@@ -4,6 +4,7 @@ import hashlib
 import io
 import json
 import os
+import re
 import subprocess
 import inspect
 import marshal
@@ -16,7 +17,7 @@ from types import MappingProxyType, ModuleType
 from typing import Mapping
 
 from fastapi import APIRouter, HTTPException, Query, Request
-from fastapi.responses import PlainTextResponse, Response
+from fastapi.responses import FileResponse, PlainTextResponse, Response
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from v2.projects.service import ProjectStore
@@ -669,6 +670,65 @@ def trade_check(body: TradeBody) -> dict:
         "team_b": body.team_b, "players_b": body.players_b,
         "season": body.season,
     })
+
+
+CARDS_DIR = _BACKEND / "data" / "cards"
+_DEBATE_FILE_RE = re.compile(r"^debate_[A-Za-z0-9]+_vs_[A-Za-z0-9]+_[0-9]+\.html$")
+
+
+@router.get("/debate-card")
+def debate_card(
+    a: str = Query(""),
+    b: str = Query(""),
+    season: str = Query("2025-26"),
+) -> dict:
+    """Shareable debate-card builder (v1 parity; file URL on the v2 mount)."""
+    from shared.tools import get_debate_card
+    from shared.tools._core import clamp_season
+
+    qa = (a or "").strip()[:80]
+    qb = (b or "").strip()[:80]
+    if not qa or not qb:
+        return {"ok": False, "error": "two player names required"}
+    clamped = clamp_season(season)
+    try:
+        res = get_debate_card.invoke({"a": qa, "b": qb, "season": clamped})
+    except Exception:
+        return {"ok": False, "error": "debate card failed"}
+    if not isinstance(res, dict) or not res.get("ok"):
+        err = res.get("error", "debate card failed") if isinstance(res, dict) else "debate card failed"
+        return {"ok": False, "error": err}
+    rows = res.get("rows", {}) if isinstance(res.get("rows"), dict) else {}
+    raw_path = str(rows.get("path", ""))
+    basename = os.path.basename(raw_path)
+    players = rows.get("players", [qa, qb])
+    return {
+        "ok": True,
+        "path": basename,
+        "players": players,
+        "url": f"/api/debate-card/file?name={basename}",
+        "rows": {
+            "path": basename,
+            "players": players,
+            "url": f"/api/debate-card/file?name={basename}",
+        },
+        "meta": {"season": clamped},
+    }
+
+
+@router.get("/debate-card/file")
+def debate_card_file(name: str = Query("")) -> FileResponse:
+    """Serve a generated debate-card HTML file (v1 parity)."""
+    if not _DEBATE_FILE_RE.fullmatch(name or ""):
+        raise HTTPException(status_code=400, detail="invalid file name")
+    target = CARDS_DIR / name
+    if not target.is_file():
+        raise HTTPException(status_code=404, detail="not found")
+    return FileResponse(
+        target,
+        media_type="text/html",
+        headers={"Cache-Control": "public, max-age=3600"},
+    )
 
 
 def public_evidence_table(item):

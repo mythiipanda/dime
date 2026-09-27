@@ -41,6 +41,8 @@ def test_v2_entrypoint_routes():
     assert "/api/sql/rerun" in paths
     assert "/api/resolve" in paths
     assert "/api/trade/check" in paths
+    assert "/api/debate-card" in paths
+    assert "/api/debate-card/file" in paths
     assert not any(p.startswith("/api/v1") for p in paths), \
         sorted(p for p in paths if p.startswith("/api/v1"))
 
@@ -514,3 +516,123 @@ def test_v2_trade_body_list_normalization():
     body = TradeBody(players_a=["a", "", " b "], players_b="c")
     assert body.players_a == "a, b"
     assert body.players_b == "c"
+
+
+# --- /debate-card + /debate-card/file (v1-removal step 3) ---
+
+
+def _stub_debate_tools(monkeypatch, invoke):
+    """Stub shared.tools.get_debate_card + shared.tools._core.clamp_season."""
+    import types
+
+    class FakeTool:
+        def invoke(self, payload):
+            return invoke(payload)
+
+    tools_mod = types.ModuleType("shared.tools")
+    tools_mod.get_debate_card = FakeTool()
+    core_mod = types.ModuleType("shared.tools._core")
+    core_mod.clamp_season = lambda season: season
+    _stub_shared(monkeypatch, **{"tools": tools_mod, "tools._core": core_mod})
+
+
+def test_v2_debate_card_requires_two_names():
+    """Missing names short-circuit before any tool call (v1 parity)."""
+    from v2.api.routes import debate_card as card_view
+
+    assert card_view(a="", b="Curry") == \
+        {"ok": False, "error": "two player names required"}
+    assert card_view(a="LeBron", b="   ") == \
+        {"ok": False, "error": "two player names required"}
+
+
+def test_v2_debate_card_ok_shape(monkeypatch):
+    """Successful card returns the v1 envelope with a v2-mount file URL."""
+    import types
+
+    seen = {}
+
+    def fake_invoke(payload):
+        seen.update(payload)
+        return {"ok": True, "rows": {
+            "path": "/var/x/debate_LeBron_vs_Curry_7.html",
+            "players": ["LeBron James", "Stephen Curry"]}}
+
+    _stub_debate_tools(monkeypatch, fake_invoke)
+
+    from v2.api.routes import debate_card as card_view
+
+    out = card_view(a="  LeBron James  ", b="Stephen Curry", season="2024-25")
+    assert seen == {"a": "LeBron James", "b": "Stephen Curry",
+                    "season": "2024-25"}
+    assert out["ok"] is True
+    assert out["path"] == "debate_LeBron_vs_Curry_7.html"
+    assert out["players"] == ["LeBron James", "Stephen Curry"]
+    assert out["url"] == \
+        "/api/debate-card/file?name=debate_LeBron_vs_Curry_7.html"
+    assert out["rows"]["url"] == out["url"]
+    assert out["meta"] == {"season": "2024-25"}
+
+
+def test_v2_debate_card_tool_failure(monkeypatch):
+    """Tool exceptions and ok=False rows project to the v1 error shape."""
+    def boom(_payload):
+        raise RuntimeError("down")
+
+    _stub_debate_tools(monkeypatch, boom)
+    from v2.api.routes import debate_card as card_view
+
+    assert card_view(a="LeBron", b="Curry") == \
+        {"ok": False, "error": "debate card failed"}
+
+    def ok_false(_payload):
+        return {"ok": False, "error": "no stats"}
+
+    _stub_debate_tools(monkeypatch, ok_false)
+    assert card_view(a="LeBron", b="Curry") == \
+        {"ok": False, "error": "no stats"}
+
+
+def test_v2_debate_card_file_rejects_bad_names():
+    """Non-matching names raise 400 without touching the filesystem."""
+    from fastapi import HTTPException
+
+    from v2.api.routes import debate_card_file as file_view
+
+    for bad in ("", "x.html", "debate_A_vs_B_1.txt",
+                "debate_A__vs_B_1.html", "../debate_A_vs_B_1.html",
+                "debate_A_vs_B_1.html "):
+        try:
+            file_view(name=bad)
+        except HTTPException as exc:
+            assert exc.status_code == 400
+        else:
+            raise AssertionError(f"name {bad!r} accepted")
+
+
+def test_v2_debate_card_file_missing_404():
+    """Regex-valid but absent files raise 404 (v1 parity)."""
+    from fastapi import HTTPException
+
+    from v2.api.routes import debate_card_file as file_view
+
+    try:
+        file_view(name="debate_NoOne_vs_NoTwo_1.html")
+    except HTTPException as exc:
+        assert exc.status_code == 404
+    else:
+        raise AssertionError("missing file served")
+
+
+def test_v2_debate_card_file_serves(monkeypatch, tmp_path):
+    """A present card file is served as HTML with the v1 cache header."""
+    import v2.api.routes as routes
+
+    card = tmp_path / "debate_A_vs_B_9.html"
+    card.write_text("<html>card</html>")
+    monkeypatch.setattr(routes, "CARDS_DIR", tmp_path)
+
+    resp = routes.debate_card_file(name="debate_A_vs_B_9.html")
+    assert resp.media_type == "text/html"
+    assert resp.headers["Cache-Control"] == "public, max-age=3600"
+    assert str(resp.path) == str(card)
