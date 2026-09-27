@@ -10,7 +10,7 @@ class SelectionModel:
         self.skill = skill
         self.calls = []
 
-    async def generate(self, *, schema, prompt, payload, envelope):
+    async def generate(self, *, schema, prompt, payload, envelope, decode=None):
         self.calls.append((schema, payload, envelope))
         if schema is TaskSpec:
             return TaskSpec(goal="test", mode=RunMode.QUICK,

@@ -7,7 +7,7 @@ import random
 import re
 import time
 import marshal
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from datetime import UTC, datetime
 from decimal import Decimal
 from functools import cached_property
@@ -157,6 +157,11 @@ class StructuredModel(Protocol):
         prompt: str,
         payload: Mapping[str, Any],
         envelope: RequestEnvelope,
+        # Optional post-generation hook: receives the validated wire model and
+        # returns ledger metadata (or None). Ledger-recording wrappers consume
+        # it; plain providers may ignore it. Part of the contract because
+        # ModelStage._generate_as forwards it whenever a stage supplies one.
+        decode: Callable[[Any], dict[str, Any] | None] | None = None,
     ) -> T: ...
 
 
@@ -472,7 +477,11 @@ class ProviderStructuredModel:
         prompt: str,
         payload: Mapping[str, Any],
         envelope: RequestEnvelope,
+        decode: Callable[[Any], dict[str, Any] | None] | None = None,
     ) -> T:
+        # decode is a ledger-metadata hook consumed by RecordedStructuredModel;
+        # this bare provider has no ledger, so it is accepted and ignored.
+        _ = decode
         models = self._models()
         if not models:
             raise RuntimeError("no configured structured-output provider")
