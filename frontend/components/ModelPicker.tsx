@@ -24,20 +24,31 @@ export default function ModelPicker({ models, value, onChange, status = "ready",
   const selectedModel = models.find((m) => m.id === value) || models[0];
 
   // Position the menu in a portal: flip above/below the trigger based on
-  // available viewport space, and never let it run off-screen.
+  // available viewport space, and never let it run off-screen. Reposition on
+  // scroll/resize so the menu tracks the trigger.
   useLayoutEffect(() => {
-    if (!open || !triggerRef.current) return;
-    const r = triggerRef.current.getBoundingClientRect();
-    const menuH = Math.min(MENU_MAX_H, window.innerHeight - 24);
-    const aboveH = r.top - 8;
-    const belowH = window.innerHeight - r.bottom - 8;
-    const openAbove = aboveH >= Math.min(menuH, 200) || aboveH >= belowH;
-    const left = Math.max(8, Math.min(r.left, window.innerWidth - 328));
-    setMenuStyle(
-      openAbove
-        ? { left, bottom: Math.max(8, window.innerHeight - r.top + 6), maxHeight: Math.min(menuH, aboveH) }
-        : { left, top: Math.min(r.bottom + 6, window.innerHeight - 120), maxHeight: Math.min(menuH, belowH) }
-    );
+    if (!open) return;
+    const position = () => {
+      if (!triggerRef.current) return;
+      const r = triggerRef.current.getBoundingClientRect();
+      const menuH = Math.min(MENU_MAX_H, window.innerHeight - 24);
+      const aboveH = r.top - 8;
+      const belowH = window.innerHeight - r.bottom - 8;
+      const openAbove = aboveH >= Math.min(menuH, 200) || aboveH >= belowH;
+      const left = Math.max(8, Math.min(r.left, window.innerWidth - 328));
+      setMenuStyle(
+        openAbove
+          ? { left, bottom: Math.max(8, window.innerHeight - r.top + 6), maxHeight: Math.min(menuH, aboveH) }
+          : { left, top: Math.min(r.bottom + 6, window.innerHeight - 120), maxHeight: Math.min(menuH, belowH) }
+      );
+    };
+    position();
+    window.addEventListener("scroll", position, true);
+    window.addEventListener("resize", position);
+    return () => {
+      window.removeEventListener("scroll", position, true);
+      window.removeEventListener("resize", position);
+    };
   }, [open ]);
 
   useEffect(() => {
