@@ -125,7 +125,7 @@ export default function ImpactView({
         </div>
         <div
           style={{
-            fontSize: 28,
+            fontSize: 24,
             fontWeight: 600,
             color: "var(--color-cyan-edge)",
             fontVariantNumeric: "tabular-nums",

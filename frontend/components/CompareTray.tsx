@@ -70,7 +70,7 @@ export default function CompareTray({
       <span
         style={{
           fontSize: 10,
-          fontWeight: 700,
+          fontWeight: 600,
           letterSpacing: "0.08em",
           color: "var(--color-warm-gray)",
           textTransform: "uppercase",

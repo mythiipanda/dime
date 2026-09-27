@@ -152,7 +152,7 @@ export default function StreaksView({
                 <span
                   style={{
                     width: 48,
-                    fontSize: 15,
+                    fontSize: 16,
                     fontWeight: 600,
                     color:
                       i === 0

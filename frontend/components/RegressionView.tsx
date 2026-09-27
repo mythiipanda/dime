@@ -85,7 +85,7 @@ function StatCell({ label, value }: { label: string; value: string }) {
     <div style={{ minWidth: 72 }}>
       <div
         style={{
-          fontSize: 15,
+          fontSize: 16,
           fontWeight: 600,
           color: "var(--color-ink-black)",
           fontVariantNumeric: "tabular-nums",

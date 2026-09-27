@@ -124,7 +124,7 @@ function ToolRow({ c }: { c: ToolCall }) {
             transform: "translateY(-1px)",
             fontSize: 10,
             color: dotColor,
-            fontWeight: 700,
+            fontWeight: 600,
           }}
         >
           {glyph}

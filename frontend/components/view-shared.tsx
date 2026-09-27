@@ -97,7 +97,7 @@ export function SectionTitle({ children }: { children: ReactNode }) {
     <div
       className="display"
       style={{
-        fontSize: 15,
+        fontSize: 16,
         color: "var(--color-ink-black)",
         marginBottom: 10,
       }}

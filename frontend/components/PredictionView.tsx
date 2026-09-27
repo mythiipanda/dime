@@ -304,7 +304,7 @@ export default function PredictionView({
         </div>
         <div
           style={{
-            fontSize: 15,
+            fontSize: 16,
             fontWeight: 600,
             color: "var(--color-ink-black)",
             fontVariantNumeric: "tabular-nums",

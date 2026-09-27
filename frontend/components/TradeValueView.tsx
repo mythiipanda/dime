@@ -144,7 +144,7 @@ function SideCard({ side, grade }: { side: TradeSide; grade?: string }) {
         <span
           style={{
             fontWeight: 600,
-            fontSize: 15,
+            fontSize: 16,
             color: "var(--color-ink-black)",
           }}
         >
@@ -287,7 +287,7 @@ export default function TradeValueView({ rows }: { rows: unknown }) {
           <div
             style={{
               fontWeight: 600,
-              fontSize: 15,
+              fontSize: 16,
               color: "var(--color-ink-black)",
             }}
           >
