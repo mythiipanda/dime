@@ -33,6 +33,12 @@ def test_v2_entrypoint_routes():
     assert "/api/projects" in paths
     assert "/api/models" in paths
     assert "/api/health" in paths
+    assert "/api/datasets/freshness" in paths
+    assert "/api/datasets/{name}" in paths
+    assert "/api/threads" in paths
+    assert "/api/threads/{thread_id}/runs" in paths
+    assert "/api/threads/{thread_id}/export" in paths
+    assert "/api/sql/rerun" in paths
     assert not any(p.startswith("/api/v1") for p in paths), \
         sorted(p for p in paths if p.startswith("/api/v1"))
 
@@ -130,3 +136,178 @@ def test_v2_rate_limited_stream_frames():
     assert chunks[0].startswith("event: error\n")
     assert "rate limited" in chunks[0]
     assert chunks[-1].startswith("event: graph_end\n")
+
+# --- Datasets + threads + sql/rerun (v1-removal Step 3, item 4) ---
+
+
+def _stub_shared(monkeypatch, store_stub=None, **module_stubs):
+    """Replace sys.modules['shared'] (+ named submodules) hermetically.
+
+    Handlers import shared.* at call time, so a stubbed module tree is
+    enough to exercise the transport layer without a warehouse or
+    provider SDKs.
+    """
+    import sys
+    import types
+
+    shared = types.ModuleType("shared")
+    if store_stub is not None:
+        shared.store = store_stub
+    monkeypatch.setitem(sys.modules, "shared", shared)
+    for name, mod in module_stubs.items():
+        monkeypatch.setitem(sys.modules, f"shared.{name}", mod)
+    return shared
+
+
+def _stub_store(**fns):
+    import types
+
+    return types.SimpleNamespace(**fns)
+
+
+def test_v2_datasets_freshness_ttl_cache(monkeypatch):
+    """Freshness caches per worker: 2 calls within TTL -> 1 payload build."""
+    from v2.api import routes
+
+    calls = []
+
+    def fake_payload():
+        calls.append(1)
+        return {"ok": True, "rows": []}
+
+    monkeypatch.setattr(routes, "_datasets_freshness_payload", fake_payload)
+    routes._DATASETS_FRESHNESS_CACHE.update(at=0.0, payload=None)
+    try:
+        first = routes.datasets_freshness()
+        second = routes.datasets_freshness()
+        assert first == {"ok": True, "rows": []}
+        assert second is first
+        assert len(calls) == 1
+    finally:
+        routes._DATASETS_FRESHNESS_CACHE.update(at=0.0, payload=None)
+
+
+def test_v2_dataset_unknown_name():
+    """Unknown dataset name returns ok False without touching the store."""
+    from v2.api.routes import dataset as dataset_view
+
+    out = dataset_view("bogus")
+    assert out["ok"] is False
+    assert "unknown dataset" in out["error"]
+    assert "standings" in out["error"]
+
+
+def test_v2_dataset_wowy_path(monkeypatch):
+    """wowy with player ids routes to the get_wowy tool (v1 parity)."""
+    import types
+
+    def fake_invoke(payload):
+        assert payload["player_a"] == "LeBron James"
+        assert payload["team_id"] == 14
+        return {"ok": True, "rows": [{"x": 1}], "verdict": "v", "meta": {"m": 1}}
+
+    player_mod = types.ModuleType("shared.tools.player")
+    player_mod.get_wowy = types.SimpleNamespace(invoke=fake_invoke)
+    tools_mod = types.ModuleType("shared.tools")
+    _stub_shared(monkeypatch, **{"tools": tools_mod, "tools.player": player_mod})
+
+    from v2.api.routes import dataset as dataset_view
+
+    out = dataset_view("wowy", player_a="LeBron James", team_id=14)
+    assert out["ok"] is True
+    assert out["data"] == [{"x": 1}]
+    assert out["verdict"] == "v"
+
+
+def test_v2_threads_list(monkeypatch):
+    """GET /api/threads lists threads from shared.store (v1 parity)."""
+    _stub_shared(monkeypatch, store_stub=_stub_store(
+        list_threads=lambda owner: [{"thread_id": "t1"}] if owner == "c" else []))
+
+    from v2.api.routes import threads as threads_view
+
+    assert threads_view(client="c") == {"threads": [{"thread_id": "t1"}]}
+
+
+def test_v2_thread_runs(monkeypatch):
+    """GET /api/threads/{id}/runs lists runs from shared.store (v1 parity)."""
+    seen = {}
+
+    def fake_list_runs(thread, owner=""):
+        seen.update(thread=thread, owner=owner)
+        return [{"question": "q"}]
+
+    _stub_shared(monkeypatch, store_stub=_stub_store(list_runs=fake_list_runs))
+
+    from v2.api.routes import thread_runs as runs_view
+
+    assert runs_view("t1", client="c") == {"runs": [{"question": "q"}]}
+    assert seen == {"thread": "t1", "owner": "c"}
+
+
+def test_v2_thread_export(monkeypatch):
+    """GET /api/threads/{id}/export renders markdown with evidence (v1 parity)."""
+    _stub_shared(monkeypatch, store_stub=_stub_store(
+        list_runs=lambda thread, owner="": [
+            {"question": "Q?",
+             "answer": "A.",
+             "tables": [{"tool": "get_leaders",
+                         "meta": {"source": "nba", "season": "2025-26",
+                                  "fetched_at": "2026-09-27T00:00:00",
+                                  "qualification": "MIN >= 500",
+                                  "coverage": "full",
+                                  "warnings": ["w1"]}}]}
+        ]))
+
+    from v2.api.routes import thread_export as export_view
+
+    resp = export_view("t1", client="c")
+    body = resp.body.decode()
+    assert "# Dime analysis thread t1" in body
+    assert "## Q: Q?" in body
+    assert "A." in body
+    assert "Source table: get_leaders" in body
+    assert "source nba" in body and "season 2025-26" in body
+    assert "Limit: MIN >= 500" in body
+    assert "Limit: w1" in body
+
+
+def test_v2_sql_rerun_empty_sql():
+    """Empty SQL is rejected before any store call (v1 parity)."""
+    import asyncio
+
+    from v2.api.routes import sql_rerun, SqlRerunBody
+
+    out = asyncio.run(sql_rerun(SqlRerunBody(sql="   ")))
+    assert out == {"ok": False, "error": "sql required", "rows": {}}
+
+
+def test_v2_sql_rerun_too_long():
+    """Oversized SQL is rejected before any store call (v1 parity)."""
+    import asyncio
+
+    from v2.api.routes import sql_rerun, SqlRerunBody
+
+    out = asyncio.run(sql_rerun(SqlRerunBody(sql="x" * 8001)))
+    assert out == {"ok": False, "error": "sql too long", "rows": {}}
+
+
+def test_v2_sql_rerun_ok(monkeypatch):
+    """rerun_sql success is projected to the v1 row envelope (v1 parity)."""
+    import asyncio
+    import types
+
+    async def fake_rerun(sql):
+        assert sql == "SELECT 1"
+        return {"ok": True, "columns": ["a"], "rows": [[1]], "ms": 5, "capped": False}
+
+    league_mod = types.ModuleType("shared.tools.league")
+    league_mod.rerun_sql = fake_rerun
+    tools_mod = types.ModuleType("shared.tools")
+    _stub_shared(monkeypatch, **{"tools": tools_mod, "tools.league": league_mod})
+
+    from v2.api.routes import sql_rerun, SqlRerunBody
+
+    out = asyncio.run(sql_rerun(SqlRerunBody(sql="SELECT 1")))
+    assert out == {"ok": True, "rows": {
+        "columns": ["a"], "rows": [[1]], "ms": 5, "capped": False}}

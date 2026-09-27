@@ -1,9 +1,10 @@
 """v2 standalone FastAPI entrypoint.
 
 Step 2 of the v1-removal migration (Tony's directive: remove v1 entirely,
-keep v2). Mounts only the v2 runtime (chat/stream, revision, projects)
-with the same CORS + startup asset-preflight posture as the v1 shell, so
-v2 can eventually serve without backend/app/.
+keep v2). Mounts the v2 router under /api — chat/stream, revision,
+projects, models, health, datasets, threads, sql/rerun — with the same
+CORS + startup asset-preflight posture as the v1 shell, so v2 can
+eventually serve without backend/app/.
 
 NOT yet wired into the Dockerfile or any deploy path — the production
 entrypoint remains app.main:app until the migration steps land. Run with:
