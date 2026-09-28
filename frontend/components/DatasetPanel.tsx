@@ -7,6 +7,7 @@ import ExplorePanel, { PanelHeader } from "./ExplorePanel";
 import Sparkline from "./Sparkline";
 import { ShotChartCard } from "./ShotChart";
 import { datasetUrl, getDatasetJson, getQueryParam, resolveFirstPlayerId, resolvePlayers, setQueryParam } from "../lib/api";
+import { rankOf } from "../lib/rankContext";
 
 const CATS = ["PTS", "REB", "AST", "STL", "BLK"];
 
@@ -126,11 +127,14 @@ function Leaders() {
           {(p.rows as Record<string, unknown>[]).slice(0, 3).map((row, index) => {
             const name = String(row.PLAYER_NAME ?? row.player_name ?? row.name ?? `No. ${index + 1}`);
             const value = row[cat] ?? row[cat.toLowerCase()] ?? row.value ?? "—";
+            // Percentile is from the position among all returned rows, not
+            // just these three. The list arrives ranked, so index is rank.
+            const pct = rankOf(index, (p.rows as Record<string, unknown>[]).length).percentile;
             return (
               <div className="leader-summary-item" key={`${name}-${index}`}>
                 <span className="leader-summary-rank">0{index + 1}</span>
                 <strong>{String(value)}</strong>
-                <span className="leader-summary-unit">{cat}</span>
+                <span className="leader-summary-unit">{cat} · p{pct}</span>
                 <span className="leader-summary-name" title={name}>{name}</span>
               </div>
             );
@@ -140,7 +144,7 @@ function Leaders() {
       {p.rows !== null && (
         <div style={{ marginTop: 8 }}>
           <AutoChart table={{ rows: p.rows, meta: { stat_category: cat } }} />
-          <DataTable rows={p.rows} storeKey="leaders" heat />
+          <DataTable rows={p.rows} storeKey="leaders" heat rankStat={cat} />
         </div>
       )}
     </ExplorePanel>

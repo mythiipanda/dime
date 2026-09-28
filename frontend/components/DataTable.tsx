@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { getQueryParam, setQueryParam } from "../lib/api";
+import { rankOf } from "../lib/rankContext";
 
 interface Props {
   rows: unknown;
@@ -9,6 +10,7 @@ interface Props {
   capRows?: number;
   heat?: boolean;
   storeKey?: string;
+  rankStat?: string;
   onPlayerSelect?: (playerName: string) => void;
   onPinPlayer?: (playerName: string) => void;
 }
@@ -92,7 +94,7 @@ function asTable(rows: unknown, capCols: number, showIds = false): {
   return { cols, body, nums, maxs, subs, numeric };
 }
 
-export default function DataTable({ rows, capCols = 8, capRows = 25, heat = false, storeKey, onPlayerSelect, onPinPlayer }: Props) {
+export default function DataTable({ rows, capCols = 8, capRows = 25, heat = false, storeKey, rankStat, onPlayerSelect, onPinPlayer }: Props) {
   const safeCapRows = Math.max(5, Math.min(100, capRows));
   const [showIds, setShowIds] = useState(false);
   const t = useMemo(() => asTable(rows, capCols, showIds), [rows, capCols, showIds]);
@@ -323,7 +325,31 @@ export default function DataTable({ rows, capCols = 8, capRows = 25, heat = fals
                       )}
                       </>
                     ) : (
-                      cell
+                      <>
+                        {cell}
+                        {rankStat !== undefined && t.cols[j] === rankStat && cell !== "" && (
+                          // Leaders rank is the row's position in the unsorted
+                          // original returned list (ri indexes t.body, which
+                          // keeps that order), so the chip stays correct when
+                          // the user re-sorts or filters the table.
+                          (() => {
+                            const rc = rankOf(ri, t.body.length);
+                            return (
+                              <span
+                                style={{
+                                  fontSize: 11,
+                                  color: "var(--color-ash-gray)",
+                                  fontVariantNumeric: "tabular-nums",
+                                  marginLeft: 6,
+                                }}
+                                title={`Ranked ${rc.chip} of ${t.body.length} by ${rankStat}`}
+                              >
+                                {rc.chip}
+                              </span>
+                            );
+                          })()
+                        )}
+                      </>
                     )}
                     {t.subs[ri][t.cols[j]] && (
                       <div style={{ fontSize: 10, color: "var(--color-ash-gray)" }}>

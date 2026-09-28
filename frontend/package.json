@@ -6,7 +6,7 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "test": "tsx --test lib/activity.test.ts lib/api.test.ts lib/chat.test.ts lib/modelNames.test.ts lib/exploreIndex.test.ts lib/freshness.test.ts lib/quickStart.test.ts lib/viz.test.ts",
+    "test": "tsx --test lib/activity.test.ts lib/api.test.ts lib/chat.test.ts lib/modelNames.test.ts lib/exploreIndex.test.ts lib/freshness.test.ts lib/quickStart.test.ts lib/rankContext.test.ts lib/viz.test.ts",
     "test:activity": "tsx --test lib/activity.test.ts",
     "test:api": "tsx --test lib/api.test.ts",
     "test:chat": "tsx --test lib/chat.test.ts"
