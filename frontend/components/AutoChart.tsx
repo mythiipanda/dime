@@ -11,6 +11,7 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
+import { categoryAxisWidth } from "../lib/viz";
 
 type Row = Record<string, unknown>;
 
@@ -101,7 +102,7 @@ export default function AutoChart({
           <BarChart data={lead} layout="vertical">
             <CartesianGrid stroke="var(--color-stone-border)" horizontal={false} />
             <XAxis type="number" tick={AXIS} />
-            <YAxis type="category" dataKey="label" tick={AXIS} width={70} />
+            <YAxis type="category" dataKey="label" tick={AXIS} width={categoryAxisWidth(lead.map((d) => d.label))} interval={0} />
             <Tooltip />
             <Bar dataKey="value" fill="var(--color-ink-black)" radius={[0, 4, 4, 0]} />
           </BarChart>

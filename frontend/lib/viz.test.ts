@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  categoryAxisWidth,
   clamp,
   formatPct,
   histogramBins,
@@ -58,5 +59,28 @@ test("histogramBins handles a flat input", () => {
   assert.equal(
     bins.reduce((a, b) => a + b.count, 0),
     3,
+  );
+});
+
+test("categoryAxisWidth returns the 70px minimum for no labels", () => {
+  assert.equal(categoryAxisWidth([]), 70);
+});
+
+test("categoryAxisWidth keeps short labels within [70, 170]", () => {
+  const w = categoryAxisWidth(["Voss", "Huang", "Keller"]);
+  assert.ok(w >= 70 && w <= 170, `width ${w} out of range`);
+});
+
+test("categoryAxisWidth grows with a long label", () => {
+  const short = categoryAxisWidth(["Voss", "Huang"]);
+  const long = categoryAxisWidth(["Voss", "Montgomery-Fitzgerald"]);
+  assert.ok(long > short, `long ${long} should exceed short ${short}`);
+  assert.ok(long <= 170, `long ${long} exceeds max`);
+});
+
+test("categoryAxisWidth caps a very long label at 170", () => {
+  assert.equal(
+    categoryAxisWidth(["Alexanderson-Wellington-Smythe-Johnsontowner"]),
+    170,
   );
 });

@@ -63,3 +63,14 @@ export function histogramBins(values: number[], binCount: number): HistBin[] {
   }
   return bins;
 }
+
+/**
+ * Pixel width for a category axis from its tick labels (11px tick font):
+ * longest label length times a per-character estimate, clamped to
+ * [70, 170]. Empty input returns the 70px minimum.
+ */
+export function categoryAxisWidth(labels: string[]): number {
+  if (!labels.length) return 70;
+  const longest = Math.max(...labels.map((l) => l.length));
+  return clamp(Math.ceil(longest * 7 + 8), 70, 170);
+}
