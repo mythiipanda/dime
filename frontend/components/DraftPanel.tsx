@@ -1,11 +1,12 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import CopyLink from "./CopyLink";
 import ExplorePanel, { PanelHeader } from "./ExplorePanel";
-import EmptyState from "./EmptyState";
 import DataTable from "./DataTable";
+import Skeleton from "./Skeleton";
 import { BACKEND } from "../lib/chat";
-import { apiPath } from "../lib/api";
+import { apiPath, getQueryParam, setQueryParam } from "../lib/api";
 
 export default function DraftPanel() {
   const [year, setYear] = useState("2025");
@@ -13,12 +14,14 @@ export default function DraftPanel() {
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
 
-  const load = async () => {
+  const load = async (draftYear?: string) => {
+    const y = (draftYear ?? year).trim() || "2025";
     setError("");
     setBusy(true);
+    setQueryParam("draft_year", y, true);
     try {
       const res = await fetch(
-        `${BACKEND}${apiPath(`/datasets/combine?season=${encodeURIComponent(year)}`)}`,
+        `${BACKEND}${apiPath(`/datasets/combine?season=${encodeURIComponent(y)}`)}`,
       );
       const data = await res.json();
       if (!data.ok) {
@@ -34,14 +37,17 @@ export default function DraftPanel() {
   };
 
   // Auto-load the default year so Explore never opens on an empty panel.
+  // The URL wins when a shared link carries a year.
   useEffect(() => {
-    load();
+    const fromUrl = getQueryParam("draft_year");
+    if (fromUrl) setYear(fromUrl);
+    load(fromUrl || "2025");
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   return (
     <ExplorePanel id="explore-draft">
-      <PanelHeader kicker="Draft" title="Draft combine" />
+      <PanelHeader kicker="Draft" title="Draft combine" action={<CopyLink panel="draft" />} />
       <div style={{ display: "flex", gap: 8 }}>
         <input
           className="field"
@@ -49,21 +55,22 @@ export default function DraftPanel() {
           onChange={(e) => setYear(e.target.value)}
           placeholder="draft year"
           style={{ width: 110 }}
+          aria-label="Draft year"
         />
-        <button className="pill-cta" style={{ fontSize: 12 }} disabled={busy} onClick={load}>
+        <button className="pill-cta" style={{ fontSize: 12 }} disabled={busy} onClick={() => load()}>
           {busy ? "Loading" : "Show"}
         </button>
       </div>
       {error && <div style={{ color: "var(--color-warm-gray)", marginTop: 8 }}>{error}</div>}
-      {rows !== null && Array.isArray(rows) && rows.length === 0 && (
-        <EmptyState
-          title={`No combine data for ${year}`}
-          description="Try another draft year - measurements land after each combine."
-        />
+      {rows === null && !error && <Skeleton lines={5} label="Loading combine rows" />}
+      {rows !== null && Array.isArray(rows) && rows.length === 0 && !busy && (
+        <div style={{ fontSize: 12, color: "var(--color-warm-gray)", marginTop: 8 }}>
+          No combine rows for {year}. Try another draft year. Measurements land after each combine.
+        </div>
       )}
       {rows !== null && !(Array.isArray(rows) && rows.length === 0) && (
         <div style={{ marginTop: 8 }}>
-          <DataTable rows={rows} />
+          <DataTable rows={rows} storeKey="draft" />
         </div>
       )}
     </ExplorePanel>

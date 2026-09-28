@@ -2,36 +2,18 @@
 
 import { useEffect, useState } from "react";
 import AutoChart from "./AutoChart";
+import CopyLink from "./CopyLink";
 import DataTable from "./DataTable";
 import ExplorePanel, { PanelHeader } from "./ExplorePanel";
+import Skeleton from "./Skeleton";
 import Sparkline from "./Sparkline";
 import { ShotChartCard } from "./ShotChart";
 import { datasetUrl, getDatasetJson, getQueryParam, resolveFirstPlayerId, resolvePlayers, setQueryParam } from "../lib/api";
+import { STAT_CATEGORIES } from "../lib/exploreSearch";
+import { freshDateLabel } from "../lib/freshness";
 import { rankOf } from "../lib/rankContext";
 
-const CATS = ["PTS", "REB", "AST", "STL", "BLK"];
-
-function CopyLink() {
-  const [done, setDone] = useState(false);
-  return (
-    <button
-      className="pill-ghost"
-      style={{ fontSize: 12 }}
-      onClick={() => {
-        if (typeof window === "undefined") return;
-        navigator.clipboard
-          .writeText(window.location.href)
-          .then(() => {
-            setDone(true);
-            setTimeout(() => setDone(false), 1500);
-          })
-          .catch(() => {});
-      }}
-    >
-      {done ? "Copied" : "Copy link"}
-    </button>
-  );
-}
+const CATS: readonly string[] = STAT_CATEGORIES;
 
 function usePreview() {
   const [rows, setRows] = useState<unknown>(null);
@@ -60,17 +42,22 @@ function usePreview() {
 
 function Meta({ meta }: { meta: Record<string, unknown> | null }) {
   if (!meta) return null;
+  const rows = Number(meta.rows ?? 0);
+  const stamp = typeof meta.fetched_at === "string" ? freshDateLabel(meta.fetched_at) : null;
   return (
     <div style={{ fontSize: 12, color: "var(--color-warm-gray)", marginTop: 8 }}>
-      {String(meta.rows ?? 0)} rows
-      {meta.source ? ` from ${String(meta.source)}` : ""}
-      {meta.fetched_at ? ` at ${String(meta.fetched_at).slice(0, 10)}` : ""}
-      {meta.cached ? " (cached)" : ""}
+      {rows} rows{stamp ? ` · updated ${stamp}` : ""}
     </div>
   );
 }
 
-function Leaders() {
+export function Leaders({
+  initialStat,
+  onPlayerSelect,
+}: {
+  initialStat?: string;
+  onPlayerSelect?: (playerName: string) => void;
+}) {
   const [cat, setCat] = useState("PTS");
   const p = usePreview();
   const show = (stat: string) => {
@@ -78,18 +65,22 @@ function Leaders() {
     p.run("leaders", { season: "2025-26", stat });
   };
   useEffect(() => {
+    // A fresh search context wins over a stale URL; a shared link carries
+    // no context, so the URL still restores the view.
     const v = getQueryParam("leaders_stat");
-    if (v && CATS.includes(v)) {
-      setCat(v);
-      show(v);
-    } else {
-      show("PTS");
-    }
+    const start =
+      initialStat && CATS.includes(initialStat)
+        ? initialStat
+        : v && CATS.includes(v)
+          ? v
+          : "PTS";
+    setCat(start);
+    show(start);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
   return (
     <ExplorePanel id="explore-leaders">
-      <PanelHeader kicker="Stats" title="League leaders" action={<CopyLink />} />
+      <PanelHeader kicker="Stats" title="League leaders" action={<CopyLink panel="leaders" />} />
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
         {CATS.map((c) => (
           <button
@@ -100,6 +91,7 @@ function Leaders() {
             }}
             className={cat === c ? "tab-active" : "tab-idle"}
             style={{ fontSize: 12 }}
+            aria-pressed={cat === c}
           >
             {c}
           </button>
@@ -122,10 +114,11 @@ function Leaders() {
       </div>
       {p.error && <div style={{ color: "var(--color-warm-gray)", marginTop: 8 }}>{p.error}</div>}
       <Meta meta={p.meta} />
+      {p.rows === null && !p.error && <Skeleton lines={5} label="Loading leaders" />}
       {Array.isArray(p.rows) && p.rows.length > 0 && (
         <div className="leader-summary" aria-label={`${cat} leaders at a glance`}>
           {(p.rows as Record<string, unknown>[]).slice(0, 3).map((row, index) => {
-            const name = String(row.PLAYER_NAME ?? row.player_name ?? row.name ?? `No. ${index + 1}`);
+            const name = String(row.PLAYER_NAME ?? row.PLAYER ?? row.player_name ?? row.name ?? `No. ${index + 1}`);
             const value = row[cat] ?? row[cat.toLowerCase()] ?? row.value ?? "—";
             // Percentile is from the position among all returned rows, not
             // just these three. The list arrives ranked, so index is rank.
@@ -144,14 +137,14 @@ function Leaders() {
       {p.rows !== null && (
         <div style={{ marginTop: 8 }}>
           <AutoChart table={{ rows: p.rows, meta: { stat_category: cat } }} />
-          <DataTable rows={p.rows} storeKey="leaders" heat rankStat={cat} />
+          <DataTable rows={p.rows} storeKey="leaders" heat rankStat={cat} onPlayerSelect={onPlayerSelect} />
         </div>
       )}
     </ExplorePanel>
   );
 }
 
-function Standings() {
+export function Standings() {
   const [season, setSeason] = useState("2025-26");
   const p = usePreview();
   const show = (s: string) => {
@@ -171,7 +164,7 @@ function Standings() {
   }, []);
   return (
     <ExplorePanel id="explore-standings">
-      <PanelHeader kicker="Season" title="Standings race" action={<CopyLink />} />
+      <PanelHeader kicker="Season" title="Standings race" action={<CopyLink panel="leaders" />} />
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
         <input
           className="field"
@@ -199,6 +192,7 @@ function Standings() {
       </div>
       {p.error && <div style={{ color: "var(--color-warm-gray)", marginTop: 8 }}>{p.error}</div>}
       <Meta meta={p.meta} />
+      {p.rows === null && !p.error && <Skeleton lines={5} label="Loading standings" />}
       {p.rows !== null && (
         <div style={{ marginTop: 8 }}>
           <DataTable rows={p.rows} storeKey="standings" />
@@ -208,7 +202,7 @@ function Standings() {
   );
 }
 
-function Gamelog() {
+export function Gamelog({ initialPlayer }: { initialPlayer?: string }) {
   const [idVal, setIdVal] = useState("");
   const [suggest, setSuggest] = useState<{ id: number; name: string }[]>([]);
   const p = usePreview();
@@ -239,10 +233,11 @@ function Gamelog() {
     return () => clearTimeout(t);
   }, [idVal]);
   useEffect(() => {
-    const v = getQueryParam("gamelog_player");
-    if (v) {
-      setIdVal(v);
-      show(v);
+    const fromUrl = getQueryParam("gamelog_player");
+    const start = (initialPlayer || fromUrl || "").trim();
+    if (start) {
+      setIdVal(start);
+      show(start);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -250,7 +245,7 @@ function Gamelog() {
   const pts = list.filter((r) => typeof r.PTS === "number").map((r) => Number(r.PTS));
   return (
     <ExplorePanel id="explore-gamelog">
-      <PanelHeader kicker="Player" title="Game log trends" action={<CopyLink />} />
+      <PanelHeader kicker="Player" title="Game log trends" action={<CopyLink panel="shots" />} />
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
         <input
           className="field"
@@ -285,6 +280,7 @@ function Gamelog() {
       )}
       {p.error && <div style={{ color: "var(--color-warm-gray)", marginTop: 8 }}>{p.error}</div>}
       <Meta meta={p.meta} />
+      {p.rows === null && !p.error && <Skeleton lines={5} label="Loading game log" />}
       {pts.length > 1 && (
         <div style={{ marginTop: 8 }}>
           <div style={{ fontSize: 12, color: "var(--color-warm-gray)", marginBottom: 4 }}>
@@ -302,16 +298,31 @@ function Gamelog() {
   );
 }
 
-export default function DatasetPanel() {
+/** Leaders expansion: league leaders plus the standings race. */
+export function LeadersPanel({
+  initialStat,
+  onPlayerSelect,
+}: {
+  initialStat?: string;
+  onPlayerSelect?: (playerName: string) => void;
+}) {
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-      <Leaders />
-      <ExplorePanel id="explore-shots">
-        <PanelHeader kicker="Stats" title="Shot chart" />
-        <ShotChartCard />
-      </ExplorePanel>
+      <Leaders initialStat={initialStat} onPlayerSelect={onPlayerSelect} />
       <Standings />
-      <Gamelog />
+    </div>
+  );
+}
+
+/** Shots expansion: shot chart plus game-log trends for one player. */
+export function ShotsPanel({ initialPlayer }: { initialPlayer?: string }) {
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+      <ExplorePanel id="explore-shots">
+        <PanelHeader kicker="Stats" title="Shot chart" action={<CopyLink panel="shots" />} />
+        <ShotChartCard initialPlayer={initialPlayer} />
+      </ExplorePanel>
+      <Gamelog initialPlayer={initialPlayer} />
     </div>
   );
 }

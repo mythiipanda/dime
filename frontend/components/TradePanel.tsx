@@ -1,9 +1,10 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import CopyLink from "./CopyLink";
 import ExplorePanel, { PanelHeader } from "./ExplorePanel";
 import { BACKEND } from "../lib/chat";
-import { apiPath } from "../lib/api";
+import { apiPath, getQueryParam, setQueryParam } from "../lib/api";
 
 interface Verdict {
   team_a: { team: string; out: number; players: string[]; payroll: number; allowed_in?: number; match_rule?: string; over_apron1?: boolean; over_apron2?: boolean };
@@ -28,9 +29,26 @@ export default function TradePanel({ onAskValue }: { onAskValue?: (q: string) =>
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
 
+  // First load: restore the last checked trade from the URL.
+  useEffect(() => {
+    const qa = getQueryParam("trade_a");
+    const pa = getQueryParam("trade_pa");
+    const qb = getQueryParam("trade_b");
+    const pb = getQueryParam("trade_pb");
+    if (qa) setA(qa);
+    if (pa) setPa(pa);
+    if (qb) setB(qb);
+    if (pb) setPb(pb);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const check = async () => {
     setError("");
     setBusy(true);
+    setQueryParam("trade_a", a, true);
+    setQueryParam("trade_pa", pa, true);
+    setQueryParam("trade_b", b, true);
+    setQueryParam("trade_pb", pb, true);
     try {
       const res = await fetch(`${BACKEND}${apiPath("/trade/check")}`, {
         method: "POST",
@@ -52,7 +70,7 @@ export default function TradePanel({ onAskValue }: { onAskValue?: (q: string) =>
 
   return (
     <ExplorePanel id="explore-trade">
-      <PanelHeader kicker="Trade" title="Trade checker" />
+      <PanelHeader kicker="Trade" title="Trade checker" action={<CopyLink panel="trade" />} />
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
         <input className="field" value={a} onChange={(e) => setA(e.target.value)} placeholder="team A" style={{ width: 80 }} />
         <input className="field" value={pa} onChange={(e) => setPa(e.target.value)} placeholder="players out, comma separated" style={{ flex: 1, minWidth: 200 }} />

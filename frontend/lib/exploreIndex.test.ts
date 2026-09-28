@@ -6,8 +6,12 @@ import {
   countPlayoffGames,
   fetchIndexSummaries,
   formatStat,
+  lineupsHeadline,
   playoffChampion,
+  shotsHeadline,
+  shortPlayerName,
   topLeaders,
+  tradeHeadline,
 } from "./exploreIndex";
 
 test("topLeaders picks the top 3 by value, desc", () => {
@@ -172,4 +176,87 @@ test("fetchIndexSummaries returns {} when every fetch rejects", async () => {
     throw new Error("backend unreachable");
   }, "2025-26");
   assert.deepEqual(got, {});
+});
+
+// Phase 3 context-card headlines: Shots, Trade, Lineups.
+
+test("shotsHeadline reports the charted count, null when empty", () => {
+  assert.equal(shotsHeadline("A Player", 412), "A Player · 412 shots charted");
+  assert.equal(shotsHeadline("", 412), null);
+  assert.equal(shotsHeadline("A Player", 0), null);
+  assert.equal(shotsHeadline("A Player", NaN), null);
+});
+
+test("shortPlayerName shortens to initial plus surname", () => {
+  assert.equal(shortPlayerName("LeBron James"), "L. James");
+  assert.equal(shortPlayerName("  Luka   Doncic  "), "L. Doncic");
+  assert.equal(shortPlayerName("Giannis"), "Giannis");
+});
+
+test("lineupsHeadline names the most-used unit and its minutes", () => {
+  const rows = [
+    { GROUP_NAME: "A One - B Two - C Three - D Four - E Five", MIN: 120.4 },
+    { GROUP_NAME: "F Six - G Seven - H Eight - I Nine - J Ten", MIN: 240.7 },
+  ];
+  assert.equal(
+    lineupsHeadline("BOS", rows),
+    "BOS · F. Six, G. Seven, H. Eight, I. Nine, J. Ten · 241 min",
+  );
+  assert.equal(lineupsHeadline("BOS", []), null);
+  assert.equal(lineupsHeadline("", rows), null);
+  assert.equal(lineupsHeadline("BOS", [{ GROUP_NAME: "", MIN: 10 }]), null);
+});
+
+test("tradeHeadline reports both payrolls, null when either is missing", () => {
+  const v = {
+    team_a: { team: "LAL", payroll: 178_400_000 },
+    team_b: { team: "DEN", payroll: 182_100_000 },
+  };
+  assert.equal(tradeHeadline(v), "LAL $178.4M · DEN $182.1M");
+  assert.equal(tradeHeadline(null), null);
+  assert.equal(
+    tradeHeadline({ team_a: { team: "LAL" }, team_b: { team: "DEN", payroll: 1 } }),
+    null,
+  );
+});
+
+test("fetchIndexSummaries adds shots/trade/lineups cards from the extra callbacks", async () => {
+  const got = await fetchIndexSummaries(
+    async (name) => GOOD[name as keyof typeof GOOD],
+    "2025-26",
+    {
+      topScorerShots: async () => ({ name: "A Player", count: 300 }),
+      tradeCheck: async () => ({
+        team_a: { team: "LAL", payroll: 178_400_000 },
+        team_b: { team: "DEN", payroll: 182_100_000 },
+      }),
+      defaultLineups: async () => ({
+        team: "BOS",
+        rows: [{ GROUP_NAME: "A One - B Two - C Three - D Four - E Five", MIN: 200 }],
+      }),
+    },
+  );
+  assert.deepEqual(got.shots, ["A Player · 300 shots charted"]);
+  assert.deepEqual(got.trade, ["LAL $178.4M · DEN $182.1M"]);
+  assert.deepEqual(got.lineups, [
+    "BOS · A. One, B. Two, C. Three, D. Four, E. Five · 200 min",
+  ]);
+});
+
+test("fetchIndexSummaries isolates a failing extra callback: other cards still render", async () => {
+  const got = await fetchIndexSummaries(
+    async (name) => GOOD[name as keyof typeof GOOD],
+    "2025-26",
+    {
+      topScorerShots: async () => {
+        throw new Error("resolve down");
+      },
+      tradeCheck: async () => null,
+      defaultLineups: async () => ({ team: "BOS", rows: [] }),
+    },
+  );
+  assert.equal(got.shots, undefined);
+  assert.equal(got.trade, undefined);
+  assert.equal(got.lineups, undefined);
+  assert.deepEqual(got.leaders, ["1. A Player — 32.1", "2. B Player — 30.2"]);
 });

@@ -83,9 +83,97 @@ export function combineSummary(
   return `${rows.length} prospects · ${draftYear} class`;
 }
 
+/**
+ * Shots card headline for one player: shot count from the warehouse.
+ * Null when there is no name or nothing charted.
+ */
+export function shotsHeadline(name: string, count: number): string | null {
+  const label = String(name || "").trim();
+  if (!label || !Number.isFinite(count) || count <= 0) return null;
+  return `${label} · ${Math.round(count)} shots charted`;
+}
+
+/** "LeBron James" -> "L. James". Shared with the Lineups panel. */
+export function shortPlayerName(full: string): string {
+  const p = String(full || "").trim().split(/\s+/).filter(Boolean);
+  return p.length > 1 ? `${p[0][0]}. ${p.slice(-1)}` : String(full || "").trim();
+}
+
+export interface LineupHeadlineRow {
+  GROUP_NAME?: unknown;
+  MIN?: unknown;
+}
+
+/**
+ * Lineups card headline for the default team: most-used unit and its
+ * minutes. Null when no lineup rows arrived.
+ */
+export function lineupsHeadline(
+  teamAbbr: string,
+  rows: LineupHeadlineRow[],
+): string | null {
+  if (!teamAbbr || !rows.length) return null;
+  const sorted = [...rows].sort(
+    (a, b) => Number(b.MIN ?? 0) - Number(a.MIN ?? 0),
+  );
+  const top = sorted[0];
+  const names = String(top.GROUP_NAME ?? "")
+    .split(" - ")
+    .map(shortPlayerName)
+    .filter(Boolean)
+    .join(", ");
+  const min = Number(top.MIN ?? 0);
+  if (!names || !Number.isFinite(min) || min <= 0) return null;
+  return `${teamAbbr} · ${names} · ${min.toFixed(0)} min`;
+}
+
+export interface TradeHeadlineSide {
+  team?: unknown;
+  payroll?: unknown;
+}
+
+export interface TradeHeadlineVerdict {
+  team_a?: TradeHeadlineSide;
+  team_b?: TradeHeadlineSide;
+}
+
+function millions(n: unknown): string | null {
+  if (typeof n !== "number" || !Number.isFinite(n)) return null;
+  return `$${(n / 1_000_000).toFixed(1)}M`;
+}
+
+/**
+ * Trade card headline from a trade/check verdict: both sides' payrolls.
+ * Null when either side is missing payroll data.
+ */
+export function tradeHeadline(v: TradeHeadlineVerdict | null | undefined): string | null {
+  const a = v?.team_a;
+  const b = v?.team_b;
+  const teamA = typeof a?.team === "string" ? a.team : "";
+  const teamB = typeof b?.team === "string" ? b.team : "";
+  const payA = millions(a?.payroll);
+  const payB = millions(b?.payroll);
+  if (!teamA || !teamB || !payA || !payB) return null;
+  return `${teamA} ${payA} · ${teamB} ${payB}`;
+}
+
 export interface DatasetResult {
   ok: boolean;
   data?: unknown[];
+}
+
+/**
+ * Deferred live summaries for the cards that need a context first
+ * (Phase 3). Each callback is wired by the component to existing
+ * endpoints: the Shots headline resolves the leaders' #1 scorer and
+ * counts their charted shots, Trade runs the default legality check,
+ * Lineups reads the default team's units. Every callback is isolated,
+ * so one failure never blanks the other cards.
+ */
+export interface IndexExtra {
+  topScorerShots?: () => Promise<{ name: string; count: number } | null>;
+  tradeCheck?: () => Promise<TradeHeadlineVerdict | null>;
+  defaultLineups?: () => Promise<{ team: string; rows: LineupHeadlineRow[] } | null>;
 }
 
 /**
@@ -98,6 +186,7 @@ export interface DatasetResult {
 export async function fetchIndexSummaries(
   fetch: (name: string, params: Record<string, string>) => Promise<DatasetResult>,
   season: string,
+  extra?: IndexExtra,
 ): Promise<Record<string, string[]>> {
   const [ld, po, cb] = await Promise.allSettled([
     fetch("leaders", { season, stat: "PTS" }),
@@ -133,6 +222,35 @@ export async function fetchIndexSummaries(
       "2025",
     );
     if (s) next.draft = [s];
+  }
+
+  // Phase 3 context cards, staggered after the parallel batch. Each is
+  // isolated: a rejection or empty result leaves that card out.
+  if (extra?.topScorerShots) {
+    try {
+      const s = await extra.topScorerShots();
+      const h = s ? shotsHeadline(s.name, s.count) : null;
+      if (h) next.shots = [h];
+    } catch {
+      /* card stays out */
+    }
+  }
+  if (extra?.tradeCheck) {
+    try {
+      const h = tradeHeadline(await extra.tradeCheck());
+      if (h) next.trade = [h];
+    } catch {
+      /* card stays out */
+    }
+  }
+  if (extra?.defaultLineups) {
+    try {
+      const l = await extra.defaultLineups();
+      const h = l ? lineupsHeadline(l.team, l.rows) : null;
+      if (h) next.lineups = [h];
+    } catch {
+      /* card stays out */
+    }
   }
 
   return next;

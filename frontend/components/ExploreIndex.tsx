@@ -1,12 +1,17 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { getDatasetJson, SEASON } from "../lib/api";
+import { getDatasetJson, resolveFirstPlayerId, SEASON } from "../lib/api";
+import { BACKEND } from "../lib/chat";
+import { apiPath } from "../lib/api";
 import { fetchIndexSummaries } from "../lib/exploreIndex";
+import type { ExplorePanelId } from "../lib/exploreSearch";
+import { TEAM_IDS } from "../lib/teams";
 
-// Explore redesign Phase 1: the overview index is the only navigation.
+// Explore redesign Phase 1+3: the overview index is the navigation.
 // A card renders only when its live summary arrived — no blurb fallbacks,
-// nothing invented, nothing hardcoded about a player or team.
+// nothing invented, nothing hardcoded about a player or team. Clicking a
+// card expands that panel on demand; panels mount lazily.
 function ArrowUpRight({ size = 12 }: { size?: number }) {
   return (
     <svg
@@ -27,7 +32,7 @@ function ArrowUpRight({ size = 12 }: { size?: number }) {
 }
 
 interface CardDef {
-  id: string;
+  id: ExplorePanelId;
   label: string;
 }
 
@@ -40,10 +45,16 @@ const CARDS: CardDef[] = [
   { id: "playoffs", label: "Playoffs" },
 ];
 
+const DEFAULT_TEAM = "BOS";
+const DEFAULT_TRADE_A = "LAL";
+const DEFAULT_TRADE_B = "DEN";
+
 export default function ExploreIndex({
-  onJump,
+  onSelect,
+  active,
 }: {
-  onJump: (id: string) => void;
+  onSelect: (id: ExplorePanelId) => void;
+  active?: ExplorePanelId | null;
 }) {
   // Live summary lines keyed by card id. Each dataset fetch is isolated
   // (Promise.allSettled inside fetchIndexSummaries), so one failed request
@@ -54,9 +65,45 @@ export default function ExploreIndex({
   useEffect(() => {
     let alive = true;
     (async () => {
+      // Batch the independent fetches; the dependent ones (shots needs
+      // the #1 scorer's id) stagger inside fetchIndexSummaries.
       const next = await fetchIndexSummaries(
         (name, params) => getDatasetJson(name, params),
         SEASON,
+        {
+          topScorerShots: async () => {
+            const ld = await getDatasetJson("leaders", { season: SEASON, stat: "PTS" });
+            const rows = (ld.ok ? (ld.data || []) : []) as Record<string, unknown>[];
+            const first = rows[0];
+            const name = String(first?.PLAYER ?? first?.PLAYER_NAME ?? "").trim();
+            if (!name) return null;
+            const id = await resolveFirstPlayerId(name);
+            if (!id) return null;
+            const sh = await getDatasetJson("shots", { season: SEASON, player_id: String(id) });
+            if (!sh.ok) return null;
+            return { name, count: ((sh.data || []) as unknown[]).length };
+          },
+          tradeCheck: async () => {
+            const res = await fetch(`${BACKEND}${apiPath("/trade/check")}`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                team_a: DEFAULT_TRADE_A,
+                players_a: "",
+                team_b: DEFAULT_TRADE_B,
+                players_b: "",
+              }),
+            });
+            const data = (await res.json()) as { ok?: boolean; rows?: unknown };
+            return data.ok ? (data.rows as { team_a?: { team?: string; payroll?: number }; team_b?: { team?: string; payroll?: number } }) : null;
+          },
+          defaultLineups: async () => {
+            const id = TEAM_IDS[DEFAULT_TEAM];
+            const res = await getDatasetJson("lineups", { team_id: String(id) });
+            if (!res.ok) return null;
+            return { team: DEFAULT_TEAM, rows: (res.data || []) as { GROUP_NAME?: unknown; MIN?: unknown }[] };
+          },
+        },
       );
       if (alive) setSummaries(next);
     })();
@@ -73,8 +120,9 @@ export default function ExploreIndex({
         <button
           key={card.id}
           type="button"
-          className="explore-index-card"
-          onClick={() => onJump(card.id)}
+          className={`explore-index-card${active === card.id ? " is-open" : ""}`}
+          onClick={() => onSelect(card.id)}
+          aria-expanded={active === card.id}
         >
           <span className="explore-index-top">
             <span className="explore-index-number">0{index + 1}</span>

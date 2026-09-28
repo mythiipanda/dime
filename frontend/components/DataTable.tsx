@@ -153,7 +153,7 @@ export default function DataTable({ rows, capCols = 8, capRows = 25, heat = fals
     return m;
   }, [t, shown, pct]);
   if (!t || !view) return null;
-  if (!t.body.length) return <div style={{ fontSize: 12, color: "var(--color-warm-gray)" }}>No rows.</div>;
+  if (!t.body.length) return <div style={{ fontSize: 12, color: "var(--color-warm-gray)" }}>No matches.</div>;
   const downloadCsv = () => {
     const esc = (v: string) =>
       /[",\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v;
@@ -245,7 +245,8 @@ export default function DataTable({ rows, capCols = 8, capRows = 25, heat = fals
                 }}
                 tabIndex={0}
                 aria-sort={sortCol === c ? (sortDir === 1 ? "ascending" : "descending") : "none"}
-                title={`Sort by ${c}`}
+                title={sortCol === c ? `Sorted by ${c} (${sortDir === 1 ? "low to high" : "high to low"}). Select to change.` : `Sort by ${c}`}
+                className={sortCol === c ? "is-sorted" : undefined}
                 style={{
                   textAlign: t.numeric[t.cols.indexOf(c)] ? "right" : "left",
                   borderBottom: "1px solid var(--color-stone-border)",

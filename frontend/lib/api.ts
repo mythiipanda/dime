@@ -588,6 +588,28 @@ export interface PlayerHit {
   name: string;
 }
 
+export interface TeamHit {
+  id: number;
+  name: string;
+  abbr: string | null;
+}
+
+export async function resolveTeams(q: string, limit = 4): Promise<TeamHit[]> {
+  try {
+    const res = await fetch(`${BACKEND}${apiPath(`/resolve?q=${encodeURIComponent(q)}`)}`);
+    const data = (await res.json()) as unknown;
+    if (typeof data !== "object" || data === null || !("rows" in data)) return [];
+    const teams = (data as { rows: { teams?: { id: number; full_name: string; abbreviation?: string }[] } }).rows.teams;
+    return (teams || []).slice(0, limit).map((v) => ({
+      id: v.id,
+      name: v.full_name,
+      abbr: typeof v.abbreviation === "string" && v.abbreviation ? v.abbreviation : null,
+    }));
+  } catch {
+    return [];
+  }
+}
+
 export interface DebateCardRows {
   path: string;
   players: string[];

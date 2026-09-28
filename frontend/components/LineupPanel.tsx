@@ -1,65 +1,48 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import CopyLink from "./CopyLink";
 import ExplorePanel, { PanelHeader } from "./ExplorePanel";
-import EmptyState from "./EmptyState";
-import { BACKEND } from "../lib/chat";
+import Skeleton from "./Skeleton";
 import WowyCard from "./WowyCard";
-import { apiPath } from "../lib/api";
+import { BACKEND } from "../lib/chat";
+import { apiPath, getQueryParam, setQueryParam } from "../lib/api";
+import { shortPlayerName } from "../lib/exploreIndex";
+import { TEAM_IDS } from "../lib/teams";
 
-const TEAMS: Record<string, number> = {
-  ATL: 1610612737,
-  BOS: 1610612738,
-  CLE: 1610612739,
-  NOP: 1610612740,
-  CHI: 1610612741,
-  DAL: 1610612742,
-  DEN: 1610612743,
-  GSW: 1610612744,
-  HOU: 1610612745,
-  LAC: 1610612746,
-  LAL: 1610612747,
-  MIA: 1610612748,
-  MIL: 1610612749,
-  MIN: 1610612750,
-  BKN: 1610612751,
-  NYK: 1610612752,
-  ORL: 1610612753,
-  IND: 1610612754,
-  PHI: 1610612755,
-  PHX: 1610612756,
-  POR: 1610612757,
-  SAC: 1610612758,
-  SAS: 1610612759,
-  OKC: 1610612760,
-  TOR: 1610612761,
-  UTA: 1610612762,
-  MEM: 1610612763,
-  WAS: 1610612764,
-  DET: 1610612765,
-  CHA: 1610612766,
-};
+const TEAMS: Record<string, number> = TEAM_IDS;
 
 type Row = { GROUP_NAME: string; MIN: number; PLUS_MINUS: number };
 
-function short(full: string) {
-  const p = full.trim().split(/\s+/);
-  return p.length > 1 ? `${p[0][0]}. ${p.slice(-1)}` : full.trim();
-}
-
-export default function LineupPanel() {
-  const [tab, setTab] = useState<"5man" | "wowy">("5man");
-  const [team, setTeam] = useState("BOS");
+export default function LineupPanel({ initialTeam }: { initialTeam?: string }) {
+  // First load reads the URL, then the search context, then the default.
+  // Lazy initializers so the first fetch already uses the right team.
+  const [tab, setTab] = useState<"5man" | "wowy">(() => {
+    const t = getQueryParam("lineups_tab");
+    return t === "wowy" ? "wowy" : "5man";
+  });
+  const [team, setTeam] = useState(() => {
+    // A fresh search context wins over a stale URL; a shared link carries
+    // no context, so the URL still restores the view.
+    const s = (initialTeam || getQueryParam("lineups_team") || "BOS").toUpperCase();
+    return TEAMS[s] ? s : "BOS";
+  });
   const [rows, setRows] = useState<Row[]>([]);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
 
   // WOWY state
-  const [playerA, setPlayerA] = useState("Luka");
-  const [playerB, setPlayerB] = useState("LeBron");
+  const [playerA, setPlayerA] = useState(() => getQueryParam("wowy_a") || "Luka");
+  const [playerB, setPlayerB] = useState(() => getQueryParam("wowy_b") || "LeBron");
   const [wowyRows, setWowyRows] = useState<unknown[]>([]);
   const [wowyVerdict, setWowyVerdict] = useState("");
   const [wowyBusy, setWowyBusy] = useState(false);
+
+  // First load: with ?lineups_tab=wowy the comparison runs at once.
+  useEffect(() => {
+    if (tab === "wowy" && wowyRows.length === 0) runWowy();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   useEffect(() => {
     let live = true;
@@ -96,6 +79,8 @@ export default function LineupPanel() {
     if (!playerA || !playerB) return;
     setWowyBusy(true);
     setError("");
+    setQueryParam("wowy_a", playerA, true);
+    setQueryParam("wowy_b", playerB, true);
     fetch(`${BACKEND}${apiPath(`/datasets/wowy?player_a=${encodeURIComponent(playerA)}&player_b=${encodeURIComponent(playerB)}`)}`)
       .then((r) => r.json())
       .then((d) => {
@@ -109,47 +94,54 @@ export default function LineupPanel() {
       .finally(() => setWowyBusy(false));
   };
 
+  const pickTeam = (abbr: string) => {
+    setTeam(abbr);
+    setQueryParam("lineups_team", abbr, true);
+  };
+
+  const pickTab = (next: "5man" | "wowy") => {
+    setTab(next);
+    setQueryParam("lineups_tab", next, true);
+    if (next === "wowy" && !wowyRows.length) runWowy();
+  };
+
   return (
     <ExplorePanel id="explore-lineups">
       <PanelHeader
         kicker="Teams"
         title="Lineups"
-        action={
-          <div style={{ display: "inline-flex", background: "var(--color-stone-canvas)", padding: 2, borderRadius: 9999, border: "1px solid var(--color-stone-border)" }}>
-            <button
-              className={tab === "5man" ? "tab-active" : "pill-ghost"}
-              style={{ fontSize: 11, padding: "3px 12px", border: "none" }}
-              onClick={() => setTab("5man")}
-            >
-              5-Man
-            </button>
-            <button
-              className={tab === "wowy" ? "tab-active" : "pill-ghost"}
-              style={{ fontSize: 11, padding: "3px 12px", border: "none" }}
-              onClick={() => {
-                setTab("wowy");
-                if (!wowyRows.length) runWowy();
-              }}
-            >
-              WOWY
-            </button>
-          </div>
-        }
+        action={<CopyLink panel="lineups" />}
       />
+      <div style={{ display: "inline-flex", background: "var(--color-stone-canvas)", padding: 2, borderRadius: 9999, border: "1px solid var(--color-stone-border)", marginBottom: 12 }}>
+        <button
+          className={tab === "5man" ? "tab-active" : "pill-ghost"}
+          style={{ fontSize: 11, padding: "3px 12px", border: "none" }}
+          onClick={() => pickTab("5man")}
+        >
+          5-Man
+        </button>
+        <button
+          className={tab === "wowy" ? "tab-active" : "pill-ghost"}
+          style={{ fontSize: 11, padding: "3px 12px", border: "none" }}
+          onClick={() => pickTab("wowy")}
+        >
+          WOWY
+        </button>
+      </div>
 
       {tab === "5man" ? (
         <div>
-          <select className="field" value={team} onChange={(e) => setTeam(e.target.value)} style={{ width: 120 }}>
+          <select className="field" value={team} onChange={(e) => pickTeam(e.target.value)} style={{ width: 120 }} aria-label="Team">
             {Object.keys(TEAMS).map((t) => (
               <option key={t} value={t}>{t}</option>
             ))}
           </select>
           {error && <div style={{ color: "var(--color-warm-gray)", marginTop: 8 }}>{error}</div>}
+          {busy && rows.length === 0 && !error && <Skeleton lines={5} label={`Loading ${team} lineups`} />}
           {!busy && !error && rows.length === 0 && (
-            <EmptyState
-              title="No lineup data yet"
-              description="Lineups show up once the season is far enough along."
-            />
+            <div style={{ fontSize: 12, color: "var(--color-warm-gray)", marginTop: 8 }}>
+              No lineups. They show up once the season is far enough along.
+            </div>
           )}
           {rows.length > 0 && (
           <table style={{ width: "100%", marginTop: 8, fontSize: 12 }}>
@@ -157,7 +149,7 @@ export default function LineupPanel() {
             <tbody>
               {rows.map((r, i) => (
                 <tr key={i}>
-                  <td>{String(r.GROUP_NAME || "").split(" - ").map(short).join(", ")}</td>
+                  <td>{String(r.GROUP_NAME || "").split(" - ").map(shortPlayerName).join(", ")}</td>
                   <td style={{ textAlign: "right" }}>{Number(r.MIN).toFixed(1)}</td>
                   <td style={{ textAlign: "right" }}>{r.PLUS_MINUS}</td>
                 </tr>
@@ -165,7 +157,6 @@ export default function LineupPanel() {
             </tbody>
           </table>
           )}
-          {busy && <div style={{ fontSize: 12, color: "var(--color-warm-gray)", marginTop: 8 }}>Loading...</div>}
         </div>
       ) : (
         <div>
@@ -176,6 +167,7 @@ export default function LineupPanel() {
               value={playerA}
               onChange={(e) => setPlayerA(e.target.value)}
               style={{ width: 160, fontSize: 12 }}
+              aria-label="Player A"
             />
             <input
               className="field"
@@ -183,6 +175,7 @@ export default function LineupPanel() {
               value={playerB}
               onChange={(e) => setPlayerB(e.target.value)}
               style={{ width: 160, fontSize: 12 }}
+              aria-label="Player B"
             />
             <button
               className="pill-cta"

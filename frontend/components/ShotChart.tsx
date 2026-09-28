@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import DataTable from "./DataTable";
 import { zoneSplits } from "./Sparkline";
-import { getDatasetJson, resolveFirstPlayerId, resolvePlayers } from "../lib/api";
+import { getDatasetJson, getQueryParam, resolveFirstPlayerId, resolvePlayers, setQueryParam } from "../lib/api";
 
 interface Shot {
   LOC_X?: number;
@@ -119,11 +119,32 @@ export default function ShotChart({
   );
 }
 
-export function ShotChartCard() {
+export function ShotChartCard({ initialPlayer }: { initialPlayer?: string }) {
   const [playerId, setPlayerId] = useState("");
   const [season, setSeason] = useState("2025-26");
   const [active, setActive] = useState("");
   const [suggest, setSuggest] = useState<{ id: number; name: string }[]>([]);
+  // First load: the search context wins, then the URL, then blank.
+  useEffect(() => {
+    const seasonParam = getQueryParam("shots_season");
+    if (seasonParam) setSeason(seasonParam);
+    const fromUrl = getQueryParam("shots_player");
+    const start = (initialPlayer || fromUrl || "").trim();
+    if (!start) return;
+    const seasonValue = seasonParam || "2025-26";
+    if (/^\d+$/.test(start)) {
+      setPlayerId(start);
+      setActive(start);
+      return;
+    }
+    resolveFirstPlayerId(start).then((found) => {
+      if (!found) return;
+      setPlayerId(String(found));
+      setActive(String(found));
+      setQueryParam("shots_player", String(found), true);
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   useEffect(() => {
     const q = playerId.trim();
     if (/^\d+$/.test(q) || q.length < 2) {
@@ -139,14 +160,22 @@ export function ShotChartCard() {
     const raw = playerId.trim();
     if (/^\d+$/.test(raw)) {
       setActive(raw);
+      setQueryParam("shots_player", raw, true);
+      setQueryParam("shots_season", season, true);
       return;
     }
     if (suggest.length) {
       setActive(String(suggest[0].id));
+      setQueryParam("shots_player", String(suggest[0].id), true);
+      setQueryParam("shots_season", season, true);
       return;
     }
     const found = await resolveFirstPlayerId(raw);
-    if (found) setActive(String(found));
+    if (found) {
+      setActive(String(found));
+      setQueryParam("shots_player", String(found), true);
+      setQueryParam("shots_season", season, true);
+    }
   };
   return (
     <div>
@@ -180,6 +209,7 @@ export function ShotChartCard() {
               onClick={() => {
                 setPlayerId(String(s.id));
                 setActive(String(s.id));
+                setQueryParam("shots_player", String(s.id), true);
               }}
             >
               {s.name}

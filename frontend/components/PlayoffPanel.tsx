@@ -1,8 +1,9 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import CopyLink from "./CopyLink";
 import ExplorePanel, { PanelHeader } from "./ExplorePanel";
-import EmptyState from "./EmptyState";
+import Skeleton from "./Skeleton";
 import { BACKEND } from "../lib/chat";
 import { apiPath } from "../lib/api";
 
@@ -95,8 +96,8 @@ export default function PlayoffPanel() {
 
   return (
     <ExplorePanel id="explore-playoffs">
-      <PanelHeader kicker="Season" title="Playoffs 2025-26" />
-      {busy && <div style={{ fontSize: 12, color: "var(--color-warm-gray)" }}>Loading</div>}
+      <PanelHeader kicker="Season" title="Playoffs 2025-26" action={<CopyLink panel="playoffs" />} />
+      {busy && <Skeleton lines={4} label="Loading playoff series" />}
       {error && <div style={{ fontSize: 12, color: "var(--color-warm-gray)", marginTop: 8 }}>{error}</div>}
       {!busy && !error && champion && (
         <div style={{ fontSize: 14, color: "var(--color-ink-black)", marginTop: 8, fontWeight: 600 }}>
@@ -104,10 +105,9 @@ export default function PlayoffPanel() {
         </div>
       )}
       {!busy && !error && series.length === 0 && (
-        <EmptyState
-          title="No playoff data yet"
-          description="Series results appear here once the postseason field is set."
-        />
+        <div style={{ fontSize: 12, color: "var(--color-warm-gray)", marginTop: 8 }}>
+          No playoff games. Series results appear here once the postseason field is set.
+        </div>
       )}
       {!busy && !error && byRound.map(({ rd, list }) => (
         <div key={rd} style={{ marginTop: 12 }}>
