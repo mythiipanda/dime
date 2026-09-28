@@ -52,3 +52,36 @@ test("panelShareUrl works for a panel with no params", () => {
     "https://dime.test/?panel=playoffs#explore-playoffs",
   );
 });
+
+test("panelShareUrl anchor overrides the hash but keeps the parent panel param", () => {
+  const url = panelShareUrl(
+    "https://dime.test",
+    "/explore",
+    "?standings_season=2025-26",
+    "leaders",
+    "standings",
+  );
+  assert.ok(url.endsWith("#explore-standings"), url);
+  const qs = url.split("?")[1].split("#")[0];
+  assert.deepEqual(decodeParams(qs), {
+    standings_season: "2025-26",
+    panel: "leaders",
+  });
+});
+
+test("panelShareUrl gamelog anchor keeps the shots panel param", () => {
+  const url = panelShareUrl(
+    "https://dime.test",
+    "/explore",
+    "?gamelog_player=99&gamelog_sort=PTS",
+    "shots",
+    "gamelog",
+  );
+  assert.ok(url.endsWith("#explore-gamelog"), url);
+  const qs = url.split("?")[1].split("#")[0];
+  assert.deepEqual(decodeParams(qs), {
+    gamelog_player: "99",
+    gamelog_sort: "PTS",
+    panel: "shots",
+  });
+});

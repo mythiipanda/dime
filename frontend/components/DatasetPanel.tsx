@@ -164,7 +164,7 @@ export function Standings() {
   }, []);
   return (
     <ExplorePanel id="explore-standings">
-      <PanelHeader kicker="Season" title="Standings race" action={<CopyLink panel="leaders" />} />
+      <PanelHeader kicker="Season" title="Standings race" action={<CopyLink panel="leaders" anchor="standings" />} />
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
         <input
           className="field"
@@ -245,7 +245,7 @@ export function Gamelog({ initialPlayer }: { initialPlayer?: string }) {
   const pts = list.filter((r) => typeof r.PTS === "number").map((r) => Number(r.PTS));
   return (
     <ExplorePanel id="explore-gamelog">
-      <PanelHeader kicker="Player" title="Game log trends" action={<CopyLink panel="shots" />} />
+      <PanelHeader kicker="Player" title="Game log trends" action={<CopyLink panel="shots" anchor="gamelog" />} />
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
         <input
           className="field"
