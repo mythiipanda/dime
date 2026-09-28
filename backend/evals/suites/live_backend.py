@@ -23,29 +23,51 @@ import scoring  # noqa: E402
 DATA = Path(__file__).resolve().parent.parent / "data"
 
 
+def _finish(res):
+    emit("suite_finished", {"suite": "live_backend", "mode": res.mode,
+                            "passed": res.passed, "failed": res.failed,
+                            "skipped": res.skipped})
+    return res
+
+
 def run(ctx):
     res = SuiteResult(name="live_backend", mode="skipped")
     emit("suite_started", {"suite": "live_backend", "mode": "skipped"})
     base = ctx.get("live_backend")
-    questions = json.loads(
-        (DATA / "golden_questions.json").read_text())["questions"]
-    runnable = [q for q in questions
+    # The opt-in check comes before ANY file read: the default run must
+    # never touch data files or raise FileNotFoundError here.
+    try:
+        questions = json.loads(
+            (DATA / "golden_questions.json").read_text())["questions"]
+    except FileNotFoundError:
+        questions = None
+    runnable = [q for q in (questions or [])
                 if q.get("warehouse") == "fixture"
                 and q.get("status") != "stubbed"]
     if not base:
-        for q in runnable:
-            res.skip(f"{q['id']}: needs --live-backend URL")
+        if questions is None:
+            res.skip("opt-in only: no live backend probed "
+                     "(golden_questions.json unavailable)")
+        else:
+            for q in runnable:
+                res.skip(f"{q['id']}: needs --live-backend URL")
         res.notes.append("opt-in only: no live backend was probed")
-        emit("suite_finished", {"suite": "live_backend", "mode": res.mode,
-                                "passed": res.passed, "failed": res.failed,
-                                "skipped": res.skipped})
-        return res
+        return _finish(res)
+    if questions is None:
+        res.fail("data-missing", "golden_questions.json not found; "
+                                 "cannot run live probes")
+        return _finish(res)
 
     res.mode = "live-backend"
     sys.path.insert(0, str(Path(__file__).resolve().parent))
+    try:
+        import duckdb
+    except ImportError:
+        res.skip("duckdb not installed; cannot build the live fixture")
+        res.notes.append("install duckdb to probe a live backend")
+        return _finish(res)
     import golden_warehouse as gw
     from live_backend import ask
-    import duckdb
     tmp = Path(tempfile.mkdtemp(prefix="evals-live-"))
     db = tmp / "fixture.duckdb"
     gw.build_fixture(db)
@@ -88,7 +110,4 @@ def run(ctx):
                              f"{ans['tool_calls']} tool calls")
     finally:
         con.close()
-    emit("suite_finished", {"suite": "live_backend", "mode": res.mode,
-                            "passed": res.passed, "failed": res.failed,
-                            "skipped": res.skipped})
-    return res
+    return _finish(res)
