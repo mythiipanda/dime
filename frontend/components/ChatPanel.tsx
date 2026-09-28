@@ -686,7 +686,24 @@ export default function ChatPanel({ thread, onRunDone, preset, onOpenArtifact, a
                   {m.ai && <AgentActivity ai={m.ai} />}
 
                     {m.ai?.error && (
-                      <div style={{ color: "var(--color-ember)", fontSize: 13, marginBottom: 8 }}>Error: {m.ai.error}</div>
+                      <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 8 }}>
+                        <span style={{ color: "var(--color-ember)", fontSize: 13 }}>{m.ai.error}</span>
+                        <button
+                          type="button"
+                          className="pill-ghost interactive-tactile"
+                          style={{ fontSize: 12, padding: "3px 10px" }}
+                          disabled={busy}
+                          onClick={() => {
+                            const q = messages
+                              .slice(0, i)
+                              .reverse()
+                              .find((x) => x.role === "human")?.text;
+                            if (q) sendText(q);
+                          }}
+                        >
+                          Retry
+                        </button>
+                      </div>
                     )}
 
                     {m.ai?.caution && m.ai.caution.length > 0 && (
@@ -731,7 +748,7 @@ export default function ChatPanel({ thread, onRunDone, preset, onOpenArtifact, a
                     )}
 
                     {m.ai && !m.ai.done && !m.ai.text && !aiHasTables(m.ai) && (
-                      <Skeleton lines={3} label="Thinking..." />
+                      <Skeleton lines={3} />
                     )}
 
                     {m.ai && (

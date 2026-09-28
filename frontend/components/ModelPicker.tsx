@@ -174,7 +174,7 @@ export default function ModelPicker({ models, value, onChange, status = "ready",
               padding: "4px 8px 6px",
             }}
           >
-            Available Reasoning Models
+            Models
           </div>
 
           {status === "error" && (
