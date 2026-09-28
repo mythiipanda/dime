@@ -37,17 +37,17 @@ test("matchStats uses plain substring matching, no pattern syntax", () => {
 });
 
 test("contextForResult sends a player to Shots with that player", () => {
-  assert.deepEqual(contextForResult({ kind: "player", id: 2544, name: "LeBron James" }), {
+  assert.deepEqual(contextForResult({ kind: "player", id: 9001, name: "Jared Cole" }), {
     panel: "shots",
-    playerName: "LeBron James",
-    playerId: "2544",
+    playerName: "Jared Cole",
+    playerId: "9001",
   });
 });
 
 test("contextForResult sends a team to Lineups with that team", () => {
   assert.deepEqual(
-    contextForResult({ kind: "team", id: 14, name: "Los Angeles Lakers", abbr: "LAL" }),
-    { panel: "lineups", teamAbbr: "LAL" },
+    contextForResult({ kind: "team", id: 7001, name: "Capital City Stars", abbr: "CCS" }),
+    { panel: "lineups", teamAbbr: "CCS" },
   );
 });
 
