@@ -618,11 +618,66 @@ def verify_mechanical(
         for result in failed
     ]
     repairs.extend(report_repairs[:max(0, 128 - len(repairs))])
+    repairs.extend(_termination_gate_repairs(
+        task, draft, evidence)[:max(0, 128 - len(repairs))])
     return VerificationReport(
         status=(VerificationStatus.REPAIR if repairs else VerificationStatus.PASS),
         claim_results=results,
         repair_instructions=repairs,
     )
+
+
+def _gate_tables(evidence: Sequence[EvidenceEnvelope]) -> list[dict]:
+    """Shape v2 evidence into the table dicts the termination gates expect.
+
+    The capability name doubles as the table title (e.g. "standings" ->
+    team level via the gate's title regex); envelope.qualification feeds
+    the minutes-qual rescue rule as table meta.
+    """
+    tables: list[dict] = []
+    for envelope in evidence:
+        rows = envelope.rows
+        if isinstance(rows, dict):
+            rows = [rows]
+        elif not isinstance(rows, list):
+            rows = []
+        meta = ({"qualification": envelope.qualification}
+                if envelope.qualification else {})
+        tables.append({
+            "title": envelope.capability,
+            "rows": rows,
+            "meta": meta,
+        })
+    return tables
+
+
+def _termination_gate_repairs(task: TaskSpec, draft: DraftReport,
+                              evidence: Sequence[EvidenceEnvelope]) -> list[str]:
+    """Wire the ported v1 termination gates into v2 verification.
+
+    question_kind comes from TaskSpec.subject_entity_type ("player"/"team")
+    and is never derived from question-text keywords. The table-kind gate
+    only bites when question_kind is explicitly set. Minutes-qualification
+    runs unconditionally; the rescue rule (qual anywhere in the answer, in
+    table meta, or in MIN/MPG/MINUTES columns) is intact.
+    """
+    tables = _gate_tables(evidence)
+    gate_repairs: list[str] = []
+    question_kind = task.subject_entity_type
+    if question_kind in ("player", "team"):
+        question = " ".join((task.goal, task.deliverable, *task.subquestions))
+        for table in tables:
+            if not verify_table_kind(question, table,
+                                     question_kind=question_kind):
+                gate_repairs.append(
+                    f"Drop or replace the {table.get('title') or 'data'} table: "
+                    f"it does not match the question's {question_kind} level.")
+    answer_text = " ".join((*draft.sections,
+                            *(claim.text for claim in draft.claims)))
+    for violation in verify_minutes_qual(answer_text, tables):
+        gate_repairs.append(
+            "Minutes-qualify or drop this rate-stat claim: " + violation)
+    return gate_repairs
 
 
 def validate_semantic_report(value: str | bytes | Mapping[str, Any] |
@@ -681,8 +736,8 @@ def merge_verification_reports(mechanical: VerificationReport,
 
 # ---------------------------------------------------------------------------
 # Termination gate, ported from backend/app/graph.py (v1) for the v2 runtime.
-# Pure functions only; NOT yet wired into verify_mechanical. When wiring,
-# pass question_kind from TaskSpec.subject_entity_type ("player"/"team").
+# Wired into verify_mechanical via _termination_gate_repairs: question_kind
+# comes from TaskSpec.subject_entity_type ("player"/"team").
 # ---------------------------------------------------------------------------
 
 _GATE_TEAM_TABLE_RX = re.compile(
@@ -837,3 +892,4 @@ def verify_minutes_qual(answer_text: str, tables: list) -> list[str]:
             if not _MINUTES_QUAL_RX.search(_s):
                 violations.append(_s)
     return violations
+

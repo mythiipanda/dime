@@ -364,6 +364,9 @@ class TaskSpec(BaseModel):
     entities: list[EntityRef] = Field(default_factory=list, max_length=64)
     season: SeasonRef | None = None
     as_of: date | None = None
+    # Entity level of the question subject ("player"/"team"). The v2
+    # verifier threads it into the termination gates as question_kind.
+    subject_entity_type: str | None = Field(default=None, max_length=64)
     subquestions: list[str] = Field(default_factory=list, max_length=32)
     required_evidence: list[str] = Field(default_factory=list, max_length=32)
     requirements: list[EvidenceRequirement] = Field(
@@ -1054,3 +1057,4 @@ class VerificationReport(BaseModel):
         if self.status == VerificationStatus.REPAIR and not findings:
             raise PydanticCustomError("verification_repair_without_findings", "repair status requires an actionable finding")
         return self
+
