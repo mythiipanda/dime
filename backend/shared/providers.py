@@ -19,7 +19,9 @@ class ProviderPolicyError(ValueError):
 # Inception/Groq reactivation is a two-part gate: explicit policy plus a key.
 # Retained credentials alone never activate them. Gemini and NIM are
 # key-activated free tiers (Tony provided both keys directly).
-# Provider order and rate limits below are crew defaults, not Tony's picks.
+# Gemini-first is Tony's own ranking (2026-09-28: he ranked Gemini #1 over
+# NIM). Everything after gemini in the fallback order, and the rate limits
+# below, are crew defaults, not his picks.
 # Gemini (flash-lite) is the workhorse default: 15 RPM / 500 RPD free
 # (quotas from Tony's AI Studio screenshot; live-probed 2026-09-28).
 FREE_PROVIDER_ORDER: tuple[ProviderName, ...] = ("gemini", "nvidia", "groq", "openrouter", "mistral")
