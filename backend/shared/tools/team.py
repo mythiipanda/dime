@@ -452,6 +452,79 @@ def _hist_team_games(team_id: int, season: str) -> list[dict[str, Any]]:
         return []
 
 
+def _num(x: Any) -> float | None:
+    """Coerce a stat cell to float; None when absent/non-numeric.
+
+    Game rows arrive with UPPERCASE warehouse keys ("PTS") on the
+    warehouse path and may carry other casings on live fallbacks.
+    """
+    if x is None or isinstance(x, bool):
+        return None
+    try:
+        return float(x)
+    except (TypeError, ValueError):
+        return None
+
+
+def _cell(row: dict[str, Any], *keys: str) -> float | None:
+    for k in keys:
+        v = _num(row.get(k))
+        if v is not None:
+            return v
+    return None
+
+
+def _team_game_summary(games: list[dict[str, Any]],
+                       full_season: bool) -> dict[str, Any]:
+    """Server-computed season aggregates over a team game log.
+
+    get_team_hub evidence is clipped twice downstream of the tool:
+    _warehouse_or_live caps returned rows at MAX_ROWS (25), and the
+    answer step clips the whole evidence blob to 12k chars. Season-level
+    answers (TS%, wins, team PPG) were therefore answered from a clipped
+    sample while the season_resolution bench truth aggregates the full
+    82-game season - the failure mode Instinct flagged in the historical
+    get_team_hub QA (2026-09-27).
+
+    This summary is computed over every row the tool returns and placed
+    ahead of the game list, so the answer model can use exact aggregates
+    even when the raw rows are clipped. covers_full_season is True only
+    when the rows in hand are the complete season (the
+    silver_hist_gamelogs static-season slice); the live path's 25-row
+    sample says so explicitly instead of masquerading as season totals.
+    TS% uses the same formula as the bench ground truth.
+    """
+    wins = losses = 0
+    pts = fga = fta = 0.0
+    have_stats = False
+    for g in games:
+        wl = str(g.get("WL", g.get("wl", ""))).strip().upper()
+        if wl.startswith("W"):
+            wins += 1
+        elif wl.startswith("L"):
+            losses += 1
+        p = _cell(g, "PTS", "pts")
+        a2 = _cell(g, "FGA", "fga")
+        a3 = _cell(g, "FTA", "fta")
+        if p is not None and a2 is not None and a3 is not None:
+            pts += p
+            fga += a2
+            fta += a3
+            have_stats = True
+    out: dict[str, Any] = {
+        "games": len(games),
+        "wins": wins,
+        "losses": losses,
+        # True only when the rows in hand ARE the whole season.
+        "covers_full_season": bool(full_season and games),
+    }
+    if games and have_stats:
+        denom = 2 * (fga + 0.44 * fta)
+        out["ppg"] = round(pts / len(games), 1)
+        out["ts_pct"] = round(100 * pts / denom, 1) if denom > 0 else None
+    return out
+
+
 @tool
 def get_team_hub(team_id: str | int, season: str = SEASON) -> dict[str, Any]:
     """Game log plus roster for one team id. Warehouse first."""
@@ -462,14 +535,19 @@ def get_team_hub(team_id: str | int, season: str = SEASON) -> dict[str, Any]:
         lambda: nba_stats.team_gamelog(team_id, season), season,
         entity=f"team:{team_id}", ttl_s=TTL_GAMELOG,
     )
+    full_season_rows = False
     if not games and season_static(season) and meta.get("error"):
         # No seeded silver_team_games rows for this complete season: serve
         # the same promoted slice from silver_hist_gamelogs instead of
         # erroring. Before this, old-season questions could only be answered
         # from the current season's numbers (the season_resolution bug).
+        # This slice is the COMPLETE regular season (no row cap), so the
+        # summary below is exact full-season aggregates - the same rows the
+        # bench truth aggregates (Instinct QA 2026-09-27).
         hist = _hist_team_games(team_id, season)
         if hist:
             games = hist
+            full_season_rows = True
             meta = {"rows": len(games), "cached": True,
                     "source": "warehouse:silver_hist_gamelogs",
                     "season": season, "season_type": "regular-season",
@@ -477,6 +555,13 @@ def get_team_hub(team_id: str | int, season: str = SEASON) -> dict[str, Any]:
                     "note": "historical season served from the "
                             "silver_hist_gamelogs regular-season slice "
                             "(same rows silver_team_games is promoted from)"}
+    if not full_season_rows:
+        try:
+            full_season_rows = bool(games) and len(games) >= int(
+                meta.get("rows", 0) or 0)
+        except (TypeError, ValueError):
+            full_season_rows = False
+    summary = _team_game_summary(games, full_season_rows)
     roster, _ = _warehouse_or_live(
         "silver_rosters", "_season = ? AND _entity = ?",
         [season, f"team:{team_id}"],
@@ -512,7 +597,11 @@ def get_team_hub(team_id: str | int, season: str = SEASON) -> dict[str, Any]:
         # Put the compact roster before the game log. Delegate evidence is
         # deliberately capped; roster questions used to lose this field
         # behind a long games list and summarize only the resolver payload.
-        "rows": {"roster": roster, "games": games}, "meta": meta,
+        # The summary sits between them: server-computed season aggregates
+        # over every returned row, so clipped raw rows can't corrupt
+        # season-level answers (Instinct QA 2026-09-27).
+        "rows": {"roster": roster, "summary": summary, "games": games},
+        "meta": meta,
     }
 
 

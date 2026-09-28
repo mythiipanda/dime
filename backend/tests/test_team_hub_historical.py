@@ -152,3 +152,73 @@ def test_get_team_hub_seeded_season_untouched(monkeypatch, hist_db):
     monkeypatch.setattr(team_mod, "coerce_team_id", lambda v: 2)
     out = team_mod.get_team_hub.invoke({"team_id": "BOS", "season": "2025-26"})
     assert out["rows"]["games"] == seeded
+
+
+def test_summary_exact_on_hist_slice(hist_db):
+    # The 3-game fixture: PTS 115+118+108=341, FGA 30+32+31=93,
+    # FTA 10+11+9=30. Same aggregates the bench truth computes.
+    rows = team_mod._hist_team_games(2, "2024-25")
+    s = team_mod._team_game_summary(rows, True)
+    assert s["games"] == 3
+    assert (s["wins"], s["losses"]) == (2, 1)
+    assert s["covers_full_season"] is True
+    assert s["ppg"] == pytest.approx(341 / 3, abs=0.05)
+    assert s["ts_pct"] == pytest.approx(
+        round(100 * 341 / (2 * (93 + 0.44 * 30)), 1))
+
+
+def test_summary_realistic_rows_partial_season():
+    games = [
+        {"wl": "w", "pts": 115, "fga": 88, "fta": 22},
+        {"wl": "L", "pts": 108, "fga": 90, "fta": 18},
+    ]
+    s = team_mod._team_game_summary(games, False)
+    assert (s["games"], s["wins"], s["losses"]) == (2, 1, 1)
+    assert s["covers_full_season"] is False
+    assert s["ppg"] == pytest.approx(111.5)
+    assert s["ts_pct"] == pytest.approx(
+        round(100 * 223 / (2 * (178 + 0.44 * 40)), 1))
+
+
+def test_summary_no_stat_columns_omits_rates():
+    s = team_mod._team_game_summary(
+        [{"WL": "W", "GAME_DATE": "OCT 01, 2025"}], True)
+    assert s["wins"] == 1 and s["covers_full_season"] is True
+    assert "ppg" not in s and "ts_pct" not in s
+
+
+def test_summary_empty_games():
+    assert team_mod._team_game_summary([], False) == {
+        "games": 0, "wins": 0, "losses": 0, "covers_full_season": False}
+
+
+def test_get_team_hub_summary_full_season_on_hist(monkeypatch, hist_db):
+    monkeypatch.setattr(team_mod, "_warehouse_or_live", _no_seeded_rows)
+    monkeypatch.setattr(team_mod, "coerce_team_id", lambda v: 2)
+    out = team_mod.get_team_hub.invoke({"team_id": "BOS", "season": "2024-25"})
+    rows = out["rows"]
+    # summary rides ahead of the game list so it survives evidence clipping
+    assert list(rows.keys()) == ["roster", "summary", "games"]
+    s = rows["summary"]
+    assert s["covers_full_season"] is True
+    assert (s["games"], s["wins"], s["losses"]) == (3, 2, 1)
+    assert s["ts_pct"] == pytest.approx(
+        round(100 * 341 / (2 * (93 + 0.44 * 30)), 1))
+
+
+def test_get_team_hub_summary_flags_capped_sample(monkeypatch, hist_db):
+    # Live path returns a 25-row head of an 82-game season: the summary
+    # must say so instead of masquerading as season totals.
+    sample = [{"WL": "W", "PTS": 120, "FGA": 90, "FTA": 20}] * 25
+
+    def fake_wol(table, where, params, fetch, season, **kw):
+        if table == "silver_team_games":
+            return list(sample), {"rows": 82, "cached": True}
+        return [], {}
+
+    monkeypatch.setattr(team_mod, "_warehouse_or_live", fake_wol)
+    monkeypatch.setattr(team_mod, "coerce_team_id", lambda v: 2)
+    out = team_mod.get_team_hub.invoke({"team_id": "BOS", "season": "2025-26"})
+    s = out["rows"]["summary"]
+    assert s["games"] == 25 and s["covers_full_season"] is False
+    assert s["wins"] == 25

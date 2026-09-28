@@ -1,0 +1,136 @@
+{
+  "header": {
+    "what": "Canonical scored-output mirror for the season-aware answer scorer.",
+    "why": "The season_resolution bench and its scorer live in dime-internal/evals/dimebench (dime/ stays code-only), which Instinct QA cannot access. This fixture mirrors scorer behavior/verdicts in dime so QA can verify without repo access. Generated from the canonical scorer, not hand-typed.",
+    "canonical_source": "mythiipanda/dime-internal evals/dimebench/scoring.py",
+    "canonical_sha": "98d41e6af6f85f2cad627d0b8d904269e62a74e1",
+    "generated": "2026-09-27T22:50:00-04:00",
+    "rules": [
+      "season_consistency(facts, answer): 1.0 unless the answer names a different season than facts['season'].",
+      "Only applies when facts carry a 'season' label ('2024-25' / '2024-2025' / en-dash tolerant, canonicalized to YYYY-YY).",
+      "An answer naming no season is NOT penalized (1.0). An explicit wrong-season claim zeroes it (0.0).",
+      "numeric_acc: numeric-form matching with trailing-digit guard; the season gate zeroes it first on a season mismatch."
+    ],
+    "regen": "fetch evals/dimebench/scoring.py from dime-internal and rerun the generation snippet; do not hand-edit expected values."
+  },
+  "cases": [
+    {
+      "id": "numeric_wrong_season_number",
+      "note": "The bug encoded: 2024-25 truth is 58.8, model answers 2025-26's 60.4.",
+      "metric": "numeric_acc",
+      "facts": {
+        "ts_pct": 58.8,
+        "season": "2024-25"
+      },
+      "answer": "The Celtics posted a 60.4% true shooting mark in 2025-26.",
+      "expected": 0.0
+    },
+    {
+      "id": "numeric_correct_season",
+      "note": "Correct number attributed to the named season.",
+      "metric": "numeric_acc",
+      "facts": {
+        "ts_pct": 58.8,
+        "season": "2024-25"
+      },
+      "answer": "Boston's true shooting percentage was 58.8% in 2024-25.",
+      "expected": 1.0
+    },
+    {
+      "id": "numeric_right_number_wrong_season_phrasing",
+      "note": "Instinct QA 2026-09-27 repro: old numeric_acc stripped season strings and scored 1.0.",
+      "metric": "numeric_acc",
+      "facts": {
+        "ts_pct": 58.8,
+        "season": "2024-25"
+      },
+      "answer": "The Celtics posted a 58.8% true shooting mark in the 2025-26 regular season.",
+      "expected": 0.0
+    },
+    {
+      "id": "numeric_no_season_mention",
+      "note": "No season named in the answer: not penalized.",
+      "metric": "numeric_acc",
+      "facts": {
+        "ts_pct": 58.8,
+        "season": "2024-25"
+      },
+      "answer": "Boston's true shooting percentage was 58.8%.",
+      "expected": 1.0
+    },
+    {
+      "id": "numeric_no_numeric_facts",
+      "note": "numeric_acc has no numbers to match: 1.0 (season gate is numeric-only).",
+      "metric": "numeric_acc",
+      "facts": {
+        "season": "2024-25"
+      },
+      "answer": "Boston shot well in 2025-26.",
+      "expected": 1.0
+    },
+    {
+      "id": "consistency_correct_season",
+      "metric": "season_consistency",
+      "facts": {
+        "season": "2024-25"
+      },
+      "answer": "61 wins in 2024-25.",
+      "expected": 1.0
+    },
+    {
+      "id": "consistency_wrong_season",
+      "metric": "season_consistency",
+      "facts": {
+        "season": "2024-25"
+      },
+      "answer": "68 wins in 2025-26.",
+      "expected": 0.0
+    },
+    {
+      "id": "consistency_no_mention",
+      "metric": "season_consistency",
+      "facts": {
+        "season": "2024-25"
+      },
+      "answer": "61 wins.",
+      "expected": 1.0
+    },
+    {
+      "id": "consistency_en_dash",
+      "metric": "season_consistency",
+      "facts": {
+        "season": "2024-25"
+      },
+      "answer": "61 wins in 2024\u201325.",
+      "expected": 1.0
+    },
+    {
+      "id": "consistency_long_form_facts",
+      "metric": "season_consistency",
+      "facts": {
+        "season": "2024-2025"
+      },
+      "answer": "61 wins in 2024-25.",
+      "expected": 1.0
+    },
+    {
+      "id": "consistency_expected_among_many",
+      "metric": "season_consistency",
+      "facts": {
+        "season": "2024-25"
+      },
+      "answer": "61 wins in 2024-25 after 57 in 2023-24.",
+      "expected": 1.0
+    },
+    {
+      "id": "consistency_no_season_label",
+      "note": "Gate only applies when facts carry a season label.",
+      "metric": "season_consistency",
+      "facts": {
+        "wins": 61
+      },
+      "answer": "61 wins in 2025-26.",
+      "expected": 1.0
+    }
+  ]
+}
