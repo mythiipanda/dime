@@ -195,14 +195,14 @@ function moverFromToday(
   };
 }
 
-export function buildMoverItems(
+function buildFullMoverItems(
   movers: MoversRows | TodayMover[] | null | undefined,
 ): FeedItem[] {
   if (!movers) return [];
   if (Array.isArray(movers)) {
     const total = Math.max(1, movers.length);
     const out: FeedItem[] = [];
-    for (let i = 0; i < movers.length && out.length < FEED_MOVER_CAP; i++) {
+    for (let i = 0; i < movers.length; i++) {
       const item = moverFromToday(movers[i], i, total);
       if (item) out.push(item);
     }
@@ -221,16 +221,22 @@ export function buildMoverItems(
   climbers.forEach((m, i) => push(moverFromMover(m, i, ct)));
   fallers.forEach((m, i) => push(moverFromMover(m, i, ft)));
   entries.forEach((e, i) => push(moverFromEntry(e, i, et)));
-  return pool.slice(0, FEED_MOVER_CAP);
+  return pool;
 }
 
-export function buildStreakItems(
+export function buildMoverItems(
+  movers: MoversRows | TodayMover[] | null | undefined,
+): FeedItem[] {
+  return buildFullMoverItems(movers).slice(0, FEED_MOVER_CAP);
+}
+
+function buildFullStreakItems(
   streaks: TeamStreak[] | null | undefined,
 ): FeedItem[] {
   if (!Array.isArray(streaks)) return [];
   const total = Math.max(1, streaks.length);
   const out: FeedItem[] = [];
-  for (let i = 0; i < streaks.length && out.length < FEED_STREAK_CAP; i++) {
+  for (let i = 0; i < streaks.length; i++) {
     const s = streaks[i];
     if (!s) continue;
     const name = clean(s.TEAM);
@@ -264,13 +270,19 @@ export function buildStreakItems(
   return out;
 }
 
+export function buildStreakItems(
+  streaks: TeamStreak[] | null | undefined,
+): FeedItem[] {
+  return buildFullStreakItems(streaks).slice(0, FEED_STREAK_CAP);
+}
+
 interface RankedWatch {
   item: WatchItem;
   name: string;
   sub: string | undefined;
 }
 
-export function buildWatchItems(
+function buildFullWatchItems(
   watchlist: WatchItem[] | null | undefined,
 ): FeedItem[] {
   if (!Array.isArray(watchlist)) return [];
@@ -311,7 +323,6 @@ export function buildWatchItems(
 
   const out: FeedItem[] = [];
   for (const item of watchlist) {
-    if (out.length >= FEED_WATCH_CAP) break;
     if (!item || !item.snapshot) continue;
     if (item.entity_type === "player") {
       const found = players.find((p) => p.item === item);
@@ -353,6 +364,12 @@ export function buildWatchItems(
   return out;
 }
 
+export function buildWatchItems(
+  watchlist: WatchItem[] | null | undefined,
+): FeedItem[] {
+  return buildFullWatchItems(watchlist).slice(0, FEED_WATCH_CAP);
+}
+
 /** Movers, then streaks, then watchlist. Each section capped. */
 export function buildFeedItems(input: FeedInput): FeedItem[] {
   return [
@@ -360,4 +377,21 @@ export function buildFeedItems(input: FeedInput): FeedItem[] {
     ...buildStreakItems(input.streaks),
     ...buildWatchItems(input.watchlist),
   ];
+}
+
+export interface FeedExpansion {
+  visible: FeedItem[];
+  extra: FeedItem[];
+  total: number;
+}
+
+/** Capped visible list plus the remaining uncapped items in kind order. */
+export function buildFeedExpansion(input: FeedInput): FeedExpansion {
+  const visible = buildFeedItems(input);
+  const extra = [
+    ...buildFullMoverItems(input.movers).slice(FEED_MOVER_CAP),
+    ...buildFullStreakItems(input.streaks).slice(FEED_STREAK_CAP),
+    ...buildFullWatchItems(input.watchlist).slice(FEED_WATCH_CAP),
+  ];
+  return { visible, extra, total: visible.length + extra.length };
 }

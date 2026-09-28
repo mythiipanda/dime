@@ -3,6 +3,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
+  buildFeedExpansion,
   buildFeedItems,
   buildMoverItems,
   buildStreakItems,
@@ -230,4 +231,78 @@ test("generated copy never uses evaluative or infrastructure words", () => {
       assert.ok(!text.includes(word.toLowerCase()), `${word} in ${text}`);
     }
   }
+});
+
+function sevenStreaks(): TeamStreak[] {
+  return [1, 2, 3, 4, 5, 6, 7].map((n) =>
+    streak("NXV", { W: 9 + n, L: 5, STREAK: `W${n}` }),
+  );
+}
+
+test("expansion caps 7 streaks to 4 visible with 3 extra and total 7", () => {
+  const expansion = buildFeedExpansion({ streaks: sevenStreaks() });
+  assert.equal(expansion.visible.length, 4);
+  assert.ok(expansion.visible.every((i) => i.kind === "streak"));
+  assert.equal(expansion.extra.length, 3);
+  assert.equal(expansion.total, 7);
+  const seventh = expansion.extra[2];
+  assert.equal(seventh.rankLabel, "#7");
+  assert.equal(seventh.rankTitle, "Ranked #7 of 7 team streaks");
+});
+
+test("expansion visible plus extra reaches every streak rank 1..7", () => {
+  const expansion = buildFeedExpansion({ streaks: sevenStreaks() });
+  const ranks = [...expansion.visible, ...expansion.extra].map((i) => i.rankLabel);
+  assert.deepEqual(ranks, ["#1", "#2", "#3", "#4", "#5", "#6", "#7"]);
+});
+
+test("expansion visible equals buildFeedItems on the same input", () => {
+  const input = {
+    movers: [1, 2, 3, 4, 5, 6, 7].map((n) =>
+      todayMover(`Player ${n}`, { RANK_CHANGE: "+1", PTS_CHANGE: 1.1 }),
+    ),
+    streaks: sevenStreaks(),
+    watchlist: [1, 2, 3, 4, 5].map((n) =>
+      watch("player", `Player ${n}`, { found: true, player: `Player ${n}`, ppg: 10 + n }),
+    ),
+  };
+  const expansion = buildFeedExpansion(input);
+  assert.deepEqual(expansion.visible, buildFeedItems(input));
+});
+
+test("expansion with 3 streaks has no extra and total 3", () => {
+  const expansion = buildFeedExpansion({
+    streaks: [1, 2, 3].map((n) => streak("NXV", { STREAK: `W${n}` })),
+  });
+  assert.equal(expansion.visible.length, 3);
+  assert.deepEqual(expansion.extra, []);
+  assert.equal(expansion.total, 3);
+});
+
+test("buildFeedItems output unchanged for a mixed input", () => {
+  const got = buildFeedItems({
+    movers: { climbers: [mover("Mara Voss", { rank_change: 1, pts_change: 1 })], fallers: [], new_entries: [] },
+    streaks: [streak("NXV")],
+    watchlist: [watch("player", "Theo Lindqvist", { found: true, player: "Theo Lindqvist", ppg: 20 })],
+  });
+  assert.deepEqual(got.map((g) => g.kind), ["mover", "streak", "watchlist"]);
+  assert.equal(got[0].statText, "up 1 spot, +1.0 pts");
+  assert.equal(got[0].rankTitle, "Ranked #1 of 1 movers by points per game");
+  assert.equal(got[1].statText, "won 3 straight · 10-5");
+  assert.equal(got[1].rankTitle, "Ranked #1 of 1 team streaks");
+  assert.equal(got[2].statText, "20.0 ppg");
+  assert.equal(got[2].rankTitle, "Ranked #1 of 1 watched players by PPG");
+});
+
+test("expansion extra includes the 7th mover when movers exceed cap", () => {
+  const rows = [1, 2, 3, 4, 5, 6, 7].map((n) =>
+    todayMover(`Player ${n}`, { RANK_CHANGE: "+1", PTS_CHANGE: 1.1 }),
+  );
+  const expansion = buildFeedExpansion({ movers: rows });
+  assert.equal(expansion.visible.length, FEED_MOVER_CAP);
+  assert.equal(expansion.extra.length, 1);
+  assert.equal(expansion.extra[0].name, "Player 7");
+  assert.equal(expansion.extra[0].rankLabel, "#7");
+  assert.equal(expansion.extra[0].rankTitle, "Ranked #7 of 7 movers by points per game");
+  assert.equal(expansion.total, 7);
 });
