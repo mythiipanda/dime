@@ -164,6 +164,11 @@ def test_gemini_is_free_and_default_when_keyed(monkeypatch):
                   if item["engine"] == "gemini"]
     assert gemini_ids == [f"gemini:{m}" for m in GEMINI_MODELS]
     assert providers.fallback_order("nvidia")[0] == "gemini"
+    # The frontend model picker takes its preselected default from the
+    # catalog's default flag: exactly one option carries it, the
+    # configured Gemini default model.
+    defaults = [item["id"] for item in catalog["models"] if item["default"]]
+    assert defaults == [f"gemini:{GEMINI_DEFAULT}"]
 
 
 def test_gemini_inert_without_key(monkeypatch):
@@ -178,6 +183,24 @@ def test_gemini_inert_without_key(monkeypatch):
         "nvidia", providers.NVIDIA_NIM_DEFAULT)
     catalog = models_catalog()
     assert catalog["available"]["gemini"] is False
+
+
+def test_no_keys_falls_back_to_mistral_default_without_crashing(monkeypatch):
+    import shared.providers as providers
+    monkeypatch.setattr(settings, "gemini_api_key", "")
+    monkeypatch.setattr(settings, "nvidia_nim_api_key", "")
+    monkeypatch.setattr(settings, "openrouter_api_key", "")
+    monkeypatch.setattr(settings, "mistral_api_key", "")
+    monkeypatch.setattr(settings, "dime_enable_groq", False)
+    monkeypatch.setattr(settings, "dime_enable_inception", False)
+    # No configured provider: the default still resolves (no crash), the
+    # runtime fallback order stays gemini-first, and no client can be built.
+    assert providers._default_provider() == (
+        "mistral", providers.MISTRAL_DEFAULT)
+    assert providers.resolve_model_id(None) == providers._default_provider()
+    assert providers.fallback_order("gemini")[0] == "gemini"
+    assert providers.get_llm("gemini") is None
+    assert providers.get_llm("mistral") is None
 
 
 def test_gemini_client_uses_openai_compatible_endpoint(monkeypatch):
