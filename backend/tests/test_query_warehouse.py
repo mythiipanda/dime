@@ -327,3 +327,36 @@ def test_union_of_selects_passes(tiny_warehouse):
     assert out["ok"] is True, out.get("error")
     assert {r["TeamCity"] for r in out["rows"]} == {
         "Oklahoma City", "Boston"}
+
+
+def test_from_position_function_calls_blocked(tiny_warehouse):
+    # Independent verification find: sqlglot models FROM unnest(...)
+    # as From(this=Unnest) — a Func, not a Table — so the table loop
+    # never saw it, and the function allowlist (which named unnest)
+    # let it through. A function call in table position is a table
+    # source, so it is now rejected structurally, whatever the name.
+    for sql in [
+        "SELECT * FROM unnest([1, 2, 3])",
+        "SELECT * FROM unnest([1, 2, 3]) u(x)",
+        "SELECT * FROM silver_standings CROSS JOIN unnest([1])",
+        "SELECT * FROM unnest((SELECT WINS FROM silver_standings))",
+    ]:
+        out = q.query_warehouse(sql)
+        assert out["ok"] is False, sql
+        assert "table functions" in out["error"], (sql, out["error"])
+    # Scalar unnest was never allowlisted (sqlglot names it EXPLODE);
+    # it stays blocked as an unknown function.
+    out = q.query_warehouse("SELECT unnest([1, 2, 3])")
+    assert out["ok"] is False
+    assert "blocked" in out["error"], out["error"]
+    # Legit table-position shapes still pass: derived tables, VALUES,
+    # TABLESAMPLE, and LATERAL over a subquery.
+    out = q.query_warehouse("SELECT * FROM (VALUES (1), (2)) t(a)")
+    assert out["ok"] is True, out.get("error")
+    out = q.query_warehouse(
+        "SELECT * FROM silver_standings TABLESAMPLE RESERVOIR(2 ROWS)")
+    assert out["ok"] is True, out.get("error")
+    out = q.query_warehouse(
+        "SELECT * FROM silver_standings, "
+        "LATERAL (SELECT WINS FROM silver_standings) t")
+    assert out["ok"] is True, out.get("error")

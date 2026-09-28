@@ -68,7 +68,7 @@ year month day hour minute second week quarter dow doy epoch
 date_part datepart date_trunc datediff date_diff dateadd date_add
 age make_date make_time make_timestamp strftime monthname dayname
 extract
-array list_value struct struct_pack row unnest
+array list_value struct struct_pack row
 list_contains list_has typeof
 """.split())
 
@@ -197,6 +197,20 @@ def _check(sql: str, allowed: set[str]) -> str:
                              "query the warehouse tables")
         if name.lower() not in ok_tables:
             raise ValueError("blocked: unknown table(s): " + tbl.name)
+    for src in list(tree.find_all(exp.From)) + list(tree.find_all(exp.Join)):
+        node = src.args.get("this")
+        while isinstance(node, exp.Lateral):
+            node = node.this
+        if isinstance(node, exp.Func):
+            # A function call sitting directly in table position
+            # (FROM unnest(...), JOIN f(...)): sqlglot models some of
+            # these as Func rather than Table, so the table loop above
+            # never sees them. Table position is for warehouse tables,
+            # CTEs, and subqueries only — never a function call, even
+            # an allowlisted one (scalar unnest(...) in the SELECT list
+            # is still fine; it never reaches this branch).
+            raise ValueError("blocked: table functions are not allowed; "
+                             "query the warehouse tables")
     for fn in tree.find_all(exp.Func):
         fname = _func_name(fn)
         if fname not in _SAFE_FUNCTIONS:
