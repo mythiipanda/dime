@@ -116,6 +116,12 @@ body {
   letter-spacing: -0.01em;
 }
 
+/* form controls don't inherit body font by default — force consistency
+   (model picker, buttons, inputs all render in --font-body now) */
+button, input, select, textarea {
+  font-family: inherit;
+}
+
 .display {
   font-family: var(--font-display);
   font-weight: 400;
