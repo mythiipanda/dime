@@ -2,6 +2,7 @@
 
 from typing import Any, Literal
 from dataclasses import dataclass
+import asyncio
 import time
 import json
 from langchain_core.messages import BaseMessage
@@ -382,6 +383,49 @@ async def invoke_with_fallback(
     raise RuntimeError("all providers failed: " + detail)
 
 
+async def _stream_with_first_token_timeout(
+    client: Any,
+    messages: list[BaseMessage],
+    timeout_s: float,
+    **kwargs: Any,
+):
+    """Yield a client's astream chunks, failing fast on a hung provider.
+
+    A provider that accepts the request but never produces a first token
+    has been observed defeating the client's httpx-level timeouts, so the
+    first token is bounded here at the asyncio level, independent of any
+    client configuration. Raises TimeoutError; the caller records it as a
+    provider failure and moves on to the next provider.
+    """
+    stream = client.astream(messages, **kwargs)
+    try:
+        first = await asyncio.wait_for(stream.__anext__(), timeout_s)
+    except (asyncio.TimeoutError, TimeoutError):
+        await _aclose_quietly(stream)
+        raise TimeoutError(f"no first token within {timeout_s}s")
+    except StopAsyncIteration:
+        return
+    except BaseException:
+        await _aclose_quietly(stream)
+        raise
+    yield first
+    try:
+        async for chunk in stream:
+            yield chunk
+    finally:
+        await _aclose_quietly(stream)
+
+
+async def _aclose_quietly(stream: Any) -> None:
+    """Close an async-generator stream, never raising."""
+    try:
+        aclose = getattr(stream, "aclose", None)
+        if aclose is not None:
+            await aclose()
+    except Exception:
+        pass
+
+
 async def astream_with_fallback(
     primary: ProviderName,
     model: str,
@@ -411,7 +455,9 @@ async def astream_with_fallback(
             errors.append(f"{name}: missing key")
             continue
         try:
-            async for chunk in client.astream(messages, **kwargs):
+            async for chunk in _stream_with_first_token_timeout(
+                    client, messages,
+                    settings.dime_first_token_timeout_s, **kwargs):
                 text = getattr(chunk, "content", "") or ""
                 if text:
                     yield {"provider": name, "text": str(text)}
@@ -456,7 +502,9 @@ async def astream_chunks_with_fallback(
             errors.append(f"{name}: missing key")
             continue
         try:
-            async for chunk in client.astream(messages, **kwargs):
+            async for chunk in _stream_with_first_token_timeout(
+                    client, messages,
+                    settings.dime_first_token_timeout_s, **kwargs):
                 yield {"provider": name, "chunk": chunk}
             return
         except Exception as exc:

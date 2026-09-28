@@ -32,6 +32,12 @@ class Settings(BaseSettings):
     # stuck model call ends the stream with a clean failure event instead
     # of heartbeats forever.
     dime_v2_run_timeout_s: float = Field(default=360.0, gt=0)
+    # First-token deadline for provider streaming calls. A provider that
+    # accepts the request but never produces a first token (observed on
+    # the NVIDIA NIM endpoint) defeats httpx-level timeouts, so the
+    # asyncio-level watchdog in providers.py bounds it explicitly: fail
+    # the provider fast and move on instead of hanging the whole turn.
+    dime_first_token_timeout_s: float = Field(default=45.0, gt=0)
     chat_rate_per_minute: int = 20
     default_timeout_seconds: int = 10
 
