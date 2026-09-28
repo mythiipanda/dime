@@ -165,6 +165,10 @@ export interface FreshRow {
   table: string;
   rows: number;
   last_fetch: string | null;
+  // Latest game/event date in the table's own rows (YYYY-MM-DD). Absent or
+  // null on backends that predate coverage dates, or for tables with no
+  // parseable date column (static/snapshot data).
+  data_through?: string | null;
 }
 
 export function getFreshness(): Promise<FreshRow[]> {

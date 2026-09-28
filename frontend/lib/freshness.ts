@@ -1,7 +1,9 @@
 // One-line freshness summary for the Explore sticky-nav status (redesign
-// Phase C). Derives "Data through Sep 26 · 5 datasets" from the same
-// /datasets/freshness rows the System status disclosure shows, replacing the
-// old decorative "2025-26" mark with a real, clickable fact.
+// Phase C). Uses per-feed DATA COVERAGE dates (data_through), not ingestion
+// time: last_fetch says when the warehouse pulled a table, which misleads
+// when shown as "Data through <date>". The summary takes the MINIMUM
+// coverage across covered tables so one fresh table can't mask stale ones;
+// the System status disclosure shows the per-feed detail.
 import type { FreshRow } from "./api";
 
 const MONTHS = [
@@ -17,18 +19,40 @@ export function freshDateLabel(iso: string): string | null {
   return `${MONTHS[month - 1]} ${Number(m[3])}`;
 }
 
-// Latest last_fetch across tables; null when nothing has a fetch time.
-// Timestamps arrive as YYYY-MM-DD..., so lexicographic max == latest.
-export function summarizeFreshness(rows: FreshRow[]): string | null {
+function datasetCount(rows: FreshRow[]): number {
+  return rows.filter((r) => (r.rows ?? 0) > 0).length;
+}
+
+// Latest ingestion times; lexicographic max on YYYY-MM-DD... timestamps.
+function latestFetchLabel(rows: FreshRow[]): string | null {
   const fetches = rows
     .map((r) => (r.last_fetch ? String(r.last_fetch) : ""))
     .filter(Boolean)
     .sort();
   if (fetches.length === 0) return null;
-  const label = freshDateLabel(fetches[fetches.length - 1]);
+  return freshDateLabel(fetches[fetches.length - 1]);
+}
+
+export function summarizeFreshness(rows: FreshRow[]): string | null {
+  const coverage = rows
+    .map((r) => (r.data_through ? String(r.data_through) : ""))
+    .filter(Boolean)
+    .sort();
+  if (coverage.length > 0) {
+    // YYYY-MM-DD strings: lexicographic min == earliest coverage date.
+    const label = freshDateLabel(coverage[0]);
+    if (!label) return null;
+    const datasets = datasetCount(rows);
+    return datasets > 0
+      ? `Data through ${label} · ${datasets} datasets`
+      : `Data through ${label}`;
+  }
+  // Backend predates coverage dates: name the thing we actually know --
+  // the last warehouse fetch -- instead of implying data coverage.
+  const label = latestFetchLabel(rows);
   if (!label) return null;
-  const datasets = rows.filter((r) => (r.rows ?? 0) > 0).length;
+  const datasets = datasetCount(rows);
   return datasets > 0
-    ? `Data through ${label} · ${datasets} datasets`
-    : `Data through ${label}`;
+    ? `Last fetch ${label} · ${datasets} datasets`
+    : `Last fetch ${label}`;
 }

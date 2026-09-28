@@ -285,6 +285,7 @@ _DATASETS_FRESHNESS_CACHE = {"at": 0.0, "payload": None}
 
 def _datasets_freshness_payload() -> dict:
     from shared import store
+    from shared.freshness import table_data_through
 
     con = store.connect()
     try:
@@ -301,7 +302,8 @@ def _datasets_freshness_payload() -> dict:
             if "_fetched_at" in cols:
                 last = con.execute(
                     f"SELECT MAX(_fetched_at) FROM {t}").fetchone()[0]
-            rows.append({"table": t, "rows": n, "last_fetch": last})
+            rows.append({"table": t, "rows": n, "last_fetch": last,
+                         "data_through": table_data_through(con, t, cols)})
     finally:
         con.close()
     return {"ok": True, "rows": rows}

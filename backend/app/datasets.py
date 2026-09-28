@@ -8,6 +8,7 @@ from fastapi import APIRouter, Query
 from fastapi.responses import Response
 
 from shared import store
+from shared.freshness import table_data_through
 from shared.sources import espn, nba_stats
 from shared.sources.base import FetchResult
 
@@ -38,7 +39,8 @@ def _freshness_payload() -> dict:
             if "_fetched_at" in cols:
                 last = con.execute(
                     f"SELECT MAX(_fetched_at) FROM {t}").fetchone()[0]
-            rows.append({"table": t, "rows": n, "last_fetch": last})
+            rows.append({"table": t, "rows": n, "last_fetch": last,
+                         "data_through": table_data_through(con, t, cols)})
     finally:
         con.close()
     return {"ok": True, "rows": rows}

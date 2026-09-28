@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import EmptyState from "./EmptyState";
 import { getFreshness, type FreshRow } from "../lib/api";
+import { freshDateLabel } from "../lib/freshness";
 
 export default function FreshnessPanel() {
   const [rows, setRows] = useState<FreshRow[]>([]);
@@ -32,6 +33,7 @@ export default function FreshnessPanel() {
           <tr style={{ textAlign: "left", color: "var(--color-warm-gray)" }}>
             <th>Table</th>
             <th>Rows</th>
+            <th>Data through</th>
             <th>Last fetch</th>
           </tr>
         </thead>
@@ -40,6 +42,7 @@ export default function FreshnessPanel() {
             <tr key={r.table} style={{ borderTop: "1px solid var(--color-stone-border)" }}>
               <td>{r.table.replace("silver_", "")}</td>
               <td>{r.rows.toLocaleString()}</td>
+              <td>{r.data_through ? freshDateLabel(r.data_through) ?? "—" : "—"}</td>
               <td>{r.last_fetch ? String(r.last_fetch).slice(0, 16).replace("T", " ") : "never"}</td>
             </tr>
           ))}
