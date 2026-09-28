@@ -183,18 +183,10 @@ export default function ExploreWorkspace({
 
         <div className="explore-content">
           <DatasetPanel key={exploreKey} />
-          <section id="explore-trade" className="explore-section-anchor">
-            <TradePanel onAskValue={onAsk} />
-          </section>
-          <section id="explore-draft" className="explore-section-anchor">
-            <DraftPanel />
-          </section>
-          <section id="explore-lineups" className="explore-section-anchor">
-            <LineupPanel />
-          </section>
-          <section id="explore-playoffs" className="explore-section-anchor">
-            <PlayoffPanel />
-          </section>
+          <TradePanel onAskValue={onAsk} />
+          <DraftPanel />
+          <LineupPanel />
+          <PlayoffPanel />
           <SystemStatus />
         </div>
       </main>

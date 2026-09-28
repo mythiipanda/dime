@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import ExplorePanel, { PanelHeader } from "./ExplorePanel";
 import EmptyState from "./EmptyState";
 import { BACKEND } from "../lib/chat";
 import WowyCard from "./WowyCard";
@@ -109,35 +110,32 @@ export default function LineupPanel() {
   };
 
   return (
-    <div className="card">
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
-        <div>
-          <div className="display" style={{ fontSize: 20 }}>Lineups</div>
-          <div style={{ fontSize: 12, color: "var(--color-warm-gray)", marginTop: 2 }}>
-            {tab === "5man" ? "Five-man units by minutes" : "With/without you net ratings"}
+    <ExplorePanel id="explore-lineups">
+      <PanelHeader
+        kicker="Teams"
+        title="Lineups"
+        action={
+          <div style={{ display: "inline-flex", background: "var(--color-stone-canvas)", padding: 2, borderRadius: 9999, border: "1px solid var(--color-stone-border)" }}>
+            <button
+              className={tab === "5man" ? "tab-active" : "pill-ghost"}
+              style={{ fontSize: 11, padding: "3px 12px", border: "none" }}
+              onClick={() => setTab("5man")}
+            >
+              5-Man
+            </button>
+            <button
+              className={tab === "wowy" ? "tab-active" : "pill-ghost"}
+              style={{ fontSize: 11, padding: "3px 12px", border: "none" }}
+              onClick={() => {
+                setTab("wowy");
+                if (!wowyRows.length) runWowy();
+              }}
+            >
+              WOWY
+            </button>
           </div>
-        </div>
-
-        <div style={{ display: "inline-flex", background: "var(--color-stone-canvas)", padding: 2, borderRadius: 9999, border: "1px solid var(--color-stone-border)" }}>
-          <button
-            className={tab === "5man" ? "tab-active" : "pill-ghost"}
-            style={{ fontSize: 11, padding: "3px 12px", border: "none" }}
-            onClick={() => setTab("5man")}
-          >
-            5-Man
-          </button>
-          <button
-            className={tab === "wowy" ? "tab-active" : "pill-ghost"}
-            style={{ fontSize: 11, padding: "3px 12px", border: "none" }}
-            onClick={() => {
-              setTab("wowy");
-              if (!wowyRows.length) runWowy();
-            }}
-          >
-            WOWY
-          </button>
-        </div>
-      </div>
+        }
+      />
 
       {tab === "5man" ? (
         <div>
@@ -199,6 +197,6 @@ export default function LineupPanel() {
           {wowyRows.length > 0 && <WowyCard rows={wowyRows} verdict={wowyVerdict} />}
         </div>
       )}
-    </div>
+    </ExplorePanel>
   );
 }

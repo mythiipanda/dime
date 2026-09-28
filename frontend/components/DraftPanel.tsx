@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import ExplorePanel, { PanelHeader } from "./ExplorePanel";
 import EmptyState from "./EmptyState";
 import DataTable from "./DataTable";
 import { BACKEND } from "../lib/chat";
@@ -39,12 +40,9 @@ export default function DraftPanel() {
   }, []);
 
   return (
-    <div className="card">
-      <div className="display" style={{ fontSize: 20 }}>Draft combine</div>
-      <div style={{ fontSize: 12, color: "var(--color-warm-gray)", marginTop: 4 }}>
-        Measurements plus spot shooting. Names sort by wingspan scouts love.
-      </div>
-      <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
+    <ExplorePanel id="explore-draft">
+      <PanelHeader kicker="Draft" title="Draft combine" />
+      <div style={{ display: "flex", gap: 8 }}>
         <input
           className="field"
           value={year}
@@ -68,6 +66,6 @@ export default function DraftPanel() {
           <DataTable rows={rows} />
         </div>
       )}
-    </div>
+    </ExplorePanel>
   );
 }

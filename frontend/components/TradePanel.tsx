@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import ExplorePanel, { PanelHeader } from "./ExplorePanel";
 import { BACKEND } from "../lib/chat";
 import { apiPath } from "../lib/api";
 
@@ -50,12 +51,9 @@ export default function TradePanel({ onAskValue }: { onAskValue?: (q: string) =>
   };
 
   return (
-    <div className="card">
-      <div className="display" style={{ fontSize: 20 }}>Trade checker</div>
-      <div style={{ fontSize: 12, color: "var(--color-warm-gray)", marginTop: 4 }}>
-        Simplified 2023 CBA matching. Picks and exceptions stay out of v1.
-      </div>
-      <div style={{ display: "flex", gap: 8, marginTop: 12, flexWrap: "wrap" }}>
+    <ExplorePanel id="explore-trade">
+      <PanelHeader kicker="Trade" title="Trade checker" />
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
         <input className="field" value={a} onChange={(e) => setA(e.target.value)} placeholder="team A" style={{ width: 80 }} />
         <input className="field" value={pa} onChange={(e) => setPa(e.target.value)} placeholder="players out, comma separated" style={{ flex: 1, minWidth: 200 }} />
       </div>
@@ -139,6 +137,6 @@ export default function TradePanel({ onAskValue }: { onAskValue?: (q: string) =>
           )}
         </div>
       )}
-    </div>
+    </ExplorePanel>
   );
 }

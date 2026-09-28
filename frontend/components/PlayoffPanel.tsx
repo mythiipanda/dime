@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import ExplorePanel, { PanelHeader } from "./ExplorePanel";
 import EmptyState from "./EmptyState";
 import { BACKEND } from "../lib/chat";
 import { apiPath } from "../lib/api";
@@ -93,9 +94,9 @@ export default function PlayoffPanel() {
     .filter((g) => g.list.length > 0);
 
   return (
-    <div className="card">
-      <div className="display" style={{ fontSize: 20 }}>Playoffs 2025-26</div>
-      {busy && <div style={{ fontSize: 12, color: "var(--color-warm-gray)", marginTop: 8 }}>Loading</div>}
+    <ExplorePanel id="explore-playoffs">
+      <PanelHeader kicker="Season" title="Playoffs 2025-26" />
+      {busy && <div style={{ fontSize: 12, color: "var(--color-warm-gray)" }}>Loading</div>}
       {error && <div style={{ fontSize: 12, color: "var(--color-warm-gray)", marginTop: 8 }}>{error}</div>}
       {!busy && !error && champion && (
         <div style={{ fontSize: 14, color: "var(--color-ink-black)", marginTop: 8, fontWeight: 600 }}>
@@ -147,6 +148,6 @@ export default function PlayoffPanel() {
           ? "Final results. Simulated odds return when the next season begins."
           : "Simulated odds live in chat: ask Simulate the playoffs."}
       </div>
-    </div>
+    </ExplorePanel>
   );
 }
