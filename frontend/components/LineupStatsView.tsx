@@ -148,7 +148,7 @@ export default function LineupStatsView({
                   {u.name}
                   {u.best && (
                     <span style={{ marginLeft: 6 }}>
-                      <Chip tone="accent">best net</Chip>
+                      <Chip tone="accent" title="Highest net rating in this view">max net</Chip>
                     </span>
                   )}
                   {u.blowout && (
