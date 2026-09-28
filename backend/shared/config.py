@@ -9,6 +9,8 @@ class Settings(BaseSettings):
 
     nvidia_nim_api_key: str = ""
     nvidia_nim_model: str = "z-ai/glm-5.3-flash"
+    gemini_api_key: str = ""
+    gemini_model: str = "gemini-3.5-flash-lite"
     mistral_api_key: str = ""
     mistral_model: str = "ministral-8b-2512"
     openrouter_api_key: str = ""

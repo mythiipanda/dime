@@ -26,6 +26,7 @@ from pydantic_ai.providers.openai import OpenAIProvider
 from shared.config import settings
 from shared.tools.rating_metrics import RANKING_DIRECTIONS, TEAM_RATING_METRICS
 from shared.providers import (
+    GEMINI_BASE_URL,
     GROQ_DEFAULT,
     NVIDIA_NIM_BASE_URL,
     NVIDIA_NIM_DEFAULT,
@@ -34,6 +35,7 @@ from shared.providers import (
     OPENROUTER_DEFAULT,
     ProviderName,
     fallback_order,
+    _gemini_model,
     _groq_free_model, _mistral_free_model,
     _nvidia_nim_model,
     _openrouter_free_model,
@@ -422,6 +424,8 @@ class ProviderStructuredModel:
 
     def _models(self) -> list[tuple[ProviderName, OpenAIChatModel]]:
         configs = {
+            "gemini": (GEMINI_BASE_URL, settings.gemini_api_key,
+                       _gemini_model()),
             "nvidia": (NVIDIA_NIM_BASE_URL, settings.nvidia_nim_api_key,
                        _nvidia_nim_model()),
             "mistral": ("https://api.mistral.ai/v1", settings.mistral_api_key,
@@ -451,7 +455,9 @@ class ProviderStructuredModel:
                 thinking_off=(provider == "nvidia"),
             )
             requested = self.model if provider == self.provider else fallback_model
-            if provider == "nvidia":
+            if provider == "gemini":
+                accepted_model = _gemini_model(requested)
+            elif provider == "nvidia":
                 accepted_model = _nvidia_nim_model(requested)
             elif provider == "openrouter":
                 accepted_model = _openrouter_free_model(requested)

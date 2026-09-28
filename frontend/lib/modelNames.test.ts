@@ -24,6 +24,8 @@ test("modelEngine returns the engine prefix", () => {
 
 test("modelDisplayName maps known catalog slugs to friendly names", () => {
   const cases: Array<[string, string]> = [
+    ["gemini:gemini-3.5-flash-lite", "Gemini 3.5 Flash Lite"],
+    ["gemini:gemini-3.5-flash", "Gemini 3.5 Flash"],
     ["nvidia:z-ai/glm-5.3-flash", "GLM 5.3 Flash"],
     ["nvidia:deepseek-ai/deepseek-v4.1-flash", "DeepSeek V4.1 Flash"],
     [
@@ -66,6 +68,7 @@ test("modelDisplayName prettifies unknown slugs instead of echoing them", () => 
 });
 
 test("providerDisplayName maps known engines and capitalizes unknown ones", () => {
+  assert.equal(providerDisplayName("gemini"), "Gemini");
   assert.equal(providerDisplayName("nvidia"), "NVIDIA");
   assert.equal(providerDisplayName("openrouter"), "OpenRouter");
   assert.equal(providerDisplayName("mistral"), "Mistral");

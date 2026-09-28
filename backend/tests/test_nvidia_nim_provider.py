@@ -1,7 +1,9 @@
 from shared.config import settings
 from shared.providers import (
-    NVIDIA_NIM_ALLOWLIST,
-    NVIDIA_NIM_BASE_URL,
+    GEMINI_BASE_URL,
+    GEMINI_DEFAULT,
+    GEMINI_MODELS,
+    NVIDIA_NIM_ALLOWLIST,    NVIDIA_NIM_BASE_URL,
     NVIDIA_NIM_DEFAULT,
     NVIDIA_NIM_MODELS,
     fallback_order,
@@ -11,10 +13,22 @@ from shared.providers import (
 )
 
 
-def test_nvidia_is_priority_one_and_exact_models_are_exposed(monkeypatch):
+def test_gemini_is_priority_one_and_exact_models_are_exposed(monkeypatch):
+    monkeypatch.setattr(settings, "gemini_api_key", "key")
+    for primary in ("gemini", "nvidia", "openrouter", "mistral", "inception", "groq"):
+        assert fallback_order(primary)[0] == "gemini"
+    catalog = models_catalog()
+    assert catalog["available"]["gemini"] is True
+    assert [item["id"] for item in catalog["models"] if item["engine"] == "gemini"] == [
+        f"gemini:{model}" for model in GEMINI_MODELS
+    ]
+    # Gemini leads the picker: it is the first catalog option (workhorse default).
+    assert catalog["models"][0]["id"] == f"gemini:{GEMINI_DEFAULT}"
+    assert catalog["models"][0]["default"] is True
+
+
+def test_nvidia_models_are_exposed(monkeypatch):
     monkeypatch.setattr(settings, "nvidia_nim_api_key", "key")
-    for primary in ("nvidia", "openrouter", "mistral", "inception", "groq"):
-        assert fallback_order(primary)[0] == "nvidia"
     catalog = models_catalog()
     assert catalog["available"]["nvidia"] is True
     assert [item["id"] for item in catalog["models"] if item["engine"] == "nvidia"] == [

@@ -10,12 +10,15 @@ def test_structured_chain_clamps_groq_and_keeps_inception_last_under_global_prio
     monkeypatch.setattr(settings, "groq_api_key", "groq-free")
     monkeypatch.setattr(settings, "openrouter_api_key", "openrouter-free")
     monkeypatch.setattr(settings, "mistral_api_key", "mistral-free")
+    monkeypatch.setattr(settings, "gemini_api_key", "gemini-free")
     monkeypatch.setattr(settings, "groq_model", "paid-or-unlisted")
     models = ProviderStructuredModel("inception", "mercury-2.5")._models()
     assert [provider for provider, _ in models] == [
-        "nvidia", "groq", "openrouter", "mistral", "inception"]
-    assert models[1][1].model_name == providers.GROQ_DEFAULT
-    assert providers.is_free_model("groq", models[1][1].model_name)
+        "gemini", "nvidia", "groq", "openrouter", "mistral", "inception"]
+    assert models[2][1].model_name == providers.GROQ_DEFAULT
+    assert providers.is_free_model("groq", models[2][1].model_name)
+    assert models[0][1].model_name == providers.GEMINI_DEFAULT
+    assert providers.is_free_model("gemini", models[0][1].model_name)
 
 
 def test_explicit_inception_request_records_actual_serving_provider():

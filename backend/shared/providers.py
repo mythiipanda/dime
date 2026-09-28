@@ -9,16 +9,17 @@ from langchain_openai import ChatOpenAI
 
 from .config import settings
 
-ProviderName = Literal["nvidia", "mistral", "openrouter", "inception", "groq"]
+ProviderName = Literal["gemini", "nvidia", "mistral", "openrouter", "inception", "groq"]
 
 
 class ProviderPolicyError(ValueError):
     """Requested provider/model is outside the owner-approved policy."""
 
-# Inception reactivation is a two-part gate: explicit policy plus a key.
-# Retained credentials alone never activate a provider. NIM is primary.
-# Groq stays off until DIME_ENABLE_GROQ and a Groq key are both set.
-FREE_PROVIDER_ORDER: tuple[ProviderName, ...] = ("nvidia", "groq", "openrouter", "mistral")
+# Inception/Groq reactivation is a two-part gate: explicit policy plus a key.
+# Retained credentials alone never activate them. Gemini and NIM are
+# Tony-approved free tiers: a configured key activates them directly.
+# Gemini (flash-lite) is the workhorse default: 15 RPM / 500 RPD free.
+FREE_PROVIDER_ORDER: tuple[ProviderName, ...] = ("gemini", "nvidia", "groq", "openrouter", "mistral")
 
 
 def active_provider_order() -> tuple[ProviderName, ...]:
@@ -28,6 +29,15 @@ def active_provider_order() -> tuple[ProviderName, ...]:
             if settings.dime_enable_inception and settings.inception_api_key
             else free)
 
+GEMINI_BASE_URL = "https://generativelanguage.googleapis.com/v1beta/openai/"
+GEMINI_DEFAULT = "gemini-3.5-flash-lite"
+# Free tier only: flash-lite is the 15 RPM / 500 RPD workhorse;
+# flash is 5 RPM / 20 RPD (quality option). No Pro models.
+GEMINI_MODELS: tuple[str, ...] = (
+    GEMINI_DEFAULT,
+    "gemini-3.5-flash",
+)
+GEMINI_ALLOWLIST = frozenset(GEMINI_MODELS)
 NVIDIA_NIM_BASE_URL = "https://integrate.api.nvidia.com/v1"
 NVIDIA_NIM_DEFAULT = "z-ai/glm-5.3-flash"
 NVIDIA_NIM_MODELS: tuple[str, ...] = (
@@ -59,6 +69,8 @@ OPENROUTER_ALLOWLIST: frozenset[str] = frozenset(
 def is_free_model(provider: str, slug: str) -> bool:
     """One authority for whether a Dime model can incur zero paid credits."""
     value = str(slug or "").strip()
+    if provider == "gemini":
+        return value in GEMINI_ALLOWLIST
     if provider == "nvidia":
         return value in NVIDIA_NIM_ALLOWLIST
     if provider == "openrouter":
@@ -71,6 +83,11 @@ def is_free_model(provider: str, slug: str) -> bool:
         # free-limit model is the only active choice for this provider.
         return value == (settings.mistral_model or MISTRAL_DEFAULT)
     return False
+
+
+def _gemini_model(slug: str | None = None) -> str:
+    value = str(slug or settings.gemini_model or "").strip()
+    return value if value in GEMINI_ALLOWLIST else GEMINI_DEFAULT
 
 
 def _nvidia_nim_model(slug: str | None = None) -> str:
@@ -97,6 +114,8 @@ def _mistral_free_model() -> str:
 
 
 def _default_provider() -> tuple[ProviderName, str]:
+    if settings.gemini_api_key:
+        return ("gemini", _gemini_model())
     if settings.nvidia_nim_api_key:
         return ("nvidia", _nvidia_nim_model())
     if settings.dime_enable_inception and settings.inception_api_key:
@@ -119,6 +138,11 @@ def resolve_model_id(model_id: str | None) -> tuple[ProviderName, str]:
         if not (settings.dime_enable_groq and settings.groq_api_key):
             raise ProviderPolicyError("Groq free-tier route is not activated")
         return ("groq", GROQ_DEFAULT)
+    if original.startswith("gemini:"):
+        slug = original.split(":", 1)[1]
+        if slug.strip() not in GEMINI_ALLOWLIST:
+            raise ProviderPolicyError("unapproved Gemini model")
+        return ("gemini", slug.strip())
     if raw.startswith("nvidia:"):
         return ("nvidia", _nvidia_nim_model(raw.split(":", 1)[1]))
     if raw.startswith("openrouter:"):
@@ -131,6 +155,8 @@ def resolve_model_id(model_id: str | None) -> tuple[ProviderName, str]:
             return ("inception", settings.inception_model or INCEPTION_DEFAULT)
         return _default_provider()
     if raw:
+        if raw in GEMINI_ALLOWLIST:
+            return ("gemini", raw)
         if raw in NVIDIA_NIM_ALLOWLIST:
             return ("nvidia", raw)
         if raw == OPENROUTER_AUTO or (raw in OPENROUTER_ALLOWLIST
@@ -147,6 +173,16 @@ def get_llm(name: ProviderName, model: str | None = None) -> ChatOpenAI | None:
     # explicit policy change here; direct callers cannot bypass route clamping.
     if name not in active_provider_order():
         return None
+    if name == "gemini":
+        if not settings.gemini_api_key:
+            return None
+        return ChatOpenAI(
+            model=_gemini_model(model),
+            base_url=GEMINI_BASE_URL,
+            api_key=settings.gemini_api_key,
+            timeout=settings.llm_timeout_s,
+            max_retries=settings.llm_max_retries,
+        )
     if name == "nvidia":
         if not settings.nvidia_nim_api_key:
             return None
@@ -304,6 +340,8 @@ async def invoke_with_fallback(
     started_all = time.perf_counter()
     for number, name in enumerate(fallback_order(primary), 1):
         accepted_model = (
+            _gemini_model(model if name == primary else None)
+            if name == "gemini" else
             _nvidia_nim_model(model if name == primary else None)
             if name == "nvidia" else
             _openrouter_free_model(model if name == primary else None)
@@ -356,6 +394,8 @@ async def astream_with_fallback(
             errors.append(f"{name}: probe failed recently")
             continue
         accepted_model = (
+            _gemini_model(model if name == primary else None)
+            if name == "gemini" else
             _nvidia_nim_model(model if name == primary else None)
             if name == "nvidia" else
             _openrouter_free_model(model if name == primary else None)
@@ -399,6 +439,8 @@ async def astream_chunks_with_fallback(
             errors.append(f"{name}: probe failed recently")
             continue
         accepted_model = (
+            _gemini_model(model if name == primary else None)
+            if name == "gemini" else
             _nvidia_nim_model(model if name == primary else None)
             if name == "nvidia" else
             _openrouter_free_model(model if name == primary else None)
@@ -471,6 +513,10 @@ def models_catalog() -> dict[str, Any]:
     slugs = sorted(slug for slug in OPENROUTER_ALLOWLIST
                    if is_free_model("openrouter", slug))
     options = [
+        {"id": f"gemini:{slug}", "engine": "gemini",
+         "default": default_id == f"gemini:{slug}"}
+        for slug in GEMINI_MODELS
+    ] + [
         {"id": f"nvidia:{slug}", "engine": "nvidia",
          "default": default_id == f"nvidia:{slug}"}
         for slug in NVIDIA_NIM_MODELS
@@ -496,6 +542,7 @@ def models_catalog() -> dict[str, Any]:
         options.append({"id": f"inception:{inception}", "engine": "inception",
                         "default": default_id == f"inception:{inception}"})
     available = {
+        "gemini": bool(settings.gemini_api_key),
         "nvidia": bool(settings.nvidia_nim_api_key),
         "openrouter": bool(settings.openrouter_api_key),
         "mistral": bool(settings.mistral_api_key),

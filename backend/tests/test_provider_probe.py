@@ -64,7 +64,7 @@ def test_fallback_skips_probe_failed_provider(monkeypatch):
         "mistral", "m", []))
     assert out.content == "ok"
     assert "mistral" not in calls, "probe-failed primary was not skipped"
-    assert calls[0] == "nvidia"
+    assert calls[0] == "gemini"
 
 
 def test_invoke_exposes_accepted_provider_and_sanitized_attempts(monkeypatch):
@@ -73,7 +73,8 @@ def test_invoke_exposes_accepted_provider_and_sanitized_attempts(monkeypatch):
         def __init__(self,name): self.name=name
         async def ainvoke(self,messages,**kwargs):
             calls.append(self.name)
-            if self.name=='nvidia': raise TimeoutError('secret payload must not leak')
+            if self.name in ('gemini','nvidia'):
+                raise TimeoutError('secret payload must not leak')
             class R: content='ok'
             return R()
     monkeypatch.setattr(prov,'get_llm',lambda name,model=None:C(name))
@@ -82,9 +83,13 @@ def test_invoke_exposes_accepted_provider_and_sanitized_attempts(monkeypatch):
     assert out.provider=='openrouter'
     assert out.model==prov.OPENROUTER_DEFAULT
     assert out.elapsed_ms>=0
-    assert out.provider_attempts==({'provider':'nvidia','model':prov.NVIDIA_NIM_DEFAULT,
-        'attempt_number':1,'exception_type':'TimeoutError','message_class':'timeout',
-        'latency_ms':out.provider_attempts[0]['latency_ms']},)
+    assert out.provider_attempts==(
+        {'provider':'gemini','model':prov.GEMINI_DEFAULT,
+         'attempt_number':1,'exception_type':'TimeoutError','message_class':'timeout',
+         'latency_ms':out.provider_attempts[0]['latency_ms']},
+        {'provider':'nvidia','model':prov.NVIDIA_NIM_DEFAULT,
+         'attempt_number':2,'exception_type':'TimeoutError','message_class':'timeout',
+         'latency_ms':out.provider_attempts[1]['latency_ms']},)
     assert 'secret' not in str(out.provider_attempts)
 
 
@@ -99,9 +104,9 @@ def test_paid_openrouter_primary_provenance_matches_constructed_free_slug(monkey
     monkeypatch.setattr(prov,'get_llm',fake_get)
     out=asyncio.run(prov.invoke_with_fallback(
         'openrouter','openai/gpt-4o',[]))
-    assert out.provider=='nvidia'
-    assert out.model==prov.NVIDIA_NIM_DEFAULT
-    assert seen[0]==('nvidia',out.model)
+    assert out.provider=='gemini'
+    assert out.model==prov.GEMINI_DEFAULT
+    assert seen[0]==('gemini',out.model)
 
 
 def test_arbitrary_mistral_primary_provenance_matches_free_limit(monkeypatch):
@@ -112,6 +117,6 @@ def test_arbitrary_mistral_primary_provenance_matches_free_limit(monkeypatch):
             return R()
     monkeypatch.setattr(prov,'get_llm',lambda n,model=None: seen.append((n,model)) or C())
     out=asyncio.run(prov.invoke_with_fallback('mistral','arbitrary-paid',[]))
-    assert out.provider=='nvidia'
-    assert out.model==prov.NVIDIA_NIM_DEFAULT
-    assert seen[0]==('nvidia',out.model)
+    assert out.provider=='gemini'
+    assert out.model==prov.GEMINI_DEFAULT
+    assert seen[0]==('gemini',out.model)

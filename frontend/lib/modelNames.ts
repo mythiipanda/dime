@@ -4,6 +4,8 @@
 // prettifier so the picker never shows a raw slug again.
 
 const OVERRIDES: Record<string, string> = {
+  "gemini-3.5-flash-lite": "Gemini 3.5 Flash Lite",
+  "gemini-3.5-flash": "Gemini 3.5 Flash",
   "z-ai/glm-5.3-flash": "GLM 5.3 Flash",
   "deepseek-ai/deepseek-v4.1-flash": "DeepSeek V4.1 Flash",
   "nvidia/nemotron-3-super-120b-a12b": "Nemotron 3 Super 120B",
@@ -22,6 +24,7 @@ const OVERRIDES: Record<string, string> = {
 };
 
 const PROVIDERS: Record<string, string> = {
+  gemini: "Gemini",
   nvidia: "NVIDIA",
   openrouter: "OpenRouter",
   mistral: "Mistral",
