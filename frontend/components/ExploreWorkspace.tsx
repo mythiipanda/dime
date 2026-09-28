@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import DraftPanel from "./DraftPanel";
+import ExploreFeed from "./ExploreFeed";
 import ExploreIndex from "./ExploreIndex";
 import ExploreSearch from "./ExploreSearch";
 import { LeadersPanel, ShotsPanel } from "./DatasetPanel";
@@ -83,7 +84,7 @@ export default function ExploreWorkspace({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const handleSearchSelect = (context: ExploreContext, _result: SearchResult) => {
+  const handleSearchSelect = (context: ExploreContext, _result?: SearchResult) => {
     expand(context.panel, context);
   };
 
@@ -112,6 +113,8 @@ export default function ExploreWorkspace({
           <ExploreSearch onSelect={handleSearchSelect} onAsk={onAsk} />
 
           <ExploreIndex onSelect={handleIndexSelect} active={expanded} />
+
+          <ExploreFeed onAsk={onAsk} onSelect={handleSearchSelect} />
         </section>
 
         <ScoreStrip />
