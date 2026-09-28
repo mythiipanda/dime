@@ -17,6 +17,8 @@ class SuiteResult:
     mode: str = "hermetic"  # hermetic | recorded | fallback-only |
                             # live-llm | live-judge | live-backend |
                             # live-warehouse | conditional | skipped | error
+    ledger: str = "plumbing"  # plumbing (harness integrity) |
+                              # signal (live answer-quality vs ground truth)
     passed: int = 0
     failed: int = 0
     skipped: int = 0
@@ -148,3 +150,22 @@ def sha256_file(path):
 
 def sha256_text(text):
     return hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+
+def load_live_client():
+    """Load backend/evals/live_backend.py (the SSE client) by file path.
+
+    The module shares its name with suites/live_backend.py, so a plain
+    `from live_backend import ...` resolves to whichever sys.path entry
+    wins — historically the suite itself, by accident of import order.
+    Load by explicit path instead; never ambiguous.
+    """
+    path = Path(__file__).resolve().parent.parent / "live_backend.py"
+    name = "_evals_live_client"
+    if name in sys.modules:
+        return sys.modules[name]
+    spec = importlib.util.spec_from_file_location(name, path)
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[name] = module
+    spec.loader.exec_module(module)
+    return module

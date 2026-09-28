@@ -19,11 +19,10 @@ import hashlib
 import json
 import random
 import sys
-import tempfile
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-from suites import SuiteResult  # noqa: E402
+from suites import SuiteResult, load_live_client  # noqa: E402
 from trace import emit  # noqa: E402
 import scoring  # noqa: E402
 
@@ -111,8 +110,6 @@ def generate():
 def run(ctx):
     res = SuiteResult(name="frontier", mode="hermetic")
     emit("suite_started", {"suite": "frontier", "mode": "hermetic"})
-    sys.path.insert(0, str(Path(__file__).resolve().parent))
-    import golden_warehouse as gw
     try:
         import duckdb
     except ImportError:
@@ -128,10 +125,16 @@ def run(ctx):
     res.notes.append(f"generated {len(cands)} candidates "
                      f"(seed={GEN_SEED}, 3 difficulty levels)")
 
-    tmp = Path(tempfile.mkdtemp(prefix="evals-frontier-"))
-    db = tmp / "fixture.duckdb"
-    gw.build_fixture(db)
-    con = duckdb.connect(str(db), read_only=True)
+    # Stable fixture (not a per-run tempdir): live probing grades the
+    # backend against THIS file, so the backend must serve it too (see
+    # the warehouse verification below).
+    client = load_live_client()
+    try:
+        fixture, fixture_sha = client.ensure_fixture()
+    except RuntimeError as exc:
+        res.fail("fixture-build", str(exc))
+        return res
+    con = duckdb.connect(str(fixture), read_only=True)
     verified = []
     try:
         for c in cands:
@@ -169,7 +172,27 @@ def run(ctx):
         return res
 
     res.mode = "live-backend"
-    from live_backend import ask
+    res.ledger = "signal"
+    # Verify BEFORE probing: the backend must serve the fixture this
+    # suite's ground truth was computed from.
+    verified, detail, _identity = client.verify_warehouse(base, fixture_sha)
+    if not verified:
+        res.mode = "live-backend-unverified"
+        for c in verified:
+            res.fail(c["id"], f"warehouse-unverified: {detail}")
+        res.notes.append("INVALID: no candidate was probed — the backend's "
+                         "warehouse identity could not be verified against "
+                         "the grading fixture. Generation verify-gates above "
+                         "are hermetic and stand; only the live probing is "
+                         "invalid.")
+        emit("warehouse_unverified", {"suite": "frontier",
+                                      "detail": detail[:300]})
+        emit("suite_finished", {"suite": "frontier", "mode": res.mode,
+                                "passed": res.passed, "failed": res.failed,
+                                "skipped": res.skipped})
+        return res
+    res.notes.append(f"warehouse verified: {detail}")
+    ask = client.ask
     retained = json.loads(RETAINED.read_text()) if RETAINED.is_file() else []
     kept_ids = {r["id"] for r in retained}
     misses = 0

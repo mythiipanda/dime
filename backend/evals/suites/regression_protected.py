@@ -16,11 +16,10 @@ from __future__ import annotations
 
 import json
 import sys
-import tempfile
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-from suites import SuiteResult  # noqa: E402
+from suites import SuiteResult, load_live_client  # noqa: E402
 from trace import emit  # noqa: E402
 import scoring  # noqa: E402
 
@@ -43,8 +42,6 @@ def run(ctx):
                                 "skipped": res.skipped})
         return res
 
-    sys.path.insert(0, str(Path(__file__).resolve().parent))
-    import golden_warehouse as gw
     try:
         import duckdb
     except ImportError:
@@ -56,10 +53,15 @@ def run(ctx):
                                 "failed": res.failed,
                                 "skipped": res.skipped})
         return res
-    tmp = Path(tempfile.mkdtemp(prefix="evals-regr-"))
-    db = tmp / "fixture.duckdb"
-    gw.build_fixture(db)
-    con = duckdb.connect(str(db), read_only=True)
+    # Stable fixture (not a per-run tempdir): live re-probing grades the
+    # backend against THIS file, so the backend must serve it too.
+    client = load_live_client()
+    try:
+        fixture, fixture_sha = client.ensure_fixture()
+    except RuntimeError as exc:
+        res.fail("fixture-build", str(exc))
+        return res
+    con = duckdb.connect(str(fixture), read_only=True)
     try:
         truths = {}
         for r in retained:
@@ -92,7 +94,26 @@ def run(ctx):
         return res
 
     res.mode = "live-backend"
-    from live_backend import ask
+    res.ledger = "signal"
+    # Verify BEFORE re-probing: the backend must serve the fixture the
+    # retained oracles were recomputed from.
+    verified, detail, _identity = client.verify_warehouse(base, fixture_sha)
+    if not verified:
+        res.mode = "live-backend-unverified"
+        for r in retained:
+            res.fail(r["id"], f"warehouse-unverified: {detail}")
+        res.notes.append("INVALID: no retained question was re-probed — the "
+                         "backend's warehouse identity could not be verified "
+                         "against the grading fixture.")
+        emit("warehouse_unverified", {"suite": "regression_protected",
+                                      "detail": detail[:300]})
+        emit("suite_finished", {"suite": "regression_protected",
+                                "mode": res.mode, "passed": res.passed,
+                                "failed": res.failed,
+                                "skipped": res.skipped})
+        return res
+    res.notes.append(f"warehouse verified: {detail}")
+    ask = client.ask
     for r in retained:
         if r["id"] not in truths:
             continue
