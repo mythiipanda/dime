@@ -1377,7 +1377,8 @@ async def quick_answer_stream(body: QuickAnswerBody):
                                         owner=body.client[:80])
                         store.save_run(body.thread, body.q[:2000], answer,
                                        public_tables, [],
-                                       owner=body.client[:80])
+                                       owner=body.client[:80],
+                                       run_id=run_id)
             yield encode_event(GraphEnd())
         finally:
             if not task.done():

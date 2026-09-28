@@ -440,6 +440,7 @@ export default function ChatPanel({ thread, onRunDone, preset, onOpenArtifact, a
     setBusy(true);
     startTimer();
     let ai: AiMessage = { text: "", nodes: {}, done: false };
+    let runId: string | undefined;
     setMessages((m) => [...m, { role: "human", text: q }, { role: "ai", text: "", ai }]);
     const push = () => {
       const snap = ai;
@@ -454,6 +455,21 @@ export default function ChatPanel({ thread, onRunDone, preset, onOpenArtifact, a
       model,
       {
         onEvent: (type, data) => {
+          if (type === "final_answer") {
+            // The backend generates a stable id per run (v1: top-level
+            // run_id, v2: carry.run_id); recording it lets the history
+            // merge dedupe this exact turn instead of guessing by
+            // question+answer timestamps.
+            const d = data as Record<string, unknown>;
+            if (typeof d.run_id === "string" && d.run_id) {
+              runId = d.run_id;
+            } else {
+              const carry = d.carry as Record<string, unknown> | undefined;
+              if (carry && typeof carry.run_id === "string" && carry.run_id) {
+                runId = carry.run_id;
+              }
+            }
+          }
           ai = applyEvent(ai, type, data);
           push();
         },
@@ -464,6 +480,7 @@ export default function ChatPanel({ thread, onRunDone, preset, onOpenArtifact, a
           // store is wiped on every deploy, so this is what makes a
           // clicked recent session actually reload its conversation.
           appendCachedRun(thread, {
+            id: runId,
             question: q,
             answer: ai.text || "",
             tables: Object.values(ai.nodes).flatMap((n) => n.tables ?? []),

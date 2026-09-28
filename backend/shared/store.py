@@ -430,6 +430,7 @@ def list_threads(owner: str = "") -> list[dict[str, str]]:
 def save_run(
     thread: str, question: str, answer: str,
     tables: list[dict], suggestions: list[str], owner: str = "",
+    run_id: str = "",
 ) -> None:
     import json as _json
 
@@ -446,14 +447,17 @@ def save_run(
                 "PRAGMA table_info(runs)").fetchall()]
             if "owner" not in cols:
                 con.execute("ALTER TABLE runs ADD COLUMN owner VARCHAR DEFAULT ''")
+            if "run_id" not in cols:
+                con.execute("ALTER TABLE runs ADD COLUMN run_id VARCHAR DEFAULT ''")
             from datetime import datetime, timezone
 
             con.execute(
-                "INSERT INTO runs VALUES (?,?,?,?,?,?,?)",
+                "INSERT INTO runs VALUES (?,?,?,?,?,?,?,?)",
                 [thread, question[:2000], answer[:8000],
                  _json.dumps(tables, default=str)[:60000],
                  _json.dumps(suggestions)[:2000],
-                 datetime.now(timezone.utc).isoformat(), owner[:80]],
+                 datetime.now(timezone.utc).isoformat(), owner[:80],
+                 run_id[:80]],
             )
     finally:
         con.close()
@@ -471,8 +475,10 @@ def list_runs(thread: str, owner: str = "") -> list[dict]:
             "PRAGMA table_info(runs)").fetchall()}
         if "owner" not in cols:
             return []
+        has_run_id = "run_id" in cols
         rows = con.execute(
-            """SELECT question, answer, tables, suggestions, created_at
+            f"""SELECT question, answer, tables, suggestions, created_at
+            {", run_id" if has_run_id else ""}
             FROM runs WHERE thread = ? AND owner = ?
             ORDER BY created_at DESC""",
             [thread, owner[:80]],
@@ -487,8 +493,11 @@ def list_runs(thread: str, owner: str = "") -> list[dict]:
                 sug = _json.loads(r[3])
             except Exception:
                 sug = []
-            out.append({"question": r[0], "answer": r[1], "tables": tbl,
-                        "suggestions": sug, "created_at": r[4]})
+            row = {"question": r[0], "answer": r[1], "tables": tbl,
+                   "suggestions": sug, "created_at": r[4]}
+            if has_run_id and r[5]:
+                row["id"] = r[5]
+            out.append(row)
         return out
     finally:
         con.close()

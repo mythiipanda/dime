@@ -451,7 +451,17 @@ function createdMs(v: unknown): number | null {
 }
 
 function isSameTurn(a: RunInfo, b: RunInfo): boolean {
+  // Stable server-generated ids are exact: the same id is always the
+  // same turn, even when timestamps or content drift across writes.
   if (a.id && b.id) return a.id === b.id;
+  // One side id'd, the other not: never merge. Folding the authoritative
+  // id'd copy into an id-less row by heuristic would resurrect the
+  // repeat-question collapse this replaced.
+  if (a.id || b.id) return false;
+  // Legacy rows without ids (older caches, pre-id server rows): fall
+  // back to question+answer with a small skew tolerance. This heuristic
+  // can over-collapse genuinely repeated identical Q/A, which is why
+  // every new run now carries a stable server id.
   if (a.question !== b.question || a.answer !== b.answer) return false;
   const ta = createdMs(a.created_at);
   const tb = createdMs(b.created_at);
@@ -497,8 +507,19 @@ export function loadCachedRuns(thread: string): RunInfo[] {
 export function appendCachedRun(thread: string, run: RunInfo): void {
   const cached = loadCachedRuns(thread);
   const last = cached[cached.length - 1];
-  if (last && last.question === run.question && last.answer === run.answer) {
-    return; // already recorded - don't double-append on re-renders
+  if (last) {
+    // onDone can fire again for the same run on re-renders: the stable
+    // id makes that exact (same id = already recorded). A genuinely
+    // re-asked question gets a new server id and is always kept.
+    if (run.id && last.id === run.id) return;
+    // Legacy no-id runs keep the old immediate q/a repeat guard.
+    if (
+      !run.id &&
+      last.question === run.question &&
+      last.answer === run.answer
+    ) {
+      return;
+    }
   }
   cached.push(run);
   lsSet(RUNS_KEY(thread), cached.slice(-MAX_CACHED_RUNS));

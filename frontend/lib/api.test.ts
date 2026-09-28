@@ -252,6 +252,73 @@ test("getRuns keeps a genuinely repeated question outside the skew window", asyn
   }
 });
 
+test("getRuns keeps identical Q/A asked 5 min apart when ids differ", async () => {
+  // Instinct QA 2026-09-27: the 10-min skew heuristic collapsed genuinely
+  // repeated identical Q/A. With stable server ids, distinct ids stay
+  // separate no matter how close the timestamps are.
+  installLocalStorage();
+  appendCachedRun("t-12", run("q1", "2026-09-27T20:00:00Z", "run-first"));
+  (globalThis as Record<string, unknown>).fetch = async () => ({
+    ok: true,
+    json: async () => ({ runs: [run("q1", "2026-09-27T20:05:00Z", "run-second")] }),
+  });
+  try {
+    const runs = await getRuns("t-12");
+    assert.deepEqual(runs.map((r) => r.question), ["q1", "q1"]);
+    assert.deepEqual(runs.map((r) => r.id), ["run-first", "run-second"]);
+  } finally {
+    delete (globalThis as Record<string, unknown>).fetch;
+  }
+});
+
+test("getRuns collapses on id even when content drifted", async () => {
+  // Same id, different answer text (e.g. re-rendered copy): still one turn.
+  installLocalStorage();
+  appendCachedRun("t-13", run("q1", "2026-09-27T20:00:00Z", "run-x"));
+  const serverRun = run("q1-changed", "2026-09-27T21:00:00Z", "run-x");
+  serverRun.answer = "a:q1 (edited)";
+  (globalThis as Record<string, unknown>).fetch = async () => ({
+    ok: true,
+    json: async () => ({ runs: [serverRun] }),
+  });
+  try {
+    const runs = await getRuns("t-13");
+    assert.equal(runs.length, 1);
+    assert.equal(runs[0].id, "run-x");
+  } finally {
+    delete (globalThis as Record<string, unknown>).fetch;
+  }
+});
+
+test("getRuns never merges an id'd run with an id-less legacy row", async () => {
+  // One side carries an id, the other doesn't: the id'd copy is the
+  // authoritative one, and heuristic merging stays off.
+  installLocalStorage();
+  appendCachedRun("t-14", run("q1", "2026-09-27T20:00:12Z")); // legacy, no id
+  (globalThis as Record<string, unknown>).fetch = async () => ({
+    ok: true,
+    json: async () => ({ runs: [run("q1", "2026-09-27T20:00:03Z", "run-new")] }),
+  });
+  try {
+    const runs = await getRuns("t-14");
+    assert.deepEqual(runs.map((r) => r.id), ["run-new", undefined]);
+  } finally {
+    delete (globalThis as Record<string, unknown>).fetch;
+  }
+});
+
+test("appendCachedRun keeps a repeat question when the run id is new", () => {
+  // Instinct QA 2026-09-27: appendCachedRun dropped immediate repeats
+  // with no time check. The stable id distinguishes a re-render
+  // (same id -> drop) from a genuinely re-asked question (new id -> keep).
+  installLocalStorage();
+  appendCachedRun("t-15", run("q1", "2026-09-27T20:00:00Z", "run-one"));
+  appendCachedRun("t-15", run("q1", "2026-09-27T20:00:01Z", "run-one")); // re-render
+  appendCachedRun("t-15", run("q1", "2026-09-27T20:00:02Z", "run-two")); // re-asked
+  const cached = loadCachedRuns("t-15");
+  assert.deepEqual(cached.map((r) => r.id), ["run-one", "run-two"]);
+});
+
 // --- Client-side watchdogs on postChatStream ---
 // The 2026-09-27 P0 fix added three watchdogs: 90s dead connection (no bytes
 // at all), 3-min no-PROGRESS (v1 only -- pings flow but no real events), and

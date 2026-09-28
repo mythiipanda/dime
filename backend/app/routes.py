@@ -102,7 +102,7 @@ def _sanitize_sse_event(etype: str, data: dict) -> dict:
     public_fields = {
         "node_update": ("node", "status"),
         "custom_data": ("node", "tables", "unverified_numbers"),
-        "final_answer": ("text", "carry"),
+        "final_answer": ("text", "carry", "run_id"),
         "suggestions": ("items",),
         "graph_end": ("ok",),
     }
@@ -293,7 +293,9 @@ async def _stream(
     async def gen():
         import asyncio
         import json as _json
+        import uuid
 
+        run_id = f"run-{uuid.uuid4().hex}"
         final = ""
         tables: list[dict] = []
         suggestions: list[str] = []
@@ -315,6 +317,10 @@ async def _stream(
             ):
                 if event["type"] == "final_answer":
                     final = str(event["data"].get("text", ""))
+                    # Carry the server-generated run id through the
+                    # sanitizer so the frontend can dedupe this exact
+                    # run against the persisted /threads/{id}/runs copy.
+                    event["data"]["run_id"] = run_id
                 elif event["type"] == "ledger_facts":
                     _lf = event["data"].get("facts")
                     if thread and isinstance(_lf, list):
@@ -356,7 +362,7 @@ async def _stream(
             store.save_chat(thread, "ai", final, owner=client[:80])
             store.save_run(
                 thread, question[:2000], final, tables, suggestions,
-                owner=client[:80])
+                owner=client[:80], run_id=run_id)
 
     async for chunk in with_heartbeat(gen()):
         yield chunk
