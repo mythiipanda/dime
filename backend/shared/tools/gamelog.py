@@ -113,13 +113,18 @@ def _load_games(table: str, season: str,
         tables = {r[0] for r in con.execute("SHOW TABLES").fetchall()}
         if table not in tables:
             return []
+        # Provenance rides every silver row, but older warehouse copies
+        # may lack it: only select it when the column exists.
+        info = con.execute(f"PRAGMA table_info({table})").fetchall()
+        has_fetched = any(str(r[1]).upper() == "_FETCHED_AT" for r in info)
+        sel = cols + (("_fetched_at",) if has_fetched else ())
         where = "_season = ?"
         params: list[object] = [season]
         if pid is not None:
             where = "Player_ID = ? AND " + where
             params = [pid, season]
         fetched = con.execute(
-            "SELECT Player_ID, " + ", ".join(cols) + f" FROM {table}"
+            "SELECT Player_ID, " + ", ".join(sel) + f" FROM {table}"
             " WHERE " + where,
             params,
         ).fetchall()
@@ -127,7 +132,7 @@ def _load_games(table: str, season: str,
         con.close()
     games = []
     for raw in fetched:
-        r = dict(zip(("Player_ID",) + cols, raw))
+        r = dict(zip(("Player_ID",) + sel, raw))
         d = parse_game_date(r.get("GAME_DATE"))
         if d is None:
             continue
@@ -154,6 +159,7 @@ def _load_games(table: str, season: str,
             "fg3a": _f(r.get("FG3A")),
             "plus_minus": _f(r.get("PLUS_MINUS")),
             "dd_count": _dd_count(r),
+            "_fetched_at": r.get("_fetched_at"),
         })
     games.sort(key=lambda g: g["date"], reverse=True)
     return games
@@ -304,31 +310,137 @@ def _game_signature(g: dict[str, Any]) -> tuple:
     )
 
 
+def _game_key(g: dict[str, Any]) -> tuple:
+    """Identity of a game independent of its stat line.
+
+    An entity (player or team) plays at most one game per day, so
+    entity + date + matchup identifies the game even when two seeds
+    disagree on the stats.
+    """
+    date = g.get("date")
+    if isinstance(date, _dt.datetime):
+        date = date.date()
+    return (
+        g.get("player_id"),
+        date.isoformat() if isinstance(date, _dt.date) else date,
+        g.get("matchup"),
+    )
+
+
+def _fetch_rank(value: object) -> tuple[int, _dt.datetime]:
+    """Order key for provenance: rows fetched later sort first.
+
+    Stat corrections land after the game, so a later fetch of the
+    same game carries the corrected line. Unparseable or missing
+    timestamps rank as oldest.
+    """
+    oldest = (0, _dt.datetime.min)
+    if value is None:
+        return oldest
+    if isinstance(value, _dt.datetime):
+        dt = value
+    elif isinstance(value, _dt.date):
+        dt = _dt.datetime.combine(value, _dt.time.min)
+    else:
+        s = str(value).strip()
+        if not s:
+            return oldest
+        dt = None
+        try:
+            dt = _dt.datetime.fromisoformat(s)
+        except ValueError:
+            for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%d",
+                        "%Y-%m-%dT%H:%M:%S"):
+                try:
+                    dt = _dt.datetime.strptime(s, fmt)
+                    break
+                except ValueError:
+                    continue
+        if dt is None:
+            return oldest
+    if dt.tzinfo is not None:
+        dt = dt.astimezone(_dt.timezone.utc).replace(tzinfo=None)
+    return (1, dt)
+
+
+def _pick_canonical(rows: list[dict[str, Any]], sig_of,
+                    stat_keys: list[str]) -> tuple[dict[str, Any], bool]:
+    """Pick the canonical row among duplicate rows of one game.
+
+    rows: duplicate rows sharing a game key. sig_of: row -> hashable
+    full-stat identity. stat_keys: stat columns for the completeness
+    tie-break. Returns (winner, conflicted): conflicted is True when
+    the rows disagreed on the stat line, i.e. the seeds genuinely
+    conflict rather than re-stating the same row.
+    """
+    if len({sig_of(r) for r in rows}) == 1:
+        return rows[0], False
+    order = sorted(
+        range(len(rows)),
+        key=lambda i: (
+            _fetch_rank(rows[i].get("_fetched_at")),
+            sum(1 for k in stat_keys if rows[i].get(k) is not None),
+            -i,
+        ),
+        reverse=True,
+    )
+    return rows[order[0]], True
+
+
+_DICT_STAT_KEYS = ["min", "pts", "reb", "ast", "stl", "blk", "tov", "pf",
+                   "fgm", "fga", "fg3m", "fg3a", "plus_minus"]
+
+
 def _dedupe_games(games: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """Collapse duplicate game rows, keeping the first occurrence.
+    """Collapse duplicate game rows, keeping one canonical row per game.
 
     The warehouse is append-seeded, so a re-seed can store one game
     twice. Game_ID collapses same-source re-seeds; the full stat
     signature additionally collapses cross-seed duplicates whose
     Game_ID formats differ, and rows with no Game_ID at all.
+    Near-duplicates (same game, disagreeing stats -- e.g. a stat
+    correction re-seeded as OREB 3 over OREB 2) collapse to the
+    canonical row: the most recently fetched line wins, then the most
+    complete stat line, then first occurrence. The winner is flagged
+    with stat_conflict=True so callers can surface the disagreement
+    instead of silently picking.
     """
-    seen_ids: set = set()
-    seen_sigs: set = set()
-    unique: list[dict[str, Any]] = []
+    groups: dict[tuple, list[dict[str, Any]]] = {}
+    order: list[tuple] = []
     for g in games:
-        gid = g.get("game_id")
-        sig = _game_signature(g)
-        # Game_IDs are per-game, not per-player: in league-wide loads two
-        # players' rows for the same game share one Game_ID, so the id key
-        # is scoped to the entity.
-        id_key = (g.get("player_id"), gid)
-        if (gid is not None and gid != "" and id_key in seen_ids) or sig in seen_sigs:
-            continue
-        if gid is not None and gid != "":
-            seen_ids.add(id_key)
-        seen_sigs.add(sig)
-        unique.append(g)
+        key = _game_key(g)
+        if key not in groups:
+            groups[key] = []
+            order.append(key)
+        groups[key].append(g)
+    unique: list[dict[str, Any]] = []
+    for key in order:
+        winner, conflicted = _pick_canonical(
+            groups[key], _game_signature, _DICT_STAT_KEYS)
+        if conflicted:
+            winner = dict(winner)
+            winner["stat_conflict"] = True
+        unique.append(winner)
     return unique
+
+
+def _frame_game_date_key() -> "pl.Expr":
+    """Canonical game-date string for grouping warehouse rows.
+
+    Seeds write GAME_DATE as nba_api-style "APR 01, 2026" or ISO
+    "2026-04-01"; normalize both to ISO so the same game groups
+    together regardless of which seed wrote it. Unparseable values
+    fall back to the raw string.
+    """
+    import polars as pl
+
+    parsed = (
+        pl.col("GAME_DATE").str.strptime(pl.Date, "%b %d, %Y", strict=False)
+        .fill_null(pl.col("GAME_DATE").str.strptime(pl.Date, "%Y-%m-%d",
+                                                    strict=False))
+    )
+    return pl.coalesce([parsed.cast(pl.String),
+                        pl.col("GAME_DATE").cast(pl.String)])
 
 
 def dedupe_game_log_frame(frame):
@@ -342,13 +454,37 @@ def dedupe_game_log_frame(frame):
     match can only be a re-seed duplicate. Keeps the first occurrence
     and preserves row order. Frames without game-log columns are
     returned unchanged.
+    Near-duplicates (same game, disagreeing stats — a re-seeded stat
+    correction) collapse to the canonical row: the most recently
+    fetched line wins, then the most complete stat line, then first
+    occurrence. No columns are added or removed.
     """
+    import polars as pl
+
     cols = frame.columns
     if "GAME_DATE" not in cols or ("Player_ID" not in cols and "Team_ID" not in cols):
         return frame
     sig = [c for c in cols
            if c not in ("Game_ID", "_source", "_season", "_fetched_at", "_entity")]
-    return frame.unique(subset=sig, keep="first", maintain_order=True)
+    entity = "Player_ID" if "Player_ID" in cols else "Team_ID"
+    if "MATCHUP" not in cols:
+        return frame.unique(subset=sig, keep="first", maintain_order=True)
+    stat_keys = [c for c in sig if c not in (entity, "GAME_DATE", "MATCHUP")]
+    tmp = (frame.with_row_index("_ri")
+           .with_columns(_frame_game_date_key().alias("_gdate")))
+    winners: list[int] = []
+    for part in tmp.partition_by([entity, "_gdate", "MATCHUP"],
+                                 maintain_order=True, as_dict=False):
+        rows = part.to_dicts()
+        winner, _conflicted = _pick_canonical(
+            rows, lambda r: tuple(r.get(c) for c in sig), stat_keys
+        )
+        winners.append(winner["_ri"])
+    return (
+        tmp.filter(pl.col("_ri").is_in(winners))
+        .sort("_ri")
+        .drop(["_ri", "_gdate"])
+    )
 
 
 def _record_for_scope(games: list[dict[str, Any]], scope: str) -> dict[str, Any]:
@@ -413,7 +549,7 @@ def _describe_filters(f: dict[str, Any], playoffs: bool = False) -> str:
 
 
 def _row_out(g: dict[str, Any]) -> dict[str, Any]:
-    return {
+    out = {
         "date": g["date"].isoformat(),
         "game_id": g.get("game_id"),
         "opponent": g["opponent"],
@@ -432,6 +568,12 @@ def _row_out(g: dict[str, Any]) -> dict[str, Any]:
         "plus_minus": g["plus_minus"],
         "wl": g["wl"],
     }
+    # Near-duplicate seeds disagreed on this game's stat line; the
+    # canonical (most recently fetched) row is shown, flagged so the
+    # answer can note the discrepancy instead of hiding it.
+    if g.get("stat_conflict"):
+        out["stat_conflict"] = True
+    return out
 
 
 @tool

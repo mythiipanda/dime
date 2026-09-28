@@ -41,8 +41,12 @@ def _full_row(gid, wl, date, pts=20.0, pid=2544, matchup="LAL vs. UTA"):
 
 
 def test_dedupe_collapses_duplicate_game_id():
-    rows = [_row("0022500001", "W"), _row("0022500001", "W"),
-            _row("0022500002", "L")]
+    # Game identity is entity + date + matchup (Game_ID formats differ
+    # across seeds, so Game_ID alone is not identity). Same-game rows
+    # collapse; the different-date row is a different game and is kept.
+    rows = [_full_row("0022500001", "W", "2026-03-01"),
+            _full_row("0022500001", "W", "2026-03-01"),
+            _full_row("0022500002", "L", "2026-03-03")]
     unique = _dedupe_games(rows)
     assert [g["game_id"] for g in unique] == ["0022500001", "0022500002"]
     assert _record_for_scope(unique, "regular") == {
