@@ -64,6 +64,10 @@ def tool_label(name: str, desk: bool = False) -> str:
     return name.replace("_", " ").strip().title() or "Checking data"
 
 MAX_ROWS = 25
+# Months when NBA games can be scheduled (Oct-Jun). Jul-Sep is the
+# offseason: no scoreboard lookups can return games, so callers skip
+# the live API and serve warehouse data immediately.
+IN_SEASON_MONTHS = frozenset({10, 11, 12, 1, 2, 3, 4, 5, 6})
 TTL_SCOREBOARD_PAST = 12 * 3600
 TTL_GAMELOG = 6 * 3600
 TTL_PBPSTATS = 24 * 3600

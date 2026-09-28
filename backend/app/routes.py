@@ -506,9 +506,12 @@ async def chat_stream_post(request: Request, body: ChatBody):
 
 @router.get("/today")
 async def api_today(season: str = Query("2025-26")):
+    import asyncio
     from shared.tools.today import get_today
     import json
-    res = get_today.invoke({"season": season})
+    loop = asyncio.get_running_loop()
+    res = await loop.run_in_executor(
+        None, lambda: get_today.invoke({"season": season}))
     return json.loads(res) if isinstance(res, str) else res
 
 

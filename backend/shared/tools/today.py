@@ -3,7 +3,65 @@
 from typing import Any
 from langchain_core.tools import tool
 
-from ._core import SEASON
+from ._core import IN_SEASON_MONTHS, SEASON, season_static
+
+
+def _in_offseason() -> bool:
+    """True when no NBA games can be scheduled (Jul-Sep)."""
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+
+    return datetime.now(ZoneInfo("America/New_York")).month not in IN_SEASON_MONTHS
+
+
+def _warehouse_has_games(season: str, dates: list[str]) -> bool:
+    """Warehouse-only check: any scoreboard rows for these date entities."""
+    try:
+        from .. import store as _store
+
+        frame = _store.read_frame(
+            "silver_scoreboard",
+            "_season = ? AND _entity IN ("
+            + ",".join("?" for _ in dates) + ")",
+            [season, *(f"date:{d}" for d in dates)],
+        )
+        return frame.height > 0
+    except Exception:
+        return True
+
+
+def _warehouse_games(date_str: str, season: str) -> list:
+    """Warehouse-only scoreboard rows for one date. Never calls the live API."""
+    try:
+        from .. import store as _store
+        from .team import game_links
+
+        frame = _store.read_frame(
+            "silver_scoreboard",
+            "_season = ? AND _entity = ?",
+            [season, f"date:{date_str}"],
+        )
+        rows = frame.to_dicts() if frame.height else []
+        for r in rows:
+            gid = r.get("GAME_ID")
+            if gid:
+                r["LINKS"] = game_links(str(gid))
+        return rows
+    except Exception:
+        return []
+
+
+def _live_scores_needed(season: str, dates: list[str]) -> bool:
+    """Skip the live score lookup when it cannot return games.
+
+    A finished season is frozen in the warehouse; in the offseason the
+    schedule has no games, so a live lookup only burns timeouts.
+    """
+    if season_static(season):
+        return False
+    if _in_offseason() and not _warehouse_has_games(season, dates):
+        return False
+    return True
 
 
 def _games(date_str: str, season: str) -> list:
@@ -36,6 +94,9 @@ def _scoreboards(season: str) -> tuple[list, list]:
     now = datetime.now(ZoneInfo("America/New_York"))
     yesterday = (now - _td(days=1)).strftime("%m/%d/%Y")
     today = now.strftime("%m/%d/%Y")
+    if not _live_scores_needed(season, [yesterday, today]):
+        return (_warehouse_games(yesterday, season),
+                _warehouse_games(today, season))
     with concurrent.futures.ThreadPoolExecutor(max_workers=2) as ex:
         last = ex.submit(_games, yesterday, season)
         tonight = ex.submit(_games, today, season)

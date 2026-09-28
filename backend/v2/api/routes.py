@@ -747,7 +747,9 @@ async def today(season: str = Query("2025-26")):
     """Today's games slate (v1 parity)."""
     from shared.tools.today import get_today
 
-    res = get_today.invoke({"season": season})
+    loop = asyncio.get_running_loop()
+    res = await loop.run_in_executor(
+        None, lambda: get_today.invoke({"season": season}))
     return json.loads(res) if isinstance(res, str) else res
 
 

@@ -8,7 +8,7 @@ from langchain_core.tools import tool
 
 from .. import store
 from ..sources import nba_stats
-from ._core import SEASON, TTL_LEADERS, TTL_SCOREBOARD_PAST, clamp_stat, _warehouse_or_live, is_past_game_date
+from ._core import IN_SEASON_MONTHS as _IN_SEASON_MONTHS, SEASON, TTL_LEADERS, TTL_SCOREBOARD_PAST, clamp_stat, _warehouse_or_live, is_past_game_date
 from .rating_metrics import RANKING_DIRECTIONS, TEAM_RATING_METRICS
 
 # Closed enums shared by the tool schema, the v2 catalog, and the verifiers.
@@ -4049,7 +4049,6 @@ def get_leaderboard_deltas(season: str = SEASON, days: int = 7) -> dict[str, Any
 
 
 _DAY = 24 * 3600
-_IN_SEASON_MONTHS = frozenset({10, 11, 12, 1, 2, 3, 4, 5, 6})
 
 # table -> (expected-cadence label, max age seconds; None = static, never stale)
 FRESHNESS_RULES: dict[str, tuple[str, float | None]] = {
