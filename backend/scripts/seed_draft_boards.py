@@ -14,7 +14,6 @@ Usage:
 
 import sys
 import time
-from datetime import datetime, timezone
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
@@ -26,9 +25,6 @@ from shared.sources import tankathon as _tk
 
 BRONZE = "bronze_draft_boards"
 SILVER = "silver_draft_boards"
-
-_DTYPE_SQL = {pl.String: "VARCHAR", pl.Int64: "BIGINT",
-              pl.Float64: "DOUBLE", pl.Boolean: "BOOLEAN"}
 
 
 def _canon(frame: pl.DataFrame) -> pl.DataFrame:
@@ -46,47 +42,18 @@ def _canon(frame: pl.DataFrame) -> pl.DataFrame:
     return frame.select(exprs)
 
 
-def _save(table: str, frame: pl.DataFrame, season: str, board: str,
-          fetched_at: str) -> int:
-    frame = _canon(frame).with_columns([
-        pl.lit(_tk.SOURCE).alias("_source"),
-        pl.lit(season).alias("_season"),
-        pl.lit(fetched_at).alias("_fetched_at"),
-        pl.lit(board).alias("_entity"),
-    ])
-    con = store.connect(read_only=False)
-    try:
-        with store.write_guard():
-            con.register("_incoming", frame.clear().to_arrow())
-            con.execute(f"CREATE TABLE IF NOT EXISTS {table} AS "
-                        "SELECT * FROM _incoming LIMIT 0")
-            have = [r[1] for r in con.execute(
-                f"PRAGMA table_info({table})").fetchall()]
-            for c, dt in frame.schema.items():
-                if c not in have:
-                    con.execute(f'ALTER TABLE {table} ADD COLUMN "{c}" '
-                                f'{_DTYPE_SQL.get(dt, "VARCHAR")}')
-                    have.append(c)
-            con.unregister("_incoming")
-            con.execute(f"DELETE FROM {table} WHERE _season = ? "
-                        "AND _entity = ?", [season, board])
-            select = ", ".join(
-                f'"{c}"' if c in frame.columns else f'NULL AS "{c}"'
-                for c in have)
-            con.register("_incoming", frame.to_arrow())
-            con.execute(f"INSERT INTO {table} SELECT {select} FROM _incoming")
-            con.unregister("_incoming")
-            con.execute(
-                "INSERT INTO fetch_log VALUES (?,?,?,?,?,?)",
-                [table, season, board, _tk.SOURCE, fetched_at,
-                 frame.height])
-            return frame.height
-    finally:
-        con.close()
+def _save(table: str, frame: pl.DataFrame, season: str, board: str) -> int:
+    """Idempotent per-board replace + watermark, one transaction.
+
+    store.write_unit runs DELETE + INSERT + watermark atomically: a crash
+    rolls back to the previous complete board, so a rerun redoes the
+    board instead of skipping it.
+    """
+    return store.write_unit(table, _canon(frame), season, _tk.SOURCE, board,
+                            "_season = ? AND _entity = ?", [season, board])
 
 
 def main() -> int:
-    fetched_at = datetime.now(timezone.utc).isoformat()
     total = 0
     for board, fn in (("mock_draft", _tk.mock_draft),
                       ("big_board", _tk.big_board)):
@@ -95,14 +62,14 @@ def main() -> int:
             print(f"{board}: FAILED {res.error}", flush=True)
             return 1
         season = res.meta.season
-        n_bronze = _save(BRONZE, res.frame, season, board, fetched_at)
+        n_bronze = _save(BRONZE, res.frame, season, board)
         # Silver: normalize pick/rank into one ORDER column.
         frame = res.frame
         if "PICK" in frame.columns:
             frame = frame.rename({"PICK": "ORDER"})
         elif "RANK" in frame.columns:
             frame = frame.rename({"RANK": "ORDER"})
-        n_silver = _save(SILVER, frame, season, board, fetched_at)
+        n_silver = _save(SILVER, frame, season, board)
         total += n_silver
         print(f"{board} ({season}): bronze {n_bronze} rows, "
               f"silver {n_silver} rows", flush=True)

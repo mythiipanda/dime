@@ -206,42 +206,145 @@ def save_frame(
     con = connect(read_only=False)
     try:
         with write_guard():
-            con.register("_incoming", frame.to_arrow())
-            con.execute(
-                f"""CREATE TABLE IF NOT EXISTS {table} AS
-                SELECT * FROM _incoming LIMIT 0"""
-            )
-            have = [r[1] for r in con.execute(f"PRAGMA table_info({table})").fetchall()]
-            incoming = frame.columns
-            if set(have) != set(incoming):
-                con.execute(f"DROP TABLE {table}")
-                con.execute(f"CREATE TABLE {table} AS SELECT * FROM _incoming")
-            cols = ", ".join(f'"{c}"' for c in have) if set(have) == set(incoming) else "*"
-            if replace_season:
-                if entity:
+            # DELETE + INSERT + watermark are one transaction: a crash
+            # mid-save rolls back to the previous complete state instead
+            # of leaving partial rows or a watermark without data.
+            con.execute("BEGIN TRANSACTION")
+            try:
+                con.register("_incoming", frame.to_arrow())
+                con.execute(
+                    f"""CREATE TABLE IF NOT EXISTS {table} AS
+                    SELECT * FROM _incoming LIMIT 0"""
+                )
+                have = [r[1] for r in con.execute(f"PRAGMA table_info({table})").fetchall()]
+                incoming = frame.columns
+                if set(have) != set(incoming):
+                    con.execute(f"DROP TABLE {table}")
+                    con.execute(f"CREATE TABLE {table} AS SELECT * FROM _incoming")
+                cols = ", ".join(f'"{c}"' for c in have) if set(have) == set(incoming) else "*"
+                if replace_season:
+                    if entity:
+                        con.execute(
+                            "DELETE FROM {table} WHERE _season = ? AND _entity = ?"
+                            .format(table=table),
+                            [result.meta.season, entity],
+                        )
+                    else:
+                        con.execute(
+                            f"DELETE FROM {table} WHERE _season = ?",
+                            [result.meta.season],
+                        )
+                con.execute(f"INSERT INTO {table} SELECT {cols} FROM _incoming")
+                con.execute(
+                    "INSERT INTO fetch_log VALUES (?,?,?,?,?,?)",
+                    [
+                        table,
+                        result.meta.season,
+                        entity,
+                        result.meta.source,
+                        result.meta.fetched_at,
+                        frame.height,
+                    ],
+                )
+                con.execute("COMMIT")
+                return frame.height
+            except Exception:
+                try:
+                    con.execute("ROLLBACK")
+                except Exception:
+                    pass
+                raise
+    finally:
+        con.close()
+
+
+_UNIT_DTYPE_SQL = {
+    pl.Int8: "TINYINT", pl.Int16: "SMALLINT",
+    pl.Int32: "INTEGER", pl.Int64: "BIGINT",
+    pl.UInt8: "UTINYINT", pl.UInt16: "USMALLINT",
+    pl.UInt32: "UINTEGER", pl.UInt64: "UBIGINT",
+    pl.Float32: "FLOAT", pl.Float64: "DOUBLE",
+    pl.Boolean: "BOOLEAN", pl.String: "VARCHAR",
+    pl.Date: "DATE", pl.Datetime: "TIMESTAMP",
+}
+
+
+def write_unit(table: str, frame: pl.DataFrame, season: str, source: str,
+               entity: str, delete_where: str, delete_params: list,
+               _fault: str | None = None) -> int:
+    """Atomically replace one backfill unit: DELETE + INSERT + watermark.
+
+    The DELETE, the INSERT, and the fetch_log watermark write run in a
+    SINGLE transaction. A crash at any point rolls back to the complete
+    previous state: never partial rows, never a watermark without data.
+    A rerun therefore redoes the unit instead of skipping it.
+
+    _fault is a crash-simulation seam for tests: "after_delete" or
+    "after_insert" raises mid-transaction; "hang" sleeps mid-transaction
+    (for kill -9 drills).
+    """
+    if frame.height == 0:
+        return 0
+    from datetime import datetime, timezone
+    fetched_at = datetime.now(timezone.utc).isoformat()
+    frame = frame.with_columns([
+        pl.lit(source).alias("_source"),
+        pl.lit(season).alias("_season"),
+        pl.lit(fetched_at).alias("_fetched_at"),
+        pl.lit(entity).alias("_entity"),
+    ])
+    con = connect(read_only=False)
+    try:
+        with write_guard():
+            con.execute("BEGIN TRANSACTION")
+            try:
+                con.register("_incoming", frame.clear().to_arrow())
+                try:
                     con.execute(
-                        "DELETE FROM {table} WHERE _season = ? AND _entity = ?"
-                        .format(table=table),
-                        [result.meta.season, entity],
+                        f"""CREATE TABLE IF NOT EXISTS {table} AS
+                        SELECT * FROM _incoming LIMIT 0"""
                     )
-                else:
+                    have = {r[1] for r in con.execute(
+                        f"PRAGMA table_info({table})").fetchall()}
+                    for name, dtype in frame.schema.items():
+                        if name not in have:
+                            con.execute(
+                                f'ALTER TABLE {table} ADD COLUMN "{name}" '
+                                f"{_UNIT_DTYPE_SQL.get(dtype, 'VARCHAR')}"
+                            )
+                    cols = [r[1] for r in con.execute(
+                        f"PRAGMA table_info({table})").fetchall()]
+                finally:
+                    con.unregister("_incoming")
+                con.execute(
+                    f"DELETE FROM {table} WHERE {delete_where}", delete_params)
+                if _fault == "after_delete":
+                    raise RuntimeError("simulated crash after DELETE")
+                if _fault == "hang":
+                    time.sleep(120)
+                select = ", ".join(
+                    f'"{c}"' if c in frame.columns else f'NULL AS "{c}"'
+                    for c in cols)
+                con.register("_incoming", frame.to_arrow())
+                try:
                     con.execute(
-                        f"DELETE FROM {table} WHERE _season = ?",
-                        [result.meta.season],
-                    )
-            con.execute(f"INSERT INTO {table} SELECT {cols} FROM _incoming")
-            con.execute(
-                "INSERT INTO fetch_log VALUES (?,?,?,?,?,?)",
-                [
-                    table,
-                    result.meta.season,
-                    entity,
-                    result.meta.source,
-                    result.meta.fetched_at,
-                    frame.height,
-                ],
-            )
-            return frame.height
+                        f"INSERT INTO {table} SELECT {select} FROM _incoming")
+                finally:
+                    con.unregister("_incoming")
+                if _fault == "after_insert":
+                    raise RuntimeError("simulated crash after INSERT")
+                con.execute(
+                    "INSERT INTO fetch_log VALUES (?,?,?,?,?,?)",
+                    [table, season, entity, source, fetched_at, frame.height],
+                )
+                con.execute("COMMIT")
+                return frame.height
+            except Exception:
+                try:
+                    con.execute("ROLLBACK")
+                except Exception:
+                    pass
+                raise
     finally:
         con.close()
 

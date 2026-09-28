@@ -195,14 +195,10 @@ def season_games(season: str, sleep_s: float, state: dict) -> list[str]:
 # --------------------------------------------------------------------------
 # warehouse writes (per-game, drift-tolerant, never drop tables)
 # --------------------------------------------------------------------------
-
-_DTYPE_SQL = {
-    pl.String: "VARCHAR",
-    pl.Int64: "BIGINT",
-    pl.Float64: "DOUBLE",
-    pl.Boolean: "BOOLEAN",
-    pl.Date: "DATE",
-}
+#
+# All writes go through store.write_unit: DELETE + INSERT + watermark in
+# a SINGLE transaction, so a crash rolls back to the previous complete
+# state and a rerun redoes the unit instead of skipping it.
 
 
 def _canon(frame: pl.DataFrame) -> pl.DataFrame:
@@ -224,30 +220,15 @@ def _canon(frame: pl.DataFrame) -> pl.DataFrame:
     return frame.select(exprs)
 
 
-def _ensure_table(con, table: str, frame: pl.DataFrame) -> list[str]:
-    con.register("_incoming", frame.clear().to_arrow())
-    con.execute(f"CREATE TABLE IF NOT EXISTS {table} AS "
-                "SELECT * FROM _incoming LIMIT 0")
-    have = [r[1] for r in con.execute(f"PRAGMA table_info({table})")
-            .fetchall()]
-    types = {r[1]: r[2] for r in con.execute(f"PRAGMA table_info({table})")
-             .fetchall()}
-    for c, dt in frame.schema.items():
-        if c not in have:
-            con.execute(f'ALTER TABLE {table} ADD COLUMN "{c}" '
-                        f'{_DTYPE_SQL.get(dt, "VARCHAR")}')
-            have.append(c)
-    con.unregister("_incoming")
-    return have
-
-
 def insert_game_rows(table: str, frame: pl.DataFrame, season: str,
                      source: str, entity: str, game_id: str,
                      view: str = "") -> int:
     """Idempotent per-game write: delete this game's rows, then insert.
 
     Never drops the table; absorbs column drift via ALTER TABLE.
-    Also appends the fetch_log watermark row.
+    The DELETE, INSERT, and fetch_log watermark run in a SINGLE
+    transaction (store.write_unit): a crash rolls back to the previous
+    complete state, so a rerun redoes the game instead of skipping it.
     """
     if frame.height == 0:
         return 0
@@ -257,39 +238,15 @@ def insert_game_rows(table: str, frame: pl.DataFrame, season: str,
     if "GAME_ID" not in frame.columns and "gameId" in frame.columns:
         frame = frame.with_columns(
             pl.col("gameId").cast(pl.String).alias("GAME_ID"))
-    frame = frame.with_columns([
-        pl.lit(source).alias("_source"),
-        pl.lit(season).alias("_season"),
-        pl.lit(_now()).alias("_fetched_at"),
-        pl.lit(entity).alias("_entity"),
-    ])
     if view:
         frame = frame.with_columns(pl.lit(view).alias("VIEW"))
-    fetched_at = frame.get_column("_fetched_at")[0]
-    con = store.connect(read_only=False)
-    try:
-        with store.write_guard():
-            cols = _ensure_table(con, table, frame)
-            where = ["GAME_ID = ?"]
-            params: list = [game_id]
-            if view:
-                where.append('"VIEW" = ?')
-                params.append(view)
-            con.execute(f"DELETE FROM {table} WHERE {' AND '.join(where)}",
-                        params)
-            select = ", ".join(
-                f'"{c}"' if c in frame.columns else f"NULL AS \"{c}\""
-                for c in cols)
-            con.register("_incoming", frame.to_arrow())
-            con.execute(f"INSERT INTO {table} SELECT {select} FROM _incoming")
-            con.unregister("_incoming")
-            con.execute(
-                "INSERT INTO fetch_log VALUES (?,?,?,?,?,?)",
-                [table, season, entity, source, fetched_at, frame.height],
-            )
-            return frame.height
-    finally:
-        con.close()
+    where = ["GAME_ID = ?"]
+    params: list = [game_id]
+    if view:
+        where.append('"VIEW" = ?')
+        params.append(view)
+    return store.write_unit(table, frame, season, source, entity,
+                            " AND ".join(where), params)
 
 
 def watermarked(table: str, season: str, entity: str) -> bool:
@@ -441,33 +398,11 @@ def backfill_lineups(season: str, sleep_s: float, ctr: Counters) -> None:
         frames.append(res.frame.with_columns(
             pl.lit(measure).alias("MEASURE")))
     frame = pl.concat(frames, how="diagonal")
-    frame = _canon(frame).with_columns([
-        pl.lit("nba_api").alias("_source"),
-        pl.lit(season).alias("_season"),
-        pl.lit(_now()).alias("_fetched_at"),
-        pl.lit(entity).alias("_entity"),
-    ])
-    fetched_at = frame.get_column("_fetched_at")[0]
-    con = store.connect(read_only=False)
-    try:
-        with store.write_guard():
-            cols = _ensure_table(con, table=LINEUP_TABLE, frame=frame)
-            con.execute("DELETE FROM silver_lineups WHERE _season = ? "
-                        "AND _entity LIKE 'lineups:%'", [season])
-            select = ", ".join(
-                f'"{c}"' if c in frame.columns else f"NULL AS \"{c}\""
-                for c in cols)
-            con.register("_incoming", frame.to_arrow())
-            con.execute(f"INSERT INTO {LINEUP_TABLE} SELECT {select} "
-                        "FROM _incoming")
-            con.unregister("_incoming")
-            con.execute(
-                "INSERT INTO fetch_log VALUES (?,?,?,?,?,?)",
-                [LINEUP_TABLE, season, entity, "nba_api", fetched_at,
-                 frame.height],
-            )
-    finally:
-        con.close()
+    frame = _canon(frame)  # MEASURE already set per-frame in the loop above
+    # One transaction: DELETE + INSERT + watermark are all-or-nothing,
+    # so a crash can't leave a half-written season or a false watermark.
+    store.write_unit(LINEUP_TABLE, frame, season, "nba_api", entity,
+                     "_season = ? AND _entity LIKE 'lineups:%'", [season])
     print(f"[{season}] lineups: {frame.height} rows", flush=True)
 
 
