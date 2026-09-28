@@ -161,6 +161,16 @@ export function getMovers(season = SEASON, days = 7): Promise<MoversRows> {
   );
 }
 
+export interface FreshRow {
+  table: string;
+  rows: number;
+  last_fetch: string | null;
+}
+
+export function getFreshness(): Promise<FreshRow[]> {
+  return getEnvelope<FreshRow[]>(apiPath("/datasets/freshness"));
+}
+
 export function getBriefing(season = SEASON): Promise<BriefingRows> {
   return getEnvelope<BriefingRows>(
     apiPath(`/briefing?season=${encodeURIComponent(season)}`),

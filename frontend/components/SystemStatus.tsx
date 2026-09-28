@@ -10,6 +10,7 @@ export default function SystemStatus() {
 
   return (
     <details
+      id="system-status"
       className="system-status"
       onToggle={(e) => setOpen((e.target as HTMLDetailsElement).open)}
     >

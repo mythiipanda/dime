@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, type CSSProperties } from "react";
+import { useEffect, useRef, useState, type CSSProperties } from "react";
 import DatasetPanel from "./DatasetPanel";
 import DraftPanel from "./DraftPanel";
 import ExploreIndex from "./ExploreIndex";
@@ -9,6 +9,14 @@ import PlayoffPanel from "./PlayoffPanel";
 import ScoreStrip from "./ScoreStrip";
 import SystemStatus from "./SystemStatus";
 import TradePanel from "./TradePanel";
+import {
+  getFreshness,
+  getMovers,
+  getToday,
+  getWatchlist,
+} from "../lib/api";
+import { summarizeFreshness } from "../lib/freshness";
+import { buildQuickStarters, type QuickStarter } from "../lib/quickStart";
 
 interface ExploreWorkspaceProps {
   activeSection: string;
@@ -45,12 +53,6 @@ function ArrowUpRight({ size = 12 }: { size?: number }) {
   );
 }
 
-const quickQuestions = [
-  ["Player", "Compare Luka Dončić and Shai Gilgeous-Alexander this season"],
-  ["Trade", "Evaluate a realistic high-impact NBA trade through value, fit, contracts, risk, and replaceability."],
-  ["Lineup", "Which NBA lineups are outperforming expectations, and what explains it?"],
-] as const;
-
 export default function ExploreWorkspace({
   activeSection,
   exploreKey,
@@ -58,6 +60,46 @@ export default function ExploreWorkspace({
   onAsk,
 }: ExploreWorkspaceProps) {
   const scrollRootRef = useRef<HTMLDivElement | null>(null);
+  const [starters, setStarters] = useState<QuickStarter[] | null>(null);
+  const [freshLabel, setFreshLabel] = useState<string | null>(null);
+
+  // Phase C: quick-ask starters come from live data (watchlist + weekly
+  // story), and the nav status shows the real freshness summary. Reuses
+  // existing endpoints only; failures degrade silently to the fallback.
+  useEffect(() => {
+    let live = true;
+    Promise.allSettled([
+      getWatchlist(),
+      getMovers(),
+      getToday(),
+      getFreshness(),
+    ]).then(([watch, movers, today, fresh]) => {
+      if (!live) return;
+      setStarters(
+        buildQuickStarters({
+          watchlist:
+            watch.status === "fulfilled" ? watch.value : [],
+          climbers:
+            movers.status === "fulfilled" ? movers.value.climbers : [],
+          streaks:
+            today.status === "fulfilled" ? today.value.streaks : [],
+        }),
+      );
+      if (fresh.status === "fulfilled") {
+        setFreshLabel(summarizeFreshness(fresh.value));
+      }
+    });
+    return () => {
+      live = false;
+    };
+  }, []);
+
+  const openSystemStatus = () => {
+    const el = document.getElementById("system-status");
+    if (!el) return;
+    (el as HTMLDetailsElement).open = true;
+    el.scrollIntoView({ behavior: "smooth", block: "start" });
+  };
 
   useEffect(() => {
     const root = scrollRootRef.current;
@@ -98,14 +140,16 @@ export default function ExploreWorkspace({
 
           <ExploreIndex onJump={jumpTo} />
 
-          <div className="explore-quick-ask">
-            <span className="explore-quick-label">Start with a question</span>
-            <div>
-              {quickQuestions.map(([label, question]) => (
-                <button key={label} onClick={() => onAsk(question)}><span>{label}</span>{question}<span className="explore-quick-go"><ArrowUpRight /></span></button>
-              ))}
+          {starters && (
+            <div className="explore-quick-ask">
+              <span className="explore-quick-label">Start with a question</span>
+              <div>
+                {starters.map(({ label, question }) => (
+                  <button key={`${label}:${question}`} onClick={() => onAsk(question)}><span>{label}</span>{question}<span className="explore-quick-go"><ArrowUpRight /></span></button>
+                ))}
+              </div>
             </div>
-          </div>
+          )}
         </section>
 
         <ScoreStrip />
@@ -124,7 +168,16 @@ export default function ExploreWorkspace({
                 {label}
               </button>
             ))}
-            <span className="explore-nav-status"><span className="status-mark" /> 2025-26</span>
+            {freshLabel && (
+              <button
+                type="button"
+                className="explore-nav-status explore-nav-status-button"
+                onClick={openSystemStatus}
+                title="Open system status"
+              >
+                <span className="status-mark" /> {freshLabel}
+              </button>
+            )}
           </div>
         </nav>
 

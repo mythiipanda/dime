@@ -529,6 +529,9 @@ body {
 .explore-nav button { position: relative; z-index: 1; display: inline-flex; align-items: center; gap: 6px; min-height: 31px; padding: 0 11px; border: 0; border-radius: 7px; color: var(--color-warm-gray); background: transparent; font-size: 13px; cursor: pointer; transition: color 160ms ease, background 160ms ease, transform 120ms ease; }
 .explore-nav button:hover { color: var(--color-ink-black); background: var(--hover-subtle); }.explore-nav button:active { transform: scale(.96); }.explore-nav button.is-active { color: var(--color-ink-black); background: transparent; font-weight: 500; }
 .explore-nav-status { display: inline-flex; align-items: center; gap: 8px; margin-left: auto; padding: 0 10px; color: var(--color-ash-gray); font-size: 12px; }
+.explore-nav button.explore-nav-status-button { min-height: 0; border: 0; border-radius: 0; background: transparent; color: var(--color-ash-gray); font-size: 12px; white-space: nowrap; }
+.explore-nav button.explore-nav-status-button:hover { color: var(--color-ink-black); background: transparent; }
+.explore-nav button.explore-nav-status-button:active { transform: none; }
 .explore-content { display: flex; flex-direction: column; gap: 22px; }.explore-content .card { border-radius: 12px; transition: border-color 180ms ease, box-shadow 180ms ease; }.explore-content .card:hover { border-color: color-mix(in oklab, var(--color-cyan-edge) 24%, var(--color-stone-border)); box-shadow: 0 12px 34px color-mix(in oklab, var(--color-ink-black) 7%, transparent); }
 /* Explore panel chrome (shared PanelHeader + ExplorePanel): design.md is law — kicker 10px/600/.08em, title 16px/500/-.03em. */
 .explore-panel-anchor { scroll-margin-top: 64px; }

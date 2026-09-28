@@ -2,23 +2,15 @@
 
 import { useEffect, useState } from "react";
 import EmptyState from "./EmptyState";
-import { BACKEND } from "../lib/chat";
-import { apiPath } from "../lib/api";
-
-interface FreshRow {
-  table: string;
-  rows: number;
-  last_fetch: string | null;
-}
+import { getFreshness, type FreshRow } from "../lib/api";
 
 export default function FreshnessPanel() {
   const [rows, setRows] = useState<FreshRow[]>([]);
   const [err, setErr] = useState("");
 
   useEffect(() => {
-    fetch(`${BACKEND}${apiPath("/datasets/freshness")}`)
-      .then((r) => r.json())
-      .then((d) => setRows(d.rows || []))
+    getFreshness()
+      .then((rows) => setRows(rows || []))
       .catch(() => setErr("freshness unavailable"));
   }, []);
 
