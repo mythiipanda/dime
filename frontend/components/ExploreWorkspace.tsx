@@ -3,6 +3,7 @@
 import { useEffect, useRef, type CSSProperties } from "react";
 import DatasetPanel from "./DatasetPanel";
 import DraftPanel from "./DraftPanel";
+import ExploreIndex from "./ExploreIndex";
 import LineupPanel from "./LineupPanel";
 import PlayoffPanel from "./PlayoffPanel";
 import ScoreStrip from "./ScoreStrip";
@@ -95,14 +96,7 @@ export default function ExploreWorkspace({
             <button className="explore-ask" onClick={() => onAsk("What is the most important NBA trend in the data right now?")}>Ask Dime <ArrowUpRight /></button>
           </div>
 
-          <div className="explore-index" aria-label="Available analysis">
-            {sections.map(({ id, label }, index) => (
-              <button key={id} onClick={() => jumpTo(id)}>
-                <span className="explore-index-number">0{index + 1}</span>
-                <strong>{label}</strong>
-              </button>
-            ))}
-          </div>
+          <ExploreIndex onJump={jumpTo} />
 
           <div className="explore-quick-ask">
             <span className="explore-quick-label">Start with a question</span>
