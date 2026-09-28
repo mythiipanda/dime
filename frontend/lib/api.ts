@@ -659,6 +659,53 @@ export async function resolveFirstPlayerId(q: string): Promise<number | null> {
   return hit ? hit.id : null;
 }
 
+// Raw resolve rows for the Explore search dropdown. Unlike PlayerHit /
+// TeamHit above, these keep each row's own response fields so the caller
+// can tell a team row from a player row by the row itself: team rows
+// carry an `abbreviation` field, player rows never do. Entity type is
+// read off the row data, never off which array the row arrived in.
+export interface ResolvePlayerRow {
+  id: number;
+  full_name: string;
+}
+
+export interface ResolveTeamRow {
+  id: number;
+  full_name: string;
+  abbreviation?: string | null;
+}
+
+export interface ResolveHits {
+  players: ResolvePlayerRow[];
+  teams: ResolveTeamRow[];
+}
+
+export async function resolveEntities(q: string, limit = 4): Promise<ResolveHits> {
+  try {
+    const res = await fetch(`${BACKEND}${apiPath(`/resolve?q=${encodeURIComponent(q)}`)}`);
+    const data = (await res.json()) as unknown;
+    if (typeof data !== "object" || data === null || !("rows" in data)) return { players: [], teams: [] };
+    const rows = (data as {
+      rows: {
+        players?: { id: number; full_name: string }[];
+        teams?: { id: number; full_name: string; abbreviation?: string }[];
+      };
+    }).rows;
+    return {
+      players: (rows.players || []).slice(0, limit).map((v) => ({ id: v.id, full_name: v.full_name })),
+      // Keep the abbreviation key on every team row (even when null) so
+      // downstream code can identify team rows by field presence.
+      teams: (rows.teams || []).slice(0, limit).map((v) => ({
+        id: v.id,
+        full_name: v.full_name,
+        abbreviation: typeof v.abbreviation === "string" && v.abbreviation ? v.abbreviation : null,
+      })),
+    };
+  } catch {
+    return { players: [], teams: [] };
+  }
+}
+
 export function getQueryParam(key: string): string | null {
   if (typeof window === "undefined") return null;
   return new URLSearchParams(window.location.search).get(key);

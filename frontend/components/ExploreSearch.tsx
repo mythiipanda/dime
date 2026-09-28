@@ -1,12 +1,14 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
-import { resolvePlayers, resolveTeams } from "../lib/api";
-import { abbrForTeamId } from "../lib/teams";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
+import { resolveEntities, type ResolvePlayerRow, type ResolveTeamRow } from "../lib/api";
 import {
+  buildSearchItems,
   contextForResult,
   groupLabel,
   matchStats,
+  placeSearchMenu,
   resultHint,
   type ExploreContext,
   type SearchResult,
@@ -18,6 +20,12 @@ import {
 // Results are clickable: picking one opens the right panel with the
 // query applied. Stat matches come from the Leaders categories;
 // no pattern matching beyond case-insensitive substring.
+//
+// Grouping reads each row's own response fields (see buildSearchItems),
+// so a team row can only land under Teams and a player row only under
+// Players. The dropdown lives in a portal and tracks the search field
+// on scroll/resize (ModelPicker pattern): scrolling repositions it,
+// never closes it.
 export default function ExploreSearch({
   onSelect,
   onAsk,
@@ -26,39 +34,30 @@ export default function ExploreSearch({
   onAsk: (question: string) => void;
 }) {
   const [q, setQ] = useState("");
-  const [players, setPlayers] = useState<{ id: number; name: string }[]>([]);
-  const [teams, setTeams] = useState<{ id: number; name: string; abbr: string | null }[]>([]);
+  const [hits, setHits] = useState<{ players: ResolvePlayerRow[]; teams: ResolveTeamRow[] }>({
+    players: [],
+    teams: [],
+  });
   const [busy, setBusy] = useState(false);
   const [open, setOpen] = useState(false);
   const [active, setActive] = useState(0);
-  const boxRef = useRef<HTMLDivElement>(null);
+  const fieldRef = useRef<HTMLDivElement>(null);
+  const [menuStyle, setMenuStyle] = useState<React.CSSProperties>({});
 
   const needle = q.trim();
 
   useEffect(() => {
     if (needle.length < 2) {
-      setPlayers([]);
-      setTeams([]);
+      setHits({ players: [], teams: [] });
       setBusy(false);
       return;
     }
     setBusy(true);
     const t = setTimeout(async () => {
       try {
-        const [p, tm] = await Promise.all([
-          resolvePlayers(needle, 4),
-          resolveTeams(needle, 4),
-        ]);
-        setPlayers(p);
-        setTeams(
-          tm.map((x) => ({
-            ...x,
-            abbr: x.abbr ?? abbrForTeamId(x.id),
-          })),
-        );
+        setHits(await resolveEntities(needle, 4));
       } catch {
-        setPlayers([]);
-        setTeams([]);
+        setHits({ players: [], teams: [] });
       } finally {
         setBusy(false);
       }
@@ -69,17 +68,39 @@ export default function ExploreSearch({
   const stats = useMemo(() => matchStats(needle), [needle]);
 
   const items: SearchResult[] = useMemo(
-    () => [
-      ...players.map((p): SearchResult => ({ kind: "player", id: p.id, name: p.name })),
-      ...teams.map((x): SearchResult => ({ kind: "team", id: x.id, name: x.name, abbr: x.abbr })),
-      ...stats,
-    ],
-    [players, teams, stats],
+    () => buildSearchItems(hits.players, hits.teams, stats),
+    [hits, stats],
   );
 
   useEffect(() => {
     setActive(0);
-  }, [needle, players.length, teams.length, stats.length]);
+  }, [needle, hits.players.length, hits.teams.length, stats.length]);
+
+  // Position the dropdown in a portal: flip above/below the search
+  // field based on available viewport space, and never let it run
+  // off-screen. Reposition on scroll/resize so the menu tracks the
+  // field while it stays open.
+  const showList = open && needle.length >= 2;
+  useLayoutEffect(() => {
+    if (!showList) return;
+    const position = () => {
+      if (!fieldRef.current) return;
+      const r = fieldRef.current.getBoundingClientRect();
+      setMenuStyle(
+        placeSearchMenu(
+          { top: r.top, bottom: r.bottom, left: r.left, width: r.width },
+          { width: window.innerWidth, height: window.innerHeight },
+        ),
+      );
+    };
+    position();
+    window.addEventListener("scroll", position, true);
+    window.addEventListener("resize", position);
+    return () => {
+      window.removeEventListener("scroll", position, true);
+      window.removeEventListener("resize", position);
+    };
+  }, [showList]);
 
   const groups = useMemo(() => {
     const order: SearchResult["kind"][] = ["player", "team", "stat"];
@@ -92,13 +113,12 @@ export default function ExploreSearch({
     setQ("");
   };
 
-  const showList = open && needle.length >= 2;
   const empty = showList && !busy && items.length === 0;
 
   return (
-    <div className="explore-search" ref={boxRef}>
+    <div className="explore-search">
       <div className="explore-search-row">
-        <div className="explore-search-field">
+        <div className="explore-search-field" ref={fieldRef}>
           <span aria-hidden="true" className="explore-search-icon">⌕</span>
           <input
             role="combobox"
@@ -150,53 +170,65 @@ export default function ExploreSearch({
             onClick={() => setOpen(false)}
             aria-hidden="true"
           />
-          <div
-            id="explore-search-results"
-            className="explore-search-results"
-            role="listbox"
-            aria-label="Search results"
-          >
-            {groups.map((kind) => (
-              <section key={kind}>
-                <h2>{groupLabel(kind)}</h2>
-                {items
-                  .filter((x) => x.kind === kind)
-                  .map((item) => {
-                    const index = items.indexOf(item);
-                    const label =
-                      item.kind === "stat" ? item.stat : item.name;
-                    return (
-                      <button
-                        id={`explore-result-${index}`}
-                        key={`${item.kind}-${label}`}
-                        type="button"
-                        role="option"
-                        aria-selected={index === active}
-                        className={index === active ? "is-active" : ""}
-                        onMouseEnter={() => setActive(index)}
-                        onClick={() => pick(item)}
-                      >
-                        <span>{label}</span>
-                        <small>{resultHint(item)}</small>
-                      </button>
-                    );
-                  })}
-              </section>
-            ))}
-            {empty && <div className="explore-search-empty">No matches</div>}
-            {!empty && needle.length >= 2 && (
-              <button
-                type="button"
-                className="explore-search-ask"
-                onClick={() => {
-                  setOpen(false);
-                  onAsk(`Tell me about ${needle}`);
-                }}
-              >
-                Ask Dime about {needle}
-              </button>
-            )}
-          </div>
+          {createPortal(
+            <div
+              id="explore-search-results"
+              className="explore-search-results"
+              role="listbox"
+              aria-label="Search results"
+              style={{
+                position: "fixed",
+                right: "auto",
+                left: menuStyle.left,
+                width: menuStyle.width,
+                maxHeight: menuStyle.maxHeight,
+                top: menuStyle.top ?? "auto",
+                bottom: menuStyle.bottom ?? "auto",
+              }}
+            >
+              {groups.map((kind) => (
+                <section key={kind}>
+                  <h2>{groupLabel(kind)}</h2>
+                  {items
+                    .filter((x) => x.kind === kind)
+                    .map((item) => {
+                      const index = items.indexOf(item);
+                      const label =
+                        item.kind === "stat" ? item.stat : item.name;
+                      return (
+                        <button
+                          id={`explore-result-${index}`}
+                          key={`${item.kind}-${label}`}
+                          type="button"
+                          role="option"
+                          aria-selected={index === active}
+                          className={index === active ? "is-active" : ""}
+                          onMouseEnter={() => setActive(index)}
+                          onClick={() => pick(item)}
+                        >
+                          <span>{label}</span>
+                          <small>{resultHint(item)}</small>
+                        </button>
+                      );
+                    })}
+                </section>
+              ))}
+              {empty && <div className="explore-search-empty">No matches</div>}
+              {!empty && needle.length >= 2 && (
+                <button
+                  type="button"
+                  className="explore-search-ask"
+                  onClick={() => {
+                    setOpen(false);
+                    onAsk(`Tell me about ${needle}`);
+                  }}
+                >
+                  Ask Dime about {needle}
+                </button>
+              )}
+            </div>,
+            document.body,
+          )}
         </>
       )}
     </div>
