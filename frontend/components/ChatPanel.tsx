@@ -687,7 +687,7 @@ export default function ChatPanel({ thread, onRunDone, preset, onOpenArtifact, a
 
                     {m.ai?.error && (
                       <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 8 }}>
-                        <span style={{ color: "var(--color-ember)", fontSize: 13 }}>{m.ai.error}</span>
+                        <span style={{ color: "var(--color-ember)", fontSize: 13 }}>{m.ai.error} If this keeps happening, switch models and ask again.</span>
                         <button
                           type="button"
                           className="pill-ghost interactive-tactile"
@@ -728,7 +728,7 @@ export default function ChatPanel({ thread, onRunDone, preset, onOpenArtifact, a
                           marginBottom: 8,
                         }}
                       >
-                        Picking up from earlier -{" "}
+                        Picking up from earlier:{" "}
                         {/* Player lane wins: when a player carried, answer-text
                             teams (often just the opponent) are noise. Team-only
                             carry (F67 lane) still names the team. */}
@@ -773,7 +773,7 @@ export default function ChatPanel({ thread, onRunDone, preset, onOpenArtifact, a
                           type="button"
                           className="pill-ghost interactive-tactile"
                           style={{ fontSize: 12, padding: "3px 10px" }}
-                          title="Settle it: open a debate card from this answer"
+                          title="Open a debate card from this answer"
                           onClick={() => {
                             setDebateTopic(
                               messages.slice(0, i).reverse().find((x) => x.role === "human")?.text

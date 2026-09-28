@@ -318,7 +318,7 @@ export default function TodayPanel() {
             ))
           ) : (
             <EmptyState
-              title="Movers unavailable"
+              title="Movers not loaded yet"
               description="Leaderboard movement hasn't loaded yet. Check back soon."
             />
           )}

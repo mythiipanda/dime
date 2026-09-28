@@ -124,7 +124,7 @@ export default function ModelPicker({ models, value, onChange, status = "ready",
           color: "var(--color-ink-black)",
           cursor: "pointer",
         }}
-        title={status === "error" && !models.length ? "Retry loading models" : "Switch AI reasoning model"}
+        title={status === "error" && !models.length ? "Retry loading models" : "Switch model"}
       >
         <span>{displayName(selectedModel?.id)}</span>
         <svg

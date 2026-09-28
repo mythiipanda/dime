@@ -58,7 +58,7 @@ export function parseImpact(input: unknown): ImpactRows | null {
     bars.push({ label: "On-off", value: onoff });
   } else if (lift !== null && prior !== null) {
     bars.push({ label: "On-court lift", value: lift });
-    bars.push({ label: "Box prior", value: prior });
+    bars.push({ label: "Box score prior", value: prior });
   } else if (lift !== null) {
     bars.push({ label: "On-court lift", value: lift });
   }

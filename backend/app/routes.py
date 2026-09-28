@@ -86,7 +86,7 @@ def _sanitize_sse_event(etype: str, data: dict) -> dict:
     if etype == "error":
         node = data.get("node") if isinstance(data, dict) else None
         out: dict = {"status": "fail",
-                     "message": "Something went wrong, try again"}
+                     "message": "The answer didn't finish. Ask again."}
         if node:
             out["node"] = node
         return out

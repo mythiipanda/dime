@@ -12,13 +12,13 @@ export default function FreshnessPanel() {
   useEffect(() => {
     getFreshness()
       .then((rows) => setRows(rows || []))
-      .catch(() => setErr("freshness unavailable"));
+      .catch(() => setErr("Data updates aren't loading. Refresh the page to try again."));
   }, []);
 
   return (
     <div className="card" style={{ marginTop: 16 }}>
       <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 8 }}>
-        Data freshness
+        Data updates
       </div>
       {err && <div style={{ fontSize: 12, color: "var(--color-warm-gray)" }}>{err}</div>}
       {!err && rows.length === 0 && (

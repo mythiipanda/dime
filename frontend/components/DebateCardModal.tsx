@@ -62,7 +62,7 @@ export default function DebateCardModal({
       setRows(r);
       setStatus("ready");
     } catch (e) {
-      setError(e instanceof Error ? e.message : "debate card failed");
+      setError(e instanceof Error ? e.message : "The debate card didn't build. Try again.");
       setStatus("error");
     }
   }
@@ -245,7 +245,7 @@ export default function DebateCardModal({
         </div>
         {status === "error" && (
           <div style={{ fontSize: 14, color: "var(--color-warm-gray)", marginBottom: 12 }}>
-            {error || "Something went wrong."}
+            {error || "The debate card didn't build. Try again."}
           </div>
         )}
         {status === "ready" && rows && (

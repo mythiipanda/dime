@@ -197,7 +197,7 @@ function PairedProbBar({ p, favHome }: { p: PredictionRows; favHome: boolean }) 
         />
       </div>
       <div style={{ fontSize: 11, color: "var(--color-ash-gray)", marginTop: 4 }}>
-        one 100% scale — bar lengths are directly comparable
+        one 100% scale. Bar lengths are directly comparable
       </div>
       {ciLine && (
         <div
@@ -232,7 +232,7 @@ export default function PredictionView({
     .filter(Boolean)
     .join(" · ");
   const seedLine =
-    p.seed !== null ? `Random seed ${Math.round(p.seed)} — reruns with this seed reproduce these numbers.` : "";
+    p.seed !== null ? `Random seed ${Math.round(p.seed)}. Reruns with this seed reproduce these numbers.` : "";
   const extras = [...p.assumptions, ...p.methodology, ...(seedLine ? [seedLine] : []), ...p.limitations];
 
   return (

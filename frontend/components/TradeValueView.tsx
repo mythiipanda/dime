@@ -211,7 +211,7 @@ function SideCard({ side, grade }: { side: TradeSide; grade?: string }) {
                 fontVariantNumeric: "tabular-nums",
               }}
             >
-              {p.ppg !== null ? `${p.ppg.toFixed(1)} ppg` : "no production row"}
+              {p.ppg !== null ? `${p.ppg.toFixed(1)} ppg` : "no stats yet"}
               {p.gp !== null ? ` · ${p.gp} gp` : ""}
               {p.salary !== null ? ` · salary $${(p.salary / 1_000_000).toFixed(1)}M` : ""}
               {p.residualM !== null

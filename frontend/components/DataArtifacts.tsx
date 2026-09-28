@@ -55,7 +55,7 @@ function CitePill({ title, meta }: {
       type="button"
       className="pill-ghost"
       style={{ fontSize: 11, padding: "3px 10px" }}
-      title="Copy a citable source line for this table"
+      title="Copy a source line for this table"
       onClick={() => {
         navigator.clipboard
           .writeText(buildCitation({

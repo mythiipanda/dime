@@ -14,7 +14,7 @@ export default function SystemStatus() {
       className="system-status"
       onToggle={(e) => setOpen((e.target as HTMLDetailsElement).open)}
     >
-      <summary className="system-status-summary">System status</summary>
+      <summary className="system-status-summary">Data updates</summary>
       {open && (
         <div className="system-status-body">
           <FreshnessPanel />

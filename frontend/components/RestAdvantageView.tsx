@@ -111,7 +111,7 @@ function SummaryLine({ s }: { s: RestTeamSummary }) {
         {edge.toFixed(2)} avg edge
       </span>
       <span style={{ fontSize: 12, color: "var(--color-warm-gray)" }}>
-        {s.avgRest !== null ? `${s.avgRest.toFixed(1)}d avg rest` : "no rest baseline"}
+        {s.avgRest !== null ? `${s.avgRest.toFixed(1)}d avg rest` : "no baseline"}
         {s.backToBacks !== null ? ` · ${s.backToBacks} back-to-back` : ""}
       </span>
     </div>
