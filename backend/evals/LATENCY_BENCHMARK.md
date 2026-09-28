@@ -37,13 +37,25 @@ v2 chat path (`backend/v2/runtime/`). LLM = one blocking LLM round-trip.
 
 ## How to run
 
-On a machine with the backend's real deps (sandbox lacks
-langchain/fastapi/warehouse — do NOT attempt here):
+On a machine with the backend's real deps. The sandbox has no fixture
+warehouse and no generated asset manifest, so the serve/bench steps
+below cannot run there — build and serve on a real machine:
 
 ```bash
-# 1. Stable data: build the fixture, point the backend at it, start it.
+# 1. Stable data: build the fixture, bind a manifest to it, start the backend.
+#    Build from the repo root; serve from backend/ (`uvicorn app.main:app`
+#    only resolves with cwd=backend/). Paths must be absolute — store.py
+#    reads DIME_WAREHOUSE as-is, so a relative path breaks under cwd=backend/.
+#    The lifespan preflight refuses to serve without the manifest.
 python3 backend/evals/run.py --build-fixture
-DIME_WAREHOUSE=backend/evals/data/fixture.duckdb uvicorn app.main:app &
+DIME_WAREHOUSE=$PWD/backend/evals/data/fixture.duckdb \
+python3 backend/scripts/generate_asset_manifest.py \
+    backend/evals/data/expected_asset_manifest.json
+cd backend
+DIME_WAREHOUSE=$PWD/evals/data/fixture.duckdb \
+DIME_EXPECTED_ASSET_MANIFEST=$PWD/evals/data/expected_asset_manifest.json \
+uvicorn app.main:app &
+cd ..
 
 # 2. Baseline (control).
 python3 backend/evals/latency_bench.py --base http://localhost:8000 \
@@ -59,8 +71,8 @@ python3 backend/evals/latency_bench.py --compare bench_control.json bench_varian
 
 Controls that make an A/B honest:
 
-- Same warehouse sha (the script labels every report; `--compare` warns
-  on mismatch — a mismatched A/B is INVALID, not a result).
+- Same warehouse sha (the script labels every report; `--compare` fails
+  non-zero on mismatch — a mismatched A/B is INVALID, not a result).
 - Same model (`--model`), same question set, warmup on (default 1), ≥3
   repeats, medians compared.
 - Run A and B back-to-back; provider latency drifts across hours.
@@ -90,6 +102,10 @@ The merge is APPROVED only if ALL of these hold:
 If any criterion fails, option B stays deferred and the next lever is
 re-measured, not argued.
 
+These gates are proposed repo-level checks for this measurement round,
+not a personal sign-off from Tony, and must not be cited as approval
+for a rewrite.
+
 ## Levers worth measuring next (in order, each gated on the same A/B)
 
 1. **Defer suggestions** — the follow-up LLM call (graph.py:5223) fires
@@ -106,8 +122,17 @@ re-measured, not argued.
 ## Sandbox verification of this round's artifacts
 
 - `python3 -m py_compile backend/evals/latency_bench.py` — clean.
-- `python3 backend/evals/latency_bench.py --selftest` — 6 fixture groups
+- `python3 backend/evals/latency_bench.py --selftest` — 7 fixture groups
   pass (timeline parsing, interval clamping, error counting, repeat-node
-  accumulation, unknown-event tolerance, compare math). No network.
+  accumulation, unknown-event tolerance, repeat-median math, compare
+  warehouse gating). No network.
 - stdlib-only import check (AST): no third-party imports.
+- Doc step 1 checked in a scrubbed env (`env -i` with only PATH, HOME,
+  DIME_WAREHOUSE): `import app.main` passes with cwd=backend/ and fails
+  from the repo root, so the `cd backend` is load-bearing; a relative
+  DIME_WAREHOUSE breaks for the same reason — use an absolute path.
+  Serving stops at the lifespan preflight without
+  DIME_EXPECTED_ASSET_MANIFEST, which can only be generated against a
+  built fixture warehouse, so boot past import and GET /api/revision
+  genuinely cannot run here.
 - No product code touched; no routing changes; no regexes added.

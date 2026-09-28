@@ -201,7 +201,7 @@ def run_bench(base: str, runtime: str, model: str | None, repeats: int,
                 print(f"  [{qid} r{r}] {res['total_s']:7.1f}s "
                       f"ttft={res['ttft_s']} errs={res['errors']} "
                       f"answer_chars={res['answer_chars']}", flush=True)
-        questions.append({"id": qid, "turns": rep_turns})
+        questions.append({"id": qid, "n_turns": len(turns), "turns": rep_turns})
     return {
         "base": base,
         "runtime": runtime,
@@ -214,10 +214,22 @@ def run_bench(base: str, runtime: str, model: str | None, repeats: int,
 
 
 def summarize(report: dict) -> dict:
-    """Median per question across repeats (per turn index)."""
+    """Median per question across repeats (per turn index).
+
+    run_bench() lays turns out flat with repeats OUTER and turns INNER
+    ([r0t0, r0t1, r1t0, r1t1, ...]), so repeat r's turn ti sits at flat
+    index r * n_turns + ti. The i % n_turns grouping below collects all
+    repeats of the same turn index, and the median runs across repeats.
+    n_turns comes from the report when run_bench() stored it; older
+    reports without it fall back to the QUESTIONS battery, then to a
+    single group (which keeps the old single-repeat behavior).
+    """
+    battery = {qid: len(turns) for qid, turns in QUESTIONS}
     out: dict[str, dict] = {}
     for q in report["questions"]:
-        n_turns = max((len(t) for t in [q["turns"]]), default=0)
+        n_turns = q.get("n_turns") or battery.get(q["id"]) or 0
+        if n_turns < 1 or n_turns > len(q["turns"]):
+            n_turns = len(q["turns"])
         turns = []
         for ti in range(n_turns):
             group = [t for i, t in enumerate(q["turns"]) if i % n_turns == ti]
@@ -256,13 +268,18 @@ def cmd_compare(a_path: str, b_path: str) -> int:
     a = json.loads(Path(a_path).read_text())
     b = json.loads(Path(b_path).read_text())
     sa, sb = summarize(a), summarize(b)
-    print(f"A: {a_path}  (runtime={a['runtime']}, warehouse={str(a['warehouse_sha256'])[:12]})")
-    print(f"B: {b_path}  (runtime={b['runtime']}, warehouse={str(b['warehouse_sha256'])[:12]})")
+    sha_a, sha_b = a.get("warehouse_sha256"), b.get("warehouse_sha256")
+    print(f"A: {a_path}  (runtime={a['runtime']}, warehouse={str(sha_a)[:12]})")
+    print(f"B: {b_path}  (runtime={b['runtime']}, warehouse={str(sha_b)[:12]})")
     if a["runtime"] != b["runtime"]:
         print("WARNING: runtimes differ; deltas mix v1/v2 path differences.")
-    if a["warehouse_sha256"] and b["warehouse_sha256"] \
-            and a["warehouse_sha256"] != b["warehouse_sha256"]:
-        print("WARNING: warehouse identity differs; deltas are INVALID.")
+    if sha_a and sha_b:
+        if sha_a != sha_b:
+            print("ERROR: warehouse identity differs; deltas are INVALID.")
+            return 2
+    else:
+        print("WARNING: warehouse sha missing on one/both reports; "
+              "cannot verify same-warehouse A/B.")
     hdr = (f"{'question':<20}{'turn':<5}{'Δtotal':>8}{'Δttft':>8} "
            + " ".join(f"Δ{n[:7]:>7}" for n in NODES))
     print("\n" + hdr)
@@ -409,30 +426,92 @@ def selftest() -> int:
     r = _fake_stream(frames)
     check("unknown event ignored", r["node_s"]["entry"], 1.0)
 
-    # 6. compare() math on two fabricated reports.
-    def _rep(sha, totals):
+    # 6. summarize() medians run across repeats, not within them.
+    def _rep(sha, qid, totals, n_turns=None):
+        q = {"id": qid,
+             "turns": [{"q": qid, "total_s": v, "ttft_s": 1.0,
+                        "node_s": {n: 0.0 for n in NODES},
+                        "errors": 0, "tool_calls": 0,
+                        "answer_chars": 5, "empty_answer": False}
+                       for v in totals]}
+        if n_turns is not None:
+            q["n_turns"] = n_turns
         return {"base": "b", "runtime": "v1", "warehouse_sha256": sha,
-                "questions": [
-                    {"id": qid,
-                     "turns": [{"q": qid, "total_s": v, "ttft_s": 1.0,
-                                "node_s": {n: 0.0 for n in NODES},
-                                "errors": 0, "tool_calls": 0,
-                                "answer_chars": 5, "empty_answer": False}]}
-                    for qid, v in totals.items()]}
-    a = _rep("sha", {"q1": 60.0, "q2": 90.0})
-    b = _rep("sha", {"q1": 45.0, "q2": 95.0})
+                "questions": [q]}
+    # 1-turn question, 3 repeats: median of 60/90/120 is 90.
+    s = summarize(_rep("sha", "q1", [60.0, 90.0, 120.0], 1))
+    check("repeat median 1-turn", s["q1"]["turns"][0]["total_s"], 90.0)
+    # 2-turn question, 3 repeats interleaved [r0t0, r0t1, r1t0, r1t1,
+    # r2t0, r2t1]: turn0 median from t0 values, turn1 from t1 values.
+    s = summarize(_rep("sha", "q2", [10.0, 20.0, 30.0, 40.0, 50.0, 60.0], 2))
+    check("repeat median 2-turn t0", s["q2"]["turns"][0]["total_s"], 30.0)
+    check("repeat median 2-turn t1", s["q2"]["turns"][1]["total_s"], 40.0)
+    # Report without n_turns but with a battery id falls back to the
+    # battery turn count ("simple-entity" has 1 turn).
+    s = summarize(_rep("sha", "simple-entity", [60.0, 90.0, 120.0]))
+    check("battery fallback median", s["simple-entity"]["turns"][0]["total_s"],
+          90.0)
+    # Unknown id without n_turns: falls back to one group per turn, each
+    # holding its single entry (the old single-repeat behavior).
+    s = summarize(_rep("sha", "zzz", [60.0, 90.0]))
+    check("unknown id group count", len(s["zzz"]["turns"]), 2)
+    check("unknown id group passthrough", s["zzz"]["turns"][1]["total_s"],
+          90.0)
+    # Delta math between two same-warehouse reports.
+    a = _rep("sha", "q1", [60.0], 1)
+    b = _rep("sha", "q1", [45.0], 1)
     sa, sb = summarize(a), summarize(b)
     check("compare delta q1", sb["q1"]["turns"][0]["total_s"]
           - sa["q1"]["turns"][0]["total_s"], -15.0)
-    check("compare delta q2", sb["q2"]["turns"][0]["total_s"]
-          - sa["q2"]["turns"][0]["total_s"], 5.0)
+
+    # 7. cmd_compare gates on warehouse identity.
+    import contextlib
+    import io
+    import tempfile
+
+    def _write(obj):
+        tf = tempfile.NamedTemporaryFile("w", suffix=".json", delete=False)
+        json.dump(obj, tf)
+        tf.close()
+        return tf.name
+
+    # Matching shas: exit 0.
+    pa = _write(_rep("sha", "q1", [60.0], 1))
+    pb = _write(_rep("sha", "q1", [45.0], 1))
+    buf = io.StringIO()
+    with contextlib.redirect_stdout(buf):
+        rc = cmd_compare(pa, pb)
+    check("compare matching sha exits 0", rc, 0)
+    # Differing shas: non-zero exit, ERROR text, no delta table.
+    pc = _write(_rep("other-sha", "q1", [45.0], 1))
+    buf = io.StringIO()
+    with contextlib.redirect_stdout(buf):
+        rc = cmd_compare(pa, pc)
+    out = buf.getvalue()
+    check("compare mismatched sha exits non-zero", rc != 0, True)
+    check("compare mismatched sha says ERROR",
+          "ERROR: warehouse identity differs; deltas are INVALID." in out, True)
+    check("compare mismatched sha prints no deltas", "Δ = B - A." not in out,
+          True)
+    # One sha missing: exit 0 with warning.
+    pn = _write(_rep(None, "q1", [60.0], 1))
+    buf = io.StringIO()
+    with contextlib.redirect_stdout(buf):
+        rc = cmd_compare(pn, pb)
+    out = buf.getvalue()
+    check("compare missing sha exits 0", rc, 0)
+    check("compare missing sha warns",
+          "WARNING: warehouse sha missing on one/both reports; "
+          "cannot verify same-warehouse A/B." in out, True)
+    for p in (pa, pb, pc, pn):
+        Path(p).unlink()
 
     if fails:
         print("\nSELFTEST FAILURES:")
         for f in fails:
             print(" -", f)
         return 1
-    print(f"\nselftest: all {6} fixture groups pass")
+    print(f"\nselftest: all {7} fixture groups pass")
     return 0
 
 
