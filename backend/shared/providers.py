@@ -370,7 +370,9 @@ async def invoke_with_fallback(
             continue
         started = time.perf_counter()
         try:
-            response = await client.ainvoke(messages, **kwargs)
+            response = await ainvoke_with_first_token_timeout(
+                client, messages,
+                settings.dime_first_token_timeout_s, **kwargs)
             return ProviderInvocation(response=response, provider=name,
                 model=accepted_model,
                 elapsed_ms=int((time.perf_counter() - started_all) * 1000),
@@ -384,6 +386,24 @@ async def invoke_with_fallback(
     detail = " | ".join(
         f"{a['provider']}:{a['message_class']}" for a in attempts)
     raise RuntimeError("all providers failed: " + detail)
+
+
+async def ainvoke_with_first_token_timeout(
+    client: Any,
+    messages: list[BaseMessage],
+    timeout_s: float,
+    **kwargs: Any,
+):
+    """Bound a non-streaming LLM call with the first-token watchdog.
+
+    A provider that accepts the request but never answers has been seen
+    defeating httpx-level timeouts, so every LLM call in the graph
+    (planning, desks, tools, answers) is bounded here at the asyncio
+    level. Raises TimeoutError; callers record it as a provider failure
+    and move on to the next provider.
+    """
+    return await asyncio.wait_for(
+        client.ainvoke(messages, **kwargs), timeout_s)
 
 
 async def _stream_with_first_token_timeout(
@@ -427,6 +447,12 @@ async def _aclose_quietly(stream: Any) -> None:
             await aclose()
     except Exception:
         pass
+
+
+# Public alias: desk and planner paths bind tools per provider, so they
+# cannot use the *_with_fallback streamers directly but still need the
+# same first-token watchdog on their raw client streams.
+stream_with_first_token_timeout = _stream_with_first_token_timeout
 
 
 async def astream_with_fallback(

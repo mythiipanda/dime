@@ -17,12 +17,16 @@ from langchain_core.messages import HumanMessage, SystemMessage
 
 from shared.providers import (
     accumulate_tool_calls,
+    ainvoke_with_first_token_timeout,
     astream_with_fallback,
+    fallback_order,
     get_llm,
     invoke_with_fallback,
     resolve_available_model,
     resolve_model_id,
+    stream_with_first_token_timeout,
 )
+from shared.config import settings
 from .skills import catalog as skills_catalog, load_skill as skills_load_skill
 from .subagents import delegate_tools, run_desk_streaming, _SHOT_ZONE_RX, _HISTORICAL_RX
 from .subagents import DESK_DEADLINE_S as _DESK_WALL_BUDGET_S
@@ -280,7 +284,9 @@ async def _select_skills_intent(question: str, llm) -> tuple[list[str], str | No
             "entity_level is the entity level the answer should be at. "
             f"Question: {question}\nCatalog:\n{catalog_text}"
         )
-        resp = await llm.ainvoke([HumanMessage(content=prompt)])
+        resp = await ainvoke_with_first_token_timeout(
+            llm, [HumanMessage(content=prompt)],
+            settings.dime_first_token_timeout_s)
         text = str(resp.content if hasattr(resp, "content") else resp or "")
         m = re.search(r"\{.*?\}", text, re.DOTALL)
         if m:
@@ -1254,31 +1260,60 @@ def _delegate_result_summary(out: dict[str, Any]) -> str | None:
         return None
 
 
-async def _stream_planner(tooled, messages: list,
+async def _stream_planner(primary: Any, model: str, tools: list,
+                         messages: list,
                          holder: dict[str, Any]) -> AsyncGenerator[dict[str, Any], None]:
     """Stream the supervisor planner's raw tokens live as thought_token events.
 
     The planner is tool-bound: text chunks stream immediately while
     tool_call_chunks accumulate. The final tool-call list lands in
-    holder["calls"]. Falls back to blocking ainvoke if streaming fails.
+    holder["calls"].
+
+    Every provider attempt carries the first-token watchdog: a provider
+    that accepts the request but never produces a token fails fast and
+    the next provider is tried. If every provider fails, raises
+    RuntimeError so the turn ends with an honest error instead of a
+    silent hang. Falls back to a bounded blocking ainvoke per provider
+    when streaming itself errors.
     """
-    tc_chunks: list[dict] = []
-    try:
-        async for chunk in tooled.astream(messages):
-            t = getattr(chunk, "content", "") or ""
-            if t:
-                yield _event("thought_token", {"node": "data_retrieval",
-                                               "text": str(t)})
-            for tc in getattr(chunk, "tool_call_chunks", None) or []:
-                tc_chunks.append(dict(tc) if isinstance(tc, dict) else tc)
-        holder["calls"] = accumulate_tool_calls(tc_chunks)
-    except Exception:
-        resp = await tooled.ainvoke(messages)
-        t = getattr(resp, "content", "") or ""
-        if t:
-            yield _event("thought_token", {"node": "data_retrieval",
-                                           "text": str(t)})
-        holder["calls"] = getattr(resp, "tool_calls", None) or []
+    errors: list[str] = []
+    for name in fallback_order(primary):
+        client = get_llm(name, model if name == primary else None)
+        if client is None:
+            errors.append(f"{name}: missing key")
+            continue
+        try:
+            tooled = client.bind_tools(tools)
+        except Exception as exc:
+            errors.append(f"{name}: {str(exc)[:160]}")
+            continue
+        tc_chunks: list[dict] = []
+        try:
+            try:
+                async for chunk in stream_with_first_token_timeout(
+                        tooled, messages,
+                        settings.dime_first_token_timeout_s):
+                    t = getattr(chunk, "content", "") or ""
+                    if t:
+                        yield _event("thought_token", {"node": "data_retrieval",
+                                                       "text": str(t)})
+                    for tc in getattr(chunk, "tool_call_chunks", None) or []:
+                        tc_chunks.append(dict(tc) if isinstance(tc, dict) else tc)
+            except Exception:
+                resp = await ainvoke_with_first_token_timeout(
+                    tooled, messages, settings.dime_first_token_timeout_s)
+                t = getattr(resp, "content", "") or ""
+                if t:
+                    yield _event("thought_token", {"node": "data_retrieval",
+                                                   "text": str(t)})
+                holder["calls"] = getattr(resp, "tool_calls", None) or []
+                return
+            holder["calls"] = accumulate_tool_calls(tc_chunks)
+            return
+        except Exception as exc:
+            errors.append(f"{name}: {str(exc)[:160]}")
+            continue
+    raise RuntimeError("all providers failed: " + " | ".join(errors))
 
 
 def _spawn(coro, *, name=None):
@@ -4866,7 +4901,7 @@ async def data_retrieval_agent(
     if client is None:
         yield _event("error", {"node": "data_retrieval", "message": "no key"})
         return
-    tooled = client.bind_tools(_supervisor_tools(state))
+    _planner_tools = _supervisor_tools(state)
     prior = ""
     carry: list[str] = []
     qp, qt = _detect_entities(state["question"])
@@ -4933,7 +4968,9 @@ async def data_retrieval_agent(
         state["selected_skills"] = sel
         state["answer_entity_level"] = entity_level
         async for _pe in _stream_planner(
-                tooled,
+                state["primary"],
+                state["model"],
+                _planner_tools,
                 [SystemMessage(content=build_planner_prompt(question_for_planner, sel) + prior),
                  HumanMessage(content=question_for_planner)],
                 _pholder):
