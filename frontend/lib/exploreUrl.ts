@@ -58,10 +58,11 @@ export function panelShareUrl(
   path: string,
   currentQs: string,
   panel: string,
+  anchor?: string,
 ): string {
   const keys = PANEL_PARAM_KEYS[panel] ?? [];
   const kept = pickParams(decodeParams(currentQs), keys);
   kept.panel = panel;
   const qs = encodeParams(kept);
-  return `${origin}${path}${qs ? `?${qs}` : ""}#explore-${panel}`;
+  return `${origin}${path}${qs ? `?${qs}` : ""}#explore-${anchor ?? panel}`;
 }

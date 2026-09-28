@@ -8,7 +8,7 @@ import { panelShareUrl } from "../lib/exploreUrl";
  * panel's shareable URL: only that panel's filter params plus the panel
  * id, so opening the link reproduces the view.
  */
-export default function CopyLink({ panel }: { panel: string }) {
+export default function CopyLink({ panel, anchor }: { panel: string; anchor?: string }) {
   const [done, setDone] = useState(false);
   return (
     <button
@@ -22,6 +22,7 @@ export default function CopyLink({ panel }: { panel: string }) {
           window.location.pathname,
           window.location.search,
           panel,
+          anchor,
         );
         navigator.clipboard
           .writeText(url)
