@@ -120,7 +120,9 @@ def test_frame_exact_dupes_collapse_keep_first():
     frame = pl.DataFrame([_frame_row(), _frame_row(game_id="202511180LAL")])
     out = dedupe_game_log_frame(frame)
     assert out.height == 1
-    assert out.columns == frame.columns  # no columns added or removed
+    # conflict signal column always present, False for clean rows
+    assert out.columns == frame.columns + ["stat_conflict"]
+    assert out["stat_conflict"].to_list() == [False]
 
 
 def test_frame_near_dupe_latest_fetch_wins():
@@ -130,7 +132,8 @@ def test_frame_near_dupe_latest_fetch_wins():
     out = dedupe_game_log_frame(pl.DataFrame([old, new]))
     assert out.height == 1
     assert out["OREB"][0] == 3
-    assert out.columns == pl.DataFrame([old]).columns
+    assert out.columns == pl.DataFrame([old]).columns + ["stat_conflict"]
+    assert out["stat_conflict"][0] is True
 
 
 def test_frame_near_dupe_mixed_date_formats_group_together():
@@ -174,6 +177,60 @@ def test_frame_without_matchup_falls_back_to_exact_unique():
     out = dedupe_game_log_frame(pl.DataFrame([r1, r2]))
     # no MATCHUP: can't tell near-dupe from distinct games; keep both
     assert out.height == 2
+    assert out["stat_conflict"].to_list() == [False, False]
+
+
+def _sgl_row(reb=5.0, fetched_at=None):
+    """Normalized search_game_logs row (post-_load_games shape)."""
+    d = _dt.date(2025, 11, 18)
+    return {
+        "player_id": 2544, "game_id": "0022500087", "date": d,
+        "matchup": "LAL vs. UTA", "opponent": "UTA", "home": True,
+        "wl": "W", "min": 36.0, "pts": 20.0, "reb": reb, "ast": 5.0,
+        "stl": 1.0, "blk": 1.0, "tov": 2.0, "pf": 2.0,
+        "fgm": 8.0, "fga": 16.0, "fg3m": 2.0, "fg3a": 6.0,
+        "plus_minus": 4.0, "dd_count": 0, "_fetched_at": fetched_at,
+    }
+
+
+def test_search_game_logs_dedupes_before_filter_crossing_threshold(monkeypatch):
+    """Losing row must not qualify a game its canonical row misses.
+
+    Instinct QA repro: older seed says REB 6, newest (canonical) says
+    REB 5. min_rebounds=6 filtered raw rows first, so the REB-6 row
+    qualified and the rendered canonical row showed REB 5 — a game
+    that never met the threshold counted as a match.
+    """
+    from shared.tools import gamelog
+
+    old = _sgl_row(reb=6.0, fetched_at="2025-11-19T08:00:00")
+    new = _sgl_row(reb=5.0, fetched_at="2025-11-20T08:00:00")
+    monkeypatch.setattr(gamelog, "_load_games", lambda *args: [old, new])
+    monkeypatch.setattr(gamelog, "coerce_player_id", lambda player: 2544)
+
+    out = gamelog.search_game_logs.invoke(
+        {"player": "LeBron James", "min_rebounds": 6})
+    assert out["ok"] is True
+    assert out["rows"]["total"] == 0
+    assert out["rows"]["matches"] == []
+
+
+def test_search_game_logs_canonical_row_qualifies_and_flags(monkeypatch):
+    """When the canonical row meets the threshold it matches, flagged."""
+    from shared.tools import gamelog
+
+    old = _sgl_row(reb=5.0, fetched_at="2025-11-19T08:00:00")
+    new = _sgl_row(reb=6.0, fetched_at="2025-11-20T08:00:00")
+    monkeypatch.setattr(gamelog, "_load_games", lambda *args: [old, new])
+    monkeypatch.setattr(gamelog, "coerce_player_id", lambda player: 2544)
+
+    out = gamelog.search_game_logs.invoke(
+        {"player": "LeBron James", "min_rebounds": 6})
+    assert out["ok"] is True
+    assert out["rows"]["total"] == 1
+    match = out["rows"]["matches"][0]
+    assert match["reb"] == 6.0
+    assert match["stat_conflict"] is True
 
 
 def test_frame_non_gamelog_unchanged():

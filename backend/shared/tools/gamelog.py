@@ -457,7 +457,9 @@ def dedupe_game_log_frame(frame):
     Near-duplicates (same game, disagreeing stats — a re-seeded stat
     correction) collapse to the canonical row: the most recently
     fetched line wins, then the most complete stat line, then first
-    occurrence. No columns are added or removed.
+    occurrence. A boolean ``stat_conflict`` column is always added —
+    True on rows whose seeds genuinely disagreed (the signal
+    dataset/CSV/Parquet consumers need, previously dropped silently).
     """
     import polars as pl
 
@@ -468,21 +470,29 @@ def dedupe_game_log_frame(frame):
            if c not in ("Game_ID", "_source", "_season", "_fetched_at", "_entity")]
     entity = "Player_ID" if "Player_ID" in cols else "Team_ID"
     if "MATCHUP" not in cols:
-        return frame.unique(subset=sig, keep="first", maintain_order=True)
+        # No MATCHUP: can't tell near-dupe from distinct games; keep
+        # unique rows but still carry the (all-false) signal column.
+        return (frame.unique(subset=sig, keep="first", maintain_order=True)
+                .with_columns(pl.lit(False).alias("stat_conflict")))
     stat_keys = [c for c in sig if c not in (entity, "GAME_DATE", "MATCHUP")]
     tmp = (frame.with_row_index("_ri")
            .with_columns(_frame_game_date_key().alias("_gdate")))
     winners: list[int] = []
+    conflicted_ris: set[int] = set()
     for part in tmp.partition_by([entity, "_gdate", "MATCHUP"],
                                  maintain_order=True, as_dict=False):
         rows = part.to_dicts()
-        winner, _conflicted = _pick_canonical(
+        winner, conflicted = _pick_canonical(
             rows, lambda r: tuple(r.get(c) for c in sig), stat_keys
         )
         winners.append(winner["_ri"])
+        if conflicted:
+            conflicted_ris.add(winner["_ri"])
     return (
         tmp.filter(pl.col("_ri").is_in(winners))
         .sort("_ri")
+        .with_columns(pl.col("_ri").is_in(conflicted_ris)
+                      .alias("stat_conflict"))
         .drop(["_ri", "_gdate"])
     )
 
@@ -713,11 +723,14 @@ def search_game_logs(
                     if pid is not None else None)
             err += f"; {note}" if note else f"; {_playoff_coverage(season)}"
         return {"tool": "search_game_logs", "ok": False, "error": err}
+    # Canonical rows only, before filtering: the warehouse is
+    # append-seeded and different seeds use different Game_ID formats
+    # for the same game. Filtering raw rows first lets the LOSING row
+    # of a conflicting pair qualify the game -- e.g. REB 6 kept on an
+    # older seed while the canonical (newest) line is REB 5, and
+    # min_rebounds=6 then "finds" a 5-rebound game (Instinct QA).
+    games = _dedupe_games(games)
     matched = [g for g in games if _matches(g, filters)]
-    # Dedupe before every branch: the warehouse is append-seeded and
-    # different seeds use different Game_ID formats for the same game,
-    # so counts and rows must collapse duplicates first.
-    matched = _dedupe_games(matched)
     lim = _clamp_limit(limit)
     if league_wide:
         counts: dict[int, int] = {}
