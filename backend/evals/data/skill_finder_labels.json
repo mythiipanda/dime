@@ -1,0 +1,140 @@
+{
+  "labels": [
+    {
+      "alternates": [
+        "player_comparison"
+      ],
+      "expected": [
+        "compare_players"
+      ],
+      "id": "sf01",
+      "question": "Compare Luka Doncic and Shai Gilgeous-Alexander"
+    },
+    {
+      "alternates": [],
+      "expected": [
+        "compare_players"
+      ],
+      "id": "sf02",
+      "question": "Compare the top 5 MVP candidates by efficiency, shot diet, and clutch scoring"
+    },
+    {
+      "alternates": [],
+      "expected": [
+        "defensive_analysis"
+      ],
+      "id": "sf03",
+      "question": "Is Jayson Tatum a good defender?"
+    },
+    {
+      "alternates": [
+        "leaderboard"
+      ],
+      "expected": [
+        "leaders_read"
+      ],
+      "id": "sf04",
+      "question": "Who leads the league in steals?"
+    },
+    {
+      "alternates": [
+        "leaders_read"
+      ],
+      "expected": [
+        "leaderboard"
+      ],
+      "id": "sf05",
+      "question": "Who had the highest true shooting percentage in 2024-25 (min 1000 minutes)?"
+    },
+    {
+      "alternates": [
+        "leaderboard"
+      ],
+      "expected": [
+        "historical_leaders"
+      ],
+      "id": "sf06",
+      "question": "Who are the all-time leaders in assists?"
+    },
+    {
+      "alternates": [],
+      "expected": [
+        "record_when_plays"
+      ],
+      "id": "sf07",
+      "question": "What is Denver's record when Jokic plays?"
+    },
+    {
+      "alternates": [
+        "form_check"
+      ],
+      "expected": [
+        "shot_profile"
+      ],
+      "id": "sf08",
+      "question": "How has Anthony Edwards shot from three over his last 10 games?"
+    },
+    {
+      "alternates": [
+        "shot_profile"
+      ],
+      "expected": [
+        "form_check"
+      ],
+      "id": "sf09",
+      "question": "Is Paolo Banchero heating up or cooling off lately?"
+    },
+    {
+      "alternates": [],
+      "expected": [
+        "team_offense"
+      ],
+      "id": "sf10",
+      "question": "Which team has the best offense this season?"
+    },
+    {
+      "alternates": [],
+      "expected": [
+        "game_preview"
+      ],
+      "id": "sf11",
+      "question": "Preview Lakers vs Celtics tonight"
+    },
+    {
+      "alternates": [],
+      "expected": [
+        "lineup_wowy"
+      ],
+      "id": "sf12",
+      "question": "What are the best 5-man lineups for the Thunder?"
+    },
+    {
+      "alternates": [
+        "lineup_wowy"
+      ],
+      "expected": [
+        "impact_check"
+      ],
+      "id": "sf13",
+      "question": "Does the team score more when Brunson is on the floor?"
+    },
+    {
+      "alternates": [],
+      "expected": [
+        "morning_briefing"
+      ],
+      "id": "sf14",
+      "question": "Give me this morning's NBA briefing"
+    },
+    {
+      "alternates": [],
+      "expected": [
+        "standings_read"
+      ],
+      "id": "sf15",
+      "question": "Where do the Knicks sit in the East playoff race?"
+    }
+  ],
+  "notes": "Labels are curated by the evals crew against the v1 catalog in backend/app/skills/. 'expected' is the primary pick; 'alternates' are acceptable second picks. Scoring: every expected skill must be selected, and every selected skill must be in expected+alternates. Selection accuracy is a proxy: the real measure is live pipeline performance with skills on vs off (SWE-Skills-Bench rule), designed as an opt-in ablation in the live_backend suite.",
+  "version": 1
+}
