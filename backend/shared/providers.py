@@ -22,8 +22,8 @@ class ProviderPolicyError(ValueError):
 # Gemini-first is Tony's own ranking (2026-09-28: he ranked Gemini #1 over
 # NIM). Everything after gemini in the fallback order, and the rate limits
 # below, are crew defaults, not his picks.
-# Gemini (flash-lite) is the workhorse default: 15 RPM / 500 RPD free
-# (quotas from Tony's AI Studio screenshot; live-probed 2026-09-28).
+# Gemini (flash-lite) is the workhorse default. Free-tier quota: unverified
+# (screenshot only; confirm from a live API response before publishing numbers).
 FREE_PROVIDER_ORDER: tuple[ProviderName, ...] = ("gemini", "nvidia", "groq", "openrouter", "mistral")
 
 
@@ -36,8 +36,9 @@ def active_provider_order() -> tuple[ProviderName, ...]:
 
 GEMINI_BASE_URL = "https://generativelanguage.googleapis.com/v1beta/openai/"
 GEMINI_DEFAULT = "gemini-3.5-flash-lite"
-# Free tier only: flash-lite is the 15 RPM / 500 RPD workhorse;
-# flash is 5 RPM / 20 RPD (quality option). No Pro models.
+# Free tier only: flash-lite is the workhorse; flash is the quality option.
+# Free-tier quotas are unverified (screenshot only; confirm from a live API
+# response before publishing numbers). No Pro models.
 GEMINI_MODELS: tuple[str, ...] = (
     GEMINI_DEFAULT,
     "gemini-3.5-flash",
