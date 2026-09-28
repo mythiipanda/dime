@@ -163,7 +163,8 @@ def fetch_with_backoff(label: str, fn, sleep_s: float):
 def season_games(season: str, sleep_s: float, state: dict) -> list[str]:
     cached = state.get("games", {}).get(season)
     if cached:
-        return [g for st in SEASON_TYPES for g in cached.get(st, [])]
+        ids = [g for st in SEASON_TYPES for g in cached.get(st, [])]
+        return list(dict.fromkeys(ids))
     from nba_api.stats.endpoints import LeagueGameFinder
 
     found: dict[str, list[str]] = {}
@@ -183,7 +184,8 @@ def season_games(season: str, sleep_s: float, state: dict) -> list[str]:
             raise RuntimeError(err)
         ids = (res.frame.get_column("GAME_ID").cast(pl.String).to_list()
                if "GAME_ID" in res.frame.columns else [])
-        found[st] = ids
+        # LeagueGameFinder returns one row per team per game: dedupe.
+        found[st] = list(dict.fromkeys(ids))
         time.sleep(sleep_s)
     state.setdefault("games", {})[season] = found
     save_progress(state)
