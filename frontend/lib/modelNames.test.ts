@@ -35,6 +35,18 @@ test("modelDisplayName maps known catalog slugs to friendly names", () => {
       "Nemotron 3.5 Lightning",
     ],
     ["openrouter:google/gemma-4-31b-it:free", "Gemma 4 31B"],
+    ["openrouter:google/gemma-4-26b-a4b-it:free", "Gemma 4 26B"],
+    ["openrouter:qwen/qwen3.8-27b:free", "Qwen 3.8 27B"],
+    [
+      "openrouter:nvidia/nemotron-3-ultra-550b-a55b:free",
+      "Nemotron 3 Ultra 550B",
+    ],
+    [
+      "openrouter:nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free",
+      "Nemotron 3 Nano 30B Reasoning",
+    ],
+    ["nvidia:meta/llama-3.3-70b-instruct", "Llama 3.3 70B"],
+    ["nvidia:deepseek-ai/deepseek-r1", "DeepSeek R1"],
     ["openrouter:openrouter/free", "Auto"],
     ["mistral:ministral-8b-2512", "Ministral 8B"],
     ["groq:openai/gpt-oss-20b", "GPT-OSS 20B"],

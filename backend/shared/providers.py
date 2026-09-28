@@ -30,7 +30,12 @@ def active_provider_order() -> tuple[ProviderName, ...]:
 
 NVIDIA_NIM_BASE_URL = "https://integrate.api.nvidia.com/v1"
 NVIDIA_NIM_DEFAULT = "z-ai/glm-5.3-flash"
-NVIDIA_NIM_MODELS: tuple[str, ...] = (NVIDIA_NIM_DEFAULT, "deepseek-ai/deepseek-v4.1-flash")
+NVIDIA_NIM_MODELS: tuple[str, ...] = (
+    NVIDIA_NIM_DEFAULT,
+    "deepseek-ai/deepseek-v4.1-flash",
+    "meta/llama-3.3-70b-instruct",
+    "deepseek-ai/deepseek-r1",
+)
 NVIDIA_NIM_ALLOWLIST = frozenset(NVIDIA_NIM_MODELS)
 MISTRAL_DEFAULT = "ministral-8b-2512"
 OPENROUTER_DEFAULT = "nvidia/nemotron-3-super-120b-a12b:free"
@@ -43,6 +48,10 @@ OPENROUTER_ALLOWLIST: frozenset[str] = frozenset(
         "nvidia/nemotron-3-super-120b-a12b:free",
         "google/gemma-4-31b-it:free",
         "nvidia/nemotron-3.5-lightning:free",
+        "nvidia/nemotron-3-ultra-550b-a55b:free",
+        "google/gemma-4-26b-a4b-it:free",
+        "qwen/qwen3.8-27b:free",
+        "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free",
     }
 )
 
