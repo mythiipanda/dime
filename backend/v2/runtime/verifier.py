@@ -677,3 +677,163 @@ def merge_verification_reports(mechanical: VerificationReport,
             mechanical.repair_instructions + semantic.repair_instructions
         )),
     )
+
+
+# ---------------------------------------------------------------------------
+# Termination gate, ported from backend/app/graph.py (v1) for the v2 runtime.
+# Pure functions only; NOT yet wired into verify_mechanical. When wiring,
+# pass question_kind from TaskSpec.subject_entity_type ("player"/"team").
+# ---------------------------------------------------------------------------
+
+_GATE_TEAM_TABLE_RX = re.compile(
+    r"team splits|team totals|standings|four factors|matchup splits",
+    re.IGNORECASE,
+)
+
+_MINUTES_RATE_CLAIM_RX = re.compile(
+    r"\d+\.?\d*\s*(?:SPG|BPG|PPG|RPG|APG|TS ?%|3P ?%|FG ?%|eFG ?%)"
+    r"|\d+\.?\d*\s*%\s*(?:TS|3P|FG|eFG)\b",
+    re.IGNORECASE,
+)
+
+_MINUTES_LEAD_RX = re.compile(
+    r"leads?( the)? league in \w+",
+    re.IGNORECASE,
+)
+
+_MINUTES_QUAL_RX = re.compile(
+    r"\bminutes?\b|\bmin\b|\bmpg\b",
+    re.IGNORECASE,
+)
+
+_UNIT_SPLIT_RX = re.compile(r"((?<=[.!?])\s+|\n+)")
+
+def _iter_units(text: str):
+    """Yield (unit, separator) pairs, preserving original separators so
+    filtering can drop a bad unit without reformatting the rest."""
+    parts = _UNIT_SPLIT_RX.split(text or "")
+    for i in range(0, len(parts), 2):
+        yield parts[i], (parts[i + 1] if i + 1 < len(parts) else "")
+
+
+def _gate_question_kind(question: str,
+                       detect=None) -> str:
+    """Classify the question's entity kind for table matching.
+
+    Uses only structural entity detection (injectable `detect`, default
+none -> no entities -> "other"). No
+    keyword/regex heuristics — phrasing like "best offense" must not
+    change which tables are kept. If no entities are found, returns
+    "other" (no kind-based table dropping).
+    """
+    try:
+        found_p, found_t = detect(question or "") if detect else ([], [])
+    except Exception:
+        found_p, found_t = [], []
+    if found_p and not found_t:
+        return "player"
+    if found_t and not found_p:
+        return "team"
+    if found_p and found_t:
+        return "mixed"
+    return "other"
+
+
+def _gate_table_level(table: dict) -> str:
+    """Player-level, team-level, or unknown - from row keys, then title."""
+    rows = table.get("rows")
+    if isinstance(rows, list) and rows and isinstance(rows[0], dict):
+        keys = {str(k).upper() for k in rows[0].keys()}
+        if "PLAYER" in keys or "PLAYER_NAME" in keys:
+            return "player"
+        if "TEAM" in keys:
+            return "team"
+    if _GATE_TEAM_TABLE_RX.search(str(table.get("title") or "")):
+        return "team"
+    return "unknown"
+
+
+def verify_table_kind(question: str, table: dict,
+                      question_kind: str | None = None) -> bool:
+    """Termination gate: table entity level must match the question kind.
+
+    question_kind is the LLM-determined intent (from
+    state["answer_entity_level"]); it wins over entity detection when
+    provided ("player"/"team"). It is never derived from question-text
+    keywords. Returns False on a mismatch in EITHER direction (player
+    question + team-level table, or team question + player-level table).
+    "mixed"/"other"/unknown kinds never reject.
+    """
+    kind = question_kind if question_kind in ("player", "team") \
+        else _gate_question_kind(question)
+    if kind not in ("player", "team"):
+        return True
+    try:
+        level = _gate_table_level(table)
+    except Exception:
+        return True
+    if level not in ("player", "team"):
+        return True
+    return kind == level
+
+
+def verify_minutes_qual(answer_text: str, tables: list) -> list[str]:
+    """Termination gate (REJECT check): rate-stat claims must carry a
+    minutes qualification. The qualification may live in the same
+    sentence, anywhere else in the answer, or in an attached table's
+    qualification meta / minutes-bearing columns - a separate qual
+    sentence or the data table itself counts.
+
+    Returns the violating sentences (empty = pass). This is a reject
+    check - callers drop the returned sentences. _gate_qualifications
+    stays as-is (append repair) and is untouched by this function.
+    """
+    try:
+        _answer_has_qual = bool(_MINUTES_QUAL_RX.search(answer_text or ""))
+    except Exception:
+        _answer_has_qual = False
+    _table_has_qual = False
+    try:
+        for _t in (tables or []):
+            try:
+                if not isinstance(_t, dict):
+                    continue
+                _meta = _t.get("meta")
+                if (isinstance(_meta, dict)
+                        and _MINUTES_QUAL_RX.search(str(_meta.get("qualification") or ""))):
+                    _table_has_qual = True
+                    break
+                _rows = _t.get("rows")
+                if isinstance(_rows, list):
+                    for _r in _rows:
+                        try:
+                            if isinstance(_r, dict) and any(
+                                str(_k).strip().upper() in ("MIN", "MPG", "MINUTES")
+                                for _k in _r.keys()
+                            ):
+                                _table_has_qual = True
+                                break
+                        except Exception:
+                            continue
+                    if _table_has_qual:
+                        break
+            except Exception:
+                continue
+    except Exception:
+        _table_has_qual = False
+    if _answer_has_qual or _table_has_qual:
+        return []
+    violations: list[str] = []
+    try:
+        units = list(_iter_units(answer_text or ""))
+    except Exception:
+        return []
+    for _sent, _ in units:
+        _s = (_sent or "").strip()
+        if not _s:
+            continue
+        if (_MINUTES_RATE_CLAIM_RX.search(_s)
+                or _MINUTES_LEAD_RX.search(_s)):
+            if not _MINUTES_QUAL_RX.search(_s):
+                violations.append(_s)
+    return violations
