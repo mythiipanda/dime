@@ -19,7 +19,10 @@ Scorer lookup, in order:
      before anything is executed;
   3. a hermetic fallback port of the fixture header's documented rules
      (reproduces all 12 fixture verdicts) - the test reports which source
-     ran. The independent test never skips; the fallback cannot detect
+     ran. When the hermetic fallback runs, the test SKIPS with a
+     fallback-only status after the port's assertions pass - a skip is
+     distinct from a pass, so fallback mode can never be mistaken for
+     canonical verification. The fallback cannot detect
      canonical-drift, so regen from the canonical scorer still anchors
      truth. Hermetic otherwise: stdlib only.
 """
@@ -202,10 +205,22 @@ def test_expected_outputs_match_canonical_scorer():
     A fixture that only asserts its own expected values can drift from
     (or be hand-edited away from) the canonical scorer without failing.
     Running the scorer here makes the mirror self-verifying.
+
+    Status semantics (Instinct QA 2026-09-27): canonical verification is
+    claimed ONLY when the real scorer ran (local checkout or pinned
+    blob). When the hermetic fallback port is used instead, passing the
+    port's assertions ends in pytest.skip with a fallback-only reason -
+    a distinct skip status, never a pass - so a green run cannot be
+    mistaken for canonical verification. The fallback cannot detect
+    canonical drift, so regen from the canonical scorer still anchors
+    truth. If the fallback port's assertions FAIL, the test fails
+    loudly (no silent skip).
     """
     data = _load()
     scorer, source = _canonical_scorer(data["header"])
-    print(f"\n[season_consistency_mirror] scorer source: {source}")
+    canonical = source != "hermetic-fallback"
+    print(f"\n[season_consistency_mirror] scorer source: {source} "
+          f"({'CANONICAL' if canonical else 'FALLBACK-ONLY'})")
     for c in data["cases"]:
         fn = scorer.get(c["metric"])
         assert callable(fn), f"canonical scorer has no {c['metric']}"
@@ -213,3 +228,10 @@ def test_expected_outputs_match_canonical_scorer():
         assert got == c["expected"], (
             f"{c['id']}: {source} {c['metric']} returned {got}, "
             f"fixture expects {c['expected']}")
+    if not canonical:
+        pytest.skip(
+            "fallback-only: canonical scorer unreachable "
+            "(no dime-internal checkout, pinned blob fetch failed); "
+            "verdicts match the hermetic port of the documented rules "
+            "but this does NOT verify against the canonical scorer and "
+            "cannot detect canonical drift")

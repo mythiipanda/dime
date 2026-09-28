@@ -37,5 +37,9 @@ checkout, else the pinned blob at the fixture header's `canonical_sha`,
 sha-verified before execution, else a hermetic fallback port of the
 documented rules) on every case and asserts its verdicts
 equal `expected`. Hand-edited or stale mirrors fail loudly; the test
-reports which scorer source ran and no longer skips when the canonical
-scorer is unreachable.
+reports which scorer source ran. Canonical verification is claimed only
+when the real scorer ran: when the hermetic fallback port is used, the
+test SKIPS with a fallback-only reason after the port's assertions pass
+(a distinct skip status, never a pass), so a green run can't be
+mistaken for canonical verification and can't detect canonical drift.
+If the fallback port's assertions fail, the test fails loudly.
