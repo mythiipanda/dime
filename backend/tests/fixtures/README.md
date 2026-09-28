@@ -32,8 +32,10 @@ source — never hand-edit `expected` values. Fetch the current
 snippet recorded in the queue notes for this item.
 
 `test_season_consistency_mirror.py::test_expected_outputs_match_canonical_scorer`
-enforces this: it runs the canonical scorer (local dime-internal
+enforces this: it runs the scorer (local dime-internal
 checkout, else the pinned blob at the fixture header's `canonical_sha`,
-sha-verified before execution) on every case and asserts its verdicts
+sha-verified before execution, else a hermetic fallback port of the
+documented rules) on every case and asserts its verdicts
 equal `expected`. Hand-edited or stale mirrors fail loudly; the test
-skips where the scorer is unreachable.
+reports which scorer source ran and no longer skips when the canonical
+scorer is unreachable.

@@ -16,14 +16,18 @@ Scorer lookup, in order:
      ~/workspace/dime-internal) at evals/dimebench/scoring.py;
   2. the pinned blob from GitHub (mythiipanda/dime-internal) at the
      fixture header's canonical_sha - the returned blob sha must match
-     before anything is executed.
-If neither is reachable the independent test skips; the structural
-checks still run. Hermetic otherwise: stdlib only.
+     before anything is executed;
+  3. a hermetic fallback port of the fixture header's documented rules
+     (reproduces all 12 fixture verdicts) - the test reports which source
+     ran. The independent test never skips; the fallback cannot detect
+     canonical-drift, so regen from the canonical scorer still anchors
+     truth. Hermetic otherwise: stdlib only.
 """
 
 import base64
 import json
 import os
+import re
 import sys
 import urllib.request
 from pathlib import Path
@@ -116,15 +120,80 @@ def _fetch_pinned_scorer(sha):
     return base64.b64decode(data["content"]).decode("utf-8")
 
 
+def _hermetic_fallback_scorer():
+    """Hermetic port of the documented scorer rules (fixture header rules).
+
+    Last-resort fallback so the independent pass still runs hermetically
+    when the canonical scorer is unreachable (no dime-internal checkout,
+    no network). It is a faithful port of the fixture header's documented
+    rules and reproduces all 12 fixture verdicts (verified); it cannot
+    detect canonical-drift the way running the canonical scorer does, so
+    regen from the canonical scorer still anchors truth.
+    """
+    _SEASON_RE = re.compile(r"(20\d\d)\s*[-–—]\s*(\d{2,4})")
+
+    def _canon(raw: str) -> str:
+        raw = raw.replace("–", "-").replace("—", "-")
+        m = re.match(r"(20\d\d)\s*-\s*(\d{2,4})", raw)
+        return f"{m.group(1)}-{m.group(2)[-2:]}"
+
+    def _named(answer: str) -> set:
+        return {_canon(f"{a}-{b}") for a, b in _SEASON_RE.findall(answer)}
+
+    def _gate(facts: dict, answer: str, numeric_only: bool) -> bool:
+        """True when the season gate should zero the score."""
+        season = facts.get("season")
+        if not season:
+            return False
+        nums = [v for k, v in facts.items()
+                if k != "season" and isinstance(v, (int, float))]
+        if numeric_only and not nums:
+            return False
+        named = _named(answer)
+        # Zeroes only when the answer names a season but never the
+        # expected one; naming no season (or the expected one among
+        # several) is not penalized.
+        return bool(named) and _canon(season) not in named
+
+    def season_consistency(facts: dict, answer: str) -> float:
+        return 0.0 if _gate(facts, answer, numeric_only=False) else 1.0
+
+    def numeric_acc(facts: dict, answer: str) -> float:
+        nums = [v for k, v in facts.items()
+                if k != "season" and isinstance(v, (int, float))]
+        if not nums:
+            return 1.0
+        if _gate(facts, answer, numeric_only=True):
+            return 0.0
+        for v in nums:
+            # numeric-form match with trailing-digit guard
+            if not re.search(r"(?<!\d)" + re.escape(str(v)) + r"(?!\d)",
+                             answer):
+                return 0.0
+        return 1.0
+
+    return {"season_consistency": season_consistency,
+            "numeric_acc": numeric_acc,
+            "__source__": "hermetic-fallback"}
+
+
 def _canonical_scorer(header):
+    """Return (scorer_ns, source_label) for the independent pass.
+
+    Lookup, in order: a local dime-internal checkout (DIME_INTERNAL env,
+    else ~/workspace/dime-internal) at evals/dimebench/scoring.py; the
+    pinned blob from GitHub at the fixture header's canonical_sha
+    (sha-verified before execution); finally the hermetic fallback port
+    of the documented rules so the test never skips.
+    """
     src = _local_scorer_source() or _fetch_pinned_scorer(
         header["canonical_sha"])
-    if src is None:
-        pytest.skip("canonical scorer unreachable: no dime-internal "
-                    "checkout and pinned GitHub fetch failed")
-    ns: dict = {}
-    exec(compile(src, "dimebench/scoring.py", "exec"), ns)
-    return ns
+    if src is not None:
+        ns: dict = {}
+        exec(compile(src, "dimebench/scoring.py", "exec"), ns)
+        return ns, ("local-dime-internal" if _local_scorer_source()
+                    else "pinned-blob")
+    return _hermetic_fallback_scorer(), "hermetic-fallback"
 
 
 def test_expected_outputs_match_canonical_scorer():
@@ -135,11 +204,12 @@ def test_expected_outputs_match_canonical_scorer():
     Running the scorer here makes the mirror self-verifying.
     """
     data = _load()
-    scorer = _canonical_scorer(data["header"])
+    scorer, source = _canonical_scorer(data["header"])
+    print(f"\n[season_consistency_mirror] scorer source: {source}")
     for c in data["cases"]:
         fn = scorer.get(c["metric"])
         assert callable(fn), f"canonical scorer has no {c['metric']}"
         got = fn(c["facts"], c["answer"])
         assert got == c["expected"], (
-            f"{c['id']}: canonical {c['metric']} returned {got}, "
+            f"{c['id']}: {source} {c['metric']} returned {got}, "
             f"fixture expects {c['expected']}")

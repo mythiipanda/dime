@@ -225,7 +225,7 @@ def test_summary_pts_without_fga_counts_only_for_ppg():
     assert s["covers_full_season"] is True
 
 
-def test_summary_full_coverage_carries_game_counts():
+def test_summary_full_coverage_carries_game_counts(hist_db):
     rows = team_mod._hist_team_games(2, "2024-25")
     s = team_mod._team_game_summary(rows, True)
     assert s["ppg_games"] == 3 and s["ts_pct_games"] == 3
