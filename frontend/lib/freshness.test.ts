@@ -37,7 +37,7 @@ test("summarizeFreshness is order-independent", () => {
   );
 });
 
-test("summarizeFreshness skips tables without coverage and zero-row tables in the count", () => {
+test("summarizeFreshness counts only datasets feeding the coverage minimum", () => {
   const mixed: FreshRow[] = [
     ...rows,
     { table: "silver_standings", rows: 30, last_fetch: "2026-09-26T14:30:00", data_through: null },
@@ -45,7 +45,19 @@ test("summarizeFreshness skips tables without coverage and zero-row tables in th
   ];
   assert.equal(
     summarizeFreshness(mixed),
-    "Data through Sep 20 · 4 datasets",
+    "Data through Sep 20 · 3 datasets",
+  );
+});
+
+test("summarizeFreshness 'Last fetch' path counts only tables with a fetch time", () => {
+  const legacy: FreshRow[] = [
+    { table: "silver_team_games", rows: 1200, last_fetch: "2026-09-24T10:00:00" },
+    { table: "silver_gamelogs", rows: 9800, last_fetch: "2026-09-26T14:30:00" },
+    { table: "silver_shots", rows: 50, last_fetch: null },
+  ];
+  assert.equal(
+    summarizeFreshness(legacy),
+    "Last fetch Sep 26 · 2 datasets",
   );
 });
 

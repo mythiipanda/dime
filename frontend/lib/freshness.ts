@@ -19,8 +19,15 @@ export function freshDateLabel(iso: string): string | null {
   return `${MONTHS[month - 1]} ${Number(m[3])}`;
 }
 
-function datasetCount(rows: FreshRow[]): number {
-  return rows.filter((r) => (r.rows ?? 0) > 0).length;
+function coverageParticipants(rows: FreshRow[]): FreshRow[] {
+  // Only datasets that actually feed the coverage minimum. Static/snapshot
+  // tables with no data_through (combine, standings) are freshness-checked
+  // nowhere, so counting them overstates the label.
+  return rows.filter((r) => (r.rows ?? 0) > 0 && Boolean(r.data_through));
+}
+
+function fetchParticipants(rows: FreshRow[]): FreshRow[] {
+  return rows.filter((r) => (r.rows ?? 0) > 0 && Boolean(r.last_fetch));
 }
 
 // Latest ingestion times; lexicographic max on YYYY-MM-DD... timestamps.
@@ -42,7 +49,7 @@ export function summarizeFreshness(rows: FreshRow[]): string | null {
     // YYYY-MM-DD strings: lexicographic min == earliest coverage date.
     const label = freshDateLabel(coverage[0]);
     if (!label) return null;
-    const datasets = datasetCount(rows);
+    const datasets = coverageParticipants(rows).length;
     return datasets > 0
       ? `Data through ${label} · ${datasets} datasets`
       : `Data through ${label}`;
@@ -51,7 +58,7 @@ export function summarizeFreshness(rows: FreshRow[]): string | null {
   // the last warehouse fetch -- instead of implying data coverage.
   const label = latestFetchLabel(rows);
   if (!label) return null;
-  const datasets = datasetCount(rows);
+  const datasets = fetchParticipants(rows).length;
   return datasets > 0
     ? `Last fetch ${label} · ${datasets} datasets`
     : `Last fetch ${label}`;

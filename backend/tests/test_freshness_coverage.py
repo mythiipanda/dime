@@ -34,6 +34,15 @@ def warehouse():
     con.execute("CREATE TABLE silver_empty (GAME_DATE VARCHAR)")
     con.execute("CREATE TABLE silver_junk (GAME_DATE VARCHAR)")
     con.execute("INSERT INTO silver_junk VALUES ('garbage'), ('1800-01-01')")
+    # DATE-typed date columns: TRY_STRPTIME on a DATE yields NULL, which used
+    # to drop these tables from the coverage minimum entirely.
+    con.execute("CREATE TABLE silver_date_typed (GAME_DATE DATE)")
+    con.execute(
+        "INSERT INTO silver_date_typed VALUES "
+        "('2026-09-30'), ('2025-10-28'), (NULL)"
+    )
+    con.execute("CREATE TABLE silver_date_typed_nulls (game_date DATE)")
+    con.execute("INSERT INTO silver_date_typed_nulls VALUES (NULL), (NULL)")
     yield con
     con.close()
 
@@ -70,3 +79,22 @@ def test_unparseable_and_out_of_range_clamped(warehouse):
 
 def test_missing_table_never_raises(warehouse):
     assert table_data_through(warehouse, "missing_table", []) is None
+
+
+def test_date_typed_column_uses_max_directly(warehouse):
+    # Before the fix this returned None (DATE -> TRY_STRPTIME -> NULL),
+    # silently excluding the table from the coverage minimum.
+    assert table_data_through(
+        warehouse, "silver_date_typed", _cols(warehouse, "silver_date_typed")
+    ) == "2026-09-30"
+
+
+def test_date_typed_all_null_returns_none(warehouse):
+    assert (
+        table_data_through(
+            warehouse,
+            "silver_date_typed_nulls",
+            _cols(warehouse, "silver_date_typed_nulls"),
+        )
+        is None
+    )
