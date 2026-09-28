@@ -14,7 +14,9 @@ from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_core.tools import tool
 
 from shared.providers import (ProviderName, get_llm, astream_chunks_with_fallback,
-                       accumulate_tool_calls, fallback_order)
+                       accumulate_tool_calls, fallback_order,
+                       stream_with_first_token_timeout)
+from shared.config import settings
 
 logger = logging.getLogger(__name__)
 
@@ -128,7 +130,9 @@ async def _stream_tooled(provider: ProviderName, model: str,
             continue
         try:
             bound = client.bind_tools(tools)
-            async for chunk in bound.astream(messages):
+            async for chunk in stream_with_first_token_timeout(
+                    bound, messages,
+                    settings.dime_first_token_timeout_s):
                 t = getattr(chunk, "content", "") or ""
                 if t:
                     text_parts.append(str(t))
