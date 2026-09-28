@@ -2,12 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { getDatasetJson, SEASON } from "../lib/api";
-import {
-  combineSummary,
-  countPlayoffGames,
-  playoffChampion,
-  topLeaders,
-} from "../lib/exploreIndex";
+import { fetchIndexSummaries } from "../lib/exploreIndex";
 
 // Explore redesign Phase B: the overview index becomes the workspace.
 // Each card carries a compact live summary from existing dataset endpoints
@@ -53,51 +48,19 @@ export default function ExploreIndex({
 }: {
   onJump: (id: string) => void;
 }) {
-  // Live summary lines keyed by card id; a live card whose fetch failed
-  // simply renders its label (same degrade pattern as the Today wrap).
+  // Live summary lines keyed by card id. Each dataset fetch is isolated
+  // (Promise.allSettled inside fetchIndexSummaries), so one failed request
+  // never blanks the cards whose data arrived fine.
   const [summaries, setSummaries] = useState<Record<string, string[]>>({});
 
   useEffect(() => {
     let alive = true;
     (async () => {
-      try {
-        const [ld, po, cb] = await Promise.all([
-          getDatasetJson("leaders", { season: SEASON, stat: "PTS" }),
-          getDatasetJson("playoffs", { season: SEASON }),
-          getDatasetJson("combine", { season: "2025" }),
-        ]);
-        if (!alive) return;
-        const next: Record<string, string[]> = {};
-        if (ld.ok) {
-          const lines = topLeaders(
-            (ld.data || []) as Record<string, unknown>[],
-            "PTS",
-          ).map((l) => `${l.rank}. ${l.name} — ${l.value}`);
-          if (lines.length) next.leaders = lines;
-        }
-        if (po.ok) {
-          const prows = (po.data || []) as Record<string, unknown>[];
-          const champ = playoffChampion(prows);
-          if (champ) {
-            next.playoffs = [
-              `${champ.champion} · ${champ.series} over ${champ.runnerUp}`,
-            ];
-          } else {
-            const n = countPlayoffGames(prows);
-            if (n > 0) next.playoffs = [`${n} playoff games in the warehouse`];
-          }
-        }
-        if (cb.ok) {
-          const s = combineSummary(
-            (cb.data || []) as Record<string, unknown>[],
-            "2025",
-          );
-          if (s) next.draft = [s];
-        }
-        setSummaries(next);
-      } catch {
-        /* summaries stay empty; cards degrade to labels + blurbs */
-      }
+      const next = await fetchIndexSummaries(
+        (name, params) => getDatasetJson(name, params),
+        SEASON,
+      );
+      if (alive) setSummaries(next);
     })();
     return () => {
       alive = false;

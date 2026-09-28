@@ -82,3 +82,58 @@ export function combineSummary(
   if (!rows.length) return null;
   return `${rows.length} prospects · ${draftYear} class`;
 }
+
+export interface DatasetResult {
+  ok: boolean;
+  data?: unknown[];
+}
+
+/**
+ * Live summaries for the Explore overview index cards. Each dataset fetch is
+ * isolated: Promise.allSettled + per-result ok checks, so one rejected or
+ * failed request never blanks the cards whose data arrived fine. A dataset
+ * that fails or returns no usable rows simply leaves its card without a
+ * summary (the card degrades to its label/blurb).
+ */
+export async function fetchIndexSummaries(
+  fetch: (name: string, params: Record<string, string>) => Promise<DatasetResult>,
+  season: string,
+): Promise<Record<string, string[]>> {
+  const [ld, po, cb] = await Promise.allSettled([
+    fetch("leaders", { season, stat: "PTS" }),
+    fetch("playoffs", { season }),
+    fetch("combine", { season: "2025" }),
+  ]);
+  const next: Record<string, string[]> = {};
+
+  if (ld.status === "fulfilled" && ld.value.ok) {
+    const lines = topLeaders(
+      (ld.value.data || []) as Record<string, unknown>[],
+      "PTS",
+    ).map((l) => `${l.rank}. ${l.name} — ${l.value}`);
+    if (lines.length) next.leaders = lines;
+  }
+
+  if (po.status === "fulfilled" && po.value.ok) {
+    const prows = (po.value.data || []) as Record<string, unknown>[];
+    const champ = playoffChampion(prows);
+    if (champ) {
+      next.playoffs = [
+        `${champ.champion} · ${champ.series} over ${champ.runnerUp}`,
+      ];
+    } else {
+      const n = countPlayoffGames(prows);
+      if (n > 0) next.playoffs = [`${n} playoff games in the warehouse`];
+    }
+  }
+
+  if (cb.status === "fulfilled" && cb.value.ok) {
+    const s = combineSummary(
+      (cb.value.data || []) as Record<string, unknown>[],
+      "2025",
+    );
+    if (s) next.draft = [s];
+  }
+
+  return next;
+}

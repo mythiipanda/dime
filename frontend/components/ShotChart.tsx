@@ -98,9 +98,10 @@ export default function ShotChart({
   }, [playerId, season]);
 
   if (!playerId) return null;
+  // No card shell or title here: the parent ExplorePanel already provides the
+  // panel chrome and "Shot chart" header. Render the chart content only.
   return (
-    <div className="card" style={{ marginTop: 16 }}>
-      <div style={{ fontWeight: 500 }}>Shot chart</div>
+    <div style={{ marginTop: 12 }}>
       <div style={{ fontSize: 12, color: "var(--color-warm-gray)" }}>
         {count} shots. Filled marks went in. Outlines missed.
       </div>
