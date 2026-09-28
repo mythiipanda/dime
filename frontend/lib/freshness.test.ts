@@ -1,7 +1,7 @@
-// Tests for the Explore nav freshness summary (redesign Phase C).
+// Tests for the Explore footer "Updated" line (redesign Phase 1).
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { freshDateLabel, summarizeFreshness } from "./freshness";
+import { freshDateLabel, updatedLine } from "./freshness";
 import type { FreshRow } from "./api";
 
 test("freshDateLabel formats ISO timestamps as 'Mon D'", () => {
@@ -22,60 +22,44 @@ const rows: FreshRow[] = [
   { table: "silver_shots", rows: 500, last_fetch: "2026-09-26T09:00:00", data_through: "2026-09-20" },
 ];
 
-test("summarizeFreshness uses the MINIMUM coverage date so a fresh table can't mask stale ones", () => {
-  assert.equal(
-    summarizeFreshness(rows),
-    "Data through Sep 20 · 3 datasets",
-  );
+test("updatedLine uses the EARLIEST coverage date so a fresh table can't mask stale ones", () => {
+  assert.equal(updatedLine(rows), "Updated Sep 20");
 });
 
-test("summarizeFreshness is order-independent", () => {
+test("updatedLine is order-independent", () => {
   const shuffled = [rows[2], rows[0], rows[1]];
-  assert.equal(
-    summarizeFreshness(shuffled),
-    "Data through Sep 20 · 3 datasets",
-  );
+  assert.equal(updatedLine(shuffled), "Updated Sep 20");
 });
 
-test("summarizeFreshness counts only datasets feeding the coverage minimum", () => {
+test("updatedLine ignores feeds with no coverage date", () => {
   const mixed: FreshRow[] = [
     ...rows,
     { table: "silver_standings", rows: 30, last_fetch: "2026-09-26T14:30:00", data_through: null },
     { table: "silver_playoffs", rows: 0, last_fetch: null, data_through: null },
   ];
-  assert.equal(
-    summarizeFreshness(mixed),
-    "Data through Sep 20 · 3 datasets",
-  );
+  assert.equal(updatedLine(mixed), "Updated Sep 20");
 });
 
-test("summarizeFreshness 'Last fetch' path counts only tables with a fetch time", () => {
+test("updatedLine falls back to the latest feed time on backends without coverage dates", () => {
   const legacy: FreshRow[] = [
     { table: "silver_team_games", rows: 1200, last_fetch: "2026-09-24T10:00:00" },
     { table: "silver_gamelogs", rows: 9800, last_fetch: "2026-09-26T14:30:00" },
     { table: "silver_shots", rows: 50, last_fetch: null },
   ];
+  assert.equal(updatedLine(legacy), "Updated Sep 26");
+});
+
+test("updatedLine returns null when nothing is known", () => {
+  assert.equal(updatedLine([]), null);
   assert.equal(
-    summarizeFreshness(legacy),
-    "Last fetch Sep 26 · 2 datasets",
+    updatedLine([{ table: "silver_x", rows: 0, last_fetch: null }]),
+    null,
   );
 });
 
-test("summarizeFreshness falls back to an honest 'Last fetch' label on backends without coverage dates", () => {
-  const legacy: FreshRow[] = [
-    { table: "silver_team_games", rows: 1200, last_fetch: "2026-09-24T10:00:00" },
-    { table: "silver_gamelogs", rows: 9800, last_fetch: "2026-09-26T14:30:00" },
-  ];
+test("updatedLine returns null on an unparseable coverage date", () => {
   assert.equal(
-    summarizeFreshness(legacy),
-    "Last fetch Sep 26 · 2 datasets",
-  );
-});
-
-test("summarizeFreshness returns null when nothing is known", () => {
-  assert.equal(summarizeFreshness([]), null);
-  assert.equal(
-    summarizeFreshness([{ table: "silver_x", rows: 0, last_fetch: null }]),
+    updatedLine([{ table: "silver_x", rows: 1, last_fetch: null, data_through: "junk" }]),
     null,
   );
 });

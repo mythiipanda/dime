@@ -4,10 +4,8 @@ import { useEffect, useState } from "react";
 import { getDatasetJson, SEASON } from "../lib/api";
 import { fetchIndexSummaries } from "../lib/exploreIndex";
 
-// Explore redesign Phase B: the overview index becomes the workspace.
-// Each card carries a compact live summary from existing dataset endpoints
-// (no new endpoints) and anchors to its panel on click. Sections with no
-// generic live endpoint get a plain one-line description of the tool —
+// Explore redesign Phase 1: the overview index is the only navigation.
+// A card renders only when its live summary arrived — no blurb fallbacks,
 // nothing invented, nothing hardcoded about a player or team.
 function ArrowUpRight({ size = 12 }: { size?: number }) {
   return (
@@ -31,15 +29,14 @@ function ArrowUpRight({ size = 12 }: { size?: number }) {
 interface CardDef {
   id: string;
   label: string;
-  blurb?: string;
 }
 
 const CARDS: CardDef[] = [
   { id: "leaders", label: "Leaders" },
-  { id: "shots", label: "Shots", blurb: "Zone shot charts for any player" },
-  { id: "trade", label: "Trade", blurb: "Simplified 2023 CBA salary matching" },
+  { id: "shots", label: "Shots" },
+  { id: "trade", label: "Trade" },
   { id: "draft", label: "Draft" },
-  { id: "lineups", label: "Lineups", blurb: "Five-man units and on/off splits" },
+  { id: "lineups", label: "Lineups" },
   { id: "playoffs", label: "Playoffs" },
 ];
 
@@ -50,7 +47,8 @@ export default function ExploreIndex({
 }) {
   // Live summary lines keyed by card id. Each dataset fetch is isolated
   // (Promise.allSettled inside fetchIndexSummaries), so one failed request
-  // never blanks the cards whose data arrived fine.
+  // never blanks the cards whose data arrived fine. Cards with no live
+  // data don't render.
   const [summaries, setSummaries] = useState<Record<string, string[]>>({});
 
   useEffect(() => {
@@ -67,9 +65,11 @@ export default function ExploreIndex({
     };
   }, []);
 
+  const visible = CARDS.filter((card) => (summaries[card.id] ?? []).length > 0);
+
   return (
     <div className="explore-index" aria-label="Available analysis">
-      {CARDS.map((card, index) => (
+      {visible.map((card, index) => (
         <button
           key={card.id}
           type="button"
@@ -83,17 +83,13 @@ export default function ExploreIndex({
             </span>
           </span>
           <strong>{card.label}</strong>
-          {summaries[card.id] ? (
-            <span className="explore-index-lines">
-              {summaries[card.id].map((line, i) => (
-                <span className="explore-index-line" key={i} title={line}>
-                  {line}
-                </span>
-              ))}
-            </span>
-          ) : card.blurb ? (
-            <span className="explore-index-blurb">{card.blurb}</span>
-          ) : null}
+          <span className="explore-index-lines">
+            {summaries[card.id].map((line, i) => (
+              <span className="explore-index-line" key={i} title={line}>
+                {line}
+              </span>
+            ))}
+          </span>
         </button>
       ))}
     </div>

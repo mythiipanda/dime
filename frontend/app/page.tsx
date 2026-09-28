@@ -40,7 +40,6 @@ export default function Home() {
     } catch {}
   }, []);
   const [paletteKey, setPaletteKey] = useState(0);
-  const [activeSection, setActiveSection] = useState("leaders");
   const [showOnboarding, setShowOnboarding] = useState(false);
 
   useEffect(() => {
@@ -395,9 +394,7 @@ export default function Home() {
             </div>
           ) : (
             <ExploreWorkspace
-              activeSection={activeSection}
               exploreKey={exploreKey}
-              onActiveSection={setActiveSection}
               onAsk={startFromOnboarding}
             />
           )}

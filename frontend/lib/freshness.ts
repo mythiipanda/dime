@@ -1,9 +1,10 @@
-// One-line freshness summary for the Explore sticky-nav status (redesign
-// Phase C). Uses per-feed DATA COVERAGE dates (data_through), not ingestion
-// time: last_fetch says when the warehouse pulled a table, which misleads
-// when shown as "Data through <date>". The summary takes the MINIMUM
-// coverage across covered tables so one fresh table can't mask stale ones;
-// the System status disclosure shows the per-feed detail.
+// One-line "Updated <date>" line for the bottom of the Explore page
+// (redesign Phase 1). It speaks in human language — no "freshness",
+// "system status", "sync", "pipeline", "endpoint", or "cache". Uses
+// per-feed data-coverage dates (data_through), not ingestion time, and
+// takes the earliest coverage across feeds so one fresh feed can't mask
+// stale ones. Returns null when the endpoint has nothing — the footer
+// then doesn't render at all.
 import type { FreshRow } from "./api";
 
 const MONTHS = [
@@ -19,28 +20,7 @@ export function freshDateLabel(iso: string): string | null {
   return `${MONTHS[month - 1]} ${Number(m[3])}`;
 }
 
-function coverageParticipants(rows: FreshRow[]): FreshRow[] {
-  // Only datasets that actually feed the coverage minimum. Static/snapshot
-  // tables with no data_through (combine, standings) are freshness-checked
-  // nowhere, so counting them overstates the label.
-  return rows.filter((r) => (r.rows ?? 0) > 0 && Boolean(r.data_through));
-}
-
-function fetchParticipants(rows: FreshRow[]): FreshRow[] {
-  return rows.filter((r) => (r.rows ?? 0) > 0 && Boolean(r.last_fetch));
-}
-
-// Latest ingestion times; lexicographic max on YYYY-MM-DD... timestamps.
-function latestFetchLabel(rows: FreshRow[]): string | null {
-  const fetches = rows
-    .map((r) => (r.last_fetch ? String(r.last_fetch) : ""))
-    .filter(Boolean)
-    .sort();
-  if (fetches.length === 0) return null;
-  return freshDateLabel(fetches[fetches.length - 1]);
-}
-
-export function summarizeFreshness(rows: FreshRow[]): string | null {
+export function updatedLine(rows: FreshRow[]): string | null {
   const coverage = rows
     .map((r) => (r.data_through ? String(r.data_through) : ""))
     .filter(Boolean)
@@ -48,18 +28,14 @@ export function summarizeFreshness(rows: FreshRow[]): string | null {
   if (coverage.length > 0) {
     // YYYY-MM-DD strings: lexicographic min == earliest coverage date.
     const label = freshDateLabel(coverage[0]);
-    if (!label) return null;
-    const datasets = coverageParticipants(rows).length;
-    return datasets > 0
-      ? `Data through ${label} · ${datasets} datasets`
-      : `Data through ${label}`;
+    return label ? `Updated ${label}` : null;
   }
-  // Backend predates coverage dates: name the thing we actually know --
-  // the last warehouse fetch -- instead of implying data coverage.
-  const label = latestFetchLabel(rows);
-  if (!label) return null;
-  const datasets = fetchParticipants(rows).length;
-  return datasets > 0
-    ? `Last fetch ${label} · ${datasets} datasets`
-    : `Last fetch ${label}`;
+  // Backend predates coverage dates: fall back to the latest feed time.
+  const fetches = rows
+    .map((r) => (r.last_fetch ? String(r.last_fetch) : ""))
+    .filter(Boolean)
+    .sort();
+  if (fetches.length === 0) return null;
+  const label = freshDateLabel(fetches[fetches.length - 1]);
+  return label ? `Updated ${label}` : null;
 }

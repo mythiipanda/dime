@@ -1,38 +1,20 @@
 "use client";
 
-import { useEffect, useRef, useState, type CSSProperties } from "react";
+import { useEffect, useRef, useState } from "react";
 import DatasetPanel from "./DatasetPanel";
 import DraftPanel from "./DraftPanel";
 import ExploreIndex from "./ExploreIndex";
 import LineupPanel from "./LineupPanel";
 import PlayoffPanel from "./PlayoffPanel";
 import ScoreStrip from "./ScoreStrip";
-import SystemStatus from "./SystemStatus";
 import TradePanel from "./TradePanel";
-import {
-  getFreshness,
-  getMovers,
-  getToday,
-  getWatchlist,
-} from "../lib/api";
-import { summarizeFreshness } from "../lib/freshness";
-import { buildQuickStarters, type QuickStarter } from "../lib/quickStart";
+import { getFreshness } from "../lib/api";
+import { updatedLine } from "../lib/freshness";
 
 interface ExploreWorkspaceProps {
-  activeSection: string;
   exploreKey: number;
-  onActiveSection: (section: string) => void;
   onAsk: (question: string) => void;
 }
-
-const sections = [
-  { id: "leaders", label: "Leaders" },
-  { id: "shots", label: "Shots" },
-  { id: "trade", label: "Trade" },
-  { id: "draft", label: "Draft" },
-  { id: "lineups", label: "Lineups" },
-  { id: "playoffs", label: "Playoffs" },
-];
 
 function ArrowUpRight({ size = 12 }: { size?: number }) {
   return (
@@ -54,75 +36,28 @@ function ArrowUpRight({ size = 12 }: { size?: number }) {
 }
 
 export default function ExploreWorkspace({
-  activeSection,
   exploreKey,
-  onActiveSection,
   onAsk,
 }: ExploreWorkspaceProps) {
   const scrollRootRef = useRef<HTMLDivElement | null>(null);
-  const [starters, setStarters] = useState<QuickStarter[] | null>(null);
-  const [freshLabel, setFreshLabel] = useState<string | null>(null);
+  const [updated, setUpdated] = useState<string | null>(null);
 
-  // Phase C: quick-ask starters come from live data (watchlist + weekly
-  // story), and the nav status shows the real freshness summary. Reuses
-  // existing endpoints only; failures degrade silently to the fallback.
+  // Redesign Phase 1: the only residue of the old freshness UI is one
+  // footer line ("Updated Oct 24"), rendered only when the endpoint has
+  // data. No nav status, no system-status disclosure, no empty states.
   useEffect(() => {
     let live = true;
-    Promise.allSettled([
-      getWatchlist(),
-      getMovers(),
-      getToday(),
-      getFreshness(),
-    ]).then(([watch, movers, today, fresh]) => {
-      if (!live) return;
-      setStarters(
-        buildQuickStarters({
-          watchlist:
-            watch.status === "fulfilled" ? watch.value : [],
-          climbers:
-            movers.status === "fulfilled" ? movers.value.climbers : [],
-          streaks:
-            today.status === "fulfilled" ? today.value.streaks : [],
-        }),
-      );
-      if (fresh.status === "fulfilled") {
-        setFreshLabel(summarizeFreshness(fresh.value));
-      }
-    });
+    getFreshness()
+      .then((rows) => {
+        if (live) setUpdated(updatedLine(rows ?? []));
+      })
+      .catch(() => {});
     return () => {
       live = false;
     };
   }, []);
 
-  const openSystemStatus = () => {
-    const el = document.getElementById("system-status");
-    if (!el) return;
-    (el as HTMLDetailsElement).open = true;
-    el.scrollIntoView({ behavior: "smooth", block: "start" });
-  };
-
-  useEffect(() => {
-    const root = scrollRootRef.current;
-    if (!root || !("IntersectionObserver" in window)) return;
-    const observer = new IntersectionObserver(
-      (entries) => {
-        const visible = entries
-          .filter((entry) => entry.isIntersecting)
-          .sort((a, b) => b.intersectionRatio - a.intersectionRatio)[0];
-        const id = visible?.target.id.replace("explore-", "");
-        if (id) onActiveSection(id);
-      },
-      { root, rootMargin: "-18% 0px -62%", threshold: [0.05, 0.25, 0.6] },
-    );
-    sections.forEach(({ id }) => {
-      const target = document.getElementById(`explore-${id}`);
-      if (target) observer.observe(target);
-    });
-    return () => observer.disconnect();
-  }, [exploreKey, onActiveSection]);
-
   const jumpTo = (id: string) => {
-    onActiveSection(id);
     document.getElementById(`explore-${id}`)?.scrollIntoView({
       behavior: "smooth",
       block: "start",
@@ -139,47 +74,9 @@ export default function ExploreWorkspace({
           </div>
 
           <ExploreIndex onJump={jumpTo} />
-
-          {starters && (
-            <div className="explore-quick-ask">
-              <span className="explore-quick-label">Start with a question</span>
-              <div>
-                {starters.map(({ label, question }) => (
-                  <button key={`${label}:${question}`} onClick={() => onAsk(question)}><span>{label}</span>{question}<span className="explore-quick-go"><ArrowUpRight /></span></button>
-                ))}
-              </div>
-            </div>
-          )}
         </section>
 
         <ScoreStrip />
-
-        <nav className="explore-nav" aria-label="Explore sections">
-          <div className="explore-nav-track" style={{ "--active-index": sections.findIndex(({ id }) => id === activeSection) } as CSSProperties}>
-            <span className="explore-nav-indicator" aria-hidden="true" />
-            {sections.map(({ id, label }) => (
-              <button
-                key={id}
-                type="button"
-                className={activeSection === id ? "is-active" : ""}
-                aria-current={activeSection === id ? "page" : undefined}
-                onClick={() => jumpTo(id)}
-              >
-                {label}
-              </button>
-            ))}
-            {freshLabel && (
-              <button
-                type="button"
-                className="explore-nav-status explore-nav-status-button"
-                onClick={openSystemStatus}
-                title="Open system status"
-              >
-                <span className="status-mark" /> {freshLabel}
-              </button>
-            )}
-          </div>
-        </nav>
 
         <div className="explore-content">
           <DatasetPanel key={exploreKey} />
@@ -187,8 +84,9 @@ export default function ExploreWorkspace({
           <DraftPanel />
           <LineupPanel />
           <PlayoffPanel />
-          <SystemStatus />
         </div>
+
+        {updated && <footer className="explore-footer">{updated}</footer>}
       </main>
     </div>
   );
