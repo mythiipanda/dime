@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import AutoChart from "./AutoChart";
 import DataTable from "./DataTable";
+import ExplorePanel, { PanelHeader } from "./ExplorePanel";
 import Sparkline from "./Sparkline";
 import { ShotChartCard } from "./ShotChart";
 import { datasetUrl, getDatasetJson, getQueryParam, resolveFirstPlayerId, resolvePlayers, setQueryParam } from "../lib/api";
@@ -86,9 +87,9 @@ function Leaders() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
   return (
-    <div className="card">
-      <div className="display" style={{ fontSize: 20 }}>League leaders</div>
-      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 12 }}>
+    <ExplorePanel id="explore-leaders">
+      <PanelHeader kicker="Stats" title="League leaders" action={<CopyLink />} />
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
         {CATS.map((c) => (
           <button
             key={c}
@@ -117,7 +118,6 @@ function Leaders() {
         >
           CSV
         </a>
-        <CopyLink />
       </div>
       {p.error && <div style={{ color: "var(--color-warm-gray)", marginTop: 8 }}>{p.error}</div>}
       <Meta meta={p.meta} />
@@ -143,7 +143,7 @@ function Leaders() {
           <DataTable rows={p.rows} storeKey="leaders" heat />
         </div>
       )}
-    </div>
+    </ExplorePanel>
   );
 }
 
@@ -166,9 +166,9 @@ function Standings() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
   return (
-    <div className="card">
-      <div className="display" style={{ fontSize: 20 }}>Standings race</div>
-      <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
+    <ExplorePanel id="explore-standings">
+      <PanelHeader kicker="Season" title="Standings race" action={<CopyLink />} />
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
         <input
           className="field"
           value={season}
@@ -192,7 +192,6 @@ function Standings() {
         >
           CSV
         </a>
-        <CopyLink />
       </div>
       {p.error && <div style={{ color: "var(--color-warm-gray)", marginTop: 8 }}>{p.error}</div>}
       <Meta meta={p.meta} />
@@ -201,7 +200,7 @@ function Standings() {
           <DataTable rows={p.rows} storeKey="standings" />
         </div>
       )}
-    </div>
+    </ExplorePanel>
   );
 }
 
@@ -246,9 +245,9 @@ function Gamelog() {
   const list = Array.isArray(p.rows) ? (p.rows as Record<string, unknown>[]) : [];
   const pts = list.filter((r) => typeof r.PTS === "number").map((r) => Number(r.PTS));
   return (
-    <div className="card">
-      <div className="display" style={{ fontSize: 20 }}>Game log trends</div>
-      <div style={{ display: "flex", gap: 8, marginTop: 12, flexWrap: "wrap" }}>
+    <ExplorePanel id="explore-gamelog">
+      <PanelHeader kicker="Player" title="Game log trends" action={<CopyLink />} />
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
         <input
           className="field"
           value={idVal}
@@ -265,7 +264,6 @@ function Gamelog() {
         >
           {p.busy ? "Loading" : "Show"}
         </button>
-        <CopyLink />
       </div>
       {suggest.length > 0 && (
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 8 }}>
@@ -296,19 +294,18 @@ function Gamelog() {
           <DataTable rows={p.rows} storeKey="gamelog" />
         </div>
       )}
-    </div>
+    </ExplorePanel>
   );
 }
 
 export default function DatasetPanel() {
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-      <div id="explore-leaders" style={{ scrollMarginTop: 16 }}>
-        <Leaders />
-      </div>
-      <div id="explore-shots" style={{ scrollMarginTop: 16 }}>
+      <Leaders />
+      <ExplorePanel id="explore-shots">
+        <PanelHeader kicker="Stats" title="Shot chart" />
         <ShotChartCard />
-      </div>
+      </ExplorePanel>
       <Standings />
       <Gamelog />
     </div>

@@ -526,6 +526,12 @@ body {
 .explore-nav button:hover { color: var(--color-ink-black); background: var(--hover-subtle); }.explore-nav button:active { transform: scale(.96); }.explore-nav button.is-active { color: var(--color-ink-black); background: transparent; font-weight: 500; }
 .explore-nav-status { display: inline-flex; align-items: center; gap: 8px; margin-left: auto; padding: 0 10px; color: var(--color-ash-gray); font-size: 12px; }
 .explore-content { display: flex; flex-direction: column; gap: 22px; }.explore-content .card { border-radius: 12px; transition: border-color 180ms ease, box-shadow 180ms ease; }.explore-content .card:hover { border-color: color-mix(in oklab, var(--color-cyan-edge) 24%, var(--color-stone-border)); box-shadow: 0 12px 34px color-mix(in oklab, var(--color-ink-black) 7%, transparent); }
+/* Explore panel chrome (shared PanelHeader + ExplorePanel): design.md is law — kicker 10px/600/.08em, title 16px/500/-.03em. */
+.explore-panel-anchor { scroll-margin-top: 64px; }
+.panel-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; margin-bottom: 14px; }
+.panel-kicker { color: var(--color-ash-gray); font-size: 10px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; }
+.panel-title { margin: 4px 0 0; font-size: 16px; font-weight: 500; letter-spacing: -.03em; line-height: 1.25; color: var(--color-ink-black); }
+.panel-head-action { display: flex; align-items: center; gap: 8px; flex-shrink: 0; padding-top: 2px; }
 .explore-section-anchor, #explore-leaders, #explore-shots { scroll-margin-top: 64px !important; }
 .system-status { border-top: 1px solid var(--color-stone-border); margin-top: 4px; }
 .system-status-summary { cursor: pointer; list-style: none; padding: 14px 2px; color: var(--color-ash-gray); font-size: 12px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; }
