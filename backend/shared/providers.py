@@ -55,13 +55,11 @@ GROQ_DEFAULT = "openai/gpt-oss-20b"
 
 OPENROUTER_ALLOWLIST: frozenset[str] = frozenset(
     {
+        # SOTA-class only (Tony's bar): the two Nemotron flagships.
+        # Smaller free models (gemma, qwen, lightning, nano) are out.
+        # `openrouter/free` auto-router stays as the availability fallback.
         "nvidia/nemotron-3-super-120b-a12b:free",
-        "google/gemma-4-31b-it:free",
-        "nvidia/nemotron-3.5-lightning:free",
         "nvidia/nemotron-3-ultra-550b-a55b:free",
-        "google/gemma-4-26b-a4b-it:free",
-        "qwen/qwen3.8-27b:free",
-        "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free",
     }
 )
 
