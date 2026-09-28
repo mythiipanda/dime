@@ -174,9 +174,11 @@ def run(ctx):
     res.mode = "live-backend"
     res.ledger = "signal"
     # Verify BEFORE probing: the backend must serve the fixture this
-    # suite's ground truth was computed from.
-    verified, detail, _identity = client.verify_warehouse(base, fixture_sha)
-    if not verified:
+    # suite's ground truth was computed from. (Keep the candidate list
+    # intact: verify_warehouse returns a bool status, not candidates.)
+    warehouse_ok, detail, _identity = client.verify_warehouse(
+        base, fixture_sha)
+    if not warehouse_ok:
         res.mode = "live-backend-unverified"
         for c in verified:
             res.fail(c["id"], f"warehouse-unverified: {detail}")

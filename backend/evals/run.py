@@ -171,13 +171,6 @@ def main(argv=None):
 
     print("\n---- ledger: answer-quality signal "
           "(live answers vs ground truth) ----")
-    pp = sum(r.passed for r in results if r.ledger != "signal")
-    pf = sum(r.failed for r in results if r.ledger != "signal")
-    ps = sum(r.skipped for r in results if r.ledger != "signal")
-    print(f"plumbing: pass={pp} fail={pf} skip={ps}")
-
-    print("\n---- ledger: answer-quality signal "
-          "(live answers vs ground truth) ----")
     sig = [r for r in results if r.ledger == "signal"]
     for r in sig:
         _print_suite(r)
