@@ -95,13 +95,31 @@ def test_skips_without_games(monkeypatch):
 def test_wrong_season_answer_scores_zero():
     # The bug, encoded: 2024-25 truth is 58.8, model answers 2025-26's 60.4.
     assert numeric_acc(
-        {"ts_pct": 58.8},
+        {"ts_pct": 58.8, "season": "2024-25"},
         "The Celtics posted a 60.4% true shooting mark in 2025-26.",
     ) == 0.0
 
 
 def test_correct_season_answer_scores_one():
     assert numeric_acc(
-        {"ts_pct": 58.8},
+        {"ts_pct": 58.8, "season": "2024-25"},
         "Boston's true shooting percentage was 58.8% in 2024-25.",
     ) == 1.0
+
+
+def test_right_number_wrong_season_phrasing_scores_zero():
+    # Instinct QA 2026-09-27 repro: numeric_acc stripped season strings,
+    # so the right number with explicit wrong-season phrasing scored 1.0.
+    assert numeric_acc(
+        {"ts_pct": 58.8, "season": "2024-25"},
+        "The Celtics posted a 58.8% true shooting mark in the "
+        "2025-26 regular season.",
+    ) == 0.0
+
+
+def test_facts_carry_named_season(monkeypatch):
+    _patch(monkeypatch)
+    _, truth = ground.gen_season_resolution(None, _ctx(0))
+    assert truth.facts["season"] == "2024-25"
+    _, truth2 = ground.gen_season_resolution(None, _ctx(2))
+    assert truth2.facts["season"] == "2023-24"

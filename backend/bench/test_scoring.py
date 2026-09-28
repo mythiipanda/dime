@@ -1,5 +1,5 @@
 from .driver import _observed_pred_args
-from .scoring import groundedness, numeric_acc, tool_f1
+from .scoring import groundedness, numeric_acc, season_consistency, tool_f1
 
 
 def test_last_name_loophole_closed():
@@ -57,6 +57,59 @@ def test_groundedness_rounding():
 def test_groundedness_catches_fabrication():
     assert groundedness(
         "He averages 99.9 points", '{"pts": 25.47}') == 0.0
+
+
+def test_season_consistency_wrong_season_zero():
+    # Instinct QA 2026-09-27 repro: the RIGHT number with WRONG-season
+    # phrasing scored 1.0 because numeric_acc stripped season strings.
+    assert season_consistency(
+        {"ts_pct": 58.8, "season": "2024-25"},
+        "The Celtics posted 58.8% TS in the 2025-26 regular season.",
+    ) == 0.0
+
+
+def test_season_consistency_right_season_one():
+    assert season_consistency(
+        {"ts_pct": 58.8, "season": "2024-25"},
+        "Boston's true shooting percentage was 58.8% in 2024-25.",
+    ) == 1.0
+
+
+def test_season_consistency_no_mention_no_penalty():
+    assert season_consistency(
+        {"ts_pct": 58.8, "season": "2024-25"},
+        "The Celtics posted 58.8% TS.",
+    ) == 1.0
+
+
+def test_season_consistency_long_and_dash_forms():
+    assert season_consistency(
+        {"wins": 68, "season": "2024-25"},
+        "OKC won 68 games in the 2024-2025 season.",
+    ) == 1.0
+    assert season_consistency(
+        {"wins": 68, "season": "2024-25"},
+        "OKC won 68 games in 2024\u201325.",
+    ) == 1.0
+
+
+def test_season_consistency_no_season_fact():
+    assert season_consistency({}, "in 2025-26") == 1.0
+
+
+def test_numeric_acc_gates_wrong_season_attribution():
+    assert numeric_acc(
+        {"ts_pct": 58.8, "season": "2024-25"},
+        "The Celtics posted a 58.8% true shooting mark in 2025-26.",
+    ) == 0.0
+    assert numeric_acc(
+        {"ts_pct": 58.8, "season": "2024-25"},
+        "Boston's true shooting percentage was 58.8% in 2024-25.",
+    ) == 1.0
+    assert numeric_acc(
+        {"ts_pct": 58.8, "season": "2024-25"},
+        "The Celtics posted 58.8% TS.",
+    ) == 1.0
 
 
 def test_tool_f1_lookup_match():

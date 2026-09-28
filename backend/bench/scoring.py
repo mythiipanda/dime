@@ -5,10 +5,49 @@ from decimal import Decimal, ROUND_HALF_UP
 
 NUM_RX = re.compile(r"-?\d+(?:,\d{3})*(?:\.\d+)?%?")
 SEASON_RX = re.compile(r"\b(?:19|20)\d\d-\d{2}(?:\d{2})?\b")
+_DASH_RX = re.compile(r"[\u2013\u2014\u2212]")  # en/em dash, minus sign
+
+
+def _dash_norm(text: str) -> str:
+    return _DASH_RX.sub("-", text or "")
 
 
 def _strip_seasons(text: str) -> str:
-    return SEASON_RX.sub("", text or "")
+    return SEASON_RX.sub("", _dash_norm(text))
+
+
+def _canon_season(raw: object) -> str | None:
+    """Canonical 'YYYY-YY' for a season label, else None.
+
+    Accepts '2024-25', '2024-2025', and en/em-dash variants; both tail
+    forms canonicalize to '2024-25' so they compare equal.
+    """
+    m = re.fullmatch(r"(?:19|20)\d{2}-\d{2}(?:\d{2})?",
+                     _dash_norm(str(raw or "")).strip())
+    if not m:
+        return None
+    head, tail = m.group(0).split("-")
+    return f"{head}-{tail[-2:]}"
+
+
+def season_consistency(facts: dict, answer: str) -> float:
+    """1.0 unless the answer names a different season than the task's.
+
+    Only applies when facts carry a top-level "season" label (currently
+    just the season_resolution golden family). An answer that names no
+    season at all is not penalized - only an explicit wrong-season claim
+    zeroes the score. That is the reported bug class: a 2024-25 question
+    answered with 2025-26 numbers and 2025-26 phrasing.
+    """
+    expected = _canon_season((facts or {}).get("season"))
+    if expected is None:
+        return 1.0
+    mentioned = {_canon_season(m)
+                 for m in SEASON_RX.findall(_dash_norm(answer))}
+    mentioned.discard(None)
+    if not mentioned:
+        return 1.0
+    return 1.0 if expected in mentioned else 0.0
 
 TOOL_FAMILY: dict[str, str | None] = {
     "get_leaders": "lookup",
@@ -171,6 +210,11 @@ def numeric_acc(facts: dict, answer: str) -> float:
             if isinstance(v, (int, float)) and not isinstance(v, bool)}
     if not nums:
         return 1.0
+    # Season-aware gate (Instinct QA 2026-09-27): a numeric hit means
+    # nothing when the answer explicitly attributes it to the wrong
+    # season - e.g. the right 2024-25 number phrased as 2025-26.
+    if isinstance(facts, dict) and season_consistency(facts, answer) == 0.0:
+        return 0.0
     text = _strip_seasons(answer or "")
     hits = 0
     for key, value in nums.items():

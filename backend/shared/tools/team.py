@@ -5,7 +5,7 @@ import asyncio as _asyncio
 from langchain_core.tools import tool
 
 from ..sources import nba_stats
-from ._core import SEASON, TTL_BOX, TTL_GAMELOG, TTL_PBPSTATS, TTL_ROSTER, TTL_SCOREBOARD_PAST, _warehouse_or_live, coerce_team_id, is_past_game_date, sample_tier
+from ._core import SEASON, TTL_BOX, TTL_GAMELOG, TTL_PBPSTATS, TTL_ROSTER, TTL_SCOREBOARD_PAST, _warehouse_or_live, coerce_team_id, is_past_game_date, sample_tier, season_static
 
 
 def _abbrev(who: str) -> str:
@@ -372,6 +372,86 @@ def get_season_series(team_a: str, team_b: str,
                              "team scores tracked for regular season"}}
 
 
+# Historical team-game slice: silver_team_games is itself a promoted slice
+# of silver_hist_gamelogs (scripts/seed_2025_26_warehouse.py), so a static
+# season with no seeded silver_team_games rows is served straight from the
+# source table with the same column renames, running W/L, and GAME_DATE
+# format. This aligns the answer source with the season_resolution bench
+# truth, which aggregates these exact rows (Instinct QA 2026-09-27).
+_HIST_TEAM_GAMES_SQL = """
+SELECT
+  team_id AS "Team_ID",
+  game_id AS "Game_ID",
+  UPPER(STRFTIME(CAST(game_date AS DATE), '%b %d, %Y')) AS "GAME_DATE",
+  matchup AS "MATCHUP",
+  wl AS "WL",
+  SUM(CASE WHEN wl = 'W' THEN 1 ELSE 0 END) OVER w AS "W",
+  SUM(CASE WHEN wl = 'L' THEN 1 ELSE 0 END) OVER w AS "L",
+  CAST(SUM(CASE WHEN wl = 'W' THEN 1 ELSE 0 END) OVER w AS DOUBLE) /
+    CAST(ROW_NUMBER() OVER w AS DOUBLE) AS "W_PCT",
+  min AS "MIN",
+  fgm AS "FGM",
+  fga AS "FGA",
+  fg_pct AS "FG_PCT",
+  fg3m AS "FG3M",
+  fg3a AS "FG3A",
+  fg3_pct AS "FG3_PCT",
+  ftm AS "FTM",
+  fta AS "FTA",
+  ft_pct AS "FT_PCT",
+  oreb AS "OREB",
+  dreb AS "DREB",
+  reb AS "REB",
+  ast AS "AST",
+  stl AS "STL",
+  blk AS "BLK",
+  tov AS "TOV",
+  pf AS "PF",
+  pts AS "PTS",
+  'sportsdataverse' AS "_source",
+  ? AS "_season",
+  ? AS "_fetched_at",
+  'team:' || CAST(team_id AS VARCHAR) AS "_entity"
+FROM silver_hist_gamelogs
+WHERE _season = ? AND team_id = ? AND season_type = 'regular-season'
+WINDOW w AS (PARTITION BY team_id ORDER BY game_date, game_id
+             ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW)
+ORDER BY game_date, game_id
+"""
+
+
+def _hist_team_games(team_id: int, season: str) -> list[dict[str, Any]]:
+    """Regular-season team game rows for a historical static season.
+
+    Same rows, same shape as the silver_team_games promotion; [] when the
+    warehouse has no historical coverage (caller keeps its no-data error).
+    """
+    from .. import store as _store
+    try:
+        con = _store.connect(read_only=True)
+        try:
+            tables = {r[0]
+                      for r in con.execute("SHOW TABLES").fetchall()}
+            if "silver_hist_gamelogs" not in tables:
+                return []
+            cols = {r[1] for r in con.execute(
+                "PRAGMA table_info(silver_hist_gamelogs)").fetchall()}
+            need = {"team_id", "game_id", "game_date", "matchup", "wl",
+                    "pts", "fga", "fta", "season_type"}
+            if not need <= cols:
+                return []
+            import datetime as _dt
+            fetched_at = _dt.datetime.now(_dt.timezone.utc).isoformat()
+            cur = con.execute(_HIST_TEAM_GAMES_SQL,
+                              [season, fetched_at, season, team_id])
+            names = [d[0] for d in cur.description]
+            return [dict(zip(names, row)) for row in cur.fetchall()]
+        finally:
+            con.close()
+    except Exception:
+        return []
+
+
 @tool
 def get_team_hub(team_id: str | int, season: str = SEASON) -> dict[str, Any]:
     """Game log plus roster for one team id. Warehouse first."""
@@ -382,6 +462,21 @@ def get_team_hub(team_id: str | int, season: str = SEASON) -> dict[str, Any]:
         lambda: nba_stats.team_gamelog(team_id, season), season,
         entity=f"team:{team_id}", ttl_s=TTL_GAMELOG,
     )
+    if not games and season_static(season) and meta.get("error"):
+        # No seeded silver_team_games rows for this complete season: serve
+        # the same promoted slice from silver_hist_gamelogs instead of
+        # erroring. Before this, old-season questions could only be answered
+        # from the current season's numbers (the season_resolution bug).
+        hist = _hist_team_games(team_id, season)
+        if hist:
+            games = hist
+            meta = {"rows": len(games), "cached": True,
+                    "source": "warehouse:silver_hist_gamelogs",
+                    "season": season, "season_type": "regular-season",
+                    "static_season": True,
+                    "note": "historical season served from the "
+                            "silver_hist_gamelogs regular-season slice "
+                            "(same rows silver_team_games is promoted from)"}
     roster, _ = _warehouse_or_live(
         "silver_rosters", "_season = ? AND _entity = ?",
         [season, f"team:{team_id}"],

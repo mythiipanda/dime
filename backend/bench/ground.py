@@ -3186,9 +3186,14 @@ def gen_rapm_prior(rng, ctx) -> tuple[Task, GroundTruth]:
 # bug class (2026-09-27: a "2024-25 TS%" question answered with 2025-26
 # numbers). Fixed curated questions, each naming exactly one past season;
 # ground truth is computed live from silver_hist_gamelogs (team game logs)
-# for THAT season. numeric_acc then scores 0 when the model answers with a
-# different season's numbers -- correctness, not schema. Deterministic:
-# task_id "season_resolution-{idx}-{seed}" cycles the golden list in order.
+# for THAT season. Source alignment (Instinct QA 2026-09-27): get_team_hub
+# now serves historical seasons from the same silver_hist_gamelogs
+# regular-season slice that silver_team_games is promoted from, so the
+# answer source and the truth source are the same rows - the bench grades
+# the model's season resolution, not warehouse coverage. numeric_acc is
+# season-aware via facts["season"]: a numeric hit explicitly attributed to
+# the wrong season scores 0. Deterministic: task_id
+# "season_resolution-{idx}-{seed}" cycles the golden list in order.
 # The natural app tool is get_team_hub(team, season), family "chain".
 # ---------------------------------------------------------------------------
 
@@ -3250,7 +3255,8 @@ def gen_season_resolution(rng, ctx) -> tuple[Task, GroundTruth]:
         value = int(row["wins"])
     else:
         value = round(row["pts"] / row["gp"], 1)
-    facts = {_SEASON_FACT_KEY[template]: value, "names": {"team": team}}
+    facts = {_SEASON_FACT_KEY[template]: value, "names": {"team": team},
+             "season": season}
     task = Task(
         task_id=tid, family="season_resolution",
         question=_SEASON_TMPL[template].format(team=team, season=season),
@@ -3260,7 +3266,8 @@ def gen_season_resolution(rng, ctx) -> tuple[Task, GroundTruth]:
     truth = GroundTruth(
         task_id=tid, facts=facts, computed_at=_now(),
         source="warehouse via silver_hist_gamelogs regular-season team "
-               "game logs (TS% = PTS / (2 * (FGA + 0.44 * FTA)))",
+               "game logs (TS% = PTS / (2 * (FGA + 0.44 * FTA))); the same "
+               "rows get_team_hub serves for historical seasons",
     )
     return task, truth
 
