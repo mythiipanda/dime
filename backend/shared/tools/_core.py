@@ -23,6 +23,7 @@ TOOL_LABELS = {
     "delegate_league": "Scanning league data",
     "run_python": "Crunching numbers",
     "text_to_sql": "Querying the warehouse",
+    "query_warehouse": "Querying the warehouse",
     "get_playoff_intel": "Pulling playoff logs",
     "get_trade_check": "Checking trade math",
     "get_trade_value": "Grading trade value",
@@ -50,6 +51,7 @@ TOOL_LABELS = {
 _DESK_LABEL_OVERRIDES = {
     "run_python": "Warehouse query",
     "text_to_sql": "Warehouse query",
+    "query_warehouse": "Warehouse query",
 }
 
 
