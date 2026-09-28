@@ -81,7 +81,11 @@ def test_hanging_provider_fails_fast(monkeypatch):
         assert "all providers failed" in str(exc)
         assert "no first token" in str(exc)
         assert "p1" in str(exc)
-    assert prov.probe_verdict("p1") is False
+    # probe_verdict is stubbed to None in _setup (so the fallback loop always
+    # proceeds); the failure is recorded by the note_provider_failure stub,
+    # which writes (ok, ts) into _probe_state. Check the recorded state.
+    ok, _ts = prov._probe_state.get("p1", (None, None))
+    assert ok is False, "hanging provider was not recorded as a failure"
 
 
 def test_hanging_provider_falls_back_to_next(monkeypatch):
