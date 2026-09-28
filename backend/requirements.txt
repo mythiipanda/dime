@@ -8,6 +8,7 @@ langchain-core==1.6.2
 langchain-openai==1.6.0
 nba_api==1.11.4
 duckdb==1.5.5
+sqlglot==30.20.0
 polars==1.44.1
 pyarrow==25.0.1
 pandera==0.33.1

@@ -6,118 +6,71 @@ opened read_only, with a statement timeout and a row cap. It returns
 columns, rows, and a truncation flag, so the caller can tell when the
 cap cut the result short.
 
+Validation is AST-level, not string-level: the statement is parsed
+with sqlglot (DuckDB dialect) and every table reference and function
+call in the tree is checked against explicit allowlists. A regex
+blocklist can never enumerate every spelling of a filesystem read
+(read_csv_auto, quoted or parenthesised calls, scalar readers like
+read_blob); the parse tree has no such gaps, because anything that
+reads outside the allowlisted tables shows up as an unknown table or
+a non-allowlisted function, and unknown functions fail closed.
+
 Errors are honest about what happened: blocked statements, timeouts,
 and syntax failures each get their own message. No write path exists.
 """
 
-import re
 import threading
 import time
 
 import duckdb
+import sqlglot
+from sqlglot import exp
 
 from . import store
 
 ROW_CAP = 500
 STATEMENT_TIMEOUT_S = 30
 
-# First keyword of the single statement. Anything else is rejected.
-_FIRST_WORD_RE = re.compile(r"(?i)^\s*(select|with)\b")
+# Statements the tool accepts: plain SELECT/WITH, plus set operations
+# whose branches are all SELECTs (UNION/INTERSECT/EXCEPT).
+_READ_STMTS = (exp.Select, exp.Union, exp.Intersect, exp.Except)
 
-# Statement-level words that can never appear in a read-only query.
-_WRITE_WORDS = (
-    "insert", "update", "delete", "drop", "alter", "create", "pragma",
-    "attach", "detach", "copy", "vacuum", "install", "load",
-    "checkpoint", "export", "import", "grant", "revoke", "truncate",
-)
-_WRITE_RE = re.compile(r"\b(" + "|".join(_WRITE_WORDS) + r")\b", re.IGNORECASE)
-
-# Table functions that reach the filesystem or the network.
-_TABLE_FN_RE = re.compile(
-    r"\b(read_csv|read_parquet|read_json|read_ndjson|read_txt|"
-    r"read_json_auto|parquet_scan|csv_scan|json_scan|sqlite_scan|"
-    r"sqlite_attach|httpfs_read|read_text)\s*\(",
-    re.IGNORECASE,
-)
-
-# A quoted FROM target that looks like a file path or URL, e.g.
-# FROM 's3://bucket/games.parquet' or FROM '/tmp/x.csv'.
-_PATHY_FROM_RE = re.compile(
-    r"""(?i)\bfrom\s+(['"])([^'"]*(?:/|\\|\.(?:csv|parquet|json|ndjson|tsv|txt|db))\b[^'"]*)\1"""
-)
-
-# Unquoted table references: FROM x, JOIN x.
-_TABLE_REF_RE = re.compile(
-    r"(?i)\bfrom\s+([a-zA-Z_]\w*)|\bjoin\s+([a-zA-Z_]\w*)"
-)
-
-# CTE names declared in WITH ... AS (...), so the outer query's
-# FROM <cte> is not mistaken for a warehouse table.
-_CTE_FIRST_RE = re.compile(r"(?i)\bwith\b\s+([a-zA-Z_]\w*)\s+as\s*\(")
-_CTE_REST_RE = re.compile(r"(?i),\s*([a-zA-Z_]\w*)\s+as\s*\(")
-
-# Words that look like table names to the FROM/JOIN pattern but are
-# SQL keywords, so they are never treated as table references.
-_KEYWORDS = frozenset("""
-select from where join on group order by having limit offset with as
-and or not in is null like ilike between union all distinct case when
-then else end left right inner outer full cross natural using values
-into over partition window rows range unbounded preceding following
-current row asc desc true false cast extract pivot unpivot
+# Explicit allowlist of pure scalar/aggregate/window functions: no
+# filesystem or network I/O, no catalog access, no configuration
+# reads. Anything not on this list is rejected, so a function the
+# validator has never seen (read_csv_auto, read_blob, current_setting,
+# ...) fails closed instead of slipping through.
+_SAFE_FUNCTIONS = frozenset("""
+case if coalesce nullif ifnull greatest least
+cast try_cast
+count sum avg mean min max median quantile quantile_cont quantile_disc
+mode stddev stddev_pop stddev_samp var_pop var_samp variance
+string_agg group_concat listagg list_agg array_agg bool_and bool_or
+approx_count_distinct arg_max arg_min corr covar_pop covar_samp
+regr_slope regr_intercept regr_count regr_r2 regr_avgx regr_avgy
+regr_sxx regr_syy regr_sxy first last any_value min_by max_by
+product histogram approx_quantile skewness kurtosis list
+row_number rank dense_rank percent_rank cume_dist ntile
+lag lead first_value last_value nth_value
+abs ceil ceiling floor round trunc sqrt cbrt pow power exp
+ln log log10 log2 sign mod div gcd lcm factorial
+degrees radians sin cos tan asin acos atan atan2 pi
+even isinf isfinite isnan random uuid
+lower upper length len char_length character_length
+trim ltrim rtrim btrim substr substring left right
+reverse repeat replace concat concat_ws starts_with ends_with
+contains position strpos str_position instr split_part string_split
+regexp_matches regexp_replace regexp_extract
+lpad rpad chr ascii unicode md5 sha256 format printf
+overlay translate levenshtein
+now current_date current_timestamp current_time
+year month day hour minute second week quarter dow doy epoch
+date_part datepart date_trunc datediff date_diff dateadd date_add
+age make_date make_time make_timestamp strftime monthname dayname
+extract
+array list_value struct struct_pack row unnest
+list_contains list_has typeof
 """.split())
-
-
-def _blank_noncode(sql: str) -> str:
-    """Return sql with string literals and comments replaced by spaces.
-
-    All guardrail checks run on this view, so a blocked word inside a
-    string literal (WHERE note = 'copy this') is left alone and a
-    blocked word hiding inside a comment is still caught. Positions
-    are preserved, so later slicing still lines up.
-    """
-    out = list(sql)
-    i, n = 0, len(sql)
-    in_str: str | None = None
-
-    def _blank(a: int, b: int) -> None:
-        for k in range(a, b):
-            if out[k] != "\n":
-                out[k] = " "
-
-    while i < n:
-        ch = sql[i]
-        if in_str:
-            if ch == in_str:
-                if i + 1 < n and sql[i + 1] == in_str:
-                    out[i] = out[i + 1] = " "
-                    i += 2
-                    continue
-                out[i] = " "
-                in_str = None
-            else:
-                if ch != "\n":
-                    out[i] = " "
-            i += 1
-            continue
-        if ch in ("'", '"', "`"):
-            in_str = ch
-            out[i] = " "
-            i += 1
-            continue
-        if ch == "-" and i + 1 < n and sql[i + 1] == "-":
-            j = sql.find("\n", i)
-            j = n if j == -1 else j
-            _blank(i, j)
-            i = j
-            continue
-        if ch == "/" and i + 1 < n and sql[i + 1] == "*":
-            j = sql.find("*/", i + 2)
-            j = n if j == -1 else j + 2
-            _blank(i, j)
-            i = j
-            continue
-        i += 1
-    return "".join(out)
 
 
 def _split_statements(sql: str) -> list[str]:
@@ -171,11 +124,26 @@ def _split_statements(sql: str) -> list[str]:
     return parts
 
 
-def _cte_names(code: str) -> set[str]:
-    """Names bound by WITH ... AS (...) clauses."""
-    names = {m.group(1).lower() for m in _CTE_FIRST_RE.finditer(code)}
-    names |= {m.group(1).lower() for m in _CTE_REST_RE.finditer(code)}
-    return names
+def _parse_one(stmt: str) -> exp.Expression:
+    """Parse one statement into an AST, or raise ValueError."""
+    try:
+        trees = [t for t in sqlglot.parse(stmt, read="duckdb")
+                 if t is not None]
+    except Exception as exc:
+        raise ValueError(f"syntax error: could not parse SQL ({exc})")
+    if not trees:
+        raise ValueError("blocked: only SELECT and WITH queries are allowed")
+    if len(trees) > 1:
+        raise ValueError("blocked: only one statement per call; "
+                         "multiple statements are not allowed")
+    return trees[0]
+
+
+def _func_name(fn: exp.Func) -> str:
+    """Lowercased function name as the validator checks it."""
+    if isinstance(fn, exp.Anonymous):
+        return fn.name.lower()
+    return fn.sql_name().lower()
 
 
 def _allowed_tables(con) -> set[str]:
@@ -200,8 +168,8 @@ def _allowed_tables(con) -> set[str]:
 
 
 def _check(sql: str, allowed: set[str]) -> str:
-    """Validate sql. Returns the normalized statement or raises ValueError
-    with a message the caller passes straight to the agent."""
+    """Validate sql against its AST. Returns the statement or raises
+    ValueError with a message the caller passes straight to the agent."""
     text = (sql or "").strip()
     if not text:
         raise ValueError("empty SQL")
@@ -210,24 +178,29 @@ def _check(sql: str, allowed: set[str]) -> str:
         raise ValueError("blocked: only one statement per call; "
                          "multiple statements are not allowed")
     stmt = stmts[0].rstrip().rstrip(";").strip()
-    code = _blank_noncode(stmt)
-    if not _FIRST_WORD_RE.match(code):
+    tree = _parse_one(stmt)
+    if not isinstance(tree, _READ_STMTS):
         raise ValueError("blocked: only SELECT and WITH queries are allowed")
-    if _WRITE_RE.search(code):
-        raise ValueError("blocked: write operations are not allowed; "
-                         "SELECT/WITH only")
-    if _TABLE_FN_RE.search(code):
-        raise ValueError("blocked: filesystem and network table "
-                         "functions are not allowed")
-    if _PATHY_FROM_RE.search(stmt):
-        raise ValueError("blocked: raw file paths are not allowed; "
-                         "query the warehouse tables")
-    refs = {a or b for a, b in _TABLE_REF_RE.findall(code)}
-    refs = {r for r in refs
-            if r.lower() not in _KEYWORDS and r.lower() not in _cte_names(code)}
-    unknown = sorted(r for r in refs if r not in allowed)
-    if unknown:
-        raise ValueError("blocked: unknown table(s): " + ", ".join(unknown))
+    for sel in tree.find_all(exp.Select):
+        if sel.args.get("into") is not None:
+            raise ValueError("blocked: SELECT ... INTO is not allowed; "
+                             "it creates a table")
+    cte_names = {c.alias.lower() for c in tree.find_all(exp.CTE)
+                 if c.alias}
+    ok_tables = {t.lower() for t in allowed} | cte_names
+    for tbl in tree.find_all(exp.Table):
+        name = tbl.name or ""
+        if not name:
+            # A table slot with no name is a table function call
+            # (read_csv_auto(...), range(...)); never legitimate here.
+            raise ValueError("blocked: table functions are not allowed; "
+                             "query the warehouse tables")
+        if name.lower() not in ok_tables:
+            raise ValueError("blocked: unknown table(s): " + tbl.name)
+    for fn in tree.find_all(exp.Func):
+        fname = _func_name(fn)
+        if fname not in _SAFE_FUNCTIONS:
+            raise ValueError("blocked: function not allowed: " + fname)
     return stmt
 
 

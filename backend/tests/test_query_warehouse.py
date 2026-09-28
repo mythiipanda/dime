@@ -266,3 +266,64 @@ def test_tool_registered():
     from shared.tools._core import tool_label
 
     assert tool_label("query_warehouse", desk=True) == "Warehouse query"
+
+
+def test_read_csv_auto_bypass_closed(tiny_warehouse):
+    # Instinct's find: read_csv_auto slipped the old regex guardrail
+    # (the blocklist named read_csv but not read_csv_auto, and the
+    # FROM-word pattern missed quoted/parenthesised spellings).
+    # AST validation must reject every filesystem/network function,
+    # however it is spelled or positioned.
+    for sql in [
+        "SELECT * FROM read_csv_auto('/tmp/x.csv')",
+        "SELECT * FROM (read_csv_auto('/tmp/x.csv'))",
+        "SELECT * FROM (read_csv_auto('/tmp/x.csv')) AS t(a, b)",
+        "SELECT * FROM \"read_csv_auto\"('/tmp/x.csv')",
+        "SELECT * FROM read_csv('/tmp/x.csv', auto_detect=true)",
+        "SELECT * FROM read_parquet('/tmp/x.parquet')",
+        "SELECT * FROM read_json_auto('/tmp/x.json')",
+        "SELECT * FROM read_ndjson('/tmp/x.ndjson')",
+        "SELECT * FROM parquet_scan('/tmp/x.parquet')",
+        "SELECT * FROM (SELECT * FROM read_csv_auto('/tmp/x.csv'))",
+        "WITH c AS (SELECT 1 AS n) "
+        "SELECT * FROM read_csv_auto('/tmp/x.csv'), c",
+        "SELECT * FROM '/tmp/x.csv'",
+        "SELECT * FROM 's3://bucket/x.csv'",
+        "SELECT * FROM range(3)",
+        "SELECT read_blob('/tmp/x.csv')",
+        "SELECT read_text('/tmp/x.csv')",
+        "SELECT current_setting('memory_limit')",
+        "SELECT * INTO sneak FROM silver_standings",
+    ]:
+        out = q.query_warehouse(sql)
+        assert out["ok"] is False, sql
+        assert "blocked" in out["error"], (sql, out["error"])
+
+
+def test_legit_window_and_cte_still_pass(tiny_warehouse):
+    out = q.query_warehouse(
+        "WITH ranked AS (SELECT TeamCity, WINS, "
+        "ROW_NUMBER() OVER (ORDER BY WINS DESC) AS rn "
+        "FROM silver_standings) "
+        "SELECT TeamCity, WINS FROM ranked WHERE rn <= 2 ORDER BY rn"
+    )
+    assert out["ok"] is True, out.get("error")
+    assert [r["TeamCity"] for r in out["rows"]] == [
+        "Oklahoma City", "Boston"]
+    out = q.query_warehouse(
+        "SELECT CAST(WINS AS DOUBLE) / (WINS + LOSSES) AS pct, "
+        "UPPER(TeamCity) AS city FROM silver_standings "
+        "WHERE WINS BETWEEN 60 AND 70 ORDER BY pct DESC"
+    )
+    assert out["ok"] is True, out.get("error")
+    assert out["rows"][0]["city"] == "OKLAHOMA CITY"
+
+
+def test_union_of_selects_passes(tiny_warehouse):
+    out = q.query_warehouse(
+        "SELECT TeamCity FROM silver_standings WHERE WINS > 65 "
+        "UNION ALL SELECT TeamCity FROM silver_standings WHERE WINS < 65"
+    )
+    assert out["ok"] is True, out.get("error")
+    assert {r["TeamCity"] for r in out["rows"]} == {
+        "Oklahoma City", "Boston"}
