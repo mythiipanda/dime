@@ -492,11 +492,21 @@ def _team_game_summary(games: list[dict[str, Any]],
     when the rows in hand are the complete season (the
     silver_hist_gamelogs static-season slice); the live path's 25-row
     sample says so explicitly instead of masquerading as season totals.
+
+    Partial stat rows: a row may lack PTS/FGA/FTA (a clipped live
+    payload, a partial seed). A game only counts toward a metric when
+    that metric's fields exist on the row - PPG averages over games
+    with PTS, TS% over games with PTS+FGA+FTA - and each rate carries
+    its game count (ppg_games, ts_pct_games), so a partial sample is
+    never mistaken for season totals (Instinct QA 2026-09-27: 2 rows,
+    one statless, silently averaged as ppg=50.0 over 2 games).
     TS% uses the same formula as the bench ground truth.
     """
     wins = losses = 0
-    pts = fga = fta = 0.0
-    have_stats = False
+    pts = 0.0
+    pts_games = 0
+    ts_pts = ts_fga = ts_fta = 0.0
+    ts_games = 0
     for g in games:
         wl = str(g.get("WL", g.get("wl", ""))).strip().upper()
         if wl.startswith("W"):
@@ -504,13 +514,16 @@ def _team_game_summary(games: list[dict[str, Any]],
         elif wl.startswith("L"):
             losses += 1
         p = _cell(g, "PTS", "pts")
+        if p is not None:
+            pts += p
+            pts_games += 1
         a2 = _cell(g, "FGA", "fga")
         a3 = _cell(g, "FTA", "fta")
         if p is not None and a2 is not None and a3 is not None:
-            pts += p
-            fga += a2
-            fta += a3
-            have_stats = True
+            ts_pts += p
+            ts_fga += a2
+            ts_fta += a3
+            ts_games += 1
     out: dict[str, Any] = {
         "games": len(games),
         "wins": wins,
@@ -518,10 +531,13 @@ def _team_game_summary(games: list[dict[str, Any]],
         # True only when the rows in hand ARE the whole season.
         "covers_full_season": bool(full_season and games),
     }
-    if games and have_stats:
-        denom = 2 * (fga + 0.44 * fta)
-        out["ppg"] = round(pts / len(games), 1)
-        out["ts_pct"] = round(100 * pts / denom, 1) if denom > 0 else None
+    if pts_games:
+        out["ppg"] = round(pts / pts_games, 1)
+        out["ppg_games"] = pts_games
+    if ts_games:
+        denom = 2 * (ts_fga + 0.44 * ts_fta)
+        out["ts_pct"] = round(100 * ts_pts / denom, 1) if denom > 0 else None
+        out["ts_pct_games"] = ts_games
     return out
 
 

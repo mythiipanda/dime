@@ -30,3 +30,10 @@ If the canonical scorer changes, regenerate this fixture from the new
 source — never hand-edit `expected` values. Fetch the current
 `evals/dimebench/scoring.py` from dime-internal and rerun the generation
 snippet recorded in the queue notes for this item.
+
+`test_season_consistency_mirror.py::test_expected_outputs_match_canonical_scorer`
+enforces this: it runs the canonical scorer (local dime-internal
+checkout, else the pinned blob at the fixture header's `canonical_sha`,
+sha-verified before execution) on every case and asserts its verdicts
+equal `expected`. Hand-edited or stale mirrors fail loudly; the test
+skips where the scorer is unreachable.

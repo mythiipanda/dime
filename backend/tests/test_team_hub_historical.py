@@ -192,6 +192,46 @@ def test_summary_empty_games():
         "games": 0, "wins": 0, "losses": 0, "covers_full_season": False}
 
 
+def test_summary_partial_stats_uses_per_metric_denominators():
+    # Instinct QA 2026-09-27 repro: 2 rows, one statless, silently
+    # averaged 100 PTS over 2 games as ppg=50.0. Now a game counts
+    # toward a metric only when that metric's fields exist.
+    games = [
+        {"WL": "W", "PTS": 100, "FGA": 90, "FTA": 20},
+        {"WL": "L", "GAME_DATE": "OCT 01, 2025"},
+    ]
+    s = team_mod._team_game_summary(games, False)
+    assert (s["games"], s["wins"], s["losses"]) == (2, 1, 1)
+    assert s["ppg"] == pytest.approx(100.0)  # not 50.0
+    assert s["ppg_games"] == 1
+    assert s["ts_pct"] == pytest.approx(
+        round(100 * 100 / (2 * (90 + 0.44 * 20)), 1))
+    assert s["ts_pct_games"] == 1
+    assert s["covers_full_season"] is False
+
+
+def test_summary_pts_without_fga_counts_only_for_ppg():
+    # PTS present but FGA/FTA missing: counts toward PPG, not TS%.
+    games = [
+        {"WL": "W", "PTS": 100, "FGA": 90, "FTA": 20},
+        {"WL": "W", "PTS": 110},
+    ]
+    s = team_mod._team_game_summary(games, True)
+    assert s["ppg"] == pytest.approx(105.0)
+    assert s["ppg_games"] == 2
+    assert s["ts_pct_games"] == 1
+    # Row coverage is complete (the rows in hand ARE the season); stat
+    # coverage is per-metric, so the flag stays a row-coverage claim.
+    assert s["covers_full_season"] is True
+
+
+def test_summary_full_coverage_carries_game_counts():
+    rows = team_mod._hist_team_games(2, "2024-25")
+    s = team_mod._team_game_summary(rows, True)
+    assert s["ppg_games"] == 3 and s["ts_pct_games"] == 3
+    assert s["ppg"] == pytest.approx(341 / 3, abs=0.05)
+
+
 def test_get_team_hub_summary_full_season_on_hist(monkeypatch, hist_db):
     monkeypatch.setattr(team_mod, "_warehouse_or_live", _no_seeded_rows)
     monkeypatch.setattr(team_mod, "coerce_team_id", lambda v: 2)
