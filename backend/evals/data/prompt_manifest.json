@@ -1,0 +1,32 @@
+{
+  "generated": "2026-09-28",
+  "note": "Eval prompts pinned for weekly comparability. If a prompt hash changes, week-over-week numbers are not comparable; bump the generation id.",
+  "prompts": {
+    "judge_prompt": "e28ddfb602b4df878036fcce809e72ed55e5c63d57760aba8a83e45752bfd0ed",
+    "judge_criteria": [
+      "number_match",
+      "grounding",
+      "reasoning",
+      "completeness",
+      "no_hedge"
+    ],
+    "judge_escalate_below": 0.7
+  },
+  "data": {
+    "golden_questions.json": "96801a335d2ca22d642c99ed6df9eb2bcae2a9d6d32ce665031d62e5b8a97087",
+    "skill_finder_labels.json": "c364b241eba26debd9cf27869b2fbddddd0933e3b2d5b4c2c8bd86d22de1b375"
+  },
+  "fixture": {
+    "seed": 7,
+    "teams": [
+      "ARC",
+      "BRV",
+      "CRD",
+      "DSK"
+    ],
+    "seasons": [
+      "2023-24",
+      "2024-25"
+    ]
+  }
+}
