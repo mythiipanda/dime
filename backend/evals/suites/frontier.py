@@ -113,7 +113,16 @@ def run(ctx):
     emit("suite_started", {"suite": "frontier", "mode": "hermetic"})
     sys.path.insert(0, str(Path(__file__).resolve().parent))
     import golden_warehouse as gw
-    import duckdb
+    try:
+        import duckdb
+    except ImportError:
+        res.mode = "skipped"
+        res.skip("duckdb not installed; cannot verify-gate candidates "
+                 "(pip install duckdb)")
+        emit("suite_finished", {"suite": "frontier", "mode": res.mode,
+                                "passed": res.passed, "failed": res.failed,
+                                "skipped": res.skipped})
+        return res
 
     cands = generate()
     res.notes.append(f"generated {len(cands)} candidates "

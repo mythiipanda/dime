@@ -27,7 +27,10 @@ from suites import SuiteResult  # noqa: E402
 import scoring  # noqa: E402
 from trace import emit  # noqa: E402
 
-import duckdb
+try:
+    import duckdb
+except ImportError:  # default path degrades to a labeled skip without it
+    duckdb = None
 
 DATA = Path(__file__).resolve().parent.parent / "data"
 SEED = 7
@@ -151,6 +154,14 @@ def _perturb_flat(flat, pos):
 def run(ctx):
     res = SuiteResult(name="golden_warehouse", mode="hermetic")
     emit("suite_started", {"suite": "golden_warehouse", "mode": "hermetic"})
+    if duckdb is None:
+        res.mode = "skipped"
+        res.skip("duckdb not installed; cannot build the fixture warehouse "
+                 "(pip install duckdb)")
+        emit("suite_finished", {"suite": "golden_warehouse", "mode": res.mode,
+                                "passed": res.passed, "failed": res.failed,
+                                "skipped": res.skipped})
+        return res
     questions = json.loads((DATA / "golden_questions.json").read_text())[
         "questions"]
 

@@ -45,7 +45,17 @@ def run(ctx):
 
     sys.path.insert(0, str(Path(__file__).resolve().parent))
     import golden_warehouse as gw
-    import duckdb
+    try:
+        import duckdb
+    except ImportError:
+        res.mode = "skipped"
+        res.skip("duckdb not installed; cannot re-verify retained misses "
+                 "(pip install duckdb)")
+        emit("suite_finished", {"suite": "regression_protected",
+                                "mode": res.mode, "passed": res.passed,
+                                "failed": res.failed,
+                                "skipped": res.skipped})
+        return res
     tmp = Path(tempfile.mkdtemp(prefix="evals-regr-"))
     db = tmp / "fixture.duckdb"
     gw.build_fixture(db)

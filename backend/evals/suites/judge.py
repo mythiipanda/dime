@@ -226,11 +226,20 @@ def run(ctx):
     questions = json.loads(
         (DATA / "golden_questions.json").read_text())["questions"]
 
+    try:
+        import duckdb
+    except ImportError:
+        res.mode = "skipped"
+        res.skip("duckdb not installed; cannot build judge candidates "
+                 "(pip install duckdb)")
+        emit("suite_finished", {"suite": "judge", "mode": res.mode,
+                                "passed": res.passed, "failed": res.failed,
+                                "skipped": res.skipped})
+        return res
 
     tmp = Path(tempfile.mkdtemp(prefix="evals-judge-"))
     db = tmp / "fixture.duckdb"
     gw.build_fixture(db)
-    import duckdb
     con = duckdb.connect(str(db), read_only=True)
 
     buckets = {}  # (lo, hi) -> [hits, n]
