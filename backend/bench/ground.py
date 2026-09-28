@@ -3181,6 +3181,90 @@ def gen_rapm_prior(rng, ctx) -> tuple[Task, GroundTruth]:
     raise SkipTask("no gradeable rapm-prior player found")
 
 
+# ---------------------------------------------------------------------------
+# season_resolution family: the golden set for the single-explicit-past-season
+# bug class (2026-09-27: a "2024-25 TS%" question answered with 2025-26
+# numbers). Fixed curated questions, each naming exactly one past season;
+# ground truth is computed live from silver_hist_gamelogs (team game logs)
+# for THAT season. numeric_acc then scores 0 when the model answers with a
+# different season's numbers -- correctness, not schema. Deterministic:
+# task_id "season_resolution-{idx}-{seed}" cycles the golden list in order.
+# The natural app tool is get_team_hub(team, season), family "chain".
+# ---------------------------------------------------------------------------
+
+_SEASON_GOLDEN = [
+    # (template, team_abbr, team_name, season)
+    ("ts", "BOS", "Boston Celtics", "2024-25"),  # the reported bug
+    ("wins", "OKC", "Oklahoma City Thunder", "2024-25"),
+    ("ppg", "LAL", "Los Angeles Lakers", "2023-24"),
+    ("wins", "DEN", "Denver Nuggets", "2023-24"),
+    ("ts", "GSW", "Golden State Warriors", "2022-23"),
+    ("ppg", "MIL", "Milwaukee Bucks", "2021-22"),
+    ("ppg", "NYK", "New York Knicks", "2024-25"),
+    ("ts", "DAL", "Dallas Mavericks", "2023-24"),
+]
+
+_SEASON_TMPL = {
+    "ts": "What true shooting percentage did the {team} post in the "
+          "{season} regular season?",
+    "wins": "How many regular-season games did the {team} win in the "
+            "{season} season?",
+    "ppg": "How many points per game did the {team} average in the "
+           "{season} regular season?",
+}
+
+_SEASON_FACT_KEY = {"ts": "ts_pct", "wins": "wins", "ppg": "ppg"}
+
+
+def _season_team_row(abbr: str, season: str) -> dict:
+    rows = _qd(
+        "SELECT COUNT(*) AS gp, "
+        "SUM(CASE WHEN wl = 'W' THEN 1 ELSE 0 END) AS wins, "
+        "SUM(pts) AS pts, SUM(fga) AS fga, SUM(fta) AS fta "
+        "FROM silver_hist_gamelogs "
+        "WHERE team_abbreviation = ? AND _season = ? "
+        "AND season_type = 'regular-season'",
+        [abbr, season],
+    )
+    if not rows or not rows[0]["gp"]:
+        raise SkipTask(f"no {season} regular-season games for {abbr}")
+    return rows[0]
+
+
+def gen_season_resolution(rng, ctx) -> tuple[Task, GroundTruth]:
+    if "silver_hist_gamelogs" not in _tables():
+        raise SkipTask("no historical game logs in warehouse")
+    tid = ctx["task_id"]
+    try:
+        idx = int(tid.rsplit("-", 2)[1])
+    except (ValueError, IndexError):
+        idx = 0
+    template, abbr, team, season = _SEASON_GOLDEN[idx % len(_SEASON_GOLDEN)]
+    row = _season_team_row(abbr, season)
+    if template == "ts":
+        denom = 2 * (row["fga"] + 0.44 * row["fta"])
+        if not denom:
+            raise SkipTask(f"no shot attempts for {abbr} {season}")
+        value: float | int = round(100 * row["pts"] / denom, 1)
+    elif template == "wins":
+        value = int(row["wins"])
+    else:
+        value = round(row["pts"] / row["gp"], 1)
+    facts = {_SEASON_FACT_KEY[template]: value, "names": {"team": team}}
+    task = Task(
+        task_id=tid, family="season_resolution",
+        question=_SEASON_TMPL[template].format(team=team, season=season),
+        entities=[team], gold_tool_families=["chain"],
+        timeout_s=ctx["timeout_s"], seed=ctx["seed"],
+    )
+    truth = GroundTruth(
+        task_id=tid, facts=facts, computed_at=_now(),
+        source="warehouse via silver_hist_gamelogs regular-season team "
+               "game logs (TS% = PTS / (2 * (FGA + 0.44 * FTA)))",
+    )
+    return task, truth
+
+
 GENERATORS = {
     "lookup": gen_lookup,
     "compare": gen_compare,
@@ -3207,4 +3291,5 @@ GENERATORS = {
     "zone_deltas": gen_zone_deltas,
     "wpa": gen_wpa,
     "rapm_prior": gen_rapm_prior,
+    "season_resolution": gen_season_resolution,
 }
