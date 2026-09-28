@@ -10,7 +10,6 @@ const OVERRIDES: Record<string, string> = {
   "deepseek-ai/deepseek-v4.1-flash": "DeepSeek V4.1 Flash",
   "nvidia/nemotron-3-super-120b-a12b": "Nemotron 3 Super 120B",
   "nvidia/nemotron-3-ultra-550b-a55b": "Nemotron 3 Ultra 550B",
-  "meta/llama-3.3-70b-instruct": "Llama 3.3 70B",
   "deepseek-ai/deepseek-r1": "DeepSeek R1",
   "openrouter/free": "Auto",
   "ministral-8b-2512": "Ministral 8B",

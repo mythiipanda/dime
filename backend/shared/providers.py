@@ -17,8 +17,10 @@ class ProviderPolicyError(ValueError):
 
 # Inception/Groq reactivation is a two-part gate: explicit policy plus a key.
 # Retained credentials alone never activate them. Gemini and NIM are
-# Tony-approved free tiers: a configured key activates them directly.
-# Gemini (flash-lite) is the workhorse default: 15 RPM / 500 RPD free.
+# key-activated free tiers (Tony provided both keys directly).
+# Provider order and rate limits below are crew defaults, not Tony's picks.
+# Gemini (flash-lite) is the workhorse default: 15 RPM / 500 RPD free
+# (quotas from Tony's AI Studio screenshot; live-probed 2026-09-28).
 FREE_PROVIDER_ORDER: tuple[ProviderName, ...] = ("gemini", "nvidia", "groq", "openrouter", "mistral")
 
 
@@ -43,10 +45,12 @@ NVIDIA_NIM_DEFAULT = "z-ai/glm-5.3-flash"
 NVIDIA_NIM_MODELS: tuple[str, ...] = (
     NVIDIA_NIM_DEFAULT,
     "deepseek-ai/deepseek-v4.1-flash",
-    "meta/llama-3.3-70b-instruct",
     "deepseek-ai/deepseek-r1",
 )
 NVIDIA_NIM_ALLOWLIST = frozenset(NVIDIA_NIM_MODELS)
+# meta/llama-3.3-70b-instruct parked 2026-09-28: Instinct flagged a
+# possible NVIDIA deprecation (unconfirmed publicly, but the model is
+# being wound down across hosts). Back in only after a live probe passes.
 MISTRAL_DEFAULT = "ministral-8b-2512"
 OPENROUTER_DEFAULT = "nvidia/nemotron-3-super-120b-a12b:free"
 OPENROUTER_AUTO = "openrouter/free"

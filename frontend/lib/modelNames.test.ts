@@ -36,7 +36,7 @@ test("modelDisplayName maps known catalog slugs to friendly names", () => {
       "openrouter:nvidia/nemotron-3-ultra-550b-a55b:free",
       "Nemotron 3 Ultra 550B",
     ],
-    ["nvidia:meta/llama-3.3-70b-instruct", "Llama 3.3 70B"],
+    ["nvidia:deepseek-ai/deepseek-v4.1-flash", "DeepSeek V4.1 Flash"],
     ["nvidia:deepseek-ai/deepseek-r1", "DeepSeek R1"],
     ["openrouter:openrouter/free", "Auto"],
     ["mistral:ministral-8b-2512", "Ministral 8B"],
