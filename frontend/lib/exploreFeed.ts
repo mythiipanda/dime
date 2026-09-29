@@ -66,6 +66,7 @@ interface FeedInput {
 }
 
 export const FEED_MOVER_CAP = 6;
+export const FEED_DEFAULT_VISIBLE = 5;
 export const FEED_STREAK_CAP = 4;
 export const FEED_WATCH_CAP = 4;
 
@@ -410,8 +411,10 @@ export interface FeedExpansion {
 
 
 export function buildFeedExpansion(input: FeedInput): FeedExpansion {
-  const visible = buildFeedItems(input);
+  const items = buildFeedItems(input);
+  const visible = items.slice(0, FEED_DEFAULT_VISIBLE);
   const extra = [
+    ...items.slice(FEED_DEFAULT_VISIBLE),
     ...buildFullMoverItems(input.movers).slice(FEED_MOVER_CAP),
     ...buildFullStreakItems(input.streaks).slice(FEED_STREAK_CAP),
     ...buildFullWatchItems(input.watchlist).slice(FEED_WATCH_CAP),
