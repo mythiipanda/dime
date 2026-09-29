@@ -61,7 +61,7 @@ if [ -z "$APP_EXISTS" ]; then
       OPENROUTER_API_KEY=secretref:openrouter-key \
       MISTRAL_MODEL=ministral-8b-2512 \
       OPENROUTER_MODEL=nvidia/nemotron-3-super-120b-a12b:free \
-      CORS_ALLOWED_ORIGINS="*" \
+      CORS_ALLOWED_ORIGINS="http://localhost:3000,https://dime-fawn.vercel.app,http://127.0.0.1:3000" \
     -o none
 else
   az containerapp update -g "$RG" -n "$APP" \

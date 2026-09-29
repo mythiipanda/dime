@@ -24,6 +24,7 @@ from v2.projects.service import ProjectStore
 from v2.conversations import ConversationStore
 from v2.api.sse import encode_raw, with_heartbeat
 from shared.config import runtime_v2_mode
+from shared.rate_limit import check_sql_rerun, client_ip
 
 router = APIRouter()
 _BACKEND = Path(__file__).resolve().parents[2]
@@ -587,7 +588,8 @@ class SqlRerunBody(BaseModel):
 
 
 @router.post("/sql/rerun")
-async def sql_rerun(body: SqlRerunBody) -> dict:
+async def sql_rerun(request: Request, body: SqlRerunBody) -> dict:
+    check_sql_rerun(client_ip(request))
     from shared.tools.league import rerun_sql
 
     sql = (body.sql or "").strip()
