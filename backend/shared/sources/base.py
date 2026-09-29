@@ -46,6 +46,15 @@ def safe(source: str, season: str, fn: Any, *args: Any,
     import os as _os
     import time as _time
 
+    try:
+        import duckdb as _duckdb
+        _permanent_duckdb = (
+            _duckdb.CatalogException,
+            _duckdb.ParserException,
+        )
+    except Exception:
+        _permanent_duckdb = ()
+
     attempts = int(_os.environ.get("DIME_LIVE_ATTEMPTS", "2"))
     backoff = float(_os.environ.get("DIME_LIVE_BACKOFF_S", "2"))
     last: Exception | None = None
@@ -57,6 +66,13 @@ def safe(source: str, season: str, fn: Any, *args: Any,
             last = RuntimeError("empty upstream response")
         except Exception as exc:
             last = exc
+            _status = getattr(getattr(exc, "response", None), "status_code", None)
+            if isinstance(_status, int) and 400 <= _status <= 499 and _status != 429:
+                return empty(source, season, str(last))
+            if isinstance(exc, (ValueError, TypeError, KeyError, AttributeError)):
+                return empty(source, season, str(last))
+            if _permanent_duckdb and isinstance(exc, _permanent_duckdb):
+                return empty(source, season, str(last))
         if attempt < attempts - 1:
             _time.sleep(backoff * (attempt + 1))
     return empty(source, season, str(last))
