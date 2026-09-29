@@ -1,3 +1,4 @@
+"""F89 Muse regressions: current qualified usage and metric-sensitive asks."""
 import asyncio, sys
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))

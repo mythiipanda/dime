@@ -208,11 +208,15 @@ def test_read_usage_requests_handles_property_and_callable_shapes():
             return Usage()
 
     class OldStyleFailure:
+        # reproduces the production bug shape: `result.usage()` raises
+        # TypeError on pydantic-ai 2.43.0, which the old code swallowed
         def usage(self):
             raise TypeError("'Usage' object is not callable")
 
     assert _read_usage_requests(PropertyResult()) == (3, None)
     assert _read_usage_requests(MethodResult()) == (3, None)
+    # the TypeError from calling usage as a method becomes a typed unknown
+    # reason, never an unhandled exception or silent drop
     assert _read_usage_requests(OldStyleFailure()) == (None, USAGE_UNKNOWN_REASON)
     assert _read_usage_requests(object()) == (None, USAGE_UNKNOWN_REASON)
 
@@ -359,6 +363,8 @@ async def test_intake_receives_explicit_current_date() -> None:
 def test_pydanticai_provider_boundary_uses_only_active_free_rotation(monkeypatch) -> None:
     from v2.adapters.models import ProviderStructuredModel
 
+    # Inception stays configured for a future key rotation, but configured is
+    # not active: Dime's own model stages may only select free providers.
     monkeypatch.setattr("v2.adapters.models.settings.nvidia_nim_api_key", "nim-key")
     monkeypatch.setattr("v2.adapters.models.settings.inception_api_key", "configured-paused")
     monkeypatch.setattr("v2.adapters.models.settings.mistral_api_key", "free-limit")
@@ -1088,7 +1094,7 @@ async def test_external_discovery_requirement_accepts_fetched_evidence():
         capability_catalog={"web_search": {}, "web_fetch": {}},
         requirement_review=True,
     ).understand("What is the current status?")
-    assert task.requirements[0].capability_options == ["web_search"]
+    assert task.requirements[0].capability_options == ["web_search"]  # BL-001 fail-closed exact sets
 
 
 @pytest.mark.anyio
@@ -1746,7 +1752,7 @@ async def test_requirement_review_closes_narrow_option_over_broader_capability()
         stub, provider="stub", model_name="stub", requirement_review=True,
         capability_catalog={"player_report": {}, "shooting_efficiency": {}},
     ).understand("Luka's 2022-23 line")
-    assert task.requirements[0].capability_options == ["shooting_efficiency"]
+    assert task.requirements[0].capability_options == ["shooting_efficiency"]  # BL-001
 
 @pytest.mark.anyio
 async def test_requirement_metric_and_output_ids_survive_typed_intake():
@@ -2666,6 +2672,7 @@ async def test_semantic_verifier_projection_does_not_send_source_identity():
     ('empty','no_tool_or_empty'),('refusal','content_filter'),
 ])
 async def test_safe_failure_taxonomy_exact_native_openai_path(anyio_backend,kind,phase):
+    # Native SDK path is validated on Dime's supported asyncio runtime; Trio is upstream, not a production contract.
     assert anyio_backend == "asyncio"
     import httpx,json
     from openai import AsyncOpenAI
@@ -2803,6 +2810,7 @@ async def test_actual_attempt_redacts_dynamic_exception_type_and_ledger_serializ
     ({'status':'partial','missing_branches':['bounded','bounded']},'duplicate_or_empty_finding'),
 ])
 async def test_safe_failure_validation_subtype_exact_native_openai_path(anyio_backend,content,subtype):
+    # Native SDK path is validated on Dime's supported asyncio runtime; Trio is upstream, not a production contract.
     assert anyio_backend == "asyncio"
     import httpx,json
     from openai import AsyncOpenAI
@@ -3462,6 +3470,8 @@ async def test_review_outage_without_typed_intake_reaches_synthesizer():
     assert draft is None
 
 def test_plain_team_ratings_question_without_conflict_reaches_synthesizer():
+    # Regression: "Celtics net rating?" must not hit the "could not be
+    # published" gap. Only a recorded typed conflict blocks the draft.
     from v2.adapters.models import _deterministic_rank_draft
     task = TaskSpec(goal="net rating", mode="quick", deliverable="team",
                     required_evidence=["team_ratings"], requirements=[])
@@ -3485,12 +3495,16 @@ def test_plain_team_ratings_with_conflict_still_gaps():
         "ranking arguments."]
 
 def test_ranked_conflict_field_excluded_from_model_output_schemas():
+    # The conflict channel is code-side only: the model must never see
+    # ranked_argument_conflicts in the intake or review JSON schemas.
     from v2.contracts import RequirementReview, TaskSpec
     for model in (TaskSpec, RequirementReview):
         assert "ranked_argument_conflicts" not in model.model_json_schema()["properties"]
 
 @pytest.mark.anyio
 async def test_decode_drops_model_written_ranked_conflicts():
+    # Even if a model wrote conflict rows, intake decode resets the field:
+    # model-written rows can never survive intake and block answers.
     from v2.adapters import RecordedStructuredModel
     from v2.contracts import TaskSpec
     from v2.runtime import RequestEnvelope, RunLedger
@@ -3635,6 +3649,8 @@ async def test_ranked_request_text_independence():
         intake = ModelIntake(review_model(), provider="stub", model_name="stub",
                              capability_catalog=_typed_catalog())
         reviews.append(await intake._review_requirements(request, task))
+    # The request text is never consulted: identical stubbed model outputs
+    # give identical reviews regardless of phrasing.
     assert (reviews[0].model_dump(mode="json")
             == reviews[1].model_dump(mode="json"))
     assert capability_arguments_for(

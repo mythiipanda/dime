@@ -1,3 +1,17 @@
+"""Promote historical playoff slices.
+
+Team rows for every offline historical season are promoted from silver_hist_gamelogs. Player playoff game
+logs come from the existing nba_api source for every player in the historical
+2023-24 player-season population. Writes are season-scoped and idempotent.
+A resumable progress file prevents a full player refetch after interruption.
+
+Usage:
+  python -m scripts.seed_2023_24_playoffs --check
+  python -m scripts.seed_2023_24_playoffs --team-only
+  python -m scripts.seed_2023_24_playoffs --team-only --season 2022-23
+  python -m scripts.seed_2023_24_playoffs --all-team-seasons
+  python -m scripts.seed_2023_24_playoffs [--limit N]
+"""
 
 from __future__ import annotations
 
@@ -120,6 +134,8 @@ def seed_player_rows(limit: int | None = None) -> dict[str, int]:
         else:
             frame = result.frame
             if frame.height:
+                # NBA endpoint returns the target table shape; save_frame adds
+                # source, season, fetch time, and player entity provenance.
                 saved = store.save_frame(
                     "silver_playoff_gamelogs",
                     FetchResult(frame=frame, meta=FetchMeta(

@@ -1,3 +1,13 @@
+"""Competitive ratings over warehouse game logs. Descriptive, not judgmental.
+
+Full-season margin-of-victory mixes close games with blowouts. This tool
+recomputes MOV after excluding blowout games (final margin above a
+threshold) and reports the gap as padding_delta -- a "what happens if you
+drop the tails" lens over the numbers. It ships the numbers and their
+sensitivity to the threshold; it does not label teams padded/gritty or
+assert causal stories about garbage time. Warehouse only; nothing is
+estimated or fabricated.
+"""
 
 from collections import Counter
 from typing import Any
@@ -9,6 +19,8 @@ from ._core import SEASON, clamp_season
 
 _TOOL_NAME = "get_competitive_ratings"
 
+# Thresholds at which padding_delta is re-reported so the output itself
+# shows how threshold-dependent the number is.
 _MARGIN_SWEEP = (10, 20, 30)
 
 _DEFINITION = (
@@ -52,6 +64,13 @@ def _norm_season_type(s: object) -> str:
 
 
 def map_season_type(raw: object, distinct: list[str]) -> str | None:
+    """Map user season_type onto the warehouse's distinct values.
+
+    Pure: no warehouse access. Returns the canonical warehouse value,
+    "all" for no filtering, or None when the input matches nothing.
+    Matching is case-insensitive over alphanumeric characters, so
+    "regular" maps onto "Regular Season" or "regular-season" alike.
+    """
     want = _norm_season_type(raw)
     if want in ("", "all", "both"):
         return "all"
@@ -99,6 +118,17 @@ def summarize_team(
     blowout_margin: float,
     min_games: int = 10,
 ) -> dict[str, Any]:
+    """One descriptive padding line over a team's game MOVs.
+
+    Pure: no warehouse access. Games with abs(mov) > margin are blowouts
+    and leave the competitive set; abs(mov) == margin stays in.
+    competitive_record is the W-L record over competitive games ONLY, not
+    the team's full record. When competitive games fall below min_games
+    the row is flagged low_sample and carries no interpretation. An empty
+    competitive set yields null mov_comp/padding_delta, never zeros.
+    sensitivity re-reports the numbers at margins 10/20/30 so
+    threshold-dependence is visible in the output itself.
+    """
     margin = clamp_blowout_margin(blowout_margin)
     movs = [float(m) for m in (movs or [])]
     try:
@@ -184,6 +214,22 @@ def get_competitive_ratings(
     blowout_margin: float = 20,
     min_games: int = 10,
 ) -> dict[str, Any]:
+    """Competitive MOV: what happens to a team's MOV when blowouts are dropped.
+
+    team: 3-letter abbrev, full name, nickname, city, or "league"/"" for
+    all teams. season: "YYYY-YY" or "all" for every warehouse season
+    (multi-season output is pooled across seasons, not a single
+    team-season -- see meta.season_note). season_type: regular (default),
+    playoffs, or all; matched against the actual distinct warehouse values
+    before aggregating. NOTE: the default changed from "all" to "regular"
+    on 2026-09-10 so season-scoped queries no longer silently mix playoff
+    games in; pass "all" explicitly to include playoffs.
+    blowout_margin: games with abs(plus_minus) above this are excluded from
+    the competitive set (clamped to [1, 40]). min_games: floor on
+    competitive games; rows below it are flagged low_sample and carry
+    numbers with no interpretation. Warehouse only; plus_minus is each
+    team's own MOV per game.
+    """
     margin = clamp_blowout_margin(blowout_margin)
     try:
         floor = int(min_games)

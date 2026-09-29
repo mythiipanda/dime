@@ -1,3 +1,34 @@
+"""Seed 2024-25 player game logs from Basketball-Reference into the warehouse.
+
+Writes ONLY silver_bbref_gamelogs_2024_25 (regular season). Stays off the
+2025-26 crew's tables (silver_player_gamelogs, silver_playoff_gamelogs) and
+off the 2025-26 season entirely.
+
+Season mapping: bbref gamelog/2025 is the 2024-25 season. SEASON label is
+2024-25, SEASON_ID is 22024 (matches clamp_season("22024") == "2024-25"),
+and NBA Player_IDs resolve from silver_hist_player_seasons where
+season = 2025.
+
+Pure parse helpers (cell, parse_int, parse_float, parse_minutes, nba_date,
+norm_name, COLS) are reused from seed_bbref_gamelogs. Two pieces are local
+on purpose: parse_gamelog_table stamps its module SEASON_ID so the base
+version would tag rows with the wrong season, and fetch_page logs to its
+module LOG_FILE so the base version would write into the 2025-26 crew log.
+
+Resumable: progress lives in seed_bbref_gamelogs_2024_25_progress.json;
+done players are skipped on re-run. Per-player DELETE+INSERT via
+store.save_frame(entity) makes re-runs idempotent.
+
+Rate limit: 3s between pages; on HTTP 429 backs off to 60s + 10s delays.
+
+Player URL list: uses seed_bbref_gamelogs_player_ids.txt when present
+(shared with the 2025-26 crew), else --ids-file, else stops with an
+honest log instead of fabricating bbref slugs.
+
+The coordinator schedules the live run. This script never runs here.
+
+Usage: ./backend/.venv/bin/python backend/scripts/seed_bbref_gamelogs_2024_25.py [--limit N] [--ids-file PATH]
+"""
 
 import json
 import re
@@ -64,6 +95,11 @@ def lookup_id(name_map: dict, pname: str):
 
 
 def load_name_map_2024_25() -> dict:
+    """NBA Player_ID lookup from silver_hist_player_seasons season 2025.
+
+    Opens read-write like the base script: a read-only connect first would
+    poison later read-write connects in this process.
+    """
     con = store.connect()
     try:
         rows = con.execute(
@@ -103,6 +139,11 @@ def save_progress(prog: dict) -> None:
 
 
 def parse_gamelog_table_2024_25(table, nba_id: int) -> list:
+    """Parse one bbref regular-season gamelog table into target rows.
+
+    Same shape as the base parser with this season's SEASON_ID. Skips
+    header-repeat rows and Inactive rows which carry no stats.
+    """
     rows_out = []
     for row in table.xpath("./tbody/tr"):
         if row.get("class") == "thead":
@@ -164,6 +205,8 @@ def assert_player_batch(rows: list, nba_id: int) -> None:
 
 
 def fetch_page_2024_25(session: requests.Session, url: str, delay_holder: dict) -> str | None:
+    # Local copy of the base backoff loop; the base version logs into the
+    # 2025-26 crew's log file, so reuse would pollute their run log.
     for attempt in range(4):
         time.sleep(delay_holder["delay"])
         try:

@@ -1,3 +1,23 @@
+"""Impact-estimate fast-path routing tests.
+
+DimeBench family 18 (impact) caught the supervisor routing
+"how good has [player] been" / "estimate [player]'s impact" to
+delegate_scout, which called get_advanced + get_raptor_history and then
+improvised impact numbers from raw net ratings instead of calling the
+purpose-built get_impact_estimate. The scout desk did not even have the
+tool in its toolset, so the right tool could never be called
+(tool_f1 0.0).
+
+The triage fast-path added in app/graph.py routes unambiguous
+impact-estimate questions for one named player straight to
+get_impact_estimate on clean single-turn asks, mirroring the
+_PREDICT_RX / get_raptor_history fast-paths. The scout desk also gains
+the tool plus its IF/THEN brief line for broader investigations.
+
+All hermetic: _triage_seed is driven directly and the real
+get_impact_estimate runs against the local warehouse. No LLM, no
+network, no stubs.
+"""
 
 import asyncio
 import sys

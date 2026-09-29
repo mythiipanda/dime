@@ -1,3 +1,10 @@
+"""Regression tests for the provider wire schema codec.
+
+normalize_provider_wire_schema() must strip title/description only as schema
+annotations on nodes — never as keys of a properties map, where they are real
+field names (RequirementWire, CalculationRequirementWire and PlannerNodeWire
+all require `description` in pydantic but lost it on the wire).
+"""
 import pytest
 import v2.arguments as _arguments
 from v2.argument_schemas import normalize_provider_wire_schema

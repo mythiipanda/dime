@@ -182,6 +182,11 @@ def get_historical_leaders(category: str = "pts",
                            end_season: Union[int, str, None] = 2025,
                            limit: Union[int, str, None] = 10,
                            mode: str = "leaders") -> dict[str, Any]:
+    """League leaders per season or best single seasons from history. Seasons are end-years (2025 means 2024-25), clamped to 2015..2025.
+
+    Seasons are end-years clamped to 2015..2025. Values are per-game
+    warehouse estimates. Empty ranges report honestly, never fabricated.
+    """
     canon = normalize_category(category)
     if canon is None:
         valid = ", ".join(sorted(CATEGORIES))

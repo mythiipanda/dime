@@ -1,3 +1,4 @@
+"""Offline exact v2/v3 persistence contracts. Live cutover is intentionally not wired."""
 from __future__ import annotations
 import hashlib,json
 from typing import Any,Literal

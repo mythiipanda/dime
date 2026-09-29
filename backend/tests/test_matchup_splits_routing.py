@@ -1,3 +1,13 @@
+"""Matchup-splits fast-path routing tests.
+
+B2: "Give me matchup splits for Lakers vs Celtics" looped 5 planner
+rounds retrying a failing tool (188s turn). The triage fast-path added
+in app/graph.py routes clean single-turn two-team splits asks straight
+to get_team_splits (one call per team).
+
+All hermetic: _triage_seed is driven directly and the real
+get_team_splits runs against the local warehouse. No LLM, no network.
+"""
 
 import asyncio
 import json

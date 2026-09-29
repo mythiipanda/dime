@@ -1,3 +1,10 @@
+"""Lineup ratings with sample floors. ROADMAP Phase 1 item 2 (Trust).
+
+get_lineup_stats returns the most-used five-man units for a team with
+offensive/defensive/net ratings per 100 possessions. Units under
+min_possessions (default 100) are hidden, not presented as signal, and
+units spending most of their time in blowouts are flagged. Warehouse-first.
+"""
 
 from typing import Any
 
@@ -10,6 +17,10 @@ from ._core import MAX_ROWS, SEASON, TTL_PBPSTATS, _warehouse_or_live, coerce_te
 
 BLOWOUT_MARGIN = 20
 BLOWOUT_SHARE_FLAG = 0.5
+# Full-frame fetch for the best-unit computation. _warehouse_or_live caps
+# returned rows at MAX_ROWS for display/payload size; the docstring
+# promises the best unit "among units meeting the floor", so best_net_unit
+# must be computed over every floor-passing unit, not the display slice.
 _ALL_ROWS = 100_000
 
 
@@ -41,6 +52,11 @@ def _flags(poss: int, blowout_share: float, min_possessions: int,
 
 
 def _canon_row_key(r: dict[str, Any]) -> tuple[float, str]:
+    """Preference key for the canonical row of a GROUP_ID.
+
+    The total-MIN variant wins (largest MIN); exact ties break to the
+    latest _fetched_at. ISO timestamps compare correctly as strings.
+    """
     try:
         minutes = float(r.get("MIN") or 0)
     except (TypeError, ValueError):
@@ -49,6 +65,13 @@ def _canon_row_key(r: dict[str, Any]) -> tuple[float, str]:
 
 
 def _dedupe_lineup_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Collapse duplicate silver_lineups rows for the same GROUP_ID.
+
+    The sportsdataverse seed writes ~14 rows per GROUP_ID (per-game and
+    total variants plus exact dupes). Keep one canonical row per GROUP_ID:
+    the total-MIN variant, tie-broken by latest _fetched_at. Pure function;
+    kept testable so the dedupe can never silently regress.
+    """
     canon: dict[str, dict[str, Any]] = {}
     for r in rows or []:
         gid = str(r.get("GROUP_ID") or r.get("GROUP_NAME") or "")
@@ -85,6 +108,14 @@ def _apply_sample_floor(
 
 def _best_net_unit(units: list[dict[str, Any]],
                    min_possessions: int) -> dict[str, Any] | None:
+    """Best five-man unit among sample-floor-passing units.
+
+    Pure function; kept testable so "best lineup" can never silently drift
+    back to "most-used lineup". Selection rule: highest NET_RATING among
+    units with poss >= min_possessions (tiny-sample/override units never
+    win); ties broken by higher possessions (larger sample = more reliable),
+    then by order (units are poss-sorted, so a full tie keeps the first).
+    """
     eligible = [u for u in units if u.get("poss", 0) >= min_possessions]
     if not eligible:
         return None
@@ -94,6 +125,11 @@ def _best_net_unit(units: list[dict[str, Any]],
 
 
 def _possession_aggs(team_id: int, season: str) -> dict[tuple[int, ...], dict] | None:
+    """Per-lineup possession counts, points for/against, and blowout share.
+
+    Margin is reconstructed from running score per game, so blowout-heavy
+    units are detected even though the warehouse has no garbage-time flag.
+    """
     try:
         rows = _store._read_df(
             "SELECT game_id, possession_number, offense_team_id,"
@@ -156,6 +192,14 @@ def get_lineup_stats(
     team: str | int, season: str = SEASON, min_possessions: int = 100,
     include_small: bool = False, limit: int = 10,
 ) -> dict[str, Any]:
+    """Five-man lineup ratings with sample floors. Names, abbrevs, or ids.
+
+    Units under min_possessions (default 100) are hidden; blowout-heavy
+    units are flagged. Ratings are per 100 possessions, warehouse-first.
+    The best lineup (highest NET_RATING among units meeting the floor) is
+    returned in the top-level best_net_unit field and flagged per-row as
+    is_best_net_unit, so it is never the most-used unit by default.
+    """
     try:
         team_id = coerce_team_id(team)
     except ValueError as exc:
@@ -214,6 +258,8 @@ def get_lineup_stats(
     best = _best_net_unit(visible, min_possessions)
     for u in visible:
         u["is_best_net_unit"] = u is best
+    # Response rows stay capped: the tool never returns more than the
+    # MAX_ROWS display slice, whatever limit the caller passes.
     visible = visible[: min(limit, MAX_ROWS)]
     meta_out = {**meta,
                 "sample_floor": f"{min_possessions} possessions",

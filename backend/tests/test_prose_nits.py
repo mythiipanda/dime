@@ -1,3 +1,5 @@
+"""Prose nit batch (QA overnight chain, Sep 12): math narration leaks,
+abbreviation-in-prose, scrub collisions, strip-induced fragments."""
 
 import sys
 from pathlib import Path
@@ -101,6 +103,8 @@ def test_single_season_evidence_line_untouched():
 
 
 def test_source_line_naming_agent_or_dataset_dropped():
+    # 2026-09-13 compose probe: "Source: league agent the dataset."
+    # leaked an internal agent name after the scout-summary rewrite.
     out = _present("who won the title?",
                    "This data covers the 2025-26 season.\n"
                    "Source: league agent the dataset.\n"
@@ -118,6 +122,7 @@ def test_real_source_citation_survives():
 
 
 def test_dangling_and_the_dataset_vocative_stripped():
+    # Same probe: "And the dataset, Shai ... played 15 playoff games."
     out = _present("how did shai do in the playoffs?",
                    "And the dataset, Shai Gilgeous-Alexander played 15 "
                    "playoff games.", [])
@@ -142,6 +147,8 @@ def test_dataset_data_collision_collapsed():
 
 
 def test_refusal_never_contradicts_attached_evidence():
+    # f62 (2026-09-13 prod QA): thin analysis + rich tool rows must not
+    # ship "I could not find that in the dataset."
     trs = [{"tool": "get_playoff_intel",
             "rows": [{"PLAYER": "Jalen Brunson", "GAME_DATE": "2026-06-13",
                       "PTS": 45, "MIN": 41}]}]

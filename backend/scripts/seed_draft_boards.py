@@ -1,3 +1,16 @@
+"""Seed Tankathon draft boards (upcoming class projections).
+
+Fetches the current mock draft + big board via shared/sources/tankathon.py
+and lands them in bronze_draft_boards (raw) + silver_draft_boards (typed).
+Complements scripts/seed_draft.py, which covers historical draft *results*
+(1997-2024); this covers *projections* for the upcoming class.
+
+Idempotent per (draft year, board): reruns replace the board slice and
+rewrite the fetch_log watermark, so a stale parse never accumulates.
+
+Usage:
+    DIME_WAREHOUSE=/path/to/warehouse.duckdb python -m scripts.seed_draft_boards
+"""
 
 import sys
 import time
@@ -30,6 +43,12 @@ def _canon(frame: pl.DataFrame) -> pl.DataFrame:
 
 
 def _save(table: str, frame: pl.DataFrame, season: str, board: str) -> int:
+    """Idempotent per-board replace + watermark, one transaction.
+
+    store.write_unit runs DELETE + INSERT + watermark atomically: a crash
+    rolls back to the previous complete board, so a rerun redoes the
+    board instead of skipping it.
+    """
     return store.write_unit(table, _canon(frame), season, _tk.SOURCE, board,
                             "_season = ? AND _entity = ?", [season, board])
 
@@ -44,6 +63,7 @@ def main() -> int:
             return 1
         season = res.meta.season
         n_bronze = _save(BRONZE, res.frame, season, board)
+        # Silver: normalize pick/rank into one ORDER column.
         frame = res.frame
         if "PICK" in frame.columns:
             frame = frame.rename({"PICK": "ORDER"})

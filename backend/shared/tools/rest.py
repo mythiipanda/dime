@@ -1,3 +1,11 @@
+"""Rest advantage over warehouse scoreboard games. Edge before tip-off.
+
+Rest is calendar days since a team's previous game minus 1, so a
+back-to-back is rest_days == 0 and the team's first game in scope has
+no baseline (None). Edge is own rest minus opponent rest before the
+same game, both read off the two teams' own schedules. Warehouse only;
+nothing is estimated or fabricated.
+"""
 
 import datetime as _dt
 from dataclasses import dataclass
@@ -32,6 +40,16 @@ class TeamGame:
 
 
 def build_schedule(rows: list[dict[str, Any]]) -> list[TeamGame]:
+    """Expand scoreboard rows into per-team games with rest gaps filled.
+
+    Pure: no warehouse access. Each row needs date (datetime.date),
+    home_team, visitor_team (abbreviations), home_pts, visitor_pts
+    (ints), and season_type ("regular" | "playoffs"). Returns one
+    TeamGame per team per game, sorted by (team, date). rest_days is
+    (date - previous team game date).days - 1, None for the team's
+    first game in scope; rest_diff is own rest minus the opponent's
+    rest before the same game, None when either side has no baseline.
+    """
     games: list[TeamGame] = []
     for r in rows or []:
         d = r.get("date")
@@ -159,6 +177,13 @@ def _resolve_team(raw: object) -> str | None:
 def _classify_scoreboard_rows(
     fetched: list[tuple],
 ) -> tuple[list[dict[str, Any]], dict[str, int]]:
+    """Split raw scoreboard tuples into classified rows plus drop counts.
+
+    Pure: no warehouse access. fetched are raw SQL tuples
+    (GAME_DATE_EST, GAME_ID, home, vis, hp, vp). Rows with NULL scores
+    (unscored preseason games), unknown game_id prefixes, or unparseable
+    dates are dropped and counted, never entering rest math.
+    """
     rows: list[dict[str, Any]] = []
     dropped = {"null_score": 0, "unknown_game_type": 0,
                "unparseable_date": 0}
@@ -194,6 +219,8 @@ def _load_scoreboard(
 ) -> tuple[list[dict[str, Any]], dict[str, int], str]:
     from .. import store as _store
 
+    # Read-only connect: this tool never writes, and it must not grab a
+    # write lock while seed jobs run against the same warehouse file.
     con = _store.connect(read_only=True)
     try:
         tables = {r[0] for r in con.execute("SHOW TABLES").fetchall()}
@@ -233,6 +260,23 @@ def _game_row(g: TeamGame) -> dict[str, Any]:
 def get_rest_advantage(team: str = "league", season: str = SEASON,
                        season_type: str = "all", date: str = "",
                        opponent: str = "") -> dict[str, Any]:
+    """Rest advantage: who had the fresher legs before each game.
+
+    team: 3-letter abbrev, full team name, or "league"/"" for all 30
+    teams. season_type: regular, playoffs, or all (default). Games are
+    filtered to the season_type BEFORE rest gaps are computed, so rest
+    never leaks across the filter boundary. Warehouse only; the first
+    game in scope has no rest baseline and reports None.
+    date: optional YYYY-MM-DD; team mode only. With date and no
+    opponent, returns the team's single game on that date (summary
+    still covers the full season as quotable context). opponent:
+    optional second team; team mode only. Team + opponent + date
+    returns the completed matchup on that date when one exists, else a
+    pre-tip-off preview projecting each side's rest from its last
+    completed game before that date (preview mode: not a warehouse
+    game record). Team + opponent with no date returns their most
+    recent completed matchup.
+    """
     season = clamp_season(season)
     st = str(season_type or "all").strip().lower()
     if st not in ("regular", "playoffs", "all"):
@@ -321,6 +365,8 @@ def get_rest_advantage(team: str = "league", season: str = SEASON,
                     "rows": {"team": abbr, "opponent": opp_abbr,
                              "summary": summary,
                              "games": [_game_row(g)]}, "meta": meta}
+        # (b) preview mode: rest from each side's last completed game
+        # strictly before D, within the season_type filter.
         assert day is not None
         own_prior = [g for g in games if g.date < day]
         opp_prior = [g for g in by_team.get(opp_abbr, [])

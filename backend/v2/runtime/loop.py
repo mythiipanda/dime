@@ -88,6 +88,9 @@ class Runtime:
             raise ValueError("runtime context cannot exceed 8 turns")
         turn_id = run_id or "turn"
         turn_started = time.perf_counter()
+        # Reserve 30 seconds of the 90-second E2E contract for tools,
+        # verification, rendering, and cancellation. Structured routes share
+        # the remaining absolute deadline instead of summing fresh budgets.
         RUN_MODEL_DEADLINE.set(turn_started + 60.0)
         if self._ledger is not None:
             if run_id is not None and self._ledger.run_id != run_id:
@@ -175,6 +178,10 @@ class Runtime:
                 if not str(exc).startswith("all structured-output providers failed"):
                     self._close_failed(turn_id, exc, started=turn_started)
                     raise
+                # A model repair outage must not turn an evidence-bearing run
+                # into a runtime failure. Apply the deterministic fallback:
+                # keep only claims already marked supported, preserve concrete
+                # verifier findings as gaps, and continue to a partial result.
                 supported = {
                     item.claim_index for item in verification.claim_results
                     if item.supported
@@ -445,6 +452,11 @@ class Runtime:
         except asyncio.CancelledError:
             raise
         except Exception as exc:
+            # Mechanical verification is the deterministic publication
+            # authority. A provider/schema failure in the advisory semantic
+            # pass must not discard evidence and already-supported claims.
+            # Preserve the mechanical adjudication and attach one precise
+            # limitation so the run terminates as a supported partial.
             if all(item.supported for item in mechanical.claim_results):
                 return mechanical.model_copy(update={
                     "status": VerificationStatus.PARTIAL,
@@ -454,6 +466,12 @@ class Runtime:
                     ],
                 })
             return mechanical
+        # Deterministic calculation verification owns whether a requested
+        # arithmetic branch exists. A semantic verifier may overlook a derived
+        # claim already tied to a recomputed calculation (for example a margin)
+        # and ask for it again. Remove only missing-branch/instruction text that
+        # names a satisfied calculation requirement; claim adjudication remains
+        # untouched.
         satisfied_calculation_ids = {
             calculation.requirement_id
             for calculation in draft.calculations
@@ -513,6 +531,9 @@ class Runtime:
                     and not semantic.repair_instructions
                     and all(item.supported for item in semantic.claim_results)):
                 semantic = semantic.model_copy(update={"status": VerificationStatus.PASS})
+        # Status without a failed claim or a concrete finding carries no
+        # actionable publication meaning. Do not manufacture a generic caveat
+        # from unexplained semantic doubt.
         if (semantic.status == VerificationStatus.PARTIAL
                 and sorted(item.claim_index for item in semantic.claim_results) == expected
                 and all(item.supported for item in semantic.claim_results)
@@ -599,6 +620,7 @@ def _verified_claims(task, execution, draft, verification, evidence=None):
             admitted.append(admit_verified_claim_bindings(
                 task, execution, draft, candidate))
         except ValueError as exc:
+            # Atomic claim behavior: one invalid proposal rejects all authority.
             admitted.append(VerifiedClaim(
                 claim_index=index, claim=claim,
                 evidence_ids=list(claim.evidence_ids),
@@ -679,6 +701,13 @@ def _redundant_failed_nodes(task: TaskSpec, execution: ExecutionResult) -> set[s
 def _uncovered_requirement_gaps(
     task: TaskSpec, execution: ExecutionResult,
 ) -> list[Gap]:
+    """Name clauses no executable plan node could honestly cover.
+
+    The planner gets one bounded replacement attempt before execution. A model
+    can still leave a clause uncovered when its required subject or argument is
+    only discoverable at runtime. That is a supported partial, not a reason to
+    suppress independent executable branches.
+    """
     covered = {
         requirement_id
         for node in execution.plan.nodes

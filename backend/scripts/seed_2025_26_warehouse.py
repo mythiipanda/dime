@@ -1,3 +1,17 @@
+"""Promote the 2025-26 in-warehouse slices (sportsdataverse seeds) into the
+current-season silver_* tables.
+
+- silver_team_games: 2025-26 regular-season slice from silver_hist_gamelogs
+  (2,460 rows = 30 teams x 82 games; W/L/W_PCT derived as running records).
+- silver_lineups: full 2025-26 slice from silver_hist_lineups (48,188 rows,
+  all measure types / per modes; regular-season + playoffs).
+
+Idempotent: the 2025-26 slice is deleted before insert, so re-runs are safe.
+
+Usage:
+    python -m scripts.seed_2025_26_warehouse          # seed + verify
+    python -m scripts.seed_2025_26_warehouse --check  # report counts only
+"""
 
 import argparse
 import datetime as dt

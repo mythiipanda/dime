@@ -11,6 +11,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
+# Patient retries inside sources/base.py safe(): attempts/backoff are read
+# from the environment at call time, so set them before any fetch.
 os.environ.setdefault("DIME_LIVE_ATTEMPTS", "3")
 os.environ.setdefault("DIME_LIVE_BACKOFF_S", "4")
 
@@ -81,12 +83,18 @@ def _is_retryable(msg: str) -> bool:
 
 
 def fetch_with_backoff(label: str, fn, sleep_s: float):
+    """Call fn() -> FetchResult, backing off on rate limits/timeouts.
+
+    Returns (FetchResult|None, fatal_error). None result with a fatal
+    error means do not retry this game on this run.
+    """
     delay = 8.0
     last_err = ""
     for attempt in range(4):
         try:
             res = fn()
             if isinstance(res, pl.DataFrame):
+                # internal call sites returning bare frames
                 res = _base.FetchResult(
                     frame=res,
                     meta=_base.FetchMeta(source="nba_api", season=""))
@@ -127,6 +135,7 @@ def season_games(season: str, sleep_s: float, state: dict) -> list[str]:
             raise RuntimeError(err)
         ids = (res.frame.get_column("GAME_ID").cast(pl.String).to_list()
                if "GAME_ID" in res.frame.columns else [])
+        # LeagueGameFinder returns one row per team per game: dedupe.
         found[st] = list(dict.fromkeys(ids))
         time.sleep(sleep_s)
     state.setdefault("games", {})[season] = found
@@ -134,7 +143,12 @@ def season_games(season: str, sleep_s: float, state: dict) -> list[str]:
     return [g for st in SEASON_TYPES for g in found.get(st, [])]
 
 
+# All writes go through store.write_unit: DELETE + INSERT + watermark in
+# a SINGLE transaction, so a crash rolls back to the previous complete
+# state and a rerun redoes the unit instead of skipping it.
 def _canon(frame: pl.DataFrame) -> pl.DataFrame:
+    """Cast columns to a small canonical type set so seasons with int32
+    vs int64 drift (or similar) land in one schema."""
     exprs = []
     for c, dt in frame.schema.items():
         if dt == pl.String or dt == pl.Utf8:
@@ -154,9 +168,18 @@ def _canon(frame: pl.DataFrame) -> pl.DataFrame:
 def insert_game_rows(table: str, frame: pl.DataFrame, season: str,
                      source: str, entity: str, game_id: str,
                      view: str = "") -> int:
+    """Idempotent per-game write: delete this game's rows, then insert.
+
+    Never drops the table; absorbs column drift via ALTER TABLE.
+    The DELETE, INSERT, and fetch_log watermark run in a SINGLE
+    transaction (store.write_unit): a crash rolls back to the previous
+    complete state, so a rerun redoes the game instead of skipping it.
+    """
     if frame.height == 0:
         return 0
     frame = _canon(frame)
+    # Raw bronze frames keep API-native camelCase columns; derive the
+    # GAME_ID key the idempotent delete predicate needs.
     if "GAME_ID" not in frame.columns and "gameId" in frame.columns:
         frame = frame.with_columns(
             pl.col("gameId").cast(pl.String).alias("GAME_ID"))
@@ -172,6 +195,7 @@ def insert_game_rows(table: str, frame: pl.DataFrame, season: str,
 
 
 def watermarked(table: str, season: str, entity: str) -> bool:
+    # Fresh warehouse: the file may not exist yet (read-only open fails).
     try:
         return bool(store.last_fetch(table, season, entity))
     except Exception:
@@ -179,6 +203,12 @@ def watermarked(table: str, season: str, entity: str) -> bool:
 
 
 def watermarked_entities(table: str, season: str) -> set[str]:
+    """All watermarked entities for a (dataset, season) in ONE query.
+
+    Per-game last_fetch() opens a connection per call; over 13k games
+    that dominates runtime. Batch it for scans, keep the single-shot
+    helper for point checks.
+    """
     try:
         con = store.connect(read_only=True)
     except Exception:
@@ -305,7 +335,9 @@ def backfill_lineups(season: str, sleep_s: float, ctr: Counters) -> None:
         frames.append(res.frame.with_columns(
             pl.lit(measure).alias("MEASURE")))
     frame = pl.concat(frames, how="diagonal")
-    frame = _canon(frame)
+    frame = _canon(frame)  # MEASURE already set per-frame in the loop above
+    # One transaction: DELETE + INSERT + watermark are all-or-nothing,
+    # so a crash can't leave a half-written season or a false watermark.
     store.write_unit(LINEUP_TABLE, frame, season, "nba_api", entity,
                      "_season = ? AND _entity LIKE 'lineups:%'", [season])
     print(f"[{season}] lineups: {frame.height} rows", flush=True)

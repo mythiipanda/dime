@@ -1,3 +1,11 @@
+"""Garbage-time flags per the public Cleaning the Glass definition.
+
+Q4 plus margin thresholds plus two or fewer starters on floor combined.
+Sticky: once garbage, later events stay garbage unless margin recovers,
+then the clock resets. Writes silver_hist_possessions.garbage (0/1).
+
+Usage: python -m scripts.garbage --seasons 2022,2023,2024,2025,2026
+"""
 
 import argparse
 import sys

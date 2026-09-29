@@ -31,6 +31,8 @@ VERDICT_RULES = [
     ' "no underlying driver found; expected to drift back toward baseline".',
 ]
 
+# QA #31: this surfaced verbatim on the waiver card - internal table
+# names are plumbing, never user-facing (F25-class). Say the fact only.
 CAREER_UNAVAILABLE_NOTE = (
     "Career baseline is not available for this player yet, so the "
     "verdict leans on this season's baseline plus driver analysis."
@@ -65,6 +67,9 @@ def _f(value: object) -> float:
 def aggregate(rows: list[dict[str, Any]]) -> dict[str, Any]:
     gp = len(rows or [])
     if gp == 0:
+        # QA #30: an empty bucket shipped as 0.0 across the board, which
+        # reads as a real (terrible) performance line. Zero games is
+        # missing data: N/A, never fake-neutral 0.0.
         return {"gp": 0, "ppg": None, "rpg": None, "apg": None,
                 "fg_pct": None, "plus_minus": None}
     fgm = sum(_f(r.get("FGM")) for r in rows)
@@ -344,6 +349,10 @@ def _career_baseline(pid: int, stat: str) -> dict[str, Any]:
         )
         if not rows:
             raise LookupError("empty")
+        # QA #31b: len(rows) is SEASONS, not games - the card printed
+        # "22.9 PTS/game over 2 games" for a 2-season baseline. Use the
+        # real gp column for games, weight the average by it, and flag
+        # thin samples so a 2-season career is not presented as signal.
         seasons = len(rows)
         key = stat.lower()
         games = int(sum(_f(r.get("gp")) for r in rows)) or seasons
@@ -410,6 +419,9 @@ def get_regression_check(player: str, stat: str = "PTS", n: int = 10,
     ]
     scales = {"true_shooting": 20.0, "minutes": 0.25, "shot_volume": 1.0 / 3.0,
               "opponent_defense": 0.25}
+    # QA #31: the waiver card printed raw decimals ("true shooting 0.5
+    # vs 0.5 -0.05") with no units. Scale percents to 0-100 and tag
+    # every driver with an explicit unit.
     _UNITS = {"true_shooting": "pct", "minutes": "min", "shot_volume": "fga",
               "opponent_defense": "rank"}
     for d in drivers_all:
@@ -434,6 +446,8 @@ def get_regression_check(player: str, stat: str = "PTS", n: int = 10,
                  "verdict_rules": VERDICT_RULES,
                  "driver_scaling": "ts*20, minutes/4, fga/3, opponent/4"
                  " so factors are comparable; drivers ranked by scaled |delta|",
+                 # QA #31b: QA's narrative listed per-game ranges instead
+                 # of using the verdict, and misread the defense rank.
                  "opponent_defense_meaning":
                  "average defensive rank of opponents faced, 1 = best "
                  "defense, 30 = worst; negative delta = tougher slate",

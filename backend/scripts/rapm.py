@@ -1,3 +1,10 @@
+"""RAPM-lite. Ridge regression on possession stints, garbage time excluded.
+
+Design: rows are possessions, columns are players (+1 offense, -1 defense).
+Target is points minus league average per possession. Report per 100.
+
+Usage: python -m scripts.rapm --season 2025-26 --min-poss 500
+"""
 
 import argparse
 import sys

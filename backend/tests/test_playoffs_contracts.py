@@ -19,6 +19,8 @@ def test_finals_games_have_home_and_scores():
 
 
 def test_finals_game3_home_is_explicit():
+    # The composed answer used to say SAS won game 3 "at home"; the
+    # game was at NYK. The payload must say so explicitly.
     games = {g["date"]: g for g in _finals()["games"]}
     g3 = games["2026-06-08"]
     assert g3["home"] == "NYK" and g3["winner"] == "SAS"

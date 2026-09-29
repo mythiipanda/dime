@@ -28,6 +28,7 @@ def _warehouse_has_games(season: str, dates: list[str]) -> bool:
 
 
 def _warehouse_games(date_str: str, season: str) -> tuple[list, bool]:
+    """Warehouse-only scoreboard rows for one date. Never calls the live API."""
     try:
         from .. import store as _store
         from .team import game_links
@@ -48,6 +49,11 @@ def _warehouse_games(date_str: str, season: str) -> tuple[list, bool]:
 
 
 def _live_scores_needed(season: str, dates: list[str]) -> bool:
+    """Skip the live score lookup when it cannot return games.
+
+    A finished season is frozen in the warehouse; in the offseason the
+    schedule has no games, so a live lookup only burns timeouts.
+    """
     if season_static(season):
         return False
     if _in_offseason() and not _warehouse_has_games(season, dates):
@@ -56,6 +62,7 @@ def _live_scores_needed(season: str, dates: list[str]) -> bool:
 
 
 def _games(date_str: str, season: str) -> list:
+    """Fetch games with a hard timeout — live API can hang."""
     import concurrent.futures
 
     from .team import get_games_on_date
@@ -71,6 +78,8 @@ def _games(date_str: str, season: str) -> list:
     except Exception:
         return []
     finally:
+        # Don't wait for the worker — that's what makes the timeout real.
+        # The orphaned thread dies on its own; we don't block on it.
         ex.shutdown(wait=False)
 
 
@@ -182,6 +191,11 @@ def get_today(season: str = SEASON) -> dict[str, Any]:
 
 @tool
 def get_morning_briefing(season: str = SEASON) -> dict[str, Any]:
+    """Morning briefing: today's games, watchlist updates, leaderboard movers.
+
+    Deterministic pipeline for app open. Combines get_today, get_watchlist,
+    and get_leaderboard_deltas into one response.
+    """
     import concurrent.futures as _cf
 
     from .league import get_leaderboard_deltas

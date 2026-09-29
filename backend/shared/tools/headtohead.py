@@ -1,3 +1,16 @@
+"""Player head-to-head history against one opponent team. Warehouse only.
+
+Answers "How has Tatum done against the Knicks?": the player's game
+logs vs that opponent, career-vs-opponent averages next to the season
+baseline with deltas, and the team record in those games. Flags small
+samples (<5 games) instead of letting averages masquerade as truth.
+
+Player-vs-player is deliberately out of scope. Only 57 players carry
+warehouse gamelogs, and game logs carry no defensive-assignment data,
+so same-game-line overlap is too sparse for an honest PvsP tool. The
+warehouse holds 2025-26 player gamelogs only, so there is no career
+baseline beyond this season; the comparison is vs-opponent vs season.
+"""
 
 from typing import Any
 import datetime as _dt
@@ -58,6 +71,8 @@ def vs_opponent(rows: list[dict[str, Any]], abbr: str) -> list[dict[str, Any]]:
 
 
 def _load_player_games(pid: int, season: str) -> list[dict[str, Any]]:
+    # Read-only connect: this tool never writes, and it must not grab a
+    # write lock while other agents run against the same warehouse file.
     con = store.connect(read_only=True)
     cols = ("GAME_DATE", "Game_ID", "MATCHUP", "WL", "MIN", "FGM", "FGA",
             "FG3M", "FG3A", "FTM", "FTA", "REB", "AST", "STL", "BLK",
@@ -93,6 +108,22 @@ def _team_abbr(opponent: str) -> tuple[str, str]:
 @tool
 def get_head_to_head(player: str, opponent: str,
                      season: str = SEASON) -> dict[str, Any]:
+    """How a player has done against one opponent team.
+
+    player: name, nickname, or id (same resolution as every other tool).
+    opponent: team name, abbreviation, or id, e.g. "Knicks" or "NYK".
+    season: 2025-26 only in the warehouse; other seasons clamp.
+
+    Returns the player's game logs against the opponent (most recent
+    first), vs-opponent averages next to the season baseline, the deltas
+    between them, and the player's team record in those games. Fewer
+    than 5 games sets small_sample and says so plainly. Warehouse only;
+    player-vs-player is not supported.
+    If `opponent` names a PLAYER (e.g. "Shai Gilgeous-Alexander"), it
+    resolves to that player's current team so the lane still answers the
+    meetings between the two players' teams instead of erroring; the
+    resolution is disclosed in the note.
+    """
     season = clamp_season(season)
     try:
         pid = coerce_player_id(player)
@@ -102,6 +133,12 @@ def get_head_to_head(player: str, opponent: str,
     try:
         abbr, full_name = _team_abbr(opponent)
     except ValueError:
+        # 2026-09-13 sweep3: "head to head between Luka and SGA" passed
+        # a PLAYER as the opponent, got 'unknown team', and the lane
+        # shipped "no shared court logs, precluding direct comparison"
+        # while MIN-vs-LAL meetings sat in the warehouse. Resolve an
+        # opponent player to their current team and say so; the answer
+        # is then the player's games against that team.
         try:
             import time as _time
             from collections import Counter as _Counter

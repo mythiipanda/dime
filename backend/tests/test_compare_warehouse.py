@@ -207,6 +207,8 @@ def test_warehouse_miss_falls_back_to_live(warehouse, monkeypatch):
     result = asyncio.run(pm.get_compare.ainvoke(
         {"a": "1628983", "b": "1630162", "season": SEASON}))
     assert result["ok"] is True
+    # A fallback row with a warehouse-style MATCHUP resolves team locally;
+    # CommonPlayerInfo is unnecessary, but on/off still receives that team.
     assert calls == []
     assert onoff_rec.calls
     assert onoff_rec.calls[0].get("team_id") == 1610612747
@@ -325,6 +327,8 @@ def _patch_compare_stubs(monkeypatch, last_stub):
 
 
 def test_last5_recovers_after_transient_failure(warehouse, monkeypatch):
+    """Ticket 4: a once-failing get_last_x is retried, so last5 populates
+    instead of silently coming back []."""
     _patch_no_live(monkeypatch)
     flaky = _FlakyLastStub()
     _patch_compare_stubs(monkeypatch, flaky)
@@ -336,6 +340,8 @@ def test_last5_recovers_after_transient_failure(warehouse, monkeypatch):
 
 
 def test_last5_failure_surfaced_in_meta(warehouse, monkeypatch):
+    """Ticket 4: when a sub-call keeps failing, the failure is surfaced in
+    meta instead of being swallowed into last5: []."""
     _patch_no_live(monkeypatch)
     _patch_compare_stubs(monkeypatch, _BoomStub())
     result = asyncio.run(pm.get_compare.ainvoke(

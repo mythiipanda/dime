@@ -1,3 +1,8 @@
+"""Watchlist desk. Followed players and teams for the Today view.
+
+User data lives in a ``watchlists`` table (entity_type, entity_id,
+added_at). It is not a silver_ table. Silver tables stay read-only here.
+"""
 
 from datetime import datetime, timezone
 from typing import Any
@@ -208,6 +213,11 @@ def remove_watchlist_item(entity_type: str, entity_id: str) -> dict[str, Any]:
 
 @tool
 def get_watchlist(season: str = SEASON) -> dict[str, Any]:
+    """List followed entities with their latest snapshot.
+
+    Players carry per-game PTS/REB/AST from silver_leaders_pts.
+    Teams carry W/L from silver_standings.
+    """
     season = str(season or SEASON).strip() or SEASON
     con = store.state_connect()
     try:

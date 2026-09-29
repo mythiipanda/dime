@@ -33,6 +33,14 @@ _CAREER_STAT_KEYS = ("GP", "MIN", "PTS", "REB", "AST", "STL", "BLK",
 
 @tool
 def get_career_totals(player: str) -> dict[str, Any]:
+    """Full NBA regular-season career totals for one player.
+
+    Live primary source first (true full career); when the live source
+    is unreachable, sums the warehouse season lines (2014-15 onward,
+    per-game rates x games) and marks the coverage partial instead of
+    inventing a full-career figure (F77: text_to_sql used to sum a
+    wrong slice and ship fabricated totals like "291.5 career points").
+    """
     try:
         pid = coerce_player_id(player)
     except Exception:
@@ -49,6 +57,7 @@ def get_career_totals(player: str) -> dict[str, Any]:
             out[key] = _num(row.get(key.lower()))
         return {"tool": "get_career_totals", "ok": True, "rows": [out],
                 "meta": {"source": "nba_api", "coverage": "full_career"}}
+    # Warehouse fallback: partial coverage, labeled as such.
     try:
         hist = store.read_frame(
             "silver_hist_player_seasons", "player_id = ?", [int(pid)])
@@ -101,6 +110,8 @@ def get_career_totals(player: str) -> dict[str, Any]:
 
 
 def _display_name(raw: object) -> str:
+    """Names in, names out: desks pass ids verbatim per the id contract,
+    so numeric ids resolve back to display names for verdicts/tables."""
     txt = str(raw or "").strip()
     if not txt.isdigit():
         return txt
@@ -195,6 +206,7 @@ def portability_fit(a: dict[str, Any], b: dict[str, Any]) -> dict[str, str]:
 
 
 def _read_df(sql: str, params: list, tries: int = 5) -> list[dict[str, Any]]:
+    """Warehouse read with retries. Concurrent writers briefly lock the file."""
     import time as _time
 
     import duckdb as _duckdb
@@ -221,6 +233,13 @@ def _read_df(sql: str, params: list, tries: int = 5) -> list[dict[str, Any]]:
 
 def _different_teams_pair(left: dict[str, Any], right: dict[str, Any],
                           season: str) -> dict[str, Any]:
+    """Pair block for players on different teams.
+
+    "No shared court" only means they are not teammates; their teams may
+    have met several times this season. Compute the actual meetings from
+    the warehouse gamelogs so the answer never claims zero matchups when
+    the two players in fact shared the floor.
+    """
     from .headtohead import _load_player_games, vs_opponent
     lid, rid = left.get("player_id"), right.get("player_id")
     ta, tb = str(left.get("team") or ""), str(right.get("team") or "")
@@ -293,6 +312,14 @@ async def get_compare(
                 return []
 
         def _team_id(abbr: str) -> int:
+            # Warehouse-first team resolution. The warehouse gamelog MATCHUP
+            # column already carries the player's team abbreviation, and the
+            # offline nba_api static table maps it to a team id with zero
+            # HTTP, so the hot path never touches the network.
+            # FALLBACK: the live CommonPlayerInfo call below only fires when
+            # the warehouse has no team data for this player at all. On that
+            # path there is no warehouse row to go stale, so the live
+            # TEAM_ID wins outright by construction.
             if abbr:
                 try:
                     return coerce_team_id(abbr)
@@ -316,6 +343,9 @@ async def get_compare(
                 return []
 
         games = await loop.run_in_executor(None, _gamelogs)
+        # Sub-calls as (tool, args) defs so a failure can be retried with a
+        # fresh coroutine; a still-failing call is recorded in sub_errors
+        # instead of silently emitting empty sections (e.g. last5: []).
         job_defs: dict[str, tuple[Any, dict[str, Any]]] = {}
         if not games:
             job_defs["intel"] = (get_player_intel,
@@ -357,6 +387,8 @@ async def get_compare(
         if not games:
             games = res.get("intel", {}).get("rows", []) or []
         if not games:
+            # Missing source population is not a zero-game season and must not
+            # flow through max(gp, 1) into confident 0.0 player statistics.
             return {
                 "name": _display_name(who), "player_id": pid,
                 "missing_population": True,
@@ -385,6 +417,9 @@ async def get_compare(
                 "rim_share": None, "three_share": None}
         except Exception:
             diet = {"rim_share": None, "three_share": None}
+        # QA #34: blank compare cells get cited from other evidence
+        # streams anyway - name what is unavailable so the card and the
+        # narrative can say N/A instead of leaving silent blanks.
         missing: list[str] = []
         if diet.get("three_share") is None:
             missing.append("three_share")
@@ -538,6 +573,9 @@ def _metric_row(metric: str, label: str, method: str, a: object, b: object,
         except (TypeError, ValueError):
             return None
     fa, fb = _f(a), _f(b)
+    # QA #34: "edges by 0.6 eFG points" is noise presented as a win.
+    # Fraction-scale metrics (0-1: ts, efg, shares) need >= 0.02 to
+    # lead; counting-scale metrics need >= 1 pct relative separation.
     if fa is not None and fb is not None and max(abs(fa), abs(fb)) <= 1.5:
         eps = 0.02
     else:
@@ -563,6 +601,12 @@ def _metric_row(metric: str, label: str, method: str, a: object, b: object,
 
 @tool
 def compare_metrics(a: str | int, b: str | int, season: str = SEASON) -> dict[str, Any]:
+    """Cross-metric adjudication for two players. Referees impact metrics.
+
+    Pulls RAPTOR, RAPM-lite, on-off net, and PIE/TS from the warehouse and
+    reports which metrics agree. EPM, LEBRON, DARKO, and DRIP are listed
+    as unavailable, never invented.
+    """
     try:
         pida = coerce_player_id(a)
         pidb = coerce_player_id(b)
@@ -652,6 +696,10 @@ def compare_metrics(a: str | int, b: str | int, season: str = SEASON) -> dict[st
         _metric_row("ts", "true shooting", "scoring efficiency",
                     ma.get("TS_PCT"), mb.get("TS_PCT"), na, nb),
     ]
+    # RAPTOR ended after 2021-22. Keep those rows visible as historical
+    # context, but never let an old vintage vote on a current-season verdict.
+    # Its total/offense/defense/WAR columns are one model family, so counting
+    # them as four independent current votes would manufacture agreement.
     raptor_current = bool(vintage) and vintage == {season}
     for row in rows:
         row["eligible_for_verdict"] = (
@@ -697,12 +745,20 @@ def _season_line(player_id: object, season: str) -> dict[str, Any] | None:
             [season, str(player_id)])
         if frame is not None and frame.height > 0:
             row = frame.to_dicts()[0]
+            # P3: bbref marks traded players 2TM/3TM - never leak the
+            # code into the narrative.
             if str(row.get("TEAM") or "").endswith("TM"):
                 n = str(row["TEAM"])[:-2]
                 row["TEAM"] = (f"traded mid-season ({n} teams)")
             return {k: v for k, v in row.items() if not k.startswith("_")}
     except Exception:
         pass
+    # F73: historical season lines live in silver_hist_player_seasons
+    # (2014-15..2024-25, sportsdataverse). Before this, "Tatum 2023-24
+    # ppg" dead-ended with a no-data error while the warehouse held the
+    # line - and the fallback narrative invented numbers. Keys are
+    # normalized to the bbref shape so every consumer renders it the
+    # same as a current-season line.
     try:
         frame = store.read_frame(
             "silver_hist_player_seasons",
@@ -736,6 +792,8 @@ def _season_line(player_id: object, season: str) -> dict[str, Any] | None:
 @tool
 def get_player_intel(player_id: str | int, season: str = SEASON) -> dict[str, Any]:
     player_id = coerce_player_id(player_id)
+    # limit=500: the 25-row cap silently clipped logs to October-
+    # December games, so "playing lately?" read stale (QA #22).
     rows, meta = _warehouse_or_live(
         "silver_player_gamelogs", "_season = ? AND _entity = ?",
         [season, f"player:{player_id}"],
@@ -752,7 +810,10 @@ def get_player_intel(player_id: str | int, season: str = SEASON) -> dict[str, An
                                      "player; showing season line"}}
         from .splits import _resolve_name as _rname3
         _d = _rname3(int(player_id), str(player_id))
+        # QA #32: facts only - an imperative to the model ("say that
+        # plainly") leaks verbatim into user-facing text.
         return {"tool": "get_player_intel", "ok": False,
+                # F75: user-safe phrasing only - never instructions.
                 "error": (f"No {season} game log rows for {_d}; game "
                           f"logs cover 2024-25 and 2025-26, and season "
                           f"lines cover 2014-15 onward.")}
@@ -765,6 +826,8 @@ def get_player_intel(player_id: str | int, season: str = SEASON) -> dict[str, An
         _note = _pin(int(player_id), season,
                      _rname4(int(player_id), str(player_id)))
         if _note:
+            # F45: a scout-only injury ask must still surface the
+            # playoff inactive listing.
             out["inactive_note"] = _note
     except Exception:
         pass
@@ -780,7 +843,13 @@ def get_season_averages(player_id: str | int, season: str = SEASON) -> dict[str,
                 "error": f"unknown player: {player_id}"}
     line = _season_line(pid, season)
     if not line:
+        # QA F13: a bare miss on a retired player dead-ended the answer
+        # ("No Kobe Bryant data found") instead of the honest story.
+        # Give the coverage facts so the narrative can say "retired /
+        # outside dataset" plainly instead of overclaiming no data.
         return {"tool": "get_season_averages", "ok": False,
+                # F75: this text can ship verbatim (QA #32 class) -
+                # keep it user-safe prose, no model instructions.
                 "error": (f"No season line on file for {season}; season "
                           f"lines cover 2014-15 through the current "
                           f"season, so this one is outside dataset "
@@ -847,10 +916,16 @@ def get_playoff_intel(player_id: str | int, season: str = SEASON) -> dict[str, A
         return {"tool": "get_playoff_intel", "ok": False, "error": err}
     cols = ["GAME_DATE", "MATCHUP", "PTS", "REB", "AST", "MIN"]
     slim = [{k: r.get(k) for k in cols if k in r} for r in rows]
+    # F67 T3: the slim rows carried no player name, so compose wrote
+    # "the recorded player" / "the OKC player" - name every row.
     from .splits import _resolve_name as _pnm
     _disp = _pnm(pid, str(player_id))
     for r in slim:
         r["PLAYER"] = _disp
+    # F67 413-vs-414: aggregate asks ("how did he do in the
+    # playoffs?") were LLM-summed over 19 rows and drifted by a point
+    # between runs. Compute the series totals once, here, and mark
+    # them canonical (v67 law: deterministic numerals on this lane).
     def _sum(col: str) -> int:
         return int(sum(float(r.get(col) or 0) for r in slim))
     meta = dict(meta or {})
@@ -874,6 +949,9 @@ def get_playoff_intel(player_id: str | int, season: str = SEASON) -> dict[str, A
 @tool
 def get_last_x(player_id: str | int, n: int = 10, season: str = SEASON) -> dict[str, Any]:
     player_id = coerce_player_id(player_id)
+    # limit=500: the default 25-row cap lands BEFORE the date sort, so
+    # "last n" used to mean "first 25 stored, then newest of those"
+    # (QA #22: KD's "last 5" showed December).
     rows, meta = _warehouse_or_live(
         "silver_player_gamelogs", "_season = ? AND _entity = ?",
         [season, f"player:{player_id}"],
@@ -904,7 +982,10 @@ def get_last_x(player_id: str | int, n: int = 10, season: str = SEASON) -> dict[
 
 @tool
 def get_trend(player_id: str | int, season: str = SEASON) -> dict[str, Any]:
+    """Decay-weighted recent form versus season baseline. DARKO-lite."""
     player_id = coerce_player_id(player_id)
+    # limit=500: same first-25-stored cap as get_last_x; the decay window
+    # must be the actual end of the log (QA #22).
     rows, meta = _warehouse_or_live(
         "silver_player_gamelogs", "_season = ? AND _entity = ?",
         [season, f"player:{player_id}"],
@@ -914,6 +995,8 @@ def get_trend(player_id: str | int, season: str = SEASON) -> dict[str, Any]:
     if not rows:
         return {"tool": "get_trend", "ok": False,
                 "error": meta.get("error") or "empty upstream response"}
+    # Warehouse storage order is not guaranteed chronological; form must
+    # be computed on real dates or "recent" quietly means December (F19).
     from .splits import parse_game_date as _pgd
     rows = sorted(rows, key=lambda r: _pgd(r.get("GAME_DATE")) or _dt.min)
     try:
@@ -935,6 +1018,9 @@ def get_trend(player_id: str | int, season: str = SEASON) -> dict[str, Any]:
                      "delta": round(form - base, 1),
                      "direction": "up" if form > base + 1 else (
                          "down" if form < base - 1 else "flat"),
+                     # Coverage honesty: name the actual windows so the
+                     # narrative can say which dates "form" covers instead
+                     # of implying an unverified recent stretch.
                      "log_from": rows[0].get("GAME_DATE"),
                      "log_to": rows[-1].get("GAME_DATE"),
                      "form_from": rows[-len(recent)].get("GAME_DATE"),
@@ -967,6 +1053,7 @@ def get_percentiles(player_id: str | int, season: str = SEASON) -> dict[str, Any
 
 @tool
 def get_comps(player_id: str | int, season: str = SEASON, k: int = 5) -> dict[str, Any]:
+    """Nearest statistical neighbors by per-36 + advanced shape. Same-season only."""
     import math
 
     from ._core import clamp_season
@@ -1029,7 +1116,7 @@ def get_comps(player_id: str | int, season: str = SEASON, k: int = 5) -> dict[st
 
         usg = _f("USG_PCT")
         if usg is not None and usg <= 1:
-            usg *= 100
+            usg *= 100  # warehouse stores usage-class stats as ratios
         ap = _f("AST_PCT")
         if ap is not None and ap <= 1:
             ap *= 100
@@ -1103,7 +1190,7 @@ def get_comps(player_id: str | int, season: str = SEASON, k: int = 5) -> dict[st
             m = _num(v)
             if m is not None:
                 return m
-            s = str(v or "").strip()
+            s = str(v or "").strip()  # gamelog MIN may be clock "MM:SS"
             if ":" in s:
                 try:
                     mm, ss = s.split(":")[:2]
@@ -1193,7 +1280,7 @@ def get_comps(player_id: str | int, season: str = SEASON, k: int = 5) -> dict[st
             mean, std = stats[feat]
             v = e["feats"].get(feat)
             z[feat] = ((v - mean) / std if isinstance(v, (int, float))
-                       else 0.0)
+                       else 0.0)  # mean-imputed when missing
         zvec[e["sid"]] = z
     zt = zvec[target["sid"]]
     scored: list[tuple[float, dict[str, Any]]] = []
@@ -1278,6 +1365,10 @@ def get_advanced(player: str | int, season: str = SEASON) -> dict[str, Any]:
         return {"tool": "get_advanced", "ok": False,
                 "error": f"no advanced row for player {player_id}"}
     slim = {k: rows[0].get(k) for k in ADVANCED_COLS if k in rows[0]}
+    # Units honesty: nba_api ships these pct fields as 0-1 decimals while
+    # TM_TOV_PCT is already 0-100. The mix made the model print PIE as
+    # "0.1" next to "54.6%" TS in the same answer. Normalize everything
+    # to the 0-100 scale the _PCT names imply.
     for k in ("USG_PCT", "TS_PCT", "EFG_PCT", "AST_PCT", "PIE"):
         v = slim.get(k)
         if isinstance(v, (int, float)) and v <= 1.0:
@@ -1287,6 +1378,8 @@ def get_advanced(player: str | int, season: str = SEASON) -> dict[str, Any]:
                      "units": "percentages on 0-100 scale"}}
 
 
+# bbref distance buckets -> canonical court zones (approximate; corner
+# threes cannot be separated from above-the-break in bucket data).
 _BUCKET_TO_ZONE = {
     "0-3ft": "Restricted Area",
     "3-10ft": "In The Paint (Non-RA)",
@@ -1298,6 +1391,12 @@ _BUCKET_TO_ZONE = {
 
 @tool
 def get_shot_zones(player_id: str | int, season: str = SEASON) -> dict[str, Any]:
+    """Zone splits for one player id: rim, midrange, three with shares.
+
+    Warehouse-first: seeded silver_shots, then seeded silver_zone_splits
+    (basketball-reference distance buckets, league-wide), then live
+    shot_chart (fail-fast; endpoint-blocked from datacenter IPs).
+    """
     player_id = coerce_player_id(player_id)
     import math
 
@@ -1319,12 +1418,14 @@ def get_shot_zones(player_id: str | int, season: str = SEASON) -> dict[str, Any]
     except Exception:
         pass
     if not shot_dicts:
+        # League-wide seeded distance buckets (bbref shooting page).
         try:
             zb = store.read_frame(
                 "silver_zone_splits",
                 "_season = ? AND CAST(PLAYER_ID AS VARCHAR) = CAST(? AS VARCHAR)",
                 [season, str(player_id)])
             if zb is not None and zb.height > 0:
+                # League baseline from the same bucket table (league-wide seed).
                 league_fg: dict[str, float] = {}
                 try:
                     lz = store.read_frame(
@@ -1338,7 +1439,7 @@ def get_shot_zones(player_id: str | int, season: str = SEASON) -> dict[str, Any]
                             m_v = float(lr.get("FGM") or 0)
                             a_v = float(lr.get("FGA") or 0)
                             if not (math.isfinite(m_v) and math.isfinite(a_v)):
-                                continue
+                                continue  # NaN rows (per-100 sections) poison sums
                             a = agg.setdefault(zone, [0.0, 0.0])
                             a[0] += m_v
                             a[1] += a_v
@@ -1347,6 +1448,11 @@ def get_shot_zones(player_id: str | int, season: str = SEASON) -> dict[str, Any]
                                 league_fg[zone] = round(m / a, 3)
                 except Exception:
                     pass
+                # Distance buckets map onto the canonical viz zones so the
+                # court heatmap and compare paths can read them. Buckets are
+                # approximate: 3-10ft counts as paint, 10-16ft and 16ft-3P
+                # merge into mid-range, all threes land in above-the-break
+                # (corners cannot be separated from bucket data).
                 merged: dict[str, list[float]] = {}
                 for r in zb.to_dicts():
                     zone = _BUCKET_TO_ZONE.get(str(r.get("ZONE")))
@@ -1364,6 +1470,8 @@ def get_shot_zones(player_id: str | int, season: str = SEASON) -> dict[str, Any]
                     fgm = float(r.get("FGM") or 0)
                     fgp = round(fgm / fga, 3) if fga else 0.0
                     zone_name = str(r.get("ZONE"))
+                    # Buckets carry no made-threes split; on canonical zones
+                    # eFG = FG% for twos, 1.5x FG% for the all-threes bucket.
                     efgp = (round(fgp * 1.5, 3) if _is_three_zone(zone_name)
                             else fgp)
                     row = {
@@ -1468,6 +1576,8 @@ def get_shot_zones(player_id: str | int, season: str = SEASON) -> dict[str, Any]
         baseline_detail = str(exc)[:120]
     bucket_fg: dict[str, float] = {}
     if baseline_missing:
+        # Fall back to the league-wide bucket table (551 players) mapped
+        # onto canonical zones; corner zones reuse the all-threes baseline.
         try:
             lz = store.read_frame("silver_zone_splits", "_season = ?", [season])
             if lz is not None and lz.height > 0:
@@ -1479,7 +1589,7 @@ def get_shot_zones(player_id: str | int, season: str = SEASON) -> dict[str, Any]
                     m_v = float(lr.get("FGM") or 0)
                     a_v = float(lr.get("FGA") or 0)
                     if not (math.isfinite(m_v) and math.isfinite(a_v)):
-                        continue
+                        continue  # NaN rows (per-100 sections) poison sums
                     slot = agg_b.setdefault(zone, [0.0, 0.0])
                     slot[0] += m_v
                     slot[1] += a_v
@@ -1562,6 +1672,7 @@ def _opp_tier_splits(frame: Any, season: str) -> list[dict[str, Any]]:
 @tool
 def get_splits(player_id: str | int, season: str = SEASON) -> dict[str, Any]:
     player_id = coerce_player_id(player_id)
+    # limit=500: last-10 splits must see the full log (QA #22).
     rows_data, warehouse_meta = _warehouse_or_live(
         "silver_player_gamelogs", "_season = ? AND _entity = ?",
         [season, f"player:{player_id}"],
@@ -1709,6 +1820,10 @@ def get_splits(player_id: str | int, season: str = SEASON) -> dict[str, Any]:
 
 
 def _hist_on_off_rows(pid: int, tid: int, season: str) -> list[dict[str, Any]]:
+    """F82: silver_on_off is current-season only. For 2009-10+ seasons,
+    derive on/off ratings from silver_hist_possessions (per-possession
+    lineups). Same {Stat, On, Off, On-Off} shape as the pbpstats pivot.
+    Garbage-time possessions excluded."""
     try:
         con = store.connect(read_only=True)
     except Exception:
@@ -1792,6 +1907,7 @@ def get_on_off(player_id: str | int, team_id: str | int, season: str = SEASON) -
         entity=f"player:{player_id}", ttl_s=TTL_PBPSTATS,
     )
     if not rows:
+        # F82: historical seasons (2009-10+) from possession lineups.
         hist = _hist_on_off_rows(int(player_id), int(team_id), str(season))
         if hist:
             return {"tool": "get_on_off", "ok": True, "rows": hist,
@@ -1812,6 +1928,12 @@ def get_wowy(
     team_id: str | int = 0,
     season: str = SEASON,
 ) -> dict[str, Any]:
+    """With-or-without-you (WOWY) 4-way lineup combination splits for two players.
+
+    Accepts player_a and player_b by name or id, or comma-separated player_ids.
+    Computes Both ON, A ON / B OFF, B ON / A OFF, and Both OFF with minutes,
+    offensive rating, defensive rating, and net rating from warehouse lineups.
+    """
     raw_a = (player_a or "").strip()
     raw_b = (player_b or "").strip()
     if not raw_a and not raw_b and player_ids:
@@ -1905,6 +2027,7 @@ def get_wowy(
         finally:
             con.close()
 
+    # Fallback to PBPStats API if warehouse lacks the lineup rows
     from ..sources import pbpstats
 
     ids = [p for p in (pid_a, pid_b) if p]
@@ -1936,6 +2059,13 @@ def get_four_factors(player_id: str | int, team_id: str | int, season: str = SEA
 
 @tool
 async def get_shot_compare(a: str, b: str, season: str = SEASON) -> dict[str, Any]:
+    """Shot-diet showdown: zone eFG and share for two players.
+
+    Missing zone data stays null, never 0.0: a player without a seeded
+    zone row has NO data there, not a 0% shooter. Edges and the verdict
+    are computed only where BOTH players have data; takeaways must never
+    be built on a missing cell.
+    """
     async def _zones(who: str) -> dict[str, dict]:
         try:
             pid = coerce_player_id(who)
@@ -1956,6 +2086,8 @@ async def get_shot_compare(a: str, b: str, season: str = SEASON) -> dict[str, An
         return None
 
     ma, mb = await _asyncio.gather(_zones(a), _zones(b))
+    # Verdicts and edges must read as names, not raw ids: desks pass ids
+    # verbatim per the id-contract, so resolve display names here.
     a, b = _display_name(a), _display_name(b)
     missing = [n for n, m in ((a, ma), (b, mb)) if not m]
     rows: list[dict[str, Any]] = []
@@ -1968,7 +2100,7 @@ async def get_shot_compare(a: str, b: str, season: str = SEASON) -> dict[str, An
         ash = _f(ra, "SHARE", "share")
         bsh = _f(rb, "SHARE", "share")
         if ae is None or be is None or ash is None or bsh is None:
-            edge = None
+            edge = None  # not comparable, never a fake wash or fake winner
         elif max(ash, bsh) < 0.05 or ae == be:
             edge = "wash"
         else:
@@ -2050,11 +2182,19 @@ def get_raptor_history(player: str, season: str = "") -> dict[str, Any]:
             "meta": {"source": "fivethirtyeight:raptor", "seasons": len(rows)}}
 
 
+# Direct impact metrics are missing for the current season in this
+# warehouse: RAPTOR is frozen at 2021-22, silver_rapm holds no rows, and no
+# BPM table exists. get_impact_estimate fills the gap with a documented,
+# always-labeled estimate. It never presents output as a measured metric.
+
 IMPACT_PRIOR_FEATURES = ("USG_PCT", "TS_PCT", "AST_PCT", "REB_PCT", "TM_TOV_PCT")
-IMPACT_PRIOR_MIN_POSS = 3000
-IMPACT_PRIOR_MIN_N = 30
-IMPACT_SHRINK_K = 1500
-IMPACT_RAPTOR_ONOFF_W = 0.20
+IMPACT_PRIOR_MIN_POSS = 3000  # box-prior trainers: players at/above this many possessions
+IMPACT_PRIOR_MIN_N = 30       # minimum trainers before the prior is used
+IMPACT_SHRINK_K = 1500        # prior strength, in possessions (estimate is
+                              # 50/50 measured/prior at this possession count)
+IMPACT_RAPTOR_ONOFF_W = 0.20  # empirical: implied on/off weight 0.19-0.22,
+                              # flat across minutes, over 4,684 player-seasons
+                              # (2013-14..2021-22) with both components present
 IMPACT_DISCLAIMER = ("This is a statistical estimate, not a measured impact "
                      "metric. Never present it as RAPTOR, RAPM, or BPM.")
 
@@ -2081,6 +2221,10 @@ def _solve_linear(a: list[list[float]], b: list[float]) -> list[float] | None:
 
 
 def _fit_box_prior(season: str) -> dict[str, Any] | None:
+    """Fit lift ~ box stats on high-minute players. lift is the player's
+    marginal on-court impact: on-court NET_RATING minus team NET_RATING,
+    per 100 possessions. Returns coefficients plus fit diagnostics, or None
+    when the warehouse cannot support the fit."""
     try:
         rows = _read_df(
             "SELECT PLAYER_NAME, TEAM_ID, POSS, NET_RATING, "
@@ -2149,6 +2293,15 @@ def _stale_raptor(player_id: int, name: str, season: str) -> dict[str, Any] | No
 
 @tool
 def get_impact_estimate(player: str | int, season: str = SEASON) -> dict[str, Any]:
+    """Estimated per-100-possession impact for players lacking direct metrics.
+
+    Rookies, call-ups, and low-minute players have no RAPTOR/RAPM/BPM in the
+    warehouse, so this synthesizes an estimate from available components.
+    ALWAYS an estimate (is_estimate=True): never present it as measured.
+    Methods: box_prior_shrinkage (marginal on-court lift shrunk toward an
+    OLS box-score prior, current season) or raptor_components (empirical
+    80/20 box/on-off blend, historical seasons with RAPTOR components).
+    """
     base: dict[str, Any] = {"tool": "get_impact_estimate", "is_estimate": True,
                             "disclaimer": IMPACT_DISCLAIMER}
     try:
@@ -2412,6 +2565,8 @@ def get_debate_card(a: str, b: str, season: str = SEASON,
         return "—"
 
     def _pct(p: dict, *keys: str) -> str:
+        """Render a pct stat as a readable percent (QA #25: raw 0.476
+        decimals looked broken on the shareable card)."""
         for k in keys:
             v = p.get(k)
             if v is None:
@@ -2488,6 +2643,7 @@ h1 {{ font-size: 22px; margin: 0; color: #1c1917; }}
 <div class="footer">Settle the debate with data</div>
 </div></body></html>"""
 
+    # Save where the file endpoint serves: backend/data/cards (git-ignored).
     out_dir = _Path(__file__).resolve().parent.parent.parent / "data" / "cards"
     out_dir.mkdir(parents=True, exist_ok=True)
     import unicodedata as _ud
@@ -2531,6 +2687,11 @@ def get_player_report(player: str | int, season: str = SEASON) -> dict[str, Any]
         return {"tool": "get_player_report", "ok": False,
                 "error": avg.get("error", "season line unavailable")}
     line = avg["rows"][0]
+    # Historical season reports must stay warehouse-bounded. The optional
+    # advanced/shot enrichments fall back to slow live NBA endpoints when a
+    # historical population is not cached, even though the complete season
+    # line already answers the aggregate and efficiency branch. Current-season
+    # reports retain the richer composite behavior.
     historical = season != SEASON
     adv = ({"ok": False} if historical else
            get_advanced.invoke({"player": pid, "season": season}))
@@ -2577,6 +2738,11 @@ def get_player_report(player: str | int, season: str = SEASON) -> dict[str, Any]
 
 @tool
 def get_player_evaluation(player: str | int, season: str = SEASON) -> dict[str, Any]:
+    """Grounded player tier, advanced profile, modeled value, and comps.
+
+    Tier rules are deterministic and transparent. Current-season impact uses
+    RAPM-lite as a context metric, never as the sole tier label.
+    """
     from .league import get_contract_value
 
     try:
@@ -2613,6 +2779,10 @@ def get_player_evaluation(player: str | int, season: str = SEASON) -> dict[str, 
     except Exception:
         pass
 
+    # A durable tier needs role and production, not one noisy impact metric.
+    # Superstar requires top-ten PIE plus top-25 impact. Star recognizes a
+    # top-40 PIE season with top-60 usage or top-75 impact. Remaining
+    # high-minute players are starters; lower-minute players are role players.
     if gp >= 40 and pie_rank <= 10 and rapm_rank is not None and rapm_rank <= 25:
         tier = "superstar"
     elif gp >= 40 and pie_rank <= 40 and (usage_rank <= 60 or
@@ -2681,6 +2851,13 @@ def get_player_evaluation(player: str | int, season: str = SEASON) -> dict[str, 
 
 @tool
 def get_player_rankings(n: int = 15, season: str = SEASON) -> dict[str, Any]:
+    """Overall top-N players board ranked by the warehouse impact metric.
+
+    Current seasons (RAPM-lite coverage, e.g. 2025-26): rank by RAPM-lite
+    with a possessions floor. Historical seasons 2014-15..2021-22: rank by
+    FiveThirtyEight WAR. Other seasons return an honest coverage note -
+    never a single-stat board presented as an overall ranking.
+    """
     try:
         n = max(1, min(int(n), 50))
     except (TypeError, ValueError):

@@ -11,6 +11,7 @@ from shared.config import settings
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    # Freeze code, warehouse, and route prompt identity before accepting requests.
     preflight_runtime_assets()
     yield
     await routes.shutdown_shadow_tasks()

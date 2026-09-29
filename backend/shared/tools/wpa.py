@@ -144,6 +144,15 @@ def _score_game(gid: str, grows: list[tuple],
 
 
 def score_events(rows: list) -> dict[str, dict[str, Any]]:
+    """Compact ordered rows to per-player WPA.
+
+    Rows are (game_id, action_number, clock, period, team_tricode,
+    person_id, player_name, location, score_home, score_away,
+    action_type) tuples ordered by game then action. Paired details
+    share an action_number, so the primary row is the one carrying an
+    action_type. Score state forward-fills per game and the delta is WP
+    after minus WP before from the acting team's perspective.
+    """
     players: dict[str, dict[str, Any]] = {}
     game = None
     grows: list[tuple] = []
@@ -170,6 +179,11 @@ def score_events(rows: list) -> dict[str, dict[str, Any]]:
 def get_wpa_leaders(season: Union[int, str, None] = 2025,
                      limit: Union[int, str, None] = 10,
                      min_events: Union[int, str, None] = MIN_EVENTS_DEFAULT) -> dict[str, Any]:
+    """WPA-by-play leaderboard for one season. Season is an end-year clamped to 2021..2025.
+
+    Deltas come from the fitted win-probability model before and after
+    each play, credited to the acting player. Documented estimates.
+    """
     warnings: list[str] = []
     year, season_warning = clamp_season_year(season)
     if season_warning:

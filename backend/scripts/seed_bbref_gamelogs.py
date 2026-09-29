@@ -1,3 +1,17 @@
+"""Seed full 2025-26 player game logs from Basketball-Reference into the warehouse.
+
+For every player page (https://www.basketball-reference.com/<player path>):
+  - parses table #player_game_log_reg -> silver_player_gamelogs (regular season)
+  - parses table #player_game_log_post -> silver_playoff_gamelogs (playoffs)
+
+Resumable: progress is tracked in seed_bbref_gamelogs_progress.json (same dir);
+already-done players are skipped on re-run. Per-player replacement makes re-runs
+idempotent (that player's 2025-26 rows are deleted and re-inserted fresh).
+
+Rate limit: 3s between pages; on HTTP 429 backs off to 60s + 10s delays and continues.
+
+Usage: ./backend/.venv/bin/python backend/scripts/seed_bbref_gamelogs.py [--limit N]
+"""
 
 import json
 import re
@@ -33,6 +47,7 @@ HEADERS = {
     )
 }
 
+# Target column order (matches existing silver tables; provenance added by store.save_frame)
 COLS = [
     "SEASON_ID", "Player_ID", "Game_ID", "GAME_DATE", "MATCHUP", "WL",
     "MIN", "FGM", "FGA", "FG_PCT", "FG3M", "FG3A", "FG3_PCT",
@@ -59,6 +74,7 @@ def norm_name(name: str) -> str:
 
 
 def loose_key(name: str) -> str:
+    """Last-name + first-initial fallback key, e.g. 'Mo Bamba' -> 'bambam'."""
     base = strip_suffix(name)
     parts = base.split()
     if len(parts) < 2:
@@ -66,6 +82,7 @@ def loose_key(name: str) -> str:
     return norm_name(parts[-1]) + norm_name(parts[0])[:1]
 
 
+# bbref display name -> warehouse canonical name (both resolved suffix-stripped).
 ALIAS_TARGETS = {
     "Jimmy Butler": "Jimmy Butler III",
     "Bobby Portis": "Bobby Portis Jr.",
@@ -92,6 +109,13 @@ def build_alias_map(name_map: dict) -> dict:
 
 
 def load_name_map() -> dict:
+    """NBA Player_ID lookup from silver_hist_player_seasons (2025-26 season).
+
+    NOTE: must NOT use read_only=True here. DuckDB caches the database
+    instance per path within a process, so a read-only connect first
+    poisons every later read-write connect in this process ("attached in
+    read-only mode"). This script writes, so open read-write.
+    """
     con = store.connect()
     try:
         rows = con.execute(
@@ -100,6 +124,8 @@ def load_name_map() -> dict:
     finally:
         con.close()
     if not rows:
+        # Fallback: warehouse has no 2025-26 slice yet - use nba_api's
+        # bundled static player list (local, no network).
         from nba_api.stats.static import players as _static_players
         rows = [(r["id"], r["full_name"]) for r in _static_players.get_players()]
         log(f"name map fallback: nba_api static list ({len(rows)} players, all-time)")
@@ -112,6 +138,8 @@ def load_name_map() -> dict:
             log(f"WARN duplicate normalized name {name!r} -> {pid} (kept {mapping[key]})")
             continue
         mapping[key] = pid
+    # Loose last-name+initial keys for nickname mismatches (bbref 'Mo Bamba'
+    # vs nba_api 'Mohamed Bamba'). Collision-safe: ambiguous keys dropped.
     loose: dict = {}
     collide: set = set()
     for pid, name in rows:
@@ -164,10 +192,11 @@ def parse_minutes(text: str):
     m = re.match(r"(\d+):(\d+)", text)
     if not m:
         return None
-    return int(m.group(1))
+    return int(m.group(1))  # floor minutes; target column is BIGINT
 
 
 def nba_date(iso: str) -> str:
+    """2025-11-18 -> 'Nov 18, 2025' (matches existing GAME_DATE format)."""
     try:
         dt = datetime.strptime(iso.strip(), "%Y-%m-%d")
         return dt.strftime("%b %d, %Y").replace(" 0", " ")
@@ -181,13 +210,17 @@ def cell(row, stat: str) -> str:
 
 
 def parse_gamelog_table(table, nba_id: int) -> list:
+    """Parse one bbref player gamelog table into target-schema rows.
+
+    Skips header-repeat rows and Inactive (partial_table) rows which have no stats.
+    """
     rows_out = []
     for row in table.xpath("./tbody/tr"):
         if row.get("class") == "thead":
             continue
         mp_txt = cell(row, "mp")
         if ":" not in mp_txt:
-            continue
+            continue  # Inactive / no-stat row
         iso_date = cell(row, "date")
         team = cell(row, "team_name_abbr")
         loc = cell(row, "game_location")
@@ -260,11 +293,18 @@ def page_player_name(doc) -> str | None:
     if not h1:
         return None
     name = h1[0].text_content().strip()
+    # bbref h1: "LeBron James 2025-26 Game Log"
     name = re.sub(r"\s+\d{4}-\d{2}\s+Game Log$", "", name).strip()
     return name or None
 
 
 def parse_inactive_rows(table, nba_id: int) -> list:
+    """Inactive/DNP listings from a playoff gamelog table (QA F33).
+
+    These are real facts (the player was listed inactive for that playoff
+    game), stored separately from gamelog stats so no-stat rows never
+    read as 0.0 or fake-neutral performances.
+    """
     out = []
     for row in table.xpath("./tbody/tr"):
         if row.get("class") != "partial_table":
@@ -344,6 +384,7 @@ def main() -> None:
         pid = path.rsplit("/", 1)[-1].replace(".html", "")
         if pid in done:
             continue
+        # bbref gamelog pages: /players/x/xxxxxx01/gamelog/2026  (2026 = 2025-26 season)
         url = BASE + path[:-len(".html")] + "/gamelog/2026"
         page_text = fetch_page(session, url, delay_holder)
         try:
@@ -372,6 +413,7 @@ def main() -> None:
             rs_tables = doc.xpath('//table[@id="player_game_log_reg"]')
             po_tables = doc.xpath('//table[@id="player_game_log_post"]')
             if not rs_tables and not po_tables:
+                # e.g. did not play in 2025-26 (Achiuwa) - not an error, mark done
                 done.add(pid)
                 counts["no_tables"] += 1
                 log(f"[{i}/{len(player_paths)}] {pid} ({pname}): no 2025-26 gamelog tables, skipping")
@@ -386,11 +428,11 @@ def main() -> None:
             counts["rs_rows"] += n_rs
             counts["po_rows"] += n_po
             done.add(pid)
-            failed.pop(pid, None)
+            failed.pop(pid, None)  # clear stale failure on successful retry
             if i % 25 == 0 or i == len(player_paths):
                 log(f"[{i}/{len(player_paths)}] {pid} ({pname}): rs={n_rs} po={n_po} "
                     f"(totals: ok={counts['ok']} rs={counts['rs_rows']} po={counts['po_rows']})")
-        except Exception as exc:
+        except Exception as exc:  # never crash the whole run on one player
             failed[pid] = f"exception: {exc!r}"[:200]
             counts["fetch_fail"] += 1
             log(f"[{i}/{len(player_paths)}] {pid}: EXCEPTION {exc!r}")

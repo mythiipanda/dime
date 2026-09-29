@@ -1,3 +1,8 @@
+"""Oct 1-3 preseason gate for 2026-27. Read-only live checks, no warehouse writes.
+
+Usage: python3 backend/scripts/preseason_gate_2026_27.py
+Rerun Oct 1-3 from the fetch environment. Exit 0 = READY, 1 = NOT-READY, 2 = error.
+"""
 
 import json
 import re

@@ -1,3 +1,12 @@
+"""Per-turn circuit breaker tests.
+
+The supervisor never gives up on a failing tool: B2 saw text_to_sql fail
+x5 across 5 planner rounds (188s turn). _circuit_broken_tools cuts a tool
+from the planner's options after 2 straight fails so it moves on.
+
+All hermetic: _supervisor_tools is driven directly with fabricated
+tool_results. No LLM, no network.
+"""
 
 import sys
 from pathlib import Path

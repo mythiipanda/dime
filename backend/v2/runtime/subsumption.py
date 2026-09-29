@@ -3,8 +3,15 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import Any
 
+# Capability-level product semantics, kept separate from question text. A
+# broader capability may satisfy the narrower one only for the same subject
+# and compatible season. This is deliberately small and auditable; it is not
+# a query router.
 CAPABILITY_SUBSUMPTIONS: dict[str, frozenset[str]] = {
     "player_report": frozenset({"shooting_efficiency"}),
+    # The prediction envelope already carries both teams' ratings and the
+    # injury inputs/adjustments used by the model. Re-fetching those complete
+    # league populations adds no independent support for an exact matchup.
     "game_prediction": frozenset({
         "team_ratings", "injuries", "injury_impact",
     }),

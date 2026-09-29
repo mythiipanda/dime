@@ -175,6 +175,8 @@ def _truncation_fixture_rows():
 
 
 def test_best_net_unit_computed_past_warehouse_row_cap(monkeypatch):
+    """Regression: best_net_unit must consider every floor-passing unit, not
+    just the head-25 warehouse slice. The true best sits beyond row 25."""
     monkeypatch.setattr("app.tools.lineup.coerce_team_id", lambda t: 20)
     monkeypatch.setattr("app.tools.lineup._possession_aggs",
                         lambda *a: None)
@@ -188,6 +190,8 @@ def test_best_net_unit_computed_past_warehouse_row_cap(monkeypatch):
 
 
 def _dup_rows():
+    """Mimic the sportsdataverse seed: 14 rows per GROUP_ID, per-game and
+    total variants plus exact dupes."""
     rows = []
     variants = [(7.1, "2026-09-09T18:00:00+00:00"),
                 (50.0, "2026-09-09T18:00:00+00:00"),
@@ -221,6 +225,7 @@ def test_dedupe_lineup_rows_empty_no_crash():
 
 
 def test_get_lineup_stats_dedupes_before_limit(monkeypatch):
+    """Ticket 1: limit=25 must return distinct units, not 25 rows of 1 unit."""
     monkeypatch.setattr("app.tools.lineup.coerce_team_id", lambda t: 20)
     monkeypatch.setattr("app.tools.lineup._possession_aggs", lambda *a: None)
     monkeypatch.setattr("app.tools.lineup._warehouse_or_live",

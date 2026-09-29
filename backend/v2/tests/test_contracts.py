@@ -593,6 +593,8 @@ def test_unresolved_block_requires_source_bound_unresolved_reference():
                               UnresolvedReference)
     subject = _entity_subject()
     with pytest.raises(ValidationError):
+        # `unresolved_reference` is intentionally not a finding code: a code
+        # without a source locator cannot establish an unresolved referent.
         IntakeAdmissionReview(
             target=_admission_target(), decision="block",
             expected_subjects=[subject],

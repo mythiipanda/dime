@@ -1,3 +1,28 @@
+"""ToolCard retrieval registry. Progressive disclosure for tools, phase 1.
+
+A ToolCard is one dict per registered tool with keys
+name, family, purpose, triggers, cost. rank_tools scores a free-text
+question against cards with case-insensitive token overlap and describe
+renders cards as compact prompt lines.
+
+Family rule. Family is the owning desk, read from the tool's underlying
+function module (app.tools.<desk>), e.g. awards, league, player, team.
+The bench scoring map is deliberately not imported here. Tools whose
+StructuredTool wrapper carries no function module are pinned by name in
+DESK_OVERRIDE from backend/app/tools/__init__.py imports. DESK_OVERRIDE
+is also where a genuinely cross-desk tool gets pinned.
+
+Cost rule. A tool is heavy when its name contains one of sim, predict,
+leaders, or zones (Monte Carlo sims, prediction models, and league-wide
+leaderboard or zone scans). Everything else is cheap. medium is reserved
+in the type and currently unused.
+
+Scoring rule. rank_tools counts case-insensitive token overlap between
+the question and each card: name tokens count double, other trigger
+tokens count single, and a family-token hit adds a bonus of 2. Name
+words carry the question intent most often, so they weigh most. Ties
+break alphabetically, which makes every ranking deterministic.
+"""
 
 import re
 

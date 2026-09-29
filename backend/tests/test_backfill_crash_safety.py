@@ -1,3 +1,10 @@
+"""Crash-safety regression for warehouse backfill writes.
+
+Invariant: a backfill unit's DELETE + INSERT + fetch_log watermark run in
+a SINGLE transaction. A crash at any point must roll back to the complete
+previous state -- never partial rows, never a watermark without data --
+so a rerun redoes the unit instead of skipping it.
+"""
 import sys
 from pathlib import Path
 
@@ -47,7 +54,9 @@ def test_crash_after_delete_keeps_old_data_no_false_watermark(scratch):
     assert store.last_fetch("silver_crash", "2024-25", "G1")
     with pytest.raises(RuntimeError, match="simulated crash"):
         _write("G1", 99, _fault="after_delete")
+    # Rolled back: old rows intact, no partial new rows.
     assert _rows("silver_crash", "G1") == [(10,)]
+    # Watermark still the original; a rerun redoes the unit honestly.
     assert store.last_fetch("silver_crash", "2024-25", "G1")
 
 
@@ -55,6 +64,7 @@ def test_crash_after_insert_leaves_no_watermark(scratch):
     with pytest.raises(RuntimeError, match="simulated crash"):
         _write("G2", 5, _fault="after_insert")
     assert _rows("silver_crash", "G2") == []
+    # No watermark: the resume check will redo this unit, not skip it.
     assert not store.last_fetch("silver_crash", "2024-25", "G2")
 
 
@@ -65,6 +75,7 @@ def test_rerun_after_crash_completes_cleanly(scratch):
     assert n == 1
     assert _rows("silver_crash", "G3") == [(7,)]
     assert store.last_fetch("silver_crash", "2024-25", "G3")
+    # Idempotent: rewriting the same unit never duplicates.
     _write("G3", 7)
     assert _rows("silver_crash", "G3") == [(7,)]
 

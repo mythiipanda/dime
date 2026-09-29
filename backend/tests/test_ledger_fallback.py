@@ -1,3 +1,6 @@
+"""F63-T3: fresh evidence fails on a switch-back turn, but the thread
+ledger already holds the payload-extracted fact. Analytics must answer
+from the ledger, never 'No <team> data found' over known facts."""
 
 import asyncio
 import sys
