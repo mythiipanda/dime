@@ -1108,10 +1108,9 @@ def test_chat_route_fails_closed_on_unknown_runtime_mode(monkeypatch):
     app = FastAPI()
     app.include_router(routes.router, prefix="/api")
 
-    response = TestClient(app).post(
-        "/api/v2/chat/stream", json={"q": "record?"})
-
-    assert response.status_code == 404
+    with pytest.raises(ValueError, match="unknown DIME_RUNTIME_V2"):
+        TestClient(app).post(
+            "/api/v2/chat/stream", json={"q": "record?"})
 
 
 def test_frontend_preserves_public_node_error_status():
