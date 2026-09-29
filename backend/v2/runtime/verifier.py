@@ -620,6 +620,7 @@ def verify_mechanical(
     repairs.extend(report_repairs[:max(0, 128 - len(repairs))])
     repairs.extend(_termination_gate_repairs(
         task, draft, evidence)[:max(0, 128 - len(repairs))])
+    repairs = list(dict.fromkeys(repairs))
     return VerificationReport(
         status=(VerificationStatus.REPAIR if repairs else VerificationStatus.PASS),
         claim_results=results,
@@ -677,7 +678,7 @@ def _termination_gate_repairs(task: TaskSpec, draft: DraftReport,
     for violation in verify_minutes_qual(answer_text, tables):
         gate_repairs.append(
             "Minutes-qualify or drop this rate-stat claim: " + violation)
-    return gate_repairs
+    return list(dict.fromkeys(gate_repairs))
 
 
 def validate_semantic_report(value: str | bytes | Mapping[str, Any] |

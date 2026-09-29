@@ -193,12 +193,14 @@ def test_mixed_source_claim_requires_provenance_label():
         evidence_id="sga", capability="player_report",
         source="warehouse:silver_player_season",
         observed_at=datetime(2026, 4, 15, tzinfo=UTC), season="2025-26",
-        rows={"player": "SGA", "ppg": 31.1})
+        rows={"player": "SGA", "ppg": 31.1},
+        qualification="Minutes-qualified players")
     luka = EvidenceEnvelope(
         evidence_id="luka", capability="player_report",
         source="fallback:basketball-reference",
         observed_at=datetime(2026, 4, 15, tzinfo=UTC), season="2025-26",
-        rows={"player": "Luka", "ppg": 33.5})
+        rows={"player": "Luka", "ppg": 33.5},
+        qualification="Minutes-qualified players")
     unlabeled = Claim(
         text="SGA averaged 31.1 PPG and Luka averaged 33.5 PPG.",
         kind="observed", evidence_ids=["sga", "luka"])
@@ -751,3 +753,69 @@ def test_mechanical_verifier_ignores_source_identity_as_claim_content():
     plain=EvidenceEnvelope(**base);bound=EvidenceEnvelope(**base,source_identity={'kind':'warehouse','warehouse_id':'frozen-eval','sha256':'a'*64})
     task=TaskSpec(goal='g',mode='quick',deliverable='d');draft=DraftReport(sections=['x'],claims=[Claim(text='A has value 1',kind='observed',evidence_ids=['e'])])
     assert verify_mechanical(task,draft,[plain])==verify_mechanical(task,draft,[bound])
+
+
+def test_repeated_unqualified_rate_text_emits_unique_repairs():
+    text = "Jaylen Brown averaged 28.7 PPG."
+    claim = Claim(text=text, kind=ClaimKind.OBSERVED, evidence_ids=["standings"])
+    draft = DraftReport(sections=[text], claims=[claim])
+    player_table = evidence(
+        rows=[{"PLAYER": "Jaylen Brown", "PPG": 28.7}],
+        units={"PPG": "count"},
+        qualification="All qualified players",
+        coverage="League player pool")
+    result = verify_mechanical(task(), draft, [player_table])
+    assert result.status == VerificationStatus.REPAIR
+    assert any(item.startswith("Minutes-qualify") for item in result.repair_instructions)
+    assert len(result.repair_instructions) == len(set(result.repair_instructions))
+
+
+def test_player_subject_rejects_team_level_table():
+    player_task = task().model_copy(update={"entities": [], "subject_entity_type": "player"})
+    claim = Claim(text="Boston had 61 wins.", kind=ClaimKind.OBSERVED,
+                  evidence_ids=["standings"])
+    result = verify_mechanical(player_task, report(claim), [evidence()])
+    assert result.status == VerificationStatus.REPAIR
+    assert any("does not match the question's player level" in item
+               for item in result.repair_instructions)
+
+
+def test_team_subject_rejects_player_level_table():
+    team_task = task().model_copy(update={"entities": [], "subject_entity_type": "team"})
+    player_table = evidence(
+        evidence_id="players", capability="player_report",
+        rows=[{"PLAYER": "Jaylen Brown", "PPG": 28.7}],
+        units={"PPG": "count"})
+    claim = Claim(text="Jaylen Brown averaged 28.7 points.", kind=ClaimKind.OBSERVED,
+                  evidence_ids=["players"])
+    result = verify_mechanical(team_task, report(claim), [player_table])
+    assert result.status == VerificationStatus.REPAIR
+    assert any("does not match the question's team level" in item
+               for item in result.repair_instructions)
+
+
+def test_player_subject_accepts_player_level_table():
+    player_task = task().model_copy(update={"entities": [], "subject_entity_type": "player"})
+    player_table = evidence(
+        evidence_id="players", capability="player_report",
+        rows=[{"PLAYER": "Jaylen Brown", "PPG": 28.7}],
+        units={"PPG": "count"})
+    claim = Claim(text="Jaylen Brown averaged 28.7 points.", kind=ClaimKind.OBSERVED,
+                  evidence_ids=["players"])
+    result = verify_mechanical(player_task, report(claim), [player_table])
+    assert result.status == VerificationStatus.PASS
+
+
+def test_unset_subject_leaves_mismatched_table_inert():
+    null_task = task().model_copy(update={"entities": []})
+    assert null_task.subject_entity_type is None
+    player_table = evidence(
+        evidence_id="players", capability="player_report",
+        rows=[{"PLAYER": "Jaylen Brown", "PPG": 28.7}],
+        units={"PPG": "count"})
+    claim = Claim(text="Jaylen Brown averaged 28.7 points.", kind=ClaimKind.OBSERVED,
+                  evidence_ids=["players"])
+    result = verify_mechanical(null_task, report(claim), [player_table])
+    assert result.status == VerificationStatus.PASS
+    assert all("does not match the question's" not in item
+               for item in result.repair_instructions)
