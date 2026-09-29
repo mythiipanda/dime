@@ -1,14 +1,3 @@
-"""Player game-log search. One flexible filter over the warehouse logs.
-
-Answers "show me all 40-point games by X this season", "X's games vs
-BOS", "X's triple-doubles in March", and league-wide asks like "who
-had the most 50-point games this season". Warehouse only, read-only.
-
-Scope: silver_player_gamelogs holds 2025-26 regular-season logs for 57
-seeded players; silver_playoff_gamelogs holds the playoff logs
-(playoffs=True). No historical seasons. Triple-doubles and
-double-doubles are counted the Stathead way: 10+ in three (or two) of
-PTS/REB/AST/STL/BLK."""
 
 import datetime as _dt
 from collections import Counter
@@ -97,11 +86,6 @@ def _table_for(playoffs: bool) -> str:
 
 def _load_games(table: str, season: str,
                 pid: int | None = None) -> list[dict[str, Any]]:
-    """Normalized game rows, most recent first. Read-only connect.
-
-    pid None loads every player (league-wide mode); otherwise one player.
-    Each row carries player_id so callers can group.
-    """
     cols = ("GAME_DATE", "Game_ID", "MATCHUP", "WL", "MIN", "FGM", "FGA", "FG3M",
             "FG3A", "FTM", "FTA", "OREB", "DREB", "REB", "AST", "STL",
             "BLK", "TOV", "PF", "PTS", "PLUS_MINUS")
@@ -110,8 +94,8 @@ def _load_games(table: str, season: str,
         tables = {r[0] for r in con.execute("SHOW TABLES").fetchall()}
         if table not in tables:
             return []
-        # Provenance rides every silver row, but older warehouse copies
-        # may lack it: only select it when the column exists.
+
+
         info = con.execute(f"PRAGMA table_info({table})").fetchall()
         has_fetched = any(str(r[1]).upper() == "_FETCHED_AT" for r in info)
         sel = cols + (("_fetched_at",) if has_fetched else ())
@@ -204,14 +188,6 @@ def _playoff_coverage(season: str | None = None) -> str:
 
 
 def playoff_inactive_note(pid: int, season: str, name: str | None = None) -> str | None:
-    """Explain a playoff-gamelog miss when the player was listed inactive.
-
-    QA F33: Luka's 2026 playoff lookup returned a bare "no data" while he
-    was in fact inactive (injured) for LAL's entire run - the bare message
-    reads like a coverage gap and contradicts teammates having rows. The
-    seeded silver_playoff_inactive table (bbref inactive listings) turns
-    the error into the true story.
-    """
     try:
         con = store.connect(read_only=True)
         try:
@@ -282,14 +258,6 @@ def _matches(g: dict[str, Any], f: dict[str, Any]) -> bool:
 
 
 def _game_signature(g: dict[str, Any]) -> tuple:
-    """Identity of a game beyond its source-specific Game_ID.
-
-    Different seeds write different Game_ID formats for the same game
-    (NBA "0022500087" vs bbref "202511180LAL"), so Game_ID alone cannot
-    collapse cross-seed duplicates. An entity (player or team) plays at
-    most one game per day: an exact match on entity + date + every stat
-    column can only be a re-seed duplicate of the same game.
-    """
     date = g.get("date")
     return (
         g.get("player_id"),
@@ -305,12 +273,6 @@ def _game_signature(g: dict[str, Any]) -> tuple:
 
 
 def _game_key(g: dict[str, Any]) -> tuple:
-    """Identity of a game independent of its stat line.
-
-    An entity (player or team) plays at most one game per day, so
-    entity + date + matchup identifies the game even when two seeds
-    disagree on the stats.
-    """
     date = g.get("date")
     if isinstance(date, _dt.datetime):
         date = date.date()
@@ -322,12 +284,6 @@ def _game_key(g: dict[str, Any]) -> tuple:
 
 
 def _fetch_rank(value: object) -> tuple[int, _dt.datetime]:
-    """Order key for provenance: rows fetched later sort first.
-
-    Stat corrections land after the game, so a later fetch of the
-    same game carries the corrected line. Unparseable or missing
-    timestamps rank as oldest.
-    """
     oldest = (0, _dt.datetime.min)
     if value is None:
         return oldest
@@ -359,14 +315,6 @@ def _fetch_rank(value: object) -> tuple[int, _dt.datetime]:
 
 def _pick_canonical(rows: list[dict[str, Any]], sig_of,
                     stat_keys: list[str]) -> tuple[dict[str, Any], bool]:
-    """Pick the canonical row among duplicate rows of one game.
-
-    rows: duplicate rows sharing a game key. sig_of: row -> hashable
-    full-stat identity. stat_keys: stat columns for the completeness
-    tie-break. Returns (winner, conflicted): conflicted is True when
-    the rows disagreed on the stat line, i.e. the seeds genuinely
-    conflict rather than re-stating the same row.
-    """
     if len({sig_of(r) for r in rows}) == 1:
         return rows[0], False
     order = sorted(
@@ -386,19 +334,6 @@ _DICT_STAT_KEYS = ["min", "pts", "reb", "ast", "stl", "blk", "tov", "pf",
 
 
 def _dedupe_games(games: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """Collapse duplicate game rows, keeping one canonical row per game.
-
-    The warehouse is append-seeded, so a re-seed can store one game
-    twice. Game_ID collapses same-source re-seeds; the full stat
-    signature additionally collapses cross-seed duplicates whose
-    Game_ID formats differ, and rows with no Game_ID at all.
-    Near-duplicates (same game, disagreeing stats -- e.g. a stat
-    correction re-seeded as OREB 3 over OREB 2) collapse to the
-    canonical row: the most recently fetched line wins, then the most
-    complete stat line, then first occurrence. The winner is flagged
-    with stat_conflict=True so callers can surface the disagreement
-    instead of silently picking.
-    """
     groups: dict[tuple, list[dict[str, Any]]] = {}
     order: list[tuple] = []
     for g in games:
@@ -419,13 +354,6 @@ def _dedupe_games(games: list[dict[str, Any]]) -> list[dict[str, Any]]:
 
 
 def _frame_game_date_key() -> "pl.Expr":
-    """Canonical game-date string for grouping warehouse rows.
-
-    Seeds write GAME_DATE as nba_api-style "APR 01, 2026" or ISO
-    "2026-04-01"; normalize both to ISO so the same game groups
-    together regardless of which seed wrote it. Unparseable values
-    fall back to the raw string.
-    """
     import polars as pl
 
     parsed = (
@@ -438,23 +366,6 @@ def _frame_game_date_key() -> "pl.Expr":
 
 
 def dedupe_game_log_frame(frame):
-    """Read-time dedupe for game-log warehouse frames (polars).
-
-    The warehouse is append-seeded and different seeds use different
-    Game_ID formats for the same game, so Game_ID alone can't collapse
-    duplicates. Two rows are the same game when the entity (Player_ID
-    or Team_ID), the game date, and every stat column match exactly —
-    an entity plays at most one game per day, so an exact full-stat
-    match can only be a re-seed duplicate. Keeps the first occurrence
-    and preserves row order. Frames without game-log columns are
-    returned unchanged.
-    Near-duplicates (same game, disagreeing stats — a re-seeded stat
-    correction) collapse to the canonical row: the most recently
-    fetched line wins, then the most complete stat line, then first
-    occurrence. A boolean ``stat_conflict`` column is always added —
-    True on rows whose seeds genuinely disagreed (the signal
-    dataset/CSV/Parquet consumers need, previously dropped silently).
-    """
     import polars as pl
 
     cols = frame.columns
@@ -464,8 +375,8 @@ def dedupe_game_log_frame(frame):
            if c not in ("Game_ID", "_source", "_season", "_fetched_at", "_entity")]
     entity = "Player_ID" if "Player_ID" in cols else "Team_ID"
     if "MATCHUP" not in cols:
-        # No MATCHUP: can't tell near-dupe from distinct games; keep
-        # unique rows but still carry the (all-false) signal column.
+
+
         return (frame.unique(subset=sig, keep="first", maintain_order=True)
                 .with_columns(pl.lit(False).alias("stat_conflict")))
     stat_keys = [c for c in sig if c not in (entity, "GAME_DATE", "MATCHUP")]
@@ -492,22 +403,12 @@ def dedupe_game_log_frame(frame):
 
 
 def _record_for_scope(games: list[dict[str, Any]], scope: str) -> dict[str, Any]:
-    """W/L aggregate over distinct games with its scope attached.
-
-    The scope label rides the record so a caller holding a regular
-    output and a playoff output cannot sum them silently.
-    """
     wl = Counter(str(g.get("wl") or "").upper() for g in games)
     w, l = wl.get("W", 0), wl.get("L", 0)
     return {"w": w, "l": l, "games": w + l, "scope": scope}
 
 
 def _record_note(record_games: int, total: int, scope: str) -> str | None:
-    """Explain a record that covers fewer games than matched.
-
-    Rows without a W/L result count toward the total but not toward
-    wins/losses. None when every matched game has a result.
-    """
     if record_games == total:
         return None
     return (f"record covers {record_games} of {total} matched {scope}"
@@ -572,9 +473,9 @@ def _row_out(g: dict[str, Any]) -> dict[str, Any]:
         "plus_minus": g["plus_minus"],
         "wl": g["wl"],
     }
-    # Near-duplicate seeds disagreed on this game's stat line; the
-    # canonical (most recently fetched) row is shown, flagged so the
-    # answer can note the discrepancy instead of hiding it.
+
+
+
     if g.get("stat_conflict"):
         out["stat_conflict"] = True
     return out
@@ -717,12 +618,12 @@ def search_game_logs(
                     if pid is not None else None)
             err += f"; {note}" if note else f"; {_playoff_coverage(season)}"
         return {"tool": "search_game_logs", "ok": False, "error": err}
-    # Canonical rows only, before filtering: the warehouse is
-    # append-seeded and different seeds use different Game_ID formats
-    # for the same game. Filtering raw rows first lets the LOSING row
-    # of a conflicting pair qualify the game -- e.g. REB 6 kept on an
-    # older seed while the canonical (newest) line is REB 5, and
-    # min_rebounds=6 then "finds" a 5-rebound game (Instinct QA).
+
+
+
+
+
+
     games = _dedupe_games(games)
     matched = [g for g in games if _matches(g, filters)]
     lim = _clamp_limit(limit)
@@ -757,10 +658,10 @@ def search_game_logs(
             },
         }
     if team_wide:
-        # Group by the player's own team that night: first token of
-        # MATCHUP ("LAL vs. BOS" -> "LAL", "LAL @ BOS" -> "LAL"). A
-        # mid-season trade attributes each game to the team the player
-        # was on that night, not their current team.
+
+
+
+
         counts_t: dict[str, int] = {}
         for g in matched:
             tabbr = str(g.get("matchup") or "").split(" ")[0].upper() or "UNK"
@@ -793,10 +694,10 @@ def search_game_logs(
             },
         }
     assert pid is not None
-    # ``player`` is the bound identity label from intake/resolution. Static
-    # catalogs can attach a historical namesake label to a warehouse id, so
-    # keep the supplied non-numeric display name after successful canonical
-    # resolution instead of relabeling the evidence as another person.
+
+
+
+
     supplied_name = str(player).strip() if player is not None else ""
     name = (supplied_name if supplied_name and not supplied_name.isdigit()
             else _resolve_name(pid, supplied_name or str(pid)))
@@ -823,9 +724,9 @@ def search_game_logs(
             "scope": "playoffs" if playoffs else "regular",
             "filters": _describe_filters(filters, playoffs),
             "total": len(matched),
-            # Canonical aggregate inputs cover the full filtered population,
-            # independent of the returned-row cap. Keep full precision here;
-            # presentation rounds only after derived arithmetic is complete.
+
+
+
             "average_pts": (Decimal(sum(g["pts"] for g in matched)) / Decimal(len(matched))
                             if matched else None),
             "window_start": (min((g["date"] for g in matched), default=None)),

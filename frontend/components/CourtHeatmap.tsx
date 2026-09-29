@@ -19,9 +19,9 @@ export interface ZoneData {
   b_share?: number;
   edge?: string;
 }
-// Three-point zones read as 3P% (FG on threes), not eFG: labeling an
-// all-threes zone with its 1.5x eFG next to surfaces that show 3P%
-// made the same number look like two different stats (QA F23).
+
+
+
 
 
 
@@ -39,8 +39,8 @@ interface CourtHeatmapProps {
   };
   verdict?: string;
 }
-// Visual zone SVG path definitions mapped to NBA half-court coordinates (500 x 470)
-// Baseline at bottom y=470, basket at cx=250, cy=417.5
+
+
 
 
 
@@ -54,10 +54,10 @@ const ZONE_PATHS: { id: string; label: string; d: string }[] = [
   {
     id: "In The Paint (Non-RA)",
     label: "Paint (Non-RA)",
-    // Paint key minus the restricted area. The carve arc must bulge UP
-    // (sweep 1) around the basket like the RA zone itself; sweep 0 carved
-    // a downward semicircle below y=430 that no zone fills, rendering a
-    // white bubble over the RA's own fill (F2 residual).
+    
+    
+    
+    
 
 
 
@@ -104,12 +104,12 @@ function findZoneRecord(list: ZoneData[], targetId: string): ZoneData | undefine
     return false;
   });
 }
-// Continuous efficiency gradient keyed on LEAGUE_DELTA (QA #26): before,
-// anything within +/-3 points of league average rendered as a barely-visible
-// 7% blue tint (looked blank), and below-average zones got a faint gray with
-// no red anywhere - RA 81.6% and AB3 37.9% read as the same flat color.
-// Now: cyan intensity scales with how far above league, ember with how far
-// below, clamped at +/-15 points. Null delta stays "no data" faint.
+
+
+
+
+
+
 
 
 
@@ -129,7 +129,7 @@ function heatStyle(delta: number | null, isHover: boolean): {
   }
   const t = Math.min(Math.abs(delta) / 0.15, 1);
   const alpha = 0.22 + 0.36 * t + (isHover ? 0.18 : 0);
-  const minAlpha = 0.22 + (isHover ? 0.12 : 0); // data zones never look empty
+  const minAlpha = 0.22 + (isHover ? 0.12 : 0); 
   const a = Math.max(alpha, minAlpha);
   if (delta >= 0) {
     return {
@@ -223,8 +223,8 @@ export default function CourtHeatmap({ rows, meta, verdict }: CourtHeatmapProps)
                 }
               }
             } else if (rec) {
-              // Missing delta means "no baseline", never "neutral": render
-              // it like no-data instead of faking a league-average zone.
+              
+              
 
 
               const style = heatStyle(rec.LEAGUE_DELTA ?? null, isHover);

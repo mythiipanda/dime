@@ -1,9 +1,9 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { isFailureFinal } from "./chat";
-// Instinct QA on aeae2b1: the error banner must clear on a recovered
-// verified answer but STAY on fallback/partial finals, even though those
-// are non-empty. isFailureFinal is the decision function.
+
+
+
 
 
 

@@ -1,27 +1,3 @@
-"""Conversational shot finder for the 2025-26 season.
-
-search_shots answers "all his corner-3 attempts in 4th quarters", "who takes
-over fourth quarters (shot volume plus efficiency)", and "end-of-quarter
-heave-free shooting" from the silver_shots warehouse table.
-
-The headline use case works through ``group_by``: pass group_by="player" or
-"team" and the tool returns per-player / per-team volume + efficiency
-leaderboards sorted by attempts -- one call, not one call per candidate.
-
-Filtering and aggregation are pushed into DuckDB SQL (no Python row loop),
-so even a league-wide 4th-quarter scan over all 233,632 rows returns in
-well under a second. Zones reuse the five-zone taxonomy from zone.py (rim,
-short_mid, long_mid, corner_3, atb_3), mapped here from the warehouse
-SHOT_ZONE_BASIC labels rather than geometry. Warehouse-first only: no live
-calls.
-
-Late-game filtering is time-based only (period >= 4 plus an optional
-seconds-remaining cap) because the table has no score-margin column; results
-must never be presented as close-game or clutch splits. meta carries
-clutch_safe=False (and score_aware=False) as the machine-readable version of
-that guardrail. Heaves are scrubbed by default and the exclusion count is
-disclosed in meta; with the scrub disabled the note says so explicitly.
-"""
 
 from typing import Any
 import threading as _threading
@@ -55,10 +31,10 @@ ZONE_LEGEND = {
     "atb_3": "Above the Break 3",
 }
 
-# Period tokens: first (and only) matching expansion wins. 5 means OT (any
-# period >= 5); matching folds 5+ onto it. Whether 5 is folded onto a
-# 4th-quarter/2nd-half selection is decided by include_ot (auto = on when
-# the parsed set contains 4, or explicitly contains 5 via the 'ot' token).
+
+
+
+
 _PERIOD_TOKEN_MAP = {
     "1": {1}, "2": {2}, "3": {3}, "4": {4},
     "4th": {4}, "ot": {5}, "1h": {1, 2}, "2h": {3, 4},
@@ -67,8 +43,8 @@ _PERIOD_TOKEN_MAP = {
 _MADE_VALUES = ("made", "missed", "any")
 _GROUP_BY_VALUES = ("", "player", "team")
 
-# Lines under this many attempts get a small-sample flag; percentages off
-# tiny samples are quotable-looking but noisy.
+
+
 SMALL_SAMPLE_MIN = 10
 
 _TEAM_ABBR_BY_ID: dict[int, str] = {}
@@ -149,12 +125,6 @@ def parse_zones(raw: str) -> set[str]:
 
 
 def parse_periods(raw: str) -> set[int] | None:
-    """Parse period tokens; "" or None means all periods. Pure function.
-
-    Returns a set of allowed periods with 5 as the OT sentinel (period >= 5).
-    OT is folded onto 4th-quarter selections separately via fold_ot so the
-    include_ot parameter can control it.
-    """
     token = (raw or "").strip().lower()
     if not token:
         return None
@@ -217,13 +187,6 @@ def parse_group_by(raw: str) -> str:
 
 
 def parse_include_ot(raw: str, default: bool) -> bool:
-    """Parse the include_ot flag; 'auto'/'' resolves to default.
-
-    Pure function. default is computed by the caller: True when the query
-    selects a 4th-quarter (or 2nd-half) window, explicitly selects overtime
-    (periods='ot'), or gives late_clock without an explicit period filter;
-    False otherwise.
-    """
     token = (raw or "").strip().lower()
     if token in ("", "auto"):
         return default
@@ -236,10 +199,6 @@ def parse_include_ot(raw: str, default: bool) -> bool:
 
 
 def fold_ot(periods: set[int] | None, include_ot: bool) -> set[int] | None:
-    """Fold the OT sentinel (5) into a parsed period set. Pure function.
-
-    None (all periods) already covers OT, so it is returned unchanged.
-    """
     if periods is None or not include_ot:
         return periods
     return set(periods) | {5}
@@ -256,7 +215,6 @@ def seconds_left(minutes_remaining: object,
 
 def is_heave(distance_ft: object, minutes_remaining: object,
              seconds_remaining: object) -> bool:
-    """Heave estimate: 30+ ft with 3 or fewer seconds left. Pure function."""
     try:
         far = float(distance_ft) >= 30.0  # type: ignore[arg-type]
     except (TypeError, ValueError):
@@ -275,7 +233,6 @@ def format_clock(minutes_remaining: object,
 
 def efficiency(attempts: int, makes: int,
                threes_made: int) -> dict[str, float]:
-    """FG% and eFG% (threes count 1.5x) from raw counts. Pure function."""
     if attempts <= 0:
         return {"fg_pct": 0.0, "efg_pct": 0.0}
     return {
@@ -331,12 +288,6 @@ def summarize_by_period(shots: list[dict[str, Any]]) -> list[dict[str, Any]]:
 
 def group_row(attempts: int, makes: int, threes_made: int,
               games: int = 0) -> dict[str, Any]:
-    """One per-player/per-team leaderboard row. Pure function.
-
-    Volume + efficiency, sorted by attempts by the caller. 'points' are
-    field-goal points only (2*FGM + 3PTM): the warehouse has no free-throw
-    attempts, so true-shooting % cannot be computed here.
-    """
     row: dict[str, Any] = {
         "attempts": attempts,
         "makes": makes,
@@ -352,11 +303,6 @@ def group_row(attempts: int, makes: int, threes_made: int,
 
 def disambiguate_last_name(raw: str,
                            pairs: list[tuple[Any, Any]]) -> dict[str, Any]:
-    """Match a last name against (player_name, player_id) pairs. Pure.
-
-    Returns {"player_id", "candidates", "ambiguous"}; candidates are
-    {"player", "player_id"} dicts sorted by id.
-    """
     key = (raw or "").strip().lower()
     hits: dict[int, str] = {}
     for name, pid in pairs:
@@ -376,37 +322,30 @@ def disambiguate_last_name(raw: str,
             "ambiguous": len(hits) > 1}
 
 
-# DuckDB SQL layer: filtering and aggregation run in the warehouse, not in a
-# Python loop over 233k rows. The read-only connection is cached per thread:
-# opening a fresh connection pays a ~2s cold-scan penalty on first use, so a
-# cached connection keeps repeat calls well under a second.
+
+
+
+
 
 
 
 
 def _warehouse_conn() -> Any:
-    """Fresh read-only warehouse connection. Never cached: a held read-only
-    connection makes any later write-mode connect() in this process fail
-    with 'different configuration' (DuckDB single-config-per-process rule),
-    which was the batch-test contention flake. Caller must close()."""
     return _store.connect(read_only=True)
 
 
 def _zone_case_sql() -> str:
-    """CASE expression mapping SHOT_ZONE_BASIC labels to taxonomy keys."""
     whens = " ".join(f"WHEN '{label}' THEN '{zone}'"
                      for label, zone in ZONE_LABEL_MAP.items())
     return f"CASE SHOT_ZONE_BASIC {whens} END"
 
 
 def _three_sql(zone_expr: str) -> str:
-    """Predicate for three-point attempts (zone or SHOT_TYPE)."""
     return (f"({zone_expr} IN ('corner_3', 'atb_3') "
             f"OR upper(SHOT_TYPE) LIKE '3PT%')")
 
 
 def _heave_sql() -> str:
-    """Heave estimate predicate, NULL-safe (never NULL, unlike NOT of it)."""
     return ("(COALESCE(SHOT_DISTANCE, 0) >= 30 AND "
             "COALESCE(MINUTES_REMAINING * 60 + SECONDS_REMAINING, 999999) <= 3)")
 
@@ -439,12 +378,12 @@ def _where_sql(season: str, player_id: int | None, team_id: int | None,
             parts.append("PERIOD >= 5")
         clauses.append("(" + " OR ".join(parts) + ")")
     if late_seconds is not None:
-        # Late-game is canonical: periods 4+ (incl. overtime). With an
-        # explicit period filter the period clause above already intersects
-        # it, so periods='ot' + late_clock scans OT only while periods='1h'
-        # + late_clock stays a zero-row contradiction by construction. With
-        # no explicit period filter, include_ot decides whether OT counts
-        # as late.
+
+
+
+
+
+
         clauses.append("PERIOD >= 4"
                        if (include_ot or allowed_periods is not None)
                        else "PERIOD = 4")
@@ -477,18 +416,6 @@ _AGG_SELECT = """COUNT(*) AS attempts,
 
 def _resolve_player(con: Any, season: str,
                     raw: str) -> tuple[int | None, str, Any]:
-    """Resolve player text to a warehouse PLAYER_ID.
-
-    Fast path first: a last-name match against the season's distinct players
-    is one cheap indexed-style scan and avoids coerce_player_id's full
-    nba_api static sweep (~1s+). Full names, nicknames, and numeric ids fall
-    through to coerce_player_id (required because warehouse PLAYER_NAME is
-    last-name-only); a failed lookup falls back to a last-name match, and
-    shared last names return "ambiguous" instead of a hard failure.
-    Returns (player_id, status, payload) where status is "none" (no player
-    filter), "ok", "unknown" (payload: error string), or "ambiguous"
-    (payload: candidate list for the disambiguation response).
-    """
     text = (raw or "").strip()
     if not text:
         return None, "none", None
@@ -516,9 +443,9 @@ def _resolve_player(con: Any, season: str,
         "WHERE _season = ? AND lower(PLAYER_NAME) = lower(?)",
         [season, last_token])]
     if len(token_pairs) == 1 and last_token.lower() != text.lower():
-        # Unique last token (e.g. 'Jayson Tatum' -> 'Tatum'). Not applied to
-        # the full text itself (handled above); multi-hit tokens fall through
-        # to coerce_player_id so exact full names still win.
+
+
+
         try:
             return int(token_pairs[0][1]), "ok", None  # type: ignore[arg-type]
         except (TypeError, ValueError):
@@ -546,11 +473,6 @@ def _disambiguation_payload(con: Any, season: str, text: str,
                             candidates: list[dict[str, Any]],
                             where_np: str, params_np: list[object],
                             heave_filter: str) -> list[dict[str, Any]]:
-    """Per-candidate aggregates (full name + teams) for an ambiguous query.
-
-    Returns candidates sorted by attempts desc so the agent can continue
-    without knowing exact identities first.
-    """
     ids = [c["player_id"] for c in candidates]
     in_list = ", ".join("?" for _ in ids)
     zone_expr = _zone_case_sql()
@@ -638,14 +560,14 @@ def search_shots(player: str = "", team: str = "", zones: str = "",
     except (TypeError, ValueError):
         lim = MAX_ROWS
     lim = max(1, min(MAX_ROWS, lim))
-    # include_ot defaults to true when the query selects a 4th-quarter /
-    # 2nd-half window, explicitly selects overtime (periods='ot' -- an
-    # explicit 'ot' token is a direct request for OT rows, so auto must not
-    # turn OT off there), or when a late_clock window is given without an
-    # explicit period filter (canonical late-game def, matching the legacy
-    # late_clock behavior). It is NOT folded onto 1st-half or single
-    # early-period filters, so e.g. periods='1h' + late_clock stays a
-    # contradiction instead of silently matching OT.
+
+
+
+
+
+
+
+
     ot_default = ((allowed_periods is not None
                    and (4 in allowed_periods or 5 in allowed_periods))
                   or (allowed_periods is None and late_seconds is not None))

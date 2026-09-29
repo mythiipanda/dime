@@ -1,16 +1,3 @@
-"""League-wide team shot-zone diet. ROADMAP Phase 2 item 6.
-
-get_team_shot_zones answers "which teams shoot at the rim most?" and
-"what is X's corner-three rate vs league?" from silver_hist_shots.
-
-Zone taxonomy is a five-zone domain table, not scattered conditionals:
-rim (< 8 ft), short mid (8-14 ft), long mid (14 ft+), corner 3, above-break 3.
-Zones are derived geometrically from the warehouse's x_legacy/y_legacy
-(tenths of a foot) because the source table carries no zone labels.
-
-Warehouse-first. No live calls. The source backfill covers completed
-seasons 2009-10 through 2025-26, regular season and playoffs.
-"""
 
 import math
 from typing import Any
@@ -22,9 +9,9 @@ from ._core import SEASON, clamp_season, coerce_team_id
 
 TABLE = "silver_hist_shots"
 
-# Zone taxonomy as an ordered rule table: first matching rule wins.
-# Each rule is (zone_key, predicate(dist_ft, abs_x_ft10, is_three)).
-# x is in tenths of a foot, so |x| >= 220 marks the corner region.
+
+
+
 ZONE_RULES: tuple[tuple[str, Any], ...] = (
     ("rim", lambda dist, ax, three: dist < 8.0),
     ("corner_3", lambda dist, ax, three: three and ax >= 220),
@@ -136,18 +123,6 @@ def build_rows(teams: dict[int, dict[str, Any]],
 
 
 def _zone_leaders(rows: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
-    """Leader per zone: the team the league desk should name for "who leads
-    this zone" questions.
-
-    Pure function; kept testable so a zone leader can never silently drift
-    back to "the first row scanned". Selection rule: highest
-    {zone}_share_delta_pp among team rows (the LEAGUE baseline row is not
-    eligible). share_delta is the criterion because zone questions are
-    about shot diet (who shoots the most at the rim / from the corner),
-    not efficiency. Ties broken by higher {zone}_share (more of the diet
-    at that zone), then by output order (rows are abbr-sorted, so a full
-    tie keeps the first team alphabetically).
-    """
     out: dict[str, dict[str, Any]] = {}
     for key in ZONE_KEYS:
         best = max(rows,
@@ -211,7 +186,7 @@ def get_team_shot_zones(teams: str = "league",
         "made": str(r.get("shot_result") or "").lower() == "made",
     } for r in frame.to_dicts() if r.get("team_id") is not None]
     full_agg = aggregate_zones(all_shots)
-    # League baselines always come from every team that season.
+
     baselines = league_baselines(full_agg)
     agg = {tid: t for tid, t in full_agg.items() if tid in wanted}
     if not agg:

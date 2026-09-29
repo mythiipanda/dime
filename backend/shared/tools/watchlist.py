@@ -1,8 +1,3 @@
-"""Watchlist desk. Followed players and teams for the Today view.
-
-User data lives in a ``watchlists`` table (entity_type, entity_id,
-added_at). It is not a silver_ table. Silver tables stay read-only here.
-"""
 
 from datetime import datetime, timezone
 from typing import Any

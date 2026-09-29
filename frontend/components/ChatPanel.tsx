@@ -79,8 +79,8 @@ function applyEvent(ai: AiMessage, type: string, data: unknown): AiMessage {
       }
     }
   } else if (type === "message") {
-    // Legacy event type; tool_call/tool_result carry tool activity now.
-    // Kept for backward compatibility with older streams.
+    
+    
 
 
   } else if (type === "custom_data") {
@@ -106,13 +106,13 @@ function applyEvent(ai: AiMessage, type: string, data: unknown): AiMessage {
     if (d.carry && typeof d.carry === "object") {
       next.carry = d.carry as AiMessage["carry"];
     }
-    // A mid-run "error" event means one node hit a snag, but if the graph
-    // recovered and produced a real answer, the run did not fail. Clear
-    // the sticky banner so it doesn't sit over a rendered answer (QA
-    // round 2d: "Error:Something went wrong" on a completed COMPARE run).
-    // But a fallback/partial final (v2 exception path, v1 gap copy) is
-    // still a failure even though it's non-empty -- keep the banner up
-    // so the user sees something went wrong (Instinct QA on aeae2b1).
+    
+    
+    
+    
+    
+    
+    
 
 
 
@@ -156,8 +156,8 @@ function aiFromRun(r: RunInfo): AiMessage {
       if (
         typeof t === "object" &&
         t !== null &&
-        // Live stream records carry kind/rows (the backend strips tool);
-        // accept any of the shapes the live path renders.
+        
+        
 
 
         (typeof (t as { tool?: unknown }).tool === "string" ||
@@ -357,7 +357,7 @@ export default function ChatPanel({ thread, onRunDone, preset, onOpenArtifact, a
       }
     }
     if (request !== modelRequest.current) return;
-    // Keep a previous successful list usable if a refresh fails.
+    
 
     setModelStatus("error");
     if (process.env.NODE_ENV !== "production") {
@@ -468,10 +468,10 @@ export default function ChatPanel({ thread, onRunDone, preset, onOpenArtifact, a
       {
         onEvent: (type, data) => {
           if (type === "final_answer") {
-            // The backend generates a stable id per run (v1: top-level
-            // run_id, v2: carry.run_id); recording it lets the history
-            // merge dedupe this exact turn instead of guessing by
-            // question+answer timestamps.
+            
+            
+            
+            
 
 
 
@@ -492,9 +492,9 @@ export default function ChatPanel({ thread, onRunDone, preset, onOpenArtifact, a
         onDone: () => {
           setBusy(false);
           stopTimer();
-          // Persist the finished exchange locally: the server session
-          // store is wiped on every deploy, so this is what makes a
-          // clicked recent session actually reload its conversation.
+          
+          
+          
 
 
 

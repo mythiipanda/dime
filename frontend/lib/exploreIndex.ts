@@ -1,7 +1,7 @@
-// Live mini-summaries for the Explore overview index cards (redesign brief
-// Phase B). Pure derivation helpers, kept separate from the component so they
-// stay unit-testable. Every numeral comes from warehouse rows — nothing is
-// hardcoded.
+
+
+
+
 
 
 
@@ -16,7 +16,7 @@ export interface LeaderLine {
 export function formatStat(v: number): string {
   return Number.isInteger(v) ? String(v) : v.toFixed(1);
 }
-/** Top-n leaders for a stat column, sorted by value desc. */
+
 
 
 export function topLeaders(
@@ -45,10 +45,10 @@ export interface PlayoffResult {
   runnerUp: string;
   series: string;
 }
-/**
- * Decided Finals winner from playoffs game rows (game ids carry the round at
- * chars 6-7; "04" is the Finals). Null when no team has 4 Finals wins.
- */
+
+
+
+
 
 
 export function playoffChampion(
@@ -72,7 +72,7 @@ export function playoffChampion(
     series: `${teams[0].w}-${teams[1].w}`,
   };
 }
-/** Distinct playoff games in the warehouse (0 when the table is empty). */
+
 
 
 export function countPlayoffGames(rows: Record<string, unknown>[]): number {
@@ -80,7 +80,7 @@ export function countPlayoffGames(rows: Record<string, unknown>[]): number {
     rows.map((r) => String(r.GAME_ID || "")).filter((id) => id.length > 0),
   ).size;
 }
-/** One-line card summary from combine rows; null when nothing is there. */
+
 
 
 export function combineSummary(
@@ -90,10 +90,10 @@ export function combineSummary(
   if (!rows.length) return null;
   return `${rows.length} prospects · ${draftYear} class`;
 }
-/**
- * Shots card headline for one player: shot count from the warehouse.
- * Null when there is no name or nothing charted.
- */
+
+
+
+
 
 
 export function shotsHeadline(name: string, count: number): string | null {
@@ -101,7 +101,7 @@ export function shotsHeadline(name: string, count: number): string | null {
   if (!label || !Number.isFinite(count) || count <= 0) return null;
   return `${label} · ${Math.round(count)} shots charted`;
 }
-/** "LeBron James" -> "L. James". Shared with the Lineups panel. */
+
 
 
 export function shortPlayerName(full: string): string {
@@ -113,10 +113,10 @@ export interface LineupHeadlineRow {
   GROUP_NAME?: unknown;
   MIN?: unknown;
 }
-/**
- * Lineups card headline for the default team: most-used unit and its
- * minutes. Null when no lineup rows arrived.
- */
+
+
+
+
 
 
 export function lineupsHeadline(
@@ -152,10 +152,10 @@ function millions(n: unknown): string | null {
   if (typeof n !== "number" || !Number.isFinite(n)) return null;
   return `$${(n / 1_000_000).toFixed(1)}M`;
 }
-/**
- * Trade card headline from a trade/check verdict: both sides' payrolls.
- * Null when either side is missing payroll data.
- */
+
+
+
+
 
 
 export function tradeHeadline(v: TradeHeadlineVerdict | null | undefined): string | null {
@@ -173,14 +173,14 @@ export interface DatasetResult {
   ok: boolean;
   data?: unknown[];
 }
-/**
- * Deferred live summaries for the cards that need a context first
- * (Phase 3). Each callback is wired by the component to existing
- * endpoints: the Shots headline resolves the leaders' #1 scorer and
- * counts their charted shots, Trade runs the default legality check,
- * Lineups reads the default team's units. Every callback is isolated,
- * so one failure never blanks the other cards.
- */
+
+
+
+
+
+
+
+
 
 
 export interface IndexExtra {
@@ -188,13 +188,13 @@ export interface IndexExtra {
   tradeCheck?: () => Promise<TradeHeadlineVerdict | null>;
   defaultLineups?: () => Promise<{ team: string; rows: LineupHeadlineRow[] } | null>;
 }
-/**
- * Live summaries for the Explore overview index cards. Each dataset fetch is
- * isolated: Promise.allSettled + per-result ok checks, so one rejected or
- * failed request never blanks the cards whose data arrived fine. A dataset
- * that fails or returns no usable rows simply leaves its card without a
- * summary (the card degrades to its label/blurb).
- */
+
+
+
+
+
+
+
 
 
 export async function fetchIndexSummaries(
@@ -237,8 +237,8 @@ export async function fetchIndexSummaries(
     );
     if (s) next.draft = [s];
   }
-  // Phase 3 context cards, staggered after the parallel batch. Each is
-  // isolated: a rejection or empty result leaves that card out.
+  
+  
 
 
 

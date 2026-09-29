@@ -1,20 +1,3 @@
-"""Planning-call watchdog (P1: NVIDIA planning hang, 2026-09-28).
-
-Prod evidence: with model=nvidia forced, the graph hung 120s at
-"planning warehouse lookups" with zero tokens and zero errors -- the
-45s first-token watchdog only covered the final answer stream, not the
-planning LLM calls. Every planning-path LLM call must fail fast with
-an honest error instead of hanging silently.
-
-Hermetic: fake clients, no network. Proves the watchdog fires on:
-1. invoke_with_fallback (non-streaming planning/tool LLM calls),
-   including fallback to the next provider.
-2. _stream_planner (supervisor planning stream): hung primary fails
-   fast and the next provider's plan is used; all-hung raises an
-   honest error fast.
-3. _select_skills_intent (runs before the planner stream): a hung
-   skills call returns ([], None) fast instead of holding the turn.
-"""
 
 import asyncio
 import sys

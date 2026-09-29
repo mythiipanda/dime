@@ -1,17 +1,3 @@
-"""Player-vs-league zone efficiency deltas. ROADMAP appendix item 6.
-
-get_zone_deltas answers "where does X beat league average, and by how
-much" for shooting zones from silver_hist_shots.
-
-This does not duplicate get_team_shot_zones (team zone diet: attempt
-shares and eFG per team). This is player efficiency: per-zone FG% vs the
-pooled league-average FG% for the same season, with a per-zone attempts
-floor so small samples never present as skill.
-
-Warehouse-first. No live calls. Zones reuse the five-zone taxonomy in
-zone.py because the source table carries no zone labels. Documented
-estimates only.
-"""
 
 from typing import Any
 
@@ -78,8 +64,6 @@ def fold_zones(shots: list[dict[str, Any]]) -> dict[str, dict[str, int]]:
 def build_deltas(player: dict[str, dict[str, int]],
                  league: dict[str, dict[str, int]],
                  floor: int) -> tuple[list[dict[str, Any]], list[str]]:
-    """One row per zone at or above the attempts floor, sorted by delta
-    descending. Zones below the floor come back as excluded names. Pure."""
     rows: list[dict[str, Any]] = []
     excluded: list[str] = []
     for key in ZONE_KEYS:

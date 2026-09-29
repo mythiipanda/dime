@@ -55,16 +55,16 @@ export function activityRecordFromEvent(
     summary: typeof summary === "string" ? summary : undefined,
     status: typeof raw.status === "string" ? raw.status : undefined,
     emittedAt: typeof raw.emitted_at === "string" ? raw.emitted_at : undefined,
-    // Preserve the exact wire payload. Nested normalized-event data is not
-    // flattened, so replay and live records remain byte-shape equivalent.
+    
+    
 
 
     data: { ...raw },
   };
 }
-// Mirrors the narrowed public contract under backend QA. Deliberately excludes
-// raw goals, requirement prose, entity IDs, free-form plan descriptions, source
-// strings, warnings, claim results, repair instructions, and contradiction prose.
+
+
+
 
 
 

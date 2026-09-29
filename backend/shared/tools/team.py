@@ -88,8 +88,8 @@ async def get_preview(
     _ra = _rating_row(_ida)
     _rb = _rating_row(_idb)
     _poss = ((_ra["PACE"] or 99.0) + (_rb["PACE"] or 99.0)) / 2
-    # Neutral court: preview(a, b) carries no home/matchup context, so the
-    # +1.5 home edge is not applied to either side.
+
+
     _home_edge = 0.0
     _exp_a = _poss / 100 * (_ra["OFF_RATING"] + _rb["DEF_RATING"]) / 2 + _home_edge
     _exp_b = _poss / 100 * (_rb["OFF_RATING"] + _ra["DEF_RATING"]) / 2
@@ -268,8 +268,8 @@ def get_season_series(team_a: str, team_b: str,
     con = _store.connect()
     try:
         tables = {r[0] for r in con.execute("SHOW TABLES").fetchall()}
-        # Regular season: team game log, A's perspective, joined to B's
-        # row on Game_ID for both scores.
+
+
         if "silver_team_games" in tables and id_a is not None:
             rows = con.execute(
                 """SELECT g.Game_ID, g.GAME_DATE, g.MATCHUP, g.WL, g.PTS,
@@ -291,9 +291,9 @@ def get_season_series(team_a: str, team_b: str,
                     f"{a.lower()}_pts": pts_a,
                     f"{b.lower()}_pts": pts_b,
                 })
-        # Playoffs: team-level table, A-perspective rows (MATCHUP starts
-        # with A), real NBA Game_IDs - substring(Game_ID,7,1) is the
-        # round (4 = Finals), and both teams' scores come from the B row.
+
+
+
         _ROUND = {"1": "first round", "2": "conference semifinals",
                   "3": "conference finals", "4": "NBA Finals"}
         if "silver_playoffs" in tables and id_a is not None:
@@ -309,7 +309,7 @@ def get_season_series(team_a: str, team_b: str,
                 [b, season, a, f"%{b}%"],
             ).fetchall()
             for gid, gdate, matchup, wl, pts_a, pts_b in prows:
-                rnd = str(gid)[7:8]  # 004 YY 0 R MM GG -> R at idx 7
+                rnd = str(gid)[7:8]
                 games.append({
                     "game_id": str(gid), "date": str(gdate),
                     "matchup": str(matchup),
@@ -337,7 +337,7 @@ def get_season_series(team_a: str, team_b: str,
     finally:
         con.close()
 
-    # F40: an empty lookup must NOT become a confident 0-0 answer.
+
     if not games:
         return {"tool": "get_season_series", "ok": False,
                 "error": (f"No games between {a} and {b} found in the "
@@ -370,12 +370,12 @@ def get_season_series(team_a: str, team_b: str,
                              "team scores tracked for regular season"}}
 
 
-# Historical team-game slice: silver_team_games is itself a promoted slice
-# of silver_hist_gamelogs (scripts/seed_2025_26_warehouse.py), so a static
-# season with no seeded silver_team_games rows is served straight from the
-# source table with the same column renames, running W/L, and GAME_DATE
-# format. This aligns the answer source with the season_resolution bench
-# truth, which aggregates these exact rows (Instinct QA 2026-09-27).
+
+
+
+
+
+
 _HIST_TEAM_GAMES_SQL = """
 SELECT
   team_id AS "Team_ID",
@@ -419,11 +419,6 @@ ORDER BY game_date, game_id
 
 
 def _hist_team_games(team_id: int, season: str) -> list[dict[str, Any]]:
-    """Regular-season team game rows for a historical static season.
-
-    Same rows, same shape as the silver_team_games promotion; [] when the
-    warehouse has no historical coverage (caller keeps its no-data error).
-    """
     from .. import store as _store
     try:
         con = _store.connect(read_only=True)
@@ -451,11 +446,6 @@ def _hist_team_games(team_id: int, season: str) -> list[dict[str, Any]]:
 
 
 def _num(x: Any) -> float | None:
-    """Coerce a stat cell to float; None when absent/non-numeric.
-
-    Game rows arrive with UPPERCASE warehouse keys ("PTS") on the
-    warehouse path and may carry other casings on live fallbacks.
-    """
     if x is None or isinstance(x, bool):
         return None
     try:
@@ -474,32 +464,6 @@ def _cell(row: dict[str, Any], *keys: str) -> float | None:
 
 def _team_game_summary(games: list[dict[str, Any]],
                        full_season: bool) -> dict[str, Any]:
-    """Server-computed season aggregates over a team game log.
-
-    get_team_hub evidence is clipped twice downstream of the tool:
-    _warehouse_or_live caps returned rows at MAX_ROWS (25), and the
-    answer step clips the whole evidence blob to 12k chars. Season-level
-    answers (TS%, wins, team PPG) were therefore answered from a clipped
-    sample while the season_resolution bench truth aggregates the full
-    82-game season - the failure mode Instinct flagged in the historical
-    get_team_hub QA (2026-09-27).
-
-    This summary is computed over every row the tool returns and placed
-    ahead of the game list, so the answer model can use exact aggregates
-    even when the raw rows are clipped. covers_full_season is True only
-    when the rows in hand are the complete season (the
-    silver_hist_gamelogs static-season slice); the live path's 25-row
-    sample says so explicitly instead of masquerading as season totals.
-
-    Partial stat rows: a row may lack PTS/FGA/FTA (a clipped live
-    payload, a partial seed). A game only counts toward a metric when
-    that metric's fields exist on the row - PPG averages over games
-    with PTS, TS% over games with PTS+FGA+FTA - and each rate carries
-    its game count (ppg_games, ts_pct_games), so a partial sample is
-    never mistaken for season totals (Instinct QA 2026-09-27: 2 rows,
-    one statless, silently averaged as ppg=50.0 over 2 games).
-    TS% uses the same formula as the bench ground truth.
-    """
     wins = losses = 0
     pts = 0.0
     pts_games = 0
@@ -526,7 +490,7 @@ def _team_game_summary(games: list[dict[str, Any]],
         "games": len(games),
         "wins": wins,
         "losses": losses,
-        # True only when the rows in hand ARE the whole season.
+
         "covers_full_season": bool(full_season and games),
     }
     if pts_games:
@@ -550,13 +514,13 @@ def get_team_hub(team_id: str | int, season: str = SEASON) -> dict[str, Any]:
     )
     full_season_rows = False
     if not games and season_static(season) and meta.get("error"):
-        # No seeded silver_team_games rows for this complete season: serve
-        # the same promoted slice from silver_hist_gamelogs instead of
-        # erroring. Before this, old-season questions could only be answered
-        # from the current season's numbers (the season_resolution bug).
-        # This slice is the COMPLETE regular season (no row cap), so the
-        # summary below is exact full-season aggregates - the same rows the
-        # bench truth aggregates (Instinct QA 2026-09-27).
+
+
+
+
+
+
+
         hist = _hist_team_games(team_id, season)
         if hist:
             games = hist
@@ -582,12 +546,12 @@ def get_team_hub(team_id: str | int, season: str = SEASON) -> dict[str, Any]:
         entity=f"team:{team_id}", ttl_s=TTL_ROSTER,
     )
     if not roster or "PLAYER" not in (roster[0] if roster else {}):
-        # F83: silver_rosters was seeded from the CommonTeamRoster
-        # COACHES dataset (frames[1] - "Lakers roster" answered with
-        # assistant coach Lionel Chalmers, data-audit P1). Both live
-        # sources block our IPs, so derive the roster from
-        # silver_player_season: every player with minutes for the team
-        # this season. Honest framing: appeared-this-season list.
+
+
+
+
+
+
         try:
             from .. import store as _store
             from .gamelog import _team_abbr as _tabbr_fn
@@ -607,12 +571,12 @@ def get_team_hub(team_id: str | int, season: str = SEASON) -> dict[str, Any]:
             pass
     return {
         "tool": "get_team_hub", "ok": True,
-        # Put the compact roster before the game log. Delegate evidence is
-        # deliberately capped; roster questions used to lose this field
-        # behind a long games list and summarize only the resolver payload.
-        # The summary sits between them: server-computed season aggregates
-        # over every returned row, so clipped raw rows can't corrupt
-        # season-level answers (Instinct QA 2026-09-27).
+
+
+
+
+
+
         "rows": {"roster": roster, "summary": summary, "games": games},
         "meta": meta,
     }
@@ -913,14 +877,6 @@ CORE_GP_FLOOR = 20
 
 
 def _tier_players(players: list[dict[str, Any]]) -> dict[str, list[dict[str, Any]]]:
-    """Tier players by per-game role, not cumulative minutes.
-
-    Tiers sort by MPG (per-game role) instead of cumulative MIN = MPG x GP,
-    so a star who missed games (low GP) is never buried in "fringe". The GP
-    floor keeps cameo appearances out of "core": a player needs at least
-    CORE_GP_FLOOR games to be considered core. Below-floor players with real
-    MPG land in bench, never fringe.
-    """
     def _gp(p: dict[str, Any]) -> int:
         try:
             return int(p.get("GP") or 0)
@@ -1001,9 +957,9 @@ def _thin_rotation_flags(
 def _closing_candidates(
     units: list[dict[str, Any]], top_units: int, min_possessions: int,
 ) -> list[dict[str, Any]]:
-    # Defensive dedupe by GROUP_NAME: callers should pass already-deduped
-    # units (get_lineup_stats dedupes by GROUP_ID), but slimmed rows carry
-    # no GROUP_ID, so guard here too to keep one closing slot per unit.
+
+
+
     seen: set[str] = set()
     distinct: list[dict[str, Any]] = []
     for u in units or []:
@@ -1241,8 +1197,8 @@ async def get_rotation_check(
                 ppg = float(pts or 0)
             except (TypeError, ValueError):
                 ppg = 0.0
-            # Warehouse min/pts are per-game averages, so season totals
-            # are derived as per-game * gp; MPG keeps the warehouse value.
+
+
             min_f = round(mpg * gp_f, 1) if gp_f > 0 else 0.0
             pts_f = round(ppg * gp_f, 1) if gp_f > 0 else 0.0
             on, off, diff, cached = _fetch_rotation_onoff(season, pid)
@@ -1253,10 +1209,10 @@ async def get_rotation_check(
             })
         except Exception:
             continue
-    # Consider the top 15 by per-game minutes (MPG), not cumulative MIN:
-    # a star who missed games must stay in the tiering set rather than be
-    # squeezed out by cumulative-minutes sorting. Tiers then apply the GP
-    # floor in _tier_players.
+
+
+
+
     enriched = sorted(enriched, key=lambda p: float(p.get("MPG") or 0),
                       reverse=True)[:15]
     try:

@@ -1,17 +1,3 @@
-"""Build team four factors from warehouse game rows (no network).
-
-silver_team_games carries full team box scores per game; the four
-factors are computable offline:
-  eFG%  = (FGM + 0.5 * FG3M) / FGA
-  TOV%  = TOV / (FGA + 0.44 * FTA + TOV)
-  ORB%  = OREB / (OREB + opp DREB)     (opponent via shared Game_ID)
-  FTr   = FTA / FGA
-plus the defensive mirrors (opp eFG%, opp TOV%, DRB%, opp FTr).
-
-Normal: silver_four_factors_team - one row per team per season.
-Written for 2025-26 (the only fully covered season in
-silver_team_games as of 2026-09-13).
-"""
 import sys
 from pathlib import Path
 

@@ -21,10 +21,10 @@ def resolve_entity(query: str) -> dict[str, Any]:
         nq = _norm_name(raw)
         ranked = score_player_candidates(raw)
         p = [{**r, "score": s} for s, r in ranked[:8]]
-        # Exact display names must expose the same canonical identity that
-        # dependent warehouse tools consume. Static and warehouse ids can
-        # differ for suffix/duplicate records; preserve the static id only as
-        # provenance rather than silently switching identity downstream.
+
+
+
+
         if p and _norm_name(p[0].get("full_name", "")) == nq:
             try:
                 canonical_id = coerce_player_id(raw)
@@ -40,11 +40,11 @@ def resolve_entity(query: str) -> dict[str, Any]:
             t = [x for x in all_t
                  if nq and (nq in _norm_name(x.get("full_name", ""))
                             or nq == (x.get("abbreviation", "") or "").lower())][:8]
-        # F83: the fuzzy player matcher can produce a weak, unrelated player
-        # for an exact team query ("Los Angeles Lakers" -> Lionel Chalmers).
-        # Keep the entity types disjoint when the query exactly names a team;
-        # a weak cross-type row otherwise anchors downstream summaries even
-        # after the team tool returns the real roster.
+
+
+
+
+
         exact_team = any(
             nq in {
                 _norm_name(x.get("full_name", "")),
@@ -69,12 +69,12 @@ def resolve_entity(query: str) -> dict[str, Any]:
             },
             "meta": {"source": "nba_api_static"},
         }
-        # QA #59: a loose single-name match must not silently pick one
-        # famous namesake - "James" answered LeBron with no nod to
-        # James Harden. Only ACTIVE players count as real alternatives;
-        # historical nobodies (James Davis) are not ambiguity. The note
-        # fires whenever several actives match loosely, even at high
-        # prefix scores.
+
+
+
+
+
+
         if " " in raw.strip():
             return out
         _act = [(sc, r.get("full_name", "")) for sc, r in ranked

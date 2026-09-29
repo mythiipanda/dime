@@ -144,15 +144,6 @@ def _score_game(gid: str, grows: list[tuple],
 
 
 def score_events(rows: list) -> dict[str, dict[str, Any]]:
-    """Compact ordered rows to per-player WPA.
-
-    Rows are (game_id, action_number, clock, period, team_tricode,
-    person_id, player_name, location, score_home, score_away,
-    action_type) tuples ordered by game then action. Paired details
-    share an action_number, so the primary row is the one carrying an
-    action_type. Score state forward-fills per game and the delta is WP
-    after minus WP before from the acting team's perspective.
-    """
     players: dict[str, dict[str, Any]] = {}
     game = None
     grows: list[tuple] = []

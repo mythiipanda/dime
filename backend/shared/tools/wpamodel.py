@@ -1,51 +1,3 @@
-"""In-game win probability for WPA. Logistic P(home win) on lead and clock.
-
-get_win_prob in league.py is a pre-game ELO engine with no clock or score
-input, so it cannot price plays. This module prices the game state instead:
-P(home win) = sigmoid(B0 + B1 * lead / sqrt(seconds_remaining + SMOOTH)),
-with lead = home score minus away score. WPA takes the difference of this
-value before and after a play. At tipoff (lead 0, full clock) the model
-returns about 0.54, the average home edge, so the pre-game ELO prior keeps
-ownership of team strength and this model only moves the price once the
-score moves.
-
-Warehouse findings (silver_hist_pbp, 3.2M events, 2020-21 to 2024-25):
-- One row per event detail, ordered per game by action_number. Numbers skip
-  (400, 402, ...) and repeat for paired details (a turnover and its steal
-  share one action_number), so analysis dedups to DISTINCT on
-  (game_id, action_number) first.
-- clock is an ISO duration such as PT07M49.00S counting down the period.
-  Periods 1-4 start at PT12M00.00S. Overtime periods (5 and up, seen up to
-  7) start at PT05M00.00S.
-- score_home and score_away are VARCHAR and empty unless that event changed
-  the score. Game state comes from forward-filling per game in
-  action_number order. The final outcome is the last non-empty pair.
-- location is h, v, or empty for neutral rows such as period markers.
-  team_tricode names the acting team. action_type values include Made Shot,
-  Missed Shot, Free Throw, Rebound, Turnover, Foul, Jump Ball, Timeout,
-  Substitution, Violation, Ejection, and empty detail rows.
-- The table holds no 2025-26 rows, so no 2025-26 data is involved anywhere.
-
-Fit recipe (deterministic, stdlib only):
-- Train on 2020-21 to 2023-24 events, one row per (game_id, action_number)
-  with forward-filled lead, seconds remaining, and the final home-win flag.
-  Deterministic sample: abs(hash(game_id || action_number)) % 10 == 0
-  (about 244k rows). Newton iterations (IRLS) by hand, see fit_logistic.
-- SMOOTH = 360.0 picked from {120, 240, 360, 600, 900} on the 2024-25
-  holdout; 360 is the round middle value, not an extreme.
-- Hold out all of 2024-25 (630,310 events). Decile calibration table:
-  bucket 0: n=58986 pred=0.0389 actual=0.0278 err=0.0111
-  bucket 1: n=37678 pred=0.1497 actual=0.1416 err=0.0081
-  bucket 2: n=44430 pred=0.2512 actual=0.2666 err=0.0154
-  bucket 3: n=53195 pred=0.3509 actual=0.3701 err=0.0192
-  bucket 4: n=66625 pred=0.4512 actual=0.4668 err=0.0156
-  bucket 5: n=85546 pred=0.5509 actual=0.5693 err=0.0184
-  bucket 6: n=72731 pred=0.6495 actual=0.6495 err=0.0001
-  bucket 7: n=61521 pred=0.7492 actual=0.7447 err=0.0045
-  bucket 8: n=57368 pred=0.8504 actual=0.8423 err=0.0081
-  bucket 9: n=92230 pred=0.9628 actual=0.9756 err=0.0128
-  Max error 0.0192, under the 0.03 gate.
-"""
 
 import math
 
@@ -114,11 +66,6 @@ def win_probability_from_scores(
 def fit_logistic(
     rows: list, iters: int = 25,
 ) -> tuple:
-    """IRLS fit of (B0, B1) on (lead, seconds, home_won) rows. Deterministic.
-
-    Same input rows always give the same coefficients. Mirrors the offline
-    fit recipe so tests can prove determinism without touching the warehouse.
-    """
     b0, b1 = 0.0, 0.0
     xs = [(1.0, float(lead) / math.sqrt(max(0.0, float(sec)) + SMOOTH))
           for lead, sec, _ in rows]

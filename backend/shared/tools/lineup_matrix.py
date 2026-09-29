@@ -1,18 +1,3 @@
-"""Lineup-vs-lineup matchup matrix for a team pairing.
-
-For a playoff-series style question ("which five of ours beats which five of
-theirs?"), cross every qualifying 5-man unit of team A against every
-qualifying unit of team B head-to-head over shared possessions from
-silver_hist_possessions: shared minutes, net rating in those minutes, and
-sample-size flags.
-
-The warehouse holds no true head-to-head clock-minutes table, so shared
-minutes are estimated as poss/2 (~2 possessions per minute). That honesty is
-carried in the flags, the meta notes, and the tool docstring: nothing here is
-play-clock minutes. Lineup qualification uses season possession totals from
-verified play-level data; silver_lineups MIN comes from a partial upstream
-fetch and is used for unit names only.
-"""
 
 from typing import Any
 

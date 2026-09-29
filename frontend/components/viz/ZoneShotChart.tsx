@@ -11,8 +11,8 @@ export interface ZoneStat {
   fgPct: number;
   leagueAvg: number;
 }
-// Court geometry in NBA tenths-of-feet, basket at (0, 0). Same mapping as
-// the canvas ShotChart: x in [-250, 250], y in [-50, 425].
+
+
 
 
 
@@ -44,7 +44,7 @@ function hexPoints(cx: number, cy: number, r: number): string {
 
 const mix = (colorVar: string, amount: number) =>
   `color-mix(in oklch, ${colorVar} ${Math.round(clamp(amount, 0, 1) * 100)}%, transparent)`;
-/** Zone fill: blue tint above league average, red tint below, gray near it. */
+
 
 
 function zoneFill(deltaPp: number, hasShots: boolean): string {

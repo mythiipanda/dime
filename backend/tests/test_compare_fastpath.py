@@ -1,16 +1,3 @@
-"""Two-player compare fast-path routing plus force-rows desk skip.
-
-Profiled cost: 4 planner LLM rounds (10.3s) on deterministic two-player
-compare turns, plus a duplicate text_to_sql run on forced league paths
-(~3s). The triage fast-path in app/graph.py answers get_compare plus one
-scout desk per player straight from the warehouse; _run_desk in
-app/subagents.py skips its tool-call rounds when the force tool already
-returned rows.
-
-All hermetic: _triage_seed is driven directly with stubbed delegate
-desks, get_compare runs against the local warehouse, and the _run_desk
-checks use fake tools with no LLM.
-"""
 
 import asyncio
 import json
@@ -72,10 +59,10 @@ def _compare_args(state):
 
 
 def test_fastpath_fires_on_two_player_compare(monkeypatch):
-    # 2026-09-13: the two-player compare pin now answers straight from
-    # the get_compare payload (deterministic_answer) after the LLM
-    # compose flaked under battery load and dropped a TS figure. One
-    # get_compare call, no desk fan-out.
+
+
+
+
     monkeypatch.setattr(graph_mod, "_run_delegate_live", _fake_delegate)
     st = _drain(Q2)
     assert _tool_names(st) == ["get_compare"]
@@ -116,9 +103,9 @@ def test_no_fire_on_one_player(monkeypatch):
 
 
 def test_fires_on_three_players(monkeypatch):
-    # QA #71: 3-player compares used to fan out through the planner
-    # (29 tools / 30s live). The pin now runs the three pairwise
-    # get_compare calls plus one scout per player, deterministically.
+
+
+
     monkeypatch.setattr(graph_mod, "_run_delegate_live", _fake_delegate)
     st = _drain(f"{EDWARDS} vs {LUKA} vs {DURANT}: "
                 f"compare scoring this season?")
@@ -145,10 +132,6 @@ def test_impact_compare_stays_with_planner(monkeypatch):
 
 
 def test_history_still_fastpaths_two_player_compare(monkeypatch):
-    """Follow-up chips name both players again; the old history gate
-    pushed those to the LLM planner, which could answer with zero
-    tools and no data (F28). Exactly-two-player compares fast-path
-    even inside a thread."""
     monkeypatch.setattr(graph_mod, "_run_delegate_live", _fake_delegate)
     st = _drain(Q2, history=[{"role": "user", "text": "hi"},
                              {"role": "assistant", "text": "hey"}])

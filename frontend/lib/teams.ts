@@ -1,6 +1,6 @@
-// Canonical NBA team abbreviation -> id map (redesign Phase 3).
-// Single source of truth: LineupPanel and explore search both import this.
-// No behavior is attached to any team here; it is a lookup table only.
+
+
+
 
 
 
@@ -37,7 +37,7 @@ export const TEAM_IDS: Record<string, number> = {
   DET: 1610612765,
   CHA: 1610612766,
 };
-/** Abbreviation for a numeric team id, or null when unknown. */
+
 
 
 export function abbrForTeamId(id: number | string): string | null {
@@ -48,7 +48,7 @@ export function abbrForTeamId(id: number | string): string | null {
   }
   return null;
 }
-/** True for a known team abbreviation (case-insensitive). */
+
 
 
 export function isTeamAbbr(v: string): boolean {

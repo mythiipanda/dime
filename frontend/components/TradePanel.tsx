@@ -28,7 +28,7 @@ export default function TradePanel({ onAskValue }: { onAskValue?: (q: string) =>
   const [out, setOut] = useState<Verdict | null>(null);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
-  // First load: restore the last checked trade from the URL.
+  
 
 
   useEffect(() => {

@@ -23,9 +23,9 @@ export default function ModelPicker({ models, value, onChange, status = "ready",
   const [menuStyle, setMenuStyle] = useState<React.CSSProperties>({});
 
   const selectedModel = models.find((m) => m.id === value) || models[0];
-  // Position the menu in a portal: flip above/below the trigger based on
-  // available viewport space, and never let it run off-screen. Reposition on
-  // scroll/resize so the menu tracks the trigger.
+  
+  
+  
 
 
 

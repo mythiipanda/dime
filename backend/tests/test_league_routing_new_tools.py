@@ -1,15 +1,3 @@
-"""League routing for the new warehouse tools.
-
-SSE evidence showed "Who led the league in scoring each season from 2020
-to 2025?" calling get_leaders once per season: the league desk tool list
-lacked get_historical_leaders, get_zone_deltas, get_wpa_leaders, and
-get_rapm_prior, the brief had no IF/THEN lines for them, and the
-list-question force paths pushed "who leads" phrasing into text_to_sql
-(~30s) before the brief ran. Historical phrasing now guards both force
-sites so the task falls through to the brief, exactly like _SHOT_ZONE_RX.
-
-All hermetic: the real _desk_spec, no LLM, no network, no mocks.
-"""
 
 import sys
 from pathlib import Path

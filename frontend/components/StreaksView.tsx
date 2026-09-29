@@ -59,8 +59,8 @@ export default function StreaksView({
   const maxStreak = Math.max(1, ...parsed.streaks.map((s) => s.streak));
   const mode = (meta?.mode || "longest").toLowerCase();
   const title = `${mode === "active" ? "Active" : "Longest"} ${meta?.stat || "stat"} streaks`;
-  // Name the stat in the threshold chip ("min 30 pts/game"), and drop the
-  // chip entirely when the title already carries the threshold ("30-pt").
+  
+  
 
 
   const statWord =

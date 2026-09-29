@@ -1,16 +1,3 @@
-"""Floor-enforcement proofs for get_leaders rate boards.
-
-get_leaders routes PPG/RPG/APG/SPG/BPG through a per-game rate branch
-with a hardcoded ``MIN >= 500`` SQL predicate, and TS_PCT through a
-``GP * MIN >= max(1000, min_attempts)`` predicate. Both floors are
-structural (in the SQL), so a caller passing ``min_attempts=0`` must not
-be able to crown a garbage-time player.
-
-All hermetic: SQL-text capture behind a fake connection, plus a scratch
-DuckDB warehouse behind monkeypatched app.store.DB_PATH. No network,
-no LLM. The live-warehouse empirical check runs only if
-backend/data/warehouse.duckdb exists, and skips otherwise.
-"""
 
 import sys
 from pathlib import Path
@@ -104,8 +91,6 @@ def test_spg_zero_floor_still_carries_500_minute_floor(fake_con):
 def test_spg_floor_survives_any_caller_floor_and_direction(
     fake_con, min_attempts, direction
 ):
-    """min_attempts is not even referenced on the rate path; asc only
-    flips ORDER BY. The hardcoded predicate must appear every time."""
     res = _league.get_leaders.invoke(
         {"stat_category": "SPG", "season": SEASON,
          "ranking_direction": direction, "min_attempts": min_attempts}

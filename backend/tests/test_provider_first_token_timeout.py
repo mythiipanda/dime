@@ -1,10 +1,3 @@
-"""First-token timeout on provider streaming (P0: chat hangs in prod).
-
-Hermetic: fake clients, no network. A provider whose astream never yields
-(e.g. the hung NIM endpoint seen in prod) must fail fast at the asyncio
-level, get recorded as a provider failure, and let the fallback chain move
-on -- instead of holding the whole turn hostage.
-"""
 
 import asyncio
 import sys

@@ -1,4 +1,3 @@
-"""Immutable semantic benchmark identity bound by runtime asset preflight."""
 
 from types import MappingProxyType
 

@@ -64,8 +64,8 @@ def test_vs_opponent_filters_home_and_away():
 
 
 def test_vs_opponent_never_teammates_side():
-    # A player traded mid-season keeps only games where the trailing
-    # token is the opponent, not the old or new team.
+
+
     rows = [
         _row("NYK @ BOS", "Jan 01, 2026"),
         _row("BOS @ NYK", "Feb 02, 2026"),

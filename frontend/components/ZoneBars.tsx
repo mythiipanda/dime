@@ -62,8 +62,8 @@ export function normalizeZones(rows: unknown): ZonePoint[] {
     const fga = asNum(r.FGA) ?? 0;
     const fgm = asNum(r.FGM) ?? 0;
     const share = asNum(r.SHARE) ?? asNum(r.share) ?? null;
-    // Three-point zones read as 3P% (FG on threes), matching the court
-    // tooltip; eFG elsewhere (QA F23 cross-surface consistency).
+    
+    
 
 
     const isThree = /3|corner|break/i.test(zone);

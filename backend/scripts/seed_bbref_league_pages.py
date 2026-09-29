@@ -1,12 +1,3 @@
-"""Seed league-wide 2025-26 tables from basketball-reference single pages.
-
-Writes:
-  silver_player_season  - per-game season line per player (coverage fallback)
-  silver_zone_splits    - distance-bucket shooting splits (shot-zone fallback)
-
-stats.nba.com endpoint-blocks datacenter IPs; bbref is reachable, so these
-league pages are the seed source. Idempotent: replaces each table's season.
-"""
 import io
 import re
 import sys
@@ -45,12 +36,12 @@ def name_map() -> dict:
 def fetch(page: str) -> pd.DataFrame:
     r = requests.get(BASE % (BBREF_YEAR, page), headers=HEADERS, timeout=30)
     r.raise_for_status()
-    r.encoding = "utf-8"  # bbref omits charset; default latin-1 mangles diacritics (Doncic, Jokic)
+    r.encoding = "utf-8"
     df = pd.read_html(io.StringIO(r.text))[0]
     if isinstance(df.columns, pd.MultiIndex):
         df.columns = ["|".join(str(x) for x in tup if "Unnamed" not in str(x))
                       for tup in df.columns]
-    df = df[df[df.columns[1]] != "Player"]  # repeated header rows
+    df = df[df[df.columns[1]] != "Player"]
     return df
 
 
@@ -86,7 +77,7 @@ def main() -> None:
             "FG_PCT": _f(r.get("FG%")), "FG3_PCT": _f(r.get("3P%")),
             "FT_PCT": _f(r.get("FT%")),
         })
-    # Traded players appear once per team plus a TOT row; keep TOT when present.
+
     best = {}
     for row in rows:
         k = row["PLAYER_ID"]
@@ -97,7 +88,7 @@ def main() -> None:
         row.pop("_TEAMORDER", None)
         rows.append(row)
     save("silver_player_season", rows, SEASON)
-    # Per-game FGA per player for the zone-split totals join below.
+
     fga_by_pid = {}
     for _, r in pg.iterrows():
         pid = nm.get(norm(str(r.get("Player", ""))))

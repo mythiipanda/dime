@@ -84,13 +84,6 @@ def compute_streaks(
     mode: str = "longest",
     top: int = 10,
 ) -> list[dict[str, Any]]:
-    """Rank streaks across holders from pre-sorted or unsorted game rows.
-
-    Each game needs holder, holder_id, date (datetime.date), and the raw
-    stat fields cond/value_of read. Returns one streak per qualifying
-    holder: their longest run for mode longest, their trailing run for
-    mode active (skipped when the trailing game fails cond).
-    """
     by_holder: dict[tuple[Any, str], list[dict[str, Any]]] = {}
     for g in games:
         if g.get("date") is None:
@@ -136,9 +129,9 @@ def compute_streaks(
     out.sort(key=lambda s: str(s["holder"]))
     out.sort(key=lambda s: s["end_date"], reverse=True)
     out.sort(key=lambda s: -s["streak"])
-    # One row per holder, always: duplicate (holder_id, holder) keys from
-    # mixed-name source rows must never surface the same team twice
-    # (QA F17: Thunder appeared twice in the top 10).
+
+
+
     seen: set = set()
     deduped: list[dict[str, Any]] = []
     for s in out:

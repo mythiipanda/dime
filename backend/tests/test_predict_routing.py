@@ -1,15 +1,3 @@
-"""Prediction fast-path routing tests.
-
-DimeBench caught the supervisor calling get_preview for pre-game
-prediction questions ("who wins", "win probability", "projected total")
-instead of the purpose-built get_game_prediction. The triage fast-path
-added in app/graph.py routes those questions straight to
-get_game_prediction on clean single-turn asks.
-
-All hermetic: _triage_seed is driven directly and the real
-get_game_prediction runs against the local warehouse (neutral-site
-simulation when no meeting is cached). No LLM, no network, no stubs.
-"""
 
 import asyncio
 import sys

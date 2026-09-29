@@ -235,11 +235,6 @@ _PLANNER_PREFIX = (
 
 
 def _planner_season_context() -> str:
-    """Season guidance for the planner, derived from the warehouse.
-
-    Reuses subagents.data_season() so there is exactly one fallback path
-    (which logs a warning), not a second hardcoded one here.
-    """
     from .subagents import data_season
     season = data_season()
     return (
@@ -259,12 +254,6 @@ _VALID_ENTITY_LEVELS = ("player", "team", "mixed", "unknown")
 
 
 async def _select_skills_intent(question: str, llm) -> tuple[list[str], str | None]:
-    """Ask the LLM for skills plus the entity level the answer should be at.
-
-    Returns (skills, entity_level). entity_level is one of
-    _VALID_ENTITY_LEVELS (lowercased) or None when undetermined.
-    Never raises; on any failure returns ([], None).
-    """
     try:
         catalog_text = skills_catalog()
         known = set()
@@ -316,7 +305,6 @@ async def _select_skills_intent(question: str, llm) -> tuple[list[str], str | No
 
 
 async def select_skills(question: str, llm) -> list[str]:
-    """Ask the LLM to pick 0-2 relevant skills. Falls back to [] on failure."""
     skills, _ = await _select_skills_intent(question, llm)
     return skills
 
@@ -342,16 +330,16 @@ PLANNER_SYSTEM = (
 
 MAX_TOOL_ROUNDS = 3
 
-# Watchdog (v2 step 3, Tony's "some of these don't even finish"): a
-# stuck turn must end honestly, never hang. Per-call timeouts feed the
-# circuit breaker; the turn budget forces the coverage-named honest
-# end (_COMPUTE_FALLBACK); heartbeats at the SSE layer already ping.
+
+
+
+
 TOOL_CALL_TIMEOUT_S = 25.0
-# Sizing note: the outer desk-call cap must sit AT OR ABOVE the desk's
-# inner per-round budget (subagents.LLM_ROUND_TIMEOUT_S=100) - an outer
-# cap under it (the old 75.0) lets a single slow NIM round kill the whole
-# desk call. It stays bounded under the overall desk wall-clock budget
-# (subagents.DESK_DEADLINE_S=170) so the turn budget still binds.
+
+
+
+
+
 DESK_CALL_TIMEOUT_S = 120.0
 TURN_WARN_S = 40.0
 TURN_BUDGET_S = 90.0
@@ -360,8 +348,8 @@ MAX_TOOL_CALLS = 8
 DEEP_TOOL_ROUNDS = 5
 DEEP_TOOL_CALLS = 12
 
-# Patterns that trigger deep investigation mode: multi-entity comparisons,
-# open-ended research questions, and explicit depth requests.
+
+
 DEEP_TRIGGERS = [
     r"\bdeep dive\b", r"\binvestigat\w*\b", r"\bcomprehensive\b",
     r"\bthorough\b", r"\bcompare\b.*\b(and|vs|versus)\b.*\b(and|vs|versus)\b",
@@ -410,9 +398,9 @@ def _result_rows(result: dict[str, Any]) -> int:
     if isinstance(rows, list):
         return len(rows)
     if isinstance(rows, dict):
-        # Game-log results nest the actual game rows under "matches"
-        # alongside metadata keys (player, filters, totals); count the
-        # games, not the keys ("7 rows" for 1 game otherwise).
+
+
+
         matches = rows.get("matches")
         if isinstance(matches, list):
             return len(matches)
@@ -453,16 +441,16 @@ _LEAGUE_RX = re.compile(
 _COMPARE_RX = re.compile(
     r"\bvs\.?\b(?!\s+top[-\s]?\d)|\bversus\b(?!\s+top[-\s]?\d)|\bcompare\b",
     re.IGNORECASE)
-# Trade-value phrasing that get_trade_value answers on its own: the planner
-# used to spend two LLM rounds (resolve_entity, then the value call) before
-# calling it, but the tool resolves names itself.
+
+
+
 _TRADE_VALUE_RX = re.compile(
     r"who wins|win(?:s|ner|ning)?\b[^.?!]{0,25}\btrades?\b|trade value|"
     r"fair value|grade[sd]? (?:this|that|the) trade|"
     r"value of (?:this|that|the) trade|production value vs salary|"
     r"who (?:got|gets) the better (?:deal|end)", re.IGNORECASE)
-# Compound trade questions the value fast-path must NOT swallow: legality,
-# cap math, or picks need the planner (or the get_trade_check path).
+
+
 _TRADE_VALUE_NO_RX = re.compile(
     r"\blegal\b|salary cap|under the cap|\bapron\b|luxury tax|"
     r"salary match|trade exception|\bcba\b|"
@@ -493,18 +481,18 @@ _PREDICT_RX = re.compile(
     r"\bchances?\s+of\s+winning\b|"
     r"\bfavor\w*\b",
     re.IGNORECASE)
-# Live in-game probability and season-title questions are not pre-game
-# predictions: they belong to get_win_prob / the league desk.
+
+
 _PREDICT_LIVE_RX = re.compile(r"\blive\b|\bin[\s-]*game\b", re.IGNORECASE)
 _PREDICT_TITLE_RX = re.compile(
     r"championship|\btitle\b|\bfinals\b|\bring\b", re.IGNORECASE)
 _PREDICT_SERIES_RX = re.compile(
     r"\bbest[\s-]?of[\s-]?(?:five|seven|5|7)\b|\bplayoff series\b|"
     r"\bseries\b", re.IGNORECASE)
-# Unambiguous impact-estimate phrasing: an estimate/impact pairing
-# within one clause ("estimate X's impact", "his estimated per-100
-# impact"), or "how good has/is [player]". RAPTOR/WAR/peak/career-arc
-# phrasing is deliberately NOT here: the raptor fast-path claims those.
+
+
+
+
 _IMPACT_RX = re.compile(
     r"\bestimat\w+.{0,48}\bimpact\b|\bimpact\b.{0,48}\bestimat\w+|"
     r"\bhow\s+good\s+(?:has|is|was)\b",
@@ -514,17 +502,17 @@ _MATCHUP_SPLITS_RX = re.compile(
     r"\bsplits?\b.{0,24}\b(?:vs\.?|versus)\b|"
     r"\b(?:vs\.?|versus)\b.{0,24}\bsplits?\b",
     re.IGNORECASE)
-# Game-log questions are answerable straight from the warehouse:
-# "game logs", "40-point games", "triple-doubles", "scored 50 points".
-# The planner free-forms these through text_to_sql and hits
-# unknown-table/column errors on silver_player_gamelogs (caught red in
-# the demo recording), so the triage fast-path routes them to
-# search_game_logs, which owns the per-player log filter pipeline.
-# Best-game phrasing ("best game", "career high", "season high", "most
-# points") is a game-log question answered with the max-points game from
-# the warehouse logs. Kept as its own regex because "career high" trips
-# _GAMELOG_NO_RX's "career" guard, which is meant for career averages,
-# not single-game highs.
+
+
+
+
+
+
+
+
+
+
+
 _GAMELOG_BEST_RX = re.compile(
     r"\bbest game\b|\bcareer[\s-]*high\b|\bseason[\s-]*high\b|"
     r"\bmost points\b",
@@ -533,30 +521,30 @@ _GAMELOG_RX = re.compile(
     r"\bgame[\s-]*logs?\b|"
     r"\btriple[\s-]*doubles?\b|\bdouble[\s-]*doubles?\b|"
     + _GAMELOG_BEST_RX.pattern + r"|"
-    r"\b\d{2}\s*[-–—\s]?\s*(?:points?|pts?)\b|"  # "40-point games" / "40 point games" / "40pt games"
-    r"\b\d{1,2}\s*[-–—]\s*rebounds?\b|"       # "15-rebound games"
-    r"\b\d{1,2}\s*[-–—]\s*assists?\b|"        # "12-assist games"
+    r"\b\d{2}\s*[-–—\s]?\s*(?:points?|pts?)\b|"
+    r"\b\d{1,2}\s*[-–—]\s*rebounds?\b|"
+    r"\b\d{1,2}\s*[-–—]\s*assists?\b|"
     r"(?:scored|had|dropped|posted|recorded)\s+\d{2}\s*(?:\+|or more)?"
-    r"\s*(?:points?|pts?)\b|"                 # "scored 50 points"
-    r"\bgames?\b.{0,16}\b(?:vs\.?|versus|against)\b|"  # "games vs the Lakers"
-    r"\b(?:vs\.?|versus|against)\b.{0,90}\bgames?\b",  # "against the Wizards... list every game"
+    r"\s*(?:points?|pts?)\b|"
+    r"\bgames?\b.{0,16}\b(?:vs\.?|versus|against)\b|"
+    r"\b(?:vs\.?|versus|against)\b.{0,90}\bgames?\b",
     re.IGNORECASE)
-# Season averages and career-history phrasing are NOT game-log
-# questions: the tool only covers 2025-26 warehouse logs.
+
+
 _GAMELOG_NO_RX = re.compile(
     r"\baverag\w*|\bavg\b|\bppg\b|\bper game\b|"
     r"\bcareer\b|\ball[\s-]*time\b|\blast season\b",
     re.IGNORECASE)
-# Single-player season-average asks ("how many assists per game does
-# Jokic average") are not game-log questions and not league questions:
-# route them to get_season_averages. Career/all-time/last-season stay
-# with the planner (season resolution lives there).
+
+
+
+
 _SEASON_AVG_RX = re.compile(
     r"\baverag\w*|\bavg\b|\bper game\b|\b[prs]pg\b|\bapg\b|"
     r"\bbpg\b|\bspg\b|\bmpg\b|"
-    # QA #61/64: season-form performance asks ("how is James playing
-    # this season?") must answer from the 60-game season line, not an
-    # 8-game gamelog sample narrated as the season.
+
+
+
     r"\bhow (?:is|has|'s)\b.{0,40}\bplay(?:ing|ed)\b|"
     r"\bhow['’]?s\b.{0,30}\bthis season\b",
     re.IGNORECASE)
@@ -567,13 +555,13 @@ _SEASON_AVG_NO_RX = re.compile(
     r"\bcareer\b|\ball[\s-]*time\b|\blast season\b|"
     r"\blast \d+ games?\b|\blately\b|\brecent(?:ly)?\b",
     re.IGNORECASE)
-# League-wide leader questions have no named player, so the
-# player-scoped fast-path can't fire ("who had the most 50-point games
-# this season"). The planner free-forms these into text_to_sql and
-# improvises, so route them to search_game_logs with league_wide=True.
-# Conservative: requires a who/which + most + stat-games phrasing; the
-# multi-player compare ("who had more 40-point games, X or Y?") names
-# players and is excluded by the no-named-player gate in _triage_seed.
+
+
+
+
+
+
+
 _CAREER_TOT_RX = re.compile(
     r"\bcareer\s+(points|rebounds|assists|steals|blocks|threes|"
     r"3-pointers|games|minutes)\b|"
@@ -599,14 +587,14 @@ _LEAGUE_LEADERS_RX = re.compile(
     r"\b\d{1,2}\s*[-–—]?\s*rebounds?\s+games?\b|"
     r"\b\d{1,2}\s*[-–—]?\s*assists?\s+games?\b)",
     re.IGNORECASE)
-# Existence phrasing of the same league-wide ask ("did anyone score 60
-# points this season?", "was there a 60-point game this season?") also
-# has no named player, so it needs the same league-wide fast-path
-# instead of the planner. Conservative: requires a two-digit points
-# number with points/game wording, or a scoring verb + two-digit
-# number ("has anyone dropped 50 this season?"). Player-scoped asks
-# name a player and stay on the player path via the no-named-player
-# gate in _triage_seed.
+
+
+
+
+
+
+
+
 _LEAGUE_EXISTENCE_RX = re.compile(
     r"(?:\b(?:did|has|have)\b.{0,40}?\banyone\b.{0,60}?"
     r"(?:\b\d{2}\s*[-–—\s]?\s*(?:points?|pts?)\b|"
@@ -616,12 +604,12 @@ _LEAGUE_EXISTENCE_RX = re.compile(
     r"\bany\b.{0,10}?\b\d{2}\s*[-–—\s]?\s*(?:points?|pts?)"
     r"\s+games?\b)",
     re.IGNORECASE)
-# Team-population phrasing ("which team had the most 50-point games
-# this season?") matches _LEAGUE_LEADERS_RX (which + most +
-# stat-games) but must not answer per-player: it needs the team_wide
-# mode of search_game_logs. Same stat alternation as _LEAGUE_LEADERS_RX.
-# Player-scoped asks name a player and stay on the player path via the
-# no-named-player gate in _triage_seed.
+
+
+
+
+
+
 _LEAGUE_TEAM_RX = re.compile(
     r"\b(?:which|what)\b.{0,40}\bteams?\b.{0,80}?"
     r"(?:\b\d{2}\s*[-–—]?\s*points?\s+games?\b|"
@@ -660,8 +648,8 @@ def _detect_entities(question: str) -> tuple[list[str], list[str]]:
 
     q = question.lower()
     for nick, full in NICKNAMES.items():
-        # LEBRON is an impact metric name. Uppercase LEBRON must not turn
-        # into LeBron James; ordinary LeBron/Bron mentions still do.
+
+
         if nick == "lebron" and re.search(r"\bLEBRON\b", question):
             continue
         if re.search(r"\b" + re.escape(nick) + r"\b", q):
@@ -670,14 +658,14 @@ def _detect_entities(question: str) -> tuple[list[str], list[str]]:
     players, teams = _entity_lists()
     found_p = [p["full_name"] for p in players
                if p.get("full_name", "") and _norm(p["full_name"]) in nq]
-    # Surname-only references ("a Brunson for Wembanyama trade"): full-name
-    # matching never fires, and downstream pins that need found_p miss the
-    # lane entirely (2026-09-13 probe: a legality ask fell to the planner,
-    # which answered value instead). Add a player when their surname is
-    # capitalized in the original question and UNIQUE among ACTIVE players
-    # (the all-time pool shares surnames like Brunson with retired
-    # players). Shared surnames stay for resolve_entity; the case gate
-    # keeps lowercase common words ("love", "ball") from becoming players.
+
+
+
+
+
+
+
+
     _suffixes = {"jr.", "sr.", "ii", "iii", "iv"}
     from nba_api.stats.static import players as _static_players
     _by_surname: dict[str, list] = {}
@@ -696,18 +684,18 @@ def _detect_entities(question: str) -> tuple[list[str], list[str]]:
         if len(sur) < 3 or fn in found_p:
             continue
         for _m in re.finditer(r"\b" + re.escape(disp) + r"\b", question):
-            # First-name position guard: "Cooper Flagg" must not detect
-            # Sharife Cooper. A surname used as a surname is followed by
-            # a lowercase or punctuated token, not another Capitalized
-            # name token.
+
+
+
+
             _rest = question[_m.end():].lstrip()
             if _rest[:1].isupper():
                 continue
-            # Hyphenated-surname fragment guard: the "Alexander" in
-            # "Gilgeous-Alexander" is not a mention of Trey Alexander.
-            # It added a phantom second player to carry scans and
-            # flaked the F67 T3 playoff pin (battery run8/run12,
-            # 2026-09-13).
+
+
+
+
+
             if _m.start() > 0 and question[_m.start() - 1] == "-":
                 continue
             found_p.append(fn)
@@ -733,13 +721,13 @@ def _detect_entities(question: str) -> tuple[list[str], list[str]]:
                     and re.search(r"\b" + re.escape(nick) + r"\b", q))
                 or (city and city not in exact_cities and not race_words
                     and re.search(r"\b" + re.escape(city) + r"\b", q))
-                # F68/F69: abbreviations match case-SENSITIVELY -
-                # case-insensitive matching read the word "was" as WAS
-                # (Washington Wizards) and silently derailed carry
-                # chains ("Who was their best player?" -> Wizards
-                # thought line + wrong-team pull). Real abbreviations
-                # arrive uppercase; lowercase intent is caught by the
-                # city/nickname branches.
+
+
+
+
+
+
+
                 or re.search(r"\b" + re.escape(t.get("abbreviation", "")) + r"\b",
                              question)):
             found_t.append(full)
@@ -755,8 +743,8 @@ def _expand_nicknames(question: str) -> str:
         full = NICKNAMES[nick]
         if full.lower() in lowered:
             continue
-        # LEBRON in all caps is the proprietary impact metric, not the
-        # LeBron nickname. Preserve it for the metric-coverage pin.
+
+
         if nick == "lebron" and re.search(r"\bLEBRON\b", question):
             continue
         out = re.sub(r"\b" + re.escape(nick) + r"\b", full, out,
@@ -766,14 +754,6 @@ def _expand_nicknames(question: str) -> str:
 
 
 def _direct_named_teams(question: str, found_t: list[str]) -> list[str]:
-    """Teams named outright in the question text.
-
-    _detect_entities expands nicknames before matching, so a city word
-    in the expansion can pull in a same-city rival the user never named
-    ("Lakers" -> "Los Angeles" -> Clippers). The prediction fast-path
-    needs exactly the two teams the user asked about, so re-match
-    against the raw question.
-    """
     from nba_api.stats.static import teams as _static_teams
 
     abbr_of = {t["full_name"]: t["abbreviation"]
@@ -782,10 +762,10 @@ def _direct_named_teams(question: str, found_t: list[str]) -> list[str]:
     out = []
     for full in found_t:
         nick = full.split()[-1].lower()
-        # F68/F69: abbreviations match case-SENSITIVELY, mirroring
-        # _detect_entities - case-insensitive matching read the word
-        # "was" as WAS (Washington Wizards). Real abbreviations arrive
-        # uppercase; full-name and nickname branches stay insensitive.
+
+
+
+
         abbr = abbr_of.get(full) or ""
         if (full.lower() in q.lower()
                 or re.search(r"\b" + re.escape(nick) + r"\b", q,
@@ -797,12 +777,6 @@ def _direct_named_teams(question: str, found_t: list[str]) -> list[str]:
 
 
 def _detect_carry_players(text: str) -> list[str]:
-    """Carry-time player detection for history turns: full entity
-    detection first, then distinctive surname-only mentions ("What is
-    Brunson averaging?"). The pronoun gate upstream already
-    established a referent, and coerce_player_id raises on
-    multi-active namesakes (QA #59), so a resolved surname is
-    unambiguous enough to carry."""
     found, _ = _detect_entities(text)
     if found:
         return found
@@ -810,17 +784,17 @@ def _detect_carry_players(text: str) -> list[str]:
     out: list[str] = []
     for _m in re.finditer(r"\b[A-Z][a-z]{3,}\b", text):
         tok = _m.group(0)
-        # Hyphenated-surname fragment: "Alexander" inside
-        # "Gilgeous-Alexander" is not a surname mention - it carried
-        # Trey Alexander alongside SGA, broke the one-carried-player
-        # gate, and flaked the F67 T3 playoff pin (battery run8/run12,
-        # 2026-09-13). A real second mention of a hyphenated player
-        # still resolves through full detection above.
+
+
+
+
+
+
         if _m.start() > 0 and text[_m.start() - 1] == "-":
             continue
-        # Unique ACTIVE player with this exact surname ("Brunson" ->
-        # Jalen; Rick is inactive). Ties and namesakes carry nothing -
-        # same conservatism as the question-time loose-name rule.
+
+
+
         try:
             exact = [x for x in
                      _static_players.find_players_by_last_name(tok)
@@ -839,14 +813,6 @@ def _detect_carry_players(text: str) -> list[str]:
 
 
 def _direct_named_players(question: str, found_p: list[str]) -> list[str]:
-    """Players named outright in the raw question text.
-
-    _detect_entities expands nicknames before matching, so a nickname
-    can surface a player the user never meant (e.g. a stray "Bron").
-    The game-log fast-path needs exactly the player asked about, so
-    re-match full names (or known nicknames) against the raw question,
-    mirroring what _direct_named_teams does for teams.
-    """
     from shared.tools._core import NICKNAMES
 
     def _norm(s: str) -> str:
@@ -874,13 +840,6 @@ def _direct_named_players(question: str, found_p: list[str]) -> list[str]:
 
 def _gamelog_args(question: str, player: str | None,
                   teams: list[str]) -> dict[str, Any]:
-    """Parse search_game_logs args from a triage-claimed question.
-
-    Conservative: only set what the regexes can see; everything else
-    keeps the tool default. Opponent prefers the re-matched team entity
-    over raw text extraction. player None means league-wide mode: the
-    caller sets league_wide=True.
-    """
     from shared.tools.gamelog import MONTH_NAMES
 
     args: dict[str, Any] = {}
@@ -888,13 +847,13 @@ def _gamelog_args(question: str, player: str | None,
         args["player"] = player
     q = question or ""
     if _GAMELOG_BEST_RX.search(q):
-        # "best game" / "career high" / "season high" / "most points":
-        # answer with the single max-points game, not a filtered list.
+
+
         args["best_game"] = True
-    # F57: "under 20 points" is a CEILING, not a floor - mapping it to
-    # min_points inverted the filter (returned every 20+ game, then the
-    # narrative honestly reported the wrong set as empty). Detect
-    # under/at-most qualifiers before the floor regexes see the digits.
+
+
+
+
     _mu = (re.search(r"\b(?:under|below|fewer\s+than|less\s+than)"
                      r"\s+(\d{1,3})\s*[-–—\s]?\s*(?:points?|pts?)\b",
                      q, re.IGNORECASE)
@@ -907,7 +866,7 @@ def _gamelog_args(question: str, player: str | None,
     if _mu:
         args["max_points"] = int(_mu.group(1))
     elif _ma:
-        # "no more than 20" includes 20: exclusive ceiling N+1.
+
         args["max_points"] = int(_ma.group(1)) + 1
     else:
         m = (re.search(r"\b(\d{2})\s*[-–—\s]?\s*(?:points?|pts?)\b", q,
@@ -915,9 +874,9 @@ def _gamelog_args(question: str, player: str | None,
              or re.search(r"(?:scored|had|dropped|posted|recorded)\s+(\d{2})"
                           r"\s*(?:\+|or more)?\s*(?:points?|pts?)\b", q,
                           re.IGNORECASE)
-             # Bare "dropped 50" / "scored 60" (existence phrasing like "has
-             # anyone dropped 50 this season?"). "had" is excluded: "had 12
-             # rebounds" is a rebound ask, not a points floor.
+
+
+
              or re.search(r"(?:scored|dropped|posted|recorded)\s+(\d{2})\b",
                           q, re.IGNORECASE))
         if m:
@@ -1011,16 +970,6 @@ def _money_m(v: object) -> str:
 
 
 def _trade_verdict_text(rows: dict[str, Any]) -> str:
-    """Deterministic trade verdict from the get_trade_check payload.
-
-    QA 2026-09-13: the LLM verdict inverted the constraint ("SAS cannot
-    receive enough") while its own takeaways stated it correctly - the
-    classic whack-a-mole the v67 law bans. On the pinned trade lane the
-    answer ships payload-built text: side A sends rows.team_a.out and
-    receives rows.team_b.out, capped at rows.team_a.allowed_in (and the
-    mirror for B), so the receiving limit and the outgoing salary can
-    never be swapped by compose variance.
-    """
     a = rows.get("team_a") or {}
     b = rows.get("team_b") or {}
     ta = str(a.get("team") or "Team A")
@@ -1083,7 +1032,6 @@ def _trade_verdict_text(rows: dict[str, Any]) -> str:
 
 def _trade_sides(question: str, found_p: list[str], found_t: list[str],
                  season: str) -> dict[str, str] | None:
-    """Deterministic trade sides: players grouped by current team abbrev."""
     from nba_api.stats.static import teams as _static
 
     from shared.tools._core import _coerce_player_id_cached
@@ -1097,9 +1045,9 @@ def _trade_sides(question: str, found_p: list[str], found_t: list[str],
     for p in found_p:
         low = _fold(p)
         last = low.split()[-1]
-        # QA #70: "the Luka trade" names the player by FIRST name only.
-        # Keep any distinctive (4+ char) name token, first or last -
-        # ambiguity is handled downstream by coerce_player_id.
+
+
+
         if (low in raw_q
                 or re.search(r"\b" + re.escape(last) + r"\b", raw_q)
                 or any(re.search(r"\b" + re.escape(tok) + r"\b", raw_q)
@@ -1195,10 +1143,10 @@ def _trade_sides(question: str, found_p: list[str], found_t: list[str],
                 if p not in players_a and p not in players_b]
         for i, p in enumerate(rest):
             (players_a if i % 2 == 0 else players_b).append(p)
-    # QA #70: a side with no named players is NOT a bail - the tool
-    # turns it into the fast informative refusal ("past trade's other
-    # side is not in this dataset"). Bail only when neither side has
-    # players at all.
+
+
+
+
     if not players_a and not players_b:
         return None
     return {"team_a": side_a, "players_a": ", ".join(players_a),
@@ -1257,19 +1205,6 @@ def _delegate_result_summary(out: dict[str, Any]) -> str | None:
 async def _stream_planner(primary: Any, model: str, tools: list,
                          messages: list,
                          holder: dict[str, Any]) -> AsyncGenerator[dict[str, Any], None]:
-    """Stream the supervisor planner's raw tokens live as thought_token events.
-
-    The planner is tool-bound: text chunks stream immediately while
-    tool_call_chunks accumulate. The final tool-call list lands in
-    holder["calls"].
-
-    Every provider attempt carries the first-token watchdog: a provider
-    that accepts the request but never produces a token fails fast and
-    the next provider is tried. If every provider fails, raises
-    RuntimeError so the turn ends with an honest error instead of a
-    silent hang. Falls back to a bounded blocking ainvoke per provider
-    when streaming itself errors.
-    """
     errors: list[str] = []
     for name in fallback_order(primary):
         client = get_llm(name, model if name == primary else None)
@@ -1311,14 +1246,6 @@ async def _stream_planner(primary: Any, model: str, tools: list,
 
 
 def _spawn(coro, *, name=None):
-    """Schedule a coroutine as a background asyncio.Task.
-
-    asyncio.create_task() only accepts coroutines. Passing the Future
-    returned by asyncio.gather() raises "TypeError: a coroutine was
-    expected, got <_GatheringFuture pending>". Every spawn site in this
-    module goes through this helper so a Future can never leak into
-    create_task again.
-    """
     if not asyncio.iscoroutine(coro):
         raise TypeError(
             "_spawn() requires a coroutine, got "
@@ -1330,13 +1257,6 @@ def _spawn(coro, *, name=None):
 async def _run_delegate_live(name: str, task: str, primary: str, model: str,
                              holder: dict[str, Any],
                              node: str = "data_retrieval") -> AsyncGenerator[dict[str, Any], None]:
-    """Run a delegate desk, yielding thought_token SSE events live as the
-    desk's LLM generates text. The desk's final result dict is stored in
-    holder["result"] when the generator is exhausted.
-
-    Uses a queue + background task so tokens flow the moment they're
-    generated instead of going silent for the seconds the desk works.
-    """
     q: asyncio.Queue = asyncio.Queue()
     desk = name.replace("delegate_", "")
 
@@ -1358,17 +1278,17 @@ async def _run_delegate_live(name: str, task: str, primary: str, model: str,
         tok = await q.get()
         if tok is None:
             break
-        # F43: desk reasoning tokens streamed raw into the expanded
-        # progress UI ("I need to query the warehouse...", sandbox
-        # errors with '!' markers). Progress now comes only from
-        # labeled tool_call events; drain the queue, emit nothing raw.
+
+
+
+
         continue
     await runner
-    # NOTE: without a yield this compiles as a coroutine and every
-    # 'async for' caller dies with "requires an object with aiter
-    # method, got coroutine" - the exact text that leaked as a final
-    # answer in F46's blowout probe. Emit one sanitized desk-done
-    # status instead of the raw token stream.
+
+
+
+
+
     _res = holder.get("result") or {}
     _ok = not (isinstance(_res, dict) and _res.get("ok") is False)
     yield _event("thought_stream", {
@@ -1438,11 +1358,6 @@ def _done_thought(label: str, out: dict[str, Any], ms: int) -> str:
 
 def _tool_result_payload(node: str, name: str, out: dict[str, Any], ms: int,
                          summary: str | None = None) -> dict[str, Any]:
-    """Build the SSE tool_result payload for one tool execution.
-
-    Lifts the executed SQL off the tool output (top-level ``sql``, falling
-    back to ``meta.sql``) so the UI can show the exact query behind a number.
-    """
     status = _result_status(out)
     payload: dict[str, Any] = {
         "node": node, "name": name, "label": tool_label(name),
@@ -1460,10 +1375,10 @@ def _tool_result_payload(node: str, name: str, out: dict[str, Any], ms: int,
     if sql:
         payload["sql"] = sql
     if status != "ok":
-        # F43/F44: this field streams live into the progress UI, which
-        # rendered raw SQL errors ('ambiguous reference to column
-        # TEAM_ID ... LINE 42'). The model still sees the full error in
-        # state; the stream gets a sanitized line.
+
+
+
+
         try:
             payload["error"] = _user_safe_tool_error(
                 name, str(out.get("error") or ""))
@@ -1473,8 +1388,6 @@ def _tool_result_payload(node: str, name: str, out: dict[str, Any], ms: int,
 
 
 def _user_safe_tool_error(name: str, err: str) -> str:
-    """One sanitized clause for streamed tool errors. Never SQL, never
-    column names, never sandbox internals."""
     if not err:
         return "failed"
     low = err.lower()
@@ -1491,11 +1404,6 @@ def _user_safe_tool_error(name: str, err: str) -> str:
 
 async def _triage_tool(name: str, args: dict[str, Any], state: dict,
                        holder: dict[str, Any]) -> AsyncGenerator[dict[str, Any], None]:
-    """Run one v1 tool from triage, emitting tool_call/tool_result/thought_stream.
-
-    Appends the result to state and stashes it in holder["out"]. Every
-    status is grounded in the real tool result; nothing is canned.
-    """
     from shared.tools import v1_tools
 
     fn = next((t for t in v1_tools if t.name == name), None)
@@ -1526,24 +1434,17 @@ async def _triage_tool(name: str, args: dict[str, Any], state: dict,
 
 async def _triage_terminal(question: str,
                            state: dict) -> AsyncGenerator[dict[str, Any], None]:
-    """End retrieval after a decisive triage hit.
-
-    Marks planner rounds exhausted so run_chat skips the supervisor loop,
-    and closes the data_retrieval window run_chat opened. Call only when
-    the evidence already answers the question; the planner fallback stays
-    for anything uncertain.
-    """
     state["round"] = (DEEP_TOOL_ROUNDS if _is_deep_question(question)
                       else MAX_TOOL_ROUNDS)
     yield _event("node_update", {"node": "data_retrieval", "status": "complete"})
 
 
-# Conversational correction/clarification openers ("no i mean ...",
-# "actually ..."). A correction follow-up carries no pronouns, so the
-# pronoun-carry gate never fires; strip the opener once and, when the
-# stripped question names nobody, inherit history entities through the
-# same carry mechanism. Conversation-state carry only: no evidence is
-# dropped and no question-kind routing changes here.
+
+
+
+
+
+
 _CORRECTION_OPENERS = ("no i mean", "i meant", "actually", "sorry",
                        "correction:")
 
@@ -1561,13 +1462,13 @@ async def _triage_seed(question: str, primary: str, model: str,
                        state: dict) -> AsyncGenerator[dict[str, Any], None]:
     found_p, found_t = _detect_entities(question)
     _orig_p, _orig_t = list(found_p), list(found_t)
-    # Correction follow-up: opener stripped once; carry only when the
-    # stripped question names nobody of its own and history exists.
-    # League-leader asks are complete standalone queries ("best
-    # defensive players in the league"): a correction opener in front
-    # of one starts a new topic, so it must not inherit prior-turn
-    # entities (Instinct QA 2026-09-27: carried Wembanyama suppressed
-    # the league pin and steered to scout).
+
+
+
+
+
+
+
     _corr_stripped = _strip_correction_opener(question)
     _corr_p, _corr_t = (_detect_entities(_corr_stripped)
                         if _corr_stripped is not None else ([], []))
@@ -1584,13 +1485,13 @@ async def _triage_seed(question: str, primary: str, model: str,
                 r"that team|that player)\b",
                 question, re.IGNORECASE)
             or _is_correction_carry)):
-        # Player carry prefers the SUBJECT of prior asks (user turns);
-        # answer mentions follow only when no ask named anyone - the
-        # F64 flake: a playoff-avg answer that happened to name a
-        # second player broke the one-carried-player pin gate 1/3 of
-        # the time. Team carry keeps the all-turns recency scan (the
-        # F67 "their best player" chain resolves the team FROM the
-        # answer - "best record?" names no team in the ask).
+
+
+
+
+
+
+
         _hist = state["history"][-6:]
         _user_turns = [t for t in _hist if t.get("role") == "human"]
         for t in _user_turns:
@@ -1598,16 +1499,16 @@ async def _triage_seed(question: str, primary: str, model: str,
                 if p not in found_p and len(found_p) < 3:
                     found_p.append(p)
         if not found_p:
-            # F67-chain flake (battery run8/run12, 2026-09-13): the asks
-            # named nobody ("best record?" / "their best player?"), so
-            # the user-turn scan found no referent for "he" and the old
-            # `_user_turns or _hist` fell through only when NO user
-            # turns existed - the answer that DID name the player (the
-            # T2 pin's SGA) was ignored and the T3 playoff pin wobbled
-            # to planner variance.
-            # Answer mentions are the fallback when user turns name no
-            # one; when a user turn DID name someone (the F64 case),
-            # this never runs and the one-carried-player gate holds.
+
+
+
+
+
+
+
+
+
+
             for t in reversed(_hist):
                 for p in _detect_carry_players(t.get("text") or ""):
                     if p not in found_p and len(found_p) < 3:
@@ -1616,8 +1517,8 @@ async def _triage_seed(question: str, primary: str, model: str,
             for tm in _detect_entities(t.get("text") or "")[1]:
                 if tm not in found_t and len(found_t) < 2:
                     found_t.append(tm)
-        # S4: surface carry to the client so the UI can say "picking up
-        # from earlier" instead of pretending the pronoun was explicit.
+
+
         _carried_p = [p for p in found_p if p not in _orig_p]
         _carried_t = [t for t in found_t if t not in _orig_t]
         if _carried_p or _carried_t:
@@ -1664,13 +1565,13 @@ async def _triage_seed(question: str, primary: str, model: str,
         and not state.get("history")
     )
     if is_predict:
-        # Pre-game prediction phrasing ("who wins", "win probability",
-        # "projected total"): get_game_prediction owns the Monte Carlo.
-        # The supervisor's toolset exposes get_preview ("Side-by-side
-        # preview of two teams") but not get_game_prediction, so without
-        # this the routing detours to get_preview and the desk briefs'
-        # IF/THEN lines never get a vote. Only on clean single-turn
-        # questions; anything uncertain falls through to the planner.
+
+
+
+
+
+
+
         _named = _direct_named_teams(question, found_t)
         if len(_named) == 2:
             _ph: dict[str, Any] = {}
@@ -1680,11 +1581,11 @@ async def _triage_seed(question: str, primary: str, model: str,
                 yield _e
             _pout = _ph.get("out") or {}
             if _result_status(_pout) == "ok":
-                # _triage_tool appended the raw tool dict. analytics_agent
-                # only treats tool_results entries with a non-empty "rows"
-                # key as evidence, so wrap it the same way other triage
-                # paths do; otherwise the turn falls into the canned
-                # no-data branch and the LLM never runs.
+
+
+
+
+
                 if state["tool_results"] and state["tool_results"][-1] is _pout:
                     state["tool_results"][-1] = {
                         "tool": "get_game_prediction", "rows": [_pout],
@@ -1702,8 +1603,8 @@ async def _triage_seed(question: str, primary: str, model: str,
         and not state.get("history")
     )
     if is_matchup_splits:
-        # B2: planner-owned matchup-splits ask looped 5 rounds (188s turn)
-        # retrying a failing tool; answer straight from warehouse splits.
+
+
         _decisive = True
         for t in _named[:2]:
             _mh: dict[str, Any] = {}
@@ -1721,8 +1622,8 @@ async def _triage_seed(question: str, primary: str, model: str,
     is_gamelog = (
         len(_named_p) == 1
         and _GAMELOG_RX.search(question)
-        # "career high" trips _GAMELOG_NO_RX's "career" guard, which is
-        # meant for career averages, not single-game highs.
+
+
         and (_GAMELOG_BEST_RX.search(question)
              or not _GAMELOG_NO_RX.search(question))
         and not is_trade
@@ -1731,14 +1632,14 @@ async def _triage_seed(question: str, primary: str, model: str,
         and not state.get("history")
     )
     if is_gamelog:
-        # Demo bug: the planner free-formed a game-log question into
-        # text_to_sql, hit "unknown table or column" on
-        # silver_player_gamelogs, and streamed the red error row.
-        # search_game_logs owns the per-player log pipeline, so answer
-        # straight from the warehouse. Only on clean single-turn
-        # questions with exactly one named player; anything uncertain
-        # (no clear player, multi-player, averages/career phrasing)
-        # falls through to the planner.
+
+
+
+
+
+
+
+
         _gh: dict[str, Any] = {}
         async for _e in _triage_tool(
                 "search_game_logs",
@@ -1746,20 +1647,20 @@ async def _triage_seed(question: str, primary: str, model: str,
             yield _e
         _gout = _gh.get("out") or {}
         if _result_status(_gout) == "ok":
-            # _triage_tool appended the raw tool dict. analytics_agent
-            # only treats tool_results entries with a non-empty "rows"
-            # key as evidence, so wrap it the same way the prediction
-            # fast-path does; otherwise the turn falls into the canned
-            # no-data branch and the LLM never runs.
+
+
+
+
+
             if state["tool_results"] and state["tool_results"][-1] is _gout:
                 state["tool_results"][-1] = {
                     "tool": "search_game_logs", "rows": [_gout]}
             async for _e in _triage_terminal(question, state):
                 yield _e
         return
-    # F89: qualified young-player usage board. Free SQL previously used a
-    # stale slice and no sample floor, naming Paolo at 33%. The current
-    # silver_advanced board uses age <= 22 and 1,000+ total minutes.
+
+
+
     if (not found_p and not found_t and not state.get("history")
             and re.search(r"\busage(?: rate)?\b|\busg(?:_pct)?\b",
                           question, re.IGNORECASE)
@@ -1779,14 +1680,14 @@ async def _triage_seed(question: str, primary: str, model: str,
                 yield _e
         return
 
-    # F89: EPM/LEBRON/DARKO/DRIP are named metric gaps, not players.
-    # A single-player metric question gets an honest coverage answer and
-    # never manufactures LeBron James as a second comparison subject.
+
+
+
     _unavailable_metrics = re.findall(
         r"\b(EPM|LEBRON|DARKO|DRIP)\b", question, re.IGNORECASE)
-    # "LeBron" is both a player's given name and a proprietary metric.
-    # Entity detection has already established name context, so do not let
-    # the metric-coverage lane steal ordinary LeBron James questions.
+
+
+
     if found_p:
         player_words = {
             word.upper() for name in found_p
@@ -1822,9 +1723,9 @@ async def _triage_seed(question: str, primary: str, model: str,
             yield _e
         return
 
-    # Total leaderboards also bypass the free-form planner, including
-    # repeat turns. The deterministic answer carries total, GP, and per-game
-    # context so multi-turn repeats cannot degrade to an unverifiable fallback.
+
+
+
     if (not found_p and not found_t
             and re.search(r"(?:who|which player).*(?:leads?|most|highest)|leaders?",
                           question, re.IGNORECASE)
@@ -1849,8 +1750,8 @@ async def _triage_seed(question: str, primary: str, model: str,
                 yield _e
         return
 
-    # Qualified rate leaderboards bypass the free-form league desk. This
-    # keeps sample floors and units attached to the exact value users see.
+
+
     _rate_leader = None
     if (not found_p and not found_t
             and re.search(r"(?:who|which player).*(?:leads?|highest|best|most)|leaders?",
@@ -1895,8 +1796,8 @@ async def _triage_seed(question: str, primary: str, model: str,
             async for _e in _triage_terminal(question, state):
                 yield _e
         return
-    # F88: percentage leaderboards need a qualification-aware warehouse
-    # board, not free-form SQL with an arbitrary attempts threshold.
+
+
     if (not found_p and not found_t and not state.get("history")
             and re.search(r"(?:who|which player).*(?:leads?|highest|best)|"
                           r"leaders?", question, re.IGNORECASE)
@@ -1914,10 +1815,10 @@ async def _triage_seed(question: str, primary: str, model: str,
                 yield _e
         return
 
-    # Team metric rankings carry the requested field and direction through
-    # retrieval and publication. A full ratings row contains many unrelated
-    # numerals; without this identity the verifier can match the right team to
-    # the wrong field or reject the supported value entirely.
+
+
+
+
     _team_rank_metric = None
     if (not found_p and not found_t and not state.get("history")
             and re.search(r"\bwhich\s+team\b|\bwhat\s+team\b|"
@@ -1951,9 +1852,9 @@ async def _triage_seed(question: str, primary: str, model: str,
                 yield _e
         return
 
-    # F88: a named team's plain ratings question is one get_ratings call.
-    # The old planner wandered through lineup stats, a league delegate,
-    # standings, and two Python calls before returning the team row.
+
+
+
     if (len(_named) == 1 and not found_p
             and re.search(r"\bratings?\b|offensive rating|defensive rating|"
                           r"net rating|\bpace\b", question, re.IGNORECASE)
@@ -1969,16 +1870,16 @@ async def _triage_seed(question: str, primary: str, model: str,
                 yield _e
         return
 
-    # QA #67 route pins - the planner is non-deterministic, so known
-    # phrasing classes get deterministic routes BEFORE it runs.
-    # (a) truly-unanswerable known gaps (contract types, bench splits):
-    # never run tools; inject the named-gap message as the sole error
-    # so the no-evidence branch ships it verbatim.
-    # QA #72 (F58): memory/preference statements are not data asks.
-    # Pin a deterministic session-scoped acknowledgment BEFORE the
-    # planner - unrouted, "favorite team is the Lakers" hit the team
-    # desk, the resolver matched both Los Angeles teams, and the final
-    # answer shipped "No Los Angeles Clippers data found."
+
+
+
+
+
+
+
+
+
+
     _mem_pin = _memory_ack(question)
     if _mem_pin:
         state["tool_results"].append(
@@ -1986,15 +1887,15 @@ async def _triage_seed(question: str, primary: str, model: str,
         async for _e in _triage_terminal(question, state):
             yield _e
         return
-    # F66: multi-metric "top N teams" compares ("compare the top 3
-    # scoring teams: total points, per-game average, and how many games
-    # each won") escaped every pin, fanned out through delegate_league,
-    # and shipped a NAMELESS table with empty cells and invented
-    # numbers. Deterministic lane: get_team_compare joins the deduped
-    # team-totals board with standings records; compose ships
-    # meta.deterministic_answer verbatim. Guards: a named player or
-    # named teams keep their own routes; single-stat totals asks keep
-    # the team-totals pin below.
+
+
+
+
+
+
+
+
+
     _dc_top = re.search(r"\btop\s*(\d+)\b", question, re.IGNORECASE)
     _dc_stat = re.search(
         r"\b(scoring|points?|rebounding|rebounds?|assists?|steals?|"
@@ -2029,16 +1930,16 @@ async def _triage_seed(question: str, primary: str, model: str,
             async for _e in _triage_terminal(question, state):
                 yield _e
         return
-    # F69 (2026-09-13 prod QA, Tony): "in your view who are the top 15
-    # players in the league" was planner-routed to a STEALS leaderboard
-    # presented as an overall ranking. Overall top-N player asks (no
-    # single-stat keyword) pin to get_player_rankings: RAPM-lite for
-    # current coverage, FiveThirtyEight WAR for 2014-15..2021-22, an
-    # honest coverage note elsewhere. The deterministic answer names the
-    # metric basis (v67 law: "in your view" still answers from the
-    # payload). Burn-down: stat-qualified top-N asks keep get_leaders;
-    # team top-N keeps the F66 pin above.
-    #
+
+
+
+
+
+
+
+
+
+
     _rk_m = re.search(
         r"\btop\s*(\d+)\s+(?:best\s+)?players?\b|"
         r"\bbest\s+(\d+)\s+players?\b|"
@@ -2092,21 +1993,21 @@ async def _triage_seed(question: str, primary: str, model: str,
             async for _e in _triage_terminal(question, state):
                 yield _e
         else:
-            # Uncovered season: ship the honest coverage note from the
-            # tool error instead of the generic refusal.
+
+
             _rkerr = (_rkout.get("error") or
                       "No overall impact metric covers that season.")
             state["analysis"] = str(_rkerr)
             async for _e in _triage_terminal(question, state):
                 yield _e
         return
-    # Tony live find (11:54 AM): team-TOTAL counting-stat asks ("which
-    # team leads in total assists this season?") dead-ended honestly -
-    # get_leaders is player-level and the league desk said team totals
-    # are "not explicitly reported". They are one aggregation away:
-    # pin straight to get_team_leaders (game logs summed by team).
-    # Guards: no named player, no "player" word - player-leader
-    # phrasings keep their routes.
+
+
+
+
+
+
+
     _tt_m = re.search(
         r"\bteam(?:s|\b).{0,45}?\b(?:total|most|leads?|best|highest|top)\b"
         r".{0,30}?\b(assists?|rebounds?|points?|steals?|blocks?)\b|"
@@ -2114,8 +2015,8 @@ async def _triage_seed(question: str, primary: str, model: str,
         r"\bby team\b", question, re.IGNORECASE)
     if (_tt_m and not found_p
             and not re.search(r"\bplayers?\b", question, re.IGNORECASE)
-            # single-game asks ("most 50-point games") belong to the
-            # gamelog team-wide fast path, not season totals
+
+
             and not re.search(r"\bgames?\b|\d+\s*-?\s*pts?\b|"
                               r"\d+-point", question, re.IGNORECASE)):
         _tt_word = (_tt_m.group(1) or _tt_m.group(2) or "").lower()
@@ -2136,19 +2037,19 @@ async def _triage_seed(question: str, primary: str, model: str,
             yield _e
         _tt_out = _tth.get("out") or {}
         if _result_status(_tt_out) == "ok":
-            # No rows=[payload] wrap: rows are already the leaderboard
-            # list (get_risers/QA #23 convention).
+
+
             async for _e in _triage_terminal(question, state):
                 yield _e
         return
-    # QA #74 (F60): "Who won the 2026 Finals?" - the marquee phrasing -
-    # dead-ended to the generic fallback under planner variance (8s/2
-    # tools) while the long phrasing worked. The playoffs payload
-    # carries the finals block deterministically; pin it. Guards: no
-    # MVP (award known-gap owns that), no future/prediction phrasing,
-    # no named player, clean single-turn only.
-    # F63: a Finals series ask ("who did X beat", "series score") is the
-    # same deterministic lane even mid-thread - allow history then.
+
+
+
+
+
+
+
+
     _fin_series_ask = bool(
         re.search(r"\bfinals\b", question, re.IGNORECASE)
         and re.search(r"\bseries (?:score|result)\b|\bwho did\b[^?]*\bbeat\b|"
@@ -2183,10 +2084,10 @@ async def _triage_seed(question: str, primary: str, model: str,
         _fout = _fh.get("out") or {}
         if _result_status(_fout) == "ok":
             _meta = dict(_fout.get("meta") or {})
-            # Game-by-game / walkthrough asks ship deterministic (v67
-            # law): the LLM given this payload answered with only the
-            # headline, and mid-thread it once claimed no Finals data
-            # existed at all. Build the listing from the payload.
+
+
+
+
             if re.search(r"\bgame[- ]by[- ]game\b|\bwalk (?:me )?through\b|"
                          r"\beach game\b|\bevery game\b",
                          question, re.IGNORECASE):
@@ -2228,13 +2129,13 @@ async def _triage_seed(question: str, primary: str, model: str,
             async for _e in _triage_terminal(question, state):
                 yield _e
         return
-    # Contract-value asks ("most overpaid", "best value contracts").
-    # Sweep3: this lane ran a 15-tool, 65s planner fan-out and composed
-    # empty slots ("His salary of exceeds a predicted value of by a
-    # residual of ."). Pin it: one get_contract_value call and a
-    # deterministic board built from the payload (v67 law: LLM-composed
-    # numerals are untrusted on pinned lanes).
-    # Burn-down: belongs in a generic ranking-board pin framework.
+
+
+
+
+
+
+
     if (re.search(r"\boverpaid\b|\bunderpaid\b|\bbest value\b|"
                   r"\bworst value\b|\bvalue contracts?\b|"
                   r"\bbiggest bargains?\b", question, re.IGNORECASE)
@@ -2293,23 +2194,23 @@ async def _triage_seed(question: str, primary: str, model: str,
             async for _e in _triage_terminal(question, state):
                 yield _e
         return
-    # Player-vs-player head-to-head asks ("head to head between X and
-    # Y"). Sweep3: this lane ran 11 tools / 92.5s and its LLM answer
-    # once declared "no shared court time" while the teams had met.
-    # Pin it: one get_compare call, deterministic answer from the
-    # payload (season lines + actual meetings from the pair block).
-    # Burn-down: DONE (2026-09-13) - widened from h2h-only to every
-    # two-player compare after the LLM-composed efficiency compare
-    # flaked under battery load (dropped a TS figure). One get_compare
-    # call, deterministic answer from the payload; the scout-desk
-    # enrichment from the former fast-path is traded for numerals that
-    # cannot drift.
-    # F68 (2026-09-13 prod QA): comparative FOLLOW-UPS carry no compare
-    # keyword at all - "who has a better true shooting percentage
-    # between them?" resolved both players via carry and still fell to
-    # the planner, which flaked to the no-data refusal with an empty
-    # supervisor note. When exactly two players are in scope (named or
-    # carried), comparative adjectives are a compare ask.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
     _two_player_comparative = bool(re.search(
         r"\bbetter\b|\bworse\b|\bhigher\b|\blower\b|\bbest\b|"
         r"\bstronger\b|\bmore efficient\b|\befficient\b",
@@ -2320,8 +2221,8 @@ async def _triage_seed(question: str, primary: str, model: str,
             and len(found_p) == 2
             and not re.search(r"\bimpact\b|\brapm\b|on.off",
                               question, re.IGNORECASE)
-            # Trade-value asks name two players and say "vs" but belong
-            # to the get_trade_value fast-path (test_trade_latency).
+
+
             and not re.search(
                 r"\btrad(e|es|ed|ing)\b|sign-and-trade|\bswap\b|"
                 r"\bdeal\b", question, re.IGNORECASE)):
@@ -2398,13 +2299,13 @@ async def _triage_seed(question: str, primary: str, model: str,
             async for _e in _triage_terminal(question, state):
                 yield _e
         return
-    # Clutch-scorer leaderboard asks ("best clutch scorers this
-    # season"). Sweep3: this lane spent 16.8s on a delegate fan-out
-    # for a board the warehouse already serves. Pin it: one get_clutch
-    # call and a deterministic board built from the payload (v67 law:
-    # LLM-composed numerals are untrusted on pinned lanes).
-    # Burn-down: merge into a generic ranking-board pin framework with
-    # the contract-value and standings boards.
+
+
+
+
+
+
+
     if (re.search(r"\bclutch\b", question, re.IGNORECASE)
             and re.search(r"\b(best|top|leaders?|scorers?|rank)\b",
                           question, re.IGNORECASE)
@@ -2457,9 +2358,9 @@ async def _triage_seed(question: str, primary: str, model: str,
         async for _e in _triage_terminal(question, state):
             yield _e
         return
-    # (b) comeback / blown-lead phrasings: straight to
-    # get_standings_deep (behind/ahead-at-half proxy board) - free-SQL
-    # routes here produced raw ids, wrong seasons, and wrong reasons.
+
+
+
     if (re.search(r"\bcomeback|\bblown lead", question, re.IGNORECASE)
             and not _named_p):
         _cseason = "2025-26"
@@ -2474,10 +2375,10 @@ async def _triage_seed(question: str, primary: str, model: str,
         _cout = _ch.get("out") or {}
         if _result_status(_cout) == "ok":
             if state["tool_results"] and state["tool_results"][-1] is _cout:
-                # QA #68: the pin must carry ONLY the comeback board -
-                # the full deep payload let the frontend render the
-                # clutch grid next to a comeback narrative, orphaned
-                # from any label.
+
+
+
+
                 _crows = _cout.get("rows")
                 _cb = (_crows.get("comeback_kings")
                        if isinstance(_crows, dict) else None) or []
@@ -2552,11 +2453,11 @@ async def _triage_seed(question: str, primary: str, model: str,
                           question, re.IGNORECASE)
     )
     if is_season_avg:
-        # Single-stat asks used to fall through to the planner, which
-        # sent them to delegate_league -> text_to_sql and dead-ended on
-        # a null (F26). The season line is seeded for every rostered
-        # player, so answer straight from the warehouse. No history
-        # gate: follow-up chips restate the player and stat.
+
+
+
+
+
         _sseason = "2025-26"
         _sm = re.search(r"(20\d\d)\s*-\s*(\d\d)", question)
         if _sm:
@@ -2575,14 +2476,14 @@ async def _triage_seed(question: str, primary: str, model: str,
             async for _e in _triage_terminal(question, state):
                 yield _e
             return
-        # Unknown player or missing line: fall through to the planner.
-    # F82: "Curry on/off for the 2018-19 Warriors" - the planner never
-    # picked get_on_off for a historical season, ran text_to_sql, and
-    # refused (data-audit P1: earlier runs showed a wrong-season game
-    # log instead). Pin: one player + on/off phrasing -> get_on_off
-    # with the asked season; the tool's possession fallback covers
-    # 2009-10+. Team comes from the question, else the player's team
-    # that season from the warehouse. Burn-down: on/off class.
+
+
+
+
+
+
+
+
     if (len(found_p) == 1
             and re.search(r"\bon[/\s-]?off\b", question, re.IGNORECASE)
             and not is_compare and not is_trade and not is_cast):
@@ -2619,14 +2520,14 @@ async def _triage_seed(question: str, primary: str, model: str,
                 async for _e in _triage_terminal(question, state):
                     yield _e
                 return
-        # No team resolvable or tool miss: fall through to planner.
-    # F81 (QA hammer, prod v84+): "Luka 2022-23 stats" names a season
-    # but says "stats", not "season averages", so neither season-line
-    # regex fired and the planner raced - 1/3 of runs went to RAPTOR
-    # history (8 tools, then refused the asked season). Pin: a single
-    # named player + an explicit YYYY-YY season + stat intent resolves
-    # the season-line table first (F73 covers 2014-15+; pre-2014 gets
-    # the honest coverage error). Burn-down: explicit-season stat asks.
+
+
+
+
+
+
+
+
     _hsm = re.search(r"\b(20\d\d)\s*-\s*(\d\d)\b", question)
     if (not is_season_avg
             and _hsm
@@ -2653,17 +2554,17 @@ async def _triage_seed(question: str, primary: str, model: str,
             async for _e in _triage_terminal(question, state):
                 yield _e
             return
-        # Pre-2014 season or unknown player: honest error already
-        # emitted; stop here so the planner cannot race to RAPTOR.
+
+
         async for _e in _triage_terminal(question, state):
             yield _e
         return
-    # F77: "career points" asks fell to text_to_sql, which summed a
-    # wrong slice and shipped fabricated numerals (LeBron "291.5
-    # career points", data-audit P0-1). Pin: career totals tool
-    # (live full-career, warehouse partial labeled when live is
-    # unreachable), answer built from payload fields (v67 law).
-    # Burn-down: career-totals class.
+
+
+
+
+
+
     _ctm = _CAREER_TOT_RX.search(question)
     if (_ctm
             and len(_named_p) == 1
@@ -2709,17 +2610,17 @@ async def _triage_seed(question: str, primary: str, model: str,
                 async for _e in _triage_terminal(question, state):
                     yield _e
                 return
-        # Tool failed entirely: fall through to the planner.
-    # F64: cross-turn "compare that to his season average" - the name
-    # arrives by pronoun carry, so the direct-name pin above never
-    # fires, and the planner free-styles a run_python average over a
-    # PARTIAL game-log window (live, 5:17 PM: Brunson "28 PPG across
-    # 13 complete games" labeled as his season average while the full
-    # season line exists). One player carried from history + an
-    # explicit season-line ask routes to get_season_averages; the
-    # ledger/history supplies the "that" side. Playoff-average asks
-    # stay with the playoff lanes; career/last-N stay out via
-    # _SEASON_AVG_NO_RX.
+
+
+
+
+
+
+
+
+
+
+
     if (not is_season_avg
             and len(found_p) == 1
             and state.get("history")
@@ -2745,13 +2646,13 @@ async def _triage_seed(question: str, primary: str, model: str,
             async for _e in _triage_terminal(question, state):
                 yield _e
             return
-        # Unknown player or missing line: fall through to the planner.
-    # F63: cross-turn playoff/Finals carry - "How did he do in the
-    # playoffs?" names nobody, so player-level lanes never fire and the
-    # planner settles for TEAM-level tables (live, 6:22 PM: injuries +
-    # team game logs, honest dead-end 0/3). One player carried from
-    # history + an explicit playoff/Finals ask pins that player's
-    # playoff game log. Named-player playoff asks keep their own lanes.
+
+
+
+
+
+
+
     if (not _named_p
             and len(found_p) == 1
             and state.get("history")
@@ -2773,17 +2674,17 @@ async def _triage_seed(question: str, primary: str, model: str,
             async for _e in _triage_terminal(question, state):
                 yield _e
             return
-        # Unknown player / no playoff log: fall through to the planner.
-    # F62: cross-turn specific-game stat follow-up - "How many points
-    # did he score in that game?" carries the player AND the game
-    # from history; unpinned, the planner dumps the whole playoff log
-    # grouped by month and asks for a date (prod f62, 2/2). One
-    # carried player + "that/this game" + a Finals game number (from
-    # the question itself or the most recent history turn that set
-    # one) resolves the exact game row from the warehouse and answers
-    # from the payload (v67 law: deterministic on pinned lanes).
-    # Burn-down: Finals game-N only; regular-season or undated "that
-    # game" references stay with the planner.
+
+
+
+
+
+
+
+
+
+
+
     if (not _named_p
             and len(found_p) == 1
             and state.get("history")
@@ -2900,16 +2801,16 @@ async def _triage_seed(question: str, primary: str, model: str,
                         async for _e in _triage_terminal(question, state):
                             yield _e
                         return
-    # F61: "all-time record for most points by a team in one game" went
-    # to delegate_league + freeform text_to_sql and shipped a different
-    # number each run (144 off playoff rows vs 157 off regular rows)
-    # with no coverage window named. Deterministic lane:
-    # silver_hist_gamelogs is the team game-log table (2009-10 through
-    # current); answer from the payload verbatim with the span named
-    # (v67 law).
-    # Burn-down: team single-game SCORING record only - player records
-    # keep the gamelog best-game pin, other team stat records
-    # (rebounds/assists) stay with the planner until they flake.
+
+
+
+
+
+
+
+
+
+
     if (re.search(r"\bmost points\b|\bscoring record\b|"
                   r"\bhighest[\s-]*scor", question, re.IGNORECASE)
             and re.search(r"\bteam\b", question, re.IGNORECASE)
@@ -2979,27 +2880,27 @@ async def _triage_seed(question: str, primary: str, model: str,
             async for _e in _triage_terminal(question, state):
                 yield _e
             return
-    # Four-factors team asks: verified live (2026-09-13) that the
-    # planner free-formed "Thunder four factors" through text_to_sql /
-    # run_python and shipped WRONG figures (12.4% TOV vs 10.8% real,
-    # "FT rate not available" while it sits in the table). Pin the lane
-    # to get_team_four_factors (silver_four_factors_team, computed
-    # offline from team game rows) with a deterministic answer (v67
-    # law). Player four-factors keep get_four_factors (found_p guard).
-    # Burn-down: team-scope only; player on/off four-factors and
-    # four-factors inside broader compares stay with the planner.
-    # QA hammer P2 (2026-09-13 v79 retest): "compare OKC and Detroit by
-    # four factors" carries "compare", so the old gate skipped the lane
-    # and routed to PREVIEW filler. Two-team four-factors compares run
-    # one call per team and ship a deterministic side-by-side.
+
+
+
+
+
+
+
+
+
+
+
+
+
     if (re.search(r"\bfour[\s-]*factors?\b", question, re.IGNORECASE)
             and not found_p
             and not is_trade and not is_cast):
         from shared.tools._core import SEASON as _FFCUR
 
         def _ffpct(v: object) -> str:
-            # QA hammer P3: table values are raw fractions (0.5613);
-            # prose must render percents (56.1%) like the check-lines.
+
+
             try:
                 return f"{float(v) * 100:.1f}%"
             except (TypeError, ValueError):
@@ -3095,15 +2996,15 @@ async def _triage_seed(question: str, primary: str, model: str,
             async for _e in _triage_terminal(question, state):
                 yield _e
             return
-    # Record-when-plays: "What is Denver's record when Jokic plays?"
-    # has a planner recipe (delegate_team -> search_game_logs, report
-    # rows.record verbatim) but sampling skips it ~50% of the time
-    # (test_record_when_jokic_plays flakes identically on the deployed
-    # base - unpinned lane variance, not a regression). One resolvable
-    # player + a record-when-plays ask pins search_game_logs with no
-    # filters and answers from rows.record verbatim (v67 law).
-    # Burn-down: "plays" only - "sits"/"without" complements stay
-    # with the planner.
+
+
+
+
+
+
+
+
+
     if (re.search(r"\brecord\b", question, re.IGNORECASE)
             and re.search(r"\bwhen\b", question, re.IGNORECASE)
             and re.search(r"\bplays?\b|\bplaying\b|\bon the floor\b|"
@@ -3151,24 +3052,24 @@ async def _triage_seed(question: str, primary: str, model: str,
                 async for _e in _triage_terminal(question, state):
                     yield _e
             return
-        # Unknown player / no games: fall through to the planner.
-    # F67: "their best player" carry - the planner resolved "their" to
-    # team-scoring TOTALS and gave up (live, 6:22 PM chain retest),
-    # though the control ask with the team named outright works. One
-    # team resolved (named or carried) + a best-player ask reads the
-    # team's top scorers straight from the leaders table. Carried
-    # players from history do not block the pin: the question names
-    # nobody (capital guard), so a carried player is context, not
-    # the ask.
-    # Resolve "their" deterministically: a team named in the question
-    # wins; otherwise the textually FIRST team of the MOST RECENT
-    # history turn that mentions one - and only when the question
-    # actually carries a pronoun/reference, so a league-wide ask
-    # ("best player in the league") never inherits a team. Battery
-    # run 2 flake (local, 8:59 PM): T1's standings answer also named
-    # the Spurs, so "exactly one carried team" silently failed 1/3
-    # of the time and the turn fell to the planner. Pronoun reference
-    # is recency, not uniqueness.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
     def _first_team_in(text: str) -> str | None:
         cands = _detect_entities(text)[1]
         if not cands:
@@ -3180,19 +3081,19 @@ async def _triage_seed(question: str, primary: str, model: str,
             spots = [s for s in spots if s >= 0]
             return min(spots) if spots else len(low)
         return min(cands, key=_pos)
-    # F67: "best record this season?" - the highest-traffic standings
-    # ask - ran through delegate_league planner variance and sometimes
-    # shipped an answer with no team name at all (battery F67[2]),
-    # which then broke the next turn's "their" carry. Pin it: top
-    # standings row, answer text built from payload fields (v67 law:
-    # deterministic on pinned lanes). Burn-down: standings-record class.
+
+
+
+
+
+
     if (re.search(r"\bbest record\b|\btop record\b", question,
                   re.IGNORECASE)
             and not found_p and not _named_p
             and not is_trade and not is_cast and not is_compare):
-        # F76: honor an asked season ("best record in 2016-17") -
-        # the pin used to hardcode the current season and answered
-        # historical asks with today's table.
+
+
+
         _bseason = "2025-26"
         _bm = re.search(r"\b(20\d\d)-(\d\d)\b", question)
         if _bm:
@@ -3224,13 +3125,13 @@ async def _triage_seed(question: str, primary: str, model: str,
                 async for _e in _triage_terminal(question, state):
                     yield _e
             return
-    # F79: "best 5-man lineups in 2021-22?" went to the planner, which
-    # called get_lineup_leaders with the default (current) season and
-    # presented 2025-26 lineups as the 2021-22 answer (data-audit P1).
-    # Pin the leaderboard ask: asked season wins (the tool's hist
-    # fallback covers 2009-10+). Team-scoped lineup asks ("Lakers best
-    # lineup") stay with the planner's get_lineups path. Burn-down:
-    # lineup-leaderboard class.
+
+
+
+
+
+
+
     if (re.search(r"\bbest\b|\btop\b", question, re.IGNORECASE)
             and re.search(r"\b(?:five|5)[\s-]*man\b|\blineups?\b",
                           question, re.IGNORECASE)
@@ -3272,11 +3173,11 @@ async def _triage_seed(question: str, primary: str, model: str,
             and not _named_p
             and re.search(r"\bbest players?\b|\bstar players?\b|"
                           r"\btop players?\b", question, re.IGNORECASE)
-            # a mid-sentence capitalized token is a name the static
-            # list did not catch ("Is Brunson their best player?") -
-            # leave those to the planner. Finals/NBA/Playoffs are
-            # keywords, not names (QA: "their best player in the
-            # Finals?" escaped the pin on the capital F).
+
+
+
+
+
             and not re.search(
                 r"(?<!^)\b[A-Z][a-z]{2,}\b",
                 __import__("functools").reduce(
@@ -3302,17 +3203,17 @@ async def _triage_seed(question: str, primary: str, model: str,
                     _bcon = _bstore.connect()
                     try:
                         if _bfinals:
-                            # Finals-phrased ask: answer from the actual
-                            # Finals game logs (round 4 dates), not the
-                            # season leader table (QA F63 team-carry gap:
-                            # "Spurs' best player in the Finals").
+
+
+
+
                             _fd = [r[0] for r in _bcon.execute(
                                 "SELECT DISTINCT GAME_DATE FROM "
                                 "silver_playoffs WHERE _season = ? AND "
                                 "substr(CAST(GAME_ID AS VARCHAR), 8, 1) "
                                 "= '4'", ["2025-26"]).fetchall()]
                             if _fd:
-                                # gamelogs store 'Jun 13, 2026', not ISO
+
                                 from datetime import datetime as _bdt
                                 _fd = [_bdt.strptime(str(_d), "%Y-%m-%d")
                                        .strftime("%b %-d, %Y")
@@ -3397,9 +3298,9 @@ async def _triage_seed(question: str, primary: str, model: str,
             return
     if re.search(r"\bris(?:ers?|ing)\b|\bfall(?:ers?|ing)\b",
                  question, re.IGNORECASE) and not found_p and not is_trade:
-        # Player-level risers used to fall to the planner, which burned
-        # 12 tool calls / 177s and still surfaced TEAM win rates
-        # (QA F12 retest). One hop, warehouse only.
+
+
+
         _team_intent = found_t or re.search(
             r"\bteams?\b|\bfranchise", question, re.IGNORECASE)
         _rtool = ("get_risers" if _team_intent
@@ -3410,18 +3311,18 @@ async def _triage_seed(question: str, primary: str, model: str,
             yield _e
         _rout = _rh2.get("out") or {}
         if _result_status(_rout) == "ok":
-            # No rows=[payload] wrap: the dataset table renders the raw
-            # payload as one giant JSON row (QA #23). Unwrapped, asTable
-            # finds the risers/fallers arrays like team get_risers (F12).
+
+
+
             async for _e in _triage_terminal(question, state):
                 yield _e
             return
     if re.search(r"back-to-backs?|back to backs?|\bb2b\b|rest days?|"
                  r"days? of rest|rest advantage", question, re.IGNORECASE) \
             and not is_trade and not is_cast:
-        # QA F17: back-to-back asks fell to the planner, which substituted
-        # an irrelevant win-streak table. Route to the rest splits tool;
-        # its offseason note makes "no games until preseason" explicit.
+
+
+
         _rest_args: dict[str, Any] = {"season": "2025-26"}
         if found_t:
             from shared.tools._core import coerce_team_id as _ctid
@@ -3446,10 +3347,10 @@ async def _triage_seed(question: str, primary: str, model: str,
         r"title chances|playoff chances|win the (title|championship|finals)",
         question, re.IGNORECASE))
     if (_elo_ask or _odds_ask) and not is_trade and not is_cast:
-        # QA F10: the league desk used to improvise ELO from NET_RATING
-        # ("OKC ELO 11.1") and hand out raw 1.0 odds. Route to the real
-        # tools: get_elo_standings (1500-scale ELO) and get_playoff_sim
-        # (actual results while the season is complete).
+
+
+
+
         _any_ok = False
         if _odds_ask:
             _oh: dict[str, Any] = {}
@@ -3504,8 +3405,8 @@ async def _triage_seed(question: str, primary: str, model: str,
                 yield _e
         return
     if _is_shot and found_p and not is_trade and not is_cast:
-        # Shot-chart asks used to burn ~22 planner tool calls / 67s on a
-        # compare thread (QA F3/#19 latency). One hop, warehouse-first.
+
+
         _stool = "get_shot_compare" if len(found_p) >= 2 else "get_shot_zones"
         _sargs = ({"a": found_p[0], "b": found_p[1], "season": "2025-26"}
                   if len(found_p) >= 2
@@ -3515,7 +3416,7 @@ async def _triage_seed(question: str, primary: str, model: str,
             yield _e
         _sout = _sh3.get("out") or {}
         if _result_status(_sout) == "ok":
-            # Same QA #23 wrap leak as the risers path; pass through raw.
+
             async for _e in _triage_terminal(question, state):
                 yield _e
             return
@@ -3529,11 +3430,11 @@ async def _triage_seed(question: str, primary: str, model: str,
         and not state.get("history")
     )
     if is_league_team:
-        # "which team had the most 50-point games this season" also
-        # matches _LEAGUE_LEADERS_RX, so this runs first: answering it
-        # per-player would silently group by the wrong population.
-        # team_wide groups matched games by the player's own team that
-        # night instead. Same clean single-turn guards as below.
+
+
+
+
+
         _targs = _gamelog_args(question, None, _named)
         _targs["team_wide"] = True
         _th: dict[str, Any] = {}
@@ -3542,8 +3443,8 @@ async def _triage_seed(question: str, primary: str, model: str,
             yield _e
         _tout = _th.get("out") or {}
         if _result_status(_tout) == "ok":
-            # Wrap like the player fast-path: analytics only treats
-            # entries with a non-empty "rows" key as evidence.
+
+
             if state["tool_results"] and state["tool_results"][-1] is _tout:
                 state["tool_results"][-1] = {
                     "tool": "search_game_logs", "rows": [_tout]}
@@ -3561,12 +3462,12 @@ async def _triage_seed(question: str, primary: str, model: str,
         and not state.get("history")
     )
     if is_league_leaders:
-        # Ticket B: "who had the most 50-point games this season" names
-        # no player, so the player-scoped fast-path can't fire and the
-        # planner improvises SQL. Answer from the warehouse instead via
-        # the league-wide mode of search_game_logs. Only on clean
-        # single-turn questions with no named player; anything
-        # uncertain falls through to the planner.
+
+
+
+
+
+
         _largs = _gamelog_args(question, None, _named)
         _largs["league_wide"] = True
         _lh: dict[str, Any] = {}
@@ -3575,8 +3476,8 @@ async def _triage_seed(question: str, primary: str, model: str,
             yield _e
         _lout = _lh.get("out") or {}
         if _result_status(_lout) == "ok":
-            # Wrap like the player fast-path: analytics only treats
-            # entries with a non-empty "rows" key as evidence.
+
+
             if state["tool_results"] and state["tool_results"][-1] is _lout:
                 state["tool_results"][-1] = {
                     "tool": "search_game_logs", "rows": [_lout]}
@@ -3584,28 +3485,28 @@ async def _triage_seed(question: str, primary: str, model: str,
                 yield _e
         return
     if (is_trade
-            # QA #70: QA retests inside existing threads. The history
-            # gate exists for context-dependent follow-ups ("who wins
-            # it?") - a self-contained question naming a team or
-            # player must pin regardless of thread history.
+
+
+
+
             and (not state.get("history") or found_t or found_p)
             and _TRADE_VALUE_RX.search(question)
             and not _TRADE_VALUE_NO_RX.search(question)
-            # F56: "Did the Mavericks win the Luka trade?" names ONE
-            # team + the player - _trade_sides resolves the player's
-            # team into the second side. Requiring two named teams
-            # let one-sided phrasings escape to the planner, which
-            # answered a two-sided question from one roster.
-            # Exactly 2 named teams, or 1 team + named player(s) whose
-            # own team becomes the second side. Three-team trades
-            # (3 named teams) stay with the planner.
+
+
+
+
+
+
+
+
             and (len(found_t) == 2
                  or (len(found_t) == 1 and found_p))):
-        # B3: "who wins this trade on value" used to go through two planner
-        # LLM rounds (resolve_entity, then the value call) before reaching
-        # get_trade_value, which resolves names itself. Parse sides
-        # deterministically and answer straight from the warehouse.
-        # Exactly two teams only: three-team trades fall to the planner.
+
+
+
+
+
         _vseason = "2025-26"
         _vm = re.search(r"(20\d\d)\s*-\s*(\d\d)", question)
         if _vm:
@@ -3618,49 +3519,49 @@ async def _triage_seed(question: str, primary: str, model: str,
                 yield _e
             _vout = _vh.get("out") or {}
             if _result_status(_vout) == "ok":
-                # Wrap like the prediction/gamelog fast-paths: analytics
-                # only treats entries with a non-empty "rows" as evidence.
+
+
                 if state["tool_results"] and state["tool_results"][-1] is _vout:
                     state["tool_results"][-1] = {
                         "tool": "get_trade_value", "rows": [_vout]}
                 async for _e in _triage_terminal(question, state):
                     yield _e
                 return
-            # QA #70: the F47 both-sides refusal is terminal - the
-            # planner's resolve_entity self-correction cannot fill a
-            # side the question never named, and the extra 5+ tools
-            # (60-100s) only re-arrive at the same answer. Ship the
-            # refusal via the no-evidence compose branch.
+
+
+
+
+
             if _vout.get("terminal"):
                 async for _e in _triage_terminal(question, state):
                     yield _e
                 return
-            # Unknown players or missing data: fall through to the planner
-            # so it can self-correct with resolve_entity. The tool's hints
-            # are already in state["tool_results"].
+
+
+
     is_compare_fast = (
         is_compare
         and 2 <= len(_named_p) <= 3
-        # _detect_entities caps at 3 players, so a 4-way ask would
-        # silently drop one - the same wrong-shape answer QA flagged on
-        # the 2-of-3 debate card. Three or more "vs" separators means
-        # the question names more players than the pin can serve.
+
+
+
+
         and len(re.findall(r"\bvs\.?\b", question)) < 3
         and not is_trade
         and not is_cast
         and not re.search(r"\bimpact\b", question, re.IGNORECASE)
-        # Chips and follow-ups name both players again; the history gate
-        # used to push those to the LLM planner, which could answer with
-        # zero tools and no data.
+
+
+
     )
     if is_compare_fast:
-        # Two-player compare turns burned 4 planner LLM rounds (10.3s)
-        # on deterministic routing: get_compare, then one scout per
-        # player. The tool resolves names itself, so answer straight
-        # from the warehouse. QA #71: a 3-player compare fanned out
-        # through the planner (29 tools / 30s) - run the three pairwise
-        # get_compare calls deterministically instead. 4+ player asks
-        # fall to the planner.
+
+
+
+
+
+
+
         _cseason = "2025-26"
         _cm = re.search(r"(20\d\d)\s*-\s*(\d\d)", question)
         if _cm:
@@ -3747,8 +3648,8 @@ async def _triage_seed(question: str, primary: str, model: str,
                 if not isinstance(out, dict):
                     out = {"tool": "get_trade_check", "rows": out}
                 if out.get("ok") and isinstance(out.get("rows"), dict):
-                    # Compose inverted this verdict once already; ship
-                    # the payload-built text (v67 law).
+
+
                     out.setdefault("meta", {})["deterministic_answer"] = (
                         _trade_verdict_text(out["rows"]))
                 _ms = int((time.time() - _t0) * 1000)
@@ -3828,9 +3729,9 @@ async def _triage_seed(question: str, primary: str, model: str,
         _cast_rows: list[dict[str, Any]] = []
         _cast_notes: list[str] = []
         if sides:
-            # Structured rows, not print-only text: the evidence card and
-            # the narrative both get real player names sorted by PPG
-            # (QA F34 follow-up: no more "Mate 1/2/3/4" placeholders).
+
+
+
             from shared import store as _store3
 
             try:
@@ -3958,26 +3859,26 @@ async def _triage_seed(question: str, primary: str, model: str,
         and not is_compare and not is_trade and not is_cast
         and not state.get("history"))
     if is_impact:
-        # Unambiguous impact-estimate phrasing ("estimate X's impact",
-        # "how good has [player] been"): get_impact_estimate answers it
-        # directly. Without this the question detours to delegate_scout,
-        # whose brief only routes impact to get_raptor_history, and the
-        # desk improvises impact numbers from raw net ratings.
-        # RAPTOR/WAR/peak/career phrasing is claimed by the raptor
-        # fast-path above and never reaches this block. Only on clean
-        # single-turn questions; anything uncertain falls through to the
-        # planner.
+
+
+
+
+
+
+
+
+
         _ih: dict[str, Any] = {}
         async for _e in _triage_tool(
                 "get_impact_estimate", {"player": found_p[0]}, state, _ih):
             yield _e
         _iout = _ih.get("out") or {}
         if _result_status(_iout) == "ok":
-            # _triage_tool appended the raw tool dict. analytics_agent
-            # only treats tool_results entries with a non-empty "rows"
-            # key as evidence, so wrap it the same way the prediction
-            # fast-path does; otherwise the turn falls into the canned
-            # no-data branch and the LLM never runs.
+
+
+
+
+
             if state["tool_results"] and state["tool_results"][-1] is _iout:
                 state["tool_results"][-1] = {
                     "tool": "get_impact_estimate", "rows": [_iout]}
@@ -3999,9 +3900,9 @@ async def _triage_seed(question: str, primary: str, model: str,
         return
     is_comps = bool(found_p and _COMPS_RX.search(question))
     if is_comps and not is_trade and not is_cast and not is_compare:
-        # "players like X" phrasing: get_comps answers directly. Routing
-        # through delegate_league first wastes a desk plus planner rounds
-        # improvising similarity from SQL.
+
+
+
         _decisive = True
         for p in found_p[:2]:
             _ch: dict[str, Any] = {}
@@ -4017,9 +3918,9 @@ async def _triage_seed(question: str, primary: str, model: str,
         return
     if (_BRIEFING_RX.search(question) and _BRIEFING_CONTEXT_RX.search(question)
             and not is_trade and not is_cast and not is_compare):
-        # Slate/morning briefing: get_briefing owns the scoreboard. A date
-        # in the question pins the day; otherwise the tool defaults to
-        # yesterday.
+
+
+
         _bm = re.search(r"(20\d\d)[-/](\d{1,2})[-/](\d{1,2})", question)
         _bdate = ""
         if _bm:
@@ -4124,10 +4025,10 @@ async def _triage_seed(question: str, primary: str, model: str,
             {"task": task}, sort_keys=True))
         if (_result_status(out) == "ok" and not state.get("history")
                 and not _is_deep_question(question)):
-            # Desk answered a list question decisively. The planner's
-            # follow-up round adds nothing here, and with thread history
-            # it would inject carry context the desk never saw, so only
-            # skip on a clean single-turn hit.
+
+
+
+
             async for _e in _triage_terminal(question, state):
                 yield _e
         return
@@ -4242,14 +4143,14 @@ async def _triage_seed(question: str, primary: str, model: str,
                     {"task": task}, sort_keys=True))
             if seeds:
                 return
-    # F74 (2026-09-14 prod QA): concept/glossary asks ("what is a pick
-    # and roll?", "how does defensive 3 seconds work?") name nobody and
-    # hit no data lane; they fell through the picker to the planner,
-    # called nothing, and shipped a dataset refusal. Answer the concept
-    # plainly from general basketball knowledge - no tools, and per the
-    # v67 law no statistics the warehouse did not produce. The guards
-    # keep data asks on their lanes: any entity, season, stat, or
-    # recency keyword skips this lane entirely.
+
+
+
+
+
+
+
+
     if (not found_p and not found_t
             and re.match(
                 r"^\s*(?:what(?:'s| is| are)\b|how do(?:es)?\b|"
@@ -4287,14 +4188,14 @@ async def _triage_seed(question: str, primary: str, model: str,
             async for _e in _triage_terminal(question, state):
                 yield _e
             return
-        # LLM miss: fall through to the picker/planner as before.
+
     pick = None
     if is_trade:
         pick = "delegate_league"
     elif re.search(r"injur|healthy|available|\bstatus\b", question,
                    re.IGNORECASE):
-        # F45: scout-only routes cannot see the injury report or the
-        # playoff inactive listings; league owns both.
+
+
         pick = "delegate_league"
     elif found_p and not found_t:
         pick = "delegate_scout"
@@ -4351,13 +4252,13 @@ class DimeState(TypedDict):
     history: list[dict[str, str]]
     analysis: str
     suggestions: list[str]
-    # Turn-level caches, reset per turn in run_chat.
-    # desk_cache: (desk, entity) -> first desk result, shared across rounds.
+
+
     desk_cache: NotRequired[dict[str, dict[str, Any]]]
-    # ledger: thread evidence facts (v2 step 2), loaded from store per
-    # turn; extraction at ship time emits a ledger_facts event.
+
+
     ledger: NotRequired[list[str]]
-    # entity_cache: normalized query -> resolve_entity result.
+
     entity_cache: NotRequired[dict[str, dict[str, Any]]]
     selected_skills: NotRequired[list[str]]
     answer_entity_level: NotRequired[str | None]
@@ -4368,12 +4269,6 @@ def _call_key(name: str, args: dict[str, Any]) -> str:
 
 
 def _desk_dedupe_key(name: str, args: dict[str, Any]) -> tuple | None:
-    """Turn-scoped dedupe key for a delegate desk: (desk, entities).
-
-    Returns None when no player/team entity is detectable in the desk
-    task, in which case the call is not dedupable (e.g. league-wide
-    scans whose tasks legitimately differ each round).
-    """
     try:
         task = args.get("task", "") if isinstance(args, dict) else ""
         qp, qt = _detect_entities(str(task or ""))
@@ -4389,7 +4284,7 @@ def _all_tools(state: DimeState) -> list:
     return list(v1_tools) + delegate_tools(state["primary"], state["model"])  # type: ignore[arg-type]
 
 
-# B2: text_to_sql failed x5 across 5 planner rounds (188s turn); cut a tool after 2 straight fails.
+
 _CIRCUIT_BREAKER_STRIKES = 2
 
 
@@ -4429,7 +4324,7 @@ def _is_deep_question(question: str) -> bool:
     for pat in DEEP_TRIGGERS:
         if re.search(pat, q):
             return True
-    # 3+ entities also triggers deep mode
+
     try:
         qp, qt = _detect_entities(question)
         if len(qp) + len(qt) >= 3:
@@ -4514,7 +4409,6 @@ def _with_title(rec: dict[str, Any]) -> dict[str, Any]:
 
 
 def _authoritative_answer(results: list[dict[str, Any]]) -> str | None:
-    """Return an answer owned by a deterministic tool, including pin wrappers."""
     for result in results:
         if not isinstance(result, dict):
             continue
@@ -4537,11 +4431,11 @@ def _flatten_tables(results: list[dict[str, Any]]) -> list[dict[str, Any]]:
             return None
         out = dict(rec)
         out.pop("tool", None)
-        # QA F37: several fast paths wrap the whole tool payload as
-        # rows=[payload]; the table then renders one row whose columns
-        # are tool/ok/rows/meta with raw JSON blobs (risers #23, season
-        # averages #37). Unwrap centrally so EVERY tool-result table is
-        # safe, not just the paths patched one by one.
+
+
+
+
+
         rows = out.get("rows")
         if (isinstance(rows, list) and len(rows) == 1
                 and isinstance(rows[0], dict)
@@ -4553,17 +4447,17 @@ def _flatten_tables(results: list[dict[str, Any]]) -> list[dict[str, Any]]:
             if isinstance(inner_meta, dict):
                 meta = out.get("meta") if isinstance(out.get("meta"), dict) else {}
                 out["meta"] = {**inner_meta, **meta}
-        # QA #66: rows keyed ONLY by an id get a readable name first -
-        # otherwise the id strip below leaves the model with "one
-        # player" and no name to cite.
+
+
+
         try:
             from shared.tools._core import attach_names as _attach_names
             out["rows"] = _attach_names(out.get("rows"))
         except Exception:
             pass
-        # QA #62: raw ids are plumbing, never user-facing table
-        # columns. Frontend references no *_id field (verified by
-        # grep), so strip them centrally at the emit point.
+
+
+
         _rows = out.get("rows")
         if isinstance(_rows, list):
             out["rows"] = [
@@ -4573,10 +4467,10 @@ def _flatten_tables(results: list[dict[str, Any]]) -> list[dict[str, Any]]:
                 for r in _rows
             ]
         out["kind"] = _KIND_FOR_TOOL.get(str(tool or ""), "dataset")
-        # Every table keeps the title _with_title computed - dropping
-        # non-curated titles here left pin-lane payloads (playoff
-        # intel, standings, season averages) untitled, and the card
-        # header fell back to a bare "DATASET" (QA S2 polish nit).
+
+
+
+
         if tool in _DISPLAY_TITLES:
             try:
                 meta = out.get("meta") if isinstance(out.get("meta"), dict) else None
@@ -4604,15 +4498,15 @@ def _flatten_tables(results: list[dict[str, Any]]) -> list[dict[str, Any]]:
             clean = _sanitize(_with_title(r))
             if clean is not None:
                 flat.append(clean)
-    # F71 empty-canvas fix: tables drive the artifact cards and the canvas.
-    # Two shapes rendered empty or junk for many prompts:
-    # 1. rows None/[] (empty supervisor notes, null stat payloads) became
-    #    cards that open to "No rows returned for this view".
-    # 2. single-object rows (one player's advanced line) hit table views
-    #    that only render arrays, so real data showed as empty.
-    # Drop artifacts with nothing to show (keeping verdict/deterministic
-    # answer carriers) and wrap flat dict rows into one-row tables.
-    # Structured payloads (compare {a, b}, nested views) pass through.
+
+
+
+
+
+
+
+
+
     out_flat: list[dict[str, Any]] = []
     for t in flat:
         rows = t.get("rows")
@@ -4629,14 +4523,14 @@ def _flatten_tables(results: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return out_flat
 
 
-# Termination gate (SmolAgents final_answer_checks, adapted for Dime).
-# Runs BEFORE anything renders. Every embedded table must match the
-# question kind and carry rows; rate-stat claims must name their
-# minutes floor. The Colby Jones episode shipped a TEAM SPLITS table
-# for "best defensive players in the league" and a LEADERS PTS table
-# for "best defensive players?" - team-level views for player-kind
-# questions. A gate catches all of that centrally instead of one more
-# regex per incident.
+
+
+
+
+
+
+
+
 _GATE_TEAM_TABLE_RX = re.compile(
     r"team splits|team totals|standings|four factors|matchup splits",
     re.IGNORECASE,
@@ -4648,13 +4542,6 @@ _GATE_SUPERLATIVE_RX = re.compile(
 
 
 def _gate_question_kind(question: str) -> str:
-    """Classify the question's entity kind for table matching.
-
-    Uses only structural entity detection (_detect_entities). No
-    keyword/regex heuristics — phrasing like "best offense" must not
-    change which tables are kept. If no entities are found, returns
-    "other" (no kind-based table dropping).
-    """
     try:
         found_p, found_t = _detect_entities(question or "")
     except Exception:
@@ -4683,15 +4570,6 @@ def _gate_table_level(table: dict) -> str:
 
 def verify_table_kind(question: str, table: dict,
                       question_kind: str | None = None) -> bool:
-    """Termination gate: table entity level must match the question kind.
-
-    question_kind is the LLM-determined intent (from
-    state["answer_entity_level"]); it wins over entity detection when
-    provided ("player"/"team"). It is never derived from question-text
-    keywords. Returns False on a mismatch in EITHER direction (player
-    question + team-level table, or team question + player-level table).
-    "mixed"/"other"/unknown kinds never reject.
-    """
     kind = question_kind if question_kind in ("player", "team") \
         else _gate_question_kind(question)
     if kind not in ("player", "team"):
@@ -4708,8 +4586,6 @@ def verify_table_kind(question: str, table: dict,
 def _gate_tables(question: str,
                  tables: list,
                  question_kind: str | None = None) -> tuple[list, dict]:
-    """Drop empty views and tables whose entity level mismatches the
-    question kind. Returns (kept_tables, report)."""
     kind = question_kind if question_kind in ("player", "team") \
         else _gate_question_kind(question)
     kept: list = []
@@ -4730,8 +4606,6 @@ def _gate_tables(question: str,
 
 
 def _gated_tables(state: dict) -> list:
-    """_flatten_tables plus the termination gate - the single emit point
-    for rendered artifact tables."""
     tables, report = _gate_tables(
         state.get("question", "") or "",
         _flatten_tables(state.get("tool_results") or []),
@@ -4746,9 +4620,6 @@ def _gated_tables(state: dict) -> list:
 
 def _gate_qualifications(text: str,
                          tables: list) -> tuple[str, dict]:
-    """Rate-stat claims must name their minutes floor. When a rendered
-    leaderboard table carries meta.qualification and the answer cites
-    numbers without naming the floor, append it - never ship it silent."""
     applied: list = []
     quals: list = []
     for t in tables:
@@ -4764,9 +4635,9 @@ def _gate_qualifications(text: str,
             text = ((text or "").rstrip() + "\n\nQualification: "
                     + "; ".join(quals) + ".")
             applied.append("qualification")
-    # On-court ratings are lineup context, not isolated individual
-    # value: when the answer makes a superlative claim off one, name
-    # the caveat the tool itself carries.
+
+
+
     coverages: list = []
     for t in tables:
         meta = t.get("meta")
@@ -4798,16 +4669,6 @@ _MINUTES_QUAL_RX = re.compile(
 
 
 def verify_minutes_qual(answer_text: str, tables: list) -> list[str]:
-    """Termination gate (REJECT check): rate-stat claims must carry a
-    minutes qualification. The qualification may live in the same
-    sentence, anywhere else in the answer, or in an attached table's
-    qualification meta / minutes-bearing columns - a separate qual
-    sentence or the data table itself counts.
-
-    Returns the violating sentences (empty = pass). This is a reject
-    check - callers drop the returned sentences. _gate_qualifications
-    stays as-is (append repair) and is untouched by this function.
-    """
     try:
         _answer_has_qual = bool(_MINUTES_QUAL_RX.search(answer_text or ""))
     except Exception:
@@ -5064,12 +4925,12 @@ async def actual_tool_node(state: DimeState) -> AsyncGenerator[dict[str, Any], N
                               if isinstance(args, dict) else "")
                     _t0 = time.time()
                     out = await _desk_attempt(_task0, DESK_CALL_TIMEOUT_S)
-                    # Desk recovery: one retry with a simpler, more
-                    # direct formulation instead of surfacing a dead-end
-                    # error straight to the user. The retry gets only
-                    # the time left under the desk wall-clock budget so
-                    # the two attempts together stay within
-                    # DESK_DEADLINE_S (170s), never 2x the call cap.
+
+
+
+
+
+
                     if _result_status(out) != "ok" and _task0:
                         _first_err = out.get("error", "unknown error")
                         _retry_timeout = min(
@@ -5131,8 +4992,8 @@ async def actual_tool_node(state: DimeState) -> AsyncGenerator[dict[str, Any], N
         return await asyncio.gather(*(_run(c) for c in pending))
 
     _gather = _spawn(_gather_all(), name="tool-gather")
-    # Drain live desk tokens while the tools run; each _run posts one
-    # None sentinel when it finishes.
+
+
     _remaining = len(pending)
     while _remaining > 0:
         _item = await _tok_q.get()
@@ -5155,7 +5016,7 @@ async def actual_tool_node(state: DimeState) -> AsyncGenerator[dict[str, Any], N
             "tools", name, res, elapsed.get(id(call), 0))
         yield _event("tool_result", rdata)
         if res.get("deduped"):
-            continue  # deduped reuse: no second trace replay in the UI
+            continue
         for _te in _trace_replay_events(res if isinstance(res, dict) else {}):
             _td = dict(_te.get("data", {}) or {})
             _td["node"] = "tools"
@@ -5211,12 +5072,6 @@ async def _suggest_llm(
     calls_made: list[str],
     llm: Any,
 ) -> list[str]:
-    """Evidence-grounded follow-up suggestions via LLM.
-
-    Falls back to hardcoded _suggest on any failure. The LLM sees a
-    compact summary of what data came back, so suggestions reference
-    actual players, teams, and stats — not generic templates.
-    """
     try:
         evidence: list[str] = []
         for r in results[:6]:
@@ -5325,8 +5180,8 @@ def _clean_error_text(text: str) -> str:
     s = text or ""
     s = re.sub(r"\b(get_\w+|delegate_\w+|resolve_entity|search_nba|run_python|text_to_sql)\b", "", s, flags=re.IGNORECASE)
     s = re.sub(r"Client error '\d{3}[^']*' for url\s*'[^']*'\.?", " ", s)
-    # content-free sandbox/schema failures are not an "informative
-    # refusal" - strip them so the honest fallback fires instead
+
+
     s = re.sub(r"unknown table or column\.?[^\n]*", " ", s,
                flags=re.IGNORECASE)
     s = re.sub(r"Valid tables:[^\n]*", " ", s, flags=re.IGNORECASE)
@@ -5336,8 +5191,8 @@ def _clean_error_text(text: str) -> str:
     s = re.sub(r"`[^`]*`", " ", s)
     s = re.sub(r"(?is)\bselect\b.*?(;|$)", " ", s)
     s = re.sub(r"\bSQL\b", " ", s, flags=re.IGNORECASE)
-    # QA #32: stripping 3-4 digit runs ate YEARS ("2025-26" -> "-26").
-    # Only long runs (raw ids like 1629029) get scrubbed here.
+
+
     s = re.sub(r"\b\d{5,}\b", " ", s)
     s = re.sub(r"\s+", " ", s).strip(" .;:,")
     s = re.sub(r"\s+\b(id|on|in|at|for|with|from|and|or)$", "", s, flags=re.IGNORECASE).strip(" .;:,")
@@ -5346,10 +5201,10 @@ def _clean_error_text(text: str) -> str:
 
 async def analytics_agent(state: DimeState) -> AsyncGenerator[dict[str, Any], None]:
     yield _event("node_update", {"node": "analytics", "status": "running"})
-    # F74: a triage lane that already composed the final analysis
-    # (concept answers) skips evidence assembly - with zero tool
-    # results the no-evidence branch would clobber it with a false
-    # "No data found".
+
+
+
+
     if state.get("_analysis_final"):
         yield _event("node_update",
                      {"node": "analytics", "status": "complete"})
@@ -5366,10 +5221,10 @@ async def analytics_agent(state: DimeState) -> AsyncGenerator[dict[str, Any], No
         if isinstance(r, dict) and _has_rows(r.get("rows"))
         and r.get("tool", "") not in ("resolve_entity", "search_nba")
     ]
-    # F45: a delegate whose answer is a NOTE (injury miss / playoff
-    # inactive listing) carries it in a real summary with zero rows.
-    # That is evidence; without this the compose collapses it to
-    # "No <player> data found" over a correct desk answer.
+
+
+
+
     _delegate_ok = any(
         isinstance(r, dict) and r.get("agent") and r.get("ok")
         and isinstance(r.get("summary"), str)
@@ -5377,11 +5232,11 @@ async def analytics_agent(state: DimeState) -> AsyncGenerator[dict[str, Any], No
         for r in state["tool_results"]
     )
     if not evidenced and not _delegate_ok:
-        # F63-T3 class: fresh evidence failed, but the thread ledger
-        # holds payload-extracted facts from earlier turns. "No New
-        # York Knicks data found" shipped live while the ledger knew
-        # 'NBA Finals result: NYK 4 - 1 SAS'. The ledger is
-        # provenance-valid; answer from it instead of false no-data.
+
+
+
+
+
         _led = [f for f in (state.get("ledger") or []) if isinstance(f, str)]
         if _led:
             from shared.tools._core import SEASON as _CUR_SEASON
@@ -5401,10 +5256,10 @@ async def analytics_agent(state: DimeState) -> AsyncGenerator[dict[str, Any], No
                     if isinstance(r, dict) and r.get("error")][:3]
         cleaned = [_clean_error_text(e) for e in raw_errs]
         cleaned = [c for c in cleaned if c and len(c) >= 12]
-        # Prefer informative refusals (F47 'side has no assets', F33
-        # inactive notes, coverage sentences) over generic query
-        # failures - the first error in the list is often the SQL
-        # dead-end, not the answer-shaped one.
+
+
+
+
         def _rank(e: str) -> int:
             low = e.lower()
             if any(k in low for k in (
@@ -5426,9 +5281,9 @@ async def analytics_agent(state: DimeState) -> AsyncGenerator[dict[str, Any], No
         m = re.search(r"(20\d\d-\d\d)", state.get("question", "") or "")
         season_q = m.group(1) if m else (seasons[-1] if seasons else "")
         if cleaned:
-            # QA #32: lead with the specific tool error ("LeBron James
-            # is on PHI per salary data"), not the overclaiming
-            # "No <player> data found" - data often EXISTS elsewhere.
+
+
+
             base = cleaned[0][0].upper() + cleaned[0][1:]
             if seasons:
                 base += f" Warehouse coverage: {', '.join(seasons)}"
@@ -5493,12 +5348,12 @@ _DEV_TEXT_RX = re.compile(
     r"name '[A-Za-z_][\w.]*' is not defined|"
     r"\b[A-Za-z]*(?:Error|Exception|Warning): [^\n]*|"
     r"File \"[^\n]*\", line \d+|"
-    # F53: httpx client errors (403/404/5xx with the external URL) are
-    # tool internals, never an answer
+
+
     r"Client error '\d{3}[^']*' for url[^\n]*|"
-    # F78: urllib/requests transport failures (data-audit P0-3: a raw
-    # "HTTPSConnectionPool(host='stats.nba.com'...): Read timed out"
-    # string shipped as the final answer on a historical shot chart)
+
+
+
     r"\b\w*ConnectionPool\b[^\n]*|"
     r"\bRead timed out\b[^\n]*|"
     r"\(read timeout=[^)]*\)|"
@@ -5508,7 +5363,7 @@ _DEV_TEXT_RX = re.compile(
     r"Valid tables:[^\n]*|"
     r"For more information check:[^\n]*|"
     r"https?://developer\.mozilla\.org[^\n]*|"
-    # F43: run_python sandbox rejections must never BE the answer
+
     r"That code pattern is unavailable[^\n]*|"
     r"[^\n]*already preloaded[^\n]*|"
     r"imports/IO/writes[^\n]*|"
@@ -5517,21 +5372,15 @@ _DEV_TEXT_RX = re.compile(
     re.IGNORECASE)
 
 
-# F61/verify-v0: the honest compute-failure end. Names coverage instead
-# of admitting infra or blaming the user. Single source - the scrub's
-# canned replacements and the presentation gap detection both key on it.
+
+
+
 _COMPUTE_FALLBACK = ("That one didn't come back from the dataset just "
                      "now. It covers 2025-26 player and team stats, "
                      "game logs, standings, playoffs and the Finals.")
 
 
 def _renumber_lists(text: str) -> str:
-    """Renumber each contiguous ordered-list block from 1.
-
-    Scrub rules can delete a list item ("Takeaways\\n2. ..." after
-    item 1 was stripped as plumbing narration). Markdown renders the
-    literal numbers, so renumber every contiguous block sequentially.
-    """
     out: list[str] = []
     n = 0
     for line in text.split("\n"):
@@ -5547,63 +5396,58 @@ def _renumber_lists(text: str) -> str:
 
 
 def _scrub_final_text(text: str) -> str:
-    """Exception text is for logs, never for the narrative (QA F34).
-
-    A synthesis pass that quotes a raw NameError or Traceback makes the
-    product look broken; swap the fragment for an honest plain-English
-    admission instead."""
     if not text:
         return text
-    # F61 shape ("I could not compute that from the dataset - the
-    # warehouse query for it did not run. Try a narrower ask."): infra
-    # admission + user-blaming. Rewrite before any other rule touches
-    # it; also kill a standalone "Try a narrower ask" sentence.
+
+
+
+
     text = re.sub(
         r"I could not compute that from the dataset[^.!?\n]*[.!?]"
         r"\s*(?:Try a narrower ask[^.!?\n]*[.!?]?\s*)?",
         _COMPUTE_FALLBACK + " ", text, flags=re.IGNORECASE)
     text = re.sub(r"(?:^|\s)Try a narrower ask[^.!?\n]*[.!?]?\s*",
                   " ", text, flags=re.IGNORECASE)
-    # F43: an answer that IS a tool/sandbox error must not ship. When
-    # internal-error patterns cover most of the text, replace the whole
-    # thing with one honest sentence.
+
+
+
     _hits = _DEV_TEXT_RX.findall(text)
     _covered = sum(len(h) for h in _hits)
     if _hits and _covered >= 0.6 * len(text):
         return _COMPUTE_FALLBACK
     cleaned = _DEV_TEXT_RX.sub("that data pull did not complete", text)
-    # P3/F66-chain: "Based on the get_X tool output" / display-name
-    # variants ("Based on the Get Standings output") are orchestration,
-    # never prose. Must run BEFORE the QA #60/#61 sentence drops, which
-    # otherwise nuke the whole sentence for containing "tool".
+
+
+
+
     cleaned = re.sub(
         r"[Bb]ased on the [Gg]et[_ ][A-Za-z]+(?: tool)? output,?", "",
         cleaned)
-    # QA #60: the model sometimes NARRATES a tool error in prose
-    # ("A query for the award returned an error stating 'Finals MVP'
-    # is not a valid award key"). Internal plumbing is never the
-    # user's business - strip the whole sentence, not the fragment.
+
+
+
+
     cleaned = re.sub(
         r"[^.!?\n]*\b(?:returned an error|error stating|"
         r"not a valid [A-Za-z' ]*? key)\b[^.!?\n]*[.!?]",
         " ", cleaned)
-    # QA #61: stop chasing phrasings - ANY sentence that talks about
-    # tools or errors is plumbing narration and never ships. (The
-    # honest whole-answer fallback returns before this pass, so its
-    # own wording is unaffected.)
+
+
+
+
     cleaned = re.sub(
         r"[^.!?\n]*\b(?:tools?|errors?|unknown tables?|"
         r"warehouse quer\w*)\b[^.!?\n]*[.!?]", " ", cleaned)
-    # "Based on scout summary and league data" - same class as
-    # "per the scout summary".
+
+
     def _strip_based_prefix(m: "re.Match[str]") -> str:
-        # Sentence-start removal must not leave a lowercase opener
-        # ("Based on the available league data, the highest..." lost
-        # its capital). Mid-sentence removals stay lowercase.
+
+
+
         pre = m.string[: m.start()].rstrip()
         rest = m.string[m.end():]
         if (not pre or pre.endswith((".", "!", "?", "\n"))) and rest:
-            return ""  # capitalization handled by the post-pass below
+            return ""
         return ""
     cleaned = re.sub(
         r"[Bb]ased on (?:the )?(?:(?:available|current|latest|full) )*"
@@ -5612,20 +5456,20 @@ def _scrub_final_text(text: str) -> str:
     cleaned = cleaned.lstrip()
     if cleaned and cleaned[0].islower():
         cleaned = cleaned[0].upper() + cleaned[1:]
-    # Field-name parrots: the model quotes evidence keys ("ambiguity
-    # note") and summary wording ("scout summary") as prose.
+
+
     cleaned = re.sub(r"\bambiguity[_ ]note\b", "note", cleaned,
                      flags=re.IGNORECASE)
-    # QA #76: this used to rewrite to "the data", colliding into
-    # "Data provided by the data and split records".
+
+
     cleaned = re.sub(r"\b(?:the )?(?:scout|league|team) summary\b",
                      "the dataset", cleaned, flags=re.IGNORECASE)
     cleaned = re.sub(r"\bwarehouse tables?\b", "the dataset", cleaned,
                      flags=re.IGNORECASE)
-    # QA #75 nit: "per the warehouse output" leaks the same internal
-    # term in a softer form. v67: "Based on warehouse data, ..." leaked
-    # live (v66 smoke) - widen the prefix class and capitalize the
-    # replacement when the phrase opened the sentence.
+
+
+
+
     def _wh_repl(m: "re.Match[str]") -> str:
         pre = m.string[: m.start()].rstrip()
         if not pre or pre.endswith((".", "!", "?", "\n")):
@@ -5638,42 +5482,42 @@ def _scrub_final_text(text: str) -> str:
         _wh_repl, cleaned)
     cleaned = re.sub(r"\bwarehouse output\b", "the dataset", cleaned,
                      flags=re.IGNORECASE)
-    # v77 QA nit: "according to the output" leaks the same infra term
-    # without the "warehouse" prefix - same rewrite class.
+
+
     cleaned = re.sub(
         r"\b(?:[Pp]er|[Ff]rom|[Vv]ia|[Bb]ased on|[Aa]ccording to) "
         r"(?:the )?outputs?\b",
         _wh_repl, cleaned)
-    # 2026-09-13 sweep: "output" as the SUBJECT of a sentence is the
-    # same leak class - "The output confirms he holds the top rank."
-    # Drop the whole sentence (the fact it confirms is already in the
-    # answer); "the statistical estimate output reports X" keeps the
-    # fact via the narrower "estimate output" -> "estimate" rewrite.
+
+
+
+
+
     cleaned = re.sub(r"\bestimate output\b", "estimate", cleaned,
                      flags=re.IGNORECASE)
-    # 2026-09-13 sweep2: "I used the provided game logs and summary to
-    # show ..." - first-person tool narration, never prose.
+
+
     cleaned = re.sub(
         r"[^.!?\n]*\bI used the (?:provided )?[A-Za-z ]*?"
         r"(?:logs?|summary|output|data|stats?|table)\b[^.!?\n]*[.!?]",
         " ", cleaned)
-    # "league leaders output lists" - "output" as a source noun; the
-    # subject-verb drop above only covers "The output ...".
+
+
     cleaned = re.sub(r"\b(league leaders|leaders|league) output\b",
                      r"\1 table", cleaned)
     cleaned = re.sub(
         r"[^.!?\n]*\b[Tt]he output (?:confirms?|shows?|indicates?|"
         r"reports?|states?)\b[^.!?\n]*[.!?]", " ", cleaned)
-    # v77 QA nit: "using the basketball-reference the dataset" - the
-    # warehouse-output rewrite fires AFTER a source name, leaving
-    # "<source> the dataset". Collapse to "<source> dataset".
+
+
+
     cleaned = re.sub(r"\b(basketball-reference|nba api) the dataset\b",
                      r"\1 dataset", cleaned, flags=re.IGNORECASE)
 
-    # F51: memory-persistence claims ("Noted your favorite team!",
-    # "I'll remember that") imply cross-session memory that does not
-    # exist (F22 shelved). Session-scoped phrasing survives; anything
-    # else is rewritten to it. Analytical "as noted" is untouched.
+
+
+
+
     def _memory_scope(m: "re.Match[str]") -> str:
         sent = m.group(0)
         if re.search(r"this (?:conversation|chat|session)", sent,
@@ -5687,34 +5531,34 @@ def _scrub_final_text(text: str) -> str:
         r"i(?:'ve| have) saved|"
         r"i(?:'ll| will) keep (?:that|this|it) in mind)\b[^.!?\n]*[.!?]",
         _memory_scope, cleaned, flags=re.IGNORECASE)
-    # v67 live collision: "per the NBA API league data" hit the
-    # league-data rule below and shipped "per the NBA API the dataset".
+
+
     cleaned = re.sub(r"\b(?:the )?NBA API league data\b", "the dataset",
                      cleaned, flags=re.IGNORECASE)
     cleaned = re.sub(r"\bleague data\b", "the dataset", cleaned,
                      flags=re.IGNORECASE)
-    # scrub collisions: "the data data", "the dataset and the dataset"
+
     cleaned = re.sub(r"\b[Tt]he data data\b", "the data", cleaned)
-    # 2026-09-13 probe: "the dataset data shows:" - the league-data
-    # rewrite landing after "the dataset" rewrite. Same collision class.
+
+
     cleaned = re.sub(r"\b[Tt]he dataset data\b", "the data", cleaned)
-    # Same probe: "Analysis based on ``." - an empty tool-name citation
-    # left when the model backticks a blank. Drop the line outright.
+
+
     cleaned = re.sub(r"(?m)^[ \t]*\*?Analysis based on `[^`]*`\.?\*?[ \t]*$\n?",
                      "", cleaned)
     cleaned = re.sub(r"\bthe the\b", "the", cleaned,
                      flags=re.IGNORECASE)
-    # 2026-09-13 sweep: "10.7 assists per game ." - stray space before
-    # terminal punctuation, an LLM typo class that reads sloppy.
+
+
     cleaned = re.sub(r" +([.,;:!?])(?=\s|$)", r"\1", cleaned)
-    # Sweep2: "points, efficiency, and efficiency" - the LLM repeated
-    # the final list item. Collapse "X, and X" -> "and X"... kept
-    # simple: drop the earlier duplicate and its comma.
+
+
+
     cleaned = re.sub(r"\b(\w{4,}), and \1\b", r"and \1", cleaned)
-    # 2026-09-13 gauntlet: "**Takeaways:**\n\n**Verdict:**" - a section
-    # header whose items were all stripped (or never written) ships as
-    # an empty section. Drop header lines with no list items or prose
-    # before the next header.
+
+
+
+
     cleaned = re.sub(
         r"(?m)^[ \t]*\*\*[^*\n]+\*\*:?[ \t]*\n"
         r"(?=[ \t]*\n?[ \t]*\*\*|\s*$)",
@@ -5723,40 +5567,40 @@ def _scrub_final_text(text: str) -> str:
                      flags=re.IGNORECASE)
     cleaned = re.sub(r"\bthe dataset(?:,? and|,)? the dataset\b",
                      "the dataset", cleaned, flags=re.IGNORECASE)
-    # 2026-09-13 compose probe: the "the dataset" rewrites above turn a
-    # "Source: league agent summary" attribution line into "Source:
-    # league agent the dataset" - an internal agent name + broken
-    # grammar. Source lines that name an agent or the dataset are
-    # orchestration leaks, never provenance; drop the whole line.
+
+
+
+
+
     cleaned = re.sub(
         r"(?m)^[ \t]*\*{0,2}Source:\*{0,2}[^\n]*\b(?:agent|dataset)\b[^\n]*$",
         "", cleaned)
-    # Sweep3: trailing empty list items ("3." with no text) after the
-    # model ran out of content.
+
+
     cleaned = re.sub(r"(?m)^[ \t]*(?:\d+\.|[-*])[ \t]*$\n?", "", cleaned)
-    # Same probe: "And the dataset, Shai ... played" - a dangling
-    # vocative left when a prefix rule fired mid-sentence. "And the
-    # dataset," can never open a grammatical sentence; strip it.
+
+
+
     cleaned = re.sub(r"(?m)(^|[.!?] )[Aa]nd the dataset, ", r"\1",
                      cleaned)
-    # Same probe: a rewrite landed "the dataset" inside a markdown
-    # header ("### Player Comparison (the dataset)"). Headers are
-    # titles, not prose - drop the parenthetical there only.
+
+
+
     cleaned = re.sub(r"(?m)^(#{1,6} [^\n]*?)\s*\(the dataset\)\s*$",
                      r"\1", cleaned)
-    # Raw ids are plumbing (QA #65: "Their unique identifier is
-    # 1610612760"). Kill id-narration sentences, then lone long runs.
+
+
     cleaned = re.sub(
         r"[^.!?\n]*\b(?:unique identifier|does not include the "
         r"(?:team |player )?name)\b[^.!?\n]*[.!?]", " ", cleaned)
     cleaned = re.sub(r"\b\d{5,}\b", " ", cleaned)
-    # QA #61c: integer-valued stats carry decimal noise ("32.0
-    # minutes", "15.0 games"). Strip trailing .0 everywhere.
+
+
     cleaned = re.sub(r"\b(\d+)\.0\b", r"\1", cleaned)
-    # QA #61b: renumber numbered-list runs sequentially from 1 - the
-    # model emits "2. 3. 4." after an unnumbered first item. Line-start
-    # runs of 2+ are real list syntax; inline runs need 3+ markers so a
-    # stat sentence chain ("scored 5. Next game 6.") is never touched.
+
+
+
+
     def _renum_lines(m: "re.Match[str]") -> str:
         n = 0
         out = []
@@ -5786,10 +5630,10 @@ def _scrub_final_text(text: str) -> str:
         for _i, m in enumerate(reversed(_run)):
             cleaned = (cleaned[:m.start(1)]
                        + str(len(_run) - _i) + cleaned[m.end(1):])
-    # QA nit batch (Sep 12 overnight chain): internal arithmetic
-    # narration never ships. "Dividing 2143 by 64 gives 33.5 points
-    # per game." keeps the value and drops the scratch work;
-    # "(509 \u00f7 19)" and "130/5 = 26 PPG" lose the long division.
+
+
+
+
     cleaned = re.sub(
         r"[Dd]ividing \d[\d,]*(?:\.\d+)? by \d[\d,]*(?:\.\d+)? "
         r"gives ", "", cleaned)
@@ -5799,11 +5643,11 @@ def _scrub_final_text(text: str) -> str:
     cleaned = re.sub(
         r"\b\d[\d,]*(?:\.\d+)?\s*/\s*\d[\d,]*(?:\.\d+)?"
         r"\s*=\s*", "", cleaned)
-    # "a 48 and 30 record" -> "a 48-30 record" (HOU-with-KD chain).
+
     cleaned = re.sub(r"\b(\d{1,3}) and (\d{1,3}) record\b",
                      r"\1-\2 record", cleaned)
-    # "the LAL franchise" - abbreviations are table shorthand, never
-    # prose (T7 ambiguity answer shipped it live).
+
+
     try:
         from nba_api.stats.static import teams as _static_teams
         _abbr_map = {t["abbreviation"]: t["full_name"]
@@ -5816,17 +5660,17 @@ def _scrub_final_text(text: str) -> str:
                     f"franchise")
         cleaned = re.sub(r"\bthe ([A-Z]{3}) franchise\b",
                          _franchise, cleaned)
-    # Scrub-collision leftover: "Data provided by the data and split
-    # records" (league-agent rewrite landed next to "provided by").
+
+
     cleaned = re.sub(r"\bprovided by the data\b",
                      "provided by the dataset", cleaned,
                      flags=re.IGNORECASE)
-    # Strip-induced fragment: "And playoff logs, Jalen ..." - the
-    # based-on strip ate the sentence head and left a dangling And.
+
+
     cleaned = re.sub(r"(^|[.!?]\s+)And (?=(?:playoff |game )?logs\b)",
                      r"\1From the ", cleaned)
-    # Sentence-start capitalization after lead-in strips ("Based on
-    # scout summary, the team" -> "The team"), keeping stat acronyms.
+
+
     _KEEP_LOWER = {"efg", "ts", "usg", "ast", "stl", "blk", "tov",
                    "fg", "ft", "3p", "3pm", "rapm", "epm"}
     def _cap(m: "re.Match[str]") -> str:
@@ -5835,8 +5679,8 @@ def _scrub_final_text(text: str) -> str:
             return m.group(0)
         return m.group(1) + word[0].upper() + word[1:]
     cleaned = re.sub(r"(^|[.!?]\s+)([a-z][a-zA-Z%]*)", _cap, cleaned)
-    # P3: tool names and desk identities are orchestration, never prose
-    # ("Based on the get_injuries tool output", "the league agent").
+
+
     cleaned = re.sub(r"\bthe get_\w+ tool\b", "the data", cleaned)
     cleaned = re.sub(r"\bget_\w+\b", "", cleaned)
     cleaned = re.sub(r"\bfrom the (league|scout|team) (agent|desk)\b",
@@ -5849,8 +5693,8 @@ def _scrub_final_text(text: str) -> str:
     cleaned = re.sub(r"\bper game([.,]?)\s+per game\b", r"per game\1",
                      cleaned, flags=re.IGNORECASE)
     cleaned = re.sub(r"[ \t]{2,}", " ", cleaned)
-    # The season-first-line guard fires once; when two evidence streams
-    # each pulled it in, the sentence lands twice. Keep the first.
+
+
     _sfx = re.compile(
         r"(This data covers the \d{4}-\d{2} season\.)", re.IGNORECASE)
     _seen = False
@@ -5861,10 +5705,10 @@ def _scrub_final_text(text: str) -> str:
         _seen = True
         return m.group(1)
     cleaned = _sfx.sub(_dedupe_season, cleaned)
-    # Whole-paragraph / long-sentence repeats: two evidence streams can
-    # each yield the same analysis block (seen live: the full Derik
-    # Queen verdict twice). Paragraph keys diverge once the season line
-    # is stripped from the second copy, so dedupe long sentences too.
+
+
+
+
     paras = cleaned.split("\n\n")
     if len(paras) > 1:
         seen_paras: set[str] = set()
@@ -5876,8 +5720,8 @@ def _scrub_final_text(text: str) -> str:
             seen_paras.add(key)
             kept.append(para)
         cleaned = "\n\n".join(kept)
-    # Split on horizontal whitespace only - eating the newline after a
-    # list item ("1. First.\n2. Second") flattens lists into prose.
+
+
     sentences = re.split(r"(?<=[.!?])[ \t]+", cleaned)
     if len(sentences) > 1:
         seen_s: set[str] = set()
@@ -5891,10 +5735,10 @@ def _scrub_final_text(text: str) -> str:
         cleaned = " ".join(kept_s)
         cleaned = re.sub(r" \n", "\n", cleaned)
     cleaned = re.sub(r"\n{3,}", "\n\n", cleaned)
-    # QA #46 structural net: an answer that reads like an error and
-    # carries no data claim at all is replaced wholesale - pattern
-    # lists alone kept missing new exception phrasings ('async for'
-    # requires..., 'no such column ...').
+
+
+
+
     _errish = re.search(
         r"error|exception|unavailable|requires an object|traceback|"
         r"did not succeed|not defined|no such column|failed after|"
@@ -5908,18 +5752,12 @@ _LEDGER_MAX = 20
 
 
 def _extract_ledger_facts(state: dict) -> list[str]:
-    """Thread evidence ledger (v2 step 2): facts extracted from tool
-    PAYLOADS at ship time - never from LLM text (v67 lesson). Persisted
-    per-thread so follow-ups resolve evidence, not just entities
-    (F62/F63: the thread produced Brunson's Game 5 line and the NYK-SAS
-    Finals matchup, then later turns claimed the dataset lacked them).
-    """
     facts: list[str] = []
     for tr in state.get("tool_results") or []:
         if not isinstance(tr, dict) or _result_status(tr) != "ok":
             continue
-        # Pins wrap payloads as {"tool": t, "rows": [raw_tool_dict]};
-        # the planner path stores the raw dict directly. Unify.
+
+
         _r = tr.get("rows")
         if (isinstance(_r, list) and len(_r) == 1
                 and isinstance(_r[0], dict) and "rows" in _r[0]):
@@ -5948,12 +5786,12 @@ def _extract_ledger_facts(state: dict) -> list[str]:
                 if da:
                     facts.append(da[0].upper() + da[1:])
             elif tname == "get_standings" and isinstance(rows, list):
-                # QA F67: "Which team had the best record?" answered OKC
-                # 64-18, but the ledger carried nothing, so the next
-                # turn ("their best player") resolved to a false
-                # absence. Persist the best-record team as trusted
-                # evidence for pronoun carry. LeagueRank 1 row wins;
-                # fall back to max WINS.
+
+
+
+
+
+
                 best = None
                 for r in rows:
                     if isinstance(r, dict) and r.get("LeagueRank") == 1.0:
@@ -5980,8 +5818,8 @@ def _extract_ledger_facts(state: dict) -> list[str]:
             elif tname == "search_game_logs" and isinstance(rows, dict):
                 matches = rows.get("matches") or []
                 player = rows.get("player")
-                # single-game context only: exactly one match, or an
-                # explicit game-number/date filter narrowed it
+
+
                 filt = str(rows.get("filters") or "")
                 if (player and matches and (len(matches) == 1 or re.search(
                         r"game \d", filt, re.IGNORECASE))):
@@ -6004,28 +5842,28 @@ def _extract_ledger_facts(state: dict) -> list[str]:
     return out[:_LEDGER_MAX]
 
 
-# Typed/inline derivation syntax for claim-level numeral verification: a
-# numeral that is not literally in this turn's evidence must carry its
-# operands in the same sentence, either as `N (a op b ...)` or
-# `N = a op b ...`. The operands must be evidence numerals and the
-# arithmetic must recompute to N.
+
+
+
+
+
 _DERIVED_EXPR_RX = re.compile(
     r"(\d+(?:\.\d+)?)\s*(?:\(\s*|=\s*)"
     r"(\d+(?:\.\d+)?(?:\s*[+\-*/]\s*\d+(?:\.\d+)?)+)\s*\)?"
 )
 _SENT_SPLIT_RX = re.compile(r"(?<=[.!?])\s+")
-# Claim-level filtering must treat each newline bullet as its own unit:
-# a bad bullet's fake numeral must not kill the good bullet on the
-# next line (the sentence splitter never saw the newline boundary).
+
+
+
 _UNIT_SPLIT_RX = re.compile(r"((?<=[.!?])\s+|\n+)")
-# A numeral asserted as a margin BETWEEN two named entities ("DET
-# trails SAS by 2.4") is a derived claim even when the digits appear
-# somewhere in the payload (2.4 was DET's own rating, not the margin).
-# The pair must bind to the NAMED teams, a SHARED metric, and the
-# DIRECTION of the verb - any unbound numeral pair (cross-metric,
-# cross-team, reversed direction) fails closed. Vaguer phrasings
-# ("favored by 2 points", "2.0-point edge") stay on the lenient path -
-# only the two-entity construction is strict.
+
+
+
+
+
+
+
+
 _TEAM_RX = r"[A-Z0-9][\w&.'-]*(?:\s+[A-Z0-9][\w&.'-]*)*"
 _MARGIN_CLAIM_RX = re.compile(
     r"\b(" + _TEAM_RX + r")\s+"
@@ -6036,15 +5874,6 @@ _MARGIN_CLAIM_RX = re.compile(
 
 
 def _canonical_team_full_name(token: str) -> str | None:
-    """Canonical full team name for a token, or None.
-
-    Deterministic static-table lookup: full name (case-insensitive),
-    nickname (case-insensitive), city (case-insensitive, only when
-    unique league-wide - Los Angeles and New York split two teams), or
-    abbreviation (case-SENSITIVE exact, the F68/F69 guard: lowercase
-    "was"/"bos" must never bind Washington/Boston). No
-    question-wording branches.
-    """
     from nba_api.stats.static import teams as _static_teams
 
     tok = (token or "").strip()
@@ -6078,15 +5907,6 @@ _TEAM_IDENTITY_KEYS = {"TEAM", "TEAM_NAME", "TEAM_ABBREVIATION", "ABBREVIATION",
 
 
 def _team_row(rows: list, token: str) -> dict | None:
-    """Bind a team token to its payload row by canonical team entity.
-
-    The token and each string cell map through the static team table,
-    so 'Celtics', 'BOS', 'Boston', and 'Boston Celtics' all bind the
-    same row whether the payload carries full names, abbreviations, or
-    both. Abbreviation matching stays case-sensitive (F68/F69).
-    Tokens with no team meaning keep the legacy exact/initials
-    fallback (short tokens also case-sensitive).
-    """
     tok = (token or "").strip()
     if not tok:
         return None
@@ -6114,9 +5934,6 @@ def _team_row(rows: list, token: str) -> dict | None:
 
 def _margin_directed_ok(state: dict, subj: str, verb: str, obj: str,
                         target: float) -> bool:
-    """True when the named teams' rows share a metric whose directed
-    difference equals the target: trails -> obj - subj, otherwise
-    subj - obj. Unbindable teams/metrics fail closed (False)."""
     rows: list = []
     for tr in state.get("tool_results") or []:
         r = tr.get("rows") if isinstance(tr, dict) else None
@@ -6140,8 +5957,6 @@ def _margin_directed_ok(state: dict, subj: str, verb: str, obj: str,
 
 
 def _iter_units(text: str):
-    """Yield (unit, separator) pairs, preserving original separators so
-    filtering can drop a bad unit without reformatting the rest."""
     parts = _UNIT_SPLIT_RX.split(text or "")
     for i in range(0, len(parts), 2):
         yield parts[i], (parts[i + 1] if i + 1 < len(parts) else "")
@@ -6215,12 +6030,6 @@ def _numeral_allowed(state: dict) -> set[str]:
 
 
 def _verify_numeral_claims(state: dict, text: str) -> list[tuple[str, str]]:
-    """Claim-level numeral verification.
-
-    Returns (sentence, numeral) pairs that fail: numerals neither in this
-    turn's evidence nor derived from evidence-carried operands that
-    recompute to the numeral.
-    """
     if not state.get("tool_results") and not state.get("ledger"):
         return []
     try:
@@ -6236,11 +6045,11 @@ def _verify_numeral_claims(state: dict, text: str) -> list[tuple[str, str]]:
             for n in re.findall(r"\d+(?:\.\d+)?", sent):
                 nn = _norm_num(n)
                 if nn in margin_nums:
-                    # Directional margin claim: passes ONLY when the
-                    # direction-bound check ties it to the named teams'
-                    # shared metric. The generic operand check must NOT
-                    # rescue a claim whose direction fails (a wrong-way
-                    # "trails" with recomputing operands is still wrong).
+
+
+
+
+
                     try:
                         _bound = any(
                             _margin_directed_ok(state, s, v, o, float(nn))
@@ -6263,16 +6072,6 @@ def _verify_numeral_claims(state: dict, text: str) -> list[tuple[str, str]]:
 
 
 def _verify_draft_numerals(state: dict, text: str) -> list[str]:
-    """Verify node v0: numeral provenance (telemetry only).
-
-    Every number in the shipped answer must trace to this turn's tool
-    payloads or the season line - the v67 lesson generalized (LLM-
-    composed numerals are untrusted). Claim-level: a derived number may
-    instead carry its operands (typed calculation or inline evidence
-    refs) and must recompute from them. Violations land on
-    state['_verify'] for the eval harness/reviewer; the re-route that
-    acts on them drops only the failing sentence(s).
-    """
     claims = _verify_numeral_claims(state, text)
     violations: list[str] = []
     for _, n in claims:
@@ -6283,20 +6082,16 @@ def _verify_draft_numerals(state: dict, text: str) -> list[str]:
 
 
 def verify_numbers_traced(state: dict, text: str) -> list[str]:
-    """Termination gate: numerals in the answer must trace to this
-    turn's evidence. Thin wrapper over _verify_numeral_claims returning
-    just the numeral strings; unlike _verify_draft_numerals it never
-    writes state["_verify"]. Non-empty = reject."""
     violations: list[str] = []
     for _, _n in _verify_numeral_claims(state, text):
         if _n not in violations:
             violations.append(_n)
     return violations
 
-# QA #65 known-gap taxonomy: what the dataset provably does NOT have.
-# When an answer comes back content-thin, the honest fallback names
-# the specific gap (bench-scoring style) instead of shipping
-# boilerplate or inventing a wrong reason.
+
+
+
+
 _KNOWN_GAPS: list[tuple["re.Pattern[str]", str]] = [
     (re.compile(r"\btwo[\s-]*way\b|\b10[\s-]*day\b|\bg[\s-]?league\b|"
                 r"\bcontract (?:types?|status|kinds?)\b", re.IGNORECASE),
@@ -6328,11 +6123,11 @@ def _gap_note(question: str) -> str | None:
     return None
 
 
-# QA #72 (F58): memory/preference statements ("My favorite team is the
-# Lakers. Remember that.") are NOT data asks. Unpinned, the planner
-# routed them to the team desk, the resolver mapped "Lakers" to BOTH
-# Los Angeles teams, and presentation shipped "No Los Angeles Clippers
-# data found." - wrong team, false no-data claim, no acknowledgment.
+
+
+
+
+
 _MEMORY_STATEMENT_RX = re.compile(
     r"\bfavou?rite\s+(?:team|player)\b", re.IGNORECASE)
 _MEMORY_DATA_ASK_RX = re.compile(
@@ -6346,11 +6141,6 @@ _MEMORY_DATA_ASK_RX = re.compile(
 
 
 def _memory_ack(question: str) -> str | None:
-    """Session-scoped acknowledgment for preference/memory statements.
-
-    Returns None when the statement carries an analytical ask - those
-    fall through to the normal routes.
-    """
     q = question or ""
     if not _MEMORY_STATEMENT_RX.search(q):
         return None
@@ -6375,19 +6165,6 @@ _ABSENCE_RX = re.compile(
 
 
 def _strip_false_absence(text: str, tool_results: list) -> str:
-    """F65: 'Heat win total is missing from the standings' shipped live
-    while get_standings' payload carried MIA 43-39 - the planner used a
-    top-N cut and synthesis reported its evidence WINDOW as a warehouse
-    gap. Deterministic guard: a sentence claiming absence about an
-    entity whose data sits in this turn's payloads is false - drop the
-    sentence, keep the rest. Conservative: only fires when the entity
-    string literally appears in payload JSON.
-
-    QA F65 (compare markdown): sentence reassembly must preserve the
-    original newline structure. Splitting on newlines and rejoining
-    with spaces flattened tables, headings and bullet lists into one
-    line, so the UI rendered the markdown source literally.
-    """
     import json as _json
 
     try:
@@ -6403,16 +6180,16 @@ def _strip_false_absence(text: str, tool_results: list) -> str:
         kept: list[str] = []
         for seg in re.split(r"(?<=[.!?])[ \t]+", chunk):
             if _ABSENCE_RX.search(seg):
-                # entity = capitalized tokens (team/player names) in the
-                # sentence; false only if one appears in the payload.
+
+
                 ents = re.findall(r"[A-Z][a-z]{2,}", seg)
                 if any(e.lower() in hay for e in ents):
-                    continue  # false absence claim: drop
+                    continue
             kept.append(seg)
         return " ".join(s.strip() for s in kept if s.strip())
 
-    # Newlines are structural (tables, headings, lists): sweep each
-    # line separately and rejoin with the original separators.
+
+
     parts = re.split(r"(\n+)", text)
     out = "".join(part if part.startswith("\n") else _sweep(part)
                   for part in parts)
@@ -6420,15 +6197,6 @@ def _strip_false_absence(text: str, tool_results: list) -> str:
 
 
 def _desk_failure_note(state: dict) -> str | None:
-    """Name a failed desk instead of the generic dataset fallback.
-
-    When a delegate_* desk errored (timeout or crash, even after the
-    one automatic retry), the honest message names the desk and says
-    what happened in plain words. It never leaks raw exception text,
-    internal paths, or the user's question verbatim, and it only
-    mentions recovered evidence when some actually came back - the
-    canned "could not find that in the dataset" is what makes the
-    product feel hardcoded."""
     failed = [tr for tr in state.get("tool_results") or []
               if isinstance(tr, dict)
               and str(tr.get("tool", "")).startswith("delegate_")
@@ -6455,9 +6223,9 @@ def _desk_failure_note(state: dict) -> str | None:
 async def presentation_agent(state: DimeState) -> AsyncGenerator[dict[str, Any], None]:
     yield _event("node_update", {"node": "presentation", "status": "running"})
     text = state.get("analysis", "") or "No data came back. Try a player or team name."
-    # QA #65 (F54): a content-thin answer - boilerplate season line and
-    # nothing else - never ships. Name the known gap when the question
-    # matches the taxonomy, else the honest generic fallback.
+
+
+
     _core = re.sub(r"This data covers the \d{4}-\d{2} season\.?", "",
                    text, flags=re.IGNORECASE)
     _words = re.findall(r"[A-Za-z]+", _core)
@@ -6468,12 +6236,12 @@ async def presentation_agent(state: DimeState) -> AsyncGenerator[dict[str, Any],
         if _gap:
             text = _gap
         else:
-            # f62 (2026-09-13 prod QA): the refusal declared "could not
-            # find" while the turn's tool_results carried the correct
-            # 19-row playoff log - prose contradicting its own attached
-            # evidence. The refusal must look at the payloads first:
-            # with rows attached, the honest message is a summary
-            # failure, not an absence.
+
+
+
+
+
+
             _has_rows = False
             for _tr in state.get("tool_results") or []:
                 if not isinstance(_tr, dict):
@@ -6493,20 +6261,20 @@ async def presentation_agent(state: DimeState) -> AsyncGenerator[dict[str, Any],
                      "game logs, standings, playoffs and the "
                      "Finals - try one of those."))
     _scrubbed = _scrub_final_text(text)
-    # Desk-failure honesty: if the turn collapsed to the canned
-    # fallback while a delegate desk actually failed, name the desk
-    # and the error instead. Applied post-scrub so P3's
-    # orchestration-anonymizing rewrites ("the team desk" -> "the
-    # data") don't mangle the honest message.
+
+
+
+
+
     _desk_note = _desk_failure_note(state)
     if _desk_note and _scrubbed.strip().startswith(
             "I could not find that in the dataset"):
         _scrubbed = _desk_note
     _scrubbed = _strip_false_absence(_scrubbed,
                                  state.get("tool_results") or [])
-    # F66: multi-metric team compare ships deterministic - the payload
-    # built the sentence, the LLM narrative is ignored (v67 design
-    # law: LLM-composed numerals are untrusted on pinned lanes).
+
+
+
     _authoritative = _authoritative_answer(state.get("tool_results") or [])
     if _authoritative is not None:
         _scrubbed = _authoritative
@@ -6535,15 +6303,15 @@ async def presentation_agent(state: DimeState) -> AsyncGenerator[dict[str, Any],
             except Exception:
                 pass
             break
-    # v67 (v66 live smoke, 12:32 PM): team-totals answers paraphrased
-    # away the leader's total - "scored the most total points with PTS
-    # (122.1 per game)". meta.note already tells the LLM to cite
-    # leader_line verbatim; it still drops the value under variance.
-    # v67 repair-regex rounds then chased four degenerate with-clause
-    # shapes ("with PTS (", "with PTS,", "with .", "with ,") and the
-    # LLM kept inventing more. Whack-a-mole lost: when get_team_leaders
-    # is the evidence, the answer ships deterministic - leader_line
-    # plus runner-ups from rows, no LLM narrative at all.
+
+
+
+
+
+
+
+
+
     for _tr in state.get("tool_results") or []:
         if (isinstance(_tr, dict)
                 and _tr.get("tool") == "get_team_leaders"
@@ -6574,9 +6342,9 @@ async def presentation_agent(state: DimeState) -> AsyncGenerator[dict[str, Any],
                     pass
                 _scrubbed = _det
             break
-    # QA #67 (F55): with no explicit season context in the question,
-    # the season line must say the CURRENT season - a stray 2024-25
-    # row in evidence must not relabel the answer.
+
+
+
     if not re.search(r"20\d\d-\d\d|last season|career|"
                      r"all[\s-]*time|histor", state.get("question", "")
                      or "", re.IGNORECASE):
@@ -6592,11 +6360,11 @@ async def presentation_agent(state: DimeState) -> AsyncGenerator[dict[str, Any],
                 _scrubbed, count=1)
         except Exception:
             pass
-    # F61 residual: the coverage line must match the evidence span -
-    # a deep hist answer from silver_hist_* shipped "This data covers
-    # the 2022-23 season." over rows spanning many seasons. When the
-    # evidence carries 2+ distinct seasons, rewrite the line to the
-    # real min-through-max span.
+
+
+
+
+
     def _row_seasons(node: object, _out: set) -> None:
         stack = [node]
         while stack:
@@ -6623,12 +6391,12 @@ async def presentation_agent(state: DimeState) -> AsyncGenerator[dict[str, Any],
             r"This data covers the 20\d\d-\d\d season\.",
             f"This data covers the {_span} seasons.", _scrubbed,
             count=1)
-    # F61 coverage-window honesty: all-time/historical asks run over the
-    # silver_hist_* span, but the compose prompt tells the model to
-    # write the current-season line verbatim (and sometimes no line at
-    # all). For a historical question with no explicit season, the line
-    # must name the historical span; when the line is missing over
-    # evidenced rows, prepend it.
+
+
+
+
+
+
     _qtxt = state.get("question", "") or ""
     _hist_q = re.search(
         r"all[\s-]*time|histor|record for|since (?:19|20)\d\d",
@@ -6648,9 +6416,9 @@ async def presentation_agent(state: DimeState) -> AsyncGenerator[dict[str, Any],
                     isinstance(r, dict) and r.get("rows")
                     for r in _flatten_tables(state["tool_results"]))
                 if _has_rows:
-                    # A model-written "season not specified" admission
-                    # contradicts the span line - drop it (F61 bench run
-                    # shipped exactly that over 144-pt playoff rows).
+
+
+
                     _scrubbed = re.sub(
                         r"The season is not specified in the "
                         r"evidence\.?\s*", "", _scrubbed,
@@ -6658,17 +6426,17 @@ async def presentation_agent(state: DimeState) -> AsyncGenerator[dict[str, Any],
                     _scrubbed = _hist_line + "\n" + _scrubbed
         except Exception:
             pass
-    # A named known-gap beats any no-data outcome: the generic
-    # compute-failure fallback AND model-worded admissions ("the query
-    # did not succeed", "no data is available", "I cannot rank").
-    # "Contract types are not tracked" informs; failure narration
-    # only mystifies (QA #65 F54).
+
+
+
+
+
     _gap = (_gap_note(state.get("question", "") or "")
             or _memory_ack(state.get("question", "") or ""))
-    # The override exists to rescue NO-DATA outcomes. When the answer is
-    # evidence-backed, an honest gap sentence inside it ("margin flow is
-    # not in the dataset") must NOT trigger a full replacement - that
-    # nuked a correct 21-row comeback board on live (10:09 AM probe).
+
+
+
+
     _evidenced = any(
         isinstance(r, dict) and r.get("rows")
         for r in _flatten_tables(state["tool_results"]))
@@ -6685,12 +6453,12 @@ async def presentation_agent(state: DimeState) -> AsyncGenerator[dict[str, Any],
                 r"is missing|could not be computed|"
                 r"does not include", _scrubbed, re.IGNORECASE)):
         _scrubbed = _gap
-    # F39: compose sometimes emits GFM pipe tables in the answer text.
-    # Tables are evidence cards now (S2 design) - the LLM-composed table
-    # is a duplicate with untrusted labels (it rendered team wins as a
-    # "Points Per Game" row on the Luka/SGA compare). Strip pipe-table
-    # blocks (2+ consecutive pipe rows) when real table artifacts exist
-    # to cite; single stray pipe lines and prose stay.
+
+
+
+
+
+
     if _evidenced:
         _kept: list[str] = []
         _run: list[str] = []
@@ -6706,9 +6474,9 @@ async def presentation_agent(state: DimeState) -> AsyncGenerator[dict[str, Any],
                            "\n".join(_kept)).strip()
         if _stripped:
             _scrubbed = _stripped
-    # QA #66: the thin-net must also run POST-scrub - the sentence
-    # strips can remove every sentence, and shipping an empty string
-    # is worse than the boilerplate it replaced.
+
+
+
     _core2 = re.sub(r"This data covers the \d{4}-\d{2} season\.?", "",
                     _scrubbed, flags=re.IGNORECASE)
     _words2 = re.findall(r"[A-Za-z]+", _core2)
@@ -6718,26 +6486,26 @@ async def presentation_agent(state: DimeState) -> AsyncGenerator[dict[str, Any],
                              "It covers 2025-26 player and team stats, "
                              "game logs, standings, playoffs and the "
                              "Finals - try one of those."))
-    # Watchdog: a turn that blew its wall-clock budget with no usable
-    # evidence ends with coverage named - never a hang, never the old
-    # "try a narrower ask" (F61/v70).
+
+
+
     if state.get("_watchdog_tripped") and not _evidenced and not _delegate_ok:
         _scrubbed = _gap or _COMPUTE_FALLBACK
     _scrubbed = _renumber_lists(_scrubbed)
-    # Claim-level: a derived number must carry its operands and recompute;
-    # on mismatch drop ONLY the failing sentence(s), never the whole answer.
+
+
     _viol_pairs = _verify_numeral_claims(state, _scrubbed)
     if _viol_pairs:
         _bad_sents = {s for s, _ in _viol_pairs}
-        # Drop only the failing unit(s) - separators are preserved so a
-        # bad newline bullet never takes the good bullet next to it down.
+
+
         _kept: list[str] = []
         for _unit, _sep in _iter_units(_scrubbed):
             if _unit.strip() and _unit in _bad_sents:
                 continue
             _kept.append(_unit + _sep)
         _scrubbed = "".join(_kept).strip()
-        # A dropped unit can leave doubled blank lines behind.
+
         _scrubbed = re.sub(r"\n{3,}", "\n\n", _scrubbed)
         if not _scrubbed:
             _scrubbed = _gap or (
@@ -6745,10 +6513,10 @@ async def presentation_agent(state: DimeState) -> AsyncGenerator[dict[str, Any],
                 "figures in the summary. The evidence panel below has the "
                 "sourced results."
             )
-    # Termination gate, minutes side (REJECT): rate-stat claims without
-    # a same-sentence minutes qualification are dropped the same way as
-    # untraced numerals - never silently rendered. Empty-after-drop
-    # keeps the honest fallback above.
+
+
+
+
     _min_viol = verify_minutes_qual(_scrubbed, _gated_tables(state))
     if _min_viol:
         _min_bad = set(_min_viol)
@@ -6768,9 +6536,9 @@ async def presentation_agent(state: DimeState) -> AsyncGenerator[dict[str, Any],
     _new_facts = _extract_ledger_facts(state)
     if _new_facts:
         yield _event("ledger_facts", {"facts": _new_facts})
-    # Termination gate, text side: rate-stat claims name their minutes
-    # floor, superlatives off on-court ratings name the caveat. Runs on
-    # the final scrubbed text - the last thing before render.
+
+
+
     _scrubbed, _qrep = _gate_qualifications(_scrubbed, _gated_tables(state))
     if _qrep.get("applied"):
         try:
@@ -6801,11 +6569,6 @@ async def presentation_agent(state: DimeState) -> AsyncGenerator[dict[str, Any],
 
 
 async def _finish_suggestions(state: DimeState) -> list[str]:
-    """Await the background suggestions task spawned by presentation_agent.
-
-    Runs after graph_end so the LLM call never delays the answer
-    stream. Falls back to the hardcoded _suggest on timeout or error.
-    """
     task = state.pop("_suggest_task", None)  # type: ignore[typeddict-unknown-key]
     items: Any = None
     if task is not None:

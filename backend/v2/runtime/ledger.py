@@ -624,7 +624,6 @@ class RunLedger:
 
 
 class _LedgerWriter:
-    """Internal write seam; not reachable from runtime configuration."""
     def write(self, fd: int, payload: bytes) -> None:
         view = memoryview(payload)
         while view:

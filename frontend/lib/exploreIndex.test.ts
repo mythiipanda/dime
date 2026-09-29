@@ -60,7 +60,7 @@ test("topLeaders returns [] on empty input", () => {
 });
 
 test("playoffChampion finds the decided Finals winner", () => {
-  // NBA playoff ids carry the round at chars 6-7 ("04" = Finals).
+  
 
   const rows: Record<string, unknown>[] = [];
   for (let i = 1; i <= 7; i++) {
@@ -110,8 +110,8 @@ test("combineSummary reports the prospect count, null when empty", () => {
   assert.equal(combineSummary([], "2025"), null);
 });
 
-// fetchIndexSummaries: each dataset fetch is isolated (allSettled), so one
-// failed request never blanks the cards whose data arrived fine.
+
+
 
 
 

@@ -1,9 +1,3 @@
-"""Clutch-scorer leaderboard pin (sweep3).
-
-"Who are the best clutch scorers this season?" spent 16.8s on a
-delegate fan-out for a board the warehouse already serves. The pin
-calls get_clutch directly and builds the answer from the payload.
-"""
 
 import asyncio
 import sys
@@ -41,7 +35,7 @@ def test_clutch_variants_pinned():
 
 
 def test_team_scope_clutch_not_pinned():
-    # "best clutch teams" asks for team scope; the pin is player-only.
+
     st = _drain("best clutch teams this season")
     assert "get_clutch" not in [c.split(":")[0] for c in st["calls_made"]]
 

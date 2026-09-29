@@ -1,8 +1,3 @@
-"""Repro: concurrent DuckDB writers collide on the single-writer lock.
-
-Usage: python -m scripts.repro_lock
-Pass means all threads wrote without lock errors.
-"""
 
 import sys
 import threading

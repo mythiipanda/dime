@@ -1,8 +1,3 @@
-"""Closed team-rating metric vocabulary; the single source of truth.
-
-Each entry carries the display label and the deterministic-answer number
-format, so no second metric-ID collection is needed anywhere.
-"""
 
 TEAM_RATING_METRICS = {
     "OFF_RATING": {"label": "offensive rating", "format": "general"},
