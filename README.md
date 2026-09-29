@@ -89,8 +89,7 @@ image. On backend changes, CI downloads the data pack
 (`tony-features-pack-20260911`, published 2026-09-12),
 unzips it into `backend/data/`, builds derived tables at
 image time, and pushes
-`ghcr.io/mythiipanda/dime-backend:latest`. Nothing queries
-a live stats API at answer time.
+`ghcr.io/mythiipanda/dime-backend:latest`. The warehouse is the primary source at answer time; on misses, some datasets fall back to live sources (nba_stats, ESPN) where configured, and that fallback can fail or time out.
 
 Coverage in the current pack: 52 tables, 47 of them silver.
 The `silver_hist_*` tables span 2009-10 through 2025-26
