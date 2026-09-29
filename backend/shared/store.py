@@ -10,6 +10,7 @@ import duckdb
 import fcntl
 import os
 import polars as pl
+import threading
 import time
 import hashlib
 
@@ -163,6 +164,106 @@ _CONNECT_RETRIES = 6
 _CONNECT_BACKOFF_S = 0.2
 
 
+_pool_state = threading.local()
+_pool_lock = threading.Lock()
+_pool_registry: list = []
+
+
+class _PooledConnection:
+    def __init__(self, real):
+        self._real = real
+        self._con = real
+
+    def __getattr__(self, name):
+        return getattr(self._real, name)
+
+    def close(self):
+        pass
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        return False
+
+
+def _pool_drop():
+    entry = getattr(_pool_state, "entry", None)
+    try:
+        _pool_state.entry = None
+    except Exception:
+        pass
+    if entry is not None:
+        try:
+            with _pool_lock:
+                try:
+                    _pool_registry.remove(entry[1])
+                except ValueError:
+                    pass
+        except Exception:
+            pass
+        try:
+            entry[1].close()
+        except Exception:
+            pass
+
+
+def _pool_evict_all():
+    try:
+        with _pool_lock:
+            cons = list(_pool_registry)
+            del _pool_registry[:]
+    except Exception:
+        return
+    for con in cons:
+        try:
+            con.close()
+        except Exception:
+            pass
+
+
+def _pool_acquire():
+    entry = getattr(_pool_state, "entry", None)
+    if entry is None:
+        return None
+    if entry[0] != (str(DB_PATH.resolve()), True):
+        _pool_drop()
+        return None
+    try:
+        st = os.stat(DB_PATH)
+    except OSError:
+        _pool_drop()
+        return None
+    if (st.st_mtime_ns, st.st_size) != (entry[2], entry[3]):
+        _pool_drop()
+        return None
+    try:
+        entry[1].execute("SELECT 1").fetchall()
+    except Exception:
+        _pool_drop()
+        return None
+    return _PooledConnection(entry[1])
+
+
+def _pool_store(con):
+    try:
+        st = os.stat(DB_PATH)
+    except OSError:
+        return con
+    _pool_state.entry = ((str(DB_PATH.resolve()), True), con, st.st_mtime_ns, st.st_size)
+    try:
+        with _pool_lock:
+            if con not in _pool_registry:
+                _pool_registry.append(con)
+    except Exception:
+        pass
+    return _PooledConnection(con)
+
+
+def warehouse_pool_clear() -> None:
+    _pool_drop()
+
+
 def connect(read_only: bool | None = None) -> duckdb.DuckDBPyConnection:
     """Open the warehouse, retrying transient file-lock contention.
 
@@ -181,12 +282,26 @@ def connect(read_only: bool | None = None) -> duckdb.DuckDBPyConnection:
         # Unclassified callers must not checkpoint it. Configured runtime DBs
         # retain legacy write behavior until their call sites are classified.
         read_only = DB_PATH.resolve() == CANONICAL_DB_PATH
+    if read_only:
+        pooled = _pool_acquire()
+        if pooled is not None:
+            return pooled
+    else:
+        _pool_evict_all()
     last: Exception | None = None
     for attempt in range(_CONNECT_RETRIES):
         try:
-            return _connect_once(read_only)
+            con = _connect_once(read_only)
+            if read_only:
+                return _pool_store(con)
+            return con
         except _LOCK_ERRORS as exc:
             last = exc
+            try:
+                if isinstance(exc, duckdb.ConnectionException) and "different configuration" in str(exc):
+                    _pool_evict_all()
+            except Exception:
+                pass
             time.sleep(_CONNECT_BACKOFF_S * (2 ** attempt))
         except duckdb.BinderException as exc:
             # Same-process attach race: two threads duckdb.connect() the
