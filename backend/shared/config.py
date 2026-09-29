@@ -1,7 +1,18 @@
-"""Process boundary. All env parsing and validation lives here."""
-
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
+import os
+from typing import Literal
+
+RuntimeV2Mode = Literal["off", "on", "shadow"]
+
+
+def runtime_v2_mode() -> RuntimeV2Mode:
+    mode = os.environ.get("DIME_RUNTIME_V2", "off").strip().lower()
+    if mode == "on":
+        return "on"
+    if mode == "shadow":
+        return "shadow"
+    return "off"
 
 
 class Settings(BaseSettings):
@@ -26,17 +37,7 @@ class Settings(BaseSettings):
     llm_timeout_s: int = 60
     llm_max_retries: int = 1
     dime_v2_pre_tool_timeout_s: float = Field(default=45.0, gt=0)
-    # Overall ceiling for a single v2 chat-stream run. Individual model
-    # calls have llm_timeout_s, but a run with many stages, retries, and
-    # tool loops can still hang for minutes -- bound the whole thing so a
-    # stuck model call ends the stream with a clean failure event instead
-    # of heartbeats forever.
     dime_v2_run_timeout_s: float = Field(default=360.0, gt=0)
-    # First-token deadline for provider streaming calls. A provider that
-    # accepts the request but never produces a first token (observed on
-    # the NVIDIA NIM endpoint) defeats httpx-level timeouts, so the
-    # asyncio-level watchdog in providers.py bounds it explicitly: fail
-    # the provider fast and move on instead of hanging the whole turn.
     dime_first_token_timeout_s: float = Field(default=45.0, gt=0)
     chat_rate_per_minute: int = 20
     default_timeout_seconds: int = 10

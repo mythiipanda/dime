@@ -1,5 +1,3 @@
-"""HTTP boundary. Parse and clamp here. Graph trusts what it receives."""
-
 import asyncio
 import math
 import time
@@ -15,7 +13,7 @@ from .graph import run_chat
 from shared.providers import models_catalog
 from shared import store
 from .sse import emit_sse, with_heartbeat
-from shared.config import settings
+from shared.config import runtime_v2_mode, settings
 
 router = APIRouter()
 
@@ -53,7 +51,6 @@ def _sanitize_sse_event(etype: str, data: dict) -> dict:
             "node", "name", "label", "summary", "agent",
         ) if key in data}
     if etype == "token":
-        # Draft prose has not passed the final numerical/grounding guard yet.
         return {"text": ""}
     if etype == "thought_token" and isinstance(data, dict):
         return {key: data[key] for key in ("node", "agent") if key in data} | {
@@ -116,7 +113,7 @@ def _sanitize_sse_event(etype: str, data: dict) -> dict:
 
 
 def _shadow_enabled() -> bool:
-    return os.environ.get("DIME_RUNTIME_V2", "off").lower() == "shadow"
+    return runtime_v2_mode() == "shadow"
 
 
 def _v1_shadow_outcome(
@@ -317,9 +314,6 @@ async def _stream(
             ):
                 if event["type"] == "final_answer":
                     final = str(event["data"].get("text", ""))
-                    # Carry the server-generated run id through the
-                    # sanitizer so the frontend can dedupe this exact
-                    # run against the persisted /threads/{id}/runs copy.
                     event["data"]["run_id"] = run_id
                 elif event["type"] == "ledger_facts":
                     _lf = event["data"].get("facts")
@@ -344,7 +338,7 @@ async def _stream(
                     if isinstance(items, list):
                         suggestions = [str(i) for i in items]
                 if event["type"] == "ledger_facts":
-                    continue  # internal plumbing - persisted above, not streamed
+                    continue
                 public_data = _sanitize_sse_event(
                     event["type"], event["data"])
                 if public_data is not None:
@@ -407,11 +401,6 @@ class SqlRerunBody(BaseModel):
 
 @router.post("/sql/rerun")
 async def api_sql_rerun(body: SqlRerunBody) -> dict:
-    """One-click re-run of a warehouse SQL shown by text_to_sql.
-
-    Boundary: parse and clamp here; read-only validation lives in the
-    shared league._validate_readonly_sql used by text_to_sql.
-    """
     from shared.tools.league import rerun_sql
 
     sql = (body.sql or "").strip()
@@ -501,8 +490,6 @@ async def chat_stream_post(request: Request, body: ChatBody):
         media_type="text/event-stream",
     )
 
-
-# --- Today / Watchlist / Movers / Briefing endpoints for frontend ---
 
 @router.get("/today")
 async def api_today(season: str = Query("2025-26")):

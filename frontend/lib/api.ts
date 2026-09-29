@@ -1,14 +1,10 @@
 import { BACKEND, ModelsResponse } from "./chat";
+import { apiRuntime, chatRuntime } from "./runtime";
 
 export const SEASON = "2025-26";
 
-// v1-removal Step 4 (frontend cutover): the v2 router serves the same
-// endpoints without the /v1 prefix (except chat, which has its own
-// NEXT_PUBLIC_CHAT_RUNTIME toggle). Setting NEXT_PUBLIC_API_RUNTIME="v2"
-// points every apiPath() call at the v2 router; the default stays v1 so
-// this wiring is a no-op until the flag is flipped.
 export function apiPath(p: string): string {
-  return process.env.NEXT_PUBLIC_API_RUNTIME === "v2" ? `/api${p}` : `/api/v1${p}`;
+  return apiRuntime() === "v2" ? `/api${p}` : `/api/v1${p}`;
 }
 
 export interface GameRow {
@@ -165,9 +161,6 @@ export interface FreshRow {
   table: string;
   rows: number;
   last_fetch: string | null;
-  // Latest game/event date in the table's own rows (YYYY-MM-DD). Absent or
-  // null on backends that predate coverage dates, or for tables with no
-  // parseable date column (static/snapshot data).
   data_through?: string | null;
 }
 
@@ -233,22 +226,10 @@ export async function postChatStream(
   signal?: AbortSignal,
   thread?: string | null,
 ): Promise<void> {
-  // Client-side watchdogs: a stuck run must surface an error, not spin
-  // "Thinking..." forever.
-  //
-  // - STALL_MS: no bytes at all (not even heartbeat pings) for 90s means
-  //   the connection itself is dead.
-  // - PROGRESS_MS: only pings and no real events for 3 minutes means the
-  //   backend is alive (heartbeats flow every 15s) but the run is stuck --
-  //   this is the case the old bytes-based watchdog could never catch.
-  //   v1 only: v2 buffers every event until run end, so pings-only is the
-  //   expected shape there and the backend's 6-minute run timeout already
-  //   bounds a stuck v2 run.
-  // - MAX_RUN_MS: absolute ceiling on a single chat request.
   const STALL_MS = 90_000;
   const PROGRESS_MS = 180_000;
   const MAX_RUN_MS = 480_000;
-  const runtime = process.env.NEXT_PUBLIC_CHAT_RUNTIME === "v2" ? "v2" : "v1";
+  const runtime = chatRuntime();
   const ctrl = new AbortController();
   const startedAt = Date.now();
   let lastByte = startedAt;
@@ -350,8 +331,7 @@ export async function postChatStream(
       try {
         const eventType = typeLine.slice(6).trim();
         if (eventType === "graph_end") terminal = true;
-        // Heartbeat pings keep the connection alive but are not progress:
-        // only real events reset the progress watchdog.
+
         if (eventType !== "ping") lastProgress = Date.now();
         handlers.onEvent(
           eventType,
@@ -398,11 +378,6 @@ export interface ThreadInfo {
   turns: number;
 }
 
-// --- Local session persistence (QA F22) -------------------------------
-// The backend session store is ephemeral container state: every deploy
-// wipes it. The rail is per-browser by design, so localStorage is the
-// durable source of truth for this browser's history; the server copy
-// is a cache. Merge on read, write on every successful fetch.
 const THREADS_KEY = () => `dime_threads_${getClientId()}`;
 const RUNS_KEY = (id: string) => `dime_runs_${getClientId()}_${id}`;
 const MAX_CACHED_THREADS = 50;
@@ -421,7 +396,6 @@ function lsSet(key: string, value: unknown): void {
   try {
     localStorage.setItem(key, JSON.stringify(value));
   } catch {
-    /* storage full or blocked - persistence is best-effort */
   }
 }
 
@@ -440,23 +414,12 @@ function saveThreads(list: ThreadInfo[]): void {
 function mergeThreads(server: ThreadInfo[]): ThreadInfo[] {
   const byId = new Map<string, ThreadInfo>();
   for (const t of loadCachedThreads()) byId.set(t.id, t);
-  for (const t of server) byId.set(t.id, t); // server copy wins
+  for (const t of server) byId.set(t.id, t);
   const merged = [...byId.values()];
   saveThreads(merged);
   return merged;
 }
 
-// Union the server's runs with the local cache instead of replacing it.
-// The server store is wiped on every deploy, so the local cache can hold
-// runs the server has never seen (appended after a wipe), and the server
-// can hold runs this browser hasn't cached yet. Replacing the cache with
-// the server's copy would silently drop whichever side is longer.
-// Two copies of the same turn can carry different created_at stamps (the
-// local write and the server write happen seconds apart), so dedupe can't
-// key on the raw timestamp. Prefer a stable run id when both sides have one;
-// otherwise treat same question+answer with a small timestamp skew as one
-// turn. Tolerance is minutes, so a genuinely repeated question an hour later
-// still renders as its own turn.
 const RUN_DEDUPE_SKEW_MS = 10 * 60 * 1000;
 
 function createdMs(v: unknown): number | null {
@@ -465,17 +428,10 @@ function createdMs(v: unknown): number | null {
 }
 
 function isSameTurn(a: RunInfo, b: RunInfo): boolean {
-  // Stable server-generated ids are exact: the same id is always the
-  // same turn, even when timestamps or content drift across writes.
   if (a.id && b.id) return a.id === b.id;
-  // One side id'd, the other not: never merge. Folding the authoritative
-  // id'd copy into an id-less row by heuristic would resurrect the
-  // repeat-question collapse this replaced.
+
   if (a.id || b.id) return false;
-  // Legacy rows without ids (older caches, pre-id server rows): fall
-  // back to question+answer with a small skew tolerance. This heuristic
-  // can over-collapse genuinely repeated identical Q/A, which is why
-  // every new run now carries a stable server id.
+
   if (a.question !== b.question || a.answer !== b.answer) return false;
   const ta = createdMs(a.created_at);
   const tb = createdMs(b.created_at);
@@ -502,8 +458,7 @@ function mergeRuns(thread: string, serverOldestFirst: RunInfo[]): RunInfo[] {
 export function loadCachedRuns(thread: string): RunInfo[] {
   const v = lsGet(RUNS_KEY(thread));
   const runs = Array.isArray(v) ? (v as RunInfo[]) : [];
-  // Older builds cached the server's newest-first order; the load path
-  // expects oldest-first. Self-heal once on read.
+
   if (runs.length > 1) {
     const first = runs[0]?.created_at;
     const last = runs[runs.length - 1]?.created_at;
@@ -514,19 +469,12 @@ export function loadCachedRuns(thread: string): RunInfo[] {
   return runs;
 }
 
-// Record a finished exchange locally the moment it completes. The server
-// session store is ephemeral container state (every deploy wipes it), so
-// without this the runs cache stays empty and a wiped server means the
-// thread rail lists sessions whose clicks render an empty welcome state.
 export function appendCachedRun(thread: string, run: RunInfo): void {
   const cached = loadCachedRuns(thread);
   const last = cached[cached.length - 1];
   if (last) {
-    // onDone can fire again for the same run on re-renders: the stable
-    // id makes that exact (same id = already recorded). A genuinely
-    // re-asked question gets a new server id and is always kept.
     if (run.id && last.id === run.id) return;
-    // Legacy no-id runs keep the old immediate q/a repeat guard.
+
     if (
       !run.id &&
       last.question === run.question &&
@@ -551,7 +499,6 @@ export async function getThreads(): Promise<ThreadInfo[]> {
 }
 
 export interface RunInfo {
-  /** Server-assigned run id, when the backend provides one. Preferred for dedupe. */
   id?: string;
   question: string;
   answer: string;
@@ -567,11 +514,6 @@ export async function getRuns(thread: string): Promise<RunInfo[]> {
     );
     if (!res.ok) return loadCachedRuns(thread);
     const server = ((await res.json()).runs || []) as RunInfo[];
-    // The server returns newest-first; the conversation load path and
-    // the local cache are oldest-first, so normalize once at the edge.
-    // Merge, don't replace: an empty server (deploy wipe) leaves the
-    // local cache intact, and a partial server (post-wipe) can't drop
-    // runs the server never saw.
     const runs = [...server].reverse();
     return mergeRuns(thread, runs);
   } catch {
@@ -659,11 +601,6 @@ export async function resolveFirstPlayerId(q: string): Promise<number | null> {
   return hit ? hit.id : null;
 }
 
-// Raw resolve rows for the Explore search dropdown. Unlike PlayerHit /
-// TeamHit above, these keep each row's own response fields so the caller
-// can tell a team row from a player row by the row itself: team rows
-// carry an `abbreviation` field, player rows never do. Entity type is
-// read off the row data, never off which array the row arrived in.
 export interface ResolvePlayerRow {
   id: number;
   full_name: string;
@@ -693,8 +630,6 @@ export async function resolveEntities(q: string, limit = 4): Promise<ResolveHits
     }).rows;
     return {
       players: (rows.players || []).slice(0, limit).map((v) => ({ id: v.id, full_name: v.full_name })),
-      // Keep the abbreviation key on every team row (even when null) so
-      // downstream code can identify team rows by field presence.
       teams: (rows.teams || []).slice(0, limit).map((v) => ({
         id: v.id,
         full_name: v.full_name,

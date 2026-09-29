@@ -7,7 +7,6 @@ import json
 import os
 import re
 import subprocess
-import inspect
 import marshal
 import time
 from collections import defaultdict
@@ -24,6 +23,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 from v2.projects.service import ProjectStore
 from v2.conversations import ConversationStore
 from v2.api.sse import encode_raw, with_heartbeat
+from shared.config import runtime_v2_mode
 
 router = APIRouter()
 _BACKEND = Path(__file__).resolve().parents[2]
@@ -45,7 +45,7 @@ _LOADED_MODULE_CODE_SHA256 = _imported_module_code_sha256()
 
 
 def _projects_enabled() -> bool:
-    return os.environ.get("DIME_RUNTIME_V2", "off").lower() == "on"
+    return runtime_v2_mode() == "on"
 
 
 def _require_projects() -> None:
@@ -86,7 +86,6 @@ def _executable_sha256() -> str:
 
 @lru_cache(maxsize=1)
 def runtime_warehouse_identity() -> dict[str, str]:
-    """Safe identity of the warehouse bound to this server process."""
     from shared import store
     identity = store.warehouse_identity()
     return {"warehouse_id": identity["warehouse_id"],
@@ -116,7 +115,6 @@ class RuntimeAssetManifest:
 
 
 def _loaded_behavior_sha256(module: ModuleType, config: Mapping[str, object]) -> str:
-    """Bind import-time module code plus canonical runtime configuration."""
     code_hash = getattr(module, "_LOADED_MODULE_CODE_SHA256", None)
     if not isinstance(code_hash, str) or len(code_hash) != 64:
         raise RuntimeError("module lacks import-time code identity")
@@ -125,7 +123,6 @@ def _loaded_behavior_sha256(module: ModuleType, config: Mapping[str, object]) ->
 
 
 def _typed_argument_asset_hashes() -> dict[str, str]:
-    """Startup pins for checked typed-wire and capability compiler assets."""
     paths = {
         "provider_schema_manifest": _BACKEND / "v2/schema_snapshots/manifest.json",
         "behavior_losses": _BACKEND / "v2/schema_snapshots/behavior_losses.json",
@@ -138,7 +135,6 @@ def _typed_argument_asset_hashes() -> dict[str, str]:
 
 @lru_cache(maxsize=1)
 def runtime_asset_manifest() -> RuntimeAssetManifest:
-    """Deeply immutable identity of code, data, and prompts bound at startup."""
     from v2.adapters import models
     prompts = models.bind_provider_route_prompts()
     expected_routes = set(models._PROVIDER_ROUTE_PROMPT_NAMES)
@@ -173,7 +169,6 @@ def runtime_asset_manifest() -> RuntimeAssetManifest:
 
 
 def preflight_runtime_assets(expected_path: str | Path | None = None) -> RuntimeAssetManifest:
-    """Fail startup unless one promotion-generated expected manifest matches."""
     configured = expected_path or os.environ.get("DIME_EXPECTED_ASSET_MANIFEST")
     if not configured:
         raise RuntimeError("DIME_EXPECTED_ASSET_MANIFEST is required")
@@ -192,10 +187,8 @@ def preflight_runtime_assets(expected_path: str | Path | None = None) -> Runtime
     if expected != observed_dict:
         import logging
         _log = logging.getLogger(__name__)
-        # Fail closed on substantive drift (code, data, prompts) — this is the
-        # safety invariant: never serve unapproved artifacts. The revision
-        # label alone is not substantive; :latest moves under pinned revisions
-        # during normal deploys, so label mismatch is warn-only.
+
+
         substantive_keys = {"executable_sha256", "module_sha256", "warehouse",
                            "semantic_baseline", "prompt_sha256",
                            "typed_argument_assets"}
@@ -209,7 +202,7 @@ def preflight_runtime_assets(expected_path: str | Path | None = None) -> Runtime
             raise RuntimeError(
                 "startup asset manifest substantive mismatch: "
                 f"{sorted(substantive_drift)}")
-        # Revision-label-only mismatch: warn, don't block deploy.
+
         _log.warning(
             "startup asset revision label mismatch: expected %s, observed %s",
             expected.get("revision"), observed_dict.get("revision"),
@@ -219,14 +212,13 @@ def preflight_runtime_assets(expected_path: str | Path | None = None) -> Runtime
 
 @router.get("/revision")
 def revision() -> dict:
-    # Round-trip gives callers a copy while preserving startup-bound identity.
+
     return runtime_asset_manifest().as_dict()
 
 
 def _models_catalog() -> dict:
-    # Deferred: shared.providers pulls heavyweight provider SDKs
-    # (langchain_*); keep v2.main importable in minimal envs.
-    # Same source as the v1 /api/v1/models + /api/v1/health endpoints.
+
+
     from shared.providers import models_catalog
 
     return models_catalog()
@@ -242,17 +234,6 @@ def health() -> dict:
     catalog = _models_catalog()
     return {"ok": True, "providers": catalog["available"]}
 
-
-# ---------------------------------------------------------------------------
-# Datasets (v1-removal Step 3, item 4)
-#
-# v1 parity for the /api/v1/datasets/* endpoints in app/datasets.py, served
-# here as /api/datasets/*. All heavy imports (shared.store, shared.sources,
-# shared.tools, polars) stay deferred to call time so v2.main remains
-# importable in minimal envs (same pattern as the /models and chat ports).
-# Registration order matters: /datasets/freshness must precede
-# /datasets/{name} or the literal path is swallowed by the wildcard.
-# ---------------------------------------------------------------------------
 
 _DATASETS_TABLES = {
     "standings": "silver_standings",
@@ -276,9 +257,7 @@ _DATASETS_TABLES = {
     "player_seasons": "silver_hist_player_seasons",
 }
 
-# In-memory cache for the freshness endpoint (v1 parity: per-worker cache,
-# 300s TTL; each cached row carries its own last_fetch so the payload is
-# self-describing).
+
 _DATASETS_FRESHNESS_TTL_S = 300
 _DATASETS_FRESHNESS_CACHE = {"at": 0.0, "payload": None}
 
@@ -331,8 +310,8 @@ def _datasets_envelope(table: str, season: str, frame: object, cached: bool) -> 
         meta["fetched_at"] = frame["_fetched_at"][0]
     rows = frame.to_dicts()
     if table.startswith("silver_leaders_"):
-        # Pin the stat column after the identity columns so capped table
-        # renderers (12-col cap) keep it visible (QA F8, Explore tab).
+
+
         stat_col = table.rsplit("_", 1)[-1].upper()
         if stat_col == "FG":
             stat_col = "FG_PCT"
@@ -344,10 +323,8 @@ def _datasets_envelope(table: str, season: str, frame: object, cached: bool) -> 
             pinned.append(keyed)
         rows = pinned
     if table == "silver_standings":
-        # Pin the overall record ahead of ConferenceRecord/DivisionRecord:
-        # the 12-col render cap used to cut before WINS/LOSSES, so the
-        # Explore standings panel showed "41-11" (conference record) as
-        # the only record column while the team was 64-18 overall.
+
+
         pin = ["TeamCity", "TeamName", "Conference", "Record",
                "WINS", "LOSSES", "WinPCT", "PlayoffRank",
                "ClinchIndicator"]
@@ -468,15 +445,15 @@ def dataset(
         entity = f"wowy:{ids}"
     frame = store.read_frame(table, "_season = ?", [season])
     if name == "leaders" and frame.height > 0:
-        # Warehouse storage order is arbitrary; leaders must come back
-        # ranked or the Top-10 chart and table drop or bury leaders.
+
+
         from shared.tools import clamp_stat
 
         stat_col = clamp_stat(stat)
         if stat_col in frame.columns:
             frame = frame.sort(stat_col, descending=True, nulls_last=True)
     if entity_scoped:
-        # Warehouse-first per entity; never force a live call when seeded.
+
         if entity:
             try:
                 frame = store.read_frame(
@@ -491,7 +468,7 @@ def dataset(
         if live is None:
             return {"ok": False, "error": "missing id param for this dataset"}
         if not live.ok:
-            # Honest attribution: name the failed live source, then stale-fallback.
+
             stale = None
             if entity_scoped and entity:
                 try:
@@ -517,9 +494,8 @@ def dataset(
             frame = store.read_frame(table, "_season = ?", [season])
     if (name in ("player_gamelogs", "team_games", "playoff_gamelogs")
             and frame.height > 0 and "GAME_DATE" in frame.columns):
-        # Warehouse storage order is arbitrary; game logs must come back
-        # newest-first by REAL date or the panel's "recent" slice quietly
-        # shows December string-sort order (QA F19).
+
+
         for fmt_s in ("%b %d, %Y", "%Y-%m-%d"):
             try:
                 frame = frame.with_columns(
@@ -537,10 +513,8 @@ def dataset(
                     frame = frame.drop("_d")
                 continue
     if name in ("player_gamelogs", "team_games", "playoff_gamelogs") and frame.height > 0:
-        # The warehouse is append-seeded and different seeds use
-        # different Game_ID formats for the same game; collapse
-        # duplicates at read time or the panels render the identical
-        # row N times (QA: the same stat row showed 5x).
+
+
         from shared.tools.gamelog import dedupe_game_log_frame
 
         frame = dedupe_game_log_frame(frame)
@@ -553,16 +527,6 @@ def dataset(
     out = _datasets_envelope(table, season, frame, cached)
     out["ok"] = True
     return out
-
-
-# ---------------------------------------------------------------------------
-# Threads + SQL rerun (v1-removal Step 3, item 4)
-#
-# v1 parity for GET /api/v1/threads (+/{thread_id}/runs, /{thread_id}/export)
-# and POST /api/v1/sql/rerun in app/routes.py, served here as /api/threads/*
-# and /api/sql/rerun. Backed by the same shared.store thread log and the
-# same shared league.rerun_sql read-only validator.
-# ---------------------------------------------------------------------------
 
 
 @router.get("/threads")
@@ -624,11 +588,6 @@ class SqlRerunBody(BaseModel):
 
 @router.post("/sql/rerun")
 async def sql_rerun(body: SqlRerunBody) -> dict:
-    """One-click re-run of a warehouse SQL shown by text_to_sql.
-
-    Boundary: parse and clamp here; read-only validation lives in the
-    shared league._validate_readonly_sql used by text_to_sql. (v1 parity)
-    """
     from shared.tools.league import rerun_sql
 
     sql = (body.sql or "").strip()
@@ -648,7 +607,6 @@ async def sql_rerun(body: SqlRerunBody) -> dict:
 
 @router.get("/resolve")
 def resolve(q: str = Query("")) -> dict:
-    """Entity resolution passthrough (v1 parity: clamps query to 80 chars)."""
     from shared.tools import resolve_entity
 
     return resolve_entity.invoke({"query": q[:80]})
@@ -673,7 +631,6 @@ class TradeBody(BaseModel):
 
 @router.post("/trade/check")
 def trade_check(body: TradeBody) -> dict:
-    """Trade legality check passthrough (v1 parity)."""
     from shared.tools import get_trade_check
 
     return get_trade_check.invoke({
@@ -693,7 +650,6 @@ def debate_card(
     b: str = Query(""),
     season: str = Query("2025-26"),
 ) -> dict:
-    """Shareable debate-card builder (v1 parity; file URL on the v2 mount)."""
     from shared.tools import get_debate_card
     from shared.tools._core import clamp_season
 
@@ -729,7 +685,6 @@ def debate_card(
 
 @router.get("/debate-card/file")
 def debate_card_file(name: str = Query("")) -> FileResponse:
-    """Serve a generated debate-card HTML file (v1 parity)."""
     if not _DEBATE_FILE_RE.fullmatch(name or ""):
         raise HTTPException(status_code=400, detail="invalid file name")
     target = CARDS_DIR / name
@@ -744,7 +699,6 @@ def debate_card_file(name: str = Query("")) -> FileResponse:
 
 @router.get("/today")
 async def today(season: str = Query("2025-26")):
-    """Today's games slate (v1 parity)."""
     from shared.tools.today import get_today
 
     loop = asyncio.get_running_loop()
@@ -755,7 +709,6 @@ async def today(season: str = Query("2025-26")):
 
 @router.get("/watchlist")
 async def watchlist(season: str = Query("2025-26")):
-    """Watchlist read (v1 parity)."""
     from shared.tools.watchlist import get_watchlist
 
     res = get_watchlist.invoke({"season": season})
@@ -770,7 +723,6 @@ class WatchlistBody(BaseModel):
 
 @router.post("/watchlist")
 async def watchlist_add(body: WatchlistBody):
-    """Watchlist add (v1 parity)."""
     from shared.tools.watchlist import add_watchlist_item
 
     res = add_watchlist_item.invoke({
@@ -786,7 +738,6 @@ async def watchlist_remove(
     entity_type: str = Query(...),
     entity_id: str = Query(...),
 ):
-    """Watchlist remove (v1 parity)."""
     from shared.tools.watchlist import remove_watchlist_item
 
     res = remove_watchlist_item.invoke({
@@ -801,7 +752,6 @@ async def movers(
     season: str = Query("2025-26"),
     days: int = Query(7, ge=1, le=30),
 ):
-    """Leaderboard movers (v1 parity)."""
     from shared.tools.league import get_leaderboard_deltas
     from shared.tools.today import normalize_movers
 
@@ -812,7 +762,6 @@ async def movers(
 
 @router.get("/briefing")
 async def briefing(season: str = Query("2025-26")):
-    """Morning briefing (v1 parity)."""
     from shared.tools.today import get_morning_briefing
 
     res = get_morning_briefing.invoke({"season": season})
@@ -820,7 +769,6 @@ async def briefing(season: str = Query("2025-26")):
 
 
 def public_evidence_table(item):
-    """Bounded public projection; internal provenance never crosses SSE."""
     return {"tool": item.capability, "rows": item.rows, "meta": {
         "source": item.source,
         "source_as_of": item.as_of.isoformat() if item.as_of else None,
@@ -924,7 +872,6 @@ def _output_line(result, status) -> str:
 
 
 def _answer_text(result) -> str:
-    """Project only deterministically admitted output authority."""
     lines = [_output_line(result, item) for item in result.output_statuses
              if item.status == "complete"]
     for item in result.output_statuses:
@@ -1030,7 +977,6 @@ def _public_evidence_tables(result) -> list[dict]:
 
 
 def _safe_buffered_event(event):
-    """Closed public-event projection for buffered runtime lifecycle."""
     from v2.api.events import NodeUpdate, ToolCall, ToolResult
     kind = str(getattr(event, "type", ""))
     public_nodes = {"entry", "data_retrieval", "tools", "analytics", "presentation"}
@@ -1062,13 +1008,6 @@ async def _drain_run(
     timeout_s: float,
     drain_tick_s: float = 0.1,
 ) -> list:
-    """Drain runtime events until the run task finishes, bounded by timeout_s.
-
-    Returns the drained event list. Raises asyncio.TimeoutError if the run
-    does not finish within timeout_s -- the caller cancels the hung task.
-    Extracted for unit tests: a hung runtime.run() must not spin the queue
-    loop forever past the run timeout.
-    """
     buffered: list = []
 
     async def _drain_until_done():
@@ -1096,9 +1035,8 @@ async def chat_stream_get(
     thread: str | None = Query(None),
     client: str | None = Query(None),
 ):
-    # GET mirrors the v1 chat stream: no request body, history comes from
-    # the conversation store via thread+client (same together-constraint
-    # as the POST body).
+
+
     return await _guarded_chat_stream(
         request,
         QuickAnswerBody(
@@ -1122,11 +1060,6 @@ _CHAT_HITS: dict[str, list[float]] = defaultdict(list)
 
 
 def _chat_allowed(ip: str) -> bool:
-    """Sliding-window per-IP chat rate limit (v1 parity).
-
-    Deferred settings import keeps v2.main importable in minimal envs,
-    same as the /models port.
-    """
     from shared.config import settings
 
     now = time.time()
@@ -1241,7 +1174,7 @@ async def quick_answer_stream(body: QuickAnswerBody):
         "DIME_V2_LEDGER_DIR", str(_BACKEND / "data" / "v2-ledgers"))
     checkpoint_dir = Path(os.environ.get(
         "DIME_V2_CHECKPOINT_DIR", str(_BACKEND / "data" / "v2-checkpoints")))
-    runtime_mode = os.environ.get("DIME_RUNTIME_V2", "off").lower()
+    runtime_mode = runtime_v2_mode()
     if runtime_mode == "shadow":
         policy = ExecutionPolicy.shadow(ledger_dir=ledger_dir)
     elif runtime_mode == "on":
@@ -1263,7 +1196,6 @@ async def quick_answer_stream(body: QuickAnswerBody):
         context = tuple(_CONVERSATIONS.read(body.client, body.thread))
 
     def missing_tool_events():
-        """Yield sanitized undelivered ledger tool events in ledger order."""
         try:
             entries = ledger.entries
             live_keys = getattr(activity, "internal_keys", set())
@@ -1300,8 +1232,8 @@ async def quick_answer_stream(body: QuickAnswerBody):
         }
 
     async def generate():
-        # v1 parity: the human turn lands in the shared thread log so the
-        # chat is visible in /api/threads even if the run fails midway.
+
+
         if body.thread is not None and body.client is not None:
             from shared import store
             store.save_chat(body.thread, "human", body.q[:2000],
@@ -1310,14 +1242,14 @@ async def quick_answer_stream(body: QuickAnswerBody):
             body.q, run_id=run_id, context=context))
         try:
             try:
-                # Bound the whole drain: a hung runtime.run() must not spin
-                # the queue loop forever past the run timeout.
+
+
                 buffered_events = await _drain_run(
                     task, queue, settings.dime_v2_run_timeout_s)
                 result = task.result()
                 while not queue.empty():
                     buffered_events.append(queue.get_nowait())
-                # Validate every public projection before emitting buffered SSE.
+
                 public_tables = _public_evidence_tables(result)
                 public_statuses = [_public_output_status(result, item)
                                    for item in result.output_statuses]
@@ -1373,9 +1305,8 @@ async def quick_answer_stream(body: QuickAnswerBody):
                     _CONVERSATIONS.append_exchange(
                         body.client, body.thread, body.q, answer)
                     if answer:
-                        # v1 parity: persist the exchange to the shared
-                        # thread log so v2 chats appear in /api/threads,
-                        # /api/threads/{thread_id}/runs and .../export.
+
+
                         from shared import store
                         store.save_chat(body.thread, "ai", answer,
                                         owner=body.client[:80])
