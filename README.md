@@ -1,57 +1,37 @@
 # Dime
 
-Answers NBA questions with stats pulled from its own data warehouse.
+Ask NBA questions in plain English. Dime plans the query, runs it
+against its own data warehouse, and shows its work.
 
-You ask in plain English in a chat. Dime plans the query, runs it, and
-shows its work: the tables, charts, and shot maps behind every number.
-
-![Dime answering a four-factors question](assets/readme/four-factors-dark.png)
+Live demo: [dime-fawn.vercel.app](https://dime-fawn.vercel.app)
 
 <video src="assets/readme/dime-motion-demo.mp4" controls muted loop playsinline width="100%"></video>
 
-## Demo
+![Dime answering a four-factors question](assets/readme/four-factors-dark.png)
 
-Live at [dime-fawn.vercel.app](https://dime-fawn.vercel.app). Runs on $0 of
-model spend.
+## Features
 
-## What you can ask
-
-Current season (2025-26): scoring, efficiency, true shooting, four factors,
-on/off splits, clutch numbers, shot zones, lineups, rest advantage, game
-predictions. Player comparisons and head-to-heads. Trade checks against the
-2026-27 cap ledger, award races, draft history back to 1996-97.
-
-History: 17 seasons of game logs, shots, possessions, lineups, and
-standings (2009-10 through 2025-26), play-by-play for 2020-21 through
-2024-25, and FiveThirtyEight RAPTOR back to 1976-77.
-
-If a question falls outside the data, the answer names the coverage window
-instead of guessing.
-
-## How it works
-
-```
-frontend/   Next.js 16, React 19, Tailwind 4, Recharts.
-            Streams tokens and live tool activity; dark and light themes.
-backend/    FastAPI planner with 94 tools over a local DuckDB warehouse
-            (48 silver tables). Four free-tier LLM providers behind one
-            interface: Mistral, OpenRouter, Inception, Groq.
-infra/      Azure Container Apps, scale-to-zero.
-```
-
-Questions with one right answer (records, four factors, Finals results,
-rankings) are answered by code reading the warehouse, not by the model
-recalling numbers.
+- Chat that answers with numbers, not vibes. Every stat comes
+  out of the warehouse and the reply shows the tables, charts,
+  and shot maps behind it.
+- Current season (2025-26): scoring, efficiency, true shooting,
+  four factors, on/off splits, clutch numbers, shot zones,
+  lineups, rest advantage, game predictions, head-to-heads.
+  Trade checks against the 2026-27 cap ledger, award races,
+  and draft history back to 1996-97.
+- History: game logs, shots, possessions, lineups, and
+  standings for 2009-10 through 2025-26, play-by-play for
+  2020-21 through 2024-25, and RAPTOR back to 1976-77.
+- Fixed answers come from code, not recall. Records, four
+  factors, Finals results, and rankings are computed from
+  warehouse rows. Outside the coverage window, the answer
+  says so instead of guessing.
+- 101 tools over a local DuckDB warehouse. Chat runs on
+  Gemini (default) and NVIDIA NIM behind one interface.
+- Streams tokens and live tool activity over SSE, in dark
+  and light themes.
 
 ![Dime in the light theme](assets/readme/chat-light.png)
-
-## Data
-
-Seeders in `backend/scripts/` pull from stats.nba.com, Basketball-Reference,
-ESPN, and pbpstats into silver tables. Derived tables (team four factors,
-RAPM-lite) are computed locally from those rows. The warehouse ships as a
-release asset and is baked into the Docker image, so answers do not depend
-on anyone's rate limits at query time.
 
 ## Quickstart
 
@@ -61,11 +41,19 @@ Backend (Python 3.12):
 cd backend
 uv venv --python 3.12
 uv pip install -r requirements.txt
-cp .env.example .env   # add your LLM keys
-uvicorn app.main:app --port 8010
+cp .env.example .env   # add your LLM keys for chat; the server boots without them
+# warehouse: download the data pack release and unzip it so that backend/data/warehouse.duckdb exists
+# https://github.com/mythiipanda/dime/releases/download/tony-features-pack-20260911/dime_data.zip
+python scripts/generate_asset_manifest.py manifest/expected_asset_manifest.json
+DIME_EXPECTED_ASSET_MANIFEST=$PWD/manifest/expected_asset_manifest.json \
+  uvicorn app.main:app --port 8010
 ```
 
-Frontend (Node 22):
+The manifest step is required. Without
+`DIME_EXPECTED_ASSET_MANIFEST`, the server exits at startup
+with `RuntimeError: DIME_EXPECTED_ASSET_MANIFEST is required`.
+
+Frontend:
 
 ```bash
 cd frontend
@@ -73,21 +61,58 @@ npm install
 NEXT_PUBLIC_BACKEND_URL=http://127.0.0.1:8010 npm run dev
 ```
 
-Open http://localhost:3000 and ask: "What are the Thunder's four factors
-this season?"
+Open http://localhost:3000 and ask: "What are the Thunder's
+four factors this season?"
 
-## Tests
+## How it works
+
+```
+frontend/   Next.js 16, React 19, Tailwind 4, Recharts.
+            Streams tokens and live tool activity over SSE; dark and light themes.
+backend/    FastAPI planner with 101 tools over a local DuckDB warehouse.
+            Gemini (default) and NVIDIA NIM behind one interface.
+infra/      Azure Container Apps, scale-to-zero.
+```
+
+You type a question. The planner picks the tools, runs them
+against the warehouse, and streams back the answer with the
+evidence attached.
+
+Production serves the v1 runtime. The v2 runtime is built,
+tested, and wired behind the `DIME_RUNTIME_V2` flag, with
+the cutover still pending.
+
+## Data
+
+The warehouse is a DuckDB file baked into the backend Docker
+image. On backend changes, CI downloads the data pack
+(`tony-features-pack-20260911`, published 2026-09-12),
+unzips it into `backend/data/`, builds derived tables at
+image time, and pushes
+`ghcr.io/mythiipanda/dime-backend:latest`. Nothing queries
+a live stats API at answer time.
+
+Coverage in the current pack: 52 tables, 47 of them silver.
+The `silver_hist_*` tables span 2009-10 through 2025-26
+(game logs, shots, possessions, lineups, standings).
+Play-by-play covers 2020-21 through 2024-25. RAPTOR runs
+1976-77 through 2021-22. Draft history runs 1996-97
+through 2023-24. Current-season tables and the 2026-27 cap
+ledger ship with each pack.
+
+## Evals and tests
 
 The benchmark pack lives in the private dime-internal repo
-(mythiipanda/dime-internal) at `evals/benchmark-pack/`. It runs 27 scenario
-chains against a live backend with expected-answer assertions and latency
-budgets. From a dime-internal checkout:
+at `evals/benchmark-pack/`. It runs 35 scenarios against a
+live backend with expected-answer assertions. From a
+dime-internal checkout:
 
 ```bash
 python evals/benchmark-pack/runner.py --url http://127.0.0.1:8010 --out reports/run.json
 ```
 
-The pytest suite covers routing, the pinned lanes, warehouse contracts, and
+The pytest suite (`backend/tests/`, 118 test files) covers
+routing, the pinned lanes, warehouse contracts, and
 streaming:
 
 ```bash
@@ -95,9 +120,15 @@ cd backend
 pytest tests/ -q
 ```
 
-## Deploy
+## Contributing
 
-`infra/deploy.sh` builds and pushes the backend image and updates the
-Container App. Needs `az login` on the subscription and `backend/.env`
-with the LLM keys, which are pushed as Container App secrets and never
-committed.
+Push backend changes on `dev` and CI builds the backend
+image with the data pack baked in. Run `pytest tests/ -q`
+from `backend/` before you open a PR. Deployments go
+through `infra/deploy.sh`, which needs `az login` and the
+LLM keys in `backend/.env` (pushed as Container App
+secrets, never committed).
+
+## License
+
+No license file ships with the repo yet.
