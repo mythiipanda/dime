@@ -68,8 +68,19 @@ def warehouse_identity() -> dict[str, str]:
     return identity
 
 
-_tables_cache: dict[Path, frozenset[str]] = {}
+_tables_cache: dict[Path, tuple[tuple[int, int, str], frozenset[str]]] = {}
 _tables_lock = threading.RLock()
+
+
+def _tables_freshness_key(path: Path) -> tuple[int, int, str] | None:
+    try:
+        st = path.stat()
+    except OSError:
+        return None
+    sample = _warehouse_sample_hexdigest(path, st.st_size)
+    if sample is None:
+        return None
+    return (st.st_mtime_ns, st.st_size, sample)
 
 
 def warehouse_tables_cache_clear() -> None:
@@ -93,13 +104,15 @@ def _tables_uncached(path: Path) -> frozenset[str]:
 
 def tables(path: Path | str | None = None) -> set[str]:
     key = DB_PATH if path is None else Path(path)
+    freshness = _tables_freshness_key(key)
     with _tables_lock:
         entry = _tables_cache.get(key)
-        if entry is not None:
-            return set(entry)
+        if freshness is not None and entry is not None and entry[0] == freshness:
+            return set(entry[1])
     names = _tables_uncached(key)
     with _tables_lock:
-        _tables_cache[key] = names
+        if freshness is not None:
+            _tables_cache[key] = (freshness, names)
         return set(names)
 
 

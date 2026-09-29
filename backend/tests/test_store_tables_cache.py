@@ -101,18 +101,16 @@ def test_stat_change_invalidates(warehouse_db, show_counter):
     assert len(show_counter) == 2
 
 
-def test_warm_hit_touches_no_filesystem(warehouse_db, show_counter, monkeypatch):
+def test_warm_hit_avg_under_1ms_no_requery(warehouse_db, show_counter):
+    import time
     assert store.tables() == {"t1"}
     assert len(show_counter) == 1
-    import os as _os
-    import pathlib as _pathlib
-
-    def _boom(*args, **kwargs):
-        raise AssertionError("touched")
-
-    monkeypatch.setattr(_pathlib.Path, "stat", _boom)
-    monkeypatch.setattr(_os, "stat", _boom)
-    assert store.tables() == {"t1"}
+    calls = 50
+    start = time.perf_counter()
+    for _ in range(calls):
+        assert store.tables() == {"t1"}
+    elapsed = time.perf_counter() - start
+    assert elapsed / calls < 0.001
     assert len(show_counter) == 1
 
 
@@ -170,3 +168,71 @@ def test_missing_path_falls_back_without_caching(warehouse_db, tmp_path):
     with pytest.raises(Exception):
         store.tables(path=missing)
     assert store.tables() == {"t1"}
+
+
+def test_external_writer_new_table_visible_without_pool_event(tmp_path):
+    db = tmp_path / "ext.duckdb"
+    con = duckdb.connect(str(db))
+    con.execute("CREATE TABLE t1(x INTEGER)")
+    con.execute("INSERT INTO t1 VALUES (1)")
+    con.close()
+    store.warehouse_pool_clear()
+    store.warehouse_tables_cache_clear()
+    try:
+        assert store.tables(db) == {"t1"}
+        writer = duckdb.connect(str(db))
+        try:
+            writer.execute("CREATE TABLE t2(y VARCHAR)")
+            writer.execute("INSERT INTO t2 VALUES ('a')")
+        finally:
+            writer.close()
+        assert store.tables(db) == {"t1", "t2"}
+    finally:
+        store.warehouse_pool_clear()
+        store.warehouse_tables_cache_clear()
+
+
+def test_sample_hexdigest_discriminates_same_size_same_mtime(tmp_path):
+    import os
+    size = 20000
+    same_ns = 1700000000000000000
+    f1 = tmp_path / "a.bin"
+    f2 = tmp_path / "b.bin"
+    f1.write_bytes(b"A" * size)
+    f2.write_bytes(b"A" * (size // 2) + b"B" + b"A" * (size - size // 2 - 1))
+    os.utime(f1, ns=(same_ns, same_ns))
+    os.utime(f2, ns=(same_ns, same_ns))
+    s1 = os.stat(f1)
+    s2 = os.stat(f2)
+    assert s1.st_size == s2.st_size == size
+    assert s1.st_mtime_ns == s2.st_mtime_ns == same_ns
+    assert f1.read_bytes() != f2.read_bytes()
+    d1 = store._warehouse_sample_hexdigest(f1, s1.st_size)
+    d2 = store._warehouse_sample_hexdigest(f2, s2.st_size)
+    assert d1 is not None and d2 is not None
+    assert d1 != d2
+
+
+def test_external_rewrite_restored_mtime_visible_through_tables(tmp_path):
+    import os
+    db = tmp_path / "rewrite.duckdb"
+    con = duckdb.connect(str(db))
+    con.execute("CREATE TABLE t1(x INTEGER)")
+    con.execute("INSERT INTO t1 VALUES (1)")
+    con.close()
+    store.warehouse_pool_clear()
+    store.warehouse_tables_cache_clear()
+    try:
+        assert store.tables(db) == {"t1"}
+        st = os.stat(db)
+        other = tmp_path / "other.duckdb"
+        w = duckdb.connect(str(other))
+        w.execute("CREATE TABLE t2(y VARCHAR)")
+        w.execute("INSERT INTO t2 VALUES ('a')")
+        w.close()
+        os.replace(other, db)
+        os.utime(db, ns=(st.st_atime_ns, st.st_mtime_ns))
+        assert store.tables(db) == {"t2"}
+    finally:
+        store.warehouse_pool_clear()
+        store.warehouse_tables_cache_clear()
