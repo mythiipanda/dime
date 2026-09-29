@@ -24,6 +24,7 @@ Fields:
 - season ({value, source, confidence}) or null: the resolved NBA season,
   e.g. "2025-26"; source is "user" | "context" | "default" | "resolved".
 - as_of (ISO date) or null: the date the answer should speak as of.
+- subject_entity_type (str) or null: the entity level of the question subject ("player" | "team"); null when ambiguous.
 - subquestions (list of str): the distinct questions inside the goal.
 - required_evidence (list of str): capability names the answer needs.
 - requirements (list): leave empty; the independent requirement review builds the clause ledger after intake.
