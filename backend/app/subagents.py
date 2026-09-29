@@ -120,19 +120,29 @@ async def _stream_tooled(provider: ProviderName, model: str,
                          on_token=None) -> tuple[str, list[dict]]:
     """Stream a tool-bound LLM call. Forwards text chunks to on_token live,
     returns (full_text, tool_calls). Tries providers in fallback order."""
-    text_parts: list[str] = []
-    tc_chunks: list[dict] = []
     errors: list[str] = []
     for name in fallback_order(provider):
+        text_parts: list[str] = []
+        tc_chunks: list[dict] = []
         client = get_llm(name, model if name == provider else None)
         if client is None:
             errors.append(f"{name}: missing key")
             continue
         try:
             bound = client.bind_tools(tools)
-            async for chunk in stream_with_first_token_timeout(
-                    bound, messages,
-                    settings.dime_first_token_timeout_s):
+            stream = stream_with_first_token_timeout(
+                bound, messages,
+                settings.dime_first_token_timeout_s)
+            while True:
+                try:
+                    chunk = await _asyncio.wait_for(
+                        stream.__anext__(),
+                        timeout=settings.dime_first_token_timeout_s)
+                except StopAsyncIteration:
+                    break
+                except BaseException:
+                    await stream.aclose()
+                    raise
                 t = getattr(chunk, "content", "") or ""
                 if t:
                     text_parts.append(str(t))
