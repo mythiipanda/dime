@@ -31,11 +31,27 @@ def _warehouse_identity_uncached(path: Path) -> dict[str, str]:
             "warehouse_sha256": hashlib.sha256(path.read_bytes()).hexdigest()}
 
 
-_warehouse_identity_cache: dict[Path, tuple[tuple[int, int], dict[str, str]]] = {}
+_warehouse_identity_cache: dict[Path, tuple[tuple[int, int, str], dict[str, str]]] = {}
 
 
 def warehouse_identity_cache_clear() -> None:
     _warehouse_identity_cache.clear()
+
+
+_SAMPLE_READ_BYTES = 8192
+
+
+def _warehouse_sample_hexdigest(path: Path, size: int) -> str | None:
+    try:
+        h = hashlib.new("sha256")
+        h.update(size.to_bytes(8, "little", signed=False))
+        with open(path, "rb") as fh:
+            for off in (0, size // 2, size - _SAMPLE_READ_BYTES):
+                fh.seek(max(off, 0))
+                h.update(fh.read(_SAMPLE_READ_BYTES))
+        return h.hexdigest()
+    except OSError:
+        return None
 
 
 def warehouse_identity() -> dict[str, str]:
@@ -44,7 +60,10 @@ def warehouse_identity() -> dict[str, str]:
         st = path.stat()
     except OSError:
         return _warehouse_identity_uncached(path)
-    key = (st.st_mtime_ns, st.st_size)
+    sample = _warehouse_sample_hexdigest(path, st.st_size)
+    if sample is None:
+        return _warehouse_identity_uncached(path)
+    key = (st.st_mtime_ns, st.st_size, sample)
     entry = _warehouse_identity_cache.get(path)
     if entry is not None and entry[0] == key:
         return entry[1]
