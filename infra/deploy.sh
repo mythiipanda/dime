@@ -1,4 +1,8 @@
 #!/usr/bin/env bash
+# Dime backend deploy to Azure Container Apps, consumption plan.
+# Stays inside student credits: scale to zero, tiny CPU, capped replicas.
+# Usage: RG=dime-rg LOC=eastus APP=dime-backend ./infra/deploy.sh
+# Requires: az login, backend/.env present (keys stay local, pushed as secrets).
 set -euo pipefail
 
 RG="${RG:-dime-rg}"
@@ -14,6 +18,7 @@ set -a; . ./.env; set +a
 
 az group create -n "$RG" -l "$LOC" -o none
 az acr create -g "$RG" -n "$ACR" --sku Basic -o none 2>/dev/null || true
+# Student subscriptions block ACR Tasks, so push the local image instead.
 az acr login -n "$ACR" -o none
 docker tag dime-backend:rewrite "$ACR.azurecr.io/$APP:latest"
 docker push "$ACR.azurecr.io/$APP:latest"
