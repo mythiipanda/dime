@@ -18,10 +18,10 @@ def test_named_player_filter_reads_nested_warehouse_injuries(monkeypatch):
         league, "_warehouse_or_live",
         lambda *args, **kwargs: (_FakeCore.rows(), {"source": "warehouse"}),
     )
-    monkeypatch.setattr("app.tools._core.coerce_player_id", lambda value: 1628369)
-    monkeypatch.setattr("app.tools.gamelog.playoff_inactive_note",
+    monkeypatch.setattr("shared.tools._core.coerce_player_id", lambda value: 1628369)
+    monkeypatch.setattr("shared.tools.gamelog.playoff_inactive_note",
                         lambda *args: None)
-    monkeypatch.setattr("app.tools.splits._resolve_name", lambda *args: "Jayson Tatum")
+    monkeypatch.setattr("shared.tools.splits._resolve_name", lambda *args: "Jayson Tatum")
 
     result = league.get_injuries.invoke({
         "player": "Jayson Tatum", "season": "2025-26",

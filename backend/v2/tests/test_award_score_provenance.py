@@ -9,7 +9,7 @@ def test_existing_award_output_declares_score_provenance(monkeypatch):
         {"player": "B", "team": "BBB", "gp": 50, "mins": 1500,
          "ppg": 10, "eff_pg": 10, "apg": 2, "rpg": 3, "age": 20},
     ])
-    monkeypatch.setattr("app.tools._core.season_static", lambda season: True)
+    monkeypatch.setattr("shared.tools._core.season_static", lambda season: True)
 
     result = awards.get_award_race.invoke({"award": "ROY", "season": "2025-26"})
     meta = result["meta"]

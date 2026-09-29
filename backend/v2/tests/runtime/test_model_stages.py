@@ -3740,7 +3740,7 @@ def test_no_ranked_text_derivation_symbols_remain():
                "canonical_team_rating_metric", "_strip_ranked_team_branches",
                "_rebuild_ranked_team_branch", "_reconcile_ranked_team_review"}
     assert not (names & removed), names & removed
-    rating = (pathlib.Path(__file__).parents[3] / "app" / "tools"
+    rating = (pathlib.Path(__file__).parents[3] / "shared" / "tools"
               / "rating_metrics.py").read_text()
     assert "RANKING_DIRECTION_ALIASES" not in rating
     assert "RankedTeamConstraintError" not in rating
@@ -3799,15 +3799,15 @@ def test_ranked_typed_functions_never_read_request_text_or_use_regex():
 
     for name in sorted(targets):
         check_ranked_function(name, by_name[name], "v2/adapters/models.py")
-    league = ast.parse((root / "app" / "tools" / "league.py").read_text())
+    league = ast.parse((root / "shared" / "tools" / "league.py").read_text())
     get_ratings = next(node for node in ast.walk(league)
                        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
                        and node.name == "get_ratings")
-    check_ranked_function("get_ratings", get_ratings, "app/tools/league.py")
+    check_ranked_function("get_ratings", get_ratings, "shared/tools/league.py")
 
 def test_no_request_text_regex_routes_ranked_arguments():
     import ast, pathlib
-    for rel in ("v2/adapters/models.py", "app/tools/league.py"):
+    for rel in ("v2/adapters/models.py", "shared/tools/league.py"):
         tree = ast.parse((pathlib.Path(__file__).parents[3] / rel).read_text())
         for node in ast.walk(tree):
             if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
