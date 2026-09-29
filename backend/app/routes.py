@@ -14,6 +14,7 @@ from shared.providers import models_catalog
 from shared import store
 from .sse import emit_sse, with_heartbeat
 from shared.config import runtime_v2_mode, settings
+from shared.rate_limit import check_sql_rerun, client_ip
 
 router = APIRouter()
 
@@ -399,7 +400,8 @@ class SqlRerunBody(BaseModel):
 
 
 @router.post("/sql/rerun")
-async def api_sql_rerun(body: SqlRerunBody) -> dict:
+async def api_sql_rerun(request: Request, body: SqlRerunBody) -> dict:
+    check_sql_rerun(client_ip(request))
     from shared.tools.league import rerun_sql
 
     sql = (body.sql or "").strip()

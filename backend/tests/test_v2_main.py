@@ -3,7 +3,31 @@ import subprocess
 import sys
 from pathlib import Path
 
+import pytest
+from starlette.requests import Request
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
+from shared import rate_limit
+
 BACKEND = Path(__file__).resolve().parents[1]
+
+
+@pytest.fixture(autouse=True)
+def _clean_sql_rerun_limiter():
+    rate_limit.reset()
+    yield
+    rate_limit.reset()
+
+
+def _sql_rerun_request():
+    return Request({
+        "type": "http",
+        "method": "POST",
+        "path": "/api/sql/rerun",
+        "headers": [],
+        "client": ("127.0.0.1", 5000),
+    })
 
 
 def test_v2_entrypoint_standalone_imports():
@@ -256,7 +280,7 @@ def test_v2_sql_rerun_empty_sql():
 
     from v2.api.routes import sql_rerun, SqlRerunBody
 
-    out = asyncio.run(sql_rerun(SqlRerunBody(sql="   ")))
+    out = asyncio.run(sql_rerun(_sql_rerun_request(), SqlRerunBody(sql="   ")))
     assert out == {"ok": False, "error": "sql required", "rows": {}}
 
 
@@ -265,7 +289,7 @@ def test_v2_sql_rerun_too_long():
 
     from v2.api.routes import sql_rerun, SqlRerunBody
 
-    out = asyncio.run(sql_rerun(SqlRerunBody(sql="x" * 8001)))
+    out = asyncio.run(sql_rerun(_sql_rerun_request(), SqlRerunBody(sql="x" * 8001)))
     assert out == {"ok": False, "error": "sql too long", "rows": {}}
 
 
@@ -284,7 +308,7 @@ def test_v2_sql_rerun_ok(monkeypatch):
 
     from v2.api.routes import sql_rerun, SqlRerunBody
 
-    out = asyncio.run(sql_rerun(SqlRerunBody(sql="SELECT 1")))
+    out = asyncio.run(sql_rerun(_sql_rerun_request(), SqlRerunBody(sql="SELECT 1")))
     assert out == {"ok": True, "rows": {
         "columns": ["a"], "rows": [[1]], "ms": 5, "capped": False}}
 

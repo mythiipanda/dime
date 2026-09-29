@@ -39,7 +39,7 @@ class Settings(BaseSettings):
     groq_api_key: str = ""
     dime_enable_groq: bool = False
     groq_model: str = "openai/gpt-oss-20b"
-    cors_allowed_origins: str = "http://localhost:3000,https://dime-fawn.vercel.app"
+    cors_allowed_origins: str = "http://localhost:3000,https://dime-fawn.vercel.app,http://127.0.0.1:3000"
     llm_timeout_s: int = 60
     llm_max_retries: int = 1
     dime_v2_pre_tool_timeout_s: float = Field(default=45.0, gt=0)

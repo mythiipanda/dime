@@ -5,10 +5,11 @@ from pathlib import Path
 
 import duckdb
 import pytest
+from starlette.requests import Request
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from shared import store
+from shared import rate_limit, store
 from app.routes import SqlRerunBody, api_sql_rerun
 from shared.tools import league
 from shared.tools.league import (
@@ -20,6 +21,23 @@ from shared.tools.league import (
 
 SQL = ("SELECT WINS, LOSSES FROM silver_standings "
        "WHERE TEAM = 'OKC' AND _season = '2025-26'")
+
+
+@pytest.fixture(autouse=True)
+def _clean_sql_rerun_limiter():
+    rate_limit.reset()
+    yield
+    rate_limit.reset()
+
+
+def _rerun_request():
+    return Request({
+        "type": "http",
+        "method": "POST",
+        "path": "/api/sql/rerun",
+        "headers": [],
+        "client": ("127.0.0.1", 5000),
+    })
 
 
 @pytest.fixture()
@@ -129,7 +147,7 @@ def test_rerun_reports_bad_sql_error(warehouse):
 
 
 def test_route_clamps_and_returns_rows(warehouse):
-    out = asyncio.run(api_sql_rerun(SqlRerunBody(sql=SQL)))
+    out = asyncio.run(api_sql_rerun(_rerun_request(), SqlRerunBody(sql=SQL)))
     assert out["ok"] is True
     assert out["rows"]["rows"][0] == {"WINS": 68, "LOSSES": 14}
     assert out["rows"]["columns"] == ["WINS", "LOSSES"]
@@ -137,13 +155,13 @@ def test_route_clamps_and_returns_rows(warehouse):
 
 
 def test_route_rejects_empty_and_long_sql(warehouse):
-    assert asyncio.run(api_sql_rerun(SqlRerunBody(sql="")))["ok"] is False
+    assert asyncio.run(api_sql_rerun(_rerun_request(), SqlRerunBody(sql="")))["ok"] is False
     assert asyncio.run(
-        api_sql_rerun(SqlRerunBody(sql="SELECT 1 " * 5000)))["ok"] is False
+        api_sql_rerun(_rerun_request(), SqlRerunBody(sql="SELECT 1 " * 5000)))["ok"] is False
 
 
 def test_route_surfaces_validation_error(warehouse):
     out = asyncio.run(
-        api_sql_rerun(SqlRerunBody(sql="DROP TABLE silver_standings")))
+        api_sql_rerun(_rerun_request(), SqlRerunBody(sql="DROP TABLE silver_standings")))
     assert out["ok"] is False
     assert out["error"]
