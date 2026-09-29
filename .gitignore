@@ -1,4 +1,3 @@
-# Local-only files. Never commit these. CI fails if they are tracked.
 LEARNINGS.MD
 AGENTS.md
 decisions.tsv
@@ -10,11 +9,9 @@ backend/scripts/*.log
 .env.local
 backend/.env
 
-# Secrets and creds
 *.pem
 *.key
 
-# Python
 __pycache__/
 *.py[cod]
 .venv/
@@ -24,52 +21,43 @@ __pycache__/
 .ruff_cache/
 .mypy_cache/
 
-# Node
 node_modules/
 .next/
 out/
 dist/
 *.tsbuildinfo
 
-# OS and editors
 .DS_Store
 .idea/
 .vscode/
 *.swp
 
-# Foreign checkouts sitting in the workspace. Never track.
 claude-talk-to-figma-mcp/
 
-# Azure and Vercel
 .azure/
 .vercel
 
-# Warehouse files. Seeded at deploy, never committed.
 backend/data/
 *.duckdb
 *.db
 
-# Old backend artifacts. Never again.
 backend/output/
 backend/chunk.json
 backend/chunk.txt
 backend/cache/
 nba-analytics-backend/backend_app.log
 
-# Logs
 logs
 *.log
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 
-# local-only: agent config, plans, working docs (never on remote)
 .opencode/
 .taskmaster/
 DESIGN.MD
 ROADMAP.md
 OPENCODE.md
-# README.md (unignored 2026-09-13: Tony asked for a real repo README with product media)
 docs/
 backend/app/data/
 .agents/
@@ -77,6 +65,5 @@ skills-lock.json
 .claude/
 agent/
 
-# Agent-only working dirs - never ship to the public repo (Tony, 2026-09-13)
 research/
 dime-arch/
