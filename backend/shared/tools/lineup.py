@@ -210,8 +210,8 @@ def get_lineup_stats(
         return {"tool": "get_lineup_stats", "ok": False,
                 "error": str(exc)[:160]}
     rows, meta = _warehouse_or_live(
-        "silver_lineups", "_season = ? AND _entity = ?",
-        [season, f"team:{team_id}"],
+        "silver_lineups", "_season = ? AND TEAM_ID = ? AND (_entity LIKE 'lineups:%' OR _entity = ?)",
+        [season, team_id, f"team:{team_id}"],
         lambda: nba_stats.lineups(team_id, season), season,
         entity=f"team:{team_id}", ttl_s=TTL_PBPSTATS, limit=_ALL_ROWS,
     )
