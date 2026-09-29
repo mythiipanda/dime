@@ -35,6 +35,9 @@ function asTable(rows: unknown, capCols: number, showIds = false): {
   const first = (list as unknown[])[0] as Record<string, unknown>;
   if (typeof first !== "object" || first === null) return null;
   const allKeys = Object.keys(first);
+  // Warehouse ID columns arrive as id / *_id / camelCase-ID (LeagueID,
+  // SeasonID, TeamID). The [a-z]ID branch skips all-caps stat names like
+  // GRID that merely end in the letters ID.
 
 
 
@@ -45,6 +48,9 @@ function asTable(rows: unknown, capCols: number, showIds = false): {
     ? [...capped, ...ordered.filter((k) => isIdCol(k) && !capped.includes(k))]
     : capped;
   const recs = (list as Record<string, unknown>[]).slice(0, 500);
+  // Percent-aware display (QA F18/F26 nit): share/pct columns stored as
+  // 0-1 fractions render as "46.8%", percent-scale values stay as-is,
+  // and long float artifacts round to 3 decimals.
 
 
 
@@ -329,6 +335,10 @@ export default function DataTable({ rows, capCols = 8, capRows = 25, heat = fals
                       <>
                         {cell}
                         {rankStat !== undefined && t.cols[j] === rankStat && cell !== "" && (
+                          // Leaders rank is the row's position in the unsorted
+                          // original returned list (ri indexes t.body, which
+                          // keeps that order), so the chip stays correct when
+                          // the user re-sorts or filters the table.
 
 
 

@@ -15,6 +15,8 @@ const TEAMS: Record<string, number> = TEAM_IDS;
 type Row = { GROUP_NAME: string; MIN: number; PLUS_MINUS: number };
 
 export default function LineupPanel({ initialTeam }: { initialTeam?: string }) {
+  // First load reads the URL, then the search context, then the default.
+  // Lazy initializers so the first fetch already uses the right team.
 
 
   const [tab, setTab] = useState<"5man" | "wowy">(() => {
@@ -22,6 +24,8 @@ export default function LineupPanel({ initialTeam }: { initialTeam?: string }) {
     return t === "wowy" ? "wowy" : "5man";
   });
   const [team, setTeam] = useState(() => {
+    // A fresh search context wins over a stale URL; a shared link carries
+    // no context, so the URL still restores the view.
 
 
     const s = (initialTeam || getQueryParam("lineups_team") || "BOS").toUpperCase();
@@ -38,6 +42,7 @@ export default function LineupPanel({ initialTeam }: { initialTeam?: string }) {
   const [wowyVerdict, setWowyVerdict] = useState("");
   const [wowyBusy, setWowyBusy] = useState(false);
 
+  // First load: with ?lineups_tab=wowy the comparison runs at once.
 
   useEffect(() => {
     if (tab === "wowy" && wowyRows.length === 0) runWowy();

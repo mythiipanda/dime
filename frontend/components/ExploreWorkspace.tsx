@@ -33,6 +33,8 @@ export default function ExploreWorkspace({
   onAsk,
 }: ExploreWorkspaceProps) {
   const [updated, setUpdated] = useState<string | null>(null);
+  // On-demand panels: mounted grows on first expansion and never shrinks;
+  // expanded is the one visible panel (null = overview only).
 
 
   const [mounted, setMounted] = useState<ExplorePanelId[]>([]);
@@ -71,6 +73,8 @@ export default function ExploreWorkspace({
     setQueryParam("panel", next ?? "", true);
     if (next) scrollToActive();
   };
+  // Shared links carry ?panel=<id>: mount and open that panel on load.
+  // Each panel restores its own filters from its params.
 
 
 
@@ -95,6 +99,8 @@ export default function ExploreWorkspace({
   const handlePlayerSelect = (playerName: string) => {
     expand("shots", { panel: "shots", playerName });
   };
+  // Context keys: a new search context remounts the panel so its first
+  // load runs with the query applied (panels read URL first, then this).
 
 
 

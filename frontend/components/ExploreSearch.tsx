@@ -13,6 +13,18 @@ import {
   type ExploreContext,
   type SearchResult,
 } from "../lib/exploreSearch";
+// Search-first header (redesign Phase 3). Structure adapts the repo's own
+// CommandPalette pattern (grouped live results, arrow-key navigation,
+// debounced /resolve calls) rendered inline instead of in a modal.
+// Results are clickable: picking one opens the right panel with the
+// query applied. Stat matches come from the Leaders categories;
+// no pattern matching beyond case-insensitive substring.
+//
+// Grouping reads each row's own response fields (see buildSearchItems),
+// so a team row can only land under Teams and a player row only under
+// Players. The dropdown lives in a portal and tracks the search field
+// on scroll/resize (ModelPicker pattern): scrolling repositions it,
+// never closes it.
 
 
 
@@ -75,6 +87,10 @@ export default function ExploreSearch({
   useEffect(() => {
     setActive(0);
   }, [needle, hits.players.length, hits.teams.length, stats.length]);
+  // Position the dropdown in a portal: flip above/below the search
+  // field based on available viewport space, and never let it run
+  // off-screen. Reposition on scroll/resize so the menu tracks the
+  // field while it stays open.
 
 
 

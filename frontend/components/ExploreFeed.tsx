@@ -5,6 +5,10 @@ import { getToday, getWatchlist } from "../lib/api";
 import { buildFeedExpansion, type FeedExpansion, type FeedItem } from "../lib/exploreFeed";
 import type { ExploreContext } from "../lib/exploreSearch";
 import Skeleton from "./Skeleton";
+// Right-now feed (redesign Phase 4). One clickable row per item: player
+// rows open the shots panel with context applied, team rows ask Dime a
+// factual question. Renders nothing on fetch error or when every endpoint
+// comes back without data: no error prose, no empty states.
 
 
 
@@ -22,6 +26,8 @@ export default function ExploreFeed({
 
   useEffect(() => {
     let live = true;
+    // Staggered: the watchlist fetch waits until today resolves. The page
+    // already fires 4+ parallel fetches on mount, so this one stays gentle.
 
 
     getToday()

@@ -1,3 +1,5 @@
+// Tests for the right-now feed builder (redesign Phase 4). All fixtures
+// use made-up names only.
 
 
 import { test } from "node:test";
@@ -157,6 +159,7 @@ test("watchlist players rank by ppg with the required title", () => {
     watch("player", "Theo Lindqvist", { found: true, player: "Theo Lindqvist", team: "QZT", ppg: 24.65 }),
   ]);
   assert.equal(got.length, 2);
+  // API order stays; ranks follow ppg.
 
   assert.equal(got[0].rankLabel, "#2");
   assert.equal(got[0].rankTitle, "Ranked #2 of 2 watched players by PPG");

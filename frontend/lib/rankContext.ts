@@ -3,6 +3,17 @@ export interface RankContext {
   percentile: number;
   chip: string;
 }
+/**
+ * Rank context for one row of an Explore leaders table (redesign Phase 2).
+ *
+ * The leaders endpoint returns rows ranked descending by the requested
+ * stat, so rank is the 1-based position in that returned list. Pass the
+ * row's index in the original unsorted list, never the position after
+ * the user re-sorts or filters the table.
+ *
+ * Ties get no tie-averaging: equal values keep position-based ranks, so
+ * the first occurrence keeps the better rank, matching the returned order.
+ */
 
 
 export function rankOf(index: number, total: number): RankContext {

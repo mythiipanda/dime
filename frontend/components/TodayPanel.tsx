@@ -4,6 +4,9 @@ import { useEffect, useState } from "react";
 import { GameRow, TodayMover, TeamStreak, TodayRows, getToday, getDatasetJson, SEASON } from "../lib/api";
 import EmptyState from "./EmptyState";
 import Skeleton from "./Skeleton";
+// Offseason season-wrap: when no games are on the slate, derive the
+// season recap from payloads (playoffs round-4 rows, leaders, standings)
+// - never hardcoded. v67: all numerals come from warehouse rows.
 
 
 
@@ -30,6 +33,7 @@ function useSeasonWrap(active: boolean): SeasonWrap | null {
           getDatasetJson("standings", { season: SEASON }),
         ]);
         if (!live) return;
+        // Playoff game ids carry the round at chars 6-7; 04 = Finals.
 
         const finals = ((po.data || []) as Record<string, unknown>[]).filter(
           (r) => String(r.GAME_ID || "").slice(6, 8) === "04",
@@ -42,7 +46,7 @@ function useSeasonWrap(active: boolean): SeasonWrap | null {
           if (String(r.WL) === "W") wins[ab].w += 1;
         }
         const teams = Object.values(wins).sort((a, b) => b.w - a.w);
-        if (teams.length < 2 || teams[0].w < 4) return;
+        if (teams.length < 2 || teams[0].w < 4) return; // no decided Finals
         const leaders = (ld.data || []) as Record<string, unknown>[];
         const top = [...leaders]
           .filter((r) => typeof r.PTS === "number" && typeof r.GP === "number" && (r.GP as number) > 0)
@@ -64,6 +68,7 @@ function useSeasonWrap(active: boolean): SeasonWrap | null {
             : "",
         });
       } catch {
+        /* wrap stays hidden on any fetch problem */
 
       }
     })();
@@ -239,6 +244,8 @@ export default function TodayPanel() {
       live = false;
     };
   }, []);
+  // Hooks must run before ANY early return below (React #310 guard):
+  // compute noGames defensively and call the wrap hook unconditionally.
 
 
 

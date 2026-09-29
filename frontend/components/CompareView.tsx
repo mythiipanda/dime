@@ -115,6 +115,9 @@ export default function CompareView({ rows, onDebate }: { rows: unknown; onDebat
     new Set([...Object.keys(a), ...Object.keys(b)]),
   ).filter(
     (k) =>
+      // QA #71: internal bookkeeping keys are not user-facing metrics.
+      // "missing" lists stats the warehouse lacks for a side;
+      // "sub_call_errors" is debug machinery for failed sub-calls.
 
 
 

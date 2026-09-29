@@ -65,6 +65,8 @@ export function Leaders({
     p.run("leaders", { season: "2025-26", stat });
   };
   useEffect(() => {
+    // A fresh search context wins over a stale URL; a shared link carries
+    // no context, so the URL still restores the view.
 
 
     const v = getQueryParam("leaders_stat");
@@ -120,6 +122,8 @@ export function Leaders({
           {(p.rows as Record<string, unknown>[]).slice(0, 3).map((row, index) => {
             const name = String(row.PLAYER_NAME ?? row.PLAYER ?? row.player_name ?? row.name ?? `No. ${index + 1}`);
             const value = row[cat] ?? row[cat.toLowerCase()] ?? row.value ?? "—";
+            // Percentile is from the position among all returned rows, not
+            // just these three. The list arrives ranked, so index is rank.
 
 
             const pct = rankOf(index, (p.rows as Record<string, unknown>[]).length).percentile;
@@ -157,6 +161,7 @@ export function Standings() {
       setSeason(v);
       show(v);
     } else {
+      // Auto-load the current season so Explore never opens on an empty panel.
 
       show("2025-26");
     }
@@ -297,6 +302,7 @@ export function Gamelog({ initialPlayer }: { initialPlayer?: string }) {
     </ExplorePanel>
   );
 }
+/** Leaders expansion: league leaders plus the standings race. */
 
 
 export function LeadersPanel({
@@ -313,6 +319,7 @@ export function LeadersPanel({
     </div>
   );
 }
+/** Shots expansion: shot chart plus game-log trends for one player. */
 
 
 export function ShotsPanel({ initialPlayer }: { initialPlayer?: string }) {

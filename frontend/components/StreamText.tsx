@@ -1,6 +1,11 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+/* StreamText - ported from the beautifului harness registry component
+ * (research/design-skills/beautifului/registry-src/stream-text--StreamText.tsx).
+ * Dime adaptation: the harness resets the reveal whenever `text` changes;
+ * here text is a LIVE token stream, so the reveal chases growth instead of
+ * restarting, and speeds up when far behind so long answers don't lag. */
 
 
 export function StreamText({

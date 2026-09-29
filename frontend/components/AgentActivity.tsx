@@ -16,6 +16,8 @@ const NODE_LABELS: Record<string, string> = {
 };
 
 function thoughtsFor(ai: AiMessage): string[] {
+  // Dedupe identical lines: the backend can emit the same plan text at
+  // a node boundary and again inside the node. Keep the work log readable.
 
 
   const out: string[] = [];
@@ -84,6 +86,8 @@ function ToolRow({ c }: { c: ToolCall }) {
         ? "var(--color-ember)"
         : "var(--color-ink-black)";
   const glyph = c.status === "running" ? "" : c.status === "fail" ? "!" : "✓";
+  // Fallback names arrive as get_shot_zones-style identifiers; show
+  // a noun phrase ("Shot zones") instead of the raw function name.
 
 
   const label =

@@ -31,6 +31,7 @@ test("matchStats returns [] when nothing matches", () => {
 });
 
 test("matchStats uses plain substring matching, no pattern syntax", () => {
+  // Regex metacharacters are literal text, never patterns.
 
   assert.deepEqual(matchStats(".*"), []);
   assert.deepEqual(matchStats("P+S"), []);
@@ -80,6 +81,9 @@ test("result labels stay factual, never evaluative", () => {
   assert.equal(resultHint({ kind: "stat", stat: "PTS" }), "Leaders");
 });
 
+// Group isolation (search dropdown): entity type comes from each row's
+// own response fields, never from which array the row arrived in. All
+// fixture names are made up.
 
 
 
@@ -122,6 +126,9 @@ test("buildSearchItems keeps team rows out of Players and player rows out of Tea
   );
 });
 
+// Anchor behavior (search dropdown): scrolling repositions the open
+// dropdown under the field instead of closing it. placeSearchMenu always
+// returns a placement for the field's current rect.
 
 
 

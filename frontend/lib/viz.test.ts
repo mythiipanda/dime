@@ -49,6 +49,7 @@ test("histogramBins covers every value exactly once", () => {
     bins.reduce((a, b) => a + b.count, 0),
     values.length,
   );
+  // Max value lands in the last bin (closed on the right).
 
   assert.equal(bins[4].count >= 1, true);
 });

@@ -82,6 +82,7 @@ function parseMatch(m: Record<string, unknown>): GameLogMatch | null {
     tripleDouble: ddCount(pts, reb, ast, stl, blk) >= 3,
   };
 }
+/** Thresholds recovered from the backend's filter description string. */
 
 
 function parseThresholds(filters: string[]): { minPts: number | null; minPra: number | null; tdOnly: boolean } {

@@ -1,9 +1,12 @@
+// Pure helpers for the viz prototypes in components/viz/.
+// No React, no DOM: everything here is unit-testable.
 
 
 
 export function clamp(v: number, lo: number, hi: number): number {
   return Math.min(hi, Math.max(lo, v));
 }
+/** 1 -> "1st", 2 -> "2nd", 3 -> "3rd", 11 -> "11th", 92 -> "92nd". */
 
 
 export function ordinal(n: number): string {
@@ -21,11 +24,16 @@ export function ordinal(n: number): string {
       return `${r}th`;
   }
 }
+/** 0.618 -> "61.8%". */
 
 
 export function formatPct(v: number, digits = 1): string {
   return `${(v * 100).toFixed(digits)}%`;
 }
+/**
+ * Fraction of values <= v, in [0, 1]. Expects the array sorted ascending.
+ * Empty input returns 0.
+ */
 
 
 export function percentileRank(sortedAsc: number[], v: number): number {
@@ -42,6 +50,7 @@ export interface HistBin {
   hi: number;
   count: number;
 }
+/** Equal-width bins over [min, max]. The last bin is closed on the right. */
 
 
 export function histogramBins(values: number[], binCount: number): HistBin[] {
@@ -60,6 +69,11 @@ export function histogramBins(values: number[], binCount: number): HistBin[] {
   }
   return bins;
 }
+/**
+ * Pixel width for a category axis from its tick labels (11px tick font):
+ * longest label length times a per-character estimate, clamped to
+ * [70, 170]. Empty input returns the 70px minimum.
+ */
 
 
 export function categoryAxisWidth(labels: string[]): number {
