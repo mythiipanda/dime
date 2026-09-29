@@ -38,12 +38,12 @@ Live demo: [dime-fawn.vercel.app](https://dime-fawn.vercel.app)
 Backend (Python 3.12):
 
 ```bash
+# warehouse: fetch the data pack release (verifies checksum, unzips to backend/data/warehouse.duckdb)
+./scripts/fetch-data.sh
 cd backend
 uv venv --python 3.12
 uv pip install -r requirements.txt
 cp .env.example .env   # add your LLM keys for chat; the server boots without them
-# warehouse: download the data pack release and unzip it so that backend/data/warehouse.duckdb exists
-# https://github.com/mythiipanda/dime/releases/download/tony-features-pack-20260911/dime_data.zip
 python scripts/generate_asset_manifest.py manifest/expected_asset_manifest.json
 DIME_EXPECTED_ASSET_MANIFEST=$PWD/manifest/expected_asset_manifest.json \
   uvicorn app.main:app --port 8010
@@ -86,7 +86,7 @@ the cutover still pending.
 
 The warehouse is a DuckDB file baked into the backend Docker
 image. On backend changes, CI downloads the data pack
-(`tony-features-pack-20260911`, published 2026-09-12),
+(`dime-data-20260929`, published 2026-09-29),
 unzips it into `backend/data/`, builds derived tables at
 image time, and pushes
 `ghcr.io/mythiipanda/dime-backend:latest`. The warehouse is the primary source at answer time; on misses, some datasets fall back to live sources (nba_stats, ESPN) where configured, and that fallback can fail or time out.
