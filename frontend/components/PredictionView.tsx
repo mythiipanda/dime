@@ -103,7 +103,7 @@ function likelyRange(ci: [number, number] | null): string {
   return `likely range ${pct(ci[0])}–${pct(ci[1])}`;
 }
 
-/** "BOS by ~5.7 (range: BOS by 12.4 to NYK by 1.1)" from a home-minus-away CI. */
+
 function marginWords(p: PredictionRows): string | null {
   if (!p.marginCi) return null;
   const [lo, hi] = p.marginCi;

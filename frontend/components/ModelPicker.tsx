@@ -24,9 +24,9 @@ export default function ModelPicker({ models, value, onChange, status = "ready",
 
   const selectedModel = models.find((m) => m.id === value) || models[0];
 
-  // Position the menu in a portal: flip above/below the trigger based on
-  // available viewport space, and never let it run off-screen. Reposition on
-  // scroll/resize so the menu tracks the trigger.
+
+
+
   useLayoutEffect(() => {
     if (!open) return;
     const position = () => {
@@ -79,7 +79,7 @@ export default function ModelPicker({ models, value, onChange, status = "ready",
 
   return (
     <div ref={containerRef} style={{ position: "relative", display: "inline-block" }}>
-      {/* Hidden Accessible Select for Test Automation & Form Support */}
+
       <select
         aria-label="Model"
         value={value || ""}
@@ -102,7 +102,7 @@ export default function ModelPicker({ models, value, onChange, status = "ready",
         ))}
       </select>
 
-      {/* Custom Bespoke Trigger Button */}
+
       <button
         ref={triggerRef}
         type="button"
@@ -144,7 +144,7 @@ export default function ModelPicker({ models, value, onChange, status = "ready",
         </svg>
       </button>
 
-      {/* Floating Menu Popover (portal: immune to ancestor overflow clipping) */}
+
       {open && createPortal(
         <div
           ref={menuRef}

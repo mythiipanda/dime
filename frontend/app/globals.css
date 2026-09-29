@@ -1,23 +1,20 @@
 @import "tailwindcss";
 
 @theme {
-  /* Dual theme (2026-09-13): values are the beautifului harness tokens
-     (research/design-skills/beautifului/foundation.css), light here,
-     dark under .dark below. Token names unchanged - every component
-     inherits through var(--color-*). */
-  --color-stone-canvas: oklch(0.985 0.001 286.376);   /* page */
-  --color-pure-white: oklch(1 0 0);                   /* surface */
-  --color-stone-border: oklch(0.946 0.003 264.542);   /* line */
-  --color-stone-muted: oklch(0.912 0.005 258.326);    /* line-strong */
-  --color-ash-gray: oklch(0.695 0.009 264.505);       /* ink-3 */
-  --color-warm-gray: oklch(0.506 0.01 264.477);       /* ink-2 */
-  --color-ink-black: oklch(0.247 0.006 258.361);      /* ink */
-  --color-soot: oklch(0.247 0.006 258.361);           /* strong ink (charts) */
-  --color-sky-wash: oklch(0.96 0.019 252.878);        /* accent-tint */
-  --color-cyan-signal: oklch(0.626 0.205 254.947);    /* accent */
-  --color-cyan-edge: oklch(0.556 0.187 255.617);      /* accent-ink */
-  --color-ember: oklch(0.621 0.192 23.042);           /* red */
-  --color-field: oklch(0.961 0.001 286.375);          /* field (inset fill) */
+
+  --color-stone-canvas: oklch(0.985 0.001 286.376);
+  --color-pure-white: oklch(1 0 0);
+  --color-stone-border: oklch(0.946 0.003 264.542);
+  --color-stone-muted: oklch(0.912 0.005 258.326);
+  --color-ash-gray: oklch(0.695 0.009 264.505);
+  --color-warm-gray: oklch(0.506 0.01 264.477);
+  --color-ink-black: oklch(0.247 0.006 258.361);
+  --color-soot: oklch(0.247 0.006 258.361);
+  --color-sky-wash: oklch(0.96 0.019 252.878);
+  --color-cyan-signal: oklch(0.626 0.205 254.947);
+  --color-cyan-edge: oklch(0.556 0.187 255.617);
+  --color-ember: oklch(0.621 0.192 23.042);
+  --color-field: oklch(0.961 0.001 286.375);
 
   --font-display: var(--font-inter), Inter, ui-sans-serif, system-ui, sans-serif;
   --font-body: var(--font-inter), Inter, ui-sans-serif, system-ui, sans-serif;
@@ -31,8 +28,7 @@
 
 
 
-/* transitions.dev #14 skeleton-reveal - content blurs into focus as it
-   replaces the skeleton (Dime tokens; reduced-motion safe) */
+
 .t-skel-in {
   animation: t-skel-in 260ms cubic-bezier(0.16, 1, 0.3, 1) both;
 }
@@ -44,7 +40,7 @@
   .t-skel-in { animation: none; }
 }
 
-/* harness streaming primitive styles (verbatim from foundation.css, tokens renamed) */
+
 .stream-tail {
   filter: blur(1.6px);
   -webkit-mask-image: linear-gradient(to right, oklch(0 0 0) 20%, oklch(0 0 0 / 0.2));
@@ -116,8 +112,7 @@ body {
   letter-spacing: -0.01em;
 }
 
-/* form controls don't inherit body font by default — force consistency
-   (model picker, buttons, inputs all render in --font-body now) */
+
 button, input, select, textarea {
   font-family: inherit;
 }
@@ -144,7 +139,7 @@ button, input, select, textarea {
   padding: 24px;
 }
 
-/* harness primary button: ink fill, surface text, control radius (records-primary-button + send button) */
+
 .pill-cta {
   background: var(--color-ink-black);
   border: none;
@@ -163,8 +158,8 @@ button, input, select, textarea {
   padding: 8px 16px;
 }
 
-/* harness tab style: active = field fill, idle = dimmed (ChatComposer header tabs) */
-/* harness sidebar rows (SidebarNav.tsx): bg-hover on hover, 150ms ease */
+
+
 .sidebar-row {
   transition: background-color 150ms ease, color 150ms ease, transform 150ms ease;
 }
@@ -176,7 +171,7 @@ button, input, select, textarea {
   transform: scale(0.98);
 }
 
-/* records-table language: hairline rows + hover (RecordsTable.css) */
+
 .dime-table tr > td, .dime-table tr > th { transition: background-color 120ms ease-out; }
 .dime-table tbody tr:hover > td { background: var(--hover-subtle); }
 .dime-table tbody tr:last-child > td { border-bottom: none; }
@@ -190,7 +185,7 @@ button, input, select, textarea {
   box-shadow: none;
 }
 
-/* transitions.dev #16 tabs-sliding: one pill glides to the active tab */
+
 .t-tabs-pill {
   position: absolute;
   top: 2px;
@@ -336,8 +331,7 @@ button, input, select, textarea {
   animation: dime-pulse-dot 1200ms ease-in-out infinite;
 }
 
-/* Responsive: usable at 390px width. Layout components opt in via
-   class names; inline desktop styles win above the breakpoint. */
+
 .table-scroll {
   overflow-x: auto;
   -webkit-overflow-scrolling: touch;
@@ -345,7 +339,7 @@ button, input, select, textarea {
 }
 
 @media (max-width: 768px) {
-  /* Game log rows: two lines on narrow screens (summary line, then details). */
+
   .gamelog-row {
     flex-wrap: wrap !important;
     row-gap: 2px !important;
@@ -355,7 +349,7 @@ button, input, select, textarea {
     min-width: 0;
   }
 
-  /* Unit rows: name on its own line, metrics right-aligned below. */
+
   .unit-row {
     flex-wrap: wrap !important;
     row-gap: 2px !important;
@@ -375,7 +369,7 @@ button, input, select, textarea {
     order: 4;
   }
 
-  /* Streak rows: dates drop to their own line under the holder on narrow. */
+
   .streak-head {
     flex-wrap: wrap !important;
   }
@@ -426,8 +420,7 @@ button, input, select, textarea {
   }
 }
 
-/* Scrollbars: thin, transparent until hover - portfolio pattern,
-   themed via color-mix on the foreground ink so dark/light both work. */
+
 * {
   scrollbar-width: thin;
   scrollbar-color: color-mix(in oklab, var(--color-ink-black) 18%, transparent) transparent;
@@ -442,7 +435,7 @@ button, input, select, textarea {
   background: color-mix(in oklab, var(--color-ink-black) 25%, transparent);
 }
 
-/* Explore workspace: compact, utility-first analysis index. */
+
 .explore-scroll { height: 100%; overflow-y: auto; overflow-x: hidden; scroll-behavior: smooth; }
 .explore-shell { width: min(1180px, calc(100% - 40px)); margin: 0 auto; padding: 26px 0 88px; font-family: var(--font-body); }
 .explore-overview { border-top: 1px solid var(--color-stone-border); animation: explore-enter 340ms both cubic-bezier(.16,1,.3,1); }
@@ -462,7 +455,7 @@ button, input, select, textarea {
 .explore-index-lines { display: flex; flex-direction: column; gap: 3px; margin-top: 3px; font-size: 12px; color: var(--color-warm-gray); font-variant-numeric: tabular-nums; }
 .explore-index-line { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .explore-content { display: flex; flex-direction: column; gap: 22px; }.explore-content .card { border-radius: 12px; transition: border-color 180ms ease, box-shadow 180ms ease; }.explore-content .card:hover { border-color: color-mix(in oklab, var(--color-cyan-edge) 24%, var(--color-stone-border)); box-shadow: 0 12px 34px color-mix(in oklab, var(--color-ink-black) 7%, transparent); }
-/* Explore panel chrome (shared PanelHeader + ExplorePanel): dime-internal/design.md is law — kicker 10px/600/.08em, title 16px/500/-.03em. */
+
 .explore-panel-anchor { scroll-margin-top: 64px; }
 .explore-footer { padding: 26px 2px 0; color: var(--color-ash-gray); font-size: 12px; }
 .panel-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; margin-bottom: 14px; }
@@ -470,9 +463,7 @@ button, input, select, textarea {
 .panel-title { margin: 4px 0 0; font-size: 16px; font-weight: 500; letter-spacing: -.03em; line-height: 1.25; color: var(--color-ink-black); }
 .panel-head-action { display: flex; align-items: center; gap: 8px; flex-shrink: 0; padding-top: 2px; }
 .explore-section-anchor, #explore-leaders, #explore-shots { scroll-margin-top: 64px !important; }
-/* Explore Phase 4: right-now feed. One clickable row per item at 13px;
-   rank chip reuses the DataTable rankStat pattern (11px ash-gray,
-   tabular-nums, rank context in the title attribute). */
+
 .explore-feed { margin: 2px 2px 20px; }
 .explore-feed .panel-kicker { padding: 0 8px; }
 .explore-feed-list { list-style: none; margin: 6px 0 0; padding: 0; }
@@ -489,9 +480,7 @@ button, input, select, textarea {
 @media (max-width: 600px) { .explore-shell { width: min(100% - 24px, 1180px); padding-top: 14px; }.explore-overview-head { align-items: center; }.explore-index-card { min-height: 112px; padding: 12px; } }
 @media (prefers-reduced-motion: reduce) { .explore-scroll { scroll-behavior: auto; }.explore-overview { animation: none; }.explore-ask,.explore-index-card { transition: none; } }
 
-/* Explore Phase 3: search-first header. Adapts the shadcn Command
-   information architecture already in .command-* (grouped sections,
-   active row, footer hint), restyled to Dime tokens, inline. */
+
 .explore-search { position: relative; margin: 2px 2px 14px; }
 .explore-search-row { display: flex; gap: 8px; align-items: stretch; }
 .explore-search-field { position: relative; flex: 1; display: flex; align-items: center; gap: 8px; background: var(--color-pure-white); border: 1px solid var(--color-stone-border); border-radius: 10px; padding: 0 12px; transition: border-color 140ms ease, box-shadow 140ms ease; }
@@ -511,13 +500,13 @@ button, input, select, textarea {
 .explore-search-empty { padding: 20px 12px; color: var(--color-ash-gray); text-align: center; font-size: 12px; }
 .explore-search-ask { width: 100%; margin-top: 4px; padding: 8px 9px; border: 1px solid var(--color-stone-border); border-radius: 7px; background: transparent; color: var(--color-ink-black); font-size: 12px; text-align: left; cursor: pointer; }
 .explore-search-ask:hover { background: var(--hover-subtle); }
-/* On-demand expanded panel: one idea, whitespace, reserved space. */
+
 .explore-active { margin: 4px 0 22px; scroll-margin-top: 64px; min-height: 280px; animation: explore-enter 340ms both cubic-bezier(.16,1,.3,1); }
 .explore-index-card.is-open { border-color: color-mix(in oklab, var(--color-cyan-edge) 45%, var(--color-stone-border)); box-shadow: 0 12px 34px color-mix(in oklab, var(--color-ink-black) 7%, transparent); }
-/* Visible sort state on data tables. */
+
 .dime-table th.is-sorted { color: var(--color-ink-black); }
 
-/* Analyst chat: focused, evidence-first workspace with low-amplitude motion. */
+
 .chat-workspace { display: flex; flex-direction: column; height: 100%; position: relative; }
 .chat-welcome { flex: 1; width: min(780px, 100%); margin: 0 auto; padding: 64px 24px 88px; display: flex; flex-direction: column; justify-content: center; box-sizing: border-box; }
 .chat-welcome-heading { margin-bottom: 24px; animation: chat-enter 440ms both cubic-bezier(.16,1,.3,1); }
@@ -557,7 +546,7 @@ button, input, select, textarea {
 }
 
 
-/* BoardUI stat-card hierarchy, reduced to Dime's existing data and tokens. */
+
 .leader-summary { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 1px; margin-top: 14px; overflow: hidden; border: 1px solid var(--color-stone-border); border-radius: 10px; background: var(--color-stone-border); }
 .leader-summary-item { min-width: 0; display: grid; grid-template-columns: auto 1fr auto; align-items: baseline; gap: 4px 8px; padding: 12px; background: var(--color-pure-white); }
 .leader-summary-rank { color: var(--color-ash-gray); font-size: 9px; font-variant-numeric: tabular-nums; }
@@ -566,7 +555,7 @@ button, input, select, textarea {
 .leader-summary-name { grid-column: 1 / -1; overflow: hidden; color: var(--color-warm-gray); font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
 @media (max-width: 600px) { .leader-summary-item { padding: 10px 8px; }.leader-summary-item strong { font-size: 18px; }.leader-summary-rank { display: none; } }
 
-/* shadcn Command information architecture, kept dependency-free. */
+
 .command-backdrop { position: fixed; inset: 0; z-index: 50; display: flex; justify-content: center; padding-top: min(15vh,120px); background: color-mix(in oklab,var(--color-ink-black) 28%,transparent); backdrop-filter: blur(3px); }
 .command-panel { width: min(560px,calc(100vw - 28px)); max-height: min(620px,70vh); overflow: hidden; border: 1px solid var(--color-stone-border); border-radius: 14px; background: var(--color-pure-white); box-shadow: 0 24px 80px color-mix(in oklab,var(--color-ink-black) 20%,transparent); }
 .command-search { display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 10px; padding: 13px 14px; border-bottom: 1px solid var(--color-stone-border); color: var(--color-ash-gray); }
@@ -576,7 +565,7 @@ button, input, select, textarea {
 .command-empty { padding: 28px 14px; color: var(--color-ash-gray); text-align: center; font-size: 11px; }.command-panel footer { display: flex; gap: 13px; padding: 8px 14px; border-top: 1px solid var(--color-stone-border); color: var(--color-ash-gray); font-size: 9px; }
 
 
-/* transitions.dev panel reveal + beUI state contrast, adapted in place. */
+
 .chat-answer-reveal { transform-origin: top left; animation: answer-panel-reveal 280ms cubic-bezier(.16,1,.3,1) both; }
 .chat-send { transition: background 180ms ease,color 180ms ease,transform 120ms cubic-bezier(.16,1,.3,1),box-shadow 180ms ease!important; }
 .chat-send:not(:disabled):hover { transform: translateY(-1px); box-shadow: 0 6px 18px color-mix(in oklab,var(--color-ink-black) 18%,transparent); }.chat-send:not(:disabled):active { transform: scale(.92); }.chat-send:focus-visible { outline: 2px solid var(--color-cyan-edge); outline-offset: 3px; }
@@ -593,7 +582,7 @@ button, input, select, textarea {
 .interactive-tactile:active { transform: scale(.97); }
 @media (prefers-reduced-motion: reduce) { .interactive-tactile { transition: none; } }
 
-/* .is-exit only plays if the JS delays unmount (see closeArtifact in page.tsx). */
+
 .artifact-pane { animation: artifact-pane-in 240ms cubic-bezier(.16,1,.3,1) backwards; }
 @keyframes artifact-pane-in { from { opacity: 0; transform: translateX(12px); } }
 .artifact-pane.is-exit { animation: none; opacity: 0; transform: translateX(12px); transition: opacity 200ms ease, transform 200ms ease; }

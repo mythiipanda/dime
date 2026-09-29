@@ -83,7 +83,7 @@ function parseMatch(m: Record<string, unknown>): GameLogMatch | null {
   };
 }
 
-/** Thresholds recovered from the backend's filter description string. */
+
 function parseThresholds(filters: string[]): { minPts: number | null; minPra: number | null; tdOnly: boolean } {
   let minPts: number | null = null;
   let minPra: number | null = null;

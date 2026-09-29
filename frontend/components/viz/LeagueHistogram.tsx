@@ -15,7 +15,7 @@ export default function LeagueHistogram({
   note,
 }: {
   label: string;
-  values: number[]; // league-wide values for the same stat
+  values: number[];
   playerValue: number;
   format: (v: number) => string;
   note?: string;

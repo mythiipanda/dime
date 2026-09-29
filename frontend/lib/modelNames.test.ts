@@ -1,4 +1,4 @@
-// Tests for friendly model display names.
+
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {

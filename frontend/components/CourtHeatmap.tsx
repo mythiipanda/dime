@@ -20,9 +20,9 @@ export interface ZoneData {
   edge?: string;
 }
 
-// Three-point zones read as 3P% (FG on threes), not eFG: labeling an
-// all-threes zone with its 1.5x eFG next to surfaces that show 3P%
-// made the same number look like two different stats (QA F23).
+
+
+
 const isThreeZone = (name: string) => /3|corner|break/i.test(name);
 
 interface CourtHeatmapProps {
@@ -37,46 +37,46 @@ interface CourtHeatmapProps {
   verdict?: string;
 }
 
-// Visual zone SVG path definitions mapped to NBA half-court coordinates (500 x 470)
-// Baseline at bottom y=470, basket at cx=250, cy=417.5
+
+
 const ZONE_PATHS: { id: string; label: string; d: string }[] = [
   {
     id: "Restricted Area",
     label: "Restricted Area",
-    // Semi-circle around basket
+
     d: "M 210,470 L 210,430 A 40,40 0 0,1 290,430 L 290,470 Z",
   },
   {
     id: "In The Paint (Non-RA)",
     label: "Paint (Non-RA)",
-    // Paint key minus the restricted area. The carve arc must bulge UP
-    // (sweep 1) around the basket like the RA zone itself; sweep 0 carved
-    // a downward semicircle below y=430 that no zone fills, rendering a
-    // white bubble over the RA's own fill (F2 residual).
+
+
+
+
     d: "M 170,470 L 170,280 L 330,280 L 330,470 L 290,470 L 290,430 A 40,40 0 0,1 210,430 L 210,470 Z",
   },
   {
     id: "Mid-Range",
     label: "Mid-Range",
-    // 2-point territory outside paint and inside 3-point arc
+
     d: "M 35,470 L 35,330 A 237.5,237.5 0 0,1 465,330 L 465,470 L 330,470 L 330,280 L 170,280 L 170,470 Z",
   },
   {
     id: "Left Corner 3",
     label: "Left Corner 3",
-    // Left baseline corner
+
     d: "M 0,470 L 0,330 L 35,330 L 35,470 Z",
   },
   {
     id: "Right Corner 3",
     label: "Right Corner 3",
-    // Right baseline corner
+
     d: "M 465,470 L 465,330 L 500,330 L 500,470 Z",
   },
   {
     id: "Above the Break 3",
     label: "Above the Break 3",
-    // Beyond 3-point arc above the corners up to half-court
+
     d: "M 0,330 A 237.5,237.5 0 0,1 500,330 L 500,0 L 0,0 Z",
   },
 ];
@@ -96,12 +96,12 @@ function findZoneRecord(list: ZoneData[], targetId: string): ZoneData | undefine
   });
 }
 
-// Continuous efficiency gradient keyed on LEAGUE_DELTA (QA #26): before,
-// anything within +/-3 points of league average rendered as a barely-visible
-// 7% blue tint (looked blank), and below-average zones got a faint gray with
-// no red anywhere - RA 81.6% and AB3 37.9% read as the same flat color.
-// Now: cyan intensity scales with how far above league, ember with how far
-// below, clamped at +/-15 points. Null delta stays "no data" faint.
+
+
+
+
+
+
 function heatStyle(delta: number | null, isHover: boolean): {
   fill: string; stroke: string; strokeWidth: number;
 } {
@@ -114,7 +114,7 @@ function heatStyle(delta: number | null, isHover: boolean): {
   }
   const t = Math.min(Math.abs(delta) / 0.15, 1);
   const alpha = 0.22 + 0.36 * t + (isHover ? 0.18 : 0);
-  const minAlpha = 0.22 + (isHover ? 0.12 : 0); // data zones never look empty
+  const minAlpha = 0.22 + (isHover ? 0.12 : 0);
   const a = Math.max(alpha, minAlpha);
   if (delta >= 0) {
     return {
@@ -179,10 +179,10 @@ export default function CourtHeatmap({ rows, meta, verdict }: CourtHeatmapProps)
             border: "1px solid var(--color-stone-border)",
           }}
         >
-          {/* Half-Court Boundary Line */}
+
           <rect x="1" y="1" width="498" height="468" fill="none" stroke="var(--color-stone-border)" strokeWidth="1.5" />
 
-          {/* Interactive Zone Polygons */}
+
           {ZONE_PATHS.map((zp) => {
             const rec = findZoneRecord(dataList, zp.id);
             const isHover = hovered === zp.id;
@@ -208,8 +208,8 @@ export default function CourtHeatmap({ rows, meta, verdict }: CourtHeatmapProps)
                 }
               }
             } else if (rec) {
-              // Missing delta means "no baseline", never "neutral": render
-              // it like no-data instead of faking a league-average zone.
+
+
               const style = heatStyle(rec.LEAGUE_DELTA ?? null, isHover);
               fill = style.fill;
               stroke = style.stroke;
@@ -233,20 +233,20 @@ export default function CourtHeatmap({ rows, meta, verdict }: CourtHeatmapProps)
             );
           })}
 
-          {/* Court Markings & Hardware */}
-          {/* Basket Rim */}
+
+
           <circle cx="250" cy="417.5" r="7.5" fill="none" stroke="var(--color-ink-black)" strokeWidth="1.8" />
-          {/* Backboard */}
+
           <line x1="220" y1="430" x2="280" y2="430" stroke="var(--color-ink-black)" strokeWidth="2.5" />
-          {/* Free Throw Circle */}
+
           <circle cx="250" cy="280" r="60" fill="none" stroke="var(--color-stone-muted)" strokeWidth="1.2" strokeDasharray="4 4" />
           <circle cx="250" cy="280" r="60" fill="none" stroke="var(--color-stone-muted)" strokeWidth="1.2" clipPath="url(#top-circle)" />
-          {/* Center Court Line at Top */}
+
           <line x1="0" y1="0" x2="500" y2="0" stroke="var(--color-stone-border)" strokeWidth="2" />
           <circle cx="250" cy="0" r="60" fill="none" stroke="var(--color-stone-border)" strokeWidth="1.2" />
         </svg>
 
-        {/* Hover Zone Tooltip Popover */}
+
         {activeRecord && hovered && (
           <div
             style={{
@@ -328,7 +328,7 @@ export default function CourtHeatmap({ rows, meta, verdict }: CourtHeatmapProps)
         )}
       </div>
 
-      {/* Legend & Provenance */}
+
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: 11, color: "var(--color-ash-gray)", padding: "0 4px" }}>
         <span>Hover court zones to inspect volume and shooting efficiency</span>
         {isCompare ? (

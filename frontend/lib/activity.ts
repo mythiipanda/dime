@@ -55,15 +55,15 @@ export function activityRecordFromEvent(
     summary: typeof summary === "string" ? summary : undefined,
     status: typeof raw.status === "string" ? raw.status : undefined,
     emittedAt: typeof raw.emitted_at === "string" ? raw.emitted_at : undefined,
-    // Preserve the exact wire payload. Nested normalized-event data is not
-    // flattened, so replay and live records remain byte-shape equivalent.
+
+
     data: { ...raw },
   };
 }
 
-// Mirrors the narrowed public contract under backend QA. Deliberately excludes
-// raw goals, requirement prose, entity IDs, free-form plan descriptions, source
-// strings, warnings, claim results, repair instructions, and contradiction prose.
+
+
+
 export const ACTIVITY_CONTRACT_FIXTURE: Record<string, unknown>[] = [
   { type: "tool_call", event_id: "run-a:1", sequence: 1, emitted_at: "2026-09-18T20:00:00Z", phase: "execute", status: "running", title: "Tool running", transition: "started", correlation_id: "call-1", data: { name: "team_ratings", argument_count: 1, unknown_argument_count: 0 } },
   { type: "tool_result", event_id: "run-a:2", sequence: 2, emitted_at: "2026-09-18T20:00:01Z", phase: "execute", status: "complete", title: "Tool complete", transition: "succeeded", correlation_id: "call-1", duration_ms: 14, data: { name: "team_ratings", rows: 30 } },

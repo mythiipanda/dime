@@ -1,7 +1,7 @@
 "use client";
 
 export interface TrendPoint {
-  label: string; // "vs BOS"
+  label: string;
   value: number;
 }
 

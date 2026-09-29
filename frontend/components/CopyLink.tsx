@@ -3,11 +3,7 @@
 import { useState } from "react";
 import { panelShareUrl } from "../lib/exploreUrl";
 
-/**
- * Copy-link button for an Explore panel (redesign Phase 3). Copies the
- * panel's shareable URL: only that panel's filter params plus the panel
- * id, so opening the link reproduces the view.
- */
+
 export default function CopyLink({ panel, anchor }: { panel: string; anchor?: string }) {
   const [done, setDone] = useState(false);
   return (

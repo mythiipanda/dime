@@ -66,7 +66,7 @@ export default function ThreadRail({
       }}
     >
       <div style={{ display: "flex", flexDirection: "column", gap: 10, minHeight: 0, flex: 1 }}>
-        {/* Brand & Action Top Header */}
+
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "0 10px" }}>
           <button
             type="button"
@@ -103,7 +103,7 @@ export default function ThreadRail({
           )}
         </div>
 
-        {/* New Session Button */}
+
         <button
           type="button"
           onClick={onNew}
@@ -136,7 +136,7 @@ export default function ThreadRail({
           </span>
         </button>
 
-        {/* Recents Section */}
+
         <div style={{ marginTop: 6, display: "flex", flexDirection: "column", minHeight: 0, flex: 1 }}>
           <div
             style={{

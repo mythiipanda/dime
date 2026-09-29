@@ -4,22 +4,22 @@ import { clamp } from "../../lib/viz";
 
 export interface ZoneStat {
   key: string;
-  short: string; // "Rim"
-  label: string; // "Restricted area"
+  short: string;
+  label: string;
   fgm: number;
   fga: number;
-  fgPct: number; // 0..1
-  leagueAvg: number; // 0..1
+  fgPct: number;
+  leagueAvg: number;
 }
 
-// Court geometry in NBA tenths-of-feet, basket at (0, 0). Same mapping as
-// the canvas ShotChart: x in [-250, 250], y in [-50, 425].
+
+
 const W = 500;
 const H = 475;
 const sx = (x: number) => ((x + 250) / 500) * W;
 const sy = (y: number) => H - ((y + 50) / 475) * H;
 
-// Hex centers, one per shooting zone.
+
 const CENTROIDS: Record<string, [number, number]> = {
   "restricted-area": [0, 22],
   paint: [0, 118],
@@ -43,7 +43,7 @@ function hexPoints(cx: number, cy: number, r: number): string {
 const mix = (colorVar: string, amount: number) =>
   `color-mix(in oklch, ${colorVar} ${Math.round(clamp(amount, 0, 1) * 100)}%, transparent)`;
 
-/** Zone fill: blue tint above league average, red tint below, gray near it. */
+
 function zoneFill(deltaPp: number, hasShots: boolean): string {
   if (!hasShots) return mix("var(--color-stone-muted)", 0.35);
   if (deltaPp >= 1.5) return mix("var(--color-cyan-signal)", 0.18 + Math.min(0.45, deltaPp / 16));
@@ -53,7 +53,7 @@ function zoneFill(deltaPp: number, hasShots: boolean): string {
 
 function CourtLines() {
   const line = "var(--color-stone-border)";
-  // 3pt arc: circle around the basket, clipped by the corner lines.
+
   const r = 237.5;
   const ax = r * Math.cos(Math.PI * 0.05);
   const ay = r * Math.sin(Math.PI * 0.05);

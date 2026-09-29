@@ -2,11 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 
-/* StreamText - ported from the beautifului harness registry component
- * (research/design-skills/beautifului/registry-src/stream-text--StreamText.tsx).
- * Dime adaptation: the harness resets the reveal whenever `text` changes;
- * here text is a LIVE token stream, so the reveal chases growth instead of
- * restarting, and speeds up when far behind so long answers don't lag. */
+
 export function StreamText({
   text,
   tickMs = 9,
@@ -36,7 +32,7 @@ export function StreamText({
       setCount((c) => {
         if (c >= target) return c;
         const remaining = target - c;
-        // 2 chars/tick baseline (harness feel); catch up fast when behind
+
         const step = Math.max(2, Math.ceil(remaining / 40));
         return Math.min(c + step, target);
       });

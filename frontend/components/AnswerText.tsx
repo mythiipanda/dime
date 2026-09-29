@@ -3,11 +3,7 @@
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 
-/* Answer rendering, harness style: no verdict hero, no display type.
- * The harness renders agent output as flat 13px prose (ChatComposer
- * Section body). Verdict text stays inline where the composer put it -
- * only the "This data covers X." preamble drops to a provenance caption.
- * Numerals stay tabular. */
+
 
 const COVERAGE_RX = /^\s*This data covers the ([^.]+)\.\s*/;
 

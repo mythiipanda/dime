@@ -56,7 +56,7 @@ export default function WowyCard({ rows, meta, verdict }: WowyCardProps) {
         </div>
       )}
 
-      {/* Switch between Visual Breakdown and Full Table */}
+
       <div style={{ display: "flex", justifyContent: "flex-end", gap: 6 }}>
         <button
           className={view === "visual" ? "tab-active" : "pill-ghost"}
@@ -116,7 +116,7 @@ export default function WowyCard({ rows, meta, verdict }: WowyCardProps) {
                   </div>
                 </div>
 
-                {/* Net Rating Differential Bar */}
+
                 <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
                   <span style={{ width: 60, fontSize: 12, fontWeight: 600, color: isPos ? "var(--color-cyan-edge)" : "var(--color-ink-black)", fontVariantNumeric: "tabular-nums" }}>
                     {isPos ? "+" : ""}{net.toFixed(1)} NET

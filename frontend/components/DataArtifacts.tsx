@@ -131,8 +131,8 @@ export default function DataArtifacts({
   const [heat, setHeat] = useState(false);
   const [viewMode, setViewMode] = useState<"table" | "chart" | "court">("table");
   const [showInline, setShowInline] = useState(false);
-  // Fetched data is part of the answer and doubles as the debugging view.
-  // Keep it open instead of hiding it behind a summary strip.
+
+
   const [expanded, setExpanded] = useState(true);
 
   const tables: {
@@ -164,11 +164,11 @@ export default function DataArtifacts({
   const toolOf = (t: { tool?: string; title?: string }) =>
     resolveToolName(t) ?? t.tool;
 
-  // A table "has content" when selecting it renders something meaningful:
-  // a non-empty row array, a non-empty structured payload (compare {a, b}),
-  // or a verdict / deterministic-answer carrier kept by the backend.
-  // Tables with nothing to show are never the default view and never
-  // appear in the pager - no "No rows returned for this view", ever.
+
+
+
+
+
   const tableHasContent = (t: {
     rows?: unknown;
     verdict?: string;
@@ -189,10 +189,10 @@ export default function DataArtifacts({
   const contentIdx = tables
     .map((t, i) => (tableHasContent(t) ? i : -1))
     .filter((i) => i >= 0);
-  // Curated views, in priority order: the answering tool's table wins the
-  // default slot. Player leaderboards are listed explicitly so a
-  // player-scoped question (e.g. best defensive players) defaults to the
-  // player table, never a trailing team-scope table like TEAM SPLITS.
+
+
+
+
   const PREFERRED_TOOLS = new Set([
     "get_shot_compare",
     "get_shot_zones",
@@ -234,8 +234,8 @@ export default function DataArtifacts({
       ? defaultPos
       : Math.max(0, Math.min(pageState, contentIdx.length - 1));
   const table = pos >= 0 ? tables[contentIdx[pos]] : undefined;
-  // Unreachable by construction (selection and pager only see tables with
-  // content); kept as a safety net so a view can never go blank.
+
+
   const emptyState = (
     <div
       style={{
@@ -422,7 +422,7 @@ export default function DataArtifacts({
   }
 
   return (
-    // expanded evidence card
+
     <div
       className="t-skel-in"
       style={{

@@ -36,8 +36,8 @@ export default function DraftPanel() {
     }
   };
 
-  // Auto-load the default year so Explore never opens on an empty panel.
-  // The URL wins when a shared link carries a year.
+
+
   useEffect(() => {
     const fromUrl = getQueryParam("draft_year");
     if (fromUrl) setYear(fromUrl);

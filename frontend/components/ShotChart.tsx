@@ -27,7 +27,7 @@ function drawShots(canvas: HTMLCanvasElement, shots: Shot[]) {
   const sx = (x: number) => ((x + 250) / 500) * W;
   const sy = (y: number) => H - ((y + 50) / 475) * H;
   const sc = W / 500;
-  // Canvas cannot resolve CSS var() strings - read the themed values directly.
+
   const cssv = getComputedStyle(document.documentElement);
   const surface = cssv.getPropertyValue("--color-pure-white").trim() || "#ffffff";
   const ink = cssv.getPropertyValue("--color-ink-black").trim() || "#1c1917";
@@ -98,8 +98,8 @@ export default function ShotChart({
   }, [playerId, season]);
 
   if (!playerId) return null;
-  // No card shell or title here: the parent ExplorePanel already provides the
-  // panel chrome and "Shot chart" header. Render the chart content only.
+
+
   return (
     <div style={{ marginTop: 12 }}>
       <div style={{ fontSize: 12, color: "var(--color-warm-gray)" }}>
@@ -124,7 +124,7 @@ export function ShotChartCard({ initialPlayer }: { initialPlayer?: string }) {
   const [season, setSeason] = useState("2025-26");
   const [active, setActive] = useState("");
   const [suggest, setSuggest] = useState<{ id: number; name: string }[]>([]);
-  // First load: the search context wins, then the URL, then blank.
+
   useEffect(() => {
     const seasonParam = getQueryParam("shots_season");
     if (seasonParam) setSeason(seasonParam);

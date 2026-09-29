@@ -1,4 +1,4 @@
-// Tests for the Explore footer "Updated" line (redesign Phase 1).
+
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { freshDateLabel, updatedLine } from "./freshness";

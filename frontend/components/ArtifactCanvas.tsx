@@ -113,7 +113,7 @@ export default function ArtifactCanvas({ artifact, onClose, onAsk }: ArtifactCan
         boxSizing: "border-box",
       }}
     >
-      {/* Data panel header */}
+
       <div
         style={{
           display: "flex",
@@ -151,7 +151,7 @@ export default function ArtifactCanvas({ artifact, onClose, onAsk }: ArtifactCan
           )}
         </div>
 
-        {/* View Switchers & Controls */}
+
         <div style={{ display: "flex", alignItems: "center", gap: 6, flexShrink: 0 }}>
           <div
             style={{
@@ -204,7 +204,7 @@ export default function ArtifactCanvas({ artifact, onClose, onAsk }: ArtifactCan
             </button>
           )}
 
-          {/* Close data panel button */}
+
           <button
             type="button"
             onClick={onClose}
@@ -224,7 +224,7 @@ export default function ArtifactCanvas({ artifact, onClose, onAsk }: ArtifactCan
         </div>
       </div>
 
-      {/* Data panel body */}
+
       <div style={{ flex: 1, minHeight: 0, overflowY: "auto", padding: "20px" }}>
         {artifact.meta?.sql && (
           <details
@@ -245,7 +245,7 @@ export default function ArtifactCanvas({ artifact, onClose, onAsk }: ArtifactCan
           </details>
         )}
 
-        {/* View Mode Rendering */}
+
         {toolName === "get_compare" || toolName === "get_preview" ? (
           <CompareView rows={artifact.rows} />
         ) : toolName === "get_wowy" ? (

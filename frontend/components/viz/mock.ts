@@ -1,4 +1,4 @@
-// Mock data for the viz prototypes. Fictional numbers for design review only.
+
 import type { ZoneStat } from "./ZoneShotChart";
 import type { PercentileRow } from "./PercentileBars";
 import type { TrendPoint } from "./StatTrend";
@@ -36,7 +36,7 @@ export const mockTrend: TrendPoint[] = [
   { label: "vs CHA", value: 28 },
 ];
 
-// Deterministic pseudo-random league distribution around 54.5% eFG.
+
 function mulberry32(seed: number) {
   let a = seed;
   return () => {

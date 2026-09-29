@@ -1,16 +1,16 @@
-// Right-now feed builder (redesign Phase 4). Pure transform from API rows
-// to feed items, kept separate from the component so it stays unit-testable.
-//
-// Inputs mirror the existing endpoints, no new plumbing:
-// - movers: either the /today envelope's movers (TodayMover[]) or the
-//   /movers endpoint rows (MoversRows with climbers, fallers, new_entries).
-// - streaks: the /today envelope's TeamStreak[].
-// - watchlist: WatchItem[] from /watchlist.
-//
-// Binding rules: no item without data (nameless movers, streaks with no
-// STREAK string, watchlist rows with found=false or an empty snapshot are
-// dropped). Every kept item carries a ranked number. Copy is factual
-// numbers only, never evaluative labels.
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 import type {
   Mover,
@@ -27,17 +27,17 @@ export type FeedKind = "mover" | "streak" | "watchlist";
 export interface FeedItem {
   id: string;
   kind: FeedKind;
-  /** Player rows open the shots panel; team rows ask Dime a question. */
+
   entity: "player" | "team";
   name: string;
   team?: string;
-  /** One-line factual number, e.g. "up 6 spots, +2.3 pts". */
+
   statText: string;
-  /** Chip text, e.g. "#14". */
+
   rankLabel: string;
-  /** Hover text, e.g. "Ranked #14 of 30 by points per game". */
+
   rankTitle: string;
-  /** Factual Ask Dime question for team rows; null for player rows. */
+
   question: string | null;
 }
 
@@ -63,13 +63,13 @@ function pts(delta: number): string {
   return `${delta > 0 ? "+" : ""}${delta.toFixed(1)} pts`;
 }
 
-/** "up 6 spots" / "down 1 spot". Factual movement words only. */
+
 function spots(change: number): string {
   const n = Math.abs(Math.round(change));
   return `${change > 0 ? "up" : "down"} ${n} spot${n === 1 ? "" : "s"}`;
 }
 
-/** A numeric RANK_CHANGE string ("+6", "-2") reads as movement words. */
+
 function changeText(raw: string): string | null {
   const n = Number(raw);
   if (raw !== "" && Number.isFinite(n) && Math.round(n) !== 0) {
@@ -78,7 +78,7 @@ function changeText(raw: string): string | null {
   return raw !== "" ? raw : null;
 }
 
-/** "W5" -> won 5 straight, "L3" -> lost 3 straight, else the raw string. */
+
 function streakText(raw: string): { text: string; won: boolean | null; games: number | null } {
   const head = raw.charAt(0).toUpperCase();
   const n = parseInt(raw.slice(1).trim(), 10);
@@ -370,7 +370,7 @@ export function buildWatchItems(
   return buildFullWatchItems(watchlist).slice(0, FEED_WATCH_CAP);
 }
 
-/** Movers, then streaks, then watchlist. Each section capped. */
+
 export function buildFeedItems(input: FeedInput): FeedItem[] {
   return [
     ...buildMoverItems(input.movers),
@@ -385,7 +385,7 @@ export interface FeedExpansion {
   total: number;
 }
 
-/** Capped visible list plus the remaining uncapped items in kind order. */
+
 export function buildFeedExpansion(input: FeedInput): FeedExpansion {
   const visible = buildFeedItems(input);
   const extra = [

@@ -1,4 +1,4 @@
-// Tests for the leaders rank/percentile helper (redesign Phase 2).
+
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { rankOf } from "./rankContext";

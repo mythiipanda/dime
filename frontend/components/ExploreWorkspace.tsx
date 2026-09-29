@@ -33,15 +33,15 @@ export default function ExploreWorkspace({
   onAsk,
 }: ExploreWorkspaceProps) {
   const [updated, setUpdated] = useState<string | null>(null);
-  // On-demand panels: mounted grows on first expansion and never shrinks;
-  // expanded is the one visible panel (null = overview only).
+
+
   const [mounted, setMounted] = useState<ExplorePanelId[]>([]);
   const [expanded, setExpanded] = useState<ExplorePanelId | null>(null);
   const [ctx, setCtx] = useState<ExploreContext | null>(null);
 
-  // Redesign Phase 1: the only residue of the old freshness UI is one
-  // footer line ("Updated Oct 24"), rendered only when the endpoint has
-  // data. No nav status, no system-status disclosure, no empty states.
+
+
+
   useEffect(() => {
     let live = true;
     getFreshness()
@@ -72,8 +72,8 @@ export default function ExploreWorkspace({
     if (next) scrollToActive();
   };
 
-  // Shared links carry ?panel=<id>: mount and open that panel on load.
-  // Each panel restores its own filters from its params.
+
+
   useEffect(() => {
     const v = getQueryParam("panel");
     if (isPanelId(v)) {
@@ -96,8 +96,8 @@ export default function ExploreWorkspace({
     expand("shots", { panel: "shots", playerName });
   };
 
-  // Context keys: a new search context remounts the panel so its first
-  // load runs with the query applied (panels read URL first, then this).
+
+
   const leadersKey = `leaders-${ctx?.panel === "leaders" ? (ctx.stat ?? "") : ""}`;
   const shotsKey = `shots-${ctx?.panel === "shots" ? (ctx.playerId ?? ctx.playerName ?? "") : ""}`;
   const lineupsKey = `lineups-${ctx?.panel === "lineups" ? (ctx.teamAbbr ?? "") : ""}`;

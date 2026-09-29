@@ -2,11 +2,7 @@
 
 import type { ReactNode } from "react";
 
-/**
- * Shared Explore panel chrome (redesign brief Phase A):
- * kicker (10px/600/.08em) + 16px/500 title, with one action slot.
- * Every Explore panel should use this instead of its own header pattern.
- */
+
 export function PanelHeader({
   kicker,
   title,
@@ -27,10 +23,7 @@ export function PanelHeader({
   );
 }
 
-/**
- * Card wrapper for an Explore panel with the scroll anchor.
- * `id` is the explore-<section> anchor the sticky nav jumps to.
- */
+
 export default function ExplorePanel({
   id,
   children,

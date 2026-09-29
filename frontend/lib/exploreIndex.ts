@@ -1,7 +1,7 @@
-// Live mini-summaries for the Explore overview index cards (redesign brief
-// Phase B). Pure derivation helpers, kept separate from the component so they
-// stay unit-testable. Every numeral comes from warehouse rows — nothing is
-// hardcoded.
+
+
+
+
 
 export interface LeaderLine {
   rank: number;
@@ -13,7 +13,7 @@ export function formatStat(v: number): string {
   return Number.isInteger(v) ? String(v) : v.toFixed(1);
 }
 
-/** Top-n leaders for a stat column, sorted by value desc. */
+
 export function topLeaders(
   rows: Record<string, unknown>[],
   stat: string,
@@ -41,10 +41,7 @@ export interface PlayoffResult {
   series: string;
 }
 
-/**
- * Decided Finals winner from playoffs game rows (game ids carry the round at
- * chars 6-7; "04" is the Finals). Null when no team has 4 Finals wins.
- */
+
 export function playoffChampion(
   rows: Record<string, unknown>[],
 ): PlayoffResult | null {
@@ -67,14 +64,14 @@ export function playoffChampion(
   };
 }
 
-/** Distinct playoff games in the warehouse (0 when the table is empty). */
+
 export function countPlayoffGames(rows: Record<string, unknown>[]): number {
   return new Set(
     rows.map((r) => String(r.GAME_ID || "")).filter((id) => id.length > 0),
   ).size;
 }
 
-/** One-line card summary from combine rows; null when nothing is there. */
+
 export function combineSummary(
   rows: Record<string, unknown>[],
   draftYear: string,
@@ -83,17 +80,14 @@ export function combineSummary(
   return `${rows.length} prospects · ${draftYear} class`;
 }
 
-/**
- * Shots card headline for one player: shot count from the warehouse.
- * Null when there is no name or nothing charted.
- */
+
 export function shotsHeadline(name: string, count: number): string | null {
   const label = String(name || "").trim();
   if (!label || !Number.isFinite(count) || count <= 0) return null;
   return `${label} · ${Math.round(count)} shots charted`;
 }
 
-/** "LeBron James" -> "L. James". Shared with the Lineups panel. */
+
 export function shortPlayerName(full: string): string {
   const p = String(full || "").trim().split(/\s+/).filter(Boolean);
   return p.length > 1 ? `${p[0][0]}. ${p.slice(-1)}` : String(full || "").trim();
@@ -104,10 +98,7 @@ export interface LineupHeadlineRow {
   MIN?: unknown;
 }
 
-/**
- * Lineups card headline for the default team: most-used unit and its
- * minutes. Null when no lineup rows arrived.
- */
+
 export function lineupsHeadline(
   teamAbbr: string,
   rows: LineupHeadlineRow[],
@@ -142,10 +133,7 @@ function millions(n: unknown): string | null {
   return `$${(n / 1_000_000).toFixed(1)}M`;
 }
 
-/**
- * Trade card headline from a trade/check verdict: both sides' payrolls.
- * Null when either side is missing payroll data.
- */
+
 export function tradeHeadline(v: TradeHeadlineVerdict | null | undefined): string | null {
   const a = v?.team_a;
   const b = v?.team_b;
@@ -162,27 +150,14 @@ export interface DatasetResult {
   data?: unknown[];
 }
 
-/**
- * Deferred live summaries for the cards that need a context first
- * (Phase 3). Each callback is wired by the component to existing
- * endpoints: the Shots headline resolves the leaders' #1 scorer and
- * counts their charted shots, Trade runs the default legality check,
- * Lineups reads the default team's units. Every callback is isolated,
- * so one failure never blanks the other cards.
- */
+
 export interface IndexExtra {
   topScorerShots?: () => Promise<{ name: string; count: number } | null>;
   tradeCheck?: () => Promise<TradeHeadlineVerdict | null>;
   defaultLineups?: () => Promise<{ team: string; rows: LineupHeadlineRow[] } | null>;
 }
 
-/**
- * Live summaries for the Explore overview index cards. Each dataset fetch is
- * isolated: Promise.allSettled + per-result ok checks, so one rejected or
- * failed request never blanks the cards whose data arrived fine. A dataset
- * that fails or returns no usable rows simply leaves its card without a
- * summary (the card degrades to its label/blurb).
- */
+
 export async function fetchIndexSummaries(
   fetch: (name: string, params: Record<string, string>) => Promise<DatasetResult>,
   season: string,
@@ -224,15 +199,15 @@ export async function fetchIndexSummaries(
     if (s) next.draft = [s];
   }
 
-  // Phase 3 context cards, staggered after the parallel batch. Each is
-  // isolated: a rejection or empty result leaves that card out.
+
+
   if (extra?.topScorerShots) {
     try {
       const s = await extra.topScorerShots();
       const h = s ? shotsHeadline(s.name, s.count) : null;
       if (h) next.shots = [h];
     } catch {
-      /* card stays out */
+
     }
   }
   if (extra?.tradeCheck) {
@@ -240,7 +215,7 @@ export async function fetchIndexSummaries(
       const h = tradeHeadline(await extra.tradeCheck());
       if (h) next.trade = [h];
     } catch {
-      /* card stays out */
+
     }
   }
   if (extra?.defaultLineups) {
@@ -249,7 +224,7 @@ export async function fetchIndexSummaries(
       const h = l ? lineupsHeadline(l.team, l.rows) : null;
       if (h) next.lineups = [h];
     } catch {
-      /* card stays out */
+
     }
   }
 

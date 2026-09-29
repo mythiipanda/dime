@@ -1,7 +1,7 @@
-// Shareable panel URLs (redesign Phase 3, PBPStats style). Pure helpers:
-// given the current query string, keep only the params that belong to one
-// panel so "Copy link" copies a URL that reproduces that panel's view.
-// Panel param names match what each panel already reads/writes.
+
+
+
+
 
 export const PANEL_PARAM_KEYS: Record<string, string[]> = {
   leaders: ["leaders_stat", "leaders_sort", "leaders_q", "leaders_pct", "standings_season"],
@@ -12,7 +12,7 @@ export const PANEL_PARAM_KEYS: Record<string, string[]> = {
   playoffs: [],
 };
 
-/** Parse "?a=1&b=2" (or "a=1&b=2") into a plain object. */
+
 export function decodeParams(qs: string): Record<string, string> {
   const out: Record<string, string> = {};
   const clean = qs.startsWith("?") ? qs.slice(1) : qs;
@@ -27,7 +27,7 @@ export function decodeParams(qs: string): Record<string, string> {
   return out;
 }
 
-/** Encode a plain object as a query string (no leading "?"). */
+
 export function encodeParams(params: Record<string, string>): string {
   return Object.entries(params)
     .filter(([, v]) => v !== "")
@@ -35,7 +35,7 @@ export function encodeParams(params: Record<string, string>): string {
     .join("&");
 }
 
-/** Keep only the entries whose key is in `keys`. */
+
 export function pickParams(
   params: Record<string, string>,
   keys: string[],
@@ -48,11 +48,7 @@ export function pickParams(
   return out;
 }
 
-/**
- * Shareable URL for one panel: origin + path, the panel anchor as hash,
- * and only that panel's params plus the panel id. Reading the URL back
- * (panel id + params) reproduces the view.
- */
+
 export function panelShareUrl(
   origin: string,
   path: string,

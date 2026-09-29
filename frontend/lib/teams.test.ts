@@ -1,4 +1,4 @@
-// Tests for the shared team lookup table (lib/teams).
+
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { abbrForTeamId, isTeamAbbr, TEAM_IDS } from "./teams";

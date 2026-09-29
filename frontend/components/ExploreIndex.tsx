@@ -8,10 +8,10 @@ import { fetchIndexSummaries } from "../lib/exploreIndex";
 import type { ExplorePanelId } from "../lib/exploreSearch";
 import { TEAM_IDS } from "../lib/teams";
 
-// Explore redesign Phase 1+3: the overview index is the navigation.
-// A card renders only when its live summary arrived — no blurb fallbacks,
-// nothing invented, nothing hardcoded about a player or team. Clicking a
-// card expands that panel on demand; panels mount lazily.
+
+
+
+
 function ArrowUpRight({ size = 12 }: { size?: number }) {
   return (
     <svg
@@ -56,17 +56,17 @@ export default function ExploreIndex({
   onSelect: (id: ExplorePanelId) => void;
   active?: ExplorePanelId | null;
 }) {
-  // Live summary lines keyed by card id. Each dataset fetch is isolated
-  // (Promise.allSettled inside fetchIndexSummaries), so one failed request
-  // never blanks the cards whose data arrived fine. Cards with no live
-  // data don't render.
+
+
+
+
   const [summaries, setSummaries] = useState<Record<string, string[]>>({});
 
   useEffect(() => {
     let alive = true;
     (async () => {
-      // Batch the independent fetches; the dependent ones (shots needs
-      // the #1 scorer's id) stagger inside fetchIndexSummaries.
+
+
       const next = await fetchIndexSummaries(
         (name, params) => getDatasetJson(name, params),
         SEASON,

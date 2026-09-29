@@ -44,8 +44,8 @@ function applyEvent(ai: AiMessage, type: string, data: unknown): AiMessage {
     touch(node).status =
       status === "complete" || status === "error" ? status : "running";
   } else if (type === "thought_token") {
-    // Live LLM tokens: planner reasoning and desk subagent thinking,
-    // streamed token-by-token as the model generates them.
+
+
     const node = touch(d.node as NodeName);
     node.liveThought = (node.liveThought || "") + String(d.text || "");
     if (d.agent && !node.liveThoughtAgent) node.liveThoughtAgent = String(d.agent);
@@ -79,8 +79,8 @@ function applyEvent(ai: AiMessage, type: string, data: unknown): AiMessage {
       }
     }
   } else if (type === "message") {
-    // Legacy event type; tool_call/tool_result carry tool activity now.
-    // Kept for backward compatibility with older streams.
+
+
   } else if (type === "custom_data") {
     const node = touch(d.node as NodeName);
     const tables = (d.tables as unknown[]) || [];
@@ -104,13 +104,13 @@ function applyEvent(ai: AiMessage, type: string, data: unknown): AiMessage {
     if (d.carry && typeof d.carry === "object") {
       next.carry = d.carry as AiMessage["carry"];
     }
-    // A mid-run "error" event means one node hit a snag, but if the graph
-    // recovered and produced a real answer, the run did not fail. Clear
-    // the sticky banner so it doesn't sit over a rendered answer (QA
-    // round 2d: "Error:Something went wrong" on a completed COMPARE run).
-    // But a fallback/partial final (v2 exception path, v1 gap copy) is
-    // still a failure even though it's non-empty -- keep the banner up
-    // so the user sees something went wrong (Instinct QA on aeae2b1).
+
+
+
+
+
+
+
     if (!isFailureFinal(next.text, d.carry)) {
       next.error = undefined;
     }
@@ -147,8 +147,8 @@ function aiFromRun(r: RunInfo): AiMessage {
       if (
         typeof t === "object" &&
         t !== null &&
-        // Live stream records carry kind/rows (the backend strips tool);
-        // accept any of the shapes the live path renders.
+
+
         (typeof (t as { tool?: unknown }).tool === "string" ||
           typeof (t as { kind?: unknown }).kind === "string" ||
           Array.isArray((t as { rows?: unknown }).rows))
@@ -303,8 +303,8 @@ export default function ChatPanel({ thread, onRunDone, preset, onOpenArtifact, a
   const [atBottom, setAtBottom] = useState(true);
   const endRef = useRef<HTMLDivElement | null>(null);
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
-  // Composer auto-grow: after a send clears the input (no onChange
-  // fires), snap the height back to the collapsed rows height.
+
+
   useEffect(() => {
     if (!input && inputRef.current) inputRef.current.style.height = "";
   }, [input]);
@@ -346,7 +346,7 @@ export default function ChatPanel({ thread, onRunDone, preset, onOpenArtifact, a
       }
     }
     if (request !== modelRequest.current) return;
-    // Keep a previous successful list usable if a refresh fails.
+
     setModelStatus("error");
     if (process.env.NODE_ENV !== "production") {
       console.error("Failed to load model list", lastError);
@@ -456,10 +456,10 @@ export default function ChatPanel({ thread, onRunDone, preset, onOpenArtifact, a
       {
         onEvent: (type, data) => {
           if (type === "final_answer") {
-            // The backend generates a stable id per run (v1: top-level
-            // run_id, v2: carry.run_id); recording it lets the history
-            // merge dedupe this exact turn instead of guessing by
-            // question+answer timestamps.
+
+
+
+
             const d = data as Record<string, unknown>;
             if (typeof d.run_id === "string" && d.run_id) {
               runId = d.run_id;
@@ -476,9 +476,9 @@ export default function ChatPanel({ thread, onRunDone, preset, onOpenArtifact, a
         onDone: () => {
           setBusy(false);
           stopTimer();
-          // Persist the finished exchange locally: the server session
-          // store is wiped on every deploy, so this is what makes a
-          // clicked recent session actually reload its conversation.
+
+
+
           appendCachedRun(thread, {
             id: runId,
             question: q,
@@ -522,14 +522,14 @@ export default function ChatPanel({ thread, onRunDone, preset, onOpenArtifact, a
   return (
     <div className="chat-workspace">
       {!messages.length ? (
-        /* Empty State: Centered Hero Layout (ChatGPT style) */
+
           <div className="chat-welcome">
           <div className="chat-welcome-heading">
             <h1>What do you want to understand?</h1>
             <p>Ask a hard basketball question. Dime will trace the answer back to the data.</p>
           </div>
 
-          {/* Centered Large Prompt Composer Card */}
+
           <div
             className="composer-card chat-composer chat-composer-hero"
           >
@@ -601,8 +601,8 @@ export default function ChatPanel({ thread, onRunDone, preset, onOpenArtifact, a
             </div>
           </div>
 
-          {/* Curated 2x2 Prompt Cards (Minimalist Frontier AI style) */}
-          {/* harness home suggestions: flat icon links, no cards (harness.html) */}
+
+
           <div className="chat-starters">
             {[
               {
@@ -643,7 +643,7 @@ export default function ChatPanel({ thread, onRunDone, preset, onOpenArtifact, a
           </div>
         </div>
       ) : (
-        /* Active Conversation State: Scrollable Message Stream */
+
         <div className="chat-active">
           <div
             style={{
@@ -676,7 +676,7 @@ export default function ChatPanel({ thread, onRunDone, preset, onOpenArtifact, a
                   id={`m-${i}`}
                   className="chat-ai-message chat-answer-reveal"
                 >
-                  {/* Message Header */}
+
                   <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
                     <span style={{ fontWeight: 600, fontSize: 13, color: "var(--color-ink-black)" }}>
                       Dime
@@ -729,9 +729,7 @@ export default function ChatPanel({ thread, onRunDone, preset, onOpenArtifact, a
                         }}
                       >
                         Picking up from earlier:{" "}
-                        {/* Player lane wins: when a player carried, answer-text
-                            teams (often just the opponent) are noise. Team-only
-                            carry (F67 lane) still names the team. */}
+
                         {(m.ai.carry.players?.length
                           ? m.ai.carry.players
                           : [...(m.ai.carry.players ?? []), ...(m.ai.carry.teams ?? [])]
@@ -821,7 +819,7 @@ export default function ChatPanel({ thread, onRunDone, preset, onOpenArtifact, a
             />
           )}
 
-          {/* Fixed Floating Prompt Bar in Active Chat */}
+
           <div
             className="prompt-bar"
             style={{

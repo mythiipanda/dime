@@ -3,9 +3,9 @@
 import { clamp, ordinal } from "../../lib/viz";
 
 export interface PercentileRow {
-  label: string; // "True shooting"
-  value: string; // "61.8%" (preformatted)
-  percentile: number; // 0..100
+  label: string;
+  value: string;
+  percentile: number;
 }
 
 export default function PercentileBars({

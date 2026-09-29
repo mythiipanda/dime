@@ -31,8 +31,8 @@ const ROUND_LABELS: Record<string, string> = {
 };
 
 function deriveSeries(rows: PlayoffRow[]): Series[] {
-  // Each game appears twice (one row per team). Round is GAME_ID[6:8];
-  // a series is one pair of teams inside a round.
+
+
   const bySeries = new Map<string, Series & { seen: Set<string> }>();
   for (const r of rows) {
     const team = (r.TEAM_ABBREVIATION || "").toUpperCase();
@@ -50,11 +50,11 @@ function deriveSeries(rows: PlayoffRow[]): Series[] {
       s = { round, a, b, winsA: 0, winsB: 0, games: 0, seen: new Set() };
       bySeries.set(key, s);
     }
-    if (s.seen.has(gid)) continue; // each game appears twice (one row per team)
+    if (s.seen.has(gid)) continue;
     s.seen.add(gid);
     s.games += 1;
-    // The kept row may be the LOSER's row - credit the winner either
-    // way or half the wins vanish (Finals showed 2-1, canon 4-1).
+
+
     const winner = r.WL === "W" ? team : other;
     if (winner === a) s.winsA += 1;
     else s.winsB += 1;

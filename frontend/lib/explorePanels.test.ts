@@ -1,4 +1,4 @@
-// Tests for the Phase 3 on-demand panel mounting (lib/explorePanels).
+
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {

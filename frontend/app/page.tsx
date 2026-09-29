@@ -29,8 +29,8 @@ export default function Home() {
   const [refreshKey, setRefreshKey] = useState(0);
   const [preset, setPreset] = useState<string | null>(null);
   const [exploreKey, setExploreKey] = useState(0);
-  // The server renders dark by default (see layout.tsx). Keep the first client
-  // render identical, then apply the saved preference after hydration.
+
+
   const [themeDark, setThemeDark] = useState(true);
   useEffect(() => {
     try {
@@ -88,8 +88,8 @@ export default function Home() {
     const btn = tabBtnRefs[tab].current;
     const pill = pillRef.current;
     if (!btn || !pill) return;
-    // transitions.dev #16: first paint positions the pill without motion,
-    // subsequent tab switches slide it.
+
+
     const prev = pill.style.transition;
     if (!pill.dataset.ready) {
       pill.style.transition = "none";
@@ -105,7 +105,7 @@ export default function Home() {
     setQueryParam("tab", t, true);
   };
 
-  // The exit timer must never outlive a newer open/close or the component.
+
   const artifactCloseTimer = useRef<number | null>(null);
   useEffect(() => () => {
     if (artifactCloseTimer.current !== null) window.clearTimeout(artifactCloseTimer.current);

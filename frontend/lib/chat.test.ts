@@ -2,11 +2,11 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { isFailureFinal } from "./chat";
 
-// Instinct QA on aeae2b1: the error banner must clear on a recovered
-// verified answer but STAY on fallback/partial finals, even though those
-// are non-empty. isFailureFinal is the decision function.
 
-// --- genuine / recovered answers: NOT failures ---
+
+
+
+
 
 test("genuine answer with verified claims is not a failure", () => {
   assert.equal(
@@ -66,7 +66,7 @@ test("non-empty text with no carry counts as recovered (older backends)", () => 
   assert.equal(isFailureFinal("An answer.", null), false);
 });
 
-// --- failure / fallback finals: ARE failures ---
+
 
 test("v2 exception fallback (verified_claims=0, execution_failure gap) is a failure", () => {
   assert.equal(

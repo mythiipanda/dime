@@ -44,9 +44,9 @@ export function leadersData(
 ): { label: string; value: number }[] | null {
   if (!rows.length || !("PLAYER" in rows[0] && stat in rows[0])) return null;
   if ("GAME_DATE" in rows[0]) return null;
-  // The dataset endpoint returns warehouse storage order (no ORDER BY);
-  // sort by the stat or the "Top PTS" chart drops leaders (QA: Doncic
-  // and Brown missing from the bar chart).
+
+
+
   return [...rows]
     .sort((a, b) => num(b[stat]) - num(a[stat]))
     .slice(0, 10)

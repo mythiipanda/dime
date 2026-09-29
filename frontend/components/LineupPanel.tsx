@@ -15,15 +15,15 @@ const TEAMS: Record<string, number> = TEAM_IDS;
 type Row = { GROUP_NAME: string; MIN: number; PLUS_MINUS: number };
 
 export default function LineupPanel({ initialTeam }: { initialTeam?: string }) {
-  // First load reads the URL, then the search context, then the default.
-  // Lazy initializers so the first fetch already uses the right team.
+
+
   const [tab, setTab] = useState<"5man" | "wowy">(() => {
     const t = getQueryParam("lineups_tab");
     return t === "wowy" ? "wowy" : "5man";
   });
   const [team, setTeam] = useState(() => {
-    // A fresh search context wins over a stale URL; a shared link carries
-    // no context, so the URL still restores the view.
+
+
     const s = (initialTeam || getQueryParam("lineups_team") || "BOS").toUpperCase();
     return TEAMS[s] ? s : "BOS";
   });
@@ -31,14 +31,14 @@ export default function LineupPanel({ initialTeam }: { initialTeam?: string }) {
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
 
-  // WOWY state
+
   const [playerA, setPlayerA] = useState(() => getQueryParam("wowy_a") || "Luka");
   const [playerB, setPlayerB] = useState(() => getQueryParam("wowy_b") || "LeBron");
   const [wowyRows, setWowyRows] = useState<unknown[]>([]);
   const [wowyVerdict, setWowyVerdict] = useState("");
   const [wowyBusy, setWowyBusy] = useState(false);
 
-  // First load: with ?lineups_tab=wowy the comparison runs at once.
+
   useEffect(() => {
     if (tab === "wowy" && wowyRows.length === 0) runWowy();
     // eslint-disable-next-line react-hooks/exhaustive-deps

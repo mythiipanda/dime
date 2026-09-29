@@ -29,7 +29,7 @@ export default function TradePanel({ onAskValue }: { onAskValue?: (q: string) =>
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
 
-  // First load: restore the last checked trade from the URL.
+
   useEffect(() => {
     const qa = getQueryParam("trade_a");
     const pa = getQueryParam("trade_pa");
