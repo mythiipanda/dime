@@ -215,7 +215,7 @@ def _read_df(sql: str, params: list, tries: int = 5) -> list[dict[str, Any]]:
     last: Exception | None = None
     for _ in range(tries):
         try:
-            con = store.connect()
+            con = store.connect(read_only=True)
             try:
                 return (
                     con.execute(sql, params)

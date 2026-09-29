@@ -73,6 +73,48 @@ def warehouse_identity() -> dict[str, str]:
     return identity
 
 
+_tables_cache: dict[Path, tuple[tuple[int, int, str], frozenset[str]]] = {}
+_tables_lock = threading.RLock()
+
+
+def warehouse_tables_cache_clear() -> None:
+    with _tables_lock:
+        _tables_cache.clear()
+
+
+def _tables_uncached(path: Path) -> frozenset[str]:
+    if path == DB_PATH.resolve():
+        con = connect(read_only=True)
+    else:
+        con = duckdb.connect(str(path), read_only=True)
+    try:
+        return frozenset(r[0] for r in con.execute("SHOW TABLES").fetchall())
+    finally:
+        try:
+            con.close()
+        except Exception:
+            pass
+
+
+def tables(path: Path | str | None = None) -> set[str]:
+    resolved = DB_PATH.resolve() if path is None else Path(path).resolve()
+    with _tables_lock:
+        try:
+            st = resolved.stat()
+        except OSError:
+            return set(_tables_uncached(resolved))
+        sample = _warehouse_sample_hexdigest(resolved, st.st_size)
+        if sample is None:
+            return set(_tables_uncached(resolved))
+        key = (st.st_mtime_ns, st.st_size, sample)
+        entry = _tables_cache.get(resolved)
+        if entry is not None and entry[0] == key:
+            return set(entry[1])
+        names = _tables_uncached(resolved)
+        _tables_cache[resolved] = (key, names)
+        return set(names)
+
+
 _PLAYED_GAME_TABLE = "silver_boxscores"
 
 # NBA game-id prefixes: 001 = preseason, 002 = regular season,
@@ -209,6 +251,10 @@ def _pool_drop():
 
 
 def _pool_evict_all():
+    try:
+        warehouse_tables_cache_clear()
+    except Exception:
+        pass
     try:
         with _pool_lock:
             cons = list(_pool_registry)
@@ -509,8 +555,7 @@ def read_frame(table: str, where: str = "", params: list[object] | None = None) 
     # free DuckDB opens can checkpoint/rewrite physical bytes on close.
     con = connect(read_only=True)
     try:
-        tables = {r[0] for r in con.execute("SHOW TABLES").fetchall()}
-        if table not in tables:
+        if table not in tables():
             return pl.DataFrame()
         query = f"SELECT * FROM {table}" + (f" WHERE {where}" if where else "")
         rel = con.execute(query, params or [])
