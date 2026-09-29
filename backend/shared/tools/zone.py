@@ -169,6 +169,10 @@ def _coverage_bounds() -> str:
 @tool
 def get_team_shot_zones(teams: str = "league",
                         season: str = SEASON) -> dict[str, Any]:
+    """League-wide team shot-zone diet: per-zone attempt share and eFG
+    with league baselines and deltas. teams is "league" or a comma-separated
+    list of team names/abbrevs/ids. Zones: rim, short_mid, long_mid,
+    corner_3, atb_3."""
     season = clamp_season(season)
     year = season_year(season)
     frame = _store.read_frame(TABLE, "season = ?", [year])

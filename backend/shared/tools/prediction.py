@@ -164,6 +164,7 @@ def _find_meeting(season: str, ida: int, idb: int,
 def get_game_prediction(a: str = "", b: str = "", game_date: str = "",
                         season: str = SEASON, n_sims: int = DEFAULT_SIMS,
                         seed: int = DEFAULT_SEED) -> dict[str, Any]:
+    """Pre-game Monte Carlo prediction: win probability, projected score/total, and confidence intervals. Model estimates with documented methodology, not betting picks. Two team names/abbrevs/ids; optional game_date (MM/DD/YYYY), n_sims, seed for reproducibility."""
     from .. import store
 
     season = clamp_season(season)

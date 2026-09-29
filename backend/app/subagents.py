@@ -857,14 +857,17 @@ async def run_desk_streaming(name: str, task: str, provider: ProviderName,
 def delegate_tools(provider: ProviderName, model: str) -> list:
     @tool("delegate_scout")
     async def delegate_scout(task: str) -> dict[str, Any]:
+        """Hand player research to the scout. One player per call."""
         return await run_desk_streaming("delegate_scout", task, provider, model)
 
     @tool("delegate_team")
     async def delegate_team(task: str) -> dict[str, Any]:
+        """Hand team research to the team desk. One team per call."""
         return await run_desk_streaming("delegate_team", task, provider, model)
 
     @tool("delegate_league")
     async def delegate_league(task: str) -> dict[str, Any]:
+        """Hand leaguewide questions to the league desk."""
         return await run_desk_streaming("delegate_league", task, provider, model)
 
     return [delegate_scout, delegate_team, delegate_league]

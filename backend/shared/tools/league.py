@@ -167,6 +167,7 @@ def _slim_standings(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
 
 @tool
 def get_standings(season: str = SEASON) -> dict[str, Any]:
+    """League standings for one season like 2025-26."""
     rows, meta = _warehouse_or_live(
         "silver_standings", "_season = ?",
         [season], lambda: nba_stats.standings(season), season,
@@ -189,6 +190,7 @@ def get_standings(season: str = SEASON) -> dict[str, Any]:
 
 @tool
 def get_standings_deep(season: str = SEASON, top: int = 5) -> dict[str, Any]:
+    """Standings deep cuts: clutch records, comeback kings, blown leads, monthly momentum."""
     from .. import store as _store
 
     season = str(season or SEASON).strip() or SEASON
@@ -463,6 +465,7 @@ def get_player_ratings(
 def get_playoff_team_ratings(
     season: str = SEASON, limit: int = 30,
 ) -> dict[str, Any]:
+    """Team offensive, defensive, and net ratings from playoff game logs."""
     from ._core import clamp_season
 
     season = clamp_season(season)
@@ -518,6 +521,7 @@ def get_playoff_team_ratings(
 @tool
 def get_clutch(scope: str = "player", season: str = SEASON,
                player: str = "") -> dict[str, Any]:
+    """Clutch stats (last 5 min, margin 5 or less), player or team scope."""
     scope = "team" if str(scope).lower().startswith("team") else "player"
     entity = f"{scope}-clutch"
     rows, meta = _warehouse_or_live(
@@ -588,6 +592,7 @@ def _finals_game_scores(finals: list[dict[str, Any]],
 
 @tool
 def get_playoffs(season: str = SEASON) -> dict[str, Any]:
+    """Playoff wins per team plus champion for one season."""
     rows, meta = _warehouse_or_live(
         "silver_playoffs", "_season = ?",
         [season], lambda: nba_stats.playoff_results(season), season,
@@ -1205,6 +1210,7 @@ def get_team_four_factors(team: str = "", season: str = SEASON) -> dict[str, Any
 
 @tool
 def get_hustle(scope: str = "player", season: str = SEASON) -> dict[str, Any]:
+    """Hustle leaders, player or team scope. Contests, deflections, charges."""
     from ._core import clamp_scope
 
     scope = clamp_scope(scope)
@@ -1217,6 +1223,7 @@ def get_hustle(scope: str = "player", season: str = SEASON) -> dict[str, Any]:
 
 @tool
 def get_rapm(player: str = "", top: int = 10, season: str = SEASON) -> dict[str, Any]:
+    """RAPM-lite ratings. Blank player returns top list, else one row."""
     from .. import store as _store
 
     con = _store.connect()
@@ -1253,6 +1260,8 @@ def get_finder(
     mode: str = "streak", team_abbrev: str = "", opponent: str = "",
     season: str = SEASON, window: int = 5,
 ) -> dict[str, Any]:
+    """Team finder across history seasons. Modes: streak, versus, span,
+    player_streak, head2head."""
     from .. import store as _store
 
     con = _store.connect()
@@ -1395,6 +1404,7 @@ def get_finder(
 
 @tool
 def get_rest(team_abbrev: str = "", season: str = SEASON) -> dict[str, Any]:
+    """Back-to-back plus rest-day splits from history game dates."""
     from datetime import datetime
 
     from .. import store as _store
@@ -1525,6 +1535,7 @@ def _build_elo(rows: list) -> tuple:
 @tool
 def get_win_prob(team_a: str = "", team_b: str = "", season: str = SEASON,
                  home_abbrev: str = "") -> dict[str, Any]:
+    """Real ELO win probability between two abbreviations. Neutral unless home_abbrev matches a side."""
     from .. import store as _store
 
     if not team_a or not team_b:
@@ -1909,6 +1920,7 @@ def _salary_date(con: object = None) -> str | None:
 
 @tool
 def get_cap_ledger(team: str = "") -> dict[str, Any]:
+    """Payroll plus apron room for one abbreviation. 2026-27 thresholds."""
     if not team:
         return {"tool": "get_cap_ledger", "ok": False, "error": "team needed"}
     from nba_api.stats.static import teams as _teams
@@ -2639,6 +2651,7 @@ def _norm_draft_year(season: str) -> str:
 
 @tool
 def get_draft_board(season: str = "2025") -> dict[str, Any]:
+    """Draft board: college production plus combine measurements, blended rank."""
     import unicodedata as _ud
 
     season = _norm_draft_year(season)
@@ -2877,6 +2890,7 @@ def get_lineup_leaders(min_minutes: int = 100, limit: int = 10,
 
 @tool
 def get_combine(season: str = "2025") -> dict[str, Any]:
+    """Draft combine measurements plus shooting drills for one draft year."""
     season = _norm_draft_year(season)
     rows, meta = _warehouse_or_live(
         "silver_combine", "_season = ?",
@@ -2917,6 +2931,7 @@ def get_combine(season: str = "2025") -> dict[str, Any]:
 
 @tool
 def get_briefing(game_date: str = "", season: str = SEASON) -> dict[str, Any]:
+    """Morning briefing: scoreboard plus top scorers. Date MM/DD/YYYY, blank means latest."""
     from datetime import datetime, timedelta
 
     day = game_date.strip()
@@ -3061,6 +3076,7 @@ def _attach_player_names(rows: list[dict]) -> None:
 
 @tool
 async def text_to_sql(question: str) -> dict[str, Any]:
+    """Answer a data question with SQL over warehouse tables. SELECT only."""
     import re as _re
 
     from langchain_core.messages import HumanMessage, SystemMessage
@@ -3269,6 +3285,7 @@ async def rerun_sql(sql: str) -> dict[str, Any]:
 
 @tool
 def get_elo(season: str = SEASON) -> dict[str, Any]:
+    """ELO power ratings from warehouse game results for one season."""
     from .. import store as _store
 
     con = _store.connect()
@@ -3299,6 +3316,7 @@ def get_elo(season: str = SEASON) -> dict[str, Any]:
 @tool
 def get_elo_standings(season: str = SEASON, opponent: str | None = None,
                       limit: int = 30) -> dict[str, Any]:
+    """ELO power ratings as standings: implied win pct, win equivalents, and Elo-implied spreads. ROADMAP Appendix #3."""
     from .. import store as _store
 
     con = _store.connect()
@@ -3378,6 +3396,7 @@ def get_elo_standings(season: str = SEASON, opponent: str | None = None,
 
 @tool
 def get_playoff_sim(season: str = SEASON, sims: int = 2000) -> dict[str, Any]:
+    """Simulated title and finals odds from ratings, Monte Carlo brackets."""
     from .sim import run_playoff_sim
 
     try:
@@ -3428,6 +3447,11 @@ def get_playoff_sim(season: str = SEASON, sims: int = 2000) -> dict[str, Any]:
 @tool
 def get_contract_value(season: str = "2025-26", min_gp: int = 20,
                        team: str = "", player: str = "") -> dict[str, Any]:
+    """Contract value residuals from production vs salary.
+
+    Returns league leaders by default; pass team for one roster or player for
+    one named player's modeled salary and residual.
+    """
     import unicodedata as _ud
 
     from .. import store as _store
@@ -3567,6 +3591,7 @@ def get_contract_value(season: str = "2025-26", min_gp: int = 20,
 
 @tool
 def get_draft_model(season: str = "2025") -> dict[str, Any]:
+    """Star-probability classifier from college production (honest proxy)."""
     try:
         from ..sources import cbb as _cbb
         from sklearn.linear_model import LogisticRegression
@@ -3614,6 +3639,7 @@ def get_draft_model(season: str = "2025") -> dict[str, Any]:
 
 @tool
 def get_risers(season: str = "2025-26", weeks: int = 4) -> dict[str, Any]:
+    """Risers and fallers: last-N win pct vs season win pct, warehouse only."""
     from .. import store as _store
 
     season = str(season or "2025-26").strip() or "2025-26"
@@ -3782,6 +3808,7 @@ def _ensure_leaderboard_snapshots(con: Any) -> None:
 
 @tool
 def snapshot_leaderboard(season: str = SEASON) -> dict[str, Any]:
+    """Capture today's top-50 scoring leaderboard. Idempotent per date."""
     from datetime import datetime, timezone
 
     from .. import store as _store
@@ -3831,6 +3858,7 @@ def snapshot_leaderboard(season: str = SEASON) -> dict[str, Any]:
 
 @tool
 def get_leaderboard_deltas(season: str = SEASON, days: int = 7) -> dict[str, Any]:
+    """Scoring leaderboard movers: latest snapshot vs the one from days ago."""
     from datetime import date as _date
     from datetime import timedelta as _td
 
@@ -4037,6 +4065,7 @@ def _warehouse_table_meta() -> list[tuple[str, int, str | None]]:
 
 @tool
 def get_warehouse_freshness() -> dict[str, Any]:
+    """Warehouse freshness panel: every silver table, row count, last fetch, stale flag."""
     from datetime import datetime as _dt, timezone as _tz
 
     now = _dt.now(_tz.utc)

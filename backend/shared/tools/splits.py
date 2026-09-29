@@ -262,6 +262,7 @@ def _split_row(label: str, games: list[dict[str, Any]]) -> dict[str, Any]:
 @tool
 def get_matchup_splits(player: str, n: int = 15,
                        season: str = SEASON) -> dict[str, Any]:
+    """Situational splits over the last N games: defense tier, home/away, rest."""
     season = clamp_season(season)
     n = _clamp_n(n)
     try:
@@ -375,6 +376,7 @@ def _career_baseline(pid: int, stat: str) -> dict[str, Any]:
 @tool
 def get_regression_check(player: str, stat: str = "PTS", n: int = 10,
                          season: str = SEASON) -> dict[str, Any]:
+    """Sustainability check on a hot stat line: window vs season plus drivers."""
     stat = clamp_stat(stat)
     season = clamp_season(season)
     n = _clamp_n(n, default=10)

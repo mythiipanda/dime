@@ -24,6 +24,7 @@ def _abbrev(who: str) -> str:
 async def get_preview(
     a: str, b: str, season: str = SEASON, home_abbrev: str = "",
 ) -> dict[str, Any]:
+    """Side-by-side preview of two teams. Names, abbrevs, or ids. One call."""
     from .league import get_standings, get_win_prob
 
     async def one(who: str) -> dict[str, Any]:
@@ -505,6 +506,7 @@ def _team_game_summary(games: list[dict[str, Any]],
 
 @tool
 def get_team_hub(team_id: str | int, season: str = SEASON) -> dict[str, Any]:
+    """Game log plus roster for one team id. Warehouse first."""
     team_id = coerce_team_id(team_id)
     games, meta = _warehouse_or_live(
         "silver_team_games", "_season = ? AND _entity = ?",
@@ -588,6 +590,7 @@ def game_links(game_id: str) -> dict[str, str]:
 
 @tool
 def get_games_on_date(game_date: str, season: str = SEASON) -> dict[str, Any]:
+    """Scoreboard for one date. Date format is MM/DD/YYYY."""
     past = is_past_game_date(game_date)
     rows, meta = _warehouse_or_live(
         "silver_scoreboard", "_season = ? AND _entity = ?",
@@ -605,6 +608,7 @@ def get_games_on_date(game_date: str, season: str = SEASON) -> dict[str, Any]:
 
 @tool
 def get_boxscore(game_id: str, season: str = SEASON) -> dict[str, Any]:
+    """Traditional boxscore player stats for one game id."""
     rows, meta = _warehouse_or_live(
         "silver_boxscores", "_season = ? AND _entity = ?",
         [season, f"game:{game_id}"],
@@ -691,6 +695,7 @@ def _lineup_key(row: dict[str, Any]) -> tuple[int, ...] | None:
 
 @tool
 def get_lineups(team_id: str | int, season: str = SEASON) -> dict[str, Any]:
+    """Five-man lineup stats for one team id, sorted by minutes."""
     team_id = coerce_team_id(team_id)
     rows, meta = _warehouse_or_live(
         "silver_lineups", "_season = ? AND _entity = ?",
@@ -755,6 +760,7 @@ def get_lineups(team_id: str | int, season: str = SEASON) -> dict[str, Any]:
 
 @tool
 def get_scouting_report(team_id: str | int, season: str = SEASON) -> dict[str, Any]:
+    """One-call dossier: record, roster, lineups, leaders context."""
     team_id = coerce_team_id(team_id)
     games, _ = _warehouse_or_live(
         "silver_team_games", "_season = ? AND _entity = ?",
@@ -782,6 +788,7 @@ def get_scouting_report(team_id: str | int, season: str = SEASON) -> dict[str, A
 
 @tool
 def get_recap(game_id: str, season: str = SEASON) -> dict[str, Any]:
+    """Post-game recap data: boxscore top five plus team totals."""
     res = nba_stats.boxscore_traditional(game_id, season)
     if not res.ok or res.frame.height == 0:
         return {"tool": "get_recap", "ok": False,
@@ -812,6 +819,7 @@ def get_recap(game_id: str, season: str = SEASON) -> dict[str, Any]:
 
 @tool
 async def get_scout_pack(team: str = "", opponent: str = "", season: str = SEASON) -> dict[str, Any]:
+    """One-call next-opponent brief: record, net rating, top lineups, injuries."""
     from .league import get_injuries, get_ratings
 
     async def one(who: str) -> dict[str, Any]:
@@ -1167,6 +1175,7 @@ async def get_rotation_check(
     team: str | int = "", season: str = SEASON, min_possessions: int = 100,
     top_units: int = 5,
 ) -> dict[str, Any]:
+    """Rotation and closing-unit check from warehouse five-man units, minutes, and cached on/off."""
     try:
         tid = coerce_team_id(team)
     except ValueError as exc:
@@ -1229,6 +1238,7 @@ async def get_rotation_check(
 
 @tool
 def get_team_splits(team: str | int, season: str = SEASON) -> dict[str, Any]:
+    """Home/away, wins/losses, last-10, monthly record plus PPG from cached gamelog."""
     try:
         tid = coerce_team_id(team)
     except ValueError as exc:
@@ -1273,6 +1283,7 @@ def get_team_splits(team: str | int, season: str = SEASON) -> dict[str, Any]:
 
 @tool
 async def get_injury_impact(team: str = "", season: str = SEASON) -> dict[str, Any]:
+    """Injury impact in one call: outs, net rating, last-10, heuristic impact."""
     import ast as _ast
     import json as _json
 

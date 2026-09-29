@@ -162,6 +162,7 @@ def _streaks(season: str) -> list[dict[str, Any]]:
 
 @tool
 def get_today(season: str = SEASON) -> dict[str, Any]:
+    """Today home view: last night's results, tonight's games, leaderboard movers, streaks."""
     from datetime import datetime
     from zoneinfo import ZoneInfo
 

@@ -136,6 +136,7 @@ def _team_snapshot(abbrev: str, season: str) -> dict[str, Any]:
 
 @tool
 def add_watchlist_item(entity_type: str, entity_id: str) -> dict[str, Any]:
+    """Follow a player (full name) or team (abbrev). Idempotent."""
     etype = _norm_type(entity_type)
     if etype not in ("player", "team"):
         return {"tool": "add_watchlist_item", "ok": False,
@@ -173,6 +174,7 @@ def add_watchlist_item(entity_type: str, entity_id: str) -> dict[str, Any]:
 
 @tool
 def remove_watchlist_item(entity_type: str, entity_id: str) -> dict[str, Any]:
+    """Unfollow a player or team. Removing a missing entry is a no-op."""
     etype = _norm_type(entity_type)
     if etype not in ("player", "team"):
         return {"tool": "remove_watchlist_item", "ok": False,

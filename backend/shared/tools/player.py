@@ -285,6 +285,7 @@ def _different_teams_pair(left: dict[str, Any], right: dict[str, Any],
 async def get_compare(
     a: str, b: str, season: str = SEASON,
 ) -> dict[str, Any]:
+    """Side-by-side compare of two players. Names or ids. One call."""
     async def one(who: str) -> dict[str, Any]:
         from collections import Counter as _Counter
 
@@ -781,6 +782,7 @@ def _season_line(player_id: object, season: str) -> dict[str, Any] | None:
 
 @tool
 def get_player_intel(player_id: str | int, season: str = SEASON) -> dict[str, Any]:
+    """Game log plus shot sample for one player id. Warehouse first."""
     player_id = coerce_player_id(player_id)
 
 
@@ -826,6 +828,9 @@ def get_player_intel(player_id: str | int, season: str = SEASON) -> dict[str, An
 
 @tool
 def get_season_averages(player_id: str | int, season: str = SEASON) -> dict[str, Any]:
+    """Per-game season averages (PPG, RPG, APG, SPG, BPG, percentages,
+    games played) for one player. Names or ids. Warehouse only, seeded
+    from basketball-reference; no game-by-game detail."""
     try:
         pid = coerce_player_id(player_id)
     except ValueError:
@@ -861,6 +866,7 @@ def get_season_averages(player_id: str | int, season: str = SEASON) -> dict[str,
 
 @tool
 def get_playoff_intel(player_id: str | int, season: str = SEASON) -> dict[str, Any]:
+    """Playoff game log for one player. Names or ids. Warehouse first."""
     try:
         pid = coerce_player_id(player_id)
     except ValueError:
@@ -938,6 +944,7 @@ def get_playoff_intel(player_id: str | int, season: str = SEASON) -> dict[str, A
 
 @tool
 def get_last_x(player_id: str | int, n: int = 10, season: str = SEASON) -> dict[str, Any]:
+    """Last n games for one player id, most recent first."""
     player_id = coerce_player_id(player_id)
 
 
@@ -1020,6 +1027,7 @@ def get_trend(player_id: str | int, season: str = SEASON) -> dict[str, Any]:
 
 @tool
 def get_percentiles(player_id: str | int, season: str = SEASON) -> dict[str, Any]:
+    """Percentile ranks for one player id across PTS REB AST STL BLK."""
     player_id = coerce_player_id(player_id)
     cats = ["PTS", "REB", "AST", "STL", "BLK"]
     out: dict[str, Any] = {}
@@ -1329,6 +1337,7 @@ ADVANCED_COLS = ["PLAYER_NAME", "TEAM_ABBREVIATION", "GP", "MIN",
 
 @tool
 def get_advanced(player: str | int, season: str = SEASON) -> dict[str, Any]:
+    """Advanced box metrics for one player: usage, efficiency, PIE, ratings."""
     player_id = coerce_player_id(player)
     rows: list[dict[str, Any]] = []
     try:
@@ -1661,6 +1670,7 @@ def _opp_tier_splits(frame: Any, season: str) -> list[dict[str, Any]]:
 
 @tool
 def get_splits(player_id: str | int, season: str = SEASON) -> dict[str, Any]:
+    """Home/away plus monthly, wins/losses, last-10, starter splits from the game log."""
     player_id = coerce_player_id(player_id)
 
     rows_data, warehouse_meta = _warehouse_or_live(
@@ -1882,6 +1892,7 @@ def _hist_on_off_rows(pid: int, tid: int, season: str) -> list[dict[str, Any]]:
 
 @tool
 def get_on_off(player_id: str | int, team_id: str | int, season: str = SEASON) -> dict[str, Any]:
+    """On and off splits for one player on one team. Possession level."""
     player_id = coerce_player_id(player_id)
     team_id = coerce_team_id(team_id)
     from ..sources import pbpstats
@@ -2030,6 +2041,7 @@ def get_wowy(
 
 @tool
 def get_four_factors(player_id: str | int, team_id: str | int, season: str = SEASON) -> dict[str, Any]:
+    """Four factor on-off splits for one player on one team."""
     player_id = coerce_player_id(player_id)
     team_id = coerce_team_id(team_id)
     from ..sources import pbpstats
@@ -2134,6 +2146,7 @@ async def get_shot_compare(a: str, b: str, season: str = SEASON) -> dict[str, An
 
 @tool
 def get_raptor_history(player: str, season: str = "") -> dict[str, Any]:
+    """Season-by-season RAPTOR and WAR for one player name. Warehouse only."""
     name = (player or "").strip()
     if not name:
         return {"tool": "get_raptor_history", "ok": False, "error": "empty player name"}
@@ -2444,6 +2457,8 @@ UNSUNG_MAX_MINUTES = 1000
 
 @tool
 def get_hustle_boards(season: str = SEASON, top: int = 10) -> dict[str, Any]:
+    """Hustle leaderboards from warehouse only: DPOY composite, screen-assist
+    kings, and unsung defenders with elite per-minute hustle in small roles."""
     try:
         top = max(1, min(int(top or 10), 25))
     except (TypeError, ValueError):
@@ -2502,6 +2517,12 @@ def get_hustle_boards(season: str = SEASON, top: int = 10) -> dict[str, Any]:
 @tool
 def get_debate_card(a: str, b: str, season: str = SEASON,
                     topic: str = "") -> dict[str, Any]:
+    """Generate a shareable HTML debate card comparing two players.
+
+    Returns a self-contained HTML file with side-by-side stats,
+    styled for sharing. Saves to workspace and returns the path.
+    Optional topic labels the debate (e.g. "MVP race").
+    """
     import html as _html
     from pathlib import Path as _Path
 
@@ -2656,6 +2677,7 @@ h1 {{ font-size: 22px; margin: 0; color: #1c1917; }}
 
 @tool
 def get_player_report(player: str | int, season: str = SEASON) -> dict[str, Any]:
+    """Multi-part player report: season line, advanced profile, shots, clutch."""
     from .league import get_clutch
 
     try:

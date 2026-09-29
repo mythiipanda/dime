@@ -92,6 +92,7 @@ def resolve_entity(query: str) -> dict[str, Any]:
 
 @tool
 def search_nba(query: str) -> dict[str, Any]:
+    """Find NBA players or teams matching a name. Input is a plain name."""
     try:
         from nba_api.stats.static import players, teams
 
