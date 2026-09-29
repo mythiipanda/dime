@@ -30,7 +30,7 @@ def _warehouse_has_games(season: str, dates: list[str]) -> bool:
         return True
 
 
-def _warehouse_games(date_str: str, season: str) -> list:
+def _warehouse_games(date_str: str, season: str) -> tuple[list, bool]:
     """Warehouse-only scoreboard rows for one date. Never calls the live API."""
     try:
         from .. import store as _store
@@ -46,9 +46,9 @@ def _warehouse_games(date_str: str, season: str) -> list:
             gid = r.get("GAME_ID")
             if gid:
                 r["LINKS"] = game_links(str(gid))
-        return rows
+        return rows, True
     except Exception:
-        return []
+        return [], False
 
 
 def _live_scores_needed(season: str, dates: list[str]) -> bool:
@@ -86,7 +86,7 @@ def _games(date_str: str, season: str) -> list:
         ex.shutdown(wait=False)
 
 
-def _scoreboards(season: str) -> tuple[list, list]:
+def _scoreboards(season: str) -> tuple[list, list, bool]:
     import concurrent.futures
     from datetime import datetime, timedelta as _td
     from zoneinfo import ZoneInfo
@@ -95,12 +95,13 @@ def _scoreboards(season: str) -> tuple[list, list]:
     yesterday = (now - _td(days=1)).strftime("%m/%d/%Y")
     today = now.strftime("%m/%d/%Y")
     if not _live_scores_needed(season, [yesterday, today]):
-        return (_warehouse_games(yesterday, season),
-                _warehouse_games(today, season))
+        last, last_ok = _warehouse_games(yesterday, season)
+        tonight, tonight_ok = _warehouse_games(today, season)
+        return last, tonight, bool(last_ok and tonight_ok)
     with concurrent.futures.ThreadPoolExecutor(max_workers=2) as ex:
         last = ex.submit(_games, yesterday, season)
         tonight = ex.submit(_games, today, season)
-        return last.result(), tonight.result()
+        return last.result(), tonight.result(), True
 
 
 def normalize_movers(delta: Any, season: str) -> dict[str, Any]:
@@ -183,12 +184,13 @@ def get_today(season: str = SEASON) -> dict[str, Any]:
         delta = get_leaderboard_deltas.invoke({"season": season, "days": 7})
     except Exception:
         delta = None
-    last_night, tonight = _scoreboards(season)
+    last_night, tonight, scoreboard_ok = _scoreboards(season)
     return {"tool": "get_today", "ok": True,
             "rows": {"last_night": last_night, "tonight": tonight,
                      "movers": _movers_from_delta(delta, season),
                      "streaks": _streaks(season)},
-            "meta": {"date": today, "source": "nba_api+warehouse"}}
+            "meta": {"date": today, "source": "nba_api+warehouse",
+                     "scoreboard_ok": scoreboard_ok}}
 
 
 @tool
@@ -223,14 +225,16 @@ def get_morning_briefing(season: str = SEASON) -> dict[str, Any]:
             except Exception as e:
                 delta_res = {"error": str(e)[:100]}
         try:
-            last_night, tonight = f_sb.result(timeout=40)
+            last_night, tonight, scoreboard_ok = f_sb.result(timeout=40)
             briefing["rows"]["today"] = {
                 "last_night": last_night, "tonight": tonight,
                 "movers": _movers_from_delta(delta_res, season),
                 "streaks": _streaks(season),
             }
+            briefing["meta"]["scoreboard_ok"] = scoreboard_ok
         except Exception as e:
             briefing["rows"]["today"] = {"error": str(e)[:100]}
+            briefing["meta"]["scoreboard_ok"] = False
         try:
             wl_res = f_wl.result(timeout=40)
             if isinstance(wl_res, str):
