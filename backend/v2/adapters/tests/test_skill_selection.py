@@ -1,7 +1,7 @@
 import pytest
 
 from v2.adapters.models import ModelIntake, ModelPlanner
-from v2.contracts import Plan, RunMode, TaskSpec
+from v2.contracts import EntityRef, Plan, RunMode, TaskSpec
 from v2.runtime.ledger import RequestEnvelope
 
 
@@ -65,3 +65,37 @@ async def test_hallucinated_advisory_skill_is_dropped_before_planning():
     planner = ModelPlanner(model, provider="test", model_name="test",
                            capability_catalog={})
     assert (await planner.plan(task)).nodes == []
+
+
+class EntityModel:
+    def __init__(self, task):
+        self.task = task
+
+    async def generate(self, *, schema, prompt, payload, envelope, decode=None):
+        return self.task
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("entities,expected", [
+    ([EntityRef(id="a", type="player", display_name="A")], "player"),
+    ([EntityRef(id="b", type="team", display_name="B")], "team"),
+    ([EntityRef(id="a", type="player", display_name="A"),
+      EntityRef(id="b", type="team", display_name="B")], None),
+    ([], None),
+])
+async def test_intake_derives_subject_level_from_resolved_entities(entities, expected):
+    proposed = TaskSpec(goal="test", mode=RunMode.QUICK, deliverable="answer",
+                        entities=entities)
+    intake = ModelIntake(EntityModel(proposed), provider="test", model_name="test",
+                         capability_catalog={})
+    assert (await intake.understand("anything")).subject_entity_type == expected
+
+
+@pytest.mark.anyio
+async def test_intake_overrides_model_subject_with_resolved_entities():
+    proposed = TaskSpec(goal="test", mode=RunMode.QUICK, deliverable="answer",
+                        entities=[EntityRef(id="a", type="player", display_name="A")],
+                        subject_entity_type="team")
+    intake = ModelIntake(EntityModel(proposed), provider="test", model_name="test",
+                         capability_catalog={})
+    assert (await intake.understand("anything")).subject_entity_type == "player"

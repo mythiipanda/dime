@@ -886,6 +886,7 @@ class ModelIntake(ModelStage):
             "subquestions": [], "required_evidence": [], "requirements": [],
             "calculation_requirements": [], "assumptions": [], "skills": [],
             "metric_ids": [], "requested_outputs": [],
+            "subject_entity_type": None,
             "open_questions": list(dict.fromkeys([
                 *task.open_questions,
                 *(blockers or ["The request could not be admitted safely."]),
@@ -1088,6 +1089,9 @@ class ModelIntake(ModelStage):
         if unknown:
             raise ValueError(f"intake selected unknown capabilities: {unknown}")
         task = _canonicalize_calculation_requirements(task)
+        task = task.model_copy(update={
+            "subject_entity_type": _derive_subject_entity_type(task),
+        })
         if self._intake_admission:
             review = await self._review_admission(request, bounded, task)
             task = self._apply_review(review, request, bounded, task)
@@ -2032,6 +2036,15 @@ _CANONICAL_CALCULATIONS = {
     "ppg_margin": ("ppg_margin", "Canonical points-per-game margin"),
     "ts_margin": ("ts_margin", "Canonical true-shooting percentage-point margin"),
 }
+
+
+def _derive_subject_entity_type(task: TaskSpec) -> str | None:
+    kinds = {entity.type for entity in task.entities}
+    if len(kinds) == 1:
+        kind = next(iter(kinds))
+        if kind == "player" or kind == "team":
+            return kind
+    return None
 
 
 def _canonicalize_calculation_requirements(task: TaskSpec) -> TaskSpec:
