@@ -6,11 +6,9 @@ export interface LineupStatUnit {
   name: string;
   estMin: number | null;
   poss: number | null;
-  gp: number | null;
   off: number | null;
   def: number | null;
   net: number | null;
-  plusMinus: number | null;
   best: boolean;
   blowout: boolean;
 }
@@ -42,11 +40,9 @@ function parseUnit(u: Record<string, unknown>): LineupStatUnit | null {
     name,
     estMin,
     poss: poss === null ? null : Math.round(poss),
-    gp: num(u.GP) === null ? null : Math.round(num(u.GP) as number),
     off,
     def,
     net,
-    plusMinus: num(u.PLUS_MINUS),
     best: u.is_best_net_unit === true,
     blowout: flags.some((f) => f.toLowerCase().startsWith("blowout")),
   };

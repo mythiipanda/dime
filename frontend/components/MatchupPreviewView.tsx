@@ -25,7 +25,6 @@ interface InjuryList {
 interface XFactor {
   player: string;
   line: string;
-  delta: string;
   note: string;
 }
 
@@ -69,15 +68,13 @@ function parseInjuries(v: unknown): InjuryList | null {
 
 function parseXFactor(v: unknown): XFactor | null {
   if (!isObj(v)) return null;
-  if (str(v.note)) return { player: "", line: "", delta: "", note: str(v.note) };
+  if (str(v.note)) return { player: "", line: "", note: str(v.note) };
   const player = str(v.player);
   const line = str(v.line);
   if (!player || !line) return null;
-  const d = v.delta;
   return {
     player,
     line,
-    delta: typeof d === "number" ? `${d >= 0 ? "+" : ""}${d.toFixed(1)}` : "",
     note: "",
   };
 }

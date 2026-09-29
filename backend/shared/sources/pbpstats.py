@@ -1,7 +1,7 @@
 
 import polars as pl
 
-from .base import FetchResult, empty, safe
+from .base import FetchResult, safe
 
 SOURCE = "pbpstats"
 BASE = "https://api.pbpstats.com"
@@ -53,17 +53,6 @@ def four_factors(player_id: int, team_id: int, season: str) -> FetchResult:
             "/get-four-factor-on-off/nba",
             {"PlayerId": player_id, "TeamId": team_id,
              "Season": season, "SeasonType": "Regular Season"},
-        )
-
-    return safe(SOURCE, season, run)
-
-
-def lineup_player_stats(team_id: int, season: str) -> FetchResult:
-    def run() -> pl.DataFrame:
-        return _get(
-            "/get-lineup-player-stats/nba",
-            {"TeamId": team_id, "Season": season,
-             "SeasonType": "Regular Season"},
         )
 
     return safe(SOURCE, season, run)

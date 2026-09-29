@@ -296,7 +296,6 @@ def save_inactive(rows: list, nba_id: int) -> int:
     if not rows:
         return 0
     import duckdb
-    from shared import store as _store
     from shared.store import DB_PATH as _DB
     con = duckdb.connect(str(_DB))
     try:

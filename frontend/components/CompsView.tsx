@@ -64,7 +64,7 @@ export default function CompsView({
 }: {
   rows: unknown;
   target?: unknown;
-  meta?: { similarity?: string; season?: string };
+  meta?: { similarity?: string };
 }) {
   const comps = parseCompsRows(rows);
   if (!comps) return null;

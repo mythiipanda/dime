@@ -4,7 +4,6 @@ import { asList, Caption, Chip, isObj, num, SectionTitle, str } from "./view-sha
 
 export interface RotationPlayer {
   name: string;
-  gp: number | null;
   mpg: number | null;
   diff: number | null;
   cached: boolean;
@@ -48,7 +47,6 @@ function parsePlayer(v: unknown): RotationPlayer | null {
   if (!name) return null;
   return {
     name,
-    gp: num(v.GP),
     mpg: num(v.MPG),
     diff: num(v.DIFF),
     cached: v.CACHED === true,

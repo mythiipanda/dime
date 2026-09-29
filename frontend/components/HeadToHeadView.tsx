@@ -28,10 +28,9 @@ export interface HeadToHeadRows {
   player: string;
   playerTeam: string;
   opponent: string;
-  opponentName: string;
   line: HeadToHeadLine;
   baseline: HeadToHeadLine | null;
-  deltas: { ppg: number | null; rpg: number | null; apg: number | null };
+  deltas: { ppg: number | null };
   teamRecord: string;
   games: HeadToHeadGame[];
   smallSample: boolean;
@@ -90,10 +89,9 @@ export function parseHeadToHead(input: unknown): HeadToHeadRows | null {
     player,
     playerTeam: str(v.player_team),
     opponent,
-    opponentName: str(v.opponent_name),
     line: vs,
     baseline,
-    deltas: { ppg: num(d.ppg), rpg: num(d.rpg), apg: num(d.apg) },
+    deltas: { ppg: num(d.ppg) },
     teamRecord: str(v.team_record) || `${w}-${l}`,
     games,
     smallSample: v.small_sample === true,
@@ -126,9 +124,7 @@ export default function HeadToHeadView({
   const awayGames = h.games.filter((g) => !g.home);
   const homeW = homeGames.filter((g) => g.wl === "W").length;
   const awayW = awayGames.filter((g) => g.wl === "W").length;
-  const title = h.playerTeam
-    ? `${h.player} vs ${h.opponent}`
-    : `${h.player} vs ${h.opponent}`;
+  const title = `${h.player} vs ${h.opponent}`;
 
   return (
     <div>

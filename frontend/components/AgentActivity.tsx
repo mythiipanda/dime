@@ -1,19 +1,11 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import type { AiMessage, NodeName, ToolCall } from "../lib/chat";
 import ActivityTimeline from "./ActivityTimeline";
 import { rerunSql, type SqlRerunRows } from "../lib/api";
 
 const AGENT_NODES: NodeName[] = ["entry", "data_retrieval", "tools", "analytics"];
-
-const NODE_LABELS: Record<string, string> = {
-  entry: "Planning",
-  data_retrieval: "Retrieving data",
-  tools: "Running tools",
-  analytics: "Analyzing",
-  presentation: "Writing answer",
-};
 
 function thoughtsFor(ai: AiMessage): string[] {
   
@@ -45,11 +37,11 @@ function callsFor(ai: AiMessage): ToolCall[] {
   return out;
 }
 
-function liveThoughtsFor(ai: AiMessage): { node: NodeName; text: string; agent?: string }[] {
-  const out: { node: NodeName; text: string; agent?: string }[] = [];
+function liveThoughtsFor(ai: AiMessage): string[] {
+  const out: string[] = [];
   for (const n of AGENT_NODES) {
     const s = ai.nodes[n];
-    if (s?.liveThought) out.push({ node: n, text: stripMd(s.liveThought), agent: s.liveThoughtAgent });
+    if (s?.liveThought) out.push(stripMd(s.liveThought));
   }
   return out;
 }
@@ -379,7 +371,7 @@ export default function AgentActivity({ ai }: { ai: AiMessage }) {
       </summary>
       <div style={{ margin: "7px 0 0 19px", paddingLeft: 10, borderLeft: "1px solid var(--color-stone-border)" }}>
         {thoughts.map((text, index) => <div key={`thought-${index}`}>{text}</div>)}
-        {live.map((item, index) => <div key={`live-${index}`}>{item.text}</div>)}
+        {live.map((text, index) => <div key={`live-${index}`}>{text}</div>)}
         {calls.map((call, index) => <ToolRow key={`call-${index}`} c={call} />)}
       </div>
     </details>

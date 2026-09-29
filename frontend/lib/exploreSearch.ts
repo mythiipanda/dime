@@ -18,20 +18,20 @@
 import { abbrForTeamId } from "./teams";
 import type { ResolvePlayerRow, ResolveTeamRow } from "./api";
 
-export interface PlayerResult {
+interface PlayerResult {
   kind: "player";
   id: number;
   name: string;
 }
 
-export interface TeamResult {
+interface TeamResult {
   kind: "team";
   id: number;
   name: string;
   abbr: string | null;
 }
 
-export interface StatResult {
+interface StatResult {
   kind: "stat";
   stat: string;
 }
@@ -169,14 +169,14 @@ export function buildSearchItems(
 
 
 
-export interface SearchMenuTrigger {
+interface SearchMenuTrigger {
   top: number;
   bottom: number;
   left: number;
   width: number;
 }
 
-export interface SearchMenuPlacement {
+interface SearchMenuPlacement {
   above: boolean;
   top?: number;
   bottom?: number;
@@ -185,7 +185,7 @@ export interface SearchMenuPlacement {
   maxHeight: number;
 }
 
-export const SEARCH_MENU_MAX_H = 340;
+const SEARCH_MENU_MAX_H = 340;
 
 
 

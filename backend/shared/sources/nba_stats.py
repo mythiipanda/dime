@@ -3,7 +3,7 @@ from typing import Any
 import polars as pl
 
 from ..config import settings
-from .base import FetchMeta, FetchResult, empty, safe
+from .base import FetchResult, safe
 
 SOURCE = "nba_api"
 
@@ -222,16 +222,6 @@ def hustle(scope: str, season: str) -> FetchResult:
     return safe(SOURCE, season, run)
 
 
-def play_by_play(game_id: str, season: str) -> FetchResult:
-    from nba_api.stats.endpoints import PlayByPlayV2
-
-    def run() -> pl.DataFrame:
-        frames = _frames(PlayByPlayV2(game_id=game_id, timeout=_t()))
-        return _pl(frames[0])
-
-    return safe(SOURCE, season, run)
-
-
 def combine(season: str) -> FetchResult:
     from nba_api.stats.endpoints import (
         DraftCombinePlayerAnthro,
@@ -294,12 +284,3 @@ def clutch(scope: str, season: str) -> FetchResult:
         return _pl(frames[0])
 
     return safe(SOURCE, season, run)
-
-
-def current_season_meta() -> FetchMeta:
-    from nba_api.stats.static import teams
-
-    _ = teams.get_teams()
-    from .base import FetchMeta as M
-
-    return M(source=SOURCE, season="")

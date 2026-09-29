@@ -1,6 +1,5 @@
 
 from typing import Any
-import threading as _threading
 
 from langchain_core.tools import tool
 

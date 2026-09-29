@@ -12,7 +12,6 @@ export interface StreakEntry {
 
 export interface StreaksRows {
   streaks: StreakEntry[];
-  count: number | null;
 }
 
 function fmtDate(iso: string): string {
@@ -38,7 +37,7 @@ export function parseStreaks(rows: unknown): StreaksRows | null {
       active: s.active === true,
     });
   }
-  return { streaks, count: num(rows.count) };
+  return { streaks };
 }
 
 export default function StreaksView({

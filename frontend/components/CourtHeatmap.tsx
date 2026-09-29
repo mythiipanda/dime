@@ -32,10 +32,8 @@ interface CourtHeatmapProps {
   rows: unknown;
   meta?: {
     source?: string;
-    season?: string;
     a?: string;
     b?: string;
-    player?: string;
   };
   verdict?: string;
 }

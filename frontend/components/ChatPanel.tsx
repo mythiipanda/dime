@@ -78,11 +78,6 @@ function applyEvent(ai: AiMessage, type: string, data: unknown): AiMessage {
         break;
       }
     }
-  } else if (type === "message") {
-    
-    
-
-
   } else if (type === "custom_data") {
     const node = touch(d.node as NodeName);
     const tables = (d.tables as unknown[]) || [];

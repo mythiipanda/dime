@@ -672,7 +672,6 @@ export default function DataArtifacts({
       ) : toolName === "get_wowy" ? (
         <WowyCard
           rows={table.rows}
-          meta={table.meta}
           verdict={table.verdict}
         />
       ) : toolName === "get_comps" && parseCompsRows(table.rows) ? (

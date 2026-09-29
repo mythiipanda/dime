@@ -35,7 +35,7 @@ import type {
 } from "./api";
 import { rankOf } from "./rankContext";
 
-export type FeedKind = "mover" | "streak" | "watchlist";
+type FeedKind = "mover" | "streak" | "watchlist";
 
 export interface FeedItem {
   id: string;
@@ -59,7 +59,7 @@ export interface FeedItem {
   question: string | null;
 }
 
-export interface FeedInput {
+interface FeedInput {
   movers?: MoversRows | TodayMover[] | null;
   streaks?: TeamStreak[] | null;
   watchlist?: WatchItem[] | null;

@@ -30,7 +30,7 @@ function rowsOf(t: { rows?: unknown }): Row[] {
   return [];
 }
 
-export function trendData(rows: Row[]): { label: string; PTS: number }[] | null {
+function trendData(rows: Row[]): { label: string; PTS: number }[] | null {
   if (!rows.length || !("PTS" in rows[0] && "GAME_DATE" in rows[0])) return null;
   return rows.slice(0, 15).reverse().map((r) => ({
     label: str(r.GAME_DATE).slice(0, 6),
@@ -38,7 +38,7 @@ export function trendData(rows: Row[]): { label: string; PTS: number }[] | null 
   }));
 }
 
-export function leadersData(
+function leadersData(
   rows: Row[],
   stat = "PTS",
 ): { label: string; value: number }[] | null {
@@ -59,7 +59,7 @@ export function leadersData(
     }));
 }
 
-export function zoneData(
+function zoneData(
   rows: Row[],
 ): { label: string; FG_PCT: number }[] | null {
   if (!rows.length || !("zone" in rows[0] && "FG_PCT" in rows[0])) return null;

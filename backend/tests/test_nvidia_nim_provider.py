@@ -1,6 +1,5 @@
 from shared.config import settings
 from shared.providers import (
-    GEMINI_BASE_URL,
     GEMINI_DEFAULT,
     GEMINI_MODELS,
     NVIDIA_NIM_ALLOWLIST,    NVIDIA_NIM_BASE_URL,

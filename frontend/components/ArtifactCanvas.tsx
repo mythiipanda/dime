@@ -249,7 +249,7 @@ export default function ArtifactCanvas({ artifact, onClose, onAsk }: ArtifactCan
         {toolName === "get_compare" || toolName === "get_preview" ? (
           <CompareView rows={artifact.rows} />
         ) : toolName === "get_wowy" ? (
-          <WowyCard rows={artifact.rows} meta={artifact.meta} verdict={artifact.verdict} />
+          <WowyCard rows={artifact.rows} verdict={artifact.verdict} />
         ) : toolName === "get_comps" && parseCompsRows(artifact.rows) ? (
           <CompsView
             rows={artifact.rows}

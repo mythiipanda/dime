@@ -8,7 +8,6 @@ import concurrent.futures
 
 from shared import store
 from shared.sources import nba_stats
-from shared.sources.base import FetchResult
 
 SEASON = "2025-26"
 TIMEOUT = 30

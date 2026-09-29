@@ -8,9 +8,6 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from shared.tools.wpamodel import (  # noqa: E402
-    B0,
-    B1,
-    SMOOTH,
     fit_logistic,
     parse_clock,
     seconds_remaining,

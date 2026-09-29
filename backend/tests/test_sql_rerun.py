@@ -14,7 +14,6 @@ from shared.tools import league
 from shared.tools.league import (
     RERUN_ROW_CAP,
     RERUN_TIMEOUT_S,
-    _execute_with_timeout,
     _validate_readonly_sql,
     rerun_sql,
 )

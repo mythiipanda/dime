@@ -14,15 +14,10 @@ export interface WowySplit {
 
 interface WowyCardProps {
   rows: unknown;
-  meta?: {
-    source?: string;
-    season?: string;
-    team?: string;
-  };
   verdict?: string;
 }
 
-export default function WowyCard({ rows, meta, verdict }: WowyCardProps) {
+export default function WowyCard({ rows, verdict }: WowyCardProps) {
   const [view, setView] = useState<"visual" | "table">("visual");
 
   const splits = useMemo<WowySplit[]>(() => {

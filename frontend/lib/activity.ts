@@ -1,6 +1,6 @@
 import type { ActivityKind, ActivityRecord, NodeName } from "./chat";
 
-export const ACTIVITY_TYPES = new Set<string>([
+const ACTIVITY_TYPES = new Set<string>([
   "stage_summary", "plan_update", "node_update", "thought_stream",
   "thought_token", "tool_call", "tool_result", "evidence_update",
   "verification_update",
@@ -51,7 +51,7 @@ export function activityRecordFromEvent(
     durationMs: typeof raw.duration_ms === "number" ? raw.duration_ms : undefined,
     kind: type as ActivityKind,
     node: raw.node as NodeName | undefined,
-    title: titles[type] || text(type),
+    title: titles[type],
     summary: typeof summary === "string" ? summary : undefined,
     status: typeof raw.status === "string" ? raw.status : undefined,
     emittedAt: typeof raw.emitted_at === "string" ? raw.emitted_at : undefined,

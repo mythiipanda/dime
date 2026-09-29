@@ -35,7 +35,6 @@ def test_compare_that_to_season_average_pins():
     rows = st["tool_results"][-1].get("rows") or []
     assert rows and "Jalen Brunson" in str(rows), \
         "season line must be evidence, not a partial log"
-    import json as _json
     row = rows[0]["rows"][0]
     gp = row.get("GP") or row.get("G") or row.get("games")
     assert gp is None or int(gp) >= 60, \

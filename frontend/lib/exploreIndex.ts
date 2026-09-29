@@ -7,7 +7,7 @@
 
 
 
-export interface LeaderLine {
+interface LeaderLine {
   rank: number;
   name: string;
   value: string;
@@ -40,7 +40,7 @@ export function topLeaders(
   }));
 }
 
-export interface PlayoffResult {
+interface PlayoffResult {
   champion: string;
   runnerUp: string;
   series: string;
@@ -109,7 +109,7 @@ export function shortPlayerName(full: string): string {
   return p.length > 1 ? `${p[0][0]}. ${p.slice(-1)}` : String(full || "").trim();
 }
 
-export interface LineupHeadlineRow {
+interface LineupHeadlineRow {
   GROUP_NAME?: unknown;
   MIN?: unknown;
 }
@@ -138,12 +138,12 @@ export function lineupsHeadline(
   return `${teamAbbr} · ${names} · ${min.toFixed(0)} min`;
 }
 
-export interface TradeHeadlineSide {
+interface TradeHeadlineSide {
   team?: unknown;
   payroll?: unknown;
 }
 
-export interface TradeHeadlineVerdict {
+interface TradeHeadlineVerdict {
   team_a?: TradeHeadlineSide;
   team_b?: TradeHeadlineSide;
 }

@@ -3,10 +3,8 @@
 import { asList, Caption, Chip, isObj, num, SectionTitle, str } from "./view-shared";
 
 export interface RegSummary {
-  gp: number | null;
   perGame: number | null;
   mpg: number | null;
-  fgaPg: number | null;
   tsPct: number | null;
 }
 
@@ -32,10 +30,8 @@ export interface RegressionRows {
 function parseSummary(v: unknown): RegSummary {
   const o = isObj(v) ? v : {};
   return {
-    gp: num(o.gp),
     perGame: num(o.per_game),
     mpg: num(o.mpg),
-    fgaPg: num(o.fga_pg),
     tsPct: num(o.ts_pct),
   };
 }

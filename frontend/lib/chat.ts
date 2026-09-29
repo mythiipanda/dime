@@ -46,7 +46,7 @@ export interface ToolCall {
   sql?: string;
 }
 
-export interface EvidenceMeta {
+interface EvidenceMeta {
   source?: string;
   fetched_at?: string;
   rows?: number;
@@ -66,7 +66,7 @@ export interface ToolResult {
   error?: string;
 }
 
-export interface NodeState {
+interface NodeState {
   status: "running" | "complete" | "error";
   thoughts: string[];
   liveThought?: string;

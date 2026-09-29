@@ -5,7 +5,6 @@ import { asList, Caption, Chip, isObj, num, SectionTitle, str } from "./view-sha
 export interface ValuedPlayer {
   name: string;
   salary: number | null;
-  age: number | null;
   gp: number | null;
   ppg: number | null;
   marketValueM: number | null;
@@ -42,7 +41,6 @@ function parsePlayer(v: unknown): ValuedPlayer | null {
   return {
     name,
     salary: num(v.salary_26_27),
-    age: num(v.age),
     gp: num(v.gp),
     ppg: num(v.ppg),
     marketValueM: num(v.est_market_value_m),

@@ -10,7 +10,6 @@ from .preview import (
     _abbrev,
     _entity_date,
     _match_pair,
-    _row_abbrs,
     _row_team_ids,
     _scoreboard_warehouse,
 )

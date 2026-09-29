@@ -19,7 +19,6 @@ export interface PredictionRows {
   nSims: number | null;
   seed: number | null;
   pace: number | null;
-  homeCourtPts: number | null;
   note: string;
   assumptions: string[];
   methodology: string[];
@@ -86,7 +85,6 @@ export function parsePrediction(input: unknown): PredictionRows | null {
     nSims: num(inputs.n_sims),
     seed: num(inputs.seed),
     pace: num(inputs.game_pace),
-    homeCourtPts: num(inputs.home_court_pts),
     note: str(estimate.note),
     assumptions: strList(v.assumptions),
     methodology: strList(v.methodology),

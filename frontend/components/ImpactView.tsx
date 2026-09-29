@@ -19,7 +19,6 @@ export interface ImpactRows {
   possessions: number | null;
   confidence: string;
   notes: string[];
-  disclaimer: string;
 }
 
 function strList(v: unknown): string[] {
@@ -75,7 +74,6 @@ export function parseImpact(input: unknown): ImpactRows | null {
     possessions: num(comp.measured_possessions ?? comp.possessions),
     confidence: str(conf.level) || "low",
     notes: strList(conf.notes),
-    disclaimer: str(v.disclaimer),
   };
 }
 
@@ -86,9 +84,7 @@ export default function ImpactView({
   rows: unknown;
   meta?: { season?: string; coverage_note?: string };
 }) {
-  const parsed = parseImpact(rows ?? {});
-  const fallback = !parsed && isObj(rows) ? parseImpact(rows) : null;
-  const im = parsed ?? fallback;
+  const im = parseImpact(rows ?? {});
   if (!im) return null;
   const maxAbs = Math.max(1, ...im.bars.map((b) => Math.abs(b.value)));
   const season = meta?.season || im.season;

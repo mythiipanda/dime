@@ -101,7 +101,7 @@ function MetricsView({ rows }: { rows: Record<string, unknown> }) {
   );
 }
 
-export default function CompareView({ rows, onDebate }: { rows: unknown; onDebate?: (a: string, b: string) => void }) {
+export default function CompareView({ rows }: { rows: unknown }) {
   const [debateOpen, setDebateOpen] = useState(false);
   if (!rows || typeof rows !== "object") return null;
   const r = rows as Record<string, unknown>;
@@ -138,8 +138,7 @@ export default function CompareView({ rows, onDebate }: { rows: unknown; onDebat
         className="pill-ghost"
         style={{ fontSize: 12, marginBottom: 8, minHeight: 40 }}
         onClick={() => {
-          if (onDebate) onDebate(labelA, labelB);
-          else setDebateOpen(true);
+          setDebateOpen(true);
         }}
       >
         Debate

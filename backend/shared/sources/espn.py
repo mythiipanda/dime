@@ -1,7 +1,7 @@
 
 import polars as pl
 
-from .base import FetchResult, empty, safe
+from .base import FetchResult, safe
 
 SOURCE = "espn"
 

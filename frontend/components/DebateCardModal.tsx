@@ -9,7 +9,7 @@ import {
   resolvePlayers,
 } from "../lib/api";
 
-export type ModalState = "idle" | "loading" | "ready" | "error";
+type ModalState = "idle" | "loading" | "ready" | "error";
 
 export interface DebateCardModalProps {
   initialA?: string;

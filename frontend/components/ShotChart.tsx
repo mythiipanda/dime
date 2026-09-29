@@ -14,7 +14,7 @@ interface Shot {
   PERIOD?: number;
 }
 
-export function isMade(s: { EVENT_TYPE?: string; SHOT_MADE_FLAG?: number | string }): boolean {
+function isMade(s: { EVENT_TYPE?: string; SHOT_MADE_FLAG?: number | string }): boolean {
   if (s.SHOT_MADE_FLAG === 1 || s.SHOT_MADE_FLAG === "1") return true;
   return (s.EVENT_TYPE || "").toLowerCase().includes("made");
 }

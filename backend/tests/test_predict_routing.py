@@ -5,7 +5,6 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from app import graph  # noqa: E402
 from app.graph import (  # noqa: E402
     DEEP_TOOL_ROUNDS,
     MAX_TOOL_ROUNDS,

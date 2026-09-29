@@ -289,7 +289,6 @@ async def _stream(
 
     async def gen():
         import asyncio
-        import json as _json
         import uuid
 
         run_id = f"run-{uuid.uuid4().hex}"

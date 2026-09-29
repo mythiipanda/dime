@@ -88,11 +88,6 @@ def _parse_year_raw(value: object, fallback: int) -> tuple[int, bool]:
         return fallback, False
 
 
-def _clamp_year(value: object, fallback: int) -> int:
-    year, _ = _parse_year_raw(value, fallback)
-    return max(MIN_YEAR, min(MAX_YEAR, year))
-
-
 def _clamp_limit(value: object) -> int:
     try:
         return max(1, min(25, int(value)))  # type: ignore[arg-type]

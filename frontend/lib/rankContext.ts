@@ -1,4 +1,4 @@
-export interface RankContext {
+interface RankContext {
   rank: number;
   percentile: number;
   chip: string;

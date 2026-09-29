@@ -16,9 +16,7 @@ from shared.providers import (
     astream_with_fallback,
     fallback_order,
     get_llm,
-    invoke_with_fallback,
     resolve_available_model,
-    resolve_model_id,
     stream_with_first_token_timeout,
 )
 from shared.config import settings
@@ -4718,10 +4716,6 @@ def verify_minutes_qual(answer_text: str, tables: list) -> list[str]:
             if not _MINUTES_QUAL_RX.search(_s):
                 violations.append(_s)
     return violations
-
-
-def _numbers(text: str) -> list[str]:
-    return re.findall(r"\d+(?:\.\d+)?(?:-\d+)?%?", text)
 
 
 def _event(kind: str, payload: Any) -> dict[str, Any]:

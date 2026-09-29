@@ -7,8 +7,6 @@ export interface LineupMatrixPair {
   bName: string;
   poss: number;
   estMin: number | null;
-  offA: number | null;
-  defA: number | null;
   netA: number | null;
   tinySample: boolean;
   blowoutHeavy: boolean;
@@ -38,8 +36,6 @@ function parsePair(p: Record<string, unknown>): LineupMatrixPair | null {
     bName,
     poss: Math.round(poss),
     estMin: num(p.est_minutes),
-    offA: num(p.OFF_RATING_A),
-    defA: num(p.DEF_RATING_A),
     netA: num(p.NET_RATING_A),
     tinySample: low.includes("tiny-sample"),
     blowoutHeavy: low.includes("blowout-heavy"),

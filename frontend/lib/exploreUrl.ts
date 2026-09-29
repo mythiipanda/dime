@@ -7,7 +7,7 @@
 
 
 
-export const PANEL_PARAM_KEYS: Record<string, string[]> = {
+const PANEL_PARAM_KEYS: Record<string, string[]> = {
   leaders: ["leaders_stat", "leaders_sort", "leaders_q", "leaders_pct", "standings_season"],
   shots: ["shots_player", "shots_season", "gamelog_player", "gamelog_sort", "gamelog_q"],
   trade: ["trade_a", "trade_pa", "trade_b", "trade_pb"],
