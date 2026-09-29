@@ -1,8 +1,8 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import type { AiMessage, NodeName, ToolCall } from "../lib/chat";
-import ActivityTimeline, { humanStatus } from "./ActivityTimeline";
+import ActivityTimeline from "./ActivityTimeline";
 import { rerunSql, type SqlRerunRows } from "../lib/api";
 
 const AGENT_NODES: NodeName[] = ["entry", "data_retrieval", "tools", "analytics"];
@@ -37,11 +37,11 @@ function callsFor(ai: AiMessage): ToolCall[] {
   return out;
 }
 
-function liveThoughtsFor(ai: AiMessage): { node: NodeName; text: string; agent?: string }[] {
-  const out: { node: NodeName; text: string; agent?: string }[] = [];
+function liveThoughtsFor(ai: AiMessage): string[] {
+  const out: string[] = [];
   for (const n of AGENT_NODES) {
     const s = ai.nodes[n];
-    if (s?.liveThought) out.push({ node: n, text: stripMd(s.liveThought), agent: s.liveThoughtAgent });
+    if (s?.liveThought) out.push(stripMd(s.liveThought));
   }
   return out;
 }
@@ -83,7 +83,8 @@ function ToolRow({ c }: { c: ToolCall }) {
 
 
   const label =
-    c.label || humanStatus("tool_call", c.name).replace("…", "");
+    c.label ||
+    (c.name.replace(/_/g, " ").replace(/^get /, "").replace(/^\w/, (ch) => ch.toUpperCase()));
   const prefix = c.agent ? `${c.agent.charAt(0).toUpperCase() + c.agent.slice(1)} desk · ` : "";
   return (
     <div
@@ -349,7 +350,7 @@ export default function AgentActivity({ ai }: { ai: AiMessage }) {
   const hasActivity = thoughts.length > 0 || calls.length > 0 || live.length > 0 || (ai.activity?.length ?? 0) > 0;
 
   if (!hasActivity) {
-    return running ? <div role="status" style={{ marginBottom: 10, fontSize: 12, color: "var(--color-ash-gray)" }}>Working on it…</div> : null;
+    return running ? <div role="status" style={{ marginBottom: 10, fontSize: 12, color: "var(--color-ash-gray)" }}>Analyzing…</div> : null;
   }
 
   if ((ai.activity?.length ?? 0) > 0) {
@@ -357,10 +358,10 @@ export default function AgentActivity({ ai }: { ai: AiMessage }) {
   }
 
   const label = running
-    ? humanStatus("tool_call", calls.at(-1)?.name)
+    ? calls.at(-1)?.label || calls.at(-1)?.name.replace(/_/g, " ") || "Analyzing"
     : calls.length > 0
-      ? `${calls.length} step${calls.length === 1 ? "" : "s"}`
-      : "Work complete";
+      ? `${calls.length} tool call${calls.length === 1 ? "" : "s"}`
+      : "Analysis complete";
 
   return (
     <details style={{ marginBottom: 10, color: "var(--color-warm-gray)", fontSize: 12 }}>
@@ -370,7 +371,7 @@ export default function AgentActivity({ ai }: { ai: AiMessage }) {
       </summary>
       <div style={{ margin: "7px 0 0 19px", paddingLeft: 10, borderLeft: "1px solid var(--color-stone-border)" }}>
         {thoughts.map((text, index) => <div key={`thought-${index}`}>{text}</div>)}
-        {live.map((item, index) => <div key={`live-${index}`}>{item.text}</div>)}
+        {live.map((text, index) => <div key={`live-${index}`}>{text}</div>)}
         {calls.map((call, index) => <ToolRow key={`call-${index}`} c={call} />)}
       </div>
     </details>

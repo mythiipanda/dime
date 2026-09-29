@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { getToday, getWatchlist, type WatchItem } from "../lib/api";
+import { getToday, getWatchlist } from "../lib/api";
 import { buildFeedExpansion, type FeedExpansion, type FeedItem } from "../lib/exploreFeed";
 import type { ExploreContext } from "../lib/exploreSearch";
 import Skeleton from "./Skeleton";
@@ -30,13 +30,20 @@ export default function ExploreFeed({
     
 
 
-    Promise.all([getToday(), getWatchlist().catch((): WatchItem[] => [])])
-      .then(([today, watch]) => {
+    getToday()
+      .then((today) => {
         if (!live) return;
-        setFeed(
-          buildFeedExpansion({ movers: today.movers, streaks: today.streaks, watchlist: watch }),
-        );
+        const base = { movers: today.movers, streaks: today.streaks };
+        setFeed(buildFeedExpansion(base));
         setExpanded(false);
+        getWatchlist()
+          .then((watch) => {
+            if (live) {
+              setFeed(buildFeedExpansion({ ...base, watchlist: watch }));
+              setExpanded(false);
+            }
+          })
+          .catch(() => {});
       })
       .catch(() => {
         if (live) setFeed({ visible: [], extra: [], total: 0 });

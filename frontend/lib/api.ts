@@ -38,7 +38,7 @@ export interface TodayRows {
   streaks: TeamStreak[];
 }
 
-export interface WatchSnapshot {
+interface WatchSnapshot {
   found?: boolean;
   player?: string;
   team?: string;
@@ -83,38 +83,16 @@ export interface MoversRows {
   new_entries: NewEntry[];
 }
 
-export interface BriefingRows {
-  today?: TodayRows;
-  watchlist?: WatchItem[];
-  movers?: MoversRows;
-}
-
-const inflight = new Map<string, Promise<unknown>>();
-
-function deduped<T>(key: string, make: () => Promise<T>): Promise<T> {
-  const hit = inflight.get(key);
-  if (hit) return hit as Promise<T>;
-  const p = make();
-  inflight.set(key, p);
-  const clear = () => {
-    if (inflight.get(key) === p) inflight.delete(key);
-  };
-  p.then(clear, clear);
-  return p;
-}
-
 async function getEnvelope<T>(path: string): Promise<T> {
-  return deduped(`${BACKEND}${path}`, async () => {
-    const res = await fetch(`${BACKEND}${path}`);
-    if (!res.ok) throw new Error(`request failed: ${res.status}`);
-    const data = (await res.json()) as {
-      ok?: boolean;
-      rows?: T;
-      error?: string;
-    };
-    if (data && data.ok === false) throw new Error(data.error || "request failed");
-    return (data.rows ?? []) as T;
-  });
+  const res = await fetch(`${BACKEND}${path}`);
+  if (!res.ok) throw new Error(`request failed: ${res.status}`);
+  const data = (await res.json()) as {
+    ok?: boolean;
+    rows?: T;
+    error?: string;
+  };
+  if (data && data.ok === false) throw new Error(data.error || "request failed");
+  return (data.rows ?? []) as T;
 }
 
 export function getToday(season = SEASON): Promise<TodayRows> {
@@ -184,12 +162,6 @@ export function getFreshness(): Promise<FreshRow[]> {
   return getEnvelope<FreshRow[]>(apiPath("/datasets/freshness"));
 }
 
-export function getBriefing(season = SEASON): Promise<BriefingRows> {
-  return getEnvelope<BriefingRows>(
-    apiPath(`/briefing?season=${encodeURIComponent(season)}`),
-  );
-}
-
 export async function getModels(): Promise<ModelsResponse> {
   const res = await fetch(`${BACKEND}${apiPath("/models")}`);
   if (!res.ok) throw new Error(`models failed: ${res.status}`);
@@ -219,7 +191,7 @@ export async function rerunSql(sql: string): Promise<SqlRerunRows> {
   return (data.rows ?? { columns: [], rows: [], ms: 0, capped: false }) as SqlRerunRows;
 }
 
-export interface StreamHandlers {
+interface StreamHandlers {
   onEvent: (type: string, data: unknown) => void;
   onDone: () => void;
   onError: (message: string) => void;
@@ -383,11 +355,8 @@ export async function getDatasetJson(
   name: string,
   params: Record<string, string>,
 ): Promise<{ ok: boolean; data?: unknown[]; meta?: Record<string, unknown>; error?: string }> {
-  const url = datasetUrl(name, params, "json");
-  return deduped(url, async () => {
-    const res = await fetch(url);
-    return res.json();
-  });
+  const res = await fetch(datasetUrl(name, params, "json"));
+  return res.json();
 }
 
 export interface ThreadInfo {
@@ -418,7 +387,7 @@ function lsSet(key: string, value: unknown): void {
   }
 }
 
-export function loadCachedThreads(): ThreadInfo[] {
+function loadCachedThreads(): ThreadInfo[] {
   const v = lsGet(THREADS_KEY());
   return Array.isArray(v) ? (v as ThreadInfo[]) : [];
 }
@@ -540,35 +509,9 @@ export async function getRuns(thread: string): Promise<RunInfo[]> {
   }
 }
 
-export function exportUrl(thread: string): string {
-  return `${BACKEND}${apiPath(`/threads/${thread}/export?client=${encodeURIComponent(getClientId())}`)}`;
-}
-
 export interface PlayerHit {
   id: number;
   name: string;
-}
-
-export interface TeamHit {
-  id: number;
-  name: string;
-  abbr: string | null;
-}
-
-export async function resolveTeams(q: string, limit = 4): Promise<TeamHit[]> {
-  try {
-    const res = await fetch(`${BACKEND}${apiPath(`/resolve?q=${encodeURIComponent(q)}`)}`);
-    const data = (await res.json()) as unknown;
-    if (typeof data !== "object" || data === null || !("rows" in data)) return [];
-    const teams = (data as { rows: { teams?: { id: number; full_name: string; abbreviation?: string }[] } }).rows.teams;
-    return (teams || []).slice(0, limit).map((v) => ({
-      id: v.id,
-      name: v.full_name,
-      abbr: typeof v.abbreviation === "string" && v.abbreviation ? v.abbreviation : null,
-    }));
-  } catch {
-    return [];
-  }
 }
 
 export interface DebateCardRows {
@@ -631,7 +574,7 @@ export interface ResolveTeamRow {
   abbreviation?: string | null;
 }
 
-export interface ResolveHits {
+interface ResolveHits {
   players: ResolvePlayerRow[];
   teams: ResolveTeamRow[];
 }
@@ -677,7 +620,7 @@ export function setQueryParam(key: string, value: string, push = false) {
   window.history[push ? "pushState" : "replaceState"](null, "", url);
 }
 
-export interface CitationInput {
+interface CitationInput {
   title?: string;
   source?: string;
   fetchedAt?: string;
@@ -700,8 +643,4 @@ export function buildCitation(c: CitationInput): string {
     ? `. Limits: ${limitations.join(" ")}`
     : "";
   return `${bits.join(", ")} — Dime NBA Analyst${suffix}`;
-}
-
-export function tableKind(t: { kind?: string; tool?: string }): string {
-  return t.kind || t.tool || "dataset";
 }
