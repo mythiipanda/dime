@@ -13,6 +13,7 @@ import {
   FEED_MOVER_CAP,
   FEED_STREAK_CAP,
   FEED_WATCH_CAP,
+  FEED_DEFAULT_VISIBLE,
 } from "./exploreFeed";
 import type {
   Mover,
@@ -259,7 +260,7 @@ test("expansion visible plus extra reaches every streak rank 1..7", () => {
   assert.deepEqual(ranks, ["#1", "#2", "#3", "#4", "#5", "#6", "#7"]);
 });
 
-test("expansion visible equals buildFeedItems on the same input", () => {
+test("expansion visible is the first 5 feed items", () => {
   const input = {
     movers: [1, 2, 3, 4, 5, 6, 7].map((n) =>
       todayMover(`Player ${n}`, { RANK_CHANGE: "+1", PTS_CHANGE: 1.1 }),
@@ -270,7 +271,12 @@ test("expansion visible equals buildFeedItems on the same input", () => {
     ),
   };
   const expansion = buildFeedExpansion(input);
-  assert.deepEqual(expansion.visible, buildFeedItems(input));
+  assert.deepEqual(expansion.visible, buildFeedItems(input).slice(0, FEED_DEFAULT_VISIBLE));
+  assert.equal(expansion.visible.length, FEED_DEFAULT_VISIBLE);
+  assert.deepEqual(
+    [...expansion.visible, ...expansion.extra].slice(0, buildFeedItems(input).length),
+    buildFeedItems(input),
+  );
 });
 
 test("expansion with 3 streaks has no extra and total 3", () => {
@@ -297,15 +303,16 @@ test("buildFeedItems output unchanged for a mixed input", () => {
   assert.equal(got[2].rankTitle, "Ranked #1 of 1 watched players by PPG");
 });
 
-test("expansion extra includes the 7th mover when movers exceed cap", () => {
+test("expansion extra includes the 6th and 7th movers when movers exceed cap", () => {
   const rows = [1, 2, 3, 4, 5, 6, 7].map((n) =>
     todayMover(`Player ${n}`, { RANK_CHANGE: "+1", PTS_CHANGE: 1.1 }),
   );
   const expansion = buildFeedExpansion({ movers: rows });
-  assert.equal(expansion.visible.length, FEED_MOVER_CAP);
-  assert.equal(expansion.extra.length, 1);
-  assert.equal(expansion.extra[0].name, "Player 7");
-  assert.equal(expansion.extra[0].rankLabel, "#7");
-  assert.equal(expansion.extra[0].rankTitle, "Ranked #7 of 7 movers by points per game");
+  assert.equal(expansion.visible.length, FEED_DEFAULT_VISIBLE);
+  assert.equal(expansion.extra.length, 2);
+  assert.equal(expansion.extra[0].name, "Player 6");
+  assert.equal(expansion.extra[1].name, "Player 7");
+  assert.equal(expansion.extra[1].rankLabel, "#7");
+  assert.equal(expansion.extra[1].rankTitle, "Ranked #7 of 7 movers by points per game");
   assert.equal(expansion.total, 7);
 });
