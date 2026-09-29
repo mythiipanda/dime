@@ -1,14 +1,3 @@
-"""Near-duplicate cross-seed game-row resolution.
-
-Instinct QA (2026-09-27): exact-dupe dedupe shipped, but near-dupes with
-differing stats across seeds still show twice (same player/date/matchup,
-OREB 2 vs 3). Decision: collapse to one canonical row -- the most
-recently fetched line wins (stat corrections land after the game), then
-the most complete stat line, then first occurrence -- and flag the
-winner with stat_conflict=True when the seeds genuinely disagreed.
-
-Pure-helper tests are hermetic. No warehouse, no LLM, no network.
-"""
 
 import datetime as _dt
 import sys
@@ -40,7 +29,7 @@ def _row(game_id="0022500087", date="2025-11-18", matchup="LAL vs. UTA",
 
 
 def test_exact_dupes_still_collapse_silently():
-    rows = [_row(), _row(game_id="202511180LAL")]  # cross-seed Game_IDs
+    rows = [_row(), _row(game_id="202511180LAL")]
     out = _dedupe_games(rows)
     assert len(out) == 1
     assert out[0] is rows[0]
@@ -49,12 +38,11 @@ def test_exact_dupes_still_collapse_silently():
 
 def test_near_dupe_latest_fetch_wins_and_flags():
     old = _row(reb=5.0, fetched_at="2025-11-19T08:00:00")
-    new = _row(reb=6.0, fetched_at="2025-11-20T08:00:00")  # stat correction
+    new = _row(reb=6.0, fetched_at="2025-11-20T08:00:00")
     out = _dedupe_games([old, new])
     assert len(out) == 1
     assert out[0]["reb"] == 6.0
     assert out[0]["stat_conflict"] is True
-    # input rows are not mutated
     assert "stat_conflict" not in old and "stat_conflict" not in new
 
 
@@ -67,8 +55,8 @@ def test_near_dupe_order_independent_latest_fetch_wins():
 
 
 def test_near_dupe_no_provenance_most_complete_wins():
-    sparse = _row(reb=5.0, stl=None)          # seed missing STL
-    full = _row(reb=6.0, stl=2.0)             # conflicting REB, but complete
+    sparse = _row(reb=5.0, stl=None)
+    full = _row(reb=6.0, stl=2.0)
     out = _dedupe_games([sparse, full])
     assert len(out) == 1
     assert out[0]["stl"] == 2.0
@@ -81,7 +69,6 @@ def test_near_dupe_full_tie_first_occurrence_wins():
     out = _dedupe_games([a, b])
     assert len(out) == 1
     assert out[0] is not None and out[0]["stat_conflict"] is True
-    # stable: first occurrence kept when nothing distinguishes them
     assert out[0]["reb"] == 5.0
 
 
@@ -120,7 +107,6 @@ def test_frame_exact_dupes_collapse_keep_first():
     frame = pl.DataFrame([_frame_row(), _frame_row(game_id="202511180LAL")])
     out = dedupe_game_log_frame(frame)
     assert out.height == 1
-    # conflict signal column always present, False for clean rows
     assert out.columns == frame.columns + ["stat_conflict"]
     assert out["stat_conflict"].to_list() == [False]
 
@@ -175,13 +161,11 @@ def test_frame_without_matchup_falls_back_to_exact_unique():
     del r1["MATCHUP"]
     del r2["MATCHUP"]
     out = dedupe_game_log_frame(pl.DataFrame([r1, r2]))
-    # no MATCHUP: can't tell near-dupe from distinct games; keep both
     assert out.height == 2
     assert out["stat_conflict"].to_list() == [False, False]
 
 
 def _sgl_row(reb=5.0, fetched_at=None):
-    """Normalized search_game_logs row (post-_load_games shape)."""
     d = _dt.date(2025, 11, 18)
     return {
         "player_id": 2544, "game_id": "0022500087", "date": d,
@@ -194,13 +178,6 @@ def _sgl_row(reb=5.0, fetched_at=None):
 
 
 def test_search_game_logs_dedupes_before_filter_crossing_threshold(monkeypatch):
-    """Losing row must not qualify a game its canonical row misses.
-
-    Instinct QA repro: older seed says REB 6, newest (canonical) says
-    REB 5. min_rebounds=6 filtered raw rows first, so the REB-6 row
-    qualified and the rendered canonical row showed REB 5 — a game
-    that never met the threshold counted as a match.
-    """
     from shared.tools import gamelog
 
     old = _sgl_row(reb=6.0, fetched_at="2025-11-19T08:00:00")
@@ -216,7 +193,6 @@ def test_search_game_logs_dedupes_before_filter_crossing_threshold(monkeypatch):
 
 
 def test_search_game_logs_canonical_row_qualifies_and_flags(monkeypatch):
-    """When the canonical row meets the threshold it matches, flagged."""
     from shared.tools import gamelog
 
     old = _sgl_row(reb=5.0, fetched_at="2025-11-19T08:00:00")

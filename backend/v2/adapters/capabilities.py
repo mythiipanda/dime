@@ -1,4 +1,3 @@
-"""The v2 initial capability set: one Capability per v1 tool in the pack."""
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -96,9 +95,6 @@ class Capability:
     source_prefix: str = "v1"
     task_season_scoped: bool = True
     extract_entities: Callable[[Any], list[EntityRef]] | None = None
-    # Provider arguments whose identity must be established by a direct
-    # entity-resolution dependency before execution. Keys are tool argument
-    # names; values are EntityRef types.
     dependent_entity_arguments: Mapping[str, str] = field(default_factory=dict)
 
 

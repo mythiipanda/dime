@@ -1,12 +1,3 @@
-"""Real NBA salaries off Basketball-Reference contracts (keyless).
-Index + 30 team pages, 4s gaps; y1 is the current season observed at
-scrape time (2026-27 on 2026-09-08 and 2026-09-11 probes).
-
-Frozen spec column SALARY_2025_26 holds the observed y1 money for
-whatever vintage was scraped. The column name never changes. The
-vintage lives in _season plus the fetch_log season, both set from the
-observed y1 header, never from a hardcoded default. ESPN roster API:
-403 on 2026-09-08, no salary fields. SOURCE bref_contracts."""
 import re
 import time
 import unicodedata
@@ -24,11 +15,6 @@ HEADERS = {
     "Referer": "https://www.basketball-reference.com/",
 }
 
-# Basketball-Reference franchise abbreviations differ from the nba_api scheme
-# used everywhere else in this app (silver_leaders_pts, silver_cap_players,
-# get_trade_check team args). Normalize at ingestion so TEAM joins match.
-# Without this, _payroll("BKN") matches zero salary rows and trade checks
-# silently fall back to estimated cap figures for Brooklyn/Charlotte/Phoenix.
 TEAM_ABBR = {"BRK": "BKN", "CHO": "CHA", "PHO": "PHX"}
 
 

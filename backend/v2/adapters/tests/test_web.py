@@ -49,7 +49,6 @@ async def test_url_guard_rejects_non_http_or_private_urls(url):
         await validate_public_url(url)
 
 
-
 @pytest.mark.anyio
 async def test_jina_reader_fetches_selected_source_and_preserves_final_url(monkeypatch):
     from v2.adapters.web import JinaReader

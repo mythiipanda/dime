@@ -1,10 +1,3 @@
-"""Fix silver_salaries TEAM from 2024-25 salary sheet Tm column.
-
-Usage: python3 scripts/seed_salary_teams.py (run from backend/)
-Source: https://raw.githubusercontent.com/coder-data/NBA-Stats-Salaries-2024-2025/main/NBA%20Salaries%202024-2025.csv
-Matches on accent-folded upper(player name). Updates TEAM only, never
-touches scrape salary values. Idempotent.
-"""
 
 import csv
 import io

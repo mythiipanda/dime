@@ -515,7 +515,6 @@ def test_public_projection_rejects_stale_evidence_and_missing_calculation_input(
     import pytest
     from copy import deepcopy
     from v2.api.routes import _public_evidence_tables
-    # Reuse the focused helpers' structural contract through malformed minimal objects.
     from types import SimpleNamespace
     from datetime import UTC, datetime
     from v2.contracts import EvidenceEnvelope, EvidenceOutputBinding, OutputFinalStatus

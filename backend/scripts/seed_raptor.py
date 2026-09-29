@@ -1,11 +1,3 @@
-"""Seed FiveThirtyEight RAPTOR modern tables into the warehouse.
-
-Usage: python scripts/seed_raptor.py (run from backend/)
-Source: https://github.com/fivethirtyeight/data/tree/master/nba-raptor
-Season ints are end years: 2022 -> '2021-22'. Saved per season so each
-row carries its own _season label. Per-season scoped saves make reruns
-converge instead of duplicating.
-"""
 
 import sys
 from pathlib import Path

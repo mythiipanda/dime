@@ -1,8 +1,3 @@
-"""Seed five seasons of history from sportsdataverse-data parquet releases.
-
-Usage: python -m scripts.seed_history [--seasons 2022,2023,2024,2025,2026]
-End-year keys: 2026 means 2025-26. Missing assets skip gracefully.
-"""
 
 import argparse
 import sys
@@ -49,7 +44,6 @@ def fetch(url: str, dest: Path) -> bool:
 
 
 def unify(frames: list) -> list:
-    """Resolve cross-season type conflicts toward VARCHAR."""
     order: dict[str, list[str]] = {}
     for f in frames:
         for name, dtype in f.schema.items():

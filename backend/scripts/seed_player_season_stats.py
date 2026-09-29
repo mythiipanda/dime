@@ -1,9 +1,3 @@
-"""Seed LeagueDash player season stats (base + advanced, per-game, regular season).
-
-Usage: python scripts/seed_player_season_stats.py [--start 2015 --end 2024] (run from backend/)
-Source: https://github.com/sportsdataverse/sportsdataverse-data/releases/tag/nba_stats_player_season_stats
-Merges base and advanced measure types on player_id into silver_hist_player_seasons.
-"""
 
 import argparse
 import sys

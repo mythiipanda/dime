@@ -1,10 +1,3 @@
-"""Hermetic tests for get_lineup_stats sample floors. No network, no LLM.
-
-Sample floors are the whole point of the tool: units under the possession
-floor are hidden by default, surfaced only with an explicit override plus
-warnings, and blowout-heavy units are flagged. These tests pin that behavior
-on the pure functions so the floor can never silently regress.
-"""
 
 import sys
 from pathlib import Path
@@ -125,7 +118,6 @@ def _fake_warehouse(rows):
 
 
 def _fake_rows():
-    # starters: 420 poss, net 10.0; bench mob: 120 poss, net 50.0
     return [
         {"GROUP_ID": "1-2-3-4-5", "GROUP_NAME": "starters", "GP": 40,
          "MIN": 210.0, "PTS": 2310.0, "PLUS_MINUS": 21.0},
@@ -183,8 +175,6 @@ def _truncation_fixture_rows():
 
 
 def test_best_net_unit_computed_past_warehouse_row_cap(monkeypatch):
-    """Regression: best_net_unit must consider every floor-passing unit, not
-    just the head-25 warehouse slice. The true best sits beyond row 25."""
     monkeypatch.setattr("app.tools.lineup.coerce_team_id", lambda t: 20)
     monkeypatch.setattr("app.tools.lineup._possession_aggs",
                         lambda *a: None)
@@ -198,8 +188,6 @@ def test_best_net_unit_computed_past_warehouse_row_cap(monkeypatch):
 
 
 def _dup_rows():
-    """Mimic the sportsdataverse seed: 14 rows per GROUP_ID, per-game and
-    total variants plus exact dupes."""
     rows = []
     variants = [(7.1, "2026-09-09T18:00:00+00:00"),
                 (50.0, "2026-09-09T18:00:00+00:00"),
@@ -222,9 +210,7 @@ def test_dedupe_lineup_rows_keeps_total_min_variant():
     deduped = _dedupe_lineup_rows(_dup_rows())
     assert len(deduped) == 2
     by_name = {r["GROUP_NAME"]: r for r in deduped}
-    # largest MIN (the total variant) wins for unit-a
     assert by_name["unit-a"]["MIN"] == 50.0
-    # exact-MIN tie breaks to the latest _fetched_at
     assert by_name["unit-a"]["_fetched_at"] == "2026-09-10T19:00:00+00:00"
     assert by_name["unit-b"]["MIN"] == 40.0
 
@@ -235,7 +221,6 @@ def test_dedupe_lineup_rows_empty_no_crash():
 
 
 def test_get_lineup_stats_dedupes_before_limit(monkeypatch):
-    """Ticket 1: limit=25 must return distinct units, not 25 rows of 1 unit."""
     monkeypatch.setattr("app.tools.lineup.coerce_team_id", lambda t: 20)
     monkeypatch.setattr("app.tools.lineup._possession_aggs", lambda *a: None)
     monkeypatch.setattr("app.tools.lineup._warehouse_or_live",

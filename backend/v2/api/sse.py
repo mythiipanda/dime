@@ -75,7 +75,6 @@ async def stream_events(events: AsyncIterable[InternalEvent]) -> AsyncIterator[s
 
 
 def encode_raw(event_type: str, data: object) -> str:
-    """Frame an untyped SSE event (pings, transport-level errors)."""
     return (f"event: {event_type}\ndata: "
             f"{json.dumps(data, separators=(',', ':'), allow_nan=False)}\n\n")
 
@@ -83,12 +82,6 @@ def encode_raw(event_type: str, data: object) -> str:
 async def with_heartbeat(
     inner: AsyncIterator[str], interval_s: float = 15.0
 ) -> AsyncIterator[str]:
-    """Yield inner SSE chunks, emitting a ping frame on idle stretches.
-
-    Long buffered runs (model calls, tool loops) can go silent for minutes;
-    proxies and browsers drop idle SSE connections. Same contract as the
-    v1 chat stream: a ping frame at most every interval_s of silence.
-    """
     queue: asyncio.Queue[str | None] = asyncio.Queue(maxsize=64)
 
     async def drain() -> None:

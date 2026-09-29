@@ -1,10 +1,3 @@
-"""Regression: actual_tool_node must never pass a Future to create_task.
-
-asyncio.gather() returns a Future, not a coroutine. Feeding it to
-asyncio.create_task() raised "TypeError: a coroutine was expected, got
-<_GatheringFuture pending>" and failed every DimeBench task whose planner
-called concrete tools directly (compare/brief/chain/trade families).
-"""
 
 import asyncio
 import sys
@@ -33,8 +26,6 @@ def _make_state():
 
 def _drain_node_twice():
     async def _go():
-        # Twice in a row on one loop, mirroring the benchmark's sequential
-        # run_task loop, to catch loop-reuse regressions too.
         for _ in range(2):
             state = _make_state()
             state["_pending_calls"] = [  # type: ignore[typeddict-unknown-key]

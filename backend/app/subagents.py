@@ -1,9 +1,3 @@
-"""Delegate subagents. Supervisor calls workers as tools.
-
-Each worker owns one desk, a small tool subset, and a tight budget.
-Workers see only their task plus their results. The supervisor thread
-stays lean. New desks need a decision row first.
-"""
 
 from typing import Any
 import asyncio as _asyncio
@@ -26,11 +20,6 @@ _SEASON_CACHE: dict[str, str] = {}
 
 
 def data_season() -> str:
-    """Latest season with played-game data in the warehouse.
-
-    Cached per process. Falls back to SEASON when the warehouse is
-    unreadable, so desk prompts always carry a season value.
-    """
     cached = _SEASON_CACHE.get("season")
     if cached is None:
         try:
@@ -43,19 +32,17 @@ def data_season() -> str:
         _SEASON_CACHE["season"] = cached
     return cached
 WORKER_BUDGET = 3
-TOOL_TIMEOUT_S = 75   # hard cap per tool call inside a desk
-LLM_ROUND_TIMEOUT_S = 100  # hard cap per streamed LLM round
-DESK_DEADLINE_S = 170      # overall wall-clock budget per desk
+TOOL_TIMEOUT_S = 75
+LLM_ROUND_TIMEOUT_S = 100
+DESK_DEADLINE_S = 170
 
 
 async def _invoke_capped(fn, args: dict, name: str) -> Any:
-    """ainvoke with a hard timeout; a stuck live fetch must not hang a desk."""
     try:
         return await _asyncio.wait_for(fn.ainvoke(args), timeout=TOOL_TIMEOUT_S)
     except _asyncio.TimeoutError:
         return {"tool": name, "ok": False,
                 "error": f"timed out after {TOOL_TIMEOUT_S}s"}
-
 
 
 def _desk_tool_label(name: str) -> str:
@@ -73,7 +60,6 @@ def _trace_status(out: Any) -> str:
 
 
 def _trace_sql(out: Any) -> str | None:
-    """Lift the executed SQL off a tool output into the desk trace."""
     try:
         if not isinstance(out, dict):
             return None
@@ -104,7 +90,6 @@ def _row_count(rows: Any) -> int:
 
 async def _stream_text(provider: ProviderName, model: str,
                        messages: list, on_token=None) -> str:
-    """Stream a plain LLM call, forwarding text chunks to on_token. Returns full text."""
     parts: list[str] = []
     async for item in astream_chunks_with_fallback(provider, model, messages):
         t = getattr(item["chunk"], "content", "") or ""
@@ -118,8 +103,6 @@ async def _stream_text(provider: ProviderName, model: str,
 async def _stream_tooled(provider: ProviderName, model: str,
                          messages: list, tools: list,
                          on_token=None) -> tuple[str, list[dict]]:
-    """Stream a tool-bound LLM call. Forwards text chunks to on_token live,
-    returns (full_text, tool_calls). Tries providers in fallback order."""
     errors: list[str] = []
     for name in fallback_order(provider):
         text_parts: list[str] = []
@@ -166,8 +149,6 @@ async def _run_desk(
     force_tool: str | tuple[str, dict] | None = None,
     on_token=None,
 ) -> dict[str, Any]:
-    """Run one desk. on_token, if given, is an async callable receiving each
-    LLM text chunk as it streams, so callers can pipe live tokens to SSE."""
     from shared import tools as _tools
 
     by_name = {t.name: t for t in _tools.v1_tools}
@@ -237,9 +218,6 @@ async def _run_desk(
         if fn is None:
             continue
         if _fails.get(fname, 0) >= 2:
-            # F44: no circuit breaker meant a desk burned 301s looping
-            # the same broken SQL pattern. Two failures disables the
-            # tool for the rest of this desk run.
             out = {"tool": fname, "ok": False,
                    "error": (fname + " disabled for this run after "
                              "repeated failures; answer from the "
@@ -338,12 +316,6 @@ async def _run_desk(
             calls_made += 1
     has_data = any(_is_answer(c) for c in collected)
     if not has_data:
-        # QA #31: the generic message swallowed the one informative
-        # error in the trace - "How did Luka do in the 2026 playoffs?"
-        # dead-ended while the playoff tool KNEW he was listed inactive
-        # for all 10 LAL games. Surface the most informative tool error
-        # (longest specific message, prefers ones carrying real facts
-        # like inactivity notes or coverage seasons) instead.
         errs = []
         for c in collected:
             if not isinstance(c, dict):
@@ -359,11 +331,6 @@ async def _run_desk(
         if informative:
             err = informative
         else:
-            # QA F13 residue: read as an honest user-safe sentence if
-            # this ever leaks into a final answer.
-            # QA F67: no coverage parenthetical - the season line
-            # already states coverage, and a second span read as
-            # season drift next to it.
             err = "no data on that angle in the dataset"
         return {"agent": desk, "ok": False, "error": err,
                 "tool_trace": trace}
@@ -609,12 +576,6 @@ LEAGUE_BRIEF = (
     "Otherwise call get_standings."
 )
 
-# Shot-zone phrasing the league desk brief routes to get_team_shot_zones.
-# The list-question force regexes below (and the _LIST_RX fast-path in
-# graph.py) would otherwise hijack these into text_to_sql: the SQL answer
-# is correct but takes ~30s vs the fast tool, and the purpose-built
-# zone_leaders never run. Guard both force sites with this regex so the
-# task falls through to the LLM brief, which already owns the routing.
 _SHOT_ZONE_RX = _re.compile(
     r"shot\s*zones?|shot\s*diet|rim\s*rate|\bat\s+the\s+rim\b|"
     r"corner\s*threes?|corner\s*3s?|"
@@ -623,12 +584,6 @@ _SHOT_ZONE_RX = _re.compile(
     _re.IGNORECASE,
 )
 
-# Multi-season or all-time leaders phrasing the league desk brief routes
-# to get_historical_leaders. Same hijack as _SHOT_ZONE_RX above: the
-# list-question force regexes would otherwise push these into text_to_sql
-# (~30s) before the brief runs, and the agent falls back to calling
-# get_leaders once per season. Guard both force sites so the task falls
-# through to the LLM brief, which already owns the routing.
 _HISTORICAL_RX = _re.compile(
     r"each\s+season|every\s+season|"
     r"since\s+(?:19|20)\d\d|"
@@ -646,11 +601,6 @@ _HISTORICAL_RX = _re.compile(
 )
 
 
-# Single-stat leaders phrasing the league brief routes to get_leaders.
-# The list-question force regex below would otherwise hijack these into
-# text_to_sql (~30s) before the brief runs, and summaries omit per-game
-# numbers. Check this before the list force so the task goes to the
-# purpose-built tool with both totals and per-game rows.
 _LEADERS_PHRASE_RX = _re.compile(
     r"leads?\s+the\s+league\s+in\b|"
     r"most\s+.+?\s+per\s+game|"
@@ -699,14 +649,6 @@ def _leaders_category(task: str) -> str | None:
 
 
 def _evidence_text(collected: list, cap: int = 8000) -> str:
-    """Serialize desk evidence notes-first.
-
-    F45: str(collected)[:8000] puts big row lists first, so a trailing
-    player_note / inactive_note / error on a fat result (64-row game
-    log) was truncated out of the summarizer's view. Hoist the notes
-    and errors of every result ahead of the rows so they always
-    survive the cap.
-    """
     notes = []
     for c in collected:
         if not isinstance(c, dict):
@@ -723,8 +665,6 @@ def _evidence_text(collected: list, cap: int = 8000) -> str:
 
 
 def _is_answer(c: Any) -> bool:
-    """A tool result that answers the ask: data rows, or a named-player
-    note (injury miss / playoff inactive) that IS the answer (F45)."""
     if not isinstance(c, dict):
         return False
     if c.get("tool", "") in ("resolve_entity", "search_nba"):
@@ -734,7 +674,6 @@ def _is_answer(c: Any) -> bool:
 
 
 def _player_mentioned(task: str) -> str:
-    """First static-list player named in the task text, else ''."""
     import unicodedata as _ud
 
     from nba_api.stats.static import players as _static_players
@@ -752,7 +691,6 @@ def _player_mentioned(task: str) -> str:
 
 
 def _teams_mentioned(task: str) -> list[str]:
-    """Distinct team abbreviations named in the task text."""
     from nba_api.stats.static import teams as _static_teams
 
     t = task or ""
@@ -771,11 +709,6 @@ def _teams_mentioned(task: str) -> list[str]:
 
 
 def _desk_spec(name: str, task: str):
-    """Shared desk configuration: (desk, brief, tool_names, force_tool).
-
-    Used by both the LangChain tool wrappers (delegate_tools) and the
-    live-streaming entry point (run_desk_streaming) so they can't drift.
-    """
     if name == "delegate_scout":
         return ("scout", SCOUT_BRIEF,
                  ["resolve_entity", "search_nba", "get_player_intel", "get_raptor_history",
@@ -826,25 +759,18 @@ def _desk_spec(name: str, task: str):
             force = ("get_leaders", {"stat_category": _leaders_cat})
         elif _re.search(r"\brookie|\broy\b|first[- ]year",
                         task, _re.IGNORECASE):
-            # F46: rookies = current draft class; never free SQL with an
-            # age proxy, never historical seasons.
             force = ("get_rookie_leaders", {})
         elif (_re.search(r"injur|healthy|available|\bstatus\b",
                         task, _re.IGNORECASE)
               and _player_mentioned(task)):
-            # F45: a player injury ask MUST carry player= or the playoff
-            # inactive-note join never runs.
             force = ("get_injuries", {"player": _player_mentioned(task)})
         elif (_re.search(r"\blineup", task, _re.IGNORECASE)
               and len(_teams_mentioned(task)) == 0):
-            # F50: league-wide lineup boards need a stated volume floor.
             force = ("get_lineup_leaders", {})
         elif _re.search(r"playoff|champion|finals|\bring\b|title",
                         task, _re.IGNORECASE):
             pair = _teams_mentioned(task)
             if len(pair) >= 2:
-                # F49: a series between two named teams is a
-                # get_season_series call; aggregates hide the meetings.
                 force = ("get_season_series",
                          {"team_a": pair[0], "team_b": pair[1]})
             else:
@@ -885,12 +811,6 @@ def _desk_spec(name: str, task: str):
 
 async def run_desk_streaming(name: str, task: str, provider: ProviderName,
                              model: str, on_token=None) -> dict[str, Any]:
-    """Direct desk entry point with live token streaming.
-
-    Same result contract as the LangChain delegate tools, but LLM text
-    chunks are forwarded to on_token (async callable) the moment they're
-    generated instead of going silent for seconds.
-    """
     desk, brief, tool_names, force = _desk_spec(name, task)
     return await _run_desk(desk, brief, task, provider, model, tool_names,
                            force_tool=force, on_token=on_token)
@@ -899,17 +819,14 @@ async def run_desk_streaming(name: str, task: str, provider: ProviderName,
 def delegate_tools(provider: ProviderName, model: str) -> list:
     @tool("delegate_scout")
     async def delegate_scout(task: str) -> dict[str, Any]:
-        """Hand player research to the scout. One player per call."""
         return await run_desk_streaming("delegate_scout", task, provider, model)
 
     @tool("delegate_team")
     async def delegate_team(task: str) -> dict[str, Any]:
-        """Hand team research to the team desk. One team per call."""
         return await run_desk_streaming("delegate_team", task, provider, model)
 
     @tool("delegate_league")
     async def delegate_league(task: str) -> dict[str, Any]:
-        """Hand leaguewide questions to the league desk."""
         return await run_desk_streaming("delegate_league", task, provider, model)
 
     return [delegate_scout, delegate_team, delegate_league]

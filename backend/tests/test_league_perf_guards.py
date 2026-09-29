@@ -1,4 +1,3 @@
-"""Perf guards for league.py: cached text_to_sql schema, single-read get_leaders."""
 
 import copy
 import json

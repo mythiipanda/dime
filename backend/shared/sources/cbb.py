@@ -1,13 +1,3 @@
-"""Keyless college stats via BartTorvik (draft modeling).
-
-Endpoint that worked: GET https://barttorvik.com/getadvstats.php?year=YYYY
--> HTTP 200 JSON array-of-arrays, no header, 67 cols (content-type text/html
-but body is JSON). Browser UA required; no fallback needed.
-Column map verified 2026-09-08 vs known 2025 freshmen (Flagg/Harper/Bailey/
-Edgecombe PPG all match). Idx: 0 name, 1 team, 3 GP, 6 USG, 8 TS (0-100),
-13-14 FTM/FTA, 16-17 2PM/2PA, 19-20 3PM/3PA, 59 REB/G, 60 AST/G, 63 PTS/G.
-FGA total = 2PA + 3PA. PTS/REB/AST are per-game.
-"""
 
 import polars as pl
 

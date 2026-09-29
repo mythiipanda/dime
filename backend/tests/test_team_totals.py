@@ -1,11 +1,3 @@
-"""Team-total counting-stat route (Tony's live find, 11:54 AM).
-
-"Which team leads in total assists this season?" dead-ended honestly
-(15.6s, league desk: "team totals not explicitly reported"). The data
-was one aggregation away: player game logs summed by team. The pin
-routes team-total phrasings to get_team_leaders; player phrasings keep
-their existing routes.
-"""
 
 import asyncio
 import sys
@@ -67,9 +59,6 @@ def test_tool_all_stats_sane():
 
 
 def test_tool_hou_not_double_counted():
-    # Warehouse seed bug: HOU's 77 games appeared twice (partial nba_api
-    # rows beside full bbref rows, different Game_IDs and abbrev style).
-    # True bbref-only total: 9449.
     out = get_team_leaders.invoke({"stat_category": "PTS"})
     hou = next(r for r in out["rows"] if r["TEAM"] == "Houston Rockets")
     assert hou["PTS"] == 9449
@@ -89,8 +78,6 @@ def test_league_summary_scrub_no_data_collision():
     assert "the data " not in out
     assert "the dataset" in out
 
-
-# --- v67: deterministic team-totals lane + scrub widening (v66 live smoke) ---
 
 from app.graph import _scrub_final_text, presentation_agent  # noqa: E402
 
@@ -120,9 +107,6 @@ _TT_TR = [{"tool": "get_team_leaders",
 
 
 def test_team_totals_deterministic_lane():
-    # LLM analysis text is IGNORED for this lane - the answer is built
-    # from leader_line + rows. Feed it a degenerate narrative; the
-    # final must still ship clean.
     out = _present(
         "which team scored the most total points this season?",
         "Based on warehouse data, the Denver Nuggets scored the most "

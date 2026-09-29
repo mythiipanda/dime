@@ -1,10 +1,3 @@
-"""Hermetic tests for the lineup matchup matrix. No network, no DuckDB.
-
-The matrix crosses qualifying five-man units of two teams over shared
-play-level possessions. These tests pin the pure functions to literal values
-so possession math, blowout detection, and honesty flags can never silently
-regress. One end-to-end warehouse test asserts structural invariants only.
-"""
 
 import sys
 from pathlib import Path

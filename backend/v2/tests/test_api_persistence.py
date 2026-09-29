@@ -74,7 +74,6 @@ def test_sse_adapter_maps_every_frozen_event() -> None:
 async def test_checkpoint_resume_does_not_replay_completed_nodes(anyio_backend,
     tmp_path: Path,
 ) -> None:
-    # Dime executor/checkpoint/SSE tasks are supported on the deployed asyncio runtime; Trio is not a production contract.
     assert anyio_backend == "asyncio"
     checkpoints = FileCheckpointStore(tmp_path)
     plan = _plan()
@@ -100,7 +99,6 @@ async def test_checkpoint_resume_does_not_replay_completed_nodes(anyio_backend,
     resumed = await executor.execute(task, plan, run_id="resume")
     assert calls == ["two"]
     assert [node.status for node in resumed.plan.nodes] == [PlanStatus.COMPLETE] * 2
-
 
 
 def test_file_checkpoint_rejects_path_escape(tmp_path: Path) -> None:
@@ -203,7 +201,6 @@ def test_project_store_handles_independent_workers(tmp_path: Path) -> None:
 @pytest.mark.anyio
 @pytest.mark.parametrize("anyio_backend", ["asyncio"])
 async def test_cancelled_execution_resumes_started_node(anyio_backend, tmp_path: Path) -> None:
-    # Dime executor/checkpoint/SSE tasks are supported on the deployed asyncio runtime; Trio is not a production contract.
     assert anyio_backend == "asyncio"
     import asyncio
 
@@ -290,7 +287,6 @@ def test_quick_answer_route_is_flagged_and_streams_typed_contract(monkeypatch, t
 @pytest.mark.anyio
 @pytest.mark.parametrize("anyio_backend", ["asyncio"])
 async def test_stream_cancellation_stops_detached_runtime(anyio_backend, monkeypatch):
-    # Dime executor/checkpoint/SSE tasks are supported on the deployed asyncio runtime; Trio is not a production contract.
     assert anyio_backend == "asyncio"
     import asyncio
     from v2.api import routes
@@ -323,13 +319,6 @@ async def test_stream_cancellation_stops_detached_runtime(anyio_backend, monkeyp
     with pytest.raises(asyncio.CancelledError):
         await reading
     await asyncio.wait_for(cancelled.wait(), timeout=1)
-
-
-
-
-
-
-
 
 
 def test_v2_uses_one_configured_model_policy(monkeypatch):
@@ -380,7 +369,6 @@ def test_chat_route_configures_durable_checkpoint_directory():
 @pytest.mark.anyio
 @pytest.mark.parametrize("anyio_backend", ["asyncio"])
 async def test_completed_execution_removes_checkpoint(anyio_backend, tmp_path: Path) -> None:
-    # Dime executor/checkpoint/SSE tasks are supported on the deployed asyncio runtime; Trio is not a production contract.
     assert anyio_backend == "asyncio"
     checkpoints = FileCheckpointStore(tmp_path)
     result = await PlanExecutor(
@@ -394,7 +382,6 @@ async def test_completed_execution_removes_checkpoint(anyio_backend, tmp_path: P
 @pytest.mark.anyio
 @pytest.mark.parametrize("anyio_backend", ["asyncio"])
 async def test_partial_execution_retains_terminal_checkpoint(anyio_backend, tmp_path: Path) -> None:
-    # Dime executor/checkpoint/SSE tasks are supported on the deployed asyncio runtime; Trio is not a production contract.
     assert anyio_backend == "asyncio"
     checkpoints = FileCheckpointStore(tmp_path)
     result = await PlanExecutor(
@@ -409,8 +396,6 @@ async def test_partial_execution_retains_terminal_checkpoint(anyio_backend, tmp_
     assert saved is not None
     assert saved.plan == result.plan
     assert saved.errors == result.errors
-
-
 
 
 @pytest.mark.anyio
@@ -1097,8 +1082,6 @@ def test_stream_event_text_has_hard_limits() -> None:
         ToolResult(node="execute", name="tool", status="fail", error="x" * 4001)
 
 
-
-
 def test_chat_route_fails_closed_on_unknown_runtime_mode(monkeypatch):
     from fastapi import FastAPI
     from fastapi.testclient import TestClient
@@ -1172,8 +1155,6 @@ def test_v2_tool_call_contract_rejects_raw_arguments():
         ToolCall(node="tools", name="standings", args={"token": "secret"})
 
 
-
-
 def test_v2_sse_recursively_bounds_structured_public_payloads():
     import json
     from v2.api.events import CustomData
@@ -1202,8 +1183,6 @@ def test_v2_sse_emits_strict_json_for_non_finite_nested_values():
     import math
     from v2.api.events import CustomData
 
-    # model_construct simulates a future/unvalidated producer crossing the
-    # final publication boundary.
     event = CustomData.model_construct(
         node="analytics", tables=[{"value": math.nan, "other": math.inf}],
         unverified_numbers=[],
@@ -1297,24 +1276,6 @@ def test_frontend_can_select_native_v2_chat_runtime():
     assert 'JSON.stringify({ q, model, thread, client: getClientId() })' in api_source
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 def test_live_route_reports_pre_stream_setup_failure_as_sse(monkeypatch):
     from fastapi import FastAPI
     from fastapi.testclient import TestClient
@@ -1357,17 +1318,10 @@ def test_live_route_reports_model_resolution_failure_as_sse(monkeypatch):
     assert "private model detail" not in response.text
 
 
-
-
 def test_final_carry_exports_structural_flags():
     from v2.api import routes
     source = Path(routes.__file__).read_text()
     assert '"structural_flags": list(getattr(result, "structural_flags", []))' in source
-
-
-
-
-
 
 
 def test_intake_provider_failure_yields_typed_partial_final_without_error(monkeypatch):
@@ -1400,8 +1354,6 @@ def test_intake_provider_failure_yields_typed_partial_final_without_error(monkey
     assert '"verified_claims":0' in response.text
     assert response.text.rstrip().endswith("event: graph_end\ndata: {}")
     assert "private provider detail" not in response.text
-
-
 
 
 def test_public_sse_projection_omits_real_envelope_source_identity():
@@ -1457,13 +1409,10 @@ def test_real_lifespan_freezes_revision_warehouse_endpoint(monkeypatch, tmp_path
             assert re.fullmatch(r"[0-9a-f]{64}", first["sha256"])
             warehouse.write_bytes(b"mutated while process is live")
             assert client.get("/api/revision").json()["warehouse"] == expected
-            # Endpoint callers receive a copy, not the cached dictionary.
             routes.revision()["warehouse"]["warehouse_id"] = "tampered"
             assert client.get("/api/revision").json()["warehouse"] == expected
     finally:
         routes.runtime_warehouse_identity.cache_clear()
-
-
 
 
 def test_full_http_sse_and_activity_omit_private_failure_taxonomy(monkeypatch,tmp_path):
@@ -1486,11 +1435,6 @@ def test_full_http_sse_and_activity_omit_private_failure_taxonomy(monkeypatch,tm
     for key in ('failure_top_class','failure_class_chain','failure_phase','failure_validation_errors','failure_validation_subtype','failure_schema_sha256','provider_attempts','exception_type'):
         assert key not in combined
     assert sentinel not in combined
-
-
-
-
-
 
 
 def _write_expected_manifest(path, manifest):
@@ -1699,26 +1643,6 @@ def test_public_stream_projection_failure_abstains_and_terminates(monkeypatch,tm
     assert text.index("event: work_log") < text.index("event: final_answer") < text.index("event: graph_end")
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 def test_typed_terminal_contract_replaces_legacy_failure_and_metadata_cases(monkeypatch,tmp_path):
     from fastapi import FastAPI
     from fastapi.testclient import TestClient
@@ -1796,7 +1720,6 @@ def test_pretool_timeout_safe_terminal_carries_latency(monkeypatch,tmp_path):
 
 
 def test_pass_result_final_carry_contract(monkeypatch,tmp_path):
-    # Reuse the admitted route fixture semantics without gaps.
     from datetime import UTC,datetime
     from fastapi import FastAPI
     from fastapi.testclient import TestClient

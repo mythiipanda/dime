@@ -22,7 +22,6 @@ def test_gemini_is_priority_one_and_exact_models_are_exposed(monkeypatch):
     assert [item["id"] for item in catalog["models"] if item["engine"] == "gemini"] == [
         f"gemini:{model}" for model in GEMINI_MODELS
     ]
-    # Gemini leads the picker: it is the first catalog option (workhorse default).
     assert catalog["models"][0]["id"] == f"gemini:{GEMINI_DEFAULT}"
     assert catalog["models"][0]["default"] is True
 

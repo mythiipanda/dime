@@ -1,4 +1,3 @@
-"""Turn-scoped dedupe + non-blocking suggestions regressions."""
 
 import asyncio
 import sys
@@ -180,14 +179,7 @@ def test_suggestions_fallback_without_llm(monkeypatch):
     assert items == graph_mod._suggest(state["question"], [], [])
 
 
-# ------------------------------------------------- comeback override guard
-
 def test_gap_override_spares_evidence_backed_answers(monkeypatch):
-    # 10:09 AM live probe: the comeback pin returned 21 rows, the analyst
-    # honestly echoed the proxy note ("does not include..."), and the
-    # QA #66 gap-override REPLACED the whole answer with the bare
-    # play-by-play gap note - the MIN 17 board vanished. The override
-    # exists for no-data outcomes only.
     monkeypatch.setattr(graph_mod, "get_llm", lambda *a, **k: None)
 
     async def _go():
@@ -226,8 +218,6 @@ def test_gap_override_still_rescues_true_no_data(monkeypatch):
     assert "could not compute" not in text
 
 
-# ------------------------------------------------------------- F51
-
 def test_memory_persistence_claims_rewritten_session_scoped():
     from app.graph import _scrub_final_text
     out = _scrub_final_text("Noted your favorite team!")
@@ -261,8 +251,6 @@ def test_memory_claim_inside_answer_rewritten():
     assert "40-12" in out
 
 
-# ------------------------------------------------------------- F58
-
 def test_memory_statement_ack_detector_positive():
     from app.graph import _memory_ack
     for team in ("Lakers", "Celtics", "Knicks", "Warriors"):
@@ -281,7 +269,6 @@ def test_memory_statement_ack_detector_positive():
 
 def test_memory_statement_ack_detector_negative():
     from app.graph import _memory_ack
-    # analytical asks carrying "favorite" must fall through to routes
     assert _memory_ack(
         "My favorite team is the Lakers, how many wins do they have?"
     ) is None
@@ -293,10 +280,6 @@ def test_memory_statement_ack_detector_negative():
 
 
 def test_memory_statement_ships_ack_not_no_data(monkeypatch):
-    # QA F58 live repro: "My favorite team is the Lakers. Remember that."
-    # shipped "No Los Angeles Clippers data found." (resolver matched both
-    # LA teams, team desk returned nothing, presentation named the FIRST).
-    # The pin must ship the session-scoped acknowledgment verbatim.
     monkeypatch.setattr(graph_mod, "get_llm", lambda *a, **k: None)
 
     async def _go():

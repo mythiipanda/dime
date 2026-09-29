@@ -1,19 +1,3 @@
-"""Single-stat leaders routing carve-out tests.
-
-Live evidence caught "Who leads the league in assists?" landing in
-text_to_sql via the league desk's list-question force regex (30s+ SQL
-vs the purpose-built get_leaders, whose totals and per-game rows never
-ran). The league brief already says one-stat-category tasks call
-get_leaders, but the force regex fired before the LLM brief ever saw
-the task.
-
-The delegate_league force block now checks single-stat leaders
-phrasings first and forces get_leaders with the extracted category.
-Everything else keeps forcing text_to_sql exactly as today. Shot-zone
-and historical guards still veto first.
-
-All hermetic: the real _desk_spec, no LLM, no network, no mocks.
-"""
 
 import sys
 from pathlib import Path

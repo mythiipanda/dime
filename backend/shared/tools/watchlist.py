@@ -1,8 +1,3 @@
-"""Watchlist desk. Followed players and teams for the Today view.
-
-User data lives in a ``watchlists`` table (entity_type, entity_id,
-added_at). It is not a silver_ table. Silver tables stay read-only here.
-"""
 
 from datetime import datetime, timezone
 from typing import Any
@@ -18,7 +13,6 @@ def _norm_type(entity_type: object) -> str:
 
 
 def _norm_player(entity_id: object) -> tuple[str, int | None]:
-    """Canonical full name plus id. Falls back to the raw string."""
     from ._core import coerce_player_id
 
     raw = str(entity_id or "").strip()
@@ -40,7 +34,6 @@ def _norm_player(entity_id: object) -> tuple[str, int | None]:
 
 
 def _norm_team(entity_id: object) -> tuple[str, int | None]:
-    """Uppercase abbrev plus id. Falls back to the raw string uppercased."""
     from ._core import coerce_team_id
 
     raw = str(entity_id or "").strip()
@@ -143,7 +136,6 @@ def _team_snapshot(abbrev: str, season: str) -> dict[str, Any]:
 
 @tool
 def add_watchlist_item(entity_type: str, entity_id: str) -> dict[str, Any]:
-    """Follow a player (full name) or team (abbrev). Idempotent."""
     etype = _norm_type(entity_type)
     if etype not in ("player", "team"):
         return {"tool": "add_watchlist_item", "ok": False,
@@ -181,7 +173,6 @@ def add_watchlist_item(entity_type: str, entity_id: str) -> dict[str, Any]:
 
 @tool
 def remove_watchlist_item(entity_type: str, entity_id: str) -> dict[str, Any]:
-    """Unfollow a player or team. Removing a missing entry is a no-op."""
     etype = _norm_type(entity_type)
     if etype not in ("player", "team"):
         return {"tool": "remove_watchlist_item", "ok": False,
@@ -217,11 +208,6 @@ def remove_watchlist_item(entity_type: str, entity_id: str) -> dict[str, Any]:
 
 @tool
 def get_watchlist(season: str = SEASON) -> dict[str, Any]:
-    """List followed entities with their latest snapshot.
-
-    Players carry per-game PTS/REB/AST from silver_leaders_pts.
-    Teams carry W/L from silver_standings.
-    """
     season = str(season or SEASON).strip() or SEASON
     con = store.state_connect()
     try:

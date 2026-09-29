@@ -1,4 +1,3 @@
-"""Comps engine tests. Read the real warehouse; skip if leaders are absent."""
 
 import sys
 from pathlib import Path

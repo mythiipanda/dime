@@ -1,8 +1,3 @@
-"""Seed team hustle stats (LeagueHustleStatsTeam) into the warehouse.
-
-Source: stats.nba.com LeagueHustleStatsTeam, 2025-26 season.
-Normals: silver_hustle_team (one row per NBA team).
-"""
 import sys
 import time
 from pathlib import Path

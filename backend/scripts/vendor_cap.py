@@ -1,9 +1,3 @@
-"""Vendor salary data from the public cap engine repo into the warehouse.
-
-Source: https://github.com/orojas119/nba-salary-cap
-Normals: silver_cap_players (one row per player-season team).
-No license file upstream; source URL rides provenance. Drop on objection.
-"""
 
 import json
 import sys

@@ -80,14 +80,12 @@ def _imported_module_code_sha256() -> str:
 _LOADED_MODULE_CODE_SHA256 = _imported_module_code_sha256()
 
 
-# Exact wire shape that disables reasoning on a NIM structured request.
 NIM_THINKING_OFF_EXTRA_BODY: dict[str, Any] = {
     "chat_template_kwargs": {"enable_thinking": False},
 }
 
 
 def _with_thinking_off(kwargs: dict[str, Any]) -> dict[str, Any]:
-    """Merge NIM_THINKING_OFF_EXTRA_BODY into a completions.create call."""
     merged = dict(kwargs)
     extra_body = dict(merged.get("extra_body") or {})
     template = dict(extra_body.get("chat_template_kwargs") or {})
@@ -100,7 +98,6 @@ def _with_thinking_off(kwargs: dict[str, Any]) -> dict[str, Any]:
 def _promote_reasoning_content(
     response: ChatCompletion,
 ) -> tuple[ChatCompletion, list[dict[str, Any]]]:
-    """Promote reasoning_content to content when finish_reason is "stop"."""
     promotions: list[dict[str, Any]] = []
     for index, choice in enumerate(response.choices):
         message = choice.message
@@ -116,7 +113,6 @@ def _promote_reasoning_content(
 
 
 class _ReasoningContentCompletions(AsyncCompletions):
-    """chat.completions resource with the reasoning_content fallback."""
 
     async def create(self, *args: Any, **kwargs: Any) -> Any:
         if getattr(self._client, "thinking_off", False):
@@ -126,7 +122,6 @@ class _ReasoningContentCompletions(AsyncCompletions):
             promoted, promotions = _promote_reasoning_content(response)
             self._client.reasoning_content_promotions.extend(promotions)
             return promoted
-        # Streaming chunks are returned untouched: reassembling streamed reasoning is out of scope here.
         return response
 
 
@@ -137,7 +132,6 @@ class _ReasoningContentChat(AsyncChat):
 
 
 class ReasoningContentFallbackClient(AsyncOpenAI):
-    """AsyncOpenAI that normalizes reasoning-first responses and injects NIM thinking-off when flagged."""
 
     def __init__(
         self, *args: Any, thinking_off: bool = False, **kwargs: Any
@@ -159,10 +153,6 @@ class StructuredModel(Protocol):
         prompt: str,
         payload: Mapping[str, Any],
         envelope: RequestEnvelope,
-        # Optional post-generation hook: receives the validated wire model and
-        # returns ledger metadata (or None). Ledger-recording wrappers consume
-        # it; plain providers may ignore it. Part of the contract because
-        # ModelStage._generate_as forwards it whenever a stage supplies one.
         decode: Callable[[Any], dict[str, Any] | None] | None = None,
     ) -> T: ...
 
@@ -243,20 +233,11 @@ def _safe_pydantic_error_type(value: object) -> str:
     return name if name in SAFE_PYDANTIC_ERROR_TYPES else "<unknown-error-type>"
 
 
-# Typed reason vocabulary for a request count that could not be read from a
-# provider result. Recorded on the ledger instead of silently dropping the
-# failure, so production gaps in `model_requests` stay diagnosable.
 USAGE_UNKNOWN_REASON = "usage_unknown"
 USAGE_UNKNOWN_REASONS = frozenset({USAGE_UNKNOWN_REASON})
 
 
 def _read_usage_requests(result: Any) -> tuple[int | None, str | None]:
-    """Read ``usage.requests`` from a provider result, handling both shapes.
-
-    pydantic-ai 2.43.0 exposes ``usage`` as a property; older call sites may
-    still see it as a method. Returns ``(count, None)`` on success and
-    ``(None, USAGE_UNKNOWN_REASON)`` when the count cannot be determined.
-    """
     usage = getattr(result, "usage", None)
     if callable(usage):
         try:
@@ -273,7 +254,6 @@ def _read_usage_requests(result: Any) -> tuple[int | None, str | None]:
 
 
 class DimeOpenAIChatModel(OpenAIChatModel):
-    """Normalize the exact schema at the last OpenAI request mapping boundary."""
     def _map_json_schema(self, output_object):
         from dataclasses import replace
         from v2.argument_schemas import normalize_provider_wire_schema
@@ -298,7 +278,6 @@ class ProviderStructuredModel:
     def _reasoning_content_promotions(
         models: Sequence[tuple[ProviderName, Any]],
     ) -> list[dict[str, Any]]:
-        """Collect bounded-metadata promotion records from each model's fallback client."""
         records: list[dict[str, Any]] = []
         for provider, model in models:
             client = getattr(model, "client", None)
@@ -309,7 +288,6 @@ class ProviderStructuredModel:
 
     @staticmethod
     def _failure_class(exc: BaseException) -> str:
-        """Bounded provider diagnostics without payloads or raw responses."""
         name = type(exc).__name__.casefold()
         detail = str(exc).casefold()
         if "timeout" in name or "timed out" in detail:
@@ -332,7 +310,6 @@ class ProviderStructuredModel:
     @staticmethod
     def _safe_failure_taxonomy(exc: BaseException, *, schema: type[BaseModel],
                                route: str) -> dict[str, Any]:
-        """Private bounded diagnostics; never serialize messages or bodies."""
         classes: list[str] = []
         validation_errors: list[dict[str, Any]] = []
         pending: list[BaseException] = [exc]
@@ -485,8 +462,6 @@ class ProviderStructuredModel:
         envelope: RequestEnvelope,
         decode: Callable[[Any], dict[str, Any] | None] | None = None,
     ) -> T:
-        # decode is a ledger-metadata hook consumed by RecordedStructuredModel;
-        # this bare provider has no ledger, so it is accepted and ignored.
         _ = decode
         models = self._models()
         if not models:
@@ -517,8 +492,6 @@ class ProviderStructuredModel:
                         model,
                         instructions=prompt,
                         output_type=NativeOutput(schema, strict=True),
-                        # PydanticAI owns one bounded schema-repair pass. Outer
-                        # retries below are reserved for transient transport.
                         retries=(0 if provider == "groq" else settings.llm_max_retries),
                     )
                     run = agent.run(user_prompt)
@@ -593,7 +566,6 @@ _PROVIDER_ROUTE_PROMPTS: dict[str, str] | None = None
 
 
 def bind_provider_route_prompts() -> dict[str, str]:
-    """Freeze the exact prompt text used by every provider route."""
     global _PROVIDER_ROUTE_PROMPTS
     if _PROVIDER_ROUTE_PROMPTS is None:
         _PROVIDER_ROUTE_PROMPTS = {
@@ -669,7 +641,6 @@ class ModelStage:
 
 
 def capability_arguments_for(requirement, capability_id: str) -> dict[str, Any]:
-    """Selected capability read; shared map is exclusively a v2 fallback."""
     if requirement.capability_argument_sets:
         match = next((item for item in requirement.capability_argument_sets
                       if item.capability_id == capability_id), None)
@@ -684,7 +655,6 @@ def _sets_projection(sets) -> dict[str, Any]:
 
 def update_capability_arguments(requirement, capability_id: str,
                                 updates: Mapping[str, Any]):
-    """Update one local set and recompute the compatibility projection."""
     if not requirement.capability_argument_sets:
         if capability_id not in requirement.capability_options:
             raise ValueError(f"requirement {requirement.id} disallows {capability_id}")
@@ -723,19 +693,6 @@ def narrow_requirement(requirement, capabilities: Sequence[str]):
 def ranked_team_arguments_error(
     capability_id: str, arguments: Mapping[str, Any],
 ) -> str | None:
-    """Deterministic verifier for typed ranked ``team_ratings`` arguments.
-
-    Returns a typed error message, or ``None`` when the arguments are valid.
-    Enum membership (rule a) is enforced by the capability schema's own
-    jsonschema check; this covers the two deterministic rules:
-
-    - rule b: a ranked requirement (``requested_metric`` set, ``team`` unset)
-      must carry an explicit ``ranking_direction`` in ``{asc, desc}``;
-    - rule c: a ``ranking_direction`` without a ``requested_metric`` is invalid.
-
-    Nothing is inferred: a ranked requirement without a direction is an
-    error, never a guessed default.
-    """
     if capability_id != "team_ratings":
         return None
     metric = arguments.get("requested_metric", "")
@@ -906,13 +863,6 @@ class ModelIntake(ModelStage):
             "skill_catalog": self._skills.catalog(),
         }
         task = await self._generate(payload)
-        # Follow-up turns get one bounded typed resolution pass before the
-        # runtime treats open_questions as user blockers. The first intake can
-        # notice a pronoun or elliptical reference yet still fail to bind it
-        # to entities in prior evidence. Re-running the same TaskSpec boundary
-        # with the unresolved questions made explicit lets the intake resolve
-        # from conversation evidence without weakening schema validation or
-        # teaching the runtime query-specific names.
         if (context and task.open_questions and not self._intake_admission):
             task = await self._generate({
                 **payload,
@@ -929,10 +879,6 @@ class ModelIntake(ModelStage):
                     ),
                 },
             })
-        # Skill selection is advisory model output. Capability-like or otherwise
-        # unknown names must not turn a valid evidence plan into a pre-tool
-        # crash; retain only installed skills. Capability validation remains
-        # strict in required_evidence and typed requirements.
         task = task.model_copy(update={
             "skills": [name for name in task.skills
                        if name in self._skills.skills],
@@ -1035,10 +981,6 @@ class ModelIntake(ModelStage):
             ]))
         if ("league-ratings" in task.skills
                 and "game_prediction" not in required_evidence):
-            # The ratings skill is methodology, not permission to widen a
-            # single-population ranking into player and playoff boards. Add
-            # those boards only when the request itself names those scopes;
-            # requirement review remains the authority for compound asks.
             folded_request = request.casefold()
             baseline = ["team_ratings"]
             if any(token in folded_request for token in (
@@ -1051,10 +993,6 @@ class ModelIntake(ModelStage):
                 *required_evidence,
                 *(name for name in baseline if name in self._catalog),
             ]))
-        # Skills advise methodology; they do not widen the user's requested
-        # evidence surface. Requirement review/planning may select a skill's
-        # extra branch when it is material to the actual goal, but activating a
-        # skill alone must not force every possible method into required data.
         if ("game_prediction" in self._catalog
                 and len([entity for entity in task.entities
                          if entity.type == "team"]) == 2
@@ -1066,10 +1004,6 @@ class ModelIntake(ModelStage):
             required_evidence = list(dict.fromkeys([
                 *required_evidence, "game_prediction",
             ]))
-        # A model-defaulted relative season is not authoritative. Pin every
-        # such TaskSpec to the application's populated current-season contract,
-        # not only prediction asks, before requirement arguments are rewritten.
-        # Explicit user/context seasons remain untouched.
         if task.season is not None and task.season.source == "default":
             from shared.tools._core import SEASON
             task = task.model_copy(update={
@@ -1099,7 +1033,6 @@ class ModelIntake(ModelStage):
         return task
 
     def _capability_argument_names(self, capabilities: Sequence[str]) -> set[str] | None:
-        """Return arguments accepted by every option, or None if unproven."""
         accepted: list[set[str]] = []
         for name in capabilities:
             entry = self._catalog.get(name)
@@ -1113,18 +1046,12 @@ class ModelIntake(ModelStage):
     def _project_capability_arguments(
         self, arguments: Mapping[str, Any], capabilities: Sequence[str],
     ) -> dict[str, Any]:
-        """Keep only args proven valid for every selected capability option."""
         names = self._capability_argument_names(capabilities)
         if names is None:
             return {}
         return {key: value for key, value in arguments.items() if key in names}
 
     def _project_legacy_requirement(self, requirement, capabilities: Sequence[str]):
-        """Narrow a requirement to capabilities through the one audited rewrite.
-
-        Typed argument sets go through narrow_requirement. Legacy shared maps
-        keep only arguments valid for every remaining capability.
-        """
         if requirement.capability_argument_sets:
             return narrow_requirement(requirement, capabilities)
         capabilities = list(dict.fromkeys(capabilities))
@@ -1136,20 +1063,12 @@ class ModelIntake(ModelStage):
     def _project_mixed_requirement_arguments(
         self, review: RequirementReview,
     ) -> RequirementReview:
-        """Enforce that every emitted argument is valid for every option."""
         return review.model_copy(update={"requirements": [
             self._project_legacy_requirement(item, item.capability_options)
             for item in review.requirements
         ]})
 
     def _intake_typed_ranked_arguments(self, task: TaskSpec) -> dict[str, Any]:
-        """Model-authored typed ranked arguments established by intake.
-
-        Merges ``requested_metric`` / ``ranking_direction`` / ``team`` from
-        every intake requirement that names ``team_ratings``. When intake's
-        own requirements disagree, ``_intake_ranked_typed_conflicts`` reports
-        the keys and carries are suppressed: first-wins is never an override.
-        """
         typed: dict[str, Any] = {}
         for item in task.requirements:
             if "team_ratings" not in item.capability_options:
@@ -1161,11 +1080,6 @@ class ModelIntake(ModelStage):
         return typed
 
     def _intake_ranked_typed_conflicts(self, task: TaskSpec) -> list[str]:
-        """Keys where intake's own team_ratings requirements disagree.
-
-        Two intake requirements typing the same key differently is a typed
-        conflict, not a first-wins override.
-        """
         seen: dict[str, Any] = {}
         seasons: set[str] = set()
         conflicts: list[str] = []
@@ -1193,7 +1107,6 @@ class ModelIntake(ModelStage):
     def _ranked_typed_carries(
         review_arguments: Mapping[str, Any], intake_typed: Mapping[str, Any],
     ) -> dict[str, Any]:
-        """Keys intake set but review omitted: carried forward."""
         carried: dict[str, Any] = {}
         for key in ("requested_metric", "ranking_direction", "team"):
             review_value = review_arguments.get(key)
@@ -1207,7 +1120,6 @@ class ModelIntake(ModelStage):
         review_arguments: Mapping[str, Any], intake_typed: Mapping[str, Any],
         task_season: str | None,
     ) -> list[str]:
-        """Keys where intake and review disagree: typed conflict, neither wins."""
         conflicts: list[str] = []
         for key in ("requested_metric", "ranking_direction", "team"):
             review_value = review_arguments.get(key)
@@ -1223,7 +1135,6 @@ class ModelIntake(ModelStage):
     def _decode_review_ranked_arguments(
         self, wire: RequirementReviewWire,
     ) -> dict[str, dict[str, Any]]:
-        """Decode each team_ratings option on the wire to source arguments."""
         if "team_ratings" not in self._catalog:
             return {}
         schema = self._review_argument_schema("team_ratings")
@@ -1243,15 +1154,6 @@ class ModelIntake(ModelStage):
     def _ranked_review_typed_decisions(
         self, task: TaskSpec, arguments_by_id: Mapping[str, Mapping[str, Any]],
     ) -> dict[str, dict[str, Any]]:
-        """One computation of typed conflict/carry decisions per requirement.
-
-        The ledger decode and reconciliation share this, so logged
-        carried-from-intake metadata always matches what was applied.
-        ``intake_conflicts`` are keys where intake's own requirements
-        disagree; ``review_conflicts`` are review-vs-intake disagreements.
-        Either suppresses carries: neither side overrides the other, and
-        nothing is ever inferred from request text.
-        """
         intake_typed = self._intake_typed_ranked_arguments(task)
         task_season = task.season.value if task.season else None
         intake_conflicts = self._intake_ranked_typed_conflicts(task)
@@ -1288,12 +1190,6 @@ class ModelIntake(ModelStage):
         self, task: TaskSpec, wire: RequirementReviewWire,
         ranked_arguments: Mapping[str, Mapping[str, Any]] | None = None,
     ) -> RequirementReviewWire:
-        """Apply carried-from-intake keys onto the provider wire before validation.
-
-        A review omission that intake typed must be filled before the
-        deterministic verifier rejects it. Requirements in typed conflict
-        are left untouched; they become typed gaps at reconciliation.
-        """
         from v2.arguments import ProviderWireArguments, encode_argument, SLOTS
         if wire.requirements is None or "team_ratings" not in self._catalog:
             return wire
@@ -1336,17 +1232,6 @@ class ModelIntake(ModelStage):
     def _reconcile_typed_ranked_arguments(
         self, task: TaskSpec, review: RequirementReview,
     ) -> tuple[RequirementReview, list[dict[str, str]], list[dict[str, str]]]:
-        """Compare model-authored typed ranked arguments between intake and review.
-
-        Returns the reconciled review plus bounded ``carried-from-intake``
-        metadata rows and typed ``ranked-argument-conflict`` rows. A review
-        requirement whose typed ``team_ratings`` arguments disagree with
-        intake on ``requested_metric``, ``ranking_direction``, ``team``, or
-        ``season`` is dropped; intake's own disagreement on a key drops it
-        the same way. Conflicts suppress carries. Conflict rows go to the
-        ledger only -- never to ``missing_subquestions``, which the intake
-        merge feeds to the planner and synthesizer as questions.
-        """
         if "team_ratings" not in task.required_evidence:
             return review, [], []
         arguments_by_id = {
@@ -1433,7 +1318,6 @@ class ModelIntake(ModelStage):
         return review.model_copy(update={"requirements": expanded})
 
     def _close_requirement_options(self, requirement):
-        """Legacy closure; v3 exact sets fail closed per behavior loss BL-001."""
         if requirement.capability_argument_sets:
             return requirement
         from v2.runtime.subsumption import capability_subsumes
@@ -1458,12 +1342,9 @@ class ModelIntake(ModelStage):
             "capability_catalog": self._catalog,
             "skill_catalog": self._skills.catalog(),
         }
-        # Decoded ranked arguments are computed once in the decode below and
-        # passed through, so ledger metadata matches the applied carries.
         ranked_arguments: dict[str, dict[str, Any]] = {}
 
         def _collect_review_metadata(wire: RequirementReviewWire) -> dict | None:
-            """Null-as-omitted drops plus ranked typed rows for the ledger."""
             nonlocal ranked_arguments
             base = self._collect_review_drops(wire)
             drops = base["null_as_omitted_drops"] if base else []
@@ -1490,8 +1371,6 @@ class ModelIntake(ModelStage):
                 schema=RequirementReviewWire, payload=payload,
                 decode=_collect_review_metadata,
             )
-            # Carries apply before wire validation: a review omission that
-            # intake typed must not fail the deterministic verifier.
             wire = self._apply_ranked_carries_to_wire(task, wire, ranked_arguments)
             self._validate_requirement_wire(wire)
             requirements = []
@@ -1520,9 +1399,6 @@ class ModelIntake(ModelStage):
         except RuntimeError as exc:
             if not str(exc).startswith("all structured-output providers failed"):
                 raise
-            # Intake already crossed the typed boundary. On exhausted transient
-            # review providers, retain exactly its evidence and calculations;
-            # do not invent resolver requirements or user-visible blockers.
             from v2.contracts import EvidenceRequirement
             requirements = list(task.requirements)
             existing_capabilities = {capability for item in requirements
@@ -1548,12 +1424,6 @@ class ModelIntake(ModelStage):
                 requirements=requirements,
                 calculation_requirements=list(task.calculation_requirements),
                 missing_subquestions=[], missing_skills=[])
-        # Typed ranked reconciliation: intake and review are both model-authored
-        # typed output. A disagreement on requested_metric, ranking_direction,
-        # team, or season drops the requirement (neither side overrides); the
-        # conflict is recorded as typed ledger rows, never as a subquestion.
-        # A field intake set but review omitted is carried forward with
-        # carried-from-intake metadata.
         review, _carried_rows, conflict_rows = (
             self._reconcile_typed_ranked_arguments(task, review))
         unknown_evidence = sorted(
@@ -1565,29 +1435,17 @@ class ModelIntake(ModelStage):
             raise ValueError(
                 f"requirement review selected unknown capabilities: {unknown_evidence}"
             )
-        # Close requirement choices over evidence-producing refinements and
-        # declared broader capabilities. This lets one successful broad report
-        # satisfy a narrow branch (for the same subject/season) instead of
-        # forcing a redundant narrow call whose failure can falsely downgrade
-        # the complete evidence.
         from v2.runtime.subsumption import capability_subsumes
-        # A combined home/away game-log requirement with a null filter cannot
-        # preserve split populations. Expand it into two typed requirements
-        # before planning so execution never dispatches home_away=None.
         scope = " ".join([request, task.goal, task.deliverable, *task.subquestions]).casefold()
         review = self._expand_home_away_requirements(review, scope)
         requirements = [self._close_requirement_options(requirement)
                         for requirement in review.requirements]
-        # The conflict rows travel on the review so the intake can copy them
-        # onto the task; the deterministic draft only gaps when a ranked
-        # branch was actually dropped for disagreement.
         return review.model_copy(update={
             "requirements": requirements,
             "ranked_argument_conflicts": conflict_rows})
 
 
 class PlannerArgumentError(ValueError):
-    """Provider-authored planner arguments failed the capability schema."""
 
     def __init__(self, message: str, *, node_id: str, missing_required: list[str]) -> None:
         super().__init__(message)
@@ -1624,14 +1482,6 @@ class ModelPlanner(ModelStage):
         self, node, arguments: Mapping[str, Any],
         requirements: Mapping[str, Any],
     ) -> None:
-        """A team_ratings node's typed arguments must equal its covered requirement's.
-
-        The planner may not re-derive, widen, or invent ranked arguments: the
-        node's ``requested_metric`` and ``ranking_direction`` must exactly
-        match the requirement it covers. A mismatch or a missing direction on
-        a ranked node is a PlannerArgumentError; a missing direction gets the
-        existing single replan, a mismatch fails closed.
-        """
         if node.capability != "team_ratings":
             return
         for requirement_id in node.covers_requirement_ids or []:
@@ -1671,8 +1521,6 @@ class ModelPlanner(ModelStage):
                     node_id=node.id, missing_required=missing)
             ranked_error = ranked_team_arguments_error(node.capability, arguments)
             if ranked_error:
-                # A missing direction gets the existing single replan with the
-                # exact argument name; any other ranked violation fails closed.
                 raise PlannerArgumentError(
                     f"invalid {node.capability} planner arguments: {ranked_error}",
                     node_id=node.id,
@@ -1705,8 +1553,6 @@ class ModelPlanner(ModelStage):
         except PlannerArgumentError as exc:
             if not exc.missing_required:
                 raise
-            # A missing catalog-required argument gets one replan with the
-            # exact names; a second invalid plan fails closed.
             plan = await self._generate_plan({
                 **payload,
                 "coverage_feedback": {
@@ -1741,17 +1587,12 @@ class ModelPlanner(ModelStage):
         return replacement
 
     def _normalize_plan(self, task: TaskSpec, plan: Plan) -> Plan:
-        """Coalesce duplicate and capability-subsumed semantic calls."""
         import json
         from v2.runtime.subsumption import (
             arguments_share_subject, capability_subsumes,
         )
 
         requirements = {item.id: item for item in task.requirements}
-        # Dependent identity calls must never run as unbound roots. Providers
-        # may omit an explicit resolver even when intake has a clear entity;
-        # normalize that plan shape by adding one resolver parent per distinct
-        # typed subject. The executor then enforces exact canonical agreement.
         if "entity_resolution" in self._catalog:
             existing = {node.id for node in plan.nodes}
             added = []
@@ -1798,9 +1639,6 @@ class ModelPlanner(ModelStage):
                     "depends_on": list(dict.fromkeys(dependencies))}))
             if added:
                 plan = plan.model_copy(update={"nodes": [*added, *normalized_nodes]})
-        # Entity resolution accepts one query string. Requirement review can
-        # preserve a pair as a list; normalize that shape before execution so
-        # an auxiliary resolver cannot crash a valid direct comparison plan.
         plan = plan.model_copy(update={"nodes": [
             node.model_copy(update={
                 "arguments": {**node.arguments, "query": ", ".join(
@@ -1811,10 +1649,6 @@ class ModelPlanner(ModelStage):
             else node
             for node in plan.nodes
         ]})
-        # A non-playoff player-stat clause can be answered more directly by the
-        # season aggregate report than by scanning game logs. When requirement
-        # review admits that alternative, normalize only the typed regular-
-        # season node; playoff=True logs remain separate and untouched.
         plan = plan.model_copy(update={"nodes": [
             node.model_copy(update={
                 "capability_hints": ["player_report"],
@@ -1923,12 +1757,6 @@ class ModelPlanner(ModelStage):
 
     @staticmethod
     def _arguments_cover(expected: Mapping[str, Any], actual: Mapping[str, Any]) -> bool:
-        """Whether actual arguments satisfy a typed requirement constraint.
-
-        This is deliberately capability-agnostic: requirement review names the
-        provider-facing argument and exact value. Lists mean any acceptable
-        value; nested objects use recursive subset matching.
-        """
         for key, wanted in expected.items():
             if key not in actual:
                 return False
@@ -2048,7 +1876,6 @@ def _derive_subject_entity_type(task: TaskSpec) -> str | None:
 
 
 def _canonicalize_calculation_requirements(task: TaskSpec) -> TaskSpec:
-    """Normalize arithmetic intent once, while preserving provider-owned IDs."""
     from v2.contracts import CalculationRequirement
     scope = " ".join([task.goal, task.deliverable, *task.subquestions,
                       *(item.description for item in task.calculation_requirements)]).casefold()
@@ -2099,15 +1926,11 @@ def _canonicalize_calculation_requirements(task: TaskSpec) -> TaskSpec:
         elif kind in requested:
             kinds.add(kind)
             unused.remove(requirement)
-    # Canonical identities own the DraftReport boundary. Provider IDs are
-    # provenance only and cannot create duplicate semantic ownership.
     kinds.update(requested)
     normalized = [CalculationRequirement(
         id=_CANONICAL_CALCULATIONS[kind][0],
         description=_CANONICAL_CALCULATIONS[kind][1])
         for kind in requested if kind in kinds]
-    # Preserve only genuinely unrelated arithmetic work. Same-kind duplicates
-    # and observed sample-size artifacts were consumed above.
     normalized.extend(unused)
     return task.model_copy(update={"calculation_requirements": normalized})
 
@@ -2148,18 +1971,8 @@ def _validate_draft(
         declared = {item.requirement_id for item in draft.calculations
                     if item.requirement_id is not None}
         blocked = set(draft.blocked_calculation_requirement_ids)
-        # blocked_calculation_requirement_ids is a model-authored convenience
-        # field, not authority to reclassify ordinary evidence requirements as
-        # calculations. Ignore non-calculation IDs here; ordinary requirement
-        # coverage is owned by the typed plan/execution boundary. A declared
-        # calculation linked to an unknown ID remains malformed and fails.
         unknown_declared = declared - required
         if unknown_declared:
-            # A model may attach an arithmetic result to the evidence
-            # requirement whose rows supplied its inputs. Preserve the
-            # calculation and lineage, but do not let that class mismatch
-            # terminate an otherwise publishable supported-partial run.
-            # Only calculation requirements own requirement_id.
             draft = draft.model_copy(update={
                 "calculations": [
                     calculation.model_copy(update={"requirement_id": None})
@@ -2183,7 +1996,6 @@ def _validate_draft(
 def _deterministic_game_log_draft(
     task: TaskSpec, evidence: Sequence[EvidenceEnvelope],
 ) -> DraftReport | None:
-    """Build typed split aggregates and signed differences from admitted logs."""
     from decimal import Decimal
     logs = [item for item in evidence
             if item.capability == "game_logs" and isinstance(item.rows, Mapping)]
@@ -2249,7 +2061,6 @@ def _deterministic_game_log_draft(
 def _deterministic_player_comparison_draft(
     task: TaskSpec, evidence: Sequence[EvidenceEnvelope],
 ) -> DraftReport | None:
-    """Project comparison facts and typed differences from canonical evidence."""
     from decimal import Decimal
     item = next((ev for ev in evidence
                  if ev.capability == "player_comparison"
@@ -2354,19 +2165,6 @@ def _deterministic_player_comparison_draft(
 def _deterministic_rank_draft(
     task: TaskSpec, evidence: Sequence[EvidenceEnvelope],
 ) -> DraftReport | None:
-    """Project one typed team-rating extremum from the requested metric only.
-
-    Metric labels and ranking directions come from rating_metrics, the
-    single source of truth. A calculation requirement is eligible only when
-    it declares the requested metric in its typed ``metric_ids``; prose
-    descriptions are never parsed and no direction is guessed from a metric.
-
-    The "could not be published" gap fires only when requirement review
-    actually dropped a ranked branch for a typed argument conflict
-    (``task.ranked_argument_conflicts`` non-empty). A plain team_ratings
-    question with no typed ranking arguments and no conflict reaches the
-    synthesizer instead of being blocked.
-    """
     from v2.domain.evidence import decimal_value
     from shared.tools.rating_metrics import RANKING_DIRECTIONS, TEAM_RATING_METRICS
     def _has_typed_ranked_arguments(requirement) -> bool:
@@ -2415,9 +2213,6 @@ def _deterministic_rank_draft(
                    else max(value for _, value, _ in numeric))
         winners = [(index, value, team) for index, value, team in numeric if value == extreme]
 
-        # Calculation requirements are not typed to a subject. If the task
-        # carries any team entity, fail closed: nothing typed proves the
-        # extremum request is global rather than scoped to that team.
         has_team_subject = any(entity.type == "team" for entity in task.entities)
         eligible, blocked = [], []
         for requirement in task.calculation_requirements:
@@ -2426,8 +2221,6 @@ def _deterministic_rank_draft(
             else:
                 blocked.append(requirement.id)
 
-        # A tied extremum does not identify one team. Refuse to fabricate a
-        # unique winner or attach a one-subject calculation to a plural fact.
         if len(winners) != 1:
             return DraftReport(
                 sections=["Team rating leader"], claims=[], calculations=[],
@@ -2484,19 +2277,11 @@ class ModelSynthesizer(ModelStage):
         except RuntimeError as exc:
             if not str(exc).startswith("all structured-output providers failed"):
                 raise
-            # Execution is already complete at this stage. Give a transient
-            # structured-output outage one fresh bounded attempt rather than
-            # discarding all successfully collected evidence. The accepted
-            # result still crosses the same DraftReport boundary and the
-            # independent publication verifiers remain authoritative.
             try:
                 draft = await self._generate(payload)
             except RuntimeError as retry_exc:
                 if not str(retry_exc).startswith("all structured-output providers failed"):
                     raise
-                # Tools already succeeded. Preserve evidence through a typed
-                # partial rather than throwing it away; deterministic builders
-                # above still publish any canonical projections they own.
                 draft = DraftReport(
                     sections=["Available evidence"], claims=[], calculations=[],
                     blocked_calculation_requirement_ids=[
@@ -2598,10 +2383,6 @@ class ModelRepairer(ModelStage):
               if self._key(claim) not in supported_keys
               and self._key(claim) not in rejected_keys],
         ]
-        # Repair can rewrite claims, but it cannot author new publication gaps.
-        # Gaps come from execution or independent verification; carrying the
-        # repair model's diagnosis forward can leave a stale limitation after
-        # the rejected branch has been replaced and reverified.
         return DraftReport.model_validate(repaired.model_copy(
             update={"claims": claims, "calculations": list(original.calculations),
                     "blocked_calculation_requirement_ids": list(original.blocked_calculation_requirement_ids), "gaps": list(original.gaps)}).model_dump())
@@ -2693,7 +2474,6 @@ class ModelSemanticVerifier(ModelStage):
         return report
 
 
-
 class RecordedStructuredModel:
     def __init__(self, model: StructuredModel, ledger: Any, *, turn_id: str) -> None:
         if not turn_id.strip():
@@ -2737,10 +2517,6 @@ class RecordedStructuredModel:
                 raise TypeError(
                     f"structured model must return {schema.__name__}")
             result = schema.model_validate(result.model_dump())
-            # Model output must never carry ranked-argument conflict rows:
-            # the field is excluded from the intake/review JSON schemas and
-            # any model-written rows are dropped on decode. Only
-            # reconciliation code populates it.
             if isinstance(result, (TaskSpec, RequirementReview)):
                 result = result.model_copy(update={"ranked_argument_conflicts": []})
         except BaseException as exc:

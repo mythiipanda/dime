@@ -1,18 +1,3 @@
-"""get_team_hub serves historical seasons from silver_hist_gamelogs.
-
-Instinct QA (2026-09-27): the season_resolution bench truth aggregates
-silver_hist_gamelogs for the NAMED season, but get_team_hub read only
-silver_team_games (seeded for 2025-26) and errored on older seasons - the
-bench graded truth against a source the app could never answer from.
-Since silver_team_games is itself a promoted slice of
-silver_hist_gamelogs, get_team_hub now serves the same slice for any
-static season with no seeded rows, so truth and answer sources align.
-
-Hermetic: temp DuckDB stands in for the warehouse; _warehouse_or_live and
-coerce_team_id are monkeypatched. Needs the full backend env
-(langchain_core); collection fails in the bare sandbox like the other
-backend tool tests.
-"""
 
 import sys
 from pathlib import Path
@@ -91,7 +76,7 @@ def _no_seeded_rows(table, where, params, fetch, season, **kw):
 
 def test_hist_slice_shape_and_order(hist_db):
     rows = team_mod._hist_team_games(2, "2024-25")
-    assert len(rows) == 3  # playoffs row excluded, DEN row excluded
+    assert len(rows) == 3
     assert [r["Game_ID"] for r in rows] == [
         "0022400001", "0022400015", "0022400030"]
     r0, r1, r2 = rows
@@ -155,8 +140,6 @@ def test_get_team_hub_seeded_season_untouched(monkeypatch, hist_db):
 
 
 def test_summary_exact_on_hist_slice(hist_db):
-    # The 3-game fixture: PTS 115+118+108=341, FGA 30+32+31=93,
-    # FTA 10+11+9=30. Same aggregates the bench truth computes.
     rows = team_mod._hist_team_games(2, "2024-25")
     s = team_mod._team_game_summary(rows, True)
     assert s["games"] == 3
@@ -193,16 +176,13 @@ def test_summary_empty_games():
 
 
 def test_summary_partial_stats_uses_per_metric_denominators():
-    # Instinct QA 2026-09-27 repro: 2 rows, one statless, silently
-    # averaged 100 PTS over 2 games as ppg=50.0. Now a game counts
-    # toward a metric only when that metric's fields exist.
     games = [
         {"WL": "W", "PTS": 100, "FGA": 90, "FTA": 20},
         {"WL": "L", "GAME_DATE": "OCT 01, 2025"},
     ]
     s = team_mod._team_game_summary(games, False)
     assert (s["games"], s["wins"], s["losses"]) == (2, 1, 1)
-    assert s["ppg"] == pytest.approx(100.0)  # not 50.0
+    assert s["ppg"] == pytest.approx(100.0)
     assert s["ppg_games"] == 1
     assert s["ts_pct"] == pytest.approx(
         round(100 * 100 / (2 * (90 + 0.44 * 20)), 1))
@@ -211,7 +191,6 @@ def test_summary_partial_stats_uses_per_metric_denominators():
 
 
 def test_summary_pts_without_fga_counts_only_for_ppg():
-    # PTS present but FGA/FTA missing: counts toward PPG, not TS%.
     games = [
         {"WL": "W", "PTS": 100, "FGA": 90, "FTA": 20},
         {"WL": "W", "PTS": 110},
@@ -220,8 +199,6 @@ def test_summary_pts_without_fga_counts_only_for_ppg():
     assert s["ppg"] == pytest.approx(105.0)
     assert s["ppg_games"] == 2
     assert s["ts_pct_games"] == 1
-    # Row coverage is complete (the rows in hand ARE the season); stat
-    # coverage is per-metric, so the flag stays a row-coverage claim.
     assert s["covers_full_season"] is True
 
 
@@ -237,7 +214,6 @@ def test_get_team_hub_summary_full_season_on_hist(monkeypatch, hist_db):
     monkeypatch.setattr(team_mod, "coerce_team_id", lambda v: 2)
     out = team_mod.get_team_hub.invoke({"team_id": "BOS", "season": "2024-25"})
     rows = out["rows"]
-    # summary rides ahead of the game list so it survives evidence clipping
     assert list(rows.keys()) == ["roster", "summary", "games"]
     s = rows["summary"]
     assert s["covers_full_season"] is True
@@ -247,8 +223,6 @@ def test_get_team_hub_summary_full_season_on_hist(monkeypatch, hist_db):
 
 
 def test_get_team_hub_summary_flags_capped_sample(monkeypatch, hist_db):
-    # Live path returns a 25-row head of an 82-game season: the summary
-    # must say so instead of masquerading as season totals.
     sample = [{"WL": "W", "PTS": 120, "FGA": 90, "FTA": 20}] * 25
 
     def fake_wol(table, where, params, fetch, season, **kw):

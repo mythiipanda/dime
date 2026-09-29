@@ -1,10 +1,3 @@
-"""Regression: _trade_sides must fold diacritics when matching names.
-
-_detect_entities finds "Luka Dončić" from an unaccented "Doncic" query via
-its accent-folding _norm, but _trade_sides re-filtered found_p against the
-raw question with an accent-sensitive match and silently dropped the
-player, so the triage path never saw him.
-"""
 
 import sys
 from pathlib import Path
@@ -56,10 +49,6 @@ def test_exact_match_keeps_working(monkeypatch):
 
 
 def test_trade_verdict_text_never_inverts_constraint():
-    """QA 2026-09-13: the LLM verdict said 'SAS cannot receive enough'
-    while its takeaways had it right. The pinned lane now ships
-    payload-built text; regression-lock that the over-limit side is the
-    RECEIVING team whose cap is exceeded."""
     from app.graph import _trade_verdict_text
 
     rows = {"team_a": {"team": "NYK", "out": 37700000,

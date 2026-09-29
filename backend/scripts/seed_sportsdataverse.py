@@ -1,19 +1,3 @@
-"""Seed sportsdataverse-data release CSVs into the warehouse.
-
-Usage: python scripts/seed_sportsdataverse.py [--seasons 2025] (run from backend/)
-Sources:
-  https://github.com/sportsdataverse/sportsdataverse-data/releases/tag/nba_stats_shots
-  https://github.com/sportsdataverse/sportsdataverse-data/releases/tag/nba_stats_player_season_stats
-
-Targets (existing hist tables; schema checked against the warehouse first):
-  silver_hist_shots            <- shots_<end_year>.csv, season label like 2024-25
-  silver_hist_player_seasons   <- player_season_stats_<end_year>.csv, base+advanced merged
-
-Idempotent: each season is checked against the warehouse before any download.
-A season already seeded at the expected row count is skipped. Re-runs converge
-because store.save_frame(..., replace_season=True) deletes the season slice
-before inserting, so a crashed run simply re-seeds on the next run.
-"""
 
 import argparse
 import sys
@@ -30,10 +14,9 @@ from shared.sources.base import FetchMeta, FetchResult
 BASE = "https://github.com/sportsdataverse/sportsdataverse-data/releases/download"
 DATA = Path(__file__).resolve().parent.parent / "data" / "history"
 
-# Expected row counts from the release investigation; shots fail loudly if off.
 EXPECTED = {"shots": {2025: 233_904}}
-SHOT_TOL = 0.01  # 1% tolerance around expected shots count
-MIN_PLAYER_SEASONS = 400  # a full season carries ~500+ player-season rows
+SHOT_TOL = 0.01
+MIN_PLAYER_SEASONS = 400
 
 
 def label(end_year: int) -> str:

@@ -11,7 +11,6 @@ def anyio_backend():
     return "asyncio"
 
 
-
 def node(
     node_id: str, *, parents: list[str] | None = None, attempts: int = 1
 ) -> PlanNode:

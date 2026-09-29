@@ -1,4 +1,3 @@
-"""Shared warehouse-first fetch helper plus registry constants."""
 
 from functools import lru_cache
 from typing import Any
@@ -8,9 +7,6 @@ from .. import store
 from ..sources.base import FetchResult
 
 SEASON = "2025-26"
-# Oldest season in the silver_hist_* tables (verified 2026-09-13:
-# hist gamelogs/shots/standings all start 2009-10). Coverage honesty
-# for all-time/historical asks must name this span, not just SEASON.
 HIST_SEASON_START = "2009-10"
 
 
@@ -54,7 +50,6 @@ _DESK_LABEL_OVERRIDES = {
 
 
 def tool_label(name: str, desk: bool = False) -> str:
-    """Single source of truth for tool display labels; desk mode swaps two."""
     if not name:
         return "Checking data"
     if desk and name in _DESK_LABEL_OVERRIDES:
@@ -64,9 +59,6 @@ def tool_label(name: str, desk: bool = False) -> str:
     return name.replace("_", " ").strip().title() or "Checking data"
 
 MAX_ROWS = 25
-# Months when NBA games can be scheduled (Oct-Jun). Jul-Sep is the
-# offseason: no scoreboard lookups can return games, so callers skip
-# the live API and serve warehouse data immediately.
 IN_SEASON_MONTHS = frozenset({10, 11, 12, 1, 2, 3, 4, 5, 6})
 TTL_SCOREBOARD_PAST = 12 * 3600
 TTL_GAMELOG = 6 * 3600
@@ -188,9 +180,6 @@ _ID_NAME: dict[int, str] = {int(r["id"]): r.get("full_name", "")
 
 
 def attach_names(rows: object) -> object:
-    """Rows keyed only by player_id/team_id get a readable name column
-    (QA #66: after *_id stripping the model could only say 'one
-    player'). Name stays, id is stripped downstream."""
     if not isinstance(rows, list):
         return rows
     team_by_id: dict[int, str] = {}
@@ -229,11 +218,6 @@ def attach_names(rows: object) -> object:
 
 
 def score_player_candidates(raw: str) -> list[tuple[float, dict]]:
-    """Scored general matcher over static players. No network.
-
-    Exact full name, nickname map, first/last name, substring,
-    token prefixes, initials, fuzzy ratio. Sorted best first.
-    """
     import difflib as _dl
 
     from nba_api.stats.static import players
@@ -308,11 +292,6 @@ def score_player_candidates(raw: str) -> list[tuple[float, dict]]:
 
 def _resolve_player_id_uncached(key: str) -> int:
     ranked = score_player_candidates(key)
-    # QA #59/#60: a loose SINGLE-TOKEN name must not silently pick one
-    # active namesake ("James" -> LeBron, ignoring James Harden). Match
-    # on whole name tokens only - fuzzy scorer noise (Jaylen Brown for
-    # "lebron") is not ambiguity. Multi-word and single-active names
-    # resolve as before.
     if " " not in key.strip():
         nq = _norm_name(key)
         act: list[str] = []
@@ -338,7 +317,6 @@ _coerce_player_id_cached = lru_cache(maxsize=2048)(_resolve_player_id_uncached)
 
 
 class PlayerNameResolutionUnavailable(ValueError):
-    """Typed unresolved-subject signal; optional profile data stays optional."""
 
     gap_kind = "profile/name_resolution_unavailable"
 
@@ -351,24 +329,13 @@ class PlayerNameResolutionUnavailable(ValueError):
         super().__init__(message)
 
 
-
-
 def coerce_player_id(value: object) -> int:
-    """Accept an id or a name. Names resolve through scored static matching.
-
-    Name results are cached process-local by stripped lowercase input.
-    """
     raw = str(value).strip()
     try:
         return int(raw)
     except (TypeError, ValueError):
         pass
     key = raw.lower()
-    # Intake/entity stages may emit URL-style stable slugs rather than display
-    # names. Normalize those slugs before static matching. When both ends are
-    # name tokens ("curry-stephen"), try natural and reversed order; accept
-    # only an exact normalized full-name match. This does not weaken fuzzy
-    # ambiguity handling for ordinary user text.
     if "-" in key or "_" in key:
         slug_tokens = [token for token in key.replace("_", "-").split("-")
                        if token]
@@ -381,10 +348,6 @@ def coerce_player_id(value: object) -> int:
                 return int(ranked[0][1]["id"])
     try:
         resolved = _coerce_player_id_cached(key)
-        # Static NBA identity can disagree with the frozen warehouse identity
-        # for duplicate/suffix records. Prefer the exact warehouse season row
-        # when the static id has no current gamelogs and the exact display name
-        # maps to one warehouse id with rows.
         try:
             has_logs = store.connect(read_only=True).execute(
                 "SELECT count(*) n FROM silver_player_gamelogs WHERE Player_ID=? AND _season=?",
@@ -414,7 +377,6 @@ coerce_player_id.cache_clear = _coerce_player_id_cached.cache_clear  # type: ign
 
 
 def coerce_team_id(value: object) -> int:
-    """Accept an id or a name. Names resolve through static tables."""
     raw = str(value).strip()
     try:
         return int(raw)
@@ -473,12 +435,6 @@ def is_past_game_date(game_date: str) -> bool:
 
 
 def season_static(season: str) -> bool:
-    """True when the season is complete and its tables never change again.
-
-    NBA seasons end in June; give a grace buffer to July 15 of the end
-    year. In the 2026 offseason, 2025-26 is static: live refetch only
-    multiplies blocked-endpoint timeouts without fresher data.
-    """
     import datetime as _dt
 
     m = _re_match(r"^20(\d{2})-(\d{2})$", str(season or ""))
@@ -495,9 +451,6 @@ def _re_match(pattern: str, text: str):
 
 
 def _bound_warehouse_read(table, where, params):
-    # Join the same interprocess lock as writers so an ordinary save cannot
-    # race either hash or the query. External mutation that ignores the lock
-    # remains detectable by the post-read identity check.
     with store.write_guard():
         before = store.warehouse_identity()
         frame = store.read_frame(table, where, params)

@@ -1,8 +1,3 @@
-"""External Markdown prompts for the v2 runtime.
-
-One cached loader over plain files: no template dependency, no registry.
-Prompts are static text; callers pass structured input alongside them.
-"""
 
 from functools import lru_cache
 from pathlib import Path
@@ -14,7 +9,6 @@ _PROMPT_NAME = re.compile(r"^[a-z][a-z0-9_]*$")
 
 @lru_cache(maxsize=None)
 def load_prompt(name: str) -> str:
-    """Return the verbatim text of prompts/<name>.md."""
     if not isinstance(name, str) or not _PROMPT_NAME.fullmatch(name):
         raise ValueError("prompt name must use lowercase letters, numbers, and underscores")
     path = _PROMPTS_DIR / f"{name}.md"

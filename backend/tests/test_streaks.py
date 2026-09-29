@@ -1,5 +1,3 @@
-"""Streak finder tests. Pure computation is hermetic; one integration
-test reads the real warehouse to prove the wiring and ranking."""
 
 import datetime as _dt
 import sys

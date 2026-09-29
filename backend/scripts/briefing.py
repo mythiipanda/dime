@@ -1,9 +1,3 @@
-"""Morning briefing report. Last night scores plus standouts plus injuries.
-
-Usage: python -m scripts.briefing [--date 09/07/2026]
-Writes backend/data/reports/briefing-<date>.md (gitignored).
-Pair with cron for daily delivery.
-"""
 
 import argparse
 import asyncio

@@ -1,4 +1,3 @@
-"""F88 deterministic qualification and named-team ratings routes."""
 import asyncio
 import pytest
 import sys
@@ -171,13 +170,11 @@ def test_bound_warehouse_read_paths_and_lineage(monkeypatch,tmp_path):
     monkeypatch.setattr(store,'read_frame',lambda *a,**k:F())
     rows,meta=_core._warehouse_or_live('t','x=?',[1],lambda:None,'2025-26')
     assert meta['warehouse_sha256']==hashlib.sha256(b'initial').hexdigest()
-    # Intentional save completes before post-save read identity is captured.
     monkeypatch.setattr(store,'read_frame',lambda *a,**k:None if db.read_bytes()==b'initial' else F())
     live=FetchResult(frame=pl.DataFrame({'x':[1]}),meta=FetchMeta(source='live',season='2025-26',fetched_at='2026-09-19'),ok=True)
     monkeypatch.setattr(store,'save_frame',lambda *a,**k:db.write_bytes(b'post-save'))
     rows,meta=_core._warehouse_or_live('t','x=?',[1],lambda:live,'2026-27',live_first=True)
     assert meta['warehouse_sha256']==hashlib.sha256(b'post-save').hexdigest()
-    # Mid-read external mutation fails.
     def mutate(*a,**k):db.write_bytes(b'external');return F()
     monkeypatch.setattr(store,'read_frame',mutate)
     with pytest.raises(RuntimeError,match='identity changed'):_core._bound_warehouse_read('t','x=?',[1])

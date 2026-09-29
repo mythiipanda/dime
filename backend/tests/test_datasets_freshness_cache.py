@@ -1,4 +1,3 @@
-"""Freshness endpoint cache tests. Hermetic: tiny warehouse built in tmp_path."""
 
 import sys
 import time
@@ -28,7 +27,6 @@ def tiny_warehouse(tmp_path, monkeypatch):
     con.execute("INSERT INTO silver_b VALUES (1)")
     con.execute("CREATE TABLE bronze_ignored (id INTEGER)")
     con.close()
-    # datasets does `from . import store`, so this redirects its connects too.
     monkeypatch.setattr(store, "DB_PATH", db)
     return db
 
@@ -92,7 +90,6 @@ def test_cache_expires_after_ttl(client, monkeypatch):
 
     client.get("/api/v1/datasets/freshness")
     assert calls["n"] == 1
-    # Age the cache entry past the TTL; next hit must re-query.
     datasets._FRESHNESS_CACHE["at"] = (
         time.monotonic() - datasets._FRESHNESS_TTL_S - 1
     )

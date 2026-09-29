@@ -1,13 +1,3 @@
-"""Verify node v0 (Tony's harness redesign, rollout step 1).
-
-(a) Banned-phrase honest end: the F61 text ("I could not compute that
-from the dataset - the warehouse query for it did not run. Try a
-narrower ask.") was both a canned fallback AND a model-emitted shape.
-Neither may ship - the fallback names coverage instead.
-(b) Numeral-provenance telemetry: every number in the final answer
-traces to the turn's payloads; violations are recorded on
-state['_verify'] for the reviewer (no user-visible change in v0).
-"""
 
 import asyncio
 import sys
@@ -41,8 +31,6 @@ def test_model_emitted_f61_shape_rewritten():
 
 
 def test_gap_detection_still_fires_on_new_prefix():
-    # The known-gap override keys on the fallback prefix; a compute
-    # failure on a known-gap question must still ship the gap note.
     async def _go():
         state = {"question": "what contract types can teams offer?",
                  "analysis": ("NameError: boom. Traceback. Error. "
@@ -86,9 +74,6 @@ def test_numeral_provenance_accepts_percent_scaling_and_rounding():
 
 
 def test_presentation_does_not_ship_unverified_figures_clean():
-    # Claim-level (2026-09-26): only the failing sentence is dropped -
-    # never the whole answer. Here the single sentence fails, so the
-    # honest figure-free fallback ships instead.
     async def _go():
         state = {"question": "rank them", "analysis": "Wrong has 99.9 points.",
                  "tool_results": [{"tool": "x", "ok": True,

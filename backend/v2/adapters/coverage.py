@@ -1,9 +1,3 @@
-"""Deterministic metric coverage registry.
-
-Which impact metrics the warehouse backs and which are unavailable.
-No warehouse query: coverage is declared here and available metrics name
-their backing table.
-"""
 from __future__ import annotations
 
 import re
@@ -59,11 +53,6 @@ def metric_coverage(
     player: str = "",
     season: str | None = None,
 ) -> dict[str, Any]:
-    """Report warehouse coverage for named metrics, for at most one player.
-
-    EPM, LEBRON, DARKO, DRIP, PER, BPM, WS and VORP are unavailable
-    and never estimated.
-    """
     if isinstance(metrics, str):
         metrics = [m.strip() for m in re.split(r"[,;&]|\band\b", metrics)
                  if m.strip()]

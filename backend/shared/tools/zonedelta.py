@@ -1,17 +1,3 @@
-"""Player-vs-league zone efficiency deltas. ROADMAP appendix item 6.
-
-get_zone_deltas answers "where does X beat league average, and by how
-much" for shooting zones from silver_hist_shots.
-
-This does not duplicate get_team_shot_zones (team zone diet: attempt
-shares and eFG per team). This is player efficiency: per-zone FG% vs the
-pooled league-average FG% for the same season, with a per-zone attempts
-floor so small samples never present as skill.
-
-Warehouse-first. No live calls. Zones reuse the five-zone taxonomy in
-zone.py because the source table carries no zone labels. Documented
-estimates only.
-"""
 
 from typing import Any
 
@@ -66,7 +52,6 @@ def _display_name(person_id: int, fallback: str) -> str:
 
 
 def fold_zones(shots: list[dict[str, Any]]) -> dict[str, dict[str, int]]:
-    """Fold shot dicts into per-zone attempt/make counts. Pure function."""
     out = {key: {"fga": 0, "fgm": 0} for key in ZONE_KEYS}
     for s in shots:
         zone = zone_of(s.get("x"), s.get("y"), s.get("shot_value", 0))
@@ -79,8 +64,6 @@ def fold_zones(shots: list[dict[str, Any]]) -> dict[str, dict[str, int]]:
 def build_deltas(player: dict[str, dict[str, int]],
                  league: dict[str, dict[str, int]],
                  floor: int) -> tuple[list[dict[str, Any]], list[str]]:
-    """One row per zone at or above the attempts floor, sorted by delta
-    descending. Zones below the floor come back as excluded names. Pure."""
     rows: list[dict[str, Any]] = []
     excluded: list[str] = []
     for key in ZONE_KEYS:
@@ -106,10 +89,6 @@ def build_deltas(player: dict[str, dict[str, int]],
 @tool
 def get_zone_deltas(player: str, season: int = MAX_SEASON,
                     min_attempts: int = DEFAULT_FLOOR) -> dict[str, Any]:
-    """Player-vs-league shooting-zone efficiency: per-zone FG% vs the
-    pooled league-average FG% for the same season, with delta in
-    percentage points. Zones below min_attempts (default 50, clamped
-    10..200) are excluded. Season is the end year (2010..2025)."""
     warnings: list[str] = []
     year = clamp_season_year(season)
     try:

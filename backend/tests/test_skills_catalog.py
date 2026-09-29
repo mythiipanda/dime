@@ -1,5 +1,3 @@
-"""Skills catalog: progressive disclosure. Catalog lists one line per skill,
-full bodies load on demand."""
 
 import sys
 from pathlib import Path

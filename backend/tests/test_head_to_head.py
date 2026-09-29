@@ -1,6 +1,3 @@
-"""Head-to-head tests. Pure math is hermetic (monkeypatched loader);
-one integration test reads the real warehouse to prove the wiring and
-the small-sample honesty."""
 
 import sys
 from pathlib import Path
@@ -67,11 +64,9 @@ def test_vs_opponent_filters_home_and_away():
 
 
 def test_vs_opponent_never_teammates_side():
-    # A player traded mid-season keeps only games where the trailing
-    # token is the opponent, not the old or new team.
     rows = [
-        _row("NYK @ BOS", "Jan 01, 2026"),   # player was on NYK; BOS is opp
-        _row("BOS @ NYK", "Feb 02, 2026"),   # now on BOS; NYK is opp
+        _row("NYK @ BOS", "Jan 01, 2026"),
+        _row("BOS @ NYK", "Feb 02, 2026"),
         _row("BOS @ MIA", "Mar 03, 2026"),
     ]
     assert len(vs_opponent(rows, "NYK")) == 1
@@ -79,8 +74,6 @@ def test_vs_opponent_never_teammates_side():
 
 
 def _fake_season(monkeypatch):
-    """6 games vs NYK (all wins, 20/10/5 on 50% FG) plus 4 other games
-    (all losses, 30/6/7 on 50% FG)."""
     nyk = [_row(f"BOS @ NYK" if i % 2 else "BOS vs. NYK",
                 f"Jan {i + 1:02d}, 2026", "W", pts=20, reb=10, ast=5,
                 fgm=10, fga=20, fta=0)
@@ -110,7 +103,6 @@ def test_tool_averages_deltas_record(monkeypatch):
                               "fg_pct": 0.0, "ts_pct": 0.0}
     assert rows["small_sample"] is False
     assert rows["note"] is None
-    # Most recent game first.
     dates = [g["date"] for g in rows["games"]]
     assert dates == sorted(dates, reverse=True)
 

@@ -1,14 +1,3 @@
-"""Game-log fast-path routing tests.
-
-Demo bug: the planner free-formed a game-log question into text_to_sql,
-hit "unknown table or column" on silver_player_gamelogs, and streamed
-the red error row before recovering. The triage fast-path in app/graph.py
-routes clean single-turn single-player game-log asks straight to
-search_game_logs instead.
-
-All hermetic: _triage_seed is driven directly and the real
-search_game_logs runs against the local warehouse. No LLM, no network.
-"""
 
 import asyncio
 import json
@@ -57,7 +46,6 @@ def test_40_point_games_routes_to_search_game_logs():
     assert args["player"] == "Anthony Edwards"
     assert args["min_points"] == 40
     assert len(_tool_names(st)) == 1
-    # Decisive hit: planner rounds exhausted.
     assert st["round"] in (MAX_TOOL_ROUNDS, DEEP_TOOL_ROUNDS)
 
 
@@ -79,10 +67,6 @@ def test_double_double_phrasing_sets_flag():
 
 
 def test_league_leaders_routes_to_search_game_logs():
-    # Ticket B: "who had the most 50-point games this season?" names no
-    # player, so the player-scoped fast-path can't fire; the
-    # league-wide fast-path must answer from the warehouse instead of
-    # letting the planner improvise SQL.
     st = _drain("who had the most 50-point games this season?")
     args = _gamelog_args_of(st)
     assert args is not None, "league-wide fast-path did not fire"
@@ -90,9 +74,7 @@ def test_league_leaders_routes_to_search_game_logs():
     assert args["min_points"] == 50
     assert "player" not in args
     assert len(_tool_names(st)) == 1
-    # Decisive hit: planner rounds exhausted.
     assert st["round"] in (MAX_TOOL_ROUNDS, DEEP_TOOL_ROUNDS)
-    # Leaders actually returned as evidence.
     rows = st["tool_results"][0]["rows"][0]["rows"]
     assert rows["league_wide"] is True
     assert rows["total_players"] >= 1
@@ -108,9 +90,6 @@ def test_which_player_most_triple_doubles_routes_league_wide():
 
 
 def test_existence_did_anyone_score_routes_league_wide():
-    # Gap A: existence phrasing names no player, so the player-scoped
-    # fast-path can't fire; it must take the league-wide fast-path
-    # instead of falling through to the planner.
     st = _drain("did anyone score 60 points this season?")
     args = _gamelog_args_of(st)
     assert args is not None, "league-wide fast-path did not fire"
@@ -118,7 +97,6 @@ def test_existence_did_anyone_score_routes_league_wide():
     assert args["min_points"] == 60
     assert "player" not in args
     assert len(_tool_names(st)) == 1
-    # Decisive hit: planner rounds exhausted.
     assert st["round"] in (MAX_TOOL_ROUNDS, DEEP_TOOL_ROUNDS)
 
 
@@ -133,14 +111,11 @@ def test_existence_was_there_game_routes_league_wide():
 
 
 def test_existence_bare_dropped_number_sets_min_points():
-    # "has anyone dropped 50 this season?" has no "points" word; the
-    # arg parser must still extract the floor from the scoring verb.
     args = _gamelog_args("has anyone dropped 50 this season?", None, [])
     assert args["min_points"] == 50
 
 
 def test_team_most_50pt_games_routes_team_wide():
-    # Gap B: team-population phrasing must group by team, not player.
     st = _drain("which team had the most 50-point games this season?")
     args = _gamelog_args_of(st)
     assert args is not None, "team fast-path did not fire"
@@ -148,7 +123,6 @@ def test_team_most_50pt_games_routes_team_wide():
     assert args["min_points"] == 50
     assert "player" not in args
     assert len(_tool_names(st)) == 1
-    # Decisive hit: planner rounds exhausted.
     assert st["round"] in (MAX_TOOL_ROUNDS, DEEP_TOOL_ROUNDS)
     rows = st["tool_results"][0]["rows"][0]["rows"]
     assert rows["team_wide"] is True
@@ -162,7 +136,6 @@ def test_team_most_50pt_games_routes_team_wide():
 
 
 def test_league_leaders_still_player_grouped_not_team_wide():
-    # Negative: the plain leaders ask keeps per-player grouping.
     st = _drain("who had the most 50-point games this season?")
     args = _gamelog_args_of(st)
     assert args is not None, "league-wide fast-path did not fire"
@@ -174,13 +147,6 @@ def test_league_leaders_still_player_grouped_not_team_wide():
 
 
 def _rs_only_player():
-    """A (name, id) with 2025-26 regular-season rows but no playoff rows.
-
-    The background scrape keeps filling silver_playoff_gamelogs, so no
-    specific player's playoff emptiness can be hardcoded. The name is
-    resolved via the static player list and verified to coerce back to
-    the same warehouse id.
-    """
     from shared import store as _store
     from shared.tools._core import coerce_player_id as _coerce
     from shared.tools.splits import _resolve_name as _rname
@@ -204,7 +170,6 @@ def _rs_only_player():
 
 
 def test_playoff_phrasing_sets_playoffs_flag():
-    # Ticket A: the fast-path must not silently drop "in the playoffs".
     q = "Did Jalen Brunson have any triple-doubles in the playoffs?"
     args = _gamelog_args(q, "Jalen Brunson", [])
     assert args.get("playoffs") is True
@@ -213,9 +178,6 @@ def test_playoff_phrasing_sets_playoffs_flag():
     args = _gamelog_args_of(st)
     assert args is not None, "fast-path did not fire"
     assert args.get("playoffs") is True
-    # A player with no playoff rows gets an explicit refusal, never a
-    # silent regular-season 0. The player is picked dynamically (see
-    # _rs_only_player) because the scrape keeps filling the playoff table.
     found = _rs_only_player()
     if found is None:
         import pytest as _pt
@@ -289,8 +251,6 @@ def test_best_game_phrasing_routes_to_search_game_logs():
 
 
 def test_career_high_phrasing_routes_despite_no_rx():
-    # "career" trips _GAMELOG_NO_RX (meant for career averages); the
-    # best-game exemption must still route "career high".
     st = _drain("what is lebron's career high in points")
     args = _gamelog_args_of(st)
     assert args is not None, "fast-path did not fire"
@@ -359,12 +319,7 @@ def test_result_rows_counts_game_rows_not_metadata_keys():
     assert _result_rows(out) == 1
 
 
-# ---------------------------------------------------------------- F57
-
 def test_under_points_is_a_ceiling_not_a_floor():
-    # F57: "under 20 points" used to set min_points=20 - the exact
-    # inversion QA #73 caught live (returned every 20+ game, then the
-    # narrative honestly reported the wrong set as empty).
     args = _gamelog_args(
         "Show me games where Luka scored under 20 points this season",
         "Luka Dončić", [])
@@ -382,7 +337,6 @@ def test_fewer_than_and_below_point_phrasings():
 
 
 def test_at_most_is_inclusive_ceiling():
-    # "no more than 20" includes a 20-point game: exclusive ceiling 21.
     args = _gamelog_args("games where he scored no more than 20 points",
                          "Luka Dončić", [])
     assert args["max_points"] == 21
@@ -416,6 +370,6 @@ def test_max_points_predicate_and_description():
          "triple_double": False, "opponent": None, "month": None,
          "start_date": None, "end_date": None, "home_away": None}
     assert _matches(game, f) is True
-    game["pts"] = 20  # exclusive ceiling: 20 is not "under 20"
+    game["pts"] = 20
     assert _matches(game, f) is False
     assert "under 20 points" in _describe_filters(f)

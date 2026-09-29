@@ -1,4 +1,3 @@
-"""Matchup previews. Narrative brief for one scheduled game."""
 
 import asyncio
 from typing import Any
@@ -66,12 +65,6 @@ def _row_abbrs(row: dict[str, Any]) -> tuple[str, str]:
 
 
 def _scoreboard_warehouse(season: str, dates: list[str]) -> list[dict[str, Any]]:
-    """Warehouse-only scoreboard rows for MM/DD/YYYY date entities.
-
-    Read-only: never triggers the live nba_api fallback. Replacing the
-    old 14-sequential-scoreboard-calls schedule scan with this one query
-    took that path from 329s to under a second.
-    """
     from .. import store
 
     entities = [f"date:{d}" for d in dates]
@@ -173,9 +166,6 @@ def _parse_gamelog_date(value: object):
 
 
 def _form_card(team_id: int, season: str) -> tuple[dict[str, Any], str | None]:
-    # Read the table directly: the hub only surfaces a 25-row head, which
-    # would corrupt the full-season record. The hub call below is just a
-    # live-fallback warm-up for teams with no cached gamelog rows yet.
     from .. import store
 
     def _read() -> list[tuple]:
@@ -270,8 +260,6 @@ def _leaders_card(abbr: str, team_id: int, season: str) -> list[dict[str, Any]]:
             gp_int = int(gp or 0)
         except (TypeError, ValueError):
             gp_int = 0
-        # silver_leaders_pts stores season TOTALS; per-game drives every
-        # downstream number (matchup ppg, injury impact, x-factor baseline).
         div = gp_int or 1
         out.append({
             "name": str(name or ""),
@@ -539,7 +527,6 @@ def _already_played(row: dict[str, Any], resolved: str,
 async def get_matchup_preview(a: str = "", b: str = "",
                               game_date: str = "",
                               season: str = SEASON) -> dict[str, Any]:
-    """Narrative preview of a scheduled NBA game: recent form, key player matchups, injury impact, x-factors, why-watch. Pass two team names/abbrevs/ids, or a date (MM/DD/YYYY) to preview that day's marquee game. Never predicts scores."""
     from datetime import datetime as _dt
 
     season = clamp_season(season)
@@ -558,8 +545,6 @@ async def get_matchup_preview(a: str = "", b: str = "",
             _dt.strptime(game_date, "%m/%d/%Y")
         except (TypeError, ValueError):
             return _err("game_date must be MM/DD/YYYY")
-        # Warehouse first: the scoreboard table is authoritative for cached
-        # dates. Exactly one live call, only when the date was never cached.
         rows = _scoreboard_warehouse(season, [game_date])
         if not rows:
             try:
@@ -620,8 +605,6 @@ async def get_matchup_preview(a: str = "", b: str = "",
 
         now = _dt.now(ZoneInfo("America/New_York"))
         days = [(now + _td(days=i)).strftime("%m/%d/%Y") for i in range(14)]
-        # One warehouse query over the whole window: the 14 sequential
-        # scoreboard calls this replaced took 329s in a smoke test.
         cands = sorted(
             (r for r in _scoreboard_warehouse(season, days)
              if _match_pair(r, ida, idb)),
@@ -652,7 +635,6 @@ async def get_matchup_preview(a: str = "", b: str = "",
     if not away_abbr:
         away_abbr = _abbrev(str(away_id))
 
-    # The two team cards are independent warehouse reads; run them together.
     card_away, card_home = await asyncio.gather(
         _team_card(away_id, away_abbr, season),
         _team_card(home_id, home_abbr, season),

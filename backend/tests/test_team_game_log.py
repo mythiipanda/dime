@@ -1,7 +1,3 @@
-"""get_team_game_log (F64): "show me the <team> last N games" needs a
-team-scope lane - search_game_logs is per-player and its team_wide mode
-returns match counts without names or game rows. Hermetic: warehouse
-only, no network."""
 
 import sys
 from pathlib import Path
@@ -20,7 +16,6 @@ def test_recent_games_have_scores_and_both_teams():
         assert g["pts"] is not None and g["opp_pts"] is not None
         assert g["wl"] in ("W", "L")
         assert g["matchup"].startswith("SAS")
-    # most recent first
     assert "APR" in games[0]["date"]
 
 

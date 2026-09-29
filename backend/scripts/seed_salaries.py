@@ -1,16 +1,3 @@
-"""Load real NBA salaries from Basketball-Reference contracts into the warehouse.
-
-Source: https://www.basketball-reference.com/contracts/ (keyless, 4s gaps).
-Normals: silver_salaries (PLAYER_NAME, TEAM, SALARY_2025_26, GUARANTEED).
-
-SALARY_2025_26 is a frozen spec name. It holds the observed y1 money for
-the scraped vintage. The vintage is the observed y1 header, stored as
-_season plus the fetch_log season on every run. Never trust the column
-name for the vintage. Aborts without writing when y1 is unobserved.
-
-This is the table get_trade_check prefers (real contracts over estimates).
-Takes ~2 minutes (30 team pages).
-"""
 import sys
 from pathlib import Path
 

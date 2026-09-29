@@ -1,8 +1,3 @@
-"""Latest-data-season derivation (MUSE-1 redo).
-
-Synthetic warehouse only: seeded in tmp_path and pointed at via monkeypatch.
-No provider keys, no network.
-"""
 
 import sys
 from pathlib import Path
@@ -17,7 +12,6 @@ from app import subagents  # noqa: E402
 
 
 def _rows(seasons: list[str], preseason: bool = False) -> list[tuple[str, str]]:
-    """(game_id, season) rows; preseason rows use the 001 game-id prefix."""
     prefix = "001" if preseason else "002"
     out = []
     for si, season in enumerate(seasons):
@@ -59,7 +53,6 @@ def test_latest_data_season_is_max_with_played_games(warehouse_store):
 
 
 def test_latest_data_season_rolls_forward_to_new_season(tmp_path, monkeypatch):
-    """A warehouse holding 2026-27 played-game data must resolve to 2026-27."""
     db = tmp_path / "warehouse.duckdb"
     _seed_warehouse(db, _rows(["2024-25", "2025-26"]) + _rows(["2026-27"]))
     monkeypatch.setattr(store, "DB_PATH", db)
@@ -68,7 +61,6 @@ def test_latest_data_season_rolls_forward_to_new_season(tmp_path, monkeypatch):
 
 
 def test_preseason_only_season_is_not_promoted(tmp_path, monkeypatch):
-    """Preseason-only 2026-27 rows must not promote 2026-27 to latest."""
     db = tmp_path / "warehouse.duckdb"
     _seed_warehouse(
         db, _rows(["2024-25", "2025-26"]) + _rows(["2026-27"], preseason=True)
@@ -108,7 +100,6 @@ def test_desk_briefs_carry_derived_season_through_channel(warehouse_store):
         assert "{DATA_SEASON}" in brief
         rendered = brief.replace("{DATA_SEASON}", season)
         assert f"Season {season} unless told otherwise." in rendered
-    # No brief may hardcode the season outright.
     for brief in (subagents.SCOUT_BRIEF, subagents.TEAM_BRIEF,
                   subagents.LEAGUE_BRIEF):
         assert "Season 2025-26" not in brief
@@ -120,7 +111,6 @@ def test_planner_season_context_states_warehouse_fact(warehouse_store):
     assert ("Latest season with played-game data in the warehouse: 2025-26."
             in ctx)
     assert "Use it for this/current season" in ctx
-    # 'last season' must not be collapsed into the derived season here.
     assert "last season" not in ctx
 
 

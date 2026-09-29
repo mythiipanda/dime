@@ -1,8 +1,3 @@
-"""Hermetic tests for get_rotation_check. No network, no warehouse.
-
-All inputs are synthetic dicts driving the pure functions; the one
-tool-level test monkeypatches the module fetch helpers.
-"""
 
 import sys
 from pathlib import Path
@@ -52,8 +47,6 @@ def test_tiers_split_top5_6_10_11_15():
 
 
 def test_tiers_sort_by_mpg_desc():
-    # Tiers sort by per-game minutes, not cumulative MIN: a high-MPG
-    # player with few games must outrank a low-MPG ironman.
     players = [_player("low", 100, pid=1), _player("high", 900, pid=2),
                _player("mid", 500, pid=3)]
     tiers = _tier_players(players)
@@ -204,9 +197,6 @@ def _star(name, mpg, gp, pid):
 
 
 def test_low_gp_star_never_fringe():
-    """Ticket 2: SAC real-world case — Keegan Murray (34.5 MPG, 23 GP) and
-    Domantas Sabonis (29.7 MPG, 19 GP) were tiered as "fringe" because tiers
-    sorted by cumulative MIN = MPG x GP."""
     players = [_star("Keegan Murray", 34.5, 23, 1),
                _star("Domantas Sabonis", 29.7, 19, 2)]
     players += [_star(f"R{i}", 24 - i * 0.5, 70, 100 + i) for i in range(13)]
@@ -215,15 +205,12 @@ def test_low_gp_star_never_fringe():
     assert "Keegan Murray" not in fringe_names
     assert "Domantas Sabonis" not in fringe_names
     core_names = [p["PLAYER"] for p in tiers["core"]]
-    # 23 GP clears the 20-GP floor: Murray is core by MPG.
     assert "Keegan Murray" in core_names
     bench_names = [p["PLAYER"] for p in tiers["bench"]]
-    # 19 GP misses the core floor: Sabonis lands in bench, never fringe.
     assert "Domantas Sabonis" in bench_names
 
 
 def test_cameo_appearance_excluded_from_core():
-    """The GP floor keeps a 5-game cameo at 40 MPG out of core."""
     players = [_star("Cameo", 40.0, 5, 1)]
     players += [_star(f"R{i}", 25 - i, 70, 100 + i) for i in range(10)]
     tiers = _tier_players(players)
@@ -233,7 +220,6 @@ def test_cameo_appearance_excluded_from_core():
 
 
 def test_closing_candidates_dedupes_duplicate_units():
-    """Ticket 1: closing_candidates must not list the same unit 5x."""
     dupes = [_unit("closers", 300, 10.0, best=True) for _ in range(5)]
     out = _closing_candidates(dupes, 5, 100)
     assert [u["GROUP_NAME"] for u in out] == ["closers"]

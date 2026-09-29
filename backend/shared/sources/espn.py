@@ -1,4 +1,3 @@
-"""ESPN source via sportsdataverse. Keyless. Complements nba_api."""
 
 import polars as pl
 
@@ -10,7 +9,6 @@ _espn_ids: dict[str, int] | None = None
 
 
 def espn_team_id(abbrev: str) -> int | None:
-    """Translate a team abbreviation to the ESPN numeric id. Cached."""
     global _espn_ids
     if _espn_ids is None:
         from sportsdataverse.nba import espn_nba_teams

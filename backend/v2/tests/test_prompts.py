@@ -1,10 +1,3 @@
-"""Contract tests for the v2 prompt system.
-
-Prompts are the runtime's interface to the model: each must exist, carry
-the five required sections, and name the frozen contract fields its output
-is parsed into. If contracts.py changes, these tests must change only
-through the integration owner.
-"""
 
 import re
 from pathlib import Path
@@ -18,8 +11,6 @@ PROMPTS_DIR = Path(prompts.__file__).parent
 
 REQUIRED_SECTIONS = ("Objective", "Input", "Output", "Invariants", "Stop condition")
 
-# prompt name -> contract models whose full field set must appear in the
-# prompt's Output section
 OUTPUT_CONTRACTS = {
     "intake": (contracts.TaskSpec,),
     "intake_admission": (contracts.IntakeAdmissionReview,),
@@ -42,11 +33,6 @@ def output_section(text: str) -> str:
 
 
 def test_manifest_prompt_hashes_match_live_files():
-    """The snapshot manifest pins the exact prompt bytes reviewers saw.
-
-    If a prompt is edited, the manifest hash must be regenerated alongside,
-    so the binding can never silently drift.
-    """
     import hashlib, json
     manifest = json.loads(
         (PROMPTS_DIR.parent / "schema_snapshots" / "manifest.json").read_text())
@@ -59,12 +45,6 @@ def test_manifest_prompt_hashes_match_live_files():
 
 
 def test_ranked_metric_ids_in_prompts_match_source():
-    """Ranked metric IDs listed in the prompts must equal the source keys.
-
-    The prompts hardcode the vocabulary in a "one of ..." enum line; if
-    TEAM_RATING_METRICS gains or loses a metric, the prompts must be
-    updated in the same change.
-    """
     from v2.adapters.models import TEAM_RATING_METRICS
     for filename in ("planner_v3.md", "requirement_review_v3.md"):
         text = (PROMPTS_DIR / filename).read_text()
@@ -97,9 +77,6 @@ def test_output_section_covers_contract_fields(name):
     text = load_prompt(name)
     for model in OUTPUT_CONTRACTS[name]:
         assert model.__name__ in text
-        # Provider-facing schema properties only: code-side fields excluded
-        # from the model JSON schema (e.g. ranked_argument_conflicts) are
-        # never model-authored and must not appear in prompts.
         for field in model.model_json_schema().get("properties", {}):
             assert field in section, f"{name}.md Output omits {model.__name__}.{field}"
 
@@ -203,7 +180,6 @@ def test_synthesis_and_verification_require_per_fact_source_vintage() -> None:
         assert "each conflicting fact" in prompt
         assert "`vintages`, then `as_of`" in prompt
         assert "`observed_at`" in prompt
-
 
 
 def test_verifier_prompt_aligns_supported_flag_and_reasons_contract():

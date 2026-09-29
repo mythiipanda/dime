@@ -1,4 +1,3 @@
-"""Thread compaction: long threads fold into one summary memo row."""
 
 import sys
 from pathlib import Path

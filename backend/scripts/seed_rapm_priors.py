@@ -1,22 +1,3 @@
-"""Multi-season RAPM priors. Ridge per season, never the current season.
-
-Reads non-garbage stints from silver_hist_possessions for end-years
-2022..2025 (labels 2021-22..2024-25) and writes one row per qualifying
-player per season to the NEW table silver_rapm_prior. Never touches
-silver_rapm and never computes end-year 2026 (2025-26): the current
-season stays a live estimate, not its own prior.
-
-Shrinkage, in one place. The ridge penalty shrinks every coefficient
-toward zero, which is league average because targets are demeaned
-points per possession. Larger alphas mean stronger shrinkage toward
-zero. Alpha is picked per season by RidgeCV over ALPHAS. The
-possession floor drops low-sample players after the fit instead of
-shrinking them further, so published rows all clear MIN_POSS.
-
-Usage: python -m scripts.seed_rapm_priors --self-check
-    python -m scripts.seed_rapm_priors --end-years 2022 2023 2024 2025
-The coordinator schedules the full warehouse run. Do not run it inline.
-"""
 
 import argparse
 import sys

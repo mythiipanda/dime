@@ -1,5 +1,3 @@
-"""Warehouse freshness tests. Stale-flag logic is hermetic with fake metadata;
-one integration test reads the real warehouse to prove wiring."""
 
 import sys
 from datetime import datetime, timedelta, timezone
@@ -10,8 +8,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from shared.tools import get_warehouse_freshness
 from shared.tools.league import FRESHNESS_RULES, _freshness_row
 
-NOW = datetime(2026, 9, 10, 15, 30, tzinfo=timezone.utc)  # September: offseason
-SEASON_NOW = datetime(2026, 1, 15, 15, 30, tzinfo=timezone.utc)  # January: in season
+NOW = datetime(2026, 9, 10, 15, 30, tzinfo=timezone.utc)
+SEASON_NOW = datetime(2026, 1, 15, 15, 30, tzinfo=timezone.utc)
 
 
 def _iso(dt):

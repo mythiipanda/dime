@@ -1,8 +1,3 @@
-"""Deep scenario suite. Daily analyst cases against tools plus warehouse.
-
-Usage: python -m scripts.scenarios
-Deterministic where possible. Two live LLM chats at the end.
-"""
 
 import sys
 from pathlib import Path
@@ -26,7 +21,6 @@ def check(name: str, cond: bool, detail: str = "") -> None:
 
 
 def rows(res: object, default: object = None) -> object:
-    """Crash-proof rows accessor."""
     if not isinstance(res, dict):
         return default if default is not None else []
     r = res.get("rows")
@@ -36,7 +30,6 @@ def rows(res: object, default: object = None) -> object:
 
 
 def safe_invoke(tool, payload: dict) -> dict:
-    """Invoke a tool, converting exceptions to error dicts."""
     try:
         res = tool.invoke(payload)
         return res if isinstance(res, dict) else {"ok": False, "error": "non-dict result"}
@@ -91,7 +84,7 @@ def main() -> None:
     check("briefing carries games",
           isinstance(rows(brief), dict) and "games" in rows(brief), "")
 
-    box = safe_invoke(tools.get_boxscore, 
+    box = safe_invoke(tools.get_boxscore,
         {"game_id": str(rows(a)[0].get("Game_ID", ""))})
     check("boxscore chains from intel",
           len(rows(box)) > 0, str(box)[:200])

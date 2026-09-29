@@ -1,11 +1,3 @@
-"""Seed silver_on_off for every rotation player (full league, 2025-26).
-
-Uses pbpstats get-on-off (gentle: one call at a time + sleeps).
-Rotation cutoff: MIN >= 900 total minutes in silver_leaders_pts (~11 mpg over 82).
-Idempotent: skips already-seeded entities; save_frame replaces per entity/season.
-
-Usage: python3 scripts/seed_on_off_league.py (run from backend/)
-"""
 import argparse
 import sys
 import time

@@ -43,7 +43,6 @@ async def test_planner_requires_complete_capability_schema():
  incomplete={'nodes':[{'id':'n','description':'x','capability':'standings','arguments':{'entries':[]},'depends_on':None,'covers_requirement_ids':None,'max_attempts':None,'status':None}]}
  model=Capture([incomplete,incomplete])
  planner=ModelPlanner(model,provider='stub',model_name='stub',capability_catalog=catalog())
- # One replan names the missing argument; a second incomplete plan fails closed.
  with pytest.raises(ValueError,match='invalid standings'):await planner.plan(TaskSpec(goal='x',mode='quick',deliverable='x'))
 
 

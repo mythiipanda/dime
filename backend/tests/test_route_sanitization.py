@@ -238,8 +238,6 @@ def test_heartbeat_applies_backpressure_to_fast_producer():
         stream = with_heartbeat(fast(), interval_s=10)
         assert await anext(stream) == "0"
         await asyncio.sleep(0.02)
-        # One item was consumed and at most the bounded queue plus the
-        # producer's current blocked put can have advanced.
         assert produced <= 66
         await stream.aclose()
         await asyncio.wait_for(closed.wait(), timeout=0.2)

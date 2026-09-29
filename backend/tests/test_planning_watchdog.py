@@ -1,20 +1,3 @@
-"""Planning-call watchdog (P1: NVIDIA planning hang, 2026-09-28).
-
-Prod evidence: with model=nvidia forced, the graph hung 120s at
-"planning warehouse lookups" with zero tokens and zero errors -- the
-45s first-token watchdog only covered the final answer stream, not the
-planning LLM calls. Every planning-path LLM call must fail fast with
-an honest error instead of hanging silently.
-
-Hermetic: fake clients, no network. Proves the watchdog fires on:
-1. invoke_with_fallback (non-streaming planning/tool LLM calls),
-   including fallback to the next provider.
-2. _stream_planner (supervisor planning stream): hung primary fails
-   fast and the next provider's plan is used; all-hung raises an
-   honest error fast.
-3. _select_skills_intent (runs before the planner stream): a hung
-   skills call returns ([], None) fast instead of holding the turn.
-"""
 
 import asyncio
 import sys
@@ -34,7 +17,6 @@ class _Chunk:
 
 
 class _HangStreamClient:
-    """Accepts the request, never produces a token."""
 
     def __init__(self, hang_s=3600):
         self.hang_s = hang_s
@@ -44,11 +26,11 @@ class _HangStreamClient:
 
     async def astream(self, messages, **kwargs):
         await asyncio.sleep(self.hang_s)
-        yield _Chunk("never")  # pragma: no cover
+        yield _Chunk("never")
 
     async def ainvoke(self, messages, **kwargs):
         await asyncio.sleep(self.hang_s)
-        raise AssertionError("unreachable")  # pragma: no cover
+        raise AssertionError("unreachable")
 
 
 class _OKStreamClient:
@@ -71,7 +53,7 @@ class _OKStreamClient:
 class _HangAinvokeClient:
     async def ainvoke(self, messages, **kwargs):
         await asyncio.sleep(3600)
-        raise AssertionError("unreachable")  # pragma: no cover
+        raise AssertionError("unreachable")
 
 
 class _OKAinvokeClient:
@@ -89,7 +71,7 @@ class _OKAinvokeClient:
 class _HangSkillsLLM:
     async def ainvoke(self, msgs):
         await asyncio.sleep(3600)
-        raise AssertionError("unreachable")  # pragma: no cover
+        raise AssertionError("unreachable")
 
 
 def _setup_providers(monkeypatch, clients, timeout_s=0.3):
@@ -114,7 +96,6 @@ def _setup_graph(monkeypatch, clients, timeout_s=0.3):
 
 
 def test_invoke_watchdog_fails_fast_and_falls_back(monkeypatch):
-    """A hung non-streaming LLM call fails fast and uses the next provider."""
     _setup_providers(monkeypatch,
                      {"p1": _HangAinvokeClient, "p2": _OKAinvokeClient},
                      timeout_s=0.3)
@@ -139,7 +120,6 @@ def test_invoke_watchdog_all_hung_raises_fast(monkeypatch):
 
 
 def test_planner_stream_falls_back_on_hang(monkeypatch):
-    """Hung planning primary fails fast; the next provider's plan is used."""
     plan_chunks = [{
         "name": "delegate_league",
         "args": '{"task": "standings"}',

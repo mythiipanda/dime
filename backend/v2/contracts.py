@@ -55,9 +55,7 @@ CanonicalDimensionId = Annotated[
 RequirementKind = Literal["evidence", "calculation", "task"]
 
 
-
 class SourceLocator(BaseModel):
-    """Exact model-declared location in the request or bounded context."""
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
@@ -84,7 +82,6 @@ class SourceLocator(BaseModel):
 
 
 class AdmissionReviewTarget(BaseModel):
-    """Digests of the exact source envelope and proposed TaskSpec reviewed."""
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
@@ -151,7 +148,6 @@ AdmissionSubject = Annotated[
 
 
 class AdmissionBinding(BaseModel):
-    """One canonical expected subject bound to one exact source location."""
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
@@ -160,7 +156,6 @@ class AdmissionBinding(BaseModel):
 
 
 class UnresolvedReference(BaseModel):
-    """A source-bound reference the intake could not safely resolve."""
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
@@ -169,7 +164,6 @@ class UnresolvedReference(BaseModel):
 
 
 class AdmissionFinding(BaseModel):
-    """Typed mismatch in the proposed intake; prose is diagnostic only."""
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
@@ -192,7 +186,6 @@ class AdmissionFinding(BaseModel):
 
 
 class IntakeAdmissionReview(BaseModel):
-    """Frozen independent decision over one exact source/task target."""
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
@@ -229,7 +222,6 @@ class IntakeAdmissionReview(BaseModel):
         return self
 
     def require_target(self, target: AdmissionReviewTarget) -> None:
-        """Reject a well-formed review replayed beside another source/task."""
         if self.target != target:
             raise ValueError("intake admission review target does not match")
 
@@ -285,7 +277,6 @@ class ConversationTurn(BaseModel):
 
 
 class CalculationRequirement(BaseModel):
-    """One independently requested arithmetic deliverable."""
     model_config = ConfigDict(extra="forbid")
     id: str = Field(min_length=1, max_length=64, pattern=r"^[a-z][a-z0-9_]*$")
     description: str = Field(min_length=1, max_length=1000)
@@ -302,16 +293,12 @@ class CalculationRequirement(BaseModel):
 
 
 class EvidenceRequirement(BaseModel):
-    """One independently reviewable clause of the user's evidence request."""
 
     model_config = ConfigDict(extra="forbid")
 
     id: str = Field(min_length=1, max_length=64, pattern=r"^[a-z][a-z0-9_]*$")
     description: str = Field(min_length=1, max_length=1000)
     capability_options: list[str] = Field(min_length=1, max_length=8)
-    # Argument constraints are the typed dimension contract between requirement
-    # review and planning. A planner cannot claim coverage with a nearby metric,
-    # population, or vintage merely because the capability name matches.
     capability_arguments: dict[str, Any] = Field(default_factory=dict, max_length=32)
     capability_argument_sets: list[CapabilityArgumentSet] = Field(default_factory=list, max_length=8)
     metric_ids: list[CanonicalDimensionId] = Field(default_factory=list, max_length=16)
@@ -338,12 +325,6 @@ class EvidenceRequirement(BaseModel):
 
 
 def _drop_ranked_argument_conflicts_from_schema(schema: dict) -> dict:
-    """Keep model output schemas free of the code-side conflict channel.
-
-    ``ranked_argument_conflicts`` is populated only by reconciliation code
-    (ledger rows), never by the model. Excluding it from the JSON schema
-    stops the model from writing rows that could survive intake.
-    """
     properties = schema.get("properties")
     if isinstance(properties, dict):
         properties.pop("ranked_argument_conflicts", None)
@@ -364,8 +345,6 @@ class TaskSpec(BaseModel):
     entities: list[EntityRef] = Field(default_factory=list, max_length=64)
     season: SeasonRef | None = None
     as_of: date | None = None
-    # Entity level of the question subject ("player"/"team"). The v2
-    # verifier threads it into the termination gates as question_kind.
     subject_entity_type: str | None = Field(default=None, max_length=64)
     subquestions: list[str] = Field(default_factory=list, max_length=32)
     required_evidence: list[str] = Field(default_factory=list, max_length=32)
@@ -376,11 +355,6 @@ class TaskSpec(BaseModel):
     assumptions: list[str] = Field(default_factory=list, max_length=32)
     open_questions: list[str] = Field(default_factory=list, max_length=32)
     skills: list[str] = Field(default_factory=list, max_length=16)
-    # Typed rows recorded when intake and requirement review disagreed on
-    # ranked team-rating arguments. The deterministic synthesizer draft only
-    # reports a typed gap for dropped ranked arguments when this is non-empty;
-    # a plain team_ratings question with no typed arguments reaches the
-    # synthesizer instead of being blocked.
     ranked_argument_conflicts: list[dict[str, str]] = Field(
         default_factory=list, max_length=32)
 
@@ -431,7 +405,6 @@ class TaskSpec(BaseModel):
 
 
 class RequirementReview(BaseModel):
-    """Independent clause ledger for an intake decomposition."""
 
     model_config = ConfigDict(extra="forbid")
 
@@ -441,9 +414,6 @@ class RequirementReview(BaseModel):
         default_factory=list, max_length=32)
     missing_subquestions: list[str] = Field(default_factory=list, max_length=32)
     missing_skills: list[str] = Field(default_factory=list, max_length=16)
-    # Typed ranked-argument conflict rows from reconciliation; the intake
-    # copies these onto the task so the deterministic draft only gaps when
-    # a ranked branch was actually dropped for disagreement.
     ranked_argument_conflicts: list[dict[str, str]] = Field(
         default_factory=list, max_length=32)
 
@@ -747,7 +717,6 @@ OutputUnitAuthority = Annotated[
 
 
 class EvidenceOutputBinding(BaseModel):
-    """Immutable claim-local authority for one admitted evidence output."""
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
@@ -780,7 +749,6 @@ class EvidenceOutputBinding(BaseModel):
 
 
 class CalculationOutputBinding(BaseModel):
-    """Immutable claim-local authority for one verified calculation output."""
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
@@ -852,7 +820,6 @@ class DeclaredCalculationInput(BaseModel):
 
 
 class DeclaredCalculation(BaseModel):
-    """Model-declared arithmetic, recomputed by deterministic verification."""
     model_config = ConfigDict(extra="forbid", frozen=True)
     calculation_id: str = Field(min_length=1, max_length=256)
     requirement_id: str | None = Field(default=None, max_length=64)
@@ -916,7 +883,6 @@ class Gap(BaseModel):
 
 
 class OutputFinalStatus(BaseModel):
-    """Deterministic publication status for one typed requested output."""
     model_config = ConfigDict(extra="forbid", frozen=True)
     requirement_kind: RequirementKind
     requirement_id: str | None = Field(default=None, max_length=64)
@@ -1057,4 +1023,3 @@ class VerificationReport(BaseModel):
         if self.status == VerificationStatus.REPAIR and not findings:
             raise PydanticCustomError("verification_repair_without_findings", "repair status requires an actionable finding")
         return self
-

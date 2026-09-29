@@ -48,7 +48,6 @@ def test_comparison_classifies_answer_route_grounding_and_failure():
     ]
 
 
-
 def test_grounding_drift_requires_comparable_claim_metrics():
     comparison = compare_outcomes(
         "record?",

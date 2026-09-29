@@ -1,6 +1,3 @@
-"""Competitive ratings tests. The tool is descriptive: no verdicts, no
-takeaways, numbers plus sensitivity. Padding math is hermetic; integration
-tests read the real warehouse to prove the wiring and the invariants."""
 
 import sys
 import time
@@ -21,13 +18,6 @@ from shared.tools.competitive import (
 
 
 def _connect_retry(tries=6, sleep_s=2):
-    """Open the warehouse for the test's own direct SQL verification.
-
-    Seed jobs hold the warehouse write lock at a time; only
-    lock-conflict errors retry, everything else raises. A persistent
-    lock raises so the caller can skip; any other failure is a real
-    error and must fail the test.
-    """
     last: Exception | None = None
     for _ in range(tries):
         try:
@@ -107,8 +97,6 @@ def test_empty_competitive_set_returns_nulls():
     assert "verdict" not in row
     sens = {s["blowout_margin"]: s["padding_delta"]
             for s in row["sensitivity"]}
-    # at 10/20 both games are still blowouts (nulls); at 30 both stay in,
-    # so delta collapses to 0.0 -- exactly the dependence the section shows
     assert sens[10] is None
     assert sens[20] is None
     assert sens[30] == 0.0
@@ -145,11 +133,8 @@ def test_sensitivity_shows_threshold_dependence():
     sens = {s["blowout_margin"]: s["padding_delta"]
             for s in row["sensitivity"]}
     assert set(sens) == {10, 20, 30}
-    # margin 10: comp=[3,1] -> mov_comp 2.0, full -2.25 -> delta -4.25
     assert sens[10] == -4.25
-    # margin 20: comp=[12,3,1] -> mov_comp 5.33, delta -7.58
     assert sens[20] == round(-2.25 - round(16 / 3, 2), 2)
-    # margin 30: nothing excluded -> delta 0.0
     assert sens[30] == 0.0
 
 
@@ -283,7 +268,7 @@ def test_integration_playoffs_team_is_low_sample_without_read():
     assert row["low_sample"] is True
     assert res["read"] is None
     assert "low-sample" in res["note"]
-    assert row["mov_full"] is not None  # numbers still reported
+    assert row["mov_full"] is not None
 
 
 def test_integration_pooled_season_label():
@@ -295,6 +280,4 @@ def test_integration_pooled_season_label():
     assert res["ok"] is True, res.get("error")
     assert res["meta"]["season_scope"] == "pooled"
     assert "not a single team-season" in res["meta"]["season_note"]
-    # Warehouse grows over time (5 seasons at writing, 17 by Sept 2026);
-    # assert the pool covers the data, not a frozen count.
     assert len(res["meta"]["seasons"]) >= 5

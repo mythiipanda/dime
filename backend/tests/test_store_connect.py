@@ -1,11 +1,3 @@
-"""Concurrent same-process duckdb.connect() race regression.
-
-Two threads opening the warehouse at once race duckdb's attach step;
-the loser used to get BinderException 'Cannot attach "warehouse" -
-already attached', which connect() did not retry. get_compare's zones
-sub-call swallowed that and silently emitted blank rim/three shares
-(the test_compare_fastpath flake). connect() now retries it.
-"""
 
 import sys
 from concurrent.futures import ThreadPoolExecutor
@@ -32,8 +24,6 @@ def test_concurrent_reads_all_succeed():
 
 def test_concurrent_read_frames_no_binder_error():
     def _read(_i):
-        # Missing table returns an empty frame; the point is the connect
-        # path must not raise BinderException under the attach race.
         return store.read_frame("definitely_not_a_table")
 
     with ThreadPoolExecutor(max_workers=8) as pool:

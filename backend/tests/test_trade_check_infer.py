@@ -1,10 +1,3 @@
-"""get_trade_check must infer side teams from player names.
-
-2026-09-13 compose probe: the agent called the tool with players only,
-got "two teams needed", and told the user salary data was missing - a
-false absence over a full salary sheet. The sheet resolves each player's
-current team, so a missing team arg is recoverable.
-"""
 
 from shared.tools import get_trade_check
 

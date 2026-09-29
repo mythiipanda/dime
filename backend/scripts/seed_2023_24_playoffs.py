@@ -1,4 +1,3 @@
-"""Backward-compatible entry point for historical playoff promotion."""
 try:
     from scripts.seed_historical_playoffs import *  # noqa: F401,F403
     from scripts.seed_historical_playoffs import main

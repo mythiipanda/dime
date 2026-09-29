@@ -28,7 +28,6 @@ class ExecutionResult(BaseModel):
 
     @property
     def evidence(self) -> list[EvidenceEnvelope]:
-        """Stable public evidence list; ownership remains explicit by node."""
         return list(self.evidence_by_node.values())
     attempts: dict[str, StrictInt] = Field(default_factory=dict, max_length=32)
     errors: dict[str, list[str]] = Field(default_factory=dict, max_length=32)
@@ -222,7 +221,6 @@ class RuntimeResult(BaseModel):
 
 
 def build_output_statuses(task, verified_claims, gaps):
-    """Compute one deterministic status for every typed requested output."""
     from v2.contracts import OutputFinalStatus
     admitted = {}
     rejected = set()
@@ -267,7 +265,6 @@ def admit_verified_claim_bindings(
     draft: DraftReport,
     verified_claim: VerifiedClaim,
 ) -> VerifiedClaim:
-    """Atomically validate claim-local output authority; never infer it."""
     from v2.adapters.capabilities import CAPABILITIES
     from v2.contracts import EvidenceOutputBinding, CalculationOutputBinding
     from v2.domain.evidence import iter_values

@@ -1,15 +1,3 @@
-"""Batch equivalence for _trade_sides team lookups.
-
-_trade_sides used to open one warehouse connection per named player
-(SELECT MATCHUP ... WHERE _entity = ? LIMIT 40 via _player_team_abbr).
-It now resolves all pids through the cached coerce path and fetches
-every MATCHUP in one SELECT with IN plus a per-entity 40-row cap.
-
-These tests run against the real warehouse read-only and assert the
-batched path returns byte-identical output to the old per-player loop
-on representative trade questions, using exactly one connection.
-Timings print via time.perf_counter for the before/after record.
-"""
 
 import sys
 import time
@@ -55,7 +43,6 @@ def _needs_gamelogs():
 
 
 def _reference_trade_sides(question, found_p, found_t, season):
-    """The pre-batch algorithm: one _player_team_abbr call per player."""
     import re
     import unicodedata
 
@@ -159,11 +146,6 @@ def test_batch_unknown_player_fallback():
     found_p = ["Anthony Edwards", "Zzz Unknown"]
     found_t = ["Minnesota Timberwolves", "Los Angeles Lakers"]
     actual = _trade_sides(question, list(found_p), list(found_t), "2025-26")
-    # QA #70 contract change: an EMPTY side no longer bails to the
-    # planner - the sides are returned and get_trade_value emits the
-    # fast informative refusal (unknown/empty side). The pre-QA70
-    # reference returned None here, pushing the question down a slow
-    # multi-tool planner route for the same refusal.
     assert actual is not None
     assert actual["team_a"] == "MIN"
     assert "Anthony Edwards" in actual["players_a"]

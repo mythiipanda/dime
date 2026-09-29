@@ -1,4 +1,3 @@
-"""Invoke v1 tools and normalize their payloads into EvidenceEnvelopes."""
 from __future__ import annotations
 
 import asyncio
@@ -15,7 +14,7 @@ from .capabilities import CAPABILITIES, Capability
 
 
 class AdapterError(RuntimeError):
-    """The underlying v1 tool failed or returned an unusable payload."""
+    pass
 
 
 def _canonical(value: Any) -> str:
@@ -26,7 +25,6 @@ def evidence_id(
     capability: str, arguments: Mapping[str, Any], rows: Any,
     *, source_revision: Mapping[str, Any] | None = None,
 ) -> str:
-    """Stable id for one exact query, source revision, and payload."""
     digest = hashlib.sha256(_canonical({
         "capability": capability,
         "arguments": dict(arguments),
@@ -170,9 +168,6 @@ def build_envelope(
                 raise AdapterError(
                     f"{spec.tool_name}: {key} must be non-empty text")
             warnings.append(limitation)
-    # Most tools use meta.stale as a cached-fallback boolean. The warehouse
-    # freshness panel owns a different, documented shape: meta.stale is the
-    # count of stale tables, while each row carries a tri-state stale marker.
     stale = (None if spec.name == "warehouse_freshness"
              else meta.get("stale"))
     if stale is not None and not isinstance(stale, bool):

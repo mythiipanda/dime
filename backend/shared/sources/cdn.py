@@ -1,10 +1,3 @@
-"""NBA CDN liveData source (keyless, bypasses stats.nba.com blocks).
-
-Base: https://cdn.nba.com. No key. Season like 2025-26.
-Schedule: /static/json/staticData/scheduleLeagueV2_1.json
-Boxscore: /static/json/liveData/boxscore/boxscore_{game_id}.json
-Column names UPPERCASE to match warehouse convention.
-"""
 
 import polars as pl
 

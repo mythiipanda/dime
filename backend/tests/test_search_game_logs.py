@@ -1,6 +1,3 @@
-"""search_game_logs tests. Pure filter logic is hermetic; four
-integration tests run against the real warehouse to prove the wiring
-and that the filters actually filter."""
 
 import datetime as _dt
 import sys
@@ -54,14 +51,14 @@ def test_matches_rebounds_and_assists():
 
 
 def test_matches_pra_combined():
-    g = _game("2026-03-01", pts=25, reb=8, ast=8)  # 41 PRA
+    g = _game("2026-03-01", pts=25, reb=8, ast=8)
     assert _matches(g, _filters(min_pra=40)) is True
     assert _matches(g, _filters(min_pra=42)) is False
 
 
 def test_matches_double_and_triple_double():
-    dd = _game("2026-03-01", pts=20, reb=12)          # two cats
-    td = _game("2026-03-02", pts=20, reb=12, ast=11)  # three cats
+    dd = _game("2026-03-01", pts=20, reb=12)
+    td = _game("2026-03-02", pts=20, reb=12, ast=11)
     assert _matches(dd, _filters(double_double=True)) is True
     assert _matches(dd, _filters(triple_double=True)) is False
     assert _matches(td, _filters(triple_double=True)) is True
@@ -133,7 +130,6 @@ def test_integration_lebron_30pt_games_filter():
     assert rows["total"] == 6
     assert rows["returned"] == 6
     assert rows["capped"] is False
-    # The filter actually filtered: every returned game meets it.
     assert all(g["pts"] >= 30 for g in rows["matches"])
     dates = [g["date"] for g in rows["matches"]]
     assert dates == sorted(dates, reverse=True)
@@ -200,16 +196,7 @@ def test_integration_bad_month_clean_error():
     assert "month" in res["error"]
 
 
-# --- Ticket A: playoff scope -------------------------------------------------
-
 def _rs_only_player():
-    """A (name, id) with 2025-26 regular-season rows but no playoff rows.
-
-    The background scrape keeps filling silver_playoff_gamelogs, so no
-    specific player's playoff emptiness can be hardcoded. The name is
-    resolved via the static player list and verified to coerce back to
-    the same warehouse id.
-    """
     from shared import store as _store
     from shared.tools._core import coerce_player_id as _coerce
     from shared.tools.splits import _resolve_name as _rname
@@ -233,12 +220,6 @@ def _rs_only_player():
 
 
 def _playoff_player():
-    """A (name, id, count) with 2025-26 playoff rows in the warehouse.
-
-    The in-flight scrape means no specific player's playoff presence can
-    be hardcoded, so the test picks whoever has rows right now. The name
-    is resolved via the static player list and verified to coerce back.
-    """
     from shared import store as _store
     from shared.tools._core import coerce_player_id as _coerce
     from shared.tools.splits import _resolve_name as _rname
@@ -258,10 +239,6 @@ def _playoff_player():
 
 
 def test_integration_playoffs_no_rows_explicit():
-    # A player with regular-season rows but no playoff rows: the old code
-    # silently answered 0 over regular-season games; now it must refuse
-    # explicitly instead of returning a computed 0. The player is picked
-    # dynamically because the scrape keeps filling the playoff table.
     found = _rs_only_player()
     if found is None:
         import pytest as _pt
@@ -276,10 +253,6 @@ def test_integration_playoffs_no_rows_explicit():
 
 
 def test_integration_playoffs_reads_playoff_table():
-    # Cross-check the tool's triple-double total against a direct count
-    # over silver_playoff_gamelogs to prove the playoff scope is honored.
-    # The player is picked dynamically because the in-flight scrape
-    # decides who has playoff rows right now.
     from shared import store as _store
     from shared.tools.gamelog import _f as _ff
 
@@ -321,8 +294,6 @@ def test_integration_playoffs_player_team_present():
     assert res["rows"]["player_team"]
 
 
-# --- Ticket B: league-wide mode ----------------------------------------------
-
 def test_integration_league_wide_50pt_leaders():
     res = search_game_logs.invoke({"league_wide": True, "min_points": 50})
     assert res["ok"] is True
@@ -332,7 +303,6 @@ def test_integration_league_wide_50pt_leaders():
     assert rows["total_players"] >= 1
     leaders = rows["leaders"]
     counts = [l["count"] for l in leaders]
-    # Sorted by count desc, and the counts partition all 50-point games.
     assert counts == sorted(counts, reverse=True)
     assert all(c >= 1 for c in counts)
     assert all(l["player"] and l["player_id"] for l in leaders)
@@ -349,8 +319,6 @@ def test_integration_league_wide_50pt_leaders():
 
 
 def test_integration_league_wide_counts_match_player_path():
-    # League-wide counts must agree with the player-scoped tool for a
-    # named player.
     wide = search_game_logs.invoke({"league_wide": True, "min_points": 40})
     assert wide["ok"] is True
     top = wide["rows"]["leaders"][0]

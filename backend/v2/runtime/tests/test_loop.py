@@ -19,7 +19,6 @@ def anyio_backend():
     return "asyncio"
 
 
-
 class Intake:
     async def understand(self, request: str) -> TaskSpec:
         return TaskSpec(goal=request, mode=RunMode.QUICK, deliverable="text")

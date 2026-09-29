@@ -1,7 +1,3 @@
-"""Provider probes (qm model-verification pattern): a provider that
-fails live gets a synthetic probe; a fresh failed probe skips it in the
-fallback chain until the TTL lets it earn a retry. Hermetic: fake
-clients, no network."""
 
 import asyncio
 import sys

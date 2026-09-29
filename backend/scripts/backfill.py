@@ -1,40 +1,3 @@
-"""Multi-season boxscore + lineup backfill over stats.nba.com (nba_api).
-
-What it does
-------------
-- Enumerates every game per season via LeagueGameFinder
-  (Regular Season + Playoffs), cached in backfill_progress.json.
-- Per game: traditional boxscore -> silver_boxscores (existing table),
-  five detail views (advanced / four_factors / misc / scoring / usage)
-  -> bronze_boxscore_ext (raw) + silver_boxscores_ext (wide, 120+ cols).
-- Per season: LeagueDashLineups league-wide, base + advanced measures
-  -> silver_lineups.
-- Optional: PlayByPlayV3 per game -> bronze_pbp + silver_pbp
-  (--pbp-seasons 2023-24,2024-25).
-
-Resume / kill-safety
---------------------
-- fetch_log watermarks per (dataset, season, entity=game_id); reruns
-  skip watermarked games, so a killed run resumes where it stopped and
-  a clean rerun performs zero fetches.
-- Silver writes are per-game: DELETE existing rows for the game, then
-  INSERT. No season-wide table wipes; a crash can never leave a
-  half-written season behind.
-- Column drift is absorbed (missing columns added via ALTER TABLE),
-  never by dropping the table.
-
-Politeness
-----------
-- --sleep seconds between requests (default 1.5).
-- Exponential backoff on 429/timeout: 8s, 16s, 32s, then the game is
-  recorded as failed and retried on the next run.
-
-Usage
------
-    DIME_WAREHOUSE=/path/to/warehouse.duckdb \
-      python -m scripts.backfill --seasons 2015-16:2024-25 --workers 2
-    python -m scripts.backfill --check   # watermark report, no fetching
-"""
 
 import argparse
 import json
@@ -48,8 +11,6 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-# Patient retries inside sources/base.py safe(): attempts/backoff are read
-# from the environment at call time, so set them before any fetch.
 os.environ.setdefault("DIME_LIVE_ATTEMPTS", "3")
 os.environ.setdefault("DIME_LIVE_BACKOFF_S", "4")
 
@@ -85,10 +46,6 @@ def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
-# --------------------------------------------------------------------------
-# seasons / progress
-# --------------------------------------------------------------------------
-
 def parse_seasons(spec: str) -> list[str]:
     out: list[str] = []
     for part in spec.split(","):
@@ -117,10 +74,6 @@ def save_progress(state: dict) -> None:
     PROGRESS_PATH.write_text(json.dumps(state, indent=1))
 
 
-# --------------------------------------------------------------------------
-# fetching with backoff
-# --------------------------------------------------------------------------
-
 def _is_retryable(msg: str) -> bool:
     m = msg.lower()
     return ("429" in m or "too many" in m or "timeout" in m
@@ -128,18 +81,12 @@ def _is_retryable(msg: str) -> bool:
 
 
 def fetch_with_backoff(label: str, fn, sleep_s: float):
-    """Call fn() -> FetchResult, backing off on rate limits/timeouts.
-
-    Returns (FetchResult|None, fatal_error). None result with a fatal
-    error means do not retry this game on this run.
-    """
     delay = 8.0
     last_err = ""
     for attempt in range(4):
         try:
             res = fn()
             if isinstance(res, pl.DataFrame):
-                # internal call sites returning bare frames
                 res = _base.FetchResult(
                     frame=res,
                     meta=_base.FetchMeta(source="nba_api", season=""))
@@ -155,10 +102,6 @@ def fetch_with_backoff(label: str, fn, sleep_s: float):
         return None, f"{label}: {last_err}"
     return None, f"{label}: backoff exhausted ({last_err[:120]})"
 
-
-# --------------------------------------------------------------------------
-# game enumeration
-# --------------------------------------------------------------------------
 
 def season_games(season: str, sleep_s: float, state: dict) -> list[str]:
     cached = state.get("games", {}).get(season)
@@ -184,7 +127,6 @@ def season_games(season: str, sleep_s: float, state: dict) -> list[str]:
             raise RuntimeError(err)
         ids = (res.frame.get_column("GAME_ID").cast(pl.String).to_list()
                if "GAME_ID" in res.frame.columns else [])
-        # LeagueGameFinder returns one row per team per game: dedupe.
         found[st] = list(dict.fromkeys(ids))
         time.sleep(sleep_s)
     state.setdefault("games", {})[season] = found
@@ -192,18 +134,7 @@ def season_games(season: str, sleep_s: float, state: dict) -> list[str]:
     return [g for st in SEASON_TYPES for g in found.get(st, [])]
 
 
-# --------------------------------------------------------------------------
-# warehouse writes (per-game, drift-tolerant, never drop tables)
-# --------------------------------------------------------------------------
-#
-# All writes go through store.write_unit: DELETE + INSERT + watermark in
-# a SINGLE transaction, so a crash rolls back to the previous complete
-# state and a rerun redoes the unit instead of skipping it.
-
-
 def _canon(frame: pl.DataFrame) -> pl.DataFrame:
-    """Cast columns to a small canonical type set so seasons with int32
-    vs int64 drift (or similar) land in one schema."""
     exprs = []
     for c, dt in frame.schema.items():
         if dt == pl.String or dt == pl.Utf8:
@@ -223,18 +154,9 @@ def _canon(frame: pl.DataFrame) -> pl.DataFrame:
 def insert_game_rows(table: str, frame: pl.DataFrame, season: str,
                      source: str, entity: str, game_id: str,
                      view: str = "") -> int:
-    """Idempotent per-game write: delete this game's rows, then insert.
-
-    Never drops the table; absorbs column drift via ALTER TABLE.
-    The DELETE, INSERT, and fetch_log watermark run in a SINGLE
-    transaction (store.write_unit): a crash rolls back to the previous
-    complete state, so a rerun redoes the game instead of skipping it.
-    """
     if frame.height == 0:
         return 0
     frame = _canon(frame)
-    # Raw bronze frames keep API-native camelCase columns; derive the
-    # GAME_ID key the idempotent delete predicate needs.
     if "GAME_ID" not in frame.columns and "gameId" in frame.columns:
         frame = frame.with_columns(
             pl.col("gameId").cast(pl.String).alias("GAME_ID"))
@@ -250,7 +172,6 @@ def insert_game_rows(table: str, frame: pl.DataFrame, season: str,
 
 
 def watermarked(table: str, season: str, entity: str) -> bool:
-    # Fresh warehouse: the file may not exist yet (read-only open fails).
     try:
         return bool(store.last_fetch(table, season, entity))
     except Exception:
@@ -258,12 +179,6 @@ def watermarked(table: str, season: str, entity: str) -> bool:
 
 
 def watermarked_entities(table: str, season: str) -> set[str]:
-    """All watermarked entities for a (dataset, season) in ONE query.
-
-    Per-game last_fetch() opens a connection per call; over 13k games
-    that dominates runtime. Batch it for scans, keep the single-shot
-    helper for point checks.
-    """
     try:
         con = store.connect(read_only=True)
     except Exception:
@@ -283,10 +198,6 @@ def watermarked_entities(table: str, season: str) -> set[str]:
     finally:
         con.close()
 
-
-# --------------------------------------------------------------------------
-# per-game backfill
-# --------------------------------------------------------------------------
 
 class Counters:
     def __init__(self) -> None:
@@ -366,10 +277,6 @@ def backfill_game(game_id: str, season: str, views: list[str],
     ctr.bump(games=1)
 
 
-# --------------------------------------------------------------------------
-# lineups (per season, league-wide)
-# --------------------------------------------------------------------------
-
 def backfill_lineups(season: str, sleep_s: float, ctr: Counters) -> None:
     entity = f"lineups:{season}"
     if watermarked(LINEUP_TABLE, season, entity):
@@ -398,17 +305,11 @@ def backfill_lineups(season: str, sleep_s: float, ctr: Counters) -> None:
         frames.append(res.frame.with_columns(
             pl.lit(measure).alias("MEASURE")))
     frame = pl.concat(frames, how="diagonal")
-    frame = _canon(frame)  # MEASURE already set per-frame in the loop above
-    # One transaction: DELETE + INSERT + watermark are all-or-nothing,
-    # so a crash can't leave a half-written season or a false watermark.
+    frame = _canon(frame)
     store.write_unit(LINEUP_TABLE, frame, season, "nba_api", entity,
                      "_season = ? AND _entity LIKE 'lineups:%'", [season])
     print(f"[{season}] lineups: {frame.height} rows", flush=True)
 
-
-# --------------------------------------------------------------------------
-# play-by-play (per game, recent seasons)
-# --------------------------------------------------------------------------
 
 def _snake(name: str) -> str:
     import re as _re
@@ -452,10 +353,6 @@ def backfill_pbp_game(game_id: str, season: str, sleep_s: float,
     ctr.bump(rows_ext=n, games=1)
 
 
-# --------------------------------------------------------------------------
-# driver
-# --------------------------------------------------------------------------
-
 def report_watermarks(seasons: list[str], state: dict) -> None:
     for season in seasons:
         games = state.get("games", {}).get(season, {})
@@ -475,7 +372,7 @@ def report_watermarks(seasons: list[str], state: dict) -> None:
 
 
 def main(argv=None) -> int:
-    ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    ap = argparse.ArgumentParser(description="Multi-season boxscore + lineup backfill over stats.nba.com (nba_api).")
     ap.add_argument("--seasons", default="2015-16:2024-25",
                     help="'2015-16:2024-25' range or comma list")
     ap.add_argument("--views", default="all",

@@ -1,4 +1,3 @@
-"""Player-named opponents in get_head_to_head resolve to their team."""
 import asyncio
 
 from shared.tools.headtohead import get_head_to_head

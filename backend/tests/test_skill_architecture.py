@@ -1,9 +1,3 @@
-"""Phase 2: LLM-based skill selection replaces keyword routing.
-
-- select_skills asks the LLM to pick 0-2 skills, [] on failure.
-- SKILL_KEYWORDS / match_skills are gone.
-- build_planner_prompt(question, selected_skills) appends bodies for selection.
-"""
 
 import asyncio
 import inspect

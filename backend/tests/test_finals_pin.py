@@ -1,10 +1,3 @@
-"""Finals-result pin (QA #74 / F60).
-
-"Who won the 2026 Finals?" - the marquee phrasing - dead-ended to the
-generic fallback under planner variance (8s/2 tools) while the longer
-phrasing worked. The playoffs payload carries the finals block
-deterministically, so the pin calls get_playoffs directly.
-"""
 
 import asyncio
 import sys
@@ -49,12 +42,9 @@ def test_finals_variants_pinned():
 
 
 def test_finals_pin_guards():
-    # Finals MVP belongs to the award known-gap
     st = _drain("Who won the 2026 Finals MVP?")
     assert "get_playoffs" not in _tool_names(st)
-    # future/prediction phrasing stays out
     st = _drain("who will win the 2027 finals")
     assert "get_playoffs" not in _tool_names(st)
-    # player-named finals asks stay with player routes
     st = _drain("how did Jalen Brunson do in the finals")
     assert "get_playoffs" not in _tool_names(st)

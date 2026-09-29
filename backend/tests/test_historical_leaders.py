@@ -1,4 +1,3 @@
-"""Historical leaders tests. Warehouse reads only; skip when tables missing."""
 
 import sys
 from pathlib import Path

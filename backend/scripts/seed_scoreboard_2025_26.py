@@ -1,17 +1,3 @@
-"""Seed silver_scoreboard for the full 2025-26 season from ESPN.
-
-stats.nba.com is unreachable from the build sandbox (read timeouts), so
-the nba_api scoreboard path cannot seed. ESPN's public scoreboard JSON
-covers every date and is reachable. Rows are written in the nba_api
-column shape the rest-advantage tool and datasets API already read:
-GAME_ID is synthesized with nba prefix semantics (002=regular,
-005=play-in, 004=playoffs) because rest.py classifies season_type from
-that prefix; regular/playoff boundary is derived from the warehouse's
-own seeded rows (last regular game 2026-04-12, playoffs from 04-18).
-
-Resumable: each date replaces its own entity rows (date:MM/DD/YYYY).
-    python scripts/seed_scoreboard_2025_26.py
-"""
 import datetime as dt
 import json
 import sys
@@ -26,8 +12,8 @@ from shared import store
 SEASON = "2025-26"
 START = dt.date(2025, 10, 21)
 END = dt.date(2026, 6, 21)
-REGULAR_END = dt.date(2026, 4, 12)   # last seeded regular game (0022501186)
-PLAYOFF_START = dt.date(2026, 4, 18)  # play-in sits between, prefix 005
+REGULAR_END = dt.date(2026, 4, 12)
+PLAYOFF_START = dt.date(2026, 4, 18)
 
 ABBR = {"GS": "GSW", "SA": "SAS", "NY": "NYK", "NO": "NOP",
         "WSH": "WAS", "UTAH": "UTA"}
@@ -37,8 +23,6 @@ NBA30 = {"ATL", "BOS", "BKN", "CHA", "CHI", "CLE", "DAL", "DEN", "DET",
          "NOP", "NYK", "OKC", "ORL", "PHI", "PHX", "POR", "SAC", "SAS",
          "TOR", "UTA", "WAS"}
 
-# Stable nba_api team ids (verified against the warehouse's original
-# rows, e.g. BOS=1610612738). preview.py matches games on these.
 TEAM_IDS = {"ATL": 1610612737, "BOS": 1610612738, "BKN": 1610612751,
             "CHA": 1610612766, "CHI": 1610612741, "CLE": 1610612739,
             "DAL": 1610612742, "DEN": 1610612743, "DET": 1610612765,
@@ -78,9 +62,6 @@ def fetch_day(d: dt.date) -> list[dict]:
                      if c.get("homeAway") == "away"), None)
         if not home or not away:
             continue
-        # All-Star weekend events (STARS/STRIPES/WORLD/USA) are not
-        # regular-season games; the NBA Cup final (neutral-site,
-        # mid-December) does not count in the standings either.
         _ha0 = ABBR.get(home["team"]["abbreviation"],
                         home["team"]["abbreviation"])
         _aa0 = ABBR.get(away["team"]["abbreviation"],
@@ -130,8 +111,6 @@ def main() -> None:
                     "DELETE FROM silver_scoreboard "
                     "WHERE _season = ? AND _entity = ?", [SEASON, entity])
                 for gi, g in enumerate(games, 1):
-                    # 2025-12-16 NBA Cup Final (NYK vs SAS, T-Mobile Arena):
-                    # played but excluded from standings - not a regular-season game.
                     if d == dt.date(2025, 12, 16) and {g['home'], g['away']} == {'NYK', 'SAS'}:
                         continue
                     pf = prefix_for(d)

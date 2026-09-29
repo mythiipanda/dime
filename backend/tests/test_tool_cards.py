@@ -1,4 +1,3 @@
-"""ToolCard registry tests. Pure registry checks, no warehouse reads."""
 
 import sys
 from pathlib import Path

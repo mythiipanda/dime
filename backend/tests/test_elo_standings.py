@@ -1,6 +1,3 @@
-"""ELO engine and standings tests. Pure-math cases are hermetic with
-literal expected values; the 2025-26 smoke runs against the warehouse
-(completed season, 1315 paired games)."""
 
 import sys
 from pathlib import Path
@@ -83,7 +80,6 @@ def test_real_2025_26_smoke():
         assert 0 <= r["elo_win_pct"] <= 1
         assert 0 <= r["win_equiv"] <= 82
     elos = [r["elo"] for r in rows]
-    # Displayed elos are ints; +-0.5 rounding dust over 30 teams.
     assert abs(sum(elos) - 45000) < 15.0
     assert elos == sorted(elos, reverse=True)
     assert res["anchor"] == {"abbr": "AVG", "elo": 1500}
@@ -93,7 +89,6 @@ def test_real_2025_26_smoke():
     print("OKC:", okc)
     assert rows[0]["elo"] == 1816 and rows[0]["abbr"] == "NYK"
     assert okc["elo"] == 1775 and okc["win_equiv"] == 68.0
-    # Same engine as get_elo: identical rounded ratings.
     elo_rows = get_elo.invoke({"season": "2025-26"})["rows"]
     assert {r["TEAM"]: r["ELO"] for r in elo_rows} == {
         r["abbr"]: r["elo"] for r in rows}

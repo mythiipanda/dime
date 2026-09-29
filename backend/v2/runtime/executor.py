@@ -12,7 +12,6 @@ from v2.domain.evidence import admit_evidence
 
 
 def _canonical_entity_value(entity_type: str, value: object) -> str:
-    """Canonicalize a provider-facing entity selector when a resolver exists."""
     text = str(value).strip()
     try:
         from shared.tools._core import coerce_team_id
@@ -309,12 +308,6 @@ class PlanExecutor:
             raise ValueError(
                 f"plan covers unknown requirements: {sorted(unknown_requirement_ids)}"
             )
-        # Typed requirements get one model repair in ModelPlanner. If the
-        # replacement still cannot ground an executable requirement, run the
-        # supported branches and publish that clause as a typed gap instead of
-        # failing before every tool call. Unknown IDs and false capability
-        # coverage above remain hard errors. The legacy required_evidence set
-        # stays a hard completeness contract.
         missing = sorted(set(task.required_evidence) - selected)
         uncovered = sorted(known_requirements.keys() - covered.keys())
         if missing and (not known_requirements or uncovered):
@@ -322,11 +315,6 @@ class PlanExecutor:
                       if uncovered else "")
             raise ValueError(
                 f"plan does not cover required evidence: {missing}{detail}")
-        # Once requirement review has produced typed clauses and every clause
-        # is covered, those clauses
-        # own executable coverage. A stale/coarser intake required_evidence
-        # label must not abort supported branches before tools run; uncovered
-        # typed clauses are published as precise gaps after execution.
 
     def _selected_name(self, plan: Plan, node_id: str) -> str | None:
         parent = next(item for item in plan.nodes if item.id == node_id)
@@ -431,14 +419,6 @@ class PlanExecutor:
         capability: Capability, node: PlanNode,
         parent_evidence: Sequence[EvidenceEnvelope],
     ) -> None:
-        """Keep dependent calls bound to the identities their parents resolved.
-
-        A provider argument is checked only when the capability declares its
-        entity semantics and the node directly depends on entity resolution.
-        This avoids guessing semantics from argument names while preventing a
-        model from resolving one entity and silently calling the next tool for
-        another.
-        """
         declarations = getattr(capability, "dependent_entity_arguments", {})
         resolved = [item for item in parent_evidence
                     if item.capability == "entity_resolution"]

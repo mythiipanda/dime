@@ -1,5 +1,3 @@
-"""Prose nit batch (QA overnight chain, Sep 12): math narration leaks,
-abbreviation-in-prose, scrub collisions, strip-induced fragments."""
 
 import sys
 from pathlib import Path
@@ -59,8 +57,6 @@ def test_and_logs_fragment():
     assert "From the playoff logs, Jalen Brunson" in out
 
 
-# --- F61 residual: coverage line must match the evidence span ---
-
 import asyncio  # noqa: E402
 
 from app.graph import presentation_agent  # noqa: E402
@@ -105,8 +101,6 @@ def test_single_season_evidence_line_untouched():
 
 
 def test_source_line_naming_agent_or_dataset_dropped():
-    # 2026-09-13 compose probe: "Source: league agent the dataset."
-    # leaked an internal agent name after the scout-summary rewrite.
     out = _present("who won the title?",
                    "This data covers the 2025-26 season.\n"
                    "Source: league agent the dataset.\n"
@@ -124,7 +118,6 @@ def test_real_source_citation_survives():
 
 
 def test_dangling_and_the_dataset_vocative_stripped():
-    # Same probe: "And the dataset, Shai ... played 15 playoff games."
     out = _present("how did shai do in the playoffs?",
                    "And the dataset, Shai Gilgeous-Alexander played 15 "
                    "playoff games.", [])
@@ -149,8 +142,6 @@ def test_dataset_data_collision_collapsed():
 
 
 def test_refusal_never_contradicts_attached_evidence():
-    # f62 (2026-09-13 prod QA): thin analysis + rich tool rows must not
-    # ship "I could not find that in the dataset."
     trs = [{"tool": "get_playoff_intel",
             "rows": [{"PLAYER": "Jalen Brunson", "GAME_DATE": "2026-06-13",
                       "PTS": 45, "MIN": 41}]}]
@@ -198,11 +189,9 @@ def test_renumber_lists_after_strip():
     out = _renumber_lists(txt)
     assert "\n1. The estimate values" in out
     assert "\n2. He recorded 5026" in out
-    # Separate blocks restart at 1.
     txt2 = "1. a\n2. b\n\nSome prose.\n5. c\n7. d"
     out2 = _renumber_lists(txt2)
     assert out2 == "1. a\n2. b\n\nSome prose.\n1. c\n2. d"
-    # Non-list text untouched.
     assert _renumber_lists("No lists here.") == "No lists here."
 
 
@@ -211,7 +200,6 @@ def test_space_before_punctuation_collapsed():
     out = _scrub_final_text("He averaged 10.7 assists per game . Next line , too .")
     assert "game." in out
     assert "line, too." in out
-    # Decimals survive.
     assert "0.665" in _scrub_final_text("He shot 0.665 from the line .")
 
 
@@ -221,10 +209,8 @@ def test_empty_section_headers_dropped():
            "**Verdict:**\nThe evidence does not show a rate split.")
     out = _scrub_final_text(txt)
     assert "**Takeaways" not in out
-    # A Verdict header followed by real prose survives.
     assert "**Verdict:**" in out
     assert "rate split" in out
-    # A Takeaways section with items survives.
     txt2 = "Intro.\n\n**Takeaways**\n1. First point.\n\n**Verdict**\nDone."
     out2 = _scrub_final_text(txt2)
     assert "**Takeaways**" in out2 and "1. First point." in out2

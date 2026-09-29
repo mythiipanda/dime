@@ -1,5 +1,3 @@
-"""get_wpa_leaders tests. Warehouse reads only; WPA leaderboard shape,
-clamps, honest empty states, book conservation, and the 5s season gate."""
 
 import sys
 import time

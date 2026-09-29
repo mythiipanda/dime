@@ -1,5 +1,3 @@
-"""get_zone_deltas tests. Warehouse reads only; player-vs-league FG%
-deltas, attempts floors, and honest empty states."""
 
 import math
 import sys

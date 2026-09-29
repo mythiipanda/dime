@@ -1,5 +1,3 @@
-"""v2 run-timeout ceiling: a hung runtime.run() must not spin the SSE queue
-drain forever. Uses a tiny timeout override, never the real 360s."""
 
 import asyncio
 import sys
@@ -16,10 +14,9 @@ def _run(coro):
 
 
 def test_hung_run_hits_timeout_ceiling():
-    """A runtime.run() that never finishes raises asyncio.TimeoutError fast."""
     async def scenario():
         async def hung():
-            await asyncio.sleep(60)  # never finishes within the test
+            await asyncio.sleep(60)
             return "never"
 
         queue: asyncio.Queue = asyncio.Queue()
@@ -30,8 +27,6 @@ def test_hung_run_hits_timeout_ceiling():
         except asyncio.TimeoutError:
             elapsed = time.monotonic() - started
             assert elapsed < 5, f"ceiling took {elapsed:.2f}s, expected ~0.05s"
-            # The hung task is still stuck at timeout time; the route
-            # cancels it, so the test does the same.
             assert not task.done()
             task.cancel()
             try:
@@ -45,7 +40,6 @@ def test_hung_run_hits_timeout_ceiling():
 
 
 def test_healthy_run_drains_events_and_returns():
-    """A run that finishes returns its drained events without waiting."""
     async def scenario():
         async def quick():
             return "done"

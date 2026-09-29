@@ -1,8 +1,3 @@
-"""Seed play-by-play history from sportsdataverse-data parquet releases.
-
-Usage: python -m scripts.seed_hist_pbp [--seasons 2021,2022,2023,2024,2025]
-End-year keys: 2025 means 2024-25. End-year 2026 is never seeded here.
-"""
 
 import argparse
 import sys
@@ -50,7 +45,6 @@ def fetch(url: str, dest: Path) -> bool:
 
 
 def unify(frames: list) -> list:
-    """Resolve cross-season type conflicts toward VARCHAR."""
     order: dict[str, list[str]] = {}
     for f in frames:
         for name, dtype in f.schema.items():

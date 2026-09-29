@@ -1,8 +1,3 @@
-"""One-click SQL re-run (ROADMAP Phase 1 #1, second half).
-
-rerun_sql re-executes the exact SQL shown behind a text_to_sql answer.
-Hermetic: no network, no LLM, no real warehouse.
-"""
 
 import asyncio
 import sys

@@ -1,9 +1,3 @@
-"""WPA win-probability model tests. Pure-math cases are hermetic.
-
-The holdout gate reads silver_hist_pbp read-only and runs the full 2024-25
-season (about 630k events) through the fitted constants. It finishes in
-seconds, well under the 120s budget.
-"""
 
 import sys
 import time

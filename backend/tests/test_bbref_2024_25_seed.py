@@ -1,5 +1,3 @@
-"""2024-25 bbref seeder tests. Offline only: synthetic HTML plus a temp
-DuckDB copy. Never touches the network or the real warehouse."""
 
 import sys
 from pathlib import Path

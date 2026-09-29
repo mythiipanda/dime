@@ -1,4 +1,3 @@
-"""RAPM prior estimates. Current season blended with multi-season priors."""
 
 from typing import Any
 
@@ -46,11 +45,6 @@ def blend_estimate(current: dict[str, Any] | None,
 
 @tool
 def get_rapm_prior(player: str = "", seasons: object = None) -> dict[str, Any]:
-    """Prior-informed RAPM for one player.
-
-    Blends current-season silver_rapm with silver_rapm_prior seasons.
-    Returns a documented estimate, or an honest empty when missing.
-    """
     from .. import store as _store
 
     name = str(player or "").strip()

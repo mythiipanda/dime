@@ -1,7 +1,3 @@
-"""Termination gate: tables must match the question kind and carry rows;
-rate-stat claims must name their minutes floor. Regression tests for the
-Colby Jones episode (TEAM SPLITS + LEADERS PTS rendered for player-kind
-questions) and the empty COMPARE view."""
 
 import sys
 from pathlib import Path
@@ -42,8 +38,6 @@ def _team_leaders_table():
 
 
 def test_question_kind_generic_no_entities():
-    # No keyword/regex guessing: a generic question with no named entities
-    # returns "other" so phrasing never drops tables (Instinct QA 2026-09-27).
     assert _gate_question_kind("best defensive players in the league") == "other"
     assert _gate_question_kind("best offense this season?") == "other"
 
@@ -101,7 +95,6 @@ def test_qualification_appended_when_missing():
     out, report = _gate_qualifications(text, [_player_table()])
     assert "Qualification: 1,000+ total minutes." in out
     assert report["applied"] == ["qualification", "coverage"]
-    # superlative claim also names the on-court caveat
     assert "does not isolate individual" in out
 
 
@@ -124,10 +117,6 @@ def test_coverage_not_appended_without_superlative():
     assert "does not isolate individual" not in out
 
 def test_no_entity_question_keeps_team_table():
-    # Instinct QA repro (2026-09-27): "best offense this season?" was
-    # classified as PLAYER by keyword regex ("best") and silently dropped
-    # a legit TEAM splits table (BOS 56 wins). With structural-only
-    # classification, no-entity questions keep all non-empty tables.
     kept, report = _gate_tables("best offense this season?", [_team_splits_table()])
     assert len(kept) == 1
     assert kept[0]["title"] == "Team splits"
@@ -147,7 +136,6 @@ def _traced_state():
 def test_verify_numbers_traced_flags_untraced():
     state = _traced_state()
     assert verify_numbers_traced(state, "Luka Doncic averages 99.9 points.") == ["99.9"]
-    # thin wrapper only: never writes state["_verify"]
     assert "_verify" not in state
 
 

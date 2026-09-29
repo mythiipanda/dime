@@ -1,19 +1,3 @@
-"""Tankathon draft data (keyless HTML scrape).
-
-No public API; the mock-draft and big-board pages are static HTML with
-stable `mock-row` markup (verified 2026-09-28). Parsed with regexes --
-no extra dependencies.
-
-- mock_draft(): pick order with team, player, school/position,
-  measurements. Season = draft class year from the page title.
-- big_board(): ranked prospect list, same parser (rank in place of pick,
-  college logo in place of team logo).
-
-Politeness: single GET per call; callers sleep between calls.
-If Tankathon changes markup, fetch_* returns ok=False with the reason
-and the warehouse keeps the last good vintage (watermarks are per
-draft year, so a parse failure never wipes prior data).
-"""
 
 import html as _html
 import re
@@ -129,10 +113,8 @@ def _fetch(board: str, url: str) -> FetchResult:
 
 
 def mock_draft() -> FetchResult:
-    """Current Tankathon mock draft (next draft class)."""
     return _fetch("mock_draft", MOCK_URL)
 
 
 def big_board() -> FetchResult:
-    """Current Tankathon draft big board."""
     return _fetch("big_board", BIG_BOARD_URL)

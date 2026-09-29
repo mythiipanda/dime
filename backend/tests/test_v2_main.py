@@ -1,9 +1,3 @@
-"""Standalone v2 entrypoint checks (Step 2 of v1 removal).
-
-v2.main must serve the v2 runtime without any v1 modules: importing it
-must not pull backend/app/*, and the app must expose only /api/* v2
-routes (no /api/v1/*).
-"""
 
 import subprocess
 import sys
@@ -13,7 +7,6 @@ BACKEND = Path(__file__).resolve().parents[1]
 
 
 def test_v2_entrypoint_standalone_imports():
-    """Importing v2.main must not load any app.* module (fresh interpreter)."""
     code = (
         "import sys; "
         "import v2.main; "
@@ -24,7 +17,6 @@ def test_v2_entrypoint_standalone_imports():
 
 
 def test_v2_entrypoint_routes():
-    """v2.main mounts the v2 router under /api and no /api/v1/* routes."""
     import v2.main
 
     paths = {r.path for r in v2.main.app.routes if hasattr(r, "path")}
@@ -52,7 +44,6 @@ def test_v2_entrypoint_routes():
 
 
 def _stub_providers(monkeypatch):
-    """shared.providers is heavyweight (langchain_*); stub it hermetically."""
     import sys
     import types
 
@@ -67,7 +58,6 @@ def _stub_providers(monkeypatch):
 
 
 def test_v2_models_returns_catalog_verbatim(monkeypatch):
-    """GET /api/models returns models_catalog() verbatim (v1 parity)."""
     _stub_providers(monkeypatch)
     from v2.api.routes import models as models_view
 
@@ -78,7 +68,6 @@ def test_v2_models_returns_catalog_verbatim(monkeypatch):
 
 
 def test_v2_health_ok_shape(monkeypatch):
-    """GET /api/health returns {ok: True, providers: catalog['available']} (v1 parity)."""
     catalog = _stub_providers(monkeypatch)
     from v2.api.routes import health as health_view
 
@@ -86,7 +75,6 @@ def test_v2_health_ok_shape(monkeypatch):
 
 
 def test_v2_chat_stream_has_get_and_post():
-    """Chat SSE parity: /api/v2/chat/stream serves both GET and POST (v1 has both)."""
     import v2.main
 
     methods: set[str] = set()
@@ -97,7 +85,6 @@ def test_v2_chat_stream_has_get_and_post():
 
 
 def test_v2_chat_rate_limit_window():
-    """Sliding-window rate limit: exhausts, then recovers as hits age out."""
     import time
     from v2.api import routes
     from shared.config import settings
@@ -113,7 +100,6 @@ def test_v2_chat_rate_limit_window():
 
 
 def test_v2_heartbeat_pings_on_idle():
-    """with_heartbeat emits ping frames while the inner stream is silent."""
     import asyncio
     from v2.api.sse import with_heartbeat
 
@@ -132,7 +118,6 @@ def test_v2_heartbeat_pings_on_idle():
 
 
 def test_v2_rate_limited_stream_frames():
-    """Rate-limited chat returns v1-parity SSE error + graph_end frames."""
     import asyncio
     from v2.api.routes import _rate_limited_stream
 
@@ -145,16 +130,8 @@ def test_v2_rate_limited_stream_frames():
     assert "rate limited" in chunks[0]
     assert chunks[-1].startswith("event: graph_end\n")
 
-# --- Datasets + threads + sql/rerun (v1-removal Step 3, item 4) ---
-
 
 def _stub_shared(monkeypatch, store_stub=None, **module_stubs):
-    """Replace sys.modules['shared'] (+ named submodules) hermetically.
-
-    Handlers import shared.* at call time, so a stubbed module tree is
-    enough to exercise the transport layer without a warehouse or
-    provider SDKs.
-    """
     import sys
     import types
 
@@ -174,7 +151,6 @@ def _stub_store(**fns):
 
 
 def test_v2_datasets_freshness_ttl_cache(monkeypatch):
-    """Freshness caches per worker: 2 calls within TTL -> 1 payload build."""
     from v2.api import routes
 
     calls = []
@@ -196,7 +172,6 @@ def test_v2_datasets_freshness_ttl_cache(monkeypatch):
 
 
 def test_v2_dataset_unknown_name():
-    """Unknown dataset name returns ok False without touching the store."""
     from v2.api.routes import dataset as dataset_view
 
     out = dataset_view("bogus")
@@ -206,7 +181,6 @@ def test_v2_dataset_unknown_name():
 
 
 def test_v2_dataset_wowy_path(monkeypatch):
-    """wowy with player ids routes to the get_wowy tool (v1 parity)."""
     import types
 
     def fake_invoke(payload):
@@ -228,7 +202,6 @@ def test_v2_dataset_wowy_path(monkeypatch):
 
 
 def test_v2_threads_list(monkeypatch):
-    """GET /api/threads lists threads from shared.store (v1 parity)."""
     _stub_shared(monkeypatch, store_stub=_stub_store(
         list_threads=lambda owner: [{"thread_id": "t1"}] if owner == "c" else []))
 
@@ -238,7 +211,6 @@ def test_v2_threads_list(monkeypatch):
 
 
 def test_v2_thread_runs(monkeypatch):
-    """GET /api/threads/{id}/runs lists runs from shared.store (v1 parity)."""
     seen = {}
 
     def fake_list_runs(thread, owner=""):
@@ -254,7 +226,6 @@ def test_v2_thread_runs(monkeypatch):
 
 
 def test_v2_thread_export(monkeypatch):
-    """GET /api/threads/{id}/export renders markdown with evidence (v1 parity)."""
     _stub_shared(monkeypatch, store_stub=_stub_store(
         list_runs=lambda thread, owner="": [
             {"question": "Q?",
@@ -281,7 +252,6 @@ def test_v2_thread_export(monkeypatch):
 
 
 def test_v2_sql_rerun_empty_sql():
-    """Empty SQL is rejected before any store call (v1 parity)."""
     import asyncio
 
     from v2.api.routes import sql_rerun, SqlRerunBody
@@ -291,7 +261,6 @@ def test_v2_sql_rerun_empty_sql():
 
 
 def test_v2_sql_rerun_too_long():
-    """Oversized SQL is rejected before any store call (v1 parity)."""
     import asyncio
 
     from v2.api.routes import sql_rerun, SqlRerunBody
@@ -301,7 +270,6 @@ def test_v2_sql_rerun_too_long():
 
 
 def test_v2_sql_rerun_ok(monkeypatch):
-    """rerun_sql success is projected to the v1 row envelope (v1 parity)."""
     import asyncio
     import types
 
@@ -321,16 +289,7 @@ def test_v2_sql_rerun_ok(monkeypatch):
         "columns": ["a"], "rows": [[1]], "ms": 5, "capped": False}}
 
 
-# --- v2 chat -> shared thread log (Instinct QA 2026-09-27: no history loss) ---
-
-
 def test_v2_chat_persists_to_shared_thread_log(monkeypatch, tmp_path):
-    """A real v2 chat turn lands in the REAL shared.store thread log.
-
-    Drives quick_answer_stream end-to-end (runtime/result seams stubbed;
-    the store is NOT stubbed) and asserts the exchange is visible via the
-    v1-parity /api/threads, /runs and /export views.
-    """
     import asyncio
     import sys
     import types
@@ -340,23 +299,17 @@ def test_v2_chat_persists_to_shared_thread_log(monkeypatch, tmp_path):
     monkeypatch.setenv("DIME_CONVERSATION_STORE",
                        str(tmp_path / "conversations.sqlite3"))
 
-    # Real shared.store, pointed at a throwaway DuckDB.
     import shared.store as real_store
     monkeypatch.setattr(real_store, "STATE_PATH",
                         tmp_path / "state.duckdb")
     monkeypatch.setattr(real_store, "STATE_LOCK_PATH",
                         tmp_path / ".state-write.lock")
 
-    # Hermetic ConversationStore (module-level singleton is env-bound at
-    # import time, so swap it for the test).
     from v2.api import routes
     from v2.conversations import ConversationStore
     monkeypatch.setattr(routes, "_CONVERSATIONS",
                         ConversationStore(tmp_path / "conv.sqlite3"))
 
-    # Stub the heavy seams only: provider resolution, runtime assembly,
-    # policy, ledger. The answer/evidence projections are module-level
-    # helpers, monkeypatched to fixed values.
     providers_mod = types.ModuleType("shared.providers")
     providers_mod.resolve_model_id = lambda model: ("fake", "fake-model")
     monkeypatch.setitem(sys.modules, "shared.providers", providers_mod)
@@ -437,8 +390,6 @@ def test_v2_chat_persists_to_shared_thread_log(monkeypatch, tmp_path):
     chunks = asyncio.run(drive())
     assert any("final_answer" in c for c in chunks), chunks
 
-    # The exchange must be visible through the v1-parity thread views,
-    # backed by the real shared.store.
     threads_out = routes.threads(client="c-hist")
     thread_ids = [t["id"] for t in threads_out["threads"]]
     assert "t-hist" in thread_ids, threads_out
@@ -455,17 +406,12 @@ def test_v2_chat_persists_to_shared_thread_log(monkeypatch, tmp_path):
     assert "Who leads the league in TS%?" in export_body
     assert answer_text in export_body
 
-    # Both turns (human + ai) are in the shared chat history.
     history = real_store.chat_history("t-hist")
     assert [m["role"] for m in history] == ["human", "ai"]
     assert history[0]["text"] == "Who leads the league in TS%?"
 
 
-# --- /resolve + /trade/check (v1-removal step 3) ---
-
-
 def test_v2_resolve_clamps_query(monkeypatch):
-    """GET /api/resolve clamps the query to 80 chars (v1 parity)."""
     import types
 
     seen = {}
@@ -486,7 +432,6 @@ def test_v2_resolve_clamps_query(monkeypatch):
 
 
 def test_v2_trade_check_passthrough(monkeypatch):
-    """POST /api/trade/check forwards the clamped body verbatim (v1 parity)."""
     import types
 
     seen = {}
@@ -514,7 +459,6 @@ def test_v2_trade_check_passthrough(monkeypatch):
 
 
 def test_v2_trade_body_list_normalization():
-    """Player lists normalize to comma-joined strings (v1 parity)."""
     from v2.api.routes import TradeBody
 
     body = TradeBody(players_a=["a", "", " b "], players_b="c")
@@ -522,11 +466,7 @@ def test_v2_trade_body_list_normalization():
     assert body.players_b == "c"
 
 
-# --- /debate-card + /debate-card/file (v1-removal step 3) ---
-
-
 def _stub_debate_tools(monkeypatch, invoke):
-    """Stub shared.tools.get_debate_card + shared.tools._core.clamp_season."""
     import types
 
     class FakeTool:
@@ -541,7 +481,6 @@ def _stub_debate_tools(monkeypatch, invoke):
 
 
 def test_v2_debate_card_requires_two_names():
-    """Missing names short-circuit before any tool call (v1 parity)."""
     from v2.api.routes import debate_card as card_view
 
     assert card_view(a="", b="Curry") == \
@@ -551,7 +490,6 @@ def test_v2_debate_card_requires_two_names():
 
 
 def test_v2_debate_card_ok_shape(monkeypatch):
-    """Successful card returns the v1 envelope with a v2-mount file URL."""
     import types
 
     seen = {}
@@ -579,7 +517,6 @@ def test_v2_debate_card_ok_shape(monkeypatch):
 
 
 def test_v2_debate_card_tool_failure(monkeypatch):
-    """Tool exceptions and ok=False rows project to the v1 error shape."""
     def boom(_payload):
         raise RuntimeError("down")
 
@@ -598,7 +535,6 @@ def test_v2_debate_card_tool_failure(monkeypatch):
 
 
 def test_v2_debate_card_file_rejects_bad_names():
-    """Non-matching names raise 400 without touching the filesystem."""
     from fastapi import HTTPException
 
     from v2.api.routes import debate_card_file as file_view
@@ -615,7 +551,6 @@ def test_v2_debate_card_file_rejects_bad_names():
 
 
 def test_v2_debate_card_file_missing_404():
-    """Regex-valid but absent files raise 404 (v1 parity)."""
     from fastapi import HTTPException
 
     from v2.api.routes import debate_card_file as file_view
@@ -629,7 +564,6 @@ def test_v2_debate_card_file_missing_404():
 
 
 def test_v2_debate_card_file_serves(monkeypatch, tmp_path):
-    """A present card file is served as HTML with the v1 cache header."""
     import v2.api.routes as routes
 
     card = tmp_path / "debate_A_vs_B_9.html"
@@ -642,11 +576,7 @@ def test_v2_debate_card_file_serves(monkeypatch, tmp_path):
     assert str(resp.path) == str(card)
 
 
-# --- /today /watchlist /movers /briefing (v1-removal step 3) ---
-
-
 def _stub_tool_module(monkeypatch, submodule, **fns):
-    """Stub shared.tools.<submodule> with plain callables."""
     import types
 
     class FakeTool:
@@ -666,7 +596,6 @@ def _stub_tool_module(monkeypatch, submodule, **fns):
 
 
 def test_v2_today_parses_json_string(monkeypatch):
-    """GET /api/today parses tool JSON strings, passes dicts through."""
     import asyncio
 
     _stub_tool_module(monkeypatch, "today",
@@ -678,7 +607,6 @@ def test_v2_today_parses_json_string(monkeypatch):
 
 
 def test_v2_watchlist_crud(monkeypatch):
-    """Watchlist GET/POST/DELETE forward season/entity args (v1 parity)."""
     import asyncio
 
     calls = []
@@ -708,7 +636,6 @@ def test_v2_watchlist_crud(monkeypatch):
 
 
 def test_v2_movers_normalizes(monkeypatch):
-    """GET /api/movers parses deltas then normalizes with season."""
     import asyncio
     import types
 
@@ -746,7 +673,6 @@ def test_v2_movers_normalizes(monkeypatch):
 
 
 def test_v2_briefing_passthrough(monkeypatch):
-    """GET /api/briefing parses the briefing JSON (v1 parity)."""
     import asyncio
 
     _stub_tool_module(monkeypatch, "today",

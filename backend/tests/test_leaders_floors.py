@@ -1,16 +1,3 @@
-"""Floor-enforcement proofs for get_leaders rate boards.
-
-get_leaders routes PPG/RPG/APG/SPG/BPG through a per-game rate branch
-with a hardcoded ``MIN >= 500`` SQL predicate, and TS_PCT through a
-``GP * MIN >= max(1000, min_attempts)`` predicate. Both floors are
-structural (in the SQL), so a caller passing ``min_attempts=0`` must not
-be able to crown a garbage-time player.
-
-All hermetic: SQL-text capture behind a fake connection, plus a scratch
-DuckDB warehouse behind monkeypatched app.store.DB_PATH. No network,
-no LLM. The live-warehouse empirical check runs only if
-backend/data/warehouse.duckdb exists, and skips otherwise.
-"""
 
 import sys
 from pathlib import Path
@@ -63,7 +50,6 @@ def warehouse(tmp_path, monkeypatch):
             "PLAYER TEXT, TEAM TEXT, GP INTEGER, MIN DOUBLE, STL INTEGER, "
             "_season TEXT)"
         )
-        # 4.0 SPG in 10 total minutes must never top a 2.0 SPG regular.
         con.execute(
             "INSERT INTO silver_leaders_stl VALUES "
             "('One Game Wonder', 'XYZ', 2, 10.0, 8, '2025-26'),"
@@ -74,7 +60,6 @@ def warehouse(tmp_path, monkeypatch):
             "PLAYER_NAME TEXT, TEAM_ABBREVIATION TEXT, GP INTEGER, "
             "MIN DOUBLE, TS_PCT DOUBLE, _season TEXT)"
         )
-        # 75% TS in 16 total minutes must never top a 60% regular.
         con.execute(
             "INSERT INTO silver_advanced VALUES "
             "('Garbage Time', 'XYZ', 2, 8.0, 0.75, '2025-26'),"
@@ -89,9 +74,6 @@ def warehouse(tmp_path, monkeypatch):
 
 def _sql_text(fake_con):
     return "\n".join(sql for sql, _params in fake_con.calls)
-
-
-# --- SPG: the 500-total-minute floor -------------------------------------
 
 
 def test_spg_zero_floor_still_carries_500_minute_floor(fake_con):
@@ -109,8 +91,6 @@ def test_spg_zero_floor_still_carries_500_minute_floor(fake_con):
 def test_spg_floor_survives_any_caller_floor_and_direction(
     fake_con, min_attempts, direction
 ):
-    """min_attempts is not even referenced on the rate path; asc only
-    flips ORDER BY. The hardcoded predicate must appear every time."""
     res = _league.get_leaders.invoke(
         {"stat_category": "SPG", "season": SEASON,
          "ranking_direction": direction, "min_attempts": min_attempts}
@@ -128,9 +108,6 @@ def test_spg_scrub_excluded_empirically(warehouse):
     names = [r["PLAYER"] for r in res["rows"]]
     assert "One Game Wonder" not in names
     assert "Steady Thief" in names
-
-
-# --- TS_PCT: the 1000-total-minute floor ----------------------------------
 
 
 def test_ts_pct_zero_floor_uses_1000_minutes(fake_con):
@@ -172,9 +149,6 @@ def test_ts_pct_scrub_excluded_empirically(warehouse):
     assert "Real Shooter" in names
     for r in res["rows"]:
         assert r["GP"] * r["MPG"] >= 1000
-
-
-# --- Live warehouse (optional) --------------------------------------------
 
 
 def _live_tables():

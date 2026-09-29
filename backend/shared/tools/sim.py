@@ -1,8 +1,7 @@
-"""Monte Carlo playoff simulator (plain function; senior wires the tool)."""
 import math
 import random
 SEED = 42
-HOME_ELO = 400 * math.log10(0.55 / 0.45)  # 55% home edge in Elo
+HOME_ELO = 400 * math.log10(0.55 / 0.45)
 
 
 def _amap():
@@ -11,9 +10,6 @@ def _amap():
 
 
 def _strengths(con, season, amap):
-    """Team strengths on the ELO scale. Primary: real ELO from the shared
-    engine over silver_hist_gamelogs (QA F10: NET_RATING masquerading as
-    ELO surfaced 'OKC ELO 11.1'). Fallbacks are converted to ELO points."""
     tabs = {r[0] for r in con.execute("SHOW TABLES").fetchall()}
     if "silver_hist_gamelogs" in tabs:
         rows = con.execute(
@@ -70,7 +66,7 @@ def _field(con, season, strength, amap):
 
 def _series(a, b, strength):
     hi, lo = (a, b) if strength[a] >= strength[b] else (b, a)
-    d = strength[hi] - strength[lo]  # ELO points (strengths are ELO-scale)
+    d = strength[hi] - strength[lo]
     ph = 1 / (1 + 10 ** (-(d + HOME_ELO) / 400))
     pa = 1 / (1 + 10 ** (-(d - HOME_ELO) / 400))
     w = l = 0
@@ -85,7 +81,6 @@ def _series(a, b, strength):
 
 
 def run_playoff_sim(season="2025-26", sims=2000):
-    """Game-by-game 2-2-1-1-1 bracket sim; returns title/final probs (pct)."""
     from .. import store as _store
     random.seed(SEED)
     con = _store.connect()

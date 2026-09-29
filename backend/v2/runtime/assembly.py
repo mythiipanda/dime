@@ -73,7 +73,6 @@ class EvidenceBoundRepair:
         return draft.model_copy(update={"claims": claims, "gaps": gaps})
 
 
-
 def _structural_schema(value):
     if isinstance(value, dict):
         return {
@@ -87,7 +86,6 @@ def _structural_schema(value):
 
 
 def capability_catalog() -> dict[str, dict]:
-    """Provider-neutral descriptions plus accepted argument schemas."""
     from shared.tools import v1_tools
 
     by_tool = {tool.name: tool for tool in v1_tools}

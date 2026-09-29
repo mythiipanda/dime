@@ -1,4 +1,3 @@
-"""text_to_sql schema-cap regression tests. Read the real warehouse."""
 
 import sys
 from pathlib import Path

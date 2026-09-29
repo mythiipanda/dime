@@ -22,9 +22,6 @@ from v2.domain.calculations import Calculation, validate_calculation
 from v2.domain.evidence import EvidenceIndex, decimal_value, iter_values
 
 _NUMBER = re.compile(
-    # Hyphenated lexical labels such as "3-point" and "5-man" name a
-    # metric or lineup shape; their digits are not asserted measurements.
-    # Date/season alternatives remain first so 2025-26 is still one token.
     r"(?<![A-Za-z0-9])(?:\d{4}-\d{2}-\d{2}|\d{4}-\d{2}|[-+]?\$?\d[\d,]*(?:\.\d+)?(?:%|[KMB])?)(?![A-Za-z0-9]|-[A-Za-z])",
     re.IGNORECASE,
 )
@@ -61,11 +58,9 @@ def _canon_number(raw: Any) -> set[Decimal]:
 
 
 def _matches_calculation_display(raw: str, values: set[Decimal]) -> bool:
-    """Accept ordinary rounded display of an already-recomputed calculation."""
     parsed = decimal_value(raw)
     if parsed is None or not values:
         return False
-    # Publication rounding may shorten precision, but it cannot flip sign.
     places = max(0, len(raw.rstrip("%").replace(",", "").split(".", 1)[1])
                  if "." in raw.rstrip("%").replace(",", "") else 0)
     tolerance = Decimal(5).scaleb(-(places + 1))
@@ -180,13 +175,6 @@ def _row_entity_value_reasons(
     claim: Claim, envelopes: Sequence[EvidenceEnvelope],
     calculation_values: set[Decimal] | None = None,
 ) -> list[str]:
-    """Bind claim numerals to named-entity rows across cited evidence.
-
-    A claim may legitimately cite several population envelopes for different
-    metrics on the same entity. Test against the union of matching entity rows,
-    never against an unrelated adjacent row and never require every envelope to
-    repeat every cited metric.
-    """
     text = " ".join(claim.text.casefold().split())
     identity_keys = {
         "team", "team_name", "team_abbreviation", "abbrev",
@@ -210,11 +198,6 @@ def _row_entity_value_reasons(
             matched_envelopes.append(envelope.model_copy(update={"rows": matched}))
     if not matched_envelopes:
         return []
-    # Ranked metric evidence carries the requested field identity from the
-    # typed plan. When a claim names no entity ("that team", "the exact
-    # value"), bind numerals to that field across the leader row instead of
-    # comparing against every unrelated numeral or rejecting the value merely
-    # because the entity was stated in a preceding supported claim.
     requested_metrics = {
         envelope.metric_definitions.get("__requested_metric__")
         for envelope in envelopes
@@ -306,9 +289,6 @@ def _metric_unit_reasons(claim: Claim,
                     reasons.append(
                         f"metric {metric} is stated without its declared unit {unit}")
             elif unit_name == "count":
-                # Count is dimensionless. Natural metric nouns such as wins,
-                # losses, games, and points already carry the measure; forcing
-                # the literal word "count" creates broken answer prose.
                 continue
             elif unit_name.replace("_", " ") not in text:
                 reasons.append(f"metric {metric} is stated without its declared unit {unit}")
@@ -332,13 +312,6 @@ def _mixed_source_reasons(claim: Claim,
 def _record_completeness_reasons(
     claim: Claim, envelopes: Sequence[EvidenceEnvelope],
 ) -> list[str]:
-    """A best-record claim must publish the complete W-L record.
-
-    Win percentage and wins alone can identify the row, but omitting losses
-    makes the answer incomplete and can hide a mismatched denominator. This
-    check is schema-driven and applies to any standings-like row carrying both
-    wins and losses.
-    """
     text = claim.text.casefold()
     if not re.search(r"\b(?:best|top|leading|leader|highest)\b.*\brecord\b", text):
         return []
@@ -406,12 +379,9 @@ def _qualification_coverage_reasons(claim: Claim,
     return reasons
 
 
-
-
 def _cross_evidence_calculation_reasons(
     claim: Claim, envelopes: Sequence[EvidenceEnvelope],
 ) -> list[str]:
-    """Require declared calculations for comparisons assembled across envelopes."""
     if claim.calculation_id or len(envelopes) < 2:
         return []
     text = claim.text.casefold()
@@ -559,10 +529,6 @@ def verify_mechanical(
         if token not in claim_tokens
     ]
     report_repairs = []
-    # A record deliverable backed by standings is incomplete unless the final
-    # report prints wins and losses together. Checking across the report (not
-    # only inside a single superlative claim) catches the common split shape:
-    # "best record" followed by wins and win percentage but no losses.
     record_task = bool(re.search(r"\brecord\b", " ".join(
         (task.goal, task.deliverable, *task.subquestions)), re.IGNORECASE))
     standings_rows = [
@@ -581,9 +547,6 @@ def verify_mechanical(
         if not has_complete_record:
             report_repairs.append(
                 "State the best team's complete wins-losses record in W-L form.")
-    # Requested metrics that exist in admitted evidence are deliverable
-    # requirements, not optional detail. Keep this as metric vocabulary rather
-    # than query/entity cases, and compare against the exact admitted value.
     task_text = " ".join((task.goal, task.deliverable, *task.subquestions)).casefold()
     requested_metrics = {
         "TS_PCT": ("true shooting", "shooting efficiency", "efficiency"),
@@ -629,12 +592,6 @@ def verify_mechanical(
 
 
 def _gate_tables(evidence: Sequence[EvidenceEnvelope]) -> list[dict]:
-    """Shape v2 evidence into the table dicts the termination gates expect.
-
-    The capability name doubles as the table title (e.g. "standings" ->
-    team level via the gate's title regex); envelope.qualification feeds
-    the minutes-qual rescue rule as table meta.
-    """
     tables: list[dict] = []
     for envelope in evidence:
         rows = envelope.rows
@@ -654,14 +611,6 @@ def _gate_tables(evidence: Sequence[EvidenceEnvelope]) -> list[dict]:
 
 def _termination_gate_repairs(task: TaskSpec, draft: DraftReport,
                               evidence: Sequence[EvidenceEnvelope]) -> list[str]:
-    """Wire the ported v1 termination gates into v2 verification.
-
-    question_kind comes from TaskSpec.subject_entity_type ("player"/"team")
-    and is never derived from question-text keywords. The table-kind gate
-    only bites when question_kind is explicitly set. Minutes-qualification
-    runs unconditionally; the rescue rule (qual anywhere in the answer, in
-    table meta, or in MIN/MPG/MINUTES columns) is intact.
-    """
     tables = _gate_tables(evidence)
     gate_repairs: list[str] = []
     question_kind = task.subject_entity_type
@@ -735,12 +684,6 @@ def merge_verification_reports(mechanical: VerificationReport,
     )
 
 
-# ---------------------------------------------------------------------------
-# Termination gate, ported from backend/app/graph.py (v1) for the v2 runtime.
-# Wired into verify_mechanical via _termination_gate_repairs: question_kind
-# comes from TaskSpec.subject_entity_type ("player"/"team").
-# ---------------------------------------------------------------------------
-
 _GATE_TEAM_TABLE_RX = re.compile(
     r"team splits|team totals|standings|four factors|matchup splits",
     re.IGNORECASE,
@@ -765,8 +708,6 @@ _MINUTES_QUAL_RX = re.compile(
 _UNIT_SPLIT_RX = re.compile(r"((?<=[.!?])\s+|\n+)")
 
 def _iter_units(text: str):
-    """Yield (unit, separator) pairs, preserving original separators so
-    filtering can drop a bad unit without reformatting the rest."""
     parts = _UNIT_SPLIT_RX.split(text or "")
     for i in range(0, len(parts), 2):
         yield parts[i], (parts[i + 1] if i + 1 < len(parts) else "")
@@ -774,14 +715,6 @@ def _iter_units(text: str):
 
 def _gate_question_kind(question: str,
                        detect=None) -> str:
-    """Classify the question's entity kind for table matching.
-
-    Uses only structural entity detection (injectable `detect`, default
-none -> no entities -> "other"). No
-    keyword/regex heuristics — phrasing like "best offense" must not
-    change which tables are kept. If no entities are found, returns
-    "other" (no kind-based table dropping).
-    """
     try:
         found_p, found_t = detect(question or "") if detect else ([], [])
     except Exception:
@@ -796,7 +729,6 @@ none -> no entities -> "other"). No
 
 
 def _gate_table_level(table: dict) -> str:
-    """Player-level, team-level, or unknown - from row keys, then title."""
     rows = table.get("rows")
     if isinstance(rows, list) and rows and isinstance(rows[0], dict):
         keys = {str(k).upper() for k in rows[0].keys()}
@@ -811,15 +743,6 @@ def _gate_table_level(table: dict) -> str:
 
 def verify_table_kind(question: str, table: dict,
                       question_kind: str | None = None) -> bool:
-    """Termination gate: table entity level must match the question kind.
-
-    question_kind is the LLM-determined intent (from
-    state["answer_entity_level"]); it wins over entity detection when
-    provided ("player"/"team"). It is never derived from question-text
-    keywords. Returns False on a mismatch in EITHER direction (player
-    question + team-level table, or team question + player-level table).
-    "mixed"/"other"/unknown kinds never reject.
-    """
     kind = question_kind if question_kind in ("player", "team") \
         else _gate_question_kind(question)
     if kind not in ("player", "team"):
@@ -834,16 +757,6 @@ def verify_table_kind(question: str, table: dict,
 
 
 def verify_minutes_qual(answer_text: str, tables: list) -> list[str]:
-    """Termination gate (REJECT check): rate-stat claims must carry a
-    minutes qualification. The qualification may live in the same
-    sentence, anywhere else in the answer, or in an attached table's
-    qualification meta / minutes-bearing columns - a separate qual
-    sentence or the data table itself counts.
-
-    Returns the violating sentences (empty = pass). This is a reject
-    check - callers drop the returned sentences. _gate_qualifications
-    stays as-is (append repair) and is untouched by this function.
-    """
     try:
         _answer_has_qual = bool(_MINUTES_QUAL_RX.search(answer_text or ""))
     except Exception:
@@ -893,4 +806,3 @@ def verify_minutes_qual(answer_text: str, tables: list) -> list[str]:
             if not _MINUTES_QUAL_RX.search(_s):
                 violations.append(_s)
     return violations
-

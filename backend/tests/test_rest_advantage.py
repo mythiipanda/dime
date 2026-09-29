@@ -1,5 +1,3 @@
-"""Rest advantage tests. Pure schedule math is hermetic; one integration
-test reads the real warehouse to prove the wiring and the invariants."""
 
 import datetime as _dt
 import sys
@@ -23,11 +21,6 @@ from shared.tools.rest import (
 
 
 def _connect_retry(tries=10, sleep_s=10):
-    """Open the warehouse for the test's own direct SQL verification.
-
-    Seed jobs hold the warehouse write lock for minutes at a time;
-    only lock-conflict errors are retried, everything else raises.
-    """
     last: Exception | None = None
     for _ in range(tries):
         try:
@@ -56,9 +49,6 @@ def _row(day, home, vis, hp, vp, st="regular"):
 
 
 def _aaa_schedule():
-    # AAA: Jan 1 home win vs BBB, Jan 2 road loss at CCC (back-to-back),
-    # Jan 5 home win vs BBB. BBB sits Jan 2-4, so AAA is at a rest
-    # disadvantage on Jan 5.
     rows = [
         _row(1, "AAA", "BBB", 110, 100),
         _row(2, "CCC", "AAA", 105, 100),
@@ -77,7 +67,6 @@ def _aaa_rows():
 
 
 def _preview_rows():
-    # AAA last played Jan 5, BBB last played Jan 1.
     return [
         _row(1, "AAA", "BBB", 110, 100),
         _row(2, "CCC", "AAA", 105, 100),
@@ -108,14 +97,12 @@ def test_first_game_none_baseline():
     aaa = _aaa_schedule()
     assert aaa[0].rest_days is None
     assert aaa[0].rest_diff is None
-    # CCC's only game in scope is Jan 2, so AAA's Jan 2 edge is also None.
     assert aaa[1].opp_rest_days is None
     assert aaa[1].rest_diff is None
 
 
 def test_rest_diff_sign():
     aaa = _aaa_schedule()
-    # BBB last played Jan 1 -> 3 days rest before Jan 5; AAA has 2.
     assert aaa[2].opp_rest_days == 3
     assert aaa[2].rest_diff == -1
 
@@ -198,7 +185,6 @@ def test_date_returns_single_game_row(monkeypatch):
     assert res["rows"]["games"][0]["date"] == "2026-01-05"
     assert res["rows"]["games"][0]["rest_diff"] == -1
     assert res["meta"]["date"] == "2026-01-05"
-    # Summary still covers the full season as quotable context.
     assert res["rows"]["summary"]["games"] == 3
 
 
@@ -334,7 +320,6 @@ def test_integration_regular_season_invariants_real_warehouse():
     assert league["meta"]["season_type"] == "regular"
     assert league["meta"]["coverage"]["games_dropped"] >= 0
     assert "games_dropped_detail" in league["meta"]["coverage"]
-    # Team mode agrees with league mode on one club's line.
     lal = get_rest_advantage.invoke({"team": "LAL", "season": "2025-26",
                                      "season_type": "regular"})
     assert lal["ok"] is True
@@ -343,8 +328,6 @@ def test_integration_regular_season_invariants_real_warehouse():
     by_abbr = {s["team"]: s for s in league["rows"]["teams"]}
     assert lal["rows"]["summary"] == {k: v for k, v in by_abbr["LAL"].items()
                                       if k != "team"}
-    # Every club's rest gaps, recomputed from one warehouse read: each
-    # team plays exactly 82 scored games and rest never goes negative.
     con = _connect_retry()
     try:
         fetched = con.execute(

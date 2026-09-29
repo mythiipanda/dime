@@ -1,14 +1,3 @@
-"""Single-player season-average fast-path (QA F26) and final-text
-scrubber (QA F34).
-
-F26: "how many assists per game does Jokic average" fell through to the
-planner, which dead-ended in delegate_league -> text_to_sql on a null.
-The season line is seeded for every rostered player, so triage answers
-straight from the warehouse via get_season_averages.
-
-F34: raw exception text (NameError, Traceback) must never reach the
-user-facing narrative; presentation scrubs it to an honest admission.
-"""
 
 import asyncio
 import sys

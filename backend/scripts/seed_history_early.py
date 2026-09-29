@@ -1,19 +1,3 @@
-"""Append-only early-history backfill for seasons 2015-16..2020-21.
-
-Usage: python -m scripts.seed_history_early [--seasons 2010,...,2021]
-End-year keys: 2021 means 2020-21. Reuses the URL scheme, unify() logic,
-and save pattern from seed_history.py without dropping any table.
-
-Safety rules, enforced in code:
-- NEVER removes a table. No table-removal statement exists in this file, and each
-  incoming frame is aligned to the live table schema (ALTER ADD for new
-  columns, NULL fill for missing ones) so store.save_frame never sees a
-  column-set mismatch that would trigger its recreate path.
-- NEVER writes a 2025-26 (end-year 2026) row. Seasons are validated at
-  the CLI boundary and asserted again before every save.
-- Per-season replace scope (entity season:<label>) so reruns converge
-  instead of duplicating rows.
-"""
 
 import argparse
 import sys
@@ -24,7 +8,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 try:
     from seed_history import BASE, DATA, FILES, fetch, season_label, unify
-except ImportError:  # pragma: no cover
+except ImportError:
     from scripts.seed_history import (  # type: ignore[no-redef]
         BASE,
         DATA,
@@ -40,14 +24,6 @@ from shared import store
 
 
 def unify(frames: list) -> list:
-    """Cross-season union that tolerates columns missing from frames[0].
-
-    The shared seed_history.unify indexes frames[0].schema, which throws
-    KeyError when an early-year parquet lacks a column a later year has
-    (seen: hustle return_to_play flags). Dtype for each column comes from
-    the first frame that carries it; numeric-only columns keep their
-    dtype, mixed ones fall back to String.
-    """
     order: dict[str, list[str]] = {}
     for f in frames:
         for name, dtype in f.schema.items():
@@ -72,7 +48,7 @@ def unify(frames: list) -> list:
 EARLIEST = 2010
 LATEST = 2021
 FORBIDDEN = 2026
-HUSTLE_EARLIEST = 2016  # tracking data starts 2015-16; earlier years 404 upstream
+HUSTLE_EARLIEST = 2016
 KNOWN_GAPS = {("silver_hist_hustle", y) for y in range(EARLIEST, HUSTLE_EARLIEST)}
 META_COLS = ("_source", "_season", "_fetched_at", "_entity")
 

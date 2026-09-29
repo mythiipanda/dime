@@ -1,10 +1,3 @@
-"""Pre-game Monte Carlo game prediction.
-
-Analyst-currency estimates (538-style): win probability, projected
-score/total, confidence intervals from warehouse ratings, pace, home
-court, and injuries. Not a betting pick. `get_matchup_preview` keeps
-its no-score-prediction rule; `get_win_prob` stays in-game ELO.
-"""
 
 import ast
 from typing import Any
@@ -171,7 +164,6 @@ def _find_meeting(season: str, ida: int, idb: int,
 def get_game_prediction(a: str = "", b: str = "", game_date: str = "",
                         season: str = SEASON, n_sims: int = DEFAULT_SIMS,
                         seed: int = DEFAULT_SEED) -> dict[str, Any]:
-    """Pre-game Monte Carlo prediction: win probability, projected score/total, and confidence intervals. Model estimates with documented methodology, not betting picks. Two team names/abbrevs/ids; optional game_date (MM/DD/YYYY), n_sims, seed for reproducibility."""
     from .. import store
 
     season = clamp_season(season)
@@ -236,7 +228,6 @@ def get_game_prediction(a: str = "", b: str = "", game_date: str = "",
         return _err("ratings missing for " + ", ".join(missing) +
                     f" (season {season}); cannot simulate without them")
 
-    # Neutral site when the warehouse has no scheduled meeting for the pair.
     neutral = not found
     h_id, aw_id = (home_id or ida), (away_id or idb)
     home_abbr, away_abbr = _abbrev(str(h_id)), _abbrev(str(aw_id))
@@ -247,8 +238,6 @@ def get_game_prediction(a: str = "", b: str = "", game_date: str = "",
     home_ppg = home_per100 * pace / 100
     away_ppg = away_per100 * pace / 100
     hca = 0.0 if neutral else HOME_COURT_PTS
-    # Injury penalty shifts net margin: half off the hurt team's scoring,
-    # half onto the opponent's scoring.
     hp, ap = home_inj["penalty"], away_inj["penalty"]
     home_ppg = home_ppg + hca / 2 - hp / 2 + ap / 2
     away_ppg = away_ppg - hca / 2 + hp / 2 - ap / 2

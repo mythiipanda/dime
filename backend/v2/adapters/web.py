@@ -1,8 +1,3 @@
-"""Provider-neutral web discovery and extraction contracts.
-
-Search results are discovery evidence. Fetching accepts a selected search row,
-not an arbitrary model-authored URL, so publication keeps source identity.
-"""
 from __future__ import annotations
 
 import asyncio
@@ -152,7 +147,6 @@ def _is_public_ip(value: str) -> bool:
 
 
 async def validate_public_url(url: str) -> str:
-    """Reject non-HTTP and hostnames resolving outside the public Internet."""
     parsed = urlparse(url)
     if parsed.scheme not in {"http", "https"} or not parsed.hostname:
         raise ValueError("web source must be an HTTP(S) URL")
@@ -175,11 +169,6 @@ async def validate_public_url(url: str) -> str:
 
 
 class DuckDuckGoSearch:
-    """Best-effort, unofficial DDG discovery through the MIT `ddgs` client.
-
-    DuckDuckGo's official Instant Answer API is not a full search API. Keep
-    this adapter swappable and never describe it as an official API.
-    """
 
     name = "duckduckgo-best-effort"
 
@@ -231,9 +220,7 @@ class DuckDuckGoSearch:
         )
 
 
-
 class JinaReader:
-    """Keyless Reader API fallback for one selected public search result."""
 
     name = "jina-reader"
 
@@ -284,7 +271,6 @@ class JinaReader:
 
 
 class WebSearchCapability:
-    """Discover current sources as typed evidence; snippets are not page facts."""
 
     name = "web_search"
     task_season_scoped = False
@@ -325,7 +311,6 @@ class WebSearchCapability:
 
 
 class WebFetchCapability:
-    """Extract one search-selected result without accepting arbitrary URLs."""
 
     name = "web_fetch"
     task_season_scoped = False

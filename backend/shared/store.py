@@ -1,8 +1,3 @@
-"""Warehouse. DuckDB file with bronze raw plus silver analyst tables.
-
-Provenance columns ride every silver row: _source, _season, _fetched_at.
-Watermarks in fetch_log drive incremental refresh.
-"""
 
 from pathlib import Path
 from contextlib import contextmanager
@@ -110,17 +105,10 @@ def tables(path: Path | str | None = None) -> set[str]:
 
 _PLAYED_GAME_TABLE = "silver_boxscores"
 
-# NBA game-id prefixes: 001 = preseason, 002 = regular season,
-# 004 = playoffs, 005 = play-in.
 _PRESEASON_GAME_ID_PREFIX = "001"
 
 
 def seasons_with_data(table: str = _PLAYED_GAME_TABLE) -> list[str]:
-    """Distinct seasons with played-game rows in the warehouse, ascending.
-
-    Preseason rows are excluded so a preseason-only future season cannot be
-    mistaken for the latest played season.
-    """
     con = duckdb.connect(str(DB_PATH), read_only=True)
     try:
         rows = con.execute(
@@ -134,21 +122,14 @@ def seasons_with_data(table: str = _PLAYED_GAME_TABLE) -> list[str]:
 
 
 def latest_data_season(table: str = _PLAYED_GAME_TABLE) -> str:
-    """Latest season with played-game data in the warehouse.
-
-    Raises ValueError when the warehouse has no played-game rows rather
-    than falling back to a hardcoded season.
-    """
     seasons = seasons_with_data(table)
     if not seasons:
         raise ValueError(f"no played-game rows in warehouse table {table}")
     return seasons[-1]
 
 
-
 @contextmanager
 def write_guard(timeout_s: float = 60.0):
-    """Serialize DuckDB writers across threads and processes."""
     DB_PATH.parent.mkdir(parents=True, exist_ok=True)
     start = time.time()
     with open(LOCK_PATH, "w") as fh:
@@ -174,11 +155,6 @@ def _connect_once(read_only: bool) -> duckdb.DuckDBPyConnection:
     try:
         con = duckdb.connect(str(DB_PATH))
     except duckdb.IOException as exc:
-        # Lock contention ("Conflicting lock is held") is transient: re-raise
-        # so connect() retries instead of silently degrading to a read-only
-        # connection whose writes then fail with a confusing
-        # "attached in read-only mode" error. Only fall back to read-only
-        # for non-lock IO errors (e.g. read-only filesystem).
         if "lock" in str(exc).lower() or "conflict" in str(exc).lower():
             raise
         return duckdb.connect(str(DB_PATH), read_only=True)
@@ -190,10 +166,6 @@ def _connect_once(read_only: bool) -> duckdb.DuckDBPyConnection:
     return con
 
 
-# Transient lock signals: cross-process "Conflicting lock is held"
-# arrives as IOException; same-process read_only-vs-read-write config
-# clash arrives as ConnectionException. Both clear once the transient
-# writer closes its connection, so both are worth retrying.
 _LOCK_ERRORS = (duckdb.IOException, duckdb.ConnectionException)
 _CONNECT_RETRIES = 6
 _CONNECT_BACKOFF_S = 0.2
@@ -308,22 +280,8 @@ def warehouse_pool_clear() -> None:
 
 
 def connect(read_only: bool | None = None) -> duckdb.DuckDBPyConnection:
-    """Open the warehouse, retrying transient file-lock contention.
-
-    DuckDB holds an exclusive file lock while any process keeps a
-    read-write connection open (even idle; read-only opens fail with
-    "Conflicting lock is held" until the writer's connection closes).
-    Seed scripts and the app server both open short-lived write
-    connections, so transient lock contention is normal; retry instead
-    of failing the read. No WAL-mode toggle exists in DuckDB (it is
-    always WAL/MVCC internally); a read replica would be a storage
-    redesign.
-    """
     DB_PATH.parent.mkdir(parents=True, exist_ok=True)
     if read_only is None:
-        # The checked/ignored evaluation warehouse is an immutable asset.
-        # Unclassified callers must not checkpoint it. Configured runtime DBs
-        # retain legacy write behavior until their call sites are classified.
         read_only = DB_PATH.resolve() == CANONICAL_DB_PATH
     if read_only:
         pooled = _pool_acquire()
@@ -347,12 +305,6 @@ def connect(read_only: bool | None = None) -> duckdb.DuckDBPyConnection:
                 pass
             time.sleep(_CONNECT_BACKOFF_S * (2 ** attempt))
         except duckdb.BinderException as exc:
-            # Same-process attach race: two threads duckdb.connect() the
-            # same file at once and the loser gets "Cannot attach
-            # "warehouse" - already attached". Transient - the winner's
-            # attach is visible on retry - so retry like lock contention.
-            # Surfaced as blank shot-diet cells in get_compare when a
-            # zones sub-call swallowed it (test_compare_fastpath flake).
             if "already attached" not in str(exc):
                 raise
             last = exc
@@ -361,9 +313,7 @@ def connect(read_only: bool | None = None) -> duckdb.DuckDBPyConnection:
     raise last
 
 
-
 def state_connect() -> duckdb.DuckDBPyConnection:
-    """Writable operational state, physically separate from benchmark data."""
     STATE_PATH.parent.mkdir(parents=True, exist_ok=True)
     if STATE_PATH.resolve() == CANONICAL_DB_PATH:
         raise PermissionError("operational state cannot target canonical warehouse")
@@ -404,9 +354,6 @@ def save_frame(
     con = connect(read_only=False)
     try:
         with write_guard():
-            # DELETE + INSERT + watermark are one transaction: a crash
-            # mid-save rolls back to the previous complete state instead
-            # of leaving partial rows or a watermark without data.
             con.execute("BEGIN TRANSACTION")
             try:
                 con.register("_incoming", frame.to_arrow())
@@ -470,17 +417,6 @@ _UNIT_DTYPE_SQL = {
 def write_unit(table: str, frame: pl.DataFrame, season: str, source: str,
                entity: str, delete_where: str, delete_params: list,
                _fault: str | None = None) -> int:
-    """Atomically replace one backfill unit: DELETE + INSERT + watermark.
-
-    The DELETE, the INSERT, and the fetch_log watermark write run in a
-    SINGLE transaction. A crash at any point rolls back to the complete
-    previous state: never partial rows, never a watermark without data.
-    A rerun therefore redoes the unit instead of skipping it.
-
-    _fault is a crash-simulation seam for tests: "after_delete" or
-    "after_insert" raises mid-transaction; "hang" sleeps mid-transaction
-    (for kill -9 drills).
-    """
     if frame.height == 0:
         return 0
     from datetime import datetime, timezone
@@ -548,8 +484,6 @@ def write_unit(table: str, frame: pl.DataFrame, season: str, source: str,
 
 
 def read_frame(table: str, where: str = "", params: list[object] | None = None) -> pl.DataFrame:
-    # Reads must never open the frozen warehouse read-write: even transaction-
-    # free DuckDB opens can checkpoint/rewrite physical bytes on close.
     con = connect(read_only=True)
     try:
         if table not in tables():
@@ -562,7 +496,6 @@ def read_frame(table: str, where: str = "", params: list[object] | None = None) 
 
 
 def _read_df(sql: str, params: list, tries: int = 5) -> list[dict[str, object]]:
-    """Warehouse read with retries. Concurrent writers briefly lock the file."""
     import time as _time
 
     last: Exception | None = None
@@ -638,9 +571,6 @@ def chat_history(thread: str, limit: int = 6) -> list[dict[str, str]]:
 
 
 def save_facts(thread: str, facts: list[str], owner: str = "") -> None:
-    """Thread evidence ledger (v2 step 2): verified facts extracted from
-    tool payloads at ship time. Deduped per thread; read back into state
-    on later turns so follow-ups resolve evidence, not just entities."""
     if not thread or not facts:
         return
     con = state_connect()
@@ -805,17 +735,6 @@ def list_runs(thread: str, owner: str = "") -> list[dict]:
 
 def compact_thread(thread: str, keep_recent: int = 4,
                    threshold: int = 12) -> dict:
-    """Fold old turns of a thread into one summary memo row.
-
-    When the thread holds more than `threshold` rows, the oldest rows
-    (all but the newest `keep_recent`) are summarized by the cheapest
-    configured LLM into entities, Q&A pairs, and open items. The
-    summarized rows are deleted and replaced with a single
-    role='summary' row prefixed 'THREAD SUMMARY: '. Prior memo rows
-    age into the summarized set, so a second compact folds the old
-    memo into the new one instead of losing it. LLM failure leaves
-    history untouched and reports compacted False.
-    """
     con = state_connect()
     try:
         tables = {r[0] for r in con.execute("SHOW TABLES").fetchall()}

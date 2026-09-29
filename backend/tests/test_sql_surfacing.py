@@ -1,9 +1,3 @@
-"""Verification surfacing: text_to_sql's executed SQL must travel the full
-pipeline — tool output -> desk trace -> SSE tool_result payload -> UI.
-
-ROADMAP Phase 1 #1 (first half). Hermetic: no network, no LLM, no real
-warehouse.
-"""
 
 import sys
 from pathlib import Path
@@ -36,7 +30,6 @@ def _warehouse_with_standings(tmp_path):
 
 
 def test_text_to_sql_output_carries_executed_sql(monkeypatch, tmp_path):
-    """The real executed SQL lands in a top-level `sql` field."""
     import asyncio
 
     import duckdb

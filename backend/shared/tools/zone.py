@@ -1,16 +1,3 @@
-"""League-wide team shot-zone diet. ROADMAP Phase 2 item 6.
-
-get_team_shot_zones answers "which teams shoot at the rim most?" and
-"what is X's corner-three rate vs league?" from silver_hist_shots.
-
-Zone taxonomy is a five-zone domain table, not scattered conditionals:
-rim (< 8 ft), short mid (8-14 ft), long mid (14 ft+), corner 3, above-break 3.
-Zones are derived geometrically from the warehouse's x_legacy/y_legacy
-(tenths of a foot) because the source table carries no zone labels.
-
-Warehouse-first. No live calls. The source backfill covers completed
-seasons 2009-10 through 2025-26, regular season and playoffs.
-"""
 
 import math
 from typing import Any
@@ -22,9 +9,6 @@ from ._core import SEASON, clamp_season, coerce_team_id
 
 TABLE = "silver_hist_shots"
 
-# Zone taxonomy as an ordered rule table: first matching rule wins.
-# Each rule is (zone_key, predicate(dist_ft, abs_x_ft10, is_three)).
-# x is in tenths of a foot, so |x| >= 220 marks the corner region.
 ZONE_RULES: tuple[tuple[str, Any], ...] = (
     ("rim", lambda dist, ax, three: dist < 8.0),
     ("corner_3", lambda dist, ax, three: three and ax >= 220),
@@ -45,7 +29,6 @@ ZONE_LEGEND = {
 
 
 def zone_of(x: float, y: float, shot_value: int) -> str:
-    """Classify one shot into the five-zone taxonomy. Pure function."""
     try:
         dist = math.hypot(float(x), float(y)) / 10.0
     except (TypeError, ValueError):
@@ -62,7 +45,6 @@ def zone_of(x: float, y: float, shot_value: int) -> str:
 
 
 def season_year(season: str) -> int:
-    """Map '2025-26' to the warehouse's integer season (end year)."""
     return int(clamp_season(season)[:4]) + 1
 
 
@@ -71,11 +53,6 @@ def _blank_zone() -> dict[str, int]:
 
 
 def aggregate_zones(shots: list[dict[str, Any]]) -> dict[int, dict[str, Any]]:
-    """Fold shot dicts into per-team per-zone attempt/make counts.
-
-    Each shot needs team_id, team_abbr, made (bool), and either a
-    precomputed zone or x/y/shot_value to classify. Pure function.
-    """
     teams: dict[int, dict[str, Any]] = {}
     for s in shots:
         tid = s.get("team_id")
@@ -99,7 +76,6 @@ def aggregate_zones(shots: list[dict[str, Any]]) -> dict[int, dict[str, Any]]:
 
 
 def league_baselines(teams: dict[int, dict[str, Any]]) -> dict[str, dict[str, float]]:
-    """Pooled league totals per zone: share of all shots and eFG. Pure."""
     total_fga = sum(z["fga"] for t in teams.values()
                     for z in t["zones"].values())
     out: dict[str, dict[str, float]] = {}
@@ -117,7 +93,6 @@ def league_baselines(teams: dict[int, dict[str, Any]]) -> dict[str, dict[str, fl
 
 def build_rows(teams: dict[int, dict[str, Any]],
                baselines: dict[str, dict[str, float]]) -> list[dict[str, Any]]:
-    """One row per team plus a LEAGUE baseline row. Shares, eFG, deltas in pp."""
     rows: list[dict[str, Any]] = [{
         "team": "LEAGUE", "team_id": 0,
         "shots": sum(b["fga"] for b in baselines.values()),
@@ -145,18 +120,6 @@ def build_rows(teams: dict[int, dict[str, Any]],
 
 
 def _zone_leaders(rows: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
-    """Leader per zone: the team the league desk should name for "who leads
-    this zone" questions.
-
-    Pure function; kept testable so a zone leader can never silently drift
-    back to "the first row scanned". Selection rule: highest
-    {zone}_share_delta_pp among team rows (the LEAGUE baseline row is not
-    eligible). share_delta is the criterion because zone questions are
-    about shot diet (who shoots the most at the rim / from the corner),
-    not efficiency. Ties broken by higher {zone}_share (more of the diet
-    at that zone), then by output order (rows are abbr-sorted, so a full
-    tie keeps the first team alphabetically).
-    """
     out: dict[str, dict[str, Any]] = {}
     for key in ZONE_KEYS:
         best = max(rows,
@@ -203,10 +166,6 @@ def _coverage_bounds() -> str:
 @tool
 def get_team_shot_zones(teams: str = "league",
                         season: str = SEASON) -> dict[str, Any]:
-    """League-wide team shot-zone diet: per-zone attempt share and eFG
-    with league baselines and deltas. teams is "league" or a comma-separated
-    list of team names/abbrevs/ids. Zones: rim, short_mid, long_mid,
-    corner_3, atb_3."""
     season = clamp_season(season)
     year = season_year(season)
     frame = _store.read_frame(TABLE, "season = ?", [year])
@@ -224,7 +183,6 @@ def get_team_shot_zones(teams: str = "league",
         "made": str(r.get("shot_result") or "").lower() == "made",
     } for r in frame.to_dicts() if r.get("team_id") is not None]
     full_agg = aggregate_zones(all_shots)
-    # League baselines always come from every team that season.
     baselines = league_baselines(full_agg)
     agg = {tid: t for tid, t in full_agg.items() if tid in wanted}
     if not agg:

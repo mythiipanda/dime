@@ -1,4 +1,3 @@
-"""Fast offline unit tests. No network, no LLM, no warehouse writes."""
 
 import sys
 from pathlib import Path

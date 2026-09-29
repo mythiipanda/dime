@@ -1,18 +1,3 @@
-"""Correction-opener follow-ups inherit prior-turn context.
-
-A correction follow-up like "no i mean ..." carries no pronouns, so
-the pronoun-carry gate never fires. With history present and no
-entities of its own (after one opener strip), it inherits history
-entities through the same carry mechanism (append to found_p/found_t,
-set carry_note).
-
-Exception (Instinct QA 2026-09-27): a league-leader ask is a complete
-standalone query ("actually best defensive players in the league").
-A correction opener in front of one starts a new topic, so it must
-NOT inherit prior-turn players -- the old behavior carried Wembanyama
-into a league-wide ask, suppressing the league route and steering to
-a named-player path.
-"""
 
 import asyncio
 import sys
@@ -52,8 +37,6 @@ def test_correction_opener_recognized_as_followup():
 
 
 def test_correction_opener_league_ask_skips_player_carry():
-    # Instinct QA repro: a league-wide ask must not inherit Wembanyama
-    # from prior history.
     st = _drain("actually best defensive players in the league",
                 WEMBY_HIST)
     note = st.get("carry_note") or {}
@@ -61,7 +44,6 @@ def test_correction_opener_league_ask_skips_player_carry():
 
 
 def test_correction_opener_still_carries_player_for_fragment():
-    # Genuine fragment follow-ups keep the carry behavior.
     st = _drain("actually, what about last season?", WEMBY_HIST)
     note = st.get("carry_note") or {}
     assert any("Wembanyama" in p for p in note.get("players", [])), note

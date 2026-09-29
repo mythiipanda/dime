@@ -1,5 +1,3 @@
-"""get_game_prediction tests. Pure math is hermetic; warehouse tests
-prove the ratings/injury/schedule wiring against the real warehouse."""
 
 import sys
 from pathlib import Path

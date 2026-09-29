@@ -1,4 +1,3 @@
-"""Provider selection, model clamping, fallback, and health probes."""
 
 from typing import Any, Literal
 from dataclasses import dataclass
@@ -14,16 +13,8 @@ ProviderName = Literal["gemini", "nvidia", "mistral", "openrouter", "inception",
 
 
 class ProviderPolicyError(ValueError):
-    """Requested provider/model is outside the owner-approved policy."""
+    pass
 
-# Inception/Groq reactivation is a two-part gate: explicit policy plus a key.
-# Retained credentials alone never activate them. Gemini and NIM are
-# key-activated free tiers (Tony provided both keys directly).
-# Gemini-first is Tony's own ranking (2026-09-28: he ranked Gemini #1 over
-# NIM). Everything after gemini in the fallback order, and the rate limits
-# below, are crew defaults, not his picks.
-# Gemini (flash-lite) is the workhorse default. Free-tier quota: unverified
-# (screenshot only; confirm from a live API response before publishing numbers).
 FREE_PROVIDER_ORDER: tuple[ProviderName, ...] = ("gemini", "nvidia", "groq", "openrouter", "mistral")
 
 
@@ -36,9 +27,6 @@ def active_provider_order() -> tuple[ProviderName, ...]:
 
 GEMINI_BASE_URL = "https://generativelanguage.googleapis.com/v1beta/openai/"
 GEMINI_DEFAULT = "gemini-3.5-flash-lite"
-# Free tier only: flash-lite is the workhorse; flash is the quality option.
-# Free-tier quotas are unverified (screenshot only; confirm from a live API
-# response before publishing numbers). No Pro models.
 GEMINI_MODELS: tuple[str, ...] = (
     GEMINI_DEFAULT,
     "gemini-3.5-flash",
@@ -52,9 +40,6 @@ NVIDIA_NIM_MODELS: tuple[str, ...] = (
     "deepseek-ai/deepseek-r1",
 )
 NVIDIA_NIM_ALLOWLIST = frozenset(NVIDIA_NIM_MODELS)
-# meta/llama-3.3-70b-instruct parked 2026-09-28: Instinct flagged a
-# possible NVIDIA deprecation (unconfirmed publicly, but the model is
-# being wound down across hosts). Back in only after a live probe passes.
 MISTRAL_DEFAULT = "ministral-8b-2512"
 OPENROUTER_DEFAULT = "nvidia/nemotron-3-super-120b-a12b:free"
 OPENROUTER_AUTO = "openrouter/free"
@@ -63,9 +48,6 @@ GROQ_DEFAULT = "openai/gpt-oss-20b"
 
 OPENROUTER_ALLOWLIST: frozenset[str] = frozenset(
     {
-        # SOTA-class only (Tony's bar): the two Nemotron flagships.
-        # Smaller free models (gemma, qwen, lightning, nano) are out.
-        # `openrouter/free` auto-router stays as the availability fallback.
         "nvidia/nemotron-3-super-120b-a12b:free",
         "nvidia/nemotron-3-ultra-550b-a55b:free",
     }
@@ -73,7 +55,6 @@ OPENROUTER_ALLOWLIST: frozenset[str] = frozenset(
 
 
 def is_free_model(provider: str, slug: str) -> bool:
-    """One authority for whether a Dime model can incur zero paid credits."""
     value = str(slug or "").strip()
     if provider == "gemini":
         return value in GEMINI_ALLOWLIST
@@ -85,8 +66,6 @@ def is_free_model(provider: str, slug: str) -> bool:
     if provider == "groq":
         return value == GROQ_DEFAULT
     if provider == "mistral":
-        # Mistral ids do not carry pricing. The configured owner-approved
-        # free-limit model is the only active choice for this provider.
         return value == (settings.mistral_model or MISTRAL_DEFAULT)
     return False
 
@@ -134,7 +113,6 @@ def _default_provider() -> tuple[ProviderName, str]:
 
 
 def resolve_model_id(model_id: str | None) -> tuple[ProviderName, str]:
-    """Clamp every boundary value to an owner-approved free model."""
     original = model_id or ""
     raw = original.strip()
     if original.startswith("groq:"):
@@ -175,8 +153,6 @@ def resolve_model_id(model_id: str | None) -> tuple[ProviderName, str]:
 
 
 def get_llm(name: ProviderName, model: str | None = None) -> ChatOpenAI | None:
-    # Configured credentials are not activation. Future reactivation needs an
-    # explicit policy change here; direct callers cannot bypass route clamping.
     if name not in active_provider_order():
         return None
     if name == "gemini":
@@ -245,10 +221,8 @@ def get_llm(name: ProviderName, model: str | None = None) -> ChatOpenAI | None:
     )
 
 
-
 @dataclass(frozen=True)
 class ProviderInvocation:
-    """Accepted response plus bounded provider provenance."""
     response: Any
     provider: ProviderName
     model: str
@@ -273,23 +247,15 @@ def _failure_class(exc: BaseException) -> str:
     return "provider_error"
 
 def fallback_order(primary: ProviderName) -> list[ProviderName]:
-    """Global provider priority; explicit model selection never bypasses it."""
     del primary
     return list(active_provider_order())
 
 
-# --- Provider probes (qm pattern: verify, don't assume) -------------
-# A provider that errors in the fallback chain gets probed with a tiny
-# synthetic request (never user data); a fresh FAILED probe skips it in
-# later fallbacks until the TTL expires and it earns a retry. Silent
-# provider drift (quota exhausted, model renamed) used to surface as
-# slow turns failing through the whole chain one by one.
 _PROBE_TTL_S = 600.0
 _probe_state: dict[str, tuple[bool, float]] = {}
 
 
 def probe_verdict(name: str) -> bool | None:
-    """True/False from a fresh probe; None when unknown or stale."""
     import time as _t
 
     got = _probe_state.get(name)
@@ -300,7 +266,6 @@ def probe_verdict(name: str) -> bool | None:
 
 
 async def probe_provider(name: ProviderName) -> bool:
-    """Synthetic liveness probe: 4 tokens, 8s deadline, no user data."""
     import asyncio as _a
     import time as _t
     from langchain_core.messages import HumanMessage as _HM
@@ -322,17 +287,16 @@ async def probe_provider(name: ProviderName) -> bool:
 
 
 def note_provider_failure(name: str) -> None:
-    """Fire-and-forget probe after a live failure; stale OKs re-probe."""
     import asyncio as _a
     import time as _t
 
     got = _probe_state.get(name)
     if got is not None and (_t.time() - got[1]) < 60.0:
-        return  # already probed in the last minute
+        return
     try:
         _a.get_running_loop().create_task(probe_provider(name))
     except RuntimeError:
-        pass  # no loop (sync caller): probe happens on next failure
+        pass
 
 
 async def invoke_with_fallback(
@@ -341,7 +305,6 @@ async def invoke_with_fallback(
     messages: list[BaseMessage],
     **kwargs: Any,
 ) -> ProviderInvocation:
-    """Try providers in order; return response with bounded provenance."""
     attempts: list[dict[str, Any]] = []
     started_all = time.perf_counter()
     for number, name in enumerate(fallback_order(primary), 1):
@@ -394,14 +357,6 @@ async def ainvoke_with_first_token_timeout(
     timeout_s: float,
     **kwargs: Any,
 ):
-    """Bound a non-streaming LLM call with the first-token watchdog.
-
-    A provider that accepts the request but never answers has been seen
-    defeating httpx-level timeouts, so every LLM call in the graph
-    (planning, desks, tools, answers) is bounded here at the asyncio
-    level. Raises TimeoutError; callers record it as a provider failure
-    and move on to the next provider.
-    """
     return await asyncio.wait_for(
         client.ainvoke(messages, **kwargs), timeout_s)
 
@@ -412,14 +367,6 @@ async def _stream_with_first_token_timeout(
     timeout_s: float,
     **kwargs: Any,
 ):
-    """Yield a client's astream chunks, failing fast on a hung provider.
-
-    A provider that accepts the request but never produces a first token
-    has been observed defeating the client's httpx-level timeouts, so the
-    first token is bounded here at the asyncio level, independent of any
-    client configuration. Raises TimeoutError; the caller records it as a
-    provider failure and moves on to the next provider.
-    """
     stream = client.astream(messages, **kwargs)
     try:
         first = await asyncio.wait_for(stream.__anext__(), timeout_s)
@@ -440,7 +387,6 @@ async def _stream_with_first_token_timeout(
 
 
 async def _aclose_quietly(stream: Any) -> None:
-    """Close an async-generator stream, never raising."""
     try:
         aclose = getattr(stream, "aclose", None)
         if aclose is not None:
@@ -449,9 +395,6 @@ async def _aclose_quietly(stream: Any) -> None:
         pass
 
 
-# Public alias: desk and planner paths bind tools per provider, so they
-# cannot use the *_with_fallback streamers directly but still need the
-# same first-token watchdog on their raw client streams.
 stream_with_first_token_timeout = _stream_with_first_token_timeout
 
 
@@ -461,7 +404,6 @@ async def astream_with_fallback(
     messages: list[BaseMessage],
     **kwargs: Any,
 ):
-    """Yield text chunks, trying providers in order. One provider streams."""
     errors: list[str] = []
     for name in fallback_order(primary):
         verdict = probe_verdict(name)
@@ -503,12 +445,6 @@ async def astream_chunks_with_fallback(
     messages: list[BaseMessage],
     **kwargs: Any,
 ):
-    """Yield raw LangChain chunks, trying providers in order.
-
-    Unlike astream_with_fallback this preserves tool_call_chunks so
-    tool-bound calls can stream text tokens live AND still collect
-    tool calls. Yields {"provider": name, "chunk": chunk}.
-    """
     errors: list[str] = []
     for name in fallback_order(primary):
         verdict = probe_verdict(name)
@@ -543,7 +479,6 @@ async def astream_chunks_with_fallback(
 
 
 def accumulate_tool_calls(tc_chunks: list[dict]) -> list[dict]:
-    """Reassemble LangChain tool_call_chunks into [{name, args, id}]."""
     by_idx: dict[int, dict] = {}
     for tc in tc_chunks:
         if not isinstance(tc, dict):
@@ -574,12 +509,6 @@ def accumulate_tool_calls(tc_chunks: list[dict]) -> list[dict]:
 
 
 def resolve_available_model(model_id: str | None) -> tuple[ProviderName, str]:
-    """Clamp a requested model to a provider that is actually usable.
-
-    If the resolved provider has no usable credentials, fall back to the
-    default provider instead of letting the chat graph fail with a generic
-    error.
-    """
     primary, model = resolve_model_id(model_id)
     if get_llm(primary, model) is None:
         primary, model = _default_provider()
@@ -587,7 +516,6 @@ def resolve_available_model(model_id: str | None) -> tuple[ProviderName, str]:
 
 
 def models_catalog() -> dict[str, Any]:
-    """Expose only model options accepted by the same free-model predicate."""
     default_id = f"{_default_provider()[0]}:{_default_provider()[1]}"
     slugs = sorted(slug for slug in OPENROUTER_ALLOWLIST
                    if is_free_model("openrouter", slug))

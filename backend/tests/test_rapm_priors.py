@@ -1,8 +1,3 @@
-"""Multi-season RAPM prior tests. Pure math always runs.
-
-Warehouse reads are read-only. Tests touching silver_rapm_prior
-return early when the coordinator has not seeded it yet.
-"""
 
 import sys
 from pathlib import Path

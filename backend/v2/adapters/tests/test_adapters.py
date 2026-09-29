@@ -1,4 +1,3 @@
-"""Hermetic adapter tests: recorded v1 payloads in, EvidenceEnvelopes out."""
 from datetime import datetime, timezone
 
 import pytest
@@ -15,7 +14,6 @@ from v2.contracts import EntityRef, EvidenceEnvelope
 
 
 class FakeTool:
-    """Mimics a sync langchain StructuredTool."""
 
     def __init__(self, payload):
         self.payload = payload
@@ -28,7 +26,6 @@ class FakeTool:
 
 
 class FakeAsyncTool:
-    """Mimics an async-only langchain StructuredTool (e.g. get_compare)."""
 
     def __init__(self, payload):
         self.payload = payload

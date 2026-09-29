@@ -1,4 +1,3 @@
-"""Agent Skills discovery and progressive disclosure."""
 from __future__ import annotations
 
 import hashlib
@@ -63,7 +62,6 @@ class Skill:
 
 
 class SkillLibrary:
-    """Discover standard `<skill>/SKILL.md` packages under one root."""
 
     def __init__(self, root: str | Path | None = None) -> None:
         self.root = Path(root) if root else Path(__file__).with_name("skills")

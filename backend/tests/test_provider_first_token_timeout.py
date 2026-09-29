@@ -1,10 +1,3 @@
-"""First-token timeout on provider streaming (P0: chat hangs in prod).
-
-Hermetic: fake clients, no network. A provider whose astream never yields
-(e.g. the hung NIM endpoint seen in prod) must fail fast at the asyncio
-level, get recorded as a provider failure, and let the fallback chain move
-on -- instead of holding the whole turn hostage.
-"""
 
 import asyncio
 import sys
@@ -22,14 +15,13 @@ class _Chunk:
 
 
 class _HangClient:
-    """Accepts the request, never produces a token."""
 
     def __init__(self, hang_s=3600):
         self.hang_s = hang_s
 
     async def astream(self, messages, **kwargs):
         await asyncio.sleep(self.hang_s)
-        yield _Chunk("never")  # pragma: no cover
+        yield _Chunk("never")
 
 
 class _OKClient:
@@ -43,7 +35,6 @@ class _OKClient:
 
 
 class _EmptyFirstClient:
-    """Yields an empty first chunk, then streams text (connection healthy)."""
 
     async def astream(self, messages, **kwargs):
         yield _Chunk("")
@@ -53,7 +44,7 @@ class _EmptyFirstClient:
 class _BoomClient:
     async def astream(self, messages, **kwargs):
         raise RuntimeError("quota exhausted")
-        yield _Chunk("never")  # pragma: no cover
+        yield _Chunk("never")
 
 
 def _setup(monkeypatch, clients, timeout_s=0.3):
@@ -81,9 +72,6 @@ def test_hanging_provider_fails_fast(monkeypatch):
         assert "all providers failed" in str(exc)
         assert "no first token" in str(exc)
         assert "p1" in str(exc)
-    # probe_verdict is stubbed to None in _setup (so the fallback loop always
-    # proceeds); the failure is recorded by the note_provider_failure stub,
-    # which writes (ok, ts) into _probe_state. Check the recorded state.
     ok, _ts = prov._probe_state.get("p1", (None, None))
     assert ok is False, "hanging provider was not recorded as a failure"
 
@@ -106,7 +94,6 @@ def test_chunks_variant_also_fails_fast(monkeypatch):
 
 
 def test_empty_first_chunk_counts_as_progress(monkeypatch):
-    """A connection that yields an (empty) chunk is not hung: no timeout."""
     _setup(monkeypatch, {"p1": _EmptyFirstClient}, timeout_s=0.3)
     chunks = asyncio.run(_drain_text("p1"))
     assert chunks == [{"provider": "p1", "text": "fine"}]

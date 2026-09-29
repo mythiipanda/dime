@@ -1,18 +1,3 @@
-"""Lineup-vs-lineup matchup matrix for a team pairing.
-
-For a playoff-series style question ("which five of ours beats which five of
-theirs?"), cross every qualifying 5-man unit of team A against every
-qualifying unit of team B head-to-head over shared possessions from
-silver_hist_possessions: shared minutes, net rating in those minutes, and
-sample-size flags.
-
-The warehouse holds no true head-to-head clock-minutes table, so shared
-minutes are estimated as poss/2 (~2 possessions per minute). That honesty is
-carried in the flags, the meta notes, and the tool docstring: nothing here is
-play-clock minutes. Lineup qualification uses season possession totals from
-verified play-level data; silver_lineups MIN comes from a partial upstream
-fetch and is used for unit names only.
-"""
 
 from typing import Any
 
@@ -200,7 +185,6 @@ def _truncate_note(total: int, shown: int) -> str:
 
 
 def _surname_map(season: str) -> dict[int, str]:
-    """Map player id -> surname for one season. Warehouse nicety only."""
     try:
         rows = _store._read_df(
             "SELECT player_id, player_name FROM silver_hist_player_seasons"
@@ -300,14 +284,6 @@ def get_lineup_matchup_matrix(
     team_a: str, team_b: str, min_minutes: float = 10,
     season: str = SEASON,
 ) -> dict[str, Any]:
-    """Lineup-vs-lineup matrix for a team matchup. Names, abbrevs, or ids.
-
-    Crosses every qualifying 5-man unit of team A against every qualifying
-    unit of team B over their shared play-level possessions: shared minutes,
-    net rating in those minutes, sample-size flags. Lineups qualify at
-    min_minutes season minutes (poss/2); shared minutes are estimated from
-    possessions (~2 per minute), never play-clock minutes.
-    """
     season = clamp_season(season)
     try:
         aid = coerce_team_id(team_a)

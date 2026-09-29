@@ -1,4 +1,3 @@
-"""SSE framing. Copied pattern from proven stack. No logic lives here."""
 
 from collections.abc import AsyncGenerator, AsyncIterator
 from typing import Any

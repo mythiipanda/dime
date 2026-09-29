@@ -497,7 +497,6 @@ def test_bare_display_source_is_not_inferred_as_live_provenance():
     assert item.source=='v1:get_ratings:nba_api' and item.source_identity is None
 
 
-
 def _admission_target(seed: str = "a"):
     from v2.contracts import AdmissionReviewTarget
     return AdmissionReviewTarget(
@@ -581,7 +580,6 @@ def test_block_requires_typed_finding_or_unresolved_reference():
     assert blocked.findings[0].code == "subject_mismatch"
 
 
-
 def test_season_admission_subject_reuses_canonical_season_invariant():
     from v2.contracts import SeasonAdmissionSubject
     assert SeasonAdmissionSubject(kind="season", value="2025-26").value == "2025-26"
@@ -595,8 +593,6 @@ def test_unresolved_block_requires_source_bound_unresolved_reference():
                               UnresolvedReference)
     subject = _entity_subject()
     with pytest.raises(ValidationError):
-        # `unresolved_reference` is intentionally not a finding code: a code
-        # without a source locator cannot establish an unresolved referent.
         IntakeAdmissionReview(
             target=_admission_target(), decision="block",
             expected_subjects=[subject],

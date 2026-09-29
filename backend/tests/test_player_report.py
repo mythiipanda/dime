@@ -1,4 +1,3 @@
-"""Multi-part player asks should answer every requested dimension."""
 import asyncio
 import sys
 from pathlib import Path

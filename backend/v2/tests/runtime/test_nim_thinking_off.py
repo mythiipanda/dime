@@ -112,7 +112,6 @@ def _clear_provider_keys(monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setattr(settings, attr, "")
 
 
-# (a) the thinking-off setting is on every NIM structured request -----------
 @pytest.mark.anyio
 async def test_thinking_off_body_sent_on_nim_request():
     captured: list[dict[str, Any]] = []
@@ -237,7 +236,6 @@ async def test_generate_sends_thinking_off_wire_body(
     assert captured[0]["chat_template_kwargs"] == {"enable_thinking": False}
 
 
-# (b) no model-name branching (static check) ---------------------------------
 def test_no_model_name_branching_in_thinking_off_wiring():
     source = (
         Path(__file__).resolve().parents[2] / "adapters" / "models.py"
@@ -256,7 +254,6 @@ def test_no_model_name_branching_in_thinking_off_wiring():
     assert 'thinking_off=(provider == "nvidia")' in source
 
 
-# (c) promotion fallback still intact -----------------------------------------
 @pytest.mark.anyio
 async def test_promotion_still_applies_with_thinking_off():
     captured: list[dict[str, Any]] = []

@@ -1,9 +1,3 @@
-"""search_shots tests.
-
-Pure helpers are tested without the warehouse. Integration tests call the
-tool itself against the real silver_shots warehouse (2025-26, 233,632 rows)
-via search_shots.invoke -- no network, no mocks.
-"""
 
 import sys
 import time
@@ -138,7 +132,6 @@ def test_is_heave_boundary():
 
 
 def test_efficiency_efg_math():
-    # 2/4 with one three: (2 + 0.5) / 4 = 0.625.
     assert efficiency(4, 2, 1) == {"fg_pct": 0.5, "efg_pct": 0.625}
     assert efficiency(0, 0, 0) == {"fg_pct": 0.0, "efg_pct": 0.0}
 
@@ -205,10 +198,6 @@ def test_seconds_left_and_clock_format():
     assert format_clock(None, None) == "unknown"
 
 
-# ---------------------------------------------------------------------------
-# Integration tests against the real warehouse (2025-26 silver_shots).
-
-
 def test_tool_tatum_corner3_4th_matches_verified_numbers():
     _require_full_shot_pack()
     res = search_shots.invoke(
@@ -218,7 +207,6 @@ def test_tool_tatum_corner3_4th_matches_verified_numbers():
     assert agg["attempts"] == 5
     assert agg["makes"] == 3
     assert agg["efg_pct"] == 0.9
-    # S2: tiny sample must be flagged.
     assert agg["small_sample"] is True
     assert "sample_warning" in res["meta"]
 
@@ -238,12 +226,12 @@ def test_tool_group_by_player_leaderboard():
     res = search_shots.invoke({"periods": "4th", "group_by": "player"})
     assert res["ok"] is True
     rows = res["by_player"]
-    assert len(rows) > 100  # league-wide scan, one call
+    assert len(rows) > 100
     attempts = [r["attempts"] for r in rows]
     assert attempts == sorted(attempts, reverse=True)
     top = rows[0]
     assert top["player_id"]
-    assert top["player"]  # full name resolved
+    assert top["player"]
     assert top["efg_pct"] > 0
     assert "small_sample" in top
     assert res["filters"]["group_by"] == "player"
@@ -269,7 +257,6 @@ def test_tool_4th_includes_ot_by_default():
     assert no_ot["filters"]["include_ot"] is False
     assert "OT" in default["filters"]["periods"]
     assert "OT" not in no_ot["filters"]["periods"]
-    # OT bucket present by default (the season has OT games).
     assert any(r["period"] == "OT" for r in default["by_period"])
     assert not any(r["period"] == "OT" for r in no_ot["by_period"])
 
@@ -285,7 +272,7 @@ def test_tool_disambiguation_returns_candidates():
     assert attempts == sorted(attempts, reverse=True)
     for c in cands:
         assert c["player_id"]
-        assert c["player"]  # full name, not just last name
+        assert c["player"]
         assert isinstance(c["teams"], list) and c["teams"]
         assert "small_sample" in c
 
@@ -318,7 +305,6 @@ def test_tool_conflicting_filters_explain_zero_rows():
     assert res["aggregate"]["attempts"] == 0
     assert "note" in res["meta"]
     assert "late_clock" in res["meta"]["note"]
-    # Generic zero-match also explains instead of silent zeros.
     res2 = search_shots.invoke({"player": "Tatum", "periods": "1",
                                 "late_clock": "5", "made": "made",
                                 "zones": "corner_3", "three_only": True})
@@ -343,7 +329,6 @@ def test_tool_sample_rows_are_a_season_mix():
     assert len(shots) == 25
     gids = [s["game_id"] for s in shots]
     assert len(set(gids)) > 1
-    # Not reverse-chronological (the old latest-GAME_IDs-first skew).
     assert gids != sorted(gids, reverse=True)
 
 
@@ -357,9 +342,6 @@ def test_tool_performance_smoke():
     assert res["aggregate"]["attempts"] > 20000
     assert elapsed < 2.0, f"search_shots took {elapsed:.2f}s"
 
-
-# ---------------------------------------------------------------------------
-# Appended tests for the rewritten shots.py. Existing tests above are untouched.
 
 from shared.tools.shots import (SMALL_SAMPLE_MIN, _AGG_SELECT, _three_sql,
                              _where_sql, _zone_case_sql)
@@ -409,14 +391,9 @@ def test_new_where_sql_ot_late():
     assert "PERIOD >= 5" in sql_on
     sql_off, _ = _where_sql("2025-26", None, None, wanted, {4}, 300,
                             False, "any", False)
-    # With an explicit period filter the canonical late clause is PERIOD >= 4
-    # and the period clause pins the exact periods, so include_ot=no never
-    # produces PERIOD = 4 in the late clause when a filter is present...
     assert "PERIOD >= 4" in sql_off
     assert "PERIOD = 4" not in sql_off
     assert "PERIOD >= 5" not in sql_off
-    # ...but with no explicit period filter, include_ot=no still narrows
-    # late to exactly the 4th quarter.
     sql_none_off, _ = _where_sql("2025-26", None, None, wanted, None, 300,
                                  False, "any", False)
     assert "PERIOD = 4" in sql_none_off
@@ -547,11 +524,6 @@ def test_performance_smoke():
     assert elapsed < 2.0, f"search_shots took {elapsed:.2f}s"
 
 
-# ---------------------------------------------------------------------------
-# Regression tests: periods='ot' + late_clock (auto include_ot must stay on,
-# late filter must apply to the folded OT set, zero-row combos keep notes).
-
-
 def test_ot_late_clock_returns_rows_note_free():
     res = search_shots.invoke({"periods": "ot", "late_clock": "60"})
     assert res["ok"] is True
@@ -559,7 +531,6 @@ def test_ot_late_clock_returns_rows_note_free():
     assert res["filters"]["periods"] == ["OT"]
     assert res["aggregate"]["attempts"] > 0
     assert "note" not in res["meta"]
-    # Every aggregate bucket and sample row is OT-only.
     assert all(r["period"] == "OT" for r in res["by_period"])
     assert all(s["period"] is not None and s["period"] >= 5
                for s in res["shots"])
@@ -586,8 +557,6 @@ def test_late_clock_applies_to_folded_set_no_ot_leak():
 def test_late_clock_ot_only_sql_targets_folded_set():
     sql, _ = _where_sql("2025-26", None, None, set(ZONE_KEYS), {5}, 60,
                         False, "any", True)
-    # OT is in the folded set, so the late filter must reach OT (PERIOD >= 5)
-    # and never pin PERIOD = 4.
     assert "PERIOD >= 5" in sql
     assert "PERIOD = 4" not in sql
 

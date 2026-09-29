@@ -1,13 +1,3 @@
-"""F66 deterministic deep-compare lane.
-
-"Compare the top 3 scoring teams: total points, per-game average, and
-how many games each won" escaped every pin, fanned out through
-delegate_league, and shipped a NAMELESS table with empty cells and
-invented numbers (benchmark f66-deep-compare). v67 lesson: no more
-LLM-lane patching - get_team_compare joins the deduped team-totals
-board with standings records in one payload, and compose ships
-meta.deterministic_answer verbatim.
-"""
 
 import asyncio
 import sys
@@ -114,8 +104,6 @@ _COMPARE_TR = [{"tool": "get_team_compare",
 
 
 def test_deterministic_answer_ships_verbatim():
-    # Feed compose a degenerate LLM narrative; the payload-built
-    # sentence must ship untouched.
     out = _present(
         "Compare the top 3 scoring teams: total points, per-game "
         "average, and how many games each won",

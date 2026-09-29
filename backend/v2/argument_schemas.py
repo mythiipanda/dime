@@ -1,4 +1,3 @@
-"""Offline compiler and explicit provider-wire schema normalizer."""
 from __future__ import annotations
 import copy,hashlib,json,re
 from typing import Any
@@ -33,7 +32,6 @@ def _nullable(schema):
  if branches and any(x.get('type')=='null' for x in branches):return schema
  return {'anyOf':[schema,{'type':'null'}]}
 def normalize_provider_wire_schema(source):
- """Normalize only an explicit all-slots provider wire codec, never arbitrary domain schemas."""
  inlined=_inline(copy.deepcopy(source),source,(),'$');losses=[]
  def walk(v,path='$'):
   if isinstance(v,list):return [walk(x,path+'[]') for x in v]

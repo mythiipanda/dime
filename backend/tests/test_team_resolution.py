@@ -1,11 +1,3 @@
-"""Team-name resolution regression tests.
-
-'Celtics', 'BOS', and 'Boston Celtics' must resolve to the SAME team
-entity end to end: _detect_entities, _direct_named_teams, and _team_row.
-Abbreviation matching stays case-sensitive (F68/F69): lowercase 'bos'
-/ 'was' must not resolve. Deterministic and hermetic: static tables
-only, no warehouse, no LLM, no network.
-"""
 
 import sys
 from pathlib import Path
@@ -65,7 +57,6 @@ def test_team_row_unified_abbr_rows():
 
 
 def test_abbreviation_guard_stays_case_sensitive():
-    # F68/F69: lowercase must never read as an abbreviation.
     assert "Boston Celtics" not in _detect_entities(
         "What is the bos record?")[1]
     assert _team_row(ABBR_ROWS, "bos") is None

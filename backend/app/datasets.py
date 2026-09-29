@@ -1,4 +1,3 @@
-"""Dataset boundary. Warehouse first, live on miss, provenance always."""
 
 import io
 import time
@@ -14,11 +13,6 @@ from shared.sources.base import FetchResult
 
 router = APIRouter()
 
-# In-memory cache for the freshness endpoint. The warehouse only changes
-# when a fetch/seed run writes new rows, so a short TTL is safe; each
-# cached row already carries its own last_fetch, so the payload is
-# self-describing and never presents stale data as fresh. Per-worker
-# (uvicorn) cache is fine: every worker just warms its own copy once.
 _FRESHNESS_TTL_S = 300
 _FRESHNESS_CACHE = {"at": 0.0, "payload": None}
 
@@ -90,8 +84,6 @@ def _envelope(table: str, season: str, frame: object, cached: bool) -> dict:
         meta["fetched_at"] = frame["_fetched_at"][0]
     rows = frame.to_dicts()
     if table.startswith("silver_leaders_"):
-        # Pin the stat column after the identity columns so capped table
-        # renderers (12-col cap) keep it visible (QA F8, Explore tab).
         stat_col = table.rsplit("_", 1)[-1].upper()
         if stat_col == "FG":
             stat_col = "FG_PCT"
@@ -103,10 +95,6 @@ def _envelope(table: str, season: str, frame: object, cached: bool) -> dict:
             pinned.append(keyed)
         rows = pinned
     if table == "silver_standings":
-        # Pin the overall record ahead of ConferenceRecord/DivisionRecord:
-        # the 12-col render cap used to cut before WINS/LOSSES, so the
-        # Explore standings panel showed "41-11" (conference record) as
-        # the only record column while the team was 64-18 overall.
         pin = ["TeamCity", "TeamName", "Conference", "Record",
                "WINS", "LOSSES", "WinPCT", "PlayoffRank",
                "ClinchIndicator"]
@@ -221,13 +209,10 @@ def dataset(
         entity = f"wowy:{ids}"
     frame = store.read_frame(table, "_season = ?", [season])
     if name == "leaders" and frame.height > 0:
-        # Warehouse storage order is arbitrary; leaders must come back
-        # ranked or the Top-10 chart and table drop or bury leaders.
         stat_col = clamp_stat(stat)
         if stat_col in frame.columns:
             frame = frame.sort(stat_col, descending=True, nulls_last=True)
     if entity_scoped:
-        # Warehouse-first per entity; never force a live call when seeded.
         if entity:
             try:
                 frame = store.read_frame(
@@ -242,7 +227,6 @@ def dataset(
         if live is None:
             return {"ok": False, "error": "missing id param for this dataset"}
         if not live.ok:
-            # Honest attribution: name the failed live source, then stale-fallback.
             stale = None
             if entity_scoped and entity:
                 try:
@@ -268,9 +252,6 @@ def dataset(
             frame = store.read_frame(table, "_season = ?", [season])
     if (name in ("player_gamelogs", "team_games", "playoff_gamelogs")
             and frame.height > 0 and "GAME_DATE" in frame.columns):
-        # Warehouse storage order is arbitrary; game logs must come back
-        # newest-first by REAL date or the panel's "recent" slice quietly
-        # shows December string-sort order (QA F19).
         for fmt_s in ("%b %d, %Y", "%Y-%m-%d"):
             try:
                 frame = frame.with_columns(
@@ -288,10 +269,6 @@ def dataset(
                     frame = frame.drop("_d")
                 continue
     if name in ("player_gamelogs", "team_games", "playoff_gamelogs") and frame.height > 0:
-        # The warehouse is append-seeded and different seeds use
-        # different Game_ID formats for the same game; collapse
-        # duplicates at read time or the panels render the identical
-        # row N times (QA: the same stat row showed 5x).
         from shared.tools.gamelog import dedupe_game_log_frame
 
         frame = dedupe_game_log_frame(frame)

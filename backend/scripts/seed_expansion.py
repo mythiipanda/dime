@@ -1,8 +1,3 @@
-"""Expand seed coverage: lineups (1->30 teams), gamelogs (3->50 players), on_off (1->30 players).
-
-Usage: python3 scripts/seed_expansion.py (run from backend/)
-Runs in background; idempotent (skips already-seeded entities).
-"""
 import sys
 import time
 from pathlib import Path
@@ -41,7 +36,6 @@ def _seeded_entities(table: str) -> set:
 
 
 def main() -> None:
-    # 1. Lineups for all 30 teams
     print("=== lineups ===", flush=True)
     seeded = _seeded_entities("silver_lineups")
     print(f"already seeded: {len(seeded)}", flush=True)
@@ -68,7 +62,6 @@ def main() -> None:
         time.sleep(1)
     print(f"lineups seeded: {done} new teams", flush=True)
 
-    # 2. Gamelogs for top 50 scorers
     print("=== gamelogs ===", flush=True)
     seeded = _seeded_entities("silver_player_gamelogs")
     print(f"already seeded: {len(seeded)}", flush=True)
@@ -98,7 +91,6 @@ def main() -> None:
         time.sleep(1)
     print(f"gamelogs seeded: {done} new players", flush=True)
 
-    # 3. On/off for top 30 by minutes (pbpstats is slower, keep it small)
     print("=== on_off ===", flush=True)
     seeded = _seeded_entities("silver_on_off")
     print(f"already seeded: {len(seeded)}", flush=True)
@@ -115,7 +107,6 @@ def main() -> None:
             [SEASON]).fetchall()
     finally:
         con.close()
-    # need team ids
     try:
         from nba_api.stats.static import teams as _teams
         tabbr = {t["abbreviation"]: t["id"] for t in _teams.get_teams()}

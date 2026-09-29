@@ -1,14 +1,3 @@
-"""Record-computation regression tests for search_game_logs.
-
-Root cause: rows.record summed WL over matched warehouse rows with no
-Game_ID. A re-seed storing one game twice doubled the record, and the
-unlabeled record let callers merge regular and playoff outputs
-silently. Live case: "Denver's record when Jokic plays" must read
-43-22 over 65, never 65-65 over 130.
-
-Pure-helper tests are hermetic. Two integration tests run the real
-tool read-only against the local warehouse. No LLM, no network.
-"""
 
 import datetime as _dt
 import sys
@@ -29,7 +18,6 @@ def _row(gid, wl, pts=20.0):
 
 
 def _full_row(gid, wl, date, pts=20.0, pid=2544, matchup="LAL vs. UTA"):
-    """A _load_games-shaped row: entity + date + full stat columns."""
     d = _dt.date.fromisoformat(date)
     return {
         "player_id": pid, "game_id": gid, "date": d, "matchup": matchup,
@@ -41,9 +29,6 @@ def _full_row(gid, wl, date, pts=20.0, pid=2544, matchup="LAL vs. UTA"):
 
 
 def test_dedupe_collapses_duplicate_game_id():
-    # Game identity is entity + date + matchup (Game_ID formats differ
-    # across seeds, so Game_ID alone is not identity). Same-game rows
-    # collapse; the different-date row is a different game and is kept.
     rows = [_full_row("0022500001", "W", "2026-03-01"),
             _full_row("0022500001", "W", "2026-03-01"),
             _full_row("0022500002", "L", "2026-03-03")]
@@ -54,40 +39,30 @@ def test_dedupe_collapses_duplicate_game_id():
 
 
 def test_dedupe_keeps_distinct_rows_without_game_id():
-    # Distinct games (different dates) with no Game_ID are kept.
     rows = [_full_row(None, "W", "2026-03-01"),
             _full_row(None, "W", "2026-03-02")]
     assert len(_dedupe_games(rows)) == 2
 
 
 def test_dedupe_collapses_identical_rows_without_game_id():
-    # Re-seed duplicate with no Game_ID collapses on the stat signature.
     rows = [_full_row(None, "W", "2026-03-01"),
             _full_row("", "W", "2026-03-01")]
     assert len(_dedupe_games(rows)) == 1
 
 
 def test_dedupe_collapses_cross_seed_game_id_formats():
-    # Same game seeded twice by different sources: NBA id "0022500001"
-    # vs bbref id "202603010LAL". Identical stat signature -> one row.
     rows = [_full_row("0022500001", "W", "2026-03-01"),
             _full_row("202603010LAL", "W", "2026-03-01")]
     assert len(_dedupe_games(rows)) == 1
 
 
 def test_dedupe_keeps_same_statline_different_players():
-    # League-wide loads every player; two players' rows for the SAME game
-    # share one Game_ID, so the id key is entity-scoped and the stat
-    # signature carries player_id too. Nothing merges across players.
     rows = [_full_row("g1", "W", "2026-03-01", pid=2544),
             _full_row("g1", "W", "2026-03-01", pid=201939)]
     assert len(_dedupe_games(rows)) == 2
 
 
 def test_dedupe_frame_collapses_cross_seed_duplicates():
-    # Frame-level read-time dedupe for the datasets endpoints: 5
-    # identical rows with different Game_ID formats collapse to one,
-    # a genuinely different game is kept, and row order is preserved.
     try:
         import polars as pl
     except ImportError:
@@ -101,14 +76,13 @@ def test_dedupe_frame_collapses_cross_seed_duplicates():
                 "_fetched_at": "2026-09-27", "_entity": "player:2544"}
 
     rows = [r("0022500001", "Mar 1, 2026", 30),
-            r("202603010LAL", "Mar 1, 2026", 30),   # cross-seed dupe
-            r(None, "Mar 1, 2026", 30),              # no-id dupe
-            r("0022500002", "Mar 3, 2026", 30),      # distinct game
-            r("0022500002", "Mar 3, 2026", 30)]      # same-id dupe
+            r("202603010LAL", "Mar 1, 2026", 30),
+            r(None, "Mar 1, 2026", 30),
+            r("0022500002", "Mar 3, 2026", 30),
+            r("0022500002", "Mar 3, 2026", 30)]
     out = dedupe_game_log_frame(pl.DataFrame(rows))
     assert out.height == 2
     assert out["GAME_DATE"].to_list() == ["Mar 1, 2026", "Mar 3, 2026"]
-    # Non game-log frames pass through untouched.
     other = pl.DataFrame({"a": [1, 1, 2]})
     assert dedupe_game_log_frame(other).height == 3
 

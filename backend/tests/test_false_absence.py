@@ -1,6 +1,3 @@
-"""F65: false absence claims. A sentence claiming an entity's data is
-missing/unavailable while that entity sits in this turn's payloads is
-an evidence-window artifact - drop the sentence, keep the rest."""
 
 import sys
 from pathlib import Path
@@ -42,9 +39,6 @@ def test_scrub_based_on_available_league_data():
 
 
 def test_newlines_preserved():
-    # QA F65: the sweep used to rejoin every segment with spaces,
-    # flattening markdown tables/headings/lists into one line so the UI
-    # rendered the source literally ("| Metric | ...", "###", "* *").
     text = ("Here is the comparison:\n\n"
             "| Metric | Luka | SGA |\n|---|---|---|\n"
             "| PPG | 33.5 | 31.1 |\n\n"
@@ -63,8 +57,6 @@ def test_drop_keeps_line_structure():
 
 
 def test_standings_best_record_ledger_fact():
-    # QA F67: "best record" -> "their best player" chain dead-ended
-    # because the ledger carried nothing from get_standings.
     from app.graph import _extract_ledger_facts
     rows = [{"team": "Oklahoma City Thunder", "abbrev": "OKC",
              "WINS": 64, "LOSSES": 18, "Record": "64-18",
@@ -79,8 +71,6 @@ def test_standings_best_record_ledger_fact():
 
 
 def test_tool_output_prefix_stripped_before_tool_sentence_drop():
-    # "Based on the Get Standings output, ..." must lose the prefix
-    # BEFORE the tools/errors sentence-drop, not lose the sentence.
     from app.graph import _scrub_final_text
     out = _scrub_final_text(
         "Based on the Get Standings output, the Oklahoma City Thunder "
@@ -93,9 +83,6 @@ def test_tool_output_prefix_stripped_before_tool_sentence_drop():
 
 
 def test_text_to_sql_attaches_player_names():
-    # F63: a team-wide playoff gamelog pull returns Player_ID but no
-    # name column, and compose dead-ended on "no individual player
-    # statistics by name". Names must be attached from the static list.
     from shared.tools.league import _attach_player_names
     rows = [{"Player_ID": 1629638, "PTS": 35, "MATCHUP": "SAS @ DEN"}]
     _attach_player_names(rows)
@@ -103,4 +90,4 @@ def test_text_to_sql_attaches_player_names():
     named = [{"Player_ID": 1, "PLAYER": "Already Named", "PTS": 10}]
     _attach_player_names(named)
     assert named[0]["PLAYER"] == "Already Named"
-    _attach_player_names([])  # no-op, no raise
+    _attach_player_names([])

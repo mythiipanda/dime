@@ -96,7 +96,6 @@ def test_streaming_groq_uses_same_gated_fixed_client(monkeypatch):
     assert asyncio.run(collect()) == [{"provider":"groq","text":"ok"}]
 
 
-
 def test_structured_groq_client_is_fixed_one_attempt_and_activation_gated(monkeypatch):
     monkeypatch.setattr(settings,"dime_enable_inception",False)
     monkeypatch.setattr(settings,"dime_enable_groq",False)

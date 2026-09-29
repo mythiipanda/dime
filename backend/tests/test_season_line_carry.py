@@ -1,9 +1,3 @@
-"""F64: cross-turn "compare that to his season average" must answer
-from the full season line, not a partial game-log window (live 5:17 PM
-repro: Brunson "28 PPG across 13 complete games" shipped as his season
-average while the 64-game season line exists). The player arrives by
-pronoun carry, so the direct-name season-avg pin never fires.
-"""
 
 import asyncio
 import sys
@@ -59,8 +53,6 @@ def test_playoff_average_stays_off_season_pin():
 
 
 def test_answer_mention_does_not_dilute_user_subject():
-    # F64: the user asked about Brunson; an ANSWER that also mentions
-    # Luka must not break the one-carried-player gate.
     hist = HIST + [{"role": "ai",
                     "text": "Luka Dončić is at 33.5 this year."}]
     st = _drain("Compare that to his season average", hist)
@@ -69,8 +61,6 @@ def test_answer_mention_does_not_dilute_user_subject():
 
 
 def test_two_user_named_players_no_pin():
-    # Genuine ambiguity: the USER named two players across turns, so
-    # "his" has no single referent and the pin must not fire.
     hist = HIST + [{"role": "human",
                     "text": "And what about Luka Dončić?"},
                    {"role": "ai",

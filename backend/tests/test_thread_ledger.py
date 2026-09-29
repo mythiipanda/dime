@@ -1,9 +1,3 @@
-"""Thread evidence ledger (v2 step 2, F62/F63).
-
-Facts are extracted from tool PAYLOADS at ship time (never LLM text),
-persisted per-thread, and injected into later turns' planner and
-analytics context so follow-ups resolve evidence, not just entities.
-"""
 
 import asyncio
 import os
@@ -61,7 +55,6 @@ def test_extract_single_game_line_only():
     facts = _extract_ledger_facts({"tool_results": [GAMELOG_SINGLE]})
     assert facts == ["Jalen Brunson on 2026-06-13 (NYK @ SAS): "
                      "45 pts, 3 reb, 3 ast"]
-    # multi-match with no narrowing filter records nothing specific
     assert _extract_ledger_facts({"tool_results": [GAMELOG_MANY]}) == []
 
 
@@ -75,7 +68,7 @@ def test_store_roundtrip_and_dedupe(monkeypatch, tmp_path):
     monkeypatch.setattr(store, "STATE_LOCK_PATH", tmp_path / ".state.lock")
     tid = f"test-ledger-{os.getpid()}"
     store.save_facts(tid, ["Fact A", "Fact B"], owner="test")
-    store.save_facts(tid, ["Fact A"], owner="test")  # dupe
+    store.save_facts(tid, ["Fact A"], owner="test")
     facts = store.thread_facts(tid)
     assert facts == ["Fact A", "Fact B"]
     assert store.thread_facts("") == []
@@ -107,8 +100,6 @@ def test_presentation_emits_ledger_facts_event():
 
 
 def test_extract_handles_pin_wrapped_payloads():
-    # The finals/gamelog pins store {"tool": t, "rows": [raw]} - the
-    # v71 extractor only read the raw shape and saw nothing live.
     wrapped = {"tool": "get_playoffs", "rows": [dict(PLAYOFFS)]}
     facts = _extract_ledger_facts({"tool_results": [wrapped]})
     assert "NBA Finals result: NYK 4 - 1 SAS" in facts

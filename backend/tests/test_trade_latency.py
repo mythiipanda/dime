@@ -1,21 +1,3 @@
-"""Latency regression tests for the trade path.
-
-Bottlenecks found Sep 10, 2026 (2-team "trade winner" turn: 11.0s,
-three-team trade turn: 17.1s):
-
-1. get_trade_value / get_trade_check opened a fresh DuckDB connection per
-   helper (4 and 7 connects per call, ~0.17s each on the 162MB warehouse).
-   Fixed: one shared connection per tool call.
-2. "Who wins this trade on value" questions exited triage with zero tool
-   calls and burned two planner LLM rounds (resolve_entity, then the value
-   call) before reaching get_trade_value, which resolves names itself.
-   Fixed: deterministic triage fast-path calling get_trade_value directly
-   (2-team only; 3-team, picks, and legality compounds still go to the
-   planner).
-3. desk_cache dedupe for repeated delegate desks (verified hit, not changed).
-
-Warehouse-backed tests skip when the warehouse is unavailable or locked.
-"""
 import asyncio
 import sys
 from pathlib import Path
@@ -51,7 +33,6 @@ def _needs_warehouse():
 
 
 def test_trade_value_single_connection():
-    """get_trade_value must do all warehouse reads on one connection."""
     store = _needs_warehouse()
     real_connect = store.connect
     calls = []
@@ -75,7 +56,6 @@ def test_trade_value_single_connection():
 
 
 def test_trade_check_single_connection():
-    """get_trade_check must do all warehouse reads on one connection."""
     store = _needs_warehouse()
     probe = store.connect()
     try:
@@ -109,7 +89,6 @@ def test_trade_check_single_connection():
 
 
 def test_trade_value_side_totals_internally_consistent():
-    """Refactor guard: side totals still equal player + pick values."""
     _needs_warehouse()
     from shared.tools.league import get_trade_value
 
@@ -148,17 +127,13 @@ def _collect_triage(question):
 
 
 def test_triage_trade_value_fast_path():
-    """The profiled 2-team value question answers in triage: one
-    get_trade_value call, planner loop skipped (no LLM rounds)."""
     events, state = _collect_triage(
         "Who wins this trade on production value vs salary: "
         "Anthony Edwards (MIN) for Luka Doncic (LAL)? Name the winner.")
     tool_calls = [e for e in events if e["type"] == "tool_call"]
     assert [ (e.get("data") or {}).get("name") for e in tool_calls] == [
         "get_trade_value"]
-    # Planner loop skipped: round pushed past the budget.
     assert state["round"] >= MAX_TOOL_ROUNDS
-    # Wrapped like the prediction/gamelog fast-paths so analytics sees rows.
     assert state["tool_results"]
     last = state["tool_results"][-1]
     assert last["tool"] == "get_trade_value"
@@ -166,7 +141,6 @@ def test_triage_trade_value_fast_path():
 
 
 def test_triage_three_team_skips_value_fast_path():
-    """Three-team trades must NOT take the 2-team value fast-path."""
     events, _ = _collect_triage(
         "Who wins this three-team trade on value: Anthony Edwards (MIN) "
         "vs Luka Doncic (LAL) vs Nikola Jokic (DEN)?")
@@ -174,7 +148,6 @@ def test_triage_three_team_skips_value_fast_path():
 
 
 def test_triage_compound_question_not_swallowed():
-    """Legality + value compounds stay out of the value fast-path."""
     events, _ = _collect_triage(
         "Is the Edwards-for-Doncic trade legal, and who wins it on value? "
         "Anthony Edwards (MIN) for Luka Doncic (LAL).")
@@ -184,8 +157,6 @@ def test_triage_compound_question_not_swallowed():
 
 
 def test_desk_cache_dedupes_trade_desks():
-    """Two delegate_league calls over the same trade entities run the desk
-    once; the second is served from desk_cache (deduped=True)."""
     ran = []
 
     async def fake_desk(name, task, primary, model, on_token=None):

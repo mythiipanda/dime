@@ -91,7 +91,6 @@ def test_all_team_seed_promotes_every_historical_playoff_season(tmp_path, monkey
     monkeypatch.setattr(store, "LOCK_PATH", tmp_path / ".write.lock")
 
     assert seed.seed_all_team_rows() == {"2022-23": 2, "2023-24": 2}
-    # A second promotion replaces each season rather than appending duplicates.
     assert seed.seed_all_team_rows() == {"2022-23": 2, "2023-24": 2}
     con = duckdb.connect(str(path), read_only=True)
     try:

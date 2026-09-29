@@ -1,8 +1,3 @@
-"""Seed the warehouse for one season. Standings plus leaders plus injuries.
-
-Usage: python -m scripts.seed --season 2025-26
-Heavy tables seed on demand through the dataset API, not here.
-"""
 
 import argparse
 import sys

@@ -1,5 +1,3 @@
-"""Analyst skills. Progressive disclosure: catalog carries one line per
-skill, full bodies load on demand via load_skill."""
 
 from pathlib import Path
 

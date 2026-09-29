@@ -1,8 +1,3 @@
-"""Warehouse hygiene. Catches dup rows, null ids, stale seasons, case dupes.
-
-Usage: python -m scripts.validate
-Exit 1 on any failure. Run before deploy claims.
-"""
 
 import sys
 from pathlib import Path

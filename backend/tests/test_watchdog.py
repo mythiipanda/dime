@@ -1,10 +1,3 @@
-"""Watchdog (v2 step 3): stuck turns end honestly, never hang.
-
-Per-call timeouts convert a sleeping tool into a circuit-breaker-fed
-error result; the turn wall-clock budget breaks the retrieval loop and
-presentation ends with coverage named (never "try a narrower ask").
-Hermetic: fabricated tools, no LLM, no network.
-"""
 
 import asyncio
 import sys
@@ -87,5 +80,4 @@ def test_presentation_watchdog_keeps_evidence():
           "calls_made": [], "history": [], "primary": "p", "model": "m",
           "_watchdog_tripped": True}
     out = asyncio.run(_go(st))
-    # evidence exists: the honest fallback must NOT override it
     assert "2462" in out

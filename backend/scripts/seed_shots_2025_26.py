@@ -1,14 +1,3 @@
-"""Seed silver_shots league-wide for 2025-26 (per-player ShotChartDetail).
-
-The shots table was originally seeded (233k rows) but the warehouse was
-rebuilt without it, leaving only demo-fetched rows for two players. This
-script restores full-league coverage via the same fetch+save path the
-datasets API uses (nba_stats.shot_chart -> store.save_frame), so entity
-keys, provenance columns, and schemas match exactly.
-
-Resumable: skips player entities already present. Run:
-    python scripts/seed_shots_2025_26.py [--all]
-"""
 import sys, time
 from pathlib import Path
 
@@ -29,8 +18,6 @@ def main() -> None:
             "ORDER BY PLAYER_ID").fetchall()]
         have = {r[0] for r in con.execute(
             "SELECT DISTINCT _entity FROM silver_shots").fetchall()}
-    # Legacy rows from the pre-entity seed would double-count the two
-    # demo players; clear them once per run.
     with store.connect() as con:
         con.execute("DELETE FROM silver_shots WHERE _entity = ''")
     todo = [p for p in pids if force or f"player:{p}" not in have]
@@ -49,7 +36,6 @@ def main() -> None:
         if i % 25 == 0:
             print(f"{i}/{len(todo)} done, {len(failed)} failed", flush=True)
         time.sleep(SLEEP)
-    # one retry pass
     for pid in list(failed):
         time.sleep(2)
         try:

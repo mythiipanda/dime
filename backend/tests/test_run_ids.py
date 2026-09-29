@@ -1,8 +1,3 @@
-"""Stable server-generated run ids for history dedupe (Instinct QA 2026-09-27).
-
-save_run accepts run_id, list_runs surfaces it as "id", and an existing
-runs table from before the column existed is migrated in place.
-"""
 
 
 def _isolated_store(monkeypatch, tmp_path):
@@ -30,7 +25,6 @@ def test_run_without_id_omits_id_field(monkeypatch, tmp_path):
 
 def test_migration_adds_run_id_to_old_schema(monkeypatch, tmp_path):
     store = _isolated_store(monkeypatch, tmp_path)
-    # Seed a runs table with the pre-id schema (7 columns).
     con = store.state_connect()
     try:
         con.execute(
@@ -45,7 +39,6 @@ def test_migration_adds_run_id_to_old_schema(monkeypatch, tmp_path):
         )
     finally:
         con.close()
-    # A fresh save must migrate the table and record the id.
     store.save_run("thread", "q2", "a2", [], [], owner="owner", run_id="run-new")
     runs = {r["question"]: r for r in store.list_runs("thread", "owner")}
     assert runs["q2"]["id"] == "run-new"

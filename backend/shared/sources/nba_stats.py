@@ -1,4 +1,3 @@
-"""nba_api source. Primary client. Pinned to nba_api 1.11.x."""
 
 from typing import Any
 import polars as pl
@@ -25,7 +24,6 @@ def _t() -> int:
 
 
 def career_totals(player_id: int) -> FetchResult:
-    """Full regular-season career totals (all seasons, one row)."""
     from nba_api.stats.endpoints import PlayerCareerStats
 
     def run() -> pl.DataFrame:
@@ -171,8 +169,6 @@ def scoreboard(game_date: str, season: str) -> FetchResult:
         except Exception:
             return header
 
-    # A date with no games is a valid empty answer, not a failure:
-    # retrying it burns ~24s of backoff sleeps in safe().
     return safe(SOURCE, season, run, accept_empty=True)
 
 
@@ -262,7 +258,6 @@ def team_roster(team_id: int, season: str) -> FetchResult:
         frames = _frames(
             CommonTeamRoster(team_id=team_id, season=season or None, timeout=_t())
         )
-        # frames[0] is the player roster; frames[1] is coaches.
         frame = _pl(frames[0])
         if frame.height == 0:
             from . import espn as _espn

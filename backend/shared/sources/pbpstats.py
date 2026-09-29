@@ -1,8 +1,3 @@
-"""PBP Stats REST source. Possession-level splits without computing them.
-
-Base: https://api.pbpstats.com. No key. Season like 2025-26.
-SeasonType is Regular Season, Playoffs, or All.
-"""
 
 import polars as pl
 

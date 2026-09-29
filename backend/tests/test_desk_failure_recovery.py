@@ -1,15 +1,3 @@
-"""Desk-failure recovery: a failed team desk must not surface the canned
-"I could not find that in the dataset" fallback.
-
-Regression for the "boston celtics stats" prod incident (2026-09-26):
-the team desk timed out and the turn collapsed into the generic dataset
-fallback, which reads as hardcoded. Expected behavior now:
-1. a delegate_* desk that fails is retried once with a simpler task,
-2. if it still fails, presentation names the desk and the error instead
-   of the canned fallback.
-
-Hermetic: fabricated desk, no LLM, no network.
-"""
 
 import asyncio
 import sys
@@ -52,10 +40,8 @@ def test_team_desk_timeout_no_canned_fallback():
     assert CANNED not in text, f"canned fallback leaked: {text!r}"
     assert "team desk" in text
     assert "didn't respond in time" in text
-    # sanitized: no raw error text, no internal detail, no question echo
     assert "120s" not in text
     assert "boston celtics" not in text.lower()
-    # "underlying data is there" is only claimed when rows came back
     assert "underlying data" not in text.lower()
 
 
@@ -181,14 +167,10 @@ def test_desk_retry_bounded_within_wall_budget(monkeypatch):
     total = _time.time() - t0
     res = state["tool_results"][-1]
     assert res.get("desk_retried") is True
-    # first attempt 0.3s + retry capped so the pair stays in budget
     assert total < 0.8 + 0.5, f"retry blew the budget: {total:.2f}s"
 
 
 def test_margin_pair_bound_to_teams_metric_direction():
-    # Instinct's exact repro: the old unbound pair search accepted
-    # "DET trails SAS by 2.4" via the unrelated OFF-vs-NET pair
-    # (4.8 - 2.4) and accepted "by 1.3" despite reversed direction.
     state = {"tool_results": [{"tool": "get_team_compare", "ok": True,
               "rows": [{"TEAM": "DET", "NET": 2.4, "OFF": 4.8},
                        {"TEAM": "SAS", "NET": 1.1, "OFF": 2.4}]}],
@@ -198,15 +180,10 @@ def test_margin_pair_bound_to_teams_metric_direction():
         "cross-metric pair leak: fake margin passed"
     assert [n for _, n in v(state, "DET trails SAS by 1.3.")] == ["1.3"], \
         "reversed direction passed"
-    # unbound team fails closed
     assert [n for _, n in v(state, "DET trails NYK by 2.4.")] == ["2.4"], \
         "unknown team passed"
-    # honest directed margin on the shared metric passes
     assert v(state, "DET leads SAS by 2.4.") == [], \
         "honest OFF margin flagged"
-    # explicit operands must NOT rescue a direction-failing margin:
-    # DET leads (OFF 4.8 vs 2.4), so "trails" is wrong even when the
-    # operands recompute - direction binds first, fail closed otherwise.
     assert [n for _, n in v(state, "DET trails SAS by 1.3 (2.4 - 1.1 = 1.3).")] == ["1.3"], \
         "operand check rescued a direction-failing margin claim"
 

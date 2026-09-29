@@ -668,7 +668,6 @@ def test_assistant_attempt_rejects_unclosed_validation_subtype(value):
     with pytest.raises(ValueError):LedgerEntry(sequence=1,run_id='run',kind='assistant/attempt',turn_id='run',call_id='model:1',data={'status':'failed','error':'bounded','provider_attempts':[attempt]})
 
 
-
 def test_assistant_attempt_accepts_not_applicable_validation_subtype():
     from v2.runtime import LedgerEntry
     attempt={'route':'semantic_verifier','provider':'inception','model':'mercury-2.5','attempt_number':1,'exception_type':'APITimeoutError','message_class':'timeout','latency_ms':1,'failure_top_class':'APITimeoutError','failure_class_chain':['APITimeoutError'],'failure_phase':'timeout','failure_validation_errors':[],'failure_validation_subtype':'not_applicable','failure_schema_sha256':'a'*64,'failure_route':'semantic_verifier'}

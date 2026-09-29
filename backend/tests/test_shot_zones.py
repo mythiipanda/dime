@@ -1,6 +1,3 @@
-"""get_team_shot_zones tests. Geometry, aggregation math, league deltas,
-and missing-data degradation. Pure functions are hermetic; tool-level
-failure cases hit only the local warehouse with seasons that hold no rows."""
 
 import sys
 from pathlib import Path
@@ -76,7 +73,6 @@ def test_league_baselines_pool_shots_not_averages():
     b = aggregate_zones([_shot(2, 0, 50, 2, False)] * 6
                         + [_shot(2, 0, 250, 3, False)])
     base = league_baselines({**a, **b})
-    # 10 rim shots, 4 made -> efg 0.4; 11 total shots -> share 10/11
     assert base["rim"]["fga"] == 10
     assert base["rim"]["efg"] == 0.4
     assert base["rim"]["share"] == round(10 / 11, 4)
@@ -141,8 +137,6 @@ def test_tool_mixes_known_and_unknown_teams():
 
 
 def _leader_rows():
-    # ZZZ sorts after AAA but leads rim on share delta: the leader must be
-    # the max-delta team, never the first row scanned.
     shots = ([_shot(1, 0, 50, 2, True, "AAA")]
              + [_shot(1, 0, 250, 3, True, "AAA")] * 3
              + [_shot(2, 0, 50, 2, True, "ZZZ")] * 4)
@@ -174,19 +168,16 @@ def _tie_rows():
 
 
 def test_zone_leader_tie_breaks_on_higher_share():
-    # Equal delta on rim: ZZZ (0.62 share) beats AAA/MMM (0.60).
     assert _zone_leaders(_tie_rows())["rim"]["team"] == "ZZZ"
 
 
 def test_zone_leader_full_tie_keeps_first_team():
     rows = _tie_rows()
-    rows[1]["rim_share"] = 0.60  # now AAA, ZZZ, MMM tie fully
+    rows[1]["rim_share"] = 0.60
     assert _zone_leaders(rows)["rim"]["team"] == "AAA"
 
 
 def test_tool_league_output_marks_rim_leader_nop():
-    # DimeBench 2026-09-10 regression: rim share_delta_pp leader is NOP
-    # +10.55, not runner-up DET +8.77.
     out = get_team_shot_zones.invoke({"teams": "league", "season": "2025-26"})
     assert out["ok"] is True
     leaders = out["zone_leaders"]

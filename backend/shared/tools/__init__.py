@@ -1,4 +1,3 @@
-"""Tool registry. Desks own their tools. Order stays stable for prompts."""
 
 from langchain_core.tools import BaseTool
 

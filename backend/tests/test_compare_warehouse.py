@@ -1,4 +1,3 @@
-"""Compare warehouse-hit vs live-fallback (hermetic where applicable)."""
 
 import asyncio
 import sys
@@ -208,8 +207,6 @@ def test_warehouse_miss_falls_back_to_live(warehouse, monkeypatch):
     result = asyncio.run(pm.get_compare.ainvoke(
         {"a": "1628983", "b": "1630162", "season": SEASON}))
     assert result["ok"] is True
-    # A fallback row with a warehouse-style MATCHUP resolves team locally;
-    # CommonPlayerInfo is unnecessary, but on/off still receives that team.
     assert calls == []
     assert onoff_rec.calls
     assert onoff_rec.calls[0].get("team_id") == 1610612747
@@ -243,8 +240,6 @@ def test_real_warehouse_zero_live_calls(monkeypatch):
 
 
 def test_warehouse_team_ids_match_live_path(monkeypatch):
-    """The warehouse-derived team ids must equal what the live fallback
-    would return, so compare output is unchanged by the fast path."""
     import pandas as pd
 
     import nba_api.stats.endpoints as _ep
@@ -307,7 +302,6 @@ def test_warehouse_team_ids_match_live_path(monkeypatch):
 
 
 class _FlakyLastStub:
-    """Fails once, then succeeds: a transient sub-call must be retried."""
 
     def __init__(self):
         self.calls = 0
@@ -331,8 +325,6 @@ def _patch_compare_stubs(monkeypatch, last_stub):
 
 
 def test_last5_recovers_after_transient_failure(warehouse, monkeypatch):
-    """Ticket 4: a once-failing get_last_x is retried, so last5 populates
-    instead of silently coming back []."""
     _patch_no_live(monkeypatch)
     flaky = _FlakyLastStub()
     _patch_compare_stubs(monkeypatch, flaky)
@@ -344,8 +336,6 @@ def test_last5_recovers_after_transient_failure(warehouse, monkeypatch):
 
 
 def test_last5_failure_surfaced_in_meta(warehouse, monkeypatch):
-    """Ticket 4: when a sub-call keeps failing, the failure is surfaced in
-    meta instead of being swallowed into last5: []."""
     _patch_no_live(monkeypatch)
     _patch_compare_stubs(monkeypatch, _BoomStub())
     result = asyncio.run(pm.get_compare.ainvoke(

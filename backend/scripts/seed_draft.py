@@ -1,8 +1,3 @@
-"""Seed historical NBA draft data (1997-2024) from sportsdataverse-data.
-
-Usage: python scripts/seed_draft.py (run from backend/)
-Source: https://github.com/sportsdataverse/sportsdataverse-data/releases/tag/nba_stats_draft
-"""
 
 import sys
 from pathlib import Path

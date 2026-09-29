@@ -1,7 +1,3 @@
-"""Matchup preview tests. All hermetic: past and upcoming paths run on the
-warehouse-cached scoreboard (2026-04-12 finale, 2026-10-21 opening week);
-marquee-pick tests use fixtures with a stubbed standings call. No live
-nba_api reads anywhere in this file."""
 
 import asyncio
 import json
@@ -15,8 +11,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from shared import tools  # noqa: E402
 from shared.tools import preview as preview_mod  # noqa: E402
 
-PAST_DATE = "04/12/2026"  # regular-season finale, cached in the warehouse
-FUTURE_DATE = "10/21/2026"  # opening week, cached in the warehouse
+PAST_DATE = "04/12/2026"
+FUTURE_DATE = "10/21/2026"
 
 BANNED_SCORE_TOKENS = (
     "win_prob", "projected_total", "projected score", "spread",
@@ -83,8 +79,6 @@ def test_no_teams_no_date_errors():
 
 
 def test_offseason_pair_returns_honest_no_schedule():
-    # 2025-26 is complete and the next 14 days hold no games: the tool
-    # must say so, not fabricate a matchup.
     res = _run({"a": "Lakers", "b": "Celtics"})
     assert res["ok"] is False
     assert "no scheduled" in res["error"]
@@ -134,8 +128,6 @@ def test_xfactor_section_present():
 
 
 def test_xfactor_card_uses_real_gamelogs():
-    # LeBron (player:2544) has 60 cached gamelog rows: a hot/cold read
-    # must come back with a last-5 line, no live calls involved.
     leaders = [
         {"name": "Filler One", "player_id": 1, "pts": 30.0,
          "ast": 5.0, "reb": 5.0, "gp": 60},
@@ -171,12 +163,11 @@ def _sched_row(game_id, home_id, home, away_id, away, tv=""):
 
 
 def _standings_rows():
-    # pct: BOS .671, LAL .610, NYK .488, GSW .366
     return [
-        {"TeamID": 1610612738, "WINS": 55, "LOSSES": 27},  # BOS
-        {"TeamID": 1610612747, "WINS": 50, "LOSSES": 32},  # LAL
-        {"TeamID": 1610612752, "WINS": 40, "LOSSES": 42},  # NYK
-        {"TeamID": 1610612744, "WINS": 30, "LOSSES": 52},  # GSW
+        {"TeamID": 1610612738, "WINS": 55, "LOSSES": 27},
+        {"TeamID": 1610612747, "WINS": 50, "LOSSES": 32},
+        {"TeamID": 1610612752, "WINS": 40, "LOSSES": 42},
+        {"TeamID": 1610612744, "WINS": 30, "LOSSES": 52},
     ]
 
 
@@ -186,9 +177,7 @@ def test_marquee_pick_prefers_combined_win_pct(monkeypatch):
     monkeypatch.setattr(league_mod, "get_standings",
                         _standings_stub(_standings_rows()))
     rows = [
-        # BOS+NYK combined 1.159, no national TV
         _sched_row("g1", 1610612738, "BOS", 1610612752, "NYK"),
-        # LAL+GSW combined 0.976, on ESPN
         _sched_row("g2", 1610612747, "LAL", 1610612744, "GSW", tv="ESPN"),
     ]
     assert preview_mod._pick_marquee(rows, "2025-26")["GAME_ID"] == "g1"

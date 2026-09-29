@@ -1,12 +1,3 @@
-"""Generate the expected startup asset manifest (promotion-time binding).
-
-Run inside the built backend image after every baked asset exists
-(warehouse, code, prompts, snapshots). Writes the JSON file that
-DIME_EXPECTED_ASSET_MANIFEST must point at so the lifespan preflight in
-v2/api/routes.py can verify the running process matches what was promoted.
-
-Usage: python scripts/generate_asset_manifest.py /srv/manifest/expected_asset_manifest.json
-"""
 import json
 import sys
 from pathlib import Path

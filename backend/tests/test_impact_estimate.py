@@ -1,7 +1,3 @@
-"""get_impact_estimate tests. Warehouse-backed and hermetic: the estimator
-reads only the local warehouse, and the RAPTOR-ballpark test pins its
-tolerance to the blend's measured p95 residual (2.16 -> tolerance 2.5),
-not to an exact reconstruction."""
 
 import sys
 from pathlib import Path
@@ -15,8 +11,6 @@ from shared.tools.player import (
     _solve_linear,
 )
 
-# Documented tolerance: the 80/20 empirical blend reconstructs RAPTOR_TOTAL
-# with p95 residual 2.16 per 100 possessions (fitted 2026-09-10, n=4684).
 RAPTOR_BLEND_TOLERANCE = 2.5
 
 

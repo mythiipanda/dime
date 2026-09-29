@@ -1,4 +1,3 @@
-"""Dime shared backend package (data layer, config, providers)."""
 import os
 for _var in ("no_proxy", "NO_PROXY"):
     _val = os.environ.get(_var)
