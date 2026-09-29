@@ -73,7 +73,7 @@ def warehouse_identity() -> dict[str, str]:
     return identity
 
 
-_tables_cache: dict[Path, tuple[tuple[int, int, str], frozenset[str]]] = {}
+_tables_cache: dict[Path, frozenset[str]] = {}
 _tables_lock = threading.RLock()
 
 
@@ -97,21 +97,14 @@ def _tables_uncached(path: Path) -> frozenset[str]:
 
 
 def tables(path: Path | str | None = None) -> set[str]:
-    resolved = DB_PATH.resolve() if path is None else Path(path).resolve()
+    key = DB_PATH if path is None else Path(path)
     with _tables_lock:
-        try:
-            st = resolved.stat()
-        except OSError:
-            return set(_tables_uncached(resolved))
-        sample = _warehouse_sample_hexdigest(resolved, st.st_size)
-        if sample is None:
-            return set(_tables_uncached(resolved))
-        key = (st.st_mtime_ns, st.st_size, sample)
-        entry = _tables_cache.get(resolved)
-        if entry is not None and entry[0] == key:
-            return set(entry[1])
-        names = _tables_uncached(resolved)
-        _tables_cache[resolved] = (key, names)
+        entry = _tables_cache.get(key)
+        if entry is not None:
+            return set(entry)
+    names = _tables_uncached(key)
+    with _tables_lock:
+        _tables_cache[key] = names
         return set(names)
 
 
@@ -282,6 +275,10 @@ def _pool_acquire():
         return None
     if (st.st_mtime_ns, st.st_size) != (entry[2], entry[3]):
         _pool_drop()
+        try:
+            warehouse_tables_cache_clear()
+        except Exception:
+            pass
         return None
     try:
         entry[1].execute("SELECT 1").fetchall()

@@ -78,15 +78,42 @@ def test_cache_hit_avoids_requery(warehouse_db, show_counter):
 def test_stat_change_invalidates(warehouse_db, show_counter):
     assert store.tables() == {"t1"}
     assert len(show_counter) == 1
-    store.warehouse_pool_clear()
-    con = duckdb.connect(str(warehouse_db))
+    con = store.connect(read_only=True)
     try:
-        con.execute("CREATE TABLE t2(y VARCHAR)")
-        con.execute("INSERT INTO t2 VALUES ('a')")
+        con.execute("SELECT 1").fetchall()
     finally:
         con.close()
+    saved = store._pool_state.entry
+    store.warehouse_pool_clear()
+    raw = duckdb.connect(str(warehouse_db))
+    try:
+        raw.execute("CREATE TABLE t2(y VARCHAR)")
+        raw.execute("INSERT INTO t2 VALUES ('a')")
+    finally:
+        raw.close()
+    store._pool_state.entry = saved
+    con2 = store.connect(read_only=True)
+    try:
+        con2.execute("SELECT 1").fetchall()
+    finally:
+        con2.close()
     assert store.tables() == {"t1", "t2"}
     assert len(show_counter) == 2
+
+
+def test_warm_hit_touches_no_filesystem(warehouse_db, show_counter, monkeypatch):
+    assert store.tables() == {"t1"}
+    assert len(show_counter) == 1
+    import os as _os
+    import pathlib as _pathlib
+
+    def _boom(*args, **kwargs):
+        raise AssertionError("touched")
+
+    monkeypatch.setattr(_pathlib.Path, "stat", _boom)
+    monkeypatch.setattr(_os, "stat", _boom)
+    assert store.tables() == {"t1"}
+    assert len(show_counter) == 1
 
 
 def test_cache_clear_forces_requery(warehouse_db, show_counter):
