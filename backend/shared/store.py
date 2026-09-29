@@ -26,10 +26,31 @@ STATE_LOCK_PATH = STATE_PATH.parent / ".state-write.lock"
 PROVENANCE_COLS = ["_source", "_season", "_fetched_at"]
 
 
-def warehouse_identity() -> dict[str, str]:
-    path = DB_PATH.resolve()
+def _warehouse_identity_uncached(path: Path) -> dict[str, str]:
     return {"warehouse_id": "frozen-eval" if path == CANONICAL_DB_PATH else "configured-runtime",
             "warehouse_sha256": hashlib.sha256(path.read_bytes()).hexdigest()}
+
+
+_warehouse_identity_cache: dict[Path, tuple[tuple[int, int], dict[str, str]]] = {}
+
+
+def warehouse_identity_cache_clear() -> None:
+    _warehouse_identity_cache.clear()
+
+
+def warehouse_identity() -> dict[str, str]:
+    path = DB_PATH.resolve()
+    try:
+        st = path.stat()
+    except OSError:
+        return _warehouse_identity_uncached(path)
+    key = (st.st_mtime_ns, st.st_size)
+    entry = _warehouse_identity_cache.get(path)
+    if entry is not None and entry[0] == key:
+        return entry[1]
+    identity = _warehouse_identity_uncached(path)
+    _warehouse_identity_cache[path] = (key, identity)
+    return identity
 
 
 _PLAYED_GAME_TABLE = "silver_boxscores"
