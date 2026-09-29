@@ -78,12 +78,13 @@ this season?"
 
 ## Tests
 
-The benchmark pack (`backend/tests/benchmark/`) runs 27 scenario chains
-against a live backend with expected-answer assertions and latency budgets:
+The benchmark pack lives in the private dime-internal repo
+(mythiipanda/dime-internal) at `evals/benchmark-pack/`. It runs 27 scenario
+chains against a live backend with expected-answer assertions and latency
+budgets. From a dime-internal checkout:
 
 ```bash
-cd backend
-python tests/benchmark/runner.py --url http://127.0.0.1:8010 --out reports/run.json
+python evals/benchmark-pack/runner.py --url http://127.0.0.1:8010 --out reports/run.json
 ```
 
 The pytest suite covers routing, the pinned lanes, warehouse contracts, and
