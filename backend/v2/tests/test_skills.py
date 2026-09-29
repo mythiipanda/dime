@@ -12,7 +12,8 @@ def test_builtin_catalog_is_agent_skills_metadata_only():
         "trade-analysis", "injury-impact", "player-comparison",
         "league-ratings", "playoff-translation",
         "defensive-analysis", "team-offense", "leaderboard",
-        "followup-correction",
+        "followup-correction", "schedule-rest", "draft-prospects",
+        "in-progress-games", "odds-lines",
     }
     assert all(set(item) == {"name", "description"} for item in catalog)
     assert all("# " not in item["description"] for item in catalog)
