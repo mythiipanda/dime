@@ -225,12 +225,6 @@ def _read_df(sql: str, params: list, tries: int = 5) -> list[dict[str, Any]]:
             finally:
                 con.close()
         except _duckdb.CatalogException:
-            # Permanent: no such table/column. The identical query can
-            # never succeed on retry, so raise at once instead of
-            # burning tries x 0.3s per call (a missing table turned one
-            # compare into dozens of identical queries under the outer
-            # sub-call retry). Transient lock contention below keeps
-            # retrying as before.
             raise
         except Exception as exc:
             last = exc
