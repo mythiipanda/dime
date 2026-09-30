@@ -37,20 +37,31 @@
           "item_constraints": {},
           "list_item_exact_decimal": false,
           "scalar_exact_decimal": false,
-          "schema_sha256": "b6f8359b507cc999385a29f3a5a8567183f33e990e14326d61f9808796cc29c4"
+          "schema_sha256": "00404e686415370f1711c4d7acfa2905444d3cf23cef2e10c47d445ebe690f96"
+        },
+        {
+          "compiled_kinds": [
+            "null"
+          ],
+          "constraints": {},
+          "item_constraints": {},
+          "list_item_exact_decimal": false,
+          "scalar_exact_decimal": false,
+          "schema_sha256": "bcde375ebd4cbacf651311181173836b169d5a360c6ac158c6a2cdaf49be3f61"
         }
       ],
       "compiled_kinds": [
-        "string"
+        "string",
+        "null"
       ],
-      "default": "2025-26",
+      "default": null,
       "default_present": true,
       "list_item_exact_decimal": false,
-      "nullable": false,
+      "nullable": true,
       "property": "season",
       "required": false,
       "scalar_exact_decimal": false,
-      "schema_sha256": "b6f8359b507cc999385a29f3a5a8567183f33e990e14326d61f9808796cc29c4"
+      "schema_sha256": "8df079e90ae598d81db07cf8abf57ab17d9efaef8841009037533af591d9bb77"
     },
     {
       "branches": [
@@ -104,6 +115,6 @@
     }
   ],
   "reasons": [],
-  "schema_sha256": "20880ba61b60f18d7470abc2ed4954420b8299ba4a65cefbbd20cd4410ead7b6",
+  "schema_sha256": "3d799777eab7ed1db2cde3469557260333c869ba935f430fb065cf8bba4d7261",
   "status": "REPRESENTABLE"
 }

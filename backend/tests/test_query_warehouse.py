@@ -309,6 +309,44 @@ def test_union_of_selects_passes(tiny_warehouse):
         "Oklahoma City", "Boston"}
 
 
+def test_cte_name_does_not_launder_same_named_table(tiny_warehouse):
+    out = q.query_warehouse(
+        "WITH bronze_raw AS (SELECT * FROM bronze_raw) SELECT * FROM bronze_raw"
+    )
+    assert out["ok"] is False
+    assert "blocked" in out["error"], out["error"]
+
+
+def test_schema_qualified_ref_ignores_cte_cover(tiny_warehouse):
+    out = q.query_warehouse(
+        "WITH bronze_raw AS (SELECT 1 AS x) SELECT * FROM main.bronze_raw"
+    )
+    assert out["ok"] is False
+    assert "blocked" in out["error"], out["error"]
+
+
+def test_cte_shadowing_allowlisted_table_rejected(tiny_warehouse):
+    out = q.query_warehouse(
+        "WITH silver_standings AS (SELECT 1 AS x) SELECT * FROM silver_standings"
+    )
+    assert out["ok"] is False
+    assert "blocked" in out["error"], out["error"]
+
+
+def test_forward_cte_ref_does_not_launder_table(tiny_warehouse):
+    out = q.query_warehouse(
+        "WITH a AS (SELECT * FROM bronze_raw), "
+        "bronze_raw AS (SELECT 1 AS x) SELECT * FROM a"
+    )
+    assert out["ok"] is False
+    assert "blocked" in out["error"], out["error"]
+
+
+def test_schema_qualified_allowlisted_table_passes(tiny_warehouse):
+    out = q.query_warehouse("SELECT TeamCity FROM main.silver_standings")
+    assert out["ok"] is True, out.get("error")
+
+
 def test_from_position_function_calls_blocked(tiny_warehouse):
     for sql in [
         "SELECT * FROM unnest([1, 2, 3])",

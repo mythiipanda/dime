@@ -84,23 +84,34 @@
           "item_constraints": {},
           "list_item_exact_decimal": false,
           "scalar_exact_decimal": false,
-          "schema_sha256": "b6f8359b507cc999385a29f3a5a8567183f33e990e14326d61f9808796cc29c4"
+          "schema_sha256": "00404e686415370f1711c4d7acfa2905444d3cf23cef2e10c47d445ebe690f96"
+        },
+        {
+          "compiled_kinds": [
+            "null"
+          ],
+          "constraints": {},
+          "item_constraints": {},
+          "list_item_exact_decimal": false,
+          "scalar_exact_decimal": false,
+          "schema_sha256": "bcde375ebd4cbacf651311181173836b169d5a360c6ac158c6a2cdaf49be3f61"
         }
       ],
       "compiled_kinds": [
-        "string"
+        "string",
+        "null"
       ],
-      "default": "2025-26",
+      "default": null,
       "default_present": true,
       "list_item_exact_decimal": false,
-      "nullable": false,
+      "nullable": true,
       "property": "season",
       "required": false,
       "scalar_exact_decimal": false,
-      "schema_sha256": "b6f8359b507cc999385a29f3a5a8567183f33e990e14326d61f9808796cc29c4"
+      "schema_sha256": "8df079e90ae598d81db07cf8abf57ab17d9efaef8841009037533af591d9bb77"
     }
   ],
   "reasons": [],
-  "schema_sha256": "1559606e7c1c10d2faacfb1ac0c69d507bd61e140191552e1c6c84380d56e822",
+  "schema_sha256": "8d5424d6d00c58286ac63ee38b1a7dfaa491f7863b859e4a16a359875983409c",
   "status": "REPRESENTABLE"
 }
