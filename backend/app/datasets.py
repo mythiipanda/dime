@@ -127,6 +127,151 @@ def _envelope(table: str, season: str, frame: object, cached: bool) -> dict:
     return {"data": rows, "meta": meta}
 
 
+def _lineup_stints(season: str) -> list:
+    frame = store.read_frame("silver_lineups", "_season = ?", [season])
+    best: dict = {}
+    for r in frame.to_dicts():
+        ids = [x for x in str(r.get("GROUP_ID") or "").split("-") if x]
+        if len(ids) != 5:
+            continue
+        if r.get("PTS") is None:
+            continue
+        try:
+            vals = {k: float(r.get(k)) for k in
+                    ("PTS", "PLUS_MINUS", "FGA", "OREB", "TOV", "FTA", "MIN")}
+        except (TypeError, ValueError):
+            continue
+        key = (str(r.get("GROUP_ID")), str(r.get("TEAM_ABBREVIATION")))
+        if key not in best or vals["MIN"] > best[key][1]["MIN"]:
+            best[key] = (r, vals)
+    out = []
+    for r, vals in best.values():
+        poss = vals["FGA"] - vals["OREB"] + vals["TOV"] + 0.44 * vals["FTA"]
+        if poss <= 0:
+            continue
+        out.append((r, vals, poss))
+    return out
+
+
+def _lineup_leaders(season: str, min_poss: int) -> dict:
+    try:
+        stints = _lineup_stints(season)
+    except Exception as exc:
+        return {"ok": False,
+                "error": f"warehouse read failed: {str(exc)[:160]}"}
+    if not stints:
+        return {"ok": False, "error":
+                f"no rated 5-man lineup stints for {season} in silver_lineups"}
+    rows = []
+    for r, vals, poss in stints:
+        if poss < min_poss:
+            continue
+        off = round(100.0 * vals["PTS"] / poss, 1)
+        net = round(100.0 * vals["PLUS_MINUS"] / poss, 1)
+        rows.append({"lineup": r.get("GROUP_NAME"), "team": r.get("TEAM_ABBREVIATION"),
+                     "MIN": vals["MIN"], "OFF_RTG": off,
+                     "DEF_RTG": round(off - net, 1),
+                     "NET_RTG": net, "possessions": round(poss, 1)})
+    rows.sort(key=lambda d: d["NET_RTG"], reverse=True)
+    return {"ok": True, "data": rows,
+            "meta": {"season": season, "rows": len(rows), "cached": True,
+                     "source": "silver_lineups",
+                     "method": "possessions estimated as FGA - OREB + TOV + 0.44 * FTA; OFF_RTG = 100 * PTS / POSS; NET_RTG = 100 * PLUS_MINUS / POSS; DEF_RTG = OFF_RTG - NET_RTG",
+                     "min_poss": min_poss}}
+
+
+def _table_leaders(table: str, season: str, sort_col: str) -> dict:
+    try:
+        frame = store.read_frame(table, "_season = ?", [season])
+    except Exception as exc:
+        return {"ok": False,
+                "error": f"warehouse read failed: {str(exc)[:160]}"}
+    if frame.height == 0:
+        return {"ok": False, "error":
+                f"no rows for {season} in {table}"}
+    if sort_col in frame.columns:
+        frame = frame.sort(sort_col, descending=True, nulls_last=True)
+    out = _envelope(table, season, frame, True)
+    out["ok"] = True
+    return out
+
+
+def _hist_zone(value, dist, x):
+    try:
+        v = int(value)
+    except (TypeError, ValueError):
+        return None
+    if v == 3:
+        if x is None:
+            return "Three-Point (no location)"
+        try:
+            return "Corner 3" if abs(float(x)) >= 220 else "Above-Break 3"
+        except (TypeError, ValueError):
+            return "Three-Point (no location)"
+    try:
+        d = float(dist)
+    except (TypeError, ValueError):
+        return None
+    if d <= 4:
+        return "Rim (0-4 ft)"
+    if d <= 14:
+        return "Short 2 (5-14 ft)"
+    return "Long 2 (15+ ft)"
+
+
+def _zone_splits(season: str, player_id: int) -> dict:
+    if not player_id:
+        return {"ok": False, "error":
+                "zone_splits is player-scoped: pass player_id"}
+    zones: dict = {}
+    sources = []
+    try:
+        cur = store.read_frame(
+            "silver_shots", "_season = ? AND CAST(PLAYER_ID AS VARCHAR) = CAST(? AS VARCHAR)",
+            [season, str(player_id)])
+    except Exception:
+        cur = None
+    if cur is not None and cur.height > 0:
+        sources.append("silver_shots")
+        for r in cur.to_dicts():
+            z = r.get("SHOT_ZONE_BASIC")
+            if z is None:
+                continue
+            slot = zones.setdefault(str(z), [0, 0])
+            slot[1] += 1
+            if str(r.get("SHOT_MADE_FLAG")) == "1":
+                slot[0] += 1
+    if not zones:
+        try:
+            hist = store.read_frame(
+                "silver_hist_shots", "_season = ? AND CAST(person_id AS VARCHAR) = CAST(? AS VARCHAR)",
+                [season, str(player_id)])
+        except Exception:
+            hist = None
+        if hist is not None and hist.height > 0:
+            sources.append("silver_hist_shots")
+            for r in hist.to_dicts():
+                z = _hist_zone(r.get("shot_value"), r.get("shot_distance"),
+                               r.get("x_legacy"))
+                if z is None:
+                    continue
+                slot = zones.setdefault(z, [0, 0])
+                slot[1] += 1
+                if str(r.get("shot_result")) == "Made":
+                    slot[0] += 1
+    if not zones:
+        return {"ok": False, "error":
+                f"no shot rows for player {player_id} in {season} (silver_shots, silver_hist_shots)"}
+    rows = [{"zone": z, "FGM": m, "FGA": a,
+             "FG_PCT": round(m / a, 3) if a else 0.0}
+            for z, (m, a) in zones.items()]
+    rows.sort(key=lambda d: d["FGA"], reverse=True)
+    return {"ok": True, "data": rows,
+            "meta": {"season": season, "rows": len(rows), "cached": True,
+                     "player_id": player_id, "sources": sources,
+                     "zone_definition": "silver_shots uses native SHOT_ZONE_BASIC; silver_hist_shots bands are Rim (0-4 ft), Short 2 (5-14 ft), Long 2 (15+ ft) by shot_distance, Corner 3 (|x_legacy| >= 220, tenths of feet) else Above-Break 3"}}
+
+
 def _fetch_live(
     name: str, season: str, player_id: int, team_id: int,
     game_id: str, game_date: str, stat: str,
@@ -183,8 +328,24 @@ def dataset(
     ids: str = Query(""),
     player_a: str = Query(""),
     player_b: str = Query(""),
+    min_poss: int = Query(200),
     fmt: str = Query("json"),
 ):
+    if name in ("rapm", "lineup_leaders", "clutch", "zone_splits"):
+        if name == "lineup_leaders":
+            res = _lineup_leaders(season, min_poss)
+        elif name == "rapm":
+            res = _table_leaders("silver_rapm", season, "rapm")
+        elif name == "clutch":
+            res = _table_leaders("silver_clutch", season, "PTS")
+        else:
+            res = _zone_splits(season, player_id)
+        if not res.get("ok"):
+            return res
+        if fmt == "csv":
+            df = pl.DataFrame(res["data"])
+            return Response(df.write_csv(), media_type="text/csv")
+        return res
     if name == "wowy" and (player_a or ids):
         from shared.tools.player import get_wowy
 
