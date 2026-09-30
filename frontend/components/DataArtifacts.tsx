@@ -29,6 +29,23 @@ import { Chip, resolveToolName } from "./view-shared";
 import WowyCard from "./WowyCard";
 import ZoneBars, { isZoneRows } from "./ZoneBars";
 
+function scrubWarehouseNames(value: string): string {
+  return value.replace(/\b(?:silver_|bronze_|ext_)[A-Za-z0-9_]+/g, "dataset");
+}
+
+function isBareRepr(value: string): boolean {
+  const text = value.trim();
+  if (text.length === 0) return true;
+  const first = text[0];
+  const last = text[text.length - 1];
+  const opens = first === "[" || first === "(" || first === "{";
+  const closes = last === "]" || last === ")" || last === "}";
+  if (!opens || !closes) return false;
+  const rest = text.split("dataset").join("");
+  const words = rest.match(/[A-Za-z]{3,}/g);
+  return !words || words.length < 2;
+}
+
 function EvidenceLimitations({ meta }: {
   meta?: { qualification?: string; coverage?: string; warnings?: string[] };
 }) {
@@ -664,34 +681,6 @@ export default function DataArtifacts({
         </div>
       </div>
 
-      {contentIdx.length > 1 && (
-        <div style={{ marginBottom: 12 }}>
-          <div style={{ fontSize: 11, fontWeight: 600, color: "var(--color-warm-gray)", marginBottom: 6 }}>
-            Fetched datasets ({contentIdx.length})
-          </div>
-          <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-            {contentIdx.map((index, p) => {
-              const item = tables[index];
-              const name = toolOf(item);
-              const label = (name || item.tool || `dataset ${p + 1}`)
-                .replace("get_", "").replace(/_/g, " ");
-              const count = (() => {
-                const rows = (item.rows as { rows?: unknown } | undefined)?.rows ?? item.rows;
-                return Array.isArray(rows) ? rows.length : null;
-              })();
-              return (
-                <button key={`${name}-${index}`} type="button"
-                  className={page === p ? "tab-active" : "pill-ghost"}
-                  style={{ fontSize: 11, padding: "3px 9px" }}
-                  onClick={() => setPage(p)}>
-                  {p + 1}. {label}{count !== null ? ` (${count})` : ""}
-                </button>
-              );
-            })}
-          </div>
-        </div>
-      )}
-
       {table.meta?.sql && (
         <details
           style={{
@@ -792,11 +781,19 @@ export default function DataArtifacts({
             Python Execution Output:
           </div>
           <pre style={{ margin: 0, whiteSpace: "pre-wrap" }}>
-            {String(
-              (table.rows as Record<string, unknown>)?.printed ||
-                (table.rows as Record<string, unknown>)?.out ||
-                "Execution completed (no stdout).",
-            )}
+            {(() => {
+              const raw = String(
+                (table.rows as Record<string, unknown>)?.printed ||
+                  (table.rows as Record<string, unknown>)?.out ||
+                  "",
+              );
+              if (!raw.trim())
+                return "The script ran but produced no readable output.";
+              const scrubbed = scrubWarehouseNames(raw);
+              if (isBareRepr(scrubbed))
+                return "The script ran but produced no readable output.";
+              return scrubbed;
+            })()}
           </pre>
         </div>
       ) : historicalRows ? (
