@@ -27,6 +27,10 @@ from v2.runtime.models import (ExecutionResult, RuntimeResult,
 from v2.domain.evidence import iter_values
 from v2.runtime.budget import RUN_MODEL_DEADLINE
 
+JUDGE_UNAVAILABLE_BRANCH = "Semantic verification was unavailable; published claims passed deterministic verification."
+JUDGE_UNAVAILABLE_LEGACY_BRANCH = "Semantic completeness review was unavailable; published claims passed deterministic verification."
+JUDGE_UNAVAILABLE_BRANCHES = frozenset({JUDGE_UNAVAILABLE_BRANCH, JUDGE_UNAVAILABLE_LEGACY_BRANCH})
+
 
 class PreToolTimeoutError(TimeoutError):
     """Intake and planning exceeded the configured pre-tool budget."""
@@ -444,28 +448,30 @@ class Runtime:
             raise ValueError(
                 "mechanical verifier must adjudicate every claim exactly once")
         if mechanical.status == VerificationStatus.REPAIR:
-            return mechanical
+            return mechanical.model_copy(update={
+                "missing_branches": _unique(
+                    [*mechanical.missing_branches, JUDGE_UNAVAILABLE_BRANCH],
+                    limit=128),
+            })
         try:
             semantic = VerificationReport.model_validate(
                 (await self._semantic_verifier.verify(task, draft, evidence)).model_dump()
             )
         except asyncio.CancelledError:
             raise
-        except Exception as exc:
-            # Mechanical verification is the deterministic publication
-            # authority. A provider/schema failure in the advisory semantic
-            # pass must not discard evidence and already-supported claims.
-            # Preserve the mechanical adjudication and attach one precise
-            # limitation so the run terminates as a supported partial.
+        except Exception:
             if all(item.supported for item in mechanical.claim_results):
                 return mechanical.model_copy(update={
                     "status": VerificationStatus.PARTIAL,
-                    "missing_branches": [
-                        "Semantic completeness review was unavailable; "
-                        "published claims passed deterministic verification."
-                    ],
+                    "missing_branches": _unique(
+                        [*mechanical.missing_branches, JUDGE_UNAVAILABLE_BRANCH],
+                        limit=128),
                 })
-            return mechanical
+            return mechanical.model_copy(update={
+                "missing_branches": _unique(
+                    [*mechanical.missing_branches, JUDGE_UNAVAILABLE_BRANCH],
+                    limit=128),
+            })
         # Deterministic calculation verification owns whether a requested
         # arithmetic branch exists. A semantic verifier may overlook a derived
         # claim already tied to a recomputed calculation (for example a margin)
@@ -546,7 +552,25 @@ class Runtime:
                 or any(index not in expected for index in observed)):
             raise ValueError(
                 "semantic verifier returned duplicate or unknown claim indices")
-        return _merge_verification(mechanical, semantic)
+        merged = _merge_verification(mechanical, semantic)
+        uncertain_indices = sorted({
+            result.claim_index for result in merged.claim_results
+            if result.uncertain
+        })
+        if uncertain_indices:
+            merged = merged.model_copy(update={
+                "status": (VerificationStatus.PARTIAL
+                           if merged.status == VerificationStatus.PASS
+                           else merged.status),
+                "missing_branches": _unique(
+                    [*merged.missing_branches, *(
+                        f"Claim {index} could not be fully confirmed "
+                        f"against the admitted evidence."
+                        for index in uncertain_indices
+                    )],
+                    limit=128),
+            })
+        return merged
 
 
 def _merge_verification(
@@ -587,6 +611,9 @@ def _merge_claim_results(results: Iterable[ClaimResult]) -> list[ClaimResult]:
             claim_index=result.claim_index,
             supported=current.supported and result.supported,
             reasons=_unique([*current.reasons, *result.reasons], limit=64),
+            evidence_spans=_unique(
+                [*current.evidence_spans, *result.evidence_spans], limit=32),
+            uncertain=current.uncertain or result.uncertain,
         )
     return [merged[index] for index in sorted(merged)]
 
@@ -598,7 +625,7 @@ def _unique(values: Iterable[str], *, limit: int | None = None) -> list[str]:
 
 def _verified_claims(task, execution, draft, verification, evidence=None):
     supported = {result.claim_index for result in verification.claim_results
-                 if result.supported}
+                 if result.supported and not result.uncertain}
     admitted: list[VerifiedClaim] = []
     rejected: list[Gap] = []
     for index, claim in enumerate(draft.claims):
@@ -757,7 +784,9 @@ def _verification_gaps(draft, verification, execution_errors=None,
             missing_messages.append(message)
     satisfied_requirement_ids = satisfied_requirement_ids or set()
     gaps = [Gap(
-        kind=(GapKind.SYNTHESIS_INCOMPLETE
+        kind=(GapKind.JUDGE_UNAVAILABLE
+              if message in JUDGE_UNAVAILABLE_BRANCHES
+              else GapKind.SYNTHESIS_INCOMPLETE
               if any(requirement_id.casefold().replace("_", " ") in
                      message.casefold().replace("_", " ")
                      for requirement_id in satisfied_requirement_ids)

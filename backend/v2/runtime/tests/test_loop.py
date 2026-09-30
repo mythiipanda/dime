@@ -263,7 +263,8 @@ async def test_exhausted_repair_returns_named_partial() -> None:
     )
 
     assert result.verification.status == VerificationStatus.PARTIAL
-    assert result.draft.gaps == ["clutch context"]
+    assert result.draft.gaps[0] == "clutch context"
+    assert any(gap.kind == "judge_unavailable" for gap in result.gaps)
 
 @pytest.mark.anyio
 async def test_runtime_ledger_owns_turn_and_stage_lifecycle() -> None:
@@ -387,7 +388,8 @@ async def test_semantic_verifier_never_sees_mechanically_rejected_draft() -> Non
     result = await runtime(MechanicalReject(), SemanticMustNotRun()).run("answer")
     assert result.verification.status == VerificationStatus.PARTIAL
     assert result.verified_claims == []
-    assert result.gaps[0].message == "uncited numeral 43"
+    assert result.gaps[0].kind == "judge_unavailable"
+    assert result.gaps[1].message == "uncited numeral 43"
 
 
 @pytest.mark.anyio
@@ -1155,8 +1157,7 @@ async def test_semantic_provider_failure_preserves_mechanically_verified_subset(
     result = await instance.run("answer")
     assert result.verification.status == VerificationStatus.PARTIAL
     assert result.verified_claims[0].claim.text == "42"
-    assert any("Semantic completeness review was unavailable" in gap.message
-               for gap in result.gaps)
+    assert any(gap.kind == "judge_unavailable" for gap in result.gaps)
 
 @pytest.mark.anyio
 async def test_repair_provider_failure_preserves_supported_claims_as_partial():

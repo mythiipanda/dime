@@ -663,6 +663,9 @@ def merge_verification_reports(mechanical: VerificationReport,
                 claim_index=result.claim_index,
                 supported=current.supported and result.supported,
                 reasons=list(dict.fromkeys(current.reasons + result.reasons)),
+                evidence_spans=list(dict.fromkeys(
+                    current.evidence_spans + result.evidence_spans))[:32],
+                uncertain=current.uncertain or result.uncertain,
             )
     return VerificationReport(
         status=status,

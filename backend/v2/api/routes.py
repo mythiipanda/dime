@@ -925,6 +925,7 @@ def _answer_text(result) -> str:
         "unsupported_claim": "Some requested outputs were not supported.",
         "execution_failure": "Some requested data was unavailable.",
         "synthesis_incomplete": "Some requested outputs could not be published.",
+        "judge_unavailable": "I couldn't double-check this answer, so treat the details with extra care.",
     }
     kinds = []
     for gap in result.gaps:
