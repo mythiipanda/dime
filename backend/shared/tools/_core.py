@@ -13,6 +13,74 @@ SEASON = "2025-26"
 HIST_SEASON_START = "2009-10"
 
 
+COVERAGE_START = HIST_SEASON_START
+
+COVERAGE_END = SEASON
+
+
+class InvalidSeasonError(Exception):
+
+    def __init__(self, requested: object, coverage_start: str = COVERAGE_START,
+                 coverage_end: str = COVERAGE_END,
+                 nearest: str | None = None) -> None:
+        self.requested = "" if requested is None else str(requested)
+        self.coverage_start = coverage_start
+        self.coverage_end = coverage_end
+        self.nearest = nearest
+        super().__init__(season_error_message(
+            self.requested, nearest, coverage_start, coverage_end))
+
+
+def season_error_message(requested: object, nearest: str | None = None,
+                         coverage_start: str = COVERAGE_START,
+                         coverage_end: str = COVERAGE_END) -> str:
+    raw = "" if requested is None else str(requested).strip()
+    shown = raw or "that"
+    if nearest is None:
+        return (f"I couldn't match '{shown}' to a season "
+                f"(I cover {coverage_start} through {coverage_end}). "
+                f"Which season did you mean?")
+    return (f"The {shown} season is not in this dataset, which covers "
+            f"{coverage_start} through {coverage_end}; "
+            f"nearest season with data is {nearest}.")
+
+
+def _canonical_parts(text: str) -> str | None:
+    s = str(text or "").strip()
+    if (len(s) == 7 and s[:4].isdigit() and s[4] == "-" and s[5:].isdigit()
+            and int(s[5:]) == (int(s[:4]) + 1) % 100):
+        return s
+    return None
+
+
+def _bare_year_slug(text: str) -> str | None:
+    s = str(text or "").strip()
+    if len(s) == 4 and s.isdigit() and s[:2] in ("19", "20"):
+        start = int(s)
+        return f"{start - 1}-{start % 100:02d}"
+    return None
+
+
+def clamp_season(season: object, coverage_start: str = COVERAGE_START,
+                 coverage_end: str = COVERAGE_END) -> str:
+    raw = "" if season is None else str(season).strip()
+    slug = _canonical_parts(raw)
+    if slug is None:
+        slug = _bare_year_slug(raw)
+    if slug is None:
+        raise InvalidSeasonError(
+            raw, coverage_start=coverage_start, coverage_end=coverage_end)
+    if slug < coverage_start:
+        raise InvalidSeasonError(
+            slug, coverage_start=coverage_start,
+            coverage_end=coverage_end, nearest=coverage_start)
+    if slug > coverage_end:
+        raise InvalidSeasonError(
+            slug, coverage_start=coverage_start,
+            coverage_end=coverage_end, nearest=coverage_end)
+    return slug
+
+
 TOOL_LABELS = {
     "resolve_entity": "Identifying players and teams",
     "search_nba": "Searching league coverage",
@@ -79,19 +147,6 @@ STAT_CATEGORIES = frozenset({
     "OREB", "DREB", "TOV", "PF", "EFF", "DD2", "TD3",
     "USG_PCT", "TOV_PCT", "TS_PCT", "SPG", "PIE",
 })
-
-
-def clamp_season(season: object) -> str:
-    import re as _re
-
-    s = str(season or "").strip()
-    if _re.fullmatch(r"20\d{2}-\d{2}", s):
-        return s
-    m = _re.fullmatch(r"20(\d{2})", s)
-    if m:
-        y = int(m.group(1))
-        return f"20{y}-{y + 1:02d}" if y < 50 else f"19{y}-{y + 1:02d}"
-    return SEASON
 
 
 def clamp_stat(stat: str) -> str:
@@ -457,17 +512,12 @@ def is_past_game_date(game_date: str) -> bool:
 def season_static(season: str) -> bool:
     import datetime as _dt
 
-    m = _re_match(r"^20(\d{2})-(\d{2})$", str(season or ""))
-    if not m:
+    s = str(season or "")
+    if (len(s) != 7 or not s[:4].isdigit() or s[4] != "-"
+            or not s[5:].isdigit()):
         return False
-    end_year = 2000 + int(m.group(2))
+    end_year = 2000 + int(s[5:])
     return _dt.date.today() > _dt.date(end_year, 7, 15)
-
-
-def _re_match(pattern: str, text: str):
-    import re as _re
-
-    return _re.match(pattern, text)
 
 
 def _bound_warehouse_read(table, where, params):

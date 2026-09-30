@@ -11,16 +11,21 @@ SKILLS_DIR = Path(__file__).resolve().parent.parent / "app" / "skills"
 EXPECTED = sorted(
     [
         "compare_players",
+        "defensive_analysis",
         "form_check",
         "game_preview",
         "historical_leaders",
         "impact_check",
+        "leaderboard",
         "leaders_read",
         "lineup_wowy",
         "morning_briefing",
+        "player_comparison",
         "record_when_plays",
+        "season_interpretation",
         "shot_profile",
         "standings_read",
+        "team_offense",
     ]
 )
 
