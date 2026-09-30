@@ -9,33 +9,58 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { BACKEND } from "../lib/chat";
 import { apiPath, getQueryParam, setQueryParam } from "../lib/api";
 import { shortPlayerName } from "../lib/exploreIndex";
-import { TEAM_IDS } from "../lib/teams";
+import { TEAM_IDS, abbrForTeamFullName } from "../lib/teams";
 
 const TEAMS: Record<string, number> = TEAM_IDS;
+const FETCH_TIMEOUT_MS = 15000;
+const RETRY_DELAY_MS = 600;
+const UNAVAILABLE = "Lineup data is unavailable right now.";
 
 type Row = { GROUP_NAME: string; MIN: number; PLUS_MINUS: number };
 
-export default function LineupPanel({ initialTeam }: { initialTeam?: string }) {
-  
-  
+type LineupPanelProps = {
+  initialTeam?: string;
+  fetchTimeoutMs?: number;
+  retryDelayMs?: number;
+};
 
+function resolveTeam(raw: string | null | undefined): string {
+  const v = (raw || "").trim();
+  if (!v) return "BOS";
+  const up = v.toUpperCase();
+  if (TEAMS[up]) return up;
+  const full = abbrForTeamFullName(v);
+  if (full && TEAMS[full]) return full;
+  return "BOS";
+}
 
+function sleep(ms: number): Promise<void> {
+  return new Promise((r) => setTimeout(r, ms));
+}
+
+async function fetchJson(url: string, timeoutMs: number): Promise<{ data?: unknown[]; verdict?: string }> {
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), timeoutMs);
+  try {
+    const res = await fetch(url, { signal: ctrl.signal });
+    const d = (await res.json()) as { ok?: boolean; data?: unknown[]; verdict?: string };
+    if (!res.ok || !d.ok) throw new Error("unavailable");
+    return { data: d.data, verdict: d.verdict };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+export default function LineupPanel({ initialTeam, fetchTimeoutMs = FETCH_TIMEOUT_MS, retryDelayMs = RETRY_DELAY_MS }: LineupPanelProps) {
   const [tab, setTab] = useState<"5man" | "wowy">(() => {
     const t = getQueryParam("lineups_tab");
     return t === "wowy" ? "wowy" : "5man";
   });
-  const [team, setTeam] = useState(() => {
-    
-    
-
-
-    const s = (initialTeam || getQueryParam("lineups_team") || "BOS").toUpperCase();
-    return TEAMS[s] ? s : "BOS";
-  });
+  const [team, setTeam] = useState(() => resolveTeam(initialTeam || getQueryParam("lineups_team")));
   const [rows, setRows] = useState<Row[]>([]);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
-
+  const [retryNonce, setRetryNonce] = useState(0);
 
   const [playerA, setPlayerA] = useState(() => getQueryParam("wowy_a") || "Luka");
   const [playerB, setPlayerB] = useState(() => getQueryParam("wowy_b") || "LeBron");
@@ -43,7 +68,6 @@ export default function LineupPanel({ initialTeam }: { initialTeam?: string }) {
   const [wowyVerdict, setWowyVerdict] = useState("");
   const [wowyBusy, setWowyBusy] = useState(false);
 
-  
 
   useEffect(() => {
     if (tab === "wowy" && wowyRows.length === 0) runWowy();
@@ -51,34 +75,37 @@ export default function LineupPanel({ initialTeam }: { initialTeam?: string }) {
 
   useEffect(() => {
     let live = true;
+    setQueryParam("lineups_team", team, true);
     setBusy(true);
     setError("");
     const id = TEAMS[team];
-    if (!id) {
-      setBusy(false);
-      setError("Unknown team.");
-      setRows([]);
-      return () => {
-        live = false;
-      };
-    }
-    fetch(`${BACKEND}${apiPath(`/datasets/lineups?team_id=${id}`)}`)
-      .then((r) => r.json())
-      .then((d) => {
+    const run = async () => {
+      for (let attempt = 0; attempt < 2; attempt++) {
         if (!live) return;
-        if (!d.ok) setError(String(d.error || "failed"));
-        else {
-          const all = (d.data || []) as Row[];
+        if (attempt > 0) await sleep(retryDelayMs);
+        if (!live) return;
+        try {
+          const d = await fetchJson(`${BACKEND}${apiPath(`/datasets/lineups?team_id=${id}`)}`, fetchTimeoutMs);
+          if (!live) return;
+          const all = [...((d.data || []) as Row[])];
           all.sort((a, b) => Number(b.MIN) - Number(a.MIN));
           setRows(all.slice(0, 12));
+          break;
+        } catch {
+          if (!live) return;
+          if (attempt === 1) {
+            setRows([]);
+            setError(UNAVAILABLE);
+          }
         }
-      })
-      .catch((e) => live && setError(String(e)))
-      .finally(() => live && setBusy(false));
+      }
+      if (live) setBusy(false);
+    };
+    run();
     return () => {
       live = false;
     };
-  }, [team]);
+  }, [team, retryNonce]);
 
   const runWowy = () => {
     if (!playerA || !playerB) return;
@@ -86,17 +113,26 @@ export default function LineupPanel({ initialTeam }: { initialTeam?: string }) {
     setError("");
     setQueryParam("wowy_a", playerA, true);
     setQueryParam("wowy_b", playerB, true);
-    fetch(`${BACKEND}${apiPath(`/datasets/wowy?player_a=${encodeURIComponent(playerA)}&player_b=${encodeURIComponent(playerB)}`)}`)
-      .then((r) => r.json())
-      .then((d) => {
-        if (!d.ok) setError(String(d.error || "Failed to calculate WOWY splits"));
-        else {
+    const url = `${BACKEND}${apiPath(`/datasets/wowy?player_a=${encodeURIComponent(playerA)}&player_b=${encodeURIComponent(playerB)}`)}`;
+    const run = async () => {
+      for (let attempt = 0; attempt < 2; attempt++) {
+        if (attempt > 0) await sleep(retryDelayMs);
+        try {
+          const d = await fetchJson(url, fetchTimeoutMs);
           setWowyRows(d.data || []);
           setWowyVerdict(d.verdict || "");
+          break;
+        } catch {
+          if (attempt === 1) {
+            setWowyRows([]);
+            setWowyVerdict("");
+            setError(UNAVAILABLE);
+          }
         }
-      })
-      .catch((e) => setError(String(e)))
-      .finally(() => setWowyBusy(false));
+      }
+      setWowyBusy(false);
+    };
+    run();
   };
 
   const pickTeam = (abbr: string) => {
@@ -148,7 +184,18 @@ export default function LineupPanel({ initialTeam }: { initialTeam?: string }) {
               ))}
             </SelectContent>
           </Select>
-          {error && <div style={{ color: "var(--color-warm-gray)", marginTop: 8 }}>{error}</div>}
+          {error && (
+            <div style={{ marginTop: 8 }}>
+              <div style={{ color: "var(--color-warm-gray)", fontSize: 12 }}>{error}</div>
+              <button
+                className="pill-ghost"
+                style={{ fontSize: 12, marginTop: 8 }}
+                onClick={() => setRetryNonce((n) => n + 1)}
+              >
+                Try again
+              </button>
+            </div>
+          )}
           {busy && rows.length === 0 && !error && <Skeleton lines={5} label={`Loading ${team} lineups`} />}
           {!busy && !error && rows.length === 0 && (
             <div style={{ fontSize: 12, color: "var(--color-warm-gray)", marginTop: 8 }}>
@@ -198,7 +245,7 @@ export default function LineupPanel({ initialTeam }: { initialTeam?: string }) {
               {wowyBusy ? "Calculating..." : "Compare"}
             </button>
           </div>
-          {error && <div style={{ color: "var(--color-warm-gray)", marginBottom: 8 }}>{error}</div>}
+          {error && <div style={{ color: "var(--color-warm-gray)", fontSize: 12, marginBottom: 8 }}>{error}</div>}
           {wowyRows.length > 0 && <WowyCard rows={wowyRows} verdict={wowyVerdict} />}
         </div>
       )}
