@@ -47,6 +47,7 @@ class GapKind(StrEnum):
     EXECUTION_FAILURE = "execution_failure"
     SYNTHESIS_INCOMPLETE = "synthesis_incomplete"
     PROFILE_NAME_RESOLUTION_UNAVAILABLE = "profile/name_resolution_unavailable"
+    JUDGE_UNAVAILABLE = "judge_unavailable"
 
 
 MAX_INTAKE_CONTEXT_TURNS = 8
@@ -986,6 +987,8 @@ class ClaimResult(BaseModel):
     claim_index: StrictInt = Field(ge=0)
     supported: StrictBool
     reasons: list[str] = Field(default_factory=list, max_length=64)
+    evidence_spans: list[str] = Field(default_factory=list, max_length=32)
+    uncertain: StrictBool = False
 
     @model_validator(mode="after")
     def validate_reason(self) -> "ClaimResult":
@@ -997,6 +1000,10 @@ class ClaimResult(BaseModel):
             raise ValueError("claim result reasons must not contain empty values")
         if len(self.reasons) != len(set(self.reasons)):
             raise ValueError("claim result reasons must not contain duplicates")
+        if any(not span.strip() for span in self.evidence_spans):
+            raise ValueError("claim result evidence spans must not contain empty values")
+        if len(self.evidence_spans) != len(set(self.evidence_spans)):
+            raise ValueError("claim result evidence spans must not contain duplicates")
         return self
 
 

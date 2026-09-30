@@ -21,6 +21,11 @@ nothing else:
   - claim_index (int): the claim's position in DraftReport.claims.
   - supported (bool).
   - reasons (list of str): use `[]` when supported is true; when supported is false, provide one or more unique rejection reasons.
+  - uncertain (bool): set `true` when the admitted evidence is ambiguous and
+    neither support nor rejection is honest; an uncertain claim must keep
+    supported aligned with reasons and must never overclaim.
+  - evidence_spans (list of str): quote the exact evidence text supporting
+    the verdict, one span per entry; use `[]` only when no span applies.
 - missing_branches (list of str): requested branches no claim covers.
 - contradictions (list of str): claims conflicting with evidence or with
   each other.
@@ -48,6 +53,9 @@ nothing else:
   supported even when another requested branch is missing or a different tool
   failed. Record missing branches separately; never use them to reject a
   supported claim.
+- When the admitted evidence is ambiguous, say so with uncertain true rather
+  than overclaiming supported true or false. Ambiguity is a verdict, not a
+  reason to guess.
 - A source warning limits only claims affected by that warning. Do not reject a
   regular-season record or trajectory claim because unrelated playoff evidence
   failed or carries a gap.

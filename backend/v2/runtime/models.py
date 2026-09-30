@@ -175,7 +175,7 @@ class RuntimeResult(BaseModel):
             if item.claim != self.draft.claims[item.claim_index]:
                 raise ValueError("verified claim does not match the draft")
             result = by_index.get(item.claim_index)
-            if result is None or not result.supported:
+            if result is None or not result.supported or result.uncertain:
                 raise ValueError("verified claim lacks supported adjudication")
             if item.evidence_ids != item.claim.evidence_ids:
                 raise ValueError("verified claim evidence does not match its claim")
@@ -203,7 +203,8 @@ class RuntimeResult(BaseModel):
             except ValueError as exc:
                 raise ValueError(
                     f"verified claim carries invalid output authority: {exc}") from exc
-        supported = {index for index, result in by_index.items() if result.supported}
+        supported = {index for index, result in by_index.items()
+                     if result.supported and not result.uncertain}
         if seen != supported:
             raise ValueError("verified claims must match supported adjudications")
         expected_status = (

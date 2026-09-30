@@ -40,9 +40,10 @@ def test_requirement_review_policy_changes_only_attempt_timeout():
         "synthesizer": {"primary_attempts": 1, "attempt_timeout_s": 6.0,
             "total_budget_s": 6.0, "secondary_limit": 0,
             "transient_classes": frozenset(), "deterministic_fallback": True},
-        "semantic_verifier": {"primary_attempts": 1, "attempt_timeout_s": 6.0,
-            "total_budget_s": 6.0, "secondary_limit": 0,
-            "transient_classes": frozenset(), "deterministic_fallback": True},
+        "semantic_verifier": {"primary_attempts": 2, "attempt_timeout_s": 6.0,
+            "total_budget_s": 18.0, "secondary_limit": 1,
+            "transient_classes": frozenset({"timeout", "rate_limit", "network", "server_error", "provider_error"}),
+            "deterministic_fallback": True},
     }
     assert ROUTE_POLICIES == expected
 
