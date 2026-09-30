@@ -10,6 +10,7 @@ def _amap():
 
 
 def _strengths(con, season, amap):
+    season = resolve_season(season)
     tabs = {r[0] for r in con.execute("SHOW TABLES").fetchall()}
     if "silver_hist_gamelogs" in tabs:
         rows = con.execute(
@@ -39,6 +40,7 @@ def _strengths(con, season, amap):
 
 
 def _field(con, season, strength, amap):
+    season = resolve_season(season)
     try:
         cols = [r[1] for r in con.execute("PRAGMA table_info(silver_standings)").fetchall()]
     except Exception:
@@ -80,7 +82,8 @@ def _series(a, b, strength):
     return hi if w == 4 else lo
 
 
-def run_playoff_sim(season="2025-26", sims=2000):
+def run_playoff_sim(season=None, sims=2000):
+    season = resolve_season(season)
     from .. import store as _store
     random.seed(SEED)
     con = _store.connect()

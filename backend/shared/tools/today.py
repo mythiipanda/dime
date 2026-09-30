@@ -2,7 +2,7 @@
 from typing import Any
 from langchain_core.tools import tool
 
-from ._core import IN_SEASON_MONTHS, SEASON, season_static
+from ._core import IN_SEASON_MONTHS, season_static, last_completed_season, resolve_season
 
 
 def _in_offseason() -> bool:
@@ -13,6 +13,7 @@ def _in_offseason() -> bool:
 
 
 def _warehouse_has_games(season: str, dates: list[str]) -> bool:
+    season = resolve_season(season)
     try:
         from .. import store as _store
 
@@ -28,6 +29,7 @@ def _warehouse_has_games(season: str, dates: list[str]) -> bool:
 
 
 def _warehouse_games(date_str: str, season: str) -> tuple[list, bool]:
+    season = resolve_season(season)
     try:
         from .. import store as _store
         from .team import game_links
@@ -48,6 +50,7 @@ def _warehouse_games(date_str: str, season: str) -> tuple[list, bool]:
 
 
 def _live_scores_needed(season: str, dates: list[str]) -> bool:
+    season = resolve_season(season)
     if season_static(season):
         return False
     if _in_offseason() and not _warehouse_has_games(season, dates):
@@ -56,6 +59,7 @@ def _live_scores_needed(season: str, dates: list[str]) -> bool:
 
 
 def _games(date_str: str, season: str) -> list:
+    season = resolve_season(season)
     import concurrent.futures
 
     from .team import get_games_on_date
@@ -77,6 +81,7 @@ def _games(date_str: str, season: str) -> list:
 
 
 def _scoreboards(season: str) -> tuple[list, list, bool]:
+    season = resolve_season(season)
     import concurrent.futures
     from datetime import datetime, timedelta as _td
     from zoneinfo import ZoneInfo
@@ -95,6 +100,7 @@ def _scoreboards(season: str) -> tuple[list, list, bool]:
 
 
 def normalize_movers(delta: Any, season: str) -> dict[str, Any]:
+    season = resolve_season(season)
     empty = {"climbers": [], "fallers": [], "new_entries": []}
     if not isinstance(delta, dict) or not delta.get("ok"):
         error = str(delta.get("error", "")) if isinstance(delta, dict) else ""
@@ -111,6 +117,7 @@ def normalize_movers(delta: Any, season: str) -> dict[str, Any]:
 
 
 def _movers_from_delta(delta: Any, season: str) -> list:
+    season = resolve_season(season)
     rows = normalize_movers(delta, season)["rows"]
     return [
         *[{"PLAYER": item.get("player"), "TEAM": item.get("team"),
@@ -125,6 +132,7 @@ def _movers_from_delta(delta: Any, season: str) -> list:
 
 
 def _streaks(season: str) -> list[dict[str, Any]]:
+    season = resolve_season(season)
     streaks: list[dict[str, Any]] = []
     try:
         from .. import store as _store
@@ -161,8 +169,9 @@ def _streaks(season: str) -> list[dict[str, Any]]:
 
 
 @tool
-def get_today(season: str = SEASON) -> dict[str, Any]:
+def get_today(season: str | None = None) -> dict[str, Any]:
     """Today home view: last night's results, tonight's games, leaderboard movers, streaks."""
+    season = resolve_season(season)
     from datetime import datetime
     from zoneinfo import ZoneInfo
 
@@ -184,12 +193,13 @@ def get_today(season: str = SEASON) -> dict[str, Any]:
 
 
 @tool
-def get_morning_briefing(season: str = SEASON) -> dict[str, Any]:
+def get_morning_briefing(season: str | None = None) -> dict[str, Any]:
     """Morning briefing: today's games, watchlist updates, leaderboard movers.
 
     Deterministic pipeline for app open. Combines get_today, get_watchlist,
     and get_leaderboard_deltas into one response.
     """
+    season = resolve_season(season)
     import concurrent.futures as _cf
 
     from .league import get_leaderboard_deltas

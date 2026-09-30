@@ -5,7 +5,7 @@ from typing import Any
 import numpy as np
 from langchain_core.tools import tool
 
-from ._core import SEASON, clamp_season, coerce_team_id, is_past_game_date
+from ._core import clamp_season, coerce_team_id, is_past_game_date, last_completed_season, resolve_season
 from .preview import (
     _abbrev,
     _entity_date,
@@ -52,6 +52,7 @@ def _full_name(team_id: int) -> str:
 
 def _rating_row(con: Any, team_id: int,
                 season: str) -> dict[str, Any] | None:
+    season = resolve_season(season)
     rows = con.execute(
         """SELECT OFF_RATING, DEF_RATING, NET_RATING, PACE, GP, W, L,
                   _fetched_at FROM silver_team_ratings
@@ -71,6 +72,7 @@ def _rating_row(con: Any, team_id: int,
 
 def _injury_penalty(con: Any, full_name: str,
                     season: str) -> dict[str, Any]:
+    season = resolve_season(season)
     out = {"penalty": 0.0, "players": [], "fetched_at": None,
            "note": "no injury data in warehouse; no adjustment applied"}
     try:
@@ -138,6 +140,7 @@ def _simulate(home_ppg: float, away_ppg: float,
 
 def _find_meeting(season: str, ida: int, idb: int,
                   game_date: str) -> tuple[int | None, int | None, str, bool]:
+    season = resolve_season(season)
     from datetime import timedelta as _td
     from datetime import datetime as _dt
     from zoneinfo import ZoneInfo
@@ -161,9 +164,10 @@ def _find_meeting(season: str, ida: int, idb: int,
 
 @tool
 def get_game_prediction(a: str = "", b: str = "", game_date: str = "",
-                        season: str = SEASON, n_sims: int = DEFAULT_SIMS,
+                        season: str | None = None, n_sims: int = DEFAULT_SIMS,
                         seed: int = DEFAULT_SEED) -> dict[str, Any]:
     """Pre-game Monte Carlo prediction: win probability, projected score/total, and confidence intervals. Model estimates with documented methodology, not betting picks. Two team names/abbrevs/ids; optional game_date (MM/DD/YYYY), n_sims, seed for reproducibility."""
+    season = resolve_season(season)
     from .. import store
 
     season = clamp_season(season)

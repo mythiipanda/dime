@@ -6,7 +6,7 @@ from langchain_core.tools import tool
 from .. import store as _store
 from .team import _lineup_key
 from ..sources import nba_stats
-from ._core import MAX_ROWS, SEASON, TTL_PBPSTATS, _warehouse_or_live, coerce_team_id
+from ._core import MAX_ROWS, TTL_PBPSTATS, _warehouse_or_live, coerce_team_id, last_completed_season, resolve_season
 
 BLOWOUT_MARGIN = 20
 BLOWOUT_SHARE_FLAG = 0.5
@@ -98,6 +98,7 @@ def _best_net_unit(units: list[dict[str, Any]],
 
 
 def _possession_aggs(team_id: int, season: str) -> dict[tuple[int, ...], dict] | None:
+    season = resolve_season(season)
     try:
         rows = _store._read_df(
             "SELECT game_id, possession_number, offense_team_id,"
@@ -157,7 +158,7 @@ def _possession_aggs(team_id: int, season: str) -> dict[tuple[int, ...], dict] |
 
 @tool
 def get_lineup_stats(
-    team: str | int, season: str = SEASON, min_possessions: int = 100,
+    team: str | int, season: str | None = None, min_possessions: int = 100,
     include_small: bool = False, limit: int = 10,
 ) -> dict[str, Any]:
     """Five-man lineup ratings with sample floors. Names, abbrevs, or ids.
@@ -168,6 +169,7 @@ def get_lineup_stats(
     returned in the top-level best_net_unit field and flagged per-row as
     is_best_net_unit, so it is never the most-used unit by default.
     """
+    season = resolve_season(season)
     try:
         team_id = coerce_team_id(team)
     except ValueError as exc:

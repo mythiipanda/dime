@@ -6,7 +6,7 @@ from typing import Any
 import duckdb
 from langchain_core.tools import tool
 
-from ._core import SEASON, clamp_season
+from ._core import clamp_season, last_completed_season, resolve_season
 
 _REST_NOTE = (
     "Rest = calendar days since the team's previous game minus 1; "
@@ -192,6 +192,7 @@ def _classify_scoreboard_rows(
 def _load_scoreboard(
     season: str,
 ) -> tuple[list[dict[str, Any]], dict[str, int], str]:
+    season = resolve_season(season)
     from .. import store as _store
 
 
@@ -232,7 +233,7 @@ def _game_row(g: TeamGame) -> dict[str, Any]:
 
 
 @tool
-def get_rest_advantage(team: str = "league", season: str = SEASON,
+def get_rest_advantage(team: str = "league", season: str | None = None,
                        season_type: str = "all", date: str = "",
                        opponent: str = "") -> dict[str, Any]:
     """Rest advantage: who had the fresher legs before each game.
@@ -252,6 +253,7 @@ def get_rest_advantage(team: str = "league", season: str = SEASON,
     game record). Team + opponent with no date returns their most
     recent completed matchup.
     """
+    season = resolve_season(season)
     season = clamp_season(season)
     st = str(season_type or "all").strip().lower()
     if st not in ("regular", "playoffs", "all"):

@@ -8,7 +8,7 @@ planning begins. Runs exactly once per turn.
 ## Input
 - The user's current question, verbatim.
 - Prior conversation context, when present: up to eight earlier user/assistant turns. Use it only to resolve references, entities, season, and the current goal. It is context, not admitted factual evidence.
-- The current date, supplied by the runtime as current_date. Use it only to resolve as_of and the current in-progress season.
+- The current date, supplied by the runtime as current_date. Use it only to resolve as_of. Season defaults come from warehouse coverage, not the calendar.
 
 ## Output
 A single JSON object matching the TaskSpec contract, and nothing else.
@@ -22,7 +22,8 @@ Fields:
 - entities (list of {id, type, display_name}): canonical NBA entities;
   type is "player" | "team" | "game" | "league".
 - season ({value, source, confidence}) or null: the resolved NBA season,
-  e.g. "2025-26"; source is "user" | "context" | "default" | "resolved".
+  e.g. "2024-25" (shape only; the runtime pins the real value from
+  warehouse coverage); source is "user" | "context" | "default" | "resolved".
 - as_of (ISO date) or null: the date the answer should speak as of.
 - subject_entity_type (str) or null: the entity level of the question subject ("player" | "team"); null when ambiguous.
 - subquestions (list of str): the distinct questions inside the goal.
@@ -37,8 +38,11 @@ Fields:
 - Resolve entities to canonical identity using the context; never invent
   an id.
 - Resolve season and as_of explicitly. If neither the question nor the
-  context names a season, use the current in-progress season and mark
-  source "default".
+  context names a season, use the most recent season with warehouse data
+  and mark source "default". Relative phrases such as "last season",
+  "this season", and "most recent season" resolve to that same
+  most-recent-with-data season, never to the calendar in-progress season;
+  the runtime pins the exact value from warehouse coverage after intake.
 - Resolve follow-up words such as "that", "he", and "that team" against conversation context when the referent is clear; preserve the resolved entity and prior analytical goal.
 - Never copy a factual claim from conversation context into required evidence or treat prior assistant text as proof; plan fresh admitted evidence for the current answer.
 - Put a gap in open_questions only when the user must answer it before planning. Missing evidence, uncertain causes, unspecified explanatory factors, or facts the tools must discover are not open questions. Record a bounded interpretation in assumptions and request the capabilities needed to test it.

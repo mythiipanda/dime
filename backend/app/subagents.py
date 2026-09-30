@@ -14,23 +14,22 @@ from shared.config import settings
 
 logger = logging.getLogger(__name__)
 
-SEASON = "2025-26"
-
 _SEASON_CACHE: dict[str, str] = {}
 
 
-def data_season() -> str:
-    cached = _SEASON_CACHE.get("season")
-    if cached is None:
-        try:
-            from shared.store import latest_data_season
-            cached = latest_data_season()
-        except Exception as exc:
-            logger.warning("data_season(): warehouse unreadable (%s); "
-                           "falling back to %s", exc, SEASON)
-            cached = SEASON
-        _SEASON_CACHE["season"] = cached
-    return cached
+def data_season() -> str | None:
+    try:
+        from shared.tools._core import last_completed_season
+        season = last_completed_season()
+    except Exception as exc:
+        logger.warning("data_season(): warehouse unreadable (%s)", exc)
+        return None
+    if season is None:
+        logger.warning("data_season(): no season with warehouse data")
+        _SEASON_CACHE.pop("season", None)
+        return None
+    _SEASON_CACHE["season"] = season
+    return season
 WORKER_BUDGET = 3
 TOOL_TIMEOUT_S = 75
 LLM_ROUND_TIMEOUT_S = 100
@@ -158,7 +157,8 @@ async def _run_desk(
         return {"agent": desk, "ok": False, "error": f"no key for {provider}",
                 "tool_trace": []}
     season = data_season()
-    brief = brief.replace("{DATA_SEASON}", season)
+    brief = brief.replace(
+        "{DATA_SEASON}", season or "latest season with warehouse data")
     calls_made = 0
     _desk_t0 = _time.time()
     collected: list[dict[str, Any]] = []

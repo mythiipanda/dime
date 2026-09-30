@@ -5,7 +5,7 @@ import datetime as _dt
 from langchain_core.tools import tool
 
 from .. import store
-from ._core import SEASON, clamp_season, coerce_player_id, coerce_team_id
+from ._core import clamp_season, coerce_player_id, coerce_team_id, last_completed_season, resolve_season
 from .splits import _resolve_name, opponent_abbr, parse_game_date
 
 SMALL_SAMPLE_GP = 5
@@ -60,6 +60,7 @@ def vs_opponent(rows: list[dict[str, Any]], abbr: str) -> list[dict[str, Any]]:
 def _load_player_games(pid: int, season: str) -> list[dict[str, Any]]:
 
 
+    season = resolve_season(season)
     con = store.connect(read_only=True)
     cols = ("GAME_DATE", "Game_ID", "MATCHUP", "WL", "MIN", "FGM", "FGA",
             "FG3M", "FG3A", "FTM", "FTA", "REB", "AST", "STL", "BLK",
@@ -123,7 +124,7 @@ def _coverage_note() -> str:
 
 @tool
 def get_head_to_head(player: str, opponent: str,
-                     season: str = SEASON) -> dict[str, Any]:
+                     season: str | None = None) -> dict[str, Any]:
     """How a player has done against one opponent team.
 
     player: name, nickname, or id (same resolution as every other tool).
@@ -140,6 +141,7 @@ def get_head_to_head(player: str, opponent: str,
     meetings between the two players' teams instead of erroring; the
     resolution is disclosed in the note.
     """
+    season = resolve_season(season)
     season = clamp_season(season)
     try:
         pid = coerce_player_id(player)

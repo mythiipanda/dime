@@ -7,7 +7,7 @@ from typing import Any
 from langchain_core.tools import tool
 
 from .. import store
-from ._core import SEASON, clamp_season, coerce_player_id
+from ._core import clamp_season, coerce_player_id, last_completed_season, resolve_season
 from .headtohead import _team_abbr
 from .splits import _resolve_name, is_home, opponent_abbr, parse_game_date
 
@@ -86,6 +86,7 @@ def _table_for(playoffs: bool) -> str:
 
 def _load_games(table: str, season: str,
                 pid: int | None = None) -> list[dict[str, Any]]:
+    season = resolve_season(season)
     cols = ("GAME_DATE", "Game_ID", "MATCHUP", "WL", "MIN", "FGM", "FGA", "FG3M",
             "FG3A", "FTM", "FTA", "OREB", "DREB", "REB", "AST", "STL",
             "BLK", "TOV", "PF", "PTS", "PLUS_MINUS")
@@ -147,10 +148,12 @@ def _load_games(table: str, season: str,
 
 
 def _load_player_games(pid: int, season: str) -> list[dict[str, Any]]:
+    season = resolve_season(season)
     return _load_games(_table_for(False), season, pid)
 
 
 def _playoff_coverage(season: str | None = None) -> str:
+    season = resolve_season(season)
     try:
         con = store.connect(read_only=True)
         try:
@@ -188,6 +191,7 @@ def _playoff_coverage(season: str | None = None) -> str:
 
 
 def playoff_inactive_note(pid: int, season: str, name: str | None = None) -> str | None:
+    season = resolve_season(season)
     try:
         con = store.connect(read_only=True)
         try:
@@ -502,7 +506,7 @@ def search_game_logs(
     end_date: str | None = None,
     home_away: str | None = None,
     playoffs: bool = False,
-    season: str = SEASON,
+    season: str | None = None,
     limit: int = 50,
 ) -> dict[str, Any]:
     """Filter game logs by stat thresholds, opponent, time, or home/away.
@@ -537,6 +541,7 @@ def search_game_logs(
     silent 0.
     Warehouse only; 2025-26 only.
     """
+    season = resolve_season(season)
     season = clamp_season(season)
     table = _table_for(bool(playoffs))
     scope = "playoff" if playoffs else "regular-season"

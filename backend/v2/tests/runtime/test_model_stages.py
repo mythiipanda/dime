@@ -19,6 +19,26 @@ from v2.contracts import EvidenceEnvelope, TaskSpec, PlanNode, RequirementReview
 from v2.arguments import PlannerOutputWire, RequirementReviewWire, SLOTS
 
 
+def _seed_warehouse_seasons(tmp_path, monkeypatch, seasons):
+    import duckdb
+
+    from shared import store
+    from shared.tools import _core as core_mod
+
+    db = tmp_path / "warehouse.duckdb"
+    connection = duckdb.connect(str(db))
+    connection.execute(
+        "CREATE TABLE silver_boxscores (_season VARCHAR, GAME_ID VARCHAR)")
+    for season in seasons:
+        connection.execute(
+            "INSERT INTO silver_boxscores VALUES (?, ?)",
+            [season, "00200001"])
+    connection.close()
+    monkeypatch.setattr(store, "DB_PATH", db)
+    core_mod.last_completed_season_cache_clear()
+    return db
+
+
 class StubModel:
     def __init__(self, values):
         self.values = iter(values)
@@ -1207,8 +1227,11 @@ async def test_two_team_winner_request_requires_prediction_even_if_intake_choose
 
 
 @pytest.mark.anyio
-async def test_implicit_matchup_season_is_pinned_to_prediction_data_vintage():
-    from shared.tools._core import SEASON
+async def test_implicit_matchup_season_is_pinned_to_prediction_data_vintage(
+    tmp_path, monkeypatch,
+):
+    from shared.tools._core import last_completed_season
+    _seed_warehouse_seasons(tmp_path, monkeypatch, ["2024-25"])
     stub = StubModel([{
         "goal": "predict Celtics vs Knicks", "mode": "quick",
         "deliverable": "winner", "entities": [
@@ -1221,7 +1244,7 @@ async def test_implicit_matchup_season_is_pinned_to_prediction_data_vintage():
         stub, provider="stub", model_name="stub",
         capability_catalog={"game_prediction": {}},
     ).understand("Who wins Celtics vs Knicks?")
-    assert task.season.value == SEASON
+    assert task.season.value == last_completed_season() == "2024-25"
     assert task.season.source == "default"
 
 
@@ -1613,8 +1636,11 @@ async def test_provider_structured_failure_preserves_sanitized_diagnostics(monke
     assert model.last_failures[0]["attempt_number"] == 1
     assert model.last_failures[0]["latency_ms"] >= 0
 @pytest.mark.anyio
-async def test_intake_season_normalization_propagates_to_requirement_arguments():
-    from shared.tools._core import SEASON
+async def test_intake_season_normalization_propagates_to_requirement_arguments(
+    tmp_path, monkeypatch,
+):
+    from shared.tools._core import last_completed_season
+    _seed_warehouse_seasons(tmp_path, monkeypatch, ["2024-25"])
 
     stub = StubModel([
         {
@@ -1634,8 +1660,9 @@ async def test_intake_season_normalization_propagates_to_requirement_arguments()
         stub, provider="stub", model_name="stub",
         capability_catalog={"game_prediction": {}}, requirement_review=True,
     ).understand("current prediction")
-    assert task.season.value == SEASON
-    assert task.requirements[0].capability_arguments["season"] == SEASON
+    assert task.season.value == last_completed_season() == "2024-25"
+    assert (task.requirements[0].capability_arguments["season"]
+            == last_completed_season() == "2024-25")
 @pytest.mark.anyio
 async def test_planner_replans_call_missing_catalog_required_arguments():
     task = TaskSpec(
@@ -1878,8 +1905,11 @@ async def test_planner_rejects_invalid_replacement_plan_arguments():
         await planner.plan(task)
 
 @pytest.mark.anyio
-async def test_implicit_relative_season_is_pinned_for_non_prediction_capability():
-    from shared.tools._core import SEASON
+async def test_implicit_relative_season_is_pinned_for_non_prediction_capability(
+    tmp_path, monkeypatch,
+):
+    from shared.tools._core import last_completed_season
+    _seed_warehouse_seasons(tmp_path, monkeypatch, ["2024-25"])
     stub = StubModel([{
         "goal": "three point leaders this season", "mode": "quick",
         "deliverable": "leaders", "season": {
@@ -1890,7 +1920,7 @@ async def test_implicit_relative_season_is_pinned_for_non_prediction_capability(
         stub, provider="stub", model_name="stub",
         capability_catalog={"qualified_leaders": {}},
     ).understand("Who are the three point leaders this season?")
-    assert task.season.value == SEASON
+    assert task.season.value == last_completed_season() == "2024-25"
     assert task.season.source == "default"
 
 @pytest.mark.anyio

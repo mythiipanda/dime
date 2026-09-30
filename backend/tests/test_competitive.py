@@ -9,7 +9,7 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from shared.tools import get_competitive_ratings
-from shared.tools._core import SEASON
+from shared.tools._core import last_completed_season as _derived_season
 from shared.tools.competitive import (
     clamp_blowout_margin,
     map_season_type,
@@ -182,14 +182,14 @@ def test_integration_team_matches_raw_reaggregation_real_warehouse():
             """SELECT plus_minus FROM silver_hist_gamelogs
                WHERE _season = ? AND team_abbreviation = ?
                  AND season_type = 'regular-season'""",
-            [SEASON, "BOS"],
+            [_derived_season(), "BOS"],
         ).fetchall()
     finally:
         con.close()
-    assert raw, f"no regular-season rows for BOS in {SEASON}"
+    assert raw, f"no regular-season rows for BOS in {_derived_season()}"
     movs = [float(r[0]) for r in raw if r[0] is not None]
     expected = summarize_team("BOS", movs, 20, 10)
-    res = get_competitive_ratings.invoke({"team": "BOS", "season": SEASON,
+    res = get_competitive_ratings.invoke({"team": "BOS", "season": _derived_season(),
                                           "season_type": "regular",
                                           "blowout_margin": 20})
     assert res["ok"] is True, res.get("error")
@@ -210,7 +210,7 @@ def test_integration_team_matches_raw_reaggregation_real_warehouse():
             for s in row["sensitivity"]}
     assert set(sens) == {10, 20, 30}
     assert res["meta"]["source"] == "warehouse"
-    assert res["meta"]["seasons"] == [SEASON]
+    assert res["meta"]["seasons"] == [_derived_season()]
     assert res["meta"]["season_scope"] == "single"
     assert res["meta"]["blowout_margin"] == 20.0
     assert "regular" in res["meta"]["season_type"].lower()
@@ -228,7 +228,7 @@ def test_integration_default_season_type_is_regular():
         _connect_retry().close()
     except (duckdb.IOException, duckdb.ConnectionException, TimeoutError):
         pytest.skip("warehouse lock timeout; seed job holds the lock")
-    res = get_competitive_ratings.invoke({"team": "BOS", "season": SEASON})
+    res = get_competitive_ratings.invoke({"team": "BOS", "season": _derived_season()})
     assert res["ok"] is True, res.get("error")
     assert "regular" in res["meta"]["season_type"].lower()
     split = res["meta"]["season_type_split"]
@@ -241,7 +241,7 @@ def test_integration_league_mode_flags_no_verdicts():
     except (duckdb.IOException, duckdb.ConnectionException, TimeoutError):
         pytest.skip("warehouse lock timeout; seed job holds the lock")
     res = get_competitive_ratings.invoke({"team": "league",
-                                          "season": SEASON})
+                                          "season": _derived_season()})
     assert res["ok"] is True, res.get("error")
     assert len(res["rows"]) == 30
     assert "below_floor" not in res
@@ -260,7 +260,7 @@ def test_integration_playoffs_team_is_low_sample_without_read():
         _connect_retry().close()
     except (duckdb.IOException, duckdb.ConnectionException, TimeoutError):
         pytest.skip("warehouse lock timeout; seed job holds the lock")
-    res = get_competitive_ratings.invoke({"team": "BOS", "season": SEASON,
+    res = get_competitive_ratings.invoke({"team": "BOS", "season": _derived_season(),
                                           "season_type": "playoffs"})
     assert res["ok"] is True, res.get("error")
     row = res["rows"][0]

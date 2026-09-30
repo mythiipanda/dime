@@ -103,7 +103,7 @@ from .team import (
 from .today import get_today, get_morning_briefing
 from .watchlist import add_watchlist_item, get_watchlist, remove_watchlist_item
 from .wpa import get_wpa_leaders
-from ._core import MAX_ROWS, SEASON, STAT_CATEGORIES, clamp_stat
+from ._core import MAX_ROWS, STAT_CATEGORIES, clamp_stat, last_completed_season, resolve_season
 
 v1_tools: list[BaseTool] = [
     resolve_entity,
@@ -213,6 +213,6 @@ v1_tools: list[BaseTool] = [
 TOOL_NAMES = [t.name for t in v1_tools]
 
 __all__ = [
-    "SEASON", "MAX_ROWS", "STAT_CATEGORIES", "clamp_stat",
+    "MAX_ROWS", "STAT_CATEGORIES", "clamp_stat",
     "v1_tools", "TOOL_NAMES",
 ]

@@ -4,11 +4,25 @@ from typing import Any
 from langchain_core.tools import tool
 
 from .. import store as _store
-from ._core import (MAX_ROWS, SEASON, clamp_season, coerce_player_id,
-                    coerce_team_id)
+from ._core import (MAX_ROWS, clamp_season, coerce_player_id, coerce_team_id, last_completed_season, resolve_season)
 
 TABLE = "silver_shots"
-COVERAGE_SEASON = "2025-26"
+
+
+def _shots_seasons() -> list[str]:
+    try:
+        con = _store.connect(read_only=True)
+        try:
+            rows = con.execute(
+                "SELECT DISTINCT _season FROM silver_shots").fetchall()
+        finally:
+            try:
+                con.close()
+            except Exception:
+                pass
+    except Exception:
+        return []
+    return sorted(r[0] for r in rows if r and r[0])
 
 ZONE_KEYS = ("rim", "short_mid", "long_mid", "corner_3", "atb_3")
 THREE_ZONES = frozenset({"corner_3", "atb_3"})
@@ -354,6 +368,7 @@ def _where_sql(season: str, player_id: int | None, team_id: int | None,
                late_seconds: int | None, three_only: bool,
                made_filter: str, include_ot: bool = True
                ) -> tuple[str, list[object]]:
+    season = resolve_season(season)
     zone_expr = _zone_case_sql()
     clauses = ["_season = ?"]
     params: list[object] = [season]
@@ -415,6 +430,7 @@ _AGG_SELECT = """COUNT(*) AS attempts,
 
 def _resolve_player(con: Any, season: str,
                     raw: str) -> tuple[int | None, str, Any]:
+    season = resolve_season(season)
     text = (raw or "").strip()
     if not text:
         return None, "none", None
@@ -472,6 +488,7 @@ def _disambiguation_payload(con: Any, season: str, text: str,
                             candidates: list[dict[str, Any]],
                             where_np: str, params_np: list[object],
                             heave_filter: str) -> list[dict[str, Any]]:
+    season = resolve_season(season)
     ids = [c["player_id"] for c in candidates]
     in_list = ", ".join("?" for _ in ids)
     zone_expr = _zone_case_sql()
@@ -520,9 +537,9 @@ def search_shots(player: str = "", team: str = "", zones: str = "",
                  periods: str = "", three_only: bool = False,
                  made: str = "any", late_clock: str = "",
                  exclude_heaves: bool = True, limit: int = 25,
-                 season: str = SEASON, group_by: str = "",
+                 season: str | None = None, group_by: str = "",
                  include_ot: str = "auto") -> dict[str, Any]:
-    """Conversational shot finder: filter 2025-26 shots by player, team,
+    """Conversational shot finder: filter warehouse shots by player, team,
     zone, period, makes, and late-clock window, with zone/period aggregates
     plus optional per-player/per-team leaderboards.
 
@@ -541,11 +558,18 @@ def search_shots(player: str = "", team: str = "", zones: str = "",
     time-based only, never score-aware (meta.clutch_safe=false); TS% is not
     shown because the table has no free-throw attempts.
     """
+    season = resolve_season(season)
     season = clamp_season(season)
-    if season != COVERAGE_SEASON:
-        return {"tool": "search_shots", "ok": False,
-                "error": f"warehouse silver_shots covers the {COVERAGE_SEASON} "
-                         f"season only (233,632 shots); requested {season!r}"}
+    _shot_seasons = _shots_seasons()
+    if season not in _shot_seasons:
+        if _shot_seasons:
+            _shot_err = (f"warehouse silver_shots covers "
+                         f"{', '.join(_shot_seasons)} (233,632 shots); "
+                         f"requested {season!r}")
+        else:
+            _shot_err = ("warehouse silver_shots has no season on hand; "
+                         f"requested {season!r}")
+        return {"tool": "search_shots", "ok": False, "error": _shot_err}
     try:
         wanted_zones = parse_zones(zones)
         allowed_periods = parse_periods(periods)
@@ -610,6 +634,7 @@ def _ambiguous_response(con: Any, season: str, text: str,
                         made_filter: str, late_seconds: int | None,
                         exclude_heaves: bool, group: str,
                         include_ot: bool = True) -> dict[str, Any]:
+    season = resolve_season(season)
     zone_expr = _zone_case_sql()
     heave_filter = "" if not exclude_heaves else f" AND NOT {_heave_sql()}"
     where_np, params_np = _where_sql(
@@ -662,6 +687,7 @@ def _run_search(con: Any, season: str, player: str, team: str,
                 late_seconds: int | None, exclude_heaves: bool, lim: int,
                 group: str, ot: bool, periods_raw: str,
                 late_raw: str) -> dict[str, Any]:
+    season = resolve_season(season)
     zone_expr = _zone_case_sql()
     heave = _heave_sql()
     where, params = _where_sql(
@@ -835,8 +861,9 @@ def _run_search(con: Any, season: str, player: str, team: str,
         "clutch_safe": False,
         "score_aware": False,
         "data_note": (
-            f"Warehouse silver_shots coverage is the {COVERAGE_SEASON} season "
-            f"only (233,632 shots, regular season and playoffs). PLAYER_NAME "
+            f"Warehouse silver_shots coverage is "
+            f"{', '.join(_shot_seasons) or 'no season on hand'} "
+            f"(233,632 shots, regular season and playoffs). PLAYER_NAME "
             f"is last-name-only (e.g. 'Gilgeous-Alexander'). TEAM_NAME/HTM/VTM "
             f"columns are not populated in this table, so team abbreviations "
             f"come from the nba_api static id->abbreviation mapping. GAME_DATE is not "

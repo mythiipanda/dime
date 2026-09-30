@@ -6,8 +6,6 @@ import polars as pl
 from .. import store
 from ..sources.base import FetchResult
 
-SEASON = "2025-26"
-
 
 
 HIST_SEASON_START = "2009-10"
@@ -15,14 +13,55 @@ HIST_SEASON_START = "2009-10"
 
 COVERAGE_START = HIST_SEASON_START
 
-COVERAGE_END = SEASON
+COVERAGE_END: str | None = None
+
+_LAST_SEASON_KEY: tuple | None = None
+_LAST_SEASON_VALUE: str | None = None
+
+
+def last_completed_season() -> str | None:
+    global _LAST_SEASON_KEY, _LAST_SEASON_VALUE
+    try:
+        stat = store.DB_PATH.stat()
+        key = (stat.st_mtime_ns, stat.st_size)
+    except OSError:
+        return None
+    if _LAST_SEASON_KEY == key:
+        return _LAST_SEASON_VALUE
+    try:
+        seasons = store.seasons_with_data()
+    except Exception:
+        return None
+    value = seasons[-1] if seasons else None
+    _LAST_SEASON_KEY = key
+    _LAST_SEASON_VALUE = value
+    return value
+
+
+def last_completed_season_cache_clear() -> None:
+    global _LAST_SEASON_KEY, _LAST_SEASON_VALUE
+    _LAST_SEASON_KEY = None
+    _LAST_SEASON_VALUE = None
+
+
+def resolve_season(season: object | None = None) -> str | None:
+    text = "" if season is None else str(season).strip()
+    if text:
+        return text
+    return last_completed_season()
+
+
+def coverage_end() -> str:
+    return last_completed_season() or COVERAGE_START
 
 
 class InvalidSeasonError(Exception):
 
     def __init__(self, requested: object, coverage_start: str = COVERAGE_START,
-                 coverage_end: str = COVERAGE_END,
+                 coverage_end: str | None = None,
                  nearest: str | None = None) -> None:
+        if coverage_end is None:
+            coverage_end = last_completed_season() or coverage_start
         self.requested = "" if requested is None else str(requested)
         self.coverage_start = coverage_start
         self.coverage_end = coverage_end
@@ -33,7 +72,9 @@ class InvalidSeasonError(Exception):
 
 def season_error_message(requested: object, nearest: str | None = None,
                          coverage_start: str = COVERAGE_START,
-                         coverage_end: str = COVERAGE_END) -> str:
+                         coverage_end: str | None = None) -> str:
+    if coverage_end is None:
+        coverage_end = last_completed_season() or coverage_start
     raw = "" if requested is None else str(requested).strip()
     shown = raw or "that"
     if nearest is None:
@@ -62,8 +103,17 @@ def _bare_year_slug(text: str) -> str | None:
 
 
 def clamp_season(season: object, coverage_start: str = COVERAGE_START,
-                 coverage_end: str = COVERAGE_END) -> str:
+                 coverage_end: str | None = None) -> str:
+    if coverage_end is None:
+        coverage_end = last_completed_season() or coverage_start
     raw = "" if season is None else str(season).strip()
+    if not raw:
+        derived = last_completed_season()
+        if derived is None:
+            raise InvalidSeasonError(
+                season, coverage_start=coverage_start,
+                coverage_end=coverage_end)
+        raw = derived
     slug = _canonical_parts(raw)
     if slug is None:
         slug = _bare_year_slug(raw)
@@ -426,15 +476,16 @@ def coerce_player_id(value: object) -> int:
 
 
         try:
+            _vintage = last_completed_season()
             has_logs = store.connect(read_only=True).execute(
                 "SELECT count(*) n FROM silver_player_gamelogs WHERE Player_ID=? AND _season=?",
-                [resolved, SEASON]).fetchone()[0]
+                [resolved, _vintage]).fetchone()[0]
             if not has_logs:
                 matches = store.connect(read_only=True).execute(
                     "SELECT DISTINCT s.PLAYER_ID FROM silver_player_season s "
                     "JOIN silver_player_gamelogs g ON g.Player_ID=s.PLAYER_ID AND g._season=s._season "
                     "WHERE lower(s.PLAYER)=lower(?) AND s._season=?",
-                    [raw, SEASON]).fetchall()
+                    [raw, _vintage]).fetchall()
                 if len(matches) == 1:
                     return int(matches[0][0])
         except Exception:
@@ -534,8 +585,12 @@ def _bound_warehouse_read(table, where, params):
         return frame, before
 
 
-def _warehouse_or_live(table: str, where: str, params: list[object], fetch: Any, season: str,
+def _warehouse_or_live(table: str, where: str, params: list[object], fetch: Any, season: str | None,
     entity: str = "", limit: int = MAX_ROWS, live_first: bool = False, ttl_s: float | None = None):
+    season = resolve_season(season)
+    if not season:
+        return [], {"source": "warehouse",
+                    "error": "warehouse has no season with data"}
     frame = None; identity = None
     if not live_first:
         frame, identity = _bound_warehouse_read(table, where, params)

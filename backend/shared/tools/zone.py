@@ -5,7 +5,7 @@ from typing import Any
 from langchain_core.tools import tool
 
 from .. import store as _store
-from ._core import SEASON, clamp_season, coerce_team_id
+from ._core import clamp_season, coerce_team_id, last_completed_season, resolve_season
 
 TABLE = "silver_hist_shots"
 
@@ -48,6 +48,7 @@ def zone_of(x: float, y: float, shot_value: int) -> str:
 
 
 def season_year(season: str) -> int:
+    season = resolve_season(season)
     return int(clamp_season(season)[:4]) + 1
 
 
@@ -168,11 +169,12 @@ def _coverage_bounds() -> str:
 
 @tool
 def get_team_shot_zones(teams: str = "league",
-                        season: str = SEASON) -> dict[str, Any]:
+                        season: str | None = None) -> dict[str, Any]:
     """League-wide team shot-zone diet: per-zone attempt share and eFG
     with league baselines and deltas. teams is "league" or a comma-separated
     list of team names/abbrevs/ids. Zones: rim, short_mid, long_mid,
     corner_3, atb_3."""
+    season = resolve_season(season)
     season = clamp_season(season)
     year = season_year(season)
     frame = _store.read_frame(TABLE, "season = ?", [year])

@@ -5,7 +5,7 @@ from typing import Any
 import duckdb
 from langchain_core.tools import tool
 
-from ._core import SEASON, clamp_season
+from ._core import clamp_season, last_completed_season, resolve_season
 
 _TOOL_NAME = "get_competitive_ratings"
 
@@ -181,7 +181,7 @@ def _read(row: dict[str, Any], margin: float) -> str | None:
 @tool
 def get_competitive_ratings(
     team: str = "league",
-    season: str = SEASON,
+    season: str | None = None,
     season_type: str = "regular",
     blowout_margin: float = 20,
     min_games: int = 10,
@@ -202,6 +202,7 @@ def get_competitive_ratings(
     numbers with no interpretation. Warehouse only; plus_minus is each
     team's own MOV per game.
     """
+    season = resolve_season(season)
     margin = clamp_blowout_margin(blowout_margin)
     try:
         floor = int(min_games)

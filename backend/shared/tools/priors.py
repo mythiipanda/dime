@@ -3,7 +3,7 @@ from typing import Any
 
 from langchain_core.tools import tool
 
-from ._core import SEASON
+from ._core import last_completed_season, resolve_season
 
 PRIOR_SEASONS = {2022: "2021-22", 2023: "2022-23",
                  2024: "2023-24", 2025: "2024-25"}
@@ -76,12 +76,12 @@ def get_rapm_prior(player: str = "", seasons: object = None) -> dict[str, Any]:
                 """SELECT player_id, name, rapm, possessions FROM silver_rapm
                 WHERE _season = ? AND LOWER(name) LIKE ?
                 ORDER BY possessions DESC LIMIT 1""",
-                [SEASON, like],
+                [last_completed_season(), like],
             ).fetchone()
             if row:
                 cur = {"player_id": str(row[0]), "name": row[1],
                        "rapm": row[2], "possessions": row[3] or 0,
-                       "season": SEASON}
+                       "season": last_completed_season()}
                 pid = str(row[0])
         placeholders = ", ".join("?" * len(labels))
         if pid is None:

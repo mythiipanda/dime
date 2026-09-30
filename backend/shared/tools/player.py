@@ -8,7 +8,7 @@ from langchain_core.tools import tool
 
 from .. import store
 from ..sources import nba_stats
-from ._core import SEASON, TTL_GAMELOG, TTL_LEADERS, TTL_PBPSTATS, _warehouse_or_live, coerce_player_id, coerce_team_id
+from ._core import TTL_GAMELOG, TTL_LEADERS, TTL_PBPSTATS, _warehouse_or_live, coerce_player_id, coerce_team_id, last_completed_season, resolve_season
 
 _logger = _logging.getLogger(__name__)
 
@@ -86,7 +86,7 @@ def get_career_totals(player: str) -> dict[str, Any]:
         r = cur.to_dicts()[0]
         gp = _num(r.get("GP")) or 0.0
         if gp:
-            through = str(r.get("_season") or "2025-26")
+            through = str(r.get("_season") or "") or resolve_season(None) or through
             seasons += 1
             sums["GP"] = sums.get("GP", 0.0) + gp
             for key, col in (("MIN", "MPG"), ("PTS", "PPG"),
@@ -230,6 +230,7 @@ def _read_df(sql: str, params: list, tries: int = 5) -> list[dict[str, Any]]:
 
 def _different_teams_pair(left: dict[str, Any], right: dict[str, Any],
                           season: str) -> dict[str, Any]:
+    season = resolve_season(season)
     from .headtohead import _load_player_games, vs_opponent
     lid, rid = left.get("player_id"), right.get("player_id")
     ta, tb = str(left.get("team") or ""), str(right.get("team") or "")
@@ -283,9 +284,10 @@ def _different_teams_pair(left: dict[str, Any], right: dict[str, Any],
 
 @tool
 async def get_compare(
-    a: str, b: str, season: str = SEASON,
+    a: str, b: str, season: str | None = None,
 ) -> dict[str, Any]:
     """Side-by-side compare of two players. Names or ids. One call."""
+    season = resolve_season(season)
     async def one(who: str) -> dict[str, Any]:
         from collections import Counter as _Counter
 
@@ -591,13 +593,14 @@ def _metric_row(metric: str, label: str, method: str, a: object, b: object,
 
 
 @tool
-def compare_metrics(a: str | int, b: str | int, season: str = SEASON) -> dict[str, Any]:
+def compare_metrics(a: str | int, b: str | int, season: str | None = None) -> dict[str, Any]:
     """Cross-metric adjudication for two players. Referees impact metrics.
 
     Pulls RAPTOR, RAPM-lite, on-off net, and PIE/TS from the warehouse and
     reports which metrics agree. EPM, LEBRON, DARKO, and DRIP are listed
     as unavailable, never invented.
     """
+    season = resolve_season(season)
     try:
         pida = coerce_player_id(a)
         pidb = coerce_player_id(b)
@@ -729,6 +732,7 @@ def compare_metrics(a: str | int, b: str | int, season: str = SEASON) -> dict[st
                      "raptor_season_b": mb.get("raptor_season")}}
 
 def _season_line(player_id: object, season: str) -> dict[str, Any] | None:
+    season = resolve_season(season)
     try:
         frame = store.read_frame(
             "silver_player_season",
@@ -802,8 +806,9 @@ def _gamelog_coverage() -> str:
 
 
 @tool
-def get_player_intel(player_id: str | int, season: str = SEASON) -> dict[str, Any]:
+def get_player_intel(player_id: str | int, season: str | None = None) -> dict[str, Any]:
     """Game log plus shot sample for one player id. Warehouse first."""
+    season = resolve_season(season)
     player_id = coerce_player_id(player_id)
 
 
@@ -848,10 +853,11 @@ def get_player_intel(player_id: str | int, season: str = SEASON) -> dict[str, An
 
 
 @tool
-def get_season_averages(player_id: str | int, season: str = SEASON) -> dict[str, Any]:
+def get_season_averages(player_id: str | int, season: str | None = None) -> dict[str, Any]:
     """Per-game season averages (PPG, RPG, APG, SPG, BPG, percentages,
     games played) for one player. Names or ids. Warehouse only, seeded
     from basketball-reference; no game-by-game detail."""
+    season = resolve_season(season)
     try:
         pid = coerce_player_id(player_id)
     except ValueError:
@@ -886,8 +892,9 @@ def get_season_averages(player_id: str | int, season: str = SEASON) -> dict[str,
 
 
 @tool
-def get_playoff_intel(player_id: str | int, season: str = SEASON) -> dict[str, Any]:
+def get_playoff_intel(player_id: str | int, season: str | None = None) -> dict[str, Any]:
     """Playoff game log for one player. Names or ids. Warehouse first."""
+    season = resolve_season(season)
     try:
         pid = coerce_player_id(player_id)
     except ValueError:
@@ -964,8 +971,9 @@ def get_playoff_intel(player_id: str | int, season: str = SEASON) -> dict[str, A
 
 
 @tool
-def get_last_x(player_id: str | int, n: int = 10, season: str = SEASON) -> dict[str, Any]:
+def get_last_x(player_id: str | int, n: int = 10, season: str | None = None) -> dict[str, Any]:
     """Last n games for one player id, most recent first."""
+    season = resolve_season(season)
     player_id = coerce_player_id(player_id)
 
 
@@ -999,8 +1007,9 @@ def get_last_x(player_id: str | int, n: int = 10, season: str = SEASON) -> dict[
 
 
 @tool
-def get_trend(player_id: str | int, season: str = SEASON) -> dict[str, Any]:
+def get_trend(player_id: str | int, season: str | None = None) -> dict[str, Any]:
     """Decay-weighted recent form versus season baseline. DARKO-lite."""
+    season = resolve_season(season)
     player_id = coerce_player_id(player_id)
 
 
@@ -1047,8 +1056,9 @@ def get_trend(player_id: str | int, season: str = SEASON) -> dict[str, Any]:
 
 
 @tool
-def get_percentiles(player_id: str | int, season: str = SEASON) -> dict[str, Any]:
+def get_percentiles(player_id: str | int, season: str | None = None) -> dict[str, Any]:
     """Percentile ranks for one player id across PTS REB AST STL BLK."""
+    season = resolve_season(season)
     player_id = coerce_player_id(player_id)
     cats = ["PTS", "REB", "AST", "STL", "BLK"]
     out: dict[str, Any] = {}
@@ -1071,8 +1081,9 @@ def get_percentiles(player_id: str | int, season: str = SEASON) -> dict[str, Any
 
 
 @tool
-def get_comps(player_id: str | int, season: str = SEASON, k: int = 5) -> dict[str, Any]:
+def get_comps(player_id: str | int, season: str | None = None, k: int = 5) -> dict[str, Any]:
     """Nearest statistical neighbors by per-36 + advanced shape. Same-season only."""
+    season = resolve_season(season)
     import math
 
     from ._core import clamp_season
@@ -1357,8 +1368,9 @@ ADVANCED_COLS = ["PLAYER_NAME", "TEAM_ABBREVIATION", "GP", "MIN",
 
 
 @tool
-def get_advanced(player: str | int, season: str = SEASON) -> dict[str, Any]:
+def get_advanced(player: str | int, season: str | None = None) -> dict[str, Any]:
     """Advanced box metrics for one player: usage, efficiency, PIE, ratings."""
+    season = resolve_season(season)
     player_id = coerce_player_id(player)
     rows: list[dict[str, Any]] = []
     try:
@@ -1410,13 +1422,14 @@ _BUCKET_TO_ZONE = {
 
 
 @tool
-def get_shot_zones(player_id: str | int, season: str = SEASON) -> dict[str, Any]:
+def get_shot_zones(player_id: str | int, season: str | None = None) -> dict[str, Any]:
     """Zone splits for one player id: rim, midrange, three with shares.
 
     Warehouse-first: seeded silver_shots, then seeded silver_zone_splits
     (basketball-reference distance buckets, league-wide), then live
     shot_chart (fail-fast; endpoint-blocked from datacenter IPs).
     """
+    season = resolve_season(season)
     player_id = coerce_player_id(player_id)
     import math
 
@@ -1657,6 +1670,7 @@ def get_shot_zones(player_id: str | int, season: str = SEASON) -> dict[str, Any]
 
 
 def _opp_tier_splits(frame: Any, season: str) -> list[dict[str, Any]]:
+    season = resolve_season(season)
     import polars as _pl
 
     if "MATCHUP" not in frame.columns or "PTS" not in frame.columns:
@@ -1690,8 +1704,9 @@ def _opp_tier_splits(frame: Any, season: str) -> list[dict[str, Any]]:
 
 
 @tool
-def get_splits(player_id: str | int, season: str = SEASON) -> dict[str, Any]:
+def get_splits(player_id: str | int, season: str | None = None) -> dict[str, Any]:
     """Home/away plus monthly, wins/losses, last-10, starter splits from the game log."""
+    season = resolve_season(season)
     player_id = coerce_player_id(player_id)
 
     rows_data, warehouse_meta = _warehouse_or_live(
@@ -1841,6 +1856,7 @@ def get_splits(player_id: str | int, season: str = SEASON) -> dict[str, Any]:
 
 
 def _hist_on_off_rows(pid: int, tid: int, season: str) -> list[dict[str, Any]]:
+    season = resolve_season(season)
     try:
         con = store.connect(read_only=True)
     except Exception:
@@ -1912,8 +1928,9 @@ def _hist_on_off_rows(pid: int, tid: int, season: str) -> list[dict[str, Any]]:
 
 
 @tool
-def get_on_off(player_id: str | int, team_id: str | int, season: str = SEASON) -> dict[str, Any]:
+def get_on_off(player_id: str | int, team_id: str | int, season: str | None = None) -> dict[str, Any]:
     """On and off splits for one player on one team. Possession level."""
+    season = resolve_season(season)
     player_id = coerce_player_id(player_id)
     team_id = coerce_team_id(team_id)
     from ..sources import pbpstats
@@ -1944,7 +1961,7 @@ def get_wowy(
     player_b: str = "",
     player_ids: str = "",
     team_id: str | int = 0,
-    season: str = SEASON,
+    season: str | None = None,
 ) -> dict[str, Any]:
     """With-or-without-you (WOWY) 4-way lineup combination splits for two players.
 
@@ -1952,6 +1969,7 @@ def get_wowy(
     Computes Both ON, A ON / B OFF, B ON / A OFF, and Both OFF with minutes,
     offensive rating, defensive rating, and net rating from warehouse lineups.
     """
+    season = resolve_season(season)
     raw_a = (player_a or "").strip()
     raw_b = (player_b or "").strip()
     if not raw_a and not raw_b and player_ids:
@@ -2061,8 +2079,9 @@ def get_wowy(
 
 
 @tool
-def get_four_factors(player_id: str | int, team_id: str | int, season: str = SEASON) -> dict[str, Any]:
+def get_four_factors(player_id: str | int, team_id: str | int, season: str | None = None) -> dict[str, Any]:
     """Four factor on-off splits for one player on one team."""
+    season = resolve_season(season)
     player_id = coerce_player_id(player_id)
     team_id = coerce_team_id(team_id)
     from ..sources import pbpstats
@@ -2077,7 +2096,7 @@ def get_four_factors(player_id: str | int, team_id: str | int, season: str = SEA
 
 
 @tool
-async def get_shot_compare(a: str, b: str, season: str = SEASON) -> dict[str, Any]:
+async def get_shot_compare(a: str, b: str, season: str | None = None) -> dict[str, Any]:
     """Shot-diet showdown: zone eFG and share for two players.
 
     Missing zone data stays null, never 0.0: a player without a seeded
@@ -2085,6 +2104,7 @@ async def get_shot_compare(a: str, b: str, season: str = SEASON) -> dict[str, An
     are computed only where BOTH players have data; takeaways must never
     be built on a missing cell.
     """
+    season = resolve_season(season)
     async def _zones(who: str) -> dict[str, dict]:
         try:
             pid = coerce_player_id(who)
@@ -2168,6 +2188,7 @@ async def get_shot_compare(a: str, b: str, season: str = SEASON) -> dict[str, An
 @tool
 def get_raptor_history(player: str, season: str = "") -> dict[str, Any]:
     """Season-by-season RAPTOR and WAR for one player name. Warehouse only."""
+    season = resolve_season(season)
     name = (player or "").strip()
     if not name:
         return {"tool": "get_raptor_history", "ok": False, "error": "empty player name"}
@@ -2241,6 +2262,7 @@ def _solve_linear(a: list[list[float]], b: list[float]) -> list[float] | None:
 
 
 def _fit_box_prior(season: str) -> dict[str, Any] | None:
+    season = resolve_season(season)
     try:
         rows = _read_df(
             "SELECT PLAYER_NAME, TEAM_ID, POSS, NET_RATING, "
@@ -2285,6 +2307,7 @@ def _fit_box_prior(season: str) -> dict[str, Any] | None:
 
 
 def _raptor_row(player_id: int, name: str, season: str) -> dict[str, Any] | None:
+    season = resolve_season(season)
     rows = _read_df(
         "SELECT PLAYER_NAME, POSS, MP, RAPTOR_BOX_TOTAL, RAPTOR_ONOFF_TOTAL,"
         " RAPTOR_TOTAL FROM silver_raptor_player WHERE _season = ?"
@@ -2296,6 +2319,7 @@ def _raptor_row(player_id: int, name: str, season: str) -> dict[str, Any] | None
 
 
 def _stale_raptor(player_id: int, name: str, season: str) -> dict[str, Any] | None:
+    season = resolve_season(season)
     rows = _read_df(
         "SELECT _season, RAPTOR_TOTAL FROM silver_raptor_player"
         " WHERE _season < ? AND RAPTOR_TOTAL IS NOT NULL"
@@ -2308,7 +2332,7 @@ def _stale_raptor(player_id: int, name: str, season: str) -> dict[str, Any] | No
 
 
 @tool
-def get_impact_estimate(player: str | int, season: str = SEASON) -> dict[str, Any]:
+def get_impact_estimate(player: str | int, season: str | None = None) -> dict[str, Any]:
     """Estimated per-100-possession impact for players lacking direct metrics.
 
     Rookies, call-ups, and low-minute players have no RAPTOR/RAPM/BPM in the
@@ -2318,6 +2342,7 @@ def get_impact_estimate(player: str | int, season: str = SEASON) -> dict[str, An
     OLS box-score prior, current season) or raptor_components (empirical
     80/20 box/on-off blend, historical seasons with RAPTOR components).
     """
+    season = resolve_season(season)
     base: dict[str, Any] = {"tool": "get_impact_estimate", "is_estimate": True,
                             "disclaimer": IMPACT_DISCLAIMER}
     try:
@@ -2325,7 +2350,7 @@ def get_impact_estimate(player: str | int, season: str = SEASON) -> dict[str, An
     except ValueError as exc:
         return {**base, "ok": False, "error": str(exc)}
     name = str(player).strip()
-    season = (season or SEASON).strip()
+    season = (season or resolve_season(None) or "").strip()
 
     raptor = _raptor_row(player_id, name, season)
     if raptor and raptor.get("RAPTOR_TOTAL") is not None:
@@ -2477,9 +2502,10 @@ UNSUNG_MAX_MINUTES = 1000
 
 
 @tool
-def get_hustle_boards(season: str = SEASON, top: int = 10) -> dict[str, Any]:
+def get_hustle_boards(season: str | None = None, top: int = 10) -> dict[str, Any]:
     """Hustle leaderboards from warehouse only: DPOY composite, screen-assist
     kings, and unsung defenders with elite per-minute hustle in small roles."""
+    season = resolve_season(season)
     try:
         top = max(1, min(int(top or 10), 25))
     except (TypeError, ValueError):
@@ -2536,7 +2562,7 @@ def get_hustle_boards(season: str = SEASON, top: int = 10) -> dict[str, Any]:
 
 
 @tool
-def get_debate_card(a: str, b: str, season: str = SEASON,
+def get_debate_card(a: str, b: str, season: str | None = None,
                     topic: str = "") -> dict[str, Any]:
     """Generate a shareable HTML debate card comparing two players.
 
@@ -2544,6 +2570,7 @@ def get_debate_card(a: str, b: str, season: str = SEASON,
     styled for sharing. Saves to workspace and returns the path.
     Optional topic labels the debate (e.g. "MVP race").
     """
+    season = resolve_season(season)
     import html as _html
     from pathlib import Path as _Path
 
@@ -2697,8 +2724,9 @@ h1 {{ font-size: 22px; margin: 0; color: #1c1917; }}
 
 
 @tool
-def get_player_report(player: str | int, season: str = SEASON) -> dict[str, Any]:
+def get_player_report(player: str | int, season: str | None = None) -> dict[str, Any]:
     """Multi-part player report: season line, advanced profile, shots, clutch."""
+    season = resolve_season(season)
     from .league import get_clutch
 
     try:
@@ -2715,7 +2743,7 @@ def get_player_report(player: str | int, season: str = SEASON) -> dict[str, Any]
 
 
 
-    historical = season != SEASON
+    historical = season != last_completed_season()
     adv = ({"ok": False} if historical else
            get_advanced.invoke({"player": pid, "season": season}))
     shots = ({"ok": False} if historical else
@@ -2760,12 +2788,13 @@ def get_player_report(player: str | int, season: str = SEASON) -> dict[str, Any]
 
 
 @tool
-def get_player_evaluation(player: str | int, season: str = SEASON) -> dict[str, Any]:
+def get_player_evaluation(player: str | int, season: str | None = None) -> dict[str, Any]:
     """Grounded player tier, advanced profile, modeled value, and comps.
 
     Tier rules are deterministic and transparent. Current-season impact uses
     RAPM-lite as a context metric, never as the sole tier label.
     """
+    season = resolve_season(season)
     from .league import get_contract_value
 
     try:
@@ -2896,7 +2925,7 @@ def _rapm_note() -> str:
 
 
 @tool
-def get_player_rankings(n: int = 15, season: str = SEASON) -> dict[str, Any]:
+def get_player_rankings(n: int = 15, season: str | None = None) -> dict[str, Any]:
     """Overall top-N players board ranked by the warehouse impact metric.
 
     Current seasons (RAPM-lite coverage, e.g. 2025-26): rank by RAPM-lite
@@ -2904,6 +2933,7 @@ def get_player_rankings(n: int = 15, season: str = SEASON) -> dict[str, Any]:
     FiveThirtyEight WAR. Other seasons return an honest coverage note -
     never a single-stat board presented as an overall ranking.
     """
+    season = resolve_season(season)
     try:
         n = max(1, min(int(n), 50))
     except (TypeError, ValueError):

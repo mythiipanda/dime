@@ -8,10 +8,11 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from shared.tools._core import (
-    COVERAGE_END,
     COVERAGE_START,
     InvalidSeasonError,
     clamp_season,
+    coverage_end,
+    last_completed_season,
 )
 
 BANNED = (
@@ -25,6 +26,30 @@ BANNED = (
     "exception",
     "tool_trace",
 )
+
+
+SEED_SEASONS = ["2009-10", "2013-14", "2023-24", "2024-25"]
+
+
+@pytest.fixture()
+def warehouse_seasons(tmp_path, monkeypatch):
+    import duckdb
+
+    from shared import store
+    from shared.tools import _core as core_mod
+
+    db = tmp_path / "seasons.duckdb"
+    con = duckdb.connect(str(db))
+    con.execute(
+        "CREATE TABLE silver_boxscores (_season VARCHAR, GAME_ID VARCHAR)")
+    for season in SEED_SEASONS:
+        con.execute("INSERT INTO silver_boxscores VALUES (?, ?)",
+                    [season, "00200001"])
+    con.close()
+    monkeypatch.setattr(store, "DB_PATH", db)
+    core_mod.last_completed_season_cache_clear()
+    yield db
+    core_mod.last_completed_season_cache_clear()
 
 
 def _node_state():
@@ -65,47 +90,53 @@ class _Echo:
                 "echo": dict(args)}
 
 
-def test_clamp_season_accepts_exact_slugs():
+def test_clamp_season_accepts_exact_slugs(warehouse_seasons):
+    assert last_completed_season() == "2024-25"
     assert clamp_season("2013-14") == "2013-14"
-    assert clamp_season("2025-26") == "2025-26"
+    assert clamp_season("2024-25") == "2024-25"
     assert clamp_season("2009-10") == "2009-10"
 
 
-def test_clamp_season_normalizes_explicit_ranges():
+def test_clamp_season_normalizes_explicit_ranges(warehouse_seasons):
     assert clamp_season("2014") == "2013-14"
-    assert clamp_season("2026") == "2025-26"
+    assert clamp_season("2025") == "2024-25"
     assert clamp_season("2010") == "2009-10"
 
 
-def test_clamp_season_rejects_without_fallback():
-    from shared.tools._core import SEASON
+def test_clamp_season_resolves_empty_to_warehouse_season(warehouse_seasons):
+    assert clamp_season(None) == "2024-25"
+    assert clamp_season("") == "2024-25"
 
+
+def test_clamp_season_rejects_without_fallback(warehouse_seasons):
+    end = coverage_end()
     for bad in ("1998-99", "2030-31"):
         with pytest.raises(InvalidSeasonError) as info:
             clamp_season(bad)
         assert info.value.requested == bad
-        assert info.value.nearest in (COVERAGE_START, COVERAGE_END)
+        assert info.value.nearest in (COVERAGE_START, end)
     with pytest.raises(InvalidSeasonError):
         clamp_season("1998-99")
-    assert SEASON == COVERAGE_END
+    assert last_completed_season() == end
 
 
-def test_clamp_season_error_is_plain_language():
+def test_clamp_season_error_is_plain_language(warehouse_seasons):
+    end = coverage_end()
     with pytest.raises(InvalidSeasonError) as low:
         clamp_season("1998-99")
     with pytest.raises(InvalidSeasonError) as high:
         clamp_season("2030-31")
     assert low.value.nearest == COVERAGE_START
-    assert high.value.nearest == COVERAGE_END
+    assert high.value.nearest == end
     for exc, slug, edge in (
         (low.value, "1998-99", COVERAGE_START),
-        (high.value, "2030-31", COVERAGE_END),
+        (high.value, "2030-31", end),
     ):
         text = str(exc)
         assert slug in text
         assert edge in text
         assert COVERAGE_START in text
-        assert COVERAGE_END in text
+        assert end in text
         lowered = text.lower()
         for token in BANNED:
             assert token not in lowered
@@ -138,12 +169,12 @@ def test_v2_library_loads_season_disambiguation():
     assert all("season" not in entry["name"] for entry in entries)
 
 
-def test_tool_node_passes_valid_season_through():
+def test_tool_node_passes_valid_season_through(warehouse_seasons):
     state, _ = _run_node(
-        [{"name": "get_echo", "args": {"season": "2025-26"}}], [_Echo()])
+        [{"name": "get_echo", "args": {"season": "2024-25"}}], [_Echo()])
     result = state["tool_results"][0]
     assert result.get("ok") is True
-    assert result["echo"]["season"] == "2025-26"
+    assert result["echo"]["season"] == "2024-25"
     state, _ = _run_node(
         [{"name": "get_echo", "args": {"season": "2014"}}], [_Echo()])
     result = state["tool_results"][0]

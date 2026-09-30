@@ -4,7 +4,7 @@ from typing import Any
 
 from langchain_core.tools import tool
 
-from ._core import SEASON, clamp_season, coerce_team_id, is_past_game_date
+from ._core import clamp_season, coerce_team_id, is_past_game_date, last_completed_season, resolve_season
 
 
 def _abbrev(who: str) -> str:
@@ -65,6 +65,7 @@ def _row_abbrs(row: dict[str, Any]) -> tuple[str, str]:
 
 
 def _scoreboard_warehouse(season: str, dates: list[str]) -> list[dict[str, Any]]:
+    season = resolve_season(season)
     from .. import store
 
     entities = [f"date:{d}" for d in dates]
@@ -103,6 +104,7 @@ def _entity_date(row: dict[str, Any]) -> str:
 
 
 def _pick_marquee(rows: list[dict[str, Any]], season: str) -> dict[str, Any]:
+    season = resolve_season(season)
     try:
         from .league import get_standings
 
@@ -169,6 +171,7 @@ def _form_card(team_id: int, season: str) -> tuple[dict[str, Any], str | None]:
 
 
 
+    season = resolve_season(season)
     from .. import store
 
     def _read() -> list[tuple]:
@@ -225,6 +228,7 @@ def _form_card(team_id: int, season: str) -> tuple[dict[str, Any], str | None]:
 
 
 def _leaders_card(abbr: str, team_id: int, season: str) -> list[dict[str, Any]]:
+    season = resolve_season(season)
     from .. import store
 
     con = store.connect()
@@ -278,6 +282,7 @@ def _leaders_card(abbr: str, team_id: int, season: str) -> list[dict[str, Any]]:
 
 
 def _net_card(abbr: str, season: str) -> tuple[float | None, Any]:
+    season = resolve_season(season)
     try:
         from .league import get_ratings
 
@@ -303,6 +308,7 @@ def _injury_rank(out_name: str, leaders: list[dict[str, Any]]) -> int | None:
 
 async def _injuries_card(abbr: str, season: str,
                          leaders: list[dict[str, Any]]) -> dict[str, Any]:
+    season = resolve_season(season)
     try:
         from .team import get_injury_impact as _tool
 
@@ -328,6 +334,7 @@ async def _injuries_card(abbr: str, season: str,
 
 
 def _xfactor_card(leaders: list[dict[str, Any]], season: str) -> dict[str, Any]:
+    season = resolve_season(season)
     from .. import store
 
     cands = [lead for lead in leaders[2:8] if lead.get("gp", 0) >= 10]
@@ -389,6 +396,7 @@ def _xfactor_card(leaders: list[dict[str, Any]], season: str) -> dict[str, Any]:
 
 
 async def _team_card(team_id: int, abbr: str, season: str) -> dict[str, Any]:
+    season = resolve_season(season)
     form, record = _form_card(team_id, season)
     leaders = _leaders_card(abbr, team_id, season)
     net, net_rank = _net_card(abbr, season)
@@ -491,6 +499,7 @@ def _err(message: str) -> dict[str, Any]:
 
 def _already_played(row: dict[str, Any], resolved: str,
                     season: str) -> dict[str, Any]:
+    season = resolve_season(season)
     from datetime import datetime as _dt
 
     gid = row.get("GAME_ID")
@@ -531,8 +540,9 @@ def _already_played(row: dict[str, Any], resolved: str,
 @tool
 async def get_matchup_preview(a: str = "", b: str = "",
                               game_date: str = "",
-                              season: str = SEASON) -> dict[str, Any]:
+                              season: str | None = None) -> dict[str, Any]:
     """Narrative preview of a scheduled NBA game: recent form, key player matchups, injury impact, x-factors, why-watch. Pass two team names/abbrevs/ids, or a date (MM/DD/YYYY) to preview that day's marquee game. Never predicts scores."""
+    season = resolve_season(season)
     from datetime import datetime as _dt
 
     season = clamp_season(season)

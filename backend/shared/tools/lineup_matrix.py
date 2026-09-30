@@ -5,7 +5,7 @@ from langchain_core.tools import tool
 
 from .. import store as _store
 from ..sources import nba_stats
-from ._core import MAX_ROWS, SEASON, TTL_PBPSTATS, _warehouse_or_live, clamp_season, coerce_team_id
+from ._core import MAX_ROWS, TTL_PBPSTATS, _warehouse_or_live, clamp_season, coerce_team_id, last_completed_season, resolve_season
 from .lineup import _dedupe_lineup_rows
 from .team import _lineup_key
 
@@ -185,6 +185,7 @@ def _truncate_note(total: int, shown: int) -> str:
 
 
 def _surname_map(season: str) -> dict[int, str]:
+    season = resolve_season(season)
     try:
         rows = _store._read_df(
             "SELECT player_id, player_name FROM silver_hist_player_seasons"
@@ -262,6 +263,7 @@ def _team_abbr(tid: int, raw: object) -> str:
 
 
 def _lineup_names(team_id: int, season: str) -> tuple[dict[UnitKey, str], dict[str, Any]]:
+    season = resolve_season(season)
     rows, meta = _warehouse_or_live(
         "silver_lineups", "_season = ? AND TEAM_ID = ? AND (_entity LIKE 'lineups:%' OR _entity = ?)",
         [season, team_id, f"team:{team_id}"],
@@ -282,7 +284,7 @@ def _lineup_names(team_id: int, season: str) -> tuple[dict[UnitKey, str], dict[s
 @tool
 def get_lineup_matchup_matrix(
     team_a: str, team_b: str, min_minutes: float = 10,
-    season: str = SEASON,
+    season: str | None = None,
 ) -> dict[str, Any]:
     """Lineup-vs-lineup matrix for a team matchup. Names, abbrevs, or ids.
 
@@ -292,6 +294,7 @@ def get_lineup_matchup_matrix(
     min_minutes season minutes (poss/2); shared minutes are estimated from
     possessions (~2 per minute), never play-clock minutes.
     """
+    season = resolve_season(season)
     season = clamp_season(season)
     try:
         aid = coerce_team_id(team_a)

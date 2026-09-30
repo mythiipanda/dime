@@ -6,14 +6,7 @@ from langchain_core.tools import tool
 
 from .. import store
 from ..sources import nba_stats
-from ._core import (
-    SEASON,
-    TTL_GAMELOG,
-    _warehouse_or_live,
-    clamp_season,
-    clamp_stat,
-    coerce_player_id,
-)
+from ._core import (TTL_GAMELOG, _warehouse_or_live, clamp_season, clamp_stat, coerce_player_id, last_completed_season, resolve_season)
 
 VERDICT_RULES = [
     'window gp < 5 -> "too early", note "fewer than 5 games in the window".',
@@ -222,6 +215,7 @@ def _sort_by_date(rows: list[dict[str, Any]],
 
 
 def _defense_lookup(season: str) -> tuple[dict[str, Any] | None, str | None]:
+    season = resolve_season(season)
     try:
         ratings = _read_df(
             "SELECT TEAM_ID, DEF_RATING FROM silver_team_ratings"
@@ -242,6 +236,7 @@ def _defense_lookup(season: str) -> tuple[dict[str, Any] | None, str | None]:
 
 def _load_gamelogs(player: str, season: str
                    ) -> tuple[int, list[dict], dict[str, Any] | None]:
+    season = resolve_season(season)
     pid = coerce_player_id(player)
     rows, meta = _warehouse_or_live(
         "silver_player_gamelogs", "_season = ? AND _entity = ?",
@@ -261,8 +256,9 @@ def _split_row(label: str, games: list[dict[str, Any]]) -> dict[str, Any]:
 
 @tool
 def get_matchup_splits(player: str, n: int = 15,
-                       season: str = SEASON) -> dict[str, Any]:
+                       season: str | None = None) -> dict[str, Any]:
     """Situational splits over the last N games: defense tier, home/away, rest."""
+    season = resolve_season(season)
     season = clamp_season(season)
     n = _clamp_n(n)
     try:
@@ -375,8 +371,9 @@ def _career_baseline(pid: int, stat: str) -> dict[str, Any]:
 
 @tool
 def get_regression_check(player: str, stat: str = "PTS", n: int = 10,
-                         season: str = SEASON) -> dict[str, Any]:
+                         season: str | None = None) -> dict[str, Any]:
     """Sustainability check on a hot stat line: window vs season plus drivers."""
+    season = resolve_season(season)
     stat = clamp_stat(stat)
     season = clamp_season(season)
     n = _clamp_n(n, default=10)

@@ -175,6 +175,7 @@ def get_wpa_leaders(season: Union[int, str, None] = 2025,
     Deltas come from the fitted win-probability model before and after
     each play, credited to the acting player. Documented estimates.
     """
+    season = resolve_season(season)
     warnings: list[str] = []
     year, season_warning = clamp_season_year(season)
     if season_warning:

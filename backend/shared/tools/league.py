@@ -7,7 +7,7 @@ from langchain_core.tools import tool
 
 from .. import store
 from ..sources import nba_stats
-from ._core import IN_SEASON_MONTHS as _IN_SEASON_MONTHS, SEASON, TTL_LEADERS, TTL_SCOREBOARD_PAST, clamp_stat, _warehouse_or_live, is_past_game_date
+from ._core import IN_SEASON_MONTHS as _IN_SEASON_MONTHS, TTL_LEADERS, TTL_SCOREBOARD_PAST, clamp_stat, _warehouse_or_live, is_past_game_date, last_completed_season, resolve_season
 from .rating_metrics import RANKING_DIRECTIONS, TEAM_RATING_METRICS
 
 
@@ -17,12 +17,13 @@ _RankingDirection = Literal.__getitem__(tuple(["", *RANKING_DIRECTIONS]))
 
 @tool
 def get_injuries(team: str = "", player: str = "",
-                 season: str = SEASON) -> dict[str, Any]:
+                 season: str | None = None) -> dict[str, Any]:
     """Injury report, optional team abbreviation or player filter.
 
     With a player name, also joins playoff inactive listings so
     'is X injured?' surfaces 'inactive for the entire playoff run'
     instead of a bare 'active' (F45)."""
+    season = resolve_season(season)
     from ..sources import espn
 
     rows, meta = _warehouse_or_live(
@@ -119,6 +120,7 @@ _STANDINGS_HIST_MAP = {
 
 
 def _hist_standings_rows(season: str) -> list[dict[str, Any]]:
+    season = resolve_season(season)
     try:
         from .. import store as _store
     except Exception:
@@ -166,8 +168,9 @@ def _slim_standings(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
 
 
 @tool
-def get_standings(season: str = SEASON) -> dict[str, Any]:
+def get_standings(season: str | None = None) -> dict[str, Any]:
     """League standings for one season like 2025-26."""
+    season = resolve_season(season)
     rows, meta = _warehouse_or_live(
         "silver_standings", "_season = ?",
         [season], lambda: nba_stats.standings(season), season,
@@ -189,11 +192,12 @@ def get_standings(season: str = SEASON) -> dict[str, Any]:
 
 
 @tool
-def get_standings_deep(season: str = SEASON, top: int = 5) -> dict[str, Any]:
+def get_standings_deep(season: str | None = None, top: int = 5) -> dict[str, Any]:
     """Standings deep cuts: clutch records, comeback kings, blown leads, monthly momentum."""
+    season = resolve_season(season)
     from .. import store as _store
 
-    season = str(season or SEASON).strip() or SEASON
+    season = str(season or "").strip() or resolve_season(None)
     try:
         top = max(1, min(int(top or 5), 15))
     except (TypeError, ValueError):
@@ -335,7 +339,7 @@ def get_standings_deep(season: str = SEASON, top: int = 5) -> dict[str, Any]:
 
 @tool
 def get_ratings(
-    season: str = SEASON,
+    season: str | None = None,
     team: str = "",
     requested_metric: _RequestedMetric = "",
     ranking_direction: _RankingDirection = "",
@@ -346,6 +350,7 @@ def get_ratings(
     ordered by that metric field and the payload owns the leader claim.
     ``team`` narrows a direct team-ratings question.
     """
+    season = resolve_season(season)
     from nba_api.stats.static import teams as _teams
 
     abbrev = {t["id"]: t["abbreviation"] for t in _teams.get_teams()}
@@ -412,7 +417,7 @@ def get_ratings(
 
 @tool
 def get_player_ratings(
-    season: str = SEASON, metric: str = "offense", limit: int = 10,
+    season: str | None = None, metric: str = "offense", limit: int = 10,
     min_minutes: int = 1000,
 ) -> dict[str, Any]:
     """Qualified player on-court offensive or defensive rating leaderboard.
@@ -423,6 +428,7 @@ def get_player_ratings(
     board (a 0-minute floor once crowned a 53.3 on-court DEF_RATING from
     ~15 total minutes as the "best defensive player").
     """
+    season = resolve_season(season)
     from ._core import clamp_season
 
     season = clamp_season(season)
@@ -463,9 +469,10 @@ def get_player_ratings(
 
 @tool
 def get_playoff_team_ratings(
-    season: str = SEASON, limit: int = 30,
+    season: str | None = None, limit: int = 30,
 ) -> dict[str, Any]:
     """Team offensive, defensive, and net ratings from playoff game logs."""
+    season = resolve_season(season)
     from ._core import clamp_season
 
     season = clamp_season(season)
@@ -519,9 +526,10 @@ def get_playoff_team_ratings(
 
 
 @tool
-def get_clutch(scope: str = "player", season: str = SEASON,
+def get_clutch(scope: str = "player", season: str | None = None,
                player: str = "") -> dict[str, Any]:
     """Clutch stats (last 5 min, margin 5 or less), player or team scope."""
+    season = resolve_season(season)
     scope = "team" if str(scope).lower().startswith("team") else "player"
     entity = f"{scope}-clutch"
     rows, meta = _warehouse_or_live(
@@ -553,6 +561,7 @@ def get_clutch(scope: str = "player", season: str = SEASON,
 
 def _finals_game_scores(finals: list[dict[str, Any]],
                         season: str) -> dict[str, dict[str, int]]:
+    season = resolve_season(season)
     from datetime import datetime as _dt
 
     dates: dict[str, str] = {}
@@ -591,8 +600,9 @@ def _finals_game_scores(finals: list[dict[str, Any]],
 
 
 @tool
-def get_playoffs(season: str = SEASON) -> dict[str, Any]:
+def get_playoffs(season: str | None = None) -> dict[str, Any]:
     """Playoff wins per team plus champion for one season."""
+    season = resolve_season(season)
     rows, meta = _warehouse_or_live(
         "silver_playoffs", "_season = ?",
         [season], lambda: nba_stats.playoff_results(season), season,
@@ -770,7 +780,7 @@ def get_playoffs(season: str = SEASON) -> dict[str, Any]:
 
 @tool
 def get_leaders(
-    stat_category: str = "PTS", season: str = SEASON,
+    stat_category: str = "PTS", season: str | None = None,
     ranking_direction: str = "desc", min_attempts: int = 0,
 ) -> dict[str, Any]:
     """Qualified league leaderboard for one stat category.
@@ -784,6 +794,7 @@ def get_leaders(
     82 made threes over an 82-game season. This keeps the board comparable
     to the official league leaderboard and excludes tiny samples.
     """
+    season = resolve_season(season)
     stat_category = clamp_stat(stat_category)
     direction = str(ranking_direction).strip().casefold()
     if direction not in {"asc", "desc"}:
@@ -933,7 +944,7 @@ def get_leaders(
 
 @tool
 def get_young_player_usage(max_age: int = 22, min_minutes: int = 1000,
-                           season: str = SEASON) -> dict[str, Any]:
+                           season: str | None = None) -> dict[str, Any]:
     """Qualified usage-rate board for young players from silver_advanced.
 
     Uses total minutes (GP * per-game MIN) as the sample floor. The default
@@ -941,6 +952,7 @@ def get_young_player_usage(max_age: int = 22, min_minutes: int = 1000,
     A hard 500-total-minute floor is ALWAYS enforced: the caller may raise
     it but never undercut it.
     """
+    season = resolve_season(season)
     max_age = max(18, min(int(max_age), 25))
     min_minutes = max(500, min(int(min_minutes), 3000))
     con = store.connect(read_only=True)
@@ -974,6 +986,7 @@ _TEAM_TOTAL_STATS = ("PTS", "REB", "AST", "STL", "BLK", "FG3M", "TOV")
 
 
 def _deduped_team_totals(stat: str, season: str):
+    season = resolve_season(season)
     con = store.connect(read_only=True)
     try:
         tables = {r[0] for r in con.execute("SHOW TABLES").fetchall()}
@@ -1004,12 +1017,13 @@ def _deduped_team_totals(stat: str, season: str):
 
 @tool
 def get_team_leaders(stat_category: str = "AST",
-                     season: str = SEASON) -> dict[str, Any]:
+                     season: str | None = None) -> dict[str, Any]:
     """Team totals leaderboard for a counting stat (PTS, REB, AST, STL,
     BLK): player game logs summed by team, with per-game averages.
     Use for "which team leads in total assists" - get_leaders is
     player-level only.
     """
+    season = resolve_season(season)
     stat = clamp_stat(stat_category)
     if stat not in _TEAM_TOTAL_STATS:
         stat = "AST"
@@ -1051,7 +1065,7 @@ def get_team_leaders(stat_category: str = "AST",
 
 @tool
 def get_team_compare(stat_category: str = "PTS", top: int = 3,
-                     season: str = SEASON) -> dict[str, Any]:
+                     season: str | None = None) -> dict[str, Any]:
     """Top-N team compare on one counting stat: total, per-game, games
     played, and the win-loss record joined from standings, in one
     board. Use for multi-metric team compares ("compare the top 3
@@ -1060,6 +1074,7 @@ def get_team_compare(stat_category: str = "PTS", top: int = 3,
     empty cells or invented numbers (F66). The answer is built
     deterministically from the rows into meta.deterministic_answer;
     compose ships it verbatim (v67 design law)."""
+    season = resolve_season(season)
     stat = clamp_stat(stat_category)
     if stat not in _TEAM_TOTAL_STATS:
         stat = "PTS"
@@ -1137,13 +1152,14 @@ def get_team_compare(stat_category: str = "PTS", top: int = 3,
 
 
 @tool
-def get_team_four_factors(team: str = "", season: str = SEASON) -> dict[str, Any]:
+def get_team_four_factors(team: str = "", season: str | None = None) -> dict[str, Any]:
     """Team four factors (eFG%, TOV%, ORB%, FT rate, plus defensive
     mirrors), computed offline from warehouse team game rows. Use for
     "why are the Thunder good", "team identity", or any four-factors
     ask. Pass a team name/abbrev to scope to one team; empty returns
     the full 30-team board.
     """
+    season = resolve_season(season)
     try:
         _con = store.connect()
         try:
@@ -1209,8 +1225,9 @@ def get_team_four_factors(team: str = "", season: str = SEASON) -> dict[str, Any
 
 
 @tool
-def get_hustle(scope: str = "player", season: str = SEASON) -> dict[str, Any]:
+def get_hustle(scope: str = "player", season: str | None = None) -> dict[str, Any]:
     """Hustle leaders, player or team scope. Contests, deflections, charges."""
+    season = resolve_season(season)
     from ._core import clamp_scope
 
     scope = clamp_scope(scope)
@@ -1222,8 +1239,9 @@ def get_hustle(scope: str = "player", season: str = SEASON) -> dict[str, Any]:
 
 
 @tool
-def get_rapm(player: str = "", top: int = 10, season: str = SEASON) -> dict[str, Any]:
+def get_rapm(player: str = "", top: int = 10, season: str | None = None) -> dict[str, Any]:
     """RAPM-lite ratings. Blank player returns top list, else one row."""
+    season = resolve_season(season)
     from .. import store as _store
 
     con = _store.connect()
@@ -1258,10 +1276,11 @@ def get_rapm(player: str = "", top: int = 10, season: str = SEASON) -> dict[str,
 @tool
 def get_finder(
     mode: str = "streak", team_abbrev: str = "", opponent: str = "",
-    season: str = SEASON, window: int = 5,
+    season: str | None = None, window: int = 5,
 ) -> dict[str, Any]:
     """Team finder across history seasons. Modes: streak, versus, span,
     player_streak, head2head."""
+    season = resolve_season(season)
     from .. import store as _store
 
     con = _store.connect()
@@ -1403,8 +1422,9 @@ def get_finder(
 
 
 @tool
-def get_rest(team_abbrev: str = "", season: str = SEASON) -> dict[str, Any]:
+def get_rest(team_abbrev: str = "", season: str | None = None) -> dict[str, Any]:
     """Back-to-back plus rest-day splits from history game dates."""
+    season = resolve_season(season)
     from datetime import datetime
 
     from .. import store as _store
@@ -1533,9 +1553,10 @@ def _build_elo(rows: list) -> tuple:
 
 
 @tool
-def get_win_prob(team_a: str = "", team_b: str = "", season: str = SEASON,
+def get_win_prob(team_a: str = "", team_b: str = "", season: str | None = None,
                  home_abbrev: str = "") -> dict[str, Any]:
     """Real ELO win probability between two abbreviations. Neutral unless home_abbrev matches a side."""
+    season = resolve_season(season)
     from .. import store as _store
 
     if not team_a or not team_b:
@@ -1588,7 +1609,7 @@ def _current_team_for_player(
     try:
         tables = {r[0] for r in con.execute("SHOW TABLES").fetchall()}
         from ._core import season_static as _season_static
-        if _season_static(SEASON) and name and "silver_salaries" in tables:
+        if _season_static(last_completed_season()) and name and "silver_salaries" in tables:
 
 
 
@@ -1608,7 +1629,7 @@ def _current_team_for_player(
                 row = con.execute(
                     "SELECT TEAM FROM silver_leaders_pts "
                     "WHERE _season = ? AND LOWER(PLAYER) = LOWER(?) LIMIT 1",
-                    [SEASON, name],
+                    [last_completed_season(), name],
                 ).fetchone()
                 if row and row[0]:
                     return str(row[0])
@@ -1629,7 +1650,7 @@ def _current_team_for_player(
         if pid is not None and "silver_player_gamelogs" in tables:
             try:
                 for where, params in (
-                    ("Player_ID = ? AND _season = ?", [pid, SEASON]),
+                    ("Player_ID = ? AND _season = ?", [pid, last_completed_season()]),
                     ("Player_ID = ?", [pid]),
                 ):
                     try:
@@ -2057,7 +2078,7 @@ def _pick_value_for_slot(slot: int, is_frp: bool) -> float:
 @tool
 def get_trade_check(
     team_a: str = "", players_a: str = "", team_b: str = "", players_b: str = "",
-    season: str = SEASON,
+    season: str | None = None,
 ) -> dict[str, Any]:
 
     """Trade legality check. Player names comma separated per side.
@@ -2066,6 +2087,7 @@ def get_trade_check(
     apron, 100 percent above it, no aggregation above the second apron.
     Picks and exceptions stay out of v1.
     """
+    season = resolve_season(season)
     if not players_a and not players_b:
         return {"tool": "get_trade_check", "ok": False,
                 "error": "two teams needed"}
@@ -2246,9 +2268,10 @@ def get_trade_value(
                               f"({team_a} / {team_b}) - check the team "
                               f"names")}
         team_a, team_b = _norm
-    PROD_SEASON = "2025-26"
+    from ._core import last_completed_season as _trade_lcs
+    PROD_SEASON = _trade_lcs()
     SAL_SEASON = "2026-27"
-    DISCLAIMER = ("All dollar figures are rough estimates from 2025-26 "
+    DISCLAIMER = (f"All dollar figures are rough estimates from {PROD_SEASON} "
                   "production vs 2026-27 salary data. Not cap-legality advice; "
                   "pair with get_trade_check.")
 
@@ -2644,6 +2667,7 @@ def get_trade_value(
 
 
 def _norm_draft_year(season: str) -> str:
+    season = resolve_season(season)
     s = str(season or "").strip()
     if re.fullmatch(r"(19|20)\d\d", s):
         return s
@@ -2658,6 +2682,7 @@ def _norm_draft_year(season: str) -> str:
 @tool
 def get_draft_board(season: str = "2025") -> dict[str, Any]:
     """Draft board: college production plus combine measurements, blended rank."""
+    season = resolve_season(season)
     import unicodedata as _ud
 
     try:
@@ -2725,7 +2750,7 @@ def get_draft_board(season: str = "2025") -> dict[str, Any]:
 @tool
 def get_rookie_leaders(stat: str = "ppg", min_value: float = 0,
                        min_gp: int = 10, limit: int = 15,
-                       season: str = SEASON) -> dict[str, Any]:
+                       season: str | None = None) -> dict[str, Any]:
     """Current rookie class leaderboard (first-year NBA players only).
 
     Rookies are defined structurally: a player in the current-season
@@ -2735,6 +2760,7 @@ def get_rookie_leaders(stat: str = "ppg", min_value: float = 0,
     right answer was the current draft class, e.g. Cooper Flagg).
     stat is a per-game column: ppg, rpg, apg, spg, bpg, mpg.
     """
+    season = resolve_season(season)
     from .. import store as _store
 
     import duckdb
@@ -2810,7 +2836,7 @@ def get_rookie_leaders(stat: str = "ppg", min_value: float = 0,
 
 @tool
 def get_lineup_leaders(min_minutes: int = 100, limit: int = 10,
-                       season: str = SEASON) -> dict[str, Any]:
+                       season: str | None = None) -> dict[str, Any]:
     """League-wide five-man lineup net-rating leaderboard.
 
     Net rating is PLUS_MINUS per 48 minutes from the warehouse lineup
@@ -2818,6 +2844,7 @@ def get_lineup_leaders(min_minutes: int = 100, limit: int = 10,
     stated: a +3 in 4 minutes is a 300.0 'net rating' on a junk slice
     and never tops the board (F50).
     """
+    season = resolve_season(season)
     from .. import store as _store
 
     import duckdb
@@ -2900,6 +2927,7 @@ def get_lineup_leaders(min_minutes: int = 100, limit: int = 10,
 @tool
 def get_combine(season: str = "2025") -> dict[str, Any]:
     """Draft combine measurements plus shooting drills for one draft year."""
+    season = resolve_season(season)
     try:
         season = _norm_draft_year(season)
     except ValueError as exc:
@@ -2942,8 +2970,9 @@ def get_combine(season: str = "2025") -> dict[str, Any]:
 
 
 @tool
-def get_briefing(game_date: str = "", season: str = SEASON) -> dict[str, Any]:
+def get_briefing(game_date: str = "", season: str | None = None) -> dict[str, Any]:
     """Morning briefing: scoreboard plus top scorers. Date MM/DD/YYYY, blank means latest."""
+    season = resolve_season(season)
     from datetime import datetime, timedelta
 
     day = game_date.strip()
@@ -3296,8 +3325,9 @@ async def rerun_sql(sql: str) -> dict[str, Any]:
 
 
 @tool
-def get_elo(season: str = SEASON) -> dict[str, Any]:
+def get_elo(season: str | None = None) -> dict[str, Any]:
     """ELO power ratings from warehouse game results for one season."""
+    season = resolve_season(season)
     from .. import store as _store
 
     con = _store.connect()
@@ -3326,9 +3356,10 @@ def get_elo(season: str = SEASON) -> dict[str, Any]:
 
 
 @tool
-def get_elo_standings(season: str = SEASON, opponent: str | None = None,
+def get_elo_standings(season: str | None = None, opponent: str | None = None,
                       limit: int = 30) -> dict[str, Any]:
     """ELO power ratings as standings: implied win pct, win equivalents, and Elo-implied spreads. ROADMAP Appendix #3."""
+    season = resolve_season(season)
     from .. import store as _store
 
     con = _store.connect()
@@ -3407,8 +3438,9 @@ def get_elo_standings(season: str = SEASON, opponent: str | None = None,
 
 
 @tool
-def get_playoff_sim(season: str = SEASON, sims: int = 2000) -> dict[str, Any]:
+def get_playoff_sim(season: str | None = None, sims: int = 2000) -> dict[str, Any]:
     """Simulated title and finals odds from ratings, Monte Carlo brackets."""
+    season = resolve_season(season)
     from .sim import run_playoff_sim
 
     try:
@@ -3457,18 +3489,19 @@ def get_playoff_sim(season: str = SEASON, sims: int = 2000) -> dict[str, Any]:
 
 
 @tool
-def get_contract_value(season: str = "2025-26", min_gp: int = 20,
+def get_contract_value(season: str | None = None, min_gp: int = 20,
                        team: str = "", player: str = "") -> dict[str, Any]:
     """Contract value residuals from production vs salary.
 
     Returns league leaders by default; pass team for one roster or player for
     one named player's modeled salary and residual.
     """
+    season = resolve_season(season)
     import unicodedata as _ud
 
     from .. import store as _store
 
-    season = str(season or "2025-26").strip() or "2025-26"
+    season = str(season or "").strip() or resolve_season(None)
     try:
 
         min_gp = max(10, min(int(min_gp), 82))
@@ -3604,6 +3637,7 @@ def get_contract_value(season: str = "2025-26", min_gp: int = 20,
 @tool
 def get_draft_model(season: str = "2025") -> dict[str, Any]:
     """Star-probability classifier from college production (honest proxy)."""
+    season = resolve_season(season)
     try:
         from ..sources import cbb as _cbb
         from sklearn.linear_model import LogisticRegression
@@ -3650,11 +3684,12 @@ def get_draft_model(season: str = "2025") -> dict[str, Any]:
 
 
 @tool
-def get_risers(season: str = "2025-26", weeks: int = 4) -> dict[str, Any]:
+def get_risers(season: str | None = None, weeks: int = 4) -> dict[str, Any]:
     """Risers and fallers: last-N win pct vs season win pct, warehouse only."""
+    season = resolve_season(season)
     from .. import store as _store
 
-    season = str(season or "2025-26").strip() or "2025-26"
+    season = str(season or "").strip() or resolve_season(None)
     try:
         weeks = max(1, min(int(weeks or 4), 8))
     except (TypeError, ValueError):
@@ -3711,14 +3746,15 @@ def get_risers(season: str = "2025-26", weeks: int = 4) -> dict[str, Any]:
 
 
 @tool
-def get_player_risers(season: str = "2025-26", n: int = 10) -> dict[str, Any]:
+def get_player_risers(season: str | None = None, n: int = 10) -> dict[str, Any]:
     """Player risers and fallers: last-N games scoring/efficiency vs the
     player's own season average, warehouse only. Use this for
     player-level 'who is rising/falling/hot' asks; get_risers is the
     TEAM version (win-rate windows)."""
+    season = resolve_season(season)
     from .. import store as _store
 
-    season = str(season or "2025-26").strip() or "2025-26"
+    season = str(season or "").strip() or resolve_season(None)
     try:
         n = max(5, min(int(n or 10), 15))
     except (TypeError, ValueError):
@@ -3814,18 +3850,19 @@ def _ensure_leaderboard_snapshots(con: Any) -> None:
 
     con.execute(
         "UPDATE leaderboard_snapshots SET season = ? WHERE season IS NULL",
-        [SEASON],
+        [last_completed_season()],
     )
 
 
 @tool
-def snapshot_leaderboard(season: str = SEASON) -> dict[str, Any]:
+def snapshot_leaderboard(season: str | None = None) -> dict[str, Any]:
     """Capture today's top-50 scoring leaderboard. Idempotent per date."""
+    season = resolve_season(season)
     from datetime import datetime, timezone
 
     from .. import store as _store
 
-    season = str(season or SEASON).strip() or SEASON
+    season = str(season or "").strip() or resolve_season(None)
     today = datetime.now(timezone.utc).date().isoformat()
     con = _store.connect()
     try:
@@ -3869,14 +3906,15 @@ def snapshot_leaderboard(season: str = SEASON) -> dict[str, Any]:
 
 
 @tool
-def get_leaderboard_deltas(season: str = SEASON, days: int = 7) -> dict[str, Any]:
+def get_leaderboard_deltas(season: str | None = None, days: int = 7) -> dict[str, Any]:
     """Scoring leaderboard movers: latest snapshot vs the one from days ago."""
+    season = resolve_season(season)
     from datetime import date as _date
     from datetime import timedelta as _td
 
     from .. import store as _store
 
-    season = str(season or SEASON).strip() or SEASON
+    season = str(season or "").strip() or resolve_season(None)
     try:
         days = max(1, int(days or 7))
     except (TypeError, ValueError):
@@ -4099,7 +4137,7 @@ def get_warehouse_freshness() -> dict[str, Any]:
 
 @tool
 def get_team_trajectory(
-    team: str | int, seasons: int = 3, through_season: str = SEASON,
+    team: str | int, seasons: int = 3, through_season: str | None = None,
 ) -> dict[str, Any]:
     """Multi-season regular-season records for one team, newest first.
 
@@ -4107,6 +4145,7 @@ def get_team_trajectory(
     complete historical standings and returns record and win percentage for
     a bounded number of seasons ending at through_season.
     """
+    through_season = resolve_season(through_season)
     from .. import store as _store
     from ._core import coerce_team_id
 

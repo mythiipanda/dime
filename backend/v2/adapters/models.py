@@ -1063,10 +1063,13 @@ class ModelIntake(ModelStage):
                 *required_evidence, "game_prediction",
             ]))
         if task.season is not None and task.season.source == "default":
-            from shared.tools._core import SEASON
-            task = task.model_copy(update={
-                "season": task.season.model_copy(update={"value": SEASON}),
-            })
+            from shared.tools._core import last_completed_season
+            _derived_season = last_completed_season()
+            if _derived_season is not None:
+                task = task.model_copy(update={
+                    "season": task.season.model_copy(
+                        update={"value": _derived_season}),
+                })
         task = self._mark_uncovered_season(task)
         task = task.model_copy(update={
             "required_evidence": required_evidence,

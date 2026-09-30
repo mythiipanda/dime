@@ -378,7 +378,7 @@ class TradeBody(BaseModel):
     players_a: str | list[str] = ""
     team_b: str = ""
     players_b: str | list[str] = ""
-    season: str = "2025-26"
+    season: str | None = None
 
     @field_validator("players_a", "players_b")
     @classmethod
@@ -497,7 +497,7 @@ async def chat_stream_post(request: Request, body: ChatBody):
 
 
 @router.get("/today")
-async def api_today(season: str = Query("2025-26")):
+async def api_today(season: str | None = Query(None)):
     import asyncio
     from shared.tools.today import get_today
     import json
@@ -508,7 +508,7 @@ async def api_today(season: str = Query("2025-26")):
 
 
 @router.get("/watchlist")
-async def api_watchlist(season: str = Query("2025-26")):
+async def api_watchlist(season: str | None = Query(None)):
     from shared.tools.watchlist import get_watchlist
     import json
     res = get_watchlist.invoke({"season": season})
@@ -518,7 +518,7 @@ async def api_watchlist(season: str = Query("2025-26")):
 class WatchlistBody(BaseModel):
     entity_type: str
     entity_id: str
-    season: str = "2025-26"
+    season: str | None = None
 
 
 @router.post("/watchlist")
@@ -549,7 +549,7 @@ async def api_watchlist_remove(
 
 @router.get("/movers")
 async def api_movers(
-    season: str = Query("2025-26"),
+    season: str | None = Query(None),
     days: int = Query(7, ge=1, le=30),
 ):
     from shared.tools.league import get_leaderboard_deltas
@@ -561,7 +561,7 @@ async def api_movers(
 
 
 @router.get("/briefing")
-async def api_briefing(season: str = Query("2025-26")):
+async def api_briefing(season: str | None = Query(None)):
     from shared.tools.today import get_morning_briefing
     import json
     res = get_morning_briefing.invoke({"season": season})
@@ -572,7 +572,7 @@ async def api_briefing(season: str = Query("2025-26")):
 def api_debate_card(
     a: str = Query(""),
     b: str = Query(""),
-    season: str = Query("2025-26"),
+    season: str | None = Query(None),
 ) -> dict:
     from shared.tools import get_debate_card
     from shared.tools._core import InvalidSeasonError, clamp_season

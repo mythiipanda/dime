@@ -4,7 +4,7 @@ from typing import Any
 from langchain_core.tools import tool
 
 from .. import store
-from ._core import SEASON, clamp_season
+from ._core import clamp_season, last_completed_season, resolve_season
 
 MIP_MSG = ("MIP needs prior-season per-player stats; silver_hist_gamelogs "
            "is team-level and there is no player-seasons table in the warehouse")
@@ -102,6 +102,7 @@ def _missing_table() -> str | None:
 
 
 def _pool(season: str) -> list[dict[str, Any]]:
+    season = resolve_season(season)
     return store._read_df(
         """SELECT l.PLAYER AS player, l.TEAM AS team,
         l.GP AS gp, l.MIN AS mins,
@@ -129,11 +130,12 @@ def _pool(season: str) -> list[dict[str, Any]]:
 
 
 @tool
-def get_award_race(award: str, season: str = SEASON) -> dict[str, Any]:
+def get_award_race(award: str, season: str | None = None) -> dict[str, Any]:
     """Award race top 5 for MVP/DPOY/ROY/6MOY.
 
     The formula is computed from warehouse stats only and listed in meta.
     """
+    season = resolve_season(season)
     import statistics as _stats
 
     season = clamp_season(season)

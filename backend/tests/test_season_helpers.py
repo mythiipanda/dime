@@ -87,8 +87,8 @@ def test_data_season_falls_back_with_warning(tmp_path, monkeypatch, caplog):
     subagents._SEASON_CACHE.clear()
     try:
         with caplog.at_level("WARNING", logger="app.subagents"):
-            assert subagents.data_season() == subagents.SEASON
-        assert "falling back" in caplog.text
+            assert subagents.data_season() is None
+        assert "no season with warehouse data" in caplog.text
     finally:
         subagents._SEASON_CACHE.clear()
 

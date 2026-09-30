@@ -5,7 +5,7 @@ from typing import Any
 from langchain_core.tools import tool
 
 from .. import store
-from ._core import SEASON
+from ._core import last_completed_season, resolve_season
 
 
 def _norm_type(entity_type: object) -> str:
@@ -70,6 +70,7 @@ def _normalize(entity_type: str, entity_id: object) -> tuple[str, str]:
 
 
 def _player_snapshot(name: str, season: str) -> dict[str, Any]:
+    season = resolve_season(season)
     con = store.connect()
     try:
         tables = {r[0] for r in con.execute("SHOW TABLES").fetchall()}
@@ -96,6 +97,7 @@ def _player_snapshot(name: str, season: str) -> dict[str, Any]:
 
 
 def _team_snapshot(abbrev: str, season: str) -> dict[str, Any]:
+    season = resolve_season(season)
     tid = None
     try:
         from nba_api.stats.static import teams as _teams
@@ -209,13 +211,14 @@ def remove_watchlist_item(entity_type: str, entity_id: str) -> dict[str, Any]:
 
 
 @tool
-def get_watchlist(season: str = SEASON) -> dict[str, Any]:
+def get_watchlist(season: str | None = None) -> dict[str, Any]:
     """List followed entities with their latest snapshot.
 
     Players carry per-game PTS/REB/AST from silver_leaders_pts.
     Teams carry W/L from silver_standings.
     """
-    season = str(season or SEASON).strip() or SEASON
+    season = resolve_season(season)
+    season = str(season or "").strip() or resolve_season(None)
     con = store.state_connect()
     try:
         tables = {r[0] for r in con.execute("SHOW TABLES").fetchall()}

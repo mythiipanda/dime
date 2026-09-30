@@ -4,7 +4,7 @@ from typing import Any, Callable
 
 from langchain_core.tools import tool
 
-from ._core import SEASON, clamp_season, clamp_scope
+from ._core import clamp_season, clamp_scope, last_completed_season, resolve_season
 
 STAT_ALIASES = {
     "points": "PTS", "point": "PTS", "pts": "PTS",
@@ -144,6 +144,7 @@ def compute_streaks(
 
 
 def _load_player_games(season: str) -> tuple[list[dict], dict]:
+    season = resolve_season(season)
     from .. import store as _store
     from .splits import _resolve_name
 
@@ -177,6 +178,7 @@ def _load_player_games(season: str) -> tuple[list[dict], dict]:
 
 
 def _load_team_games(season: str) -> tuple[list[dict], dict]:
+    season = resolve_season(season)
     from .. import store as _store
 
     con = _store.connect()
@@ -215,7 +217,7 @@ def _load_team_games(season: str) -> tuple[list[dict], dict]:
 
 @tool
 def get_streaks(stat: str = "points", threshold: float | None = None,
-                scope: str = "player", season: str = SEASON,
+                scope: str = "player", season: str | None = None,
                 mode: str = "longest", top: int = 10) -> dict[str, Any]:
     """Longest or currently-active streaks, ranked league-wide.
 
@@ -226,6 +228,7 @@ def get_streaks(stat: str = "points", threshold: float | None = None,
     mode: longest or active. Warehouse only; active means the streak
     includes the holder's latest game on record.
     """
+    season = resolve_season(season)
     stat_key = STAT_ALIASES.get(str(stat or "").strip().lower())
     if stat_key is None:
         return {"tool": "get_streaks", "ok": False,

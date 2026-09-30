@@ -25,6 +25,7 @@ from .subagents import delegate_tools, run_desk_streaming, _SHOT_ZONE_RX, _HISTO
 from .subagents import DESK_DEADLINE_S as _DESK_WALL_BUDGET_S
 from shared.tools import v1_tools
 from shared.tools._core import COVERAGE_END, COVERAGE_START, tool_label
+from shared.tools._core import last_completed_season as _warehouse_last_season
 from v2.adapters.coverage import coverage_bounds, coverage_label
 
 ANALYST_SYSTEM = (
@@ -257,6 +258,11 @@ _PLANNER_PREFIX = (
 def _planner_season_context() -> str:
     from .subagents import data_season
     season = data_season()
+    if season is None:
+        return (
+            "No season with played-game data is in the warehouse right now. "
+            "Say that instead of guessing a season."
+        )
     return (
         f"Latest season with played-game data in the warehouse: {season}. "
         "Use it for this/current season; resolve other relative references "
@@ -954,10 +960,13 @@ def _gamelog_args(question: str, player: str | None,
     return args
 
 
-def _player_team_abbr(pid: int, season: str) -> str:
+def _player_team_abbr(pid: int, season: str | None) -> str:
     import time as _time
 
     from shared import store
+    from shared.tools._core import resolve_season as _resolve_abbr_season
+
+    season = _resolve_abbr_season(season) or ""
 
     for _ in range(3):
         try:
@@ -1422,7 +1431,7 @@ def _user_safe_tool_error(name: str, err: str) -> str:
     return base[:120]
 
 
-_TOOL_SEASON_COVERAGE: dict[str, tuple[str, str]] = {
+_TOOL_SEASON_COVERAGE: dict[str, tuple[str, str | None]] = {
     "get_raptor_history": ("1976-77", COVERAGE_END),
     "get_draft_board": ("1996-97", COVERAGE_END),
     "get_draft_model": ("1996-97", COVERAGE_END),
@@ -1504,6 +1513,16 @@ def _strip_correction_opener(question: str) -> str | None:
         if _low.startswith(_op):
             return _q[len(_op):].lstrip(" ,:;-")
     return None
+
+
+def _default_season(question: str) -> str | None:
+    _slug = re.search(r"(20\d\d)\s*-\s*(\d\d)", question or "")
+    if _slug:
+        return f"{_slug.group(1)}-{_slug.group(2)}"
+    try:
+        return _warehouse_last_season()
+    except Exception:
+        return None
 
 
 async def _triage_seed(question: str, primary: str, model: str,
@@ -1720,7 +1739,7 @@ async def _triage_seed(question: str, primary: str, model: str,
         async for _e in _triage_tool(
                 "get_young_player_usage",
                 {"max_age": 22, "min_minutes": 1000,
-                 "season": "2025-26"}, state, _yuh):
+                 "season": _default_season(question)}, state, _yuh):
             yield _e
         _yuout = _yuh.get("out") or {}
         if _result_status(_yuout) == "ok" and _result_rows(_yuout):
@@ -1779,9 +1798,10 @@ async def _triage_seed(question: str, primary: str, model: str,
                           question, re.IGNORECASE)
             and re.search(r"\bassists?\b", question, re.IGNORECASE)
             and not re.search(r"per[ -]?game|\bAPG\b", question, re.IGNORECASE)):
+        _tlseason = _default_season(question)
         _tlh: dict[str, Any] = {}
         async for _e in _triage_tool(
-                "get_leaders", {"stat_category": "AST", "season": "2025-26"},
+                "get_leaders", {"stat_category": "AST", "season": _tlseason},
                 state, _tlh):
             yield _e
         _tlout = _tlh.get("out") or {}
@@ -1793,7 +1813,7 @@ async def _triage_seed(question: str, primary: str, model: str,
             _tlout["meta"] = dict(_tlout.get("meta") or {})
             _tlout["meta"]["deterministic_answer"] = (
                 f"{_top.get('PLAYER')} leads the league with {_ast} assists "
-                f"in {_gp} games ({_apg:.2f} assists per game) in 2025-26.")
+                f"in {_gp} games ({_apg:.2f} assists per game) in {_tlseason}.")
             async for _e in _triage_terminal(question, state):
                 yield _e
         return
@@ -1816,10 +1836,11 @@ async def _triage_seed(question: str, primary: str, model: str,
                     _rate_leader = category
                     break
     if _rate_leader:
+        _rlseason = _default_season(question)
         _rlh: dict[str, Any] = {}
         async for _e in _triage_tool(
                 "get_leaders",
-                {"stat_category": _rate_leader, "season": "2025-26"},
+                {"stat_category": _rate_leader, "season": _rlseason},
                 state, _rlh):
             yield _e
         _rlout = _rlh.get("out") or {}
@@ -1834,11 +1855,11 @@ async def _triage_seed(question: str, primary: str, model: str,
                 _rlout["meta"] = dict(_rlout.get("meta") or {})
                 if _field == "TS_PCT":
                     _answer = (f"{_rltop.get('PLAYER')} leads qualified players at "
-                               f"{float(_value):.1f}% true shooting in 2025-26 "
+                               f"{float(_value):.1f}% true shooting in {_rlseason} "
                                f"({_rltop.get('GP')} games; 1,000+ total minutes).")
                 else:
                     _answer = (f"{_rltop.get('PLAYER')} leads at {float(_value):.2f} "
-                               f"{_unit} per game in 2025-26 "
+                               f"{_unit} per game in {_rlseason} "
                                f"({_rltop.get('GP')} games).")
                 _rlout["meta"]["deterministic_answer"] = _answer
             async for _e in _triage_terminal(question, state):
@@ -1854,7 +1875,7 @@ async def _triage_seed(question: str, primary: str, model: str,
         _p3h: dict[str, Any] = {}
         async for _e in _triage_tool(
                 "get_leaders",
-                {"stat_category": "FG3_PCT", "season": "2025-26"},
+                {"stat_category": "FG3_PCT", "season": _default_season(question)},
                 state, _p3h):
             yield _e
         _p3out = _p3h.get("out") or {}
@@ -1891,7 +1912,7 @@ async def _triage_seed(question: str, primary: str, model: str,
         _trh: dict[str, Any] = {}
         async for _e in _triage_tool(
                 "get_ratings",
-                {"season": "2025-26", "requested_metric": _team_rank_metric,
+                {"season": _default_season(question), "requested_metric": _team_rank_metric,
                  "ranking_direction": _direction}, state, _trh):
             yield _e
         _trout = _trh.get("out") or {}
@@ -1909,7 +1930,7 @@ async def _triage_seed(question: str, primary: str, model: str,
             and not is_compare and not is_predict and not state.get("history")):
         _rth: dict[str, Any] = {}
         async for _e in _triage_tool(
-                "get_ratings", {"team": _named[0], "season": "2025-26"},
+                "get_ratings", {"team": _named[0], "season": _default_season(question)},
                 state, _rth):
             yield _e
         _rtout = _rth.get("out") or {}
@@ -1961,7 +1982,7 @@ async def _triage_seed(question: str, primary: str, model: str,
             "assist": "AST", "assists": "AST",
             "steal": "STL", "steals": "STL",
             "block": "BLK", "blocks": "BLK"}
-        _dcseason = "2025-26"
+        _dcseason = _default_season(question)
         _dsm = re.search(r"(20\d\d)\s*-\s*(\d\d)", question)
         if _dsm:
             _dcseason = f"{_dsm.group(1)}-{_dsm.group(2)}"
@@ -2004,7 +2025,7 @@ async def _triage_seed(question: str, primary: str, model: str,
                 question, re.IGNORECASE)
             and not is_trade and not is_cast):
         _rk_n = int(next((g for g in _rk_m.groups() if g), "15"))
-        _rkseason = "2025-26"
+        _rkseason = _default_season(question)
         _rkm = re.search(r"(20\d\d)\s*-\s*(\d\d)", question)
         if _rkm:
             _rkseason = f"{_rkm.group(1)}-{_rkm.group(2)}"
@@ -2073,7 +2094,7 @@ async def _triage_seed(question: str, primary: str, model: str,
                     "point": "PTS", "points": "PTS",
                     "steal": "STL", "steals": "STL",
                     "block": "BLK", "blocks": "BLK"}.get(_tt_word, "AST")
-        _tseason = "2025-26"
+        _tseason = _default_season(question)
         _tsm = re.search(r"(20\d\d)\s*-\s*(\d\d)", question)
         if _tsm:
             _tseason = f"{_tsm.group(1)}-{_tsm.group(2)}"
@@ -2120,7 +2141,7 @@ async def _triage_seed(question: str, primary: str, model: str,
                               r"\bpredict", question, re.IGNORECASE)
             and not found_p
             and (not state.get("history") or _fin_series_ask)):
-        _fseason = "2025-26"
+        _fseason = _default_season(question)
         _fm = re.search(r"\b(20\d\d)\b", question)
         if _fm:
             _fy = int(_fm.group(1))
@@ -2192,7 +2213,7 @@ async def _triage_seed(question: str, primary: str, model: str,
                               question, re.IGNORECASE)):
         _over = not re.search(r"\bunderpaid\b|\bbest value\b|"
                               r"\bbargain", question, re.IGNORECASE)
-        _vargs: dict[str, Any] = {"season": "2025-26"}
+        _vargs: dict[str, Any] = {"season": _default_season(question)}
         if found_t:
             _vargs["team"] = found_t[0]
         _vh: dict[str, Any] = {}
@@ -2277,7 +2298,7 @@ async def _triage_seed(question: str, primary: str, model: str,
         _hh: dict[str, Any] = {}
         async for _e in _triage_tool(
                 "get_compare",
-                {"a": found_p[0], "b": found_p[1], "season": "2025-26"},
+                {"a": found_p[0], "b": found_p[1], "season": _default_season(question)},
                 state, _hh):
             yield _e
         _hout = _hh.get("out") or {}
@@ -2359,9 +2380,10 @@ async def _triage_seed(question: str, primary: str, model: str,
                           question, re.IGNORECASE)
             and not found_p and not found_t
             and not re.search(r"\bteams?\b", question, re.IGNORECASE)):
+        _clseason = _default_season(question)
         _cl: dict[str, Any] = {}
         async for _e in _triage_tool(
-                "get_clutch", {"scope": "player", "season": "2025-26"},
+                "get_clutch", {"scope": "player", "season": _clseason},
                 state, _cl):
             yield _e
         _clout = _cl.get("out") or {}
@@ -2371,7 +2393,7 @@ async def _triage_seed(question: str, primary: str, model: str,
             if _crows:
                 _lines = [
                     "Clutch scoring leaders - final 5 minutes, margin "
-                    "within 5 (2025-26):"]
+                    f"within 5 ({_clseason}):"]
                 for _f in _crows[:5]:
                     try:
                         _fg = f"{float(_f.get('FG_PCT')) * 100:.1f}%"
@@ -2411,7 +2433,7 @@ async def _triage_seed(question: str, primary: str, model: str,
 
     if (re.search(r"\bcomeback|\bblown lead", question, re.IGNORECASE)
             and not _named_p):
-        _cseason = "2025-26"
+        _cseason = _default_season(question)
         _cm = re.search(r"(20\d\d)\s*-\s*(\d\d)", question)
         if _cm:
             _cseason = f"{_cm.group(1)}-{_cm.group(2)}"
@@ -2463,7 +2485,7 @@ async def _triage_seed(question: str, primary: str, model: str,
         _mrh: dict[str, Any] = {}
         async for _e in _triage_tool(
                 "get_player_report",
-                {"player": _named_p[0], "season": "2025-26"}, state, _mrh):
+                {"player": _named_p[0], "season": _default_season(question)}, state, _mrh):
             yield _e
         _mrout = _mrh.get("out") or {}
         if _result_status(_mrout) == "ok" and _result_rows(_mrout):
@@ -2477,7 +2499,7 @@ async def _triage_seed(question: str, primary: str, model: str,
                           r"\bhow (?:did|was)\b|\b[prs]pg\b|\bapg\b",
                           question, re.IGNORECASE)
             and not is_compare and not is_trade and not is_cast):
-        _npseason = "2025-26"
+        _npseason = _default_season(question)
         _npm = re.search(r"(20\d\d)\s*-\s*(\d\d)", question)
         if _npm:
             _npseason = f"{_npm.group(1)}-{_npm.group(2)}"
@@ -2506,7 +2528,7 @@ async def _triage_seed(question: str, primary: str, model: str,
 
 
 
-        _sseason = "2025-26"
+        _sseason = _default_season(question)
         _sm = re.search(r"(20\d\d)\s*-\s*(\d\d)", question)
         if _sm:
             _sseason = f"{_sm.group(1)}-{_sm.group(2)}"
@@ -2535,7 +2557,7 @@ async def _triage_seed(question: str, primary: str, model: str,
     if (len(found_p) == 1
             and re.search(r"\bon[/\s-]?off\b", question, re.IGNORECASE)
             and not is_compare and not is_trade and not is_cast):
-        _oseason = "2025-26"
+        _oseason = _default_season(question)
         _om = re.search(r"\b(20\d\d)\s*-\s*(\d\d)\b", question)
         if _om:
             _oseason = f"{_om.group(1)}-{_om.group(2)}"
@@ -2676,7 +2698,7 @@ async def _triage_seed(question: str, primary: str, model: str,
             and not _SEASON_AVG_NO_RX.search(question)
             and not re.search(r"\bplayoffs?\b", question, re.IGNORECASE)
             and not is_trade and not is_cast):
-        _cseason = "2025-26"
+        _cseason = _default_season(question)
         _cm2 = re.search(r"(20\d\d)\s*-\s*(\d\d)", question)
         if _cm2:
             _cseason = f"{_cm2.group(1)}-{_cm2.group(2)}"
@@ -2707,7 +2729,7 @@ async def _triage_seed(question: str, primary: str, model: str,
             and re.search(r"\bplayoffs?\b|\bpostseason\b|\bfinals\b",
                           question, re.IGNORECASE)
             and not is_trade and not is_cast and not is_compare):
-        _pseason = "2025-26"
+        _pseason = _default_season(question)
         _pm = re.search(r"(20\d\d)\s*-\s*(\d\d)", question)
         if _pm:
             _pseason = f"{_pm.group(1)}-{_pm.group(2)}"
@@ -2765,6 +2787,9 @@ async def _triage_seed(question: str, primary: str, model: str,
                 import time as _gtime
 
                 from shared import store as _gstore
+                _gseason = _default_season(question)
+                _gfinals_year = (("20" + _gseason[5:])
+                                 if _gseason else "")
                 _grow: dict[str, Any] | None = None
                 for _try in range(3):
                     try:
@@ -2774,7 +2799,7 @@ async def _triage_seed(question: str, primary: str, model: str,
                                 "SELECT DISTINCT GAME_DATE FROM "
                                 "silver_playoffs WHERE _season = ? AND "
                                 "substr(CAST(GAME_ID AS VARCHAR), 8, 1) "
-                                "= '4'", ["2025-26"]).fetchall()]
+                                "= '4'", [_gseason]).fetchall()]
                             from datetime import datetime as _gdt
                             _gdates = [
                                 _d.strftime("%b %-d, %Y") for _d in
@@ -2787,7 +2812,7 @@ async def _triage_seed(question: str, primary: str, model: str,
                                     "silver_playoff_gamelogs WHERE "
                                     "_season = ? AND _entity = ? AND "
                                     "GAME_DATE = ?",
-                                    ["2025-26", f"player:{_gpid}",
+                                    [_gseason, f"player:{_gpid}",
                                      _gdates[_gnum - 1]]).fetchone()
                                 if _r:
                                     _grow = dict(zip(
@@ -2820,11 +2845,11 @@ async def _triage_seed(question: str, primary: str, model: str,
                             "rows": [_grow],
                             "meta": {
                                 "source": "warehouse",
-                                "season": "2025-26",
+                                "season": _gseason,
                                 "deterministic_answer": (
                                     f"{_gdisp} {_gverb} {int(_gval)} "
                                     f"{_gnoun} in Game {_gnum} of the "
-                                    f"2026 Finals "
+                                    f"{_gfinals_year} Finals "
                                     f"({_grow['GAME_DATE']}, "
                                     f"{_grow['MATCHUP']}).")}}
                         yield _event("tool_call", {
@@ -2833,7 +2858,7 @@ async def _triage_seed(question: str, primary: str, model: str,
                             "label": tool_label(
                                 "pin_game_stat_followup"),
                             "summary": f"{_gdisp} Finals game "
-                                       f"{_gnum} log, 2025-26"})
+                                       f"{_gnum} log, {_gseason}"})
                         yield _event("tool_result",
                                      _tool_result_payload(
                                          "data_retrieval",
@@ -3065,7 +3090,7 @@ async def _triage_seed(question: str, primary: str, model: str,
                               re.IGNORECASE)
             and len(found_p) == 1
             and not is_trade and not is_cast and not is_compare):
-        _rwseason = "2025-26"
+        _rwseason = _default_season(question)
         _rwm = re.search(r"(20\d\d)\s*-\s*(\d\d)", question)
         if _rwm:
             _rwseason = f"{_rwm.group(1)}-{_rwm.group(2)}"
@@ -3144,7 +3169,7 @@ async def _triage_seed(question: str, primary: str, model: str,
 
 
 
-        _bseason = "2025-26"
+        _bseason = _default_season(question)
         _bm = re.search(r"\b(20\d\d)-(\d\d)\b", question)
         if _bm:
             _bseason = f"{_bm.group(1)}-{_bm.group(2)}"
@@ -3187,7 +3212,7 @@ async def _triage_seed(question: str, primary: str, model: str,
                           question, re.IGNORECASE)
             and not found_p and not _named_p and not found_t
             and not is_trade and not is_cast and not is_compare):
-        _lseason = "2025-26"
+        _lseason = _default_season(question)
         _lm = re.search(r"\b(20\d\d)\s*-\s*(\d\d)\b", question)
         if _lm:
             _lseason = f"{_lm.group(1)}-{_lm.group(2)}"
@@ -3244,6 +3269,7 @@ async def _triage_seed(question: str, primary: str, model: str,
             _babbr, _bfull = "", _bteam
         _brows: list[dict[str, Any]] = []
         _bfinals = bool(re.search(r"\bfinals\b", question, re.IGNORECASE))
+        _bseason = _default_season(question)
         if _babbr:
             import time as _btime
 
@@ -3261,7 +3287,7 @@ async def _triage_seed(question: str, primary: str, model: str,
                                 "SELECT DISTINCT GAME_DATE FROM "
                                 "silver_playoffs WHERE _season = ? AND "
                                 "substr(CAST(GAME_ID AS VARCHAR), 8, 1) "
-                                "= '4'", ["2025-26"]).fetchall()]
+                                "= '4'", [_bseason]).fetchall()]
                             if _fd:
 
                                 from datetime import datetime as _bdt
@@ -3277,7 +3303,7 @@ async def _triage_seed(question: str, primary: str, model: str,
                                         "MATCHUP LIKE ? AND GAME_DATE "
                                         f"IN ({_ph}) GROUP BY 1 "
                                         "ORDER BY 3 DESC LIMIT 3",
-                                        ["2025-26", _babbr + " %",
+                                        [_bseason, _babbr + " %",
                                          *sorted(_fd)]).fetchall():
                                     _pid = str(_e).replace("player:", "")
                                     _nm = _bcon.execute(
@@ -3296,7 +3322,7 @@ async def _triage_seed(question: str, primary: str, model: str,
                                 "FROM silver_leaders_pts "
                                 "WHERE TEAM = ? AND _season = ? AND GP >= 20 "
                                 "ORDER BY PTS * 1.0 / NULLIF(GP, 0) DESC "
-                                "LIMIT 3", [_babbr, "2025-26"])
+                                "LIMIT 3", [_babbr, _bseason])
                             _bcols = [d[0] for d in _bcon.description]
                             _brows = [dict(zip(_bcols, r))
                                       for r in _cur.fetchall()]
@@ -3307,7 +3333,7 @@ async def _triage_seed(question: str, primary: str, model: str,
                     _btime.sleep(0.2)
         if _brows:
             _bmeta: dict[str, Any] = {
-                "source": "warehouse", "season": "2025-26",
+                "source": "warehouse", "season": _bseason,
                 "note": (f"top {_bfull} scorers by per-game "
                          "points (20+ games); 'best player' "
                          "read as the team's leading scorers")}
@@ -3325,7 +3351,7 @@ async def _triage_seed(question: str, primary: str, model: str,
                 _bmeta["deterministic_answer"] = (
                     f"{_btop['PLAYER']} led the {_bfull} in scoring "
                     f"at {_btop['PPG']} points per game over "
-                    f"{_btop['GP']} games in the 2025-26 season.")
+                    f"{_btop['GP']} games in the {_bseason} season.")
             _bres = {
                 "tool": "pin_team_best_player", "ok": True,
                 "rows": _brows,
@@ -3334,7 +3360,7 @@ async def _triage_seed(question: str, primary: str, model: str,
                 "node": "data_retrieval",
                 "name": "pin_team_best_player",
                 "label": tool_label("pin_team_best_player"),
-                "summary": f"{_bfull} scoring leaders, 2025-26"})
+                "summary": f"{_bfull} scoring leaders, {_bseason}"})
             yield _event("tool_result", _tool_result_payload(
                 "data_retrieval", "pin_team_best_player", _bres, 0))
             yield _event("thought_stream", {
@@ -3357,7 +3383,7 @@ async def _triage_seed(question: str, primary: str, model: str,
                   else "get_player_risers")
         _rh2: dict[str, Any] = {}
         async for _e in _triage_tool(
-                _rtool, {"season": "2025-26"}, state, _rh2):
+                _rtool, {"season": _default_season(question)}, state, _rh2):
             yield _e
         _rout = _rh2.get("out") or {}
         if _result_status(_rout) == "ok":
@@ -3373,7 +3399,7 @@ async def _triage_seed(question: str, primary: str, model: str,
 
 
 
-        _rest_args: dict[str, Any] = {"season": "2025-26"}
+        _rest_args: dict[str, Any] = {"season": _default_season(question)}
         if found_t:
             from shared.tools._core import coerce_team_id as _ctid
             from nba_api.stats.static import teams as _tteams
@@ -3405,11 +3431,11 @@ async def _triage_seed(question: str, primary: str, model: str,
         if _odds_ask:
             _oh: dict[str, Any] = {}
             async for _e in _triage_tool(
-                    "get_playoff_sim", {"season": "2025-26"}, state, _oh):
+                    "get_playoff_sim", {"season": _default_season(question)}, state, _oh):
                 yield _e
             _any_ok = _any_ok or _result_status(_oh.get("out") or {}) == "ok"
         if _elo_ask:
-            _eargs: dict[str, Any] = {"season": "2025-26"}
+            _eargs: dict[str, Any] = {"season": _default_season(question)}
             if found_t:
                 _eargs["opponent"] = found_t[0]
             _eh: dict[str, Any] = {}
@@ -3433,10 +3459,11 @@ async def _triage_seed(question: str, primary: str, model: str,
                       question, re.IGNORECASE)
     )
     if _corner_leader and not is_trade and not is_cast:
+        _zseason = _default_season(question)
         _zh: dict[str, Any] = {}
         async for _e in _triage_tool(
                 "get_team_shot_zones",
-                {"teams": "league", "season": "2025-26"}, state, _zh):
+                {"teams": "league", "season": _zseason}, state, _zh):
             yield _e
         _zout = _zh.get("out") or {}
         leader = (_zout.get("zone_leaders") or {}).get("corner_3")
@@ -3446,7 +3473,7 @@ async def _triage_seed(question: str, primary: str, model: str,
             meta = dict(_zout.get("meta") or {})
             meta["deterministic_answer"] = (
                 f"{leader.get('team')} leads the league in corner-three "
-                f"attempt share at {share:.1f}% in 2025-26 "
+                f"attempt share at {share:.1f}% in {_zseason} "
                 f"({delta:+.1f} percentage points vs the league baseline).")
             _zout = {**_zout, "meta": meta}
             if state["tool_results"]:
@@ -3458,9 +3485,9 @@ async def _triage_seed(question: str, primary: str, model: str,
 
 
         _stool = "get_shot_compare" if len(found_p) >= 2 else "get_shot_zones"
-        _sargs = ({"a": found_p[0], "b": found_p[1], "season": "2025-26"}
+        _sargs = ({"a": found_p[0], "b": found_p[1], "season": _default_season(question)}
                   if len(found_p) >= 2
-                  else {"player_id": found_p[0], "season": "2025-26"})
+                  else {"player_id": found_p[0], "season": _default_season(question)})
         _sh3: dict[str, Any] = {}
         async for _e in _triage_tool(_stool, _sargs, state, _sh3):
             yield _e
@@ -3557,7 +3584,7 @@ async def _triage_seed(question: str, primary: str, model: str,
 
 
 
-        _vseason = "2025-26"
+        _vseason = _default_season(question)
         _vm = re.search(r"(20\d\d)\s*-\s*(\d\d)", question)
         if _vm:
             _vseason = f"{_vm.group(1)}-{_vm.group(2)}"
@@ -3612,7 +3639,7 @@ async def _triage_seed(question: str, primary: str, model: str,
 
 
 
-        _cseason = "2025-26"
+        _cseason = _default_season(question)
         _cm = re.search(r"(20\d\d)\s*-\s*(\d\d)", question)
         if _cm:
             _cseason = f"{_cm.group(1)}-{_cm.group(2)}"
@@ -3665,12 +3692,34 @@ async def _triage_seed(question: str, primary: str, model: str,
             async for _e in _triage_terminal(question, state):
                 yield _e
             return
+    _cmp_teams = _named if len(_named) == 2 else found_t[:2]
+    if (len(_cmp_teams) == 2
+            and re.search(r"\bratings?\b|offensive rating|defensive rating|"
+                          r"net rating|\bpace\b", question, re.IGNORECASE)
+            and not is_trade and not is_cast and not is_predict
+            and not state.get("history")):
+        _cmpseason = _default_season(question)
+        _cmpok = True
+        for _cmpteam in _cmp_teams:
+            _cmph: dict[str, Any] = {}
+            async for _e in _triage_tool(
+                    "get_ratings",
+                    {"team": _cmpteam, "season": _cmpseason},
+                    state, _cmph):
+                yield _e
+            if _result_status(_cmph.get("out") or {}) != "ok":
+                _cmpok = False
+                break
+        if _cmpok:
+            async for _e in _triage_terminal(question, state):
+                yield _e
+            return
     if ((len(found_p) >= 2 or len(found_t) >= 2 or is_compare)
             and not (is_trade and not is_compare)
             and not (is_cast and not is_compare)):
         return
     if is_trade:
-        season = "2025-26"
+        season = _default_season(question)
         m = re.search(r"(20\d\d)\s*-\s*(\d\d)", question)
         if m:
             season = f"{m.group(1)}-{m.group(2)}"
@@ -3768,10 +3817,11 @@ async def _triage_seed(question: str, primary: str, model: str,
         from shared.tools._core import coerce_player_id as _cp2
 
         sides = []
+        _cast_season = _default_season(question)
         for p in found_p[:2]:
             try:
                 _pid = _cp2(p)
-                _ab = _player_team_abbr(_pid, "2025-26") if _pid else ""
+                _ab = _player_team_abbr(_pid, _cast_season) if _pid else ""
             except Exception:
                 _pid, _ab = 0, ""
             if _ab:
@@ -3792,10 +3842,11 @@ async def _triage_seed(question: str, primary: str, model: str,
                         try:
                             mates = _con3.execute(
                                 "SELECT PLAYER, PTS, GP FROM "
-                                "silver_leaders_pts WHERE _season='2025-26' "
+                                "silver_leaders_pts WHERE _season = ? "
                                 "AND TEAM=? AND UPPER(PLAYER) NOT LIKE ? "
                                 "ORDER BY PTS DESC LIMIT 4",
-                                [ab, "%" + last.upper() + "%"]).fetchall()
+                                [_cast_season, ab,
+                                 "%" + last.upper() + "%"]).fetchall()
                         except Exception:
                             mates = []
                         try:
@@ -3803,9 +3854,9 @@ async def _triage_seed(question: str, primary: str, model: str,
                                    for r in _con3.execute(
                                        "SELECT PLAYER_NAME, TS_PCT, "
                                        "NET_RATING FROM silver_advanced "
-                                       "WHERE _season='2025-26' AND "
+                                       "WHERE _season = ? AND "
                                        "TEAM_ABBREVIATION=?",
-                                       [ab]).fetchall()}
+                                       [_cast_season, ab]).fetchall()}
                         except Exception:
                             adv = {}
                         if not mates:
@@ -3833,7 +3884,7 @@ async def _triage_seed(question: str, primary: str, model: str,
         if sides:
             if _cast_rows:
                 _cmeta: dict[str, Any] = {"source": "warehouse",
-                                          "season": "2025-26",
+                                          "season": _cast_season,
                                           "note": "supporting cast, "
                                                   "star excluded, "
                                                   "sorted by PPG"}
@@ -3941,7 +3992,7 @@ async def _triage_seed(question: str, primary: str, model: str,
         _evh: dict[str, Any] = {}
         async for _e in _triage_tool(
                 "get_player_evaluation",
-                {"player": found_p[0], "season": "2025-26"}, state, _evh):
+                {"player": found_p[0], "season": _default_season(question)}, state, _evh):
             yield _e
         _evout = _evh.get("out") or {}
         if _result_status(_evout) == "ok" and _result_rows(_evout):
@@ -3999,10 +4050,11 @@ async def _triage_seed(question: str, primary: str, model: str,
             and re.search(r"streak|longest|consecutive", question,
                           re.IGNORECASE)):
         _thresh = max(1, min(int(_sm.group(1)), 60))
+        _stseason = _default_season(question)
         _code = (
             "rows = con.execute(\"WITH g AS (SELECT Player_ID, PTS, "
             "TRY_STRPTIME(GAME_DATE, '%b %d, %Y') AS d "
-            "FROM silver_player_gamelogs WHERE _season = '2025-26'), "
+            f"FROM silver_player_gamelogs WHERE _season = '{_stseason}'), "
             "s AS (SELECT Player_ID, d, PTS, ROW_NUMBER() OVER "
             "(PARTITION BY Player_ID ORDER BY d) - ROW_NUMBER() OVER "
             f"(PARTITION BY Player_ID, (PTS >= {_thresh})::INT ORDER BY d) "
@@ -4145,7 +4197,7 @@ async def _triage_seed(question: str, primary: str, model: str,
 
                     _pid = _cp(p)
                     if _pid:
-                        _ab = _player_team_abbr(_pid, "2025-26")
+                        _ab = _player_team_abbr(_pid, _default_season(question))
                         if _ab:
                             team_hint = f" Warehouse lists {p} on {_ab}."
                 except Exception:
@@ -4809,7 +4861,8 @@ async def data_retrieval_agent(
 
             for p in qp[:4]:
                 _pid = _cp(p)
-                _ab = _player_team_abbr(_pid, "2025-26") if _pid else ""
+                _ab = _player_team_abbr(
+                    _pid, _default_season(state["question"])) if _pid else ""
                 if _ab:
                     team_facts.append(f"{p} plays for {_ab}")
         except Exception:
@@ -6124,10 +6177,11 @@ def _numeral_allowed(state: dict) -> set[str]:
         except ValueError:
             pass
     try:
-        from shared.tools._core import SEASON as _S
-        allowed |= set(re.findall(r"\d+", _S))
+        _derived_season = _warehouse_last_season()
+        if _derived_season:
+            allowed |= set(re.findall(r"\d+", _derived_season))
     except Exception:
-        allowed |= {"2025", "26"}
+        pass
     return allowed
 
 
