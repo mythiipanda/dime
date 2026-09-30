@@ -11,7 +11,7 @@ from v2.runtime.verifier import merge_verification_reports, validate_semantic_re
 def task(season="2025-26"):
     from v2.contracts import RunMode
     return TaskSpec(goal="Rank Boston", mode=RunMode.QUICK, deliverable="answer",
-        entities=[EntityRef(id="BOS", type="team", display_name="Boston Celtics")],
+        entities=[EntityRef(id="BOS", type="team", display_name="Capital City Stars")],
         season=SeasonRef(value=season, source="user", confidence=1), as_of=date(2026, 4, 15))
 
 
@@ -19,9 +19,9 @@ def evidence(**changes):
     from v2.contracts import EvidenceEnvelope
     values = dict(evidence_id="standings", capability="standings", source="warehouse:standings",
         observed_at=datetime(2026, 4, 15, 12, tzinfo=UTC), season="2025-26", as_of=date(2026, 4, 15),
-        entities=[EntityRef(id="BOS", type="team", display_name="Boston Celtics")],
-        rows=[{"TEAM": "Boston Celtics", "W": 61, "WIN_PCT": 0.744},
-              {"TEAM": "New York Knicks", "W": 52, "WIN_PCT": 0.634}],
+        entities=[EntityRef(id="BOS", type="team", display_name="Capital City Stars")],
+        rows=[{"TEAM": "Capital City Stars", "W": 61, "WIN_PCT": 0.744},
+              {"TEAM": "Riverport Ravens", "W": 52, "WIN_PCT": 0.634}],
         units={"W": "wins", "WIN_PCT": "percent"},
         metric_definitions={"W": "regular-season wins", "WIN_PCT": "wins divided by games"},
         qualification="All teams with 82 games", coverage="All 30 NBA teams")
@@ -34,7 +34,7 @@ def report(claim):
 
 
 def test_observed_claim_passes_with_number_date_season_entity_and_units():
-    claim = Claim(text="As of 2026-04-15, the Boston Celtics had 61 wins in 2025-26.",
+    claim = Claim(text="As of 2026-04-15, the Capital City Stars had 61 wins in 2025-26.",
                   kind=ClaimKind.OBSERVED, evidence_ids=["standings"])
     result = verify_mechanical(task(), report(claim), [evidence()])
     assert result.status == VerificationStatus.PASS
@@ -42,7 +42,7 @@ def test_observed_claim_passes_with_number_date_season_entity_and_units():
 
 
 def test_rejects_uncited_numeral_date_and_season():
-    claim = Claim(text="As of 2026-04-14, Boston had 62 wins in 2024-25.",
+    claim = Claim(text="As of 2026-04-14, Capital City had 62 wins in 2024-25.",
                   kind=ClaimKind.OBSERVED, evidence_ids=["standings"])
     reasons = verify_mechanical(task(), report(claim), [evidence()]).claim_results[0].reasons
     assert "uncited numeral 62" in reasons
@@ -71,9 +71,9 @@ def test_maximum_rejected_claims_do_not_overflow_repair_report():
 
 
 def test_entity_season_and_as_of_mismatches_fail():
-    bad = evidence(entities=[EntityRef(id="NYK", type="team", display_name="New York Knicks")],
+    bad = evidence(entities=[EntityRef(id="NYK", type="team", display_name="Riverport Ravens")],
                    season="2024-25", as_of=date(2026, 4, 16))
-    claim = Claim(text="Boston had 61 wins.", kind=ClaimKind.OBSERVED, evidence_ids=["standings"])
+    claim = Claim(text="Capital City had 61 wins.", kind=ClaimKind.OBSERVED, evidence_ids=["standings"])
     reasons = verify_mechanical(task(), report(claim), [bad]).claim_results[0].reasons
     assert "cited evidence entities do not match the task entities" in reasons
     assert any("does not match task season" in r for r in reasons)
@@ -157,7 +157,7 @@ def test_uncited_section_fact_is_rejected():
 
 
 def test_observation_time_does_not_support_an_as_of_claim():
-    claim = Claim(text="As of 2026-04-15, Boston had 61 wins.",
+    claim = Claim(text="As of 2026-04-15, Capital City had 61 wins.",
                   kind=ClaimKind.OBSERVED, evidence_ids=["standings"])
     result = verify_mechanical(
         task(), report(claim),
@@ -167,9 +167,9 @@ def test_observation_time_does_not_support_an_as_of_claim():
 
 
 def test_ordered_list_labels_are_not_factual_numerals():
-    claim = Claim(text="Boston had 61 wins.", kind=ClaimKind.OBSERVED,
+    claim = Claim(text="Capital City had 61 wins.", kind=ClaimKind.OBSERVED,
                   evidence_ids=["standings"])
-    draft = DraftReport(sections=["1. Boston had 61 wins."], claims=[claim])
+    draft = DraftReport(sections=["1. Capital City had 61 wins."], claims=[claim])
     assert verify_mechanical(task(), draft, [evidence()]).status == VerificationStatus.PASS
 
 
@@ -213,7 +213,7 @@ def test_mixed_source_claim_requires_provenance_label():
 
 def test_source_ranked_leader_does_not_require_duplicate_calculation():
     ranked = evidence(
-        rows=[{"RANK": 1, "PLAYER": "Boston Celtics", "W": 61}],
+        rows=[{"RANK": 1, "PLAYER": "Capital City Stars", "W": 61}],
         units={"W": "wins"},
         qualification="Qualified teams", coverage="Source-ranked full population")
     claim = Claim(text="Boston is the leader with 61 wins.",
@@ -242,7 +242,7 @@ def test_multi_vintage_trade_evidence_supports_salary_and_season_claim() -> None
 
 def test_task_season_scope_still_rejects_statistical_vintage_mismatch() -> None:
     wrong = evidence(season="2024-25", task_season_scoped=True)
-    claim = Claim(text="Boston had 61 wins.", kind=ClaimKind.OBSERVED,
+    claim = Claim(text="Capital City had 61 wins.", kind=ClaimKind.OBSERVED,
                   evidence_ids=["standings"])
     result = verify_mechanical(task(), report(claim), [wrong])
     assert any("does not match task season" in reason
@@ -273,7 +273,7 @@ def test_mechanical_verifier_revalidates_copied_inputs() -> None:
 def test_undeclared_source_identity_cannot_support_factual_claim():
     unknown = evidence(warnings=["source identity not declared by tool"])
     claim = Claim(
-        text="Boston had 61 wins.", kind=ClaimKind.OBSERVED,
+        text="Capital City had 61 wins.", kind=ClaimKind.OBSERVED,
         evidence_ids=["standings"],
     )
 
@@ -287,13 +287,13 @@ def test_undeclared_source_identity_cannot_support_factual_claim():
 def test_entity_alias_ids_match_on_canonical_display_name():
     from v2.contracts import EvidenceEnvelope
     task_with_slug = task().model_copy(update={"entities": [EntityRef(
-        id="boston-celtics", type="team", display_name="Boston Celtics")]})
+        id="boston-celtics", type="team", display_name="Capital City Stars")]})
     for evidence_entity in (
         EntityRef(id="1610612738", type="team", display_name="boston-celtics"),
         EntityRef(id="BOS", type="team", display_name="bos"),
     ):
         evidence_with_alias = evidence(entities=[evidence_entity])
-        for text in ("The Boston Celtics finished with 61 wins.",
+        for text in ("The Capital City Stars finished with 61 wins.",
                      "The team's win total was 61."):
             claim = Claim(text=text, kind="observed", evidence_ids=["standings"])
             result = verify_mechanical(
@@ -340,7 +340,7 @@ def test_nested_prediction_metrics_match_declared_units():
         units={"win_prob": "fraction_0_1", "projected_score": "points"},
     )
     claim = Claim(
-        text="Boston had a 54.8 percent win probability.", kind="observed",
+        text="Capital City had a 54.8 percent win probability.", kind="observed",
         evidence_ids=[ev.evidence_id],
     )
     report = verify_mechanical(task(), DraftReport(sections=[], claims=[claim]), [ev])
@@ -376,10 +376,10 @@ def test_qualification_numeral_is_supported_for_population_claim():
 
 def test_cross_evidence_comparison_requires_declared_calculation():
     regular = evidence(evidence_id="regular", capability="team_ratings",
-        rows=[{"TEAM": "Boston Celtics", "OFF_RATING": 120.0}],
+        rows=[{"TEAM": "Capital City Stars", "OFF_RATING": 120.0}],
         units={"OFF_RATING": "points_per_100_possessions"})
     playoffs = evidence(evidence_id="playoffs", capability="playoff_team_ratings",
-        rows=[{"TEAM": "Boston Celtics", "OFF_RATING": 111.4}],
+        rows=[{"TEAM": "Capital City Stars", "OFF_RATING": 111.4}],
         units={"OFF_RATING": "points_per_100_possessions"})
     claim = Claim(
         text="Boston's offensive rating dropped from 120.0 to 111.4 points per 100 possessions.",
@@ -389,8 +389,8 @@ def test_cross_evidence_comparison_requires_declared_calculation():
 
 
 def test_universal_cross_evidence_claim_requires_declared_calculation():
-    regular = evidence(evidence_id="regular", rows=[{"TEAM": "Boston Celtics", "OFF_RATING": 120.0}])
-    playoffs = evidence(evidence_id="playoffs", rows=[{"TEAM": "Boston Celtics", "OFF_RATING": 111.4}])
+    regular = evidence(evidence_id="regular", rows=[{"TEAM": "Capital City Stars", "OFF_RATING": 120.0}])
+    playoffs = evidence(evidence_id="playoffs", rows=[{"TEAM": "Capital City Stars", "OFF_RATING": 111.4}])
     claim = Claim(text="Every playoff team declined.", kind="judgment",
                   evidence_ids=["regular", "playoffs"])
     result = verify_mechanical(task(), report(claim), [regular, playoffs])
@@ -400,7 +400,7 @@ def test_universal_cross_evidence_claim_requires_declared_calculation():
 def test_population_claim_numerals_must_match_named_entity_row():
     table = evidence(
         rows=[
-            {"TEAM_NAME": "Boston Celtics", "OFF_RATING": 111.4, "DEF_RATING": 108.8},
+            {"TEAM_NAME": "Capital City Stars", "OFF_RATING": 111.4, "DEF_RATING": 108.8},
             {"TEAM_NAME": "Cleveland Cavaliers", "OFF_RATING": 109.7, "DEF_RATING": 112.3},
         ],
         units={"OFF_RATING": "points_per_100_possessions",
@@ -422,7 +422,7 @@ def test_population_claim_numerals_must_match_named_entity_row():
 def test_population_claim_accepts_numeral_from_named_entity_row():
     table = evidence(
         rows=[
-            {"TEAM_NAME": "Boston Celtics", "OFF_RATING": 111.4},
+            {"TEAM_NAME": "Capital City Stars", "OFF_RATING": 111.4},
             {"TEAM_NAME": "Cleveland Cavaliers", "OFF_RATING": 109.7},
         ],
         units={"OFF_RATING": "points_per_100_possessions"},
@@ -451,7 +451,7 @@ def test_metric_name_digit_is_not_treated_as_an_asserted_measurement():
         kind="observed", evidence_ids=[table.evidence_id],
     )
     result = verify_mechanical(
-        TaskSpec(goal="Boston shot zones", mode="quick", deliverable="answer"),
+        TaskSpec(goal="Capital City shot zones", mode="quick", deliverable="answer"),
         report(claim), [table],
     )
     assert result.status == VerificationStatus.PASS
@@ -470,7 +470,7 @@ def test_hyphenated_metric_labels_do_not_hide_real_measurements():
         kind="observed", evidence_ids=[table.evidence_id],
     )
     result = verify_mechanical(
-        TaskSpec(goal="Boston shot zones", mode="quick", deliverable="answer"),
+        TaskSpec(goal="Capital City shot zones", mode="quick", deliverable="answer"),
         report(claim), [table],
     )
     assert result.status == VerificationStatus.REPAIR
@@ -482,14 +482,14 @@ def test_named_entity_values_can_span_multiple_population_envelopes():
         evidence_id="totals",
         rows=[
             {"TEAM": "Atlanta Hawks", "AST": 2462, "GP": 82, "PER_GAME": 30.0},
-            {"TEAM": "Boston Celtics", "AST": 2021, "GP": 82, "PER_GAME": 24.6},
+            {"TEAM": "Capital City Stars", "AST": 2021, "GP": 82, "PER_GAME": 24.6},
         ],
     )
     standings = evidence(
         evidence_id="standings",
         rows=[
             {"team": "Atlanta Hawks", "WINS": 42, "LOSSES": 40},
-            {"team": "Boston Celtics", "WINS": 56, "LOSSES": 26},
+            {"team": "Capital City Stars", "WINS": 56, "LOSSES": 26},
         ],
     )
     claim = Claim(
@@ -509,14 +509,14 @@ def test_named_entity_values_still_reject_adjacent_rows_across_envelopes():
         evidence_id="totals",
         rows=[
             {"TEAM": "Atlanta Hawks", "AST": 2462},
-            {"TEAM": "Boston Celtics", "AST": 2021},
+            {"TEAM": "Capital City Stars", "AST": 2021},
         ],
     )
     standings = evidence(
         evidence_id="standings",
         rows=[
             {"team": "Atlanta Hawks", "WINS": 42},
-            {"team": "Boston Celtics", "WINS": 56},
+            {"team": "Capital City Stars", "WINS": 56},
         ],
     )
     claim = Claim(
@@ -678,7 +678,7 @@ def test_named_row_matcher_leaves_rank_numeral_to_rank_verifier():
         coverage="Full standings", rows=[
             {"team":"Oklahoma City Thunder", "WINS":64, "LOSSES":18,
              "LeagueRank":1},
-            {"team":"Boston Celtics", "WINS":56, "LOSSES":26,
+            {"team":"Capital City Stars", "WINS":56, "LOSSES":26,
              "LeagueRank":3},
         ])
     claim = Claim(text="Oklahoma City ranked 1st at 64-18.", kind="observed",
@@ -755,11 +755,11 @@ def test_mechanical_verifier_ignores_source_identity_as_claim_content():
 
 def test_count_metric_rejects_percent_alias():
     ev = evidence(
-        rows=[{"TEAM": "Boston Celtics", "BLK": 1}, {"TEAM": "New York Knicks", "BLK": 2}],
+        rows=[{"TEAM": "Capital City Stars", "BLK": 1}, {"TEAM": "Riverport Ravens", "BLK": 2}],
         units={"BLK": "count"},
         metric_definitions={"BLK": "blocked shots"},
     )
-    claim = Claim(text="Boston had 100 blocks in 2025-26.", kind=ClaimKind.OBSERVED,
+    claim = Claim(text="Capital City had 100 blocks in 2025-26.", kind=ClaimKind.OBSERVED,
                   evidence_ids=["standings"])
     result = verify_mechanical(task(), report(claim), [ev])
     assert result.status == VerificationStatus.REPAIR
@@ -769,11 +769,11 @@ def test_count_metric_rejects_percent_alias():
 
 def test_percent_unit_metric_accepts_percent_alias():
     ev = evidence(
-        rows=[{"TEAM": "Boston Celtics", "FG_PCT": 0.45}, {"TEAM": "New York Knicks", "FG_PCT": 0.40}],
+        rows=[{"TEAM": "Capital City Stars", "FG_PCT": 0.45}, {"TEAM": "Riverport Ravens", "FG_PCT": 0.40}],
         units={"FG_PCT": "fraction_0_1"},
         metric_definitions={"FG_PCT": "field goal percentage"},
     )
-    claim = Claim(text="Boston shot 45 percent in 2025-26.", kind=ClaimKind.OBSERVED,
+    claim = Claim(text="Capital City shot 45 percent in 2025-26.", kind=ClaimKind.OBSERVED,
                   evidence_ids=["standings"])
     result = verify_mechanical(task(), report(claim), [ev])
     assert result.status == VerificationStatus.PASS
@@ -782,11 +782,11 @@ def test_percent_unit_metric_accepts_percent_alias():
 
 def test_percent_scale_value_rejects_hundredfold_alias():
     ev = evidence(
-        rows=[{"TEAM": "Boston Celtics", "FG_PCT": 45}, {"TEAM": "New York Knicks", "FG_PCT": 40}],
+        rows=[{"TEAM": "Capital City Stars", "FG_PCT": 45}, {"TEAM": "Riverport Ravens", "FG_PCT": 40}],
         units={"FG_PCT": "percent_0_100"},
         metric_definitions={"FG_PCT": "field goal percentage"},
     )
-    claim = Claim(text="Boston shot 4500 percent in 2025-26.", kind=ClaimKind.OBSERVED,
+    claim = Claim(text="Capital City shot 4500 percent in 2025-26.", kind=ClaimKind.OBSERVED,
                   evidence_ids=["standings"])
     result = verify_mechanical(task(), report(claim), [ev])
     assert result.status == VerificationStatus.REPAIR
