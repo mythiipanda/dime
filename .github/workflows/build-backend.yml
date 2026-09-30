@@ -14,16 +14,15 @@ on:
       - '.github/workflows/build-backend.yml'
 permissions:
   packages: write
+env:
+  DIME_WAREHOUSE_URL: https://dimewarehouse.blob.core.windows.net/warehouse/dime_data_full.zip
 jobs:
   build:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Fetch warehouse data (release asset)
-        run: |
-          curl -L -o /tmp/dime_data.zip https://github.com/mythiipanda/dime/releases/download/dime-data-20260930/dime_data_full.zip
-          unzip -q /tmp/dime_data.zip -d backend
-          ls -la backend/data | head
+      - name: Fetch warehouse data (blob, checksum-verified)
+        run: bash scripts/fetch-data.sh
       - uses: docker/login-action@v3
         with:
           registry: ghcr.io
