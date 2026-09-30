@@ -350,7 +350,7 @@ def get_ratings(
     ordered by that metric field and the payload owns the leader claim.
     ``team`` narrows a direct team-ratings question.
     """
-    season = resolve_season(season)
+    season = resolve_season(season, "silver_team_ratings")
     from nba_api.stats.static import teams as _teams
 
     abbrev = {t["id"]: t["abbreviation"] for t in _teams.get_teams()}
@@ -412,6 +412,31 @@ def get_ratings(
                 f"{r.get('OFF_RATING')} offense, {r.get('DEF_RATING')} "
                 f"defense, {r.get('NET_RATING'):+g} net, and "
                 f"{r.get('PACE')} pace. Record: {r.get('W')}-{r.get('L')}.")
+    if not slim and season:
+        try:
+            from v2.adapters.coverage import parse_season_start
+            from v2.adapters.coverage import table_seasons
+            available = sorted(
+                found for found in table_seasons("silver_team_ratings")
+                if parse_season_start(found) is not None)
+        except Exception:
+            available = []
+        if season not in available:
+            if available:
+                ask = (
+                    f"Team ratings for the {season} season are not available. "
+                    f"Available seasons: {', '.join(available)}. "
+                    "Which season should be used instead?"
+                )
+            else:
+                ask = (
+                    f"Team ratings for the {season} season are not available. "
+                    "No seasons are on hand for team ratings right now. "
+                    "Which season should be used instead?"
+                )
+            return {"tool": "get_ratings", "ok": False, "rows": [],
+                    "error": ask,
+                    "meta": {**meta, "deterministic_answer": ask}}
     return {"tool": "get_ratings", "ok": True, "rows": slim, "meta": meta}
 
 

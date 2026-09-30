@@ -44,10 +44,22 @@ def last_completed_season_cache_clear() -> None:
     _LAST_SEASON_VALUE = None
 
 
-def resolve_season(season: object | None = None) -> str | None:
+def resolve_season(season: object | None = None,
+                   table: str | None = None) -> str | None:
     text = "" if season is None else str(season).strip()
     if text:
         return text
+    if table:
+        try:
+            from v2.adapters.coverage import parse_season_start
+            from v2.adapters.coverage import table_seasons
+            covered = sorted(
+                found for found in table_seasons(table)
+                if parse_season_start(found) is not None)
+            if covered:
+                return covered[-1]
+        except Exception:
+            pass
     return last_completed_season()
 
 

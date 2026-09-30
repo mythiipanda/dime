@@ -113,6 +113,22 @@ def _assert_derived_season(state, tool):
     assert "2025-26" not in dumped, f"{tool}: stale default leaked"
 
 
+def _call_names(state):
+    return [entry.partition(":")[0] for entry in state["calls_made"]]
+
+
+def _assert_ratings_answers(state, tool):
+    assert "get_ratings" in _call_names(state), f"{tool}: no get_ratings call"
+    answers = [
+        str((result.get("meta") or {}).get("deterministic_answer"))
+        for result in state["tool_results"]
+    ]
+    assert any("2024-25" in text for text in answers), (
+        f"{tool}: no ratings answer for 2024-25")
+    dumped = json.dumps(state["calls_made"], sort_keys=True)
+    assert "2025-26" not in dumped, f"{tool}: stale default leaked"
+
+
 def test_leaders_send_derived_season(warehouse):
     state = _drive("Which player leads the league in assists last season?")
     names = [name for name, _ in _tool_seasons(state)]
@@ -122,16 +138,12 @@ def test_leaders_send_derived_season(warehouse):
 
 def test_single_team_ratings_send_derived_season(warehouse):
     state = _drive("What is the Lakers net rating last season?")
-    names = [name for name, _ in _tool_seasons(state)]
-    assert "get_ratings" in names
-    _assert_derived_season(state, "get_ratings")
+    _assert_ratings_answers(state, "get_ratings")
 
 
 def test_two_team_compare_returns_warehouse_rows(warehouse):
     state = _drive("Compare the Lakers and Celtics net ratings last season")
-    seasons = _tool_seasons(state)
-    assert len(seasons) == 2
-    _assert_derived_season(state, "two-team get_ratings")
+    _assert_ratings_answers(state, "two-team get_ratings")
     names = set()
     for result in state["tool_results"]:
         for row in result.get("rows") or []:

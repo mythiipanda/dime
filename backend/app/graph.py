@@ -1530,6 +1530,20 @@ def _default_season(question: str) -> str | None:
         return None
 
 
+def _explicit_season(question: str) -> str | None:
+    _slug = re.search(r"(20\d\d)\s*-\s*(\d\d)", question or "")
+    if _slug:
+        return f"{_slug.group(1)}-{_slug.group(2)}"
+    return None
+
+
+def _season_args(question: str, extra: dict[str, Any]) -> dict[str, Any]:
+    _season = _explicit_season(question)
+    if _season is None:
+        return dict(extra)
+    return {**extra, "season": _season}
+
+
 _RATE_UNIT_RX = re.compile(
     r"per[ -]?game|/game|\bAPG\b|\bPPG\b|\bRPG\b|\bSPG\b|\bBPG\b",
     re.IGNORECASE)
@@ -1987,8 +2001,9 @@ async def _triage_seed(question: str, primary: str, model: str,
         _trh: dict[str, Any] = {}
         async for _e in _triage_tool(
                 "get_ratings",
-                {"season": _default_season(question), "requested_metric": _team_rank_metric,
-                 "ranking_direction": _direction}, state, _trh):
+                _season_args(question, {"requested_metric": _team_rank_metric,
+                                        "ranking_direction": _direction}),
+                state, _trh):
             yield _e
         _trout = _trh.get("out") or {}
         if _result_status(_trout) == "ok" and _result_rows(_trout):
@@ -2005,7 +2020,7 @@ async def _triage_seed(question: str, primary: str, model: str,
             and not is_compare and not is_predict and not state.get("history")):
         _rth: dict[str, Any] = {}
         async for _e in _triage_tool(
-                "get_ratings", {"team": _named[0], "season": _default_season(question)},
+                "get_ratings", _season_args(question, {"team": _named[0]}),
                 state, _rth):
             yield _e
         _rtout = _rth.get("out") or {}
@@ -3773,13 +3788,12 @@ async def _triage_seed(question: str, primary: str, model: str,
                           r"net rating|\bpace\b", question, re.IGNORECASE)
             and not is_trade and not is_cast and not is_predict
             and not state.get("history")):
-        _cmpseason = _default_season(question)
         _cmpok = True
         for _cmpteam in _cmp_teams:
             _cmph: dict[str, Any] = {}
             async for _e in _triage_tool(
                     "get_ratings",
-                    {"team": _cmpteam, "season": _cmpseason},
+                    _season_args(question, {"team": _cmpteam}),
                     state, _cmph):
                 yield _e
             if _result_status(_cmph.get("out") or {}) != "ok":
