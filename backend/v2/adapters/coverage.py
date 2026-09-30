@@ -29,6 +29,30 @@ _ALIASES = {
     "WARTOTAL": "WAR",
 }
 
+DEFAULT_SEASON = "2015-16"
+
+DEFAULT_TABLE = "silver_boxscores"
+
+COVERAGE_REGISTRY = {
+    "silver_boxscores": "2015-16",
+    "silver_boxscores_ext": "2015-16",
+    "silver_lineups": "2015-16",
+    "silver_rapm": "2015-16",
+    "silver_on_off": "2015-16",
+    "silver_advanced": "2015-16",
+    "silver_shots": "2015-16",
+    "silver_raptor_player": "1976-77",
+    "silver_raptor_team": "2013-14",
+}
+
+
+def table_for_metric(metric: str) -> str:
+    key = _ALIASES.get(_key(metric), _key(metric))
+    known = AVAILABLE_METRICS.get(key)
+    if known:
+        return known["table"]
+    return DEFAULT_TABLE
+
 
 def _key(metric: str) -> str:
     return re.sub(r"[^A-Z0-9]", "", (metric or "").upper())
@@ -48,6 +72,26 @@ def _classify(metric: str) -> dict[str, str]:
             "note": "not in the coverage registry"}
 
 
+def coverage_check(
+    metric: str, season: str, table: str | None = None,
+) -> dict[str, Any]:
+    resolved = table or table_for_metric(metric)
+    earliest = COVERAGE_REGISTRY.get(resolved, DEFAULT_SEASON)
+    requested = str(season)
+    covered = requested >= earliest
+    if covered:
+        message = f"Numbers are available for the {requested} season."
+    else:
+        message = f"That data only goes back to the {earliest} season."
+    return {
+        "covered": covered,
+        "table": resolved,
+        "requested_season": requested,
+        "earliest_season": earliest,
+        "message": message,
+    }
+
+
 def metric_coverage(
     metrics: str | list[str],
     player: str = "",
@@ -61,6 +105,10 @@ def metric_coverage(
         row = _classify(raw)
         if player:
             row["player"] = player
+        if season is not None:
+            verdict = coverage_check(raw, season)
+            row["covered"] = verdict["covered"]
+            row["earliest_season"] = verdict["earliest_season"]
         rows.append(row)
     unavailable = [r["metric"] for r in rows if r["status"] == "unavailable"]
     subject = f" for {player}" if player else ""
