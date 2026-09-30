@@ -1768,3 +1768,24 @@ def test_runtime_manifest_pins_accepted_semantic_baseline():
         "logical_content_id": "81969a2d902583aea99c2d8b1a09673b941c63e649bdf6fb6ce09a8aff591a08",
         "manifest_self_hash": "c8ba316cc4d50c666208874a5d04d9788a312e450781d057b823a63aadb446ac",
     }
+
+
+def test_chat_stream_get_with_client_header_and_no_thread_starts_stream(monkeypatch, tmp_path):
+    from v2 import contracts
+    from v2.api import routes
+    from v2.runtime.ledger import RunLedger
+    from v2.runtime.models import ExecutionResult, RuntimeResult
+    result = RuntimeResult(task=contracts.TaskSpec(goal="x", mode="quick", deliverable="x"), execution=ExecutionResult(plan=contracts.Plan(nodes=[])), draft=contracts.DraftReport(sections=[], claims=[]), verification=contracts.VerificationReport(status="partial"), gaps=[contracts.Gap(kind="execution_failure", message="x")])
+    class Runtime:
+        async def run(self, *a, **k):
+            return result
+    monkeypatch.setenv("DIME_RUNTIME_V2", "on")
+    monkeypatch.setattr("shared.providers.resolve_model_id", lambda value: ("openrouter", "fixture"))
+    monkeypatch.setattr("v2.runtime.assembly.build_runtime", lambda **k: (Runtime(), RunLedger(k["run_id"])))
+    monkeypatch.setattr(routes, "_PROJECTS", ProjectStore(tmp_path / "p.sqlite"))
+    app = FastAPI()
+    app.include_router(routes.router, prefix="/api")
+    response = TestClient(app, raise_server_exceptions=False).get("/api/v2/chat/stream", params={"q": "hello"}, headers={"x-dime-client": "dogfood-loop"})
+    assert response.status_code == 200
+    assert response.text.count("event: final_answer") == 1
+    assert response.text.count("event: graph_end") == 1

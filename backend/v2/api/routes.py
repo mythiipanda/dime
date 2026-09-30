@@ -1043,13 +1043,18 @@ async def chat_stream_get(
 ):
 
 
+    conversation_client = (
+        (client or request.headers.get("x-dime-client") or None)
+        if thread is not None
+        else client
+    )
     return await _guarded_chat_stream(
         request,
         QuickAnswerBody(
             q=q,
             model=model,
             thread=thread,
-            client=client or request.headers.get("x-dime-client") or None,
+            client=conversation_client,
         ),
     )
 
