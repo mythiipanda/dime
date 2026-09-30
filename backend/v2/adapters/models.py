@@ -851,34 +851,60 @@ class ModelIntake(ModelStage):
         })
 
     @classmethod
-    def _floor_season_for_coverage(cls, task: TaskSpec) -> TaskSpec:
+    def _mark_uncovered_season(cls, task: TaskSpec) -> TaskSpec:
         if task.season is None:
             return task
         from v2.adapters.coverage import (
-            COVERAGE_REGISTRY,
-            DEFAULT_SEASON,
             DEFAULT_TABLE,
+            parse_season_start,
+            season_beyond_upper_bound,
             table_for_metric,
+            table_seasons,
         )
         implied = [table_for_metric(metric) for metric in task.metric_ids]
         if not implied:
             implied = [DEFAULT_TABLE]
-        earliest = max(
-            COVERAGE_REGISTRY.get(table, DEFAULT_SEASON) for table in implied
-        )
-        if task.season.value >= earliest:
-            return task
+        names = list(dict.fromkeys(implied))
         requested = task.season.value
-        floored = task.season.model_copy(update={
-            "value": earliest, "source": "resolved", "confidence": 1.0,
+        sets = {name: table_seasons(name) for name in names}
+        if (
+            parse_season_start(requested) is not None
+            and any(requested in seasons for seasons in sets.values())
+            and not season_beyond_upper_bound(requested)
+        ):
+            return task
+        missing = [
+            name for name, seasons in sets.items()
+            if requested not in seasons
+        ]
+        known = sorted({
+            season
+            for seasons in sets.values()
+            for season in seasons
+            if parse_season_start(season) is not None
         })
+        if known:
+            question = (
+                f"Numbers for the {requested} season are not available "
+                f"for {', '.join(missing)}. "
+                f"Available seasons: {', '.join(known)}. "
+                "Which season should be used instead?"
+            )
+        else:
+            question = (
+                f"Numbers for the {requested} season are not available "
+                f"for {', '.join(missing)}. "
+                "Which season should be used instead?"
+            )
         note = (
-            f"Our numbers start with the {earliest} season, "
-            f"so I am answering for {earliest} instead of {requested}."
+            f"Requested {requested} season has no rows in "
+            f"{', '.join(missing)}; leaving the request unchanged."
         )
         return task.model_copy(update={
-            "season": floored,
-            "assumptions": list(dict.fromkeys([*task.assumptions, note])),
+            "open_questions": list(dict.fromkeys(
+                [*task.open_questions, question])),
+            "assumptions": list(dict.fromkeys(
+                [*task.assumptions, note])),
         })
 
     async def understand(
@@ -1040,7 +1066,7 @@ class ModelIntake(ModelStage):
             task = task.model_copy(update={
                 "season": task.season.model_copy(update={"value": SEASON}),
             })
-        task = self._floor_season_for_coverage(task)
+        task = self._mark_uncovered_season(task)
         task = task.model_copy(update={
             "required_evidence": required_evidence,
         })
