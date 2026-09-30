@@ -870,7 +870,7 @@ class ModelIntake(ModelStage):
         sets = {name: table_seasons(name) for name in names}
         if (
             parse_season_start(requested) is not None
-            and any(requested in seasons for seasons in sets.values())
+            and all(requested in seasons for seasons in sets.values())
             and not season_beyond_upper_bound(requested)
         ):
             return task

@@ -1563,8 +1563,17 @@ def _ledger_leader_answer(question: str, ledger: list[str]) -> str | None:
     unit = _LEDGER_UNIT_WORDS.get(base)
     if unit is None:
         return None
-    for fact in ledger or []:
+    try:
+        wanted = _default_season(question or "")
+    except Exception:
+        wanted = None
+    if wanted is None:
+        return None
+    for fact in reversed(ledger or []):
         if not isinstance(fact, str) or not re.search(r"\d", fact):
+            continue
+        _seasons = re.findall(r"(20\d\d-\d\d)", fact)
+        if len(_seasons) != 1 or _seasons[0] != wanted:
             continue
         low = fact.lower()
         if rate:
