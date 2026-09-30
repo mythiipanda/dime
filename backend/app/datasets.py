@@ -127,9 +127,12 @@ def _envelope(table: str, season: str, frame: object, cached: bool) -> dict:
     return {"data": rows, "meta": meta}
 
 
+_LINEUP_SUM_KEYS = ("PTS", "PLUS_MINUS", "FGA", "OREB", "TOV", "FTA", "MIN")
+
+
 def _lineup_stints(season: str) -> list:
     frame = store.read_frame("silver_lineups", "_season = ?", [season])
-    best: dict = {}
+    agg: dict = {}
     for r in frame.to_dicts():
         ids = [x for x in str(r.get("GROUP_ID") or "").split("-") if x]
         if len(ids) != 5:
@@ -137,19 +140,25 @@ def _lineup_stints(season: str) -> list:
         if r.get("PTS") is None:
             continue
         try:
-            vals = {k: float(r.get(k)) for k in
-                    ("PTS", "PLUS_MINUS", "FGA", "OREB", "TOV", "FTA", "MIN")}
+            vals = {k: float(r.get(k)) for k in _LINEUP_SUM_KEYS}
         except (TypeError, ValueError):
             continue
         key = (str(r.get("GROUP_ID")), str(r.get("TEAM_ABBREVIATION")))
-        if key not in best or vals["MIN"] > best[key][1]["MIN"]:
-            best[key] = (r, vals)
+        slot = agg.get(key)
+        if slot is None:
+            agg[key] = {"name": r.get("GROUP_NAME"), "vals": vals}
+        else:
+            if vals["MIN"] > slot["vals"]["MIN"]:
+                slot["name"] = r.get("GROUP_NAME")
+            for k in _LINEUP_SUM_KEYS:
+                slot["vals"][k] += vals[k]
     out = []
-    for r, vals in best.values():
+    for (gid, team), slot in agg.items():
+        vals = slot["vals"]
         poss = vals["FGA"] - vals["OREB"] + vals["TOV"] + 0.44 * vals["FTA"]
         if poss <= 0:
             continue
-        out.append((r, vals, poss))
+        out.append((gid, team, slot["name"], vals, poss))
     return out
 
 
@@ -163,12 +172,12 @@ def _lineup_leaders(season: str, min_poss: int) -> dict:
         return {"ok": False, "error":
                 f"no rated 5-man lineup stints for {season} in silver_lineups"}
     rows = []
-    for r, vals, poss in stints:
+    for gid, team, name, vals, poss in stints:
         if poss < min_poss:
             continue
         off = round(100.0 * vals["PTS"] / poss, 1)
         net = round(100.0 * vals["PLUS_MINUS"] / poss, 1)
-        rows.append({"lineup": r.get("GROUP_NAME"), "team": r.get("TEAM_ABBREVIATION"),
+        rows.append({"lineup": name, "team": team,
                      "MIN": vals["MIN"], "OFF_RTG": off,
                      "DEF_RTG": round(off - net, 1),
                      "NET_RTG": net, "possessions": round(poss, 1)})
@@ -176,7 +185,7 @@ def _lineup_leaders(season: str, min_poss: int) -> dict:
     return {"ok": True, "data": rows,
             "meta": {"season": season, "rows": len(rows), "cached": True,
                      "source": "silver_lineups",
-                     "method": "possessions estimated as FGA - OREB + TOV + 0.44 * FTA; OFF_RTG = 100 * PTS / POSS; NET_RTG = 100 * PLUS_MINUS / POSS; DEF_RTG = OFF_RTG - NET_RTG",
+                     "method": "lineup stats summed per (GROUP_ID, TEAM_ABBREVIATION) across stints; possessions estimated as FGA - OREB + TOV + 0.44 * FTA; OFF_RTG = 100 * PTS / POSS; NET_RTG = 100 * PLUS_MINUS / POSS; DEF_RTG derived as OFF_RTG - NET_RTG",
                      "min_poss": min_poss}}
 
 
@@ -196,27 +205,34 @@ def _table_leaders(table: str, season: str, sort_col: str) -> dict:
     return out
 
 
+_HIST_ZONE_LABELS = {
+    "rim": "Rim (<8 ft)",
+    "corner_3": "Corner 3",
+    "atb_3": "Above-Break 3",
+    "short_mid": "Short Mid (8-14 ft)",
+    "long_mid": "Long Mid (14 ft+)",
+}
+
+
 def _hist_zone(value, dist, x):
     try:
-        v = int(value)
+        three = int(value or 0) == 3
     except (TypeError, ValueError):
-        return None
-    if v == 3:
-        if x is None:
-            return "Three-Point (no location)"
-        try:
-            return "Corner 3" if abs(float(x)) >= 220 else "Above-Break 3"
-        except (TypeError, ValueError):
-            return "Three-Point (no location)"
+        three = False
     try:
         d = float(dist)
     except (TypeError, ValueError):
-        return None
-    if d <= 4:
-        return "Rim (0-4 ft)"
-    if d <= 14:
-        return "Short 2 (5-14 ft)"
-    return "Long 2 (15+ ft)"
+        d = 999.0
+    try:
+        ax = abs(float(x))
+    except (TypeError, ValueError):
+        ax = 0.0
+    from shared.tools.zone import ZONE_RULES
+
+    for key, rule in ZONE_RULES:
+        if rule(d, ax, three):
+            return _HIST_ZONE_LABELS[key]
+    return _HIST_ZONE_LABELS["long_mid"]
 
 
 def _zone_splits(season: str, player_id: int) -> dict:
@@ -269,7 +285,7 @@ def _zone_splits(season: str, player_id: int) -> dict:
     return {"ok": True, "data": rows,
             "meta": {"season": season, "rows": len(rows), "cached": True,
                      "player_id": player_id, "sources": sources,
-                     "zone_definition": "silver_shots uses native SHOT_ZONE_BASIC; silver_hist_shots bands are Rim (0-4 ft), Short 2 (5-14 ft), Long 2 (15+ ft) by shot_distance, Corner 3 (|x_legacy| >= 220, tenths of feet) else Above-Break 3"}}
+                      "zone_definition": "silver_shots uses native SHOT_ZONE_BASIC; silver_hist_shots rows use the same play-level zone definitions as the zone tool: rim is shot_distance under 8 ft, corner 3 is a 3pt shot with |x_legacy| at or above 220 tenths of feet, above-break 3 is any other 3pt shot, short mid is a 2pt shot under 14 ft, long mid is any other 2pt shot"}}
 
 
 def _fetch_live(

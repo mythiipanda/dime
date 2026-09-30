@@ -316,7 +316,7 @@ export default function ZoneSplitsPanel({
         )}
       </div>
       <div style={{ marginTop: 8, fontSize: 12, color: "var(--color-ash-gray)" }}>
-        Zone splits are player-scoped. Zones follow the warehouse shot tables for {season}.
+        Zone splits are player-scoped. Current seasons use the league shot zones. Older seasons group shots as rim, short mid, long mid, corner 3, and above-break 3.
       </div>
     </ExplorePanel>
   );

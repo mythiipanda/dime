@@ -25,7 +25,7 @@ const SEASONS = [
 const TABS: { key: TabKey; label: string; dataset: string; note: string }[] = [
   { key: "rapm", label: "RAPM", dataset: "rapm", note: "RAPM ranks players by regularized plus-minus for the season. Subscripts mark the 0-99 percentile in this view." },
   { key: "clutch", label: "Clutch", dataset: "clutch", note: "Clutch ranks players by late-game production for the season. Subscripts mark the 0-99 percentile in this view." },
-  { key: "lineups", label: "Lineups", dataset: "lineup_leaders", note: "Five-man units sorted by net rating. Possessions estimated from box score counts. Subscripts mark the 0-99 percentile in this view." },
+  { key: "lineups", label: "Lineups", dataset: "lineup_leaders", note: "Five-man units sorted by estimated net rating. Possessions estimated from box score counts, defensive rating is offensive rating minus net rating. Subscripts mark the 0-99 percentile in this view." },
 ];
 
 const DEFAULT_SORT: Record<TabKey, string> = { rapm: "rapm", clutch: "PTS", lineups: "NET_RTG" };
