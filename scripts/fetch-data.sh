@@ -14,7 +14,8 @@ fetch() {
   fi
   return 1
 }
-if fetch "https://github.com/mythiipanda/dime/releases/download/dime-data-20260930/dime_data_full.zip" "5566409dd71881194edc6dd6ddddbf56a316824a9c34340b3ddb34d6c7a95ea8" "dime-data-20260930"; then
+WAREHOUSE_URL="${DIME_WAREHOUSE_URL:-https://dimewarehouse.blob.core.windows.net/warehouse/dime_data_full.zip}"
+if fetch "$WAREHOUSE_URL" "5566409dd71881194edc6dd6ddddbf56a316824a9c34340b3ddb34d6c7a95ea8" "dime-data-20260930"; then
   :
 else
   echo "fetch-data: download failed" >&2
