@@ -363,6 +363,103 @@ def _metric_unit_reasons(claim: Claim,
     return reasons
 
 
+def _column_canon_values(envelope: EvidenceEnvelope, metric: str) -> set[Decimal]:
+    unit_map = {str(key).casefold(): str(item)
+                for key, item in envelope.units.items()}
+    values: set[Decimal] = set()
+    for item in iter_values(envelope):
+        last = str(item.path).rsplit(".", 1)[-1].split("[", 1)[0]
+        if last.casefold() != metric.casefold():
+            continue
+        unit = None
+        for segment in reversed(str(item.path).split(".")):
+            name = segment.split("[", 1)[0].casefold()
+            if name in unit_map:
+                unit = unit_map[name]
+                break
+        values.update(_canon_number(item.value, unit))
+        if isinstance(item.value, str):
+            for token in _number_tokens(item.value):
+                values.update(_canon_number(token, unit))
+    return values
+
+
+def _metric_identity_reasons(
+    claim: Claim,
+    envelopes: Sequence[EvidenceEnvelope],
+    supported_numbers: set[Decimal],
+    calculation_values: set[Decimal] | None = None,
+    allowed_numbers: set[Decimal] | None = None,
+) -> list[str]:
+    requested = sorted({
+        str(envelope.metric_definitions.get("__requested_metric__")).upper()
+        for envelope in envelopes
+        if envelope.metric_definitions.get("__requested_metric__")
+    })
+    if not requested:
+        return []
+    reasons: list[str] = []
+    columns = {
+        metric: {envelope.evidence_id: _column_canon_values(envelope, metric)
+                 for envelope in envelopes}
+        for metric in requested
+    }
+    for metric in requested:
+        carriers = {evidence_id for evidence_id, values in columns[metric].items()
+                    if values}
+        if not carriers:
+            reasons.append(
+                f"claim about {metric} cites no evidence carrying a {metric} column"
+            )
+            continue
+        for envelope in envelopes:
+            if envelope.evidence_id not in carriers:
+                reasons.append(
+                    f"cited {envelope.capability} evidence {envelope.evidence_id} "
+                    f"carries no {metric} column"
+                )
+    bound: set[Decimal] = set()
+    for metric in requested:
+        for values in columns[metric].values():
+            bound.update(values)
+    grounded = set(calculation_values or set()) | set(allowed_numbers or set())
+    for envelope in envelopes:
+        for qualifier in (envelope.qualification, envelope.coverage):
+            if qualifier:
+                for token in _number_tokens(qualifier):
+                    grounded.update(_canon_number(token))
+    rank_numbers = {
+        value for match in _RANK.finditer(claim.text)
+        for value in match.groups() if value is not None
+    }
+    for raw in _number_tokens(claim.text):
+        if _DATE.fullmatch(raw) or _SEASON.fullmatch(raw):
+            continue
+        if (raw == "100" and "points_per_100_possessions" in {
+                unit.casefold() for envelope in envelopes
+                for unit in envelope.units.values()}
+                and re.search(r"points?\s+per\s+100\s+possessions?",
+                              claim.text, re.IGNORECASE)):
+            continue
+        if raw in rank_numbers:
+            continue
+        canon = _canon_number(raw)
+        if canon & bound:
+            continue
+        if not (canon & supported_numbers):
+            continue
+        if canon & grounded:
+            continue
+        if (claim.kind == ClaimKind.DERIVED and claim.calculation_id
+                and _matches_calculation_display(raw, calculation_values or set())):
+            continue
+        reasons.append(
+            f"numeral {raw} does not match a {', '.join(requested)} column "
+            f"value in cited evidence"
+        )
+    return reasons
+
+
 def _mixed_source_reasons(claim: Claim,
                           envelopes: Sequence[EvidenceEnvelope]) -> list[str]:
     source_classes = {envelope.source.split(":", 1)[0].casefold()
@@ -579,6 +676,8 @@ def verify_mechanical(
         reasons.extend(_mixed_source_reasons(claim, cited))
         reasons.extend(_cross_evidence_calculation_reasons(claim, cited))
         reasons.extend(_metric_unit_reasons(claim, cited))
+        reasons.extend(_metric_identity_reasons(
+            claim, cited, supported_numbers, calculation_values, allowed_numbers))
         reasons.extend(_qualification_coverage_reasons(claim, cited))
         reasons.extend(_record_completeness_reasons(claim, cited))
 

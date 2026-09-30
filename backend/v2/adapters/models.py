@@ -66,6 +66,7 @@ from v2.runtime.ledger import RequestEnvelope, exception_text
 from v2.runtime.budget import RUN_MODEL_DEADLINE
 from v2.skills import SkillLibrary, skill_hashes
 from v2.arguments import RequirementReviewWire, PlannerOutputWire, provider_to_source
+from .capabilities import CAPABILITIES
 
 T = TypeVar("T", bound=BaseModel)
 
@@ -714,6 +715,18 @@ def ranked_team_arguments_error(
             return ("RANKED_DIRECTION_CONFLICT: ranked team_ratings ranking_direction "
                     f"{direction!r} contradicts {metric} (expected {expected!r})")
     return None
+
+METRIC_AGREEMENT_CAPABILITIES = (
+    "team_ratings", "clutch", "on_off", "lineups", "playoff_team_ratings")
+
+
+def served_capability_metrics(capability_id: str) -> set[str]:
+    spec = CAPABILITIES.get(capability_id)
+    if spec is None:
+        return set()
+    names = set(spec.units) | {
+        key for key in spec.metric_definitions if not key.startswith("__")}
+    return {str(name).upper() for name in names}
 
 class ModelIntake(ModelStage):
     prompt_name = "intake"
@@ -1549,23 +1562,45 @@ class ModelPlanner(ModelStage):
         self, node, arguments: Mapping[str, Any],
         requirements: Mapping[str, Any],
     ) -> None:
-        if node.capability != "team_ratings":
+        if node.capability not in METRIC_AGREEMENT_CAPABILITIES:
             return
+        served = served_capability_metrics(node.capability)
         for requirement_id in node.covers_requirement_ids or []:
             requirement = requirements.get(requirement_id)
             if requirement is None:
                 continue
-            if "team_ratings" not in requirement.capability_options:
-                continue
-            expected = capability_arguments_for(requirement, "team_ratings")
+            if node.capability in requirement.capability_options:
+                expected = capability_arguments_for(requirement, node.capability)
+            else:
+                expected = {}
+            requested = str(expected.get("requested_metric", "") or "").upper()
+            metrics = [requested] if requested else []
+            metrics.extend(
+                str(item).upper() for item in (requirement.metric_ids or []))
+            if node.capability not in requirement.capability_options:
+                detail = (f": requested metric {metrics[0]!r} is not coverable "
+                          f"by {node.capability}" if metrics else "")
+                raise PlannerArgumentError(
+                    f"METRIC_IDENTITY_GAP: planner {node.capability} node "
+                    f"'{node.id}' cannot cover requirement '{requirement_id}' "
+                    f"which disallows {node.capability}{detail}",
+                    node_id=node.id, missing_required=[])
             for key in ("requested_metric", "ranking_direction"):
                 node_value = arguments.get(key, "")
                 expected_value = expected.get(key, "")
                 if node_value != expected_value:
                     raise PlannerArgumentError(
-                        f"RANKED_ARGUMENT_CONFLICT: planner team_ratings node "
+                        f"RANKED_ARGUMENT_CONFLICT: planner {node.capability} node "
                         f"'{node.id}' {key}={node_value!r} does not match "
                         f"covered requirement '{requirement_id}' {key}={expected_value!r}",
+                        node_id=node.id, missing_required=[])
+            for metric in metrics:
+                if metric not in served:
+                    raise PlannerArgumentError(
+                        f"METRIC_IDENTITY_GAP: planner {node.capability} node "
+                        f"'{node.id}' cannot cover requirement '{requirement_id}': "
+                        f"requested metric {metric!r} is not served "
+                        f"by {node.capability}",
                         node_id=node.id, missing_required=[])
 
     async def _generate_plan(self, payload, task: TaskSpec | None = None):

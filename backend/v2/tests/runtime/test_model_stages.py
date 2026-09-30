@@ -3790,7 +3790,8 @@ def test_ranked_typed_functions_never_read_request_text_or_use_regex():
                "_decode_review_ranked_arguments", "_ranked_review_typed_decisions",
                "_apply_ranked_carries_to_wire", "_reconcile_typed_ranked_arguments",
                "ranked_team_arguments_error", "_validate_requirement_wire",
-               "_deterministic_rank_draft"}
+               "_deterministic_rank_draft", "served_capability_metrics",
+               "_check_ranked_requirement_agreement"}
     by_name = {node.name: node for node in ast.walk(tree)
                if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))}
     assert not (targets - set(by_name)), targets - set(by_name)
@@ -3864,3 +3865,72 @@ def test_ranked_rejects_metric_direction_conflict():
     assert ranked_team_arguments_error("team_ratings", {
         "requested_metric": "NET_RATING", "ranking_direction": "desc",
         "team": "", "season": "2025-26"}) is None
+
+
+def _clutch_net_task():
+    from v2.arguments import CapabilityArgumentSet, RequirementArguments, encode_argument
+    from v2.contracts import EvidenceRequirement
+    args = {"scope": "team", "season": "2025-26", "player": ""}
+    req = EvidenceRequirement(
+        id="clutchnet", description="clutch net rating board",
+        capability_options=["clutch"], metric_ids=["NET_RATING"],
+        capability_argument_sets=[CapabilityArgumentSet(
+            capability_id="clutch",
+            arguments=RequirementArguments.model_validate(
+                {"entries": [encode_argument(k, v) for k, v in args.items()]}))])
+    return TaskSpec(goal="clutch net", mode="quick", deliverable="team",
+                    season={"value": "2025-26", "source": "user", "confidence": 1},
+                    required_evidence=["clutch"], requirements=[req])
+
+
+def test_clutch_net_requirement_rejects_team_ratings_cover():
+    from types import SimpleNamespace
+    planner = ModelPlanner(StubModel([]), provider="stub", model_name="stub",
+                           capability_catalog=_typed_catalog())
+    task = _clutch_net_task()
+    requirements = {item.id: item for item in task.requirements}
+    node = SimpleNamespace(id="n", capability="team_ratings",
+                           covers_requirement_ids=["clutchnet"])
+    with pytest.raises(PlannerArgumentError, match="METRIC_IDENTITY_GAP"):
+        planner._check_ranked_requirement_agreement(
+            node,
+            {"requested_metric": "NET_RATING", "ranking_direction": "desc",
+             "team": "", "season": "2025-26"},
+            requirements)
+
+
+@pytest.mark.anyio
+async def test_clutch_net_plan_with_team_ratings_cover_fails_closed():
+    planner = ModelPlanner(StubModel([
+        {"nodes": [_planner_node("n", "team_ratings",
+                                 {"requested_metric": "NET_RATING",
+                                  "ranking_direction": "desc"},
+                                 covers=("clutchnet",))]}]),
+        provider="stub", model_name="stub", capability_catalog=_typed_catalog())
+    with pytest.raises(PlannerArgumentError, match="METRIC_IDENTITY_GAP"):
+        await planner.plan(_clutch_net_task())
+
+
+@pytest.mark.anyio
+async def test_clutch_node_covering_served_clutch_metric_still_passes():
+    planner = ModelPlanner(StubModel([
+        {"nodes": [{"id": "n", "description": "clutch scoring",
+                     "capability": "clutch", "covers_requirement_ids": ["clutchpts"],
+                     "arguments": {"scope": "team", "season": "2025-26", "player": ""},
+                     "depends_on": None, "max_attempts": None, "status": None}]}]),
+        provider="stub", model_name="stub", capability_catalog=_typed_catalog())
+    from v2.arguments import CapabilityArgumentSet, RequirementArguments, encode_argument
+    from v2.contracts import EvidenceRequirement
+    args = {"scope": "team", "season": "2025-26", "player": ""}
+    req = EvidenceRequirement(
+        id="clutchpts", description="clutch scoring board",
+        capability_options=["clutch"], metric_ids=["PTS"],
+        capability_argument_sets=[CapabilityArgumentSet(
+            capability_id="clutch",
+            arguments=RequirementArguments.model_validate(
+                {"entries": [encode_argument(k, v) for k, v in args.items()]}))])
+    task = TaskSpec(goal="clutch scoring", mode="quick", deliverable="team",
+                    season={"value": "2025-26", "source": "user", "confidence": 1},
+                    required_evidence=["clutch"], requirements=[req])
+    plan = await planner.plan(task)
+    assert plan.nodes[0].covers_requirement_ids == ["clutchpts"]
