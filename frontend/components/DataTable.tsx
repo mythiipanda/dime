@@ -47,6 +47,8 @@ const HEADER_LABELS: Record<string, string> = {
   PERCENTILE: "Pct",
   Season: "Season",
   Value: "Value",
+  printed: "Output",
+  out: "Output",
 };
 
 function headerLabel(c: string): string {
