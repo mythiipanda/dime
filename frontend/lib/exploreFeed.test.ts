@@ -125,7 +125,7 @@ test("today-shaped movers read RANK_CHANGE and PTS_CHANGE", () => {
   assert.equal(got[1].name, "Iris Vale");
 });
 
-test("streaks spell out the streak with the record and ask a question", () => {
+test("streaks spell out the streak with the record and no question", () => {
   const got = buildStreakItems([
     streak("SPR", { W: 12, L: 5, STREAK: "W5" }),
     streak("QZT", { W: 8, L: 9, STREAK: "L3" }),
@@ -133,9 +133,9 @@ test("streaks spell out the streak with the record and ask a question", () => {
   assert.equal(got[0].statText, "won 5 straight · 12-5");
   assert.equal(got[0].rankLabel, "#1");
   assert.equal(got[0].rankTitle, "Ranked #1 of 2 team streaks");
-  assert.equal(got[0].question, "Why has SPR won 5 straight?");
+  assert.equal(got[0].question, null);
   assert.equal(got[1].statText, "lost 3 straight · 8-9");
-  assert.equal(got[1].question, "Why has QZT lost 3 straight?");
+  assert.equal(got[1].question, null);
 });
 
 test("streaks drop rows with no team or no STREAK string", () => {
@@ -183,7 +183,7 @@ test("watchlist drops found=false rows and empty snapshots", () => {
   assert.equal(got[0].statText, "12-5");
   assert.equal(got[0].rankLabel, "#1");
   assert.equal(got[0].rankTitle, "Ranked #1 of 1 watched teams by wins");
-  assert.equal(got[0].question, "How is Vexford playing at 12-5?");
+  assert.equal(got[0].question, null);
 });
 
 test("watchlist falls back to W-L when no record string exists", () => {
