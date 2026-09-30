@@ -205,8 +205,8 @@ def get_team_game_log(team: str, limit: int = 10,
     if _covered and not playoffs and season not in _covered:
         return {"tool": "get_team_game_log", "ok": False,
                 "error": (f"no regular-season games found for {abbr} "
-                          f"in {season} (team game coverage: "
-                          f"{', '.join(sorted(_covered))})")}
+                          f"in {season}. Team game coverage: "
+                          f"{', '.join(sorted(_covered))}.")}
 
     con = _store.connect()
     try:

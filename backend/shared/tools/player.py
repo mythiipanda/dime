@@ -228,20 +228,46 @@ def _read_df(sql: str, params: list, tries: int = 5) -> list[dict[str, Any]]:
     raise last or RuntimeError("warehouse read failed")
 
 
+def _player_season_team(pid: int, season: str) -> str:
+    try:
+        rows = _read_df(
+            "SELECT TEAM FROM silver_player_season"
+            " WHERE _season = ? AND CAST(PLAYER_ID AS VARCHAR)"
+            " = CAST(? AS VARCHAR) LIMIT 1",
+            [season, str(pid)],
+        )
+    except Exception:
+        return ""
+    if not rows:
+        return ""
+    return str(rows[0].get("TEAM") or "")
+
+
 def _different_teams_pair(left: dict[str, Any], right: dict[str, Any],
                           season: str) -> dict[str, Any]:
     season = resolve_season(season)
-    from .headtohead import _load_player_games, vs_opponent
+    from .headtohead import (HeadToHeadSchemaError, _load_player_games,
+                             vs_opponent)
     lid, rid = left.get("player_id"), right.get("player_id")
     ta, tb = str(left.get("team") or ""), str(right.get("team") or "")
     base: dict[str, Any] = {"teammates": False, "both_on_net": None,
                             "both_on_minutes": 0}
+    na = str(left.get("name") or "player A")
+    nb = str(right.get("name") or "player B")
     if not (lid and rid and ta and tb):
-        base["note"] = "Different teams."
+        base["note"] = (
+            f"Team matchup could not be determined from game logs; "
+            f"comparing {na} and {nb} on season stats for {season} "
+            f"without head-to-head meetings.")
         return base
     try:
         a_games = vs_opponent(_load_player_games(int(lid), season), tb)
         b_games = vs_opponent(_load_player_games(int(rid), season), ta)
+    except HeadToHeadSchemaError as exc:
+        base["note"] = (
+            f"{exc}; comparing {na} and {nb} on season stats "
+            f"for {season}.")
+        return base
     except Exception:
         base["note"] = "Different teams; meeting logs unavailable."
         return base
@@ -432,14 +458,19 @@ async def get_compare(
         pts_total = _sum("PTS")
         ts = round(pts_total / max(2 * (fga + 0.44 * fta), 1), 3)
         efg = round((fgm + 0.5 * fg3m) / max(fga, 1), 3)
+        ft_points_share = round(ftm / max(pts_total, 1), 3)
+        fg_points_share = round((pts_total - ftm) / max(pts_total, 1), 3)
         record, net_onoff, rapm, clutch_pts = "", None, None, None
-        if team_abbr:
+        _lookup = team_abbr or _player_season_team(pid, season)
+        if _lookup:
             try:
                 from nba_api.stats.static import teams as _static
 
-                full = next(
-                    (t["full_name"] for t in _static.get_teams()
-                     if t["abbreviation"] == team_abbr), "")
+                hit = next(
+                    (t for t in _static.get_teams()
+                     if _lookup in (t["abbreviation"], t["full_name"])),
+                    None)
+                full = hit["full_name"] if hit else ""
                 nick = full.split()[-1] if full else ""
             except Exception:
                 full, nick = "", ""
@@ -454,34 +485,33 @@ async def get_compare(
                     record = f"{row[0]['WINS']}-{row[0]['LOSSES']}"
             except Exception:
                 pass
-            try:
-                rrows = _read_df(
-                    "SELECT rapm FROM silver_rapm"
-                    " WHERE _season = ? AND CAST(player_id AS VARCHAR)"
-                    " = CAST(? AS VARCHAR) AND rapm IS NOT NULL"
-                    " LIMIT 1",
-                    [season, str(pid)],
-                )
-                if rrows and rrows[0].get("rapm") is not None:
-                    rapm = round(float(rrows[0]["rapm"]), 2)
-            except Exception:
-                pass
-            clutch_pts = None
-            try:
-                from nba_api.stats.static import players as _static_p
+        try:
+            rrows = _read_df(
+                "SELECT rapm FROM silver_rapm"
+                " WHERE _season = ? AND CAST(player_id AS VARCHAR)"
+                " = CAST(? AS VARCHAR) AND rapm IS NOT NULL"
+                " LIMIT 1",
+                [season, str(pid)],
+            )
+            if rrows and rrows[0].get("rapm") is not None:
+                rapm = round(float(rrows[0]["rapm"]), 2)
+        except Exception:
+            pass
+        try:
+            from nba_api.stats.static import players as _static_p
 
-                canon = next(
-                    (p["full_name"] for p in _static_p.get_players()
-                     if p.get("id") == pid), who)
-                crows = _read_df(
-                    "SELECT PTS FROM silver_clutch"
-                    " WHERE _season = ? AND PLAYER_NAME = ? LIMIT 1",
-                    [season, canon],
-                )
-                if crows and crows[0].get("PTS") is not None:
-                    clutch_pts = int(crows[0]["PTS"])
-            except Exception:
-                pass
+            canon = next(
+                (p["full_name"] for p in _static_p.get_players()
+                 if p.get("id") == pid), who)
+            crows = _read_df(
+                "SELECT PTS FROM silver_clutch"
+                " WHERE _season = ? AND PLAYER_NAME = ? LIMIT 1",
+                [season, canon],
+            )
+            if crows and crows[0].get("PTS") is not None:
+                clutch_pts = int(crows[0]["PTS"])
+        except Exception:
+            pass
         for r in oo.get("rows", []) or []:
             if isinstance(r, dict) and r.get("Stat") == "Pts per 100 Possessions":
                 try:
@@ -508,6 +538,8 @@ async def get_compare(
             "ft_pct": round(ftm / max(fta, 1), 3),
             "ts_pct": ts,
             "efg_pct": efg,
+            "ft_points_share": ft_points_share,
+            "fg_points_share": fg_points_share,
             "usg_pct": adv_rows.get("USG_PCT"),
             "tov_pct": adv_rows.get("TM_TOV_PCT"),
             "pie": adv_rows.get("PIE"),

@@ -52,6 +52,7 @@ class Runtime:
         progress: Callable[[str, str], None] | None = None,
         activity: Callable[[dict], None] | None = None,
         pre_tool_timeout_s: float | None = None,
+        run_timeout_s: float | None = None,
     ) -> None:
         if not isinstance(repair_attempts, int) or isinstance(repair_attempts, bool):
             raise TypeError("repair_attempts must be an integer")
@@ -68,12 +69,18 @@ class Runtime:
         self._ledger = ledger
         if (pre_tool_timeout_s is not None
                 and (isinstance(pre_tool_timeout_s, bool)
-                     or not isinstance(pre_tool_timeout_s, (int, float))
-                     or pre_tool_timeout_s <= 0)):
+                      or not isinstance(pre_tool_timeout_s, (int, float))
+                      or pre_tool_timeout_s <= 0)):
             raise ValueError("pre_tool_timeout_s must be a positive number or None")
+        if (run_timeout_s is not None
+                and (isinstance(run_timeout_s, bool)
+                      or not isinstance(run_timeout_s, (int, float))
+                      or run_timeout_s <= 0)):
+            raise ValueError("run_timeout_s must be a positive number or None")
         self._progress = progress
         self._activity = activity
         self._pre_tool_timeout_s = pre_tool_timeout_s
+        self._run_timeout_s = run_timeout_s
 
     async def run(
         self, request: str, *, run_id: str | None = None,
@@ -92,6 +99,13 @@ class Runtime:
             raise ValueError("runtime context cannot exceed 8 turns")
         turn_id = run_id or "turn"
         turn_started = time.perf_counter()
+        run_deadline = (None if self._run_timeout_s is None
+                        else turn_started + self._run_timeout_s)
+
+        def run_remaining() -> float | None:
+            if run_deadline is None:
+                return None
+            return max(0.000001, run_deadline - time.perf_counter())
 
 
 
@@ -141,7 +155,8 @@ class Runtime:
                         f"{self._pre_tool_timeout_s:g} seconds") from exc
             execution = ExecutionResult.model_validate((await self._stage(
                 turn_id, "execute",
-                self._executor.execute(task, plan, run_id=run_id))).model_dump())
+                self._executor.execute(task, plan, run_id=run_id),
+                timeout_s=run_remaining())).model_dump())
             if (execution.plan.nodes
                     and not any(node.status.value == "complete"
                                 for node in execution.plan.nodes)
@@ -150,24 +165,28 @@ class Runtime:
                     turn_id, "replan",
                     self._planner.plan(
                         task,
-                        failure_context=_failure_context(task, execution))
+                        failure_context=_failure_context(task, execution)),
+                    timeout_s=run_remaining()
                 )).model_dump())
                 self._report_activity({"kind":"stage_summary","phase":"replan","status":"complete","title":"Recovery plan accepted","transition":"completed","correlation_id":"stage:replan","data":{"node_count":len(recovery_plan.nodes),"capabilities":sorted({cap for n in recovery_plan.nodes for cap in n.capability_hints})}})
                 recovery = ExecutionResult.model_validate((await self._stage(
                     turn_id, "recover",
                     self._executor.execute(
-                        task, recovery_plan, run_id=run_id))).model_dump())
+                        task, recovery_plan, run_id=run_id),
+                    timeout_s=run_remaining())).model_dump())
                 execution = _merge_recovery(execution, recovery)
             draft = DraftReport.model_validate((await self._stage(
                 turn_id, "synthesize",
-                self._synthesizer.synthesize(task, execution.evidence))).model_dump())
+                self._synthesizer.synthesize(task, execution.evidence),
+                timeout_s=run_remaining())).model_dump())
         except BaseException as exc:
             self._close_failed(turn_id, exc, started=turn_started)
             raise
         evidence = {item.evidence_id: item for item in execution.evidence}
         try:
             verification = await self._stage(
-                turn_id, "verify", self._verify(task, draft, evidence))
+                turn_id, "verify", self._verify(task, draft, evidence),
+                timeout_s=run_remaining())
         except BaseException as exc:
             self._close_failed(turn_id, exc, started=turn_started)
             raise
@@ -185,11 +204,13 @@ class Runtime:
                 repair_call = self._repairer.repair(
                     task, draft, evidence, verification)
                 draft = DraftReport.model_validate((await self._stage(
-                    turn_id, f"repair{suffix}", repair_call)).model_dump())
+                    turn_id, f"repair{suffix}", repair_call,
+                    timeout_s=run_remaining())).model_dump())
                 repaired = True
                 verification = await self._stage(
                     turn_id, f"reverify{suffix}",
-                    self._verify(task, draft, evidence))
+                    self._verify(task, draft, evidence),
+                    timeout_s=run_remaining())
                 self._verification_activity(verification, f"reverify:{attempt + 1}")
             except asyncio.CancelledError:
                 self._close_failed(turn_id, asyncio.CancelledError(), started=turn_started)
