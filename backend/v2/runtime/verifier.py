@@ -36,13 +36,14 @@ _SEMANTIC_KEYS = {
     "status", "claim_results", "missing_branches", "contradictions",
     "repair_instructions",
 }
+_PERCENT_LIKE_UNITS = frozenset({"percent", "percent_0_100", "fraction_0_1"})
 
 class SemanticVerifier(Protocol):
     async def verify(self, task: TaskSpec, draft: DraftReport,
                      evidence: Sequence[EvidenceEnvelope]) -> VerificationReport: ...
 
 
-def _canon_number(raw: Any) -> set[Decimal]:
+def _canon_number(raw: Any, unit: str | None = None) -> set[Decimal]:
     value = decimal_value(raw)
     if value is None:
         return set()
@@ -55,7 +56,7 @@ def _canon_number(raw: Any) -> set[Decimal]:
         if compact is not None:
             values.add(compact * {"K": 1_000, "M": 1_000_000,
                                   "B": 1_000_000_000}[text[-1].upper()])
-    elif abs(value) <= 1:
+    elif abs(value) <= 1 and unit is not None and unit.casefold() in _PERCENT_LIKE_UNITS:
         values.add(value * 100)
     return values
 
@@ -101,11 +102,18 @@ def _text_values(envelopes: Iterable[EvidenceEnvelope]) -> set[str]:
 def _numeric_values(envelopes: Iterable[EvidenceEnvelope]) -> set[Decimal]:
     values: set[Decimal] = set()
     for envelope in envelopes:
+        unit_map = {str(key).casefold(): str(item) for key, item in envelope.units.items()}
         for item in iter_values(envelope):
-            values.update(_canon_number(item.value))
+            unit = None
+            for segment in reversed(item.path.split(".")):
+                name = segment.split("[", 1)[0].casefold()
+                if name in unit_map:
+                    unit = unit_map[name]
+                    break
+            values.update(_canon_number(item.value, unit))
             if isinstance(item.value, str):
                 for token in _number_tokens(item.value):
-                    values.update(_canon_number(token))
+                    values.update(_canon_number(token, unit))
     return values
 
 
@@ -290,7 +298,7 @@ def _metric_unit_reasons(claim: Claim,
                 continue
             unit_name = unit.casefold()
             percent_shown = "%" in claim.text or "percent" in text
-            if unit_name in {"percent", "percent_0_100", "fraction_0_1"}:
+            if unit_name in _PERCENT_LIKE_UNITS:
                 if not percent_shown:
                     reasons.append(f"metric {metric} is stated without a percent unit")
             elif unit_name == "points_per_100_possessions":
