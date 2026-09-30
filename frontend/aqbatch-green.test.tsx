@@ -123,18 +123,18 @@ describe("aqbatch green-after", () => {
     assert.ok(html.includes("Source: warehouse"));
   });
 
-  it("A5 failure rows hidden", () => {
+  it("A5 failed calls surface as cross rows, never raw JSON", () => {
     const agent = renderToStaticMarkup(
       React.createElement(AgentActivity, { ai: aiWithFailedCall() }),
     );
-    assert.ok(!agent.includes("warehouse read failed"));
-    assert.ok(agent.includes("1 tool call"));
+    assert.ok(agent.includes("warehouse read failed"));
+    assert.ok(agent.includes("✗"));
+    assert.ok(agent.includes("2 tool calls"));
+    assert.ok(!agent.includes("stat_category"));
     const timeline = renderToStaticMarkup(
       React.createElement(ActivityTimeline, { items: failedActivity(), running: false }),
     );
-    assert.ok(!timeline.includes("unavailable"));
-    assert.ok(!timeline.includes(">Failed<"));
-    assert.ok(timeline.includes("get leaders") || timeline.includes("1 tool call"));
-    console.log("A5-TIMELINE-BUTTON:" + timeline.slice(timeline.indexOf("1 tool call") - 200, timeline.indexOf("1 tool call") + 20));
+    assert.ok(timeline.includes("2 tool calls"));
+    assert.ok(!timeline.includes("argument_count"));
   });
 });

@@ -69,6 +69,114 @@ export function activityRecordFromEvent(
 
 
 
+export interface ToolPair {
+  call?: ActivityRecord;
+  result?: ActivityRecord;
+}
+
+export type PlanStepState = "pending" | "running" | "done";
+
+export interface PlanStep {
+  capability: string;
+  state: PlanStepState;
+}
+
+export function recordField(item: ActivityRecord, key: string): unknown {
+  const raw = item.data as Record<string, unknown>;
+  if (raw[key] !== undefined) return raw[key];
+  const nested = raw.data;
+  if (nested && typeof nested === "object" && !Array.isArray(nested)) {
+    return (nested as Record<string, unknown>)[key];
+  }
+  return undefined;
+}
+
+const recordString = (item: ActivityRecord, key: string): string | undefined => {
+  const value = recordField(item, key);
+  return typeof value === "string" && value ? value : undefined;
+};
+
+export const recordKey = (item: ActivityRecord): string | undefined =>
+  recordString(item, "name") ?? recordString(item, "capability");
+
+export const recordLabel = (item: ActivityRecord): string | undefined =>
+  recordString(item, "label") ?? recordKey(item);
+
+const recordName = (item: ActivityRecord): string | undefined => recordKey(item);
+
+export function pairToolItems(items: ActivityRecord[]): ToolPair[] {
+  const pairs: ToolPair[] = [];
+  const openByCorrelation = new Map<string, ToolPair>();
+  const openByName: ToolPair[] = [];
+  for (const item of items) {
+    if (item.kind !== "tool_call" && item.kind !== "tool_result") continue;
+    if (item.kind === "tool_call") {
+      const pair: ToolPair = { call: item };
+      pairs.push(pair);
+      if (item.correlationId) openByCorrelation.set(item.correlationId, pair);
+      else openByName.push(pair);
+      continue;
+    }
+    let pair: ToolPair | undefined;
+    if (item.correlationId) pair = openByCorrelation.get(item.correlationId);
+    if (!pair) {
+      const name = recordName(item);
+      for (const open of openByName) {
+        if (!open.result && recordName(open.call!) === name) {
+          pair = open;
+          break;
+        }
+      }
+    }
+    if (pair && !pair.result) {
+      pair.result = item;
+      if (pair.call?.correlationId) openByCorrelation.delete(pair.call.correlationId);
+      const at = openByName.indexOf(pair);
+      if (at >= 0) openByName.splice(at, 1);
+    } else {
+      pairs.push({ result: item });
+    }
+  }
+  return pairs;
+}
+
+export function planSteps(items: ActivityRecord[]): PlanStep[] {
+  const plans = items.filter((i) => i.kind === "plan_update");
+  if (!plans.length) return [];
+  const latest = plans[plans.length - 1];
+  const d = latest.data.data && typeof latest.data.data === "object" && !Array.isArray(latest.data.data)
+    ? latest.data.data as Record<string, unknown>
+    : {};
+  const capabilities = Array.isArray(d.capabilities)
+    ? d.capabilities.filter((c): c is string => typeof c === "string" && !!c)
+    : [];
+  const running = new Set<string>();
+  const done = new Set<string>();
+  for (const item of items) {
+    const name = recordName(item);
+    if (!name) continue;
+    if (item.kind === "tool_call") running.add(name);
+    if (item.kind === "tool_result") {
+      running.delete(name);
+      if (item.transition !== "failed" && item.status !== "fail" && item.status !== "failed") done.add(name);
+    }
+    if (item.kind === "evidence_update" && item.transition === "admitted") {
+      running.delete(name);
+      done.add(name);
+    }
+  }
+  return capabilities.map((capability) => ({
+    capability,
+    state: done.has(capability) ? "done" : running.has(capability) ? "running" : "pending",
+  }));
+}
+
+export function isNoiseRecord(item: ActivityRecord): boolean {
+  if (item.kind === "thought_stream" || item.kind === "thought_token") return true;
+  if (item.kind === "node_update" && item.node === "entry") return true;
+  return false;
+}
+
 export const ACTIVITY_CONTRACT_FIXTURE: Record<string, unknown>[] = [
   { type: "tool_call", event_id: "run-a:1", sequence: 1, emitted_at: "2026-09-18T20:00:00Z", phase: "execute", status: "running", title: "Tool running", transition: "started", correlation_id: "call-1", data: { name: "team_ratings", argument_count: 1, unknown_argument_count: 0 } },
   { type: "tool_result", event_id: "run-a:2", sequence: 2, emitted_at: "2026-09-18T20:00:01Z", phase: "execute", status: "complete", title: "Tool complete", transition: "succeeded", correlation_id: "call-1", duration_ms: 14, data: { name: "team_ratings", rows: 30 } },
