@@ -42,7 +42,8 @@ def test_per_season_leaders_shape_and_order():
         assert vals == sorted(vals, reverse=True)
         for r in s["leaders"]:
             assert r["player"] and r["team"] and r["gp"] >= 20
-    assert res["meta"]["source"] == "warehouse (documented estimates)"
+    assert res["meta"]["source"] == "warehouse"
+    assert res["meta"]["estimated"] is True
 
 
 def test_single_season_best_has_known_campaign():

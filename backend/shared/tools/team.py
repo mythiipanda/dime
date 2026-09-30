@@ -7,6 +7,40 @@ from ..sources import nba_stats
 from ._core import TTL_BOX, TTL_GAMELOG, TTL_PBPSTATS, TTL_ROSTER, TTL_SCOREBOARD_PAST, _warehouse_or_live, coerce_team_id, is_past_game_date, sample_tier, season_static, last_completed_season, resolve_season
 
 
+def _team_game_seasons() -> set[str] | None:
+    try:
+        from v2.adapters.coverage import table_seasons as _seasons
+    except Exception:
+        return None
+    try:
+        return (set(_seasons("silver_team_games"))
+                | set(_seasons("silver_hist_gamelogs")))
+    except Exception:
+        return None
+
+
+def _hist_game_log_rows(team_id: int, season: str,
+                        limit: int) -> list[dict[str, Any]]:
+    out: list[dict[str, Any]] = []
+    for _h in reversed(_hist_team_games(team_id, season)):
+        if not isinstance(_h, dict):
+            continue
+        _wl = str(_h.get("WL") or "").strip().upper()
+        out.append({
+            "game_id": str(_h.get("Game_ID") or ""),
+            "date": str(_h.get("GAME_DATE") or ""),
+            "matchup": str(_h.get("MATCHUP") or ""),
+            "wl": _wl or None,
+            "pts": _h.get("PTS"), "opp_pts": None,
+            "reb": _h.get("REB"), "ast": _h.get("AST"),
+            "stl": _h.get("STL"), "blk": _h.get("BLK"),
+            "tov": _h.get("TOV"),
+        })
+        if len(out) >= limit:
+            break
+    return out
+
+
 def _abbrev(who: str) -> str:
     try:
         tid = coerce_team_id(who)
@@ -167,6 +201,12 @@ def get_team_game_log(team: str, limit: int = 10,
     except (TypeError, ValueError):
         limit = 10
     abbr = _abbrev(team)
+    _covered = _team_game_seasons()
+    if _covered and not playoffs and season not in _covered:
+        return {"tool": "get_team_game_log", "ok": False,
+                "error": (f"no regular-season games found for {abbr} "
+                          f"in {season} (team game coverage: "
+                          f"{', '.join(sorted(_covered))})")}
 
     con = _store.connect()
     try:
@@ -234,13 +274,19 @@ def get_team_game_log(team: str, limit: int = 10,
                     "error": "team game table not present in warehouse"}
     finally:
         con.close()
+    _source = "warehouse:silver_team_games"
+    if not games and not playoffs and season_static(season):
+        _hist = _hist_game_log_rows(tid, season, limit)
+        if _hist:
+            games = _hist
+            _source = "warehouse:silver_hist_gamelogs"
     if not games:
         return {"tool": "get_team_game_log", "ok": False,
                 "error": f"no {'playoff' if playoffs else 'regular-season'} "
                          f"games found for {abbr} in {season}"}
     return {"tool": "get_team_game_log", "ok": True,
             "team": abbr, "games": games, "rows": games,
-            "meta": {"season": season,
+            "meta": {"season": season, "source": _source,
                      "scope": "playoffs" if playoffs else "regular season"}}
 
 

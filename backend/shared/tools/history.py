@@ -255,7 +255,7 @@ def get_historical_leaders(category: str = "pts",
     if not rows:
         return {"tool": "get_historical_leaders", "ok": False, "rows": {},
                 "meta": {"category": canon, "start_season": start, "end_season": end,
-                         "mode": mode, "source": "warehouse (documented estimates)"},
+                         "mode": mode, "source": "warehouse", "estimated": True},
                 "error": f"no {spec['label']} coverage for seasons {start}..{end}"}
     qual = f"GP>={MIN_GP}" + (" MIN>=20" if canon == "raptor" else "")
     meta: dict[str, Any] = {
@@ -263,7 +263,8 @@ def get_historical_leaders(category: str = "pts",
         "start_season": start, "end_season": end, "limit": limit,
         "display_range": f"{season_label(start)} to {season_label(end)}",
         "qualification": qual,
-        "source": "warehouse (documented estimates)",
+        "source": "warehouse",
+        "estimated": True,
         "values": "per-game season averages; RAPTOR from five-year-old model, not current form",
         "raptor_available": raptor,
     }

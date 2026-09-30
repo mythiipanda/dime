@@ -25,7 +25,7 @@ import SplitsView, { parseSplits } from "./SplitsView";
 import StreaksView, { parseStreaks } from "./StreaksView";
 import TradeValueView, { parseTradeValue } from "./TradeValueView";
 import TrendChart, { isRaptorRows } from "./TrendChart";
-import { resolveToolName } from "./view-shared";
+import { Chip, resolveToolName } from "./view-shared";
 import WowyCard from "./WowyCard";
 import ZoneBars, { isZoneRows } from "./ZoneBars";
 
@@ -111,6 +111,41 @@ function InlineChart({ rows }: { rows: unknown }) {
 
 const ORDER: NodeName[] = ["entry", "data_retrieval", "tools", "analytics", "presentation"];
 
+function flattenHistoricalLeaders(rows: unknown, statLabel?: string): Record<string, unknown>[] | null {
+  const root = (rows as { rows?: unknown } | null)?.rows ?? rows;
+  if (!root || typeof root !== "object" || Array.isArray(root)) return null;
+  const rec = root as Record<string, unknown>;
+  const groups: { season?: unknown; leaders?: unknown }[] = [];
+  if (Array.isArray(rec.seasons)) {
+    for (const s of rec.seasons) {
+      if (!s || typeof s !== "object" || Array.isArray(s)) return null;
+      const sr = s as Record<string, unknown>;
+      if (!Array.isArray(sr.leaders)) return null;
+      groups.push({ season: sr.season_label ?? sr.season, leaders: sr.leaders });
+    }
+  } else if (Array.isArray(rec.leaders)) {
+    groups.push({ leaders: rec.leaders });
+  } else {
+    return null;
+  }
+  const valueKey = typeof statLabel === "string" && statLabel ? statLabel : "Value";
+  const out: Record<string, unknown>[] = [];
+  for (const g of groups) {
+    for (const l of g.leaders as unknown[]) {
+      if (!l || typeof l !== "object" || Array.isArray(l)) continue;
+      const lr = l as Record<string, unknown>;
+      out.push({
+        Season: g.season ?? lr.season_label ?? lr.season ?? "",
+        PLAYER: lr.player ?? "",
+        TEAM: lr.team ?? "",
+        [valueKey]: typeof lr.value === "number" ? lr.value : (lr.display ?? ""),
+        GP: lr.gp ?? "",
+      });
+    }
+  }
+  return out.length ? out : null;
+}
+
 export default function DataArtifacts({
   ai,
   loading,
@@ -156,6 +191,7 @@ export default function DataArtifacts({
       qualification?: string;
       coverage?: string;
       warnings?: string[];
+      estimated?: boolean;
     };
   }[] = [];
 
@@ -267,6 +303,13 @@ export default function DataArtifacts({
 
   const toolName = toolOf(table ?? {});
   const isShotTool = toolName === "get_shot_zones" || toolName === "get_shot_compare" || toolName === "get_team_shot_zones";
+  const historicalRows =
+    toolName === "get_historical_leaders" && table
+      ? flattenHistoricalLeaders(
+          table.rows,
+          (table.meta as { label?: string } | undefined)?.label,
+        )
+      : null;
   useEffect(() => {
     if (isShotTool) {
       setViewMode("court");
@@ -383,6 +426,11 @@ export default function DataArtifacts({
             {table.meta?.fetched_at
               ? ` · ${String(table.meta.fetched_at).slice(0, 10)}`
               : ""}
+            {table.meta?.estimated ? (
+              <span style={{ marginLeft: 6 }}>
+                <Chip tone="accent">Estimated values</Chip>
+              </span>
+            ) : null}
           </div>
           <EvidenceLimitations meta={table.meta} />
           {table.verdict && (
@@ -466,6 +514,11 @@ export default function DataArtifacts({
           <div style={{ fontSize: 11, color: "var(--color-ash-gray)", marginTop: 2 }}>
             {table.meta?.source ? `Source: ${table.meta.source}` : "Source: NBA data"}
             {table.meta?.fetched_at ? ` · ${String(table.meta.fetched_at).slice(0, 10)}` : ""}
+            {table.meta?.estimated ? (
+              <span style={{ marginLeft: 6 }}>
+                <Chip tone="accent">Estimated values</Chip>
+              </span>
+            ) : null}
             {table.meta?.links?.watch && (
               <a
                 href={table.meta.links.watch}
@@ -746,6 +799,15 @@ export default function DataArtifacts({
             )}
           </pre>
         </div>
+      ) : historicalRows ? (
+        <DataTable
+          rows={historicalRows}
+          heat={heat}
+          onPlayerSelect={(player) =>
+            onAsk ? onAsk(`Tell me about ${player} this season`) : undefined
+          }
+          onPinPlayer={onPinPlayer}
+        />
       ) : viewMode === "chart" ? (
         <AutoChart table={table as { rows?: unknown }} />
       ) : (

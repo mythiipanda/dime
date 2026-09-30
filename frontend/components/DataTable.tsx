@@ -16,6 +16,43 @@ interface Props {
   onPinPlayer?: (playerName: string) => void;
 }
 
+const HEADER_LABELS: Record<string, string> = {
+  RANK: "Rank",
+  PLAYER: "Player",
+  TEAM: "Team",
+  PTS: "Points",
+  REB: "Rebounds",
+  AST: "Assists",
+  STL: "Steals",
+  BLK: "Blocks",
+  TOV: "Turnovers",
+  FGM: "FG made",
+  FGA: "FG att.",
+  FG_PCT: "FG%",
+  FG3M: "3P made",
+  FG3A: "3P att.",
+  FG3_PCT: "3P%",
+  FTM: "FT made",
+  FTA: "FT att.",
+  FT_PCT: "FT%",
+  TS_PCT: "TS%",
+  PPG: "Pts/game",
+  RPG: "Reb/game",
+  APG: "Ast/game",
+  SPG: "Stl/game",
+  BPG: "Blk/game",
+  GP: "Games",
+  MIN: "Minutes",
+  MPG: "Min/game",
+  PERCENTILE: "Pct",
+  Season: "Season",
+  Value: "Value",
+};
+
+function headerLabel(c: string): string {
+  return HEADER_LABELS[c] ?? c;
+}
+
 function asTable(rows: unknown, capCols: number, showIds = false): {
   cols: string[];
   body: string[][];
@@ -253,7 +290,7 @@ export default function DataTable({ rows, capCols = 8, capRows = 25, heat = fals
                 }}
                 tabIndex={0}
                 aria-sort={sortCol === c ? (sortDir === 1 ? "ascending" : "descending") : "none"}
-                title={sortCol === c ? `Sorted by ${c} (${sortDir === 1 ? "low to high" : "high to low"}). Select to change.` : `Sort by ${c}`}
+                title={sortCol === c ? `Sorted by ${headerLabel(c)} (${sortDir === 1 ? "low to high" : "high to low"}). Select to change.` : `Sort by ${headerLabel(c)}`}
                 style={{
                   textAlign: t.numeric[t.cols.indexOf(c)] ? "right" : "left",
                   borderBottom: "1px solid var(--color-stone-border)",
@@ -265,7 +302,7 @@ export default function DataTable({ rows, capCols = 8, capRows = 25, heat = fals
                   whiteSpace: "nowrap",
                 }}
               >
-                {c}
+                {headerLabel(c)}
                 {sortCol === c ? (sortDir === 1 ? " ▲" : " ▼") : ""}
               </TableHead>
             ))}

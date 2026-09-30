@@ -32,7 +32,7 @@ function callsFor(ai: AiMessage): ToolCall[] {
   const out: ToolCall[] = [];
   for (const n of AGENT_NODES) {
     const s = ai.nodes[n];
-    if (s) out.push(...s.toolCalls);
+    if (s) out.push(...s.toolCalls.filter((c) => c.status !== "fail"));
   }
   return out;
 }
