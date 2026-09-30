@@ -916,23 +916,10 @@ def get_leaders(
         except Exception:
             rows = []
 
-    try:
-        total = int(meta.get("rows") or len(rows) or 0)
-        for r in rows:
-            rank = r.get("RANK") or 0
-            if rank and total:
-                r["PERCENTILE"] = round(100 * (1 - (rank - 1) / total), 1)
-    except Exception:
-        pass
-
-
-
-
-
     pin = ["RANK", "PLAYER", "TEAM", stat_category]
     if stat_category == "FG3_PCT":
         pin.extend(["FG3M", "FG3A"])
-    pin.extend(["GP", "MIN", "MPG", "PERCENTILE"])
+    pin.extend(["GP", "MIN", "MPG"])
     pinned = []
     for r in rows:
         if not isinstance(r, dict):

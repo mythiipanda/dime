@@ -634,7 +634,7 @@ _HISTORICAL_RX = _re.compile(
 
 _LEADERS_PHRASE_RX = _re.compile(
     r"leads?\s+the\s+league\s+in\b|"
-    r"most\s+.+?\s+per\s+game|"
+    r"most\s+.+?\s+(?:per\s+game|/game)|"
     r"scoring\s+title|"
     r"leaders?\s+in\b",
     _re.IGNORECASE,

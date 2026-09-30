@@ -14,4 +14,5 @@ values verbatim, coverage range dated.
 
 Pitfalls: coverage runs 2015 to 2025. Out-of-range seasons return
 empty, report that honestly and never fabricate. Values are per-game
-warehouse estimates, not totals.
+warehouse estimates, not totals. The payload marks estimated true, so
+answers call them estimates and never present them as measured totals.

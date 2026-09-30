@@ -22,6 +22,7 @@ from shared.providers import (
 from shared.config import settings
 from .skills import catalog as skills_catalog, load_skill as skills_load_skill
 from .subagents import delegate_tools, run_desk_streaming, _SHOT_ZONE_RX, _HISTORICAL_RX
+from .subagents import _leaders_category, _LEADERS_STAT_PATTERNS
 from .subagents import DESK_DEADLINE_S as _DESK_WALL_BUDGET_S
 from shared.tools import v1_tools
 from shared.tools._core import COVERAGE_END, COVERAGE_START, tool_label
@@ -78,6 +79,8 @@ ANALYST_SYSTEM = (
     "State one number per fact, never ranges. "
     "For ranking questions, narrate the full order including the middle, "
     "not just the top and bottom; the table carries every row. "
+    "For multi-season answers, name the pattern across seasons in one "
+    "sentence and never list every season value. "
     "Only cite all-in-one metrics present in evidence: RAPM-lite, on-off "
     "net, RAPTOR history. Label RAPM-lite and RAPTOR as estimates. "
     "Never invent PER, BPM, EPM, WS, VORP, or LEBRON. Say EPM is unavailable. "
@@ -1527,6 +1530,54 @@ def _default_season(question: str) -> str | None:
         return None
 
 
+_RATE_UNIT_RX = re.compile(
+    r"per[ -]?game|/game|\bAPG\b|\bPPG\b|\bRPG\b|\bSPG\b|\bBPG\b",
+    re.IGNORECASE)
+
+_LEDGER_RATE_BASE = {"PPG": "PTS", "RPG": "REB", "APG": "AST",
+                     "SPG": "STL", "BPG": "BLK"}
+
+_LEDGER_UNIT_WORDS = {"PTS": "points", "REB": "rebounds", "AST": "assists",
+                      "STL": "steals", "BLK": "blocks",
+                      "TS_PCT": "true shooting"}
+
+
+def _ledger_leader_answer(question: str, ledger: list[str]) -> str | None:
+    try:
+        category = _leaders_category(question or "")
+    except Exception:
+        category = None
+    if category is None:
+        for _pat, _cat in _LEADERS_STAT_PATTERNS:
+            try:
+                _hit = re.search(_pat, question or "", re.IGNORECASE)
+            except Exception:
+                _hit = None
+            if _hit:
+                category = _cat
+                break
+    if category is None:
+        return None
+    base = _LEDGER_RATE_BASE.get(category, category)
+    rate = bool(_RATE_UNIT_RX.search(question or "")) or base == "TS_PCT"
+    unit = _LEDGER_UNIT_WORDS.get(base)
+    if unit is None:
+        return None
+    for fact in ledger or []:
+        if not isinstance(fact, str) or not re.search(r"\d", fact):
+            continue
+        low = fact.lower()
+        if rate:
+            if base == "TS_PCT":
+                if "leads qualified players at" in low and unit in low:
+                    return fact
+            elif "leads at" in low and f"{unit} per game" in low:
+                return fact
+        elif "leads the league with" in low and unit in low:
+            return fact
+    return None
+
+
 async def _triage_seed(question: str, primary: str, model: str,
                        state: dict) -> AsyncGenerator[dict[str, Any], None]:
     found_p, found_t = _detect_entities(question)
@@ -1795,11 +1846,22 @@ async def _triage_seed(question: str, primary: str, model: str,
 
 
 
+    if (not found_p and not found_t and state.get("ledger")):
+        _ledger_answer = _ledger_leader_answer(
+            question, state.get("ledger") or [])
+        if _ledger_answer is not None:
+            state["analysis"] = _ledger_answer
+            state["_analysis_final"] = True  # type: ignore[typeddict-unknown-key]
+            async for _e in _triage_terminal(question, state):
+                yield _e
+            return
+
+
     if (not found_p and not found_t
             and re.search(r"(?:who|which player).*(?:leads?|most|highest)|leaders?",
                           question, re.IGNORECASE)
             and re.search(r"\bassists?\b", question, re.IGNORECASE)
-            and not re.search(r"per[ -]?game|\bAPG\b", question, re.IGNORECASE)):
+            and not re.search(r"per[ -]?game|/game|\bAPG\b", question, re.IGNORECASE)):
         _tlseason = _default_season(question)
         _tlh: dict[str, Any] = {}
         async for _e in _triage_tool(
@@ -1824,16 +1886,18 @@ async def _triage_seed(question: str, primary: str, model: str,
 
     _rate_leader = None
     if (not found_p and not found_t
-            and re.search(r"(?:who|which player).*(?:leads?|highest|best|most)|leaders?",
+            and re.search(r"(?:who|which player).*(?:leads?|highest|best|most)|leaders?"
+                          r"|(?:highest|most|best)\b[^?]{0,40}?(?:per[ -]?game|/game"
+                          r"|\bAPG\b|\bPPG\b|\bRPG\b|\bSPG\b|\bBPG\b)",
                           question, re.IGNORECASE)):
         if re.search(r"true[ -]?shooting|\bTS%?\b", question, re.IGNORECASE):
             _rate_leader = "TS_PCT"
         else:
-            for pattern, category in ((r"points?\s+per[ -]?game|\bPPG\b", "PPG"),
-                                      (r"rebounds?\s+per[ -]?game|\bRPG\b", "RPG"),
-                                      (r"assists?\s+per[ -]?game|\bAPG\b", "APG"),
-                                      (r"steals?\s+per[ -]?game|\bSPG\b", "SPG"),
-                                      (r"blocks?\s+per[ -]?game|\bBPG\b", "BPG")):
+            for pattern, category in ((r"points?\s*(?:per[ -]?game|/game)|\bPPG\b", "PPG"),
+                                      (r"rebounds?\s*(?:per[ -]?game|/game)|\bRPG\b", "RPG"),
+                                      (r"assists?\s*(?:per[ -]?game|/game)|\bAPG\b", "APG"),
+                                      (r"steals?\s*(?:per[ -]?game|/game)|\bSPG\b", "SPG"),
+                                      (r"blocks?\s*(?:per[ -]?game|/game)|\bBPG\b", "BPG")):
                 if re.search(pattern, question, re.IGNORECASE):
                     _rate_leader = category
                     break
@@ -5237,6 +5301,24 @@ async def _suggest_llm(
         return _suggest(question, results, calls_made)
 
 
+def _trim_season_evidence(results: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    out: list[dict[str, Any]] = []
+    for r in results:
+        if not isinstance(r, dict):
+            out.append(r)
+            continue
+        rows = r.get("rows")
+        if isinstance(rows, dict) and isinstance(rows.get("seasons"), list):
+            seasons: list[Any] = []
+            for s in rows["seasons"][:50]:
+                if isinstance(s, dict) and isinstance(s.get("leaders"), list):
+                    s = {**s, "leaders": s["leaders"][:3]}
+                seasons.append(s)
+            r = {**r, "rows": {**rows, "seasons": seasons}}
+        out.append(r)
+    return out
+
+
 def _sanitize_evidence(results: list[dict[str, Any]]) -> list[dict[str, Any]]:
     def _label(name: str) -> str:
         n = (name or "").lower()
@@ -5416,7 +5498,7 @@ async def analytics_agent(state: DimeState) -> AsyncGenerator[dict[str, Any], No
         )
         yield _event("node_update", {"node": "analytics", "status": "complete"})
         return
-    evidence = str(_sanitize_evidence(state["tool_results"]))[:12000]
+    evidence = str(_sanitize_evidence(_trim_season_evidence(state["tool_results"])))[:12000]
     try:
         parts: list[str] = []
         async for chunk in astream_with_fallback(
@@ -5939,6 +6021,10 @@ def _extract_ledger_facts(state: dict) -> list[str]:
                 if ll:
                     facts.append(ll[0].upper() + ll[1:])
             elif tname == "get_team_compare":
+                da = (tr.get("meta") or {}).get("deterministic_answer")
+                if da:
+                    facts.append(da[0].upper() + da[1:])
+            elif tname == "get_leaders":
                 da = (tr.get("meta") or {}).get("deterministic_answer")
                 if da:
                     facts.append(da[0].upper() + da[1:])

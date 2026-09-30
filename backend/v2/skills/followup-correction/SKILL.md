@@ -19,6 +19,7 @@ The user opens with a correction phrase — "no i mean", "i meant", "actually", 
 ## What to fetch
 
 - Reuse the prior turn's fetched data when the correction only reframes the same entities.
+- When the follow-up asks for a different cut of the same leaderboard the prior turn already fetched (totals vs per-game, including the "/game" shorthand), reuse those rows and derive the answer from them instead of fetching fresh.
 - Fetch fresh when the correction changes entities, scope (player-wide to league-wide), or the stat in question.
 
 ## Caveats to apply
