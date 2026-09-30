@@ -13,6 +13,7 @@ import {
   type ExploreContext,
   type SearchResult,
 } from "../lib/exploreSearch";
+import { Input } from "@/components/ui/input";
 
 
 
@@ -136,12 +137,13 @@ export default function ExploreSearch({
       <div className="explore-search-row">
         <div className="explore-search-field" ref={fieldRef}>
           <span aria-hidden="true" className="explore-search-icon">⌕</span>
-          <input
+          <Input
             role="combobox"
             aria-expanded={showList}
             aria-controls="explore-search-results"
             aria-activedescendant={items[active] ? `explore-result-${active}` : undefined}
             aria-label="Search players, teams, and stats"
+            className="h-auto px-0 py-0 focus-visible:ring-0"
             value={q}
             onChange={(e) => {
               setQ(e.target.value);

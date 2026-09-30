@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { BACKEND } from "../lib/chat";
 import { pinToTray, readTray } from "./CompareTray";
 import { apiPath } from "../lib/api";
+import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 
 interface Hit { kind: string; id: number | string; name: string; }
 interface PaletteItem { id: string; group: string; label: string; hint: string; run: () => void; }
@@ -31,15 +32,15 @@ export default function CommandPalette({onAsk,onTab,onDebate,openKey=0}:{onAsk:(
     ];return out.filter(x=>!needle||x.label.toLowerCase().includes(needle));
   },[needle,hits,onAsk,onTab,onDebate,tray]);
   useEffect(()=>setActive(0),[needle,hits.length]);
-  if(!open)return null;
   const groups=[...new Set(items.map(x=>x.group))];
-  return <div className="command-backdrop" onClick={close} role="presentation">
-    <div className="command-panel" role="dialog" aria-modal="true" aria-label="Search commands and players" onClick={e=>e.stopPropagation()}>
+  return <Dialog open={open} onOpenChange={(v)=>{if(!v)close()}}>
+    <DialogContent showCloseButton={false} aria-label="Search commands and players" className="command-panel top-[min(15vh,120px)] block max-w-none translate-y-0 gap-0 p-0 text-inherit ring-0 sm:max-w-none">
+      <DialogTitle className="sr-only">Search commands and players</DialogTitle>
       <div className="command-search"><span aria-hidden>⌕</span><input ref={input} value={q} onChange={e=>setQ(e.target.value)} onKeyDown={e=>{if(e.key==="ArrowDown"){e.preventDefault();setActive(x=>Math.min(x+1,items.length-1))}if(e.key==="ArrowUp"){e.preventDefault();setActive(x=>Math.max(x-1,0))}if(e.key==="Enter"&&items[active]){e.preventDefault();items[active].run()}}} placeholder="Player, team, section, or action..." aria-controls="command-results" aria-activedescendant={items[active]?.id}/><kbd>Esc</kbd></div>
       <div id="command-results" className="command-results" role="listbox">
         {groups.map(group=><section key={group}><h2>{group}</h2>{items.filter(x=>x.group===group).map(item=>{const index=items.indexOf(item);return <button id={item.id} key={item.id} role="option" aria-selected={index===active} className={index===active?"is-active":""} onMouseEnter={()=>setActive(index)} onClick={item.run}><span>{item.label}</span><small>{item.hint}</small>{item.hint==="player"&&<b onClick={e=>{e.stopPropagation();pinToTray(item.label)}}>+ tray</b>}</button>})}</section>)}
         {!items.length&&<div className="command-empty">No matching players, teams, or actions.</div>}
       </div><footer><span>↑↓ move</span><span>↵ open</span><span>esc close</span></footer>
-    </div>
-  </div>;
+    </DialogContent>
+  </Dialog>;
 }

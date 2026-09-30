@@ -10,6 +10,7 @@ import {
 } from "../lib/api";
 import EmptyState from "./EmptyState";
 import Skeleton from "./Skeleton";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
 function snapshotLabel(item: WatchItem): string {
   const s = item.snapshot || {};
@@ -103,15 +104,15 @@ export default function WatchlistPanel() {
       </div>
 
       <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
-        <select
-          className="field"
-          value={etype}
-          onChange={(e) => setEtype(e.target.value as "player" | "team")}
-          aria-label="Entity type"
-        >
-          <option value="player">Player</option>
-          <option value="team">Team</option>
-        </select>
+        <Select value={etype} onValueChange={(next) => setEtype(next as "player" | "team")}>
+          <SelectTrigger aria-label="Entity type">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="player">Player</SelectItem>
+            <SelectItem value="team">Team</SelectItem>
+          </SelectContent>
+        </Select>
         <input
           ref={inputRef}
           className="field"
