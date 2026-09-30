@@ -263,6 +263,11 @@ def strip_array_length_bounds(schema):
         if isinstance(node, dict):
             node.pop("maxItems", None)
             node.pop("minItems", None)
+            node.pop("discriminator", None)
+            if "const" in node:
+                const_value = node.pop("const")
+                if "enum" not in node:
+                    node["enum"] = [const_value]
             for key, value in node.items():
                 if key in {"default", "examples", "const", "enum"}:
                     continue

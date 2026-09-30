@@ -46,13 +46,6 @@ STRIPPED_LITERAL = {
         "subjects": {
             "type": "array",
             "items": {
-                "discriminator": {
-                    "propertyName": "kind",
-                    "mapping": {
-                        "task": "#/$defs/TaskSubject",
-                        "entity": "#/$defs/EntitySubject",
-                    },
-                },
                 "oneOf": [
                     {"$ref": "#/$defs/TaskSubject"},
                     {"$ref": "#/$defs/EntitySubject"},
@@ -124,11 +117,15 @@ def test_intake_review_wire_drops_union_bounds_preserves_oneof():
     before = json.dumps(schema, sort_keys=True)
     wire = _wire_schema(schema, "IntakeAdmissionReview")
     wired = wire["properties"]["expected_subjects"]
+    expected_items = {
+        key: value for key, value in node["items"].items() if key != "discriminator"
+    }
     assert wired == {
         "type": "array",
         "title": node["title"],
-        "items": node["items"],
+        "items": expected_items,
     }
+    assert wired["items"]["oneOf"] == node["items"]["oneOf"]
     assert _bound_paths(wire) == []
     assert json.dumps(schema, sort_keys=True) == before
 
@@ -154,6 +151,94 @@ def test_planner_wire_path_drops_bounds():
     wire = _wire_schema(schema, "PlannerOutputWire")
     assert _bound_paths(wire) == []
     assert "nodes" in wire["properties"]
+    assert json.dumps(schema, sort_keys=True) == before
+
+
+def _forbidden_paths(value):
+    found = []
+
+    def visit(node, path):
+        if isinstance(node, dict):
+            for key in ("const", "discriminator"):
+                if key in node:
+                    found.append(f"{path}.{key}")
+            for key, child in node.items():
+                visit(child, f"{path}.{key}")
+        elif isinstance(node, list):
+            for index, child in enumerate(node):
+                visit(child, f"{path}[{index}]")
+
+    visit(value, "$")
+    return sorted(found)
+
+
+class _CapturingWireModel:
+    def __init__(self):
+        self.wire_schemas = []
+
+    async def generate(self, **call):
+        self.wire_schemas.append(
+            _wire_schema(
+                call["schema"].model_json_schema(), call["schema"].__name__
+            )
+        )
+        return call["schema"].model_validate(
+            {"goal": "g", "mode": "quick", "deliverable": "d"}
+        )
+
+
+@pytest.mark.anyio
+async def test_understand_wire_schema_holds_no_gemini_rejected_keys():
+    from v2.adapters.models import ModelIntake
+
+    model = _CapturingWireModel()
+    intake = ModelIntake(
+        model,
+        provider="stub",
+        model_name="stub-model",
+        capability_catalog={},
+    )
+    task = await intake.understand("What is Boston's record?")
+    assert task.goal == "g"
+    assert len(model.wire_schemas) == 1
+    assert _forbidden_paths(model.wire_schemas[0]) == []
+
+
+def test_const_becomes_single_value_enum_with_shape_preserved():
+    schema = {
+        "type": "object",
+        "properties": {
+            "kind": {"const": "bool", "title": "Kind", "type": "string"},
+        },
+        "required": ["kind"],
+    }
+    before = json.dumps(schema, sort_keys=True)
+    wire = _wire_schema(schema, "Probe")
+    assert wire["properties"]["kind"] == {
+        "enum": ["bool"],
+        "title": "Kind",
+        "type": "string",
+    }
+    assert _forbidden_paths(wire) == []
+    assert json.dumps(schema, sort_keys=True) == before
+
+
+def test_taskspec_wire_turns_kind_consts_into_enums_preserves_oneof():
+    schema = TypeAdapter(TaskSpec).json_schema()
+    assert schema["$defs"]["BoolArg"]["properties"]["kind"] == {
+        "const": "bool",
+        "title": "Kind",
+        "type": "string",
+    }
+    before = json.dumps(schema, sort_keys=True)
+    wire = _wire_schema(schema, "TaskSpec")
+    assert wire["$defs"]["BoolArg"]["properties"]["kind"] == {
+        "enum": ["bool"],
+        "title": "Kind",
+        "type": "string",
+    }
+    assert _forbidden_paths(wire) == []
+    assert len(wire["$defs"]["RequirementArguments"]["properties"]["entries"]["items"]["oneOf"]) == 11
     assert json.dumps(schema, sort_keys=True) == before
 
 
