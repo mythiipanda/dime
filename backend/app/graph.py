@@ -1407,6 +1407,13 @@ _TOOL_SEASON_COVERAGE: dict[str, tuple[str, str]] = {
 }
 
 
+_SEASON_CLAMP_EXEMPT = frozenset({
+    "get_draft_board",
+    "get_draft_model",
+    "get_combine",
+})
+
+
 async def _triage_tool(name: str, args: dict[str, Any], state: dict,
                        holder: dict[str, Any]) -> AsyncGenerator[dict[str, Any], None]:
     from shared.tools import v1_tools
@@ -1420,12 +1427,13 @@ async def _triage_tool(name: str, args: dict[str, Any], state: dict,
     })
     try:
         if fn is not None and isinstance(args, dict) and "season" in args:
-            from shared.tools._core import clamp_season as _clamp_triage
+            if name not in _SEASON_CLAMP_EXEMPT:
+                from shared.tools._core import clamp_season as _clamp_triage
 
-            _span = _TOOL_SEASON_COVERAGE.get(
-                name, (COVERAGE_START, COVERAGE_END))
-            args = {**args, "season": _clamp_triage(
-                args.get("season"), _span[0], _span[1])}
+                _span = _TOOL_SEASON_COVERAGE.get(
+                    name, (COVERAGE_START, COVERAGE_END))
+                args = {**args, "season": _clamp_triage(
+                    args.get("season"), _span[0], _span[1])}
         out = await fn.ainvoke(args) if fn is not None else {
             "tool": name, "ok": False, "error": "unknown tool"}
     except Exception as exc:
@@ -4896,19 +4904,20 @@ async def actual_tool_node(state: DimeState) -> AsyncGenerator[dict[str, Any], N
             await _tok_q.put(None)
             return {"tool": name, "ok": False, "error": "unknown tool"}
         if isinstance(args, dict) and "season" in args:
-            from shared.tools._core import InvalidSeasonError as _ISE
-            from shared.tools._core import clamp_season
+            if name not in _SEASON_CLAMP_EXEMPT:
+                from shared.tools._core import InvalidSeasonError as _ISE
+                from shared.tools._core import clamp_season
 
-            _span = _TOOL_SEASON_COVERAGE.get(
-                name, (COVERAGE_START, COVERAGE_END))
-            try:
-                args = {**args, "season": clamp_season(
-                    args.get("season"), _span[0], _span[1])}
-            except _ISE as exc:
-                elapsed[id(call)] = int((time.time() - t0) * 1000)
-                await _tok_q.put(None)
-                return {"tool": name, "ok": False, "error": str(exc),
-                        "season_error": True}
+                _span = _TOOL_SEASON_COVERAGE.get(
+                    name, (COVERAGE_START, COVERAGE_END))
+                try:
+                    args = {**args, "season": clamp_season(
+                        args.get("season"), _span[0], _span[1])}
+                except _ISE as exc:
+                    elapsed[id(call)] = int((time.time() - t0) * 1000)
+                    await _tok_q.put(None)
+                    return {"tool": name, "ok": False, "error": str(exc),
+                            "season_error": True}
         try:
             desk_cache = state.setdefault("desk_cache", {})
             entity_cache = state.setdefault("entity_cache", {})
