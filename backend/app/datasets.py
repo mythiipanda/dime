@@ -127,6 +127,167 @@ def _envelope(table: str, season: str, frame: object, cached: bool) -> dict:
     return {"data": rows, "meta": meta}
 
 
+_LINEUP_SUM_KEYS = ("PTS", "PLUS_MINUS", "FGA", "OREB", "TOV", "FTA", "MIN")
+
+
+def _lineup_stints(season: str) -> list:
+    frame = store.read_frame("silver_lineups", "_season = ?", [season])
+    agg: dict = {}
+    for r in frame.to_dicts():
+        ids = [x for x in str(r.get("GROUP_ID") or "").split("-") if x]
+        if len(ids) != 5:
+            continue
+        if r.get("PTS") is None:
+            continue
+        try:
+            vals = {k: float(r.get(k)) for k in _LINEUP_SUM_KEYS}
+        except (TypeError, ValueError):
+            continue
+        key = (str(r.get("GROUP_ID")), str(r.get("TEAM_ABBREVIATION")))
+        slot = agg.get(key)
+        if slot is None:
+            agg[key] = {"name": r.get("GROUP_NAME"), "vals": vals}
+        else:
+            if vals["MIN"] > slot["vals"]["MIN"]:
+                slot["name"] = r.get("GROUP_NAME")
+            for k in _LINEUP_SUM_KEYS:
+                slot["vals"][k] += vals[k]
+    out = []
+    for (gid, team), slot in agg.items():
+        vals = slot["vals"]
+        poss = vals["FGA"] - vals["OREB"] + vals["TOV"] + 0.44 * vals["FTA"]
+        if poss <= 0:
+            continue
+        out.append((gid, team, slot["name"], vals, poss))
+    return out
+
+
+def _lineup_leaders(season: str, min_poss: int) -> dict:
+    try:
+        stints = _lineup_stints(season)
+    except Exception as exc:
+        return {"ok": False,
+                "error": f"warehouse read failed: {str(exc)[:160]}"}
+    if not stints:
+        return {"ok": False, "error":
+                f"no rated 5-man lineup stints for {season} in silver_lineups"}
+    rows = []
+    for gid, team, name, vals, poss in stints:
+        if poss < min_poss:
+            continue
+        off = round(100.0 * vals["PTS"] / poss, 1)
+        net = round(100.0 * vals["PLUS_MINUS"] / poss, 1)
+        rows.append({"lineup": name, "team": team,
+                     "MIN": vals["MIN"], "OFF_RTG": off,
+                     "DEF_RTG": round(off - net, 1),
+                     "NET_RTG": net, "possessions": round(poss, 1)})
+    rows.sort(key=lambda d: d["NET_RTG"], reverse=True)
+    return {"ok": True, "data": rows,
+            "meta": {"season": season, "rows": len(rows), "cached": True,
+                     "source": "silver_lineups",
+                     "method": "lineup stats summed per (GROUP_ID, TEAM_ABBREVIATION) across stints; possessions estimated as FGA - OREB + TOV + 0.44 * FTA; OFF_RTG = 100 * PTS / POSS; NET_RTG = 100 * PLUS_MINUS / POSS; DEF_RTG derived as OFF_RTG - NET_RTG",
+                     "min_poss": min_poss}}
+
+
+def _table_leaders(table: str, season: str, sort_col: str) -> dict:
+    try:
+        frame = store.read_frame(table, "_season = ?", [season])
+    except Exception as exc:
+        return {"ok": False,
+                "error": f"warehouse read failed: {str(exc)[:160]}"}
+    if frame.height == 0:
+        return {"ok": False, "error":
+                f"no rows for {season} in {table}"}
+    if sort_col in frame.columns:
+        frame = frame.sort(sort_col, descending=True, nulls_last=True)
+    out = _envelope(table, season, frame, True)
+    out["ok"] = True
+    return out
+
+
+_HIST_ZONE_LABELS = {
+    "rim": "Rim (<8 ft)",
+    "corner_3": "Corner 3",
+    "atb_3": "Above-Break 3",
+    "short_mid": "Short Mid (8-14 ft)",
+    "long_mid": "Long Mid (14 ft+)",
+}
+
+
+def _hist_zone(value, dist, x):
+    try:
+        three = int(value or 0) == 3
+    except (TypeError, ValueError):
+        three = False
+    try:
+        d = float(dist)
+    except (TypeError, ValueError):
+        d = 999.0
+    try:
+        ax = abs(float(x))
+    except (TypeError, ValueError):
+        ax = 0.0
+    from shared.tools.zone import ZONE_RULES
+
+    for key, rule in ZONE_RULES:
+        if rule(d, ax, three):
+            return _HIST_ZONE_LABELS[key]
+    return _HIST_ZONE_LABELS["long_mid"]
+
+
+def _zone_splits(season: str, player_id: int) -> dict:
+    if not player_id:
+        return {"ok": False, "error":
+                "zone_splits is player-scoped: pass player_id"}
+    zones: dict = {}
+    sources = []
+    try:
+        cur = store.read_frame(
+            "silver_shots", "_season = ? AND CAST(PLAYER_ID AS VARCHAR) = CAST(? AS VARCHAR)",
+            [season, str(player_id)])
+    except Exception:
+        cur = None
+    if cur is not None and cur.height > 0:
+        sources.append("silver_shots")
+        for r in cur.to_dicts():
+            z = r.get("SHOT_ZONE_BASIC")
+            if z is None:
+                continue
+            slot = zones.setdefault(str(z), [0, 0])
+            slot[1] += 1
+            if str(r.get("SHOT_MADE_FLAG")) == "1":
+                slot[0] += 1
+    if not zones:
+        try:
+            hist = store.read_frame(
+                "silver_hist_shots", "_season = ? AND CAST(person_id AS VARCHAR) = CAST(? AS VARCHAR)",
+                [season, str(player_id)])
+        except Exception:
+            hist = None
+        if hist is not None and hist.height > 0:
+            sources.append("silver_hist_shots")
+            for r in hist.to_dicts():
+                z = _hist_zone(r.get("shot_value"), r.get("shot_distance"),
+                               r.get("x_legacy"))
+                if z is None:
+                    continue
+                slot = zones.setdefault(z, [0, 0])
+                slot[1] += 1
+                if str(r.get("shot_result")) == "Made":
+                    slot[0] += 1
+    if not zones:
+        return {"ok": False, "error":
+                f"no shot rows for player {player_id} in {season} (silver_shots, silver_hist_shots)"}
+    rows = [{"zone": z, "FGM": m, "FGA": a,
+             "FG_PCT": round(m / a, 3) if a else 0.0}
+            for z, (m, a) in zones.items()]
+    rows.sort(key=lambda d: d["FGA"], reverse=True)
+    return {"ok": True, "data": rows,
+            "meta": {"season": season, "rows": len(rows), "cached": True,
+                     "player_id": player_id, "sources": sources,
+                      "zone_definition": "silver_shots uses native SHOT_ZONE_BASIC; silver_hist_shots rows use the same play-level zone definitions as the zone tool: rim is shot_distance under 8 ft, corner 3 is a 3pt shot with |x_legacy| at or above 220 tenths of feet, above-break 3 is any other 3pt shot, short mid is a 2pt shot under 14 ft, long mid is any other 2pt shot"}}
+
+
 def _fetch_live(
     name: str, season: str, player_id: int, team_id: int,
     game_id: str, game_date: str, stat: str,
@@ -183,8 +344,24 @@ def dataset(
     ids: str = Query(""),
     player_a: str = Query(""),
     player_b: str = Query(""),
+    min_poss: int = Query(200),
     fmt: str = Query("json"),
 ):
+    if name in ("rapm", "lineup_leaders", "clutch", "zone_splits"):
+        if name == "lineup_leaders":
+            res = _lineup_leaders(season, min_poss)
+        elif name == "rapm":
+            res = _table_leaders("silver_rapm", season, "rapm")
+        elif name == "clutch":
+            res = _table_leaders("silver_clutch", season, "PTS")
+        else:
+            res = _zone_splits(season, player_id)
+        if not res.get("ok"):
+            return res
+        if fmt == "csv":
+            df = pl.DataFrame(res["data"])
+            return Response(df.write_csv(), media_type="text/csv")
+        return res
     if name == "wowy" and (player_a or ids):
         from shared.tools.player import get_wowy
 

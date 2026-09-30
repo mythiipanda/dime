@@ -6,6 +6,8 @@ import ExploreFeed from "./ExploreFeed";
 import ExploreIndex from "./ExploreIndex";
 import ExploreSearch from "./ExploreSearch";
 import { LeadersPanel, ShotsPanel } from "./DatasetPanel";
+import AdvancedStatsPanel from "./AdvancedStatsPanel";
+import ZoneSplitsPanel from "./ZoneSplitsPanel";
 import LineupPanel from "./LineupPanel";
 import PlayoffPanel from "./PlayoffPanel";
 import ScoreStrip from "./ScoreStrip";
@@ -106,6 +108,7 @@ export default function ExploreWorkspace({
 
   const leadersKey = `leaders-${ctx?.panel === "leaders" ? (ctx.stat ?? "") : ""}`;
   const shotsKey = `shots-${ctx?.panel === "shots" ? (ctx.playerId ?? ctx.playerName ?? "") : ""}`;
+  const zoneKey = `zone-${ctx?.panel === "shots" ? (ctx.playerId ?? ctx.playerName ?? "") : ""}`;
   const lineupsKey = `lineups-${ctx?.panel === "lineups" ? (ctx.teamAbbr ?? "") : ""}`;
 
   return (
@@ -140,12 +143,22 @@ export default function ExploreWorkspace({
                   onPlayerSelect={handlePlayerSelect}
                 />
               )}
+              {mounted.includes("leaders") && (
+                <AdvancedStatsPanel onPlayerSelect={handlePlayerSelect} />
+              )}
             </div>
             <div hidden={expanded !== "shots"}>
               {mounted.includes("shots") && (
                 <ShotsPanel
                   key={shotsKey}
                   initialPlayer={ctx?.panel === "shots" ? (ctx.playerId ?? ctx.playerName) : undefined}
+                />
+              )}
+              {mounted.includes("shots") && (
+                <ZoneSplitsPanel
+                  key={zoneKey}
+                  initialPlayerId={ctx?.panel === "shots" ? ctx.playerId : undefined}
+                  initialPlayerName={ctx?.panel === "shots" ? ctx.playerName : undefined}
                 />
               )}
             </div>

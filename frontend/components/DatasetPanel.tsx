@@ -5,6 +5,7 @@ import AutoChart from "./AutoChart";
 import CopyLink from "./CopyLink";
 import DataTable from "./DataTable";
 import ExplorePanel, { PanelHeader } from "./ExplorePanel";
+import PlayerLeaderboard from "./PlayerLeaderboard";
 import Skeleton from "./Skeleton";
 import Sparkline from "./Sparkline";
 import { ShotChartCard } from "./ShotChart";
@@ -315,6 +316,9 @@ export function LeadersPanel({
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
       <Leaders initialStat={initialStat} onPlayerSelect={onPlayerSelect} />
+      <ExplorePanel id="explore-board">
+        <PlayerLeaderboard onPlayerSelect={onPlayerSelect} />
+      </ExplorePanel>
       <Standings />
     </div>
   );
