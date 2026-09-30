@@ -11,6 +11,8 @@ PROMPTS_DIR = Path(prompts.__file__).parent
 
 REQUIRED_SECTIONS = ("Objective", "Input", "Output", "Invariants", "Stop condition")
 
+PROMPT_SECTION_OVERRIDES = {"planner": (*REQUIRED_SECTIONS, "Failure-context replan")}
+
 OUTPUT_CONTRACTS = {
     "intake": (contracts.TaskSpec,),
     "intake_admission": (contracts.IntakeAdmissionReview,),
@@ -68,7 +70,7 @@ def test_prompt_files_match_expected_set():
 def test_required_sections_in_order(name):
     text = load_prompt(name)
     headings = re.findall(r"^## (.+)$", text, re.M)
-    assert headings == list(REQUIRED_SECTIONS)
+    assert headings == list(PROMPT_SECTION_OVERRIDES.get(name, REQUIRED_SECTIONS))
 
 
 @pytest.mark.parametrize("name", PROMPT_NAMES)

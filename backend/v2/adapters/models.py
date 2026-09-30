@@ -1542,12 +1542,14 @@ class ModelPlanner(ModelStage):
         super().__init__(*args, **kwargs)
         self._catalog = dict(capability_catalog)
 
-    async def plan(self, task: TaskSpec) -> Plan:
+    async def plan(self, task: TaskSpec, failure_context: dict | None = None) -> Plan:
         payload = {
             "task": task.model_dump(mode="json"),
             "capability_catalog": self._catalog,
             "skills": self._skills.activate(task.skills),
         }
+        if failure_context is not None:
+            payload["failure_context"] = failure_context
         try:
             plan = await self._generate_plan(payload, task)
         except PlannerArgumentError as exc:

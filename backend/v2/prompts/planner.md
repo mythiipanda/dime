@@ -58,3 +58,16 @@ fact. Do not add duplicate, filler, or unrelated nodes.
   a later salary season, but that salary vintage must never replace the
   performance season. Only trade-legality salary matching inherits the contract
   season through its dependency.
+
+## Failure-context replan
+The runtime re-invokes the planner for one bounded pass only when an
+execution finishes with zero complete nodes. The call carries
+failure_context: per uncovered requirement, the failed node names, the
+failure reasons from execution errors, and the remaining
+capability_options (requirement options minus capabilities already tried
+by failed nodes covering that requirement).
+The recovery sub-plan covers only the uncovered requirements. Select
+capabilities only from the remaining capability_options of each
+requirement. Keep a small DAG that satisfies the invariants above.
+Nodes produce evidence, never prose answers. Never retry a failed
+capability with identical arguments. max_attempts stays within 1-5.

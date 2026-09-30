@@ -21,7 +21,9 @@ class Intake(Protocol):
 
 
 class Planner(Protocol):
-    async def plan(self, task: TaskSpec) -> Plan: ...
+    async def plan(
+        self, task: TaskSpec, failure_context: dict | None = None
+    ) -> Plan: ...
 
 
 class Capability(Protocol):

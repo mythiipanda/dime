@@ -138,6 +138,22 @@ class Runtime:
             execution = ExecutionResult.model_validate((await self._stage(
                 turn_id, "execute",
                 self._executor.execute(task, plan, run_id=run_id))).model_dump())
+            if (execution.plan.nodes
+                    and not any(node.status.value == "complete"
+                                for node in execution.plan.nodes)
+                    and _planner_accepts_failure_context(self._planner)):
+                recovery_plan = Plan.model_validate((await self._stage(
+                    turn_id, "replan",
+                    self._planner.plan(
+                        task,
+                        failure_context=_failure_context(task, execution))
+                )).model_dump())
+                self._report_activity({"kind":"stage_summary","phase":"replan","status":"complete","title":"Recovery plan accepted","transition":"completed","correlation_id":"stage:replan","data":{"node_count":len(recovery_plan.nodes),"capabilities":sorted({cap for n in recovery_plan.nodes for cap in n.capability_hints})}})
+                recovery = ExecutionResult.model_validate((await self._stage(
+                    turn_id, "recover",
+                    self._executor.execute(
+                        task, recovery_plan, run_id=run_id))).model_dump())
+                execution = _merge_recovery(execution, recovery)
             draft = DraftReport.model_validate((await self._stage(
                 turn_id, "synthesize",
                 self._synthesizer.synthesize(task, execution.evidence))).model_dump())
@@ -589,6 +605,96 @@ def _merge_claim_results(results: Iterable[ClaimResult]) -> list[ClaimResult]:
             reasons=_unique([*current.reasons, *result.reasons], limit=64),
         )
     return [merged[index] for index in sorted(merged)]
+
+
+def _planner_accepts_failure_context(planner) -> bool:
+    try:
+        parameters = inspect.signature(planner.plan).parameters
+    except (TypeError, ValueError):
+        return True
+    return "failure_context" in parameters or any(
+        parameter.kind is inspect.Parameter.VAR_KEYWORD
+        for parameter in parameters.values()
+    )
+
+
+def _failure_context(task, execution) -> dict:
+    requirements = {item.id: item for item in task.requirements}
+    grouped: dict[str, list] = {}
+    for node in execution.plan.nodes:
+        if node.status.value not in {"failed", "skipped"}:
+            continue
+        for requirement_id in node.covers_requirement_ids:
+            grouped.setdefault(requirement_id, []).append(node)
+    entries = []
+    for requirement_id, nodes in grouped.items():
+        requirement = requirements.get(requirement_id)
+        if requirement is None:
+            continue
+        tried = {hint for node in nodes if node.status.value == "failed"
+                 for hint in node.capability_hints}
+        entries.append({
+            "requirement_id": requirement_id,
+            "failed_nodes": [node.id for node in nodes],
+            "failure_reasons": [message for node in nodes
+                                for message in execution.errors.get(node.id, [])],
+            "remaining_capability_options": [
+                option for option in requirement.capability_options
+                if option not in tried],
+        })
+    return {"requirements": entries}
+
+
+def _merge_recovery(execution: ExecutionResult, recovery: ExecutionResult) -> ExecutionResult:
+    taken = {node.id for node in execution.plan.nodes}
+    renames: dict[str, str] = {}
+    for node in recovery.plan.nodes:
+        target = node.id
+        index = 1
+        while target in taken:
+            index += 1
+            target = f"{node.id}-replan{index}"
+        renames[node.id] = target
+        taken.add(target)
+    merged_nodes = [*execution.plan.nodes, *(
+        node.model_copy(update={
+            "id": renames[node.id],
+            "depends_on": [renames.get(parent, parent)
+                           for parent in node.depends_on],
+        })
+        for node in recovery.plan.nodes
+    )]
+    merged_evidence = dict(execution.evidence_by_node)
+    for node_id, envelope in recovery.evidence_by_node.items():
+        target = renames.get(node_id, node_id)
+        if target != node_id:
+            envelope = envelope.model_copy(
+                update={"evidence_id": f"evidence:{target}"})
+        merged_evidence[target] = envelope
+    merged_attempts = dict(execution.attempts)
+    for node_id, count in recovery.attempts.items():
+        merged_attempts[renames.get(node_id, node_id)] = count
+    merged_errors = dict(execution.errors)
+    for node_id, messages in recovery.errors.items():
+        target = renames.get(node_id, node_id)
+        merged_errors[target] = list(dict.fromkeys(
+            [*merged_errors.get(target, []), *messages]))
+    merged_codes = dict(execution.error_codes)
+    for node_id, codes in recovery.error_codes.items():
+        target = renames.get(node_id, node_id)
+        merged_codes[target] = list(dict.fromkeys(
+            [*merged_codes.get(target, []), *codes]))
+    return ExecutionResult.model_validate({
+        **execution.model_dump(),
+        "plan": {"nodes": [node.model_dump() for node in merged_nodes]},
+        "evidence_by_node": {
+            node_id: envelope.model_dump()
+            for node_id, envelope in merged_evidence.items()
+        },
+        "attempts": merged_attempts,
+        "errors": merged_errors,
+        "error_codes": merged_codes,
+    })
 
 
 def _unique(values: Iterable[str], *, limit: int | None = None) -> list[str]:
