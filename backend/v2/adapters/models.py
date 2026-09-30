@@ -708,6 +708,11 @@ def ranked_team_arguments_error(
     if metric != "" and team == "" and direction not in RANKING_DIRECTIONS:
         return ("RANKED_DIRECTION_UNSPECIFIED: ranked team_ratings requires "
                 "ranking_direction")
+    if metric != "" and direction in RANKING_DIRECTIONS:
+        expected = TEAM_RATING_METRICS.get(metric, {}).get("direction")
+        if expected is not None and direction != expected:
+            return ("RANKED_DIRECTION_CONFLICT: ranked team_ratings ranking_direction "
+                    f"{direction!r} contradicts {metric} (expected {expected!r})")
     return None
 
 class ModelIntake(ModelStage):

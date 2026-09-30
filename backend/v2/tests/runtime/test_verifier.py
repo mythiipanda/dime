@@ -860,3 +860,52 @@ def test_percent_scale_value_rejects_hundredfold_alias():
     assert result.status == VerificationStatus.REPAIR
     assert not result.claim_results[0].supported
     assert any("4500" in reason for reason in result.claim_results[0].reasons)
+
+
+def _rating_board(metric, low, high):
+    from v2.contracts import EvidenceEnvelope
+    return EvidenceEnvelope(
+        evidence_id="ratings", capability="team_ratings", source="fixture",
+        observed_at=datetime.now(UTC), season="2025-26",
+        qualification="All league teams", coverage="Full team ratings table",
+        metric_definitions={"__requested_metric__": metric},
+        rows=[
+            {"TEAM_NAME": "Northport Nights", metric: low, f"{metric}_RANK": 1},
+            {"TEAM_NAME": "Eastvale Embers", metric: high, f"{metric}_RANK": 2},
+        ])
+
+
+def test_inverted_best_defense_claim_fails_direction_check():
+    from v2.contracts import TaskSpec
+    draft = DraftReport(sections=["Defense"], claims=[Claim(
+        text="Eastvale Embers had the lowest defensive rating in 2025-26: 109.7.",
+        kind="observed", evidence_ids=["ratings"])])
+    result = verify_mechanical(
+        TaskSpec(goal="team defense", mode="quick", deliverable="team and value"),
+        draft, [_rating_board("DEF_RATING", 104.3, 109.7)])
+    assert result.status == "repair"
+    assert not result.claim_results[0].supported
+
+
+def test_correct_best_defense_claim_passes_direction_check():
+    from v2.contracts import TaskSpec
+    draft = DraftReport(sections=["Defense"], claims=[Claim(
+        text="Northport Nights had the lowest defensive rating in 2025-26: 104.3.",
+        kind="observed", evidence_ids=["ratings"])])
+    result = verify_mechanical(
+        TaskSpec(goal="team defense", mode="quick", deliverable="team and value"),
+        draft, [_rating_board("DEF_RATING", 104.3, 109.7)])
+    assert result.status == "pass"
+    assert result.claim_results[0].supported
+
+
+def test_inverted_best_offense_claim_fails_direction_check():
+    from v2.contracts import TaskSpec
+    draft = DraftReport(sections=["Offense"], claims=[Claim(
+        text="Northport Nights had the highest offensive rating in 2025-26: 111.2.",
+        kind="observed", evidence_ids=["ratings"])])
+    result = verify_mechanical(
+        TaskSpec(goal="team offense", mode="quick", deliverable="team and value"),
+        draft, [_rating_board("OFF_RATING", 111.2, 118.9)])
+    assert result.status == "repair"
+    assert not result.claim_results[0].supported

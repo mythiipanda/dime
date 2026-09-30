@@ -148,12 +148,12 @@ def test_blocks_per_game_uses_full_blocks_totals_and_unrounded_sort():
 def test_team_rating_tool_enum_and_planner_vocabulary_stay_aligned():
     from shared.tools.rating_metrics import TEAM_RATING_METRICS
     assert TEAM_RATING_METRICS == {
-        "OFF_RATING": "offensive rating",
-        "DEF_RATING": "defensive rating",
-        "NET_RATING": "net rating",
-        "PACE": "pace",
-        "TS_PCT": "true shooting percentage",
-        "TM_TOV_PCT": "turnover percentage",
+        "OFF_RATING": {"label": "offensive rating", "format": "general", "direction": "desc"},
+        "DEF_RATING": {"label": "defensive rating", "format": "general", "direction": "asc"},
+        "NET_RATING": {"label": "net rating", "format": "general", "direction": "desc"},
+        "PACE": {"label": "pace", "format": "general", "direction": "desc"},
+        "TS_PCT": {"label": "true shooting percentage", "format": "decimal3", "direction": "desc"},
+        "TM_TOV_PCT": {"label": "turnover percentage", "format": "decimal3", "direction": "asc"},
     }
 
 def test_bound_warehouse_read_paths_and_lineage(monkeypatch,tmp_path):

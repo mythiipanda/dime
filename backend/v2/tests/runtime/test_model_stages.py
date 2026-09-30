@@ -3246,7 +3246,7 @@ async def test_ranked_conflict_stays_out_of_subquestions_reaches_ledger_and_gaps
             "capability_options": ["team_ratings"],
             "capability_argument_sets": [{
                 "capability_id": "team_ratings",
-                "arguments": {"requested_metric": "OFF_RATING",
+                "arguments": {"requested_metric": "TM_TOV_PCT",
                               "ranking_direction": "asc", "team": "",
                               "season": "2025-26"}}],
             "metric_ids": None, "requested_outputs": None}],
@@ -3768,12 +3768,12 @@ def test_no_ranked_text_derivation_symbols_remain():
 def test_ranked_metric_vocabulary_is_label_map_from_single_source():
     from shared.tools.rating_metrics import RANKING_DIRECTIONS, TEAM_RATING_METRICS
     assert TEAM_RATING_METRICS == {
-        "OFF_RATING": {"label": "offensive rating", "format": "general"},
-        "DEF_RATING": {"label": "defensive rating", "format": "general"},
-        "NET_RATING": {"label": "net rating", "format": "general"},
-        "PACE": {"label": "pace", "format": "general"},
-        "TS_PCT": {"label": "true shooting percentage", "format": "decimal3"},
-        "TM_TOV_PCT": {"label": "turnover percentage", "format": "decimal3"},
+        "OFF_RATING": {"label": "offensive rating", "format": "general", "direction": "desc"},
+        "DEF_RATING": {"label": "defensive rating", "format": "general", "direction": "asc"},
+        "NET_RATING": {"label": "net rating", "format": "general", "direction": "desc"},
+        "PACE": {"label": "pace", "format": "general", "direction": "desc"},
+        "TS_PCT": {"label": "true shooting percentage", "format": "decimal3", "direction": "desc"},
+        "TM_TOV_PCT": {"label": "turnover percentage", "format": "decimal3", "direction": "asc"},
     }
     assert tuple(RANKING_DIRECTIONS) == ("asc", "desc")
     catalog = _typed_catalog()
@@ -3839,3 +3839,28 @@ def test_no_request_text_regex_routes_ranked_arguments():
                 (pathlib.Path(__file__).parents[3] / rel).read_text(), node) or ""
             assert "import re" not in src and "re.compile" not in src, \
                 f"{rel}:{node.name} uses regex for ranked argument routing"
+
+
+def test_ranked_rejects_metric_direction_conflict():
+    from v2.adapters.models import ranked_team_arguments_error
+    assert ranked_team_arguments_error("team_ratings", {
+        "requested_metric": "DEF_RATING", "ranking_direction": "desc",
+        "team": "", "season": "2025-26"}) is not None
+    assert ranked_team_arguments_error("team_ratings", {
+        "requested_metric": "TM_TOV_PCT", "ranking_direction": "desc",
+        "team": "", "season": "2025-26"}) is not None
+    assert ranked_team_arguments_error("team_ratings", {
+        "requested_metric": "OFF_RATING", "ranking_direction": "asc",
+        "team": "", "season": "2025-26"}) is not None
+    assert ranked_team_arguments_error("team_ratings", {
+        "requested_metric": "NET_RATING", "ranking_direction": "asc",
+        "team": "", "season": "2025-26"}) is not None
+    assert ranked_team_arguments_error("team_ratings", {
+        "requested_metric": "DEF_RATING", "ranking_direction": "asc",
+        "team": "", "season": "2025-26"}) is None
+    assert ranked_team_arguments_error("team_ratings", {
+        "requested_metric": "TM_TOV_PCT", "ranking_direction": "asc",
+        "team": "", "season": "2025-26"}) is None
+    assert ranked_team_arguments_error("team_ratings", {
+        "requested_metric": "NET_RATING", "ranking_direction": "desc",
+        "team": "", "season": "2025-26"}) is None

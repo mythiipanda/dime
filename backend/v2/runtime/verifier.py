@@ -31,6 +31,8 @@ _NUMBER = re.compile(
 _DATE = re.compile(r"\b\d{4}-\d{2}-\d{2}\b")
 _SEASON = re.compile(r"\b\d{4}-\d{2}\b(?!-\d{2})")
 _RANK = re.compile(r"(?:#\s*(\d+)|\b(\d+)(?:st|nd|rd|th)\b)", re.IGNORECASE)
+_DIRECTION_MIN_WORDS = re.compile(r"\b(?:best|lowest|fewest)\b", re.IGNORECASE)
+_DIRECTION_MAX_WORDS = re.compile(r"\b(?:best|highest|most)\b", re.IGNORECASE)
 _LIST_LABEL = re.compile(r"(?m)^\s*(\d+)\.\s")
 _SEMANTIC_KEYS = {
     "status", "claim_results", "missing_branches", "contradictions",
@@ -250,6 +252,52 @@ def _row_entity_value_reasons(
             + ", ".join(unsupported)
         ]
     return []
+
+
+def _direction_reasons(
+    claim: Claim, envelopes: Sequence[EvidenceEnvelope],
+) -> list[str]:
+    from shared.tools.rating_metrics import TEAM_RATING_METRICS
+    claimed: set[Decimal] = set()
+    for raw in _number_tokens(claim.text):
+        if _DATE.fullmatch(raw) or _SEASON.fullmatch(raw):
+            continue
+        claimed.update(_canon_number(raw))
+    if not claimed:
+        return []
+    reasons: list[str] = []
+    for envelope in envelopes:
+        metric = envelope.metric_definitions.get("__requested_metric__")
+        entry = TEAM_RATING_METRICS.get(metric)
+        if not entry:
+            continue
+        direction = entry.get("direction")
+        if direction == "asc":
+            if not _DIRECTION_MIN_WORDS.search(claim.text):
+                continue
+        elif direction == "desc":
+            if not _DIRECTION_MAX_WORDS.search(claim.text):
+                continue
+        else:
+            continue
+        rows = envelope.rows
+        if isinstance(rows, dict):
+            rows = [rows]
+        if not isinstance(rows, list):
+            continue
+        values = [decimal_value(row.get(metric)) for row in rows
+                  if isinstance(row, Mapping)]
+        values = [value for value in values if value is not None]
+        if len(values) < 2:
+            continue
+        extreme = min(values) if direction == "asc" else max(values)
+        if extreme not in claimed:
+            bound = "minimum" if direction == "asc" else "maximum"
+            reasons.append(
+                f"best {entry.get('label', metric)} claim must state the {bound} "
+                f"{entry.get('label', metric)} on the board"
+            )
+    return reasons
 
 
 def _scope_reasons(task: TaskSpec,
@@ -526,6 +574,7 @@ def verify_mechanical(
         reasons.extend(_entity_reasons(task, claim, cited))
         reasons.extend(_row_entity_value_reasons(
             claim, cited, calculation_values))
+        reasons.extend(_direction_reasons(claim, cited))
         reasons.extend(_scope_reasons(task, cited))
         reasons.extend(_mixed_source_reasons(claim, cited))
         reasons.extend(_cross_evidence_calculation_reasons(claim, cited))
