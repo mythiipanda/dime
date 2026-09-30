@@ -92,6 +92,35 @@ def _team_abbr(opponent: str) -> tuple[str, str]:
     return str(opponent).upper(), str(opponent)
 
 
+def _coverage_note() -> str:
+    try:
+        con = store.connect(read_only=True)
+        try:
+            seasons = sorted(
+                {row[0] for row in con.execute(
+                    "SELECT DISTINCT _season FROM silver_player_gamelogs"
+                ).fetchall() if row[0]},
+                key=lambda s: s[:4],
+            )
+        finally:
+            con.close()
+    except Exception:
+        return ("silver_player_gamelogs covers the seasons stored in the"
+                " warehouse; vs-opponent is compared to the season"
+                " baseline, not a career baseline")
+    if not seasons:
+        return ("silver_player_gamelogs covers the seasons stored in the"
+                " warehouse; vs-opponent is compared to the season"
+                " baseline, not a career baseline")
+    if len(seasons) == 1:
+        return (f"silver_player_gamelogs covers {seasons[0]} only;"
+                " vs-opponent is compared to the season"
+                " baseline, not a career baseline")
+    return (f"silver_player_gamelogs covers {seasons[0]}–{seasons[-1]}"
+            " only; vs-opponent is compared to the season"
+            " baseline, not a career baseline")
+
+
 @tool
 def get_head_to_head(player: str, opponent: str,
                      season: str = SEASON) -> dict[str, Any]:
@@ -227,8 +256,6 @@ def get_head_to_head(player: str, opponent: str,
         "meta": {
             "source": "warehouse",
             "season": season,
-            "coverage_note": "silver_player_gamelogs covers 2025-26 only;"
-                             " vs-opponent is compared to the season"
-                             " baseline, not a career baseline",
+            "coverage_note": _coverage_note(),
         },
     }

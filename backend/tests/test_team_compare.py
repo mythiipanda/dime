@@ -111,6 +111,7 @@ def test_deterministic_answer_ships_verbatim():
         "not specified.", list(_COMPARE_TR))
     assert ("Denver Nuggets lead with 10010 total PTS "
             "(122.1 per game over 82 games) and a 54-28 record.") in out
-    assert out.startswith("This data covers the 2025-26 season.")
+    assert out.startswith("This data covers the available seasons.")
+    assert "2025-26" not in out
     for bad in ("not specified", "| |", "with .", "warehouse"):
         assert bad not in out

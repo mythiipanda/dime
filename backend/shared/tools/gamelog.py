@@ -745,6 +745,28 @@ def _coverage_note(table: str) -> str:
         return ("silver_playoff_gamelogs covers playoff logs for seeded"
                 " players only; date filters use game dates within the"
                 f" season ({_playoff_coverage()})")
-    return ("silver_player_gamelogs covers 2025-26 regular season only"
-            " (57 seeded players); date filters use game dates within"
-            " that season")
+    try:
+        con = store.connect(read_only=True)
+        try:
+            seasons = sorted(
+                {row[0] for row in con.execute(
+                    "SELECT DISTINCT _season FROM silver_player_gamelogs"
+                ).fetchall() if row[0]},
+                key=lambda s: s[:4],
+            )
+        finally:
+            con.close()
+    except Exception:
+        return ("silver_player_gamelogs covers the seasons stored in the"
+                " warehouse; date filters use game dates within those"
+                " seasons")
+    if not seasons:
+        return ("silver_player_gamelogs covers the seasons stored in the"
+                " warehouse; date filters use game dates within those"
+                " seasons")
+    if len(seasons) == 1:
+        return (f"silver_player_gamelogs covers {seasons[0]} regular"
+                " season; date filters use game dates within that range")
+    return (f"silver_player_gamelogs covers {seasons[0]}–{seasons[-1]}"
+            " regular season; date filters use game dates within that"
+            " range")

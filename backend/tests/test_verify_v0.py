@@ -5,7 +5,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from app.graph import (_COMPUTE_FALLBACK, _scrub_final_text,  # noqa: E402
+from app.graph import (_compute_fallback, _scrub_final_text,  # noqa: E402
                        _verify_draft_numerals, presentation_agent)
 
 BANNED = ("narrower", "did not run", "did not succeed")
@@ -17,8 +17,8 @@ def test_canned_dev_text_fallback_is_honest():
         "NameError again. Traceback. Error. Exception. NameError.")
     for b in BANNED:
         assert b not in out
-    assert out == _COMPUTE_FALLBACK
-    assert "2025-26" in out and "Finals" in out
+    assert out == _compute_fallback()
+    assert "2025-26" not in out and "Finals" in out
 
 
 def test_model_emitted_f61_shape_rewritten():
@@ -27,7 +27,7 @@ def test_model_emitted_f61_shape_rewritten():
         "query for it did not run. Try a narrower ask.")
     for b in BANNED:
         assert b not in out
-    assert out == _COMPUTE_FALLBACK
+    assert out == _compute_fallback()
 
 
 def test_gap_detection_still_fires_on_new_prefix():

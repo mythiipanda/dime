@@ -54,7 +54,7 @@ def test_presentation_watchdog_honest_end():
           "tool_results": [], "calls_made": [], "history": [],
           "primary": "p", "model": "m", "_watchdog_tripped": True}
     out = asyncio.run(_go(st))
-    assert out == g._COMPUTE_FALLBACK
+    assert out == g._compute_fallback()
     assert "narrower" not in out and "did not run" not in out
 
 

@@ -780,6 +780,27 @@ def _season_line(player_id: object, season: str) -> dict[str, Any] | None:
     return None
 
 
+def _gamelog_coverage() -> str:
+    try:
+        con = store.connect(read_only=True)
+        try:
+            seasons = sorted(
+                {row[0] for row in con.execute(
+                    "SELECT DISTINCT _season FROM silver_player_gamelogs"
+                ).fetchall() if row[0]},
+                key=lambda s: s[:4],
+            )
+        finally:
+            con.close()
+    except Exception:
+        return "game logs cover the seasons stored in the warehouse"
+    if not seasons:
+        return "game logs cover the seasons stored in the warehouse"
+    if len(seasons) == 1:
+        return f"game logs cover {seasons[0]}"
+    return f"game logs cover {seasons[0]}–{seasons[-1]}"
+
+
 @tool
 def get_player_intel(player_id: str | int, season: str = SEASON) -> dict[str, Any]:
     """Game log plus shot sample for one player id. Warehouse first."""
@@ -806,8 +827,8 @@ def get_player_intel(player_id: str | int, season: str = SEASON) -> dict[str, An
 
         return {"tool": "get_player_intel", "ok": False,
 
-                "error": (f"No {season} game log rows for {_d}; game "
-                          f"logs cover 2024-25 and 2025-26, and season "
+                "error": (f"No {season} game log rows for {_d}; "
+                          f"{_gamelog_coverage()}, and season "
                           f"lines cover 2014-15 onward.")}
     out = {"tool": "get_player_intel", "ok": True, "rows": rows,
            "meta": meta}
@@ -2851,6 +2872,29 @@ def get_player_evaluation(player: str | int, season: str = SEASON) -> dict[str, 
     }
 
 
+def _rapm_note() -> str:
+    try:
+        con = store.connect(read_only=True)
+        try:
+            seasons = sorted(
+                {row[0] for row in con.execute(
+                    "SELECT DISTINCT _season FROM silver_rapm"
+                ).fetchall() if row[0]},
+                key=lambda s: s[:4],
+            )
+        finally:
+            con.close()
+    except Exception:
+        return "The warehouse has no season range to report."
+    if not seasons:
+        return "The warehouse has no season range to report."
+    if len(seasons) == 1:
+        return (f"RAPM-lite covers {seasons[0]}; FiveThirtyEight RAPTOR "
+                "covers 2014-15 through 2021-22.")
+    return (f"RAPM-lite covers {seasons[0]}–{seasons[-1]}; "
+            "FiveThirtyEight RAPTOR covers 2014-15 through 2021-22.")
+
+
 @tool
 def get_player_rankings(n: int = 15, season: str = SEASON) -> dict[str, Any]:
     """Overall top-N players board ranked by the warehouse impact metric.
@@ -2903,6 +2947,5 @@ def get_player_rankings(n: int = 15, season: str = SEASON) -> dict[str, Any]:
         pass
     return {"tool": "get_player_rankings", "ok": False,
             "error": (f"No overall impact metric covers {season}. "
-                      "RAPM-lite covers 2025-26; FiveThirtyEight RAPTOR "
-                      "covers 2014-15 through 2021-22."),
+                      f"{_rapm_note()}"),
             "meta": meta}

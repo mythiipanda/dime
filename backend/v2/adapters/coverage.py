@@ -163,6 +163,30 @@ def table_seasons(table: str) -> frozenset[str]:
     return seasons
 
 
+def coverage_bounds(
+    tables: Iterable[str] | None = None,
+) -> tuple[str, str] | None:
+    found: set[str] = set()
+    for seasons in tables_seasons(tables).values():
+        found.update(seasons)
+    ranked = [(parse_season_start(season), season) for season in found]
+    ranked = [(start, season) for start, season in ranked if start is not None]
+    if not ranked:
+        return None
+    ranked.sort()
+    return (ranked[0][1], ranked[-1][1])
+
+
+def coverage_label(tables: Iterable[str] | None = None) -> str | None:
+    bounds = coverage_bounds(tables)
+    if bounds is None:
+        return None
+    low, high = bounds
+    if low == high:
+        return low
+    return f"{low}–{high}"
+
+
 def tables_seasons(
     tables: Iterable[str] | None = None,
 ) -> dict[str, frozenset[str]]:

@@ -117,7 +117,8 @@ def test_team_totals_deterministic_lane():
     assert "with ," not in out and "with PTS" not in out
     assert out.count("10010") == 1
     assert "Atlanta Hawks 9900 (120.7 per game)" in out
-    assert out.startswith("This data covers the 2025-26 season.")
+    assert out.startswith("This data covers the available seasons.")
+    assert "2025-26" not in out
 
 
 def test_scrub_nba_api_league_data_collision():

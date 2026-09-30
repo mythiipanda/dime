@@ -25,6 +25,7 @@ from .subagents import delegate_tools, run_desk_streaming, _SHOT_ZONE_RX, _HISTO
 from .subagents import DESK_DEADLINE_S as _DESK_WALL_BUDGET_S
 from shared.tools import v1_tools
 from shared.tools._core import COVERAGE_END, COVERAGE_START, tool_label
+from v2.adapters.coverage import coverage_bounds, coverage_label
 
 ANALYST_SYSTEM = (
     "You are Dime, an NBA data analyst assistant. "
@@ -84,8 +85,8 @@ ANALYST_SYSTEM = (
     "When shot-zone or shot-compare evidence is present, never claim "
     "shot charts or visual courts are unavailable; the evidence card "
     "renders the court. "
-    "State the season the data covers in the first line of every answer; "
-    "write it exactly like 'This data covers the 2025-26 season.' and "
+    "State the seasons the data covers in the first line of every answer; "
+    "use the season range from the tool evidence and "
     "never duplicate the word season. "
     "Never name tools, tables, or query languages. "
     "If the evidence carries an assumption note about which player a "
@@ -97,6 +98,27 @@ ANALYST_SYSTEM = (
     "anything implying it persists across sessions; nothing carries "
     "between sessions (F51). "
 )
+
+
+def _analyst_system_content() -> str:
+    try:
+        _label = coverage_label()
+    except Exception:
+        _label = None
+    if _label is None:
+        _instruction = "do not state any season range and never invent one"
+    elif "–" in _label:
+        _instruction = (
+            f"write it exactly like 'This data covers the {_label} seasons.'"
+        )
+    else:
+        _instruction = (
+            f"write it exactly like 'This data covers the {_label} season.'"
+        )
+    return ANALYST_SYSTEM.replace(
+        "use the season range from the tool evidence",
+        _instruction,
+    )
 
 _PLANNER_PREFIX = (
     "You are the retrieval supervisor. Your tools: resolve_entity, "
@@ -2866,28 +2888,32 @@ async def _triage_seed(question: str, primary: str, model: str,
             except Exception:
                 _rtime.sleep(0.2)
         if _rrows:
-            from shared.tools._core import SEASON as _RCUR
-            from shared.tools._core import HIST_SEASON_START as _RHIST
+            try:
+                _rbounds = coverage_bounds()
+            except Exception:
+                _rbounds = None
             _rtop = _rrows[0]
             _rnxt = "; ".join(
                 f"{r['team_name']} {r['pts']} ({r['game_date']})"
                 for r in _rrows[1:4])
             _rdet = (
-                f"This data covers the {_RHIST} through {_RCUR} "
-                f"seasons.\n"
+                _coverage_span_line() + "\n"
                 f"The highest-scoring team game in coverage: "
                 f"{_rtop['team_name']} scored {_rtop['pts']} points "
                 f"({_rtop['matchup']}, {_rtop['game_date']}, "
                 f"{_rtop['_season']} season).")
             if _rnxt:
                 _rdet += f" Next: {_rnxt}."
-            _rdet += (" Team games before 2009-10 are outside "
-                      "coverage.")
+            if _rbounds is not None:
+                _rdet += (f" Team games before {_rbounds[0]} are "
+                          "outside coverage.")
+            _rspan = (f"{_rbounds[0]}..{_rbounds[1]}"
+                      if _rbounds is not None else "")
             _rres = {
                 "tool": "pin_team_scoring_record", "ok": True,
                 "rows": _rrows,
                 "meta": {"source": "warehouse",
-                         "span": f"{_RHIST}..{_RCUR}",
+                         "span": _rspan,
                          "deterministic_answer": _rdet}}
             yield _event("tool_call", {
                 "node": "data_retrieval",
@@ -2922,8 +2948,6 @@ async def _triage_seed(question: str, primary: str, model: str,
     if (re.search(r"\bfour[\s-]*factors?\b", question, re.IGNORECASE)
             and not found_p
             and not is_trade and not is_cast):
-        from shared.tools._core import SEASON as _FFCUR
-
         def _ffpct(v: object) -> str:
 
 
@@ -2951,7 +2975,7 @@ async def _triage_seed(question: str, primary: str, model: str,
             if len(_cmprows) >= 2:
                 _ca, _cb = _cmprows[0], _cmprows[1]
                 _clines = [
-                    f"This data covers the {_FFCUR} season.",
+                    _coverage_claim(),
                     f"{_ca['TEAM']} vs {_cb['TEAM']} four factors:",
                     (f"- eFG%: {_ca['TEAM']} {_ffpct(_ca['EFG_PCT'])} vs "
                      f"{_cb['TEAM']} {_ffpct(_cb['EFG_PCT'])}"),
@@ -2993,7 +3017,7 @@ async def _triage_seed(question: str, primary: str, model: str,
             if len(_frows) == 1:
                 _r0 = _frows[0]
                 _ffdet = (
-                    f"This data covers the {_FFCUR} season.\n"
+                    _coverage_claim() + "\n"
                     f"{_r0['TEAM']} four factors: eFG% "
                     f"{_ffpct(_r0['EFG_PCT'])}, "
                     f"TOV% {_ffpct(_r0['TOV_PCT'])}, "
@@ -3007,7 +3031,7 @@ async def _triage_seed(question: str, primary: str, model: str,
                     f"(record {_r0['W']}-{_r0['GP'] - _r0['W']}).")
             else:
                 _ffdet = (
-                    f"This data covers the {_FFCUR} season.\n"
+                    _coverage_claim() + "\n"
                     "League four-factors board (offense): "
                     + "; ".join(
                         f"{r['TEAM']} eFG% {_ffpct(r['EFG_PCT'])}, "
@@ -5277,9 +5301,8 @@ async def analytics_agent(state: DimeState) -> AsyncGenerator[dict[str, Any], No
 
         _led = [f for f in (state.get("ledger") or []) if isinstance(f, str)]
         if _led:
-            from shared.tools._core import SEASON as _CUR_SEASON
             state["analysis"] = (
-                f"This data covers the {_CUR_SEASON} season.\n"
+                _coverage_claim() + "\n"
                 "From earlier in this conversation: "
                 + "; ".join(_led[-_LEDGER_MAX:]) + ".")
             yield _event(
@@ -5345,7 +5368,7 @@ async def analytics_agent(state: DimeState) -> AsyncGenerator[dict[str, Any], No
             state["primary"],  # type: ignore[arg-type]
             state["model"],
             [
-                SystemMessage(content=ANALYST_SYSTEM),
+                SystemMessage(content=_analyst_system_content()),
                 HumanMessage(
                     content=(
                         f"Question: {state['question']}"
@@ -5413,9 +5436,49 @@ _DEV_TEXT_RX = re.compile(
 
 
 
-_COMPUTE_FALLBACK = ("That one didn't come back from the dataset just "
-                     "now. It covers 2025-26 player and team stats, "
-                     "game logs, standings, playoffs and the Finals.")
+def _coverage_claim() -> str:
+    try:
+        _label = coverage_label()
+    except Exception:
+        _label = None
+    if _label is None:
+        return "This data covers the available seasons."
+    if "–" in _label:
+        return f"This data covers the {_label} seasons."
+    return f"This data covers the {_label} season."
+
+
+def _coverage_span_line() -> str:
+    try:
+        _bounds = coverage_bounds()
+    except Exception:
+        _bounds = None
+    if _bounds is None:
+        return "This data covers the available seasons."
+    _lo, _hi = _bounds
+    if _lo == _hi:
+        return f"This data covers the {_hi} season."
+    return f"This data covers the {_lo} through {_hi} seasons."
+
+
+def _coverage_phrase() -> str:
+    try:
+        _label = coverage_label()
+    except Exception:
+        _label = None
+    if _label is None:
+        return ("player and team stats, game logs, standings, "
+                "playoffs and the Finals")
+    if "–" in _label:
+        return (f"{_label} player and team stats, game logs, standings, "
+                "playoffs and the Finals")
+    return (f"the {_label} season: player and team stats, game logs, "
+            "standings, playoffs and the Finals")
+
+
+def _compute_fallback() -> str:
+    return ("That one didn't come back from the dataset just now. It covers "
+            + _coverage_phrase() + ".")
 
 
 def _renumber_lists(text: str) -> str:
@@ -5443,7 +5506,7 @@ def _scrub_final_text(text: str) -> str:
     text = re.sub(
         r"I could not compute that from the dataset[^.!?\n]*[.!?]"
         r"\s*(?:Try a narrower ask[^.!?\n]*[.!?]?\s*)?",
-        _COMPUTE_FALLBACK + " ", text, flags=re.IGNORECASE)
+        _compute_fallback() + " ", text, flags=re.IGNORECASE)
     text = re.sub(r"(?:^|\s)Try a narrower ask[^.!?\n]*[.!?]?\s*",
                   " ", text, flags=re.IGNORECASE)
 
@@ -5452,7 +5515,7 @@ def _scrub_final_text(text: str) -> str:
     _hits = _DEV_TEXT_RX.findall(text)
     _covered = sum(len(h) for h in _hits)
     if _hits and _covered >= 0.6 * len(text):
-        return _COMPUTE_FALLBACK
+        return _compute_fallback()
     cleaned = _DEV_TEXT_RX.sub("that data pull did not complete", text)
 
 
@@ -5734,7 +5797,8 @@ def _scrub_final_text(text: str) -> str:
 
 
     _sfx = re.compile(
-        r"(This data covers the \d{4}-\d{2} season\.)", re.IGNORECASE)
+        r"(This data covers the \d{4}-\d{2}(?:–\d{4}-\d{2})? seasons?\.)",
+        re.IGNORECASE)
     _seen = False
     def _dedupe_season(m: "re.Match[str]") -> str:
         nonlocal _seen
@@ -5782,7 +5846,7 @@ def _scrub_final_text(text: str) -> str:
         r"did not succeed|not defined|no such column|failed after|"
         r"coroutine|aiter", cleaned, re.IGNORECASE)
     if _errish and not re.search(r"\d", cleaned):
-        return _COMPUTE_FALLBACK
+        return _compute_fallback()
     return cleaned.strip()
 
 
@@ -6264,7 +6328,7 @@ async def presentation_agent(state: DimeState) -> AsyncGenerator[dict[str, Any],
 
 
 
-    _core = re.sub(r"This data covers the \d{4}-\d{2} season\.?", "",
+    _core = re.sub(r"This data covers the \d{4}-\d{2}(?:–\d{4}-\d{2})? seasons?\.?", "",
                    text, flags=re.IGNORECASE)
     _words = re.findall(r"[A-Za-z]+", _core)
     if ((len(_words) < 5 and not re.search(r"\d", _core))
@@ -6294,10 +6358,8 @@ async def presentation_agent(state: DimeState) -> AsyncGenerator[dict[str, Any],
                      "into a clean summary - the evidence panel below "
                      "has the full breakdown.")
                     if _has_rows else
-                    ("I could not find that in the dataset. "
-                     "It covers 2025-26 player and team stats, "
-                     "game logs, standings, playoffs and the "
-                     "Finals - try one of those."))
+                    ("I could not find that in the dataset. It covers "
+                     + _coverage_phrase() + " - try one of those."))
     _scrubbed = _scrub_final_text(text)
 
 
@@ -6334,9 +6396,7 @@ async def presentation_agent(state: DimeState) -> AsyncGenerator[dict[str, Any],
                 if _candidate.get("tool") not in (
                         "get_trade_check", "pin_team_scoring_record",
                         "get_team_four_factors"):
-                    from shared.tools._core import SEASON as _CUR_SEASON
-                    _det_season = _meta.get("season") or _CUR_SEASON
-                    _scrubbed = (f"This data covers the {_det_season} season.\n"
+                    _scrubbed = (_coverage_claim() + "\n"
                                  + _authoritative)
             except Exception:
                 pass
@@ -6373,33 +6433,11 @@ async def presentation_agent(state: DimeState) -> AsyncGenerator[dict[str, Any],
                     _det += (f" Next in total {_stat_word}: "
                              f"{_runners}.")
                 try:
-                    from shared.tools._core import SEASON as _CUR_SEASON
-                    _det = (f"This data covers the {_CUR_SEASON} "
-                            f"season.\n" + _det)
+                    _det = _coverage_claim() + "\n" + _det
                 except Exception:
                     pass
                 _scrubbed = _det
             break
-
-
-
-    if not re.search(r"20\d\d-\d\d|last season|career|"
-                     r"all[\s-]*time|histor", state.get("question", "")
-                     or "", re.IGNORECASE):
-        try:
-            from shared.tools._core import SEASON as _CUR_SEASON
-            _scrubbed = re.sub(
-                r"This data covers the \d{4}-\d{2} season",
-                f"This data covers the {_CUR_SEASON} season",
-                _scrubbed, count=1)
-            _scrubbed = re.sub(
-                r"This data covers the 20\d\d season",
-                f"This data covers the {_CUR_SEASON} season",
-                _scrubbed, count=1)
-        except Exception:
-            pass
-
-
 
 
 
@@ -6421,6 +6459,28 @@ async def presentation_agent(state: DimeState) -> AsyncGenerator[dict[str, Any],
     for _tr in state.get("tool_results") or []:
         if isinstance(_tr, dict):
             _row_seasons(_tr.get("rows"), _ev_seasons)
+
+
+    if len(_ev_seasons) < 2 and not re.search(
+            r"20\d\d-\d\d|last season|career|"
+            r"all[\s-]*time|histor", state.get("question", "")
+            or "", re.IGNORECASE):
+        try:
+            _norm_claim = _coverage_claim()
+            if _norm_claim.endswith("."):
+                _norm_claim = _norm_claim[:-1]
+            _scrubbed = re.sub(
+                r"This data covers the \d{4}-\d{2} season",
+                _norm_claim,
+                _scrubbed, count=1)
+            _scrubbed = re.sub(
+                r"This data covers the 20\d\d season",
+                _norm_claim,
+                _scrubbed, count=1)
+        except Exception:
+            pass
+
+
     if len(_ev_seasons) >= 2:
         _ys = sorted(int(s[:4]) for s in _ev_seasons)
         _span = (f"{_ys[0]}-{str(_ys[0] + 1)[2:]} through "
@@ -6441,10 +6501,14 @@ async def presentation_agent(state: DimeState) -> AsyncGenerator[dict[str, Any],
         _qtxt, re.IGNORECASE) and not re.search(r"20\d\d-\d\d", _qtxt)
     if _hist_q:
         try:
-            from shared.tools._core import SEASON as _CUR_SEASON
-            from shared.tools._core import HIST_SEASON_START as _HIST_START
-            _hist_line = (f"This data covers the {_HIST_START} through "
-                          f"{_CUR_SEASON} seasons.")
+            _hist_bounds = coverage_bounds()
+            if _hist_bounds is None:
+                _hist_line = "This data covers the available seasons."
+            elif _hist_bounds[0] == _hist_bounds[1]:
+                _hist_line = f"This data covers the {_hist_bounds[1]} season."
+            else:
+                _hist_line = (f"This data covers the {_hist_bounds[0]} "
+                              f"through {_hist_bounds[1]} seasons.")
             _new, _n = re.subn(
                 r"This data covers the 20\d\d-\d\d season\.",
                 _hist_line, _scrubbed, count=1)
@@ -6484,7 +6548,7 @@ async def presentation_agent(state: DimeState) -> AsyncGenerator[dict[str, Any],
         and len(r["summary"].strip()) >= 40
         for r in state["tool_results"])
     if _gap and not _evidenced and not _delegate_ok and (
-            _scrubbed.startswith(_COMPUTE_FALLBACK[:40])
+            _scrubbed.startswith(_compute_fallback()[:40])
             or re.search(
                 r"did not succeed|no data is available|"
                 r"i cannot|can't rank|not available|"
@@ -6515,20 +6579,18 @@ async def presentation_agent(state: DimeState) -> AsyncGenerator[dict[str, Any],
 
 
 
-    _core2 = re.sub(r"This data covers the \d{4}-\d{2} season\.?", "",
+    _core2 = re.sub(r"This data covers the \d{4}-\d{2}(?:–\d{4}-\d{2})? seasons?\.?", "",
                     _scrubbed, flags=re.IGNORECASE)
     _words2 = re.findall(r"[A-Za-z]+", _core2)
     if len(_words2) < 5 and not re.search(r"\d", _core2):
         _scrubbed = (_gap or _desk_failure_note(state) or
-                     ("I could not find that in the dataset. "
-                             "It covers 2025-26 player and team stats, "
-                             "game logs, standings, playoffs and the "
-                             "Finals - try one of those."))
+                     ("I could not find that in the dataset. It covers "
+                      + _coverage_phrase() + " - try one of those."))
 
 
 
     if state.get("_watchdog_tripped") and not _evidenced and not _delegate_ok:
-        _scrubbed = _gap or _COMPUTE_FALLBACK
+        _scrubbed = _gap or _compute_fallback()
     _scrubbed = _renumber_lists(_scrubbed)
 
 
