@@ -2645,8 +2645,14 @@ def get_trade_value(
 
 def _norm_draft_year(season: str) -> str:
     s = str(season or "").strip()
-    m = re.fullmatch(r"(20\d\d)-\d\d", s)
-    return m.group(1) if m else s
+    if re.fullmatch(r"(19|20)\d\d", s):
+        return s
+    m = re.fullmatch(r"((?:19|20)\d\d)-(\d\d)", s)
+    if m and int(m.group(2)) == (int(m.group(1)) + 1) % 100:
+        return str(int(m.group(1)) + 1)
+    raise ValueError(
+        f"could not match {s!r} to a draft year "
+        "(use a calendar year like 2025 or a season slug like 2024-25)")
 
 
 @tool
@@ -2654,7 +2660,10 @@ def get_draft_board(season: str = "2025") -> dict[str, Any]:
     """Draft board: college production plus combine measurements, blended rank."""
     import unicodedata as _ud
 
-    season = _norm_draft_year(season)
+    try:
+        season = _norm_draft_year(season)
+    except ValueError as exc:
+        return {"tool": "get_draft_board", "ok": False, "error": str(exc)}
 
     from ..sources import cbb as _cbb
 
@@ -2891,7 +2900,10 @@ def get_lineup_leaders(min_minutes: int = 100, limit: int = 10,
 @tool
 def get_combine(season: str = "2025") -> dict[str, Any]:
     """Draft combine measurements plus shooting drills for one draft year."""
-    season = _norm_draft_year(season)
+    try:
+        season = _norm_draft_year(season)
+    except ValueError as exc:
+        return {"tool": "get_combine", "ok": False, "error": str(exc)}
     rows, meta = _warehouse_or_live(
         "silver_combine", "_season = ?",
         [season], lambda: nba_stats.combine(season), season,
@@ -3595,8 +3607,8 @@ def get_draft_model(season: str = "2025") -> dict[str, Any]:
     try:
         from ..sources import cbb as _cbb
         from sklearn.linear_model import LogisticRegression
-        yr = 2025 if str(season) == "2025" else int(str(season))
-        prod = _cbb.get_player_stats(yr)
+        season = _norm_draft_year(season)
+        prod = _cbb.get_player_stats(int(season))
         if not prod.ok or prod.frame.height == 0:
             return {"tool": "get_draft_model", "ok": False,
                     "error": prod.error or "college stats empty"}

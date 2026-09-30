@@ -107,12 +107,20 @@ def test_player_intel_out_of_range_2013_14(monkeypatch, tmp_path):
     assert FLOOR in text
 
 
-def test_find_out_of_range_picks_marker():
+def test_find_out_of_range_picks_marker(monkeypatch, tmp_path):
+    _warehouse(monkeypatch, tmp_path)
     import app.graph as graph_mod
+    from shared.sources.base import empty as _empty
+    from shared.sources import cbb as _cbb
     from shared.tools.league import get_draft_board
+
+    monkeypatch.setattr(
+        _cbb, "get_player_stats",
+        lambda yr=2025: _empty("barttorvik", str(yr), "blocked"))
 
     span = graph_mod._TOOL_SEASON_COVERAGE["get_draft_board"]
     assert span[0] == "1996-97"
+    assert "get_draft_board" in graph_mod._SEASON_CLAMP_EXEMPT
 
     async def _go():
         state = graph_mod.DimeState(
@@ -135,11 +143,8 @@ def test_find_out_of_range_picks_marker():
     state, _ = asyncio.run(_go())
     result = state["tool_results"][0]
     assert result.get("ok") is False
-    assert result.get("season_error") is True
-    text = str(result.get("error", ""))
-    assert "1989-90" in text
-    assert span[0] in text
-    assert span[1] in text
+    assert result.get("season_error") is not True
+    assert "1989-90" not in str(result.get("error", ""))
 
 
 def test_honest_answer_names_floor_and_nearest():
