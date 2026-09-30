@@ -966,7 +966,9 @@ def _player_team_abbr(pid: int, season: str | None) -> str:
     from shared import store
     from shared.tools._core import resolve_season as _resolve_abbr_season
 
-    season = _resolve_abbr_season(season) or ""
+    season = _resolve_abbr_season(season)
+    if not season:
+        return ""
 
     for _ in range(3):
         try:
@@ -1431,7 +1433,7 @@ def _user_safe_tool_error(name: str, err: str) -> str:
     return base[:120]
 
 
-_TOOL_SEASON_COVERAGE: dict[str, tuple[str, str | None]] = {
+_TOOL_SEASON_COVERAGE: dict[str, tuple[str, str]] = {
     "get_raptor_history": ("1976-77", COVERAGE_END),
     "get_draft_board": ("1996-97", COVERAGE_END),
     "get_draft_model": ("1996-97", COVERAGE_END),

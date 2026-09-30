@@ -135,15 +135,15 @@ def get_award_race(award: str, season: str | None = None) -> dict[str, Any]:
 
     The formula is computed from warehouse stats only and listed in meta.
     """
-    season = resolve_season(season)
-    import statistics as _stats
-
-    season = clamp_season(season)
     canon = normalize_award(award)
     if canon is None:
         valid = ", ".join(sorted(AWARD_SPECS))
         return {"tool": "get_award_race", "ok": False, "rows": {},
                 "meta": {}, "error": f"unknown award '{award}'; valid awards: {valid}"}
+    season = resolve_season(season)
+    import statistics as _stats
+
+    season = clamp_season(season)
     spec = AWARD_SPECS[canon]
     if spec.get("unavailable"):
         return {"tool": "get_award_race", "ok": False, "rows": {},
