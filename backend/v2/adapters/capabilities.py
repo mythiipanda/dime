@@ -258,6 +258,18 @@ _LIST = [
     Capability(
         name="clutch",
         tool_name="get_clutch",
+        units={"GP": COUNT, "W": COUNT, "L": COUNT, "PTS": COUNT,
+               "FG_PCT": FRACTION, "FG3_PCT": FRACTION,
+               "PLUS_MINUS": "points"},
+        metric_definitions={
+            "GP": "Clutch games played.",
+            "W": "Clutch wins.",
+            "L": "Clutch losses.",
+            "PTS": "Total clutch points.",
+            "FG_PCT": "Clutch field-goal share, fraction scale 0-1.",
+            "FG3_PCT": "Clutch three-point share, fraction scale 0-1.",
+            "PLUS_MINUS": "Clutch point differential.",
+        },
         qualification="Clutch: last 5 minutes, margin 5 or fewer.",
     ),
     Capability(name="playoffs", tool_name="get_playoffs"),

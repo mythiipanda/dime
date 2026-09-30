@@ -912,3 +912,119 @@ def test_one_percent_source_accepts_one_percent_claim():
     result = verify_mechanical(task(), report(claim), [ev])
     assert result.status == VerificationStatus.PASS
     assert result.claim_results[0].supported
+def _rating_board(metric, low, high):
+    from v2.contracts import EvidenceEnvelope
+    return EvidenceEnvelope(
+        evidence_id="ratings", capability="team_ratings", source="fixture",
+        observed_at=datetime.now(UTC), season="2025-26",
+        qualification="All league teams", coverage="Full team ratings table",
+        metric_definitions={"__requested_metric__": metric},
+        rows=[
+            {"TEAM_NAME": "Northport Nights", metric: low, f"{metric}_RANK": 1},
+            {"TEAM_NAME": "Eastvale Embers", metric: high, f"{metric}_RANK": 2},
+        ])
+
+
+def test_inverted_best_defense_claim_fails_direction_check():
+    from v2.contracts import TaskSpec
+    draft = DraftReport(sections=["Defense"], claims=[Claim(
+        text="Eastvale Embers had the lowest defensive rating in 2025-26: 109.7.",
+        kind="observed", evidence_ids=["ratings"])])
+    result = verify_mechanical(
+        TaskSpec(goal="team defense", mode="quick", deliverable="team and value"),
+        draft, [_rating_board("DEF_RATING", 104.3, 109.7)])
+    assert result.status == "repair"
+    assert not result.claim_results[0].supported
+
+
+def test_correct_best_defense_claim_passes_direction_check():
+    from v2.contracts import TaskSpec
+    draft = DraftReport(sections=["Defense"], claims=[Claim(
+        text="Northport Nights had the lowest defensive rating in 2025-26: 104.3.",
+        kind="observed", evidence_ids=["ratings"])])
+    result = verify_mechanical(
+        TaskSpec(goal="team defense", mode="quick", deliverable="team and value"),
+        draft, [_rating_board("DEF_RATING", 104.3, 109.7)])
+    assert result.status == "pass"
+    assert result.claim_results[0].supported
+
+
+def test_inverted_best_offense_claim_fails_direction_check():
+    from v2.contracts import TaskSpec
+    draft = DraftReport(sections=["Offense"], claims=[Claim(
+        text="Northport Nights had the highest offensive rating in 2025-26: 111.2.",
+        kind="observed", evidence_ids=["ratings"])])
+    result = verify_mechanical(
+        TaskSpec(goal="team offense", mode="quick", deliverable="team and value"),
+        draft, [_rating_board("OFF_RATING", 111.2, 118.9)])
+    assert result.status == "repair"
+    assert not result.claim_results[0].supported
+
+def _clutch_team_board():
+    from v2.contracts import EvidenceEnvelope
+    return EvidenceEnvelope(
+        evidence_id="clutch", capability="clutch", source="fixture",
+        observed_at=datetime.now(UTC), season="2025-26",
+        qualification="Clutch: last 5 minutes, margin 5 or fewer.",
+        coverage="Team clutch population for the season.",
+        rows=[
+            {"TEAM_NAME": "Eastvale Embers", "GP": 10, "W": 7, "L": 3,
+             "PTS": 52, "FG_PCT": 0.48, "FG3_PCT": 0.41, "PLUS_MINUS": 31},
+            {"TEAM_NAME": "Northport Nights", "GP": 11, "W": 5, "L": 6,
+             "PTS": 48, "FG_PCT": 0.44, "FG3_PCT": 0.36, "PLUS_MINUS": -12},
+        ])
+
+
+def test_clutch_net_claim_borrowing_overall_rating_column_fails():
+    from v2.contracts import TaskSpec
+    draft = DraftReport(sections=["Clutch"], claims=[Claim(
+        text="Eastvale Embers had the best clutch net rating in 2025-26: 8.4.",
+        kind="observed", evidence_ids=["clutch", "ratings"])])
+    result = verify_mechanical(
+        TaskSpec(goal="clutch net rating", mode="quick", deliverable="team and value"),
+        draft, [_clutch_team_board(), _rating_board("NET_RATING", 4.2, 8.4)])
+    assert result.status == "repair"
+    assert not result.claim_results[0].supported
+    assert any("NET_RATING" in reason for reason in result.claim_results[0].reasons)
+
+
+def test_off_rating_value_cannot_pose_as_requested_defense_value():
+    from v2.contracts import EvidenceEnvelope, TaskSpec
+    ev = EvidenceEnvelope(
+        evidence_id="ratings", capability="team_ratings", source="fixture",
+        observed_at=datetime.now(UTC), season="2025-26",
+        qualification="All league teams", coverage="Full team ratings table",
+        metric_definitions={"__requested_metric__": "DEF_RATING"},
+        rows=[
+            {"TEAM_NAME": "Northport Nights", "OFF_RATING": 112.3, "DEF_RATING": 104.3},
+            {"TEAM_NAME": "Eastvale Embers", "OFF_RATING": 118.9, "DEF_RATING": 109.7},
+        ])
+    draft = DraftReport(sections=["Defense"], claims=[Claim(
+        text="Northport Nights defensive rating in 2025-26 was 112.3.",
+        kind="observed", evidence_ids=["ratings"])])
+    result = verify_mechanical(
+        TaskSpec(goal="team defense", mode="quick", deliverable="team and value"),
+        draft, [ev])
+    assert result.status == "repair"
+    assert not result.claim_results[0].supported
+
+
+def test_requested_defense_value_from_own_column_still_passes():
+    from v2.contracts import EvidenceEnvelope, TaskSpec
+    ev = EvidenceEnvelope(
+        evidence_id="ratings", capability="team_ratings", source="fixture",
+        observed_at=datetime.now(UTC), season="2025-26",
+        qualification="All league teams", coverage="Full team ratings table",
+        metric_definitions={"__requested_metric__": "DEF_RATING"},
+        rows=[
+            {"TEAM_NAME": "Northport Nights", "OFF_RATING": 112.3, "DEF_RATING": 104.3},
+            {"TEAM_NAME": "Eastvale Embers", "OFF_RATING": 118.9, "DEF_RATING": 109.7},
+        ])
+    draft = DraftReport(sections=["Defense"], claims=[Claim(
+        text="Northport Nights defensive rating in 2025-26 was 104.3.",
+        kind="observed", evidence_ids=["ratings"])])
+    result = verify_mechanical(
+        TaskSpec(goal="team defense", mode="quick", deliverable="team and value"),
+        draft, [ev])
+    assert result.status == "pass"
+    assert result.claim_results[0].supported

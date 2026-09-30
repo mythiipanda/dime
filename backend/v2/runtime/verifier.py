@@ -31,6 +31,8 @@ _NUMBER = re.compile(
 _DATE = re.compile(r"\b\d{4}-\d{2}-\d{2}\b")
 _SEASON = re.compile(r"\b\d{4}-\d{2}\b(?!-\d{2})")
 _RANK = re.compile(r"(?:#\s*(\d+)|\b(\d+)(?:st|nd|rd|th)\b)", re.IGNORECASE)
+_DIRECTION_MIN_WORDS = re.compile(r"\b(?:best|lowest|fewest)\b", re.IGNORECASE)
+_DIRECTION_MAX_WORDS = re.compile(r"\b(?:best|highest|most)\b", re.IGNORECASE)
 _LIST_LABEL = re.compile(r"(?m)^\s*(\d+)\.\s")
 _SEMANTIC_KEYS = {
     "status", "claim_results", "missing_branches", "contradictions",
@@ -251,6 +253,52 @@ def _row_entity_value_reasons(
     return []
 
 
+def _direction_reasons(
+    claim: Claim, envelopes: Sequence[EvidenceEnvelope],
+) -> list[str]:
+    from shared.tools.rating_metrics import TEAM_RATING_METRICS
+    claimed: set[Decimal] = set()
+    for raw in _number_tokens(claim.text):
+        if _DATE.fullmatch(raw) or _SEASON.fullmatch(raw):
+            continue
+        claimed.update(_canon_number(raw))
+    if not claimed:
+        return []
+    reasons: list[str] = []
+    for envelope in envelopes:
+        metric = envelope.metric_definitions.get("__requested_metric__")
+        entry = TEAM_RATING_METRICS.get(metric)
+        if not entry:
+            continue
+        direction = entry.get("direction")
+        if direction == "asc":
+            if not _DIRECTION_MIN_WORDS.search(claim.text):
+                continue
+        elif direction == "desc":
+            if not _DIRECTION_MAX_WORDS.search(claim.text):
+                continue
+        else:
+            continue
+        rows = envelope.rows
+        if isinstance(rows, dict):
+            rows = [rows]
+        if not isinstance(rows, list):
+            continue
+        values = [decimal_value(row.get(metric)) for row in rows
+                  if isinstance(row, Mapping)]
+        values = [value for value in values if value is not None]
+        if len(values) < 2:
+            continue
+        extreme = min(values) if direction == "asc" else max(values)
+        if extreme not in claimed:
+            bound = "minimum" if direction == "asc" else "maximum"
+            reasons.append(
+                f"best {entry.get('label', metric)} claim must state the {bound} "
+                f"{entry.get('label', metric)} on the board"
+            )
+    return reasons
+
+
 def _scope_reasons(task: TaskSpec,
                    envelopes: Sequence[EvidenceEnvelope]) -> list[str]:
     reasons: list[str] = []
@@ -311,6 +359,103 @@ def _metric_unit_reasons(claim: Claim,
                 continue
             elif unit_name.replace("_", " ") not in text:
                 reasons.append(f"metric {metric} is stated without its declared unit {unit}")
+    return reasons
+
+
+def _column_canon_values(envelope: EvidenceEnvelope, metric: str) -> set[Decimal]:
+    unit_map = {str(key).casefold(): str(item)
+                for key, item in envelope.units.items()}
+    values: set[Decimal] = set()
+    for item in iter_values(envelope):
+        last = str(item.path).rsplit(".", 1)[-1].split("[", 1)[0]
+        if last.casefold() != metric.casefold():
+            continue
+        unit = None
+        for segment in reversed(str(item.path).split(".")):
+            name = segment.split("[", 1)[0].casefold()
+            if name in unit_map:
+                unit = unit_map[name]
+                break
+        values.update(_canon_number(item.value, unit))
+        if isinstance(item.value, str):
+            for token in _number_tokens(item.value):
+                values.update(_canon_number(token, unit))
+    return values
+
+
+def _metric_identity_reasons(
+    claim: Claim,
+    envelopes: Sequence[EvidenceEnvelope],
+    supported_numbers: set[Decimal],
+    calculation_values: set[Decimal] | None = None,
+    allowed_numbers: set[Decimal] | None = None,
+) -> list[str]:
+    requested = sorted({
+        str(envelope.metric_definitions.get("__requested_metric__")).upper()
+        for envelope in envelopes
+        if envelope.metric_definitions.get("__requested_metric__")
+    })
+    if not requested:
+        return []
+    reasons: list[str] = []
+    columns = {
+        metric: {envelope.evidence_id: _column_canon_values(envelope, metric)
+                 for envelope in envelopes}
+        for metric in requested
+    }
+    for metric in requested:
+        carriers = {evidence_id for evidence_id, values in columns[metric].items()
+                    if values}
+        if not carriers:
+            reasons.append(
+                f"claim about {metric} cites no evidence carrying a {metric} column"
+            )
+            continue
+        for envelope in envelopes:
+            if envelope.evidence_id not in carriers:
+                reasons.append(
+                    f"cited {envelope.capability} evidence {envelope.evidence_id} "
+                    f"carries no {metric} column"
+                )
+    bound: set[Decimal] = set()
+    for metric in requested:
+        for values in columns[metric].values():
+            bound.update(values)
+    grounded = set(calculation_values or set()) | set(allowed_numbers or set())
+    for envelope in envelopes:
+        for qualifier in (envelope.qualification, envelope.coverage):
+            if qualifier:
+                for token in _number_tokens(qualifier):
+                    grounded.update(_canon_number(token))
+    rank_numbers = {
+        value for match in _RANK.finditer(claim.text)
+        for value in match.groups() if value is not None
+    }
+    for raw in _number_tokens(claim.text):
+        if _DATE.fullmatch(raw) or _SEASON.fullmatch(raw):
+            continue
+        if (raw == "100" and "points_per_100_possessions" in {
+                unit.casefold() for envelope in envelopes
+                for unit in envelope.units.values()}
+                and re.search(r"points?\s+per\s+100\s+possessions?",
+                              claim.text, re.IGNORECASE)):
+            continue
+        if raw in rank_numbers:
+            continue
+        canon = _canon_number(raw)
+        if canon & bound:
+            continue
+        if not (canon & supported_numbers):
+            continue
+        if canon & grounded:
+            continue
+        if (claim.kind == ClaimKind.DERIVED and claim.calculation_id
+                and _matches_calculation_display(raw, calculation_values or set())):
+            continue
+        reasons.append(
+            f"numeral {raw} does not match a {', '.join(requested)} column "
+            f"value in cited evidence"
+        )
     return reasons
 
 
@@ -525,10 +670,13 @@ def verify_mechanical(
         reasons.extend(_entity_reasons(task, claim, cited))
         reasons.extend(_row_entity_value_reasons(
             claim, cited, calculation_values))
+        reasons.extend(_direction_reasons(claim, cited))
         reasons.extend(_scope_reasons(task, cited))
         reasons.extend(_mixed_source_reasons(claim, cited))
         reasons.extend(_cross_evidence_calculation_reasons(claim, cited))
         reasons.extend(_metric_unit_reasons(claim, cited))
+        reasons.extend(_metric_identity_reasons(
+            claim, cited, supported_numbers, calculation_values, allowed_numbers))
         reasons.extend(_qualification_coverage_reasons(claim, cited))
         reasons.extend(_record_completeness_reasons(claim, cited))
 
