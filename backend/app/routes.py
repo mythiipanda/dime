@@ -309,9 +309,24 @@ async def _stream(
             _SHADOW_TASKS.add(shadow_task)
             shadow_task.add_done_callback(_consume_background_task)
         try:
-            async for event in run_chat(
+            chat_iter = run_chat(
                 question[:2000], (model or "")[:200], history, thread
-            ):
+            ).__aiter__()
+            deadline = started + settings.dime_v2_run_timeout_s
+            timed_out = False
+            while True:
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    timed_out = True
+                    break
+                try:
+                    event = await asyncio.wait_for(
+                        chat_iter.__anext__(), timeout=remaining)
+                except StopAsyncIteration:
+                    break
+                except TimeoutError:
+                    timed_out = True
+                    break
                 if event["type"] == "final_answer":
                     final = str(event["data"].get("text", ""))
                     event["data"]["run_id"] = run_id
@@ -343,6 +358,23 @@ async def _stream(
                     event["type"], event["data"])
                 if public_data is not None:
                     yield emit_sse(event["type"], public_data)
+            if timed_out:
+                try:
+                    await chat_iter.aclose()
+                except Exception:
+                    pass
+                had_error = True
+                if not final:
+                    final = ("I could not verify a publishable answer from "
+                             "the available data. The run timed out before "
+                             "finishing.")
+                    yield emit_sse("final_answer", _sanitize_sse_event(
+                        "final_answer", {
+                            "text": final,
+                            "carry": {"run_id": run_id,
+                                      "verification": "partial",
+                                      "gaps": [{"kind": "run_timeout"}]},
+                            "run_id": run_id}))
         except Exception:
             if not had_error:
                 yield emit_sse("error", _sanitize_sse_event("error", {}))

@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import asyncio
+import time
 from collections.abc import Mapping, Sequence
+from typing import Any
 
 from v2.contracts import EvidenceEnvelope, Plan, PlanNode, PlanStatus, TaskSpec
 from v2.runtime.checkpoints import CheckpointStore, ExecutionCheckpoint
@@ -25,6 +27,20 @@ def _canonical_entity_value(entity_type: str, value: object) -> str:
     return " ".join(text.casefold().replace("-", " ").replace("_", " ").split())
 
 
+class NodeTimeoutError(TimeoutError):
+
+    def __init__(self, node_id: str, budget_s: float) -> None:
+        self.node_id = str(node_id)
+        self.budget_s = float(budget_s)
+        super().__init__(
+            f"node {self.node_id} timed out after {self.budget_s:g}s")
+
+
+async def _join_node(node: PlanNode, coro) -> tuple[PlanNode, Any]:
+    _, envelope = await coro
+    return node, envelope
+
+
 class PlanExecutor:
     def __init__(
         self,
@@ -34,6 +50,7 @@ class PlanExecutor:
         max_failures: int | None = None,
         checkpoint_store: CheckpointStore | None = None,
         evidence_activity=None,
+        node_timeout_s: float | None = None,
     ) -> None:
         if not isinstance(max_concurrency, int) or isinstance(max_concurrency, bool):
             raise TypeError("max_concurrency must be an integer")
@@ -44,12 +61,18 @@ class PlanExecutor:
                 raise TypeError("max_failures must be an integer or None")
             if not 1 <= max_failures <= 10:
                 raise ValueError("max_failures must be between 1 and 10")
+        if (node_timeout_s is not None
+                and (isinstance(node_timeout_s, bool)
+                      or not isinstance(node_timeout_s, (int, float))
+                      or node_timeout_s <= 0)):
+            raise ValueError("node_timeout_s must be a positive number or None")
         self._capabilities = dict(capabilities)
         self.capability_names = frozenset(self._capabilities)
         self._max_concurrency = max_concurrency
         self._max_failures = max_failures
         self._checkpoint_store = checkpoint_store
         self._evidence_activity = evidence_activity
+        self._node_timeout_s = node_timeout_s
 
     async def execute(
         self, task: TaskSpec, plan: Plan, *, run_id: str | None = None
@@ -134,15 +157,28 @@ class PlanExecutor:
                 self._save_checkpoint(
                     run_id, task, plan, nodes, evidence_by_node, attempts, errors, error_codes
                 )
-                tasks = [
-                    asyncio.create_task(
-                        self._run_node(node, task, evidence_by_node, attempts, errors, error_codes)
-                    )
-                    for node in batch
-                ]
+                tasks = []
+                for node in batch:
+                    if self._node_timeout_s is None:
+                        coro = self._run_node(
+                            node, task, evidence_by_node, attempts, errors,
+                            error_codes)
+                    else:
+                        coro = self._run_node_bounded(
+                            node, task, evidence_by_node, attempts, errors,
+                            error_codes)
+                    tasks.append(asyncio.create_task(_join_node(node, coro)))
                 try:
                     for completed in asyncio.as_completed(tasks):
-                        node, envelope = await completed
+                        try:
+                            node, envelope = await completed
+                        except NodeTimeoutError as exc:
+                            node = nodes[exc.node_id]
+                            envelope = None
+                            attempts[node.id] = node.max_attempts
+                            node_errors = errors.setdefault(node.id, [])
+                            if str(exc) not in node_errors:
+                                node_errors.append(str(exc))
                         if envelope is None:
                             node.status = PlanStatus.FAILED
                             failures += 1
@@ -358,6 +394,28 @@ class PlanExecutor:
                 error_codes={key: list(value) for key, value in error_codes.items()},
             )
         )
+
+    async def _run_node_bounded(
+        self,
+        node: PlanNode,
+        task: TaskSpec,
+        evidence_by_node: Mapping[str, EvidenceEnvelope],
+        attempts: dict[str, int],
+        errors: dict[str, list[str]],
+        error_codes: dict[str, list[ExecutionErrorCode]],
+    ) -> tuple[PlanNode, EvidenceEnvelope | None]:
+        assert self._node_timeout_s is not None
+        started = time.monotonic()
+        try:
+            return await asyncio.wait_for(
+                self._run_node(node, task, evidence_by_node, attempts,
+                               errors, error_codes),
+                self._node_timeout_s)
+        except TimeoutError as exc:
+            if time.monotonic() - started >= self._node_timeout_s:
+                raise NodeTimeoutError(
+                    node.id, self._node_timeout_s) from exc
+            raise
 
     async def _run_node(
         self,

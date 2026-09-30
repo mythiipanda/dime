@@ -11,6 +11,17 @@ from .splits import _resolve_name, opponent_abbr, parse_game_date
 SMALL_SAMPLE_GP = 5
 
 
+class HeadToHeadSchemaError(Exception):
+
+    gap_kind = "headtohead/schema_unavailable"
+
+    def __init__(self, detail: str = "") -> None:
+        self.detail = str(detail)
+        super().__init__(
+            "Player game logs lack columns needed for head-to-head"
+            + (f": {self.detail}" if self.detail else ""))
+
+
 def _f(value: object) -> float:
     try:
         if value is None or value == "":
@@ -69,6 +80,12 @@ def _load_player_games(pid: int, season: str) -> list[dict[str, Any]]:
         tables = {r[0] for r in con.execute("SHOW TABLES").fetchall()}
         if "silver_player_gamelogs" not in tables:
             return []
+        have = {r[1] for r in con.execute(
+            "PRAGMA table_info(silver_player_gamelogs)").fetchall()}
+        missing = [c for c in (*cols, "Player_ID", "_season")
+                   if c not in have]
+        if missing:
+            raise HeadToHeadSchemaError(", ".join(missing))
         fetched = con.execute(
             "SELECT " + ", ".join(cols) + " FROM silver_player_gamelogs"
             " WHERE Player_ID = ? AND _season = ?",
