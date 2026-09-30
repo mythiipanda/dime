@@ -41,12 +41,12 @@ function applyEvent(ai: AiMessage, type: string, data: unknown): AiMessage {
   if (activity) next.activity = mergeActivityRecord(next.activity || [], activity);
   if (type === "node_update") {
     const node = d.node as NodeName;
+    if (node === "entry") return next;
     const status = d.status;
     touch(node).status =
       status === "complete" || status === "error" ? status : "running";
   } else if (type === "thought_token") {
-
-
+    if (!next.thoughtStarted) next.thoughtStarted = Date.now();
     const node = touch(d.node as NodeName);
     node.liveThought = (node.liveThought || "") + String(d.text || "");
     if (d.agent && !node.liveThoughtAgent) node.liveThoughtAgent = String(d.agent);
@@ -55,29 +55,48 @@ function applyEvent(ai: AiMessage, type: string, data: unknown): AiMessage {
     touch(d.node as NodeName).thoughts.push(String(d.text || ""));
   } else if (type === "tool_call") {
     const node = touch(d.node as NodeName);
+    const id =
+      typeof d.correlation_id === "string"
+        ? d.correlation_id
+        : typeof d.event_id === "string"
+          ? d.event_id
+          : undefined;
     node.toolCalls.push({
+      id,
       name: String(d.name || ""),
       args: (d.args as Record<string, unknown>) || {},
       label: d.label as string | undefined,
       summary: d.summary as string | undefined,
       agent: d.agent as string | undefined,
       status: "running",
+      startedAt: Date.now(),
     });
   } else if (type === "tool_result") {
     const node = touch(d.node as NodeName);
     const name = String(d.name || "");
     const agent = d.agent as string | undefined;
-    for (let i = node.toolCalls.length - 1; i >= 0; i--) {
+    const id =
+      typeof d.correlation_id === "string"
+        ? d.correlation_id
+        : typeof d.event_id === "string"
+          ? d.event_id
+          : undefined;
+    for (let i = 0; i < node.toolCalls.length; i++) {
       const c = node.toolCalls[i];
-      if (c.name === name && c.agent === agent && c.status === "running") {
+      if (c.status !== "running") continue;
+      if (id && c.id) {
+        if (c.id !== id) continue;
+      } else if (!(c.name === name && c.agent === agent)) {
+        continue;
+      }
         c.status = d.status === "ok" ? "ok" : "fail";
+        c.endedAt = Date.now();
         if (typeof d.rows === "number") c.rows = d.rows;
         if (typeof d.ms === "number") c.ms = d.ms;
         if (d.error) c.error = String(d.error);
         if (d.summary) c.summary = String(d.summary);
         if (typeof d.sql === "string" && d.sql.trim()) c.sql = d.sql;
         break;
-      }
     }
   } else if (type === "custom_data") {
     const node = touch(d.node as NodeName);

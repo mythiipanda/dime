@@ -34,6 +34,7 @@ export interface ActivityRecord {
 }
 
 export interface ToolCall {
+  id?: string;
   name: string;
   args: Record<string, unknown>;
   label?: string;
@@ -44,6 +45,8 @@ export interface ToolCall {
   error?: string;
   agent?: string;
   sql?: string;
+  startedAt?: number;
+  endedAt?: number;
 }
 
 interface EvidenceMeta {
