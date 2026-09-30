@@ -343,6 +343,10 @@ async def _stream(
                     event["type"], event["data"])
                 if public_data is not None:
                     yield emit_sse(event["type"], public_data)
+        except Exception:
+            if not had_error:
+                yield emit_sse("error", _sanitize_sse_event("error", {}))
+            return
         finally:
             if v1_outcome is not None and not v1_outcome.done():
                 v1_outcome.set_result(_v1_shadow_outcome(

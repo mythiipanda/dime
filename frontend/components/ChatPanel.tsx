@@ -21,6 +21,7 @@ import AgentActivity from "./AgentActivity";
 import Skeleton from "./Skeleton";
 import CompareTray, { pinToTray, readTray } from "./CompareTray";
 import DebateCardModal from "./DebateCardModal";
+import { Button } from "@/components/ui/button";
 
 function aiHasTables(ai: AiMessage): boolean {
   return Object.values(ai.nodes).some((n) => n.tables.length > 0);
@@ -585,20 +586,24 @@ export default function ChatPanel({ thread, onRunDone, preset, onOpenArtifact, a
               <ModelPicker models={models} value={model} onChange={setModel} status={modelStatus} onRetry={() => void loadModels(false)} />
 
               {busy ? (
-                <button
-                  className="pill-ghost interactive-tactile"
+                <Button
+                  variant="ghost"
+                  size="default"
+                  className="pill-ghost interactive-tactile h-auto font-normal"
                   onClick={stop}
                   style={{ borderColor: "var(--color-cyan-signal)", color: "var(--color-cyan-edge)" }}
                 >
                   Stop {elapsed}s
-                </button>
+                </Button>
               ) : (
-                <button
+                <Button
                   type="button"
+                  variant="default"
+                  size="icon"
                   aria-label="Send"
                   disabled={!input.trim()}
                   onClick={() => sendText(input)}
-                  className="interactive-tactile chat-send"
+                  className="interactive-tactile chat-send disabled:opacity-100 [&_svg:not([class*='size-'])]:size-[15px]"
                   style={{
                     width: 28, height: 28, borderRadius: 8, border: "none", cursor: input.trim() ? "pointer" : "default",
                     display: "flex", alignItems: "center", justifyContent: "center",
@@ -610,7 +615,7 @@ export default function ChatPanel({ thread, onRunDone, preset, onOpenArtifact, a
                   <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
                     <path d="M12 19V5M5 12l7-7 7 7" />
                   </svg>
-                </button>
+                </Button>
               )}
             </div>
           </div>
@@ -899,19 +904,24 @@ export default function ChatPanel({ thread, onRunDone, preset, onOpenArtifact, a
                 />
 
                 {busy ? (
-                  <button
-                    className="pill-ghost"
+                  <Button
+                    variant="ghost"
+                    size="default"
+                    className="pill-ghost h-auto font-normal"
                     onClick={stop}
                     style={{ borderColor: "var(--color-cyan-signal)", color: "var(--color-cyan-edge)" }}
                   >
                     Stop {elapsed}s
-                  </button>
+                  </Button>
                 ) : (
-                  <button
+                  <Button
                     type="button"
+                    variant="default"
+                    size="icon"
                     aria-label="Send"
                     disabled={!input.trim()}
                     onClick={() => sendText(input)}
+                    className="disabled:opacity-100 [&_svg:not([class*='size-'])]:size-[15px]"
                     style={{
                       width: 28, height: 28, borderRadius: 8, border: "none", flexShrink: 0,
                       cursor: input.trim() ? "pointer" : "default",
@@ -922,9 +932,9 @@ export default function ChatPanel({ thread, onRunDone, preset, onOpenArtifact, a
                     }}
                   >
                     <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
-                      <path d="M12 19V5M5 12l7-7 7 7" />
-                    </svg>
-                  </button>
+                    <path d="M12 19V5M5 12l7-7 7 7" />
+                  </svg>
+                  </Button>
                 )}
               </div>
             </div>

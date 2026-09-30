@@ -16,8 +16,6 @@ fetch() {
 }
 if fetch "https://github.com/mythiipanda/dime/releases/download/dime-data-20260929/dime_data.zip" "54e2f5a9998844045460cd02eaabe1afe7af3f97ef96278e6de6ae89237c19a2" "dime-data-20260929"; then
   :
-elif fetch "https://github.com/mythiipanda/dime/releases/download/tony-features-pack-20260911/dime_data.zip" "8f9823831057340cfbbdbb38d33450ae3a268df690a4e82e53dc526844a74a73" "tony-features-pack-20260911"; then
-  :
 else
   echo "fetch-data: download failed" >&2
   exit 1

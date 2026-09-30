@@ -24,7 +24,7 @@ from .skills import catalog as skills_catalog, load_skill as skills_load_skill
 from .subagents import delegate_tools, run_desk_streaming, _SHOT_ZONE_RX, _HISTORICAL_RX
 from .subagents import DESK_DEADLINE_S as _DESK_WALL_BUDGET_S
 from shared.tools import v1_tools
-from shared.tools._core import tool_label
+from shared.tools._core import COVERAGE_END, COVERAGE_START, tool_label
 
 ANALYST_SYSTEM = (
     "You are Dime, an NBA data analyst assistant. "
@@ -1400,6 +1400,13 @@ def _user_safe_tool_error(name: str, err: str) -> str:
     return base[:120]
 
 
+_TOOL_SEASON_COVERAGE: dict[str, tuple[str, str]] = {
+    "get_raptor_history": ("1976-77", COVERAGE_END),
+    "get_draft_board": ("1996-97", COVERAGE_END),
+    "get_draft_model": ("1996-97", COVERAGE_END),
+}
+
+
 async def _triage_tool(name: str, args: dict[str, Any], state: dict,
                        holder: dict[str, Any]) -> AsyncGenerator[dict[str, Any], None]:
     from shared.tools import v1_tools
@@ -1412,6 +1419,13 @@ async def _triage_tool(name: str, args: dict[str, Any], state: dict,
         "summary": _args_summary(name, args),
     })
     try:
+        if fn is not None and isinstance(args, dict) and "season" in args:
+            from shared.tools._core import clamp_season as _clamp_triage
+
+            _span = _TOOL_SEASON_COVERAGE.get(
+                name, (COVERAGE_START, COVERAGE_END))
+            args = {**args, "season": _clamp_triage(
+                args.get("season"), _span[0], _span[1])}
         out = await fn.ainvoke(args) if fn is not None else {
             "tool": name, "ok": False, "error": "unknown tool"}
     except Exception as exc:
@@ -4885,8 +4899,11 @@ async def actual_tool_node(state: DimeState) -> AsyncGenerator[dict[str, Any], N
             from shared.tools._core import InvalidSeasonError as _ISE
             from shared.tools._core import clamp_season
 
+            _span = _TOOL_SEASON_COVERAGE.get(
+                name, (COVERAGE_START, COVERAGE_END))
             try:
-                args = {**args, "season": clamp_season(args.get("season"))}
+                args = {**args, "season": clamp_season(
+                    args.get("season"), _span[0], _span[1])}
             except _ISE as exc:
                 elapsed[id(call)] = int((time.time() - t0) * 1000)
                 await _tok_q.put(None)

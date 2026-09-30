@@ -27,18 +27,21 @@ class InvalidSeasonError(Exception):
         self.coverage_start = coverage_start
         self.coverage_end = coverage_end
         self.nearest = nearest
-        super().__init__(season_error_message(self.requested, nearest))
+        super().__init__(season_error_message(
+            self.requested, nearest, coverage_start, coverage_end))
 
 
-def season_error_message(requested: object, nearest: str | None = None) -> str:
+def season_error_message(requested: object, nearest: str | None = None,
+                         coverage_start: str = COVERAGE_START,
+                         coverage_end: str = COVERAGE_END) -> str:
     raw = "" if requested is None else str(requested).strip()
     shown = raw or "that"
     if nearest is None:
         return (f"I couldn't match '{shown}' to a season "
-                f"(I cover {COVERAGE_START} through {COVERAGE_END}). "
+                f"(I cover {coverage_start} through {coverage_end}). "
                 f"Which season did you mean?")
     return (f"The {shown} season is not in this dataset, which covers "
-            f"{COVERAGE_START} through {COVERAGE_END}; "
+            f"{coverage_start} through {coverage_end}; "
             f"nearest season with data is {nearest}.")
 
 
@@ -52,23 +55,29 @@ def _canonical_parts(text: str) -> str | None:
 
 def _bare_year_slug(text: str) -> str | None:
     s = str(text or "").strip()
-    if len(s) == 4 and s.isdigit() and s[:2] == "20":
+    if len(s) == 4 and s.isdigit() and s[:2] in ("19", "20"):
         start = int(s)
         return f"{start - 1}-{start % 100:02d}"
     return None
 
 
-def clamp_season(season: object) -> str:
+def clamp_season(season: object, coverage_start: str = COVERAGE_START,
+                 coverage_end: str = COVERAGE_END) -> str:
     raw = "" if season is None else str(season).strip()
     slug = _canonical_parts(raw)
     if slug is None:
         slug = _bare_year_slug(raw)
     if slug is None:
-        raise InvalidSeasonError(raw)
-    if slug < COVERAGE_START:
-        raise InvalidSeasonError(slug, nearest=COVERAGE_START)
-    if slug > COVERAGE_END:
-        raise InvalidSeasonError(slug, nearest=COVERAGE_END)
+        raise InvalidSeasonError(
+            raw, coverage_start=coverage_start, coverage_end=coverage_end)
+    if slug < coverage_start:
+        raise InvalidSeasonError(
+            slug, coverage_start=coverage_start,
+            coverage_end=coverage_end, nearest=coverage_start)
+    if slug > coverage_end:
+        raise InvalidSeasonError(
+            slug, coverage_start=coverage_start,
+            coverage_end=coverage_end, nearest=coverage_end)
     return slug
 
 

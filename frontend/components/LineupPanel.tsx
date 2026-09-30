@@ -5,6 +5,7 @@ import CopyLink from "./CopyLink";
 import ExplorePanel, { PanelHeader } from "./ExplorePanel";
 import Skeleton from "./Skeleton";
 import WowyCard from "./WowyCard";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { BACKEND } from "../lib/chat";
 import { apiPath, getQueryParam, setQueryParam } from "../lib/api";
 import { shortPlayerName } from "../lib/exploreIndex";
@@ -46,7 +47,6 @@ export default function LineupPanel({ initialTeam }: { initialTeam?: string }) {
 
   useEffect(() => {
     if (tab === "wowy" && wowyRows.length === 0) runWowy();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
@@ -136,11 +136,18 @@ export default function LineupPanel({ initialTeam }: { initialTeam?: string }) {
 
       {tab === "5man" ? (
         <div>
-          <select className="field" value={team} onChange={(e) => pickTeam(e.target.value)} style={{ width: 120 }} aria-label="Team">
-            {Object.keys(TEAMS).map((t) => (
-              <option key={t} value={t}>{t}</option>
-            ))}
-          </select>
+          <Select value={team} onValueChange={(next: string | null) => { if (next) pickTeam(next); }}>
+            <SelectTrigger aria-label="Team" style={{ width: 120 }}>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {Object.keys(TEAMS).map((t) => (
+                <SelectItem key={t} value={t}>
+                  {t}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
           {error && <div style={{ color: "var(--color-warm-gray)", marginTop: 8 }}>{error}</div>}
           {busy && rows.length === 0 && !error && <Skeleton lines={5} label={`Loading ${team} lineups`} />}
           {!busy && !error && rows.length === 0 && (

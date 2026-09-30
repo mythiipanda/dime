@@ -1,5 +1,7 @@
 "use client";
 
+import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
+
 interface Props {
   onFinish: () => void;
   onSelectPrompt: (q: string) => void;
@@ -13,32 +15,22 @@ const PROMPTS = [
 
 export default function OnboardingModal({ onFinish, onSelectPrompt }: Props) {
   return (
-    <div
-      role="dialog"
-      aria-modal="true"
-      aria-label="Welcome to Dime"
-      className="onboard-backdrop"
-      style={{
-        position: "fixed",
-        inset: 0,
-        background: "rgba(12, 10, 9, 0.25)",
-        zIndex: 60,
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        padding: 16,
+    <Dialog
+      open
+      onOpenChange={(next) => {
+        if (!next) onFinish();
       }}
-      onClick={onFinish}
     >
-      <div
+      <DialogContent
+        aria-label="Welcome to Dime"
+        showCloseButton={false}
         className="card onboard-panel"
-        style={{ width: 460, maxWidth: "92vw", padding: 24 }}
-        onClick={(e) => e.stopPropagation()}
+        style={{ width: 460, maxWidth: "92vw", padding: 24, gap: 0 }}
       >
         <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", marginBottom: 4 }}>
-          <div className="display" style={{ fontSize: 24, color: "var(--color-ink-black)" }}>
+          <DialogTitle className="display" style={{ fontSize: 24, fontWeight: 400, color: "var(--color-ink-black)" }}>
             Meet Dime
-          </div>
+          </DialogTitle>
           <button
             type="button"
             onClick={onFinish}
@@ -47,9 +39,9 @@ export default function OnboardingModal({ onFinish, onSelectPrompt }: Props) {
             Skip
           </button>
         </div>
-        <div style={{ fontSize: 13, color: "var(--color-warm-gray)", marginBottom: 14 }}>
+        <DialogDescription style={{ fontSize: 13, fontWeight: 400, color: "var(--color-warm-gray)", marginBottom: 14 }}>
           Ask a hard basketball question. Every number traces back to the data.
-        </div>
+        </DialogDescription>
         <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
           {PROMPTS.map((p) => (
             <button
@@ -63,7 +55,7 @@ export default function OnboardingModal({ onFinish, onSelectPrompt }: Props) {
             </button>
           ))}
         </div>
-      </div>
-    </div>
+      </DialogContent>
+    </Dialog>
   );
 }

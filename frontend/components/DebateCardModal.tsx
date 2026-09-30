@@ -8,6 +8,7 @@ import {
   getDebateCard,
   resolvePlayers,
 } from "../lib/api";
+import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 
 type ModalState = "idle" | "loading" | "ready" | "error";
 
@@ -137,24 +138,15 @@ export default function DebateCardModal({
   }
 
   return (
-    <div
-      role="dialog"
-      aria-modal="true"
-      aria-label="Debate card"
-      style={{
-        position: "fixed",
-        inset: 0,
-        background: "rgba(12,10,9,0.4)",
-        zIndex: 60,
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        padding: 16,
-        overflowY: "auto",
+    <Dialog
+      open
+      onOpenChange={(next) => {
+        if (!next) onClose();
       }}
-      onClick={onClose}
     >
-      <div
+      <DialogContent
+        aria-label="Debate card"
+        showCloseButton={false}
         style={{
           background: "var(--color-pure-white)",
           border: "1px solid var(--color-stone-border)",
@@ -166,12 +158,12 @@ export default function DebateCardModal({
           overflowY: "auto",
           boxSizing: "border-box",
           margin: "auto",
+          gap: 0,
         }}
-        onClick={(e) => e.stopPropagation()}
       >
-        <div className="display" style={{ fontSize: 20, color: "var(--color-ink-black)", marginBottom: 4 }}>
+        <DialogTitle className="display" style={{ fontSize: 20, fontWeight: 400, color: "var(--color-ink-black)", marginBottom: 4 }}>
           Debate card
-        </div>
+        </DialogTitle>
         {debateTopic ? (
           <div style={{ marginBottom: 16, maxWidth: "100%" }}>
             <span
@@ -195,9 +187,9 @@ export default function DebateCardModal({
             </span>
           </div>
         ) : (
-          <div style={{ fontSize: 14, color: "var(--color-warm-gray)", marginBottom: 16 }}>
+          <DialogDescription style={{ fontSize: 14, color: "var(--color-warm-gray)", marginBottom: 16 }}>
             Pick two players and settle it with data.
-          </div>
+          </DialogDescription>
         )}
         <div style={{ display: "flex", gap: 8, marginBottom: 12, flexWrap: "wrap" }}>
           <div style={{ position: "relative", flex: "1 1 160px", minWidth: 0 }}>
@@ -278,7 +270,7 @@ export default function DebateCardModal({
             </div>
           </div>
         )}
-      </div>
-    </div>
+      </DialogContent>
+    </Dialog>
   );
 }

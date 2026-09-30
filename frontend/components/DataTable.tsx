@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from "@/components/ui/table";
 import { getQueryParam, setQueryParam } from "../lib/api";
 import { rankOf } from "../lib/rankContext";
 
@@ -235,13 +236,14 @@ export default function DataTable({ rows, capCols = 8, capRows = 25, heat = fals
           CSV
         </button>
       </div>
-    <div className="dime-table" style={{ overflowX: "auto", border: "1px solid var(--color-stone-border)", borderRadius: 10, background: "var(--color-pure-white)", boxShadow: "var(--shadow-card)" }}>
-      <table style={{ borderCollapse: "collapse", width: "100%", fontSize: 12 }}>
-        <thead>
-          <tr>
+    <div className="dime-table" style={{ border: "1px solid var(--color-stone-border)", borderRadius: 10, background: "var(--color-pure-white)", boxShadow: "var(--shadow-card)", overflow: "hidden" }}>
+      <Table style={{ borderCollapse: "collapse", width: "100%", fontSize: 12 }}>
+        <TableHeader className="[&_tr]:border-0">
+          <TableRow className="border-0 hover:bg-transparent">
             {t.cols.map((c) => (
-              <th
+              <TableHead
                 key={c}
+                className={sortCol === c ? "is-sorted h-auto" : "h-auto"}
                 onClick={() => toggleSort(c)}
                 onKeyDown={(e) => {
                   if (e.key === "Enter" || e.key === " ") {
@@ -252,7 +254,6 @@ export default function DataTable({ rows, capCols = 8, capRows = 25, heat = fals
                 tabIndex={0}
                 aria-sort={sortCol === c ? (sortDir === 1 ? "ascending" : "descending") : "none"}
                 title={sortCol === c ? `Sorted by ${c} (${sortDir === 1 ? "low to high" : "high to low"}). Select to change.` : `Sort by ${c}`}
-                className={sortCol === c ? "is-sorted" : undefined}
                 style={{
                   textAlign: t.numeric[t.cols.indexOf(c)] ? "right" : "left",
                   borderBottom: "1px solid var(--color-stone-border)",
@@ -266,13 +267,13 @@ export default function DataTable({ rows, capCols = 8, capRows = 25, heat = fals
               >
                 {c}
                 {sortCol === c ? (sortDir === 1 ? " ▲" : " ▼") : ""}
-              </th>
+              </TableHead>
             ))}
-          </tr>
-        </thead>
-        <tbody>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
           {shown.map((ri) => (
-            <tr key={ri}>
+            <TableRow key={ri} className="border-0 hover:bg-transparent">
               {t.body[ri].map((cell, j) => {
                 const v = t.nums[ri][j];
                 const m = t.maxs[j];
@@ -281,8 +282,9 @@ export default function DataTable({ rows, capCols = 8, capRows = 25, heat = fals
                     ? `color-mix(in srgb, var(--color-cyan-signal) ${Math.round(4 + 22 * (Math.abs(v) / m))}%, transparent)`
                     : undefined;
                 return (
-                  <td
+                  <TableCell
                     key={j}
+                    className="whitespace-normal"
                     style={{
                       borderBottom: "1px solid var(--color-stone-border)",
                       padding: "7px 10px",
@@ -405,13 +407,13 @@ export default function DataTable({ rows, capCols = 8, capRows = 25, heat = fals
                           </div>
                         );
                       })()}
-                  </td>
+                  </TableCell>
                 );
               })}
-            </tr>
+            </TableRow>
           ))}
-        </tbody>
-      </table>
+        </TableBody>
+      </Table>
     </div>
     </div>
   );

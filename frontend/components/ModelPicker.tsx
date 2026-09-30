@@ -1,7 +1,13 @@
 "use client";
 
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import { createPortal } from "react-dom";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectLabel,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { ModelOption } from "../lib/chat";
 import { modelDisplayName, providerDisplayName } from "../lib/modelNames";
 
@@ -13,106 +19,29 @@ interface ModelPickerProps {
   onRetry?: () => void;
 }
 
-const MENU_MAX_H = 340;
+const RETRY_VALUE = "__dime-retry";
 
 export default function ModelPicker({ models, value, onChange, status = "ready", onRetry }: ModelPickerProps) {
-  const [open, setOpen] = useState(false);
-  const containerRef = useRef<HTMLDivElement>(null);
-  const triggerRef = useRef<HTMLButtonElement>(null);
-  const menuRef = useRef<HTMLDivElement>(null);
-  const [menuStyle, setMenuStyle] = useState<React.CSSProperties>({});
-
   const selectedModel = models.find((m) => m.id === value) || models[0];
-  
-  
-  
-
-
-
-
-  useLayoutEffect(() => {
-    if (!open) return;
-    const position = () => {
-      if (!triggerRef.current) return;
-      const r = triggerRef.current.getBoundingClientRect();
-      const menuH = Math.min(MENU_MAX_H, window.innerHeight - 24);
-      const aboveH = r.top - 8;
-      const belowH = window.innerHeight - r.bottom - 8;
-      const openAbove = aboveH >= Math.min(menuH, 200) || aboveH >= belowH;
-      const left = Math.max(8, Math.min(r.left, window.innerWidth - 328));
-      setMenuStyle(
-        openAbove
-          ? { left, bottom: Math.max(8, window.innerHeight - r.top + 6), maxHeight: Math.min(menuH, aboveH) }
-          : { left, top: Math.min(r.bottom + 6, window.innerHeight - 120), maxHeight: Math.min(menuH, belowH) }
-      );
-    };
-    position();
-    window.addEventListener("scroll", position, true);
-    window.addEventListener("resize", position);
-    return () => {
-      window.removeEventListener("scroll", position, true);
-      window.removeEventListener("resize", position);
-    };
-  }, [open ]);
-
-  useEffect(() => {
-    const handleClickOutside = (e: MouseEvent) => {
-      if (
-        containerRef.current && !containerRef.current.contains(e.target as Node) &&
-        menuRef.current && !menuRef.current.contains(e.target as Node)
-      ) {
-        setOpen(false);
-      }
-    };
-    const handleKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setOpen(false);
-    };
-    document.addEventListener("mousedown", handleClickOutside);
-    document.addEventListener("keydown", handleKey);
-    return () => {
-      document.removeEventListener("mousedown", handleClickOutside);
-      document.removeEventListener("keydown", handleKey);
-    };
-  }, []);
 
   const displayName = (id?: string) => {
     if (!id) return status === "loading" ? "Loading models..." : "Models unavailable";
     return modelDisplayName(id);
   };
 
-  return (
-    <div ref={containerRef} style={{ position: "relative", display: "inline-block" }}>
+  const handleValueChange = (next: string | null) => {
+    if (next === RETRY_VALUE) {
+      onRetry?.();
+      return;
+    }
+    onChange(next || null);
+  };
 
-      <select
-        aria-label="Model"
-        value={value || ""}
-        onChange={(e) => onChange(e.target.value || null)}
-        style={{
-          position: "absolute",
-          opacity: 0,
-          pointerEvents: "none",
-          width: 1,
-          height: 1,
-          top: 0,
-          left: 0,
-        }}
-      >
-        {!models.length && <option value="">{status === "loading" ? "Loading models..." : "Models unavailable"}</option>}
-        {models.map((m) => (
-          <option key={m.id} value={m.id}>
-            {modelDisplayName(m.id)}
-          </option>
-        ))}
-      </select>
-
-
+  if (status === "error" && !models.length) {
+    return (
       <button
-        ref={triggerRef}
         type="button"
-        onClick={() => {
-          if (status === "error" && !models.length) onRetry?.();
-          else setOpen(!open);
-        }}
+        onClick={() => onRetry?.()}
         className="interactive-tactile"
         style={{
           display: "inline-flex",
@@ -127,132 +56,84 @@ export default function ModelPicker({ models, value, onChange, status = "ready",
           color: "var(--color-ink-black)",
           cursor: "pointer",
         }}
-        title={status === "error" && !models.length ? "Retry loading models" : "Switch model"}
+        title="Retry loading models"
       >
-        <span>{displayName(selectedModel?.id)}</span>
-        <svg
-          width="10"
-          height="10"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="2.5"
-          style={{
-            color: "var(--color-warm-gray)",
-            transform: open ? "rotate(180deg)" : "none",
-            transition: "transform 140ms ease",
-          }}
-        >
-          <polyline points="6 9 12 15 18 9" />
-        </svg>
+        <span>Retry loading models</span>
       </button>
+    );
+  }
 
+  const effectiveValue = value || models[0]?.id || "";
 
-      {open && createPortal(
-        <div
-          ref={menuRef}
+  return (
+    <Select value={effectiveValue} onValueChange={handleValueChange}>
+      <SelectTrigger
+        aria-label="Model"
+        title="Switch model"
+        className="interactive-tactile"
+        style={{
+          padding: "4px 8px",
+          borderRadius: 6,
+          background: "var(--color-stone-canvas)",
+          fontSize: 12,
+          fontWeight: 500,
+          color: "var(--color-ink-black)",
+        }}
+      >
+        <SelectValue placeholder={status === "loading" ? "Loading models..." : "Models unavailable"}>
+          {(selected: string | null) => displayName(typeof selected === "string" && selected ? selected : selectedModel?.id)}
+        </SelectValue>
+      </SelectTrigger>
+      <SelectContent style={{ width: 320, maxHeight: 340 }}>
+        <SelectLabel
           style={{
-            position: "fixed",
-            ...menuStyle,
-            background: "var(--color-pure-white)",
-            border: "1px solid var(--color-stone-border)",
-            borderRadius: 12,
-            boxShadow: "var(--shadow-focus)",
-            padding: "6px",
-            width: 320,
-            overflowY: "auto",
-            zIndex: 100,
-            display: "flex",
-            flexDirection: "column",
-            gap: 2,
+            fontSize: 10,
+            fontWeight: 600,
+            color: "var(--color-ash-gray)",
+            textTransform: "uppercase",
+            letterSpacing: "0.08em",
+            padding: "4px 8px 6px",
           }}
         >
-          <div
-            style={{
-              fontSize: 10,
-              fontWeight: 600,
-              color: "var(--color-ash-gray)",
-              textTransform: "uppercase",
-              letterSpacing: "0.08em",
-              padding: "4px 8px 6px",
-            }}
-          >
-            Models
-          </div>
-
-          {status === "error" && (
-            <button
-              type="button"
-              onClick={() => { onRetry?.(); setOpen(false); }}
-              style={{ border: "none", background: "transparent", color: "var(--color-cyan-edge)", cursor: "pointer", padding: "8px 10px", textAlign: "left" }}
-            >
+          Models
+        </SelectLabel>
+        {status === "error" && (
+          <SelectItem value={RETRY_VALUE} label="Retry loading models">
+            <span style={{ fontSize: 13, color: "var(--color-cyan-edge)" }}>
               Retry loading models
-            </button>
-          )}
-          {models.map((m) => {
-            const isSelected = (value || models[0]?.id) === m.id;
-            const isUnavailable = m.available === false;
-            return (
-              <button
-                key={m.id}
-                type="button"
-                disabled={isUnavailable}
-                onClick={() => {
-                  onChange(m.id);
-                  setOpen(false);
-                }}
-                className="interactive-tactile"
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "space-between",
-                  padding: "8px 10px",
-                  borderRadius: 8,
-                  border: "none",
-                  background: isSelected ? "var(--color-stone-canvas)" : "transparent",
-                  cursor: isUnavailable ? "not-allowed" : "pointer",
-                  textAlign: "left",
-                  width: "100%",
-                  opacity: isUnavailable ? 0.45 : 1,
-                }}
-              >
-                <div>
-                  <div
-                    style={{
-                      fontSize: 13,
-                      fontWeight: isSelected ? 600 : 400,
-                      color: "var(--color-ink-black)",
-                    }}
-                  >
-                    {displayName(m.id)}
-                  </div>
-                  <div style={{ fontSize: 11, color: "var(--color-warm-gray)" }}>
-                    {isUnavailable
-                      ? `${providerDisplayName(m.engine) || m.engine} · unavailable`
-                      : (providerDisplayName(m.engine) || m.engine || "live")}
-                  </div>
-                </div>
-
-                {isSelected && (
-                  <svg
-                    width="14"
-                    height="14"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="var(--color-cyan-signal)"
-                    strokeWidth="2.5"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                  >
-                    <polyline points="20 6 9 17 4 12" />
-                  </svg>
-                )}
-              </button>
-            );
-          })}
-        </div>,
-        document.body
-      )}
-    </div>
+            </span>
+          </SelectItem>
+        )}
+        {models.map((m) => {
+          const isSelected = (value || models[0]?.id) === m.id;
+          const isUnavailable = m.available === false;
+          return (
+            <SelectItem
+              key={m.id}
+              value={m.id}
+              label={modelDisplayName(m.id)}
+              disabled={isUnavailable}
+            >
+              <span style={{ display: "flex", flexDirection: "column", opacity: isUnavailable ? 0.45 : 1 }}>
+                <span
+                  style={{
+                    fontSize: 13,
+                    fontWeight: isSelected ? 600 : 400,
+                    color: "var(--color-ink-black)",
+                  }}
+                >
+                  {displayName(m.id)}
+                </span>
+                <span style={{ fontSize: 11, fontWeight: 400, color: "var(--color-warm-gray)" }}>
+                  {isUnavailable
+                    ? `${providerDisplayName(m.engine) || m.engine} · unavailable`
+                    : (providerDisplayName(m.engine) || m.engine || "live")}
+                </span>
+              </span>
+            </SelectItem>
+          );
+        })}
+      </SelectContent>
+    </Select>
   );
 }
