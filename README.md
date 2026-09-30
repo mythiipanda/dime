@@ -90,10 +90,13 @@ the cutover still pending.
 
 The warehouse is a DuckDB file baked into the backend Docker
 image. On backend changes, CI downloads the data pack
-(`dime-data-20260929`, published 2026-09-29),
-unzips it into `backend/data/`, builds derived tables at
+(`tony-features-pack-20260911`), unzips it into
+`backend/data/`, builds derived tables at
 image time, and pushes
-`ghcr.io/mythiipanda/dime-backend:latest`. The warehouse is the primary source at answer time; on misses, some datasets fall back to live sources (nba_stats, ESPN) where configured, and that fallback can fail or time out.
+`ghcr.io/mythiipanda/dime-backend:latest`. For local dev,
+`./scripts/fetch-data.sh` fetches the newest pack
+(`dime-data-20260929` once its release asset is published),
+falling back to the previous pack. The warehouse is the primary source at answer time; on misses, some datasets fall back to live sources (nba_stats, ESPN) where configured, and that fallback can fail or time out.
 
 Coverage in the current pack: 52 tables, 47 of them silver.
 The `silver_hist_*` tables span 2009-10 through 2025-26
