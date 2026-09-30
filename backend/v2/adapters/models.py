@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import anyio
+import copy
 import json
 import hashlib
 import random
@@ -254,14 +255,31 @@ def _read_usage_requests(result: Any) -> tuple[int | None, str | None]:
         return None, USAGE_UNKNOWN_REASON
 
 
+def strip_array_length_bounds(schema):
+    stripped = copy.deepcopy(schema)
+    stack = [stripped]
+    while stack:
+        node = stack.pop()
+        if isinstance(node, dict):
+            node.pop("maxItems", None)
+            node.pop("minItems", None)
+            for key, value in node.items():
+                if key in {"default", "examples", "const", "enum"}:
+                    continue
+                stack.append(value)
+        elif isinstance(node, list):
+            stack.extend(node)
+    return stripped
+
+
 class DimeOpenAIChatModel(OpenAIChatModel):
     def _map_json_schema(self, output_object):
         from dataclasses import replace
         from v2.argument_schemas import normalize_provider_wire_schema
         if output_object.name not in {"RequirementReviewWire", "PlannerOutputWire"}:
-            return super()._map_json_schema(output_object)
+            return super()._map_json_schema(replace(output_object, json_schema=strip_array_length_bounds(output_object.json_schema)))
         candidate, _ = normalize_provider_wire_schema(output_object.json_schema)
-        return super()._map_json_schema(replace(output_object, json_schema=candidate))
+        return super()._map_json_schema(replace(output_object, json_schema=strip_array_length_bounds(candidate)))
 
 
 class ProviderStructuredModel:
