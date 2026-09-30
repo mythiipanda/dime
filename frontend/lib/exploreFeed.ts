@@ -25,6 +25,8 @@
 
 
 
+import type { ExploreContext } from "./exploreSearch";
+import { abbrForTeamFullName } from "./teams";
 import type {
   Mover,
   MoversRows,
@@ -270,14 +272,6 @@ function buildFullStreakItems(
     const record = w !== null && l !== null ? `${w}-${l}` : "";
     const statText = record ? `${parsed.text} · ${record}` : parsed.text;
     const rc = rankOf(i, total);
-    let question: string;
-    if (parsed.won !== null && parsed.games !== null) {
-      question = `Why has ${name} ${parsed.won ? "won" : "lost"} ${parsed.games} straight?`;
-    } else if (record) {
-      question = `How is ${name} playing at ${record}?`;
-    } else {
-      question = `How is ${name} playing?`;
-    }
     out.push({
       id: `streak-${i}-${name}`,
       kind: "streak",
@@ -286,7 +280,7 @@ function buildFullStreakItems(
       statText,
       rankLabel: rc.chip,
       rankTitle: `Ranked ${rc.chip} of ${total} team streaks`,
-      question,
+      question: null,
     });
   }
   return out;
@@ -379,7 +373,7 @@ function buildFullWatchItems(
         statText: text,
         rankLabel: `#${rank}`,
         rankTitle: `Ranked #${rank} of ${teams.length} watched teams by wins`,
-        question: `How is ${found.name} playing at ${text}?`,
+        question: null,
       });
     }
   }
@@ -420,4 +414,25 @@ export function buildFeedExpansion(input: FeedInput): FeedExpansion {
     ...buildFullWatchItems(input.watchlist).slice(FEED_WATCH_CAP),
   ];
   return { visible, extra, total: visible.length + extra.length };
+}
+
+export type FeedAction =
+  | { kind: "select"; ctx: ExploreContext }
+  | { kind: "ask"; question: string }
+  | { kind: "none" };
+
+export function feedActionFor(item: FeedItem): FeedAction {
+  if (item.entity === "player") {
+    return { kind: "select", ctx: { panel: "shots", playerName: item.name } };
+  }
+  if (item.entity === "team") {
+    const abbr = abbrForTeamFullName(item.name);
+    return abbr
+      ? { kind: "select", ctx: { panel: "lineups", teamAbbr: abbr } }
+      : { kind: "select", ctx: { panel: "lineups" } };
+  }
+  if (item.question) {
+    return { kind: "ask", question: item.question };
+  }
+  return { kind: "none" };
 }

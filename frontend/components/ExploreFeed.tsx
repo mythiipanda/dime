@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { getToday, getWatchlist } from "../lib/api";
-import { buildFeedExpansion, type FeedExpansion, type FeedItem } from "../lib/exploreFeed";
+import { buildFeedExpansion, feedActionFor, type FeedExpansion, type FeedItem } from "../lib/exploreFeed";
 import type { ExploreContext } from "../lib/exploreSearch";
 import Skeleton from "./Skeleton";
 
@@ -66,10 +66,11 @@ export default function ExploreFeed({
   if (feed.total === 0) return null;
 
   const activate = (item: FeedItem) => {
-    if (item.entity === "player") {
-      onSelect({ panel: "shots", playerName: item.name });
-    } else if (item.question) {
-      onAsk(item.question);
+    const action = feedActionFor(item);
+    if (action.kind === "select") {
+      onSelect(action.ctx);
+    } else if (action.kind === "ask") {
+      onAsk(action.question);
     }
   };
 
