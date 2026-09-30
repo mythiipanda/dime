@@ -196,7 +196,7 @@ def test_tool_node_converts_bad_season_to_ok_false():
         assert token not in lowered
 
 
-def test_season_failure_result_shape():
+def test_season_failure_result_shape(warehouse_seasons):
     state, _ = _run_node(
         [{"name": "get_echo", "args": {"season": "2030-31"}}], [_Echo()])
     result = state["tool_results"][0]
