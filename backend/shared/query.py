@@ -135,6 +135,54 @@ def _allowed_tables(con) -> set[str]:
     return present
 
 
+_READ_SCHEMAS = frozenset({"main", "public", "memory"})
+
+
+def _resolve_table(tbl: exp.Table, allowed: set[str],
+                   scope: dict[str, bool]) -> None:
+    name = (tbl.name or "").lower()
+    if not name:
+        raise ValueError("blocked: table functions are not allowed; "
+                         "query the warehouse tables")
+    db = (tbl.db or "").lower()
+    catalog = (tbl.catalog or "").lower()
+    if db or catalog:
+        if db not in _READ_SCHEMAS and db != "":
+            raise ValueError("blocked: unknown table(s): " + tbl.name)
+        if catalog not in _READ_SCHEMAS and catalog != "":
+            raise ValueError("blocked: unknown table(s): " + tbl.name)
+        if name not in allowed:
+            raise ValueError("blocked: unknown table(s): " + tbl.name)
+        return
+    if name not in allowed and name not in scope:
+        raise ValueError("blocked: unknown table(s): " + tbl.name)
+
+
+def _walk_tables(node: exp.Expression, allowed: set[str],
+                 scope: dict[str, bool]) -> None:
+    if isinstance(node, exp.Table):
+        _resolve_table(node, allowed, scope)
+        return
+    local = dict(scope)
+    with_node = node.args.get("with", node.args.get("with_"))
+    if isinstance(with_node, exp.With):
+        if with_node.args.get("recursive"):
+            for cte in with_node.expressions:
+                if cte.alias:
+                    local[cte.alias.lower()] = True
+        for cte in with_node.expressions:
+            _walk_tables(cte.this, allowed, dict(local))
+            if cte.alias:
+                local[cte.alias.lower()] = True
+    for child in node.args.values():
+        if isinstance(child, exp.Expression):
+            _walk_tables(child, allowed, local)
+        elif isinstance(child, list):
+            for item in child:
+                if isinstance(item, exp.Expression):
+                    _walk_tables(item, allowed, local)
+
+
 def _check(sql: str, allowed: set[str]) -> str:
     text = (sql or "").strip()
     if not text:
@@ -153,14 +201,12 @@ def _check(sql: str, allowed: set[str]) -> str:
                              "it creates a table")
     cte_names = {c.alias.lower() for c in tree.find_all(exp.CTE)
                  if c.alias}
-    ok_tables = {t.lower() for t in allowed} | cte_names
-    for tbl in tree.find_all(exp.Table):
-        name = tbl.name or ""
-        if not name:
-            raise ValueError("blocked: table functions are not allowed; "
-                             "query the warehouse tables")
-        if name.lower() not in ok_tables:
-            raise ValueError("blocked: unknown table(s): " + tbl.name)
+    ok_tables = {t.lower() for t in allowed}
+    shadowed = sorted(cte_names & ok_tables)
+    if shadowed:
+        raise ValueError("blocked: CTE name shadows warehouse table(s): "
+                         + ", ".join(shadowed))
+    _walk_tables(tree, ok_tables, {})
     for src in list(tree.find_all(exp.From)) + list(tree.find_all(exp.Join)):
         node = src.args.get("this")
         while isinstance(node, exp.Lateral):

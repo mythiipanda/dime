@@ -860,3 +860,55 @@ def test_percent_scale_value_rejects_hundredfold_alias():
     assert result.status == VerificationStatus.REPAIR
     assert not result.claim_results[0].supported
     assert any("4500" in reason for reason in result.claim_results[0].reasons)
+
+
+def test_exact_one_percent_scale_has_no_hundredfold_alias():
+    from v2.runtime.verifier import _canon_number
+
+    assert _canon_number(1, "percent_0_100") == {Decimal("1")}
+
+
+def test_just_below_one_percent_scale_has_no_hundredfold_alias():
+    from v2.runtime.verifier import _canon_number
+
+    assert _canon_number(0.99, "percent_0_100") == {Decimal("0.99")}
+
+
+def test_just_above_one_percent_scale_has_no_alias():
+    from v2.runtime.verifier import _canon_number
+
+    assert _canon_number(1.01, "percent_0_100") == {Decimal("1.01")}
+
+
+def test_exact_one_fraction_scale_keeps_hundredfold_alias():
+    from v2.runtime.verifier import _canon_number
+
+    assert _canon_number(1, "fraction_0_1") == {Decimal("1"), Decimal("100")}
+
+
+def test_one_percent_source_rejects_hundred_percent_claim():
+    ev = evidence(
+        rows=[{"TEAM": "Capital City Stars", "FG_PCT": 1}, {"TEAM": "Riverport Ravens", "FG_PCT": 2}],
+        units={"FG_PCT": "percent_0_100"},
+        metric_definitions={"FG_PCT": "field goal percentage"},
+    )
+    for text in ("Capital City shot 100 percent in 2025-26.",
+                 "Capital City shot 100% in 2025-26."):
+        claim = Claim(text=text, kind=ClaimKind.OBSERVED, evidence_ids=["standings"])
+        result = verify_mechanical(task(), report(claim), [ev])
+        assert result.status == VerificationStatus.REPAIR
+        assert not result.claim_results[0].supported
+        assert any("100" in reason for reason in result.claim_results[0].reasons)
+
+
+def test_one_percent_source_accepts_one_percent_claim():
+    ev = evidence(
+        rows=[{"TEAM": "Capital City Stars", "FG_PCT": 1}, {"TEAM": "Riverport Ravens", "FG_PCT": 2}],
+        units={"FG_PCT": "percent_0_100"},
+        metric_definitions={"FG_PCT": "field goal percentage"},
+    )
+    claim = Claim(text="Capital City shot 1 percent in 2025-26.", kind=ClaimKind.OBSERVED,
+                  evidence_ids=["standings"])
+    result = verify_mechanical(task(), report(claim), [ev])
+    assert result.status == VerificationStatus.PASS
+    assert result.claim_results[0].supported

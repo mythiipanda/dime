@@ -37,6 +37,7 @@ _SEMANTIC_KEYS = {
     "repair_instructions",
 }
 _PERCENT_LIKE_UNITS = frozenset({"percent", "percent_0_100", "fraction_0_1"})
+_FRACTION_LIKE_UNITS = frozenset({"percent", "fraction_0_1"})
 
 class SemanticVerifier(Protocol):
     async def verify(self, task: TaskSpec, draft: DraftReport,
@@ -49,14 +50,12 @@ def _canon_number(raw: Any, unit: str | None = None) -> set[Decimal]:
         return set()
     values = {value}
     text = str(raw).strip()
-    if text.endswith("%"):
-        values.add(value / 100)
-    elif text[-1:].upper() in {"K", "M", "B"}:
+    if text[-1:].upper() in {"K", "M", "B"}:
         compact = decimal_value(text[:-1])
         if compact is not None:
             values.add(compact * {"K": 1_000, "M": 1_000_000,
                                   "B": 1_000_000_000}[text[-1].upper()])
-    elif abs(value) <= 1 and unit is not None and unit.casefold() in _PERCENT_LIKE_UNITS:
+    elif abs(value) <= 1 and (unit is None or unit.casefold() in _FRACTION_LIKE_UNITS):
         values.add(value * 100)
     return values
 
