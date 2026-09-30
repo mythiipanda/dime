@@ -1,6 +1,9 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import CopyLink from "./CopyLink";
+import { PanelHeader } from "./ExplorePanel";
+import { getQueryParam, setQueryParam } from "../lib/api";
 import { BACKEND } from "../lib/chat";
 
 const SEASONS = [
@@ -32,6 +35,12 @@ type StatKey = (typeof STATS)[number]["key"];
 type SortKey = "player" | StatKey;
 type SortDir = 1 | -1;
 type FilterMode = "mpg" | "total" | "all";
+
+const DEFAULT_SEASON = "2024-25";
+const DEFAULT_MODE: FilterMode = "mpg";
+const DEFAULT_SORT: SortKey = "pts";
+const DEFAULT_DIR: SortDir = -1;
+const BAR_KEYS: readonly StatKey[] = ["pts", "reb", "ast", "ts_pct"];
 
 interface SeasonRow {
   key: string;
@@ -115,15 +124,55 @@ const headStyle: React.CSSProperties = {
   whiteSpace: "nowrap",
 };
 
-export default function PlayerLeaderboard() {
-  const [season, setSeason] = useState("2024-25");
-  const [mode, setMode] = useState<FilterMode>("mpg");
+export default function PlayerLeaderboard({
+  onPlayerSelect,
+}: {
+  onPlayerSelect?: (playerName: string) => void;
+}) {
+  const [season, setSeason] = useState(DEFAULT_SEASON);
+  const [mode, setMode] = useState<FilterMode>(DEFAULT_MODE);
   const [query, setQuery] = useState("");
-  const [sortKey, setSortKey] = useState<SortKey>("pts");
-  const [sortDir, setSortDir] = useState<SortDir>(-1);
+  const [sortKey, setSortKey] = useState<SortKey>(DEFAULT_SORT);
+  const [sortDir, setSortDir] = useState<SortDir>(DEFAULT_DIR);
   const [pool, setPool] = useState<SeasonRow[]>([]);
   const [status, setStatus] = useState<"loading" | "ok" | "error">("loading");
   const [error, setError] = useState("");
+
+  useEffect(() => {
+    const s = getQueryParam("lb_season");
+    if (s && SEASONS.includes(s)) setSeason(s);
+    const m = getQueryParam("lb_mode");
+    if (m === "mpg" || m === "total" || m === "all") setMode(m);
+    const q = getQueryParam("lb_q");
+    if (q) setQuery(q);
+    const sk = getQueryParam("lb_sort");
+    if (sk === "player" || STATS.some((st) => st.key === sk)) setSortKey(sk as SortKey);
+    const d = getQueryParam("lb_dir");
+    if (d === "asc") setSortDir(1);
+    else if (d === "desc") setSortDir(-1);
+  }, []);
+
+  const applySeason = (s: string) => {
+    setSeason(s);
+    setQueryParam("lb_season", s === DEFAULT_SEASON ? "" : s);
+  };
+
+  const applyMode = (m: FilterMode) => {
+    setMode(m);
+    setQueryParam("lb_mode", m === DEFAULT_MODE ? "" : m);
+  };
+
+  const applyQuery = (q: string) => {
+    setQuery(q);
+    setQueryParam("lb_q", q);
+  };
+
+  const applySort = (key: SortKey, dir: SortDir) => {
+    setSortKey(key);
+    setSortDir(dir);
+    setQueryParam("lb_sort", key === DEFAULT_SORT ? "" : key);
+    setQueryParam("lb_dir", dir === DEFAULT_DIR ? "" : "asc");
+  };
 
   useEffect(() => {
     const ctrl = new AbortController();
@@ -240,11 +289,10 @@ export default function PlayerLeaderboard() {
 
   const toggleSort = (key: SortKey) => {
     if (sortKey !== key) {
-      setSortKey(key);
-      setSortDir(key === "player" ? 1 : -1);
+      applySort(key, key === "player" ? 1 : -1);
       return;
     }
-    setSortDir((d) => (d === 1 ? -1 : 1));
+    applySort(key, sortDir === 1 ? -1 : 1);
   };
 
   const arrow = (key: SortKey) =>
@@ -255,19 +303,18 @@ export default function PlayerLeaderboard() {
       aria-label="Player season leaderboard"
       style={{ fontFamily: "var(--font-body)" }}
     >
-      <div className="panel-kicker">Season leaderboard</div>
-      <h2
-        className="panel-title"
-        style={{ margin: "4px 0 12px" }}
-      >
-        Every player, one table
-      </h2>
+      <PanelHeader
+        kicker="Season leaderboard"
+        title="Player seasons"
+        action={<CopyLink panel="leaders" anchor="board" />}
+      />
       <div
         style={{
           display: "flex",
           gap: 8,
           alignItems: "center",
           flexWrap: "wrap",
+          marginTop: 12,
           marginBottom: 10,
         }}
       >
@@ -275,7 +322,7 @@ export default function PlayerLeaderboard() {
           className="field"
           aria-label="Season"
           value={season}
-          onChange={(e) => setSeason(e.target.value)}
+          onChange={(e) => applySeason(e.target.value)}
           style={{ fontSize: 13 }}
         >
           {SEASONS.map((s) => (
@@ -288,7 +335,7 @@ export default function PlayerLeaderboard() {
           className="field"
           aria-label="Search players"
           value={query}
-          onChange={(e) => setQuery(e.target.value)}
+          onChange={(e) => applyQuery(e.target.value)}
           placeholder="Search players"
           style={{ fontSize: 13, width: 180 }}
         />
@@ -308,7 +355,7 @@ export default function PlayerLeaderboard() {
               key={o.v}
               type="button"
               className={mode === o.v ? "tab-active" : "pill-ghost"}
-              onClick={() => setMode(o.v)}
+              onClick={() => applyMode(o.v)}
               style={{ fontSize: 12, padding: "4px 12px" }}
             >
               {o.label}
@@ -328,7 +375,7 @@ export default function PlayerLeaderboard() {
       </div>
       {status === "loading" && (
         <div style={{ fontSize: 13, color: "var(--color-warm-gray)" }}>
-          Loading player_seasons…
+          Loading player seasons...
         </div>
       )}
       {status === "error" && (
@@ -442,7 +489,11 @@ export default function PlayerLeaderboard() {
                 const row = pool[i];
                 const pcts = pctByIndex[i];
                 return (
-                  <tr key={row.key}>
+                  <tr
+                    key={row.key}
+                    onClick={onPlayerSelect ? () => onPlayerSelect(row.name) : undefined}
+                    style={onPlayerSelect ? { cursor: "pointer" } : undefined}
+                  >
                     <td
                       style={{
                         ...cellStyle,
@@ -452,7 +503,29 @@ export default function PlayerLeaderboard() {
                         background: "var(--color-pure-white)",
                       }}
                     >
-                      <span style={{ fontWeight: 500 }}>{row.name}</span>
+                      {onPlayerSelect ? (
+                        <button
+                          type="button"
+                          onClick={() => onPlayerSelect(row.name)}
+                          title={`Open ${row.name}`}
+                          style={{
+                            background: "none",
+                            border: "none",
+                            padding: 0,
+                            font: "inherit",
+                            cursor: "pointer",
+                            color: "var(--color-cyan-edge)",
+                            textAlign: "left",
+                            fontWeight: 500,
+                            textDecoration: "underline",
+                            textUnderlineOffset: 2,
+                          }}
+                        >
+                          {row.name}
+                        </button>
+                      ) : (
+                        <span style={{ fontWeight: 500 }}>{row.name}</span>
+                      )}
                       {row.team && (
                         <span
                           style={{
@@ -483,6 +556,29 @@ export default function PlayerLeaderboard() {
                               {p}
                             </sub>
                           )}
+                          {p !== undefined && BAR_KEYS.includes(s.key) && (
+                            <span
+                              style={{
+                                display: "block",
+                                width: 36,
+                                height: 3,
+                                marginTop: 3,
+                                marginLeft: "auto",
+                                background: "var(--color-stone-border)",
+                                borderRadius: 2,
+                                overflow: "hidden",
+                              }}
+                            >
+                              <span
+                                style={{
+                                  display: "block",
+                                  width: `${p}%`,
+                                  height: "100%",
+                                  background: "var(--color-cyan-signal)",
+                                }}
+                              />
+                            </span>
+                          )}
                         </td>
                       );
                     })}
@@ -500,7 +596,7 @@ export default function PlayerLeaderboard() {
           color: "var(--color-ash-gray)",
         }}
       >
-        Per-game numbers from player_seasons. Subscripts mark the 0–99
+        Per-game numbers from player_seasons. Subscripts mark the 0-99
         percentile within this season. RAPTOR is unavailable for this season,
         so those columns are left out rather than estimated.
       </div>

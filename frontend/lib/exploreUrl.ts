@@ -8,8 +8,8 @@
 
 
 const PANEL_PARAM_KEYS: Record<string, string[]> = {
-  leaders: ["leaders_stat", "leaders_sort", "leaders_q", "leaders_pct", "standings_season"],
-  shots: ["shots_player", "shots_season", "gamelog_player", "gamelog_sort", "gamelog_q"],
+  leaders: ["leaders_stat", "leaders_sort", "leaders_q", "leaders_pct", "standings_season", "lb_season", "lb_mode", "lb_q", "lb_sort", "lb_dir", "adv_tab", "adv_season", "adv_minposs", "adv_sort", "adv_dir", "adv_q"],
+  shots: ["shots_player", "shots_season", "gamelog_player", "gamelog_sort", "gamelog_q", "zone_player", "zone_pname", "zone_season"],
   trade: ["trade_a", "trade_pa", "trade_b", "trade_pb"],
   draft: ["draft_year", "draft_sort", "draft_q"],
   lineups: ["lineups_team", "lineups_tab", "wowy_a", "wowy_b"],
