@@ -751,3 +751,44 @@ def test_mechanical_verifier_ignores_source_identity_as_claim_content():
     plain=EvidenceEnvelope(**base);bound=EvidenceEnvelope(**base,source_identity={'kind':'warehouse','warehouse_id':'frozen-eval','sha256':'a'*64})
     task=TaskSpec(goal='g',mode='quick',deliverable='d');draft=DraftReport(sections=['x'],claims=[Claim(text='A has value 1',kind='observed',evidence_ids=['e'])])
     assert verify_mechanical(task,draft,[plain])==verify_mechanical(task,draft,[bound])
+
+
+def test_count_metric_rejects_percent_alias():
+    ev = evidence(
+        rows=[{"TEAM": "Boston Celtics", "BLK": 1}, {"TEAM": "New York Knicks", "BLK": 2}],
+        units={"BLK": "count"},
+        metric_definitions={"BLK": "blocked shots"},
+    )
+    claim = Claim(text="Boston had 100 blocks in 2025-26.", kind=ClaimKind.OBSERVED,
+                  evidence_ids=["standings"])
+    result = verify_mechanical(task(), report(claim), [ev])
+    assert result.status == VerificationStatus.REPAIR
+    assert not result.claim_results[0].supported
+    assert any("100" in reason for reason in result.claim_results[0].reasons)
+
+
+def test_percent_unit_metric_accepts_percent_alias():
+    ev = evidence(
+        rows=[{"TEAM": "Boston Celtics", "FG_PCT": 0.45}, {"TEAM": "New York Knicks", "FG_PCT": 0.40}],
+        units={"FG_PCT": "fraction_0_1"},
+        metric_definitions={"FG_PCT": "field goal percentage"},
+    )
+    claim = Claim(text="Boston shot 45 percent in 2025-26.", kind=ClaimKind.OBSERVED,
+                  evidence_ids=["standings"])
+    result = verify_mechanical(task(), report(claim), [ev])
+    assert result.status == VerificationStatus.PASS
+    assert result.claim_results[0].supported
+
+
+def test_percent_scale_value_rejects_hundredfold_alias():
+    ev = evidence(
+        rows=[{"TEAM": "Boston Celtics", "FG_PCT": 45}, {"TEAM": "New York Knicks", "FG_PCT": 40}],
+        units={"FG_PCT": "percent_0_100"},
+        metric_definitions={"FG_PCT": "field goal percentage"},
+    )
+    claim = Claim(text="Boston shot 4500 percent in 2025-26.", kind=ClaimKind.OBSERVED,
+                  evidence_ids=["standings"])
+    result = verify_mechanical(task(), report(claim), [ev])
+    assert result.status == VerificationStatus.REPAIR
+    assert not result.claim_results[0].supported
+    assert any("4500" in reason for reason in result.claim_results[0].reasons)
