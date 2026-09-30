@@ -74,6 +74,7 @@ from .preview import get_matchup_preview
 from .prediction import get_game_prediction
 from .priors import get_rapm_prior
 from .shared import resolve_entity, run_python, search_nba
+from .query import query_warehouse_tool
 from .headtohead import get_head_to_head
 from .team import get_season_series
 from .gamelog import search_game_logs
@@ -143,6 +144,7 @@ v1_tools: list[BaseTool] = [
     get_scouting_report,
     get_recap,
     text_to_sql,
+    query_warehouse_tool,
     get_finder,
     get_rapm,
     get_combine,
