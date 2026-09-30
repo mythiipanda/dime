@@ -7,7 +7,11 @@ Live demo: [dime-fawn.vercel.app](https://dime-fawn.vercel.app)
 
 <video src="assets/readme/dime-motion-demo.mp4" controls muted loop playsinline width="100%"></video>
 
-![Dime answering a four-factors question](assets/readme/four-factors-dark.png)
+![Dime chat in the dark theme](assets/readme/chat-dark.png)
+
+![Dime Explore tab](assets/readme/explore.png)
+
+![Dime tracing an answer back to the data](assets/readme/analyst-answer.png)
 
 ## Features
 
