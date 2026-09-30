@@ -571,13 +571,16 @@ def api_debate_card(
     season: str = Query("2025-26"),
 ) -> dict:
     from shared.tools import get_debate_card
-    from shared.tools._core import clamp_season
+    from shared.tools._core import InvalidSeasonError, clamp_season
 
     qa = (a or "").strip()[:80]
     qb = (b or "").strip()[:80]
     if not qa or not qb:
         return {"ok": False, "error": "two player names required"}
-    clamped = clamp_season(season)
+    try:
+        clamped = clamp_season(season)
+    except InvalidSeasonError as exc:
+        return {"ok": False, "error": str(exc)}
     try:
         res = get_debate_card.invoke({"a": qa, "b": qb, "season": clamped})
     except Exception:

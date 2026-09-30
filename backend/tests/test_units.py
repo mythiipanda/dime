@@ -37,11 +37,15 @@ def test_resolve_model_inception(monkeypatch):
 
 
 def test_clamp_season_rejects_garbage():
-    from shared.tools._core import clamp_season
+    import pytest
 
-    assert clamp_season("22025") == "2025-26"
+    from shared.tools._core import InvalidSeasonError, clamp_season
+
     assert clamp_season("2025-26") == "2025-26"
-    assert clamp_season("") == "2025-26"
+    assert clamp_season("2025") == "2024-25"
+    for bad in ("22025", "", "garbage"):
+        with pytest.raises(InvalidSeasonError):
+            clamp_season(bad)
 
 
 def test_resolve_model_rejects_bare_names():

@@ -1415,7 +1415,13 @@ async def _triage_tool(name: str, args: dict[str, Any], state: dict,
         out = await fn.ainvoke(args) if fn is not None else {
             "tool": name, "ok": False, "error": "unknown tool"}
     except Exception as exc:
-        out = {"tool": name, "ok": False, "error": str(exc)[:160]}
+        from shared.tools._core import InvalidSeasonError as _ISE3
+
+        if isinstance(exc, _ISE3):
+            out = {"tool": name, "ok": False, "error": str(exc),
+                   "season_error": True}
+        else:
+            out = {"tool": name, "ok": False, "error": str(exc)[:160]}
     if not isinstance(out, dict):
         out = {"tool": name, "rows": out}
     ms = int((time.time() - t0) * 1000)
@@ -4876,9 +4882,16 @@ async def actual_tool_node(state: DimeState) -> AsyncGenerator[dict[str, Any], N
             await _tok_q.put(None)
             return {"tool": name, "ok": False, "error": "unknown tool"}
         if isinstance(args, dict) and "season" in args:
+            from shared.tools._core import InvalidSeasonError as _ISE
             from shared.tools._core import clamp_season
 
-            args = {**args, "season": clamp_season(args.get("season"))}
+            try:
+                args = {**args, "season": clamp_season(args.get("season"))}
+            except _ISE as exc:
+                elapsed[id(call)] = int((time.time() - t0) * 1000)
+                await _tok_q.put(None)
+                return {"tool": name, "ok": False, "error": str(exc),
+                        "season_error": True}
         try:
             desk_cache = state.setdefault("desk_cache", {})
             entity_cache = state.setdefault("entity_cache", {})
@@ -4969,8 +4982,13 @@ async def actual_tool_node(state: DimeState) -> AsyncGenerator[dict[str, Any], N
             return {"tool": name, "ok": False,
                     "error": f"timed out after {int(time.time() - t0)}s"}
         except Exception as exc:
+            from shared.tools._core import InvalidSeasonError as _ISE2
+
             elapsed[id(call)] = int((time.time() - t0) * 1000)
             await _tok_q.put(None)
+            if isinstance(exc, _ISE2):
+                return {"tool": name, "ok": False, "error": str(exc),
+                        "season_error": True}
             return {"tool": name, "ok": False, "error": str(exc)[:200]}
 
     for call in pending:
