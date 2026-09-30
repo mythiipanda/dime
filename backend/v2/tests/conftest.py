@@ -76,6 +76,19 @@ def build_warehouse(path):
             "INSERT INTO silver_hist_gamelogs VALUES ('DEN', ?, ?, '2025-26')",
             [game_date, wl],
         )
+    con.execute(
+        "CREATE TABLE silver_boxscores ("
+        "GAME_ID VARCHAR, _season VARCHAR)"
+    )
+    for game_id in [
+        "0022500001",
+        "0022500002",
+        "0022500003",
+    ]:
+        con.execute(
+            "INSERT INTO silver_boxscores VALUES (?, '2025-26')",
+            [game_id],
+        )
     con.close()
 
 

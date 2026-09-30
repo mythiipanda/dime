@@ -11,8 +11,15 @@
           "type": "string"
         },
         "season": {
-          "default": "2025-26",
-          "type": "string"
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
         }
       },
       "type": "object"
@@ -32,8 +39,15 @@
           "type": "integer"
         },
         "season": {
-          "default": "2025-26",
-          "type": "string"
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
         },
         "season_type": {
           "default": "regular",
@@ -91,8 +105,15 @@
           ]
         },
         "season": {
-          "default": "2025-26",
-          "type": "string"
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
         },
         "team_id": {
           "anyOf": [
@@ -273,8 +294,15 @@
           "type": "boolean"
         },
         "season": {
-          "default": "2025-26",
-          "type": "string"
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
         },
         "start_date": {
           "anyOf": [
@@ -323,8 +351,15 @@
           "type": "integer"
         },
         "season": {
-          "default": "2025-26",
-          "type": "string"
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
         },
         "seed": {
           "default": 7,
@@ -344,8 +379,15 @@
           "type": "string"
         },
         "season": {
-          "default": "2025-26",
-          "type": "string"
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
         },
         "team": {
           "default": "",
@@ -361,8 +403,15 @@
     "arguments": {
       "properties": {
         "season": {
-          "default": "2025-26",
-          "type": "string"
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
         },
         "team": {
           "default": "",
@@ -384,8 +433,15 @@
           "type": "number"
         },
         "season": {
-          "default": "2025-26",
-          "type": "string"
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
         },
         "team_a": {
           "type": "string"
@@ -419,8 +475,15 @@
           "type": "integer"
         },
         "season": {
-          "default": "2025-26",
-          "type": "string"
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
         },
         "team": {
           "anyOf": [
@@ -465,8 +528,15 @@
           ]
         },
         "season": {
-          "default": "2025-26",
-          "type": "string"
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
         }
       },
       "required": [
@@ -500,8 +570,15 @@
           ]
         },
         "season": {
-          "default": "2025-26",
-          "type": "string"
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
         },
         "team_id": {
           "anyOf": [
@@ -533,8 +610,15 @@
           "type": "string"
         },
         "season": {
-          "default": "2025-26",
-          "type": "string"
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
         }
       },
       "required": [
@@ -560,8 +644,15 @@
           ]
         },
         "season": {
-          "default": "2025-26",
-          "type": "string"
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
         }
       },
       "required": [
@@ -590,8 +681,15 @@
           "type": "integer"
         },
         "season": {
-          "default": "2025-26",
-          "type": "string"
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
         }
       },
       "type": "object"
@@ -613,8 +711,15 @@
           ]
         },
         "season": {
-          "default": "2025-26",
-          "type": "string"
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
         }
       },
       "required": [
@@ -641,8 +746,15 @@
           ]
         },
         "season": {
-          "default": "2025-26",
-          "type": "string"
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
         }
       },
       "required": [
@@ -661,8 +773,15 @@
           "type": "integer"
         },
         "season": {
-          "default": "2025-26",
-          "type": "string"
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
         }
       },
       "type": "object"
@@ -674,8 +793,15 @@
     "arguments": {
       "properties": {
         "season": {
-          "default": "2025-26",
-          "type": "string"
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
         }
       },
       "type": "object"
@@ -695,8 +821,15 @@
           "type": "string"
         },
         "season": {
-          "default": "2025-26",
-          "type": "string"
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
         },
         "stat_category": {
           "default": "PTS",
@@ -712,8 +845,15 @@
     "arguments": {
       "properties": {
         "season": {
-          "default": "2025-26",
-          "type": "string"
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
         },
         "team_abbrev": {
           "default": "",
@@ -741,8 +881,15 @@
           "type": "number"
         },
         "season": {
-          "default": "2025-26",
-          "type": "string"
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
         },
         "stat": {
           "default": "ppg",
@@ -758,8 +905,15 @@
     "arguments": {
       "properties": {
         "season": {
-          "default": "2025-26",
-          "type": "string"
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
         },
         "team_id": {
           "anyOf": [
@@ -794,8 +948,15 @@
           ]
         },
         "season": {
-          "default": "2025-26",
-          "type": "string"
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
         }
       },
       "required": [
@@ -842,8 +1003,15 @@
           "type": "string"
         },
         "season": {
-          "default": "2025-26",
-          "type": "string"
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
         },
         "team": {
           "default": "",
@@ -867,8 +1035,15 @@
     "arguments": {
       "properties": {
         "season": {
-          "default": "2025-26",
-          "type": "string"
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
         }
       },
       "type": "object"
@@ -880,8 +1055,15 @@
     "arguments": {
       "properties": {
         "season": {
-          "default": "2025-26",
-          "type": "string"
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
         },
         "team": {
           "default": "",
@@ -919,8 +1101,15 @@
           "type": "string"
         },
         "season": {
-          "default": "2025-26",
-          "type": "string"
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
         },
         "team": {
           "default": "",
@@ -936,8 +1125,15 @@
     "arguments": {
       "properties": {
         "season": {
-          "default": "2025-26",
-          "type": "string"
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
         },
         "teams": {
           "default": "league",
@@ -953,8 +1149,15 @@
     "arguments": {
       "properties": {
         "season": {
-          "default": "2025-26",
-          "type": "string"
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
         },
         "team": {
           "anyOf": [
@@ -979,8 +1182,15 @@
     "arguments": {
       "properties": {
         "season": {
-          "default": "2025-26",
-          "type": "string"
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
         },
         "stat_category": {
           "default": "AST",
@@ -1010,8 +1220,15 @@
           ]
         },
         "through_season": {
-          "default": "2025-26",
-          "type": "string"
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
         }
       },
       "required": [
@@ -1067,8 +1284,15 @@
           "type": "string"
         },
         "season": {
-          "default": "2025-26",
-          "type": "string"
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
         },
         "team_a": {
           "default": "",
