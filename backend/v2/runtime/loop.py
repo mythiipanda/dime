@@ -665,11 +665,19 @@ def _merge_recovery(execution: ExecutionResult, recovery: ExecutionResult) -> Ex
         for node in recovery.plan.nodes
     )]
     merged_evidence = dict(execution.evidence_by_node)
+    remapped: dict[str, str] = {}
     for node_id, envelope in recovery.evidence_by_node.items():
         target = renames.get(node_id, node_id)
         if target != node_id:
-            envelope = envelope.model_copy(
-                update={"evidence_id": f"evidence:{target}"})
+            remapped[envelope.evidence_id] = f"evidence:{target}"
+    for node_id, envelope in recovery.evidence_by_node.items():
+        target = renames.get(node_id, node_id)
+        lineage = [remapped.get(entry, entry) for entry in envelope.lineage]
+        new_id = remapped.get(envelope.evidence_id)
+        if new_id is not None:
+            envelope = envelope.model_copy(update={"evidence_id": new_id, "lineage": lineage})
+        elif lineage != envelope.lineage:
+            envelope = envelope.model_copy(update={"lineage": lineage})
         merged_evidence[target] = envelope
     merged_attempts = dict(execution.attempts)
     for node_id, count in recovery.attempts.items():
