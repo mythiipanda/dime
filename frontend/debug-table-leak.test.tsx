@@ -19,12 +19,12 @@ function twoTableAi(): AiMessage {
         tables: [
           {
             tool: "get_leaders",
-            rows: [{ PLAYER: "Nikola Jokic", TEAM: "DEN", PTS: 30 }],
+            rows: [{ PLAYER: "Marek Voss", TEAM: "DEN", PTS: 30 }],
             meta: { source: "warehouse" },
           },
           {
             tool: "get_hustle",
-            rows: [{ PLAYER: "Draymond Green", TEAM: "GSW", PTS: 8 }],
+            rows: [{ PLAYER: "Tariq Bell", TEAM: "GSW", PTS: 8 }],
             meta: { source: "warehouse" },
           },
         ] as never,
