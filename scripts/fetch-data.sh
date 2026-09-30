@@ -14,7 +14,7 @@ fetch() {
   fi
   return 1
 }
-if fetch "https://github.com/mythiipanda/dime/releases/download/dime-data-20260929/dime_data.zip" "54e2f5a9998844045460cd02eaabe1afe7af3f97ef96278e6de6ae89237c19a2" "dime-data-20260929"; then
+if fetch "https://github.com/mythiipanda/dime/releases/download/dime-data-20260930/dime_data_full.zip" "5566409dd71881194edc6dd6ddddbf56a316824a9c34340b3ddb34d6c7a95ea8" "dime-data-20260930"; then
   :
 else
   echo "fetch-data: download failed" >&2

@@ -90,21 +90,20 @@ the cutover still pending.
 
 The warehouse is a DuckDB file baked into the backend Docker
 image. On backend changes, CI downloads the data pack
-(`dime-data-20260929`), unzips it into
+(`dime-data-20260930`), unzips it into
 `backend/data/`, builds derived tables at
 image time, and pushes
 `ghcr.io/mythiipanda/dime-backend:latest`. For local dev,
 `./scripts/fetch-data.sh` fetches the current pack
-(`dime-data-20260929`, checksum-verified) and exits 1 on
+(`dime-data-20260930`, checksum-verified) and exits 1 on
 failure. The warehouse is the primary source at answer time; on misses, some datasets fall back to live sources (nba_stats, ESPN) where configured, and that fallback can fail or time out.
 
-Coverage in the current pack: 52 tables, 47 of them silver.
-The `silver_hist_*` tables span 2009-10 through 2025-26
-(game logs, shots, possessions, lineups, standings).
-Play-by-play covers 2020-21 through 2024-25. RAPTOR runs
-1976-77 through 2021-22. Draft history runs 1996-97
-through 2023-24. Current-season tables and the 2026-27 cap
-ledger ship with each pack.
+The current pack holds 54 tables. A fresh backfill covers
+2015-16 through 2024-25 with 330,485 boxscore rows and 40,000
+lineup rows. The pack also carries the historical tables:
+RAPTOR, RAPM, shots, advanced stats, on/off splits, clutch
+splits, leaders, salaries, zone splits, and the `hist_*`
+tables.
 
 ## Evals and tests
 
