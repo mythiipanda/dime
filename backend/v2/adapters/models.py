@@ -850,6 +850,37 @@ class ModelIntake(ModelStage):
             ])),
         })
 
+    @classmethod
+    def _floor_season_for_coverage(cls, task: TaskSpec) -> TaskSpec:
+        if task.season is None:
+            return task
+        from v2.adapters.coverage import (
+            COVERAGE_REGISTRY,
+            DEFAULT_SEASON,
+            DEFAULT_TABLE,
+            table_for_metric,
+        )
+        implied = [table_for_metric(metric) for metric in task.metric_ids]
+        if not implied:
+            implied = [DEFAULT_TABLE]
+        earliest = max(
+            COVERAGE_REGISTRY.get(table, DEFAULT_SEASON) for table in implied
+        )
+        if task.season.value >= earliest:
+            return task
+        requested = task.season.value
+        floored = task.season.model_copy(update={
+            "value": earliest, "source": "resolved", "confidence": 1.0,
+        })
+        note = (
+            f"Our numbers start with the {earliest} season, "
+            f"so I am answering for {earliest} instead of {requested}."
+        )
+        return task.model_copy(update={
+            "season": floored,
+            "assumptions": list(dict.fromkeys([*task.assumptions, note])),
+        })
+
     async def understand(
         self, request: str, context: Sequence[ConversationTurn] = ()
     ) -> TaskSpec:
@@ -1009,6 +1040,7 @@ class ModelIntake(ModelStage):
             task = task.model_copy(update={
                 "season": task.season.model_copy(update={"value": SEASON}),
             })
+        task = self._floor_season_for_coverage(task)
         task = task.model_copy(update={
             "required_evidence": required_evidence,
         })
