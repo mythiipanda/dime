@@ -4,6 +4,7 @@ import anyio
 import copy
 import json
 import hashlib
+import logging
 import random
 import re
 import time
@@ -169,8 +170,9 @@ ROUTE_POLICIES: dict[str, dict[str, Any]] = {
     "intake": {"max_attempts": 2, "attempt_timeout_s": 6.0,
                "total_budget_s": 18.0,
                "transient_classes": _TRANSIENT_FAILURE_CLASSES},
-    "intake_admission": {"max_attempts": 1, "attempt_timeout_s": 6.0,
-               "total_budget_s": 6.0, "transient_classes": frozenset()},
+    "intake_admission": {"max_attempts": 2, "attempt_timeout_s": 6.0,
+               "total_budget_s": 12.0,
+               "transient_classes": _TRANSIENT_FAILURE_CLASSES},
     "requirement_review": {"max_attempts": 2, "attempt_timeout_s": 8.0,
                "total_budget_s": 12.0,
                "transient_classes": _TRANSIENT_FAILURE_CLASSES},
@@ -823,6 +825,10 @@ def served_capability_metrics(capability_id: str) -> set[str]:
         key for key in spec.metric_definitions if not key.startswith("__")}
     return {str(name).upper() for name in names}
 
+
+_admission_logger = logging.getLogger(__name__)
+
+
 class ModelIntake(ModelStage):
     prompt_name = "intake"
     route = "intake"
@@ -947,6 +953,16 @@ class ModelIntake(ModelStage):
                       task: TaskSpec) -> TaskSpec:
         errors = cls._validate_review(review, request, context, task)
         if review.decision == "admit" and not errors:
+            return task
+        if (not errors and not review.unresolved_references
+                and review.findings
+                and all(finding.code == "missing_binding"
+                        for finding in review.findings)):
+            _admission_logger.warning(
+                "intake_admission missing_binding advisory: %d expected "
+                "subjects unbound; admitting task unchanged",
+                len(review.findings[0].affected_subjects),
+            )
             return task
         blockers = [finding.code for finding in review.findings]
         if review.unresolved_references:
