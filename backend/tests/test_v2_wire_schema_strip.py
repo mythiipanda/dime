@@ -7,7 +7,7 @@ from pydantic_ai.models import OutputObjectDefinition
 from pydantic_ai.providers.openai import OpenAIProvider
 from v2.adapters.models import DimeOpenAIChatModel
 from v2.arguments import PlannerOutputWire
-from v2.contracts import EvidenceRequirement, IntakeAdmissionReview, TaskSpec
+from v2.contracts import EvidenceRequirement, TaskSpec
 
 
 UNION_LITERAL = {
@@ -106,28 +106,6 @@ def test_plain_string_array_bounds_dropped_with_shape_preserved():
 
 def test_wire_schema_holds_no_bounds_anywhere():
     assert _bound_paths(_wire_schema(UNION_LITERAL, "Probe")) == []
-
-
-def test_intake_review_wire_drops_union_bounds_preserves_oneof():
-    schema = TypeAdapter(IntakeAdmissionReview).json_schema()
-    node = schema["properties"]["expected_subjects"]
-    assert node["minItems"] == 1
-    assert node["maxItems"] == 128
-    assert len(node["items"]["oneOf"]) == 6
-    before = json.dumps(schema, sort_keys=True)
-    wire = _wire_schema(schema, "IntakeAdmissionReview")
-    wired = wire["properties"]["expected_subjects"]
-    expected_items = {
-        key: value for key, value in node["items"].items() if key != "discriminator"
-    }
-    assert wired == {
-        "type": "array",
-        "title": node["title"],
-        "items": expected_items,
-    }
-    assert wired["items"]["oneOf"] == node["items"]["oneOf"]
-    assert _bound_paths(wire) == []
-    assert json.dumps(schema, sort_keys=True) == before
 
 
 def test_taskspec_wire_drops_plain_array_bound_preserves_items():

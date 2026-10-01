@@ -4,7 +4,6 @@ import anyio
 import copy
 import json
 import hashlib
-import logging
 import random
 import re
 import time
@@ -44,15 +43,6 @@ from shared.providers import (
 )
 from v2.contracts import (
     ConversationTurn,
-    AdmissionBinding,
-    AdmissionReviewTarget,
-    EntityAdmissionSubject,
-    IntakeAdmissionReview,
-    OutputAdmissionSubject,
-    MetricAdmissionSubject,
-    TaskAdmissionSubject,
-    RequirementAdmissionSubject,
-    SeasonAdmissionSubject,
     Claim,
     DraftReport,
     EvidenceEnvelope,
@@ -169,9 +159,6 @@ _TRANSIENT_FAILURE_CLASSES = frozenset({
 ROUTE_POLICIES: dict[str, dict[str, Any]] = {
     "intake": {"max_attempts": 2, "attempt_timeout_s": 6.0,
                "total_budget_s": 18.0,
-               "transient_classes": _TRANSIENT_FAILURE_CLASSES},
-    "intake_admission": {"max_attempts": 2, "attempt_timeout_s": 6.0,
-               "total_budget_s": 12.0,
                "transient_classes": _TRANSIENT_FAILURE_CLASSES},
     "requirement_review": {"max_attempts": 2, "attempt_timeout_s": 8.0,
                "total_budget_s": 12.0,
@@ -654,7 +641,6 @@ class ProviderStructuredModel:
 
 _PROVIDER_ROUTE_PROMPT_NAMES = {
     "intake": "intake",
-    "intake_admission": "intake_admission",
     "requirement_review": "requirement_review_v3",
     "planner": "planner_v3",
     "synthesizer": "synthesizer",
@@ -826,218 +812,20 @@ def served_capability_metrics(capability_id: str) -> set[str]:
     return {str(name).upper() for name in names}
 
 
-_admission_logger = logging.getLogger(__name__)
-
-
 class ModelIntake(ModelStage):
     prompt_name = "intake"
     route = "intake"
     schema = TaskSpec
 
     def __init__(self, *args: Any, capability_catalog: Mapping[str, str],
-                 intake_admission: bool = False, **kwargs: Any) -> None:
+                 **kwargs: Any) -> None:
         super().__init__(*args, **kwargs)
         self._catalog = dict(capability_catalog)
-        self._intake_admission = intake_admission
 
     @staticmethod
     def _bounded_context(context: Sequence[ConversationTurn]) -> tuple[ConversationTurn, ...]:
         from v2.contracts import MAX_INTAKE_CONTEXT_TURNS
         return tuple(context[-MAX_INTAKE_CONTEXT_TURNS:])
-
-    @staticmethod
-    def _canonical_json(value: Any) -> bytes:
-        return json.dumps(value, sort_keys=True, separators=(",", ":"),
-                          ensure_ascii=False).encode("utf-8")
-
-    @classmethod
-    def _review_target(cls, request: str, context: Sequence[ConversationTurn],
-                       task: TaskSpec) -> AdmissionReviewTarget:
-        bounded = cls._bounded_context(context)
-        context_value = [{"index": index, "role": turn.role,
-                          "content": turn.content}
-                         for index, turn in enumerate(bounded)]
-        return AdmissionReviewTarget(
-            request_sha256=hashlib.sha256(request.encode("utf-8")).hexdigest(),
-            context_sha256=hashlib.sha256(
-                cls._canonical_json(context_value)).hexdigest(),
-            task_sha256=hashlib.sha256(cls._canonical_json(
-                task.model_dump(mode="json"))).hexdigest())
-
-    @staticmethod
-    def _expected_admission_subjects(task: TaskSpec) -> tuple[Any, ...]:
-        subjects: list[Any] = [TaskAdmissionSubject(kind="task")]
-        subjects.extend(EntityAdmissionSubject(
-            kind="entity", entity_id=entity.id, entity_type=entity.type)
-            for entity in task.entities)
-        if task.season is not None:
-            subjects.append(SeasonAdmissionSubject(
-                kind="season", value=task.season.value))
-        subjects.extend(MetricAdmissionSubject(
-            kind="metric", owner_kind="task", owner_id="request", metric_id=metric)
-            for metric in task.metric_ids)
-        subjects.extend(OutputAdmissionSubject(
-            kind="output", owner_kind="task", requirement_id="request", output_id=output)
-            for output in task.requested_outputs)
-        for owner_kind, requirements in (("evidence", task.requirements),
-                                         ("calculation", task.calculation_requirements)):
-            for requirement in requirements:
-                subjects.append(RequirementAdmissionSubject(
-                    kind="requirement", requirement_kind=owner_kind,
-                    requirement_id=requirement.id))
-                subjects.extend(MetricAdmissionSubject(
-                    kind="metric", owner_kind=owner_kind,
-                    owner_id=requirement.id, metric_id=metric)
-                    for metric in requirement.metric_ids)
-                subjects.extend(OutputAdmissionSubject(
-                    kind="output", owner_kind=owner_kind,
-                    requirement_id=requirement.id, output_id=output)
-                    for output in requirement.requested_outputs)
-        return tuple(subjects)
-
-    @classmethod
-    def _source_for_locator(cls, locator: Any, request: str,
-                            context: Sequence[ConversationTurn]) -> str | None:
-        if locator.source == "request":
-            return request
-        bounded = cls._bounded_context(context)
-        if locator.context_turn is None or locator.context_turn >= len(bounded):
-            return None
-        return bounded[locator.context_turn].content
-
-    @classmethod
-    def _locator_binds_source(cls, locator: Any, request: str,
-                              context: Sequence[ConversationTurn]) -> bool:
-        source = cls._source_for_locator(locator, request, context)
-        if (source is None or locator.end > len(source)
-                or source[locator.start:locator.end] != locator.text):
-            return False
-        return True
-
-    @classmethod
-    def _validate_review(cls, review: IntakeAdmissionReview, request: str,
-                         context: Sequence[ConversationTurn], task: TaskSpec) -> list[str]:
-        target = cls._review_target(request, context, task)
-        errors: list[str] = []
-        try:
-            review.require_target(target)
-        except ValueError as exc:
-            errors.append(str(exc))
-        expected = cls._expected_admission_subjects(task)
-        expected_ids = {item.model_dump_json() for item in expected}
-        review_ids = {item.model_dump_json() for item in review.expected_subjects}
-        if review_ids != expected_ids or len(review.expected_subjects) != len(expected):
-            errors.append("review expected subjects do not match proposed task")
-        for item in (*review.bindings, *review.unresolved_references):
-            if not cls._locator_binds_source(item.locator, request, context):
-                errors.append("review locator does not match frozen source")
-        return list(dict.fromkeys(errors))
-
-    async def _review_admission(self, request: str,
-                                context: Sequence[ConversationTurn],
-                                task: TaskSpec) -> IntakeAdmissionReview:
-        bounded = self._bounded_context(context)
-        expected = self._expected_admission_subjects(task)
-        target = self._review_target(request, bounded, task)
-        return await self._generate_as(
-            prompt_name="intake_admission", route="intake_admission",
-            schema=IntakeAdmissionReview,
-            payload={
-                "target": target.model_dump(mode="json"),
-                "expected_subjects": [item.model_dump(mode="json")
-                                      for item in expected],
-                "question": request,
-                "conversation_context": [
-                    {"index": index, **turn.model_dump(mode="json")}
-                    for index, turn in enumerate(bounded)],
-                "proposed_task": task.model_dump(mode="json"),
-            })
-
-    @classmethod
-    def _blocked_task(cls, task: TaskSpec, blockers: Sequence[str]) -> TaskSpec:
-        return task.model_copy(update={
-            "entities": [], "season": None, "as_of": None,
-            "subquestions": [], "required_evidence": [], "requirements": [],
-            "calculation_requirements": [], "assumptions": [], "skills": [],
-            "metric_ids": [], "requested_outputs": [],
-            "subject_entity_type": None,
-            "open_questions": list(dict.fromkeys([
-                *task.open_questions,
-                *(blockers or ["The request could not be admitted safely."]),
-            ])),
-        })
-
-    @classmethod
-    def _apply_review(cls, review: IntakeAdmissionReview, request: str,
-                      context: Sequence[ConversationTurn],
-                      task: TaskSpec) -> TaskSpec:
-        errors = cls._validate_review(review, request, context, task)
-        if review.decision == "admit" and not errors:
-            return task
-        if review.decision == "admit":
-            return cls._blocked_task(task, errors)
-        expected_ids = {item.model_dump_json()
-                        for item in cls._expected_admission_subjects(task)}
-        review_ids = {item.model_dump_json()
-                      for item in review.expected_subjects}
-        if (review_ids != expected_ids
-                or len(review.expected_subjects) != len(expected_ids)):
-            _admission_logger.warning(
-                "intake_admission expected subjects mismatch: review manifest "
-                "does not match proposed task; proceeding on deterministic manifest")
-        try:
-            review.require_target(cls._review_target(request, context, task))
-        except ValueError:
-            _admission_logger.warning(
-                "intake_admission target mismatch: review target does not "
-                "match frozen task")
-        verifiable_references = [
-            item for item in review.unresolved_references
-            if cls._locator_binds_source(item.locator, request, context)
-        ]
-        dropped_locators = sum(
-            not cls._locator_binds_source(item.locator, request, context)
-            for item in (*review.bindings, *review.unresolved_references)
-        )
-        if dropped_locators:
-            _admission_logger.warning(
-                "intake_admission locator mismatch: %d reference(s) do not "
-                "bind frozen source; ignoring",
-                dropped_locators,
-            )
-        known_findings = [
-            finding for finding in review.findings
-            if all(subject.model_dump_json() in expected_ids
-                   for subject in finding.affected_subjects)
-        ]
-        dropped_findings = len(review.findings) - len(known_findings)
-        if dropped_findings:
-            _admission_logger.warning(
-                "intake_admission unknown finding subjects: %d finding(s) "
-                "outside proposed task; ignoring",
-                dropped_findings,
-            )
-        if verifiable_references:
-            return cls._blocked_task(task, [
-                *(finding.code for finding in known_findings),
-                "The request contains an unresolved reference.",
-            ])
-        if (known_findings
-                and all(finding.code == "missing_binding"
-                        for finding in known_findings)):
-            _admission_logger.warning(
-                "intake_admission missing_binding advisory: %d expected "
-                "subjects unbound; admitting task unchanged",
-                len(known_findings[0].affected_subjects),
-            )
-            return task
-        if not known_findings:
-            _admission_logger.warning(
-                "intake_admission no verifiable blockers advisory: "
-                "admitting task unchanged")
-            return task
-        return cls._blocked_task(
-            task, [finding.code for finding in known_findings])
 
     @classmethod
     def _mark_uncovered_season(cls, task: TaskSpec) -> TaskSpec:
@@ -1109,7 +897,7 @@ class ModelIntake(ModelStage):
             "skill_catalog": self._skills.catalog(),
         }
         task = await self._generate(payload)
-        if (context and task.open_questions and not self._intake_admission):
+        if context and task.open_questions:
             task = await self._generate({
                 **payload,
                 "prior_intake": task.model_dump(mode="json"),
@@ -1276,26 +1064,6 @@ class ModelIntake(ModelStage):
         task = task.model_copy(update={
             "subject_entity_type": _derive_subject_entity_type(task),
         })
-        if self._intake_admission:
-            candidate = task
-            review = await self._review_admission(request, bounded, candidate)
-            task = self._apply_review(review, request, bounded, candidate)
-            if not candidate.open_questions and task.open_questions:
-                _admission_logger.warning(
-                    "intake_admission reviewer block on clean task; "
-                    "resampling review")
-                review = await self._review_admission(
-                    request, bounded, candidate)
-                resampled = self._apply_review(
-                    review, request, bounded, candidate)
-                if not resampled.open_questions:
-                    _admission_logger.warning(
-                        "intake_admission resample admitted task unchanged")
-                    task = resampled
-                else:
-                    _admission_logger.warning(
-                        "intake_admission resample confirmed block; "
-                        "keeping first verdict")
         self._skills.activate(task.skills)
         return task
 

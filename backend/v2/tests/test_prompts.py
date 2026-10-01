@@ -15,7 +15,6 @@ PROMPT_SECTION_OVERRIDES = {"planner": (*REQUIRED_SECTIONS, "Failure-context rep
 
 OUTPUT_CONTRACTS = {
     "intake": (contracts.TaskSpec,),
-    "intake_admission": (contracts.IntakeAdmissionReview,),
     "planner": (contracts.PlanNode,),
     "requirement_review": (contracts.RequirementReview,),
     "synthesizer": (contracts.DraftReport, contracts.Claim),
