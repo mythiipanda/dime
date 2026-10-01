@@ -93,7 +93,8 @@ def test_happy_path_shape():
     wpas = [r["wpa"] for r in leaders]
     assert wpas == sorted(wpas, reverse=True)
     assert out["meta"]["season_label"] == "2024-25"
-    assert out["meta"]["source"] == "warehouse silver_hist_pbp (documented estimates)"
+    assert out["meta"]["source"] == "warehouse silver_hist_pbp"
+    assert out["meta"]["estimated"] is True
 
 
 def test_star_sanity():
@@ -202,3 +203,11 @@ def test_display_name_builds_static_index_once(monkeypatch):
     assert wpa._display_name(2, "Two") == "Two Player"
     assert wpa._display_name(3, "Three") == "Three"
     assert calls == 1
+
+
+def test_estimates_never_claim_warehouse_source():
+    out = get_wpa_leaders.invoke({"season": 2026, "limit": 3})
+    assert out["ok"] is False
+    assert out["meta"]["source"] == "warehouse silver_hist_pbp"
+    assert out["meta"]["estimated"] is True
+    assert "documented estimates" not in str(out["meta"])

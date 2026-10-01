@@ -169,6 +169,17 @@ function cleanTable(table: ArtifactTable): ArtifactTable {
   };
 }
 
+function parseStringRows(rows: unknown): unknown {
+  if (typeof rows !== "string") return rows;
+  try {
+    const parsed: unknown = JSON.parse(rows);
+    if (parsed && typeof parsed === "object") return parsed;
+  } catch {
+    return rows;
+  }
+  return rows;
+}
+
 function isTableListing(list: unknown[]): boolean {
   if (list.length === 0) return false;
   return list.every((row) => {
@@ -302,7 +313,9 @@ function InlineChart({ rows }: { rows: unknown }) {
 const ORDER: NodeName[] = ["entry", "data_retrieval", "tools", "analytics", "presentation"];
 
 function flattenHistoricalLeaders(rows: unknown, statLabel?: string): Record<string, unknown>[] | null {
-  const root = (rows as { rows?: unknown } | null)?.rows ?? rows;
+  const source = parseStringRows(rows);
+  if (typeof source === "string") return null;
+  const root = (source as { rows?: unknown } | null)?.rows ?? source;
   if (!root || typeof root !== "object" || Array.isArray(root)) return null;
   const rec = root as Record<string, unknown>;
   const groups: { season?: unknown; leaders?: unknown }[] = [];
@@ -367,9 +380,10 @@ export default function DataArtifacts({
   for (const n of names) {
     for (const t of ai.nodes[n]!.tables) {
       const name = resolveToolName(t) ?? t.tool;
-      if (isDebugPayload(innerRows(t.rows))) continue;
+      const rows = parseStringRows(t.rows);
+      if (isDebugPayload(innerRows(rows))) continue;
       if (isProduction() && DEBUG_TOOLS.has(name ?? "")) continue;
-      tables.push(cleanTable(t));
+      tables.push(cleanTable({ ...t, rows }));
     }
   }
 
@@ -478,7 +492,7 @@ export default function DataArtifacts({
   const toolName = toolOf(table ?? {});
   const isShotTool = toolName === "get_shot_zones" || toolName === "get_shot_compare" || toolName === "get_team_shot_zones";
   const historicalRows =
-    toolName === "get_historical_leaders" && table
+    table && (toolName === "get_historical_leaders" || toolName === undefined)
       ? flattenHistoricalLeaders(
           table.rows,
           (table.meta as { label?: string } | undefined)?.label,

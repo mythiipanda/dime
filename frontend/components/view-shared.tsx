@@ -136,6 +136,7 @@ const TITLE_TO_TOOL: Record<string, string> = {
   "Game Prediction": "get_game_prediction",
   "Game Logs": "search_game_logs",
   "Search Game Logs": "search_game_logs",
+  "Historical leaders": "get_historical_leaders",
   "Rotation Check": "get_rotation_check",
 };
 
@@ -160,9 +161,9 @@ export function resolveToolName(table: {
 }): string | undefined {
   if (table.tool) return table.tool;
   const raw = str(table.title).split(" · ")[0].trim();
-  if (!raw || raw === "Dataset") return undefined;
+  if (!raw || raw.toLowerCase() === "dataset") return undefined;
   for (const [title, tool] of Object.entries(TITLE_TO_TOOL)) {
-    if (title === raw) return tool;
+    if (title.toLowerCase() === raw.toLowerCase()) return tool;
   }
   if (/^[A-Z][A-Za-z]*(\s[A-Z][A-Za-z]*)*$/.test(raw)) {
     const candidate = "get_" + raw.toLowerCase().replace(/\s+/g, "_");

@@ -5,6 +5,7 @@ from typing import Any, Union
 from langchain_core.tools import tool
 
 from .. import store
+from ._core import resolve_season
 from .wpamodel import TIPOFF_SEC, seconds_remaining, win_probability
 
 MIN_YEAR, MAX_YEAR = 2021, 2025
@@ -182,7 +183,9 @@ def get_wpa_leaders(season: Union[int, str, None] = 2025,
         warnings.append(season_warning)
     if year is None:
         return {"tool": "get_wpa_leaders", "ok": False, "rows": {},
-                "meta": {"requested_season": season},
+                "meta": {"requested_season": season,
+                         "source": "warehouse silver_hist_pbp",
+                         "estimated": True},
                 "error": f"no WPA coverage for season {season}; "
                          f"play-by-play covers end-years {MIN_YEAR}..{MAX_YEAR}"}
     try:
@@ -210,7 +213,9 @@ def get_wpa_leaders(season: Union[int, str, None] = 2025,
             tables = {r[0] for r in con.execute("SHOW TABLES").fetchall()}
             if "silver_hist_pbp" not in tables:
                 return {"tool": "get_wpa_leaders", "ok": False, "rows": {},
-                        "meta": {"season": year},
+                        "meta": {"season": year,
+                                 "source": "warehouse silver_hist_pbp",
+                                 "estimated": True},
                         "error": "warehouse table missing: silver_hist_pbp"}
             rows = con.execute(
                 f"""SELECT {COLUMNS} FROM silver_hist_pbp WHERE _season = ?
@@ -251,7 +256,8 @@ def get_wpa_leaders(season: Union[int, str, None] = 2025,
         return {"tool": "get_wpa_leaders", "ok": False, "rows": {},
                 "meta": {"season": year, "season_label": label,
                          "min_events": floor,
-                         "source": "warehouse silver_hist_pbp (documented estimates)"},
+                         "source": "warehouse silver_hist_pbp",
+                         "estimated": True},
                 "error": f"no players with {floor}+ events in season {label}"}
     for rank, row in enumerate(leaders[:limit], 1):
         row["rank"] = rank
@@ -263,7 +269,8 @@ def get_wpa_leaders(season: Union[int, str, None] = 2025,
         "model": "fitted WP sigmoid(B0+B1*lead/sqrt(sec+360)); "
                  "delta credited to the acting player; paired rows share one "
                  "action_number credited to shooter/committer only",
-        "source": "warehouse silver_hist_pbp (documented estimates)",
+        "source": "warehouse silver_hist_pbp",
+        "estimated": True,
         "values": "WPA sums credit makers and debit missers",
         "limits": "no steal or block credit; no opponent or teammate "
                   "adjustment; cumulative totals reward games played",

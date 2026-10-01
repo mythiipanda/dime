@@ -372,6 +372,7 @@ TOOL_CALL_TIMEOUT_S = 25.0
 DESK_CALL_TIMEOUT_S = 120.0
 TURN_WARN_S = 40.0
 TURN_BUDGET_S = 90.0
+TURN_HARD_CAP_S = 105.0
 DEEP_TURN_BUDGET_S = 180.0
 MAX_TOOL_CALLS = 8
 DEEP_TOOL_ROUNDS = 5
@@ -1593,6 +1594,73 @@ _LEDGER_UNIT_WORDS = {"PTS": "points", "REB": "rebounds", "AST": "assists",
                       "TS_PCT": "true shooting"}
 
 
+_CONTEXT_RATE_CATEGORY = {
+    "points": "PPG", "rebounds": "RPG", "assists": "APG",
+    "steals": "SPG", "blocks": "BPG", "true shooting": "TS_PCT",
+}
+
+
+def _prior_context_leader_claim(question: str, history: list,
+                                ledger: list) -> tuple | None:
+    try:
+        explicit = _explicit_season(question) or _relative_season(question)
+    except Exception:
+        explicit = None
+    texts: list[str] = []
+    for turn in reversed(history or []):
+        if (isinstance(turn, dict) and turn.get("role") == "assistant"
+                and str(turn.get("text") or "").strip()):
+            texts.append(str(turn["text"]))
+    for fact in reversed(ledger or []):
+        if isinstance(fact, str) and fact.strip():
+            texts.append(fact)
+    for text in texts:
+        found: list[tuple] = []
+        for sentence in re.split(r"(?<=[.!?])\s+", text):
+            seasons = set(re.findall(r"20\d\d-\d\d", sentence))
+            if len(seasons) != 1 or not re.search(r"\d", sentence):
+                continue
+            season = next(iter(seasons))
+            if explicit is not None and season != explicit:
+                continue
+            low = sentence.lower()
+            units = [u for u in _CONTEXT_RATE_CATEGORY if u in low]
+            if len(units) != 1:
+                continue
+            found.append((_CONTEXT_RATE_CATEGORY[units[0]], season,
+                          sentence.strip()))
+        if not found:
+            continue
+        if (len({c for c, _s, _t in found}) == 1
+                and len({s for _c, s, _t in found}) == 1):
+            return found[-1]
+        return None
+    return None
+
+
+def _context_claim_verified(out: dict, sentence: str,
+                            category: str) -> bool:
+    if _result_status(out) != "ok":
+        return False
+    rows = out.get("rows")
+    if not isinstance(rows, list) or not rows:
+        return False
+    top = rows[0]
+    if not isinstance(top, dict) or category not in top:
+        return False
+    try:
+        value = float(top[category])
+    except (TypeError, ValueError):
+        return False
+    for raw in re.findall(r"\d+(?:\.\d+)?", sentence):
+        try:
+            if abs(float(raw) - value) <= 0.1:
+                return True
+        except (TypeError, ValueError):
+            continue
+    return False
+
+
 def _ledger_leader_answer(question: str, ledger: list[str]) -> str | None:
     try:
         category = _leaders_category(question or "")
@@ -1905,6 +1973,31 @@ async def _triage_seed(question: str, primary: str, model: str,
 
 
 
+
+    if (not found_p and not found_t
+            and (state.get("history") or state.get("ledger"))):
+        _ctx_claim = _prior_context_leader_claim(
+            question, state.get("history") or [], state.get("ledger") or [])
+        if _ctx_claim is not None:
+            _ccat, _cseason, _csentence = _ctx_claim
+            _ch: dict[str, Any] = {}
+            async for _e in _triage_tool(
+                    "get_leaders",
+                    {"stat_category": _ccat, "season": _cseason},
+                    state, _ch):
+                yield _e
+            if _context_claim_verified(_ch.get("out") or {}, _csentence,
+                                         _ccat):
+                _ctop = (_ch["out"].get("rows") or [{}])[0]
+                _cval = _ctop.get(_ccat)
+                state["analysis"] = (
+                    f"{_csentence} Verified against the current board: "
+                    f"{_ctop.get('PLAYER')} still leads at {_cval} in "
+                    f"{_cseason}.")
+                state["_analysis_final"] = True  # type: ignore[typeddict-unknown-key]
+                async for _e in _triage_terminal(question, state):
+                    yield _e
+                return
 
     if (not found_p and not found_t and state.get("ledger")):
         _ledger_answer = _ledger_leader_answer(
@@ -5218,7 +5311,13 @@ async def actual_tool_node(state: DimeState) -> AsyncGenerator[dict[str, Any], N
                     _task0 = (args.get("task", "")
                               if isinstance(args, dict) else "")
                     _t0 = time.time()
-                    out = await _desk_attempt(_task0, DESK_CALL_TIMEOUT_S)
+                    _deadline = state.get("_turn_deadline")
+                    try:
+                        _left = float(_deadline) - time.time()
+                    except (TypeError, ValueError):
+                        _left = DESK_CALL_TIMEOUT_S
+                    out = await _desk_attempt(
+                        _task0, max(10.0, min(DESK_CALL_TIMEOUT_S, _left)))
 
 
 
@@ -5227,10 +5326,15 @@ async def actual_tool_node(state: DimeState) -> AsyncGenerator[dict[str, Any], N
 
                     if _result_status(out) != "ok" and _task0:
                         _first_err = out.get("error", "unknown error")
-                        _retry_timeout = min(
+                        try:
+                            _left2 = float(state.get("_turn_deadline")) - time.time()
+                        except (TypeError, ValueError):
+                            _left2 = DESK_CALL_TIMEOUT_S
+                        _retry_timeout = max(10.0, min(
                             DESK_CALL_TIMEOUT_S,
                             max(25.0, _DESK_WALL_BUDGET_S
-                                - (time.time() - _t0)))
+                                - (time.time() - _t0)),
+                            _left2))
                         out = await _desk_attempt(
                             "The previous attempt failed "
                             f"({_first_err}). Retry with the simplest "
@@ -5526,6 +5630,13 @@ async def analytics_agent(state: DimeState) -> AsyncGenerator[dict[str, Any], No
         yield _event("node_update",
                      {"node": "analytics", "status": "complete"})
         return
+    if state.get("_watchdog_tripped"):
+        state["analysis"] = _watchdog_partial(
+            state.get("tool_results") or [])
+        state["_analysis_final"] = True  # type: ignore[typeddict-unknown-key]
+        yield _event("node_update",
+                     {"node": "analytics", "status": "complete"})
+        return
     def _has_rows(rows: Any) -> bool:
         if isinstance(rows, list):
             return len(rows) > 0
@@ -5729,6 +5840,36 @@ def _coverage_phrase() -> str:
                 "playoffs and the Finals")
     return (f"the {_label} season: player and team stats, game logs, "
             "standings, playoffs and the Finals")
+
+
+def _watchdog_partial(results: list) -> str:
+    done: list[str] = []
+    failed: list[str] = []
+    for item in results or []:
+        if not isinstance(item, dict):
+            continue
+        name = str(item.get("tool") or "").strip()
+        if not name:
+            continue
+        label = tool_label(name)
+        if label in done or label in failed:
+            continue
+        if _result_status(item) == "ok":
+            done.append(label)
+        else:
+            failed.append(label)
+    parts = ["The full data pull ran out of time."]
+    if done:
+        parts.append("Finished: " + ", ".join(done[:6]) + ".")
+    names = _sourced_row_names(results)
+    if names:
+        parts.append("The pulled " + _row_provenance(results) + " name "
+                     + ", ".join(names) + ".")
+    if failed:
+        parts.append("Did not finish: " + ", ".join(failed[:6]) + ".")
+    parts.append("Anything not stated here was not verified, "
+                 "so it is left out rather than guessed.")
+    return " ".join(parts)
 
 
 def _compute_fallback() -> str:
@@ -6905,7 +7046,8 @@ async def presentation_agent(state: DimeState) -> AsyncGenerator[dict[str, Any],
 
 
     if state.get("_watchdog_tripped") and not _evidenced and not _delegate_ok:
-        _scrubbed = _gap or _compute_fallback()
+        _scrubbed = _gap or _watchdog_partial(
+            state.get("tool_results") or [])
     _scrubbed = _renumber_lists(_scrubbed)
 
 
@@ -7030,7 +7172,9 @@ async def run_chat(
             "text": "Deep investigation mode: expanded tool budget.",
         })
     _turn_t0 = time.time()
-    _turn_budget = DEEP_TURN_BUDGET_S if deep else TURN_BUDGET_S
+    _turn_budget = min(DEEP_TURN_BUDGET_S if deep else TURN_BUDGET_S,
+                       TURN_HARD_CAP_S)
+    state["_turn_deadline"] = _turn_t0 + _turn_budget  # type: ignore[typeddict-unknown-key]
     _warned = False
     while state["round"] < max_rounds:
         _el = time.time() - _turn_t0
@@ -7055,10 +7199,30 @@ async def run_chat(
             break
         async for e in actual_tool_node(state):
             yield e
-    async for e in analytics_agent(state):
-        yield e
-    async for e in presentation_agent(state):
-        yield e
+    if time.time() > state.get("_turn_deadline", float("inf")):
+        state["_watchdog_tripped"] = True  # type: ignore[typeddict-unknown-key]
+    _tail_left = state.get("_turn_deadline", float("inf")) - time.time()
+    _anal = analytics_agent(state)
+    _pres: Any = None
+    try:
+        async with asyncio.timeout(max(1.0, _tail_left + 10.0)):
+            async for e in _anal:
+                yield e
+            _pres = presentation_agent(state)
+            async for e in _pres:
+                yield e
+    except TimeoutError:
+        for _g in (_anal, _pres):
+            if _g is not None:
+                try:
+                    await _g.aclose()
+                except Exception:
+                    pass
+        state["_watchdog_tripped"] = True  # type: ignore[typeddict-unknown-key]
+        async for e in analytics_agent(state):
+            yield e
+        async for e in presentation_agent(state):
+            yield e
     yield _event("graph_end", {"ok": True})
     state["suggestions"] = await _finish_suggestions(state)
     yield _event("suggestions", {"items": state["suggestions"]})
