@@ -516,7 +516,7 @@ class ProviderStructuredModel:
                     agent = Agent(
                         model,
                         instructions=prompt,
-                        output_type=NativeOutput(schema, strict=True),
+                        output_type=NativeOutput(schema, strict=provider != "groq"),
                         retries=(0 if provider == "groq" else settings.llm_max_retries),
                     )
                     run = agent.run(user_prompt)
