@@ -44,6 +44,26 @@ def last_completed_season_cache_clear() -> None:
     _LAST_SEASON_VALUE = None
 
 
+def completed_season_for_date(day: object) -> str | None:
+    try:
+        year = int(day.year)  # type: ignore[union-attr]
+        month = int(day.month)  # type: ignore[union-attr]
+    except Exception:
+        return None
+    if month < 1 or month > 12:
+        return None
+    start = year - 1 if month >= 7 else year - 2
+    return f"{start}-{(start + 1) % 100:02d}"
+
+
+def calendar_last_completed_season(today: object = None) -> str | None:
+    if today is None:
+        import datetime as _dt
+
+        today = _dt.date.today()
+    return completed_season_for_date(today)
+
+
 def resolve_season(season: object | None = None,
                    table: str | None = None) -> str | None:
     text = "" if season is None else str(season).strip()

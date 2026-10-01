@@ -1,4 +1,5 @@
 import asyncio
+import datetime as dt
 import json
 import sys
 from pathlib import Path
@@ -11,6 +12,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from app.graph import _triage_seed
 from shared import store
 from shared.tools import _core as core_mod
+from v2.adapters import coverage as coverage_mod
 
 WAREHOUSE_SEASONS = [
     "2015-16",
@@ -24,6 +26,8 @@ WAREHOUSE_SEASONS = [
     "2023-24",
     "2024-25",
 ]
+
+WAREHOUSE_MAX = "2024-25"
 
 RATINGS_ROWS = [
     (14, "Los Angeles Lakers", 82, 50, 32, 115.2, 113.1, 2.1),
@@ -47,7 +51,7 @@ def _seed(path):
                 "INSERT INTO silver_team_ratings VALUES "
                 "(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 [tid, name, gp, w, l, off, dfn, net,
-                 99.0, 0.585, 12.0, "2024-25", "seed", "2024-01-01"],
+                 99.0, 0.585, 12.0, WAREHOUSE_MAX, "seed", "2024-01-01"],
             )
         connection.execute(
             "CREATE TABLE silver_boxscores (_season VARCHAR, GAME_ID VARCHAR)"
@@ -71,8 +75,17 @@ def warehouse(monkeypatch, tmp_path):
     store._pool_evict_all()
     store.warehouse_identity_cache_clear()
     core_mod.last_completed_season_cache_clear()
+    coverage_mod.coverage_cache_clear()
     yield path
     core_mod.last_completed_season_cache_clear()
+    coverage_mod.coverage_cache_clear()
+
+
+def _calendar_season():
+    season = core_mod.completed_season_for_date(dt.date.today())
+    if season == WAREHOUSE_MAX:
+        pytest.skip("calendar season coincides with fixture max")
+    return season
 
 
 def _drive(question):
@@ -104,101 +117,99 @@ def _tool_seasons(state):
     return found
 
 
-def _assert_derived_season(state, tool):
+def _assert_calendar_season_no_substitution(state, tool):
+    expected = _calendar_season()
     seasons = _tool_seasons(state)
     assert seasons, f"{tool}: no tool call recorded a season"
     for name, season in seasons:
-        assert season == "2024-25", f"{tool}: {name} sent {season}"
+        assert season == expected, f"{tool}: {name} sent {season}"
     dumped = json.dumps(state["calls_made"], sort_keys=True)
-    assert "2025-26" not in dumped, f"{tool}: stale default leaked"
+    assert WAREHOUSE_MAX not in dumped, (
+        f"{tool}: warehouse max leaked into calls")
+    refusals = [result for result in state["tool_results"]
+                if result.get("season_error") is True]
+    assert refusals, f"{tool}: no coverage refusal recorded"
+    for result in refusals:
+        assert expected in str(result.get("error") or ""), (
+            f"{tool}: refusal names no season")
+
+
+def _assert_warehouse_default(state, tool):
+    seasons = _tool_seasons(state)
+    assert seasons, f"{tool}: no tool call recorded a season"
+    for name, season in seasons:
+        assert season == WAREHOUSE_MAX, f"{tool}: {name} sent {season}"
 
 
 def _call_names(state):
     return [entry.partition(":")[0] for entry in state["calls_made"]]
 
 
-def _assert_ratings_answers(state, tool):
-    assert "get_ratings" in _call_names(state), f"{tool}: no get_ratings call"
-    answers = [
-        str((result.get("meta") or {}).get("deterministic_answer"))
-        for result in state["tool_results"]
-    ]
-    assert any("2024-25" in text for text in answers), (
-        f"{tool}: no ratings answer for 2024-25")
-    dumped = json.dumps(state["calls_made"], sort_keys=True)
-    assert "2025-26" not in dumped, f"{tool}: stale default leaked"
-
-
-def test_leaders_send_derived_season(warehouse):
+def test_leaders_send_calendar_season(warehouse):
     state = _drive("Which player leads the league in assists last season?")
     names = [name for name, _ in _tool_seasons(state)]
     assert "get_leaders" in names
-    _assert_derived_season(state, "get_leaders")
+    _assert_calendar_season_no_substitution(state, "get_leaders")
 
 
-def test_single_team_ratings_send_derived_season(warehouse):
+def test_single_team_ratings_send_calendar_season(warehouse):
     state = _drive("What is the Lakers net rating last season?")
-    _assert_ratings_answers(state, "get_ratings")
+    names = _call_names(state)
+    assert "get_ratings" in names
+    _assert_calendar_season_no_substitution(state, "get_ratings")
 
 
-def test_two_team_compare_returns_warehouse_rows(warehouse):
+def test_two_team_compare_sends_calendar_season(warehouse):
     state = _drive("Compare the Lakers and Celtics net ratings last season")
-    _assert_ratings_answers(state, "two-team get_ratings")
-    names = set()
-    for result in state["tool_results"]:
-        for row in result.get("rows") or []:
-            if isinstance(row, dict):
-                for key in ("TEAM_NAME", "team"):
-                    if row.get(key):
-                        names.add(row[key])
-    assert "Los Angeles Lakers" in names
-    assert "Boston Celtics" in names
+    names = _call_names(state)
+    assert "get_ratings" in names
+    _assert_calendar_season_no_substitution(state, "two-team get_ratings")
 
 
-def test_clutch_sends_derived_season(warehouse):
+def test_clutch_sends_calendar_season(warehouse):
     state = _drive("Who are the top clutch scorers last season?")
     names = [name for name, _ in _tool_seasons(state)]
     assert "get_clutch" in names
-    _assert_derived_season(state, "get_clutch")
+    _assert_calendar_season_no_substitution(state, "get_clutch")
 
 
-def test_team_compare_sends_derived_season(warehouse):
+def test_team_compare_without_season_keeps_warehouse_default(warehouse):
     state = _drive(
         "Top 5 teams in scoring totals with per game averages and wins?")
     names = [name for name, _ in _tool_seasons(state)]
     assert "get_team_compare" in names
-    _assert_derived_season(state, "get_team_compare")
+    _assert_warehouse_default(state, "get_team_compare")
 
 
-def test_rest_sends_derived_season(warehouse):
+def test_rest_sends_calendar_season(warehouse):
     state = _drive("Which team has the biggest rest advantage last season?")
     names = [name for name, _ in _tool_seasons(state)]
     assert "get_rest" in names
-    _assert_derived_season(state, "get_rest")
+    _assert_calendar_season_no_substitution(state, "get_rest")
 
 
-def test_playoff_sim_sends_derived_season(warehouse):
+def test_playoff_sim_sends_calendar_season(warehouse):
     state = _drive("What are the championship odds last season?")
     names = [name for name, _ in _tool_seasons(state)]
     assert "get_playoff_sim" in names
-    _assert_derived_season(state, "get_playoff_sim")
+    _assert_calendar_season_no_substitution(state, "get_playoff_sim")
 
 
-def test_trade_check_sends_derived_season(warehouse):
+def test_trade_check_without_season_keeps_warehouse_default(warehouse):
     state = _drive(
         "Grade the trade: Anthony Davis for Jayson Tatum, "
         "Lakers and Celtics?")
     seasons = _tool_seasons(state)
-    assert ("get_trade_check", "2024-25") in seasons
+    assert ("get_trade_check", WAREHOUSE_MAX) in seasons
     dumped = json.dumps(state["calls_made"], sort_keys=True)
-    assert "2025-26" not in dumped
+    assert _calendar_season() not in dumped
 
 
-def test_contract_value_sends_derived_season(warehouse):
+def test_contract_value_sends_calendar_season(warehouse):
     state = _drive("Who is the most overpaid player last season?")
     names = [name for name, _ in _tool_seasons(state)]
     assert "get_contract_value" in names
-    _assert_derived_season(state, "get_contract_value")
+    _assert_calendar_season_no_substitution(state, "get_contract_value")
 
 
 def test_explicit_season_slug_still_wins(warehouse):

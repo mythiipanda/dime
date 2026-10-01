@@ -1524,8 +1524,28 @@ def _default_season(question: str) -> str | None:
     _slug = re.search(r"(20\d\d)\s*-\s*(\d\d)", question or "")
     if _slug:
         return f"{_slug.group(1)}-{_slug.group(2)}"
+    _relative = _relative_season(question or "")
+    if _relative is not None:
+        return _relative
     try:
         return _warehouse_last_season()
+    except Exception:
+        return None
+
+
+_RELATIVE_SEASON_RX = re.compile(
+    r"\b(?:last|this|current)\s+season\b", re.IGNORECASE)
+
+
+def _relative_season(question: str) -> str | None:
+    if not _RELATIVE_SEASON_RX.search(question or ""):
+        return None
+    try:
+        from shared.tools._core import calendar_last_completed_season
+    except Exception:
+        return None
+    try:
+        return calendar_last_completed_season()
     except Exception:
         return None
 
@@ -1539,6 +1559,8 @@ def _explicit_season(question: str) -> str | None:
 
 def _season_args(question: str, extra: dict[str, Any]) -> dict[str, Any]:
     _season = _explicit_season(question)
+    if _season is None:
+        _season = _relative_season(question or "")
     if _season is None:
         return dict(extra)
     return {**extra, "season": _season}
@@ -4615,6 +4637,18 @@ def _authoritative_answer(results: list[dict[str, Any]]) -> str | None:
     return None
 
 
+def _season_refusal(results: list[dict[str, Any]]) -> str | None:
+    for result in results:
+        if not isinstance(result, dict):
+            continue
+        if result.get("season_error") is not True:
+            continue
+        text = str(result.get("error") or "").strip()
+        if text:
+            return text
+    return None
+
+
 def _flatten_tables(results: list[dict[str, Any]]) -> list[dict[str, Any]]:
     def _sanitize(rec: dict[str, Any]) -> dict[str, Any] | None:
         tool = rec.get("tool")
@@ -6541,6 +6575,8 @@ async def presentation_agent(state: DimeState) -> AsyncGenerator[dict[str, Any],
 
 
     _authoritative = _authoritative_answer(state.get("tool_results") or [])
+    if _authoritative is None:
+        _authoritative = _season_refusal(state.get("tool_results") or [])
     if _authoritative is not None:
         _scrubbed = _authoritative
         for _tr in state.get("tool_results") or []:
