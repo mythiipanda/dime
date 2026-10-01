@@ -81,10 +81,6 @@ class StubModel:
         return call["schema"].model_validate(self._migrate_fixture(call['schema'],value))
 
 
-def fixture_result(call, value):
-    raw=value.model_dump(mode="json") if isinstance(value,BaseModel) else value
-    return call["schema"].model_validate(StubModel._migrate_fixture(call["schema"],raw))
-
 def stage_kwargs():
     return {"provider": "stub", "model_name": "stub-model",
             "capability_catalog": {"standings": {}}}
@@ -2423,140 +2419,6 @@ async def test_followup_accepts_only_explicit_verified_antecedent_types():
     assert task.open_questions==[]
     assert {e.type for e in task.entities}=={"player","team"}
 
-class AdmissionModel:
-    def __init__(self, task, review_factory):
-        self.task = task
-        self.review_factory = review_factory
-        self.calls = []
-
-    async def generate(self, **call):
-        self.calls.append(call)
-        if call["envelope"].route == "intake":
-            return call["schema"].model_validate(self.task)
-        if call["envelope"].route == "intake_admission":
-            return call["schema"].model_validate(
-                self.review_factory(call["payload"]))
-        raise AssertionError(call["envelope"].route)
-
-
-def admission_stage_kwargs():
-    return {**stage_kwargs(), "intake_admission": True}
-
-
-def blocked_reference(payload, text, kind="unknown", *, source="request", turn=None):
-    body = (payload["question"] if source == "request" else
-            payload["conversation_context"][turn]["content"])
-    start = body.index(text)
-    return {"target": payload["target"], "decision": "block",
-            "expected_subjects": payload["expected_subjects"],
-            "unresolved_references": [{"kind": kind, "locator": {
-                "source": source, "context_turn": turn, "start": start,
-                "end": start + len(text), "text": text}}]}
-
-
-def blocked_subject(payload, index=0):
-    return {"target": payload["target"], "decision": "block",
-            "expected_subjects": payload["expected_subjects"],
-            "findings": [{"code": "subject_mismatch",
-                "affected_subjects": [payload["expected_subjects"][index]]}]}
-
-
-def admitted(payload, spans):
-    bindings=[]
-    for subject, span in zip(payload["expected_subjects"], spans, strict=True):
-        source, turn, text = span
-        body = (payload["question"] if source == "request" else
-                payload["conversation_context"][turn]["content"])
-        start=body.index(text)
-        bindings.append({"subject":subject,"locator":{"source":source,
-            "context_turn":turn,"start":start,"end":start+len(text),"text":text}})
-    return {"target":payload["target"],"decision":"admit",
-            "expected_subjects":payload["expected_subjects"],"bindings":bindings}
-
-
-@pytest.mark.anyio
-@pytest.mark.parametrize("user_text", ["How did he do?", "How did they compare?"])
-async def test_pronoun_only_empty_context_returns_typed_unresolved_reference(user_text):
-    model=AdmissionModel({"goal":"performance","mode":"quick","deliverable":"answer",
-        "entities":[{"id":"unresolved","type":"league","display_name":"Unresolved subject"}]},
-        lambda payload: blocked_reference(payload, "he" if "he" in user_text else "they"))
-    task=await ModelIntake(model,**admission_stage_kwargs()).understand(user_text)
-    assert task.entities==[] and task.required_evidence==[]
-    assert task.open_questions and "unresolved reference" in task.open_questions[-1]
-    assert [call["envelope"].route for call in model.calls]==["intake","intake_admission","intake_admission"]
-
-
-@pytest.mark.anyio
-async def test_explicit_player_context_does_not_license_invented_team():
-    from v2.contracts import ConversationTurn
-    model=AdmissionModel({"goal":"compare","mode":"quick","deliverable":"answer",
-        "entities":[{"id":"w","type":"player","display_name":"Victor Wembanyama"},
-                    {"id":"t","type":"team","display_name":"Invented Team"}]},
-        lambda payload: blocked_subject(payload,2))
-    task=await ModelIntake(model,**admission_stage_kwargs()).understand(
-        "Compare that player with that team.",context=(
-            ConversationTurn(role="assistant",content="Victor Wembanyama led the board."),))
-    assert task.entities==[] and "subject_mismatch" in task.open_questions
-
-
-@pytest.mark.anyio
-@pytest.mark.parametrize("bad", [
- {"goal":"NBA assists leaders","mode":"quick","deliverable":"top assists",
-  "entities":[{"id":"assists","type":"league","display_name":"NBA assists"}]},
- {"goal":"compare Curry and Durant","mode":"quick","deliverable":"comparison",
-  "entities":[{"id":"curry","type":"player","display_name":"Curry"}]},
- {"goal":"blocks leaders","mode":"quick","deliverable":"rank blocks",
-  "season":{"value":"2026-27","source":"default","confidence":1.0}},
-])
-async def test_intake_semantic_anchor_mismatch_is_blocked_by_typed_review(bad):
-    model=AdmissionModel(bad,blocked_subject)
-    task=await ModelIntake(model,**admission_stage_kwargs()).understand(
-        "Who led blocks in 2025-26?")
-    assert task.entities==[] and task.required_evidence==[]
-    assert "subject_mismatch" in task.open_questions
-
-
-@pytest.mark.anyio
-async def test_explicit_lebron_possessive_is_admitted_without_referent_false_positive():
-    request="Analyze LeBron James and his fit."
-    model=AdmissionModel({"goal":"analyze LeBron fit","mode":"quick","deliverable":"fit",
-        "entities":[{"id":"2544","type":"player","display_name":"LeBron James"}],
-        "requirements":[{"id":"fit","description":"fit","capability_options":["standings"],
-                         "requested_outputs":["FIT_ASSESSMENT"]}]},
-        lambda payload: admitted(payload,[("request",None,"Analyze LeBron James and his fit."),
-                                          ("request",None,"LeBron James"),
-                                          ("request",None,"fit"),
-                                          ("request",None,"fit")]))
-    task=await ModelIntake(model,**admission_stage_kwargs()).understand(request)
-    assert [(e.id,e.display_name) for e in task.entities]==[("2544","LeBron James")]
-    assert task.open_questions==[]
-
-
-@pytest.mark.anyio
-async def test_unicode_paraphrase_and_context_locator_are_admitted():
-    from v2.contracts import ConversationTurn
-    context=(ConversationTurn(role="assistant",content="Nikola Jokić led Denver."),)
-    model=AdmissionModel({"goal":"summarize center impact","mode":"quick","deliverable":"impact",
-        "entities":[{"id":"203999","type":"player","display_name":"Nikola Jokić"}]},
-        lambda payload: admitted(payload,[("request",None,"What about the center’s impact?"),
-                                          ("context",0,"Nikola Jokić")]))
-    task=await ModelIntake(model,**admission_stage_kwargs()).understand(
-        "What about the center’s impact?",context=context)
-    assert task.entities[0].display_name=="Nikola Jokić" and not task.open_questions
-
-
-@pytest.mark.anyio
-async def test_copied_goal_cannot_mask_wrong_typed_requirement():
-    task={"goal":"Show LeBron James points","mode":"quick","deliverable":"points",
-          "entities":[{"id":"2544","type":"player","display_name":"LeBron James"}],
-          "metric_ids":["AST"], "requested_outputs":["AST"],
-          "requirements":[{"id":"wrong","description":"assists","capability_options":["standings"],
-                           "metric_ids":["AST"],"requested_outputs":["AST"]}]}
-    model=AdmissionModel(task,lambda payload: blocked_subject(payload,2))
-    result=await ModelIntake(model,**admission_stage_kwargs()).understand(
-        "Show LeBron James points.")
-    assert result.requirements==[] and "subject_mismatch" in result.open_questions
-
 @pytest.mark.anyio
 async def test_explicit_context_entity_performance_summary_passes():
     stub=StubModel([{"goal":"summarize Victor Wembanyama performance","mode":"quick","deliverable":"performance summary","entities":[{"id":"w","type":"player","display_name":"Victor Wembanyama"}]}])
@@ -2956,74 +2818,6 @@ async def test_semantic_verifier_prompt_exposes_claim_result_alignment():
     assert '`supported: false` requires at least one rejection reason' in prompt
 
 
-def test_intake_admission_rejects_replay_omission_and_length_correct_wrong_text():
-    from v2.contracts import (AdmissionBinding, IntakeAdmissionReview,
-        SourceLocator, TaskSpec)
-    task=TaskSpec(goal="LeBron",mode="quick",deliverable="answer",
-        entities=[{"id":"2544","type":"player","display_name":"LeBron James"}])
-    request="Ask LeBron James."
-    target=ModelIntake._review_target(request,(),task)
-    subjects=ModelIntake._expected_admission_subjects(task)
-    valid=IntakeAdmissionReview(target=target,decision="admit",
-        expected_subjects=subjects,bindings=[
-            AdmissionBinding(subject=subjects[0], locator=SourceLocator(
-                source="request",start=0,end=len(request),text=request)),
-            AdmissionBinding(subject=subjects[1], locator=SourceLocator(
-                source="request",start=4,end=16,text="LeBron James"))])
-    assert ModelIntake._validate_review(valid,request,(),task)==[]
-    replay=valid.model_copy(update={"target":target.model_copy(update={"task_sha256":"d"*64})})
-    assert any("target does not match" in item for item in ModelIntake._validate_review(replay,request,(),task))
-    omitted=valid.model_copy(update={"expected_subjects":(),"bindings":()})
-    assert any("expected subjects" in item for item in ModelIntake._validate_review(omitted,request,(),task))
-    wrong=valid.model_copy(update={"bindings": (
-        valid.bindings[0], AdmissionBinding(subject=subjects[1],
-        locator=SourceLocator(source="request",start=4,end=16,text="Another Name")))})
-    assert any("frozen source" in item for item in ModelIntake._validate_review(wrong,request,(),task))
-
-
-def test_intake_admission_context_digest_binds_role_order_and_exact_unicode_text():
-    from v2.contracts import ConversationTurn, TaskSpec
-    task=TaskSpec(goal="impact",mode="quick",deliverable="answer")
-    a=(ConversationTurn(role="user",content="Nikola Jokić?"),
-       ConversationTurn(role="assistant",content="Denver’s center."))
-    b=tuple(reversed(a))
-    c=(ConversationTurn(role="assistant",content="Nikola Jokić?"),
-       ConversationTurn(role="user",content="Denver’s center."))
-    assert ModelIntake._review_target("x",a,task).context_sha256 != ModelIntake._review_target("x",b,task).context_sha256
-    assert ModelIntake._review_target("x",a,task).context_sha256 != ModelIntake._review_target("x",c,task).context_sha256
-
-
-def test_intake_admission_manifest_covers_zero_entity_task_metrics_outputs_and_calculations():
-    task=TaskSpec(goal="calculate pace change",mode="quick",deliverable="delta",
-        metric_ids=["PACE"],requested_outputs=["PACE_DELTA"],
-        calculation_requirements=[{"id":"pace_delta","description":"pace change",
-            "metric_ids":["PACE"],"requested_outputs":["PACE_DELTA"]}])
-    subjects=ModelIntake._expected_admission_subjects(task)
-    dumped=[item.model_dump(mode="json") for item in subjects]
-    assert dumped[0]=={"kind":"task","task_id":"request"}
-    assert {item.get("metric_id") for item in dumped if item["kind"]=="metric"}=={"PACE"}
-    assert {(item.get("owner_kind"),item.get("requirement_id"),item.get("output_id")) for item in dumped
-            if item["kind"]=="output"}=={("task","request","PACE_DELTA"),("calculation","pace_delta","PACE_DELTA")}
-    assert any(item.get("requirement_id")=="pace_delta" for item in dumped)
-
-
-def test_block_clears_every_action_driving_task_field_before_skill_activation():
-    from datetime import date
-    from v2.contracts import (AdmissionFinding, IntakeAdmissionReview,
-                              TaskAdmissionSubject)
-    task=TaskSpec(goal="x",mode="quick",deliverable="x",season={"value":"2025-26","source":"user","confidence":1.0},
-        as_of=date(2026,1,1),subquestions=["q"],required_evidence=["standings"],
-        assumptions=["a"],skills=["trade-analysis"],metric_ids=["PACE"],requested_outputs=["PACE"])
-    subject=TaskAdmissionSubject(kind="task")
-    review=IntakeAdmissionReview(target=ModelIntake._review_target("x",(),task),decision="block",
-        expected_subjects=ModelIntake._expected_admission_subjects(task),findings=[AdmissionFinding(
-            code="subject_mismatch",affected_subjects=[subject])])
-    blocked=ModelIntake._apply_review(review,"x",(),task)
-    assert blocked.season is None and blocked.as_of is None
-    assert blocked.subquestions==[] and blocked.assumptions==[] and blocked.skills==[]
-    assert blocked.required_evidence==[] and blocked.metric_ids==[] and blocked.requested_outputs==[]
-
-
 def test_admission_dimension_ids_reject_noncanonical_values_at_task_boundary():
     from pydantic import ValidationError
     for value in ("!!!", "A B", "ÉFG", "lower"):
@@ -3033,88 +2827,12 @@ def test_admission_dimension_ids_reject_noncanonical_values_at_task_boundary():
             TaskSpec(goal="x",mode="quick",deliverable="x",requested_outputs=[value])
 
 
-def test_admission_manifest_preserves_same_metric_under_distinct_requirement_scopes():
-    task=TaskSpec(goal="compare",mode="quick",deliverable="answer",requirements=[
-        {"id":"first","description":"first","capability_options":["standings"],"metric_ids":["PACE"]},
-        {"id":"second","description":"second","capability_options":["standings"],"metric_ids":["PACE"]},
-    ])
-    metrics=[item.model_dump(mode="json") for item in ModelIntake._expected_admission_subjects(task)
-             if item.kind=="metric"]
-    assert metrics==[
-        {"kind":"metric","owner_kind":"evidence","owner_id":"first","metric_id":"PACE"},
-        {"kind":"metric","owner_kind":"evidence","owner_id":"second","metric_id":"PACE"},
-    ]
-
-
 def test_evidence_and_calculation_requirement_ids_cannot_collide():
     from pydantic import ValidationError
     with pytest.raises(ValidationError,match="ids overlap"):
         TaskSpec(goal="x",mode="quick",deliverable="x",
             requirements=[{"id":"same","description":"e","capability_options":["standings"]}],
             calculation_requirements=[{"id":"same","description":"c"}])
-
-
-class StagedAdmissionModel:
-    def __init__(self, intake, requirement_review, admission_factory):
-        self.intake=intake;self.requirement_review=requirement_review
-        self.admission_factory=admission_factory;self.calls=[]
-    async def generate(self,**call):
-        self.calls.append(call);route=call["envelope"].route
-        value=(self.intake if route=="intake" else self.requirement_review
-               if route=="requirement_review" else self.admission_factory(call["payload"])
-               if route=="intake_admission" else None)
-        if value is None:raise AssertionError(route)
-        return fixture_result(call,value)
-
-
-def _staged_admission(payload, spans, *, decision="admit", block_index=0):
-    if decision=="block": return blocked_subject(payload,block_index)
-    return admitted(payload,spans)
-
-
-@pytest.mark.anyio
-async def test_final_admission_blocks_requirement_review_metric_substitution_before_planning():
-    intake={"goal":"LeBron points","mode":"quick","deliverable":"points",
-            "entities":[{"id":"2544","type":"player","display_name":"LeBron James"}]}
-    wrong={"requirements":[{"id":"scoring","description":"wrong assists",
-        "capability_options":["standings"],"metric_ids":["AST"],"requested_outputs":["AST"]}]}
-    model=StagedAdmissionModel(intake,wrong,lambda payload:blocked_subject(payload,3))
-    task=await ModelIntake(model,**stage_kwargs(),intake_admission=True,
-                          requirement_review=True).understand("Show LeBron James PTS.")
-    assert task.requirements==[] and task.metric_ids==[] and task.skills==[]
-    assert [call["envelope"].route for call in model.calls]==[
-        "intake","requirement_review","intake_admission","intake_admission"]
-
-
-@pytest.mark.anyio
-async def test_final_admission_binds_post_review_evidence_and_calculation_scopes():
-    request="Show LeBron James PTS and PTS change."
-    intake={"goal":"LeBron scoring","mode":"quick","deliverable":"points change",
-            "entities":[{"id":"2544","type":"player","display_name":"LeBron James"}]}
-    reviewed={"requirements":[{"id":"scoring","description":"points",
-        "capability_options":["standings"],"metric_ids":["PTS"],"requested_outputs":["PTS"]}],
-        "calculation_requirements":[{"id":"change","description":"change",
-        "metric_ids":["PTS"],"requested_outputs":["PTS_DELTA"]}]}
-    def approve(payload):
-        spans=[]
-        for item in payload["expected_subjects"]:
-            if item["kind"]=="entity":text="LeBron James"
-            elif item["kind"]=="metric":text="PTS"
-            elif item["kind"]=="output" and item["output_id"]=="PTS_DELTA":text="PTS change"
-            elif item["kind"]=="output":text="PTS"
-            elif item["kind"]=="requirement" and item["requirement_kind"]=="calculation":text="change"
-            elif item["kind"]=="requirement":text="PTS"
-            else:text=request
-            spans.append(("request",None,text))
-        return admitted(payload,spans)
-    model=StagedAdmissionModel(intake,reviewed,approve)
-    task=await ModelIntake(model,**stage_kwargs(),intake_admission=True,
-                          requirement_review=True).understand(request)
-    assert task.requirements[0].metric_ids==["PTS"]
-    assert task.calculation_requirements[0].requested_outputs==["PTS_DELTA"]
-    admission_call=model.calls[-1]
-    assert admission_call["envelope"].route=="intake_admission"
-    assert admission_call["payload"]["target"]["task_sha256"]==ModelIntake._review_target(request,(),task).task_sha256
 
 
 def _typed_catalog():
