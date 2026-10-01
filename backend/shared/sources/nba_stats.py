@@ -284,3 +284,83 @@ def clutch(scope: str, season: str) -> FetchResult:
         return _pl(frames[0])
 
     return safe(SOURCE, season, run)
+
+
+PT_MEASURE_TYPES = (
+    "CatchShoot",
+    "Defense",
+    "Drives",
+    "Efficiency",
+    "ElbowTouch",
+    "PaintTouch",
+    "Passing",
+    "Possessions",
+    "PostTouch",
+    "PullUpShot",
+    "Rebounding",
+    "SpeedDistance",
+)
+
+PT_SCOPES = ("player", "team")
+
+PT_DEFEND_CATEGORIES = ("Overall",)
+
+_TRACKING_GAP_S = 1.5
+_tracking_last = 0.0
+
+
+def _tracking_wait() -> None:
+    import time as _time
+
+    global _tracking_last
+    wait = _TRACKING_GAP_S - (_time.monotonic() - _tracking_last)
+    if wait > 0:
+        _time.sleep(wait)
+    _tracking_last = _time.monotonic()
+
+
+def pt_stats(scope: str, measure_type: str, season: str) -> FetchResult:
+    from nba_api.stats.endpoints import LeagueDashPtStats
+
+    def run() -> pl.DataFrame:
+        if scope not in PT_SCOPES:
+            raise ValueError("unknown pt scope: " + repr(scope))
+        _tracking_wait()
+        frames = _frames(LeagueDashPtStats(
+            player_or_team="Player" if scope == "player" else "Team",
+            pt_measure_type=measure_type,
+            season=season or None,
+            timeout=60,
+        ))
+        return _pl(frames[0])
+
+    return safe(SOURCE, season, run)
+
+
+def pt_defend(defense_category: str, season: str) -> FetchResult:
+    from nba_api.stats.endpoints import LeagueDashPtDefend
+
+    def run() -> pl.DataFrame:
+        _tracking_wait()
+        frames = _frames(LeagueDashPtDefend(
+            defense_category=defense_category,
+            season=season or None,
+            timeout=60,
+        ))
+        return _pl(frames[0])
+
+    return safe(SOURCE, season, run)
+
+
+def pt_shot(season: str) -> FetchResult:
+    from nba_api.stats.endpoints import LeagueDashPlayerPtShot
+
+    def run() -> pl.DataFrame:
+        _tracking_wait()
+        frames = _frames(LeagueDashPlayerPtShot(
+            season=season or None,
+            timeout=60,
+        ))
+        return _pl(frames[0])
+
+    return safe(SOURCE, season, run)
