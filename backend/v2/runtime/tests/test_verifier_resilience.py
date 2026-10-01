@@ -88,8 +88,8 @@ def make_runtime(mechanical, semantic) -> Runtime:
 
 def test_semantic_route_policy_matches_planner_grade_resilience() -> None:
     policy = ROUTE_POLICIES["semantic_verifier"]
-    assert policy["primary_attempts"] == 2
-    assert policy["secondary_limit"] == 1
+    assert policy["max_attempts"] == 2
+    assert "secondary_limit" not in policy
     assert policy["transient_classes"] == frozenset({"timeout", "rate_limit", "network", "server_error", "provider_error"})
     assert policy["total_budget_s"] == 18.0
 

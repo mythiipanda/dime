@@ -42,12 +42,12 @@ async def test_never_tokens_hang_is_bounded(monkeypatch):
         await m.generate(schema=TaskSpec, prompt="p",
                          payload={"q": "x"}, envelope=_planner_envelope())
     elapsed = time.monotonic() - started
-    floor = policy["primary_attempts"] * policy["attempt_timeout_s"]
-    assert elapsed >= floor - 0.5, f"hung call returned too fast ({elapsed:.2f}s)"
-    assert elapsed <= floor + 4.0, f"hung call exceeded bound ({elapsed:.2f}s)"
-    assert [f["message_class"] for f in m.last_failures] == ["timeout"] * policy["primary_attempts"]
+    budget = policy["total_budget_s"]
+    assert elapsed >= budget - 0.5, f"hung call returned too fast ({elapsed:.2f}s)"
+    assert elapsed <= budget + 5.0, f"hung call exceeded bound ({elapsed:.2f}s)"
+    assert [f["message_class"] for f in m.last_failures] == ["timeout"] * policy["max_attempts"]
     print(f"\nnever-tokens planner hang resolved in {elapsed:.2f}s "
-          f"(bound: {policy['primary_attempts']}x{policy['attempt_timeout_s']}s={floor:.1f}s)")
+          f"(bound: {policy['max_attempts']}x{policy['attempt_timeout_s']}s budget {budget:.1f}s)")
 
 
 @pytest.mark.anyio
@@ -70,12 +70,12 @@ async def test_slow_dribble_hang_is_bounded(monkeypatch):
         await m.generate(schema=TaskSpec, prompt="p",
                          payload={"q": "x"}, envelope=_planner_envelope())
     elapsed = time.monotonic() - started
-    floor = policy["primary_attempts"] * policy["attempt_timeout_s"]
-    assert elapsed >= floor - 0.5, f"dribble returned too fast ({elapsed:.2f}s)"
-    assert elapsed <= floor + 4.0, f"dribble exceeded bound ({elapsed:.2f}s)"
-    assert [f["message_class"] for f in m.last_failures] == ["timeout"] * policy["primary_attempts"]
+    budget = policy["total_budget_s"]
+    assert elapsed >= budget - 0.5, f"dribble returned too fast ({elapsed:.2f}s)"
+    assert elapsed <= budget + 5.0, f"dribble exceeded bound ({elapsed:.2f}s)"
+    assert [f["message_class"] for f in m.last_failures] == ["timeout"] * policy["max_attempts"]
     print(f"\nslow-dribble planner hang resolved in {elapsed:.2f}s "
-          f"(bound: {policy['primary_attempts']}x{policy['attempt_timeout_s']}s={floor:.1f}s)")
+          f"(bound: {policy['max_attempts']}x{policy['attempt_timeout_s']}s budget {budget:.1f}s)")
 
 
 @pytest.mark.anyio

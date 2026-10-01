@@ -3,8 +3,12 @@ from v2.adapters.models import ProviderStructuredModel
 QUOTA_MESSAGE = "429 RESOURCE_EXHAUSTED (GenerateRequestsPerDayPerProjectPerModel-FreeTier, 500/day)"
 
 
-def test_quota_message_with_embedded_500_is_rate_limit():
-    assert ProviderStructuredModel._failure_class(Exception(QUOTA_MESSAGE)) == "rate_limit"
+def test_per_day_quota_message_is_quota_exhausted_not_rate_limit():
+    assert ProviderStructuredModel._failure_class(Exception(QUOTA_MESSAGE)) == "quota_exhausted"
+
+
+def test_per_minute_429_with_embedded_500_is_rate_limit():
+    assert ProviderStructuredModel._failure_class(Exception("429 rate_limit_exceeded: 500 requests per minute")) == "rate_limit"
 
 
 def test_plain_429_without_500_is_rate_limit():

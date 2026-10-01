@@ -35,7 +35,6 @@ from shared.providers import (
     MISTRAL_DEFAULT,
     OPENROUTER_DEFAULT,
     ProviderName,
-    fallback_order,
     _gemini_model,
     _groq_free_model, _mistral_free_model,
     _nvidia_nim_model,
@@ -159,34 +158,35 @@ class StructuredModel(Protocol):
     ) -> T: ...
 
 
+RETRY_INITIAL_S = 1.0
+RETRY_MULTIPLIER = 2.0
+RETRY_MAX_S = 60.0
+
+_TRANSIENT_FAILURE_CLASSES = frozenset({
+    "timeout", "rate_limit", "network", "server_error", "provider_error"})
+
 ROUTE_POLICIES: dict[str, dict[str, Any]] = {
-    "intake": {"primary_attempts": 2, "attempt_timeout_s": 6.0,
-               "total_budget_s": 18.0, "secondary_limit": 1,
-               "transient_classes": frozenset({"timeout", "rate_limit", "network", "server_error", "provider_error"}),
-               "deterministic_fallback": False},
-    "intake_admission": {"primary_attempts": 1, "attempt_timeout_s": 6.0,
-               "total_budget_s": 6.0, "secondary_limit": 0,
-               "transient_classes": frozenset(), "deterministic_fallback": False},
-    "requirement_review": {"primary_attempts": 2, "attempt_timeout_s": 8.0,
-               "total_budget_s": 12.0, "secondary_limit": 1,
-               "transient_classes": frozenset({"timeout", "rate_limit", "network", "server_error", "provider_error"}),
-               "deterministic_fallback": True},
-    "planner": {"primary_attempts": 2, "attempt_timeout_s": 4.0,
-               "total_budget_s": 12.0, "secondary_limit": 1,
-               "transient_classes": frozenset({"timeout", "rate_limit", "network", "server_error", "provider_error"}),
-               "deterministic_fallback": False},
-    "synthesizer": {"primary_attempts": 1, "attempt_timeout_s": 6.0,
-               "total_budget_s": 6.0, "secondary_limit": 0,
-               "transient_classes": frozenset(), "deterministic_fallback": True},
-    "semantic_verifier": {"primary_attempts": 2, "attempt_timeout_s": 6.0,
-                "total_budget_s": 18.0, "secondary_limit": 1,
-                "transient_classes": frozenset({"timeout", "rate_limit", "network", "server_error", "provider_error"}),
-                "deterministic_fallback": True},
+    "intake": {"max_attempts": 2, "attempt_timeout_s": 6.0,
+               "total_budget_s": 18.0,
+               "transient_classes": _TRANSIENT_FAILURE_CLASSES},
+    "intake_admission": {"max_attempts": 1, "attempt_timeout_s": 6.0,
+               "total_budget_s": 6.0, "transient_classes": frozenset()},
+    "requirement_review": {"max_attempts": 2, "attempt_timeout_s": 8.0,
+               "total_budget_s": 12.0,
+               "transient_classes": _TRANSIENT_FAILURE_CLASSES},
+    "planner": {"max_attempts": 2, "attempt_timeout_s": 8.0,
+               "total_budget_s": 12.0,
+               "transient_classes": _TRANSIENT_FAILURE_CLASSES},
+    "synthesizer": {"max_attempts": 2, "attempt_timeout_s": 6.0,
+               "total_budget_s": 6.0,
+               "transient_classes": _TRANSIENT_FAILURE_CLASSES},
+    "semantic_verifier": {"max_attempts": 2, "attempt_timeout_s": 6.0,
+               "total_budget_s": 18.0,
+               "transient_classes": _TRANSIENT_FAILURE_CLASSES},
 }
-_DEFAULT_ROUTE_POLICY = {"primary_attempts": 1, "attempt_timeout_s": 6.0,
-    "total_budget_s": 12.0, "secondary_limit": 1,
-    "transient_classes": frozenset({"timeout", "rate_limit", "network", "server_error", "provider_error"}),
-    "deterministic_fallback": False}
+_DEFAULT_ROUTE_POLICY = {"max_attempts": 2, "attempt_timeout_s": 6.0,
+    "total_budget_s": 12.0,
+    "transient_classes": _TRANSIENT_FAILURE_CLASSES}
 
 
 SAFE_FAILURE_EXCEPTION_CLASSES = frozenset({
@@ -312,22 +312,95 @@ class ProviderStructuredModel:
         return records
 
     @staticmethod
+    def _retry_after_s(exc: BaseException) -> float | None:
+        hint = getattr(exc, "retry_after", None)
+        if isinstance(hint, bool):
+            hint = None
+        if isinstance(hint, (int, float)) and hint >= 0:
+            return min(float(hint), RETRY_MAX_S)
+        headers = getattr(getattr(exc, "response", None), "headers", None)
+        if headers is not None:
+            get = getattr(headers, "get", None)
+            if callable(get):
+                for key in ("retry-after", "Retry-After",
+                            "retry-after-ms", "Retry-After-Ms"):
+                    raw = get(key, None)
+                    if raw is None:
+                        continue
+                    try:
+                        value = float(str(raw).strip())
+                    except (TypeError, ValueError):
+                        continue
+                    if "ms" in key.casefold():
+                        value = value / 1000.0
+                    if value >= 0:
+                        return min(value, RETRY_MAX_S)
+        text = str(exc)
+        match = re.search(r'"retryDelay"\s*:\s*"([\d.]+)s"', text)
+        if match is None:
+            match = re.search(r"retry in ([\d.]+)s", text.casefold())
+        if match is not None:
+            try:
+                value = float(match.group(1))
+            except (TypeError, ValueError):
+                return None
+            if value >= 0:
+                return min(value, RETRY_MAX_S)
+        return None
+
+    @staticmethod
+    def _backoff_delay_s(retry_index: int,
+                         retry_after_s: float | None = None) -> float:
+        capped = min(RETRY_INITIAL_S * (RETRY_MULTIPLIER ** retry_index),
+                     RETRY_MAX_S)
+        floor = capped / 2.0
+        delay = floor + random.uniform(0, floor)
+        if retry_after_s is not None:
+            delay = max(delay, min(retry_after_s, RETRY_MAX_S))
+        return delay
+
+    @staticmethod
     def _failure_class(exc: BaseException) -> str:
-        name = type(exc).__name__.casefold()
-        detail = str(exc).casefold()
-        if "timeout" in name or "timed out" in detail:
+        names: list[str] = []
+        details: list[str] = []
+        seen: set[int] = set()
+        pending: list[BaseException] = [exc]
+        while pending and len(names) < 8:
+            item = pending.pop(0)
+            if id(item) in seen or not isinstance(item, BaseException):
+                continue
+            seen.add(id(item))
+            names.append(type(item).__name__.casefold())
+            details.append(str(item)[:2000].casefold())
+            cause = item.__cause__
+            context = item.__context__
+            if isinstance(cause, BaseException):
+                pending.append(cause)
+            if isinstance(context, BaseException) and context is not cause:
+                pending.append(context)
+        name = " ".join(names)
+        detail = " ".join(details)
+        if "timeout" in name or "timed out" in detail or re.search(r"\b408\b", detail):
             return "timeout"
+        if ("quota_exceeded" in detail or "perday" in detail
+                or "per_day" in detail or "/day" in detail
+                or "daily quota" in detail or "quota reset" in detail):
+            return "quota_exhausted"
         if "rate" in name or "429" in detail or "rate limit" in detail:
             return "rate_limit"
         if any(code in detail for code in ("500", "502", "503", "504")):
             return "server_error"
         if "auth" in name or "401" in detail or "403" in detail:
             return "authentication"
+        if (re.search(r"\b400\b", detail) or re.search(r"\b404\b", detail)):
+            return "client_error"
         if ("validation" in name or "schema" in detail
                 or "structured" in detail or "json" in detail):
             return "structured_output"
         if "context" in detail or "token" in detail and "limit" in detail:
             return "context_limit"
+        if "filter" in name:
+            return "content_filter"
         if "connect" in name or "network" in detail:
             return "network"
         return "provider_error"
@@ -439,44 +512,45 @@ class ProviderStructuredModel:
             "groq": ("https://api.groq.com/openai/v1", settings.groq_api_key,
                      settings.groq_model or GROQ_DEFAULT),
         }
-        models: list[tuple[ProviderName, OpenAIChatModel]] = []
-        for provider in fallback_order(self.provider):
-            base_url, api_key, fallback_model = configs[provider]
-            if not api_key:
-                continue
-            headers = ({
-                "HTTP-Referer": "https://github.com/mythiipanda/dime",
-                "X-Title": "Dime NBA Analyst",
-            } if provider == "openrouter" else None)
-            client = ReasoningContentFallbackClient(
-                base_url=base_url,
-                api_key=api_key,
-                timeout=settings.llm_timeout_s,
-                max_retries=0,
-                default_headers=headers,
-                thinking_off=(provider == "nvidia"),
-            )
-            requested = self.model if provider == self.provider else fallback_model
-            if provider == "gemini":
-                accepted_model = _gemini_model(requested)
-            elif provider == "nvidia":
-                accepted_model = _nvidia_nim_model(requested)
-            elif provider == "openrouter":
-                accepted_model = _openrouter_free_model(requested)
-            elif provider == "mistral":
-                accepted_model = _mistral_free_model()
-            elif provider == "groq":
-                accepted_model = _groq_free_model()
-            else:
-                accepted_model = settings.inception_model or INCEPTION_DEFAULT
-            if (provider != "inception"
-                    and not is_free_model(provider, accepted_model)):
-                continue
-            models.append((provider, DimeOpenAIChatModel(
-                accepted_model,
-                provider=OpenAIProvider(openai_client=client),
-            )))
-        return models
+        provider = self.provider
+        entry = configs.get(provider)
+        if entry is None:
+            return []
+        base_url, api_key, fallback_model = entry
+        if not api_key:
+            return []
+        headers = ({
+            "HTTP-Referer": "https://github.com/mythiipanda/dime",
+            "X-Title": "Dime NBA Analyst",
+        } if provider == "openrouter" else None)
+        client = ReasoningContentFallbackClient(
+            base_url=base_url,
+            api_key=api_key,
+            timeout=settings.llm_timeout_s,
+            max_retries=0,
+            default_headers=headers,
+            thinking_off=(provider == "nvidia"),
+        )
+        requested = self.model
+        if provider == "gemini":
+            accepted_model = _gemini_model(requested)
+        elif provider == "nvidia":
+            accepted_model = _nvidia_nim_model(requested)
+        elif provider == "openrouter":
+            accepted_model = _openrouter_free_model(requested)
+        elif provider == "mistral":
+            accepted_model = _mistral_free_model()
+        elif provider == "groq":
+            accepted_model = _groq_free_model()
+        else:
+            accepted_model = settings.inception_model or INCEPTION_DEFAULT
+        if (provider != "inception"
+                and not is_free_model(provider, accepted_model)):
+            return []
+        return [(provider, DimeOpenAIChatModel(
+            accepted_model,
+            provider=OpenAIProvider(openai_client=client),
+        ))]
 
     async def generate(
         self,
@@ -502,62 +576,60 @@ class ProviderStructuredModel:
         deadline = min(now + float(policy["total_budget_s"]),
                        run_deadline if run_deadline is not None else float("inf"))
         budget_exhausted = False
-        candidates = models[:1 + int(policy["secondary_limit"])]
-        for model_index, (provider, model) in enumerate(candidates):
-            max_attempts = (1 if provider == "groq" else
-                int(policy["primary_attempts"]) if model_index == 0 else 1)
-            for attempt_number in range(1, max_attempts + 1):
-                remaining = deadline - time.monotonic()
-                if remaining <= 0:
+        provider, model = models[0]
+        max_attempts = int(policy["max_attempts"])
+        for attempt_number in range(1, max_attempts + 1):
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                budget_exhausted = True
+                break
+            started = time.perf_counter()
+            try:
+                agent = Agent(
+                    model,
+                    instructions=prompt,
+                    output_type=NativeOutput(schema, strict=True),
+                    retries=settings.llm_max_retries,
+                )
+                run = agent.run(user_prompt)
+                with anyio.fail_after(
+                    min(float(policy["attempt_timeout_s"]), remaining)
+                ):
+                    result = await run
+                self.last_provider = provider
+                self.last_model = (
+                    f"mistral_free_limit:{model.model_name}"
+                    if provider == "mistral" else model.model_name
+                )
+                request_count, usage_unknown = _read_usage_requests(result)
+                self.last_request_count = request_count
+                self.last_usage_unknown = usage_unknown
+                self.last_promotions = self._reasoning_content_promotions(models)
+                return result.output
+            except Exception as exc:
+                failure_class = self._failure_class(exc)
+                self.last_failures.append({
+                    "route": envelope.route,
+                    "provider": provider,
+                    "model": (f"mistral_free_limit:{model.model_name}"
+                              if provider == "mistral" else model.model_name),
+                    "attempt_number": attempt_number,
+                    "exception_type": _safe_exception_name(type(exc)),
+                    "message_class": failure_class,
+                    "latency_ms": max(0, round(
+                        (time.perf_counter() - started) * 1000)),
+                    **self._safe_failure_taxonomy(
+                        exc, schema=schema, route=envelope.route),
+                })
+                transient = failure_class in policy["transient_classes"]
+                if attempt_number >= max_attempts or not transient:
+                    break
+                wait = self._backoff_delay_s(
+                    attempt_number - 1, self._retry_after_s(exc))
+                if wait >= deadline - time.monotonic():
                     budget_exhausted = True
                     break
-                started = time.perf_counter()
-                try:
-                    agent = Agent(
-                        model,
-                        instructions=prompt,
-                        output_type=NativeOutput(schema, strict=True),
-                        retries=(0 if provider == "groq" else settings.llm_max_retries),
-                    )
-                    run = agent.run(user_prompt)
-                    with anyio.fail_after(
-                        min(float(policy["attempt_timeout_s"]), remaining)
-                    ):
-                        result = await run
-                    self.last_provider = provider
-                    self.last_model = (
-                        f"mistral_free_limit:{model.model_name}"
-                        if provider == "mistral" else model.model_name
-                    )
-                    request_count, usage_unknown = _read_usage_requests(result)
-                    self.last_request_count = request_count
-                    self.last_usage_unknown = usage_unknown
-                    self.last_promotions = self._reasoning_content_promotions(models)
-                    return result.output
-                except Exception as exc:
-                    failure_class = self._failure_class(exc)
-                    self.last_failures.append({
-                        "route": envelope.route,
-                        "provider": provider,
-                        "model": (f"mistral_free_limit:{model.model_name}"
-                                  if provider == "mistral" else model.model_name),
-                        "attempt_number": attempt_number,
-                        "exception_type": _safe_exception_name(type(exc)),
-                        "message_class": failure_class,
-                        "latency_ms": max(0, round(
-                            (time.perf_counter() - started) * 1000)),
-                        **self._safe_failure_taxonomy(
-                            exc, schema=schema, route=envelope.route),
-                    })
-                    transient = failure_class in policy["transient_classes"]
-                    if (attempt_number < max_attempts and transient):
-                        await anyio.sleep(random.uniform(0.04, 0.12))
-                        continue
-                    break
-            if budget_exhausted:
-                break
-        budget_exhausted = (budget_exhausted or (
-            time.monotonic() >= deadline and len(models) > len(candidates)))
+                await anyio.sleep(wait)
         if budget_exhausted:
             self.last_failures.append({
                 "route": envelope.route,
@@ -1468,65 +1540,36 @@ class ModelIntake(ModelStage):
                 metadata["ranked_argument_conflicts"] = conflict_rows
             return metadata if (drops or carried_rows or conflict_rows) else None
 
-        try:
-            wire = await self._generate_as(
-                prompt_name="requirement_review_v3", route="requirement_review",
-                schema=RequirementReviewWire, payload=payload,
-                decode=_collect_review_metadata,
-            )
-            wire = self._apply_ranked_carries_to_wire(task, wire, ranked_arguments)
-            self._validate_requirement_wire(wire)
-            requirements = []
-            for item in (wire.requirements or []):
-                sets = [{"capability_id": option.capability_id,
-                         "arguments": provider_to_source(option.arguments, "requirement",
-                            route="requirement_review", capability_id=option.capability_id,
-                            argument_schema=self._review_argument_schema(option.capability_id))}
-                        for option in item.capability_argument_sets]
-                maps = [dict(option["arguments"]) for option in sets]
-                shared = maps[0] if maps and all(value == maps[0] for value in maps) else {}
-                requirements.append({"id": item.id, "description": item.description,
-                    "capability_options": item.capability_options,
-                    "capability_argument_sets": sets,
-                    "capability_arguments": shared,
-                    "metric_ids": item.metric_ids or [],
-                    "requested_outputs": item.requested_outputs or []})
-            review = RequirementReview.model_validate({
-                "requirements": requirements,
-                "calculation_requirements": [{**item.model_dump(),
-                    "metric_ids": item.metric_ids or [],
-                    "requested_outputs": item.requested_outputs or []}
-                    for item in (wire.calculation_requirements or [])],
-                "missing_subquestions": wire.missing_subquestions or [],
-                "missing_skills": wire.missing_skills or []})
-        except RuntimeError as exc:
-            if not str(exc).startswith("all structured-output providers failed"):
-                raise
-            from v2.contracts import EvidenceRequirement
-            requirements = list(task.requirements)
-            existing_capabilities = {capability for item in requirements
-                                     for capability in item.capability_options}
-            entities = [item.display_name for item in task.entities]
-            for capability in task.required_evidence:
-                if capability in existing_capabilities:
-                    continue
-                arguments: dict[str, Any] = {}
-                if task.season is not None:
-                    arguments["season"] = task.season.value
-                if capability == "player_comparison" and len(entities) >= 2:
-                    arguments.update({"a": entities[0], "b": entities[1]})
-                elif capability.startswith("player_") and entities:
-                    arguments["player"] = entities[0]
-                requirement_id = f"required_{re.sub(r'[^a-z0-9]+', '_', capability.casefold()).strip('_')}"
-                requirements.append(EvidenceRequirement(
-                    id=requirement_id,
-                    description=f"Required intake evidence: {capability}",
-                    capability_options=[capability],
-                    capability_arguments=arguments))
-            review = RequirementReview(
-                requirements=requirements,
-                calculation_requirements=list(task.calculation_requirements),
-                missing_subquestions=[], missing_skills=[])
+        wire = await self._generate_as(
+            prompt_name="requirement_review_v3", route="requirement_review",
+            schema=RequirementReviewWire, payload=payload,
+            decode=_collect_review_metadata,
+        )
+        wire = self._apply_ranked_carries_to_wire(task, wire, ranked_arguments)
+        self._validate_requirement_wire(wire)
+        requirements = []
+        for item in (wire.requirements or []):
+            sets = [{"capability_id": option.capability_id,
+                     "arguments": provider_to_source(option.arguments, "requirement",
+                        route="requirement_review", capability_id=option.capability_id,
+                        argument_schema=self._review_argument_schema(option.capability_id))}
+                    for option in item.capability_argument_sets]
+            maps = [dict(option["arguments"]) for option in sets]
+            shared = maps[0] if maps and all(value == maps[0] for value in maps) else {}
+            requirements.append({"id": item.id, "description": item.description,
+                "capability_options": item.capability_options,
+                "capability_argument_sets": sets,
+                "capability_arguments": shared,
+                "metric_ids": item.metric_ids or [],
+                "requested_outputs": item.requested_outputs or []})
+        review = RequirementReview.model_validate({
+            "requirements": requirements,
+            "calculation_requirements": [{**item.model_dump(),
+                "metric_ids": item.metric_ids or [],
+                "requested_outputs": item.requested_outputs or []}
+                for item in (wire.calculation_requirements or [])],
+            "missing_subquestions": wire.missing_subquestions or [],
+            "missing_skills": wire.missing_skills or []})
         review, _carried_rows, conflict_rows = (
             self._reconcile_typed_ranked_arguments(task, review))
         unknown_evidence = sorted(
@@ -2399,21 +2442,7 @@ class ModelSynthesizer(ModelStage):
             "evidence": [item.model_dump(mode="json") for item in evidence],
             "skills": self._skills.activate(task.skills),
         }
-        try:
-            draft = await self._generate(payload)
-        except RuntimeError as exc:
-            if not str(exc).startswith("all structured-output providers failed"):
-                raise
-            try:
-                draft = await self._generate(payload)
-            except RuntimeError as retry_exc:
-                if not str(retry_exc).startswith("all structured-output providers failed"):
-                    raise
-                draft = DraftReport(
-                    sections=["Available evidence"], claims=[], calculations=[],
-                    blocked_calculation_requirement_ids=[
-                        item.id for item in task.calculation_requirements],
-                    gaps=["Answer synthesis provider was unavailable; admitted evidence is preserved."])
+        draft = await self._generate(payload)
         try:
             return _validate_draft(draft, evidence, task)
         except InvalidDraftCalculation as exc:

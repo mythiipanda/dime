@@ -22,28 +22,23 @@ class _Model:
 
 def test_requirement_review_policy_changes_only_attempt_timeout():
     expected = {
-        "intake": {"primary_attempts": 2, "attempt_timeout_s": 6.0,
-            "total_budget_s": 18.0, "secondary_limit": 1,
-            "transient_classes": frozenset({"timeout", "rate_limit", "network", "server_error", "provider_error"}),
-            "deterministic_fallback": False},
-        "intake_admission": {"primary_attempts": 1, "attempt_timeout_s": 6.0,
-            "total_budget_s": 6.0, "secondary_limit": 0,
-            "transient_classes": frozenset(), "deterministic_fallback": False},
-        "requirement_review": {"primary_attempts": 2, "attempt_timeout_s": 8.0,
-            "total_budget_s": 12.0, "secondary_limit": 1,
-            "transient_classes": frozenset({"timeout", "rate_limit", "network", "server_error", "provider_error"}),
-            "deterministic_fallback": True},
-        "planner": {"primary_attempts": 2, "attempt_timeout_s": 4.0,
-            "total_budget_s": 12.0, "secondary_limit": 1,
-            "transient_classes": frozenset({"timeout", "rate_limit", "network", "server_error", "provider_error"}),
-            "deterministic_fallback": False},
-        "synthesizer": {"primary_attempts": 1, "attempt_timeout_s": 6.0,
-            "total_budget_s": 6.0, "secondary_limit": 0,
-            "transient_classes": frozenset(), "deterministic_fallback": True},
-        "semantic_verifier": {"primary_attempts": 2, "attempt_timeout_s": 6.0,
-            "total_budget_s": 18.0, "secondary_limit": 1,
-            "transient_classes": frozenset({"timeout", "rate_limit", "network", "server_error", "provider_error"}),
-            "deterministic_fallback": True},
+        "intake": {"max_attempts": 2, "attempt_timeout_s": 6.0,
+            "total_budget_s": 18.0,
+            "transient_classes": frozenset({"timeout", "rate_limit", "network", "server_error", "provider_error"})},
+        "intake_admission": {"max_attempts": 1, "attempt_timeout_s": 6.0,
+            "total_budget_s": 6.0, "transient_classes": frozenset()},
+        "requirement_review": {"max_attempts": 2, "attempt_timeout_s": 8.0,
+            "total_budget_s": 12.0,
+            "transient_classes": frozenset({"timeout", "rate_limit", "network", "server_error", "provider_error"})},
+        "planner": {"max_attempts": 2, "attempt_timeout_s": 8.0,
+            "total_budget_s": 12.0,
+            "transient_classes": frozenset({"timeout", "rate_limit", "network", "server_error", "provider_error"})},
+        "synthesizer": {"max_attempts": 2, "attempt_timeout_s": 6.0,
+            "total_budget_s": 6.0,
+            "transient_classes": frozenset({"timeout", "rate_limit", "network", "server_error", "provider_error"})},
+        "semantic_verifier": {"max_attempts": 2, "attempt_timeout_s": 6.0,
+            "total_budget_s": 18.0,
+            "transient_classes": frozenset({"timeout", "rate_limit", "network", "server_error", "provider_error"})},
     }
     assert ROUTE_POLICIES == expected
 
@@ -90,14 +85,14 @@ async def test_requirement_review_remaining_budget_caps_attempt_two_and_blocks_s
     monkeypatch.setattr("v2.adapters.models.time.perf_counter", lambda: clock.value)
     model = ProviderStructuredModel("inception", "primary")
     monkeypatch.setattr(model, "_models", lambda: [("inception", _Model("primary")), ("mistral", _Model("secondary"))])
-    with pytest.raises(RuntimeError, match="requirement_review_deadline"):
+    with pytest.raises(RuntimeError, match="all structured-output providers failed"):
         await model.generate(schema=RequirementReview, prompt="p", payload={}, envelope=_envelope())
     assert timeouts == [8.0, 4.0] and agents == ["primary", "primary"]
     assert clock.value == 12.0
 
 
 @pytest.mark.anyio
-async def test_fast_primary_failures_still_allow_secondary_within_budget(monkeypatch):
+async def test_fast_primary_failures_raise_without_secondary_within_budget(monkeypatch):
     clock = type("Clock", (), {"value": 0.0})(); calls = []; timeouts = []
     @contextmanager
     def fail_after(timeout):
@@ -106,8 +101,7 @@ async def test_fast_primary_failures_still_allow_secondary_within_budget(monkeyp
         def __init__(self, model, *args, **kwargs): self.name = model.model_name
         async def run(self, prompt):
             calls.append(self.name); clock.value += 0.25
-            if self.name == "primary": raise TimeoutError("fast transient")
-            return type("Result", (), {"output": RequirementReview()})()
+            raise TimeoutError("fast transient")
     async def no_sleep(value): return None
     monkeypatch.setattr("v2.adapters.models.Agent", Agent)
     monkeypatch.setattr("v2.adapters.models.anyio.fail_after", fail_after)
@@ -116,8 +110,8 @@ async def test_fast_primary_failures_still_allow_secondary_within_budget(monkeyp
     monkeypatch.setattr("v2.adapters.models.time.monotonic", lambda: clock.value)
     model = ProviderStructuredModel("inception", "primary")
     monkeypatch.setattr(model, "_models", lambda: [("inception", _Model("primary")), ("mistral", _Model("secondary"))])
-    out = await model.generate(schema=RequirementReview, prompt="p", payload={}, envelope=_envelope())
-    assert out == RequirementReview()
-    assert calls == ["primary", "primary", "secondary"]
-    assert timeouts == [8.0, 8.0, 8.0] and clock.value == 0.75
+    with pytest.raises(RuntimeError, match="all structured-output providers failed"):
+        await model.generate(schema=RequirementReview, prompt="p", payload={}, envelope=_envelope())
+    assert calls == ["primary", "primary"]
+    assert timeouts == [8.0, 8.0] and clock.value == 0.5
     assert len(model.last_failures) == 2

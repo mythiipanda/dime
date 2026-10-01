@@ -380,7 +380,7 @@ async def test_intake_receives_explicit_current_date() -> None:
     assert current_date.count("-") == 2
 
 
-def test_pydanticai_provider_boundary_uses_only_active_free_rotation(monkeypatch) -> None:
+def test_pydanticai_provider_boundary_uses_only_configured_model(monkeypatch) -> None:
     from v2.adapters.models import ProviderStructuredModel
 
 
@@ -391,10 +391,8 @@ def test_pydanticai_provider_boundary_uses_only_active_free_rotation(monkeypatch
     monkeypatch.setattr("v2.adapters.models.settings.openrouter_api_key", "free-key")
     monkeypatch.setattr("v2.adapters.models.settings.groq_api_key", "configured-paused")
     models = ProviderStructuredModel("inception", "mercury-test")._models()
-    assert [provider for provider, _ in models] == ["nvidia", "openrouter", "mistral"]
-    assert models[0][1].model_name == settings.nvidia_nim_model
-    assert models[1][1].model_name.endswith(":free")
-    assert models[2][1].model_name == settings.mistral_model
+    assert [provider for provider, _ in models] == ["inception"]
+    assert models[0][1].model_name == "mercury-2.5"
 
 
 def test_pydanticai_models_keep_timeout_and_openrouter_attribution(monkeypatch) -> None:
@@ -1349,28 +1347,25 @@ async def test_playoff_translation_skill_does_not_force_unrequested_capabilities
     assert task.required_evidence == ["player_report", "game_logs"]
 
 @pytest.mark.anyio
-async def test_synthesizer_retries_one_failed_structured_generation() -> None:
+async def test_synthesizer_exhaustion_raises_without_retry_or_empty_draft() -> None:
     from v2.contracts import Claim, DraftReport, TaskSpec
 
-    class Flaky:
+    class Down:
         def __init__(self):
             self.calls = 0
 
         async def generate(self, **call):
             self.calls += 1
-            if self.calls == 1:
-                raise RuntimeError("all structured-output providers failed")
-            return DraftReport(sections=["Record"], claims=[Claim(
-                text="Boston had the best record.", kind="judgment")])
+            raise RuntimeError("all structured-output providers failed")
 
-    model = Flaky()
-    draft = await ModelSynthesizer(
-        model, provider="test", model_name="test",
-    ).synthesize(
-        TaskSpec(goal="best record", mode="quick", deliverable="answer"), [])
+    model = Down()
+    with pytest.raises(RuntimeError, match="all structured-output providers failed"):
+        await ModelSynthesizer(
+            model, provider="test", model_name="test",
+        ).synthesize(
+            TaskSpec(goal="best record", mode="quick", deliverable="answer"), [])
 
-    assert draft.sections == ["Record"]
-    assert model.calls == 2
+    assert model.calls == 1
 
 
 @pytest.mark.anyio
@@ -1628,7 +1623,10 @@ async def test_provider_structured_failure_preserves_sanitized_diagnostics(monke
     assert "inception:TimeoutError:timeout" in text
     assert "secret payload" not in text
     assert "secret upstream" not in text
-    assert len(model.last_failures) == 1
+    assert len(model.last_failures) == 2
+    assert [failure["message_class"] for failure in model.last_failures] == [
+        "timeout", "timeout"]
+    assert [failure["attempt_number"] for failure in model.last_failures] == [1, 2]
     assert {key: model.last_failures[0][key] for key in (
         "provider", "exception_type", "message_class")} == {
         "provider": "inception", "exception_type": "TimeoutError",
@@ -1742,7 +1740,7 @@ async def test_planner_fails_closed_when_replan_still_misses_required_argument()
     assert len(stub.calls) == 2
 
 @pytest.mark.anyio
-async def test_requirement_review_retries_one_provider_exhaustion() -> None:
+async def test_requirement_review_exhaustion_raises_without_retry() -> None:
     class FlakyReview:
         def __init__(self):
             self.calls = 0
@@ -1750,17 +1748,15 @@ async def test_requirement_review_retries_one_provider_exhaustion() -> None:
             self.calls += 1
             if self.calls == 1:
                 return TaskSpec(goal="leaders", mode="quick", deliverable="answer")
-            if self.calls == 2:
-                raise RuntimeError("all structured-output providers failed [inception:ModelHTTPError:provider_error]")
-            return call["schema"].model_validate({"requirements": []})
+            raise RuntimeError("all structured-output providers failed [inception:ModelHTTPError:provider_error]")
 
     model = FlakyReview()
-    task = await ModelIntake(
-        model, provider="stub", model_name="stub",
-        capability_catalog={}, requirement_review=True,
-    ).understand("leaders")
+    with pytest.raises(RuntimeError, match="all structured-output providers failed"):
+        await ModelIntake(
+            model, provider="stub", model_name="stub",
+            capability_catalog={}, requirement_review=True,
+        ).understand("leaders")
 
-    assert task.goal == "leaders"
     assert model.calls == 2
 @pytest.mark.anyio
 async def test_requirement_review_closes_narrow_option_over_broader_capability():
@@ -2217,7 +2213,7 @@ async def test_intake_primary_transient_retries_then_succeeds(monkeypatch):
 
 
 @pytest.mark.anyio
-async def test_intake_primary_exhausted_then_secondary_success(monkeypatch):
+async def test_intake_primary_exhausted_raises_without_secondary(monkeypatch):
     from v2.adapters.models import ProviderStructuredModel
     from v2.runtime import RequestEnvelope
     calls=[]
@@ -2225,20 +2221,23 @@ async def test_intake_primary_exhausted_then_secondary_success(monkeypatch):
         def __init__(self,model,*a,**k):self.model=model
         async def run(self,prompt):
             calls.append((self.model.model_name,prompt))
-            if self.model.model_name=="primary":raise TimeoutError("temporary")
-            return type("R",(),{"output":TaskSpec(goal="ok",mode="quick",deliverable="x")})()
+            raise TimeoutError("temporary")
     class M:
         def __init__(self,n):self.model_name=n
     monkeypatch.setattr("v2.adapters.models.Agent",A);monkeypatch.setattr("v2.adapters.models.random.uniform",lambda a,b:0)
+    async def no_sleep(value):return None
+    monkeypatch.setattr("v2.adapters.models.anyio.sleep",no_sleep)
     m=ProviderStructuredModel("inception","primary");monkeypatch.setattr(m,"_models",lambda:[("inception",M("primary")),("mistral",M("secondary"))])
     e=RequestEnvelope.freeze(provider="inception",model="primary",route="intake",prompt="p",context={},tool_schemas={},planner_version="v2")
-    await m.generate(schema=TaskSpec,prompt="p",payload={"same":"input"},envelope=e)
-    assert [x[0] for x in calls]==["primary","primary","secondary"]
-    assert m.last_provider=="mistral" and m.last_model=="mistral_free_limit:secondary"
+    with pytest.raises(RuntimeError,match="all structured-output providers failed"):
+        await m.generate(schema=TaskSpec,prompt="p",payload={"same":"input"},envelope=e)
+    assert [x[0] for x in calls]==["primary","primary"]
+    assert m.last_provider is None
+    assert {f["provider"] for f in m.last_failures}=={"inception"}
 
 
 @pytest.mark.anyio
-async def test_intake_schema_failure_does_not_outer_retry(monkeypatch):
+async def test_intake_schema_failure_raises_without_retry_or_secondary(monkeypatch):
     from pydantic import ValidationError
     from v2.adapters.models import ProviderStructuredModel
     from v2.runtime import RequestEnvelope
@@ -2247,15 +2246,16 @@ async def test_intake_schema_failure_does_not_outer_retry(monkeypatch):
         def __init__(self,model,*a,**k):self.model=model
         async def run(self,prompt):
             calls.append(self.model.model_name)
-            if self.model.model_name=="primary":TaskSpec.model_validate({"goal":""})
+            TaskSpec.model_validate({"goal":""})
             return type("R",(),{"output":TaskSpec(goal="ok",mode="quick",deliverable="x")})()
     class M:
         def __init__(self,n):self.model_name=n
     monkeypatch.setattr("v2.adapters.models.Agent",A)
     m=ProviderStructuredModel("inception","primary");monkeypatch.setattr(m,"_models",lambda:[("inception",M("primary")),("mistral",M("secondary"))])
     e=RequestEnvelope.freeze(provider="inception",model="primary",route="intake",prompt="p",context={},tool_schemas={},planner_version="v2")
-    await m.generate(schema=TaskSpec,prompt="p",payload={},envelope=e)
-    assert calls==["primary","secondary"]
+    with pytest.raises(RuntimeError,match="all structured-output providers failed"):
+        await m.generate(schema=TaskSpec,prompt="p",payload={},envelope=e)
+    assert calls==["primary"]
     assert m.last_failures[0]["message_class"]=="structured_output"
 
 @pytest.mark.anyio
@@ -2275,26 +2275,27 @@ async def test_recorded_intake_ledger_carries_provider_attempt_diagnostics():
     assert attempt["used_fallback"] is True
 
 @pytest.mark.anyio
-async def test_intake_global_deadline_stops_many_provider_chain(monkeypatch):
+async def test_intake_global_deadline_stops_single_model_retries(monkeypatch):
     from v2.adapters.models import ProviderStructuredModel
     from v2.runtime import RequestEnvelope
     calls=[]; clock=type("Clock",(),{"value":0})()
     class A:
         def __init__(self,model,*a,**k):self.model=model
         async def run(self,prompt):
-            calls.append(self.model.model_name);clock.value += 7;raise TimeoutError("x")
+            calls.append(self.model.model_name);clock.value += 20;raise TimeoutError("x")
     class M:
         def __init__(self,n):self.model_name=n
     monkeypatch.setattr("v2.adapters.models.Agent",A)
     monkeypatch.setattr("v2.adapters.models.time.monotonic",lambda:clock.value)
     monkeypatch.setattr("v2.adapters.models.time.perf_counter",lambda:0)
     monkeypatch.setattr("v2.adapters.models.random.uniform",lambda a,b:0)
-    models=[("inception",M("m0")),("mistral",M("m1")),("groq",M("m2")),("openrouter",M("m3"))]
-    m=ProviderStructuredModel("inception","m0");monkeypatch.setattr(m,"_models",lambda:models)
+    async def no_sleep(value):return None
+    monkeypatch.setattr("v2.adapters.models.anyio.sleep",no_sleep)
+    m=ProviderStructuredModel("inception","m0");monkeypatch.setattr(m,"_models",lambda:[("inception",M("m0"))])
     e=RequestEnvelope.freeze(provider="inception",model="m0",route="intake",prompt="p",context={},tool_schemas={},planner_version="v2")
     with pytest.raises(RuntimeError,match="intake_deadline"):
         await m.generate(schema=TaskSpec,prompt="p",payload={},envelope=e)
-    assert calls==["m0","m0","m1"]
+    assert calls==["m0"]
     assert m.last_failures[-1]["message_class"]=="intake_deadline"
 
 
@@ -2315,8 +2316,8 @@ async def test_exhausted_intake_ledger_keeps_complete_attempt_diagnostics():
     assert len(ledger.entries)==2
 
 @pytest.mark.anyio
-async def test_requirement_review_exhaustion_preserves_intake_without_blocker():
-    class ReviewDown:
+async def test_requirement_review_exhaustion_raises_without_fabricated_nodes():
+    class IntakeThenDown:
         calls=0
         async def generate(self,**call):
             self.calls+=1
@@ -2328,16 +2329,10 @@ async def test_requirement_review_exhaustion_preserves_intake_without_blocker():
                     season={"value":"2025-26","source":"user","confidence":1.0},
                     required_evidence=["player_comparison"])
             raise RuntimeError("all structured-output providers failed [x]")
-    model=ReviewDown()
-    task=await ModelIntake(model,provider="stub",model_name="stub",
-        capability_catalog={"player_comparison":{}},requirement_review=True).understand("pair")
-    assert task.required_evidence==["player_comparison"]
-    assert len(task.requirements)==1
-    assert task.requirements[0].capability_options==["player_comparison"]
-    assert task.requirements[0].id=="required_player_comparison"
-    assert task.requirements[0].capability_arguments=={
-        "a":"Myles Turner","b":"Luka Doncic","season":"2025-26"}
-    assert task.open_questions==[]
+    model=IntakeThenDown()
+    with pytest.raises(RuntimeError,match="all structured-output providers failed"):
+        await ModelIntake(model,provider="stub",model_name="stub",
+            capability_catalog={"player_comparison":{}},requirement_review=True).understand("pair")
     assert model.calls==2
 
 
@@ -2345,8 +2340,10 @@ def test_route_policy_table_bounds_model_owned_routes():
     from v2.adapters.models import ROUTE_POLICIES
     assert ROUTE_POLICIES["requirement_review"]["total_budget_s"] <= 12
     assert ROUTE_POLICIES["planner"]["total_budget_s"] <= 12
-    assert ROUTE_POLICIES["synthesizer"]["deterministic_fallback"] is True
-    assert ROUTE_POLICIES["semantic_verifier"]["deterministic_fallback"] is True
+    assert ROUTE_POLICIES["planner"]["attempt_timeout_s"] == 8.0
+    for policy in ROUTE_POLICIES.values():
+        assert "secondary_limit" not in policy
+        assert "deterministic_fallback" not in policy
 
 @pytest.mark.anyio
 async def test_run_model_deadline_is_shared_across_sequential_routes(monkeypatch):
@@ -2363,6 +2360,8 @@ async def test_run_model_deadline_is_shared_across_sequential_routes(monkeypatch
     monkeypatch.setattr("v2.adapters.models.time.monotonic",lambda:clock.value)
     monkeypatch.setattr("v2.adapters.models.time.perf_counter",lambda:0)
     monkeypatch.setattr("v2.adapters.models.random.uniform",lambda a,b:0)
+    async def no_sleep(value):return None
+    monkeypatch.setattr("v2.adapters.models.anyio.sleep",no_sleep)
     RUN_MODEL_DEADLINE.set(20)
     m=ProviderStructuredModel("inception","m");monkeypatch.setattr(m,"_models",lambda:[("inception",M())])
     def env(route):return RequestEnvelope.freeze(provider="inception",model="m",route=route,prompt="p",context={},tool_schemas={},planner_version="v2")
@@ -3461,24 +3460,18 @@ async def test_ranked_prose_does_not_change_reconciliation():
             == capability_arguments_for(second.requirements[0], "team_ratings"))
 
 @pytest.mark.anyio
-async def test_review_outage_with_typed_intake_carries_typed_arguments():
+async def test_review_outage_raises_without_fabricated_nodes():
     class ReviewDown:
         async def generate(self, **call):
             raise RuntimeError("all structured-output providers failed [x]")
     intake = ModelIntake(ReviewDown(), provider="stub", model_name="stub",
                          capability_catalog=_typed_catalog())
     task = _typed_ranked_task(metric="DEF_RATING", direction="asc")
-    review = await intake._review_requirements("best defense", task)
-    assert len(review.requirements) == 1
-    arguments = capability_arguments_for(review.requirements[0], "team_ratings")
-    assert arguments["requested_metric"] == "DEF_RATING"
-    assert arguments["ranking_direction"] == "asc"
-    assert arguments["season"] == "2025-26"
-    assert review.missing_subquestions == []
+    with pytest.raises(RuntimeError, match="all structured-output providers failed"):
+        await intake._review_requirements("best defense", task)
 
 @pytest.mark.anyio
-async def test_review_outage_without_typed_intake_reaches_synthesizer():
-    from v2.adapters.models import _deterministic_rank_draft
+async def test_review_outage_raises_without_deterministic_draft():
     class ReviewDown:
         async def generate(self, **call):
             raise RuntimeError("all structured-output providers failed [x]")
@@ -3487,17 +3480,8 @@ async def test_review_outage_without_typed_intake_reaches_synthesizer():
     task = TaskSpec(goal="rank", mode="quick", deliverable="team",
                     season={"value": "2025-26", "source": "user", "confidence": 1},
                     required_evidence=["team_ratings"], requirements=[])
-    review = await intake._review_requirements("best defense", task)
-    assert len(review.requirements) == 1
-    arguments = capability_arguments_for(review.requirements[0], "team_ratings")
-    assert "requested_metric" not in arguments
-    assert arguments["season"] == "2025-26"
-    assert review.missing_subquestions == []
-    assert review.ranked_argument_conflicts == []
-    draft = _deterministic_rank_draft(task.model_copy(update={
-        "requirements": review.requirements,
-        "ranked_argument_conflicts": review.ranked_argument_conflicts}), [])
-    assert draft is None
+    with pytest.raises(RuntimeError, match="all structured-output providers failed"):
+        await intake._review_requirements("best defense", task)
 
 def test_plain_team_ratings_question_without_conflict_reaches_synthesizer():
 
