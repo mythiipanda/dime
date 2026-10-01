@@ -1218,8 +1218,25 @@ class ModelIntake(ModelStage):
             "subject_entity_type": _derive_subject_entity_type(task),
         })
         if self._intake_admission:
-            review = await self._review_admission(request, bounded, task)
-            task = self._apply_review(review, request, bounded, task)
+            candidate = task
+            review = await self._review_admission(request, bounded, candidate)
+            task = self._apply_review(review, request, bounded, candidate)
+            if not candidate.open_questions and task.open_questions:
+                _admission_logger.warning(
+                    "intake_admission reviewer block on clean task; "
+                    "resampling review")
+                review = await self._review_admission(
+                    request, bounded, candidate)
+                resampled = self._apply_review(
+                    review, request, bounded, candidate)
+                if not resampled.open_questions:
+                    _admission_logger.warning(
+                        "intake_admission resample admitted task unchanged")
+                    task = resampled
+                else:
+                    _admission_logger.warning(
+                        "intake_admission resample confirmed block; "
+                        "keeping first verdict")
         self._skills.activate(task.skills)
         return task
 
