@@ -131,6 +131,34 @@ describe("debug-table leak", () => {
     assert.ok(html.includes("LEAGUE LEADERS"), "human title missing");
   });
 
+  it("warehouse-name object keys never reach headers or tooltips", () => {
+    const ai: AiMessage = {
+      text: "answer",
+      done: true,
+      nodes: {
+        tools: {
+          status: "complete",
+          thoughts: [],
+          toolCalls: [],
+          toolResults: [],
+          tables: [
+            {
+              tool: "get_leaders",
+              rows: [{ PLAYER: "Quinn Mercer", silver_hist_standings: 30 }],
+              meta: { source: "warehouse" },
+            },
+          ] as never,
+        },
+      },
+    };
+    const html = renderToStaticMarkup(React.createElement(DataArtifacts, { ai }));
+    assert.ok(!html.includes("silver_"), "silver_ warehouse key leaked");
+    assert.ok(!html.includes("bronze_"), "bronze_ warehouse key leaked");
+    assert.ok(!html.includes("ext_"), "ext_ warehouse key leaked");
+    assert.ok(html.includes("Quinn Mercer"), "player row missing");
+    assert.ok(html.includes("30"), "stat value missing");
+  });
+
   it("production build hides debug surfaces but keeps real data", () => {
     const env = process.env as Record<string, string | undefined>;
     const prev = env.NODE_ENV;

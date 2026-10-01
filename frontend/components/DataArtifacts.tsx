@@ -115,7 +115,7 @@ function cleanText(value: unknown): unknown {
   if (Array.isArray(value)) return value.map(cleanText);
   if (value !== null && typeof value === "object") {
     const cleaned: Record<string, unknown> = {};
-    for (const [key, entry] of Object.entries(value)) cleaned[key] = cleanText(entry);
+    for (const [key, entry] of Object.entries(value)) cleaned[scrubWarehouseNames(key)] = cleanText(entry);
     return cleaned;
   }
   return value;
