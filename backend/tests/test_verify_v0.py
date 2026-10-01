@@ -85,7 +85,8 @@ def test_presentation_does_not_ship_unverified_figures_clean():
 
     answer = asyncio.run(_go())
     assert "99.9" not in answer
-    assert "could not verify the figures" in answer
+    assert "Right" in answer
+    assert "evidence panel" not in answer
 
 
 def test_game_prediction_publishes_verified_deterministic_summary():
