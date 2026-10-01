@@ -317,10 +317,10 @@ class ProviderStructuredModel:
         detail = str(exc).casefold()
         if "timeout" in name or "timed out" in detail:
             return "timeout"
-        if any(code in detail for code in ("500", "502", "503", "504")):
-            return "server_error"
         if "rate" in name or "429" in detail or "rate limit" in detail:
             return "rate_limit"
+        if any(code in detail for code in ("500", "502", "503", "504")):
+            return "server_error"
         if "auth" in name or "401" in detail or "403" in detail:
             return "authentication"
         if ("validation" in name or "schema" in detail

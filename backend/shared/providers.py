@@ -240,8 +240,8 @@ class ProviderInvocation:
 def _failure_class(exc: BaseException) -> str:
     name = type(exc).__name__.casefold(); detail = str(exc).casefold()
     if "timeout" in name or "timed out" in detail: return "timeout"
-    if any(code in detail for code in ("500", "502", "503", "504")): return "server_error"
     if "429" in detail or "rate" in name or "rate limit" in detail: return "rate_limit"
+    if any(code in detail for code in ("500", "502", "503", "504")): return "server_error"
     if "connect" in name or "network" in detail: return "network"
     if "401" in detail or "403" in detail or "auth" in name: return "authentication"
     return "provider_error"
