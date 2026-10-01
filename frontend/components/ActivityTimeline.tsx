@@ -80,12 +80,12 @@ function buildRows(items:ActivityRecord[]):Row[]{
   for(const i of shown){
     if(i.kind==="tool_call"){
       const p=pairForCall.get(i.eventId);
-      if(p)rows.push({key:`pair:${i.eventId}`,kind:"pair",pair:p});
+      if(p&&!pairFailed(p))rows.push({key:`pair:${i.eventId}`,kind:"pair",pair:p});
       continue;
     }
     if(i.kind==="tool_result"){
       const p=pairForLoneResult.get(i.eventId);
-      if(p)rows.push({key:`pair:${i.eventId}`,kind:"pair",pair:p});
+      if(p&&!pairFailed(p))rows.push({key:`pair:${i.eventId}`,kind:"pair",pair:p});
       continue;
     }
     if(i.kind==="plan_update"){

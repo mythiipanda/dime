@@ -11,10 +11,40 @@ import remarkGfm from "remark-gfm";
 
 
 const COVERAGE_RX = /^\s*This data covers the ([^.]+)\.\s*/;
+const TAKEAWAY_HEAD_RX = /^\s*(#{1,3}\s*)?\*{0,2}takeaways\*{0,2}\s*:?\s*$/i;
+const SECTION_HEAD_RX = /^\s*(#{1,3}\s+\S|\*\*\S.*\S\*\*\s*:?\s*)$/;
+const MAX_TAKEAWAYS = 3;
+const MAX_TAKEAWAY_CHARS = 160;
+
+function capTakeaways(body: string): string {
+  const lines = body.split("\n");
+  const head = lines.findIndex((l) => TAKEAWAY_HEAD_RX.test(l));
+  if (head < 0) return body;
+  let end = lines.length;
+  for (let i = head + 1; i < lines.length; i++) {
+    if (SECTION_HEAD_RX.test(lines[i])) {
+      end = i;
+      break;
+    }
+  }
+  const kept: string[] = [lines[head]];
+  let count = 0;
+  for (let i = head + 1; i < end && count < MAX_TAKEAWAYS; i++) {
+    const line = lines[i].trim();
+    if (!line) continue;
+    kept.push(
+      line.length > MAX_TAKEAWAY_CHARS
+        ? `${line.slice(0, MAX_TAKEAWAY_CHARS).replace(/\s+\S*$/, "")}…`
+        : line,
+    );
+    count++;
+  }
+  return [...kept, ...lines.slice(end)].join("\n");
+}
 
 export default function AnswerText({ text }: { text: string }) {
   if (!text) return null;
-  let body = text;
+  let body = capTakeaways(text);
   let coverage: string | null = null;
   const cm = body.match(COVERAGE_RX);
   if (cm) {

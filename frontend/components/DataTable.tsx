@@ -44,7 +44,6 @@ const HEADER_LABELS: Record<string, string> = {
   GP: "Games",
   MIN: "Minutes",
   MPG: "Min/game",
-  PERCENTILE: "Pct",
   Season: "Season",
   Value: "Value",
   printed: "Output",
@@ -74,7 +73,9 @@ function asTable(rows: unknown, capCols: number, showIds = false): {
   if (!Array.isArray(list) || !list.length) return null;
   const first = (list as unknown[])[0] as Record<string, unknown>;
   if (typeof first !== "object" || first === null) return null;
-  const allKeys = Object.keys(first);
+  const allKeys = Object.keys(first).filter(
+    (k) => k.toUpperCase() !== "PERCENTILE",
+  );
   
   
   

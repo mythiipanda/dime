@@ -31,7 +31,7 @@ def _hist_game_log_rows(team_id: int, season: str,
             "date": str(_h.get("GAME_DATE") or ""),
             "matchup": str(_h.get("MATCHUP") or ""),
             "wl": _wl or None,
-            "pts": _h.get("PTS"), "opp_pts": None,
+            "pts": _h.get("PTS"), "opp_pts": _h.get("OPP_PTS"),
             "reb": _h.get("REB"), "ast": _h.get("AST"),
             "stl": _h.get("STL"), "blk": _h.get("BLK"),
             "tov": _h.get("TOV"),
@@ -39,6 +39,53 @@ def _hist_game_log_rows(team_id: int, season: str,
         if len(out) >= limit:
             break
     return out
+
+
+def _team_game_window(tid: int, abbr: str, season: str,
+                        playoffs: bool, hist: bool) -> dict[str, Any]:
+    try:
+        from .. import store as _store
+        con = _store.connect(read_only=True)
+        try:
+            tables = {r[0] for r in con.execute("SHOW TABLES").fetchall()}
+            if playoffs:
+                if "silver_playoffs" not in tables:
+                    return {}
+                row = con.execute(
+                    "SELECT COUNT(*), MIN(coalesce(try_strptime(GAME_DATE, '%b %d, %Y'),"
+                    " try_strptime(GAME_DATE, '%Y-%m-%d'))),"
+                    " MAX(coalesce(try_strptime(GAME_DATE, '%b %d, %Y'),"
+                    " try_strptime(GAME_DATE, '%Y-%m-%d')))"
+                    " FROM silver_playoffs WHERE _season = ?"
+                    " AND TEAM_ABBREVIATION = ?",
+                    [season, abbr]).fetchone()
+            elif hist and "silver_hist_gamelogs" in tables:
+                row = con.execute(
+                    "SELECT COUNT(*), MIN(CAST(game_date AS DATE)),"
+                    " MAX(CAST(game_date AS DATE))"
+                    " FROM silver_hist_gamelogs WHERE _season = ?"
+                    " AND (team_id = ? OR team_abbreviation = ?)"
+                    " AND season_type = 'regular-season'",
+                    [season, tid, abbr]).fetchone()
+            elif "silver_team_games" in tables:
+                row = con.execute(
+                    "SELECT COUNT(DISTINCT Game_ID),"
+                    " MIN(try_strptime(GAME_DATE, '%b %d, %Y')),"
+                    " MAX(try_strptime(GAME_DATE, '%b %d, %Y'))"
+                    " FROM silver_team_games WHERE _season = ?"
+                    " AND _entity = ?",
+                    [season, f"team:{tid}"]).fetchone()
+            else:
+                return {}
+        finally:
+            con.close()
+    except Exception:
+        return {}
+    if not row or not row[0]:
+        return {}
+    return {"season_games": int(row[0]),
+            "first_date": None if row[1] is None else str(row[1]),
+            "last_date": None if row[2] is None else str(row[2])}
 
 
 def _abbrev(who: str) -> str:
@@ -270,24 +317,45 @@ def get_team_game_log(team: str, limit: int = 10,
                 if len(games) >= limit:
                     break
         else:
-            return {"tool": "get_team_game_log", "ok": False,
-                    "error": "team game table not present in warehouse"}
+            if playoffs:
+                return {"tool": "get_team_game_log", "ok": False,
+                        "error": "team game table not present in warehouse"}
     finally:
         con.close()
     _source = "warehouse:silver_team_games"
+    _hist_served = False
     if not games and not playoffs and season_static(season):
         _hist = _hist_game_log_rows(tid, season, limit)
         if _hist:
             games = _hist
             _source = "warehouse:silver_hist_gamelogs"
+            _hist_served = True
     if not games:
+        _suffix = ""
+        if _covered:
+            _suffix = (" Team game coverage: "
+                       + ", ".join(sorted(_covered)) + ".")
         return {"tool": "get_team_game_log", "ok": False,
                 "error": f"no {'playoff' if playoffs else 'regular-season'} "
-                         f"games found for {abbr} in {season}"}
+                         f"games found for {abbr} in {season}." + _suffix}
+    _window = _team_game_window(tid, abbr, season, playoffs, _hist_served)
+    _meta: dict[str, Any] = {
+        "season": season, "source": _source,
+        "scope": "playoffs" if playoffs else "regular season",
+        "returned_games": len(games),
+    }
+    if _window:
+        _total = _window.get("season_games") or 0
+        _meta.update(_window)
+        _meta["partial_window"] = bool(_total and len(games) < _total)
+        _first = _window.get("first_date") or "unknown start"
+        _last = _window.get("last_date") or "unknown end"
+        _meta["coverage_note"] = (
+            f"{abbr} {season} {('playoffs' if playoffs else 'regular season')}: "
+            f"{_total} games from {_first} to {_last}; "
+            f"showing {len(games)} most recent.")
     return {"tool": "get_team_game_log", "ok": True,
-            "team": abbr, "games": games, "rows": games,
-            "meta": {"season": season, "source": _source,
-                     "scope": "playoffs" if playoffs else "regular season"}}
+            "team": abbr, "games": games, "rows": games, "meta": _meta}
 
 
 @tool
@@ -428,43 +496,49 @@ def get_season_series(team_a: str, team_b: str,
 
 _HIST_TEAM_GAMES_SQL = """
 SELECT
-  team_id AS "Team_ID",
-  game_id AS "Game_ID",
-  UPPER(STRFTIME(CAST(game_date AS DATE), '%b %d, %Y')) AS "GAME_DATE",
-  matchup AS "MATCHUP",
-  wl AS "WL",
-  SUM(CASE WHEN wl = 'W' THEN 1 ELSE 0 END) OVER w AS "W",
-  SUM(CASE WHEN wl = 'L' THEN 1 ELSE 0 END) OVER w AS "L",
-  CAST(SUM(CASE WHEN wl = 'W' THEN 1 ELSE 0 END) OVER w AS DOUBLE) /
+  g.team_id AS "Team_ID",
+  g.game_id AS "Game_ID",
+  UPPER(STRFTIME(CAST(g.game_date AS DATE), '%b %d, %Y')) AS "GAME_DATE",
+  CAST(g.game_date AS DATE) AS "_sort_date",
+  g.matchup AS "MATCHUP",
+  g.wl AS "WL",
+  SUM(CASE WHEN g.wl = 'W' THEN 1 ELSE 0 END) OVER w AS "W",
+  SUM(CASE WHEN g.wl = 'L' THEN 1 ELSE 0 END) OVER w AS "L",
+  CAST(SUM(CASE WHEN g.wl = 'W' THEN 1 ELSE 0 END) OVER w AS DOUBLE) /
     CAST(ROW_NUMBER() OVER w AS DOUBLE) AS "W_PCT",
-  min AS "MIN",
-  fgm AS "FGM",
-  fga AS "FGA",
-  fg_pct AS "FG_PCT",
-  fg3m AS "FG3M",
-  fg3a AS "FG3A",
-  fg3_pct AS "FG3_PCT",
-  ftm AS "FTM",
-  fta AS "FTA",
-  ft_pct AS "FT_PCT",
-  oreb AS "OREB",
-  dreb AS "DREB",
-  reb AS "REB",
-  ast AS "AST",
-  stl AS "STL",
-  blk AS "BLK",
-  tov AS "TOV",
-  pf AS "PF",
-  pts AS "PTS",
+  g.min AS "MIN",
+  g.fgm AS "FGM",
+  g.fga AS "FGA",
+  g.fg_pct AS "FG_PCT",
+  g.fg3m AS "FG3M",
+  g.fg3a AS "FG3A",
+  g.fg3_pct AS "FG3_PCT",
+  g.ftm AS "FTM",
+  g.fta AS "FTA",
+  g.ft_pct AS "FT_PCT",
+  g.oreb AS "OREB",
+  g.dreb AS "DREB",
+  g.reb AS "REB",
+  g.ast AS "AST",
+  g.stl AS "STL",
+  g.blk AS "BLK",
+  g.tov AS "TOV",
+  g.pf AS "PF",
+  g.pts AS "PTS",
+  o.pts AS "OPP_PTS",
   'sportsdataverse' AS "_source",
   ? AS "_season",
   ? AS "_fetched_at",
-  'team:' || CAST(team_id AS VARCHAR) AS "_entity"
-FROM silver_hist_gamelogs
-WHERE _season = ? AND team_id = ? AND season_type = 'regular-season'
-WINDOW w AS (PARTITION BY team_id ORDER BY game_date, game_id
+  'team:' || CAST(g.team_id AS VARCHAR) AS "_entity"
+FROM silver_hist_gamelogs g
+LEFT JOIN silver_hist_gamelogs o
+  ON o._season = g._season AND o.game_id = g.game_id
+ AND o.team_id != g.team_id AND o.season_type = 'regular-season'
+WHERE g._season = ? AND (g.team_id = ? OR g.team_abbreviation = ?)
+  AND g.season_type = 'regular-season'
+WINDOW w AS (PARTITION BY g.team_id ORDER BY CAST(g.game_date AS DATE), g.game_id
              ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW)
-ORDER BY game_date, game_id
+ORDER BY "_sort_date", g.game_id
 """
 
 
@@ -480,14 +554,15 @@ def _hist_team_games(team_id: int, season: str) -> list[dict[str, Any]]:
                 return []
             cols = {r[1] for r in con.execute(
                 "PRAGMA table_info(silver_hist_gamelogs)").fetchall()}
-            need = {"team_id", "game_id", "game_date", "matchup", "wl",
-                    "pts", "fga", "fta", "season_type"}
+            need = {"team_id", "team_abbreviation", "game_id", "game_date",
+                    "matchup", "wl", "pts", "fga", "fta", "season_type"}
             if not need <= cols:
                 return []
             import datetime as _dt
             fetched_at = _dt.datetime.now(_dt.timezone.utc).isoformat()
             cur = con.execute(_HIST_TEAM_GAMES_SQL,
-                              [season, fetched_at, season, team_id])
+                              [season, fetched_at, season, team_id,
+                               _abbrev(str(team_id))])
             names = [d[0] for d in cur.description]
             return [dict(zip(names, row)) for row in cur.fetchall()]
         finally:
