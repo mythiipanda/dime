@@ -130,10 +130,9 @@ def _envelope(table: str, season: str, frame: object, cached: bool) -> dict:
 _LINEUP_SUM_KEYS = ("PTS", "PLUS_MINUS", "FGA", "OREB", "TOV", "FTA", "MIN")
 
 
-def _lineup_stints(season: str) -> list:
-    frame = store.read_frame("silver_lineups", "_season = ?", [season])
+def _aggregate_lineup_rows(rows: list) -> list:
     agg: dict = {}
-    for r in frame.to_dicts():
+    for r in rows:
         ids = [x for x in str(r.get("GROUP_ID") or "").split("-") if x]
         if len(ids) != 5:
             continue
@@ -160,6 +159,37 @@ def _lineup_stints(season: str) -> list:
             continue
         out.append((gid, team, slot["name"], vals, poss))
     return out
+
+
+def _lineup_stints(season: str) -> list:
+    frame = store.read_frame("silver_lineups", "_season = ?", [season])
+    return _aggregate_lineup_rows(frame.to_dicts())
+
+
+def _sanitize_live_error(err: object) -> str:
+    text = "" if err is None else str(err).strip()
+    if not text:
+        return "live source failed and no cached rows for this team and season"
+    low = text.lower()
+    if "httpsconnectionpool" in low or "httpconnectionpool" in low:
+        return "live source timed out and no cached rows for this team and season"
+    if "max retries exceeded" in low:
+        return "live source timed out and no cached rows for this team and season"
+    if "read timed out" in low or "timed out" in low:
+        return "live source timed out and no cached rows for this team and season"
+    return text[:300]
+
+
+def _team_lineup_frame(season: str, team_id: int) -> object:
+    try:
+        frame = store.read_frame(
+            "silver_lineups",
+            "_season = ? AND CAST(TEAM_ID AS VARCHAR) = CAST(? AS VARCHAR)",
+            [season, str(team_id)],
+        )
+    except Exception:
+        return pl.DataFrame([])
+    return frame
 
 
 def _lineup_leaders(season: str, min_poss: int) -> dict:
@@ -335,7 +365,7 @@ def _fetch_live(
 @router.get("/datasets/{name}")
 def dataset(
     name: str,
-    season: str = Query("2025-26"),
+    season: str | None = Query(None),
     player_id: int = Query(0),
     team_id: int = Query(0),
     game_id: str = Query(""),
@@ -347,6 +377,23 @@ def dataset(
     min_poss: int = Query(200),
     fmt: str = Query("json"),
 ):
+    raw_season = season if isinstance(season, str) else ""
+    raw_season = raw_season.strip()
+    if raw_season:
+        season = raw_season
+    else:
+        resolved = None
+        try:
+            from shared.tools._core import resolve_season as _resolve_season
+            probe = TABLES.get(name, None) if name in TABLES else None
+            if name in ("rapm", "lineup_leaders", "clutch", "zone_splits"):
+                probe = "silver_lineups" if name == "lineup_leaders" else probe
+            resolved = _resolve_season(None, probe)
+        except Exception:
+            resolved = None
+        if not resolved:
+            return {"ok": False, "error": "no season provided and warehouse has no season with data"}
+        season = resolved
     if name in ("rapm", "lineup_leaders", "clutch", "zone_splits"):
         if name == "lineup_leaders":
             res = _lineup_leaders(season, min_poss)
@@ -395,6 +442,18 @@ def dataset(
         entity = f"date:{game_date}"
     elif ids:
         entity = f"wowy:{ids}"
+    if name == "lineups" and team_id:
+        team_frame = _team_lineup_frame(season, team_id)
+        if team_frame is not None and team_frame.height > 0:
+            if fmt == "csv":
+                return Response(team_frame.write_csv(), media_type="text/csv")
+            if fmt == "parquet":
+                buf = io.BytesIO()
+                team_frame.write_parquet(buf)
+                return Response(buf.getvalue(), media_type="application/octet-stream")
+            out = _envelope(table, season, team_frame, True)
+            out["ok"] = True
+            return out
     frame = store.read_frame(table, "_season = ?", [season])
     if name == "leaders" and frame.height > 0:
 
@@ -429,10 +488,10 @@ def dataset(
                 out = _envelope(table, season, stale, True)
                 out["ok"] = True
                 out["meta"]["stale"] = True
-                out["meta"]["live_error"] = live.error or "empty upstream response"
+                out["meta"]["live_error"] = _sanitize_live_error(live.error or "empty upstream response")
                 out["meta"]["live_source"] = live.meta.source
                 return out
-            return {"ok": False, "error": live.error,
+            return {"ok": False, "error": _sanitize_live_error(live.error),
                     "source": live.meta.source,
                     "detail": "live source failed and no cached rows for this entity"}
         store.save_frame(table, live, entity)
