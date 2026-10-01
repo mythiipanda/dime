@@ -1115,3 +1115,101 @@ async def test_structured_name_resolution_error_code_survives_checkpoint_replay(
     assert result.error_codes == {"profile": [ExecutionErrorCode.PROFILE_NAME_RESOLUTION_UNAVAILABLE]}
     raw = (tmp_path / "r.json").read_text()
     assert '"profile/name_resolution_unavailable"' in raw
+
+
+def _seed_completed_season_boxscores(monkeypatch, tmp_path):
+    import duckdb
+
+    from shared import store
+
+    warehouse = tmp_path / "warehouse.duckdb"
+    connection = duckdb.connect(str(warehouse))
+    connection.execute(
+        "CREATE TABLE silver_leaders_ast (RANK BIGINT, PLAYER VARCHAR, "
+        "TEAM VARCHAR, GP BIGINT, AST BIGINT, MIN BIGINT, _source VARCHAR, "
+        "_season VARCHAR, _fetched_at VARCHAR)"
+    )
+    connection.execute(
+        "INSERT INTO silver_leaders_ast VALUES (1, 'Current Star', 'DEN', "
+        "65, 697, 2200, 'nba_stats', '2025-26', "
+        "'2026-09-30T00:00:00+00:00')"
+    )
+    connection.execute(
+        "CREATE TABLE silver_boxscores (PLAYER_ID BIGINT, firstName VARCHAR, "
+        "familyName VARCHAR, GAME_ID VARCHAR, teamTricode VARCHAR, "
+        "assists BIGINT, comment VARCHAR, _source VARCHAR, _season VARCHAR, "
+        "_fetched_at VARCHAR, _entity VARCHAR)"
+    )
+    rows = []
+    game = 2000
+    for _ in range(60):
+        game += 1
+        rows.append(
+            f"(1629027, 'Trae', 'Young', 'G{game}', 'ATL', 12, '', "
+            "'nba_stats', '2024-25', '2025-06-01T00:00:00+00:00', '')"
+        )
+    for _ in range(16):
+        game += 1
+        rows.append(
+            f"(1629027, 'Trae', 'Young', 'G{game}', 'ATL', 10, '', "
+            "'nba_stats', '2024-25', '2025-06-01T00:00:00+00:00', '')"
+        )
+    rows.append(
+        "(1629027, 'Trae', 'Young', 'G9999', 'ATL', 0, "
+        "'DND - Injury/Illness', 'nba_stats', '2024-25', "
+        "'2025-06-01T00:00:00+00:00', '')"
+    )
+    for _ in range(70):
+        game += 1
+        rows.append(
+            f"(1630162, 'Second', 'Guard', 'G{game}', 'DET', 10, '', "
+            "'nba_stats', '2024-25', '2025-06-01T00:00:00+00:00', '')"
+        )
+    connection.execute("INSERT INTO silver_boxscores VALUES " + ",".join(rows))
+    connection.close()
+    monkeypatch.setattr(store, "DB_PATH", warehouse)
+    return warehouse
+
+
+@pytest.mark.anyio
+async def test_completed_season_leader_executes_with_valued_evidence(
+    monkeypatch, tmp_path,
+) -> None:
+    from v2.adapters.core import ToolCapability
+    from v2.contracts import EvidenceRequirement, SeasonRef
+
+    _seed_completed_season_boxscores(monkeypatch, tmp_path)
+    task = TaskSpec(
+        goal="Who led the NBA in assists in the 2024-25 season, and how many?",
+        mode=RunMode.QUICK,
+        deliverable="Assists leader and total assists",
+        requested_outputs=["AST"],
+        season=SeasonRef(value="2024-25", source="user", confidence=1.0),
+        requirements=[
+            EvidenceRequirement(
+                id="assists_leader_2024_25",
+                description="2024-25 NBA assists leaderboard",
+                capability_options=["qualified_leaders"],
+                capability_arguments={
+                    "stat_category": "AST",
+                    "season": "2024-25",
+                },
+                requested_outputs=["AST"],
+            )
+        ],
+    )
+    plan = Plan(nodes=[PlanNode(
+        id="leader",
+        description="Fetch 2024-25 assists leaderboard",
+        capability_hints=["qualified_leaders"],
+        covers_requirement_ids=["assists_leader_2024_25"],
+        arguments={"stat_category": "AST", "season": "2024-25"},
+    )])
+    result = await PlanExecutor(
+        {"qualified_leaders": ToolCapability("qualified_leaders")}
+    ).execute(task, plan)
+    assert result.plan.nodes[0].status == PlanStatus.COMPLETE
+    assert result.evidence[0].rows
+    assert result.evidence[0].rows[0]["PLAYER"] == "Trae Young"
+    assert result.evidence[0].rows[0]["AST"] == 880
+    assert result.evidence[0].rows[0]["GP"] == 76

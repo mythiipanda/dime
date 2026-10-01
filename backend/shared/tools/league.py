@@ -7,7 +7,7 @@ from langchain_core.tools import tool
 
 from .. import store
 from ..sources import nba_stats
-from ._core import IN_SEASON_MONTHS as _IN_SEASON_MONTHS, TTL_LEADERS, TTL_SCOREBOARD_PAST, clamp_stat, _warehouse_or_live, is_past_game_date, last_completed_season, resolve_season
+from ._core import IN_SEASON_MONTHS as _IN_SEASON_MONTHS, TTL_LEADERS, TTL_SCOREBOARD_PAST, clamp_stat, _warehouse_or_live, is_past_game_date, last_completed_season, resolve_season, season_static
 from .rating_metrics import RANKING_DIRECTIONS, TEAM_RATING_METRICS
 
 
@@ -803,6 +803,70 @@ def get_playoffs(season: str | None = None) -> dict[str, Any]:
             "meta": meta}
 
 
+_BOX_TOTAL_COLUMNS = {
+    "PTS": "points", "REB": "reboundsTotal", "AST": "assists",
+    "STL": "steals", "BLK": "blocks", "FGM": "fieldGoalsMade",
+    "FGA": "fieldGoalsAttempted", "FG3M": "threePointersMade",
+    "FG3A": "threePointersAttempted", "FTM": "freeThrowsMade",
+    "FTA": "freeThrowsAttempted", "OREB": "reboundsOffensive",
+    "DREB": "reboundsDefensive", "TOV": "turnovers", "PF": "foulsPersonal",
+}
+
+
+def _completed_season_totals(stat_category, season, order="DESC"):
+    column = _BOX_TOTAL_COLUMNS.get(stat_category)
+    if column is None:
+        return None
+    con = store.connect(read_only=True)
+    try:
+        tables = {row[0] for row in con.execute("SHOW TABLES").fetchall()}
+        if "silver_boxscores" not in tables:
+            return None
+        columns = {
+            row[1]
+            for row in con.execute(
+                "PRAGMA table_info(silver_boxscores)").fetchall()
+        }
+        if not {"PLAYER_ID", "firstName", "familyName", "GAME_ID",
+                "teamTricode", column, "comment", "_season"} <= columns:
+            return None
+        raw = con.execute(
+            "SELECT firstName || ' ' || familyName AS PLAYER, "
+            "MODE(teamTricode) AS TEAM, "
+            "COUNT(DISTINCT GAME_ID) AS GP, "
+            f"SUM({column}) AS TOTAL "
+            "FROM silver_boxscores WHERE _season = ? "
+            "AND (comment IS NULL OR comment = '') "
+            "GROUP BY PLAYER_ID, firstName, familyName "
+            f"ORDER BY TOTAL {order}",
+            [season],
+        ).fetchall()
+    finally:
+        con.close()
+    if not raw:
+        return None
+    rows = [
+        {"RANK": index, "PLAYER": row[0], "TEAM": row[1],
+         "GP": row[2], stat_category: row[3]}
+        for index, row in enumerate(raw, 1)
+    ]
+    meta = {
+        "source": "warehouse", "season": season,
+        "stat_category": stat_category, "rows": len(rows),
+        "cached": True, "static_season": True,
+        "qualification": (
+            "Season totals summed from warehouse game logs; "
+            "games not played are left out."
+        ),
+        "coverage": (
+            "Full player population in warehouse game logs "
+            "for the season, ordered by total."
+        ),
+        **store.warehouse_identity(),
+    }
+    return rows, meta
+
+
 @tool
 def get_leaders(
     stat_category: str = "PTS", season: str | None = None,
@@ -897,6 +961,10 @@ def get_leaders(
             [season], lambda: nba_stats.leaders(stat_category, season), season,
         )
         meta["stat_category"] = stat_category
+        if not rows and season_static(season):
+            fallback = _completed_season_totals(stat_category, season, order)
+            if fallback is not None:
+                rows, meta = fallback
 
 
 
