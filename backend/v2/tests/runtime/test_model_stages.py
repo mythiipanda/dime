@@ -2483,7 +2483,7 @@ async def test_pronoun_only_empty_context_returns_typed_unresolved_reference(use
     task=await ModelIntake(model,**admission_stage_kwargs()).understand(user_text)
     assert task.entities==[] and task.required_evidence==[]
     assert task.open_questions and "unresolved reference" in task.open_questions[-1]
-    assert [call["envelope"].route for call in model.calls]==["intake","intake_admission"]
+    assert [call["envelope"].route for call in model.calls]==["intake","intake_admission","intake_admission"]
 
 
 @pytest.mark.anyio
@@ -3083,7 +3083,7 @@ async def test_final_admission_blocks_requirement_review_metric_substitution_bef
                           requirement_review=True).understand("Show LeBron James PTS.")
     assert task.requirements==[] and task.metric_ids==[] and task.skills==[]
     assert [call["envelope"].route for call in model.calls]==[
-        "intake","requirement_review","intake_admission"]
+        "intake","requirement_review","intake_admission","intake_admission"]
 
 
 @pytest.mark.anyio

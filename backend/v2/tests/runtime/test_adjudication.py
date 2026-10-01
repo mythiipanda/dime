@@ -582,3 +582,135 @@ def test_public_event_contract_closes_nodes_tools_and_work_log():
     assert "SECRET" not in encoded and "rows" not in encoded and "ms" not in encoded
     work=encode_event(WorkLog(run_id="run-"+"a"*32,status="complete"))
     assert '"run_id":"run-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"' in work
+
+
+def _seed_completed_season_boxscores(monkeypatch, tmp_path):
+    import duckdb
+
+    from shared import store
+
+    warehouse = tmp_path / "warehouse.duckdb"
+    connection = duckdb.connect(str(warehouse))
+    connection.execute(
+        "CREATE TABLE silver_leaders_ast (RANK BIGINT, PLAYER VARCHAR, "
+        "TEAM VARCHAR, GP BIGINT, AST BIGINT, MIN BIGINT, _source VARCHAR, "
+        "_season VARCHAR, _fetched_at VARCHAR)"
+    )
+    connection.execute(
+        "INSERT INTO silver_leaders_ast VALUES (1, 'Current Star', 'DEN', "
+        "65, 697, 2200, 'nba_stats', '2025-26', "
+        "'2026-09-30T00:00:00+00:00')"
+    )
+    connection.execute(
+        "CREATE TABLE silver_boxscores (PLAYER_ID BIGINT, firstName VARCHAR, "
+        "familyName VARCHAR, GAME_ID VARCHAR, teamTricode VARCHAR, "
+        "assists BIGINT, comment VARCHAR, _source VARCHAR, _season VARCHAR, "
+        "_fetched_at VARCHAR, _entity VARCHAR)"
+    )
+    rows = []
+    game = 2000
+    for _ in range(60):
+        game += 1
+        rows.append(
+            f"(1629027, 'Trae', 'Young', 'G{game}', 'ATL', 12, '', "
+            "'nba_stats', '2024-25', '2025-06-01T00:00:00+00:00', '')"
+        )
+    for _ in range(16):
+        game += 1
+        rows.append(
+            f"(1629027, 'Trae', 'Young', 'G{game}', 'ATL', 10, '', "
+            "'nba_stats', '2024-25', '2025-06-01T00:00:00+00:00', '')"
+        )
+    rows.append(
+        "(1629027, 'Trae', 'Young', 'G9999', 'ATL', 0, "
+        "'DND - Injury/Illness', 'nba_stats', '2024-25', "
+        "'2025-06-01T00:00:00+00:00', '')"
+    )
+    for _ in range(70):
+        game += 1
+        rows.append(
+            f"(1630162, 'Second', 'Guard', 'G{game}', 'DET', 10, '', "
+            "'nba_stats', '2024-25', '2025-06-01T00:00:00+00:00', '')"
+        )
+    connection.execute("INSERT INTO silver_boxscores VALUES " + ",".join(rows))
+    connection.close()
+    monkeypatch.setattr(store, "DB_PATH", warehouse)
+    return warehouse
+
+
+def test_completed_season_assists_leader_publishes_count(monkeypatch, tmp_path):
+    import asyncio
+    from types import SimpleNamespace
+
+    from v2.adapters.core import ToolCapability
+    from v2.api.routes import _answer_text
+    from v2.contracts import (
+        Claim,
+        ClaimKind,
+        DraftReport,
+        EvidenceOutputBinding,
+        EvidenceRequirement,
+        SeasonRef,
+        VerifiedClaim,
+    )
+    from v2.runtime.executor import PlanExecutor
+    from v2.runtime.loop import _verified_claims
+    from v2.runtime.models import admit_verified_claim_bindings, build_output_statuses
+    from v2.runtime.verifier import verify_mechanical
+
+    _seed_completed_season_boxscores(monkeypatch, tmp_path)
+    task = TaskSpec(
+        goal="Who led the NBA in assists in the 2024-25 season, and how many?",
+        mode="quick", deliverable="Assists leader and total assists",
+        requested_outputs=["AST"],
+        season=SeasonRef(value="2024-25", source="user", confidence=1.0),
+        requirements=[EvidenceRequirement(
+            id="assists_leader_2024_25",
+            description="2024-25 NBA assists leaderboard",
+            capability_options=["qualified_leaders"],
+            capability_arguments={"stat_category": "AST", "season": "2024-25"},
+            requested_outputs=["AST"])])
+    plan = Plan(nodes=[PlanNode(
+        id="leader", description="Fetch 2024-25 assists leaderboard",
+        capability_hints=["qualified_leaders"],
+        covers_requirement_ids=["assists_leader_2024_25"],
+        arguments={"stat_category": "AST", "season": "2024-25"})])
+    execution = asyncio.run(PlanExecutor(
+        {"qualified_leaders": ToolCapability("qualified_leaders")}
+    ).execute(task, plan))
+    envelope = execution.evidence[0]
+    binding = EvidenceOutputBinding(
+        requirement_kind="evidence", requirement_id="assists_leader_2024_25",
+        output_id="AST", node_id="leader", evidence_id=envelope.evidence_id,
+        selector="rows[0].AST", value={"kind": "integer", "value": 880},
+        unit={"kind": "declared", "value": "count"},
+        domain="qualified_leaders")
+    claim = Claim(
+        text="Trae Young led the NBA with 880 assists in 2024-25.",
+        kind=ClaimKind.OBSERVED, evidence_ids=[envelope.evidence_id],
+        output_bindings=[binding])
+    draft = DraftReport(sections=["Assists leader"], claims=[claim], gaps=[])
+    verification = verify_mechanical(task, draft, execution.evidence)
+    assert verification.claim_results[0].supported
+    candidate = VerifiedClaim(
+        claim_index=0, claim=claim, evidence_ids=[envelope.evidence_id],
+        sources=[], output_bindings=[binding])
+    candidate = candidate.model_copy(update={
+        "sources": [
+            {"evidence_id": envelope.evidence_id, "source": envelope.source,
+             "capability": envelope.capability,
+             "observed_at": envelope.observed_at, "as_of": envelope.as_of,
+             "vintages": dict(envelope.vintages)}]})
+    admit_verified_claim_bindings(task, execution, draft, candidate)
+    claims, gaps = _verified_claims(
+        task, execution, draft, verification,
+        {item.evidence_id: item for item in execution.evidence})
+    assert gaps == []
+    statuses = build_output_statuses(task, claims, [])
+    assert ("evidence", "assists_leader_2024_25", "AST") in [
+        (item.requirement_kind, item.requirement_id, item.output_id)
+        for item in statuses if item.status == "complete"]
+    text = _answer_text(SimpleNamespace(
+        output_statuses=statuses, gaps=[], draft=draft,
+        verification=verification))
+    assert "evidence:assists_leader_2024_25:AST = 880 (count)" in text

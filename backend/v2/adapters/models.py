@@ -906,6 +906,15 @@ class ModelIntake(ModelStage):
         return bounded[locator.context_turn].content
 
     @classmethod
+    def _locator_binds_source(cls, locator: Any, request: str,
+                              context: Sequence[ConversationTurn]) -> bool:
+        source = cls._source_for_locator(locator, request, context)
+        if (source is None or locator.end > len(source)
+                or source[locator.start:locator.end] != locator.text):
+            return False
+        return True
+
+    @classmethod
     def _validate_review(cls, review: IntakeAdmissionReview, request: str,
                          context: Sequence[ConversationTurn], task: TaskSpec) -> list[str]:
         target = cls._review_target(request, context, task)
@@ -920,10 +929,7 @@ class ModelIntake(ModelStage):
         if review_ids != expected_ids or len(review.expected_subjects) != len(expected):
             errors.append("review expected subjects do not match proposed task")
         for item in (*review.bindings, *review.unresolved_references):
-            source = cls._source_for_locator(item.locator, request, context)
-            locator = item.locator
-            if (source is None or locator.end > len(source)
-                    or source[locator.start:locator.end] != locator.text):
+            if not cls._locator_binds_source(item.locator, request, context):
                 errors.append("review locator does not match frozen source")
         return list(dict.fromkeys(errors))
 
@@ -948,26 +954,7 @@ class ModelIntake(ModelStage):
             })
 
     @classmethod
-    def _apply_review(cls, review: IntakeAdmissionReview, request: str,
-                      context: Sequence[ConversationTurn],
-                      task: TaskSpec) -> TaskSpec:
-        errors = cls._validate_review(review, request, context, task)
-        if review.decision == "admit" and not errors:
-            return task
-        if (not errors and not review.unresolved_references
-                and review.findings
-                and all(finding.code == "missing_binding"
-                        for finding in review.findings)):
-            _admission_logger.warning(
-                "intake_admission missing_binding advisory: %d expected "
-                "subjects unbound; admitting task unchanged",
-                len(review.findings[0].affected_subjects),
-            )
-            return task
-        blockers = [finding.code for finding in review.findings]
-        if review.unresolved_references:
-            blockers.append("The request contains an unresolved reference.")
-        blockers.extend(errors)
+    def _blocked_task(cls, task: TaskSpec, blockers: Sequence[str]) -> TaskSpec:
         return task.model_copy(update={
             "entities": [], "season": None, "as_of": None,
             "subquestions": [], "required_evidence": [], "requirements": [],
@@ -979,6 +966,78 @@ class ModelIntake(ModelStage):
                 *(blockers or ["The request could not be admitted safely."]),
             ])),
         })
+
+    @classmethod
+    def _apply_review(cls, review: IntakeAdmissionReview, request: str,
+                      context: Sequence[ConversationTurn],
+                      task: TaskSpec) -> TaskSpec:
+        errors = cls._validate_review(review, request, context, task)
+        if review.decision == "admit" and not errors:
+            return task
+        if review.decision == "admit":
+            return cls._blocked_task(task, errors)
+        expected_ids = {item.model_dump_json()
+                        for item in cls._expected_admission_subjects(task)}
+        review_ids = {item.model_dump_json()
+                      for item in review.expected_subjects}
+        if (review_ids != expected_ids
+                or len(review.expected_subjects) != len(expected_ids)):
+            _admission_logger.warning(
+                "intake_admission expected subjects mismatch: review manifest "
+                "does not match proposed task; proceeding on deterministic manifest")
+        try:
+            review.require_target(cls._review_target(request, context, task))
+        except ValueError:
+            _admission_logger.warning(
+                "intake_admission target mismatch: review target does not "
+                "match frozen task")
+        verifiable_references = [
+            item for item in review.unresolved_references
+            if cls._locator_binds_source(item.locator, request, context)
+        ]
+        dropped_locators = sum(
+            not cls._locator_binds_source(item.locator, request, context)
+            for item in (*review.bindings, *review.unresolved_references)
+        )
+        if dropped_locators:
+            _admission_logger.warning(
+                "intake_admission locator mismatch: %d reference(s) do not "
+                "bind frozen source; ignoring",
+                dropped_locators,
+            )
+        known_findings = [
+            finding for finding in review.findings
+            if all(subject.model_dump_json() in expected_ids
+                   for subject in finding.affected_subjects)
+        ]
+        dropped_findings = len(review.findings) - len(known_findings)
+        if dropped_findings:
+            _admission_logger.warning(
+                "intake_admission unknown finding subjects: %d finding(s) "
+                "outside proposed task; ignoring",
+                dropped_findings,
+            )
+        if verifiable_references:
+            return cls._blocked_task(task, [
+                *(finding.code for finding in known_findings),
+                "The request contains an unresolved reference.",
+            ])
+        if (known_findings
+                and all(finding.code == "missing_binding"
+                        for finding in known_findings)):
+            _admission_logger.warning(
+                "intake_admission missing_binding advisory: %d expected "
+                "subjects unbound; admitting task unchanged",
+                len(known_findings[0].affected_subjects),
+            )
+            return task
+        if not known_findings:
+            _admission_logger.warning(
+                "intake_admission no verifiable blockers advisory: "
+                "admitting task unchanged")
+            return task
+        return cls._blocked_task(
+            task, [finding.code for finding in known_findings])
 
     @classmethod
     def _mark_uncovered_season(cls, task: TaskSpec) -> TaskSpec:
@@ -1218,8 +1277,25 @@ class ModelIntake(ModelStage):
             "subject_entity_type": _derive_subject_entity_type(task),
         })
         if self._intake_admission:
-            review = await self._review_admission(request, bounded, task)
-            task = self._apply_review(review, request, bounded, task)
+            candidate = task
+            review = await self._review_admission(request, bounded, candidate)
+            task = self._apply_review(review, request, bounded, candidate)
+            if not candidate.open_questions and task.open_questions:
+                _admission_logger.warning(
+                    "intake_admission reviewer block on clean task; "
+                    "resampling review")
+                review = await self._review_admission(
+                    request, bounded, candidate)
+                resampled = self._apply_review(
+                    review, request, bounded, candidate)
+                if not resampled.open_questions:
+                    _admission_logger.warning(
+                        "intake_admission resample admitted task unchanged")
+                    task = resampled
+                else:
+                    _admission_logger.warning(
+                        "intake_admission resample confirmed block; "
+                        "keeping first verdict")
         self._skills.activate(task.skills)
         return task
 

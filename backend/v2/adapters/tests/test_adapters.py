@@ -503,7 +503,7 @@ async def test_tool_capability_executes_through_runtime_protocol():
 def test_leader_envelope_filters_units_and_declares_rank_coverage():
     env = call_capability("qualified_leaders", {"season": "2025-26"},
                           tools={"get_leaders": FakeTool(LEADERS_PAYLOAD)})
-    assert set(env.units) == {"GP", "MIN", "FG3_PCT"}
+    assert set(env.units) == {"GP", "MIN", "FG3M", "FG3A", "FG3_PCT"}
     assert "population ranks" in env.coverage
 
 
@@ -985,3 +985,88 @@ def test_warehouse_game_logs_and_composed_injury_evidence_keep_identity(monkeypa
     injury_env=call_capability("injury_impact",{"season":"2025-26","team":"SEA"},tools={"get_injury_impact":Tool(injury)})
     assert game_env.source_identity.model_dump()=={"kind":"warehouse","warehouse_id":"configured-runtime","sha256":expected}
     assert injury_env.source_identity.model_dump()=={"kind":"composite","warehouse_id":"configured-runtime","sha256":expected,"live_sources":["espn","nba_api"]}
+
+
+def _seed_completed_season_boxscores(monkeypatch, tmp_path):
+    import duckdb
+
+    from shared import store
+
+    warehouse = tmp_path / "warehouse.duckdb"
+    connection = duckdb.connect(str(warehouse))
+    connection.execute(
+        "CREATE TABLE silver_leaders_ast (RANK BIGINT, PLAYER VARCHAR, "
+        "TEAM VARCHAR, GP BIGINT, AST BIGINT, MIN BIGINT, _source VARCHAR, "
+        "_season VARCHAR, _fetched_at VARCHAR)"
+    )
+    connection.execute(
+        "INSERT INTO silver_leaders_ast VALUES (1, 'Current Star', 'DEN', "
+        "65, 697, 2200, 'nba_stats', '2025-26', "
+        "'2026-09-30T00:00:00+00:00')"
+    )
+    connection.execute(
+        "CREATE TABLE silver_boxscores (PLAYER_ID BIGINT, firstName VARCHAR, "
+        "familyName VARCHAR, GAME_ID VARCHAR, teamTricode VARCHAR, "
+        "assists BIGINT, comment VARCHAR, _source VARCHAR, _season VARCHAR, "
+        "_fetched_at VARCHAR, _entity VARCHAR)"
+    )
+    rows = []
+    game = 2000
+    for _ in range(60):
+        game += 1
+        rows.append(
+            f"(1629027, 'Trae', 'Young', 'G{game}', 'ATL', 12, '', "
+            "'nba_stats', '2024-25', '2025-06-01T00:00:00+00:00', '')"
+        )
+    for _ in range(16):
+        game += 1
+        rows.append(
+            f"(1629027, 'Trae', 'Young', 'G{game}', 'ATL', 10, '', "
+            "'nba_stats', '2024-25', '2025-06-01T00:00:00+00:00', '')"
+        )
+    rows.append(
+        "(1629027, 'Trae', 'Young', 'G9999', 'ATL', 0, "
+        "'DND - Injury/Illness', 'nba_stats', '2024-25', "
+        "'2025-06-01T00:00:00+00:00', '')"
+    )
+    for _ in range(70):
+        game += 1
+        rows.append(
+            f"(1630162, 'Second', 'Guard', 'G{game}', 'DET', 10, '', "
+            "'nba_stats', '2024-25', '2025-06-01T00:00:00+00:00', '')"
+        )
+    connection.execute("INSERT INTO silver_boxscores VALUES " + ",".join(rows))
+    connection.close()
+    monkeypatch.setattr(store, "DB_PATH", warehouse)
+    return warehouse
+
+
+def test_completed_season_totals_come_from_game_logs(monkeypatch, tmp_path):
+    from shared import store
+    from shared.tools.league import get_leaders
+
+    _seed_completed_season_boxscores(monkeypatch, tmp_path)
+    result = get_leaders.invoke({"stat_category": "AST", "season": "2024-25"})
+    assert result["ok"] is True
+    assert result["rows"]
+    assert result["rows"][0]["PLAYER"] == "Trae Young"
+    assert result["rows"][0]["AST"] == 880
+    assert result["rows"][0]["GP"] == 76
+    assert result["rows"][1]["PLAYER"] == "Second Guard"
+    assert result["rows"][1]["AST"] == 700
+    assert result["rows"][1]["GP"] == 70
+    frame = store.read_frame("silver_boxscores", "_season = ?", ["2024-25"])
+    oracle = {}
+    for row in frame.to_dicts():
+        if row["comment"] not in (None, ""):
+            continue
+        entry = oracle.setdefault(
+            (row["firstName"], row["familyName"]), [set(), 0])
+        entry[0].add(row["GAME_ID"])
+        entry[1] += row["assists"]
+    oracle_top = sorted(
+        oracle.items(), key=lambda item: item[1][1], reverse=True)[0]
+    assert result["rows"][0]["PLAYER"] == (
+        f"{oracle_top[0][0]} {oracle_top[0][1]}")
+    assert result["rows"][0]["GP"] == len(oracle_top[1][0])
+    assert result["rows"][0]["AST"] == oracle_top[1][1]
