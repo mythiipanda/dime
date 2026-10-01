@@ -1524,6 +1524,9 @@ def _default_season(question: str) -> str | None:
     _slug = re.search(r"(20\d\d)\s*-\s*(\d\d)", question or "")
     if _slug:
         return f"{_slug.group(1)}-{_slug.group(2)}"
+    _bare = _bare_season(question or "")
+    if _bare is not None:
+        return _bare
     _relative = _relative_season(question or "")
     if _relative is not None:
         return _relative
@@ -1554,7 +1557,19 @@ def _explicit_season(question: str) -> str | None:
     _slug = re.search(r"(20\d\d)\s*-\s*(\d\d)", question or "")
     if _slug:
         return f"{_slug.group(1)}-{_slug.group(2)}"
-    return None
+    return _bare_season(question or "")
+
+
+_BARE_SEASON_RX = re.compile(
+    r"\b((?:19|20)\d\d)\s+season\b", re.IGNORECASE)
+
+
+def _bare_season(text: str) -> str | None:
+    _m = _BARE_SEASON_RX.search(text or "")
+    if _m is None:
+        return None
+    _y = int(_m.group(1))
+    return f"{_y - 1}-{_y % 100:02d}"
 
 
 def _season_args(question: str, extra: dict[str, Any]) -> dict[str, Any]:
@@ -5717,7 +5732,7 @@ def _coverage_phrase() -> str:
 
 
 def _compute_fallback() -> str:
-    return ("That one didn't come back from the dataset just now. It covers "
+    return ("The data pull did not complete. The dataset covers "
             + _coverage_phrase() + ".")
 
 

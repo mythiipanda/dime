@@ -816,6 +816,28 @@ def _season_line(player_id: object, season: str) -> dict[str, Any] | None:
     return None
 
 
+def _season_line_seasons() -> set[str] | None:
+    try:
+        from v2.adapters.coverage import table_seasons as _seasons
+    except Exception:
+        return None
+    try:
+        return (set(_seasons("silver_player_season"))
+                | set(_seasons("silver_hist_player_seasons")))
+    except Exception:
+        return None
+
+
+def _season_line_coverage() -> str:
+    _covered = _season_line_seasons()
+    if not _covered:
+        return "season lines cover 2014-15 through the current season"
+    _lo, _hi = min(_covered), max(_covered)
+    if _lo == _hi:
+        return f"season lines cover {_lo}"
+    return f"season lines cover {_lo} through {_hi}"
+
+
 def _gamelog_coverage() -> str:
     try:
         con = store.connect(read_only=True)
@@ -897,17 +919,15 @@ def get_season_averages(player_id: str | int, season: str | None = None) -> dict
                 "error": f"unknown player: {player_id}"}
     line = _season_line(pid, season)
     if not line:
-
-
-
-
+        _covered = _season_line_seasons()
+        if _covered is not None and season not in _covered:
+            return {"tool": "get_season_averages", "ok": False,
+                    "error": (f"No season line on file for {season}; "
+                              + _season_line_coverage() + "."),
+                    "season_error": True}
         return {"tool": "get_season_averages", "ok": False,
-
-
-                "error": (f"No season line on file for {season}; season "
-                          f"lines cover 2014-15 through the current "
-                          f"season, so this one is outside dataset "
-                          f"coverage.")}
+                "error": (f"No season line on file for {season}; "
+                          + _season_line_coverage() + ".")}
     name = str(line.get("PLAYER") or player_id)
     answer = (
         f"{name} averaged {float(line['PPG']):g} points, "
@@ -2767,8 +2787,12 @@ def get_player_report(player: str | int, season: str | None = None) -> dict[str,
         return {"tool": "get_player_report", "ok": False, "error": str(exc)}
     avg = get_season_averages.invoke({"player_id": pid, "season": season})
     if not avg.get("ok") or not avg.get("rows"):
-        return {"tool": "get_player_report", "ok": False,
-                "error": avg.get("error", "season line unavailable")}
+        _err: dict[str, Any] = {
+            "tool": "get_player_report", "ok": False,
+            "error": avg.get("error", "season line unavailable")}
+        if avg.get("season_error") is True:
+            _err["season_error"] = True
+        return _err
     line = avg["rows"][0]
 
 
