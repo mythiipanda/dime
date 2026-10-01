@@ -984,7 +984,12 @@ def get_leaders(
     to the official league leaderboard and excludes tiny samples.
     """
     season = resolve_season(season)
-    stat_category = clamp_stat(stat_category)
+    try:
+        stat_category = clamp_stat(stat_category)
+    except ValueError:
+        return {"tool": "get_leaders", "ok": False, "rows": [],
+                "error": f"unknown stat_category: {stat_category!r}",
+                "meta": {"source": "warehouse", "season": season}}
     direction = str(ranking_direction).strip().casefold()
     if direction in {"ascending", "ascend"}:
         direction = "asc"
@@ -1122,7 +1127,10 @@ def get_leaders(
         if not isinstance(r, dict):
             pinned.append(r)
             continue
-        pinned.append({k: r[k] for k in pin if k in r})
+        slim = {k: r[k] for k in pin if k in r}
+        if "PLAYER" in slim and "PLAYER_NAME" not in slim:
+            slim["PLAYER_NAME"] = slim["PLAYER"]
+        pinned.append(slim)
     return {"tool": "get_leaders", "ok": True, "rows": pinned, "meta": meta}
 
 

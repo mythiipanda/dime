@@ -350,8 +350,25 @@ def _metric_unit_reasons(claim: Claim,
                     reasons.append(f"metric {metric} is stated without a percent unit")
             elif unit_name == "points_per_100_possessions":
                 if not re.search(r"points?\s+per\s+100\s+possessions?", text):
-                    reasons.append(
-                        f"metric {metric} is stated without its declared unit {unit}")
+                    same_unit_values: set[Decimal] = set()
+                    for other, other_unit in envelope.units.items():
+                        if other_unit.casefold() == unit_name:
+                            same_unit_values.update(
+                                _column_canon_values(envelope, other))
+                    rank_numbers = {
+                        value for match in _RANK.finditer(claim.text)
+                        for value in match.groups() if value is not None
+                    }
+                    unbound = [
+                        raw for raw in _number_tokens(claim.text)
+                        if not (_DATE.fullmatch(raw)
+                                or _SEASON.fullmatch(raw)
+                                or raw in rank_numbers)
+                        and not (_canon_number(raw) & same_unit_values)
+                    ]
+                    if unbound:
+                        reasons.append(
+                            f"metric {metric} is stated without its declared unit {unit}")
             elif unit_name == "count":
 
 

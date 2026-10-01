@@ -142,3 +142,113 @@ def test_ratings_refusal_preserved_without_gamelogs(warehouse):
     result = get_ratings.invoke({"season": "2023-24", "team": "BOS"})
     assert result["ok"] is False
     assert result["rows"] == []
+
+
+def test_unknown_stat_category_fails_loudly(warehouse):
+    result = get_leaders.invoke(
+        {"stat_category": "total assists", "season": SEASON})
+    assert result["ok"] is False
+    assert result["rows"] == []
+    assert "total assists" in result["error"]
+
+
+def test_natural_ratings_claim_passes_without_unit_phrase(warehouse):
+    from v2.contracts import (
+        Claim, ClaimKind, DraftReport, EvidenceRequirement,
+        SeasonRef, TaskSpec,
+    )
+    from v2.runtime.verifier import verify_mechanical
+    envelope = call_capability(
+        "team_ratings", {"season": SEASON, "team": "BOS"})
+    task = TaskSpec(
+        goal="What were the Celtics' net rating, offensive rating, "
+             "and defensive rating in the 2024-25 season?",
+        mode="quick", deliverable="Celtics ratings",
+        requested_outputs=["NET_RATING", "OFF_RATING", "DEF_RATING"],
+        season=SeasonRef(value=SEASON, source="user", confidence=1.0),
+        requirements=[EvidenceRequirement(
+            id="celtics_ratings",
+            description="Celtics 2024-25 ratings",
+            capability_options=["team_ratings"],
+            capability_arguments={"season": SEASON, "team": "BOS"},
+            requested_outputs=["NET_RATING", "OFF_RATING", "DEF_RATING"])])
+    claim = Claim(
+        text="The Boston Celtics had a net rating of 13.9, an offensive "
+             "rating of 129.0, and a defensive rating of 115.1 "
+             "in the 2024-25 season.",
+        kind=ClaimKind.OBSERVED, evidence_ids=[envelope.evidence_id],
+        output_bindings=[])
+    draft = DraftReport(
+        sections=["Celtics ratings"], claims=[claim], gaps=[])
+    report = verify_mechanical(task, draft, [envelope])
+    assert report.status.value == "pass"
+    assert report.claim_results[0].supported is True
+
+
+def test_player_name_output_binds_leader_row(warehouse):
+    from v2.contracts import (
+        Claim, ClaimKind, DraftReport, EvidenceOutputBinding,
+        EvidenceRequirement, Plan, PlanNode, PlanStatus,
+        SeasonRef, TaskSpec, VerifiedClaim,
+    )
+    from v2.runtime.models import (
+        ExecutionResult, admit_verified_claim_bindings,
+    )
+    envelope = call_capability(
+        "qualified_leaders",
+        {"stat_category": "assists", "season": SEASON})
+    assert envelope.rows[0]["PLAYER"] == "Trae Young"
+    task = TaskSpec(
+        goal="Who led the NBA in assists in the 2024-25 season, and how many?",
+        mode="quick", deliverable="Assists leader and total assists",
+        requested_outputs=["AST"],
+        season=SeasonRef(value=SEASON, source="user", confidence=1.0),
+        requirements=[EvidenceRequirement(
+            id="assist_leader_2024_25",
+            description="2024-25 NBA assists leader",
+            capability_options=["qualified_leaders"],
+            capability_arguments={"stat_category": "AST", "season": SEASON},
+            requested_outputs=["PLAYER_NAME", "AST"])])
+    plan = Plan(nodes=[PlanNode(
+        id="leader", description="Fetch 2024-25 assists leaderboard",
+        capability_hints=["qualified_leaders"],
+        covers_requirement_ids=["assist_leader_2024_25"],
+        arguments={"stat_category": "AST", "season": SEASON},
+        status=PlanStatus.COMPLETE)])
+    execution = ExecutionResult(
+        plan=plan, evidence_by_node={"leader": envelope},
+        attempts={"leader": 1})
+    bindings = [
+        EvidenceOutputBinding(
+            requirement_kind="evidence",
+            requirement_id="assist_leader_2024_25", output_id="AST",
+            node_id="leader", evidence_id=envelope.evidence_id,
+            selector="rows[0].AST",
+            value={"kind": "integer", "value": 880},
+            unit={"kind": "declared", "value": "count"},
+            domain="qualified_leaders"),
+        EvidenceOutputBinding(
+            requirement_kind="evidence",
+            requirement_id="assist_leader_2024_25", output_id="PLAYER_NAME",
+            node_id="leader", evidence_id=envelope.evidence_id,
+            selector="rows[0].PLAYER_NAME",
+            value={"kind": "string", "value": "Trae Young"},
+            unit={"kind": "unitless"},
+            domain="qualified_leaders"),
+    ]
+    claim = Claim(
+        text="Trae Young led the NBA with 880 assists in 2024-25.",
+        kind=ClaimKind.OBSERVED, evidence_ids=[envelope.evidence_id],
+        output_bindings=bindings)
+    draft = DraftReport(sections=["Assists leader"], claims=[claim], gaps=[])
+    candidate = VerifiedClaim(
+        claim_index=0, claim=claim, evidence_ids=[envelope.evidence_id],
+        sources=[{"evidence_id": envelope.evidence_id,
+                  "source": envelope.source,
+                  "capability": envelope.capability,
+                  "observed_at": envelope.observed_at,
+                  "as_of": envelope.as_of,
+                  "vintages": dict(envelope.vintages)}],
+        output_bindings=bindings)
+    assert admit_verified_claim_bindings(
+        task, execution, draft, candidate) is candidate
