@@ -174,7 +174,7 @@ ROUTE_POLICIES: dict[str, dict[str, Any]] = {
     "planner": {"primary_attempts": 2, "attempt_timeout_s": 4.0,
                "total_budget_s": 12.0, "secondary_limit": 1,
                "transient_classes": frozenset({"timeout", "rate_limit", "network", "server_error", "provider_error"}),
-               "deterministic_fallback": False},
+               "deterministic_fallback": True},
     "synthesizer": {"primary_attempts": 1, "attempt_timeout_s": 6.0,
                "total_budget_s": 6.0, "secondary_limit": 0,
                "transient_classes": frozenset(), "deterministic_fallback": True},
@@ -1581,6 +1581,14 @@ class ModelPlanner(ModelStage):
                 drops=drops)
         return {"null_as_omitted_drops": drops} if drops else None
 
+    def _fallback_plan(self, task: TaskSpec) -> Plan:
+        return Plan.model_validate({"nodes": [{
+            "id": item.id, "description": item.description,
+            "depends_on": [], "capability_hints": [item.capability_options[0]],
+            "covers_requirement_ids": [item.id],
+            "arguments": dict(capability_arguments_for(item, item.capability_options[0])),
+        } for item in task.requirements if item.capability_options]})
+
     def _check_ranked_requirement_agreement(
         self, node, arguments: Mapping[str, Any],
         requirements: Mapping[str, Any],
@@ -1687,6 +1695,12 @@ class ModelPlanner(ModelStage):
                     "instruction": "Return a complete replacement plan.",
                 },
             }, task)
+        except RuntimeError as exc:
+            if not str(exc).startswith("all structured-output providers failed"):
+                raise
+            return self._normalize_plan(
+                task, self._normalize_requirement_coverage(
+                    task, self._fallback_plan(task)))
         plan = self._normalize_plan(
             task, self._normalize_requirement_coverage(task, plan))
         feedback = self._coverage_feedback(task, plan)
