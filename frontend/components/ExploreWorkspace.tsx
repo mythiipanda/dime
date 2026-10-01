@@ -13,6 +13,7 @@ import PlayoffPanel from "./PlayoffPanel";
 import ScoreStrip from "./ScoreStrip";
 import TradePanel from "./TradePanel";
 import { getFreshness, getQueryParam, setQueryParam } from "../lib/api";
+import { streakLine } from "../lib/exploreFeed";
 import { updatedLine } from "../lib/freshness";
 import { EXPANDABLE_PANELS, markMounted, toggleExpanded } from "../lib/explorePanels";
 import type {
@@ -109,7 +110,8 @@ export default function ExploreWorkspace({
   const leadersKey = `leaders-${ctx?.panel === "leaders" ? (ctx.stat ?? "") : ""}`;
   const shotsKey = `shots-${ctx?.panel === "shots" ? (ctx.playerId ?? ctx.playerName ?? "") : ""}`;
   const zoneKey = `zone-${ctx?.panel === "shots" ? (ctx.playerId ?? ctx.playerName ?? "") : ""}`;
-  const lineupsKey = `lineups-${ctx?.panel === "lineups" ? (ctx.teamAbbr ?? "") : ""}`;
+  const lineupsStreak = ctx?.panel === "lineups" ? ctx.streak : undefined;
+  const lineupsKey = `lineups-${ctx?.panel === "lineups" ? (ctx.teamAbbr ?? "") : ""}-${lineupsStreak ? streakLine(lineupsStreak) : ""}`;
 
   return (
     <div className="explore-scroll">
@@ -173,6 +175,7 @@ export default function ExploreWorkspace({
                 <LineupPanel
                   key={lineupsKey}
                   initialTeam={ctx?.panel === "lineups" ? ctx.teamAbbr : undefined}
+                  initialStreak={lineupsStreak}
                 />
               )}
             </div>

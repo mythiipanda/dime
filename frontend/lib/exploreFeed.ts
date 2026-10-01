@@ -25,7 +25,7 @@
 
 
 
-import type { ExploreContext } from "./exploreSearch";
+import type { ExploreContext, StreakDetail } from "./exploreSearch";
 import { abbrForTeamFullName } from "./teams";
 import type {
   Mover,
@@ -59,6 +59,7 @@ export interface FeedItem {
   
 
   question: string | null;
+  streak?: StreakDetail;
 }
 
 interface FeedInput {
@@ -115,6 +116,10 @@ function streakText(raw: string): { text: string; won: boolean | null; games: nu
     };
   }
   return { text: raw, won: null, games: null };
+}
+
+export function streakLine(s: StreakDetail): string {
+  return `${s.won ? "Won" : "Lost"} ${s.games} straight · ${s.wins}-${s.losses}`;
 }
 
 function moverFromMover(
@@ -272,6 +277,10 @@ function buildFullStreakItems(
     const record = w !== null && l !== null ? `${w}-${l}` : "";
     const statText = record ? `${parsed.text} · ${record}` : parsed.text;
     const rc = rankOf(i, total);
+    const streak =
+      parsed.won !== null && parsed.games !== null && w !== null && l !== null
+        ? { won: parsed.won, games: parsed.games, wins: w, losses: l }
+        : undefined;
     out.push({
       id: `streak-${i}-${name}`,
       kind: "streak",
@@ -281,6 +290,7 @@ function buildFullStreakItems(
       rankLabel: rc.chip,
       rankTitle: `Ranked ${rc.chip} of ${total} team streaks`,
       question: null,
+      ...(streak ? { streak } : null),
     });
   }
   return out;
@@ -427,9 +437,13 @@ export function feedActionFor(item: FeedItem): FeedAction {
   }
   if (item.entity === "team") {
     const abbr = abbrForTeamFullName(item.name);
-    return abbr
-      ? { kind: "select", ctx: { panel: "lineups", teamAbbr: abbr } }
-      : { kind: "select", ctx: { panel: "lineups" } };
+    const base: ExploreContext = abbr
+      ? { panel: "lineups", teamAbbr: abbr }
+      : { panel: "lineups" };
+    if (item.kind === "streak" && item.streak) {
+      return { kind: "select", ctx: { ...base, streak: item.streak } };
+    }
+    return { kind: "select", ctx: base };
   }
   if (item.question) {
     return { kind: "ask", question: item.question };

@@ -9,6 +9,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { BACKEND } from "../lib/chat";
 import { apiPath, getQueryParam, setQueryParam } from "../lib/api";
 import { shortPlayerName } from "../lib/exploreIndex";
+import { streakLine } from "../lib/exploreFeed";
+import type { StreakDetail } from "../lib/exploreSearch";
 import { TEAM_IDS, abbrForTeamFullName } from "../lib/teams";
 
 const TEAMS: Record<string, number> = TEAM_IDS;
@@ -20,6 +22,7 @@ type Row = { GROUP_NAME: string; MIN: number; PLUS_MINUS: number };
 
 type LineupPanelProps = {
   initialTeam?: string;
+  initialStreak?: StreakDetail;
   fetchTimeoutMs?: number;
   retryDelayMs?: number;
 };
@@ -51,12 +54,13 @@ async function fetchJson(url: string, timeoutMs: number): Promise<{ data?: unkno
   }
 }
 
-export default function LineupPanel({ initialTeam, fetchTimeoutMs = FETCH_TIMEOUT_MS, retryDelayMs = RETRY_DELAY_MS }: LineupPanelProps) {
+export default function LineupPanel({ initialTeam, initialStreak, fetchTimeoutMs = FETCH_TIMEOUT_MS, retryDelayMs = RETRY_DELAY_MS }: LineupPanelProps) {
   const [tab, setTab] = useState<"5man" | "wowy">(() => {
     const t = getQueryParam("lineups_tab");
     return t === "wowy" ? "wowy" : "5man";
   });
   const [team, setTeam] = useState(() => resolveTeam(initialTeam || getQueryParam("lineups_team")));
+  const [streak, setStreak] = useState(initialStreak);
   const [rows, setRows] = useState<Row[]>([]);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
@@ -137,6 +141,7 @@ export default function LineupPanel({ initialTeam, fetchTimeoutMs = FETCH_TIMEOU
 
   const pickTeam = (abbr: string) => {
     setTeam(abbr);
+    setStreak(undefined);
     setQueryParam("lineups_team", abbr, true);
   };
 
@@ -172,6 +177,11 @@ export default function LineupPanel({ initialTeam, fetchTimeoutMs = FETCH_TIMEOU
 
       {tab === "5man" ? (
         <div>
+          {streak && (
+            <div style={{ fontSize: 12, color: "var(--color-warm-gray)", marginBottom: 8 }}>
+              {streakLine(streak)}
+            </div>
+          )}
           <Select value={team} onValueChange={(next: string | null) => { if (next) pickTeam(next); }}>
             <SelectTrigger aria-label="Team" style={{ width: 120 }}>
               <SelectValue />

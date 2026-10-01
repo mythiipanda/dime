@@ -7,6 +7,7 @@ import { createRoot } from "react-dom/client";
 import type { Root } from "react-dom/client";
 import LineupPanel from "./components/LineupPanel";
 import { panelShareUrl } from "./lib/exploreUrl";
+import type { StreakDetail } from "./lib/exploreSearch";
 
 const dom = new JSDOM("<!doctype html><html><body></body></html>", {
   url: "http://localhost/",
@@ -35,6 +36,7 @@ gx.IS_REACT_ACT_ENVIRONMENT = true;
 
 type PanelProps = {
   initialTeam?: string;
+  initialStreak?: StreakDetail;
   fetchTimeoutMs?: number;
   retryDelayMs?: number;
 };
@@ -102,7 +104,7 @@ function okLineups(url: string): Promise<unknown> {
   });
 }
 
-async function mount(initialTeam?: string) {
+async function mount(initialTeam?: string, initialStreak?: StreakDetail) {
   const el = win.document.createElement("div");
   win.document.body.appendChild(el);
   mounts.push(el);
@@ -112,6 +114,7 @@ async function mount(initialTeam?: string) {
     root.render(
       React.createElement(LineupPanel, {
         initialTeam,
+        initialStreak,
         fetchTimeoutMs: 40,
         retryDelayMs: 10,
       } as PanelProps),
@@ -175,6 +178,29 @@ describe("lineups resilience", () => {
     assert.equal(calls.length, 2, "expected one retry then success");
     assert.ok(el.innerHTML.includes("Vrant"), "retried rows missing");
     assert.ok(!el.innerHTML.includes(HONEST), "stale error shown");
+  });
+
+  it("streak context renders one plain line alongside rows", async () => {
+    mockFetch([okLineups]);
+    const el = await mount("DEN", { won: true, games: 5, wins: 12, losses: 5 });
+    await settle(300);
+    assert.ok(el.innerHTML.includes("Won 5 straight · 12-5"), "streak line missing");
+    assert.ok(el.innerHTML.includes("Vrant"), "lineup rows missing");
+  });
+
+  it("streak context survives the unavailable empty state", async () => {
+    mockFetch([fail, fail]);
+    const el = await mount("DEN", { won: false, games: 3, wins: 10, losses: 5 });
+    await settle(600);
+    assert.ok(el.innerHTML.includes(HONEST), "honest error copy missing");
+    assert.ok(el.innerHTML.includes("Lost 3 straight · 10-5"), "streak line missing from empty state");
+  });
+
+  it("no streak line without streak context", async () => {
+    mockFetch([okLineups]);
+    const el = await mount("DEN");
+    await settle(300);
+    assert.ok(!el.innerHTML.includes("straight ·"), "unexpected streak line");
   });
 
   it("teamAbbr URL round-trip: open, copy link, restore, full name, unknown", async () => {

@@ -4,6 +4,7 @@ import {
   buildStreakItems,
   buildWatchItems,
   feedActionFor,
+  streakLine,
   type FeedItem,
 } from "./exploreFeed";
 import {
@@ -58,7 +59,10 @@ test("team streak rows route to select/lineups with the resolved teamAbbr", () =
   const [item] = buildStreakItems([{ TEAM: KNOWN_NAME, W: 12, L: 5, STREAK: "W5" }]);
   assert.equal(item.entity, "team");
   const got = feedActionFor(item);
-  assert.deepEqual(got, { kind: "select", ctx: { panel: "lineups", teamAbbr: KNOWN_ABBR } });
+  assert.deepEqual(got, {
+    kind: "select",
+    ctx: { panel: "lineups", teamAbbr: KNOWN_ABBR, streak: { won: true, games: 5, wins: 12, losses: 5 } },
+  });
 });
 
 test("team watchlist rows route to select/lineups with the resolved teamAbbr", () => {
@@ -113,4 +117,19 @@ test("a team row carrying a stale question still routes to select and never asks
 test("player rows still route to select/shots", () => {
   const got = feedActionFor(playerRow());
   assert.deepEqual(got, { kind: "select", ctx: { panel: "shots", playerName: "Mara Voss" } });
+});
+
+test("streakLine formats plain copy from structured detail", () => {
+  assert.equal(streakLine({ won: true, games: 12, wins: 68, losses: 14 }), "Won 12 straight · 68-14");
+  assert.equal(streakLine({ won: false, games: 3, wins: 10, losses: 5 }), "Lost 3 straight · 10-5");
+});
+
+test("streak rows carry structured streak detail into the select ctx", () => {
+  const [item] = buildStreakItems([{ TEAM: KNOWN_NAME, W: 12, L: 5, STREAK: "W5" }]);
+  assert.deepEqual(item.streak, { won: true, games: 5, wins: 12, losses: 5 });
+  const got = feedActionFor(item);
+  assert.deepEqual(got, {
+    kind: "select",
+    ctx: { panel: "lineups", teamAbbr: KNOWN_ABBR, streak: { won: true, games: 5, wins: 12, losses: 5 } },
+  });
 });

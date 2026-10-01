@@ -52,12 +52,20 @@ export type ExplorePanelId =
 
 
 
+export interface StreakDetail {
+  won: boolean;
+  games: number;
+  wins: number;
+  losses: number;
+}
+
 export interface ExploreContext {
   panel: ExplorePanelId;
   playerName?: string;
   playerId?: string;
   teamAbbr?: string;
   stat?: string;
+  streak?: StreakDetail;
 }
 
 
