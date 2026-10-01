@@ -749,8 +749,8 @@ async def test_planner_does_not_outer_retry_failed_structured_generation() -> No
     model = Flaky()
     planner = ModelPlanner(
         model, provider="test", model_name="test", capability_catalog={})
-    plan = await planner.plan(TaskSpec(goal="trade", mode="quick", deliverable="answer"))
-    assert plan.nodes == []
+    with pytest.raises(RuntimeError, match="all structured-output providers failed"):
+        await planner.plan(TaskSpec(goal="trade", mode="quick", deliverable="answer"))
     assert model.calls == 1
 
 @pytest.mark.anyio
@@ -2339,37 +2339,6 @@ async def test_requirement_review_exhaustion_preserves_intake_without_blocker():
         "a":"Myles Turner","b":"Luka Doncic","season":"2025-26"}
     assert task.open_questions==[]
     assert model.calls==2
-
-
-@pytest.mark.anyio
-async def test_planner_exhaustion_falls_back_to_requirement_covering_plan():
-    class PlannerDown:
-        async def generate(self,**call):
-            raise RuntimeError("all structured-output providers failed [gemini:ModelHTTPError:structured_output]")
-    task=TaskSpec(goal="assists leader",mode="quick",deliverable="name",
-        requirements=[{"id":"leaders_assists","description":"assists leader 2024-25",
-            "capability_options":["qualified_leaders"],
-            "capability_argument_sets":[{"capability_id":"qualified_leaders",
-                "arguments":{"entries":[
-                    {"key":"stat_category","kind":"string","string_value":"AST"},
-                    {"key":"season","kind":"string","string_value":"2024-25"}]}}],
-            "capability_arguments":{"stat_category":"AST","season":"2024-25"}}],
-        required_evidence=["qualified_leaders"])
-    plan=await ModelPlanner(PlannerDown(),provider="stub",model_name="stub",
-        capability_catalog={"qualified_leaders":{}}).plan(task)
-    assert [(node.id,node.capability_hints,node.arguments,node.covers_requirement_ids) for node in plan.nodes]==[
-        ("leaders_assists",["qualified_leaders"],{"stat_category":"AST","season":"2024-25"},["leaders_assists"])]
-
-
-@pytest.mark.anyio
-async def test_planner_fallback_only_catches_provider_exhaustion():
-    class PlannerBroken:
-        async def generate(self,**call):
-            raise RuntimeError("boom")
-    task=TaskSpec(goal="assists leader",mode="quick",deliverable="name")
-    with pytest.raises(RuntimeError,match="boom"):
-        await ModelPlanner(PlannerBroken(),provider="stub",model_name="stub",
-            capability_catalog={}).plan(task)
 
 
 def test_route_policy_table_bounds_model_owned_routes():
