@@ -29,8 +29,178 @@ import { Chip, resolveToolName } from "./view-shared";
 import WowyCard from "./WowyCard";
 import ZoneBars, { isZoneRows } from "./ZoneBars";
 
+const DEBUG_TOOLS = new Set(["run_python", "list_tables", "describe_table"]);
+const DEBUG_COLUMNS = new Set(["printed", "out"]);
+const DEBUG_NAME_KEYS = new Set(["name", "table", "dataset", "table_name", "tablename"]);
+
+const TOOL_TITLES: Record<string, string> = {
+  get_compare: "Player comparison",
+  get_preview: "Matchup preview",
+  get_wowy: "Wowy",
+  get_comps: "Comps",
+  get_award_race: "Award race",
+  get_trade_value: "Trade value",
+  get_matchup_splits: "Matchup splits",
+  get_regression_check: "Regression check",
+  get_matchup_preview: "Matchup preview",
+  get_streaks: "Streaks",
+  get_game_prediction: "Game Prediction",
+  search_game_logs: "Game Logs",
+  get_rotation_check: "Rotation Check",
+  get_lineup_stats: "Lineup stats",
+  get_rest_advantage: "Rest advantage",
+  get_lineup_matchup_matrix: "Lineup matchup matrix",
+  get_head_to_head: "Head to head",
+  get_impact_estimate: "Impact estimate",
+  get_player_ratings: "Player ratings",
+  get_leaders: "League leaders",
+  get_clutch: "Clutch",
+  get_hustle: "Hustle",
+  get_rookie_leaders: "Rookie leaders",
+  get_lineup_leaders: "Lineup leaders",
+  get_shot_compare: "Shot comparison",
+  get_shot_zones: "Shot zones",
+  get_team_shot_zones: "Team shot zones",
+  get_historical_leaders: "Historical leaders",
+  get_rapm: "RAPM",
+  get_finder: "Finder",
+};
+
+type ArtifactTable = {
+  tool: string;
+  title?: string;
+  rows?: unknown;
+  verdict?: string;
+  meta?: {
+    source?: string;
+    fetched_at?: string;
+    stat_category?: string;
+    sql?: string;
+    links?: { watch?: string };
+    a?: string;
+    b?: string;
+    season?: string;
+    team?: string;
+    as_of?: string;
+    qualification?: string;
+    coverage?: string;
+    warnings?: string[];
+    estimated?: boolean;
+  };
+};
+
 function scrubWarehouseNames(value: string): string {
   return value.replace(/\b(?:silver_|bronze_|ext_)[A-Za-z0-9_]+/g, "dataset");
+}
+
+function isProduction(): boolean {
+  return process.env.NODE_ENV === "production";
+}
+
+function humanTitle(tool?: string): string {
+  if (tool && TOOL_TITLES[tool]) return TOOL_TITLES[tool];
+  if (tool && tool.indexOf("get_") === 0) {
+    const words = tool
+      .slice(4)
+      .split("_")
+      .filter((part) => part.length > 0)
+      .map((part) => part.slice(0, 1).toUpperCase() + part.slice(1));
+    if (words.length > 0) return words.join(" ");
+  }
+  return "Data";
+}
+
+function cleanText(value: unknown): unknown {
+  if (typeof value === "string") return scrubWarehouseNames(value);
+  if (Array.isArray(value)) return value.map(cleanText);
+  if (value !== null && typeof value === "object") {
+    const cleaned: Record<string, unknown> = {};
+    for (const [key, entry] of Object.entries(value)) cleaned[key] = cleanText(entry);
+    return cleaned;
+  }
+  return value;
+}
+
+function innerRows(rows: unknown): unknown {
+  if (rows !== null && typeof rows === "object" && !Array.isArray(rows)) {
+    const nested = (rows as { rows?: unknown }).rows;
+    if (nested !== undefined) return nested;
+  }
+  return rows;
+}
+
+function stripDebugColumns(rows: unknown): unknown {
+  const list = innerRows(rows);
+  if (!Array.isArray(list)) return rows;
+  const kept: unknown[] = [];
+  for (const row of list) {
+    if (row !== null && typeof row === "object" && !Array.isArray(row)) {
+      const stripped: Record<string, unknown> = {};
+      for (const [key, entry] of Object.entries(row)) {
+        if (!DEBUG_COLUMNS.has(key)) stripped[key] = entry;
+      }
+      if (Object.keys(stripped).length === 0) continue;
+      kept.push(stripped);
+    } else {
+      kept.push(row);
+    }
+  }
+  if (
+    rows !== null &&
+    typeof rows === "object" &&
+    !Array.isArray(rows) &&
+    (rows as { rows?: unknown }).rows !== undefined
+  ) {
+    return { ...(rows as Record<string, unknown>), rows: kept };
+  }
+  return kept;
+}
+
+function cleanTable(table: ArtifactTable): ArtifactTable {
+  return {
+    ...table,
+    rows: cleanText(stripDebugColumns(table.rows)),
+    verdict:
+      typeof table.verdict === "string" ? scrubWarehouseNames(table.verdict) : table.verdict,
+    meta: cleanText(table.meta) as ArtifactTable["meta"],
+  };
+}
+
+function isTableListing(list: unknown[]): boolean {
+  if (list.length === 0) return false;
+  return list.every((row) => {
+    if (row === null || typeof row !== "object" || Array.isArray(row)) return false;
+    const keys = Object.keys(row);
+    if (keys.length !== 1 || !DEBUG_NAME_KEYS.has(keys[0])) return false;
+    const cell = (row as Record<string, unknown>)[keys[0]];
+    return (
+      typeof cell === "string" &&
+      /^[A-Za-z_][A-Za-z0-9_]*$/.test(cell) &&
+      cell.indexOf("_") >= 0
+    );
+  });
+}
+
+function isDebugPayload(rows: unknown): boolean {
+  const list = innerRows(rows);
+  if (typeof list === "string") return isBareRepr(scrubWarehouseNames(list));
+  if (!Array.isArray(list) || list.length === 0) return false;
+  if (list.every((row) => row === null || typeof row !== "object")) {
+    return isBareRepr(scrubWarehouseNames(list.map((row) => String(row)).join(" ")));
+  }
+  if (
+    list.every(
+      (row) =>
+        row !== null &&
+        typeof row === "object" &&
+        !Array.isArray(row) &&
+        Object.keys(row).length > 0 &&
+        Object.keys(row).every((key) => DEBUG_COLUMNS.has(key)),
+    )
+  ) {
+    return true;
+  }
+  return isTableListing(list);
 }
 
 function isBareRepr(value: string): boolean {
@@ -189,31 +359,15 @@ export default function DataArtifacts({
 
   const [expanded, setExpanded] = useState(true);
 
-  const tables: {
-    tool: string;
-    title?: string;
-    rows?: unknown;
-    verdict?: string;
-    meta?: {
-      source?: string;
-      fetched_at?: string;
-      stat_category?: string;
-      sql?: string;
-      links?: { watch?: string };
-      a?: string;
-      b?: string;
-      season?: string;
-      team?: string;
-      as_of?: string;
-      qualification?: string;
-      coverage?: string;
-      warnings?: string[];
-      estimated?: boolean;
-    };
-  }[] = [];
+  const tables: ArtifactTable[] = [];
 
   for (const n of names) {
-    for (const t of ai.nodes[n]!.tables) tables.push(t);
+    for (const t of ai.nodes[n]!.tables) {
+      const name = resolveToolName(t) ?? t.tool;
+      if (isDebugPayload(innerRows(t.rows))) continue;
+      if (isProduction() && DEBUG_TOOLS.has(name ?? "")) continue;
+      tables.push(cleanTable(t));
+    }
   }
 
   const toolOf = (t: { tool?: string; title?: string }) =>
@@ -358,7 +512,7 @@ export default function DataArtifacts({
   const artifactId = `${toolName || table.tool || "dataset"}-${page}`;
   const isCanvasOpen = activeArtifactId === artifactId;
   const rawTitle =
-    (toolName || table.tool || "dataset").replace("get_", "").replace(/_/g, " ").toUpperCase() +
+    humanTitle(toolName || table.tool).toUpperCase() +
     (table.meta?.stat_category ? ` · ${table.meta.stat_category}` : "");
 
   if (isCanvasOpen && !showInline) {
@@ -681,7 +835,7 @@ export default function DataArtifacts({
         </div>
       </div>
 
-      {table.meta?.sql && (
+      {!isProduction() && table.meta?.sql && (
         <details
           style={{
             fontSize: 11,
