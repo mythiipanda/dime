@@ -355,6 +355,7 @@ def save_frame(
     result: FetchResult,
     entity: str = "",
     replace_season: bool = True,
+    _fault: str | None = None,
 ) -> int:
     frame = result.frame.with_columns(
         [
@@ -369,17 +370,24 @@ def save_frame(
         with write_guard():
             con.execute("BEGIN TRANSACTION")
             try:
-                con.register("_incoming", frame.to_arrow())
-                con.execute(
-                    f"""CREATE TABLE IF NOT EXISTS {table} AS
-                    SELECT * FROM _incoming LIMIT 0"""
-                )
-                have = [r[1] for r in con.execute(f"PRAGMA table_info({table})").fetchall()]
-                incoming = frame.columns
-                if set(have) != set(incoming):
-                    con.execute(f"DROP TABLE {table}")
-                    con.execute(f"CREATE TABLE {table} AS SELECT * FROM _incoming")
-                cols = ", ".join(f'"{c}"' for c in have) if set(have) == set(incoming) else "*"
+                con.register("_incoming", frame.clear().to_arrow())
+                try:
+                    con.execute(
+                        f"""CREATE TABLE IF NOT EXISTS {table} AS
+                        SELECT * FROM _incoming LIMIT 0"""
+                    )
+                    have = {r[1] for r in con.execute(
+                        f"PRAGMA table_info({table})").fetchall()}
+                    for name, dtype in frame.schema.items():
+                        if name not in have:
+                            con.execute(
+                                f'ALTER TABLE {table} ADD COLUMN "{name}" '
+                                f"{_UNIT_DTYPE_SQL.get(dtype, 'VARCHAR')}"
+                            )
+                    cols = [r[1] for r in con.execute(
+                        f"PRAGMA table_info({table})").fetchall()]
+                finally:
+                    con.unregister("_incoming")
                 if replace_season:
                     if entity:
                         con.execute(
@@ -392,7 +400,21 @@ def save_frame(
                             f"DELETE FROM {table} WHERE _season = ?",
                             [result.meta.season],
                         )
-                con.execute(f"INSERT INTO {table} SELECT {cols} FROM _incoming")
+                if _fault == "after_delete":
+                    raise RuntimeError("simulated crash after DELETE")
+                if _fault == "hang":
+                    time.sleep(120)
+                select = ", ".join(
+                    f'"{c}"' if c in frame.columns else f'NULL AS "{c}"'
+                    for c in cols)
+                con.register("_incoming", frame.to_arrow())
+                try:
+                    con.execute(
+                        f"INSERT INTO {table} SELECT {select} FROM _incoming")
+                finally:
+                    con.unregister("_incoming")
+                if _fault == "after_insert":
+                    raise RuntimeError("simulated crash after INSERT")
                 con.execute(
                     "INSERT INTO fetch_log VALUES (?,?,?,?,?,?)",
                     [
