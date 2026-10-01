@@ -2424,6 +2424,15 @@ async def _triage_seed(question: str, primary: str, model: str,
                     return f"{float(v) * 100:.1f}%"
                 except (TypeError, ValueError):
                     return "?"
+
+            def _share(v: object) -> str | None:
+                try:
+                    f = float(v)  # type: ignore[arg-type]
+                except (TypeError, ValueError):
+                    return None
+                if f != f or f < 0 or f > 1:
+                    return None
+                return f"{f * 100:.1f}%"
             _asks_efg = bool(re.search(
                 r"\beFG(?:%)?\b|effective field goal", question,
                 re.IGNORECASE))
@@ -2438,6 +2447,43 @@ async def _triage_seed(question: str, primary: str, model: str,
                         f"{_p.get('ppg', '?')} pts, {_p.get('rpg', '?')} reb, "
                         f"{_p.get('apg', '?')} ast on {_pc(_eff_value)} "
                         f"{_eff_label} over {_p.get('gp', '?')} games.")
+            for _p in (_a, _b):
+                if _p.get("name"):
+                    _rim = _share(_p.get("rim_share"))
+                    _three = _share(_p.get("three_share"))
+                    if _rim is not None and _three is not None:
+                        _lines.append(
+                            f"- {_p['name']}: shot diet {_rim} at the rim, "
+                            f"{_three} from three.")
+            for _p in (_a, _b):
+                if _p.get("name"):
+                    _ft = _share(_p.get("ft_points_share"))
+                    _fg = _share(_p.get("fg_points_share"))
+                    if _ft is not None and _fg is not None:
+                        _lines.append(
+                            f"- {_p['name']}: {_ft} of scoring from free "
+                            f"throws, {_fg} from field goals.")
+            try:
+                _ca = _a.get("clutch_pts")
+                _cb = _b.get("clutch_pts")
+                if (_ca is not None and _cb is not None
+                        and _a.get("name") and _b.get("name")):
+                    _lines.append(
+                        f"Clutch scoring: {_a['name']} {int(_ca)} pts vs "  # type: ignore[arg-type]
+                        f"{_b['name']} {int(_cb)} pts.")  # type: ignore[arg-type]
+            except (TypeError, ValueError):
+                pass
+            try:
+                _fa = float(_a.get("ft_points_share"))  # type: ignore[arg-type]
+                _fb = float(_b.get("ft_points_share"))  # type: ignore[arg-type]
+                if _a.get("name") and _b.get("name") and _fa != _fb:
+                    _lean = _a if _fa > _fb else _b
+                    _lines.append(
+                        f"{_lean.get('name')} leans more on getting to the "
+                        f"line ({_pc(max(_fa, _fb))} vs {_pc(min(_fa, _fb))} "
+                        f"of scoring from free throws).")
+            except (TypeError, ValueError):
+                pass
             _meet = _pair.get("h2h_meetings") or []
             if _meet:
                 _aw = sum(1 for m in _meet
