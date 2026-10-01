@@ -156,7 +156,36 @@ describe("debug-table leak", () => {
     assert.ok(!html.includes("bronze_"), "bronze_ warehouse key leaked");
     assert.ok(!html.includes("ext_"), "ext_ warehouse key leaked");
     assert.ok(html.includes("Quinn Mercer"), "player row missing");
-    assert.ok(html.includes("30"), "stat value missing");
+    assert.ok(!html.includes(">dataset<"), "merged dataset header leaked");
+  });
+
+  it("two warehouse-name keys in one row do not collide into one header", () => {
+    const ai: AiMessage = {
+      text: "answer",
+      done: true,
+      nodes: {
+        tools: {
+          status: "complete",
+          thoughts: [],
+          toolCalls: [],
+          toolResults: [],
+          tables: [
+            {
+              tool: "get_leaders",
+              rows: [{ PLAYER: "Quinn Mercer", silver_hist_standings: 30, bronze_raw_games: 82, detail: { silver_hist_standings: 30 } }],
+              meta: { source: "warehouse" },
+            },
+          ] as never,
+        },
+      },
+    };
+    const html = renderToStaticMarkup(React.createElement(DataArtifacts, { ai }));
+    assert.ok(!html.includes("silver_"), "silver_ warehouse key leaked");
+    assert.ok(!html.includes("bronze_"), "bronze_ warehouse key leaked");
+    assert.ok(!html.includes("ext_"), "ext_ warehouse key leaked");
+    assert.ok(html.includes("Quinn Mercer"), "player row missing");
+    assert.ok(!html.includes(">dataset<"), "merged dataset header leaked");
+    assert.ok(!html.includes('"dataset"'), "nested key-scrub label leaked");
   });
 
   it("production build hides debug surfaces but keeps real data", () => {
