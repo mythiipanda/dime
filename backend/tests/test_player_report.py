@@ -1,9 +1,44 @@
 import asyncio
+import datetime as dt
+import json
 import sys
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+import duckdb
+import pytest
 from app import graph
+from shared import store
 from shared.tools import TOOL_NAMES, get_player_report
+from shared.tools import _core as core_mod
+from v2.adapters import coverage as coverage_mod
+
+
+@pytest.fixture()
+def warehouse(monkeypatch, tmp_path):
+    path = tmp_path / "playerreport.duckdb"
+    connection = duckdb.connect(str(path))
+    try:
+        connection.execute(
+            "CREATE TABLE silver_boxscores (_season VARCHAR, GAME_ID VARCHAR)"
+        )
+        for start in range(2015, 2025):
+            season = f"{start}-{str(start + 1)[2:]}"
+            connection.execute(
+                "INSERT INTO silver_boxscores VALUES (?, ?)",
+                [season, "002" + str(start) + "00001"],
+            )
+    finally:
+        connection.close()
+    monkeypatch.setattr(store, "DB_PATH", path)
+    monkeypatch.setattr(store, "LOCK_PATH", tmp_path / ".write.lock")
+    store._tables_cache.clear()
+    store._pool_evict_all()
+    store.warehouse_identity_cache_clear()
+    core_mod.last_completed_season_cache_clear()
+    coverage_mod.coverage_cache_clear()
+    yield path
+    core_mod.last_completed_season_cache_clear()
+    coverage_mod.coverage_cache_clear()
 
 
 def _drain(q):
@@ -30,9 +65,29 @@ def test_compound_route_beats_first_matching_average_lane():
     st=_drain("For LeBron this season, give me his averages, advanced metrics, shot profile, and clutch scoring.")
     assert [x.split(":",1)[0] for x in st["calls_made"]] == ["get_player_report"]
 
-def test_simple_average_stays_simple():
-    st=_drain("What did LeBron average this season?")
-    assert [x.split(":",1)[0] for x in st["calls_made"]] == ["get_season_averages"]
+def test_this_season_average_resolves_to_calendar_refusal(warehouse):
+    expected = core_mod.completed_season_for_date(dt.date.today())
+    assert expected != "2024-25"
+    st = _drain("What did LeBron average this season?")
+    names = [x.split(":", 1)[0] for x in st["calls_made"]]
+    assert "get_season_averages" in names
+    sent = []
+    for entry in st["calls_made"]:
+        _name, _, blob = entry.partition(":")
+        try:
+            args = json.loads(blob)
+        except Exception:
+            continue
+        if isinstance(args, dict) and args.get("season"):
+            sent.append(args["season"])
+    assert sent
+    assert all(season == expected for season in sent)
+    assert all(season != "2024-25" for season in sent)
+    refusals = [result for result in st["tool_results"]
+                if result.get("season_error") is True]
+    assert refusals
+    assert all(expected in str(result.get("error") or "")
+               for result in refusals)
 
 def test_historical_report_stays_warehouse_bounded(monkeypatch):
     from shared.tools import player as module

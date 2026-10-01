@@ -1,4 +1,6 @@
 import asyncio
+import datetime as dt
+import json
 import sys
 from pathlib import Path
 
@@ -7,6 +9,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
+from app import graph as graph_mod
 from app.graph import _triage_seed
 from shared import store
 from shared.tools import _core as core_mod
@@ -90,6 +93,13 @@ def warehouse(monkeypatch, tmp_path):
     coverage_mod.coverage_cache_clear()
 
 
+def _calendar_season():
+    season = core_mod.completed_season_for_date(dt.date.today())
+    if season == WAREHOUSE_MAX:
+        pytest.skip("calendar season coincides with fixture max")
+    return season
+
+
 def _drive(question):
     state = {
         "question": question,
@@ -106,30 +116,46 @@ def _drive(question):
     return state
 
 
-def _result_names(state):
-    names = set()
-    for result in state["tool_results"]:
-        for row in result.get("rows") or []:
-            if isinstance(row, dict):
-                for key in ("TEAM_NAME", "TEAM"):
-                    if row.get(key):
-                        names.add(row[key])
-    return names
-
-
-def _answers(state):
-    texts = []
-    for result in state["tool_results"]:
-        meta = result.get("meta") or {}
-        if isinstance(meta, dict) and meta.get("deterministic_answer"):
-            texts.append(str(meta["deterministic_answer"]))
-    return texts
-
-
-def test_compare_returns_warehouse_max_season_rows(warehouse):
+def test_compare_sends_calendar_season_with_coverage_refusal(warehouse):
+    expected = _calendar_season()
     state = _drive(QUESTION)
-    assert {"Los Angeles Lakers", "Boston Celtics"} <= _result_names(state)
-    assert any(WAREHOUSE_MAX in text for text in _answers(state))
+    sent = []
+    for entry in state["calls_made"]:
+        _name, _, blob = entry.partition(":")
+        try:
+            args = json.loads(blob)
+        except Exception:
+            continue
+        if isinstance(args, dict) and args.get("season"):
+            sent.append(args["season"])
+    assert sent
+    assert all(season == expected for season in sent)
+    assert all(season != WAREHOUSE_MAX for season in sent)
+    refusals = [result for result in state["tool_results"]
+                if result.get("season_error") is True]
+    assert refusals
+    assert all(expected in str(result.get("error") or "")
+                for result in refusals)
+
+
+def test_compare_refusal_reaches_final_answer(warehouse):
+    expected = _calendar_season()
+    state = _drive(QUESTION)
+    asked = dict(state)
+    asked["primary"] = "p"
+    asked["model"] = "m"
+
+    async def _collect():
+        texts = []
+        async for event in graph_mod.presentation_agent(asked):
+            if event.get("type") == "final_answer":
+                texts.append(str((event.get("data") or {}).get("text", "")))
+        return texts
+
+    texts = asyncio.run(_collect())
+    assert texts
+    assert expected in texts[-1]
+    assert "could not find that in the dataset" not in texts[-1]
 
 
 def test_ratings_gap_asks_instead_of_empty_answer(warehouse):

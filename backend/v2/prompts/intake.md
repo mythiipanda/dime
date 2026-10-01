@@ -40,9 +40,13 @@ Fields:
 - Resolve season and as_of explicitly. If neither the question nor the
   context names a season, use the most recent season with warehouse data
   and mark source "default". Relative phrases such as "last season",
-  "this season", and "most recent season" resolve to that same
-  most-recent-with-data season, never to the calendar in-progress season;
-  the runtime pins the exact value from warehouse coverage after intake.
+  "this season", and "current season" resolve to the last completed
+  season by the calendar (NBA seasons run October through June, so a
+  season is completed once June of its end year has passed), marked
+  source "resolved"; never substitute the most recent season with data
+  for a relative phrase. The runtime pins source "default" values from
+  warehouse coverage after intake, and the coverage check surfaces an
+  uncovered requested season as an open question instead of replacing it.
 - Resolve follow-up words such as "that", "he", and "that team" against conversation context when the referent is clear; preserve the resolved entity and prior analytical goal.
 - Never copy a factual claim from conversation context into required evidence or treat prior assistant text as proof; plan fresh admitted evidence for the current answer.
 - Put a gap in open_questions only when the user must answer it before planning. Missing evidence, uncertain causes, unspecified explanatory factors, or facts the tools must discover are not open questions. Record a bounded interpretation in assumptions and request the capabilities needed to test it.
