@@ -238,6 +238,11 @@ def clamp_stat(stat: str) -> str:
     aliases = {
         "3P": "FG3_PCT", "3P%": "FG3_PCT", "3PT": "FG3_PCT",
         "3PT%": "FG3_PCT", "THREE_POINT_PERCENTAGE": "FG3_PCT",
+        "POINT": "PTS", "POINTS": "PTS",
+        "REBOUND": "REB", "REBOUNDS": "REB",
+        "ASSIST": "AST", "ASSISTS": "AST",
+        "STEAL": "STL", "STEALS": "STL",
+        "BLOCK": "BLK", "BLOCKS": "BLK",
     }
     upper = aliases.get(upper, upper)
     return upper if upper in STAT_CATEGORIES else "PTS"
