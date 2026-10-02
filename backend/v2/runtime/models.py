@@ -433,9 +433,12 @@ def admit_verified_claim_bindings(
                 envelope = execution.evidence_by_node.get(binding.node_id)
                 if envelope is not None:
                     owned = (binding.node_id, envelope)
-            if owned is None or owned[0] != binding.node_id:
+            if owned is not None and owned[0] != binding.node_id \
+                    and binding.node_id != owned[1].evidence_id:
+                owned = None
+            if owned is None:
                 raise ValueError("binding evidence ownership is invalid")
-            node = next(item for item in execution.plan.nodes if item.id == binding.node_id)
+            node = next(item for item in execution.plan.nodes if item.id == owned[0])
             evidence = owned[1]
             if requirement is not None:
                 if binding.requirement_id not in node.covers_requirement_ids:
