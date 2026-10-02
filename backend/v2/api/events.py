@@ -144,6 +144,8 @@ class BindingDiagnostic(StrictEvent):
     subject_entity_id: str | None = Field(default=None, max_length=256)
     declared_value: dict[str, Any] = Field(default_factory=dict, max_length=8)
     declared_unit: dict[str, Any] | None = Field(default=None, max_length=8)
+    domain: str | None = Field(default=None, max_length=256)
+    evidence_capability: str | None = Field(default=None, max_length=256)
     reanchor_changed: StrictBool
     rejection: str = Field(max_length=512)
 
