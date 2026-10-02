@@ -459,7 +459,7 @@ def get_ratings(
         fallback = _regular_season_team_ratings(season)
         if fallback is not None:
             rows, meta = fallback
-    keep = ["TEAM_NAME", "GP", "W", "L",
+    keep = ["TEAM_ID", "TEAM_NAME", "GP", "W", "L",
             "OFF_RATING", "DEF_RATING", "NET_RATING", "PACE",
             "TS_PCT", "TM_TOV_PCT",
             "OFF_RATING_RANK", "DEF_RATING_RANK", "NET_RATING_RANK",
