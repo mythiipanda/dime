@@ -268,6 +268,14 @@ _LIST = [
                       "possessions); smaller samples only on request.",
     ),
     Capability(
+        name="stint_timeline",
+        tool_name="get_stint_timeline",
+        qualification="One 10-digit game_id; warehouse rows only, "
+                      "no live refetch.",
+        coverage="Ordered 5-man stints per game with clocks, "
+                 "scores, and swings.",
+    ),
+    Capability(
         name="clutch",
         tool_name="get_clutch",
         units={"GP": COUNT, "W": COUNT, "L": COUNT, "PTS": COUNT,
@@ -372,6 +380,7 @@ CAPABILITY_DESCRIPTIONS: dict[str, str] = {
     "shooting_efficiency": "Player usage, shooting efficiency, PIE, and ratings.",
     "on_off": "Player on-court and off-court possession splits for one team.",
     "lineups": "Five-player lineup ratings subject to a possession sample floor.",
+    "stint_timeline": "Ordered 5-man stint timeline for one game.",
     "clutch": "Player or team stats in the last five minutes with a margin of five or less.",
     "playoffs": "Playoff wins by team and champion for one season.",
     "player_ratings": (
