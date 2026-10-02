@@ -413,6 +413,60 @@ def build_output_statuses(task, verified_claims, gaps):
     return rows
 
 
+def propagate_evidence_to_task(task, execution, draft, admitted):
+    from v2.contracts import (
+        EvidenceOutputBinding, canonical_entity_id, canonical_entity_ref)
+    task_entities = {canonical_entity_ref(item) for item in task.entities}
+    league_scoped = bool(task_entities) and all(
+        kind == "league" for kind, _ in task_entities)
+    if not task_entities or league_scoped:
+        return list(admitted)
+    owned = {(binding.requirement_kind, binding.requirement_id,
+              binding.output_id)
+             for claim in admitted for binding in claim.output_bindings}
+    candidates: dict[str, list] = {}
+    for claim in admitted:
+        for binding in claim.output_bindings:
+            if not isinstance(binding, EvidenceOutputBinding):
+                continue
+            if binding.requirement_kind != "evidence":
+                continue
+            if binding.output_id not in task.requested_outputs:
+                continue
+            if binding.subject_entity_type is None \
+                    or binding.subject_entity_id is None:
+                continue
+            subject = (binding.subject_entity_type, canonical_entity_id(
+                binding.subject_entity_type, binding.subject_entity_id))
+            if subject not in task_entities:
+                continue
+            candidates.setdefault(binding.output_id, []).append(
+                (claim, binding))
+    accepted: dict[int, list] = {}
+    for output_id, competing in candidates.items():
+        if ("task", None, output_id) in owned:
+            continue
+        if len(competing) != 1:
+            continue
+        claim, binding = competing[0]
+        clone = binding.model_copy(update={
+            "requirement_kind": "task", "requirement_id": None})
+        trial = claim.model_copy(update={
+            "output_bindings": [*claim.output_bindings, clone]})
+        try:
+            admit_verified_claim_bindings(task, execution, draft, trial)
+        except ValueError:
+            continue
+        accepted.setdefault(claim.claim_index, []).append(clone)
+        owned.add(("task", None, output_id))
+    if not accepted:
+        return list(admitted)
+    return [claim.model_copy(update={"output_bindings": [
+        *claim.output_bindings, *accepted.get(claim.claim_index, [])]})
+        if claim.claim_index in accepted else claim
+        for claim in admitted]
+
+
 def admit_verified_claim_bindings(
     task: TaskSpec,
     execution: ExecutionResult,

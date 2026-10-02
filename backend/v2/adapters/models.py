@@ -1461,6 +1461,27 @@ class PlannerArgumentError(ValueError):
         self.missing_required = missing_required
 
 
+def _team_subject_abbreviation(entity) -> str | None:
+    from v2.contracts import canonical_entity_id
+    canonical = canonical_entity_id(
+        entity.type, entity.id, entity.display_name)
+    try:
+        from nba_api.stats.static import teams as static_teams
+        entries = static_teams.get_teams()
+    except Exception:
+        return None
+    for entry in entries:
+        if str(entry.get("id")) == canonical:
+            abbreviation = str(entry.get("abbreviation") or "")
+            return abbreviation or None
+    lowered = canonical.casefold()
+    for entry in entries:
+        if lowered and lowered == str(
+                entry.get("abbreviation") or "").casefold():
+            return str(entry.get("abbreviation"))
+    return None
+
+
 class ModelPlanner(ModelStage):
     prompt_name = "planner_v3"
     route = "planner"
@@ -1785,6 +1806,16 @@ class ModelPlanner(ModelStage):
                 "depends_on": list(dict.fromkeys(
                     aliases.get(parent, parent) for parent in node.depends_on))
             }) for node in kept]
+        teams = [entity for entity in task.entities if entity.type == "team"]
+        if len(teams) == 1:
+            abbreviation = _team_subject_abbreviation(teams[0])
+            if abbreviation is not None:
+                kept = [node.model_copy(update={"arguments": {
+                    **node.arguments, "team": abbreviation}})
+                    if (next((name for name in node.capability_hints
+                              if name in self._catalog), None) == "team_ratings"
+                        and "team" not in node.arguments)
+                    else node for node in kept]
         return plan.model_copy(update={"nodes": kept})
 
     @staticmethod

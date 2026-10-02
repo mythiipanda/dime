@@ -1,0 +1,346 @@
+from datetime import UTC, datetime
+from unittest.mock import patch
+
+from v2.adapters.capabilities import CAPABILITIES
+from v2.adapters.core import build_envelope
+from v2.contracts import (
+    Claim,
+    ClaimSource,
+    DraftReport,
+    EntityRef,
+    EvidenceOutputBinding,
+    EvidenceRequirement,
+    Plan,
+    PlanNode,
+    SeasonRef,
+    TaskSpec,
+    VerificationReport,
+    VerifiedClaim,
+)
+from v2.runtime.loop import _verified_claims
+from v2.runtime.models import (
+    ExecutionResult,
+    admit_verified_claim_bindings,
+    build_output_statuses,
+)
+
+
+_NODE_ID = "leaders"
+
+
+def _leader_rows():
+    return [
+        {
+            "PLAYER_ID": 1629027,
+            "PLAYER_NAME": "Trae Young",
+            "GP": 76,
+            "MIN": 2700,
+            "AST": 880,
+            "PTS": 1500,
+        },
+        {
+            "PLAYER_ID": 1628369,
+            "PLAYER_NAME": "Nikola Jokic",
+            "GP": 74,
+            "MIN": 2600,
+            "AST": 700,
+            "PTS": 1900,
+        },
+    ]
+
+
+def _warehouse_meta():
+    return {
+        "source": "warehouse",
+        "season": "2024-25",
+        "warehouse_id": "frozen-eval",
+        "warehouse_sha256": "a" * 64,
+    }
+
+
+def _envelope(rows=None):
+    return build_envelope(
+        CAPABILITIES["qualified_leaders"],
+        {"season": "2024-25", "stat_category": "AST"},
+        {"ok": True, "rows": rows if rows is not None else _leader_rows(),
+         "meta": dict(_warehouse_meta())},
+        entities=None,
+        observed_at=datetime.now(UTC),
+    )
+
+
+def _trae():
+    return EntityRef(id="1629027", type="player", display_name="Trae Young")
+
+
+def _jokic():
+    return EntityRef(id="1628369", type="player", display_name="Nikola Jokic")
+
+
+def _requirement(requirement_id, outputs):
+    return EvidenceRequirement(
+        id=requirement_id,
+        description="2024-25 assists leaderboard",
+        capability_options=["qualified_leaders"],
+        requested_outputs=list(outputs),
+    )
+
+
+def _task(entities, requirements, outputs):
+    return TaskSpec(
+        goal="Who led the NBA in assists in the 2024-25 season, and how many?",
+        mode="quick",
+        deliverable="Assists leader and total assists",
+        requested_outputs=list(outputs),
+        season=SeasonRef(value="2024-25", source="user", confidence=1.0),
+        entities=list(entities),
+        requirements=list(requirements),
+    )
+
+
+def _binding(output_id, value, requirement_id, row, subject_id, subject_name):
+    selector = f"rows[{row}].{output_id}"
+    if output_id == "PLAYER_NAME":
+        unit = {"kind": "unitless"}
+        declared = {"kind": "string", "value": value}
+    else:
+        unit = {"kind": "declared", "value": "count"}
+        declared = {"kind": "integer", "value": value}
+    return EvidenceOutputBinding(
+        requirement_kind="evidence",
+        requirement_id=requirement_id,
+        output_id=output_id,
+        node_id=_NODE_ID,
+        evidence_id="placeholder",
+        selector=selector,
+        row_selector=f"rows[{row}]",
+        value=declared,
+        subject_entity_type="player",
+        subject_entity_id=subject_id,
+        subject_selector=f"rows[{row}].PLAYER_ID",
+        unit=unit,
+        domain="qualified_leaders",
+    )
+
+
+def _q1_bindings(envelope):
+    return [
+        binding.model_copy(update={"evidence_id": envelope.evidence_id})
+        for binding in (
+            _binding("PLAYER_NAME", "Trae Young", "player_assists_leader",
+                     0, "1629027", "Trae Young"),
+            _binding("AST", 880, "player_assists_leader",
+                     0, "1629027", "Trae Young"),
+        )
+    ]
+
+
+def _node(covers):
+    return PlanNode(
+        id=_NODE_ID,
+        description="2024-25 assists leaderboard",
+        capability_hints=["qualified_leaders"],
+        covers_requirement_ids=list(covers),
+        status="complete",
+    )
+
+
+def _execution(envelope, node):
+    return ExecutionResult(
+        plan=Plan(nodes=[node]),
+        evidence_by_node={node.id: envelope},
+        attempts={node.id: 1},
+    )
+
+
+def _report():
+    return VerificationReport(
+        status="pass",
+        claim_results=[{"claim_index": 0, "supported": True, "reasons": []}],
+    )
+
+
+def _claim(bindings, evidence_id):
+    return Claim(
+        text="Trae Young led the NBA with 880 assists in 2024-25.",
+        kind="observed",
+        evidence_ids=[evidence_id],
+        output_bindings=list(bindings),
+    )
+
+
+def _admitted(task, execution, envelope, bindings):
+    claim = _claim(bindings, envelope.evidence_id)
+    draft = DraftReport(sections=["Assists leader"], claims=[claim])
+    evidence = {envelope.evidence_id: envelope}
+    claims, gaps = _verified_claims(task, execution, draft, _report(), evidence)
+    statuses = build_output_statuses(task, claims, gaps)
+    return claims, gaps, {
+        (row.requirement_kind, row.requirement_id, row.output_id): row
+        for row in statuses
+    }
+
+
+def test_evidence_only_q1_bindings_own_task_outputs():
+    envelope = _envelope()
+    task = _task([_trae()], [_requirement("player_assists_leader",
+                                         ["PLAYER_NAME", "AST"])],
+                 ["PLAYER_NAME", "AST"])
+    bindings = _q1_bindings(envelope)
+    _, _, by_key = _admitted(
+        task, _execution(envelope, _node(["player_assists_leader"])),
+        envelope, bindings)
+    assert by_key[("task", None, "PLAYER_NAME")].status == "complete"
+    assert by_key[("task", None, "PLAYER_NAME")].binding.value.value == "Trae Young"
+    assert by_key[("task", None, "AST")].status == "complete"
+    assert by_key[("task", None, "AST")].binding.value.value == 880
+
+
+def test_league_scoped_task_outputs_stay_missing():
+    envelope = _envelope()
+    task = _task([EntityRef(id="nba", type="league", display_name="NBA")],
+                 [_requirement("player_assists_leader",
+                               ["PLAYER_NAME", "AST"])],
+                 ["PLAYER_NAME", "AST"])
+    bindings = _q1_bindings(envelope)
+    _, _, by_key = _admitted(
+        task, _execution(envelope, _node(["player_assists_leader"])),
+        envelope, bindings)
+    assert by_key[("evidence", "player_assists_leader",
+                   "PLAYER_NAME")].status == "complete"
+    assert by_key[("task", None, "PLAYER_NAME")].status == "missing"
+    assert by_key[("task", None, "AST")].status == "missing"
+
+
+def test_competing_evidence_subjects_leave_task_output_missing():
+    envelope = _envelope()
+    task = _task([_trae(), _jokic()],
+                 [_requirement("leaders_a", ["PLAYER_NAME"]),
+                  _requirement("leaders_b", ["PLAYER_NAME"])],
+                 ["PLAYER_NAME"])
+    bindings = [
+        binding.model_copy(update={"evidence_id": envelope.evidence_id})
+        for binding in (
+            _binding("PLAYER_NAME", "Trae Young", "leaders_a",
+                     0, "1629027", "Trae Young"),
+            _binding("PLAYER_NAME", "Nikola Jokic", "leaders_b",
+                     1, "1628369", "Nikola Jokic"),
+        )
+    ]
+    _, _, by_key = _admitted(
+        task, _execution(envelope, _node(["leaders_a", "leaders_b"])),
+        envelope, bindings)
+    assert by_key[("evidence", "leaders_a", "PLAYER_NAME")].status == "complete"
+    assert by_key[("evidence", "leaders_b", "PLAYER_NAME")].status == "complete"
+    assert by_key[("task", None, "PLAYER_NAME")].status == "missing"
+
+
+def test_propagated_task_binding_passes_admission_authority():
+    envelope = _envelope()
+    task = _task([_trae()], [_requirement("player_assists_leader",
+                                         ["PLAYER_NAME", "AST"])],
+                 ["PLAYER_NAME", "AST"])
+    bindings = _q1_bindings(envelope)
+    claims, _, _ = _admitted(
+        task, _execution(envelope, _node(["player_assists_leader"])),
+        envelope, bindings)
+    propagated = [binding for binding in claims[0].output_bindings
+                  if binding.requirement_kind == "task"]
+    assert {binding.output_id for binding in propagated} == {"PLAYER_NAME", "AST"}
+    execution = _execution(envelope, _node(["player_assists_leader"]))
+    claim = _claim(list(claims[0].output_bindings), envelope.evidence_id)
+    draft = DraftReport(sections=["Assists leader"], claims=[claim])
+    verified = VerifiedClaim(
+        claim_index=0,
+        claim=claim,
+        evidence_ids=[envelope.evidence_id],
+        sources=[
+            ClaimSource(
+                evidence_id=envelope.evidence_id,
+                source=envelope.source,
+                capability=envelope.capability,
+                observed_at=envelope.observed_at,
+            )
+        ],
+        output_bindings=list(claims[0].output_bindings),
+    )
+    readmitted = admit_verified_claim_bindings(task, execution, draft, verified)
+    assert len(readmitted.output_bindings) == 4
+
+
+def test_preexisting_task_binding_is_not_duplicated():
+    envelope = _envelope()
+    task = _task([_trae()], [_requirement("player_assists_leader",
+                                         ["PLAYER_NAME", "AST"])],
+                 ["PLAYER_NAME", "AST"])
+    evidence_binding = _q1_bindings(envelope)[0]
+    task_binding = evidence_binding.model_copy(update={
+        "requirement_kind": "task", "requirement_id": None})
+    bindings = [evidence_binding, task_binding,
+                _q1_bindings(envelope)[1]]
+    _, _, by_key = _admitted(
+        task, _execution(envelope, _node(["player_assists_leader"])),
+        envelope, bindings)
+    assert by_key[("task", None, "PLAYER_NAME")].status == "complete"
+    assert by_key[("task", None, "PLAYER_NAME")].binding.requirement_id is None
+    assert by_key[("task", None, "AST")].status == "complete"
+
+
+class _StubModel:
+    def __init__(self, payloads):
+        self._payloads = list(payloads)
+
+
+def _bos_task():
+    return TaskSpec(
+        goal="Celtics ratings 2024-25",
+        mode="quick",
+        deliverable="ratings",
+        requested_outputs=["NET_RATING", "OFF_RATING", "DEF_RATING"],
+        season=SeasonRef(value="2024-25", source="user", confidence=1.0),
+        entities=[EntityRef(id="1610612738", type="team",
+                            display_name="Boston Celtics")],
+        requirements=[EvidenceRequirement(
+            id="celtics_ratings_2024_25",
+            description="Celtics ratings 2024-25",
+            capability_options=["team_ratings"],
+            requested_outputs=["NET_RATING", "OFF_RATING", "DEF_RATING"],
+        )],
+    )
+
+
+def test_planner_narrows_team_ratings_node_to_subject_team():
+    from v2.adapters.models import ModelPlanner
+
+    task = _bos_task()
+    plan = Plan(nodes=[PlanNode(
+        id="ratings",
+        description="Celtics ratings 2024-25",
+        capability_hints=["team_ratings"],
+        covers_requirement_ids=["celtics_ratings_2024_25"],
+        arguments={"season": "2024-25"},
+    )])
+    planner = ModelPlanner(_StubModel([]), provider="stub", model_name="stub",
+                           capability_catalog={"team_ratings": {}})
+    normalized = planner._normalize_plan(task, plan)
+    assert normalized.nodes[0].arguments["team"] == "BOS"
+    team_rows = [
+        {"TEAM_ID": 1610612760, "TEAM_NAME": "Oklahoma City Thunder",
+         "OFF_RATING": 118.1, "DEF_RATING": 105.4, "NET_RATING": 12.7},
+        {"TEAM_ID": 1610612738, "TEAM_NAME": "Boston Celtics",
+         "OFF_RATING": 118.2, "DEF_RATING": 108.8, "NET_RATING": 9.4},
+    ]
+    from shared.tools.league import get_ratings
+
+    with patch("shared.tools.league._warehouse_or_live",
+               return_value=(list(team_rows), {"method": "NBA box-score estimated possessions",
+                                               "season": "2024-25"})):
+        result = get_ratings.invoke({"season": "2024-25",
+                                     "team": normalized.nodes[0].arguments["team"]})
+    assert result["ok"] is True
+    assert result["meta"]["method"] == "NBA box-score estimated possessions"
+    assert len(result["rows"]) == 1
+    assert result["rows"][0]["TEAM_ID"] == 1610612738
+    assert result["rows"][0]["OFF_RATING"] == 118.2
+    assert result["rows"][0]["DEF_RATING"] == 108.8
+    assert result["rows"][0]["NET_RATING"] == 9.4

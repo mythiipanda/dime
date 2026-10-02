@@ -25,6 +25,7 @@ from v2.runtime.interfaces import Intake, Planner, Repairer, Synthesizer, Verifi
 from v2.runtime.ledger import LedgerKind, RunLedger, TerminalReason, exception_text
 from v2.runtime.models import (ExecutionResult, RuntimeResult,
                                admit_verified_claim_bindings,
+                               propagate_evidence_to_task,
                                reanchor_verified_claim_bindings)
 from v2.domain.evidence import iter_values
 from v2.runtime.budget import RUN_MODEL_DEADLINE
@@ -860,6 +861,7 @@ def _verified_claims(task, execution, draft, verification, evidence=None, *,
                 message=f"claim output binding rejected: {exc}",
                 evidence_ids=list(claim.evidence_ids),
                 blocks=[f"claim:{index}"]))
+    admitted = propagate_evidence_to_task(task, execution, draft, admitted)
     return admitted, rejected
 
 
