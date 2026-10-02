@@ -25,6 +25,7 @@ Each Claim contains:
 - calculation_id: required for a derived claim;
 - confidence: required for a projection claim;
 - output_bindings: claim-local typed output proposals. Preserve valid existing proposals when the repaired claim still states that exact output; otherwise remove or replace them with exact requirement/output, evidence selector/value/subject/unit/domain, or calculation identity proposals for deterministic admission.
+- Binding path format (mechanical, must match exactly): evidence rows live under `rows`. A binding for a row value uses selector "rows[i].COLUMN" (e.g. "rows[0].NET_RATING"), row_selector "rows[i]" (e.g. "rows[0]"), subject_selector "rows[i].ID_COLUMN" where ID_COLUMN is the identity key for the subject type ("rows[0].TEAM_ID" for teams, "rows[0].PLAYER_ID" for players), subject_entity_id the exact identity value from that column (e.g. the numeric team id "1610612738", never an abbreviation or display name), and node_id the exact plan node id that produced the evidence (never invent a suffixed variant). Never use filter expressions, display names, or bare column names as selectors.
 
 ## Invariants
 - Do not add a fact, number, date, entity, season, rank, or unit absent from admitted evidence.
