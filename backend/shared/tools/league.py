@@ -1070,7 +1070,10 @@ def get_leaders(
             [season], lambda: nba_stats.leaders(stat_category, season), season,
         )
         meta["stat_category"] = stat_category
-        if not rows and season_static(season):
+        needs_id_fallback = bool(rows) and not any(
+            "PLAYER_ID" in row or "player_id" in row for row in rows
+        )
+        if (not rows or needs_id_fallback) and season_static(season):
             fallback = _completed_season_totals(stat_category, season, order)
             if fallback is not None:
                 rows, meta = fallback
