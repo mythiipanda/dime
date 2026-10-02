@@ -101,6 +101,7 @@ from .team import (
     get_team_splits,
 )
 from .today import get_today, get_morning_briefing
+from .transactions import get_transactions
 from .watchlist import add_watchlist_item, get_watchlist, remove_watchlist_item
 from .wpa import get_wpa_leaders
 from ._core import MAX_ROWS, STAT_CATEGORIES, clamp_stat, last_completed_season, resolve_season
@@ -208,6 +209,7 @@ v1_tools: list[BaseTool] = [
     get_zone_deltas,
     get_rapm_prior,
     get_wpa_leaders,
+    get_transactions,
 ]
 
 TOOL_NAMES = [t.name for t in v1_tools]
