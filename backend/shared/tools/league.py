@@ -2969,8 +2969,6 @@ def get_rookie_leaders(stat: str = "ppg", min_value: float = 0,
     season = resolve_season(season)
     from .. import store as _store
 
-    import duckdb
-
     col = str(stat or "ppg").strip().upper()
     allowed = {"PPG", "RPG", "APG", "SPG", "BPG", "MPG",
                "FG_PCT", "FG3_PCT", "FT_PCT", "GP"}
@@ -2988,7 +2986,7 @@ def get_rookie_leaders(stat: str = "ppg", min_value: float = 0,
         ORDER BY {col} DESC
     """
     try:
-        con = duckdb.connect(str(_store.DB_PATH), read_only=True)
+        con = _store.connect(read_only=True)
         try:
             cur_rows = con.execute(
                 sql, [season, int(min_gp), float(min_value)]
