@@ -1619,7 +1619,7 @@ def test_typed_public_stream_sanitizes_all_events_and_preserves_lifecycle(monkey
     carry=final_json["carry"]
     assert carry["run_id"]==response.headers["x-dime-run-id"]
     assert carry["verification"]=="partial" and carry["verified_claims"]==1
-    assert carry["gaps"]==[{"kind":"missing_evidence"}]
+    assert carry["gaps"]==[{"kind":"missing_evidence","blocks":[]}]
     assert carry["output_statuses"][0]["output_id"]=="PTS"
     assert "node_id" not in str(carry) and "selector" not in str(carry)
     assert text.count('"node":"analytics","status":"complete"')==1
