@@ -367,6 +367,18 @@ _LIST = [
         qualification="One resolved player over the last N games with splits below 5 games flagged as low sample.",
         coverage="Situational splits over the window: defense tier, home and away, and rest days.",
     ),
+    Capability(
+        name="today",
+        tool_name="get_today",
+        qualification="Date-scoped snapshot; offseason returns honest empty lists, never fabricated games.",
+        coverage="Last night results, tonight games, leaderboard movers, and streaks with scoreboard status.",
+    ),
+    Capability(
+        name="morning_briefing",
+        tool_name="get_morning_briefing",
+        qualification="Date-scoped bundle; offseason sections stay honestly empty, never fabricated games.",
+        coverage="Today snapshot plus watchlist updates and leaderboard deltas with scoreboard status.",
+    ),
 ]
 
 CAPABILITIES: dict[str, Capability] = {c.name: c for c in _LIST}
@@ -427,6 +439,8 @@ CAPABILITY_DESCRIPTIONS: dict[str, str] = {
     "season_series": "Every meeting between two teams in one season with winner and scores when tracked.",
     "head_to_head": "One player against one opponent team with vs-opponent averages next to the season baseline.",
     "matchup_splits": "Situational splits for one player over the last N games by defense tier, venue, and rest.",
+    "today": "Date-scoped scoreboard snapshot with last night, tonight, movers, and streaks.",
+    "morning_briefing": "Date-scoped bundle of today snapshot, watchlist updates, and leaderboard deltas.",
 }
 
 if len(CAPABILITIES) != len(_LIST):
