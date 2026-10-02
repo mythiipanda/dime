@@ -160,13 +160,13 @@ def test_route_policies_have_no_failover_or_masking_keys():
 
 def test_route_policy_attempt_budgets_and_timeouts():
     from v2.adapters.models import ROUTE_POLICIES
-    assert ROUTE_POLICIES["planner"]["attempt_timeout_s"] == 8.0
+    assert ROUTE_POLICIES["planner"]["attempt_timeout_s"] == 30.0
     assert ROUTE_POLICIES["planner"]["max_attempts"] == 2
-    assert ROUTE_POLICIES["planner"]["total_budget_s"] == 12.0
-    assert ROUTE_POLICIES["intake"]["total_budget_s"] == 18.0
-    assert ROUTE_POLICIES["requirement_review"]["total_budget_s"] == 12.0
-    assert ROUTE_POLICIES["synthesizer"]["total_budget_s"] == 6.0
-    assert ROUTE_POLICIES["semantic_verifier"]["total_budget_s"] == 18.0
+    assert ROUTE_POLICIES["planner"]["total_budget_s"] == 60.0
+    assert ROUTE_POLICIES["intake"]["total_budget_s"] == 60.0
+    assert ROUTE_POLICIES["requirement_review"]["total_budget_s"] == 60.0
+    assert ROUTE_POLICIES["synthesizer"]["total_budget_s"] == 50.0
+    assert ROUTE_POLICIES["semantic_verifier"]["total_budget_s"] == 60.0
 
 
 def _envelope(route="intake"):

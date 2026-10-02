@@ -157,24 +157,24 @@ _TRANSIENT_FAILURE_CLASSES = frozenset({
     "timeout", "rate_limit", "network", "server_error", "provider_error"})
 
 ROUTE_POLICIES: dict[str, dict[str, Any]] = {
-    "intake": {"max_attempts": 2, "attempt_timeout_s": 6.0,
-               "total_budget_s": 18.0,
+    "intake": {"max_attempts": 2, "attempt_timeout_s": 30.0,
+               "total_budget_s": 60.0,
                "transient_classes": _TRANSIENT_FAILURE_CLASSES},
-    "requirement_review": {"max_attempts": 2, "attempt_timeout_s": 8.0,
-               "total_budget_s": 12.0,
+    "requirement_review": {"max_attempts": 2, "attempt_timeout_s": 30.0,
+               "total_budget_s": 60.0,
                "transient_classes": _TRANSIENT_FAILURE_CLASSES},
-    "planner": {"max_attempts": 2, "attempt_timeout_s": 8.0,
-               "total_budget_s": 12.0,
+    "planner": {"max_attempts": 2, "attempt_timeout_s": 30.0,
+               "total_budget_s": 60.0,
                "transient_classes": _TRANSIENT_FAILURE_CLASSES},
-    "synthesizer": {"max_attempts": 2, "attempt_timeout_s": 6.0,
-               "total_budget_s": 6.0,
+    "synthesizer": {"max_attempts": 2, "attempt_timeout_s": 25.0,
+               "total_budget_s": 50.0,
                "transient_classes": _TRANSIENT_FAILURE_CLASSES},
-    "semantic_verifier": {"max_attempts": 2, "attempt_timeout_s": 6.0,
-               "total_budget_s": 18.0,
+    "semantic_verifier": {"max_attempts": 2, "attempt_timeout_s": 30.0,
+               "total_budget_s": 60.0,
                "transient_classes": _TRANSIENT_FAILURE_CLASSES},
 }
-_DEFAULT_ROUTE_POLICY = {"max_attempts": 2, "attempt_timeout_s": 6.0,
-    "total_budget_s": 12.0,
+_DEFAULT_ROUTE_POLICY = {"max_attempts": 2, "attempt_timeout_s": 25.0,
+    "total_budget_s": 50.0,
     "transient_classes": _TRANSIENT_FAILURE_CLASSES}
 
 
