@@ -595,7 +595,7 @@ class EvidenceOutputBinding(BaseModel):
     subject_entity_id: str | None = Field(default=None, min_length=1, max_length=256)
     subject_selector: str | None = Field(default=None, min_length=1, max_length=1000)
     unit: OutputUnitAuthority
-    domain: str = Field(min_length=1, max_length=256)
+    domain: str = Field(min_length=1, max_length=256, description="the exact capability name of the cited evidence envelope")
 
     @model_validator(mode="after")
     def validate_scope(self) -> "EvidenceOutputBinding":

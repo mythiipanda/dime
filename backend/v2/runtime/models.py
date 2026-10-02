@@ -71,6 +71,16 @@ def _canonical_unit(value):
     return "_".join(value.lower().split())
 
 
+def _canonical_domain(value):
+    normalized = "_".join(value.lower().split())
+    from v2.adapters.capabilities import CAPABILITIES
+    aliases = {}
+    for spec in CAPABILITIES.values():
+        aliases["_".join(spec.name.lower().split())] = spec.name
+        aliases["_".join(spec.tool_name.lower().split())] = spec.name
+    return aliases.get(normalized, normalized)
+
+
 def _row_index(row_selector):
     prefix = "rows["
     if not row_selector.startswith(prefix):
@@ -473,7 +483,7 @@ def admit_verified_claim_bindings(
             elif binding.unit.kind != "declared" \
                     or _canonical_unit(binding.unit.value) != _canonical_unit(authoritative_unit):
                 raise ValueError("binding unit does not match output authority")
-            if binding.domain != evidence.capability:
+            if _canonical_domain(binding.domain) != evidence.capability:
                 raise ValueError("binding domain does not match capability")
             if task.season is not None and evidence.task_season_scoped \
                     and evidence.season != task.season.value:

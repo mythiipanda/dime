@@ -776,7 +776,8 @@ def _diagnostic_text(value):
     return text[:_DIAGNOSTIC_TEXT_CAP]
 
 
-def _binding_diagnostic_event(execution, candidate, position, run_id, rejection):
+def _binding_diagnostic_event(execution, candidate, position, run_id, rejection,
+                               evidence=None):
     binding = candidate.output_bindings[position]
     fixed = reanchor_verified_claim_bindings(execution, candidate).output_bindings[position]
     changed = any(
@@ -790,6 +791,10 @@ def _binding_diagnostic_event(execution, candidate, position, run_id, rejection)
             "kind": unit.kind,
             "value": _diagnostic_text(getattr(unit, "value", None)),
         }
+    envelope = None
+    if evidence is not None:
+        envelope = evidence.get(getattr(binding, "evidence_id", None))
+    capability = getattr(envelope, "capability", None) if envelope is not None else None
     return BindingDiagnostic(
         run_id=run_id,
         claim_index=candidate.claim_index,
@@ -808,6 +813,8 @@ def _binding_diagnostic_event(execution, candidate, position, run_id, rejection)
             "value": _diagnostic_text(getattr(value, "value", None)),
         },
         declared_unit=declared_unit,
+        domain=_diagnostic_text(getattr(binding, "domain", None)),
+        evidence_capability=_diagnostic_text(capability),
         reanchor_changed=changed,
         rejection=_diagnostic_text(rejection),
     )
@@ -843,7 +850,7 @@ def _verified_claims(task, execution, draft, verification, evidence=None, *,
                 for position in range(len(candidate.output_bindings)):
                     diagnostics_events.append(_binding_diagnostic_event(
                         execution, candidate, position,
-                        diagnostics_run_id, str(exc)))
+                        diagnostics_run_id, str(exc), evidence))
             admitted.append(VerifiedClaim(
                 claim_index=index, claim=claim,
                 evidence_ids=list(claim.evidence_ids),
