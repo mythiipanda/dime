@@ -6,7 +6,7 @@ import { act } from "react";
 import { createRoot } from "react-dom/client";
 import type { Root } from "react-dom/client";
 import TodayPanel from "./components/TodayPanel";
-import { addWatchlist, getWatchlist } from "./lib/api";
+import { addWatchlist, clearEnvelopeCache, getWatchlist } from "./lib/api";
 
 const dom = new JSDOM("<!doctype html><html><body></body></html>", {
   url: "http://localhost/",
@@ -63,6 +63,7 @@ function envelope(rows: unknown) {
 
 function mockFetch() {
   calls = [];
+  clearEnvelopeCache();
   gx.fetch = ((url: string, init?: RequestInit) => {
     const u = String(url);
     const method = init?.method || "GET";
