@@ -8,17 +8,18 @@ import type { EvidenceRow } from "../lib/evidence";
 function CountLine({ backed, total }: { backed: number; total: number }) {
   const missing = total - backed;
   const backedWord = backed === 1 ? "finding backed by data" : "findings backed by data";
+  const backedText = backed === 0 ? "No findings backed by data" : backed + " " + backedWord;
   if (missing === 0) {
     return (
       <span style={{ fontSize: 12, color: "var(--color-ash-gray)", fontVariantNumeric: "tabular-nums" }}>
-        {backed} {backedWord}
+        {backedText}
       </span>
     );
   }
   const missingWord = missing === 1 ? "finding not verified" : "findings not verified";
   return (
     <span style={{ fontSize: 12, color: "var(--color-ash-gray)", fontVariantNumeric: "tabular-nums" }}>
-      {backed} {backedWord} · {missing} {missingWord}
+      {backedText} · {missing} {missingWord}
     </span>
   );
 }

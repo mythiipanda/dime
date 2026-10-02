@@ -160,6 +160,7 @@ describe("EvidenceSection", () => {
     );
     assert.ok(html.includes("This answer"));
     assert.ok(html.includes("The run ran out of time."));
+    assert.ok(html.includes("No findings backed by data"));
   });
 
   it("never leaks field names into copy", () => {
