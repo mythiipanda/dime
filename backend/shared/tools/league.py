@@ -1131,6 +1131,9 @@ def get_leaders(
             pinned.append(r)
             continue
         slim = {k: r[k] for k in pin if k in r}
+        for _id in ("PLAYER_ID", "player_id", "TEAM_ID", "team_id"):
+            if _id in r and _id not in slim:
+                slim[_id] = r[_id]
         if "PLAYER" in slim and "PLAYER_NAME" not in slim:
             slim["PLAYER_NAME"] = slim["PLAYER"]
         pinned.append(slim)
