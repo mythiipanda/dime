@@ -509,3 +509,9 @@ def test_composite_warehouse_identity_is_typed_and_complete():
     assert item.source_identity.model_dump() == {
         "kind": "composite", "warehouse_id": "configured-runtime",
         "sha256": "a" * 64, "live_sources": ["espn", "nba_api"]}
+
+
+def test_fabricated_team_name_does_not_collapse_to_real_team_id():
+    from v2.contracts import canonical_entity_id
+    for probe in ("Queens Cobras", "Springfield Atoms", ""):
+        assert canonical_entity_id("team", probe) != "1610612737"

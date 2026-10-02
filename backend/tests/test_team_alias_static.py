@@ -27,6 +27,32 @@ def test_unknown_team_still_raises_without_nba_api(monkeypatch):
         coerce_team_id("London Lions")
 
 
+def test_blank_team_name_is_rejected(monkeypatch):
+    _without_nba_teams(monkeypatch)
+    for probe in ("", "   "):
+        with pytest.raises(ValueError, match="unknown team"):
+            coerce_team_id(probe)
+
+
+def test_blank_team_name_is_rejected_with_live_lookup():
+    for probe in ("", "   "):
+        with pytest.raises(ValueError, match="unknown team"):
+            coerce_team_id(probe)
+
+
+def test_short_fragments_are_not_guessed_as_teams(monkeypatch):
+    _without_nba_teams(monkeypatch)
+    for probe in ("a", "LA", "NY"):
+        with pytest.raises(ValueError, match="unknown team"):
+            coerce_team_id(probe)
+
+
+def test_short_fragments_are_not_guessed_with_live_lookup():
+    for probe in ("a", "LA", "NY"):
+        with pytest.raises(ValueError, match="unknown team"):
+            coerce_team_id(probe)
+
+
 def test_static_aliases_match_live_lookup_for_all_teams():
     from nba_api.stats.static import teams as live
 
