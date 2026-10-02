@@ -358,7 +358,11 @@ def _datasets_fetch_live(
     if name == "leaders":
         from shared.tools import clamp_stat
 
-        return nba_stats.leaders(clamp_stat(stat), season)
+        try:
+            stat = clamp_stat(stat)
+        except ValueError:
+            stat = "PTS"
+        return nba_stats.leaders(stat, season)
     if name == "injuries":
         return espn.injuries(season)
     if name == "player_gamelogs" and player_id:
@@ -431,7 +435,11 @@ def dataset(
     if name == "leaders":
         from shared.tools import clamp_stat
 
-        table = f"silver_leaders_{clamp_stat(stat).lower()}"
+        try:
+            stat = clamp_stat(stat)
+        except ValueError:
+            stat = "PTS"
+        table = f"silver_leaders_{stat.lower()}"
     entity_scoped = name in ("player_gamelogs", "team_games", "shots", "scoreboard", "lineups", "on_off", "wowy", "four_factors")
     entity = ""
     if player_id:

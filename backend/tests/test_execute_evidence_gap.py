@@ -144,6 +144,13 @@ def test_ratings_refusal_preserved_without_gamelogs(warehouse):
     assert result["rows"] == []
 
 
+def test_clamp_stat_rejects_unknown_category():
+    from shared.tools import clamp_stat
+
+    with pytest.raises(ValueError):
+        clamp_stat("total assists")
+
+
 def test_unknown_stat_category_fails_loudly(warehouse):
     result = get_leaders.invoke(
         {"stat_category": "total assists", "season": SEASON})
