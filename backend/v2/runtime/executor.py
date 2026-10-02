@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-import asyncio
+import anyio
 import time
 from collections.abc import Mapping, Sequence
 from typing import Any
@@ -157,28 +157,38 @@ class PlanExecutor:
                 self._save_checkpoint(
                     run_id, task, plan, nodes, evidence_by_node, attempts, errors, error_codes
                 )
-                tasks = []
-                for node in batch:
-                    if self._node_timeout_s is None:
-                        coro = self._run_node(
-                            node, task, evidence_by_node, attempts, errors,
-                            error_codes)
-                    else:
-                        coro = self._run_node_bounded(
-                            node, task, evidence_by_node, attempts, errors,
-                            error_codes)
-                    tasks.append(asyncio.create_task(_join_node(node, coro)))
-                try:
-                    for completed in asyncio.as_completed(tasks):
-                        try:
-                            node, envelope = await completed
-                        except NodeTimeoutError as exc:
-                            node = nodes[exc.node_id]
+                sender, receiver = anyio.create_memory_object_stream(len(batch))
+
+                async def _produce(node, coro) -> None:
+                    try:
+                        await sender.send(await _join_node(node, coro))
+                    except Exception as exc:
+                        await sender.send(exc)
+
+                async with anyio.create_task_group() as task_group:
+                    for node in batch:
+                        if self._node_timeout_s is None:
+                            coro = self._run_node(
+                                node, task, evidence_by_node, attempts, errors,
+                                error_codes)
+                        else:
+                            coro = self._run_node_bounded(
+                                node, task, evidence_by_node, attempts, errors,
+                                error_codes)
+                        task_group.start_soon(_produce, node, coro)
+                    for _ in batch:
+                        item = await receiver.receive()
+                        if isinstance(item, NodeTimeoutError):
+                            node = nodes[item.node_id]
                             envelope = None
                             attempts[node.id] = node.max_attempts
                             node_errors = errors.setdefault(node.id, [])
-                            if str(exc) not in node_errors:
-                                node_errors.append(str(exc))
+                            if str(item) not in node_errors:
+                                node_errors.append(str(item))
+                        elif isinstance(item, Exception):
+                            raise item
+                        else:
+                            node, envelope = item
                         if envelope is None:
                             node.status = PlanStatus.FAILED
                             failures += 1
@@ -201,11 +211,6 @@ class PlanExecutor:
                         self._save_checkpoint(
                             run_id, task, plan, nodes, evidence_by_node, attempts, errors, error_codes
                         )
-                finally:
-                    for task_handle in tasks:
-                        if not task_handle.done():
-                            task_handle.cancel()
-                    await asyncio.gather(*tasks, return_exceptions=True)
 
             if not progressed:
                 raise RuntimeError("validated plan made no execution progress")
@@ -407,10 +412,9 @@ class PlanExecutor:
         assert self._node_timeout_s is not None
         started = time.monotonic()
         try:
-            return await asyncio.wait_for(
-                self._run_node(node, task, evidence_by_node, attempts,
-                               errors, error_codes),
-                self._node_timeout_s)
+            with anyio.fail_after(self._node_timeout_s):
+                return await self._run_node(
+                    node, task, evidence_by_node, attempts, errors, error_codes)
         except TimeoutError as exc:
             if time.monotonic() - started >= self._node_timeout_s:
                 raise NodeTimeoutError(
@@ -468,7 +472,7 @@ class PlanExecutor:
                     except Exception:
                         pass
                 return node, result
-            except asyncio.CancelledError:
+            except anyio.get_cancelled_exc_class():
                 raise
             except Exception as exc:  # noqa: BLE001
                 message = exception_text(exc)

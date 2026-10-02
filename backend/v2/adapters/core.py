@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import anyio
 import asyncio
 import hashlib
 import inspect
@@ -40,7 +41,7 @@ async def ainvoke_tool(tool: Any, arguments: Mapping[str, Any]) -> dict[str, Any
     if callable(ainvoke):
         result = await ainvoke(dict(arguments))
     elif callable(invoke):
-        result = await asyncio.to_thread(invoke, dict(arguments))
+        result = await anyio.to_thread.run_sync(invoke, dict(arguments))
     elif callable(tool):
         result = tool(**dict(arguments))
         if inspect.isawaitable(result):
