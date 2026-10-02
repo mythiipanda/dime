@@ -324,6 +324,22 @@ _LIST = [
         tool_name="get_team_four_factors",
         metric_definitions=FOUR_FACTORS_DEFS,
     ),
+    Capability(
+        name="tracking_profile",
+        tool_name="get_tracking_profile",
+        units={"GP": COUNT, "W": COUNT, "L": COUNT, "MIN": MINUTES},
+        qualification="Exactly one of player name or team abbreviation; one measure type or all.",
+        coverage="Player and team tracking by measure type (drives, shooting, touches, rebounding, speed and more) for seasons on file.",
+    ),
+    Capability(
+        name="defensive_matchups",
+        tool_name="get_defensive_matchups",
+        units={"GP": COUNT, "FREQ": FRACTION,
+                "D_FGM": COUNT, "D_FGA": COUNT,
+                "D_FG_PCT": FRACTION, "NORMAL_FG_PCT": FRACTION},
+        qualification="One resolved player; per-defender defended-shot aggregates.",
+        coverage="How often the defender was the closest defender and how those shots fell. No per-opponent rows exist.",
+    ),
 ]
 
 CAPABILITIES: dict[str, Capability] = {c.name: c for c in _LIST}
@@ -376,6 +392,8 @@ CAPABILITY_DESCRIPTIONS: dict[str, str] = {
     "game_logs": "Filter player or team game logs by stats, opponent, date, or venue.",
     "four_factors": "Player on-off splits for the four factors.",
     "team_four_factors": "Team offensive and defensive four-factor profile.",
+    "tracking_profile": "Player or team tracking profile for one measure type or all.",
+    "defensive_matchups": "One defender's defended-shot frequency and shooter results.",
 }
 
 if len(CAPABILITIES) != len(_LIST):
