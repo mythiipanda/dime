@@ -342,6 +342,31 @@ _LIST = [
         qualification="Two named teams in the selected regular season.",
         coverage="Both teams ratings, last-10 form, injuries with impact, season-series meetings, and modeled win probability.",
     ),
+    Capability(
+        name="season_series",
+        tool_name="get_season_series",
+        qualification="Two different teams in the selected season.",
+        coverage="Every regular-season and playoff meeting between the two teams with winner and scores when tracked.",
+    ),
+    Capability(
+        name="head_to_head",
+        tool_name="get_head_to_head",
+        units={"gp": COUNT, "ppg": PER_GAME, "rpg": PER_GAME,
+               "apg": PER_GAME, "fg_pct": FRACTION, "ts_pct": FRACTION,
+               "pts": COUNT, "reb": COUNT, "ast": COUNT,
+               "plus_minus": "points"},
+        qualification="One resolved player against one resolved opponent team with fewer than 5 games flagged as small sample.",
+        coverage="Player game logs against the opponent with vs-opponent averages next to the season baseline and deltas.",
+    ),
+    Capability(
+        name="matchup_splits",
+        tool_name="get_matchup_splits",
+        units={"gp": COUNT, "ppg": PER_GAME, "rpg": PER_GAME,
+               "apg": PER_GAME, "fg_pct": FRACTION,
+               "plus_minus": "points"},
+        qualification="One resolved player over the last N games with splits below 5 games flagged as low sample.",
+        coverage="Situational splits over the window: defense tier, home and away, and rest days.",
+    ),
 ]
 
 CAPABILITIES: dict[str, Capability] = {c.name: c for c in _LIST}
@@ -399,6 +424,9 @@ CAPABILITY_DESCRIPTIONS: dict[str, str] = {
     "four_factors": "Player on-off splits for the four factors.",
     "team_four_factors": "Team offensive and defensive four-factor profile.",
     "matchup_brief": "Two-team matchup brief with ratings, form, injuries, season series, and win probability.",
+    "season_series": "Every meeting between two teams in one season with winner and scores when tracked.",
+    "head_to_head": "One player against one opponent team with vs-opponent averages next to the season baseline.",
+    "matchup_splits": "Situational splits for one player over the last N games by defense tier, venue, and rest.",
 }
 
 if len(CAPABILITIES) != len(_LIST):
