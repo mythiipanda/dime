@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import math
+from decimal import Decimal
 from enum import StrEnum
 
 from pydantic import BaseModel, ConfigDict, Field, StrictBool, StrictInt, model_validator
@@ -14,6 +16,141 @@ from v2.contracts import (
     VerifiedClaim,
     OutputFinalStatus,
 )
+
+
+_IDENTITY_KEYS = {
+    "player": {"PLAYER_ID", "player_id"},
+    "team": {"TEAM_ID", "team_id"},
+}
+
+
+_VALUE_TOLERANCE = 1e-9
+
+
+def _coerce_number(value):
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, int):
+        return float(value)
+    if isinstance(value, float):
+        return value if math.isfinite(value) else None
+    if isinstance(value, Decimal):
+        try:
+            result = float(value)
+        except (ArithmeticError, ValueError):
+            return None
+        return result if math.isfinite(result) else None
+    return None
+
+
+def _declared_value_matches(declared, selected) -> bool:
+    if declared.kind == "boolean":
+        return isinstance(selected, bool) and selected is declared.value
+    if declared.kind == "string":
+        return isinstance(selected, str) and selected == declared.value
+    if not isinstance(selected, bool) and selected == declared.value:
+        return True
+    target = _coerce_number(selected)
+    if target is None:
+        return False
+    try:
+        if declared.kind == "decimal":
+            wanted = float(Decimal(declared.value))
+        else:
+            wanted = float(declared.value)
+    except (ArithmeticError, ValueError, TypeError):
+        return False
+    if not math.isfinite(wanted):
+        return False
+    scale = max(1.0, abs(target), abs(wanted))
+    return abs(target - wanted) <= _VALUE_TOLERANCE * scale
+
+
+def _row_index(row_selector):
+    prefix = "rows["
+    if not row_selector.startswith(prefix):
+        return None
+    rest = row_selector[len(prefix):]
+    digits, sep, _ = rest.partition("]")
+    if not sep or not digits.isdigit():
+        return None
+    return int(digits)
+
+
+def _reanchor_binding(binding, evidence):
+    from v2.contracts import EvidenceOutputBinding, canonical_entity_id
+    from v2.domain.evidence import iter_values
+    if not isinstance(binding, EvidenceOutputBinding):
+        return None
+    if evidence is None:
+        return None
+    if (binding.row_selector is None or binding.subject_selector is None
+            or binding.subject_entity_id is None
+            or binding.subject_entity_type is None):
+        return None
+    if not isinstance(evidence.rows, list):
+        return None
+    row_root = binding.row_selector
+    claimed = _row_index(row_root)
+    if claimed is None:
+        return None
+    identity_keys = _IDENTITY_KEYS.get(binding.subject_entity_type)
+    if identity_keys is None:
+        return None
+    if binding.subject_selector != f"{row_root}." + binding.subject_selector.rsplit(".", 1)[-1]:
+        return None
+    leaf = binding.subject_selector.rsplit(".", 1)[-1]
+    if leaf not in identity_keys:
+        return None
+    if not (binding.selector.startswith(row_root + ".")
+            or binding.selector.startswith(row_root + "[")):
+        return None
+    subject = canonical_entity_id(
+        binding.subject_entity_type, binding.subject_entity_id)
+    match = None
+    for index, row in enumerate(evidence.rows):
+        if not isinstance(row, dict):
+            continue
+        if leaf not in row or row[leaf] is None:
+            continue
+        if canonical_entity_id(
+                binding.subject_entity_type, str(row[leaf])) == subject:
+            match = index
+            break
+    if match is None or match == claimed:
+        return None
+    new_root = f"rows[{match}]"
+    new_selector = new_root + binding.selector[len(row_root):]
+    new_subject_selector = f"{new_root}.{leaf}"
+    found = [item for item in iter_values(evidence)
+             if item.path == new_selector]
+    if len(found) != 1 or found[0].value is None:
+        return None
+    if not _declared_value_matches(binding.value, found[0].value):
+        return None
+    return binding.model_copy(update={
+        "selector": new_selector,
+        "row_selector": new_root,
+        "subject_selector": new_subject_selector,
+    })
+
+
+def reanchor_verified_claim_bindings(execution, verified_claim):
+    evidence_by_id = {item.evidence_id: item for item in execution.evidence}
+    fixed = []
+    changed = False
+    for binding in verified_claim.output_bindings:
+        candidate = _reanchor_binding(
+            binding, evidence_by_id.get(binding.evidence_id)
+            if hasattr(binding, "evidence_id") else None)
+        if candidate is not None:
+            fixed.append(candidate)
+            changed = True
+        else:
+            fixed.append(binding)
+    if not changed:
+        return verified_claim
+    return verified_claim.model_copy(update={"output_bindings": fixed})
 
 
 class ExecutionErrorCode(StrEnum):
@@ -276,6 +413,7 @@ def admit_verified_claim_bindings(
     calculations = {item.calculation_id: item for item in draft.calculations}
     task_entities = {canonical_entity_ref(item) for item in task.entities}
     league_scoped = bool(task_entities) and all(t == "league" for t, _ in task_entities)
+    verified_claim = reanchor_verified_claim_bindings(execution, verified_claim)
     for binding in verified_claim.output_bindings:
         if isinstance(binding, EvidenceOutputBinding):
             requirement = (evidence_requirements.get(binding.requirement_id)
@@ -342,10 +480,7 @@ def admit_verified_claim_bindings(
                     raise ValueError("binding subject is outside evidence scope")
                 values = [item for item in iter_values(evidence)
                           if item.path == binding.selector]
-                identity_keys = {
-                    "player": {"PLAYER_ID", "player_id"},
-                    "team": {"TEAM_ID", "team_id"},
-                }.get(binding.subject_entity_type)
+                identity_keys = _IDENTITY_KEYS.get(binding.subject_entity_type)
                 if identity_keys is None:
                     raise ValueError("binding subject type lacks identity authority")
                 subject_values = [item.value for item in iter_values(evidence)
@@ -373,22 +508,7 @@ def admit_verified_claim_bindings(
                 raise ValueError("binding selector must locate exactly one value")
             selected = values[0].value
             declared = binding.value
-            if declared.kind == "boolean":
-                equal = isinstance(selected, bool) and selected is declared.value
-            elif declared.kind == "integer":
-                equal = (not isinstance(selected, bool)
-                         and isinstance(selected, int)
-                         and selected == declared.value)
-            elif declared.kind == "float":
-                equal = (isinstance(selected, float)
-                         and selected == declared.value)
-            elif declared.kind == "decimal":
-                from decimal import Decimal
-                equal = (isinstance(selected, Decimal)
-                         and selected == Decimal(declared.value))
-            else:
-                equal = isinstance(selected, str) and selected == declared.value
-            if not equal:
+            if not _declared_value_matches(declared, selected):
                 raise ValueError("binding value does not exactly match selected evidence")
             if binding.evidence_id not in verified_claim.evidence_ids:
                 raise ValueError("binding evidence is not cited by claim")
