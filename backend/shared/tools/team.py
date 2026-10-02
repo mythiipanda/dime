@@ -822,6 +822,39 @@ def _lineup_key(row: dict[str, Any]) -> tuple[int, ...] | None:
     return None
 
 
+_HIST_LINEUP_PAIRS = (
+    ("group_id", "GROUP_ID"), ("group_name", "GROUP_NAME"),
+    ("team_id", "TEAM_ID"), ("team_abbreviation", "TEAM_ABBREVIATION"),
+    ("gp", "GP"), ("min", "MIN"), ("pts", "PTS"),
+    ("plus_minus", "PLUS_MINUS"), ("fga", "FGA"), ("oreb", "OREB"),
+    ("tov", "TOV"), ("fta", "FTA"),
+)
+
+
+def _hist_lineup_rows(team_id: int, season: str) -> list[dict[str, Any]]:
+    try:
+        from .. import store as _store
+        found = _store._read_df(
+            "SELECT group_id, group_name, team_id, team_abbreviation,"
+            " gp, min, pts, plus_minus, fga, oreb, tov, fta"
+            " FROM silver_hist_lineups"
+            " WHERE _season = ? AND team_id = ?"
+            " AND season_type = 'regular-season'"
+            " AND measure_type = 'base' AND per_mode = 'totals'",
+            [season, team_id],
+        )
+    except Exception:
+        return []
+    out: list[dict[str, Any]] = []
+    for r in found or []:
+        try:
+            out.append({upper: r.get(lower)
+                        for lower, upper in _HIST_LINEUP_PAIRS})
+        except Exception:
+            continue
+    return out
+
+
 @tool
 def get_lineups(team_id: str | int, season: str | None = None) -> dict[str, Any]:
     """Five-man lineup stats for one team id, sorted by minutes."""
@@ -833,6 +866,11 @@ def get_lineups(team_id: str | int, season: str | None = None) -> dict[str, Any]
         lambda: nba_stats.lineups(team_id, season), season,
         entity=f"team:{team_id}", ttl_s=TTL_PBPSTATS,
     )
+    if not rows:
+        rows = _hist_lineup_rows(team_id, season)
+        if rows:
+            meta = {**meta, "source": "warehouse",
+                    "coverage": "historical_lineups"}
     for r in rows:
         tier, est = _sample_tier(r.get("MIN"))
         r["SAMPLE_TIER"] = tier

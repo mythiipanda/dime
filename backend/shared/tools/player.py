@@ -2038,10 +2038,14 @@ def get_wowy(
         con = store.connect(read_only=True)
         try:
             tid = coerce_team_id(team_id) if team_id else None
+            lt = "silver_lineups"
+            lx = ""
+            hx = (" AND season_type = 'regular-season'"
+                  " AND measure_type = 'base' AND per_mode = 'totals'")
             if not tid:
                 shared = con.execute(
-                    """
-                    SELECT TEAM_ID, TEAM_ABBREVIATION, COUNT(*) FROM silver_lineups
+                    f"""
+                    SELECT TEAM_ID, TEAM_ABBREVIATION, COUNT(*) FROM {lt}
                     WHERE _season = ?
                       AND GROUP_ID LIKE '%-' || ? || '-%'
                       AND GROUP_ID LIKE '%-' || ? || '-%'
@@ -2051,6 +2055,20 @@ def get_wowy(
                     [season, str(pid_a), str(pid_b)],
                 ).fetchone()
                 if not shared:
+                    lt = "silver_hist_lineups"
+                    lx = hx
+                    shared = con.execute(
+                        f"""
+                        SELECT TEAM_ID, TEAM_ABBREVIATION, COUNT(*) FROM {lt}
+                        WHERE _season = ?{lx}
+                          AND GROUP_ID LIKE '%-' || ? || '-%'
+                          AND GROUP_ID LIKE '%-' || ? || '-%'
+                        GROUP BY TEAM_ID, TEAM_ABBREVIATION
+                        ORDER BY COUNT(*) DESC LIMIT 1
+                        """,
+                        [season, str(pid_a), str(pid_b)],
+                    ).fetchone()
+                if not shared:
                     return {"tool": "get_wowy", "ok": False,
                             "error": f"{raw_a} and {raw_b} never shared "
                                      f"the court in {season}. WOWY needs teammates."}
@@ -2058,14 +2076,26 @@ def get_wowy(
             else:
                 tabbr = str(tid)
                 both = con.execute(
-                    """
-                    SELECT COUNT(*) FROM silver_lineups
-                    WHERE _season = ? AND TEAM_ID = ?
+                    f"""
+                    SELECT COUNT(*) FROM {lt}
+                    WHERE _season = ? AND TEAM_ID = ?{lx}
                       AND GROUP_ID LIKE '%-' || ? || '-%'
                       AND GROUP_ID LIKE '%-' || ? || '-%'
                     """,
                     [season, tid, str(pid_a), str(pid_b)],
                 ).fetchone()
+                if not both or not both[0]:
+                    lt = "silver_hist_lineups"
+                    lx = hx
+                    both = con.execute(
+                        f"""
+                        SELECT COUNT(*) FROM {lt}
+                        WHERE _season = ? AND TEAM_ID = ?{lx}
+                          AND GROUP_ID LIKE '%-' || ? || '-%'
+                          AND GROUP_ID LIKE '%-' || ? || '-%'
+                        """,
+                        [season, tid, str(pid_a), str(pid_b)],
+                    ).fetchone()
                 if not both or not both[0]:
                     return {"tool": "get_wowy", "ok": False,
                             "error": f"{raw_a} and {raw_b} never shared "
@@ -2073,7 +2103,7 @@ def get_wowy(
 
             if tid:
                 df = con.execute(
-                    """
+                    f"""
                     SELECT 
                       CASE 
                         WHEN GROUP_ID LIKE '%-' || ? || '-%' AND GROUP_ID LIKE '%-' || ? || '-%' THEN 'Both ON'
@@ -2086,8 +2116,8 @@ def get_wowy(
                       ROUND(100.0 * SUM(PTS) / NULLIF(SUM(FGA - OREB + TOV + 0.44 * FTA), 0), 2) AS off_rating,
                       ROUND(100.0 * SUM(PTS - PLUS_MINUS) / NULLIF(SUM(FGA - OREB + TOV + 0.44 * FTA), 0), 2) AS def_rating,
                       ROUND(100.0 * SUM(PLUS_MINUS) / NULLIF(SUM(FGA - OREB + TOV + 0.44 * FTA), 0), 2) AS net_rating
-                    FROM silver_lineups
-                    WHERE TEAM_ID = ? AND _season = ?
+                    FROM {lt}
+                    WHERE TEAM_ID = ? AND _season = ?{lx}
                     GROUP BY split
                     ORDER BY minutes DESC
                     """,
@@ -2100,6 +2130,11 @@ def get_wowy(
                     net_str = f"{both_on['net_rating']:+.1f}" if both_on and both_on.get("net_rating") is not None else "N/A"
                     min_val = both_on['minutes'] if both_on else 0
                     verdict = f"{tabbr}: Both on court net rating {net_str} across {min_val} minutes."
+                    meta = {"source": lt, "season": season, "team": tabbr}
+                    if lt != "silver_lineups":
+                        meta["minutes_note"] = (
+                            "minutes are clock minutes from the warehouse "
+                            "lineup table")
                     return {
                         "tool": "get_wowy",
                         "ok": True,
@@ -2108,7 +2143,7 @@ def get_wowy(
                         "player_b": raw_b,
                         "rows": rows,
                         "verdict": verdict,
-                        "meta": {"source": "silver_lineups", "season": season, "team": tabbr},
+                        "meta": meta,
                     }
         except Exception:
             pass

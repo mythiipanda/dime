@@ -4,7 +4,7 @@ from typing import Any
 from langchain_core.tools import tool
 
 from .. import store as _store
-from .team import _lineup_key
+from .team import _hist_lineup_rows, _lineup_key
 from ..sources import nba_stats
 from ._core import MAX_ROWS, TTL_PBPSTATS, _warehouse_or_live, coerce_team_id, last_completed_season, resolve_season
 
@@ -181,6 +181,13 @@ def get_lineup_stats(
         lambda: nba_stats.lineups(team_id, season), season,
         entity=f"team:{team_id}", ttl_s=TTL_PBPSTATS, limit=_ALL_ROWS,
     )
+    hist = False
+    if not rows:
+        rows = _hist_lineup_rows(team_id, season)
+        hist = bool(rows)
+        if hist:
+            meta = {**meta, "source": "warehouse",
+                    "coverage": "historical_lineups"}
     if not rows:
         return {"tool": "get_lineup_stats", "ok": True, "rows": [],
                 "meta": {**meta, "data_note": (
@@ -207,7 +214,10 @@ def get_lineup_stats(
             pf, pa = float(a["pf"]), float(a["pa"])
             poss = off_poss + def_poss
             blowout_share = round(a["blowout"] / poss, 3) if poss else 0.0
-            est_min = round(poss / 2, 1)
+            if hist:
+                est_min = round(float(r.get("MIN") or 0), 1)
+            else:
+                est_min = round(poss / 2, 1)
         else:
             poss = int(round(float(r.get("MIN") or 0) * 2))
             off_poss = def_poss = poss // 2
@@ -231,6 +241,21 @@ def get_lineup_stats(
 
 
     visible = visible[: min(limit, MAX_ROWS)]
+    if hist:
+        minute_note = ("minutes are clock minutes from the warehouse "
+                       "lineup table")
+    elif estimated:
+        minute_note = ("play-level data missing; ratings estimated from "
+                       "lineup minutes")
+    else:
+        minute_note = ("silver_lineups MIN is from a partial upstream "
+                       "fetch, so minutes are estimated as poss/2")
+    if not estimated:
+        data_note = ("play-level possession data (verified against gamelog "
+                     "totals) drives ratings and possession counts; "
+                     + minute_note)
+    else:
+        data_note = minute_note
     meta_out = {**meta,
                 "sample_floor": f"{min_possessions} possessions",
                 "blowout_rule": (f"flagged at {round(BLOWOUT_SHARE_FLAG * 100)}% "
@@ -239,12 +264,6 @@ def get_lineup_stats(
                 "scope": ("ratings per 100 offensive/defensive possessions; "
                           "full-game totals include garbage time unless "
                           "filtered by the blowout flag"),
-                "data_note": (
-                    "play-level possession data (verified against gamelog "
-                    "totals) drives ratings and possession counts; "
-                    "silver_lineups MIN is from a partial upstream fetch, "
-                    "so minutes are estimated as poss/2" if not estimated else
-                    "play-level data missing; ratings estimated from "
-                    "lineup minutes") + (f"; {warning}" if warning else "")}
+                "data_note": data_note + (f"; {warning}" if warning else "")}
     return {"tool": "get_lineup_stats", "ok": True, "rows": visible,
             "best_net_unit": best, "meta": meta_out}
