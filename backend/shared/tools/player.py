@@ -9,6 +9,11 @@ from langchain_core.tools import tool
 from .. import store
 from ..sources import nba_stats
 from ._core import TTL_GAMELOG, TTL_LEADERS, TTL_PBPSTATS, _warehouse_or_live, coerce_player_id, coerce_team_id, last_completed_season, resolve_season
+from .zone import ZONE_KEYS as _HIST_ZONE_KEYS
+from .zone import ZONE_LEGEND as _HIST_ZONE_LEGEND
+from .zone import season_year as _hist_season_year
+from .zone import zone_of as _hist_zone_of
+from .zonedelta import clamp_floor as _clamp_hist_floor
 
 _logger = _logging.getLogger(__name__)
 
@@ -1473,17 +1478,107 @@ _BUCKET_TO_ZONE = {
 }
 
 
+_HIST_THREE_ZONES = frozenset({"corner_3", "atb_3"})
+
+
+def _fold_hist_shots(rows: list[dict[str, Any]], person_id: int) -> tuple[dict, dict, int]:
+    player = {key: [0, 0] for key in _HIST_ZONE_KEYS}
+    league = {key: [0, 0] for key in _HIST_ZONE_KEYS}
+    total = 0
+    for r in rows:
+        zone = _hist_zone_of(r.get("x_legacy"), r.get("y_legacy"), r.get("shot_value", 0))
+        made = str(r.get("shot_result") or "").lower() == "made"
+        slot = league[zone]
+        slot[1] += 1
+        if made:
+            slot[0] += 1
+        try:
+            match = int(r.get("person_id")) == person_id
+        except (TypeError, ValueError):
+            match = False
+        if match:
+            total += 1
+            pslot = player[zone]
+            pslot[1] += 1
+            if made:
+                pslot[0] += 1
+    return player, league, total
+
+
+def _hist_zone_rows(player: dict, league: dict, total: int, floor: int) -> tuple[list, list]:
+    rows: list[dict[str, Any]] = []
+    excluded: list[str] = []
+    for key in _HIST_ZONE_KEYS:
+        m, a = player[key]
+        if a < floor:
+            excluded.append(key)
+            continue
+        lm, la = league[key]
+        threes = m if key in _HIST_THREE_ZONES else 0
+        league_threes = lm if key in _HIST_THREE_ZONES else 0
+        fgp = round(m / a, 3)
+        efg = round((m + 0.5 * threes) / a, 3)
+        league_efg = round((lm + 0.5 * league_threes) / la, 3) if la else 0.0
+        share = round(a / total, 3) if total else 0.0
+        rows.append({"zone": key, "FGM": m, "FGA": a,
+                     "FG_PCT": fgp, "share": share,
+                     "eFG_PCT": efg, "SHARE": share,
+                     "fgm": m, "fga": a, "fg_pct": fgp,
+                     "freq_pct": share,
+                     "LEAGUE_DELTA": round(efg - league_efg, 3)})
+    return rows, excluded
+
+
 @tool
-def get_shot_zones(player_id: str | int, season: str | None = None) -> dict[str, Any]:
+def get_shot_zones(player_id: str | int, season: str | None = None, min_attempts: int = 50) -> dict[str, Any]:
     """Zone splits for one player id: rim, midrange, three with shares.
 
-    Warehouse-first: seeded silver_shots, then seeded silver_zone_splits
+    Warehouse-first: historical silver_hist_shots geometric zones, then
+    seeded silver_shots, then seeded silver_zone_splits
     (basketball-reference distance buckets, league-wide), then live
     shot_chart (fail-fast; endpoint-blocked from datacenter IPs).
+    Zones below min_attempts (default 50, clamped 10..200) are excluded.
     """
     season = resolve_season(season)
     player_id = coerce_player_id(player_id)
     import math
+
+    floor = _clamp_hist_floor(min_attempts)
+    try:
+        hist_year = _hist_season_year(season)
+    except Exception:
+        hist_year = 0
+    if hist_year:
+        try:
+            hist_frame = store.read_frame(
+                "silver_hist_shots", "season = ?", [hist_year])
+        except Exception:
+            hist_frame = None
+        if hist_frame is not None and hist_frame.height > 0:
+            folded_player, folded_league, hist_total = _fold_hist_shots(
+                hist_frame.to_dicts(), player_id)
+            if hist_total > 0:
+                hist_rows, hist_excluded = _hist_zone_rows(
+                    folded_player, folded_league, hist_total, floor)
+                fetched = [str(v) for v in hist_frame.select(
+                    "_fetched_at").to_series().to_list() if v]
+                meta: dict[str, Any] = {
+                    "source": "warehouse:silver_hist_shots",
+                    "fetched_at": max(fetched) if fetched else "unknown",
+                    "rows": len(hist_rows), "season": season,
+                    "cached": True,
+                    "baseline": "silver_hist_shots league zone eFG",
+                    "player_shots": hist_total,
+                    "min_attempts": floor,
+                    "excluded_zones": hist_excluded,
+                    "zones": dict(_HIST_ZONE_LEGEND),
+                }
+                if not hist_rows:
+                    meta["note"] = (
+                        f"player {player_id} has {hist_total} tracked shots "
+                        f"but no zone reaches the {floor}-attempt floor")
+                return {"tool": "get_shot_zones", "ok": True,
+                        "rows": hist_rows, "meta": meta}
 
     res = None
     live_error = ""
@@ -2234,7 +2329,7 @@ async def get_shot_compare(a: str, b: str, season: str | None = None) -> dict[st
         rows.append({"zone": z, "a_eFG": ae, "b_eFG": be,
                      "a_fg": afg, "b_fg": bfg,
                      "a_share": ash, "b_share": bsh, "edge": edge})
-    rim = next((r for r in rows if r["zone"] == "Restricted Area"), None)
+    rim = next((r for r in rows if r["zone"] in ("Restricted Area", "rim")), None)
     if (not rim or rim["a_eFG"] is None or rim["b_eFG"] is None
             or rim["a_share"] is None or rim["b_share"] is None):
         rim_owner = None
