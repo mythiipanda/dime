@@ -2,6 +2,7 @@
 
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import type { Components } from "react-markdown";
 
 
 
@@ -42,7 +43,7 @@ function capTakeaways(body: string): string {
   return [...kept, ...lines.slice(end)].join("\n");
 }
 
-export default function AnswerText({ text }: { text: string }) {
+export default function AnswerText({ text, components }: { text: string; components?: Components }) {
   if (!text) return null;
   let body = capTakeaways(text);
   let coverage: string | null = null;
@@ -137,6 +138,7 @@ export default function AnswerText({ text }: { text: string }) {
               {children}
             </td>
           ),
+          ...components,
         }}
       >
         {body}

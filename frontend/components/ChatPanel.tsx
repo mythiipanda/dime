@@ -14,6 +14,7 @@ import {
 import { RunInfo, appendCachedRun, buildCitation, getModels, getRuns, postChatStream } from "../lib/api";
 import { activityRecordFromEvent, mergeActivityRecord } from "../lib/activity";
 import AnswerText from "./AnswerText";
+import CitedAnswerText from "./CitedAnswerText";
 import { StreamText } from "./StreamText";
 import { ArtifactItem } from "./ArtifactCanvas";
 import DataArtifacts from "./DataArtifacts";
@@ -779,6 +780,8 @@ export default function ChatPanel({ thread, onRunDone, preset, onOpenArtifact, a
                       <div style={{ fontSize: 14, lineHeight: 1.64, color: "var(--color-ink-black)" }}>
                         <StreamText text={m.text} />
                       </div>
+                    ) : m.ai ? (
+                      <CitedAnswerText text={m.text} ai={m.ai} />
                     ) : (
                       <AnswerText text={m.text} />
                     )}

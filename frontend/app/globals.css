@@ -612,3 +612,15 @@ button, input, select, textarea {
 @keyframes onboard-backdrop-in { from { opacity: 0; } }
 @keyframes onboard-panel-in { from { opacity: 0; transform: translateY(8px) scale(.97); } }
 @media (prefers-reduced-motion: reduce) { .onboard-backdrop, .onboard-panel { animation: none; } }
+
+.cite-marker {
+  background: none;
+  border: none;
+  padding: 0 1px;
+  font: inherit;
+  line-height: 1;
+  color: var(--color-warm-gray);
+  cursor: pointer;
+}
+.cite-marker:hover { color: var(--color-ink-black); }
+.cite-marker.is-open { color: var(--color-ink-black); }

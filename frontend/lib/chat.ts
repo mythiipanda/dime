@@ -96,6 +96,16 @@ export interface AiMessage {
     run_id?: string;
     verification?: string;
     verified_claims?: number;
+    output_statuses?: {
+      requirement_kind?: string;
+      requirement_id?: string | null;
+      output_id?: string;
+      status?: string;
+      value?: string;
+      unit?: string;
+      subject_type?: string;
+      subject_id?: string | number | null;
+    }[];
     gaps?: { kind?: string; blocks?: string[] }[];
   };
 }
