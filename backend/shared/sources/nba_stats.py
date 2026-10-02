@@ -73,6 +73,87 @@ def team_gamelog(team_id: int, season: str) -> FetchResult:
     return safe(SOURCE, season, run)
 
 
+PLAYTYPE_TYPES = (
+    "Transition", "Isolation", "PRBallHandler", "PRRollman", "Postup",
+    "Spotup", "Handoff", "Cut", "OffScreen", "OffRebound", "Misc",
+)
+
+PLAYTYPE_SCHEMA = {
+    "subject_kind": pl.String,
+    "subject_id": pl.Int64,
+    "subject_name": pl.String,
+    "team_id": pl.Int64,
+    "team_abbreviation": pl.String,
+    "side": pl.String,
+    "play_type": pl.String,
+    "percentile": pl.Float64,
+    "gp": pl.Int64,
+    "poss_pct": pl.Float64,
+    "ppp": pl.Float64,
+    "fg_pct": pl.Float64,
+    "efg_pct": pl.Float64,
+    "poss": pl.Int64,
+    "pts": pl.Int64,
+    "fgm": pl.Int64,
+    "fga": pl.Int64,
+}
+
+
+def normalize_playtype_frame(df: Any, subject_kind: str,
+                             side: str) -> pl.DataFrame:
+    if getattr(df, "height", 0) == 0:
+        return pl.DataFrame(schema=PLAYTYPE_SCHEMA)
+    id_col = "PLAYER_ID" if subject_kind == "player" else "TEAM_ID"
+    name_col = "PLAYER_NAME" if subject_kind == "player" else "TEAM_NAME"
+    frame = df.with_columns([
+        pl.lit(subject_kind).alias("subject_kind"),
+        pl.col(id_col).cast(pl.Int64).alias("subject_id"),
+        pl.col(name_col).cast(pl.String).alias("subject_name"),
+        pl.col("TEAM_ID").cast(pl.Int64).alias("team_id"),
+        pl.col("TEAM_ABBREVIATION").cast(pl.String).alias(
+            "team_abbreviation"),
+        pl.lit(side).alias("side"),
+        pl.col("PLAY_TYPE").cast(pl.String).alias("play_type"),
+        pl.col("PERCENTILE").cast(pl.Float64).alias("percentile"),
+        pl.col("GP").cast(pl.Int64).alias("gp"),
+        pl.col("POSS_PCT").cast(pl.Float64).alias("poss_pct"),
+        pl.col("PPP").cast(pl.Float64).alias("ppp"),
+        pl.col("FG_PCT").cast(pl.Float64).alias("fg_pct"),
+        pl.col("EFG_PCT").cast(pl.Float64).alias("efg_pct"),
+        pl.col("POSS").cast(pl.Int64).alias("poss"),
+        pl.col("PTS").cast(pl.Int64).alias("pts"),
+        pl.col("FGM").cast(pl.Int64).alias("fgm"),
+        pl.col("FGA").cast(pl.Int64).alias("fga"),
+    ])
+    return frame.select(list(PLAYTYPE_SCHEMA))
+
+
+def synergy_playtypes(season: str, player_or_team: str,
+                      type_grouping: str) -> FetchResult:
+    from nba_api.stats.endpoints import SynergyPlayTypes
+
+    kind = "player" if player_or_team == "P" else "team"
+    side = "offense" if type_grouping == "offensive" else "defense"
+
+    def run() -> pl.DataFrame:
+        import time as _time
+
+        frames = []
+        for play_type in PLAYTYPE_TYPES:
+            ep = SynergyPlayTypes(
+                season=season,
+                player_or_team_abbreviation=player_or_team,
+                type_grouping_nullable=type_grouping,
+                play_type_nullable=play_type,
+                timeout=_t())
+            frames.append(normalize_playtype_frame(
+                _pl(ep.get_data_frames()[0]), kind, side))
+            _time.sleep(0.6)
+        return pl.concat(frames)
+
+    return safe(SOURCE, season, run)
+
+
 def standings(season: str) -> FetchResult:
     from nba_api.stats.endpoints import LeagueStandings
 

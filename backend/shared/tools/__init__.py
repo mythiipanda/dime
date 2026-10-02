@@ -79,6 +79,7 @@ from .headtohead import get_head_to_head
 from .team import get_season_series
 from .gamelog import search_game_logs
 from .splits import get_matchup_splits, get_regression_check
+from .playtypes import get_playtype_profile
 from .streaks import get_streaks
 from .rest import get_rest_advantage
 from .competitive import get_competitive_ratings
@@ -141,6 +142,7 @@ v1_tools: list[BaseTool] = [
     get_splits,
     get_matchup_splits,
     get_regression_check,
+    get_playtype_profile,
     get_scouting_report,
     get_recap,
     text_to_sql,
