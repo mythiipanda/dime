@@ -99,6 +99,22 @@ test("name claims keep the name and skip the stat", () => {
   assert.equal(sources[0].origin, "League leaders, 2024-25 season");
 });
 
+test("tables prefer backend display names", () => {
+  const table = { ...CLAIM_TABLE, display_name: "Net rating" };
+  const sources = evidenceSources(aiWith({}, [table]));
+  assert.equal(sources.length, 1);
+  assert.equal(sources[0].stat, "Net rating");
+});
+
+test("blank display names fall back to local labels", () => {
+  const blank = { ...CLAIM_TABLE, display_name: "" };
+  const numeric = { ...CLAIM_TABLE, display_name: 42 };
+  const sources = evidenceSources(aiWith({}, [blank, numeric]));
+  assert.equal(sources.length, 2);
+  assert.equal(sources[0].stat, "points per 100 possessions");
+  assert.equal(sources[1].stat, "points per 100 possessions");
+});
+
 test("sources never leak machine ids", () => {
   const sources = evidenceSources(aiWith({}, [CLAIM_TABLE, NAME_TABLE]));
   const joined = JSON.stringify(sources);

@@ -305,6 +305,12 @@ function statText(outputId: string, unit: unknown): string {
   return statLabel(outputId);
 }
 
+function displayStat(outputId: string, unit: unknown, table: Record<string, unknown>): string {
+  const name = table.display_name;
+  if (typeof name === "string" && name.trim()) return name.trim();
+  return statText(outputId, unit);
+}
+
 function tableSource(table: unknown, index: number): EvidenceSource | null {
   if (!isRecord(table)) return null;
   const t = table as Record<string, unknown>;
@@ -316,7 +322,7 @@ function tableSource(table: unknown, index: number): EvidenceSource | null {
       key: "claim-" + index,
       index,
       subject: subjectName(t.subject_type, t.subject_id),
-      stat: statText(outputId, t.unit),
+      stat: displayStat(outputId, t.unit, t),
       value,
       origin: originText(t.provenance),
     };
