@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { getToday, getWatchlist } from "../lib/api";
+import type { TodayMover, TeamStreak, WatchItem } from "../lib/api";
 import { buildFeedExpansion, feedActionFor, type FeedExpansion, type FeedItem } from "../lib/exploreFeed";
 import type { ExploreContext } from "../lib/exploreSearch";
 import Skeleton from "./Skeleton";
@@ -26,28 +27,29 @@ export default function ExploreFeed({
 
   useEffect(() => {
     let live = true;
-    
-    
-
-
+    let base: { movers: TodayMover[]; streaks: TeamStreak[] } | null = null;
+    let watchlist: WatchItem[] | null = null;
+    const render = () => {
+      if (!base) return;
+      setFeed(buildFeedExpansion(watchlist ? { ...base, watchlist } : base));
+      setExpanded(false);
+    };
     getToday()
       .then((today) => {
         if (!live) return;
-        const base = { movers: today.movers, streaks: today.streaks };
-        setFeed(buildFeedExpansion(base));
-        setExpanded(false);
-        getWatchlist()
-          .then((watch) => {
-            if (live) {
-              setFeed(buildFeedExpansion({ ...base, watchlist: watch }));
-              setExpanded(false);
-            }
-          })
-          .catch(() => {});
+        base = { movers: today.movers, streaks: today.streaks };
+        render();
       })
       .catch(() => {
         if (live) setFeed({ visible: [], extra: [], total: 0 });
       });
+    getWatchlist()
+      .then((watch) => {
+        if (!live) return;
+        watchlist = watch;
+        render();
+      })
+      .catch(() => {});
     return () => {
       live = false;
     };
