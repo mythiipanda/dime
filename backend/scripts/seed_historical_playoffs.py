@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import time
 from pathlib import Path
 import sys
 
@@ -18,7 +19,6 @@ SEASON = "2023-24"
 END_YEAR = 2024
 SEASON_ID = "22023"
 SOURCE = "sportsdataverse"
-PROGRESS_FILE = Path(__file__).with_name("seed_2023_24_playoffs_progress.json")
 
 TEAM_COLS = [
     "SEASON_ID", "TEAM_ID", "TEAM_ABBREVIATION", "TEAM_NAME", "GAME_ID",
@@ -84,48 +84,70 @@ def seed_all_team_rows() -> dict[str, int]:
             for end_year in seasons}
 
 
-def player_ids(con) -> list[int]:
+def player_ids(con, end_year: int = END_YEAR) -> list[int]:
     return [int(row[0]) for row in con.execute(
         """SELECT DISTINCT player_id FROM silver_hist_player_seasons
-        WHERE season = ? AND player_id IS NOT NULL ORDER BY player_id""",
-        [END_YEAR],
+        WHERE season = ? AND player_id IS NOT NULL
+        AND team_abbreviation IN (
+            SELECT DISTINCT team_abbreviation FROM silver_hist_gamelogs
+            WHERE season = ? AND season_type = 'playoffs')
+        ORDER BY player_id""",
+        [end_year, end_year],
     ).fetchall()]
 
 
-def _progress() -> dict:
-    if PROGRESS_FILE.exists():
-        return json.loads(PROGRESS_FILE.read_text())
+def _progress_file(season: str) -> Path:
+    return Path(__file__).with_name(f"seed_{season.replace('-', '_')}_playoffs_progress.json")
+
+
+def _progress(season: str = SEASON) -> dict:
+    path = _progress_file(season)
+    if path.exists():
+        return json.loads(path.read_text())
     return {"done": [], "failed": {}}
 
 
-def seed_player_rows(limit: int | None = None) -> dict[str, int]:
+def seed_player_rows(season: str = SEASON, limit: int | None = None) -> dict[str, int]:
+    end_year = int(season.split("-")[0]) + 1
     con = store.connect()
     try:
-        ids = player_ids(con)
+        ids = player_ids(con, end_year)
     finally:
         con.close()
     if limit is not None:
         ids = ids[:limit]
-    progress = _progress()
+    progress = _progress(season)
     done = {int(value) for value in progress.get("done", [])}
     failed = dict(progress.get("failed", {}))
     counts = {"players": 0, "rows": 0, "failed": 0}
+    consecutive_failures = 0
     for player_id in ids:
         if player_id in done:
             continue
-        result = nba_stats.player_playoff_gamelog(player_id, SEASON)
+        try:
+            result = nba_stats.player_playoff_gamelog(player_id, season)
+        except Exception as exc:
+            failed[str(player_id)] = str(exc)[:300] or "fetch raised"
+            counts["failed"] += 1
+            consecutive_failures += 1
+            if consecutive_failures >= 10:
+                break
+            continue
         if not result.ok:
             failed[str(player_id)] = result.error or "empty upstream response"
             counts["failed"] += 1
+            consecutive_failures += 1
+            if consecutive_failures >= 10:
+                progress = {"done": sorted(done), "failed": failed}
+                _progress_file(season).write_text(json.dumps(progress, indent=1))
+                break
         else:
             frame = result.frame
             if frame.height:
-
-
                 saved = store.save_frame(
                     "silver_playoff_gamelogs",
                     FetchResult(frame=frame, meta=FetchMeta(
-                        source=result.meta.source, season=SEASON,
+                        source=result.meta.source, season=season,
                         fetched_at=result.meta.fetched_at)),
                     entity=f"player:{player_id}",
                 )
@@ -133,19 +155,21 @@ def seed_player_rows(limit: int | None = None) -> dict[str, int]:
             done.add(player_id)
             failed.pop(str(player_id), None)
             counts["players"] += 1
+            consecutive_failures = 0
         progress = {"done": sorted(done), "failed": failed}
-        PROGRESS_FILE.write_text(json.dumps(progress, indent=1))
+        _progress_file(season).write_text(json.dumps(progress, indent=1))
+        time.sleep(0.6)
     return counts
 
 
-def check() -> dict[str, int]:
+def check(season: str = SEASON) -> dict[str, int]:
     con = store.connect(read_only=True)
     try:
         tables = {row[0] for row in con.execute("SHOW TABLES").fetchall()}
         out = {}
         for table in ("silver_playoffs", "silver_playoff_gamelogs"):
             out[table] = (con.execute(
-                f"SELECT COUNT(*) FROM {table} WHERE _season = ?", [SEASON]
+                f"SELECT COUNT(*) FROM {table} WHERE _season = ?", [season]
             ).fetchone()[0] if table in tables else 0)
         return out
     finally:
@@ -163,7 +187,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.limit is not None and args.limit < 1:
         parser.error("--limit must be >= 1")
     if args.check:
-        counts = check()
+        counts = check(args.season)
         print(json.dumps(counts, sort_keys=True))
         return 0 if all(counts.values()) else 1
     if args.all_team_seasons:
@@ -178,9 +202,7 @@ def main(argv: list[str] | None = None) -> int:
         parser.error("--season must use consecutive YYYY-YY format")
     print(f"silver_playoffs: wrote {seed_team_rows(end_year)} rows")
     if not args.team_only:
-        if args.season != SEASON:
-            parser.error("player promotion is currently supported only for 2023-24")
-        print(json.dumps(seed_player_rows(args.limit), sort_keys=True))
+        print(json.dumps(seed_player_rows(args.season, args.limit), sort_keys=True))
     return 0
 
 
