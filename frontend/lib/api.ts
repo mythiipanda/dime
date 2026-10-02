@@ -83,8 +83,20 @@ export interface MoversRows {
   new_entries: NewEntry[];
 }
 
+const ENVELOPE_TTL_MS = 60_000;
+const envelopeCache = new Map<string, { at: number; data: unknown }>();
+
+function bustEnvelopeCache(fragment: string) {
+  for (const key of [...envelopeCache.keys()]) {
+    if (key.includes(fragment)) envelopeCache.delete(key);
+  }
+}
+
 async function getEnvelope<T>(path: string): Promise<T> {
-  const res = await fetch(`${BACKEND}${path}`);
+  const url = `${BACKEND}${path}`;
+  const hit = envelopeCache.get(url);
+  if (hit && Date.now() - hit.at < ENVELOPE_TTL_MS) return hit.data as T;
+  const res = await fetch(url);
   if (!res.ok) throw new Error(`request failed: ${res.status}`);
   const data = (await res.json()) as {
     ok?: boolean;
@@ -92,7 +104,9 @@ async function getEnvelope<T>(path: string): Promise<T> {
     error?: string;
   };
   if (data && data.ok === false) throw new Error(data.error || "request failed");
-  return (data.rows ?? []) as T;
+  const rows = (data.rows ?? []) as T;
+  envelopeCache.set(url, { at: Date.now(), data: rows });
+  return rows;
 }
 
 export function getToday(season = SEASON): Promise<TodayRows> {
@@ -124,6 +138,7 @@ export async function addWatchlist(
     error?: string;
   };
   if (data && data.ok === false) throw new Error(data.error || "add failed");
+  bustEnvelopeCache("/watchlist");
   return Boolean(data.rows?.added);
 }
 
@@ -142,6 +157,7 @@ export async function removeWatchlist(
     error?: string;
   };
   if (data && data.ok === false) throw new Error(data.error || "remove failed");
+  bustEnvelopeCache("/watchlist");
   return Boolean(data.rows?.removed);
 }
 
