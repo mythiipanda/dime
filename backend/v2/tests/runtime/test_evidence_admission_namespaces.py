@@ -198,3 +198,66 @@ def test_absent_subject_still_rejected():
     binding = _team_binding(envelope, "NYK")
     with pytest.raises(ValueError):
         _admit(_team_task(), envelope, "ratings", binding)
+
+
+def _two_team_rows():
+    return [
+        {
+            "TEAM_ID": 1610612737,
+            "TEAM_NAME": "Atlanta Hawks",
+            "TEAM": "ATL",
+            "GP": 82,
+            "W": 40,
+            "L": 42,
+            "OFF_RATING": 115.0,
+            "DEF_RATING": 116.5,
+            "NET_RATING": -1.5,
+            "PACE": 100.0,
+        },
+        {
+            "TEAM_ID": 1610612738,
+            "TEAM_NAME": "Boston Celtics",
+            "TEAM": "BOS",
+            "GP": 82,
+            "W": 61,
+            "L": 21,
+            "OFF_RATING": 120.0,
+            "DEF_RATING": 111.7,
+            "NET_RATING": 8.3,
+            "PACE": 99.0,
+        },
+    ]
+
+
+def _team_binding_at(envelope, subject_id, index, value):
+    return EvidenceOutputBinding(
+        requirement_kind="evidence",
+        requirement_id="ratings",
+        output_id="NET_RATING",
+        node_id="ratings",
+        evidence_id=envelope.evidence_id,
+        selector=f"rows[{index}].NET_RATING",
+        row_selector=f"rows[{index}]",
+        value={"kind": "float", "value": value},
+        subject_entity_type="team",
+        subject_entity_id=subject_id,
+        subject_selector=f"rows[{index}].TEAM_ID",
+        unit={"kind": "declared", "value": "points_per_100_possessions"},
+        domain="team_ratings",
+    )
+
+
+def test_first_row_default_binding_with_team_subject_rejects_on_row_mismatch():
+    import pytest
+
+    envelope = _build(_two_team_rows(), "team_ratings", {"season": "2024-25"})
+    binding = _team_binding_at(envelope, "BOS", 0, -1.5)
+    with pytest.raises(ValueError, match="binding selector row does not match subject"):
+        _admit(_team_task(), envelope, "ratings", binding)
+
+
+def test_subject_matching_nonfirst_row_binding_admits():
+    envelope = _build(_two_team_rows(), "team_ratings", {"season": "2024-25"})
+    binding = _team_binding_at(envelope, "BOS", 1, 8.3)
+    admitted = _admit(_team_task(), envelope, "ratings", binding)
+    assert admitted.output_bindings[0].value.value == 8.3
