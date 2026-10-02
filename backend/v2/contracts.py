@@ -579,10 +579,10 @@ class EvidenceOutputBinding(BaseModel):
 
     @model_validator(mode="after")
     def validate_scope(self) -> "EvidenceOutputBinding":
+        if self.requirement_kind == "task" and self.requirement_id is not None:
+            return self.model_copy(update={"requirement_id": None})
         if self.requirement_kind == "evidence" and self.requirement_id is None:
             raise ValueError("evidence binding requires requirement id")
-        if self.requirement_kind == "task" and self.requirement_id is not None:
-            raise ValueError("task binding cannot name requirement id")
         subject_fields = (self.subject_entity_type, self.subject_entity_id,
                           self.subject_selector, self.row_selector)
         if any(value is None for value in subject_fields) and any(

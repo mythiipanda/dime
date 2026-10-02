@@ -252,3 +252,203 @@ def test_player_name_output_binds_leader_row(warehouse):
         output_bindings=bindings)
     assert admit_verified_claim_bindings(
         task, execution, draft, candidate) is candidate
+
+
+def test_task_scoped_binding_with_requirement_id_stays_task_scoped():
+    from v2.contracts import EvidenceOutputBinding
+    binding = EvidenceOutputBinding.model_validate({
+        "requirement_kind": "task",
+        "requirement_id": "assist_leader_2024_25",
+        "output_id": "AST",
+        "node_id": "assist_leader_2024_25",
+        "evidence_id": "qualified_leaders:0123456789abcdef",
+        "selector": "rows[0].AST",
+        "value": {"kind": "integer", "value": 880},
+        "unit": {"kind": "declared", "value": "count"},
+        "domain": "qualified_leaders",
+    })
+    assert binding.requirement_kind == "task"
+    assert binding.requirement_id is None
+
+
+def test_synthesizer_keeps_task_scoped_llm_bindings(warehouse):
+    import asyncio
+    import json
+    from pydantic import TypeAdapter
+    from v2.adapters.models import ModelSynthesizer
+    from v2.contracts import (
+        Claim, ClaimKind, DraftReport, EvidenceRequirement,
+        SeasonRef, TaskSpec,
+    )
+    envelope = call_capability(
+        "qualified_leaders",
+        {"stat_category": "AST", "season": SEASON})
+    assert envelope.rows[0]["AST"] == 880
+    task = TaskSpec(
+        goal="Identify the player who led the NBA in assists during "
+             "the 2024-25 season and report their assist total.",
+        mode="quick",
+        deliverable="The name of the assist leader for the 2024-25 NBA "
+                    "season and their total number of assists.",
+        metric_ids=["AST"],
+        requested_outputs=["PLAYER_NAME", "AST"],
+        season=SeasonRef(value=SEASON, source="user", confidence=1.0),
+        requirements=[EvidenceRequirement(
+            id="assist_leader_2024_25",
+            description="Identify the player who led the NBA in assists "
+                        "during the 2024-25 season and report their total.",
+            capability_options=["qualified_leaders"],
+            capability_arguments={
+                "stat_category": "AST", "season": SEASON,
+                "min_attempts": 0, "ranking_direction": "desc"},
+            metric_ids=["AST"],
+            requested_outputs=["PLAYER_NAME", "AST"])])
+
+    class StubModel:
+        async def generate(self, **call):
+            schema = call["schema"]
+            evidence_id = call["payload"]["evidence"][0]["evidence_id"]
+            draft = {
+                "sections": ["Assists leader"],
+                "claims": [{
+                    "text": "Trae Young led the NBA with 880 assists in "
+                            "76 games in 2024-25.",
+                    "kind": "observed",
+                    "evidence_ids": [evidence_id],
+                    "output_bindings": [
+                        {"requirement_kind": "task",
+                         "requirement_id": "assist_leader_2024_25",
+                         "output_id": "AST",
+                         "node_id": "assist_leader_2024_25",
+                         "evidence_id": evidence_id,
+                         "selector": "rows[0].AST",
+                         "value": {"kind": "integer", "value": 880},
+                         "unit": {"kind": "declared", "value": "count"},
+                         "domain": "qualified_leaders"},
+                        {"requirement_kind": "task",
+                         "requirement_id": "assist_leader_2024_25",
+                         "output_id": "PLAYER_NAME",
+                         "node_id": "assist_leader_2024_25",
+                         "evidence_id": evidence_id,
+                         "selector": "rows[0].PLAYER_NAME",
+                         "value": {"kind": "string",
+                                   "value": "Trae Young"},
+                         "unit": {"kind": "unitless"},
+                         "domain": "qualified_leaders"},
+                    ],
+                }],
+                "calculations": [],
+                "blocked_calculation_requirement_ids": [],
+                "gaps": [],
+            }
+            return TypeAdapter(schema).validate_json(json.dumps(draft))
+
+    synth = ModelSynthesizer(
+        StubModel(), provider="gemini",
+        model_name="gemini-3.5-flash-lite")
+    draft = asyncio.run(synth.synthesize(task, [envelope]))
+    assert draft.claims[0].text.startswith("Trae Young led the NBA")
+    assert [binding.requirement_id
+            for binding in draft.claims[0].output_bindings] == [None, None]
+    assert [binding.output_id
+            for binding in draft.claims[0].output_bindings] == [
+                "AST", "PLAYER_NAME"]
+
+
+def test_task_scoped_claim_verifies_and_admits(warehouse):
+    from v2.contracts import (
+        Claim, ClaimKind, DraftReport, EvidenceOutputBinding,
+        EvidenceRequirement, Plan, PlanNode, PlanStatus,
+        SeasonRef, TaskSpec, VerifiedClaim,
+    )
+    from v2.runtime.models import (
+        ExecutionResult, admit_verified_claim_bindings,
+    )
+    from v2.runtime.verifier import verify_mechanical
+    envelope = call_capability(
+        "qualified_leaders",
+        {"stat_category": "AST", "season": SEASON})
+    assert envelope.rows[0]["PLAYER_NAME"] == "Trae Young"
+    task = TaskSpec(
+        goal="Identify the player who led the NBA in assists during "
+             "the 2024-25 season and report their assist total.",
+        mode="quick",
+        deliverable="The name of the assist leader for the 2024-25 NBA "
+                    "season and their total number of assists.",
+        metric_ids=["AST"],
+        requested_outputs=["PLAYER_NAME", "AST"],
+        season=SeasonRef(value=SEASON, source="user", confidence=1.0),
+        requirements=[EvidenceRequirement(
+            id="assist_leader_2024_25",
+            description="Identify the player who led the NBA in assists "
+                        "during the 2024-25 season and report their total.",
+            capability_options=["qualified_leaders"],
+            capability_arguments={
+                "stat_category": "AST", "season": SEASON,
+                "min_attempts": 0, "ranking_direction": "desc"},
+            metric_ids=["AST"],
+            requested_outputs=["PLAYER_NAME", "AST"])])
+    plan = Plan(nodes=[PlanNode(
+        id="leader", description="Fetch 2024-25 assists leaderboard",
+        capability_hints=["qualified_leaders"],
+        covers_requirement_ids=["assist_leader_2024_25"],
+        arguments={"stat_category": "AST", "season": SEASON},
+        status=PlanStatus.COMPLETE)])
+    execution = ExecutionResult(
+        plan=plan, evidence_by_node={"leader": envelope},
+        attempts={"leader": 1})
+    bindings = [
+        EvidenceOutputBinding(
+            requirement_kind="task",
+            requirement_id=None, output_id="AST",
+            node_id="leader", evidence_id=envelope.evidence_id,
+            selector="rows[0].AST",
+            value={"kind": "integer", "value": 880},
+            unit={"kind": "declared", "value": "count"},
+            domain="qualified_leaders"),
+        EvidenceOutputBinding(
+            requirement_kind="task",
+            requirement_id=None, output_id="PLAYER_NAME",
+            node_id="leader", evidence_id=envelope.evidence_id,
+            selector="rows[0].PLAYER_NAME",
+            value={"kind": "string", "value": "Trae Young"},
+            unit={"kind": "unitless"},
+            domain="qualified_leaders"),
+    ]
+    claim = Claim(
+        text="Trae Young led the NBA with 880 assists in 76 games "
+             "in 2024-25.",
+        kind=ClaimKind.OBSERVED, evidence_ids=[envelope.evidence_id],
+        output_bindings=bindings)
+    draft = DraftReport(sections=["Assists leader"], claims=[claim], gaps=[])
+    report = verify_mechanical(task, draft, [envelope])
+    assert report.claim_results[0].supported is True
+    candidate = VerifiedClaim(
+        claim_index=0, claim=claim, evidence_ids=[envelope.evidence_id],
+        sources=[{"evidence_id": envelope.evidence_id,
+                  "source": envelope.source,
+                  "capability": envelope.capability,
+                  "observed_at": envelope.observed_at,
+                  "as_of": envelope.as_of,
+                  "vintages": dict(envelope.vintages)}],
+        output_bindings=bindings)
+    assert admit_verified_claim_bindings(
+        task, execution, draft, candidate) is candidate
+
+
+def test_planner_wire_entries_validate_without_null_value_slot():
+    from v2.arguments import ProviderWireArguments, provider_to_source
+    wire = ProviderWireArguments.model_validate({
+        "entries": [
+            {"key": "ranking_direction", "kind": "string",
+             "string_value": ""},
+            {"key": "requested_metric", "kind": "string",
+             "string_value": ""},
+            {"key": "season", "kind": "string",
+             "string_value": "2024-25"},
+            {"key": "team", "kind": "string", "string_value": "BOS"},
+        ]})
+    assert provider_to_source(
+        wire, "planner", capability_id="team_ratings") == {
+            "ranking_direction": "", "requested_metric": "",
+            "season": "2024-25", "team": "BOS"}
