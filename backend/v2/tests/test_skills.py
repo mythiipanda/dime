@@ -12,6 +12,7 @@ def test_builtin_catalog_is_agent_skills_metadata_only():
         "trade-analysis", "injury-impact", "player-comparison",
         "league-ratings", "playoff-translation",
         "defensive-analysis", "team-offense", "leaderboard",
+        "matchup-brief",
         "followup-correction", "schedule-rest", "draft-prospects",
         "in-progress-games", "odds-lines",
     }
