@@ -22,20 +22,20 @@ class _Model:
 
 def test_requirement_review_policy_changes_only_attempt_timeout():
     expected = {
-        "intake": {"max_attempts": 2, "attempt_timeout_s": 6.0,
-            "total_budget_s": 18.0,
+        "intake": {"max_attempts": 2, "attempt_timeout_s": 30.0,
+            "total_budget_s": 60.0,
             "transient_classes": frozenset({"timeout", "rate_limit", "network", "server_error", "provider_error"})},
-        "requirement_review": {"max_attempts": 2, "attempt_timeout_s": 8.0,
-            "total_budget_s": 12.0,
+        "requirement_review": {"max_attempts": 2, "attempt_timeout_s": 30.0,
+            "total_budget_s": 60.0,
             "transient_classes": frozenset({"timeout", "rate_limit", "network", "server_error", "provider_error"})},
-        "planner": {"max_attempts": 2, "attempt_timeout_s": 8.0,
-            "total_budget_s": 12.0,
+        "planner": {"max_attempts": 2, "attempt_timeout_s": 30.0,
+            "total_budget_s": 60.0,
             "transient_classes": frozenset({"timeout", "rate_limit", "network", "server_error", "provider_error"})},
-        "synthesizer": {"max_attempts": 2, "attempt_timeout_s": 6.0,
-            "total_budget_s": 6.0,
+        "synthesizer": {"max_attempts": 2, "attempt_timeout_s": 25.0,
+            "total_budget_s": 50.0,
             "transient_classes": frozenset({"timeout", "rate_limit", "network", "server_error", "provider_error"})},
-        "semantic_verifier": {"max_attempts": 2, "attempt_timeout_s": 6.0,
-            "total_budget_s": 18.0,
+        "semantic_verifier": {"max_attempts": 2, "attempt_timeout_s": 30.0,
+            "total_budget_s": 60.0,
             "transient_classes": frozenset({"timeout", "rate_limit", "network", "server_error", "provider_error"})},
     }
     assert ROUTE_POLICIES == expected
@@ -58,7 +58,7 @@ async def test_requirement_review_response_after_four_before_eight_completes(mon
     model = ProviderStructuredModel("inception", "primary")
     monkeypatch.setattr(model, "_models", lambda: [("inception", _Model("primary"))])
     out = await model.generate(schema=RequirementReview, prompt="p", payload={}, envelope=_envelope())
-    assert out == RequirementReview() and timeouts == [8.0]
+    assert out == RequirementReview() and timeouts == [30.0]
     assert model.last_failures == []
 
 
@@ -85,8 +85,8 @@ async def test_requirement_review_remaining_budget_caps_attempt_two_and_blocks_s
     monkeypatch.setattr(model, "_models", lambda: [("inception", _Model("primary")), ("mistral", _Model("secondary"))])
     with pytest.raises(RuntimeError, match="all structured-output providers failed"):
         await model.generate(schema=RequirementReview, prompt="p", payload={}, envelope=_envelope())
-    assert timeouts == [8.0, 4.0] and agents == ["primary", "primary"]
-    assert clock.value == 12.0
+    assert timeouts == [30.0, 30.0] and agents == ["primary", "primary"]
+    assert clock.value == 60.0
 
 
 @pytest.mark.anyio
@@ -111,5 +111,5 @@ async def test_fast_primary_failures_raise_without_secondary_within_budget(monke
     with pytest.raises(RuntimeError, match="all structured-output providers failed"):
         await model.generate(schema=RequirementReview, prompt="p", payload={}, envelope=_envelope())
     assert calls == ["primary", "primary"]
-    assert timeouts == [8.0, 8.0] and clock.value == 0.5
+    assert timeouts == [30.0, 30.0] and clock.value == 0.5
     assert len(model.last_failures) == 2

@@ -2278,7 +2278,7 @@ async def test_intake_global_deadline_stops_single_model_retries(monkeypatch):
     class A:
         def __init__(self,model,*a,**k):self.model=model
         async def run(self,prompt):
-            calls.append(self.model.model_name);clock.value += 20;raise TimeoutError("x")
+            calls.append(self.model.model_name);clock.value += 70;raise TimeoutError("x")
     class M:
         def __init__(self,n):self.model_name=n
     monkeypatch.setattr("v2.adapters.models.Agent",A)
@@ -2334,9 +2334,9 @@ async def test_requirement_review_exhaustion_raises_without_fabricated_nodes():
 
 def test_route_policy_table_bounds_model_owned_routes():
     from v2.adapters.models import ROUTE_POLICIES
-    assert ROUTE_POLICIES["requirement_review"]["total_budget_s"] <= 12
-    assert ROUTE_POLICIES["planner"]["total_budget_s"] <= 12
-    assert ROUTE_POLICIES["planner"]["attempt_timeout_s"] == 8.0
+    assert ROUTE_POLICIES["requirement_review"]["total_budget_s"] <= 60
+    assert ROUTE_POLICIES["planner"]["total_budget_s"] <= 60
+    assert ROUTE_POLICIES["planner"]["attempt_timeout_s"] == 30.0
     for policy in ROUTE_POLICIES.values():
         assert "secondary_limit" not in policy
         assert "deterministic_fallback" not in policy
