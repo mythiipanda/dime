@@ -931,7 +931,7 @@ def _completed_season_totals(stat_category, season, order="DESC"):
                 "teamTricode", column, "comment", "_season"} <= columns:
             return None
         raw = con.execute(
-            "SELECT firstName || ' ' || familyName AS PLAYER, "
+            "SELECT PLAYER_ID, firstName || ' ' || familyName AS PLAYER, "
             "MODE(teamTricode) AS TEAM, "
             "COUNT(DISTINCT GAME_ID) AS GP, "
             f"SUM({column}) AS TOTAL "
@@ -946,8 +946,8 @@ def _completed_season_totals(stat_category, season, order="DESC"):
     if not raw:
         return None
     rows = [
-        {"RANK": index, "PLAYER": row[0], "TEAM": row[1],
-         "GP": row[2], stat_category: row[3]}
+        {"RANK": index, "PLAYER_ID": row[0], "PLAYER": row[1], "TEAM": row[2],
+         "GP": row[3], stat_category: row[4], "PLAYER_NAME": row[1]}
         for index, row in enumerate(raw, 1)
     ]
     meta = {
