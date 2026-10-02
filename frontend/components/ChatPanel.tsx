@@ -7,6 +7,7 @@ import {
   ModelOption,
   NodeName,
   ToolResult,
+  createStreamBatcher,
   emptyNode,
   isFailureFinal,
 } from "../lib/chat";
@@ -477,34 +478,32 @@ export default function ChatPanel({ thread, onRunDone, preset, onOpenArtifact, a
         return copy;
       });
     };
+    const batcher = createStreamBatcher((events) => {
+      for (const event of events) {
+        if (event.type === "final_answer") {
+          const d = event.data as Record<string, unknown>;
+          if (typeof d.run_id === "string" && d.run_id) {
+            runId = d.run_id;
+          } else {
+            const carry = d.carry as Record<string, unknown> | undefined;
+            if (carry && typeof carry.run_id === "string" && carry.run_id) {
+              runId = carry.run_id;
+            }
+          }
+        }
+        ai = applyEvent(ai, event.type, event.data);
+      }
+      push();
+    });
     await postChatStream(
       q,
       model,
       {
         onEvent: (type, data) => {
-          if (type === "final_answer") {
-            
-            
-            
-            
-
-
-
-
-            const d = data as Record<string, unknown>;
-            if (typeof d.run_id === "string" && d.run_id) {
-              runId = d.run_id;
-            } else {
-              const carry = d.carry as Record<string, unknown> | undefined;
-              if (carry && typeof carry.run_id === "string" && carry.run_id) {
-                runId = carry.run_id;
-              }
-            }
-          }
-          ai = applyEvent(ai, type, data);
-          push();
+          batcher.push(type, data);
         },
         onDone: () => {
+          batcher.flush();
           setBusy(false);
           stopTimer();
           
@@ -524,6 +523,7 @@ export default function ChatPanel({ thread, onRunDone, preset, onOpenArtifact, a
           onRunDone();
         },
         onError: (message) => {
+          batcher.flush();
           ai = { ...ai, error: message, done: true };
           push();
           setBusy(false);

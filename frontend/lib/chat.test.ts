@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { isFailureFinal } from "./chat";
+import { createStreamBatcher, isFailureFinal } from "./chat";
 
 
 
@@ -114,4 +114,69 @@ test("zero verified claims is a failure even with other text", () => {
 test("empty final is a failure", () => {
   assert.equal(isFailureFinal("", undefined), true);
   assert.equal(isFailureFinal("   ", { verified_claims: 5 }), true);
+});
+
+function manualScheduler() {
+  const pending: (() => void)[] = [];
+  return {
+    pending,
+    schedule: (flush: () => void) => {
+      pending.push(flush);
+    },
+    run: () => {
+      while (pending.length) pending.shift()!();
+    },
+  };
+}
+
+test("stream batcher coalesces rapid pushes into one ordered flush", () => {
+  const sched = manualScheduler();
+  const flushed: { type: string; data: unknown }[][] = [];
+  const batcher = createStreamBatcher(
+    (events) => flushed.push(events),
+    sched.schedule,
+  );
+  batcher.push("node_update", { node: "tools" });
+  batcher.push("tool_call", { name: "tool" });
+  batcher.push("tool_result", { status: "ok" });
+  assert.equal(flushed.length, 0);
+  sched.run();
+  assert.equal(flushed.length, 1);
+  assert.deepEqual(
+    flushed[0].map((e) => e.type),
+    ["node_update", "tool_call", "tool_result"],
+  );
+  assert.deepEqual(flushed[0][1], { type: "tool_call", data: { name: "tool" } });
+});
+
+test("stream batcher flushes synchronously on terminal events", () => {
+  const sched = manualScheduler();
+  const flushed: string[][] = [];
+  const batcher = createStreamBatcher(
+    (events) => flushed.push(events.map((e) => e.type)),
+    sched.schedule,
+  );
+  batcher.push("node_update", {});
+  batcher.push("final_answer", { text: "done" });
+  assert.deepEqual(flushed, [["node_update", "final_answer"]]);
+  assert.equal(sched.pending.length, 1);
+  sched.run();
+  assert.equal(flushed.length, 1);
+});
+
+test("stream batcher manual flush drains and scheduled flush becomes a no-op", () => {
+  const sched = manualScheduler();
+  let calls = 0;
+  const batcher = createStreamBatcher(
+    () => calls++,
+    sched.schedule,
+  );
+  batcher.push("node_update", {});
+  batcher.flush();
+  assert.equal(calls, 1);
+  assert.equal(batcher.size(), 0);
+  sched.run();
+  assert.equal(calls, 1);
+  batcher.flush();
+  assert.equal(calls, 1);
 });

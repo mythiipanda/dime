@@ -118,6 +118,53 @@ export interface ModelsResponse {
   available: Record<string, boolean>;
 }
 
+export interface BatchedStreamEvent {
+  type: string;
+  data: unknown;
+}
+
+export interface StreamBatcher {
+  push: (type: string, data: unknown) => void;
+  flush: () => void;
+  size: () => number;
+}
+
+export const TERMINAL_STREAM_EVENTS = ["final_answer", "graph_end", "error"];
+
+export function createStreamBatcher(
+  onFlush: (events: BatchedStreamEvent[]) => void,
+  schedule: (flush: () => void) => void = (flush) => {
+    if (typeof requestAnimationFrame !== "undefined") requestAnimationFrame(flush);
+    else setTimeout(flush, 0);
+  },
+  terminalTypes: string[] = TERMINAL_STREAM_EVENTS,
+): StreamBatcher {
+  let queue: BatchedStreamEvent[] = [];
+  let scheduled = false;
+  const drain = () => {
+    scheduled = false;
+    if (!queue.length) return;
+    const events = queue;
+    queue = [];
+    onFlush(events);
+  };
+  return {
+    push: (type, data) => {
+      queue.push({ type, data });
+      if (terminalTypes.includes(type)) {
+        drain();
+        return;
+      }
+      if (!scheduled) {
+        scheduled = true;
+        schedule(drain);
+      }
+    },
+    flush: drain,
+    size: () => queue.length,
+  };
+}
+
 export const BACKEND =
   process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:8000";
 
