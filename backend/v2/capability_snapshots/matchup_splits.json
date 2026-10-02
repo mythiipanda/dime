@@ -1,5 +1,5 @@
 {
-  "capability_id": "player_shot_zones",
+  "capability_id": "matchup_splits",
   "dependent_entity_arguments": {},
   "properties": [
     {
@@ -12,20 +12,20 @@
           "item_constraints": {},
           "list_item_exact_decimal": false,
           "scalar_exact_decimal": false,
-          "schema_sha256": "6730793de3bf04d551799b6e2f9abc6ac326a43ce4d48d33217e5e2d8e9e63d6"
+          "schema_sha256": "c3b6795563d69afd90a04e75b8fba4338947a5664974aa28bd244b747b802e81"
         }
       ],
       "compiled_kinds": [
         "int"
       ],
-      "default": 50,
+      "default": 15,
       "default_present": true,
       "list_item_exact_decimal": false,
       "nullable": false,
-      "property": "min_attempts",
+      "property": "n",
       "required": false,
       "scalar_exact_decimal": false,
-      "schema_sha256": "6730793de3bf04d551799b6e2f9abc6ac326a43ce4d48d33217e5e2d8e9e63d6"
+      "schema_sha256": "c3b6795563d69afd90a04e75b8fba4338947a5664974aa28bd244b747b802e81"
     },
     {
       "branches": [
@@ -38,30 +38,19 @@
           "list_item_exact_decimal": false,
           "scalar_exact_decimal": false,
           "schema_sha256": "00404e686415370f1711c4d7acfa2905444d3cf23cef2e10c47d445ebe690f96"
-        },
-        {
-          "compiled_kinds": [
-            "int"
-          ],
-          "constraints": {},
-          "item_constraints": {},
-          "list_item_exact_decimal": false,
-          "scalar_exact_decimal": false,
-          "schema_sha256": "f0765dbf409c74f001806c446f2cf171d8c46b5b15779d54423dde921a4b0670"
         }
       ],
       "compiled_kinds": [
-        "string",
-        "int"
+        "string"
       ],
       "default": null,
       "default_present": false,
       "list_item_exact_decimal": false,
       "nullable": false,
-      "property": "player_id",
+      "property": "player",
       "required": true,
       "scalar_exact_decimal": false,
-      "schema_sha256": "57fd5e19cf865cb5799722591919d546ac9a3cb5ca5deb27e1ae08a03f8cd524"
+      "schema_sha256": "00404e686415370f1711c4d7acfa2905444d3cf23cef2e10c47d445ebe690f96"
     },
     {
       "branches": [
@@ -101,6 +90,6 @@
     }
   ],
   "reasons": [],
-  "schema_sha256": "1f2dd5fd644ebe803bfbbc5c4243dbf975dfef01f846b83b1f69422e90779048",
+  "schema_sha256": "f9c1e204ac79e337629b88d6c1ee24879a267caf7434ca299eee67b3e3383fae",
   "status": "REPRESENTABLE"
 }

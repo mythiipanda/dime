@@ -1,31 +1,31 @@
 {
-  "capability_id": "player_shot_zones",
+  "capability_id": "matchup_brief",
   "dependent_entity_arguments": {},
   "properties": [
     {
       "branches": [
         {
           "compiled_kinds": [
-            "int"
+            "string"
           ],
           "constraints": {},
           "item_constraints": {},
           "list_item_exact_decimal": false,
           "scalar_exact_decimal": false,
-          "schema_sha256": "6730793de3bf04d551799b6e2f9abc6ac326a43ce4d48d33217e5e2d8e9e63d6"
+          "schema_sha256": "709300bf34f89b7ec383b3333d501da187ed2fb156ff6c750f1b30fd261c9171"
         }
       ],
       "compiled_kinds": [
-        "int"
+        "string"
       ],
-      "default": 50,
+      "default": "",
       "default_present": true,
       "list_item_exact_decimal": false,
       "nullable": false,
-      "property": "min_attempts",
+      "property": "a",
       "required": false,
       "scalar_exact_decimal": false,
-      "schema_sha256": "6730793de3bf04d551799b6e2f9abc6ac326a43ce4d48d33217e5e2d8e9e63d6"
+      "schema_sha256": "709300bf34f89b7ec383b3333d501da187ed2fb156ff6c750f1b30fd261c9171"
     },
     {
       "branches": [
@@ -37,31 +37,20 @@
           "item_constraints": {},
           "list_item_exact_decimal": false,
           "scalar_exact_decimal": false,
-          "schema_sha256": "00404e686415370f1711c4d7acfa2905444d3cf23cef2e10c47d445ebe690f96"
-        },
-        {
-          "compiled_kinds": [
-            "int"
-          ],
-          "constraints": {},
-          "item_constraints": {},
-          "list_item_exact_decimal": false,
-          "scalar_exact_decimal": false,
-          "schema_sha256": "f0765dbf409c74f001806c446f2cf171d8c46b5b15779d54423dde921a4b0670"
+          "schema_sha256": "709300bf34f89b7ec383b3333d501da187ed2fb156ff6c750f1b30fd261c9171"
         }
       ],
       "compiled_kinds": [
-        "string",
-        "int"
+        "string"
       ],
-      "default": null,
-      "default_present": false,
+      "default": "",
+      "default_present": true,
       "list_item_exact_decimal": false,
       "nullable": false,
-      "property": "player_id",
-      "required": true,
+      "property": "b",
+      "required": false,
       "scalar_exact_decimal": false,
-      "schema_sha256": "57fd5e19cf865cb5799722591919d546ac9a3cb5ca5deb27e1ae08a03f8cd524"
+      "schema_sha256": "709300bf34f89b7ec383b3333d501da187ed2fb156ff6c750f1b30fd261c9171"
     },
     {
       "branches": [
@@ -101,6 +90,6 @@
     }
   ],
   "reasons": [],
-  "schema_sha256": "1f2dd5fd644ebe803bfbbc5c4243dbf975dfef01f846b83b1f69422e90779048",
+  "schema_sha256": "098f7be49c855ffb39bcfbf9089f8db0d477bb8b76849965502068c675774289",
   "status": "REPRESENTABLE"
 }

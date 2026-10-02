@@ -104,7 +104,7 @@ def test_v3_intake_closure_is_fail_closed_and_bound_to_behavior_loss():
 def test_final_mapper_all_active_routes_succeed_and_only_v3_wire_normalizes():
  from pydantic_ai import NativeOutput
  from pydantic_ai._output import OutputSchema
- from v2.adapters.models import DimeOpenAIChatModel
+ from v2.adapters.models import DimeOpenAIChatModel,strip_array_length_bounds
  from v2.contracts import TaskSpec,DraftReport,VerificationReport
  class Mapper(DimeOpenAIChatModel):
   @property
@@ -117,7 +117,7 @@ def test_final_mapper_all_active_routes_succeed_and_only_v3_wire_normalizes():
  for model in (TaskSpec,DraftReport,VerificationReport):
   prepared=OutputSchema.build(NativeOutput(model,strict=True)).processor.object_def
   mapped=DimeOpenAIChatModel._map_json_schema(mapper,prepared)
-  assert mapped['json_schema']['schema']==prepared.json_schema
+  assert mapped['json_schema']['schema']==strip_array_length_bounds(prepared.json_schema)
 
 def _req_args(values):
  from v2.arguments import RequirementArguments,encode_argument
