@@ -2555,6 +2555,7 @@ class RecordedStructuredModel:
             call_id=call_id,
             data=envelope.model_dump(mode="json"),
         )
+        started = time.perf_counter()
         try:
             result = await self._model.generate(
                 schema=schema,
@@ -2575,6 +2576,8 @@ class RecordedStructuredModel:
                 turn_id=self._turn_id,
                 call_id=call_id,
                 data={"status": "failed", "error": exception_text(exc),
+                      "duration_ms": max(0, round(
+                          (time.perf_counter() - started) * 1000)),
                       "provider_attempts": list(getattr(
                           self._model, "last_failures", [])),
                       "reasoning_content_promotions": list(getattr(
@@ -2597,6 +2600,8 @@ class RecordedStructuredModel:
                     (actual_provider or envelope.provider) != envelope.provider
                     or (actual_model or envelope.model) != envelope.model
                 ),
+                "duration_ms": max(0, round(
+                    (time.perf_counter() - started) * 1000)),
                 "provider_attempts": list(getattr(
                     self._model, "last_failures", [])),
                 "reasoning_content_promotions": list(getattr(

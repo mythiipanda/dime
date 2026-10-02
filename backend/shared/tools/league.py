@@ -701,9 +701,7 @@ def _finals_game_scores(finals: list[dict[str, Any]],
     try:
         from .. import store as _store
 
-        import duckdb as _ddb
-
-        con = _ddb.connect(str(_store.DB_PATH), read_only=True)
+        con = _store.connect(read_only=True)
         try:
             ph = ",".join("?" * len(dates))
             rows = con.execute(
@@ -831,9 +829,7 @@ def get_playoffs(season: str | None = None) -> dict[str, Any]:
                 if fdates:
                     from .. import store as _store
 
-                    import duckdb as _ddb
-
-                    _con = _ddb.connect(str(_store.DB_PATH), read_only=True)
+                    _con = _store.connect(read_only=True)
                     try:
                         _ph = ",".join("?" * len(fdates))
                         _sc = _con.execute(
