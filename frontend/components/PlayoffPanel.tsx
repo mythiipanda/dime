@@ -115,7 +115,7 @@ export default function PlayoffPanel() {
       )}
       {!busy && !error && byRound.map(({ rd, list }) => (
         <div key={rd} style={{ marginTop: 12 }}>
-          <div style={{ fontSize: 12, color: "var(--color-warm-gray)", textTransform: "uppercase", letterSpacing: 0.6 }}>
+          <div style={{ fontSize: 10, fontWeight: 600, color: "var(--color-warm-gray)", textTransform: "uppercase", letterSpacing: ".08em" }}>
             {ROUND_LABELS[rd] || `Round ${rd}`}
           </div>
           <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 6 }}>
