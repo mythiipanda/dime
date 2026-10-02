@@ -70,6 +70,26 @@ class EntityRef(BaseModel):
         return self
 
 
+def canonical_entity_id(entity_type: str, entity_id: str, display_name: str = "") -> str:
+    try:
+        from shared.tools._core import coerce_team_id
+        from shared.tools.player import coerce_player_id
+        resolver = {"team": coerce_team_id, "player": coerce_player_id}.get(entity_type)
+        if resolver is not None:
+            for candidate in (entity_id, display_name):
+                try:
+                    return str(resolver(candidate))
+                except (TypeError, ValueError):
+                    continue
+    except ImportError:
+        pass
+    return " ".join(entity_id.casefold().replace("-", " ").replace("_", " ").split())
+
+
+def canonical_entity_ref(entity) -> tuple[str, str]:
+    return (entity.type, canonical_entity_id(entity.type, entity.id, entity.display_name))
+
+
 def _is_canonical_season(value: str) -> bool:
     parts = value.split("-")
     return (len(parts) == 2 and len(parts[0]) == 4 and len(parts[1]) == 2

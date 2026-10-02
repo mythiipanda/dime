@@ -8,7 +8,7 @@ import json
 from datetime import date, datetime, timezone
 from typing import Any, Callable, Iterable, Mapping
 
-from ..contracts import EntityRef, EvidenceEnvelope
+from ..contracts import EntityRef, EvidenceEnvelope, canonical_entity_id
 from ..domain.evidence import iter_values
 from .capabilities import CAPABILITIES, Capability
 
@@ -201,8 +201,9 @@ def build_envelope(
         key = (entity.type, entity.id)
         existing = deduplicated_entities.get(key)
         if existing is not None and existing != entity:
-            raise AdapterError(
-                f"conflicting entity identity {entity.type}:{entity.id}")
+            if canonical_entity_id(entity.type, existing.display_name) != canonical_entity_id(entity.type, entity.display_name):
+                raise AdapterError(
+                    f"conflicting entity identity {entity.type}:{entity.id}")
         deduplicated_entities[key] = entity
     envelope_entities = list(deduplicated_entities.values())
     vintages = {

@@ -267,14 +267,15 @@ def admit_verified_claim_bindings(
     verified_claim: VerifiedClaim,
 ) -> VerifiedClaim:
     from v2.adapters.capabilities import CAPABILITIES
-    from v2.contracts import EvidenceOutputBinding, CalculationOutputBinding
+    from v2.contracts import EvidenceOutputBinding, CalculationOutputBinding, canonical_entity_id, canonical_entity_ref
     from v2.domain.evidence import iter_values
     evidence_requirements = {item.id: item for item in task.requirements}
     calculation_requirements = {item.id: item for item in task.calculation_requirements}
     evidence_by_id = {item.evidence_id: (node_id, item)
                       for node_id, item in execution.evidence_by_node.items()}
     calculations = {item.calculation_id: item for item in draft.calculations}
-    task_entities = {(item.type, item.id) for item in task.entities}
+    task_entities = {canonical_entity_ref(item) for item in task.entities}
+    league_scoped = bool(task_entities) and all(t == "league" for t, _ in task_entities)
     for binding in verified_claim.output_bindings:
         if isinstance(binding, EvidenceOutputBinding):
             requirement = (evidence_requirements.get(binding.requirement_id)
@@ -333,10 +334,10 @@ def admit_verified_claim_bindings(
             if scoped_entities and binding.subject_entity_id is None:
                 raise ValueError("entity-scoped binding requires selector-local subject")
             if binding.subject_entity_id is not None:
-                subject = (binding.subject_entity_type, binding.subject_entity_id)
-                if subject not in scoped_entities:
+                subject = (binding.subject_entity_type, canonical_entity_id(binding.subject_entity_type, binding.subject_entity_id))
+                if subject not in scoped_entities and not (league_scoped and any(canonical_entity_ref(e) == subject for e in evidence.entities)):
                     raise ValueError("binding subject is outside requested scope")
-                if not any((entity.type, entity.id) == subject
+                if not any(canonical_entity_ref(entity) == subject
                            for entity in evidence.entities):
                     raise ValueError("binding subject is outside evidence scope")
                 values = [item for item in iter_values(evidence)
@@ -363,7 +364,7 @@ def admit_verified_claim_bindings(
                 if not descends(binding.selector, row_root) \
                         or not descends(binding.subject_selector, row_root):
                     raise ValueError("binding selectors are outside declared row")
-                if len(subject_values) != 1 or str(subject_values[0]) != binding.subject_entity_id:
+                if len(subject_values) != 1 or canonical_entity_id(binding.subject_entity_type, str(subject_values[0])) != subject[1]:
                     raise ValueError("binding selector row does not match subject")
             else:
                 values = [item for item in iter_values(evidence)

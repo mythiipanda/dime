@@ -133,21 +133,8 @@ def _claim_seasons_supported(claim: Claim,
 
 
 def _canonical_entity(entity) -> tuple[str, str]:
-    try:
-        from shared.tools._core import coerce_team_id
-        from shared.tools.player import coerce_player_id
-        resolver = {"team": coerce_team_id, "player": coerce_player_id}.get(entity.type)
-        if resolver is not None:
-            for candidate in (entity.id, entity.display_name):
-                try:
-                    return (entity.type, str(resolver(candidate)))
-                except (TypeError, ValueError):
-                    continue
-    except ImportError:
-        pass
-    normalized = " ".join(
-        entity.id.casefold().replace("-", " ").replace("_", " ").split())
-    return (entity.type, normalized)
+    from v2.contracts import canonical_entity_ref
+    return canonical_entity_ref(entity)
 
 
 def _entity_reasons(task: TaskSpec, claim: Claim,

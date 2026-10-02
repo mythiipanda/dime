@@ -75,10 +75,17 @@ def _team_entities(rows: Any) -> list[EntityRef]:
     items = rows if isinstance(rows, list) else [rows]
     found: dict[str, EntityRef] = {}
     for item in items:
-        if not isinstance(item, Mapping) or item.get("team_id") is None:
+        if not isinstance(item, Mapping):
             continue
-        ref = EntityRef(id=str(item["team_id"]), type="team",
-                        display_name=str(item.get("team") or item["team_id"]))
+        team_id = item.get("team_id")
+        if team_id is None:
+            team_id = item.get("TEAM_ID")
+        if team_id is None:
+            continue
+        display = (item.get("team") or item.get("TEAM_NAME")
+                   or item.get("TEAM") or team_id)
+        ref = EntityRef(id=str(team_id), type="team",
+                        display_name=str(display))
         found[ref.id] = ref
     return list(found.values())
 
@@ -212,6 +219,7 @@ _LIST = [
     Capability(
         name="team_ratings",
         tool_name="get_ratings",
+        extract_entities=_team_entities,
         units={"OFF_RATING": POINTS_PER_100, "DEF_RATING": POINTS_PER_100,
                "NET_RATING": POINTS_PER_100, "PACE": "possessions_per_48",
                "TS_PCT": PERCENT, "TM_TOV_PCT": PERCENT},
