@@ -332,6 +332,16 @@ _LIST = [
         tool_name="get_team_four_factors",
         metric_definitions=FOUR_FACTORS_DEFS,
     ),
+    Capability(
+        name="matchup_brief",
+        tool_name="get_matchup_brief",
+        units={"OFF_RATING": POINTS_PER_100, "DEF_RATING": POINTS_PER_100,
+               "NET_RATING": POINTS_PER_100, "PACE": "possessions_per_48",
+               "win_prob": FRACTION, "projected_score": "points",
+               "projected_total": "points"},
+        qualification="Two named teams in the selected regular season.",
+        coverage="Both teams ratings, last-10 form, injuries with impact, season-series meetings, and modeled win probability.",
+    ),
 ]
 
 CAPABILITIES: dict[str, Capability] = {c.name: c for c in _LIST}
@@ -388,6 +398,7 @@ CAPABILITY_DESCRIPTIONS: dict[str, str] = {
     "game_logs": "Filter player or team game logs by stats, opponent, date, or venue.",
     "four_factors": "Player on-off splits for the four factors.",
     "team_four_factors": "Team offensive and defensive four-factor profile.",
+    "matchup_brief": "Two-team matchup brief with ratings, form, injuries, season series, and win probability.",
 }
 
 if len(CAPABILITIES) != len(_LIST):
