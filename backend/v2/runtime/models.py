@@ -3,6 +3,7 @@ from __future__ import annotations
 import math
 from decimal import Decimal
 from enum import StrEnum
+from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, StrictBool, StrictInt, model_validator
 
@@ -253,6 +254,7 @@ class RuntimeResult(BaseModel):
     verified_claims: list[VerifiedClaim] = Field(default_factory=list, max_length=128)
     gaps: list[Gap] = Field(default_factory=list, max_length=256)
     output_statuses: list[OutputFinalStatus] = Field(default_factory=list, max_length=256)
+    binding_diagnostics: list[dict[str, Any]] = Field(default_factory=list, max_length=256)
 
     @model_validator(mode="after")
     def validate_publication(self) -> "RuntimeResult":

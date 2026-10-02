@@ -836,6 +836,7 @@ class QuickAnswerBody(BaseModel):
     history: list[ConversationTurn] = Field(default_factory=list, max_length=8)
     thread: str | None = Field(default=None, min_length=1, max_length=80)
     client: str | None = Field(default=None, min_length=1, max_length=80)
+    diagnostics: bool = False
 
     @field_validator("q")
     @classmethod
@@ -1016,6 +1017,18 @@ def _safe_buffered_event(event):
     return None
 
 
+def _stream_binding_diagnostics(result, diagnostics: bool) -> list[str]:
+    from v2.api.events import BindingDiagnostic
+    from v2.api.sse import encode_event
+
+    if not diagnostics:
+        return []
+    return [
+        encode_event(BindingDiagnostic.model_validate(item), diagnostics=True)
+        for item in result.binding_diagnostics
+    ]
+
+
 async def _drain_run(
     task: "asyncio.Task",
     queue: "asyncio.Queue",
@@ -1048,6 +1061,7 @@ async def chat_stream_get(
     model: str | None = Query(None),
     thread: str | None = Query(None),
     client: str | None = Query(None),
+    diagnostics: bool = Query(False),
 ):
 
 
@@ -1063,6 +1077,7 @@ async def chat_stream_get(
             model=model,
             thread=thread,
             client=conversation_client,
+            diagnostics=diagnostics,
         ),
     )
 
@@ -1209,7 +1224,8 @@ async def quick_answer_stream(body: QuickAnswerBody):
             progress=progress, activity=activity, policy=policy,
             pre_tool_timeout_s=settings.dime_v2_pre_tool_timeout_s,
             run_timeout_s=settings.dime_v2_run_timeout_s,
-            node_timeout_s=settings.dime_v2_node_timeout_s)
+            node_timeout_s=settings.dime_v2_node_timeout_s,
+            diagnostics=body.diagnostics)
     except Exception:
         return setup_error_stream()
     context = tuple(body.history)
@@ -1312,6 +1328,8 @@ async def quick_answer_stream(body: QuickAnswerBody):
                 yield encode_event(CustomData(
                     node="analytics",
                     tables=public_tables))
+                for chunk in _stream_binding_diagnostics(result, body.diagnostics):
+                    yield chunk
                 carry = {
                     "run_id": run_id,
                     "verification": result.verification.status.value,

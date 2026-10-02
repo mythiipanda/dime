@@ -6,6 +6,7 @@ import re
 import time
 from collections.abc import Callable, Iterable
 
+from v2.api.events import BindingDiagnostic
 from v2.contracts import (
     ClaimResult,
     ConversationTurn,
@@ -23,7 +24,8 @@ from v2.runtime.executor import PlanExecutor
 from v2.runtime.interfaces import Intake, Planner, Repairer, Synthesizer, Verifier
 from v2.runtime.ledger import LedgerKind, RunLedger, TerminalReason, exception_text
 from v2.runtime.models import (ExecutionResult, RuntimeResult,
-                               admit_verified_claim_bindings)
+                               admit_verified_claim_bindings,
+                               reanchor_verified_claim_bindings)
 from v2.domain.evidence import iter_values
 from v2.runtime.budget import RUN_MODEL_DEADLINE
 
@@ -53,6 +55,7 @@ class Runtime:
         activity: Callable[[dict], None] | None = None,
         pre_tool_timeout_s: float | None = None,
         run_timeout_s: float | None = None,
+        diagnostics: bool = False,
     ) -> None:
         if not isinstance(repair_attempts, int) or isinstance(repair_attempts, bool):
             raise TypeError("repair_attempts must be an integer")
@@ -81,6 +84,9 @@ class Runtime:
         self._activity = activity
         self._pre_tool_timeout_s = pre_tool_timeout_s
         self._run_timeout_s = run_timeout_s
+        if not isinstance(diagnostics, bool):
+            raise TypeError("diagnostics must be a boolean")
+        self._diagnostics = diagnostics
 
     async def run(
         self, request: str, *, run_id: str | None = None,
@@ -320,8 +326,12 @@ class Runtime:
             verification = verification.model_copy(
                 update={"status": VerificationStatus.PARTIAL}
             )
+        binding_diagnostics = []
         verified_claims, binding_gaps = _verified_claims(
-            task, execution, draft, verification, evidence)
+            task, execution, draft, verification, evidence,
+            diagnostics=self._diagnostics,
+            diagnostics_run_id=turn_id,
+            diagnostics_events=binding_diagnostics)
         if binding_gaps and verification.status == VerificationStatus.PASS:
             verification = verification.model_copy(
                 update={"status": VerificationStatus.PARTIAL})
@@ -379,6 +389,10 @@ class Runtime:
             structural_flags=structural_flags,
             verified_claims=verified_claims,
             gaps=gaps[:256],
+            binding_diagnostics=[
+                event.model_dump(mode="json", exclude_none=True)
+                for event in binding_diagnostics
+            ],
         )
         if self._ledger is not None:
             self._ledger.append(
@@ -752,7 +766,56 @@ def _unique(values: Iterable[str], *, limit: int | None = None) -> list[str]:
     return unique if limit is None else unique[:limit]
 
 
-def _verified_claims(task, execution, draft, verification, evidence=None):
+_DIAGNOSTIC_TEXT_CAP = 512
+
+
+def _diagnostic_text(value):
+    if value is None:
+        return None
+    text = value if isinstance(value, str) else str(value)
+    return text[:_DIAGNOSTIC_TEXT_CAP]
+
+
+def _binding_diagnostic_event(execution, candidate, position, run_id, rejection):
+    binding = candidate.output_bindings[position]
+    fixed = reanchor_verified_claim_bindings(execution, candidate).output_bindings[position]
+    changed = any(
+        getattr(binding, name, None) != getattr(fixed, name, None)
+        for name in ("selector", "row_selector", "subject_selector"))
+    value = getattr(binding, "value", None)
+    unit = getattr(binding, "unit", None)
+    declared_unit = None
+    if unit is not None:
+        declared_unit = {
+            "kind": unit.kind,
+            "value": _diagnostic_text(getattr(unit, "value", None)),
+        }
+    return BindingDiagnostic(
+        run_id=run_id,
+        claim_index=candidate.claim_index,
+        requirement_kind=binding.requirement_kind,
+        requirement_id=_diagnostic_text(binding.requirement_id),
+        output_id=_diagnostic_text(binding.output_id),
+        node_id=_diagnostic_text(getattr(binding, "node_id", None)),
+        evidence_id=_diagnostic_text(getattr(binding, "evidence_id", None)),
+        selector=_diagnostic_text(getattr(binding, "selector", None)),
+        row_selector=_diagnostic_text(getattr(binding, "row_selector", None)),
+        subject_selector=_diagnostic_text(getattr(binding, "subject_selector", None)),
+        subject_entity_type=_diagnostic_text(getattr(binding, "subject_entity_type", None)),
+        subject_entity_id=_diagnostic_text(getattr(binding, "subject_entity_id", None)),
+        declared_value={
+            "kind": getattr(value, "kind", None),
+            "value": _diagnostic_text(getattr(value, "value", None)),
+        },
+        declared_unit=declared_unit,
+        reanchor_changed=changed,
+        rejection=_diagnostic_text(rejection),
+    )
+
+
+def _verified_claims(task, execution, draft, verification, evidence=None, *,
+                     diagnostics=False, diagnostics_run_id="",
+                     diagnostics_events=None):
     supported = {result.claim_index for result in verification.claim_results
                  if result.supported and not result.uncertain}
     admitted: list[VerifiedClaim] = []
@@ -776,7 +839,11 @@ def _verified_claims(task, execution, draft, verification, evidence=None):
             admitted.append(admit_verified_claim_bindings(
                 task, execution, draft, candidate))
         except ValueError as exc:
-
+            if diagnostics and diagnostics_events is not None:
+                for position in range(len(candidate.output_bindings)):
+                    diagnostics_events.append(_binding_diagnostic_event(
+                        execution, candidate, position,
+                        diagnostics_run_id, str(exc)))
             admitted.append(VerifiedClaim(
                 claim_index=index, claim=claim,
                 evidence_ids=list(claim.evidence_ids),
