@@ -616,6 +616,19 @@ def coerce_team_id(value: object) -> int:
         return _static_team_id(value, raw)
 
 
+REGULAR_SEASON_GAME_PREFIX = "002"
+PLAYOFF_GAME_PREFIX = "004"
+
+
+def is_scope_game(game_id: object, scope: str) -> bool:
+    text = str(game_id or "").strip()
+    if not text.isdigit():
+        return True
+    if scope.startswith("playoff"):
+        return text.startswith(PLAYOFF_GAME_PREFIX)
+    return text.startswith(REGULAR_SEASON_GAME_PREFIX)
+
+
 def _cache_age_s(frame) -> float | None:
     if "_fetched_at" not in frame.columns:
         return None
