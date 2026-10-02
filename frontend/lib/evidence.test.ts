@@ -42,6 +42,8 @@ const CALC_TABLE = {
   provenance: { capability: "get_team_stats", season: "2024-25", as_of: "2025-04-14" },
 };
 
+const PASS_TWO = { verification: "pass", verified_claims: 2, gaps: [] };
+
 test("pass with all claims backed is verified", () => {
   assert.equal(
     badgeState({ verification: "pass", verified_claims: 2, gaps: [] }),
@@ -203,10 +205,35 @@ test("badge text never leaks field names", () => {
   }
 });
 
-test("tables without carry still read as verified", () => {
+test("tables without carry stay unknown, rows still listed", () => {
   const summary = summarizeEvidence(aiWith(undefined, [CLAIM_TABLE]));
-  assert.equal(summary.state, "verified");
+  assert.equal(summary.state, "unknown");
   assert.equal(summary.backed, 1);
+  assert.equal(evidenceRows(aiWith(undefined, [CLAIM_TABLE])).length, 1);
+});
+
+test("gaps without outputs become one row per gap", () => {
+  const ai = aiWith(
+    { verification: "partial", verified_claims: 0, gaps: [{ kind: "run_timeout" }] },
+    [],
+  );
+  const rows = evidenceRows(ai);
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].ok, false);
+  assert.equal(rows[0].finding, "This answer");
+  assert.equal(rows[0].detail, "The run ran out of time.");
+  assert.equal(summarizeEvidence(ai).state, "unverified");
+});
+
+test("claim rows name the subject type", () => {
+  const rows = evidenceRows(aiWith({ verification: "pass", verified_claims: 1, gaps: [] }, [CLAIM_TABLE]));
+  assert.equal(rows[0].detail, "Player · Ppg");
+});
+
+test("carry counts set the badge numbers", () => {
+  const summary = summarizeEvidence(aiWith(PASS_TWO, [CLAIM_TABLE]));
+  assert.equal(summary.backed, 2);
+  assert.equal(summary.total, 2);
 });
 
 test("empty answer with no signal is unknown", () => {

@@ -39,6 +39,10 @@ describe("VerificationBadge", () => {
     assert.equal(VerificationBadge({ ai: aiWith(undefined, []) }), null);
   });
 
+  it("renders nothing for tables without a verdict", () => {
+    assert.equal(VerificationBadge({ ai: aiWith(undefined, [CLAIM]) }), null);
+  });
+
   it("shows verified with counts", () => {
     const html = renderToStaticMarkup(
       React.createElement(VerificationBadge, { ai: aiWith(PASS_CARRY, [CLAIM, CLAIM]) }),
@@ -143,6 +147,19 @@ describe("EvidenceSection", () => {
     );
     assert.ok(html.includes("Sources"));
     assert.ok(!html.includes("LeBron James"));
+  });
+
+  it("opens a gap-only answer with the reason shown", () => {
+    const html = renderToStaticMarkup(
+      React.createElement(EvidenceSection, {
+        ai: aiWith(
+          { verification: "partial", verified_claims: 0, gaps: [{ kind: "run_timeout" }] },
+          [],
+        ),
+      }),
+    );
+    assert.ok(html.includes("This answer"));
+    assert.ok(html.includes("The run ran out of time."));
   });
 
   it("never leaks field names into copy", () => {

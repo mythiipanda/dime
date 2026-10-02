@@ -104,9 +104,15 @@ function provenanceSource(meta: EvidenceProvenance | undefined): string {
   return parts.join(" · ");
 }
 
-function subjectLabel(type: unknown, id: unknown): string {
+function subjectLabel(id: unknown): string {
   if (id === null || id === undefined || id === "") return "";
   return String(id);
+}
+
+function subjectDetail(type: unknown, outputId: string): string {
+  const output = humanize(outputId);
+  if (typeof type === "string" && type) return humanize(type) + " · " + output;
+  return output;
 }
 
 function valueWithUnit(value: unknown, unit: unknown): string {
@@ -135,7 +141,7 @@ function tableRow(table: unknown, index: number): EvidenceRow | null {
   if (isRecord(table.provenance) || typeof table.output_id === "string") {
     const t = table as Record<string, unknown>;
     const provenance = isRecord(t.provenance) ? (t.provenance as EvidenceProvenance) : undefined;
-    const subject = subjectLabel(t.subject_type, t.subject_id);
+    const subject = subjectLabel(t.subject_id);
     const outputId = typeof t.output_id === "string" ? t.output_id : "";
     const value = valueWithUnit(
       t.value !== undefined ? t.value : t.input_value,
@@ -144,7 +150,7 @@ function tableRow(table: unknown, index: number): EvidenceRow | null {
     return {
       key: "claim-" + index + "-" + outputId,
       finding: subject || humanize(outputId),
-      detail: subject ? humanize(outputId) : "",
+      detail: subject ? subjectDetail(t.subject_type, outputId) : "",
       value,
       source: provenanceSource(provenance),
       ok: true,
@@ -170,7 +176,7 @@ function incompleteRows(statuses: OutputStatus[], gaps: EvidenceGap[]): Evidence
   statuses.forEach((status, index) => {
     if (!status || status.status === "complete") return;
     const outputId = typeof status.output_id === "string" ? status.output_id : "";
-    const subject = subjectLabel(status.subject_type, status.subject_id);
+    const subject = subjectLabel(status.subject_id);
     rows.push({
       key: "gap-" + index + "-" + outputId,
       finding: subject || humanize(outputId) || "A finding",
@@ -183,6 +189,17 @@ function incompleteRows(statuses: OutputStatus[], gaps: EvidenceGap[]): Evidence
   return rows;
 }
 
+function gapOnlyRows(gaps: EvidenceGap[]): EvidenceRow[] {
+  return gaps.map((gap, index) => ({
+    key: "gap-" + index,
+    finding: "This answer",
+    detail: gapMessage(gap && typeof gap.kind === "string" ? gap.kind : ""),
+    value: "",
+    source: "",
+    ok: false,
+  }));
+}
+
 export function evidenceRows(ai: AiMessage): EvidenceRow[] {
   const tables = allTables(ai);
   const rows: EvidenceRow[] = [];
@@ -192,7 +209,12 @@ export function evidenceRows(ai: AiMessage): EvidenceRow[] {
   });
   const carry = (ai.carry || {}) as EvidenceCarry;
   const statuses = Array.isArray(carry.output_statuses) ? carry.output_statuses : [];
-  rows.push(...incompleteRows(statuses, Array.isArray(carry.gaps) ? carry.gaps : []));
+  const gaps = Array.isArray(carry.gaps) ? carry.gaps : [];
+  if (statuses.length > 0) {
+    rows.push(...incompleteRows(statuses, gaps));
+  } else if (rows.length === 0 && gaps.length > 0) {
+    rows.push(...gapOnlyRows(gaps));
+  }
   return rows;
 }
 
@@ -221,15 +243,18 @@ export function badgeState(carry: unknown): BadgeState {
 
 export function summarizeEvidence(ai: AiMessage): EvidenceSummary {
   const rows = evidenceRows(ai);
-  const backed = rows.filter((r) => r.ok).length;
   const carry = (ai.carry || {}) as EvidenceCarry;
   const gaps = Array.isArray(carry.gaps) ? carry.gaps : [];
-  let state = badgeState(ai.carry);
-  if (!ai.carry && rows.length > 0) state = "verified";
+  const statuses = Array.isArray(carry.output_statuses) ? carry.output_statuses : [];
+  const backed =
+    typeof carry.verified_claims === "number"
+      ? carry.verified_claims
+      : rows.filter((r) => r.ok).length;
+  const total = Math.max(statuses.length, rows.length, backed);
   return {
-    state,
+    state: badgeState(ai.carry),
     backed,
-    total: rows.length,
+    total,
     gaps: gaps.map((g) => (g && typeof g.kind === "string" ? g.kind : "")),
     rows,
   };
