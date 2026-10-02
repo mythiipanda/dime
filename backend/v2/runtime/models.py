@@ -419,8 +419,6 @@ def propagate_evidence_to_task(task, execution, draft, admitted):
     task_entities = {canonical_entity_ref(item) for item in task.entities}
     league_scoped = bool(task_entities) and all(
         kind == "league" for kind, _ in task_entities)
-    if not task_entities or league_scoped:
-        return list(admitted)
     owned = {(binding.requirement_kind, binding.requirement_id,
               binding.output_id)
              for claim in admitted for binding in claim.output_bindings}
@@ -438,7 +436,18 @@ def propagate_evidence_to_task(task, execution, draft, admitted):
                 continue
             subject = (binding.subject_entity_type, canonical_entity_id(
                 binding.subject_entity_type, binding.subject_entity_id))
-            if subject not in task_entities:
+            if subject in task_entities:
+                pass
+            elif not task_entities or league_scoped:
+                envelope = execution.evidence_by_node.get(binding.node_id)
+                if envelope is None:
+                    continue
+                envelope_entities = {
+                    canonical_entity_ref(item) for item in envelope.entities
+                }
+                if subject not in envelope_entities:
+                    continue
+            else:
                 continue
             candidates.setdefault(binding.output_id, []).append(
                 (claim, binding))
@@ -549,7 +558,7 @@ def admit_verified_claim_bindings(
                 raise ValueError("entity-scoped binding requires selector-local subject")
             if binding.subject_entity_id is not None:
                 subject = (binding.subject_entity_type, canonical_entity_id(binding.subject_entity_type, binding.subject_entity_id))
-                if subject not in scoped_entities and not (league_scoped and any(canonical_entity_ref(e) == subject for e in evidence.entities)):
+                if subject not in scoped_entities and not ((league_scoped or not task_entities) and any(canonical_entity_ref(e) == subject for e in evidence.entities)):
                     raise ValueError("binding subject is outside requested scope")
                 if not any(canonical_entity_ref(entity) == subject
                            for entity in evidence.entities):
