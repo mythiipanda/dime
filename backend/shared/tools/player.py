@@ -766,7 +766,9 @@ def compare_metrics(a: str | int, b: str | int, season: str | None = None) -> di
                          for m in ("EPM", "LEBRON", "DARKO", "DRIP")]},
             "meta": {"source": "warehouse", "season": season,
                      "raptor_season_a": ma.get("raptor_season"),
-                     "raptor_season_b": mb.get("raptor_season")}}
+                     "raptor_season_b": mb.get("raptor_season"),
+                     "raptor_gap": not raptor_current,
+                     "raptor_coverage": "RAPTOR ends 2021-22; later seasons read as gaps"}}
 
 def _season_line(player_id: object, season: str) -> dict[str, Any] | None:
     season = resolve_season(season)
@@ -816,6 +818,31 @@ def _season_line(player_id: object, season: str) -> dict[str, Any] | None:
                 "TS_PCT": h.get("ts_pct"),
             }
             return {k: v for k, v in row.items() if v is not None}
+    except Exception:
+        pass
+    try:
+        from .career_arc import line_for_season as _arc_line
+        arc = _arc_line(int(str(player_id)) if str(player_id).isdigit() else 0, season)
+        if arc:
+            row = {
+                "PLAYER_ID": player_id,
+                "PLAYER": arc.get("player_name"),
+                "TEAM": arc.get("team_abbreviation"),
+                "GP": arc.get("gp"),
+                "MPG": arc.get("min"),
+                "PPG": arc.get("pts"),
+                "RPG": arc.get("reb"),
+                "APG": arc.get("ast"),
+                "SPG": arc.get("stl"),
+                "BPG": arc.get("blk"),
+                "FG_PCT": arc.get("fg_pct"),
+                "FG3_PCT": arc.get("fg3_pct"),
+                "FT_PCT": arc.get("ft_pct"),
+                "TS_PCT": arc.get("ts_pct"),
+            }
+            slim = {k: v for k, v in row.items() if v is not None}
+            if slim.get("PPG") is not None and slim.get("GP") is not None:
+                return slim
     except Exception:
         pass
     return None
@@ -2402,7 +2429,8 @@ def get_raptor_history(player: str, season: str = "") -> dict[str, Any]:
              "RAPTOR_D": r.get("RAPTOR_DEFENSE"), "RAPTOR": r.get("RAPTOR_TOTAL"),
              "WAR": r.get("WAR_TOTAL")} for r in frame.to_dicts()]
     return {"tool": "get_raptor_history", "ok": True, "rows": rows,
-            "meta": {"source": "fivethirtyeight:raptor", "seasons": len(rows)}}
+            "meta": {"source": "fivethirtyeight:raptor", "seasons": len(rows),
+                     "coverage": "RAPTOR ends 2021-22; later seasons read as gaps, never estimates"}}
 
 
 
