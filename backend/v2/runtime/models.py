@@ -67,6 +67,10 @@ def _declared_value_matches(declared, selected) -> bool:
     return abs(target - wanted) <= _VALUE_TOLERANCE * scale
 
 
+def _canonical_unit(value):
+    return "_".join(value.lower().split())
+
+
 def _row_index(row_selector):
     prefix = "rows["
     if not row_selector.startswith(prefix):
@@ -467,7 +471,7 @@ def admit_verified_claim_bindings(
                 if binding.unit.kind != "unitless":
                     raise ValueError("unitless output must be explicit")
             elif binding.unit.kind != "declared" \
-                    or binding.unit.value != authoritative_unit:
+                    or _canonical_unit(binding.unit.value) != _canonical_unit(authoritative_unit):
                 raise ValueError("binding unit does not match output authority")
             if binding.domain != evidence.capability:
                 raise ValueError("binding domain does not match capability")
