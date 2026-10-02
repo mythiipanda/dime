@@ -374,7 +374,10 @@ def get_regression_check(player: str, stat: str = "PTS", n: int = 10,
                          season: str | None = None) -> dict[str, Any]:
     """Sustainability check on a hot stat line: window vs season plus drivers."""
     season = resolve_season(season)
-    stat = clamp_stat(stat)
+    try:
+        stat = clamp_stat(stat)
+    except ValueError:
+        stat = "PTS"
     season = clamp_season(season)
     n = _clamp_n(n, default=10)
     try:

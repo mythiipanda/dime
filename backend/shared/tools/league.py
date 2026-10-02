@@ -1216,7 +1216,10 @@ def get_team_leaders(stat_category: str = "AST",
     player-level only.
     """
     season = resolve_season(season)
-    stat = clamp_stat(stat_category)
+    try:
+        stat = clamp_stat(stat_category)
+    except ValueError:
+        stat = "PTS"
     if stat not in _TEAM_TOTAL_STATS:
         stat = "AST"
     fetched = _deduped_team_totals(stat, season)
@@ -1267,7 +1270,10 @@ def get_team_compare(stat_category: str = "PTS", top: int = 3,
     deterministically from the rows into meta.deterministic_answer;
     compose ships it verbatim (v67 design law)."""
     season = resolve_season(season)
-    stat = clamp_stat(stat_category)
+    try:
+        stat = clamp_stat(stat_category)
+    except ValueError:
+        stat = "PTS"
     if stat not in _TEAM_TOTAL_STATS:
         stat = "PTS"
     try:

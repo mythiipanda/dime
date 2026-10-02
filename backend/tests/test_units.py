@@ -10,7 +10,10 @@ from shared.providers import resolve_model_id
 
 
 def test_clamp_stat_rejects_injection():
-    assert tools.clamp_stat('PTS"; DROP TABLE x; --') == "PTS"
+    import pytest
+
+    with pytest.raises(ValueError):
+        tools.clamp_stat('PTS"; DROP TABLE x; --')
 
 
 def test_clamp_stat_normalizes_case():
@@ -246,7 +249,10 @@ def test_splits_unknown_player():
     assert "unknown player" in res["error"]
     from shared.tools import clamp_stat
 
-    assert clamp_stat("xyz") == "PTS"
+    import pytest
+
+    with pytest.raises(ValueError):
+        clamp_stat("xyz")
 
 
 def _warehouse_has_durant():

@@ -245,7 +245,9 @@ def clamp_stat(stat: str) -> str:
         "BLOCK": "BLK", "BLOCKS": "BLK",
     }
     upper = aliases.get(upper, upper)
-    return upper if upper in STAT_CATEGORIES else "PTS"
+    if upper not in STAT_CATEGORIES:
+        raise ValueError(f"unknown stat_category: {stat!r}")
+    return upper
 
 
 def clamp_scope(scope: str) -> str:
