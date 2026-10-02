@@ -28,8 +28,12 @@ def _bounded_public_value(value, *, depth: int = 0):
     return str(value)[:200_000]
 
 
-def _public_payload(event: InternalEvent) -> dict:
+def _public_payload(event: InternalEvent, *, diagnostics: bool = False) -> dict | None:
     payload = event.model_dump(mode="json", exclude={"type"}, exclude_none=True)
+    if event.type == EventType.BINDING_DIAGNOSTIC:
+        if not diagnostics:
+            return None
+        return payload
     if isinstance(event.type, str) and event.type in {"stage_summary", "plan_update", "evidence_update", "verification_update"}:
         common = {key: payload[key] for key in ("event_id","sequence","emitted_at","phase","status","title","correlation_id","transition","duration_ms") if key in payload}
         allowed = {
@@ -58,20 +62,27 @@ def _public_payload(event: InternalEvent) -> dict:
     return payload
 
 
-def encode_event(event: InternalEvent) -> str:
-    payload = _bounded_public_value(_public_payload(event))
+def encode_event(event: InternalEvent, *, diagnostics: bool = False) -> str | None:
+    payload = _public_payload(event, diagnostics=diagnostics)
+    if payload is None:
+        return None
+    payload = _bounded_public_value(payload)
     event_name = event.type.value if isinstance(event.type, EventType) else event.type
     return f"event: {event_name}\ndata: {json.dumps(payload, separators=(',', ':'), allow_nan=False)}\n\n"
 
 
-def encode_events(events: Iterable[InternalEvent]) -> Iterable[str]:
+def encode_events(events: Iterable[InternalEvent], *, diagnostics: bool = False) -> Iterable[str]:
     for event in events:
-        yield encode_event(event)
+        chunk = encode_event(event, diagnostics=diagnostics)
+        if chunk is not None:
+            yield chunk
 
 
-async def stream_events(events: AsyncIterable[InternalEvent]) -> AsyncIterator[str]:
+async def stream_events(events: AsyncIterable[InternalEvent], *, diagnostics: bool = False) -> AsyncIterator[str]:
     async for event in events:
-        yield encode_event(event)
+        chunk = encode_event(event, diagnostics=diagnostics)
+        if chunk is not None:
+            yield chunk
 
 
 def encode_raw(event_type: str, data: object) -> str:

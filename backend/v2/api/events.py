@@ -3,7 +3,7 @@ from __future__ import annotations
 from enum import StrEnum
 from typing import Annotated, Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, StrictInt, TypeAdapter, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, StrictBool, StrictInt, TypeAdapter, field_validator, model_validator
 
 
 class StrictEvent(BaseModel):
@@ -33,6 +33,7 @@ class EventType(StrEnum):
     FINAL_ANSWER = "final_answer"
     SUGGESTIONS = "suggestions"
     GRAPH_END = "graph_end"
+    BINDING_DIAGNOSTIC = "binding_diagnostic"
 
 
 class NodeUpdate(StrictEvent):
@@ -127,6 +128,26 @@ class GraphEnd(StrictEvent):
     type: Literal[EventType.GRAPH_END] = EventType.GRAPH_END
 
 
+class BindingDiagnostic(StrictEvent):
+    type: Literal[EventType.BINDING_DIAGNOSTIC] = EventType.BINDING_DIAGNOSTIC
+    run_id: str = Field(max_length=256)
+    claim_index: StrictInt = Field(ge=0)
+    requirement_kind: str = Field(max_length=64)
+    requirement_id: str | None = Field(default=None, max_length=64)
+    output_id: str = Field(max_length=256)
+    node_id: str | None = Field(default=None, max_length=256)
+    evidence_id: str | None = Field(default=None, max_length=256)
+    selector: str | None = Field(default=None, max_length=512)
+    row_selector: str | None = Field(default=None, max_length=512)
+    subject_selector: str | None = Field(default=None, max_length=512)
+    subject_entity_type: str | None = Field(default=None, max_length=64)
+    subject_entity_id: str | None = Field(default=None, max_length=256)
+    declared_value: dict[str, Any] = Field(default_factory=dict, max_length=8)
+    declared_unit: dict[str, Any] | None = Field(default=None, max_length=8)
+    reanchor_changed: StrictBool
+    rejection: str = Field(max_length=512)
+
+
 from v2.api.activity import StageData, PlanData, EvidenceData, VerificationData
 class ActivityBase(StrictEvent):
     event_id: str = Field(pattern=r'^[A-Za-z0-9_-]+:\d+$')
@@ -167,7 +188,8 @@ InternalEvent = Annotated[
     | CustomData
     | FinalAnswer
     | Suggestions
-    | GraphEnd,
+    | GraphEnd
+    | BindingDiagnostic,
     Field(discriminator="type"),
 ]
 
