@@ -173,7 +173,7 @@ def _validate_assistant_attempt(data: dict[str, Any]) -> None:
     attempt_keys = {"provider_attempts", "model_requests", "repaired",
                     "null_as_omitted_drops", "carried_from_intake",
                     "ranked_argument_conflicts", "usage_unknown",
-                    "reasoning_content_promotions"}
+                    "reasoning_content_promotions", "duration_ms"}
     provider_attempts = data.get("provider_attempts", [])
     promotions = data.get("reasoning_content_promotions", [])
     safe_attempt_keys = {"route", "provider", "model", "attempt_number",
@@ -260,11 +260,15 @@ def _validate_assistant_attempt(data: dict[str, Any]) -> None:
         for item in promotions)
     required_failed = {"status", "error"}
     required_accepted = {"status", "output", "provider", "model", "used_fallback"}
+    duration_ms = data.get("duration_ms")
+    duration_valid = ("duration_ms" not in data or (
+        isinstance(duration_ms, int) and not isinstance(duration_ms, bool)
+        and duration_ms >= 0))
     if status == "failed":
         valid = (required_failed <= set(data) <= {*required_failed, *attempt_keys}
                  and isinstance(data.get("error"), str)
                  and bool(data["error"].strip()) and attempts_valid
-                 and promotions_valid)
+                 and promotions_valid and duration_valid)
     elif status == "accepted":
         requests = data.get("model_requests")
         requests_valid = ("model_requests" not in data or (
@@ -315,7 +319,7 @@ def _validate_assistant_attempt(data: dict[str, Any]) -> None:
                  and isinstance(data.get("used_fallback"), bool)
                  and requests_valid and repaired_valid and drops_valid
                  and carries_valid and conflicts_valid
-                 and usage_unknown_valid)
+                 and usage_unknown_valid and duration_valid)
     else:
         raise ValueError("assistant attempt status must be accepted or failed")
     if not valid:
