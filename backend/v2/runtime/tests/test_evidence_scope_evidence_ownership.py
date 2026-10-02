@@ -10,6 +10,7 @@ from v2.contracts import (
     DraftReport,
     EntityRef,
     EvidenceOutputBinding,
+    EvidenceRequirement,
     Plan,
     PlanNode,
     SeasonRef,
@@ -20,6 +21,7 @@ from v2.runtime.models import ExecutionResult, admit_verified_claim_bindings
 
 
 _NODE_ID = "qualified_leaders:05b5922eaefae72d"
+_REQUIREMENT_ID = "player_assists_leader_2024_25"
 
 
 def _rows():
@@ -66,15 +68,21 @@ def _task():
         requested_outputs=["PLAYER_NAME", "AST"],
         season=SeasonRef(value="2024-25", source="user", confidence=1.0),
         entities=[EntityRef(id="1629027", type="player", display_name="Trae Young")],
+        requirements=[EvidenceRequirement(
+            id=_REQUIREMENT_ID,
+            description="2024-25 assists leaderboard",
+            capability_options=["qualified_leaders"],
+            capability_arguments={"stat_category": "AST", "season": "2024-25"},
+            requested_outputs=["PLAYER_NAME", "AST"],
+        )],
     )
 
 
-def _bindings(node_id=_NODE_ID, evidence_id=_NODE_ID,
-              requirement_kind="task", requirement_id=None):
+def _bindings(node_id=_NODE_ID, evidence_id=_NODE_ID):
     return [
         EvidenceOutputBinding(
-            requirement_kind=requirement_kind,
-            requirement_id=requirement_id,
+            requirement_kind="evidence",
+            requirement_id=_REQUIREMENT_ID,
             output_id="PLAYER_NAME",
             node_id=node_id,
             evidence_id=evidence_id,
@@ -88,8 +96,8 @@ def _bindings(node_id=_NODE_ID, evidence_id=_NODE_ID,
             domain="qualified_leaders",
         ),
         EvidenceOutputBinding(
-            requirement_kind=requirement_kind,
-            requirement_id=requirement_id,
+            requirement_kind="evidence",
+            requirement_id=_REQUIREMENT_ID,
             output_id="AST",
             node_id=node_id,
             evidence_id=evidence_id,
@@ -105,17 +113,24 @@ def _bindings(node_id=_NODE_ID, evidence_id=_NODE_ID,
     ]
 
 
-def _admit(task, envelope, bindings, nodes=None, attempts=None):
-    nodes = nodes or [PlanNode(
-        id=_NODE_ID,
+def _node(node_id=_NODE_ID):
+    return PlanNode(
+        id=node_id,
         description="2024-25 assists leaderboard",
         capability_hints=["qualified_leaders"],
+        covers_requirement_ids=[_REQUIREMENT_ID],
+        arguments={"stat_category": "AST", "season": "2024-25"},
         status="complete",
-    )]
-    attempts = attempts or {node.id: 1 for node in nodes}
+    )
+
+
+def _admit(task, envelope, bindings, nodes=None):
+    nodes = nodes or [_node()]
+    attempts = {node.id: 1 for node in nodes}
+    by_node = {node.id: envelope for node in nodes if node.id == _NODE_ID}
     execution = ExecutionResult(
         plan=Plan(nodes=nodes),
-        evidence_by_node={_NODE_ID: envelope},
+        evidence_by_node=by_node,
         attempts=attempts,
     )
     evidence_ids = list(dict.fromkeys(item.evidence_id for item in bindings))
@@ -144,7 +159,7 @@ def _admit(task, envelope, bindings, nodes=None, attempts=None):
     return admit_verified_claim_bindings(task, execution, draft, verified)
 
 
-def test_task_scope_binding_citing_node_id_admits():
+def test_evidence_scope_binding_citing_node_id_admits():
     envelope = _envelope()
     assert envelope.evidence_id != _NODE_ID
     admitted = _admit(_task(), envelope, _bindings())
@@ -153,24 +168,10 @@ def test_task_scope_binding_citing_node_id_admits():
     assert by_output["AST"].value.value == 880
 
 
-def test_task_scope_binding_without_node_evidence_still_rejects():
+def test_evidence_scope_binding_without_node_evidence_still_rejects():
     envelope = _envelope()
     ghost = "qualified_leaders:0000000000000000"
     bindings = _bindings(node_id=ghost, evidence_id=ghost)
-    nodes = [
-        PlanNode(
-            id=_NODE_ID,
-            description="2024-25 assists leaderboard",
-            capability_hints=["qualified_leaders"],
-            status="complete",
-        ),
-        PlanNode(
-            id=ghost,
-            description="empty leaderboard",
-            capability_hints=["qualified_leaders"],
-            status="complete",
-        ),
-    ]
+    nodes = [_node(), _node(ghost)]
     with pytest.raises(ValueError, match="ownership"):
         _admit(_task(), envelope, bindings, nodes=nodes)
-
