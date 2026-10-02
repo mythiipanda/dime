@@ -92,17 +92,17 @@ class PlannerArguments(TypedArguments):entries:list[ArgumentEntry]=Field(default
 class ProviderWireEntry(Closed):
  key:KEY
  kind:Literal[tuple(SLOTS)]
- value:None
- bool_value:StrictBool|None
- int_value:StrictInt|None
- number_value:FINITE|None
- decimal_value:DECIMAL_TEXT|None
- string_value:TEXT|None
- bool_list_value:list[StrictBool]|None=Field(max_length=32)
- int_list_value:list[StrictInt]|None=Field(max_length=32)
- number_list_value:list[FINITE]|None=Field(max_length=32)
- decimal_list_value:list[DECIMAL_TEXT]|None=Field(max_length=32)
- string_list_value:list[TEXT]|None=Field(max_length=32)
+ value:None=None
+ bool_value:StrictBool|None=None
+ int_value:StrictInt|None=None
+ number_value:FINITE|None=None
+ decimal_value:DECIMAL_TEXT|None=None
+ string_value:TEXT|None=None
+ bool_list_value:list[StrictBool]|None=Field(default=None,max_length=32)
+ int_list_value:list[StrictInt]|None=Field(default=None,max_length=32)
+ number_list_value:list[FINITE]|None=Field(default=None,max_length=32)
+ decimal_list_value:list[DECIMAL_TEXT]|None=Field(default=None,max_length=32)
+ string_list_value:list[TEXT]|None=Field(default=None,max_length=32)
 class ProviderWireArguments(Closed):
  entries:list[ProviderWireEntry]|None=Field(max_length=64)
 def _wire_prop_nullable(prop:dict[str,Any])->bool:

@@ -2584,6 +2584,8 @@ class RecordedStructuredModel:
         actual_provider = getattr(self._model, "last_provider", None)
         actual_model = getattr(self._model, "last_model", None)
         extra = getattr(self._model, "last_decode_extra", None)
+        if extra is None and decode is not None:
+            extra = decode(result)
         request_count = getattr(self._model, "last_request_count", None)
         usage_unknown = getattr(self._model, "last_usage_unknown", None)
         data = {

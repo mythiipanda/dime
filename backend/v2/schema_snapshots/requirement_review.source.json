@@ -130,6 +130,7 @@
               "type": "null"
             }
           ],
+          "default": null,
           "title": "Bool List Value"
         },
         "bool_value": {
@@ -141,6 +142,7 @@
               "type": "null"
             }
           ],
+          "default": null,
           "title": "Bool Value"
         },
         "decimal_list_value": {
@@ -159,6 +161,7 @@
               "type": "null"
             }
           ],
+          "default": null,
           "title": "Decimal List Value"
         },
         "decimal_value": {
@@ -173,6 +176,7 @@
               "type": "null"
             }
           ],
+          "default": null,
           "title": "Decimal Value"
         },
         "int_list_value": {
@@ -188,6 +192,7 @@
               "type": "null"
             }
           ],
+          "default": null,
           "title": "Int List Value"
         },
         "int_value": {
@@ -199,6 +204,7 @@
               "type": "null"
             }
           ],
+          "default": null,
           "title": "Int Value"
         },
         "key": {
@@ -238,6 +244,7 @@
               "type": "null"
             }
           ],
+          "default": null,
           "title": "Number List Value"
         },
         "number_value": {
@@ -249,6 +256,7 @@
               "type": "null"
             }
           ],
+          "default": null,
           "title": "Number Value"
         },
         "string_list_value": {
@@ -265,6 +273,7 @@
               "type": "null"
             }
           ],
+          "default": null,
           "title": "String List Value"
         },
         "string_value": {
@@ -277,27 +286,18 @@
               "type": "null"
             }
           ],
+          "default": null,
           "title": "String Value"
         },
         "value": {
+          "default": null,
           "title": "Value",
           "type": "null"
         }
       },
       "required": [
         "key",
-        "kind",
-        "value",
-        "bool_value",
-        "int_value",
-        "number_value",
-        "decimal_value",
-        "string_value",
-        "bool_list_value",
-        "int_list_value",
-        "number_list_value",
-        "decimal_list_value",
-        "string_list_value"
+        "kind"
       ],
       "title": "ProviderWireEntry",
       "type": "object"

@@ -1,7 +1,7 @@
 {
   "additionalProperties": false,
   "properties": {
-    "requirements": {
+    "calculation_requirements": {
       "anyOf": [
         {
           "items": {
@@ -17,27 +17,95 @@
                 "pattern": "^[a-z][a-z0-9_]*$",
                 "type": "string"
               },
-              "capability_options": {
-                "items": {
-                  "maxLength": 64,
-                  "minLength": 1,
-                  "pattern": "^[a-z][a-z0-9_]*$",
-                  "type": "string"
-                },
-                "maxItems": 8,
-                "minItems": 1,
-                "type": "array"
+              "metric_ids": {
+                "anyOf": [
+                  {
+                    "items": {
+                      "maxLength": 128,
+                      "minLength": 1,
+                      "pattern": "^[A-Z][A-Z0-9_]*$",
+                      "type": "string"
+                    },
+                    "maxItems": 16,
+                    "type": "array"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
               },
+              "requested_outputs": {
+                "anyOf": [
+                  {
+                    "items": {
+                      "maxLength": 128,
+                      "minLength": 1,
+                      "pattern": "^[A-Z][A-Z0-9_]*$",
+                      "type": "string"
+                    },
+                    "maxItems": 16,
+                    "type": "array"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            "required": [
+              "description",
+              "id",
+              "metric_ids",
+              "requested_outputs"
+            ],
+            "type": "object"
+          },
+          "maxItems": 32,
+          "type": "array"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "missing_skills": {
+      "anyOf": [
+        {
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 16,
+          "type": "array"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "missing_subquestions": {
+      "anyOf": [
+        {
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 32,
+          "type": "array"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "requirements": {
+      "anyOf": [
+        {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
               "capability_argument_sets": {
                 "items": {
                   "additionalProperties": false,
                   "properties": {
-                    "capability_id": {
-                      "maxLength": 64,
-                      "minLength": 1,
-                      "pattern": "^[a-z][a-z0-9_]*$",
-                      "type": "string"
-                    },
                     "arguments": {
                       "anyOf": [
                         {
@@ -49,6 +117,90 @@
                                   "items": {
                                     "additionalProperties": false,
                                     "properties": {
+                                      "bool_list_value": {
+                                        "anyOf": [
+                                          {
+                                            "items": {
+                                              "type": "boolean"
+                                            },
+                                            "maxItems": 32,
+                                            "type": "array"
+                                          },
+                                          {
+                                            "type": "null"
+                                          }
+                                        ],
+                                        "default": null
+                                      },
+                                      "bool_value": {
+                                        "anyOf": [
+                                          {
+                                            "type": "boolean"
+                                          },
+                                          {
+                                            "type": "null"
+                                          }
+                                        ],
+                                        "default": null
+                                      },
+                                      "decimal_list_value": {
+                                        "anyOf": [
+                                          {
+                                            "items": {
+                                              "maxLength": 128,
+                                              "minLength": 1,
+                                              "pattern": "^-?(0|[1-9][0-9]*)(\\.[0-9]+)?$",
+                                              "type": "string"
+                                            },
+                                            "maxItems": 32,
+                                            "type": "array"
+                                          },
+                                          {
+                                            "type": "null"
+                                          }
+                                        ],
+                                        "default": null
+                                      },
+                                      "decimal_value": {
+                                        "anyOf": [
+                                          {
+                                            "maxLength": 128,
+                                            "minLength": 1,
+                                            "pattern": "^-?(0|[1-9][0-9]*)(\\.[0-9]+)?$",
+                                            "type": "string"
+                                          },
+                                          {
+                                            "type": "null"
+                                          }
+                                        ],
+                                        "default": null
+                                      },
+                                      "int_list_value": {
+                                        "anyOf": [
+                                          {
+                                            "items": {
+                                              "type": "integer"
+                                            },
+                                            "maxItems": 32,
+                                            "type": "array"
+                                          },
+                                          {
+                                            "type": "null"
+                                          }
+                                        ],
+                                        "default": null
+                                      },
+                                      "int_value": {
+                                        "anyOf": [
+                                          {
+                                            "type": "integer"
+                                          },
+                                          {
+                                            "type": "null"
+                                          }
+                                        ],
+                                        "default": null
+                                      },
                                       "key": {
                                         "maxLength": 128,
                                         "minLength": 1,
@@ -71,91 +223,6 @@
                                         ],
                                         "type": "string"
                                       },
-                                      "value": {
-                                        "type": "null"
-                                      },
-                                      "bool_value": {
-                                        "anyOf": [
-                                          {
-                                            "type": "boolean"
-                                          },
-                                          {
-                                            "type": "null"
-                                          }
-                                        ]
-                                      },
-                                      "int_value": {
-                                        "anyOf": [
-                                          {
-                                            "type": "integer"
-                                          },
-                                          {
-                                            "type": "null"
-                                          }
-                                        ]
-                                      },
-                                      "number_value": {
-                                        "anyOf": [
-                                          {
-                                            "type": "number"
-                                          },
-                                          {
-                                            "type": "null"
-                                          }
-                                        ]
-                                      },
-                                      "decimal_value": {
-                                        "anyOf": [
-                                          {
-                                            "maxLength": 128,
-                                            "minLength": 1,
-                                            "pattern": "^-?(0|[1-9][0-9]*)(\\.[0-9]+)?$",
-                                            "type": "string"
-                                          },
-                                          {
-                                            "type": "null"
-                                          }
-                                        ]
-                                      },
-                                      "string_value": {
-                                        "anyOf": [
-                                          {
-                                            "maxLength": 2048,
-                                            "type": "string"
-                                          },
-                                          {
-                                            "type": "null"
-                                          }
-                                        ]
-                                      },
-                                      "bool_list_value": {
-                                        "anyOf": [
-                                          {
-                                            "items": {
-                                              "type": "boolean"
-                                            },
-                                            "maxItems": 32,
-                                            "type": "array"
-                                          },
-                                          {
-                                            "type": "null"
-                                          }
-                                        ]
-                                      },
-                                      "int_list_value": {
-                                        "anyOf": [
-                                          {
-                                            "items": {
-                                              "type": "integer"
-                                            },
-                                            "maxItems": 32,
-                                            "type": "array"
-                                          },
-                                          {
-                                            "type": "null"
-                                          }
-                                        ]
-                                      },
                                       "number_list_value": {
                                         "anyOf": [
                                           {
@@ -168,24 +235,19 @@
                                           {
                                             "type": "null"
                                           }
-                                        ]
+                                        ],
+                                        "default": null
                                       },
-                                      "decimal_list_value": {
+                                      "number_value": {
                                         "anyOf": [
                                           {
-                                            "items": {
-                                              "maxLength": 128,
-                                              "minLength": 1,
-                                              "pattern": "^-?(0|[1-9][0-9]*)(\\.[0-9]+)?$",
-                                              "type": "string"
-                                            },
-                                            "maxItems": 32,
-                                            "type": "array"
+                                            "type": "number"
                                           },
                                           {
                                             "type": "null"
                                           }
-                                        ]
+                                        ],
+                                        "default": null
                                       },
                                       "string_list_value": {
                                         "anyOf": [
@@ -200,7 +262,32 @@
                                           {
                                             "type": "null"
                                           }
-                                        ]
+                                        ],
+                                        "default": null
+                                      },
+                                      "string_value": {
+                                        "anyOf": [
+                                          {
+                                            "maxLength": 2048,
+                                            "type": "string"
+                                          },
+                                          {
+                                            "type": "null"
+                                          }
+                                        ],
+                                        "default": null
+                                      },
+                                      "value": {
+                                        "anyOf": [
+                                          {
+                                            "default": null,
+                                            "type": "null"
+                                          },
+                                          {
+                                            "type": "null"
+                                          }
+                                        ],
+                                        "default": null
                                       }
                                     },
                                     "required": [
@@ -238,6 +325,12 @@
                           "type": "null"
                         }
                       ]
+                    },
+                    "capability_id": {
+                      "maxLength": 64,
+                      "minLength": 1,
+                      "pattern": "^[a-z][a-z0-9_]*$",
+                      "type": "string"
                     }
                   },
                   "required": [
@@ -249,6 +342,27 @@
                 "maxItems": 8,
                 "minItems": 1,
                 "type": "array"
+              },
+              "capability_options": {
+                "items": {
+                  "maxLength": 64,
+                  "minLength": 1,
+                  "pattern": "^[a-z][a-z0-9_]*$",
+                  "type": "string"
+                },
+                "maxItems": 8,
+                "minItems": 1,
+                "type": "array"
+              },
+              "description": {
+                "maxLength": 2048,
+                "type": "string"
+              },
+              "id": {
+                "maxLength": 64,
+                "minLength": 1,
+                "pattern": "^[a-z][a-z0-9_]*$",
+                "type": "string"
               },
               "metric_ids": {
                 "anyOf": [
@@ -296,101 +410,6 @@
             "type": "object"
           },
           "maxItems": 32,
-          "type": "array"
-        },
-        {
-          "type": "null"
-        }
-      ]
-    },
-    "calculation_requirements": {
-      "anyOf": [
-        {
-          "items": {
-            "additionalProperties": false,
-            "properties": {
-              "id": {
-                "maxLength": 64,
-                "minLength": 1,
-                "pattern": "^[a-z][a-z0-9_]*$",
-                "type": "string"
-              },
-              "description": {
-                "maxLength": 2048,
-                "type": "string"
-              },
-              "metric_ids": {
-                "anyOf": [
-                  {
-                    "items": {
-                      "maxLength": 128,
-                      "minLength": 1,
-                      "pattern": "^[A-Z][A-Z0-9_]*$",
-                      "type": "string"
-                    },
-                    "maxItems": 16,
-                    "type": "array"
-                  },
-                  {
-                    "type": "null"
-                  }
-                ]
-              },
-              "requested_outputs": {
-                "anyOf": [
-                  {
-                    "items": {
-                      "maxLength": 128,
-                      "minLength": 1,
-                      "pattern": "^[A-Z][A-Z0-9_]*$",
-                      "type": "string"
-                    },
-                    "maxItems": 16,
-                    "type": "array"
-                  },
-                  {
-                    "type": "null"
-                  }
-                ]
-              }
-            },
-            "required": [
-              "description",
-              "id",
-              "metric_ids",
-              "requested_outputs"
-            ],
-            "type": "object"
-          },
-          "maxItems": 32,
-          "type": "array"
-        },
-        {
-          "type": "null"
-        }
-      ]
-    },
-    "missing_subquestions": {
-      "anyOf": [
-        {
-          "items": {
-            "type": "string"
-          },
-          "maxItems": 32,
-          "type": "array"
-        },
-        {
-          "type": "null"
-        }
-      ]
-    },
-    "missing_skills": {
-      "anyOf": [
-        {
-          "items": {
-            "type": "string"
-          },
-          "maxItems": 16,
           "type": "array"
         },
         {
