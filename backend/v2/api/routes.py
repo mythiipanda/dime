@@ -910,6 +910,33 @@ def _answer_text(result) -> str:
     return "\n".join(lines) or "I could not verify a publishable answer from the available data."
 
 
+def _output_display_name(output_id: str, definitions=None) -> str:
+    definition = (definitions or {}).get(output_id)
+    if definition:
+        head = definition.split(":", 1)[0].strip()
+        if head and len(head) <= 64:
+            return head
+    humanized = output_id.replace("_", " ").strip()
+    if humanized and humanized == humanized.lower():
+        return humanized.upper()
+    return humanized or output_id
+
+
+def _envelope_definitions(result, evidence_id: str) -> dict:
+    try:
+        for item in result.execution.evidence:
+            if getattr(item, "evidence_id", None) == evidence_id:
+                return dict(getattr(item, "metric_definitions", None) or {})
+    except Exception:
+        return {}
+    return {}
+
+
+def _public_gaps(result) -> list[dict]:
+    return [{"kind": gap.kind.value, "blocks": list(gap.blocks)}
+            for gap in result.gaps]
+
+
 def _public_output_status(result, status) -> dict:
     item = {"requirement_kind": status.requirement_kind,
             "requirement_id": status.requirement_id,
@@ -920,7 +947,8 @@ def _public_output_status(result, status) -> dict:
             calculation = next(x for x in result.draft.calculations
                                if x.calculation_id == binding.calculation_id)
             item.update(value=str(calculation.result),
-                        unit=calculation.unit or "unitless")
+                        unit=calculation.unit or "unitless",
+                        display_name=_output_display_name(status.output_id))
         else:
             item.update(value=("true" if binding.value.kind == "boolean" and binding.value.value
                                else "false" if binding.value.kind == "boolean"
@@ -928,7 +956,10 @@ def _public_output_status(result, status) -> dict:
                         unit=(binding.unit.value if binding.unit.kind == "declared"
                               else "unitless"),
                         subject_type=binding.subject_entity_type,
-                        subject_id=binding.subject_entity_id)
+                        subject_id=binding.subject_entity_id,
+                        display_name=_output_display_name(
+                            status.output_id,
+                            _envelope_definitions(result, binding.evidence_id)))
     return item
 
 
@@ -961,6 +992,8 @@ def _public_evidence_tables(result) -> list[dict]:
             if not equal:
                 raise ValueError("publication evidence changed after admission")
             tables.append({"output_id":binding.output_id,
+                "display_name":_output_display_name(
+                    binding.output_id, envelope.metric_definitions),
                 "subject_type":binding.subject_entity_type,
                 "subject_id":binding.subject_entity_id,
                 "value":str(binding.value.value),
@@ -984,6 +1017,7 @@ def _public_evidence_tables(result) -> list[dict]:
                 if len(selected)!=1:
                     raise ValueError("publication calculation input must resolve exactly once")
                 tables.append({"output_id":binding.output_id,
+                    "display_name":_output_display_name(binding.output_id),
                     "input_value":str(selected[0]),
                     "provenance":{"capability":envelope.capability,
                                   "season":envelope.season,
@@ -1306,7 +1340,8 @@ async def quick_answer_stream(body: QuickAnswerBody):
                               + ("The run timed out before finishing." if timed_out else "")),
                         carry={"run_id": run_id, "verification": "partial",
                                "verified_claims": 0, "structural_flags": [],
-                               "gaps": [{"kind": "run_timeout" if timed_out else "execution_failure"}],
+                               "gaps": [{"kind": "run_timeout" if timed_out else "execution_failure",
+                                         "blocks": []}],
                                "stage_latencies_ms": stage_latencies_ms()}))
                 yield encode_event(GraphEnd())
                 return
@@ -1336,7 +1371,7 @@ async def quick_answer_stream(body: QuickAnswerBody):
                     "verified_claims": len(result.verified_claims),
                     "output_statuses": public_statuses,
                     "structural_flags": list(getattr(result, "structural_flags", [])),
-                    "gaps": [{"kind": gap.kind.value} for gap in result.gaps],
+                    "gaps": _public_gaps(result),
                     "stage_latencies_ms": stage_latencies_ms(),
                 }
                 yield encode_event(FinalAnswer(text=answer, carry=carry))
