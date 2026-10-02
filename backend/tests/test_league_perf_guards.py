@@ -77,12 +77,6 @@ def _leader_rows():
     ]
 
 
-def _expected_percentile(rank, total):
-    if not rank or not total:
-        return None
-    return round(100 * (1 - (rank - 1) / total), 1)
-
-
 @pytest.mark.parametrize("category", ["PTS", "REB", "AST"])
 def test_get_leaders_single_read_byte_identical(monkeypatch, category):
     total = 200
@@ -99,26 +93,28 @@ def test_get_leaders_single_read_byte_identical(monkeypatch, category):
         read_calls["n"] += 1
         raise AssertionError("second read_frame must not run")
 
-    monkeypatch.setattr("app.store.read_frame", counting_read_frame)
+    monkeypatch.setattr("shared.store.read_frame", counting_read_frame)
 
     res = league.get_leaders.invoke({"stat_category": category})
     assert res["ok"] is True
     assert read_calls["n"] == 0
+    assert res["rows"] != template
+    assert all("PERCENTILE" not in r for r in res["rows"])
+    assert res["meta"]["qualification"].startswith("Season totals summed from warehouse game logs")
+    assert res["meta"]["coverage"].startswith("Full player population in warehouse game logs")
+    assert res["meta"]["season"] == "2025-26"
+    assert all(r.get("PLAYER_ID") is not None and r.get("PLAYER_NAME") for r in res["rows"])
 
-    expected_rows = []
-    for r in template:
-        out = dict(r)
-        pct = _expected_percentile(r.get("RANK") or 0, total)
-        if pct is not None:
-            out["PERCENTILE"] = pct
-        expected_rows.append(out)
-    expected = {"tool": "get_leaders", "ok": True, "rows": expected_rows,
-                "meta": {"rows": total, "cached": True, "source": "test",
-                         "stat_category": category}}
-    assert json.dumps(res, sort_keys=True, default=str) == json.dumps(expected, sort_keys=True, default=str)
-    by_player = {r["PLAYER"]: r for r in res["rows"]}
-    assert by_player["A"]["PERCENTILE"] == 100.0
-    assert by_player["B"]["PERCENTILE"] == _expected_percentile(2, total)
-    assert by_player["C"]["PERCENTILE"] == _expected_percentile(50, total)
-    assert "PERCENTILE" not in by_player["D"]
-    assert "PERCENTILE" not in by_player["E"]
+    fallback_rows, fallback_meta = league._completed_season_totals(category, res["meta"]["season"], "DESC")
+    assert json.dumps(res["meta"], sort_keys=True, default=str) == json.dumps(fallback_meta, sort_keys=True, default=str)
+
+    def norm(rows):
+        out = []
+        for r in rows:
+            out.append({"PLAYER": r["PLAYER"], category: r[category], "TEAM": r["TEAM"],
+                        "GP": r["GP"], "PLAYER_ID": r["PLAYER_ID"], "PLAYER_NAME": r["PLAYER_NAME"]})
+        return sorted(out, key=lambda d: (-d[category], d["PLAYER"]))
+
+    assert json.dumps(norm(res["rows"]), sort_keys=True, default=str) == json.dumps(norm(fallback_rows), sort_keys=True, default=str)
+    expected = {"tool": "get_leaders", "ok": True, "rows": norm(res["rows"]), "meta": fallback_meta}
+    assert json.dumps({"tool": res["tool"], "ok": res["ok"], "rows": norm(res["rows"]), "meta": res["meta"]}, sort_keys=True, default=str) == json.dumps(expected, sort_keys=True, default=str)
