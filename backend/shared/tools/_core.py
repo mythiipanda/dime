@@ -543,6 +543,51 @@ coerce_player_id.cache_info = _coerce_player_id_cached.cache_info  # type: ignor
 coerce_player_id.cache_clear = _coerce_player_id_cached.cache_clear  # type: ignore[attr-defined]
 
 
+_STATIC_TEAMS = (
+    ("ATL", "Atlanta Hawks", 1610612737),
+    ("BKN", "Brooklyn Nets", 1610612751),
+    ("BOS", "Boston Celtics", 1610612738),
+    ("CHA", "Charlotte Hornets", 1610612766),
+    ("CHI", "Chicago Bulls", 1610612741),
+    ("CLE", "Cleveland Cavaliers", 1610612739),
+    ("DAL", "Dallas Mavericks", 1610612742),
+    ("DEN", "Denver Nuggets", 1610612743),
+    ("DET", "Detroit Pistons", 1610612765),
+    ("GSW", "Golden State Warriors", 1610612744),
+    ("HOU", "Houston Rockets", 1610612745),
+    ("IND", "Indiana Pacers", 1610612754),
+    ("LAC", "Los Angeles Clippers", 1610612746),
+    ("LAL", "Los Angeles Lakers", 1610612747),
+    ("MEM", "Memphis Grizzlies", 1610612763),
+    ("MIA", "Miami Heat", 1610612748),
+    ("MIL", "Milwaukee Bucks", 1610612749),
+    ("MIN", "Minnesota Timberwolves", 1610612750),
+    ("NOP", "New Orleans Pelicans", 1610612740),
+    ("NYK", "New York Knicks", 1610612752),
+    ("OKC", "Oklahoma City Thunder", 1610612760),
+    ("ORL", "Orlando Magic", 1610612753),
+    ("PHI", "Philadelphia 76ers", 1610612755),
+    ("PHX", "Phoenix Suns", 1610612756),
+    ("POR", "Portland Trail Blazers", 1610612757),
+    ("SAC", "Sacramento Kings", 1610612758),
+    ("SAS", "San Antonio Spurs", 1610612759),
+    ("TOR", "Toronto Raptors", 1610612761),
+    ("UTA", "Utah Jazz", 1610612762),
+    ("WAS", "Washington Wizards", 1610612764),
+)
+
+
+def _static_team_id(value: object, raw: str) -> int:
+    name = raw.lower()
+    exact = [t for t in _STATIC_TEAMS if name == t[0].lower()]
+    if exact:
+        return exact[0][2]
+    found = [t for t in _STATIC_TEAMS if name in t[1].lower()]
+    if not found:
+        raise ValueError(f"unknown team: {value}")
+    return found[0][2]
+
+
 def coerce_team_id(value: object) -> int:
     raw = str(value).strip()
     try:
@@ -551,21 +596,24 @@ def coerce_team_id(value: object) -> int:
         pass
     raw = NICKNAMES.get(raw.lower(), raw)
     raw = raw.replace("-", " ").replace("_", " ")
-    from nba_api.stats.static import teams
+    try:
+        from nba_api.stats.static import teams
 
-    name = raw.lower()
-    all_t = teams.get_teams()
-    exact = [x for x in all_t
-             if name == x.get("abbreviation", "").lower()]
-    if exact:
-        return int(exact[0]["id"])
-    found = teams.find_teams_by_full_name(raw)
-    if not found:
-        found = [x for x in all_t
-                 if name in x.get("full_name", "").lower()]
-    if not found:
-        raise ValueError(f"unknown team: {value}")
-    return int(found[0]["id"])
+        name = raw.lower()
+        all_t = teams.get_teams()
+        exact = [x for x in all_t
+                 if name == x.get("abbreviation", "").lower()]
+        if exact:
+            return int(exact[0]["id"])
+        found = teams.find_teams_by_full_name(raw)
+        if not found:
+            found = [x for x in all_t
+                     if name in x.get("full_name", "").lower()]
+        if not found:
+            raise ValueError(f"unknown team: {value}")
+        return int(found[0]["id"])
+    except Exception:
+        return _static_team_id(value, raw)
 
 
 def _cache_age_s(frame) -> float | None:

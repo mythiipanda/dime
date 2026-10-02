@@ -1038,6 +1038,10 @@ def _seed_completed_season_boxscores(monkeypatch, tmp_path):
     connection.execute("INSERT INTO silver_boxscores VALUES " + ",".join(rows))
     connection.close()
     monkeypatch.setattr(store, "DB_PATH", warehouse)
+    monkeypatch.setattr(store, "LOCK_PATH", tmp_path / ".write.lock")
+    store._tables_cache.clear()
+    store._pool_evict_all()
+    store.warehouse_identity_cache_clear()
     return warehouse
 
 
@@ -1070,3 +1074,14 @@ def test_completed_season_totals_come_from_game_logs(monkeypatch, tmp_path):
         f"{oracle_top[0][0]} {oracle_top[0][1]}")
     assert result["rows"][0]["GP"] == len(oracle_top[1][0])
     assert result["rows"][0]["AST"] == oracle_top[1][1]
+
+
+def test_completed_season_leader_rows_keep_player_id(monkeypatch, tmp_path):
+    from shared.tools.league import get_leaders
+
+    _seed_completed_season_boxscores(monkeypatch, tmp_path)
+    result = get_leaders.invoke({"stat_category": "AST", "season": "2024-25"})
+    assert result["ok"] is True
+    assert result["rows"][0]["PLAYER"] == "Trae Young"
+    assert result["rows"][0]["PLAYER_ID"] == 1629027
+    assert all("PLAYER_ID" in row for row in result["rows"])
