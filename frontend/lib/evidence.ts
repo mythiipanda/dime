@@ -1,7 +1,5 @@
 import type { AiMessage } from "./chat";
 
-export type BadgeState = "verified" | "partial" | "unverified" | "unknown";
-
 export interface EvidenceGap {
   kind?: string;
   blocks?: string[];
@@ -35,34 +33,224 @@ export interface EvidenceProvenance {
   observed_at?: string;
 }
 
-export interface EvidenceRow {
+export interface EvidenceSource {
   key: string;
-  finding: string;
-  detail: string;
+  index: number;
+  subject: string;
+  stat: string;
   value: string;
-  source: string;
-  ok: boolean;
+  origin: string;
 }
 
-export interface EvidenceSummary {
-  state: BadgeState;
-  backed: number;
-  total: number;
-  gaps: string[];
-  rows: EvidenceRow[];
-}
+const CAPABILITY_LABELS: Record<string, string> = {
+  get_advanced: "Advanced stats",
+  get_award_race: "Award races",
+  get_boxscore: "Box scores",
+  get_briefing: "Briefing",
+  get_cap_ledger: "Cap sheet",
+  get_career_totals: "Career totals",
+  get_clutch: "Clutch stats",
+  get_combine: "Combine",
+  get_compare: "Comparison",
+  get_competitive_ratings: "Competitive ratings",
+  get_comps: "Comparisons",
+  get_contract_value: "Contract values",
+  get_debate_card: "Debate cards",
+  get_draft_board: "Draft board",
+  get_draft_model: "Draft model",
+  get_elo: "Elo",
+  get_elo_standings: "Elo standings",
+  get_finder: "Finder",
+  get_four_factors: "Four factors",
+  get_game_prediction: "Game predictions",
+  get_games_on_date: "Games",
+  get_head_to_head: "Head-to-head",
+  get_historical_leaders: "All-time leaders",
+  get_hustle: "Hustle stats",
+  get_hustle_boards: "Hustle boards",
+  get_impact_estimate: "Impact estimates",
+  get_injuries: "Injuries",
+  get_injury_impact: "Injury impact",
+  get_last_x: "Recent games",
+  get_leaderboard_deltas: "Leaderboard changes",
+  get_leaders: "League leaders",
+  get_lineup_leaders: "Lineup leaders",
+  get_lineup_matchup_matrix: "Lineup matchups",
+  get_lineup_stats: "Lineup stats",
+  get_lineups: "Lineups",
+  get_matchup_preview: "Matchup preview",
+  get_matchup_splits: "Matchup splits",
+  get_morning_briefing: "Morning briefing",
+  get_on_off: "On/off",
+  get_percentiles: "Percentiles",
+  get_player_evaluation: "Player evaluations",
+  get_player_intel: "Player intel",
+  get_player_rankings: "Player rankings",
+  get_player_ratings: "Player ratings",
+  get_player_report: "Player reports",
+  get_player_risers: "Player risers",
+  get_playoff_intel: "Playoff intel",
+  get_playoff_sim: "Playoff simulator",
+  get_playoff_team_ratings: "Playoff team ratings",
+  get_playoffs: "Playoffs",
+  get_preview: "Preview",
+  get_rapm: "RAPM",
+  get_rapm_prior: "RAPM priors",
+  get_raptor_history: "RAPTOR history",
+  get_ratings: "Team ratings",
+  get_recap: "Recaps",
+  get_regression_check: "Regression checks",
+  get_rest: "Rest",
+  get_rest_advantage: "Rest advantage",
+  get_risers: "Risers",
+  get_rookie_leaders: "Rookie leaders",
+  get_rotation_check: "Rotations",
+  get_scout_pack: "Scout pack",
+  get_scouting_report: "Scouting reports",
+  get_season_averages: "Season averages",
+  get_season_series: "Season series",
+  get_shot_compare: "Shot comparison",
+  get_shot_zones: "Shot zones",
+  get_team_compare: "Team comparison",
+  get_team_four_factors: "Four factors",
+  get_team_game_log: "Game log",
+  get_team_hub: "Team hub",
+  get_team_leaders: "Team leaders",
+  get_team_shot_zones: "Shot zones",
+  get_team_splits: "Team splits",
+  get_team_trajectory: "Trajectory",
+  get_today: "Today's games",
+  get_trade_check: "Trade checker",
+  get_trade_value: "Trade values",
+  get_trend: "Trends",
+  get_warehouse_freshness: "Data freshness",
+  get_watchlist: "Watchlist",
+  get_win_prob: "Win probability",
+  get_wowy: "With or without you",
+  get_wpa_leaders: "WPA leaders",
+  get_young_player_usage: "Young player usage",
+  get_zone_deltas: "Zone changes",
+  qualified_leaders: "League leaders",
+  team_ratings: "Team ratings",
+};
 
-export function humanize(token: string): string {
-  const words = String(token || "")
+const STAT_LABELS: Record<string, string> = {
+  APG: "assists per game",
+  AST: "assists",
+  AST_PCT: "assist %",
+  BLK: "blocks",
+  BPG: "blocks per game",
+  DEF_RATING: "defensive rating",
+  DREB: "defensive rebounds",
+  DRTG: "defensive rating",
+  EFG_PCT: "effective field goal %",
+  ELO: "Elo",
+  FG_PCT: "field goal %",
+  FG3_PCT: "three-point %",
+  FT_PCT: "free throw %",
+  GP: "games",
+  GS: "starts",
+  L: "losses",
+  MIN: "minutes",
+  MPG: "minutes per game",
+  NET_RATING: "net rating",
+  NRTG: "net rating",
+  OFF_RATING: "offensive rating",
+  OREB: "offensive rebounds",
+  ORTG: "offensive rating",
+  PACE: "pace",
+  PF: "fouls",
+  PLAYER_NAME: "",
+  PLUS_MINUS: "plus/minus",
+  PPG: "points per game",
+  PTS: "points",
+  REB: "rebounds",
+  REB_PCT: "rebound %",
+  RPG: "rebounds per game",
+  SPG: "steals per game",
+  STL: "steals",
+  TEAM_NAME: "",
+  TOPG: "turnovers per game",
+  TOV: "turnovers",
+  TS_PCT: "true shooting %",
+  USG_PCT: "usage %",
+  W: "wins",
+  WIN_PCT: "win %",
+};
+
+const TEAM_NAMES: Record<string, string> = {
+  ATL: "Atlanta",
+  BOS: "Boston",
+  BKN: "Brooklyn",
+  CHA: "Charlotte",
+  CHI: "Chicago",
+  CLE: "Cleveland",
+  DAL: "Dallas",
+  DEN: "Denver",
+  DET: "Detroit",
+  GSW: "Golden State",
+  HOU: "Houston",
+  IND: "Indiana",
+  LAC: "LA Clippers",
+  LAL: "LA Lakers",
+  MEM: "Memphis",
+  MIA: "Miami",
+  MIL: "Milwaukee",
+  MIN: "Minnesota",
+  NOP: "New Orleans",
+  NYK: "New York",
+  OKC: "Oklahoma City",
+  ORL: "Orlando",
+  PHI: "Philadelphia",
+  PHX: "Phoenix",
+  POR: "Portland",
+  SAC: "Sacramento",
+  SAS: "San Antonio",
+  TOR: "Toronto",
+  UTA: "Utah",
+  WAS: "Washington",
+};
+
+const SUPERSCRIPTS = ["¹", "²", "³", "⁴", "⁵", "⁶", "⁷", "⁸", "⁹"];
+
+function plainWords(token: string): string {
+  return String(token || "")
     .split(/[_-]+/)
     .map((w) => w.trim())
-    .filter(Boolean);
-  if (words.length > 1 && (words[0] === "get" || words[0] === "fetch")) {
-    words.shift();
-  }
-  if (!words.length) return "";
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase();
+}
+
+function sentenceCase(token: string): string {
+  const words = plainWords(token).split(" ");
+  if (words.length > 1 && (words[0] === "get" || words[0] === "fetch")) words.shift();
   const joined = words.join(" ");
-  return joined.charAt(0).toUpperCase() + joined.slice(1);
+  return joined ? joined.charAt(0).toUpperCase() + joined.slice(1) : joined;
+}
+
+export function capabilityLabel(capability: string): string {
+  const key = String(capability || "");
+  if (CAPABILITY_LABELS[key]) return CAPABILITY_LABELS[key];
+  const words = sentenceCase(key);
+  return words || "Data";
+}
+
+export function statLabel(outputId: string): string {
+  const key = String(outputId || "").toUpperCase();
+  if (key in STAT_LABELS) return STAT_LABELS[key];
+  return sentenceCase(key);
+}
+
+export function subjectName(type: unknown, id: unknown): string {
+  if (id === null || id === undefined || id === "") return "";
+  const raw = String(id);
+  if (typeof type === "string" && type.toLowerCase() === "team") {
+    const upper = raw.toUpperCase();
+    return TEAM_NAMES[upper] || raw;
+  }
+  if (/^\d+$/.test(raw)) return "";
+  return raw;
 }
 
 export function gapMessage(kind: string): string {
@@ -85,41 +273,8 @@ export function gapMessage(kind: string): string {
     case "":
       return "No reason given.";
     default:
-      return humanize(key) + ".";
+      return sentenceCase(key) + ".";
   }
-}
-
-function asDatePart(raw: unknown): string {
-  if (typeof raw !== "string" || !raw) return "";
-  return raw.length >= 10 ? raw.slice(0, 10) : raw;
-}
-
-function provenanceSource(meta: EvidenceProvenance | undefined): string {
-  if (!meta) return "";
-  const parts: string[] = [];
-  if (meta.capability) parts.push(humanize(meta.capability));
-  if (meta.season) parts.push(meta.season);
-  const stamp = asDatePart(meta.as_of || meta.source_as_of || meta.fetched_at || meta.observed_at);
-  if (stamp) parts.push(stamp);
-  return parts.join(" · ");
-}
-
-function subjectLabel(id: unknown): string {
-  if (id === null || id === undefined || id === "") return "";
-  return String(id);
-}
-
-function subjectDetail(type: unknown, outputId: string): string {
-  const output = humanize(outputId);
-  if (typeof type === "string" && type) return humanize(type) + " · " + output;
-  return output;
-}
-
-function valueWithUnit(value: unknown, unit: unknown): string {
-  const text = value === null || value === undefined ? "" : String(value);
-  if (!text) return "";
-  if (typeof unit === "string" && unit && unit !== "unitless") return text + " " + unit;
-  return text;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -136,134 +291,122 @@ function allTables(ai: AiMessage): unknown[] {
   return out;
 }
 
-function tableRow(table: unknown, index: number): EvidenceRow | null {
+function originText(provenance: unknown): string {
+  if (!isRecord(provenance)) return "";
+  const p = provenance as EvidenceProvenance;
+  const parts: string[] = [];
+  if (p.capability) parts.push(capabilityLabel(String(p.capability)));
+  if (p.season) parts.push(String(p.season) + " season");
+  return parts.join(", ");
+}
+
+function statText(outputId: string, unit: unknown): string {
+  if (typeof unit === "string" && unit && unit !== "unitless") return plainWords(unit);
+  return statLabel(outputId);
+}
+
+function tableSource(table: unknown, index: number): EvidenceSource | null {
   if (!isRecord(table)) return null;
-  if (isRecord(table.provenance) || typeof table.output_id === "string") {
-    const t = table as Record<string, unknown>;
-    const provenance = isRecord(t.provenance) ? (t.provenance as EvidenceProvenance) : undefined;
-    const subject = subjectLabel(t.subject_id);
+  const t = table as Record<string, unknown>;
+  if (isRecord(t.provenance) || typeof t.output_id === "string") {
     const outputId = typeof t.output_id === "string" ? t.output_id : "";
-    const value = valueWithUnit(
-      t.value !== undefined ? t.value : t.input_value,
-      t.unit,
-    );
+    const rawValue = t.value !== undefined ? t.value : t.input_value;
+    const value = rawValue === null || rawValue === undefined ? "" : String(rawValue);
     return {
-      key: "claim-" + index + "-" + outputId,
-      finding: subject || humanize(outputId),
-      detail: subject ? subjectDetail(t.subject_type, outputId) : "",
+      key: "claim-" + index,
+      index,
+      subject: subjectName(t.subject_type, t.subject_id),
+      stat: statText(outputId, t.unit),
       value,
-      source: provenanceSource(provenance),
-      ok: true,
+      origin: originText(t.provenance),
     };
   }
-  if (typeof table.tool === "string") {
-    const t = table as { tool: string; meta?: EvidenceProvenance };
+  if (typeof t.tool === "string") {
     return {
-      key: "tool-" + index + "-" + t.tool,
-      finding: humanize(t.tool),
-      detail: "",
+      key: "tool-" + index,
+      index,
+      subject: "",
+      stat: capabilityLabel(t.tool),
       value: "",
-      source: provenanceSource(t.meta),
-      ok: true,
+      origin: originText(t.meta),
     };
   }
   return null;
 }
 
-function incompleteRows(statuses: OutputStatus[], gaps: EvidenceGap[]): EvidenceRow[] {
-  const reason = gaps.length ? gapMessage(gaps[0].kind || "") : "No reason given.";
-  const rows: EvidenceRow[] = [];
-  statuses.forEach((status, index) => {
+export function evidenceSources(ai: AiMessage): EvidenceSource[] {
+  const sources: EvidenceSource[] = [];
+  allTables(ai).forEach((table, index) => {
+    const source = tableSource(table, index);
+    if (source) sources.push({ ...source, index: sources.length });
+  });
+  return sources;
+}
+
+function carryOf(ai: AiMessage): EvidenceCarry {
+  return (ai.carry || {}) as EvidenceCarry;
+}
+
+function incompleteLabels(ai: AiMessage): string[] {
+  const carry = carryOf(ai);
+  const statuses = Array.isArray(carry.output_statuses) ? carry.output_statuses : [];
+  const labels: string[] = [];
+  statuses.forEach((status) => {
     if (!status || status.status === "complete") return;
     const outputId = typeof status.output_id === "string" ? status.output_id : "";
-    const subject = subjectLabel(status.subject_id);
-    rows.push({
-      key: "gap-" + index + "-" + outputId,
-      finding: subject || humanize(outputId) || "A finding",
-      detail: reason,
-      value: "",
-      source: "",
-      ok: false,
-    });
+    const label = subjectName(status.subject_type, status.subject_id) || statLabel(outputId);
+    labels.push(label || "a stat");
   });
-  return rows;
+  return labels;
 }
 
-function gapOnlyRows(gaps: EvidenceGap[]): EvidenceRow[] {
-  return gaps.map((gap, index) => ({
-    key: "gap-" + index,
-    finding: "This answer",
-    detail: gapMessage(gap && typeof gap.kind === "string" ? gap.kind : ""),
-    value: "",
-    source: "",
-    ok: false,
-  }));
-}
-
-export function evidenceRows(ai: AiMessage): EvidenceRow[] {
-  const tables = allTables(ai);
-  const rows: EvidenceRow[] = [];
-  tables.forEach((table, index) => {
-    const row = tableRow(table, index);
-    if (row) rows.push(row);
-  });
-  const carry = (ai.carry || {}) as EvidenceCarry;
-  const statuses = Array.isArray(carry.output_statuses) ? carry.output_statuses : [];
+function reasonText(ai: AiMessage): string {
+  const carry = carryOf(ai);
   const gaps = Array.isArray(carry.gaps) ? carry.gaps : [];
-  if (statuses.length > 0) {
-    rows.push(...incompleteRows(statuses, gaps));
-  } else if (rows.length === 0 && gaps.length > 0) {
-    rows.push(...gapOnlyRows(gaps));
-  }
-  return rows;
+  const raw = gaps.length ? gapMessage(gaps[0].kind || "") : "No reason given.";
+  return raw.charAt(0).toLowerCase() + raw.slice(1);
 }
 
-export function badgeState(carry: unknown): BadgeState {
-  if (!isRecord(carry)) return "unknown";
-  const c = carry as EvidenceCarry;
-  const verdict = typeof c.verification === "string" ? c.verification : "";
-  const gaps = Array.isArray(c.gaps) ? c.gaps : [];
-  const statuses = Array.isArray(c.output_statuses) ? c.output_statuses : [];
-  const backed =
-    typeof c.verified_claims === "number"
-      ? c.verified_claims
-      : statuses.filter((s) => s && s.status === "complete").length;
-  const hasSignal =
-    verdict !== "" ||
-    typeof c.verified_claims === "number" ||
-    gaps.length > 0 ||
-    statuses.length > 0;
-  if (backed > 0) {
-    if ((verdict === "pass" || verdict === "verified") && gaps.length === 0) return "verified";
-    return "partial";
-  }
-  if (hasSignal) return "unverified";
-  return "unknown";
-}
-
-export function summarizeEvidence(ai: AiMessage): EvidenceSummary {
-  const rows = evidenceRows(ai);
-  const carry = (ai.carry || {}) as EvidenceCarry;
+export function unverifiedSummary(ai: AiMessage): string | null {
+  const sources = evidenceSources(ai);
+  const labels = incompleteLabels(ai);
+  const carry = carryOf(ai);
   const gaps = Array.isArray(carry.gaps) ? carry.gaps : [];
   const statuses = Array.isArray(carry.output_statuses) ? carry.output_statuses : [];
-  const backed =
-    typeof carry.verified_claims === "number"
-      ? carry.verified_claims
-      : rows.filter((r) => r.ok).length;
-  const total = Math.max(statuses.length, rows.length, backed);
-  return {
-    state: badgeState(ai.carry),
-    backed,
-    total,
-    gaps: gaps.map((g) => (g && typeof g.kind === "string" ? g.kind : "")),
-    rows,
-  };
+  const signal = gaps.length > 0 || statuses.length > 0 || sources.length > 0;
+  if (!signal) return null;
+  if (labels.length === 0) {
+    if (gaps.length === 0) return null;
+    return "Dime couldn't check this answer — " + reasonText(ai);
+  }
+  const n = labels.length;
+  return n === 1
+    ? "1 number couldn't be traced to source data."
+    : n + " numbers couldn't be traced to source data.";
 }
 
-export function badgeText(summary: EvidenceSummary): string {
-  const one = summary.total === 1 ? "finding" : "findings";
-  if (summary.state === "verified") return "Verified · " + summary.backed + " of " + summary.total + " " + one;
-  if (summary.state === "partial") return "Some verified · " + summary.backed + " of " + summary.total + " " + one;
-  if (summary.state === "unverified") return "Could not verify";
-  return "";
+function escapeRegExp(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+export function withCitationMarkers(text: string, sources: EvidenceSource[]): string {
+  if (!text || sources.length === 0) return text;
+  const byValue = new Map<string, EvidenceSource[]>();
+  sources.forEach((source) => {
+    if (source.index >= SUPERSCRIPTS.length) return;
+    if (!/^(?:\d{2,}(?:\.\d+)?|\d\.\d+)$/.test(source.value)) return;
+    const list = byValue.get(source.value) || [];
+    list.push(source);
+    byValue.set(source.value, list);
+  });
+  let out = text;
+  byValue.forEach((list, value) => {
+    if (list.length !== 1) return;
+    const rx = new RegExp("(?<![\\d.])" + escapeRegExp(value) + "(?!\\d|\\.\\d)", "g");
+    const matches = out.match(rx);
+    if (!matches || matches.length !== 1) return;
+    const marker = "[" + SUPERSCRIPTS[list[0].index] + "](#cite-" + list[0].index + ")";
+    out = out.replace(rx, value + marker);
+  });
+  return out;
 }

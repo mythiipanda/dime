@@ -13,8 +13,7 @@ import {
 import { RunInfo, appendCachedRun, buildCitation, getModels, getRuns, postChatStream } from "../lib/api";
 import { activityRecordFromEvent, mergeActivityRecord } from "../lib/activity";
 import AnswerText from "./AnswerText";
-import VerificationBadge from "./VerificationBadge";
-import EvidenceSection from "./EvidenceSection";
+import CitedAnswerText from "./CitedAnswerText";
 import { StreamText } from "./StreamText";
 import { ArtifactItem } from "./ArtifactCanvas";
 import DataArtifacts from "./DataArtifacts";
@@ -721,9 +720,6 @@ export default function ChatPanel({ thread, onRunDone, preset, onOpenArtifact, a
                     <span style={{ fontWeight: 600, fontSize: 13, color: "var(--color-ink-black)" }}>
                       Dime
                     </span>
-                    <span style={{ marginLeft: "auto" }}>
-                      {m.ai && <VerificationBadge ai={m.ai} />}
-                    </span>
                   </div>
 
                   {m.ai && <AgentActivity ai={m.ai} />}
@@ -784,11 +780,11 @@ export default function ChatPanel({ thread, onRunDone, preset, onOpenArtifact, a
                       <div style={{ fontSize: 14, lineHeight: 1.64, color: "var(--color-ink-black)" }}>
                         <StreamText text={m.text} />
                       </div>
+                    ) : m.ai ? (
+                      <CitedAnswerText text={m.text} ai={m.ai} />
                     ) : (
                       <AnswerText text={m.text} />
                     )}
-
-                    {m.ai && m.ai.done && <EvidenceSection ai={m.ai} />}
 
                     {m.ai && !m.ai.done && !m.ai.text && !aiHasTables(m.ai) && (
                       <Skeleton lines={3} />

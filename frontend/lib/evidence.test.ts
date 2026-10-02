@@ -1,12 +1,13 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
-  badgeText,
-  badgeState,
-  evidenceRows,
+  capabilityLabel,
+  statLabel,
+  subjectName,
+  evidenceSources,
+  unverifiedSummary,
+  withCitationMarkers,
   gapMessage,
-  humanize,
-  summarizeEvidence,
 } from "./evidence";
 import type { AiMessage } from "./chat";
 
@@ -28,68 +29,129 @@ function aiWith(carry: unknown, tables: unknown[]): AiMessage {
 }
 
 const CLAIM_TABLE = {
-  output_id: "ppg",
+  output_id: "NET_RATING",
+  subject_type: "team",
+  subject_id: "BOS",
+  value: "9.4",
+  unit: "points_per_100_possessions",
+  provenance: { capability: "team_ratings", season: "2024-25", as_of: "2025-04-14" },
+};
+
+const NAME_TABLE = {
+  output_id: "PLAYER_NAME",
   subject_type: "player",
-  subject_id: "LeBron James",
-  value: "27.1",
-  unit: "points per game",
-  provenance: { capability: "get_leaders", season: "2024-25", as_of: "2025-04-14" },
+  subject_id: "1629027",
+  value: "Trae Young",
+  unit: "unitless",
+  provenance: { capability: "qualified_leaders", season: "2024-25" },
 };
 
-const CALC_TABLE = {
-  output_id: "net_rating",
-  input_value: "5.3",
-  provenance: { capability: "get_team_stats", season: "2024-25", as_of: "2025-04-14" },
-};
-
-const PASS_TWO = { verification: "pass", verified_claims: 2, gaps: [] };
-
-test("pass with all claims backed is verified", () => {
-  assert.equal(
-    badgeState({ verification: "pass", verified_claims: 2, gaps: [] }),
-    "verified",
-  );
+test("capability labels use plain words", () => {
+  assert.equal(capabilityLabel("get_leaders"), "League leaders");
+  assert.equal(capabilityLabel("team_ratings"), "Team ratings");
+  assert.equal(capabilityLabel("qualified_leaders"), "League leaders");
+  assert.equal(capabilityLabel("get_win_prob"), "Win probability");
 });
 
-test("pass with gaps is partial", () => {
-  assert.equal(
-    badgeState({
-      verification: "pass",
-      verified_claims: 2,
-      gaps: [{ kind: "missing_evidence" }],
-    }),
-    "partial",
-  );
+test("capability fallback strips get_ and title-cases", () => {
+  assert.equal(capabilityLabel("get_foo_bar"), "Foo bar");
+  assert.equal(capabilityLabel(""), "Data");
 });
 
-test("zero backed claims is unverified", () => {
-  assert.equal(
-    badgeState({ verification: "partial", verified_claims: 0, gaps: [{ kind: "missing_evidence" }] }),
-    "unverified",
-  );
+test("stat labels use plain words", () => {
+  assert.equal(statLabel("NET_RATING"), "net rating");
+  assert.equal(statLabel("ppg"), "points per game");
+  assert.equal(statLabel("AST"), "assists");
+  assert.equal(statLabel("PLAYER_NAME"), "");
 });
 
-test("missing carry is unknown", () => {
-  assert.equal(badgeState(undefined), "unknown");
-  assert.equal(badgeState(null), "unknown");
+test("stat fallback title-cases unknown ids", () => {
+  assert.equal(statLabel("some_new_stat"), "Some new stat");
 });
 
-test("carry without any signal is unknown", () => {
-  assert.equal(badgeState({}), "unknown");
+test("subject names resolve team abbreviations", () => {
+  assert.equal(subjectName("team", "BOS"), "Boston");
+  assert.equal(subjectName("team", "lal"), "LA Lakers");
+  assert.equal(subjectName("team", "XYZ"), "XYZ");
 });
 
-test("backed claims without a pass verdict are partial", () => {
-  assert.equal(
-    badgeState({ verification: "partial", verified_claims: 1, gaps: [] }),
-    "partial",
-  );
+test("subject names never show numeric entity ids", () => {
+  assert.equal(subjectName("player", "1629027"), "");
+  assert.equal(subjectName("player", "Trae Young"), "Trae Young");
+  assert.equal(subjectName("player", null), "");
 });
 
-test("humanize turns snake case into plain words", () => {
-  assert.equal(humanize("get_leaders"), "Leaders");
-  assert.equal(humanize("ppg_leaders"), "Ppg leaders");
-  assert.equal(humanize("fetch_historical-stats"), "Historical stats");
-  assert.equal(humanize(""), "");
+test("claim tables become plain-word sources", () => {
+  const sources = evidenceSources(aiWith({}, [CLAIM_TABLE]));
+  assert.equal(sources.length, 1);
+  assert.equal(sources[0].subject, "Boston");
+  assert.equal(sources[0].stat, "points per 100 possessions");
+  assert.equal(sources[0].value, "9.4");
+  assert.equal(sources[0].origin, "Team ratings, 2024-25 season");
+});
+
+test("name claims keep the name and skip the stat", () => {
+  const sources = evidenceSources(aiWith({}, [NAME_TABLE]));
+  assert.equal(sources.length, 1);
+  assert.equal(sources[0].subject, "");
+  assert.equal(sources[0].value, "Trae Young");
+  assert.equal(sources[0].stat, "");
+  assert.equal(sources[0].origin, "League leaders, 2024-25 season");
+});
+
+test("sources never leak machine ids", () => {
+  const sources = evidenceSources(aiWith({}, [CLAIM_TABLE, NAME_TABLE]));
+  const joined = JSON.stringify(sources);
+  for (const token of ["output_id", "subject_id", "Ppg", "Apg", "Leaders", "verified_claims", "ppg", "NET_RATING", "points_per_100"]) {
+    assert.ok(!joined.includes(token), "leaked " + token);
+  }
+});
+
+test("markers attach to a number that appears exactly once", () => {
+  const sources = evidenceSources(aiWith({}, [CLAIM_TABLE]));
+  const out = withCitationMarkers("Boston finished with a 9.4 net rating.", sources);
+  assert.equal(out, "Boston finished with a 9.4[¹](#cite-0) net rating.");
+});
+
+test("markers skip numbers that appear more than once", () => {
+  const sources = evidenceSources(aiWith({}, [CLAIM_TABLE]));
+  const out = withCitationMarkers("9.4 is the number, and 9.4 appears twice.", sources);
+  assert.equal(out, "9.4 is the number, and 9.4 appears twice.");
+});
+
+test("markers skip values claimed by more than one source", () => {
+  const other = { ...CLAIM_TABLE, output_id: "OFF_RATING", value: "9.4" };
+  const sources = evidenceSources(aiWith({}, [CLAIM_TABLE, other]));
+  const out = withCitationMarkers("Boston finished with a 9.4 net rating.", sources);
+  assert.ok(!out.includes("#cite-"));
+});
+
+test("markers skip single digits and non-numeric values", () => {
+  const sources = evidenceSources(aiWith({}, [CLAIM_TABLE, NAME_TABLE]));
+  const out = withCitationMarkers("Trae Young is 1 of 1. Boston scored 9.4.", sources);
+  assert.ok(out.includes("Trae Young is 1 of 1."));
+  assert.ok(out.includes("[¹](#cite-0)"));
+});
+
+test("markers skip values absent from the text", () => {
+  const sources = evidenceSources(aiWith({}, [CLAIM_TABLE]));
+  const out = withCitationMarkers("Boston had a great season.", sources);
+  assert.equal(out, "Boston had a great season.");
+});
+
+test("markers match numbers inside signed tokens", () => {
+  const sources = evidenceSources(aiWith({}, [CLAIM_TABLE]));
+  const out = withCitationMarkers("Boston finished +9.4 per 100.", sources);
+  assert.equal(out, "Boston finished +9.4[¹](#cite-0) per 100.");
+});
+
+test("markers cap at nine sources", () => {
+  const tables = Array.from({ length: 12 }, (_, i) => ({ ...CLAIM_TABLE, value: String(90 + i) + ".4" }));
+  const sources = evidenceSources(aiWith({}, tables));
+  const text = tables.map((t) => t.value).join(" ");
+  const out = withCitationMarkers(text, sources);
+  assert.ok(out.includes("#cite-8"));
+  assert.ok(!out.includes("#cite-9"));
 });
 
 test("gap messages use plain words", () => {
@@ -100,143 +162,47 @@ test("gap messages use plain words", () => {
   assert.equal(gapMessage(""), "No reason given.");
 });
 
-test("gap messages never leak field names", () => {
-  for (const kind of ["missing_evidence", "unsupported_claim", "execution_failure", "synthesis_incomplete", "judge_unavailable"]) {
-    assert.ok(!gapMessage(kind).includes("verified_claims"));
-  }
-});
-
-test("claim tables become one row per claim", () => {
-  const rows = evidenceRows(aiWith({ verification: "pass", verified_claims: 1, gaps: [] }, [CLAIM_TABLE]));
-  assert.equal(rows.length, 1);
-  assert.equal(rows[0].ok, true);
-  assert.equal(rows[0].finding, "LeBron James");
-  assert.ok(rows[0].detail.includes("Ppg"));
-  assert.equal(rows[0].value, "27.1 points per game");
-  assert.ok(rows[0].source.includes("Leaders"));
-  assert.ok(rows[0].source.includes("2024-25"));
-  assert.ok(rows[0].source.includes("2025-04-14"));
-});
-
-test("unitless values render without a unit", () => {
-  const rows = evidenceRows(
-    aiWith({}, [{ ...CLAIM_TABLE, unit: "unitless" }]),
-  );
-  assert.equal(rows[0].value, "27.1");
-});
-
-test("calculation input tables render their input value", () => {
-  const rows = evidenceRows(aiWith({}, [CALC_TABLE]));
-  assert.equal(rows.length, 1);
-  assert.equal(rows[0].value, "5.3");
-  assert.ok(rows[0].source.includes("2024-25"));
-});
-
-test("incomplete outputs become not-verified rows with reasons", () => {
+test("partial check states one plain sentence", () => {
   const ai = aiWith(
     {
-      verification: "partial",
+      verification: "pass",
       verified_claims: 1,
       gaps: [{ kind: "missing_evidence" }],
       output_statuses: [
-        { output_id: "ppg", status: "complete" },
-        { output_id: "apg", status: "incomplete" },
+        { output_id: "NET_RATING", status: "complete" },
+        { output_id: "apg", status: "incomplete", subject_type: "player", subject_id: "1629027" },
       ],
     },
     [CLAIM_TABLE],
   );
-  const rows = evidenceRows(ai);
-  assert.equal(rows.length, 2);
-  const missing = rows.find((r) => r.finding === "Apg");
-  assert.ok(missing);
-  assert.equal(missing.ok, false);
-  assert.equal(missing.detail, "No data covered this.");
+  assert.equal(unverifiedSummary(ai), "1 number couldn't be traced to source data.");
 });
 
-test("legacy tool tables render a source row", () => {
-  const rows = evidenceRows(
-    aiWith({}, [
-      { tool: "get_leaders", meta: { source: "warehouse", season: "2024-25" } },
-    ]),
-  );
-  assert.equal(rows.length, 1);
-  assert.equal(rows[0].ok, true);
-  assert.ok(rows[0].source.includes("2024-25"));
-});
-
-test("non-evidence tables are ignored", () => {
-  assert.deepEqual(evidenceRows(aiWith({}, [{ nonsense: true }])), []);
-  assert.deepEqual(evidenceRows(aiWith({}, [])), []);
-});
-
-test("summary counts backed against total", () => {
-  const summary = summarizeEvidence(
-    aiWith(
-      {
-        verification: "partial",
-        verified_claims: 1,
-        gaps: [{ kind: "missing_evidence" }],
-        output_statuses: [
-          { output_id: "ppg", status: "complete" },
-          { output_id: "apg", status: "incomplete" },
-        ],
-      },
-      [CLAIM_TABLE],
-    ),
-  );
-  assert.equal(summary.state, "partial");
-  assert.equal(summary.backed, 1);
-  assert.equal(summary.total, 2);
-});
-
-test("badge text uses plain words and counts", () => {
-  assert.equal(badgeText({ state: "verified", backed: 3, total: 3, gaps: [], rows: [] }), "Verified · 3 of 3 findings");
-  assert.equal(badgeText({ state: "partial", backed: 2, total: 3, gaps: [], rows: [] }), "Some verified · 2 of 3 findings");
-  assert.equal(badgeText({ state: "unverified", backed: 0, total: 2, gaps: [], rows: [] }), "Could not verify");
-  assert.equal(badgeText({ state: "unknown", backed: 0, total: 0, gaps: [], rows: [] }), "");
-});
-
-test("badge text never leaks field names", () => {
-  for (const state of ["verified", "partial", "unverified"] as const) {
-    const text = badgeText({ state, backed: 1, total: 2, gaps: [], rows: [] });
-    assert.ok(!text.includes("verified_claims"));
-    assert.ok(!text.includes("verification"));
-    assert.ok(!text.includes("claim"));
-  }
-});
-
-test("tables without carry stay unknown, rows still listed", () => {
-  const summary = summarizeEvidence(aiWith(undefined, [CLAIM_TABLE]));
-  assert.equal(summary.state, "unknown");
-  assert.equal(summary.backed, 1);
-  assert.equal(evidenceRows(aiWith(undefined, [CLAIM_TABLE])).length, 1);
-});
-
-test("gaps without outputs become one row per gap", () => {
+test("total failure states one plain sentence", () => {
   const ai = aiWith(
     { verification: "partial", verified_claims: 0, gaps: [{ kind: "run_timeout" }] },
     [],
   );
-  const rows = evidenceRows(ai);
-  assert.equal(rows.length, 1);
-  assert.equal(rows[0].ok, false);
-  assert.equal(rows[0].finding, "This answer");
-  assert.equal(rows[0].detail, "The run ran out of time.");
-  assert.equal(summarizeEvidence(ai).state, "unverified");
+  assert.equal(unverifiedSummary(ai), "Dime couldn't check this answer — the run ran out of time.");
 });
 
-test("claim rows name the subject type", () => {
-  const rows = evidenceRows(aiWith({ verification: "pass", verified_claims: 1, gaps: [] }, [CLAIM_TABLE]));
-  assert.equal(rows[0].detail, "Player · Ppg");
+test("multiple unchecked stats are counted, not listed", () => {
+  const ai = aiWith(
+    {
+      verification: "pass",
+      verified_claims: 1,
+      gaps: [{ kind: "missing_evidence" }],
+      output_statuses: [
+        { output_id: "apg", status: "incomplete" },
+        { output_id: "rpg", status: "incomplete" },
+      ],
+    },
+    [CLAIM_TABLE],
+  );
+  assert.equal(unverifiedSummary(ai), "2 numbers couldn't be traced to source data.");
 });
 
-test("carry counts set the badge numbers", () => {
-  const summary = summarizeEvidence(aiWith(PASS_TWO, [CLAIM_TABLE]));
-  assert.equal(summary.backed, 2);
-  assert.equal(summary.total, 2);
-});
-
-test("empty answer with no signal is unknown", () => {
-  const summary = summarizeEvidence(aiWith(undefined, []));
-  assert.equal(summary.state, "unknown");
+test("no signal means no summary", () => {
+  assert.equal(unverifiedSummary(aiWith({}, [])), null);
+  assert.equal(unverifiedSummary(aiWith({ verification: "pass", verified_claims: 2, gaps: [] }, [CLAIM_TABLE])), null);
 });
