@@ -333,9 +333,13 @@ CAPABILITY_DESCRIPTIONS: dict[str, str] = {
     "warehouse_freshness": "Authoritative warehouse table freshness, cadence, row counts, and stale status.",
     "standings": "League standings for one season.",
     "team_trajectory": "Bounded multi-season regular-season records for one team.",
-    "team_totals": "Team leaderboard for a counting stat, with totals and per-game averages.",
+    "team_totals": ("Team leaderboard for a counting stat, with totals and "
+                  "per-game averages. Ranks TEAMS (franchises), never "
+                  "individual players; use qualified_leaders for player "
+                  "questions."),
     "qualified_leaders": ("Qualified player leaderboard for one stat category; "
-                          "supports ranking_direction and an explicit min_attempts "
+                          "ranks individual PLAYERS, never teams. Supports "
+                          "ranking_direction and an explicit min_attempts "
                           "volume floor for percentage boards."),
     "team_splits": "Team home/away, result, last-10, and monthly records and scoring.",
     "injury_impact": "Current injuries combined with team ratings and recent form.",

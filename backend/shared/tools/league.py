@@ -1175,33 +1175,37 @@ def get_young_player_usage(max_age: int = 22, min_minutes: int = 1000,
 
 
 _TEAM_TOTAL_STATS = ("PTS", "REB", "AST", "STL", "BLK", "FG3M", "TOV")
+_TEAM_TOTAL_COLUMNS = {
+    "PTS": "points",
+    "REB": "reboundsTotal",
+    "AST": "assists",
+    "STL": "steals",
+    "BLK": "blocks",
+    "FG3M": "threePointersMade",
+    "TOV": "turnovers",
+}
 
 
 def _deduped_team_totals(stat: str, season: str):
     season = resolve_season(season)
+    column = _TEAM_TOTAL_COLUMNS.get(stat)
+    if column is None:
+        return None
     con = store.connect(read_only=True)
     try:
         tables = {r[0] for r in con.execute("SHOW TABLES").fetchall()}
-        if "silver_player_gamelogs" not in tables:
+        if "silver_boxscores" not in tables:
             return None
         return con.execute(
-            "WITH norm AS ("
-            "SELECT *, TRY_STRPTIME(GAME_DATE, '%b %d, %Y') AS d, "
-            "REPLACE(REPLACE(REPLACE(MATCHUP, 'PHX', 'PHO'), "
-            "'CHA', 'CHO'), 'BKN', 'BRK') AS m "
-            "FROM silver_player_gamelogs WHERE _season = ?), "
-            "bb_games AS ("
-            "SELECT DISTINCT d, m FROM norm "
-            "WHERE _source = 'basketball-reference'), "
-            "deduped AS ("
-            "SELECT n.* FROM norm n WHERE NOT ("
-            "n._source <> 'basketball-reference' AND (n.d, n.m) "
-            "IN (SELECT d, m FROM bb_games))) "
-            "SELECT SPLIT_PART(m, ' ', 1) AS ABBREV, "
-            f"SUM({stat}) AS TOTAL, COUNT(DISTINCT d) AS GP, "
-            f"ROUND(SUM({stat}) * 1.0 / COUNT(DISTINCT d), 1) "
+            "SELECT teamTricode AS ABBREV, "
+            f"SUM({column}) AS TOTAL, COUNT(DISTINCT GAME_ID) AS GP, "
+            f"ROUND(SUM({column}) * 1.0 / COUNT(DISTINCT GAME_ID), 1) "
             "AS PER_GAME "
-            "FROM deduped GROUP BY 1 ORDER BY TOTAL DESC",
+            "FROM silver_boxscores WHERE _season = ? "
+            "AND SUBSTR(GAME_ID, 1, 3) = '002' "
+            "AND TEAM_ID IS NOT NULL "
+            "AND (comment IS NULL OR comment = '') "
+            "GROUP BY 1 ORDER BY TOTAL DESC",
             [season]).fetchall()
     finally:
         con.close()
@@ -1225,7 +1229,7 @@ def get_team_leaders(stat_category: str = "AST",
     fetched = _deduped_team_totals(stat, season)
     if fetched is None:
         return {"tool": "get_team_leaders", "ok": False,
-                "error": "no player game logs table in the warehouse"}
+                "error": "no team totals data in the warehouse"}
     from nba_api.stats.static import teams as _static
     names = {t["abbreviation"]: t["full_name"]
              for t in _static.get_teams()}
@@ -1283,7 +1287,7 @@ def get_team_compare(stat_category: str = "PTS", top: int = 3,
     fetched = _deduped_team_totals(stat, season)
     if fetched is None:
         return {"tool": "get_team_compare", "ok": False,
-                "error": "no player game logs table in the warehouse"}
+                "error": "no team totals data in the warehouse"}
     con = store.connect(read_only=True)
     try:
         tables = {r[0] for r in con.execute("SHOW TABLES").fetchall()}

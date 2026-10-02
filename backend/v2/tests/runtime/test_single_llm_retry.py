@@ -388,3 +388,40 @@ def test_chained_timeout_cause_is_timeout():
     outer = RuntimeError("wrapper")
     outer.__cause__ = TimeoutError("timed out")
     assert ProviderStructuredModel._failure_class(outer) == "timeout"
+
+
+@pytest.mark.anyio
+async def test_decode_error_retries_same_model_then_succeeds(monkeypatch):
+    from v2.contracts import TaskSpec
+    calls = []
+    decodes = []
+
+    class OkAgent:
+        def __init__(self, model, *a, **k):
+            self.name = model.model_name
+
+        async def run(self, prompt):
+            calls.append(self.name)
+            return _ok_result()
+
+    def flaky_decode(output):
+        decodes.append(output)
+        if len(decodes) == 1:
+            raise ValueError("kind payload mismatch")
+        return {"drops": []}
+
+    async def capture_sleep(value):
+        pass
+
+    monkeypatch.setattr("v2.adapters.models.Agent", OkAgent)
+    monkeypatch.setattr("v2.adapters.models.anyio.sleep", capture_sleep)
+    m = ProviderStructuredModel("gemini", "primary")
+    monkeypatch.setattr(m, "_models", lambda: [("gemini", _Model("primary"))])
+    out = await m.generate(schema=TaskSpec, prompt="p",
+                           payload={"q": "x"}, envelope=_envelope(),
+                           decode=flaky_decode)
+    assert out.goal == "ok"
+    assert calls == ["primary", "primary"]
+    assert len(decodes) == 2
+    assert [f["message_class"] for f in m.last_failures] == ["provider_error"]
+    assert m.last_decode_extra == {"drops": []}

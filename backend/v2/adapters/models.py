@@ -550,7 +550,6 @@ class ProviderStructuredModel:
         envelope: RequestEnvelope,
         decode: Callable[[Any], dict[str, Any] | None] | None = None,
     ) -> T:
-        _ = decode
         models = self._models()
         if not models:
             raise RuntimeError("no configured structured-output provider")
@@ -558,6 +557,7 @@ class ProviderStructuredModel:
         self.last_model = None
         self.last_failures = []
         self.last_promotions = []
+        self.last_decode_extra = None
         user_prompt = json.dumps(payload, sort_keys=True, default=str)
         policy = ROUTE_POLICIES.get(envelope.route, _DEFAULT_ROUTE_POLICY)
         now = time.monotonic()
@@ -594,6 +594,8 @@ class ProviderStructuredModel:
                 self.last_request_count = request_count
                 self.last_usage_unknown = usage_unknown
                 self.last_promotions = self._reasoning_content_promotions(models)
+                if decode is not None:
+                    self.last_decode_extra = decode(result.output)
                 return result.output
             except Exception as exc:
                 failure_class = self._failure_class(exc)
@@ -2528,6 +2530,7 @@ class RecordedStructuredModel:
                 prompt=prompt,
                 payload=payload,
                 envelope=envelope,
+                decode=decode,
             )
             if not isinstance(result, schema):
                 raise TypeError(
@@ -2549,7 +2552,7 @@ class RecordedStructuredModel:
             raise
         actual_provider = getattr(self._model, "last_provider", None)
         actual_model = getattr(self._model, "last_model", None)
-        extra = decode(result) if decode is not None else None
+        extra = getattr(self._model, "last_decode_extra", None)
         request_count = getattr(self._model, "last_request_count", None)
         usage_unknown = getattr(self._model, "last_usage_unknown", None)
         data = {
