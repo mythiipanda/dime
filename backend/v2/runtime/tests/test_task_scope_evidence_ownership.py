@@ -1,0 +1,203 @@
+from datetime import UTC, datetime
+
+import pytest
+
+from v2.adapters.capabilities import CAPABILITIES
+from v2.adapters.core import build_envelope
+from v2.contracts import (
+    Claim,
+    ClaimSource,
+    DraftReport,
+    EntityRef,
+    EvidenceOutputBinding,
+    EvidenceRequirement,
+    Plan,
+    PlanNode,
+    SeasonRef,
+    TaskSpec,
+    VerifiedClaim,
+)
+from v2.runtime.models import ExecutionResult, admit_verified_claim_bindings
+
+
+_NODE_ID = "qualified_leaders:05b5922eaefae72d"
+
+
+def _rows():
+    return [
+        {
+            "PLAYER_ID": 1629027,
+            "PLAYER_NAME": "Trae Young",
+            "GP": 76,
+            "MIN": 2700,
+            "AST": 880,
+            "PTS": 1500,
+        },
+        {
+            "PLAYER_ID": 1628369,
+            "PLAYER_NAME": "Nikola Jokic",
+            "GP": 74,
+            "MIN": 2600,
+            "AST": 700,
+            "PTS": 1900,
+        },
+    ]
+
+
+def _envelope():
+    return build_envelope(
+        CAPABILITIES["qualified_leaders"],
+        {"season": "2024-25", "stat_category": "AST"},
+        {"ok": True, "rows": _rows(), "meta": {
+            "source": "warehouse",
+            "season": "2024-25",
+            "warehouse_id": "frozen-eval",
+            "warehouse_sha256": "a" * 64,
+        }},
+        entities=None,
+        observed_at=datetime.now(UTC),
+    )
+
+
+def _task():
+    return TaskSpec(
+        goal="Who led the NBA in assists in the 2024-25 season, and how many?",
+        mode="quick",
+        deliverable="Assists leader and total assists",
+        requested_outputs=["PLAYER_NAME", "AST"],
+        season=SeasonRef(value="2024-25", source="user", confidence=1.0),
+        entities=[EntityRef(id="1629027", type="player", display_name="Trae Young")],
+    )
+
+
+def _bindings(node_id=_NODE_ID, evidence_id=_NODE_ID,
+              requirement_kind="task", requirement_id=None):
+    return [
+        EvidenceOutputBinding(
+            requirement_kind=requirement_kind,
+            requirement_id=requirement_id,
+            output_id="PLAYER_NAME",
+            node_id=node_id,
+            evidence_id=evidence_id,
+            selector="rows[0].PLAYER_NAME",
+            row_selector="rows[0]",
+            value={"kind": "string", "value": "Trae Young"},
+            subject_entity_type="player",
+            subject_entity_id="1629027",
+            subject_selector="rows[0].PLAYER_ID",
+            unit={"kind": "unitless"},
+            domain="qualified_leaders",
+        ),
+        EvidenceOutputBinding(
+            requirement_kind=requirement_kind,
+            requirement_id=requirement_id,
+            output_id="AST",
+            node_id=node_id,
+            evidence_id=evidence_id,
+            selector="rows[0].AST",
+            row_selector="rows[0]",
+            value={"kind": "integer", "value": 880},
+            subject_entity_type="player",
+            subject_entity_id="1629027",
+            subject_selector="rows[0].PLAYER_ID",
+            unit={"kind": "declared", "value": "count"},
+            domain="qualified_leaders",
+        ),
+    ]
+
+
+def _admit(task, envelope, bindings, nodes=None, attempts=None):
+    nodes = nodes or [PlanNode(
+        id=_NODE_ID,
+        description="2024-25 assists leaderboard",
+        capability_hints=["qualified_leaders"],
+        status="complete",
+    )]
+    attempts = attempts or {node.id: 1 for node in nodes}
+    execution = ExecutionResult(
+        plan=Plan(nodes=nodes),
+        evidence_by_node={_NODE_ID: envelope},
+        attempts=attempts,
+    )
+    evidence_ids = list(dict.fromkeys(item.evidence_id for item in bindings))
+    claim = Claim(
+        text="Trae Young led the NBA with 880 assists in 2024-25.",
+        kind="observed",
+        evidence_ids=evidence_ids,
+        output_bindings=bindings,
+    )
+    draft = DraftReport(sections=["Assists leader"], claims=[claim])
+    verified = VerifiedClaim(
+        claim_index=0,
+        claim=claim,
+        evidence_ids=evidence_ids,
+        sources=[
+            ClaimSource(
+                evidence_id=evidence_id,
+                source=envelope.source,
+                capability=envelope.capability,
+                observed_at=envelope.observed_at,
+            )
+            for evidence_id in evidence_ids
+        ],
+        output_bindings=bindings,
+    )
+    return admit_verified_claim_bindings(task, execution, draft, verified)
+
+
+def test_task_scope_binding_citing_node_id_admits():
+    envelope = _envelope()
+    assert envelope.evidence_id != _NODE_ID
+    admitted = _admit(_task(), envelope, _bindings())
+    by_output = {item.output_id: item for item in admitted.output_bindings}
+    assert by_output["PLAYER_NAME"].value.value == "Trae Young"
+    assert by_output["AST"].value.value == 880
+
+
+def test_task_scope_binding_without_node_evidence_still_rejects():
+    envelope = _envelope()
+    ghost = "qualified_leaders:0000000000000000"
+    bindings = _bindings(node_id=ghost, evidence_id=ghost)
+    nodes = [
+        PlanNode(
+            id=_NODE_ID,
+            description="2024-25 assists leaderboard",
+            capability_hints=["qualified_leaders"],
+            status="complete",
+        ),
+        PlanNode(
+            id=ghost,
+            description="empty leaderboard",
+            capability_hints=["qualified_leaders"],
+            status="complete",
+        ),
+    ]
+    with pytest.raises(ValueError, match="ownership"):
+        _admit(_task(), envelope, bindings, nodes=nodes)
+
+
+def test_evidence_scope_binding_citing_node_id_still_rejects():
+    envelope = _envelope()
+    assert envelope.evidence_id != _NODE_ID
+    task = _task().model_copy(update={
+        "requirements": [EvidenceRequirement(
+            id="leaders",
+            description="2024-25 assists leaderboard",
+            capability_options=["qualified_leaders"],
+            capability_arguments={"stat_category": "AST", "season": "2024-25"},
+            requested_outputs=["AST"],
+        )],
+    })
+    node = PlanNode(
+        id=_NODE_ID,
+        description="2024-25 assists leaderboard",
+        capability_hints=["qualified_leaders"],
+        covers_requirement_ids=["leaders"],
+        arguments={"stat_category": "AST", "season": "2024-25"},
+        status="complete",
+    )
+    bindings = _bindings(
+        requirement_kind="evidence", requirement_id="leaders")
+    bindings = [item for item in bindings if item.output_id == "AST"]
+    with pytest.raises(ValueError, match="ownership"):
+        _admit(task, envelope, bindings, nodes=[node])

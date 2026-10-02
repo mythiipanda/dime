@@ -427,6 +427,11 @@ def admit_verified_claim_bindings(
             if binding.output_id not in allowed_outputs:
                 raise ValueError("binding output is outside its authority")
             owned = evidence_by_id.get(binding.evidence_id)
+            if owned is None and binding.requirement_kind == "task" \
+                    and binding.requirement_id is None:
+                envelope = execution.evidence_by_node.get(binding.node_id)
+                if envelope is not None:
+                    owned = (binding.node_id, envelope)
             if owned is None or owned[0] != binding.node_id:
                 raise ValueError("binding evidence ownership is invalid")
             node = next(item for item in execution.plan.nodes if item.id == binding.node_id)
