@@ -1197,7 +1197,7 @@ def _deduped_team_totals(stat: str, season: str):
         if "silver_boxscores" not in tables:
             return None
         return con.execute(
-            "SELECT teamTricode AS ABBREV, "
+            "SELECT MODE(TEAM_ID) AS TEAM_ID, teamTricode AS ABBREV, "
             f"SUM({column}) AS TOTAL, COUNT(DISTINCT GAME_ID) AS GP, "
             f"ROUND(SUM({column}) * 1.0 / COUNT(DISTINCT GAME_ID), 1) "
             "AS PER_GAME "
@@ -1205,7 +1205,7 @@ def _deduped_team_totals(stat: str, season: str):
             "AND SUBSTR(GAME_ID, 1, 3) = '002' "
             "AND TEAM_ID IS NOT NULL "
             "AND (comment IS NULL OR comment = '') "
-            "GROUP BY 1 ORDER BY TOTAL DESC",
+            "GROUP BY teamTricode ORDER BY TOTAL DESC",
             [season]).fetchall()
     finally:
         con.close()
@@ -1236,9 +1236,10 @@ def get_team_leaders(stat_category: str = "AST",
 
     _alias = {"PHO": "PHX", "CHO": "CHA", "BRK": "BKN"}
     rows = []
-    for i, (abbrev, total, gp, per_game) in enumerate(fetched, 1):
+    for i, (team_id, abbrev, total, gp, per_game) in enumerate(fetched, 1):
         rows.append({
             "RANK": i,
+            "TEAM_ID": int(team_id) if team_id is not None else None,
             "TEAM": names.get(_alias.get(abbrev, abbrev), abbrev),
             "ABBREV": abbrev,
             stat: int(total),
@@ -1307,12 +1308,13 @@ def get_team_compare(stat_category: str = "PTS", top: int = 3,
 
     _alias = {"PHO": "PHX", "CHO": "CHA", "BRK": "BKN"}
     rows = []
-    for i, (abbrev, total, gp, per_game) in enumerate(
+    for i, (team_id, abbrev, total, gp, per_game) in enumerate(
             fetched[:top], 1):
         team = names.get(_alias.get(abbrev, abbrev), abbrev)
         w, loss = records.get(team, (None, None))
         rows.append({
             "RANK": i,
+            "TEAM_ID": int(team_id) if team_id is not None else None,
             "TEAM": team,
             "ABBREV": abbrev,
             stat: int(total),
