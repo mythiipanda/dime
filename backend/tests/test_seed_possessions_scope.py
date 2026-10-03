@@ -19,3 +19,22 @@ def test_exhibition_games_are_out_of_scope():
         "exhibition/preseason out of scope"
     assert seed_possessions.scope_reason("0062400001") == \
         "exhibition/preseason out of scope"
+
+
+def _loc_row(team_id, location):
+    return {"team_id": team_id, "location": location}
+
+
+def test_home_away_resolves_from_location_column():
+    rows = [
+        _loc_row(0, "h"),
+        _loc_row(1610612738, "h"),
+        _loc_row(1610612737, "v"),
+        _loc_row(0, ""),
+    ]
+    assert seed_possessions.resolve_home_away(rows) == (1610612738, 1610612737)
+
+
+def test_home_away_unresolvable_without_sides():
+    assert seed_possessions.resolve_home_away([_loc_row(0, "h")]) is None
+    assert seed_possessions.resolve_home_away([]) is None

@@ -15,7 +15,6 @@ from shared.tools.wpamodel import win_probability
 
 TABLE = "silver_possessions"
 SOURCE = "nba_stats_pbp"
-GAMELOG_TABLE = "silver_hist_gamelogs"
 
 BASE = "https://github.com/sportsdataverse/sportsdataverse-data/releases/download"
 TAG = "nba_stats_pbp"
@@ -117,37 +116,25 @@ def game_rows(frame, game_id):
                   key=lambda r: int(r.get("order_index") or 0))
 
 
-def resolve_home_away(source_db, game_id):
-    con = duckdb.connect(str(source_db), read_only=True)
-    try:
-        tables = {r[0] for r in con.execute("SHOW TABLES").fetchall()}
-        if GAMELOG_TABLE not in tables:
-            return None
-        rel = con.execute(
-            f"SELECT team_id, matchup, team_abbreviation FROM "
-            f"{GAMELOG_TABLE} WHERE game_id = ?",
-            [game_id])
-        cols = [d[0] for d in rel.description]
-        logs = [dict(zip(cols, r)) for r in rel.fetchall()]
-    finally:
-        con.close()
-    home = away = None
-    for row in logs:
+def resolve_home_away(rows):
+    home = away = 0
+    for row in rows or []:
         try:
-            tid = int(row.get("team_id"))
+            tid = int(row.get("team_id") or 0)
         except (TypeError, ValueError):
             continue
-        matchup = str(row.get("matchup") or "")
-        abbr = str(row.get("team_abbreviation") or "")
-        if " vs. " in matchup:
-            home = (tid, abbr)
-        elif " @ " in matchup:
-            away = (tid, abbr)
-    if home is None or away is None or home[0] == away[0]:
+        if not tid:
+            continue
+        loc = str(row.get("location") or "").strip().lower()
+        if loc == "h" and not home:
+            home = tid
+        elif loc == "v" and not away:
+            away = tid
+        if home and away:
+            break
+    if not home or not away or home == away:
         return None
-    if not home[1] or not away[1]:
-        return None
-    return home[0], away[0]
+    return home, away
 
 
 def game_seconds(period, sec):
@@ -237,7 +224,7 @@ def materialize_game(rows, source_db, game_id, season=""):
         return False, f"parse failed: {exc}"[:160]
     if not parsed:
         return False, "no possessions derived"
-    placed = resolve_home_away(source_db, game_id)
+    placed = resolve_home_away(rows)
     if placed is None:
         return False, "home and away unresolvable"
     home_id, away_id = placed
