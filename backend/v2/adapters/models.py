@@ -284,10 +284,18 @@ def strip_array_length_bounds(schema):
 
 
 class DimeOpenAIChatModel(OpenAIChatModel):
+    _GEMMA_INLINE_SCHEMAS = frozenset({"TaskSpec", "DraftReport", "VerificationReport"})
+
     def _map_json_schema(self, output_object):
         from dataclasses import replace
-        from v2.argument_schemas import normalize_provider_wire_schema
+        from v2.argument_schemas import (
+            inline_provider_schema_defs,
+            normalize_provider_wire_schema,
+        )
         if output_object.name not in {"RequirementReviewWire", "PlannerOutputWire"}:
+            if _is_gemma_model(getattr(self, "model_name", "")) and output_object.name in self._GEMMA_INLINE_SCHEMAS:
+                inlined = inline_provider_schema_defs(output_object.json_schema)
+                return super()._map_json_schema(replace(output_object, json_schema=strip_array_length_bounds(inlined)))
             return super()._map_json_schema(replace(output_object, json_schema=strip_array_length_bounds(output_object.json_schema)))
         candidate, _ = normalize_provider_wire_schema(output_object.json_schema)
         return super()._map_json_schema(replace(output_object, json_schema=strip_array_length_bounds(candidate)))
