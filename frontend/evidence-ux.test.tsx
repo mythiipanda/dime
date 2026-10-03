@@ -2,7 +2,11 @@ import { describe, it } from "node:test";
 import * as assert from "node:assert";
 import * as React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import CitedAnswerText, { CiteTable, UnverifiedNote } from "./components/CitedAnswerText";
+import CitedAnswerText, {
+  CiteTable,
+  EvidenceLedger,
+  UnverifiedNote,
+} from "./components/CitedAnswerText";
 import { evidenceSources } from "./lib/evidence";
 import type { AiMessage } from "./lib/chat";
 
@@ -99,6 +103,62 @@ describe("cited answer", () => {
     );
     assert.ok(html.includes("1 number couldn&#x27;t be traced to source data."));
     assert.ok(!html.includes("NOT VERIFIED"));
+  });
+});
+
+describe("claim anchors", () => {
+  const tables = [
+    {
+      output_id: "PLAYER_NAME",
+      subject_type: "player",
+      subject_id: "1629027",
+      subject_display_name: "Trae Young",
+      value: "Trae Young",
+      unit: "unitless",
+      provenance: { capability: "qualified_leaders", season: "2024-25" },
+    },
+    {
+      output_id: "AST",
+      subject_type: "player",
+      subject_id: "1629027",
+      subject_display_name: "Trae Young",
+      value: "880",
+      unit: "count",
+      provenance: { capability: "qualified_leaders", season: "2024-25" },
+    },
+  ];
+  const text = "Trae Young led the league with 880 assists. He also won 64 games.";
+  const ai = aiWith(PASS_CARRY, tables);
+
+  it("anchors admitted claims and skips unbound prose", () => {
+    const html = renderToStaticMarkup(React.createElement(CitedAnswerText, { text, ai }));
+    const markers = html.match(/cite-marker/g) || [];
+    assert.equal(markers.length, 1);
+    assert.ok(html.includes("880"));
+  });
+
+  it("every anchor lands on a matching ledger row", () => {
+    const html = renderToStaticMarkup(React.createElement(CitedAnswerText, { text, ai }));
+    for (const index of ["0", "1"]) {
+      assert.ok(html.includes(`id="cite-${index}"`), "missing row " + index);
+    }
+    assert.ok(html.includes("Trae Young"));
+    assert.ok(html.includes("880"));
+  });
+
+  it("anchor labels carry claim detail", () => {
+    const html = renderToStaticMarkup(React.createElement(CitedAnswerText, { text, ai }));
+    assert.ok(html.includes("Show source: Trae Young"));
+    assert.ok(html.includes("League leaders, 2024-25 season"));
+  });
+
+  it("ledger lists every source even without markers", () => {
+    const sources = evidenceSources(ai);
+    const html = renderToStaticMarkup(
+      React.createElement(EvidenceLedger, { sources, openIndex: null }),
+    );
+    assert.ok(html.includes("Trae Young"));
+    assert.ok(html.includes("880"));
   });
 });
 
