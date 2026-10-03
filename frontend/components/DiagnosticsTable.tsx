@@ -20,10 +20,10 @@ export function DiagnosticsTable({ rows }: { rows: BindingDiagnostic[] }) {
   };
   return (
     <div style={{ overflowX: "auto", marginTop: 16 }}>
-      <table style={{ borderCollapse: "collapse", minWidth: 900 }}>
+      <table style={{ borderCollapse: "collapse", minWidth: 1100 }}>
         <thead>
           <tr>
-            {["#", "Output", "Requirement", "Selector", "Subject", "Declared", "Reanchored", "Rejection"].map(
+            {["#", "Output", "Requirement", "Domain", "Capability", "Selector", "Subject", "Declared", "Reanchored", "Rejection"].map(
               (h) => (
                 <th
                   key={h}
@@ -52,6 +52,8 @@ export function DiagnosticsTable({ rows }: { rows: BindingDiagnostic[] }) {
                 {d.requirement_kind}
                 {d.requirement_id ? ` · ${d.requirement_id}` : ""}
               </td>
+              <td style={cell}>{d.domain || ""}</td>
+              <td style={cell}>{d.evidence_capability || ""}</td>
               <td style={{ ...cell, fontFamily: "monospace" }}>
                 {d.selector || ""}
                 <div style={{ color: "var(--color-ash-gray)" }}>

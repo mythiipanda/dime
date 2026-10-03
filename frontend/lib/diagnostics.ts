@@ -18,6 +18,8 @@ export interface BindingDiagnostic {
   subject_entity_id: string | null;
   declared_value: Record<string, unknown>;
   declared_unit: Record<string, unknown> | null;
+  domain: string | null;
+  evidence_capability: string | null;
   reanchor_changed: boolean;
   rejection: string;
 }

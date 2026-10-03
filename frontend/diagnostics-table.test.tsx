@@ -32,6 +32,24 @@ describe("diagnostics table", () => {
     }
   });
 
+  it("renders domain and capability when the fixture carries them", () => {
+    const frame = `event: binding_diagnostic
+data: {"run_id":"run-x","claim_index":1,"requirement_kind":"evidence","requirement_id":"ratings","output_id":"NET_RATING","node_id":"ratings","evidence_id":"ev-1","selector":"rows[5].NET_RATING","row_selector":"rows[5]","subject_selector":"rows[5].TEAM_ID","subject_entity_type":"team","subject_entity_id":"BOS","declared_value":{"kind":"float","value":99.9},"declared_unit":{"kind":"declared","value":"points_per_100_possessions"},"domain":"team_ratings","evidence_capability":"team_ratings","reanchor_changed":true,"rejection":"binding evidence ownership is invalid"}
+`;
+    const rows = bindingDiagnostics(parseSseText(frame));
+    assert.equal(rows.length, 1);
+    const html = renderToStaticMarkup(React.createElement(DiagnosticsTable, { rows }));
+    assert.ok(html.includes("team_ratings"));
+    assert.ok(html.includes("changed"));
+  });
+
+  it("older fixtures without the fields render clean", () => {
+    const rows = bindingDiagnostics(parseSseText(FIXTURE));
+    const html = renderToStaticMarkup(React.createElement(DiagnosticsTable, { rows }));
+    assert.ok(!html.includes("undefined"));
+    assert.ok(!html.includes("null"));
+  });
+
   it("renders nothing without rows", () => {
     assert.equal(
       renderToStaticMarkup(React.createElement(DiagnosticsTable, { rows: [] })),
