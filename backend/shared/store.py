@@ -22,9 +22,18 @@ STATE_LOCK_PATH = STATE_PATH.parent / ".state-write.lock"
 PROVENANCE_COLS = ["_source", "_season", "_fetched_at"]
 
 
-def _warehouse_identity_uncached(path: Path) -> dict[str, str]:
+def _warehouse_identity_uncached(path: Path, sample: str | None = None) -> dict[str, str]:
+    if sample is None:
+        try:
+            size: int | None = path.stat().st_size
+        except OSError:
+            size = None
+        sample = (_warehouse_sample_hexdigest(path, size)
+                  if size is not None else None)
+        if sample is None:
+            sample = hashlib.sha256(path.read_bytes()).hexdigest()
     return {"warehouse_id": "frozen-eval" if path == CANONICAL_DB_PATH else "configured-runtime",
-            "warehouse_sha256": hashlib.sha256(path.read_bytes()).hexdigest()}
+            "warehouse_sha256": sample}
 
 
 _warehouse_identity_cache: dict[Path, tuple[tuple[int, int, str], dict[str, str]]] = {}
@@ -63,7 +72,7 @@ def warehouse_identity() -> dict[str, str]:
     entry = _warehouse_identity_cache.get(path)
     if entry is not None and entry[0] == key:
         return entry[1]
-    identity = _warehouse_identity_uncached(path)
+    identity = _warehouse_identity_uncached(path, sample)
     _warehouse_identity_cache[path] = (key, identity)
     return identity
 
