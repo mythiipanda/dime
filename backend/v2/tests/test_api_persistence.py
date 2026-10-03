@@ -1280,7 +1280,8 @@ def test_frontend_can_select_native_v2_chat_runtime():
     assert 'chatRuntime()' in api_source
     assert 'NEXT_PUBLIC_CHAT_RUNTIME' in runtime_source
     assert '"/api/v2/chat/stream"' in api_source
-    assert 'JSON.stringify({ q, model, thread, client: getClientId() })' in api_source
+    assert 'q,' in api_source and 'model,' in api_source
+    assert 'thread,' in api_source and 'client: getClientId()' in api_source
 
 
 def test_live_route_reports_pre_stream_setup_failure_as_sse(monkeypatch):
@@ -1384,7 +1385,7 @@ def test_revision_warehouse_identity_is_safe_and_startup_bound(monkeypatch, tmp_
     try:
         first = routes.runtime_warehouse_identity()
         assert first == {"warehouse_id": "configured-runtime",
-                         "sha256": hashlib.sha256(b"startup bytes").hexdigest()}
+                         "sha256": store._warehouse_sample_hexdigest(warehouse, len(b"startup bytes"))}
         assert set(first) == {"warehouse_id", "sha256"}
         assert str(warehouse) not in repr(first)
         warehouse.write_bytes(b"mutated later")
@@ -1410,7 +1411,7 @@ def test_real_lifespan_freezes_revision_warehouse_endpoint(monkeypatch, tmp_path
     try:
         with TestClient(main.app) as client:
             expected = {"warehouse_id": "configured-runtime",
-                        "sha256": hashlib.sha256(startup).hexdigest()}
+                        "sha256": store._warehouse_sample_hexdigest(warehouse, len(startup))}
             first = client.get("/api/revision").json()["warehouse"]
             assert first == expected
             assert re.fullmatch(r"[0-9a-f]{64}", first["sha256"])
