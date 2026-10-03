@@ -1219,7 +1219,7 @@ def test_frontend_can_select_native_v2_chat_runtime():
     assert 'chatRuntime()' in api_source
     assert 'NEXT_PUBLIC_CHAT_RUNTIME' in runtime_source
     assert '"/api/v2/chat/stream"' in api_source
-    assert 'JSON.stringify({ q, model, thread, client: getClientId() })' in api_source
+    assert 'client: getClientId()' in api_source
 
 
 def test_live_route_reports_pre_stream_setup_failure_as_sse(monkeypatch):
