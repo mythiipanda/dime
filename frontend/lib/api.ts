@@ -92,6 +92,10 @@ function bustEnvelopeCache(fragment: string) {
   }
 }
 
+export function clearEnvelopeCache() {
+  envelopeCache.clear();
+}
+
 async function getEnvelope<T>(path: string): Promise<T> {
   const url = `${BACKEND}${path}`;
   const hit = envelopeCache.get(url);
@@ -229,6 +233,7 @@ export async function postChatStream(
   handlers: StreamHandlers,
   signal?: AbortSignal,
   thread?: string | null,
+  options?: { diagnostics?: boolean },
 ): Promise<void> {
   const STALL_MS = 90_000;
   const PROGRESS_MS = 180_000;
@@ -275,7 +280,13 @@ export async function postChatStream(
     res = await fetch(`${BACKEND}${endpoint}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ q, model, thread, client: getClientId() }),
+      body: JSON.stringify({
+        q,
+        model,
+        thread,
+        client: getClientId(),
+        ...(options?.diagnostics ? { diagnostics: true } : null),
+      }),
       signal: ctrl.signal,
     });
   } catch (e) {

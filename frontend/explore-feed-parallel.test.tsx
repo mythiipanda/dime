@@ -6,6 +6,7 @@ import { act } from "react";
 import { createRoot } from "react-dom/client";
 import type { Root } from "react-dom/client";
 import ExploreFeed from "./components/ExploreFeed";
+import { clearEnvelopeCache } from "./lib/api";
 
 const dom = new JSDOM("<!doctype html><html><body></body></html>", {
   url: "http://localhost/",
@@ -75,6 +76,7 @@ function mockFeedFetch(
   watchGate: Promise<unknown>,
 ) {
   calls = [];
+  clearEnvelopeCache();
   gx.fetch = ((url: string, init?: RequestInit) => {
     const u = String(url);
     calls.push({ url: u, method: init?.method || "GET" });
