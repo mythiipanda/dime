@@ -3051,12 +3051,6 @@ def get_lineup_leaders(min_minutes: int = 100, limit: int = 10,
     season = resolve_season(season)
     from .. import store as _store
 
-    import duckdb
-
-
-
-
-
     min_minutes = max(25, min(float(min_minutes), 5000))
 
     sql = """
@@ -3069,7 +3063,7 @@ def get_lineup_leaders(min_minutes: int = 100, limit: int = 10,
         LIMIT ?
     """
     try:
-        con = duckdb.connect(str(_store.DB_PATH), read_only=True)
+        con = _store.connect(read_only=True)
         try:
             raw = con.execute(
                 sql, [season, float(min_minutes), int(limit) * 2]
@@ -4282,20 +4276,7 @@ def _freshness_row(table: str, rows: int, last_fetch: object,
 def _warehouse_table_meta() -> list[tuple[str, int, str | None]]:
     from .. import store as _store
 
-    import duckdb
-
-    last: Exception | None = None
-    for _ in range(5):
-        try:
-            con = duckdb.connect(str(_store.DB_PATH), read_only=True)
-            break
-        except Exception as exc:
-            last = exc
-            import time as _time
-
-            _time.sleep(0.3)
-    else:
-        raise last or RuntimeError("warehouse read failed")
+    con = _store.connect(read_only=True)
     try:
         tables = sorted(
             r[0] for r in con.execute("SHOW TABLES").fetchall()
