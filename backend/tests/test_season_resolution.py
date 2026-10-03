@@ -158,7 +158,18 @@ def test_compare_refusal_reaches_final_answer(warehouse):
     assert "could not find that in the dataset" not in texts[-1]
 
 
-def test_ratings_gap_asks_instead_of_empty_answer(warehouse):
+def test_ratings_gap_asks_instead_of_empty_answer(warehouse, monkeypatch):
+    from shared.sources import nba_stats
+    from shared.sources.base import FetchMeta, FetchResult
+    import polars as pl
+
+    def unavailable(season):
+        return FetchResult(
+            frame=pl.DataFrame(),
+            meta=FetchMeta(source=nba_stats.SOURCE, season=season),
+            ok=False, error="upstream returned nothing")
+
+    monkeypatch.setattr(nba_stats, "team_ratings", unavailable)
     out = get_ratings.invoke({"season": "2023-24"})
     assert out.get("ok") is False
     assert WAREHOUSE_MAX in str(out.get("error") or "")

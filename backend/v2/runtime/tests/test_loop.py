@@ -55,10 +55,13 @@ class SequenceVerifier:
 
     async def verify(self, task, draft, evidence) -> VerificationReport:
         status = self.statuses.pop(0)
+        rejected = (len(draft.claims) - 1
+                    if status == VerificationStatus.REPAIR else -1)
         return VerificationReport(
             status=status,
             claim_results=[
-                {"claim_index": index, "supported": True}
+                {"claim_index": index, "supported": index != rejected,
+                 "reasons": ["unsupported branch"] if index == rejected else []}
                 for index, _claim in enumerate(draft.claims)
             ],
             repair_instructions=(
@@ -73,7 +76,16 @@ class Repairer:
         return draft.model_copy(update={"sections": ["Repaired"]})
 
 
-def runtime(mechanical, semantic, repairer=None) -> Runtime:
+class RecordingRepairer(Repairer):
+    def __init__(self) -> None:
+        self.calls: list[VerificationReport] = []
+
+    async def repair(self, task, draft, evidence, verification) -> DraftReport:
+        self.calls.append(verification)
+        return await super().repair(task, draft, evidence, verification)
+
+
+def runtime(mechanical, semantic, repairer=None, ledger=None) -> Runtime:
     return Runtime(
         intake=Intake(),
         planner=Planner(),
@@ -82,6 +94,7 @@ def runtime(mechanical, semantic, repairer=None) -> Runtime:
         mechanical_verifier=mechanical,
         semantic_verifier=semantic,
         repairer=repairer,
+        ledger=ledger,
     )
 
 
@@ -208,6 +221,85 @@ async def test_repairs_once_and_reverifies() -> None:
 
 
 @pytest.mark.anyio
+async def test_coverage_only_repair_status_skips_the_repair_round() -> None:
+    from v2.runtime import LedgerKind, RunLedger
+
+    class ThreeClaimSynthesizer:
+        async def synthesize(self, task, evidence):
+            return DraftReport(
+                sections=["Answer"],
+                claims=[
+                    Claim(text=f"rating claim {index}", kind=ClaimKind.OBSERVED,
+                          evidence_ids=["evidence:facts"])
+                    for index in range(3)
+                ],
+            )
+
+    class CoverageOnlySemantic:
+        async def verify(self, task, draft, evidence):
+            return VerificationReport(
+                status=VerificationStatus.REPAIR,
+                claim_results=[
+                    {"claim_index": index, "supported": True}
+                    for index, _claim in enumerate(draft.claims)
+                ],
+                missing_branches=["current true level as a range"],
+                repair_instructions=["add the range branch"],
+            )
+
+    ledger = RunLedger("coverage-only")
+    repairer = RecordingRepairer()
+    instance = runtime(
+        SequenceVerifier(VerificationStatus.PASS, VerificationStatus.PASS),
+        CoverageOnlySemantic(), repairer, ledger)
+    instance._synthesizer = ThreeClaimSynthesizer()
+    result = await instance.run("answer")
+
+    assert repairer.calls == []
+    assert result.repaired is False
+    assert result.verification.status == VerificationStatus.PARTIAL
+    assert "current true level as a range" in result.draft.gaps
+    assert [entry.step_id for entry in ledger.entries
+            if entry.kind == LedgerKind.STEP_START] == [
+                "understand", "plan", "execute", "synthesize", "verify"]
+
+
+@pytest.mark.anyio
+async def test_unsupported_claim_still_enters_the_repair_round() -> None:
+    class RejectFirstThenPass:
+        def __init__(self) -> None:
+            self.calls = 0
+
+        async def verify(self, task, draft, evidence):
+            self.calls += 1
+            return VerificationReport(
+                status=(VerificationStatus.REPAIR if self.calls == 1
+                        else VerificationStatus.PASS),
+                claim_results=[
+                    {"claim_index": index, "supported": self.calls > 1,
+                     "reasons": (["uncited numeral 42"] if self.calls == 1
+                                 else [])}
+                    for index, _claim in enumerate(draft.claims)
+                ],
+                repair_instructions=(["rewrite the leader claim"]
+                                     if self.calls == 1 else []),
+            )
+
+    repairer = RecordingRepairer()
+    result = await runtime(
+        SequenceVerifier(VerificationStatus.PASS, VerificationStatus.PASS),
+        RejectFirstThenPass(),
+        repairer,
+    ).run("answer")
+
+    assert len(repairer.calls) == 1
+    assert [item.supported for item in repairer.calls[0].claim_results] == [False]
+    assert result.repaired is True
+    assert result.draft.sections == ["Repaired"]
+    assert result.verification.status == VerificationStatus.PASS
+
+
+@pytest.mark.anyio
 async def test_runtime_revalidates_repairer_output() -> None:
     class InvalidRepairer:
         async def repair(self, task, draft, evidence, verification):
@@ -226,10 +318,13 @@ async def test_runtime_revalidates_repairer_output() -> None:
 async def test_exhausted_repair_bounds_combined_draft_gaps() -> None:
     class MaxFindingVerifier:
         async def verify(self, task, draft, evidence):
+            rejected = len(draft.claims) - 1
             return VerificationReport(
                 status=VerificationStatus.REPAIR,
                 claim_results=[{
-                    "claim_index": index, "supported": True,
+                    "claim_index": index, "supported": index != rejected,
+                    "reasons": (["max finding branch"]
+                                if index == rejected else []),
                 } for index, _claim in enumerate(draft.claims)],
                 missing_branches=[f"missing-{index}" for index in range(128)],
                 repair_instructions=[f"repair-{index}" for index in range(128)],
@@ -239,6 +334,7 @@ async def test_exhausted_repair_bounds_combined_draft_gaps() -> None:
         MaxFindingVerifier(), MaxFindingVerifier(), Repairer(),
     ).run("answer")
 
+    assert result.repaired is True
     assert result.verification.status == VerificationStatus.PARTIAL
     assert len(result.draft.gaps) == 128
     assert result.draft.gaps == [f"missing-{index}" for index in range(128)]
@@ -248,10 +344,13 @@ async def test_exhausted_repair_bounds_combined_draft_gaps() -> None:
 async def test_exhausted_repair_returns_named_partial() -> None:
     class RejectingVerifier:
         async def verify(self, task, draft, evidence):
+            rejected = len(draft.claims) - 1
             return VerificationReport(
                 status=VerificationStatus.REPAIR,
                 claim_results=[{
-                    "claim_index": index, "supported": True,
+                    "claim_index": index, "supported": index != rejected,
+                    "reasons": (["clutch claim is not in the cited row"]
+                                if index == rejected else []),
                 } for index, _claim in enumerate(draft.claims)],
                 missing_branches=["clutch context"],
                 repair_instructions=["add clutch evidence"],
@@ -261,6 +360,7 @@ async def test_exhausted_repair_returns_named_partial() -> None:
         "answer"
     )
 
+    assert result.repaired is True
     assert result.verification.status == VerificationStatus.PARTIAL
     assert result.draft.gaps[0] == "clutch context"
     assert any(gap.kind == "judge_unavailable" for gap in result.gaps)
@@ -483,7 +583,7 @@ async def test_empty_evidence_cannot_finish_as_a_clean_pass() -> None:
 @pytest.mark.anyio
 async def test_execution_failure_prevents_clean_pass_status() -> None:
     class FailedExecutor:
-        async def execute(self, task, plan, run_id=None):
+        async def execute(self, task, plan, run_id=None, resume=True):
             from v2.runtime.models import ExecutionResult
             from v2.contracts import PlanStatus
             failed = plan.nodes[0].model_copy(update={"status": PlanStatus.FAILED})
@@ -636,7 +736,7 @@ async def test_runtime_bounds_combined_typed_publication_gaps() -> None:
 @pytest.mark.anyio
 async def test_skipped_execution_node_prevents_clean_pass() -> None:
     class SkippedExecutor:
-        async def execute(self, task, plan, run_id=None):
+        async def execute(self, task, plan, run_id=None, resume=True):
             from v2.runtime.models import ExecutionResult
             from v2.contracts import PlanStatus
             skipped = plan.nodes[0].model_copy(update={"status": PlanStatus.SKIPPED})
@@ -783,10 +883,25 @@ async def test_runtime_flags_repair_that_strips_evidence_claim():
 
     class EvidenceDraft:
         async def synthesize(self, task, evidence):
-            return DraftReport(sections=["Answer"], claims=[Claim(
-                text="Atlanta led with 2462 assists.", kind="observed",
-                evidence_ids=[evidence[0].evidence_id],
-            )])
+            return DraftReport(sections=["Answer"], claims=[
+                Claim(text="Atlanta led with 2462 assists.", kind="observed",
+                      evidence_ids=[evidence[0].evidence_id]),
+                Claim(text="Atlanta won 61 games.", kind="observed",
+                      evidence_ids=[evidence[0].evidence_id]),
+            ])
+
+    class RejectLastClaim:
+        async def verify(self, task, draft, evidence):
+            rejected = len(draft.claims) - 1
+            return VerificationReport(
+                status=VerificationStatus.REPAIR,
+                claim_results=[
+                    {"claim_index": index, "supported": index != rejected,
+                     "reasons": (["win total is not in the cited row"]
+                                 if index == rejected else [])}
+                    for index, _claim in enumerate(draft.claims)
+                ],
+                repair_instructions=["rewrite the win total branch"])
 
     class StripRepair:
         async def repair(self, task, draft, evidence, verification):
@@ -794,8 +909,7 @@ async def test_runtime_flags_repair_that_strips_evidence_claim():
                                gaps=["leader claim was rejected"])
 
     instance = runtime(
-        SequenceVerifier(VerificationStatus.REPAIR, VerificationStatus.PASS),
-        SequenceVerifier(VerificationStatus.PASS, VerificationStatus.PASS),
+        RejectLastClaim(), SequenceVerifier(VerificationStatus.PASS),
         StripRepair(),
     )
     instance._synthesizer = EvidenceDraft()
@@ -904,7 +1018,7 @@ async def test_redundant_failed_capability_does_not_create_false_partial():
             ])
 
     class RedundantExecutor:
-        async def execute(self, task, plan, run_id=None):
+        async def execute(self, task, plan, run_id=None, resume=True):
             evidence = await FakeCapability(
                 "player_report", {"TS_PCT": 0.65},
             ).execute(plan.nodes[0], task, ())
@@ -1160,16 +1274,30 @@ async def test_semantic_provider_failure_preserves_mechanically_verified_subset(
 
 @pytest.mark.anyio
 async def test_repair_provider_failure_preserves_supported_claims_as_partial():
+    class TwoClaimSynthesizer:
+        async def synthesize(self, task, evidence):
+            return DraftReport(sections=["Answer"], claims=[
+                Claim(text="42", kind=ClaimKind.OBSERVED,
+                      evidence_ids=[evidence[0].evidence_id]),
+                Claim(text="team win total", kind=ClaimKind.OBSERVED,
+                      evidence_ids=[evidence[0].evidence_id]),
+            ])
+
     class MixedMechanical:
         async def verify(self, task, draft, evidence):
             return VerificationReport(status=VerificationStatus.REPAIR,
-                claim_results=[{"claim_index":0,"supported":True}],
+                claim_results=[
+                    {"claim_index": 0, "supported": True},
+                    {"claim_index": 1, "supported": False,
+                     "reasons": ["win total is not in the cited row"]},
+                ],
                 repair_instructions=["rewrite unsupported branch"])
     class FailingRepair:
         async def repair(self, task, draft, evidence, verification):
             raise RuntimeError("all structured-output providers failed [fixture]")
     instance = runtime(MixedMechanical(), SequenceVerifier(VerificationStatus.PASS),
                        FailingRepair())
+    instance._synthesizer = TwoClaimSynthesizer()
     result = await instance.run("answer")
     assert result.verification.status == VerificationStatus.PARTIAL
     assert result.verified_claims[0].claim.text == "42"
@@ -1294,7 +1422,7 @@ async def test_runtime_caller_maps_structured_execution_code_to_typed_gap():
     from v2.runtime.models import ExecutionErrorCode, ExecutionResult
     from v2.contracts import PlanStatus
     class FailedExecutor:
-        async def execute(self, task, plan, run_id=None):
+        async def execute(self, task, plan, run_id=None, resume=True):
             failed = plan.nodes[0].model_copy(update={"status": PlanStatus.FAILED})
             return ExecutionResult(
                 plan=Plan(nodes=[failed]), attempts={failed.id: 1},

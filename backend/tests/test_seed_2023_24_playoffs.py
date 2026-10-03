@@ -33,8 +33,8 @@ def _db(path: Path):
     con = duckdb.connect(str(path))
     con.register("rows", _hist_frame().to_arrow())
     con.execute("CREATE TABLE silver_hist_gamelogs AS SELECT * FROM rows")
-    con.execute("CREATE TABLE silver_hist_player_seasons(player_id BIGINT, season INT)")
-    con.execute("INSERT INTO silver_hist_player_seasons VALUES (10, 2024), (20, 2024)")
+    con.execute("CREATE TABLE silver_hist_player_seasons(player_id BIGINT, season INT, team_abbreviation VARCHAR)")
+    con.execute("INSERT INTO silver_hist_player_seasons VALUES (10, 2024, 'AAA'), (20, 2024, 'BBB')")
     con.close()
 
 

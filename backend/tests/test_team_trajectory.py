@@ -23,8 +23,8 @@ class FakeConnection:
 
 
 def test_team_trajectory_returns_bounded_regular_season_records(monkeypatch):
-    monkeypatch.setattr("app.tools._core.coerce_team_id", lambda team: 1610612738)
-    monkeypatch.setattr("app.store.connect", lambda read_only=True: FakeConnection())
+    monkeypatch.setattr("shared.tools._core.coerce_team_id", lambda team: 1610612738)
+    monkeypatch.setattr("shared.store.connect", lambda read_only=True: FakeConnection())
     result = get_team_trajectory.invoke({"team": "Boston Celtics"})
     assert result["ok"] is True
     assert [row["record"] for row in result["rows"]] == [

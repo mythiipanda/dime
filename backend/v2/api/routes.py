@@ -15,7 +15,7 @@ from pathlib import Path
 from functools import lru_cache
 from dataclasses import dataclass
 from types import MappingProxyType, ModuleType
-from typing import Mapping
+from typing import Callable, Mapping
 
 from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi.responses import FileResponse, PlainTextResponse, Response
@@ -869,8 +869,6 @@ class QuickAnswerBody(BaseModel):
 
 def _output_line(result, status) -> str:
     binding = status.binding
-    identity = (f"{status.requirement_kind}:{status.requirement_id or 'task'}:"
-                f"{status.output_id}")
     if binding.requirement_kind == "calculation":
         calculation = next(item for item in result.draft.calculations
                            if item.calculation_id == binding.calculation_id)
@@ -883,17 +881,189 @@ def _output_line(result, status) -> str:
         unit = (binding.unit.value if binding.unit.kind == "declared" else "unitless")
         subject = (f" [{binding.subject_entity_type}:{binding.subject_entity_id}]"
                    if binding.subject_entity_id is not None else "")
-    return f"{identity}{subject} = {value} ({unit})"
+    return f"{status.output_id}{subject} = {value} ({unit})"
+
+
+LIVE_SOURCE_NAMES = {
+    "nba_api": "the NBA's live feed",
+    "basketball_reference": "Basketball Reference",
+    "espn": "ESPN",
+}
+
+LIVE_SOURCE_LINES = {
+    "live_only": ("These figures came from {sources}{when}, not from the figures "
+                  "I had saved, so they can differ from numbers you saw earlier."),
+    "mixed": ("Some of these figures were refreshed from {sources}{when}; the "
+              "rest came from the figures I had saved."),
+}
+
+
+def _live_source_line(result) -> str | None:
+    sources: set[str] = set()
+    from_saved_figures = False
+    as_of = None
+    for envelope in result.execution.evidence:
+        identity = envelope.source_identity
+        if identity is None:
+            continue
+        if identity.kind == "live":
+            sources.add(identity.source)
+        else:
+            from_saved_figures = True
+            if identity.kind == "composite":
+                sources.update(identity.live_sources)
+        if envelope.as_of is not None and (as_of is None or envelope.as_of > as_of):
+            as_of = envelope.as_of
+    if not sources:
+        return None
+    names = [name for source, name in LIVE_SOURCE_NAMES.items() if source in sources]
+    names += sorted(sources - LIVE_SOURCE_NAMES.keys())
+    story = "mixed" if from_saved_figures else "live_only"
+    return LIVE_SOURCE_LINES[story].format(
+        sources=", ".join(names), when=f" on {as_of}" if as_of else "")
+
+
+def _claim_prose(result) -> list[str]:
+    from v2.runtime.models import withheld_claim_indices
+
+    withheld = withheld_claim_indices(result.gaps)
+    claims = [item for item in result.verified_claims
+              if item.claim_index not in withheld]
+    if not claims:
+        return []
+    internal = _internal_identifier_rx(result)
+    lines: list[str] = []
+    for item in claims:
+        prose = _publishable_prose(item.claim.text, internal)
+        if prose is None:
+            lines.extend(_label_lines(result, item.claim.output_bindings))
+        else:
+            lines.append(prose)
+    return list(dict.fromkeys(lines))
+
+
+_SCRUB_REFERRAL = "the data"
+_SCRUB_COVERAGE_LIMIT = 0.6
+
+
+def _scrub_digits(m: re.Match[str]) -> str:
+    digits = m.group(0)
+    if len(digits) == 4 and 1900 <= int(digits) <= 2100:
+        return digits
+    return ""
+
+
+_PROSE_SCRUB_RULES: tuple[
+    tuple[re.Pattern[str], str | Callable[[re.Match[str]], str]], ...] = (
+    (re.compile(
+        r"\[[a-z_]{2,20}:\s*(?=[A-Za-z0-9_.\-]*\d)[A-Za-z0-9_.\-]{1,64}\]",
+        re.IGNORECASE), ""),
+    (re.compile(
+        r"\b(?:evidence|evidence_id|node|node_id|claim|claim_index|"
+        r"requirement|requirement_id|calculation|calculation_id|capability|"
+        r"selector|row_selector|subject_selector|resolve|row-scan|"
+        r"web_search|web_fetch)\b"
+        r"\s*[:=]\s*[\"']?[A-Za-z0-9_.:\-]{1,96}[\"']?"), _SCRUB_REFERRAL),
+    (re.compile(
+        r"\b(?:player|player_id|team|team_id|entity|entity_id|subject|"
+        r"subject_id|output|output_id|domain)\b"
+        r"\s*=\s*[\"']?[A-Za-z0-9_.:\-]{1,96}[\"']?"), _SCRUB_REFERRAL),
+    (re.compile(
+        r"\b[a-z][a-z0-9]*(?:_[a-z0-9]+)+\s*:\s*[A-Za-z0-9_.\-]{1,96}\b",
+        re.IGNORECASE), _SCRUB_REFERRAL),
+    (re.compile(
+        r"\b[a-z][a-z0-9_]{1,20}\s*:\s*"
+        r"(?=[A-Za-z0-9_.\-]*(?:[_\-.][A-Za-z0-9_.\-]*|[0-9]{3,}))"
+        r"[A-Za-z0-9_.\-]{1,96}\b"), _SCRUB_REFERRAL),
+    (re.compile(r"\b[a-z][a-z0-9]*(?:_[a-z0-9]+)+\b", re.IGNORECASE),
+     _SCRUB_REFERRAL),
+    (re.compile(
+        r"\b(?:rows?|lines?|columns?|cells?|season_line|matches|meta|values)\b"
+        r"(?:\s*\[\s*\d*\s*\]|\s*\[\s*\]|\.[A-Za-z_][A-Za-z0-9_]*)+",
+        re.IGNORECASE), _SCRUB_REFERRAL),
+    (re.compile(r"\d{4,}"), _scrub_digits),
+)
+
+
+_PROSE_TIDY_RULES: tuple[tuple["re.Pattern[str]", str], ...] = (
+    (re.compile(r"[(\[{]\s*[)\]}]"), ""),
+    (re.compile(r"\bthe the\b", re.IGNORECASE), "the"),
+    (re.compile(r" +([.,;:!?])"), r"\1"),
+    (re.compile(r"[ \t]{2,}"), " "),
+)
+
+_PROSE_EDGE_RX = re.compile(r"^[\s,;:.\-]+|[\s,;:\-]+$")
+
+_IDENTIFIER_SHAPE_RX = re.compile(r"[_\-.:\d]")
+_BINDING_INTERNAL_FIELDS = (
+    "evidence_id", "node_id", "selector", "row_selector", "subject_selector",
+    "subject_entity_id", "requirement_id", "calculation_id", "domain")
+
+
+def _internal_identifiers(result) -> set[str]:
+    identifiers = {envelope.evidence_id for envelope in result.execution.evidence}
+    identifiers |= {envelope.capability for envelope in result.execution.evidence}
+    identifiers |= {node.id for node in result.execution.plan.nodes}
+    for item in result.verified_claims:
+        identifiers |= set(item.claim.evidence_ids)
+        if item.claim.calculation_id is not None:
+            identifiers.add(item.claim.calculation_id)
+        for binding in item.claim.output_bindings:
+            identifiers |= {
+                getattr(binding, field) for field in _BINDING_INTERNAL_FIELDS
+                if getattr(binding, field, None) is not None}
+    return {value for value in identifiers if _IDENTIFIER_SHAPE_RX.search(value)}
+
+
+def _internal_identifier_rx(result) -> "re.Pattern[str] | None":
+    identifiers = sorted(_internal_identifiers(result), key=len, reverse=True)
+    if not identifiers:
+        return None
+    return re.compile("|".join(
+        rf"(?<![A-Za-z0-9_]){re.escape(value)}(?![A-Za-z0-9_])"
+        for value in identifiers))
+
+
+def _publishable_prose(
+        text: str, internal: re.Pattern[str] | None) -> str | None:
+    original = text
+    covered = 0
+    for pattern, replacement in _PROSE_SCRUB_RULES:
+        covered += sum(len(match.group(0))
+                       for match in pattern.finditer(text))
+        text = pattern.sub(replacement, text)
+    for pattern, replacement in _PROSE_TIDY_RULES:
+        text = pattern.sub(replacement, text)
+    text = _PROSE_EDGE_RX.sub("", text)
+    if text[:1].islower():
+        text = text[:1].upper() + text[1:]
+    if not text or covered >= _SCRUB_COVERAGE_LIMIT * len(original):
+        return None
+    if internal is not None and internal.search(text):
+        return None
+    return text
+
+
+def _label_lines(result, bindings) -> list[str]:
+    keys = {(binding.requirement_kind, binding.requirement_id,
+             binding.output_id) for binding in bindings}
+    return [_output_line(result, status) for status in result.output_statuses
+            if status.status == "complete"
+            and (status.requirement_kind, status.requirement_id,
+                 status.output_id) in keys]
 
 
 def _answer_text(result) -> str:
-    lines = [_output_line(result, item) for item in result.output_statuses
-             if item.status == "complete"]
-    for item in result.output_statuses:
-        if item.status != "complete":
-            identity = (f"{item.requirement_kind}:{item.requirement_id or 'task'}:"
-                        f"{item.output_id}")
-            lines.append(f"{identity} could not be verified ({item.status}).")
+    published = {
+        item.output_id for item in result.output_statuses
+        if item.status == "complete"
+    }
+    lines = _claim_prose(result) or list(dict.fromkeys(
+        _output_line(result, item) for item in result.output_statuses
+        if item.status == "complete"))
+    source_line = _live_source_line(result)
+    if source_line is not None:
+        lines.append(source_line)
     gap_messages = {
         "missing_evidence": "Some requested outputs could not be verified.",
         "source_conflict": "Available sources conflict for some requested outputs.",
@@ -908,6 +1078,10 @@ def _answer_text(result) -> str:
             kinds.append(gap.kind.value)
     for kind in kinds:
         lines.append(gap_messages[kind])
+    lines += list(dict.fromkeys(
+        f"{item.output_id} could not be verified ({item.status})."
+        for item in result.output_statuses
+        if item.status != "complete" and item.output_id not in published))
     return "\n".join(lines) or "I could not verify a publishable answer from the available data."
 
 
@@ -1023,7 +1197,16 @@ def _public_evidence_tables(result) -> list[dict]:
                     "provenance":{"capability":envelope.capability,
                                   "season":envelope.season,
                                   "as_of":envelope.as_of.isoformat() if envelope.as_of else None}})
-    return tables
+    distinct: dict[str, dict] = {}
+    for row in tables:
+        distinct.setdefault(json.dumps(row, sort_keys=True), row)
+    return list(distinct.values())
+
+
+def _public_capability_name(raw) -> str:
+    from v2.adapters import CAPABILITIES
+    executable = set(CAPABILITIES) | {"web_search", "web_fetch"}
+    return raw if raw in executable else "tool"
 
 
 def _safe_buffered_event(event):
@@ -1035,12 +1218,14 @@ def _safe_buffered_event(event):
             return None
         return NodeUpdate(node=event.node, status=event.status)
     if kind == "tool_call":
-        return ToolCall(node="tools", name="tool")
+        return ToolCall(node="tools", name=_public_capability_name(
+            getattr(event, "name", None)))
     if kind == "tool_result":
         status = getattr(event, "status", None)
         if status not in {"ok", "fail"}:
             return None
-        return ToolResult(node="tools", name="tool", status=status,
+        return ToolResult(node="tools", status=status,
+                          name=_public_capability_name(getattr(event, "name", None)),
                           error="Tool failed" if status == "fail" else None)
     status = getattr(event, "status", None)
     phase = getattr(event, "phase", None)
@@ -1186,7 +1371,6 @@ async def quick_answer_stream(body: QuickAnswerBody):
     from v2.api.events import EVENT_ADAPTER
     from v2.api.sse import encode_event
     from v2.runtime.assembly import build_runtime
-    from v2.adapters import CAPABILITIES
     from v2.runtime.ledger import LedgerKind
     from v2.runtime.policy import ExecutionPolicy
 
@@ -1211,9 +1395,11 @@ async def quick_answer_stream(body: QuickAnswerBody):
         event = activity_journal.append(**payload)
         common = event.model_dump(mode="json", exclude={"kind"})
         if event.kind == "tool_call":
-            queue.put_nowait(ToolCall(type="tool_call", node="tools", name=event.data.name, label=event.title, **common))
+            carried = {k: v for k, v in common.items() if k != "title"}
+            queue.put_nowait(ToolCall(type="tool_call", node="tools", name=event.data.name, label=event.title, **carried))
         elif event.kind == "tool_result":
-            queue.put_nowait(ToolResult(type="tool_result", node="tools", name=event.data.name, status="ok" if event.transition == "succeeded" else "fail", rows=event.data.rows, ms=event.duration_ms, error=("Tool failed" if event.transition == "failed" else None), **{k:v for k,v in common.items() if k not in {"status","duration_ms"}}))
+            carried = {k: v for k, v in common.items() if k not in {"title", "status", "duration_ms"}}
+            queue.put_nowait(ToolResult(type="tool_result", node="tools", name=event.data.name, status="ok" if event.transition == "succeeded" else "fail", rows=event.data.rows, ms=event.duration_ms, error=("Tool failed" if event.transition == "failed" else None), **carried))
         else:
             queue.put_nowait(EVENT_ADAPTER.validate_python({"type":event.kind, **common}))
         internal_keys.add((event.kind, internal))
@@ -1290,7 +1476,6 @@ async def quick_answer_stream(body: QuickAnswerBody):
             live_keys = getattr(activity, "internal_keys", set())
             calls = {entry.call_id: entry for entry in entries
                      if entry.kind == LedgerKind.TOOL_CALL and entry.call_id is not None}
-            executable = set(CAPABILITIES) | {"web_search", "web_fetch"}
             for entry in entries:
                 if entry.kind not in {LedgerKind.TOOL_CALL, LedgerKind.TOOL_RESULT}:
                     continue
@@ -1298,8 +1483,8 @@ async def quick_answer_stream(body: QuickAnswerBody):
                 if (kind, entry.call_id) in live_keys:
                     continue
                 call = entry if entry.kind == LedgerKind.TOOL_CALL else calls.get(entry.call_id)
-                raw_name = call.data.get("name") if call is not None else None
-                name = str(raw_name) if raw_name in executable else "tool"
+                name = _public_capability_name(
+                    call.data.get("name") if call is not None else None)
                 if entry.kind == LedgerKind.TOOL_CALL:
                     yield ToolCall(node="tools", name=name)
                 else:

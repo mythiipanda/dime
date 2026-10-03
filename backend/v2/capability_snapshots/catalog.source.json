@@ -2,6 +2,14 @@
   "clutch": {
     "arguments": {
       "properties": {
+        "clutch_margin": {
+          "default": 5,
+          "type": "integer"
+        },
+        "clutch_seconds": {
+          "default": 300,
+          "type": "integer"
+        },
         "player": {
           "default": "",
           "type": "string"
@@ -20,6 +28,10 @@
             }
           ],
           "default": null
+        },
+        "season_type": {
+          "default": "regular",
+          "type": "string"
         }
       },
       "type": "object"
@@ -371,6 +383,36 @@
     "dependent_entity_arguments": {},
     "description": "Pre-game Monte Carlo estimate for a two-team matchup."
   },
+  "head_to_head": {
+    "arguments": {
+      "properties": {
+        "opponent": {
+          "type": "string"
+        },
+        "player": {
+          "type": "string"
+        },
+        "season": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "required": [
+        "player",
+        "opponent"
+      ],
+      "type": "object"
+    },
+    "dependent_entity_arguments": {},
+    "description": "One player against one opponent team with vs-opponent averages next to the season baseline."
+  },
   "injuries": {
     "arguments": {
       "properties": {
@@ -504,6 +546,64 @@
     "dependent_entity_arguments": {},
     "description": "Five-player lineup ratings subject to a possession sample floor."
   },
+  "matchup_brief": {
+    "arguments": {
+      "properties": {
+        "a": {
+          "default": "",
+          "type": "string"
+        },
+        "b": {
+          "default": "",
+          "type": "string"
+        },
+        "season": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "type": "object"
+    },
+    "dependent_entity_arguments": {},
+    "description": "Two-team matchup brief with ratings, form, injuries, season series, and win probability."
+  },
+  "matchup_splits": {
+    "arguments": {
+      "properties": {
+        "n": {
+          "default": 15,
+          "type": "integer"
+        },
+        "player": {
+          "type": "string"
+        },
+        "season": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "required": [
+        "player"
+      ],
+      "type": "object"
+    },
+    "dependent_entity_arguments": {},
+    "description": "Situational splits for one player over the last N games by defense tier, venue, and rest."
+  },
   "metric_adjudication": {
     "arguments": {
       "properties": {
@@ -555,6 +655,26 @@
     },
     "dependent_entity_arguments": {},
     "description": "Report available and unavailable metrics for an analysis request."
+  },
+  "morning_briefing": {
+    "arguments": {
+      "properties": {
+        "season": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "type": "object"
+    },
+    "dependent_entity_arguments": {},
+    "description": "Date-scoped bundle of today snapshot, watchlist updates, and leaderboard deltas."
   },
   "on_off": {
     "arguments": {
@@ -735,6 +855,10 @@
   "player_shot_zones": {
     "arguments": {
       "properties": {
+        "min_attempts": {
+          "default": 50,
+          "type": "integer"
+        },
         "player_id": {
           "anyOf": [
             {
@@ -839,7 +963,7 @@
       "type": "object"
     },
     "dependent_entity_arguments": {},
-    "description": "Qualified player leaderboard for one stat category; supports ranking_direction and an explicit min_attempts volume floor for percentage boards."
+    "description": "Qualified player leaderboard for one stat category; ranks individual PLAYERS, never teams. Supports ranking_direction and an explicit min_attempts volume floor for percentage boards."
   },
   "rest_splits": {
     "arguments": {
@@ -933,6 +1057,36 @@
     },
     "dependent_entity_arguments": {},
     "description": "Team roster and game-log context for one season."
+  },
+  "season_series": {
+    "arguments": {
+      "properties": {
+        "season": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "team_a": {
+          "type": "string"
+        },
+        "team_b": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "team_a",
+        "team_b"
+      ],
+      "type": "object"
+    },
+    "dependent_entity_arguments": {},
+    "description": "Every meeting between two teams in one season with winner and scores when tracked."
   },
   "shooting_efficiency": {
     "arguments": {
@@ -1200,7 +1354,7 @@
       "type": "object"
     },
     "dependent_entity_arguments": {},
-    "description": "Team leaderboard for a counting stat, with totals and per-game averages."
+    "description": "Team leaderboard for a counting stat, with totals and per-game averages. Ranks TEAMS (franchises), never individual players; use qualified_leaders for player questions."
   },
   "team_trajectory": {
     "arguments": {
@@ -1238,6 +1392,26 @@
     },
     "dependent_entity_arguments": {},
     "description": "Bounded multi-season regular-season records for one team."
+  },
+  "today": {
+    "arguments": {
+      "properties": {
+        "season": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "type": "object"
+    },
+    "dependent_entity_arguments": {},
+    "description": "Date-scoped scoreboard snapshot with last night, tonight, movers, and streaks."
   },
   "trade_value": {
     "arguments": {

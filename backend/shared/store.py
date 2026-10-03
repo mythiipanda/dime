@@ -97,13 +97,29 @@ def warehouse_tables_cache_clear() -> None:
         _tables_cache.clear()
 
 
-def _tables_uncached(path: Path) -> frozenset[str]:
+def _connection_db_path(con) -> Path | None:
+    try:
+        rows = con.execute("PRAGMA database_list").fetchall()
+    except Exception:
+        return None
+    try:
+        for row in rows:
+            file = row[2] if len(row) > 2 else None
+            if file:
+                return Path(str(file))
+        return None
+    except Exception:
+        return None
+
+
+def _tables_uncached(path: Path) -> tuple[frozenset[str], Path | None]:
     if path == DB_PATH.resolve():
         con = connect(read_only=True)
     else:
         con = duckdb.connect(str(path), read_only=True)
     try:
-        return frozenset(r[0] for r in con.execute("SHOW TABLES").fetchall())
+        names = frozenset(r[0] for r in con.execute("SHOW TABLES").fetchall())
+        return names, _connection_db_path(con)
     finally:
         try:
             con.close()
@@ -118,10 +134,15 @@ def tables(path: Path | str | None = None) -> set[str]:
         entry = _tables_cache.get(key)
         if freshness is not None and entry is not None and entry[0] == freshness:
             return set(entry[1])
-    names = _tables_uncached(key)
+    names, source = _tables_uncached(key)
     with _tables_lock:
         if freshness is not None:
-            _tables_cache[key] = (freshness, names)
+            try:
+                matches = source is not None and source.resolve() == key.resolve()
+            except OSError:
+                matches = False
+            if matches:
+                _tables_cache[key] = (freshness, names)
         return set(names)
 
 

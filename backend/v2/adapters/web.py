@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-import asyncio
+import anyio
 import hashlib
 import ipaddress
 import socket
@@ -156,9 +156,9 @@ async def validate_public_url(url: str) -> str:
     try:
         literal = ipaddress.ip_address(host)
     except ValueError:
-        infos = await asyncio.to_thread(
-            socket.getaddrinfo, host, parsed.port or 443,
-            type=socket.SOCK_STREAM)
+        infos = await anyio.to_thread.run_sync(
+            lambda: socket.getaddrinfo(
+                host, parsed.port or 443, type=socket.SOCK_STREAM))
         addresses = {item[4][0] for item in infos}
         if not addresses or not all(_is_public_ip(item) for item in addresses):
             raise ValueError("web source resolves to a non-public address")
@@ -201,7 +201,7 @@ class DuckDuckGoSearch:
                 query, backend="duckduckgo", timelimit=timelimit,
                 max_results=request.max_results))
 
-        raw = await asyncio.to_thread(run)
+        raw = await anyio.to_thread.run_sync(run)
         results = []
         for item in raw[:request.max_results]:
             href = item.get("href") or item.get("url")

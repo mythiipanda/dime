@@ -168,6 +168,50 @@ def test_final_admission_rejects_wrong_selected_local_scope_end_to_end():
  with pytest.raises(ValueError,match='scope does not match'):
   admit_verified_claim_bindings(task,execution,DraftReport(sections=['x'],claims=[claim]),verified)
 
+def test_gemma_strict_path_sends_normalized_schema_flash_identical():
+ from openai import AsyncOpenAI as _AsyncOpenAI
+ from pydantic_ai import NativeOutput as _NativeOutput
+ from pydantic_ai._output import OutputSchema as _OutputSchema
+ from pydantic_ai.providers.openai import OpenAIProvider as _OpenAIProvider
+ from v2.adapters.models import DimeOpenAIChatModel as _ChatModel
+ import pathlib as _pathlib
+ def _model(name):
+  return _ChatModel(name,provider=_OpenAIProvider(openai_client=_AsyncOpenAI(base_url='https://generativelanguage.googleapis.com/v1beta/openai/',api_key='test-key')))
+ root=_pathlib.Path(__file__).parents[2]/'schema_snapshots'
+ for name,cls in [('requirement_review',RequirementReviewWire),('planner',PlannerOutputWire)]:
+  prepared=_OutputSchema.build(_NativeOutput(cls,strict=True)).processor.object_def
+  gemma=_ChatModel._map_json_schema(_model('gemma-4-26b-a4b-it'),prepared)
+  flash=_ChatModel._map_json_schema(_model('gemini-3.5-flash-lite'),prepared)
+  assert gemma==flash
+  assert gemma['json_schema']['schema']==json.loads((root/f'{name}.candidate.json').read_text())
+  assert gemma['json_schema'].get('strict') is True
+  assert not any(token in json.dumps(gemma['json_schema']['schema']) for token in ('$ref','$defs','oneOf'))
+
+def test_gemma_route_policy_extends_timeouts_flash_unchanged():
+ from v2.adapters.models import ROUTE_POLICIES,_route_policy,_is_gemma_model
+ assert _is_gemma_model('gemma-4-26b-a4b-it') and not _is_gemma_model('gemini-3.5-flash-lite')
+ for route,baseline in ROUTE_POLICIES.items():
+  assert _route_policy('gemini','gemini-3.5-flash-lite',route)==baseline
+  assert _route_policy('nvidia','z-ai/glm-5.3-flash',route)==baseline
+  gemma=_route_policy('gemini','gemma-4-26b-a4b-it',route)
+  assert gemma['max_attempts']==baseline['max_attempts']
+  assert gemma['transient_classes']==baseline['transient_classes']
+  assert gemma['attempt_timeout_s']>baseline['attempt_timeout_s']
+  assert gemma['total_budget_s']>baseline['total_budget_s']
+ assert ROUTE_POLICIES['requirement_review']['attempt_timeout_s']==30.0
+
+def test_gemma_http_timeout_exceeds_attempt_flash_unchanged(monkeypatch):
+ from shared.config import settings as _settings
+ from v2.adapters.models import (ProviderStructuredModel as _PSM,GEMMA_HTTP_TIMEOUT_S,
+  GEMMA_ROUTE_POLICY_OVERRIDES,_route_policy)
+ monkeypatch.setattr(_settings,'gemini_api_key','test-key')
+ gemma=_PSM(provider='gemini',model='gemma-4-26b-a4b-it')._models()
+ flash=_PSM(provider='gemini',model='gemini-3.5-flash-lite')._models()
+ assert len(gemma)==1 and len(flash)==1
+ assert float(gemma[0][1].client.timeout)==GEMMA_HTTP_TIMEOUT_S
+ assert float(flash[0][1].client.timeout)==float(_settings.llm_timeout_s)
+ assert GEMMA_HTTP_TIMEOUT_S>_route_policy('gemini','gemma-4-26b-a4b-it','requirement_review')['attempt_timeout_s']
+
 def test_startup_manifest_repins_typed_argument_assets():
  import hashlib,pathlib
  from v2.api.routes import _typed_argument_asset_hashes

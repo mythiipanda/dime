@@ -138,10 +138,23 @@ def test_team_ratings_capability_binds_gamelog_fallback(warehouse):
     admit_evidence(envelope, required_season=SEASON)
 
 
-def test_ratings_refusal_preserved_without_gamelogs(warehouse):
+def test_ratings_refusal_preserved_without_gamelogs(warehouse, monkeypatch):
+    from shared.sources import nba_stats
+    from shared.sources.base import FetchMeta, FetchResult
+    import polars as pl
+
+    def unavailable(season):
+        return FetchResult(
+            frame=pl.DataFrame(),
+            meta=FetchMeta(source=nba_stats.SOURCE, season=season),
+            ok=False, error="upstream returned nothing")
+
+    monkeypatch.setattr(nba_stats, "team_ratings", unavailable)
     result = get_ratings.invoke({"season": "2023-24", "team": "BOS"})
     assert result["ok"] is False
     assert result["rows"] == []
+    assert "2023-24" in str(result["error"])
+    assert "not available" in str(result["error"])
 
 
 def test_clamp_stat_rejects_unknown_category():

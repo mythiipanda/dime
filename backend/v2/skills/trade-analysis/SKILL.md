@@ -38,7 +38,7 @@ Keep these conclusions distinct:
 - Market price reflects scarcity, control, comparable trades, negotiating position, and timing.
 - Legality says whether the proposed structure is allowed.
 
-Use `trade_value` for the modeled production-versus-salary estimate. Use `contracts` for salary, payroll, control, and apron context. Run `trades` only after authoritative salary evidence exists. If it fails, preserve the legality gap. A legal trade can be bad. An attractive illegal trade needs a repair path, not a positive verdict.
+Use `trade_value` for the modeled production-versus-salary estimate. Use `contracts` for salary, payroll, control, and apron context. Run `trades` only after authoritative salary evidence exists. If it fails, preserve the legality gap. Desirability and permissibility are different verdicts. A legal trade can be bad. An attractive illegal trade needs a repair path, not a positive verdict.
 
 Every `trade_value` node names both teams and both player sides. Do not issue a one-sided value call.
 
@@ -50,7 +50,7 @@ Stress-test best, base, and downside cases. State the strongest reason each team
 
 ## Complete the answer
 
-A complete answer has:
+State the decision in one line and keep two competing readings alive until the end. A complete answer has:
 
 - current basketball delta;
 - projected delta over the control window;
@@ -60,8 +60,8 @@ A complete answer has:
 - market-price range or a named market-data gap;
 - flexibility cost;
 - legality status and repair options;
-- strongest counterargument;
-- accept, reject, negotiate, or insufficient-evidence verdict;
+- strongest counterargument, with the strongest reason each side says no;
+- conditional accept, reject, negotiate, or insufficient-evidence verdict for the named decision maker;
 - the price or new evidence that changes the verdict.
 
 Keep every fact tied to admitted evidence. Label projections and judgments. Name missing branches instead of filling them with intuition.

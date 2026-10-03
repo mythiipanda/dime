@@ -1,0 +1,95 @@
+{
+  "capability_id": "matchup_splits",
+  "dependent_entity_arguments": {},
+  "properties": [
+    {
+      "branches": [
+        {
+          "compiled_kinds": [
+            "int"
+          ],
+          "constraints": {},
+          "item_constraints": {},
+          "list_item_exact_decimal": false,
+          "scalar_exact_decimal": false,
+          "schema_sha256": "c3b6795563d69afd90a04e75b8fba4338947a5664974aa28bd244b747b802e81"
+        }
+      ],
+      "compiled_kinds": [
+        "int"
+      ],
+      "default": 15,
+      "default_present": true,
+      "list_item_exact_decimal": false,
+      "nullable": false,
+      "property": "n",
+      "required": false,
+      "scalar_exact_decimal": false,
+      "schema_sha256": "c3b6795563d69afd90a04e75b8fba4338947a5664974aa28bd244b747b802e81"
+    },
+    {
+      "branches": [
+        {
+          "compiled_kinds": [
+            "string"
+          ],
+          "constraints": {},
+          "item_constraints": {},
+          "list_item_exact_decimal": false,
+          "scalar_exact_decimal": false,
+          "schema_sha256": "00404e686415370f1711c4d7acfa2905444d3cf23cef2e10c47d445ebe690f96"
+        }
+      ],
+      "compiled_kinds": [
+        "string"
+      ],
+      "default": null,
+      "default_present": false,
+      "list_item_exact_decimal": false,
+      "nullable": false,
+      "property": "player",
+      "required": true,
+      "scalar_exact_decimal": false,
+      "schema_sha256": "00404e686415370f1711c4d7acfa2905444d3cf23cef2e10c47d445ebe690f96"
+    },
+    {
+      "branches": [
+        {
+          "compiled_kinds": [
+            "string"
+          ],
+          "constraints": {},
+          "item_constraints": {},
+          "list_item_exact_decimal": false,
+          "scalar_exact_decimal": false,
+          "schema_sha256": "00404e686415370f1711c4d7acfa2905444d3cf23cef2e10c47d445ebe690f96"
+        },
+        {
+          "compiled_kinds": [
+            "null"
+          ],
+          "constraints": {},
+          "item_constraints": {},
+          "list_item_exact_decimal": false,
+          "scalar_exact_decimal": false,
+          "schema_sha256": "bcde375ebd4cbacf651311181173836b169d5a360c6ac158c6a2cdaf49be3f61"
+        }
+      ],
+      "compiled_kinds": [
+        "string",
+        "null"
+      ],
+      "default": null,
+      "default_present": true,
+      "list_item_exact_decimal": false,
+      "nullable": true,
+      "property": "season",
+      "required": false,
+      "scalar_exact_decimal": false,
+      "schema_sha256": "8df079e90ae598d81db07cf8abf57ab17d9efaef8841009037533af591d9bb77"
+    }
+  ],
+  "reasons": [],
+  "schema_sha256": "f9c1e204ac79e337629b88d6c1ee24879a267caf7434ca299eee67b3e3383fae",
+  "status": "REPRESENTABLE"
+}

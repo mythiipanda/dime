@@ -336,7 +336,9 @@ def _intake_envelope() -> RequestEnvelope:
 
 
 @pytest.mark.anyio
-async def test_generate_parses_reasoning_content_structured_output(monkeypatch):
+@pytest.mark.parametrize("anyio_backend", ["asyncio"])
+async def test_generate_parses_reasoning_content_structured_output(anyio_backend, monkeypatch):
+    assert anyio_backend == "asyncio"
     openai_model = _mock_openai_model(
         content="",
         reasoning_content='{"answer":"hi"}',
@@ -353,7 +355,9 @@ async def test_generate_parses_reasoning_content_structured_output(monkeypatch):
 
 
 @pytest.mark.anyio
-async def test_generate_still_parses_normal_content(monkeypatch):
+@pytest.mark.parametrize("anyio_backend", ["asyncio"])
+async def test_generate_still_parses_normal_content(anyio_backend, monkeypatch):
+    assert anyio_backend == "asyncio"
     openai_model = _mock_openai_model(
         content='{"answer":"normal"}',
         reasoning_content=None,
@@ -370,7 +374,9 @@ async def test_generate_still_parses_normal_content(monkeypatch):
 
 
 @pytest.mark.anyio
-async def test_generate_records_promotion_in_last_promotions(monkeypatch):
+@pytest.mark.parametrize("anyio_backend", ["asyncio"])
+async def test_generate_records_promotion_in_last_promotions(anyio_backend, monkeypatch):
+    assert anyio_backend == "asyncio"
     openai_model = _mock_openai_model(
         content="",
         reasoning_content='{"answer":"hi"}',
@@ -396,7 +402,9 @@ async def test_generate_records_promotion_in_last_promotions(monkeypatch):
 
 
 @pytest.mark.anyio
-async def test_generate_records_no_promotion_for_normal_content(monkeypatch):
+@pytest.mark.parametrize("anyio_backend", ["asyncio"])
+async def test_generate_records_no_promotion_for_normal_content(anyio_backend, monkeypatch):
+    assert anyio_backend == "asyncio"
     openai_model = _mock_openai_model(
         content='{"answer":"normal"}',
         reasoning_content=None,

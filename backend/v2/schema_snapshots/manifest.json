@@ -8,7 +8,7 @@
     "file_sha256": "770daf7039782e2c0fafe0785d488ffc7f8c0679096d2f7f04ac7c64b0d09674"
   },
   "planner.prompt": {
-    "sha256": "b6bc1c62a20e7bd0e7567e68d815521d4b2d97dca7961fe6e705983b38a338b1"
+    "sha256": "263421dc66b1301b0bebd12c88a5cabb13c0e7a42c0ddf783b06370e6c1abca4"
   },
   "planner.source.json": {
     "canonical_json_sha256": "2383483493cd2953239947266648d673b3441f7a01185931a9f10ee3091579c7",
@@ -23,7 +23,7 @@
     "file_sha256": "b9a03e60bd673e89547b986151208534d0a612e5509c145f4b1ad6ba464be591"
   },
   "requirement_review.prompt": {
-    "sha256": "a0a747ffcee1ff6757e8aaf3dca9fc9f96ea4a0e5d21af239a4888700f302a53"
+    "sha256": "fc9f2b8a3c40271ae54d374326141ae04256d4be8cfd39d8bba8e7b4be8d7d51"
   },
   "requirement_review.source.json": {
     "canonical_json_sha256": "4e7c24a0efcf0454fd0b430daf69a54593e3e741d5ed5c7b6b5876613c39044d",

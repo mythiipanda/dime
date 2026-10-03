@@ -688,6 +688,7 @@ def _run_search(con: Any, season: str, player: str, team: str,
                 group: str, ot: bool, periods_raw: str,
                 late_raw: str) -> dict[str, Any]:
     season = resolve_season(season)
+    _shot_seasons = _shots_seasons()
     zone_expr = _zone_case_sql()
     heave = _heave_sql()
     where, params = _where_sql(

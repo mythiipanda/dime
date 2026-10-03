@@ -822,6 +822,39 @@ def _lineup_key(row: dict[str, Any]) -> tuple[int, ...] | None:
     return None
 
 
+_HIST_LINEUP_PAIRS = (
+    ("group_id", "GROUP_ID"), ("group_name", "GROUP_NAME"),
+    ("team_id", "TEAM_ID"), ("team_abbreviation", "TEAM_ABBREVIATION"),
+    ("gp", "GP"), ("min", "MIN"), ("pts", "PTS"),
+    ("plus_minus", "PLUS_MINUS"), ("fga", "FGA"), ("oreb", "OREB"),
+    ("tov", "TOV"), ("fta", "FTA"),
+)
+
+
+def _hist_lineup_rows(team_id: int, season: str) -> list[dict[str, Any]]:
+    try:
+        from .. import store as _store
+        found = _store._read_df(
+            "SELECT group_id, group_name, team_id, team_abbreviation,"
+            " gp, min, pts, plus_minus, fga, oreb, tov, fta"
+            " FROM silver_hist_lineups"
+            " WHERE _season = ? AND team_id = ?"
+            " AND season_type = 'regular-season'"
+            " AND measure_type = 'base' AND per_mode = 'totals'",
+            [season, team_id],
+        )
+    except Exception:
+        return []
+    out: list[dict[str, Any]] = []
+    for r in found or []:
+        try:
+            out.append({upper: r.get(lower)
+                        for lower, upper in _HIST_LINEUP_PAIRS})
+        except Exception:
+            continue
+    return out
+
+
 @tool
 def get_lineups(team_id: str | int, season: str | None = None) -> dict[str, Any]:
     """Five-man lineup stats for one team id, sorted by minutes."""
@@ -833,6 +866,11 @@ def get_lineups(team_id: str | int, season: str | None = None) -> dict[str, Any]
         lambda: nba_stats.lineups(team_id, season), season,
         entity=f"team:{team_id}", ttl_s=TTL_PBPSTATS,
     )
+    if not rows:
+        rows = _hist_lineup_rows(team_id, season)
+        if rows:
+            meta = {**meta, "source": "warehouse",
+                    "coverage": "historical_lineups"}
     for r in rows:
         tier, est = _sample_tier(r.get("MIN"))
         r["SAMPLE_TIER"] = tier
@@ -1497,3 +1535,93 @@ async def get_injury_impact(team: str = "", season: str | None = None) -> dict[s
                      "net_rating": net, "net_rank": rank, "last10": last10,
                      "impact": impact},
             "meta": meta}
+
+
+@tool(description="Two-team matchup brief with ratings, form, injuries, season series, and win probability.")
+async def get_matchup_brief(a: str = "", b: str = "", season: str | None = None) -> dict[str, Any]:
+    from .league import get_ratings
+    from .prediction import get_game_prediction
+    season = resolve_season(season)
+    a = str(a or "").strip()
+    b = str(b or "").strip()
+    if not a or not b:
+        return {"tool": "get_matchup_brief", "ok": False, "error": "pass two teams (a, b)"}
+    if not season:
+        return {"tool": "get_matchup_brief", "ok": False, "error": "season is unresolved"}
+    try:
+        ida = coerce_team_id(a)
+    except ValueError:
+        return {"tool": "get_matchup_brief", "ok": False, "error": "unknown team: " + a}
+    try:
+        idb = coerce_team_id(b)
+    except ValueError:
+        return {"tool": "get_matchup_brief", "ok": False, "error": "unknown team: " + b}
+    if ida == idb:
+        return {"tool": "get_matchup_brief", "ok": False, "error": "a and b must be different teams"}
+    abbr_a = str(_abbrev(a) or "").strip().upper()
+    abbr_b = str(_abbrev(b) or "").strip().upper()
+    rat = await get_ratings.ainvoke({"season": season})
+    if not isinstance(rat, dict) or not rat.get("ok"):
+        err = ""
+        if isinstance(rat, dict):
+            err = str(rat.get("error") or "ratings unavailable")
+        return {"tool": "get_matchup_brief", "ok": False, "error": err}
+    allrows = rat.get("rows") or []
+    row_a = next((r for r in allrows if str(r.get("TEAM") or "").strip().upper() == abbr_a), None)
+    row_b = next((r for r in allrows if str(r.get("TEAM") or "").strip().upper() == abbr_b), None)
+    if row_a is None or row_b is None:
+        missing = []
+        if row_a is None:
+            missing.append(abbr_a)
+        if row_b is None:
+            missing.append(abbr_b)
+        return {"tool": "get_matchup_brief", "ok": False, "error": "ratings missing for " + ", ".join(missing)}
+    def _rating_card(r):
+        w = r.get("W")
+        l = r.get("L")
+        record = str(w) + "-" + str(l) if w is not None and l is not None else None
+        return {"TEAM": r.get("TEAM"), "TEAM_NAME": r.get("TEAM_NAME"), "TEAM_ID": r.get("TEAM_ID"), "OFF_RATING": r.get("OFF_RATING"), "DEF_RATING": r.get("DEF_RATING"), "NET_RATING": r.get("NET_RATING"), "PACE": r.get("PACE"), "W": w, "L": l, "record": record, "OFF_RATING_RANK": r.get("OFF_RATING_RANK"), "DEF_RATING_RANK": r.get("DEF_RATING_RANK"), "NET_RATING_RANK": r.get("NET_RATING_RANK")}
+    def _last10(rows_in):
+        item = next((x for x in rows_in if x.get("split") == "last10"), None)
+        if not item:
+            return None
+        return str(item.get("W")) + "-" + str(item.get("L"))
+    form = {}
+    for abbr in (abbr_a, abbr_b):
+        sp = await get_team_splits.ainvoke({"team": abbr, "season": season})
+        if not isinstance(sp, dict) or not sp.get("ok"):
+            err2 = ""
+            if isinstance(sp, dict):
+                err2 = str(sp.get("error") or "splits unavailable")
+            return {"tool": "get_matchup_brief", "ok": False, "error": err2}
+        sprows = sp.get("rows") or []
+        form[abbr] = {"last10": _last10(sprows), "splits": sprows}
+    injuries = {}
+    for abbr in (abbr_a, abbr_b):
+        imp = await get_injury_impact.ainvoke({"team": abbr, "season": season})
+        if not isinstance(imp, dict) or not imp.get("ok"):
+            err3 = ""
+            if isinstance(imp, dict):
+                err3 = str(imp.get("error") or "injury data unavailable")
+            return {"tool": "get_matchup_brief", "ok": False, "error": err3}
+        injuries[abbr] = imp.get("rows") or {}
+    ser = await get_season_series.ainvoke({"team_a": abbr_a, "team_b": abbr_b, "season": season})
+    warnings = []
+    if isinstance(ser, dict) and ser.get("ok"):
+        series_rows = ser.get("rows") or {}
+    else:
+        series_rows = {"teams": [abbr_a, abbr_b], "summary": {"games": 0}, "games": []}
+        if isinstance(ser, dict) and ser.get("error"):
+            warnings.append(str(ser.get("error")))
+    pred = await get_game_prediction.ainvoke({"a": abbr_a, "b": abbr_b, "season": season})
+    if not isinstance(pred, dict) or not pred.get("ok"):
+        err4 = ""
+        if isinstance(pred, dict):
+            err4 = str(pred.get("error") or "prediction unavailable")
+        return {"tool": "get_matchup_brief", "ok": False, "error": err4}
+    est = pred.get("estimate") or {}
+    prediction_rows = {"matchup": pred.get("matchup") or {}, "win_prob": est.get("win_prob") or {}, "projected_score": est.get("projected_score") or {}, "projected_total": est.get("projected_total"), "win_prob_ci90": est.get("win_prob_ci90") or {}, "total_ci90": est.get("total_ci90") or [], "margin_ci90": est.get("margin_ci90") or []}
+    meta = {"source": "warehouse", "season": season}
+    if warnings:
+        meta["warnings"] = warnings
+    return {"tool": "get_matchup_brief", "ok": True, "rows": {"teams": [abbr_a, abbr_b], "ratings": {abbr_a: _rating_card(row_a), abbr_b: _rating_card(row_b)}, "form": form, "injuries": injuries, "season_series": series_rows, "prediction": prediction_rows}, "meta": meta}

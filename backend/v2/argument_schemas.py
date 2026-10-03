@@ -31,6 +31,9 @@ def _nullable(schema):
  branches=schema.get('anyOf')
  if branches and any(x.get('type')=='null' for x in branches):return schema
  return {'anyOf':[schema,{'type':'null'}]}
+def inline_provider_schema_defs(source):
+ inlined=_inline(copy.deepcopy(source),source,(),'$')
+ return inlined
 def normalize_provider_wire_schema(source):
  inlined=_inline(copy.deepcopy(source),source,(),'$');losses=[]
  def walk(v,path='$'):

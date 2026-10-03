@@ -6,7 +6,7 @@ from langchain_core.tools import tool
 
 from .. import store
 
-MIN_YEAR, MAX_YEAR = 2015, 2025
+MIN_YEAR, MAX_YEAR = 2015, 2026
 MIN_GP = 20
 
 CATEGORIES: dict[str, dict[str, Any]] = {
@@ -171,15 +171,65 @@ def _query(spec: dict[str, Any], where: str, params: list,
     return [_row(spec, r) for r in rows if _round_value(spec["decimals"], r.get("value")) is not None]
 
 
+CURRENT_TOTALS = {
+    "pts": "PTS", "reb": "REB", "ast": "AST", "stl": "STL", "blk": "BLK",
+    "tov": "TOV", "fgm": "FGM", "fga": "FGA", "fg3m": "FG3M", "fg3a": "FG3A",
+    "ftm": "FTM", "fta": "FTA",
+}
+
+CURRENT_RATES = {"fg_pct", "fg3_pct", "ft_pct"}
+
+
+def _query_current(spec: dict[str, Any], limit: int) -> list[dict[str, Any]]:
+    if spec.get("raptor_only"):
+        return []
+    col = spec["column"]
+    try:
+        tables = _tables()
+    except Exception:
+        return []
+    if "silver_leaders_pts" not in tables:
+        return []
+    if col in CURRENT_TOTALS:
+        total = CURRENT_TOTALS[col]
+        rows = store._read_df(
+            f"""SELECT PLAYER AS player_name, TEAM AS team_abbreviation,
+            2026 AS season, GP AS gp,
+            CAST({total} AS DOUBLE) / NULLIF(CAST(GP AS DOUBLE), 0) AS value
+            FROM silver_leaders_pts
+            WHERE _season = '2025-26' AND GP >= {MIN_GP}
+            AND {total} IS NOT NULL
+            ORDER BY value DESC LIMIT {limit}""",
+            [],
+        )
+    elif col in CURRENT_RATES:
+        rate = {"fg_pct": "FG_PCT", "fg3_pct": "FG3_PCT",
+                "ft_pct": "FT_PCT"}[col]
+        denom = {"fg_pct": "FGA", "fg3_pct": "FG3A", "ft_pct": "FTA"}[col]
+        rows = store._read_df(
+            f"""SELECT PLAYER AS player_name, TEAM AS team_abbreviation,
+            2026 AS season, GP AS gp,
+            CAST({rate} AS DOUBLE) AS value
+            FROM silver_leaders_pts
+            WHERE _season = '2025-26' AND GP >= {MIN_GP}
+            AND {rate} IS NOT NULL AND {denom} >= 2
+            ORDER BY value DESC LIMIT {limit}""",
+            [],
+        )
+    else:
+        return []
+    return [_row(spec, r) for r in rows if _round_value(spec["decimals"], r.get("value")) is not None]
+
+
 @tool
 def get_historical_leaders(category: str = "pts",
                            start_season: Union[int, str, None] = 2015,
-                           end_season: Union[int, str, None] = 2025,
+                           end_season: Union[int, str, None] = 2026,
                            limit: Union[int, str, None] = 10,
                            mode: str = "leaders") -> dict[str, Any]:
-    """League leaders per season or best single seasons from history. Seasons are end-years (2025 means 2024-25), clamped to 2015..2025.
+    """League leaders per season or best single seasons from history. Seasons are end-years (2026 means 2025-26), clamped to 2015..2026.
 
-    Seasons are end-years clamped to 2015..2025. Values are per-game
+    Seasons are end-years clamped to 2015..2026. Values are per-game
     warehouse estimates. Empty ranges report honestly, never fabricated.
     """
     canon = normalize_category(category)
@@ -238,12 +288,20 @@ def get_historical_leaders(category: str = "pts",
     raptor = "silver_raptor_player" in tables
     try:
         if mode == "best":
-            rows = _query(spec, "h.season BETWEEN ? AND ?", [start, end], limit, raptor)
+            hist_end = min(end, 2025)
+            rows = _query(spec, "h.season BETWEEN ? AND ?", [start, hist_end], limit, raptor) if start <= hist_end else []
+            if end >= 2026 >= start:
+                rows = sorted(rows + _query_current(spec, limit),
+                              key=lambda r: r.get("value") or 0,
+                              reverse=True)[:limit]
             payload: dict[str, Any] = {"leaders": rows}
         else:
             seasons = []
             for year in range(start, end + 1):
-                top = _query(spec, "h.season = ?", [year], limit, raptor)
+                if year == 2026:
+                    top = _query_current(spec, limit)
+                else:
+                    top = _query(spec, "h.season = ?", [year], limit, raptor)
                 if top:
                     seasons.append({"season": year, "leaders": top})
             payload = {"seasons": seasons}
@@ -267,6 +325,7 @@ def get_historical_leaders(category: str = "pts",
         "estimated": True,
         "values": "per-game season averages; RAPTOR from five-year-old model, not current form",
         "raptor_available": raptor,
+        "coverage": "2014-15 through 2024-25 from warehouse history; 2025-26 from current leaders",
     }
     if warnings:
         meta["warning"] = "; ".join(warnings)

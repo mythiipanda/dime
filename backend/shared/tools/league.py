@@ -461,6 +461,12 @@ def get_ratings(
         fallback = _regular_season_team_ratings(season)
         if fallback is not None:
             rows, meta = fallback
+        else:
+            rows, meta = _warehouse_or_live(
+                "silver_team_ratings", "_season = ?",
+                [season], lambda: nba_stats.team_ratings(season), season,
+                limit=30, live_on_static_miss=True,
+            )
     keep = ["TEAM_ID", "TEAM_NAME", "GP", "W", "L",
             "OFF_RATING", "DEF_RATING", "NET_RATING", "PACE",
             "TS_PCT", "TM_TOV_PCT",
@@ -652,12 +658,462 @@ def get_playoff_team_ratings(
     }
 
 
+_CLUTCH_PBP_FIRST = 2021
+_CLUTCH_PBP_LAST = 2025
+_CLUTCH_SECONDS_DEFAULT = 300
+_CLUTCH_MARGIN_DEFAULT = 5
+_CLUTCH_SEASON_TYPE_DEFAULT = "regular"
+_CLUTCH_PBP_ALIAS = {"BRK": "BKN", "CHO": "CHA", "PHO": "PHX"}
+
+
+def _clutch_end_year(season: object) -> int | None:
+    try:
+        text = str(season or "").strip()
+    except Exception:
+        return None
+    if len(text) == 7 and text[4] == "-":
+        try:
+            return 2000 + int(text[5:])
+        except (TypeError, ValueError):
+            return None
+    return None
+
+
+def _clutch_seconds_of(value: object) -> tuple[int, str | None]:
+    try:
+        seconds = int(value)
+    except (TypeError, ValueError):
+        return _CLUTCH_SECONDS_DEFAULT, (
+            f"clutch_seconds '{value}' invalid, using "
+            f"{_CLUTCH_SECONDS_DEFAULT}")
+    if seconds < 30 or seconds > 720:
+        clamped = max(30, min(720, seconds))
+        return clamped, f"clutch_seconds {seconds} clamped to {clamped}"
+    return seconds, None
+
+
+def _clutch_margin_of(value: object) -> tuple[int, str | None]:
+    try:
+        margin = int(value)
+    except (TypeError, ValueError):
+        return _CLUTCH_MARGIN_DEFAULT, (
+            f"clutch_margin '{value}' invalid, using "
+            f"{_CLUTCH_MARGIN_DEFAULT}")
+    if margin < 1 or margin > 30:
+        clamped = max(1, min(30, margin))
+        return clamped, f"clutch_margin {margin} clamped to {clamped}"
+    return margin, None
+
+
+def _clutch_season_type_of(value: object) -> tuple[str, str | None]:
+    text = str(value or "").strip().lower()
+    if text in ("regular", "reg", "002"):
+        return "regular", None
+    if text in ("playoffs", "playoff", "post", "004"):
+        return "playoffs", None
+    if text in ("both", "all"):
+        return "both", None
+    if text == _CLUTCH_SEASON_TYPE_DEFAULT:
+        return _CLUTCH_SEASON_TYPE_DEFAULT, None
+    return _CLUTCH_SEASON_TYPE_DEFAULT, (
+        f"season_type '{value}' invalid, using "
+        f"{_CLUTCH_SEASON_TYPE_DEFAULT}")
+
+
+def _clutch_prefixes(season_type: str) -> set[str]:
+    if season_type == "playoffs":
+        return {"004"}
+    if season_type == "both":
+        return {"002", "004"}
+    return {"002"}
+
+
+def _clutch_clock_left(clock: object) -> float | None:
+    try:
+        text = str(clock)
+    except Exception:
+        return None
+    if not text.startswith("PT") or not text.endswith("S"):
+        return None
+    try:
+        mark = text.index("M")
+        return int(text[2:mark]) * 60.0 + float(text[mark + 1:-1])
+    except (ValueError, AttributeError):
+        return None
+
+
+def _clutch_pbp_rows(season: str, prefixes: set[str]) -> list[tuple]:
+    con = store.connect(read_only=True)
+    try:
+        tables = {r[0] for r in con.execute("SHOW TABLES").fetchall()}
+        if "silver_hist_pbp" not in tables:
+            return []
+        ph = ",".join("?" * len(prefixes))
+        return con.execute(
+            "SELECT game_id, action_number, clock, period, team_tricode,"
+            " person_id, player_name, location, score_home, score_away,"
+            " action_type, sub_type, description, shot_value, shot_result"
+            " FROM silver_hist_pbp WHERE _season = ? AND period >= 4"
+            f" AND substr(game_id, 1, 3) IN ({ph})"
+            " ORDER BY game_id, action_number",
+            [season, *sorted(prefixes)],
+        ).fetchall()
+    finally:
+        con.close()
+
+
+def _clutch_home_of(rows: list[tuple]) -> dict[str, str]:
+    from collections import Counter as _Counter
+    votes: dict[str, _Counter] = {}
+    for r in rows:
+        if (r[7] or "") == "h" and r[4]:
+            votes.setdefault(str(r[0]), _Counter())[str(r[4])] += 1
+    return {gid: tally.most_common(1)[0][0] for gid, tally in votes.items()
+            if tally}
+
+
+def _clutch_int(raw: object) -> int | None:
+    try:
+        if raw is None or raw == "":
+            return None
+        return int(str(raw))
+    except (TypeError, ValueError):
+        return None
+
+
+def _clutch_fold(rows: list[tuple], home_of: dict[str, str],
+                 seconds: int, margin: int) -> tuple[dict, dict, dict, int]:
+    events: dict[str, list[tuple]] = {}
+    finals: dict[str, tuple[int, int]] = {}
+    scored = 0
+    for r in rows:
+        gid = str(r[0])
+        home = home_of.get(gid)
+        if home is None:
+            continue
+        lead = finals.get(gid)
+        if lead is None:
+            pending: tuple[int, int] | None = None
+        else:
+            pending = lead
+        sh = _clutch_int(r[8])
+        sa = _clutch_int(r[9])
+        if sh is not None and sa is not None:
+            pending = (sh, sa)
+        left = _clutch_clock_left(r[2])
+        if pending is not None and left is not None:
+            if left <= seconds and abs(pending[0] - pending[1]) <= margin:
+                events.setdefault(gid, []).append((r, pending))
+                scored += 1
+        if sh is not None and sa is not None:
+            finals[gid] = (sh, sa)
+    return events, finals, home_of, scored
+
+
+def _clutch_points(action: object, sub: object, desc: object,
+                   value: object, result: object) -> tuple[int, int, int]:
+    if str(action) == "Made Shot":
+        try:
+            pts = int(value or 0)
+        except (TypeError, ValueError):
+            pts = 0
+        return pts, 1, 1 if pts == 3 else 0
+    if str(action) == "Free Throw":
+        if str(desc or "").startswith("MISS"):
+            return 0, 0, 0
+        return 1, 0, 0
+    return 0, 0, 0
+
+
+def _clutch_is_home(loc: object, tri: object, home: str) -> bool | None:
+    if (loc or "") == "h":
+        return True
+    if (loc or "") == "v":
+        return False
+    if tri:
+        return str(tri) == home
+    return None
+
+
+def _clutch_state(signed: int) -> str:
+    if signed > 0:
+        return "ahead"
+    if signed < 0:
+        return "behind"
+    return "tied"
+
+
+def _clutch_player_teams(events: dict[str, list]) -> dict[tuple[str, str], str]:
+    from collections import Counter as _Counter
+    per: dict[tuple[str, str], _Counter] = {}
+    for gid, evts in events.items():
+        for r, _ in evts:
+            pid = r[5]
+            if pid is None or pid == 0:
+                continue
+            if r[4]:
+                per.setdefault((gid, str(pid)), _Counter())[str(r[4])] += 1
+    return {key: tally.most_common(1)[0][0] for key, tally in per.items()
+            if tally}
+
+
+def _derive_hist_clutch(season: str, scope: str, seconds: int, margin: int,
+                        season_type: str) -> tuple[list | None, dict]:
+    from .wpa import _display_name as _wpa_name
+    prefixes = _clutch_prefixes(season_type)
+    rows = _clutch_pbp_rows(season, prefixes)
+    if not rows:
+        return None, {"source": "warehouse:silver_hist_pbp",
+                      "season": season,
+                      "error": f"no play-by-play coverage for season {season}"}
+    home_of = _clutch_home_of(rows)
+    events, finals, _, scored = _clutch_fold(rows, home_of, seconds, margin)
+    if not events:
+        return [], {"source": "warehouse:silver_hist_pbp", "season": season,
+                    "clutch_definition": {"seconds": seconds, "margin": margin,
+                                          "season_type": season_type},
+                    "games": 0, "clutch_events": 0}
+    teams = _clutch_player_teams(events)
+    names: dict[str, str] = {}
+    agg: dict[str, dict[str, Any]] = {}
+    game_of: dict[str, set[str]] = {}
+
+    def _slot(key: str, label: str, team: str) -> dict[str, Any]:
+        slot = agg.get(key)
+        if slot is None:
+            slot = {"label": label, "team": team, "gp_set": set(),
+                    "w": 0, "l": 0, "pts": 0, "fgm": 0, "fga": 0,
+                    "fg3m": 0, "fg3a": 0, "ftm": 0, "fta": 0}
+            agg[key] = slot
+        return slot
+    for gid, evts in events.items():
+        home = home_of.get(gid)
+        final = finals.get(gid)
+        home_won: bool | None = None
+        if final is not None and home is not None:
+            home_won = final[0] > final[1]
+        for r, pending in evts:
+            pid = r[5]
+            if pid is None or pid == 0:
+                continue
+            key = str(pid)
+            tri = teams.get((gid, key), "")
+            if not tri and r[4]:
+                tri = str(r[4])
+            label = _wpa_name(pid, str(r[6] or key))
+            names[key] = label
+            slot = _slot(key, label, tri)
+            pts, fgm, fg3m = _clutch_points(r[10], r[11], r[12], r[13], r[14])
+            fga = 1 if str(r[10]) in ("Made Shot", "Missed Shot") else 0
+            if str(r[10]) == "Missed Shot":
+                fgm = 0
+                fg3m = 0
+            fg3a = fga if _clutch_int(r[13]) == 3 and fga else 0
+            slot["pts"] += pts
+            slot["fgm"] += fgm
+            slot["fga"] += fga
+            slot["fg3m"] += fg3m
+            slot["fg3a"] += fg3a
+            if str(r[10]) == "Free Throw":
+                slot["fta"] += 1
+                if pts:
+                    slot["ftm"] += 1
+            game_of.setdefault(key, set()).add(gid)
+    won: dict[str, int] = {}
+    lost: dict[str, int] = {}
+    for (gid, key), tri in teams.items():
+        if gid not in events:
+            continue
+        home = home_of.get(gid)
+        final = finals.get(gid)
+        if home is None or final is None or not tri:
+            continue
+        is_home = tri == home
+        home_won = final[0] > final[1]
+        if home_won == is_home:
+            won[key] = won.get(key, 0) + 1
+        else:
+            lost[key] = lost.get(key, 0) + 1
+    players = []
+    for key, slot in agg.items():
+        fga = slot["fga"]
+        fg3a = slot["fg3a"]
+        players.append({
+            "PLAYER_ID": int(key) if key.isdigit() else key,
+            "PLAYER_NAME": names.get(key, slot["label"]),
+            "TEAM_ABBREVIATION": slot["team"],
+            "GP": len(game_of.get(key, set())),
+            "W": won.get(key, 0), "L": lost.get(key, 0),
+            "PTS": slot["pts"],
+            "FGM": slot["fgm"], "FGA": fga,
+            "FG_PCT": round(slot["fgm"] / fga, 3) if fga else 0.0,
+            "FG3M": slot["fg3m"], "FG3A": fg3a,
+            "FG3_PCT": round(slot["fg3m"] / fg3a, 3) if fg3a else 0.0,
+            "FTM": slot["ftm"], "FTA": slot["fta"],
+            "PLUS_MINUS": None,
+        })
+    team_agg: dict[str, dict[str, Any]] = {}
+    team_games: dict[str, set[str]] = {}
+    team_wins: dict[str, int] = {}
+    team_losses: dict[str, int] = {}
+    for gid, evts in events.items():
+        home = home_of.get(gid)
+        final = finals.get(gid)
+        seen: set[str] = set()
+        for r, _ in evts:
+            tri = str(r[4] or "")
+            if not tri:
+                continue
+            slot = team_agg.setdefault(tri, {"pts": 0, "fgm": 0, "fga": 0,
+                                             "fg3m": 0, "fg3a": 0,
+                                             "ftm": 0, "fta": 0})
+            pts, fgm, fg3m = _clutch_points(r[10], r[11], r[12], r[13], r[14])
+            fga = 1 if str(r[10]) in ("Made Shot", "Missed Shot") else 0
+            if str(r[10]) == "Missed Shot":
+                fgm = 0
+                fg3m = 0
+            slot["pts"] += pts
+            slot["fgm"] += fgm
+            slot["fga"] += fga
+            slot["fg3m"] += fg3m
+            if _clutch_int(r[13]) == 3 and fga:
+                slot["fg3a"] += 1
+            if str(r[10]) == "Free Throw":
+                slot["fta"] += 1
+                if pts:
+                    slot["ftm"] += 1
+            seen.add(tri)
+        for tri in seen:
+            team_games.setdefault(tri, set()).add(gid)
+        if home is not None and final is not None:
+            home_won = final[0] > final[1]
+            for tri in seen:
+                if (tri == home) == home_won:
+                    team_wins[tri] = team_wins.get(tri, 0) + 1
+                else:
+                    team_losses[tri] = team_losses.get(tri, 0) + 1
+    squads = []
+    for tri, slot in team_agg.items():
+        fga = slot["fga"]
+        fg3a = slot["fg3a"]
+        squads.append({
+            "TEAM_ABBREVIATION": tri,
+            "GP": len(team_games.get(tri, set())),
+            "W": team_wins.get(tri, 0), "L": team_losses.get(tri, 0),
+            "PTS": slot["pts"],
+            "FGM": slot["fgm"], "FGA": fga,
+            "FG_PCT": round(slot["fgm"] / fga, 3) if fga else 0.0,
+            "FG3M": slot["fg3m"], "FG3A": fg3a,
+            "FG3_PCT": round(slot["fg3m"] / fg3a, 3) if fg3a else 0.0,
+            "FTM": slot["ftm"], "FTA": slot["fta"],
+            "PLUS_MINUS": None,
+        })
+    meta = {"source": "warehouse:silver_hist_pbp", "season": season,
+            "clutch_definition": {"seconds": seconds, "margin": margin,
+                                 "season_type": season_type},
+            "games": len(events), "clutch_events": scored,
+            "coverage": "clutch events use the score before each play; "
+                        "wins follow the final score of games with a clutch "
+                        "appearance; plus-minus needs on-court lineups and "
+                        "is not derivable from play-by-play"}
+    if scope == "team":
+        return squads, meta
+    return players, meta
+
+
+def _clutch_team_abbr(value: object) -> str | None:
+    raw = str(value or "").strip()
+    if not raw:
+        return None
+    try:
+        from nba_api.stats.static import teams as _teams
+        low = raw.lower()
+        for t in _teams.get_teams():
+            if low == str(t.get("abbreviation") or "").lower():
+                return str(t.get("abbreviation")).upper()
+        for t in _teams.get_teams():
+            if low == str(t.get("full_name") or "").lower():
+                return str(t.get("abbreviation")).upper()
+        for t in _teams.get_teams():
+            if low == str(t.get("nickname") or "").lower():
+                return str(t.get("abbreviation")).upper()
+    except Exception:
+        pass
+    upper = raw.upper()
+    alias = {"BRK": "BKN", "CHO": "CHA", "PHO": "PHX"}
+    upper = alias.get(upper, upper)
+    if upper in {"ATL", "BKN", "BOS", "CHA", "CHI", "CLE", "DAL", "DEN",
+                 "DET", "GSW", "HOU", "IND", "LAC", "LAL", "MEM", "MIA",
+                 "MIL", "MIN", "NOP", "NYK", "OKC", "ORL", "PHI", "PHX",
+                 "POR", "SAC", "SAS", "TOR", "UTA", "WAS"}:
+        return upper
+    return None
+
+
 @tool
 def get_clutch(scope: str = "player", season: str | None = None,
-               player: str = "") -> dict[str, Any]:
+               player: str = "",
+               clutch_seconds: int = _CLUTCH_SECONDS_DEFAULT,
+               clutch_margin: int = _CLUTCH_MARGIN_DEFAULT,
+               season_type: str = _CLUTCH_SEASON_TYPE_DEFAULT
+               ) -> dict[str, Any]:
     """Clutch stats (last 5 min, margin 5 or less), player or team scope."""
     season = resolve_season(season)
     scope = "team" if str(scope).lower().startswith("team") else "player"
+    seconds, seconds_warning = _clutch_seconds_of(clutch_seconds)
+    margin, margin_warning = _clutch_margin_of(clutch_margin)
+    stype, stype_warning = _clutch_season_type_of(season_type)
+    warnings = [w for w in
+                (seconds_warning, margin_warning, stype_warning) if w]
+    year = _clutch_end_year(season)
+    standard = (seconds == _CLUTCH_SECONDS_DEFAULT
+                and margin == _CLUTCH_MARGIN_DEFAULT
+                and stype == _CLUTCH_SEASON_TYPE_DEFAULT)
+    if year is not None and _CLUTCH_PBP_FIRST <= year <= _CLUTCH_PBP_LAST:
+        derived, meta = _derive_hist_clutch(season, scope, seconds, margin,
+                                            stype)
+        if derived is None:
+            return {"tool": "get_clutch", "ok": False, "rows": [],
+                    "error": str(meta.get("error") or "no coverage"),
+                    "meta": meta}
+        if warnings:
+            meta = dict(meta)
+            meta["warning"] = "; ".join(warnings)
+        if player and scope == "player":
+            want = str(player).strip().lower()
+            derived = [r for r in derived
+                       if str(r.get("PLAYER_NAME") or "").strip().lower()
+                       == want]
+        slim = sorted(
+            ({"PLAYER_ID": r.get("PLAYER_ID"),
+              "PLAYER_NAME": r.get("PLAYER_NAME"), "GP": r.get("GP"),
+              "W": r.get("W"), "L": r.get("L"), "PTS": r.get("PTS"),
+              "FG_PCT": r.get("FG_PCT"), "FG3_PCT": r.get("FG3_PCT"),
+              "PLUS_MINUS": r.get("PLUS_MINUS")} if scope == "player"
+             else {"TEAM_ABBREVIATION": r.get("TEAM_ABBREVIATION"),
+                   "GP": r.get("GP"), "W": r.get("W"), "L": r.get("L"),
+                   "PTS": r.get("PTS"), "FG_PCT": r.get("FG_PCT"),
+                   "FG3_PCT": r.get("FG3_PCT"),
+                   "PLUS_MINUS": r.get("PLUS_MINUS")}
+             for r in derived),
+            key=lambda d: (d.get("PTS") or 0), reverse=True,
+        )
+        return {"tool": "get_clutch", "ok": True, "rows": slim[:30],
+                "meta": meta}
+    if not standard:
+        return {
+            "tool": "get_clutch", "ok": False, "rows": [],
+            "error": (f"custom clutch definition (last {seconds}s, margin "
+                      f"{margin}) needs play-by-play, which covers "
+                      f"{_CLUTCH_PBP_FIRST - 1}-{str(_CLUTCH_PBP_FIRST)[-2:]} "
+                      f"through {_CLUTCH_PBP_LAST - 1}-"
+                      f"{str(_CLUTCH_PBP_LAST)[-2:]} only; season {season} "
+                      f"is outside that range"),
+            "meta": {"season": season,
+                     "clutch_definition": {"seconds": seconds,
+                                          "margin": margin,
+                                          "season_type": stype}},
+        }
     entity = f"{scope}-clutch"
     rows, meta = _warehouse_or_live(
         "silver_clutch", "_season = ? AND _entity = ?",
@@ -676,14 +1132,192 @@ def get_clutch(scope: str = "player", season: str | None = None,
         _want = str(player).strip().lower()
         rows = [r for r in rows
                 if str(r.get("PLAYER_NAME") or "").strip().lower() == _want]
+    if warnings:
+        meta = dict(meta)
+        meta["warning"] = "; ".join(warnings)
     slim = sorted(
-        ({name_col: r.get(name_col), "GP": r.get("GP"), "W": r.get("W"),
+        ({"PLAYER_ID": r.get("PLAYER_ID"), name_col: r.get(name_col),
+          "GP": r.get("GP"), "W": r.get("W"),
+          "L": r.get("L"), "PTS": r.get("PTS"),
+          "FG_PCT": r.get("FG_PCT"), "FG3_PCT": r.get("FG3_PCT"),
+          "PLUS_MINUS": r.get("PLUS_MINUS")} if scope == "player"
+         else {name_col: r.get(name_col), "GP": r.get("GP"), "W": r.get("W"),
           "L": r.get("L"), "PTS": r.get("PTS"),
           "FG_PCT": r.get("FG_PCT"), "FG3_PCT": r.get("FG3_PCT"),
           "PLUS_MINUS": r.get("PLUS_MINUS")} for r in rows),
         key=lambda d: (d.get("PTS") or 0), reverse=True,
     )
+    if not slim and year is not None and year < _CLUTCH_PBP_FIRST:
+        return {"tool": "get_clutch", "ok": False, "rows": [],
+                "error": (f"no clutch coverage for season {season}; "
+                          f"play-by-play covers "
+                          f"{_CLUTCH_PBP_FIRST - 1}-"
+                          f"{str(_CLUTCH_PBP_FIRST)[-2:]} through "
+                          f"{_CLUTCH_PBP_LAST - 1}-"
+                          f"{str(_CLUTCH_PBP_LAST)[-2:]} and the clutch "
+                          f"table covers 2025-26 only"),
+                "meta": meta}
     return {"tool": "get_clutch", "ok": True, "rows": slim[:30], "meta": meta}
+
+
+def _split_bucket(label: str) -> dict[str, Any]:
+    return {"split": label, "GP": 0, "FGM": 0, "FGA": 0, "FG_PCT": 0.0,
+            "FG3M": 0, "FG3A": 0, "FG3_PCT": 0.0,
+            "FTM": 0, "FTA": 0, "PTS": 0}
+
+
+def _split_credit(bucket: dict[str, Any], pts: int, fgm: int, fga: int,
+                  fg3m: int, fg3a: int, ftm: int, fta: int) -> None:
+    bucket["PTS"] += pts
+    bucket["FGM"] += fgm
+    bucket["FGA"] += fga
+    bucket["FG3M"] += fg3m
+    bucket["FG3A"] += fg3a
+    bucket["FTM"] += ftm
+    bucket["FTA"] += fta
+
+
+def _split_finalize(bucket: dict[str, Any]) -> None:
+    fga = bucket["FGA"]
+    fg3a = bucket["FG3A"]
+    bucket["FG_PCT"] = round(bucket["FGM"] / fga, 3) if fga else 0.0
+    bucket["FG3_PCT"] = round(bucket["FG3M"] / fg3a, 3) if fg3a else 0.0
+
+
+@tool
+def get_situational_splits(scope: str = "player", entity: str = "",
+                            season: str | None = None,
+                            clutch_seconds: int = _CLUTCH_SECONDS_DEFAULT,
+                            clutch_margin: int = _CLUTCH_MARGIN_DEFAULT,
+                            season_type: str = _CLUTCH_SEASON_TYPE_DEFAULT
+                            ) -> dict[str, Any]:
+    """Clutch situational splits for one player or team: score state plus venue."""
+    season = resolve_season(season)
+    scope = "team" if str(scope).lower().startswith("team") else "player"
+    seconds, seconds_warning = _clutch_seconds_of(clutch_seconds)
+    margin, margin_warning = _clutch_margin_of(clutch_margin)
+    stype, stype_warning = _clutch_season_type_of(season_type)
+    warnings = [w for w in
+                (seconds_warning, margin_warning, stype_warning) if w]
+    year = _clutch_end_year(season)
+    if year is None or not (_CLUTCH_PBP_FIRST <= year <= _CLUTCH_PBP_LAST):
+        return {
+            "tool": "get_situational_splits", "ok": False, "rows": {},
+            "error": (f"no play-by-play coverage for season {season}; "
+                      f"situational splits cover "
+                      f"{_CLUTCH_PBP_FIRST - 1}-"
+                      f"{str(_CLUTCH_PBP_FIRST)[-2:]} through "
+                      f"{_CLUTCH_PBP_LAST - 1}-"
+                      f"{str(_CLUTCH_PBP_LAST)[-2:]} only"),
+            "meta": {"season": season,
+                     "clutch_definition": {"seconds": seconds,
+                                          "margin": margin,
+                                          "season_type": stype}},
+        }
+    name = str(entity or "").strip()
+    if not name:
+        return {"tool": "get_situational_splits", "ok": False, "rows": {},
+                "error": "pass one player or team entity",
+                "meta": {"season": season}}
+    pid: int | None = None
+    abbr: str | None = None
+    if scope == "player":
+        from ._core import coerce_player_id as _cpid
+        try:
+            pid = _cpid(name)
+        except ValueError as exc:
+            return {"tool": "get_situational_splits", "ok": False,
+                    "rows": {}, "error": str(exc)[:160],
+                    "meta": {"season": season}}
+    else:
+        abbr = _clutch_team_abbr(name)
+        if abbr is None:
+            return {"tool": "get_situational_splits", "ok": False,
+                    "rows": {}, "error": f"unknown team: {name}",
+                    "meta": {"season": season}}
+    prefixes = _clutch_prefixes(stype)
+    rows = _clutch_pbp_rows(season, prefixes)
+    home_of = _clutch_home_of(rows)
+    events, _, _, scored = _clutch_fold(rows, home_of, seconds, margin)
+    fallbacks = _clutch_player_teams(events) if scope == "player" else {}
+    buckets = {label: _split_bucket(label) for label in
+               ("overall", "ahead", "tied", "behind", "home", "away")}
+    games: set[str] = set()
+    resolved = name
+    for gid, evts in events.items():
+        home = home_of.get(gid)
+        for r, pending in evts:
+            if scope == "player":
+                try:
+                    match = pid is not None and int(r[5] or 0) == pid
+                except (TypeError, ValueError):
+                    match = False
+                if not match:
+                    continue
+                if r[6]:
+                    from .wpa import _display_name as _wpa_name
+                    resolved = _wpa_name(pid, str(r[6]))
+                tri_raw = str(r[4] or "") or fallbacks.get(
+                    (gid, str(pid)), "")
+            else:
+                tri_raw = _CLUTCH_PBP_ALIAS.get(str(r[4] or ""),
+                                                str(r[4] or ""))
+                if tri_raw != abbr:
+                    continue
+            is_home = _clutch_is_home(r[7], tri_raw, str(home or ""))
+            if is_home is None:
+                continue
+            signed = pending[0] - pending[1]
+            if not is_home:
+                signed = -signed
+            state = _clutch_state(signed)
+            pts, fgm, fg3m = _clutch_points(r[10], r[11], r[12], r[13],
+                                            r[14])
+            fga = 1 if str(r[10]) in ("Made Shot", "Missed Shot") else 0
+            if str(r[10]) == "Missed Shot":
+                fgm = 0
+                fg3m = 0
+            fg3a = 1 if _clutch_int(r[13]) == 3 and fga else 0
+            ftm = fta = 0
+            if str(r[10]) == "Free Throw":
+                fta = 1
+                ftm = 1 if pts else 0
+            games.add(gid)
+            for label in ("overall", state,
+                          "home" if is_home else "away"):
+                _split_credit(buckets[label], pts, fgm, fga, fg3m, fg3a,
+                              ftm, fta)
+    for bucket in buckets.values():
+        _split_finalize(bucket)
+    buckets["overall"]["GP"] = len(games)
+    if not games:
+        return {"tool": "get_situational_splits", "ok": False, "rows": {},
+                "error": f"no clutch appearances for {name} in {season}",
+                "meta": {"season": season,
+                         "clutch_definition": {"seconds": seconds,
+                                              "margin": margin,
+                                              "season_type": stype}}}
+    order = ["overall", "ahead", "tied", "behind", "home", "away"]
+    meta: dict[str, Any] = {
+        "source": "warehouse:silver_hist_pbp", "season": season,
+        "clutch_definition": {"seconds": seconds, "margin": margin,
+                             "season_type": stype},
+        "clutch_events": scored,
+        "state_rule": "score state from the entity side at each play, "
+                      "using the score before the play",
+    }
+    if warnings:
+        meta["warning"] = "; ".join(warnings)
+    if scope == "player":
+        rows_out: dict[str, Any] = {"player": resolved, "player_id": pid,
+                                    "season": season,
+                                    "splits": [buckets[label]
+                                               for label in order]}
+    else:
+        rows_out = {"team": abbr, "season": season,
+                    "splits": [buckets[label] for label in order]}
+    return {"tool": "get_situational_splits", "ok": True,
+            "rows": rows_out, "meta": meta}
 
 
 def _finals_game_scores(finals: list[dict[str, Any]],

@@ -179,9 +179,12 @@ def test_non_nim_providers_keep_thinking_off_disabled(
 
 
 @pytest.mark.anyio
+@pytest.mark.parametrize("anyio_backend", ["asyncio"])
 async def test_generate_sends_thinking_off_wire_body(
+    anyio_backend,
     monkeypatch: pytest.MonkeyPatch,
 ):
+    assert anyio_backend == "asyncio"
     captured: list[dict[str, Any]] = []
     mock_client = _capturing_client(thinking_off=True, captured=captured)
     openai_model = OpenAIChatModel(
@@ -265,9 +268,12 @@ async def test_no_promotion_unless_stop_with_thinking_off(finish_reason: str):
 
 
 @pytest.mark.anyio
+@pytest.mark.parametrize("anyio_backend", ["asyncio"])
 async def test_promotion_recorded_on_attempt_ledger(
+    anyio_backend,
     monkeypatch: pytest.MonkeyPatch,
 ):
+    assert anyio_backend == "asyncio"
     captured: list[dict[str, Any]] = []
     mock_client = _capturing_client(
         thinking_off=True,

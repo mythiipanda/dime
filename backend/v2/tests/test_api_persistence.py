@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import re
 from pathlib import Path
 
@@ -1579,7 +1580,7 @@ def test_typed_public_stream_sanitizes_all_events_and_preserves_lifecycle(monkey
         row_selector="rows.lebron",subject_entity_type="player",subject_entity_id="23",
         subject_selector="rows.lebron.PLAYER_ID",value={"kind":"integer","value":25},
         unit={"kind":"unitless"},domain="player_report")
-    claim=contracts.Claim(text=secret,kind="observed",evidence_ids=["internal-evidence"],output_bindings=[binding])
+    claim=contracts.Claim(text="LeBron James scored 25 points.",kind="observed",evidence_ids=["internal-evidence"],output_bindings=[binding])
     evidence=contracts.EvidenceEnvelope(evidence_id="internal-evidence",capability="player_report",
         source=secret,observed_at=datetime.now(UTC),entities=[contracts.EntityRef(id="23",type="player",display_name="LeBron")],rows={"lebron":{"PLAYER_ID":"23","PTS":25,"AST":8},"curry":{"PLAYER_ID":"987654321","PTS":987654321}})
     result=RuntimeResult(task=contracts.TaskSpec(goal="x",mode="quick",deliverable="x",requested_outputs=["PTS"],entities=[contracts.EntityRef(id="23",type="player",display_name="LeBron")]),
@@ -1617,6 +1618,7 @@ def test_typed_public_stream_sanitizes_all_events_and_preserves_lifecycle(monkey
     assert terminal.count("event: ")==2
     assert response.headers["x-dime-run-id"] in text
     final_json=__import__("json").loads(text.split("event: final_answer\ndata: ",1)[1].split("\n\n",1)[0])
+    assert final_json["text"].splitlines()[0]=="LeBron James scored 25 points."
     carry=final_json["carry"]
     assert carry["run_id"]==response.headers["x-dime-run-id"]
     assert carry["verification"]=="partial" and carry["verified_claims"]==1
@@ -1685,7 +1687,7 @@ def test_no_authority_with_internal_gap_still_nonblank_and_terminal():
     from types import SimpleNamespace
     from v2.api.routes import _answer_text
     from v2.contracts import Gap
-    text=_answer_text(SimpleNamespace(output_statuses=[],gaps=[Gap(kind="execution_failure",message="SECRET")]))
+    text=_answer_text(SimpleNamespace(output_statuses=[],verified_claims=[],execution=SimpleNamespace(evidence=[]),gaps=[Gap(kind="execution_failure",message="SECRET")]))
     assert text.strip() and "SECRET" not in text
 
 
@@ -1706,8 +1708,138 @@ def test_journal_setup_and_append_failures_keep_generic_fallback_once(monkeypatc
         def build(**k):l=RunLedger(k["run_id"]);ledgers[k["run_id"]]=l;return Broken(),l
         monkeypatch.setattr("v2.runtime.assembly.build_runtime",build);app=FastAPI();app.include_router(routes.router,prefix="/api");text=TestClient(app).post("/api/v2/chat/stream",json={"q":"x"}).text
         assert text.count("event: tool_call")==1 and text.count("event: tool_result")==1
-        assert '"name":"tool"' in text and "SECRET" not in text
+        assert '"name":"contracts"' in text and "SECRET" not in text
         assert text.count("event: final_answer")==text.count("event: graph_end")==1
+
+
+def _stream_with_runtime(monkeypatch, tmp_path, runtime_factory):
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+    from v2.api import routes
+    monkeypatch.setenv("DIME_RUNTIME_V2","on")
+    monkeypatch.setattr("shared.providers.resolve_model_id",lambda value:("openrouter","fixture"))
+    monkeypatch.setattr(routes,"_PROJECTS",ProjectStore(tmp_path/"p.sqlite"))
+    monkeypatch.setattr("v2.runtime.assembly.build_runtime",runtime_factory)
+    app=FastAPI();app.include_router(routes.router,prefix="/api")
+    return TestClient(app).post("/api/v2/chat/stream",json={"q":"x"}).text
+
+
+def test_stream_tool_events_report_the_capability_the_ledger_recorded(monkeypatch,tmp_path):
+    from v2.runtime.ledger import LedgerKind,RunLedger
+    ledgers={}
+    class Broken:
+        async def run(self,*a,run_id=None,**k):
+            ledger=ledgers[run_id]
+            ledger.append(LedgerKind.TOOL_CALL,turn_id=run_id,step_id="ratings",call_id="c",
+                data={"name":"team_ratings","args":{"secret":"SECRET"}})
+            ledger.append(LedgerKind.TOOL_RESULT,turn_id=run_id,step_id="ratings",call_id="c",
+                data={"status":"failed","error":"SECRET"})
+            raise RuntimeError("SECRET")
+    def build(**k):
+        ledger=RunLedger(k["run_id"]);ledgers[k["run_id"]]=ledger
+        return Broken(),ledger
+    text=_stream_with_runtime(monkeypatch,tmp_path,build)
+    assert text.count('"name":"team_ratings"')==2
+    assert '"name":"tool"' not in text and "SECRET" not in text
+    assert text.count("event: tool_call")==1 and text.count("event: tool_result")==1
+
+
+def test_stream_tool_events_from_the_live_journal_carry_the_capability_name(monkeypatch,tmp_path):
+    from v2 import contracts
+    from v2.runtime.fakes import FakeCapability
+    from v2.runtime.ledger import RunLedger
+    from v2.runtime.models import ExecutionResult,RuntimeResult
+    from v2.runtime.recording import RecordedCapability
+    callbacks={};ledgers={}
+    result=RuntimeResult(
+        task=contracts.TaskSpec(goal="x",mode="quick",deliverable="x"),
+        execution=ExecutionResult(plan=contracts.Plan(nodes=[])),
+        draft=contracts.DraftReport(sections=[],claims=[]),
+        verification=contracts.VerificationReport(status="pass"))
+    class Runtime:
+        async def run(self,q,run_id=None,**k):
+            node=contracts.PlanNode(id="ratings",description="ratings",
+                capability_hints=["team_ratings"],status="complete")
+            await RecordedCapability(
+                FakeCapability("team_ratings",[{"NET_RATING":9.6}]),
+                ledgers[run_id],turn_id=run_id,
+                activity=callbacks[run_id]).execute(node,result.task,[])
+            return result
+    def build(**k):
+        callbacks[k["run_id"]]=k["activity"]
+        ledgers[k["run_id"]]=RunLedger(k["run_id"])
+        return Runtime(),ledgers[k["run_id"]]
+    text=_stream_with_runtime(monkeypatch,tmp_path,build)
+    assert text.count("event: tool_call")==1 and text.count("event: tool_result")==1
+    assert text.count('"name":"team_ratings"')==2
+    assert '"name":"tool"' not in text
+
+
+def test_stream_publishes_claim_prose_and_one_clean_row_per_metric(monkeypatch,tmp_path):
+    from datetime import UTC, datetime
+
+    from v2 import contracts
+    from v2.adapters.capabilities import CAPABILITIES
+    from v2.adapters.core import build_envelope
+    from v2.runtime.ledger import RunLedger
+    from v2.runtime.loop import _verified_claims
+    from v2.runtime.models import ExecutionResult,RuntimeResult
+
+    metrics=["NET_RATING","OFF_RATING","DEF_RATING"]
+    unit=CAPABILITIES["team_ratings"].units["NET_RATING"]
+    subject=contracts.EntityRef(id="1",type="team",display_name="Capital City Stars")
+    row={"TEAM_ID":1,"TEAM_NAME":subject.display_name,
+         "NET_RATING":9.6,"OFF_RATING":119.8,"DEF_RATING":110.2}
+    envelope=build_envelope(
+        CAPABILITIES["team_ratings"],{"season":"2025-26"},
+        {"ok":True,"rows":[row],"meta":{"source":"warehouse","season":"2025-26",
+            "warehouse_id":"frozen-eval","warehouse_sha256":"a"*64}},
+        entities=[subject],observed_at=datetime.now(UTC))
+    requirement=contracts.EvidenceRequirement(
+        id="capital_city_stars_team_ratings_2025_26",description="ratings for one team",
+        capability_options=["team_ratings"],requested_outputs=list(metrics))
+    task=contracts.TaskSpec(
+        goal="ratings for one team",mode="quick",deliverable="ratings",
+        requested_outputs=list(metrics),
+        season=contracts.SeasonRef(value="2025-26",source="user",confidence=1.0),
+        entities=[subject],requirements=[requirement])
+    node=contracts.PlanNode(id="ratings",description="ratings for one team",
+        capability_hints=["team_ratings"],covers_requirement_ids=[requirement.id],
+        status="complete")
+    execution=ExecutionResult(
+        plan=contracts.Plan(nodes=[node]),evidence_by_node={node.id:envelope},
+        attempts={node.id:1})
+    bindings=[contracts.EvidenceOutputBinding(
+        requirement_kind="evidence",requirement_id=requirement.id,output_id=metric,
+        node_id=node.id,evidence_id=envelope.evidence_id,selector=f"rows[0].{metric}",
+        row_selector="rows[0]",subject_entity_type="team",subject_entity_id=subject.id,
+        subject_selector="rows[0].TEAM_ID",value={"kind":"float","value":row[metric]},
+        unit={"kind":"declared","value":unit},domain="team_ratings")
+        for metric in metrics]
+    claim=contracts.Claim(text="Capital City Stars rate at 119.8 points per 100 "
+        "possessions offensively and 110.2 defensively, for a net rating of 9.6.",
+        kind="observed",evidence_ids=[envelope.evidence_id],output_bindings=bindings)
+    draft=contracts.DraftReport(sections=["ratings"],claims=[claim])
+    verification=contracts.VerificationReport(status="pass",claim_results=[
+        {"claim_index":0,"supported":True,"reasons":[]}])
+    claims,gaps=_verified_claims(task,execution,draft,verification,
+        {envelope.evidence_id:envelope})
+    assert gaps==[]
+    result=RuntimeResult(task=task,execution=execution,draft=draft,
+        verification=verification,verified_claims=claims)
+    assert len(result.output_statuses)==2*len(metrics)
+    class Runtime:
+        async def run(self,*a,**k):return result
+    text=_stream_with_runtime(monkeypatch,tmp_path,
+        lambda **k:(Runtime(),RunLedger(k["run_id"])))
+    payload=json.loads(text.split("event: final_answer\ndata: ",1)[1].split("\n\n",1)[0])
+    assert payload["text"].splitlines()==[
+        "Capital City Stars rate at 119.8 points per 100 possessions offensively "
+        "and 110.2 defensively, for a net rating of 9.6."]
+    assert "NET_RATING" not in payload["text"]
+    custom=json.loads(text.split("event: custom_data\ndata: ",1)[1].split("\n\n",1)[0])
+    assert [row["output_id"] for row in custom["tables"]]==metrics
+    assert [row["value"] for row in custom["tables"]]==["9.6","119.8","110.2"]
 
 
 def test_pretool_timeout_safe_terminal_carries_latency(monkeypatch,tmp_path):

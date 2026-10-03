@@ -127,10 +127,10 @@ def _fake_rows():
 
 
 def test_tool_marks_best_unit_not_most_used(monkeypatch):
-    monkeypatch.setattr("app.tools.lineup.coerce_team_id", lambda t: 20)
-    monkeypatch.setattr("app.tools.lineup._possession_aggs",
+    monkeypatch.setattr("shared.tools.lineup.coerce_team_id", lambda t: 20)
+    monkeypatch.setattr("shared.tools.lineup._possession_aggs",
                         lambda *a: None)
-    monkeypatch.setattr("app.tools.lineup._warehouse_or_live",
+    monkeypatch.setattr("shared.tools.lineup._warehouse_or_live",
                         _fake_warehouse(_fake_rows()))
     res = get_lineup_stats.invoke({"team": "NYK"})
     assert res["ok"] is True
@@ -142,10 +142,10 @@ def test_tool_marks_best_unit_not_most_used(monkeypatch):
 
 
 def test_tool_best_unit_named_even_below_limit(monkeypatch):
-    monkeypatch.setattr("app.tools.lineup.coerce_team_id", lambda t: 20)
-    monkeypatch.setattr("app.tools.lineup._possession_aggs",
+    monkeypatch.setattr("shared.tools.lineup.coerce_team_id", lambda t: 20)
+    monkeypatch.setattr("shared.tools.lineup._possession_aggs",
                         lambda *a: None)
-    monkeypatch.setattr("app.tools.lineup._warehouse_or_live",
+    monkeypatch.setattr("shared.tools.lineup._warehouse_or_live",
                         _fake_warehouse(_fake_rows()))
     res = get_lineup_stats.invoke({"team": "NYK", "limit": 1})
     assert res["ok"] is True
@@ -175,10 +175,10 @@ def _truncation_fixture_rows():
 
 
 def test_best_net_unit_computed_past_warehouse_row_cap(monkeypatch):
-    monkeypatch.setattr("app.tools.lineup.coerce_team_id", lambda t: 20)
-    monkeypatch.setattr("app.tools.lineup._possession_aggs",
+    monkeypatch.setattr("shared.tools.lineup.coerce_team_id", lambda t: 20)
+    monkeypatch.setattr("shared.tools.lineup._possession_aggs",
                         lambda *a: None)
-    monkeypatch.setattr("app.tools.lineup._warehouse_or_live",
+    monkeypatch.setattr("shared.tools.lineup._warehouse_or_live",
                         _limit_aware_warehouse(_truncation_fixture_rows()))
     res = get_lineup_stats.invoke({"team": "NYK"})
     assert res["ok"] is True
@@ -221,9 +221,9 @@ def test_dedupe_lineup_rows_empty_no_crash():
 
 
 def test_get_lineup_stats_dedupes_before_limit(monkeypatch):
-    monkeypatch.setattr("app.tools.lineup.coerce_team_id", lambda t: 20)
-    monkeypatch.setattr("app.tools.lineup._possession_aggs", lambda *a: None)
-    monkeypatch.setattr("app.tools.lineup._warehouse_or_live",
+    monkeypatch.setattr("shared.tools.lineup.coerce_team_id", lambda t: 20)
+    monkeypatch.setattr("shared.tools.lineup._possession_aggs", lambda *a: None)
+    monkeypatch.setattr("shared.tools.lineup._warehouse_or_live",
                         _limit_aware_warehouse(_dup_rows()))
     res = get_lineup_stats.invoke(
         {"team": "SAC", "min_possessions": 10, "limit": 25})

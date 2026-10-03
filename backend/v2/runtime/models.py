@@ -374,13 +374,23 @@ class RuntimeResult(BaseModel):
         return self
 
 
+def withheld_claim_indices(gaps) -> set[int]:
+    return {
+        int(block.removeprefix("claim:"))
+        for gap in gaps
+        if gap.kind.value == "synthesis_incomplete"
+        for block in gap.blocks
+        if block.startswith("claim:") and block.removeprefix("claim:").isdigit()
+    }
+
+
 def build_output_statuses(task, verified_claims, gaps):
     from v2.contracts import OutputFinalStatus
     admitted = {}
     rejected = set()
+    withheld = withheld_claim_indices(gaps)
     for claim in verified_claims:
-        if any(gap.kind.value == "synthesis_incomplete"
-               and f"claim:{claim.claim_index}" in gap.blocks for gap in gaps):
+        if claim.claim_index in withheld:
             rejected.update((binding.requirement_kind, binding.requirement_id,
                              binding.output_id)
                             for binding in claim.claim.output_bindings)
@@ -419,6 +429,8 @@ def propagate_evidence_to_task(task, execution, draft, admitted):
     task_entities = {canonical_entity_ref(item) for item in task.entities}
     league_scoped = bool(task_entities) and all(
         kind == "league" for kind, _ in task_entities)
+    owner_by_evidence_id = {
+        envelope.evidence_id: envelope for envelope in execution.evidence}
     owned = {(binding.requirement_kind, binding.requirement_id,
               binding.output_id)
              for claim in admitted for binding in claim.output_bindings}
@@ -439,11 +451,7 @@ def propagate_evidence_to_task(task, execution, draft, admitted):
             if subject in task_entities:
                 pass
             elif not task_entities or league_scoped:
-                envelope = next(
-                    (item for item in execution.evidence_by_node.values()
-                     if item.evidence_id == binding.evidence_id),
-                    None,
-                )
+                envelope = owner_by_evidence_id.get(binding.evidence_id)
                 if envelope is None:
                     envelope = execution.evidence_by_node.get(binding.node_id)
                 if envelope is None:
@@ -458,22 +466,43 @@ def propagate_evidence_to_task(task, execution, draft, admitted):
             candidates.setdefault(binding.output_id, []).append(
                 (claim, binding))
     accepted: dict[int, list] = {}
-    for output_id, competing in candidates.items():
-        if ("task", None, output_id) in owned:
-            continue
-        if len(competing) != 1:
-            continue
-        claim, binding = competing[0]
-        clone = binding.model_copy(update={
-            "requirement_kind": "task", "requirement_id": None})
+
+    def admit_alias(claim, binding, update, key):
+        if key in owned:
+            return
+        clone = binding.model_copy(update=update)
         trial = claim.model_copy(update={
             "output_bindings": [*claim.output_bindings, clone]})
         try:
             admit_verified_claim_bindings(task, execution, draft, trial)
         except ValueError:
-            continue
+            return
         accepted.setdefault(claim.claim_index, []).append(clone)
-        owned.add(("task", None, output_id))
+        owned.add(key)
+
+    for output_id, competing in candidates.items():
+        if len(competing) != 1:
+            continue
+        claim, binding = competing[0]
+        admit_alias(claim, binding,
+                    {"requirement_kind": "task", "requirement_id": None},
+                    ("task", None, output_id))
+    for claim in admitted:
+        for binding in [
+                *claim.output_bindings,
+                *accepted.get(claim.claim_index, [])]:
+            if not isinstance(binding, EvidenceOutputBinding):
+                continue
+            if binding.requirement_kind != "task":
+                continue
+            for requirement in task.requirements:
+                if binding.output_id not in requirement.requested_outputs:
+                    continue
+                admit_alias(
+                    claim, binding,
+                    {"requirement_kind": "evidence",
+                     "requirement_id": requirement.id},
+                    ("evidence", requirement.id, binding.output_id))
     if not accepted:
         return list(admitted)
     return [claim.model_copy(update={"output_bindings": [

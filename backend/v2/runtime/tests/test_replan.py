@@ -119,7 +119,7 @@ class FailThenCompleteExecutor:
     def __init__(self) -> None:
         self.calls = 0
 
-    async def execute(self, task, plan, run_id=None) -> ExecutionResult:
+    async def execute(self, task, plan, run_id=None, resume=True) -> ExecutionResult:
         self.calls += 1
         if self.calls == 1:
             return fail_all(plan)
@@ -130,16 +130,41 @@ class AlwaysFailExecutor:
     def __init__(self) -> None:
         self.calls = 0
 
-    async def execute(self, task, plan, run_id=None) -> ExecutionResult:
+    async def execute(self, task, plan, run_id=None, resume=True) -> ExecutionResult:
         self.calls += 1
         return fail_all(plan)
+
+
+class FailsThenSucceeds:
+    def __init__(self, name: str, message: str, failures: int) -> None:
+        self.name = name
+        self._message = message
+        self._remaining = failures
+
+    async def execute(self, node, task, evidence):
+        from v2.runtime import FakeCapability
+
+        if self._remaining:
+            self._remaining -= 1
+            raise RuntimeError(self._message)
+        return await FakeCapability(self.name, {"value": 1}).execute(
+            node, task, evidence)
+
+
+def recovery_capabilities(message: str, *, cap_a_failures: int = 99) -> dict:
+    return {
+        "cap_a": FailsThenSucceeds("cap_a", message, cap_a_failures),
+        "cap_c": FailsThenSucceeds("cap_c", message, 99),
+        "cap_b": FailsThenSucceeds("cap_b", message, 0),
+        "cap_d": FailsThenSucceeds("cap_d", message, 0),
+    }
 
 
 class PartialExecutor:
     def __init__(self) -> None:
         self.calls = 0
 
-    async def execute(self, task, plan, run_id=None) -> ExecutionResult:
+    async def execute(self, task, plan, run_id=None, resume=True) -> ExecutionResult:
         self.calls += 1
         finished = plan.nodes[0].model_copy(
             update={"status": PlanStatus.COMPLETE})
@@ -217,6 +242,68 @@ async def test_total_failure_replans_once_and_synthesizes_recovery_evidence() ->
     assert result.verification.status == VerificationStatus.PASS
     assert [item.claim.text for item in result.verified_claims] == [
         "Recovered value is 1."]
+
+
+@pytest.mark.anyio
+async def test_checkpointed_recovery_executes_the_replan_instead_of_raising(tmp_path) -> None:
+    from v2.runtime import PlanExecutor
+    from v2.runtime.checkpoints import FileCheckpointStore
+
+    message = ("AdapterError: get_ratings: Team ratings for the 2024-25 "
+               "season are not available. Available seasons: 2025-26.")
+    planner = Planner(recovery_nodes())
+    executor = PlanExecutor(
+        recovery_capabilities(message),
+        checkpoint_store=FileCheckpointStore(tmp_path / "checkpoints"),
+    )
+    synthesizer = Synthesizer()
+    result = await build_runtime(
+        planner, executor, synthesizer).run("assess scoring", run_id="turn-1")
+
+    assert len(planner.calls) == 2
+    assert [item.evidence_id for item in synthesizer.seen] == [
+        "evidence:b1", "evidence:d1"]
+    assert result.verification.status == VerificationStatus.PASS
+    assert [item.claim.text for item in result.verified_claims] == [
+        "Recovered value is 1."]
+    failed = {
+        node.id for node in result.execution.plan.nodes
+        if node.status.value == "failed"
+    }
+    assert failed == {"a1", "c1"}
+    assert result.execution.errors["a1"] == [f"RuntimeError: {message}"]
+    assert not (tmp_path / "checkpoints" / "turn-1.json").exists()
+
+
+@pytest.mark.anyio
+async def test_checkpointed_recovery_reenters_the_same_replanned_node(tmp_path) -> None:
+    from v2.runtime import PlanExecutor
+    from v2.runtime.checkpoints import FileCheckpointStore
+
+    message = "AdapterError: silver_team_ratings has no 2024-25 rows"
+    planner = Planner([
+        PlanNode(
+            id="a1", description="same scoring node replanned",
+            capability_hints=["cap_a"], covers_requirement_ids=["scoring"],
+        ),
+        PlanNode(
+            id="d1", description="second efficiency attempt",
+            capability_hints=["cap_d"], covers_requirement_ids=["efficiency"],
+        ),
+    ])
+    executor = PlanExecutor(
+        recovery_capabilities(message, cap_a_failures=1),
+        checkpoint_store=FileCheckpointStore(tmp_path / "checkpoints"),
+    )
+    synthesizer = Synthesizer()
+    result = await build_runtime(
+        planner, executor, synthesizer).run("assess scoring", run_id="turn-1")
+
+    assert len(planner.calls) == 2
+    assert [item.evidence_id for item in synthesizer.seen] == [
+        "evidence:a1-replan2", "evidence:d1"]
+    assert result.verification.status == VerificationStatus.PASS
+    assert not (tmp_path / "checkpoints" / "turn-1.json").exists()
 
 
 @pytest.mark.anyio

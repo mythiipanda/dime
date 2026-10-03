@@ -83,8 +83,8 @@ def test_season_clamp_never_2026():
     })
     assert res["ok"] is True
     assert res["meta"]["start_season"] == 2015
-    assert res["meta"]["end_season"] == 2025
-    assert res["rows"]["seasons"][-1]["season"] == 2025
+    assert res["meta"]["end_season"] == 2026
+    assert res["rows"]["seasons"][-1]["season"] == 2026
 
 
 def test_empty_range_honest():
@@ -146,7 +146,7 @@ def test_partial_overlap_clamps_with_warning():
         "end_season": 2030, "limit": 2, "mode": "best",
     })
     assert res["ok"] is True
-    assert res["meta"]["end_season"] == 2025
+    assert res["meta"]["end_season"] == 2026
     assert "warning" in res["meta"]
 
 

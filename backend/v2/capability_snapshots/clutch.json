@@ -6,6 +6,56 @@
       "branches": [
         {
           "compiled_kinds": [
+            "int"
+          ],
+          "constraints": {},
+          "item_constraints": {},
+          "list_item_exact_decimal": false,
+          "scalar_exact_decimal": false,
+          "schema_sha256": "2b7bd30938883cbec3bc58d034e9cc4bbcfdb4a2ae13d455df7b4ea7183014ed"
+        }
+      ],
+      "compiled_kinds": [
+        "int"
+      ],
+      "default": 5,
+      "default_present": true,
+      "list_item_exact_decimal": false,
+      "nullable": false,
+      "property": "clutch_margin",
+      "required": false,
+      "scalar_exact_decimal": false,
+      "schema_sha256": "2b7bd30938883cbec3bc58d034e9cc4bbcfdb4a2ae13d455df7b4ea7183014ed"
+    },
+    {
+      "branches": [
+        {
+          "compiled_kinds": [
+            "int"
+          ],
+          "constraints": {},
+          "item_constraints": {},
+          "list_item_exact_decimal": false,
+          "scalar_exact_decimal": false,
+          "schema_sha256": "8884b107207437911c55f17d50ca89b1028e21f51f7c38bfc40028a5e5ec5460"
+        }
+      ],
+      "compiled_kinds": [
+        "int"
+      ],
+      "default": 300,
+      "default_present": true,
+      "list_item_exact_decimal": false,
+      "nullable": false,
+      "property": "clutch_seconds",
+      "required": false,
+      "scalar_exact_decimal": false,
+      "schema_sha256": "8884b107207437911c55f17d50ca89b1028e21f51f7c38bfc40028a5e5ec5460"
+    },
+    {
+      "branches": [
+        {
+          "compiled_kinds": [
             "string"
           ],
           "constraints": {},
@@ -87,9 +137,34 @@
       "required": false,
       "scalar_exact_decimal": false,
       "schema_sha256": "8df079e90ae598d81db07cf8abf57ab17d9efaef8841009037533af591d9bb77"
+    },
+    {
+      "branches": [
+        {
+          "compiled_kinds": [
+            "string"
+          ],
+          "constraints": {},
+          "item_constraints": {},
+          "list_item_exact_decimal": false,
+          "scalar_exact_decimal": false,
+          "schema_sha256": "1b7eb1c13ef54b900a2d2646c7908356d1d9b0da9cfc3b86f7e76358906ae9df"
+        }
+      ],
+      "compiled_kinds": [
+        "string"
+      ],
+      "default": "regular",
+      "default_present": true,
+      "list_item_exact_decimal": false,
+      "nullable": false,
+      "property": "season_type",
+      "required": false,
+      "scalar_exact_decimal": false,
+      "schema_sha256": "1b7eb1c13ef54b900a2d2646c7908356d1d9b0da9cfc3b86f7e76358906ae9df"
     }
   ],
   "reasons": [],
-  "schema_sha256": "1537eeb20fb238cc6d3798f9287501421ec098ff340c60b2612b935ba95bfdfa",
+  "schema_sha256": "03ee1191010beb944fee1eaf5dad29f2f3fa4ad83f01ffecdd19bc0dc1238456",
   "status": "REPRESENTABLE"
 }

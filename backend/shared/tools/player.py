@@ -9,6 +9,12 @@ from langchain_core.tools import tool
 from .. import store
 from ..sources import nba_stats
 from ._core import TTL_GAMELOG, TTL_LEADERS, TTL_PBPSTATS, _warehouse_or_live, coerce_player_id, coerce_team_id, last_completed_season, resolve_season
+from .shots import ZONE_LEGEND as _SHOT_ZONE_LABELS
+from .zone import ZONE_KEYS as _HIST_ZONE_KEYS
+from .zone import ZONE_LEGEND as _HIST_ZONE_LEGEND
+from .zone import season_year as _hist_season_year
+from .zone import zone_of as _hist_zone_of
+from .zonedelta import clamp_floor as _clamp_hist_floor
 
 _logger = _logging.getLogger(__name__)
 
@@ -761,7 +767,9 @@ def compare_metrics(a: str | int, b: str | int, season: str | None = None) -> di
                          for m in ("EPM", "LEBRON", "DARKO", "DRIP")]},
             "meta": {"source": "warehouse", "season": season,
                      "raptor_season_a": ma.get("raptor_season"),
-                     "raptor_season_b": mb.get("raptor_season")}}
+                     "raptor_season_b": mb.get("raptor_season"),
+                     "raptor_gap": not raptor_current,
+                     "raptor_coverage": "RAPTOR ends 2021-22; later seasons read as gaps"}}
 
 def _season_line(player_id: object, season: str) -> dict[str, Any] | None:
     season = resolve_season(season)
@@ -811,6 +819,31 @@ def _season_line(player_id: object, season: str) -> dict[str, Any] | None:
                 "TS_PCT": h.get("ts_pct"),
             }
             return {k: v for k, v in row.items() if v is not None}
+    except Exception:
+        pass
+    try:
+        from .career_arc import line_for_season as _arc_line
+        arc = _arc_line(int(str(player_id)) if str(player_id).isdigit() else 0, season)
+        if arc:
+            row = {
+                "PLAYER_ID": player_id,
+                "PLAYER": arc.get("player_name"),
+                "TEAM": arc.get("team_abbreviation"),
+                "GP": arc.get("gp"),
+                "MPG": arc.get("min"),
+                "PPG": arc.get("pts"),
+                "RPG": arc.get("reb"),
+                "APG": arc.get("ast"),
+                "SPG": arc.get("stl"),
+                "BPG": arc.get("blk"),
+                "FG_PCT": arc.get("fg_pct"),
+                "FG3_PCT": arc.get("fg3_pct"),
+                "FT_PCT": arc.get("ft_pct"),
+                "TS_PCT": arc.get("ts_pct"),
+            }
+            slim = {k: v for k, v in row.items() if v is not None}
+            if slim.get("PPG") is not None and slim.get("GP") is not None:
+                return slim
     except Exception:
         pass
     return None
@@ -1473,17 +1506,107 @@ _BUCKET_TO_ZONE = {
 }
 
 
+_HIST_THREE_ZONES = frozenset({"corner_3", "atb_3"})
+
+
+def _fold_hist_shots(rows: list[dict[str, Any]], person_id: int) -> tuple[dict, dict, int]:
+    player = {key: [0, 0] for key in _HIST_ZONE_KEYS}
+    league = {key: [0, 0] for key in _HIST_ZONE_KEYS}
+    total = 0
+    for r in rows:
+        zone = _hist_zone_of(r.get("x_legacy"), r.get("y_legacy"), r.get("shot_value", 0))
+        made = str(r.get("shot_result") or "").lower() == "made"
+        slot = league[zone]
+        slot[1] += 1
+        if made:
+            slot[0] += 1
+        try:
+            match = int(r.get("person_id")) == person_id
+        except (TypeError, ValueError):
+            match = False
+        if match:
+            total += 1
+            pslot = player[zone]
+            pslot[1] += 1
+            if made:
+                pslot[0] += 1
+    return player, league, total
+
+
+def _hist_zone_rows(player: dict, league: dict, total: int, floor: int) -> tuple[list, list]:
+    rows: list[dict[str, Any]] = []
+    excluded: list[str] = []
+    for key in _HIST_ZONE_KEYS:
+        m, a = player[key]
+        if a < floor:
+            excluded.append(key)
+            continue
+        lm, la = league[key]
+        threes = m if key in _HIST_THREE_ZONES else 0
+        league_threes = lm if key in _HIST_THREE_ZONES else 0
+        fgp = round(m / a, 3)
+        efg = round((m + 0.5 * threes) / a, 3)
+        league_efg = round((lm + 0.5 * league_threes) / la, 3) if la else 0.0
+        share = round(a / total, 3) if total else 0.0
+        rows.append({"zone": key, "FGM": m, "FGA": a,
+                     "FG_PCT": fgp, "share": share,
+                     "eFG_PCT": efg, "SHARE": share,
+                     "fgm": m, "fga": a, "fg_pct": fgp,
+                     "freq_pct": share,
+                     "LEAGUE_DELTA": round(efg - league_efg, 3)})
+    return rows, excluded
+
+
 @tool
-def get_shot_zones(player_id: str | int, season: str | None = None) -> dict[str, Any]:
+def get_shot_zones(player_id: str | int, season: str | None = None, min_attempts: int = 50) -> dict[str, Any]:
     """Zone splits for one player id: rim, midrange, three with shares.
 
-    Warehouse-first: seeded silver_shots, then seeded silver_zone_splits
+    Warehouse-first: historical silver_hist_shots geometric zones, then
+    seeded silver_shots, then seeded silver_zone_splits
     (basketball-reference distance buckets, league-wide), then live
     shot_chart (fail-fast; endpoint-blocked from datacenter IPs).
+    Zones below min_attempts (default 50, clamped 10..200) are excluded.
     """
     season = resolve_season(season)
     player_id = coerce_player_id(player_id)
     import math
+
+    floor = _clamp_hist_floor(min_attempts)
+    try:
+        hist_year = _hist_season_year(season)
+    except Exception:
+        hist_year = 0
+    if hist_year:
+        try:
+            hist_frame = store.read_frame(
+                "silver_hist_shots", "season = ?", [hist_year])
+        except Exception:
+            hist_frame = None
+        if hist_frame is not None and hist_frame.height > 0:
+            folded_player, folded_league, hist_total = _fold_hist_shots(
+                hist_frame.to_dicts(), player_id)
+            if hist_total > 0:
+                hist_rows, hist_excluded = _hist_zone_rows(
+                    folded_player, folded_league, hist_total, floor)
+                fetched = [str(v) for v in hist_frame.select(
+                    "_fetched_at").to_series().to_list() if v]
+                meta: dict[str, Any] = {
+                    "source": "warehouse:silver_hist_shots",
+                    "fetched_at": max(fetched) if fetched else "unknown",
+                    "rows": len(hist_rows), "season": season,
+                    "cached": True,
+                    "baseline": "silver_hist_shots league zone eFG",
+                    "player_shots": hist_total,
+                    "min_attempts": floor,
+                    "excluded_zones": hist_excluded,
+                    "zones": dict(_HIST_ZONE_LEGEND),
+                }
+                if not hist_rows:
+                    meta["note"] = (
+                        f"player {player_id} has {hist_total} tracked shots "
+                        f"but no zone reaches the {floor}-attempt floor")
+                return {"tool": "get_shot_zones", "ok": True,
+                        "rows": hist_rows, "meta": meta}
 
     res = None
     live_error = ""
@@ -2038,10 +2161,14 @@ def get_wowy(
         con = store.connect(read_only=True)
         try:
             tid = coerce_team_id(team_id) if team_id else None
+            lt = "silver_lineups"
+            lx = ""
+            hx = (" AND season_type = 'regular-season'"
+                  " AND measure_type = 'base' AND per_mode = 'totals'")
             if not tid:
                 shared = con.execute(
-                    """
-                    SELECT TEAM_ID, TEAM_ABBREVIATION, COUNT(*) FROM silver_lineups
+                    f"""
+                    SELECT TEAM_ID, TEAM_ABBREVIATION, COUNT(*) FROM {lt}
                     WHERE _season = ?
                       AND GROUP_ID LIKE '%-' || ? || '-%'
                       AND GROUP_ID LIKE '%-' || ? || '-%'
@@ -2051,6 +2178,20 @@ def get_wowy(
                     [season, str(pid_a), str(pid_b)],
                 ).fetchone()
                 if not shared:
+                    lt = "silver_hist_lineups"
+                    lx = hx
+                    shared = con.execute(
+                        f"""
+                        SELECT TEAM_ID, TEAM_ABBREVIATION, COUNT(*) FROM {lt}
+                        WHERE _season = ?{lx}
+                          AND GROUP_ID LIKE '%-' || ? || '-%'
+                          AND GROUP_ID LIKE '%-' || ? || '-%'
+                        GROUP BY TEAM_ID, TEAM_ABBREVIATION
+                        ORDER BY COUNT(*) DESC LIMIT 1
+                        """,
+                        [season, str(pid_a), str(pid_b)],
+                    ).fetchone()
+                if not shared:
                     return {"tool": "get_wowy", "ok": False,
                             "error": f"{raw_a} and {raw_b} never shared "
                                      f"the court in {season}. WOWY needs teammates."}
@@ -2058,14 +2199,26 @@ def get_wowy(
             else:
                 tabbr = str(tid)
                 both = con.execute(
-                    """
-                    SELECT COUNT(*) FROM silver_lineups
-                    WHERE _season = ? AND TEAM_ID = ?
+                    f"""
+                    SELECT COUNT(*) FROM {lt}
+                    WHERE _season = ? AND TEAM_ID = ?{lx}
                       AND GROUP_ID LIKE '%-' || ? || '-%'
                       AND GROUP_ID LIKE '%-' || ? || '-%'
                     """,
                     [season, tid, str(pid_a), str(pid_b)],
                 ).fetchone()
+                if not both or not both[0]:
+                    lt = "silver_hist_lineups"
+                    lx = hx
+                    both = con.execute(
+                        f"""
+                        SELECT COUNT(*) FROM {lt}
+                        WHERE _season = ? AND TEAM_ID = ?{lx}
+                          AND GROUP_ID LIKE '%-' || ? || '-%'
+                          AND GROUP_ID LIKE '%-' || ? || '-%'
+                        """,
+                        [season, tid, str(pid_a), str(pid_b)],
+                    ).fetchone()
                 if not both or not both[0]:
                     return {"tool": "get_wowy", "ok": False,
                             "error": f"{raw_a} and {raw_b} never shared "
@@ -2073,7 +2226,7 @@ def get_wowy(
 
             if tid:
                 df = con.execute(
-                    """
+                    f"""
                     SELECT 
                       CASE 
                         WHEN GROUP_ID LIKE '%-' || ? || '-%' AND GROUP_ID LIKE '%-' || ? || '-%' THEN 'Both ON'
@@ -2086,8 +2239,8 @@ def get_wowy(
                       ROUND(100.0 * SUM(PTS) / NULLIF(SUM(FGA - OREB + TOV + 0.44 * FTA), 0), 2) AS off_rating,
                       ROUND(100.0 * SUM(PTS - PLUS_MINUS) / NULLIF(SUM(FGA - OREB + TOV + 0.44 * FTA), 0), 2) AS def_rating,
                       ROUND(100.0 * SUM(PLUS_MINUS) / NULLIF(SUM(FGA - OREB + TOV + 0.44 * FTA), 0), 2) AS net_rating
-                    FROM silver_lineups
-                    WHERE TEAM_ID = ? AND _season = ?
+                    FROM {lt}
+                    WHERE TEAM_ID = ? AND _season = ?{lx}
                     GROUP BY split
                     ORDER BY minutes DESC
                     """,
@@ -2100,6 +2253,11 @@ def get_wowy(
                     net_str = f"{both_on['net_rating']:+.1f}" if both_on and both_on.get("net_rating") is not None else "N/A"
                     min_val = both_on['minutes'] if both_on else 0
                     verdict = f"{tabbr}: Both on court net rating {net_str} across {min_val} minutes."
+                    meta = {"source": lt, "season": season, "team": tabbr}
+                    if lt != "silver_lineups":
+                        meta["minutes_note"] = (
+                            "minutes are clock minutes from the warehouse "
+                            "lineup table")
                     return {
                         "tool": "get_wowy",
                         "ok": True,
@@ -2108,7 +2266,7 @@ def get_wowy(
                         "player_b": raw_b,
                         "rows": rows,
                         "verdict": verdict,
-                        "meta": {"source": "silver_lineups", "season": season, "team": tabbr},
+                        "meta": meta,
                     }
         except Exception:
             pass
@@ -2199,7 +2357,7 @@ async def get_shot_compare(a: str, b: str, season: str | None = None) -> dict[st
         rows.append({"zone": z, "a_eFG": ae, "b_eFG": be,
                      "a_fg": afg, "b_fg": bfg,
                      "a_share": ash, "b_share": bsh, "edge": edge})
-    rim = next((r for r in rows if r["zone"] == "Restricted Area"), None)
+    rim = next((r for r in rows if r["zone"] in ("Restricted Area", "rim")), None)
     if (not rim or rim["a_eFG"] is None or rim["b_eFG"] is None
             or rim["a_share"] is None or rim["b_share"] is None):
         rim_owner = None
@@ -2272,7 +2430,8 @@ def get_raptor_history(player: str, season: str = "") -> dict[str, Any]:
              "RAPTOR_D": r.get("RAPTOR_DEFENSE"), "RAPTOR": r.get("RAPTOR_TOTAL"),
              "WAR": r.get("WAR_TOTAL")} for r in frame.to_dicts()]
     return {"tool": "get_raptor_history", "ok": True, "rows": rows,
-            "meta": {"source": "fivethirtyeight:raptor", "seasons": len(rows)}}
+            "meta": {"source": "fivethirtyeight:raptor", "seasons": len(rows),
+                     "coverage": "RAPTOR ends 2021-22; later seasons read as gaps, never estimates"}}
 
 
 
@@ -2828,7 +2987,8 @@ def get_player_report(player: str | int, season: str | None = None) -> dict[str,
                      f"{a.get('NET_RATING'):+g} net rating.")
     if top_zones:
         lines.append("Shot profile: " + "; ".join(
-            f"{r.get('zone')} {100 * float(r.get('share') or 0):.1f}% of shots "
+            f"{_SHOT_ZONE_LABELS.get(str(r.get('zone')), r.get('zone'))} "
+            f"{100 * float(r.get('share') or 0):.1f}% of shots "
             f"at {100 * float(r.get('FG_PCT') or 0):.1f}% FG"
             for r in top_zones) + ".")
     if crow:

@@ -1,7 +1,8 @@
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from app import routes, store
+from app import routes
+from shared import store
 
 
 def test_run_history_and_export_are_scoped_to_browser_owner(monkeypatch, tmp_path):

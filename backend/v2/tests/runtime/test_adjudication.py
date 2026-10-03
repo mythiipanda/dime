@@ -367,8 +367,9 @@ def test_output_status_matrix_and_projection_use_only_admitted_bindings():
     statuses = build_output_statuses(task, [verified], [])
     assert [(x.output_id,x.status) for x in statuses] == [
         ("WINS","complete"),("LOSSES","missing")]
-    result = SimpleNamespace(output_statuses=statuses, gaps=[])
-    assert _answer_text(result) == "evidence:record:WINS = 61 (count)\nevidence:record:LOSSES could not be verified (missing)."
+    result = SimpleNamespace(output_statuses=statuses, gaps=[], verified_claims=[],
+        execution=SimpleNamespace(evidence=[]))
+    assert _answer_text(result) == "WINS = 61 (count)\nLOSSES could not be verified (missing)."
     assert "999" not in _answer_text(result)
 
 
@@ -377,10 +378,85 @@ def test_projection_uses_canonical_gap_kind_not_untrusted_message():
     from v2.api.routes import _answer_text
     from v2.contracts import Gap
     result = SimpleNamespace(output_statuses=[], gaps=[Gap(
-        kind="execution_failure", message="SECRET internal adapter path")])
+        kind="execution_failure", message="SECRET internal adapter path")],
+        verified_claims=[],
+        execution=SimpleNamespace(evidence=[]))
     text = _answer_text(result)
     assert text == "Some requested data was unavailable."
     assert "SECRET" not in text
+
+
+def test_ratings_task_publishes_one_clean_label_and_row_per_metric():
+    from datetime import UTC, datetime
+    from types import SimpleNamespace
+
+    from v2.adapters.capabilities import CAPABILITIES
+    from v2.adapters.core import build_envelope
+    from v2.api.routes import _answer_text, _public_evidence_tables
+    from v2.contracts import (
+        Claim, EntityRef, EvidenceOutputBinding, EvidenceRequirement, SeasonRef,
+        VerificationReport)
+    from v2.runtime.models import build_output_statuses
+
+    metrics = ["NET_RATING", "OFF_RATING", "DEF_RATING"]
+    unit = CAPABILITIES["team_ratings"].units["NET_RATING"]
+    subject = EntityRef(id="1", type="team", display_name="Capital City Stars")
+    row = {"TEAM_ID": 1, "TEAM_NAME": subject.display_name,
+           "NET_RATING": 9.6, "OFF_RATING": 119.8, "DEF_RATING": 110.2}
+    envelope = build_envelope(
+        CAPABILITIES["team_ratings"], {"season": "2025-26"},
+        {"ok": True, "rows": [row],
+         "meta": {"source": "warehouse", "season": "2025-26",
+                  "warehouse_id": "frozen-eval", "warehouse_sha256": "a" * 64}},
+        entities=[subject], observed_at=datetime.now(UTC))
+    requirement = EvidenceRequirement(
+        id="capital_city_stars_team_ratings_2025_26",
+        description="ratings for one team",
+        capability_options=["team_ratings"], requested_outputs=list(metrics))
+    task = TaskSpec(
+        goal="ratings for one team", mode="quick", deliverable="ratings",
+        requested_outputs=list(metrics),
+        season=SeasonRef(value="2025-26", source="user", confidence=1.0),
+        entities=[subject], requirements=[requirement])
+    node = PlanNode(
+        id="ratings", description="ratings for one team",
+        capability_hints=["team_ratings"],
+        covers_requirement_ids=[requirement.id], status="complete")
+    execution = ExecutionResult(
+        plan=Plan(nodes=[node]), evidence_by_node={node.id: envelope},
+        attempts={node.id: 1})
+    bindings = [
+        EvidenceOutputBinding(
+            requirement_kind="evidence", requirement_id=requirement.id,
+            output_id=metric, node_id=node.id, evidence_id=envelope.evidence_id,
+            selector=f"rows[0].{metric}", row_selector="rows[0]",
+            subject_entity_type="team", subject_entity_id=subject.id,
+            subject_selector="rows[0].TEAM_ID",
+            value={"kind": "float", "value": row[metric]},
+            unit={"kind": "declared", "value": unit}, domain="team_ratings")
+        for metric in metrics]
+    claim = Claim(text="ratings", kind="observed",
+                  evidence_ids=[envelope.evidence_id],
+                  output_bindings=bindings)
+    draft = DraftReport(sections=["ratings"], claims=[claim])
+    report = VerificationReport(status="pass", claim_results=[
+        ClaimResult(claim_index=0, supported=True)])
+    claims, gaps = _verified_claims(
+        task, execution, draft, report,
+        {envelope.evidence_id: envelope})
+    assert gaps == []
+    statuses = build_output_statuses(task, claims, [])
+    assert len(statuses) == 2 * len(metrics)
+    result = SimpleNamespace(
+        output_statuses=statuses, gaps=[], draft=draft, verified_claims=[],
+        execution=SimpleNamespace(evidence=[envelope]))
+    assert _answer_text(result).splitlines() == [
+        "NET_RATING [team:1] = 9.6 (points_per_100_possessions)",
+        "OFF_RATING [team:1] = 119.8 (points_per_100_possessions)",
+        "DEF_RATING [team:1] = 110.2 (points_per_100_possessions)"]
+    tables = _public_evidence_tables(result)
+    assert [item["output_id"] for item in tables] == metrics
+    assert [item["value"] for item in tables] == ["9.6", "119.8", "110.2"]
 
 
 def test_four_typed_values_project_complete_without_fragments():
@@ -399,10 +475,11 @@ def test_four_typed_values_project_complete_without_fragments():
             unit={"kind":"unitless"},domain="standings")
         statuses.append(OutputFinalStatus(requirement_kind="task",output_id=output,
             status="complete",claim_index=0,binding=binding))
-    text=_answer_text(SimpleNamespace(output_statuses=statuses,gaps=[]))
-    assert text.splitlines()==["task:task:ZERO = 0 (unitless)",
-        "task:task:FLAG = false (unitless)", "task:task:RATE = 1.5 (unitless)",
-        "task:task:EXACT = 0.123456789123456789 (unitless)"]
+    text=_answer_text(SimpleNamespace(output_statuses=statuses,gaps=[],verified_claims=[],
+        execution=SimpleNamespace(evidence=[])))
+    assert text.splitlines()==["ZERO = 0 (unitless)",
+        "FLAG = false (unitless)", "RATE = 1.5 (unitless)",
+        "EXACT = 0.123456789123456789 (unitless)"]
 
 
 def test_probe_five_abstains_without_admitted_output_authority():
@@ -415,8 +492,9 @@ def test_probe_five_abstains_without_admitted_output_authority():
     statuses = __import__('v2.runtime.models',fromlist=['build_output_statuses']).build_output_statuses(
         task, [], [])
     assert statuses[0].status == "missing"
-    assert _answer_text(SimpleNamespace(output_statuses=statuses,gaps=[])) == (
-        "task:task:DECISION could not be verified (missing).")
+    assert _answer_text(SimpleNamespace(output_statuses=statuses,gaps=[],verified_claims=[],
+        execution=SimpleNamespace(evidence=[]))) == (
+        "DECISION could not be verified (missing).")
 
 
 def test_mixed_branch_matrix_preserves_complete_and_missing():
@@ -461,9 +539,10 @@ def test_two_subjects_same_output_and_unit_are_self_contained():
             unit={"kind":"declared","value":"points"},domain="player_report")
         statuses.append(OutputFinalStatus(requirement_kind="evidence",requirement_id=req,
             output_id="PTS",status="complete",claim_index=0,binding=binding))
-    assert _answer_text(SimpleNamespace(output_statuses=statuses,gaps=[])).splitlines()==[
-        "evidence:lebron:PTS [player:23] = 25 (points)",
-        "evidence:curry:PTS [player:30] = 30 (points)"]
+    assert _answer_text(SimpleNamespace(output_statuses=statuses,gaps=[],verified_claims=[],
+        execution=SimpleNamespace(evidence=[]))).splitlines()==[
+        "PTS [player:23] = 25 (points)",
+        "PTS [player:30] = 30 (points)"]
 
 
 def test_calculation_projection_and_input_evidence_filtering():
@@ -482,10 +561,11 @@ def test_calculation_projection_and_input_evidence_filtering():
     from datetime import UTC, datetime
     from v2.contracts import EvidenceEnvelope
     result=SimpleNamespace(output_statuses=[status],gaps=[],draft=DraftReport(
-        sections=[],claims=[],calculations=[calc]), execution=SimpleNamespace(evidence=[
+        sections=[],claims=[],calculations=[calc]),verified_claims=[],
+        execution=SimpleNamespace(evidence=[
         EvidenceEnvelope(evidence_id="a",capability="player_report",source="a",observed_at=datetime.now(UTC),rows={"PTS":25}),
         EvidenceEnvelope(evidence_id="b",capability="player_report",source="b",observed_at=datetime.now(UTC),rows={"PTS":30})]))
-    assert _answer_text(result)=="calculation:delta:PTS_DELTA = -5 (points)"
+    assert _answer_text(result)=="PTS_DELTA = -5 (points)"
     assert len(_public_evidence_tables(result)) == 2
 
 
@@ -712,8 +792,10 @@ def test_completed_season_assists_leader_publishes_count(monkeypatch, tmp_path):
         for item in statuses if item.status == "complete"]
     text = _answer_text(SimpleNamespace(
         output_statuses=statuses, gaps=[], draft=draft,
-        verification=verification))
-    assert "evidence:assists_leader_2024_25:AST = 880 (count)" in text
+        execution=execution, verification=verification,
+        verified_claims=claims))
+    assert text.splitlines()[0] == "Trae Young led the NBA with 880 assists in 2024-25."
+    assert "AST = 880 (count)" not in text
 
 
 def _display_table(output_id, definitions=None, rows=None):
@@ -778,3 +860,4 @@ def test_public_gaps_plumb_blocks():
         {"kind": "missing_evidence", "blocks": ["requirement:assists", "claim:1"]},
         {"kind": "source_conflict", "blocks": []},
     ]
+
