@@ -455,6 +455,8 @@ def get_ratings(
         [season], lambda: nba_stats.team_ratings(season), season,
         limit=30,
     )
+    if rows:
+        meta.setdefault("method", "official")
     if not rows and season_static(season or ""):
         fallback = _regular_season_team_ratings(season)
         if fallback is not None:
