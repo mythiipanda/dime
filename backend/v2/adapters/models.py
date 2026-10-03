@@ -2522,6 +2522,25 @@ class ModelRepairer(ModelStage):
             update={"claims": claims, "calculations": list(original.calculations),
                     "blocked_calculation_requirement_ids": list(original.blocked_calculation_requirement_ids), "gaps": list(original.gaps)}).model_dump())
 
+    def _fallback_repair(
+        self, draft: DraftReport, verification: VerificationReport,
+    ) -> DraftReport:
+        rejected = {
+            item.claim_index for item in verification.claim_results
+            if not item.supported
+        }
+        claims = [
+            claim for index, claim in enumerate(draft.claims)
+            if index not in rejected
+        ]
+        gaps = list(dict.fromkeys([
+            *draft.gaps,
+            *verification.missing_branches,
+            *verification.contradictions,
+            *verification.repair_instructions,
+        ]))
+        return draft.model_copy(update={"claims": claims, "gaps": gaps})
+
     async def repair(
         self,
         task: TaskSpec,
@@ -2538,16 +2557,23 @@ class ModelRepairer(ModelStage):
                 item.model_dump(mode="json") for item in evidence.values()
             ],
         }
-        repaired = _validate_draft(
-            await self._generate(payload), list(evidence.values()))
+        try:
+            generated = await self._generate(payload)
+        except Exception:
+            return self._fallback_repair(draft, verification)
+        repaired = _validate_draft(generated, list(evidence.values()))
         repaired = self._merge_supported(draft, repaired, verification)
         missing = self._missing_replacements(draft, repaired, verification)
         if missing:
-            repaired = _validate_draft(await self._generate({
-                **payload,
-                "previous_repair": repaired.model_dump(mode="json"),
-                "required_replacements": missing,
-            }), list(evidence.values()))
+            try:
+                generated = await self._generate({
+                    **payload,
+                    "previous_repair": repaired.model_dump(mode="json"),
+                    "required_replacements": missing,
+                })
+            except Exception:
+                return self._fallback_repair(draft, verification)
+            repaired = _validate_draft(generated, list(evidence.values()))
             repaired = self._merge_supported(draft, repaired, verification)
             missing = self._missing_replacements(draft, repaired, verification)
         if missing:
