@@ -21,7 +21,7 @@ from v2.contracts import (
 
 _IDENTITY_KEYS = {
     "player": {"PLAYER_ID", "player_id"},
-    "team": {"TEAM_ID", "team_id"},
+    "team": {"TEAM_ID", "team_id", "TeamID"},
 }
 
 
@@ -69,6 +69,10 @@ def _declared_value_matches(declared, selected) -> bool:
 
 def _canonical_unit(value):
     return "_".join(value.lower().split())
+
+
+def _canonical_metric(value):
+    return value.upper().replace("_", "")
 
 
 def _canonical_domain(value):
@@ -559,10 +563,15 @@ def admit_verified_claim_bindings(
                 raise ValueError("binding capability lacks catalog authority")
             leaf = binding.selector.rsplit(".", 1)[-1]
             leaf = leaf.split("[", 1)[0]
-            if leaf != binding.output_id:
+            if _canonical_metric(leaf) != _canonical_metric(binding.output_id):
                 raise ValueError("binding selector metric does not match output")
-            catalog_unit = capability.units.get(binding.output_id)
-            evidence_unit = evidence.units.get(binding.output_id)
+            wanted_metric = _canonical_metric(binding.output_id)
+            catalog_units = {_canonical_metric(name): unit
+                             for name, unit in capability.units.items()}
+            evidence_units = {_canonical_metric(name): unit
+                              for name, unit in evidence.units.items()}
+            catalog_unit = catalog_units.get(wanted_metric)
+            evidence_unit = evidence_units.get(wanted_metric)
             if catalog_unit is not None and evidence_unit is not None \
                     and catalog_unit != evidence_unit:
                 raise ValueError("catalog and evidence units disagree")
@@ -587,8 +596,9 @@ def admit_verified_claim_bindings(
                 subject = (binding.subject_entity_type, canonical_entity_id(binding.subject_entity_type, binding.subject_entity_id))
                 if subject not in scoped_entities and not ((league_scoped or not task_entities) and any(canonical_entity_ref(e) == subject for e in evidence.entities)):
                     raise ValueError("binding subject is outside requested scope")
-                if not any(canonical_entity_ref(entity) == subject
-                           for entity in evidence.entities):
+                if evidence.entities and not any(
+                        canonical_entity_ref(entity) == subject
+                        for entity in evidence.entities):
                     raise ValueError("binding subject is outside evidence scope")
                 values = [item for item in iter_values(evidence)
                           if item.path == binding.selector]
