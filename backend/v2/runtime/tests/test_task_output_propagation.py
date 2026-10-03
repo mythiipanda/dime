@@ -1,8 +1,10 @@
 from datetime import UTC, datetime
+from types import SimpleNamespace
 from unittest.mock import patch
 
 from v2.adapters.capabilities import CAPABILITIES
 from v2.adapters.core import build_envelope
+from v2.api.routes import _answer_text
 from v2.contracts import (
     Claim,
     ClaimSource,
@@ -98,7 +100,8 @@ def _task(entities, requirements, outputs):
     )
 
 
-def _binding(output_id, value, requirement_id, row, subject_id, subject_name):
+def _binding(output_id, value, requirement_id, row, subject_id, subject_name,
+             node_id=_NODE_ID):
     selector = f"rows[{row}].{output_id}"
     if output_id == "PLAYER_NAME":
         unit = {"kind": "unitless"}
@@ -110,7 +113,7 @@ def _binding(output_id, value, requirement_id, row, subject_id, subject_name):
         requirement_kind="evidence",
         requirement_id=requirement_id,
         output_id=output_id,
-        node_id=_NODE_ID,
+        node_id=node_id,
         evidence_id="placeholder",
         selector=selector,
         row_selector=f"rows[{row}]",
@@ -123,14 +126,14 @@ def _binding(output_id, value, requirement_id, row, subject_id, subject_name):
     )
 
 
-def _q1_bindings(envelope):
+def _q1_bindings(envelope, node_id=_NODE_ID):
     return [
         binding.model_copy(update={"evidence_id": envelope.evidence_id})
         for binding in (
             _binding("PLAYER_NAME", "Trae Young", "player_assists_leader",
-                     0, "1629027", "Trae Young"),
+                     0, "1629027", "Trae Young", node_id=node_id),
             _binding("AST", 880, "player_assists_leader",
-                     0, "1629027", "Trae Young"),
+                     0, "1629027", "Trae Young", node_id=node_id),
         )
     ]
 
@@ -181,6 +184,14 @@ def _admitted(task, execution, envelope, bindings):
     }
 
 
+def _answer(task, execution, envelope, bindings):
+    claims, gaps, by_key = _admitted(task, execution, envelope, bindings)
+    result = SimpleNamespace(
+        output_statuses=list(by_key.values()), gaps=gaps, execution=execution,
+        draft=DraftReport(sections=["Assists leader"], claims=[]))
+    return _answer_text(result)
+
+
 def test_evidence_only_q1_bindings_own_task_outputs():
     envelope = _envelope()
     task = _task([_trae()], [_requirement("player_assists_leader",
@@ -196,20 +207,35 @@ def test_evidence_only_q1_bindings_own_task_outputs():
     assert by_key[("task", None, "AST")].binding.value.value == 880
 
 
-def test_league_scoped_task_outputs_stay_missing():
+def test_binding_naming_a_requirement_instead_of_the_plan_node_still_owns_task_outputs():
+    envelope = _envelope()
+    task = _task([], [_requirement("player_assists_leader",
+                                   ["PLAYER_NAME", "AST"])],
+                 ["PLAYER_NAME", "AST"])
+    execution = _execution(envelope, _node(["player_assists_leader"]))
+    bindings = _q1_bindings(envelope, node_id="player_assists_leader")
+
+    assert _answer(task, execution, envelope, bindings).splitlines() == [
+        "PLAYER_NAME [player:1629027] = Trae Young (unitless)",
+        "AST [player:1629027] = 880 (count)"]
+
+
+def test_league_scoped_task_outputs_own_the_leader_the_envelope_carries():
     envelope = _envelope()
     task = _task([EntityRef(id="nba", type="league", display_name="NBA")],
                  [_requirement("player_assists_leader",
                                ["PLAYER_NAME", "AST"])],
                  ["PLAYER_NAME", "AST"])
+    execution = _execution(envelope, _node(["player_assists_leader"]))
     bindings = _q1_bindings(envelope)
-    _, _, by_key = _admitted(
-        task, _execution(envelope, _node(["player_assists_leader"])),
-        envelope, bindings)
+    _, _, by_key = _admitted(task, execution, envelope, bindings)
     assert by_key[("evidence", "player_assists_leader",
                    "PLAYER_NAME")].status == "complete"
-    assert by_key[("task", None, "PLAYER_NAME")].status == "missing"
-    assert by_key[("task", None, "AST")].status == "missing"
+    assert by_key[("task", None, "PLAYER_NAME")].status == "complete"
+    assert by_key[("task", None, "AST")].status == "complete"
+    assert _answer(task, execution, envelope, bindings).splitlines() == [
+        "PLAYER_NAME [player:1629027] = Trae Young (unitless)",
+        "AST [player:1629027] = 880 (count)"]
 
 
 def test_competing_evidence_subjects_leave_task_output_missing():
@@ -233,6 +259,28 @@ def test_competing_evidence_subjects_leave_task_output_missing():
     assert by_key[("evidence", "leaders_a", "PLAYER_NAME")].status == "complete"
     assert by_key[("evidence", "leaders_b", "PLAYER_NAME")].status == "complete"
     assert by_key[("task", None, "PLAYER_NAME")].status == "missing"
+
+
+def test_competing_evidence_subjects_publish_without_claiming_the_metric_is_missing():
+    envelope = _envelope()
+    task = _task([_trae(), _jokic()],
+                 [_requirement("leaders_a", ["PLAYER_NAME"]),
+                  _requirement("leaders_b", ["PLAYER_NAME"])],
+                 ["PLAYER_NAME"])
+    execution = _execution(envelope, _node(["leaders_a", "leaders_b"]))
+    bindings = [
+        binding.model_copy(update={"evidence_id": envelope.evidence_id})
+        for binding in (
+            _binding("PLAYER_NAME", "Trae Young", "leaders_a",
+                     0, "1629027", "Trae Young"),
+            _binding("PLAYER_NAME", "Nikola Jokic", "leaders_b",
+                     1, "1628369", "Nikola Jokic"),
+        )
+    ]
+
+    assert _answer(task, execution, envelope, bindings).splitlines() == [
+        "PLAYER_NAME [player:1629027] = Trae Young (unitless)",
+        "PLAYER_NAME [player:1628369] = Nikola Jokic (unitless)"]
 
 
 def test_propagated_task_binding_passes_admission_authority():

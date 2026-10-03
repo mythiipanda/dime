@@ -419,6 +419,8 @@ def propagate_evidence_to_task(task, execution, draft, admitted):
     task_entities = {canonical_entity_ref(item) for item in task.entities}
     league_scoped = bool(task_entities) and all(
         kind == "league" for kind, _ in task_entities)
+    owner_by_evidence_id = {
+        envelope.evidence_id: envelope for envelope in execution.evidence}
     owned = {(binding.requirement_kind, binding.requirement_id,
               binding.output_id)
              for claim in admitted for binding in claim.output_bindings}
@@ -439,7 +441,7 @@ def propagate_evidence_to_task(task, execution, draft, admitted):
             if subject in task_entities:
                 pass
             elif not task_entities or league_scoped:
-                envelope = execution.evidence_by_node.get(binding.node_id)
+                envelope = owner_by_evidence_id.get(binding.evidence_id)
                 if envelope is None:
                     continue
                 envelope_entities = {

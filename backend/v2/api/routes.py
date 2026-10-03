@@ -923,11 +923,16 @@ def _live_source_line(result) -> str | None:
 
 
 def _answer_text(result) -> str:
+    published = {
+        item.output_id for item in result.output_statuses
+        if item.status == "complete"
+    }
     lines = list(dict.fromkeys(
         [_output_line(result, item) for item in result.output_statuses
          if item.status == "complete"]
         + [f"{item.output_id} could not be verified ({item.status})."
-           for item in result.output_statuses if item.status != "complete"]))
+           for item in result.output_statuses
+           if item.status != "complete" and item.output_id not in published]))
     source_line = _live_source_line(result)
     if source_line is not None:
         lines.append(source_line)
