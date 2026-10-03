@@ -597,6 +597,18 @@ class EvidenceOutputBinding(BaseModel):
     unit: OutputUnitAuthority
     domain: str = Field(min_length=1, max_length=256, description="the exact capability name of the cited evidence envelope")
 
+    @model_validator(mode="before")
+    @classmethod
+    def sanitize_partial_subject_scope(cls, data):
+        if isinstance(data, dict):
+            names = ("subject_entity_type", "subject_entity_id",
+                     "subject_selector", "row_selector")
+            values = [data.get(name) for name in names]
+            if any(value is None for value in values) and any(
+                    value is not None for value in values):
+                data = {**data, **dict.fromkeys(names)}
+        return data
+
     @model_validator(mode="after")
     def validate_scope(self) -> "EvidenceOutputBinding":
         if self.requirement_kind == "task" and self.requirement_id is not None:
@@ -607,12 +619,7 @@ class EvidenceOutputBinding(BaseModel):
                           self.subject_selector, self.row_selector)
         if any(value is None for value in subject_fields) and any(
                 value is not None for value in subject_fields):
-            return self.model_copy(update={
-                "subject_entity_type": None,
-                "subject_entity_id": None,
-                "subject_selector": None,
-                "row_selector": None,
-            })
+            raise ValueError("binding subject type, id, and selector must be supplied together")
         return self
 
 
