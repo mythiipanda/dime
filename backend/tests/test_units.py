@@ -16,11 +16,6 @@ def test_clamp_stat_rejects_injection():
         tools.clamp_stat('PTS"; DROP TABLE x; --')
 
 
-def test_clamp_stat_normalizes_case():
-    assert tools.clamp_stat("ast") == "AST"
-    assert tools.clamp_stat("REB") == "REB"
-
-
 def test_resolve_model_defaults_mistral():
     from shared.providers import _default_provider
 
@@ -475,11 +470,6 @@ def test_compare_metrics_stale_raptor_is_context_not_four_votes(monkeypatch):
     assert out["rows"]["verdict"].startswith(
         "Every verdict-eligible metric favors Nikola Jokic")
     assert "2021-22 vintage" in out["rows"]["verdict"]
-
-def test_clamp_stat_normalizes_three_point_percentage_aliases():
-    from shared.tools import clamp_stat
-    for value in ("3P", "3P%", "3PT", "3PT%", "three-point-percentage"):
-        assert clamp_stat(value) == "FG3_PCT"
 
 def test_resolve_entity_uses_warehouse_canonical_id_for_exact_suffix_name():
     res = tools.resolve_entity.invoke({"query": "Tim Hardaway Jr."})

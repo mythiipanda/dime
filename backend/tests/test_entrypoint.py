@@ -45,40 +45,16 @@ def _title_and_provider(proc):
     return lines[0], lines[1]
 
 
-def test_on_mounts_v2():
-    title, provider = _title_and_provider(_child("on"))
-    assert title == V2_TITLE
-    assert provider == "v2.main"
-
-
-def test_off_mounts_v1():
-    title, provider = _title_and_provider(_child("off"))
-    assert title == V1_TITLE
-    assert provider == "app.main"
-
-
-def test_unset_mounts_v1():
-    title, provider = _title_and_provider(_child("", unset=True))
-    assert title == V1_TITLE
-    assert provider == "app.main"
-
-
-def test_empty_mounts_v1():
-    title, provider = _title_and_provider(_child(""))
-    assert title == V1_TITLE
-    assert provider == "app.main"
-
-
-def test_whitespace_mounts_v1():
-    title, provider = _title_and_provider(_child("   "))
-    assert title == V1_TITLE
-    assert provider == "app.main"
-
-
-def test_shadow_mounts_v1():
-    title, provider = _title_and_provider(_child("shadow"))
-    assert title == V1_TITLE
-    assert provider == "app.main"
+@pytest.mark.parametrize("value,unset,title,provider", [
+    ("on", False, V2_TITLE, "v2.main"),
+    ("off", False, V1_TITLE, "app.main"),
+    ("shadow", False, V1_TITLE, "app.main"),
+    ("", True, V1_TITLE, "app.main"),
+    ("", False, V1_TITLE, "app.main"),
+    ("   ", False, V1_TITLE, "app.main"),
+])
+def test_mode_mounts_expected_app(value, unset, title, provider):
+    assert _title_and_provider(_child(value, unset)) == (title, provider)
 
 
 @pytest.mark.parametrize("value", ["true", "yes", "1", "typo"])
