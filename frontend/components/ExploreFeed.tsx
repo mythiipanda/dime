@@ -29,16 +29,16 @@ export default function ExploreFeed({
     let live = true;
     let base: { movers: TodayMover[]; streaks: TeamStreak[] } | null = null;
     let watchlist: WatchItem[] | null = null;
-    const render = () => {
+    const paint = (resetExpansion: boolean) => {
       if (!base) return;
       setFeed(buildFeedExpansion(watchlist ? { ...base, watchlist } : base));
-      setExpanded(false);
+      if (resetExpansion) setExpanded(false);
     };
     getToday()
       .then((today) => {
         if (!live) return;
         base = { movers: today.movers, streaks: today.streaks };
-        render();
+        paint(true);
       })
       .catch(() => {
         if (live) setFeed({ visible: [], extra: [], total: 0 });
@@ -47,7 +47,7 @@ export default function ExploreFeed({
       .then((watch) => {
         if (!live) return;
         watchlist = watch;
-        render();
+        paint(false);
       })
       .catch(() => {});
     return () => {

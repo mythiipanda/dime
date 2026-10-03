@@ -74,14 +74,15 @@ const WATCH_ROWS = [
 function mockFeedFetch(
   todayGate: Promise<unknown>,
   watchGate: Promise<unknown>,
+  rows?: { today?: unknown; watch?: unknown },
 ) {
   calls = [];
   clearEnvelopeCache();
   gx.fetch = ((url: string, init?: RequestInit) => {
     const u = String(url);
     calls.push({ url: u, method: init?.method || "GET" });
-    if (u.includes("/today?")) return todayGate.then(() => envelope(TODAY_ROWS));
-    if (u.includes("/watchlist")) return watchGate.then(() => envelope(WATCH_ROWS));
+    if (u.includes("/today?")) return todayGate.then(() => envelope(rows?.today ?? TODAY_ROWS));
+    if (u.includes("/watchlist")) return watchGate.then(() => envelope(rows?.watch ?? WATCH_ROWS));
     return Promise.reject(new TypeError("unexpected " + u));
   }) as unknown as typeof fetch;
 }
@@ -147,6 +148,38 @@ describe("explore feed loading", () => {
     await tick(50);
     assert.ok(el.textContent?.includes("Watch Guy"), "watchlist never merged:\n" + el.textContent);
     assert.ok(el.textContent?.includes("Test Player"), "movers lost after merge");
+  });
+
+  it("keeps Show-all expansion when the late watchlist merges", async () => {
+    const movers = ["Ava", "Ben", "Cy", "Dee", "Eli", "Finn"].map((first) => ({
+      PLAYER: first + " Player",
+      TEAM: "BOS",
+      RANK_CHANGE: "2",
+      PTS_CHANGE: 1.0,
+    }));
+    const today = deferred<unknown>();
+    const watch = deferred<unknown>();
+    mockFeedFetch(today.promise, watch.promise, {
+      today: { last_night: [], tonight: [], movers, streaks: [] },
+    });
+    const el = await mount();
+    await tick();
+    today.resolve(null);
+    await tick(50);
+    assert.ok(el.textContent?.includes("Show all 6"), "expander missing:\n" + el.textContent);
+    assert.ok(!el.textContent?.includes("Finn Player"), "extra item shown before expand");
+    const btn = [...el.querySelectorAll("button")].find((b) =>
+      b.textContent?.startsWith("Show all"),
+    ) as HTMLButtonElement | undefined;
+    assert.ok(btn, "expander button not found");
+    await act(async () => {
+      btn.click();
+    });
+    assert.ok(el.textContent?.includes("Finn Player"), "expand did not reveal extra items");
+    watch.resolve(null);
+    await tick(50);
+    assert.ok(el.textContent?.includes("Finn Player"), "expansion reset on watchlist merge");
+    assert.ok(el.textContent?.includes("Watch Guy"), "watchlist never merged");
   });
 
   it("shows nothing when today fails, even if the watchlist succeeds", async () => {
