@@ -1075,7 +1075,18 @@ def _answer_text(result) -> str:
     for gap in result.gaps:
         if gap.kind.value not in kinds:
             kinds.append(gap.kind.value)
+    try:
+        from v2.runtime.loop import JUDGE_UNAVAILABLE_BRANCHES as _judge_branches
+    except Exception:
+        _judge_branches = frozenset()
+    if any(getattr(gap, "message", None) in _judge_branches
+           for gap in result.gaps) and "judge_unavailable" not in kinds:
+        kinds.append("judge_unavailable")
+    all_complete = bool(result.output_statuses) and all(
+        item.status == "complete" for item in result.output_statuses)
     for kind in kinds:
+        if kind == "missing_evidence" and all_complete:
+            continue
         lines.append(gap_messages[kind])
     lines += list(dict.fromkeys(
         f"{item.output_id} could not be verified ({item.status})."

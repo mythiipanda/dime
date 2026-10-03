@@ -130,6 +130,36 @@ def test_gap_lines_still_render_next_to_the_live_source_line() -> None:
     )
 
 
+def test_complete_outputs_never_claim_values_are_unverified() -> None:
+    from v2.contracts import Gap
+
+    result = _result(_envelope(
+        "live", identity={"kind": "live", "source": "nba_api"},
+        as_of=AS_OF, source="silver:team_ratings:nba_api"))
+    result.gaps = [Gap(
+        kind="missing_evidence",
+        message="verification did not establish complete support")]
+
+    text = _answer_text(result)
+    assert "9.4" in text
+    assert "Some requested outputs could not be verified." not in text
+
+
+def test_complete_but_unjudged_keeps_the_double_check_tail() -> None:
+    from v2.contracts import Gap
+    from v2.runtime.loop import JUDGE_UNAVAILABLE_BRANCH
+
+    result = _result(_envelope(
+        "live", identity={"kind": "live", "source": "nba_api"},
+        as_of=AS_OF, source="silver:team_ratings:nba_api"))
+    result.gaps = [Gap(kind="missing_evidence", message=JUDGE_UNAVAILABLE_BRANCH)]
+
+    text = _answer_text(result)
+    assert "9.4" in text
+    assert "Some requested outputs could not be verified." not in text
+    assert "I couldn't double-check this answer" in text
+
+
 def test_unattributed_evidence_never_produces_a_live_label() -> None:
     result = _result(_envelope(
         "unknown", identity=None, as_of=None, source="silver:team_ratings:warehouse"))

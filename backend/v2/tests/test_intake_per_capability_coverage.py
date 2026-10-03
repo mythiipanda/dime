@@ -110,3 +110,47 @@ def test_capability_without_live_path_still_blocks_uncovered_season(monkeypatch)
     assert result.open_questions != []
     assert any("silver_playoffs" in item for item in result.open_questions)
     assert not any("silver_boxscores" in item for item in result.open_questions)
+
+
+def _series_task(season="2024-25"):
+    return TaskSpec(
+        goal="Season series between two teams",
+        mode="quick",
+        deliverable="answer",
+        season=SeasonRef(value=season, source="user", confidence=1.0),
+        required_evidence=["season_series"],
+        requirements=[
+            EvidenceRequirement(
+                id="series",
+                description="Season series",
+                capability_options=["season_series"],
+                capability_arguments={"season": season},
+            )
+        ],
+    )
+
+
+def test_season_series_resolves_against_series_source_not_boxscores(monkeypatch):
+    _stubbed_seasons(monkeypatch, {
+        "silver_boxscores": {"2025-26"},
+        "silver_team_games": set(),
+        "silver_playoffs": {"2024-25", "2025-26"},
+        "silver_playoff_gamelogs": {"2024-25", "2025-26"},
+    })
+    assert coverage.tables_for_capability("season_series", {}) == (
+        "silver_team_games", "silver_playoffs", "silver_playoff_gamelogs")
+    assert ModelIntake._mark_uncovered_season(_series_task()) == _series_task()
+
+
+def test_season_series_still_blocks_season_missing_everywhere(monkeypatch):
+    _stubbed_seasons(monkeypatch, {
+        "silver_boxscores": {"2024-25", "2025-26"},
+        "silver_team_games": {"2025-26"},
+        "silver_playoffs": {"2025-26"},
+        "silver_playoff_gamelogs": {"2025-26"},
+    })
+    result = ModelIntake._mark_uncovered_season(_series_task())
+    assert result.season.value == "2024-25"
+    assert result.open_questions != []
+    assert any("2024-25" in item for item in result.open_questions)
+    assert not any("silver_boxscores" in item for item in result.open_questions)

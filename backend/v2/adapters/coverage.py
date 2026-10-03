@@ -48,6 +48,11 @@ CAPABILITY_TABLES: dict[str, tuple[str, ...]] = {
     "team_ratings": ("silver_team_ratings",),
     "playoff_team_ratings": ("silver_playoffs",),
     "playoffs": ("silver_playoffs",),
+    "season_series": (
+        "silver_team_games",
+        "silver_playoffs",
+        "silver_playoff_gamelogs",
+    ),
     "standings": ("silver_standings",),
     "team_trajectory": ("silver_standings",),
     "team_totals": ("silver_boxscores",),
