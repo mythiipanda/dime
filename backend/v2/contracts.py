@@ -613,6 +613,7 @@ class EvidenceOutputBinding(BaseModel):
                 "subject_selector": None,
                 "row_selector": None,
             })
+
         return self
 
 
