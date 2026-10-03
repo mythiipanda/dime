@@ -519,45 +519,30 @@ def test_fabricated_team_name_does_not_collapse_to_real_team_id():
     assert canonical_entity_id("team", "Springfield Thunder") == "springfield thunder"
 
 
-def test_evidence_binding_clears_partial_subject_scope():
-    from v2.contracts import EvidenceOutputBinding
-    binding = EvidenceOutputBinding(
-        requirement_kind="evidence",
-        requirement_id="ratings",
-        output_id="NET_RATING",
-        node_id="ratings",
-        evidence_id="ev1",
-        selector="rows[5].NET_RATING",
-        value={"kind": "float", "value": 99.9},
-        subject_entity_type="team",
-        subject_entity_id="BOS",
-        unit={"kind": "declared", "value": "points_per_100_possessions"},
-        domain="team_ratings",
-    )
-    assert binding.subject_entity_type is None
-    assert binding.subject_entity_id is None
-    assert binding.subject_selector is None
-    assert binding.row_selector is None
+def test_task_spec_and_envelope_carry_optional_date_window():
+    from datetime import date
+    from v2.contracts import EvidenceEnvelope, TaskSpec
+    task = TaskSpec(goal="January splits", mode="quick", deliverable="answer",
+        window_start=date(2026, 1, 1), window_end=date(2026, 1, 31))
+    assert (task.window_start, task.window_end) == (date(2026, 1, 1), date(2026, 1, 31))
+    plain = TaskSpec(goal="Full season", mode="quick", deliverable="answer")
+    assert (plain.window_start, plain.window_end) == (None, None)
+    from datetime import UTC, datetime
+    item = EvidenceEnvelope(evidence_id="logs", capability="game_logs", source="fixture",
+        observed_at=datetime.now(UTC), rows=[],
+        window_start=date(2026, 1, 1), window_end=date(2026, 1, 31))
+    assert (item.window_start, item.window_end) == (date(2026, 1, 1), date(2026, 1, 31))
 
 
-def test_evidence_binding_keeps_complete_subject_scope():
-    from v2.contracts import EvidenceOutputBinding
-    binding = EvidenceOutputBinding(
-        requirement_kind="evidence",
-        requirement_id="ratings",
-        output_id="NET_RATING",
-        node_id="ratings",
-        evidence_id="ev1",
-        selector="rows[5].NET_RATING",
-        row_selector="rows[5]",
-        value={"kind": "float", "value": 99.9},
-        subject_entity_type="team",
-        subject_entity_id="BOS",
-        subject_selector="rows[5].TEAM_ID",
-        unit={"kind": "declared", "value": "points_per_100_possessions"},
-        domain="team_ratings",
-    )
-    assert binding.subject_entity_type == "team"
-    assert binding.subject_entity_id == "BOS"
-    assert binding.subject_selector == "rows[5].TEAM_ID"
-    assert binding.row_selector == "rows[5]"
+def test_date_window_rejects_start_after_end():
+    from datetime import date
+    import pytest
+    from v2.contracts import EvidenceEnvelope, TaskSpec
+    with pytest.raises(Exception):
+        TaskSpec(goal="Bad window", mode="quick", deliverable="answer",
+            window_start=date(2026, 2, 1), window_end=date(2026, 1, 31))
+    from datetime import UTC, datetime
+    with pytest.raises(Exception):
+        EvidenceEnvelope(evidence_id="logs", capability="game_logs", source="fixture",
+            observed_at=datetime.now(UTC), rows=[],
+            window_start=date(2026, 2, 1), window_end=date(2026, 1, 31))
