@@ -58,6 +58,7 @@ export default function AnswerText({ text, components }: { text: string; compone
         fontSize: 13,
         lineHeight: 1.5,
         overflowWrap: "break-word",
+        whiteSpace: "pre-wrap",
         fontVariantNumeric: "tabular-nums",
         color: "var(--color-ink-black)",
       }}
