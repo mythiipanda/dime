@@ -464,22 +464,43 @@ def propagate_evidence_to_task(task, execution, draft, admitted):
             candidates.setdefault(binding.output_id, []).append(
                 (claim, binding))
     accepted: dict[int, list] = {}
-    for output_id, competing in candidates.items():
-        if ("task", None, output_id) in owned:
-            continue
-        if len(competing) != 1:
-            continue
-        claim, binding = competing[0]
-        clone = binding.model_copy(update={
-            "requirement_kind": "task", "requirement_id": None})
+
+    def admit_alias(claim, binding, update, key):
+        if key in owned:
+            return
+        clone = binding.model_copy(update=update)
         trial = claim.model_copy(update={
             "output_bindings": [*claim.output_bindings, clone]})
         try:
             admit_verified_claim_bindings(task, execution, draft, trial)
         except ValueError:
-            continue
+            return
         accepted.setdefault(claim.claim_index, []).append(clone)
-        owned.add(("task", None, output_id))
+        owned.add(key)
+
+    for output_id, competing in candidates.items():
+        if len(competing) != 1:
+            continue
+        claim, binding = competing[0]
+        admit_alias(claim, binding,
+                    {"requirement_kind": "task", "requirement_id": None},
+                    ("task", None, output_id))
+    for claim in admitted:
+        for binding in [
+                *claim.output_bindings,
+                *accepted.get(claim.claim_index, [])]:
+            if not isinstance(binding, EvidenceOutputBinding):
+                continue
+            if binding.requirement_kind != "task":
+                continue
+            for requirement in task.requirements:
+                if binding.output_id not in requirement.requested_outputs:
+                    continue
+                admit_alias(
+                    claim, binding,
+                    {"requirement_kind": "evidence",
+                     "requirement_id": requirement.id},
+                    ("evidence", requirement.id, binding.output_id))
     if not accepted:
         return list(admitted)
     return [claim.model_copy(update={"output_bindings": [
