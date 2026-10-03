@@ -868,8 +868,6 @@ class QuickAnswerBody(BaseModel):
 
 def _output_line(result, status) -> str:
     binding = status.binding
-    identity = (f"{status.requirement_kind}:{status.requirement_id or 'task'}:"
-                f"{status.output_id}")
     if binding.requirement_kind == "calculation":
         calculation = next(item for item in result.draft.calculations
                            if item.calculation_id == binding.calculation_id)
@@ -882,17 +880,57 @@ def _output_line(result, status) -> str:
         unit = (binding.unit.value if binding.unit.kind == "declared" else "unitless")
         subject = (f" [{binding.subject_entity_type}:{binding.subject_entity_id}]"
                    if binding.subject_entity_id is not None else "")
-    return f"{identity}{subject} = {value} ({unit})"
+    return f"{status.output_id}{subject} = {value} ({unit})"
+
+
+LIVE_SOURCE_NAMES = {
+    "nba_api": "the NBA's live feed",
+    "basketball_reference": "Basketball Reference",
+    "espn": "ESPN",
+}
+
+LIVE_SOURCE_LINES = {
+    "live_only": ("These figures came from {sources}{when}, not from the figures "
+                  "I had saved, so they can differ from numbers you saw earlier."),
+    "mixed": ("Some of these figures were refreshed from {sources}{when}; the "
+              "rest came from the figures I had saved."),
+}
+
+
+def _live_source_line(result) -> str | None:
+    sources: set[str] = set()
+    from_saved_figures = False
+    as_of = None
+    for envelope in result.execution.evidence:
+        identity = envelope.source_identity
+        if identity is None:
+            continue
+        if identity.kind == "live":
+            sources.add(identity.source)
+        else:
+            from_saved_figures = True
+            if identity.kind == "composite":
+                sources.update(identity.live_sources)
+        if envelope.as_of is not None and (as_of is None or envelope.as_of > as_of):
+            as_of = envelope.as_of
+    if not sources:
+        return None
+    names = [name for source, name in LIVE_SOURCE_NAMES.items() if source in sources]
+    names += sorted(sources - LIVE_SOURCE_NAMES.keys())
+    story = "mixed" if from_saved_figures else "live_only"
+    return LIVE_SOURCE_LINES[story].format(
+        sources=", ".join(names), when=f" on {as_of}" if as_of else "")
 
 
 def _answer_text(result) -> str:
-    lines = [_output_line(result, item) for item in result.output_statuses
-             if item.status == "complete"]
-    for item in result.output_statuses:
-        if item.status != "complete":
-            identity = (f"{item.requirement_kind}:{item.requirement_id or 'task'}:"
-                        f"{item.output_id}")
-            lines.append(f"{identity} could not be verified ({item.status}).")
+    lines = list(dict.fromkeys(
+        [_output_line(result, item) for item in result.output_statuses
+         if item.status == "complete"]
+        + [f"{item.output_id} could not be verified ({item.status})."
+           for item in result.output_statuses if item.status != "complete"]))
+    source_line = _live_source_line(result)
+    if source_line is not None:
+        lines.append(source_line)
     gap_messages = {
         "missing_evidence": "Some requested outputs could not be verified.",
         "source_conflict": "Available sources conflict for some requested outputs.",
@@ -988,7 +1026,16 @@ def _public_evidence_tables(result) -> list[dict]:
                     "provenance":{"capability":envelope.capability,
                                   "season":envelope.season,
                                   "as_of":envelope.as_of.isoformat() if envelope.as_of else None}})
-    return tables
+    distinct: dict[str, dict] = {}
+    for row in tables:
+        distinct.setdefault(json.dumps(row, sort_keys=True), row)
+    return list(distinct.values())
+
+
+def _public_capability_name(raw) -> str:
+    from v2.adapters import CAPABILITIES
+    executable = set(CAPABILITIES) | {"web_search", "web_fetch"}
+    return raw if raw in executable else "tool"
 
 
 def _safe_buffered_event(event):
@@ -1000,12 +1047,14 @@ def _safe_buffered_event(event):
             return None
         return NodeUpdate(node=event.node, status=event.status)
     if kind == "tool_call":
-        return ToolCall(node="tools", name="tool")
+        return ToolCall(node="tools", name=_public_capability_name(
+            getattr(event, "name", None)))
     if kind == "tool_result":
         status = getattr(event, "status", None)
         if status not in {"ok", "fail"}:
             return None
-        return ToolResult(node="tools", name="tool", status=status,
+        return ToolResult(node="tools", status=status,
+                          name=_public_capability_name(getattr(event, "name", None)),
                           error="Tool failed" if status == "fail" else None)
     status = getattr(event, "status", None)
     phase = getattr(event, "phase", None)
@@ -1134,7 +1183,6 @@ async def quick_answer_stream(body: QuickAnswerBody):
     from v2.api.events import EVENT_ADAPTER
     from v2.api.sse import encode_event
     from v2.runtime.assembly import build_runtime
-    from v2.adapters import CAPABILITIES
     from v2.runtime.ledger import LedgerKind
     from v2.runtime.policy import ExecutionPolicy
 
@@ -1159,9 +1207,11 @@ async def quick_answer_stream(body: QuickAnswerBody):
         event = activity_journal.append(**payload)
         common = event.model_dump(mode="json", exclude={"kind"})
         if event.kind == "tool_call":
-            queue.put_nowait(ToolCall(type="tool_call", node="tools", name=event.data.name, label=event.title, **common))
+            carried = {k: v for k, v in common.items() if k != "title"}
+            queue.put_nowait(ToolCall(type="tool_call", node="tools", name=event.data.name, label=event.title, **carried))
         elif event.kind == "tool_result":
-            queue.put_nowait(ToolResult(type="tool_result", node="tools", name=event.data.name, status="ok" if event.transition == "succeeded" else "fail", rows=event.data.rows, ms=event.duration_ms, error=("Tool failed" if event.transition == "failed" else None), **{k:v for k,v in common.items() if k not in {"status","duration_ms"}}))
+            carried = {k: v for k, v in common.items() if k not in {"title", "status", "duration_ms"}}
+            queue.put_nowait(ToolResult(type="tool_result", node="tools", name=event.data.name, status="ok" if event.transition == "succeeded" else "fail", rows=event.data.rows, ms=event.duration_ms, error=("Tool failed" if event.transition == "failed" else None), **carried))
         else:
             queue.put_nowait(EVENT_ADAPTER.validate_python({"type":event.kind, **common}))
         internal_keys.add((event.kind, internal))
@@ -1238,7 +1288,6 @@ async def quick_answer_stream(body: QuickAnswerBody):
             live_keys = getattr(activity, "internal_keys", set())
             calls = {entry.call_id: entry for entry in entries
                      if entry.kind == LedgerKind.TOOL_CALL and entry.call_id is not None}
-            executable = set(CAPABILITIES) | {"web_search", "web_fetch"}
             for entry in entries:
                 if entry.kind not in {LedgerKind.TOOL_CALL, LedgerKind.TOOL_RESULT}:
                     continue
@@ -1246,8 +1295,8 @@ async def quick_answer_stream(body: QuickAnswerBody):
                 if (kind, entry.call_id) in live_keys:
                     continue
                 call = entry if entry.kind == LedgerKind.TOOL_CALL else calls.get(entry.call_id)
-                raw_name = call.data.get("name") if call is not None else None
-                name = str(raw_name) if raw_name in executable else "tool"
+                name = _public_capability_name(
+                    call.data.get("name") if call is not None else None)
                 if entry.kind == LedgerKind.TOOL_CALL:
                     yield ToolCall(node="tools", name=name)
                 else:
