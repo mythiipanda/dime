@@ -4,6 +4,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
+import pytest
+
 from shared.tools.zone import (ZONE_KEYS, aggregate_zones, build_rows,
                             get_team_shot_zones, league_baselines,
                             season_year, zone_of, _zone_leaders)
@@ -14,24 +16,15 @@ def _shot(team_id, x, y, value, made, abbr="TST"):
             "shot_value": value, "made": made}
 
 
-def test_zone_of_rim():
-    assert zone_of(0, 50, 2) == "rim"
-
-
-def test_zone_of_short_mid():
-    assert zone_of(50, 80, 2) == "short_mid"
-
-
-def test_zone_of_long_mid():
-    assert zone_of(100, 100, 2) == "long_mid"
-
-
-def test_zone_of_corner_3():
-    assert zone_of(230, 30, 3) == "corner_3"
-
-
-def test_zone_of_above_break_3():
-    assert zone_of(0, 250, 3) == "atb_3"
+@pytest.mark.parametrize("x,y,value,expected", [
+    (0, 50, 2, "rim"),
+    (50, 80, 2, "short_mid"),
+    (100, 100, 2, "long_mid"),
+    (230, 30, 3, "corner_3"),
+    (0, 250, 3, "atb_3"),
+])
+def test_zone_of_maps_coords_to_zone(x, y, value, expected):
+    assert zone_of(x, y, value) == expected
 
 
 def test_zone_of_boundary_8ft_is_short_mid():
