@@ -103,6 +103,7 @@ from .team import (
 from .today import get_today, get_morning_briefing
 from .watchlist import add_watchlist_item, get_watchlist, remove_watchlist_item
 from .wpa import get_wpa_leaders
+from .possessions import get_possession_log
 from ._core import MAX_ROWS, STAT_CATEGORIES, clamp_stat, last_completed_season, resolve_season
 
 v1_tools: list[BaseTool] = [
@@ -208,6 +209,7 @@ v1_tools: list[BaseTool] = [
     get_zone_deltas,
     get_rapm_prior,
     get_wpa_leaders,
+    get_possession_log,
 ]
 
 TOOL_NAMES = [t.name for t in v1_tools]
