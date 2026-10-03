@@ -153,7 +153,7 @@ def test_project_store_rejects_symlinked_database(tmp_path: Path) -> None:
         ProjectStore(path)
 
 
-def test_revision_and_feature_flagged_project_endpoints(
+def test_revision_and_project_endpoints(
     monkeypatch, tmp_path: Path
 ) -> None:
     from v2.api import routes
@@ -171,13 +171,6 @@ def test_revision_and_feature_flagged_project_endpoints(
     assert re.fullmatch(r"[0-9a-f]{64}", revision.json()["warehouse"]["sha256"])
     assert len(revision.json()["executable_sha256"]) == hashlib.sha256().digest_size * 2
 
-    monkeypatch.setenv("DIME_RUNTIME_V2", "off")
-    assert client.get("/api/projects").status_code == 404
-    monkeypatch.setenv("DIME_RUNTIME_V2", "shadow")
-    assert client.get("/api/projects").status_code == 404
-    assert client.post(
-        "/api/projects", json={"goal": "must not persist"}).status_code == 404
-    monkeypatch.setenv("DIME_RUNTIME_V2", "on")
     created = client.post("/api/projects", json={"goal": "Celtics outlook"})
     assert created.status_code == 201
     project_id = created.json()["id"]
@@ -246,7 +239,6 @@ def test_quick_answer_route_is_flagged_and_streams_typed_contract(monkeypatch, t
     from v2.runtime.ledger import RunLedger
     from v2.runtime.models import ExecutionResult, RuntimeResult
 
-    monkeypatch.setenv("DIME_RUNTIME_V2", "shadow")
     evidence = contracts.EvidenceEnvelope(
         evidence_id="ev", capability="standings", source="fixture",
         observed_at=datetime.now(UTC), as_of=date(2026, 9, 10),
@@ -281,9 +273,11 @@ def test_quick_answer_route_is_flagged_and_streams_typed_contract(monkeypatch, t
     app.include_router(routes.router, prefix="/api")
     response = TestClient(app).post("/api/v2/chat/stream", json={"q": "record?"})
 
-    assert response.status_code == 404
-    assert "x-dime-run-id" not in response.headers
-    assert "Boston won 61 games." not in response.text
+    assert response.status_code == 200
+    assert "x-dime-run-id" in response.headers
+    assert "event: final_answer" in response.text
+    assert "event: graph_end" in response.text
+    assert "event: work_log" in response.text
 
 
 @pytest.mark.anyio
@@ -312,7 +306,6 @@ async def test_stream_cancellation_stops_detached_runtime(anyio_backend, monkeyp
         "v2.runtime.assembly.build_runtime",
         lambda **kwargs: (WaitingRuntime(), RunLedger(kwargs["run_id"])),
     )
-    monkeypatch.setenv("DIME_RUNTIME_V2", "on")
     response = await routes.quick_answer_stream(
         routes.QuickAnswerBody(q="record?"))
 
@@ -1087,20 +1080,6 @@ def test_stream_event_text_has_hard_limits() -> None:
         ToolResult(node="execute", name="tool", status="fail", error="x" * 4001)
 
 
-def test_chat_route_fails_closed_on_unknown_runtime_mode(monkeypatch):
-    from fastapi import FastAPI
-    from fastapi.testclient import TestClient
-    from v2.api import routes
-
-    monkeypatch.setenv("DIME_RUNTIME_V2", "typo")
-    app = FastAPI()
-    app.include_router(routes.router, prefix="/api")
-
-    with pytest.raises(ValueError, match="unknown DIME_RUNTIME_V2"):
-        TestClient(app).post(
-            "/api/v2/chat/stream", json={"q": "record?"})
-
-
 def test_frontend_preserves_public_node_error_status():
     from pathlib import Path
 
@@ -1231,46 +1210,6 @@ def test_v2_sse_boundary_hides_draft_reasoning_and_diagnostics():
         assert secret not in combined
 
 
-def test_shadow_stream_failure_stays_silent(monkeypatch):
-    from fastapi import FastAPI
-    from fastapi.testclient import TestClient
-    from v2.api import routes
-    from v2.runtime.ledger import LedgerKind, RunLedger
-
-    ledgers = {}
-
-    class BrokenRuntime:
-        async def run(self, request, *, run_id=None, context=()):
-            ledger = ledgers[run_id]
-            ledger.append(
-                LedgerKind.TOOL_CALL, turn_id=run_id, call_id="call",
-                data={"name": "secret_tool", "args": {"token": "private"}},
-            )
-            ledger.append(
-                LedgerKind.TOOL_RESULT, turn_id=run_id, call_id="call",
-                data={"status": "failed", "error": "provider secret"},
-            )
-            raise RuntimeError("private failure")
-
-    def build(**kwargs):
-        ledger = RunLedger(kwargs["run_id"])
-        ledgers[kwargs["run_id"]] = ledger
-        return BrokenRuntime(), ledger
-
-    monkeypatch.setenv("DIME_RUNTIME_V2", "shadow")
-    monkeypatch.setattr(
-        "shared.providers.resolve_model_id", lambda value: ("openrouter", "fixture"))
-    monkeypatch.setattr("v2.runtime.assembly.build_runtime", build)
-    app = FastAPI()
-    app.include_router(routes.router, prefix="/api")
-    response = TestClient(app).post("/api/v2/chat/stream", json={"q": "record?"})
-
-    assert response.status_code == 404
-    assert "x-dime-run-id" not in response.headers
-    for private in ("secret_tool", "private", "provider secret"):
-        assert private not in response.text
-
-
 def test_frontend_can_select_native_v2_chat_runtime():
     from pathlib import Path
 
@@ -1280,8 +1219,7 @@ def test_frontend_can_select_native_v2_chat_runtime():
     assert 'chatRuntime()' in api_source
     assert 'NEXT_PUBLIC_CHAT_RUNTIME' in runtime_source
     assert '"/api/v2/chat/stream"' in api_source
-    assert 'q,' in api_source and 'model,' in api_source
-    assert 'thread,' in api_source and 'client: getClientId()' in api_source
+    assert 'JSON.stringify({ q, model, thread, client: getClientId() })' in api_source
 
 
 def test_live_route_reports_pre_stream_setup_failure_as_sse(monkeypatch):
@@ -1289,7 +1227,6 @@ def test_live_route_reports_pre_stream_setup_failure_as_sse(monkeypatch):
     from fastapi.testclient import TestClient
     from v2.api import routes
 
-    monkeypatch.setenv("DIME_RUNTIME_V2", "on")
     monkeypatch.setattr(
         "v2.runtime.assembly.build_runtime",
         lambda **kwargs: (_ for _ in ()).throw(RuntimeError("private setup detail")),
@@ -1312,7 +1249,6 @@ def test_live_route_reports_model_resolution_failure_as_sse(monkeypatch):
     from fastapi.testclient import TestClient
     from v2.api import routes
 
-    monkeypatch.setenv("DIME_RUNTIME_V2", "on")
     monkeypatch.setattr(
         "shared.providers.resolve_model_id",
         lambda *_: (_ for _ in ()).throw(ValueError("private model detail")),
@@ -1350,7 +1286,6 @@ def test_intake_provider_failure_yields_typed_partial_final_without_error(monkey
     def build(**kwargs):
         ledger = RunLedger(kwargs["run_id"]); ledgers[kwargs["run_id"]] = ledger
         return BrokenIntakeRuntime(), ledger
-    monkeypatch.setenv("DIME_RUNTIME_V2", "on")
     monkeypatch.setattr("shared.providers.resolve_model_id",
                         lambda value:("openrouter","fixture"))
     monkeypatch.setattr("v2.runtime.assembly.build_runtime", build)
@@ -1385,7 +1320,7 @@ def test_revision_warehouse_identity_is_safe_and_startup_bound(monkeypatch, tmp_
     try:
         first = routes.runtime_warehouse_identity()
         assert first == {"warehouse_id": "configured-runtime",
-                         "sha256": store._warehouse_sample_hexdigest(warehouse, len(b"startup bytes"))}
+                         "sha256": hashlib.sha256(b"startup bytes").hexdigest()}
         assert set(first) == {"warehouse_id", "sha256"}
         assert str(warehouse) not in repr(first)
         warehouse.write_bytes(b"mutated later")
@@ -1395,7 +1330,7 @@ def test_revision_warehouse_identity_is_safe_and_startup_bound(monkeypatch, tmp_
 
 
 def test_real_lifespan_freezes_revision_warehouse_endpoint(monkeypatch, tmp_path):
-    from app import main
+    from v2.main import app as v2_app
     from shared import store
     from v2.api import routes
     warehouse = tmp_path / "startup.duckdb"
@@ -1409,9 +1344,9 @@ def test_real_lifespan_freezes_revision_warehouse_endpoint(monkeypatch, tmp_path
     manifest_path.write_text(json.dumps(routes.runtime_asset_manifest().as_dict()))
     monkeypatch.setenv("DIME_EXPECTED_ASSET_MANIFEST", str(manifest_path))
     try:
-        with TestClient(main.app) as client:
+        with TestClient(v2_app) as client:
             expected = {"warehouse_id": "configured-runtime",
-                        "sha256": store._warehouse_sample_hexdigest(warehouse, len(startup))}
+                        "sha256": hashlib.sha256(startup).hexdigest()}
             first = client.get("/api/revision").json()["warehouse"]
             assert first == expected
             assert re.fullmatch(r"[0-9a-f]{64}", first["sha256"])
@@ -1439,7 +1374,7 @@ def test_full_http_sse_and_activity_omit_private_failure_taxonomy(monkeypatch,tm
             return RuntimeResult(task=TaskSpec(goal='g',mode='quick',deliverable='d'),execution=ExecutionResult(plan=Plan(nodes=[]),errors={}),draft=DraftReport(sections=[],claims=[]),verification=VerificationReport(status='pass'))
     def build(**kwargs):
         ledger=RunLedger(kwargs['run_id']);ledger.append('model/request',turn_id=kwargs['run_id'],call_id='model:1',data={'provider':'inception','model':'mercury-2.5','route':'semantic_verifier','prompt_hash':'a'*64,'context_hash':'b'*64,'tool_schema_hash':'c'*64,'planner_version':'v2','budgets':{},'skill_hashes':{}});ledger.append('assistant/attempt',turn_id=kwargs['run_id'],call_id='model:1',data={'status':'failed','error':sentinel,'provider_attempts':[{'route':'semantic_verifier','provider':'inception','model':'mercury-2.5','attempt_number':1,'exception_type':'UnexpectedModelBehavior','message_class':'structured_output','latency_ms':1,'failure_top_class':'UnexpectedModelBehavior','failure_class_chain':['UnexpectedModelBehavior'],'failure_phase':'no_tool_or_empty','failure_validation_errors':[],'failure_validation_subtype':'not_applicable','failure_schema_sha256':'a'*64,'failure_route':'semantic_verifier'}]});return Runtime(),ledger
-    monkeypatch.setenv('DIME_RUNTIME_V2','on');monkeypatch.setenv('DIME_V2_ACTIVITY_DIR',str(tmp_path/'activity'));monkeypatch.setattr('shared.providers.resolve_model_id',lambda value:('inception','mercury-2.5'));monkeypatch.setattr('v2.runtime.assembly.build_runtime',build)
+    monkeypatch.setenv('DIME_V2_ACTIVITY_DIR',str(tmp_path/'activity'));monkeypatch.setattr('shared.providers.resolve_model_id',lambda value:('inception','mercury-2.5'));monkeypatch.setattr('v2.runtime.assembly.build_runtime',build)
     app=FastAPI();app.include_router(routes.router,prefix='/api');response=TestClient(app).post('/api/v2/chat/stream',json={'q':'x'});text=response.text;run_id=response.headers['x-dime-run-id'];activity=[x.model_dump(mode='json') for x in ActivityJournal(tmp_path/'activity'/f'{run_id}.jsonl',run_id).read()];combined=text+json.dumps(activity)
     for key in ('failure_top_class','failure_class_chain','failure_phase','failure_validation_errors','failure_validation_subtype','failure_schema_sha256','provider_attempts','exception_type'):
         assert key not in combined
@@ -1504,13 +1439,13 @@ def test_loaded_module_hash_detects_old_import_against_new_expected(monkeypatch,
 
 
 def test_real_lifespan_freezes_manifest_and_runtime_prompts(monkeypatch,tmp_path):
-    from app import main
+    from v2.main import app as v2_app
     from v2.api import routes
     from v2.adapters import models
     routes.runtime_asset_manifest.cache_clear();models._PROVIDER_ROUTE_PROMPTS=None
     observed=routes.runtime_asset_manifest();path=_write_expected_manifest(tmp_path/'expected.json',observed)
     monkeypatch.setenv('DIME_EXPECTED_ASSET_MANIFEST',str(path))
-    with TestClient(main.app) as client:
+    with TestClient(v2_app) as client:
         first=client.get('/api/revision').json();assert first==observed.as_dict()
         assert first['prompt_sha256']['semantic_verifier']==hashlib.sha256(models.provider_route_prompt('semantic_verifier','verifier').encode()).hexdigest()
         verifier_path=routes._BACKEND/'v2/prompts/verifier.md';original=verifier_path.read_bytes()
@@ -1523,21 +1458,21 @@ def test_real_lifespan_freezes_manifest_and_runtime_prompts(monkeypatch,tmp_path
 
 def test_lifespan_fails_before_serving_on_expected_mismatch(monkeypatch,tmp_path):
     import json
-    from app import main
+    from v2.main import app as v2_app
     from v2.api import routes
     expected=routes.runtime_asset_manifest().as_dict();expected['warehouse']={**expected['warehouse'],'sha256':'wrong'}
     path=tmp_path/'wrong.json';path.write_text(json.dumps(expected));monkeypatch.setenv('DIME_EXPECTED_ASSET_MANIFEST',str(path))
     with pytest.raises(RuntimeError,match='substantive mismatch'):
-        with TestClient(main.app):pass
+        with TestClient(v2_app):pass
 
 
 def test_lifespan_starts_on_revision_only_mismatch(monkeypatch,tmp_path):
     import json
-    from app import main
+    from v2.main import app as v2_app
     from v2.api import routes
     expected=routes.runtime_asset_manifest().as_dict();expected['revision']='wrong-label-only'
     path=tmp_path/'revision-only.json';path.write_text(json.dumps(expected));monkeypatch.setenv('DIME_EXPECTED_ASSET_MANIFEST',str(path))
-    with TestClient(main.app) as client:
+    with TestClient(v2_app) as client:
         assert client.get('/api/revision').status_code==200
 
 
@@ -1599,7 +1534,7 @@ def test_typed_public_stream_sanitizes_all_events_and_preserves_lifecycle(monkey
     def build(**kwargs):
         holder["progress"]=kwargs["progress"]
         return Runtime(),RunLedger(kwargs["run_id"])
-    monkeypatch.setenv("DIME_RUNTIME_V2","on");monkeypatch.setenv("DIME_PROJECT_STORE",str(tmp_path/"p.sqlite"))
+    monkeypatch.setenv("DIME_PROJECT_STORE",str(tmp_path/"p.sqlite"))
     monkeypatch.setattr("shared.providers.resolve_model_id",lambda value:("openrouter","fixture"))
     monkeypatch.setattr("v2.runtime.assembly.build_runtime",build)
     monkeypatch.setattr(routes,"_PROJECTS",ProjectStore(tmp_path/"p.sqlite"))
@@ -1643,7 +1578,7 @@ def test_public_stream_projection_failure_abstains_and_terminates(monkeypatch,tm
     class Runtime:
         async def run(self,*a,**k):holder["progress"]("verify","running");return result
     def build(**kwargs):holder["progress"]=kwargs["progress"];return Runtime(),RunLedger(kwargs["run_id"])
-    monkeypatch.setenv("DIME_RUNTIME_V2","on");monkeypatch.setattr("shared.providers.resolve_model_id",lambda value:("openrouter","fixture"));monkeypatch.setattr("v2.runtime.assembly.build_runtime",build);monkeypatch.setattr(routes,"_PROJECTS",ProjectStore(tmp_path/"p.sqlite"))
+    monkeypatch.setattr("shared.providers.resolve_model_id",lambda value:("openrouter","fixture"));monkeypatch.setattr("v2.runtime.assembly.build_runtime",build);monkeypatch.setattr(routes,"_PROJECTS",ProjectStore(tmp_path/"p.sqlite"))
     app=FastAPI();app.include_router(routes.router,prefix="/api")
     response=TestClient(app).post("/api/v2/chat/stream",json={"q":"x"});text=response.text
     assert secret not in text and '"node":"analytics"' not in text
@@ -1660,7 +1595,7 @@ def test_typed_terminal_contract_replaces_legacy_failure_and_metadata_cases(monk
     secret="EXCEPTION_SECRET"
     class Runtime:
         async def run(self,*a,**k): raise RuntimeError(secret)
-    monkeypatch.setenv("DIME_RUNTIME_V2","on");monkeypatch.setattr("shared.providers.resolve_model_id",lambda value:("openrouter","fixture"));monkeypatch.setattr("v2.runtime.assembly.build_runtime",lambda **k:(Runtime(),RunLedger(k["run_id"])));monkeypatch.setattr(routes,"_PROJECTS",ProjectStore(tmp_path/"p.sqlite"))
+    monkeypatch.setattr("shared.providers.resolve_model_id",lambda value:("openrouter","fixture"));monkeypatch.setattr("v2.runtime.assembly.build_runtime",lambda **k:(Runtime(),RunLedger(k["run_id"])));monkeypatch.setattr(routes,"_PROJECTS",ProjectStore(tmp_path/"p.sqlite"))
     app=FastAPI();app.include_router(routes.router,prefix="/api");r=TestClient(app).post("/api/v2/chat/stream",json={"q":"x"});text=r.text
     assert secret not in text and "event: error" not in text
     assert text.count("event: work_log")==text.count("event: final_answer")==text.count("event: graph_end")==1
@@ -1702,7 +1637,7 @@ def test_journal_setup_and_append_failures_keep_generic_fallback_once(monkeypatc
         def __init__(self,*a,**k):pass
         def append(self,*a,**k):raise OSError("SECRET")
     for journal in [lambda *a,**k:(_ for _ in ()).throw(PermissionError("SECRET")),BadJournal]:
-        monkeypatch.setattr("v2.api.activity.ActivityJournal",journal);monkeypatch.setenv("DIME_RUNTIME_V2","on");monkeypatch.setattr("shared.providers.resolve_model_id",lambda value:("openrouter","fixture"));monkeypatch.setattr(routes,"_PROJECTS",ProjectStore(tmp_path/"p.sqlite"))
+        monkeypatch.setattr("v2.api.activity.ActivityJournal",journal);monkeypatch.setattr("shared.providers.resolve_model_id",lambda value:("openrouter","fixture"));monkeypatch.setattr(routes,"_PROJECTS",ProjectStore(tmp_path/"p.sqlite"))
         def build(**k):l=RunLedger(k["run_id"]);ledgers[k["run_id"]]=l;return Broken(),l
         monkeypatch.setattr("v2.runtime.assembly.build_runtime",build);app=FastAPI();app.include_router(routes.router,prefix="/api");text=TestClient(app).post("/api/v2/chat/stream",json={"q":"x"}).text
         assert text.count("event: tool_call")==1 and text.count("event: tool_result")==1
@@ -1720,7 +1655,7 @@ def test_pretool_timeout_safe_terminal_carries_latency(monkeypatch,tmp_path):
         async def run(self,*a,run_id=None,**k):
             l=ledgers[run_id];l.append(LedgerKind.STEP_START,turn_id=run_id,step_id="understand");l.append(LedgerKind.STEP_END,turn_id=run_id,step_id="understand",data={"reason":"timeout","duration_ms":12,"error":"SECRET"});raise PreToolTimeoutError("SECRET")
     def build(**k):l=RunLedger(k["run_id"]);ledgers[k["run_id"]]=l;return Timeout(),l
-    monkeypatch.setenv("DIME_RUNTIME_V2","on");monkeypatch.setattr("shared.providers.resolve_model_id",lambda value:("openrouter","fixture"));monkeypatch.setattr("v2.runtime.assembly.build_runtime",build);monkeypatch.setattr(routes,"_PROJECTS",ProjectStore(tmp_path/"p.sqlite"));app=FastAPI();app.include_router(routes.router,prefix="/api");response=TestClient(app).post("/api/v2/chat/stream",json={"q":"x"});text=response.text
+    monkeypatch.setattr("shared.providers.resolve_model_id",lambda value:("openrouter","fixture"));monkeypatch.setattr("v2.runtime.assembly.build_runtime",build);monkeypatch.setattr(routes,"_PROJECTS",ProjectStore(tmp_path/"p.sqlite"));app=FastAPI();app.include_router(routes.router,prefix="/api");response=TestClient(app).post("/api/v2/chat/stream",json={"q":"x"});text=response.text
     assert "SECRET" not in text and '"stage_latencies_ms":{"understand":12}' in text
     assert '"status":"partial"' in text
     assert text.count("event: work_log")==text.count("event: final_answer")==text.count("event: graph_end")==1
@@ -1741,7 +1676,7 @@ def test_pass_result_final_carry_contract(monkeypatch,tmp_path):
     result=RuntimeResult(task=contracts.TaskSpec(goal="x",mode="quick",deliverable="x",requested_outputs=["WINS"]),execution=ExecutionResult(plan=contracts.Plan(nodes=[contracts.PlanNode(id="n",description="n",capability_hints=["standings"],status="complete")]),evidence_by_node={"n":ev},attempts={"n":1}),draft=contracts.DraftReport(sections=[],claims=[c]),verification=contracts.VerificationReport(status="pass",claim_results=[{"claim_index":0,"supported":True}]),verified_claims=[contracts.VerifiedClaim(claim_index=0,claim=c,evidence_ids=["e"],sources=[contracts.ClaimSource(evidence_id="e",source="private",capability="standings")],output_bindings=[b])])
     class Runtime:
         async def run(self,*a,**k):return result
-    monkeypatch.setenv("DIME_RUNTIME_V2","on");monkeypatch.setattr("shared.providers.resolve_model_id",lambda value:("openrouter","fixture"));monkeypatch.setattr("v2.runtime.assembly.build_runtime",lambda **k:(Runtime(),RunLedger(k["run_id"])));monkeypatch.setattr(routes,"_PROJECTS",ProjectStore(tmp_path/"p.sqlite"));app=FastAPI();app.include_router(routes.router,prefix="/api");r=TestClient(app).post("/api/v2/chat/stream",json={"q":"x"});payload=__import__("json").loads(r.text.split("event: final_answer\ndata: ",1)[1].split("\n\n",1)[0]);carry=payload["carry"]
+    monkeypatch.setattr("shared.providers.resolve_model_id",lambda value:("openrouter","fixture"));monkeypatch.setattr("v2.runtime.assembly.build_runtime",lambda **k:(Runtime(),RunLedger(k["run_id"])));monkeypatch.setattr(routes,"_PROJECTS",ProjectStore(tmp_path/"p.sqlite"));app=FastAPI();app.include_router(routes.router,prefix="/api");r=TestClient(app).post("/api/v2/chat/stream",json={"q":"x"});payload=__import__("json").loads(r.text.split("event: final_answer\ndata: ",1)[1].split("\n\n",1)[0]);carry=payload["carry"]
     assert carry["run_id"]==r.headers["x-dime-run-id"] and carry["verification"]=="pass"
     assert carry["verified_claims"]==1 and carry["gaps"]==[] and len(carry["output_statuses"])==1
 
@@ -1756,7 +1691,7 @@ def test_no_authority_internal_gap_route_is_nonblank_and_terminal(monkeypatch,tm
     result=RuntimeResult(task=contracts.TaskSpec(goal="x",mode="quick",deliverable="x"),execution=ExecutionResult(plan=contracts.Plan(nodes=[])),draft=contracts.DraftReport(sections=[],claims=[]),verification=contracts.VerificationReport(status="partial"),gaps=[contracts.Gap(kind="execution_failure",message="SECRET")])
     class Runtime:
         async def run(self,*a,**k):return result
-    monkeypatch.setenv("DIME_RUNTIME_V2","on");monkeypatch.setattr("shared.providers.resolve_model_id",lambda value:("openrouter","fixture"));monkeypatch.setattr("v2.runtime.assembly.build_runtime",lambda **k:(Runtime(),RunLedger(k["run_id"])));monkeypatch.setattr(routes,"_PROJECTS",ProjectStore(tmp_path/"p.sqlite"));app=FastAPI();app.include_router(routes.router,prefix="/api");text=TestClient(app).post("/api/v2/chat/stream",json={"q":"x"}).text
+    monkeypatch.setattr("shared.providers.resolve_model_id",lambda value:("openrouter","fixture"));monkeypatch.setattr("v2.runtime.assembly.build_runtime",lambda **k:(Runtime(),RunLedger(k["run_id"])));monkeypatch.setattr(routes,"_PROJECTS",ProjectStore(tmp_path/"p.sqlite"));app=FastAPI();app.include_router(routes.router,prefix="/api");text=TestClient(app).post("/api/v2/chat/stream",json={"q":"x"}).text
     assert "SECRET" not in text and text.count("event: work_log")==text.count("event: final_answer")==text.count("event: graph_end")==1
     payload=__import__("json").loads(text.split("event: final_answer\ndata: ",1)[1].split("\n\n",1)[0]);assert payload["text"].strip()
 
@@ -1780,7 +1715,6 @@ def test_chat_stream_get_with_client_header_and_no_thread_starts_stream(monkeypa
     class Runtime:
         async def run(self, *a, **k):
             return result
-    monkeypatch.setenv("DIME_RUNTIME_V2", "on")
     monkeypatch.setattr("shared.providers.resolve_model_id", lambda value: ("openrouter", "fixture"))
     monkeypatch.setattr("v2.runtime.assembly.build_runtime", lambda **k: (Runtime(), RunLedger(k["run_id"])))
     monkeypatch.setattr(routes, "_PROJECTS", ProjectStore(tmp_path / "p.sqlite"))

@@ -87,13 +87,6 @@ def test_fallback_builders_have_no_future_season(monkeypatch, tmp_path):
     _point_coverage_at(monkeypatch, path)
     assert coverage.coverage_label() == RANGE_LABEL
     assert FUTURE_SEASON not in (coverage.coverage_label() or "")
-    pytest.importorskip("pydantic_ai")
-    graph = pytest.importorskip("app.graph")
-    assert FUTURE_SEASON not in graph._coverage_claim()
-    assert FUTURE_SEASON not in graph._coverage_span_line()
-    assert FUTURE_SEASON not in graph._coverage_phrase()
-    assert FUTURE_SEASON not in graph._compute_fallback()
-    assert FUTURE_SEASON not in graph._analyst_system_content()
     coverage.coverage_cache_clear()
 
 

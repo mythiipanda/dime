@@ -24,7 +24,6 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 from v2.projects.service import ProjectStore
 from v2.conversations import ConversationStore
 from v2.api.sse import encode_raw, with_heartbeat
-from shared.config import runtime_v2_mode
 from shared.rate_limit import check_sql_rerun, client_ip
 
 router = APIRouter()
@@ -44,15 +43,6 @@ def _imported_module_code_sha256() -> str:
 
 
 _LOADED_MODULE_CODE_SHA256 = _imported_module_code_sha256()
-
-
-def _projects_enabled() -> bool:
-    return runtime_v2_mode() == "on"
-
-
-def _require_projects() -> None:
-    if not _projects_enabled():
-        raise HTTPException(status_code=404, detail="not found")
 
 
 def _revision() -> str:
@@ -808,19 +798,16 @@ class CreateProjectBody(BaseModel):
 
 @router.post("/projects", status_code=201)
 def create_project(body: CreateProjectBody) -> dict:
-    _require_projects()
     return _PROJECTS.create(body.goal).model_dump(mode="json")
 
 
 @router.get("/projects")
 def list_projects() -> dict:
-    _require_projects()
     return {"projects": [item.model_dump(mode="json") for item in _PROJECTS.list()]}
 
 
 @router.get("/projects/{project_id}")
 def get_project(project_id: str) -> dict:
-    _require_projects()
     project = _PROJECTS.get(project_id)
     if project is None:
         raise HTTPException(status_code=404, detail="project not found")
@@ -1172,7 +1159,6 @@ def _rate_limited_stream():
 
 
 async def quick_answer_stream(body: QuickAnswerBody):
-    _require_projects()
     import asyncio
     import uuid
 
@@ -1260,13 +1246,7 @@ async def quick_answer_stream(body: QuickAnswerBody):
         "DIME_V2_LEDGER_DIR", str(_BACKEND / "data" / "v2-ledgers"))
     checkpoint_dir = Path(os.environ.get(
         "DIME_V2_CHECKPOINT_DIR", str(_BACKEND / "data" / "v2-checkpoints")))
-    runtime_mode = runtime_v2_mode()
-    if runtime_mode == "shadow":
-        policy = ExecutionPolicy.shadow(ledger_dir=ledger_dir)
-    elif runtime_mode == "on":
-        policy = ExecutionPolicy.live(ledger_dir=ledger_dir)
-    else:
-        raise HTTPException(status_code=404, detail="not found")
+    policy = ExecutionPolicy.live(ledger_dir=ledger_dir)
     policy = ExecutionPolicy.model_validate({
         **policy.model_dump(), "checkpoint_dir": checkpoint_dir,
     })

@@ -1,24 +1,5 @@
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
-import os
-from typing import Literal
-
-RuntimeV2Mode = Literal["off", "on", "shadow"]
-
-
-def runtime_v2_mode() -> RuntimeV2Mode:
-    raw = os.environ.get("DIME_RUNTIME_V2", "")
-    mode = raw.strip().lower()
-    if not mode or mode == "off":
-        return "off"
-    if mode == "on":
-        return "on"
-    if mode == "shadow":
-        return "shadow"
-    raise ValueError(
-        "unknown DIME_RUNTIME_V2 value: " + repr(raw)
-        + "; expected 'on', 'shadow', or unset/empty for 'off'"
-    )
 
 
 class Settings(BaseSettings):

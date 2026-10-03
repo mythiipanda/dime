@@ -99,7 +99,7 @@ def test_get_leaders_single_read_byte_identical(monkeypatch, category):
         read_calls["n"] += 1
         raise AssertionError("second read_frame must not run")
 
-    monkeypatch.setattr("app.store.read_frame", counting_read_frame)
+    monkeypatch.setattr("shared.store.read_frame", counting_read_frame)
 
     res = league.get_leaders.invoke({"stat_category": category})
     assert res["ok"] is True

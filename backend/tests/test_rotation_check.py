@@ -168,14 +168,14 @@ def test_tool_hermetic_with_monkeypatched_fetchers(monkeypatch):
     async def _units(*a, **k):
         return units
 
-    monkeypatch.setattr("app.tools.team.coerce_team_id", lambda t: 14)
-    monkeypatch.setattr("app.tools.team._abbrev", lambda t: "LAL")
-    monkeypatch.setattr("app.tools.team._fetch_rotation_players",
+    monkeypatch.setattr("shared.tools.team.coerce_team_id", lambda t: 14)
+    monkeypatch.setattr("shared.tools.team._abbrev", lambda t: "LAL")
+    monkeypatch.setattr("shared.tools.team._fetch_rotation_players",
                         lambda *a, **k: raw)
-    monkeypatch.setattr("app.tools.team._fetch_rotation_onoff",
+    monkeypatch.setattr("shared.tools.team._fetch_rotation_onoff",
                         lambda *a, **k: (110.0, 108.0, 2.0, True))
-    monkeypatch.setattr("app.tools.team._fetch_rotation_units", _units)
-    monkeypatch.setattr("app.tools.team._fetch_rotation_clutch",
+    monkeypatch.setattr("shared.tools.team._fetch_rotation_units", _units)
+    monkeypatch.setattr("shared.tools.team._fetch_rotation_clutch",
                         lambda *a, **k: clutch)
     res = _asyncio.run(get_rotation_check.ainvoke({"team": "LAL"}))
     assert res["ok"] is True
