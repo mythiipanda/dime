@@ -177,6 +177,22 @@ _DEFAULT_ROUTE_POLICY = {"max_attempts": 2, "attempt_timeout_s": 25.0,
     "total_budget_s": 50.0,
     "transient_classes": _TRANSIENT_FAILURE_CLASSES}
 
+GEMMA_ROUTE_POLICY_OVERRIDES = {"attempt_timeout_s": 90.0,
+    "total_budget_s": 200.0}
+GEMMA_HTTP_TIMEOUT_S = 120.0
+
+
+def _is_gemma_model(model_name: str) -> bool:
+    return "gemma" in str(model_name or "").casefold()
+
+
+def _route_policy(provider: str, model_name: str,
+                  route: str) -> dict[str, Any]:
+    policy = ROUTE_POLICIES.get(route, _DEFAULT_ROUTE_POLICY)
+    if provider == "gemini" and _is_gemma_model(model_name):
+        policy = {**policy, **GEMMA_ROUTE_POLICY_OVERRIDES}
+    return policy
+
 
 SAFE_FAILURE_EXCEPTION_CLASSES = frozenset({
     "UnexpectedModelBehavior", "ToolRetryError", "ValidationError",
@@ -268,10 +284,18 @@ def strip_array_length_bounds(schema):
 
 
 class DimeOpenAIChatModel(OpenAIChatModel):
+    _GEMMA_INLINE_SCHEMAS = frozenset({"TaskSpec", "DraftReport", "VerificationReport"})
+
     def _map_json_schema(self, output_object):
         from dataclasses import replace
-        from v2.argument_schemas import normalize_provider_wire_schema
+        from v2.argument_schemas import (
+            inline_provider_schema_defs,
+            normalize_provider_wire_schema,
+        )
         if output_object.name not in {"RequirementReviewWire", "PlannerOutputWire"}:
+            if _is_gemma_model(getattr(self, "model_name", "")) and output_object.name in self._GEMMA_INLINE_SCHEMAS:
+                inlined = inline_provider_schema_defs(output_object.json_schema)
+                return super()._map_json_schema(replace(output_object, json_schema=strip_array_length_bounds(inlined)))
             return super()._map_json_schema(replace(output_object, json_schema=strip_array_length_bounds(output_object.json_schema)))
         candidate, _ = normalize_provider_wire_schema(output_object.json_schema)
         return super()._map_json_schema(replace(output_object, json_schema=strip_array_length_bounds(candidate)))
@@ -512,14 +536,6 @@ class ProviderStructuredModel:
             "HTTP-Referer": "https://github.com/mythiipanda/dime",
             "X-Title": "Dime NBA Analyst",
         } if provider == "openrouter" else None)
-        client = ReasoningContentFallbackClient(
-            base_url=base_url,
-            api_key=api_key,
-            timeout=settings.llm_timeout_s,
-            max_retries=0,
-            default_headers=headers,
-            thinking_off=(provider == "nvidia"),
-        )
         requested = self.model
         if provider == "gemini":
             accepted_model = _gemini_model(requested)
@@ -536,6 +552,16 @@ class ProviderStructuredModel:
         if (provider != "inception"
                 and not is_free_model(provider, accepted_model)):
             return []
+        client = ReasoningContentFallbackClient(
+            base_url=base_url,
+            api_key=api_key,
+            timeout=(GEMMA_HTTP_TIMEOUT_S
+                     if provider == "gemini" and _is_gemma_model(accepted_model)
+                     else settings.llm_timeout_s),
+            max_retries=0,
+            default_headers=headers,
+            thinking_off=(provider == "nvidia"),
+        )
         return [(provider, DimeOpenAIChatModel(
             accepted_model,
             provider=OpenAIProvider(openai_client=client),
@@ -559,13 +585,13 @@ class ProviderStructuredModel:
         self.last_promotions = []
         self.last_decode_extra = None
         user_prompt = json.dumps(payload, sort_keys=True, default=str)
-        policy = ROUTE_POLICIES.get(envelope.route, _DEFAULT_ROUTE_POLICY)
+        provider, model = models[0]
+        policy = _route_policy(provider, model.model_name, envelope.route)
         now = time.monotonic()
         run_deadline = RUN_MODEL_DEADLINE.get()
         deadline = min(now + float(policy["total_budget_s"]),
                        run_deadline if run_deadline is not None else float("inf"))
         budget_exhausted = False
-        provider, model = models[0]
         max_attempts = int(policy["max_attempts"])
         for attempt_number in range(1, max_attempts + 1):
             remaining = deadline - time.monotonic()
@@ -727,6 +753,17 @@ class ModelStage:
         return await self._model.generate(**call)
 
 
+def catalog_for_wire(catalog: Mapping[str, Any]) -> dict[str, Any]:
+    return {
+        name: (
+            {key: value for key, value in entry.items()
+             if key != "dependent_entity_arguments" or value}
+            if isinstance(entry, Mapping) else entry
+        )
+        for name, entry in catalog.items()
+    }
+
+
 def capability_arguments_for(requirement, capability_id: str) -> dict[str, Any]:
     if requirement.capability_argument_sets:
         match = next((item for item in requirement.capability_argument_sets
@@ -823,11 +860,25 @@ class ModelIntake(ModelStage):
                  **kwargs: Any) -> None:
         super().__init__(*args, **kwargs)
         self._catalog = dict(capability_catalog)
+        self._wire_catalog = catalog_for_wire(self._catalog)
 
     @staticmethod
     def _bounded_context(context: Sequence[ConversationTurn]) -> tuple[ConversationTurn, ...]:
         from v2.contracts import MAX_INTAKE_CONTEXT_TURNS
         return tuple(context[-MAX_INTAKE_CONTEXT_TURNS:])
+
+    @classmethod
+    def _live_option_available(cls, task: TaskSpec, capability: str) -> bool:
+        for requirement in task.requirements:
+            options = [str(option)
+                       for option in requirement.capability_options]
+            if capability not in options:
+                continue
+            for option in options:
+                spec = CAPABILITIES.get(option)
+                if spec is not None and spec.live_fallback:
+                    return True
+        return False
 
     @classmethod
     def _mark_uncovered_season(cls, task: TaskSpec) -> TaskSpec:
@@ -839,23 +890,68 @@ class ModelIntake(ModelStage):
             season_beyond_upper_bound,
             table_for_metric,
             table_seasons,
+            task_coverage_groups_labeled,
         )
-        implied = [table_for_metric(metric) for metric in task.metric_ids]
-        if not implied:
-            implied = [DEFAULT_TABLE]
-        names = list(dict.fromkeys(implied))
+        labeled = task_coverage_groups_labeled(task)
+        if not labeled:
+            implied = [table_for_metric(metric) for metric in task.metric_ids]
+            if not implied:
+                implied = [DEFAULT_TABLE]
+            labeled = [(None, frozenset({name}))
+                       for name in dict.fromkeys(implied)]
+        groups = [tables for _, tables in labeled]
+        names = list(dict.fromkeys(
+            table for group in groups for table in sorted(group)))
         requested = task.season.value
         sets = {name: table_seasons(name) for name in names}
+        covered_groups = [
+            any(requested in sets.get(table, frozenset()) for table in group)
+            for group in groups
+        ]
         if (
             parse_season_start(requested) is not None
-            and all(requested in seasons for seasons in sets.values())
+            and all(covered_groups)
             and not season_beyond_upper_bound(requested)
         ):
             return task
-        missing = [
-            name for name, seasons in sets.items()
-            if requested not in seasons
-        ]
+        blocked = []
+        live_tables = []
+        live_capabilities = []
+        for (label, group), covered in zip(labeled, covered_groups):
+            if covered:
+                continue
+            live = (label is not None
+                    and cls._live_option_available(task, label))
+            for table in sorted(group):
+                if requested not in sets.get(table, frozenset()):
+                    if live:
+                        if table not in live_tables:
+                            live_tables.append(table)
+                        if label not in live_capabilities:
+                            live_capabilities.append(label)
+                    elif table not in blocked:
+                        blocked.append(table)
+        assumptions = list(task.assumptions)
+        if live_tables:
+            if len(live_capabilities) == 1:
+                live_note = (
+                    f"Requested {requested} season has no rows in "
+                    f"{', '.join(live_tables)}; "
+                    f"{live_capabilities[0]} will attempt its live source "
+                    f"instead."
+                )
+            else:
+                live_note = (
+                    f"Requested {requested} season has no rows in "
+                    f"{', '.join(live_tables)}; "
+                    f"{', '.join(live_capabilities)} will attempt their "
+                    f"live sources instead."
+                )
+            assumptions.append(live_note)
+        if not blocked:
+            return task.model_copy(update={
+                "assumptions": list(dict.fromkeys(assumptions)),
+            })
         known = sorted({
             season
             for seasons in sets.values()
@@ -865,25 +961,25 @@ class ModelIntake(ModelStage):
         if known:
             question = (
                 f"Numbers for the {requested} season are not available "
-                f"for {', '.join(missing)}. "
+                f"for {', '.join(blocked)}. "
                 f"Available seasons: {', '.join(known)}. "
                 "Which season should be used instead?"
             )
         else:
             question = (
                 f"Numbers for the {requested} season are not available "
-                f"for {', '.join(missing)}. "
+                f"for {', '.join(blocked)}. "
                 "Which season should be used instead?"
             )
         note = (
             f"Requested {requested} season has no rows in "
-            f"{', '.join(missing)}; leaving the request unchanged."
+            f"{', '.join(blocked)}; leaving the request unchanged."
         )
         return task.model_copy(update={
             "open_questions": list(dict.fromkeys(
                 [*task.open_questions, question])),
             "assumptions": list(dict.fromkeys(
-                [*task.assumptions, note])),
+                [*assumptions, note])),
         })
 
     async def understand(
@@ -895,7 +991,7 @@ class ModelIntake(ModelStage):
             "current_date": datetime.now(UTC).date().isoformat(),
             "conversation_context": [turn.model_dump(mode="json")
                                      for turn in bounded],
-            "capability_catalog": self._catalog,
+            "capability_catalog": self._wire_catalog,
             "skill_catalog": self._skills.catalog(),
         }
         if bounded:
@@ -1326,10 +1422,6 @@ class ModelIntake(ModelStage):
                 if errors: raise ValueError(f"invalid {option.capability_id} requirement arguments: {errors[0].message}")
                 ranked_error = ranked_team_arguments_error(option.capability_id, arguments)
                 if ranked_error: raise ValueError(ranked_error)
-                entry = self._catalog.get(option.capability_id)
-                injected = set(entry.get("dependent_entity_arguments", {}))
-                if injected & set(arguments):
-                    raise ValueError("provider may not author dependent injected arguments")
 
     def _expand_home_away_requirements(self, review, scope: str):
         expanded = []
@@ -1371,7 +1463,7 @@ class ModelIntake(ModelStage):
         payload = {
             "question": request,
             "draft_task": task.model_dump(mode="json"),
-            "capability_catalog": self._catalog,
+            "capability_catalog": self._wire_catalog,
             "skill_catalog": self._skills.catalog(),
         }
         ranked_arguments: dict[str, dict[str, Any]] = {}
@@ -1574,8 +1666,6 @@ class ModelPlanner(ModelStage):
                         if ranked_error.startswith("RANKED_DIRECTION_UNSPECIFIED")
                         else []))
             self._check_ranked_requirement_agreement(node, arguments, requirements)
-            if set(self._catalog.get(node.capability).get("dependent_entity_arguments", {})) & set(arguments):
-                raise ValueError("provider may not author dependent injected arguments")
             decoded.append((node, arguments))
         return Plan.model_validate({"nodes": [{
             "id": node.id, "description": node.description,
@@ -1587,11 +1677,12 @@ class ModelPlanner(ModelStage):
     def __init__(self, *args: Any, capability_catalog: Mapping[str, str], **kwargs: Any) -> None:
         super().__init__(*args, **kwargs)
         self._catalog = dict(capability_catalog)
+        self._wire_catalog = catalog_for_wire(self._catalog)
 
     async def plan(self, task: TaskSpec, failure_context: dict | None = None) -> Plan:
         payload = {
             "task": task.model_dump(mode="json"),
-            "capability_catalog": self._catalog,
+            "capability_catalog": self._wire_catalog,
             "skills": self._skills.activate(task.skills),
         }
         if failure_context is not None:
@@ -2431,6 +2522,25 @@ class ModelRepairer(ModelStage):
             update={"claims": claims, "calculations": list(original.calculations),
                     "blocked_calculation_requirement_ids": list(original.blocked_calculation_requirement_ids), "gaps": list(original.gaps)}).model_dump())
 
+    def _fallback_repair(
+        self, draft: DraftReport, verification: VerificationReport,
+    ) -> DraftReport:
+        rejected = {
+            item.claim_index for item in verification.claim_results
+            if not item.supported
+        }
+        claims = [
+            claim for index, claim in enumerate(draft.claims)
+            if index not in rejected
+        ]
+        gaps = list(dict.fromkeys([
+            *draft.gaps,
+            *verification.missing_branches,
+            *verification.contradictions,
+            *verification.repair_instructions,
+        ]))
+        return draft.model_copy(update={"claims": claims, "gaps": gaps})
+
     async def repair(
         self,
         task: TaskSpec,
@@ -2447,16 +2557,23 @@ class ModelRepairer(ModelStage):
                 item.model_dump(mode="json") for item in evidence.values()
             ],
         }
-        repaired = _validate_draft(
-            await self._generate(payload), list(evidence.values()))
+        try:
+            generated = await self._generate(payload)
+        except Exception:
+            return self._fallback_repair(draft, verification)
+        repaired = _validate_draft(generated, list(evidence.values()))
         repaired = self._merge_supported(draft, repaired, verification)
         missing = self._missing_replacements(draft, repaired, verification)
         if missing:
-            repaired = _validate_draft(await self._generate({
-                **payload,
-                "previous_repair": repaired.model_dump(mode="json"),
-                "required_replacements": missing,
-            }), list(evidence.values()))
+            try:
+                generated = await self._generate({
+                    **payload,
+                    "previous_repair": repaired.model_dump(mode="json"),
+                    "required_replacements": missing,
+                })
+            except Exception:
+                return self._fallback_repair(draft, verification)
+            repaired = _validate_draft(generated, list(evidence.values()))
             repaired = self._merge_supported(draft, repaired, verification)
             missing = self._missing_replacements(draft, repaired, verification)
         if missing:
