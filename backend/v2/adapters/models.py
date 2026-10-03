@@ -865,23 +865,36 @@ class ModelIntake(ModelStage):
             season_beyond_upper_bound,
             table_for_metric,
             table_seasons,
+            task_coverage_groups,
         )
-        implied = [table_for_metric(metric) for metric in task.metric_ids]
-        if not implied:
-            implied = [DEFAULT_TABLE]
-        names = list(dict.fromkeys(implied))
+        groups = task_coverage_groups(task)
+        if not groups:
+            implied = [table_for_metric(metric) for metric in task.metric_ids]
+            if not implied:
+                implied = [DEFAULT_TABLE]
+            groups = [frozenset({name}) for name in dict.fromkeys(implied)]
+        names = list(dict.fromkeys(
+            table for group in groups for table in sorted(group)))
         requested = task.season.value
         sets = {name: table_seasons(name) for name in names}
+        covered_groups = [
+            any(requested in sets.get(table, frozenset()) for table in group)
+            for group in groups
+        ]
         if (
             parse_season_start(requested) is not None
-            and all(requested in seasons for seasons in sets.values())
+            and all(covered_groups)
             and not season_beyond_upper_bound(requested)
         ):
             return task
-        missing = [
-            name for name, seasons in sets.items()
-            if requested not in seasons
-        ]
+        missing = []
+        for group, covered in zip(groups, covered_groups):
+            if covered:
+                continue
+            for table in sorted(group):
+                if requested not in sets.get(table, frozenset()):
+                    if table not in missing:
+                        missing.append(table)
         known = sorted({
             season
             for seasons in sets.values()

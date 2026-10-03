@@ -34,6 +34,39 @@ _ALIASES = {
 
 DEFAULT_TABLE = "silver_boxscores"
 
+LEADERS_TABLES = (
+    "silver_leaders_pts",
+    "silver_leaders_reb",
+    "silver_leaders_ast",
+    "silver_leaders_stl",
+    "silver_leaders_blk",
+    "silver_leaders_dreb",
+    "silver_leaders_fg_pct",
+)
+
+CAPABILITY_TABLES: dict[str, tuple[str, ...]] = {
+    "team_ratings": ("silver_team_ratings",),
+    "playoff_team_ratings": ("silver_playoffs",),
+    "playoffs": ("silver_playoffs",),
+    "standings": ("silver_standings",),
+    "team_trajectory": ("silver_standings",),
+    "team_totals": ("silver_boxscores",),
+    "game_logs": ("silver_boxscores",),
+    "player_report": ("silver_boxscores",),
+    "shooting_efficiency": ("silver_advanced",),
+    "on_off": ("silver_on_off",),
+    "lineups": ("silver_lineups",),
+    "shots": ("silver_shots",),
+}
+
+_RATE_TO_TOTAL = {
+    "PPG": "PTS",
+    "RPG": "REB",
+    "APG": "AST",
+    "SPG": "STL",
+    "BPG": "BLK",
+}
+
 KNOWN_TABLES = (
     "silver_boxscores",
     "silver_boxscores_ext",
@@ -62,6 +95,105 @@ def table_for_metric(metric: str) -> str:
 
 def _key(metric: str) -> str:
     return re.sub(r"[^A-Z0-9]", "", (metric or "").upper())
+
+
+def _leaders_table_for_stat(stat: object) -> str | None:
+    try:
+        from shared.tools._core import clamp_stat
+        normalized = clamp_stat(str(stat or ""))
+    except Exception:
+        return None
+    total = _RATE_TO_TOTAL.get(normalized, normalized)
+    if total == "TS_PCT":
+        return "silver_advanced"
+    if total == "FG3_PCT":
+        return "silver_leaders_pts"
+    return f"silver_leaders_{total.lower()}"
+
+
+def _arguments_dict(arguments: object) -> dict[str, Any]:
+    if arguments is None:
+        return {}
+    if isinstance(arguments, dict):
+        return dict(arguments)
+    as_dict = getattr(arguments, "as_dict", None)
+    if callable(as_dict):
+        try:
+            value = as_dict()
+            if isinstance(value, dict):
+                return dict(value)
+        except Exception:
+            return {}
+    model_dump = getattr(arguments, "model_dump", None)
+    if callable(model_dump):
+        try:
+            value = model_dump(mode="json")
+            if isinstance(value, dict):
+                return dict(value)
+        except Exception:
+            return {}
+    return {}
+
+
+def _requirement_arguments(requirement: object, capability: str) -> dict[str, Any]:
+    sets = getattr(requirement, "capability_argument_sets", None) or []
+    for item in sets:
+        if getattr(item, "capability_id", None) == capability:
+            return _arguments_dict(getattr(item, "arguments", None))
+    return _arguments_dict(getattr(requirement, "capability_arguments", None))
+
+
+def tables_for_capability(
+    capability: str, arguments: object = None,
+) -> tuple[str, ...]:
+    name = str(capability or "")
+    if name == "qualified_leaders":
+        values = _arguments_dict(arguments)
+        for key in ("stat_category", "requested_metric", "stat", "metric"):
+            if values.get(key) is not None:
+                table = _leaders_table_for_stat(values.get(key))
+                if table is not None:
+                    return (table,)
+                break
+        return LEADERS_TABLES
+    if name == "rookie_leaders":
+        return LEADERS_TABLES
+    known = CAPABILITY_TABLES.get(name)
+    if known is not None:
+        return known
+    return ()
+
+
+def task_coverage_groups(task: object) -> list[frozenset[str]]:
+    groups: list[frozenset[str]] = []
+    evidence = [str(item) for item in
+                getattr(task, "required_evidence", None) or []]
+    for metric in getattr(task, "metric_ids", None) or []:
+        table = table_for_metric(str(metric))
+        if evidence and table == DEFAULT_TABLE:
+            continue
+        groups.append(frozenset({table}))
+    requirements = list(getattr(task, "requirements", None) or [])
+    if not evidence:
+        return groups
+    for capability in dict.fromkeys(evidence):
+        tables: set[str] = set()
+        matched = False
+        for requirement in requirements:
+            options = list(
+                getattr(requirement, "capability_options", None) or [])
+            if capability not in [str(option) for option in options]:
+                continue
+            matched = True
+            tables.update(tables_for_capability(
+                capability,
+                _requirement_arguments(requirement, capability),
+            ))
+        if not matched:
+            tables.update(tables_for_capability(capability, {}))
+        if tables:
+            groups.append(frozenset(tables))
+    return groups
 
 
 def _classify(metric: str) -> dict[str, str]:
