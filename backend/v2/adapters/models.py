@@ -898,23 +898,18 @@ class ModelIntake(ModelStage):
             "capability_catalog": self._catalog,
             "skill_catalog": self._skills.catalog(),
         }
+        if bounded:
+            payload["reference_resolution"] = {
+                "instruction": (
+                    "Resolve references and omitted subjects from the "
+                    "bounded conversation context before leaving a user "
+                    "question open. Preserve an open question only when "
+                    "the context supports multiple materially different "
+                    "referents or supplies none. Return a complete "
+                    "replacement TaskSpec."
+                ),
+            }
         task = await self._generate(payload)
-        if context and task.open_questions:
-            task = await self._generate({
-                **payload,
-                "prior_intake": task.model_dump(mode="json"),
-                "resolution_feedback": {
-                    "unresolved_questions": list(task.open_questions),
-                    "instruction": (
-                        "Resolve references and omitted subjects from the "
-                        "bounded conversation context before leaving a user "
-                        "question open. Preserve an open question only when "
-                        "the context supports multiple materially different "
-                        "referents or supplies none. Return a complete "
-                        "replacement TaskSpec."
-                    ),
-                },
-            })
         task = task.model_copy(update={
             "skills": [name for name in task.skills
                        if name in self._skills.skills],
@@ -973,19 +968,19 @@ class ModelIntake(ModelStage):
             ],
         })
         if self._requirement_review and not task.open_questions:
-            review = await self._review_requirements(request, task)
-            task = task.model_copy(update={
-                "subquestions": list(dict.fromkeys([
-                    *task.subquestions, *review.missing_subquestions,
-                ])),
-                "required_evidence": task.required_evidence,
-                "requirements": review.requirements,
-                "ranked_argument_conflicts": list(review.ranked_argument_conflicts),
-                "calculation_requirements": review.calculation_requirements,
-                "skills": list(dict.fromkeys([
-                    *task.skills, *review.missing_skills,
-                ])),
-            })
+            unknown_requirements = sorted(
+                {capability for requirement in task.requirements
+                 for capability in requirement.capability_options}
+                - self._catalog.keys()
+            )
+            if unknown_requirements:
+                raise ValueError(
+                    "requirement review selected unknown capabilities: "
+                    f"{unknown_requirements}"
+                )
+            scope = " ".join([request, task.goal, task.deliverable,
+                              *task.subquestions]).casefold()
+            task = self._expand_home_away_requirements(task, scope)
             task = task.model_copy(update={
                 "skills": [name for name in task.skills
                            if name in self._skills.skills],
