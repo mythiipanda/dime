@@ -30,7 +30,7 @@ def test_read_only_connect_retries_through_writer_lock(tmp_path,
     finally:
         t.join()
     try:
-        con.execute("SELECT 1").fetchone()
+        assert con.execute("SELECT 1").fetchone()[0] == 1
     finally:
         con.close()
 
@@ -46,14 +46,26 @@ def test_read_write_connect_retries_through_writer_lock(tmp_path,
         con = store.connect()
     finally:
         t.join()
-    con.close()
+    try:
+        assert con.execute("SELECT 1").fetchone()[0] == 1
+    finally:
+        con.close()
 
 
 def test_no_contention_connects_immediately(tmp_path, monkeypatch):
     monkeypatch.setattr(store, "DB_PATH", tmp_path / "free.duckdb")
     con = store.connect()
-    con.close()
+    try:
+        assert con.execute("SELECT 1").fetchone()[0] == 1
+    finally:
+        con.close()
     con = store.connect(read_only=True)
-    con.close()
+    try:
+        assert con.execute("SELECT 1").fetchone()[0] == 1
+    finally:
+        con.close()
     con = store.connect()
-    con.close()
+    try:
+        assert con.execute("SELECT 1").fetchone()[0] == 1
+    finally:
+        con.close()

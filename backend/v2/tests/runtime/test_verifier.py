@@ -1028,3 +1028,35 @@ def test_requested_defense_value_from_own_column_still_passes():
         draft, [ev])
     assert result.status == "pass"
     assert result.claim_results[0].supported
+
+
+def windowed_task():
+    from v2.contracts import TaskSpec
+    return TaskSpec(goal="January form", mode="quick", deliverable="answer",
+        window_start=date(2026, 1, 1), window_end=date(2026, 1, 31))
+
+
+def test_windowed_task_rejects_full_season_envelope():
+    claim = Claim(text="Capital City Stars had 61 wins.", kind=ClaimKind.OBSERVED,
+                  evidence_ids=["standings"])
+    reasons = verify_mechanical(
+        windowed_task(), report(claim), [evidence()]).claim_results[0].reasons
+    assert any("2026-01-01" in r and "2026-01-31" in r for r in reasons)
+
+
+def test_windowed_task_accepts_matching_window_envelope():
+    claim = Claim(text="As of 2026-04-15, the Capital City Stars had 61 wins in 2025-26.",
+                  kind=ClaimKind.OBSERVED, evidence_ids=["standings"])
+    result = verify_mechanical(windowed_task(), report(claim),
+        [evidence(window_start=date(2026, 1, 1), window_end=date(2026, 1, 31))])
+    assert result.status == VerificationStatus.PASS
+    assert result.claim_results[0].supported
+
+
+def test_unwindowed_task_ignores_envelope_window():
+    claim = Claim(text="As of 2026-04-15, the Capital City Stars had 61 wins in 2025-26.",
+                  kind=ClaimKind.OBSERVED, evidence_ids=["standings"])
+    result = verify_mechanical(task(), report(claim),
+        [evidence(window_start=date(2026, 1, 1), window_end=date(2026, 1, 31))])
+    assert result.status == VerificationStatus.PASS
+    assert result.claim_results[0].supported

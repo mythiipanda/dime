@@ -66,8 +66,8 @@ export default function LineupPanel({ initialTeam, initialStreak, fetchTimeoutMs
   const [busy, setBusy] = useState(false);
   const [retryNonce, setRetryNonce] = useState(0);
 
-  const [playerA, setPlayerA] = useState(() => getQueryParam("wowy_a") || "Luka");
-  const [playerB, setPlayerB] = useState(() => getQueryParam("wowy_b") || "LeBron");
+  const [playerA, setPlayerA] = useState(() => getQueryParam("wowy_a") || "");
+  const [playerB, setPlayerB] = useState(() => getQueryParam("wowy_b") || "");
   const [wowyRows, setWowyRows] = useState<unknown[]>([]);
   const [wowyVerdict, setWowyVerdict] = useState("");
   const [wowyBusy, setWowyBusy] = useState(false);
@@ -232,7 +232,7 @@ export default function LineupPanel({ initialTeam, initialStreak, fetchTimeoutMs
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center", marginBottom: 12 }}>
             <input
               className="field"
-              placeholder="Player A (e.g. Luka)"
+              placeholder="Player A"
               value={playerA}
               onChange={(e) => setPlayerA(e.target.value)}
               style={{ width: 160, fontSize: 12 }}
@@ -240,7 +240,7 @@ export default function LineupPanel({ initialTeam, initialStreak, fetchTimeoutMs
             />
             <input
               className="field"
-              placeholder="Player B (e.g. LeBron)"
+              placeholder="Player B"
               value={playerB}
               onChange={(e) => setPlayerB(e.target.value)}
               style={{ width: 160, fontSize: 12 }}

@@ -455,6 +455,8 @@ def get_ratings(
         [season], lambda: nba_stats.team_ratings(season), season,
         limit=30,
     )
+    if rows:
+        meta.setdefault("method", "official")
     if not rows and season_static(season or ""):
         fallback = _regular_season_team_ratings(season)
         if fallback is not None:
@@ -1335,9 +1337,7 @@ def _finals_game_scores(finals: list[dict[str, Any]],
     try:
         from .. import store as _store
 
-        import duckdb as _ddb
-
-        con = _ddb.connect(str(_store.DB_PATH), read_only=True)
+        con = _store.connect(read_only=True)
         try:
             ph = ",".join("?" * len(dates))
             rows = con.execute(
@@ -1465,9 +1465,7 @@ def get_playoffs(season: str | None = None) -> dict[str, Any]:
                 if fdates:
                     from .. import store as _store
 
-                    import duckdb as _ddb
-
-                    _con = _ddb.connect(str(_store.DB_PATH), read_only=True)
+                    _con = _store.connect(read_only=True)
                     try:
                         _ph = ",".join("?" * len(fdates))
                         _sc = _con.execute(
@@ -3607,8 +3605,6 @@ def get_rookie_leaders(stat: str = "ppg", min_value: float = 0,
     season = resolve_season(season)
     from .. import store as _store
 
-    import duckdb
-
     col = str(stat or "ppg").strip().upper()
     allowed = {"PPG", "RPG", "APG", "SPG", "BPG", "MPG",
                "FG_PCT", "FG3_PCT", "FT_PCT", "GP"}
@@ -3626,7 +3622,7 @@ def get_rookie_leaders(stat: str = "ppg", min_value: float = 0,
         ORDER BY {col} DESC
     """
     try:
-        con = duckdb.connect(str(_store.DB_PATH), read_only=True)
+        con = _store.connect(read_only=True)
         try:
             cur_rows = con.execute(
                 sql, [season, int(min_gp), float(min_value)]
@@ -3691,12 +3687,6 @@ def get_lineup_leaders(min_minutes: int = 100, limit: int = 10,
     season = resolve_season(season)
     from .. import store as _store
 
-    import duckdb
-
-
-
-
-
     min_minutes = max(25, min(float(min_minutes), 5000))
 
     sql = """
@@ -3709,7 +3699,7 @@ def get_lineup_leaders(min_minutes: int = 100, limit: int = 10,
         LIMIT ?
     """
     try:
-        con = duckdb.connect(str(_store.DB_PATH), read_only=True)
+        con = _store.connect(read_only=True)
         try:
             raw = con.execute(
                 sql, [season, float(min_minutes), int(limit) * 2]
@@ -4922,20 +4912,7 @@ def _freshness_row(table: str, rows: int, last_fetch: object,
 def _warehouse_table_meta() -> list[tuple[str, int, str | None]]:
     from .. import store as _store
 
-    import duckdb
-
-    last: Exception | None = None
-    for _ in range(5):
-        try:
-            con = duckdb.connect(str(_store.DB_PATH), read_only=True)
-            break
-        except Exception as exc:
-            last = exc
-            import time as _time
-
-            _time.sleep(0.3)
-    else:
-        raise last or RuntimeError("warehouse read failed")
+    con = _store.connect(read_only=True)
     try:
         tables = sorted(
             r[0] for r in con.execute("SHOW TABLES").fetchall()

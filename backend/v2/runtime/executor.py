@@ -473,7 +473,15 @@ class PlanExecutor:
                     if task.season and task_season_scoped
                     else None
                 )
-                result = admit_evidence(result, required_season=required_season)
+                required_window = (
+                    getattr(task, "window_start", None),
+                    getattr(task, "window_end", None),
+                )
+                if required_window == (None, None):
+                    required_window = None
+                result = admit_evidence(
+                    result, required_season=required_season,
+                    required_window=required_window)
                 if result.capability != capability.name:
                     raise ValueError(
                         f"capability returned {result.capability!r}, expected {capability.name!r}"

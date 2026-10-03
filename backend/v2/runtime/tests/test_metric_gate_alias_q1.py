@@ -65,7 +65,7 @@ def _task():
         goal="Who led the NBA in assists in the 2024-25 season, and how many?",
         mode="quick",
         deliverable="Assists leader and total assists",
-        requested_outputs=["PLAYER_NAME", "AST"],
+        requested_outputs=["PLAYER_NAME", "ASSIST_TOTAL"],
         season=SeasonRef(value="2024-25", source="user", confidence=1.0),
         entities=[EntityRef(id="1629027", type="player", display_name="Trae Young")],
         requirements=[EvidenceRequirement(
@@ -73,12 +73,14 @@ def _task():
             description="2024-25 assists leaderboard",
             capability_options=["qualified_leaders"],
             capability_arguments={"stat_category": "AST", "season": "2024-25"},
-            requested_outputs=["PLAYER_NAME", "AST"],
+            requested_outputs=["PLAYER_NAME", "ASSIST_TOTAL"],
         )],
     )
 
 
-def _bindings(node_id=_NODE_ID, evidence_id=_NODE_ID):
+def _bindings(node_id=_NODE_ID, evidence_id=None, metric_leaf="AST", metric_value=880):
+    if evidence_id is None:
+        evidence_id = _envelope().evidence_id
     return [
         EvidenceOutputBinding(
             requirement_kind="evidence",
@@ -98,12 +100,12 @@ def _bindings(node_id=_NODE_ID, evidence_id=_NODE_ID):
         EvidenceOutputBinding(
             requirement_kind="evidence",
             requirement_id=_REQUIREMENT_ID,
-            output_id="AST",
+            output_id="ASSIST_TOTAL",
             node_id=node_id,
             evidence_id=evidence_id,
-            selector="rows[0].AST",
+            selector=f"rows[0].{metric_leaf}",
             row_selector="rows[0]",
-            value={"kind": "integer", "value": 880},
+            value={"kind": "integer", "value": metric_value},
             subject_entity_type="player",
             subject_entity_id="1629027",
             subject_selector="rows[0].PLAYER_ID",
@@ -159,19 +161,13 @@ def _admit(task, envelope, bindings, nodes=None):
     return admit_verified_claim_bindings(task, execution, draft, verified)
 
 
-def test_evidence_scope_binding_citing_node_id_admits_with_corrected_id():
-    envelope = _envelope()
-    assert envelope.evidence_id != _NODE_ID
-    admitted = _admit(_task(), envelope, _bindings())
-    assert all(item.evidence_id == envelope.evidence_id for item in admitted.output_bindings)
-    assert admitted.evidence_ids == [envelope.evidence_id]
-    assert [item.evidence_id for item in admitted.sources] == [envelope.evidence_id]
+def test_q1_assist_total_served_by_ast_column_admits():
+    admitted = _admit(_task(), _envelope(), _bindings())
+    by_output = {item.output_id: item for item in admitted.output_bindings}
+    assert by_output["PLAYER_NAME"].value.value == "Trae Young"
+    assert by_output["ASSIST_TOTAL"].value.value == 880
 
 
-def test_evidence_scope_binding_without_node_evidence_still_rejects():
-    envelope = _envelope()
-    ghost = "qualified_leaders:0000000000000000"
-    bindings = _bindings(node_id=ghost, evidence_id=ghost)
-    nodes = [_node(), _node(ghost)]
-    with pytest.raises(ValueError, match="ownership"):
-        _admit(_task(), envelope, bindings, nodes=nodes)
+def test_pts_leaf_on_assist_total_output_still_rejects():
+    with pytest.raises(ValueError, match="binding selector metric does not match output"):
+        _admit(_task(), _envelope(), _bindings(metric_leaf="PTS", metric_value=1500))

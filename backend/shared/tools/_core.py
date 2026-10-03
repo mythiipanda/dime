@@ -577,15 +577,30 @@ _STATIC_TEAMS = (
 )
 
 
+def _team_alias_index() -> dict[str, list[int]]:
+    index: dict[str, list[int]] = {}
+    for abbr, full, team_id in _STATIC_TEAMS:
+        words = full.lower().split()
+        keys = {abbr.lower(), full.lower()}
+        for i in range(1, len(words)):
+            keys.add(" ".join(words[:i]))
+            keys.add(" ".join(words[i:]))
+        for key in keys:
+            index.setdefault(key, []).append(team_id)
+    return index
+
+
+_TEAM_ALIAS_INDEX = _team_alias_index()
+
+
 def _static_team_id(value: object, raw: str) -> int:
-    name = raw.lower()
-    exact = [t for t in _STATIC_TEAMS if name == t[0].lower()]
-    if exact:
-        return exact[0][2]
-    found = [t for t in _STATIC_TEAMS if name in t[1].lower()]
-    if not found:
+    name = " ".join(raw.lower().replace("-", " ").replace("_", " ").split())
+    if not name:
         raise ValueError(f"unknown team: {value}")
-    return found[0][2]
+    hits = _TEAM_ALIAS_INDEX.get(name, [])
+    if len(hits) == 1:
+        return hits[0]
+    raise ValueError(f"unknown team: {value}")
 
 
 def coerce_team_id(value: object) -> int:
@@ -594,26 +609,16 @@ def coerce_team_id(value: object) -> int:
         return int(raw)
     except (TypeError, ValueError):
         pass
+    if not raw:
+        raise ValueError(f"unknown team: {value}")
     raw = NICKNAMES.get(raw.lower(), raw)
     raw = raw.replace("-", " ").replace("_", " ")
-    try:
-        from nba_api.stats.static import teams
-
-        name = raw.lower()
-        all_t = teams.get_teams()
-        exact = [x for x in all_t
-                 if name == x.get("abbreviation", "").lower()]
-        if exact:
-            return int(exact[0]["id"])
-        found = teams.find_teams_by_full_name(raw)
-        if not found:
-            found = [x for x in all_t
-                     if name in x.get("full_name", "").lower()]
-        if not found:
-            raise ValueError(f"unknown team: {value}")
-        return int(found[0]["id"])
-    except Exception:
-        return _static_team_id(value, raw)
+    name = raw.lower()
+    if not name.strip():
+        raise ValueError(f"unknown team: {value}")
+    if len(name) < 3:
+        raise ValueError(f"unknown team: {value}")
+    return _static_team_id(value, raw)
 
 
 def _cache_age_s(frame) -> float | None:

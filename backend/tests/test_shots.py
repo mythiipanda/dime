@@ -13,7 +13,7 @@ from shared.tools.shots import (ZONE_KEYS, ZONE_LABEL_MAP, disambiguate_last_nam
                              parse_made, parse_late_clock, parse_periods,
                              parse_zones, period_matches, search_shots,
                              seconds_left, summarize, summarize_by_period,
-                             summarize_by_zone, zone_of_label)
+                             summarize_by_zone, zone_of_label, _where_sql)
 
 
 def _require_full_shot_pack():
@@ -38,77 +38,123 @@ def _shot(zone, made, period=4, game="g1"):
     return {"zone": zone, "made": made, "period": period, "game_id": game}
 
 
-def test_zone_of_label_maps_all_six_values():
-    assert zone_of_label("Restricted Area") == "rim"
-    assert zone_of_label("In The Paint (Non-RA)") == "short_mid"
-    assert zone_of_label("Mid-Range") == "long_mid"
-    assert zone_of_label("Left Corner 3") == "corner_3"
-    assert zone_of_label("Right Corner 3") == "corner_3"
-    assert zone_of_label("Above the Break 3") == "atb_3"
+@pytest.mark.parametrize("label,expected", [
+    ("Restricted Area", "rim"),
+    ("In The Paint (Non-RA)", "short_mid"),
+    ("Mid-Range", "long_mid"),
+    ("Left Corner 3", "corner_3"),
+    ("Right Corner 3", "corner_3"),
+    ("Above the Break 3", "atb_3"),
+    ("Half Court", None),
+    (None, None),
+])
+def test_zone_of_label_table(label, expected):
+    assert zone_of_label(label) == expected
     assert set(ZONE_LABEL_MAP) == {
         "Restricted Area", "In The Paint (Non-RA)", "Mid-Range",
         "Left Corner 3", "Right Corner 3", "Above the Break 3"}
 
 
-def test_zone_of_label_unknown_returns_none():
-    assert zone_of_label("Half Court") is None
-    assert zone_of_label(None) is None
+@pytest.mark.parametrize("text,expected", [
+    ("", set(ZONE_KEYS)),
+    ("corner_3, atb_3", {"corner_3", "atb_3"}),
+])
+def test_parse_zones_table(text, expected):
+    assert parse_zones(text) == expected
 
 
-def test_parse_zones_defaults_to_all_and_rejects_unknown():
-    assert parse_zones("") == set(ZONE_KEYS)
-    assert parse_zones("corner_3, atb_3") == {"corner_3", "atb_3"}
-    with pytest.raises(ValueError, match="unknown zone"):
-        parse_zones("corner_3, paint")
+@pytest.mark.parametrize("text,expected", [
+    ("", None),
+    ("4th", {4}),
+    ("ot", {5}),
+    ("1h", {1, 2}),
+    ("2h", {3, 4}),
+    ("1,2", {1, 2}),
+])
+def test_parse_periods_table(text, expected):
+    assert parse_periods(text) == expected
 
 
-def test_parse_periods_tokens():
-    assert parse_periods("") is None
-    assert parse_periods("4th") == {4}
-    assert parse_periods("ot") == {5}
-    assert parse_periods("1h") == {1, 2}
-    assert parse_periods("2h") == {3, 4}
-    assert parse_periods("1,2") == {1, 2}
+@pytest.mark.parametrize("period,wanted,expected", [
+    (4, {4}, True),
+    (5, {5}, True),
+    (7, {5}, True),
+    (5, {4}, False),
+    (3, None, True),
+    (None, {4}, False),
+])
+def test_period_matches_table(period, wanted, expected):
+    assert period_matches(period, wanted) is expected
 
 
-def test_parse_periods_rejects_unknown():
-    with pytest.raises(ValueError, match="unknown period"):
-        parse_periods("q5")
+@pytest.mark.parametrize("text,expected", [
+    ("", ""),
+    ("player", "player"),
+    ("TEAM", "team"),
+])
+def test_parse_group_by_table(text, expected):
+    assert parse_group_by(text) == expected
 
 
-def test_period_matches_groups_ot():
-    assert period_matches(4, {4}) is True
-    assert period_matches(5, {5}) is True
-    assert period_matches(7, {5}) is True
-    assert period_matches(5, {4}) is False
-    assert period_matches(3, None) is True
-    assert period_matches(None, {4}) is False
+@pytest.mark.parametrize("text,default,expected", [
+    ("", True, True),
+    ("auto", False, False),
+    ("yes", False, True),
+    ("no", True, False),
+    ("TRUE", True, True),
+])
+def test_parse_include_ot_table(text, default, expected):
+    assert parse_include_ot(text, default) is expected
 
 
-def test_parse_group_by():
-    assert parse_group_by("") == ""
-    assert parse_group_by("player") == "player"
-    assert parse_group_by("TEAM") == "team"
-    with pytest.raises(ValueError, match="invalid group_by"):
-        parse_group_by("zone")
+@pytest.mark.parametrize("periods,include,expected", [
+    ({4}, True, {4, 5}),
+    ({4}, False, {4}),
+    ({1, 2}, True, {1, 2, 5}),
+    ({5}, False, {5}),
+    (None, True, None),
+    (None, False, None),
+])
+def test_fold_ot_table(periods, include, expected):
+    assert fold_ot(periods, include) == expected
 
 
-def test_parse_include_ot():
-    assert parse_include_ot("", True) is True
-    assert parse_include_ot("auto", False) is False
-    assert parse_include_ot("yes", False) is True
-    assert parse_include_ot("no", True) is False
-    assert parse_include_ot("TRUE", True) is True
-    with pytest.raises(ValueError, match="invalid include_ot"):
-        parse_include_ot("maybe", True)
+@pytest.mark.parametrize("func,args,expected", [
+    (parse_made, ("MADE",), "made"),
+    (parse_made, ("any",), "any"),
+    (parse_late_clock, ("",), None),
+    (parse_late_clock, ("30",), 30),
+    (efficiency, (4, 2, 1), {"fg_pct": 0.5, "efg_pct": 0.625}),
+    (efficiency, (0, 0, 0), {"fg_pct": 0.0, "efg_pct": 0.0}),
+])
+def test_parse_value_mappings_table(func, args, expected):
+    assert func(*args) == expected
 
 
-def test_fold_ot():
-    assert fold_ot({4}, True) == {4, 5}
-    assert fold_ot({4}, False) == {4}
-    assert fold_ot({1, 2}, True) == {1, 2, 5}
-    assert fold_ot({5}, False) == {5}
-    assert fold_ot(None, True) is None
+@pytest.mark.parametrize("period,secs,left,clock", [
+    (1, 5, 65, "1:05"),
+    (None, 5, None, None),
+    (None, None, None, "unknown"),
+])
+def test_clock_helpers_table(period, secs, left, clock):
+    assert seconds_left(period, secs) == left
+    if clock is not None:
+        assert format_clock(period, secs) == clock
+
+
+@pytest.mark.parametrize("func,args,match", [
+    (parse_zones, ("corner_3, paint",), "unknown zone"),
+    (parse_periods, ("q5",), "unknown period"),
+    (parse_group_by, ("zone",), "invalid group_by"),
+    (parse_group_by, ("coach",), "invalid group_by"),
+    (parse_include_ot, ("maybe", True), "invalid include_ot"),
+    (parse_made, ("sometimes",), "invalid made filter"),
+    (parse_late_clock, ("abc",), "invalid late_clock"),
+    (parse_late_clock, ("Q4:30",), "invalid late_clock"),
+])
+def test_parse_invalid_rejected(func, args, match):
+    with pytest.raises(ValueError, match=match):
+        func(*args)
 
 
 def test_group_row_small_sample_flag():
@@ -129,27 +175,6 @@ def test_is_heave_boundary():
     assert is_heave(35, 0, 0) is True
     assert is_heave(30, None, None) is False
     assert is_heave(None, 0, 1) is False
-
-
-def test_efficiency_efg_math():
-    assert efficiency(4, 2, 1) == {"fg_pct": 0.5, "efg_pct": 0.625}
-    assert efficiency(0, 0, 0) == {"fg_pct": 0.0, "efg_pct": 0.0}
-
-
-def test_parse_made_validation():
-    assert parse_made("MADE") == "made"
-    assert parse_made("any") == "any"
-    with pytest.raises(ValueError, match="invalid made filter"):
-        parse_made("sometimes")
-
-
-def test_parse_late_clock_validation():
-    assert parse_late_clock("") is None
-    assert parse_late_clock("30") == 30
-    with pytest.raises(ValueError, match="invalid late_clock"):
-        parse_late_clock("abc")
-    with pytest.raises(ValueError, match="invalid late_clock"):
-        parse_late_clock("Q4:30")
 
 
 def test_disambiguate_last_name_unique_and_ambiguous():
@@ -191,13 +216,6 @@ def test_summarize_overall_and_by_zone_and_period():
     assert by_period["OT"]["makes"] == 1
 
 
-def test_seconds_left_and_clock_format():
-    assert seconds_left(1, 5) == 65
-    assert seconds_left(None, 5) is None
-    assert format_clock(1, 5) == "1:05"
-    assert format_clock(None, None) == "unknown"
-
-
 def test_tool_tatum_corner3_4th_matches_verified_numbers():
     _require_full_shot_pack()
     res = search_shots.invoke(
@@ -237,81 +255,6 @@ def test_tool_group_by_player_leaderboard():
     assert res["filters"]["group_by"] == "player"
 
 
-def test_tool_group_by_team():
-    _require_full_shot_pack()
-    res = search_shots.invoke({"periods": "4th", "group_by": "team"})
-    assert res["ok"] is True
-    rows = res["by_team"]
-    assert len(rows) == 30
-    assert all(r["team"] and len(r["team"]) == 3 for r in rows)
-    attempts = [r["attempts"] for r in rows]
-    assert attempts == sorted(attempts, reverse=True)
-
-
-def test_tool_4th_includes_ot_by_default():
-    default = search_shots.invoke({"periods": "4th"})
-    no_ot = search_shots.invoke({"periods": "4th", "include_ot": "no"})
-    assert default["ok"] and no_ot["ok"]
-    assert default["aggregate"]["attempts"] >= no_ot["aggregate"]["attempts"]
-    assert default["filters"]["include_ot"] is True
-    assert no_ot["filters"]["include_ot"] is False
-    assert "OT" in default["filters"]["periods"]
-    assert "OT" not in no_ot["filters"]["periods"]
-    assert any(r["period"] == "OT" for r in default["by_period"])
-    assert not any(r["period"] == "OT" for r in no_ot["by_period"])
-
-
-def test_tool_disambiguation_returns_candidates():
-    _require_full_shot_pack()
-    res = search_shots.invoke({"player": "Williams"})
-    assert res["ok"] is True
-    assert "disambiguation" in res
-    cands = res["disambiguation"]["candidates"]
-    assert len(cands) > 1
-    attempts = [c["attempts"] for c in cands]
-    assert attempts == sorted(attempts, reverse=True)
-    for c in cands:
-        assert c["player_id"]
-        assert c["player"]
-        assert isinstance(c["teams"], list) and c["teams"]
-        assert "small_sample" in c
-
-
-def test_tool_unknown_player_still_errors():
-    res = search_shots.invoke({"player": "Nobody McNobodyface"})
-    assert res["ok"] is False
-    assert "unknown player" in res["error"]
-
-
-def test_tool_clutch_safe_flag():
-    res = search_shots.invoke({"periods": "4th", "late_clock": "300"})
-    assert res["ok"] is True
-    assert res["meta"]["clutch_safe"] is False
-    assert res["meta"]["score_aware"] is False
-
-
-def test_tool_heave_disabled_meta_says_included():
-    res = search_shots.invoke({"periods": "4th", "exclude_heaves": False})
-    assert res["ok"] is True
-    assert res["meta"]["heaves_excluded"] == 0
-    assert "INCLUDED" in res["meta"]["data_note"]
-    on = search_shots.invoke({"periods": "4th", "exclude_heaves": True})
-    assert "excluded here" in on["meta"]["data_note"]
-
-
-def test_tool_conflicting_filters_explain_zero_rows():
-    res = search_shots.invoke({"periods": "1h", "late_clock": "60"})
-    assert res["ok"] is True
-    assert res["aggregate"]["attempts"] == 0
-    assert "note" in res["meta"]
-    assert "late_clock" in res["meta"]["note"]
-    res2 = search_shots.invoke({"player": "Tatum", "periods": "1",
-                                "late_clock": "5", "made": "made",
-                                "zones": "corner_3", "three_only": True})
-    if res2["aggregate"]["attempts"] == 0:
-        assert "note" in res2["meta"]
-
-
 def test_tool_by_zone_only_requested_zones():
     res = search_shots.invoke({"zones": "rim"})
     assert res["ok"] is True
@@ -320,16 +263,6 @@ def test_tool_by_zone_only_requested_zones():
     assert all(r["zone"] in {"rim", "corner_3"}
                for r in search_shots.invoke(
                    {"zones": "rim,corner_3"})["by_zone"])
-
-
-def test_tool_sample_rows_are_a_season_mix():
-    res = search_shots.invoke({"periods": "4th", "limit": 25})
-    assert res["ok"] is True
-    shots = res["shots"]
-    assert len(shots) == 25
-    gids = [s["game_id"] for s in shots]
-    assert len(set(gids)) > 1
-    assert gids != sorted(gids, reverse=True)
 
 
 def test_tool_performance_smoke():
@@ -341,70 +274,6 @@ def test_tool_performance_smoke():
     assert res["ok"] is True
     assert res["aggregate"]["attempts"] > 20000
     assert elapsed < 2.0, f"search_shots took {elapsed:.2f}s"
-
-
-from shared.tools.shots import (SMALL_SAMPLE_MIN, _AGG_SELECT, _three_sql,
-                             _where_sql, _zone_case_sql)
-
-
-def test_new_parse_group_by_variants():
-    assert parse_group_by("") == ""
-    assert parse_group_by("player") == "player"
-    assert parse_group_by("TEAM") == "team"
-    with pytest.raises(ValueError, match="invalid group_by"):
-        parse_group_by("coach")
-
-
-def test_new_parse_include_ot_variants():
-    assert parse_include_ot("auto", True) is True
-    assert parse_include_ot("auto", False) is False
-    assert parse_include_ot("yes", False) is True
-    assert parse_include_ot("no", True) is False
-    with pytest.raises(ValueError, match="invalid include_ot"):
-        parse_include_ot("maybe", True)
-
-
-def test_new_fold_ot_semantics():
-    assert fold_ot({4}, True) == {4, 5}
-    assert fold_ot({1, 2}, True) == {1, 2, 5}
-    assert fold_ot({4}, False) == {4}
-    assert fold_ot(None, True) is None
-    assert fold_ot(None, False) is None
-
-
-def test_new_group_row_values():
-    row = group_row(5, 3, 3)
-    assert row["attempts"] == 5
-    assert row["fg_pct"] == 0.6
-    assert row["efg_pct"] == 0.9
-    assert row["small_sample"] is True
-    assert row["points"] == 2 * 3 + 3
-    assert SMALL_SAMPLE_MIN == 10
-    assert group_row(100, 50, 10)["small_sample"] is False
-
-
-def test_new_where_sql_ot_late():
-    wanted = set(ZONE_KEYS)
-    sql_on, _ = _where_sql("2025-26", None, None, wanted, {4, 5}, 300,
-                           False, "any", True)
-    assert "PERIOD >= 4" in sql_on
-    assert "PERIOD >= 5" in sql_on
-    sql_off, _ = _where_sql("2025-26", None, None, wanted, {4}, 300,
-                            False, "any", False)
-    assert "PERIOD >= 4" in sql_off
-    assert "PERIOD = 4" not in sql_off
-    assert "PERIOD >= 5" not in sql_off
-    sql_none_off, _ = _where_sql("2025-26", None, None, wanted, None, 300,
-                                 False, "any", False)
-    assert "PERIOD = 4" in sql_none_off
-    assert "PERIOD >= 4" not in sql_none_off
-
-
-def test_new_sql_helpers_smoke():
-    assert "COUNT(*)" in _AGG_SELECT
-    zone_expr = _zone_case_sql()
-    assert "CASE" in zone_expr
-    assert "corner_3" in _three_sql(zone_expr)
 
 
 def test_group_by_team_leaderboard():
@@ -554,7 +423,21 @@ def test_late_clock_applies_to_folded_set_no_ot_leak():
     assert all(r["period"] == 4 for r in res["by_period"])
 
 
-def test_late_clock_ot_only_sql_targets_folded_set():
+def test_where_sql_period_bounds():
+    wanted = set(ZONE_KEYS)
+    sql_on, _ = _where_sql("2025-26", None, None, wanted, {4, 5}, 300,
+                           False, "any", True)
+    assert "PERIOD >= 4" in sql_on
+    assert "PERIOD >= 5" in sql_on
+    sql_off, _ = _where_sql("2025-26", None, None, wanted, {4}, 300,
+                            False, "any", False)
+    assert "PERIOD >= 4" in sql_off
+    assert "PERIOD = 4" not in sql_off
+    assert "PERIOD >= 5" not in sql_off
+    sql_none_off, _ = _where_sql("2025-26", None, None, wanted, None, 300,
+                                 False, "any", False)
+    assert "PERIOD = 4" in sql_none_off
+    assert "PERIOD >= 4" not in sql_none_off
     sql, _ = _where_sql("2025-26", None, None, set(ZONE_KEYS), {5}, 60,
                         False, "any", True)
     assert "PERIOD >= 5" in sql

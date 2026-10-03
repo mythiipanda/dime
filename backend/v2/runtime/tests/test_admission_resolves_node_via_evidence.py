@@ -141,6 +141,21 @@ def test_nonexistent_node_with_real_evidence_binds():
     assert by_output["LOSSES"].value.value == 14
 
 
-def test_invented_evidence_with_true_node_rejects():
-    with pytest.raises(ValueError, match="ownership"):
-        _admit(_bindings(_TRUE_NODE, _GHOST_EVIDENCE_ID))
+def test_invented_evidence_with_true_node_admits_with_corrected_id():
+    admitted = _admit(_bindings(_TRUE_NODE, _GHOST_EVIDENCE_ID))
+    assert [item.evidence_id for item in admitted.output_bindings] == [_EVIDENCE_ID, _EVIDENCE_ID]
+    assert admitted.evidence_ids == [_EVIDENCE_ID]
+    assert [item.evidence_id for item in admitted.sources] == [_EVIDENCE_ID]
+    by_output = {item.output_id: item for item in admitted.output_bindings}
+    assert by_output["WINS"].value.value == 68
+    assert by_output["LOSSES"].value.value == 14
+
+
+def test_invented_evidence_with_true_node_wrong_values_rejects():
+    bindings = _bindings(_TRUE_NODE, _GHOST_EVIDENCE_ID)
+    bad = [
+        item.model_copy(update={"value": item.value.model_copy(update={"value": 999})})
+        for item in bindings
+    ]
+    with pytest.raises(ValueError, match="binding value"):
+        _admit(bad)

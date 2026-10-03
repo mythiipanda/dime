@@ -34,6 +34,10 @@ def _public_payload(event: InternalEvent, *, diagnostics: bool = False) -> dict 
         if not diagnostics:
             return None
         return payload
+    if event.type == EventType.RUN_DIAGNOSTIC:
+        if not diagnostics:
+            return None
+        return payload
     if isinstance(event.type, str) and event.type in {"stage_summary", "plan_update", "evidence_update", "verification_update"}:
         common = {key: payload[key] for key in ("event_id","sequence","emitted_at","phase","status","title","correlation_id","transition","duration_ms") if key in payload}
         allowed = {

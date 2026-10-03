@@ -603,7 +603,7 @@ class ProviderStructuredModel:
                 agent = Agent(
                     model,
                     instructions=prompt,
-                    output_type=NativeOutput(schema, strict=True),
+                    output_type=NativeOutput(schema, strict=provider != "groq"),
                     retries=settings.llm_max_retries,
                 )
                 run = agent.run(user_prompt)
@@ -994,23 +994,18 @@ class ModelIntake(ModelStage):
             "capability_catalog": self._wire_catalog,
             "skill_catalog": self._skills.catalog(),
         }
+        if bounded:
+            payload["reference_resolution"] = {
+                "instruction": (
+                    "Resolve references and omitted subjects from the "
+                    "bounded conversation context before leaving a user "
+                    "question open. Preserve an open question only when "
+                    "the context supports multiple materially different "
+                    "referents or supplies none. Return a complete "
+                    "replacement TaskSpec."
+                ),
+            }
         task = await self._generate(payload)
-        if context and task.open_questions:
-            task = await self._generate({
-                **payload,
-                "prior_intake": task.model_dump(mode="json"),
-                "resolution_feedback": {
-                    "unresolved_questions": list(task.open_questions),
-                    "instruction": (
-                        "Resolve references and omitted subjects from the "
-                        "bounded conversation context before leaving a user "
-                        "question open. Preserve an open question only when "
-                        "the context supports multiple materially different "
-                        "referents or supplies none. Return a complete "
-                        "replacement TaskSpec."
-                    ),
-                },
-            })
         task = task.model_copy(update={
             "skills": [name for name in task.skills
                        if name in self._skills.skills],
@@ -1069,19 +1064,19 @@ class ModelIntake(ModelStage):
             ],
         })
         if self._requirement_review and not task.open_questions:
-            review = await self._review_requirements(request, task)
-            task = task.model_copy(update={
-                "subquestions": list(dict.fromkeys([
-                    *task.subquestions, *review.missing_subquestions,
-                ])),
-                "required_evidence": task.required_evidence,
-                "requirements": review.requirements,
-                "ranked_argument_conflicts": list(review.ranked_argument_conflicts),
-                "calculation_requirements": review.calculation_requirements,
-                "skills": list(dict.fromkeys([
-                    *task.skills, *review.missing_skills,
-                ])),
-            })
+            unknown_requirements = sorted(
+                {capability for requirement in task.requirements
+                 for capability in requirement.capability_options}
+                - self._catalog.keys()
+            )
+            if unknown_requirements:
+                raise ValueError(
+                    "requirement review selected unknown capabilities: "
+                    f"{unknown_requirements}"
+                )
+            scope = " ".join([request, task.goal, task.deliverable,
+                              *task.subquestions]).casefold()
+            task = self._expand_home_away_requirements(task, scope)
             task = task.model_copy(update={
                 "skills": [name for name in task.skills
                            if name in self._skills.skills],
@@ -1427,10 +1422,6 @@ class ModelIntake(ModelStage):
                 if errors: raise ValueError(f"invalid {option.capability_id} requirement arguments: {errors[0].message}")
                 ranked_error = ranked_team_arguments_error(option.capability_id, arguments)
                 if ranked_error: raise ValueError(ranked_error)
-                entry = self._catalog.get(option.capability_id)
-                injected = set(entry.get("dependent_entity_arguments", {}))
-                if injected & set(arguments):
-                    raise ValueError("provider may not author dependent injected arguments")
 
     def _expand_home_away_requirements(self, review, scope: str):
         expanded = []
@@ -1717,8 +1708,8 @@ class ModelPlanner(ModelStage):
         return Plan.model_validate({"nodes": [
             *resolvers,
             *[{
-            "id": node.id, "description": node.description,
-            "depends_on": list(dict.fromkeys([*(node.depends_on or []), *depends_extra.get(node.id, [])])),
+                "id": node.id, "description": node.description,
+                "depends_on": list(dict.fromkeys([*(node.depends_on or []), *depends_extra.get(node.id, [])])),
             "capability_hints": [node.capability],
             "covers_requirement_ids": node.covers_requirement_ids or [],
             "arguments": dict(arguments), "max_attempts": node.max_attempts or 1,
@@ -2642,6 +2633,25 @@ class ModelRepairer(ModelStage):
             update={"claims": claims, "calculations": list(original.calculations),
                     "blocked_calculation_requirement_ids": list(original.blocked_calculation_requirement_ids), "gaps": list(original.gaps)}).model_dump())
 
+    def _fallback_repair(
+        self, draft: DraftReport, verification: VerificationReport,
+    ) -> DraftReport:
+        rejected = {
+            item.claim_index for item in verification.claim_results
+            if not item.supported
+        }
+        claims = [
+            claim for index, claim in enumerate(draft.claims)
+            if index not in rejected
+        ]
+        gaps = list(dict.fromkeys([
+            *draft.gaps,
+            *verification.missing_branches,
+            *verification.contradictions,
+            *verification.repair_instructions,
+        ]))
+        return draft.model_copy(update={"claims": claims, "gaps": gaps})
+
     async def repair(
         self,
         task: TaskSpec,
@@ -2658,16 +2668,23 @@ class ModelRepairer(ModelStage):
                 item.model_dump(mode="json") for item in evidence.values()
             ],
         }
-        repaired = _validate_draft(
-            await self._generate(payload), list(evidence.values()))
+        try:
+            generated = await self._generate(payload)
+        except Exception:
+            return self._fallback_repair(draft, verification)
+        repaired = _validate_draft(generated, list(evidence.values()))
         repaired = self._merge_supported(draft, repaired, verification)
         missing = self._missing_replacements(draft, repaired, verification)
         if missing:
-            repaired = _validate_draft(await self._generate({
-                **payload,
-                "previous_repair": repaired.model_dump(mode="json"),
-                "required_replacements": missing,
-            }), list(evidence.values()))
+            try:
+                generated = await self._generate({
+                    **payload,
+                    "previous_repair": repaired.model_dump(mode="json"),
+                    "required_replacements": missing,
+                })
+            except Exception:
+                return self._fallback_repair(draft, verification)
+            repaired = _validate_draft(generated, list(evidence.values()))
             repaired = self._merge_supported(draft, repaired, verification)
             missing = self._missing_replacements(draft, repaired, verification)
         if missing:
@@ -2761,6 +2778,7 @@ class RecordedStructuredModel:
             call_id=call_id,
             data=envelope.model_dump(mode="json"),
         )
+        started = time.perf_counter()
         try:
             result = await self._model.generate(
                 schema=schema,
@@ -2781,6 +2799,8 @@ class RecordedStructuredModel:
                 turn_id=self._turn_id,
                 call_id=call_id,
                 data={"status": "failed", "error": exception_text(exc),
+                      "duration_ms": max(0, round(
+                          (time.perf_counter() - started) * 1000)),
                       "provider_attempts": list(getattr(
                           self._model, "last_failures", [])),
                       "reasoning_content_promotions": list(getattr(
@@ -2803,6 +2823,8 @@ class RecordedStructuredModel:
                     (actual_provider or envelope.provider) != envelope.provider
                     or (actual_model or envelope.model) != envelope.model
                 ),
+                "duration_ms": max(0, round(
+                    (time.perf_counter() - started) * 1000)),
                 "provider_attempts": list(getattr(
                     self._model, "last_failures", [])),
                 "reasoning_content_promotions": list(getattr(

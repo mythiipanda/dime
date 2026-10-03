@@ -71,10 +71,6 @@ def _canonical_unit(value):
     return "_".join(value.lower().split())
 
 
-def _canonical_metric(value):
-    return value.upper().replace("_", "")
-
-
 def _canonical_domain(value):
     normalized = "_".join(value.lower().split())
     from v2.adapters.capabilities import CAPABILITIES
@@ -457,7 +453,9 @@ def propagate_evidence_to_task(task, execution, draft, admitted):
             elif not task_entities or league_scoped:
                 envelope = owner_by_evidence_id.get(binding.evidence_id)
                 if envelope is None:
-                    continue
+                    envelope = execution.evidence_by_node.get(binding.node_id)
+                if envelope is None:
+                    raise ValueError("propagation could not resolve binding evidence")
                 envelope_entities = {
                     canonical_entity_ref(item) for item in envelope.entities
                 }
@@ -519,7 +517,7 @@ def admit_verified_claim_bindings(
     draft: DraftReport,
     verified_claim: VerifiedClaim,
 ) -> VerifiedClaim:
-    from v2.adapters.capabilities import CAPABILITIES
+    from v2.adapters.capabilities import CAPABILITIES, resolve_metric_column
     from v2.contracts import EvidenceOutputBinding, CalculationOutputBinding, canonical_entity_id, canonical_entity_ref
     from v2.domain.evidence import iter_values
     evidence_requirements = {item.id: item for item in task.requirements}
@@ -530,6 +528,48 @@ def admit_verified_claim_bindings(
     task_entities = {canonical_entity_ref(item) for item in task.entities}
     league_scoped = bool(task_entities) and all(t == "league" for t, _ in task_entities)
     verified_claim = reanchor_verified_claim_bindings(execution, verified_claim)
+    fallback_map: dict[str, str] = {}
+    for binding in verified_claim.output_bindings:
+        if isinstance(binding, EvidenceOutputBinding):
+            if binding.evidence_id not in evidence_by_id:
+                if ((binding.requirement_kind == "task" and binding.requirement_id is None)
+                        or binding.requirement_kind == "evidence"):
+                    envelope = execution.evidence_by_node.get(binding.node_id)
+                    if envelope is not None:
+                        real_id = envelope.evidence_id
+                        if binding.evidence_id != real_id:
+                            prev = fallback_map.get(binding.evidence_id)
+                            if prev is not None and prev != real_id:
+                                raise ValueError("binding evidence ownership is invalid")
+                            fallback_map[binding.evidence_id] = real_id
+    if fallback_map:
+        fixed_bindings = [
+            item.model_copy(update={"evidence_id": fallback_map[item.evidence_id]})
+            if isinstance(item, EvidenceOutputBinding) and item.evidence_id in fallback_map
+            else item
+            for item in verified_claim.output_bindings
+        ]
+        remapped_ids: list[str] = []
+        for evidence_id in verified_claim.evidence_ids:
+            mapped = fallback_map.get(evidence_id, evidence_id)
+            if mapped not in remapped_ids:
+                remapped_ids.append(mapped)
+        remapped_sources = []
+        seen_source_ids: set[str] = set()
+        for source in verified_claim.sources:
+            mapped = fallback_map.get(source.evidence_id, source.evidence_id)
+            if mapped in seen_source_ids:
+                continue
+            seen_source_ids.add(mapped)
+            remapped_sources.append(
+                source.model_copy(update={"evidence_id": mapped})
+                if mapped != source.evidence_id else source
+            )
+        verified_claim = verified_claim.model_copy(update={
+            "output_bindings": fixed_bindings,
+            "evidence_ids": remapped_ids,
+            "sources": remapped_sources,
+        })
     for binding in verified_claim.output_bindings:
         if isinstance(binding, EvidenceOutputBinding):
             requirement = (evidence_requirements.get(binding.requirement_id)
@@ -541,6 +581,12 @@ def admit_verified_claim_bindings(
             if binding.output_id not in allowed_outputs:
                 raise ValueError("binding output is outside its authority")
             owned = evidence_by_id.get(binding.evidence_id)
+            if owned is None and ((binding.requirement_kind == "task"
+                    and binding.requirement_id is None)
+                    or binding.requirement_kind == "evidence"):
+                envelope = execution.evidence_by_node.get(binding.node_id)
+                if envelope is not None:
+                    owned = (binding.node_id, envelope)
             if owned is None:
                 raise ValueError("binding evidence ownership is invalid")
             node = next(item for item in execution.plan.nodes if item.id == owned[0])
@@ -563,15 +609,15 @@ def admit_verified_claim_bindings(
                 raise ValueError("binding capability lacks catalog authority")
             leaf = binding.selector.rsplit(".", 1)[-1]
             leaf = leaf.split("[", 1)[0]
-            if _canonical_metric(leaf) != _canonical_metric(binding.output_id):
-                raise ValueError("binding selector metric does not match output")
-            wanted_metric = _canonical_metric(binding.output_id)
-            catalog_units = {_canonical_metric(name): unit
-                             for name, unit in capability.units.items()}
-            evidence_units = {_canonical_metric(name): unit
-                              for name, unit in evidence.units.items()}
-            catalog_unit = catalog_units.get(wanted_metric)
-            evidence_unit = evidence_units.get(wanted_metric)
+            if leaf == binding.output_id:
+                metric_column = leaf
+            else:
+                resolved = resolve_metric_column(capability, binding.output_id)
+                if resolved is None or resolved != leaf:
+                    raise ValueError("binding selector metric does not match output")
+                metric_column = resolved
+            catalog_unit = capability.units.get(metric_column)
+            evidence_unit = evidence.units.get(metric_column)
             if catalog_unit is not None and evidence_unit is not None \
                     and catalog_unit != evidence_unit:
                 raise ValueError("catalog and evidence units disagree")

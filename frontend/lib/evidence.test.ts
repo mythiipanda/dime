@@ -93,10 +93,46 @@ test("claim tables become plain-word sources", () => {
 test("name claims keep the name and skip the stat", () => {
   const sources = evidenceSources(aiWith({}, [NAME_TABLE]));
   assert.equal(sources.length, 1);
-  assert.equal(sources[0].subject, "");
+  assert.equal(sources[0].subject, "1629027");
   assert.equal(sources[0].value, "Trae Young");
   assert.equal(sources[0].stat, "");
   assert.equal(sources[0].origin, "League leaders, 2024-25 season");
+});
+
+test("tables prefer backend subject display names", () => {
+  const table = { ...NAME_TABLE, subject_display_name: "Trae Young" };
+  const sources = evidenceSources(aiWith({}, [table]));
+  assert.equal(sources.length, 1);
+  assert.equal(sources[0].subject, "Trae Young");
+});
+
+test("blank subject display names fall back to local labels", () => {
+  const blank = { ...CLAIM_TABLE, subject_display_name: "" };
+  const sources = evidenceSources(aiWith({}, [blank]));
+  assert.equal(sources[0].subject, "Boston");
+});
+
+test("unknown subjects fall back to the raw id", () => {
+  const table = { ...NAME_TABLE, subject_id: "9999999" };
+  const sources = evidenceSources(aiWith({}, [table]));
+  assert.equal(sources.length, 1);
+  assert.equal(sources[0].subject, "9999999");
+});
+
+test("tables prefer backend display names", () => {
+  const table = { ...CLAIM_TABLE, display_name: "Net rating" };
+  const sources = evidenceSources(aiWith({}, [table]));
+  assert.equal(sources.length, 1);
+  assert.equal(sources[0].stat, "Net rating");
+});
+
+test("blank display names fall back to local labels", () => {
+  const blank = { ...CLAIM_TABLE, display_name: "" };
+  const numeric = { ...CLAIM_TABLE, display_name: 42 };
+  const sources = evidenceSources(aiWith({}, [blank, numeric]));
+  assert.equal(sources.length, 2);
+  assert.equal(sources[0].stat, "points per 100 possessions");
+  assert.equal(sources[1].stat, "points per 100 possessions");
 });
 
 test("sources never leak machine ids", () => {

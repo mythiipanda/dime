@@ -796,3 +796,68 @@ def test_completed_season_assists_leader_publishes_count(monkeypatch, tmp_path):
         verified_claims=claims))
     assert text.splitlines()[0] == "Trae Young led the NBA with 880 assists in 2024-25."
     assert "AST = 880 (count)" not in text
+
+
+def _display_table(output_id, definitions=None, rows=None):
+    from datetime import UTC, datetime
+    from types import SimpleNamespace
+    from v2.api.routes import _public_evidence_tables
+    from v2.contracts import EvidenceEnvelope, EvidenceOutputBinding, OutputFinalStatus
+    binding = EvidenceOutputBinding(requirement_kind="task", output_id=output_id,
+        node_id="n", evidence_id="ev", selector=f"rows.{output_id}",
+        value={"kind": "integer", "value": 25},
+        unit={"kind": "declared", "value": "points"}, domain="player_report")
+    status = OutputFinalStatus(requirement_kind="task", output_id=output_id,
+        status="complete", claim_index=0, binding=binding)
+    envelope = EvidenceEnvelope(evidence_id="ev", capability="player_report",
+        source="fixture", observed_at=datetime.now(UTC),
+        metric_definitions=definitions or {},
+        rows=rows or {output_id: 25})
+    result = SimpleNamespace(output_statuses=[status],
+        draft=DraftReport(sections=[], claims=[]),
+        execution=SimpleNamespace(evidence=[envelope]))
+    return _public_evidence_tables(result)[0]
+
+
+def test_public_table_display_name_prefers_metric_definition_head():
+    table = _display_table("EFG_PCT", definitions={
+        "EFG_PCT": "Effective field-goal percentage: (FGM + 0.5 * FG3M) / FGA."},
+        rows={"EFG_PCT": 25})
+    assert table["output_id"] == "EFG_PCT"
+    assert table["display_name"] == "Effective field-goal percentage"
+
+
+def test_public_table_display_name_humanizes_bare_output_id():
+    from v2.api.routes import _output_display_name
+    assert _display_table("PPG")["display_name"] == "PPG"
+    assert _display_table("PTS_DELTA")["display_name"] == "PTS DELTA"
+    assert _output_display_name("ppg") == "PPG"
+
+
+def test_public_output_status_carries_display_name():
+    from types import SimpleNamespace
+    from v2.api.routes import _public_output_status
+    from v2.contracts import EvidenceOutputBinding, OutputFinalStatus
+    binding = EvidenceOutputBinding(requirement_kind="task", output_id="PTS",
+        node_id="n", evidence_id="e", selector="rows.PTS",
+        value={"kind": "integer", "value": 25},
+        unit={"kind": "declared", "value": "points"}, domain="standings")
+    status = OutputFinalStatus(requirement_kind="task", output_id="PTS",
+        status="complete", claim_index=0, binding=binding)
+    assert _public_output_status(SimpleNamespace(), status)["display_name"] == "PTS"
+
+
+def test_public_gaps_plumb_blocks():
+    from types import SimpleNamespace
+    from v2.api.routes import _public_gaps
+    from v2.contracts import Gap, GapKind
+    result = SimpleNamespace(gaps=[
+        Gap(kind=GapKind.MISSING_EVIDENCE, message="no data",
+            blocks=["requirement:assists", "claim:1"]),
+        Gap(kind=GapKind.SOURCE_CONFLICT, message="conflict", blocks=[]),
+    ])
+    assert _public_gaps(result) == [
+        {"kind": "missing_evidence", "blocks": ["requirement:assists", "claim:1"]},
+        {"kind": "source_conflict", "blocks": []},
+    ]
+

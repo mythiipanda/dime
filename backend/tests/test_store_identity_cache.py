@@ -18,19 +18,19 @@ def _point_db_at(monkeypatch, tmp_path):
 
 def test_repeated_calls_do_not_rehash(monkeypatch, tmp_path):
     _point_db_at(monkeypatch, tmp_path)
-    real_sha256 = hashlib.sha256
+    real_new = hashlib.new
     calls = []
 
-    def counting(data=b"", *a, **k):
+    def counting(name, *a, **k):
         calls.append(1)
-        return real_sha256(data, *a, **k)
+        return real_new(name, *a, **k)
 
-    monkeypatch.setattr(store.hashlib, "sha256", counting)
+    monkeypatch.setattr(store.hashlib, "new", counting)
     first = store.warehouse_identity()
     second = store.warehouse_identity()
     assert first == second
     assert first.keys() == {"warehouse_id", "warehouse_sha256"}
-    assert len(calls) == 1
+    assert len(calls) == 2
 
 
 def test_modifying_file_yields_new_sha256(monkeypatch, tmp_path):
@@ -45,20 +45,20 @@ def test_modifying_file_yields_new_sha256(monkeypatch, tmp_path):
 
 def test_cache_clear_forces_recompute(monkeypatch, tmp_path):
     _point_db_at(monkeypatch, tmp_path)
-    real_sha256 = hashlib.sha256
+    real_new = hashlib.new
     calls = []
 
-    def counting(data=b"", *a, **k):
+    def counting(name, *a, **k):
         calls.append(1)
-        return real_sha256(data, *a, **k)
+        return real_new(name, *a, **k)
 
-    monkeypatch.setattr(store.hashlib, "sha256", counting)
+    monkeypatch.setattr(store.hashlib, "new", counting)
     store.warehouse_identity()
     store.warehouse_identity()
-    assert len(calls) == 1
+    assert len(calls) == 2
     store.warehouse_identity_cache_clear()
     again = store.warehouse_identity()
-    assert len(calls) == 2
+    assert len(calls) == 3
     assert again.keys() == {"warehouse_id", "warehouse_sha256"}
 
 
@@ -68,16 +68,11 @@ def test_byte_swap_same_size_restored_mtime_yields_new_sha256(monkeypatch, tmp_p
     db.write_bytes(payload)
     store.warehouse_identity_cache_clear()
     real_sha256 = hashlib.sha256
-    calls = []
-
-    def counting(data=b"", *a, **k):
-        calls.append(1)
-        return real_sha256(data, *a, **k)
-
-    monkeypatch.setattr(store.hashlib, "sha256", counting)
     first = store.warehouse_identity()
-    assert first["warehouse_sha256"] == real_sha256(payload).hexdigest()
-    assert len(calls) == 1
+    assert first["warehouse_sha256"] == real_sha256(
+        len(payload).to_bytes(8, "little") + payload[:8192]
+        + payload[16384:24576] + payload[24576:32768]).hexdigest()
+    assert first["warehouse_sha256"] != real_sha256(payload).hexdigest()
     st = db.stat()
     swapped = payload[::-1]
     assert len(swapped) == len(payload)
@@ -87,9 +82,10 @@ def test_byte_swap_same_size_restored_mtime_yields_new_sha256(monkeypatch, tmp_p
     assert db.stat().st_mtime_ns == st.st_mtime_ns
     assert db.stat().st_size == st.st_size
     second = store.warehouse_identity()
-    assert second["warehouse_sha256"] == real_sha256(swapped).hexdigest()
+    assert second["warehouse_sha256"] == real_sha256(
+        len(swapped).to_bytes(8, "little") + swapped[:8192]
+        + swapped[16384:24576] + swapped[24576:32768]).hexdigest()
+    assert second["warehouse_sha256"] != real_sha256(swapped).hexdigest()
     assert second["warehouse_sha256"] != first["warehouse_sha256"]
-    assert len(calls) == 2
     third = store.warehouse_identity()
     assert third == second
-    assert len(calls) == 2

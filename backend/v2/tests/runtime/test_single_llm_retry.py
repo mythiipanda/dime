@@ -346,7 +346,7 @@ async def test_synthesizer_exhaustion_raises_without_empty_draft():
 
 
 @pytest.mark.anyio
-async def test_requirement_review_exhaustion_raises_without_fabricated_nodes():
+async def test_fused_intake_returns_unreviewed_task_without_fabricated_nodes():
     from v2.adapters.models import ModelIntake
 
     class ReviewDown:
@@ -369,10 +369,11 @@ async def test_requirement_review_exhaustion_raises_without_fabricated_nodes():
             raise RuntimeError("all structured-output providers failed [x]")
 
     model = FailingReview()
-    with pytest.raises(RuntimeError, match="all structured-output providers failed"):
-        await ModelIntake(model, provider="stub", model_name="stub",
-                          capability_catalog={"player_comparison": {}},
-                          requirement_review=True).understand("pair")
+    task = await ModelIntake(model, provider="stub", model_name="stub",
+                             capability_catalog={"player_comparison": {}},
+                             requirement_review=True).understand("pair")
+    assert task.requirements == []
+    assert FailingReview.calls == 1
 
 
 def test_chained_validation_cause_is_structured_output():

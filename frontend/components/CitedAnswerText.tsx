@@ -60,6 +60,44 @@ export function CiteTable({ source }: { source: EvidenceSource }) {
   );
 }
 
+export function EvidenceLedger({
+  sources,
+  openIndex,
+}: {
+  sources: EvidenceSource[];
+  openIndex: number | null;
+}) {
+  if (!sources.length) return null;
+  return (
+    <div style={{ marginTop: 8 }}>
+      {sources.map((source) => {
+        const open = openIndex === source.index;
+        const line = [source.subject, source.stat, source.value, source.origin]
+          .filter(Boolean)
+          .join(" · ");
+        return (
+          <div key={source.key} id={`cite-${source.index}`}>
+            <div
+              style={{
+                fontSize: 12,
+                lineHeight: 1.5,
+                padding: "3px 8px",
+                borderRadius: 6,
+                color: open ? "var(--color-ink-black)" : "var(--color-ash-gray)",
+                background: open ? "var(--color-bg-selected)" : "transparent",
+                fontVariantNumeric: "tabular-nums",
+              }}
+            >
+              {line || "Dime data"}
+            </div>
+            {open ? <CiteTable source={source} /> : null}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 export function UnverifiedNote({ ai }: { ai: AiMessage }) {
   const note = unverifiedSummary(ai);
   if (!note) return null;
@@ -70,13 +108,19 @@ export function UnverifiedNote({ ai }: { ai: AiMessage }) {
   );
 }
 
-function CiteAnchor(props: { children?: ReactNode; onToggle: (index: number) => void; open: boolean; index: number }) {
+function CiteAnchor(props: {
+  children?: ReactNode;
+  onToggle: (index: number) => void;
+  open: boolean;
+  index: number;
+  label: string;
+}) {
   return (
     <button
       type="button"
       className={"cite-marker" + (props.open ? " is-open" : "")}
       aria-expanded={props.open}
-      aria-label="Show source data"
+      aria-label={props.label}
       onClick={() => props.onToggle(props.index)}
     >
       {props.children}
@@ -84,11 +128,23 @@ function CiteAnchor(props: { children?: ReactNode; onToggle: (index: number) => 
   );
 }
 
+function anchorLabel(source: EvidenceSource): string {
+  const detail = [source.subject, source.stat, source.value, source.origin]
+    .filter(Boolean)
+    .join(", ");
+  return detail ? `Show source: ${detail}` : "Show source data";
+}
+
 export default function CitedAnswerText({ text, ai }: { text: string; ai: AiMessage }) {
   const [openCite, setOpenCite] = useState<number | null>(null);
   const sources = evidenceSources(ai);
   const marked = withCitationMarkers(text, sources);
-  const openSource = openCite === null ? undefined : sources[openCite];
+  const toggle = (index: number) => {
+    setOpenCite((cur) => (cur === index ? null : index));
+    setTimeout(() => {
+      document.getElementById(`cite-${index}`)?.scrollIntoView({ block: "nearest" });
+    }, 0);
+  };
   return (
     <div>
       <AnswerText
@@ -103,7 +159,8 @@ export default function CitedAnswerText({ text, ai }: { text: string; ai: AiMess
                 <CiteAnchor
                   index={index}
                   open={openCite === index}
-                  onToggle={(i) => setOpenCite((cur) => (cur === i ? null : i))}
+                  onToggle={toggle}
+                  label={anchorLabel(sources[index])}
                 >
                   {children}
                 </CiteAnchor>
@@ -113,7 +170,7 @@ export default function CitedAnswerText({ text, ai }: { text: string; ai: AiMess
           },
         }}
       />
-      {openSource ? <CiteTable source={openSource} /> : null}
+      <EvidenceLedger sources={sources} openIndex={openCite} />
       <UnverifiedNote ai={ai} />
     </div>
   );

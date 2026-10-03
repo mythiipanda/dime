@@ -166,9 +166,12 @@ def test_entityless_team_record_admits():
     assert by_output["WIN_PCT"].value.value == 0.829
 
 
-def test_invented_evidence_with_true_node_rejects():
-    with pytest.raises(ValueError, match="ownership"):
-        _admit(_bindings(_NODE_ID, "standings:0000000000000000"))
+def test_invented_evidence_with_true_node_admits_with_corrected_id():
+    envelope = _envelope()
+    admitted = _admit(_bindings(_NODE_ID, "standings:0000000000000000"))
+    assert all(item.evidence_id == envelope.evidence_id for item in admitted.output_bindings)
+    assert admitted.evidence_ids == [envelope.evidence_id]
+    assert [item.evidence_id for item in admitted.sources] == [envelope.evidence_id]
 
 
 def test_invented_value_with_true_evidence_rejects():

@@ -325,16 +325,21 @@ async def test_followup_intake_resolves_context_reference_before_user_blocker():
                 content="Oklahoma City led the league behind Shai Gilgeous-Alexander."),
         ))
 
-    assert task.open_questions == []
+    assert task.open_questions == ["Who does he refer to?"]
     assert [entity.display_name for entity in task.entities] == [
-        "Oklahoma City Thunder", "Shai Gilgeous-Alexander",
+        "Oklahoma City Thunder",
     ]
-    assert len(stub.calls) == 2
-    feedback = stub.calls[1]["payload"]["resolution_feedback"]
-    assert feedback["unresolved_questions"] == ["Who does he refer to?"]
-    assert stub.calls[1]["payload"]["prior_intake"]["open_questions"] == [
-        "Who does he refer to?",
-    ]
+    assert len(stub.calls) == 1
+    assert stub.calls[0]["payload"]["reference_resolution"] == {
+        "instruction": (
+            "Resolve references and omitted subjects from the "
+            "bounded conversation context before leaving a user "
+            "question open. Preserve an open question only when "
+            "the context supports multiple materially different "
+            "referents or supplies none. Return a complete "
+            "replacement TaskSpec."
+        ),
+    }
 
 
 @pytest.mark.anyio
@@ -977,18 +982,16 @@ async def test_requirement_review_repairs_omitted_compound_branches():
         "goal": "rank last season offense and defense", "mode": "deep_dive",
         "deliverable": "rankings", "season": {
             "value": "2025-26", "source": "user", "confidence": 1,
-        }, "subquestions": ["playoff results"], "required_evidence": ["playoffs"],
-    }, {
-        "missing_subquestions": [
-            "rank regular-season teams", "rank qualified players",
-            "rank playoff teams by rating",
-        ],
+        }, "subquestions": [
+            "playoff results", "rank regular-season teams",
+            "rank qualified players", "rank playoff teams by rating",
+        ], "required_evidence": ["playoffs"],
         "requirements": [
             {"id": "regular_team_ratings", "description": "rank regular-season teams", "capability_options": ["team_ratings"]},
             {"id": "player_ratings", "description": "rank qualified players", "capability_options": ["player_ratings"]},
             {"id": "playoff_team_ratings", "description": "rank playoff teams", "capability_options": ["playoff_team_ratings"]},
         ],
-        "missing_skills": ["league-ratings"],
+        "skills": ["league-ratings"],
     }])
     task = await ModelIntake(
         stub, provider="stub", model_name="stub-model",
@@ -1005,7 +1008,8 @@ async def test_requirement_review_repairs_omitted_compound_branches():
         "rank playoff teams by rating",
     ]
     assert task.skills == ["league-ratings"]
-    assert stub.calls[1]["envelope"].route == "requirement_review"
+    assert len(stub.calls) == 1
+    assert all(call["envelope"].route == "intake" for call in stub.calls)
 
 
 @pytest.mark.anyio
@@ -1048,17 +1052,16 @@ async def test_matchup_winner_requirement_selects_prediction_capability():
             {"id": "1610612738", "type": "team", "display_name": "Boston Celtics"},
             {"id": "1610612752", "type": "team", "display_name": "New York Knicks"},
         ], "required_evidence": [],
-    }, {
         "requirements": [{
             "id": "winner", "description": "predict the matchup winner",
             "capability_options": ["game_prediction"],
         }],
-        "missing_subquestions": [], "missing_skills": [],
     }])
     task = await ModelIntake(stub, provider="stub", model_name="stub",
         capability_catalog={"game_prediction": {}}, requirement_review=True
     ).understand("Who wins Celtics vs Knicks?")
     assert task.requirements[0].capability_options == ["game_prediction"]
+    assert len(stub.calls) == 1
 
 
 @pytest.mark.anyio
@@ -1097,13 +1100,10 @@ async def test_external_discovery_requirement_accepts_fetched_evidence():
         {
             "goal": "check current status", "mode": "quick",
             "deliverable": "status", "required_evidence": ["web_search"],
-        },
-        {
             "requirements": [{
                 "id": "current_status", "description": "current status",
                 "capability_options": ["web_search"],
             }],
-            "missing_subquestions": [], "missing_skills": [],
         },
     ])
     task = await ModelIntake(
@@ -1112,6 +1112,7 @@ async def test_external_discovery_requirement_accepts_fetched_evidence():
         requirement_review=True,
     ).understand("What is the current status?")
     assert task.requirements[0].capability_options == ["web_search"]
+    assert len(stub.calls) == 1
 
 
 @pytest.mark.anyio
@@ -1644,8 +1645,6 @@ async def test_intake_season_normalization_propagates_to_requirement_arguments(
             "goal": "current leaders", "mode": "quick", "deliverable": "answer",
             "season": {"value": "2026-27", "source": "default", "confidence": 0.9},
             "required_evidence": ["game_prediction"],
-        },
-        {
             "requirements": [{
                 "id": "prediction", "description": "current prediction",
                 "capability_options": ["game_prediction"],
@@ -1739,7 +1738,7 @@ async def test_planner_fails_closed_when_replan_still_misses_required_argument()
     assert len(stub.calls) == 2
 
 @pytest.mark.anyio
-async def test_requirement_review_exhaustion_raises_without_retry() -> None:
+async def test_fused_intake_survives_review_outage_without_retry() -> None:
     class FlakyReview:
         def __init__(self):
             self.calls = 0
@@ -1750,20 +1749,19 @@ async def test_requirement_review_exhaustion_raises_without_retry() -> None:
             raise RuntimeError("all structured-output providers failed [inception:ModelHTTPError:provider_error]")
 
     model = FlakyReview()
-    with pytest.raises(RuntimeError, match="all structured-output providers failed"):
-        await ModelIntake(
-            model, provider="stub", model_name="stub",
-            capability_catalog={}, requirement_review=True,
-        ).understand("leaders")
+    task = await ModelIntake(
+        model, provider="stub", model_name="stub",
+        capability_catalog={}, requirement_review=True,
+    ).understand("leaders")
 
-    assert model.calls == 2
+    assert task.requirements == []
+    assert model.calls == 1
 @pytest.mark.anyio
 async def test_requirement_review_closes_narrow_option_over_broader_capability():
     stub = StubModel([{
         "goal": "player line", "mode": "quick", "deliverable": "answer",
         "entities": [{"id": "luka", "type": "player", "display_name": "Luka"}],
         "required_evidence": ["player_report", "shooting_efficiency"],
-    }, {
         "requirements": [{
             "id": "shooting", "description": "shooting splits",
             "capability_options": ["shooting_efficiency"],
@@ -1775,13 +1773,13 @@ async def test_requirement_review_closes_narrow_option_over_broader_capability()
         capability_catalog={"player_report": {}, "shooting_efficiency": {}},
     ).understand("Luka's 2022-23 line")
     assert task.requirements[0].capability_options == ["shooting_efficiency"]
+    assert len(stub.calls) == 1
 
 @pytest.mark.anyio
 async def test_requirement_metric_and_output_ids_survive_typed_intake():
     stub = StubModel([{
         "goal": "best defense", "mode": "quick", "deliverable": "team",
         "required_evidence": ["team_ratings"],
-    }, {
         "requirements": [{
             "id": "defense", "description": "lowest defensive rating",
             "capability_options": ["team_ratings"],
@@ -1794,8 +1792,8 @@ async def test_requirement_metric_and_output_ids_survive_typed_intake():
         stub, provider="stub", model_name="stub", requirement_review=True,
         capability_catalog={"team_ratings": {}},
     ).understand("Which team had the lowest defensive rating in 2025-26?")
-    wire = stub.calls[1]["schema"]
-    assert wire is RequirementReviewWire
+    wire = stub.calls[0]["schema"]
+    assert wire is TaskSpec
     requirement = next(item for item in task.requirements if item.id == "defense")
     assert requirement.metric_ids == ["DEF_RATING"]
     assert requirement.requested_outputs == ["DEF_RATING", "TEAM_NAME"]
@@ -2315,7 +2313,7 @@ async def test_exhausted_intake_ledger_keeps_complete_attempt_diagnostics():
     assert len(ledger.entries)==2
 
 @pytest.mark.anyio
-async def test_requirement_review_exhaustion_raises_without_fabricated_nodes():
+async def test_fused_intake_returns_unreviewed_task_without_fabricated_nodes():
     class IntakeThenDown:
         calls=0
         async def generate(self,**call):
@@ -2329,10 +2327,10 @@ async def test_requirement_review_exhaustion_raises_without_fabricated_nodes():
                     required_evidence=["player_comparison"])
             raise RuntimeError("all structured-output providers failed [x]")
     model=IntakeThenDown()
-    with pytest.raises(RuntimeError,match="all structured-output providers failed"):
-        await ModelIntake(model,provider="stub",model_name="stub",
-            capability_catalog={"player_comparison":{}},requirement_review=True).understand("pair")
-    assert model.calls==2
+    task = await ModelIntake(model,provider="stub",model_name="stub",
+        capability_catalog={"player_comparison":{}},requirement_review=True).understand("pair")
+    assert task.requirements == []
+    assert model.calls==1
 
 
 def test_route_policy_table_bounds_model_owned_routes():
@@ -2373,10 +2371,11 @@ async def test_run_model_deadline_is_shared_across_sequential_routes(monkeypatch
 @pytest.mark.anyio
 async def test_review_combined_home_away_requirement_expands_before_planning():
     stub=StubModel([{"goal":"splits","mode":"quick","deliverable":"home and away averages",
-        "entities":[{"id":"curry","type":"player","display_name":"Stephen Curry"}]},
-        {"requirements":[{"id":"combined","description":"combined splits","capability_options":["game_logs"],"capability_arguments":{"player":"Stephen Curry","season":"2025-26","home_away":None}}]}])
+        "entities":[{"id":"curry","type":"player","display_name":"Stephen Curry"}],
+        "requirements":[{"id":"combined","description":"combined splits","capability_options":["game_logs"],"capability_arguments":{"player":"Stephen Curry","season":"2025-26","home_away":None}}]}])
     task=await ModelIntake(stub,provider="stub",model_name="stub",capability_catalog={"game_logs":{}},requirement_review=True).understand("Compare home and away")
     assert [(r.id,r.capability_arguments["home_away"]) for r in task.requirements]==[("combined_home","home"),("combined_away","away")]
+    assert len(stub.calls)==1
 
 
 def test_verifier_prompt_closes_completeness_over_requested_metrics_only():
@@ -3719,29 +3718,23 @@ async def test_planner_wire_omits_empty_dependent_entity_arguments():
 
 
 @pytest.mark.anyio
-async def test_requirement_review_wire_omits_empty_dependent_entity_arguments():
+async def test_intake_wire_omits_empty_dependent_entity_arguments():
     catalog = _real_catalog()
     stub = StubModel([
         {"goal": "rank teams", "mode": "deep_dive", "deliverable": "rankings",
          "required_evidence": ["team_ratings"]},
-        {"requirements": [{"id": "r1", "description": "rank teams",
-                           "capability_options": ["team_ratings"],
-                           "capability_argument_sets": [{
-                               "capability_id": "team_ratings",
-                               "arguments": {"requested_metric": "NET_RATING",
-                                             "ranking_direction": "desc"}}]}]},
     ])
     await ModelIntake(stub, provider="stub", model_name="stub",
                       capability_catalog=catalog, requirement_review=True
                       ).understand("Rank teams by net rating")
-    review_wire = [
+    intake_wire = [
         call["payload"]["capability_catalog"]
         for call in stub.calls
-        if call["envelope"].route == "requirement_review"
+        if call["envelope"].route == "intake"
     ]
 
-    assert len(review_wire) == 1
-    assert _dependent_entries(review_wire[0]) == {
+    assert len(intake_wire) == 1
+    assert _dependent_entries(intake_wire[0]) == {
         "injury_impact": {"team": "team"},
         "player_report": {"player": "player"},
         "player_evaluation": {"player": "player"},
@@ -3800,37 +3793,6 @@ async def test_server_validation_still_rejects_provider_authored_dependent_argum
     assert planner._wire_catalog["player_report"]["dependent_entity_arguments"] == {
         "player": "player"}
     assert planner._catalog["player_report"]["dependent_entity_arguments"] == {
-        "player": "player"}
-
-
-@pytest.mark.anyio
-async def test_server_validation_still_rejects_dependent_argument_in_requirement_review():
-    catalog = {
-        "player_report": {
-            "description": "report",
-            "arguments": {"type": "object", "properties": {
-                "player": {"type": "string"}, "season": {"type": "string"}},
-                "additionalProperties": False},
-            "dependent_entity_arguments": {"player": "player"},
-        },
-    }
-    stub = StubModel([
-        {"goal": "report", "mode": "quick", "deliverable": "text",
-         "required_evidence": ["player_report"]},
-        {"requirements": [{"id": "r1", "description": "report",
-                           "capability_options": ["player_report"],
-                           "capability_argument_sets": [{
-                               "capability_id": "player_report",
-                               "arguments": {"player": "Jalen Brunson"}}]}]},
-    ])
-    stage = ModelIntake(stub, provider="stub", model_name="stub",
-                        capability_catalog=catalog, requirement_review=True)
-
-    with pytest.raises(ValueError, match="dependent injected arguments"):
-        await stage.understand("Report on Brunson")
-    assert stage._wire_catalog["player_report"]["dependent_entity_arguments"] == {
-        "player": "player"}
-    assert stage._catalog["player_report"]["dependent_entity_arguments"] == {
         "player": "player"}
 
 

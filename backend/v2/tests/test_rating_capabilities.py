@@ -101,3 +101,12 @@ def test_get_ratings_formats_percentages_from_metric_source():
     assert pct["meta"]["deterministic_answer"].endswith("0.612.")
     assert rating["meta"]["deterministic_answer"].endswith("118.246.")
     assert "true shooting percentage" in pct["meta"]["deterministic_answer"]
+
+def test_team_ratings_warehouse_rows_declare_official_method():
+    from shared.tools.league import get_ratings
+    out = get_ratings.invoke({"season": "2025-26"})
+    assert out["ok"] is True and out["rows"]
+    assert out["meta"]["method"] == "official"
+    assert out["meta"]["source"] == "fixture"
+    assert all({"OFF_RATING", "DEF_RATING", "NET_RATING"} <= row.keys()
+               for row in out["rows"])

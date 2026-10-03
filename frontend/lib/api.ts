@@ -83,8 +83,24 @@ export interface MoversRows {
   new_entries: NewEntry[];
 }
 
+const ENVELOPE_TTL_MS = 60_000;
+const envelopeCache = new Map<string, { at: number; data: unknown }>();
+
+function bustEnvelopeCache(fragment: string) {
+  for (const key of [...envelopeCache.keys()]) {
+    if (key.includes(fragment)) envelopeCache.delete(key);
+  }
+}
+
+export function clearEnvelopeCache() {
+  envelopeCache.clear();
+}
+
 async function getEnvelope<T>(path: string): Promise<T> {
-  const res = await fetch(`${BACKEND}${path}`);
+  const url = `${BACKEND}${path}`;
+  const hit = envelopeCache.get(url);
+  if (hit && Date.now() - hit.at < ENVELOPE_TTL_MS) return hit.data as T;
+  const res = await fetch(url);
   if (!res.ok) throw new Error(`request failed: ${res.status}`);
   const data = (await res.json()) as {
     ok?: boolean;
@@ -92,7 +108,9 @@ async function getEnvelope<T>(path: string): Promise<T> {
     error?: string;
   };
   if (data && data.ok === false) throw new Error(data.error || "request failed");
-  return (data.rows ?? []) as T;
+  const rows = (data.rows ?? []) as T;
+  envelopeCache.set(url, { at: Date.now(), data: rows });
+  return rows;
 }
 
 export function getToday(season = SEASON): Promise<TodayRows> {
@@ -124,6 +142,7 @@ export async function addWatchlist(
     error?: string;
   };
   if (data && data.ok === false) throw new Error(data.error || "add failed");
+  bustEnvelopeCache("/watchlist");
   return Boolean(data.rows?.added);
 }
 
@@ -142,6 +161,7 @@ export async function removeWatchlist(
     error?: string;
   };
   if (data && data.ok === false) throw new Error(data.error || "remove failed");
+  bustEnvelopeCache("/watchlist");
   return Boolean(data.rows?.removed);
 }
 
@@ -213,6 +233,7 @@ export async function postChatStream(
   handlers: StreamHandlers,
   signal?: AbortSignal,
   thread?: string | null,
+  options?: { diagnostics?: boolean },
 ): Promise<void> {
   const STALL_MS = 90_000;
   const PROGRESS_MS = 180_000;
@@ -259,7 +280,13 @@ export async function postChatStream(
     res = await fetch(`${BACKEND}${endpoint}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ q, model, thread, client: getClientId() }),
+      body: JSON.stringify({
+        q,
+        model,
+        thread,
+        client: getClientId(),
+        ...(options?.diagnostics ? { diagnostics: true } : null),
+      }),
       signal: ctrl.signal,
     });
   } catch (e) {

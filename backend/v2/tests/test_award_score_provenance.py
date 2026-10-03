@@ -21,9 +21,9 @@ def test_existing_award_output_declares_score_provenance(monkeypatch):
 
 
 def test_rookie_leader_surface_declares_source_method_and_stat_unit(monkeypatch):
-    import sys
     from unittest.mock import MagicMock
     from shared.tools import league
+    from shared import store
 
     connection = MagicMock()
     connection.execute.side_effect = [
@@ -36,8 +36,7 @@ def test_rookie_leader_surface_declares_source_method_and_stat_unit(monkeypatch)
         MagicMock(fetchall=lambda: []),
         MagicMock(fetchall=lambda: []),
     ]
-    fake_duckdb = MagicMock(connect=lambda *args, **kwargs: connection)
-    monkeypatch.setitem(sys.modules, "duckdb", fake_duckdb)
+    monkeypatch.setattr(store, "connect", lambda *args, **kwargs: connection)
 
     result = league.get_rookie_leaders.invoke({
         "stat": "fg3_pct", "season": "2025-26",

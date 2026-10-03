@@ -744,8 +744,12 @@ async def test_recorded_model_ledger_accepts_carried_from_intake_end_to_end():
     class FakeModel:
         def __init__(self, result):
             self._result = result
+            self.last_decode_extra = None
 
         async def generate(self, **call):
+            decode = call.get("decode")
+            if decode is not None:
+                self.last_decode_extra = decode(self._result)
             return self._result
 
     ledger = RunLedger("run")
@@ -762,3 +766,77 @@ async def test_recorded_model_ledger_accepts_carried_from_intake_end_to_end():
     last = ledger.entries[-1]
     assert last.kind == LedgerKind.ASSISTANT_ATTEMPT
     assert last.data["carried_from_intake"] == [row]
+
+
+@pytest.mark.anyio
+async def test_recorded_model_attempt_carries_wall_clock_duration():
+    import anyio
+
+    from v2.adapters.models import RecordedStructuredModel
+    from v2.contracts import RequirementReview
+
+    class SlowModel:
+        async def generate(self, **call):
+            await anyio.sleep(0.05)
+            return RequirementReview()
+
+    ledger = RunLedger("run")
+    model = RecordedStructuredModel(SlowModel(), ledger, turn_id="t")
+    envelope = RequestEnvelope.freeze(
+        provider="p", model="m", route="requirement_review", prompt="p",
+        context={}, tool_schemas={}, planner_version="v2")
+    await model.generate(
+        schema=RequirementReview, prompt="p", payload={}, envelope=envelope)
+    last = ledger.entries[-1]
+    assert last.kind == LedgerKind.ASSISTANT_ATTEMPT
+    assert isinstance(last.data["duration_ms"], int)
+    assert not isinstance(last.data["duration_ms"], bool)
+    assert last.data["duration_ms"] >= 0
+
+
+@pytest.mark.anyio
+async def test_recorded_model_failure_carries_wall_clock_duration():
+    from v2.adapters.models import RecordedStructuredModel
+    from v2.contracts import RequirementReview
+
+    class FailingModel:
+        async def generate(self, **call):
+            raise RuntimeError("boom")
+
+    ledger = RunLedger("run")
+    model = RecordedStructuredModel(FailingModel(), ledger, turn_id="t")
+    envelope = RequestEnvelope.freeze(
+        provider="p", model="m", route="requirement_review", prompt="p",
+        context={}, tool_schemas={}, planner_version="v2")
+    with pytest.raises(RuntimeError, match="boom"):
+        await model.generate(
+            schema=RequirementReview, prompt="p", payload={}, envelope=envelope)
+    last = ledger.entries[-1]
+    assert last.kind == LedgerKind.ASSISTANT_ATTEMPT
+    assert last.data["status"] == "failed"
+    assert isinstance(last.data["duration_ms"], int)
+    assert last.data["duration_ms"] >= 0
+
+
+@pytest.mark.parametrize("status,extra", [
+    ("accepted", {"output": {}, "provider": "p", "model": "m",
+                  "used_fallback": False}),
+    ("failed", {"error": "bad"}),
+])
+def test_ledger_accepts_wall_clock_duration_on_assistant_attempt(
+        status, extra) -> None:
+    ledger = RunLedger("run")
+    _append_model_request(ledger)
+    ledger.append(LedgerKind.ASSISTANT_ATTEMPT, turn_id="t", call_id="c",
+                  data={"status": status, "duration_ms": 7, **extra})
+    assert ledger.entries[-1].data["duration_ms"] == 7
+
+
+@pytest.mark.parametrize("duration_ms", [-1, True, "7", 1.5, None])
+def test_ledger_rejects_malformed_wall_clock_duration(duration_ms) -> None:
+    ledger = RunLedger("run")
+    _append_model_request(ledger)
+    with pytest.raises(ValueError, match="assistant attempt"):
+        ledger.append(LedgerKind.ASSISTANT_ATTEMPT, turn_id="t", call_id="c",
+                      data={"status": "failed", "error": "bad",
+                            "duration_ms": duration_ms})

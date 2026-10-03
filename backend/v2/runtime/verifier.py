@@ -17,6 +17,7 @@ from v2.contracts import (
     TaskSpec,
     VerificationReport,
     VerificationStatus,
+    format_window,
 )
 from v2.domain.calculations import Calculation, validate_calculation
 from v2.domain.evidence import EvidenceIndex, decimal_value, iter_values
@@ -305,6 +306,21 @@ def _scope_reasons(task: TaskSpec,
                 reasons.append(
                     f"evidence {envelope.evidence_id} is after task as-of "
                     f"{task.as_of.isoformat()}"
+                )
+    if task.window_start is not None or task.window_end is not None:
+        asked = (task.window_start, task.window_end)
+        for envelope in envelopes:
+            served = (envelope.window_start, envelope.window_end)
+            if served == (None, None):
+                reasons.append(
+                    f"evidence {envelope.evidence_id} covers the full season "
+                    f"but the task asks for {format_window(*asked)}"
+                )
+            elif served != asked:
+                reasons.append(
+                    f"evidence {envelope.evidence_id} covers "
+                    f"{format_window(*served)} but the task asks for "
+                    f"{format_window(*asked)}"
                 )
     return reasons
 

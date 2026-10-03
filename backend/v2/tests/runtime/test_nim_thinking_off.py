@@ -15,7 +15,6 @@ from shared.config import settings
 from shared.providers import NVIDIA_NIM_MODELS
 
 from v2.adapters.models import (
-    NIM_THINKING_OFF_EXTRA_BODY,
     ProviderStructuredModel,
     ReasoningContentFallbackClient,
     RecordedStructuredModel,
@@ -113,78 +112,43 @@ def _clear_provider_keys(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 @pytest.mark.anyio
-async def test_thinking_off_body_sent_on_nim_request():
+@pytest.mark.parametrize("thinking_off,extra_body,expected_kwargs", [
+    (True, None, {"enable_thinking": False}),
+    (False, None, None),
+    (True, {"some_flag": True,
+            "chat_template_kwargs": {"enable_thinking": True, "other": 1}},
+     {"enable_thinking": False, "other": 1}),
+])
+async def test_thinking_off_wire_body(thinking_off, extra_body,
+                                      expected_kwargs):
     captured: list[dict[str, Any]] = []
-    client = _capturing_client(thinking_off=True, captured=captured)
-    resp = await client.chat.completions.create(
-        model="test-model/nim-flash",
-        messages=[{"role": "user", "content": "hi"}],
-        response_format={"type": "json_object"},
-    )
+    client = _capturing_client(thinking_off=thinking_off, captured=captured)
+    kwargs: dict[str, Any] = {
+        "model": "test-model/nim-flash",
+        "messages": [{"role": "user", "content": "hi"}],
+        "response_format": {"type": "json_object"},
+    }
+    if extra_body is not None:
+        kwargs["extra_body"] = extra_body
+    resp = await client.chat.completions.create(**kwargs)
     assert resp.choices[0].message.content == '{"answer":"hi"}'
     assert len(captured) == 1
-    assert captured[0]["chat_template_kwargs"] == {"enable_thinking": False}
+    if expected_kwargs is None:
+        assert "chat_template_kwargs" not in captured[0]
+    else:
+        assert captured[0]["chat_template_kwargs"] == expected_kwargs
+        if extra_body is not None:
+            assert captured[0]["some_flag"] is True
 
 
-@pytest.mark.anyio
-async def test_thinking_off_not_sent_by_default():
-    captured: list[dict[str, Any]] = []
-    client = _capturing_client(thinking_off=False, captured=captured)
-    await client.chat.completions.create(
-        model="test-model/nim-flash",
-        messages=[{"role": "user", "content": "hi"}],
-        response_format={"type": "json_object"},
-    )
-    assert "chat_template_kwargs" not in captured[0]
-
-
-@pytest.mark.anyio
-async def test_thinking_off_preserves_caller_extra_body():
-    captured: list[dict[str, Any]] = []
-    client = _capturing_client(thinking_off=True, captured=captured)
-    await client.chat.completions.create(
-        model="test-model/nim-flash",
-        messages=[{"role": "user", "content": "hi"}],
-        extra_body={
-            "some_flag": True,
-            "chat_template_kwargs": {"enable_thinking": True, "other": 1},
-        },
-    )
-    body = captured[0]
-    assert body["some_flag"] is True
-    assert body["chat_template_kwargs"] == {
-        "enable_thinking": False,
-        "other": 1,
-    }
-
-
-def test_wire_shape_constant_is_exact():
-    assert NIM_THINKING_OFF_EXTRA_BODY == {
-        "chat_template_kwargs": {"enable_thinking": False}
-    }
-
-
-@pytest.mark.parametrize("model", list(NVIDIA_NIM_MODELS))
-def test_nim_wiring_enables_thinking_off_for_every_nim_model(
+@pytest.mark.parametrize("model", [*list(NVIDIA_NIM_MODELS),
+                                   "not-on/the-allowlist"])
+def test_nim_wiring_enables_thinking_off(
     monkeypatch: pytest.MonkeyPatch, model: str
 ):
     _clear_provider_keys(monkeypatch)
     monkeypatch.setattr(settings, "nvidia_nim_api_key", "placeholder")
     structured = ProviderStructuredModel("nvidia", model)
-    models = structured._models()
-    nvidia_models = [(p, m) for p, m in models if p == "nvidia"]
-    assert len(nvidia_models) == 1
-    client = nvidia_models[0][1].client
-    assert isinstance(client, ReasoningContentFallbackClient)
-    assert client.thinking_off is True
-
-
-def test_nim_wiring_enables_thinking_off_for_unapproved_slug(
-    monkeypatch: pytest.MonkeyPatch,
-):
-    _clear_provider_keys(monkeypatch)
-    monkeypatch.setattr(settings, "nvidia_nim_api_key", "placeholder")
-    structured = ProviderStructuredModel("nvidia", "not-on/the-allowlist")
     models = structured._models()
     nvidia_models = [(p, m) for p, m in models if p == "nvidia"]
     assert len(nvidia_models) == 1
