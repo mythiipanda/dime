@@ -4,6 +4,7 @@ import {
   bindingDiagnostics,
   diffDiagnostics,
   diffMarker,
+  fastFailVerdict,
   isBindingDiagnostic,
   parseSseText,
 } from "./diagnostics";
@@ -88,6 +89,32 @@ test("identical runs diff clean", () => {
     assert.equal(diffMarker(row), "same");
     assert.equal(row.changed, false);
   }
+});
+
+const FAST_FAIL_FIXTURE = `event: work_log
+data: {"run_id":"run-b2cee69e8fb148f187ef19c1fe34038f","status":"partial"}
+
+event: final_answer
+data: {"text":"I could not verify a publishable answer from the available data. ","carry":{"run_id":"run-b2cee69e8fb148f187ef19c1fe34038f","verification":"partial","verified_claims":0,"structural_flags":[],"gaps":[{"kind":"execution_failure","blocks":[]}],"stage_latencies_ms":{"understand":306}}}
+
+event: graph_end
+data: {}
+`;
+
+test("fast-fail verdict fires on sub-second understand with execution failure", () => {
+  const verdict = fastFailVerdict(parseSseText(FAST_FAIL_FIXTURE));
+  assert.equal(verdict.fastFail, true);
+  assert.equal(verdict.understandMs, 306);
+  assert.deepEqual(verdict.gapKinds, ["execution_failure"]);
+});
+
+test("slow or clean runs are not fast-fails", () => {
+  assert.equal(fastFailVerdict(parseSseText(FIXTURE)).fastFail, false);
+  assert.equal(fastFailVerdict([]).fastFail, false);
+  assert.equal(
+    fastFailVerdict(parseSseText('event: final_answer\ndata: {"text":"ok"}\n\n')).fastFail,
+    false,
+  );
 });
 
 test("diagnostic guard rejects other payloads", () => {

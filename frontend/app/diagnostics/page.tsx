@@ -7,10 +7,32 @@ import {
   bindingDiagnostics,
   diffDiagnostics,
   diffMarker,
+  fastFailVerdict,
   parseSseText,
   type SseEvent,
 } from "../../lib/diagnostics";
 import { DiagnosticsTable } from "../../components/DiagnosticsTable";
+
+export function FastFailBanner({ events, label }: { events: SseEvent[]; label?: string }) {
+  const verdict = fastFailVerdict(events);
+  if (!verdict.fastFail) return null;
+  return (
+    <div
+      style={{
+        marginTop: 12,
+        border: "1px solid var(--color-stone-border)",
+        borderRadius: 10,
+        padding: "10px 14px",
+        background: "var(--color-pure-white)",
+        fontSize: 13,
+        color: "var(--color-ink-black)",
+      }}
+    >
+      Fast fail{label ? ` (${label})` : ""}: understand finished in {verdict.understandMs}
+      ms with {verdict.gapKinds.join(", ")}.
+    </div>
+  );
+}
 
 export function DiffTable({ leftText, rightText }: { leftText: string; rightText: string }) {
   const rows = diffDiagnostics(
@@ -184,6 +206,8 @@ export default function DiagnosticsPage() {
               aria-label="Run B SSE"
             />
           </div>
+          <FastFailBanner events={parseSseText(leftText)} label="run A" />
+          <FastFailBanner events={parseSseText(rightText)} label="run B" />
           <DiffTable leftText={leftText} rightText={rightText} />
         </>
       ) : (
@@ -193,6 +217,7 @@ export default function DiagnosticsPage() {
               {events.length} events · {diags.length} rejected bindings
             </div>
           )}
+          <FastFailBanner events={events} />
           <DiagnosticsTable rows={diags} />
         </>
       )}
