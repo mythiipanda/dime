@@ -68,12 +68,16 @@ def fetch(url, dest):
     try:
         req = urllib.request.Request(url,
                                      headers={"User-Agent": "dime-seed/1.0"})
-        with urllib.request.urlopen(req, timeout=120) as r, \
+        with urllib.request.urlopen(req, timeout=300) as r, \
                 open(dest, "wb") as f:
             f.write(r.read())
         return dest.stat().st_size > 0
     except Exception as exc:
         print(f"skip {url.split('/')[-1]}: {str(exc)[:80]}")
+        try:
+            dest.unlink()
+        except OSError:
+            pass
         return False
 
 
