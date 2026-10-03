@@ -974,3 +974,4 @@ class VerificationReport(BaseModel):
         if self.status == VerificationStatus.REPAIR and not findings:
             raise PydanticCustomError("verification_repair_without_findings", "repair status requires an actionable finding")
         return self
+
