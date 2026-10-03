@@ -272,7 +272,7 @@ class DimeOpenAIChatModel(OpenAIChatModel):
         from dataclasses import replace
         from v2.argument_schemas import normalize_provider_wire_schema
         if output_object.name not in {"RequirementReviewWire", "PlannerOutputWire"}:
-            return super()._map_json_schema(output_object)
+            return super()._map_json_schema(replace(output_object, json_schema=strip_array_length_bounds(output_object.json_schema)))
         candidate, _ = normalize_provider_wire_schema(output_object.json_schema)
         return super()._map_json_schema(replace(output_object, json_schema=strip_array_length_bounds(candidate)))
 
