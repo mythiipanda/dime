@@ -2,7 +2,12 @@ import { describe, it } from "node:test";
 import * as assert from "node:assert";
 import * as React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { DiagnosticsTable } from "./components/DiagnosticsTable";
+import {
+  DiagnosticsTable,
+  RevisionCard,
+  RunMetaHeader,
+} from "./components/DiagnosticsTable";
+import { DiffTable, FastFailBanner } from "./app/diagnostics/page";
 import { bindingDiagnostics, parseSseText } from "./lib/diagnostics";
 
 const FIXTURE = `event: binding_diagnostic
@@ -48,6 +53,101 @@ data: {"run_id":"run-x","claim_index":1,"requirement_kind":"evidence","requireme
     const html = renderToStaticMarkup(React.createElement(DiagnosticsTable, { rows }));
     assert.ok(!html.includes("undefined"));
     assert.ok(!html.includes("null"));
+  });
+
+  it("renders run diff with both rejection strings and markers", () => {
+    const runA = `event: binding_diagnostic
+data: {"run_id":"run-a","claim_index":0,"requirement_kind":"evidence","requirement_id":"celtics_ratings_2024_25","output_id":"NET_RATING","node_id":"node_ratings","evidence_id":"ev-1","selector":"rows[0].NET_RATING","row_selector":"rows[0]","subject_selector":"rows[0].TEAM_ID","subject_entity_type":"team","subject_entity_id":"BOS","declared_value":{"kind":"float","value":"9.4"},"declared_unit":{"kind":"declared","value":"points_per_100_possessions"},"reanchor_changed":false,"rejection":"binding evidence ownership is invalid"}
+`;
+    const runB = `event: binding_diagnostic
+data: {"run_id":"run-b","claim_index":2,"requirement_kind":"task","output_id":"NET_RATING","node_id":"team_ratings:x","evidence_id":"team_ratings:x","selector":"rows[0].NET_RATING","row_selector":"rows[0]","subject_selector":"rows[0].TEAM_ID","subject_entity_type":"team","subject_entity_id":"BOS","declared_value":{"kind":"float","value":"9.4"},"declared_unit":{"kind":"declared","value":"points per 100 possessions"},"reanchor_changed":false,"rejection":"binding unit does not match output authority"}
+
+event: binding_diagnostic
+data: {"run_id":"run-b","claim_index":1,"requirement_kind":"task","output_id":"DEF_RATING","node_id":"team_ratings:x","evidence_id":"team_ratings:x","selector":"rows[0].DEF_RATING","row_selector":"rows[0]","subject_selector":"rows[0].TEAM_ID","subject_entity_type":"team","subject_entity_id":"BOS","declared_value":{"kind":"float","value":"108.8"},"declared_unit":{"kind":"declared","value":"points per 100 possessions"},"reanchor_changed":false,"rejection":"binding unit does not match output authority"}
+`;
+    const html = renderToStaticMarkup(
+      React.createElement(DiffTable, { leftText: runA, rightText: runB }),
+    );
+    const netAt = html.indexOf("NET_RATING");
+    const defAt = html.indexOf("DEF_RATING");
+    assert.ok(netAt !== -1 && defAt !== -1 && netAt < defAt);
+    for (const token of [
+      "binding evidence ownership is invalid",
+      "binding unit does not match output authority",
+      "changed",
+      "only in run B",
+    ]) {
+      assert.ok(html.includes(token), "missing " + token);
+    }
+  });
+
+  it("banners the fast-fail verdict with exact gap string", () => {
+    const sse = `event: work_log
+data: {"run_id":"run-x","status":"partial"}
+
+event: final_answer
+data: {"text":"I could not verify a publishable answer from the available data. ","carry":{"run_id":"run-x","verification":"partial","verified_claims":0,"structural_flags":[],"gaps":[{"kind":"execution_failure","blocks":[]}],"stage_latencies_ms":{"understand":306}}}
+
+event: graph_end
+data: {}
+`;
+    const html = renderToStaticMarkup(
+      React.createElement(FastFailBanner, { events: parseSseText(sse) }),
+    );
+    assert.ok(html.includes("Fast fail"));
+    assert.ok(html.includes("306"));
+    assert.ok(html.includes("execution_failure"));
+  });
+
+  it("banner stays silent without a fast-fail", () => {
+    const html = renderToStaticMarkup(
+      React.createElement(FastFailBanner, { events: parseSseText(FIXTURE) }),
+    );
+    assert.equal(html, "");
+  });
+
+  it("renders revision hash plus runtime flag", () => {
+    const html = renderToStaticMarkup(
+      React.createElement(RevisionCard, {
+        info: { revision: "168e2f31abc123", runtime: "v2" },
+      }),
+    );
+    assert.ok(html.includes("168e2f31"));
+    assert.ok(!html.includes("168e2f31abc123"));
+    assert.ok(html.includes("v2"));
+  });
+
+  it("renders plain words when revision is missing", () => {
+    const html = renderToStaticMarkup(React.createElement(RevisionCard, { info: null }));
+    assert.ok(html.includes("revision unavailable"));
+  });
+
+  it("renders distinct run headers per side with metadata", () => {
+    const left = renderToStaticMarkup(
+      React.createElement(RunMetaHeader, {
+        text: FIXTURE,
+        revision: "168e2f31abc123",
+        runtime: "v2",
+      }),
+    );
+    const right = renderToStaticMarkup(
+      React.createElement(RunMetaHeader, {
+        text: FIXTURE,
+        revision: "bf0a5dcc999888",
+        runtime: "v2",
+      }),
+    );
+    assert.ok(left.includes("168e2f31"));
+    assert.ok(!left.includes("bf0a5dcc"));
+    assert.ok(right.includes("bf0a5dcc"));
+    assert.ok(left.includes("run-"));
+  });
+
+  it("renders no header without a revision", () => {
+    const html = renderToStaticMarkup(
+      React.createElement(RunMetaHeader, { text: FIXTURE, revision: "", runtime: "" }),
+    );
+    assert.equal(html, "");
   });
 
   it("renders nothing without rows", () => {

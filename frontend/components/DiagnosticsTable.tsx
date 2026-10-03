@@ -1,12 +1,66 @@
 "use client";
 
 import type { CSSProperties } from "react";
-import type { BindingDiagnostic } from "../lib/diagnostics";
+import {
+  parseSseText,
+  runIdOf,
+  shortRevision,
+  type BindingDiagnostic,
+} from "../lib/diagnostics";
 
 function declaredText(value: Record<string, unknown> | null): string {
   if (!value) return "";
   const v = value.value;
   return typeof v === "string" || typeof v === "number" ? String(v) : "";
+}
+
+export function RevisionCard({ info }: { info: { revision: string; runtime: string } | null }) {
+  return (
+    <div
+      style={{
+        border: "1px solid var(--color-stone-border)",
+        borderRadius: 10,
+        padding: "10px 14px",
+        background: "var(--color-pure-white)",
+        fontSize: 12,
+        color: "var(--color-warm-gray)",
+        marginBottom: 16,
+        fontVariantNumeric: "tabular-nums",
+      }}
+    >
+      {info ? (
+        <>
+          revision{" "}
+          <span style={{ fontWeight: 500, color: "var(--color-ink-black)" }}>
+            {shortRevision(info.revision)}
+          </span>{" "}
+          · {info.runtime}
+        </>
+      ) : (
+        "revision unavailable"
+      )}
+    </div>
+  );
+}
+
+export function RunMetaHeader({
+  text,
+  revision,
+  runtime,
+}: {
+  text: string;
+  revision: string;
+  runtime: string;
+}) {
+  if (!revision.trim()) return null;
+  const runId = text.trim() ? runIdOf(parseSseText(text)) : null;
+  return (
+    <div style={{ fontSize: 12, color: "var(--color-warm-gray)", marginBottom: 6 }}>
+      {runId ? `run ${runId.slice(0, 12)} · ` : ""}
+      {revision.trim().slice(0, 8)}
+      {runtime.trim() ? ` · ${runtime.trim()}` : ""}
+    </div>
+  );
 }
 
 export function DiagnosticsTable({ rows }: { rows: BindingDiagnostic[] }) {
