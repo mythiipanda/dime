@@ -2,6 +2,8 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   bindingDiagnostics,
+  diffDiagnostics,
+  diffMarker,
   isBindingDiagnostic,
   parseSseText,
 } from "./diagnostics";
@@ -42,6 +44,50 @@ test("junk frames are skipped without throwing", () => {
   assert.equal(events.length, 1);
   assert.equal(events[0].data, "not json");
   assert.equal(bindingDiagnostics(events).length, 0);
+});
+
+const RUN_A = `event: binding_diagnostic
+data: {"run_id":"run-12b45b4ccf1b4059a53cfb14f4262a33","claim_index":0,"requirement_kind":"evidence","requirement_id":"celtics_ratings_2024_25","output_id":"NET_RATING","node_id":"node_ratings","evidence_id":"team_ratings:846a59cd8b5b96a7","selector":"rows[0].NET_RATING","row_selector":"rows[0]","subject_selector":"rows[0].TEAM_ID","subject_entity_type":"team","subject_entity_id":"BOS","declared_value":{"kind":"float","value":"9.4"},"declared_unit":{"kind":"declared","value":"points_per_100_possessions"},"reanchor_changed":false,"rejection":"binding evidence ownership is invalid"}
+
+event: binding_diagnostic
+data: {"run_id":"run-12b45b4ccf1b4059a53cfb14f4262a33","claim_index":1,"requirement_kind":"evidence","requirement_id":"celtics_ratings_2024_25","output_id":"OFF_RATING","node_id":"node_ratings","evidence_id":"team_ratings:846a59cd8b5b96a7","selector":"rows[0].OFF_RATING","row_selector":"rows[0]","subject_selector":"rows[0].TEAM_ID","subject_entity_type":"team","subject_entity_id":"BOS","declared_value":{"kind":"float","value":"118.2"},"declared_unit":{"kind":"declared","value":"points_per_100_possessions"},"reanchor_changed":false,"rejection":"binding evidence ownership is invalid"}
+`;
+
+const RUN_B = `event: binding_diagnostic
+data: {"run_id":"run-5feb4808b6d34181a637e6790829c802","claim_index":0,"requirement_kind":"task","output_id":"OFF_RATING","node_id":"team_ratings:846a59cd8b5b96a7","evidence_id":"team_ratings:846a59cd8b5b96a7","selector":"rows[0].OFF_RATING","row_selector":"rows[0]","subject_selector":"rows[0].TEAM_ID","subject_entity_type":"team","subject_entity_id":"BOS","declared_value":{"kind":"float","value":"118.2"},"declared_unit":{"kind":"declared","value":"points per 100 possessions"},"reanchor_changed":false,"rejection":"binding unit does not match output authority"}
+
+event: binding_diagnostic
+data: {"run_id":"run-5feb4808b6d34181a637e6790829c802","claim_index":2,"requirement_kind":"task","output_id":"NET_RATING","node_id":"team_ratings:846a59cd8b5b96a7","evidence_id":"team_ratings:846a59cd8b5b96a7","selector":"rows[0].NET_RATING","row_selector":"rows[0]","subject_selector":"rows[0].TEAM_ID","subject_entity_type":"team","subject_entity_id":"BOS","declared_value":{"kind":"float","value":"9.4"},"declared_unit":{"kind":"declared","value":"points per 100 possessions"},"reanchor_changed":false,"rejection":"binding unit does not match output authority"}
+
+event: binding_diagnostic
+data: {"run_id":"run-5feb4808b6d34181a637e6790829c802","claim_index":1,"requirement_kind":"task","output_id":"DEF_RATING","node_id":"team_ratings:846a59cd8b5b96a7","evidence_id":"team_ratings:846a59cd8b5b96a7","selector":"rows[0].DEF_RATING","row_selector":"rows[0]","subject_selector":"rows[0].TEAM_ID","subject_entity_type":"team","subject_entity_id":"BOS","declared_value":{"kind":"float","value":"108.8"},"declared_unit":{"kind":"declared","value":"points per 100 possessions"},"reanchor_changed":false,"rejection":"binding unit does not match output authority"}
+`;
+
+test("run diff aligns by output and marks changed gates", () => {
+  const left = bindingDiagnostics(parseSseText(RUN_A));
+  const right = bindingDiagnostics(parseSseText(RUN_B));
+  const rows = diffDiagnostics(left, right);
+  assert.deepEqual(
+    rows.map((r) => r.output_id),
+    ["NET_RATING", "OFF_RATING", "DEF_RATING"],
+  );
+  const net = rows[0];
+  assert.equal(diffMarker(net), "changed");
+  assert.equal(net.left?.rejection, "binding evidence ownership is invalid");
+  assert.equal(net.right?.rejection, "binding unit does not match output authority");
+  assert.equal(diffMarker(rows[1]), "changed");
+  assert.equal(diffMarker(rows[2]), "only in run B");
+  assert.equal(rows[2].left, null);
+});
+
+test("identical runs diff clean", () => {
+  const left = bindingDiagnostics(parseSseText(RUN_A));
+  const rows = diffDiagnostics(left, left);
+  assert.ok(rows.length > 0);
+  for (const row of rows) {
+    assert.equal(diffMarker(row), "same");
+    assert.equal(row.changed, false);
+  }
 });
 
 test("diagnostic guard rejects other payloads", () => {

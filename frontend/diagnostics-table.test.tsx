@@ -3,6 +3,7 @@ import * as assert from "node:assert";
 import * as React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { DiagnosticsTable } from "./components/DiagnosticsTable";
+import { DiffTable } from "./app/diagnostics/page";
 import { bindingDiagnostics, parseSseText } from "./lib/diagnostics";
 
 const FIXTURE = `event: binding_diagnostic
@@ -48,6 +49,32 @@ data: {"run_id":"run-x","claim_index":1,"requirement_kind":"evidence","requireme
     const html = renderToStaticMarkup(React.createElement(DiagnosticsTable, { rows }));
     assert.ok(!html.includes("undefined"));
     assert.ok(!html.includes("null"));
+  });
+
+  it("renders run diff with both rejection strings and markers", () => {
+    const runA = `event: binding_diagnostic
+data: {"run_id":"run-a","claim_index":0,"requirement_kind":"evidence","requirement_id":"celtics_ratings_2024_25","output_id":"NET_RATING","node_id":"node_ratings","evidence_id":"ev-1","selector":"rows[0].NET_RATING","row_selector":"rows[0]","subject_selector":"rows[0].TEAM_ID","subject_entity_type":"team","subject_entity_id":"BOS","declared_value":{"kind":"float","value":"9.4"},"declared_unit":{"kind":"declared","value":"points_per_100_possessions"},"reanchor_changed":false,"rejection":"binding evidence ownership is invalid"}
+`;
+    const runB = `event: binding_diagnostic
+data: {"run_id":"run-b","claim_index":2,"requirement_kind":"task","output_id":"NET_RATING","node_id":"team_ratings:x","evidence_id":"team_ratings:x","selector":"rows[0].NET_RATING","row_selector":"rows[0]","subject_selector":"rows[0].TEAM_ID","subject_entity_type":"team","subject_entity_id":"BOS","declared_value":{"kind":"float","value":"9.4"},"declared_unit":{"kind":"declared","value":"points per 100 possessions"},"reanchor_changed":false,"rejection":"binding unit does not match output authority"}
+
+event: binding_diagnostic
+data: {"run_id":"run-b","claim_index":1,"requirement_kind":"task","output_id":"DEF_RATING","node_id":"team_ratings:x","evidence_id":"team_ratings:x","selector":"rows[0].DEF_RATING","row_selector":"rows[0]","subject_selector":"rows[0].TEAM_ID","subject_entity_type":"team","subject_entity_id":"BOS","declared_value":{"kind":"float","value":"108.8"},"declared_unit":{"kind":"declared","value":"points per 100 possessions"},"reanchor_changed":false,"rejection":"binding unit does not match output authority"}
+`;
+    const html = renderToStaticMarkup(
+      React.createElement(DiffTable, { leftText: runA, rightText: runB }),
+    );
+    const netAt = html.indexOf("NET_RATING");
+    const defAt = html.indexOf("DEF_RATING");
+    assert.ok(netAt !== -1 && defAt !== -1 && netAt < defAt);
+    for (const token of [
+      "binding evidence ownership is invalid",
+      "binding unit does not match output authority",
+      "changed",
+      "only in run B",
+    ]) {
+      assert.ok(html.includes(token), "missing " + token);
+    }
   });
 
   it("renders nothing without rows", () => {

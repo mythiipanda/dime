@@ -60,3 +60,53 @@ export function isBindingDiagnostic(data: unknown): data is BindingDiagnostic {
 export function bindingDiagnostics(events: SseEvent[]): BindingDiagnostic[] {
   return events.map((e) => e.data).filter(isBindingDiagnostic);
 }
+
+export interface DiffRow {
+  key: string;
+  output_id: string;
+  claim_index: number;
+  left: BindingDiagnostic | null;
+  right: BindingDiagnostic | null;
+  changed: boolean;
+}
+
+export function diffDiagnostics(
+  left: BindingDiagnostic[],
+  right: BindingDiagnostic[],
+): DiffRow[] {
+  const rightByOutput = new Map(right.map((d) => [d.output_id, d]));
+  const seen = new Set<string>();
+  const rows: DiffRow[] = [];
+  for (const l of left) {
+    if (seen.has(l.output_id)) continue;
+    seen.add(l.output_id);
+    const r = rightByOutput.get(l.output_id) || null;
+    rows.push({
+      key: l.output_id,
+      output_id: l.output_id,
+      claim_index: l.claim_index,
+      left: l,
+      right: r,
+      changed: !r || r.rejection !== l.rejection,
+    });
+  }
+  for (const r of right) {
+    if (seen.has(r.output_id)) continue;
+    seen.add(r.output_id);
+    rows.push({
+      key: r.output_id,
+      output_id: r.output_id,
+      claim_index: r.claim_index,
+      left: null,
+      right: r,
+      changed: true,
+    });
+  }
+  return rows;
+}
+
+export function diffMarker(row: DiffRow): string {
+  if (!row.left) return "only in run B";
+  if (!row.right) return "only in run A";
+  return row.changed ? "changed" : "same";
+}
