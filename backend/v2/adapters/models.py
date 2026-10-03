@@ -177,6 +177,22 @@ _DEFAULT_ROUTE_POLICY = {"max_attempts": 2, "attempt_timeout_s": 25.0,
     "total_budget_s": 50.0,
     "transient_classes": _TRANSIENT_FAILURE_CLASSES}
 
+GEMMA_ROUTE_POLICY_OVERRIDES = {"attempt_timeout_s": 90.0,
+    "total_budget_s": 200.0}
+GEMMA_HTTP_TIMEOUT_S = 120.0
+
+
+def _is_gemma_model(model_name: str) -> bool:
+    return "gemma" in str(model_name or "").casefold()
+
+
+def _route_policy(provider: str, model_name: str,
+                  route: str) -> dict[str, Any]:
+    policy = ROUTE_POLICIES.get(route, _DEFAULT_ROUTE_POLICY)
+    if provider == "gemini" and _is_gemma_model(model_name):
+        policy = {**policy, **GEMMA_ROUTE_POLICY_OVERRIDES}
+    return policy
+
 
 SAFE_FAILURE_EXCEPTION_CLASSES = frozenset({
     "UnexpectedModelBehavior", "ToolRetryError", "ValidationError",
@@ -512,14 +528,6 @@ class ProviderStructuredModel:
             "HTTP-Referer": "https://github.com/mythiipanda/dime",
             "X-Title": "Dime NBA Analyst",
         } if provider == "openrouter" else None)
-        client = ReasoningContentFallbackClient(
-            base_url=base_url,
-            api_key=api_key,
-            timeout=settings.llm_timeout_s,
-            max_retries=0,
-            default_headers=headers,
-            thinking_off=(provider == "nvidia"),
-        )
         requested = self.model
         if provider == "gemini":
             accepted_model = _gemini_model(requested)
@@ -536,6 +544,16 @@ class ProviderStructuredModel:
         if (provider != "inception"
                 and not is_free_model(provider, accepted_model)):
             return []
+        client = ReasoningContentFallbackClient(
+            base_url=base_url,
+            api_key=api_key,
+            timeout=(GEMMA_HTTP_TIMEOUT_S
+                     if provider == "gemini" and _is_gemma_model(accepted_model)
+                     else settings.llm_timeout_s),
+            max_retries=0,
+            default_headers=headers,
+            thinking_off=(provider == "nvidia"),
+        )
         return [(provider, DimeOpenAIChatModel(
             accepted_model,
             provider=OpenAIProvider(openai_client=client),
@@ -559,13 +577,13 @@ class ProviderStructuredModel:
         self.last_promotions = []
         self.last_decode_extra = None
         user_prompt = json.dumps(payload, sort_keys=True, default=str)
-        policy = ROUTE_POLICIES.get(envelope.route, _DEFAULT_ROUTE_POLICY)
+        provider, model = models[0]
+        policy = _route_policy(provider, model.model_name, envelope.route)
         now = time.monotonic()
         run_deadline = RUN_MODEL_DEADLINE.get()
         deadline = min(now + float(policy["total_budget_s"]),
                        run_deadline if run_deadline is not None else float("inf"))
         budget_exhausted = False
-        provider, model = models[0]
         max_attempts = int(policy["max_attempts"])
         for attempt_number in range(1, max_attempts + 1):
             remaining = deadline - time.monotonic()
