@@ -95,6 +95,9 @@ def run_unit(season: str) -> bool:
     return False
 
 
+DEV_ENVS = frozenset({"dev", "local", "test"})
+
+
 def resolve_target(scratch_db: str) -> Path | None:
     raw = scratch_db or os.environ.get("DIME_WAREHOUSE", "")
     if not raw:
@@ -104,6 +107,10 @@ def resolve_target(scratch_db: str) -> Path | None:
     print(f"target: {target}")
     if target == store.CANONICAL_DB_PATH:
         print("refusing: target is the canonical warehouse")
+        return None
+    env = (os.environ.get("DIME_ENV") or "").strip().lower()
+    if env not in DEV_ENVS and not scratch_db:
+        print("refusing: set DIME_ENV=dev or pass --scratch-db")
         return None
     return target
 

@@ -16,6 +16,7 @@ from shared.sources.base import FetchMeta, FetchResult
 def scratch(monkeypatch, tmp_path):
     db = tmp_path / "ratings.duckdb"
     monkeypatch.setenv("DIME_WAREHOUSE", str(db))
+    monkeypatch.setenv("DIME_ENV", "dev")
     monkeypatch.delenv("DIME_STATE_DB", raising=False)
     monkeypatch.setattr(store, "DB_PATH", db)
     monkeypatch.setattr(store, "LOCK_PATH", tmp_path / ".write.lock")
@@ -179,3 +180,23 @@ def test_positional_seasons_override_default(scratch, monkeypatch):
                         lambda season: calls.append(season) or _ok(season))
     assert seed.main(["2024-25"]) == 0
     assert calls == ["2024-25"]
+
+
+def test_refuses_prod_env_without_explicit_scratch_db(monkeypatch, tmp_path):
+    db = tmp_path / "ratings.duckdb"
+    monkeypatch.setenv("DIME_WAREHOUSE", str(db))
+    monkeypatch.setenv("DIME_ENV", "prod")
+    def _must_not_fetch(season):
+        raise AssertionError("seeder must not fetch against prod")
+    monkeypatch.setattr(seed, "fetch", _must_not_fetch)
+    assert seed.main(["--seasons", "2024-25"]) == 1
+    assert not db.exists()
+
+
+def test_explicit_scratch_db_opts_in_without_env(monkeypatch, tmp_path):
+    db = tmp_path / "ratings.duckdb"
+    monkeypatch.delenv("DIME_WAREHOUSE", raising=False)
+    monkeypatch.delenv("DIME_ENV", raising=False)
+    monkeypatch.setattr(seed, "fetch", lambda season: _ok(season))
+    assert seed.main(["--seasons", "2024-25", "--scratch-db", str(db)]) == 0
+    assert db.exists()
