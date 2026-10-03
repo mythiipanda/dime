@@ -9,6 +9,7 @@ from datetime import date, datetime, timezone
 from typing import Any, Callable, Iterable, Mapping
 
 from ..contracts import EntityRef, EvidenceEnvelope, canonical_entity_id
+from ..contracts import WINDOW_ARGUMENT_NAMES, window_of_arguments
 from ..domain.evidence import iter_values
 from .capabilities import CAPABILITIES, Capability
 
@@ -193,6 +194,7 @@ def build_envelope(
             except ValueError:
                 warnings.append(f"unparseable {key}: {value}")
             break
+    served_window = window_of_arguments(arguments, season)
     envelope_entities = list(entities or [])
     if spec.extract_entities is not None:
         envelope_entities = spec.extract_entities(rows) + envelope_entities
@@ -227,6 +229,8 @@ def build_envelope(
         vintages=vintages,
         task_season_scoped=spec.task_season_scoped,
         as_of=as_of,
+        window_start=served_window[0],
+        window_end=served_window[1],
         entities=envelope_entities,
         rows=rows,
         units={key: unit for key, unit in spec.units.items()
@@ -338,6 +342,18 @@ class ToolCapability:
         values = dict(arguments)
         if schema is None:
             return values
+        unsupported = sorted(
+            key for key, value in values.items()
+            if value is not None and key in WINDOW_ARGUMENT_NAMES
+            and key not in schema.model_fields
+        )
+        if unsupported:
+            raise AdapterError(
+                f"{CAPABILITIES[self.name].tool_name}: capability {self.name} "
+                f"cannot serve date-windowed arguments "
+                f"{unsupported}; date-bound questions need date-filtered "
+                f"evidence or an explicit gap"
+            )
         accepted = {key: value for key, value in values.items()
                     if key in schema.model_fields}
         schema.model_validate(accepted)
@@ -370,6 +386,15 @@ def _task_arguments(name: str, node: Any, task: Any, evidence: Iterable[Evidence
         if spec.season_arg and (spec.task_season_scoped
                                 or spec.season_arg not in arguments):
             arguments[spec.season_arg] = season.value
+    window = CAPABILITIES[name].window_args
+    if window is not None:
+        start_key, end_key = window
+        window_start = getattr(task, "window_start", None)
+        window_end = getattr(task, "window_end", None)
+        if window_start is not None and not arguments.get(start_key):
+            arguments[start_key] = window_start.isoformat()
+        if window_end is not None and not arguments.get(end_key):
+            arguments[end_key] = window_end.isoformat()
     if name == "trades" and "season" not in arguments:
         for item in evidence:
             salary_season = item.vintages.get("salary_season")

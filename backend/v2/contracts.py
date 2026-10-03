@@ -3,8 +3,9 @@ from __future__ import annotations
 from datetime import date, datetime
 from decimal import Decimal
 from enum import StrEnum
+import calendar
 import math
-from typing import Any, Literal
+from typing import Any, Literal, Mapping
 
 from pydantic import (BaseModel, ConfigDict, Field, StrictBool, StrictFloat,
                     StrictInt, field_validator, model_validator)
@@ -95,6 +96,81 @@ def _is_canonical_season(value: str) -> bool:
     return (len(parts) == 2 and len(parts[0]) == 4 and len(parts[1]) == 2
             and all(part.isdigit() for part in parts)
             and int(parts[1]) == (int(parts[0]) + 1) % 100)
+
+
+WINDOW_ARGUMENT_NAMES = frozenset({"start_date", "end_date", "month"})
+
+
+def _parse_window_bound(value: Any) -> date | None:
+    if value is None:
+        return None
+    text = str(value).strip()
+    if not text:
+        return None
+    try:
+        return date.fromisoformat(text.split("T", 1)[0])
+    except ValueError:
+        return None
+
+
+def _parse_month_number(month: Any) -> tuple[int | None, int | None]:
+    if month is None:
+        return None, None
+    text = str(month).strip().lower()
+    if not text:
+        return None, None
+    if "-" in text:
+        parts = text.split("-")
+        if len(parts) == 2 and parts[0].isdigit() and parts[1].isdigit():
+            year, number = int(parts[0]), int(parts[1])
+            if len(parts[0]) == 4 and 1 <= number <= 12:
+                return year, number
+        return None, None
+    if text.isdigit() and 1 <= int(text) <= 12:
+        return None, int(text)
+    names = {name.lower(): index for index, name in enumerate(calendar.month_name) if name}
+    names.update({name.lower(): index for index, name in enumerate(calendar.month_abbr) if name})
+    number = names.get(text)
+    return None, number
+
+
+def _month_window(month: Any, season: str | None) -> tuple[date | None, date | None]:
+    year, number = _parse_month_number(month)
+    if number is None:
+        return None, None
+    if year is None:
+        if season is None or not _is_canonical_season(str(season)):
+            return None, None
+        start_year = int(str(season).split("-")[0])
+        year = start_year if number >= 8 else start_year + 1
+    last_day = calendar.monthrange(year, number)[1]
+    return date(year, number, 1), date(year, number, last_day)
+
+
+def window_of_arguments(
+    arguments: Mapping[str, Any],
+    season: str | None = None,
+) -> tuple[date | None, date | None]:
+    start = _parse_window_bound(arguments.get("start_date"))
+    end = _parse_window_bound(arguments.get("end_date"))
+    if start is None and end is None and arguments.get("month") not in (None, ""):
+        start, end = _month_window(arguments.get("month"), season)
+    return start, end
+
+
+def format_window(start: date | None, end: date | None) -> str:
+    if start is not None and end is not None:
+        return f"{start.isoformat()} to {end.isoformat()}"
+    if start is not None:
+        return f"{start.isoformat()} onward"
+    if end is not None:
+        return f"through {end.isoformat()}"
+    return "full season"
+
+
+def validate_window_order(start: date | None, end: date | None) -> None:
+    if start is not None and end is not None and start > end:
+        raise ValueError("window start must not be after window end")
 
 
 class SeasonRef(BaseModel):
@@ -198,6 +274,8 @@ class TaskSpec(BaseModel):
     entities: list[EntityRef] = Field(default_factory=list, max_length=64)
     season: SeasonRef | None = None
     as_of: date | None = None
+    window_start: date | None = None
+    window_end: date | None = None
 
 
     subject_entity_type: str | None = Field(default=None, max_length=64)
@@ -240,6 +318,7 @@ class TaskSpec(BaseModel):
 
     @model_validator(mode="after")
     def validate_scope(self) -> "TaskSpec":
+        validate_window_order(self.window_start, self.window_end)
         if not self.goal.strip() or not self.deliverable.strip():
             raise ValueError("task goal and deliverable must be non-empty")
         for field_name in ("subquestions", "required_evidence", "assumptions",
@@ -428,6 +507,8 @@ class EvidenceEnvelope(BaseModel):
     vintages: dict[str, str] = Field(default_factory=dict, max_length=64)
     task_season_scoped: StrictBool = True
     as_of: date | None = None
+    window_start: date | None = None
+    window_end: date | None = None
     entities: list[EntityRef] = Field(default_factory=list, max_length=64)
     rows: list[dict[str, Any]] | dict[str, Any]
     units: dict[str, str] = Field(default_factory=dict, max_length=256)
@@ -440,6 +521,7 @@ class EvidenceEnvelope(BaseModel):
 
     @model_validator(mode="after")
     def validate_identity(self) -> "EvidenceEnvelope":
+        validate_window_order(self.window_start, self.window_end)
         if (not self.evidence_id.strip() or not self.capability.strip()
                 or not self.source.strip()):
             raise ValueError("evidence identity, capability, and source must be non-empty")
