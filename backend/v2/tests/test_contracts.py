@@ -513,8 +513,10 @@ def test_composite_warehouse_identity_is_typed_and_complete():
 
 def test_fabricated_team_name_does_not_collapse_to_real_team_id():
     from v2.contracts import canonical_entity_id
-    for probe in ("Queens Cobras", "Springfield Atoms", ""):
+    for probe in ("Queens Cobras", "Springfield Atoms", "Springfield Thunder",
+                  "Hawk", "Los Angeles", ""):
         assert canonical_entity_id("team", probe) != "1610612737"
+    assert canonical_entity_id("team", "Springfield Thunder") == "springfield thunder"
 
 
 def test_task_spec_and_envelope_carry_optional_date_window():

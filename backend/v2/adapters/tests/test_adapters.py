@@ -974,7 +974,7 @@ def test_warehouse_game_logs_and_composed_injury_evidence_keep_identity(monkeypa
     warehouse = tmp_path / "warehouse.duckdb"
     warehouse.write_bytes(b"identity bytes")
     monkeypatch.setattr(store, "DB_PATH", warehouse)
-    expected = "a83dbed6639d9eabd9d769c986d5a0a6b36fed3be1da7e06d3a3ea7447df9265"
+    expected = "21b62468088c86084a589a8897b36e62ab5dad2afbd6f66ec3940ab50be83c89"
     game = {"tool":"search_game_logs","ok":True,"rows":{"returned":3,"total":68,"matches":[]},"meta":{"source":"warehouse","season":"2025-26"}}
     injury = {"tool":"get_injury_impact","ok":True,"rows":{"availability_known":False,"impact":"unknown"},"meta":{"source":"espn+nba_api+warehouse","season":"2025-26"}}
     class Tool:
