@@ -87,10 +87,10 @@ def test_fg3_percentage_leaders_carry_direction_volume_and_shooting_counts(monke
             pass
 
     monkeypatch.setattr(
-        "app.tools.league._warehouse_or_live",
+        "shared.tools.league._warehouse_or_live",
         lambda *args, **kwargs: ([], {"source": "fixture", "rows": 0}),
     )
-    monkeypatch.setattr("app.tools.league.store.connect", lambda **_: Connection())
+    monkeypatch.setattr("shared.store.connect", lambda **_: Connection())
     out = get_leaders.invoke({
         "stat_category": "FG3_PCT", "season": "2025-26",
         "ranking_direction": "asc", "min_attempts": 300,
@@ -101,8 +101,8 @@ def test_fg3_percentage_leaders_carry_direction_volume_and_shooting_counts(monke
     assert out["meta"]["qualification"] == "300+ three-point attempts"
     assert out["rows"][0] == {
         "RANK": 1, "PLAYER": "A", "TEAM": "AAA", "FG3_PCT": 0.467,
-        "FG3M": 140, "FG3A": 300, "GP": 70, "MIN": 1800,
-        "PERCENTILE": 100.0,
+        "FG3M": 140, "FG3A": 300, "GP": 70, "MPG": 1800,
+        "PLAYER_NAME": "A",
     }
 
 
@@ -209,7 +209,7 @@ def test_ranked_team_answer_uses_label_not_enum_or_aliases(monkeypatch):
          "DEF_RATING": 106.9, "OFF_RATING": 117.2},
     ]
     monkeypatch.setattr(
-        "app.tools.league._warehouse_or_live",
+        "shared.tools.league._warehouse_or_live",
         lambda *args, **kwargs: (rows, {"source": "fixture"}),
     )
     out = get_ratings.invoke({

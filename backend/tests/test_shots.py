@@ -600,8 +600,8 @@ def test_individual_shot_rows_keep_canonical_player_and_team_ids(monkeypatch):
         def fetchone(self): return self._rows[0]
         def close(self): pass
 
-    monkeypatch.setattr("app.tools.shots._warehouse_conn", FakeCon)
-    monkeypatch.setattr("app.tools.shots._resolve_player",
+    monkeypatch.setattr("shared.tools.shots._warehouse_conn", FakeCon)
+    monkeypatch.setattr("shared.tools.shots._resolve_player",
                         lambda *args: (1628369, "exact", None))
     result = search_shots.invoke({"player": "Tatum", "zones": "corner_3"})
     row = result["shots"][0]
