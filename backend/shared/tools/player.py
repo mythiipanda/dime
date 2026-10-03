@@ -9,6 +9,7 @@ from langchain_core.tools import tool
 from .. import store
 from ..sources import nba_stats
 from ._core import TTL_GAMELOG, TTL_LEADERS, TTL_PBPSTATS, _warehouse_or_live, coerce_player_id, coerce_team_id, last_completed_season, resolve_season
+from .shots import ZONE_LEGEND as _SHOT_ZONE_LABELS
 from .zone import ZONE_KEYS as _HIST_ZONE_KEYS
 from .zone import ZONE_LEGEND as _HIST_ZONE_LEGEND
 from .zone import season_year as _hist_season_year
@@ -2986,7 +2987,8 @@ def get_player_report(player: str | int, season: str | None = None) -> dict[str,
                      f"{a.get('NET_RATING'):+g} net rating.")
     if top_zones:
         lines.append("Shot profile: " + "; ".join(
-            f"{r.get('zone')} {100 * float(r.get('share') or 0):.1f}% of shots "
+            f"{_SHOT_ZONE_LABELS.get(str(r.get('zone')), r.get('zone'))} "
+            f"{100 * float(r.get('share') or 0):.1f}% of shots "
             f"at {100 * float(r.get('FG_PCT') or 0):.1f}% FG"
             for r in top_zones) + ".")
     if crow:

@@ -4,6 +4,7 @@ import sys
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from app.graph import _triage_seed
+from shared import store
 from shared.tools import get_leaders
 
 
@@ -58,14 +59,38 @@ def test_true_shooting_leader_is_qualified_and_one_call():
 
 
 def test_steals_per_game_leader_carries_sample_size():
+    from shared import store
     st = _drain("Who leads the league in steals per game this season?")
     assert [c.split(":")[0] for c in st["calls_made"]] == ["get_leaders"]
     out = st["tool_results"][0]
     assert out["meta"]["stat_category"] == "SPG"
-    assert out["meta"]["qualification"] == "games played shown; no implicit GP floor"
-    assert out["rows"][0]["GP"] > 0
+    assert out["meta"]["qualification"] == "500+ total minutes"
+    assert out["meta"]["min_attempts"] == 0
+    assert out["meta"]["ranking_direction"] == "desc"
+    assert out["meta"]["season"] == "2025-26"
+    assert out["meta"]["rows"] == len(out["rows"])
+    lead = out["rows"][0]
+    assert set(lead) == {"RANK", "PLAYER", "TEAM", "SPG", "GP", "PLAYER_NAME"}
+    assert [r["RANK"] for r in out["rows"]] == list(
+        range(1, len(out["rows"]) + 1))
+    assert all(isinstance(r["GP"], int) and r["GP"] > 0 for r in out["rows"])
+    assert len({r["GP"] for r in out["rows"]}) > 1
+    rates = [r["SPG"] for r in out["rows"]]
+    assert rates == sorted(rates, reverse=True)
+    assert any(rate != round(rate, 2) for rate in rates)
+    con = store.connect(read_only=True)
+    try:
+        raw = {player: (rate, gp) for player, rate, gp in con.execute(
+            "SELECT PLAYER, STL * 1.0 / GP, GP FROM silver_leaders_stl "
+            "WHERE _season = '2025-26' AND GP > 0 AND MIN >= 500").fetchall()}
+    finally:
+        con.close()
+    assert len(raw) == len(out["rows"])
+    assert [(r["SPG"], r["GP"]) for r in out["rows"]] == [
+        (raw[r["PLAYER"]][0], raw[r["PLAYER"]][1]) for r in out["rows"]]
     answer = out["meta"]["deterministic_answer"]
-    assert "steals per game" in answer and "games" in answer
+    assert f"{lead['SPG']:.2f} steals per game" in answer
+    assert f"({lead['GP']} games)" in answer
 
 
 def test_fg3_percentage_leaders_carry_direction_volume_and_shooting_counts(monkeypatch):
@@ -139,10 +164,22 @@ def test_blocks_per_game_uses_full_blocks_totals_and_unrounded_sort():
     assert [c.split(":")[0] for c in st["calls_made"]] == ["get_leaders"]
     out = st["tool_results"][0]
     assert out["meta"]["stat_category"] == "BPG"
+    assert out["meta"]["qualification"] == "500+ total minutes"
     assert [r["PLAYER"] for r in out["rows"][:5]] == [
-        "Victor Wembanyama", "Alex Sarr", "Zach Edey", "Chet Holmgren", "Jay Huff"]
+        "Victor Wembanyama", "Alex Sarr", "Chet Holmgren", "Jay Huff", "Evan Mobley"]
     assert all(r["GP"] for r in out["rows"][:5])
     assert out["rows"][2]["BPG"] > out["rows"][3]["BPG"] > out["rows"][4]["BPG"]
+    con = store.connect(read_only=True)
+    try:
+        full_totals = dict(con.execute(
+            "SELECT PLAYER, BLK * 1.0 / GP FROM silver_leaders_blk "
+            "WHERE _season = '2025-26' AND GP > 0 AND MIN >= 500").fetchall())
+    finally:
+        con.close()
+    assert [r["BPG"] for r in out["rows"][:5]] == [
+        full_totals[r["PLAYER"]] for r in out["rows"][:5]]
+    rates = [r["BPG"] for r in out["rows"]]
+    assert all(a >= b for a, b in zip(rates, rates[1:]))
 
 
 def test_team_rating_tool_enum_and_planner_vocabulary_stay_aligned():
