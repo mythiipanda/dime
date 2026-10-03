@@ -374,13 +374,23 @@ class RuntimeResult(BaseModel):
         return self
 
 
+def withheld_claim_indices(gaps) -> set[int]:
+    return {
+        int(block.removeprefix("claim:"))
+        for gap in gaps
+        if gap.kind.value == "synthesis_incomplete"
+        for block in gap.blocks
+        if block.startswith("claim:") and block.removeprefix("claim:").isdigit()
+    }
+
+
 def build_output_statuses(task, verified_claims, gaps):
     from v2.contracts import OutputFinalStatus
     admitted = {}
     rejected = set()
+    withheld = withheld_claim_indices(gaps)
     for claim in verified_claims:
-        if any(gap.kind.value == "synthesis_incomplete"
-               and f"claim:{claim.claim_index}" in gap.blocks for gap in gaps):
+        if claim.claim_index in withheld:
             rejected.update((binding.requirement_kind, binding.requirement_id,
                              binding.output_id)
                             for binding in claim.claim.output_bindings)

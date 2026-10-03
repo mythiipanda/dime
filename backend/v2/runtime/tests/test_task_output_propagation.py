@@ -188,6 +188,7 @@ def _answer(task, execution, envelope, bindings):
     claims, gaps, by_key = _admitted(task, execution, envelope, bindings)
     result = SimpleNamespace(
         output_statuses=list(by_key.values()), gaps=gaps, execution=execution,
+        verified_claims=claims,
         draft=DraftReport(sections=["Assists leader"], claims=[]))
     return _answer_text(result)
 
@@ -216,8 +217,7 @@ def test_binding_naming_a_requirement_instead_of_the_plan_node_still_owns_task_o
     bindings = _q1_bindings(envelope, node_id="player_assists_leader")
 
     assert _answer(task, execution, envelope, bindings).splitlines() == [
-        "PLAYER_NAME [player:1629027] = Trae Young (unitless)",
-        "AST [player:1629027] = 880 (count)"]
+        "Trae Young led the NBA with 880 assists in 2024-25."]
 
 
 def test_league_scoped_task_outputs_own_the_leader_the_envelope_carries():
@@ -234,8 +234,7 @@ def test_league_scoped_task_outputs_own_the_leader_the_envelope_carries():
     assert by_key[("task", None, "PLAYER_NAME")].status == "complete"
     assert by_key[("task", None, "AST")].status == "complete"
     assert _answer(task, execution, envelope, bindings).splitlines() == [
-        "PLAYER_NAME [player:1629027] = Trae Young (unitless)",
-        "AST [player:1629027] = 880 (count)"]
+        "Trae Young led the NBA with 880 assists in 2024-25."]
 
 
 def test_competing_evidence_subjects_leave_task_output_missing():
@@ -279,8 +278,7 @@ def test_competing_evidence_subjects_publish_without_claiming_the_metric_is_miss
     ]
 
     assert _answer(task, execution, envelope, bindings).splitlines() == [
-        "PLAYER_NAME [player:1629027] = Trae Young (unitless)",
-        "PLAYER_NAME [player:1628369] = Nikola Jokic (unitless)"]
+        "Trae Young led the NBA with 880 assists in 2024-25."]
 
 
 def test_propagated_task_binding_passes_admission_authority():

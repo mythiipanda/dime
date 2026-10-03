@@ -1579,7 +1579,7 @@ def test_typed_public_stream_sanitizes_all_events_and_preserves_lifecycle(monkey
         row_selector="rows.lebron",subject_entity_type="player",subject_entity_id="23",
         subject_selector="rows.lebron.PLAYER_ID",value={"kind":"integer","value":25},
         unit={"kind":"unitless"},domain="player_report")
-    claim=contracts.Claim(text=secret,kind="observed",evidence_ids=["internal-evidence"],output_bindings=[binding])
+    claim=contracts.Claim(text="LeBron James scored 25 points.",kind="observed",evidence_ids=["internal-evidence"],output_bindings=[binding])
     evidence=contracts.EvidenceEnvelope(evidence_id="internal-evidence",capability="player_report",
         source=secret,observed_at=datetime.now(UTC),entities=[contracts.EntityRef(id="23",type="player",display_name="LeBron")],rows={"lebron":{"PLAYER_ID":"23","PTS":25,"AST":8},"curry":{"PLAYER_ID":"987654321","PTS":987654321}})
     result=RuntimeResult(task=contracts.TaskSpec(goal="x",mode="quick",deliverable="x",requested_outputs=["PTS"],entities=[contracts.EntityRef(id="23",type="player",display_name="LeBron")]),
@@ -1617,6 +1617,7 @@ def test_typed_public_stream_sanitizes_all_events_and_preserves_lifecycle(monkey
     assert terminal.count("event: ")==2
     assert response.headers["x-dime-run-id"] in text
     final_json=__import__("json").loads(text.split("event: final_answer\ndata: ",1)[1].split("\n\n",1)[0])
+    assert final_json["text"].splitlines()[0]=="LeBron James scored 25 points."
     carry=final_json["carry"]
     assert carry["run_id"]==response.headers["x-dime-run-id"]
     assert carry["verification"]=="partial" and carry["verified_claims"]==1
@@ -1685,7 +1686,7 @@ def test_no_authority_with_internal_gap_still_nonblank_and_terminal():
     from types import SimpleNamespace
     from v2.api.routes import _answer_text
     from v2.contracts import Gap
-    text=_answer_text(SimpleNamespace(output_statuses=[],execution=SimpleNamespace(evidence=[]),gaps=[Gap(kind="execution_failure",message="SECRET")]))
+    text=_answer_text(SimpleNamespace(output_statuses=[],verified_claims=[],execution=SimpleNamespace(evidence=[]),gaps=[Gap(kind="execution_failure",message="SECRET")]))
     assert text.strip() and "SECRET" not in text
 
 
@@ -1773,7 +1774,7 @@ def test_stream_tool_events_from_the_live_journal_carry_the_capability_name(monk
     assert '"name":"tool"' not in text
 
 
-def test_stream_publishes_one_clean_row_and_label_per_metric(monkeypatch,tmp_path):
+def test_stream_publishes_claim_prose_and_one_clean_row_per_metric(monkeypatch,tmp_path):
     from datetime import UTC, datetime
 
     from v2 import contracts
@@ -1814,8 +1815,9 @@ def test_stream_publishes_one_clean_row_and_label_per_metric(monkeypatch,tmp_pat
         subject_selector="rows[0].TEAM_ID",value={"kind":"float","value":row[metric]},
         unit={"kind":"declared","value":unit},domain="team_ratings")
         for metric in metrics]
-    claim=contracts.Claim(text="ratings",kind="observed",
-        evidence_ids=[envelope.evidence_id],output_bindings=bindings)
+    claim=contracts.Claim(text="Capital City Stars rate at 119.8 points per 100 "
+        "possessions offensively and 110.2 defensively, for a net rating of 9.6.",
+        kind="observed",evidence_ids=[envelope.evidence_id],output_bindings=bindings)
     draft=contracts.DraftReport(sections=["ratings"],claims=[claim])
     verification=contracts.VerificationReport(status="pass",claim_results=[
         {"claim_index":0,"supported":True,"reasons":[]}])
@@ -1831,9 +1833,9 @@ def test_stream_publishes_one_clean_row_and_label_per_metric(monkeypatch,tmp_pat
         lambda **k:(Runtime(),RunLedger(k["run_id"])))
     payload=json.loads(text.split("event: final_answer\ndata: ",1)[1].split("\n\n",1)[0])
     assert payload["text"].splitlines()==[
-        "NET_RATING [team:1] = 9.6 (points_per_100_possessions)",
-        "OFF_RATING [team:1] = 119.8 (points_per_100_possessions)",
-        "DEF_RATING [team:1] = 110.2 (points_per_100_possessions)"]
+        "Capital City Stars rate at 119.8 points per 100 possessions offensively "
+        "and 110.2 defensively, for a net rating of 9.6."]
+    assert "NET_RATING" not in payload["text"]
     custom=json.loads(text.split("event: custom_data\ndata: ",1)[1].split("\n\n",1)[0])
     assert [row["output_id"] for row in custom["tables"]]==metrics
     assert [row["value"] for row in custom["tables"]]==["9.6","119.8","110.2"]

@@ -367,7 +367,7 @@ def test_output_status_matrix_and_projection_use_only_admitted_bindings():
     statuses = build_output_statuses(task, [verified], [])
     assert [(x.output_id,x.status) for x in statuses] == [
         ("WINS","complete"),("LOSSES","missing")]
-    result = SimpleNamespace(output_statuses=statuses, gaps=[],
+    result = SimpleNamespace(output_statuses=statuses, gaps=[], verified_claims=[],
         execution=SimpleNamespace(evidence=[]))
     assert _answer_text(result) == "WINS = 61 (count)\nLOSSES could not be verified (missing)."
     assert "999" not in _answer_text(result)
@@ -379,6 +379,7 @@ def test_projection_uses_canonical_gap_kind_not_untrusted_message():
     from v2.contracts import Gap
     result = SimpleNamespace(output_statuses=[], gaps=[Gap(
         kind="execution_failure", message="SECRET internal adapter path")],
+        verified_claims=[],
         execution=SimpleNamespace(evidence=[]))
     text = _answer_text(result)
     assert text == "Some requested data was unavailable."
@@ -447,7 +448,7 @@ def test_ratings_task_publishes_one_clean_label_and_row_per_metric():
     statuses = build_output_statuses(task, claims, [])
     assert len(statuses) == 2 * len(metrics)
     result = SimpleNamespace(
-        output_statuses=statuses, gaps=[], draft=draft,
+        output_statuses=statuses, gaps=[], draft=draft, verified_claims=[],
         execution=SimpleNamespace(evidence=[envelope]))
     assert _answer_text(result).splitlines() == [
         "NET_RATING [team:1] = 9.6 (points_per_100_possessions)",
@@ -474,7 +475,7 @@ def test_four_typed_values_project_complete_without_fragments():
             unit={"kind":"unitless"},domain="standings")
         statuses.append(OutputFinalStatus(requirement_kind="task",output_id=output,
             status="complete",claim_index=0,binding=binding))
-    text=_answer_text(SimpleNamespace(output_statuses=statuses,gaps=[],
+    text=_answer_text(SimpleNamespace(output_statuses=statuses,gaps=[],verified_claims=[],
         execution=SimpleNamespace(evidence=[])))
     assert text.splitlines()==["ZERO = 0 (unitless)",
         "FLAG = false (unitless)", "RATE = 1.5 (unitless)",
@@ -491,7 +492,7 @@ def test_probe_five_abstains_without_admitted_output_authority():
     statuses = __import__('v2.runtime.models',fromlist=['build_output_statuses']).build_output_statuses(
         task, [], [])
     assert statuses[0].status == "missing"
-    assert _answer_text(SimpleNamespace(output_statuses=statuses,gaps=[],
+    assert _answer_text(SimpleNamespace(output_statuses=statuses,gaps=[],verified_claims=[],
         execution=SimpleNamespace(evidence=[]))) == (
         "DECISION could not be verified (missing).")
 
@@ -538,7 +539,7 @@ def test_two_subjects_same_output_and_unit_are_self_contained():
             unit={"kind":"declared","value":"points"},domain="player_report")
         statuses.append(OutputFinalStatus(requirement_kind="evidence",requirement_id=req,
             output_id="PTS",status="complete",claim_index=0,binding=binding))
-    assert _answer_text(SimpleNamespace(output_statuses=statuses,gaps=[],
+    assert _answer_text(SimpleNamespace(output_statuses=statuses,gaps=[],verified_claims=[],
         execution=SimpleNamespace(evidence=[]))).splitlines()==[
         "PTS [player:23] = 25 (points)",
         "PTS [player:30] = 30 (points)"]
@@ -560,7 +561,8 @@ def test_calculation_projection_and_input_evidence_filtering():
     from datetime import UTC, datetime
     from v2.contracts import EvidenceEnvelope
     result=SimpleNamespace(output_statuses=[status],gaps=[],draft=DraftReport(
-        sections=[],claims=[],calculations=[calc]), execution=SimpleNamespace(evidence=[
+        sections=[],claims=[],calculations=[calc]),verified_claims=[],
+        execution=SimpleNamespace(evidence=[
         EvidenceEnvelope(evidence_id="a",capability="player_report",source="a",observed_at=datetime.now(UTC),rows={"PTS":25}),
         EvidenceEnvelope(evidence_id="b",capability="player_report",source="b",observed_at=datetime.now(UTC),rows={"PTS":30})]))
     assert _answer_text(result)=="PTS_DELTA = -5 (points)"
@@ -790,5 +792,7 @@ def test_completed_season_assists_leader_publishes_count(monkeypatch, tmp_path):
         for item in statuses if item.status == "complete"]
     text = _answer_text(SimpleNamespace(
         output_statuses=statuses, gaps=[], draft=draft,
-        execution=execution, verification=verification))
-    assert "AST = 880 (count)" in text
+        execution=execution, verification=verification,
+        verified_claims=claims))
+    assert text.splitlines()[0] == "Trae Young led the NBA with 880 assists in 2024-25."
+    assert "AST = 880 (count)" not in text

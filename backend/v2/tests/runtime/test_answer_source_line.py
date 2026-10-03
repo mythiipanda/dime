@@ -41,6 +41,7 @@ def _result(*envelopes: EvidenceEnvelope) -> SimpleNamespace:
             requirement_kind="evidence", requirement_id="ratings",
             output_id="NET_RATING", status="complete", claim_index=0,
             binding=binding)],
+        verified_claims=[],
         gaps=[],
         execution=SimpleNamespace(evidence=list(envelopes)),
     )

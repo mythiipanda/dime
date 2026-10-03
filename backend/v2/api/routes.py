@@ -922,17 +922,23 @@ def _live_source_line(result) -> str | None:
         sources=", ".join(names), when=f" on {as_of}" if as_of else "")
 
 
+def _claim_prose(result) -> list[str]:
+    from v2.runtime.models import withheld_claim_indices
+
+    withheld = withheld_claim_indices(result.gaps)
+    return list(dict.fromkeys(
+        item.claim.text for item in result.verified_claims
+        if item.claim_index not in withheld))
+
+
 def _answer_text(result) -> str:
     published = {
         item.output_id for item in result.output_statuses
         if item.status == "complete"
     }
-    lines = list(dict.fromkeys(
-        [_output_line(result, item) for item in result.output_statuses
-         if item.status == "complete"]
-        + [f"{item.output_id} could not be verified ({item.status})."
-           for item in result.output_statuses
-           if item.status != "complete" and item.output_id not in published]))
+    lines = _claim_prose(result) or list(dict.fromkeys(
+        _output_line(result, item) for item in result.output_statuses
+        if item.status == "complete"))
     source_line = _live_source_line(result)
     if source_line is not None:
         lines.append(source_line)
@@ -950,6 +956,10 @@ def _answer_text(result) -> str:
             kinds.append(gap.kind.value)
     for kind in kinds:
         lines.append(gap_messages[kind])
+    lines += list(dict.fromkeys(
+        f"{item.output_id} could not be verified ({item.status})."
+        for item in result.output_statuses
+        if item.status != "complete" and item.output_id not in published))
     return "\n".join(lines) or "I could not verify a publishable answer from the available data."
 
 
