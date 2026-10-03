@@ -1,7 +1,7 @@
 "use client";
 
-import { useRef, useState } from "react";
-import { postChatStream } from "../../lib/api";
+import { useEffect, useRef, useState } from "react";
+import { getRevision, postChatStream } from "../../lib/api";
 import { chatRuntime } from "../../lib/runtime";
 import {
   bindingDiagnostics,
@@ -9,9 +9,10 @@ import {
   diffMarker,
   fastFailVerdict,
   parseSseText,
+  revisionInfo,
   type SseEvent,
 } from "../../lib/diagnostics";
-import { DiagnosticsTable } from "../../components/DiagnosticsTable";
+import { DiagnosticsTable, RevisionCard } from "../../components/DiagnosticsTable";
 
 export function FastFailBanner({ events, label }: { events: SseEvent[]; label?: string }) {
   const verdict = fastFailVerdict(events);
@@ -103,6 +104,19 @@ export default function DiagnosticsPage() {
   const [rightText, setRightText] = useState("");
   const abort = useRef<AbortController | null>(null);
   const v2 = chatRuntime() === "v2";
+  const [revision, setRevision] = useState<{ revision: string; runtime: string } | null>(null);
+
+  useEffect(() => {
+    let live = true;
+    getRevision()
+      .then((data) => {
+        if (live) setRevision(revisionInfo(data, chatRuntime()));
+      })
+      .catch(() => {});
+    return () => {
+      live = false;
+    };
+  }, []);
 
   const run = async () => {
     const question = q.trim();
@@ -146,6 +160,7 @@ export default function DiagnosticsPage() {
       <div style={{ fontSize: 13, color: "var(--color-warm-gray)", marginBottom: 16 }}>
         Runs a chat stream with diagnostics on and lists every rejected evidence binding.
       </div>
+      <RevisionCard info={revision} />
       {!v2 && (
         <div style={{ fontSize: 13, color: "var(--color-warm-gray)", marginBottom: 16 }}>
           Needs the v2 chat runtime. Diagnostics events only exist on v2 streams.

@@ -7,6 +7,8 @@ import {
   fastFailVerdict,
   isBindingDiagnostic,
   parseSseText,
+  revisionInfo,
+  shortRevision,
 } from "./diagnostics";
 
 const FIXTURE = `event: binding_diagnostic
@@ -115,6 +117,18 @@ test("slow or clean runs are not fast-fails", () => {
     fastFailVerdict(parseSseText('event: final_answer\ndata: {"text":"ok"}\n\n')).fastFail,
     false,
   );
+});
+
+test("revision fixture yields short hash with runtime", () => {
+  const info = revisionInfo(
+    { revision: "168e2f31abc123", executable_sha256: "0".repeat(64) },
+    "v2",
+  );
+  assert.deepEqual(info, { revision: "168e2f31abc123", runtime: "v2" });
+  assert.equal(shortRevision("168e2f31abc123"), "168e2f31");
+  assert.equal(revisionInfo({}, "v2"), null);
+  assert.equal(revisionInfo(null, "v2"), null);
+  assert.equal(revisionInfo({ revision: "" }, "v2"), null);
 });
 
 test("diagnostic guard rejects other payloads", () => {

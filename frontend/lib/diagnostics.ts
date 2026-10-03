@@ -111,6 +111,21 @@ export function diffMarker(row: DiffRow): string {
   return row.changed ? "changed" : "same";
 }
 
+export interface RevisionInfo {
+  revision: string;
+  runtime: string;
+}
+
+export function revisionInfo(data: unknown, runtime: string): RevisionInfo | null {
+  if (!isRecord(data)) return null;
+  if (typeof data.revision !== "string" || !data.revision) return null;
+  return { revision: data.revision, runtime };
+}
+
+export function shortRevision(revision: string): string {
+  return String(revision || "").slice(0, 8);
+}
+
 export interface FastFailVerdict {
   fastFail: boolean;
   understandMs: number | null;

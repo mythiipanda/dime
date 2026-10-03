@@ -182,6 +182,12 @@ export function getFreshness(): Promise<FreshRow[]> {
   return getEnvelope<FreshRow[]>(apiPath("/datasets/freshness"));
 }
 
+export async function getRevision(): Promise<unknown> {
+  const res = await fetch(`${BACKEND}/api/revision`);
+  if (!res.ok) throw new Error(`revision failed: ${res.status}`);
+  return res.json();
+}
+
 export async function getModels(): Promise<ModelsResponse> {
   const res = await fetch(`${BACKEND}${apiPath("/models")}`);
   if (!res.ok) throw new Error(`models failed: ${res.status}`);

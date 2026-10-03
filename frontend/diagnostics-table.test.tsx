@@ -2,7 +2,7 @@ import { describe, it } from "node:test";
 import * as assert from "node:assert";
 import * as React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { DiagnosticsTable } from "./components/DiagnosticsTable";
+import { DiagnosticsTable, RevisionCard } from "./components/DiagnosticsTable";
 import { DiffTable, FastFailBanner } from "./app/diagnostics/page";
 import { bindingDiagnostics, parseSseText } from "./lib/diagnostics";
 
@@ -100,6 +100,22 @@ data: {}
       React.createElement(FastFailBanner, { events: parseSseText(FIXTURE) }),
     );
     assert.equal(html, "");
+  });
+
+  it("renders revision hash plus runtime flag", () => {
+    const html = renderToStaticMarkup(
+      React.createElement(RevisionCard, {
+        info: { revision: "168e2f31abc123", runtime: "v2" },
+      }),
+    );
+    assert.ok(html.includes("168e2f31"));
+    assert.ok(!html.includes("168e2f31abc123"));
+    assert.ok(html.includes("v2"));
+  });
+
+  it("renders plain words when revision is missing", () => {
+    const html = renderToStaticMarkup(React.createElement(RevisionCard, { info: null }));
+    assert.ok(html.includes("revision unavailable"));
   });
 
   it("renders nothing without rows", () => {
