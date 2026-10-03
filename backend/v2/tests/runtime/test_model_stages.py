@@ -3769,6 +3769,12 @@ async def test_stripped_wire_leaves_shared_catalog_intact_for_server_validation(
 @pytest.mark.anyio
 async def test_server_validation_still_rejects_provider_authored_dependent_argument():
     catalog = {
+        "entity_resolution": {
+            "description": "resolve",
+            "arguments": {"type": "object", "properties": {
+                "query": {"type": "string"}}},
+            "dependent_entity_arguments": {},
+        },
         "player_report": {
             "description": "report",
             "arguments": {"type": "object", "properties": {
@@ -3783,8 +3789,14 @@ async def test_server_validation_still_rejects_provider_authored_dependent_argum
     planner = ModelPlanner(stub, provider="stub", model_name="stub",
                            capability_catalog=catalog)
 
-    with pytest.raises(ValueError, match="dependent injected arguments"):
-        await planner.plan(TaskSpec(goal="report", mode="quick", deliverable="text"))
+    plan = await planner.plan(TaskSpec(goal="report", mode="quick", deliverable="text"))
+    by_id = {node.id: node for node in plan.nodes}
+    assert "player" not in by_id["report"].arguments
+    assert by_id["report"].arguments.get("season") == "2025-26"
+    resolvers = [node for node in plan.nodes if "entity_resolution" in node.capability_hints]
+    assert len(resolvers) == 1
+    assert resolvers[0].arguments.get("query") == "Jalen Brunson"
+    assert resolvers[0].id in by_id["report"].depends_on
     assert planner._wire_catalog["player_report"]["dependent_entity_arguments"] == {
         "player": "player"}
     assert planner._catalog["player_report"]["dependent_entity_arguments"] == {

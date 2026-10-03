@@ -1675,15 +1675,54 @@ class ModelPlanner(ModelStage):
                         if ranked_error.startswith("RANKED_DIRECTION_UNSPECIFIED")
                         else []))
             self._check_ranked_requirement_agreement(node, arguments, requirements)
-            if set(self._catalog.get(node.capability).get("dependent_entity_arguments", {})) & set(arguments):
-                raise ValueError("provider may not author dependent injected arguments")
-            decoded.append((node, arguments))
-        return Plan.model_validate({"nodes": [{
+            entry = self._catalog.get(node.capability)
+            declarations = entry.get("dependent_entity_arguments", {}) if isinstance(entry, Mapping) else {}
+            values = dict(arguments.as_dict() if hasattr(arguments, "as_dict") else arguments)
+            stripped: dict[str, Any] = {}
+            for key in set(declarations) & set(values):
+                stripped[key] = values.pop(key)
+            decoded.append((node, values, stripped))
+        resolvers: list[dict[str, Any]] = []
+        existing = {node.id for node, _, _ in decoded}
+        resolver_for: dict[tuple[str, str], str] = {}
+        depends_extra: dict[str, list[str]] = {}
+        if "entity_resolution" in self._catalog:
+            for node, _, stripped in decoded:
+                entry = self._catalog.get(node.capability)
+                declarations = entry.get("dependent_entity_arguments", {}) if isinstance(entry, Mapping) else {}
+                for key, value in stripped.items():
+                    if value is None or (isinstance(value, str) and not value.strip()):
+                        continue
+                    entity_type = declarations.get(key)
+                    if not isinstance(entity_type, str) or not entity_type:
+                        continue
+                    fold = (str(entity_type), str(value).strip().casefold())
+                    resolver_id = resolver_for.get(fold)
+                    if resolver_id is None:
+                        base = f"resolve_{str(entity_type).replace('-', '_')}"
+                        resolver_id = base
+                        suffix = 2
+                        while resolver_id in existing:
+                            resolver_id = f"{base}_{suffix}"
+                            suffix += 1
+                        existing.add(resolver_id)
+                        resolver_for[fold] = resolver_id
+                        resolvers.append({
+                            "id": resolver_id, "description": f"Resolve {entity_type} identity for dependent tools",
+                            "depends_on": [], "capability_hints": ["entity_resolution"],
+                            "covers_requirement_ids": [],
+                            "arguments": {"query": value}, "max_attempts": 1,
+                            "status": "pending"})
+                    depends_extra.setdefault(node.id, []).append(resolver_id)
+        return Plan.model_validate({"nodes": [
+            *resolvers,
+            *[{
             "id": node.id, "description": node.description,
-            "depends_on": node.depends_on or [], "capability_hints": [node.capability],
+            "depends_on": list(dict.fromkeys([*(node.depends_on or []), *depends_extra.get(node.id, [])])),
+            "capability_hints": [node.capability],
             "covers_requirement_ids": node.covers_requirement_ids or [],
             "arguments": dict(arguments), "max_attempts": node.max_attempts or 1,
-            "status": node.status or "pending"} for node, arguments in decoded]})
+            "status": node.status or "pending"} for node, arguments, _ in decoded]]})
 
     def __init__(self, *args: Any, capability_catalog: Mapping[str, str], **kwargs: Any) -> None:
         super().__init__(*args, **kwargs)
