@@ -262,6 +262,21 @@ def test_next_play_foul_opens_new_possession():
     assert out[1]["points"] == 0
 
 
+def test_orphan_period_end_after_close_is_dropped():
+    rows = [
+        _row(0, _pt(12, 0), 1, 0, "", "period", "start", "Start of 1st",
+             home="100", away="99"),
+        _row(1, _pt(0, 1), 1, ATL, "ATL", "Missed Shot", "Jump Shot",
+             "MISS Rivers 25' 3PT Jump Shot", shot_value=3),
+        _row(2, _pt(0, 1), 1, BOS, "BOS", "Rebound", "Unknown",
+             "Lauvergne REBOUND (Off:0 Def:4)"),
+        _row(3, _pt(0, 0), 1, 0, "", "period", "end", "End of 1st"),
+    ]
+    out = possessions.parse_game_possessions(rows)
+    assert len(out) == 1
+    assert out[0]["events"] == ["PERIOD-START", "MISS3", "DREB"]
+
+
 def test_unmapped_team_rebound_raises():
     rows = [
         _row(0, _pt(12, 0), 1, 0, "", "period", "start", "Start of 1st"),

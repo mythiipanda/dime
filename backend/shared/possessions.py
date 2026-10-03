@@ -373,6 +373,14 @@ def parse_game_possessions(pbp_rows):
         action = row.get("action_type") or ""
         sub = row.get("sub_type") or ""
         if current is None:
+            if action == "period" and sub == "end":
+                home_score = _score_value(row.get("score_home"))
+                if home_score is not None:
+                    home = home_score
+                away_score = _score_value(row.get("score_away"))
+                if away_score is not None:
+                    away = away_score
+                continue
             current = _Open(team_ids, id_to_abbr, abbr_to_id, (home, away))
         elif action == "period" and sub == "start":
             shut(len(out) + 1)
