@@ -753,6 +753,17 @@ class ModelStage:
         return await self._model.generate(**call)
 
 
+def catalog_for_wire(catalog: Mapping[str, Any]) -> dict[str, Any]:
+    return {
+        name: (
+            {key: value for key, value in entry.items()
+             if key != "dependent_entity_arguments" or value}
+            if isinstance(entry, Mapping) else entry
+        )
+        for name, entry in catalog.items()
+    }
+
+
 def capability_arguments_for(requirement, capability_id: str) -> dict[str, Any]:
     if requirement.capability_argument_sets:
         match = next((item for item in requirement.capability_argument_sets
@@ -849,6 +860,7 @@ class ModelIntake(ModelStage):
                  **kwargs: Any) -> None:
         super().__init__(*args, **kwargs)
         self._catalog = dict(capability_catalog)
+        self._wire_catalog = catalog_for_wire(self._catalog)
 
     @staticmethod
     def _bounded_context(context: Sequence[ConversationTurn]) -> tuple[ConversationTurn, ...]:
@@ -979,7 +991,7 @@ class ModelIntake(ModelStage):
             "current_date": datetime.now(UTC).date().isoformat(),
             "conversation_context": [turn.model_dump(mode="json")
                                      for turn in bounded],
-            "capability_catalog": self._catalog,
+            "capability_catalog": self._wire_catalog,
             "skill_catalog": self._skills.catalog(),
         }
         task = await self._generate(payload)
@@ -1460,7 +1472,7 @@ class ModelIntake(ModelStage):
         payload = {
             "question": request,
             "draft_task": task.model_dump(mode="json"),
-            "capability_catalog": self._catalog,
+            "capability_catalog": self._wire_catalog,
             "skill_catalog": self._skills.catalog(),
         }
         ranked_arguments: dict[str, dict[str, Any]] = {}
@@ -1676,11 +1688,12 @@ class ModelPlanner(ModelStage):
     def __init__(self, *args: Any, capability_catalog: Mapping[str, str], **kwargs: Any) -> None:
         super().__init__(*args, **kwargs)
         self._catalog = dict(capability_catalog)
+        self._wire_catalog = catalog_for_wire(self._catalog)
 
     async def plan(self, task: TaskSpec, failure_context: dict | None = None) -> Plan:
         payload = {
             "task": task.model_dump(mode="json"),
-            "capability_catalog": self._catalog,
+            "capability_catalog": self._wire_catalog,
             "skills": self._skills.activate(task.skills),
         }
         if failure_context is not None:
