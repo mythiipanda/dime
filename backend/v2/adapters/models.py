@@ -1424,8 +1424,8 @@ class ModelIntake(ModelStage):
                 if ranked_error: raise ValueError(ranked_error)
                 entry = self._catalog.get(option.capability_id)
                 injected = set(entry.get("dependent_entity_arguments", {}))
-                if injected & set(arguments):
-                    raise ValueError("provider may not author dependent injected arguments")
+                for key in injected & set(arguments):
+                    del arguments[key]
 
     def _expand_home_away_requirements(self, review, scope: str):
         expanded = []
@@ -1670,8 +1670,9 @@ class ModelPlanner(ModelStage):
                         if ranked_error.startswith("RANKED_DIRECTION_UNSPECIFIED")
                         else []))
             self._check_ranked_requirement_agreement(node, arguments, requirements)
-            if set(self._catalog.get(node.capability).get("dependent_entity_arguments", {})) & set(arguments):
-                raise ValueError("provider may not author dependent injected arguments")
+            injected_args = set(self._catalog.get(node.capability).get("dependent_entity_arguments", {}))
+            for key in injected_args & set(arguments):
+                del arguments[key]
             decoded.append((node, arguments))
         return Plan.model_validate({"nodes": [{
             "id": node.id, "description": node.description,
