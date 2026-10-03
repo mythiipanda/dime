@@ -1422,9 +1422,6 @@ class ModelIntake(ModelStage):
                 if errors: raise ValueError(f"invalid {option.capability_id} requirement arguments: {errors[0].message}")
                 ranked_error = ranked_team_arguments_error(option.capability_id, arguments)
                 if ranked_error: raise ValueError(ranked_error)
-                entry = self._catalog.get(option.capability_id)
-                injected = set(entry.get("dependent_entity_arguments", {}))
-                arguments = {k: v for k, v in arguments.items() if k not in injected}
 
     def _expand_home_away_requirements(self, review, scope: str):
         expanded = []
@@ -1669,11 +1666,6 @@ class ModelPlanner(ModelStage):
                         if ranked_error.startswith("RANKED_DIRECTION_UNSPECIFIED")
                         else []))
             self._check_ranked_requirement_agreement(node, arguments, requirements)
-            injected_args = set(self._catalog.get(node.capability).get("dependent_entity_arguments", {}))
-            if injected_args & set(arguments):
-                arguments = type(arguments).model_validate({
-                    "entries": [e for e in arguments.entries if e.key not in injected_args]
-                })
             decoded.append((node, arguments))
         return Plan.model_validate({"nodes": [{
             "id": node.id, "description": node.description,
