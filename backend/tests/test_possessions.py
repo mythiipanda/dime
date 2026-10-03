@@ -9,6 +9,7 @@ from shared import possessions  # noqa: E402
 
 ATL = 1610612737
 BOS = 1610612738
+CLE = 1610612739
 
 PILOT_PARQUET = Path(
     "/home/hatch/workspace/goals/dime-playground/hidden_files"
@@ -287,6 +288,75 @@ def test_unmapped_team_rebound_raises():
     ]
     with pytest.raises(ValueError):
         possessions.parse_game_possessions(rows)
+
+
+def test_teamless_shot_clock_turnover_resolves_offense_from_description():
+    rows = [
+        _row(0, _pt(12, 0), 1, 0, "", "period", "start", "Start of 1st"),
+        _row(1, _pt(11, 30), 1, 0, "", "Turnover", "Shot Clock Violation",
+             "CAVALIERS Turnover: Shot Clock (T#9)"),
+        _row(2, _pt(11, 10), 1, BOS, "BOS", "Made Shot", "Jump Shot",
+             "Brown 25' 3PT Jump Shot (3 PTS)", shot_value=3),
+        _row(3, _pt(10, 50), 1, CLE, "CLE", "Made Shot", "Jump Shot",
+             "Mitchell 12' Jump Shot (2 PTS)", shot_value=2),
+    ]
+    out = possessions.parse_game_possessions(rows)
+    assert [p["possession_number"] for p in out] == [1, 2, 3]
+    assert out[0]["off_abbr"] == "CLE"
+    assert out[0]["events"] == ["PERIOD-START", "TOV"]
+    assert out[1]["off_abbr"] == "BOS"
+    assert out[2]["off_abbr"] == "CLE"
+
+
+def test_teamless_replay_between_possessions_does_not_open():
+    rows = [
+        _row(0, _pt(12, 0), 1, 0, "", "period", "start", "Start of 1st"),
+        _row(1, _pt(10, 57), 1, BOS, "BOS", "Turnover", "Bad Pass",
+             "Brown Bad Pass Turnover (P1.T1)", home="0", away="0"),
+        _row(2, _pt(10, 57), 1, 0, "", "Instant Replay", "",
+             "Support Ruling - ruling stands"),
+        _row(3, _pt(10, 40), 1, ATL, "ATL", "Made Shot", "Jump Shot",
+             "Risacher 10' Jump Shot (2 PTS)", home="0", away="2",
+             shot_value=2),
+    ]
+    out = possessions.parse_game_possessions(rows)
+    assert len(out) == 2
+    assert out[0]["events"] == ["PERIOD-START", "TOV", "REPLAY"]
+    assert out[1]["events"] == ["MAKE2"]
+
+
+def test_teamless_replay_before_first_possession_is_dropped():
+    rows = [
+        _row(0, _pt(12, 0), 1, 0, "", "Instant Replay", "",
+             "Support Ruling - ruling stands"),
+        _row(1, _pt(12, 0), 1, 0, "", "period", "start", "Start of 1st"),
+        _row(2, _pt(11, 40), 1, ATL, "ATL", "Missed Shot", "Jump Shot",
+             "MISS Risacher 3PT Jump Shot", shot_value=3),
+        _row(3, _pt(11, 38), 1, BOS, "BOS", "Rebound", "Unknown",
+             "Horford REBOUND (Off:0 Def:1)"),
+    ]
+    out = possessions.parse_game_possessions(rows)
+    assert len(out) == 1
+    assert out[0]["events"] == ["PERIOD-START", "MISS3", "DREB"]
+
+
+def test_unresolvable_fragment_folds_into_previous_possession():
+    rows = [
+        _row(0, _pt(12, 0), 1, 0, "", "period", "start", "Start of 1st",
+             home="0", away="0"),
+        _row(1, _pt(11, 40), 1, BOS, "BOS", "Made Shot", "Jump Shot",
+             "Brown 10' Jump Shot (2 PTS)", home="2", away="0",
+             shot_value=2),
+        _row(2, _pt(11, 35), 1, 0, "", "Turnover", "",
+             "Support Ruling - ruling stands"),
+        _row(3, _pt(11, 20), 1, ATL, "ATL", "Made Shot", "Jump Shot",
+             "Risacher 10' Jump Shot (2 PTS)", home="2", away="2",
+             shot_value=2),
+    ]
+    out = possessions.parse_game_possessions(rows)
+    assert len(out) == 2
+    assert out[0]["events"] == ["PERIOD-START", "MAKE2", "TOV"]
+    assert out[1]["events"] == ["MAKE2"]
 
 
 def _pilot_rows():

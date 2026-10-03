@@ -172,6 +172,39 @@ def _rebound_team(row, id_to_abbr, abbr_to_id):
     return abbr_to_id[abbr], abbr
 
 
+def _nickname_abbr(desc, action, known_abbrs):
+    text = str(desc or "")
+    if action == "Rebound":
+        name = text.split(" Rebound")[0].strip().lower()
+    elif action == "Turnover":
+        name = text.split(" Turnover")[0].strip().lower()
+    else:
+        return None
+    if not name:
+        return None
+    abbr = TEAM_NICKNAMES.get(name)
+    if abbr is not None:
+        return abbr
+    for known in known_abbrs:
+        if known and known.lower() == name:
+            return known
+    return None
+
+
+def _normalize_teamless(rows, abbr_to_id):
+    for row in rows:
+        if _team_of(row):
+            continue
+        if str(row.get("team_tricode") or "").strip():
+            continue
+        abbr = _nickname_abbr(row.get("description"),
+                              row.get("action_type") or "",
+                              abbr_to_id)
+        if abbr is None or abbr not in abbr_to_id:
+            continue
+        row["team_id"] = abbr_to_id[abbr]
+
+
 def _static_token(row):
     action = row.get("action_type") or ""
     if action == "period":
@@ -349,6 +382,7 @@ def parse_game_possessions(pbp_rows):
     if len(team_ids) != 2:
         raise ValueError(f"expected 2 teams, found {len(team_ids)}")
     abbr_to_id = {a: i for i, a in id_to_abbr.items() if a}
+    _normalize_teamless(rows, abbr_to_id)
     out = []
     current = None
     home = 0
@@ -363,7 +397,12 @@ def parse_game_possessions(pbp_rows):
             away = first_away
 
     def shut(number):
-        record = current.close(number, (home, away))
+        try:
+            record = current.close(number, (home, away))
+        except ValueError:
+            if out:
+                out[-1]["events"].extend(current.events)
+            return
         out.append(record)
 
     for row in rows:
@@ -380,6 +419,19 @@ def parse_game_possessions(pbp_rows):
                 away_score = _score_value(row.get("score_away"))
                 if away_score is not None:
                     away = away_score
+                continue
+            teamless = not _team_of(row) and not str(
+                row.get("team_tricode") or "").strip()
+            if teamless and action != "Timeout" and not (
+                    action == "period" and sub == "start"):
+                home_score = _score_value(row.get("score_home"))
+                if home_score is not None:
+                    home = home_score
+                away_score = _score_value(row.get("score_away"))
+                if away_score is not None:
+                    away = away_score
+                if out:
+                    out[-1]["events"].append(_static_token(row))
                 continue
             current = _Open(team_ids, id_to_abbr, abbr_to_id, (home, away))
         elif action == "period" and sub == "start":

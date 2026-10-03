@@ -62,6 +62,12 @@ def season_for_game(game_id):
         return 0
 
 
+def scope_reason(game_id):
+    if str(game_id or "")[:3] in ("002", "003", "004"):
+        return None
+    return "exhibition/preseason out of scope"
+
+
 def fetch(url, dest):
     if dest.exists() and dest.stat().st_size > 0:
         return True
@@ -332,6 +338,11 @@ def main(argv=None):
         if not args.dry_run and ids:
             frame = pl.read_parquet(path)
         for gid in ids:
+            reason = scope_reason(gid)
+            if reason is not None:
+                print(f"skip {TABLE} {season} {gid}: {reason}", flush=True)
+                skipped += 1
+                continue
             if unit_complete(season, entity_for(gid)):
                 print(f"skip {TABLE} {season} {gid}", flush=True)
                 done += 1
