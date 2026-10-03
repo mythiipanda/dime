@@ -99,6 +99,13 @@ def _score_value(raw):
         return None
 
 
+def _track_score(current, raw):
+    seen = _score_value(raw)
+    if seen is None or seen < current:
+        return current
+    return seen
+
+
 def _team_of(row):
     try:
         return int(row.get("team_id"))
@@ -359,7 +366,7 @@ class _Open:
             "off_abbr": off_abbr,
             "def_abbr": self.id_to_abbr.get(def_id) or "",
             "events": list(self.events),
-            "points": int(self.team_points.get(off_id, 0)),
+            "points": int(sum(self.team_points.values())),
             "score_home_in": int(self.score_in[0]),
             "score_away_in": int(self.score_in[1]),
             "score_home_out": int(score_out[0]),
@@ -413,23 +420,15 @@ def parse_game_possessions(pbp_rows):
         sub = row.get("sub_type") or ""
         if current is None:
             if action == "period" and sub == "end":
-                home_score = _score_value(row.get("score_home"))
-                if home_score is not None:
-                    home = home_score
-                away_score = _score_value(row.get("score_away"))
-                if away_score is not None:
-                    away = away_score
+                home = _track_score(home, row.get("score_home"))
+                away = _track_score(away, row.get("score_away"))
                 continue
             teamless = not _team_of(row) and not str(
                 row.get("team_tricode") or "").strip()
             if teamless and action != "Timeout" and not (
                     action == "period" and sub == "start"):
-                home_score = _score_value(row.get("score_home"))
-                if home_score is not None:
-                    home = home_score
-                away_score = _score_value(row.get("score_away"))
-                if away_score is not None:
-                    away = away_score
+                home = _track_score(home, row.get("score_home"))
+                away = _track_score(away, row.get("score_away"))
                 if out:
                     out[-1]["events"].append(_static_token(row))
                 continue
@@ -438,12 +437,8 @@ def parse_game_possessions(pbp_rows):
             shut(len(out) + 1)
             current = _Open(team_ids, id_to_abbr, abbr_to_id, (home, away))
         elif action == "period" and sub == "end":
-            home_score = _score_value(row.get("score_home"))
-            if home_score is not None:
-                home = home_score
-            away_score = _score_value(row.get("score_away"))
-            if away_score is not None:
-                away = away_score
+            home = _track_score(home, row.get("score_home"))
+            away = _track_score(away, row.get("score_away"))
             current.attach(row)
             shut(len(out) + 1)
             current = None
@@ -466,12 +461,8 @@ def parse_game_possessions(pbp_rows):
                 shut(len(out) + 1)
                 current = _Open(team_ids, id_to_abbr, abbr_to_id,
                                 (home, away))
-        home_score = _score_value(row.get("score_home"))
-        if home_score is not None:
-            home = home_score
-        away_score = _score_value(row.get("score_away"))
-        if away_score is not None:
-            away = away_score
+        home = _track_score(home, row.get("score_home"))
+        away = _track_score(away, row.get("score_away"))
         ended = current.attach(row)
         if ended:
             shut(len(out) + 1)

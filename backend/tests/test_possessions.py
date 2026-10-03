@@ -439,3 +439,19 @@ def test_pilot_game_pinned_possessions():
     assert last["off_abbr"] == "BOS"
     assert last["clock_in_sec"] == 0.0
     assert last["clock_out_sec"] == 0.0
+
+
+def test_score_gap_holds_last_good_value():
+    rows = [
+        _row(0, _pt(12, 0), 4, 0, "", "period", "start", "Start of 4th",
+             home="98", away="110"),
+        _row(1, _pt(0, 21), 4, ATL, "ATL", "Missed Shot", "Jump Shot",
+             "MISS Player 3PT", home="0", away="0", shot_value=3),
+        _row(2, _pt(0, 20), 4, BOS, "BOS", "Rebound", "Unknown",
+             "Player REBOUND", home="0", away="0"),
+        _row(3, _pt(0, 0), 4, 0, "", "period", "end", "End of 4th",
+             home="98", away="110"),
+    ]
+    out = possessions.parse_game_possessions(rows)
+    assert len(out) == 1
+    assert (out[0]["score_home_out"], out[0]["score_away_out"]) == (98, 110)
