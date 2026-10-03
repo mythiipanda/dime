@@ -34,6 +34,7 @@ class EventType(StrEnum):
     SUGGESTIONS = "suggestions"
     GRAPH_END = "graph_end"
     BINDING_DIAGNOSTIC = "binding_diagnostic"
+    RUN_DIAGNOSTIC = "run_diagnostic"
 
 
 class NodeUpdate(StrictEvent):
@@ -150,6 +151,14 @@ class BindingDiagnostic(StrictEvent):
     rejection: str = Field(max_length=512)
 
 
+class RunDiagnostic(StrictEvent):
+    type: Literal[EventType.RUN_DIAGNOSTIC] = EventType.RUN_DIAGNOSTIC
+    run_id: str = Field(max_length=256)
+    error_type: str = Field(max_length=256)
+    message: str = Field(max_length=4000)
+    last_stage: str | None = Field(default=None, max_length=256)
+
+
 from v2.api.activity import StageData, PlanData, EvidenceData, VerificationData
 class ActivityBase(StrictEvent):
     event_id: str = Field(pattern=r'^[A-Za-z0-9_-]+:\d+$')
@@ -191,7 +200,8 @@ InternalEvent = Annotated[
     | FinalAnswer
     | Suggestions
     | GraphEnd
-    | BindingDiagnostic,
+    | BindingDiagnostic
+    | RunDiagnostic,
     Field(discriminator="type"),
 ]
 

@@ -366,3 +366,115 @@ def test_pts_leaf_on_assist_total_still_rejected():
             task, execution, _draft(),
             _claim([_assist_name_binding(),
                     _assist_total_binding("rows[0].PTS", 1900)]))
+
+
+LIVE_SHORT = "qualified_leaders"
+LIVE_DIGEST = "qualified_leaders:05b5922eaefae72d"
+LIVE_REQ = "assist_leader_2024_25"
+
+
+def _live_envelope():
+    return EvidenceEnvelope(
+        evidence_id=LIVE_DIGEST,
+        capability="qualified_leaders",
+        source="warehouse",
+        observed_at=datetime.now(timezone.utc),
+        season="2024-25",
+        entities=[_trae()],
+        rows=_rows(),
+        units={"AST": "count"},
+    )
+
+
+def _live_plan():
+    return Plan(nodes=[
+        PlanNode(
+            id=LIVE_SHORT,
+            description="assists leaders board",
+            capability_hints=["qualified_leaders"],
+            covers_requirement_ids=[LIVE_REQ],
+            status=PlanStatus.COMPLETE,
+        ),
+    ])
+
+
+def _live_execution():
+    return ExecutionResult(
+        plan=_live_plan(),
+        evidence_by_node={LIVE_SHORT: _live_envelope()},
+        attempts={LIVE_SHORT: 1},
+    )
+
+
+def _live_task():
+    return TaskSpec(
+        goal="Who led the 2024-25 season in assists?",
+        mode="quick",
+        deliverable="The assists leader for 2024-25",
+        requested_outputs=["PLAYER_NAME", "AST"],
+        entities=[],
+        requirements=[_requirement(LIVE_REQ, ["PLAYER_NAME", "AST"])],
+    )
+
+
+def _live_binding(output_id, value, unit):
+    return EvidenceOutputBinding(
+        requirement_kind="evidence",
+        requirement_id=LIVE_REQ,
+        output_id=output_id,
+        node_id=LIVE_DIGEST,
+        evidence_id=LIVE_DIGEST,
+        selector="rows[0]." + output_id,
+        row_selector="rows[0]",
+        value=value,
+        subject_entity_type="player",
+        subject_entity_id="1629027",
+        subject_selector="rows[0].PLAYER_ID",
+        unit=unit,
+        domain="qualified_leaders",
+    )
+
+
+def _live_claim():
+    bindings = [
+        _live_binding(
+            "PLAYER_NAME",
+            {"kind": "string", "value": "Trae Young"},
+            {"kind": "unitless"},
+        ),
+        _live_binding(
+            "AST",
+            {"kind": "integer", "value": 880},
+            {"kind": "declared", "value": "count"},
+        ),
+    ]
+    return VerifiedClaim(
+        claim_index=0,
+        claim=Claim(
+            text="Trae Young led with 880 assists",
+            kind="observed",
+            evidence_ids=[LIVE_DIGEST],
+            output_bindings=list(bindings),
+        ),
+        evidence_ids=[LIVE_DIGEST],
+        output_bindings=list(bindings),
+    )
+
+
+def test_short_slug_keyed_propagate_resolves_by_evidence_id():
+    task = _live_task()
+    execution = _live_execution()
+    draft = _draft()
+    admitted = admit_verified_claim_bindings(
+        task, execution, draft, _live_claim())
+    propagated = propagate_evidence_to_task(task, execution, draft, [admitted])
+    clones = [
+        binding
+        for claim in propagated
+        for binding in claim.output_bindings
+        if binding.requirement_kind == "task"
+    ]
+    assert len(clones) == 2
+    by_key = _statuses(task, propagated)
+    assert by_key[("task", None, "PLAYER_NAME")].status == "complete"
+    assert by_key[("task", None, "AST")].status == "complete"

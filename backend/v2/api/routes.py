@@ -4,6 +4,7 @@ import asyncio
 import hashlib
 import io
 import json
+import logging
 import os
 import re
 import subprocess
@@ -1063,6 +1064,23 @@ def _stream_binding_diagnostics(result, diagnostics: bool) -> list[str]:
     ]
 
 
+def _stream_run_diagnostic(exc, run_id, last_stage, diagnostics: bool) -> list[str]:
+    from v2.api.events import RunDiagnostic
+    from v2.api.sse import encode_event
+
+    if not diagnostics:
+        return []
+    message = str(exc) or type(exc).__name__
+    return [
+        encode_event(RunDiagnostic(
+            run_id=run_id,
+            error_type=type(exc).__name__,
+            message=message,
+            last_stage=last_stage,
+        ), diagnostics=True)
+    ]
+
+
 async def _drain_run(
     task: "asyncio.Task",
     queue: "asyncio.Queue",
@@ -1329,7 +1347,13 @@ async def quick_answer_stream(body: QuickAnswerBody):
                 timed_out = isinstance(exc, asyncio.TimeoutError)
                 if timed_out and not task.done():
                     task.cancel()
+                logging.getLogger(__name__).exception("v2 run failed: %r", exc)
                 if policy.publish:
+                    stages = stage_latencies_ms()
+                    last_stage = list(stages)[-1] if stages else None
+                    for chunk in _stream_run_diagnostic(
+                            exc, run_id, last_stage, body.diagnostics):
+                        yield chunk
                     for event in missing_tool_events():
                         safe_event = _safe_buffered_event(event)
                         if safe_event is not None:

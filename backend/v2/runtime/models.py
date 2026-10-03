@@ -439,9 +439,15 @@ def propagate_evidence_to_task(task, execution, draft, admitted):
             if subject in task_entities:
                 pass
             elif not task_entities or league_scoped:
-                envelope = execution.evidence_by_node.get(binding.node_id)
+                envelope = next(
+                    (item for item in execution.evidence_by_node.values()
+                     if item.evidence_id == binding.evidence_id),
+                    None,
+                )
                 if envelope is None:
-                    continue
+                    envelope = execution.evidence_by_node.get(binding.node_id)
+                if envelope is None:
+                    raise ValueError("propagation could not resolve binding evidence")
                 envelope_entities = {
                     canonical_entity_ref(item) for item in envelope.entities
                 }
