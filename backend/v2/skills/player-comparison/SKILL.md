@@ -37,4 +37,4 @@ Explain apples-to-oranges roles, metric disagreement, shooting variance, teammat
 
 State the decision in one line and keep two competing answers alive until the end. Cover five angles with separate evidence: role, production, impact, context, projection. Rows from one table count as one angle only.
 
-Explain conflicts before picking a winner, including strong box numbers with weak adjusted impact and on/off splits moved by bench quality. Give a conditional winner for the decision and horizon. Name where each player is better, which skills transfer, and what evidence cannot settle. State the strongest reason the pick is wrong and the evidence or role change that reverses it.
+Explain conflicts before picking a winner, including strong box numbers with weak adjusted impact and on/off splits moved by bench quality. Give conditional winners for the decision and horizon. Name where each player is better, which skills transfer, and what evidence cannot settle. State the strongest reason the pick is wrong and the evidence or role change that reverses it.
