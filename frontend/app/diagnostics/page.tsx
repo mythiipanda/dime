@@ -2,7 +2,6 @@
 
 import { useRef, useState } from "react";
 import { postChatStream } from "../../lib/api";
-import { chatRuntime } from "../../lib/runtime";
 import {
   bindingDiagnostics,
   diffDiagnostics,
@@ -80,11 +79,10 @@ export default function DiagnosticsPage() {
   const [leftText, setLeftText] = useState("");
   const [rightText, setRightText] = useState("");
   const abort = useRef<AbortController | null>(null);
-  const v2 = chatRuntime() === "v2";
 
   const run = async () => {
     const question = q.trim();
-    if (!question || running || !v2) return;
+    if (!question || running) return;
     abort.current?.abort();
     abort.current = new AbortController();
     setEvents([]);
@@ -124,11 +122,7 @@ export default function DiagnosticsPage() {
       <div style={{ fontSize: 13, color: "var(--color-warm-gray)", marginBottom: 16 }}>
         Runs a chat stream with diagnostics on and lists every rejected evidence binding.
       </div>
-      {!v2 && (
-        <div style={{ fontSize: 13, color: "var(--color-warm-gray)", marginBottom: 16 }}>
-          Needs the v2 chat runtime. Diagnostics events only exist on v2 streams.
-        </div>
-      )}
+
       <div style={{ display: "flex", gap: 4, marginBottom: 12 }} role="group" aria-label="Mode">
         {(["probe", "compare"] as const).map((m) => (
           <button
@@ -157,7 +151,7 @@ export default function DiagnosticsPage() {
               placeholder="Ask the question to probe"
               aria-label="Probe question"
             />
-            <button className="pill-cta" onClick={run} disabled={running || !v2 || !q.trim()}>
+            <button className="pill-cta" onClick={run} disabled={running || !q.trim()}>
               {running ? "Running..." : "Run probe"}
             </button>
           </div>

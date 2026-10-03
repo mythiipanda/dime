@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import CopyLink from "./CopyLink";
 import { PanelHeader } from "./ExplorePanel";
-import { getQueryParam, setQueryParam } from "../lib/api";
+import { apiPath, getQueryParam, setQueryParam } from "../lib/api";
 import { BACKEND } from "../lib/chat";
 
 const SEASONS = [
@@ -179,7 +179,7 @@ export default function PlayerLeaderboard({
     setStatus("loading");
     setError("");
     fetch(
-      `${BACKEND}/api/v1/datasets/player_seasons?season=${encodeURIComponent(season)}&fmt=json`,
+      `${BACKEND}${apiPath(`/datasets/player_seasons?season=${encodeURIComponent(season)}&fmt=json`)}`,
       { signal: ctrl.signal },
     )
       .then((res) => {
