@@ -7,7 +7,7 @@ from decimal import Decimal, InvalidOperation
 import math
 from typing import Any
 
-from v2.contracts import EvidenceEnvelope
+from v2.contracts import EvidenceEnvelope, format_window
 
 
 @dataclass(frozen=True)
@@ -127,6 +127,7 @@ def source_integrity_issues(
     *,
     required_season: str | None = None,
     expected_teams: Mapping[str, str] | None = None,
+    required_window: tuple[date | None, date | None] | None = None,
 ) -> list[SourceIntegrityIssue]:
     evidence = EvidenceEnvelope.model_validate(evidence.model_dump())
     issues: list[SourceIntegrityIssue] = []
@@ -138,6 +139,20 @@ def source_integrity_issues(
         issues.append(SourceIntegrityIssue(
             "season_mismatch",
             f"evidence season {evidence.season} does not match {required_season}"))
+    if required_window is not None:
+        asked_start, asked_end = required_window
+        if asked_start is not None or asked_end is not None:
+            served = (evidence.window_start, evidence.window_end)
+            if served == (None, None):
+                issues.append(SourceIntegrityIssue(
+                    "window_missing",
+                    f"evidence covers the full season but "
+                    f"{format_window(asked_start, asked_end)} is required"))
+            elif served != (asked_start, asked_end):
+                issues.append(SourceIntegrityIssue(
+                    "window_mismatch",
+                    f"evidence covers {format_window(*served)} but "
+                    f"{format_window(asked_start, asked_end)} is required"))
     expected = {name.casefold(): team.upper()
                 for name, team in (expected_teams or {}).items()}
     rows = evidence.rows if isinstance(evidence.rows, list) else [evidence.rows]
@@ -164,10 +179,11 @@ def admit_evidence(
     *,
     required_season: str | None = None,
     expected_teams: Mapping[str, str] | None = None,
+    required_window: tuple[date | None, date | None] | None = None,
 ) -> EvidenceEnvelope:
     issues = source_integrity_issues(
         evidence, required_season=required_season,
-        expected_teams=expected_teams)
+        expected_teams=expected_teams, required_window=required_window)
     if issues:
         raise EvidenceAdmissionError(issues)
     return evidence

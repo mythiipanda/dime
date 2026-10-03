@@ -515,3 +515,32 @@ def test_fabricated_team_name_does_not_collapse_to_real_team_id():
     from v2.contracts import canonical_entity_id
     for probe in ("Queens Cobras", "Springfield Atoms", ""):
         assert canonical_entity_id("team", probe) != "1610612737"
+
+
+def test_task_spec_and_envelope_carry_optional_date_window():
+    from datetime import date
+    from v2.contracts import EvidenceEnvelope, TaskSpec
+    task = TaskSpec(goal="January splits", mode="quick", deliverable="answer",
+        window_start=date(2026, 1, 1), window_end=date(2026, 1, 31))
+    assert (task.window_start, task.window_end) == (date(2026, 1, 1), date(2026, 1, 31))
+    plain = TaskSpec(goal="Full season", mode="quick", deliverable="answer")
+    assert (plain.window_start, plain.window_end) == (None, None)
+    from datetime import UTC, datetime
+    item = EvidenceEnvelope(evidence_id="logs", capability="game_logs", source="fixture",
+        observed_at=datetime.now(UTC), rows=[],
+        window_start=date(2026, 1, 1), window_end=date(2026, 1, 31))
+    assert (item.window_start, item.window_end) == (date(2026, 1, 1), date(2026, 1, 31))
+
+
+def test_date_window_rejects_start_after_end():
+    from datetime import date
+    import pytest
+    from v2.contracts import EvidenceEnvelope, TaskSpec
+    with pytest.raises(Exception):
+        TaskSpec(goal="Bad window", mode="quick", deliverable="answer",
+            window_start=date(2026, 2, 1), window_end=date(2026, 1, 31))
+    from datetime import UTC, datetime
+    with pytest.raises(Exception):
+        EvidenceEnvelope(evidence_id="logs", capability="game_logs", source="fixture",
+            observed_at=datetime.now(UTC), rows=[],
+            window_start=date(2026, 2, 1), window_end=date(2026, 1, 31))

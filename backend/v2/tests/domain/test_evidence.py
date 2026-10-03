@@ -151,3 +151,30 @@ def test_evidence_index_revalidates_copied_envelopes() -> None:
     invalid = envelope("ev").model_copy(update={"source": " "})
     with pytest.raises(ValidationError, match="evidence identity"):
         EvidenceIndex([invalid])
+
+
+def test_admission_rejects_full_season_evidence_for_windowed_task():
+    from datetime import date
+    from v2.domain.evidence import EvidenceAdmissionError, admit_evidence
+
+    item = envelope("season")
+    with pytest.raises(EvidenceAdmissionError) as caught:
+        admit_evidence(item, required_window=(date(2026, 1, 1), date(2026, 1, 31)))
+    assert [issue.code for issue in caught.value.issues] == ["window_missing"]
+    assert "2026-01-01" in caught.value.issues[0].message
+
+
+def test_admission_accepts_matching_window_evidence():
+    from datetime import date
+    from v2.domain.evidence import admit_evidence
+
+    item = envelope("logs", rows=[{"PTS": 10}]).model_copy(update={
+        "window_start": date(2026, 1, 1), "window_end": date(2026, 1, 31)})
+    admitted = admit_evidence(item, required_window=(date(2026, 1, 1), date(2026, 1, 31)))
+    assert admitted.evidence_id == "logs"
+
+
+def test_admission_ignores_window_when_task_is_unwindowed():
+    from v2.domain.evidence import admit_evidence
+
+    assert admit_evidence(envelope("season")).evidence_id == "season"

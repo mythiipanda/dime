@@ -25,6 +25,7 @@ Fields:
   e.g. "2024-25" (shape only; the runtime pins the real value from
   warehouse coverage); source is "user" | "context" | "default" | "resolved".
 - as_of (ISO date) or null: the date the answer should speak as of.
+- window_start / window_end (ISO dates) or null: the date range the question asks about, only when the question states explicit calendar dates. Event-relative spans without a fixed calendar mapping ("pre/post All-Star") leave both null; never invent cutoff dates.
 - subject_entity_type (str) or null: the entity level of the question subject ("player" | "team"); null when ambiguous.
 - subquestions (list of str): the distinct questions inside the goal.
 - required_evidence (list of str): capability names the answer needs.
