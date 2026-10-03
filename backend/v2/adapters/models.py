@@ -2399,13 +2399,83 @@ def _deterministic_rank_draft(
             "inputs": inputs, "subject_input": subject_input, "result": 1, "unit": "rank",
         } for index, requirement in enumerate(eligible)]
         calculation_id = calculations[0]["calculation_id"] if calculations else None
+        from v2.contracts import (
+            CalculationOutputBinding,
+            Claim,
+            EvidenceOutputBinding,
+        )
+        winner_row = item.rows[winner_index]
+        row_selector = f"rows[{winner_index}]"
+        subject_id = winner_row.get("TEAM_ID")
+        if subject_id is not None and str(subject_id).strip():
+            subject_fields: dict = {
+                "subject_entity_type": "team",
+                "subject_entity_id": str(subject_id),
+                "subject_selector": f"{row_selector}.TEAM_ID",
+            }
+        else:
+            subject_fields = {
+                "subject_entity_type": None,
+                "subject_entity_id": None,
+                "subject_selector": None,
+            }
+
+        def _binding_value(raw):
+            if isinstance(raw, bool):
+                return {"kind": "boolean", "value": raw}
+            if isinstance(raw, int):
+                return {"kind": "integer", "value": raw}
+            if isinstance(raw, float):
+                return {"kind": "float", "value": raw}
+            if isinstance(raw, Decimal):
+                return {"kind": "decimal", "value": str(raw)}
+            return {"kind": "string", "value": str(raw)}
+
+        from v2.adapters.capabilities import CAPABILITIES
+        capability_units = getattr(
+            CAPABILITIES.get("team_ratings"), "units", {}) or {}
+        output_bindings: list = []
+        for output_id in owner.requested_outputs:
+            if output_id not in winner_row or winner_row[output_id] is None:
+                continue
+            unit_name = (item.units or {}).get(output_id) \
+                or capability_units.get(output_id)
+            unit = {"kind": "declared", "value": unit_name} \
+                if unit_name else {"kind": "unitless"}
+            output_bindings.append(EvidenceOutputBinding(
+                requirement_kind="evidence",
+                requirement_id=owner.id,
+                output_id=output_id,
+                node_id=owner.id,
+                evidence_id=item.evidence_id,
+                selector=f"{row_selector}.{output_id}",
+                row_selector=row_selector,
+                value=_binding_value(winner_row[output_id]),
+                unit=unit,
+                domain="team_ratings",
+                **subject_fields,
+            ))
+        if calculation_id is not None:
+            cited_requirement_id = calculations[0]["requirement_id"]
+            cited_requirement = next(
+                (requirement for requirement in eligible
+                 if requirement.id == cited_requirement_id), None)
+            if cited_requirement is not None:
+                for output_id in cited_requirement.requested_outputs:
+                    output_bindings.append(CalculationOutputBinding(
+                        requirement_kind="calculation",
+                        requirement_id=cited_requirement.id,
+                        output_id=output_id,
+                        calculation_id=calculation_id,
+                    ))
         return DraftReport(
             sections=["Team rating leader"],
             claims=[Claim(
                 text=(f"{team} had the {direction_words[direction]} {label} "
                       f"in {item.season or 'the selected season'}: {value}."),
                 kind="derived" if calculation_id else "observed",
-                evidence_ids=[item.evidence_id], calculation_id=calculation_id)],
+                evidence_ids=[item.evidence_id], calculation_id=calculation_id,
+                output_bindings=output_bindings)],
             calculations=calculations,
             blocked_calculation_requirement_ids=blocked,
             gaps=(["Some requested calculations do not declare the requested metric in their metric_ids."]
