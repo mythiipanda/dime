@@ -270,15 +270,13 @@ def test_conflated_node_id_with_evidence_id_hit_admits():
     assert by_output["AST"].value.value == 880
 
 
-def test_evidence_id_miss_with_true_node_fallback_admits():
+def test_evidence_id_miss_with_true_node_rejects():
     ghost = "qualified_leaders:0000000000000000"
-    admitted = _admit(
-        _q1_task(), _q1_envelope(), _q1_bindings(_Q1_TRUE_NODE, ghost),
-        _Q1_TRUE_NODE, [_q1_node()],
-    )
-    by_output = {item.output_id: item for item in admitted.output_bindings}
-    assert by_output["PLAYER_NAME"].value.value == "Trae Young"
-    assert by_output["AST"].value.value == 880
+    with pytest.raises(ValueError, match="ownership"):
+        _admit(
+            _q1_task(), _q1_envelope(), _q1_bindings(_Q1_TRUE_NODE, ghost),
+            _Q1_TRUE_NODE, [_q1_node()],
+        )
 
 
 def test_evidence_and_node_miss_rejects():
