@@ -101,6 +101,7 @@ class Capability:
     coverage: str | None = None
     source_prefix: str = "v1"
     task_season_scoped: bool = True
+    live_fallback: bool = False
     extract_entities: Callable[[Any], list[EntityRef]] | None = None
     dependent_entity_arguments: Mapping[str, str] = field(default_factory=dict)
 
@@ -128,6 +129,7 @@ _LIST = [
     Capability(
         name="standings",
         tool_name="get_standings",
+        live_fallback=True,
         units={"WINS": COUNT, "LOSSES": COUNT, "WinPCT": FRACTION,
                "PointsPG": PER_GAME, "OppPointsPG": PER_GAME,
                "DiffPointsPG": PER_GAME},
@@ -152,6 +154,7 @@ _LIST = [
     Capability(
         name="qualified_leaders",
         tool_name="get_leaders",
+        live_fallback=True,
         units={"GP": COUNT, "MIN": MINUTES, "FG_PCT": FRACTION,
                "FG3_PCT": FRACTION, "FT_PCT": FRACTION,
                "PTS": COUNT, "REB": COUNT, "AST": COUNT,
@@ -174,6 +177,7 @@ _LIST = [
     ),
     Capability(
         name="lineup_matchups", tool_name="get_lineup_matchup_matrix",
+        live_fallback=True,
         units={"shared_minutes": MINUTES, "NET_RATING": POINTS_PER_100},
         qualification="Both teams' lineups meet the configured season-minute floor.",
         coverage="Observed shared play-level possessions for the selected team matchup.",
@@ -186,6 +190,7 @@ _LIST = [
     ),
     Capability(
         name="injuries", tool_name="get_injuries",
+        live_fallback=True,
         season_arg=None, task_season_scoped=False,
         coverage="Current warehouse injury rows with source freshness metadata.",
     ),
@@ -197,6 +202,7 @@ _LIST = [
     ),
     Capability(
         name="player_shot_zones", tool_name="get_shot_zones",
+        live_fallback=True,
         units={"share": FRACTION, "FG_PCT": FRACTION},
         qualification="One resolved player; source-specific zone granularity applies.",
     ),
@@ -219,6 +225,7 @@ _LIST = [
     Capability(
         name="team_ratings",
         tool_name="get_ratings",
+        live_fallback=True,
         extract_entities=_team_entities,
         units={"OFF_RATING": POINTS_PER_100, "DEF_RATING": POINTS_PER_100,
                "NET_RATING": POINTS_PER_100, "PACE": "possessions_per_48",
@@ -229,7 +236,7 @@ _LIST = [
         qualification="All NBA teams in the selected regular season.",
         coverage="Full regular-season team rating table.",
     ),
-    Capability(name="roster", tool_name="get_team_hub"),
+    Capability(name="roster", tool_name="get_team_hub", live_fallback=True),
     Capability(name="player_report", tool_name="get_player_report",
                extract_entities=_player_entity,
                dependent_entity_arguments={"player": "player"}),
@@ -250,18 +257,21 @@ _LIST = [
     Capability(
         name="shooting_efficiency",
         tool_name="get_advanced",
+        live_fallback=True,
         units={"TS_PCT": PERCENT, "EFG_PCT": PERCENT},
         metric_definitions={"TS_PCT": TS_DEF, "EFG_PCT": EFG_DEF},
     ),
     Capability(
         name="on_off",
         tool_name="get_on_off",
+        live_fallback=True,
         units={"NET_RATING": POINTS_PER_100},
         metric_definitions={"NET_RATING": NET_RATING_DEF},
     ),
     Capability(
         name="lineups",
         tool_name="get_lineup_stats",
+        live_fallback=True,
         units={"MIN": MINUTES, "NET_RATING": POINTS_PER_100},
         metric_definitions={"NET_RATING": NET_RATING_DEF},
         qualification="Lineup sample floor applies (default 100 "
@@ -270,6 +280,7 @@ _LIST = [
     Capability(
         name="clutch",
         tool_name="get_clutch",
+        live_fallback=True,
         units={"GP": COUNT, "W": COUNT, "L": COUNT, "PTS": COUNT,
                "FG_PCT": FRACTION, "FG3_PCT": FRACTION,
                "PLUS_MINUS": "points"},
@@ -284,7 +295,7 @@ _LIST = [
         },
         qualification="Clutch: last 5 minutes, margin 5 or fewer.",
     ),
-    Capability(name="playoffs", tool_name="get_playoffs"),
+    Capability(name="playoffs", tool_name="get_playoffs", live_fallback=True),
     Capability(
         name="player_ratings", tool_name="get_player_ratings",
         units={"OFF_RATING": POINTS_PER_100, "DEF_RATING": POINTS_PER_100,
@@ -325,6 +336,7 @@ _LIST = [
     Capability(
         name="four_factors",
         tool_name="get_four_factors",
+        live_fallback=True,
         metric_definitions=FOUR_FACTORS_DEFS,
     ),
     Capability(
@@ -361,6 +373,7 @@ _LIST = [
     Capability(
         name="matchup_splits",
         tool_name="get_matchup_splits",
+        live_fallback=True,
         units={"gp": COUNT, "ppg": PER_GAME, "rpg": PER_GAME,
                "apg": PER_GAME, "fg_pct": FRACTION,
                "plus_minus": "points"},

@@ -165,17 +165,23 @@ def tables_for_capability(
 
 
 def task_coverage_groups(task: object) -> list[frozenset[str]]:
-    groups: list[frozenset[str]] = []
+    return [tables for _, tables in task_coverage_groups_labeled(task)]
+
+
+def task_coverage_groups_labeled(
+    task: object,
+) -> list[tuple[str | None, frozenset[str]]]:
+    labeled: list[tuple[str | None, frozenset[str]]] = []
     evidence = [str(item) for item in
                 getattr(task, "required_evidence", None) or []]
     for metric in getattr(task, "metric_ids", None) or []:
         table = table_for_metric(str(metric))
         if evidence and table == DEFAULT_TABLE:
             continue
-        groups.append(frozenset({table}))
+        labeled.append((None, frozenset({table})))
     requirements = list(getattr(task, "requirements", None) or [])
     if not evidence:
-        return groups
+        return labeled
     for capability in dict.fromkeys(evidence):
         tables: set[str] = set()
         matched = False
@@ -192,8 +198,8 @@ def task_coverage_groups(task: object) -> list[frozenset[str]]:
         if not matched:
             tables.update(tables_for_capability(capability, {}))
         if tables:
-            groups.append(frozenset(tables))
-    return groups
+            labeled.append((capability, frozenset(tables)))
+    return labeled
 
 
 def _classify(metric: str) -> dict[str, str]:

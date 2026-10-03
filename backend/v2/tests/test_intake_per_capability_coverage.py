@@ -50,6 +50,24 @@ def _ratings_task(season="2024-25"):
     )
 
 
+def _playoffs_task(season="2024-25"):
+    return TaskSpec(
+        goal="Playoff ratings",
+        mode="quick",
+        deliverable="answer",
+        season=SeasonRef(value=season, source="user", confidence=1.0),
+        required_evidence=["playoff_team_ratings"],
+        requirements=[
+            EvidenceRequirement(
+                id="ratings",
+                description="Playoff team ratings",
+                capability_options=["playoff_team_ratings"],
+                capability_arguments={"season": season},
+            )
+        ],
+    )
+
+
 def test_assists_leader_resolves_from_leaders_table(monkeypatch):
     _stubbed_seasons(monkeypatch, {
         "silver_boxscores": {"2025-26"},
@@ -69,13 +87,26 @@ def test_assists_leader_with_metric_id_resolves_from_leaders_table(monkeypatch):
     assert ModelIntake._mark_uncovered_season(task) == task
 
 
-def test_ratings_gap_names_ratings_table(monkeypatch):
+def test_ratings_uncovered_season_admits_with_live_gap(monkeypatch):
     _stubbed_seasons(monkeypatch, {
         "silver_boxscores": {"2025-26"},
         "silver_leaders_ast": {"2024-25", "2025-26"},
         "silver_team_ratings": {"2025-26"},
     })
     result = ModelIntake._mark_uncovered_season(_ratings_task())
+    assert result.season.value == "2024-25"
+    assert result.open_questions == []
+    assert any("silver_team_ratings" in item for item in result.assumptions)
+    assert any("2024-25" in item for item in result.assumptions)
+
+
+def test_capability_without_live_path_still_blocks_uncovered_season(monkeypatch):
+    _stubbed_seasons(monkeypatch, {
+        "silver_boxscores": {"2025-26"},
+        "silver_playoffs": {"2025-26"},
+    })
+    result = ModelIntake._mark_uncovered_season(_playoffs_task())
+    assert result.season.value == "2024-25"
     assert result.open_questions != []
-    assert any("silver_team_ratings" in item for item in result.open_questions)
+    assert any("silver_playoffs" in item for item in result.open_questions)
     assert not any("silver_boxscores" in item for item in result.open_questions)

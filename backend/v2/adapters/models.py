@@ -856,6 +856,19 @@ class ModelIntake(ModelStage):
         return tuple(context[-MAX_INTAKE_CONTEXT_TURNS:])
 
     @classmethod
+    def _live_option_available(cls, task: TaskSpec, capability: str) -> bool:
+        for requirement in task.requirements:
+            options = [str(option)
+                       for option in requirement.capability_options]
+            if capability not in options:
+                continue
+            for option in options:
+                spec = CAPABILITIES.get(option)
+                if spec is not None and spec.live_fallback:
+                    return True
+        return False
+
+    @classmethod
     def _mark_uncovered_season(cls, task: TaskSpec) -> TaskSpec:
         if task.season is None:
             return task
@@ -865,14 +878,16 @@ class ModelIntake(ModelStage):
             season_beyond_upper_bound,
             table_for_metric,
             table_seasons,
-            task_coverage_groups,
+            task_coverage_groups_labeled,
         )
-        groups = task_coverage_groups(task)
-        if not groups:
+        labeled = task_coverage_groups_labeled(task)
+        if not labeled:
             implied = [table_for_metric(metric) for metric in task.metric_ids]
             if not implied:
                 implied = [DEFAULT_TABLE]
-            groups = [frozenset({name}) for name in dict.fromkeys(implied)]
+            labeled = [(None, frozenset({name}))
+                       for name in dict.fromkeys(implied)]
+        groups = [tables for _, tables in labeled]
         names = list(dict.fromkeys(
             table for group in groups for table in sorted(group)))
         requested = task.season.value
@@ -887,14 +902,44 @@ class ModelIntake(ModelStage):
             and not season_beyond_upper_bound(requested)
         ):
             return task
-        missing = []
-        for group, covered in zip(groups, covered_groups):
+        blocked = []
+        live_tables = []
+        live_capabilities = []
+        for (label, group), covered in zip(labeled, covered_groups):
             if covered:
                 continue
+            live = (label is not None
+                    and cls._live_option_available(task, label))
             for table in sorted(group):
                 if requested not in sets.get(table, frozenset()):
-                    if table not in missing:
-                        missing.append(table)
+                    if live:
+                        if table not in live_tables:
+                            live_tables.append(table)
+                        if label not in live_capabilities:
+                            live_capabilities.append(label)
+                    elif table not in blocked:
+                        blocked.append(table)
+        assumptions = list(task.assumptions)
+        if live_tables:
+            if len(live_capabilities) == 1:
+                live_note = (
+                    f"Requested {requested} season has no rows in "
+                    f"{', '.join(live_tables)}; "
+                    f"{live_capabilities[0]} will attempt its live source "
+                    f"instead."
+                )
+            else:
+                live_note = (
+                    f"Requested {requested} season has no rows in "
+                    f"{', '.join(live_tables)}; "
+                    f"{', '.join(live_capabilities)} will attempt their "
+                    f"live sources instead."
+                )
+            assumptions.append(live_note)
+        if not blocked:
+            return task.model_copy(update={
+                "assumptions": list(dict.fromkeys(assumptions)),
+            })
         known = sorted({
             season
             for seasons in sets.values()
@@ -904,25 +949,25 @@ class ModelIntake(ModelStage):
         if known:
             question = (
                 f"Numbers for the {requested} season are not available "
-                f"for {', '.join(missing)}. "
+                f"for {', '.join(blocked)}. "
                 f"Available seasons: {', '.join(known)}. "
                 "Which season should be used instead?"
             )
         else:
             question = (
                 f"Numbers for the {requested} season are not available "
-                f"for {', '.join(missing)}. "
+                f"for {', '.join(blocked)}. "
                 "Which season should be used instead?"
             )
         note = (
             f"Requested {requested} season has no rows in "
-            f"{', '.join(missing)}; leaving the request unchanged."
+            f"{', '.join(blocked)}; leaving the request unchanged."
         )
         return task.model_copy(update={
             "open_questions": list(dict.fromkeys(
                 [*task.open_questions, question])),
             "assumptions": list(dict.fromkeys(
-                [*task.assumptions, note])),
+                [*assumptions, note])),
         })
 
     async def understand(
