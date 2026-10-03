@@ -96,6 +96,10 @@ def season_games(parquet_path):
 
 def load_game_rows(parquet_path, game_id):
     frame = pl.read_parquet(parquet_path)
+    return game_rows(frame, game_id)
+
+
+def game_rows(frame, game_id):
     game = frame.filter(pl.col("game_id") == game_id)
     if game.height == 0:
         return []
@@ -212,15 +216,9 @@ def entity_for(game_id):
     return f"game:{game_id}"
 
 
-def materialize_game(parquet_path, source_db, game_id, season=""):
-    rows = load_game_rows(parquet_path, game_id)
+def materialize_game(rows, source_db, game_id, season=""):
     if not rows:
         return False, "no pbp rows"
-    try:
-        year = int(str(parquet_path.name).split("_")[-1].split(".")[0])
-        season = season or season_label(year)
-    except (TypeError, ValueError):
-        season = season or ""
     if not season:
         return False, "season unresolvable"
     try:
@@ -326,13 +324,17 @@ def main(argv=None):
         return 0
     done = skipped = failed = 0
     for season, path, ids in plans:
+        frame = None
+        if not args.dry_run and ids:
+            frame = pl.read_parquet(path)
         for gid in ids:
             if unit_complete(season, entity_for(gid)):
                 print(f"skip {TABLE} {season} {gid}", flush=True)
                 done += 1
                 continue
             try:
-                ok, note = materialize_game(path, args.source_db, gid,
+                rows = game_rows(frame, gid) if frame is not None else []
+                ok, note = materialize_game(rows, args.source_db, gid,
                                             season)
             except Exception as exc:
                 print(f"failed {TABLE} {season} {gid}: {exc}"[:200],
