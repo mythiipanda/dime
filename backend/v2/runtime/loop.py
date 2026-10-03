@@ -203,8 +203,7 @@ class Runtime:
         repaired = False
 
         for attempt in range(self._repair_attempts):
-            if (verification.status != VerificationStatus.REPAIR
-                    or self._repairer is None):
+            if not _needs_repair(verification) or self._repairer is None:
                 break
             suffix = "" if attempt == 0 else f":{attempt + 1}"
             try:
@@ -617,6 +616,11 @@ class Runtime:
                     limit=128),
             })
         return merged
+
+
+def _needs_repair(report: VerificationReport) -> bool:
+    return (report.status == VerificationStatus.REPAIR
+            and any(not item.supported for item in report.claim_results))
 
 
 def _merge_verification(
