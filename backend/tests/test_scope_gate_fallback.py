@@ -72,9 +72,9 @@ def _plan(covers):
     ])
 
 
-def _execution(envelope):
+def _execution(envelope, covers=(REQ_ID,)):
     return ExecutionResult(
-        plan=_plan([REQ_ID]),
+        plan=_plan(list(covers)),
         evidence_by_node={NODE_ID: envelope},
         attempts={NODE_ID: 1},
     )
@@ -283,3 +283,86 @@ def test_player_task_with_entityless_envelope_rejects_evidence_scope():
     ):
         admit_verified_claim_bindings(
             task, execution, _draft(), _claim(_bindings()))
+
+
+ASSIST_REQ_ID = "assists_leader_2024_25"
+
+
+def _assist_rows():
+    return [{"PLAYER_NAME": "Trae Young", "PLAYER_ID": "1629027",
+             "AST": 880, "PTS": 1900}]
+
+
+def _assist_envelope():
+    return EvidenceEnvelope(
+        evidence_id=NODE_ID,
+        capability="qualified_leaders",
+        source="warehouse",
+        observed_at=datetime.now(timezone.utc),
+        season="2024-25",
+        entities=[_trae()],
+        rows=_assist_rows(),
+        units={"AST": "count", "PTS": "count"},
+    )
+
+
+def _assist_task():
+    return TaskSpec(
+        goal="Who led the 2024-25 season in assists?",
+        mode="quick",
+        deliverable="The assists leader for 2024-25",
+        requested_outputs=["PLAYER_NAME", "ASSIST_TOTAL"],
+        entities=[_trae()],
+        requirements=[
+            _requirement(ASSIST_REQ_ID, ["PLAYER_NAME", "ASSIST_TOTAL"]),
+        ],
+    )
+
+
+def _assist_name_binding():
+    return _binding(
+        "PLAYER_NAME",
+        {"kind": "string", "value": "Trae Young"},
+        ASSIST_REQ_ID,
+        {"kind": "unitless"},
+    )
+
+
+def _assist_total_binding(selector="rows[0].AST", value=880):
+    return EvidenceOutputBinding(
+        requirement_kind="evidence",
+        requirement_id=ASSIST_REQ_ID,
+        output_id="ASSIST_TOTAL",
+        node_id=NODE_ID,
+        evidence_id=NODE_ID,
+        selector=selector,
+        row_selector="rows[0]",
+        value={"kind": "integer", "value": value},
+        subject_entity_type="player",
+        subject_entity_id="1629027",
+        subject_selector="rows[0].PLAYER_ID",
+        unit={"kind": "declared", "value": "count"},
+        domain="qualified_leaders",
+    )
+
+
+def test_assist_total_admits_ast_column():
+    task = _assist_task()
+    execution = _execution(_assist_envelope(), (ASSIST_REQ_ID,))
+    admitted = admit_verified_claim_bindings(
+        task, execution, _draft(),
+        _claim([_assist_name_binding(), _assist_total_binding()]))
+    assert [binding.output_id for binding in admitted.output_bindings] == [
+        "PLAYER_NAME", "ASSIST_TOTAL"]
+
+
+def test_pts_leaf_on_assist_total_still_rejected():
+    task = _assist_task()
+    execution = _execution(_assist_envelope(), (ASSIST_REQ_ID,))
+    with pytest.raises(
+        ValueError, match="binding selector metric does not match output"
+    ):
+        admit_verified_claim_bindings(
+            task, execution, _draft(),
+            _claim([_assist_name_binding(),
+                    _assist_total_binding("rows[0].PTS", 1900)]))

@@ -482,7 +482,7 @@ def admit_verified_claim_bindings(
     draft: DraftReport,
     verified_claim: VerifiedClaim,
 ) -> VerifiedClaim:
-    from v2.adapters.capabilities import CAPABILITIES
+    from v2.adapters.capabilities import CAPABILITIES, resolve_metric_column
     from v2.contracts import EvidenceOutputBinding, CalculationOutputBinding, canonical_entity_id, canonical_entity_ref
     from v2.domain.evidence import iter_values
     evidence_requirements = {item.id: item for item in task.requirements}
@@ -532,10 +532,15 @@ def admit_verified_claim_bindings(
                 raise ValueError("binding capability lacks catalog authority")
             leaf = binding.selector.rsplit(".", 1)[-1]
             leaf = leaf.split("[", 1)[0]
-            if leaf != binding.output_id:
-                raise ValueError("binding selector metric does not match output")
-            catalog_unit = capability.units.get(binding.output_id)
-            evidence_unit = evidence.units.get(binding.output_id)
+            if leaf == binding.output_id:
+                metric_column = leaf
+            else:
+                resolved = resolve_metric_column(capability, binding.output_id)
+                if resolved is None or resolved != leaf:
+                    raise ValueError("binding selector metric does not match output")
+                metric_column = resolved
+            catalog_unit = capability.units.get(metric_column)
+            evidence_unit = evidence.units.get(metric_column)
             if catalog_unit is not None and evidence_unit is not None \
                     and catalog_unit != evidence_unit:
                 raise ValueError("catalog and evidence units disagree")

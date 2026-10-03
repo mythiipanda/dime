@@ -336,6 +336,64 @@ _LIST = [
 
 CAPABILITIES: dict[str, Capability] = {c.name: c for c in _LIST}
 
+
+_METRIC_DISPLAY_ALIASES = {
+    "ASSIST": "AST",
+    "ASSISTS": "AST",
+    "POINT": "PTS",
+    "POINTS": "PTS",
+    "REBOUND": "REB",
+    "REBOUNDS": "REB",
+    "OFFENSIVEREBOUND": "OREB",
+    "OFFENSIVEREBOUNDS": "OREB",
+    "DEFENSIVEREBOUND": "DREB",
+    "DEFENSIVEREBOUNDS": "DREB",
+    "STEAL": "STL",
+    "STEALS": "STL",
+    "BLOCK": "BLK",
+    "BLOCKS": "BLK",
+    "TURNOVER": "TOV",
+    "TURNOVERS": "TOV",
+    "FOUL": "PF",
+    "FOULS": "PF",
+    "GAME": "GP",
+    "GAMES": "GP",
+    "MINUTE": "MIN",
+    "MINUTES": "MIN",
+}
+
+_AGGREGATION_SUFFIXES = ("TOTALS", "TOTAL")
+
+
+def _squashed(value: object) -> str:
+    return "".join(
+        character for character in str(value).upper() if character.isalnum())
+
+
+def resolve_metric_column(capability: Capability, output_id: str) -> str | None:
+    vocabulary: dict[str, str] = {}
+    for mapping in (capability.units, capability.metric_definitions):
+        for key in mapping:
+            vocabulary.setdefault(_squashed(key), str(key))
+    squashed = _squashed(output_id)
+    direct = vocabulary.get(squashed)
+    if direct is not None:
+        return direct
+    stem = squashed
+    for suffix in _AGGREGATION_SUFFIXES:
+        if stem.endswith(suffix) and len(stem) > len(suffix):
+            stem = stem[: -len(suffix)]
+            break
+    stemmed = vocabulary.get(stem)
+    if stemmed is not None:
+        return stemmed
+    alias = _METRIC_DISPLAY_ALIASES.get(stem)
+    if alias is not None:
+        aliased = vocabulary.get(alias)
+        if aliased is not None:
+            return aliased
+    return None
+
 CAPABILITY_DESCRIPTIONS: dict[str, str] = {
     "entity_resolution": "Resolve a player or team name to canonical identity.",
     "warehouse_freshness": "Authoritative warehouse table freshness, cadence, row counts, and stale status.",
