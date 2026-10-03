@@ -92,6 +92,10 @@ function bustEnvelopeCache(fragment: string) {
   }
 }
 
+export function clearEnvelopeCache() {
+  envelopeCache.clear();
+}
+
 async function getEnvelope<T>(path: string): Promise<T> {
   const url = `${BACKEND}${path}`;
   const hit = envelopeCache.get(url);
