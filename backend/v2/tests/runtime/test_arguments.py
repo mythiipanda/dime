@@ -1,6 +1,6 @@
 import pytest
 from pydantic import ValidationError
-from v2.arguments import RequirementArguments,PlannerArguments,ProviderWireArguments,provider_to_source,encode_argument,migrate_legacy_arguments,RequirementV3
+from v2.arguments import RequirementArguments,PlannerArguments,ProviderWireArguments,provider_to_source,encode_argument,migrate_legacy_arguments,RequirementV3,RequirementReviewWire,PlannerOutputWire
 from v2.argument_schemas import compile_capability_catalog,normalize_provider_wire_schema
 
 def entries_map():return {'entries':[{'key':'x','kind':'int','int_value':1}]}
@@ -88,3 +88,20 @@ def test_array_branch_records_item_constraints():
  branch=out['capabilities'][0]['properties'][0]['branches'][0]
  assert branch['constraints']=={'minItems':1}
  assert branch['item_constraints']=={'enum':['a'],'minLength':1}
+@pytest.mark.parametrize('wire',[RequirementReviewWire,PlannerOutputWire])
+def test_live_wire_schemas_survive_provider_normalization(wire):
+ candidate,_=normalize_provider_wire_schema(wire.model_json_schema());assert candidate['type']=='object'
+ found=set()
+ def walk(node):
+  if isinstance(node,dict):
+   if '$ref' in node:raise AssertionError('unresolved ref survives normalization')
+   if node.get('type')=='object':
+    props=node.get('properties',{})
+    assert set(node.get('required',[]))>=set(props)
+   for key in ('minLength','maxLength','minimum','maximum','pattern','enum'):
+    if key in node:found.add(key)
+   for value in node.values():walk(value)
+  elif isinstance(node,list):
+   for value in node:walk(value)
+ walk(candidate)
+ assert {'minLength','maxLength','pattern','enum'}<=found
