@@ -14,7 +14,7 @@ from pathlib import Path
 from functools import lru_cache
 from dataclasses import dataclass
 from types import MappingProxyType, ModuleType
-from typing import Mapping
+from typing import Callable, Mapping
 
 from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi.responses import FileResponse, PlainTextResponse, Response
@@ -926,9 +926,130 @@ def _claim_prose(result) -> list[str]:
     from v2.runtime.models import withheld_claim_indices
 
     withheld = withheld_claim_indices(result.gaps)
-    return list(dict.fromkeys(
-        item.claim.text for item in result.verified_claims
-        if item.claim_index not in withheld))
+    claims = [item for item in result.verified_claims
+              if item.claim_index not in withheld]
+    if not claims:
+        return []
+    internal = _internal_identifier_rx(result)
+    lines: list[str] = []
+    for item in claims:
+        prose = _publishable_prose(item.claim.text, internal)
+        if prose is None:
+            lines.extend(_label_lines(result, item.claim.output_bindings))
+        else:
+            lines.append(prose)
+    return list(dict.fromkeys(lines))
+
+
+_SCRUB_REFERRAL = "the data"
+_SCRUB_COVERAGE_LIMIT = 0.6
+
+
+def _scrub_digits(m: re.Match[str]) -> str:
+    digits = m.group(0)
+    if len(digits) == 4 and 1900 <= int(digits) <= 2100:
+        return digits
+    return ""
+
+
+_PROSE_SCRUB_RULES: tuple[
+    tuple[re.Pattern[str], str | Callable[[re.Match[str]], str]], ...] = (
+    (re.compile(
+        r"\[[a-z_]{2,20}:\s*(?=[A-Za-z0-9_.\-]*\d)[A-Za-z0-9_.\-]{1,64}\]",
+        re.IGNORECASE), ""),
+    (re.compile(
+        r"\b(?:evidence|evidence_id|node|node_id|claim|claim_index|"
+        r"requirement|requirement_id|calculation|calculation_id|capability|"
+        r"selector|row_selector|subject_selector|resolve|row-scan|"
+        r"web_search|web_fetch)\b"
+        r"\s*[:=]\s*[\"']?[A-Za-z0-9_.:\-]{1,96}[\"']?"), _SCRUB_REFERRAL),
+    (re.compile(
+        r"\b(?:player|player_id|team|team_id|entity|entity_id|subject|"
+        r"subject_id|output|output_id|domain)\b"
+        r"\s*=\s*[\"']?[A-Za-z0-9_.:\-]{1,96}[\"']?"), _SCRUB_REFERRAL),
+    (re.compile(
+        r"\b[a-z][a-z0-9]*(?:_[a-z0-9]+)+\s*:\s*[A-Za-z0-9_.\-]{1,96}\b",
+        re.IGNORECASE), _SCRUB_REFERRAL),
+    (re.compile(
+        r"\b[a-z][a-z0-9_]{1,20}\s*:\s*"
+        r"(?=[A-Za-z0-9_.\-]*(?:[_\-.][A-Za-z0-9_.\-]*|[0-9]{3,}))"
+        r"[A-Za-z0-9_.\-]{1,96}\b"), _SCRUB_REFERRAL),
+    (re.compile(r"\b[a-z][a-z0-9]*(?:_[a-z0-9]+)+\b", re.IGNORECASE),
+     _SCRUB_REFERRAL),
+    (re.compile(
+        r"\b(?:rows?|lines?|columns?|cells?|season_line|matches|meta|values)\b"
+        r"(?:\s*\[\s*\d*\s*\]|\s*\[\s*\]|\.[A-Za-z_][A-Za-z0-9_]*)+",
+        re.IGNORECASE), _SCRUB_REFERRAL),
+    (re.compile(r"\d{4,}"), _scrub_digits),
+)
+
+
+_PROSE_TIDY_RULES: tuple[tuple["re.Pattern[str]", str], ...] = (
+    (re.compile(r"[(\[{]\s*[)\]}]"), ""),
+    (re.compile(r"\bthe the\b", re.IGNORECASE), "the"),
+    (re.compile(r" +([.,;:!?])"), r"\1"),
+    (re.compile(r"[ \t]{2,}"), " "),
+)
+
+_PROSE_EDGE_RX = re.compile(r"^[\s,;:.\-]+|[\s,;:\-]+$")
+
+_IDENTIFIER_SHAPE_RX = re.compile(r"[_\-.:\d]")
+_BINDING_INTERNAL_FIELDS = (
+    "evidence_id", "node_id", "selector", "row_selector", "subject_selector",
+    "subject_entity_id", "requirement_id", "calculation_id", "domain")
+
+
+def _internal_identifiers(result) -> set[str]:
+    identifiers = {envelope.evidence_id for envelope in result.execution.evidence}
+    identifiers |= {envelope.capability for envelope in result.execution.evidence}
+    identifiers |= {node.id for node in result.execution.plan.nodes}
+    for item in result.verified_claims:
+        identifiers |= set(item.claim.evidence_ids)
+        if item.claim.calculation_id is not None:
+            identifiers.add(item.claim.calculation_id)
+        for binding in item.claim.output_bindings:
+            identifiers |= {
+                getattr(binding, field) for field in _BINDING_INTERNAL_FIELDS
+                if getattr(binding, field, None) is not None}
+    return {value for value in identifiers if _IDENTIFIER_SHAPE_RX.search(value)}
+
+
+def _internal_identifier_rx(result) -> "re.Pattern[str] | None":
+    identifiers = sorted(_internal_identifiers(result), key=len, reverse=True)
+    if not identifiers:
+        return None
+    return re.compile("|".join(
+        rf"(?<![A-Za-z0-9_]){re.escape(value)}(?![A-Za-z0-9_])"
+        for value in identifiers))
+
+
+def _publishable_prose(
+        text: str, internal: re.Pattern[str] | None) -> str | None:
+    original = text
+    covered = 0
+    for pattern, replacement in _PROSE_SCRUB_RULES:
+        covered += sum(len(match.group(0))
+                       for match in pattern.finditer(text))
+        text = pattern.sub(replacement, text)
+    for pattern, replacement in _PROSE_TIDY_RULES:
+        text = pattern.sub(replacement, text)
+    text = _PROSE_EDGE_RX.sub("", text)
+    if text[:1].islower():
+        text = text[:1].upper() + text[1:]
+    if not text or covered >= _SCRUB_COVERAGE_LIMIT * len(original):
+        return None
+    if internal is not None and internal.search(text):
+        return None
+    return text
+
+
+def _label_lines(result, bindings) -> list[str]:
+    keys = {(binding.requirement_kind, binding.requirement_id,
+             binding.output_id) for binding in bindings}
+    return [_output_line(result, status) for status in result.output_statuses
+            if status.status == "complete"
+            and (status.requirement_kind, status.requirement_id,
+                 status.output_id) in keys]
 
 
 def _answer_text(result) -> str:
