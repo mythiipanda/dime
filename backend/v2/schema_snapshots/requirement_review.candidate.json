@@ -26,7 +26,6 @@
                       "pattern": "^[A-Z][A-Z0-9_]*$",
                       "type": "string"
                     },
-                    "maxItems": 16,
                     "type": "array"
                   },
                   {
@@ -43,7 +42,6 @@
                       "pattern": "^[A-Z][A-Z0-9_]*$",
                       "type": "string"
                     },
-                    "maxItems": 16,
                     "type": "array"
                   },
                   {
@@ -60,7 +58,6 @@
             ],
             "type": "object"
           },
-          "maxItems": 32,
           "type": "array"
         },
         {
@@ -74,7 +71,6 @@
           "items": {
             "type": "string"
           },
-          "maxItems": 16,
           "type": "array"
         },
         {
@@ -88,7 +84,6 @@
           "items": {
             "type": "string"
           },
-          "maxItems": 32,
           "type": "array"
         },
         {
@@ -123,7 +118,6 @@
                                             "items": {
                                               "type": "boolean"
                                             },
-                                            "maxItems": 32,
                                             "type": "array"
                                           },
                                           {
@@ -152,7 +146,6 @@
                                               "pattern": "^-?(0|[1-9][0-9]*)(\\.[0-9]+)?$",
                                               "type": "string"
                                             },
-                                            "maxItems": 32,
                                             "type": "array"
                                           },
                                           {
@@ -181,7 +174,6 @@
                                             "items": {
                                               "type": "integer"
                                             },
-                                            "maxItems": 32,
                                             "type": "array"
                                           },
                                           {
@@ -229,7 +221,6 @@
                                             "items": {
                                               "type": "number"
                                             },
-                                            "maxItems": 32,
                                             "type": "array"
                                           },
                                           {
@@ -256,7 +247,6 @@
                                               "maxLength": 2048,
                                               "type": "string"
                                             },
-                                            "maxItems": 32,
                                             "type": "array"
                                           },
                                           {
@@ -307,7 +297,6 @@
                                     ],
                                     "type": "object"
                                   },
-                                  "maxItems": 64,
                                   "type": "array"
                                 },
                                 {
@@ -339,8 +328,6 @@
                   ],
                   "type": "object"
                 },
-                "maxItems": 8,
-                "minItems": 1,
                 "type": "array"
               },
               "capability_options": {
@@ -350,8 +337,6 @@
                   "pattern": "^[a-z][a-z0-9_]*$",
                   "type": "string"
                 },
-                "maxItems": 8,
-                "minItems": 1,
                 "type": "array"
               },
               "description": {
@@ -373,7 +358,6 @@
                       "pattern": "^[A-Z][A-Z0-9_]*$",
                       "type": "string"
                     },
-                    "maxItems": 16,
                     "type": "array"
                   },
                   {
@@ -390,7 +374,6 @@
                       "pattern": "^[A-Z][A-Z0-9_]*$",
                       "type": "string"
                     },
-                    "maxItems": 16,
                     "type": "array"
                   },
                   {
@@ -409,7 +392,6 @@
             ],
             "type": "object"
           },
-          "maxItems": 32,
           "type": "array"
         },
         {
