@@ -179,7 +179,7 @@ class Runtime:
                 recovery = ExecutionResult.model_validate((await self._stage(
                     turn_id, "recover",
                     self._executor.execute(
-                        task, recovery_plan, run_id=run_id),
+                        task, recovery_plan, run_id=run_id, resume=False),
                     timeout_s=run_remaining())).model_dump())
                 execution = _merge_recovery(execution, recovery)
             draft = DraftReport.model_validate((await self._stage(

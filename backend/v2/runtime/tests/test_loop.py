@@ -483,7 +483,7 @@ async def test_empty_evidence_cannot_finish_as_a_clean_pass() -> None:
 @pytest.mark.anyio
 async def test_execution_failure_prevents_clean_pass_status() -> None:
     class FailedExecutor:
-        async def execute(self, task, plan, run_id=None):
+        async def execute(self, task, plan, run_id=None, resume=True):
             from v2.runtime.models import ExecutionResult
             from v2.contracts import PlanStatus
             failed = plan.nodes[0].model_copy(update={"status": PlanStatus.FAILED})
@@ -636,7 +636,7 @@ async def test_runtime_bounds_combined_typed_publication_gaps() -> None:
 @pytest.mark.anyio
 async def test_skipped_execution_node_prevents_clean_pass() -> None:
     class SkippedExecutor:
-        async def execute(self, task, plan, run_id=None):
+        async def execute(self, task, plan, run_id=None, resume=True):
             from v2.runtime.models import ExecutionResult
             from v2.contracts import PlanStatus
             skipped = plan.nodes[0].model_copy(update={"status": PlanStatus.SKIPPED})
@@ -904,7 +904,7 @@ async def test_redundant_failed_capability_does_not_create_false_partial():
             ])
 
     class RedundantExecutor:
-        async def execute(self, task, plan, run_id=None):
+        async def execute(self, task, plan, run_id=None, resume=True):
             evidence = await FakeCapability(
                 "player_report", {"TS_PCT": 0.65},
             ).execute(plan.nodes[0], task, ())
@@ -1294,7 +1294,7 @@ async def test_runtime_caller_maps_structured_execution_code_to_typed_gap():
     from v2.runtime.models import ExecutionErrorCode, ExecutionResult
     from v2.contracts import PlanStatus
     class FailedExecutor:
-        async def execute(self, task, plan, run_id=None):
+        async def execute(self, task, plan, run_id=None, resume=True):
             failed = plan.nodes[0].model_copy(update={"status": PlanStatus.FAILED})
             return ExecutionResult(
                 plan=Plan(nodes=[failed]), attempts={failed.id: 1},

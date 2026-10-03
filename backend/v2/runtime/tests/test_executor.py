@@ -1098,6 +1098,43 @@ def test_broad_row_selector_cannot_join_sibling_subject_and_metric():
 
 
 @pytest.mark.anyio
+async def test_declared_replan_supersedes_the_recorded_checkpoint_plan(tmp_path):
+    from v2.runtime.checkpoints import FileCheckpointStore
+
+    task = TaskSpec(goal="g", mode="quick", deliverable="d")
+    store = FileCheckpointStore(tmp_path)
+    failed_plan = Plan(nodes=[node("a")])
+    replanned = Plan(nodes=[node("b"), node("c")])
+    capabilities = {"fake": FakeCapability("fake", {"ok": True})}
+    await PlanExecutor(capabilities, checkpoint_store=store).execute(
+        task, failed_plan, run_id="r")
+
+    result = await PlanExecutor(
+        capabilities, checkpoint_store=store).execute(
+        task, replanned, run_id="r", resume=False)
+
+    assert [item.id for item in result.plan.nodes] == ["b", "c"]
+    assert all(
+        item.status == PlanStatus.COMPLETE for item in result.plan.nodes)
+    assert not (tmp_path / "r.json").exists()
+
+
+@pytest.mark.anyio
+async def test_silent_plan_drift_against_the_checkpoint_still_raises(tmp_path):
+    from v2.runtime.checkpoints import FileCheckpointStore
+
+    task = TaskSpec(goal="g", mode="quick", deliverable="d")
+    store = FileCheckpointStore(tmp_path)
+    capabilities = {"fake": FakeCapability("fake", {}, failures_before_success=9)}
+    await PlanExecutor(capabilities, checkpoint_store=store).execute(
+        task, Plan(nodes=[node("a")]), run_id="r")
+
+    with pytest.raises(ValueError, match="checkpoint plan does not match"):
+        await PlanExecutor(capabilities, checkpoint_store=store).execute(
+            task, Plan(nodes=[node("b")]), run_id="r")
+
+
+@pytest.mark.anyio
 async def test_structured_name_resolution_error_code_survives_checkpoint_replay(tmp_path):
     from shared.tools._core import PlayerNameResolutionUnavailable
     from v2.runtime.checkpoints import FileCheckpointStore

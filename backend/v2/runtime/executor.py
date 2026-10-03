@@ -75,7 +75,8 @@ class PlanExecutor:
         self._node_timeout_s = node_timeout_s
 
     async def execute(
-        self, task: TaskSpec, plan: Plan, *, run_id: str | None = None
+        self, task: TaskSpec, plan: Plan, *, run_id: str | None = None,
+        resume: bool = True,
     ) -> ExecutionResult:
         self._preflight(task, plan)
         checkpoint = (
@@ -83,16 +84,11 @@ class PlanExecutor:
             if self._checkpoint_store is not None and run_id is not None
             else None
         )
+        if checkpoint is not None and not self._checkpoint_covers(
+                checkpoint, run_id, task, plan, resume=resume):
+            self._checkpoint_store.delete(run_id)
+            checkpoint = None
         if checkpoint is not None:
-            if checkpoint.run_id != run_id:
-                raise ValueError("checkpoint run id does not match requested run")
-            if checkpoint.task != task:
-                raise ValueError("checkpoint task does not match requested task")
-            checkpoint_plan = checkpoint.plan.model_copy(deep=True)
-            for node in checkpoint_plan.nodes:
-                node.status = PlanStatus.PENDING
-            if checkpoint_plan != plan:
-                raise ValueError("checkpoint plan does not match requested plan")
             self._validate_checkpoint(checkpoint)
             nodes = {
                 node.id: node.model_copy(deep=True) for node in checkpoint.plan.nodes
@@ -231,6 +227,23 @@ class PlanExecutor:
                         for node in completed_plan.nodes)):
             self._checkpoint_store.delete(run_id)
         return result
+
+    def _checkpoint_covers(
+        self, checkpoint: ExecutionCheckpoint, run_id: str, task: TaskSpec,
+        plan: Plan, *, resume: bool,
+    ) -> bool:
+        if checkpoint.run_id != run_id:
+            raise ValueError("checkpoint run id does not match requested run")
+        if checkpoint.task != task:
+            raise ValueError("checkpoint task does not match requested task")
+        pending = checkpoint.plan.model_copy(deep=True)
+        for node in pending.nodes:
+            node.status = PlanStatus.PENDING
+        if pending == plan:
+            return True
+        if resume:
+            raise ValueError("checkpoint plan does not match requested plan")
+        return False
 
     def _validate_checkpoint(self, checkpoint: ExecutionCheckpoint) -> None:
         nodes = {node.id: node for node in checkpoint.plan.nodes}

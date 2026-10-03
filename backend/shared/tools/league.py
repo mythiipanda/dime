@@ -459,6 +459,12 @@ def get_ratings(
         fallback = _regular_season_team_ratings(season)
         if fallback is not None:
             rows, meta = fallback
+        else:
+            rows, meta = _warehouse_or_live(
+                "silver_team_ratings", "_season = ?",
+                [season], lambda: nba_stats.team_ratings(season), season,
+                limit=30, live_on_static_miss=True,
+            )
     keep = ["TEAM_ID", "TEAM_NAME", "GP", "W", "L",
             "OFF_RATING", "DEF_RATING", "NET_RATING", "PACE",
             "TS_PCT", "TM_TOV_PCT",

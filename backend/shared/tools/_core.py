@@ -673,7 +673,8 @@ def _bound_warehouse_read(table, where, params):
 
 
 def _warehouse_or_live(table: str, where: str, params: list[object], fetch: Any, season: str | None,
-    entity: str = "", limit: int = MAX_ROWS, live_first: bool = False, ttl_s: float | None = None):
+    entity: str = "", limit: int = MAX_ROWS, live_first: bool = False, ttl_s: float | None = None,
+    live_on_static_miss: bool = False):
     season = resolve_season(season)
     if not season:
         return [], {"source": "warehouse",
@@ -685,7 +686,8 @@ def _warehouse_or_live(table: str, where: str, params: list[object], fetch: Any,
             age = _cache_age_s(frame)
             if age is not None and age > ttl_s: frame = None
     if frame is None or frame.height == 0:
-        if season_static(season):
+        static = season_static(season)
+        if static and not live_on_static_miss:
             frame, identity = _bound_warehouse_read(table, where, params)
             if frame is not None and frame.height > 0:
                 meta = {"rows": frame.height, "cached": True, "static_season": True, **identity}
@@ -700,9 +702,10 @@ def _warehouse_or_live(table: str, where: str, params: list[object], fetch: Any,
                 if "_source" in frame.columns:meta.update(source=frame["_source"][0],fetched_at=frame["_fetched_at"][0])
                 return frame.head(limit).to_dicts(),meta
             return [],{"source":live.meta.source,"error":live.error or "empty upstream response",**(identity or {})}
-        store.save_frame(table, live, entity)
-        frame, identity = _bound_warehouse_read(table, where, params)
-        if frame.height == 0:
+        if not static:
+            store.save_frame(table, live, entity)
+            frame, identity = _bound_warehouse_read(table, where, params)
+        if frame is None or frame.height == 0:
             frame=live.frame.with_columns([pl.lit(live.meta.source).alias("_source"),pl.lit(live.meta.season).alias("_season"),pl.lit(live.meta.fetched_at).alias("_fetched_at")])
             return frame.head(limit).to_dicts(),{"rows":frame.height,"cached":False,"source":live.meta.source,"fetched_at":live.meta.fetched_at,"lineage_kind":"live"}
         return frame.head(limit).to_dicts(),{"rows":frame.height,"cached":False,"source":live.meta.source,"fetched_at":live.meta.fetched_at,**identity}
