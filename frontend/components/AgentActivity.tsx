@@ -141,7 +141,7 @@ function ToolRow({ c, live }: { c: ToolCall; live: boolean }) {
       : c.status === "running"
         ? "var(--color-ash-gray)"
         : "var(--color-ink-black)";
-  const glyph = spinning ? "" : c.status === "fail" ? "✗" : c.status === "running" ? "○" : "✓";
+  const glyph = spinning ? "" : c.status === "fail" ? "✗" : c.status === "running" ? "○" : "·";
   const label = toolLabel(c);
   const prefix = c.agent ? `${c.agent.charAt(0).toUpperCase() + c.agent.slice(1)} desk · ` : "";
   return (
@@ -390,7 +390,7 @@ function GroupRow({ g, live }: { g: ToolGroup; live: boolean }) {
   const spinning = state === "running" && live;
   const dotColor =
     state === "fail" ? "var(--color-ember)" : spinning ? "var(--color-cyan-signal)" : "var(--color-ink-black)";
-  const glyph = spinning ? "" : state === "fail" ? "✗" : "✓";
+  const glyph = spinning ? "" : state === "fail" ? "✗" : "·";
   const prefix = g.agent ? `${g.agent.charAt(0).toUpperCase() + g.agent.slice(1)} desk · ` : "";
   return (
     <div style={{ borderBottom: "1px solid var(--color-stone-border)" }}>
@@ -513,7 +513,7 @@ export default function AgentActivity({ ai }: { ai: AiMessage }) {
       ) : (
         <details style={{ color: "var(--color-warm-gray)", fontSize: 12 }}>
           <summary style={{ cursor: "pointer", listStyle: "none" }}>
-            <span aria-hidden style={{ marginRight: 7, color: "var(--color-ash-gray)" }}>{running ? "●" : "✓"}</span>
+            <span aria-hidden style={{ marginRight: 7, color: "var(--color-ash-gray)" }}>{running ? "●" : "·"}</span>
             {label}
           </summary>
           <div style={{ margin: "7px 0 0 19px", paddingLeft: 10, borderLeft: "1px solid var(--color-stone-border)" }}>
