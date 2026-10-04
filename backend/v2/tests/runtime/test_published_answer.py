@@ -24,7 +24,9 @@ from v2.contracts import (
 from v2.runtime import FakeCapability, PlanExecutor, Runtime
 from v2.runtime.assembly import MechanicalVerifier
 from v2.runtime.loop import _verified_claims
-from v2.runtime.models import ExecutionResult, RuntimeResult, build_output_statuses
+from v2.runtime.models import (ExecutionResult, RuntimeResult,
+                               build_output_statuses,
+                               withheld_claim_indices)
 
 ASSISTS = 880
 LEADER_ROWS = [{"PLAYER_ID": 9001, "PLAYER_NAME": "Ada Vega", "AST": ASSISTS}]
@@ -294,7 +296,9 @@ def test_series_answer_keeps_opener_per_game_lines_and_outcome() -> None:
         task, execution, draft, verification, {envelope.evidence_id: envelope})
 
     assert len(admitted) == 7
-    assert any(gap.kind.value == "synthesis_incomplete" for gap in binding_gaps)
+    assert [item.claim.text for item in admitted] == _SERIES_TEXTS
+    assert all(item.output_bindings == [] for item in admitted)
+    assert withheld_claim_indices(binding_gaps) == set()
     result = RuntimeResult(
         task=task,
         execution=execution,

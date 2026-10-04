@@ -23,7 +23,7 @@ from v2.contracts import (
 from v2.runtime.executor import PlanExecutor
 from v2.runtime.interfaces import Intake, Planner, Repairer, Synthesizer, Verifier
 from v2.runtime.ledger import LedgerKind, RunLedger, TerminalReason, exception_text
-from v2.runtime.models import (ExecutionResult, RuntimeResult,
+from v2.runtime.models import (BindingFormMismatch, ExecutionResult, RuntimeResult,
                                admit_verified_claim_bindings,
                                propagate_evidence_to_task,
                                reanchor_verified_claim_bindings)
@@ -825,15 +825,6 @@ def _binding_diagnostic_event(execution, candidate, position, run_id, rejection,
     )
 
 
-_BINDING_FORM_REJECTIONS = (
-    "binding selector metric does not match output",
-)
-
-
-def _binding_rejection_withholds_claim(message: str) -> bool:
-    return not message.startswith(_BINDING_FORM_REJECTIONS)
-
-
 def _verified_claims(task, execution, draft, verification, evidence=None, *,
                      diagnostics=False, diagnostics_run_id="",
                      diagnostics_events=None):
@@ -865,21 +856,18 @@ def _verified_claims(task, execution, draft, verification, evidence=None, *,
                     diagnostics_events.append(_binding_diagnostic_event(
                         execution, candidate, position,
                         diagnostics_run_id, str(exc), evidence))
+            form_only = isinstance(exc, BindingFormMismatch)
             admitted.append(VerifiedClaim(
                 claim_index=index, claim=claim,
                 evidence_ids=list(claim.evidence_ids),
                 sources=list(candidate.sources), output_bindings=[]))
-            if _binding_rejection_withholds_claim(str(exc)):
-                rejected.append(Gap(
-                    kind=GapKind.SYNTHESIS_INCOMPLETE,
-                    message=f"claim output binding rejected: {exc}",
-                    evidence_ids=list(claim.evidence_ids),
-                    blocks=[f"claim:{index}"]))
-            else:
-                rejected.append(Gap(
-                    kind=GapKind.SYNTHESIS_INCOMPLETE,
-                    message=f"claim:{index} output binding not admitted: {exc}",
-                    evidence_ids=list(claim.evidence_ids)))
+            rejected.append(Gap(
+                kind=GapKind.SYNTHESIS_INCOMPLETE,
+                message=(f"claim:{index} output binding not admitted: {exc}"
+                         if form_only else
+                         f"claim output binding rejected: {exc}"),
+                evidence_ids=list(claim.evidence_ids),
+                blocks=[] if form_only else [f"claim:{index}"]))
     admitted = propagate_evidence_to_task(task, execution, draft, admitted)
     return admitted, rejected
 

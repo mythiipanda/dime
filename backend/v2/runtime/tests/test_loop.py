@@ -1359,19 +1359,21 @@ async def test_invalid_model_calculation_path_is_safe_partial_not_runtime_failur
     assert any("outside admitted evidence" in gap.message for gap in result.gaps)
 
 
-def test_binding_rejection_is_atomic_and_returns_typed_gap():
+def _record_binding(output_id, value=61):
+    from v2.contracts import EvidenceOutputBinding
+    return EvidenceOutputBinding(value={"kind": "integer", "value": value},
+        unit={"kind": "declared", "value": "count"}, domain="standings",
+        requirement_id="stats", output_id=output_id, node_id="facts",
+        evidence_id="ev", selector="rows.WINS")
+
+
+def _record_admission(bindings):
     from datetime import UTC, datetime
-    from v2.contracts import (EvidenceEnvelope, EvidenceOutputBinding,
-        EvidenceRequirement, Plan, PlanNode, TaskSpec)
-    from v2.runtime.loop import _verified_claims
+    from v2.contracts import (EvidenceEnvelope, EvidenceRequirement, Plan,
+        PlanNode, TaskSpec)
     from v2.runtime.models import ExecutionResult
-    good = EvidenceOutputBinding(value={"kind":"integer","value":61}, unit={"kind":"declared","value":"count"}, domain="standings", requirement_id="stats", output_id="WINS",
-        node_id="facts", evidence_id="ev", selector="rows.WINS")
-    bad = EvidenceOutputBinding(value={"kind":"integer","value":0}, unit={"kind":"declared","value":"count"}, domain="standings", requirement_id="stats", output_id="LOSSES",
-        node_id="facts", evidence_id="ev", selector="rows.WINS")
-    claim = Claim(text="record", kind="observed", evidence_ids=["ev"],
-                  output_bindings=[good, bad])
-    draft = DraftReport(sections=[], claims=[claim])
+    draft = DraftReport(sections=[], claims=[Claim(text="record",
+        kind="observed", evidence_ids=["ev"], output_bindings=list(bindings))])
     task = TaskSpec(goal="record", mode="quick", deliverable="answer",
         requirements=[EvidenceRequirement(id="stats", description="record",
             capability_options=["standings"], requested_outputs=["WINS","LOSSES"])])
@@ -1383,11 +1385,52 @@ def test_binding_rejection_is_atomic_and_returns_typed_gap():
         evidence_by_node={"facts":envelope}, attempts={"facts":1})
     report = VerificationReport(status="pass", claim_results=[
         {"claim_index":0,"supported":True}])
-    claims, gaps = _verified_claims(task, execution, draft, report, {"ev":envelope})
+    return task, execution, draft, report, {"ev":envelope}
+
+
+def test_binding_form_mismatch_keeps_prose_and_leaves_the_claim_unwithheld():
+    from v2.runtime.loop import _verified_claims
+    task, execution, draft, report, evidence = _record_admission([
+        _record_binding("WINS"), _record_binding("LOSSES")])
+
+    claims, gaps = _verified_claims(task, execution, draft, report, evidence)
+
+    assert [item.claim.text for item in claims] == ["record"]
     assert claims[0].output_bindings == []
-    assert len(gaps) == 1 and gaps[0].kind == "synthesis_incomplete"
-    assert gaps[0].blocks == []
-    assert "not admitted" in gaps[0].message
+    assert [(gap.kind, gap.blocks) for gap in gaps] == [
+        ("synthesis_incomplete", [])]
+
+
+def test_admission_value_rejection_withholds_the_claim():
+    from v2.runtime.loop import _verified_claims
+    task, execution, draft, report, evidence = _record_admission([
+        _record_binding("WINS", value=62)])
+
+    claims, gaps = _verified_claims(task, execution, draft, report, evidence)
+
+    assert [item.claim.text for item in claims] == ["record"]
+    assert claims[0].output_bindings == []
+    assert [(gap.kind, gap.blocks) for gap in gaps] == [
+        ("synthesis_incomplete", ["claim:0"])]
+
+
+def test_binding_form_path_follows_the_exception_type_not_its_wording(monkeypatch):
+    from v2.runtime import loop
+    from v2.runtime.models import BindingFormMismatch
+
+    def form_mismatch(*args, **kwargs):
+        raise BindingFormMismatch("selector vocabulary rewritten")
+
+    monkeypatch.setattr(loop, "admit_verified_claim_bindings", form_mismatch)
+    task, execution, draft, report, evidence = _record_admission([
+        _record_binding("WINS")])
+
+    claims, gaps = loop._verified_claims(
+        task, execution, draft, report, evidence)
+
+    assert claims[0].output_bindings == []
+    assert [(gap.kind, gap.blocks) for gap in gaps] == [
+        ("synthesis_incomplete", [])]
 
 
 def test_unmatched_player_execution_error_becomes_typed_gap():

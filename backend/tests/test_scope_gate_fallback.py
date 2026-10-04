@@ -16,6 +16,7 @@ from v2.contracts import (
     VerifiedClaim,
 )
 from v2.runtime.models import (
+    BindingFormMismatch,
     ExecutionResult,
     admit_verified_claim_bindings,
     build_output_statuses,
@@ -373,9 +374,7 @@ def test_assist_total_admits_ast_column():
 def test_pts_leaf_on_assist_total_still_rejected():
     task = _assist_task()
     execution = _execution(_assist_envelope(), (ASSIST_REQ_ID,))
-    with pytest.raises(
-        ValueError, match="binding selector metric does not match output"
-    ):
+    with pytest.raises(BindingFormMismatch):
         admit_verified_claim_bindings(
             task, execution, _draft(),
             _claim([_assist_name_binding(),

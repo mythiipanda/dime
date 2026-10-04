@@ -524,6 +524,10 @@ def propagate_evidence_to_task(task, execution, draft, admitted):
         for claim in admitted]
 
 
+class BindingFormMismatch(ValueError):
+    pass
+
+
 def admit_verified_claim_bindings(
     task: TaskSpec,
     execution: ExecutionResult,
@@ -627,7 +631,7 @@ def admit_verified_claim_bindings(
             else:
                 resolved = resolve_metric_column(capability, binding.output_id)
                 if resolved is None or resolved != leaf:
-                    raise ValueError("binding selector metric does not match output")
+                    raise BindingFormMismatch("binding selector metric does not match output")
                 metric_column = resolved
             catalog_unit = capability.units.get(metric_column)
             evidence_unit = evidence.units.get(metric_column)

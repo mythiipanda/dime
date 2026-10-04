@@ -17,7 +17,8 @@ from v2.contracts import (
     TaskSpec,
     VerifiedClaim,
 )
-from v2.runtime.models import ExecutionResult, admit_verified_claim_bindings
+from v2.runtime.models import (BindingFormMismatch, ExecutionResult,
+                               admit_verified_claim_bindings)
 
 
 _NODE_ID = "qualified_leaders:05b5922eaefae72d"
@@ -169,5 +170,9 @@ def test_q1_assist_total_served_by_ast_column_admits():
 
 
 def test_pts_leaf_on_assist_total_output_still_rejects():
-    with pytest.raises(ValueError, match="binding selector metric does not match output"):
+    with pytest.raises(BindingFormMismatch):
         _admit(_task(), _envelope(), _bindings(metric_leaf="PTS", metric_value=1500))
+
+
+def test_binding_form_mismatch_answers_to_plain_value_error_catchers():
+    assert issubclass(BindingFormMismatch, ValueError)
