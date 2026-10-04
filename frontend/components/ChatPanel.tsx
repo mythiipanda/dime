@@ -758,11 +758,7 @@ export default function ChatPanel({ thread, onRunDone, preset, onOpenArtifact, a
                       </div>
                     )}
 
-                    {m.ai?.caution && m.ai.caution.length > 0 && (
-                      <div style={{ fontSize: 12, color: "var(--color-warm-gray)", marginBottom: 10, background: "var(--color-sky-wash)", padding: "6px 12px", borderRadius: 8 }}>
-                        Check numbers against tables: {m.ai.caution.join(", ")}
-                      </div>
-                    )}
+
 
                     {m.ai?.carry &&
                       ((m.ai.carry.players?.length ?? 0) > 0 ||

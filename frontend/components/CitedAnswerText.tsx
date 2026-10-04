@@ -168,6 +168,42 @@ export function EvidenceLedger({
   );
 }
 
+const UNTRACED_SUFFIX = " could not be traced to the source data.";
+
+export function untracedOutputs(ai: AiMessage): string[] {
+  const caution = Array.isArray(ai.caution) ? ai.caution : [];
+  return caution.filter((c): c is string => typeof c === "string" && c.length > 0);
+}
+
+export function UntracedNote({ ai }: { ai: AiMessage }) {
+  const outputs = untracedOutputs(ai);
+  if (!outputs.length) return null;
+  return (
+    <div style={{ marginTop: 10 }}>
+      <div style={{ fontSize: 12, fontWeight: 500, color: "var(--color-warm-gray)", marginBottom: 4 }}>
+        Not traced to source
+      </div>
+      {outputs.map((line, i) => {
+        const cut = line.endsWith(UNTRACED_SUFFIX)
+          ? line.slice(0, line.length - UNTRACED_SUFFIX.length)
+          : "";
+        return (
+          <div key={i} style={{ fontSize: 12, lineHeight: 1.5, color: "var(--color-ash-gray)" }}>
+            {cut ? (
+              <>
+                <span style={{ fontWeight: 500, color: "var(--color-ink-black)" }}>{cut}</span>
+                {UNTRACED_SUFFIX}
+              </>
+            ) : (
+              line
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 export function UnverifiedNote({ ai }: { ai: AiMessage }) {
   const note = unverifiedSummary(ai);
   if (!note) return null;
@@ -300,6 +336,7 @@ export default function CitedAnswerText({ text, ai }: { text: string; ai: AiMess
         onAccept={accept}
         onFlag={flag}
       />
+      <UntracedNote ai={ai} />
       {flagged.length > 0 ? (
         <button
           type="button"

@@ -6,6 +6,7 @@ import CitedAnswerText, {
   CiteTable,
   ContextPills,
   EvidenceLedger,
+  UntracedNote,
   UnverifiedNote,
 } from "./components/CitedAnswerText";
 import { evidenceSources } from "./lib/evidence";
@@ -175,6 +176,48 @@ describe("context pills", () => {
   it("renders nothing without provenance", () => {
     const html = renderToStaticMarkup(
       React.createElement(ContextPills, { ai: aiWith(PASS_CARRY, []) }),
+    );
+    assert.equal(html, "");
+  });
+});
+
+describe("untraced disclosure", () => {
+  const tables = [
+    {
+      output_id: "OFF_RATING",
+      subject_type: "team",
+      subject_id: "BOS",
+      value: "118.2",
+      unit: "points_per_100_possessions",
+      provenance: { capability: "team_ratings", season: "2024-25" },
+    },
+  ];
+  const untracedAi: AiMessage = {
+    ...aiWith(PASS_CARRY, tables),
+    caution: ["Net Rating could not be traced to the source data."],
+  };
+  const text = "Net rating finished 9.4 with a 118.2 offensive rating.";
+
+  it("renders one marker per untraced output", () => {
+    const html = renderToStaticMarkup(
+      React.createElement(CitedAnswerText, { text, ai: untracedAi }),
+    );
+    assert.ok(html.includes("Not traced to source"));
+    assert.ok(html.includes("Net Rating"));
+    assert.ok(html.includes("could not be traced to the source data."));
+  });
+
+  it("untraced outputs get no citation anchor", () => {
+    const html = renderToStaticMarkup(
+      React.createElement(CitedAnswerText, { text, ai: untracedAi }),
+    );
+    const markers = html.match(/cite-marker/g) || [];
+    assert.equal(markers.length, 1);
+  });
+
+  it("fully traced answers render no disclosure", () => {
+    const html = renderToStaticMarkup(
+      React.createElement(UntracedNote, { ai: aiWith(PASS_CARRY, tables) }),
     );
     assert.equal(html, "");
   });
