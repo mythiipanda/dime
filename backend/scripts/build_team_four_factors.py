@@ -4,6 +4,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from shared import store
+from v2.adapters import coverage
 
 SQL = """
 WITH games AS (
@@ -38,8 +39,17 @@ ORDER BY EFG_PCT DESC
 """
 
 
-def main() -> None:
-    season = "2025-26"
+LEAGUE_SIZE = 30
+
+TOOL_TABLE = "silver_team_games"
+TEAM_COLUMN = "Team_ID"
+
+
+def league_seasons() -> tuple[str, ...]:
+    return coverage.league_seasons(TOOL_TABLE, TEAM_COLUMN, LEAGUE_SIZE)
+
+
+def build(season: str) -> tuple[dict, int]:
     con = store.connect(read_only=False)
     try:
         cur = con.execute(SQL, [season])
@@ -48,30 +58,44 @@ def main() -> None:
     finally:
         con.close()
     print(f"computed four factors for {len(rows)} teams ({season})")
-    if len(rows) != 30:
-        raise SystemExit(f"expected 30 teams, got {len(rows)}")
+    if len(rows) != LEAGUE_SIZE:
+        raise SystemExit(
+            f"{season}: expected {LEAGUE_SIZE} teams, got {len(rows)}; "
+            f"this season is not a complete league season")
+    return rows, len(rows)
 
+
+def main() -> None:
     import polars as pl
 
-    frame = pl.DataFrame(rows)
+    seasons = sys.argv[1:] or league_seasons()
+    if not seasons:
+        raise SystemExit("no league-complete seasons found")
     con = store.connect(read_only=False)
     try:
         con.execute(
             "CREATE TABLE IF NOT EXISTS silver_four_factors_team AS "
-            "SELECT * FROM frame LIMIT 0")
-        con.execute(
-            "DELETE FROM silver_four_factors_team WHERE _season = ?",
-            [season])
-        con.execute("INSERT INTO silver_four_factors_team "
-                    "SELECT * FROM frame")
-        (n,) = con.execute(
-            "SELECT COUNT(*) FROM silver_four_factors_team "
-            "WHERE _season = ?", [season]).fetchone()
+            "SELECT * FROM silver_team_games LIMIT 0")
     finally:
         con.close()
-    print(f"silver_four_factors_team {season}: {n} rows")
-    if n != 30:
-        raise SystemExit(1)
+    for season in seasons:
+        rows, _ = build(season)
+        frame = pl.DataFrame(rows)
+        con = store.connect(read_only=False)
+        try:
+            con.execute(
+                "DELETE FROM silver_four_factors_team WHERE _season = ?",
+                [season])
+            con.execute("INSERT INTO silver_four_factors_team "
+                        "SELECT * FROM frame")
+            (n,) = con.execute(
+                "SELECT COUNT(*) FROM silver_four_factors_team "
+                "WHERE _season = ?", [season]).fetchone()
+        finally:
+            con.close()
+        print(f"silver_four_factors_team {season}: {n} rows")
+        if n != LEAGUE_SIZE:
+            raise SystemExit(1)
 
 
 if __name__ == "__main__":

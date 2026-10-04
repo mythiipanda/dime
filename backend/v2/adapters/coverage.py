@@ -385,6 +385,44 @@ def table_seasons(table: str) -> frozenset[str]:
     return seasons
 
 
+def _read_league_seasons(
+    path: Path, table: str, team_column: str, league_size: int,
+) -> tuple[str, ...]:
+    import duckdb
+
+    connection = duckdb.connect(str(path), read_only=True)
+    try:
+        rows = connection.execute(
+            f'SELECT _season, COUNT(DISTINCT "{team_column}") AS teams '
+            f'FROM "{table}" WHERE _season IS NOT NULL '
+            f'GROUP BY 1 ORDER BY 1').fetchall()
+    finally:
+        try:
+            connection.close()
+        except Exception:
+            pass
+    return tuple(
+        str(season) for season, teams in rows
+        if season and int(teams or 0) >= int(league_size))
+
+
+def league_seasons(
+    table: str, team_column: str, league_size: int,
+) -> tuple[str, ...]:
+    if re.fullmatch(_TABLE_NAME, str(table or "")) is None:
+        return ()
+    if re.fullmatch(_TABLE_NAME, str(team_column or "")) is None:
+        return ()
+    try:
+        path = warehouse_path()
+    except Exception:
+        return ()
+    try:
+        return _read_league_seasons(path, table, team_column, league_size)
+    except Exception:
+        return ()
+
+
 def coverage_bounds(
     tables: Iterable[str] | None = None,
 ) -> tuple[str, str] | None:

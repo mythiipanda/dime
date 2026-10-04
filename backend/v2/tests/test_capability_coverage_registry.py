@@ -102,3 +102,38 @@ def test_registry_tables_carry_a_season_column_in_the_warehouse():
 def test_capability_with_no_season_source_leaves_the_task_alone():
     task = _seasonless_evidence_task("2015-16")
     assert ModelIntake._mark_uncovered_season(task) == task
+
+def _scratch_warehouse(tmp_path):
+    path = tmp_path / "scratch.duckdb"
+    connection = duckdb.connect(str(path))
+    connection.execute(
+        'CREATE TABLE silver_team_games ('
+        '_season VARCHAR, Team_ID BIGINT)')
+    connection.execute(
+        "INSERT INTO silver_team_games VALUES "
+        "('2023-24', 1), ('2025-26', 10), ('2025-26', 11), ('2025-26', 12)")
+    connection.close()
+    return path
+
+
+def test_league_seasons_excludes_a_season_slice_that_is_one_team(
+    tmp_path, monkeypatch):
+    from shared import store
+    path = _scratch_warehouse(tmp_path)
+    monkeypatch.setattr(store, "DB_PATH", path)
+    monkeypatch.setattr(store, "CANONICAL_DB_PATH", path)
+    coverage.coverage_cache_clear()
+    assert coverage.league_seasons("silver_team_games", "Team_ID", 3) == (
+        "2025-26",)
+
+
+def test_league_seasons_rejects_a_table_or_column_it_cannot_quote(
+    tmp_path, monkeypatch):
+    from shared import store
+    path = _scratch_warehouse(tmp_path)
+    monkeypatch.setattr(store, "DB_PATH", path)
+    monkeypatch.setattr(store, "CANONICAL_DB_PATH", path)
+    coverage.coverage_cache_clear()
+    assert coverage.league_seasons("nope; drop table x", "Team_ID", 3) == ()
+    assert coverage.league_seasons(
+        "silver_team_games", 'Team_ID" FROM x --', 3) == ()
