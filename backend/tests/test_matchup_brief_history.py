@@ -177,7 +177,8 @@ def test_brief_for_2024_25_composes_every_section(brief_db):
     summary = rows["season_series"]["summary"]
     assert summary["games"] == 2
     assert summary["games_won"] == {"BOS": 2, "NYK": 0}
-    assert summary["series_played"] == 0
+    assert summary["series_played"] is None
+    assert summary["series"] is None
     assert rows["prediction"]["win_prob"]["BOS"] > 0.5
     assert rows["prediction"]["ratings_source"] == "silver_team_ratings"
     assert env.qualification
@@ -329,6 +330,36 @@ def test_brief_rejects_wrong_subject_end_to_end(brief_db):
             "matchup_brief",
             {"a": "BOS", "b": "BOS", "season": "2024-25"},
         )
+
+
+def test_playoff_rows_in_history_never_become_a_series_record(brief_db):
+    con = store.connect(read_only=True)
+    try:
+        present = {r[0] for r in con.execute("SHOW TABLES").fetchall()}
+        for table in ("silver_playoffs", "silver_playoff_gamelogs"):
+            if table not in present:
+                continue
+            covered = con.execute(
+                f"SELECT COUNT(*) FROM {table} WHERE _season = '2024-25'"
+            ).fetchone()[0]
+            if covered:
+                pytest.skip(f"{table} covers 2024-25 in this fixture")
+    finally:
+        con.close()
+
+    out = team_mod.get_season_series.invoke(
+        {"team_a": "BOS", "team_b": "NYK", "season": "2024-25"})
+
+    assert out["ok"] is True
+    summary = out["rows"]["summary"]
+    assert summary["games"] == 2
+    assert summary["series_played"] is None
+    assert summary["series_won"] is None
+    assert summary["series"] is None
+    assert "playoffs" not in summary["games_by_phase"]
+    assert out["meta"]["coverage"]["regular season"]["source"] == (
+        HIST_RATINGS_TABLE)
+    assert out["meta"]["coverage"]["playoffs"]["source"] is None
 
 
 def test_season_series_fails_loud_for_a_pairing_that_never_met(brief_db):

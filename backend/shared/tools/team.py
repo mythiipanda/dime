@@ -1,5 +1,5 @@
 
-from typing import Any
+from typing import Any, NamedTuple
 import asyncio as _asyncio
 from dataclasses import dataclass
 from langchain_core.tools import tool
@@ -392,6 +392,184 @@ def get_team_game_log(team: str, limit: int = 10,
             "team": abbr, "games": games, "rows": games, "meta": _meta}
 
 
+_SERIES_PHASES = ("regular season", "playoffs")
+
+_PLAYOFF_ROUND = {"1": "first round", "2": "conference semifinals",
+                  "3": "conference finals", "4": "NBA Finals"}
+
+
+def _winner_from(wl: Any, a: str, b: str) -> str | None:
+    mark = str(wl or "").strip().upper()
+    return a if mark == "W" else (b if mark == "L" else None)
+
+
+def _meeting(game_id: Any, game_date: Any, matchup: Any, wl: Any,
+             pts_a: Any, pts_b: Any, a: str, b: str, phase: str,
+             round_code: Any = None) -> dict[str, Any]:
+    record: dict[str, Any] = {
+        "game_id": str(game_id or ""),
+        "date": str(game_date or ""),
+        "matchup": str(matchup or ""),
+        "phase": phase,
+        "winner": _winner_from(wl, a, b),
+        f"{a.lower()}_pts": pts_a,
+        f"{b.lower()}_pts": pts_b,
+    }
+    if round_code is not None:
+        record["round_code"] = round_code
+        record["round"] = _PLAYOFF_ROUND.get(round_code, "playoffs")
+    return record
+
+
+def _read_stored_team_games(con: Any, season: str, id_a: int, id_b: int,
+                            a: str, b: str) -> list[dict[str, Any]]:
+    rows = con.execute(
+        """SELECT g.Game_ID, g.GAME_DATE, g.MATCHUP, g.WL, g.PTS, o.PTS
+           FROM silver_team_games g
+           LEFT JOIN silver_team_games o
+             ON o._season = g._season AND o.Game_ID = g.Game_ID
+            AND o._entity = ?
+           WHERE g._season = ? AND g._entity = ? AND g.MATCHUP ILIKE ?""",
+        [f"team:{id_b}", season, f"team:{id_a}", f"%{b}%"],
+    ).fetchall()
+    return [_meeting(gid, gdate, matchup, wl, pts_a, pts_b, a, b,
+                     "regular season")
+            for gid, gdate, matchup, wl, pts_a, pts_b in rows]
+
+
+def _read_hist_gamelogs(con: Any, season: str, id_a: int, id_b: int, a: str,
+                        b: str) -> list[dict[str, Any]]:
+    meetings: list[dict[str, Any]] = []
+    for row in _hist_team_games(id_a, season):
+        if b not in str(row.get("MATCHUP") or "").upper():
+            continue
+        meetings.append({
+            "game_id": str(row.get("Game_ID") or ""),
+            "date": str(row.get("GAME_DATE") or ""),
+            "matchup": str(row.get("MATCHUP") or ""),
+            "phase": "regular season",
+            "winner": _winner_from(row.get("WL"), a, b),
+            f"{a.lower()}_pts": row.get("PTS"),
+            f"{b.lower()}_pts": row.get("OPP_PTS"),
+        })
+    return meetings
+
+
+def _read_playoffs(con: Any, season: str, id_a: int, id_b: int, a: str,
+                   b: str) -> list[dict[str, Any]]:
+    rows = con.execute(
+        """SELECT g.GAME_ID, g.GAME_DATE, g.MATCHUP, g.WL, g.PTS, o.PTS
+           FROM silver_playoffs g
+           LEFT JOIN silver_playoffs o
+             ON o._season = g._season AND o.Game_ID = g.Game_ID
+            AND o.TEAM_ABBREVIATION = ?
+           WHERE g._season = ? AND g.TEAM_ABBREVIATION = ?
+             AND g.MATCHUP ILIKE ?""",
+        [b, season, a, f"%{b}%"],
+    ).fetchall()
+    return [_meeting(gid, gdate, matchup, wl, pts_a, pts_b, a, b, "playoffs",
+                     str(gid)[7:8])
+            for gid, gdate, matchup, wl, pts_a, pts_b in rows]
+
+
+def _read_playoff_gamelogs(con: Any, season: str, id_a: int, id_b: int,
+                           a: str, b: str) -> list[dict[str, Any]]:
+    rows = con.execute(
+        """SELECT DISTINCT Game_ID, GAME_DATE, MATCHUP, WL
+           FROM silver_playoff_gamelogs
+           WHERE _season = ? AND MATCHUP ILIKE ?""",
+        [season, f"{a} % {b}"],
+    ).fetchall()
+    return [_meeting(gid, gdate, matchup, wl, None, None, a, b, "playoffs",
+                     str(gid)[7:8])
+            for gid, gdate, matchup, wl in rows]
+
+
+class _SeriesSource(NamedTuple):
+    table: str
+    phase: str
+    holds_sql: str
+    holds_args: Any
+    read: Any
+
+
+_SERIES_SOURCES = (
+    _SeriesSource(
+        "silver_team_games", "regular season",
+        "SELECT 1 FROM silver_team_games WHERE _season = ? AND _entity = ?"
+        " LIMIT 1",
+        lambda season, id_a, abbr: [season, f"team:{id_a}"],
+        _read_stored_team_games),
+    _SeriesSource(
+        "silver_hist_gamelogs", "regular season",
+        "SELECT 1 FROM silver_hist_gamelogs WHERE _season = ?"
+        " AND (team_id = ? OR team_abbreviation = ?)"
+        " AND season_type = 'regular-season' LIMIT 1",
+        lambda season, id_a, abbr: [season, id_a, abbr],
+        _read_hist_gamelogs),
+    _SeriesSource(
+        "silver_playoffs", "playoffs",
+        "SELECT 1 FROM silver_playoffs WHERE _season = ?"
+        " AND TEAM_ABBREVIATION = ? LIMIT 1",
+        lambda season, id_a, abbr: [season, abbr],
+        _read_playoffs),
+    _SeriesSource(
+        "silver_playoff_gamelogs", "playoffs",
+        "SELECT 1 FROM silver_playoff_gamelogs WHERE _season = ? LIMIT 1",
+        lambda season, id_a, abbr: [season],
+        _read_playoff_gamelogs),
+)
+
+
+def _series_coverage(con: Any, tables: set[str], season: str, id_a: int,
+                     abbr: str) -> dict[str, dict[str, Any]]:
+    coverage: dict[str, dict[str, Any]] = {}
+    for source in _SERIES_SOURCES:
+        slot = coverage.setdefault(
+            source.phase, {"source": None, "consulted": []})
+        if source.table not in tables:
+            continue
+        slot["consulted"].append(source.table)
+        if slot["source"] is None and con.execute(
+                source.holds_sql,
+                source.holds_args(season, id_a, abbr)).fetchone():
+            slot["source"] = source.table
+    return coverage
+
+
+def _consulted_tables(coverage: dict[str, dict[str, Any]]) -> list[str]:
+    return [name for phase in _SERIES_PHASES
+            for name in coverage[phase]["consulted"]]
+
+
+def _season_not_covered_error(a: str, b: str, season: str,
+                              coverage: dict[str, dict[str, Any]]) -> str:
+    return (f"no warehouse table holds {season} for {a} or {b}, so their "
+            f"meetings cannot be counted or ruled out. Tables consulted: "
+            f"{', '.join(_consulted_tables(coverage))}. This is a coverage "
+            f"gap, not evidence the teams never met. Do not report a 0-0 "
+            f"record.")
+
+
+def _no_meetings_error(a: str, b: str, season: str,
+                       coverage: dict[str, dict[str, Any]]) -> str:
+    uncovered = [phase for phase in _SERIES_PHASES
+                 if coverage[phase]["source"] is None]
+    gap = ""
+    if uncovered:
+        gap = (f" No {' nor '.join(uncovered)} table holds {season} rows, "
+               f"so this is not evidence the teams never met.")
+    return (f"{a} and {b} have no recorded meetings in {season}. Tables "
+            f"consulted: {', '.join(_consulted_tables(coverage))}. Do not "
+            f"report a 0-0 record - say the meetings are not in the "
+            f"dataset.{gap}")
+
+
+def _series_source(coverage: dict[str, dict[str, Any]],
+                   phase: str) -> str | None:
+    return coverage[phase]["source"]
+
+
 @tool
 def get_season_series(team_a: str, team_b: str,
                       season: str | None = None) -> dict[str, Any]:
@@ -413,119 +591,33 @@ def get_season_series(team_a: str, team_b: str,
     ids = {str(t.get("abbreviation") or "").upper(): t.get("id")
            for t in _static_teams.get_teams()}
     id_a, id_b = ids.get(a), ids.get(b)
+    if id_a is None or id_b is None:
+        return {"tool": "get_season_series", "ok": False,
+                "error": (f"no warehouse team id for "
+                          f"{a if id_a is None else b}, so {season} meetings "
+                          f"cannot be looked up without guessing")}
 
     from .. import store as _store
 
-    games: list[dict[str, Any]] = []
-    reg_source = "silver_team_games"
     con = _store.connect()
     try:
         tables = {r[0] for r in con.execute("SHOW TABLES").fetchall()}
-
-
-        if "silver_team_games" in tables and id_a is not None:
-            rows = con.execute(
-                """SELECT g.Game_ID, g.GAME_DATE, g.MATCHUP, g.WL, g.PTS,
-                          o.PTS
-                   FROM silver_team_games g
-                   LEFT JOIN silver_team_games o
-                     ON o._season = g._season AND o.Game_ID = g.Game_ID
-                    AND o._entity = ?
-                   WHERE g._season = ? AND g._entity = ?
-                     AND g.MATCHUP ILIKE ?""",
-                [f"team:{id_b}", season, f"team:{id_a}", f"%{b}%"],
-            ).fetchall()
-            for gid, gdate, matchup, wl, pts_a, pts_b in rows:
-                games.append({
-                    "game_id": str(gid), "date": str(gdate),
-                    "matchup": str(matchup), "phase": "regular season",
-                    "winner": a if str(wl).upper() == "W"
-                    else (b if str(wl).upper() == "L" else None),
-                    f"{a.lower()}_pts": pts_a,
-                    f"{b.lower()}_pts": pts_b,
-                })
-
-        if not games and id_a is not None:
-            reg_source = "silver_hist_gamelogs"
-            for row in _hist_team_games(id_a, season):
-                if b not in str(row.get("MATCHUP") or "").upper():
-                    continue
-                wl = str(row.get("WL") or "").upper()
-                games.append({
-                    "game_id": str(row.get("Game_ID") or ""),
-                    "date": str(row.get("GAME_DATE") or ""),
-                    "matchup": str(row.get("MATCHUP") or ""),
-                    "phase": "regular season",
-                    "winner": a if wl == "W" else (b if wl == "L" else None),
-                    f"{a.lower()}_pts": row.get("PTS"),
-                    f"{b.lower()}_pts": row.get("OPP_PTS"),
-                })
-
-
-        _ROUND = {"1": "first round", "2": "conference semifinals",
-                  "3": "conference finals", "4": "NBA Finals"}
-        playoff_source = None
-        if "silver_playoffs" in tables and id_a is not None:
-            prows = con.execute(
-                """SELECT g.GAME_ID, g.GAME_DATE, g.MATCHUP, g.WL, g.PTS,
-                          o.PTS
-                   FROM silver_playoffs g
-                   LEFT JOIN silver_playoffs o
-                     ON o._season = g._season AND o.GAME_ID = g.GAME_ID
-                    AND o.TEAM_ABBREVIATION = ?
-                   WHERE g._season = ? AND g.TEAM_ABBREVIATION = ?
-                     AND g.MATCHUP ILIKE ?""",
-                [b, season, a, f"%{b}%"],
-            ).fetchall()
-            for gid, gdate, matchup, wl, pts_a, pts_b in prows:
-                rnd = str(gid)[7:8]
-                games.append({
-                    "game_id": str(gid), "date": str(gdate),
-                    "matchup": str(matchup),
-                    "phase": "playoffs",
-                    "round_code": rnd,
-                    "round": _ROUND.get(rnd, "playoffs"),
-                    "winner": a if str(wl).upper() == "W"
-                    else (b if str(wl).upper() == "L" else None),
-                    f"{a.lower()}_pts": pts_a,
-                    f"{b.lower()}_pts": pts_b,
-                })
-            if prows:
-                playoff_source = "silver_playoffs"
-        if (not playoff_source
-                and "silver_playoff_gamelogs" in tables):
-            prows = con.execute(
-                """SELECT DISTINCT Game_ID, GAME_DATE, MATCHUP, WL
-                   FROM silver_playoff_gamelogs
-                   WHERE _season = ? AND MATCHUP ILIKE ?""",
-                [season, f"{a} % {b}"],
-            ).fetchall()
-            for gid, gdate, matchup, wl in prows:
-                rnd = str(gid)[7:8]
-                games.append({
-                    "game_id": str(gid), "date": str(gdate),
-                    "matchup": str(matchup), "phase": "playoffs",
-                    "round_code": rnd,
-                    "round": _ROUND.get(rnd, "playoffs"),
-                    "winner": a if str(wl).upper() == "W"
-                    else (b if str(wl).upper() == "L" else None),
-                })
-            if prows:
-                playoff_source = "silver_playoff_gamelogs"
-        playoff_coverage = {
-            "silver_playoffs": "silver_playoffs" in tables,
-            "silver_playoff_gamelogs": "silver_playoff_gamelogs" in tables,
-        }
+        coverage = _series_coverage(con, tables, season, id_a, a)
+        reg_source = _series_source(coverage, "regular season")
+        playoff_source = _series_source(coverage, "playoffs")
+        if reg_source is None:
+            return {"tool": "get_season_series", "ok": False,
+                    "error": _season_not_covered_error(a, b, season, coverage)}
+        games: list[dict[str, Any]] = []
+        for source in _SERIES_SOURCES:
+            if source.table in (reg_source, playoff_source):
+                games.extend(source.read(con, season, id_a, id_b, a, b))
     finally:
         con.close()
 
-
     if not games:
         return {"tool": "get_season_series", "ok": False,
-                "error": (f"No games between {a} and {b} found in the "
-                          f"dataset (coverage: {season} regular season "
-                          f"and playoffs). Do not report a 0-0 record - "
-                          f"say the meetings are not in the dataset.")}
+                "error": _no_meetings_error(a, b, season, coverage)}
     games.sort(key=lambda g: _series_date_key(g["date"]))
     phases = sorted({g["phase"] for g in games})
     games_won = {a: sum(1 for g in games if g.get("winner") == a),
@@ -539,26 +631,34 @@ def get_season_series(team_a: str, team_b: str,
                        and g.get("winner") == b)}
         for phase in phases}
     undecided = len(games) - games_won[a] - games_won[b]
-    series = _playoff_series(games, a, b)
-    series_won = {a: sum(1 for s in series if s["winner"] == a),
-                  b: sum(1 for s in series if s["winner"] == b)}
     summary = {
         "games": len(games),
         "games_undecided": undecided,
         "games_won": games_won,
         "games_by_phase": games_by_phase,
         "games_won_by_phase": games_won_by_phase,
-        "series_played": len(series),
-        "series_won": series_won,
-        "series": series,
     }
+    if playoff_source is None:
+        summary["series_played"] = None
+        summary["series_won"] = None
+        summary["series"] = None
+    else:
+        series = _playoff_series(games, a, b)
+        summary["series_played"] = len(series)
+        summary["series_won"] = {a: sum(1 for s in series if s["winner"] == a),
+                                 b: sum(1 for s in series if s["winner"] == b)}
+        summary["series"] = series
     return {"tool": "get_season_series", "ok": True,
             "rows": {"teams": [a, b], "summary": summary, "games": games},
             "meta": {"source": "warehouse team + playoff gamelogs",
                      "season": season,
                      "regular_season_source": reg_source,
                      "playoff_source": playoff_source,
-                     "playoff_tables_present": playoff_coverage,
+                     "playoff_tables_present": {
+                         source.table: source.table in tables
+                         for source in _SERIES_SOURCES
+                         if source.phase == "playoffs"},
+                     "coverage": coverage,
                      "unscored_games": sorted(
                          g["game_id"] for g in games
                          if f"{a.lower()}_pts" not in g
@@ -1745,11 +1845,15 @@ async def get_matchup_brief(a: str = "", b: str = "", season: str | None = None)
     ser = await get_season_series.ainvoke({"team_a": abbr_a, "team_b": abbr_b, "season": season})
     warnings = []
     if isinstance(ser, dict) and ser.get("ok"):
-        series_rows = ser.get("rows") or {}
+        series_rows = {"teams": [abbr_a, abbr_b], "available": True,
+                       **(ser.get("rows") or {})}
     else:
-        series_rows = {"teams": [abbr_a, abbr_b], "summary": {"games": 0}, "games": []}
-        if isinstance(ser, dict) and ser.get("error"):
-            warnings.append(str(ser.get("error")))
+        reason = (str(ser.get("error") or "") if isinstance(ser, dict)
+                  else "season series unavailable")
+        series_rows = {"teams": [abbr_a, abbr_b], "available": False,
+                       "summary": None, "games": [], "reason": reason}
+        if reason:
+            warnings.append(reason)
     pred = await get_game_prediction.ainvoke({"a": abbr_a, "b": abbr_b, "season": season})
     if not isinstance(pred, dict) or not pred.get("ok"):
         err4 = ""
