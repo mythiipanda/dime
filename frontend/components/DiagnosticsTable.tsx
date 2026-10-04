@@ -1,7 +1,12 @@
 "use client";
 
 import type { CSSProperties } from "react";
-import { shortRevision, type BindingDiagnostic } from "../lib/diagnostics";
+import {
+  parseSseText,
+  runIdOf,
+  shortRevision,
+  type BindingDiagnostic,
+} from "../lib/diagnostics";
 
 function declaredText(value: Record<string, unknown> | null): string {
   if (!value) return "";
@@ -34,6 +39,26 @@ export function RevisionCard({ info }: { info: { revision: string; runtime: stri
       ) : (
         "revision unavailable"
       )}
+    </div>
+  );
+}
+
+export function RunMetaHeader({
+  text,
+  revision,
+  runtime,
+}: {
+  text: string;
+  revision: string;
+  runtime: string;
+}) {
+  if (!revision.trim()) return null;
+  const runId = text.trim() ? runIdOf(parseSseText(text)) : null;
+  return (
+    <div style={{ fontSize: 12, color: "var(--color-warm-gray)", marginBottom: 6 }}>
+      {runId ? `run ${runId.slice(0, 12)} · ` : ""}
+      {revision.trim().slice(0, 8)}
+      {runtime.trim() ? ` · ${runtime.trim()}` : ""}
     </div>
   );
 }

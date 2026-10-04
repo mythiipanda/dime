@@ -8,6 +8,7 @@ import {
   isBindingDiagnostic,
   parseSseText,
   revisionInfo,
+  runIdOf,
   shortRevision,
 } from "./diagnostics";
 
@@ -129,6 +130,16 @@ test("revision fixture yields short hash with runtime", () => {
   assert.equal(revisionInfo({}, "v2"), null);
   assert.equal(revisionInfo(null, "v2"), null);
   assert.equal(revisionInfo({ revision: "" }, "v2"), null);
+});
+
+test("run id prefers final_answer carry over binding events", () => {
+  assert.equal(runIdOf(parseSseText(FIXTURE)), "run-ccbce16e085d4d4f81db412cdb45df51");
+  assert.equal(runIdOf(parseSseText(FAST_FAIL_FIXTURE)), "run-b2cee69e8fb148f187ef19c1fe34038f");
+  assert.equal(runIdOf([]), null);
+  assert.equal(
+    runIdOf(parseSseText('event: node_update\ndata: {"x":1}\n\n')),
+    null,
+  );
 });
 
 test("diagnostic guard rejects other payloads", () => {

@@ -126,6 +126,23 @@ export function shortRevision(revision: string): string {
   return String(revision || "").slice(0, 8);
 }
 
+export function runIdOf(events: SseEvent[]): string | null {
+  for (const e of events) {
+    if (e.type !== "final_answer") continue;
+    if (!isRecord(e.data)) continue;
+    const carry = (e.data as Record<string, unknown>).carry;
+    if (isRecord(carry) && typeof carry.run_id === "string" && carry.run_id) {
+      return carry.run_id;
+    }
+  }
+  for (const e of events) {
+    if (isRecord(e.data) && typeof e.data.run_id === "string" && e.data.run_id) {
+      return e.data.run_id;
+    }
+  }
+  return null;
+}
+
 export interface FastFailVerdict {
   fastFail: boolean;
   understandMs: number | null;

@@ -2,7 +2,11 @@ import { describe, it } from "node:test";
 import * as assert from "node:assert";
 import * as React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { DiagnosticsTable, RevisionCard } from "./components/DiagnosticsTable";
+import {
+  DiagnosticsTable,
+  RevisionCard,
+  RunMetaHeader,
+} from "./components/DiagnosticsTable";
 import { DiffTable, FastFailBanner } from "./app/diagnostics/page";
 import { bindingDiagnostics, parseSseText } from "./lib/diagnostics";
 
@@ -116,6 +120,34 @@ data: {}
   it("renders plain words when revision is missing", () => {
     const html = renderToStaticMarkup(React.createElement(RevisionCard, { info: null }));
     assert.ok(html.includes("revision unavailable"));
+  });
+
+  it("renders distinct run headers per side with metadata", () => {
+    const left = renderToStaticMarkup(
+      React.createElement(RunMetaHeader, {
+        text: FIXTURE,
+        revision: "168e2f31abc123",
+        runtime: "v2",
+      }),
+    );
+    const right = renderToStaticMarkup(
+      React.createElement(RunMetaHeader, {
+        text: FIXTURE,
+        revision: "bf0a5dcc999888",
+        runtime: "v2",
+      }),
+    );
+    assert.ok(left.includes("168e2f31"));
+    assert.ok(!left.includes("bf0a5dcc"));
+    assert.ok(right.includes("bf0a5dcc"));
+    assert.ok(left.includes("run-"));
+  });
+
+  it("renders no header without a revision", () => {
+    const html = renderToStaticMarkup(
+      React.createElement(RunMetaHeader, { text: FIXTURE, revision: "", runtime: "" }),
+    );
+    assert.equal(html, "");
   });
 
   it("renders nothing without rows", () => {
