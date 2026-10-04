@@ -34,7 +34,12 @@ def _ratings_payload():
                 "PACE": 98.4,
             },
         ],
-        "meta": {"source": "warehouse", "season": "2025-26"},
+        "meta": {
+            "source": "warehouse",
+            "season": "2025-26",
+            "ratings_provenance": "stored",
+            "ratings_source": "silver_team_ratings",
+        },
     }
 
 
@@ -116,11 +121,20 @@ def _prediction_payload():
             "projected_score": {"BOS": 116.4, "NYK": 112.8},
             "projected_total": 229.2,
         },
-        "inputs": {"n_sims": 10000},
+        "inputs": {
+            "n_sims": 10000,
+            "ratings_provenance": "stored",
+            "ratings_source": "silver_team_ratings",
+        },
         "methodology": ["Monte Carlo"],
         "assumptions": [],
         "limitations": [],
-        "meta": {"source": "warehouse", "season": "2025-26"},
+        "meta": {
+            "source": "warehouse",
+            "season": "2025-26",
+            "ratings_provenance": "stored",
+            "ratings_source": "silver_team_ratings",
+        },
     }
 
 

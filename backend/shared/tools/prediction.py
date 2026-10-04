@@ -1,6 +1,6 @@
 
 import ast
-from typing import Any
+from typing import Any, NamedTuple
 
 import numpy as np
 from langchain_core.tools import tool
@@ -52,6 +52,9 @@ def _full_name(team_id: int) -> str:
 
 STORED_RATINGS_TABLE = "silver_team_ratings"
 HIST_RATINGS_TABLE = "silver_hist_gamelogs"
+RATINGS_STORED = "stored"
+RATINGS_DERIVED = "derived"
+RATINGS_LIVE = "live"
 
 _HIST_RATINGS_SQL = """
 WITH paired AS (
@@ -80,16 +83,48 @@ GROUP BY "TEAM_ID"
 """
 
 RATINGS_METHOD = {
-    STORED_RATINGS_TABLE: (
+    RATINGS_STORED: (
         "Team ratings come from warehouse silver_team_ratings, the stored "
         "season averages for offensive and defensive rating per 100 "
         "possessions."),
-    HIST_RATINGS_TABLE: (
+    RATINGS_DERIVED: (
         "Team ratings are derived offline from the regular-season game log "
         "in silver_hist_gamelogs: every game is paired with its opponent's "
         "row, possessions are estimated per game, and the ratings are points "
-        "per 100 of those possessions. No live source is used."),
+        "per 100 of those possessions. No live source is used, and "
+        "silver_team_ratings holds no rows for this season."),
 }
+
+_RATINGS_DECLARED = {
+    RATINGS_STORED: "warehouse",
+    RATINGS_DERIVED: f"{HIST_RATINGS_TABLE} (derived offline)",
+}
+
+
+class RatingsSource(NamedTuple):
+    """Which source produced a season's team ratings, and from what."""
+
+    kind: str
+    table: str
+
+    @property
+    def declared(self) -> str:
+        """Source token that names what produced the numbers."""
+        return _RATINGS_DECLARED[self.kind]
+
+
+STORED_RATINGS = RatingsSource(RATINGS_STORED, STORED_RATINGS_TABLE)
+DERIVED_RATINGS = RatingsSource(RATINGS_DERIVED, HIST_RATINGS_TABLE)
+
+
+def ratings_unavailable(season: str, available: list[str] | None = None) -> str:
+    """Why no ratings exist for a season, naming every candidate source."""
+    message = (f"Team ratings for the {season} season are not available: "
+               f"{STORED_RATINGS_TABLE} has no rows for it and "
+               f"{HIST_RATINGS_TABLE} has no game log to derive them from.")
+    if available:
+        message += f" Available seasons: {', '.join(available)}."
+    return message + " Which season should be used instead?"
 
 
 def _rating_values(row: tuple) -> dict[str, Any]:
@@ -111,8 +146,7 @@ def _stored_ratings(con: Any, season: str) -> dict[int, dict[str, Any]]:
     for row in rows:
         values = _rating_values(row)
         if values:
-            out[row[0]] = {**values, "fetched_at": row[8],
-                           "source": STORED_RATINGS_TABLE}
+            out[row[0]] = {**values, "fetched_at": row[8]}
     return out
 
 
@@ -122,29 +156,39 @@ def _derived_ratings(con: Any, season: str) -> dict[int, dict[str, Any]]:
     for row in rows:
         values = _rating_values(row)
         if values:
-            out[row[0]] = {**values, "fetched_at": None,
-                           "source": HIST_RATINGS_TABLE}
+            out[row[0]] = {**values, "fetched_at": None}
     return out
 
 
-def _season_ratings(con: Any, season: str) -> dict[int, dict[str, Any]]:
+def season_team_ratings(
+    con: Any, season: str,
+) -> tuple[dict[int, dict[str, Any]], RatingsSource | None]:
+    """Team ratings for one season keyed by team id, plus the one source.
+
+    Stored rows win whenever the stored ratings table holds the season;
+    otherwise the offline game-log derivation answers. A season no offline
+    source can serve returns no ratings and no source, so callers fail loud
+    instead of reaching for the network. Every consumer of team ratings reads
+    this one function, so one quantity carries one provenance.
+    """
     season = resolve_season(season)
     tables = {row[0] for row in con.execute("SHOW TABLES").fetchall()}
     if STORED_RATINGS_TABLE in tables:
         stored = _stored_ratings(con, season)
         if stored:
-            return stored
+            return stored, STORED_RATINGS
     if HIST_RATINGS_TABLE in tables:
-        return _derived_ratings(con, season)
-    return {}
+        derived = _derived_ratings(con, season)
+        if derived:
+            return derived, DERIVED_RATINGS
+    return {}, None
 
 
-def _league_ratings(ratings: dict[int, dict[str, Any]]) -> dict[str, Any]:
+def _league_ratings(ratings: dict[int, dict[str, Any]]) -> dict[str, float]:
     if not ratings:
         return {}
     return {"off": float(np.mean([r["off"] for r in ratings.values()])),
-            "def": float(np.mean([r["def"] for r in ratings.values()])),
-            "source": next(iter(ratings.values()))["source"]}
+            "def": float(np.mean([r["def"] for r in ratings.values()]))}
 
 
 def _injury_penalty(con: Any, full_name: str,
@@ -287,7 +331,7 @@ def get_game_prediction(a: str = "", b: str = "", game_date: str = "",
 
     con = store.connect()
     try:
-        ratings = _season_ratings(con, season)
+        ratings, ratings_source = season_team_ratings(con, season)
         league = _league_ratings(ratings)
         home_r = ratings.get(home_id or ida)
         away_r = ratings.get(away_id or idb)
@@ -296,10 +340,8 @@ def get_game_prediction(a: str = "", b: str = "", game_date: str = "",
     finally:
         con.close()
 
-    if not league:
-        return _err(f"ratings missing for season {season}; the warehouse "
-                    "holds no stored team ratings and no game history to "
-                    "derive them from")
+    if ratings_source is None or not league:
+        return _err(ratings_unavailable(season))
     if home_r is None or away_r is None:
         missing = []
         if home_r is None:
@@ -363,7 +405,7 @@ def get_game_prediction(a: str = "", b: str = "", game_date: str = "",
                 "adjustment was applied.")
 
     methodology = [
-        RATINGS_METHOD[league["source"]],
+        RATINGS_METHOD[ratings_source.kind],
         "Each team's per-100 scoring is adjusted for opponent strength "
         "relative to the league average, then scaled by the average of the "
         "two teams' paces.",
@@ -409,7 +451,8 @@ def get_game_prediction(a: str = "", b: str = "", game_date: str = "",
         "inputs": {
             "home": _card(home_abbr, home_r, home_inj),
             "away": _card(away_abbr, away_r, away_inj),
-            "ratings_source": league["source"],
+            "ratings_source": ratings_source.table,
+            "ratings_provenance": ratings_source.kind,
             "game_pace": round(pace, 1),
             "league_avg_off": round(lg_off, 1),
             "league_avg_def": round(lg_def, 1),
@@ -421,9 +464,12 @@ def get_game_prediction(a: str = "", b: str = "", game_date: str = "",
         "assumptions": assumptions,
         "limitations": limitations,
         "meta": {
-            "source": "warehouse",
+            "source": ratings_source.declared,
             "season": season,
+            "ratings_provenance": ratings_source.kind,
+            "ratings_source": ratings_source.table,
             "ratings_fetched_at": home_r["fetched_at"],
+            **store.warehouse_identity(),
             "deterministic_answer": (
                 f"{home_abbr} has a {p_home * 100:.1f}% win probability "
                 f"to {away_abbr}'s {p_away * 100:.1f}%. The projected "

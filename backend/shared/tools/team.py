@@ -1589,6 +1589,11 @@ async def get_matchup_brief(a: str = "", b: str = "", season: str | None = None)
         if isinstance(rat, dict):
             err = str(rat.get("error") or "ratings unavailable")
         return {"tool": "get_matchup_brief", "ok": False, "error": err}
+    ratings_meta = rat.get("meta") if isinstance(rat.get("meta"), dict) else {}
+    card_provenance = {
+        "kind": str(ratings_meta.get("ratings_provenance") or ""),
+        "source": str(ratings_meta.get("ratings_source") or ""),
+    }
     allrows = rat.get("rows") or []
     row_a = next((r for r in allrows if str(r.get("TEAM") or "").strip().upper() == abbr_a), None)
     row_b = next((r for r in allrows if str(r.get("TEAM") or "").strip().upper() == abbr_b), None)
@@ -1644,8 +1649,31 @@ async def get_matchup_brief(a: str = "", b: str = "", season: str | None = None)
         return {"tool": "get_matchup_brief", "ok": False, "error": err4}
     est = pred.get("estimate") or {}
     inputs = pred.get("inputs") or {}
-    prediction_rows = {"matchup": pred.get("matchup") or {}, "win_prob": est.get("win_prob") or {}, "projected_score": est.get("projected_score") or {}, "projected_total": est.get("projected_total"), "win_prob_ci90": est.get("win_prob_ci90") or {}, "total_ci90": est.get("total_ci90") or [], "margin_ci90": est.get("margin_ci90") or [], "ratings_source": inputs.get("ratings_source")}
-    meta = {"source": "warehouse", "season": season}
+    prediction_provenance = {
+        "kind": str(inputs.get("ratings_provenance") or ""),
+        "source": str(inputs.get("ratings_source") or ""),
+    }
+    if (not all(card_provenance.values())
+            or card_provenance != prediction_provenance):
+        return {"tool": "get_matchup_brief", "ok": False, "error": (
+            f"ratings provenance disagrees inside the brief for season "
+            f"{season}: the ratings card reports "
+            f"{_provenance_label(card_provenance)} and the simulation reports "
+            f"{_provenance_label(prediction_provenance)}, so one quantity "
+            f"would carry two provenances; refusing to answer")}
+    pred_meta = pred.get("meta") if isinstance(pred.get("meta"), dict) else {}
+    prediction_rows = {"matchup": pred.get("matchup") or {}, "win_prob": est.get("win_prob") or {}, "projected_score": est.get("projected_score") or {}, "projected_total": est.get("projected_total"), "win_prob_ci90": est.get("win_prob_ci90") or {}, "total_ci90": est.get("total_ci90") or [], "margin_ci90": est.get("margin_ci90") or [], "ratings_source": prediction_provenance["source"], "ratings_provenance": prediction_provenance["kind"]}
+    from .. import store as _store
+
+    meta = {"source": str(pred_meta.get("source") or "warehouse"), "season": season, "ratings_provenance": card_provenance, **_store.warehouse_identity()}
     if warnings:
         meta["warnings"] = warnings
-    return {"tool": "get_matchup_brief", "ok": True, "rows": {"teams": [abbr_a, abbr_b], "ratings": {abbr_a: _rating_card(row_a), abbr_b: _rating_card(row_b)}, "form": form, "injuries": injuries, "season_series": series_rows, "prediction": prediction_rows}, "meta": meta}
+    return {"tool": "get_matchup_brief", "ok": True, "rows": {"teams": [abbr_a, abbr_b], "ratings_provenance": card_provenance, "ratings": {abbr_a: _rating_card(row_a), abbr_b: _rating_card(row_b)}, "form": form, "injuries": injuries, "season_series": series_rows, "prediction": prediction_rows}, "meta": meta}
+
+
+def _provenance_label(provenance: dict[str, str]) -> str:
+    kind = str(provenance.get("kind") or "").strip()
+    source = str(provenance.get("source") or "").strip()
+    if not kind and not source:
+        return "no provenance"
+    return f"{kind or 'unknown'} ({source or 'no table'})"

@@ -338,100 +338,20 @@ def get_standings_deep(season: str | None = None, top: int = 5) -> dict[str, Any
                              "game logs are missing."}}
 
 
-_REGULAR_SEASON_GAME_PREFIX = "002"
-
-
-def _regular_season_team_ratings(season):
-    con = store.connect(read_only=True)
-    try:
-        tables = {row[0] for row in con.execute("SHOW TABLES").fetchall()}
-        if "silver_boxscores" not in tables:
-            return None
-        columns = {
-            row[1]
-            for row in con.execute(
-                "PRAGMA table_info(silver_boxscores)").fetchall()
-        }
-        if not {"GAME_ID", "TEAM_ID", "teamTricode", "teamCity",
-                "teamName", "points", "fieldGoalsAttempted",
-                "freeThrowsAttempted", "reboundsOffensive", "turnovers",
-                "comment", "_season"} <= columns:
-            return None
-        raw = con.execute(
-            "WITH teamgames AS ("
-            "SELECT GAME_ID, TEAM_ID, MAX(teamTricode) AS tricode, "
-            "MAX(teamCity) || ' ' || MAX(teamName) AS name, "
-            "SUM(points) AS PTS, "
-            "SUM(fieldGoalsAttempted) + 0.44 * SUM(freeThrowsAttempted) "
-            "- SUM(reboundsOffensive) + SUM(turnovers) AS poss "
-            "FROM silver_boxscores "
-            "WHERE _season = ? AND SUBSTR(GAME_ID, 1, 3) = '002' "
-            "AND TEAM_ID IS NOT NULL "
-            "AND (comment IS NULL OR comment = '') "
-            "GROUP BY GAME_ID, TEAM_ID), "
-            "paired AS ("
-            "SELECT a.TEAM_ID, a.tricode, a.name, a.PTS, a.poss, "
-            "b.PTS AS opp_pts, b.poss AS opp_poss "
-            "FROM teamgames a JOIN teamgames b "
-            "ON a.GAME_ID = b.GAME_ID AND a.TEAM_ID <> b.TEAM_ID) "
-            "SELECT TEAM_ID, tricode, name, COUNT(*) AS GP, "
-            "SUM(CASE WHEN PTS > opp_pts THEN 1 ELSE 0 END) AS W, "
-            "SUM(PTS) AS PTS, SUM(poss) AS poss, "
-            "SUM(opp_pts) AS opp_pts, SUM(opp_poss) AS opp_poss "
-            "FROM paired GROUP BY TEAM_ID, tricode, name",
-            [season],
-        ).fetchall()
-    finally:
-        con.close()
-    if not raw:
-        return None
-    table = [
-        {"TEAM_ID": row[0], "TEAM": row[1], "TEAM_NAME": row[2],
-         "GP": row[3], "W": row[4],
-         "L": row[3] - row[4],
-         "OFF_RATING": round(100 * float(row[5]) / float(row[6]), 1)
-         if row[6] else None,
-         "DEF_RATING": round(100 * float(row[7]) / float(row[8]), 1)
-         if row[8] else None,
-         "NET_RATING": (round(100 * float(row[5]) / float(row[6])
-                             - 100 * float(row[7]) / float(row[8]), 1)
-                        if row[6] and row[8] else None),
-         "PACE": round(float(row[6]) / row[3], 2)
-         if row[6] else None}
-        for row in raw
-    ]
-    table = [row for row in table
-             if row["OFF_RATING"] is not None
-             and row["DEF_RATING"] is not None
-             and row["NET_RATING"] is not None]
-    if not table:
-        return None
-    for rank, row in enumerate(
-            sorted(table, key=lambda item: item["OFF_RATING"], reverse=True),
-            1):
-        row["OFF_RATING_RANK"] = rank
-    for rank, row in enumerate(
-            sorted(table, key=lambda item: item["DEF_RATING"]),
-            1):
-        row["DEF_RATING_RANK"] = rank
-    table.sort(key=lambda item: item["NET_RATING"], reverse=True)
-    for rank, row in enumerate(table, 1):
-        row["NET_RATING_RANK"] = rank
-    meta = {
-        "source": "warehouse", "season": season, "rows": len(table),
-        "cached": True, "static_season": True,
-        "method": "NBA box-score estimated possessions",
-        "qualification": (
-            "All NBA teams in the selected regular season; estimated "
-            "possessions use the NBA box-score formula."
-        ),
-        "coverage": (
-            "Full regular-season team rating table estimated from "
-            "warehouse game logs."
-        ),
-        **store.warehouse_identity(),
+def _rating_board_row(card: dict[str, Any], team_id: int,
+                      teams_by_id: dict[int, dict[str, Any]]) -> dict[str, Any]:
+    """One team rating card in leaderboard field names."""
+    team = teams_by_id.get(team_id, {})
+    return {
+        "TEAM_ID": team_id,
+        "TEAM_NAME": str(team.get("full_name") or ""),
+        "TEAM": str(team.get("abbreviation") or ""),
+        "GP": card["gp"], "W": card["w"], "L": card["l"],
+        "OFF_RATING": round(card["off"], 1),
+        "DEF_RATING": round(card["def"], 1),
+        "NET_RATING": round(card["net"], 1),
+        "PACE": round(card["pace"], 2),
     }
-    return table, meta
 
 
 @tool
@@ -450,24 +370,53 @@ def get_ratings(
     season = resolve_season(season, "silver_team_ratings")
     from nba_api.stats.static import teams as _teams
 
-    abbrev = {t["id"]: t["abbreviation"] for t in _teams.get_teams()}
+    from .prediction import (
+        RATINGS_LIVE,
+        RATINGS_STORED,
+        RatingsSource,
+        ratings_unavailable,
+        season_team_ratings,
+    )
+
+    teams_by_id = {int(t["id"]): t for t in _teams.get_teams()}
+    abbrev = {tid: str(t.get("abbreviation") or "")
+              for tid, t in teams_by_id.items()}
     rows, meta = _warehouse_or_live(
         "silver_team_ratings", "_season = ?",
         [season], lambda: nba_stats.team_ratings(season), season,
         limit=30,
     )
+    source: RatingsSource | None = None
     if rows:
         meta.setdefault("method", "official")
-    if not rows and season_static(season or ""):
-        fallback = _regular_season_team_ratings(season)
-        if fallback is not None:
-            rows, meta = fallback
-        else:
-            rows, meta = _warehouse_or_live(
-                "silver_team_ratings", "_season = ?",
-                [season], lambda: nba_stats.team_ratings(season), season,
-                limit=30, live_on_static_miss=True,
-            )
+        source = RatingsSource(RATINGS_STORED, "silver_team_ratings")
+    else:
+        con = store.connect(read_only=True)
+        try:
+            ratings, offline = season_team_ratings(con, season)
+        finally:
+            con.close()
+        if offline is not None:
+            rows = [_rating_board_row(card, tid, teams_by_id)
+                    for tid, card in ratings.items()]
+            rows.sort(key=lambda row: row["NET_RATING"], reverse=True)
+            source = offline
+            meta = {"source": offline.declared, "season": season,
+                    "rows": len(rows),
+                    "method": ("official" if offline.kind == RATINGS_STORED
+                               else "derived"),
+                    **store.warehouse_identity()}
+    if source is None and season_static(season or ""):
+        rows, meta = _warehouse_or_live(
+            "silver_team_ratings", "_season = ?",
+            [season], lambda: nba_stats.team_ratings(season), season,
+            limit=30, live_on_static_miss=True,
+        )
+        if rows:
+            source = RatingsSource(RATINGS_LIVE,
+                                   str(meta.get("source") or "live"))
+    meta["ratings_provenance"] = source.kind if source else ""
+    meta["ratings_source"] = source.table if source else ""
     keep = ["TEAM_ID", "TEAM_NAME", "GP", "W", "L",
             "OFF_RATING", "DEF_RATING", "NET_RATING", "PACE",
             "TS_PCT", "TM_TOV_PCT",
@@ -531,18 +480,7 @@ def get_ratings(
         except Exception:
             available = []
         if season not in available:
-            if available:
-                ask = (
-                    f"Team ratings for the {season} season are not available. "
-                    f"Available seasons: {', '.join(available)}. "
-                    "Which season should be used instead?"
-                )
-            else:
-                ask = (
-                    f"Team ratings for the {season} season are not available. "
-                    "No seasons are on hand for team ratings right now. "
-                    "Which season should be used instead?"
-                )
+            ask = ratings_unavailable(season, available)
             return {"tool": "get_ratings", "ok": False, "rows": [],
                     "error": ask,
                     "meta": {**meta, "deterministic_answer": ask}}

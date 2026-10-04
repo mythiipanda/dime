@@ -1,15 +1,22 @@
+import asyncio
 import sys
 from pathlib import Path
 
 import duckdb
+import polars as pl
 import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from shared import store  # noqa: E402
+from shared.sources import nba_stats  # noqa: E402
+from shared.sources.base import FetchMeta, FetchResult  # noqa: E402
 from shared.tools import team as team_mod  # noqa: E402
 from shared.tools.prediction import get_game_prediction  # noqa: E402
 from v2.adapters import AdapterError, call_capability  # noqa: E402
+
+STORED_RATINGS_TABLE = "silver_team_ratings"
+HIST_RATINGS_TABLE = "silver_hist_gamelogs"
 
 BOS = 1610612738
 NYK = 1610612752
@@ -135,6 +142,29 @@ def _row(summary, key):
     return int(summary[key])
 
 
+def _drop_season_from(table, season):
+    con = store.connect(read_only=False)
+    try:
+        con.execute(f"DELETE FROM {table} WHERE _season = ?", [season])
+    finally:
+        con.close()
+
+
+def _forbid_live_ratings(monkeypatch):
+    def forbidden(season):
+        raise AssertionError(f"live ratings fetch for {season}")
+
+    monkeypatch.setattr(nba_stats, "team_ratings", forbidden)
+
+
+class _StubTool:
+    def __init__(self, payload):
+        self._payload = payload
+
+    async def ainvoke(self, arguments):
+        return self._payload
+
+
 def test_brief_for_2024_25_composes_every_section(brief_db):
     env = call_capability(
         "matchup_brief",
@@ -205,6 +235,91 @@ def test_prediction_fails_loud_when_no_ratings_source_has_the_season(
         {"a": "BOS", "b": "NYK", "season": "2009-10", "n_sims": 2000})
     assert out["ok"] is False
     assert "ratings" in out["error"]
+
+
+def test_brief_without_a_stored_season_shares_one_derived_provenance(
+    brief_db, monkeypatch,
+):
+    _drop_season_from(STORED_RATINGS_TABLE, "2024-25")
+    _forbid_live_ratings(monkeypatch)
+
+    env = call_capability(
+        "matchup_brief",
+        {"a": "BOS", "b": "NYK", "season": "2024-25"},
+    )
+
+    assert env.rows["ratings_provenance"] == {
+        "kind": "derived", "source": HIST_RATINGS_TABLE}
+    assert env.rows["prediction"]["ratings_source"] == HIST_RATINGS_TABLE
+    simulation = get_game_prediction.invoke(
+        {"a": "BOS", "b": "NYK", "season": "2024-25", "n_sims": 2000})
+    assert env.rows["ratings"]["BOS"]["NET_RATING"] == pytest.approx(
+        simulation["inputs"]["home"]["net_rating"], abs=0.1)
+    assert env.rows["ratings"]["BOS"]["NET_RATING"] != pytest.approx(9.3, abs=0.01)
+    assert "derived" in env.source
+    assert "warehouse" not in env.source
+
+
+def test_brief_keeps_stored_ratings_when_the_season_is_stored(brief_db):
+    env = call_capability(
+        "matchup_brief",
+        {"a": "BOS", "b": "NYK", "season": "2024-25"},
+    )
+
+    assert env.rows["ratings_provenance"] == {
+        "kind": "stored", "source": STORED_RATINGS_TABLE}
+    assert env.rows["prediction"]["ratings_source"] == STORED_RATINGS_TABLE
+    assert env.rows["ratings"]["BOS"]["NET_RATING"] == 9.3
+    assert "warehouse" in env.source
+
+
+def test_brief_fails_loud_when_no_ratings_source_has_the_season(
+    brief_db, monkeypatch,
+):
+    monkeypatch.setattr(
+        nba_stats, "team_ratings",
+        lambda season: FetchResult(
+            frame=pl.DataFrame(),
+            meta=FetchMeta(source=nba_stats.SOURCE, season=season),
+            ok=False, error="upstream returned nothing"))
+
+    out = asyncio.run(team_mod.get_matchup_brief.ainvoke(
+        {"a": "BOS", "b": "NYK", "season": "2009-10"}))
+
+    assert out["ok"] is False
+    assert "rows" not in out
+    for named in ("2009-10", STORED_RATINGS_TABLE, HIST_RATINGS_TABLE):
+        assert named in out["error"], named
+    with pytest.raises(AdapterError):
+        call_capability(
+            "matchup_brief",
+            {"a": "BOS", "b": "NYK", "season": "2009-10"},
+        )
+
+
+def test_brief_fails_when_card_and_simulation_disagree_on_provenance(
+    brief_db, monkeypatch,
+):
+    simulation = get_game_prediction.invoke(
+        {"a": "BOS", "b": "NYK", "season": "2024-25", "n_sims": 2000})
+    assert simulation["inputs"]["ratings_source"] == STORED_RATINGS_TABLE
+    disagreeing = dict(simulation)
+    disagreeing["inputs"] = {
+        **simulation["inputs"],
+        "ratings_provenance": "derived",
+        "ratings_source": HIST_RATINGS_TABLE,
+    }
+    monkeypatch.setattr(
+        "shared.tools.prediction.get_game_prediction",
+        _StubTool(disagreeing))
+
+    out = asyncio.run(team_mod.get_matchup_brief.ainvoke(
+        {"a": "BOS", "b": "NYK", "season": "2024-25"}))
+
+    assert out["ok"] is False
+    assert "rows" not in out
+    for named in (STORED_RATINGS_TABLE, HIST_RATINGS_TABLE):
+        assert named in out["error"], named
 
 
 def test_brief_rejects_wrong_subject_end_to_end(brief_db):
