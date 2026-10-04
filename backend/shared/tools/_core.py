@@ -677,6 +677,12 @@ def _bound_warehouse_read(table, where, params):
         return frame, before
 
 
+def _live_fallback_marker(table: str, season: str, live: FetchResult,
+                          outcome: str) -> dict[str, str]:
+    return {"table": table, "requested_season": season,
+            "live_source": str(live.meta.source), "outcome": outcome}
+
+
 def _warehouse_or_live(table: str, where: str, params: list[object], fetch: Any, season: str | None,
     entity: str = "", limit: int = MAX_ROWS, live_first: bool = False, ttl_s: float | None = None,
     live_on_static_miss: bool = False):
@@ -703,17 +709,17 @@ def _warehouse_or_live(table: str, where: str, params: list[object], fetch: Any,
         if not live.ok or live.frame.height == 0:
             frame, identity = _bound_warehouse_read(table, where, params)
             if frame is not None and frame.height > 0:
-                meta={"rows":frame.height,"cached":True,"stale":True,"live_error":live.error or "empty upstream response",**identity}
+                meta={"rows":frame.height,"cached":True,"stale":True,"live_error":live.error or "empty upstream response","live_fallback": _live_fallback_marker(table, season, live, "stale"),**identity}
                 if "_source" in frame.columns:meta.update(source=frame["_source"][0],fetched_at=frame["_fetched_at"][0])
                 return frame.head(limit).to_dicts(),meta
-            return [],{"source":live.meta.source,"error":live.error or "empty upstream response",**(identity or {})}
+            return [],{"source":live.meta.source,"error":live.error or "empty upstream response","live_fallback": _live_fallback_marker(table, season, live, "empty"),**(identity or {})}
         if not static:
             store.save_frame(table, live, entity)
             frame, identity = _bound_warehouse_read(table, where, params)
         if frame is None or frame.height == 0:
             frame=live.frame.with_columns([pl.lit(live.meta.source).alias("_source"),pl.lit(live.meta.season).alias("_season"),pl.lit(live.meta.fetched_at).alias("_fetched_at")])
-            return frame.head(limit).to_dicts(),{"rows":frame.height,"cached":False,"source":live.meta.source,"fetched_at":live.meta.fetched_at,"lineage_kind":"live"}
-        return frame.head(limit).to_dicts(),{"rows":frame.height,"cached":False,"source":live.meta.source,"fetched_at":live.meta.fetched_at,**identity}
+            return frame.head(limit).to_dicts(),{"rows":frame.height,"cached":False,"source":live.meta.source,"fetched_at":live.meta.fetched_at,"lineage_kind":"live","live_fallback": _live_fallback_marker(table, season, live, "served")}
+        return frame.head(limit).to_dicts(),{"rows":frame.height,"cached":False,"source":live.meta.source,"fetched_at":live.meta.fetched_at,"live_fallback": _live_fallback_marker(table, season, live, "served"),**identity}
     meta={"rows":frame.height,"cached":True,**(identity or {})}
     if "_source" in frame.columns:meta.update(source=frame["_source"][0],fetched_at=frame["_fetched_at"][0])
     return frame.head(limit).to_dicts(),meta

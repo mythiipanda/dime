@@ -5,6 +5,7 @@ from decimal import Decimal
 from enum import StrEnum
 import calendar
 import math
+import re
 from typing import Any, Literal, Mapping
 
 from pydantic import (BaseModel, ConfigDict, Field, StrictBool, StrictFloat,
@@ -496,6 +497,25 @@ SourceIdentity = Annotated[
 ]
 
 
+class LiveFallback(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    warehouse_table: str = Field(pattern=r"^[a-z][a-z0-9_]{0,63}$")
+    requested_season: str = Field(pattern=r"^\d{4}-\d{2}$")
+    warehouse_seasons: list[str] = Field(default_factory=list, max_length=64)
+    live_source: str = Field(pattern=r"^[a-z][a-z0-9_]{0,63}$")
+    outcome: Literal["served", "stale", "empty"]
+
+    @model_validator(mode="after")
+    def validate_seasons(self):
+        if any(re.fullmatch(r"\d{4}-\d{2}", season) is None
+               for season in self.warehouse_seasons):
+            raise ValueError("warehouse seasons must be YYYY-YY")
+        if len(self.warehouse_seasons) != len(set(self.warehouse_seasons)):
+            raise ValueError("warehouse seasons must be unique")
+        return self
+
+
 class EvidenceEnvelope(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -517,6 +537,7 @@ class EvidenceEnvelope(BaseModel):
     coverage: str | None = Field(default=None, max_length=4000)
     lineage: list[str] = Field(default_factory=list, max_length=32)
     source_identity: SourceIdentity | None = None
+    live_fallback: LiveFallback | None = None
     warnings: list[str] = Field(default_factory=list, max_length=64)
 
     @model_validator(mode="after")

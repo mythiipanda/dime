@@ -29,6 +29,7 @@ class LedgerKind(StrEnum):
     STEP_START = "step/start"
     MODEL_REQUEST = "model/request"
     TOOL_CALL = "tool/call"
+    LIVE_FALLBACK = "live/fallback"
     TOOL_RESULT = "tool/result"
     ASSISTANT_ATTEMPT = "assistant/attempt"
     STEP_END = "step/end"
@@ -40,6 +41,37 @@ class TerminalReason(StrEnum):
     FAILED = "failed"
     CANCELLED = "cancelled"
     TIMEOUT = "timeout"
+
+
+_LIVE_FALLBACK_KEYS = frozenset({
+    "capability", "requested_season", "warehouse_table",
+    "warehouse_seasons", "live_source", "outcome",
+})
+_LIVE_FALLBACK_CAPABILITY = r"[a-z][a-z0-9_]{0,63}"
+
+
+def _validate_live_fallback_data(data: dict[str, Any]) -> None:
+    from v2.contracts import LiveFallback
+
+    if set(data) != _LIVE_FALLBACK_KEYS:
+        raise ValueError(
+            "live fallback requires exactly capability, requested_season, "
+            "warehouse_table, warehouse_seasons, live_source and outcome")
+    capability = data["capability"]
+    if (not isinstance(capability, str)
+            or re.fullmatch(_LIVE_FALLBACK_CAPABILITY, capability) is None):
+        raise ValueError("live fallback capability must be a bare identifier")
+    try:
+        LiveFallback(
+            warehouse_table=data["warehouse_table"],
+            requested_season=data["requested_season"],
+            warehouse_seasons=data["warehouse_seasons"],
+            live_source=data["live_source"],
+            outcome=data["outcome"],
+        )
+    except (TypeError, ValueError) as exc:
+        raise ValueError(
+            f"live fallback data does not match LiveFallback: {exc}") from exc
 
 
 def exception_text(exc: BaseException, *, max_length: int = 4000) -> str:
@@ -354,6 +386,7 @@ class RunLedger:
             raise ValueError("ledger sequence must be contiguous")
         self._calls: dict[str, str] = {}
         self._results: set[str] = set()
+        self._live_fallbacks: set[str] = set()
         self._model_requests: dict[str, RequestEnvelope] = {}
         self._model_attempts: set[str] = set()
         open_turns: set[str] = set()
@@ -372,6 +405,13 @@ class RunLedger:
                 raise ValueError("turn events cannot carry step_id")
             _validate_start_data(entry.kind, entry.data)
             _validate_terminal_data(entry.kind, entry.data)
+            if entry.kind == LedgerKind.LIVE_FALLBACK:
+                if not entry.call_id:
+                    raise ValueError("live fallback requires call_id")
+                if entry.call_id not in self._calls:
+                    raise ValueError("live fallback requires an earlier tool call")
+                _validate_live_fallback_data(entry.data)
+                self._live_fallbacks.add(entry.call_id)
             if entry.kind == LedgerKind.TURN_START:
                 if entry.turn_id in open_turns or entry.turn_id in closed_turns:
                     raise ValueError("turn may start only once")
@@ -494,6 +534,7 @@ class RunLedger:
         if kind in (LedgerKind.TURN_START, LedgerKind.TURN_END) and step_id is not None:
             raise ValueError("turn events cannot carry step_id")
         if kind in (LedgerKind.TOOL_CALL, LedgerKind.TOOL_RESULT,
+                    LedgerKind.LIVE_FALLBACK,
                     LedgerKind.MODEL_REQUEST, LedgerKind.ASSISTANT_ATTEMPT)                 and not call_id:
             raise ValueError("call events require call_id")
         _validate_start_data(kind, payload)
@@ -551,6 +592,15 @@ class RunLedger:
                          or duration_ms < 0)):
                 raise ValueError("tool result duration_ms must be a non-negative integer")
             self._results.add(call_id)
+        if kind == LedgerKind.LIVE_FALLBACK:
+            if call_id not in self._calls:
+                raise ValueError("live fallback requires an earlier tool call")
+            if call_id in self._live_fallbacks:
+                raise ValueError("a tool call may have only one live fallback event")
+            if call_id in self._results:
+                raise ValueError("live fallback cannot follow its tool result")
+            _validate_live_fallback_data(payload)
+            self._live_fallbacks.add(call_id)
         recorded_at = datetime.now(UTC)
         if self._entries and recorded_at < self._entries[-1].recorded_at:
             recorded_at = self._entries[-1].recorded_at
