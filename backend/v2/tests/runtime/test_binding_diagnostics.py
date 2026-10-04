@@ -27,7 +27,7 @@ from v2.contracts import (
 from v2.runtime.loop import _verified_claims
 from v2.runtime.models import ExecutionResult, admit_verified_claim_bindings
 
-KNOWN_REJECTION = "binding selector row does not match subject"
+KNOWN_REJECTION = "binding selector must locate exactly one value"
 RUN_ID = "run-" + "a" * 32
 
 

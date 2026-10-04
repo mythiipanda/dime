@@ -15,7 +15,7 @@ from pathlib import Path
 from functools import lru_cache
 from dataclasses import dataclass
 from types import MappingProxyType, ModuleType
-from typing import Callable, Mapping
+from typing import Any, Callable, Mapping
 
 from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi.responses import FileResponse, PlainTextResponse, Response
@@ -1307,13 +1307,37 @@ def _published_bindings(result) -> list:
     return list(bindings.values())
 
 
+def _traced_value(envelope, binding) -> tuple[Any, str | None]:
+    from v2.runtime.models import (
+        AmbiguousSelector, ResolvedSelector, _declared_value_matches,
+        resolve_evidence_binding, resolve_subject_row,
+    )
+    from v2.contracts import canonical_entity_id
+
+    subject_row = None
+    if binding.subject_entity_id is not None:
+        subject_row = resolve_subject_row(envelope, binding, canonical_entity_id(
+            binding.subject_entity_type, binding.subject_entity_id))
+        if subject_row is None:
+            return None, "its subject selector names no row the envelope holds"
+    resolution = resolve_evidence_binding(envelope, binding, subject_row)
+    if isinstance(resolution, AmbiguousSelector):
+        return None, "its selector names several values"
+    if not isinstance(resolution, ResolvedSelector) or resolution.value is None:
+        return None, "its selector resolves to nothing"
+    if not _declared_value_matches(binding.value, resolution.value):
+        raise ValueError("publication evidence changed after admission")
+    return resolution.value, None
+
+
 def _public_evidence(result) -> tuple[list[dict], list[str]]:
     from v2.domain.calculations import Calculation, validate_calculation
     from v2.domain.evidence import EvidenceIndex, iter_values
-    from v2.runtime.models import _declared_value_matches
     evidence = {item.evidence_id: item for item in result.execution.evidence}
     calculations = {item.calculation_id: item for item in result.draft.calculations}
     rows: dict[str, dict] = {}
+    dropped: list[str] = []
+    logger = logging.getLogger(__name__)
 
     def publish(row: dict) -> None:
         rows.setdefault(json.dumps(row, sort_keys=True), row)
@@ -1323,18 +1347,18 @@ def _public_evidence(result) -> tuple[list[dict], list[str]]:
             envelope = evidence.get(binding.evidence_id)
             if envelope is None:
                 raise ValueError("publication evidence is missing")
-            selected = [item.value for item in iter_values(envelope)
-                        if item.path == binding.selector]
-            if len(selected) != 1:
-                raise ValueError("publication selector must resolve exactly once")
-            if not _declared_value_matches(binding.value, selected[0]):
-                raise ValueError("publication evidence changed after admission")
+            value, reason = _traced_value(envelope, binding)
+            if reason is not None:
+                dropped.append(binding.output_id)
+                logger.warning("publication could not trace %s: %s",
+                               binding.output_id, reason)
+                continue
             publish({"output_id": binding.output_id,
                      "display_name": _output_display_name(
                          binding.output_id, envelope.metric_definitions),
                      "subject_type": binding.subject_entity_type,
                      "subject_id": binding.subject_entity_id,
-                     "value": str(binding.value.value),
+                     "value": str(value),
                      "unit": (binding.unit.value if binding.unit.kind == "declared"
                               else "unitless"),
                      "provenance": _citation_provenance(envelope)})
@@ -1362,9 +1386,11 @@ def _public_evidence(result) -> tuple[list[dict], list[str]]:
                      "provenance": _citation_provenance(envelope)})
     cited = {row["output_id"] for row in rows.values()}
     untraced = list(dict.fromkeys(
-        _output_display_name(status.output_id) + UNTRACED_SUFFIX
-        for status in result.output_statuses
-        if status.output_id not in cited))
+        _output_display_name(output_id) + UNTRACED_SUFFIX
+        for output_id in (
+            *dropped,
+            *(status.output_id for status in result.output_statuses
+              if status.output_id not in cited))))
     return list(rows.values()), untraced
 
 

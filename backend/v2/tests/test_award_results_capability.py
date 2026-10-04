@@ -1,3 +1,4 @@
+import json
 import shutil
 import sys
 from pathlib import Path
@@ -174,6 +175,124 @@ def test_every_declared_unit_reaches_a_row_the_verifier_can_find(
     declared = {key.casefold() for key in CAPABILITIES["award_results"].units}
     assert not declared - row_keys
     assert set(envelope.units) <= declared
+
+
+class WinnerIntake:
+    def __init__(self) -> None:
+        from v2.contracts import RunMode, SeasonRef, TaskSpec
+
+        self._task = TaskSpec(
+            goal="Who won the 2023-24 MVP?",
+            mode=RunMode.QUICK,
+            deliverable="the winner and the share of the vote",
+            requested_outputs=["AWARD_SHARE"],
+            season=SeasonRef(value="2023-24", source="user", confidence=1.0))
+
+    async def understand(self, request: str, context=()):
+        return self._task
+
+
+class WinnerPlanner:
+    async def plan(self, task, failure_context=None):
+        from v2.contracts import Plan, PlanNode
+
+        return Plan(nodes=[PlanNode(
+            id="mvp_winner", description="official 2023-24 MVP result",
+            capability_hints=["award_results"],
+            arguments={"view": "winner", "award": "MVP"})])
+
+
+class WinnerSynthesizer:
+    async def synthesize(self, task, evidence):
+        from v2.contracts import Claim, ClaimKind, DraftReport, EvidenceOutputBinding
+
+        envelope = next(iter(evidence))
+        share = envelope.rows["placements"][0]["award_share"]
+        binding = EvidenceOutputBinding(
+            requirement_kind="task", requirement_id=None,
+            output_id="AWARD_SHARE", node_id="mvp_winner",
+            evidence_id=envelope.evidence_id, selector="rows[0].award_share",
+            value={"kind": "float", "value": share},
+            unit={"kind": "declared", "value": "fraction_0_1"},
+            domain="award_results")
+        return DraftReport(
+            sections=["MVP"],
+            claims=[Claim(
+                text=(f"{envelope.rows['placements'][0]['player']} won the "
+                      f"{envelope.season} MVP, taking {share} of "
+                      "first-place votes."),
+                kind=ClaimKind.OBSERVED,
+                evidence_ids=[envelope.evidence_id],
+                output_bindings=[binding])])
+
+
+class WinnerSemantic:
+    async def verify(self, task, draft, evidence):
+        from v2.contracts import VerificationReport, VerificationStatus
+
+        return VerificationReport(
+            status=VerificationStatus.PASS,
+            claim_results=[{"claim_index": index, "supported": True}
+                           for index, _claim in enumerate(draft.claims)])
+
+
+def _event(text: str, name: str) -> dict:
+    payloads = [chunk.split("data: ", 1)[1]
+                for chunk in text.split("\n\n")
+                if chunk.startswith(f"event: {name}\n")]
+    assert payloads
+    return json.loads(payloads[-1])
+
+
+def test_the_flat_selector_the_synthesizer_is_taught_reaches_a_nested_row(
+        awards_warehouse, monkeypatch, tmp_path):
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+
+    from v2.adapters.core import ToolCapability
+    from v2.api import routes
+    from v2.projects.service import ProjectStore
+    from v2.runtime import PlanExecutor, Runtime
+    from v2.runtime.assembly import MechanicalVerifier
+    from v2.runtime.ledger import RunLedger
+
+    runtime = Runtime(
+        intake=WinnerIntake(), planner=WinnerPlanner(),
+        executor=PlanExecutor(
+            {"award_results": ToolCapability("award_results")}),
+        synthesizer=WinnerSynthesizer(),
+        mechanical_verifier=MechanicalVerifier(),
+        semantic_verifier=WinnerSemantic())
+
+    def build(**kwargs):
+        return runtime, RunLedger(kwargs["run_id"])
+
+    monkeypatch.setenv("DIME_RUNTIME_V2", "on")
+    monkeypatch.setattr("shared.providers.resolve_model_id",
+                        lambda value: ("openrouter", "fixture"))
+    monkeypatch.setattr("v2.runtime.assembly.build_runtime", build)
+    monkeypatch.setattr(routes, "_PROJECTS", ProjectStore(tmp_path / "p.sqlite"))
+    routes._CHAT_HITS.clear()
+    app = FastAPI()
+    app.include_router(routes.router, prefix="/api")
+    response = TestClient(app).post(
+        "/api/v2/chat/stream",
+        json={"q": "Who won the 2023-24 MVP?"})
+    assert response.status_code == 200
+
+    custom = _event(response.text, "custom_data")
+    cited = custom["tables"]
+    final = _event(response.text, "final_answer")
+    assert [row["output_id"] for row in cited] == ["AWARD_SHARE"]
+    assert cited[0]["value"] == "0.935"
+    assert cited[0]["provenance"]["capability"] == "award_results"
+    assert cited[0]["provenance"]["origin"] == "warehouse"
+    assert custom["unverified_numbers"] == []
+    assert "I could not verify a publishable answer" not in final["text"]
+    assert final["carry"]["verified_claims"] == 1
+    assert "rows[0].award_share" not in response.text
+    assert "placements" not in response.text
+
 
 
 def test_a_coach_asked_for_as_a_player_fails_loudly_end_to_end(awards_warehouse):
