@@ -38,6 +38,16 @@ function pairRows(pair:ToolPair):number|undefined{
   const v=recordField(pair.result,"rows");
   return typeof v==="number"?v:undefined;
 }
+function pairParams(pair:ToolPair):string|undefined{
+  const raw=pair.call?recordField(pair.call,"args"):undefined;
+  if(!raw||typeof raw!=="object"||Array.isArray(raw))return undefined;
+  const bits=Object.entries(raw as Record<string,unknown>)
+    .filter(([,x])=>typeof x!=="object"||x===null)
+    .map(([k,x])=>`${words(k)} ${String(x)}`);
+  if(!bits.length)return undefined;
+  const line=bits.join(", ");
+  return line.length>120?line.slice(0,120)+"…":line;
+}
 export function describePair(pair:ToolPair,streamRunning:boolean):View{
   const name=pairName(pair);
   const rows=pairRows(pair);
@@ -50,7 +60,8 @@ export function describePair(pair:ToolPair,streamRunning:boolean):View{
   }
   if(pairFailed(pair))return{label:`${name} unavailable`,meta:"Failed",fields:[...(rows===undefined?[]:[["Rows",String(rows)] as [string,string]]),...(ms===undefined?[]:[["Time",fmtMs(ms)] as [string,string]]),...(pairError(pair)?[["Error",pairError(pair)!] as [string,string]]:[])]};
   const meta=[rows===undefined?undefined:amount(rows,"row"),ms===undefined?undefined:fmtMs(ms)].filter(Boolean).join(" · ");
-  return{label:`Found ${name}`,meta,fields:[...(rows===undefined?[]:[["Rows",String(rows)] as [string,string]]),...(ms===undefined?[]:[["Time",fmtMs(ms)] as [string,string]])]};
+  const params=pairParams(pair);
+  return{label:`Found ${name}`,meta,fields:[...(params?[["Params",params] as [string,string]]:[]),...(rows===undefined?[]:[["Rows",String(rows)] as [string,string]]),...(ms===undefined?[]:[["Time",fmtMs(ms)] as [string,string]])]};
 }
 function describe(i:ActivityRecord):View{const d=payload(i),get=(k:string)=>recordField(i,k)??d[k],name=words(recordLabel(i)||"data");
   if(i.kind==="stage_summary")return{label:"Mapped the question",meta:amount(get("requirement_count"),"requirement"),fields:[["Mode",words(get("mode"))],["Season",words((get("season") as string)||"Current")],["Entities",String((get("entity_count") as number)??0)]]};
@@ -119,7 +130,9 @@ export default function ActivityTimeline({items,running}:{items:ActivityRecord[]
     if(last.kind==="plan"&&last.steps){const cur=last.steps.find((s)=>s.state==="running");return cur?words(cur.capability):"Analyzing";}
     return last.item?describe(last.item).label:"Analyzing";
   };
+  const totalMs=rows.reduce((sum,r)=>r.kind==="pair"&&r.pair?(sum+(pairMs(r.pair)??0)):sum,0);
+  const doneLabel=[`Used ${pairCount} tool${pairCount===1?"":"s"}`,evidence>0?`${evidence} source${evidence===1?"":"s"}`:undefined,totalMs>0?fmtMs(totalMs):undefined].filter(Boolean).join(" · ");
   return <>
   <style jsx global>{`@keyframes activity-in{from{opacity:0;transform:translateY(5px)}to{opacity:1;transform:none}}@keyframes activity-orbit{to{transform:rotate(360deg)}}@keyframes activity-shimmer{0%,100%{opacity:.48}50%{opacity:1}}.activity-step{opacity:0;animation:activity-in .28s cubic-bezier(.2,.8,.2,1) forwards}.activity-detail{animation:activity-in .18s ease-out}.activity-orbit{width:10px;height:10px;border-radius:50%;border:1.5px solid var(--color-stone-border);border-top-color:var(--color-cyan-signal);animation:activity-orbit .8s linear infinite}.activity-shimmer{animation:activity-shimmer 1.35s ease-in-out infinite}.activity-timeline{position:relative;padding-top:3px}.activity-progress-rail{position:absolute;top:0;left:0;width:100%;height:2px;overflow:hidden;border-radius:999px;background:var(--color-stone-border)}.activity-progress-rail::after{content:"";position:absolute;inset:0;width:34%;border-radius:inherit;background:var(--color-cyan-signal);opacity:0;transform:translateX(-110%)}.activity-timeline.is-running .activity-progress-rail::after{opacity:1;animation:activity-progress 1.2s cubic-bezier(.4,0,.2,1) infinite}.activity-timeline.is-complete .activity-progress-rail::after{width:100%;opacity:.55;transform:none;transition:width .28s cubic-bezier(.16,1,.3,1),opacity .2s ease}@keyframes activity-progress{to{transform:translateX(395%)}}@media(prefers-reduced-motion:reduce){.activity-step,.activity-detail,.activity-orbit,.activity-shimmer,.activity-progress-rail::after{animation:none!important;transition:none!important;opacity:1!important}.activity-timeline.is-running .activity-progress-rail::after{width:42%;transform:none}}`}</style>
-  <div className={`activity-timeline ${running?"is-running":completed?"is-complete":""}`}><span className="activity-progress-rail" aria-hidden="true"/><button type="button" onClick={()=>setOpen(x=>!x)} aria-expanded={open} style={{display:"inline-flex",alignItems:"center",gap:7,padding:"5px 9px",border:0,borderRadius:7,background:"var(--color-stone-canvas)",color:"var(--color-warm-gray)",fontSize:12,cursor:"pointer"}}><span style={{transform:open?"rotate(90deg)":"none",transition:"transform .16s"}}>›</span>{running?(rows.length?latestLabel():"Analyzing"):`${pairCount} tool call${pairCount===1?"":"s"}`}{!running&&evidence>0?`, ${evidence} source${evidence===1?"":"s"} checked`:""}</button>
+  <div className={`activity-timeline ${running?"is-running":completed?"is-complete":""}`}><span className="activity-progress-rail" aria-hidden="true"/><button type="button" onClick={()=>setOpen(x=>!x)} aria-expanded={open} style={{display:"inline-flex",alignItems:"center",gap:7,padding:"5px 9px",border:0,borderRadius:7,background:"var(--color-stone-canvas)",color:"var(--color-warm-gray)",fontSize:12,cursor:"pointer"}}><span style={{transform:open?"rotate(90deg)":"none",transition:"transform .16s"}}>›</span><span style={{fontSize:10,fontWeight:600,letterSpacing:".08em",textTransform:"uppercase",color:"var(--color-ash-gray)"}}>Evidence</span><span>{running?(rows.length?latestLabel():"Analyzing"):doneLabel}</span></button>
   {open&&<div ref={box} role="log" aria-live="polite" aria-label="Tool activity" style={{marginTop:8,maxHeight:390,overflowY:"auto",padding:"0 2px 2px 7px",borderLeft:"1px solid var(--color-stone-border)"}}>{rows.map((r,n)=>r.kind==="pair"&&r.pair?<PairStep key={r.key} pair={r.pair} index={n} streamRunning={running} active={running&&n===rows.length-1}/>:r.kind==="plan"&&r.steps&&r.item?<PlanBlock key={r.key} steps={r.steps} item={r.item} index={n} active={running}/>:r.item?<SingleStep key={r.key} item={r.item} index={n} active={running&&n===rows.length-1}/>:null)}</div>}</div></>}
