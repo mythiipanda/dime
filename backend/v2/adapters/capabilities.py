@@ -13,6 +13,8 @@ FRACTION = "fraction_0_1"
 PERCENT = "percent_0_100"
 POINTS_PER_100 = "points_per_100_possessions"
 MINUTES = "minutes"
+BALLOT_POINTS = "ballot_points"
+YEARS = "years"
 
 COUNTING_UNITS = {metric: COUNT for metric in COUNTING_METRICS}
 PER_GAME_UNITS = {per_game_column(metric): PER_GAME
@@ -31,6 +33,16 @@ FOUR_FACTORS_DEFS = {
                "rebounds, fraction scale 0-1.",
     "ft_rate": "Free-throw rate: FTM / FGA, fraction scale 0-1.",
 }
+
+AWARD_SHARE_DEF = ("Award share: share of the maximum ballot points available "
+                   "to the placement, fraction scale 0-1. The official winner "
+                   "usually lands near 0.9, so 0.913 is 91.3 percent.")
+POINTS_WON_DEF = ("Points won: weighted ballot points credited to the "
+                  "placement. points_max is the largest point total on that "
+                  "ballot, so the winner's points_won equals points_max.")
+VOTES_DEF = ("First, second, and third place votes a placement received on a "
+             "published ballot, counted in ballots. Null where the source "
+             "publishes no vote count for that award.")
 
 
 def _resolve_entities(rows: Any) -> list[EntityRef]:
@@ -403,6 +415,37 @@ _LIST = [
         qualification="Date-scoped bundle; offseason sections stay honestly empty, never fabricated games.",
         coverage="Today snapshot plus watchlist updates and leaderboard deltas with scoreboard status.",
     ),
+    Capability(
+        name="award_results",
+        tool_name="get_award_results",
+        units={
+            "award_share": FRACTION,
+            "points_won": BALLOT_POINTS,
+            "points_max": BALLOT_POINTS,
+            "votes_first": COUNT,
+            "votes_second": COUNT,
+            "votes_third": COUNT,
+            "age": YEARS,
+        },
+        metric_definitions={
+            "award_share": AWARD_SHARE_DEF,
+            "points_won": POINTS_WON_DEF,
+            "points_max": POINTS_WON_DEF,
+            "votes_first": VOTES_DEF,
+            "votes_second": VOTES_DEF,
+            "votes_third": VOTES_DEF,
+        },
+        qualification=(
+            "Every placement the source published on that ballot. A tied "
+            "placement keeps the published leading rank and its verbatim "
+            "rank_label; a null rank labelled ORV is a subject that got votes "
+            "but made no team. Coach-of-the-Year rows name a coach and no "
+            "player."),
+        coverage=(
+            "Published Basketball-Reference award ballots, 1976-77 onward, "
+            "with the seasons the source publishes named per request. Never a "
+            "model score, projection, or live race."),
+    ),
 ]
 
 CAPABILITIES: dict[str, Capability] = {c.name: c for c in _LIST}
@@ -548,6 +591,14 @@ CAPABILITY_DESCRIPTIONS: dict[str, str] = {
     "matchup_splits": "Situational splits for one player over the last N games by defense tier, venue, and rest.",
     "today": "Date-scoped scoreboard snapshot with last night, tonight, movers, and streaks.",
     "morning_briefing": "Date-scoped bundle of today snapshot, watchlist updates, and leaderboard deltas.",
+    "award_results": (
+        "Official NBA award results recorded on published ballots: who won an "
+        "award in a season, the full ranked field with award share and vote "
+        "counts, and one player's award record through a season. Coach-of-the-"
+        "Year is included; a tied rank and an ORV row are reported as "
+        "published. This is a recorded outcome, never a model score, so use it "
+        "instead of any award race for a result."
+    ),
 }
 
 if len(CAPABILITIES) != len(_LIST):

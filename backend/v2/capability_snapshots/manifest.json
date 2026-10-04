@@ -1,10 +1,11 @@
 {
-  "catalog_canonical_sha256": "3e789b7b9cede2dc25b248ae47d8c740340fd4d30eebe2b4d68c2f7acc4d2e59",
-  "compiled_canonical_sha256": "f4c4c12b673164d70b1a7e63dc2c4a669d384fd1bb0fd8ec9227138352ac6dca",
-  "count": 45,
+  "catalog_canonical_sha256": "dc74e89c9c794161d5b66ea7287536da74633938eb995f7b4f20cf265be97927",
+  "compiled_canonical_sha256": "cbef907ad7b152b2e2ff64b30c99d6a0d34c3fb854d1c903282d9df142979baa",
+  "count": 46,
   "files": {
-    "catalog.compiled.json": "dbe42e7deb50c1e462c2465dad0672f2342453df83a5fccba945f50ef35a2173",
-    "catalog.source.json": "30f1640b32d2891b7d58e7c6d3941c3a7a2f95938858c9e8e70e0922459eefdc",
+    "award_results.json": "e6c0c61d768cbd0578d25baa45ea9894c0f86fa02cf50bc181c7a5b13f9acc4c",
+    "catalog.compiled.json": "b8c09cfabb8aa89d4af7fc4ee03d2ccab5472944217411d334020a330e2640d1",
+    "catalog.source.json": "68f7c3c7f688dfbd2b673e6c51541cbb6062ccb54d5cc9b95759b13a57572d01",
     "clutch.json": "73f49dcc25f3aba079f74aa67155e7b45d3b4c36712f932de83116623b921a9e",
     "competitive_ratings.json": "bb629f15bbfe574c8007af94a048562feeb92d83b155f686780d0aaa57f8caa6",
     "contracts.json": "7c36293493ec0780c9671cdf0376d9a886ba34c55a56d05a935b48a3a828b4c7",

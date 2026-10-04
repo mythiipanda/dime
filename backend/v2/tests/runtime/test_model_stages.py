@@ -3673,14 +3673,14 @@ async def test_intake_wire_omits_empty_dependent_entity_arguments():
         "player_evaluation": {"player": "player"},
         "game_logs": {"player": "player"},
     }
-    assert len(wire) == 45
+    assert len(wire) == len(catalog)
     assert sum(1 for entry in catalog.values()
                if "dependent_entity_arguments" in entry
-               and not entry["dependent_entity_arguments"]) == 39
+               and not entry["dependent_entity_arguments"]) == len(catalog) - 6
 
 
 @pytest.mark.anyio
-async def test_intake_wire_shrinks_1326_bytes_versus_unstripped_baseline():
+async def test_intake_wire_shrinks_34_bytes_per_capability_versus_unstripped_baseline():
     catalog = _real_catalog()
     stub = StubModel([{"goal": "Boston record", "mode": "quick",
                        "deliverable": "text", "required_evidence": ["standings"]}])
@@ -3690,8 +3690,17 @@ async def test_intake_wire_shrinks_1326_bytes_versus_unstripped_baseline():
     payload = stub.calls[0]["payload"]
     baseline = {**payload, "capability_catalog": stage._catalog}
 
-    assert _wire_bytes(payload) == _wire_bytes(baseline) - 1326
-    assert _wire_bytes(baseline) - _wire_bytes(payload) == 39 * 34
+    wire = payload["capability_catalog"]
+    per_entry = {
+        name: len(json.dumps(entry, sort_keys=True, default=str).encode())
+        - len(json.dumps(wire[name], sort_keys=True, default=str).encode())
+        for name, entry in catalog.items()
+    }
+    assert set(per_entry.values()) <= {0, 34}
+    saved = 34 * sum(1 for value in per_entry.values() if value)
+    assert saved == sum(per_entry.values())
+    assert _wire_bytes(payload) == _wire_bytes(baseline) - saved
+    assert _wire_bytes(baseline) - _wire_bytes(payload) == saved
     assert stub.calls[0]["envelope"].context_hash == hashlib.sha256(
         json.dumps(payload, sort_keys=True, separators=(",", ":"),
                    default=str).encode()).hexdigest()

@@ -114,8 +114,8 @@ def load_pack(path: Path) -> dict[str, Any]:
     scenarios = pack["scenarios"]
     if not isinstance(scenarios, list):
         raise ValueError("compatibility scenarios must be a list")
-    if len(scenarios) != 35:
-        raise ValueError(f"compatibility pack must contain 35 scenarios, got {len(scenarios)}")
+    if len(scenarios) != 39:
+        raise ValueError(f"compatibility pack must contain 39 scenarios, got {len(scenarios)}")
     if any(not isinstance(scenario, dict) for scenario in scenarios):
         raise ValueError("compatibility scenarios must be objects")
     ids: list[str] = []

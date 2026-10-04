@@ -140,7 +140,7 @@ def test_registry_covers_initial_pack():
         "team_shot_zones", "player_shot_zones", "team_splits",
         "injury_impact", "lineup_matchups", "competitive_ratings",
         "matchup_brief", "season_series", "head_to_head", "matchup_splits",
-        "today", "morning_briefing",
+        "today", "morning_briefing", "award_results",
     }
     assert set(CAPABILITIES) == expected
     tool_names = [c.tool_name for c in CAPABILITIES.values()]

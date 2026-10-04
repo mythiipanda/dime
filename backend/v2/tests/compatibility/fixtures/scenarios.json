@@ -1,6 +1,6 @@
 {
   "version": 3,
-  "notes": "Frozen 35-scenario v2 behavioral pack. Tool-routing pins were replaced by equivalent evidence and budget requirements.",
+  "notes": "Frozen 39-scenario v2 behavioral pack. Tool-routing pins were replaced by equivalent evidence and budget requirements.",
   "banned_everywhere": [
     "try a narrower",
     "did not run",
@@ -935,6 +935,178 @@
         ],
         "max_evidence": 1
       }
+    },
+    {
+      "id": "award-mvp-winner",
+      "tags": [
+        "award",
+        "result",
+        "regression"
+      ],
+      "season": "2023-24",
+      "chain": [
+        "Who won the 2023-24 NBA MVP and how large was the winning vote share?"
+      ],
+      "expect": {
+        "contains_any": [
+          [
+            "Nikola Jokić",
+            "Nikola Jokic"
+          ],
+          [
+            "93.5%",
+            "0.935"
+          ]
+        ],
+        "not_contains": [
+          "award race",
+          "model pick",
+          "z-score"
+        ]
+      },
+      "budget": {
+        "max_seconds": 30,
+        "max_tool_calls": 2
+      },
+      "evidence_requirement": {
+        "any_capability": [
+          "award_results"
+        ],
+        "required_values": [
+          "Nikola Jokić",
+          "0.935",
+          "926",
+          "990",
+          "79"
+        ],
+        "metric_definitions_contain": [
+          "fraction scale 0-1"
+        ],
+        "max_evidence": 1
+      },
+      "comment": "Recorded ballot outcome. 79 of 100 first-place votes carried 926 of 990 available points."
+    },
+    {
+      "id": "award-coach-of-year-winner",
+      "tags": [
+        "award",
+        "result",
+        "coach",
+        "regression"
+      ],
+      "season": "1997-98",
+      "chain": [
+        "Who won the 1997-98 NBA Coach of the Year?"
+      ],
+      "expect": {
+        "contains": [
+          "Larry Bird"
+        ],
+        "contains_any": [
+          [
+            "43.1%",
+            "0.431"
+          ]
+        ]
+      },
+      "budget": {
+        "max_seconds": 30,
+        "max_tool_calls": 2
+      },
+      "evidence_requirement": {
+        "any_capability": [
+          "award_results"
+        ],
+        "required_values": [
+          "Larry Bird",
+          "0.431",
+          "50"
+        ],
+        "max_evidence": 1
+      },
+      "comment": "A coach award names a coach and no player, so the answer must not read as a player award."
+    },
+    {
+      "id": "award-all-nba-first-team",
+      "tags": [
+        "award",
+        "result",
+        "tied",
+        "regression"
+      ],
+      "season": "2023-24",
+      "chain": [
+        "Who made the 2023-24 All-NBA first team?"
+      ],
+      "expect": {
+        "contains_any": [
+          [
+            "Nikola Jokić",
+            "Nikola Jokic"
+          ],
+          [
+            "Shai Gilgeous-Alexander"
+          ],
+          [
+            "Luka"
+          ]
+        ],
+        "not_contains": [
+          "ORV"
+        ]
+      },
+      "budget": {
+        "max_seconds": 30,
+        "max_tool_calls": 2
+      },
+      "evidence_requirement": {
+        "any_capability": [
+          "award_results"
+        ],
+        "required_values": [
+          "Nikola Jokić",
+          "Shai Gilgeous-Alexander",
+          "Luka Dončić",
+          "Giannis Antetokounmpo",
+          "Jayson Tatum"
+        ],
+        "max_evidence": 1
+      },
+      "comment": "A team award names five players at one published rank, so the winner view returns five rows."
+    },
+    {
+      "id": "award-mvp-no-published-ballot",
+      "tags": [
+        "award",
+        "absence",
+        "regression"
+      ],
+      "season": "1984-85",
+      "chain": [
+        "Who won the 1984-85 NBA MVP?"
+      ],
+      "expect": {
+        "contains_any": [
+          [
+            "no ballot",
+            "not on hand",
+            "not available",
+            "no award results",
+            "no data",
+            "not in"
+          ]
+        ],
+        "not_contains": [
+          "Larry Bird",
+          "award race",
+          "model pick"
+        ]
+      },
+      "budget": {
+        "max_seconds": 30,
+        "max_tool_calls": 2
+      },
+      "comment": "1984-85 has no published ballot in the warehouse, so naming a winner would be fabrication."
     }
   ]
 }

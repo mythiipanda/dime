@@ -1,6 +1,7 @@
 
 from langchain_core.tools import BaseTool
 
+from .award_results import get_award_results
 from .awards import get_award_race
 from .history import get_historical_leaders
 from .league import (
@@ -154,6 +155,7 @@ v1_tools: list[BaseTool] = [
     compare_metrics,
     get_debate_card,
     get_award_race,
+    get_award_results,
     get_historical_leaders,
     get_comps,
     get_player_rankings,

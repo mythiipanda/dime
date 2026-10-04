@@ -1,4 +1,57 @@
 {
+  "award_results": {
+    "arguments": {
+      "properties": {
+        "award": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "player": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "season": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "view": {
+          "enum": [
+            "winner",
+            "field",
+            "player_awards"
+          ],
+          "type": "string"
+        }
+      },
+      "required": [
+        "view"
+      ],
+      "type": "object"
+    },
+    "dependent_entity_arguments": {},
+    "description": "Official NBA award results recorded on published ballots: who won an award in a season, the full ranked field with award share and vote counts, and one player's award record through a season. Coach-of-the-Year is included; a tied rank and an ORV row are reported as published. This is a recorded outcome, never a model score, so use it instead of any award race for a result."
+  },
   "clutch": {
     "arguments": {
       "properties": {
