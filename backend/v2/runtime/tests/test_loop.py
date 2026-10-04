@@ -1386,7 +1386,8 @@ def test_binding_rejection_is_atomic_and_returns_typed_gap():
     claims, gaps = _verified_claims(task, execution, draft, report, {"ev":envelope})
     assert claims[0].output_bindings == []
     assert len(gaps) == 1 and gaps[0].kind == "synthesis_incomplete"
-    assert gaps[0].blocks == ["claim:0"]
+    assert gaps[0].blocks == []
+    assert "not admitted" in gaps[0].message
 
 
 def test_unmatched_player_execution_error_becomes_typed_gap():

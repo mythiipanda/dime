@@ -825,6 +825,15 @@ def _binding_diagnostic_event(execution, candidate, position, run_id, rejection,
     )
 
 
+_BINDING_FORM_REJECTIONS = (
+    "binding selector metric does not match output",
+)
+
+
+def _binding_rejection_withholds_claim(message: str) -> bool:
+    return not message.startswith(_BINDING_FORM_REJECTIONS)
+
+
 def _verified_claims(task, execution, draft, verification, evidence=None, *,
                      diagnostics=False, diagnostics_run_id="",
                      diagnostics_events=None):
@@ -860,11 +869,17 @@ def _verified_claims(task, execution, draft, verification, evidence=None, *,
                 claim_index=index, claim=claim,
                 evidence_ids=list(claim.evidence_ids),
                 sources=list(candidate.sources), output_bindings=[]))
-            rejected.append(Gap(
-                kind=GapKind.SYNTHESIS_INCOMPLETE,
-                message=f"claim output binding rejected: {exc}",
-                evidence_ids=list(claim.evidence_ids),
-                blocks=[f"claim:{index}"]))
+            if _binding_rejection_withholds_claim(str(exc)):
+                rejected.append(Gap(
+                    kind=GapKind.SYNTHESIS_INCOMPLETE,
+                    message=f"claim output binding rejected: {exc}",
+                    evidence_ids=list(claim.evidence_ids),
+                    blocks=[f"claim:{index}"]))
+            else:
+                rejected.append(Gap(
+                    kind=GapKind.SYNTHESIS_INCOMPLETE,
+                    message=f"claim:{index} output binding not admitted: {exc}",
+                    evidence_ids=list(claim.evidence_ids)))
     admitted = propagate_evidence_to_task(task, execution, draft, admitted)
     return admitted, rejected
 
