@@ -3,9 +3,8 @@ import * as assert from "node:assert";
 import * as React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import ActivityTimeline, { describePair } from "./components/ActivityTimeline";
-import AgentActivity from "./components/AgentActivity";
 import { pairToolItems } from "./lib/activity";
-import type { ActivityRecord, AiMessage } from "./lib/chat";
+import type { ActivityRecord } from "./lib/chat";
 
 function rec(partial: Record<string, unknown>): ActivityRecord {
   return {
@@ -24,9 +23,8 @@ const ITEMS: ActivityRecord[] = [
     sequence: 1,
     kind: "tool_call",
     title: "Tool call",
-    status: "running",
     node: "tools",
-    data: { name: "get_leaders", argument_count: 1 },
+    data: { name: "get_leaders", args: { stat_category: "AST", season: "2024-25" } },
   }),
   rec({
     eventId: "e2",
@@ -36,63 +34,63 @@ const ITEMS: ActivityRecord[] = [
     status: "complete",
     transition: "succeeded",
     node: "tools",
+    durationMs: 1200,
     data: { name: "get_leaders", rows: 30 },
   }),
   rec({
     eventId: "e3",
     sequence: 3,
-    kind: "node_update",
-    title: "Node",
-    status: "complete",
-    node: "analytics",
-    data: {},
+    kind: "evidence_update",
+    title: "Evidence",
+    transition: "admitted",
+    data: { capability: "leaders", rows: 30 },
   }),
 ];
-
-function doneAi(): AiMessage {
-  return {
-    text: "done",
-    done: true,
-    nodes: {
-      tools: {
-        status: "complete",
-        thoughts: [],
-        toolCalls: [{ name: "get_leaders", args: {}, status: "ok", rows: 30 }],
-        toolResults: [],
-        tables: [],
-      },
-    },
-  };
-}
 
 function clean(html: string): string {
   return html.replace(/<style[^>]*>[\s\S]*?<\/style>/g, "");
 }
 
-describe("activity status narration", () => {
-  it("finished work reads past tense with no checkmarks or Complete rows", () => {
+describe("evidence drawer", () => {
+  it("summary line names evidence with tool, source, and time totals", () => {
     const html = clean(
       renderToStaticMarkup(
         React.createElement(ActivityTimeline, { items: ITEMS, running: false }),
       ),
     );
-    assert.ok(!html.includes("✓"), "checkmark row leaked");
-    assert.ok(!html.includes("Complete"), "Complete row leaked");
-    assert.ok(!html.includes("Status"), "status field leaked");
+    assert.ok(html.includes("Evidence"));
     assert.ok(html.includes("Used 1 tool"));
+    assert.ok(html.includes("1 source"));
+    assert.ok(html.includes("1.2s"));
+  });
+
+  it("live work keeps the running narration, not the totals", () => {
+    const html = clean(
+      renderToStaticMarkup(
+        React.createElement(ActivityTimeline, { items: ITEMS, running: true }),
+      ),
+    );
+    assert.ok(html.includes("Evidence"));
+    assert.ok(!html.includes("Used 1 tool"));
+  });
+
+  it("tool rows carry a one-line params summary from call args", () => {
     const pairs = pairToolItems(ITEMS);
     assert.equal(pairs.length, 1);
     const view = describePair(pairs[0], false);
-    assert.ok(view.label.startsWith("Found"));
-    assert.ok(view.meta.includes("30 rows"));
-    assert.ok(!view.fields.some(([k]) => k === "Status"));
+    const params = view.fields.find(([k]) => k === "Params");
+    assert.ok(params, "params field missing");
+    assert.ok(params[1].includes("stat category"));
+    assert.ok(!params[1].includes("{"));
   });
 
-  it("legacy activity path has no checkmarks either", () => {
+  it("collapsed drawer shows no raw payloads", () => {
     const html = clean(
-      renderToStaticMarkup(React.createElement(AgentActivity, { ai: doneAi() })),
+      renderToStaticMarkup(
+        React.createElement(ActivityTimeline, { items: ITEMS, running: false }),
+      ),
     );
-    assert.ok(!html.includes("✓"), "checkmark row leaked");
-    assert.ok(!html.includes("Complete"), "Complete row leaked");
+    assert.ok(!html.includes("{\""));
+    assert.ok(!html.includes("stat_category"));
   });
 });

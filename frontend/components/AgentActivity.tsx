@@ -503,7 +503,7 @@ export default function AgentActivity({ ai }: { ai: AiMessage }) {
   const label = running
     ? calls.at(-1)?.label || calls.at(-1)?.name.replace(/_/g, " ") || "Analyzing"
     : calls.length > 0
-      ? `${calls.length} tool call${calls.length === 1 ? "" : "s"}`
+      ? `Used ${calls.length} tool${calls.length === 1 ? "" : "s"}`
       : "Analysis complete";
 
   return (
