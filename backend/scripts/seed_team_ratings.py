@@ -149,8 +149,16 @@ def main(argv: list[str] | None = None) -> int:
     if target is None:
         return 1
     target.parent.mkdir(parents=True, exist_ok=True)
+    prior_db_path, prior_lock_path = store.DB_PATH, store.LOCK_PATH
     store.DB_PATH = target
     store.LOCK_PATH = target.parent / ".write.lock"
+    try:
+        return _run(args, target)
+    finally:
+        store.DB_PATH, store.LOCK_PATH = prior_db_path, prior_lock_path
+
+
+def _run(args, target: Path) -> int:
     if args.positional:
         seasons = [s.strip() for s in args.positional if s.strip()]
     else:
