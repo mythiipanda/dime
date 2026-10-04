@@ -58,6 +58,25 @@ def test_true_shooting_leader_is_qualified_and_one_call():
     assert "77.2% true shooting" in out["meta"]["deterministic_answer"]
 
 
+def test_true_shooting_answer_names_the_minutes_behind_the_floor():
+    st = _drain("Who leads the league in true shooting percentage this season?")
+    out = st["tool_results"][0]
+    lead = out["rows"][0]
+    con = store.connect(read_only=True)
+    try:
+        total_minutes = con.execute(
+            "SELECT GP * MIN FROM silver_advanced WHERE _season = ? "
+            "AND PLAYER_NAME = ?",
+            [out["meta"]["season"], lead["PLAYER"]]).fetchone()[0]
+    finally:
+        con.close()
+    answer = out["meta"]["deterministic_answer"]
+    assert lead["TOTAL_MINUTES"] == pytest.approx(total_minutes)
+    assert f"{total_minutes:,.0f} total minutes" in answer
+    assert f"({lead['GP']} games; {total_minutes:,.0f} total minutes)" in answer
+    assert "games; 1,000+ total minutes" not in answer
+
+
 def test_steals_per_game_leader_carries_sample_size():
     from shared import store
     st = _drain("Who leads the league in steals per game this season?")
@@ -70,7 +89,14 @@ def test_steals_per_game_leader_carries_sample_size():
     assert out["meta"]["season"] == "2025-26"
     assert out["meta"]["rows"] == len(out["rows"])
     lead = out["rows"][0]
-    assert set(lead) == {"RANK", "PLAYER", "TEAM", "SPG", "GP", "PLAYER_NAME"}
+    assert set(lead) == {"RANK", "PLAYER", "TEAM", "SPG", "GP", "MIN",
+                         "PLAYER_NAME"}
+    assert out["meta"]["qualification_floor"] == {
+        "metric": "total_minutes", "floor": 500,
+        "label": "500+ total minutes", "cleared_column": "MIN"}
+    assert all(r["MIN"] >= 500 for r in out["rows"])
+    assert f"{lead['MIN']:,.0f} total minutes" in (
+        out["meta"]["deterministic_answer"])
     assert [r["RANK"] for r in out["rows"]] == list(
         range(1, len(out["rows"]) + 1))
     assert all(isinstance(r["GP"], int) and r["GP"] > 0 for r in out["rows"])
@@ -80,17 +106,20 @@ def test_steals_per_game_leader_carries_sample_size():
     assert any(rate != round(rate, 2) for rate in rates)
     con = store.connect(read_only=True)
     try:
-        raw = {player: (rate, gp) for player, rate, gp in con.execute(
-            "SELECT PLAYER, STL * 1.0 / GP, GP FROM silver_leaders_stl "
-            "WHERE _season = '2025-26' AND GP > 0 AND MIN >= 500").fetchall()}
+        raw = {player: (rate, gp, minutes) for player, rate, gp, minutes in
+            con.execute(
+                "SELECT PLAYER, STL * 1.0 / GP, GP, MIN "
+                "FROM silver_leaders_stl WHERE _season = '2025-26' "
+                "AND GP > 0 AND MIN >= 500").fetchall()}
     finally:
         con.close()
     assert len(raw) == len(out["rows"])
-    assert [(r["SPG"], r["GP"]) for r in out["rows"]] == [
-        (raw[r["PLAYER"]][0], raw[r["PLAYER"]][1]) for r in out["rows"]]
+    assert [(r["SPG"], r["GP"], r["MIN"]) for r in out["rows"]] == [
+        (raw[r["PLAYER"]][0], raw[r["PLAYER"]][1], raw[r["PLAYER"]][2])
+        for r in out["rows"]]
     answer = out["meta"]["deterministic_answer"]
     assert f"{lead['SPG']:.2f} steals per game" in answer
-    assert f"({lead['GP']} games)" in answer
+    assert f"({lead['GP']} games; {lead['MIN']:,.0f} total minutes)" in answer
 
 
 def test_fg3_percentage_leaders_carry_direction_volume_and_shooting_counts(monkeypatch):

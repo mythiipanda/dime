@@ -2071,15 +2071,25 @@ async def _triage_seed(question: str, primary: str, model: str,
                 _value = _rltop.get(_field)
                 _unit = {"APG":"assists", "PPG":"points", "RPG":"rebounds",
                          "SPG":"steals", "BPG":"blocks"}.get(_field,_field)
+                _floor = (_rlout.get("meta") or {}).get("qualification_floor") or {}
+                _cleared = _rltop.get(str(_floor.get("cleared_column") or ""))
+                _cleared_text = ""
+                if _floor:
+                    if not isinstance(_cleared, (int, float)) or isinstance(
+                            _cleared, bool):
+                        return
+                    _cleared_text = (
+                        f"; {_cleared:,.0f} "
+                        f"{str(_floor.get('metric') or '').replace('_', ' ')}")
                 _rlout["meta"] = dict(_rlout.get("meta") or {})
                 if _field == "TS_PCT":
                     _answer = (f"{_rltop.get('PLAYER')} leads qualified players at "
                                f"{float(_value):.1f}% true shooting in {_rlseason} "
-                               f"({_rltop.get('GP')} games; 1,000+ total minutes).")
+                               f"({_rltop.get('GP')} games{_cleared_text}).")
                 else:
                     _answer = (f"{_rltop.get('PLAYER')} leads at {float(_value):.2f} "
                                f"{_unit} per game in {_rlseason} "
-                               f"({_rltop.get('GP')} games).")
+                               f"({_rltop.get('GP')} games{_cleared_text}).")
                 _rlout["meta"]["deterministic_answer"] = _answer
             async for _e in _triage_terminal(question, state):
                 yield _e

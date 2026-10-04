@@ -91,9 +91,11 @@ def test_season_series_2024_25_counts_regular_and_playoff_meetings():
     assert out["ok"] is True
     summary = out["rows"]["summary"]
     assert summary["games"] == 10
-    assert summary["bos_wins"] == 6
-    assert summary["nyk_wins"] == 4
-    assert summary["playoff_meetings"] == 6
+    assert summary["games_won"] == {"BOS": 6, "NYK": 4}
+    assert summary["games_undecided"] == 0
+    assert summary["games_by_phase"] == {"playoffs": 6, "regular season": 4}
+    assert summary["series_played"] == 1
+    assert summary["series_won"] == {"BOS": 0, "NYK": 1}
     phases = [game["phase"] for game in out["rows"]["games"]]
     assert phases.count("regular season") == 4
     assert phases.count("playoffs") == 6
@@ -106,9 +108,11 @@ def test_season_series_2024_25_reports_a_pairing_with_no_playoff_meeting():
     assert out["ok"] is True
     summary = out["rows"]["summary"]
     assert summary["games"] == 4
-    assert summary["lal_wins"] == 3
-    assert summary["gsw_wins"] == 1
-    assert "playoff_meetings" not in summary
+    assert summary["games_won"] == {"LAL": 3, "GSW": 1}
+    assert summary["series_played"] == 0
+    assert summary["series_won"] == {"LAL": 0, "GSW": 0}
+    assert summary["series"] == []
+    assert summary["games_by_phase"] == {"regular season": 4}
     assert all(game["phase"] == "regular season"
                for game in out["rows"]["games"])
 

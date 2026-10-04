@@ -138,10 +138,6 @@ def brief_db(tmp_path, monkeypatch):
     return path
 
 
-def _row(summary, key):
-    return int(summary[key])
-
-
 def _drop_season_from(table, season):
     con = store.connect(read_only=False)
     try:
@@ -180,8 +176,8 @@ def test_brief_for_2024_25_composes_every_section(brief_db):
     assert rows["form"]["NYK"]["last10"] == "1-2"
     summary = rows["season_series"]["summary"]
     assert summary["games"] == 2
-    assert _row(summary, "bos_wins") == 2
-    assert _row(summary, "nyk_wins") == 0
+    assert summary["games_won"] == {"BOS": 2, "NYK": 0}
+    assert summary["series_played"] == 0
     assert rows["prediction"]["win_prob"]["BOS"] > 0.5
     assert rows["prediction"]["ratings_source"] == "silver_team_ratings"
     assert env.qualification

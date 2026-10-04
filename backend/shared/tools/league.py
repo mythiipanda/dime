@@ -2,6 +2,7 @@
 import ast
 import json
 import re
+import duckdb
 from typing import Any, Literal
 from langchain_core.tools import tool
 
@@ -1538,6 +1539,111 @@ def _completed_season_totals(stat_category, season, order="DESC"):
     return rows, meta
 
 
+_TOTAL_MINUTES_FLOOR = 500
+_TOTAL_MINUTES_TS_FLOOR = 1000
+
+
+class QualificationFloor:
+    """A sample floor plus the row column that proves it was cleared.
+
+    A floor published without the value it applies to is a label with no
+    number behind it, so the two travel together or neither publishes.
+    """
+
+    __slots__ = ("metric", "floor", "label", "cleared_column")
+
+    def __init__(self, metric: str, floor: int, label: str,
+                 cleared_column: str) -> None:
+        self.metric = metric
+        self.floor = floor
+        self.label = label
+        self.cleared_column = cleared_column
+
+    def payload(self) -> dict[str, Any]:
+        return {"metric": self.metric, "floor": self.floor,
+                "label": self.label, "cleared_column": self.cleared_column}
+
+
+class _FloorValueUnavailable(Exception):
+    pass
+
+
+def _floor_rows(con, sql: str, params: list[Any], table: str,
+                floor: QualificationFloor) -> list[Any]:
+    try:
+        return con.execute(sql, params).fetchall()
+    except duckdb.Error as exc:
+        raise _FloorValueUnavailable(
+            f"{table} cannot evidence the {floor.label} qualification "
+            f"because the column behind it is unreadable: {exc}") from exc
+
+
+def _qualified_rate_board(
+        con, stat_category: str, season: str, order: str, min_attempts: int,
+) -> tuple[list[dict[str, Any]], QualificationFloor, Any]:
+    """Rows for a rate board, the floor they cleared, and the text that
+    renders a row's own rate. The floor names the row column carrying its
+    value, so no caller has to know which column that is."""
+    if stat_category == "TS_PCT":
+        floor_value = max(_TOTAL_MINUTES_TS_FLOOR, min_attempts)
+        qualification = QualificationFloor(
+            "total_minutes", floor_value, f"{floor_value:,}+ total minutes",
+            "TOTAL_MINUTES")
+        raw = _floor_rows(
+            con,
+            "SELECT PLAYER_NAME, TEAM_ABBREVIATION, GP, MIN, TS_PCT "
+            "FROM silver_advanced WHERE _season = ? "
+            f"AND GP * MIN >= ? ORDER BY TS_PCT {order}, GP * MIN DESC",
+            [season, floor_value], "silver_advanced", qualification)
+        rows = [
+            {"RANK": index, "PLAYER": row[0], "TEAM": row[1],
+             "GP": row[2], "MPG": row[3],
+             "TOTAL_MINUTES": row[2] * row[3],
+             "TS_PCT": round(float(row[4]) * 100, 1)}
+            for index, row in enumerate(raw, 1)
+        ]
+        return rows, qualification, (
+            lambda row: f"{row['TS_PCT']:.1f}% true shooting")
+
+    rate_to_total = {"PPG": "PTS", "RPG": "REB", "APG": "AST",
+                     "SPG": "STL", "BPG": "BLK"}
+    total_stat = rate_to_total[stat_category]
+    table = f"silver_leaders_{total_stat.lower()}"
+    qualification = QualificationFloor(
+        "total_minutes", _TOTAL_MINUTES_FLOOR,
+        f"{_TOTAL_MINUTES_FLOOR}+ total minutes", "MIN")
+    raw = _floor_rows(
+        con,
+        f"SELECT PLAYER, TEAM, GP, MIN,"
+        f" {total_stat} / CAST(GP AS DOUBLE) AS RATE "
+        f"FROM {table} WHERE _season = ? AND GP > 0"
+        f" AND MIN >= {_TOTAL_MINUTES_FLOOR} "
+        f"ORDER BY RATE {order}, GP DESC, PLAYER",
+        [season], table, qualification)
+    rows = [
+        {"RANK": index, "PLAYER": row[0], "TEAM": row[1],
+         "GP": row[2], "MIN": row[3],
+         stat_category: float(row[4])}
+        for index, row in enumerate(raw, 1)
+    ]
+    noun = {"PPG": "points", "RPG": "rebounds", "APG": "assists",
+            "SPG": "steals", "BPG": "blocks"}[stat_category]
+    return rows, qualification, (
+        lambda row: f"{row[stat_category]:.2f} {noun} per game")
+
+
+def _cleared(lead: dict[str, Any], floor: QualificationFloor) -> str:
+    column = floor.cleared_column
+    observed = lead.get(column)
+    if observed is None:
+        raise ValueError(
+            f"qualification floor {floor.label} has no published value: the "
+            f"leader row carries no {column}, so the floor would publish as a "
+            f"label with no number behind it")
+    return f"{observed:,.0f} {floor.metric.replace('_', ' ')} over " \
+           f"{lead.get('GP')} games"
+
+
 @tool
 def get_leaders(
     stat_category: str = "PTS", season: str | None = None,
@@ -1576,64 +1682,33 @@ def get_leaders(
 
 
 
+    lead_answer: tuple[Any, QualificationFloor] | None = None
     if stat_category in {"TS_PCT", "PPG", "RPG", "APG", "SPG", "BPG"}:
         con = store.connect(read_only=True)
         try:
-            if stat_category == "TS_PCT":
-                raw = con.execute(
-                    "SELECT PLAYER_NAME, TEAM_ABBREVIATION, GP, MIN, TS_PCT "
-                    "FROM silver_advanced WHERE _season = ? "
-                    f"AND GP * MIN >= ? ORDER BY TS_PCT {order}, GP * MIN DESC",
-                    [season, max(1000, min_attempts)],
-                ).fetchall()
-                rows = [
-                    {"RANK": index, "PLAYER": row[0], "TEAM": row[1],
-                     "GP": row[2], "MPG": row[3],
-                     "TS_PCT": round(float(row[4]) * 100, 1)}
-                    for index, row in enumerate(raw, 1)
-                ]
-                qualification = "1,000+ total minutes"
-                value = lambda row: f"{row['TS_PCT']:.1f}% true shooting"
-            else:
-                rate_to_total = {"PPG": "PTS", "RPG": "REB", "APG": "AST",
-                                 "SPG": "STL", "BPG": "BLK"}
-                total_stat = rate_to_total[stat_category]
-                table = f"silver_leaders_{total_stat.lower()}"
-                raw = con.execute(
-                    f"SELECT PLAYER, TEAM, GP, {total_stat} / CAST(GP AS DOUBLE) AS RATE "
-
-
-
-
-                    f"FROM {table} WHERE _season = ? AND GP > 0 AND MIN >= 500 "
-                    f"ORDER BY RATE {order}, GP DESC, PLAYER",
-                    [season],
-                ).fetchall()
-                rows = [
-                    {"RANK": index, "PLAYER": row[0], "TEAM": row[1],
-                     "GP": row[2], stat_category: float(row[3])}
-                    for index, row in enumerate(raw, 1)
-                ]
-                qualification = "500+ total minutes"
-                label = {"PPG": "points", "RPG": "rebounds",
-                         "APG": "assists", "SPG": "steals",
-                         "BPG": "blocks"}[stat_category]
-                value = lambda row: f"{row[stat_category]:.2f} {label} per game"
+            try:
+                rows, qualification, value = _qualified_rate_board(
+                    con, stat_category, season, order, min_attempts)
+            except _FloorValueUnavailable as exc:
+                con.close()
+                return {"tool": "get_leaders", "ok": False, "rows": [],
+                        "error": (f"{exc}; refusing to publish a "
+                                  f"{stat_category} board whose "
+                                  f"qualification cannot be evidenced"),
+                        "meta": {"source": "warehouse", "season": season,
+                                 "stat_category": stat_category,
+                                 "ranking_direction": direction,
+                                 "min_attempts": min_attempts}}
         finally:
             con.close()
         meta = {
             "source": "warehouse", "season": season,
             "stat_category": stat_category, "rows": len(rows),
             "ranking_direction": direction, "min_attempts": min_attempts,
-            "qualification": qualification,
+            "qualification": qualification.label,
+            "qualification_floor": qualification.payload(),
         }
-        if rows:
-            lead = rows[0]
-            meta["deterministic_answer"] = (
-                f"{lead['PLAYER']} leads qualified players at {value(lead)} "
-                f"in {season}. Qualification: {qualification}; "
-                f"{lead['GP']} games."
-            )
+        lead_answer = (value, qualification)
     else:
         table = f"silver_leaders_{stat_category.lower()}"
         rows, meta = _warehouse_or_live(
@@ -1695,7 +1770,7 @@ def get_leaders(
     pin = ["RANK", "PLAYER", "TEAM", stat_category]
     if stat_category == "FG3_PCT":
         pin.extend(["FG3M", "FG3A"])
-    pin.extend(["GP", "MIN", "MPG"])
+    pin.extend(["GP", "MIN", "MPG", "TOTAL_MINUTES"])
     pinned = []
     for r in rows:
         if not isinstance(r, dict):
@@ -1712,6 +1787,20 @@ def get_leaders(
         if "PLAYER" in slim and "PLAYER_NAME" not in slim:
             slim["PLAYER_NAME"] = slim["PLAYER"]
         pinned.append(slim)
+    if lead_answer is not None and pinned:
+        value, qualification = lead_answer
+        try:
+            meta["deterministic_answer"] = (
+                f"{pinned[0]['PLAYER']} leads qualified players at "
+                f"{value(pinned[0])} in {season}. Qualification: "
+                f"{qualification.label}; "
+                f"{_cleared(pinned[0], qualification)}.")
+        except (ValueError, KeyError, TypeError) as exc:
+            return {"tool": "get_leaders", "ok": False, "rows": [],
+                    "error": (f"refusing to publish a {stat_category} answer "
+                              f"whose qualification cannot be evidenced from "
+                              f"the published row: {exc}"),
+                    "meta": meta}
     return {"tool": "get_leaders", "ok": True, "rows": pinned, "meta": meta}
 
 

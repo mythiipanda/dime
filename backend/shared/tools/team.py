@@ -1,6 +1,7 @@
 
 from typing import Any
 import asyncio as _asyncio
+from dataclasses import dataclass
 from langchain_core.tools import tool
 
 from ..sources import nba_stats
@@ -223,6 +224,39 @@ def _series_date_key(s: object) -> str:
     return raw
 
 
+def _playoff_series(games: list[dict[str, Any]], a: str,
+                    b: str) -> list[dict[str, Any]]:
+    """One record per playoff series the two teams played.
+
+    A series is the run of playoff games inside one round; two teams can
+    meet at most once per round. Series wins and game wins count different
+    things, so the two never share a field.
+    """
+    by_round: dict[str, list[dict[str, Any]]] = {}
+    for game in games:
+        if game.get("phase") != "playoffs":
+            continue
+        code = str(game.get("round_code") or "")
+        by_round.setdefault(code, []).append(game)
+    records: list[dict[str, Any]] = []
+    for code in sorted(by_round):
+        round_games = by_round[code]
+        tally = {a: sum(1 for g in round_games if g.get("winner") == a),
+                 b: sum(1 for g in round_games if g.get("winner") == b)}
+        undecided = len(round_games) - tally[a] - tally[b]
+        winner = (a if tally[a] > tally[b]
+                  else (b if tally[b] > tally[a] else None))
+        records.append({
+            "round_code": code,
+            "round": str(round_games[0].get("round") or ""),
+            "games": len(round_games),
+            "games_undecided": undecided,
+            "games_won": tally,
+            "winner": winner,
+        })
+    return records
+
+
 @tool
 def get_team_game_log(team: str, limit: int = 10,
                       playoffs: bool = False,
@@ -430,6 +464,7 @@ def get_season_series(team_a: str, team_b: str,
 
         _ROUND = {"1": "first round", "2": "conference semifinals",
                   "3": "conference finals", "4": "NBA Finals"}
+        playoff_source = None
         if "silver_playoffs" in tables and id_a is not None:
             prows = con.execute(
                 """SELECT g.GAME_ID, g.GAME_DATE, g.MATCHUP, g.WL, g.PTS,
@@ -448,13 +483,17 @@ def get_season_series(team_a: str, team_b: str,
                     "game_id": str(gid), "date": str(gdate),
                     "matchup": str(matchup),
                     "phase": "playoffs",
+                    "round_code": rnd,
                     "round": _ROUND.get(rnd, "playoffs"),
                     "winner": a if str(wl).upper() == "W"
                     else (b if str(wl).upper() == "L" else None),
                     f"{a.lower()}_pts": pts_a,
                     f"{b.lower()}_pts": pts_b,
                 })
-        elif "silver_playoff_gamelogs" in tables:
+            if prows:
+                playoff_source = "silver_playoffs"
+        if (not playoff_source
+                and "silver_playoff_gamelogs" in tables):
             prows = con.execute(
                 """SELECT DISTINCT Game_ID, GAME_DATE, MATCHUP, WL
                    FROM silver_playoff_gamelogs
@@ -462,12 +501,21 @@ def get_season_series(team_a: str, team_b: str,
                 [season, f"{a} % {b}"],
             ).fetchall()
             for gid, gdate, matchup, wl in prows:
+                rnd = str(gid)[7:8]
                 games.append({
                     "game_id": str(gid), "date": str(gdate),
                     "matchup": str(matchup), "phase": "playoffs",
+                    "round_code": rnd,
+                    "round": _ROUND.get(rnd, "playoffs"),
                     "winner": a if str(wl).upper() == "W"
                     else (b if str(wl).upper() == "L" else None),
                 })
+            if prows:
+                playoff_source = "silver_playoff_gamelogs"
+        playoff_coverage = {
+            "silver_playoffs": "silver_playoffs" in tables,
+            "silver_playoff_gamelogs": "silver_playoff_gamelogs" in tables,
+        }
     finally:
         con.close()
 
@@ -479,30 +527,44 @@ def get_season_series(team_a: str, team_b: str,
                           f"and playoffs). Do not report a 0-0 record - "
                           f"say the meetings are not in the dataset.")}
     games.sort(key=lambda g: _series_date_key(g["date"]))
-    wins_a = sum(1 for g in games if g.get("winner") == a)
-    wins_b = sum(1 for g in games if g.get("winner") == b)
-    po = [g for g in games if g["phase"] == "playoffs"]
+    phases = sorted({g["phase"] for g in games})
+    games_won = {a: sum(1 for g in games if g.get("winner") == a),
+                 b: sum(1 for g in games if g.get("winner") == b)}
+    games_by_phase = {phase: sum(1 for g in games if g["phase"] == phase)
+                      for phase in phases}
+    games_won_by_phase = {
+        phase: {a: sum(1 for g in games if g["phase"] == phase
+                       and g.get("winner") == a),
+                b: sum(1 for g in games if g["phase"] == phase
+                       and g.get("winner") == b)}
+        for phase in phases}
+    undecided = len(games) - games_won[a] - games_won[b]
+    series = _playoff_series(games, a, b)
+    series_won = {a: sum(1 for s in series if s["winner"] == a),
+                  b: sum(1 for s in series if s["winner"] == b)}
     summary = {
         "games": len(games),
-        f"{a.lower()}_wins": wins_a,
-        f"{b.lower()}_wins": wins_b,
+        "games_undecided": undecided,
+        "games_won": games_won,
+        "games_by_phase": games_by_phase,
+        "games_won_by_phase": games_won_by_phase,
+        "series_played": len(series),
+        "series_won": series_won,
+        "series": series,
     }
-    if po:
-        summary["playoff_meetings"] = len(po)
-        rounds = sorted({g.get("round") for g in po if g.get("round")})
-        if rounds:
-            summary["playoff_rounds"] = ", ".join(rounds)
-        summary[f"{a.lower()}_playoff_wins"] = sum(
-            1 for g in po if g.get("winner") == a)
-        summary[f"{b.lower()}_playoff_wins"] = sum(
-            1 for g in po if g.get("winner") == b)
     return {"tool": "get_season_series", "ok": True,
             "rows": {"teams": [a, b], "summary": summary, "games": games},
             "meta": {"source": "warehouse team + playoff gamelogs",
                      "season": season,
                      "regular_season_source": reg_source,
-                     "note": "playoff meetings carry winner only; "
-                             "team scores tracked for regular season"}}
+                     "playoff_source": playoff_source,
+                     "playoff_tables_present": playoff_coverage,
+                     "unscored_games": sorted(
+                         g["game_id"] for g in games
+                         if f"{a.lower()}_pts" not in g
+                         or g.get(f"{a.lower()}_pts") is None),
+                     "note": ("games_won counts games; series_won counts "
+                              "playoff series, one per round")}}
 
 
 
@@ -1430,6 +1492,46 @@ async def get_rotation_check(
     )
 
 
+_TRAILING_SPLIT = "last10"
+_TRAILING_SPLIT_SIZE = 10
+
+_SPLIT_WINDOW_KINDS = {
+    "home": ("venue", "regular-season games at home"),
+    "away": ("venue", "regular-season games on the road"),
+    "wins": ("outcome", "regular-season games won"),
+    "losses": ("outcome", "regular-season games lost"),
+    _TRAILING_SPLIT: (
+        "trailing_games",
+        f"the {_TRAILING_SPLIT_SIZE} most recent regular-season games"),
+}
+
+
+@dataclass(frozen=True)
+class ScoredWindow:
+    """The games a per-game rate was measured over.
+
+    A rate without its window is a different number wearing the same label,
+    so the window travels with the value or the value does not publish.
+    """
+
+    kind: str
+    label: str
+    season: str
+    phase: str
+    games: int
+
+    def payload(self) -> dict[str, Any]:
+        return {"kind": self.kind, "label": self.label, "season": self.season,
+                "phase": self.phase, "games": self.games}
+
+
+def _split_window(split: str, season: str, games: int) -> ScoredWindow:
+    kind, label = _SPLIT_WINDOW_KINDS.get(
+        split, ("calendar_month", f"regular-season games in {split}"))
+    return ScoredWindow(kind=kind, label=label, season=season,
+                        phase="regular season", games=games)
+
+
 @tool
 def get_team_splits(team: str | int, season: str | None = None) -> dict[str, Any]:
     """Home/away, wins/losses, last-10, monthly record plus PPG from cached gamelog."""
@@ -1466,14 +1568,20 @@ def get_team_splits(team: str | int, season: str | None = None) -> dict[str, Any
     def _row(split: str, rs: list) -> dict[str, Any]:
         gp = len(rs)
         w = sum(1 for r in rs if r[1] == "W")
-        ppg = round(sum((r[3] or 0) for r in rs) / gp, 1) if gp else 0.0
-        return {"split": split, "GP": gp, "W": w, "L": gp - w, "PPG": ppg}
+        l = sum(1 for r in rs if r[1] == "L")
+        scored = [r for r in rs if r[3] is not None]
+        ppg = (round(sum(float(r[3]) for r in scored) / len(scored), 1)
+               if scored else None)
+        return {"split": split,
+                "window": _split_window(split, season, gp).payload(),
+                "GP": gp, "W": w, "L": l, "UNDECIDED": gp - w - l,
+                "PPG": ppg, "PPG_GAMES": len(scored)}
     out = [_row("home", [r for r in rows if "@" not in str(r[0])]),
            _row("away", [r for r in rows if "@" in str(r[0])]),
            _row("wins", [r for r in rows if r[1] == "W"]),
            _row("losses", [r for r in rows if r[1] == "L"])]
     ordered = sorted(rows, key=lambda r: _dkey(r[2]), reverse=True)
-    out.append(_row("last10", ordered[:10]))
+    out.append(_row(_TRAILING_SPLIT, ordered[:_TRAILING_SPLIT_SIZE]))
     months: dict[str, list] = {}
     for r in sorted(rows, key=lambda r: _dkey(r[2])):
         months.setdefault(str(r[2])[:3].upper(), []).append(r)
@@ -1532,7 +1640,7 @@ async def get_injury_impact(team: str = "", season: str | None = None) -> dict[s
     try:
         sp = get_team_splits.invoke({"team": abbr, "season": season})
         l10 = next((x for x in sp.get("rows", []) or []
-                    if x.get("split") == "last10"), {})
+                    if x.get("split") == _TRAILING_SPLIT), {})
         if l10:
             last10 = f"{l10.get('W')}-{l10.get('L')}"
     except Exception:
@@ -1610,7 +1718,8 @@ async def get_matchup_brief(a: str = "", b: str = "", season: str | None = None)
         record = str(w) + "-" + str(l) if w is not None and l is not None else None
         return {"TEAM": r.get("TEAM"), "TEAM_NAME": r.get("TEAM_NAME"), "TEAM_ID": r.get("TEAM_ID"), "OFF_RATING": r.get("OFF_RATING"), "DEF_RATING": r.get("DEF_RATING"), "NET_RATING": r.get("NET_RATING"), "PACE": r.get("PACE"), "W": w, "L": l, "record": record, "OFF_RATING_RANK": r.get("OFF_RATING_RANK"), "DEF_RATING_RANK": r.get("DEF_RATING_RANK"), "NET_RATING_RANK": r.get("NET_RATING_RANK")}
     def _last10(rows_in):
-        item = next((x for x in rows_in if x.get("split") == "last10"), None)
+        item = next(
+            (x for x in rows_in if x.get("split") == _TRAILING_SPLIT), None)
         if not item:
             return None
         return str(item.get("W")) + "-" + str(item.get("L"))
