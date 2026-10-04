@@ -1737,8 +1737,6 @@ class ModelPlanner(ModelStage):
                     current = values.get(key)
                     if current is not None and not (isinstance(current, str) and not current.strip()):
                         continue
-                    if key in stripped and stripped[key] not in (None, "") and not (isinstance(stripped[key], str) and not stripped[key].strip()):
-                        continue
                     if not isinstance(entity_type, str) or not entity_type:
                         continue
                     candidate = self._dependent_source_candidate(
