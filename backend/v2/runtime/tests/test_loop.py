@@ -1396,7 +1396,8 @@ def test_binding_form_mismatch_keeps_prose_and_leaves_the_claim_unwithheld():
     claims, gaps = _verified_claims(task, execution, draft, report, evidence)
 
     assert [item.claim.text for item in claims] == ["record"]
-    assert claims[0].output_bindings == []
+    assert [binding.output_id for binding in claims[0].output_bindings] == [
+        "WINS"]
     assert [(gap.kind, gap.blocks) for gap in gaps] == [
         ("synthesis_incomplete", [])]
 

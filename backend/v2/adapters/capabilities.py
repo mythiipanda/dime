@@ -44,6 +44,61 @@ VOTES_DEF = ("First, second, and third place votes a placement received on a "
              "published ballot, counted in ballots. Null where the source "
              "publishes no vote count for that award.")
 
+AWARD_FIELD_UNITS = {
+    "age": YEARS,
+    "award_share": FRACTION,
+    "points_max": BALLOT_POINTS,
+    "points_won": BALLOT_POINTS,
+    "rank": COUNT,
+    "votes_first": COUNT,
+    "votes_second": COUNT,
+    "votes_third": COUNT,
+}
+
+AWARD_FIELD_DEFINITIONS = {
+    "age": ("Age in years the player was on the ballot; null on a coach row."),
+    "award": "Award code the source published the placement under.",
+    "award_share": AWARD_SHARE_DEF,
+    "coach": ("Coach named on the placement; null on a player award, so a "
+              "Coach-of-the-Year question reads this column."),
+    "player": ("Player named on the placement; null on a Coach-of-the-Year "
+               "row, so a player-award question reads this column."),
+    "points_max": POINTS_WON_DEF,
+    "points_won": POINTS_WON_DEF,
+    "rank": ("Published leading rank on the ballot. A tied placement shares "
+             "the leading rank; null for an ORV row."),
+    "rank_label": "Verbatim published rank label, including a tie suffix.",
+    "season": "Season the source published the ballot for.",
+    "team": "Team abbreviation published with the placement.",
+    "tied": "True when the published rank label marks a tied placement.",
+    "votes_first": VOTES_DEF,
+    "votes_second": VOTES_DEF,
+    "votes_third": VOTES_DEF,
+}
+
+AWARD_OUTPUT_ALIASES = {
+    "PLAYER_NAME": "player",
+    "COACH_NAME": "coach",
+    "VOTE_SHARE": "award_share",
+}
+
+
+def _award_vocabulary() -> tuple[dict[str, str], dict[str, str]]:
+    from shared.tools.award_results import _SELECT, _placement
+
+    source_row = dict.fromkeys(
+        name.strip() for name in _SELECT.replace("\n", " ").split(","))
+    fields = tuple(_placement(source_row))
+    return ({field: AWARD_FIELD_UNITS[field] for field in fields
+             if field in AWARD_FIELD_UNITS},
+            {field: AWARD_FIELD_DEFINITIONS.get(
+                field, f"{field.replace('_', ' ')} as the award ballot "
+                       "publishes it.")
+             for field in fields})
+
+
+AWARD_UNITS, AWARD_DEFINITIONS = _award_vocabulary()
+
 
 def _resolve_entities(rows: Any) -> list[EntityRef]:
     out: list[EntityRef] = []
@@ -116,6 +171,7 @@ class Capability:
     window_args: tuple[str, str] | None = None
     units: Mapping[str, str] = field(default_factory=dict)
     metric_definitions: Mapping[str, str] = field(default_factory=dict)
+    output_aliases: Mapping[str, str] = field(default_factory=dict)
     qualification: str | None = None
     coverage: str | None = None
     source_prefix: str = "v1"
@@ -418,23 +474,9 @@ _LIST = [
     Capability(
         name="award_results",
         tool_name="get_award_results",
-        units={
-            "award_share": FRACTION,
-            "points_won": BALLOT_POINTS,
-            "points_max": BALLOT_POINTS,
-            "votes_first": COUNT,
-            "votes_second": COUNT,
-            "votes_third": COUNT,
-            "age": YEARS,
-        },
-        metric_definitions={
-            "award_share": AWARD_SHARE_DEF,
-            "points_won": POINTS_WON_DEF,
-            "points_max": POINTS_WON_DEF,
-            "votes_first": VOTES_DEF,
-            "votes_second": VOTES_DEF,
-            "votes_third": VOTES_DEF,
-        },
+        units=AWARD_UNITS,
+        metric_definitions=AWARD_DEFINITIONS,
+        output_aliases=AWARD_OUTPUT_ALIASES,
         qualification=(
             "Every placement the source published on that ballot. A tied "
             "placement keeps the published leading rank and its verbatim "
@@ -531,7 +573,8 @@ def resolve_metric_column(capability: Capability, output_id: str) -> str | None:
         aliased = vocabulary.get(alias)
         if aliased is not None:
             return aliased
-    return None
+    return next((column for name, column in capability.output_aliases.items()
+                 if _squashed(name) == squashed), None)
 
 CAPABILITY_DESCRIPTIONS: dict[str, str] = {
     "entity_resolution": "Resolve a player or team name to canonical identity.",
@@ -605,3 +648,11 @@ if len(CAPABILITIES) != len(_LIST):
     raise AssertionError("duplicate capability names")
 if CAPABILITY_DESCRIPTIONS.keys() != CAPABILITIES.keys():
     raise AssertionError("capability descriptions must cover the catalog exactly")
+for spec in CAPABILITIES.values():
+    undeclared_aliases = sorted(
+        target for target in spec.output_aliases.values()
+        if target not in spec.units and target not in spec.metric_definitions)
+    if undeclared_aliases:
+        raise AssertionError(
+            f"capability {spec.name} aliases undeclared outputs: "
+            f"{undeclared_aliases}")

@@ -257,6 +257,28 @@ def test_one_selector_that_names_no_value_drops_only_its_own_field(
     assert final["carry"]["verified_claims"] == 1
 
 
+def test_a_binding_that_resolves_keeps_its_authority_when_a_neighbour_does_not(
+        monkeypatch, tmp_path):
+    text, custom, final = _stream(
+        monkeypatch, tmp_path,
+        _runtime([_claim(_injuries(), _off_rating(), _net_rating())],
+                 NESTED_ROWS))
+
+    assert [(item["output_id"], item["status"])
+            for item in final["carry"]["output_statuses"]] == [
+        ("OFF_RATING", "complete"),
+        ("NET_RATING", "complete"),
+        ("INJURED_PLAYERS", "missing"),
+    ]
+    cited = _cited(custom)
+    assert cited["OFF_RATING"]["value"] == "116.6"
+    assert cited["NET_RATING"]["value"] == "1.3"
+    assert cited["OFF_RATING"]["provenance"]["capability"] == "matchup_brief"
+    assert cited["NET_RATING"]["provenance"]["capability"] == "matchup_brief"
+    assert "INJURED_PLAYERS" not in cited
+    assert REFUSAL not in final["text"]
+
+
 def test_a_selector_that_names_two_rows_publishes_neither_of_them(
         monkeypatch, tmp_path):
     text, custom, final = _stream(
@@ -266,9 +288,9 @@ def test_a_selector_that_names_two_rows_publishes_neither_of_them(
 
     assert custom["tables"] == []
     assert custom["unverified_numbers"] == [
-        "INJURED PLAYERS could not be traced to the source data.",
-        "NET RATING could not be traced to the source data.",
         "OFF RATING could not be traced to the source data.",
+        "NET RATING could not be traced to the source data.",
+        "INJURED PLAYERS could not be traced to the source data.",
     ]
     assert REFUSAL not in final["text"]
     assert final["carry"]["verified_claims"] == 1
