@@ -235,6 +235,37 @@ function downloadLog(entries: FlagEntry[]) {
   URL.revokeObjectURL(url);
 }
 
+export default function CitedAnswerText({ text, ai }: { text: string; ai: AiMessage }) {
+  const [openCite, setOpenCite] = useState<number | null>(null);
+  const [accepted, setAccepted] = useState<number[]>([]);
+  const [flagged, setFlagged] = useState<FlagEntry[]>([]);
+  const sources = evidenceSources(ai);
+  const marked = withCitationMarkers(text, sources);
+  const toggle = (index: number) => {
+    setOpenCite((cur) => (cur === index ? null : index));
+    setTimeout(() => {
+      const row = document.getElementById(`cite-${index}`);
+      if (row && typeof row.scrollIntoView === "function") {
+        row.scrollIntoView({ block: "nearest" });
+      }
+    }, 0);
+  };
+  const accept = (index: number) => {
+    if (!accepted.includes(index)) setAccepted((cur) => [...cur, index]);
+    setOpenCite((cur) => (cur === index ? null : cur));
+  };
+  const flag = (index: number) => {
+    const source = sources[index];
+    if (!source || flagged.some((f) => f.stat === source.stat && f.subject === source.subject && f.value === source.value)) return;
+    setFlagged((cur) => [...cur, flagEntry(source, new Date().toISOString())]);
+  };
+  const flaggedIndexes = flagged
+    .map((f) =>
+      sources.findIndex(
+        (s) => s.stat === f.stat && s.subject === f.subject && s.value === f.value,
+      ),
+    )
+    .filter((i) => i >= 0);
   return (
     <div>
       <ContextPills ai={ai} />

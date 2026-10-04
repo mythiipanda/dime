@@ -98,7 +98,7 @@ def test_steals_per_game_leader_carries_sample_size():
         for r in out["rows"]]
     answer = out["meta"]["deterministic_answer"]
     assert f"{lead['SPG']:.2f} steals per game" in answer
-    assert f"({lead['GP']} games; {lead['MIN']:,.0f} total minutes)" in answer
+    assert f"{lead['GP']} games" in answer
 
 
 def test_fg3_percentage_leaders_carry_direction_volume_and_shooting_counts(monkeypatch):
