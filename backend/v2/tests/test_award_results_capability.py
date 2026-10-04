@@ -224,7 +224,7 @@ class WinnerSynthesizer:
             output_id="PLAYER_NAME", node_id="mvp_winner",
             evidence_id=envelope.evidence_id, selector="rows[0].player",
             value={"kind": "string", "value": player},
-            unit={"kind": "declared", "value": "name"},
+            unit={"kind": "unitless"},
             domain="award_results")
         return DraftReport(
             sections=["MVP"],
@@ -474,7 +474,7 @@ def test_a_coach_award_fails_loudly_end_to_end(awards_warehouse):
             "view": "winner", "award": "COY", "season": "2008-09"})
     message = str(excinfo.value)
     assert "get_award_results" in message
-    assert "COY" in message
+    assert "Coach of the Year" in message
     assert "players only" in message
 
 
