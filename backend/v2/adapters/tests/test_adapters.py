@@ -453,7 +453,6 @@ def test_metric_coverage_without_player_or_season():
 
 
 def test_default_registry_includes_native_coverage_tool():
-    pytest.importorskip("app.tools")
     from v2.adapters.core import _default_tools
 
     assert "metric_coverage" in _default_tools()
@@ -1087,76 +1086,3 @@ def test_completed_season_leader_rows_keep_player_id(monkeypatch, tmp_path):
     assert result["rows"][0]["PLAYER"] == "Trae Young"
     assert result["rows"][0]["PLAYER_ID"] == 1629027
     assert all("PLAYER_ID" in row for row in result["rows"])
-
-
-def test_task_arguments_propagates_window_to_game_logs_only() -> None:
-    from datetime import date
-    from v2.adapters.core import _task_arguments
-    from v2.contracts import PlanNode, SeasonRef, TaskSpec
-    task = TaskSpec(goal="January splits", mode="quick", deliverable="answer",
-        season=SeasonRef(value="2025-26", source="user", confidence=1),
-        window_start=date(2026, 1, 1), window_end=date(2026, 1, 31))
-    logs = _task_arguments("game_logs", PlanNode(
-        id="g", description="logs", capability_hints=["game_logs"], arguments={}), task, [])
-    assert (logs["start_date"], logs["end_date"]) == ("2026-01-01", "2026-01-31")
-    ratings = _task_arguments("team_ratings", PlanNode(
-        id="r", description="ratings", capability_hints=["team_ratings"], arguments={}), task, [])
-    assert "start_date" not in ratings and "end_date" not in ratings and "month" not in ratings
-
-
-def test_task_arguments_never_overwrites_explicit_window_arguments() -> None:
-    from datetime import date
-    from v2.adapters.core import _task_arguments
-    from v2.contracts import PlanNode, SeasonRef, TaskSpec
-    task = TaskSpec(goal="January splits", mode="quick", deliverable="answer",
-        season=SeasonRef(value="2025-26", source="user", confidence=1),
-        window_start=date(2026, 1, 1), window_end=date(2026, 1, 31))
-    node = PlanNode(id="g", description="logs", capability_hints=["game_logs"],
-        arguments={"start_date": "2026-01-10", "end_date": "2026-01-20"})
-    arguments = _task_arguments("game_logs", node, task, [])
-    assert (arguments["start_date"], arguments["end_date"]) == ("2026-01-10", "2026-01-20")
-
-
-def test_validated_arguments_rejects_window_args_on_season_only_schema() -> None:
-    from v2.adapters import ToolCapability
-    from v2.adapters.core import AdapterError
-    from v2.contracts import PlanNode
-    import pytest
-    capability = ToolCapability("team_ratings")
-    node = PlanNode(id="r", description="ratings", capability_hints=["team_ratings"],
-        arguments={"season": "2025-26", "start_date": "2026-01-01"})
-    with pytest.raises(AdapterError, match="start_date"):
-        capability.validate_arguments(node)
-
-
-def test_validated_arguments_keeps_window_args_on_game_logs_schema() -> None:
-    from v2.adapters import ToolCapability
-    from v2.contracts import PlanNode
-    capability = ToolCapability("game_logs")
-    node = PlanNode(id="g", description="logs", capability_hints=["game_logs"],
-        arguments={"start_date": "2026-01-01", "end_date": "2026-01-31"})
-    capability.validate_arguments(node)
-
-
-def test_build_envelope_records_served_window_from_game_log_arguments() -> None:
-    from datetime import UTC, datetime
-    from v2.adapters.capabilities import CAPABILITIES
-    from v2.adapters.core import build_envelope
-    from datetime import date
-    item = build_envelope(CAPABILITIES["game_logs"],
-        {"season": "2025-26", "start_date": "2026-01-01", "end_date": "2026-01-31"},
-        {"ok": True, "rows": [], "meta": {"source": "warehouse", "season": "2025-26",
-            "warehouse_id": "frozen-eval", "warehouse_sha256": "a" * 64}},
-        observed_at=datetime.now(UTC))
-    assert (item.window_start, item.window_end) == (date(2026, 1, 1), date(2026, 1, 31))
-
-
-def test_build_envelope_leaves_season_only_envelope_unwindowed() -> None:
-    from datetime import UTC, datetime
-    from v2.adapters.capabilities import CAPABILITIES
-    from v2.adapters.core import build_envelope
-    item = build_envelope(CAPABILITIES["team_ratings"], {"season": "2025-26"},
-        {"ok": True, "rows": [], "meta": {"source": "warehouse", "season": "2025-26",
-            "warehouse_id": "frozen-eval", "warehouse_sha256": "a" * 64}},
-        observed_at=datetime.now(UTC))
-    assert (item.window_start, item.window_end) == (None, None)

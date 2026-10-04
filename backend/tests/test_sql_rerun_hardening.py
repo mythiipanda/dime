@@ -70,7 +70,7 @@ def test_check_sql_rerun_trips_429_with_retry_after(monkeypatch):
 
 def test_handler_returns_429_when_limit_tripped(monkeypatch):
     import shared.tools.league as league
-    from app import routes
+    from v2.api import routes
 
     async def fake_rerun(sql):
         assert sql == "SELECT 1"
@@ -80,11 +80,11 @@ def test_handler_returns_429_when_limit_tripped(monkeypatch):
     monkeypatch.setenv("DIME_SQL_RERUN_RATE_LIMIT", "1")
     monkeypatch.setattr(league, "rerun_sql", fake_rerun)
     app = FastAPI()
-    app.include_router(routes.router, prefix="/api/v1")
+    app.include_router(routes.router, prefix="/api")
     client = TestClient(app)
-    first = client.post("/api/v1/sql/rerun", json={"sql": "SELECT 1"})
+    first = client.post("/api/sql/rerun", json={"sql": "SELECT 1"})
     assert first.status_code == 200
-    second = client.post("/api/v1/sql/rerun", json={"sql": "SELECT 1"})
+    second = client.post("/api/sql/rerun", json={"sql": "SELECT 1"})
     assert second.status_code == 429
     lowered = {k.lower(): v for k, v in second.headers.items()}
     assert "retry-after" in lowered
