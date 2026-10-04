@@ -246,7 +246,8 @@ _LIST = [
                coverage="Current-season player population represented in the warehouse.",
                extract_entities=_player_entity,
                dependent_entity_arguments={"player": "player"}),
-    Capability(name="player_comparison", tool_name="get_compare"),
+    Capability(name="player_comparison", tool_name="get_compare",
+               live_fallback=True),
     Capability(name="metric_adjudication", tool_name="compare_metrics"),
     Capability(name="metric_coverage", tool_name="metric_coverage", source_prefix="v2"),
     Capability(

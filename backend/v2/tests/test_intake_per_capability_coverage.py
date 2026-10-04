@@ -154,3 +154,62 @@ def test_season_series_still_blocks_season_missing_everywhere(monkeypatch):
     assert result.open_questions != []
     assert any("2024-25" in item for item in result.open_questions)
     assert not any("silver_boxscores" in item for item in result.open_questions)
+
+
+def _comparison_task(season="2024-25", arguments=None):
+    return TaskSpec(
+        goal="Compare two players scoring",
+        mode="quick",
+        deliverable="answer",
+        season=SeasonRef(value=season, source="user", confidence=1.0),
+        required_evidence=["player_comparison"],
+        requirements=[
+            EvidenceRequirement(
+                id="compare",
+                description="Player scoring comparison",
+                capability_options=["player_comparison"],
+                capability_arguments={"season": season, **(arguments or {})},
+            )
+        ],
+    )
+
+
+def test_player_comparison_resolves_from_scoring_tables_not_boxscores(monkeypatch):
+    _stubbed_seasons(monkeypatch, {
+        "silver_boxscores": {"2025-26"},
+        "silver_leaders_pts": {"2024-25", "2025-26"},
+        "silver_advanced": {"2024-25", "2025-26"},
+    })
+    assert coverage.tables_for_capability(
+        "player_comparison", {})[0] == "silver_leaders_pts"
+    assert "silver_advanced" in coverage.tables_for_capability(
+        "player_comparison", {})
+    assert (ModelIntake._mark_uncovered_season(_comparison_task())
+            == _comparison_task())
+
+
+def test_player_comparison_stat_arg_narrows_to_single_leaders_table(monkeypatch):
+    _stubbed_seasons(monkeypatch, {
+        "silver_boxscores": {"2025-26"},
+        "silver_leaders_pts": {"2024-25", "2025-26"},
+        "silver_advanced": {"2025-26"},
+    })
+    assert coverage.tables_for_capability(
+        "player_comparison", {"stat_category": "PTS"}) == (
+        "silver_leaders_pts",)
+    assert (ModelIntake._mark_uncovered_season(
+        _comparison_task(arguments={"stat_category": "PTS"}))
+        == _comparison_task(arguments={"stat_category": "PTS"}))
+
+
+def test_player_comparison_uncovered_season_admits_with_live_gap(monkeypatch):
+    _stubbed_seasons(monkeypatch, {
+        "silver_boxscores": {"2025-26"},
+        "silver_leaders_pts": {"2025-26"},
+        "silver_advanced": {"2025-26"},
+    })
+    result = ModelIntake._mark_uncovered_season(_comparison_task())
+    assert result.season.value == "2024-25"
+    assert result.open_questions == []
+    assert any("2024-25" in item for item in result.assumptions)
+    assert any("player_comparison" in item for item in result.assumptions)

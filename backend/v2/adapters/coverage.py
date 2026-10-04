@@ -152,7 +152,7 @@ def tables_for_capability(
     capability: str, arguments: object = None,
 ) -> tuple[str, ...]:
     name = str(capability or "")
-    if name == "qualified_leaders":
+    if name in ("qualified_leaders", "player_comparison"):
         values = _arguments_dict(arguments)
         for key in ("stat_category", "requested_metric", "stat", "metric"):
             if values.get(key) is not None:
@@ -160,6 +160,8 @@ def tables_for_capability(
                 if table is not None:
                     return (table,)
                 break
+        if name == "player_comparison":
+            return (*LEADERS_TABLES, "silver_advanced")
         return LEADERS_TABLES
     if name == "rookie_leaders":
         return LEADERS_TABLES
