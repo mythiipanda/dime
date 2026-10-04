@@ -1856,3 +1856,47 @@ def test_chat_stream_get_with_client_header_and_no_thread_starts_stream(monkeypa
     assert response.status_code == 200
     assert response.text.count("event: final_answer") == 1
     assert response.text.count("event: graph_end") == 1
+
+
+def _healthz_client(monkeypatch, tmp_path):
+    import duckdb
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+    from shared import store
+    from v2.api import routes
+    wh = tmp_path / "healthz.duckdb"
+    duckdb.connect(str(wh)).close()
+    monkeypatch.setattr(store, "DB_PATH", wh)
+    app = FastAPI()
+    app.include_router(routes.router, prefix="/api")
+    return TestClient(app), wh
+
+
+def test_healthz_503_when_ratings_table_missing(monkeypatch, tmp_path):
+    import duckdb
+    client, wh = _healthz_client(monkeypatch, tmp_path)
+    assert "silver_team_ratings" not in {
+        r[0] for r in duckdb.connect(str(wh)).execute("SHOW TABLES").fetchall()}
+    response = client.get("/api/healthz")
+    assert response.status_code == 503
+    assert response.json()["ok"] is False
+
+
+def test_healthz_503_when_ratings_table_empty(monkeypatch, tmp_path):
+    import duckdb
+    client, wh = _healthz_client(monkeypatch, tmp_path)
+    duckdb.connect(str(wh)).execute(
+        "CREATE TABLE silver_team_ratings (_season VARCHAR)")
+    assert client.get("/api/healthz").status_code == 503
+
+
+def test_healthz_200_when_ratings_present(monkeypatch, tmp_path):
+    import duckdb
+    client, wh = _healthz_client(monkeypatch, tmp_path)
+    duckdb.connect(str(wh)).execute(
+        "CREATE TABLE silver_team_ratings (_season VARCHAR)")
+    duckdb.connect(str(wh)).execute(
+        "INSERT INTO silver_team_ratings VALUES ('2024-25')")
+    response = client.get("/api/healthz")
+    assert response.status_code == 200
+    assert response.json() == {"ok": True}

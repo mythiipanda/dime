@@ -227,6 +227,40 @@ def health() -> dict:
     return {"ok": True, "providers": catalog["available"]}
 
 
+@router.get("/healthz")
+def healthz() -> Response:
+    from shared import store
+    try:
+        con = store.connect(read_only=True)
+    except Exception:
+        return Response(
+            content=json.dumps({"ok": False, "reason": "warehouse_unreachable"}),
+            media_type="application/json", status_code=503)
+    try:
+        tables = {row[0] for row in con.execute("SHOW TABLES").fetchall()}
+        if "silver_team_ratings" not in tables:
+            return Response(
+                content=json.dumps({"ok": False, "reason": "ratings_table_missing"}),
+                media_type="application/json", status_code=503)
+        count = con.execute("SELECT COUNT(*) FROM silver_team_ratings").fetchone()[0]
+    except Exception:
+        return Response(
+            content=json.dumps({"ok": False, "reason": "ratings_unreadable"}),
+            media_type="application/json", status_code=503)
+    finally:
+        try:
+            con.close()
+        except Exception:
+            pass
+    if not count:
+        return Response(
+            content=json.dumps({"ok": False, "reason": "ratings_table_empty"}),
+            media_type="application/json", status_code=503)
+    return Response(
+        content=json.dumps({"ok": True}),
+        media_type="application/json", status_code=200)
+
+
 _DATASETS_TABLES = {
     "standings": "silver_standings",
     "leaders": "silver_leaders_pts",
