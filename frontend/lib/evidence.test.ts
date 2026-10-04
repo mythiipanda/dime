@@ -7,6 +7,7 @@ import {
   evidenceSources,
   unverifiedSummary,
   withCitationMarkers,
+  withUnverifiedMarkers,
   gapMessage,
 } from "./evidence";
 import type { AiMessage } from "./chat";
@@ -133,6 +134,40 @@ test("blank display names fall back to local labels", () => {
   assert.equal(sources.length, 2);
   assert.equal(sources[0].stat, "points per 100 possessions");
   assert.equal(sources[1].stat, "points per 100 possessions");
+});
+
+test("unbacked numbers get unverified markers, backed ones do not", () => {
+  const table = {
+    output_id: "AST",
+    subject_type: "player",
+    subject_id: "1629027",
+    subject_display_name: "Trae Young",
+    value: "880",
+    unit: "count",
+    provenance: { capability: "qualified_leaders", season: "2024-25" },
+  };
+  const sources = evidenceSources(aiWith({}, [table]));
+  assert.equal(
+    withUnverifiedMarkers("880 assists and 64 wins.", sources),
+    "880 assists and 64[?](#unverified) wins.",
+  );
+});
+
+test("unverified markers skip ranges, multi-source values, and empty sources", () => {
+  const table = {
+    output_id: "AST",
+    subject_type: "player",
+    subject_id: "1629027",
+    value: "880",
+    unit: "count",
+    provenance: { capability: "qualified_leaders", season: "2024-25" },
+  };
+  const sources = evidenceSources(aiWith({}, [table, { ...table, output_id: "APG" }]));
+  assert.equal(
+    withUnverifiedMarkers("In the 2024-25 season.", sources),
+    "In the 2024-25 season.",
+  );
+  assert.equal(withUnverifiedMarkers("880 assists.", []), "880 assists.");
 });
 
 test("sources never leak machine ids", () => {

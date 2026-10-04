@@ -152,6 +152,14 @@ describe("claim anchors", () => {
     assert.ok(html.includes("League leaders, 2024-25 season"));
   });
 
+  it("unverified numbers get a distinct marker with no source link", () => {
+    const html = renderToStaticMarkup(React.createElement(CitedAnswerText, { text, ai }));
+    assert.ok(html.includes("unverified-marker"));
+    assert.ok(html.includes("Not verified against source data"));
+    const markers = html.match(/cite-marker/g) || [];
+    assert.equal(markers.length, 1);
+  });
+
   it("ledger lists every source even without markers", () => {
     const sources = evidenceSources(ai);
     const html = renderToStaticMarkup(

@@ -624,3 +624,11 @@ button, input, select, textarea {
 }
 .cite-marker:hover { color: var(--color-ink-black); }
 .cite-marker.is-open { color: var(--color-ink-black); }
+.unverified-marker {
+  font-size: 0.78em;
+  vertical-align: super;
+  line-height: 1;
+  color: var(--color-ash-gray);
+  border-bottom: 1px dashed var(--color-ash-gray);
+  cursor: help;
+}

@@ -404,6 +404,20 @@ function escapeRegExp(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
+const STAT_NUMBER_RX = /(?<![\d.\-–])(\d{2,}(?:\.\d+)?|\d\.\d+)(?![\d.\-–])/g;
+
+export function withUnverifiedMarkers(text: string, sources: EvidenceSource[]): string {
+  if (!text || sources.length === 0) return text;
+  const backed = new Set<string>();
+  sources.forEach((source) => {
+    if (/^(?:\d{2,}(?:\.\d+)?|\d\.\d+)$/.test(source.value)) backed.add(source.value);
+  });
+  return text.replace(STAT_NUMBER_RX, (match) => {
+    if (backed.has(match)) return match;
+    return match + "[?](#unverified)";
+  });
+}
+
 export function withCitationMarkers(text: string, sources: EvidenceSource[]): string {
   if (!text || sources.length === 0) return text;
   const byValue = new Map<string, EvidenceSource[]>();
