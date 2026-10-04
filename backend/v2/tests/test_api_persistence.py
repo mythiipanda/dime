@@ -1879,7 +1879,7 @@ def test_healthz_503_when_ratings_table_missing(monkeypatch, tmp_path):
         r[0] for r in duckdb.connect(str(wh)).execute("SHOW TABLES").fetchall()}
     response = client.get("/api/healthz")
     assert response.status_code == 503
-    assert response.json()["ok"] is False
+    assert response.json() == {"ok": False, "reason": "ratings_table_missing"}
 
 
 def test_healthz_503_when_ratings_table_empty(monkeypatch, tmp_path):
@@ -1887,7 +1887,9 @@ def test_healthz_503_when_ratings_table_empty(monkeypatch, tmp_path):
     client, wh = _healthz_client(monkeypatch, tmp_path)
     duckdb.connect(str(wh)).execute(
         "CREATE TABLE silver_team_ratings (_season VARCHAR)")
-    assert client.get("/api/healthz").status_code == 503
+    response = client.get("/api/healthz")
+    assert response.status_code == 503
+    assert response.json() == {"ok": False, "reason": "ratings_table_empty"}
 
 
 def test_healthz_200_when_ratings_present(monkeypatch, tmp_path):
@@ -1900,3 +1902,55 @@ def test_healthz_200_when_ratings_present(monkeypatch, tmp_path):
     response = client.get("/api/healthz")
     assert response.status_code == 200
     assert response.json() == {"ok": True}
+
+
+def test_healthz_503_when_warehouse_unreadable(monkeypatch, tmp_path):
+    import duckdb
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+    from shared import store
+    from v2.api import routes
+    wh = tmp_path / "healthz.duckdb"
+    wh.write_bytes(b"not a database")
+    monkeypatch.setattr(store, "DB_PATH", wh)
+    try:
+        duckdb.connect(str(wh)).execute("SHOW TABLES").fetchall()
+        readable = True
+    except Exception:
+        readable = False
+    assert readable is False
+    app = FastAPI()
+    app.include_router(routes.router, prefix="/api")
+    response = TestClient(app).get("/api/healthz")
+    assert response.status_code == 503
+    assert response.json() == {"ok": False, "reason": "warehouse_unreachable"}
+
+
+def test_healthz_503_when_ratings_unreadable(monkeypatch, tmp_path):
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+    from shared import store
+    from v2.api import routes
+
+    class FailingCount:
+        def execute(self, sql, *args):
+            if "COUNT(*)" in sql:
+                raise RuntimeError("synthetic read failure")
+            return self
+
+        def fetchall(self):
+            return [("silver_team_ratings",)]
+
+        def fetchone(self):
+            raise AssertionError("unreachable")
+
+        def close(self):
+            pass
+
+    monkeypatch.setattr(store, "DB_PATH", tmp_path / "healthz.duckdb")
+    monkeypatch.setattr(store, "connect", lambda **kwargs: FailingCount())
+    app = FastAPI()
+    app.include_router(routes.router, prefix="/api")
+    response = TestClient(app).get("/api/healthz")
+    assert response.status_code == 503
+    assert response.json() == {"ok": False, "reason": "ratings_unreadable"}
