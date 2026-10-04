@@ -1053,11 +1053,60 @@ def _label_lines(result, bindings) -> list[str]:
                  status.output_id) in keys]
 
 
+def _prose_covered_output_ids(result) -> set[str]:
+    from v2.runtime.models import withheld_claim_indices
+    verified = list(getattr(result, "verified_claims", None) or [])
+    if not verified:
+        return set()
+    try:
+        withheld = withheld_claim_indices(getattr(result, "gaps", None) or [])
+    except Exception:
+        withheld = set()
+    try:
+        internal = _internal_identifier_rx(result)
+    except Exception:
+        internal = None
+    draft_claims = list(
+        getattr(getattr(result, "draft", None), "claims", None) or [])
+    covered: set[str] = set()
+    for item in verified:
+        index = getattr(item, "claim_index", None)
+        if index in withheld:
+            continue
+        claim = getattr(item, "claim", None)
+        text = getattr(claim, "text", None)
+        if not isinstance(text, str) or not text:
+            continue
+        try:
+            prose = _publishable_prose(text, internal)
+        except Exception:
+            continue
+        if prose is None:
+            continue
+        for binding in (getattr(claim, "output_bindings", None) or []):
+            output_id = getattr(binding, "output_id", None)
+            if isinstance(output_id, str) and output_id:
+                covered.add(output_id)
+        for binding in (getattr(item, "output_bindings", None) or []):
+            output_id = getattr(binding, "output_id", None)
+            if isinstance(output_id, str) and output_id:
+                covered.add(output_id)
+        if isinstance(index, int) and 0 <= index < len(draft_claims):
+            for binding in (
+                    getattr(draft_claims[index], "output_bindings", None)
+                    or []):
+                output_id = getattr(binding, "output_id", None)
+                if isinstance(output_id, str) and output_id:
+                    covered.add(output_id)
+    return covered
+
+
 def _answer_text(result) -> str:
     published = {
         item.output_id for item in result.output_statuses
         if item.status == "complete"
     }
+    stated = _prose_covered_output_ids(result)
     lines = _claim_prose(result) or list(dict.fromkeys(
         _output_line(result, item) for item in result.output_statuses
         if item.status == "complete"))
@@ -1092,7 +1141,8 @@ def _answer_text(result) -> str:
     lines += list(dict.fromkeys(
         f"{item.output_id} could not be verified ({item.status})."
         for item in result.output_statuses
-        if item.status != "complete" and item.output_id not in published))
+        if item.status != "complete" and item.output_id not in published
+        and item.output_id not in stated))
     return "\n".join(lines) or "I could not verify a publishable answer from the available data."
 
 
