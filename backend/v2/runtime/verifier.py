@@ -41,6 +41,8 @@ _SEMANTIC_KEYS = {
 }
 _PERCENT_LIKE_UNITS = frozenset({"percent", "percent_0_100", "fraction_0_1"})
 _FRACTION_LIKE_UNITS = frozenset({"percent", "fraction_0_1"})
+_WORD = re.compile(r"[A-Za-z0-9]+")
+COMPETITION_ENTITY_TYPES = frozenset({"league"})
 
 class SemanticVerifier(Protocol):
     async def verify(self, task: TaskSpec, draft: DraftReport,
@@ -83,6 +85,19 @@ def _number_tokens(text: str) -> list[str]:
     label_numbers = {match.start(1) for match in _LIST_LABEL.finditer(text)}
     return [match.group(0) for match in _NUMBER.finditer(text)
             if match.start() not in label_numbers]
+
+
+def _words(text: str) -> list[str]:
+    return [word.casefold() for word in _WORD.findall(text)]
+
+
+def _states_name(words: Sequence[str], name: str) -> bool:
+    run = _words(str(name))
+    if not run or len(run) > len(words):
+        return False
+    span = len(run)
+    return any(words[start:start + span] == run
+               for start in range(len(words) - span + 1))
 
 
 def _text_values(envelopes: Iterable[EvidenceEnvelope]) -> set[str]:
@@ -140,7 +155,7 @@ def _canonical_entity(entity) -> tuple[str, str]:
 
 def _entity_reasons(task: TaskSpec, claim: Claim,
                     envelopes: Sequence[EvidenceEnvelope]) -> list[str]:
-    text = claim.text.casefold()
+    words = _words(claim.text)
     evidence_entities = {
         (entity.type, entity.id.casefold(), entity.display_name.casefold())
         for envelope in envelopes for entity in envelope.entities
@@ -161,7 +176,10 @@ def _entity_reasons(task: TaskSpec, claim: Claim,
     ):
         reasons.append("cited evidence entities do not match the task entities")
     for entity in task.entities:
-        if entity.display_name.casefold() not in text and entity.id.casefold() not in text:
+        if entity.type in COMPETITION_ENTITY_TYPES:
+            continue
+        if not (_states_name(words, entity.display_name)
+                or _states_name(words, entity.id)):
             continue
         exact = (entity.type, entity.id.casefold(), entity.display_name.casefold())
         canonical = _canonical_entity(entity)
@@ -329,6 +347,7 @@ def _metric_unit_reasons(claim: Claim,
                          envelopes: Sequence[EvidenceEnvelope]) -> list[str]:
     reasons: list[str] = []
     text = claim.text.casefold()
+    words = _words(claim.text)
     for envelope in envelopes:
         row_keys = {
             segment.split("[", 1)[0].casefold()
@@ -343,8 +362,7 @@ def _metric_unit_reasons(claim: Claim,
                 f"{sorted(unknown_units)}"
             )
         for metric, unit in envelope.units.items():
-            metric_words = metric.casefold().replace("_", " ")
-            if len(metric_words) < 3 or metric_words not in text:
+            if not _states_name(words, metric):
                 continue
             unit_name = unit.casefold()
             percent_shown = "%" in claim.text or "percent" in text
