@@ -67,8 +67,21 @@ def _declared_value_matches(declared, selected) -> bool:
     return abs(target - wanted) <= _VALUE_TOLERANCE * scale
 
 
+_UNIT_WORD_FORMS = {
+    "points per game": "per_game",
+    "rebounds per game": "per_game",
+    "assists per game": "per_game",
+    "steals per game": "per_game",
+    "blocks per game": "per_game",
+    "minutes per game": "minutes",
+}
+
+
 def _canonical_unit(value):
-    return "_".join(value.lower().split())
+    words = " ".join(str(value).lower().split())
+    if words in _UNIT_WORD_FORMS:
+        return _UNIT_WORD_FORMS[words]
+    return "_".join(words.split())
 
 
 def _canonical_domain(value):
