@@ -50,24 +50,101 @@ def _full_name(team_id: int) -> str:
     return ""
 
 
-def _rating_row(con: Any, team_id: int,
-                season: str) -> dict[str, Any] | None:
-    season = resolve_season(season)
-    rows = con.execute(
-        """SELECT OFF_RATING, DEF_RATING, NET_RATING, PACE, GP, W, L,
-                  _fetched_at FROM silver_team_ratings
-           WHERE TEAM_ID = ? AND _season = ?""",
-        [team_id, season],
-    ).fetchall()
-    if not rows:
-        return None
-    r = rows[0]
-    vals = {k: _num(v) for k, v in
-            zip(("off", "def", "net", "pace"), r[:4])}
+STORED_RATINGS_TABLE = "silver_team_ratings"
+HIST_RATINGS_TABLE = "silver_hist_gamelogs"
+
+_HIST_RATINGS_SQL = """
+WITH paired AS (
+  SELECT g.team_id AS "TEAM_ID",
+         g.pts AS "PTS",
+         o.pts AS "OPP_PTS",
+         g.min AS "MIN",
+         g.wl AS "WL",
+         g.fga + 0.44 * g.fta - g.oreb + o.oreb AS "POSS"
+  FROM silver_hist_gamelogs g
+  LEFT JOIN silver_hist_gamelogs o
+    ON o._season = g._season AND o.game_id = g.game_id
+   AND o.team_id != g.team_id AND o.season_type = 'regular-season'
+  WHERE g._season = ? AND g.season_type = 'regular-season'
+)
+SELECT "TEAM_ID",
+       100.0 * SUM("PTS") / NULLIF(SUM("POSS"), 0) AS OFF,
+       100.0 * SUM("OPP_PTS") / NULLIF(SUM("POSS"), 0) AS DEF,
+       100.0 * (SUM("PTS") - SUM("OPP_PTS")) / NULLIF(SUM("POSS"), 0) AS NET,
+       240.0 * SUM("POSS") / NULLIF(SUM("MIN"), 0) AS PACE,
+       COUNT(*) AS GP,
+       COUNT(*) FILTER (WHERE "WL" = 'W') AS W,
+       COUNT(*) FILTER (WHERE "WL" = 'L') AS L
+FROM paired
+GROUP BY "TEAM_ID"
+"""
+
+RATINGS_METHOD = {
+    STORED_RATINGS_TABLE: (
+        "Team ratings come from warehouse silver_team_ratings, the stored "
+        "season averages for offensive and defensive rating per 100 "
+        "possessions."),
+    HIST_RATINGS_TABLE: (
+        "Team ratings are derived offline from the regular-season game log "
+        "in silver_hist_gamelogs: every game is paired with its opponent's "
+        "row, possessions are estimated per game, and the ratings are points "
+        "per 100 of those possessions. No live source is used."),
+}
+
+
+def _rating_values(row: tuple) -> dict[str, Any]:
+    vals = {k: _num(v) for k, v in zip(("off", "def", "net", "pace"),
+                                       row[1:5])}
     if any(v is None for v in vals.values()):
-        return None
-    return {**vals, "gp": r[4], "w": r[5], "l": r[6],
-            "fetched_at": r[7]}
+        return {}
+    return {**vals, "gp": int(row[5]), "w": int(row[6]), "l": int(row[7])}
+
+
+def _stored_ratings(con: Any, season: str) -> dict[int, dict[str, Any]]:
+    rows = con.execute(
+        """SELECT TEAM_ID, OFF_RATING, DEF_RATING, NET_RATING, PACE, GP, W,
+                  L, _fetched_at FROM silver_team_ratings
+           WHERE _season = ?""",
+        [season],
+    ).fetchall()
+    out: dict[int, dict[str, Any]] = {}
+    for row in rows:
+        values = _rating_values(row)
+        if values:
+            out[row[0]] = {**values, "fetched_at": row[8],
+                           "source": STORED_RATINGS_TABLE}
+    return out
+
+
+def _derived_ratings(con: Any, season: str) -> dict[int, dict[str, Any]]:
+    rows = con.execute(_HIST_RATINGS_SQL, [season]).fetchall()
+    out: dict[int, dict[str, Any]] = {}
+    for row in rows:
+        values = _rating_values(row)
+        if values:
+            out[row[0]] = {**values, "fetched_at": None,
+                           "source": HIST_RATINGS_TABLE}
+    return out
+
+
+def _season_ratings(con: Any, season: str) -> dict[int, dict[str, Any]]:
+    season = resolve_season(season)
+    tables = {row[0] for row in con.execute("SHOW TABLES").fetchall()}
+    if STORED_RATINGS_TABLE in tables:
+        stored = _stored_ratings(con, season)
+        if stored:
+            return stored
+    if HIST_RATINGS_TABLE in tables:
+        return _derived_ratings(con, season)
+    return {}
+
+
+def _league_ratings(ratings: dict[int, dict[str, Any]]) -> dict[str, Any]:
+    if not ratings:
+        return {}
+    return {"off": float(np.mean([r["off"] for r in ratings.values()])),
+            "def": float(np.mean([r["def"] for r in ratings.values()])),
+            "source": next(iter(ratings.values()))["source"]}
 
 
 def _injury_penalty(con: Any, full_name: str,
@@ -210,19 +287,19 @@ def get_game_prediction(a: str = "", b: str = "", game_date: str = "",
 
     con = store.connect()
     try:
-        ratings = {r[0]: r[1:] for r in con.execute(
-            "SELECT TEAM_ID, AVG(OFF_RATING), AVG(DEF_RATING), AVG(PACE) "
-            "FROM silver_team_ratings WHERE _season = ? GROUP BY TEAM_ID",
-            [season]).fetchall()}
-        lg_off = float(np.mean([r[0] for r in ratings.values()]))
-        lg_def = float(np.mean([r[1] for r in ratings.values()]))
-        home_r = _rating_row(con, home_id or ida, season)
-        away_r = _rating_row(con, away_id or idb, season)
+        ratings = _season_ratings(con, season)
+        league = _league_ratings(ratings)
+        home_r = ratings.get(home_id or ida)
+        away_r = ratings.get(away_id or idb)
         home_inj = _injury_penalty(con, _full_name(home_id or ida), season)
         away_inj = _injury_penalty(con, _full_name(away_id or idb), season)
     finally:
         con.close()
 
+    if not league:
+        return _err(f"ratings missing for season {season}; the warehouse "
+                    "holds no stored team ratings and no game history to "
+                    "derive them from")
     if home_r is None or away_r is None:
         missing = []
         if home_r is None:
@@ -232,7 +309,8 @@ def get_game_prediction(a: str = "", b: str = "", game_date: str = "",
         return _err("ratings missing for " + ", ".join(missing) +
                     f" (season {season}); cannot simulate without them")
 
-
+    lg_off = league["off"]
+    lg_def = league["def"]
     neutral = not found
     h_id, aw_id = (home_id or ida), (away_id or idb)
     home_abbr, away_abbr = _abbrev(str(h_id)), _abbrev(str(aw_id))
@@ -285,8 +363,7 @@ def get_game_prediction(a: str = "", b: str = "", game_date: str = "",
                 "adjustment was applied.")
 
     methodology = [
-        "Team ratings come from warehouse silver_team_ratings (offensive and "
-        "defensive rating per 100 possessions, season averages).",
+        RATINGS_METHOD[league["source"]],
         "Each team's per-100 scoring is adjusted for opponent strength "
         "relative to the league average, then scaled by the average of the "
         "two teams' paces.",
@@ -332,6 +409,7 @@ def get_game_prediction(a: str = "", b: str = "", game_date: str = "",
         "inputs": {
             "home": _card(home_abbr, home_r, home_inj),
             "away": _card(away_abbr, away_r, away_inj),
+            "ratings_source": league["source"],
             "game_pace": round(pace, 1),
             "league_avg_off": round(lg_off, 1),
             "league_avg_def": round(lg_def, 1),

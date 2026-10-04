@@ -383,6 +383,7 @@ def get_season_series(team_a: str, team_b: str,
     from .. import store as _store
 
     games: list[dict[str, Any]] = []
+    reg_source = "silver_team_games"
     con = _store.connect()
     try:
         tables = {r[0] for r in con.execute("SHOW TABLES").fetchall()}
@@ -410,6 +411,21 @@ def get_season_series(team_a: str, team_b: str,
                     f"{b.lower()}_pts": pts_b,
                 })
 
+        if not games and id_a is not None:
+            reg_source = "silver_hist_gamelogs"
+            for row in _hist_team_games(id_a, season):
+                if b not in str(row.get("MATCHUP") or "").upper():
+                    continue
+                wl = str(row.get("WL") or "").upper()
+                games.append({
+                    "game_id": str(row.get("Game_ID") or ""),
+                    "date": str(row.get("GAME_DATE") or ""),
+                    "matchup": str(row.get("MATCHUP") or ""),
+                    "phase": "regular season",
+                    "winner": a if wl == "W" else (b if wl == "L" else None),
+                    f"{a.lower()}_pts": row.get("PTS"),
+                    f"{b.lower()}_pts": row.get("OPP_PTS"),
+                })
 
 
         _ROUND = {"1": "first round", "2": "conference semifinals",
@@ -484,6 +500,7 @@ def get_season_series(team_a: str, team_b: str,
             "rows": {"teams": [a, b], "summary": summary, "games": games},
             "meta": {"source": "warehouse team + playoff gamelogs",
                      "season": season,
+                     "regular_season_source": reg_source,
                      "note": "playoff meetings carry winner only; "
                              "team scores tracked for regular season"}}
 
@@ -1432,6 +1449,12 @@ def get_team_splits(team: str | int, season: str | None = None) -> dict[str, Any
         ).fetchall()
     finally:
         con.close()
+    source = "silver_team_games"
+    if not rows:
+        rows = [(str(row.get("MATCHUP") or ""), str(row.get("WL") or ""),
+                 str(row.get("GAME_DATE") or ""), row.get("PTS"))
+                for row in _hist_team_games(tid, season)]
+        source = "silver_hist_gamelogs"
     if not rows:
         return {"tool": "get_team_splits", "ok": False,
                 "error": f"no cached games for team {tid}"}
@@ -1456,7 +1479,7 @@ def get_team_splits(team: str | int, season: str | None = None) -> dict[str, Any
         months.setdefault(str(r[2])[:3].upper(), []).append(r)
     out.extend(_row(m, rs) for m, rs in months.items())
     return {"tool": "get_team_splits", "ok": True, "rows": out,
-            "meta": {"source": "warehouse", "season": season, "team_id": tid}}
+            "meta": {"source": source, "season": season, "team_id": tid}}
 
 
 @tool
@@ -1620,7 +1643,8 @@ async def get_matchup_brief(a: str = "", b: str = "", season: str | None = None)
             err4 = str(pred.get("error") or "prediction unavailable")
         return {"tool": "get_matchup_brief", "ok": False, "error": err4}
     est = pred.get("estimate") or {}
-    prediction_rows = {"matchup": pred.get("matchup") or {}, "win_prob": est.get("win_prob") or {}, "projected_score": est.get("projected_score") or {}, "projected_total": est.get("projected_total"), "win_prob_ci90": est.get("win_prob_ci90") or {}, "total_ci90": est.get("total_ci90") or [], "margin_ci90": est.get("margin_ci90") or []}
+    inputs = pred.get("inputs") or {}
+    prediction_rows = {"matchup": pred.get("matchup") or {}, "win_prob": est.get("win_prob") or {}, "projected_score": est.get("projected_score") or {}, "projected_total": est.get("projected_total"), "win_prob_ci90": est.get("win_prob_ci90") or {}, "total_ci90": est.get("total_ci90") or [], "margin_ci90": est.get("margin_ci90") or [], "ratings_source": inputs.get("ratings_source")}
     meta = {"source": "warehouse", "season": season}
     if warnings:
         meta["warnings"] = warnings
