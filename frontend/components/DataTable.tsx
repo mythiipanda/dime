@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from "@/components/ui/table";
 import { getQueryParam, setQueryParam } from "../lib/api";
 import { rankOf } from "../lib/rankContext";
+import { summarizeValue } from "../lib/utils";
 
 interface Props {
   rows: unknown;
@@ -110,7 +111,7 @@ function asTable(rows: unknown, capCols: number, showIds = false): {
     cols.map((c) => {
       const v = r[c];
       if (v === null || v === undefined) return "";
-      if (typeof v === "object") return JSON.stringify(v).slice(0, 60);
+      if (typeof v === "object") return summarizeValue(v, 60);
       if (typeof v === "number") return fmtNum(c, v);
       return String(v).slice(0, 60);
     }),

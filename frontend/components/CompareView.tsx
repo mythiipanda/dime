@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import DebateCardModal from "./DebateCardModal";
+import { summarizeValue } from "../lib/utils";
 
 type Side = {
   player_id?: number;
@@ -30,7 +31,7 @@ function fmt(v: unknown): string {
   if (typeof v === "object") {
     const o = v as Record<string, unknown>;
     if ("Stat" in o) return `${String(o.Stat)} ${String(o["On-Off"] ?? "")}`;
-    return JSON.stringify(v).slice(0, 80);
+    return summarizeValue(v, 80);
   }
   return String(v).slice(0, 80);
 }
