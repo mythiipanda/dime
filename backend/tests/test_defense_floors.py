@@ -49,6 +49,14 @@ def warehouse(tmp_path, monkeypatch):
             "('XYZ', 'junk five', 1, 4.0, 3.0, '2025-26'),"
             "('ABC', 'real five', 40, 200.0, 50.0, '2025-26')"
         )
+        con.execute(
+            "CREATE TABLE silver_boxscores ("
+            "GAME_ID TEXT, _season TEXT)"
+        )
+        con.execute(
+            "INSERT INTO silver_boxscores VALUES "
+            "('0022500001', '2025-26')"
+        )
     finally:
         con.close()
     monkeypatch.setattr(_store, "DB_PATH", db)
