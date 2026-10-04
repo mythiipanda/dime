@@ -154,11 +154,39 @@ describe("claim anchors", () => {
   });
 
   it("unverified numbers get a distinct marker with no source link", () => {
-    const html = renderToStaticMarkup(React.createElement(CitedAnswerText, { text, ai }));
+    const flagged = aiWith(
+      {
+        verification: "partial",
+        verified_claims: 1,
+        gaps: [{ kind: "missing_evidence" }],
+        output_statuses: [{ output_id: "W", status: "incomplete", value: "64" }],
+      },
+      tables,
+    );
+    const html = renderToStaticMarkup(React.createElement(CitedAnswerText, { text, ai: flagged }));
     assert.ok(html.includes("unverified-marker"));
     assert.ok(html.includes("Not verified against source data"));
     const markers = html.match(/cite-marker/g) || [];
     assert.equal(markers.length, 1);
+  });
+
+  it("years, ranks, and rounded values get no markers without typed backing", () => {
+    const proseAi = aiWith(
+      {
+        verification: "partial",
+        verified_claims: 1,
+        gaps: [{ kind: "missing_evidence" }],
+        output_statuses: [{ output_id: "AST", status: "incomplete", value: "880" }],
+      },
+      tables,
+    );
+    const html = renderToStaticMarkup(
+      React.createElement(CitedAnswerText, {
+        text: "In 2024-25 he finished top 3 with a 30.4 mark over 82 games.",
+        ai: proseAi,
+      }),
+    );
+    assert.ok(!html.includes("unverified-marker"));
   });
 
   it("ledger lists every source even without markers", () => {

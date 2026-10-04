@@ -4,7 +4,14 @@ import { useState } from "react";
 import type { ReactNode } from "react";
 import AnswerText from "./AnswerText";
 import type { AiMessage } from "../lib/chat";
-import { contextPills, evidenceSources, unverifiedSummary, withCitationMarkers, withUnverifiedMarkers } from "../lib/evidence";
+import {
+  contextPills,
+  evidenceSources,
+  unverifiedSummary,
+  unverifiedValues,
+  withCitationMarkers,
+  withUnverifiedMarkers,
+} from "../lib/evidence";
 import { Chip } from "./view-shared";
 import type { EvidenceSource } from "../lib/evidence";
 
@@ -240,7 +247,13 @@ export default function CitedAnswerText({ text, ai }: { text: string; ai: AiMess
   const [accepted, setAccepted] = useState<number[]>([]);
   const [flagged, setFlagged] = useState<FlagEntry[]>([]);
   const sources = evidenceSources(ai);
-  const marked = withUnverifiedMarkers(withCitationMarkers(text, sources), sources);
+  const marked = withUnverifiedMarkers(
+    withCitationMarkers(text, sources),
+    unverifiedValues(
+      ai,
+      sources.map((s) => s.value),
+    ),
+  );
   const toggle = (index: number) => {
     setOpenCite((cur) => (cur === index ? null : index));
     setTimeout(() => {

@@ -7,6 +7,7 @@ import {
   contextPills,
   evidenceSources,
   unverifiedSummary,
+  unverifiedValues,
   withCitationMarkers,
   withUnverifiedMarkers,
   gapMessage,
@@ -157,38 +158,35 @@ test("context pills cap capabilities and skip empties", () => {
   assert.deepEqual(contextPills(aiWith({}, tables)), []);
 });
 
-test("unbacked numbers get unverified markers, backed ones do not", () => {
-  const table = {
-    output_id: "AST",
-    subject_type: "player",
-    subject_id: "1629027",
-    subject_display_name: "Trae Young",
-    value: "880",
-    unit: "count",
-    provenance: { capability: "qualified_leaders", season: "2024-25" },
+test("unverified values come from incomplete typed statuses only", () => {
+  const carry = {
+    output_statuses: [
+      { output_id: "AST", status: "incomplete", value: "64" },
+      { output_id: "OFF_RATING", status: "complete", value: "118.2" },
+      { output_id: "PLAYER_NAME", status: "missing", value: "Trae Young" },
+      { output_id: "APG", status: "incomplete" },
+    ],
   };
-  const sources = evidenceSources(aiWith({}, [table]));
-  assert.equal(
-    withUnverifiedMarkers("880 assists and 64 wins.", sources),
-    "880 assists and 64[?](#unverified) wins.",
-  );
+  assert.deepEqual(unverifiedValues(aiWith(carry, []), []), ["64"]);
 });
 
-test("unverified markers skip ranges, multi-source values, and empty sources", () => {
-  const table = {
-    output_id: "AST",
-    subject_type: "player",
-    subject_id: "1629027",
-    value: "880",
-    unit: "count",
-    provenance: { capability: "qualified_leaders", season: "2024-25" },
+test("admitted values never count as unverified", () => {
+  const carry = {
+    output_statuses: [{ output_id: "AST", status: "incomplete", value: "880" }],
   };
-  const sources = evidenceSources(aiWith({}, [table, { ...table, output_id: "APG" }]));
+  assert.deepEqual(unverifiedValues(aiWith(carry, []), ["880"]), []);
+});
+
+test("unverified markers land on literal occurrences with clean boundaries", () => {
   assert.equal(
-    withUnverifiedMarkers("In the 2024-25 season.", sources),
-    "In the 2024-25 season.",
+    withUnverifiedMarkers("64 wins and 64 losses.", ["64"]),
+    "64[?](#unverified) wins and 64[?](#unverified) losses.",
   );
-  assert.equal(withUnverifiedMarkers("880 assists.", []), "880 assists.");
+  assert.equal(
+    withUnverifiedMarkers("In the 2024-25 season, top 3.", ["24", "25", "3"]),
+    "In the 2024-25 season, top 3.",
+  );
+  assert.equal(withUnverifiedMarkers("64 wins.", []), "64 wins.");
 });
 
 test("sources never leak machine ids", () => {

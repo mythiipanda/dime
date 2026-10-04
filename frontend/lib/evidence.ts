@@ -439,18 +439,54 @@ function escapeRegExp(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
-const STAT_NUMBER_RX = /(?<![\d.\-–])(\d{2,}(?:\.\d+)?|\d\.\d+)(?![\d.\-–])/g;
+function isStatValue(value: unknown): value is string {
+  return typeof value === "string" && /^(?:\d{2,}(?:\.\d+)?|\d\.\d+)$/.test(value);
+}
 
-export function withUnverifiedMarkers(text: string, sources: EvidenceSource[]): string {
-  if (!text || sources.length === 0) return text;
-  const backed = new Set<string>();
-  sources.forEach((source) => {
-    if (/^(?:\d{2,}(?:\.\d+)?|\d\.\d+)$/.test(source.value)) backed.add(source.value);
+function isValueChar(ch: string | undefined): boolean {
+  return ch !== undefined && "0123456789.-–".includes(ch);
+}
+
+function markValue(out: string, value: string): string {
+  let from = 0;
+  let result = "";
+  for (;;) {
+    const at = out.indexOf(value, from);
+    if (at < 0) {
+      result += out.slice(from);
+      break;
+    }
+    if (isValueChar(out[at - 1]) || isValueChar(out[at + value.length])) {
+      result += out.slice(from, at + 1);
+      from = at + 1;
+      continue;
+    }
+    result += out.slice(from, at) + value + "[?](#unverified)";
+    from = at + value.length;
+  }
+  return result;
+}
+
+export function unverifiedValues(ai: AiMessage, admitted: string[]): string[] {
+  const admittedSet = new Set(admitted);
+  const carry = carryOf(ai);
+  const statuses = Array.isArray(carry.output_statuses) ? carry.output_statuses : [];
+  const values: string[] = [];
+  statuses.forEach((status) => {
+    if (!status || status.status === "complete") return;
+    if (isStatValue(status.value) && !admittedSet.has(status.value)) values.push(status.value);
   });
-  return text.replace(STAT_NUMBER_RX, (match) => {
-    if (backed.has(match)) return match;
-    return match + "[?](#unverified)";
+  return [...new Set(values)].sort((a, b) => b.length - a.length);
+}
+
+export function withUnverifiedMarkers(text: string, unbacked: string[]): string {
+  if (!text || unbacked.length === 0) return text;
+  let out = text;
+  unbacked.forEach((value) => {
+    if (!isStatValue(value)) return;
+    out = markValue(out, value);
   });
+  return out;
 }
 
 export function withCitationMarkers(text: string, sources: EvidenceSource[]): string {
