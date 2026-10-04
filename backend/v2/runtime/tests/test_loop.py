@@ -1431,7 +1431,34 @@ def test_binding_form_path_follows_the_exception_type_not_its_wording(monkeypatc
 
     assert claims[0].output_bindings == []
     assert [(gap.kind, gap.blocks) for gap in gaps] == [
-        ("synthesis_incomplete", [])]
+        ("synthesis_incomplete", ["claim:0"])]
+
+
+def test_claim_with_every_binding_form_mismatched_shows_unbacked_not_verified(monkeypatch):
+    from v2.runtime import loop
+    from v2.runtime.models import (
+        BindingFormMismatch, build_output_statuses, withheld_claim_indices)
+
+    def form_mismatch(*args, **kwargs):
+        raise BindingFormMismatch("selector vocabulary rewritten")
+
+    monkeypatch.setattr(loop, "admit_verified_claim_bindings", form_mismatch)
+    task, execution, draft, report, evidence = _record_admission([
+        _record_binding("WINS"), _record_binding("LOSSES")])
+
+    claims, gaps = loop._verified_claims(
+        task, execution, draft, report, evidence)
+
+    assert [item.claim.text for item in claims] == ["record"]
+    assert claims[0].output_bindings == []
+    assert [(gap.kind, gap.blocks) for gap in gaps] == [
+        ("synthesis_incomplete", ["claim:0"])]
+    assert "not admitted" in gaps[0].message
+    assert 0 in withheld_claim_indices(gaps)
+    statuses = build_output_statuses(task, claims, gaps)
+    by_output = {item.output_id: item.status for item in statuses}
+    assert by_output == {"WINS": "rejected", "LOSSES": "rejected"}
+    assert all(item.status != "complete" for item in statuses)
 
 
 def test_unmatched_player_execution_error_becomes_typed_gap():

@@ -831,8 +831,9 @@ def _admitted_bindings(task, execution, draft, candidate):
     Returns the claim to publish, the rejection message per dropped position,
     and the failure that withholds the claim instead. A binding whose declared
     shape does not match the row it names drops on its own, so one malformed
-    output costs one output. Any other failure means the claim itself is not
-    trustworthy, so nothing it binds publishes.
+    output costs one output. When every binding drops this way the claim keeps
+    no admitted output and is withheld as unbacked. Any other failure means the
+    claim itself is not trustworthy, so nothing it binds publishes.
     """
     def admit(bindings):
         return admit_verified_claim_bindings(
@@ -908,7 +909,14 @@ def _verified_claims(task, execution, draft, verification, evidence=None, *,
                 blocks=[f"claim:{index}"]))
             continue
         admitted.append(admitted_claim)
-        if rejections:
+        if rejections and not admitted_claim.output_bindings:
+            rejected.append(Gap(
+                kind=GapKind.SYNTHESIS_INCOMPLETE,
+                message=(f"claim:{index} output bindings not admitted: "
+                         f"{rejections[min(rejections)]}"),
+                evidence_ids=list(claim.evidence_ids),
+                blocks=[f"claim:{index}"]))
+        elif rejections:
             rejected.append(Gap(
                 kind=GapKind.SYNTHESIS_INCOMPLETE,
                 message=(f"claim:{index} output binding not admitted: "
