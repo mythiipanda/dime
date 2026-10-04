@@ -2,7 +2,6 @@
 
 import { useEffect, useRef, useState } from "react";
 import { getRevision, postChatStream } from "../../lib/api";
-import { chatRuntime } from "../../lib/runtime";
 import {
   bindingDiagnostics,
   diffDiagnostics,
@@ -111,14 +110,13 @@ export default function DiagnosticsPage() {
   const [rightRevision, setRightRevision] = useState("");
   const [rightRuntime, setRightRuntime] = useState("");
   const abort = useRef<AbortController | null>(null);
-  const v2 = chatRuntime() === "v2";
   const [revision, setRevision] = useState<{ revision: string; runtime: string } | null>(null);
 
   useEffect(() => {
     let live = true;
     getRevision()
       .then((data) => {
-        if (live) setRevision(revisionInfo(data, chatRuntime()));
+        if (live) setRevision(revisionInfo(data, "v2"));
       })
       .catch(() => {});
     return () => {
@@ -169,11 +167,6 @@ export default function DiagnosticsPage() {
         Runs a chat stream with diagnostics on and lists every rejected evidence binding.
       </div>
       <RevisionCard info={revision} />
-      {!v2 && (
-        <div style={{ fontSize: 13, color: "var(--color-warm-gray)", marginBottom: 16 }}>
-          Needs the v2 chat runtime. Diagnostics events only exist on v2 streams.
-        </div>
-      )}
       <div style={{ display: "flex", gap: 4, marginBottom: 12 }} role="group" aria-label="Mode">
         {(["probe", "compare"] as const).map((m) => (
           <button

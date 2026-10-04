@@ -1,10 +1,9 @@
 import { BACKEND, ModelsResponse } from "./chat";
-import { apiRuntime, chatRuntime } from "./runtime";
 
 export const SEASON = "2025-26";
 
 export function apiPath(p: string): string {
-  return apiRuntime() === "v2" ? `/api${p}` : `/api/v1${p}`;
+  return `/api${p}`;
 }
 
 export interface GameRow {
@@ -242,22 +241,16 @@ export async function postChatStream(
   options?: { diagnostics?: boolean },
 ): Promise<void> {
   const STALL_MS = 90_000;
-  const PROGRESS_MS = 180_000;
   const MAX_RUN_MS = 480_000;
-  const runtime = chatRuntime();
   const ctrl = new AbortController();
   const startedAt = Date.now();
   let lastByte = startedAt;
-  let lastProgress = startedAt;
-  type AbortCause = "idle" | "progress" | "ceiling" | null;
+  type AbortCause = "idle" | "ceiling" | null;
   let cause: AbortCause = null;
   const watchdog = setInterval(() => {
     const now = Date.now();
     if (now - lastByte > STALL_MS) {
       cause = "idle";
-      ctrl.abort();
-    } else if (runtime === "v1" && now - lastProgress > PROGRESS_MS) {
-      cause = "progress";
       ctrl.abort();
     } else if (now - startedAt > MAX_RUN_MS) {
       cause = "ceiling";
@@ -272,9 +265,6 @@ export async function postChatStream(
     if (cause === "idle") {
       return "No response from the server for 90s. The backend may be down - try again in a moment.";
     }
-    if (cause === "progress") {
-      return "The model stopped making progress for 3 minutes. The run was stopped - try again.";
-    }
     if (cause === "ceiling") {
       return "The request timed out after 8 minutes. Try a simpler question or try again.";
     }
@@ -282,8 +272,7 @@ export async function postChatStream(
   }
   let res: Response;
   try {
-    const endpoint = runtime === "v2" ? "/api/v2/chat/stream" : "/api/v1/chat/stream";
-    res = await fetch(`${BACKEND}${endpoint}`, {
+    res = await fetch(`${BACKEND}/api/v2/chat/stream`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -327,8 +316,6 @@ export async function postChatStream(
       clearInterval(watchdog);
       if (cause === "idle") {
         handlers.onError("No response from the server for 90s. The backend may be down - try again in a moment.");
-      } else if (cause === "progress") {
-        handlers.onError("The model stopped making progress for 3 minutes. The run was stopped - try again.");
       } else if (cause === "ceiling") {
         handlers.onError("The request timed out after 8 minutes. Try a simpler question or try again.");
       } else if ((e as Error)?.name !== "AbortError") {
@@ -353,7 +340,6 @@ export async function postChatStream(
         const eventType = typeLine.slice(6).trim();
         if (eventType === "graph_end") terminal = true;
 
-        if (eventType !== "ping") lastProgress = Date.now();
         handlers.onEvent(
           eventType,
           JSON.parse(dataLines.join("\n")),
