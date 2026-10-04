@@ -213,3 +213,64 @@ def test_player_comparison_uncovered_season_admits_with_live_gap(monkeypatch):
     assert result.open_questions == []
     assert any("2024-25" in item for item in result.assumptions)
     assert any("player_comparison" in item for item in result.assumptions)
+
+
+def _player_report_task(season="2024-25", arguments=None):
+    return TaskSpec(
+        goal="Jayson Tatum points per game in 2024-25",
+        mode="quick",
+        deliverable="answer",
+        season=SeasonRef(value=season, source="user", confidence=1.0),
+        required_evidence=["player_report"],
+        requirements=[
+            EvidenceRequirement(
+                id="tatum_ppg",
+                description="Single-player scoring average",
+                capability_options=["player_report"],
+                capability_arguments={"season": season, **(arguments or {})},
+                metric_ids=["PTS", "PPG"],
+                requested_outputs=["PPG"],
+            )
+        ],
+    )
+
+
+def test_player_report_resolves_from_scoring_tables_not_boxscores(monkeypatch):
+    _stubbed_seasons(monkeypatch, {
+        "silver_boxscores": {"2025-26"},
+        "silver_leaders_pts": {"2024-25", "2025-26"},
+        "silver_advanced": {"2025-26"},
+    })
+    assert coverage.tables_for_capability(
+        "player_report", {})[0] == "silver_leaders_pts"
+    assert "silver_advanced" in coverage.tables_for_capability(
+        "player_report", {})
+    assert (ModelIntake._mark_uncovered_season(_player_report_task())
+            == _player_report_task())
+
+
+def test_player_report_stat_arg_narrows_to_single_leaders_table(monkeypatch):
+    _stubbed_seasons(monkeypatch, {
+        "silver_boxscores": {"2025-26"},
+        "silver_leaders_pts": {"2024-25", "2025-26"},
+        "silver_advanced": {"2025-26"},
+    })
+    assert coverage.tables_for_capability(
+        "player_report", {"stat_category": "PTS"}) == (
+        "silver_leaders_pts",)
+    assert (ModelIntake._mark_uncovered_season(
+        _player_report_task(arguments={"stat_category": "PTS"}))
+        == _player_report_task(arguments={"stat_category": "PTS"}))
+
+
+def test_player_report_still_blocks_season_missing_everywhere(monkeypatch):
+    _stubbed_seasons(monkeypatch, {
+        "silver_boxscores": {"2024-25", "2025-26"},
+        "silver_leaders_pts": {"2025-26"},
+        "silver_advanced": {"2025-26"},
+    })
+    result = ModelIntake._mark_uncovered_season(_player_report_task())
+    assert result.season.value == "2024-25"
+    assert result.open_questions != []
+    assert any("2024-25" in item for item in result.open_questions)
+    assert not any("silver_boxscores" in item for item in result.open_questions)

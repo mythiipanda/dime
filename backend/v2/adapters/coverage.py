@@ -57,7 +57,6 @@ CAPABILITY_TABLES: dict[str, tuple[str, ...]] = {
     "team_trajectory": ("silver_standings",),
     "team_totals": ("silver_boxscores",),
     "game_logs": ("silver_boxscores",),
-    "player_report": ("silver_boxscores",),
     "shooting_efficiency": ("silver_advanced",),
     "on_off": ("silver_on_off",),
     "lineups": ("silver_lineups",),
@@ -152,7 +151,7 @@ def tables_for_capability(
     capability: str, arguments: object = None,
 ) -> tuple[str, ...]:
     name = str(capability or "")
-    if name in ("qualified_leaders", "player_comparison"):
+    if name in ("qualified_leaders", "player_comparison", "player_report"):
         values = _arguments_dict(arguments)
         for key in ("stat_category", "requested_metric", "stat", "metric"):
             if values.get(key) is not None:
@@ -160,7 +159,7 @@ def tables_for_capability(
                 if table is not None:
                     return (table,)
                 break
-        if name == "player_comparison":
+        if name in ("player_comparison", "player_report"):
             return (*LEADERS_TABLES, "silver_advanced")
         return LEADERS_TABLES
     if name == "rookie_leaders":
