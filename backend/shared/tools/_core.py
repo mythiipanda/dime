@@ -330,6 +330,10 @@ _build_player_index()
 _ID_NAME: dict[int, str] = {int(r["id"]): r.get("full_name", "")
                             for r in _PLAYER_ROWS if r.get("id")}
 
+_EXACT_NAME_INDEX: dict[str, list[dict]] = {}
+for _r, _n in zip(_PLAYER_ROWS, _PLAYER_NORMS):
+    _EXACT_NAME_INDEX.setdefault(_n, []).append(_r)
+
 
 def attach_names(rows: object) -> object:
     if not isinstance(rows, list):
@@ -369,12 +373,16 @@ def attach_names(rows: object) -> object:
     return out
 
 
-def score_player_candidates(raw: str) -> list[tuple[float, dict]]:
+def _score_player_candidates_uncached(raw: str) -> list[tuple[float, dict]]:
     import difflib as _dl
 
     from nba_api.stats.static import players
 
     nq = _norm_name(raw)
+    if nq:
+        _hit = _EXACT_NAME_INDEX.get(nq)
+        if _hit is not None and len(_hit) == 1:
+            return [(1.0, _hit[0])]
     qtokens = nq.split()
     scored: dict[int, tuple[float, dict]] = {}
 
@@ -440,6 +448,9 @@ def score_player_candidates(raw: str) -> list[tuple[float, dict]]:
                     _add(x["id"], round(min(ratio, 0.89), 2), x)
                     break
     return sorted(scored.values(), key=lambda t: -t[0])
+
+
+score_player_candidates = lru_cache(maxsize=2048)(_score_player_candidates_uncached)
 
 
 def _resolve_player_id_uncached(key: str) -> int:
