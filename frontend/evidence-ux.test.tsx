@@ -178,6 +178,21 @@ describe("context pills", () => {
     );
     assert.equal(html, "");
   });
+
+  it("renders typed evidence values even when prose names another season", () => {
+    const html = renderToStaticMarkup(
+      React.createElement(CitedAnswerText, {
+        text: "Back in 2023-24 nobody saw this coming.",
+        ai: aiWith(PASS_CARRY, TEAM_TABLES),
+      }),
+    );
+    assert.ok(html.includes("2023-24"), "prose itself renders");
+    assert.ok(html.includes("2024-25"), "typed season pill renders");
+    const pills = renderToStaticMarkup(
+      React.createElement(ContextPills, { ai: aiWith(PASS_CARRY, TEAM_TABLES) }),
+    );
+    assert.ok(!pills.includes("2023-24"), "pills must not echo prose");
+  });
 });
 
 describe("source table", () => {
