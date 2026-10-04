@@ -1123,6 +1123,67 @@ def _public_gaps(result) -> list[dict]:
             for gap in result.gaps]
 
 
+def _status_subject(task) -> str:
+    entities = getattr(task, "entities", None) or []
+    names: list[str] = []
+    for entity in list(entities)[:2]:
+        name = str(getattr(entity, "display_name", None)
+                   or getattr(entity, "id", "") or "").strip()
+        if name:
+            names.append(name)
+    season_obj = getattr(task, "season", None)
+    season = getattr(season_obj, "value", season_obj)
+    season = str(season).strip() if isinstance(season, str) and str(season).strip() else ""
+    if names:
+        base = " and ".join(names)
+        if season:
+            return f"{base} for {season}"[:80]
+        return base[:80]
+    phrases: list[str] = []
+    for req in getattr(task, "requirements", None) or []:
+        desc = str(getattr(req, "description", "") or "").strip()
+        if desc:
+            phrases.append(" ".join(desc.split()[:5]))
+    topic = phrases[0] if phrases else ""
+    if not topic:
+        goal = str(getattr(task, "goal", "") or "")
+        stop = {"who", "what", "which", "when", "where", "how", "led", "lead",
+                "leads", "league", "the", "a", "an", "in", "for", "of", "is",
+                "are", "was", "were", "top", "list", "show", "give", "tell",
+                "me", "please", "find", "get", "name"}
+        words = [w.strip("?.,;:!") for w in goal.split()]
+        kept = [w for w in words if w and w.lower() not in stop]
+        topic = " ".join((kept or words)[:5]).strip()
+    if not topic:
+        topic = "the numbers"
+    if season and season not in topic:
+        topic = f"{topic} for {season}"
+    return topic[:80]
+
+
+def _status_lines(task) -> list[str]:
+    if task is None:
+        return []
+    subject = _status_subject(task).strip()
+    lines: list[str] = []
+    if subject:
+        lines.append(f"Checking {subject}…")
+        base = subject.split(" for ")[0].strip() or subject
+        season_obj = getattr(task, "season", None)
+        season = getattr(season_obj, "value", season_obj)
+        season = str(season).strip() if isinstance(season, str) and str(season).strip() else ""
+        if season and season not in base:
+            lines.append(f"Comparing {base} across {season}…")
+        else:
+            lines.append(f"Comparing {base}…")
+    lines.append("Verifying every number…")
+    deduped: list[str] = []
+    for line in lines:
+        if line not in deduped:
+            deduped.append(line)
+    return deduped[:3]
+
+
 def _public_output_status(result, status) -> dict:
     item = {"requirement_kind": status.requirement_kind,
             "requirement_id": status.requirement_id,
@@ -1566,6 +1627,14 @@ async def quick_answer_stream(body: QuickAnswerBody):
                 yield encode_event(GraphEnd())
                 return
             if policy.publish:
+                from v2.api.events import StatusUpdate
+                for line in _status_lines(getattr(result, "task", None)):
+                    try:
+                        chunk = encode_event(StatusUpdate(text=line))
+                    except Exception:
+                        continue
+                    if chunk is not None:
+                        yield chunk
                 for event in buffered_events:
                     safe_event = _safe_buffered_event(event)
                     if safe_event is not None:
