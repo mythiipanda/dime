@@ -16,22 +16,6 @@ SMALL_PAIR_POSS = 30
 _BLOWOUT_MARGIN = 20
 _BLOWOUT_SHARE_FLAG = 0.5
 
-_POSS_COLS = (
-    "game_id, possession_number, offense_team_id, defense_team_id, points,"
-    " off_player_1, off_player_2, off_player_3, off_player_4, off_player_5,"
-    " def_player_1, def_player_2, def_player_3, def_player_4, def_player_5"
-)
-_MATCHUP_SQL = (
-    f"SELECT {_POSS_COLS} FROM silver_hist_possessions WHERE _season = ?"
-    " AND ((offense_team_id = ? AND defense_team_id = ?)"
-    " OR (offense_team_id = ? AND defense_team_id = ?))"
-    " AND count_as_possession = 'true'"
-)
-_SEASON_SQL = (
-    f"SELECT {_POSS_COLS} FROM silver_hist_possessions WHERE _season = ?"
-    " AND (offense_team_id IN (?, ?) OR defense_team_id IN (?, ?))"
-    " AND count_as_possession = 'true'"
-)
 _NO_DATA_NOTE = (
     "no play-level possession data for this matchup in the warehouse;"
     " nothing estimated, nothing fabricated"
@@ -70,66 +54,6 @@ def _season_lineup_minutes(
             if key is not None:
                 counts[key] = counts.get(key, 0) + 1
     return counts
-
-
-def _qualifying_lineups(
-    poss_rows: list[dict], team_a: int, team_b: int, min_minutes: float,
-) -> tuple[dict[UnitKey, int], dict[UnitKey, int]]:
-    counts_a = _season_lineup_minutes(poss_rows, team_a)
-    counts_b = _season_lineup_minutes(poss_rows, team_b)
-    qual_a = {k: v for k, v in counts_a.items() if v / 2 >= min_minutes}
-    qual_b = {k: v for k, v in counts_b.items() if v / 2 >= min_minutes}
-    return qual_a, qual_b
-
-
-def _accumulate_pairs(
-    poss_rows: list[dict], team_a: int, team_b: int,
-    qual_a: set[UnitKey], qual_b: set[UnitKey],
-) -> dict[PairKey, dict]:
-    agg: dict[PairKey, dict] = {}
-    runs: dict[str, dict[int, int]] = {}
-    for r in poss_rows or []:
-        try:
-            off_tid = int(r.get("offense_team_id"))
-            def_tid = int(r.get("defense_team_id"))
-        except (TypeError, ValueError):
-            continue
-        try:
-            pts = int(r.get("points"))
-        except (TypeError, ValueError):
-            pts = 0
-        game = str(r.get("game_id"))
-        run = runs.setdefault(game, {})
-        margin = run.get(team_a, 0) - run.get(team_b, 0)
-        run[off_tid] = run.get(off_tid, 0) + pts
-        run.setdefault(def_tid, 0)
-        if off_tid == def_tid:
-            continue
-        off_unit = _unit_from_row(r, "off")
-        def_unit = _unit_from_row(r, "def")
-        if off_unit is None or def_unit is None:
-            continue
-        if off_tid == team_a and def_tid == team_b:
-            key_a, key_b = off_unit, def_unit
-        elif off_tid == team_b and def_tid == team_a:
-            key_a, key_b = def_unit, off_unit
-        else:
-            continue
-        if key_a not in qual_a or key_b not in qual_b:
-            continue
-        a = agg.setdefault((key_a, key_b),
-                           {"poss": 0, "off_poss_a": 0, "off_poss_b": 0,
-                            "pts_a": 0, "pts_b": 0, "blowout": 0})
-        a["poss"] += 1
-        if off_tid == team_a:
-            a["off_poss_a"] += 1
-            a["pts_a"] += pts
-        else:
-            a["off_poss_b"] += 1
-            a["pts_b"] += pts
-        if abs(margin) >= _BLOWOUT_MARGIN:
-            a["blowout"] += 1
-    return agg
 
 
 def _pair_flags(poss: int, blowout_share: float) -> list[str]:
@@ -220,32 +144,159 @@ def _fallback_name(key: UnitKey, surnames: dict[int, str] | None = None) -> str:
     return "unit " + str(key[0])[:6] + "…"
 
 
-def _build_matrix(
-    poss_rows: list[dict], team_a: int, team_b: int,
-    qual_a: set[UnitKey] | dict[UnitKey, int],
-    qual_b: set[UnitKey] | dict[UnitKey, int],
-    names_a: dict[UnitKey, str], names_b: dict[UnitKey, str],
-    surnames_a: dict[int, str] | None = None,
-    surnames_b: dict[int, str] | None = None,
-) -> list[dict[str, Any]]:
-    ordered = sorted(poss_rows or [],
-                     key=lambda r: (str(r.get("game_id")), _poss_num(r)))
-    acc = _accumulate_pairs(ordered, team_a, team_b, set(qual_a), set(qual_b))
-    rows = [
-        _pair_row(key_a, key_b, a,
-                  (names_a or {}).get(key_a)
-                  or _fallback_name(key_a, surnames_a),
-                  (names_b or {}).get(key_b)
-                  or _fallback_name(key_b, surnames_b))
-        for (key_a, key_b), a in acc.items()
-    ]
-    rows.sort(key=lambda r: r["est_minutes"], reverse=True)
-    return rows
+_SEASON_UNITS_SQL = (
+    "SELECT team, p1, p2, p3, p4, p5, COUNT(*) AS n FROM ("
+    " SELECT offense_team_id AS team,"
+    " off_player_1 AS p1, off_player_2 AS p2, off_player_3 AS p3,"
+    " off_player_4 AS p4, off_player_5 AS p5"
+    " FROM silver_hist_possessions"
+    " WHERE _season = ? AND offense_team_id IN (?, ?)"
+    " AND count_as_possession = 'true'"
+    " AND off_player_1 IS NOT NULL AND off_player_2 IS NOT NULL"
+    " AND off_player_3 IS NOT NULL AND off_player_4 IS NOT NULL"
+    " AND off_player_5 IS NOT NULL"
+    " UNION ALL"
+    " SELECT defense_team_id AS team,"
+    " def_player_1 AS p1, def_player_2 AS p2, def_player_3 AS p3,"
+    " def_player_4 AS p4, def_player_5 AS p5"
+    " FROM silver_hist_possessions"
+    " WHERE _season = ? AND defense_team_id IN (?, ?)"
+    " AND count_as_possession = 'true'"
+    " AND def_player_1 IS NOT NULL AND def_player_2 IS NOT NULL"
+    " AND def_player_3 IS NOT NULL AND def_player_4 IS NOT NULL"
+    " AND def_player_5 IS NOT NULL"
+    " ) GROUP BY team, p1, p2, p3, p4, p5"
+)
 
 
-def _poss_num(r: dict[str, Any]) -> int:
+_PAIR_AGGS_SQL = (
+    "SELECT ua1, ua2, ua3, ua4, ua5, ub1, ub2, ub3, ub4, ub5,"
+    " COUNT(*) AS poss,"
+    " COUNT(*) FILTER (offense_team_id = ?) AS off_poss_a,"
+    " COUNT(*) FILTER (offense_team_id = ?) AS off_poss_b,"
+    " COALESCE(SUM(points) FILTER (offense_team_id = ?), 0) AS pts_a,"
+    " COALESCE(SUM(points) FILTER (offense_team_id = ?), 0) AS pts_b,"
+    " COUNT(*) FILTER (ABS(margin) >= ?) AS blowout,"
+    " MIN(game_id || LPAD(CAST(possession_number AS VARCHAR), 20, '0'))"
+    " AS first_seen"
+    " FROM ("
+    " SELECT game_id, possession_number, offense_team_id,"
+    " COALESCE(points, 0) AS points,"
+    " CASE WHEN offense_team_id = ?"
+    " THEN off_player_1 ELSE def_player_1 END AS ua1,"
+    " CASE WHEN offense_team_id = ?"
+    " THEN off_player_2 ELSE def_player_2 END AS ua2,"
+    " CASE WHEN offense_team_id = ?"
+    " THEN off_player_3 ELSE def_player_3 END AS ua3,"
+    " CASE WHEN offense_team_id = ?"
+    " THEN off_player_4 ELSE def_player_4 END AS ua4,"
+    " CASE WHEN offense_team_id = ?"
+    " THEN off_player_5 ELSE def_player_5 END AS ua5,"
+    " CASE WHEN offense_team_id = ?"
+    " THEN off_player_1 ELSE def_player_1 END AS ub1,"
+    " CASE WHEN offense_team_id = ?"
+    " THEN off_player_2 ELSE def_player_2 END AS ub2,"
+    " CASE WHEN offense_team_id = ?"
+    " THEN off_player_3 ELSE def_player_3 END AS ub3,"
+    " CASE WHEN offense_team_id = ?"
+    " THEN off_player_4 ELSE def_player_4 END AS ub4,"
+    " CASE WHEN offense_team_id = ?"
+    " THEN off_player_5 ELSE def_player_5 END AS ub5,"
+    " COALESCE(SUM(CASE WHEN offense_team_id = ?"
+    " THEN COALESCE(points, 0) ELSE 0 END) OVER w"
+    " - SUM(CASE WHEN offense_team_id = ?"
+    " THEN COALESCE(points, 0) ELSE 0 END) OVER w, 0) AS margin"
+    " FROM silver_hist_possessions"
+    " WHERE _season = ?"
+    " AND ((offense_team_id = ? AND defense_team_id = ?)"
+    " OR (offense_team_id = ? AND defense_team_id = ?))"
+    " AND count_as_possession = 'true'"
+    " AND offense_team_id <> defense_team_id"
+    " AND off_player_1 IS NOT NULL AND off_player_2 IS NOT NULL"
+    " AND off_player_3 IS NOT NULL AND off_player_4 IS NOT NULL"
+    " AND off_player_5 IS NOT NULL"
+    " AND def_player_1 IS NOT NULL AND def_player_2 IS NOT NULL"
+    " AND def_player_3 IS NOT NULL AND def_player_4 IS NOT NULL"
+    " AND def_player_5 IS NOT NULL"
+    " WINDOW w AS (PARTITION BY game_id ORDER BY possession_number"
+    " ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING)"
+    " ) GROUP BY ua1, ua2, ua3, ua4, ua5, ub1, ub2, ub3, ub4, ub5"
+)
+
+
+_MATCHUP_GAMES_SQL = (
+    "SELECT COUNT(DISTINCT game_id) AS games"
+    " FROM silver_hist_possessions"
+    " WHERE _season = ?"
+    " AND ((offense_team_id = ? AND defense_team_id = ?)"
+    " OR (offense_team_id = ? AND defense_team_id = ?))"
+    " AND count_as_possession = 'true'"
+)
+
+
+def _qualifying_lineups_sql(
+    season: str, team_a: int, team_b: int, min_minutes: float,
+) -> tuple[dict[UnitKey, int], dict[UnitKey, int]]:
+    rows = _store._read_df(
+        _SEASON_UNITS_SQL,
+        [season, team_a, team_b, season, team_a, team_b],
+    )
+    counts_a: dict[UnitKey, int] = {}
+    counts_b: dict[UnitKey, int] = {}
+    for r in rows or []:
+        try:
+            unit = tuple(sorted(int(r[f"p{i}"]) for i in range(1, 6)))
+            n = int(r["n"] or 0)
+        except (TypeError, ValueError, KeyError):
+            continue
+        try:
+            tid = int(r["team"])
+        except (TypeError, ValueError, KeyError):
+            continue
+        if tid == team_a:
+            counts_a[unit] = counts_a.get(unit, 0) + n
+        if tid == team_b:
+            counts_b[unit] = counts_b.get(unit, 0) + n
+    qual_a = {k: v for k, v in counts_a.items() if v / 2 >= min_minutes}
+    qual_b = {k: v for k, v in counts_b.items() if v / 2 >= min_minutes}
+    return qual_a, qual_b
+
+
+def _pair_aggs_sql(
+    season: str, team_a: int, team_b: int,
+) -> dict[PairKey, dict]:
+    rows = _store._read_df(
+        _PAIR_AGGS_SQL,
+        [team_a, team_b, team_a, team_b, _BLOWOUT_MARGIN,
+         team_a, team_a, team_a, team_a, team_a,
+         team_b, team_b, team_b, team_b, team_b,
+         team_a, team_b,
+         season, team_a, team_b, team_b, team_a],
+    )
+    agg: dict[PairKey, dict] = {}
+    for r in rows or []:
+        try:
+            key_a = tuple(sorted(int(r[f"ua{i}"]) for i in range(1, 6)))
+            key_b = tuple(sorted(int(r[f"ub{i}"]) for i in range(1, 6)))
+            agg[(key_a, key_b)] = {
+                "poss": int(r["poss"] or 0),
+                "off_poss_a": int(r["off_poss_a"] or 0),
+                "off_poss_b": int(r["off_poss_b"] or 0),
+                "pts_a": int(r["pts_a"] or 0),
+                "pts_b": int(r["pts_b"] or 0),
+                "blowout": int(r["blowout"] or 0),
+                "first_seen": str(r.get("first_seen") or "")}
+        except (TypeError, ValueError, KeyError):
+            continue
+    return agg
+
+
+def _matchup_games_sql(season: str, team_a: int, team_b: int) -> int:
+    rows = _store._read_df(
+        _MATCHUP_GAMES_SQL, [season, team_a, team_b, team_b, team_a],
+    )
     try:
-        return int(r.get("possession_number") or 0)
+        return int((rows or [{}])[0].get("games") or 0)
     except (TypeError, ValueError):
         return 0
 
@@ -316,19 +367,28 @@ def get_lineup_matchup_matrix(
         "team_b": {"id": bid, "abbr": _team_abbr(bid, team_b)},
     }
     try:
-        matchup_rows = _store._read_df(_MATCHUP_SQL, [season, aid, bid, bid, aid])
-        season_rows = _store._read_df(_SEASON_SQL, [season, aid, bid, aid, bid])
+        qual_a, qual_b = _qualifying_lineups_sql(season, aid, bid,
+                                                 min_minutes)
+        pair_agg = _pair_aggs_sql(season, aid, bid)
+        matchup_games = _matchup_games_sql(season, aid, bid)
     except Exception:
         return {"tool": "get_lineup_matchup_matrix", "ok": True, "rows": [],
                 "meta": {**base_meta, "data_note": _NO_DATA_NOTE}}
-    if not matchup_rows:
+    if not pair_agg:
         return {"tool": "get_lineup_matchup_matrix", "ok": True, "rows": [],
                 "meta": {**base_meta, "data_note": _NO_DATA_NOTE}}
-    matchup_rows.sort(key=lambda r: (str(r.get("game_id")), _poss_num(r)))
-    qual_a, qual_b = _qualifying_lineups(season_rows, aid, bid, min_minutes)
     surnames = _surname_map(season)
-    pairs = _build_matrix(matchup_rows, aid, bid, qual_a, qual_b,
-                          names_a, names_b, surnames, surnames)
+    in_a, in_b = set(qual_a), set(qual_b)
+    scored = []
+    for (key_a, key_b), a in pair_agg.items():
+        if key_a not in in_a or key_b not in in_b:
+            continue
+        scored.append((str(a.get("first_seen") or ""), _pair_row(
+            key_a, key_b, a,
+            names_a.get(key_a) or _fallback_name(key_a, surnames),
+            names_b.get(key_b) or _fallback_name(key_b, surnames))))
+    scored.sort(key=lambda t: (-t[1]["est_minutes"], t[0]))
+    pairs = [row for _, row in scored]
     shown_rows = pairs[:MAX_ROWS]
     meta = {
         **base_meta,
@@ -337,7 +397,7 @@ def get_lineup_matchup_matrix(
         "pairs": len(pairs),
         "rows_returned": len(shown_rows),
         "truncation_note": _truncate_note(len(pairs), len(shown_rows)),
-        "matchup_games": len({str(r.get("game_id")) for r in matchup_rows}),
+        "matchup_games": matchup_games,
         "minutes_note": (
             "shared minutes estimated from possessions (~2 per minute);"
             " the warehouse holds no true head-to-head clock minutes"),
