@@ -894,6 +894,9 @@ class ModelIntake(ModelStage):
         )
         labeled = task_coverage_groups_labeled(task)
         if not labeled:
+            if list(getattr(task, "required_evidence", None) or []) \
+                    and not list(task.metric_ids or []):
+                return task
             implied = [table_for_metric(metric) for metric in task.metric_ids]
             if not implied:
                 implied = [DEFAULT_TABLE]

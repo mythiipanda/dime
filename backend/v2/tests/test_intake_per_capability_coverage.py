@@ -134,11 +134,13 @@ def test_season_series_resolves_against_series_source_not_boxscores(monkeypatch)
     _stubbed_seasons(monkeypatch, {
         "silver_boxscores": {"2025-26"},
         "silver_team_games": set(),
+        "silver_hist_gamelogs": {"2024-25", "2025-26"},
         "silver_playoffs": {"2024-25", "2025-26"},
         "silver_playoff_gamelogs": {"2024-25", "2025-26"},
     })
     assert coverage.tables_for_capability("season_series", {}) == (
-        "silver_team_games", "silver_playoffs", "silver_playoff_gamelogs")
+        "silver_team_games", "silver_hist_gamelogs",
+        "silver_playoffs", "silver_playoff_gamelogs")
     assert ModelIntake._mark_uncovered_season(_series_task()) == _series_task()
 
 
@@ -174,39 +176,43 @@ def _comparison_task(season="2024-25", arguments=None):
     )
 
 
-def test_player_comparison_resolves_from_scoring_tables_not_boxscores(monkeypatch):
+def test_player_comparison_resolves_from_its_own_tables_not_boxscores(
+    monkeypatch,
+):
     _stubbed_seasons(monkeypatch, {
         "silver_boxscores": {"2025-26"},
-        "silver_leaders_pts": {"2024-25", "2025-26"},
-        "silver_advanced": {"2024-25", "2025-26"},
+        "silver_player_gamelogs": {"2024-25", "2025-26"},
+        "silver_on_off": {"2025-26"},
     })
-    assert coverage.tables_for_capability(
-        "player_comparison", {})[0] == "silver_leaders_pts"
-    assert "silver_advanced" in coverage.tables_for_capability(
-        "player_comparison", {})
+    tables = coverage.tables_for_capability("player_comparison", {})
+    assert tables[0] == "silver_player_gamelogs"
+    assert "silver_on_off" in tables
+    assert "silver_boxscores" not in tables
     assert (ModelIntake._mark_uncovered_season(_comparison_task())
             == _comparison_task())
 
 
-def test_player_comparison_stat_arg_narrows_to_single_leaders_table(monkeypatch):
+def test_player_comparison_entry_ignores_a_stat_argument(monkeypatch):
     _stubbed_seasons(monkeypatch, {
         "silver_boxscores": {"2025-26"},
-        "silver_leaders_pts": {"2024-25", "2025-26"},
-        "silver_advanced": {"2025-26"},
+        "silver_player_gamelogs": {"2025-26"},
     })
-    assert coverage.tables_for_capability(
-        "player_comparison", {"stat_category": "PTS"}) == (
-        "silver_leaders_pts",)
-    assert (ModelIntake._mark_uncovered_season(
+    with_stat = coverage.tables_for_capability(
+        "player_comparison", {"stat_category": "PTS"})
+    assert with_stat == coverage.tables_for_capability(
+        "player_comparison", {})
+    result = ModelIntake._mark_uncovered_season(
         _comparison_task(arguments={"stat_category": "PTS"}))
-        == _comparison_task(arguments={"stat_category": "PTS"}))
+    assert any("silver_player_gamelogs" in item for item in result.assumptions)
+    assert not any("silver_leaders_pts" in item for item in result.assumptions)
+    assert result.open_questions == []
 
 
 def test_player_comparison_uncovered_season_admits_with_live_gap(monkeypatch):
     _stubbed_seasons(monkeypatch, {
         "silver_boxscores": {"2025-26"},
-        "silver_leaders_pts": {"2025-26"},
-        "silver_advanced": {"2025-26"},
+        "silver_player_gamelogs": {"2025-26"},
+        "silver_on_off": {"2025-26"},
     })
     result = ModelIntake._mark_uncovered_season(_comparison_task())
     assert result.season.value == "2024-25"
@@ -235,38 +241,44 @@ def _player_report_task(season="2024-25", arguments=None):
     )
 
 
-def test_player_report_resolves_from_scoring_tables_not_boxscores(monkeypatch):
+def test_player_report_resolves_from_its_own_tables_not_boxscores(monkeypatch):
     _stubbed_seasons(monkeypatch, {
         "silver_boxscores": {"2025-26"},
-        "silver_leaders_pts": {"2024-25", "2025-26"},
+        "silver_player_season": set(),
+        "silver_hist_player_seasons": {"2024-25", "2025-26"},
         "silver_advanced": {"2025-26"},
     })
-    assert coverage.tables_for_capability(
-        "player_report", {})[0] == "silver_leaders_pts"
-    assert "silver_advanced" in coverage.tables_for_capability(
-        "player_report", {})
+    tables = coverage.tables_for_capability("player_report", {})
+    assert tables[0] == "silver_player_season"
+    assert "silver_hist_player_seasons" in tables
+    assert "silver_advanced" in tables
+    assert "silver_boxscores" not in tables
     assert (ModelIntake._mark_uncovered_season(_player_report_task())
             == _player_report_task())
 
 
-def test_player_report_stat_arg_narrows_to_single_leaders_table(monkeypatch):
+def test_player_report_entry_ignores_a_stat_argument(monkeypatch):
     _stubbed_seasons(monkeypatch, {
         "silver_boxscores": {"2025-26"},
-        "silver_leaders_pts": {"2024-25", "2025-26"},
+        "silver_player_season": set(),
+        "silver_hist_player_seasons": {"2025-26"},
         "silver_advanced": {"2025-26"},
     })
     assert coverage.tables_for_capability(
-        "player_report", {"stat_category": "PTS"}) == (
-        "silver_leaders_pts",)
-    assert (ModelIntake._mark_uncovered_season(
+        "player_report", {"stat_category": "PTS"}) == coverage.tables_for_capability(
+        "player_report", {})
+    result = ModelIntake._mark_uncovered_season(
         _player_report_task(arguments={"stat_category": "PTS"}))
-        == _player_report_task(arguments={"stat_category": "PTS"}))
+    assert result.open_questions != []
+    assert any("2024-25" in item for item in result.open_questions)
+    assert not any("silver_leaders_pts" in item for item in result.open_questions)
 
 
 def test_player_report_still_blocks_season_missing_everywhere(monkeypatch):
     _stubbed_seasons(monkeypatch, {
         "silver_boxscores": {"2024-25", "2025-26"},
-        "silver_leaders_pts": {"2025-26"},
+        "silver_player_season": set(),
+        "silver_hist_player_seasons": {"2025-26"},
         "silver_advanced": {"2025-26"},
     })
     result = ModelIntake._mark_uncovered_season(_player_report_task())
@@ -297,12 +309,13 @@ def _brief_task(season="2024-25"):
 def test_matchup_brief_names_the_tables_its_sections_read():
     tables = coverage.tables_for_capability("matchup_brief", {})
     assert "silver_team_ratings" in tables
+    assert "silver_boxscores" in tables
     assert "silver_hist_gamelogs" in tables
     assert "silver_team_games" in tables
     assert "silver_playoffs" in tables
     assert "silver_playoff_gamelogs" in tables
     assert "silver_injuries" in tables
-    assert "silver_boxscores" not in tables
+    assert "silver_scoreboard" in tables
 
 
 def test_matchup_brief_resolves_season_against_its_own_tables(monkeypatch):
@@ -310,6 +323,7 @@ def test_matchup_brief_resolves_season_against_its_own_tables(monkeypatch):
         "silver_boxscores": {"2025-26"},
         "silver_team_ratings": {"2025-26"},
         "silver_injuries": {"2025-26"},
+        "silver_scoreboard": {"2025-26"},
         "silver_team_games": {"2025-26"},
         "silver_hist_gamelogs": {"2024-25", "2025-26"},
         "silver_playoffs": {"2024-25", "2025-26"},
@@ -325,6 +339,7 @@ def test_matchup_brief_still_blocks_season_missing_from_every_table(
         "silver_boxscores": {"2025-26"},
         "silver_team_ratings": {"2025-26"},
         "silver_injuries": {"2025-26"},
+        "silver_scoreboard": {"2025-26"},
         "silver_team_games": {"2025-26"},
         "silver_hist_gamelogs": {"2025-26"},
         "silver_playoffs": {"2025-26"},
@@ -334,4 +349,4 @@ def test_matchup_brief_still_blocks_season_missing_from_every_table(
     assert result.season.value == "2024-25"
     assert result.open_questions != []
     assert any("2024-25" in item for item in result.open_questions)
-    assert not any("silver_boxscores" in item for item in result.open_questions)
+    assert any("silver_team_ratings" in item for item in result.open_questions)

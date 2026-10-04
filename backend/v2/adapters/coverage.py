@@ -44,31 +44,105 @@ LEADERS_TABLES = (
     "silver_leaders_fg_pct",
 )
 
+METRIC_COVERAGE_TABLES = tuple(sorted(
+    {DEFAULT_TABLE} | {entry["table"] for entry in AVAILABLE_METRICS.values()}))
+
 CAPABILITY_TABLES: dict[str, tuple[str, ...]] = {
-    "team_ratings": ("silver_team_ratings",),
-    "playoff_team_ratings": ("silver_playoffs",),
-    "playoffs": ("silver_playoffs",),
-    "season_series": (
+    "standings": ("silver_standings", "silver_hist_standings"),
+    "team_trajectory": ("silver_hist_standings",),
+    "team_totals": ("silver_boxscores",),
+    "team_splits": ("silver_team_games", "silver_hist_gamelogs"),
+    "injury_impact": (
+        "silver_injuries",
+        "silver_team_ratings",
+        "silver_boxscores",
         "silver_team_games",
-        "silver_playoffs",
-        "silver_playoff_gamelogs",
+        "silver_hist_gamelogs",
     ),
+    "lineup_matchups": ("silver_lineups",),
+    "competitive_ratings": ("silver_hist_gamelogs",),
+    "team_shot_zones": ("silver_hist_shots",),
+    "player_shot_zones": ("silver_hist_shots", "silver_shots"),
+    "rest_splits": ("silver_hist_gamelogs",),
+    "rookie_leaders": ("silver_player_season", "silver_hist_player_seasons"),
+    "team_ratings": ("silver_team_ratings", "silver_boxscores"),
+    "roster": ("silver_team_games", "silver_hist_gamelogs", "silver_rosters"),
+    "player_report": (
+        "silver_player_season",
+        "silver_hist_player_seasons",
+        "silver_advanced",
+        "silver_hist_shots",
+        "silver_shots",
+        "silver_clutch",
+        "silver_hist_pbp",
+    ),
+    "player_evaluation": (
+        "silver_rapm",
+        "silver_advanced",
+        "silver_leaders_pts",
+        "silver_player_gamelogs",
+        "silver_salaries",
+        "silver_cap_players",
+    ),
+    "player_comparison": (
+        "silver_player_gamelogs",
+        "silver_on_off",
+        "silver_hist_possessions",
+        "silver_standings",
+        "silver_rapm",
+        "silver_clutch",
+        "silver_lineups",
+        "silver_hist_lineups",
+        "silver_wowy",
+    ),
+    "metric_adjudication": (
+        "silver_raptor_player",
+        "silver_rapm",
+        "silver_on_off",
+        "silver_advanced",
+    ),
+    "metric_coverage": METRIC_COVERAGE_TABLES,
+    "shots": ("silver_shots",),
+    "shooting_efficiency": ("silver_advanced",),
+    "on_off": ("silver_on_off", "silver_hist_possessions"),
+    "lineups": (
+        "silver_lineups",
+        "silver_hist_possessions",
+        "silver_hist_lineups",
+    ),
+    "clutch": ("silver_clutch", "silver_hist_pbp"),
+    "playoffs": ("silver_playoffs", "silver_playoff_gamelogs"),
+    "player_ratings": ("silver_advanced",),
+    "playoff_team_ratings": ("silver_playoffs",),
+    "game_prediction": (
+        "silver_team_ratings",
+        "silver_hist_gamelogs",
+        "silver_injuries",
+        "silver_scoreboard",
+    ),
+    "game_logs": ("silver_player_gamelogs", "silver_playoff_gamelogs"),
+    "four_factors": ("silver_four_factors",),
+    "team_four_factors": ("silver_four_factors_team",),
     "matchup_brief": (
         "silver_team_ratings",
+        "silver_boxscores",
         "silver_team_games",
         "silver_hist_gamelogs",
         "silver_playoffs",
         "silver_playoff_gamelogs",
         "silver_injuries",
+        "silver_scoreboard",
     ),
-    "standings": ("silver_standings",),
-    "team_trajectory": ("silver_standings",),
-    "team_totals": ("silver_boxscores",),
-    "game_logs": ("silver_boxscores",),
-    "shooting_efficiency": ("silver_advanced",),
-    "on_off": ("silver_on_off",),
-    "lineups": ("silver_lineups",),
-    "shots": ("silver_shots",),
+    "season_series": (
+        "silver_team_games",
+        "silver_hist_gamelogs",
+        "silver_playoffs",
+        "silver_playoff_gamelogs",
+    ),
+    "head_to_head": ("silver_player_gamelogs",),
+    "matchup_splits": ("silver_player_gamelogs", "silver_team_ratings"),
+    "today": ("silver_scoreboard", "silver_standings"),
+    "morning_briefing": ("silver_scoreboard", "silver_standings"),
 }
 
 _RATE_TO_TOTAL = {
@@ -159,7 +233,7 @@ def tables_for_capability(
     capability: str, arguments: object = None,
 ) -> tuple[str, ...]:
     name = str(capability or "")
-    if name in ("qualified_leaders", "player_comparison", "player_report"):
+    if name == "qualified_leaders":
         values = _arguments_dict(arguments)
         for key in ("stat_category", "requested_metric", "stat", "metric"):
             if values.get(key) is not None:
@@ -167,10 +241,6 @@ def tables_for_capability(
                 if table is not None:
                     return (table,)
                 break
-        if name in ("player_comparison", "player_report"):
-            return (*LEADERS_TABLES, "silver_advanced")
-        return LEADERS_TABLES
-    if name == "rookie_leaders":
         return LEADERS_TABLES
     known = CAPABILITY_TABLES.get(name)
     if known is not None:
