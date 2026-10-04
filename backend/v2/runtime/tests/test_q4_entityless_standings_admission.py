@@ -178,3 +178,14 @@ def test_invented_value_with_true_evidence_rejects():
     envelope = _envelope()
     with pytest.raises(ValueError, match="exactly match"):
         _admit(_bindings(_NODE_ID, envelope.evidence_id, wins=69))
+
+
+def test_wrong_subject_with_true_evidence_rejects():
+    envelope = _envelope()
+    bindings = _bindings(_NODE_ID, envelope.evidence_id)
+    wrong = [
+        item.model_copy(update={"subject_entity_id": "1610612738"})
+        for item in bindings
+    ]
+    with pytest.raises(ValueError, match="binding subject is outside requested scope"):
+        _admit(wrong)
