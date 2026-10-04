@@ -8,6 +8,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
+from shared import store  # noqa: E402
 from shared.tools import team as team_mod  # noqa: E402
 from v2.adapters import call_capability  # noqa: E402
 
@@ -218,3 +219,33 @@ def test_the_brief_never_publishes_a_count_the_tables_cannot_support():
         assert section["summary"]["games"] == meetings, (a, b, season)
         assert section["summary"]["games_by_phase"] == {
             "regular season": meetings}, (a, b, season)
+
+
+class _UnreadableTables:
+    def __init__(self, con):
+        self._con = con
+
+    def execute(self, sql, *args, **kwargs):
+        if str(sql).lstrip().upper().startswith("SHOW TABLES"):
+            return self._con.execute(sql, *args, **kwargs)
+        raise duckdb.IOException("simulated warehouse read failure")
+
+    def close(self):
+        self._con.close()
+
+
+def test_an_unreadable_table_fails_loudly_instead_of_reporting_absence(
+        monkeypatch):
+    _require_warehouse()
+    real = store.connect
+    monkeypatch.setattr(
+        store, "connect",
+        lambda read_only=None: _UnreadableTables(real(read_only=True)))
+    out = _series("CLE", "MIL", "2024-25")
+    assert out["ok"] is False
+    assert "rows" not in out
+    assert "2024-25" in out["error"]
+    for table in SERIES_TABLES:
+        assert table in out["error"], table
+    assert "no recorded meetings" not in out["error"]
+    assert "unknown" in out["error"]

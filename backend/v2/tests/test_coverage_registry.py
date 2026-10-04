@@ -245,3 +245,40 @@ def test_missing_warehouse_file_degrades_to_empty(tmp_path, monkeypatch):
         assert refused.open_questions != []
     finally:
         coverage.coverage_cache_clear()
+
+
+def test_a_season_never_leaks_from_one_warehouse_into_another(
+        tmp_path, monkeypatch):
+    duckdb = pytest.importorskip("duckdb")
+    written = []
+    for name, season in [("first.duckdb", "2001-02"),
+                         ("second.duckdb", "2019-20")]:
+        path = tmp_path / name
+        connection = duckdb.connect(str(path))
+        connection.execute(
+            "CREATE TABLE silver_advanced (_season VARCHAR, value INTEGER)")
+        connection.execute(
+            "INSERT INTO silver_advanced VALUES (?, 1)", [season])
+        connection.close()
+        written.append(path)
+    stamps = [path.stat() for path in written]
+    assert len({stat.st_size for stat in stamps}) == 1
+    shared = stamps[0].st_mtime_ns
+    for path in written:
+        os.utime(path, ns=(shared, shared))
+    coverage.coverage_cache_clear()
+    try:
+        for path, season in zip(written, ("2001-02", "2019-20")):
+            monkeypatch.setattr(coverage, "warehouse_path", lambda p=path: p)
+            assert coverage.table_seasons("silver_advanced") == frozenset(
+                {season}), path.name
+    finally:
+        coverage.coverage_cache_clear()
+
+
+def test_the_season_series_capability_reads_the_series_source_tables():
+    from shared.tools.team import _SERIES_PHASES, _SERIES_SOURCES
+
+    assert set(coverage.tables_for_capability("season_series")) == {
+        source.table for source in _SERIES_SOURCES}
+    assert {source.phase for source in _SERIES_SOURCES} == set(_SERIES_PHASES)

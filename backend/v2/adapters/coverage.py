@@ -169,7 +169,7 @@ KNOWN_TABLES = (
 _TABLE_NAME = r"[A-Za-z_][A-Za-z0-9_]*"
 
 _state_lock = threading.RLock()
-_season_cache: dict[str, tuple[tuple[int, int], frozenset[str]]] = {}
+_season_cache: dict[str, tuple[Path, tuple[int, int], frozenset[str]]] = {}
 
 
 def table_for_metric(metric: str) -> str:
@@ -372,17 +372,19 @@ def table_seasons(table: str) -> frozenset[str]:
     except Exception:
         return frozenset()
     fresh = _freshness(path)
+    key = path.resolve()
     with _state_lock:
         entry = _season_cache.get(name)
-        if entry is not None and fresh is not None and entry[0] == fresh:
-            return entry[1]
+        if (entry is not None and fresh is not None
+                and entry[0] == key and entry[1] == fresh):
+            return entry[2]
     try:
         seasons = _read_table_seasons(path, name)
     except Exception:
         return frozenset()
     with _state_lock:
         if fresh is not None:
-            _season_cache[name] = (fresh, seasons)
+            _season_cache[name] = (key, fresh, seasons)
     return seasons
 
 

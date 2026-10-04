@@ -421,120 +421,90 @@ def _meeting(game_id: Any, game_date: Any, matchup: Any, wl: Any,
     return record
 
 
-def _read_stored_team_games(con: Any, season: str, id_a: int, id_b: int,
-                            a: str, b: str) -> list[dict[str, Any]]:
-    rows = con.execute(
-        """SELECT g.Game_ID, g.GAME_DATE, g.MATCHUP, g.WL, g.PTS, o.PTS
-           FROM silver_team_games g
-           LEFT JOIN silver_team_games o
-             ON o._season = g._season AND o.Game_ID = g.Game_ID
-            AND o._entity = ?
-           WHERE g._season = ? AND g._entity = ? AND g.MATCHUP ILIKE ?""",
-        [f"team:{id_b}", season, f"team:{id_a}", f"%{b}%"],
-    ).fetchall()
-    return [_meeting(gid, gdate, matchup, wl, pts_a, pts_b, a, b,
-                     "regular season")
-            for gid, gdate, matchup, wl, pts_a, pts_b in rows]
-
-
-def _read_hist_gamelogs(con: Any, season: str, id_a: int, id_b: int, a: str,
-                        b: str) -> list[dict[str, Any]]:
-    meetings: list[dict[str, Any]] = []
-    for row in _hist_team_games(id_a, season):
-        if b not in str(row.get("MATCHUP") or "").upper():
-            continue
-        meetings.append({
-            "game_id": str(row.get("Game_ID") or ""),
-            "date": str(row.get("GAME_DATE") or ""),
-            "matchup": str(row.get("MATCHUP") or ""),
-            "phase": "regular season",
-            "winner": _winner_from(row.get("WL"), a, b),
-            f"{a.lower()}_pts": row.get("PTS"),
-            f"{b.lower()}_pts": row.get("OPP_PTS"),
-        })
-    return meetings
-
-
-def _read_playoffs(con: Any, season: str, id_a: int, id_b: int, a: str,
-                   b: str) -> list[dict[str, Any]]:
-    rows = con.execute(
-        """SELECT g.GAME_ID, g.GAME_DATE, g.MATCHUP, g.WL, g.PTS, o.PTS
-           FROM silver_playoffs g
-           LEFT JOIN silver_playoffs o
-             ON o._season = g._season AND o.Game_ID = g.Game_ID
-            AND o.TEAM_ABBREVIATION = ?
-           WHERE g._season = ? AND g.TEAM_ABBREVIATION = ?
-             AND g.MATCHUP ILIKE ?""",
-        [b, season, a, f"%{b}%"],
-    ).fetchall()
-    return [_meeting(gid, gdate, matchup, wl, pts_a, pts_b, a, b, "playoffs",
-                     str(gid)[7:8])
-            for gid, gdate, matchup, wl, pts_a, pts_b in rows]
-
-
-def _read_playoff_gamelogs(con: Any, season: str, id_a: int, id_b: int,
-                           a: str, b: str) -> list[dict[str, Any]]:
-    rows = con.execute(
-        """SELECT DISTINCT Game_ID, GAME_DATE, MATCHUP, WL
-           FROM silver_playoff_gamelogs
-           WHERE _season = ? AND MATCHUP ILIKE ?""",
-        [season, f"{a} % {b}"],
-    ).fetchall()
-    return [_meeting(gid, gdate, matchup, wl, None, None, a, b, "playoffs",
-                     str(gid)[7:8])
-            for gid, gdate, matchup, wl in rows]
+class _SeriesQuery(NamedTuple):
+    season: str
+    a: str
+    b: str
+    id_a: int
+    id_b: int
 
 
 class _SeriesSource(NamedTuple):
     table: str
     phase: str
-    holds_sql: str
-    holds_args: Any
-    read: Any
+    encodes_rounds: bool
+    rows_sql: str
+    rows_args: Any
 
 
 _SERIES_SOURCES = (
     _SeriesSource(
-        "silver_team_games", "regular season",
-        "SELECT 1 FROM silver_team_games WHERE _season = ? AND _entity = ?"
-        " LIMIT 1",
-        lambda season, id_a, abbr: [season, f"team:{id_a}"],
-        _read_stored_team_games),
+        "silver_team_games", "regular season", False,
+        """SELECT g.Game_ID, g.GAME_DATE, g.MATCHUP, g.WL, g.PTS, o.PTS,
+                  (g.MATCHUP ILIKE ?) AS is_meeting
+           FROM silver_team_games g
+           LEFT JOIN silver_team_games o
+             ON o._season = g._season AND o.Game_ID = g.Game_ID
+            AND o._entity = ?
+           WHERE g._season = ? AND g._entity = ?""",
+        lambda q: [f"%{q.b}%", f"team:{q.id_b}", q.season, f"team:{q.id_a}"]),
     _SeriesSource(
-        "silver_hist_gamelogs", "regular season",
-        "SELECT 1 FROM silver_hist_gamelogs WHERE _season = ?"
-        " AND (team_id = ? OR team_abbreviation = ?)"
-        " AND season_type = 'regular-season' LIMIT 1",
-        lambda season, id_a, abbr: [season, id_a, abbr],
-        _read_hist_gamelogs),
+        "silver_hist_gamelogs", "regular season", False,
+        """SELECT g.game_id,
+                  UPPER(STRFTIME(CAST(g.game_date AS DATE), '%b %d, %Y')),
+                  g.matchup, g.wl, g.pts, o.pts,
+                  (g.matchup ILIKE ?) AS is_meeting
+           FROM silver_hist_gamelogs g
+           LEFT JOIN silver_hist_gamelogs o
+             ON o._season = g._season AND o.game_id = g.game_id
+            AND o.team_id != g.team_id AND o.season_type = 'regular-season'
+           WHERE g._season = ? AND (g.team_id = ? OR g.team_abbreviation = ?)
+             AND g.season_type = 'regular-season'""",
+        lambda q: [f"%{q.b}%", q.season, q.id_a, q.a]),
     _SeriesSource(
-        "silver_playoffs", "playoffs",
-        "SELECT 1 FROM silver_playoffs WHERE _season = ?"
-        " AND TEAM_ABBREVIATION = ? LIMIT 1",
-        lambda season, id_a, abbr: [season, abbr],
-        _read_playoffs),
+        "silver_playoffs", "playoffs", True,
+        """SELECT g.Game_ID, g.GAME_DATE, g.MATCHUP, g.WL, g.PTS, o.PTS,
+                  (g.MATCHUP ILIKE ?) AS is_meeting
+           FROM silver_playoffs g
+           LEFT JOIN silver_playoffs o
+             ON o._season = g._season AND o.Game_ID = g.Game_ID
+            AND o.TEAM_ABBREVIATION = ?
+           WHERE g._season = ? AND g.TEAM_ABBREVIATION = ?""",
+        lambda q: [f"%{q.b}%", q.b, q.season, q.a]),
     _SeriesSource(
-        "silver_playoff_gamelogs", "playoffs",
-        "SELECT 1 FROM silver_playoff_gamelogs WHERE _season = ? LIMIT 1",
-        lambda season, id_a, abbr: [season],
-        _read_playoff_gamelogs),
+        "silver_playoff_gamelogs", "playoffs", True,
+        """SELECT DISTINCT Game_ID, GAME_DATE, MATCHUP, WL, NULL, NULL,
+                  (MATCHUP ILIKE ?) AS is_meeting
+           FROM silver_playoff_gamelogs
+           WHERE _season = ?""",
+        lambda q: [f"{q.a} % {q.b}", q.season]),
 )
 
 
-def _series_coverage(con: Any, tables: set[str], season: str, id_a: int,
-                     abbr: str) -> dict[str, dict[str, Any]]:
+def _series_from(con: Any, tables: set[str],
+                     query: _SeriesQuery) -> tuple[dict[str, dict[str, Any]],
+                                                   list[dict[str, Any]]]:
     coverage: dict[str, dict[str, Any]] = {}
+    meetings: list[dict[str, Any]] = []
     for source in _SERIES_SOURCES:
         slot = coverage.setdefault(
             source.phase, {"source": None, "consulted": []})
-        if source.table not in tables:
-            continue
         slot["consulted"].append(source.table)
-        if slot["source"] is None and con.execute(
-                source.holds_sql,
-                source.holds_args(season, id_a, abbr)).fetchone():
-            slot["source"] = source.table
-    return coverage
+        if slot["source"] is not None or source.table not in tables:
+            continue
+        rows = con.execute(
+            source.rows_sql, source.rows_args(query)).fetchall()
+        if not rows:
+            continue
+        slot["source"] = source.table
+        for gid, gdate, matchup, wl, pts, opp_pts, is_meeting in rows:
+            if not is_meeting:
+                continue
+            meetings.append(_meeting(
+                gid, gdate, matchup, wl, pts, opp_pts, query.a, query.b,
+                source.phase,
+                str(gid)[7:8] if source.encodes_rounds else None))
+    return coverage, meetings
 
 
 def _consulted_tables(coverage: dict[str, dict[str, Any]]) -> list[str]:
@@ -570,6 +540,14 @@ def _series_source(coverage: dict[str, dict[str, Any]],
     return coverage[phase]["source"]
 
 
+def _series_unreadable_error(season: str, cause: object) -> str:
+    return (f"the warehouse could not be read for {season}, so whether these "
+            f"teams met is unknown rather than absent: {cause}. Tables this "
+            f"question reads: "
+            f"{', '.join(source.table for source in _SERIES_SOURCES)}. Do not "
+            f"report a 0-0 record.")
+
+
 @tool
 def get_season_series(team_a: str, team_b: str,
                       season: str | None = None) -> dict[str, Any]:
@@ -599,19 +577,20 @@ def get_season_series(team_a: str, team_b: str,
 
     from .. import store as _store
 
-    con = _store.connect()
+    con = _store.connect(read_only=True)
     try:
-        tables = {r[0] for r in con.execute("SHOW TABLES").fetchall()}
-        coverage = _series_coverage(con, tables, season, id_a, a)
+        try:
+            tables = {r[0] for r in con.execute("SHOW TABLES").fetchall()}
+            coverage, games = _series_from(
+                con, tables, _SeriesQuery(season, a, b, id_a, id_b))
+        except Exception as exc:
+            return {"tool": "get_season_series", "ok": False,
+                    "error": _series_unreadable_error(season, exc)}
         reg_source = _series_source(coverage, "regular season")
         playoff_source = _series_source(coverage, "playoffs")
         if reg_source is None:
             return {"tool": "get_season_series", "ok": False,
                     "error": _season_not_covered_error(a, b, season, coverage)}
-        games: list[dict[str, Any]] = []
-        for source in _SERIES_SOURCES:
-            if source.table in (reg_source, playoff_source):
-                games.extend(source.read(con, season, id_a, id_b, a, b))
     finally:
         con.close()
 
