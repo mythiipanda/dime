@@ -6,7 +6,7 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "test": "tsx --test lib/activity.test.ts lib/api.test.ts lib/chat.test.ts lib/diagnostics.test.ts lib/evidence.test.ts lib/exploreFeed.test.ts lib/exploreFeedAction.test.ts lib/exploreIndex.test.ts lib/exploreSearch.test.ts lib/freshness.test.ts aqbatch-green.test.tsx aqbatch2.test.tsx debug-table-leak.test.tsx diagnostics-table.test.tsx evidence-ux.test.tsx explore-feed-parallel.test.tsx lineups-resilience.test.tsx activity-status.test.tsx no-json-thread.test.tsx stream-batcher.test.tsx today-cache.test.tsx cite-render-perf.test.tsx",
+    "test": "tsx --test lib/activity.test.ts lib/api.test.ts lib/chat.test.ts lib/diagnostics.test.ts lib/evidence.test.ts lib/exploreFeed.test.ts lib/exploreFeedAction.test.ts lib/exploreIndex.test.ts lib/exploreSearch.test.ts lib/freshness.test.ts aqbatch-green.test.tsx aqbatch2.test.tsx claim-accept-flag.test.tsx debug-table-leak.test.tsx diagnostics-table.test.tsx evidence-ux.test.tsx explore-feed-parallel.test.tsx lineups-resilience.test.tsx activity-status.test.tsx no-json-thread.test.tsx stream-batcher.test.tsx today-cache.test.tsx cite-render-perf.test.tsx",
     "test:activity": "tsx --test lib/activity.test.ts",
     "test:api": "tsx --test lib/api.test.ts",
     "test:chat": "tsx --test lib/chat.test.ts"
