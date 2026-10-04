@@ -4,7 +4,7 @@ import { useState } from "react";
 import type { ReactNode } from "react";
 import AnswerText from "./AnswerText";
 import type { AiMessage } from "../lib/chat";
-import { contextPills, evidenceSources, unverifiedSummary, withCitationMarkers } from "../lib/evidence";
+import { contextPills, evidenceSources, unverifiedSummary, withCitationMarkers, withUnverifiedMarkers } from "../lib/evidence";
 import { Chip } from "./view-shared";
 import type { EvidenceSource } from "../lib/evidence";
 
@@ -159,7 +159,7 @@ export function ContextPills({ ai }: { ai: AiMessage }) {
 export default function CitedAnswerText({ text, ai }: { text: string; ai: AiMessage }) {
   const [openCite, setOpenCite] = useState<number | null>(null);
   const sources = evidenceSources(ai);
-  const marked = withCitationMarkers(text, sources);
+  const marked = withUnverifiedMarkers(withCitationMarkers(text, sources), sources);
   const toggle = (index: number) => {
     setOpenCite((cur) => (cur === index ? null : index));
     setTimeout(() => {
@@ -174,6 +174,17 @@ export default function CitedAnswerText({ text, ai }: { text: string; ai: AiMess
         components={{
           a: ({ href, children }) => {
             const target = href || "";
+            if (target.startsWith("#unverified")) {
+              return (
+                <span
+                  className="unverified-marker"
+                  title="Not verified against source data"
+                  aria-label="Not verified against source data"
+                >
+                  {children}
+                </span>
+              );
+            }
             if (target.startsWith("#cite-")) {
               const index = Number(target.slice("#cite-".length));
               if (!Number.isInteger(index) || !sources[index]) return <>{children}</>;
