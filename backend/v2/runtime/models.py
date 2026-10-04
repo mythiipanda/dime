@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import math
+from collections.abc import Callable, Mapping
+from dataclasses import dataclass
 from decimal import Decimal
 from enum import StrEnum
 from typing import Any
@@ -16,12 +18,13 @@ from v2.contracts import (
     VerificationReport,
     VerifiedClaim,
     OutputFinalStatus,
+    canonical_entity_id,
 )
 
 
 _IDENTITY_KEYS = {
     "player": {"PLAYER_ID", "player_id"},
-    "team": {"TEAM_ID", "team_id"},
+    "team": {"TEAM_ID", "team_id", "TeamID"},
 }
 
 
@@ -67,8 +70,21 @@ def _declared_value_matches(declared, selected) -> bool:
     return abs(target - wanted) <= _VALUE_TOLERANCE * scale
 
 
+_UNIT_WORD_FORMS = {
+    "points per game": "per_game",
+    "rebounds per game": "per_game",
+    "assists per game": "per_game",
+    "steals per game": "per_game",
+    "blocks per game": "per_game",
+    "minutes per game": "minutes",
+}
+
+
 def _canonical_unit(value):
-    return "_".join(value.lower().split())
+    words = " ".join(str(value).lower().split())
+    if words in _UNIT_WORD_FORMS:
+        return _UNIT_WORD_FORMS[words]
+    return "_".join(words.split())
 
 
 def _canonical_domain(value):
@@ -90,6 +106,132 @@ def _row_index(row_selector):
     if not sep or not digits.isdigit():
         return None
     return int(digits)
+
+
+@dataclass(frozen=True)
+class ResolvedSelector:
+    path: str
+    value: Any
+
+
+@dataclass(frozen=True)
+class UnresolvedSelector:
+    selector: str
+
+
+@dataclass(frozen=True)
+class AmbiguousSelector:
+    selector: str
+    paths: tuple[str, ...]
+
+
+SelectorResolution = ResolvedSelector | UnresolvedSelector | AmbiguousSelector
+
+
+@dataclass(frozen=True)
+class _ColumnLeaf:
+    path: str
+    value: Any
+    row: str | None
+    position: int | None
+
+
+def _column_leaves(rows, key):
+    def walk(value, path, position, row, row_position, own_key):
+        if isinstance(value, Mapping):
+            holds = key in value
+            for index, (name, child) in enumerate(value.items()):
+                yield from walk(child, f"{path}.{name}" if path else str(name),
+                                index, path if holds else row,
+                                position if holds else row_position, name)
+        elif isinstance(value, list):
+            for index, child in enumerate(value):
+                yield from walk(child, f"{path}[{index}]", index, row,
+                                row_position, own_key)
+        elif own_key == key:
+            yield _ColumnLeaf(path, value, row, row_position)
+
+    yield from walk(rows, "rows", None, None, None, None)
+
+
+def _flat_row_field(selector: str) -> tuple[int, str] | None:
+    row, sep, key = selector.partition(".")
+    if not sep or not key or "." in key or "[" in key:
+        return None
+    if not row.startswith("rows[") or not row.endswith("]"):
+        return None
+    digits = row[len("rows["):-1]
+    if not digits.isdigit():
+        return None
+    return int(digits), key
+
+
+def _row_of(path: str) -> str:
+    return path.rsplit(".", 1)[0]
+
+
+def _inside_row(path: str, row: str) -> bool:
+    return (path == row or path.startswith(row + ".")
+            or path.startswith(row + "["))
+
+
+def resolve_selector(
+    envelope: EvidenceEnvelope,
+    selector: str,
+    *,
+    row: str | None = None,
+    preferred: Callable[[Any], bool] | None = None,
+) -> SelectorResolution:
+    from v2.domain.evidence import iter_values
+
+    literal = [item for item in iter_values(envelope) if item.path == selector]
+    if len(literal) > 1:
+        return AmbiguousSelector(selector, tuple(item.path for item in literal))
+    if literal:
+        return ResolvedSelector(literal[0].path, literal[0].value)
+    flat = _flat_row_field(selector)
+    if flat is None:
+        return UnresolvedSelector(selector)
+    index, key = flat
+    leaves = [leaf for leaf in _column_leaves(envelope.rows, key)
+              if row is None or leaf.row == row]
+    if not leaves:
+        return UnresolvedSelector(selector)
+    if preferred is not None:
+        declared = [leaf for leaf in leaves if preferred(leaf.value)]
+        if not declared:
+            return UnresolvedSelector(selector)
+        leaves = declared
+    positional = [leaf for leaf in leaves if leaf.position == index]
+    leaves = positional or leaves
+    if len(leaves) == 1:
+        return ResolvedSelector(leaves[0].path, leaves[0].value)
+    return AmbiguousSelector(selector, tuple(leaf.path for leaf in leaves))
+
+
+def resolve_subject_row(
+    envelope: EvidenceEnvelope, binding, identity: str) -> str | None:
+    def names_subject(value) -> bool:
+        return canonical_entity_id(
+            binding.subject_entity_type, str(value)) == identity
+
+    resolution = resolve_selector(
+        envelope, binding.subject_selector, preferred=names_subject)
+    if not isinstance(resolution, ResolvedSelector) \
+            or not names_subject(resolution.value):
+        return None
+    return _row_of(resolution.path)
+
+
+def resolve_evidence_binding(
+    envelope: EvidenceEnvelope, binding, subject_row: str | None) -> SelectorResolution:
+    resolution = resolve_selector(
+        envelope, binding.selector, row=subject_row,
+        preferred=lambda value: _declared_value_matches(binding.value, value))
+    if isinstance(resolution, ResolvedSelector) and subject_row is not None \
+            and not _inside_row(resolution.path, subject_row):
+        return UnresolvedSelector(binding.selector)
+    return resolution
 
 
 def _reanchor_binding(binding, evidence):
@@ -511,6 +653,10 @@ def propagate_evidence_to_task(task, execution, draft, admitted):
         for claim in admitted]
 
 
+class BindingFormMismatch(ValueError):
+    pass
+
+
 def admit_verified_claim_bindings(
     task: TaskSpec,
     execution: ExecutionResult,
@@ -518,8 +664,7 @@ def admit_verified_claim_bindings(
     verified_claim: VerifiedClaim,
 ) -> VerifiedClaim:
     from v2.adapters.capabilities import CAPABILITIES, resolve_metric_column
-    from v2.contracts import EvidenceOutputBinding, CalculationOutputBinding, canonical_entity_id, canonical_entity_ref
-    from v2.domain.evidence import iter_values
+    from v2.contracts import EvidenceOutputBinding, canonical_entity_id, canonical_entity_ref
     evidence_requirements = {item.id: item for item in task.requirements}
     calculation_requirements = {item.id: item for item in task.calculation_requirements}
     evidence_by_id = {item.evidence_id: (node_id, item)
@@ -528,6 +673,48 @@ def admit_verified_claim_bindings(
     task_entities = {canonical_entity_ref(item) for item in task.entities}
     league_scoped = bool(task_entities) and all(t == "league" for t, _ in task_entities)
     verified_claim = reanchor_verified_claim_bindings(execution, verified_claim)
+    fallback_map: dict[str, str] = {}
+    for binding in verified_claim.output_bindings:
+        if isinstance(binding, EvidenceOutputBinding):
+            if binding.evidence_id not in evidence_by_id:
+                if ((binding.requirement_kind == "task" and binding.requirement_id is None)
+                        or binding.requirement_kind == "evidence"):
+                    envelope = execution.evidence_by_node.get(binding.node_id)
+                    if envelope is not None:
+                        real_id = envelope.evidence_id
+                        if binding.evidence_id != real_id:
+                            prev = fallback_map.get(binding.evidence_id)
+                            if prev is not None and prev != real_id:
+                                raise ValueError("binding evidence ownership is invalid")
+                            fallback_map[binding.evidence_id] = real_id
+    if fallback_map:
+        fixed_bindings = [
+            item.model_copy(update={"evidence_id": fallback_map[item.evidence_id]})
+            if isinstance(item, EvidenceOutputBinding) and item.evidence_id in fallback_map
+            else item
+            for item in verified_claim.output_bindings
+        ]
+        remapped_ids: list[str] = []
+        for evidence_id in verified_claim.evidence_ids:
+            mapped = fallback_map.get(evidence_id, evidence_id)
+            if mapped not in remapped_ids:
+                remapped_ids.append(mapped)
+        remapped_sources = []
+        seen_source_ids: set[str] = set()
+        for source in verified_claim.sources:
+            mapped = fallback_map.get(source.evidence_id, source.evidence_id)
+            if mapped in seen_source_ids:
+                continue
+            seen_source_ids.add(mapped)
+            remapped_sources.append(
+                source.model_copy(update={"evidence_id": mapped})
+                if mapped != source.evidence_id else source
+            )
+        verified_claim = verified_claim.model_copy(update={
+            "output_bindings": fixed_bindings,
+            "evidence_ids": remapped_ids,
+            "sources": remapped_sources,
+        })
     for binding in verified_claim.output_bindings:
         if isinstance(binding, EvidenceOutputBinding):
             requirement = (evidence_requirements.get(binding.requirement_id)
@@ -572,7 +759,7 @@ def admit_verified_claim_bindings(
             else:
                 resolved = resolve_metric_column(capability, binding.output_id)
                 if resolved is None or resolved != leaf:
-                    raise ValueError("binding selector metric does not match output")
+                    raise BindingFormMismatch("binding selector metric does not match output")
                 metric_column = resolved
             catalog_unit = capability.units.get(metric_column)
             evidence_unit = evidence.units.get(metric_column)
@@ -600,16 +787,13 @@ def admit_verified_claim_bindings(
                 subject = (binding.subject_entity_type, canonical_entity_id(binding.subject_entity_type, binding.subject_entity_id))
                 if subject not in scoped_entities and not ((league_scoped or not task_entities) and any(canonical_entity_ref(e) == subject for e in evidence.entities)):
                     raise ValueError("binding subject is outside requested scope")
-                if not any(canonical_entity_ref(entity) == subject
-                           for entity in evidence.entities):
+                if evidence.entities and not any(
+                        canonical_entity_ref(entity) == subject
+                        for entity in evidence.entities):
                     raise ValueError("binding subject is outside evidence scope")
-                values = [item for item in iter_values(evidence)
-                          if item.path == binding.selector]
                 identity_keys = _IDENTITY_KEYS.get(binding.subject_entity_type)
                 if identity_keys is None:
                     raise ValueError("binding subject type lacks identity authority")
-                subject_values = [item.value for item in iter_values(evidence)
-                                  if item.path == binding.subject_selector]
                 subject_leaf = binding.subject_selector.rsplit(".", 1)[-1]
                 if subject_leaf not in identity_keys:
                     raise ValueError("binding subject selector has wrong entity type")
@@ -624,14 +808,19 @@ def admit_verified_claim_bindings(
                 if not descends(binding.selector, row_root) \
                         or not descends(binding.subject_selector, row_root):
                     raise ValueError("binding selectors are outside declared row")
-                if len(subject_values) != 1 or canonical_entity_id(binding.subject_entity_type, str(subject_values[0])) != subject[1]:
+                subject_row = resolve_subject_row(evidence, binding, subject[1])
+                if subject_row is None:
                     raise ValueError("binding selector row does not match subject")
             else:
-                values = [item for item in iter_values(evidence)
-                          if item.path == binding.selector]
-            if len(values) != 1 or values[0].value is None:
+                subject_row = None
+            resolution = resolve_evidence_binding(evidence, binding, subject_row)
+            if isinstance(resolution, AmbiguousSelector):
+                raise ValueError(
+                    f"binding selector names {len(resolution.paths)} values")
+            if not isinstance(resolution, ResolvedSelector) \
+                    or resolution.value is None:
                 raise ValueError("binding selector must locate exactly one value")
-            selected = values[0].value
+            selected = resolution.value
             declared = binding.value
             if not _declared_value_matches(declared, selected):
                 raise ValueError("binding value does not exactly match selected evidence")
@@ -656,4 +845,11 @@ def admit_verified_claim_bindings(
                 "subject_input": calculation.subject_input})
             if validate_calculation(checked, EvidenceIndex(execution.evidence)) is not None:
                 raise ValueError("binding calculation did not pass recomputation")
+            operation = str(calculation.operation)
+            unit_text = (calculation.unit or "").strip().casefold()
+            if operation in ("rank_desc", "rank_asc"):
+                if unit_text not in ("", "rank", "unitless"):
+                    raise ValueError("rank calculation unit must be rank or unitless")
+            elif unit_text == "rank":
+                raise ValueError("non-rank calculation cannot carry rank unit")
     return verified_claim

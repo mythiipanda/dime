@@ -564,3 +564,110 @@ def test_planner_narrows_team_ratings_node_to_subject_team():
     assert result["rows"][0]["OFF_RATING"] == 118.2
     assert result["rows"][0]["DEF_RATING"] == 108.8
     assert result["rows"][0]["NET_RATING"] == 9.4
+
+
+def _best_defense_task():
+    from v2.contracts import CalculationRequirement
+    return TaskSpec(
+        goal="Determine which team had the best defensive rating.",
+        mode="quick",
+        deliverable="best defensive team with rating and rank",
+        metric_ids=["DEF_RATING"],
+        requested_outputs=["TEAM_NAME", "DEF_RATING", "RANK"],
+        season=SeasonRef(value="2024-25", source="user", confidence=1.0),
+        entities=[],
+        requirements=[EvidenceRequirement(
+            id="team_defensive_rating_2024_25",
+            description="best defensive rating",
+            capability_options=["team_ratings"],
+            capability_arguments={
+                "ranking_direction": "asc",
+                "requested_metric": "DEF_RATING",
+                "season": "2024-25",
+                "team": "",
+            },
+            metric_ids=["DEF_RATING"],
+            requested_outputs=["TEAM_NAME", "DEF_RATING", "RANK"],
+        )],
+        calculation_requirements=[CalculationRequirement(
+            id="best_defensive_rating_ranking",
+            description="rank teams by defensive rating",
+            metric_ids=["DEF_RATING"],
+            requested_outputs=["TEAM_NAME", "DEF_RATING", "RANK"],
+        )],
+        required_evidence=["team_ratings"],
+    )
+
+
+def _best_defense_envelope():
+    from v2.contracts import EvidenceEnvelope
+    return EvidenceEnvelope(
+        evidence_id="team_ratings:bestdefense",
+        capability="team_ratings",
+        source="v1:get_ratings:nba_api",
+        observed_at=datetime.now(UTC),
+        season="2024-25",
+        rows=[
+            {"TEAM_ID": "9001", "TEAM_NAME": "Northport Nights",
+             "DEF_RATING": 106.6, "DEF_RATING_RANK": 1},
+            {"TEAM_ID": "9002", "TEAM_NAME": "Eastvale Embers",
+             "DEF_RATING": 109.1, "DEF_RATING_RANK": 2},
+        ],
+        units={"DEF_RATING": "points_per_100_possessions"},
+        metric_definitions={"__requested_metric__": "DEF_RATING"},
+        entities=[
+            EntityRef(id="9001", type="team",
+                      display_name="Northport Nights"),
+            EntityRef(id="9002", type="team",
+                      display_name="Eastvale Embers"),
+        ],
+    )
+
+
+def _best_defense_execution(envelope):
+    node = PlanNode(
+        id="team_defensive_rating_node",
+        description="best defensive rating",
+        capability_hints=["team_ratings"],
+        covers_requirement_ids=["team_defensive_rating_2024_25"],
+        arguments={"ranking_direction": "asc",
+                   "requested_metric": "DEF_RATING",
+                   "season": "2024-25", "team": ""},
+        status="complete",
+    )
+    return ExecutionResult(
+        plan=Plan(nodes=[node]),
+        evidence_by_node={node.id: envelope},
+        attempts={node.id: 1},
+    )
+
+
+def test_entityless_best_defense_rank_draft_owns_nine_outputs():
+    from v2.adapters.models import _deterministic_rank_draft
+    task = _best_defense_task()
+    envelope = _best_defense_envelope()
+    draft = _deterministic_rank_draft(task, [envelope])
+    assert draft is not None
+    assert len(draft.claims) == 1
+    assert draft.claims[0].output_bindings != []
+    execution = _best_defense_execution(envelope)
+    evidence = {envelope.evidence_id: envelope}
+    claims, gaps = _verified_claims(task, execution, draft, _report(),
+                                    evidence)
+    assert gaps == []
+    by_key = {(row.requirement_kind, row.requirement_id, row.output_id): row
+              for row in build_output_statuses(task, claims, gaps)}
+    assert by_key[("task", None, "TEAM_NAME")].status == "complete"
+    assert by_key[("task", None, "TEAM_NAME")].binding.value.value == \
+        "Northport Nights"
+    assert by_key[("task", None, "DEF_RATING")].status == "complete"
+    assert by_key[("task", None, "DEF_RATING")].binding.value.value == 106.6
+    assert by_key[("evidence", "team_defensive_rating_2024_25",
+                   "TEAM_NAME")].status == "complete"
+    assert by_key[("evidence", "team_defensive_rating_2024_25",
+                   "DEF_RATING")].status == "complete"
+    assert by_key[("calculation", "best_defensive_rating_ranking",
+                   "RANK")].status == "complete"
+    published = {row.output_id for row in by_key.values()
+                 if row.status == "complete"}
+    assert {"TEAM_NAME", "DEF_RATING", "RANK"} <= published

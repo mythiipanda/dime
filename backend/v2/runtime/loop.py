@@ -23,7 +23,7 @@ from v2.contracts import (
 from v2.runtime.executor import PlanExecutor
 from v2.runtime.interfaces import Intake, Planner, Repairer, Synthesizer, Verifier
 from v2.runtime.ledger import LedgerKind, RunLedger, TerminalReason, exception_text
-from v2.runtime.models import (ExecutionResult, RuntimeResult,
+from v2.runtime.models import (BindingFormMismatch, ExecutionResult, RuntimeResult,
                                admit_verified_claim_bindings,
                                propagate_evidence_to_task,
                                reanchor_verified_claim_bindings)
@@ -825,6 +825,49 @@ def _binding_diagnostic_event(execution, candidate, position, run_id, rejection,
     )
 
 
+def _admitted_bindings(task, execution, draft, candidate):
+    """Admit a candidate's bindings, isolating the ones that fail alone.
+
+    Returns the claim to publish, the rejection message per dropped position,
+    and the failure that withholds the claim instead. A binding whose declared
+    shape does not match the row it names drops on its own, so one malformed
+    output costs one output. When every binding drops this way the claim keeps
+    no admitted output and is withheld as unbacked. Any other failure means the
+    claim itself is not trustworthy, so nothing it binds publishes.
+    """
+    def admit(bindings):
+        return admit_verified_claim_bindings(
+            task, execution, draft,
+            candidate.model_copy(update={"output_bindings": list(bindings)}))
+
+    try:
+        return admit(candidate.output_bindings), {}, None
+    except ValueError:
+        pass
+    survivors: list = []
+    rejections: dict[int, str] = {}
+    withheld: ValueError | None = None
+    for position, binding in enumerate(candidate.output_bindings):
+        try:
+            admit([binding])
+        except BindingFormMismatch as exc:
+            rejections[position] = str(exc)
+            continue
+        except ValueError as exc:
+            rejections[position] = str(exc)
+            withheld = withheld if withheld is not None else exc
+            continue
+        survivors.append(binding)
+    if withheld is not None:
+        return None, rejections, withheld
+    if not survivors:
+        return candidate.model_copy(update={"output_bindings": []}), rejections, None
+    try:
+        return admit(survivors), rejections, None
+    except ValueError as exc:
+        return None, rejections, exc
+
+
 def _verified_claims(task, execution, draft, verification, evidence=None, *,
                      diagnostics=False, diagnostics_run_id="",
                      diagnostics_events=None):
@@ -847,24 +890,39 @@ def _verified_claims(task, execution, draft, verification, evidence=None, *,
                 for evidence_id in claim.evidence_ids
                 if evidence and evidence_id in evidence],
             output_bindings=list(claim.output_bindings))
-        try:
-            admitted.append(admit_verified_claim_bindings(
-                task, execution, draft, candidate))
-        except ValueError as exc:
-            if diagnostics and diagnostics_events is not None:
-                for position in range(len(candidate.output_bindings)):
-                    diagnostics_events.append(_binding_diagnostic_event(
-                        execution, candidate, position,
-                        diagnostics_run_id, str(exc), evidence))
+        admitted_claim, rejections, withheld = _admitted_bindings(
+            task, execution, draft, candidate)
+        if diagnostics and diagnostics_events is not None:
+            for position, message in sorted(rejections.items()):
+                diagnostics_events.append(_binding_diagnostic_event(
+                    execution, candidate, position,
+                    diagnostics_run_id, message, evidence))
+        if withheld is not None:
             admitted.append(VerifiedClaim(
                 claim_index=index, claim=claim,
                 evidence_ids=list(claim.evidence_ids),
                 sources=list(candidate.sources), output_bindings=[]))
             rejected.append(Gap(
                 kind=GapKind.SYNTHESIS_INCOMPLETE,
-                message=f"claim output binding rejected: {exc}",
+                message=f"claim output binding rejected: {withheld}",
                 evidence_ids=list(claim.evidence_ids),
                 blocks=[f"claim:{index}"]))
+            continue
+        admitted.append(admitted_claim)
+        if rejections and not admitted_claim.output_bindings:
+            rejected.append(Gap(
+                kind=GapKind.SYNTHESIS_INCOMPLETE,
+                message=(f"claim:{index} output bindings not admitted: "
+                         f"{rejections[min(rejections)]}"),
+                evidence_ids=list(claim.evidence_ids),
+                blocks=[f"claim:{index}"]))
+        elif rejections:
+            rejected.append(Gap(
+                kind=GapKind.SYNTHESIS_INCOMPLETE,
+                message=(f"claim:{index} output binding not admitted: "
+                         f"{rejections[min(rejections)]}"),
+                evidence_ids=list(claim.evidence_ids),
+                blocks=[]))
     admitted = propagate_evidence_to_task(task, execution, draft, admitted)
     return admitted, rejected
 

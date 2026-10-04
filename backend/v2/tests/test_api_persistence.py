@@ -1220,7 +1220,8 @@ def test_frontend_can_select_native_v2_chat_runtime():
     assert 'chatRuntime()' in api_source
     assert 'NEXT_PUBLIC_CHAT_RUNTIME' in runtime_source
     assert '"/api/v2/chat/stream"' in api_source
-    assert 'client: getClientId()' in api_source
+    assert 'q,' in api_source and 'model,' in api_source
+    assert 'thread,' in api_source and 'client: getClientId()' in api_source
 
 
 def test_live_route_reports_pre_stream_setup_failure_as_sse(monkeypatch):
@@ -1608,13 +1609,13 @@ def test_typed_terminal_contract_replaces_legacy_failure_and_metadata_cases(monk
 def test_public_provenance_separates_season_and_as_of():
     from datetime import UTC,date,datetime
     from types import SimpleNamespace
-    from v2.api.routes import _public_evidence_tables
+    from v2.api.routes import _public_evidence
     from v2 import contracts
     b=contracts.EvidenceOutputBinding(requirement_kind="task",output_id="WINS",node_id="n",evidence_id="e",selector="rows.WINS",value={"kind":"integer","value":61},unit={"kind":"declared","value":"count"},domain="standings")
     st=contracts.OutputFinalStatus(requirement_kind="task",output_id="WINS",status="complete",claim_index=0,binding=b)
     ev=contracts.EvidenceEnvelope(evidence_id="e",capability="standings",source="private",observed_at=datetime.now(UTC),season="2025-26",as_of=date(2026,4,1),rows={"WINS":61})
-    tables=_public_evidence_tables(SimpleNamespace(output_statuses=[st],draft=contracts.DraftReport(sections=[],claims=[]),execution=SimpleNamespace(evidence=[ev])))
-    assert tables[0]["provenance"]=={"capability":"standings","season":"2025-26","as_of":"2026-04-01"}
+    tables=_public_evidence(SimpleNamespace(output_statuses=[st],draft=contracts.DraftReport(sections=[],claims=[]),execution=SimpleNamespace(evidence=[ev])))[0]
+    assert tables[0]["provenance"]=={"capability":"standings","origin":"undeclared","warehouse_id":None,"season":"2025-26","as_of":"2026-04-01","live_sources":[]}
     assert "private" not in str(tables)
 
 

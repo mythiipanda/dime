@@ -180,7 +180,7 @@ def test_gemma_strict_path_sends_normalized_schema_flash_identical():
  root=_pathlib.Path(__file__).parents[2]/'schema_snapshots'
  for name,cls in [('requirement_review',RequirementReviewWire),('planner',PlannerOutputWire)]:
   prepared=_OutputSchema.build(_NativeOutput(cls,strict=True)).processor.object_def
-  gemma=_ChatModel._map_json_schema(_model('gemma-4-26b-a4b-it'),prepared)
+  gemma=_ChatModel._map_json_schema(_model('gemma-4-31b-it'),prepared)
   flash=_ChatModel._map_json_schema(_model('gemini-3.5-flash-lite'),prepared)
   assert gemma==flash
   assert gemma['json_schema']['schema']==json.loads((root/f'{name}.candidate.json').read_text())
@@ -189,11 +189,11 @@ def test_gemma_strict_path_sends_normalized_schema_flash_identical():
 
 def test_gemma_route_policy_extends_timeouts_flash_unchanged():
  from v2.adapters.models import ROUTE_POLICIES,_route_policy,_is_gemma_model
- assert _is_gemma_model('gemma-4-26b-a4b-it') and not _is_gemma_model('gemini-3.5-flash-lite')
+ assert _is_gemma_model('gemma-4-31b-it') and not _is_gemma_model('gemini-3.5-flash-lite')
  for route,baseline in ROUTE_POLICIES.items():
   assert _route_policy('gemini','gemini-3.5-flash-lite',route)==baseline
   assert _route_policy('nvidia','z-ai/glm-5.3-flash',route)==baseline
-  gemma=_route_policy('gemini','gemma-4-26b-a4b-it',route)
+  gemma=_route_policy('gemini','gemma-4-31b-it',route)
   assert gemma['max_attempts']==baseline['max_attempts']
   assert gemma['transient_classes']==baseline['transient_classes']
   assert gemma['attempt_timeout_s']>baseline['attempt_timeout_s']
@@ -205,12 +205,12 @@ def test_gemma_http_timeout_exceeds_attempt_flash_unchanged(monkeypatch):
  from v2.adapters.models import (ProviderStructuredModel as _PSM,GEMMA_HTTP_TIMEOUT_S,
   GEMMA_ROUTE_POLICY_OVERRIDES,_route_policy)
  monkeypatch.setattr(_settings,'gemini_api_key','test-key')
- gemma=_PSM(provider='gemini',model='gemma-4-26b-a4b-it')._models()
+ gemma=_PSM(provider='gemini',model='gemma-4-31b-it')._models()
  flash=_PSM(provider='gemini',model='gemini-3.5-flash-lite')._models()
  assert len(gemma)==1 and len(flash)==1
  assert float(gemma[0][1].client.timeout)==GEMMA_HTTP_TIMEOUT_S
  assert float(flash[0][1].client.timeout)==float(_settings.llm_timeout_s)
- assert GEMMA_HTTP_TIMEOUT_S>_route_policy('gemini','gemma-4-26b-a4b-it','requirement_review')['attempt_timeout_s']
+ assert GEMMA_HTTP_TIMEOUT_S>_route_policy('gemini','gemma-4-31b-it','requirement_review')['attempt_timeout_s']
 
 def test_startup_manifest_repins_typed_argument_assets():
  import hashlib,pathlib

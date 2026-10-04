@@ -16,6 +16,7 @@ from v2.contracts import (
     VerifiedClaim,
 )
 from v2.runtime.models import (
+    BindingFormMismatch,
     ExecutionResult,
     admit_verified_claim_bindings,
     build_output_statuses,
@@ -275,14 +276,28 @@ def test_competing_claims_leave_task_output_unchanged():
     assert by_key[("task", None, "PLAYER_NAME")].status == "missing"
 
 
-def test_player_task_with_entityless_envelope_rejects_evidence_scope():
+def test_player_task_with_entityless_envelope_admits_row_local_match():
     task = _task([_trae()], [_requirement(REQ_ID, ["PLAYER_NAME", "AST"])])
     execution = _execution(_envelope(False))
+    admitted = admit_verified_claim_bindings(
+        task, execution, _draft(), _claim(_bindings()))
+    by_output = {item.output_id: item for item in admitted.output_bindings}
+    assert by_output["PLAYER_NAME"].value.value == "Trae Young"
+    assert by_output["AST"].value.value == 880
+
+
+def test_player_task_with_entityless_envelope_rejects_wrong_subject():
+    task = _task([_trae()], [_requirement(REQ_ID, ["PLAYER_NAME", "AST"])])
+    execution = _execution(_envelope(False))
+    wrong = [
+        item.model_copy(update={"subject_entity_id": "1628369"})
+        for item in _bindings()
+    ]
     with pytest.raises(
-        ValueError, match="binding subject is outside evidence scope"
+        ValueError, match="binding subject is outside requested scope"
     ):
         admit_verified_claim_bindings(
-            task, execution, _draft(), _claim(_bindings()))
+            task, execution, _draft(), _claim(wrong))
 
 
 ASSIST_REQ_ID = "assists_leader_2024_25"
@@ -359,9 +374,7 @@ def test_assist_total_admits_ast_column():
 def test_pts_leaf_on_assist_total_still_rejected():
     task = _assist_task()
     execution = _execution(_assist_envelope(), (ASSIST_REQ_ID,))
-    with pytest.raises(
-        ValueError, match="binding selector metric does not match output"
-    ):
+    with pytest.raises(BindingFormMismatch):
         admit_verified_claim_bindings(
             task, execution, _draft(),
             _claim([_assist_name_binding(),

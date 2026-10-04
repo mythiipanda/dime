@@ -1,41 +1,38 @@
 
+import math
 from typing import Any
 
 from langchain_core.tools import tool
 
 from .. import store
 from ._core import clamp_season, last_completed_season, resolve_season
+from .award_results import normalize_award
 
 MIP_MSG = ("MIP needs prior-season per-player stats; silver_hist_gamelogs "
            "is team-level and there is no player-seasons table in the warehouse")
 
-AWARD_SPECS: dict[str, dict[str, Any]] = {
+PROJECTION_SPECS: dict[str, dict[str, Any]] = {
     "MVP": {
-        "aliases": {"mvp", "most valuable player"},
         "components": [("ppg", 0.35, 1), ("team_win_pct", 0.20, 1), ("net_rating", 0.15, 1),
                        ("apg", 0.15, 1), ("rpg", 0.15, 1)],
         "qualification": {"min_gp": 20, "min_minutes": 500},
     },
     "DPOY": {
-        "aliases": {"dpoy", "defensive player of the year", "defensive player", "best defender"},
         "components": [("bpg", 0.30, 1), ("spg", 0.20, 1), ("def_rating", 0.20, -1),
                        ("dreb_pg", 0.15, 1), ("team_opp_ppg", 0.15, -1)],
         "qualification": {"min_gp": 20, "min_minutes": 500},
     },
     "ROY": {
-        "aliases": {"roy", "rookie of the year", "rookie", "best rookie"},
         "components": [("ppg", 0.40, 1), ("eff_pg", 0.25, 1), ("apg", 0.20, 1), ("rpg", 0.15, 1)],
         "qualification": {"min_gp": 20, "min_minutes": 300, "max_age": 21},
         "proxy_caveat": "warehouse has no rookie flag; candidates limited to age <= 21 as a rookie proxy",
     },
     "6MOY": {
-        "aliases": {"6moy", "sixth man of the year", "sixth man", "sixthman", "6th man", "best bench"},
         "components": [("ppg", 0.40, 1), ("ts_pct", 0.25, 1), ("eff_pg", 0.20, 1), ("apg", 0.15, 1)],
         "qualification": {"min_gp": 20, "min_minutes": 400, "max_mpg": 30.0},
         "proxy_caveat": "warehouse has no starter/bench split; candidates limited to under 30.0 MPG as a bench-adjacent proxy",
     },
     "MIP": {
-        "aliases": {"mip", "most improved player", "most improved"},
         "components": [], "qualification": {}, "unavailable": MIP_MSG,
     },
 }
@@ -49,16 +46,64 @@ FEATURE_LABELS = {
 _ROUND3 = {"ts_pct", "team_win_pct"}
 
 
+STANDINGS_FIELDS = ("team_id", "wins", "losses", "opp_points_pg")
+
+STANDINGS_SOURCES: tuple[dict[str, str], ...] = (
+    {"table": "silver_standings", "coverage": "current",
+     "team_id": "TeamID", "wins": "WINS", "losses": "LOSSES",
+     "opp_points_pg": "OppPointsPG"},
+    {"table": "silver_hist_standings", "coverage": "historical",
+     "team_id": "team_id", "wins": "wins", "losses": "losses",
+     "opp_points_pg": "opp_points_pg"},
+)
+
+
+class StandingsUnavailable(Exception):
+    pass
+
+
+def _standings_for(season: str) -> dict[str, str]:
+    con = store.connect(read_only=True)
+    try:
+        tables = {r[0] for r in con.execute("SHOW TABLES").fetchall()}
+        present = [s for s in STANDINGS_SOURCES if s["table"] in tables]
+        for source in present:
+            covered = con.execute(
+                f'SELECT 1 FROM {source["table"]} WHERE _season = ? LIMIT 1',
+                [season]).fetchone()
+            if not covered:
+                continue
+            columns = {r[1] for r in con.execute(
+                f'PRAGMA table_info({source["table"]})').fetchall()}
+            for field in STANDINGS_FIELDS:
+                if source[field] not in columns:
+                    raise StandingsUnavailable(
+                        f"{source['table']} carries no {source[field]} column, "
+                        f"which {season} team context needs")
+            return source
+        named = " or ".join(s["table"] for s in present) or "no standings table"
+        raise StandingsUnavailable(f"no standings for season {season} in {named}")
+    finally:
+        con.close()
+
+
+def _finite(value: object) -> float | None:
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return None
+    return number if math.isfinite(number) else None
+
+
+def _population_spread(values: list[float]) -> float:
+    if len(values) < 2:
+        return 0.0
+    mean = math.fsum(values) / len(values)
+    return math.sqrt(math.fsum((v - mean) ** 2 for v in values) / len(values))
+
+
 def _round_val(key: str, value: object) -> float:
     return round(float(value or 0), 3) if key in _ROUND3 else round(float(value or 0), 1)
-
-
-def normalize_award(name: object) -> str | None:
-    key = str(name or "").strip().lower()
-    for canon, spec in AWARD_SPECS.items():
-        if key == canon.lower() or key in spec.get("aliases", set()):
-            return canon
-    return None
 
 
 def _formula(spec: dict[str, Any]) -> str:
@@ -95,7 +140,7 @@ def _missing_table() -> str | None:
         tables = {r[0] for r in con.execute("SHOW TABLES").fetchall()}
     finally:
         con.close()
-    for table in ("silver_leaders_pts", "silver_advanced", "silver_standings"):
+    for table in ("silver_leaders_pts", "silver_advanced"):
         if table not in tables:
             return table
     return None
@@ -103,8 +148,9 @@ def _missing_table() -> str | None:
 
 def _pool(season: str) -> list[dict[str, Any]]:
     season = resolve_season(season)
+    source = _standings_for(str(season))
     return store._read_df(
-        """SELECT l.PLAYER AS player, l.TEAM AS team,
+        f"""SELECT l.PLAYER AS player, l.TEAM AS team,
         l.GP AS gp, l.MIN AS mins,
         l.PTS * 1.0 / NULLIF(l.GP, 0) AS ppg,
         l.REB * 1.0 / NULLIF(l.GP, 0) AS rpg,
@@ -116,14 +162,15 @@ def _pool(season: str) -> list[dict[str, Any]]:
         l.MIN * 1.0 / NULLIF(l.GP, 0) AS mpg,
         a.AGE AS age, a.TS_PCT AS ts_pct,
         a.NET_RATING AS net_rating, a.DEF_RATING AS def_rating,
-        s.WINS * 1.0 / NULLIF(s.WINS + s.LOSSES, 0) AS team_win_pct,
-        s.OppPointsPG AS team_opp_ppg
+        s.{source["wins"]} * 1.0 /
+        NULLIF(s.{source["wins"]} + s.{source["losses"]}, 0) AS team_win_pct,
+        s.{source["opp_points_pg"]} AS team_opp_ppg
         FROM silver_leaders_pts l
         LEFT JOIN silver_advanced a
         ON CAST(a.PLAYER_ID AS VARCHAR) = CAST(l.PLAYER_ID AS VARCHAR)
         AND a._season = l._season
-        LEFT JOIN silver_standings s
-        ON s.TeamID = l.TEAM_ID AND s._season = l._season
+        LEFT JOIN {source["table"]} s
+        ON s.{source["team_id"]} = l.TEAM_ID AND s._season = l._season
         WHERE l._season = ?""",
         [season],
     )
@@ -136,15 +183,13 @@ def get_award_race(award: str, season: str | None = None) -> dict[str, Any]:
     The formula is computed from warehouse stats only and listed in meta.
     """
     canon = normalize_award(award)
-    if canon is None:
-        valid = ", ".join(sorted(AWARD_SPECS))
+    if canon is None or canon not in PROJECTION_SPECS:
+        valid = ", ".join(sorted(PROJECTION_SPECS))
         return {"tool": "get_award_race", "ok": False, "rows": {},
                 "meta": {}, "error": f"unknown award '{award}'; valid awards: {valid}"}
     season = resolve_season(season)
-    import statistics as _stats
-
     season = clamp_season(season)
-    spec = AWARD_SPECS[canon]
+    spec = PROJECTION_SPECS[canon]
     if spec.get("unavailable"):
         return {"tool": "get_award_race", "ok": False, "rows": {},
                 "meta": {"award": canon, "season": season}, "error": spec["unavailable"]}
@@ -154,7 +199,12 @@ def get_award_race(award: str, season: str | None = None) -> dict[str, Any]:
                 "meta": {"award": canon, "season": season},
                 "error": f"warehouse table missing: {missing}"}
     try:
+        standings = _standings_for(str(season))
         pool = _pool(season)
+    except StandingsUnavailable as exc:
+        return {"tool": "get_award_race", "ok": False, "rows": {},
+                "meta": {"award": canon, "season": season},
+                "error": str(exc)}
     except Exception as exc:
         return {"tool": "get_award_race", "ok": False, "rows": {},
                 "meta": {"award": canon, "season": season},
@@ -166,6 +216,7 @@ def get_award_race(award: str, season: str | None = None) -> dict[str, Any]:
     qual = spec.get("qualification", {})
     comps = spec["components"]
     eligible = []
+    unscored: dict[str, int] = {}
     for row in pool:
         try:
             gp = row.get("gp") or 0
@@ -178,21 +229,29 @@ def get_award_race(award: str, season: str | None = None) -> dict[str, Any]:
             if "max_mpg" in qual and (row.get("mpg") is None
                                       or float(row["mpg"]) > qual["max_mpg"]):
                 continue
-            if any(row.get(feat) is None for feat, _, _ in comps):
+            missing = [feat for feat, _, _ in comps
+                       if _finite(row.get(feat)) is None]
+            if missing:
+                for feat in missing:
+                    unscored[feat] = unscored.get(feat, 0) + 1
                 continue
         except (TypeError, ValueError):
             continue
         eligible.append(row)
     if not eligible:
+        error = f"no qualified candidates for {canon} in season {season}"
+        if unscored:
+            gaps = ", ".join(f"{FEATURE_LABELS.get(feat, feat)} ({count} players)"
+                             for feat, count in sorted(unscored.items()))
+            error += f"; the warehouse holds no value for {gaps}"
         return {"tool": "get_award_race", "ok": False, "rows": {},
-                "meta": {"award": canon, "season": season},
-                "error": f"no qualified candidates for {canon} in season {season}"}
+                "meta": {"award": canon, "season": season}, "error": error}
     means, stds, bests = {}, {}, {}
     signs = {feat: sign for feat, _, sign in comps}
     for feat, _, _ in comps:
         vals = [float(r[feat]) for r in eligible]
-        means[feat] = sum(vals) / len(vals)
-        stds[feat] = _stats.pstdev(vals) if len(vals) > 1 else 0.0
+        means[feat] = math.fsum(vals) / len(vals)
+        stds[feat] = _population_spread(vals)
         bests[feat] = max(vals) if signs[feat] > 0 else min(vals)
     scored = []
     for row in eligible:
@@ -250,6 +309,8 @@ def get_award_race(award: str, season: str | None = None) -> dict[str, Any]:
     meta: dict[str, Any] = {
         "award": canon, "season": season, "formula": _formula(spec),
         "qualification": _qualification(spec),
+        "standings_coverage": standings["coverage"],
+        "qualified_pool": len(eligible),
         "components": [{"feature": feat, "weight": weight,
                         "direction": "higher-is-better" if sign > 0 else "lower-is-better"}
                        for feat, weight, sign in comps],
@@ -259,19 +320,28 @@ def get_award_race(award: str, season: str | None = None) -> dict[str, Any]:
         "score_unit": "weighted_z_score",
         "score_definition": ("dimensionless model score; not points, probability, "
                              "vote share, or an official award result"),
+        "results_tool": "get_award_results",
         "advanced_metrics": "EPM/LEBRON/DARKO/RAPTOR not in warehouse; not fabricated",
     }
     if spec.get("proxy_caveat"):
         meta["proxy_caveat"] = spec["proxy_caveat"]
+    notes: list[str] = []
+    if len(eligible) == 1:
+        meta["single_candidate_pool"] = True
+        notes.append(f"only one player qualifies for {canon} in {season}, so "
+                     "there is no comparison pool: every z-score is zero and "
+                     "the score ranks nothing")
     from ._core import season_static as _season_static
     if _season_static(season):
 
 
         meta["season_complete"] = True
-        meta["note"] = (f"{season} is complete. These are formula-based "
-                        f"statistical candidates from final stats; the "
-                        f"dataset does not record the actual award "
-                        f"outcome, so present them as model picks, not "
-                        f"a live race or official result.")
+        notes.append(f"{season} is complete. These are formula-based "
+                     f"statistical candidates from final stats; the "
+                     f"dataset does not record the actual award "
+                     f"outcome, so present them as model picks, not "
+                     f"a live race or official result.")
+    if notes:
+        meta["note"] = " ".join(notes)
     return {"tool": "get_award_race", "ok": True,
             "rows": {"candidates": candidates}, "meta": meta}

@@ -130,6 +130,36 @@ def test_gap_lines_still_render_next_to_the_live_source_line() -> None:
     )
 
 
+def test_complete_outputs_never_claim_values_are_unverified() -> None:
+    from v2.contracts import Gap
+
+    result = _result(_envelope(
+        "live", identity={"kind": "live", "source": "nba_api"},
+        as_of=AS_OF, source="silver:team_ratings:nba_api"))
+    result.gaps = [Gap(
+        kind="missing_evidence",
+        message="verification did not establish complete support")]
+
+    text = _answer_text(result)
+    assert "9.4" in text
+    assert "Some requested outputs could not be verified." not in text
+
+
+def test_complete_but_unjudged_keeps_the_double_check_tail() -> None:
+    from v2.contracts import Gap
+    from v2.runtime.loop import JUDGE_UNAVAILABLE_BRANCH
+
+    result = _result(_envelope(
+        "live", identity={"kind": "live", "source": "nba_api"},
+        as_of=AS_OF, source="silver:team_ratings:nba_api"))
+    result.gaps = [Gap(kind="missing_evidence", message=JUDGE_UNAVAILABLE_BRANCH)]
+
+    text = _answer_text(result)
+    assert "9.4" in text
+    assert "Some requested outputs could not be verified." not in text
+    assert "I couldn't double-check this answer" in text
+
+
 def test_unattributed_evidence_never_produces_a_live_label() -> None:
     result = _result(_envelope(
         "unknown", identity=None, as_of=None, source="silver:team_ratings:warehouse"))
@@ -176,7 +206,7 @@ def test_every_live_source_has_plain_language_copy(identity: dict) -> None:
 def test_the_published_table_keeps_stamping_the_live_date_for_each_figure() -> None:
     from decimal import Decimal
 
-    from v2.api.routes import _public_evidence_tables
+    from v2.api.routes import _public_evidence
 
     envelope = _envelope(
         "live", identity={"kind": "live", "source": "nba_api"},
@@ -186,12 +216,44 @@ def test_the_published_table_keeps_stamping_the_live_date_for_each_figure() -> N
     result.execution = SimpleNamespace(evidence=[envelope])
     result.draft = SimpleNamespace(calculations=[])
 
-    assert _public_evidence_tables(result) == [{
+    assert _public_evidence(result) == ([{
         "output_id": "NET_RATING",
+        "display_name": "NET RATING",
         "subject_type": None,
         "subject_id": None,
         "value": "9.4",
         "unit": "net_rating",
-        "provenance": {"capability": "team_ratings", "season": "2024-25",
-                       "as_of": "2026-10-03"},
-    }]
+        "provenance": {"capability": "team_ratings", "origin": "live",
+                       "warehouse_id": None, "season": "2024-25",
+                       "as_of": "2026-10-03", "live_sources": ["nba_api"]},
+    }], [])
+
+
+def test_complete_outputs_never_claim_values_are_unverified() -> None:
+    from v2.contracts import Gap
+
+    result = _result(_envelope(
+        "live", identity={"kind": "live", "source": "nba_api"},
+        as_of=AS_OF, source="silver:team_ratings:nba_api"))
+    result.gaps = [Gap(
+        kind="missing_evidence",
+        message="verification did not establish complete support")]
+
+    text = _answer_text(result)
+    assert "9.4" in text
+    assert "Some requested outputs could not be verified." not in text
+
+
+def test_complete_but_unjudged_keeps_the_double_check_tail() -> None:
+    from v2.contracts import Gap
+    from v2.runtime.loop import JUDGE_UNAVAILABLE_BRANCH
+
+    result = _result(_envelope(
+        "live", identity={"kind": "live", "source": "nba_api"},
+        as_of=AS_OF, source="silver:team_ratings:nba_api"))
+    result.gaps = [Gap(kind="missing_evidence", message=JUDGE_UNAVAILABLE_BRANCH)]
+
+    text = _answer_text(result)
+    assert "9.4" in text
+    assert "Some requested outputs could not be verified." not in text
+    assert "I couldn't double-check this answer" in text

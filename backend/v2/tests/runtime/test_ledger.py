@@ -770,14 +770,14 @@ async def test_recorded_model_ledger_accepts_carried_from_intake_end_to_end():
 
 @pytest.mark.anyio
 async def test_recorded_model_attempt_carries_wall_clock_duration():
-    import asyncio
+    import anyio
 
     from v2.adapters.models import RecordedStructuredModel
     from v2.contracts import RequirementReview
 
     class SlowModel:
         async def generate(self, **call):
-            await asyncio.sleep(0.05)
+            await anyio.sleep(0.05)
             return RequirementReview()
 
     ledger = RunLedger("run")

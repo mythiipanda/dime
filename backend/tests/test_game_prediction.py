@@ -112,10 +112,11 @@ def test_tool_same_team_errors():
 
 def test_tool_missing_ratings_degrades(monkeypatch):
     import shared.tools.prediction as pred
-    monkeypatch.setattr(pred, "_rating_row", lambda con, tid, season: None)
+    monkeypatch.setattr(
+        pred, "season_team_ratings", lambda con, season: ({}, None))
     out = get_game_prediction.invoke({"a": "BOS", "b": "NYK", "n_sims": 1_000})
     assert out["ok"] is False
-    assert "ratings missing" in out["error"]
+    assert "ratings" in out["error"]
 
 
 def test_tool_warehouse_integration():

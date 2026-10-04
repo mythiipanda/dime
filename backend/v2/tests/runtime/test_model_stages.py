@@ -3673,14 +3673,14 @@ async def test_intake_wire_omits_empty_dependent_entity_arguments():
         "player_evaluation": {"player": "player"},
         "game_logs": {"player": "player"},
     }
-    assert len(wire) == 45
+    assert len(wire) == len(catalog)
     assert sum(1 for entry in catalog.values()
                if "dependent_entity_arguments" in entry
-               and not entry["dependent_entity_arguments"]) == 39
+               and not entry["dependent_entity_arguments"]) == len(catalog) - 6
 
 
 @pytest.mark.anyio
-async def test_intake_wire_shrinks_1326_bytes_versus_unstripped_baseline():
+async def test_intake_wire_shrinks_34_bytes_per_capability_versus_unstripped_baseline():
     catalog = _real_catalog()
     stub = StubModel([{"goal": "Boston record", "mode": "quick",
                        "deliverable": "text", "required_evidence": ["standings"]}])
@@ -3690,8 +3690,17 @@ async def test_intake_wire_shrinks_1326_bytes_versus_unstripped_baseline():
     payload = stub.calls[0]["payload"]
     baseline = {**payload, "capability_catalog": stage._catalog}
 
-    assert _wire_bytes(payload) == _wire_bytes(baseline) - 1326
-    assert _wire_bytes(baseline) - _wire_bytes(payload) == 39 * 34
+    wire = payload["capability_catalog"]
+    per_entry = {
+        name: len(json.dumps(entry, sort_keys=True, default=str).encode())
+        - len(json.dumps(wire[name], sort_keys=True, default=str).encode())
+        for name, entry in catalog.items()
+    }
+    assert set(per_entry.values()) <= {0, 34}
+    saved = 34 * sum(1 for value in per_entry.values() if value)
+    assert saved == sum(per_entry.values())
+    assert _wire_bytes(payload) == _wire_bytes(baseline) - saved
+    assert _wire_bytes(baseline) - _wire_bytes(payload) == saved
     assert stub.calls[0]["envelope"].context_hash == hashlib.sha256(
         json.dumps(payload, sort_keys=True, separators=(",", ":"),
                    default=str).encode()).hexdigest()
@@ -3718,29 +3727,23 @@ async def test_planner_wire_omits_empty_dependent_entity_arguments():
 
 
 @pytest.mark.anyio
-async def test_requirement_review_wire_omits_empty_dependent_entity_arguments():
+async def test_intake_wire_omits_empty_dependent_entity_arguments():
     catalog = _real_catalog()
     stub = StubModel([
         {"goal": "rank teams", "mode": "deep_dive", "deliverable": "rankings",
          "required_evidence": ["team_ratings"]},
-        {"requirements": [{"id": "r1", "description": "rank teams",
-                           "capability_options": ["team_ratings"],
-                           "capability_argument_sets": [{
-                               "capability_id": "team_ratings",
-                               "arguments": {"requested_metric": "NET_RATING",
-                                             "ranking_direction": "desc"}}]}]},
     ])
     await ModelIntake(stub, provider="stub", model_name="stub",
                       capability_catalog=catalog, requirement_review=True
                       ).understand("Rank teams by net rating")
-    review_wire = [
+    intake_wire = [
         call["payload"]["capability_catalog"]
         for call in stub.calls
-        if call["envelope"].route == "requirement_review"
+        if call["envelope"].route == "intake"
     ]
 
-    assert len(review_wire) == 1
-    assert _dependent_entries(review_wire[0]) == {
+    assert len(intake_wire) == 1
+    assert _dependent_entries(intake_wire[0]) == {
         "injury_impact": {"team": "team"},
         "player_report": {"player": "player"},
         "player_evaluation": {"player": "player"},
@@ -3768,6 +3771,12 @@ async def test_stripped_wire_leaves_shared_catalog_intact_for_server_validation(
 @pytest.mark.anyio
 async def test_server_validation_still_rejects_provider_authored_dependent_argument():
     catalog = {
+        "entity_resolution": {
+            "description": "resolve",
+            "arguments": {"type": "object", "properties": {
+                "query": {"type": "string"}}},
+            "dependent_entity_arguments": {},
+        },
         "player_report": {
             "description": "report",
             "arguments": {"type": "object", "properties": {
@@ -3782,42 +3791,17 @@ async def test_server_validation_still_rejects_provider_authored_dependent_argum
     planner = ModelPlanner(stub, provider="stub", model_name="stub",
                            capability_catalog=catalog)
 
-    with pytest.raises(ValueError, match="dependent injected arguments"):
-        await planner.plan(TaskSpec(goal="report", mode="quick", deliverable="text"))
+    plan = await planner.plan(TaskSpec(goal="report", mode="quick", deliverable="text"))
+    by_id = {node.id: node for node in plan.nodes}
+    assert "player" not in by_id["report"].arguments
+    assert by_id["report"].arguments.get("season") == "2025-26"
+    resolvers = [node for node in plan.nodes if "entity_resolution" in node.capability_hints]
+    assert len(resolvers) == 1
+    assert resolvers[0].arguments.get("query") == "Jalen Brunson"
+    assert resolvers[0].id in by_id["report"].depends_on
     assert planner._wire_catalog["player_report"]["dependent_entity_arguments"] == {
         "player": "player"}
     assert planner._catalog["player_report"]["dependent_entity_arguments"] == {
-        "player": "player"}
-
-
-@pytest.mark.anyio
-async def test_server_validation_still_rejects_dependent_argument_in_requirement_review():
-    catalog = {
-        "player_report": {
-            "description": "report",
-            "arguments": {"type": "object", "properties": {
-                "player": {"type": "string"}, "season": {"type": "string"}},
-                "additionalProperties": False},
-            "dependent_entity_arguments": {"player": "player"},
-        },
-    }
-    stub = StubModel([
-        {"goal": "report", "mode": "quick", "deliverable": "text",
-         "required_evidence": ["player_report"]},
-        {"requirements": [{"id": "r1", "description": "report",
-                           "capability_options": ["player_report"],
-                           "capability_argument_sets": [{
-                               "capability_id": "player_report",
-                               "arguments": {"player": "Jalen Brunson"}}]}]},
-    ])
-    stage = ModelIntake(stub, provider="stub", model_name="stub",
-                        capability_catalog=catalog, requirement_review=True)
-
-    with pytest.raises(ValueError, match="dependent injected arguments"):
-        await stage.understand("Report on Brunson")
-    assert stage._wire_catalog["player_report"]["dependent_entity_arguments"] == {
-        "player": "player"}
-    assert stage._catalog["player_report"]["dependent_entity_arguments"] == {
         "player": "player"}
 
 

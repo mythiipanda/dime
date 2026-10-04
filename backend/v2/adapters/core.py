@@ -9,7 +9,7 @@ import json
 from datetime import date, datetime, timezone
 from typing import Any, Callable, Iterable, Mapping
 
-from ..contracts import EntityRef, EvidenceEnvelope, canonical_entity_id
+from ..contracts import EntityRef, EvidenceEnvelope, LiveFallback, canonical_entity_id
 from ..contracts import WINDOW_ARGUMENT_NAMES, window_of_arguments
 from ..domain.evidence import iter_values
 from .capabilities import CAPABILITIES, Capability
@@ -17,6 +17,40 @@ from .capabilities import CAPABILITIES, Capability
 
 class AdapterError(RuntimeError):
     pass
+
+
+class LiveFallbackEmpty(AdapterError):
+
+    def __init__(self, message: str, fallback: LiveFallback) -> None:
+        super().__init__(message)
+        self.fallback = fallback
+
+
+def _warehouse_seasons(table: str) -> list[str]:
+    from . import coverage
+
+    return sorted(
+        season for season in coverage.table_seasons(table)
+        if coverage.parse_season_start(season) is not None)
+
+
+def resolve_live_fallback(spec: Capability, meta: Mapping[str, Any]) -> LiveFallback | None:
+    marker = meta.get("live_fallback")
+    if marker is None:
+        return None
+    if not isinstance(marker, Mapping):
+        raise AdapterError(f"{spec.tool_name}: live fallback marker must be an object")
+    try:
+        return LiveFallback(
+            warehouse_table=marker.get("table"),
+            requested_season=marker.get("requested_season"),
+            warehouse_seasons=_warehouse_seasons(marker.get("table")),
+            live_source=marker.get("live_source"),
+            outcome=marker.get("outcome"),
+        )
+    except (TypeError, ValueError) as exc:
+        raise AdapterError(
+            f"{spec.tool_name}: invalid live fallback marker: {exc}") from exc
 
 
 def _canonical(value: Any) -> str:
@@ -67,6 +101,18 @@ def invoke_tool(tool: Any, arguments: Mapping[str, Any]) -> dict[str, Any]:
         "use acall_capability")
 
 
+def _live_fallback_miss(spec: Capability, fallback: LiveFallback,
+                        reported: str = "") -> str:
+    on_hand = ", ".join(fallback.warehouse_seasons) or "none"
+    message = (
+        f"{spec.tool_name}: {spec.name} has no warehouse rows for the "
+        f"{fallback.requested_season} season in {fallback.warehouse_table} "
+        f"and the {fallback.live_source} live source returned nothing, so no "
+        f"answer exists for {fallback.requested_season} (warehouse seasons on "
+        f"hand: {on_hand})")
+    return f"{message}; tool reported: {reported}" if reported else message
+
+
 def build_envelope(
     spec: Capability,
     arguments: Mapping[str, Any],
@@ -75,7 +121,20 @@ def build_envelope(
     entities: Iterable[EntityRef] | None = None,
     observed_at: datetime | None = None,
 ) -> EvidenceEnvelope:
-    if result.get("ok") is not True:
+    raw_meta = result.get("meta")
+    if raw_meta is not None and not isinstance(raw_meta, Mapping):
+        raise AdapterError(f"{spec.tool_name}: result meta must be an object")
+    meta = raw_meta or {}
+    live_fallback = resolve_live_fallback(spec, meta)
+    failed = result.get("ok") is not True
+    if (live_fallback is not None and live_fallback.outcome == "empty"
+            and (failed or not result.get("rows"))):
+        raise LiveFallbackEmpty(
+            _live_fallback_miss(
+                spec, live_fallback,
+                str(result.get("error") or "unknown error") if failed else ""),
+            live_fallback)
+    if failed:
         raise AdapterError(
             f"{spec.tool_name}: {result.get('error') or 'unknown error'}")
     rows = result.get("rows")
@@ -105,10 +164,6 @@ def build_envelope(
                 raise AdapterError(
                     f"{spec.tool_name}: data_gaps must be an array of non-empty text")
             row_warnings.extend(data_gaps)
-    raw_meta = result.get("meta")
-    if raw_meta is not None and not isinstance(raw_meta, Mapping):
-        raise AdapterError(f"{spec.tool_name}: result meta must be an object")
-    meta = raw_meta or {}
     declared_sources = {
         token.strip() for token in str(meta.get("source") or "").split("+")
         if token.strip()
@@ -261,6 +316,7 @@ def build_envelope(
             if has_warehouse_id and has_warehouse_sha else
             {"kind": "live", "source": str(meta["source"])}
             if meta.get("lineage_kind") == "live" and meta.get("source") else None),
+        live_fallback=live_fallback,
     )
 
 

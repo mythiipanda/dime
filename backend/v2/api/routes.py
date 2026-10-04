@@ -15,7 +15,7 @@ from pathlib import Path
 from functools import lru_cache
 from dataclasses import dataclass
 from types import MappingProxyType, ModuleType
-from typing import Callable, Mapping
+from typing import Any, Callable, Mapping
 
 from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi.responses import FileResponse, PlainTextResponse, Response
@@ -24,6 +24,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 from v2.projects.service import ProjectStore
 from v2.conversations import ConversationStore
 from v2.api.sse import encode_raw, with_heartbeat
+from shared.config import runtime_v2_mode
 from shared.rate_limit import check_sql_rerun, client_ip
 
 router = APIRouter()
@@ -43,6 +44,15 @@ def _imported_module_code_sha256() -> str:
 
 
 _LOADED_MODULE_CODE_SHA256 = _imported_module_code_sha256()
+
+
+def _projects_enabled() -> bool:
+    return runtime_v2_mode() == "on"
+
+
+def _require_projects() -> None:
+    if not _projects_enabled():
+        raise HTTPException(status_code=404, detail="not found")
 
 
 def _revision() -> str:
@@ -832,16 +842,19 @@ class CreateProjectBody(BaseModel):
 
 @router.post("/projects", status_code=201)
 def create_project(body: CreateProjectBody) -> dict:
+    _require_projects()
     return _PROJECTS.create(body.goal).model_dump(mode="json")
 
 
 @router.get("/projects")
 def list_projects() -> dict:
+    _require_projects()
     return {"projects": [item.model_dump(mode="json") for item in _PROJECTS.list()]}
 
 
 @router.get("/projects/{project_id}")
 def get_project(project_id: str) -> dict:
+    _require_projects()
     project = _PROJECTS.get(project_id)
     if project is None:
         raise HTTPException(status_code=404, detail="project not found")
@@ -917,6 +930,8 @@ LIVE_SOURCE_LINES = {
     "mixed": ("Some of these figures were refreshed from {sources}{when}; the "
               "rest came from the figures I had saved."),
 }
+
+UNTRACED_SUFFIX = " could not be traced to the source data."
 
 
 def _live_source_line(result) -> str | None:
@@ -1074,11 +1089,60 @@ def _label_lines(result, bindings) -> list[str]:
                  status.output_id) in keys]
 
 
+def _prose_covered_output_ids(result) -> set[str]:
+    from v2.runtime.models import withheld_claim_indices
+    verified = list(getattr(result, "verified_claims", None) or [])
+    if not verified:
+        return set()
+    try:
+        withheld = withheld_claim_indices(getattr(result, "gaps", None) or [])
+    except Exception:
+        withheld = set()
+    try:
+        internal = _internal_identifier_rx(result)
+    except Exception:
+        internal = None
+    draft_claims = list(
+        getattr(getattr(result, "draft", None), "claims", None) or [])
+    covered: set[str] = set()
+    for item in verified:
+        index = getattr(item, "claim_index", None)
+        if index in withheld:
+            continue
+        claim = getattr(item, "claim", None)
+        text = getattr(claim, "text", None)
+        if not isinstance(text, str) or not text:
+            continue
+        try:
+            prose = _publishable_prose(text, internal)
+        except Exception:
+            continue
+        if prose is None:
+            continue
+        for binding in (getattr(claim, "output_bindings", None) or []):
+            output_id = getattr(binding, "output_id", None)
+            if isinstance(output_id, str) and output_id:
+                covered.add(output_id)
+        for binding in (getattr(item, "output_bindings", None) or []):
+            output_id = getattr(binding, "output_id", None)
+            if isinstance(output_id, str) and output_id:
+                covered.add(output_id)
+        if isinstance(index, int) and 0 <= index < len(draft_claims):
+            for binding in (
+                    getattr(draft_claims[index], "output_bindings", None)
+                    or []):
+                output_id = getattr(binding, "output_id", None)
+                if isinstance(output_id, str) and output_id:
+                    covered.add(output_id)
+    return covered
+
+
 def _answer_text(result) -> str:
     published = {
         item.output_id for item in result.output_statuses
         if item.status == "complete"
     }
+    stated = _prose_covered_output_ids(result)
     lines = _claim_prose(result) or list(dict.fromkeys(
         _output_line(result, item) for item in result.output_statuses
         if item.status == "complete"))
@@ -1097,12 +1161,28 @@ def _answer_text(result) -> str:
     for gap in result.gaps:
         if gap.kind.value not in kinds:
             kinds.append(gap.kind.value)
+    try:
+        from v2.runtime.loop import JUDGE_UNAVAILABLE_BRANCHES as _judge_branches
+    except Exception:
+        _judge_branches = frozenset()
+    if any(getattr(gap, "message", None) in _judge_branches
+           for gap in result.gaps) and "judge_unavailable" not in kinds:
+        kinds.append("judge_unavailable")
+    all_complete = bool(result.output_statuses) and all(
+        item.status == "complete" for item in result.output_statuses)
+    requested_ids = {item.output_id for item in result.output_statuses}
+    fully_covered = bool(result.output_statuses) and requested_ids <= (published | stated)
     for kind in kinds:
+        if kind == "missing_evidence" and all_complete:
+            continue
+        if kind in ("missing_evidence", "synthesis_incomplete") and fully_covered:
+            continue
         lines.append(gap_messages[kind])
     lines += list(dict.fromkeys(
         f"{item.output_id} could not be verified ({item.status})."
         for item in result.output_statuses
-        if item.status != "complete" and item.output_id not in published))
+        if item.status != "complete" and item.output_id not in published
+        and item.output_id not in stated))
     return "\n".join(lines) or "I could not verify a publishable answer from the available data."
 
 
@@ -1133,6 +1213,65 @@ def _public_gaps(result) -> list[dict]:
             for gap in result.gaps]
 
 
+def _status_subject(task) -> tuple[str, str]:
+    entities = getattr(task, "entities", None) or []
+    names: list[str] = []
+    for entity in list(entities)[:2]:
+        name = str(getattr(entity, "display_name", None)
+                   or getattr(entity, "id", "") or "").strip()
+        if name:
+            names.append(name)
+    season_obj = getattr(task, "season", None)
+    season = getattr(season_obj, "value", season_obj)
+    season = str(season).strip() if isinstance(season, str) and str(season).strip() else ""
+    if names:
+        base = " and ".join(names)
+        return (base[:80], season)
+    phrases: list[str] = []
+    for req in getattr(task, "requirements", None) or []:
+        desc = str(getattr(req, "description", "") or "").strip()
+        if desc:
+            phrases.append(" ".join(desc.split()[:5]))
+    topic = phrases[0] if phrases else ""
+    if not topic:
+        goal = str(getattr(task, "goal", "") or "")
+        stop = {"who", "what", "which", "when", "where", "how", "led", "lead",
+                "leads", "league", "the", "a", "an", "in", "for", "of", "is",
+                "are", "was", "were", "top", "list", "show", "give", "tell",
+                "me", "please", "find", "get", "name"}
+        words = [w.strip("?.,;:!") for w in goal.split()]
+        kept = [w for w in words if w and w.lower() not in stop]
+        topic = " ".join((kept or words)[:5]).strip()
+    if not topic:
+        topic = "the numbers"
+    return (topic[:80], season)
+
+
+def _status_lines(task) -> list[str]:
+    if task is None:
+        return []
+    base_raw, season_raw = _status_subject(task)
+    base = base_raw.strip()
+    season = season_raw.strip()
+    lines: list[str] = []
+    if base:
+        if season and season not in base:
+            subject = f"{base} for {season}"[:80].strip()
+        else:
+            subject = base[:80].strip()
+        lines.append(f"Checking {subject}…")
+        if season and season not in base:
+            lines.append(f"Comparing {base} across {season}…")
+        else:
+            lines.append(f"Comparing {base}…")
+    lines.append("Verifying every number…")
+    deduped: list[str] = []
+    for line in lines:
+        if line not in deduped:
+            deduped.append(line)
+    return deduped[:3]
+
+
 def _public_output_status(result, status) -> dict:
     item = {"requirement_kind": status.requirement_kind,
             "requirement_id": status.requirement_id,
@@ -1159,69 +1298,134 @@ def _public_output_status(result, status) -> dict:
     return item
 
 
-def _public_evidence_tables(result) -> list[dict]:
-    from v2.domain.evidence import iter_values
-    from v2.domain.calculations import Calculation, validate_calculation
-    from v2.domain.evidence import EvidenceIndex
-    evidence = {item.evidence_id:item for item in result.execution.evidence}
-    calculations = {item.calculation_id:item for item in result.draft.calculations}
-    tables = []
+def _citation_provenance(envelope) -> dict:
+    identity = envelope.source_identity
+    if identity is None:
+        origin, live_sources, warehouse_id = "undeclared", [], None
+    elif identity.kind == "live":
+        origin, live_sources, warehouse_id = "live", [identity.source], None
+    elif identity.kind == "composite":
+        origin, live_sources = "mixed", list(identity.live_sources)
+        warehouse_id = identity.warehouse_id
+    else:
+        origin, live_sources, warehouse_id = "warehouse", [], identity.warehouse_id
+    return {"capability": envelope.capability,
+            "origin": origin,
+            "warehouse_id": warehouse_id,
+            "season": envelope.season,
+            "as_of": envelope.as_of.isoformat() if envelope.as_of else None,
+            "live_sources": live_sources}
+
+
+def _published_bindings(result) -> list:
+    from v2.runtime.models import withheld_claim_indices
+
+    verified = list(getattr(result, "verified_claims", None) or [])
+    bindings: dict[tuple, object] = {}
+    if verified:
+        withheld = withheld_claim_indices(getattr(result, "gaps", None) or [])
+        internal = _internal_identifier_rx(result)
+        for item in verified:
+            if item.claim_index in withheld:
+                continue
+            if _publishable_prose(item.claim.text, internal) is None:
+                continue
+            for binding in item.claim.output_bindings:
+                bindings[(binding.requirement_kind, binding.requirement_id,
+                          binding.output_id)] = binding
     for status in result.output_statuses:
-        if status.status != "complete":
-            continue
-        binding = status.binding
-        if hasattr(binding, "evidence_id"):
+        if status.status == "complete" and status.binding is not None:
+            bindings.setdefault(
+                (status.requirement_kind, status.requirement_id,
+                 status.output_id), status.binding)
+    return list(bindings.values())
+
+
+def _traced_value(envelope, binding) -> tuple[Any, str | None]:
+    from v2.runtime.models import (
+        AmbiguousSelector, ResolvedSelector, _declared_value_matches,
+        resolve_evidence_binding, resolve_subject_row,
+    )
+    from v2.contracts import canonical_entity_id
+
+    subject_row = None
+    if binding.subject_entity_id is not None:
+        subject_row = resolve_subject_row(envelope, binding, canonical_entity_id(
+            binding.subject_entity_type, binding.subject_entity_id))
+        if subject_row is None:
+            return None, "its subject selector names no row the envelope holds"
+    resolution = resolve_evidence_binding(envelope, binding, subject_row)
+    if isinstance(resolution, AmbiguousSelector):
+        return None, "its selector names several values"
+    if not isinstance(resolution, ResolvedSelector) or resolution.value is None:
+        return None, "its selector resolves to nothing"
+    if not _declared_value_matches(binding.value, resolution.value):
+        raise ValueError("publication evidence changed after admission")
+    return resolution.value, None
+
+
+def _public_evidence(result) -> tuple[list[dict], list[str]]:
+    from v2.domain.calculations import Calculation, validate_calculation
+    from v2.domain.evidence import EvidenceIndex, iter_values
+    evidence = {item.evidence_id: item for item in result.execution.evidence}
+    calculations = {item.calculation_id: item for item in result.draft.calculations}
+    rows: dict[str, dict] = {}
+    dropped: list[str] = []
+    logger = logging.getLogger(__name__)
+
+    def publish(row: dict) -> None:
+        rows.setdefault(json.dumps(row, sort_keys=True), row)
+
+    for binding in _published_bindings(result):
+        if binding.requirement_kind != "calculation":
             envelope = evidence.get(binding.evidence_id)
             if envelope is None:
                 raise ValueError("publication evidence is missing")
-            values=[v.value for v in iter_values(envelope) if v.path==binding.selector]
-            if len(values)!=1:
-                raise ValueError("publication selector must resolve exactly once")
-            selected=values[0]; declared=binding.value
-            if declared.kind=="boolean": equal=isinstance(selected,bool) and selected is declared.value
-            elif declared.kind=="integer": equal=not isinstance(selected,bool) and isinstance(selected,int) and selected==declared.value
-            elif declared.kind=="float": equal=isinstance(selected,float) and selected==declared.value
-            elif declared.kind=="decimal":
-                from decimal import Decimal
-                equal=isinstance(selected,Decimal) and selected==Decimal(declared.value)
-            else: equal=isinstance(selected,str) and selected==declared.value
-            if not equal:
-                raise ValueError("publication evidence changed after admission")
-            tables.append({"output_id":binding.output_id,
-                "display_name":_output_display_name(
-                    binding.output_id, envelope.metric_definitions),
-                "subject_type":binding.subject_entity_type,
-                "subject_id":binding.subject_entity_id,
-                "value":str(binding.value.value),
-                "unit":binding.unit.value if binding.unit.kind=="declared" else "unitless",
-                "provenance":{"capability":envelope.capability,
-                              "season":envelope.season,
-                              "as_of":envelope.as_of.isoformat() if envelope.as_of else None}})
-        else:
-            calculation=calculations.get(binding.calculation_id)
-            if calculation is None:
-                raise ValueError("publication calculation is missing")
-            checked=Calculation.model_validate({"calculation_id":calculation.calculation_id,
-                "operation":calculation.operation,"inputs":[x.model_dump() for x in calculation.inputs],
-                "result":calculation.result,"unit":calculation.unit,"subject_input":calculation.subject_input})
-            if validate_calculation(checked,EvidenceIndex(evidence.values())) is not None:
-                raise ValueError("publication calculation no longer recomputes")
-            for input_ in calculation.inputs:
-                envelope=evidence.get(input_.evidence_id)
-                values=[v.value for v in iter_values(envelope)] if envelope else []
-                selected=[v.value for v in iter_values(envelope) if v.path==input_.path] if envelope else []
-                if len(selected)!=1:
-                    raise ValueError("publication calculation input must resolve exactly once")
-                tables.append({"output_id":binding.output_id,
-                    "display_name":_output_display_name(binding.output_id),
-                    "input_value":str(selected[0]),
-                    "provenance":{"capability":envelope.capability,
-                                  "season":envelope.season,
-                                  "as_of":envelope.as_of.isoformat() if envelope.as_of else None}})
-    distinct: dict[str, dict] = {}
-    for row in tables:
-        distinct.setdefault(json.dumps(row, sort_keys=True), row)
-    return list(distinct.values())
+            value, reason = _traced_value(envelope, binding)
+            if reason is not None:
+                dropped.append(binding.output_id)
+                logger.warning("publication could not trace %s: %s",
+                               binding.output_id, reason)
+                continue
+            publish({"output_id": binding.output_id,
+                     "display_name": _output_display_name(
+                         binding.output_id, envelope.metric_definitions),
+                     "subject_type": binding.subject_entity_type,
+                     "subject_id": binding.subject_entity_id,
+                     "value": str(value),
+                     "unit": (binding.unit.value if binding.unit.kind == "declared"
+                              else "unitless"),
+                     "provenance": _citation_provenance(envelope)})
+            continue
+        calculation = calculations.get(binding.calculation_id)
+        if calculation is None:
+            raise ValueError("publication calculation is missing")
+        checked = Calculation.model_validate({
+            "calculation_id": calculation.calculation_id,
+            "operation": calculation.operation,
+            "inputs": [item.model_dump() for item in calculation.inputs],
+            "result": calculation.result, "unit": calculation.unit,
+            "subject_input": calculation.subject_input})
+        if validate_calculation(checked, EvidenceIndex(evidence.values())) is not None:
+            raise ValueError("publication calculation no longer recomputes")
+        for input_ in calculation.inputs:
+            envelope = evidence.get(input_.evidence_id)
+            selected = ([item.value for item in iter_values(envelope)
+                         if item.path == input_.path] if envelope else [])
+            if len(selected) != 1:
+                raise ValueError("publication calculation input must resolve exactly once")
+            publish({"output_id": binding.output_id,
+                     "display_name": _output_display_name(binding.output_id),
+                     "input_value": str(selected[0]),
+                     "provenance": _citation_provenance(envelope)})
+    cited = {row["output_id"] for row in rows.values()}
+    untraced = list(dict.fromkeys(
+        _output_display_name(output_id) + UNTRACED_SUFFIX
+        for output_id in (
+            *dropped,
+            *(status.output_id for status in result.output_statuses
+              if status.output_id not in cited))))
+    return list(rows.values()), untraced
 
 
 def _public_capability_name(raw) -> str:
@@ -1378,6 +1582,7 @@ def _rate_limited_stream():
 
 
 async def quick_answer_stream(body: QuickAnswerBody):
+    _require_projects()
     import asyncio
     import uuid
 
@@ -1466,7 +1671,13 @@ async def quick_answer_stream(body: QuickAnswerBody):
         "DIME_V2_LEDGER_DIR", str(_BACKEND / "data" / "v2-ledgers"))
     checkpoint_dir = Path(os.environ.get(
         "DIME_V2_CHECKPOINT_DIR", str(_BACKEND / "data" / "v2-checkpoints")))
-    policy = ExecutionPolicy.live(ledger_dir=ledger_dir)
+    runtime_mode = runtime_v2_mode()
+    if runtime_mode == "shadow":
+        policy = ExecutionPolicy.shadow(ledger_dir=ledger_dir)
+    elif runtime_mode == "on":
+        policy = ExecutionPolicy.live(ledger_dir=ledger_dir)
+    else:
+        raise HTTPException(status_code=404, detail="not found")
     policy = ExecutionPolicy.model_validate({
         **policy.model_dump(), "checkpoint_dir": checkpoint_dir,
     })
@@ -1538,7 +1749,7 @@ async def quick_answer_stream(body: QuickAnswerBody):
                 while not queue.empty():
                     buffered_events.append(queue.get_nowait())
 
-                public_tables = _public_evidence_tables(result)
+                public_tables, untraced_numbers = _public_evidence(result)
                 public_statuses = [_public_output_status(result, item)
                                    for item in result.output_statuses]
                 answer = _answer_text(result)
@@ -1569,6 +1780,14 @@ async def quick_answer_stream(body: QuickAnswerBody):
                 yield encode_event(GraphEnd())
                 return
             if policy.publish:
+                from v2.api.events import StatusUpdate
+                for line in _status_lines(getattr(result, "task", None)):
+                    try:
+                        chunk = encode_event(StatusUpdate(text=line))
+                    except Exception:
+                        continue
+                    if chunk is not None:
+                        yield chunk
                 for event in buffered_events:
                     safe_event = _safe_buffered_event(event)
                     if safe_event is not None:
@@ -1585,7 +1804,8 @@ async def quick_answer_stream(body: QuickAnswerBody):
                     status="complete" if result.verification.status.value == "pass" else "partial"))
                 yield encode_event(CustomData(
                     node="analytics",
-                    tables=public_tables))
+                    tables=public_tables,
+                    unverified_numbers=untraced_numbers))
                 for chunk in _stream_binding_diagnostics(result, body.diagnostics):
                     yield chunk
                 carry = {
@@ -1608,7 +1828,7 @@ async def quick_answer_stream(body: QuickAnswerBody):
                         store.save_chat(body.thread, "ai", answer,
                                         owner=body.client[:80])
                         store.save_run(body.thread, body.q[:2000], answer,
-                                       public_tables, [],
+                                       public_tables, untraced_numbers,
                                        owner=body.client[:80],
                                        run_id=run_id)
             yield encode_event(GraphEnd())

@@ -44,19 +44,106 @@ LEADERS_TABLES = (
     "silver_leaders_fg_pct",
 )
 
+METRIC_COVERAGE_TABLES = tuple(sorted(
+    {DEFAULT_TABLE} | {entry["table"] for entry in AVAILABLE_METRICS.values()}))
+
 CAPABILITY_TABLES: dict[str, tuple[str, ...]] = {
-    "team_ratings": ("silver_team_ratings",),
-    "playoff_team_ratings": ("silver_playoffs",),
-    "playoffs": ("silver_playoffs",),
-    "standings": ("silver_standings",),
-    "team_trajectory": ("silver_standings",),
+    "standings": ("silver_standings", "silver_hist_standings"),
+    "team_trajectory": ("silver_hist_standings",),
     "team_totals": ("silver_boxscores",),
-    "game_logs": ("silver_boxscores",),
-    "player_report": ("silver_boxscores",),
-    "shooting_efficiency": ("silver_advanced",),
-    "on_off": ("silver_on_off",),
-    "lineups": ("silver_lineups",),
+    "team_splits": ("silver_team_games", "silver_hist_gamelogs"),
+    "injury_impact": (
+        "silver_injuries",
+        "silver_team_ratings",
+        "silver_boxscores",
+        "silver_team_games",
+        "silver_hist_gamelogs",
+    ),
+    "lineup_matchups": ("silver_lineups",),
+    "competitive_ratings": ("silver_hist_gamelogs",),
+    "team_shot_zones": ("silver_hist_shots",),
+    "player_shot_zones": ("silver_hist_shots", "silver_shots"),
+    "rest_splits": ("silver_hist_gamelogs",),
+    "rookie_leaders": ("silver_player_season", "silver_hist_player_seasons"),
+    "team_ratings": ("silver_team_ratings", "silver_boxscores"),
+    "roster": ("silver_team_games", "silver_hist_gamelogs", "silver_rosters"),
+    "player_report": (
+        "silver_player_season",
+        "silver_hist_player_seasons",
+        "silver_advanced",
+        "silver_hist_shots",
+        "silver_shots",
+        "silver_clutch",
+        "silver_hist_pbp",
+    ),
+    "player_evaluation": (
+        "silver_rapm",
+        "silver_advanced",
+        "silver_leaders_pts",
+        "silver_player_gamelogs",
+        "silver_salaries",
+        "silver_cap_players",
+    ),
+    "player_comparison": (
+        "silver_player_gamelogs",
+        "silver_on_off",
+        "silver_hist_possessions",
+        "silver_standings",
+        "silver_rapm",
+        "silver_clutch",
+        "silver_lineups",
+        "silver_hist_lineups",
+        "silver_wowy",
+    ),
+    "metric_adjudication": (
+        "silver_raptor_player",
+        "silver_rapm",
+        "silver_on_off",
+        "silver_advanced",
+    ),
+    "metric_coverage": METRIC_COVERAGE_TABLES,
     "shots": ("silver_shots",),
+    "shooting_efficiency": ("silver_advanced",),
+    "on_off": ("silver_on_off", "silver_hist_possessions"),
+    "lineups": (
+        "silver_lineups",
+        "silver_hist_possessions",
+        "silver_hist_lineups",
+    ),
+    "clutch": ("silver_clutch", "silver_hist_pbp"),
+    "playoffs": ("silver_playoffs", "silver_playoff_gamelogs"),
+    "player_ratings": ("silver_advanced",),
+    "playoff_team_ratings": ("silver_playoffs",),
+    "game_prediction": (
+        "silver_team_ratings",
+        "silver_hist_gamelogs",
+        "silver_injuries",
+        "silver_scoreboard",
+    ),
+    "game_logs": ("silver_player_gamelogs", "silver_playoff_gamelogs"),
+    "four_factors": ("silver_four_factors",),
+    "team_four_factors": ("silver_four_factors_team",),
+    "matchup_brief": (
+        "silver_team_ratings",
+        "silver_boxscores",
+        "silver_team_games",
+        "silver_hist_gamelogs",
+        "silver_playoffs",
+        "silver_playoff_gamelogs",
+        "silver_injuries",
+        "silver_scoreboard",
+    ),
+    "season_series": (
+        "silver_team_games",
+        "silver_hist_gamelogs",
+        "silver_playoffs",
+        "silver_playoff_gamelogs",
+    ),
+    "head_to_head": ("silver_player_gamelogs",),
+    "matchup_splits": ("silver_player_gamelogs", "silver_team_ratings"),
+    "today": ("silver_scoreboard", "silver_standings"),
+    "morning_briefing": ("silver_scoreboard", "silver_standings"),
+    "award_results": ("silver_award_winners",),
 }
 
 _RATE_TO_TOTAL = {
@@ -155,8 +242,6 @@ def tables_for_capability(
                 if table is not None:
                     return (table,)
                 break
-        return LEADERS_TABLES
-    if name == "rookie_leaders":
         return LEADERS_TABLES
     known = CAPABILITY_TABLES.get(name)
     if known is not None:
@@ -299,6 +384,52 @@ def table_seasons(table: str) -> frozenset[str]:
         if fresh is not None:
             _season_cache[name] = (fresh, seasons)
     return seasons
+
+
+def _read_league_seasons(
+    path: Path, table: str, team_column: str, league_size: int,
+) -> tuple[str, ...]:
+    import duckdb
+
+    connection = duckdb.connect(str(path), read_only=True)
+    try:
+        rows = connection.execute(
+            f'SELECT _season, COUNT(DISTINCT "{team_column}") AS teams '
+            f'FROM "{table}" WHERE _season IS NOT NULL '
+            f'GROUP BY 1 ORDER BY 1').fetchall()
+    finally:
+        try:
+            connection.close()
+        except Exception:
+            pass
+    return tuple(
+        str(season) for season, teams in rows
+        if season and int(teams or 0) >= int(league_size))
+
+
+def league_seasons(
+    table: str, team_column: str, league_size: int,
+) -> tuple[str, ...]:
+    import logging
+
+    import duckdb
+
+    if re.fullmatch(_TABLE_NAME, str(table or "")) is None:
+        return ()
+    if re.fullmatch(_TABLE_NAME, str(team_column or "")) is None:
+        return ()
+    log = logging.getLogger(__name__)
+    try:
+        path = warehouse_path()
+    except OSError as exc:
+        log.warning("league_seasons: warehouse path unavailable: %r", exc)
+        return ()
+    try:
+        return _read_league_seasons(path, table, team_column, league_size)
+    except (duckdb.Error, OSError, ValueError) as exc:
+        log.warning("league_seasons: %s.%s unreadable: %r",
+                    table, team_column, exc)
+        return ()
 
 
 def coverage_bounds(

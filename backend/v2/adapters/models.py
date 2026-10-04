@@ -894,6 +894,9 @@ class ModelIntake(ModelStage):
         )
         labeled = task_coverage_groups_labeled(task)
         if not labeled:
+            if list(getattr(task, "required_evidence", None) or []) \
+                    and not list(task.metric_ids or []):
+                return task
             implied = [table_for_metric(metric) for metric in task.metric_ids]
             if not implied:
                 implied = [DEFAULT_TABLE]
@@ -1639,6 +1642,30 @@ class ModelPlanner(ModelStage):
                         f"by {node.capability}",
                         node_id=node.id, missing_required=[])
 
+    def _dependent_source_candidate(
+        self, task: TaskSpec | None,
+        requirements: Mapping[str, Any],
+        node: Any, capability: str,
+        argument: str, entity_type: str,
+    ) -> str | None:
+        for requirement_id in node.covers_requirement_ids or []:
+            requirement = requirements.get(requirement_id)
+            if requirement is None:
+                continue
+            if capability not in requirement.capability_options:
+                continue
+            value = capability_arguments_for(requirement, capability).get(argument)
+            if value is not None and not (isinstance(value, str) and not value.strip()):
+                return value if isinstance(value, str) else str(value)
+        if task is not None:
+            matches = [entity for entity in task.entities
+                       if entity.type == entity_type]
+            if len(matches) == 1:
+                candidate = matches[0].display_name or matches[0].id
+                if candidate is not None and str(candidate).strip():
+                    return str(candidate)
+        return None
+
     async def _generate_plan(self, payload, task: TaskSpec | None = None):
         wire = await self._generate(payload, decode=self._collect_planner_drops)
         from jsonschema import Draft202012Validator
@@ -1666,13 +1693,88 @@ class ModelPlanner(ModelStage):
                         if ranked_error.startswith("RANKED_DIRECTION_UNSPECIFIED")
                         else []))
             self._check_ranked_requirement_agreement(node, arguments, requirements)
-            decoded.append((node, arguments))
-        return Plan.model_validate({"nodes": [{
-            "id": node.id, "description": node.description,
-            "depends_on": node.depends_on or [], "capability_hints": [node.capability],
+            entry = self._catalog.get(node.capability)
+            declarations = entry.get("dependent_entity_arguments", {}) if isinstance(entry, Mapping) else {}
+            values = dict(arguments.as_dict() if hasattr(arguments, "as_dict") else arguments)
+            stripped: dict[str, Any] = {}
+            for key in set(declarations) & set(values):
+                stripped[key] = values.pop(key)
+            decoded.append((node, values, stripped))
+        resolvers: list[dict[str, Any]] = []
+        existing = {node.id for node, _, _ in decoded}
+        resolver_for: dict[tuple[str, str], str] = {}
+        depends_extra: dict[str, list[str]] = {}
+        if "entity_resolution" in self._catalog:
+            for node, _, stripped in decoded:
+                entry = self._catalog.get(node.capability)
+                declarations = entry.get("dependent_entity_arguments", {}) if isinstance(entry, Mapping) else {}
+                for key, value in stripped.items():
+                    if value is None or (isinstance(value, str) and not value.strip()):
+                        continue
+                    entity_type = declarations.get(key)
+                    if not isinstance(entity_type, str) or not entity_type:
+                        continue
+                    fold = (str(entity_type), str(value).strip().casefold())
+                    resolver_id = resolver_for.get(fold)
+                    if resolver_id is None:
+                        base = f"resolve_{str(entity_type).replace('-', '_')}"
+                        resolver_id = base
+                        suffix = 2
+                        while resolver_id in existing:
+                            resolver_id = f"{base}_{suffix}"
+                            suffix += 1
+                        existing.add(resolver_id)
+                        resolver_for[fold] = resolver_id
+                        resolvers.append({
+                            "id": resolver_id, "description": f"Resolve {entity_type} identity for dependent tools",
+                            "depends_on": [], "capability_hints": ["entity_resolution"],
+                            "covers_requirement_ids": [],
+                            "arguments": {"query": value}, "max_attempts": 1,
+                            "status": "pending"})
+                    depends_extra.setdefault(node.id, []).append(resolver_id)
+        if "entity_resolution" in self._catalog:
+            for node, values, stripped in decoded:
+                entry = self._catalog.get(node.capability)
+                declarations = entry.get("dependent_entity_arguments", {}) if isinstance(entry, Mapping) else {}
+                for key, entity_type in declarations.items():
+                    current = values.get(key)
+                    if current is not None and not (isinstance(current, str) and not current.strip()):
+                        continue
+                    if not isinstance(entity_type, str) or not entity_type:
+                        continue
+                    candidate = self._dependent_source_candidate(
+                        task, requirements, node, node.capability, key, entity_type)
+                    if candidate is None or not candidate.strip():
+                        continue
+                    values[key] = candidate
+                    fold = (str(entity_type), candidate.strip().casefold())
+                    resolver_id = resolver_for.get(fold)
+                    if resolver_id is None:
+                        base = f"resolve_{str(entity_type).replace('-', '_')}"
+                        resolver_id = base
+                        suffix = 2
+                        while resolver_id in existing:
+                            resolver_id = f"{base}_{suffix}"
+                            suffix += 1
+                        existing.add(resolver_id)
+                        resolver_for[fold] = resolver_id
+                        resolvers.append({
+                            "id": resolver_id, "description": f"Resolve {entity_type} identity for dependent tools",
+                            "depends_on": [], "capability_hints": ["entity_resolution"],
+                            "covers_requirement_ids": [],
+                            "arguments": {"query": candidate}, "max_attempts": 1,
+                            "status": "pending"})
+                    if resolver_id not in depends_extra.get(node.id, []):
+                        depends_extra.setdefault(node.id, []).append(resolver_id)
+        return Plan.model_validate({"nodes": [
+            *resolvers,
+            *[{
+                "id": node.id, "description": node.description,
+                "depends_on": list(dict.fromkeys([*(node.depends_on or []), *depends_extra.get(node.id, [])])),
+            "capability_hints": [node.capability],
             "covers_requirement_ids": node.covers_requirement_ids or [],
             "arguments": dict(arguments), "max_attempts": node.max_attempts or 1,
-            "status": node.status or "pending"} for node, arguments in decoded]})
+            "status": node.status or "pending"} for node, arguments, _ in decoded]]})
 
     def __init__(self, *args: Any, capability_catalog: Mapping[str, str], **kwargs: Any) -> None:
         super().__init__(*args, **kwargs)
@@ -1744,10 +1846,21 @@ class ModelPlanner(ModelStage):
                 declarations = (entry.get("dependent_entity_arguments", {})
                                 if isinstance(entry, Mapping) else {})
                 dependencies = list(node.depends_on)
+                updated_arguments: dict[str, Any] | None = None
                 for argument, entity_type in declarations.items():
-                    value = node.arguments.get(argument)
+                    value = (updated_arguments.get(argument, node.arguments.get(argument))
+                             if updated_arguments is not None else node.arguments.get(argument))
                     if value is None or (isinstance(value, str) and not value.strip()):
-                        continue
+                        candidate = self._dependent_source_candidate(
+                            task, requirements, node,
+                            selected_name or "", argument, entity_type)
+                        if candidate is not None and candidate.strip():
+                            if updated_arguments is None:
+                                updated_arguments = dict(node.arguments)
+                            updated_arguments[argument] = candidate
+                            value = candidate
+                        else:
+                            continue
                     has_resolver = any(
                         parent in existing and any(
                             candidate.id == parent
@@ -1774,8 +1887,11 @@ class ModelPlanner(ModelStage):
                             arguments={"query": value},
                         ))
                     dependencies.append(resolver_id)
-                normalized_nodes.append(node.model_copy(update={
-                    "depends_on": list(dict.fromkeys(dependencies))}))
+                update: dict[str, Any] = {
+                    "depends_on": list(dict.fromkeys(dependencies))}
+                if updated_arguments is not None:
+                    update["arguments"] = updated_arguments
+                normalized_nodes.append(node.model_copy(update=update))
             if added:
                 plan = plan.model_copy(update={"nodes": [*added, *normalized_nodes]})
         plan = plan.model_copy(update={"nodes": [
@@ -2343,11 +2459,11 @@ def _deterministic_rank_draft(
             continue
         label = TEAM_RATING_METRICS[metric]["label"]
         owner = next((requirement for requirement in task.requirements
-                      if "team_ratings" in requirement.capability_options
-                      and capability_arguments_for(requirement, "team_ratings").get("requested_metric") == metric), None)
+                      if item.capability in requirement.capability_options
+                      and capability_arguments_for(requirement, item.capability).get("requested_metric") == metric), None)
         if owner is None:
             continue
-        direction = capability_arguments_for(owner, "team_ratings").get("ranking_direction")
+        direction = capability_arguments_for(owner, item.capability).get("ranking_direction")
         if direction not in RANKING_DIRECTIONS:
             continue
         numeric = []
@@ -2388,13 +2504,83 @@ def _deterministic_rank_draft(
             "inputs": inputs, "subject_input": subject_input, "result": 1, "unit": "rank",
         } for index, requirement in enumerate(eligible)]
         calculation_id = calculations[0]["calculation_id"] if calculations else None
+        from v2.contracts import (
+            CalculationOutputBinding,
+            Claim,
+            EvidenceOutputBinding,
+        )
+        winner_row = item.rows[winner_index]
+        row_selector = f"rows[{winner_index}]"
+        subject_id = winner_row.get("TEAM_ID")
+        if subject_id is not None and str(subject_id).strip():
+            subject_fields: dict = {
+                "subject_entity_type": "team",
+                "subject_entity_id": str(subject_id),
+                "subject_selector": f"{row_selector}.TEAM_ID",
+            }
+        else:
+            subject_fields = {
+                "subject_entity_type": None,
+                "subject_entity_id": None,
+                "subject_selector": None,
+            }
+
+        def _binding_value(raw):
+            if isinstance(raw, bool):
+                return {"kind": "boolean", "value": raw}
+            if isinstance(raw, int):
+                return {"kind": "integer", "value": raw}
+            if isinstance(raw, float):
+                return {"kind": "float", "value": raw}
+            if isinstance(raw, Decimal):
+                return {"kind": "decimal", "value": str(raw)}
+            return {"kind": "string", "value": str(raw)}
+
+        from v2.adapters.capabilities import CAPABILITIES
+        capability_units = getattr(
+            CAPABILITIES.get(item.capability), "units", {}) or {}
+        output_bindings: list = []
+        for output_id in owner.requested_outputs:
+            if output_id not in winner_row or winner_row[output_id] is None:
+                continue
+            unit_name = (item.units or {}).get(output_id) \
+                or capability_units.get(output_id)
+            unit = {"kind": "declared", "value": unit_name} \
+                if unit_name else {"kind": "unitless"}
+            output_bindings.append(EvidenceOutputBinding(
+                requirement_kind="evidence",
+                requirement_id=owner.id,
+                output_id=output_id,
+                node_id=owner.id,
+                evidence_id=item.evidence_id,
+                selector=f"{row_selector}.{output_id}",
+                row_selector=row_selector,
+                value=_binding_value(winner_row[output_id]),
+                unit=unit,
+                domain=item.capability,
+                **subject_fields,
+            ))
+        if calculation_id is not None:
+            cited_requirement_id = calculations[0]["requirement_id"]
+            cited_requirement = next(
+                (requirement for requirement in eligible
+                 if requirement.id == cited_requirement_id), None)
+            if cited_requirement is not None:
+                for output_id in cited_requirement.requested_outputs:
+                    output_bindings.append(CalculationOutputBinding(
+                        requirement_kind="calculation",
+                        requirement_id=cited_requirement.id,
+                        output_id=output_id,
+                        calculation_id=calculation_id,
+                    ))
         return DraftReport(
             sections=["Team rating leader"],
             claims=[Claim(
                 text=(f"{team} had the {direction_words[direction]} {label} "
                       f"in {item.season or 'the selected season'}: {value}."),
                 kind="derived" if calculation_id else "observed",
-                evidence_ids=[item.evidence_id], calculation_id=calculation_id)],
+                evidence_ids=[item.evidence_id], calculation_id=calculation_id,
+                output_bindings=output_bindings)],
             calculations=calculations,
             blocked_calculation_requirement_ids=blocked,
             gaps=(["Some requested calculations do not declare the requested metric in their metric_ids."]

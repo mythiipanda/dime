@@ -15,6 +15,40 @@ from v2.domain.evidence import admit_evidence  # noqa: E402
 SEASON = "2024-25"
 
 
+_HIST_COLUMNS = (
+    "team_id BIGINT, team_abbreviation VARCHAR, game_id VARCHAR, "
+    "game_date DATE, matchup VARCHAR, wl VARCHAR, min DOUBLE, "
+    "fgm INTEGER, fga INTEGER, fg_pct DOUBLE, "
+    "fg3m INTEGER, fg3a INTEGER, fg3_pct DOUBLE, "
+    "ftm INTEGER, fta INTEGER, ft_pct DOUBLE, "
+    "oreb INTEGER, dreb INTEGER, reb INTEGER, "
+    "ast INTEGER, stl INTEGER, blk INTEGER, "
+    "tov INTEGER, pf INTEGER, pts INTEGER, "
+    "season_type VARCHAR, _season VARCHAR"
+)
+
+_HIST_ROWS = [
+    (1610612738, "BOS", "0022400001", "2024-10-22", "BOS vs. NYK", "W",
+     240.0, 46, 100, 0.460, 10, 32, 0.3125, 18, 20, 0.900,
+     10, 30, 40, 25, 7, 4, 12, 20, 120, "regular-season", SEASON),
+    (1610612752, "NYK", "0022400001", "2024-10-22", "NYK @ BOS", "L",
+     240.0, 41, 94, 0.436, 9, 30, 0.300, 15, 18, 0.833,
+     8, 31, 39, 22, 6, 3, 14, 22, 110, "regular-season", SEASON),
+    (1610612738, "BOS", "0022400002", "2024-11-05", "BOS @ NYK", "W",
+     240.0, 45, 89, 0.506, 8, 28, 0.286, 20, 22, 0.909,
+     9, 33, 42, 27, 5, 6, 13, 19, 118, "regular-season", SEASON),
+    (1610612752, "NYK", "0022400002", "2024-11-05", "NYK vs. BOS", "L",
+     240.0, 40, 84, 0.476, 8, 26, 0.308, 17, 20, 0.850,
+     11, 28, 39, 23, 8, 2, 15, 24, 105, "regular-season", SEASON),
+    (1610612738, "BOS", "0042400101", "2024-04-20", "BOS vs. NYK", "W",
+     240.0, 48, 100, 0.480, 14, 36, 0.389, 22, 26, 0.846,
+     12, 34, 46, 28, 9, 5, 15, 22, 140, "playoffs", SEASON),
+    (1610612752, "NYK", "0042400101", "2024-04-20", "NYK @ BOS", "L",
+     240.0, 44, 96, 0.458, 11, 32, 0.344, 18, 20, 0.900,
+     9, 30, 39, 21, 7, 4, 16, 23, 128, "playoffs", SEASON),
+]
+
+
 def _seed(path):
     connection = duckdb.connect(str(path))
     try:
@@ -33,43 +67,12 @@ def _seed(path):
             "'2025-26', '2026-09-30T00:00:00+00:00')"
         )
         connection.execute(
-            "CREATE TABLE silver_boxscores (GAME_ID VARCHAR, "
-            "TEAM_ID BIGINT, teamTricode VARCHAR, teamCity VARCHAR, "
-            "teamName VARCHAR, PLAYER_ID BIGINT, firstName VARCHAR, "
-            "familyName VARCHAR, points BIGINT, "
-            "fieldGoalsAttempted BIGINT, freeThrowsAttempted BIGINT, "
-            "reboundsOffensive BIGINT, turnovers BIGINT, comment VARCHAR, "
-            "_source VARCHAR, _season VARCHAR, _fetched_at VARCHAR, "
-            "_entity VARCHAR)"
+            f"CREATE TABLE silver_hist_gamelogs ({_HIST_COLUMNS})")
+        connection.executemany(
+            f"INSERT INTO silver_hist_gamelogs "
+            f"VALUES ({', '.join('?' * 27)})",
+            [list(row) for row in _HIST_ROWS],
         )
-        games = [
-            ("0022400001", 1610612738, "BOS", "Boston", "Celtics",
-             1, "Jay", "Star", 20, 10, 2, 1, 2, ""),
-            ("0022400001", 1610612738, "BOS", "Boston", "Celtics",
-             2, "Jay", "Sidekick", 80, 60, 10, 5, 8, ""),
-            ("0022400001", 1610612752, "NYK", "New York", "Knicks",
-             3, "Knick", "Leader", 90, 70, 10, 8, 12, ""),
-            ("0022400002", 1610612738, "BOS", "Boston", "Celtics",
-             1, "Jay", "Star", 60, 40, 4, 2, 5, ""),
-            ("0022400002", 1610612738, "BOS", "Boston", "Celtics",
-             2, "Jay", "Sidekick", 50, 35, 4, 2, 4, ""),
-            ("0022400002", 1610612752, "NYK", "New York", "Knicks",
-             3, "Knick", "Leader", 95, 72, 12, 6, 11, ""),
-            ("0022400001", 1610612738, "BOS", "Boston", "Celtics",
-             9, "Did", "Notplay", 500, 200, 100, 50, 60,
-             "DND - Injury/Illness"),
-            ("0042400101", 1610612738, "BOS", "Boston", "Celtics",
-             1, "Jay", "Star", 200, 150, 40, 10, 20, ""),
-            ("0042400101", 1610612752, "NYK", "New York", "Knicks",
-             3, "Knick", "Leader", 190, 140, 30, 12, 18, ""),
-        ]
-        for game in games:
-            connection.execute(
-                "INSERT INTO silver_boxscores VALUES "
-                "(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, "
-                "'nba_stats', '2024-25', '2025-06-01T00:00:00+00:00', '')",
-                list(game),
-            )
     finally:
         connection.close()
 
@@ -123,17 +126,20 @@ def test_missing_ratings_season_estimated_from_gamelogs(warehouse):
     assert row["TEAM_NAME"] == "Boston Celtics"
     assert row["GP"] == 2
     assert (row["W"], row["L"]) == (2, 0)
-    assert row["OFF_RATING"] == 129.0
-    assert row["DEF_RATING"] == 115.1
-    assert row["NET_RATING"] == 13.9
-    assert row["PACE"] == 81.4
+    assert row["OFF_RATING"] == 114.7
+    assert row["DEF_RATING"] == 103.6
+    assert row["NET_RATING"] == 11.1
+    assert row["PACE"] == 103.74
+    assert result["meta"]["ratings_provenance"] == "derived"
+    assert result["meta"]["ratings_source"] == "silver_hist_gamelogs"
+    assert "derived" in result["meta"]["source"]
 
 
 def test_team_ratings_capability_binds_gamelog_fallback(warehouse):
     envelope = call_capability(
         "team_ratings", {"season": SEASON, "team": "Celtics"})
     assert envelope.season == SEASON
-    assert envelope.rows[0]["NET_RATING"] == 13.9
+    assert envelope.rows[0]["NET_RATING"] == 11.1
     assert envelope.units["NET_RATING"] == "points_per_100_possessions"
     admit_evidence(envelope, required_season=SEASON)
 
@@ -193,8 +199,8 @@ def test_natural_ratings_claim_passes_without_unit_phrase(warehouse):
             capability_arguments={"season": SEASON, "team": "BOS"},
             requested_outputs=["NET_RATING", "OFF_RATING", "DEF_RATING"])])
     claim = Claim(
-        text="The Boston Celtics had a net rating of 13.9, an offensive "
-             "rating of 129.0, and a defensive rating of 115.1 "
+        text="The Boston Celtics had a net rating of 11.1, an offensive "
+             "rating of 114.7, and a defensive rating of 103.6 "
              "in the 2024-25 season.",
         kind=ClaimKind.OBSERVED, evidence_ids=[envelope.evidence_id],
         output_bindings=[])

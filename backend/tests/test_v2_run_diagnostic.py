@@ -14,6 +14,7 @@ FAIL_MESSAGE = "boom-after-replan"
 
 
 def _install_stubs(monkeypatch, tmp_path):
+    monkeypatch.setenv("DIME_RUNTIME_V2", "on")
     monkeypatch.setenv("DIME_V2_ACTIVITY_DIR", str(tmp_path / "activity"))
     monkeypatch.setenv(
         "DIME_CONVERSATION_STORE", str(tmp_path / "conv.sqlite3"))

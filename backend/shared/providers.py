@@ -30,7 +30,7 @@ GEMINI_DEFAULT = "gemini-3.5-flash-lite"
 GEMINI_MODELS: tuple[str, ...] = (
     GEMINI_DEFAULT,
     "gemini-3.5-flash",
-    "gemma-4-26b-a4b-it",
+    "gemma-4-31b-it",
 )
 GEMINI_ALLOWLIST = frozenset(GEMINI_MODELS)
 NVIDIA_NIM_BASE_URL = "https://integrate.api.nvidia.com/v1"

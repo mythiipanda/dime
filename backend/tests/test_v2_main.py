@@ -400,8 +400,8 @@ def test_v2_chat_persists_to_shared_thread_log(monkeypatch, tmp_path):
     evidence_tables = [{"tool": "get_leaders",
                         "meta": {"source": "nba", "season": "2025-26"}}]
     monkeypatch.setattr(routes, "_answer_text", lambda result: answer_text)
-    monkeypatch.setattr(routes, "_public_evidence_tables",
-                        lambda result: evidence_tables)
+    monkeypatch.setattr(routes, "_public_evidence",
+                        lambda result: (evidence_tables, []))
 
     body = routes.QuickAnswerBody(q="Who leads the league in TS%?",
                                   thread="t-hist", client="c-hist")

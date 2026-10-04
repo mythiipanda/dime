@@ -51,6 +51,9 @@ def _public_payload(event: InternalEvent, *, diagnostics: bool = False) -> dict 
         return common
     if event.type == EventType.TOKEN:
         return {"text": ""}
+    if event.type == EventType.STATUS:
+        text = str(payload.get("text", ""))
+        return {"text": text[:500]}
     if event.type == EventType.THOUGHT_STREAM:
         return {key: payload[key] for key in ("node",) if key in payload} | {
             "text": "Working through the evidence...",

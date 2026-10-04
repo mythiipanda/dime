@@ -5,7 +5,7 @@ from typing import Any
 from langchain_core.tools import tool
 
 from .. import store as _store
-from ._core import clamp_season, coerce_team_id, last_completed_season, resolve_season
+from ._core import InvalidSeasonError, clamp_season, coerce_team_id, last_completed_season, resolve_season
 
 TABLE = "silver_hist_shots"
 
@@ -175,7 +175,10 @@ def get_team_shot_zones(teams: str = "league",
     list of team names/abbrevs/ids. Zones: rim, short_mid, long_mid,
     corner_3, atb_3."""
     season = resolve_season(season)
-    season = clamp_season(season)
+    try:
+        season = clamp_season(season)
+    except InvalidSeasonError as exc:
+        return {"tool": "get_team_shot_zones", "ok": False, "error": str(exc)}
     year = season_year(season)
     frame = _store.read_frame(TABLE, "season = ?", [year])
     if frame.height == 0:

@@ -3,6 +3,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, Callable, Mapping
 
+from shared.tools.leader_metrics import COUNTING_METRICS, per_game_column
+
 from ..contracts import EntityRef
 
 COUNT = "count"
@@ -11,6 +13,11 @@ FRACTION = "fraction_0_1"
 PERCENT = "percent_0_100"
 POINTS_PER_100 = "points_per_100_possessions"
 MINUTES = "minutes"
+YEARS = "years"
+
+COUNTING_UNITS = {metric: COUNT for metric in COUNTING_METRICS}
+PER_GAME_UNITS = {per_game_column(metric): PER_GAME
+                  for metric in COUNTING_METRICS}
 
 EFG_DEF = "Effective field-goal percentage: (FGM + 0.5 * FG3M) / FGA."
 TS_DEF = "True shooting percentage: PTS / (2 * (FGA + 0.44 * FTA))."
@@ -25,6 +32,44 @@ FOUR_FACTORS_DEFS = {
                "rebounds, fraction scale 0-1.",
     "ft_rate": "Free-throw rate: FTM / FGA, fraction scale 0-1.",
 }
+
+AWARD_WINNER_UNITS = {
+    "rank": COUNT,
+}
+
+AWARD_WINNER_DEFINITIONS = {
+    "award": "Award code the source recorded the winner under.",
+    "coach": ("Coach named on the winner row; always null, the dataset "
+              "covers players only."),
+    "player": "Player named as the award winner.",
+    "rank": "Always 1: every row is a recorded winner.",
+    "rank_label": "Winner rank label, always \"1\".",
+    "season": "Season the source recorded the award for.",
+    "team": "Team name the source recorded with the winner.",
+    "tied": "Always false: winners are recorded one row per award and season.",
+}
+
+AWARD_OUTPUT_ALIASES = {
+    "PLAYER_NAME": "player",
+    "COACH_NAME": "coach",
+}
+
+
+def _award_vocabulary() -> tuple[dict[str, str], dict[str, str]]:
+    from shared.tools.award_results import _SELECT, _placement
+
+    source_row = dict.fromkeys(
+        name.strip() for name in _SELECT.replace("\n", " ").split(","))
+    fields = tuple(_placement(source_row))
+    return ({field: AWARD_WINNER_UNITS[field] for field in fields
+             if field in AWARD_WINNER_UNITS},
+            {field: AWARD_WINNER_DEFINITIONS.get(
+                field, f"{field.replace('_', ' ')} as the award winners "
+                       "dataset records it.")
+             for field in fields})
+
+
+AWARD_UNITS, AWARD_DEFINITIONS = _award_vocabulary()
 
 
 def _resolve_entities(rows: Any) -> list[EntityRef]:
@@ -98,6 +143,7 @@ class Capability:
     window_args: tuple[str, str] | None = None
     units: Mapping[str, str] = field(default_factory=dict)
     metric_definitions: Mapping[str, str] = field(default_factory=dict)
+    output_aliases: Mapping[str, str] = field(default_factory=dict)
     qualification: str | None = None
     coverage: str | None = None
     source_prefix: str = "v1"
@@ -156,12 +202,9 @@ _LIST = [
         name="qualified_leaders",
         tool_name="get_leaders",
         live_fallback=True,
-        units={"GP": COUNT, "MIN": MINUTES, "FG_PCT": FRACTION,
-               "FG3_PCT": FRACTION, "FT_PCT": FRACTION,
-               "PTS": COUNT, "REB": COUNT, "AST": COUNT,
-               "STL": COUNT, "BLK": COUNT, "FGM": COUNT, "FGA": COUNT,
-               "FG3M": COUNT, "FG3A": COUNT, "FTM": COUNT, "FTA": COUNT,
-               "OREB": COUNT, "DREB": COUNT, "TOV": COUNT, "PF": COUNT},
+        units={**COUNTING_UNITS, **PER_GAME_UNITS,
+               "GP": COUNT, "MIN": MINUTES, "FG_PCT": FRACTION,
+               "FG3_PCT": FRACTION, "FT_PCT": FRACTION},
         qualification="Qualified players only (NBA leaderboard minimums).",
         coverage="Source-ranked qualified leaderboard; returned rows preserve population ranks.",
         extract_entities=_player_entities,
@@ -239,6 +282,11 @@ _LIST = [
     ),
     Capability(name="roster", tool_name="get_team_hub", live_fallback=True),
     Capability(name="player_report", tool_name="get_player_report",
+               units={"GP": COUNT, "MPG": MINUTES,
+                      "PPG": PER_GAME, "RPG": PER_GAME, "APG": PER_GAME,
+                      "SPG": PER_GAME, "BPG": PER_GAME,
+                      "FG_PCT": FRACTION, "FG3_PCT": FRACTION,
+                      "FT_PCT": FRACTION, "TS_PCT": FRACTION},
                extract_entities=_player_entity,
                dependent_entity_arguments={"player": "player"}),
     Capability(name="player_evaluation", tool_name="get_player_evaluation",
@@ -246,7 +294,8 @@ _LIST = [
                coverage="Current-season player population represented in the warehouse.",
                extract_entities=_player_entity,
                dependent_entity_arguments={"player": "player"}),
-    Capability(name="player_comparison", tool_name="get_compare"),
+    Capability(name="player_comparison", tool_name="get_compare",
+               live_fallback=True),
     Capability(name="metric_adjudication", tool_name="compare_metrics"),
     Capability(name="metric_coverage", tool_name="metric_coverage", source_prefix="v2"),
     Capability(
@@ -394,6 +443,21 @@ _LIST = [
         qualification="Date-scoped bundle; offseason sections stay honestly empty, never fabricated games.",
         coverage="Today snapshot plus watchlist updates and leaderboard deltas with scoreboard status.",
     ),
+    Capability(
+        name="award_results",
+        tool_name="get_award_results",
+        units=AWARD_UNITS,
+        metric_definitions=AWARD_DEFINITIONS,
+        output_aliases=AWARD_OUTPUT_ALIASES,
+        qualification=(
+            "Recorded award winners only: one row per award and season, rank "
+            "always 1. No vote counts, vote shares, or ranked fields, so the "
+            "field view fails loud; Coach of the Year is not in the dataset."),
+        coverage=(
+            "Recorded NBA award winners from nba_api PlayerAwards, read from "
+            "silver_award_winners. Never a model score, projection, or live "
+            "race."),
+    ),
 ]
 
 CAPABILITIES: dict[str, Capability] = {c.name: c for c in _LIST}
@@ -426,10 +490,32 @@ _METRIC_DISPLAY_ALIASES = {
 
 _AGGREGATION_SUFFIXES = ("TOTALS", "TOTAL")
 
+_PER_GAME_STEM_SUFFIXES = ("PERGAME", "PG")
+
 
 def _squashed(value: object) -> str:
     return "".join(
         character for character in str(value).upper() if character.isalnum())
+
+
+def _per_game_stem(stem: str) -> str | None:
+    for suffix in _PER_GAME_STEM_SUFFIXES:
+        if stem.endswith(suffix) and len(stem) > len(suffix):
+            return stem[: -len(suffix)]
+    return None
+
+
+def _per_game_column(vocabulary: Mapping[str, str], stem: str) -> str | None:
+    base = _per_game_stem(stem)
+    if base is None:
+        return None
+    for candidate in (base, _METRIC_DISPLAY_ALIASES.get(base)):
+        if candidate is None:
+            continue
+        declared = vocabulary.get(_squashed(per_game_column(candidate)))
+        if declared is not None:
+            return declared
+    return None
 
 
 def resolve_metric_column(capability: Capability, output_id: str) -> str | None:
@@ -449,12 +535,16 @@ def resolve_metric_column(capability: Capability, output_id: str) -> str | None:
     stemmed = vocabulary.get(stem)
     if stemmed is not None:
         return stemmed
+    per_game = _per_game_column(vocabulary, stem)
+    if per_game is not None:
+        return per_game
     alias = _METRIC_DISPLAY_ALIASES.get(stem)
     if alias is not None:
         aliased = vocabulary.get(alias)
         if aliased is not None:
             return aliased
-    return None
+    return next((column for name, column in capability.output_aliases.items()
+                 if _squashed(name) == squashed), None)
 
 CAPABILITY_DESCRIPTIONS: dict[str, str] = {
     "entity_resolution": "Resolve a player or team name to canonical identity.",
@@ -514,9 +604,24 @@ CAPABILITY_DESCRIPTIONS: dict[str, str] = {
     "matchup_splits": "Situational splits for one player over the last N games by defense tier, venue, and rest.",
     "today": "Date-scoped scoreboard snapshot with last night, tonight, movers, and streaks.",
     "morning_briefing": "Date-scoped bundle of today snapshot, watchlist updates, and leaderboard deltas.",
+    "award_results": (
+        "Official recorded NBA award winners from nba_api PlayerAwards: who "
+        "won an award in a season, and one player's award-winner record "
+        "through a season. Winners only, no ballot detail; Coach of the Year "
+        "is not covered. This is a recorded outcome, never a model score, so "
+        "use it instead of any award race for a result."
+    ),
 }
 
 if len(CAPABILITIES) != len(_LIST):
     raise AssertionError("duplicate capability names")
 if CAPABILITY_DESCRIPTIONS.keys() != CAPABILITIES.keys():
     raise AssertionError("capability descriptions must cover the catalog exactly")
+for spec in CAPABILITIES.values():
+    undeclared_aliases = sorted(
+        target for target in spec.output_aliases.values()
+        if target not in spec.units and target not in spec.metric_definitions)
+    if undeclared_aliases:
+        raise AssertionError(
+            f"capability {spec.name} aliases undeclared outputs: "
+            f"{undeclared_aliases}")

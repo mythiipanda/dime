@@ -2,12 +2,14 @@
 import ast
 import json
 import re
+import duckdb
 from typing import Any, Literal
 from langchain_core.tools import tool
 
 from .. import store
 from ..sources import nba_stats
 from ._core import IN_SEASON_MONTHS as _IN_SEASON_MONTHS, TTL_LEADERS, TTL_SCOREBOARD_PAST, clamp_stat, _warehouse_or_live, is_past_game_date, last_completed_season, resolve_season, season_static
+from .leader_metrics import COUNTING_METRICS, per_game_column, per_game_value
 from .rating_metrics import RANKING_DIRECTIONS, TEAM_RATING_METRICS
 
 
@@ -337,100 +339,20 @@ def get_standings_deep(season: str | None = None, top: int = 5) -> dict[str, Any
                              "game logs are missing."}}
 
 
-_REGULAR_SEASON_GAME_PREFIX = "002"
-
-
-def _regular_season_team_ratings(season):
-    con = store.connect(read_only=True)
-    try:
-        tables = {row[0] for row in con.execute("SHOW TABLES").fetchall()}
-        if "silver_boxscores" not in tables:
-            return None
-        columns = {
-            row[1]
-            for row in con.execute(
-                "PRAGMA table_info(silver_boxscores)").fetchall()
-        }
-        if not {"GAME_ID", "TEAM_ID", "teamTricode", "teamCity",
-                "teamName", "points", "fieldGoalsAttempted",
-                "freeThrowsAttempted", "reboundsOffensive", "turnovers",
-                "comment", "_season"} <= columns:
-            return None
-        raw = con.execute(
-            "WITH teamgames AS ("
-            "SELECT GAME_ID, TEAM_ID, MAX(teamTricode) AS tricode, "
-            "MAX(teamCity) || ' ' || MAX(teamName) AS name, "
-            "SUM(points) AS PTS, "
-            "SUM(fieldGoalsAttempted) + 0.44 * SUM(freeThrowsAttempted) "
-            "- SUM(reboundsOffensive) + SUM(turnovers) AS poss "
-            "FROM silver_boxscores "
-            "WHERE _season = ? AND SUBSTR(GAME_ID, 1, 3) = '002' "
-            "AND TEAM_ID IS NOT NULL "
-            "AND (comment IS NULL OR comment = '') "
-            "GROUP BY GAME_ID, TEAM_ID), "
-            "paired AS ("
-            "SELECT a.TEAM_ID, a.tricode, a.name, a.PTS, a.poss, "
-            "b.PTS AS opp_pts, b.poss AS opp_poss "
-            "FROM teamgames a JOIN teamgames b "
-            "ON a.GAME_ID = b.GAME_ID AND a.TEAM_ID <> b.TEAM_ID) "
-            "SELECT TEAM_ID, tricode, name, COUNT(*) AS GP, "
-            "SUM(CASE WHEN PTS > opp_pts THEN 1 ELSE 0 END) AS W, "
-            "SUM(PTS) AS PTS, SUM(poss) AS poss, "
-            "SUM(opp_pts) AS opp_pts, SUM(opp_poss) AS opp_poss "
-            "FROM paired GROUP BY TEAM_ID, tricode, name",
-            [season],
-        ).fetchall()
-    finally:
-        con.close()
-    if not raw:
-        return None
-    table = [
-        {"TEAM_ID": row[0], "TEAM": row[1], "TEAM_NAME": row[2],
-         "GP": row[3], "W": row[4],
-         "L": row[3] - row[4],
-         "OFF_RATING": round(100 * float(row[5]) / float(row[6]), 1)
-         if row[6] else None,
-         "DEF_RATING": round(100 * float(row[7]) / float(row[8]), 1)
-         if row[8] else None,
-         "NET_RATING": (round(100 * float(row[5]) / float(row[6])
-                             - 100 * float(row[7]) / float(row[8]), 1)
-                        if row[6] and row[8] else None),
-         "PACE": round(float(row[6]) / row[3], 2)
-         if row[6] else None}
-        for row in raw
-    ]
-    table = [row for row in table
-             if row["OFF_RATING"] is not None
-             and row["DEF_RATING"] is not None
-             and row["NET_RATING"] is not None]
-    if not table:
-        return None
-    for rank, row in enumerate(
-            sorted(table, key=lambda item: item["OFF_RATING"], reverse=True),
-            1):
-        row["OFF_RATING_RANK"] = rank
-    for rank, row in enumerate(
-            sorted(table, key=lambda item: item["DEF_RATING"]),
-            1):
-        row["DEF_RATING_RANK"] = rank
-    table.sort(key=lambda item: item["NET_RATING"], reverse=True)
-    for rank, row in enumerate(table, 1):
-        row["NET_RATING_RANK"] = rank
-    meta = {
-        "source": "warehouse", "season": season, "rows": len(table),
-        "cached": True, "static_season": True,
-        "method": "NBA box-score estimated possessions",
-        "qualification": (
-            "All NBA teams in the selected regular season; estimated "
-            "possessions use the NBA box-score formula."
-        ),
-        "coverage": (
-            "Full regular-season team rating table estimated from "
-            "warehouse game logs."
-        ),
-        **store.warehouse_identity(),
+def _rating_board_row(card: dict[str, Any], team_id: int,
+                      teams_by_id: dict[int, dict[str, Any]]) -> dict[str, Any]:
+    """One team rating card in leaderboard field names."""
+    team = teams_by_id.get(team_id, {})
+    return {
+        "TEAM_ID": team_id,
+        "TEAM_NAME": str(team.get("full_name") or ""),
+        "TEAM": str(team.get("abbreviation") or ""),
+        "GP": card["gp"], "W": card["w"], "L": card["l"],
+        "OFF_RATING": round(card["off"], 1),
+        "DEF_RATING": round(card["def"], 1),
+        "NET_RATING": round(card["net"], 1),
+        "PACE": round(card["pace"], 2),
     }
-    return table, meta
 
 
 @tool
@@ -449,24 +371,53 @@ def get_ratings(
     season = resolve_season(season, "silver_team_ratings")
     from nba_api.stats.static import teams as _teams
 
-    abbrev = {t["id"]: t["abbreviation"] for t in _teams.get_teams()}
+    from .prediction import (
+        RATINGS_LIVE,
+        RATINGS_STORED,
+        RatingsSource,
+        ratings_unavailable,
+        season_team_ratings,
+    )
+
+    teams_by_id = {int(t["id"]): t for t in _teams.get_teams()}
+    abbrev = {tid: str(t.get("abbreviation") or "")
+              for tid, t in teams_by_id.items()}
     rows, meta = _warehouse_or_live(
         "silver_team_ratings", "_season = ?",
         [season], lambda: nba_stats.team_ratings(season), season,
         limit=30,
     )
+    source: RatingsSource | None = None
     if rows:
         meta.setdefault("method", "official")
-    if not rows and season_static(season or ""):
-        fallback = _regular_season_team_ratings(season)
-        if fallback is not None:
-            rows, meta = fallback
-        else:
-            rows, meta = _warehouse_or_live(
-                "silver_team_ratings", "_season = ?",
-                [season], lambda: nba_stats.team_ratings(season), season,
-                limit=30, live_on_static_miss=True,
-            )
+        source = RatingsSource(RATINGS_STORED, "silver_team_ratings")
+    else:
+        con = store.connect(read_only=True)
+        try:
+            ratings, offline = season_team_ratings(con, season)
+        finally:
+            con.close()
+        if offline is not None:
+            rows = [_rating_board_row(card, tid, teams_by_id)
+                    for tid, card in ratings.items()]
+            rows.sort(key=lambda row: row["NET_RATING"], reverse=True)
+            source = offline
+            meta = {"source": offline.declared, "season": season,
+                    "rows": len(rows),
+                    "method": ("official" if offline.kind == RATINGS_STORED
+                               else "derived"),
+                    **store.warehouse_identity()}
+    if source is None and season_static(season or ""):
+        rows, meta = _warehouse_or_live(
+            "silver_team_ratings", "_season = ?",
+            [season], lambda: nba_stats.team_ratings(season), season,
+            limit=30, live_on_static_miss=True,
+        )
+        if rows:
+            source = RatingsSource(RATINGS_LIVE,
+                                   str(meta.get("source") or "live"))
+    meta["ratings_provenance"] = source.kind if source else ""
+    meta["ratings_source"] = source.table if source else ""
     keep = ["TEAM_ID", "TEAM_NAME", "GP", "W", "L",
             "OFF_RATING", "DEF_RATING", "NET_RATING", "PACE",
             "TS_PCT", "TM_TOV_PCT",
@@ -530,18 +481,7 @@ def get_ratings(
         except Exception:
             available = []
         if season not in available:
-            if available:
-                ask = (
-                    f"Team ratings for the {season} season are not available. "
-                    f"Available seasons: {', '.join(available)}. "
-                    "Which season should be used instead?"
-                )
-            else:
-                ask = (
-                    f"Team ratings for the {season} season are not available. "
-                    "No seasons are on hand for team ratings right now. "
-                    "Which season should be used instead?"
-                )
+            ask = ratings_unavailable(season, available)
             return {"tool": "get_ratings", "ok": False, "rows": [],
                     "error": ask,
                     "meta": {**meta, "deterministic_answer": ask}}
@@ -1599,6 +1539,111 @@ def _completed_season_totals(stat_category, season, order="DESC"):
     return rows, meta
 
 
+_TOTAL_MINUTES_FLOOR = 500
+_TOTAL_MINUTES_TS_FLOOR = 1000
+
+
+class QualificationFloor:
+    """A sample floor plus the row column that proves it was cleared.
+
+    A floor published without the value it applies to is a label with no
+    number behind it, so the two travel together or neither publishes.
+    """
+
+    __slots__ = ("metric", "floor", "label", "cleared_column")
+
+    def __init__(self, metric: str, floor: int, label: str,
+                 cleared_column: str) -> None:
+        self.metric = metric
+        self.floor = floor
+        self.label = label
+        self.cleared_column = cleared_column
+
+    def payload(self) -> dict[str, Any]:
+        return {"metric": self.metric, "floor": self.floor,
+                "label": self.label, "cleared_column": self.cleared_column}
+
+
+class _FloorValueUnavailable(Exception):
+    pass
+
+
+def _floor_rows(con, sql: str, params: list[Any], table: str,
+                floor: QualificationFloor) -> list[Any]:
+    try:
+        return con.execute(sql, params).fetchall()
+    except duckdb.Error as exc:
+        raise _FloorValueUnavailable(
+            f"{table} cannot evidence the {floor.label} qualification "
+            f"because the column behind it is unreadable: {exc}") from exc
+
+
+def _qualified_rate_board(
+        con, stat_category: str, season: str, order: str, min_attempts: int,
+) -> tuple[list[dict[str, Any]], QualificationFloor, Any]:
+    """Rows for a rate board, the floor they cleared, and the text that
+    renders a row's own rate. The floor names the row column carrying its
+    value, so no caller has to know which column that is."""
+    if stat_category == "TS_PCT":
+        floor_value = max(_TOTAL_MINUTES_TS_FLOOR, min_attempts)
+        qualification = QualificationFloor(
+            "total_minutes", floor_value, f"{floor_value:,}+ total minutes",
+            "TOTAL_MINUTES")
+        raw = _floor_rows(
+            con,
+            "SELECT PLAYER_NAME, TEAM_ABBREVIATION, GP, MIN, TS_PCT "
+            "FROM silver_advanced WHERE _season = ? "
+            f"AND GP * MIN >= ? ORDER BY TS_PCT {order}, GP * MIN DESC",
+            [season, floor_value], "silver_advanced", qualification)
+        rows = [
+            {"RANK": index, "PLAYER": row[0], "TEAM": row[1],
+             "GP": row[2], "MPG": row[3],
+             "TOTAL_MINUTES": row[2] * row[3],
+             "TS_PCT": round(float(row[4]) * 100, 1)}
+            for index, row in enumerate(raw, 1)
+        ]
+        return rows, qualification, (
+            lambda row: f"{row['TS_PCT']:.1f}% true shooting")
+
+    rate_to_total = {"PPG": "PTS", "RPG": "REB", "APG": "AST",
+                     "SPG": "STL", "BPG": "BLK"}
+    total_stat = rate_to_total[stat_category]
+    table = f"silver_leaders_{total_stat.lower()}"
+    qualification = QualificationFloor(
+        "total_minutes", _TOTAL_MINUTES_FLOOR,
+        f"{_TOTAL_MINUTES_FLOOR}+ total minutes", "MIN")
+    raw = _floor_rows(
+        con,
+        f"SELECT PLAYER, TEAM, GP, MIN,"
+        f" {total_stat} / CAST(GP AS DOUBLE) AS RATE "
+        f"FROM {table} WHERE _season = ? AND GP > 0"
+        f" AND MIN >= {_TOTAL_MINUTES_FLOOR} "
+        f"ORDER BY RATE {order}, GP DESC, PLAYER",
+        [season], table, qualification)
+    rows = [
+        {"RANK": index, "PLAYER": row[0], "TEAM": row[1],
+         "GP": row[2], "MIN": row[3],
+         stat_category: float(row[4])}
+        for index, row in enumerate(raw, 1)
+    ]
+    noun = {"PPG": "points", "RPG": "rebounds", "APG": "assists",
+            "SPG": "steals", "BPG": "blocks"}[stat_category]
+    return rows, qualification, (
+        lambda row: f"{row[stat_category]:.2f} {noun} per game")
+
+
+def _cleared(lead: dict[str, Any], floor: QualificationFloor) -> str:
+    column = floor.cleared_column
+    observed = lead.get(column)
+    if observed is None:
+        raise ValueError(
+            f"qualification floor {floor.label} has no published value: the "
+            f"leader row carries no {column}, so the floor would publish as a "
+            f"label with no number behind it")
+    return f"{observed:,.0f} {floor.metric.replace('_', ' ')} over " \
+           f"{lead.get('GP')} games"
+
+
 @tool
 def get_leaders(
     stat_category: str = "PTS", season: str | None = None,
@@ -1637,64 +1682,33 @@ def get_leaders(
 
 
 
+    lead_answer: tuple[Any, QualificationFloor] | None = None
     if stat_category in {"TS_PCT", "PPG", "RPG", "APG", "SPG", "BPG"}:
         con = store.connect(read_only=True)
         try:
-            if stat_category == "TS_PCT":
-                raw = con.execute(
-                    "SELECT PLAYER_NAME, TEAM_ABBREVIATION, GP, MIN, TS_PCT "
-                    "FROM silver_advanced WHERE _season = ? "
-                    f"AND GP * MIN >= ? ORDER BY TS_PCT {order}, GP * MIN DESC",
-                    [season, max(1000, min_attempts)],
-                ).fetchall()
-                rows = [
-                    {"RANK": index, "PLAYER": row[0], "TEAM": row[1],
-                     "GP": row[2], "MPG": row[3],
-                     "TS_PCT": round(float(row[4]) * 100, 1)}
-                    for index, row in enumerate(raw, 1)
-                ]
-                qualification = "1,000+ total minutes"
-                value = lambda row: f"{row['TS_PCT']:.1f}% true shooting"
-            else:
-                rate_to_total = {"PPG": "PTS", "RPG": "REB", "APG": "AST",
-                                 "SPG": "STL", "BPG": "BLK"}
-                total_stat = rate_to_total[stat_category]
-                table = f"silver_leaders_{total_stat.lower()}"
-                raw = con.execute(
-                    f"SELECT PLAYER, TEAM, GP, {total_stat} / CAST(GP AS DOUBLE) AS RATE "
-
-
-
-
-                    f"FROM {table} WHERE _season = ? AND GP > 0 AND MIN >= 500 "
-                    f"ORDER BY RATE {order}, GP DESC, PLAYER",
-                    [season],
-                ).fetchall()
-                rows = [
-                    {"RANK": index, "PLAYER": row[0], "TEAM": row[1],
-                     "GP": row[2], stat_category: float(row[3])}
-                    for index, row in enumerate(raw, 1)
-                ]
-                qualification = "500+ total minutes"
-                label = {"PPG": "points", "RPG": "rebounds",
-                         "APG": "assists", "SPG": "steals",
-                         "BPG": "blocks"}[stat_category]
-                value = lambda row: f"{row[stat_category]:.2f} {label} per game"
+            try:
+                rows, qualification, value = _qualified_rate_board(
+                    con, stat_category, season, order, min_attempts)
+            except _FloorValueUnavailable as exc:
+                con.close()
+                return {"tool": "get_leaders", "ok": False, "rows": [],
+                        "error": (f"{exc}; refusing to publish a "
+                                  f"{stat_category} board whose "
+                                  f"qualification cannot be evidenced"),
+                        "meta": {"source": "warehouse", "season": season,
+                                 "stat_category": stat_category,
+                                 "ranking_direction": direction,
+                                 "min_attempts": min_attempts}}
         finally:
             con.close()
         meta = {
             "source": "warehouse", "season": season,
             "stat_category": stat_category, "rows": len(rows),
             "ranking_direction": direction, "min_attempts": min_attempts,
-            "qualification": qualification,
+            "qualification": qualification.label,
+            "qualification_floor": qualification.payload(),
         }
-        if rows:
-            lead = rows[0]
-            meta["deterministic_answer"] = (
-                f"{lead['PLAYER']} leads qualified players at {value(lead)} "
-                f"in {season}. Qualification: {qualification}; "
-                f"{lead['GP']} games."
-            )
+        lead_answer = (value, qualification)
     else:
         table = f"silver_leaders_{stat_category.lower()}"
         rows, meta = _warehouse_or_live(
@@ -1756,19 +1770,37 @@ def get_leaders(
     pin = ["RANK", "PLAYER", "TEAM", stat_category]
     if stat_category == "FG3_PCT":
         pin.extend(["FG3M", "FG3A"])
-    pin.extend(["GP", "MIN", "MPG"])
+    pin.extend(["GP", "MIN", "MPG", "TOTAL_MINUTES"])
     pinned = []
     for r in rows:
         if not isinstance(r, dict):
             pinned.append(r)
             continue
         slim = {k: r[k] for k in pin if k in r}
+        for _metric in COUNTING_METRICS:
+            _rate = per_game_value(slim.get(_metric), slim.get("GP"))
+            if _rate is not None:
+                slim[per_game_column(_metric)] = _rate
         for _id in ("PLAYER_ID", "player_id", "TEAM_ID", "team_id"):
             if _id in r and _id not in slim:
                 slim[_id] = r[_id]
         if "PLAYER" in slim and "PLAYER_NAME" not in slim:
             slim["PLAYER_NAME"] = slim["PLAYER"]
         pinned.append(slim)
+    if lead_answer is not None and pinned:
+        value, qualification = lead_answer
+        try:
+            meta["deterministic_answer"] = (
+                f"{pinned[0]['PLAYER']} leads qualified players at "
+                f"{value(pinned[0])} in {season}. Qualification: "
+                f"{qualification.label}; "
+                f"{_cleared(pinned[0], qualification)}.")
+        except (ValueError, KeyError, TypeError) as exc:
+            return {"tool": "get_leaders", "ok": False, "rows": [],
+                    "error": (f"refusing to publish a {stat_category} answer "
+                              f"whose qualification cannot be evidenced from "
+                              f"the published row: {exc}"),
+                    "meta": meta}
     return {"tool": "get_leaders", "ok": True, "rows": pinned, "meta": meta}
 
 

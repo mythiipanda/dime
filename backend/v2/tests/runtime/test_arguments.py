@@ -59,13 +59,13 @@ def _assert_snapshot_binding(root, live):
  assert manifest['catalog_canonical_sha256']==canonical_hash(live)==canonical_hash(source)
  assert manifest['compiled_canonical_sha256']==canonical_hash(actual)==canonical_hash(aggregate)
  rows={x['capability_id']:x for x in aggregate['capabilities']}
- assert len(rows)==manifest['count']==45
+ assert len(rows)==manifest['count']==46
  files={p.stem:p for p in root.glob('*.json') if p.name not in {'catalog.source.json','catalog.compiled.json','manifest.json'}}
  assert set(rows)==set(files)
  assert all(json.loads(files[name].read_text())==row for name,row in rows.items())
  assert all(hashlib.sha256((root/name).read_bytes()).hexdigest()==digest for name,digest in manifest['files'].items())
 
-def test_all_45_capability_snapshots_bind_live_source_aggregate_and_rows():
+def test_all_46_capability_snapshots_bind_live_source_aggregate_and_rows():
  import pathlib
  from v2.runtime.assembly import capability_catalog
  _assert_snapshot_binding(pathlib.Path(__file__).parents[2]/'capability_snapshots',capability_catalog())

@@ -24,6 +24,7 @@ class StrictEvent(BaseModel):
 
 class EventType(StrEnum):
     NODE_UPDATE = "node_update"
+    STATUS = "status"
     THOUGHT_STREAM = "thought_stream"
     TOOL_CALL = "tool_call"
     TOOL_RESULT = "tool_result"
@@ -47,6 +48,11 @@ class ThoughtStream(StrictEvent):
     type: Literal[EventType.THOUGHT_STREAM] = EventType.THOUGHT_STREAM
     node: Literal["entry", "data_retrieval", "tools", "analytics", "presentation"]
     text: str = Field(max_length=200_000)
+
+
+class StatusUpdate(StrictEvent):
+    type: Literal[EventType.STATUS] = EventType.STATUS
+    text: str = Field(max_length=500)
 
 
 class ToolCall(StrictEvent):
@@ -191,6 +197,7 @@ InternalEvent = Annotated[
     | EvidenceUpdate
     | VerificationUpdate
     | NodeUpdate
+    | StatusUpdate
     | ThoughtStream
     | ToolCall
     | ToolResult

@@ -861,6 +861,39 @@ def test_calculation_binding_requires_exact_calculation_and_requirement():
     with pytest.raises(ValueError):admit_verified_claim_bindings(task,execution,draft,bad)
 
 
+def _rank_admit(*, unit, result):
+    from datetime import UTC,datetime
+    from decimal import Decimal
+    from v2.contracts import CalculationRequirement,Claim,DraftReport,EvidenceEnvelope,Plan,PlanNode,TaskSpec,VerifiedClaim,CalculationOutputBinding,DeclaredCalculation,DeclaredCalculationInput
+    from v2.runtime.models import ExecutionResult,admit_verified_claim_bindings
+    task=TaskSpec(goal="rank",mode="quick",deliverable="rank",calculation_requirements=[CalculationRequirement(id="r",description="rank",requested_outputs=["RANK"])])
+    envelope=EvidenceEnvelope(evidence_id="ev",capability="standings",source="fixture",observed_at=datetime.now(UTC),rows=[{"SCORE":119.5},{"SCORE":110.1}])
+    execution=ExecutionResult(plan=Plan(nodes=[PlanNode(id="n",description="n",capability_hints=["standings"],status="complete")]),evidence_by_node={"n":envelope},attempts={"n":1})
+    calc=DeclaredCalculation(calculation_id="rank1",requirement_id="r",operation="rank_desc",inputs=[DeclaredCalculationInput(evidence_id="ev",path="rows[0].SCORE"),DeclaredCalculationInput(evidence_id="ev",path="rows[1].SCORE")],result=Decimal(str(result)),unit=unit,subject_input=0)
+    binding=CalculationOutputBinding(requirement_id="r",output_id="RANK",calculation_id="rank1")
+    claim=Claim(text="rank is 1",kind="derived",evidence_ids=["ev"],calculation_id="rank1",output_bindings=[binding]);draft=DraftReport(sections=[],claims=[claim],calculations=[calc]);verified=VerifiedClaim(claim_index=0,claim=claim,evidence_ids=["ev"],output_bindings=[binding])
+    return admit_verified_claim_bindings(task,execution,draft,verified)
+
+
+def test_rank_calculation_with_rank_unit_admits():
+    assert _rank_admit(unit="rank",result="1") is not None
+
+
+@pytest.mark.parametrize("unit",[None,"unitless"])
+def test_rank_calculation_with_unitless_admits(unit):
+    assert _rank_admit(unit=unit,result="1") is not None
+
+
+def test_rank_calculation_with_metric_unit_rejects():
+    with pytest.raises(ValueError,match="rank calculation unit must be rank or unitless"):
+        _rank_admit(unit="points_per_100_possessions",result="1")
+
+
+def test_invented_rank_value_fails_recomputation():
+    with pytest.raises(ValueError,match="did not pass recomputation"):
+        _rank_admit(unit="rank",result="2")
+
+
 def test_checkpoint_v2_roundtrip_and_rejects_legacy_shape(tmp_path):
     import json
     from v2.runtime.checkpoints import ExecutionCheckpoint,FileCheckpointStore

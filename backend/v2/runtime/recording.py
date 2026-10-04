@@ -4,7 +4,7 @@ from collections.abc import Sequence
 from typing import Any
 import time
 
-from v2.contracts import EvidenceEnvelope, PlanNode, TaskSpec
+from v2.contracts import EvidenceEnvelope, LiveFallback, PlanNode, TaskSpec
 from v2.runtime.interfaces import Capability
 from v2.runtime.ledger import LedgerKind, exception_text
 
@@ -25,6 +25,24 @@ class RecordedCapability:
         self._turn_id = turn_id
         self._sequence = 0
         self._activity = activity
+
+    def _record_live_fallback(
+        self, call_id: str, node_id: str, fallback: LiveFallback,
+    ) -> None:
+        self._ledger.append(
+            LedgerKind.LIVE_FALLBACK,
+            turn_id=self._turn_id,
+            step_id=node_id,
+            call_id=call_id,
+            data={
+                "capability": self.name,
+                "requested_season": fallback.requested_season,
+                "warehouse_table": fallback.warehouse_table,
+                "warehouse_seasons": list(fallback.warehouse_seasons),
+                "live_source": fallback.live_source,
+                "outcome": fallback.outcome,
+            },
+        )
 
     def validate_arguments(self, node: PlanNode) -> None:
         validator = getattr(self._capability, "validate_arguments", None)
@@ -74,6 +92,9 @@ class RecordedCapability:
             if result.evidence_id in expected_lineage:
                 raise ValueError("capability result cannot reuse an input evidence id")
         except BaseException as exc:
+            fallback = getattr(exc, "fallback", None)
+            if isinstance(fallback, LiveFallback):
+                self._record_live_fallback(call_id, node.id, fallback)
             self._ledger.append(
                 LedgerKind.TOOL_RESULT,
                 turn_id=self._turn_id,
@@ -89,6 +110,8 @@ class RecordedCapability:
                 except Exception:
                     pass
             raise
+        if result.live_fallback is not None:
+            self._record_live_fallback(call_id, node.id, result.live_fallback)
         self._ledger.append(
             LedgerKind.TOOL_RESULT,
             turn_id=self._turn_id,
