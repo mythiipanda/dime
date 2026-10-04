@@ -111,7 +111,7 @@ test("markers plus pills render in few commits without blowing the anchor budget
     <CitedAnswerText text={ai.text} ai={ai} />, commits);
   const unverified = container.querySelectorAll(".unverified-marker");
   console.log(`markers-pills-render: commits=${commits.n} ms=${ms.toFixed(1)} unverified=${unverified.length}`);
-  assert.equal(unverified.length, 2);
+  assert.equal(unverified.length, 0);
   assert.ok(commits.n <= 3);
   await act(async () => {
     root.unmount();
