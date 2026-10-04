@@ -1123,7 +1123,7 @@ def _public_gaps(result) -> list[dict]:
             for gap in result.gaps]
 
 
-def _status_subject(task) -> str:
+def _status_subject(task) -> tuple[str, str]:
     entities = getattr(task, "entities", None) or []
     names: list[str] = []
     for entity in list(entities)[:2]:
@@ -1136,9 +1136,7 @@ def _status_subject(task) -> str:
     season = str(season).strip() if isinstance(season, str) and str(season).strip() else ""
     if names:
         base = " and ".join(names)
-        if season:
-            return f"{base} for {season}"[:80]
-        return base[:80]
+        return (base[:80], season)
     phrases: list[str] = []
     for req in getattr(task, "requirements", None) or []:
         desc = str(getattr(req, "description", "") or "").strip()
@@ -1156,22 +1154,22 @@ def _status_subject(task) -> str:
         topic = " ".join((kept or words)[:5]).strip()
     if not topic:
         topic = "the numbers"
-    if season and season not in topic:
-        topic = f"{topic} for {season}"
-    return topic[:80]
+    return (topic[:80], season)
 
 
 def _status_lines(task) -> list[str]:
     if task is None:
         return []
-    subject = _status_subject(task).strip()
+    base_raw, season_raw = _status_subject(task)
+    base = base_raw.strip()
+    season = season_raw.strip()
     lines: list[str] = []
-    if subject:
+    if base:
+        if season and season not in base:
+            subject = f"{base} for {season}"[:80].strip()
+        else:
+            subject = base[:80].strip()
         lines.append(f"Checking {subject}…")
-        base = subject.split(" for ")[0].strip() or subject
-        season_obj = getattr(task, "season", None)
-        season = getattr(season_obj, "value", season_obj)
-        season = str(season).strip() if isinstance(season, str) and str(season).strip() else ""
         if season and season not in base:
             lines.append(f"Comparing {base} across {season}…")
         else:

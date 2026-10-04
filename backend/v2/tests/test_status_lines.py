@@ -86,3 +86,30 @@ def test_leaders_status_stream_narrates_subject_without_plumbing(monkeypatch, tm
     ]
     for marker in forbidden:
         assert marker not in joined
+
+
+def test_status_lines_for_phrase_keeps_base_without_doubling() -> None:
+    from v2 import contracts
+    from v2.api import routes
+
+    task = contracts.TaskSpec(
+        goal="Q6 check",
+        mode="quick",
+        deliverable="answer",
+        season=contracts.SeasonRef(value="2024-25", source="user", confidence=1.0),
+        requirements=[
+            contracts.EvidenceRequirement(
+                id="r1",
+                description="Points for the starters last season",
+                capability_options=["qualified_leaders"],
+                capability_arguments={},
+            )
+        ],
+    )
+    lines = routes._status_lines(task)
+    assert lines == [
+        "Checking Points for the starters last for 2024-25…",
+        "Comparing Points for the starters last across 2024-25…",
+        "Verifying every number…",
+    ]
+    assert "for for" not in " ".join(lines).lower()
