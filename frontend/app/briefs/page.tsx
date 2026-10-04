@@ -2,9 +2,12 @@
 
 import { useEffect, useState } from "react";
 import MatchupPreviewView, { parsePreview } from "../../components/MatchupPreviewView";
+import { getRevision } from "../../lib/api";
 import {
+  briefStale,
   getBrief,
   listBriefs,
+  packHashOf,
   removeBrief,
   rerunBrief,
   type BriefDoc,
@@ -17,9 +20,19 @@ function briefTitle(doc: BriefDoc): string {
 export default function BriefsPage() {
   const [docs, setDocs] = useState<BriefDoc[]>([]);
   const [activeId, setActiveId] = useState<string | null>(null);
+  const [packHash, setPackHash] = useState<string | null>(null);
 
   useEffect(() => {
     setDocs(listBriefs());
+    let live = true;
+    getRevision()
+      .then((data) => {
+        if (live) setPackHash(packHashOf(data));
+      })
+      .catch(() => {});
+    return () => {
+      live = false;
+    };
   }, []);
 
   const refresh = () => setDocs(listBriefs());
@@ -135,7 +148,14 @@ export default function BriefsPage() {
                 Pick a brief to read it.
               </div>
             ) : parsePreview(active.rows) ? (
-              <MatchupPreviewView rows={active.rows} meta={active.meta ?? undefined} />
+              <>
+                {briefStale(active.packHash, packHash) ? (
+                  <div style={{ fontSize: 12, color: "var(--color-warm-gray)", marginBottom: 8 }}>
+                    This brief may be out of date.
+                  </div>
+                ) : null}
+                <MatchupPreviewView rows={active.rows} meta={active.meta ?? undefined} />
+              </>
             ) : (
               <div style={{ fontSize: 13, color: "var(--color-warm-gray)" }}>
                 This brief did not load.

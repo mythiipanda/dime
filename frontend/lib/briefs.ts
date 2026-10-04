@@ -5,25 +5,69 @@ export interface BriefDoc {
   createdAt: string;
   rows: unknown;
   meta?: Record<string, unknown> | null;
+  packHash?: string | null;
 }
 
 const KEY = "dime_briefs_v1";
+const RERUN_KEY = "dime_rerun";
 
-function store(): Pick<Storage, "getItem" | "setItem" | "removeItem"> | null {
+type Store = Pick<Storage, "getItem" | "setItem" | "removeItem">;
+
+function warn(area: string, error: unknown) {
   try {
-    if (typeof window === "undefined" || !window.localStorage) return null;
-    return window.localStorage;
-  } catch {
+    console.warn(`[briefs] ${area}, using memory fallback`, error);
+  } catch {}
+}
+
+const memoryAreas = new Map<string, Map<string, string>>();
+
+function memoryStore(ns: string): Store {
+  let area = memoryAreas.get(ns);
+  if (!area) {
+    area = new Map<string, string>();
+    memoryAreas.set(ns, area);
+  }
+  return {
+    getItem: (k: string) => (area!.has(k) ? area!.get(k)! : null),
+    setItem: (k: string, v: string) => {
+      area!.set(k, String(v));
+    },
+    removeItem: (k: string) => {
+      area!.delete(k);
+    },
+  };
+}
+
+function webStore(kind: "localStorage" | "sessionStorage"): Store | null {
+  try {
+    if (typeof window === "undefined") return null;
+    const s = window[kind];
+    if (!s) return null;
+    return s;
+  } catch (e) {
+    warn(`${kind} unavailable`, e);
     return null;
   }
 }
 
+function store(): Store {
+  return webStore("localStorage") ?? memoryStore(KEY);
+}
+
+function session(): Store {
+  return webStore("sessionStorage") ?? memoryStore(RERUN_KEY);
+}
+
 function readAll(): BriefDoc[] {
-  const s = store();
-  if (!s) return [];
+  let raw: string | null = null;
   try {
-    const raw = s.getItem(KEY);
-    if (!raw) return [];
+    raw = store().getItem(KEY);
+  } catch (e) {
+    warn(`read ${KEY}`, e);
+    raw = memoryStore(KEY).getItem(KEY);
+  }
+  if (!raw) return [];
+  try {
     const parsed: unknown = JSON.parse(raw);
     if (!Array.isArray(parsed)) return [];
     return parsed.filter(
@@ -33,13 +77,19 @@ function readAll(): BriefDoc[] {
         typeof (b as Record<string, unknown>).id === "string" &&
         typeof (b as Record<string, unknown>).question === "string",
     );
-  } catch {
+  } catch (e) {
+    warn(`parse ${KEY}`, e);
     return [];
   }
 }
 
 function writeAll(docs: BriefDoc[]) {
-  store()?.setItem(KEY, JSON.stringify(docs));
+  try {
+    store().setItem(KEY, JSON.stringify(docs));
+  } catch (e) {
+    warn(`write ${KEY}`, e);
+    memoryStore(KEY).setItem(KEY, JSON.stringify(docs));
+  }
 }
 
 function newId(): string {
@@ -47,7 +97,9 @@ function newId(): string {
     if (typeof window !== "undefined" && window.crypto?.randomUUID) {
       return `b-${window.crypto.randomUUID().slice(0, 8)}`;
     }
-  } catch {}
+  } catch (e) {
+    warn("randomUUID", e);
+  }
   return `b-${Date.now().toString(36)}-${Math.floor(Math.random() * 1296).toString(36)}`;
 }
 
@@ -64,6 +116,7 @@ export function saveBrief(input: {
   question: string;
   rows: unknown;
   meta?: Record<string, unknown> | null;
+  packHash?: string | null;
 }): BriefDoc {
   const doc: BriefDoc = {
     id: newId(),
@@ -72,6 +125,7 @@ export function saveBrief(input: {
     createdAt: new Date().toISOString(),
     rows: input.rows ?? null,
     meta: input.meta ?? null,
+    packHash: input.packHash ?? null,
   };
   const docs = readAll().filter((b) => b.id !== doc.id);
   docs.push(doc);
@@ -83,29 +137,35 @@ export function removeBrief(id: string) {
   writeAll(readAll().filter((b) => b.id !== id));
 }
 
-function sessionStore(): Pick<Storage, "getItem" | "setItem" | "removeItem"> | null {
-  try {
-    if (typeof window === "undefined" || !window.sessionStorage) return null;
-    return window.sessionStorage;
-  } catch {
-    return null;
-  }
-}
-
 export function rerunBrief(doc: BriefDoc): string {
   try {
-    sessionStore()?.setItem("dime_rerun", doc.question);
-  } catch {}
+    session().setItem(RERUN_KEY, doc.question);
+  } catch (e) {
+    warn(`write ${RERUN_KEY}`, e);
+    memoryStore(RERUN_KEY).setItem(RERUN_KEY, doc.question);
+  }
   return "/?tab=chat";
 }
 
 export function takeRerun(): string | null {
   try {
-    const q = sessionStore()?.getItem("dime_rerun");
+    const q = session().getItem(RERUN_KEY);
     if (q) {
-      sessionStore()?.removeItem("dime_rerun");
+      session().removeItem(RERUN_KEY);
       return q;
     }
-  } catch {}
+  } catch (e) {
+    warn(`read ${RERUN_KEY}`, e);
+  }
   return null;
+}
+
+export function packHashOf(data: unknown): string | null {
+  if (typeof data !== "object" || data === null) return null;
+  const revision = (data as Record<string, unknown>).revision;
+  return typeof revision === "string" && revision ? revision : null;
+}
+
+export function briefStale(packHash: string | null | undefined, current: string | null): boolean {
+  return !!packHash && !!current && packHash !== current;
 }

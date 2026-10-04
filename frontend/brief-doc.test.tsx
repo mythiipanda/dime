@@ -96,43 +96,141 @@ afterEach(async () => {
   win.sessionStorage.clear();
 });
 
+function isolateFetch(impl: (url: string) => Promise<unknown>) {
+  const prev = (globalThis as Record<string, unknown>).fetch;
+  (globalThis as Record<string, unknown>).fetch = impl as unknown as typeof fetch;
+  return () => {
+    if (prev === undefined) delete (globalThis as Record<string, unknown>).fetch;
+    else (globalThis as Record<string, unknown>).fetch = prev;
+  };
+}
+
 describe("matchup brief doc", () => {
   it("saves a cited brief from a matchup answer", async () => {
-    const host = await mountEl(
-      React.createElement(DataArtifacts, {
-        ai: previewAi(),
+    const restore = isolateFetch(() => Promise.reject(new TypeError("offline")));
+    try {
+      const host = await mountEl(
+        React.createElement(DataArtifacts, {
+          ai: previewAi(),
+          question: "How do Boston and New York match up Friday?",
+        }),
+      );
+      assert.equal(buttons(host, "Save brief").length, 1);
+      await act(async () => {
+        buttons(host, "Save brief")[0].click();
+        await new Promise((r) => setTimeout(r, 60));
+      });
+      assert.ok(host.textContent?.includes("Open briefs"));
+      const docs = listBriefs();
+      assert.equal(docs.length, 1);
+      assert.ok(docs[0].title.includes("BOS"));
+      assert.deepEqual(docs[0].rows, PREVIEW_ROWS);
+      assert.equal(docs[0].packHash, null);
+    } finally {
+      restore();
+    }
+  });
+
+  it("save captures the current pack hash", async () => {
+    const prev = (globalThis as Record<string, unknown>).fetch;
+    (globalThis as Record<string, unknown>).fetch = (async (url: string) => {
+      if (String(url).includes("/api/revision")) {
+        return { ok: true, json: async () => ({ revision: "abc123" }) };
+      }
+      throw new TypeError("unexpected " + url);
+    }) as unknown as typeof fetch;
+    try {
+      const host = await mountEl(
+        React.createElement(DataArtifacts, {
+          ai: previewAi(),
+          question: "How do Boston and New York match up Friday?",
+        }),
+      );
+      await act(async () => {
+        buttons(host, "Save brief")[0].click();
+        await new Promise((r) => setTimeout(r, 60));
+      });
+      assert.equal(listBriefs()[0]?.packHash, "abc123");
+    } finally {
+      if (prev === undefined) delete (globalThis as Record<string, unknown>).fetch;
+      else (globalThis as Record<string, unknown>).fetch = prev;
+    }
+  });
+
+  it("viewer warns when the saved pack hash differs", async () => {
+    const prev = (globalThis as Record<string, unknown>).fetch;
+    (globalThis as Record<string, unknown>).fetch = (async (url: string) => {
+      if (String(url).includes("/api/revision")) {
+        return { ok: true, json: async () => ({ revision: "new-hash" }) };
+      }
+      throw new TypeError("unexpected " + url);
+    }) as unknown as typeof fetch;
+    try {
+      saveBrief({
+        title: "BOS at NYK",
         question: "How do Boston and New York match up Friday?",
-      }),
-    );
-    assert.equal(buttons(host, "Save brief").length, 1);
-    await act(async () => {
-      buttons(host, "Save brief")[0].click();
-      await new Promise((r) => setTimeout(r, 30));
-    });
-    assert.ok(host.textContent?.includes("Open briefs"));
-    const docs = listBriefs();
-    assert.equal(docs.length, 1);
-    assert.ok(docs[0].title.includes("BOS"));
-    assert.deepEqual(docs[0].rows, PREVIEW_ROWS);
+        rows: PREVIEW_ROWS,
+        packHash: "old-hash",
+      });
+      const host = await mountEl(React.createElement(BriefsPage));
+      await act(async () => {
+        buttons(host, "BOS at NYK")[0].click();
+        await new Promise((r) => setTimeout(r, 30));
+      });
+      assert.ok(host.textContent?.includes("may be out of date"));
+    } finally {
+      if (prev === undefined) delete (globalThis as Record<string, unknown>).fetch;
+      else (globalThis as Record<string, unknown>).fetch = prev;
+    }
+  });
+
+  it("viewer stays quiet when hashes match", async () => {
+    const prev = (globalThis as Record<string, unknown>).fetch;
+    (globalThis as Record<string, unknown>).fetch = (async () => ({
+      ok: true,
+      json: async () => ({ revision: "same-hash" }),
+    })) as unknown as typeof fetch;
+    try {
+      saveBrief({
+        title: "BOS at NYK",
+        question: "How do Boston and New York match up Friday?",
+        rows: PREVIEW_ROWS,
+        packHash: "same-hash",
+      });
+      const host = await mountEl(React.createElement(BriefsPage));
+      await act(async () => {
+        buttons(host, "BOS at NYK")[0].click();
+        await new Promise((r) => setTimeout(r, 30));
+      });
+      assert.ok(!host.textContent?.includes("may be out of date"));
+    } finally {
+      if (prev === undefined) delete (globalThis as Record<string, unknown>).fetch;
+      else (globalThis as Record<string, unknown>).fetch = prev;
+    }
   });
 
   it("briefs page lists, opens, and re-runs a saved brief", async () => {
-    saveBrief({
-      title: "BOS at NYK",
-      question: "How do Boston and New York match up Friday?",
-      rows: PREVIEW_ROWS,
-    });
-    const host = await mountEl(React.createElement(BriefsPage));
-    assert.ok(host.textContent?.includes("BOS at NYK"));
-    await act(async () => {
-      buttons(host, "BOS at NYK")[0].click();
-      await new Promise((r) => setTimeout(r, 30));
-    });
-    assert.ok(host.textContent?.includes("NYK"));
-    await act(async () => {
-      buttons(host, "Re-run")[0].click();
-      await new Promise((r) => setTimeout(r, 30));
-    });
-    assert.equal(win.sessionStorage.getItem("dime_rerun"), "How do Boston and New York match up Friday?");
+    const restore = isolateFetch(() => Promise.reject(new TypeError("offline")));
+    try {
+      saveBrief({
+        title: "BOS at NYK",
+        question: "How do Boston and New York match up Friday?",
+        rows: PREVIEW_ROWS,
+      });
+      const host = await mountEl(React.createElement(BriefsPage));
+      assert.ok(host.textContent?.includes("BOS at NYK"));
+      await act(async () => {
+        buttons(host, "BOS at NYK")[0].click();
+        await new Promise((r) => setTimeout(r, 30));
+      });
+      assert.ok(host.textContent?.includes("NYK"));
+      await act(async () => {
+        buttons(host, "Re-run")[0].click();
+        await new Promise((r) => setTimeout(r, 30));
+      });
+      assert.equal(win.sessionStorage.getItem("dime_rerun"), "How do Boston and New York match up Friday?");
+    } finally {
+      restore();
+    }
   });
 });

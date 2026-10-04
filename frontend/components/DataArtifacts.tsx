@@ -17,7 +17,8 @@ import ImpactView, { parseImpact } from "./ImpactView";
 import LineupMatrixView, { parseLineupMatrix } from "./LineupMatrixView";
 import LineupStatsView, { parseLineupStats } from "./LineupStatsView";
 import MatchupPreviewView, { parsePreview } from "./MatchupPreviewView";
-import { saveBrief } from "../lib/briefs";
+import { packHashOf, saveBrief } from "../lib/briefs";
+import { getRevision } from "../lib/api";
 import PredictionView, { parsePrediction } from "./PredictionView";
 import RegressionView, { parseRegression } from "./RegressionView";
 import RestAdvantageView, { parseRestAdvantage } from "./RestAdvantageView";
@@ -358,6 +359,7 @@ function SaveBrief({
   question?: string;
 }) {
   const [savedId, setSavedId] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
   if (!question) return null;
   if (savedId) {
     return (
@@ -374,19 +376,30 @@ function SaveBrief({
       type="button"
       className="pill-ghost"
       style={{ fontSize: 12, padding: "3px 10px", marginTop: 8 }}
+      disabled={saving}
       onClick={() => {
-        const preview = parsePreview(table.rows);
-        const title =
-          preview && !preview.alreadyPlayed && preview.away && preview.home
-            ? `${preview.away} at ${preview.home}`
-            : preview && preview.alreadyPlayed && preview.playedMatchup
-              ? preview.playedMatchup
-              : question.slice(0, 80);
-        const doc = saveBrief({ title, question, rows: table.rows, meta: table.meta });
-        setSavedId(doc.id);
+        if (saving) return;
+        setSaving(true);
+        getRevision()
+          .then(
+            (data) => packHashOf(data),
+            () => null,
+          )
+          .then((packHash) => {
+            const preview = parsePreview(table.rows);
+            const title =
+              preview && !preview.alreadyPlayed && preview.away && preview.home
+                ? `${preview.away} at ${preview.home}`
+                : preview && preview.alreadyPlayed && preview.playedMatchup
+                  ? preview.playedMatchup
+                  : question.slice(0, 80);
+            const doc = saveBrief({ title, question, rows: table.rows, meta: table.meta, packHash });
+            setSavedId(doc.id);
+          })
+          .finally(() => setSaving(false));
       }}
     >
-      Save brief
+      {saving ? "Saving…" : "Save brief"}
     </button>
   );
 }

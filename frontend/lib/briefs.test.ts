@@ -1,8 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  briefStale,
   getBrief,
   listBriefs,
+  packHashOf,
   removeBrief,
   rerunBrief,
   saveBrief,
@@ -63,6 +65,49 @@ test("rerun stores the question and takeRerun consumes it once", () => {
   assert.equal(rerunBrief(doc), "/?tab=chat");
   assert.equal(takeRerun(), "Preview BOS at NYK");
   assert.equal(takeRerun(), null);
+});
+
+test("throwing storage warns loudly and falls back to memory", () => {
+  const warnings: unknown[][] = [];
+  const orig = console.warn;
+  (console as unknown as Record<string, unknown>).warn = (...a: unknown[]) => {
+    warnings.push(a);
+  };
+  (globalThis as unknown as { window?: unknown }).window = {
+    get localStorage(): never {
+      throw new Error("denied");
+    },
+    get sessionStorage(): never {
+      throw new Error("denied");
+    },
+  };
+  try {
+    const doc = saveBrief({ title: "t", question: "q?", rows: null });
+    assert.equal(listBriefs().length, 1);
+    assert.equal(getBrief(doc.id)?.question, "q?");
+    assert.ok(warnings.length > 0);
+    assert.ok(String(warnings[0][0]).includes("[briefs]"));
+  } finally {
+    (console as unknown as Record<string, unknown>).warn = orig;
+    installLocalStorage();
+  }
+});
+
+test("pack hash helpers read revision and compare staleness", () => {
+  assert.equal(packHashOf({ revision: "abc123" }), "abc123");
+  assert.equal(packHashOf({}), null);
+  assert.equal(packHashOf(null), null);
+  assert.equal(briefStale("abc", "abc"), false);
+  assert.equal(briefStale("abc", "def"), true);
+  assert.equal(briefStale(null, "def"), false);
+  assert.equal(briefStale("abc", null), false);
+});
+
+test("saved briefs keep their pack hash", () => {
+  installLocalStorage();
+  const doc = saveBrief({ title: "t", question: "q?", rows: null, packHash: "abc123" });
+  assert.equal(getBrief(doc.id)?.packHash, "abc123");
+  removeBrief(doc.id);
 });
 
 test("corrupt storage reads as empty, never throws", () => {
