@@ -1,6 +1,7 @@
 
 import argparse
 import json
+import logging
 import os
 import sys
 import threading
@@ -25,7 +26,22 @@ from shared.sources import nba_stats as _nba
 
 PROGRESS_PATH = Path(__file__).resolve().parent / "backfill_progress.json"
 
-DEFAULT_SEASONS = "2015-16:2025-26"
+logger = logging.getLogger(__name__)
+
+FIRST_SEASON = "2015-16"
+
+
+def default_seasons() -> str:
+    try:
+        from datetime import date
+        from shared.tools._core import completed_season_for_date
+        end = completed_season_for_date(date.today())
+    except ImportError as exc:
+        logger.warning("default_seasons falling back to 2025-26: %s", exc)
+        end = None
+    if not end:
+        end = "2025-26"
+    return f"{FIRST_SEASON}:{end}"
 
 SEASON_TYPES = ("Regular Season", "Playoffs")
 
@@ -387,8 +403,8 @@ def report_watermarks(seasons: list[str], state: dict) -> None:
 
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description="Multi-season boxscore + lineup backfill over stats.nba.com (nba_api).")
-    ap.add_argument("--seasons", default=DEFAULT_SEASONS,
-                    help="'2015-16:2025-26' range or comma list")
+    ap.add_argument("--seasons", default=default_seasons(),
+                    help="'2015-16:<last-completed>' range or comma list")
     ap.add_argument("--views", default="all",
                     help="comma list incl. traditional, or 'all'")
     ap.add_argument("--sleep", type=float, default=1.5,
