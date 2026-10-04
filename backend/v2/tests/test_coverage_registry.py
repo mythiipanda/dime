@@ -279,6 +279,6 @@ def test_a_season_never_leaks_from_one_warehouse_into_another(
 def test_the_season_series_capability_reads_the_series_source_tables():
     from shared.tools.team import _SERIES_PHASES, _SERIES_SOURCES
 
-    assert set(coverage.tables_for_capability("season_series")) == {
+    assert set(coverage.declared_tables_for_capability("season_series")) == {
         source.table for source in _SERIES_SOURCES}
     assert {source.phase for source in _SERIES_SOURCES} == set(_SERIES_PHASES)

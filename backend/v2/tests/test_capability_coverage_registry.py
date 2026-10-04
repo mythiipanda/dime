@@ -54,13 +54,14 @@ def test_wire_catalog_offers_every_capability_the_registry_covers():
 
 
 def test_season_scoped_capability_names_coverage_tables():
-    invisible = {
+    blind = {
         name for name in SEASON_SCOPED
-        if not coverage.tables_for_capability(name, {})
+        if not (coverage.tables_for_capability(name, {})
+                or coverage.declared_tables_for_capability(name, {}))
     }
-    assert not invisible, (
+    assert not blind, (
         "capabilities season coverage cannot see, so intake blames "
-        f"silver_boxscores for them: {sorted(invisible)}")
+        f"silver_boxscores for them: {sorted(blind)}")
 
 
 def test_registry_never_names_a_non_season_scoped_capability():

@@ -138,7 +138,7 @@ def test_season_series_resolves_against_series_source_not_boxscores(monkeypatch)
         "silver_playoffs": {"2024-25", "2025-26"},
         "silver_playoff_gamelogs": {"2024-25", "2025-26"},
     })
-    assert coverage.tables_for_capability("season_series", {}) == (
+    assert coverage.declared_tables_for_capability("season_series", {}) == (
         "silver_team_games", "silver_hist_gamelogs",
         "silver_playoffs", "silver_playoff_gamelogs")
     assert ModelIntake._mark_uncovered_season(_series_task()) == _series_task()
@@ -184,7 +184,7 @@ def test_player_comparison_resolves_from_its_own_tables_not_boxscores(
         "silver_player_gamelogs": {"2024-25", "2025-26"},
         "silver_on_off": {"2025-26"},
     })
-    tables = coverage.tables_for_capability("player_comparison", {})
+    tables = coverage.declared_tables_for_capability("player_comparison", {})
     assert tables[0] == "silver_player_gamelogs"
     assert "silver_on_off" in tables
     assert "silver_boxscores" not in tables
@@ -248,7 +248,7 @@ def test_player_report_resolves_from_its_own_tables_not_boxscores(monkeypatch):
         "silver_hist_player_seasons": {"2024-25", "2025-26"},
         "silver_advanced": {"2025-26"},
     })
-    tables = coverage.tables_for_capability("player_report", {})
+    tables = coverage.declared_tables_for_capability("player_report", {})
     assert tables[0] == "silver_player_season"
     assert "silver_hist_player_seasons" in tables
     assert "silver_advanced" in tables
@@ -307,7 +307,7 @@ def _brief_task(season="2024-25"):
 
 
 def test_matchup_brief_names_the_tables_its_sections_read():
-    tables = coverage.tables_for_capability("matchup_brief", {})
+    tables = coverage.declared_tables_for_capability("matchup_brief", {})
     assert "silver_team_ratings" in tables
     assert "silver_boxscores" in tables
     assert "silver_hist_gamelogs" in tables

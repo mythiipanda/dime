@@ -156,7 +156,6 @@ _RATE_TO_TOTAL = {
 
 KNOWN_TABLES = (
     "silver_boxscores",
-    "silver_boxscores_ext",
     "silver_lineups",
     "silver_rapm",
     "silver_on_off",
@@ -170,6 +169,7 @@ _TABLE_NAME = r"[A-Za-z_][A-Za-z0-9_]*"
 
 _state_lock = threading.RLock()
 _season_cache: dict[str, tuple[Path, tuple[int, int], frozenset[str]]] = {}
+_table_cache: tuple[Path, tuple[int, int], frozenset[str]] | None = None
 
 
 def table_for_metric(metric: str) -> str:
@@ -230,7 +230,7 @@ def _requirement_arguments(requirement: object, capability: str) -> dict[str, An
     return _arguments_dict(getattr(requirement, "capability_arguments", None))
 
 
-def tables_for_capability(
+def declared_tables_for_capability(
     capability: str, arguments: object = None,
 ) -> tuple[str, ...]:
     name = str(capability or "")
@@ -247,6 +247,27 @@ def tables_for_capability(
     if known is not None:
         return known
     return ()
+
+
+def tables_for_capability(
+    capability: str, arguments: object = None,
+) -> tuple[str, ...]:
+    """Tables a season verdict may be read from: declared reads that exist."""
+    on_hand = warehouse_tables()
+    return tuple(
+        table for table in declared_tables_for_capability(capability, arguments)
+        if table in on_hand)
+
+
+def absent_tables_for_capability(
+    capability: str, arguments: object = None,
+) -> tuple[str, ...]:
+    """Declared reads this warehouse does not have, so no tool can serve them."""
+    on_hand = warehouse_tables()
+    return tuple(
+        table
+        for table in declared_tables_for_capability(capability, arguments)
+        if table not in on_hand)
 
 
 def task_coverage_groups(task: object) -> list[frozenset[str]]:
@@ -276,12 +297,10 @@ def task_coverage_groups_labeled(
             if capability not in [str(option) for option in options]:
                 continue
             matched = True
-            tables.update(tables_for_capability(
-                capability,
-                _requirement_arguments(requirement, capability),
-            ))
+            arguments = _requirement_arguments(requirement, capability)
+            tables.update(declared_tables_for_capability(capability, arguments))
         if not matched:
-            tables.update(tables_for_capability(capability, {}))
+            tables.update(declared_tables_for_capability(capability, {}))
         if tables:
             labeled.append((capability, frozenset(tables)))
     return labeled
@@ -337,8 +356,47 @@ def _freshness(path: Path) -> tuple[int, int] | None:
 
 
 def coverage_cache_clear() -> None:
+    global _table_cache
     with _state_lock:
         _season_cache.clear()
+        _table_cache = None
+
+
+def _read_table_names(path: Path) -> frozenset[str]:
+    import duckdb
+
+    connection = duckdb.connect(str(path), read_only=True)
+    try:
+        return frozenset(
+            row[0] for row in connection.execute("SHOW TABLES").fetchall())
+    finally:
+        try:
+            connection.close()
+        except Exception:
+            pass
+
+
+def warehouse_tables() -> frozenset[str]:
+    global _table_cache
+    try:
+        path = warehouse_path()
+    except Exception:
+        return frozenset()
+    fresh = _freshness(path)
+    key = path.resolve()
+    with _state_lock:
+        entry = _table_cache
+        if (entry is not None and fresh is not None
+                and entry[0] == key and entry[1] == fresh):
+            return entry[2]
+    try:
+        names = _read_table_names(path)
+    except Exception:
+        return frozenset()
+    with _state_lock:
+        if fresh is not None:
+            _table_cache = (key, fresh, names)
+    return names
 
 
 def _read_table_seasons(path: Path, table: str) -> frozenset[str]:

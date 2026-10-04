@@ -75,13 +75,24 @@ def _open_chat_budget():
 def test_the_capability_names_its_tool_and_its_coverage_table():
     from shared.tools import v1_tools
     from v2.adapters.capabilities import CAPABILITIES
-    from v2.adapters.coverage import tables_for_capability
+    from v2.adapters.coverage import (
+        absent_tables_for_capability,
+        declared_tables_for_capability,
+        tables_for_capability,
+        warehouse_tables,
+    )
     from v2.runtime.assembly import capability_catalog
 
     spec = CAPABILITIES["award_results"]
     assert spec.tool_name == "get_award_results"
     assert spec.tool_name in {tool.name for tool in v1_tools}
-    assert tables_for_capability("award_results", {}) == ("silver_bbref_awards",)
+    assert declared_tables_for_capability("award_results", {}) == (
+        "silver_bbref_awards",)
+    on_hand = warehouse_tables()
+    assert set(tables_for_capability("award_results", {})) <= on_hand
+    ballot = "silver_bbref_awards"
+    assert (ballot in absent_tables_for_capability("award_results", {})) is (
+        ballot not in on_hand)
     assert "award_results" in capability_catalog()
     assert spec.task_season_scoped is True
     assert spec.season_arg == "season"
