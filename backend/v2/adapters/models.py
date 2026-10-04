@@ -1639,6 +1639,30 @@ class ModelPlanner(ModelStage):
                         f"by {node.capability}",
                         node_id=node.id, missing_required=[])
 
+    def _dependent_source_candidate(
+        self, task: TaskSpec | None,
+        requirements: Mapping[str, Any],
+        node: Any, capability: str,
+        argument: str, entity_type: str,
+    ) -> str | None:
+        for requirement_id in node.covers_requirement_ids or []:
+            requirement = requirements.get(requirement_id)
+            if requirement is None:
+                continue
+            if capability not in requirement.capability_options:
+                continue
+            value = capability_arguments_for(requirement, capability).get(argument)
+            if value is not None and not (isinstance(value, str) and not value.strip()):
+                return value if isinstance(value, str) else str(value)
+        if task is not None:
+            matches = [entity for entity in task.entities
+                       if entity.type == entity_type]
+            if len(matches) == 1:
+                candidate = matches[0].display_name or matches[0].id
+                if candidate is not None and str(candidate).strip():
+                    return str(candidate)
+        return None
+
     async def _generate_plan(self, payload, task: TaskSpec | None = None):
         wire = await self._generate(payload, decode=self._collect_planner_drops)
         from jsonschema import Draft202012Validator
@@ -1705,6 +1729,42 @@ class ModelPlanner(ModelStage):
                             "arguments": {"query": value}, "max_attempts": 1,
                             "status": "pending"})
                     depends_extra.setdefault(node.id, []).append(resolver_id)
+        if "entity_resolution" in self._catalog:
+            for node, values, stripped in decoded:
+                entry = self._catalog.get(node.capability)
+                declarations = entry.get("dependent_entity_arguments", {}) if isinstance(entry, Mapping) else {}
+                for key, entity_type in declarations.items():
+                    current = values.get(key)
+                    if current is not None and not (isinstance(current, str) and not current.strip()):
+                        continue
+                    if key in stripped and stripped[key] not in (None, "") and not (isinstance(stripped[key], str) and not stripped[key].strip()):
+                        continue
+                    if not isinstance(entity_type, str) or not entity_type:
+                        continue
+                    candidate = self._dependent_source_candidate(
+                        task, requirements, node, node.capability, key, entity_type)
+                    if candidate is None or not candidate.strip():
+                        continue
+                    values[key] = candidate
+                    fold = (str(entity_type), candidate.strip().casefold())
+                    resolver_id = resolver_for.get(fold)
+                    if resolver_id is None:
+                        base = f"resolve_{str(entity_type).replace('-', '_')}"
+                        resolver_id = base
+                        suffix = 2
+                        while resolver_id in existing:
+                            resolver_id = f"{base}_{suffix}"
+                            suffix += 1
+                        existing.add(resolver_id)
+                        resolver_for[fold] = resolver_id
+                        resolvers.append({
+                            "id": resolver_id, "description": f"Resolve {entity_type} identity for dependent tools",
+                            "depends_on": [], "capability_hints": ["entity_resolution"],
+                            "covers_requirement_ids": [],
+                            "arguments": {"query": candidate}, "max_attempts": 1,
+                            "status": "pending"})
+                    if resolver_id not in depends_extra.get(node.id, []):
+                        depends_extra.setdefault(node.id, []).append(resolver_id)
         return Plan.model_validate({"nodes": [
             *resolvers,
             *[{
@@ -1785,10 +1845,21 @@ class ModelPlanner(ModelStage):
                 declarations = (entry.get("dependent_entity_arguments", {})
                                 if isinstance(entry, Mapping) else {})
                 dependencies = list(node.depends_on)
+                updated_arguments: dict[str, Any] | None = None
                 for argument, entity_type in declarations.items():
-                    value = node.arguments.get(argument)
+                    value = (updated_arguments.get(argument, node.arguments.get(argument))
+                             if updated_arguments is not None else node.arguments.get(argument))
                     if value is None or (isinstance(value, str) and not value.strip()):
-                        continue
+                        candidate = self._dependent_source_candidate(
+                            task, requirements, node,
+                            selected_name or "", argument, entity_type)
+                        if candidate is not None and candidate.strip():
+                            if updated_arguments is None:
+                                updated_arguments = dict(node.arguments)
+                            updated_arguments[argument] = candidate
+                            value = candidate
+                        else:
+                            continue
                     has_resolver = any(
                         parent in existing and any(
                             candidate.id == parent
@@ -1815,8 +1886,11 @@ class ModelPlanner(ModelStage):
                             arguments={"query": value},
                         ))
                     dependencies.append(resolver_id)
-                normalized_nodes.append(node.model_copy(update={
-                    "depends_on": list(dict.fromkeys(dependencies))}))
+                update: dict[str, Any] = {
+                    "depends_on": list(dict.fromkeys(dependencies))}
+                if updated_arguments is not None:
+                    update["arguments"] = updated_arguments
+                normalized_nodes.append(node.model_copy(update=update))
             if added:
                 plan = plan.model_copy(update={"nodes": [*added, *normalized_nodes]})
         plan = plan.model_copy(update={"nodes": [
