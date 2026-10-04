@@ -4,7 +4,8 @@ import { useState } from "react";
 import type { ReactNode } from "react";
 import AnswerText from "./AnswerText";
 import type { AiMessage } from "../lib/chat";
-import { evidenceSources, unverifiedSummary, withCitationMarkers } from "../lib/evidence";
+import { contextPills, evidenceSources, unverifiedSummary, withCitationMarkers } from "../lib/evidence";
+import { Chip } from "./view-shared";
 import type { EvidenceSource } from "../lib/evidence";
 
 export function CiteTable({ source }: { source: EvidenceSource }) {
@@ -135,6 +136,26 @@ function anchorLabel(source: EvidenceSource): string {
   return detail ? `Show source: ${detail}` : "Show source data";
 }
 
+export function ContextPills({ ai }: { ai: AiMessage }) {
+  const pills = contextPills(ai);
+  if (!pills.length) return null;
+  return (
+    <div
+      style={{
+        display: "flex",
+        gap: 6,
+        flexWrap: "wrap",
+        marginBottom: 8,
+        fontVariantNumeric: "tabular-nums",
+      }}
+    >
+      {pills.map((p) => (
+        <Chip key={p}>{p}</Chip>
+      ))}
+    </div>
+  );
+}
+
 export default function CitedAnswerText({ text, ai }: { text: string; ai: AiMessage }) {
   const [openCite, setOpenCite] = useState<number | null>(null);
   const sources = evidenceSources(ai);
@@ -147,6 +168,7 @@ export default function CitedAnswerText({ text, ai }: { text: string; ai: AiMess
   };
   return (
     <div>
+      <ContextPills ai={ai} />
       <AnswerText
         text={marked}
         components={{
