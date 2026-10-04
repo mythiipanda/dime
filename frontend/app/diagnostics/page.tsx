@@ -1,16 +1,43 @@
 "use client";
 
-import { useRef, useState } from "react";
-import { postChatStream } from "../../lib/api";
+import { useEffect, useRef, useState } from "react";
+import { getRevision, postChatStream } from "../../lib/api";
 import { chatRuntime } from "../../lib/runtime";
 import {
   bindingDiagnostics,
   diffDiagnostics,
   diffMarker,
+  fastFailVerdict,
   parseSseText,
+  revisionInfo,
   type SseEvent,
 } from "../../lib/diagnostics";
-import { DiagnosticsTable } from "../../components/DiagnosticsTable";
+import {
+  DiagnosticsTable,
+  RevisionCard,
+  RunMetaHeader,
+} from "../../components/DiagnosticsTable";
+
+export function FastFailBanner({ events, label }: { events: SseEvent[]; label?: string }) {
+  const verdict = fastFailVerdict(events);
+  if (!verdict.fastFail) return null;
+  return (
+    <div
+      style={{
+        marginTop: 12,
+        border: "1px solid var(--color-stone-border)",
+        borderRadius: 10,
+        padding: "10px 14px",
+        background: "var(--color-pure-white)",
+        fontSize: 13,
+        color: "var(--color-ink-black)",
+      }}
+    >
+      Fast fail{label ? ` (${label})` : ""}: understand finished in {verdict.understandMs}
+      ms with {verdict.gapKinds.join(", ")}.
+    </div>
+  );
+}
 
 export function DiffTable({ leftText, rightText }: { leftText: string; rightText: string }) {
   const rows = diffDiagnostics(
@@ -79,8 +106,25 @@ export default function DiagnosticsPage() {
   const [mode, setMode] = useState<"probe" | "compare">("probe");
   const [leftText, setLeftText] = useState("");
   const [rightText, setRightText] = useState("");
+  const [leftRevision, setLeftRevision] = useState("");
+  const [leftRuntime, setLeftRuntime] = useState("");
+  const [rightRevision, setRightRevision] = useState("");
+  const [rightRuntime, setRightRuntime] = useState("");
   const abort = useRef<AbortController | null>(null);
   const v2 = chatRuntime() === "v2";
+  const [revision, setRevision] = useState<{ revision: string; runtime: string } | null>(null);
+
+  useEffect(() => {
+    let live = true;
+    getRevision()
+      .then((data) => {
+        if (live) setRevision(revisionInfo(data, chatRuntime()));
+      })
+      .catch(() => {});
+    return () => {
+      live = false;
+    };
+  }, []);
 
   const run = async () => {
     const question = q.trim();
@@ -124,6 +168,7 @@ export default function DiagnosticsPage() {
       <div style={{ fontSize: 13, color: "var(--color-warm-gray)", marginBottom: 16 }}>
         Runs a chat stream with diagnostics on and lists every rejected evidence binding.
       </div>
+      <RevisionCard info={revision} />
       {!v2 && (
         <div style={{ fontSize: 13, color: "var(--color-warm-gray)", marginBottom: 16 }}>
           Needs the v2 chat runtime. Diagnostics events only exist on v2 streams.
@@ -167,23 +212,67 @@ export default function DiagnosticsPage() {
       {mode === "compare" ? (
         <>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginTop: 12 }}>
-            <textarea
-              className="field"
-              style={{ minHeight: 160, fontFamily: "monospace", fontSize: 11 }}
-              value={leftText}
-              onChange={(e) => setLeftText(e.target.value)}
-              placeholder="Paste run A SSE here"
-              aria-label="Run A SSE"
-            />
-            <textarea
-              className="field"
-              style={{ minHeight: 160, fontFamily: "monospace", fontSize: 11 }}
-              value={rightText}
-              onChange={(e) => setRightText(e.target.value)}
-              placeholder="Paste run B SSE here"
-              aria-label="Run B SSE"
-            />
+            <div>
+              <div style={{ display: "flex", gap: 8, marginBottom: 8 }}>
+                <input
+                  className="field"
+                  style={{ flex: 1, fontSize: 12 }}
+                  value={leftRevision}
+                  onChange={(e) => setLeftRevision(e.target.value)}
+                  placeholder="Run A revision"
+                  aria-label="Run A revision"
+                />
+                <input
+                  className="field"
+                  style={{ width: 90, fontSize: 12 }}
+                  value={leftRuntime}
+                  onChange={(e) => setLeftRuntime(e.target.value)}
+                  placeholder="Runtime"
+                  aria-label="Run A runtime"
+                />
+              </div>
+              <RunMetaHeader text={leftText} revision={leftRevision} runtime={leftRuntime} />
+              <textarea
+                className="field"
+                style={{ minHeight: 160, fontFamily: "monospace", fontSize: 11, width: "100%" }}
+                value={leftText}
+                onChange={(e) => setLeftText(e.target.value)}
+                placeholder="Paste run A SSE here"
+                aria-label="Run A SSE"
+              />
+            </div>
+            <div>
+              <div style={{ display: "flex", gap: 8, marginBottom: 8 }}>
+                <input
+                  className="field"
+                  style={{ flex: 1, fontSize: 12 }}
+                  value={rightRevision}
+                  onChange={(e) => setRightRevision(e.target.value)}
+                  placeholder="Run B revision"
+                  aria-label="Run B revision"
+                />
+                <input
+                  className="field"
+                  style={{ width: 90, fontSize: 12 }}
+                  value={rightRuntime}
+                  onChange={(e) => setRightRuntime(e.target.value)}
+                  placeholder="Runtime"
+                  aria-label="Run B runtime"
+                />
+              </div>
+              <RunMetaHeader text={rightText} revision={rightRevision} runtime={rightRuntime} />
+              <textarea
+                className="field"
+                style={{ minHeight: 160, fontFamily: "monospace", fontSize: 11, width: "100%" }}
+                value={rightText}
+                onChange={(e) => setRightText(e.target.value)}
+                placeholder="Paste run B SSE here"
+                aria-label="Run B SSE"
+              />
+            </div>
           </div>
+          <FastFailBanner events={parseSseText(leftText)} label="run A" />
+          <FastFailBanner events={parseSseText(rightText)} label="run B" />
           <DiffTable leftText={leftText} rightText={rightText} />
         </>
       ) : (
@@ -193,6 +282,7 @@ export default function DiagnosticsPage() {
               {events.length} events · {diags.length} rejected bindings
             </div>
           )}
+          <FastFailBanner events={events} />
           <DiagnosticsTable rows={diags} />
         </>
       )}

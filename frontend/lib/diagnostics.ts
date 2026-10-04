@@ -110,3 +110,68 @@ export function diffMarker(row: DiffRow): string {
   if (!row.right) return "only in run A";
   return row.changed ? "changed" : "same";
 }
+
+export interface RevisionInfo {
+  revision: string;
+  runtime: string;
+}
+
+export function revisionInfo(data: unknown, runtime: string): RevisionInfo | null {
+  if (!isRecord(data)) return null;
+  if (typeof data.revision !== "string" || !data.revision) return null;
+  return { revision: data.revision, runtime };
+}
+
+export function shortRevision(revision: string): string {
+  return String(revision || "").slice(0, 8);
+}
+
+export function runIdOf(events: SseEvent[]): string | null {
+  for (const e of events) {
+    if (e.type !== "final_answer") continue;
+    if (!isRecord(e.data)) continue;
+    const carry = (e.data as Record<string, unknown>).carry;
+    if (isRecord(carry) && typeof carry.run_id === "string" && carry.run_id) {
+      return carry.run_id;
+    }
+  }
+  for (const e of events) {
+    if (isRecord(e.data) && typeof e.data.run_id === "string" && e.data.run_id) {
+      return e.data.run_id;
+    }
+  }
+  return null;
+}
+
+export interface FastFailVerdict {
+  fastFail: boolean;
+  understandMs: number | null;
+  gapKinds: string[];
+}
+
+function carryOf(events: SseEvent[]): Record<string, unknown> | null {
+  for (const e of events) {
+    if (e.type !== "final_answer") continue;
+    if (!isRecord(e.data)) continue;
+    const carry = (e.data as Record<string, unknown>).carry;
+    if (isRecord(carry)) return carry;
+  }
+  return null;
+}
+
+export function fastFailVerdict(events: SseEvent[]): FastFailVerdict {
+  const carry = carryOf(events);
+  const latencies = carry && isRecord(carry.stage_latencies_ms) ? carry.stage_latencies_ms : null;
+  const rawMs = latencies ? latencies.understand : undefined;
+  const understandMs = typeof rawMs === "number" && Number.isFinite(rawMs) ? rawMs : null;
+  const gaps = carry && Array.isArray(carry.gaps) ? carry.gaps : [];
+  const gapKinds = gaps
+    .map((g) => (isRecord(g) && typeof g.kind === "string" ? g.kind : ""))
+    .filter(Boolean);
+  return {
+    fastFail:
+      understandMs !== null && understandMs < 1000 && gapKinds.includes("execution_failure"),
+    understandMs,
+    gapKinds,
+  };
+}
