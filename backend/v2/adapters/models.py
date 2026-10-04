@@ -2384,11 +2384,11 @@ def _deterministic_rank_draft(
             continue
         label = TEAM_RATING_METRICS[metric]["label"]
         owner = next((requirement for requirement in task.requirements
-                      if "team_ratings" in requirement.capability_options
-                      and capability_arguments_for(requirement, "team_ratings").get("requested_metric") == metric), None)
+                      if item.capability in requirement.capability_options
+                      and capability_arguments_for(requirement, item.capability).get("requested_metric") == metric), None)
         if owner is None:
             continue
-        direction = capability_arguments_for(owner, "team_ratings").get("ranking_direction")
+        direction = capability_arguments_for(owner, item.capability).get("ranking_direction")
         if direction not in RANKING_DIRECTIONS:
             continue
         numeric = []
@@ -2463,7 +2463,7 @@ def _deterministic_rank_draft(
 
         from v2.adapters.capabilities import CAPABILITIES
         capability_units = getattr(
-            CAPABILITIES.get("team_ratings"), "units", {}) or {}
+            CAPABILITIES.get(item.capability), "units", {}) or {}
         output_bindings: list = []
         for output_id in owner.requested_outputs:
             if output_id not in winner_row or winner_row[output_id] is None:
@@ -2482,7 +2482,7 @@ def _deterministic_rank_draft(
                 row_selector=row_selector,
                 value=_binding_value(winner_row[output_id]),
                 unit=unit,
-                domain="team_ratings",
+                domain=item.capability,
                 **subject_fields,
             ))
         if calculation_id is not None:
