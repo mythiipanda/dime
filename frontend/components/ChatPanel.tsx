@@ -12,6 +12,7 @@ import {
   isFailureFinal,
 } from "../lib/chat";
 import { RunInfo, appendCachedRun, buildCitation, getModels, getRuns, postChatStream } from "../lib/api";
+import { takeRerun } from "../lib/briefs";
 import { activityRecordFromEvent, mergeActivityRecord } from "../lib/activity";
 import AnswerText from "./AnswerText";
 import CitedAnswerText from "./CitedAnswerText";
@@ -27,6 +28,13 @@ import { Button } from "@/components/ui/button";
 
 function aiHasTables(ai: AiMessage): boolean {
   return Object.values(ai.nodes).some((n) => n.tables.length > 0);
+}
+
+function priorQuestion(messages: ChatMessage[], i: number): string {
+  for (let j = i - 1; j >= 0; j--) {
+    if (messages[j].role === "human") return messages[j].text;
+  }
+  return "";
 }
 
 function applyEvent(ai: AiMessage, type: string, data: unknown): AiMessage {
@@ -460,6 +468,11 @@ export default function ChatPanel({ thread, onRunDone, preset, onOpenArtifact, a
     if (preset) setInput(preset);
   }, [preset]);
 
+  useEffect(() => {
+    const rerun = takeRerun();
+    if (rerun) setInput(rerun);
+  }, []);
+
   const sendText = async (raw: string) => {
     const q = raw.trim();
     if (!q || busy) return;
@@ -798,6 +811,7 @@ export default function ChatPanel({ thread, onRunDone, preset, onOpenArtifact, a
                         onPinPlayer={(p) => pinToTray(p)}
                         onOpenArtifact={onOpenArtifact}
                         activeArtifactId={activeArtifactId}
+                        question={priorQuestion(messages, i)}
                       />
                     )}
 
