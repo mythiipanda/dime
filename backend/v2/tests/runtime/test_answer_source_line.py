@@ -206,7 +206,7 @@ def test_every_live_source_has_plain_language_copy(identity: dict) -> None:
 def test_the_published_table_keeps_stamping_the_live_date_for_each_figure() -> None:
     from decimal import Decimal
 
-    from v2.api.routes import _public_evidence_tables
+    from v2.api.routes import _public_evidence
 
     envelope = _envelope(
         "live", identity={"kind": "live", "source": "nba_api"},
@@ -216,16 +216,17 @@ def test_the_published_table_keeps_stamping_the_live_date_for_each_figure() -> N
     result.execution = SimpleNamespace(evidence=[envelope])
     result.draft = SimpleNamespace(calculations=[])
 
-    assert _public_evidence_tables(result) == [{
+    assert _public_evidence(result) == ([{
         "output_id": "NET_RATING",
         "display_name": "NET RATING",
         "subject_type": None,
         "subject_id": None,
         "value": "9.4",
         "unit": "net_rating",
-        "provenance": {"capability": "team_ratings", "season": "2024-25",
-                       "as_of": "2026-10-03"},
-    }]
+        "provenance": {"capability": "team_ratings", "origin": "live",
+                       "warehouse_id": None, "season": "2024-25",
+                       "as_of": "2026-10-03", "live_sources": ["nba_api"]},
+    }], [])
 
 
 def test_complete_outputs_never_claim_values_are_unverified() -> None:

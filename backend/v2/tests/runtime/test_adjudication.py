@@ -392,7 +392,7 @@ def test_ratings_task_publishes_one_clean_label_and_row_per_metric():
 
     from v2.adapters.capabilities import CAPABILITIES
     from v2.adapters.core import build_envelope
-    from v2.api.routes import _answer_text, _public_evidence_tables
+    from v2.api.routes import _answer_text, _public_evidence
     from v2.contracts import (
         Claim, EntityRef, EvidenceOutputBinding, EvidenceRequirement, SeasonRef,
         VerificationReport)
@@ -454,7 +454,7 @@ def test_ratings_task_publishes_one_clean_label_and_row_per_metric():
         "NET_RATING [team:1] = 9.6 (points_per_100_possessions)",
         "OFF_RATING [team:1] = 119.8 (points_per_100_possessions)",
         "DEF_RATING [team:1] = 110.2 (points_per_100_possessions)"]
-    tables = _public_evidence_tables(result)
+    tables = _public_evidence(result)[0]
     assert [item["output_id"] for item in tables] == metrics
     assert [item["value"] for item in tables] == ["9.6", "119.8", "110.2"]
 
@@ -548,7 +548,7 @@ def test_two_subjects_same_output_and_unit_are_self_contained():
 def test_calculation_projection_and_input_evidence_filtering():
     from decimal import Decimal
     from types import SimpleNamespace
-    from v2.api.routes import _answer_text, _public_evidence_tables
+    from v2.api.routes import _answer_text, _public_evidence
     from v2.contracts import (OutputFinalStatus, CalculationOutputBinding,
         DraftReport, DeclaredCalculation, DeclaredCalculationInput)
     binding=CalculationOutputBinding(requirement_id="delta",output_id="PTS_DELTA",
@@ -566,13 +566,13 @@ def test_calculation_projection_and_input_evidence_filtering():
         EvidenceEnvelope(evidence_id="a",capability="player_report",source="a",observed_at=datetime.now(UTC),rows={"PTS":25}),
         EvidenceEnvelope(evidence_id="b",capability="player_report",source="b",observed_at=datetime.now(UTC),rows={"PTS":30})]))
     assert _answer_text(result)=="PTS_DELTA = -5 (points)"
-    assert len(_public_evidence_tables(result)) == 2
+    assert len(_public_evidence(result)[0]) == 2
 
 
 def test_public_evidence_projection_excludes_sibling_rows_and_metrics():
     from datetime import UTC, datetime
     from types import SimpleNamespace
-    from v2.api.routes import _public_evidence_tables
+    from v2.api.routes import _public_evidence
     from v2.contracts import EvidenceEnvelope, EvidenceOutputBinding, OutputFinalStatus
     binding=EvidenceOutputBinding(requirement_kind="task",output_id="PTS",node_id="n",
         evidence_id="ev",selector="rows.lebron.PTS",row_selector="rows.lebron",
@@ -587,14 +587,14 @@ def test_public_evidence_projection_excludes_sibling_rows_and_metrics():
     result=SimpleNamespace(output_statuses=[status],draft=DraftReport(sections=[],claims=[]),
         execution=ExecutionResult(plan=Plan(nodes=[PlanNode(id="n",description="n",
         capability_hints=["player_report"],status="complete")]),evidence_by_node={"n":envelope},attempts={"n":1}))
-    encoded=str(_public_evidence_tables(result))
+    encoded=str(_public_evidence(result)[0])
     assert "25" in encoded and "30" not in encoded and "AST" not in encoded and "curry" not in encoded
 
 
 def test_public_projection_rejects_stale_evidence_and_missing_calculation_input():
     import pytest
     from copy import deepcopy
-    from v2.api.routes import _public_evidence_tables
+    from v2.api.routes import _public_evidence
     from types import SimpleNamespace
     from datetime import UTC, datetime
     from v2.contracts import EvidenceEnvelope, EvidenceOutputBinding, OutputFinalStatus
@@ -607,7 +607,7 @@ def test_public_projection_rejects_stale_evidence_and_missing_calculation_input(
         observed_at=datetime.now(UTC),rows={"WINS":62})
     result=SimpleNamespace(output_statuses=[status],draft=DraftReport(sections=[],claims=[]),
                            execution=SimpleNamespace(evidence=[stale]))
-    with pytest.raises(ValueError,match="changed"):_public_evidence_tables(result)
+    with pytest.raises(ValueError,match="changed"):_public_evidence(result)
 
 
 def test_calculation_projection_rejects_missing_and_ambiguous_inputs():
@@ -615,7 +615,7 @@ def test_calculation_projection_rejects_missing_and_ambiguous_inputs():
     from decimal import Decimal
     from types import SimpleNamespace
     from datetime import UTC, datetime
-    from v2.api.routes import _public_evidence_tables
+    from v2.api.routes import _public_evidence
     from v2.contracts import (OutputFinalStatus, CalculationOutputBinding,
         DeclaredCalculation, DeclaredCalculationInput, EvidenceEnvelope)
     binding=CalculationOutputBinding(requirement_id="d",output_id="DELTA",calculation_id="c")
@@ -630,14 +630,14 @@ def test_calculation_projection_rejects_missing_and_ambiguous_inputs():
         observed_at=datetime.now(UTC),rows={"PTS":30})
     result=SimpleNamespace(output_statuses=[status],draft=DraftReport(sections=[],claims=[],calculations=[calc]),
                            execution=SimpleNamespace(evidence=[a,b]))
-    with pytest.raises(ValueError):_public_evidence_tables(result)
+    with pytest.raises(ValueError):_public_evidence(result)
     missing_calc=calc.model_copy(update={"inputs":[
         DeclaredCalculationInput(evidence_id="missing",path="rows.PTS"),
         DeclaredCalculationInput(evidence_id="b",path="rows.PTS")]})
     missing_result=SimpleNamespace(output_statuses=[status],
         draft=DraftReport(sections=[],claims=[],calculations=[missing_calc]),
         execution=SimpleNamespace(evidence=[b]))
-    with pytest.raises((ValueError,KeyError)):_public_evidence_tables(missing_result)
+    with pytest.raises((ValueError,KeyError)):_public_evidence(missing_result)
 
 
 def test_buffered_event_projection_drops_secrets_and_internal_ids():
@@ -801,7 +801,7 @@ def test_completed_season_assists_leader_publishes_count(monkeypatch, tmp_path):
 def _display_table(output_id, definitions=None, rows=None):
     from datetime import UTC, datetime
     from types import SimpleNamespace
-    from v2.api.routes import _public_evidence_tables
+    from v2.api.routes import _public_evidence
     from v2.contracts import EvidenceEnvelope, EvidenceOutputBinding, OutputFinalStatus
     binding = EvidenceOutputBinding(requirement_kind="task", output_id=output_id,
         node_id="n", evidence_id="ev", selector=f"rows.{output_id}",
@@ -816,7 +816,7 @@ def _display_table(output_id, definitions=None, rows=None):
     result = SimpleNamespace(output_statuses=[status],
         draft=DraftReport(sections=[], claims=[]),
         execution=SimpleNamespace(evidence=[envelope]))
-    return _public_evidence_tables(result)[0]
+    return _public_evidence(result)[0][0]
 
 
 def test_public_table_display_name_prefers_metric_definition_head():

@@ -897,6 +897,8 @@ LIVE_SOURCE_LINES = {
               "rest came from the figures I had saved."),
 }
 
+UNTRACED_SUFFIX = " could not be traced to the source data."
+
 
 def _live_source_line(result) -> str | None:
     sources: set[str] = set()
@@ -1262,69 +1264,108 @@ def _public_output_status(result, status) -> dict:
     return item
 
 
-def _public_evidence_tables(result) -> list[dict]:
-    from v2.domain.evidence import iter_values
-    from v2.domain.calculations import Calculation, validate_calculation
-    from v2.domain.evidence import EvidenceIndex
-    evidence = {item.evidence_id:item for item in result.execution.evidence}
-    calculations = {item.calculation_id:item for item in result.draft.calculations}
-    tables = []
+def _citation_provenance(envelope) -> dict:
+    identity = envelope.source_identity
+    if identity is None:
+        origin, live_sources, warehouse_id = "undeclared", [], None
+    elif identity.kind == "live":
+        origin, live_sources, warehouse_id = "live", [identity.source], None
+    elif identity.kind == "composite":
+        origin, live_sources = "mixed", list(identity.live_sources)
+        warehouse_id = identity.warehouse_id
+    else:
+        origin, live_sources, warehouse_id = "warehouse", [], identity.warehouse_id
+    return {"capability": envelope.capability,
+            "origin": origin,
+            "warehouse_id": warehouse_id,
+            "season": envelope.season,
+            "as_of": envelope.as_of.isoformat() if envelope.as_of else None,
+            "live_sources": live_sources}
+
+
+def _published_bindings(result) -> list:
+    from v2.runtime.models import withheld_claim_indices
+
+    verified = list(getattr(result, "verified_claims", None) or [])
+    bindings: dict[tuple, object] = {}
+    if verified:
+        withheld = withheld_claim_indices(getattr(result, "gaps", None) or [])
+        internal = _internal_identifier_rx(result)
+        for item in verified:
+            if item.claim_index in withheld:
+                continue
+            if _publishable_prose(item.claim.text, internal) is None:
+                continue
+            for binding in item.claim.output_bindings:
+                bindings[(binding.requirement_kind, binding.requirement_id,
+                          binding.output_id)] = binding
     for status in result.output_statuses:
-        if status.status != "complete":
-            continue
-        binding = status.binding
-        if hasattr(binding, "evidence_id"):
+        if status.status == "complete" and status.binding is not None:
+            bindings.setdefault(
+                (status.requirement_kind, status.requirement_id,
+                 status.output_id), status.binding)
+    return list(bindings.values())
+
+
+def _public_evidence(result) -> tuple[list[dict], list[str]]:
+    from v2.domain.calculations import Calculation, validate_calculation
+    from v2.domain.evidence import EvidenceIndex, iter_values
+    from v2.runtime.models import _declared_value_matches
+    evidence = {item.evidence_id: item for item in result.execution.evidence}
+    calculations = {item.calculation_id: item for item in result.draft.calculations}
+    rows: dict[str, dict] = {}
+
+    def publish(row: dict) -> None:
+        rows.setdefault(json.dumps(row, sort_keys=True), row)
+
+    for binding in _published_bindings(result):
+        if binding.requirement_kind != "calculation":
             envelope = evidence.get(binding.evidence_id)
             if envelope is None:
                 raise ValueError("publication evidence is missing")
-            values=[v.value for v in iter_values(envelope) if v.path==binding.selector]
-            if len(values)!=1:
+            selected = [item.value for item in iter_values(envelope)
+                        if item.path == binding.selector]
+            if len(selected) != 1:
                 raise ValueError("publication selector must resolve exactly once")
-            selected=values[0]; declared=binding.value
-            if declared.kind=="boolean": equal=isinstance(selected,bool) and selected is declared.value
-            elif declared.kind=="integer": equal=not isinstance(selected,bool) and isinstance(selected,int) and selected==declared.value
-            elif declared.kind=="float": equal=isinstance(selected,float) and selected==declared.value
-            elif declared.kind=="decimal":
-                from decimal import Decimal
-                equal=isinstance(selected,Decimal) and selected==Decimal(declared.value)
-            else: equal=isinstance(selected,str) and selected==declared.value
-            if not equal:
+            if not _declared_value_matches(binding.value, selected[0]):
                 raise ValueError("publication evidence changed after admission")
-            tables.append({"output_id":binding.output_id,
-                "display_name":_output_display_name(
-                    binding.output_id, envelope.metric_definitions),
-                "subject_type":binding.subject_entity_type,
-                "subject_id":binding.subject_entity_id,
-                "value":str(binding.value.value),
-                "unit":binding.unit.value if binding.unit.kind=="declared" else "unitless",
-                "provenance":{"capability":envelope.capability,
-                              "season":envelope.season,
-                              "as_of":envelope.as_of.isoformat() if envelope.as_of else None}})
-        else:
-            calculation=calculations.get(binding.calculation_id)
-            if calculation is None:
-                raise ValueError("publication calculation is missing")
-            checked=Calculation.model_validate({"calculation_id":calculation.calculation_id,
-                "operation":calculation.operation,"inputs":[x.model_dump() for x in calculation.inputs],
-                "result":calculation.result,"unit":calculation.unit,"subject_input":calculation.subject_input})
-            if validate_calculation(checked,EvidenceIndex(evidence.values())) is not None:
-                raise ValueError("publication calculation no longer recomputes")
-            for input_ in calculation.inputs:
-                envelope=evidence.get(input_.evidence_id)
-                values=[v.value for v in iter_values(envelope)] if envelope else []
-                selected=[v.value for v in iter_values(envelope) if v.path==input_.path] if envelope else []
-                if len(selected)!=1:
-                    raise ValueError("publication calculation input must resolve exactly once")
-                tables.append({"output_id":binding.output_id,
-                    "display_name":_output_display_name(binding.output_id),
-                    "input_value":str(selected[0]),
-                    "provenance":{"capability":envelope.capability,
-                                  "season":envelope.season,
-                                  "as_of":envelope.as_of.isoformat() if envelope.as_of else None}})
-    distinct: dict[str, dict] = {}
-    for row in tables:
-        distinct.setdefault(json.dumps(row, sort_keys=True), row)
-    return list(distinct.values())
+            publish({"output_id": binding.output_id,
+                     "display_name": _output_display_name(
+                         binding.output_id, envelope.metric_definitions),
+                     "subject_type": binding.subject_entity_type,
+                     "subject_id": binding.subject_entity_id,
+                     "value": str(binding.value.value),
+                     "unit": (binding.unit.value if binding.unit.kind == "declared"
+                              else "unitless"),
+                     "provenance": _citation_provenance(envelope)})
+            continue
+        calculation = calculations.get(binding.calculation_id)
+        if calculation is None:
+            raise ValueError("publication calculation is missing")
+        checked = Calculation.model_validate({
+            "calculation_id": calculation.calculation_id,
+            "operation": calculation.operation,
+            "inputs": [item.model_dump() for item in calculation.inputs],
+            "result": calculation.result, "unit": calculation.unit,
+            "subject_input": calculation.subject_input})
+        if validate_calculation(checked, EvidenceIndex(evidence.values())) is not None:
+            raise ValueError("publication calculation no longer recomputes")
+        for input_ in calculation.inputs:
+            envelope = evidence.get(input_.evidence_id)
+            selected = ([item.value for item in iter_values(envelope)
+                         if item.path == input_.path] if envelope else [])
+            if len(selected) != 1:
+                raise ValueError("publication calculation input must resolve exactly once")
+            publish({"output_id": binding.output_id,
+                     "display_name": _output_display_name(binding.output_id),
+                     "input_value": str(selected[0]),
+                     "provenance": _citation_provenance(envelope)})
+    cited = {row["output_id"] for row in rows.values()}
+    untraced = list(dict.fromkeys(
+        _output_display_name(status.output_id) + UNTRACED_SUFFIX
+        for status in result.output_statuses
+        if status.output_id not in cited))
+    return list(rows.values()), untraced
 
 
 def _public_capability_name(raw) -> str:
@@ -1648,7 +1689,7 @@ async def quick_answer_stream(body: QuickAnswerBody):
                 while not queue.empty():
                     buffered_events.append(queue.get_nowait())
 
-                public_tables = _public_evidence_tables(result)
+                public_tables, untraced_numbers = _public_evidence(result)
                 public_statuses = [_public_output_status(result, item)
                                    for item in result.output_statuses]
                 answer = _answer_text(result)
@@ -1703,7 +1744,8 @@ async def quick_answer_stream(body: QuickAnswerBody):
                     status="complete" if result.verification.status.value == "pass" else "partial"))
                 yield encode_event(CustomData(
                     node="analytics",
-                    tables=public_tables))
+                    tables=public_tables,
+                    unverified_numbers=untraced_numbers))
                 for chunk in _stream_binding_diagnostics(result, body.diagnostics):
                     yield chunk
                 carry = {
@@ -1726,7 +1768,7 @@ async def quick_answer_stream(body: QuickAnswerBody):
                         store.save_chat(body.thread, "ai", answer,
                                         owner=body.client[:80])
                         store.save_run(body.thread, body.q[:2000], answer,
-                                       public_tables, [],
+                                       public_tables, untraced_numbers,
                                        owner=body.client[:80],
                                        run_id=run_id)
             yield encode_event(GraphEnd())
