@@ -1,6 +1,7 @@
 
 import argparse
 import json
+import logging
 import os
 import sys
 import threading
@@ -25,6 +26,8 @@ from shared.sources import nba_stats as _nba
 
 PROGRESS_PATH = Path(__file__).resolve().parent / "backfill_progress.json"
 
+logger = logging.getLogger(__name__)
+
 FIRST_SEASON = "2015-16"
 
 
@@ -33,7 +36,8 @@ def default_seasons() -> str:
         from datetime import date
         from shared.tools._core import completed_season_for_date
         end = completed_season_for_date(date.today())
-    except Exception:
+    except ImportError as exc:
+        logger.warning("default_seasons falling back to 2025-26: %s", exc)
         end = None
     if not end:
         end = "2025-26"
