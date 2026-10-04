@@ -699,4 +699,11 @@ def admit_verified_claim_bindings(
                 "subject_input": calculation.subject_input})
             if validate_calculation(checked, EvidenceIndex(execution.evidence)) is not None:
                 raise ValueError("binding calculation did not pass recomputation")
+            operation = str(calculation.operation)
+            unit_text = (calculation.unit or "").strip().casefold()
+            if operation in ("rank_desc", "rank_asc"):
+                if unit_text not in ("", "rank", "unitless"):
+                    raise ValueError("rank calculation unit must be rank or unitless")
+            elif unit_text == "rank":
+                raise ValueError("non-rank calculation cannot carry rank unit")
     return verified_claim
