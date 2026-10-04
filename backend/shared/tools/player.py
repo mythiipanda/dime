@@ -12,8 +12,9 @@ from ._core import TTL_GAMELOG, TTL_LEADERS, TTL_PBPSTATS, _warehouse_or_live, c
 from .shots import ZONE_LEGEND as _SHOT_ZONE_LABELS
 from .zone import ZONE_KEYS as _HIST_ZONE_KEYS
 from .zone import ZONE_LEGEND as _HIST_ZONE_LEGEND
+from .zone import fetch_max_fetched_at as _hist_fetched_at
+from .zone import fetch_zone_aggregates as _fetch_hist_aggs
 from .zone import season_year as _hist_season_year
-from .zone import zone_of as _hist_zone_of
 from .zonedelta import clamp_floor as _clamp_hist_floor
 
 _logger = _logging.getLogger(__name__)
@@ -1509,28 +1510,15 @@ _BUCKET_TO_ZONE = {
 _HIST_THREE_ZONES = frozenset({"corner_3", "atb_3"})
 
 
-def _fold_hist_shots(rows: list[dict[str, Any]], person_id: int) -> tuple[dict, dict, int]:
-    player = {key: [0, 0] for key in _HIST_ZONE_KEYS}
-    league = {key: [0, 0] for key in _HIST_ZONE_KEYS}
-    total = 0
+def _fold_agg_rows(rows: list[dict[str, Any]]) -> tuple[dict, int]:
+    folded = {key: [0, 0] for key in _HIST_ZONE_KEYS}
     for r in rows:
-        zone = _hist_zone_of(r.get("x_legacy"), r.get("y_legacy"), r.get("shot_value", 0))
-        made = str(r.get("shot_result") or "").lower() == "made"
-        slot = league[zone]
-        slot[1] += 1
-        if made:
-            slot[0] += 1
-        try:
-            match = int(r.get("person_id")) == person_id
-        except (TypeError, ValueError):
-            match = False
-        if match:
-            total += 1
-            pslot = player[zone]
-            pslot[1] += 1
-            if made:
-                pslot[0] += 1
-    return player, league, total
+        slot = folded.get(str(r.get("zone")))
+        if slot is None:
+            continue
+        slot[1] += int(r.get("fga") or 0)
+        slot[0] += int(r.get("fgm") or 0)
+    return folded, sum(a for _, a in folded.values())
 
 
 def _hist_zone_rows(player: dict, league: dict, total: int, floor: int) -> tuple[list, list]:
@@ -1578,21 +1566,23 @@ def get_shot_zones(player_id: str | int, season: str | None = None, min_attempts
         hist_year = 0
     if hist_year:
         try:
-            hist_frame = store.read_frame(
-                "silver_hist_shots", "season = ?", [hist_year])
+            league_rows = _fetch_hist_aggs("silver_hist_shots", hist_year)
+            player_rows = _fetch_hist_aggs(
+                "silver_hist_shots", hist_year,
+                where="person_id = ?", params=[player_id])
         except Exception:
-            hist_frame = None
-        if hist_frame is not None and hist_frame.height > 0:
-            folded_player, folded_league, hist_total = _fold_hist_shots(
-                hist_frame.to_dicts(), player_id)
+            league_rows = []
+            player_rows = []
+        if league_rows:
+            folded_league, _ = _fold_agg_rows(league_rows)
+            folded_player, hist_total = _fold_agg_rows(player_rows)
             if hist_total > 0:
                 hist_rows, hist_excluded = _hist_zone_rows(
                     folded_player, folded_league, hist_total, floor)
-                fetched = [str(v) for v in hist_frame.select(
-                    "_fetched_at").to_series().to_list() if v]
                 meta: dict[str, Any] = {
                     "source": "warehouse:silver_hist_shots",
-                    "fetched_at": max(fetched) if fetched else "unknown",
+                    "fetched_at": _hist_fetched_at(
+                        "silver_hist_shots", hist_year),
                     "rows": len(hist_rows), "season": season,
                     "cached": True,
                     "baseline": "silver_hist_shots league zone eFG",

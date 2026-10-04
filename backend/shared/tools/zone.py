@@ -12,15 +12,16 @@ TABLE = "silver_hist_shots"
 
 
 
-ZONE_RULES: tuple[tuple[str, Any], ...] = (
-    ("rim", lambda dist, ax, three: dist < 8.0),
-    ("corner_3", lambda dist, ax, three: three and ax >= 220),
-    ("atb_3", lambda dist, ax, three: three),
-    ("short_mid", lambda dist, ax, three: dist < 14.0),
-    ("long_mid", lambda dist, ax, three: True),
+ZONE_RULES: tuple[tuple[str, Any, str], ...] = (
+    ("rim", lambda dist, ax, three: dist < 8.0, "{dist} < 8.0"),
+    ("corner_3", lambda dist, ax, three: three and ax >= 220,
+     "{three} AND {ax} >= 220"),
+    ("atb_3", lambda dist, ax, three: three, "{three}"),
+    ("short_mid", lambda dist, ax, three: dist < 14.0, "{dist} < 14.0"),
+    ("long_mid", lambda dist, ax, three: True, "TRUE"),
 )
 
-ZONE_KEYS = tuple(key for key, _ in ZONE_RULES)
+ZONE_KEYS = tuple(key for key, _, _ in ZONE_RULES)
 
 ZONE_LEGEND = {
     "rim": "shots within 8 ft of the hoop",
@@ -41,10 +42,60 @@ def zone_of(x: float, y: float, shot_value: int) -> str:
     except (TypeError, ValueError):
         ax = 0.0
     three = int(shot_value or 0) == 3
-    for key, rule in ZONE_RULES:
+    for key, rule, _ in ZONE_RULES:
         if rule(dist, ax, three):
             return key
     return "long_mid"
+
+
+def zone_case_sql(x_col: str = "x_legacy", y_col: str = "y_legacy",
+                    v_col: str = "shot_value") -> str:
+    dist = (
+        f"(CASE WHEN {x_col} IS NULL OR {y_col} IS NULL THEN 999.0 ELSE "
+        f"SQRT(CAST({x_col} AS DOUBLE) * CAST({x_col} AS DOUBLE) + "
+        f"CAST({y_col} AS DOUBLE) * CAST({y_col} AS DOUBLE)) / 10.0 END)"
+    )
+    ax = f"COALESCE(ABS(CAST({x_col} AS DOUBLE)), 0.0)"
+    three = f"COALESCE(({v_col} = 3), FALSE)"
+    whens = " ".join(
+        f"WHEN {sql.format(dist=dist, ax=ax, three=three)} THEN '{key}'"
+        for key, _, sql in ZONE_RULES[:-1]
+    )
+    return f"(CASE {whens} ELSE '{ZONE_RULES[-1][0]}' END)"
+
+
+def zone_made_sql(result_col: str = "shot_result") -> str:
+    return f"(LOWER({result_col}) = 'made')"
+
+
+def fetch_zone_aggregates(table: str, year: int,
+                          groups: tuple[str, ...] = (),
+                          where: str = "",
+                          params: list[object] | None = None) -> list[dict[str, Any]]:
+    case = zone_case_sql()
+    made = zone_made_sql()
+    cols = "".join(f"{g}, " for g in groups)
+    filt = f" AND {where}" if where else ""
+    by = ", ".join([*groups, "zone"])
+    rows = _store._read_df(
+        f"SELECT {cols}{case} AS zone, COUNT(*) AS fga, "
+        f"SUM(CASE WHEN {made} THEN 1 ELSE 0 END) AS fgm "
+        f"FROM {table} WHERE season = ?{filt} GROUP BY {by}",
+        [year, *(params or [])],
+    )
+    return [
+        {**r, "fga": int(r["fga"]), "fgm": int(r["fgm"])}
+        for r in rows
+    ]
+
+
+def fetch_max_fetched_at(table: str, year: int) -> str:
+    rows = _store._read_df(
+        f"SELECT MAX(_fetched_at) AS m FROM {table} WHERE season = ?",
+        [year],
+    )
+    val = rows[0].get("m") if rows else None
+    return str(val) if val else "unknown"
 
 
 def season_year(season: str) -> int:
@@ -177,21 +228,30 @@ def get_team_shot_zones(teams: str = "league",
     season = resolve_season(season)
     season = clamp_season(season)
     year = season_year(season)
-    frame = _store.read_frame(TABLE, "season = ?", [year])
-    if frame.height == 0:
+    grouped = fetch_zone_aggregates(TABLE, year,
+                                    groups=("team_id", "team_tricode"))
+    if not grouped:
         return {"tool": "get_team_shot_zones", "ok": False,
                 "error": f"no shot rows for season {season} in {TABLE}; "
                          f"coverage is seasons {_coverage_bounds()}"}
-    frame_ids = {int(t) for t in frame.select("team_id").to_series().to_list()}
+    full_agg: dict[int, dict[str, Any]] = {}
+    for r in grouped:
+        tid = r.get("team_id")
+        if tid is None or (isinstance(tid, float) and math.isnan(tid)):
+            continue
+        tid = int(tid)
+        entry = full_agg.setdefault(
+            tid, {"team_id": tid,
+                  "team_abbr": r.get("team_tricode") or "",
+                  "zones": {k: _blank_zone() for k in ZONE_KEYS}})
+        zone = str(r.get("zone"))
+        z = entry["zones"][zone]
+        z["fga"] += int(r["fga"])
+        z["fgm"] += int(r["fgm"])
+        if zone in ("corner_3", "atb_3"):
+            z["three_made"] += int(r["fgm"])
+    frame_ids = set(full_agg)
     wanted, unknown = _parse_teams(teams, frame_ids)
-    all_shots = [{
-        "team_id": int(r.get("team_id") or 0),
-        "team_abbr": r.get("team_tricode") or "",
-        "x": r.get("x_legacy"), "y": r.get("y_legacy"),
-        "shot_value": r.get("shot_value", 0),
-        "made": str(r.get("shot_result") or "").lower() == "made",
-    } for r in frame.to_dicts() if r.get("team_id") is not None]
-    full_agg = aggregate_zones(all_shots)
 
     baselines = league_baselines(full_agg)
     agg = {tid: t for tid, t in full_agg.items() if tid in wanted}
@@ -204,12 +264,10 @@ def get_team_shot_zones(teams: str = "league",
         for row in rows[1:]:
             row[f"is_{key}_share_leader"] = row["team_id"] == leader["team_id"]
     rows[0].update({f"is_{key}_share_leader": False for key in ZONE_KEYS})
-    fetched = [str(v) for v in frame.select("_fetched_at").to_series()
-               .to_list() if v]
     meta = {
         "source": f"warehouse {TABLE}",
         "season": season,
-        "fetched_at": max(fetched) if fetched else "unknown",
+        "fetched_at": fetch_max_fetched_at(TABLE, year),
         "teams_requested": teams,
         "teams_returned": len(agg),
         "data_note": (

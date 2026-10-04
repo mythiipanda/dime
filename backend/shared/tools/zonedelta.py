@@ -3,9 +3,9 @@ from typing import Any
 
 from langchain_core.tools import tool
 
-from .. import store as _store
 from ._core import coerce_player_id
-from .zone import ZONE_KEYS, ZONE_LEGEND, zone_of
+from .zone import ZONE_KEYS, ZONE_LEGEND, fetch_max_fetched_at
+from .zone import fetch_zone_aggregates, zone_of
 
 TABLE = "silver_hist_shots"
 
@@ -58,6 +58,17 @@ def fold_zones(shots: list[dict[str, Any]]) -> dict[str, dict[str, int]]:
         out[zone]["fga"] += 1
         if _is_made(s):
             out[zone]["fgm"] += 1
+    return out
+
+
+def fold_aggregates(rows: list[dict[str, Any]]) -> dict[str, dict[str, int]]:
+    out = {key: {"fga": 0, "fgm": 0} for key in ZONE_KEYS}
+    for r in rows:
+        zone = str(r.get("zone"))
+        if zone not in out:
+            continue
+        out[zone]["fga"] += int(r.get("fga") or 0)
+        out[zone]["fgm"] += int(r.get("fgm") or 0)
     return out
 
 
@@ -122,23 +133,15 @@ def get_zone_deltas(player: str, season: int = MAX_SEASON,
                 "rows": {}, "meta": {"season": year,
                                      "season_label": season_label(year)},
                 "error": str(exc)}
-    frame = _store.read_frame(TABLE, "season = ?", [year])
-    if frame.height == 0:
+    league = fold_aggregates(fetch_zone_aggregates(TABLE, year))
+    if not any(z["fga"] for z in league.values()):
         return {"tool": "get_zone_deltas", "ok": False, "rows": {},
                 "meta": {"season": year,
                          "season_label": season_label(year)},
                 "error": f"no shot rows for season {season_label(year)} "
                          f"in {TABLE}"}
-    all_shots = [{
-        "person_id": r.get("person_id"),
-        "x": r.get("x_legacy"), "y": r.get("y_legacy"),
-        "shot_value": r.get("shot_value", 0),
-        "shot_result": r.get("shot_result"),
-    } for r in frame.to_dicts()]
-    league = fold_zones(all_shots)
-    mine = fold_zones([s for s in all_shots
-                       if s.get("person_id") is not None
-                       and int(s["person_id"]) == person_id])
+    mine = fold_aggregates(fetch_zone_aggregates(
+        TABLE, year, where="person_id = ?", params=[person_id]))
     total = sum(z["fga"] for z in mine.values())
     name = _display_name(person_id, str(player).strip())
     if total == 0:
@@ -149,13 +152,11 @@ def get_zone_deltas(player: str, season: int = MAX_SEASON,
                          f"resolve through roster ids, surnames alone "
                          f"may be ambiguous"}
     zones, excluded = build_deltas(mine, league, floor)
-    fetched = [str(v) for v in frame.select("_fetched_at").to_series()
-               .to_list() if v]
     meta: dict[str, Any] = {
         "source": f"warehouse {TABLE}",
         "season": year,
         "season_label": season_label(year),
-        "fetched_at": max(fetched) if fetched else "unknown",
+        "fetched_at": fetch_max_fetched_at(TABLE, year),
         "player": name,
         "person_id": person_id,
         "player_shots": total,
