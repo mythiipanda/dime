@@ -349,6 +349,41 @@ function tableSource(table: unknown, index: number): EvidenceSource | null {
   return null;
 }
 
+export function contextPills(ai: AiMessage): string[] {
+  const seasons = new Map<string, number>();
+  const caps: string[] = [];
+  const seenCaps = new Set<string>();
+  for (const table of allTables(ai)) {
+    if (!isRecord(table)) continue;
+    const provenance = (table as Record<string, unknown>).provenance;
+    if (!isRecord(provenance)) continue;
+    const season = provenance.season;
+    if (typeof season === "string" && season) {
+      seasons.set(season, (seasons.get(season) || 0) + 1);
+    }
+    const capability = provenance.capability;
+    if (typeof capability === "string" && capability) {
+      const label = capabilityLabel(capability);
+      if (!seenCaps.has(label)) {
+        seenCaps.add(label);
+        caps.push(label);
+      }
+    }
+  }
+  const pills: string[] = [];
+  let topSeason = "";
+  let topCount = 0;
+  seasons.forEach((n, s) => {
+    if (n > topCount) {
+      topCount = n;
+      topSeason = s;
+    }
+  });
+  if (topSeason) pills.push(topSeason);
+  pills.push(...caps.slice(0, 2));
+  return pills;
+}
+
 export function evidenceSources(ai: AiMessage): EvidenceSource[] {
   const sources: EvidenceSource[] = [];
   allTables(ai).forEach((table, index) => {
