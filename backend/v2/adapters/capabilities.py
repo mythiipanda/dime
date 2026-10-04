@@ -3,6 +3,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, Callable, Mapping
 
+from shared.tools.leader_metrics import COUNTING_METRICS, per_game_column
+
 from ..contracts import EntityRef
 
 COUNT = "count"
@@ -11,6 +13,10 @@ FRACTION = "fraction_0_1"
 PERCENT = "percent_0_100"
 POINTS_PER_100 = "points_per_100_possessions"
 MINUTES = "minutes"
+
+COUNTING_UNITS = {metric: COUNT for metric in COUNTING_METRICS}
+PER_GAME_UNITS = {per_game_column(metric): PER_GAME
+                  for metric in COUNTING_METRICS}
 
 EFG_DEF = "Effective field-goal percentage: (FGM + 0.5 * FG3M) / FGA."
 TS_DEF = "True shooting percentage: PTS / (2 * (FGA + 0.44 * FTA))."
@@ -156,12 +162,9 @@ _LIST = [
         name="qualified_leaders",
         tool_name="get_leaders",
         live_fallback=True,
-        units={"GP": COUNT, "MIN": MINUTES, "FG_PCT": FRACTION,
-               "FG3_PCT": FRACTION, "FT_PCT": FRACTION,
-               "PTS": COUNT, "REB": COUNT, "AST": COUNT,
-               "STL": COUNT, "BLK": COUNT, "FGM": COUNT, "FGA": COUNT,
-               "FG3M": COUNT, "FG3A": COUNT, "FTM": COUNT, "FTA": COUNT,
-               "OREB": COUNT, "DREB": COUNT, "TOV": COUNT, "PF": COUNT},
+        units={**COUNTING_UNITS, **PER_GAME_UNITS,
+               "GP": COUNT, "MIN": MINUTES, "FG_PCT": FRACTION,
+               "FG3_PCT": FRACTION, "FT_PCT": FRACTION},
         qualification="Qualified players only (NBA leaderboard minimums).",
         coverage="Source-ranked qualified leaderboard; returned rows preserve population ranks.",
         extract_entities=_player_entities,
@@ -432,10 +435,32 @@ _METRIC_DISPLAY_ALIASES = {
 
 _AGGREGATION_SUFFIXES = ("TOTALS", "TOTAL")
 
+_PER_GAME_STEM_SUFFIXES = ("PERGAME", "PG")
+
 
 def _squashed(value: object) -> str:
     return "".join(
         character for character in str(value).upper() if character.isalnum())
+
+
+def _per_game_stem(stem: str) -> str | None:
+    for suffix in _PER_GAME_STEM_SUFFIXES:
+        if stem.endswith(suffix) and len(stem) > len(suffix):
+            return stem[: -len(suffix)]
+    return None
+
+
+def _per_game_column(vocabulary: Mapping[str, str], stem: str) -> str | None:
+    base = _per_game_stem(stem)
+    if base is None:
+        return None
+    for candidate in (base, _METRIC_DISPLAY_ALIASES.get(base)):
+        if candidate is None:
+            continue
+        declared = vocabulary.get(_squashed(per_game_column(candidate)))
+        if declared is not None:
+            return declared
+    return None
 
 
 def resolve_metric_column(capability: Capability, output_id: str) -> str | None:
@@ -455,6 +480,9 @@ def resolve_metric_column(capability: Capability, output_id: str) -> str | None:
     stemmed = vocabulary.get(stem)
     if stemmed is not None:
         return stemmed
+    per_game = _per_game_column(vocabulary, stem)
+    if per_game is not None:
+        return per_game
     alias = _METRIC_DISPLAY_ALIASES.get(stem)
     if alias is not None:
         aliased = vocabulary.get(alias)

@@ -126,7 +126,8 @@ def test_fg3_percentage_leaders_carry_direction_volume_and_shooting_counts(monke
     assert out["meta"]["qualification"] == "300+ three-point attempts"
     assert out["rows"][0] == {
         "RANK": 1, "PLAYER": "A", "TEAM": "AAA", "FG3_PCT": 0.467,
-        "FG3M": 140, "FG3A": 300, "GP": 70, "MPG": 1800,
+        "FG3M": 140, "FG3A": 300, "FG3M_PER_GAME": 2.0,
+        "FG3A_PER_GAME": 4.3, "GP": 70, "MPG": 1800,
         "PLAYER_NAME": "A",
     }
 

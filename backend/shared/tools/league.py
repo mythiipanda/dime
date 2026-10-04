@@ -8,6 +8,7 @@ from langchain_core.tools import tool
 from .. import store
 from ..sources import nba_stats
 from ._core import IN_SEASON_MONTHS as _IN_SEASON_MONTHS, TTL_LEADERS, TTL_SCOREBOARD_PAST, clamp_stat, _warehouse_or_live, is_past_game_date, last_completed_season, resolve_season, season_static
+from .leader_metrics import COUNTING_METRICS, per_game_column, per_game_value
 from .rating_metrics import RANKING_DIRECTIONS, TEAM_RATING_METRICS
 
 
@@ -1763,6 +1764,10 @@ def get_leaders(
             pinned.append(r)
             continue
         slim = {k: r[k] for k in pin if k in r}
+        for _metric in COUNTING_METRICS:
+            _rate = per_game_value(slim.get(_metric), slim.get("GP"))
+            if _rate is not None:
+                slim[per_game_column(_metric)] = _rate
         for _id in ("PLAYER_ID", "player_id", "TEAM_ID", "team_id"):
             if _id in r and _id not in slim:
                 slim[_id] = r[_id]
