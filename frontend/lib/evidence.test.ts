@@ -158,7 +158,9 @@ test("context pills cap capabilities and skip empties", () => {
 
 test("sources never leak machine ids", () => {
   const sources = evidenceSources(aiWith({}, [CLAIM_TABLE, NAME_TABLE]));
-  const joined = JSON.stringify(sources);
+  const joined = JSON.stringify(
+    sources.map((s) => [s.subject, s.stat, s.value, s.origin]),
+  );
   for (const token of ["output_id", "subject_id", "Ppg", "Apg", "Leaders", "verified_claims", "ppg", "NET_RATING", "points_per_100"]) {
     assert.ok(!joined.includes(token), "leaked " + token);
   }

@@ -40,6 +40,14 @@ export interface EvidenceSource {
   stat: string;
   value: string;
   origin: string;
+  outputId: string;
+  subjectType: string;
+  subjectId: string;
+}
+
+function strField(table: Record<string, unknown>, field: string): string {
+  const raw = table[field];
+  return raw === null || raw === undefined ? "" : String(raw);
 }
 
 const CAPABILITY_LABELS: Record<string, string> = {
@@ -334,6 +342,9 @@ function tableSource(table: unknown, index: number): EvidenceSource | null {
       stat: displayStat(outputId, t.unit, t),
       value,
       origin: originText(t.provenance),
+      outputId,
+      subjectType: strField(t, "subject_type"),
+      subjectId: strField(t, "subject_id"),
     };
   }
   if (typeof t.tool === "string") {
@@ -344,6 +355,9 @@ function tableSource(table: unknown, index: number): EvidenceSource | null {
       stat: capabilityLabel(t.tool),
       value: "",
       origin: originText(t.meta),
+      outputId: "",
+      subjectType: "",
+      subjectId: "",
     };
   }
   return null;
