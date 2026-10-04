@@ -3,6 +3,7 @@
 import {
   Select,
   SelectContent,
+  SelectGroup,
   SelectItem,
   SelectLabel,
   SelectTrigger,
@@ -85,54 +86,56 @@ export default function ModelPicker({ models, value, onChange, status = "ready",
         </SelectValue>
       </SelectTrigger>
       <SelectContent style={{ width: 320, maxHeight: 340 }}>
-        <SelectLabel
-          style={{
-            fontSize: 10,
-            fontWeight: 600,
-            color: "var(--color-ash-gray)",
-            textTransform: "uppercase",
-            letterSpacing: "0.08em",
-            padding: "4px 8px 6px",
-          }}
-        >
-          Models
-        </SelectLabel>
-        {status === "error" && (
-          <SelectItem value={RETRY_VALUE} label="Retry loading models">
-            <span style={{ fontSize: 13, color: "var(--color-cyan-edge)" }}>
-              Retry loading models
-            </span>
-          </SelectItem>
-        )}
-        {models.map((m) => {
-          const isSelected = (value || models[0]?.id) === m.id;
-          const isUnavailable = m.available === false;
-          return (
-            <SelectItem
-              key={m.id}
-              value={m.id}
-              label={modelDisplayName(m.id)}
-              disabled={isUnavailable}
-            >
-              <span style={{ display: "flex", flexDirection: "column", opacity: isUnavailable ? 0.45 : 1 }}>
-                <span
-                  style={{
-                    fontSize: 13,
-                    fontWeight: isSelected ? 600 : 400,
-                    color: "var(--color-ink-black)",
-                  }}
-                >
-                  {displayName(m.id)}
-                </span>
-                <span style={{ fontSize: 11, fontWeight: 400, color: "var(--color-warm-gray)" }}>
-                  {isUnavailable
-                    ? `${providerDisplayName(m.engine) || m.engine} · unavailable`
-                    : (providerDisplayName(m.engine) || m.engine || "live")}
-                </span>
+        <SelectGroup>
+          <SelectLabel
+            style={{
+              fontSize: 10,
+              fontWeight: 600,
+              color: "var(--color-ash-gray)",
+              textTransform: "uppercase",
+              letterSpacing: "0.08em",
+              padding: "4px 8px 6px",
+            }}
+          >
+            Models
+          </SelectLabel>
+          {status === "error" && (
+            <SelectItem value={RETRY_VALUE} label="Retry loading models">
+              <span style={{ fontSize: 13, color: "var(--color-cyan-edge)" }}>
+                Retry loading models
               </span>
             </SelectItem>
-          );
-        })}
+          )}
+          {models.map((m) => {
+            const isSelected = (value || models[0]?.id) === m.id;
+            const isUnavailable = m.available === false;
+            return (
+              <SelectItem
+                key={m.id}
+                value={m.id}
+                label={modelDisplayName(m.id)}
+                disabled={isUnavailable}
+              >
+                <span style={{ display: "flex", flexDirection: "column", opacity: isUnavailable ? 0.45 : 1 }}>
+                  <span
+                    style={{
+                      fontSize: 13,
+                      fontWeight: isSelected ? 600 : 400,
+                      color: "var(--color-ink-black)",
+                    }}
+                  >
+                    {displayName(m.id)}
+                  </span>
+                  <span style={{ fontSize: 11, fontWeight: 400, color: "var(--color-warm-gray)" }}>
+                    {isUnavailable
+                      ? `${providerDisplayName(m.engine) || m.engine} · unavailable`
+                      : (providerDisplayName(m.engine) || m.engine || "live")}
+                  </span>
+                </span>
+              </SelectItem>
+            );
+          })}
+        </SelectGroup>
       </SelectContent>
     </Select>
   );
