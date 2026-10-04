@@ -379,6 +379,7 @@ def test_paced_transport_turns_a_429_into_a_throttle(monkeypatch):
 
 def test_seeder_writes_nothing_for_a_malformed_page(tmp_path, monkeypatch):
     _scratch(tmp_path, monkeypatch)
+    monkeypatch.setattr(seed, "LOG_FILE", tmp_path / "seed.log")
 
     with pytest.raises(src.AwardsPageError):
         seed.seed_season("2023-24",
@@ -394,12 +395,15 @@ def test_seeder_writes_nothing_for_a_malformed_page(tmp_path, monkeypatch):
 
 def test_seed_season_is_idempotent(tmp_path, monkeypatch):
     _scratch(tmp_path, monkeypatch)
+    monkeypatch.setattr(seed, "LOG_FILE", tmp_path / "seed.log")
 
     def transport(url: str) -> str:
         return _page(2024)
 
-    first = seed.seed_season("2023-24", transport=transport, min_interval_s=0.0)
-    second = seed.seed_season("2023-24", transport=transport, min_interval_s=0.0)
+    first = seed.seed_season("2023-24", transport=transport, min_interval_s=0.0,
+                             winners=_winner_index())
+    second = seed.seed_season("2023-24", transport=transport, min_interval_s=0.0,
+                              winners=_winner_index())
     assert first == second == sum(SEASON_ROWS_2023_24.values())
     con = store.connect()
     try:
@@ -417,12 +421,14 @@ def test_seed_season_is_idempotent(tmp_path, monkeypatch):
 
 def test_seeder_resumes_from_the_progress_file(tmp_path, monkeypatch):
     _scratch(tmp_path, monkeypatch)
+    monkeypatch.setattr(seed, "LOG_FILE", tmp_path / "seed.log")
     progress = tmp_path / "progress.json"
 
     def transport(url: str) -> str:
         return _page(2024)
 
-    seed.seed_season("2023-24", transport=transport, min_interval_s=0.0)
+    seed.seed_season("2023-24", transport=transport, min_interval_s=0.0,
+                     winners=_winner_index())
     seed.mark_done(progress, "2023-24")
     seed.mark_failed(progress, "2024-25", "rate limited")
     assert seed.pending_seasons(["2023-24", "2024-25"], progress) == ["2024-25"]
@@ -470,8 +476,17 @@ def _write_spine(seasons: list[str]) -> None:
     store.warehouse_tables_cache_clear()
 
 
+def _winner_fixture_for(url: str) -> str:
+    for page in src.WINNER_PAGES:
+        if page.url == url:
+            return WINNER_FIXTURES[page.award]
+    raise AssertionError(f"no recorded fixture for {url}")
+
+
 def _page_router(pages: dict):
     def transport(url: str) -> str:
+        if url in src.WINNER_URLS:
+            return (FIXTURES / _winner_fixture_for(url)).read_text(encoding="utf-8")
         year = int(url.rsplit("_", 1)[-1].split(".")[0])
         if year not in pages:
             raise RuntimeError(f"404 for {url}")
@@ -614,9 +629,10 @@ def _write_award_tool_fixture(path, season: str = "2023-24") -> None:
 def test_landed_table_answers_a_vote_share_question_the_award_tool_refuses(
         tmp_path, monkeypatch):
     _scratch(tmp_path, monkeypatch)
+    monkeypatch.setattr(seed, "LOG_FILE", tmp_path / "seed.log")
     _write_award_tool_fixture(store.DB_PATH)
     seed.seed_season("2023-24", transport=lambda url: _page(2024),
-                     min_interval_s=0.0)
+                     min_interval_s=0.0, winners=_winner_index())
     from shared.tools.awards import get_award_race
 
     race = get_award_race.invoke({"award": "MVP", "season": "2023-24"})
@@ -650,8 +666,9 @@ def test_landed_table_answers_a_vote_share_question_the_award_tool_refuses(
 
 def test_landed_awards_table_answers_a_season_no_award_ballot_touches(tmp_path, monkeypatch):
     _scratch(tmp_path, monkeypatch)
+    monkeypatch.setattr(seed, "LOG_FILE", tmp_path / "seed.log")
     seed.seed_season("1997-98", transport=lambda url: _page(1998),
-                     min_interval_s=0.0)
+                     min_interval_s=0.0, winners=_winner_index())
     con = store.connect()
     try:
         rows = con.execute(
@@ -668,3 +685,327 @@ def test_landed_awards_table_answers_a_season_no_award_ballot_touches(tmp_path, 
         "Gary Payton": (0.967, "SEA", 108),
         "Shaquille O'Neal": (0.938, "LAL", 103),
         "Tim Duncan": (0.638, "SAS", 45)}
+
+
+WINNER_FIXTURES = {
+    "MVP": "winners_mvp.html",
+    "ROY": "winners_roy.html",
+    "DPOY": "winners_dpoy.html",
+    "6MOY": "winners_smoy.html",
+    "MIP": "winners_mip.html",
+    "COY": "winners_coy.html",
+}
+
+RECORDED_SEASONS = ((1977, "1976-77"), (1981, "1980-81"), (1998, "1997-98"),
+                    (2004, "2003-04"), (2015, "2014-15"), (2024, "2023-24"),
+                    (2026, "2025-26"))
+
+CONTESTED_RANK_ONE = (
+    ("1976-77", "MVP", "Kareem Abdul-Jabbar", 159, 247, 0.644, 159),
+    ("1976-77", "ROY", "Adrian Dantley", 44, 66, 0.667, 44),
+    ("1976-77", "COY", "Tom Nissalke", 26, 59, 0.441, 26),
+    ("1980-81", "MVP", "Julius Erving", 454, 690, 0.658, 28),
+    ("1980-81", "ROY", "Darrell Griffith", 19, 69, 0.275, 19),
+    ("1980-81", "COY", "Jack McKinney", 27, 69, 0.391, 27),
+    ("1997-98", "MVP", "Michael Jordan", 1084, 1160, 0.934, 92),
+    ("1997-98", "ROY", "Tim Duncan", 113, 116, 0.974, 113),
+    ("1997-98", "DPOY", "Dikembe Mutombo", 39, 116, 0.336, 39),
+    ("1997-98", "6MOY", "Danny Manning", 57, 116, 0.491, 57),
+    ("1997-98", "MIP", "Alan Henderson", 33, 116, 0.284, 33),
+    ("1997-98", "COY", "Larry Bird", 50, 116, 0.431, 50),
+    ("2003-04", "MVP", "Kevin Garnett", 1219, 1230, 0.991, 120),
+    ("2003-04", "ROY", "LeBron James", 508, 590, 0.861, 78),
+    ("2003-04", "DPOY", "Metta World Peace", 476, 605, 0.787, 80),
+    ("2003-04", "6MOY", "Antawn Jamison", 338, 600, 0.563, 43),
+    ("2003-04", "MIP", "Zach Randolph", 379, 605, 0.626, 59),
+    ("2003-04", "COY", "Hubie Brown", 466, 610, 0.764, 62),
+    ("2014-15", "MVP", "Stephen Curry", 1198, 1300, 0.922, 100),
+    ("2014-15", "ROY", "Andrew Wiggins", 604, 650, 0.929, 110),
+    ("2014-15", "DPOY", "Kawhi Leonard", 333, 645, 0.516, 37),
+    ("2014-15", "6MOY", "Lou Williams", 502, 650, 0.772, 78),
+    ("2014-15", "MIP", "Jimmy Butler", 535, 645, 0.829, 92),
+    ("2014-15", "COY", "Mike Budenholzer", 513, 650, 0.789, 67),
+    ("2023-24", "MVP", "Nikola Jokić", 926, 990, 0.935, 79),
+    ("2023-24", "ROY", "Victor Wembanyama", 495, 495, 1.0, 99),
+    ("2023-24", "DPOY", "Rudy Gobert", 433, 495, 0.875, 72),
+    ("2023-24", "6MOY", "Naz Reid", 352, 495, 0.711, 45),
+    ("2023-24", "MIP", "Tyrese Maxey", 319, 495, 0.644, 51),
+    ("2023-24", "COY", "Mark Daigneault", 473, 495, 0.956, 89),
+    ("2025-26", "MVP", "Shai Gilgeous-Alexander", 939, 1000, 0.939, 83),
+    ("2025-26", "ROY", "Cooper Flagg", 412, 500, 0.824, 56),
+    ("2025-26", "DPOY", "Victor Wembanyama", 500, 500, 1.0, 100),
+    ("2025-26", "6MOY", "Keldon Johnson", 404, 500, 0.808, 63),
+    ("2025-26", "MIP", "Nickeil Alexander-Walker", 396, 500, 0.792, 66),
+    ("2025-26", "COY", "Joe Mazzulla", 392, 500, 0.784, 62),
+)
+
+IDENTITY_STATS = ("player", "coach", "age", "team_id")
+
+
+def _winner_index() -> dict:
+    return src.load_winner_index({
+        award: (FIXTURES / name).read_text(encoding="utf-8")
+        for award, name in WINNER_FIXTURES.items()})
+
+
+def _offset_identities(text: str, label: str, table_ids: tuple[str, ...]) -> str:
+    from lxml import etree
+
+    doc = src._document(text, label)
+    tables = src._award_tables(doc)
+    for table_id in table_ids:
+        rows = tables[table_id].xpath("./tbody/tr")
+        identity = [[cell for cell in row.xpath("./th|./td")
+                     if cell.get("data-stat") in IDENTITY_STATS] for row in rows]
+        carried = [[(cell.text, [etree.tostring(child, encoding="unicode")
+                                 for child in cell])
+                    for cell in cells] for cells in identity]
+        for index, cells in enumerate(identity):
+            donor = carried[(index + 1) % len(rows)]
+            for cell, (content, children) in zip(cells, donor):
+                for child in list(cell):
+                    cell.remove(child)
+                cell.text = content
+                for child in children:
+                    cell.append(etree.fromstring(child))
+    return etree.tostring(doc, encoding="unicode")
+
+
+def test_winner_index_names_one_winner_per_published_season():
+    winners = _winner_index()
+    assert set(winners) == set(WINNER_FIXTURES)
+    assert winners["MVP"]["1980-81"] == ("Julius Erving",)
+    assert winners["MVP"]["2003-04"] == ("Kevin Garnett",)
+    assert winners["COY"]["2003-04"] == ("Hubie Brown",)
+    assert winners["6MOY"]["2023-24"] == ("Naz Reid",)
+    assert len(winners["MVP"]) >= 70
+    assert all(re.fullmatch(r"\d{4}-\d{2}", season)
+               for season in winners["ROY"])
+
+
+def test_a_tied_award_keeps_both_of_the_source_winners():
+    tied = _winner_index()["ROY"]["1999-00"]
+    assert tied == ("Steve Francis", "Elton Brand")
+
+
+def test_winner_index_page_without_the_winners_table_raises():
+    with pytest.raises(src.AwardsPageError) as excinfo:
+        src.winner_index('<html><body><h1>x</h1><table id="other">'
+                         '<tbody><tr><td data-stat="season">2003-04</td>'
+                         '</tr></tbody></table></body></html>', "MVP")
+    assert "MVP" in str(excinfo.value)
+    assert "mvp.html" in str(excinfo.value)
+
+
+def test_every_recorded_season_matches_the_source_winner_index():
+    winners = _winner_index()
+    for year, season in RECORDED_SEASONS:
+        frame = src.parse_season_page(_page(year), year)
+        src.verify_ballots(frame, winners)
+
+
+def test_every_recorded_contested_award_names_its_real_winner():
+    for season, award, winner, won, top, share, firsts in CONTESTED_RANK_ONE:
+        year = src.season_year(season)
+        frame = src.parse_season_page(_page(year), year)
+        row = frame.filter((pl.col("AWARD") == award)
+                           & (pl.col("RANK") == 1)).row(0, named=True)
+        assert (row["PLAYER"] or row["COACH"]) == winner, (season, award)
+        assert row["POINTS_WON"] == won, (season, award)
+        assert row["POINTS_MAX"] == top, (season, award)
+        assert row["AWARD_SHARE"] == pytest.approx(share), (season, award)
+        assert row["VOTES_FIRST"] == firsts, (season, award)
+
+
+def test_the_seasons_reported_as_corrupt_publish_their_true_winner():
+    frame = src.parse_season_page(_page(2004), 2004)
+    garnett = frame.filter((pl.col("AWARD") == "MVP")
+                           & (pl.col("RANK") == 1)).row(0, named=True)
+    assert garnett["PLAYER"] == "Kevin Garnett"
+    assert garnett["TEAM"] == "MIN"
+    assert (garnett["POINTS_WON"], garnett["POINTS_MAX"],
+            garnett["AWARD_SHARE"], garnett["VOTES_FIRST"]) == (
+        1219, 1230, 0.991, 120)
+    frame = src.parse_season_page(_page(1981), 1981)
+    erving = frame.filter((pl.col("AWARD") == "MVP")
+                         & (pl.col("RANK") == 1)).row(0, named=True)
+    assert erving["PLAYER"] == "Julius Erving"
+    assert erving["TEAM"] == "PHI"
+    assert (erving["POINTS_WON"], erving["POINTS_MAX"],
+            erving["AWARD_SHARE"], erving["VOTES_FIRST"]) == (
+        454, 690, 0.658, 28)
+
+
+def test_a_page_whose_identity_column_is_offset_from_its_ballot_is_refused():
+    broken = _offset_identities(_page(2004), "2003-04",
+                                ("mvp", "roy", "dpoy", "smoy", "mip", "coy"))
+    frame = src.parse_season_page(broken, 2004)
+    rank_one = frame.filter((pl.col("AWARD") == "MVP")
+                            & (pl.col("RANK") == 1)).row(0, named=True)
+    assert rank_one["PLAYER"] == "Tim Duncan"
+    assert rank_one["POINTS_WON"] == 1219
+    assert rank_one["VOTES_FIRST"] == 120
+    with pytest.raises(src.AwardsPageError) as excinfo:
+        src.verify_ballots(frame, _winner_index())
+    message = str(excinfo.value)
+    assert "2003-04" in message
+    assert "MVP" in message
+    assert "Kevin Garnett" in message
+    assert "Tim Duncan" in message
+
+
+def test_a_season_the_winner_index_does_not_cover_is_refused():
+    frame = src.parse_season_page(_page(2004), 2004)
+    with pytest.raises(src.AwardsPageError) as excinfo:
+        src.verify_ballots(frame, {"MVP": {"1999-00": "Shaquille O'Neal"}})
+    assert "2003-04" in str(excinfo.value)
+
+
+def test_a_ballot_whose_points_rise_with_rank_is_refused():
+    rank_one = (pl.col("AWARD") == "MVP") & (pl.col("RANK") == 1)
+    demoted = src.parse_season_page(_page(2004), 2004).with_columns(
+        pl.when(rank_one).then(pl.lit(100, dtype=pl.Int64))
+        .otherwise(pl.col("POINTS_WON")).alias("POINTS_WON"),
+        pl.when(rank_one).then(pl.lit(round(100 / 1230, 3)))
+        .otherwise(pl.col("AWARD_SHARE")).alias("AWARD_SHARE"))
+    with pytest.raises(src.AwardsPageError) as excinfo:
+        src.verify_ballots(demoted, _winner_index())
+    message = str(excinfo.value)
+    assert "MVP" in message
+    assert "716" in message and "100" in message
+
+
+def test_a_ballot_whose_share_disagrees_with_its_points_is_refused():
+    frame = src.parse_season_page(_page(2004), 2004)
+    doctored = frame.with_columns(
+        pl.when(pl.col("AWARD") == "MVP").then(0.5)
+        .otherwise(pl.col("AWARD_SHARE")).alias("AWARD_SHARE"))
+    with pytest.raises(src.AwardsPageError) as excinfo:
+        src.verify_ballots(doctored, _winner_index())
+    assert "0.5" in str(excinfo.value) or "share" in str(excinfo.value).lower()
+
+
+def test_a_ballot_whose_first_place_votes_exceed_the_voter_count_is_refused():
+    frame = src.parse_season_page(_page(2004), 2004)
+    doctored = frame.with_columns(
+        pl.when(pl.col("AWARD") == "MVP").then(pl.lit(9000, dtype=pl.Int64))
+        .otherwise(pl.col("VOTES_FIRST")).alias("VOTES_FIRST"))
+    with pytest.raises(src.AwardsPageError) as excinfo:
+        src.verify_ballots(doctored, _winner_index())
+    assert "first" in str(excinfo.value).lower()
+
+
+def test_a_ballot_whose_rows_disagree_about_the_voter_count_is_refused():
+    frame = src.parse_season_page(_page(2004), 2004)
+    doctored = frame.with_columns(
+        pl.when((pl.col("AWARD") == "MVP") & (pl.col("RANK") == 1))
+        .then(pl.lit(999, dtype=pl.Int64))
+        .otherwise(pl.col("POINTS_MAX")).alias("POINTS_MAX"))
+    with pytest.raises(src.AwardsPageError) as excinfo:
+        src.verify_ballots(doctored, _winner_index())
+    assert "999" in str(excinfo.value)
+
+
+def _second_row_claims_rank_one(frame: pl.DataFrame) -> pl.DataFrame:
+    return frame.with_columns(
+        pl.when((pl.col("AWARD") == "MVP") & (pl.col("RANK") == 2))
+        .then(pl.lit(1, dtype=pl.Int64)).otherwise(pl.col("RANK")).alias("RANK"))
+
+
+def test_a_second_row_claiming_rank_1_is_refused_unless_the_source_published_a_tie():
+    doctored = _second_row_claims_rank_one(
+        src.parse_season_page(_page(2004), 2004))
+    with pytest.raises(src.AwardsPageError) as excinfo:
+        src.verify_ballots(doctored, _winner_index())
+    message = str(excinfo.value)
+    assert "Tim Duncan" in message
+    assert "Kevin Garnett" in message
+
+
+def test_a_source_published_tie_admits_every_joined_winner():
+    doctored = _second_row_claims_rank_one(
+        src.parse_season_page(_page(2004), 2004))
+    winners = _winner_index()
+    winners["MVP"] = dict(winners["MVP"],
+                          **{"2003-04": ("Kevin Garnett", "Tim Duncan")})
+    src.verify_ballots(doctored, winners)
+
+
+def test_team_ballots_are_not_ranked_by_points_they_earned():
+    frame = src.parse_season_page(_page(2024), 2024)
+    all_nba = frame.filter(pl.col("AWARD") == "ALL_NBA")
+    assert all_nba.filter(pl.col("RANK") == 1)["POINTS_WON"].to_list() != sorted(
+        all_nba.filter(pl.col("RANK") == 1)["POINTS_WON"].to_list(), reverse=True)
+    src.verify_ballots(frame, _winner_index())
+
+
+def test_a_row_with_two_cells_for_one_stat_is_refused():
+    doubled = _page(2004).replace(
+        '<td class="left " data-append-csv="garneke01" data-stat="player"',
+        '<td class="left " data-stat="player">Kevin Garnett</td>'
+        '<td class="left " data-append-csv="garneke01" data-stat="player"', 1)
+    assert doubled != _page(2004)
+    with pytest.raises(src.AwardsPageError) as excinfo:
+        src.parse_season_page(doubled, 2004)
+    assert "player" in str(excinfo.value)
+
+
+def test_seeder_writes_nothing_when_the_winner_index_names_someone_else(
+        tmp_path, monkeypatch):
+    _scratch(tmp_path, monkeypatch)
+    monkeypatch.setattr(seed, "LOG_FILE", tmp_path / "seed.log")
+    wrong = _winner_index()
+    wrong["MVP"] = dict(wrong["MVP"], **{"2023-24": ("Joel Embiid",)})
+    with pytest.raises(src.AwardsPageError) as excinfo:
+        seed.seed_season("2023-24", transport=lambda url: _page(2024),
+                         min_interval_s=0.0, winners=wrong)
+    assert "Joel Embiid" in str(excinfo.value)
+    con = store.connect()
+    try:
+        tables = {r[0] for r in con.execute("SHOW TABLES").fetchall()}
+    finally:
+        con.close()
+    assert seed.TABLE not in tables
+    state = json.loads((tmp_path / "progress.json").read_text()) \
+        if (tmp_path / "progress.json").exists() else {"done": [], "failed": {}}
+    assert "2023-24" not in state["done"]
+
+
+def test_a_direct_season_write_without_a_winner_index_is_logged_as_unverified(
+        tmp_path, monkeypatch):
+    _scratch(tmp_path, monkeypatch)
+    monkeypatch.setattr(seed, "LOG_FILE", tmp_path / "seed.log")
+    written = seed.seed_season("2023-24", transport=lambda url: _page(2024),
+                               min_interval_s=0.0)
+    assert written == sum(SEASON_ROWS_2023_24.values())
+    assert "unverified" in (tmp_path / "seed.log").read_text()
+
+
+def test_main_refuses_to_seed_when_the_winner_index_cannot_be_read(
+        tmp_path, monkeypatch):
+    pages = {2024: "awards_2024.html"}
+
+    def broken_router(pages_map):
+        router = _page_router(pages_map)
+
+        def transport(url: str) -> str:
+            if url in src.WINNER_URLS:
+                raise RuntimeError(f"503 for {url}")
+            return router(url)
+
+        return transport
+
+    monkeypatch.setattr(seed, "LOG_FILE", tmp_path / "seed2.log")
+    monkeypatch.setattr(src, "paced_transport", lambda min_interval_s=0.0: broken_router(pages))
+    monkeypatch.setattr(src, "fetch_index", lambda transport=None: sorted(pages))
+    progress = tmp_path / "progress2.json"
+    code = seed.main(["seed_bbref_awards.py", "--progress", str(progress)])
+    assert code == 1
+    assert "winner" in (tmp_path / "seed2.log").read_text()
+    con = store.connect()
+    try:
+        tables = {row[0] for row in con.execute("SHOW TABLES").fetchall()}
+    finally:
+        con.close()
+    assert seed.TABLE not in tables
+    assert not progress.exists()

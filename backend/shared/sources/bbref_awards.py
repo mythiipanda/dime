@@ -26,6 +26,8 @@ BACKOFF_S = 30.0
 
 _RESULT_STATS = ("team_id", "points_won", "points_max", "award_share")
 VOTE_OUT_COLUMNS = ("VOTES_FIRST", "VOTES_SECOND", "VOTES_THIRD")
+SEASON_LABEL = re.compile(r"\d{4}-\d{2}")
+SHARE_TOLERANCE = 0.001
 
 
 class AwardsPageError(RuntimeError):
@@ -45,10 +47,15 @@ class AwardSection:
     team_stat: str | None
     vote_stats: tuple[str | None, ...]
     first_year: int
+    contested: bool = False
 
     @property
     def ordinal_stat(self) -> str:
         return self.rank_stat or self.team_stat or ""
+
+    @property
+    def name_column(self) -> str:
+        return "COACH" if self.name_stat == "coach" else "PLAYER"
 
     @property
     def required_stats(self) -> tuple[str, ...]:
@@ -57,19 +64,77 @@ class AwardSection:
         return tuple(sorted(set(declared)))
 
 
+@dataclass(frozen=True)
+class WinnerPage:
+    award: str
+    url: str
+    table_id: str
+
+
+WINNER_PAGES: tuple[WinnerPage, ...] = (
+    WinnerPage("MVP", "https://www.basketball-reference.com/awards/mvp.html",
+               "mvp_NBA"),
+    WinnerPage("ROY", "https://www.basketball-reference.com/awards/roy.html",
+               "roy_NBA"),
+    WinnerPage("DPOY", "https://www.basketball-reference.com/awards/dpoy.html",
+               "dpoy_NBA"),
+    WinnerPage("6MOY", "https://www.basketball-reference.com/awards/smoy.html",
+               "smoy_NBA"),
+    WinnerPage("MIP", "https://www.basketball-reference.com/awards/mip.html",
+               "mip_NBA"),
+    WinnerPage("COY", "https://www.basketball-reference.com/awards/coy.html",
+               "coyNBA"),
+)
+WINNER_URLS = frozenset(page.url for page in WINNER_PAGES)
+
+
+@dataclass(frozen=True)
+class Ballot:
+    season: str
+    award: str
+    rank: int | None
+    rank_label: str | None
+    player: str | None
+    coach: str | None
+    age: int | None
+    team: str | None
+    points_won: int | None
+    points_max: int | None
+    award_share: float | None
+    votes: tuple[int | None, ...]
+
+    def row(self, source_url: str) -> dict:
+        row = {
+            "SEASON": self.season,
+            "AWARD": self.award,
+            "RANK": self.rank,
+            "RANK_LABEL": self.rank_label,
+            "PLAYER": self.player,
+            "COACH": self.coach,
+            "AGE": self.age,
+            "TEAM": self.team,
+            "POINTS_WON": self.points_won,
+            "POINTS_MAX": self.points_max,
+            "AWARD_SHARE": self.award_share,
+            "SOURCE_URL": source_url,
+        }
+        row.update(zip(VOTE_OUT_COLUMNS, self.votes))
+        return row
+
+
 AWARD_SECTIONS: tuple[AwardSection, ...] = (
     AwardSection("mvp", "MVP", "player", "rank", None,
-                 ("votes_first", None, None), 1955),
+                 ("votes_first", None, None), 1955, True),
     AwardSection("roy", "ROY", "player", "rank", None,
-                 ("votes_first", None, None), 1962),
+                 ("votes_first", None, None), 1962, True),
     AwardSection("dpoy", "DPOY", "player", "rank", None,
-                 ("votes_first", None, None), 1982),
+                 ("votes_first", None, None), 1982, True),
     AwardSection("smoy", "6MOY", "player", "rank", None,
-                 ("votes_first", None, None), 1982),
+                 ("votes_first", None, None), 1982, True),
     AwardSection("mip", "MIP", "player", "rank", None,
-                 ("votes_first", None, None), 1985),
+                 ("votes_first", None, None), 1985, True),
     AwardSection("coy", "COY", "coach", "rank", None,
-                 ("votes_first", None, None), 1962),
+                 ("votes_first", None, None), 1962, True),
     AwardSection("leading_all_nba", "ALL_NBA", "player", None, "all_nba_team",
                  ("first_team_votes", "second_team_votes",
                   "third_team_votes"), 1955),
@@ -178,6 +243,173 @@ def fetch_index(transport=None) -> list[int]:
     return published_years(get(AWARDS_INDEX_URL))
 
 
+def winner_index(text: str, award: str) -> dict[str, tuple[str, ...]]:
+    page = _winner_page(award)
+    tables = _award_tables(_document(text, f"the {award} winners index"))
+    table = tables.get(page.table_id)
+    if table is None:
+        raise AwardsPageError(
+            f"award {award}: winners table '{page.table_id}' missing from "
+            f"{page.url}, so no season's {award} winner can be verified")
+    winners: dict[str, list[str]] = {}
+    for tr in table.xpath(".//tr"):
+        cells = _row_cells(tr, f"award {award}", page.url)
+        season = _cell_text(cells.get("season"))
+        identity = _identity(_cell_text(cells.get("player"))
+                             or _cell_text(cells.get("coach")))
+        if not SEASON_LABEL.fullmatch(season or "") or not identity:
+            continue
+        named = winners.setdefault(season, [])
+        if identity not in named:
+            named.append(identity)
+    if not winners:
+        raise AwardsPageError(
+            f"award {award}: {page.url} published no season winner, so no "
+            f"{award} winner can be verified")
+    return {season: tuple(named) for season, named in winners.items()}
+
+
+def _identity(text: str | None) -> str:
+    cleaned = re.sub(r"\s+", " ", (text or "").replace("\xa0", " ")).strip()
+    return re.sub(r"\s*[(*].*$", "", cleaned).strip()
+
+
+def load_winner_index(
+        pages: dict[str, str]) -> dict[str, dict[str, tuple[str, ...]]]:
+    return {page.award: winner_index(pages[page.award], page.award)
+            for page in WINNER_PAGES}
+
+
+def fetch_winner_index(
+        transport=None) -> dict[str, dict[str, tuple[str, ...]]]:
+    get = transport or paced_transport()
+    return load_winner_index({page.award: get(page.url)
+                              for page in WINNER_PAGES})
+
+
+def verify_ballots(frame: pl.DataFrame,
+                   winners: dict[str, dict[str, tuple[str, ...]]]) -> None:
+    for section in AWARD_SECTIONS:
+        rows = frame.filter(pl.col("AWARD") == section.award)
+        if rows.height == 0:
+            continue
+        seasons = rows["SEASON"].unique().to_list()
+        if len(seasons) != 1:
+            raise AwardsPageError(
+                f"award {section.award}: one ballot spans seasons {seasons}")
+        label = seasons[0]
+        url = rows["SOURCE_URL"][0]
+        _verify_row_completeness(section, rows, label, url)
+        _verify_one_ballot_size(section, rows, label, url)
+        _verify_share_of_points(section, rows, label, url)
+        if section.contested:
+            _verify_points_fall_with_rank(section, rows, label, url)
+            _verify_first_place_budget(section, rows, label, url)
+            _verify_published_winner(section, rows, label, url, winners)
+
+
+def _winner_page(award: str) -> WinnerPage:
+    for page in WINNER_PAGES:
+        if page.award == award:
+            return page
+    raise AwardsPageError(
+        f"award {award} has no winners page in {AWARDS_INDEX_URL}, so its "
+        f"winner cannot be verified against the source")
+
+
+def _verify_row_completeness(section: AwardSection, rows: pl.DataFrame,
+                             label: str, url: str) -> None:
+    columns = [section.name_column]
+    if section.contested:
+        columns += ["POINTS_WON", "POINTS_MAX", "AWARD_SHARE", "VOTES_FIRST"]
+    for row in rows.iter_rows(named=True):
+        for column in columns:
+            if row[column] is None:
+                raise AwardsPageError(
+                    f"season {label}: award {section.award} row "
+                    f"{_describe(row)} at {url} has no {column.lower()}, so its "
+                    f"identity and its ballot cannot both be read")
+
+
+def _verify_one_ballot_size(section: AwardSection, rows: pl.DataFrame,
+                            label: str, url: str) -> None:
+    sizes = rows["POINTS_MAX"].drop_nulls().unique().to_list()
+    if len(sizes) > 1:
+        raise AwardsPageError(
+            f"season {label}: award {section.award} at {url} reports "
+            f"{len(sizes)} different voter counts {sorted(sizes)}, so its rows "
+            f"do not come from one ballot")
+
+
+def _verify_share_of_points(section: AwardSection, rows: pl.DataFrame,
+                            label: str, url: str) -> None:
+    for row in rows.iter_rows(named=True):
+        if row["POINTS_MAX"] in (None, 0) or row["POINTS_WON"] is None:
+            continue
+        exact = row["POINTS_WON"] / row["POINTS_MAX"]
+        if abs(row["AWARD_SHARE"] - exact) >= SHARE_TOLERANCE:
+            raise AwardsPageError(
+                f"season {label}: award {section.award} row "
+                f"{row[section.name_column]!r} at {url} claims share "
+                f"{row['AWARD_SHARE']} for "
+                f"{row['POINTS_WON']} of {row['POINTS_MAX']} points, which is "
+                f"{round(exact, 4)}")
+
+
+def _verify_points_fall_with_rank(section: AwardSection, rows: pl.DataFrame,
+                                  label: str, url: str) -> None:
+    ranked = rows.filter(pl.col("RANK").is_not_null()).sort("RANK")
+    points = ranked["POINTS_WON"].to_list()
+    for index in range(len(points) - 1):
+        if points[index + 1] > points[index]:
+            raise AwardsPageError(
+                f"season {label}: award {section.award} at {url} gives rank "
+                f"{ranked['RANK'][index + 1]} more points "
+                f"({points[index + 1]}) than rank {ranked['RANK'][index]} "
+                f"({points[index]})")
+
+
+def _verify_first_place_budget(section: AwardSection, rows: pl.DataFrame,
+                               label: str, url: str) -> None:
+    firsts = rows["VOTES_FIRST"].drop_nulls().sum()
+    voters = rows["POINTS_MAX"].drop_nulls().max()
+    if firsts is not None and voters and firsts > voters:
+        raise AwardsPageError(
+            f"season {label}: award {section.award} at {url} hands out "
+            f"{firsts} first-place votes to {voters} voters, so its rows "
+            f"cannot all come from that ballot")
+
+
+def _verify_published_winner(
+        section: AwardSection, rows: pl.DataFrame, label: str, url: str,
+        winners: dict[str, dict[str, tuple[str, ...]]]) -> None:
+    published = (winners.get(section.award) or {}).get(label)
+    if not published:
+        raise AwardsPageError(
+            f"season {label}: award {section.award} has no winner published at "
+            f"{_winner_page(section.award).url}, so the ballot read from {url} "
+            f"would go out unverified")
+    ranked = rows.filter(pl.col("RANK") == 1)
+    if ranked.height == 0:
+        raise AwardsPageError(
+            f"season {label}: award {section.award} at {url} has no rank 1 row, "
+            f"so it names no winner at all")
+    named = {_identity(row[section.name_column])
+             for row in ranked.iter_rows(named=True)}
+    unexpected = sorted(named - set(published))
+    if unexpected:
+        raise AwardsPageError(
+            f"season {label}: award {section.award} rank 1 at {url} names "
+            f"{', '.join(repr(name) for name in unexpected)} but "
+            f"{_winner_page(section.award).url} names "
+            f"{', '.join(repr(name) for name in published)} for that season")
+
+
+def _describe(row: dict) -> str:
+    rank = row["RANK"]
+    return f"rank {rank}" if rank is not None else "unranked"
+
+
 def paced_transport(min_interval_s: float = MIN_INTERVAL_S):
     last_request = [0.0]
 
@@ -236,59 +468,69 @@ def _section_rows(section: AwardSection, table, label: str, url: str) -> list[di
             f"at {url} lacks column(s) {','.join(missing)}")
     rows = []
     for tr in table.xpath("./tbody/tr"):
-        name = _text(tr, section.name_stat)
-        if not tr.xpath("./td") or not name:
-            continue
-        row = {
-            "SEASON": label,
-            "AWARD": section.award,
-            "RANK": _rank(tr, section, label, url),
-            "RANK_LABEL": _rank_label(tr, section),
-            "PLAYER": name if section.name_stat == "player" else None,
-            "COACH": name if section.name_stat == "coach" else None,
-            "AGE": _int(tr, "age"),
-            "TEAM": _text(tr, "team_id") or None,
-            "POINTS_WON": _int(tr, "points_won"),
-            "POINTS_MAX": _int(tr, "points_max"),
-            "AWARD_SHARE": _float(tr, "award_share"),
-            "SOURCE_URL": url,
-        }
-        for column, stat in zip(VOTE_OUT_COLUMNS, section.vote_stats):
-            row[column] = _int(tr, stat) if stat else None
-        rows.append(row)
+        ballot = _ballot(tr, section, label, url)
+        if ballot is not None:
+            rows.append(ballot.row(url))
     return rows
 
 
-def _rank_label(tr, section: AwardSection) -> str | None:
-    return _text(tr, section.ordinal_stat) or None
+def _ballot(tr, section: AwardSection, label: str, url: str) -> Ballot | None:
+    if not tr.xpath("./td"):
+        return None
+    cells = _row_cells(tr, f"season {label}: award {section.award}", url)
+    name = _cell_text(cells.get(section.name_stat))
+    if not name:
+        return None
+    rank_label = _cell_text(cells.get(section.ordinal_stat)) or None
+    return Ballot(
+        season=label,
+        award=section.award,
+        rank=_rank(rank_label, section, name, label, url),
+        rank_label=rank_label,
+        player=name if section.name_stat == "player" else None,
+        coach=name if section.name_stat == "coach" else None,
+        age=_cell_int(cells.get("age")),
+        team=_cell_text(cells.get("team_id")) or None,
+        points_won=_cell_int(cells.get("points_won")),
+        points_max=_cell_int(cells.get("points_max")),
+        award_share=_cell_float(cells.get("award_share")),
+        votes=tuple(_cell_int(cells.get(stat)) if stat else None
+                    for stat in section.vote_stats),
+    )
 
 
-def _rank(tr, section: AwardSection, label: str, url: str) -> int | None:
-    code = _rank_label(tr, section) or ""
-    ordinal = re.match(r"\d+", code)
+def _row_cells(tr, context: str, url: str) -> dict:
+    cells: dict = {}
+    for cell in tr.xpath("./th|./td"):
+        stat = cell.get("data-stat")
+        if not stat:
+            continue
+        if stat in cells:
+            raise AwardsPageError(
+                f"{context} row at {url} carries two cells for {stat!r}, so no "
+                f"cell can be trusted as that row's {stat}")
+        cells[stat] = cell
+    return cells
+
+
+def _rank(rank_label: str | None, section: AwardSection, name: str,
+          label: str, url: str) -> int | None:
+    ordinal = re.match(r"\d+", rank_label or "")
     if ordinal:
         return int(ordinal.group(0))
     if section.rank_stat:
         raise AwardsPageError(
-            f"season {label}: award {section.award} row "
-            f"{_text(tr, section.name_stat)!r} has rank {code!r} at {url}")
+            f"season {label}: award {section.award} row {name!r} has rank "
+            f"{rank_label!r} at {url}")
     return None
 
 
-def _cell(tr, stat: str | None):
-    if not stat:
-        return None
-    found = tr.xpath("./th[@data-stat=$stat]|./td[@data-stat=$stat]", stat=stat)
-    return found[0] if found else None
-
-
-def _text(tr, stat: str | None) -> str:
-    cell = _cell(tr, stat)
+def _cell_text(cell) -> str:
     return cell.text_content().strip() if cell is not None else ""
 
 
-def _number(tr, stat: str | None, cast):
-    raw = _text(tr, stat).replace(",", "")
+def _cell_number(cell, cast):
+    raw = _cell_text(cell).replace(",", "")
     if not raw:
         return None
     try:
@@ -297,9 +539,9 @@ def _number(tr, stat: str | None, cast):
         return None
 
 
-def _int(tr, stat: str | None):
-    return _number(tr, stat, lambda raw: int(float(raw)))
+def _cell_int(cell):
+    return _cell_number(cell, lambda raw: int(float(raw)))
 
 
-def _float(tr, stat: str | None):
-    return _number(tr, stat, float)
+def _cell_float(cell):
+    return _cell_number(cell, float)

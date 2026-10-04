@@ -115,10 +115,17 @@ def save_rows(season: str, rows: pl.DataFrame) -> int:
 
 
 def seed_season(season: str, transport=None, min_interval_s: float = 0.0,
-                progress_file: Path | None = None) -> int:
+                progress_file: Path | None = None,
+                winners: dict | None = None) -> int:
     year = src.season_year(season)
     result = src.fetch_season(year, transport=transport,
                               min_interval_s=min_interval_s or src.MIN_INTERVAL_S)
+    if winners is None:
+        log(f"{season}: WARNING writing {result.frame.height} rows with no "
+            f"winner index, so the {season} winner goes out unverified against "
+            f"the source's published winners")
+    else:
+        src.verify_ballots(result.frame, winners)
     written = save_rows(season, result.frame)
     if progress_file is not None:
         mark_done(progress_file, season)
@@ -139,6 +146,17 @@ def main(argv: list[str]) -> int:
     published = src.fetch_index(transport=transport)
     log(f"index: {len(published)} published seasons "
         f"{published[0]}-{published[-1]}")
+    try:
+        winners = src.fetch_winner_index(transport=transport)
+    except Exception as exc:
+        log(f"refusing to seed: the source's published winners could not be "
+            f"read ({type(exc).__name__}: {exc}), so every season's winner "
+            f"would go out unverified")
+        print(f"winner index unreadable: {exc}", file=sys.stderr)
+        return 1
+    covered = sorted({len(season_winners) for season_winners in winners.values()})
+    log(f"winners: {len(winners)} award indexes, thinnest covers "
+        f"{covered[0]} seasons")
     seasons = only or plan_seasons(published, from_season, to_season)
     queue = pending_seasons(seasons, progress_file)
     if limit:
@@ -154,7 +172,8 @@ def main(argv: list[str]) -> int:
     for index, season in enumerate(queue, 1):
         try:
             done_rows += seed_season(season, transport=transport,
-                                     progress_file=progress_file)
+                                     progress_file=progress_file,
+                                     winners=winners)
         except Exception as exc:
             consecutive_failures += 1
             mark_failed(progress_file, season, f"{type(exc).__name__}: {exc}")
