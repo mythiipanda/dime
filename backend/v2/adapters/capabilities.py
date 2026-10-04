@@ -13,7 +13,6 @@ FRACTION = "fraction_0_1"
 PERCENT = "percent_0_100"
 POINTS_PER_100 = "points_per_100_possessions"
 MINUTES = "minutes"
-BALLOT_POINTS = "ballot_points"
 YEARS = "years"
 
 COUNTING_UNITS = {metric: COUNT for metric in COUNTING_METRICS}
@@ -34,52 +33,25 @@ FOUR_FACTORS_DEFS = {
     "ft_rate": "Free-throw rate: FTM / FGA, fraction scale 0-1.",
 }
 
-AWARD_SHARE_DEF = ("Award share: share of the maximum ballot points available "
-                   "to the placement, fraction scale 0-1. The official winner "
-                   "usually lands near 0.9, so 0.913 is 91.3 percent.")
-POINTS_WON_DEF = ("Points won: weighted ballot points credited to the "
-                  "placement. points_max is the largest point total on that "
-                  "ballot, so the winner's points_won equals points_max.")
-VOTES_DEF = ("First, second, and third place votes a placement received on a "
-             "published ballot, counted in ballots. Null where the source "
-             "publishes no vote count for that award.")
-
-AWARD_FIELD_UNITS = {
-    "age": YEARS,
-    "award_share": FRACTION,
-    "points_max": BALLOT_POINTS,
-    "points_won": BALLOT_POINTS,
+AWARD_WINNER_UNITS = {
     "rank": COUNT,
-    "votes_first": COUNT,
-    "votes_second": COUNT,
-    "votes_third": COUNT,
 }
 
-AWARD_FIELD_DEFINITIONS = {
-    "age": ("Age in years the player was on the ballot; null on a coach row."),
-    "award": "Award code the source published the placement under.",
-    "award_share": AWARD_SHARE_DEF,
-    "coach": ("Coach named on the placement; null on a player award, so a "
-              "Coach-of-the-Year question reads this column."),
-    "player": ("Player named on the placement; null on a Coach-of-the-Year "
-               "row, so a player-award question reads this column."),
-    "points_max": POINTS_WON_DEF,
-    "points_won": POINTS_WON_DEF,
-    "rank": ("Published leading rank on the ballot. A tied placement shares "
-             "the leading rank; null for an ORV row."),
-    "rank_label": "Verbatim published rank label, including a tie suffix.",
-    "season": "Season the source published the ballot for.",
-    "team": "Team abbreviation published with the placement.",
-    "tied": "True when the published rank label marks a tied placement.",
-    "votes_first": VOTES_DEF,
-    "votes_second": VOTES_DEF,
-    "votes_third": VOTES_DEF,
+AWARD_WINNER_DEFINITIONS = {
+    "award": "Award code the source recorded the winner under.",
+    "coach": ("Coach named on the winner row; always null, the dataset "
+              "covers players only."),
+    "player": "Player named as the award winner.",
+    "rank": "Always 1: every row is a recorded winner.",
+    "rank_label": "Winner rank label, always \"1\".",
+    "season": "Season the source recorded the award for.",
+    "team": "Team name the source recorded with the winner.",
+    "tied": "Always false: winners are recorded one row per award and season.",
 }
 
 AWARD_OUTPUT_ALIASES = {
     "PLAYER_NAME": "player",
     "COACH_NAME": "coach",
-    "VOTE_SHARE": "award_share",
 }
 
 
@@ -89,11 +61,11 @@ def _award_vocabulary() -> tuple[dict[str, str], dict[str, str]]:
     source_row = dict.fromkeys(
         name.strip() for name in _SELECT.replace("\n", " ").split(","))
     fields = tuple(_placement(source_row))
-    return ({field: AWARD_FIELD_UNITS[field] for field in fields
-             if field in AWARD_FIELD_UNITS},
-            {field: AWARD_FIELD_DEFINITIONS.get(
-                field, f"{field.replace('_', ' ')} as the award ballot "
-                       "publishes it.")
+    return ({field: AWARD_WINNER_UNITS[field] for field in fields
+             if field in AWARD_WINNER_UNITS},
+            {field: AWARD_WINNER_DEFINITIONS.get(
+                field, f"{field.replace('_', ' ')} as the award winners "
+                       "dataset records it.")
              for field in fields})
 
 
@@ -478,15 +450,13 @@ _LIST = [
         metric_definitions=AWARD_DEFINITIONS,
         output_aliases=AWARD_OUTPUT_ALIASES,
         qualification=(
-            "Every placement the source published on that ballot. A tied "
-            "placement keeps the published leading rank and its verbatim "
-            "rank_label; a null rank labelled ORV is a subject that got votes "
-            "but made no team. Coach-of-the-Year rows name a coach and no "
-            "player."),
+            "Recorded award winners only: one row per award and season, rank "
+            "always 1. No vote counts, vote shares, or ranked fields, so the "
+            "field view fails loud; Coach of the Year is not in the dataset."),
         coverage=(
-            "Published Basketball-Reference award ballots, 1976-77 onward, "
-            "with the seasons the source publishes named per request. Never a "
-            "model score, projection, or live race."),
+            "Recorded NBA award winners from nba_api PlayerAwards, read from "
+            "silver_award_winners. Never a model score, projection, or live "
+            "race."),
     ),
 ]
 
@@ -635,12 +605,11 @@ CAPABILITY_DESCRIPTIONS: dict[str, str] = {
     "today": "Date-scoped scoreboard snapshot with last night, tonight, movers, and streaks.",
     "morning_briefing": "Date-scoped bundle of today snapshot, watchlist updates, and leaderboard deltas.",
     "award_results": (
-        "Official NBA award results recorded on published ballots: who won an "
-        "award in a season, the full ranked field with award share and vote "
-        "counts, and one player's award record through a season. Coach-of-the-"
-        "Year is included; a tied rank and an ORV row are reported as "
-        "published. This is a recorded outcome, never a model score, so use it "
-        "instead of any award race for a result."
+        "Official recorded NBA award winners from nba_api PlayerAwards: who "
+        "won an award in a season, and one player's award-winner record "
+        "through a season. Winners only, no ballot detail; Coach of the Year "
+        "is not covered. This is a recorded outcome, never a model score, so "
+        "use it instead of any award race for a result."
     ),
 }
 
