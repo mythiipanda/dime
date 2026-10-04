@@ -305,6 +305,6 @@ def test_series_answer_keeps_opener_per_game_lines_and_outcome() -> None:
     )
     lines = _answer_text(result).splitlines()
     assert lines[:7] == _SERIES_TEXTS
-    assert "Some requested outputs could not be published." in lines
+    assert "Some requested outputs could not be published." not in lines
     assert [item.status for item in result.output_statuses] == [
         "missing"] * 4

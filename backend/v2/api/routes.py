@@ -1134,8 +1134,12 @@ def _answer_text(result) -> str:
         kinds.append("judge_unavailable")
     all_complete = bool(result.output_statuses) and all(
         item.status == "complete" for item in result.output_statuses)
+    requested_ids = {item.output_id for item in result.output_statuses}
+    fully_covered = bool(result.output_statuses) and requested_ids <= (published | stated)
     for kind in kinds:
         if kind == "missing_evidence" and all_complete:
+            continue
+        if kind in ("missing_evidence", "synthesis_incomplete") and fully_covered:
             continue
         lines.append(gap_messages[kind])
     lines += list(dict.fromkeys(
