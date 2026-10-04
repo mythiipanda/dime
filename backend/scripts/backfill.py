@@ -25,6 +25,8 @@ from shared.sources import nba_stats as _nba
 
 PROGRESS_PATH = Path(__file__).resolve().parent / "backfill_progress.json"
 
+DEFAULT_SEASONS = "2015-16:2025-26"
+
 SEASON_TYPES = ("Regular Season", "Playoffs")
 
 GAME_TABLE = "silver_boxscores"
@@ -385,8 +387,8 @@ def report_watermarks(seasons: list[str], state: dict) -> None:
 
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description="Multi-season boxscore + lineup backfill over stats.nba.com (nba_api).")
-    ap.add_argument("--seasons", default="2015-16:2024-25",
-                    help="'2015-16:2024-25' range or comma list")
+    ap.add_argument("--seasons", default=DEFAULT_SEASONS,
+                    help="'2015-16:2025-26' range or comma list")
     ap.add_argument("--views", default="all",
                     help="comma list incl. traditional, or 'all'")
     ap.add_argument("--sleep", type=float, default=1.5,
