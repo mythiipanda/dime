@@ -71,18 +71,14 @@ def main() -> None:
     seasons = sys.argv[1:] or league_seasons()
     if not seasons:
         raise SystemExit("no league-complete seasons found")
-    con = store.connect(read_only=False)
-    try:
-        con.execute(
-            "CREATE TABLE IF NOT EXISTS silver_four_factors_team AS "
-            "SELECT * FROM silver_team_games LIMIT 0")
-    finally:
-        con.close()
     for season in seasons:
         rows, _ = build(season)
         frame = pl.DataFrame(rows)
         con = store.connect(read_only=False)
         try:
+            con.execute(
+                "CREATE TABLE IF NOT EXISTS silver_four_factors_team AS "
+                "SELECT * FROM frame LIMIT 0")
             con.execute(
                 "DELETE FROM silver_four_factors_team WHERE _season = ?",
                 [season])
