@@ -13,6 +13,14 @@ import {
 } from "../lib/chat";
 import { RunInfo, appendCachedRun, buildCitation, getModels, getRuns, postChatStream } from "../lib/api";
 import { takeRerun } from "../lib/briefs";
+import {
+  findScroller,
+  glideToBottom,
+  isAtBottom,
+  jumpToTop,
+  scrolledUp,
+  shouldFollow,
+} from "../lib/scroll";
 import { activityRecordFromEvent, mergeActivityRecord } from "../lib/activity";
 import AnswerText from "./AnswerText";
 import CitedAnswerText from "./CitedAnswerText";
@@ -395,16 +403,33 @@ export default function ChatPanel({ thread, onRunDone, preset, onOpenArtifact, a
     return () => { modelRequest.current += 1; };
   }, []);
 
+  const lastTop = useRef(0);
+  const attachedBox = useRef<Element | null>(null);
+  const detachScroll = useRef<(() => void) | null>(null);
   useEffect(() => {
+    const box = findScroller(endRef.current);
+    if (!box || box === attachedBox.current) return;
+    if (detachScroll.current) detachScroll.current();
     const onScroll = () => {
-      const gap =
-        document.documentElement.scrollHeight -
-        (window.innerHeight + window.scrollY);
-      setAtBottom(gap < 120);
+      if (scrolledUp(lastTop.current, box.scrollTop)) {
+        setAtBottom(false);
+      } else if (isAtBottom(box)) {
+        setAtBottom(true);
+      }
+      lastTop.current = box.scrollTop;
     };
     onScroll();
-    window.addEventListener("scroll", onScroll, { passive: true });
-    return () => window.removeEventListener("scroll", onScroll);
+    lastTop.current = box.scrollTop;
+    box.addEventListener("scroll", onScroll, { passive: true });
+    attachedBox.current = box;
+    detachScroll.current = () => box.removeEventListener("scroll", onScroll);
+  });
+  useEffect(() => {
+    return () => {
+      if (detachScroll.current) detachScroll.current();
+      detachScroll.current = null;
+      attachedBox.current = null;
+    };
   }, []);
 
   useEffect(() => {
@@ -416,10 +441,10 @@ export default function ChatPanel({ thread, onRunDone, preset, onOpenArtifact, a
         return;
       }
     }
-    if (atBottom) {
-      endRef.current?.scrollIntoView({ block: "end" });
+    if (shouldFollow(atBottom, busy)) {
+      glideToBottom(findScroller(endRef.current));
     }
-  }, [messages, atBottom]);
+  }, [messages, atBottom, busy]);
 
   useEffect(() => {
     const toHash = () => {
@@ -438,6 +463,9 @@ export default function ChatPanel({ thread, onRunDone, preset, onOpenArtifact, a
     setBusy(false);
     stopTimer();
     let cancelled = false;
+    if (typeof window !== "undefined" && !window.location.hash) {
+      jumpToTop(findScroller(endRef.current));
+    }
     getRuns(thread)
       .then((runs) => {
         if (cancelled || !runs.length) return;
@@ -478,6 +506,7 @@ export default function ChatPanel({ thread, onRunDone, preset, onOpenArtifact, a
     if (!q || busy) return;
     abort.current?.abort();
     abort.current = new AbortController();
+    setAtBottom(true);
     setInput("");
     setBusy(true);
     startTimer();
@@ -816,7 +845,15 @@ export default function ChatPanel({ thread, onRunDone, preset, onOpenArtifact, a
                     )}
 
                     {m.text && (
-                      <div style={{ display: "flex", gap: 8, marginTop: 12, alignItems: "center" }}>
+                      <div
+                        style={{
+                          display: "flex",
+                          gap: 8,
+                          marginTop: 12,
+                          alignItems: "center",
+                          minHeight: 32,
+                        }}
+                      >
                         <CopyButton text={m.text} />
                         {tableSources(m.ai).length > 0 && (
                           <CiteButton text={m.text} sources={tableSources(m.ai)} />
@@ -896,7 +933,7 @@ export default function ChatPanel({ thread, onRunDone, preset, onOpenArtifact, a
                     style={{ fontSize: 12, background: "var(--color-pure-white)", boxShadow: "var(--shadow-card)" }}
                     onClick={() => {
                       setAtBottom(true);
-                      endRef.current?.scrollIntoView({ block: "end" });
+                      glideToBottom(findScroller(endRef.current));
                     }}
                   >
                     ↓ Jump to latest message
