@@ -1,0 +1,40 @@
+{
+  "endpoints": [
+    {
+      "base_url": "https://generativelanguage.googleapis.com/v1beta/openai/",
+      "strict_json_schema": true,
+      "tool_calling": true,
+      "strict_tool_definitions": true
+    },
+    {
+      "base_url": "https://integrate.api.nvidia.com/v1",
+      "strict_json_schema": true,
+      "tool_calling": true,
+      "strict_tool_definitions": true
+    },
+    {
+      "base_url": "https://api.mistral.ai/v1",
+      "strict_json_schema": true,
+      "tool_calling": true,
+      "strict_tool_definitions": true
+    },
+    {
+      "base_url": "https://openrouter.ai/api/v1",
+      "strict_json_schema": true,
+      "tool_calling": true,
+      "strict_tool_definitions": true
+    },
+    {
+      "base_url": "https://api.inceptionlabs.ai/v1",
+      "strict_json_schema": true,
+      "tool_calling": true,
+      "strict_tool_definitions": true
+    },
+    {
+      "base_url": "https://api.groq.com/openai/v1",
+      "strict_json_schema": false,
+      "tool_calling": true,
+      "strict_tool_definitions": false
+    }
+  ]
+}

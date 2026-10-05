@@ -5,6 +5,7 @@ from contextlib import contextmanager
 import pytest
 
 from v2.adapters.models import ModelIntake, ProviderStructuredModel, ROUTE_POLICIES
+from v2.adapters.structured import EndpointCapabilities, resolve_strategy
 from v2.contracts import RequirementReview, TaskSpec
 from v2.runtime import RequestEnvelope
 
@@ -18,25 +19,24 @@ def _envelope() -> RequestEnvelope:
 class _Model:
     def __init__(self, name: str):
         self.model_name = name
+        self.capabilities = EndpointCapabilities(
+            endpoint="https://stub.invalid/v1", strict_json_schema=True,
+            tool_calling=True, strict_tool_definitions=True)
+        self.strategy = resolve_strategy(self.capabilities)
 
 
 def test_requirement_review_policy_changes_only_attempt_timeout():
     expected = {
         "intake": {"max_attempts": 2, "attempt_timeout_s": 30.0,
-            "total_budget_s": 60.0,
-            "transient_classes": frozenset({"timeout", "rate_limit", "network", "server_error", "provider_error"})},
+            "total_budget_s": 60.0},
         "requirement_review": {"max_attempts": 2, "attempt_timeout_s": 30.0,
-            "total_budget_s": 60.0,
-            "transient_classes": frozenset({"timeout", "rate_limit", "network", "server_error", "provider_error"})},
+            "total_budget_s": 60.0},
         "planner": {"max_attempts": 2, "attempt_timeout_s": 30.0,
-            "total_budget_s": 60.0,
-            "transient_classes": frozenset({"timeout", "rate_limit", "network", "server_error", "provider_error"})},
+            "total_budget_s": 60.0},
         "synthesizer": {"max_attempts": 2, "attempt_timeout_s": 25.0,
-            "total_budget_s": 50.0,
-            "transient_classes": frozenset({"timeout", "rate_limit", "network", "server_error", "provider_error"})},
+            "total_budget_s": 50.0},
         "semantic_verifier": {"max_attempts": 2, "attempt_timeout_s": 30.0,
-            "total_budget_s": 60.0,
-            "transient_classes": frozenset({"timeout", "rate_limit", "network", "server_error", "provider_error"})},
+            "total_budget_s": 60.0},
     }
     assert ROUTE_POLICIES == expected
 

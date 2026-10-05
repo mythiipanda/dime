@@ -557,7 +557,7 @@ def test_calculation_projection_and_input_evidence_filtering():
         output_id="PTS_DELTA",status="complete",claim_index=0,binding=binding)
     calc=DeclaredCalculation(calculation_id="calc",requirement_id="delta",
         operation="subtract",inputs=[DeclaredCalculationInput(evidence_id="a",path="rows.PTS"),
-        DeclaredCalculationInput(evidence_id="b",path="rows.PTS")],result=Decimal("-5"),unit="points")
+        DeclaredCalculationInput(evidence_id="b",path="rows.PTS")],result="-5",unit="points")
     from datetime import UTC, datetime
     from v2.contracts import EvidenceEnvelope
     result=SimpleNamespace(output_statuses=[status],gaps=[],draft=DraftReport(
@@ -623,7 +623,7 @@ def test_calculation_projection_rejects_missing_and_ambiguous_inputs():
         output_id="DELTA",status="complete",claim_index=0,binding=binding)
     calc=DeclaredCalculation(calculation_id="c",requirement_id="d",operation="subtract",
         inputs=[DeclaredCalculationInput(evidence_id="a",path="rows[].PTS"),
-                DeclaredCalculationInput(evidence_id="b",path="rows.PTS")],result=Decimal("-5"))
+                DeclaredCalculationInput(evidence_id="b",path="rows.PTS")],result="-5")
     a=EvidenceEnvelope(evidence_id="a",capability="player_report",source="a",
         observed_at=datetime.now(UTC),rows=[{"PTS":25},{"PTS":26}])
     b=EvidenceEnvelope(evidence_id="b",capability="player_report",source="b",

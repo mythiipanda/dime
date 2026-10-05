@@ -1352,7 +1352,7 @@ async def test_invalid_model_calculation_path_is_safe_partial_not_runtime_failur
             ev=EvidenceEnvelope(evidence_id="ev",capability="fake",source="f",observed_at=datetime.now(UTC),rows={"a":2,"b":1})
             return ExecutionResult(plan=Plan(nodes=[plan.nodes[0].model_copy(update={"status":PlanStatus.COMPLETE})]),evidence_by_node={"facts":ev},attempts={"facts":1},errors={})
     class DraftModel:
-        async def generate(self,**call):return call["schema"].model_validate({"sections":[],"claims":[{"text":"Wrong difference 99.","kind":"derived","evidence_ids":["ev"],"calculation_id":"bad"}],"calculations":[{"calculation_id":"bad","requirement_id":"delta","operation":"subtract","inputs":[{"evidence_id":"ev","path":"rows.missing"},{"evidence_id":"ev","path":"rows.b"}],"result":99}]})
+        async def generate(self,**call):return call["schema"].model_validate({"sections":[],"claims":[{"text":"Wrong difference 99.","kind":"derived","evidence_ids":["ev"],"calculation_id":"bad"}],"calculations":[{"calculation_id":"bad","requirement_id":"delta","operation":"subtract","inputs":[{"evidence_id":"ev","path":"rows.missing"},{"evidence_id":"ev","path":"rows.b"}],"result":"99"}]})
     result=await Runtime(intake=IntakeCalc(),planner=PlannerCalc(),executor=ExecCalc(),synthesizer=ModelSynthesizer(DraftModel(),provider="p",model_name="m"),mechanical_verifier=SequenceVerifier(VerificationStatus.PASS),semantic_verifier=SequenceVerifier(VerificationStatus.PASS)).run("split")
     assert result.verification.status==VerificationStatus.PARTIAL
     assert result.verified_claims==[]

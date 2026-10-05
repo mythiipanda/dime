@@ -8,7 +8,8 @@ import httpx
 import pytest
 from openai.types.chat import ChatCompletion
 from pydantic import BaseModel
-from pydantic_ai.models.openai import OpenAIChatModel
+from v2.adapters.models import DimeOpenAIChatModel
+from v2.adapters.structured import EndpointCapabilities
 from pydantic_ai.providers.openai import OpenAIProvider
 
 from shared.config import settings
@@ -187,9 +188,13 @@ async def test_generate_sends_thinking_off_wire_body(
     assert anyio_backend == "asyncio"
     captured: list[dict[str, Any]] = []
     mock_client = _capturing_client(thinking_off=True, captured=captured)
-    openai_model = OpenAIChatModel(
+    openai_model = DimeOpenAIChatModel(
         "test-model/nim-flash",
         provider=OpenAIProvider(openai_client=mock_client),
+        capabilities=EndpointCapabilities(
+            endpoint="https://integrate.api.nvidia.com/v1",
+            strict_json_schema=True, tool_calling=True,
+            strict_tool_definitions=True),
     )
     monkeypatch.setattr(
         ProviderStructuredModel, "_models", lambda self: [("nvidia", openai_model)]
@@ -282,9 +287,13 @@ async def test_promotion_recorded_on_attempt_ledger(
         finish_reason="stop",
         captured=captured,
     )
-    openai_model = OpenAIChatModel(
+    openai_model = DimeOpenAIChatModel(
         "test-model/nim-flash",
         provider=OpenAIProvider(openai_client=mock_client),
+        capabilities=EndpointCapabilities(
+            endpoint="https://integrate.api.nvidia.com/v1",
+            strict_json_schema=True, tool_calling=True,
+            strict_tool_definitions=True),
     )
     monkeypatch.setattr(
         ProviderStructuredModel, "_models", lambda self: [("nvidia", openai_model)]

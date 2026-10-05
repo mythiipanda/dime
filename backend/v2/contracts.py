@@ -8,8 +8,8 @@ import math
 import re
 from typing import Any, Literal, Mapping
 
-from pydantic import (BaseModel, ConfigDict, Field, StrictBool, StrictFloat,
-                    StrictInt, field_validator, model_validator)
+from pydantic import (AfterValidator, BaseModel, ConfigDict, Field, StrictBool,
+                    StrictFloat, StrictInt, field_validator, model_validator)
 from pydantic_core import PydanticCustomError
 from typing import Annotated
 from v2.arguments import CapabilityArgumentSet
@@ -641,17 +641,27 @@ class FloatOutputValue(BaseModel):
         return self
 
 
+DECIMAL_TEXT_PATTERN = (
+    r"^-?(?:0|[1-9][0-9]*)(?:\.[0-9]+)?(?:[eE][+-]?[0-9]+)?$")
+
+
+def _finite_decimal_text(value: str) -> str:
+    if not Decimal(value).is_finite():
+        raise ValueError("decimal text must be finite")
+    return value
+
+
+FiniteDecimalText = Annotated[
+    str,
+    Field(min_length=1, max_length=1000, pattern=DECIMAL_TEXT_PATTERN),
+    AfterValidator(_finite_decimal_text),
+]
+
+
 class DecimalOutputValue(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
     kind: Literal["decimal"] = "decimal"
-    value: str = Field(min_length=1, max_length=1000,
-                       pattern=r"^-?(?:0|[1-9][0-9]*)(?:\.[0-9]+)?(?:[eE][+-]?[0-9]+)?$")
-
-    @model_validator(mode="after")
-    def finite(self) -> "DecimalOutputValue":
-        if not Decimal(self.value).is_finite():
-            raise ValueError("decimal output value must be finite")
-        return self
+    value: FiniteDecimalText
 
 
 class StringOutputValue(BaseModel):
@@ -792,7 +802,7 @@ class DeclaredCalculation(BaseModel):
     operation: Literal["add", "subtract", "multiply", "divide", "percent",
                        "mean", "rank_desc", "rank_asc"]
     inputs: list[DeclaredCalculationInput] = Field(min_length=1, max_length=256)
-    result: Decimal
+    result: FiniteDecimalText
     unit: str | None = Field(default=None, max_length=256)
     subject_input: StrictInt | None = Field(default=None, ge=0)
 

@@ -851,7 +851,7 @@ def test_calculation_binding_requires_exact_calculation_and_requirement():
     from v2.contracts import TaskSpec,CalculationRequirement,DraftReport,Claim,VerifiedClaim,CalculationOutputBinding,DeclaredCalculation,DeclaredCalculationInput
     from v2.runtime.models import admit_verified_claim_bindings
     task=TaskSpec(goal="delta",mode="quick",deliverable="answer",calculation_requirements=[CalculationRequirement(id="delta",description="delta",requested_outputs=["PTS_DELTA"])])
-    execution=_owned_execution();calc=DeclaredCalculation(calculation_id="c",requirement_id="delta",operation="subtract",inputs=[DeclaredCalculationInput(evidence_id="one",path="rows.WINS"),DeclaredCalculationInput(evidence_id="two",path="rows.LOSSES")],result=Decimal("-7"))
+    execution=_owned_execution();calc=DeclaredCalculation(calculation_id="c",requirement_id="delta",operation="subtract",inputs=[DeclaredCalculationInput(evidence_id="one",path="rows.WINS"),DeclaredCalculationInput(evidence_id="two",path="rows.LOSSES")],result="-7")
     binding=CalculationOutputBinding(requirement_id="delta",output_id="PTS_DELTA",calculation_id="c")
     claim=Claim(text="delta is -7",kind="derived",evidence_ids=["one","two"],calculation_id="c",output_bindings=[binding]);draft=DraftReport(sections=[],claims=[claim],calculations=[calc]);verified=VerifiedClaim(claim_index=0,claim=claim,evidence_ids=["one","two"],output_bindings=[binding])
     assert admit_verified_claim_bindings(task,execution,draft,verified) is verified
@@ -869,7 +869,7 @@ def _rank_admit(*, unit, result):
     task=TaskSpec(goal="rank",mode="quick",deliverable="rank",calculation_requirements=[CalculationRequirement(id="r",description="rank",requested_outputs=["RANK"])])
     envelope=EvidenceEnvelope(evidence_id="ev",capability="standings",source="fixture",observed_at=datetime.now(UTC),rows=[{"SCORE":119.5},{"SCORE":110.1}])
     execution=ExecutionResult(plan=Plan(nodes=[PlanNode(id="n",description="n",capability_hints=["standings"],status="complete")]),evidence_by_node={"n":envelope},attempts={"n":1})
-    calc=DeclaredCalculation(calculation_id="rank1",requirement_id="r",operation="rank_desc",inputs=[DeclaredCalculationInput(evidence_id="ev",path="rows[0].SCORE"),DeclaredCalculationInput(evidence_id="ev",path="rows[1].SCORE")],result=Decimal(str(result)),unit=unit,subject_input=0)
+    calc=DeclaredCalculation(calculation_id="rank1",requirement_id="r",operation="rank_desc",inputs=[DeclaredCalculationInput(evidence_id="ev",path="rows[0].SCORE"),DeclaredCalculationInput(evidence_id="ev",path="rows[1].SCORE")],result=str(result),unit=unit,subject_input=0)
     binding=CalculationOutputBinding(requirement_id="r",output_id="RANK",calculation_id="rank1")
     claim=Claim(text="rank is 1",kind="derived",evidence_ids=["ev"],calculation_id="rank1",output_bindings=[binding]);draft=DraftReport(sections=[],claims=[claim],calculations=[calc]);verified=VerifiedClaim(claim_index=0,claim=claim,evidence_ids=["ev"],output_bindings=[binding])
     return admit_verified_claim_bindings(task,execution,draft,verified)

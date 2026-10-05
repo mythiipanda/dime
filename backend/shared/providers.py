@@ -30,6 +30,7 @@ GEMINI_DEFAULT = "gemini-3.5-flash-lite"
 GEMINI_MODELS: tuple[str, ...] = (
     GEMINI_DEFAULT,
     "gemini-3.5-flash",
+    "gemini-3.8-flash",
     "gemma-4-31b-it",
 )
 GEMINI_ALLOWLIST = frozenset(GEMINI_MODELS)

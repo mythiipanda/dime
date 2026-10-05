@@ -16,6 +16,18 @@ def _planner_envelope():
 
 class _Model:
     model_name = "primary"
+    @property
+    def strategy(self):
+        from v2.adapters.structured import (EndpointCapabilities,
+                                            resolve_strategy)
+        return resolve_strategy(self.capabilities)
+
+    @property
+    def capabilities(self):
+        from v2.adapters.structured import EndpointCapabilities
+        return EndpointCapabilities(
+            endpoint="https://stub.invalid/v1", strict_json_schema=True,
+            tool_calling=True, strict_tool_definitions=True)
 
 
 def _ok_result():

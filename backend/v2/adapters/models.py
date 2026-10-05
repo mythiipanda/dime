@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import anyio
-import copy
+import httpx
 import json
 import hashlib
 import random
@@ -19,7 +19,8 @@ from openai.resources.chat import AsyncChat
 from openai.resources.chat.completions import AsyncCompletions
 from openai.types.chat import ChatCompletion
 from pydantic import BaseModel, ValidationError
-from pydantic_ai import Agent, NativeOutput
+from pydantic_ai import Agent
+from pydantic_ai.capabilities import Hooks
 from pydantic_ai.exceptions import ContentFilterError, ModelHTTPError, UnexpectedModelBehavior
 from pydantic_ai.models.openai import OpenAIChatModel
 from pydantic_ai.providers.openai import OpenAIProvider
@@ -57,6 +58,18 @@ from v2.runtime.ledger import RequestEnvelope, exception_text
 from v2.runtime.budget import RUN_MODEL_DEADLINE
 from v2.skills import SkillLibrary, skill_hashes
 from v2.arguments import RequirementReviewWire, PlannerOutputWire, provider_to_source
+from v2.adapters.structured import (
+    EndpointCapabilities,
+    FailureKind,
+    OutputStrategy,
+    capabilities_for,
+    classify_exception,
+    output_type_for,
+    repaired_output_payload,
+    resolve_strategy,
+    should_retry,
+    wire_schema_for,
+)
 from .capabilities import CAPABILITIES
 
 T = TypeVar("T", bound=BaseModel)
@@ -91,7 +104,7 @@ def _promote_reasoning_content(
     response: ChatCompletion,
 ) -> tuple[ChatCompletion, list[dict[str, Any]]]:
     promotions: list[dict[str, Any]] = []
-    for index, choice in enumerate(response.choices):
+    for index, choice in enumerate(response.choices or ()):
         message = choice.message
         if (choice.finish_reason == "stop" and not message.content
                 and getattr(message, "reasoning_content", None)):
@@ -153,29 +166,20 @@ RETRY_INITIAL_S = 1.0
 RETRY_MULTIPLIER = 2.0
 RETRY_MAX_S = 60.0
 
-_TRANSIENT_FAILURE_CLASSES = frozenset({
-    "timeout", "rate_limit", "network", "server_error", "provider_error"})
-
 ROUTE_POLICIES: dict[str, dict[str, Any]] = {
     "intake": {"max_attempts": 2, "attempt_timeout_s": 30.0,
-               "total_budget_s": 60.0,
-               "transient_classes": _TRANSIENT_FAILURE_CLASSES},
+               "total_budget_s": 60.0},
     "requirement_review": {"max_attempts": 2, "attempt_timeout_s": 30.0,
-               "total_budget_s": 60.0,
-               "transient_classes": _TRANSIENT_FAILURE_CLASSES},
+               "total_budget_s": 60.0},
     "planner": {"max_attempts": 2, "attempt_timeout_s": 30.0,
-               "total_budget_s": 60.0,
-               "transient_classes": _TRANSIENT_FAILURE_CLASSES},
+               "total_budget_s": 60.0},
     "synthesizer": {"max_attempts": 2, "attempt_timeout_s": 25.0,
-               "total_budget_s": 50.0,
-               "transient_classes": _TRANSIENT_FAILURE_CLASSES},
+               "total_budget_s": 50.0},
     "semantic_verifier": {"max_attempts": 2, "attempt_timeout_s": 30.0,
-               "total_budget_s": 60.0,
-               "transient_classes": _TRANSIENT_FAILURE_CLASSES},
+               "total_budget_s": 60.0},
 }
 _DEFAULT_ROUTE_POLICY = {"max_attempts": 2, "attempt_timeout_s": 25.0,
-    "total_budget_s": 50.0,
-    "transient_classes": _TRANSIENT_FAILURE_CLASSES}
+    "total_budget_s": 50.0}
 
 GEMMA_ROUTE_POLICY_OVERRIDES = {"attempt_timeout_s": 90.0,
     "total_budget_s": 200.0}
@@ -261,50 +265,51 @@ def _read_usage_requests(result: Any) -> tuple[int | None, str | None]:
         return None, USAGE_UNKNOWN_REASON
 
 
-def strip_array_length_bounds(schema):
-    stripped = copy.deepcopy(schema)
-    stack = [stripped]
-    while stack:
-        node = stack.pop()
-        if isinstance(node, dict):
-            node.pop("maxItems", None)
-            node.pop("minItems", None)
-            node.pop("discriminator", None)
-            if "const" in node:
-                const_value = node.pop("const")
-                if "enum" not in node:
-                    node["enum"] = [const_value]
-            for key, value in node.items():
-                if key in {"default", "examples", "const", "enum"}:
-                    continue
-                stack.append(value)
-        elif isinstance(node, list):
-            stack.extend(node)
-    return stripped
-
-
 class DimeOpenAIChatModel(OpenAIChatModel):
-    _GEMMA_INLINE_SCHEMAS = frozenset({"TaskSpec", "DraftReport", "VerificationReport"})
+    def __init__(self, model_name: str, *, provider: Any,
+                 capabilities: EndpointCapabilities) -> None:
+        super().__init__(model_name, provider=provider)
+        self.capabilities = capabilities
+        self.strategy = resolve_strategy(capabilities)
+
+    def _wire_schema(self, schema: Mapping[str, Any]) -> dict[str, Any]:
+        return wire_schema_for(self.strategy, schema).schema
 
     def _map_json_schema(self, output_object):
         from dataclasses import replace
-        from v2.argument_schemas import (
-            inline_provider_schema_defs,
-            normalize_provider_wire_schema,
-        )
-        if output_object.name not in {"RequirementReviewWire", "PlannerOutputWire"}:
-            if _is_gemma_model(getattr(self, "model_name", "")) and output_object.name in self._GEMMA_INLINE_SCHEMAS:
-                inlined = inline_provider_schema_defs(output_object.json_schema)
-                return super()._map_json_schema(replace(output_object, json_schema=strip_array_length_bounds(inlined)))
-            return super()._map_json_schema(replace(output_object, json_schema=strip_array_length_bounds(output_object.json_schema)))
-        candidate, _ = normalize_provider_wire_schema(output_object.json_schema)
-        return super()._map_json_schema(replace(output_object, json_schema=strip_array_length_bounds(candidate)))
+        return super()._map_json_schema(replace(
+            output_object,
+            json_schema=self._wire_schema(output_object.json_schema)))
+
+    def _map_tool_definition(self, tool_def, model_settings):
+        mapped = super()._map_tool_definition(tool_def, model_settings)
+        if self.strategy is not OutputStrategy.TOOL_CALL:
+            return mapped
+        function = dict(mapped["function"])
+        function["parameters"] = self._wire_schema(function["parameters"])
+        return {**mapped, "function": function}
+
+
+def _map_wire_response_format(json_schema: Mapping[str, Any], *,
+                              name: str, strict: bool = True
+                              ) -> dict[str, Any]:
+    return {
+        "type": "json_schema",
+        "json_schema": {
+            "name": name, "strict": strict,
+            "schema": wire_schema_for(
+                OutputStrategy.STRICT_SCHEMA, json_schema).schema},
+    }
 
 
 class ProviderStructuredModel:
-    def __init__(self, provider: ProviderName, model: str) -> None:
+    def __init__(self, provider: ProviderName, model: str, *,
+                 capabilities: Mapping[str, EndpointCapabilities] | None = None,
+                 http_client: httpx.AsyncClient | None = None) -> None:
         self.provider = provider
         self.model = model
+        self._capabilities = capabilities
+        self._http_client = http_client
         self.last_provider: ProviderName | None = None
         self.last_model: str | None = None
         self.last_failures: list[dict[str, str]] = []
@@ -561,10 +566,12 @@ class ProviderStructuredModel:
             max_retries=0,
             default_headers=headers,
             thinking_off=(provider == "nvidia"),
+            http_client=self._http_client,
         )
         return [(provider, DimeOpenAIChatModel(
             accepted_model,
             provider=OpenAIProvider(openai_client=client),
+            capabilities=capabilities_for(base_url, self._capabilities),
         ))]
 
     async def generate(
@@ -603,8 +610,11 @@ class ProviderStructuredModel:
                 agent = Agent(
                     model,
                     instructions=prompt,
-                    output_type=NativeOutput(schema, strict=provider != "groq"),
+                    output_type=output_type_for(
+                        model.strategy, schema, model.capabilities),
                     retries=settings.llm_max_retries,
+                    capabilities=[Hooks(
+                        before_output_validate=repaired_output_payload)],
                 )
                 run = agent.run(user_prompt)
                 with anyio.fail_after(
@@ -624,7 +634,7 @@ class ProviderStructuredModel:
                     self.last_decode_extra = decode(result.output)
                 return result.output
             except Exception as exc:
-                failure_class = self._failure_class(exc)
+                failure_kind = classify_exception(exc)
                 self.last_failures.append({
                     "route": envelope.route,
                     "provider": provider,
@@ -632,14 +642,18 @@ class ProviderStructuredModel:
                               if provider == "mistral" else model.model_name),
                     "attempt_number": attempt_number,
                     "exception_type": _safe_exception_name(type(exc)),
-                    "message_class": failure_class,
+                    "message_class": (
+                        str(FailureKind.SCHEMA_REJECTED)
+                        if failure_kind is FailureKind.SCHEMA_REJECTED
+                        else self._failure_class(exc)),
                     "latency_ms": max(0, round(
                         (time.perf_counter() - started) * 1000)),
                     **self._safe_failure_taxonomy(
                         exc, schema=schema, route=envelope.route),
                 })
-                transient = failure_class in policy["transient_classes"]
-                if attempt_number >= max_attempts or not transient:
+                if attempt_number >= max_attempts:
+                    break
+                if not should_retry(failure_kind):
                     break
                 wait = self._backoff_delay_s(
                     attempt_number - 1, self._retry_after_s(exc))
@@ -2297,7 +2311,7 @@ def _deterministic_game_log_draft(
             calculations.append({"calculation_id":calculation_id,
                 "requirement_id":requirement_id, "operation":"mean",
                 "inputs":[{"evidence_id":item.evidence_id,"path":"rows.matches[].pts"}],
-                "result":value, "unit":"points_per_game"})
+                "result":str(value), "unit":"points_per_game"})
             if index == 0:
                 claims.append(Claim(
                     text=f"{player} averaged {one(value)} points per game in {count} {label} games in {season}.",
@@ -2310,7 +2324,7 @@ def _deterministic_game_log_draft(
             "requirement_id":requirement_id, "operation":"subtract",
             "inputs":[{"evidence_id":home.evidence_id,"path":"rows.average_pts"},
                       {"evidence_id":away.evidence_id,"path":"rows.average_pts"}],
-            "result":delta, "unit":"points_per_game"})
+            "result":str(delta), "unit":"points_per_game"})
         if index == 0:
             claims.append(Claim(
                 text=f"The home-minus-away scoring difference was {one(delta)} points per game.",
@@ -2374,7 +2388,7 @@ def _deterministic_player_comparison_draft(
             "operation":"rank_desc", "inputs":[
                 {"evidence_id":item.evidence_id,"path":high_path},
                 {"evidence_id":item.evidence_id,"path":low_path}],
-            "result":1, "unit":"rank", "subject_input":0})
+            "result":"1", "unit":"rank", "subject_input":0})
         if index == 0:
             claims.append(Claim(text=f"{high_name} scored more points per game than {low_name}.",
                 kind="derived", evidence_ids=[item.evidence_id], calculation_id=cid))
@@ -2388,7 +2402,7 @@ def _deterministic_player_comparison_draft(
             "operation":"subtract", "inputs":[
                 {"evidence_id":item.evidence_id,"path":high_path},
                 {"evidence_id":item.evidence_id,"path":low_path}],
-            "result":margin,"unit":"points per game"})
+            "result":str(margin),"unit":"points per game"})
         if index == 0:
             claims.append(Claim(text=f"{high_name} scored {margin} points per game more than {low_name}.",
                 kind="derived", evidence_ids=[item.evidence_id], calculation_id=cid))
@@ -2415,7 +2429,7 @@ def _deterministic_player_comparison_draft(
                 "operation":"subtract", "inputs":[
                     {"evidence_id":hi_ev.evidence_id,"path":"rows.TS_PCT"},
                     {"evidence_id":lo_ev.evidence_id,"path":"rows.TS_PCT"}],
-                "result":hi_ts-lo_ts,"unit":"percentage points"})
+                "result":str(hi_ts-lo_ts),"unit":"percentage points"})
             if index == 0:
                 claims.append(Claim(text=f"{hi_name}'s true shooting was {hi_ts-lo_ts} percentage points higher than {lo_name}'s.",
                     kind="derived", evidence_ids=[hi_ev.evidence_id, lo_ev.evidence_id], calculation_id=cid))
@@ -2501,7 +2515,7 @@ def _deterministic_rank_draft(
             "calculation_id": f"requested_metric_rank_{index + 1}",
             "requirement_id": requirement.id,
             "operation": "rank_asc" if direction == "asc" else "rank_desc",
-            "inputs": inputs, "subject_input": subject_input, "result": 1, "unit": "rank",
+            "inputs": inputs, "subject_input": subject_input, "result": "1", "unit": "rank",
         } for index, requirement in enumerate(eligible)]
         calculation_id = calculations[0]["calculation_id"] if calculations else None
         from v2.contracts import (

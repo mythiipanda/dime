@@ -42,6 +42,18 @@ def _seed_warehouse_seasons(tmp_path, monkeypatch, seasons):
     return db
 
 
+def _structured_endpoint(model_name):
+    from v2.adapters.structured import EndpointCapabilities, resolve_strategy
+    capabilities = EndpointCapabilities(
+        endpoint="https://stub.invalid/v1", strict_json_schema=True,
+        tool_calling=True, strict_tool_definitions=True)
+    return type("ProviderModel", (), {
+        "model_name": model_name,
+        "capabilities": capabilities,
+        "strategy": resolve_strategy(capabilities),
+    })
+
+
 class StubModel:
     def __init__(self, values):
         self.values = iter(values)
@@ -664,13 +676,12 @@ async def test_provider_model_clears_last_success_before_failed_generation(monke
         async def run(self, prompt):
             raise RuntimeError("down")
 
-    class StubModel:
-        model_name = "mercury"
+    StubModel = _structured_endpoint("mercury")
 
     model = ProviderStructuredModel("inception", "mercury")
     model.last_provider = "inception"
     model.last_model = "old-success"
-    monkeypatch.setattr(model, "_models", lambda: [("inception", StubModel())])
+    monkeypatch.setattr(model, "_models", lambda: [("inception", StubModel)])
     monkeypatch.setattr("v2.adapters.models.Agent", FailingAgent)
     envelope = RequestEnvelope.freeze(
         provider="inception", model="mercury", route="intake", prompt="p",
@@ -715,11 +726,10 @@ async def test_provider_boundary_does_not_expose_provider_error_text(monkeypatch
         async def run(self, prompt):
             raise RuntimeError("secret upstream body")
 
-    class StubModel:
-        model_name = "mercury"
+    StubModel = _structured_endpoint("mercury")
 
     model = ProviderStructuredModel("inception", "mercury")
-    monkeypatch.setattr(model, "_models", lambda: [("inception", StubModel())])
+    monkeypatch.setattr(model, "_models", lambda: [("inception", StubModel)])
     monkeypatch.setattr("v2.adapters.models.Agent", FailingAgent)
     envelope = RequestEnvelope.freeze(
         provider="inception", model="mercury", route="intake", prompt="p",
@@ -1412,7 +1422,7 @@ async def test_synthesizer_requires_every_independent_calculation_or_named_block
             "operation": "subtract", "inputs": [
                 {"evidence_id": "ratings", "path": "rows.playoff_off"},
                 {"evidence_id": "ratings", "path": "rows.off"},
-            ], "result": -8.6,
+            ], "result": "-8.6",
         }],
         "blocked_calculation_requirement_ids": [], "gaps": [],
     }])
@@ -1447,7 +1457,7 @@ async def test_synthesizer_accepts_declared_or_blocked_calculation_ledger():
             "operation": "subtract", "inputs": [
                 {"evidence_id": "ratings", "path": "rows.playoff_off"},
                 {"evidence_id": "ratings", "path": "rows.off"},
-            ], "result": -8.6,
+            ], "result": "-8.6",
         }],
         "blocked_calculation_requirement_ids": ["def_change", "net_change"],
         "gaps": ["defense and net inputs missing"],
@@ -1585,7 +1595,7 @@ async def test_synthesizer_rejects_declared_calculation_for_evidence_requirement
             "requirement_id": "three_point_pct_leaders",
             "operation": "mean", "inputs": [{
                 "evidence_id": "leaders", "path": "rows.value",
-            }], "result": 0,
+            }], "result": "0",
         }],
     }])
     draft = await ModelSynthesizer(
@@ -1608,7 +1618,7 @@ async def test_provider_structured_failure_preserves_sanitized_diagnostics(monke
     monkeypatch.setattr("v2.adapters.models.Agent", FailingAgent)
     model = ProviderStructuredModel("inception", "mercury-2.5")
     monkeypatch.setattr(model, "_models", lambda: [
-        ("inception", type("M", (), {"model_name": "mercury-2.5"})()),
+        ("inception", _structured_endpoint("mercury-2.5")),
     ])
     envelope = RequestEnvelope.freeze(
         provider="inception", model="mercury-2.5", route="synthesizer",
@@ -2047,7 +2057,7 @@ async def test_game_log_aggregate_synthesis_uses_full_population_and_signed_delt
         "Stephen Curry averaged 25.0 points per game in 23 home games in 2025-26.",
         "Stephen Curry averaged 28.3 points per game in 20 away games in 2025-26.",
         "The home-minus-away scoring difference was -3.3 points per game."]
-    assert draft.calculations[-1].result == Decimal("-3.25652173913043478260869565")
+    assert draft.calculations[-1].result == "-3.25652173913043478260869565"
     assert all(inp.evidence_id in {"home", "away"} for calc in draft.calculations for inp in calc.inputs)
 
 
@@ -2160,9 +2170,9 @@ def test_draft_validator_rejects_duplicate_requirement_ownership():
     with pytest.raises(ValueError, match="must not duplicate requirement ids"):
         DraftReport.model_validate({"sections":[],"claims":[],"calculations":[
             {"calculation_id":"a","requirement_id":"same","operation":"mean",
-             "inputs":[{"evidence_id":"e","path":"rows.x"}],"result":1},
+             "inputs":[{"evidence_id":"e","path":"rows.x"}],"result":"1"},
             {"calculation_id":"b","requirement_id":"same","operation":"mean",
-             "inputs":[{"evidence_id":"e","path":"rows.y"}],"result":2}]})
+             "inputs":[{"evidence_id":"e","path":"rows.y"}],"result":"2"}]})
 
 @pytest.mark.anyio
 async def test_sample_size_calc_artifacts_are_observed_not_blocked():
@@ -2200,7 +2210,7 @@ async def test_intake_primary_transient_retries_then_succeeds(monkeypatch):
             calls.append(prompt)
             if len(calls)==1: raise TimeoutError("temporary")
             return type("R",(),{"output":TaskSpec(goal="ok",mode="quick",deliverable="x")})()
-    class M:model_name="primary"
+    M=lambda *a, **k: _structured_endpoint(*(a or ("mercury",)), **k)
     monkeypatch.setattr("v2.adapters.models.Agent",A);monkeypatch.setattr("v2.adapters.models.random.uniform",lambda a,b:0)
     m=ProviderStructuredModel("inception","primary");monkeypatch.setattr(m,"_models",lambda:[("inception",M())])
     e=RequestEnvelope.freeze(provider="inception",model="primary",route="intake",prompt="p",context={},tool_schemas={},planner_version="v2")
@@ -2220,7 +2230,13 @@ async def test_intake_primary_exhausted_raises_without_secondary(monkeypatch):
             calls.append((self.model.model_name,prompt))
             raise TimeoutError("temporary")
     class M:
-        def __init__(self,n):self.model_name=n
+        def __init__(self,n):
+            self.model_name=n
+            from v2.adapters.structured import EndpointCapabilities, resolve_strategy
+            self.capabilities=EndpointCapabilities(
+                endpoint="https://stub.invalid/v1",strict_json_schema=True,
+                tool_calling=True,strict_tool_definitions=True)
+            self.strategy=resolve_strategy(self.capabilities)
     monkeypatch.setattr("v2.adapters.models.Agent",A);monkeypatch.setattr("v2.adapters.models.random.uniform",lambda a,b:0)
     async def no_sleep(value):return None
     monkeypatch.setattr("v2.adapters.models.anyio.sleep",no_sleep)
@@ -2246,14 +2262,20 @@ async def test_intake_schema_failure_raises_without_retry_or_secondary(monkeypat
             TaskSpec.model_validate({"goal":""})
             return type("R",(),{"output":TaskSpec(goal="ok",mode="quick",deliverable="x")})()
     class M:
-        def __init__(self,n):self.model_name=n
+        def __init__(self,n):
+            self.model_name=n
+            from v2.adapters.structured import EndpointCapabilities, resolve_strategy
+            self.capabilities=EndpointCapabilities(
+                endpoint="https://stub.invalid/v1",strict_json_schema=True,
+                tool_calling=True,strict_tool_definitions=True)
+            self.strategy=resolve_strategy(self.capabilities)
     monkeypatch.setattr("v2.adapters.models.Agent",A)
     m=ProviderStructuredModel("inception","primary");monkeypatch.setattr(m,"_models",lambda:[("inception",M("primary")),("mistral",M("secondary"))])
     e=RequestEnvelope.freeze(provider="inception",model="primary",route="intake",prompt="p",context={},tool_schemas={},planner_version="v2")
     with pytest.raises(RuntimeError,match="all structured-output providers failed"):
         await m.generate(schema=TaskSpec,prompt="p",payload={},envelope=e)
     assert calls==["primary"]
-    assert m.last_failures[0]["message_class"]=="structured_output"
+    assert m.last_failures[0]["message_class"]=="schema_rejected"
 
 @pytest.mark.anyio
 async def test_recorded_intake_ledger_carries_provider_attempt_diagnostics():
@@ -2281,7 +2303,13 @@ async def test_intake_global_deadline_stops_single_model_retries(monkeypatch):
         async def run(self,prompt):
             calls.append(self.model.model_name);clock.value += 70;raise TimeoutError("x")
     class M:
-        def __init__(self,n):self.model_name=n
+        def __init__(self,n):
+            self.model_name=n
+            from v2.adapters.structured import EndpointCapabilities, resolve_strategy
+            self.capabilities=EndpointCapabilities(
+                endpoint="https://stub.invalid/v1",strict_json_schema=True,
+                tool_calling=True,strict_tool_definitions=True)
+            self.strategy=resolve_strategy(self.capabilities)
     monkeypatch.setattr("v2.adapters.models.Agent",A)
     monkeypatch.setattr("v2.adapters.models.time.monotonic",lambda:clock.value)
     monkeypatch.setattr("v2.adapters.models.time.perf_counter",lambda:0)
@@ -2352,7 +2380,7 @@ async def test_run_model_deadline_is_shared_across_sequential_routes(monkeypatch
         def __init__(self,model,*a,**k):self.model=model
         async def run(self,prompt):
             calls.append(self.model.model_name);clock.value += 7;raise TimeoutError("x")
-    class M:model_name="m"
+    M=lambda *a, **k: _structured_endpoint(*(a or ("mercury",)), **k)
     monkeypatch.setattr("v2.adapters.models.Agent",A)
     monkeypatch.setattr("v2.adapters.models.time.monotonic",lambda:clock.value)
     monkeypatch.setattr("v2.adapters.models.time.perf_counter",lambda:0)
@@ -2388,9 +2416,9 @@ def test_verifier_prompt_closes_completeness_over_requested_metrics_only():
 async def test_model_valid_path_wrong_result_remains_for_mechanical_rejection():
     task=TaskSpec(goal="delta",mode="quick",deliverable="delta",calculation_requirements=[{"id":"d","description":"delta"}])
     ev=EvidenceEnvelope(evidence_id="e",capability="x",source="f",observed_at=datetime.now(UTC),rows={"a":2,"b":1})
-    stub=StubModel([{"sections":[],"claims":[{"text":"Difference 99.","kind":"derived","evidence_ids":["e"],"calculation_id":"bad"}],"calculations":[{"calculation_id":"bad","requirement_id":"d","operation":"subtract","inputs":[{"evidence_id":"e","path":"rows.a"},{"evidence_id":"e","path":"rows.b"}],"result":99}]}])
+    stub=StubModel([{"sections":[],"claims":[{"text":"Difference 99.","kind":"derived","evidence_ids":["e"],"calculation_id":"bad"}],"calculations":[{"calculation_id":"bad","requirement_id":"d","operation":"subtract","inputs":[{"evidence_id":"e","path":"rows.a"},{"evidence_id":"e","path":"rows.b"}],"result":"99"}]}])
     draft=await ModelSynthesizer(stub,provider="s",model_name="s").synthesize(task,[ev])
-    assert draft.calculations[0].result==99
+    assert draft.calculations[0].result=="99"
     from v2.domain.calculations import Calculation
     from v2.runtime.verifier import verify_mechanical
     calculation=Calculation.model_validate({key:value for key,value in draft.calculations[0].model_dump().items() if key != "requirement_id"})
@@ -2451,7 +2479,7 @@ async def test_team_rank_deterministic_draft_satisfies_rank_calculation_requirem
     assert draft.claims[0].kind.value == "derived"
     assert draft.calculations[0].requirement_id == "lowest_def_rating_lookup"
     assert draft.calculations[0].operation == "rank_asc"
-    assert draft.calculations[0].result == 1
+    assert draft.calculations[0].result == "1"
     assert draft.blocked_calculation_requirement_ids == []
 
 @pytest.mark.anyio
@@ -2481,7 +2509,7 @@ async def test_team_rank_calculation_adversarial(rows,direction,description,metr
         assert draft.claims[0].kind.value == "observed"
     else:
         assert draft.calculations[0].subject_input == expected_subject
-        assert draft.calculations[0].result == 1
+        assert draft.calculations[0].result == "1"
         assert draft.claims[0].calculation_id == draft.calculations[0].calculation_id
 
 @pytest.mark.anyio
@@ -2681,7 +2709,7 @@ async def test_actual_attempt_redacts_dynamic_exception_type_and_ledger_serializ
     class A:
         def __init__(self,*a,**k):pass
         async def run(self,*a,**k):raise Dynamic('bounded')
-    class M:model_name='mercury-2.5'
+    M=lambda *a, **k: _structured_endpoint(*(a or ("mercury",)), **k)
     monkeypatch.setattr('v2.adapters.models.Agent',A)
     m=ProviderStructuredModel('inception','mercury-2.5');monkeypatch.setattr(m,'_models',lambda:[('inception',M())])
     e=RequestEnvelope.freeze(provider='inception',model='mercury-2.5',route='semantic_verifier',prompt='p',context={},tool_schemas={},planner_version='v2');ledger=RunLedger('run');recorded=RecordedStructuredModel(m,ledger,turn_id='run')

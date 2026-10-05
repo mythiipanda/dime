@@ -64,17 +64,17 @@ def test_capability_local_coverage_rejects_wrong_selected_value():
 
 def test_final_openai_request_schema_matches_checked_candidate():
  import pathlib
+ from openai import AsyncOpenAI
  from pydantic_ai import NativeOutput
  from pydantic_ai._output import OutputSchema
+ from pydantic_ai.providers.openai import OpenAIProvider
  from v2.adapters.models import DimeOpenAIChatModel
+ from v2.adapters.structured import EndpointCapabilities
  root=pathlib.Path(__file__).parents[2]/'schema_snapshots'
- class Mapper(DimeOpenAIChatModel):
-  @property
-  def profile(self): return {'openai_supports_strict_tool_definition':True}
- mapper=object.__new__(Mapper)
+ mapper=DimeOpenAIChatModel('t',provider=OpenAIProvider(openai_client=AsyncOpenAI(api_key='x',base_url='https://stub.invalid/v1')),capabilities=EndpointCapabilities(endpoint='https://stub.invalid/v1',strict_json_schema=True,tool_calling=True,strict_tool_definitions=True))
  for name,model in [('requirement_review',RequirementReviewWire),('planner',PlannerOutputWire)]:
   prepared=OutputSchema.build(NativeOutput(model,strict=True)).processor.object_def
-  sent=DimeOpenAIChatModel._map_json_schema(mapper,prepared)['json_schema']['schema']
+  sent=mapper._map_json_schema(prepared)['json_schema']['schema']
   expected=json.loads((root/f'{name}.candidate.json').read_text())
   assert sent==expected
   manifest=json.loads((root/'manifest.json').read_text())
@@ -101,23 +101,21 @@ def test_v3_intake_closure_is_fail_closed_and_bound_to_behavior_loss():
   assert [item.capability_id for item in closed.capability_argument_sets]==[capability]
  assert {'web_fetch','player_report'} <= set(catalog)
 
-def test_final_mapper_all_active_routes_succeed_and_only_v3_wire_normalizes():
+def test_every_stage_wire_schema_comes_from_the_strategy_not_the_schema_name():
+ from openai import AsyncOpenAI
  from pydantic_ai import NativeOutput
  from pydantic_ai._output import OutputSchema
- from v2.adapters.models import DimeOpenAIChatModel, strip_array_length_bounds
+ from pydantic_ai.providers.openai import OpenAIProvider
+ from v2.adapters.models import DimeOpenAIChatModel
+ from v2.adapters.structured import EndpointCapabilities,wire_schema_for
  from v2.contracts import TaskSpec,DraftReport,VerificationReport
- class Mapper(DimeOpenAIChatModel):
-  @property
-  def profile(self): return {'openai_supports_strict_tool_definition':True}
- mapper=object.__new__(Mapper)
+ mapper=DimeOpenAIChatModel('t',provider=OpenAIProvider(openai_client=AsyncOpenAI(api_key='x',base_url='https://stub.invalid/v1')),capabilities=EndpointCapabilities(endpoint='https://stub.invalid/v1',strict_json_schema=True,tool_calling=True,strict_tool_definitions=True))
+ assert mapper.strategy=='strict_schema'
  for model in (TaskSpec,DraftReport,VerificationReport,RequirementReviewWire,PlannerOutputWire):
   prepared=OutputSchema.build(NativeOutput(model,strict=True)).processor.object_def
-  mapped=DimeOpenAIChatModel._map_json_schema(mapper,prepared)
-  assert mapped['type']=='json_schema' and mapped['json_schema']['schema']
- for model in (TaskSpec,DraftReport,VerificationReport):
-  prepared=OutputSchema.build(NativeOutput(model,strict=True)).processor.object_def
-  mapped=DimeOpenAIChatModel._map_json_schema(mapper,prepared)
-  assert mapped['json_schema']['schema']==strip_array_length_bounds(prepared.json_schema)
+  mapped=mapper._map_json_schema(prepared)
+  assert mapped['type']=='json_schema'
+  assert mapped['json_schema']['schema']==wire_schema_for(mapper.strategy,prepared.json_schema).schema
 
 def _req_args(values):
  from v2.arguments import RequirementArguments,encode_argument
@@ -168,15 +166,18 @@ def test_final_admission_rejects_wrong_selected_local_scope_end_to_end():
  with pytest.raises(ValueError,match='scope does not match'):
   admit_verified_claim_bindings(task,execution,DraftReport(sections=['x'],claims=[claim]),verified)
 
-def test_gemma_strict_path_sends_normalized_schema_flash_identical():
+def test_one_wire_shape_reaches_every_model_name_on_the_endpoint():
  from openai import AsyncOpenAI as _AsyncOpenAI
  from pydantic_ai import NativeOutput as _NativeOutput
  from pydantic_ai._output import OutputSchema as _OutputSchema
  from pydantic_ai.providers.openai import OpenAIProvider as _OpenAIProvider
  from v2.adapters.models import DimeOpenAIChatModel as _ChatModel
+ from v2.adapters.structured import capabilities_for
  import pathlib as _pathlib
+ base='https://generativelanguage.googleapis.com/v1beta/openai/'
+ caps=capabilities_for(base)
  def _model(name):
-  return _ChatModel(name,provider=_OpenAIProvider(openai_client=_AsyncOpenAI(base_url='https://generativelanguage.googleapis.com/v1beta/openai/',api_key='test-key')))
+  return _ChatModel(name,provider=_OpenAIProvider(openai_client=_AsyncOpenAI(base_url=base,api_key='test-key')),capabilities=caps)
  root=_pathlib.Path(__file__).parents[2]/'schema_snapshots'
  for name,cls in [('requirement_review',RequirementReviewWire),('planner',PlannerOutputWire)]:
   prepared=_OutputSchema.build(_NativeOutput(cls,strict=True)).processor.object_def
@@ -195,7 +196,6 @@ def test_gemma_route_policy_extends_timeouts_flash_unchanged():
   assert _route_policy('nvidia','z-ai/glm-5.3-flash',route)==baseline
   gemma=_route_policy('gemini','gemma-4-31b-it',route)
   assert gemma['max_attempts']==baseline['max_attempts']
-  assert gemma['transient_classes']==baseline['transient_classes']
   assert gemma['attempt_timeout_s']>baseline['attempt_timeout_s']
   assert gemma['total_budget_s']>baseline['total_budget_s']
  assert ROUTE_POLICIES['requirement_review']['attempt_timeout_s']==30.0

@@ -18,6 +18,18 @@ def _envelope() -> RequestEnvelope:
 class _Model:
     def __init__(self, name: str):
         self.model_name = name
+    @property
+    def strategy(self):
+        from v2.adapters.structured import (EndpointCapabilities,
+                                            resolve_strategy)
+        return resolve_strategy(self.capabilities)
+
+    @property
+    def capabilities(self):
+        from v2.adapters.structured import EndpointCapabilities
+        return EndpointCapabilities(
+            endpoint="https://stub.invalid/v1", strict_json_schema=True,
+            tool_calling=True, strict_tool_definitions=True)
 
 
 @pytest.mark.anyio

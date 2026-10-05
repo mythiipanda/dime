@@ -128,7 +128,7 @@ async def test_verify_mechanical_still_runs_downstream_unchanged():
         model, provider="stub", model_name="stub").synthesize(task, [evidence])
     assert "Cleveland Cavaliers" in draft.claims[0].text
     assert "121.2" in draft.claims[0].text
-    assert draft.calculations[0].result == 1
+    assert draft.calculations[0].result == "1"
     calculations = [
         Calculation.model_validate(
             {key: value for key, value in item.model_dump().items()

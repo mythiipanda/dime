@@ -178,7 +178,13 @@ def _envelope(route="intake"):
 
 class _Model:
     def __init__(self, name="primary"):
+        from v2.adapters.structured import (EndpointCapabilities, resolve_strategy)
         self.model_name = name
+        self.capabilities = EndpointCapabilities(
+            endpoint="https://stub.invalid/v1",
+            strict_json_schema=True, tool_calling=True,
+            strict_tool_definitions=True)
+        self.strategy = resolve_strategy(self.capabilities)
 
 
 def _ok_result():
