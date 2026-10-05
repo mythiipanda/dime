@@ -84,6 +84,7 @@ from .splits import get_matchup_splits, get_regression_check
 from .streaks import get_streaks
 from .rest import get_rest_advantage
 from .competitive import get_competitive_ratings
+from .espn import get_espn_event_summary, get_espn_odds, get_espn_scores
 from .lineup_matrix import get_lineup_matchup_matrix
 from .shots import search_shots
 from .zone import get_team_shot_zones
@@ -214,6 +215,9 @@ v1_tools: list[BaseTool] = [
     get_zone_deltas,
     get_rapm_prior,
     get_wpa_leaders,
+    get_espn_scores,
+    get_espn_event_summary,
+    get_espn_odds,
 ]
 
 TOOL_NAMES = [t.name for t in v1_tools]
