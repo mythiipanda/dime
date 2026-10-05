@@ -3,10 +3,46 @@ import subprocess
 import sys
 from pathlib import Path
 
+import pytest
+
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import shared.tools.espn as espn_mod
 from shared.tools import TOOL_NAMES, v1_tools
+
+
+@pytest.fixture(autouse=True)
+def _pinned_cli_version(monkeypatch):
+    monkeypatch.setattr(
+        espn_mod, "cli_version_info",
+        lambda *args, **kwargs: ("fake-cli", espn_mod.EXPECTED_CLI_VERSION))
+
+
+def _pinned_version(monkeypatch):
+    pass
+
+
+def test_version_mismatch_fails_loud(monkeypatch):
+    monkeypatch.setattr(
+        espn_mod, "cli_version_info", lambda *args, **kwargs: ("fake-cli", "0.0.0"))
+    out = espn_mod.get_espn_scores.invoke({"sport": "nfl"})
+    assert out["ok"] is False
+    assert out["reason"] == "version_mismatch"
+
+
+def test_unreadable_version_fails_loud(monkeypatch):
+    monkeypatch.setattr(
+        espn_mod, "cli_version_info", lambda *args, **kwargs: ("fake-cli", None))
+    out = espn_mod.get_espn_scores.invoke({"sport": "nfl"})
+    assert out["ok"] is False
+    assert out["reason"] == "version_mismatch"
+
+
+def test_failure_dicts_carry_machine_reason(monkeypatch):
+    _pinned_version(monkeypatch)
+    out = espn_mod.get_espn_scores.invoke({"sport": "quidditch"})
+    assert out["ok"] is False
+    assert out["reason"] == "unknown_sport"
 
 
 SCORES_FIXTURE = [

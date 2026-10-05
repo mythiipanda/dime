@@ -70,10 +70,18 @@ def cli_version_info() -> tuple[str, str | None]:
     return path, version
 
 
+def _ensure_pinned_cli() -> None:
+    _, version = cli_version_info()
+    if version != EXPECTED_CLI_VERSION:
+        raise EspnUnavailable(
+            "version_mismatch", f"{version} != {EXPECTED_CLI_VERSION}")
+
+
 def _run(args: list[str], timeout: int | float = _TIMEOUT) -> Any:
     cli = _resolve_cli_path()
     if not (os.path.isfile(cli) and os.access(cli, os.X_OK)):
         raise EspnUnavailable("binary_not_found", cli)
+    _ensure_pinned_cli()
     try:
         proc = subprocess.run(
             [cli, *args, "--agent"],
@@ -106,7 +114,7 @@ def _resolve(sport: str) -> Any:
 
 
 def _failure(tool: str, exc: EspnUnavailable) -> dict[str, Any]:
-    return {"tool": tool, "ok": False, "error": str(exc)}
+    return {"tool": tool, "ok": False, "reason": exc.reason, "error": str(exc)}
 
 
 @tool(description="Today's live scores and results for a sport. Pass sport as nfl, nba, mlb, or nhl. Returns each game with teams, score, status, and event id.")
