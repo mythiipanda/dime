@@ -81,6 +81,7 @@ AWARD_OUTPUT_ALIASES = {
     "COACH_NAME": "coach",
     "VOTE_SHARE": "award_share",
     "WINNER": "winner",
+    "VOTE_COUNT": "votes_first",
 }
 
 
