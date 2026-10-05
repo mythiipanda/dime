@@ -1,6 +1,6 @@
 {
  "version": 3,
- "notes": "Frozen 39-scenario v2 behavioral pack. Tool-routing pins were replaced by equivalent evidence and budget requirements.",
+ "notes": "Frozen 41-scenario v2 behavioral pack. Tool-routing pins were replaced by equivalent evidence and budget requirements.",
  "banned_everywhere": [
   "try a narrower",
   "did not run",
@@ -1106,7 +1106,94 @@
     "max_seconds": 30,
     "max_tool_calls": 2
    },
-   "comment": "1984-85 has no published ballot in the warehouse, so naming a winner would be fabrication."
-  }
- ]
-}
+    "comment": "1984-85 has no published ballot in the warehouse, so naming a winner would be fabrication."
+   },
+   {
+    "id": "sql-young-scorers-2324",
+    "tags": [
+     "sql",
+     "analytical",
+     "regression"
+    ],
+    "season": "2023-24",
+    "chain": [
+     "How many players aged 23 or younger averaged at least 20 points per game in the 2023-24 season?"
+    ],
+    "expect": {
+     "contains_any": [
+      [
+       "9",
+       "nine"
+      ]
+     ],
+     "not_contains": [
+      "could not verify",
+      "model pick"
+     ]
+    },
+    "budget": {
+     "max_seconds": 30,
+     "max_tool_calls": 2
+    },
+    "evidence_requirement": {
+     "any_capability": [
+      "sql_exec"
+     ],
+     "required_values": [
+      "9"
+     ],
+     "metric_definitions_contain": [
+      "count"
+     ],
+     "max_evidence": 1
+    },
+    "comment": "Agent-written SQL over silver_hist_player_seasons. Nine players aged 23 or younger averaged 20 or more points in 2023-24; no prebuilt tool takes an arbitrary age plus scoring filter."
+   },
+   {
+    "id": "sql-most-wins-2425",
+    "tags": [
+     "sql",
+     "analytical",
+     "regression"
+    ],
+    "season": "2024-25",
+    "chain": [
+     "Which team won the most regular-season games in 2024-25, and how many did it win?"
+    ],
+    "expect": {
+     "contains_any": [
+      [
+       "Oklahoma City",
+       "Thunder"
+      ],
+      [
+       "68"
+      ]
+     ],
+     "not_contains": [
+      "could not verify",
+      "model pick"
+     ]
+    },
+    "budget": {
+     "max_seconds": 30,
+     "max_tool_calls": 2
+    },
+    "evidence_requirement": {
+     "any_capability": [
+      "sql_exec"
+     ],
+     "required_values": [
+      "Oklahoma City",
+      "Thunder",
+      "68"
+     ],
+     "metric_definitions_contain": [
+      "count"
+     ],
+     "max_evidence": 1
+    },
+    "comment": "Agent-written SQL over silver_hist_standings. Oklahoma City won 68 games in 2024-25; the ordered lookup with a computed top row is the agent query, not a curated board."
+   }
+  ]
+ }

@@ -100,6 +100,35 @@ def _award_vocabulary() -> tuple[dict[str, str], dict[str, str]]:
 AWARD_UNITS, AWARD_DEFINITIONS = _award_vocabulary()
 
 
+SQL_EXEC_UNITS = {
+    "n": COUNT,
+    "count": COUNT,
+    "total": COUNT,
+    "players": COUNT,
+    "teams": COUNT,
+    "games": COUNT,
+    "wins": COUNT,
+    "losses": COUNT,
+}
+
+SQL_EXEC_DEFINITIONS = {
+    "n": ("Primary numeric answer the agent-written aggregate returned, "
+          "counted in rows or wins as the SQL aliases it."),
+    "count": "Row count the agent-written aggregate returned.",
+    "total": "Total the agent-written aggregate summed or counted.",
+    "players": "Players counted by the agent-written aggregate.",
+    "teams": "Teams counted by the agent-written aggregate.",
+    "games": "Games counted by the agent-written aggregate.",
+    "wins": "Wins counted by the agent-written aggregate.",
+    "losses": "Losses counted by the agent-written aggregate.",
+}
+
+SQL_EXEC_OUTPUT_ALIASES = {
+    "TOTAL_COUNT": "n",
+    "ROW_COUNT": "n",
+}
+
+
 def _resolve_entities(rows: Any) -> list[EntityRef]:
     out: list[EntityRef] = []
     if isinstance(rows, Mapping):
@@ -488,6 +517,24 @@ _LIST = [
             "with the seasons the source publishes named per request. Never a "
             "model score, projection, or live race."),
     ),
+    Capability(
+        name="sql_exec",
+        tool_name="sql_exec",
+        units=SQL_EXEC_UNITS,
+        metric_definitions=SQL_EXEC_DEFINITIONS,
+        output_aliases=SQL_EXEC_OUTPUT_ALIASES,
+        qualification=(
+            "Agent-written read-only SQL for an analyst question no prebuilt "
+            "tool covers. The agent supplies one SELECT or WITH statement; "
+            "writes, stacked statements, and tables outside the declared "
+            "set are refused before execution, results are row-capped with "
+            "a statement timeout, and an empty result fails instead of "
+            "publishing. The primary numeric answer is aliased `n`."),
+        coverage=(
+            "Read-only analytical SQL over the declared warehouse tables, "
+            "computed per query. Rows are computed from the supplied SQL, "
+            "never curated table values."),
+    ),
 ]
 
 CAPABILITIES: dict[str, Capability] = {c.name: c for c in _LIST}
@@ -641,6 +688,14 @@ CAPABILITY_DESCRIPTIONS: dict[str, str] = {
         "Year is included; a tied rank and an ORV row are reported as "
         "published. This is a recorded outcome, never a model score, so use it "
         "instead of any award race for a result."
+    ),
+    "sql_exec": (
+        "Agent-written read-only SQL over the warehouse for an analyst "
+        "question no prebuilt tool covers. The agent supplies one SELECT or "
+        "WITH statement and the rows come back as evidence. Rows are "
+        "computed from that SQL over the named tables, so the SQL is part "
+        "of the evidence identity and a number from this capability never "
+        "reads as a curated table value."
     ),
 }
 

@@ -19,9 +19,9 @@ def evidence(capability: str = "ratings", rows: dict | None = None, **kwargs) ->
     )
 
 
-def test_pack_freezes_all_39_scenarios():
+def test_pack_freezes_all_41_scenarios():
     pack = load_pack(PACK)
-    assert len(pack["scenarios"]) == 39
+    assert len(pack["scenarios"]) == 41
     assert pack["version"] == 3
 
 

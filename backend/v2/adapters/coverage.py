@@ -6,6 +6,8 @@ import threading
 from pathlib import Path
 from typing import Any, Iterable
 
+from shared.tools.league import _SQL_TABLES as _AGENT_SQL_TABLES
+
 UNAVAILABLE_METRICS = ("EPM", "LEBRON", "DARKO", "DRIP", "PER", "BPM",
                        "WS", "VORP")
 
@@ -144,6 +146,7 @@ CAPABILITY_TABLES: dict[str, tuple[str, ...]] = {
     "today": ("silver_scoreboard", "silver_standings"),
     "morning_briefing": ("silver_scoreboard", "silver_standings"),
     "award_results": ("silver_bbref_awards",),
+    "sql_exec": tuple(sorted(_AGENT_SQL_TABLES)),
 }
 
 _RATE_TO_TOTAL = {
@@ -230,10 +233,25 @@ def _requirement_arguments(requirement: object, capability: str) -> dict[str, An
     return _arguments_dict(getattr(requirement, "capability_arguments", None))
 
 
+def _sql_tables_for_arguments(arguments: object) -> tuple[str, ...] | None:
+    values = _arguments_dict(arguments)
+    sql = values.get("sql")
+    if not isinstance(sql, str) or not sql.strip():
+        return None
+    found = {a or b for a, b in re.findall(
+        r"(?i)from\s+(\w+)|join\s+(\w+)", sql)}
+    known = sorted(table for table in found if table in set(_AGENT_SQL_TABLES))
+    return tuple(known) or None
+
+
 def declared_tables_for_capability(
     capability: str, arguments: object = None,
 ) -> tuple[str, ...]:
     name = str(capability or "")
+    if name == "sql_exec":
+        tables = _sql_tables_for_arguments(arguments)
+        if tables is not None:
+            return tables
     if name == "qualified_leaders":
         values = _arguments_dict(arguments)
         for key in ("stat_category", "requested_metric", "stat", "metric"):
