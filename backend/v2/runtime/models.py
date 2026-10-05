@@ -230,7 +230,6 @@ def resolve_evidence_binding(
 
 def _reanchor_binding(binding, evidence):
     from v2.contracts import EvidenceOutputBinding, canonical_entity_id
-    from v2.domain.evidence import iter_values
     if not isinstance(binding, EvidenceOutputBinding):
         return None
     if evidence is None:
@@ -273,11 +272,10 @@ def _reanchor_binding(binding, evidence):
     new_root = f"rows[{match}]"
     new_selector = new_root + binding.selector[len(row_root):]
     new_subject_selector = f"{new_root}.{leaf}"
-    found = [item for item in iter_values(evidence)
-             if item.path == new_selector]
-    if len(found) != 1 or found[0].value is None:
+    resolution = resolve_selector(evidence, new_selector)
+    if not isinstance(resolution, ResolvedSelector) or resolution.value is None:
         return None
-    if not _declared_value_matches(binding.value, found[0].value):
+    if not _declared_value_matches(binding.value, resolution.value):
         return None
     return binding.model_copy(update={
         "selector": new_selector,
