@@ -35,10 +35,32 @@ function cleanLines(value: unknown): string {
   return typeof value === "string" ? value.trim() : "";
 }
 
+const ESTIMATE_HINTS = [
+  "estimat",
+  "deriv",
+  "shrink",
+  "simulat",
+  "monte carlo",
+  "project",
+  "raptor",
+  "regress",
+  "imput",
+  "synth",
+  "forecast",
+  "z-score",
+  "zscore",
+  "weighted sum",
+];
+
+export function isEstimateMethod(method: string): boolean {
+  const lowered = method.toLowerCase();
+  return ESTIMATE_HINTS.some((hint) => lowered.includes(hint));
+}
+
 export function gradeClaim(input: GradeInput): GradedClaim {
   const method = cleanLines(input.method);
   const season = cleanLines(input.season);
-  if (method) {
+  if (method && isEstimateMethod(method)) {
     return {
       grade: "G4",
       tag: "Model estimate",
@@ -59,7 +81,7 @@ export function gradeClaim(input: GradeInput): GradedClaim {
         grade: "G3",
         tag,
         scope: season ? `${tag} · ${season}` : tag,
-        method: "",
+        method,
         gap: "",
         unknownScope: false,
       };
@@ -68,7 +90,7 @@ export function gradeClaim(input: GradeInput): GradedClaim {
       grade: "G2",
       tag: `Last ${windowN} games`,
       scope: season ? `Last ${windowN} games · ${season}` : `Last ${windowN} games`,
-      method: "",
+      method,
       gap: "",
       unknownScope: false,
     };
@@ -78,7 +100,7 @@ export function gradeClaim(input: GradeInput): GradedClaim {
       grade: "G4",
       tag: "Unconfirmed scope",
       scope: season ? `Live data · ${season}` : "Live data",
-      method: "",
+      method,
       gap: "couldn't confirm the scope",
       unknownScope: true,
     };
@@ -88,7 +110,7 @@ export function gradeClaim(input: GradeInput): GradedClaim {
       grade: "G1",
       tag: "Full season",
       scope: `Full season · ${season}`,
-      method: "",
+      method,
       gap: "",
       unknownScope: false,
     };
@@ -97,7 +119,7 @@ export function gradeClaim(input: GradeInput): GradedClaim {
     grade: "G4",
     tag: "Unconfirmed scope",
     scope: season ? season : "Scope unconfirmed",
-    method: "",
+    method,
     gap: "couldn't confirm the scope",
     unknownScope: true,
   };

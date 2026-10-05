@@ -1,6 +1,12 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { gradeClaim, gradeLimits, type Grade, type GradeInput } from "./grades";
+import {
+  gradeClaim,
+  gradeLimits,
+  isEstimateMethod,
+  type Grade,
+  type GradeInput,
+} from "./grades";
 
 const GRADES: Grade[] = ["G1", "G2", "G3", "G4"];
 
@@ -72,6 +78,35 @@ test("limits describe what each grade does not cover", () => {
   assert.equal(gradeLimits("G3", false), "Small sample, treat as a hint");
   assert.equal(gradeLimits("G4", false), "Not observed results");
   assert.equal(gradeLimits("G4", true), "");
+});
+
+test("official methods grade quiet G1, never estimates", () => {
+  const graded = gradeClaim({
+    method: "official",
+    lineage: "warehouse",
+    season: "2024-25",
+  });
+  assert.equal(graded.grade, "G1");
+  assert.equal(graded.tag, "Full season");
+  assert.equal(graded.method, "official");
+});
+
+test("estimate-indicating methods grade G4", () => {
+  for (const method of [
+    "derived possessions",
+    "raptor_components",
+    "box_prior_shrinkage",
+    "weighted sum of z-scores",
+  ]) {
+    const graded = gradeClaim({ method, season: "2024-25" });
+    assert.equal(graded.grade, "G4", method);
+    assert.equal(graded.method, method);
+  }
+  assert.equal(isEstimateMethod("official"), false);
+  assert.equal(
+    isEstimateMethod("winner rows recorded from nba_api with no scoring"),
+    false,
+  );
 });
 
 test("estimators grade G4 with their method line", () => {
