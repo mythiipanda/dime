@@ -175,3 +175,24 @@ def test_v1_tools_includes_espn_names():
     for name in ("get_espn_scores", "get_espn_event_summary", "get_espn_odds"):
         assert name in TOOL_NAMES
         assert name in [t.name for t in v1_tools]
+
+
+def test_cli_path_env_override_is_honored(monkeypatch, tmp_path):
+    import shared.tools.espn as espn
+    monkeypatch.setenv("ESPN_CLI_PATH", str(tmp_path / "no-such-binary"))
+    out = espn.get_espn_scores.invoke({"sport": "nfl"})
+    assert out["ok"] is False
+    assert "binary_not_found" in out["error"]
+    assert "no-such-binary" in out["error"]
+
+
+def test_cli_version_pin_matches_adopted_release():
+    import os
+    import shutil
+    import shared.tools.espn as espn
+    present = shutil.which("espn-pp-cli") is not None or os.path.exists(
+        os.path.expanduser("~/.local/bin/espn-pp-cli"))
+    if not present:
+        import pytest
+        pytest.skip("espn-pp-cli not installed")
+    assert espn.cli_version_info()[1] == espn.EXPECTED_CLI_VERSION

@@ -4,9 +4,10 @@ import subprocess
 from typing import Any
 from langchain_core.tools import tool
 
-_CLI = os.path.expanduser("~/.local/bin/espn-pp-cli")
+_DEFAULT_CLI = os.path.expanduser("~/.local/bin/espn-pp-cli")
 _BIN_DIR = os.path.expanduser("~/.local/bin")
 _TIMEOUT = 30
+EXPECTED_CLI_VERSION = "2026.9.2"
 
 _PAIRS = {
     "nfl": ("football", "nfl"),
@@ -46,17 +47,41 @@ class EspnUnavailable(Exception):
         super().__init__(message)
 
 
-def _run(args: list[str]) -> Any:
+def _resolve_cli_path() -> str:
+    return os.environ.get("ESPN_CLI_PATH", _DEFAULT_CLI)
+
+
+def cli_version_info() -> tuple[str, str | None]:
+    path = _resolve_cli_path()
     try:
         proc = subprocess.run(
-            [_CLI, *args, "--agent"],
+            [path, "--version"],
+            capture_output=True, text=True, timeout=10, env=_env(),
+        )
+    except Exception:
+        return path, None
+    first = (proc.stdout or "").strip().splitlines()
+    if not first or proc.returncode != 0:
+        return path, None
+    parts = first[0].strip().rsplit(None, 1)
+    version = parts[-1] if len(parts) == 2 else None
+    return path, version
+
+
+def _run(args: list[str]) -> Any:
+    cli = _resolve_cli_path()
+    if not (os.path.isfile(cli) and os.access(cli, os.X_OK)):
+        raise EspnUnavailable("binary_not_found", cli)
+    try:
+        proc = subprocess.run(
+            [cli, *args, "--agent"],
             capture_output=True,
             text=True,
             timeout=_TIMEOUT,
             env=_env(),
         )
     except FileNotFoundError:
-        raise EspnUnavailable("binary_not_found", _CLI)
+        raise EspnUnavailable("binary_not_found", cli)
     except subprocess.TimeoutExpired:
         raise EspnUnavailable("timeout", f"{_TIMEOUT}s")
     except Exception as exc:
