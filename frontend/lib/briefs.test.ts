@@ -9,6 +9,7 @@ import {
   rerunBrief,
   saveBrief,
   takeRerun,
+  updateBrief,
 } from "./briefs";
 
 function installLocalStorage() {
@@ -91,6 +92,40 @@ test("throwing storage warns loudly and falls back to memory", () => {
     (console as unknown as Record<string, unknown>).warn = orig;
     installLocalStorage();
   }
+});
+
+test("typed revision guard accepts matching writes, rejects stale ones", () => {
+  installLocalStorage();
+  const doc = saveBrief({ title: "t", question: "q?", rows: null });
+  assert.equal(doc.rev, 1);
+  const ok = updateBrief(doc.id, { title: "t2" }, 1);
+  assert.equal(ok.ok, true);
+  if (ok.ok) assert.equal(ok.doc.rev, 2);
+  const stale = updateBrief(doc.id, { title: "t3" }, 1);
+  assert.equal(stale.ok, false);
+  if (!stale.ok && stale.current) assert.equal(stale.current.title, "t2");
+  assert.equal(getBrief(doc.id)?.title, "t2");
+  const missing = updateBrief("nope", { title: "x" }, 0);
+  assert.equal(missing.ok, false);
+  assert.equal(missing.current, null);
+  removeBrief(doc.id);
+});
+
+test("legacy docs without a revision compare as zero", () => {
+  installLocalStorage();
+  const doc = saveBrief({ title: "t", question: "q?", rows: null });
+  const raw = JSON.parse(
+    ((globalThis as Record<string, unknown>).localStorage as { getItem: (k: string) => string }).getItem(
+      "dime_briefs_v1",
+    ),
+  );
+  delete raw[0].rev;
+  ((globalThis as Record<string, unknown>).localStorage as { setItem: (k: string, v: string) => void }).setItem(
+    "dime_briefs_v1",
+    JSON.stringify(raw),
+  );
+  const first = updateBrief(doc.id, { title: "t2" }, 0);
+  assert.equal(first.ok, true);
 });
 
 test("pack hash helpers read revision and compare staleness", () => {

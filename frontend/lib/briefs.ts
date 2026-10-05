@@ -6,6 +6,11 @@ export interface BriefDoc {
   rows: unknown;
   meta?: Record<string, unknown> | null;
   packHash?: string | null;
+  rev?: number;
+}
+
+export function docRev(doc: BriefDoc | null): number {
+  return doc && typeof doc.rev === "number" ? doc.rev : 0;
 }
 
 const KEY = "dime_briefs_v1";
@@ -126,6 +131,7 @@ export function saveBrief(input: {
     rows: input.rows ?? null,
     meta: input.meta ?? null,
     packHash: input.packHash ?? null,
+    rev: 1,
   };
   const docs = readAll().filter((b) => b.id !== doc.id);
   docs.push(doc);
@@ -135,6 +141,27 @@ export function saveBrief(input: {
 
 export function removeBrief(id: string) {
   writeAll(readAll().filter((b) => b.id !== id));
+}
+
+export function updateBrief(
+  id: string,
+  patch: { title?: string; question?: string },
+  expectedRev: number,
+): { ok: true; doc: BriefDoc } | { ok: false; current: BriefDoc | null } {
+  const docs = readAll();
+  const at = docs.findIndex((b) => b.id === id);
+  if (at < 0) return { ok: false, current: null };
+  const current = docs[at];
+  if (docRev(current) !== expectedRev) return { ok: false, current };
+  const next: BriefDoc = {
+    ...current,
+    ...(patch.title !== undefined ? { title: patch.title } : null),
+    ...(patch.question !== undefined ? { question: patch.question } : null),
+    rev: expectedRev + 1,
+  };
+  docs[at] = next;
+  writeAll(docs);
+  return { ok: true, doc: next };
 }
 
 export function rerunBrief(doc: BriefDoc): string {
