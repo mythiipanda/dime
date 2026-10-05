@@ -1,20 +1,106 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import MatchupPreviewView, { parsePreview } from "../../components/MatchupPreviewView";
 import { getRevision } from "../../lib/api";
 import {
   briefStale,
+  docRev,
   getBrief,
   listBriefs,
   packHashOf,
   removeBrief,
   rerunBrief,
+  updateBrief,
   type BriefDoc,
 } from "../../lib/briefs";
 
 function briefTitle(doc: BriefDoc): string {
   return doc.title || doc.question.slice(0, 80);
+}
+
+function BriefEditor({ doc, onSaved }: { doc: BriefDoc; onSaved: () => void }) {
+  const [title, setTitle] = useState(doc.title);
+  const [question, setQuestion] = useState(doc.question);
+  const [conflict, setConflict] = useState(false);
+  const saved = useRef({ title: doc.title, question: doc.question, rev: docRev(doc) });
+
+  useEffect(() => {
+    if (title === saved.current.title && question === saved.current.question) return;
+    const id = setTimeout(() => {
+      const result = updateBrief(doc.id, { title, question }, saved.current.rev);
+      if (result.ok) {
+        saved.current = { title, question, rev: docRev(result.doc) };
+        setConflict(false);
+        onSaved();
+      } else {
+        setConflict(true);
+      }
+    }, 600);
+    return () => clearTimeout(id);
+  }, [title, question, doc.id, onSaved]);
+
+  const reload = () => {
+    const current = getBrief(doc.id);
+    if (!current) return;
+    setTitle(current.title);
+    setQuestion(current.question);
+    saved.current = { title: current.title, question: current.question, rev: docRev(current) };
+    setConflict(false);
+    onSaved();
+  };
+
+  const field = {
+    display: "block",
+    width: "100%",
+    border: "1px solid var(--color-stone-border)",
+    borderRadius: 8,
+    padding: "6px 10px",
+    fontSize: 13,
+    color: "var(--color-ink-black)",
+    background: "var(--color-pure-white)",
+    marginBottom: 8,
+  } as const;
+
+  return (
+    <div style={{ marginBottom: 12 }}>
+      <input
+        className="field"
+        style={field}
+        value={title}
+        onChange={(e) => setTitle(e.target.value)}
+        aria-label="Brief title"
+      />
+      <input
+        className="field"
+        style={field}
+        value={question}
+        onChange={(e) => setQuestion(e.target.value)}
+        aria-label="Brief question"
+      />
+      {conflict ? (
+        <div style={{ fontSize: 12, color: "var(--color-warm-gray)", marginBottom: 4 }}>
+          Brief changed elsewhere. Your edits kept.{" "}
+          <button
+            type="button"
+            onClick={reload}
+            style={{
+              background: "none",
+              border: "none",
+              padding: 0,
+              cursor: "pointer",
+              fontSize: 12,
+              fontWeight: 500,
+              color: "var(--color-warm-gray)",
+              textDecoration: "underline",
+            }}
+          >
+            Reload saved
+          </button>
+        </div>
+      ) : null}
+    </div>
+  );
 }
 
 export default function BriefsPage() {
@@ -154,6 +240,7 @@ export default function BriefsPage() {
                     This brief may be out of date.
                   </div>
                 ) : null}
+                <BriefEditor key={active.id} doc={active} onSaved={refresh} />
                 <MatchupPreviewView rows={active.rows} meta={active.meta ?? undefined} />
               </>
             ) : (

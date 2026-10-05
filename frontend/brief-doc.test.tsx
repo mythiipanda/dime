@@ -209,6 +209,31 @@ describe("matchup brief doc", () => {
     }
   });
 
+  it("editor fields render the saved values with no conflict notice", async () => {
+    saveBrief({
+      title: "BOS at NYK",
+      question: "How do Boston and New York match up Friday?",
+      rows: PREVIEW_ROWS,
+    });
+    const host = await mountEl(React.createElement(BriefsPage));
+    await act(async () => {
+      buttons(host, "BOS at NYK")[0].click();
+      await new Promise((r) => setTimeout(r, 30));
+    });
+    const titleBox = host.querySelector(
+      'input[aria-label="Brief title"]',
+    ) as HTMLInputElement | null;
+    const questionBox = host.querySelector(
+      'input[aria-label="Brief question"]',
+    ) as HTMLInputElement | null;
+    assert.ok(titleBox, "title field missing");
+    assert.ok(questionBox, "question field missing");
+    assert.equal(titleBox.value, "BOS at NYK");
+    assert.equal(questionBox.value, "How do Boston and New York match up Friday?");
+    assert.ok(!host.textContent?.includes("Brief changed elsewhere"));
+    assert.equal(buttons(host, "Reload saved").length, 0);
+  });
+
   it("briefs page lists, opens, and re-runs a saved brief", async () => {
     const restore = isolateFetch(() => Promise.reject(new TypeError("offline")));
     try {
