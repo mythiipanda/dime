@@ -193,6 +193,7 @@ def test_a_real_season_through_the_capability_returns_the_published_winner(
         "votes_first": 79,
         "votes_second": None,
         "votes_third": None,
+        "winner": "Nikola Jokić",
     }]
     assert envelope.units == {
         "award_share": "fraction_0_1",

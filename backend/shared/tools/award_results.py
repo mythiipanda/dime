@@ -246,6 +246,7 @@ def _placement(row: dict[str, Any]) -> dict[str, Any]:
         "votes_first": _null(row["VOTES_FIRST"]),
         "votes_second": _null(row["VOTES_SECOND"]),
         "votes_third": _null(row["VOTES_THIRD"]),
+        "winner": _null(row["PLAYER"]) or _null(row["COACH"]),
     }
 
 

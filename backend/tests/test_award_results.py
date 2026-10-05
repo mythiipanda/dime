@@ -99,6 +99,7 @@ def test_a_real_season_returns_the_published_winner_and_share(awards_warehouse):
         "votes_first": 79,
         "votes_second": None,
         "votes_third": None,
+        "winner": "Nikola Jokić",
     }]
 
 
