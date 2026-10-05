@@ -54,6 +54,23 @@ test("glide scrolls smooth to the end, jump goes straight to top", () => {
   assert.equal(jumpToTop(null), false);
 });
 
+test("findScroller skips ancestors that cannot scroll", () => {
+  const prev = (globalThis as Record<string, unknown>).getComputedStyle;
+  (globalThis as Record<string, unknown>).getComputedStyle = (el: unknown) =>
+    ({
+      overflowY: (el as Record<string, unknown>).tag === "tall" ? "visible" : "auto",
+    }) as CSSStyleDeclaration;
+  try {
+    const fake = { scrollHeight: 700, clientHeight: 100, tag: "tall", parentElement: null };
+    const pane = { scrollHeight: 700, clientHeight: 257, tag: "pane", parentElement: null };
+    (fake as Record<string, unknown>).parentElement = pane;
+    assert.equal(findScroller({ parentElement: fake }), pane);
+  } finally {
+    if (prev === undefined) delete (globalThis as Record<string, unknown>).getComputedStyle;
+    else (globalThis as Record<string, unknown>).getComputedStyle = prev;
+  }
+});
+
 test("findScroller climbs to the first scrollable ancestor", () => {
   const inner = { scrollHeight: 100, clientHeight: 100, parentElement: null };
   const pane = { scrollHeight: 700, clientHeight: 257, parentElement: null };

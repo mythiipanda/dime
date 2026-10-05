@@ -12,6 +12,16 @@ export function scrolledUp(prevTop: number, nextTop: number): boolean {
   return nextTop + 4 < prevTop;
 }
 
+function scrollsOverflow(el: Element): boolean {
+  if (typeof getComputedStyle !== "function") return true;
+  try {
+    const overflowY = getComputedStyle(el).overflowY;
+    return overflowY === "auto" || overflowY === "scroll" || overflowY === "overlay";
+  } catch {
+    return false;
+  }
+}
+
 export function findScroller(from: { parentElement?: unknown } | null): Element | null {
   let el: unknown = from?.parentElement ?? null;
   while (el && typeof el === "object") {
@@ -22,7 +32,8 @@ export function findScroller(from: { parentElement?: unknown } | null): Element 
     if (
       typeof candidate.scrollHeight === "number" &&
       typeof candidate.clientHeight === "number" &&
-      candidate.scrollHeight > candidate.clientHeight + 4
+      candidate.scrollHeight > candidate.clientHeight + 4 &&
+      scrollsOverflow(candidate)
     ) {
       return candidate;
     }

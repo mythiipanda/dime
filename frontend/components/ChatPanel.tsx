@@ -404,11 +404,13 @@ export default function ChatPanel({ thread, onRunDone, preset, onOpenArtifact, a
   }, []);
 
   const lastTop = useRef(0);
+  const attachedBox = useRef<Element | null>(null);
+  const detachScroll = useRef<(() => void) | null>(null);
   useEffect(() => {
-    const pane = () => findScroller(endRef.current);
+    const box = findScroller(endRef.current);
+    if (!box || box === attachedBox.current) return;
+    if (detachScroll.current) detachScroll.current();
     const onScroll = () => {
-      const box = pane();
-      if (!box) return;
       if (scrolledUp(lastTop.current, box.scrollTop)) {
         setAtBottom(false);
       } else if (isAtBottom(box)) {
@@ -417,9 +419,17 @@ export default function ChatPanel({ thread, onRunDone, preset, onOpenArtifact, a
       lastTop.current = box.scrollTop;
     };
     onScroll();
-    const target = pane() ?? window;
-    target.addEventListener("scroll", onScroll, { passive: true });
-    return () => target.removeEventListener("scroll", onScroll);
+    lastTop.current = box.scrollTop;
+    box.addEventListener("scroll", onScroll, { passive: true });
+    attachedBox.current = box;
+    detachScroll.current = () => box.removeEventListener("scroll", onScroll);
+  });
+  useEffect(() => {
+    return () => {
+      if (detachScroll.current) detachScroll.current();
+      detachScroll.current = null;
+      attachedBox.current = null;
+    };
   }, []);
 
   useEffect(() => {
