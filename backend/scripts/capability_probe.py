@@ -1,13 +1,4 @@
 #!/usr/bin/env python3
-"""Measure every declared endpoint once per rung and rewrite the table.
-
-The capability table answers one question per rung: has a probe seen this
-endpoint take it? Whatever the probe could not settle is written as
-``unmeasured``, which the adapter reads as no support, so no endpoint inherits
-a rung nobody witnessed. Credentials come from the loaded settings and are
-never printed, logged, or written into the table.
-"""
-
 from __future__ import annotations
 
 import argparse
@@ -47,6 +38,7 @@ from v2.adapters.structured import (
     normalize_endpoint,
     wire_schema_for,
 )
+from v2.adapters.models import strict_output_json_schema
 from v2.contracts import TaskSpec
 
 PROBE = "capability_probe"
@@ -79,7 +71,6 @@ class Target:
 
 
 def declared_targets() -> tuple[Target, ...]:
-    """One target per endpoint the adapter may route a stage to."""
     return (
         Target("gemini", GEMINI_BASE_URL, _gemini_model(), "gemini_api_key"),
         Target("nvidia", NVIDIA_NIM_BASE_URL, _nvidia_nim_model(),
@@ -102,7 +93,7 @@ def strict_request(model: str) -> dict[str, Any]:
         "response_format": {"type": "json_schema", "json_schema": {
             "name": "task_spec", "strict": True, "schema": wire_schema_for(
                 OutputStrategy.STRICT_SCHEMA,
-                TaskSpec.model_json_schema()).schema}},
+                strict_output_json_schema(TaskSpec)).schema}},
         "temperature": 0,
     }
 
@@ -110,7 +101,7 @@ def strict_request(model: str) -> dict[str, Any]:
 def tool_request(model: str, *, strict: bool) -> dict[str, Any]:
     function: dict[str, Any] = {
         "name": "task_spec", "parameters": wire_schema_for(
-            OutputStrategy.TOOL_CALL, TaskSpec.model_json_schema()).schema}
+            OutputStrategy.TOOL_CALL, strict_output_json_schema(TaskSpec)).schema}
     if strict:
         function["strict"] = True
     return {
@@ -208,13 +199,6 @@ STRENGTH: dict[Support, int] = {
 
 def merge_row(kept: dict[str, Any] | None, observed: dict[str, Any]
               ) -> dict[str, Any]:
-    """The strongest evidence either the table or this run holds.
-
-    A probe that times out, hits a rate limit, or meets an expired credential
-    says nothing about the endpoint, so it must not erase what a previous
-    probe witnessed. A rung only ever moves from unmeasured to an observed
-    answer, and the strongest observed answer wins.
-    """
     if kept is None:
         return observed
     merged = dict(observed)

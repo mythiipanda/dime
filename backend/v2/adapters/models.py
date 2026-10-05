@@ -96,12 +96,6 @@ NIM_THINKING_OFF_EXTRA_BODY: dict[str, Any] = {
 
 def strict_output_json_schema(schema: type[BaseModel], *,
                               strict: bool = True) -> dict[str, Any]:
-    """The schema the agent hands the wire, which is not the declared one.
-
-    pydantic-ai generates the schema with its tool generator and then rewrites
-    it for the provider profile, so measuring the declared model schema
-    measures a shape no endpoint is ever sent.
-    """
     generated = TypeAdapter(schema).json_schema(
         schema_generator=GenerateToolJsonSchema)
     return OpenAIJsonSchemaTransformer(generated, strict=strict).walk()
