@@ -11,6 +11,7 @@ class Workspace(BaseModel):
     owner: str = Field(min_length=1, max_length=256)
     member_thread_ids: list[str] = Field(default_factory=list, max_length=1024)
     member_brief_ids: list[str] = Field(default_factory=list, max_length=1024)
+    owner_token_hash: str = Field(default="", max_length=256)
     created_at: datetime
     updated_at: datetime
 
