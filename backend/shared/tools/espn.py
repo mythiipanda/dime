@@ -1,12 +1,14 @@
 import json
 import os
 import subprocess
+import time
 from typing import Any
 from langchain_core.tools import tool
 
 _DEFAULT_CLI = os.path.expanduser("~/.local/bin/espn-pp-cli")
 _BIN_DIR = os.path.expanduser("~/.local/bin")
 _TIMEOUT = 30
+PROBE_BUDGET_S = 60
 EXPECTED_CLI_VERSION = "2026.9.2"
 
 _PAIRS = {
@@ -68,7 +70,7 @@ def cli_version_info() -> tuple[str, str | None]:
     return path, version
 
 
-def _run(args: list[str]) -> Any:
+def _run(args: list[str], timeout: int | float = _TIMEOUT) -> Any:
     cli = _resolve_cli_path()
     if not (os.path.isfile(cli) and os.access(cli, os.X_OK)):
         raise EspnUnavailable("binary_not_found", cli)
@@ -77,7 +79,7 @@ def _run(args: list[str]) -> Any:
             [cli, *args, "--agent"],
             capture_output=True,
             text=True,
-            timeout=_TIMEOUT,
+            timeout=timeout,
             env=_env(),
         )
     except FileNotFoundError:
@@ -125,19 +127,27 @@ def get_espn_scores(sport: str) -> Any:
 @tool(description="Detailed recap for one game by ESPN event id: final score, box score, stat leaders, scoring plays, and win probability. Get the event id from get_espn_scores first.")
 def get_espn_event_summary(event_id: str) -> Any:
     eid = event_id.strip()
-    last_error: EspnUnavailable | None = None
-    for s, l in _PROBE_ORDER:
+    failures: list[str] = []
+    deadline = time.monotonic() + PROBE_BUDGET_S
+    for index, (s, l) in enumerate(_PROBE_ORDER):
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            skipped = ", ".join(
+                f"{sport}/{league}" for sport, league in _PROBE_ORDER[index:])
+            failures.append(f"budget_exhausted_skipped: {skipped}")
+            break
         try:
-            data = _run(["summary", s, l, "--event", eid])
+            data = _run(["summary", s, l, "--event", eid],
+                        timeout=max(1, min(_TIMEOUT, remaining)))
         except EspnUnavailable as exc:
             if exc.reason in ("binary_not_found", "timeout"):
                 return _failure("get_espn_event_summary", exc)
-            last_error = exc
+            failures.append(f"{s}/{l}: {exc.reason}")
             continue
         if isinstance(data, dict) and isinstance(data.get("results"), dict):
             if data["results"].get("error"):
-                last_error = EspnUnavailable(
-                    "service_error", str(data["results"]["error"]))
+                failures.append(
+                    f"{s}/{l}: service_error: {data['results']['error']}")
                 continue
             return {
                 "tool": "get_espn_event_summary",
@@ -150,27 +160,17 @@ def get_espn_event_summary(event_id: str) -> Any:
                     "source": "espn",
                 },
             }
-        last_error = EspnUnavailable("no_summary", f"no summary for event {eid}")
-    if last_error is not None:
-        return _failure("get_espn_event_summary", last_error)
+        failures.append(f"{s}/{l}: no_summary")
+    detail = "; ".join(failures) if failures else f"no summary for event {eid}"
     return {"tool": "get_espn_event_summary", "ok": False,
-            "error": f"espn-pp-cli unavailable: no_summary: no summary found for event {eid}"}
+            "error": f"espn-pp-cli unavailable: no_summary: {detail}"[:400]}
 
 
 @tool(description="Current spread, total, and moneyline lines for a sport's slate, as pricing context for breaking down matchups. Analysis only, never betting advice. Pass sport as nfl, nba, mlb, or nhl.")
 def get_espn_odds(sport: str) -> Any:
-    try:
-        pair = _resolve(sport)
-        data = _run(["odds", pair[0], pair[1]])
-    except EspnUnavailable as exc:
-        return _failure("get_espn_odds", exc)
     return {
         "tool": "get_espn_odds",
-        "ok": True,
-        "rows": data,
-        "meta": {
-            "sport": sport.strip().lower(),
-            "source": "espn",
-            "analysis_only": True,
-        },
+        "ok": False,
+        "error": "espn-pp-cli unavailable: disabled_pending_stance: "
+                 "betting-lines output quarantined pending stance decision",
     }
