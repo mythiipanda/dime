@@ -47,7 +47,7 @@ def _family_for(name: str, tool) -> str:
     if name in DESK_OVERRIDE:
         return DESK_OVERRIDE[name]
     mod = getattr(getattr(tool, "func", None), "__module__", None) or ""
-    if mod.startswith("app.tools."):
+    if mod.startswith(("app.tools.", "shared.tools.")):
         return mod.rsplit(".", 1)[-1]
     return "misc"
 
