@@ -1238,6 +1238,32 @@
     "dependent_entity_arguments": {},
     "description": "Filter and aggregate shots by player, team, zone, period, result, or clock."
   },
+  "sql_exec": {
+    "arguments": {
+      "properties": {
+        "season": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "sql": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "sql"
+      ],
+      "type": "object"
+    },
+    "dependent_entity_arguments": {},
+    "description": "Agent-written read-only SQL over the warehouse for an analyst question no prebuilt tool covers. The agent supplies one SELECT or WITH statement and the rows come back as evidence. Rows are computed from that SQL over the named tables, so the SQL is part of the evidence identity and a number from this capability never reads as a curated table value."
+  },
   "standings": {
     "arguments": {
       "properties": {

@@ -901,7 +901,7 @@ def test_game_prediction_envelope_preserves_matchup_arguments_and_units():
     assert env.rows["matchup"] == {"home": "NYK", "away": "BOS"}
 
 
-def test_prediction_uses_tool_default_season_for_implicit_matchup_date():
+def test_prediction_carries_task_default_season_for_implicit_matchup_date():
     from v2.adapters.core import _task_arguments
     from v2.contracts import EntityRef, PlanNode, SeasonRef, TaskSpec
 
@@ -918,7 +918,7 @@ def test_prediction_uses_tool_default_season_for_implicit_matchup_date():
         arguments={"a": "team-celtics", "b": "team-knicks", "season": "2026-27"},
     )
     assert _task_arguments("game_prediction", node, task, []) == {
-        "a": "Boston Celtics", "b": "New York Knicks",
+        "a": "Boston Celtics", "b": "New York Knicks", "season": "2026-27",
     }
 
 
