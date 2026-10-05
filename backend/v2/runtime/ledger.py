@@ -205,11 +205,13 @@ def _validate_assistant_attempt(data: dict[str, Any]) -> None:
     attempt_keys = {"provider_attempts", "model_requests", "repaired",
                     "null_as_omitted_drops", "carried_from_intake",
                     "ranked_argument_conflicts", "usage_unknown",
-                    "reasoning_content_promotions", "duration_ms"}
+                    "reasoning_content_promotions", "duration_ms",
+                    "output_strategy"}
     provider_attempts = data.get("provider_attempts", [])
     promotions = data.get("reasoning_content_promotions", [])
     safe_attempt_keys = {"route", "provider", "model", "attempt_number",
-                         "exception_type", "message_class", "latency_ms",
+                         "output_strategy", "exception_type", "message_class",
+                         "latency_ms",
                          "failure_top_class", "failure_class_chain",
                          "failure_phase", "failure_validation_errors",
                          "failure_validation_subtype", "failure_schema_sha256",
@@ -219,6 +221,8 @@ def _validate_assistant_attempt(data: dict[str, Any]) -> None:
         SAFE_PYDANTIC_ERROR_TYPES, SAFE_FAILURE_VALIDATION_SUBTYPES,
         USAGE_UNKNOWN_REASONS,
     )
+    from v2.adapters.structured import STRATEGY_LADDER
+    output_strategies = {strategy.value for strategy in STRATEGY_LADDER}
     safe_exception_names = {*SAFE_FAILURE_EXCEPTION_CLASSES, "<unknown-exception>"}
     safe_error_types = {*SAFE_PYDANTIC_ERROR_TYPES, "<unknown-error-type>"}
     def safe_string(value: Any, limit: int = 120) -> bool:
@@ -271,6 +275,8 @@ def _validate_assistant_attempt(data: dict[str, Any]) -> None:
         and item["attempt_number"] >= 1
         and safe_string(item.get("message_class"))
         and ("exception_type" not in item or item["exception_type"] in safe_exception_names)
+        and ("output_strategy" not in item
+             or item["output_strategy"] in output_strategies)
         and isinstance(item.get("latency_ms"), int)
         and not isinstance(item.get("latency_ms"), bool)
         and item["latency_ms"] >= 0
@@ -344,6 +350,8 @@ def _validate_assistant_attempt(data: dict[str, Any]) -> None:
         valid = (required_accepted <= set(data) <= {*required_accepted, *attempt_keys}
                  and attempts_valid and promotions_valid
                  and isinstance(data.get("output"), dict)
+                 and (data.get("output_strategy") is None
+                      or data["output_strategy"] in output_strategies)
                  and isinstance(data.get("provider"), str)
                  and bool(data["provider"].strip())
                  and isinstance(data.get("model"), str)

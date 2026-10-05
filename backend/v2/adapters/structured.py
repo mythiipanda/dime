@@ -29,18 +29,44 @@ STRATEGY_LADDER: Final[tuple[OutputStrategy, ...]] = (
 )
 
 
+class CapabilityTableError(ValueError):
+    pass
+
+
+class Support(StrEnum):
+    MEASURED = "measured"
+    REFUSED = "refused"
+    UNMEASURED = "unmeasured"
+
+    @property
+    def supported(self) -> bool:
+        return self is Support.MEASURED
+
+
+_SUPPORT_FLAGS: Final[tuple[str, ...]] = (
+    "strict_json_schema", "tool_calling", "strict_tool_definitions")
+
+
+@dataclass(frozen=True)
+class CapabilityMeasurement:
+    probe: str
+    measured_at: str
+    models: tuple[str, ...]
+
+
 @dataclass(frozen=True)
 class EndpointCapabilities:
     endpoint: str
-    strict_json_schema: bool = False
-    tool_calling: bool = False
-    strict_tool_definitions: bool = False
+    strict_json_schema: Support = Support.UNMEASURED
+    tool_calling: Support = Support.UNMEASURED
+    strict_tool_definitions: Support = Support.UNMEASURED
+    measurement: CapabilityMeasurement | None = None
 
     def supports(self, strategy: OutputStrategy) -> bool:
         if strategy is OutputStrategy.STRICT_SCHEMA:
-            return self.strict_json_schema
+            return self.strict_json_schema.supported
         if strategy is OutputStrategy.TOOL_CALL:
-            return self.tool_calling
+            return self.tool_calling.supported
         return True
 
 
@@ -54,21 +80,17 @@ def output_type_for(strategy: OutputStrategy, schema: type[BaseModel],
     if strategy is OutputStrategy.STRICT_SCHEMA:
         return NativeOutput(schema, strict=True)
     if strategy is OutputStrategy.TOOL_CALL:
-        return ToolOutput(schema, strict=capabilities.strict_tool_definitions)
+        return ToolOutput(
+            schema, strict=capabilities.strict_tool_definitions.supported)
     return PromptedOutput(schema)
-
-
-class CapabilityTableError(ValueError):
-    pass
 
 
 CAPABILITY_TABLE_PATH: Final[Path] = Path(__file__).with_name(
     "endpoint_capabilities.json")
 _CAPABILITY_ENTRY_KEYS: Final[frozenset[str]] = frozenset(
-    {"base_url", "strict_json_schema", "tool_calling",
-     "strict_tool_definitions"})
-_CAPABILITY_FLAGS: Final[tuple[str, ...]] = (
-    "strict_json_schema", "tool_calling", "strict_tool_definitions")
+    {"base_url", *_SUPPORT_FLAGS})
+_MEASUREMENT_KEYS: Final[frozenset[str]] = frozenset(
+    {"probe", "measured_at", "models"})
 
 
 def normalize_endpoint(base_url: str) -> str:
@@ -76,6 +98,34 @@ def normalize_endpoint(base_url: str) -> str:
     if parts.scheme != "https" or not parts.netloc:
         raise CapabilityTableError(f"endpoint base_url must be https: {base_url!r}")
     return f"{parts.scheme}://{parts.netloc}{parts.path}".rstrip("/").casefold()
+
+
+def _support(value: object, endpoint: str, flag: str) -> Support:
+    try:
+        return Support(value)
+    except ValueError as error:
+        raise CapabilityTableError(
+            f"{flag} for {endpoint} must be measured or refused, never an "
+            f"assumption: {value!r}") from error
+
+
+def _measurement(entry: Mapping[str, Any]) -> CapabilityMeasurement | None:
+    raw = entry.get("measurement")
+    if raw is None:
+        return None
+    if (not isinstance(raw, Mapping) or set(raw) != _MEASUREMENT_KEYS
+            or not isinstance(raw["probe"], str) or not raw["probe"].strip()
+            or not isinstance(raw["measured_at"], str)
+            or not raw["measured_at"].strip()
+            or not isinstance(raw["models"], list)
+            or not raw["models"]
+            or not all(isinstance(model, str) and model.strip()
+                       for model in raw["models"])):
+        raise CapabilityTableError(
+            f"measurement needs {sorted(_MEASUREMENT_KEYS)}: {raw!r}")
+    return CapabilityMeasurement(
+        probe=raw["probe"], measured_at=raw["measured_at"],
+        models=tuple(raw["models"]))
 
 
 def load_capability_table(
@@ -87,20 +137,26 @@ def load_capability_table(
         raise CapabilityTableError("capability table needs an endpoints list")
     table: dict[str, EndpointCapabilities] = {}
     for entry in entries:
-        if not isinstance(entry, Mapping) or set(entry) != _CAPABILITY_ENTRY_KEYS:
+        if (not isinstance(entry, Mapping)
+                or not _CAPABILITY_ENTRY_KEYS <= set(entry)
+                or set(entry) - _CAPABILITY_ENTRY_KEYS - {"measurement"}):
             raise CapabilityTableError(
-                f"capability entry needs exactly {sorted(_CAPABILITY_ENTRY_KEYS)}")
-        if not all(isinstance(entry[key], bool) for key in _CAPABILITY_FLAGS):
-            raise CapabilityTableError(
-                f"capability entry for {entry['base_url']} needs boolean "
-                f"capabilities: {list(_CAPABILITY_FLAGS)}")
+                f"capability entry needs exactly "
+                f"{sorted({*_CAPABILITY_ENTRY_KEYS, 'measurement'})}")
         endpoint = normalize_endpoint(str(entry["base_url"]))
         if endpoint in table:
             raise CapabilityTableError(f"duplicate capability entry for {endpoint}")
+        flags = {flag: _support(entry[flag], endpoint, flag)
+                 for flag in _SUPPORT_FLAGS}
+        measurement = _measurement(entry)
+        if (measurement is None
+                and any(flag is not Support.UNMEASURED
+                        for flag in flags.values())):
+            raise CapabilityTableError(
+                f"capability row for {endpoint} reports an outcome without a "
+                "measurement")
         table[endpoint] = EndpointCapabilities(
-            endpoint=endpoint,
-            **{flag: bool(entry[flag]) for flag in _CAPABILITY_FLAGS},
-        )
+            endpoint=endpoint, measurement=measurement, **flags)
     return table
 
 
@@ -279,8 +335,6 @@ TRANSIENT_STATUS_CODES: Final[frozenset[int]] = frozenset(
     {408, 409, 425, 429, 500, 502, 503, 504})
 PERMANENT_STATUS_CODES: Final[frozenset[int]] = frozenset({401, 403, 404})
 SCHEMA_REJECTION_STATUS_CODES: Final[frozenset[int]] = frozenset({400, 415, 422})
-RETRYABLE_KINDS: Final[frozenset[FailureKind]] = frozenset(
-    {FailureKind.TRANSIENT, FailureKind.UNKNOWN})
 TRANSIENT_MARKERS: Final[tuple[str, ...]] = (
     "timed out", "timeout", "rate limit", "ratelimit", "too many requests",
     "connection reset", "connection refused", "connection aborted",
@@ -307,10 +361,6 @@ PERMANENT_EXCEPTION_NAMES: Final[frozenset[str]] = frozenset({
 STATUS_CODE_ATTRIBUTES: Final[tuple[str, ...]] = ("status_code", "http_status")
 MAX_FAILURE_CARRIERS: Final[int] = 8
 MAX_FAILURE_DETAIL_CHARS: Final[int] = 2000
-
-
-def should_retry(kind: FailureKind) -> bool:
-    return kind in RETRYABLE_KINDS
 
 
 def classify_failure(*, status_code: int | None, detail: str,
@@ -374,3 +424,51 @@ def _failure_carriers(carriers: Iterable[BaseException]) -> Iterable[BaseExcepti
         if isinstance(item, BaseExceptionGroup):
             pending.extend(child for child in item.exceptions
                            if isinstance(child, BaseException))
+
+
+DESCENDING_KINDS: Final[frozenset[FailureKind]] = frozenset(
+    {FailureKind.SCHEMA_REJECTED, FailureKind.TRANSIENT, FailureKind.UNKNOWN})
+
+
+@dataclass(frozen=True)
+class LadderAttempt:
+    rung: OutputStrategy
+    attempt_number: int
+    failure_kind: FailureKind | None
+
+
+class StrategyLadder:
+    """The rungs one stage call has left, and the ones it has already lost.
+
+    A stage call owns its ladder, so a stage that has to descend does not
+    move any other stage. The floor is terminal: its failure is the answer.
+    """
+
+    def __init__(self, capabilities: EndpointCapabilities) -> None:
+        self._index = STRATEGY_LADDER.index(resolve_strategy(capabilities))
+        self._attempts: list[LadderAttempt] = []
+
+    @property
+    def rung(self) -> OutputStrategy:
+        return STRATEGY_LADDER[self._index]
+
+    @property
+    def at_floor(self) -> bool:
+        return self._index == len(STRATEGY_LADDER) - 1
+
+    @property
+    def attempts(self) -> tuple[LadderAttempt, ...]:
+        return tuple(self._attempts)
+
+    def record(self, *, attempt_number: int,
+               failure_kind: FailureKind | None) -> None:
+        self._attempts.append(
+            LadderAttempt(self.rung, attempt_number, failure_kind))
+
+    def descend(self, kind: FailureKind) -> OutputStrategy | None:
+        """The rung given up, or None when the ladder holds its ground."""
+        if kind not in DESCENDING_KINDS or self.at_floor:
+            return None
+        given_up = self.rung
+        self._index += 1
+        return given_up

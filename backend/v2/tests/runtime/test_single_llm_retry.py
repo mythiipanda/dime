@@ -152,21 +152,19 @@ def test_backoff_honors_retry_after_floor(monkeypatch):
 
 
 def test_route_policies_have_no_failover_or_masking_keys():
-    from v2.adapters.models import ROUTE_POLICIES
-    for route, policy in ROUTE_POLICIES.items():
-        assert "secondary_limit" not in policy, route
-        assert "deterministic_fallback" not in policy, route
+    from v2.adapters.models import MODEL_ROUTES, route_budgets
+    for route in MODEL_ROUTES:
+        policy = route_budgets(None, route)
+        assert set(vars(policy)) == {
+            "attempt_timeout_s", "total_budget_s"}, route
 
 
-def test_route_policy_attempt_budgets_and_timeouts():
-    from v2.adapters.models import ROUTE_POLICIES
-    assert ROUTE_POLICIES["planner"]["attempt_timeout_s"] == 30.0
-    assert ROUTE_POLICIES["planner"]["max_attempts"] == 2
-    assert ROUTE_POLICIES["planner"]["total_budget_s"] == 60.0
-    assert ROUTE_POLICIES["intake"]["total_budget_s"] == 60.0
-    assert ROUTE_POLICIES["requirement_review"]["total_budget_s"] == 60.0
-    assert ROUTE_POLICIES["synthesizer"]["total_budget_s"] == 50.0
-    assert ROUTE_POLICIES["semantic_verifier"]["total_budget_s"] == 60.0
+def test_no_route_budget_can_kill_a_model_that_answers_in_45_seconds():
+    from v2.adapters.models import MODEL_ROUTES, route_budgets
+    for route in MODEL_ROUTES:
+        policy = route_budgets(None, route)
+        assert policy.attempt_timeout_s is None, route
+        assert policy.total_budget_s is None, route
 
 
 def _envelope(route="intake"):
@@ -178,13 +176,15 @@ def _envelope(route="intake"):
 
 class _Model:
     def __init__(self, name="primary"):
-        from v2.adapters.structured import (EndpointCapabilities, resolve_strategy)
+        from v2.adapters.structured import EndpointCapabilities, Support
         self.model_name = name
         self.capabilities = EndpointCapabilities(
             endpoint="https://stub.invalid/v1",
-            strict_json_schema=True, tool_calling=True,
-            strict_tool_definitions=True)
-        self.strategy = resolve_strategy(self.capabilities)
+            strict_json_schema=Support.MEASURED, tool_calling=Support.MEASURED,
+            strict_tool_definitions=Support.MEASURED)
+
+    def on_ladder(self, ladder):
+        return self
 
 
 def _ok_result():
@@ -325,7 +325,9 @@ async def test_second_model_is_never_consulted(monkeypatch):
     with pytest.raises(RuntimeError, match="all structured-output providers failed"):
         await m.generate(schema=TaskSpec, prompt="p",
                          payload={"q": "x"}, envelope=_envelope())
-    assert calls == ["primary", "primary"]
+    assert calls == ["primary"] * 3
+    assert [f["output_strategy"] for f in m.last_failures] == [
+        "strict_schema", "tool_call", "prompted_json"]
     assert {f["provider"] for f in m.last_failures} == {"gemini"}
 
 

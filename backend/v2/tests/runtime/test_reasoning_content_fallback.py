@@ -11,7 +11,7 @@ from openai.types.chat import ChatCompletion
 from pydantic import BaseModel
 from pydantic_ai.models.openai import OpenAIChatModel
 from v2.adapters.models import DimeOpenAIChatModel
-from v2.adapters.structured import EndpointCapabilities
+from v2.adapters.structured import EndpointCapabilities, Support
 from pydantic_ai.providers.openai import OpenAIProvider
 
 from v2.adapters.models import (
@@ -324,8 +324,8 @@ def _mock_openai_model(
         model, provider=OpenAIProvider(openai_client=mock_client),
         capabilities=EndpointCapabilities(
             endpoint="https://integrate.api.nvidia.com/v1",
-            strict_json_schema=True, tool_calling=True,
-            strict_tool_definitions=True),
+            strict_json_schema=Support.MEASURED, tool_calling=Support.MEASURED,
+            strict_tool_definitions=Support.MEASURED),
     )
 
 

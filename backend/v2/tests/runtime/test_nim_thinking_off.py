@@ -9,7 +9,7 @@ import pytest
 from openai.types.chat import ChatCompletion
 from pydantic import BaseModel
 from v2.adapters.models import DimeOpenAIChatModel
-from v2.adapters.structured import EndpointCapabilities
+from v2.adapters.structured import EndpointCapabilities, Support
 from pydantic_ai.providers.openai import OpenAIProvider
 
 from shared.config import settings
@@ -193,8 +193,8 @@ async def test_generate_sends_thinking_off_wire_body(
         provider=OpenAIProvider(openai_client=mock_client),
         capabilities=EndpointCapabilities(
             endpoint="https://integrate.api.nvidia.com/v1",
-            strict_json_schema=True, tool_calling=True,
-            strict_tool_definitions=True),
+            strict_json_schema=Support.MEASURED, tool_calling=Support.MEASURED,
+            strict_tool_definitions=Support.MEASURED),
     )
     monkeypatch.setattr(
         ProviderStructuredModel, "_models", lambda self: [("nvidia", openai_model)]
@@ -292,8 +292,8 @@ async def test_promotion_recorded_on_attempt_ledger(
         provider=OpenAIProvider(openai_client=mock_client),
         capabilities=EndpointCapabilities(
             endpoint="https://integrate.api.nvidia.com/v1",
-            strict_json_schema=True, tool_calling=True,
-            strict_tool_definitions=True),
+            strict_json_schema=Support.MEASURED, tool_calling=Support.MEASURED,
+            strict_tool_definitions=Support.MEASURED),
     )
     monkeypatch.setattr(
         ProviderStructuredModel, "_models", lambda self: [("nvidia", openai_model)]

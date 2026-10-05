@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import pytest
-from v2.adapters.models import ROUTE_POLICIES
+from v2.adapters.models import load_model_budgets, route_budgets
 from v2.contracts import (
     Claim,
     ClaimKind,
@@ -87,11 +87,14 @@ def make_runtime(mechanical, semantic) -> Runtime:
 
 
 def test_semantic_route_policy_matches_planner_grade_resilience() -> None:
-    policy = ROUTE_POLICIES["semantic_verifier"]
-    assert policy["max_attempts"] == 2
-    assert "secondary_limit" not in policy
-    assert "transient_classes" not in policy
-    assert policy["total_budget_s"] == 60.0
+    policy = route_budgets(None, "semantic_verifier")
+    assert policy == route_budgets(None, "planner")
+    assert policy.attempt_timeout_s is None
+    assert policy.total_budget_s is None
+    assert set(vars(policy)) == {"attempt_timeout_s", "total_budget_s"}
+    assert set(load_model_budgets().routes) <= {
+        "intake", "requirement_review", "planner", "synthesizer",
+        "semantic_verifier", "repair"}
 
 
 @pytest.mark.anyio

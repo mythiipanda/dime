@@ -6,6 +6,8 @@ import re
 import time
 from collections.abc import Callable, Iterable
 
+from shared.config import settings
+
 from v2.api.events import BindingDiagnostic
 from v2.contracts import (
     ClaimResult,
@@ -116,7 +118,9 @@ class Runtime:
 
 
 
-        RUN_MODEL_DEADLINE.set(turn_started + 60.0)
+        RUN_MODEL_DEADLINE.set(
+            None if settings.dime_v2_model_deadline_s <= 0
+            else turn_started + settings.dime_v2_model_deadline_s)
         if self._ledger is not None:
             if run_id is not None and self._ledger.run_id != run_id:
                 raise ValueError("ledger run id does not match runtime run id")

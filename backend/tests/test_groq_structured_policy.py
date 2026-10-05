@@ -127,10 +127,19 @@ def test_groq_faults_attempt_once_then_continue_with_transparent_evidence(monkey
         async def run(self, payload):
             if self.model.model_name == providers.GROQ_DEFAULT: raise failure
             return SimpleNamespace(output=Out(value="ok"))
+    from v2.adapters.structured import EndpointCapabilities, Support
+    capabilities=EndpointCapabilities(
+        endpoint="https://api.groq.com/openai/v1",
+        strict_json_schema=Support.REFUSED, tool_calling=Support.MEASURED,
+        strict_tool_definitions=Support.MEASURED)
+    def endpoint(name):
+        stub = SimpleNamespace(model_name=name, capabilities=capabilities)
+        stub.on_ladder = lambda ladder: stub
+        return stub
     model=ProviderStructuredModel("groq",providers.GROQ_DEFAULT)
     model._models=lambda: [
-        ("groq",SimpleNamespace(model_name=providers.GROQ_DEFAULT)),
-        ("openrouter",SimpleNamespace(model_name=providers.OPENROUTER_DEFAULT))]
+        ("groq",endpoint(providers.GROQ_DEFAULT)),
+        ("openrouter",endpoint(providers.OPENROUTER_DEFAULT))]
     monkeypatch.setattr("v2.adapters.models.Agent",FakeAgent)
     env=RequestEnvelope.freeze(provider="groq",model=providers.GROQ_DEFAULT,
         route="intake",prompt="p",context={},tool_schemas={},planner_version="v2")

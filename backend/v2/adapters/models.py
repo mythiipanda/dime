@@ -9,10 +9,12 @@ import re
 import time
 import marshal
 from collections.abc import Callable, Mapping, Sequence
+from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from decimal import Decimal
-from functools import cached_property
-from typing import Any, Protocol, TypeVar
+from functools import cached_property, lru_cache
+from pathlib import Path
+from typing import Any, Final, Protocol, TypeVar
 
 from openai import AsyncOpenAI, APITimeoutError, APIConnectionError, RateLimitError
 from openai.resources.chat import AsyncChat
@@ -59,15 +61,15 @@ from v2.runtime.budget import RUN_MODEL_DEADLINE
 from v2.skills import SkillLibrary, skill_hashes
 from v2.arguments import RequirementReviewWire, PlannerOutputWire, provider_to_source
 from v2.adapters.structured import (
+    STRATEGY_LADDER,
     EndpointCapabilities,
     FailureKind,
     OutputStrategy,
+    StrategyLadder,
     capabilities_for,
     classify_exception,
     output_type_for,
     repaired_output_payload,
-    resolve_strategy,
-    should_retry,
     wire_schema_for,
 )
 from .capabilities import CAPABILITIES
@@ -166,36 +168,80 @@ RETRY_INITIAL_S = 1.0
 RETRY_MULTIPLIER = 2.0
 RETRY_MAX_S = 60.0
 
-ROUTE_POLICIES: dict[str, dict[str, Any]] = {
-    "intake": {"max_attempts": 2, "attempt_timeout_s": 30.0,
-               "total_budget_s": 60.0},
-    "requirement_review": {"max_attempts": 2, "attempt_timeout_s": 30.0,
-               "total_budget_s": 60.0},
-    "planner": {"max_attempts": 2, "attempt_timeout_s": 30.0,
-               "total_budget_s": 60.0},
-    "synthesizer": {"max_attempts": 2, "attempt_timeout_s": 25.0,
-               "total_budget_s": 50.0},
-    "semantic_verifier": {"max_attempts": 2, "attempt_timeout_s": 30.0,
-               "total_budget_s": 60.0},
-}
-_DEFAULT_ROUTE_POLICY = {"max_attempts": 2, "attempt_timeout_s": 25.0,
-    "total_budget_s": 50.0}
-
-GEMMA_ROUTE_POLICY_OVERRIDES = {"attempt_timeout_s": 90.0,
-    "total_budget_s": 200.0}
-GEMMA_HTTP_TIMEOUT_S = 120.0
+MODEL_BUDGETS_PATH: Final[Path] = Path(__file__).with_name("model_budgets.json")
+ROUTE_POLICY_KEYS: Final[frozenset[str]] = frozenset(
+    {"attempt_timeout_s", "total_budget_s"})
 
 
-def _is_gemma_model(model_name: str) -> bool:
-    return "gemma" in str(model_name or "").casefold()
+@dataclass(frozen=True)
+class RoutePolicy:
+    """What the harness may cut a stage call short on. Unset means never."""
+
+    attempt_timeout_s: float | None = None
+    total_budget_s: float | None = None
 
 
-def _route_policy(provider: str, model_name: str,
-                  route: str) -> dict[str, Any]:
-    policy = ROUTE_POLICIES.get(route, _DEFAULT_ROUTE_POLICY)
-    if provider == "gemini" and _is_gemma_model(model_name):
-        policy = {**policy, **GEMMA_ROUTE_POLICY_OVERRIDES}
-    return policy
+@dataclass(frozen=True)
+class ModelBudgets:
+    transport_timeout_s: float
+    defaults: RoutePolicy = RoutePolicy()
+    routes: Mapping[str, RoutePolicy] = field(default_factory=dict)
+
+    def policy_for(self, route: str) -> RoutePolicy:
+        return self.routes.get(route, self.defaults)
+
+
+def _seconds(value: Any, field_name: str) -> float | None:
+    if value is None:
+        return None
+    if (isinstance(value, bool) or not isinstance(value, (int, float))
+            or value <= 0):
+        raise ValueError(f"{field_name} must be a positive number or null")
+    return float(value)
+
+
+def _policy(entry: Any) -> RoutePolicy:
+    if not isinstance(entry, Mapping) or set(entry) - ROUTE_POLICY_KEYS:
+        raise ValueError(
+            f"route policy needs only {sorted(ROUTE_POLICY_KEYS)}: {entry!r}")
+    return RoutePolicy(
+        **{name: _seconds(entry.get(name), name) for name in ROUTE_POLICY_KEYS})
+
+
+def load_model_budgets(path: Path | None = None) -> ModelBudgets:
+    document = json.loads((path or MODEL_BUDGETS_PATH).read_text())
+    if not isinstance(document, Mapping) or set(document) - {
+            "transport_timeout_s", "default", "routes"}:
+        raise ValueError("model budgets need transport_timeout_s, "
+                         "default and routes")
+    transport = _seconds(document.get("transport_timeout_s"),
+                         "transport_timeout_s")
+    if transport is None:
+        raise ValueError("transport_timeout_s must bound a socket read")
+    routes = document.get("routes", {})
+    if not isinstance(routes, Mapping) or not all(
+            isinstance(route, str) for route in routes):
+        raise ValueError("routes must map a route name to its policy")
+    return ModelBudgets(
+        transport_timeout_s=transport,
+        defaults=_policy(document.get("default", {})),
+        routes={route: _policy(entry) for route, entry in routes.items()})
+
+
+@lru_cache(maxsize=1)
+def _shipped_model_budgets() -> ModelBudgets:
+    return load_model_budgets()
+
+
+def route_budgets(budgets: ModelBudgets | None, route: str) -> RoutePolicy:
+    return (budgets or _shipped_model_budgets()).policy_for(route)
+
+
+async def _within(awaitable: Any, timeout_s: float | None) -> Any:
+    if timeout_s is None:
+        return await awaitable
+    with anyio.fail_after(timeout_s):
+        return await awaitable
 
 
 SAFE_FAILURE_EXCEPTION_CLASSES = frozenset({
@@ -207,7 +253,6 @@ SAFE_FAILURE_EXCEPTION_CLASSES = frozenset({
 })
 SAFE_FAILURE_PHASES = frozenset({"content_filter", "no_tool_or_empty",
     "json_or_schema_validation", "http", "transport", "timeout", "unknown"})
-MODEL_ROUTES = frozenset(ROUTE_POLICIES)
 SAFE_PYDANTIC_ERROR_TYPES = frozenset({
     "extra_forbidden", "json_invalid", "literal_error", "missing",
     "model_type", "string_type", "int_type", "int_parsing", "bool_type",
@@ -267,10 +312,21 @@ def _read_usage_requests(result: Any) -> tuple[int | None, str | None]:
 
 class DimeOpenAIChatModel(OpenAIChatModel):
     def __init__(self, model_name: str, *, provider: Any,
-                 capabilities: EndpointCapabilities) -> None:
+                 capabilities: EndpointCapabilities,
+                 ladder: StrategyLadder | None = None) -> None:
         super().__init__(model_name, provider=provider)
         self.capabilities = capabilities
-        self.strategy = resolve_strategy(capabilities)
+        self.ladder = ladder or StrategyLadder(capabilities)
+
+    @property
+    def strategy(self) -> OutputStrategy:
+        return self.ladder.rung
+
+    def on_ladder(self, ladder: StrategyLadder) -> DimeOpenAIChatModel:
+        """A twin bound to one stage call's ladder over the same client."""
+        return DimeOpenAIChatModel(
+            self.model_name, provider=self._provider,
+            capabilities=self.capabilities, ladder=ladder)
 
     def _wire_schema(self, schema: Mapping[str, Any]) -> dict[str, Any]:
         return wire_schema_for(self.strategy, schema).schema
@@ -305,14 +361,17 @@ def _map_wire_response_format(json_schema: Mapping[str, Any], *,
 class ProviderStructuredModel:
     def __init__(self, provider: ProviderName, model: str, *,
                  capabilities: Mapping[str, EndpointCapabilities] | None = None,
+                 model_budgets: ModelBudgets | None = None,
                  http_client: httpx.AsyncClient | None = None) -> None:
         self.provider = provider
         self.model = model
         self._capabilities = capabilities
+        self._budgets = model_budgets
         self._http_client = http_client
         self.last_provider: ProviderName | None = None
         self.last_model: str | None = None
-        self.last_failures: list[dict[str, str]] = []
+        self.last_output_strategy: OutputStrategy | None = None
+        self.last_failures: list[dict[str, Any]] = []
         self.last_request_count: int | None = None
         self.last_usage_unknown: str | None = None
         self.last_promotions: list[dict[str, Any]] = []
@@ -515,7 +574,7 @@ class ProviderStructuredModel:
             "failure_route": route,
         }
 
-    def _models(self) -> list[tuple[ProviderName, OpenAIChatModel]]:
+    def _models(self) -> list[tuple[ProviderName, DimeOpenAIChatModel]]:
         configs = {
             "gemini": (GEMINI_BASE_URL, settings.gemini_api_key,
                        _gemini_model()),
@@ -560,9 +619,8 @@ class ProviderStructuredModel:
         client = ReasoningContentFallbackClient(
             base_url=base_url,
             api_key=api_key,
-            timeout=(GEMMA_HTTP_TIMEOUT_S
-                     if provider == "gemini" and _is_gemma_model(accepted_model)
-                     else settings.llm_timeout_s),
+            timeout=(self._budgets
+                     or _shipped_model_budgets()).transport_timeout_s,
             max_retries=0,
             default_headers=headers,
             thinking_off=(provider == "nvidia"),
@@ -588,39 +646,46 @@ class ProviderStructuredModel:
             raise RuntimeError("no configured structured-output provider")
         self.last_provider = None
         self.last_model = None
+        self.last_output_strategy = None
         self.last_failures = []
         self.last_promotions = []
         self.last_decode_extra = None
         user_prompt = json.dumps(payload, sort_keys=True, default=str)
         provider, model = models[0]
-        policy = _route_policy(provider, model.model_name, envelope.route)
-        now = time.monotonic()
-        run_deadline = RUN_MODEL_DEADLINE.get()
-        deadline = min(now + float(policy["total_budget_s"]),
-                       run_deadline if run_deadline is not None else float("inf"))
+        policy = route_budgets(self._budgets, envelope.route)
+        budget_deadline = (None if policy.total_budget_s is None
+                           else time.monotonic() + policy.total_budget_s)
+        deadlines = [value for value in
+                     (budget_deadline, RUN_MODEL_DEADLINE.get())
+                     if value is not None]
+        deadline = min(deadlines) if deadlines else None
         budget_exhausted = False
-        max_attempts = int(policy["max_attempts"])
-        for attempt_number in range(1, max_attempts + 1):
-            remaining = deadline - time.monotonic()
-            if remaining <= 0:
+        ladder = StrategyLadder(model.capabilities)
+        for attempt_number in range(1, len(STRATEGY_LADDER) + 1):
+            remaining = (None if deadline is None
+                         else deadline - time.monotonic())
+            if remaining is not None and remaining <= 0:
                 budget_exhausted = True
                 break
+            rung = ladder.rung
+            attempt_model = model.on_ladder(ladder)
+            attempt_timeout = policy.attempt_timeout_s
+            if attempt_timeout is not None and remaining is not None:
+                attempt_timeout = min(attempt_timeout, remaining)
             started = time.perf_counter()
             try:
                 agent = Agent(
-                    model,
+                    attempt_model,
                     instructions=prompt,
                     output_type=output_type_for(
-                        model.strategy, schema, model.capabilities),
+                        rung, schema, model.capabilities),
                     retries=settings.llm_max_retries,
                     capabilities=[Hooks(
                         before_output_validate=repaired_output_payload)],
                 )
-                run = agent.run(user_prompt)
-                with anyio.fail_after(
-                    min(float(policy["attempt_timeout_s"]), remaining)
-                ):
-                    result = await run
+                result = await _within(agent.run(user_prompt), attempt_timeout)
+                ladder.record(attempt_number=attempt_number, failure_kind=None)
+                self.last_output_strategy = rung
                 self.last_provider = provider
                 self.last_model = (
                     f"mistral_free_limit:{model.model_name}"
@@ -635,12 +700,15 @@ class ProviderStructuredModel:
                 return result.output
             except Exception as exc:
                 failure_kind = classify_exception(exc)
+                ladder.record(
+                    attempt_number=attempt_number, failure_kind=failure_kind)
                 self.last_failures.append({
                     "route": envelope.route,
                     "provider": provider,
                     "model": (f"mistral_free_limit:{model.model_name}"
                               if provider == "mistral" else model.model_name),
                     "attempt_number": attempt_number,
+                    "output_strategy": str(rung),
                     "exception_type": _safe_exception_name(type(exc)),
                     "message_class": (
                         str(FailureKind.SCHEMA_REJECTED)
@@ -651,13 +719,11 @@ class ProviderStructuredModel:
                     **self._safe_failure_taxonomy(
                         exc, schema=schema, route=envelope.route),
                 })
-                if attempt_number >= max_attempts:
-                    break
-                if not should_retry(failure_kind):
+                if ladder.descend(failure_kind) is None:
                     break
                 wait = self._backoff_delay_s(
                     attempt_number - 1, self._retry_after_s(exc))
-                if wait >= deadline - time.monotonic():
+                if deadline is not None and wait >= deadline - time.monotonic():
                     budget_exhausted = True
                     break
                 await anyio.sleep(wait)
@@ -667,6 +733,7 @@ class ProviderStructuredModel:
                 "provider": envelope.route,
                 "model": "deadline",
                 "attempt_number": len(self.last_failures) + 1,
+                "output_strategy": str(ladder.rung),
                 "exception_type": "TimeoutError",
                 "message_class": f"{envelope.route}_deadline",
                 "latency_ms": 0,
@@ -690,6 +757,7 @@ _PROVIDER_ROUTE_PROMPT_NAMES = {
     "semantic_verifier": "verifier",
 }
 _PROVIDER_ROUTE_PROMPTS: dict[str, str] | None = None
+MODEL_ROUTES = frozenset(_PROVIDER_ROUTE_PROMPT_NAMES)
 
 
 def bind_provider_route_prompts() -> dict[str, str]:
@@ -2861,6 +2929,8 @@ class RecordedStructuredModel:
             self._model.last_request_count = None
         if hasattr(self._model, "last_usage_unknown"):
             self._model.last_usage_unknown = None
+        if hasattr(self._model, "last_output_strategy"):
+            self._model.last_output_strategy = None
         self._ledger.append(
             LedgerKind.MODEL_REQUEST,
             turn_id=self._turn_id,
@@ -2903,6 +2973,7 @@ class RecordedStructuredModel:
             extra = decode(result)
         request_count = getattr(self._model, "last_request_count", None)
         usage_unknown = getattr(self._model, "last_usage_unknown", None)
+        output_strategy = getattr(self._model, "last_output_strategy", None)
         data = {
                 "status": "accepted",
                 "output": result.model_dump(mode="json"),
@@ -2919,6 +2990,8 @@ class RecordedStructuredModel:
                 "reasoning_content_promotions": list(getattr(
                     self._model, "last_promotions", [])),
             }
+        if output_strategy is not None:
+            data["output_strategy"] = str(output_strategy)
         if request_count is not None:
             data["model_requests"] = request_count
             data["repaired"] = request_count > 1

@@ -44,6 +44,7 @@ class Settings(BaseSettings):
     llm_max_retries: int = 1
     dime_v2_pre_tool_timeout_s: float = Field(default=150.0, gt=0)
     dime_v2_run_timeout_s: float = Field(default=360.0, gt=0)
+    dime_v2_model_deadline_s: float = Field(default=0.0, ge=0)
     dime_v2_node_timeout_s: float | None = Field(default=None, gt=0)
     dime_first_token_timeout_s: float = Field(default=45.0, gt=0)
     chat_rate_per_minute: int = 20

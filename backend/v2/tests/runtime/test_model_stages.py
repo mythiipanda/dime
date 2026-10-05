@@ -43,15 +43,22 @@ def _seed_warehouse_seasons(tmp_path, monkeypatch, seasons):
 
 
 def _structured_endpoint(model_name):
-    from v2.adapters.structured import EndpointCapabilities, resolve_strategy
-    capabilities = EndpointCapabilities(
-        endpoint="https://stub.invalid/v1", strict_json_schema=True,
-        tool_calling=True, strict_tool_definitions=True)
-    return type("ProviderModel", (), {
-        "model_name": model_name,
-        "capabilities": capabilities,
-        "strategy": resolve_strategy(capabilities),
-    })
+    from v2.adapters.structured import EndpointCapabilities, Support
+
+    class ProviderModel:
+        capabilities = EndpointCapabilities(
+            endpoint="https://stub.invalid/v1",
+            strict_json_schema=Support.MEASURED,
+            tool_calling=Support.MEASURED,
+            strict_tool_definitions=Support.MEASURED)
+
+        def __init__(self, name):
+            self.model_name = name
+
+        def on_ladder(self, ladder):
+            return self
+
+    return ProviderModel(model_name)
 
 
 class StubModel:
@@ -412,7 +419,7 @@ def test_pydanticai_provider_boundary_uses_only_configured_model(monkeypatch) ->
 
 
 def test_pydanticai_models_keep_timeout_and_openrouter_attribution(monkeypatch) -> None:
-    from v2.adapters.models import ProviderStructuredModel
+    from v2.adapters.models import ProviderStructuredModel, load_model_budgets
 
     monkeypatch.setattr("v2.adapters.models.settings.nvidia_nim_api_key", "")
     monkeypatch.setattr("v2.adapters.models.settings.openrouter_api_key", "key")
@@ -423,7 +430,8 @@ def test_pydanticai_models_keep_timeout_and_openrouter_attribution(monkeypatch) 
         "openrouter", "openrouter/free")._models()
     assert provider == "openrouter"
     client = model.client
-    assert client.timeout == settings.llm_timeout_s
+    assert client.timeout == load_model_budgets().transport_timeout_s
+    assert client.timeout > settings.llm_timeout_s
     assert client.max_retries == 0
     assert client.default_headers["X-Title"] == "Dime NBA Analyst"
 
@@ -741,7 +749,9 @@ async def test_provider_boundary_does_not_expose_provider_error_text(monkeypatch
 
     assert str(caught.value) == (
         "all structured-output providers failed "
-        "[inception:RuntimeError:provider_error, inception:RuntimeError:provider_error]"
+        "[inception:RuntimeError:provider_error, "
+        "inception:RuntimeError:provider_error, "
+        "inception:RuntimeError:provider_error]"
     )
     assert "secret upstream body" not in str(caught.value)
 
@@ -1633,10 +1643,13 @@ async def test_provider_structured_failure_preserves_sanitized_diagnostics(monke
     assert "inception:TimeoutError:timeout" in text
     assert "secret payload" not in text
     assert "secret upstream" not in text
-    assert len(model.last_failures) == 2
+    assert len(model.last_failures) == 3
     assert [failure["message_class"] for failure in model.last_failures] == [
-        "timeout", "timeout"]
-    assert [failure["attempt_number"] for failure in model.last_failures] == [1, 2]
+        "timeout"] * 3
+    assert [failure["attempt_number"] for failure in model.last_failures] == [
+        1, 2, 3]
+    assert [failure["output_strategy"] for failure in model.last_failures] == [
+        "strict_schema", "tool_call", "prompted_json"]
     assert {key: model.last_failures[0][key] for key in (
         "provider", "exception_type", "message_class")} == {
         "provider": "inception", "exception_type": "TimeoutError",
@@ -2232,11 +2245,12 @@ async def test_intake_primary_exhausted_raises_without_secondary(monkeypatch):
     class M:
         def __init__(self,n):
             self.model_name=n
-            from v2.adapters.structured import EndpointCapabilities, resolve_strategy
+            from v2.adapters.structured import EndpointCapabilities, Support
             self.capabilities=EndpointCapabilities(
-                endpoint="https://stub.invalid/v1",strict_json_schema=True,
-                tool_calling=True,strict_tool_definitions=True)
-            self.strategy=resolve_strategy(self.capabilities)
+                endpoint="https://stub.invalid/v1",strict_json_schema=Support.MEASURED,
+                tool_calling=Support.MEASURED,
+                strict_tool_definitions=Support.MEASURED)
+            self.on_ladder=lambda ladder: self
     monkeypatch.setattr("v2.adapters.models.Agent",A);monkeypatch.setattr("v2.adapters.models.random.uniform",lambda a,b:0)
     async def no_sleep(value):return None
     monkeypatch.setattr("v2.adapters.models.anyio.sleep",no_sleep)
@@ -2244,9 +2258,11 @@ async def test_intake_primary_exhausted_raises_without_secondary(monkeypatch):
     e=RequestEnvelope.freeze(provider="inception",model="primary",route="intake",prompt="p",context={},tool_schemas={},planner_version="v2")
     with pytest.raises(RuntimeError,match="all structured-output providers failed"):
         await m.generate(schema=TaskSpec,prompt="p",payload={"same":"input"},envelope=e)
-    assert [x[0] for x in calls]==["primary","primary"]
+    assert [x[0] for x in calls]==["primary"]*3
     assert m.last_provider is None
     assert {f["provider"] for f in m.last_failures}=={"inception"}
+    assert [f["output_strategy"] for f in m.last_failures]==[
+        "strict_schema","tool_call","prompted_json"]
 
 
 @pytest.mark.anyio
@@ -2264,17 +2280,20 @@ async def test_intake_schema_failure_raises_without_retry_or_secondary(monkeypat
     class M:
         def __init__(self,n):
             self.model_name=n
-            from v2.adapters.structured import EndpointCapabilities, resolve_strategy
+            from v2.adapters.structured import EndpointCapabilities, Support
             self.capabilities=EndpointCapabilities(
-                endpoint="https://stub.invalid/v1",strict_json_schema=True,
-                tool_calling=True,strict_tool_definitions=True)
-            self.strategy=resolve_strategy(self.capabilities)
+                endpoint="https://stub.invalid/v1",strict_json_schema=Support.MEASURED,
+                tool_calling=Support.MEASURED,
+                strict_tool_definitions=Support.MEASURED)
+            self.on_ladder=lambda ladder: self
     monkeypatch.setattr("v2.adapters.models.Agent",A)
     m=ProviderStructuredModel("inception","primary");monkeypatch.setattr(m,"_models",lambda:[("inception",M("primary")),("mistral",M("secondary"))])
     e=RequestEnvelope.freeze(provider="inception",model="primary",route="intake",prompt="p",context={},tool_schemas={},planner_version="v2")
     with pytest.raises(RuntimeError,match="all structured-output providers failed"):
         await m.generate(schema=TaskSpec,prompt="p",payload={},envelope=e)
-    assert calls==["primary"]
+    assert calls==["primary"]*3
+    assert [f["output_strategy"] for f in m.last_failures]==[
+        "strict_schema","tool_call","prompted_json"]
     assert m.last_failures[0]["message_class"]=="schema_rejected"
 
 @pytest.mark.anyio
@@ -2305,23 +2324,31 @@ async def test_intake_global_deadline_stops_single_model_retries(monkeypatch):
     class M:
         def __init__(self,n):
             self.model_name=n
-            from v2.adapters.structured import EndpointCapabilities, resolve_strategy
+            from v2.adapters.structured import EndpointCapabilities, Support
             self.capabilities=EndpointCapabilities(
-                endpoint="https://stub.invalid/v1",strict_json_schema=True,
-                tool_calling=True,strict_tool_definitions=True)
-            self.strategy=resolve_strategy(self.capabilities)
+                endpoint="https://stub.invalid/v1",strict_json_schema=Support.MEASURED,
+                tool_calling=Support.MEASURED,
+                strict_tool_definitions=Support.MEASURED)
+            self.on_ladder=lambda ladder: self
     monkeypatch.setattr("v2.adapters.models.Agent",A)
     monkeypatch.setattr("v2.adapters.models.time.monotonic",lambda:clock.value)
     monkeypatch.setattr("v2.adapters.models.time.perf_counter",lambda:0)
     monkeypatch.setattr("v2.adapters.models.random.uniform",lambda a,b:0)
     async def no_sleep(value):return None
     monkeypatch.setattr("v2.adapters.models.anyio.sleep",no_sleep)
-    m=ProviderStructuredModel("inception","m0");monkeypatch.setattr(m,"_models",lambda:[("inception",M("m0"))])
-    e=RequestEnvelope.freeze(provider="inception",model="m0",route="intake",prompt="p",context={},tool_schemas={},planner_version="v2")
-    with pytest.raises(RuntimeError,match="intake_deadline"):
-        await m.generate(schema=TaskSpec,prompt="p",payload={},envelope=e)
+    from v2.runtime.budget import RUN_MODEL_DEADLINE
+    RUN_MODEL_DEADLINE.set(60)
+    try:
+        m=ProviderStructuredModel("inception","m0");monkeypatch.setattr(m,"_models",lambda:[("inception",M("m0"))])
+        e=RequestEnvelope.freeze(provider="inception",model="m0",route="intake",prompt="p",context={},tool_schemas={},planner_version="v2")
+        with pytest.raises(RuntimeError,match="intake_deadline"):
+            await m.generate(schema=TaskSpec,prompt="p",payload={},envelope=e)
+    finally:
+        RUN_MODEL_DEADLINE.set(None)
     assert calls==["m0"]
-    assert m.last_failures[-1]["message_class"]=="intake_deadline"
+    assert [(f["output_strategy"],f["message_class"])
+            for f in m.last_failures]==[
+                ("strict_schema","timeout"),("tool_call","intake_deadline")]
 
 
 @pytest.mark.anyio
@@ -2362,13 +2389,15 @@ async def test_fused_intake_returns_unreviewed_task_without_fabricated_nodes():
 
 
 def test_route_policy_table_bounds_model_owned_routes():
-    from v2.adapters.models import ROUTE_POLICIES
-    assert ROUTE_POLICIES["requirement_review"]["total_budget_s"] <= 60
-    assert ROUTE_POLICIES["planner"]["total_budget_s"] <= 60
-    assert ROUTE_POLICIES["planner"]["attempt_timeout_s"] == 30.0
-    for policy in ROUTE_POLICIES.values():
-        assert "secondary_limit" not in policy
-        assert "deterministic_fallback" not in policy
+    from v2.adapters.models import MODEL_ROUTES, load_model_budgets, route_budgets
+    budgets = load_model_budgets()
+    assert budgets.transport_timeout_s >= 600.0
+    for route in MODEL_ROUTES:
+        policy = route_budgets(None, route)
+        assert set(vars(policy)) == {
+            "attempt_timeout_s", "total_budget_s"}, route
+        assert policy.attempt_timeout_s is None, route
+        assert policy.total_budget_s is None, route
 
 @pytest.mark.anyio
 async def test_run_model_deadline_is_shared_across_sequential_routes(monkeypatch):

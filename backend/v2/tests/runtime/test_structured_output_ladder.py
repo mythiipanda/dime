@@ -3,6 +3,8 @@ from __future__ import annotations
 import inspect
 import json
 import re
+from collections.abc import Mapping
+from typing import Any
 
 import httpx
 import pytest
@@ -22,12 +24,16 @@ from v2.adapters.models import (
 from v2.adapters.structured import (
     CAPABILITY_TABLE_PATH,
     STRICT_SAFE_PATTERNS,
+    CapabilityMeasurement,
     CapabilityTableError,
     EndpointCapabilities,
     FailureKind,
+    LadderAttempt,
     OutputStrategy,
     STRATEGY_LADDER,
     SchemaNotPortable,
+    StrategyLadder,
+    Support,
     capabilities_for,
     classify_failure,
     load_capability_table,
@@ -37,7 +43,6 @@ from v2.adapters.structured import (
     repair_json_text,
     resolve_strategy,
     sanitize_schema,
-    should_retry,
     wire_schema_for,
 )
 from v2.arguments import PlannerOutputWire, RequirementReviewWire
@@ -78,13 +83,37 @@ LADDER = (
     (OutputStrategy.TOOL_CALL, False, True, False),
     (OutputStrategy.PROMPTED_JSON, False, False, False),
 )
+_SUPPORT_FLAGS = ("strict_json_schema", "tool_calling",
+                  "strict_tool_definitions")
+MEASUREMENT_JSON = {"probe": "test-probe", "measured_at": "2026-10-05",
+                    "models": ["probe-model"]}
+MEASUREMENT = CapabilityMeasurement(
+    probe=MEASUREMENT_JSON["probe"], measured_at=MEASUREMENT_JSON["measured_at"],
+    models=tuple(MEASUREMENT_JSON["models"]))
+
+
+def _write_table(path, *, base_url="https://a.invalid/v1",
+                 strict_json_schema="unmeasured", tool_calling="unmeasured",
+                 strict_tool_definitions="unmeasured", measurement=None,
+                 extra_key=False) -> None:
+    entry = {"base_url": base_url, "strict_json_schema": strict_json_schema,
+             "tool_calling": tool_calling,
+             "strict_tool_definitions": strict_tool_definitions}
+    if measurement is not None:
+        entry["measurement"] = measurement
+    if extra_key:
+        entry["assumed"] = True
+    path.write_text(json.dumps({"endpoints": [entry]}))
 
 
 def _capabilities(strict=True, tools=True, strict_tools=True):
     return EndpointCapabilities(
         endpoint="https://probe.invalid/v1",
-        strict_json_schema=strict, tool_calling=tools,
-        strict_tool_definitions=strict_tools)
+        strict_json_schema=Support.MEASURED if strict else Support.REFUSED,
+        tool_calling=Support.MEASURED if tools else Support.REFUSED,
+        strict_tool_definitions=(Support.MEASURED if strict_tools
+                                 else Support.REFUSED),
+        measurement=MEASUREMENT)
 
 
 def _completion(content=None, tool_arguments=None, finish_reason="stop"):
@@ -124,6 +153,73 @@ def _model(capabilities, wire: Wire) -> DimeOpenAIChatModel:
     return DimeOpenAIChatModel(
         "probe-model", provider=OpenAIProvider(openai_client=client),
         capabilities=capabilities)
+
+
+REFUSALS = {
+    "refused": (400, "invalid schema for response_format"),
+    "server_error": (500, "Internal Server Error"),
+    "unauthorized": (401, "invalid api key"),
+}
+
+
+def rung_of(body: Mapping[str, Any]) -> OutputStrategy:
+    if body.get("response_format", {}).get("type") == "json_schema":
+        return OutputStrategy.STRICT_SCHEMA
+    if body.get("tools"):
+        return OutputStrategy.TOOL_CALL
+    return OutputStrategy.PROMPTED_JSON
+
+
+class LadderEndpoint:
+    """Fake endpoint that answers, or refuses, per rung of the ladder."""
+
+    def __init__(self, *, strict="ok", tools="ok", floor="ok"):
+        self.behavior = {OutputStrategy.STRICT_SCHEMA: strict,
+                         OutputStrategy.TOOL_CALL: tools,
+                         OutputStrategy.PROMPTED_JSON: floor}
+        self.sent: list[dict] = []
+
+    def transport(self) -> httpx.MockTransport:
+        def handler(request: httpx.Request) -> httpx.Response:
+            body = json.loads(request.content)
+            self.sent.append(body)
+            rung = rung_of(body)
+            behavior = self.behavior[rung]
+            if behavior == "ok":
+                return httpx.Response(
+                    200, json=(_completion(tool_arguments='{"answer": "a"}',
+                                           finish_reason="tool_calls")
+                              if rung is OutputStrategy.TOOL_CALL
+                              else _completion(content='{"answer": "a"}')))
+            status, message = REFUSALS[behavior]
+            return httpx.Response(status, json={"error": {
+                "message": message, "type": "invalid_request_error"}})
+        return httpx.MockTransport(handler)
+
+    @property
+    def rungs(self) -> list[OutputStrategy]:
+        return [rung_of(body) for body in self.sent]
+
+
+def _stage_model(endpoint: LadderEndpoint,
+                 capabilities) -> ProviderStructuredModel:
+    client = httpx.AsyncClient(transport=endpoint.transport())
+    chat_model = DimeOpenAIChatModel(
+        "probe-model",
+        provider=OpenAIProvider(openai_client=ReasoningContentFallbackClient(
+            api_key="placeholder", max_retries=0, http_client=client)),
+        capabilities=capabilities)
+    model = ProviderStructuredModel("inception", "probe-model")
+    model._models = lambda: [("inception", chat_model)]
+    return model
+
+
+async def _no_backoff(monkeypatch) -> None:
+    async def no_sleep(value: float) -> None:
+        return None
+
+    monkeypatch.setattr("v2.adapters.models.anyio.sleep", no_sleep)
+    monkeypatch.setattr("v2.adapters.models.random.uniform", lambda a, b: 0)
 
 
 async def _run(capabilities, schema, wire: Wire, retries: int = 2):
@@ -205,34 +301,82 @@ def test_the_capability_table_is_data_and_rejects_a_malformed_row(tmp_path):
     for entry in table.values():
         assert entry.endpoint == normalize_endpoint(entry.endpoint)
     assert capabilities_for(
-        "https://api.groq.com/openai/v1").strict_json_schema is False
+        "https://api.groq.com/openai/v1").supports(
+            OutputStrategy.STRICT_SCHEMA) is False
     unknown = capabilities_for("https://never-probed.invalid/v1")
     assert unknown.supports(OutputStrategy.PROMPTED_JSON) is True
     assert unknown.supports(OutputStrategy.STRICT_SCHEMA) is False
     assert unknown.supports(OutputStrategy.TOOL_CALL) is False
 
     path = tmp_path / "table.json"
-    path.write_text(json.dumps({"endpoints": [
-        {"base_url": "https://a.invalid/v1", "strict_json_schema": True}]}))
+    _write_table(path, strict_json_schema=True, tool_calling=True,
+                 strict_tool_definitions=True)
+    with pytest.raises(CapabilityTableError, match="measured or refused"):
+        load_capability_table(path)
+    _write_table(path, strict_json_schema="assumed", tool_calling=True,
+                 strict_tool_definitions=True)
+    with pytest.raises(CapabilityTableError, match="measured or refused"):
+        load_capability_table(path)
+    _write_table(path, strict_json_schema="measured")
+    with pytest.raises(CapabilityTableError, match="without a measurement"):
+        load_capability_table(path)
+    _write_table(path, strict_json_schema="measured", measurement=MEASUREMENT_JSON)
+    assert load_capability_table(path)["https://a.invalid/v1"] == (
+        EndpointCapabilities(
+            endpoint="https://a.invalid/v1", strict_json_schema="measured",
+            tool_calling="unmeasured", strict_tool_definitions="unmeasured",
+            measurement=MEASUREMENT))
+    _write_table(path, strict_json_schema="refused", tool_calling="refused",
+                 strict_tool_definitions="refused")
     with pytest.raises(CapabilityTableError):
         load_capability_table(path)
-    path.write_text(json.dumps({"endpoints": [
-        {"base_url": "https://a.invalid/v1", "strict_json_schema": "yes",
-         "tool_calling": True, "strict_tool_definitions": True}]}))
+    _write_table(path, strict_json_schema="measured", measurement=MEASUREMENT_JSON,
+                 extra_key=True)
     with pytest.raises(CapabilityTableError):
         load_capability_table(path)
-    path.write_text(json.dumps({"endpoints": [
-        {"base_url": "http://a.invalid/v1", "strict_json_schema": True,
-         "tool_calling": True, "strict_tool_definitions": True}]}))
+    _write_table(path, strict_json_schema="measured", measurement=MEASUREMENT_JSON,
+                 base_url="http://a.invalid/v1")
     with pytest.raises(CapabilityTableError):
         load_capability_table(path)
+    unmeasured = {"base_url": "https://a.invalid/v1",
+                  **{flag: "unmeasured" for flag in _SUPPORT_FLAGS}}
     path.write_text(json.dumps({"endpoints": [
-        {"base_url": "https://a.invalid/v1", "strict_json_schema": True,
-         "tool_calling": True, "strict_tool_definitions": True},
-        {"base_url": "https://a.invalid/v1/", "strict_json_schema": False,
-         "tool_calling": False, "strict_tool_definitions": False}]}))
-    with pytest.raises(CapabilityTableError):
+        unmeasured, {**unmeasured, "base_url": "https://a.invalid/v1/"}]}))
+    with pytest.raises(CapabilityTableError, match="duplicate"):
         load_capability_table(path)
+
+
+def test_the_shipped_table_records_where_each_outcome_came_from():
+    table = load_capability_table()
+    measured = {endpoint: entry for endpoint, entry in table.items()
+                if entry.measurement is not None}
+    assert measured, "no endpoint row carries a measurement"
+    for endpoint, entry in measured.items():
+        assert entry.measurement.probe and entry.measurement.measured_at
+        assert entry.measurement.models
+        assert any(getattr(entry, flag) is not Support.UNMEASURED
+                   for flag in _SUPPORT_FLAGS), endpoint
+    for endpoint, entry in table.items():
+        if entry.measurement is None:
+            assert all(getattr(entry, flag) is Support.UNMEASURED
+                       for flag in _SUPPORT_FLAGS), endpoint
+
+
+def test_only_a_measured_observation_reads_as_support():
+    assert Support.MEASURED.supported is True
+    assert Support.REFUSED.supported is False
+    assert Support.UNMEASURED.supported is False
+    for flag in ("strict_json_schema", "tool_calling"):
+        strategy = OutputStrategy.STRICT_SCHEMA if flag == "strict_json_schema" \
+            else OutputStrategy.TOOL_CALL
+        unmeasured = EndpointCapabilities(endpoint="https://a.invalid/v1")
+        refused = EndpointCapabilities(endpoint="https://a.invalid/v1",
+                                       **{flag: Support.REFUSED})
+        for capabilities in (unmeasured, refused):
+            assert capabilities.supports(strategy) is False
+        assert EndpointCapabilities(
+            endpoint="https://a.invalid/v1", **{flag: Support.MEASURED}
+        ).supports(strategy) is True
 
 
 @pytest.mark.anyio
@@ -309,22 +453,26 @@ def test_no_stage_or_provider_name_decides_the_wire_shape():
         assert forbidden not in source
 
 
-def test_a_rate_limit_is_transient_and_is_retried():
+def descends(kind: FailureKind) -> bool:
+    return StrategyLadder(_capabilities()).descend(kind) is not None
+
+
+def test_a_rate_limit_is_transient_and_descends():
     kind = classify_failure(status_code=429, detail="429 Too Many Requests")
     assert kind is FailureKind.TRANSIENT
-    assert should_retry(kind) is True
+    assert descends(kind) is True
 
 
 @pytest.mark.parametrize("code", [500, 502, 503, 504])
-def test_a_server_error_is_transient_and_is_retried(code):
-    assert should_retry(
-        classify_failure(status_code=code, detail="upstream")) is True
+def test_a_server_error_is_transient_and_descends(code):
+    assert descends(classify_failure(
+        status_code=code, detail="upstream")) is True
 
 
 def test_a_timeout_and_a_connection_reset_are_transient():
-    assert should_retry(classify_failure(
+    assert descends(classify_failure(
         status_code=None, detail="TimeoutError timed out")) is True
-    assert should_retry(classify_failure(
+    assert descends(classify_failure(
         status_code=None, detail="Connection reset by peer")) is True
 
 
@@ -334,35 +482,36 @@ def test_a_grammar_refusal_inside_a_500_is_a_schema_rejection():
         "error: ^(?!^[-+.]*$)[+-]?0*[0-9]*\\.?[0-9]*$ error: look-around, "
         "including look-ahead and look-behind, is not supported while "
         "processing json-schema:///#/$defs/DeclaredCalculation")
-    kind = classify_failure(status_code=500, detail=detail)
-    assert kind is FailureKind.SCHEMA_REJECTED
-    assert should_retry(kind) is False
+    assert classify_failure(status_code=500, detail=detail) is (
+        FailureKind.SCHEMA_REJECTED)
+    assert descends(FailureKind.SCHEMA_REJECTED) is True
 
 
 def test_a_schema_refusal_wrapped_in_a_200_is_a_schema_rejection():
     detail = ("Upstream error: json_schema is not supported, response_format "
               "was rejected")
-    assert should_retry(classify_failure(status_code=200,
-                                         detail=detail)) is False
+    kind = classify_failure(status_code=200, detail=detail)
+    assert kind is FailureKind.SCHEMA_REJECTED
+    assert descends(kind) is True
 
 
 def test_a_400_schema_complaint_is_a_schema_rejection():
-    assert should_retry(classify_failure(
-        status_code=400, detail="invalid schema for response_format")) is False
+    assert classify_failure(
+        status_code=400, detail="invalid schema for response_format") is (
+            FailureKind.SCHEMA_REJECTED)
 
 
-def test_a_validation_failure_is_a_schema_rejection_and_is_not_retried():
-    kind = classify_failure(
+def test_a_validation_failure_is_a_schema_rejection():
+    assert classify_failure(
         status_code=None, detail="1 validation error for TaskSpec",
-        exception_names=frozenset({"ValidationError"}))
-    assert kind is FailureKind.SCHEMA_REJECTED
-    assert should_retry(kind) is False
+        exception_names=frozenset({"ValidationError"})) is (
+            FailureKind.SCHEMA_REJECTED)
 
 
-def test_authentication_and_a_daily_quota_wall_fail_without_retry():
-    assert should_retry(classify_failure(
+def test_authentication_and_a_daily_quota_wall_do_not_descend():
+    assert descends(classify_failure(
         status_code=401, detail="invalid api key")) is False
-    assert should_retry(classify_failure(
+    assert descends(classify_failure(
         status_code=None,
         detail="429 RESOURCE_EXHAUSTED (PerDay, 500/day) quota reset")) is False
 
@@ -404,7 +553,7 @@ async def test_generate_retries_a_429_then_succeeds(monkeypatch):
 
 @pytest.mark.anyio
 @pytest.mark.parametrize("anyio_backend", ["asyncio"])
-async def test_generate_reports_a_schema_rejection_and_never_retries_it(
+async def test_generate_classifies_a_validation_failure_and_walks_the_ladder(
         monkeypatch):
     calls: list[int] = []
 
@@ -425,9 +574,166 @@ async def test_generate_reports_a_schema_rejection_and_never_retries_it(
                        match="all structured-output providers failed"):
         await model.generate(schema=TaskSpec, prompt="p", payload={},
                              envelope=_envelope())
-    assert calls == [1]
+    assert calls == [1, 1, 1]
     assert [failure["message_class"]
-            for failure in model.last_failures] == ["schema_rejected"]
+            for failure in model.last_failures] == ["schema_rejected"] * 3
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("anyio_backend", ["asyncio"])
+async def test_a_stage_refused_on_the_strict_rung_succeeds_on_the_tool_rung(
+        monkeypatch):
+    await _no_backoff(monkeypatch)
+    endpoint = LadderEndpoint(strict="refused")
+    model = _stage_model(endpoint, _capabilities())
+    result = await model.generate(schema=Ping, prompt="p", payload={},
+                                  envelope=_envelope())
+    assert result.answer == "a"
+    assert endpoint.rungs == [OutputStrategy.STRICT_SCHEMA,
+                              OutputStrategy.TOOL_CALL]
+    assert model.last_output_strategy is OutputStrategy.TOOL_CALL
+    assert [(failure["attempt_number"], failure["output_strategy"])
+            for failure in model.last_failures] == [(1, "strict_schema")]
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("anyio_backend", ["asyncio"])
+async def test_a_stage_refused_on_the_tool_rung_succeeds_on_the_prompt_floor(
+        monkeypatch):
+    await _no_backoff(monkeypatch)
+    endpoint = LadderEndpoint(strict="refused", tools="refused")
+    model = _stage_model(endpoint, _capabilities())
+    result = await model.generate(schema=Ping, prompt="p", payload={},
+                                  envelope=_envelope())
+    assert result.answer == "a"
+    assert endpoint.rungs == list(STRATEGY_LADDER)
+    assert model.last_output_strategy is OutputStrategy.PROMPTED_JSON
+    assert [failure["output_strategy"] for failure in model.last_failures] == [
+        "strict_schema", "tool_call"]
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("anyio_backend", ["asyncio"])
+async def test_a_transport_failure_on_the_strict_rung_descends(monkeypatch):
+    await _no_backoff(monkeypatch)
+    endpoint = LadderEndpoint(strict="server_error")
+    model = _stage_model(endpoint, _capabilities())
+    result = await model.generate(schema=Ping, prompt="p", payload={},
+                                  envelope=_envelope())
+    assert result.answer == "a"
+    assert endpoint.rungs == [OutputStrategy.STRICT_SCHEMA,
+                              OutputStrategy.TOOL_CALL]
+    assert [(failure["output_strategy"], failure["message_class"])
+            for failure in model.last_failures] == [
+                ("strict_schema", "server_error")]
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("anyio_backend", ["asyncio"])
+async def test_the_prompt_floor_is_terminal_and_its_failure_is_a_failure(
+        monkeypatch):
+    await _no_backoff(monkeypatch)
+    endpoint = LadderEndpoint(strict="refused", tools="refused", floor="refused")
+    model = _stage_model(endpoint, _capabilities())
+    with pytest.raises(RuntimeError,
+                       match="all structured-output providers failed"):
+        await model.generate(schema=Ping, prompt="p", payload={},
+                             envelope=_envelope())
+    assert endpoint.rungs == list(STRATEGY_LADDER)
+    assert [failure["output_strategy"] for failure in model.last_failures] == [
+        "strict_schema", "tool_call", "prompted_json"]
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("anyio_backend", ["asyncio"])
+async def test_a_permanent_failure_does_not_descend_or_retry(monkeypatch):
+    await _no_backoff(monkeypatch)
+    endpoint = LadderEndpoint(strict="unauthorized")
+    model = _stage_model(endpoint, _capabilities())
+    with pytest.raises(RuntimeError,
+                       match="all structured-output providers failed"):
+        await model.generate(schema=Ping, prompt="p", payload={},
+                             envelope=_envelope())
+    assert endpoint.rungs == [OutputStrategy.STRICT_SCHEMA]
+    assert [failure["message_class"]
+            for failure in model.last_failures] == ["authentication"]
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("anyio_backend", ["asyncio"])
+async def test_a_stage_that_descends_does_not_move_the_next_stage_down(
+        monkeypatch):
+    await _no_backoff(monkeypatch)
+    endpoint = LadderEndpoint(strict="refused")
+    model = _stage_model(endpoint, _capabilities())
+    first = await model.generate(schema=Ping, prompt="p", payload={},
+                                 envelope=_envelope())
+    second = await model.generate(schema=Ping, prompt="p", payload={},
+                                  envelope=_envelope("requirement_review"))
+    assert (first.answer, second.answer) == ("a", "a")
+    assert endpoint.rungs == [
+        OutputStrategy.STRICT_SCHEMA, OutputStrategy.TOOL_CALL,
+        OutputStrategy.STRICT_SCHEMA, OutputStrategy.TOOL_CALL]
+    assert [(failure["route"], failure["output_strategy"])
+            for failure in model.last_failures] == [
+                ("requirement_review", "strict_schema")]
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("anyio_backend", ["asyncio"])
+async def test_the_ledger_records_the_accepted_rung_and_every_failed_rung(
+        monkeypatch):
+    from v2.adapters.models import RecordedStructuredModel
+    from v2.runtime import RunLedger
+
+    await _no_backoff(monkeypatch)
+    endpoint = LadderEndpoint(strict="server_error", tools="refused")
+    model = _stage_model(endpoint, _capabilities())
+    ledger = RunLedger("run")
+    recorded = RecordedStructuredModel(model, ledger, turn_id="turn")
+    result = await recorded.generate(schema=Ping, prompt="p", payload={},
+                                     envelope=_envelope())
+    assert result.answer == "a"
+    attempt = ledger.entries[-1].data
+    assert attempt["status"] == "accepted"
+    assert attempt["output_strategy"] == "prompted_json"
+    assert [(item["output_strategy"], item["attempt_number"])
+            for item in attempt["provider_attempts"]] == [
+                ("strict_schema", 1), ("tool_call", 2)]
+
+
+def test_the_ladder_is_ordered_so_the_floor_is_the_terminal_strategy():
+    assert STRATEGY_LADDER[-1] is OutputStrategy.PROMPTED_JSON
+    ladder = StrategyLadder(_capabilities())
+    assert [ladder.rung] * 1 == [OutputStrategy.STRICT_SCHEMA]
+    assert ladder.descend(FailureKind.SCHEMA_REJECTED) is OutputStrategy.STRICT_SCHEMA
+    assert ladder.descend(FailureKind.TRANSIENT) is OutputStrategy.TOOL_CALL
+    assert ladder.at_floor is True
+    assert ladder.descend(FailureKind.TRANSIENT) is None
+    assert ladder.descend(FailureKind.SCHEMA_REJECTED) is None
+    assert ladder.rung is OutputStrategy.PROMPTED_JSON
+
+
+def test_a_permanent_failure_never_descends_the_ladder():
+    ladder = StrategyLadder(_capabilities())
+    assert ladder.descend(FailureKind.PERMANENT) is None
+    assert ladder.rung is OutputStrategy.STRICT_SCHEMA
+
+
+def test_a_ladder_that_starts_on_the_floor_cannot_move():
+    ladder = StrategyLadder(_capabilities(strict=False, tools=False))
+    assert ladder.rung is OutputStrategy.PROMPTED_JSON
+    assert ladder.descend(FailureKind.TRANSIENT) is None
+
+
+def test_a_ladder_records_every_attempt_it_served():
+    ladder = StrategyLadder(_capabilities())
+    ladder.record(attempt_number=1, failure_kind=FailureKind.TRANSIENT)
+    ladder.descend(FailureKind.TRANSIENT)
+    ladder.record(attempt_number=2, failure_kind=None)
+    assert ladder.attempts == (
+        LadderAttempt(OutputStrategy.STRICT_SCHEMA, 1, FailureKind.TRANSIENT),
+        LadderAttempt(OutputStrategy.TOOL_CALL, 2, None))
 
 
 def test_repair_recovers_markdown_fenced_json():

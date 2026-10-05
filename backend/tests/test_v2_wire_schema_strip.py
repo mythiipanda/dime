@@ -6,7 +6,7 @@ from pydantic import TypeAdapter, ValidationError
 from pydantic_ai.models import OutputObjectDefinition
 from pydantic_ai.providers.openai import OpenAIProvider
 from v2.adapters.models import DimeOpenAIChatModel
-from v2.adapters.structured import EndpointCapabilities, OutputStrategy
+from v2.adapters.structured import EndpointCapabilities, OutputStrategy, Support
 from v2.arguments import PlannerOutputWire
 from v2.contracts import EvidenceRequirement, TaskSpec
 
@@ -65,9 +65,11 @@ STRIPPED_LITERAL = {
 def _make_model(strategy=OutputStrategy.TOOL_CALL):
     capabilities = EndpointCapabilities(
         endpoint="https://stub.invalid/v1",
-        strict_json_schema=strategy is OutputStrategy.STRICT_SCHEMA,
-        tool_calling=strategy is not OutputStrategy.PROMPTED_JSON,
-        strict_tool_definitions=True,
+        strict_json_schema=Support.MEASURED
+        if strategy is OutputStrategy.STRICT_SCHEMA else Support.REFUSED,
+        tool_calling=Support.MEASURED
+        if strategy is not OutputStrategy.PROMPTED_JSON else Support.REFUSED,
+        strict_tool_definitions=Support.MEASURED,
     )
     return DimeOpenAIChatModel(
         "t",
