@@ -83,7 +83,7 @@ def _results(**arguments):
 def test_a_real_season_returns_the_published_winner_and_share(awards_warehouse):
     result = _results(view="winner", award="MVP", season="2023-24")
     assert result["ok"] is True, result
-    assert result["rows"]["placements"] == [{
+    assert result["rows"] == [{
         "season": "2023-24",
         "award": "MVP",
         "player": "Nikola Jokić",
@@ -124,7 +124,7 @@ def test_the_result_declares_itself_a_recorded_outcome_not_a_projection(
 def test_a_coach_award_names_a_coach_and_never_a_player(awards_warehouse):
     result = _results(view="winner", award="COY", season="1997-98")
     assert result["ok"] is True, result
-    placement = result["rows"]["placements"][0]
+    placement = result["rows"][0]
     assert placement["coach"] == "Larry Bird"
     assert placement["player"] is None
     assert placement["team"] == "IND"
@@ -166,7 +166,7 @@ def test_a_player_history_covers_every_season_they_appear_on(awards_warehouse):
                       player="Nikola Jokić")
     assert result["ok"] is True, result
     assert [(row["season"], row["award"], row["rank"], row["rank_label"])
-            for row in result["rows"]["placements"]] == [
+            for row in result["rows"]] == [
         ("2025-26", "ALL_NBA", 1, "1T"),
         ("2025-26", "MVP", 2, "2"),
         ("2023-24", "ALL_NBA", 1, "1T"),
@@ -181,8 +181,8 @@ def test_a_player_history_narrows_to_one_award_when_asked(awards_warehouse):
     result = _results(view="player_awards", award="MVP", season="2025-26",
                       player="Nikola Jokić")
     assert result["ok"] is True, result
-    assert {row["award"] for row in result["rows"]["placements"]} == {"MVP"}
-    assert [row["award_share"] for row in result["rows"]["placements"]] == [
+    assert {row["award"] for row in result["rows"]} == {"MVP"}
+    assert [row["award_share"] for row in result["rows"]] == [
         0.634, 0.935]
 
 
@@ -190,7 +190,7 @@ def test_the_field_returns_every_published_placement_with_its_votes(
         awards_warehouse):
     result = _results(view="field", award="DPOY", season="2023-24")
     assert result["ok"] is True, result
-    placements = result["rows"]["placements"]
+    placements = result["rows"]
     assert len(placements) == 13
     assert [row["rank"] for row in placements] == sorted(
         row["rank"] for row in placements)
@@ -203,19 +203,19 @@ def test_the_field_returns_every_published_placement_with_its_votes(
 
 def test_a_tied_rank_keeps_the_published_rank_and_marks_the_tie(awards_warehouse):
     result = _results(view="field", award="DPOY", season="2023-24")
-    tied = [row for row in result["rows"]["placements"] if row["rank"] == 10]
+    tied = [row for row in result["rows"] if row["rank"] == 10]
     assert [row["rank_label"] for row in tied] == ["10T", "10T", "10T", "10T"]
     assert {row["tied"] for row in tied} == {True}
     assert {row["player"] for row in tied} == {
         "Alex Caruso", "Domantas Sabonis", "Jalen Suggs", "Jarrett Allen"}
-    assert [row["rank"] for row in result["rows"]["placements"]
+    assert [row["rank"] for row in result["rows"]
             if row["tied"] is False and row["rank"] == 10] == []
 
 
 def test_a_tied_first_team_keeps_every_leading_player(awards_warehouse):
     result = _results(view="winner", award="ALL_NBA", season="2023-24")
     assert result["ok"] is True, result
-    placements = result["rows"]["placements"]
+    placements = result["rows"]
     assert len(placements) == 5
     assert {row["rank"] for row in placements} == {1}
     assert {row["rank_label"] for row in placements} == {"1T"}
@@ -226,7 +226,7 @@ def test_a_tied_first_team_keeps_every_leading_player(awards_warehouse):
 def test_a_team_award_is_not_reported_as_a_tie(awards_warehouse):
     result = _results(view="winner", award="ALL_DEFENSE", season="2023-24")
     assert result["ok"] is True, result
-    placements = result["rows"]["placements"]
+    placements = result["rows"]
     assert len(placements) == 5
     assert {row["rank"] for row in placements} == {1}
     assert {row["rank_label"] for row in placements} == {"1st"}
@@ -237,15 +237,15 @@ def test_a_team_award_is_not_reported_as_a_tie(awards_warehouse):
 def test_a_row_that_made_no_team_keeps_a_null_rank_and_its_published_label(
         awards_warehouse):
     result = _results(view="field", award="ALL_NBA", season="2023-24")
-    other = [row for row in result["rows"]["placements"]
+    other = [row for row in result["rows"]
              if row["rank_label"] == "ORV"]
     assert len(other) == 10
     assert {row["rank"] for row in other} == {None}
     assert {row["tied"] for row in other} == {False}
     assert all(row["player"] for row in other)
-    ranked = [row for row in result["rows"]["placements"] if row["rank"]]
+    ranked = [row for row in result["rows"] if row["rank"]]
     assert min(row["rank"] for row in ranked) == 1
-    assert result["rows"]["placements"][-1]["rank"] is None
+    assert result["rows"][-1]["rank"] is None
 
 
 def test_a_ballot_without_vote_counts_reports_them_as_absent(awards_warehouse):
@@ -253,8 +253,8 @@ def test_a_ballot_without_vote_counts_reports_them_as_absent(awards_warehouse):
     assert result["ok"] is True, result
     assert result["meta"]["ballot"] is False
     assert result["meta"]["vote_columns"] == []
-    assert {row["votes_first"] for row in result["rows"]["placements"]} == {None}
-    assert result["rows"]["placements"][0]["rank_label"] == "1st"
+    assert {row["votes_first"] for row in result["rows"]} == {None}
+    assert result["rows"][0]["rank_label"] == "1st"
 
 
 def test_a_season_whose_ballot_never_existed_fails_naming_the_season(
@@ -286,7 +286,7 @@ def test_an_award_surface_form_normalizes_to_its_published_code(awards_warehouse
                       season="2023-24")
     assert result["ok"] is True, result
     assert result["meta"]["award"] == "MIP"
-    assert result["rows"]["placements"][0]["award"] == "MIP"
+    assert result["rows"][0]["award"] == "MIP"
 
 
 def test_an_unrecognized_award_fails_naming_the_published_codes(awards_warehouse):
@@ -377,7 +377,7 @@ def test_an_omitted_season_resolves_to_the_latest_published_ballot(
     result = _results(view="winner", award="MVP")
     assert result["ok"] is True, result
     assert result["meta"]["season"] == "2025-26"
-    assert result["rows"]["placements"][0]["player"] == "Shai Gilgeous-Alexander"
+    assert result["rows"][0]["player"] == "Shai Gilgeous-Alexander"
 
 
 def test_a_player_name_matches_without_its_diacritic(awards_warehouse):

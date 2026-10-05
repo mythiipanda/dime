@@ -378,4 +378,4 @@ def get_award_results(
         "fetched_at": fetched_at,
         "projection_tool": "get_award_race",
     }
-    return {"tool": TOOL, "ok": True, "rows": {"placements": rows}, "meta": meta}
+    return {"tool": TOOL, "ok": True, "rows": rows, "meta": meta}

@@ -139,7 +139,7 @@ def test_the_declared_vocabulary_covers_every_field_the_award_tool_returns(
 
     envelope = call_capability("award_results", {
         "view": "field", "award": "ALL_NBA", "season": "2023-24"})
-    returned = set(envelope.rows["placements"][0])
+    returned = set(envelope.rows[0])
     declared = (set(CAPABILITIES["award_results"].units)
                 | set(CAPABILITIES["award_results"].metric_definitions))
     assert not returned - declared
@@ -177,7 +177,7 @@ def test_a_real_season_through_the_capability_returns_the_published_winner(
         "award_results", {"view": "winner", "award": "MVP", "season": "2023-24"})
     assert envelope.capability == "award_results"
     assert envelope.season == "2023-24"
-    assert envelope.rows["placements"] == [{
+    assert envelope.rows == [{
         "season": "2023-24",
         "award": "MVP",
         "player": "Nikola Jokić",
@@ -259,7 +259,7 @@ class WinnerSynthesizer:
         from v2.contracts import Claim, ClaimKind, DraftReport, EvidenceOutputBinding
 
         envelope = next(iter(evidence))
-        share = envelope.rows["placements"][0]["award_share"]
+        share = envelope.rows[0]["award_share"]
         binding = EvidenceOutputBinding(
             requirement_kind="task", requirement_id=None,
             output_id="AWARD_SHARE", node_id="mvp_winner",
@@ -270,7 +270,7 @@ class WinnerSynthesizer:
         return DraftReport(
             sections=["MVP"],
             claims=[Claim(
-                text=(f"{envelope.rows['placements'][0]['player']} won the "
+                text=(f"{envelope.rows[0]['player']} won the "
                       f"{envelope.season} MVP, taking {share} of "
                       "first-place votes."),
                 kind=ClaimKind.OBSERVED,
@@ -296,7 +296,7 @@ def _event(text: str, name: str) -> dict:
     return json.loads(payloads[-1])
 
 
-def test_the_flat_selector_the_synthesizer_is_taught_reaches_a_nested_row(
+def test_the_synthesizer_selector_reaches_a_flat_award_row(
         awards_warehouse, monkeypatch, tmp_path):
     from fastapi import FastAPI
     from fastapi.testclient import TestClient
@@ -415,11 +415,11 @@ class BallotSynthesizer:
     async def synthesize(self, task, evidence):
         from v2.contracts import Claim, ClaimKind, DraftReport
 
-        ballots = {envelope.rows["placements"][0]["award"]: envelope
+        ballots = {envelope.rows[0]["award"]: envelope
                    for envelope in evidence}
         mvp_envelope, coy_envelope = ballots["MVP"], ballots["COY"]
-        winner = mvp_envelope.rows["placements"][0]
-        coach = coy_envelope.rows["placements"][0]
+        winner = mvp_envelope.rows[0]
+        coach = coy_envelope.rows[0]
         named = self._winner_name or winner["player"]
         return DraftReport(
             sections=["Awards"],
@@ -523,7 +523,7 @@ def test_an_award_binding_naming_a_player_off_the_ballot_is_rejected(
     ballot = call_capability("award_results", {
         "view": "field", "award": "MVP", "season": "2023-24"})
     assert OFF_BALLOT_PLAYER not in {
-        row["player"] for row in ballot.rows["placements"]}
+        row["player"] for row in ballot.rows}
 
     custom, final = _ballot_stream(
         "2023-24", monkeypatch, tmp_path, winner_name=OFF_BALLOT_PLAYER)
@@ -707,9 +707,9 @@ def test_the_golden_winner_scenarios_are_not_a_race(awards_warehouse):
 
     envelope = call_capability("award_results", {
         "view": "winner", "award": "ALL_NBA", "season": "2023-24"})
-    labels = {row["rank_label"] for row in envelope.rows["placements"]}
+    labels = {row["rank_label"] for row in envelope.rows}
     assert labels == {"1T"}
-    assert {row["rank"] for row in envelope.rows["placements"]} == {1}
+    assert {row["rank"] for row in envelope.rows} == {1}
     assert "never a model score" in envelope.coverage
 
 
@@ -780,7 +780,7 @@ class MvpAlignedSynthesizer:
         from v2.contracts import Claim, ClaimKind, DraftReport, EvidenceOutputBinding
 
         envelope = next(iter(evidence))
-        placement = envelope.rows["placements"][0]
+        placement = envelope.rows[0]
         bindings = [
             EvidenceOutputBinding(
                 requirement_kind="task", requirement_id=None,

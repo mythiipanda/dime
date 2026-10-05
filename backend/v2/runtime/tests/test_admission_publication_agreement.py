@@ -120,8 +120,8 @@ def test_mvp_winner_and_share_publish_with_citations_through_real_tool(
 
     probe = call_capability(
         "award_results", {"view": "winner", "award": "MVP", "season": SEASON})
-    assert probe.rows["placements"][0]["award_share"] == 0.935
-    placement = probe.rows["placements"][0]
+    assert probe.rows[0]["award_share"] == 0.935
+    placement = probe.rows[0]
 
     task = TaskSpec(
         goal="Who won the 2023-24 MVP and how large was the winning vote share?",
@@ -144,7 +144,7 @@ def test_mvp_winner_and_share_publish_with_citations_through_real_tool(
     class Synthesizer:
         async def synthesize(self, task, evidence):
             envelope = next(iter(evidence))
-            row = envelope.rows["placements"][0]
+            row = envelope.rows[0]
             return DraftReport(
                 sections=["MVP"],
                 claims=[Claim(
@@ -308,7 +308,7 @@ def test_selector_naming_nothing_is_rejected_by_both():
                verified)
 
 
-def test_admission_and_publication_agree_by_construction_on_nested_envelope(
+def test_admission_and_publication_agree_by_construction_on_flat_envelope(
         awards_warehouse):
     from v2.adapters import call_capability
     from v2.api import routes
@@ -321,8 +321,8 @@ def test_admission_and_publication_agree_by_construction_on_nested_envelope(
     assert "resolve_subject_row" in source
     envelope = call_capability(
         "award_results", {"view": "winner", "award": "MVP", "season": SEASON})
-    assert isinstance(envelope.rows, dict)
-    assert envelope.rows["placements"][0]["award_share"] == 0.935
+    assert isinstance(envelope.rows, list)
+    assert envelope.rows[0]["award_share"] == 0.935
     seen = []
 
     real = models.resolve_evidence_binding

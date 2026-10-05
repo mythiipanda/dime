@@ -57,7 +57,7 @@ def test_a_real_season_returns_the_real_winner_and_share(
         runtime_awards, season, player, team, age, won, maximum, share, votes):
     result = _results(view="winner", award="MVP", season=season)
     assert result["ok"] is True, result
-    assert result["rows"]["placements"] == [{
+    assert result["rows"] == [{
         "season": season,
         "award": "MVP",
         "player": player,
@@ -82,7 +82,7 @@ def test_a_real_season_returns_the_real_winner_and_share(
 def test_a_coach_award_names_its_coach_and_its_votes(runtime_awards):
     result = _results(view="winner", award="COY", season="2015-16")
     assert result["ok"] is True, result
-    assert result["rows"]["placements"] == [{
+    assert result["rows"] == [{
         "season": "2015-16",
         "award": "COY",
         "player": None,
@@ -116,7 +116,7 @@ def test_a_season_whose_ballot_never_existed_fails_loud_naming_the_season(
 def test_a_tied_rank_keeps_the_published_rank_and_marks_the_tie(runtime_awards):
     result = _results(view="field", award="DPOY", season="2024-25")
     assert result["ok"] is True, result
-    tied = [row for row in result["rows"]["placements"]
+    tied = [row for row in result["rows"]
             if row["rank_label"] == "10T"]
     assert [row["player"] for row in tied] == [
         "Bam Adebayo", "Derrick White", "Shai Gilgeous-Alexander"]
@@ -129,7 +129,7 @@ def test_a_row_that_made_no_team_keeps_a_null_rank_and_its_published_label(
         runtime_awards):
     result = _results(view="field", award="ALL_NBA", season="2024-25")
     assert result["ok"] is True, result
-    placements = result["rows"]["placements"]
+    placements = result["rows"]
     other = [row for row in placements if row["rank_label"] == "ORV"]
     assert len(other) == 9
     assert {row["rank"] for row in other} == {None}
@@ -142,7 +142,7 @@ def test_a_row_that_made_no_team_keeps_a_null_rank_and_its_published_label(
 def test_a_tied_first_team_keeps_every_leading_player(runtime_awards):
     result = _results(view="winner", award="ALL_NBA", season="2024-25")
     assert result["ok"] is True, result
-    placements = result["rows"]["placements"]
+    placements = result["rows"]
     assert {row["rank"] for row in placements} == {1}
     assert {row["rank_label"] for row in placements} == {"1T"}
     assert {row["tied"] for row in placements} == {True}
@@ -155,7 +155,7 @@ def test_a_tied_first_team_keeps_every_leading_player(runtime_awards):
 def test_a_team_award_is_not_reported_as_a_tie(runtime_awards):
     result = _results(view="winner", award="ALL_DEFENSE", season="2024-25")
     assert result["ok"] is True, result
-    placements = result["rows"]["placements"]
+    placements = result["rows"]
     assert {row["rank_label"] for row in placements} == {"1st"}
     assert {row["tied"] for row in placements} == {False}
     assert result["meta"]["ballot"] is False
