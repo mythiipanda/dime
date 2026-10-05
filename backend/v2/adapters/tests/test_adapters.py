@@ -453,7 +453,6 @@ def test_metric_coverage_without_player_or_season():
 
 
 def test_default_registry_includes_native_coverage_tool():
-    pytest.importorskip("app.tools")
     from v2.adapters.core import _default_tools
 
     assert "metric_coverage" in _default_tools()

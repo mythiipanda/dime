@@ -5,54 +5,23 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { apiPath } from "./api";
 
-const ENV_KEY = "NEXT_PUBLIC_API_RUNTIME";
-
-function setRuntime(v: string | undefined) {
-  if (v === undefined) delete process.env[ENV_KEY];
-  else process.env[ENV_KEY] = v;
-}
-
-test("defaults to the v1 router when the flag is unset", () => {
-  setRuntime(undefined);
-  assert.equal(apiPath("/today"), "/api/v1/today");
-});
-
-test("defaults to the v1 router on any non-v2 value", () => {
-  setRuntime("v1");
-  assert.equal(apiPath("/models"), "/api/v1/models");
-  setRuntime("bogus");
-  assert.equal(apiPath("/models"), "/api/v1/models");
-  setRuntime(undefined);
-});
-
-test("points at the v2 router when the flag is v2", () => {
-  setRuntime("v2");
-  try {
-    assert.equal(apiPath("/today"), "/api/today");
-    assert.equal(apiPath("/watchlist"), "/api/watchlist");
-    assert.equal(apiPath("/sql/rerun"), "/api/sql/rerun");
-    assert.equal(apiPath("/datasets/freshness"), "/api/datasets/freshness");
-    assert.equal(apiPath("/debate-card/file?name=x"), "/api/debate-card/file?name=x");
-  } finally {
-    setRuntime(undefined);
-  }
+test("points at the v2 router", () => {
+  assert.equal(apiPath("/today"), "/api/today");
+  assert.equal(apiPath("/watchlist"), "/api/watchlist");
+  assert.equal(apiPath("/sql/rerun"), "/api/sql/rerun");
+  assert.equal(apiPath("/datasets/freshness"), "/api/datasets/freshness");
+  assert.equal(apiPath("/debate-card/file?name=x"), "/api/debate-card/file?name=x");
 });
 
 test("preserves query strings through the mapping", () => {
-  setRuntime(undefined);
   assert.equal(
     apiPath("/today?season=2025-26"),
-    "/api/v1/today?season=2025-26",
+    "/api/today?season=2025-26",
   );
-  setRuntime("v2");
-  try {
-    assert.equal(
-      apiPath("/threads/abc/runs?client=xyz"),
-      "/api/threads/abc/runs?client=xyz",
-    );
-  } finally {
-    setRuntime(undefined);
-  }
+  assert.equal(
+    apiPath("/threads/abc/runs?client=xyz"),
+    "/api/threads/abc/runs?client=xyz",
+  );
 });
 
 
@@ -326,8 +295,6 @@ test("appendCachedRun keeps a repeat question when the run id is new", () => {
 
 import { postChatStream } from "./api";
 
-const CHAT_RUNTIME_KEY = "NEXT_PUBLIC_CHAT_RUNTIME";
-
 type SseMock = {
   emit: (event: string) => void;
   end: () => void;
@@ -419,10 +386,6 @@ function streamHandlers() {  const events: string[] = [];
   };
 }
 
-function setChatRuntime(v: string | undefined) {
-  if (v === undefined) delete process.env[CHAT_RUNTIME_KEY];
-  else process.env[CHAT_RUNTIME_KEY] = v;
-}
 
 
 
@@ -443,9 +406,8 @@ async function advance(t: { mock: { timers: { tick: (ms: number) => void } } }, 
   await settle();
 }
 
-test("watchdog: no bytes for 90s aborts with an idle error (v1)", async (t) => {
+test("watchdog: no bytes for 90s aborts with an idle error", async (t) => {
   t.mock.timers.enable({ apis: ["setInterval", "Date"] });
-  setChatRuntime(undefined);
   installSseMock();
   const s = streamHandlers();
   try {
@@ -457,38 +419,12 @@ test("watchdog: no bytes for 90s aborts with an idle error (v1)", async (t) => {
     ]);
     assert.equal(s.wasDone(), false);
   } finally {
-    setChatRuntime(undefined);
     delete (globalThis as Record<string, unknown>).fetch;
   }
 });
 
-test("watchdog: v1 pings-only stream aborts after 3 min with a progress error", async (t) => {
+test("watchdog: pings-only stream never aborts on progress", async (t) => {
   t.mock.timers.enable({ apis: ["setInterval", "Date"] });
-  setChatRuntime(undefined);
-  const sse = installSseMock();
-  const s = streamHandlers();
-  try {
-    const p = postChatStream("q", null, s.handlers);
-    
-    
-    for (let i = 0; i < 13; i++) {
-      sse.emit("ping");
-      await advance(t, 15_000);
-    }
-    await p;
-    assert.ok(s.events.every((e) => e === "ping"), "only pings were seen");
-    assert.deepEqual(s.errors, [
-      "The model stopped making progress for 3 minutes. The run was stopped - try again.",
-    ]);
-  } finally {
-    setChatRuntime(undefined);
-    delete (globalThis as Record<string, unknown>).fetch;
-  }
-});
-
-test("watchdog: v2 pings-only stream does NOT abort on progress (gating)", async (t) => {
-  t.mock.timers.enable({ apis: ["setInterval", "Date"] });
-  setChatRuntime("v2");
   const sse = installSseMock();
   const s = streamHandlers();
   try {
@@ -508,14 +444,12 @@ test("watchdog: v2 pings-only stream does NOT abort on progress (gating)", async
     assert.equal(s.wasDone(), true);
     assert.deepEqual(s.errors, []);
   } finally {
-    setChatRuntime(undefined);
     delete (globalThis as Record<string, unknown>).fetch;
   }
 });
 
-test("watchdog: v2 dead connection still aborts on idle after 90s", async (t) => {
+test("watchdog: dead connection still aborts on idle after 90s", async (t) => {
   t.mock.timers.enable({ apis: ["setInterval", "Date"] });
-  setChatRuntime("v2");
   installSseMock();
   const s = streamHandlers();
   try {
@@ -526,14 +460,12 @@ test("watchdog: v2 dead connection still aborts on idle after 90s", async (t) =>
       "No response from the server for 90s. The backend may be down - try again in a moment.",
     ]);
   } finally {
-    setChatRuntime(undefined);
     delete (globalThis as Record<string, unknown>).fetch;
   }
 });
 
-test("watchdog: 8-min absolute ceiling fires even with real events flowing (v1)", async (t) => {
+test("watchdog: 8-min absolute ceiling fires even with real events flowing", async (t) => {
   t.mock.timers.enable({ apis: ["setInterval", "Date"] });
-  setChatRuntime(undefined);
   const sse = installSseMock();
   const s = streamHandlers();
   try {
@@ -549,7 +481,6 @@ test("watchdog: 8-min absolute ceiling fires even with real events flowing (v1)"
       "The request timed out after 8 minutes. Try a simpler question or try again.",
     ]);
   } finally {
-    setChatRuntime(undefined);
     delete (globalThis as Record<string, unknown>).fetch;
   }
 });

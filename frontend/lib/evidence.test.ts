@@ -4,6 +4,7 @@ import {
   capabilityLabel,
   statLabel,
   subjectName,
+  contextPills,
   evidenceSources,
   unverifiedSummary,
   withCitationMarkers,
@@ -133,6 +134,26 @@ test("blank display names fall back to local labels", () => {
   assert.equal(sources.length, 2);
   assert.equal(sources[0].stat, "points per 100 possessions");
   assert.equal(sources[1].stat, "points per 100 possessions");
+});
+
+test("context pills lead with the modal season then capabilities", () => {
+  const tables = [
+    CLAIM_TABLE,
+    { ...CLAIM_TABLE, output_id: "OFF_RATING" },
+    { ...CLAIM_TABLE, provenance: { capability: "get_leaders", season: "2023-24" } },
+  ];
+  assert.deepEqual(evidenceSources(aiWith({}, tables)).length, 3);
+  assert.deepEqual(contextPills(aiWith({}, tables)), [
+    "2024-25",
+    "Team ratings",
+    "League leaders",
+  ]);
+});
+
+test("context pills cap capabilities and skip empties", () => {
+  assert.deepEqual(contextPills(aiWith({}, [])), []);
+  const tables = [{ ...CLAIM_TABLE, provenance: {} }];
+  assert.deepEqual(contextPills(aiWith({}, tables)), []);
 });
 
 test("sources never leak machine ids", () => {

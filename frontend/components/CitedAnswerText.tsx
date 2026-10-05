@@ -4,7 +4,8 @@ import { useState } from "react";
 import type { ReactNode } from "react";
 import AnswerText from "./AnswerText";
 import type { AiMessage } from "../lib/chat";
-import { evidenceSources, unverifiedSummary, withCitationMarkers } from "../lib/evidence";
+import { contextPills, evidenceSources, unverifiedSummary, withCitationMarkers } from "../lib/evidence";
+import { Chip } from "./view-shared";
 import type { EvidenceSource } from "../lib/evidence";
 
 export function CiteTable({ source }: { source: EvidenceSource }) {
@@ -60,12 +61,70 @@ export function CiteTable({ source }: { source: EvidenceSource }) {
   );
 }
 
+export interface FlagEntry {
+  stat: string;
+  subject: string;
+  value: string;
+  source: string;
+  timestamp: string;
+}
+
+export function flagEntry(source: EvidenceSource, at: string): FlagEntry {
+  return {
+    stat: source.stat,
+    subject: source.subject,
+    value: source.value,
+    source: source.origin,
+    timestamp: at,
+  };
+}
+
+function RowActions({
+  flagged,
+  onAccept,
+  onFlag,
+}: {
+  flagged: boolean;
+  onAccept: () => void;
+  onFlag: () => void;
+}) {
+  const action = {
+    background: "none",
+    border: "none",
+    padding: "2px 0",
+    marginRight: 12,
+    cursor: "pointer",
+    fontSize: 12,
+    fontWeight: 500,
+    color: "var(--color-warm-gray)",
+  } as const;
+  if (flagged) {
+    return <div style={{ fontSize: 12, color: "var(--color-ash-gray)" }}>Flagged</div>;
+  }
+  return (
+    <div style={{ display: "flex", marginTop: 2 }}>
+      <button type="button" onClick={onAccept} style={action}>
+        Accept
+      </button>
+      <button type="button" onClick={onFlag} style={action}>
+        Flag
+      </button>
+    </div>
+  );
+}
+
 export function EvidenceLedger({
   sources,
   openIndex,
+  flagged = [],
+  onAccept,
+  onFlag,
 }: {
   sources: EvidenceSource[];
   openIndex: number | null;
+  flagged?: number[];
+  onAccept?: (index: number) => void;
+  onFlag?: (index: number) => void;
 }) {
   if (!sources.length) return null;
   return (
@@ -90,7 +149,18 @@ export function EvidenceLedger({
             >
               {line || "Dime data"}
             </div>
-            {open ? <CiteTable source={source} /> : null}
+            {open ? (
+              <>
+                <CiteTable source={source} />
+                {onAccept && onFlag ? (
+                  <RowActions
+                    flagged={flagged.includes(source.index)}
+                    onAccept={() => onAccept(source.index)}
+                    onFlag={() => onFlag(source.index)}
+                  />
+                ) : null}
+              </>
+            ) : null}
           </div>
         );
       })}
@@ -135,18 +205,70 @@ function anchorLabel(source: EvidenceSource): string {
   return detail ? `Show source: ${detail}` : "Show source data";
 }
 
+export function ContextPills({ ai }: { ai: AiMessage }) {
+  const pills = contextPills(ai);
+  if (!pills.length) return null;
+  return (
+    <div
+      style={{
+        display: "flex",
+        gap: 6,
+        flexWrap: "wrap",
+        marginBottom: 8,
+        fontVariantNumeric: "tabular-nums",
+      }}
+    >
+      {pills.map((p) => (
+        <Chip key={p}>{p}</Chip>
+      ))}
+    </div>
+  );
+}
+
+function downloadLog(entries: FlagEntry[]) {
+  const blob = new Blob([JSON.stringify(entries, null, 2)], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = "dime-flagged-claims.json";
+  link.click();
+  URL.revokeObjectURL(url);
+}
+
 export default function CitedAnswerText({ text, ai }: { text: string; ai: AiMessage }) {
   const [openCite, setOpenCite] = useState<number | null>(null);
+  const [accepted, setAccepted] = useState<number[]>([]);
+  const [flagged, setFlagged] = useState<FlagEntry[]>([]);
   const sources = evidenceSources(ai);
   const marked = withCitationMarkers(text, sources);
   const toggle = (index: number) => {
     setOpenCite((cur) => (cur === index ? null : index));
     setTimeout(() => {
-      document.getElementById(`cite-${index}`)?.scrollIntoView({ block: "nearest" });
+      const row = document.getElementById(`cite-${index}`);
+      if (row && typeof row.scrollIntoView === "function") {
+        row.scrollIntoView({ block: "nearest" });
+      }
     }, 0);
   };
+  const accept = (index: number) => {
+    if (!accepted.includes(index)) setAccepted((cur) => [...cur, index]);
+    setOpenCite((cur) => (cur === index ? null : cur));
+  };
+  const flag = (index: number) => {
+    const source = sources[index];
+    if (!source || flagged.some((f) => f.stat === source.stat && f.subject === source.subject && f.value === source.value)) return;
+    setFlagged((cur) => [...cur, flagEntry(source, new Date().toISOString())]);
+  };
+  const flaggedIndexes = flagged
+    .map((f) =>
+      sources.findIndex(
+        (s) => s.stat === f.stat && s.subject === f.subject && s.value === f.value,
+      ),
+    )
+    .filter((i) => i >= 0);
   return (
     <div>
+      <ContextPills ai={ai} />
       <AnswerText
         text={marked}
         components={{
@@ -155,6 +277,7 @@ export default function CitedAnswerText({ text, ai }: { text: string; ai: AiMess
             if (target.startsWith("#cite-")) {
               const index = Number(target.slice("#cite-".length));
               if (!Number.isInteger(index) || !sources[index]) return <>{children}</>;
+              if (accepted.includes(index)) return <>{children}</>;
               return (
                 <CiteAnchor
                   index={index}
@@ -170,7 +293,23 @@ export default function CitedAnswerText({ text, ai }: { text: string; ai: AiMess
           },
         }}
       />
-      <EvidenceLedger sources={sources} openIndex={openCite} />
+      <EvidenceLedger
+        sources={sources}
+        openIndex={openCite}
+        flagged={flaggedIndexes}
+        onAccept={accept}
+        onFlag={flag}
+      />
+      {flagged.length > 0 ? (
+        <button
+          type="button"
+          className="pill-ghost"
+          style={{ fontSize: 12, padding: "3px 10px", marginTop: 8 }}
+          onClick={() => downloadLog(flagged)}
+        >
+          Download log ({flagged.length})
+        </button>
+      ) : null}
       <UnverifiedNote ai={ai} />
     </div>
   );

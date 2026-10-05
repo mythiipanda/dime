@@ -143,7 +143,7 @@ CAPABILITY_TABLES: dict[str, tuple[str, ...]] = {
     "matchup_splits": ("silver_player_gamelogs", "silver_team_ratings"),
     "today": ("silver_scoreboard", "silver_standings"),
     "morning_briefing": ("silver_scoreboard", "silver_standings"),
-    "award_results": ("silver_bbref_awards",),
+    "award_results": ("silver_award_winners",),
 }
 
 _RATE_TO_TOTAL = {
@@ -470,17 +470,25 @@ def _read_league_seasons(
 def league_seasons(
     table: str, team_column: str, league_size: int,
 ) -> tuple[str, ...]:
+    import logging
+
+    import duckdb
+
     if re.fullmatch(_TABLE_NAME, str(table or "")) is None:
         return ()
     if re.fullmatch(_TABLE_NAME, str(team_column or "")) is None:
         return ()
+    log = logging.getLogger(__name__)
     try:
         path = warehouse_path()
-    except Exception:
+    except OSError as exc:
+        log.warning("league_seasons: warehouse path unavailable: %r", exc)
         return ()
     try:
         return _read_league_seasons(path, table, team_column, league_size)
-    except Exception:
+    except (duckdb.Error, OSError, ValueError) as exc:
+        log.warning("league_seasons: %s.%s unreadable: %r",
+                    table, team_column, exc)
         return ()
 
 

@@ -4,6 +4,7 @@ import * as React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import CitedAnswerText, {
   CiteTable,
+  ContextPills,
   EvidenceLedger,
   UnverifiedNote,
 } from "./components/CitedAnswerText";
@@ -159,6 +160,23 @@ describe("claim anchors", () => {
     );
     assert.ok(html.includes("Trae Young"));
     assert.ok(html.includes("880"));
+  });
+});
+
+describe("context pills", () => {
+  it("shows season and source pills above the answer", () => {
+    const html = renderToStaticMarkup(
+      React.createElement(ContextPills, { ai: aiWith(PASS_CARRY, TEAM_TABLES) }),
+    );
+    assert.ok(html.includes("2024-25"));
+    assert.ok(html.includes("Team ratings"));
+  });
+
+  it("renders nothing without provenance", () => {
+    const html = renderToStaticMarkup(
+      React.createElement(ContextPills, { ai: aiWith(PASS_CARRY, []) }),
+    );
+    assert.equal(html, "");
   });
 });
 

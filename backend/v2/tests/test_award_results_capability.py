@@ -8,28 +8,22 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "scripts"))
 
-FIXTURES = Path(__file__).resolve().parents[2] / "tests" / "fixtures" / "bbref_awards"
+FIXTURES = Path(__file__).resolve().parents[2] / "tests" / "fixtures" / "nba_awards"
 
-RECORDED = (
-    (1977, "1976-77"),
-    (1998, "1997-98"),
-    (2015, "2014-15"),
-    (2024, "2023-24"),
-    (2026, "2025-26"),
-)
+PLAYER_IDS = (2544, 203497, 2037, 203506, 201566)
 
 
-def _page(year: int):
-    def transport(url: str) -> str:
-        return (FIXTURES / f"awards_{year}.html").read_text(encoding="utf-8")
-
-    return transport
+def _payload(player_id: int) -> dict:
+    return json.loads(
+        (FIXTURES / f"player_awards_{player_id}.json").read_text(
+            encoding="utf-8"))
 
 
 @pytest.fixture(scope="module")
 def recorded_awards(tmp_path_factory):
-    import seed_bbref_awards as seed
+    import seed_nba_awards as seed
     from shared import store
+    from shared.sources import nba_awards as src
 
     root = tmp_path_factory.mktemp("v2_recorded_awards")
     recorded = root / "recorded.duckdb"
@@ -37,9 +31,9 @@ def recorded_awards(tmp_path_factory):
     store.DB_PATH = recorded
     store.LOCK_PATH = root / ".write.lock"
     try:
-        for year, season in RECORDED:
-            seed.seed_season(
-                season, transport=_page(year), min_interval_s=0.0)
+        for player_id in PLAYER_IDS:
+            frame = src.parse_player_awards(_payload(player_id))
+            seed.save_player_rows(player_id, frame)
     finally:
         store.DB_PATH, store.LOCK_PATH = original
     return recorded
@@ -86,11 +80,11 @@ def test_the_capability_names_its_tool_and_its_coverage_table():
     spec = CAPABILITIES["award_results"]
     assert spec.tool_name == "get_award_results"
     assert spec.tool_name in {tool.name for tool in v1_tools}
-    assert declared_tables_for_capability("award_results", {}) == (
-        "silver_bbref_awards",)
+    declared = declared_tables_for_capability("award_results", {})
+    assert declared == ("silver_award_winners",)
     on_hand = warehouse_tables()
     assert set(tables_for_capability("award_results", {})) <= on_hand
-    ballot = "silver_bbref_awards"
+    ballot = "silver_award_winners"
     assert (ballot in absent_tables_for_capability("award_results", {})) is (
         ballot not in on_hand)
     assert "award_results" in capability_catalog()
@@ -113,23 +107,12 @@ def test_the_catalog_publishes_the_view_enum_so_no_routing_can_pick_one():
 
 
 def test_the_capability_declares_units_for_every_numeric_output():
-    from v2.adapters.capabilities import (
-        BALLOT_POINTS, CAPABILITIES, COUNT, FRACTION, YEARS)
+    from v2.adapters.capabilities import CAPABILITIES, COUNT
 
     units = CAPABILITIES["award_results"].units
-    assert units == {
-        "age": YEARS,
-        "award_share": FRACTION,
-        "points_max": BALLOT_POINTS,
-        "points_won": BALLOT_POINTS,
-        "rank": COUNT,
-        "votes_first": COUNT,
-        "votes_second": COUNT,
-        "votes_third": COUNT,
-    }
+    assert units == {"rank": COUNT}
     definitions = CAPABILITIES["award_results"].metric_definitions
-    assert "fraction scale 0-1" in definitions["award_share"]
-    assert "points_max" in definitions["points_won"]
+    assert "Always 1" in definitions["rank"]
 
 
 def test_the_declared_vocabulary_covers_every_field_the_award_tool_returns(
@@ -138,26 +121,23 @@ def test_the_declared_vocabulary_covers_every_field_the_award_tool_returns(
     from v2.adapters.capabilities import CAPABILITIES
 
     envelope = call_capability("award_results", {
-        "view": "field", "award": "ALL_NBA", "season": "2023-24"})
+        "view": "winner", "award": "MVP", "season": "2008-09"})
     returned = set(envelope.rows["placements"][0])
     declared = (set(CAPABILITIES["award_results"].units)
                 | set(CAPABILITIES["award_results"].metric_definitions))
     assert not returned - declared
-    assert {"player", "coach", "award_share", "points_won", "points_max",
-            "votes_first", "votes_second", "votes_third", "rank"} <= declared
+    assert {"player", "rank"} <= declared
 
 
 def test_the_names_a_planner_asks_for_resolve_to_a_returned_field():
     from v2.adapters.capabilities import CAPABILITIES, resolve_metric_column
 
     spec = CAPABILITIES["award_results"]
-    for column in ("PLAYER", "COACH", "AWARD_SHARE", "POINTS_WON",
-                   "POINTS_MAX", "VOTES_FIRST", "VOTES_SECOND",
-                   "VOTES_THIRD", "RANK"):
+    for column in ("PLAYER", "RANK"):
         assert resolve_metric_column(spec, column) == column.lower(), column
     assert resolve_metric_column(spec, "PLAYER_NAME") == "player"
     assert resolve_metric_column(spec, "COACH_NAME") == "coach"
-    assert resolve_metric_column(spec, "VOTE_SHARE") == "award_share"
+    assert resolve_metric_column(spec, "VOTE_SHARE") is None
     assert resolve_metric_column(spec, "HOME_RUNS") is None
 
 
@@ -165,47 +145,37 @@ def test_the_capability_description_separates_a_result_from_a_race():
     from v2.adapters.capabilities import CAPABILITY_DESCRIPTIONS
 
     description = CAPABILITY_DESCRIPTIONS["award_results"]
-    assert "Official NBA award results" in description
+    assert "Official recorded NBA award winners" in description
     assert "never a model score" in description
 
 
-def test_a_real_season_through_the_capability_returns_the_published_winner(
+def test_a_real_season_through_the_capability_returns_the_recorded_winner(
         awards_warehouse):
     from v2.adapters import call_capability
 
     envelope = call_capability(
-        "award_results", {"view": "winner", "award": "MVP", "season": "2023-24"})
+        "award_results", {"view": "winner", "award": "MVP", "season": "2008-09"})
     assert envelope.capability == "award_results"
-    assert envelope.season == "2023-24"
+    assert envelope.season == "2008-09"
     assert envelope.rows["placements"] == [{
-        "season": "2023-24",
+        "season": "2008-09",
         "award": "MVP",
-        "player": "Nikola Jokić",
+        "player": "LeBron James",
         "coach": None,
-        "team": "DEN",
-        "age": 28,
+        "team": "Cleveland Cavaliers",
+        "age": None,
         "rank": 1,
         "rank_label": "1",
         "tied": False,
-        "award_share": 0.935,
-        "points_won": 926,
-        "points_max": 990,
-        "votes_first": 79,
+        "award_share": None,
+        "points_won": None,
+        "points_max": None,
+        "votes_first": None,
         "votes_second": None,
         "votes_third": None,
     }]
-    assert envelope.units == {
-        "award_share": "fraction_0_1",
-        "points_won": "ballot_points",
-        "points_max": "ballot_points",
-        "votes_first": "count",
-        "votes_second": "count",
-        "votes_third": "count",
-        "age": "years",
-        "rank": "count",
-    }
-    assert "recorded outcome, never a model score" in envelope.coverage
-    assert "ORV" in envelope.coverage or "ORV" in envelope.qualification
+    assert envelope.units == {"rank": "count"}
+    assert "never a model score" in envelope.coverage
     assert envelope.source_identity.kind == "warehouse"
     assert envelope.source == "v1:get_award_results:warehouse"
     assert envelope.as_of is not None
@@ -218,7 +188,7 @@ def test_every_declared_unit_reaches_a_row_the_verifier_can_find(
     from v2.domain.evidence import iter_values
 
     envelope = call_capability("award_results", {
-        "view": "field", "award": "ALL_NBA", "season": "2023-24"})
+        "view": "winner", "award": "MVP", "season": "2008-09"})
     row_keys = {
         segment.split("[", 1)[0].casefold()
         for item in iter_values(envelope)
@@ -234,11 +204,11 @@ class WinnerIntake:
         from v2.contracts import RunMode, SeasonRef, TaskSpec
 
         self._task = TaskSpec(
-            goal="Who won the 2023-24 MVP?",
+            goal="Who won the 2008-09 MVP?",
             mode=RunMode.QUICK,
-            deliverable="the winner and the share of the vote",
-            requested_outputs=["AWARD_SHARE"],
-            season=SeasonRef(value="2023-24", source="user", confidence=1.0))
+            deliverable="the winner",
+            requested_outputs=["PLAYER_NAME"],
+            season=SeasonRef(value="2008-09", source="user", confidence=1.0))
 
     async def understand(self, request: str, context=()):
         return self._task
@@ -249,7 +219,7 @@ class WinnerPlanner:
         from v2.contracts import Plan, PlanNode
 
         return Plan(nodes=[PlanNode(
-            id="mvp_winner", description="official 2023-24 MVP result",
+            id="mvp_winner", description="official 2008-09 MVP result",
             capability_hints=["award_results"],
             arguments={"view": "winner", "award": "MVP"})])
 
@@ -259,20 +229,18 @@ class WinnerSynthesizer:
         from v2.contracts import Claim, ClaimKind, DraftReport, EvidenceOutputBinding
 
         envelope = next(iter(evidence))
-        share = envelope.rows["placements"][0]["award_share"]
+        player = envelope.rows["placements"][0]["player"]
         binding = EvidenceOutputBinding(
             requirement_kind="task", requirement_id=None,
-            output_id="AWARD_SHARE", node_id="mvp_winner",
-            evidence_id=envelope.evidence_id, selector="rows[0].award_share",
-            value={"kind": "float", "value": share},
-            unit={"kind": "declared", "value": "fraction_0_1"},
+            output_id="PLAYER_NAME", node_id="mvp_winner",
+            evidence_id=envelope.evidence_id, selector="rows[0].player",
+            value={"kind": "string", "value": player},
+            unit={"kind": "unitless"},
             domain="award_results")
         return DraftReport(
             sections=["MVP"],
             claims=[Claim(
-                text=(f"{envelope.rows['placements'][0]['player']} won the "
-                      f"{envelope.season} MVP, taking {share} of "
-                      "first-place votes."),
+                text=f"{player} won the {envelope.season} MVP.",
                 kind=ClaimKind.OBSERVED,
                 evidence_ids=[envelope.evidence_id],
                 output_bindings=[binding])])
@@ -329,42 +297,41 @@ def test_the_flat_selector_the_synthesizer_is_taught_reaches_a_nested_row(
     app.include_router(routes.router, prefix="/api")
     response = TestClient(app).post(
         "/api/v2/chat/stream",
-        json={"q": "Who won the 2023-24 MVP?"})
+        json={"q": "Who won the 2008-09 MVP?"})
     assert response.status_code == 200
 
     custom = _event(response.text, "custom_data")
     cited = custom["tables"]
     final = _event(response.text, "final_answer")
-    assert [row["output_id"] for row in cited] == ["AWARD_SHARE"]
-    assert cited[0]["value"] == "0.935"
+    assert [row["output_id"] for row in cited] == ["PLAYER_NAME"]
+    assert cited[0]["value"] == "LeBron James"
     assert cited[0]["provenance"]["capability"] == "award_results"
     assert cited[0]["provenance"]["origin"] == "warehouse"
     assert custom["unverified_numbers"] == []
     assert "I could not verify a publishable answer" not in final["text"]
     assert final["carry"]["verified_claims"] == 1
-    assert "rows[0].award_share" not in response.text
+    assert "rows[0].player" not in response.text
     assert "placements" not in response.text
 
 
-RECORDED_BALLOTS = {
-    "2023-24": {"player": "Nikola Jokić", "coach": "Mark Daigneault",
-                "award_share": 0.935, "votes_first": 79},
-    "2014-15": {"player": "Stephen Curry", "coach": "Mike Budenholzer",
-                "award_share": 0.922, "votes_first": 100},
+RECORDED_WINNERS = {
+    "2008-09": {"award": "MVP", "player": "LeBron James"},
+    "2023-24": {"award": "DPOY", "player": "Rudy Gobert"},
 }
-AWARD_OUTPUTS = ["PLAYER_NAME", "VOTE_SHARE", "VOTES_FIRST", "COACH"]
-OFF_BALLOT_PLAYER = "Victor Wembanyama"
+AWARD_OUTPUTS = ["PLAYER_NAME"]
+OFF_BOARD_PLAYER = "Ada Vega"
 REFUSAL = "I could not verify a publishable answer"
 
 
-class BallotIntake:
-    def __init__(self, season: str) -> None:
+class WinnersIntake:
+    def __init__(self, season: str, award: str) -> None:
         from v2.contracts import RunMode, SeasonRef, TaskSpec
 
+        label = {"MVP": "MVP", "DPOY": "Defensive Player of the Year"}[award]
         self._task = TaskSpec(
-            goal=f"Who won the {season} MVP and Coach of the Year?",
+            goal=f"Who won the {season} {label}?",
             mode=RunMode.QUICK,
-            deliverable="the winner, the share of the vote, and the vote count",
+            deliverable="the winner",
             requested_outputs=list(AWARD_OUTPUTS),
             season=SeasonRef(value=season, source="user", confidence=1.0))
 
@@ -372,17 +339,17 @@ class BallotIntake:
         return self._task
 
 
-class BallotPlanner:
+class WinnersPlanner:
+    def __init__(self, award: str) -> None:
+        self._award = award
+
     async def plan(self, task, failure_context=None):
         from v2.contracts import Plan, PlanNode
 
-        return Plan(nodes=[
-            PlanNode(id="mvp_ballot", description="official MVP ballot",
-                     capability_hints=["award_results"],
-                     arguments={"view": "field", "award": "MVP"}),
-            PlanNode(id="coy_ballot", description="official coach ballot",
-                     capability_hints=["award_results"],
-                     arguments={"view": "winner", "award": "COY"})])
+        return Plan(nodes=[PlanNode(
+            id="award_winner", description="official award winner",
+            capability_hints=["award_results"],
+            arguments={"view": "winner", "award": self._award})])
 
 
 def _admitted_value(raw):
@@ -408,51 +375,31 @@ def _award_binding(output_id, node_id, envelope, column, value):
         domain="award_results")
 
 
-class BallotSynthesizer:
+class WinnersSynthesizer:
     def __init__(self, winner_name: str | None = None) -> None:
         self._winner_name = winner_name
 
     async def synthesize(self, task, evidence):
         from v2.contracts import Claim, ClaimKind, DraftReport
 
-        ballots = {envelope.rows["placements"][0]["award"]: envelope
-                   for envelope in evidence}
-        mvp_envelope, coy_envelope = ballots["MVP"], ballots["COY"]
-        winner = mvp_envelope.rows["placements"][0]
-        coach = coy_envelope.rows["placements"][0]
+        envelope = next(iter(evidence))
+        winner = envelope.rows["placements"][0]
         named = self._winner_name or winner["player"]
         return DraftReport(
             sections=["Awards"],
-            claims=[
-                Claim(
-                    text=(f"{named} won the MVP in {mvp_envelope.season} with "
-                          f"{winner['votes_first']} first-place votes."),
-                    kind=ClaimKind.OBSERVED,
-                    evidence_ids=[mvp_envelope.evidence_id],
-                    output_bindings=[
-                        _award_binding("PLAYER_NAME", "mvp_ballot",
-                                       mvp_envelope, "player",
-                                       _admitted_value(named)),
-                        _award_binding("VOTE_SHARE", "mvp_ballot",
-                                       mvp_envelope, "award_share",
-                                       _admitted_value(winner["award_share"])),
-                        _award_binding("VOTES_FIRST", "mvp_ballot",
-                                       mvp_envelope, "votes_first",
-                                       _admitted_value(winner["votes_first"])),
-                    ]),
-                Claim(
-                    text=(f"{coach['coach']} won the Coach of the Year award "
-                          f"in {coy_envelope.season}."),
-                    kind=ClaimKind.OBSERVED,
-                    evidence_ids=[coy_envelope.evidence_id],
-                    output_bindings=[
-                        _award_binding("COACH", "coy_ballot", coy_envelope,
-                                       "coach", _admitted_value(coach["coach"])),
-                    ]),
-            ])
+            claims=[Claim(
+                text=(f"{named} won the {winner['award']} in "
+                      f"{envelope.season}."),
+                kind=ClaimKind.OBSERVED,
+                evidence_ids=[envelope.evidence_id],
+                output_bindings=[
+                    _award_binding("PLAYER_NAME", "award_winner",
+                                   envelope, "player",
+                                   _admitted_value(named)),
+                ])])
 
 
-def _ballot_stream(season, monkeypatch, tmp_path, *, winner_name=None):
+def _winners_stream(season, award, monkeypatch, tmp_path, *, winner_name=None):
     from fastapi import FastAPI
     from fastapi.testclient import TestClient
 
@@ -464,10 +411,10 @@ def _ballot_stream(season, monkeypatch, tmp_path, *, winner_name=None):
     from v2.runtime.ledger import RunLedger
 
     runtime = Runtime(
-        intake=BallotIntake(season), planner=BallotPlanner(),
+        intake=WinnersIntake(season, award), planner=WinnersPlanner(award),
         executor=PlanExecutor(
             {"award_results": ToolCapability("award_results")}),
-        synthesizer=BallotSynthesizer(winner_name=winner_name),
+        synthesizer=WinnersSynthesizer(winner_name=winner_name),
         mechanical_verifier=MechanicalVerifier(),
         semantic_verifier=WinnerSemantic())
 
@@ -481,9 +428,10 @@ def _ballot_stream(season, monkeypatch, tmp_path, *, winner_name=None):
     monkeypatch.setattr(routes, "_PROJECTS", ProjectStore(tmp_path / "p.sqlite"))
     app = FastAPI()
     app.include_router(routes.router, prefix="/api")
+    label = {"MVP": "MVP", "DPOY": "Defensive Player of the Year"}[award]
     response = TestClient(app).post(
         "/api/v2/chat/stream",
-        json={"q": f"Who won the {season} MVP and Coach of the Year?"})
+        json={"q": f"Who won the {season} {label}?"})
     assert response.status_code == 200
     return (_event(response.text, "custom_data"),
             _event(response.text, "final_answer"))
@@ -495,63 +443,50 @@ def _authority(custom, final):
             {row["output_id"]: row["value"] for row in custom["tables"]})
 
 
-@pytest.mark.parametrize("season", sorted(RECORDED_BALLOTS))
-def test_an_award_question_binds_the_player_the_coach_the_share_and_the_votes(
+@pytest.mark.parametrize("season", sorted(RECORDED_WINNERS))
+def test_an_award_question_binds_the_recorded_winner(
         awards_warehouse, monkeypatch, tmp_path, season):
-    expected = RECORDED_BALLOTS[season]
-    custom, final = _ballot_stream(season, monkeypatch, tmp_path)
+    expected = RECORDED_WINNERS[season]
+    custom, final = _winners_stream(
+        season, expected["award"], monkeypatch, tmp_path)
 
     statuses, cited = _authority(custom, final)
-    assert statuses == [(output_id, "complete") for output_id in AWARD_OUTPUTS]
-    assert cited == {
-        "PLAYER_NAME": expected["player"],
-        "VOTE_SHARE": str(expected["award_share"]),
-        "VOTES_FIRST": str(expected["votes_first"]),
-        "COACH": expected["coach"],
-    }
+    assert ("PLAYER_NAME", "complete") in statuses
+    assert cited["PLAYER_NAME"] == expected["player"]
     assert {row["provenance"]["capability"] for row in custom["tables"]} == {
         "award_results"}
     assert custom["unverified_numbers"] == []
     assert REFUSAL not in final["text"]
-    assert final["carry"]["verified_claims"] == 2
 
 
-def test_an_award_binding_naming_a_player_off_the_ballot_is_rejected(
+def test_an_award_binding_naming_a_player_off_the_board_is_rejected(
         awards_warehouse, monkeypatch, tmp_path):
     from v2.adapters import call_capability
 
-    ballot = call_capability("award_results", {
-        "view": "field", "award": "MVP", "season": "2023-24"})
-    assert OFF_BALLOT_PLAYER not in {
-        row["player"] for row in ballot.rows["placements"]}
+    winners = call_capability("award_results", {
+        "view": "winner", "award": "MVP", "season": "2008-09"})
+    assert OFF_BOARD_PLAYER not in {
+        row["player"] for row in winners.rows["placements"]}
 
-    custom, final = _ballot_stream(
-        "2023-24", monkeypatch, tmp_path, winner_name=OFF_BALLOT_PLAYER)
+    custom, final = _winners_stream(
+        "2008-09", "MVP", monkeypatch, tmp_path, winner_name=OFF_BOARD_PLAYER)
 
     statuses, cited = _authority(custom, final)
-    assert statuses == [
-        ("PLAYER_NAME", "rejected"),
-        ("VOTE_SHARE", "rejected"),
-        ("VOTES_FIRST", "rejected"),
-        ("COACH", "complete"),
-    ]
-    assert cited == {"COACH": RECORDED_BALLOTS["2023-24"]["coach"]}
+    assert ("PLAYER_NAME", "rejected") in statuses
     assert "PLAYER_NAME could not be verified (rejected)." in final["text"]
-    assert final["carry"]["verified_claims"] == 2
 
 
-def test_a_coach_asked_for_as_a_player_fails_loudly_end_to_end(awards_warehouse):
+def test_a_coach_award_fails_loudly_end_to_end(awards_warehouse):
     from v2.adapters import call_capability
     from v2.adapters.core import AdapterError
 
     with pytest.raises(AdapterError) as excinfo:
         call_capability("award_results", {
-            "view": "player_awards", "season": "1976-77", "player": "Larry Brown"})
+            "view": "winner", "award": "COY", "season": "2008-09"})
     message = str(excinfo.value)
     assert "get_award_results" in message
-    assert "Larry Brown" in message
-    assert "coach, not a player" in message
-    assert "COY" in message
+    assert "Coach of the Year" in message
+    assert "players only" in message
 
 
 def test_an_award_a_player_never_won_fails_loudly_end_to_end(awards_warehouse):
@@ -560,15 +495,15 @@ def test_an_award_a_player_never_won_fails_loudly_end_to_end(awards_warehouse):
 
     with pytest.raises(AdapterError) as excinfo:
         call_capability("award_results", {
-            "view": "player_awards", "award": "COY", "season": "2023-24",
-            "player": "Nikola Jokić"})
+            "view": "player_awards", "award": "MVP", "season": "2023-24",
+            "player": "Jamal Crawford"})
     message = str(excinfo.value)
-    assert "COY" in message
-    assert "Nikola Jokić" in message
-    assert "MVP" in message and "ALL_NBA" in message
+    assert "MVP" in message
+    assert "Jamal Crawford" in message
+    assert "6MOY" in message
 
 
-def test_a_season_whose_ballot_never_existed_fails_loudly_end_to_end(
+def test_a_season_with_no_recorded_winners_fails_loudly_end_to_end(
         awards_warehouse):
     from v2.adapters import call_capability
     from v2.adapters.core import AdapterError
@@ -586,8 +521,8 @@ def test_the_tool_argument_is_rejected_on_an_award_view_end_to_end(
 
     with pytest.raises(AdapterError) as excinfo:
         call_capability("award_results", {
-            "view": "field", "award": "MVP", "season": "2023-24",
-            "player": "Nikola Jokić"})
+            "view": "winner", "award": "MVP", "season": "2008-09",
+            "player": "LeBron James"})
     assert "player_awards" in str(excinfo.value)
 
 
@@ -612,12 +547,12 @@ def test_intake_blames_the_awards_table_for_an_uncovered_award_season(
             )],
         )
 
-    covered = ModelIntake._mark_uncovered_season(task("2023-24"))
+    covered = ModelIntake._mark_uncovered_season(task("2008-09"))
     assert covered.open_questions == []
     assert covered.assumptions == []
     blocked = ModelIntake._mark_uncovered_season(task("1984-85"))
     joined = " ".join([*blocked.open_questions, *blocked.assumptions])
-    assert "silver_bbref_awards" in joined
+    assert "silver_award_winners" in joined
     assert "1984-85" in joined
     assert "2025-26" in joined
     assert CAPABILITIES["award_results"].task_season_scoped is True
@@ -646,10 +581,9 @@ def test_the_projection_and_the_result_declare_themselves_apart(
 
 GOLDEN_CALLS = {
     "award-mvp-winner": ({"view": "winner", "award": "MVP"}, "answer"),
-    "award-coach-of-year-winner": ({"view": "winner", "award": "COY"}, "answer"),
-    "award-all-nba-first-team": (
-        {"view": "winner", "award": "ALL_NBA"}, "answer"),
-    "award-mvp-no-published-ballot": (
+    "award-dpoy-winner": ({"view": "winner", "award": "DPOY"}, "answer"),
+    "award-sixth-man-winner": ({"view": "winner", "award": "6MOY"}, "answer"),
+    "award-mvp-no-recorded-winner": (
         {"view": "winner", "award": "MVP"}, "refuse"),
 }
 
@@ -702,12 +636,11 @@ def test_every_golden_award_question_is_answered_by_the_recorded_table(
                            question, needle)
 
 
-def test_the_golden_winner_scenarios_are_not_a_race(awards_warehouse):
+def test_the_golden_winner_scenarios_answer_from_winners_not_a_race(
+        awards_warehouse):
     from v2.adapters import call_capability
 
     envelope = call_capability("award_results", {
-        "view": "winner", "award": "ALL_NBA", "season": "2023-24"})
-    labels = {row["rank_label"] for row in envelope.rows["placements"]}
-    assert labels == {"1T"}
+        "view": "winner", "award": "MVP", "season": "2008-09"})
     assert {row["rank"] for row in envelope.rows["placements"]} == {1}
-    assert "never a model score" in envelope.coverage
+    assert {row["rank_label"] for row in envelope.rows["placements"]} == {"1"}

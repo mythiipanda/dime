@@ -318,7 +318,6 @@ def test_v2_chat_persists_to_shared_thread_log(monkeypatch, tmp_path):
     import sys
     import types
 
-    monkeypatch.setenv("DIME_RUNTIME_V2", "on")
     monkeypatch.setenv("DIME_V2_ACTIVITY_DIR", str(tmp_path / "activity"))
     monkeypatch.setenv("DIME_CONVERSATION_STORE",
                        str(tmp_path / "conversations.sqlite3"))

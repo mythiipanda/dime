@@ -4,8 +4,12 @@ import {
   bindingDiagnostics,
   diffDiagnostics,
   diffMarker,
+  fastFailVerdict,
   isBindingDiagnostic,
   parseSseText,
+  revisionInfo,
+  runIdOf,
+  shortRevision,
 } from "./diagnostics";
 
 const FIXTURE = `event: binding_diagnostic
@@ -88,6 +92,54 @@ test("identical runs diff clean", () => {
     assert.equal(diffMarker(row), "same");
     assert.equal(row.changed, false);
   }
+});
+
+const FAST_FAIL_FIXTURE = `event: work_log
+data: {"run_id":"run-b2cee69e8fb148f187ef19c1fe34038f","status":"partial"}
+
+event: final_answer
+data: {"text":"I could not verify a publishable answer from the available data. ","carry":{"run_id":"run-b2cee69e8fb148f187ef19c1fe34038f","verification":"partial","verified_claims":0,"structural_flags":[],"gaps":[{"kind":"execution_failure","blocks":[]}],"stage_latencies_ms":{"understand":306}}}
+
+event: graph_end
+data: {}
+`;
+
+test("fast-fail verdict fires on sub-second understand with execution failure", () => {
+  const verdict = fastFailVerdict(parseSseText(FAST_FAIL_FIXTURE));
+  assert.equal(verdict.fastFail, true);
+  assert.equal(verdict.understandMs, 306);
+  assert.deepEqual(verdict.gapKinds, ["execution_failure"]);
+});
+
+test("slow or clean runs are not fast-fails", () => {
+  assert.equal(fastFailVerdict(parseSseText(FIXTURE)).fastFail, false);
+  assert.equal(fastFailVerdict([]).fastFail, false);
+  assert.equal(
+    fastFailVerdict(parseSseText('event: final_answer\ndata: {"text":"ok"}\n\n')).fastFail,
+    false,
+  );
+});
+
+test("revision fixture yields short hash with runtime", () => {
+  const info = revisionInfo(
+    { revision: "168e2f31abc123", executable_sha256: "0".repeat(64) },
+    "v2",
+  );
+  assert.deepEqual(info, { revision: "168e2f31abc123", runtime: "v2" });
+  assert.equal(shortRevision("168e2f31abc123"), "168e2f31");
+  assert.equal(revisionInfo({}, "v2"), null);
+  assert.equal(revisionInfo(null, "v2"), null);
+  assert.equal(revisionInfo({ revision: "" }, "v2"), null);
+});
+
+test("run id prefers final_answer carry over binding events", () => {
+  assert.equal(runIdOf(parseSseText(FIXTURE)), "run-ccbce16e085d4d4f81db412cdb45df51");
+  assert.equal(runIdOf(parseSseText(FAST_FAIL_FIXTURE)), "run-b2cee69e8fb148f187ef19c1fe34038f");
+  assert.equal(runIdOf([]), null);
+  assert.equal(
+    runIdOf(parseSseText('event: node_update\ndata: {"x":1}\n\n')),
+    null,
+  );
 });
 
 test("diagnostic guard rejects other payloads", () => {

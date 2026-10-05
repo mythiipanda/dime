@@ -129,14 +129,14 @@ describe("aqbatch green-after", () => {
     );
     assert.ok(!agent.includes("warehouse read failed"));
     assert.ok(!agent.includes("✗"));
-    assert.ok(agent.includes("1 tool call"));
+    assert.ok(agent.includes("Used 1 tool"));
     assert.ok(!agent.includes("stat_category"));
     const timeline = renderToStaticMarkup(
       React.createElement(ActivityTimeline, { items: failedActivity(), running: false }),
     );
     assert.ok(!timeline.includes("unavailable"));
     assert.ok(!timeline.includes(">Failed<"));
-    assert.ok(timeline.includes("1 tool call"));
+    assert.ok(timeline.includes("Used 1 tool"));
     assert.ok(!timeline.includes("argument_count"));
   });
 });

@@ -4,7 +4,6 @@ ARG DIME_REVISION=unknown
 ENV DIME_REVISION=$DIME_REVISION
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
-COPY app ./app
 COPY v2 ./v2
 COPY shared ./shared
 COPY entrypoint.py ./entrypoint.py

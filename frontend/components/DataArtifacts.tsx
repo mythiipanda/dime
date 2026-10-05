@@ -17,6 +17,8 @@ import ImpactView, { parseImpact } from "./ImpactView";
 import LineupMatrixView, { parseLineupMatrix } from "./LineupMatrixView";
 import LineupStatsView, { parseLineupStats } from "./LineupStatsView";
 import MatchupPreviewView, { parsePreview } from "./MatchupPreviewView";
+import { packHashOf, saveBrief } from "../lib/briefs";
+import { getRevision } from "../lib/api";
 import PredictionView, { parsePrediction } from "./PredictionView";
 import RegressionView, { parseRegression } from "./RegressionView";
 import RestAdvantageView, { parseRestAdvantage } from "./RestAdvantageView";
@@ -349,6 +351,59 @@ function flattenHistoricalLeaders(rows: unknown, statLabel?: string): Record<str
   return out.length ? out : null;
 }
 
+function SaveBrief({
+  table,
+  question,
+}: {
+  table: { rows: unknown; meta?: Record<string, unknown> };
+  question?: string;
+}) {
+  const [savedId, setSavedId] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+  if (!question) return null;
+  if (savedId) {
+    return (
+      <a
+        href="/briefs"
+        style={{ fontSize: 12, fontWeight: 500, color: "var(--color-warm-gray)" }}
+      >
+        Saved · Open briefs
+      </a>
+    );
+  }
+  return (
+    <button
+      type="button"
+      className="pill-ghost"
+      style={{ fontSize: 12, padding: "3px 10px", marginTop: 8 }}
+      disabled={saving}
+      onClick={() => {
+        if (saving) return;
+        setSaving(true);
+        getRevision()
+          .then(
+            (data) => packHashOf(data),
+            () => null,
+          )
+          .then((packHash) => {
+            const preview = parsePreview(table.rows);
+            const title =
+              preview && !preview.alreadyPlayed && preview.away && preview.home
+                ? `${preview.away} at ${preview.home}`
+                : preview && preview.alreadyPlayed && preview.playedMatchup
+                  ? preview.playedMatchup
+                  : question.slice(0, 80);
+            const doc = saveBrief({ title, question, rows: table.rows, meta: table.meta, packHash });
+            setSavedId(doc.id);
+          })
+          .finally(() => setSaving(false));
+      }}
+    >
+      {saving ? "Saving…" : "Save brief"}
+    </button>
+  );
+}
+
 export default function DataArtifacts({
   ai,
   loading,
@@ -356,6 +411,7 @@ export default function DataArtifacts({
   onPinPlayer,
   onOpenArtifact,
   activeArtifactId,
+  question,
 }: {
   ai: AiMessage;
   loading?: boolean;
@@ -363,6 +419,7 @@ export default function DataArtifacts({
   onPinPlayer?: (playerName: string) => void;
   onOpenArtifact?: (artifact: ArtifactItem) => void;
   activeArtifactId?: string;
+  question?: string;
 }) {
   const names = ORDER.filter((n) => ai.nodes[n]);
   const [pageState, setPageState] = useState<number | null>(null);
@@ -902,7 +959,16 @@ export default function DataArtifacts({
       ) : toolName === "get_regression_check" && parseRegression(table.rows) ? (
         <RegressionView rows={table.rows} />
       ) : toolName === "get_matchup_preview" && parsePreview(table.rows) ? (
-        <MatchupPreviewView rows={table.rows} meta={table.meta} />
+        <>
+          <MatchupPreviewView rows={table.rows} meta={table.meta} />
+          <SaveBrief
+            table={{
+              rows: table.rows,
+              meta: table.meta as Record<string, unknown> | undefined,
+            }}
+            question={question}
+          />
+        </>
       ) : toolName === "get_streaks" && parseStreaks(table.rows) ? (
         <StreaksView rows={table.rows} meta={table.meta} />
       ) : toolName === "get_game_prediction" &&

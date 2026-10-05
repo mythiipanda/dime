@@ -4,7 +4,6 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from app import datasets, graph
 from shared import tools
 from shared.providers import resolve_model_id
 
@@ -52,33 +51,10 @@ def test_resolve_model_rejects_bare_names():
     assert resolve_model_id("LeBron James") == _default_provider()
 
 
-def test_call_keys_dedupe():
-    a = graph._call_key("get_leaders", {"stat_category": "PTS"})
-    b = graph._call_key("get_leaders", {"stat_category": "PTS"})
-    c = graph._call_key("get_leaders", {"stat_category": "AST"})
-    assert a == b
-    assert a != c
-
-
-def test_budget_bounds():
-    assert 1 <= graph.MAX_TOOL_CALLS <= 8
-    assert 1 <= graph.MAX_TOOL_ROUNDS <= 3
-
-
 def test_registry_unique_names():
     names = [t.name for t in tools.v1_tools]
     assert len(names) == len(set(names))
     assert len(names) >= 20
-
-
-def test_dataset_tables_allowlisted():
-    assert set(datasets.TABLES) <= {
-        "standings", "leaders", "injuries", "player_gamelogs",
-        "team_games", "scoreboard", "shots", "lineups",
-        "on_off", "wowy", "four_factors", "hustle", "combine",
-        "ratings", "playoffs", "playoff_gamelogs",
-        "draft", "raptor", "player_seasons",
-    }
 
 
 def test_resolve_entity_exact_team_excludes_weak_player_match():
@@ -407,7 +383,6 @@ def test_registry_has_trade_value():
     from shared import tools as _tools
 
     assert "get_trade_value" in _tools.TOOL_NAMES
-    assert graph.tool_label("get_trade_value") == "Grading trade value"
 
 
 def test_compare_metrics_adjudicates():
