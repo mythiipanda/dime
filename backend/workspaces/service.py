@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+import hashlib
+import hmac
 import json
+import secrets
 import sqlite3
 from pathlib import Path
 from threading import Lock
@@ -18,27 +21,48 @@ def _path_lock(path: Path) -> Lock:
         return _LOCKS.setdefault(resolved, Lock())
 
 
+def _token_hash(workspace_id: str, token: str) -> str:
+    return hashlib.sha256(f"{workspace_id}:{token}".encode()).hexdigest()
+
+
 class WorkspaceStore:
     def __init__(self, path: str | Path) -> None:
         self._path = Path(path)
         self._reject_symlinked_path()
         self._lock = _path_lock(self._path)
 
-    def create(self, name: str, owner: str) -> Workspace:
+    def create(self, name: str, owner: str) -> tuple[Workspace, str]:
         if not isinstance(name, str) or not name.strip():
             raise ValueError("workspace name must be non-empty")
         if not isinstance(owner, str) or not owner.strip():
             raise ValueError("workspace owner must be non-empty")
         now = utcnow()
+        workspace_id = uuid4().hex
+        token = secrets.token_hex(32)
         workspace = Workspace(
-            id=uuid4().hex, name=name.strip(), owner=owner.strip(),
+            id=workspace_id, name=name.strip(), owner=owner.strip(),
+            owner_token_hash=_token_hash(workspace_id, token),
             created_at=now, updated_at=now)
         with self._lock, self._connect() as connection:
             connection.execute(
                 "INSERT INTO workspaces (id, data) VALUES (?, ?)",
                 (workspace.id, workspace.model_dump_json()),
             )
-        return workspace
+        return workspace, token
+
+    def verify_owner(self, workspace_id: str, token: str | None) -> bool:
+        self._validate_workspace_id(workspace_id)
+        if not isinstance(token, str) or not token:
+            return False
+        with self._lock, self._connect() as connection:
+            row = connection.execute(
+                "SELECT data FROM workspaces WHERE id = ?", (workspace_id,)
+            ).fetchone()
+        if row is None:
+            return False
+        expected = Workspace.model_validate_json(row[0]).owner_token_hash
+        return bool(expected) and hmac.compare_digest(
+            expected, _token_hash(workspace_id, token))
 
     def get(self, workspace_id: str) -> Workspace | None:
         self._validate_workspace_id(workspace_id)
