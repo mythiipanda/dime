@@ -93,35 +93,36 @@ def test_scores_returns_fixture_games(monkeypatch):
     assert "IND VS WSH" in matchups
 
 
-def test_scores_unknown_sport_is_honest_error():
+def test_scores_unknown_sport_is_typed_error():
     out = espn_mod.get_espn_scores.invoke({"sport": "quidditch"})
-    assert isinstance(out, str)
-    assert out.startswith("espn-pp-cli unavailable:")
+    assert out["ok"] is False
+    assert out["tool"] == "get_espn_scores"
+    assert "unknown_sport" in out["error"]
 
 
-def test_scores_bad_json_is_honest_error(monkeypatch):
+def test_scores_bad_json_is_typed_error(monkeypatch):
     monkeypatch.setattr(subprocess, "run", lambda *a, **k: _Completed("not json{{{"))
     out = espn_mod.get_espn_scores.invoke({"sport": "nfl"})
-    assert isinstance(out, str)
-    assert out.startswith("espn-pp-cli unavailable:")
+    assert out["ok"] is False
+    assert "bad_response" in out["error"]
 
 
-def test_scores_timeout_is_honest_error(monkeypatch):
+def test_scores_timeout_is_typed_error(monkeypatch):
     def _boom(*args, **kwargs):
         raise subprocess.TimeoutExpired(cmd=args[0], timeout=30)
     monkeypatch.setattr(subprocess, "run", _boom)
     out = espn_mod.get_espn_scores.invoke({"sport": "nfl"})
-    assert isinstance(out, str)
-    assert out.startswith("espn-pp-cli unavailable:")
+    assert out["ok"] is False
+    assert "timeout" in out["error"]
 
 
-def test_scores_missing_binary_is_honest_error(monkeypatch):
+def test_scores_missing_binary_is_typed_error(monkeypatch):
     def _boom(*args, **kwargs):
         raise FileNotFoundError("no such file")
     monkeypatch.setattr(subprocess, "run", _boom)
     out = espn_mod.get_espn_scores.invoke({"sport": "nfl"})
-    assert isinstance(out, str)
-    assert out.startswith("espn-pp-cli unavailable:")
+    assert out["ok"] is False
+    assert "binary_not_found" in out["error"]
 
 
 def test_summary_returns_boxscore_and_leaders(monkeypatch):
@@ -145,13 +146,13 @@ def test_summary_skips_wrong_league_pair(monkeypatch):
     assert len(calls) == 2
 
 
-def test_summary_timeout_is_honest_error(monkeypatch):
+def test_summary_timeout_is_typed_error(monkeypatch):
     def _boom(*args, **kwargs):
         raise subprocess.TimeoutExpired(cmd=args[0], timeout=30)
     monkeypatch.setattr(subprocess, "run", _boom)
     out = espn_mod.get_espn_event_summary.invoke({"event_id": "401872964"})
-    assert isinstance(out, str)
-    assert out.startswith("espn-pp-cli unavailable:")
+    assert out["ok"] is False
+    assert "timeout" in out["error"]
 
 
 def test_odds_returns_lines(monkeypatch):
@@ -163,11 +164,11 @@ def test_odds_returns_lines(monkeypatch):
     assert "BUF -7" in spreads
 
 
-def test_odds_bad_json_is_honest_error(monkeypatch):
+def test_odds_bad_json_is_typed_error(monkeypatch):
     monkeypatch.setattr(subprocess, "run", lambda *a, **k: _Completed("oops"))
     out = espn_mod.get_espn_odds.invoke({"sport": "nba"})
-    assert isinstance(out, str)
-    assert out.startswith("espn-pp-cli unavailable:")
+    assert out["ok"] is False
+    assert "bad_response" in out["error"]
 
 
 def test_v1_tools_includes_espn_names():

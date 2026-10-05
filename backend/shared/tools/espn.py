@@ -37,6 +37,15 @@ def _env() -> dict[str, str]:
     return env
 
 
+class EspnUnavailable(Exception):
+    def __init__(self, reason: str, detail: str = "") -> None:
+        self.reason = reason
+        message = f"espn-pp-cli unavailable: {reason}"
+        if detail:
+            message += f": {detail[:120]}"
+        super().__init__(message)
+
+
 def _run(args: list[str]) -> Any:
     try:
         proc = subprocess.run(
@@ -47,38 +56,39 @@ def _run(args: list[str]) -> Any:
             env=_env(),
         )
     except FileNotFoundError:
-        return "espn-pp-cli unavailable: binary not found at ~/.local/bin/espn-pp-cli"
+        raise EspnUnavailable("binary_not_found", _CLI)
     except subprocess.TimeoutExpired:
-        return "espn-pp-cli unavailable: request timed out after 30s"
-    except Exception as e:
-        return f"espn-pp-cli unavailable: {type(e).__name__}"
+        raise EspnUnavailable("timeout", f"{_TIMEOUT}s")
+    except Exception as exc:
+        raise EspnUnavailable(type(exc).__name__, str(exc))
     try:
         data = json.loads(proc.stdout)
     except Exception:
-        return "espn-pp-cli unavailable: could not read scores service response"
+        raise EspnUnavailable("bad_response", "unparseable scores service response")
     if proc.returncode != 0 and isinstance(data, dict) and data.get("results", {}).get("error"):
-        return f"espn-pp-cli unavailable: {data['results']['error']}"[:160]
+        raise EspnUnavailable("service_error", str(data["results"]["error"]))
     return data
 
 
 def _resolve(sport: str) -> Any:
     key = sport.strip().lower()
     if key not in _PAIRS:
-        return (
-            "espn-pp-cli unavailable: unknown sport "
-            f"'{sport.strip()}' (try nfl, nba, mlb, nhl)"
-        )
+        raise EspnUnavailable(
+            "unknown_sport", f"{sport.strip()!r} (try nfl, nba, mlb, nhl)")
     return _PAIRS[key]
+
+
+def _failure(tool: str, exc: EspnUnavailable) -> dict[str, Any]:
+    return {"tool": tool, "ok": False, "error": str(exc)}
 
 
 @tool(description="Today's live scores and results for a sport. Pass sport as nfl, nba, mlb, or nhl. Returns each game with teams, score, status, and event id.")
 def get_espn_scores(sport: str) -> Any:
-    pair = _resolve(sport)
-    if isinstance(pair, str):
-        return pair
-    data = _run(["scores", pair[0], pair[1]])
-    if isinstance(data, str):
-        return data
+    try:
+        pair = _resolve(sport)
+        data = _run(["scores", pair[0], pair[1]])
+    except EspnUnavailable as exc:
+        return _failure("get_espn_scores", exc)
     return {
         "tool": "get_espn_scores",
         "ok": True,
@@ -90,16 +100,19 @@ def get_espn_scores(sport: str) -> Any:
 @tool(description="Detailed recap for one game by ESPN event id: final score, box score, stat leaders, scoring plays, and win probability. Get the event id from get_espn_scores first.")
 def get_espn_event_summary(event_id: str) -> Any:
     eid = event_id.strip()
-    last_error = f"espn-pp-cli unavailable: no summary found for event {eid}"
+    last_error: EspnUnavailable | None = None
     for s, l in _PROBE_ORDER:
-        data = _run(["summary", s, l, "--event", eid])
-        if isinstance(data, str):
-            if "binary not found" in data or "timed out" in data:
-                return data
-            last_error = data
+        try:
+            data = _run(["summary", s, l, "--event", eid])
+        except EspnUnavailable as exc:
+            if exc.reason in ("binary_not_found", "timeout"):
+                return _failure("get_espn_event_summary", exc)
+            last_error = exc
             continue
         if isinstance(data, dict) and isinstance(data.get("results"), dict):
             if data["results"].get("error"):
+                last_error = EspnUnavailable(
+                    "service_error", str(data["results"]["error"]))
                 continue
             return {
                 "tool": "get_espn_event_summary",
@@ -112,18 +125,20 @@ def get_espn_event_summary(event_id: str) -> Any:
                     "source": "espn",
                 },
             }
-        return f"espn-pp-cli unavailable: no summary found for event {eid}"
-    return last_error
+        last_error = EspnUnavailable("no_summary", f"no summary for event {eid}")
+    if last_error is not None:
+        return _failure("get_espn_event_summary", last_error)
+    return {"tool": "get_espn_event_summary", "ok": False,
+            "error": f"espn-pp-cli unavailable: no_summary: no summary found for event {eid}"}
 
 
 @tool(description="Current spread, total, and moneyline lines for a sport's slate, as pricing context for breaking down matchups. Analysis only, never betting advice. Pass sport as nfl, nba, mlb, or nhl.")
 def get_espn_odds(sport: str) -> Any:
-    pair = _resolve(sport)
-    if isinstance(pair, str):
-        return pair
-    data = _run(["odds", pair[0], pair[1]])
-    if isinstance(data, str):
-        return data
+    try:
+        pair = _resolve(sport)
+        data = _run(["odds", pair[0], pair[1]])
+    except EspnUnavailable as exc:
+        return _failure("get_espn_odds", exc)
     return {
         "tool": "get_espn_odds",
         "ok": True,
