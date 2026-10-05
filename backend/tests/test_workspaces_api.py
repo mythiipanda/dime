@@ -90,3 +90,29 @@ def test_rejects_empty_name_owner_and_blank_members(monkeypatch, tmp_path):
     assert client.patch(
         f"/api/workspaces/{workspace_id}",
         json={"add_thread_ids": [" "]}).status_code == 422
+
+
+def test_no_connection_growth_across_crud_sequence(tmp_path):
+    import os
+    from workspaces.service import WorkspaceStore
+
+    path = str(tmp_path / "leak.sqlite3")
+
+    def open_handles():
+        count = 0
+        for fd in os.listdir("/proc/self/fd"):
+            try:
+                if os.readlink(f"/proc/self/fd/{fd}") == path:
+                    count += 1
+            except OSError:
+                pass
+        return count
+
+    store = WorkspaceStore(path)
+    baseline = open_handles()
+    for index in range(5):
+        workspace = store.create(f"w{index}", "o")
+        store.update_members(workspace.id, add_thread_ids=["t"])
+        store.get(workspace.id)
+        store.delete(workspace.id)
+    assert open_handles() == baseline
