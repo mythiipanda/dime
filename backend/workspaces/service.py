@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
+from contextlib import contextmanager
 from pathlib import Path
 from threading import Lock
 from uuid import uuid4
@@ -33,7 +34,7 @@ class WorkspaceStore:
         workspace = Workspace(
             id=uuid4().hex, name=name.strip(), owner=owner.strip(),
             created_at=now, updated_at=now)
-        with self._lock, self._connect() as connection:
+        with self._lock, self._session() as connection:
             connection.execute(
                 "INSERT INTO workspaces (id, data) VALUES (?, ?)",
                 (workspace.id, workspace.model_dump_json()),
@@ -42,7 +43,7 @@ class WorkspaceStore:
 
     def get(self, workspace_id: str) -> Workspace | None:
         self._validate_workspace_id(workspace_id)
-        with self._lock, self._connect() as connection:
+        with self._lock, self._session() as connection:
             row = connection.execute(
                 "SELECT data FROM workspaces WHERE id = ?", (workspace_id,)
             ).fetchone()
@@ -70,7 +71,7 @@ class WorkspaceStore:
                     raise ValueError(f"workspace {label} must be non-empty strings")
         if name is not None and (not isinstance(name, str) or not name.strip()):
             raise ValueError("workspace name must be non-empty")
-        with self._lock, self._connect() as connection:
+        with self._lock, self._session() as connection:
             row = connection.execute(
                 "SELECT data FROM workspaces WHERE id = ?", (workspace_id,)
             ).fetchone()
@@ -101,7 +102,7 @@ class WorkspaceStore:
 
     def delete(self, workspace_id: str) -> None:
         self._validate_workspace_id(workspace_id)
-        with self._lock, self._connect() as connection:
+        with self._lock, self._session() as connection:
             row = connection.execute(
                 "SELECT data FROM workspaces WHERE id = ?", (workspace_id,)
             ).fetchone()
@@ -131,3 +132,15 @@ class WorkspaceStore:
         connection.execute(
             "CREATE TABLE IF NOT EXISTS workspaces (id TEXT PRIMARY KEY, data TEXT NOT NULL)")
         return connection
+
+    @contextmanager
+    def _session(self):
+        connection = self._connect()
+        try:
+            yield connection
+            connection.commit()
+        except Exception:
+            connection.rollback()
+            raise
+        finally:
+            connection.close()
