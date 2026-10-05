@@ -64,31 +64,23 @@ def get_career_totals(player: str) -> dict[str, Any]:
         return {"tool": "get_career_totals", "ok": True, "rows": [out],
                 "meta": {"source": "nba_api", "coverage": "full_career"}}
 
-    try:
-        hist = store.read_frame(
-            "silver_hist_player_seasons", "player_id = ?", [int(pid)])
-    except Exception:
-        hist = None
+    hist = store.read_frame(
+        "silver_hist_player_seasons", "player_id = ?", [int(pid)])
     sums: dict[str, float] = {}
-    seasons = 0
-    if hist is not None and hist.height > 0:
-        seasons = hist.height
-        for r in hist.to_dicts():
-            gp = _num(r.get("gp")) or 0.0
-            sums["GP"] = sums.get("GP", 0.0) + gp
-            for key, col in (("MIN", "min"), ("PTS", "pts"), ("REB", "reb"),
-                             ("AST", "ast"), ("STL", "stl"), ("BLK", "blk"),
-                             ("FG3M", "fg3m")):
-                rate = _num(r.get(col))
-                if rate is not None:
-                    sums[key] = sums.get(key, 0.0) + rate * gp
+    seasons = hist.height
+    for r in hist.to_dicts():
+        gp = _num(r.get("gp")) or 0.0
+        sums["GP"] = sums.get("GP", 0.0) + gp
+        for key, col in (("MIN", "min"), ("PTS", "pts"), ("REB", "reb"),
+                         ("AST", "ast"), ("STL", "stl"), ("BLK", "blk"),
+                         ("FG3M", "fg3m")):
+            rate = _num(r.get(col))
+            if rate is not None:
+                sums[key] = sums.get(key, 0.0) + rate * gp
     through = "2024-25"
-    try:
-        cur = store.read_frame(
-            "silver_player_season", "PLAYER_ID = ?", [int(pid)])
-    except Exception:
-        cur = None
-    if cur is not None and cur.height > 0:
+    cur = store.read_frame(
+        "silver_player_season", "PLAYER_ID = ?", [int(pid)])
+    if cur.height > 0:
         r = cur.to_dicts()[0]
         gp = _num(r.get("GP")) or 0.0
         if gp:
@@ -773,54 +765,43 @@ def compare_metrics(a: str | int, b: str | int, season: str | None = None) -> di
 
 def _season_line(player_id: object, season: str) -> dict[str, Any] | None:
     season = resolve_season(season)
-    try:
-        frame = store.read_frame(
-            "silver_player_season",
-            "_season = ? AND CAST(PLAYER_ID AS VARCHAR) = CAST(? AS VARCHAR)",
-            [season, str(player_id)])
-        if frame is not None and frame.height > 0:
-            row = frame.to_dicts()[0]
+    frame = store.read_frame(
+        "silver_player_season",
+        "_season = ? AND CAST(PLAYER_ID AS VARCHAR) = CAST(? AS VARCHAR)",
+        [season, str(player_id)])
+    if frame.height > 0:
+        row = frame.to_dicts()[0]
 
 
-            if str(row.get("TEAM") or "").endswith("TM"):
-                n = str(row["TEAM"])[:-2]
-                row["TEAM"] = (f"traded mid-season ({n} teams)")
-            return {k: v for k, v in row.items() if not k.startswith("_")}
-    except Exception:
-        pass
+        if str(row.get("TEAM") or "").endswith("TM"):
+            n = str(row["TEAM"])[:-2]
+            row["TEAM"] = (f"traded mid-season ({n} teams)")
+        return {k: v for k, v in row.items() if not k.startswith("_")}
 
-
-
-
-
-
-    try:
-        frame = store.read_frame(
-            "silver_hist_player_seasons",
-            "_season = ? AND CAST(player_id AS VARCHAR) = CAST(? AS VARCHAR)",
-            [season, str(player_id)])
-        if frame is not None and frame.height > 0:
-            h = frame.to_dicts()[0]
-            row = {
-                "PLAYER_ID": h.get("player_id"),
-                "PLAYER": h.get("player_name"),
-                "TEAM": h.get("team_abbreviation"),
-                "AGE": h.get("age"),
-                "GP": h.get("gp"),
-                "MPG": h.get("min"),
-                "PPG": h.get("pts"),
-                "RPG": h.get("reb"),
-                "APG": h.get("ast"),
-                "SPG": h.get("stl"),
-                "BPG": h.get("blk"),
-                "FG_PCT": h.get("fg_pct"),
-                "FG3_PCT": h.get("fg3_pct"),
-                "FT_PCT": h.get("ft_pct"),
-                "TS_PCT": h.get("ts_pct"),
-            }
-            return {k: v for k, v in row.items() if v is not None}
-    except Exception:
-        pass
+    frame = store.read_frame(
+        "silver_hist_player_seasons",
+        "_season = ? AND CAST(player_id AS VARCHAR) = CAST(? AS VARCHAR)",
+        [season, str(player_id)])
+    if frame.height > 0:
+        h = frame.to_dicts()[0]
+        row = {
+            "PLAYER_ID": h.get("player_id"),
+            "PLAYER": h.get("player_name"),
+            "TEAM": h.get("team_abbreviation"),
+            "AGE": h.get("age"),
+            "GP": h.get("gp"),
+            "MPG": h.get("min"),
+            "PPG": h.get("pts"),
+            "RPG": h.get("reb"),
+            "APG": h.get("ast"),
+            "SPG": h.get("stl"),
+            "BPG": h.get("blk"),
+            "FG_PCT": h.get("fg_pct"),
+            "FG3_PCT": h.get("fg3_pct"),
+            "FT_PCT": h.get("ft_pct"),
+            "TS_PCT": h.get("ts_pct"),
+        }
+        return {k: v for k, v in row.items() if v is not None}
     try:
         from .career_arc import line_for_season as _arc_line
         arc = _arc_line(int(str(player_id)) if str(player_id).isdigit() else 0, season)
@@ -1577,12 +1558,9 @@ def get_shot_zones(player_id: str | int, season: str | None = None, min_attempts
     except Exception:
         hist_year = 0
     if hist_year:
-        try:
-            hist_frame = store.read_frame(
-                "silver_hist_shots", "season = ?", [hist_year])
-        except Exception:
-            hist_frame = None
-        if hist_frame is not None and hist_frame.height > 0:
+        hist_frame = store.read_frame(
+            "silver_hist_shots", "season = ?", [hist_year])
+        if hist_frame.height > 0:
             folded_player, folded_league, hist_total = _fold_hist_shots(
                 hist_frame.to_dicts(), player_id)
             if hist_total > 0:
@@ -1613,104 +1591,91 @@ def get_shot_zones(player_id: str | int, season: str | None = None, min_attempts
     shot_dicts: list[dict[str, Any]] = []
     shot_source = ""
     shot_fetched = ""
-    try:
-        w = store.read_frame(
-            "silver_shots",
-            "_season = ? AND CAST(PLAYER_ID AS VARCHAR) = CAST(? AS VARCHAR)",
-            [season, str(player_id)])
-        if w is not None and w.height > 0:
-            shot_dicts = w.to_dicts()
-            shot_source = "warehouse:silver_shots"
-            if "_fetched_at" in w.columns:
-                shot_fetched = str(w["_fetched_at"][0])
-    except Exception:
-        pass
+    w = store.read_frame(
+        "silver_shots",
+        "_season = ? AND CAST(PLAYER_ID AS VARCHAR) = CAST(? AS VARCHAR)",
+        [season, str(player_id)])
+    if w.height > 0:
+        shot_dicts = w.to_dicts()
+        shot_source = "warehouse:silver_shots"
+        if "_fetched_at" in w.columns:
+            shot_fetched = str(w["_fetched_at"][0])
     if not shot_dicts:
 
-        try:
-            zb = store.read_frame(
-                "silver_zone_splits",
-                "_season = ? AND CAST(PLAYER_ID AS VARCHAR) = CAST(? AS VARCHAR)",
-                [season, str(player_id)])
-            if zb is not None and zb.height > 0:
+        zb = store.read_frame(
+            "silver_zone_splits",
+            "_season = ? AND CAST(PLAYER_ID AS VARCHAR) = CAST(? AS VARCHAR)",
+            [season, str(player_id)])
+        if zb.height > 0:
 
-                league_fg: dict[str, float] = {}
-                try:
-                    lz = store.read_frame(
-                        "silver_zone_splits", "_season = ?", [season])
-                    if lz is not None and lz.height > 0:
-                        agg: dict[str, list] = {}
-                        for lr in lz.to_dicts():
-                            zone = _BUCKET_TO_ZONE.get(str(lr.get("ZONE")))
-                            if zone is None:
-                                continue
-                            m_v = float(lr.get("FGM") or 0)
-                            a_v = float(lr.get("FGA") or 0)
-                            if not (math.isfinite(m_v) and math.isfinite(a_v)):
-                                continue
-                            a = agg.setdefault(zone, [0.0, 0.0])
-                            a[0] += m_v
-                            a[1] += a_v
-                        for zone, (m, a) in agg.items():
-                            if a >= 50:
-                                league_fg[zone] = round(m / a, 3)
-                except Exception:
-                    pass
-
-
-
-
-
-                merged: dict[str, list[float]] = {}
-                for r in zb.to_dicts():
-                    zone = _BUCKET_TO_ZONE.get(str(r.get("ZONE")))
+            league_fg: dict[str, float] = {}
+            lz = store.read_frame(
+                "silver_zone_splits", "_season = ?", [season])
+            if lz.height > 0:
+                agg: dict[str, list] = {}
+                for lr in lz.to_dicts():
+                    zone = _BUCKET_TO_ZONE.get(str(lr.get("ZONE")))
                     if zone is None:
                         continue
-                    slot = merged.setdefault(zone, [0.0, 0.0])
-                    slot[0] += float(r.get("FGM") or 0)
-                    slot[1] += float(r.get("FGA") or 0)
-                bucket_rows = [{"ZONE": z, "FGM": m, "FGA": a}
-                               for z, (m, a) in merged.items()]
-                zb_rows = bucket_rows
-                out_rows = []
-                for r in zb_rows:
-                    fga = float(r.get("FGA") or 0)
-                    fgm = float(r.get("FGM") or 0)
-                    fgp = round(fgm / fga, 3) if fga else 0.0
-                    zone_name = str(r.get("ZONE"))
+                    m_v = float(lr.get("FGM") or 0)
+                    a_v = float(lr.get("FGA") or 0)
+                    if not (math.isfinite(m_v) and math.isfinite(a_v)):
+                        continue
+                    a = agg.setdefault(zone, [0.0, 0.0])
+                    a[0] += m_v
+                    a[1] += a_v
+                for zone, (m, a) in agg.items():
+                    if a >= 50:
+                        league_fg[zone] = round(m / a, 3)
+
+            merged: dict[str, list[float]] = {}
+            for r in zb.to_dicts():
+                zone = _BUCKET_TO_ZONE.get(str(r.get("ZONE")))
+                if zone is None:
+                    continue
+                slot = merged.setdefault(zone, [0.0, 0.0])
+                slot[0] += float(r.get("FGM") or 0)
+                slot[1] += float(r.get("FGA") or 0)
+            bucket_rows = [{"ZONE": z, "FGM": m, "FGA": a}
+                           for z, (m, a) in merged.items()]
+            zb_rows = bucket_rows
+            out_rows = []
+            for r in zb_rows:
+                fga = float(r.get("FGA") or 0)
+                fgm = float(r.get("FGM") or 0)
+                fgp = round(fgm / fga, 3) if fga else 0.0
+                zone_name = str(r.get("ZONE"))
 
 
-                    efgp = (round(fgp * 1.5, 3) if _is_three_zone(zone_name)
-                            else fgp)
-                    row = {
-                        "zone": zone_name, "FGM": int(fgm), "FGA": int(fga),
-                        "FG_PCT": fgp,
-                        "eFG_PCT": efgp,
-                        "share": round(float(r.get("FGA_PCT") or 0), 3),
-                        "fgm": int(fgm), "fga": int(fga),
-                        "fg_pct": fgp,
-                        "freq_pct": round(float(r.get("FGA_PCT") or 0), 3),
-                    }
-                    if str(r.get("ZONE")) in league_fg:
-                        row["LEAGUE_DELTA"] = round(fgp - league_fg[str(r.get("ZONE"))], 3)
-                    out_rows.append(row)
-                total = sum(r["FGA"] for r in out_rows) or 1
-                for r in out_rows:
-                    r["share"] = round(r["FGA"] / total, 3)
-                    r["freq_pct"] = r["share"]
-                meta = {"source": "basketball-reference",
-                        "season": season, "rows": len(out_rows),
-                        "cached": True,
-                        "note": "distance buckets mapped onto court zones "
-                                "(3-10ft counts as paint, both mid buckets "
-                                "merge, corner threes included in "
-                                "above-the-break), not exact NBA zones"}
-                if league_fg:
-                    meta["baseline"] = "silver_zone_splits league bucket FG%"
-                return {"tool": "get_shot_zones", "ok": True, "rows": out_rows,
-                        "meta": meta}
-        except Exception:
-            pass
+                efgp = (round(fgp * 1.5, 3) if _is_three_zone(zone_name)
+                        else fgp)
+                row = {
+                    "zone": zone_name, "FGM": int(fgm), "FGA": int(fga),
+                    "FG_PCT": fgp,
+                    "eFG_PCT": efgp,
+                    "share": round(float(r.get("FGA_PCT") or 0), 3),
+                    "fgm": int(fgm), "fga": int(fga),
+                    "fg_pct": fgp,
+                    "freq_pct": round(float(r.get("FGA_PCT") or 0), 3),
+                }
+                if str(r.get("ZONE")) in league_fg:
+                    row["LEAGUE_DELTA"] = round(fgp - league_fg[str(r.get("ZONE"))], 3)
+                out_rows.append(row)
+            total = sum(r["FGA"] for r in out_rows) or 1
+            for r in out_rows:
+                r["share"] = round(r["FGA"] / total, 3)
+                r["freq_pct"] = r["share"]
+            meta = {"source": "basketball-reference",
+                    "season": season, "rows": len(out_rows),
+                    "cached": True,
+                    "note": "distance buckets mapped onto court zones "
+                            "(3-10ft counts as paint, both mid buckets "
+                            "merge, corner threes included in "
+                            "above-the-break), not exact NBA zones"}
+            if league_fg:
+                meta["baseline"] = "silver_zone_splits league bucket FG%"
+            return {"tool": "get_shot_zones", "ok": True, "rows": out_rows,
+                    "meta": meta}
     if not shot_dicts:
         res = nba_stats.shot_chart(player_id, season)
         if not res.ok or res.frame.height == 0:
@@ -1784,33 +1749,28 @@ def get_shot_zones(player_id: str | int, season: str | None = None, min_attempts
         baseline_detail = str(exc)[:120]
     bucket_fg: dict[str, float] = {}
     if baseline_missing:
-
-
-        try:
-            lz = store.read_frame("silver_zone_splits", "_season = ?", [season])
-            if lz is not None and lz.height > 0:
-                agg_b: dict[str, list] = {}
-                for lr in lz.to_dicts():
-                    zone = _BUCKET_TO_ZONE.get(str(lr.get("ZONE")))
-                    if zone is None:
-                        continue
-                    m_v = float(lr.get("FGM") or 0)
-                    a_v = float(lr.get("FGA") or 0)
-                    if not (math.isfinite(m_v) and math.isfinite(a_v)):
-                        continue
-                    slot = agg_b.setdefault(zone, [0.0, 0.0])
-                    slot[0] += m_v
-                    slot[1] += a_v
-                for zone, (m, a) in agg_b.items():
-                    if a >= 50:
-                        bucket_fg[zone] = round(m / a, 3)
-                if "Above the Break 3" in bucket_fg:
-                    bucket_fg.setdefault("Left Corner 3",
-                                         bucket_fg["Above the Break 3"])
-                    bucket_fg.setdefault("Right Corner 3",
-                                         bucket_fg["Above the Break 3"])
-        except Exception:
-            bucket_fg = {}
+        lz = store.read_frame("silver_zone_splits", "_season = ?", [season])
+        if lz.height > 0:
+            agg_b: dict[str, list] = {}
+            for lr in lz.to_dicts():
+                zone = _BUCKET_TO_ZONE.get(str(lr.get("ZONE")))
+                if zone is None:
+                    continue
+                m_v = float(lr.get("FGM") or 0)
+                a_v = float(lr.get("FGA") or 0)
+                if not (math.isfinite(m_v) and math.isfinite(a_v)):
+                    continue
+                slot = agg_b.setdefault(zone, [0.0, 0.0])
+                slot[0] += m_v
+                slot[1] += a_v
+            for zone, (m, a) in agg_b.items():
+                if a >= 50:
+                    bucket_fg[zone] = round(m / a, 3)
+            if "Above the Break 3" in bucket_fg:
+                bucket_fg.setdefault("Left Corner 3",
+                                     bucket_fg["Above the Break 3"])
+                bucket_fg.setdefault("Right Corner 3",
+                                     bucket_fg["Above the Break 3"])
         if not bucket_fg:
             baseline_detail = ("league baseline unavailable: shot-level data "
                                "seeded for few players and bucket table "

@@ -137,9 +137,13 @@ def test_multi_season_history():
 
 
 def test_unknown_player_stays_honest():
-    out = get_shot_zones.invoke(
-        {"player_id": 999999999, "season": "2024-25"})
-    assert out["ok"] is False
+    pytest = __import__("pytest")
+    with pytest.raises(store.TableAbsent) as info:
+        get_shot_zones.invoke({"player_id": 999999999, "season": "2024-25"})
+    assert info.value.table == "silver_zone_splits"
+    assert str(store.DB_PATH) == info.value.warehouse
+    assert store.DB_PATH.name in str(info.value)
+    assert "999999999" not in str(info.value)
 
 
 def test_compare_edges_survive_hist_zones():

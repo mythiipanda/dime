@@ -23,13 +23,15 @@ def _tool_names(state):
     return [c.split(":")[0] for c in state["calls_made"]]
 
 
-def test_season_avg_fastpath_fires():
+def test_season_avg_fastpath_reports_the_absent_table():
     st = _drain("how many assists per game does Jokic average")
     assert "get_season_averages" in _tool_names(st)
-    rows = st["tool_results"][-1].get("rows") or []
-    assert rows, "fast path must wrap the tool output as rows"
-    line = rows[0].get("rows") or [{}]
-    assert abs(float(line[0].get("APG", 0)) - 10.7) < 0.2
+    out = next(r for r in st["tool_results"]
+               if r.get("tool") == "get_season_averages")
+    assert out.get("ok") is False
+    assert "silver_player_season" in str(out.get("error", ""))
+    assert not (out.get("rows") or []), (
+        "a failed warehouse read must not be wrapped as empty evidence")
 
 
 def test_season_avg_fastpath_allows_history():

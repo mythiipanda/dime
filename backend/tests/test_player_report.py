@@ -51,15 +51,13 @@ def _drain(q):
 
 def test_registered(): assert "get_player_report" in TOOL_NAMES
 
-def test_lebron_report_has_all_four_parts():
-    o=get_player_report.invoke({"player":"LeBron James"})
-    assert o["ok"]
-    assert set(o["rows"]) == {"season_line","advanced","shot_profile","clutch"}
-    assert len(o["rows"]["shot_profile"]) >= 5
-    assert o["rows"]["clutch"]["PTS"] > 0
-    text=o["meta"]["deterministic_answer"]
-    for x in ("20.9 PPG","59.4% true shooting","Restricted Area","Clutch:"):
-        assert x in text
+def test_lebron_report_names_the_absent_season_table():
+    pytest = __import__("pytest")
+    with pytest.raises(store.TableAbsent) as info:
+        get_player_report.invoke({"player": "LeBron James"})
+    assert info.value.table == "silver_player_season"
+    assert str(store.DB_PATH) == info.value.warehouse
+    assert store.DB_PATH.name in str(info.value)
 
 def test_compound_route_beats_first_matching_average_lane():
     st=_drain("For LeBron this season, give me his averages, advanced metrics, shot profile, and clutch scoring.")

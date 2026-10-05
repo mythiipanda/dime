@@ -17,7 +17,7 @@ def _warehouse_has_games(season: str, dates: list[str]) -> bool:
     try:
         from .. import store as _store
 
-        frame = _store.read_frame(
+        frame = _store.read_frame_optional(
             "silver_scoreboard",
             "_season = ? AND _entity IN ("
             + ",".join("?" for _ in dates) + ")",
@@ -45,6 +45,8 @@ def _warehouse_games(date_str: str, season: str) -> tuple[list, bool]:
             if gid:
                 r["LINKS"] = game_links(str(gid))
         return rows, True
+    except _store.TableAbsent:
+        return [], False
     except Exception:
         return [], False
 

@@ -50,6 +50,12 @@ def _seed_hist(path: Path) -> None:
            9, 26, 35, 21, 6, 2, 12, 16, 102,
            '2024-25', 'regular-season', 'DEN')
         """)
+        con.execute("""
+        CREATE TABLE silver_player_season (
+            PLAYER_ID BIGINT, PLAYER VARCHAR, TEAM VARCHAR, AGE DOUBLE,
+            GP BIGINT, MPG DOUBLE, PPG DOUBLE, RPG DOUBLE, APG DOUBLE,
+            SPG DOUBLE, BPG DOUBLE, FG_PCT DOUBLE, FG3_PCT DOUBLE,
+            FT_PCT DOUBLE, TS_PCT DOUBLE, _season VARCHAR)""")
     finally:
         con.close()
 

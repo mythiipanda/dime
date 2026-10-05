@@ -2840,19 +2840,21 @@ async def _triage_seed(question: str, primary: str, model: str,
         _oteam: Any = found_t[0] if found_t else ""
         if not _oteam:
             try:
-                from shared import store as _ostore
                 _opid = int(str(found_p[0])) if str(found_p[0]).isdigit() else 0
                 if not _opid:
                     from shared.tools._core import coerce_player_id as _cpid
                     _opid = int(_cpid(found_p[0]))
+            except (ImportError, ValueError):
+                _opid = 0
+            if _opid:
+                from shared import store as _ostore
+
                 _ohit = _ostore.read_frame(
                     "silver_hist_player_seasons",
                     "player_id = ? AND _season = ?", [_opid, _oseason])
-                if _ohit is not None and _ohit.height:
+                if _ohit.height:
                     _oteam = str(_ohit.to_dicts()[-1].get(
                         "team_abbreviation") or "")
-            except Exception:
-                _oteam = ""
         if _oteam:
             _ooh: dict[str, Any] = {}
             async for _e in _triage_tool(

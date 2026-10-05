@@ -26,6 +26,18 @@ def _seed_boxscores(path, seasons=SEASONS):
                 [f"002{season[2:4]}000{(i + 1):03d}", season,
                  "synthetic", "2026-01-01T00:00:00Z"],
             )
+        con.execute(
+            "CREATE TABLE silver_player_season ("
+            "PLAYER_ID BIGINT, PLAYER VARCHAR, TEAM VARCHAR, AGE DOUBLE, "
+            "GP BIGINT, MPG DOUBLE, PPG DOUBLE, RPG DOUBLE, APG DOUBLE, "
+            "SPG DOUBLE, BPG DOUBLE, FG_PCT DOUBLE, FG3_PCT DOUBLE, "
+            "FT_PCT DOUBLE, TS_PCT DOUBLE, _season VARCHAR)"
+        )
+        con.execute(
+            "CREATE TABLE silver_hist_player_seasons ("
+            "player_id VARCHAR, player_name VARCHAR, "
+            "team_abbreviation VARCHAR, _season VARCHAR)"
+        )
     finally:
         con.close()
     return path

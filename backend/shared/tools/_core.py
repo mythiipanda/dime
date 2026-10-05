@@ -672,7 +672,7 @@ def _bound_warehouse_read(table, where, params):
 
     with store.write_guard():
         before = store.warehouse_identity()
-        frame = store.read_frame(table, where, params)
+        frame = store.read_frame_optional(table, where, params)
         if store.warehouse_identity() != before:
             raise RuntimeError("warehouse identity changed during query")
         return frame, before

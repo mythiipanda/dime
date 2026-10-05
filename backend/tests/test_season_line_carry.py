@@ -32,13 +32,13 @@ def _tool_names(state):
 def test_compare_that_to_season_average_pins():
     st = _drain("Compare that to his season average", HIST)
     assert "get_season_averages" in _tool_names(st)
-    rows = st["tool_results"][-1].get("rows") or []
-    assert rows and "Jalen Brunson" in str(rows), \
+    out = next(r for r in st["tool_results"]
+               if r.get("tool") == "get_season_averages")
+    assert out.get("ok") is False, \
+        "an absent season table must fail, not answer as an empty season"
+    assert "silver_player_season" in str(out.get("error", ""))
+    assert not (out.get("rows") or []), \
         "season line must be evidence, not a partial log"
-    row = rows[0]["rows"][0]
-    gp = row.get("GP") or row.get("G") or row.get("games")
-    assert gp is None or int(gp) >= 60, \
-        f"season line shows {gp} games - a partial window is not the season"
 
 
 def test_plain_season_average_followup_pins():

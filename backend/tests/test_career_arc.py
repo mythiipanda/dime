@@ -45,6 +45,18 @@ def _seed(path):
             "560, 1100, 0.509, 120, 300, 0.40, 260, 340, 0.765, '2025-26')"
         )
         con.execute(
+            "CREATE TABLE silver_player_season ("
+            "PLAYER_ID BIGINT, PLAYER VARCHAR, TEAM VARCHAR, AGE DOUBLE, "
+            "GP BIGINT, MPG DOUBLE, PPG DOUBLE, RPG DOUBLE, APG DOUBLE, "
+            "SPG DOUBLE, BPG DOUBLE, FG_PCT DOUBLE, FG3_PCT DOUBLE, "
+            "FT_PCT DOUBLE, _season VARCHAR)"
+        )
+        con.execute(
+            "INSERT INTO silver_player_season VALUES "
+            "(2544, 'LeBron James', 'LAL', 40.0, 60, 33.1, 25.0, 6.1, 7.2, "
+            "1.2, 0.6, 0.515, 0.317, 0.737, '2025-26')"
+        )
+        con.execute(
             "CREATE TABLE silver_advanced ("
             "PLAYER_ID BIGINT, TS_PCT DOUBLE, _season VARCHAR)"
         )

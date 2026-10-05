@@ -548,16 +548,48 @@ def write_unit(table: str, frame: pl.DataFrame, season: str, source: str,
         con.close()
 
 
+class TableAbsent(LookupError):
+    """A read named a table the warehouse does not hold."""
+
+    def __init__(self, table: str, warehouse: Path | str) -> None:
+        self.table = str(table)
+        self.warehouse = str(warehouse)
+        super().__init__(
+            f"warehouse table {self.table!r} is absent from "
+            f"{Path(self.warehouse).name}; an empty read here would be "
+            f"indistinguishable from a table that holds no matching rows")
+
+
 def read_frame(table: str, where: str = "", params: list[object] | None = None) -> pl.DataFrame:
+    """Read a warehouse table. Raises TableAbsent when the table is absent.
+
+    An empty frame means the table exists and matched no rows. Those are
+    different facts and a caller that conflates them answers as though the
+    data were never built.
+    """
+    if table not in tables():
+        raise TableAbsent(table, DB_PATH)
     con = connect(read_only=True)
     try:
-        if table not in tables():
-            return pl.DataFrame()
         query = f"SELECT * FROM {table}" + (f" WHERE {where}" if where else "")
         rel = con.execute(query, params or [])
         return pl.from_arrow(rel.fetch_arrow_table())
     finally:
         con.close()
+
+
+def read_frame_optional(table: str, where: str = "",
+                        params: list[object] | None = None) -> pl.DataFrame:
+    """Read a table whose absence is a declared, expected outcome.
+
+    Only for callers that genuinely treat the table as one source among
+    several, or that ask whether it exists yet. Never use it to make a
+    warehouse miss look like an empty result set.
+    """
+    try:
+        return read_frame(table, where, params)
+    except TableAbsent:
+        return pl.DataFrame()
 
 
 def _read_df(sql: str, params: list, tries: int = 5) -> list[dict[str, object]]:

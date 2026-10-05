@@ -465,11 +465,8 @@ def dataset(
     if entity_scoped:
 
         if entity:
-            try:
-                frame = store.read_frame(
-                    table, "_season = ? AND _entity = ?", [season, entity])
-            except Exception:
-                frame = frame.clear()
+            frame = store.read_frame(
+                table, "_season = ? AND _entity = ?", [season, entity])
         else:
             frame = frame.clear()
     cached = frame.height > 0
@@ -481,10 +478,7 @@ def dataset(
 
             stale = None
             if entity_scoped and entity:
-                try:
-                    stale = store.read_frame(table, "_entity = ?", [entity])
-                except Exception:
-                    stale = None
+                stale = store.read_frame(table, "_entity = ?", [entity])
             if stale is not None and stale.height > 0:
                 out = _datasets_envelope(table, season, stale, True)
                 out["ok"] = True

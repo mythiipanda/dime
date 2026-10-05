@@ -35,12 +35,12 @@ def download(url: str, dest: Path) -> Path:
 
 
 def have_shots(year: int) -> int:
-    df = store.read_frame("silver_hist_shots", f"season = {year}", [])
+    df = store.read_frame_optional("silver_hist_shots", f"season = {year}", [])
     return len(df)
 
 
 def have_player_seasons(year: int) -> int:
-    df = store.read_frame(
+    df = store.read_frame_optional(
         "silver_hist_player_seasons", "_season = ? AND _entity = 'league'", [label(year)]
     )
     return len(df)

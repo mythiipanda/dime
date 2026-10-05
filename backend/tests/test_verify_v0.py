@@ -161,8 +161,9 @@ def test_wrapped_authoritative_answer_suppresses_discarded_draft_caution(monkeyp
     assert not [e for e in events if e["type"] == "custom_data"
                 and e["data"].get("unverified_numbers")]
     answer = asyncio.run(_final_answer(state))
-    assert "32.4 points" in answer and "2022-23" in answer
     assert "could not verify" not in answer
+    assert "silver_player_season" not in answer, \
+        "an absent warehouse table is reported as a failed tool, not as prose"
 
 
 async def _final_answer(state):

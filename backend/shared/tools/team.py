@@ -838,23 +838,21 @@ def get_team_hub(team_id: str | int, season: str | None = None) -> dict[str, Any
 
 
 
-        try:
-            from .. import store as _store
-            from .gamelog import _team_abbr as _tabbr_fn
-            abbr, _full = _tabbr_fn(team_id)
-            frame = _store.read_frame(
-                "silver_player_season", '"TEAM" = ? AND _season = ?',
-                [abbr, season])
-            if frame is not None and frame.height:
-                roster = sorted(
-                    ({"PLAYER": r.get("PLAYER"), "TEAM": r.get("TEAM"),
-                      "AGE": r.get("AGE"), "GP": r.get("GP"),
-                      "PPG": r.get("PPG"), "RPG": r.get("RPG"),
-                      "APG": r.get("APG")}
-                     for r in frame.to_dicts()),
-                    key=lambda r: -(r.get("GP") or 0))
-        except Exception:
-            pass
+        from .. import store as _store
+        from .gamelog import _team_abbr as _tabbr_fn
+
+        abbr, _full = _tabbr_fn(team_id)
+        frame = _store.read_frame(
+            "silver_player_season", '"TEAM" = ? AND _season = ?',
+            [abbr, season])
+        if frame.height:
+            roster = sorted(
+                ({"PLAYER": r.get("PLAYER"), "TEAM": r.get("TEAM"),
+                  "AGE": r.get("AGE"), "GP": r.get("GP"),
+                  "PPG": r.get("PPG"), "RPG": r.get("RPG"),
+                  "APG": r.get("APG")}
+                 for r in frame.to_dicts()),
+                key=lambda r: -(r.get("GP") or 0))
     return {
         "tool": "get_team_hub", "ok": True,
 

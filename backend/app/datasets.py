@@ -181,15 +181,11 @@ def _sanitize_live_error(err: object) -> str:
 
 
 def _team_lineup_frame(season: str, team_id: int) -> object:
-    try:
-        frame = store.read_frame(
-            "silver_lineups",
-            "_season = ? AND CAST(TEAM_ID AS VARCHAR) = CAST(? AS VARCHAR)",
-            [season, str(team_id)],
-        )
-    except Exception:
-        return pl.DataFrame([])
-    return frame
+    return store.read_frame(
+        "silver_lineups",
+        "_season = ? AND CAST(TEAM_ID AS VARCHAR) = CAST(? AS VARCHAR)",
+        [season, str(team_id)],
+    )
 
 
 def _lineup_leaders(season: str, min_poss: int) -> dict:
@@ -271,13 +267,10 @@ def _zone_splits(season: str, player_id: int) -> dict:
                 "zone_splits is player-scoped: pass player_id"}
     zones: dict = {}
     sources = []
-    try:
-        cur = store.read_frame(
-            "silver_shots", "_season = ? AND CAST(PLAYER_ID AS VARCHAR) = CAST(? AS VARCHAR)",
-            [season, str(player_id)])
-    except Exception:
-        cur = None
-    if cur is not None and cur.height > 0:
+    cur = store.read_frame(
+        "silver_shots", "_season = ? AND CAST(PLAYER_ID AS VARCHAR) = CAST(? AS VARCHAR)",
+        [season, str(player_id)])
+    if cur.height > 0:
         sources.append("silver_shots")
         for r in cur.to_dicts():
             z = r.get("SHOT_ZONE_BASIC")
@@ -288,13 +281,10 @@ def _zone_splits(season: str, player_id: int) -> dict:
             if str(r.get("SHOT_MADE_FLAG")) == "1":
                 slot[0] += 1
     if not zones:
-        try:
-            hist = store.read_frame(
-                "silver_hist_shots", "_season = ? AND CAST(person_id AS VARCHAR) = CAST(? AS VARCHAR)",
-                [season, str(player_id)])
-        except Exception:
-            hist = None
-        if hist is not None and hist.height > 0:
+        hist = store.read_frame(
+            "silver_hist_shots", "_season = ? AND CAST(person_id AS VARCHAR) = CAST(? AS VARCHAR)",
+            [season, str(player_id)])
+        if hist.height > 0:
             sources.append("silver_hist_shots")
             for r in hist.to_dicts():
                 z = _hist_zone(r.get("shot_value"), r.get("shot_distance"),
@@ -472,11 +462,8 @@ def dataset(
     if entity_scoped:
 
         if entity:
-            try:
-                frame = store.read_frame(
-                    table, "_season = ? AND _entity = ?", [season, entity])
-            except Exception:
-                frame = frame.clear()
+            frame = store.read_frame(
+                table, "_season = ? AND _entity = ?", [season, entity])
         else:
             frame = frame.clear()
     cached = frame.height > 0
@@ -488,10 +475,7 @@ def dataset(
 
             stale = None
             if entity_scoped and entity:
-                try:
-                    stale = store.read_frame(table, "_entity = ?", [entity])
-                except Exception:
-                    stale = None
+                stale = store.read_frame(table, "_entity = ?", [entity])
             if stale is not None and stale.height > 0:
                 out = _envelope(table, season, stale, True)
                 out["ok"] = True

@@ -116,6 +116,25 @@ def test_team_lineups_both_fail_returns_sanitized_error(monkeypatch):
     assert "no cached rows" in out["error"].lower()
 
 
+def test_non_entity_dataset_live_failure_reports_error(monkeypatch):
+    def fake_read(table, where=None, params=None):
+        return pl.DataFrame([])
+
+    def fake_standings(season):
+        return FetchResult(
+            frame=pl.DataFrame([]),
+            meta=FetchMeta(source="nba_api", season=season),
+            ok=False,
+            error="upstream refused the connection",
+        )
+
+    monkeypatch.setattr(_store, "read_frame", fake_read)
+    monkeypatch.setattr(_nba, "standings", fake_standings)
+    out = _endpoint()("standings", season="2024-25")
+    assert out.get("ok") is False
+    assert "upstream refused the connection" in str(out.get("error", ""))
+
+
 def test_default_season_resolves_without_literal_and_explicit_preserved(monkeypatch):
     assert "2025-26" not in inspect.getsource(_ds.dataset)
     import shared.tools._core as _core

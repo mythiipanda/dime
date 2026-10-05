@@ -24,11 +24,24 @@ def test_concurrent_reads_all_succeed():
 
 def test_concurrent_read_frames_no_binder_error():
     def _read(_i):
-        return store.read_frame("definitely_not_a_table")
+        return store.read_frame_optional("definitely_not_a_table")
 
     with ThreadPoolExecutor(max_workers=8) as pool:
         frames = list(pool.map(_read, range(32)))
     assert all(f.height == 0 for f in frames)
+
+
+def test_concurrent_absent_reads_all_raise_table_absent():
+    def _read(_i):
+        return store.read_frame("definitely_not_a_table")
+
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        futures = [pool.submit(_read, i) for i in range(32)]
+        raised = [f.exception() for f in futures]
+
+    assert all(isinstance(exc, store.TableAbsent) for exc in raised)
+    assert all(exc.table == "definitely_not_a_table" for exc in raised)
+    assert all(str(exc.warehouse).endswith(".duckdb") for exc in raised)
 
 
 def test_read_frame_opens_frozen_warehouse_read_only(monkeypatch):

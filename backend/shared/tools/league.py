@@ -127,12 +127,9 @@ def _hist_standings_rows(season: str) -> list[dict[str, Any]]:
         from .. import store as _store
     except Exception:
         from shared import store as _store
-    try:
-        frame = _store.read_frame(
-            "silver_hist_standings", "_season = ?", [season])
-    except Exception:
-        return []
-    if frame is None or frame.height == 0:
+    frame = _store.read_frame(
+        "silver_hist_standings", "_season = ?", [season])
+    if frame.height == 0:
         return []
     out: list[dict[str, Any]] = []
     for h in frame.to_dicts():
