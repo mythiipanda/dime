@@ -4,7 +4,13 @@ import { useState } from "react";
 import type { ReactNode } from "react";
 import AnswerText from "./AnswerText";
 import type { AiMessage } from "../lib/chat";
-import { contextPills, evidenceSources, unverifiedSummary, withCitationMarkers } from "../lib/evidence";
+import {
+  contextPills,
+  evidenceSources,
+  gapReasons,
+  unverifiedSummary,
+  withCitationMarkers,
+} from "../lib/evidence";
 import { Chip } from "./view-shared";
 import type { EvidenceSource } from "../lib/evidence";
 import { gradeLimits } from "../lib/grades";
@@ -224,6 +230,23 @@ export function UnverifiedNote({ ai }: { ai: AiMessage }) {
   );
 }
 
+export function GapPanel({ ai }: { ai: AiMessage }) {
+  const reasons = gapReasons(ai);
+  if (!reasons.length) return null;
+  return (
+    <div style={{ marginTop: 10 }}>
+      <div style={{ fontSize: 12, fontWeight: 500, color: "var(--color-warm-gray)", marginBottom: 4 }}>
+        Couldn't verify
+      </div>
+      {reasons.map((reason) => (
+        <div key={reason} style={{ fontSize: 12, lineHeight: 1.5, color: "var(--color-ash-gray)" }}>
+          {reason}
+        </div>
+      ))}
+    </div>
+  );
+}
+
 function CiteAnchor(props: {
   children?: ReactNode;
   onToggle: (index: number) => void;
@@ -357,6 +380,7 @@ export default function CitedAnswerText({ text, ai }: { text: string; ai: AiMess
         </button>
       ) : null}
       <UnverifiedNote ai={ai} />
+      <GapPanel ai={ai} />
     </div>
   );
 }

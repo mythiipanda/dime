@@ -460,6 +460,21 @@ function incompleteLabels(ai: AiMessage): string[] {
   return labels;
 }
 
+export function gapReasons(ai: AiMessage): string[] {
+  const carry = carryOf(ai);
+  const gaps = Array.isArray(carry.gaps) ? carry.gaps : [];
+  const seen = new Set<string>();
+  const reasons: string[] = [];
+  gaps.forEach((gap) => {
+    const kind =
+      typeof gap === "string" ? gap : isRecord(gap) ? String(gap.kind || "") : "";
+    if (!kind || seen.has(kind)) return;
+    seen.add(kind);
+    reasons.push(gapMessage(kind));
+  });
+  return reasons;
+}
+
 function reasonText(ai: AiMessage): string {
   const carry = carryOf(ai);
   const gaps = Array.isArray(carry.gaps) ? carry.gaps : [];
