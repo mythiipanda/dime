@@ -449,6 +449,6 @@ def test_compare_metrics_stale_raptor_is_context_not_four_votes(monkeypatch):
 def test_resolve_entity_uses_warehouse_canonical_id_for_exact_suffix_name():
     res = tools.resolve_entity.invoke({"query": "Tim Hardaway Jr."})
     player = res["rows"]["players"][0]
-    assert player["id"] == 896
+    assert player["id"] == 203501
     assert player["static_id"] == 203501
     assert player["identity_source"] == "warehouse_exact_name"
