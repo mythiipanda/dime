@@ -1258,6 +1258,7 @@ class ModelIntake(ModelStage):
         if unknown:
             raise ValueError(f"intake selected unknown capabilities: {unknown}")
         task = _canonicalize_calculation_requirements(task)
+        task = _align_requirement_requested_outputs(task)
         task = task.model_copy(update={
             "subject_entity_type": _derive_subject_entity_type(task),
         })
@@ -2239,6 +2240,49 @@ def _derive_subject_entity_type(task: TaskSpec) -> str | None:
         if kind == "player" or kind == "team":
             return kind
     return None
+
+
+def _align_requirement_requested_outputs(task: TaskSpec) -> TaskSpec:
+    from v2.adapters.capabilities import CAPABILITIES, resolve_metric_column
+    if not task.requested_outputs or not task.requirements:
+        return task
+    aligned = []
+    for requirement in task.requirements:
+        options = [name for name in requirement.capability_options if name in CAPABILITIES]
+        if not options:
+            aligned.append(requirement)
+            continue
+        existing = list(requirement.requested_outputs)
+        for wanted in task.requested_outputs:
+            if wanted in existing:
+                continue
+            wanted_columns = set()
+            for name in options:
+                column = resolve_metric_column(CAPABILITIES[name], wanted)
+                if column is not None:
+                    wanted_columns.add(column)
+            if not wanted_columns:
+                continue
+            replaced = False
+            for index, current in enumerate(list(existing)):
+                current_columns = set()
+                for name in options:
+                    column = resolve_metric_column(CAPABILITIES[name], current)
+                    if column is not None:
+                        current_columns.add(column)
+                if wanted_columns & current_columns:
+                    existing[index] = wanted
+                    replaced = True
+                    break
+            if not replaced:
+                if len(existing) >= 16:
+                    continue
+                existing.append(wanted)
+        if existing == list(requirement.requested_outputs):
+            aligned.append(requirement)
+        else:
+            aligned.append(requirement.model_copy(update={"requested_outputs": existing}))
+    return task.model_copy(update={"requirements": aligned})
 
 
 def _canonicalize_calculation_requirements(task: TaskSpec) -> TaskSpec:

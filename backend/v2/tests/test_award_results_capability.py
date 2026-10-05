@@ -711,3 +711,149 @@ def test_the_golden_winner_scenarios_are_not_a_race(awards_warehouse):
     assert labels == {"1T"}
     assert {row["rank"] for row in envelope.rows["placements"]} == {1}
     assert "never a model score" in envelope.coverage
+
+
+def test_requirement_alignment_repairs_award_requested_outputs():
+    from v2.adapters.models import _align_requirement_requested_outputs
+    from v2.contracts import EvidenceRequirement, RunMode, SeasonRef, TaskSpec
+
+    def task_with(requirement_outputs):
+        return TaskSpec(
+            goal="Who won the 2023-24 MVP and how large was the winning vote share?",
+            mode=RunMode.QUICK,
+            deliverable="winner and share",
+            requested_outputs=["PLAYER_NAME", "VOTE_SHARE"],
+            season=SeasonRef(value="2023-24", source="user", confidence=1.0),
+            requirements=[EvidenceRequirement(
+                id="mvp_result",
+                description="official 2023-24 MVP result",
+                capability_options=["award_results"],
+                requested_outputs=list(requirement_outputs),
+            )],
+        )
+
+    repaired = _align_requirement_requested_outputs(task_with(["AWARD_SHARE"]))
+    assert sorted(repaired.requirements[0].requested_outputs) == ["PLAYER_NAME", "VOTE_SHARE"]
+    repaired_empty = _align_requirement_requested_outputs(task_with([]))
+    assert sorted(repaired_empty.requirements[0].requested_outputs) == ["PLAYER_NAME", "VOTE_SHARE"]
+    repaired_raw = _align_requirement_requested_outputs(task_with(["PLAYER", "AWARD_SHARE"]))
+    assert sorted(repaired_raw.requirements[0].requested_outputs) == ["PLAYER_NAME", "VOTE_SHARE"]
+
+
+class MvpAlignedIntake:
+    def __init__(self) -> None:
+        from v2.adapters.models import _align_requirement_requested_outputs
+        from v2.contracts import EvidenceRequirement, RunMode, SeasonRef, TaskSpec
+
+        misaligned = TaskSpec(
+            goal="Who won the 2023-24 MVP and how large was the winning vote share?",
+            mode=RunMode.QUICK,
+            deliverable="winner and share",
+            requested_outputs=["PLAYER_NAME", "VOTE_SHARE"],
+            season=SeasonRef(value="2023-24", source="user", confidence=1.0),
+            requirements=[EvidenceRequirement(
+                id="mvp_result",
+                description="official 2023-24 MVP result",
+                capability_options=["award_results"],
+                requested_outputs=["AWARD_SHARE"],
+            )],
+        )
+        self._task = _align_requirement_requested_outputs(misaligned)
+
+    async def understand(self, request: str, context=()):
+        return self._task
+
+
+class MvpAlignedPlanner:
+    async def plan(self, task, failure_context=None):
+        from v2.contracts import Plan, PlanNode
+
+        return Plan(nodes=[PlanNode(
+            id="mvp_winner", description="official 2023-24 MVP result",
+            capability_hints=["award_results"],
+            covers_requirement_ids=["mvp_result"],
+            arguments={"view": "winner", "award": "MVP"})])
+
+
+class MvpAlignedSynthesizer:
+    async def synthesize(self, task, evidence):
+        from v2.contracts import Claim, ClaimKind, DraftReport, EvidenceOutputBinding
+
+        envelope = next(iter(evidence))
+        placement = envelope.rows["placements"][0]
+        bindings = [
+            EvidenceOutputBinding(
+                requirement_kind="task", requirement_id=None,
+                output_id="PLAYER_NAME", node_id="mvp_winner",
+                evidence_id=envelope.evidence_id, selector="rows[0].player",
+                value={"kind": "string", "value": str(placement["player"])},
+                unit={"kind": "unitless"},
+                domain="award_results"),
+            EvidenceOutputBinding(
+                requirement_kind="task", requirement_id=None,
+                output_id="VOTE_SHARE", node_id="mvp_winner",
+                evidence_id=envelope.evidence_id, selector="rows[0].award_share",
+                value={"kind": "float", "value": float(placement["award_share"])},
+                unit={"kind": "declared", "value": "fraction_0_1"},
+                domain="award_results"),
+        ]
+        return DraftReport(
+            sections=["MVP"],
+            claims=[Claim(
+                text=(f"{placement['player']} won the {envelope.season} MVP with a {placement['award_share']} share."),
+                kind=ClaimKind.OBSERVED,
+                evidence_ids=[envelope.evidence_id],
+                output_bindings=bindings)])
+
+
+def test_mvp_winner_and_share_publish_through_public_seam(
+        awards_warehouse, monkeypatch, tmp_path):
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+
+    from v2.adapters.core import ToolCapability
+    from v2.api import routes
+    from v2.projects.service import ProjectStore
+    from v2.runtime import PlanExecutor, Runtime
+    from v2.runtime.assembly import MechanicalVerifier
+    from v2.runtime.ledger import RunLedger
+
+    runtime = Runtime(
+        intake=MvpAlignedIntake(), planner=MvpAlignedPlanner(),
+        executor=PlanExecutor(
+            {"award_results": ToolCapability("award_results")}),
+        synthesizer=MvpAlignedSynthesizer(),
+        mechanical_verifier=MechanicalVerifier(),
+        semantic_verifier=WinnerSemantic())
+
+    def build(**kwargs):
+        return runtime, RunLedger(kwargs["run_id"])
+
+    monkeypatch.setenv("DIME_RUNTIME_V2", "on")
+    monkeypatch.setattr("shared.providers.resolve_model_id",
+                        lambda value: ("openrouter", "fixture"))
+    monkeypatch.setattr("v2.runtime.assembly.build_runtime", build)
+    monkeypatch.setattr(routes, "_PROJECTS", ProjectStore(tmp_path / "p.sqlite"))
+    routes._CHAT_HITS.clear()
+    app = FastAPI()
+    app.include_router(routes.router, prefix="/api")
+    response = TestClient(app).post(
+        "/api/v2/chat/stream",
+        json={"q": "Who won the 2023-24 MVP and how large was the winning vote share?"})
+    assert response.status_code == 200
+    custom = _event(response.text, "custom_data")
+    final = _event(response.text, "final_answer")
+    statuses = {(item["requirement_kind"], item["requirement_id"], item["output_id"]): item["status"]
+                for item in final["carry"]["output_statuses"]}
+    assert statuses[("task", None, "PLAYER_NAME")] == "complete"
+    assert statuses[("task", None, "VOTE_SHARE")] == "complete"
+    assert statuses[("evidence", "mvp_result", "PLAYER_NAME")] == "complete"
+    assert statuses[("evidence", "mvp_result", "VOTE_SHARE")] == "complete"
+    cited = {row["output_id"]: row["value"] for row in custom["tables"]}
+    assert cited["PLAYER_NAME"] == "Nikola Jokić"
+    assert cited["VOTE_SHARE"] == "0.935"
+    assert {row["provenance"]["capability"] for row in custom["tables"]} == {"award_results"}
+    assert {row["provenance"]["origin"] for row in custom["tables"]} == {"warehouse"}
+    assert custom["unverified_numbers"] == []
+    assert REFUSAL not in final["text"]
+    assert final["carry"]["verified_claims"] == 1
