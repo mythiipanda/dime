@@ -23,6 +23,7 @@ from v2.adapters.models import (
 )
 from v2.adapters.structured import (
     CAPABILITY_TABLE_PATH,
+    LOOKAROUND_PATTERN,
     STRICT_SAFE_PATTERNS,
     CapabilityMeasurement,
     CapabilityTableError,
@@ -43,6 +44,7 @@ from v2.adapters.structured import (
     repair_json_text,
     resolve_strategy,
     sanitize_schema,
+    strict_subset_violations,
     wire_schema_for,
 )
 from v2.arguments import PlannerOutputWire, RequirementReviewWire
@@ -62,22 +64,6 @@ STAGE_SCHEMAS = (
     ("verifier", VerificationReport),
 )
 
-STANDARD_KEYWORDS = frozenset({
-    "$anchor", "$comment", "$defs", "$dynamicAnchor", "$dynamicRef", "$id",
-    "$ref", "$schema", "$vocabulary", "additionalProperties", "allOf", "anyOf",
-    "const", "contains", "contentEncoding", "contentMediaType",
-    "contentSchema", "default", "dependentRequired", "dependentSchemas",
-    "deprecated", "description", "discriminator", "else", "enum",
-    "examples", "exclusiveMaximum", "exclusiveMinimum", "format", "if",
-    "items", "maxContains", "maxItems", "maxLength", "maxProperties",
-    "maximum", "minContains", "minItems", "minLength", "minProperties",
-    "minimum", "multipleOf", "not", "oneOf", "pattern", "patternProperties",
-    "prefixItems", "properties", "propertyNames", "readOnly", "required",
-    "then", "title", "type", "unevaluatedItems", "unevaluatedProperties",
-    "uniqueItems", "writeOnly",
-})
-UNCOMPILABLE_KEYWORDS = frozenset({"const", "discriminator"})
-LOOKAROUND = re.compile(r"\(\?(?:=|!|<=|<!)")
 LADDER = (
     (OutputStrategy.STRICT_SCHEMA, True, True, True),
     (OutputStrategy.TOOL_CALL, False, True, False),
@@ -240,29 +226,7 @@ def _envelope(route: str = "intake") -> RequestEnvelope:
 
 def _strict_grammar_accepts(schema) -> None:
     Draft202012Validator.check_schema(schema)
-    _assert_strict_subset(schema)
-
-
-def _assert_strict_subset(schema, path="$") -> None:
-    if isinstance(schema, list):
-        for index, item in enumerate(schema):
-            _assert_strict_subset(item, f"{path}[{index}]")
-        return
-    if not isinstance(schema, dict):
-        return
-    for keyword, value in schema.items():
-        assert keyword in STANDARD_KEYWORDS, f"{path}.{keyword}"
-        assert keyword not in UNCOMPILABLE_KEYWORDS, f"{path}.{keyword}"
-        if keyword == "pattern":
-            assert LOOKAROUND.search(value) is None, f"{path}.{keyword}={value!r}"
-        if keyword in {"enum", "default", "const", "properties",
-                       "$defs"}:
-            continue
-        _assert_strict_subset(value, f"{path}.{keyword}")
-    for name, definition in schema.get("$defs", {}).items():
-        _assert_strict_subset(definition, f"{path}.$defs.{name}")
-    for name, definition in schema.get("properties", {}).items():
-        _assert_strict_subset(definition, f"{path}.properties.{name}")
+    assert strict_subset_violations(schema) == ()
 
 
 def test_ladder_picks_the_highest_strategy_an_endpoint_supports():
@@ -785,7 +749,7 @@ def test_declared_calculation_result_is_decimal_text_not_a_decimal():
 
     schema = DeclaredCalculation.model_json_schema()
     assert schema["properties"]["result"]["type"] == "string"
-    assert LOOKAROUND.search(
+    assert LOOKAROUND_PATTERN.search(
         schema["properties"]["result"]["pattern"]) is None
     calculation = DeclaredCalculation.model_validate({
         "calculation_id": "c", "operation": "add",
@@ -856,7 +820,7 @@ def test_every_stage_wire_schema_satisfies_a_strict_grammar():
             sanitized = wire_schema_for(strategy, schema.model_json_schema())
             assert sanitized.schema, (stage, strategy)
             _strict_grammar_accepts(sanitized.schema)
-            assert LOOKAROUND.search(json.dumps(sanitized.schema)) is None
+            assert LOOKAROUND_PATTERN.search(json.dumps(sanitized.schema)) is None
 
 
 def test_the_prompt_floor_sends_no_schema_on_the_wire():

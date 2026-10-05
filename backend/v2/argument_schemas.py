@@ -27,15 +27,11 @@ def _inline(value,root,stack,path):
   if ref in stack:raise ValueError(f'ref cycle at {path}')
   return _inline(_resolve_pointer(root,ref),root,stack+(ref,),path)
  return {k:_inline(v,root,stack,f'{path}.{k}') for k,v in value.items() if not (k=='$defs' and path=='$')}
-def _nullable(schema):
- branches=schema.get('anyOf')
- if branches and any(x.get('type')=='null' for x in branches):return schema
- return {'anyOf':[schema,{'type':'null'}]}
 def inline_provider_schema_defs(source):
  inlined=_inline(copy.deepcopy(source),source,(),'$')
  return inlined
 def normalize_provider_wire_schema(source):
- inlined=_inline(copy.deepcopy(source),source,(),'$');losses=[]
+ inlined=_inline(copy.deepcopy(source),source,(),'$')
  def walk(v,path='$'):
   if isinstance(v,list):return [walk(x,path+'[]') for x in v]
   if not isinstance(v,dict):return v
@@ -47,16 +43,10 @@ def normalize_provider_wire_schema(source):
    out[k]=walk(x,f'{path}.{k}')
   if out.get('type')=='object':
    if out.get('additionalProperties',False) is not False:raise ValueError(f'free-form object at {path}')
-   props=out.get('properties',{});original=set(out.get('required',[]))
-   for key in props:
-    if key not in original:
-     default=props[key].get('default')
-     props[key]=_nullable(props[key]);props[key]['default']=default
-     losses.append({'path':f'{path}.properties.{key}','classification':'optional-materialized-nullable','default':default})
-   out['required']=sorted(props)
+   out['required']=sorted(out.get('properties',{}))
   return out
  candidate=walk(inlined)
- return candidate,{'source_schema_sha256':canonical_hash(source),'candidate_schema_sha256':canonical_hash(candidate),'hash_canonicalization':'UTF-8 sorted-key compact JSON','losses':losses}
+ return candidate,{'source_schema_sha256':canonical_hash(source),'candidate_schema_sha256':canonical_hash(candidate),'hash_canonicalization':'UTF-8 sorted-key compact JSON','losses':[]}
 
 def _kinds(schema):
  out=[]

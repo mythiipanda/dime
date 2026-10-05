@@ -13,7 +13,10 @@ from urllib.parse import urlsplit
 
 from pydantic import BaseModel
 from pydantic_ai import NativeOutput, PromptedOutput, ToolOutput
-from v2.argument_schemas import normalize_provider_wire_schema
+from v2.argument_schemas import (
+    inline_provider_schema_defs,
+    normalize_provider_wire_schema,
+)
 
 
 class OutputStrategy(StrEnum):
@@ -277,6 +280,96 @@ def wire_schema_for(strategy: OutputStrategy,
     if strategy is OutputStrategy.TOOL_CALL:
         return sanitize_schema(schema)
     return SchemaSanitization({}, ())
+
+
+STRICT_SUBSET_KEYWORDS: Final[frozenset[str]] = frozenset({
+    "$anchor", "$comment", "$defs", "$dynamicAnchor", "$dynamicRef", "$id",
+    "$ref", "$schema", "$vocabulary", "additionalProperties", "allOf", "anyOf",
+    "const", "contains", "contentEncoding", "contentMediaType",
+    "contentSchema", "default", "dependentRequired", "dependentSchemas",
+    "deprecated", "description", "discriminator", "else", "enum",
+    "examples", "exclusiveMaximum", "exclusiveMinimum", "format", "if",
+    "items", "maxContains", "maxItems", "maxLength", "maxProperties",
+    "maximum", "minContains", "minItems", "minLength", "minProperties",
+    "minimum", "multipleOf", "not", "oneOf", "pattern", "patternProperties",
+    "prefixItems", "properties", "propertyNames", "readOnly", "required",
+    "then", "title", "type", "unevaluatedItems", "unevaluatedProperties",
+    "uniqueItems", "writeOnly",
+})
+UNCOMPILABLE_KEYWORDS: Final[frozenset[str]] = frozenset(
+    {"const", "discriminator"})
+
+
+def strict_subset_violations(schema: Mapping[str, Any]) -> tuple[str, ...]:
+    """Every construct a strict JSON-Schema grammar refuses to compile."""
+    violations: list[str] = []
+
+    def walk(node: Any, path: str) -> None:
+        if isinstance(node, list):
+            for item in node:
+                walk(item, f"{path}[]")
+            return
+        if not isinstance(node, Mapping):
+            return
+        for keyword, value in node.items():
+            if (keyword not in STRICT_SUBSET_KEYWORDS
+                    or keyword in UNCOMPILABLE_KEYWORDS
+                    or (keyword == "pattern"
+                        and LOOKAROUND_PATTERN.search(str(value)) is not None)):
+                violations.append(f"{path}.{keyword}")
+            if keyword in {"enum", "default", "const", "properties", "$defs"}:
+                continue
+            walk(value, f"{path}.{keyword}")
+        for container, separator in (("properties", ".properties"),
+                                     ("$defs", ".$defs")):
+            for name, definition in (node.get(container) or {}).items():
+                walk(definition, f"{path}{separator}.{name}")
+
+    walk(dict(schema), "$")
+    return tuple(violations)
+
+
+def _admits_null(node: Any) -> bool:
+    if not isinstance(node, Mapping):
+        return False
+    kind = node.get("type")
+    if kind == "null" or (isinstance(kind, list) and "null" in kind):
+        return True
+    return any(_admits_null(branch) for keyword in ("anyOf", "oneOf", "allOf")
+               for branch in node.get(keyword) or ())
+
+
+def _nullable_paths(node: Any, path: str = "$") -> set[str]:
+    if isinstance(node, list):
+        return {found for item in node
+                for found in _nullable_paths(item, path)}
+    if not isinstance(node, Mapping):
+        return set()
+    found = {path} if _admits_null(node) else set()
+    for keyword in ("anyOf", "oneOf", "allOf"):
+        for branch in node.get(keyword) or ():
+            found |= _nullable_paths(branch, f"{path}.union[]")
+    for container, separator in (("properties", ".properties"),
+                                 ("$defs", ".$defs")):
+        for name, definition in (node.get(container) or {}).items():
+            found |= _nullable_paths(definition, f"{path}{separator}.{name}")
+    if isinstance(node.get("items"), Mapping):
+        found |= _nullable_paths(node["items"], f"{path}.items")
+    return found
+
+
+def value_space_widened(source: Mapping[str, Any],
+                        wire: Mapping[str, Any]) -> tuple[str, ...]:
+    """Pointers where the wire accepts a value the declared schema refuses.
+
+    A provider told a field may be null will send null, and the contract that
+    declared the field non-nullable then rejects the whole response. Widening
+    the wire past the declared value space is the one rewrite with no lossless
+    form, so it is reported rather than shipped.
+    """
+    declared = _nullable_paths(inline_provider_schema_defs(source))
+    return tuple(sorted(
+        _nullable_paths(inline_provider_schema_defs(wire)) - declared))
 
 
 FENCE_PATTERN: Final[re.Pattern[str]] = re.compile(

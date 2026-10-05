@@ -20,12 +20,14 @@ from openai import AsyncOpenAI, APITimeoutError, APIConnectionError, RateLimitEr
 from openai.resources.chat import AsyncChat
 from openai.resources.chat.completions import AsyncCompletions
 from openai.types.chat import ChatCompletion
-from pydantic import BaseModel, ValidationError
+from pydantic import BaseModel, TypeAdapter, ValidationError
 from pydantic_ai import Agent
 from pydantic_ai.capabilities import Hooks
 from pydantic_ai.exceptions import ContentFilterError, ModelHTTPError, UnexpectedModelBehavior
 from pydantic_ai.models.openai import OpenAIChatModel
+from pydantic_ai.profiles.openai import OpenAIJsonSchemaTransformer
 from pydantic_ai.providers.openai import OpenAIProvider
+from pydantic_ai.tools import GenerateToolJsonSchema
 
 from shared.config import settings
 from shared.tools.rating_metrics import RANKING_DIRECTIONS, TEAM_RATING_METRICS
@@ -90,6 +92,19 @@ _LOADED_MODULE_CODE_SHA256 = _imported_module_code_sha256()
 NIM_THINKING_OFF_EXTRA_BODY: dict[str, Any] = {
     "chat_template_kwargs": {"enable_thinking": False},
 }
+
+
+def strict_output_json_schema(schema: type[BaseModel], *,
+                              strict: bool = True) -> dict[str, Any]:
+    """The schema the agent hands the wire, which is not the declared one.
+
+    pydantic-ai generates the schema with its tool generator and then rewrites
+    it for the provider profile, so measuring the declared model schema
+    measures a shape no endpoint is ever sent.
+    """
+    generated = TypeAdapter(schema).json_schema(
+        schema_generator=GenerateToolJsonSchema)
+    return OpenAIJsonSchemaTransformer(generated, strict=strict).walk()
 
 
 def _with_thinking_off(kwargs: dict[str, Any]) -> dict[str, Any]:

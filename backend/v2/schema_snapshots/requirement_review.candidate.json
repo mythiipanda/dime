@@ -268,16 +268,8 @@
                                         "default": null
                                       },
                                       "value": {
-                                        "anyOf": [
-                                          {
-                                            "default": null,
-                                            "type": "null"
-                                          },
-                                          {
-                                            "type": "null"
-                                          }
-                                        ],
-                                        "default": null
+                                        "default": null,
+                                        "type": "null"
                                       }
                                     },
                                     "required": [

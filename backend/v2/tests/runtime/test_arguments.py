@@ -19,9 +19,11 @@ def test_provider_semantic_boundary():
  with pytest.raises(ValueError):provider_to_source(ProviderWireArguments(entries=[row]),'planner')
 def test_capability_local_sets_exact():
  r=RequirementV3(id='r',description='r',capability_options=['a','b'],capability_argument_sets=[{'capability_id':'a','arguments':entries_map()},{'capability_id':'b','arguments':{'entries':[]}}]);assert r.select('a')=={'x':1}
-def test_explicit_wire_normalizer_inlines_refs_materializes_optional_and_reports_loss():
+def test_explicit_wire_normalizer_inlines_refs_closes_objects_and_reports_no_loss():
  source={'$defs':{'S':{'type':'string','maxLength':4}},'type':'object','additionalProperties':False,'properties':{'required':{'$ref':'#/$defs/S'},'optional':{'type':'integer','default':2}},'required':['required']}
- candidate,report=normalize_provider_wire_schema(source);assert '$defs' not in str(candidate) and candidate['required']==['optional','required'];assert candidate['properties']['optional']['anyOf'][-1]=={'type':'null'};assert report['losses'] and len(report['source_schema_sha256'])==64
+ candidate,report=normalize_provider_wire_schema(source);assert '$defs' not in str(candidate) and candidate['required']==['optional','required']
+ assert candidate['properties']['optional']=={'type':'integer','default':2}
+ assert report['losses']==[] and len(report['source_schema_sha256'])==64
 @pytest.mark.parametrize('bad',[{'$defs':{'X':{'$ref':'#/$defs/X'}},'$ref':'#/$defs/X'},{'$defs':{'X':{'type':'string'}},'$ref':'#/$defs/X','description':'sibling'}])
 def test_normalizer_rejects_ref_cycle_and_siblings(bad):
  with pytest.raises(ValueError):normalize_provider_wire_schema(bad)
