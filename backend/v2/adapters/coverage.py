@@ -143,7 +143,7 @@ CAPABILITY_TABLES: dict[str, tuple[str, ...]] = {
     "matchup_splits": ("silver_player_gamelogs", "silver_team_ratings"),
     "today": ("silver_scoreboard", "silver_standings"),
     "morning_briefing": ("silver_scoreboard", "silver_standings"),
-    "award_results": ("silver_award_winners",),
+    "award_results": ("silver_bbref_awards",),
 }
 
 _RATE_TO_TOTAL = {

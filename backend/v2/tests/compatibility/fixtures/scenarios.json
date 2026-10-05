@@ -943,14 +943,19 @@
     "result",
     "regression"
    ],
-   "season": "2008-09",
+   "season": "2023-24",
    "chain": [
-    "Who won the 2008-09 NBA MVP?"
+    "Who won the 2023-24 NBA MVP and how large was the winning vote share?"
    ],
    "expect": {
     "contains_any": [
      [
-      "LeBron James"
+      "Nikola Jokić",
+      "Nikola Jokic"
+     ],
+     [
+      "93.5%",
+      "0.935"
      ]
     ],
     "not_contains": [
@@ -968,26 +973,40 @@
      "award_results"
     ],
     "required_values": [
-     "LeBron James"
+     "Nikola Jokić",
+     "0.935",
+     "926",
+     "990",
+     "79"
+    ],
+    "metric_definitions_contain": [
+     "fraction scale 0-1"
     ],
     "max_evidence": 1
    },
-   "comment": "Recorded winner from nba_api PlayerAwards."
+   "comment": "Recorded ballot outcome. 79 of 100 first-place votes carried 926 of 990 available points."
   },
   {
-   "id": "award-dpoy-winner",
+   "id": "award-coach-of-year-winner",
    "tags": [
     "award",
     "result",
+    "coach",
     "regression"
    ],
-   "season": "2023-24",
+   "season": "1997-98",
    "chain": [
-    "Who won the 2023-24 NBA Defensive Player of the Year?"
+    "Who won the 1997-98 NBA Coach of the Year?"
    ],
    "expect": {
     "contains": [
-     "Rudy Gobert"
+     "Larry Bird"
+    ],
+    "contains_any": [
+     [
+      "43.1%",
+      "0.431"
+     ]
     ]
    },
    "budget": {
@@ -999,27 +1018,41 @@
      "award_results"
     ],
     "required_values": [
-     "Rudy Gobert"
+     "Larry Bird",
+     "0.431",
+     "50"
     ],
     "max_evidence": 1
    },
-   "comment": "Recorded winner from nba_api PlayerAwards."
+   "comment": "A coach award names a coach and no player, so the answer must not read as a player award."
   },
   {
-   "id": "award-sixth-man-winner",
+   "id": "award-all-nba-first-team",
    "tags": [
     "award",
     "result",
     "tied",
     "regression"
    ],
-   "season": "2015-16",
+   "season": "2023-24",
    "chain": [
-    "Who won the 2015-16 NBA Sixth Man of the Year?"
+    "Who made the 2023-24 All-NBA first team?"
    ],
    "expect": {
-    "contains": [
-     "Jamal Crawford"
+    "contains_any": [
+     [
+      "Nikola Jokić",
+      "Nikola Jokic"
+     ],
+     [
+      "Shai Gilgeous-Alexander"
+     ],
+     [
+      "Luka"
+     ]
+    ],
+    "not_contains": [
+     "ORV"
     ]
    },
    "budget": {
@@ -1031,14 +1064,18 @@
      "award_results"
     ],
     "required_values": [
-     "Jamal Crawford"
+     "Nikola Jokić",
+     "Shai Gilgeous-Alexander",
+     "Luka Dončić",
+     "Giannis Antetokounmpo",
+     "Jayson Tatum"
     ],
     "max_evidence": 1
    },
-   "comment": "Recorded winner from nba_api PlayerAwards."
+   "comment": "A team award names five players at one published rank, so the winner view returns five rows."
   },
   {
-   "id": "award-mvp-no-recorded-winner",
+   "id": "award-mvp-no-published-ballot",
    "tags": [
     "award",
     "absence",
