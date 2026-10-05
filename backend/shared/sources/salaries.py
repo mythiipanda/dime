@@ -70,7 +70,7 @@ def _run(season: list) -> pl.DataFrame:
             g = _csk(row, "remain_gtd")
             rows.append({"PLAYER_NAME": _fold(p.group(1)),
                          "TEAM": TEAM_ABBR.get(a, a),
-                         "SALARY_2025_26": s, "GUARANTEED": g or s})
+                         "SALARY": s, "GUARANTEED": g or s})
     return pl.DataFrame(rows)
 
 def get_contracts() -> FetchResult:

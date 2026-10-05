@@ -2587,7 +2587,7 @@ def _resolve_stale_trade_player(want: str, team: str,
             return None
         try:
             rows = con.execute(
-                "SELECT PLAYER_NAME, SALARY_2025_26, TEAM FROM silver_salaries"
+                "SELECT PLAYER_NAME, SALARY, TEAM FROM silver_salaries"
             ).fetchall()
         except Exception:
             return None
@@ -2636,7 +2636,7 @@ def _locate_player_team(name: str, con: object) -> tuple[str, str, int] | None:
         return None
     try:
         rows = con.execute(
-            "SELECT PLAYER_NAME, SALARY_2025_26, TEAM FROM silver_salaries"
+            "SELECT PLAYER_NAME, SALARY, TEAM FROM silver_salaries"
         ).fetchall()
     except Exception:
         return None
@@ -2705,7 +2705,7 @@ def _payroll(team: str, con: object = None) -> tuple[int, list[dict]]:
         tables = {r[0] for r in con.execute("SHOW TABLES").fetchall()}
         if "silver_salaries" in tables:
             rows = con.execute(
-                """SELECT PLAYER_NAME, SALARY_2025_26 FROM silver_salaries
+                """SELECT PLAYER_NAME, SALARY FROM silver_salaries
                 WHERE TEAM = ?""",
                 [team.upper()],
             ).fetchall()
@@ -3245,7 +3245,7 @@ def get_trade_value(
         salaries: dict[str, int] = {}
         if "silver_salaries" in tables:
             scols = cols.get("silver_salaries", set())
-            scol = ("SALARY_2025_26" if "SALARY_2025_26" in scols
+            scol = ("SALARY" if "SALARY" in scols
                     else next((c for c in scols if "SALARY" in c.upper()), ""))
             if scol:
                 q = (f"SELECT PLAYER_NAME, {scol} FROM silver_salaries "
@@ -3533,7 +3533,7 @@ def get_trade_value(
                      "(outperforming the contract), negative = overpaid"},
             "meta": {"source": payroll_source,
                      "production_season": PROD_SEASON,
-                     "salary_season": "2026-27 (column SALARY_2025_26)",
+                     "salary_season": _salary_vintage()[0] or "2026-27",
                      "estimates": True}}
 
 
@@ -4001,7 +4001,7 @@ async def text_to_sql(question: str) -> dict[str, Any]:
         "FROM silver_hist_gamelogs WHERE team_abbreviation = 'OKC' "
         "AND _season IN ('2025-26', '2024-25', '2023-24') GROUP BY _season\n"
         "Q: Which 5 teams have the highest total payroll?\n"
-        "SQL: SELECT TEAM, SUM(SALARY_2025_26) AS payroll FROM silver_salaries "
+        "SQL: SELECT TEAM, SUM(SALARY) AS payroll FROM silver_salaries "
         "GROUP BY TEAM ORDER BY payroll DESC LIMIT 5\n"
         "Q: Who has the best clutch FG% with at least 10 GP?\n"
         "SQL: SELECT PLAYER_NAME, FG_PCT FROM silver_clutch "
@@ -4491,7 +4491,7 @@ def get_contract_value(season: str | None = None, min_gp: int = 20,
                      "missing_columns_zero_weight": missing,
                      "slope": round(slope, 2), "intercept": round(intercept, 2),
                      "n_qualified": n, "min_gp": min_gp,
-                     "production_season": season, "salary_season": "2026-27",
+                     "production_season": season, "salary_season": _salary_vintage()[0] or "2026-27",
                      "production_date": prod_date, "salary_date": cap_date,
                      "overpaid_first": True,
                      "team_scope": team_scope or None}}

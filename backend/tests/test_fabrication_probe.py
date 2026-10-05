@@ -431,7 +431,7 @@ def test_extract_mask_param():
 def test_grade_integer_exact_large():
     from evals.fabrication_probe import grade_row
 
-    row = _mini_evidence("fab-101", "ultra-specific", {"SALARY_2025_26": 59033114}, season="2026-27")
+    row = _mini_evidence("fab-101", "ultra-specific", {"SALARY": 59033114}, season="2026-27")
     assert grade_row(row, "Salary was 59033114.").passed
     assert not grade_row(row, "Salary was 59033120.").passed
 
