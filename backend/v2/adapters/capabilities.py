@@ -208,6 +208,7 @@ class Capability:
     live_fallback: bool = False
     extract_entities: Callable[[Any], list[EntityRef]] | None = None
     dependent_entity_arguments: Mapping[str, str] = field(default_factory=dict)
+    domain: str = "basketball"
 
 
 _LIST = [
