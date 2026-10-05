@@ -6,6 +6,9 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 COPY v2 ./v2
 COPY shared ./shared
+COPY bin/espn-pp-cli /usr/local/bin/espn-pp-cli
+RUN chmod +x /usr/local/bin/espn-pp-cli
+ENV ESPN_CLI_PATH=/usr/local/bin/espn-pp-cli
 COPY entrypoint.py ./entrypoint.py
 COPY scripts/build_team_four_factors.py scripts/generate_asset_manifest.py scripts/seed_team_ratings.py ./scripts/
 COPY data ./data
