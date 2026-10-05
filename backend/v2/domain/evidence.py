@@ -7,7 +7,14 @@ from decimal import Decimal, InvalidOperation
 import math
 from typing import Any
 
-from v2.contracts import EvidenceEnvelope, format_window
+from v2.contracts import (
+    EvidenceEnvelope,
+    TaskSpec,
+    canonical_entity_id,
+    canonical_entity_ref,
+    format_window,
+    window_of_arguments,
+)
 
 
 @dataclass(frozen=True)
@@ -167,6 +174,292 @@ def source_integrity_issues(
                 "team_conflict",
                 f"{name} is {team} in evidence but {wanted} in season context"))
     return issues
+
+@dataclass(frozen=True)
+class GuardDenial:
+    capability: str
+    check: str
+    message: str
+
+
+NON_EMPTY_ROWS_REQUIRED = frozenset({"sql_exec"})
+
+_SEASON_LIKE_KEYS = frozenset({"season", "through_season"})
+
+_AS_OF_KEYS = ("as_of", "salary_date", "production_date", "fetched_at")
+
+_ENTITY_ARGUMENT_TYPES = {
+    "player": "player",
+    "player_id": "player",
+    "team": "team",
+    "team_id": "team",
+}
+
+_ROW_ENTITY_KEYS = {
+    "player": "player",
+    "player_id": "player",
+    "team": "team",
+    "team_id": "team",
+}
+
+
+def _is_season_text(value: object) -> bool:
+    if not isinstance(value, str):
+        return False
+    parts = value.split("-")
+    return (
+        len(parts) == 2
+        and len(parts[0]) == 4
+        and len(parts[1]) == 2
+        and all(part.isdigit() for part in parts)
+        and int(parts[1]) == (int(parts[0]) + 1) % 100
+    )
+
+
+def _call_seasons(arguments: Mapping[str, Any]) -> set[str]:
+    found: set[str] = set()
+    for value in arguments.values():
+        if _is_season_text(str(value).strip() if value is not None else ""):
+            found.add(str(value).strip())
+    for key in _SEASON_LIKE_KEYS:
+        value = arguments.get(key)
+        if value is not None and _is_season_text(str(value).strip()):
+            found.add(str(value).strip())
+    return found
+
+
+def _parse_call_as_of(arguments: Mapping[str, Any]) -> date | None:
+    for key in _AS_OF_KEYS:
+        value = arguments.get(key)
+        if not value:
+            continue
+        try:
+            return date.fromisoformat(str(value).split("T", 1)[0])
+        except ValueError:
+            continue
+    return None
+
+
+def _call_entities(arguments: Mapping[str, Any]) -> set[tuple[str, str]]:
+    found: set[tuple[str, str]] = set()
+    for key, entity_type in _ENTITY_ARGUMENT_TYPES.items():
+        value = arguments.get(key)
+        if value is None:
+            continue
+        text = str(value).strip()
+        if not text:
+            continue
+        found.add((entity_type, canonical_entity_id(entity_type, text)))
+    return found
+
+
+def _task_entities(task: TaskSpec) -> set[tuple[str, str]]:
+    return {canonical_entity_ref(entity) for entity in task.entities}
+
+
+def _row_seasons(rows: Any) -> set[str]:
+    items = rows if isinstance(rows, list) else [rows]
+    found: set[str] = set()
+    for item in items:
+        if not isinstance(item, Mapping):
+            continue
+        for key, value in item.items():
+            if str(key).casefold() == "season" and _is_season_text(
+                str(value).strip() if value is not None else ""
+            ):
+                found.add(str(value).strip())
+    return found
+
+
+def _row_entities(rows: Any) -> set[tuple[str, str]]:
+    items = rows if isinstance(rows, list) else [rows]
+    found: set[tuple[str, str]] = set()
+    for item in items:
+        if not isinstance(item, Mapping):
+            continue
+        for key, value in item.items():
+            entity_type = _ROW_ENTITY_KEYS.get(str(key).casefold())
+            if entity_type is None or value is None:
+                continue
+            text = str(value).strip()
+            if not text:
+                continue
+            found.add((entity_type, canonical_entity_id(entity_type, text)))
+    return found
+
+
+def _envelope_entities(envelope: EvidenceEnvelope) -> set[tuple[str, str]]:
+    found = {canonical_entity_ref(entity) for entity in envelope.entities}
+    return found | _row_entities(envelope.rows)
+
+
+def _rows_empty(rows: Any) -> bool:
+    if isinstance(rows, list):
+        return len(rows) == 0
+    if isinstance(rows, Mapping):
+        return len(rows) == 0
+    return False
+
+
+def pre_call_denials(
+    task: TaskSpec,
+    capability_id: str,
+    arguments: Mapping[str, Any],
+    *,
+    task_season_scoped: bool = True,
+) -> list[GuardDenial]:
+    denials: list[GuardDenial] = []
+    required_season = task.season.value if task.season else None
+    if required_season is not None and task_season_scoped:
+        for asked in sorted(_call_seasons(arguments)):
+            if asked != required_season:
+                denials.append(GuardDenial(
+                    capability=capability_id,
+                    check="season_mismatch",
+                    message=(
+                        f"{capability_id} pre-call season_mismatch: "
+                        f"call asks season {asked} but task requires {required_season}"
+                    ),
+                ))
+                break
+    asked_window = (task.window_start, task.window_end)
+    if asked_window != (None, None):
+        served = window_of_arguments(arguments, required_season)
+        if served != (None, None) and served != asked_window:
+            denials.append(GuardDenial(
+                capability=capability_id,
+                check="window_mismatch",
+                message=(
+                    f"{capability_id} pre-call window_mismatch: "
+                    f"call covers {format_window(*served)} but task requires "
+                    f"{format_window(*asked_window)}"
+                ),
+            ))
+    if task.as_of is not None:
+        call_as_of = _parse_call_as_of(arguments)
+        if call_as_of is not None and call_as_of > task.as_of:
+            denials.append(GuardDenial(
+                capability=capability_id,
+                check="as_of_mismatch",
+                message=(
+                    f"{capability_id} pre-call as_of_mismatch: "
+                    f"call as_of {call_as_of.isoformat()} is after task as_of "
+                    f"{task.as_of.isoformat()}"
+                ),
+            ))
+    if task.entities:
+        wanted = _task_entities(task)
+        named = _call_entities(arguments)
+        if named and wanted and named.isdisjoint(wanted):
+            denials.append(GuardDenial(
+                capability=capability_id,
+                check="entity_mismatch",
+                message=(
+                    f"{capability_id} pre-call entity_mismatch: "
+                    f"call entities {sorted(named)} do not intersect task entities "
+                    f"{sorted(wanted)}"
+                ),
+            ))
+    return denials
+
+
+def post_result_denials(
+    task: TaskSpec,
+    envelope: EvidenceEnvelope,
+) -> list[GuardDenial]:
+    capability_id = envelope.capability
+    denials: list[GuardDenial] = []
+    required_season = task.season.value if task.season else None
+    if required_season is not None and envelope.task_season_scoped:
+        if envelope.season is None:
+            denials.append(GuardDenial(
+                capability=capability_id,
+                check="season_mismatch",
+                message=(
+                    f"{capability_id} post-result season_mismatch: "
+                    f"result declares no season but task requires {required_season}"
+                ),
+            ))
+        elif envelope.season != required_season:
+            denials.append(GuardDenial(
+                capability=capability_id,
+                check="season_mismatch",
+                message=(
+                    f"{capability_id} post-result season_mismatch: "
+                    f"result season {envelope.season} does not match task season "
+                    f"{required_season}"
+                ),
+            ))
+        for row_season in sorted(_row_seasons(envelope.rows)):
+            if row_season != required_season:
+                denials.append(GuardDenial(
+                    capability=capability_id,
+                    check="row_season_mismatch",
+                    message=(
+                        f"{capability_id} post-result row_season_mismatch: "
+                        f"row season {row_season} does not match task season "
+                        f"{required_season}"
+                    ),
+                ))
+                break
+    asked_window = (task.window_start, task.window_end)
+    if asked_window != (None, None):
+        served = (envelope.window_start, envelope.window_end)
+        if served == (None, None):
+            denials.append(GuardDenial(
+                capability=capability_id,
+                check="window_mismatch",
+                message=(
+                    f"{capability_id} post-result window_mismatch: "
+                    f"result covers the full season but task requires "
+                    f"{format_window(*asked_window)}"
+                ),
+            ))
+        elif served != asked_window:
+            denials.append(GuardDenial(
+                capability=capability_id,
+                check="window_mismatch",
+                message=(
+                    f"{capability_id} post-result window_mismatch: "
+                    f"result covers {format_window(*served)} but task requires "
+                    f"{format_window(*asked_window)}"
+                ),
+            ))
+    if task.as_of is not None and envelope.as_of is not None:
+        if envelope.as_of > task.as_of:
+            denials.append(GuardDenial(
+                capability=capability_id,
+                check="as_of_mismatch",
+                message=(
+                    f"{capability_id} post-result as_of_mismatch: "
+                    f"result as_of {envelope.as_of.isoformat()} is after task as_of "
+                    f"{task.as_of.isoformat()}"
+                ),
+            ))
+    if task.entities:
+        wanted = _task_entities(task)
+        served_entities = _envelope_entities(envelope)
+        if served_entities and wanted and served_entities.isdisjoint(wanted):
+            denials.append(GuardDenial(
+                capability=capability_id,
+                check="entity_mismatch",
+                message=(
+                    f"{capability_id} post-result entity_mismatch: "
+                    f"result entities {sorted(served_entities)} do not intersect "
+                    f"task entities {sorted(wanted)}"
+                ),
+            ))
+    if _rows_empty(envelope.rows) and capability_id in NON_EMPTY_ROWS_REQUIRED:
+        denials.append(GuardDenial(
+            capability=capability_id,
+            check="empty_rows_forbidden",
+            message=(
+                f"{capability_id} post-result empty_rows_forbidden: "
+                f"empty result set is not an allowed success for {capability_id}"
+            ),
+        ))
+    return denials
+
 
 class EvidenceAdmissionError(ValueError):
     def __init__(self, issues: list[SourceIntegrityIssue]) -> None:

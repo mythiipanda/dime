@@ -10,7 +10,7 @@ from v2.runtime.checkpoints import CheckpointStore, ExecutionCheckpoint
 from v2.runtime.interfaces import Capability
 from v2.runtime.models import ExecutionErrorCode, ExecutionResult
 from v2.runtime.ledger import exception_text
-from v2.domain.evidence import admit_evidence
+from v2.domain.evidence import admit_evidence, post_result_denials, pre_call_denials
 
 
 def _canonical_entity_value(entity_type: str, value: object) -> str:
@@ -458,6 +458,14 @@ class PlanExecutor:
             try:
                 self._validate_dependent_entity_arguments(
                     capability, node, parent_evidence)
+                pre_denials = pre_call_denials(
+                    task, capability.name, dict(node.arguments),
+                    task_season_scoped=getattr(
+                        capability, "task_season_scoped", True),
+                )
+                if pre_denials:
+                    raise ValueError("; ".join(
+                        item.message for item in pre_denials))
                 result = await capability.execute(node, task, parent_evidence)
                 task_season_scoped = getattr(
                     capability, "task_season_scoped", True)
@@ -468,6 +476,10 @@ class PlanExecutor:
                     **result.model_dump(),
                     "task_season_scoped": task_season_scoped,
                 })
+                post_denials = post_result_denials(task, result)
+                if post_denials:
+                    raise ValueError("; ".join(
+                        item.message for item in post_denials))
                 required_season = (
                     task.season.value
                     if task.season and task_season_scoped
