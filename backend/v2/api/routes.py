@@ -1144,7 +1144,6 @@ def _answer_text(result) -> str:
     if source_line is not None:
         lines.append(source_line)
     gap_messages = {
-        "missing_evidence": "Some requested outputs could not be verified.",
         "source_conflict": "Available sources conflict for some requested outputs.",
         "unsupported_claim": "Some requested outputs were not supported.",
         "execution_failure": "Some requested data was unavailable.",
@@ -1166,10 +1165,24 @@ def _answer_text(result) -> str:
         item.status == "complete" for item in result.output_statuses)
     requested_ids = {item.output_id for item in result.output_statuses}
     fully_covered = bool(result.output_statuses) and requested_ids <= (published | stated)
+    unverified_output_ids = [
+        item.output_id for item in result.output_statuses
+        if item.status != "complete" and item.output_id not in published
+        and item.output_id not in stated]
     for kind in kinds:
         if kind == "missing_evidence" and all_complete:
             continue
         if kind in ("missing_evidence", "synthesis_incomplete") and fully_covered:
+            continue
+        if kind == "missing_evidence":
+            if unverified_output_ids:
+                lines.append(
+                    "Some requested outputs could not be verified: "
+                    + ", ".join(unverified_output_ids) + ".")
+            else:
+                lines.extend(
+                    gap.message for gap in result.gaps
+                    if gap.kind.value == "missing_evidence")
             continue
         lines.append(gap_messages[kind])
     lines += list(dict.fromkeys(

@@ -1241,7 +1241,10 @@ async def test_two_team_winner_request_requires_prediction_even_if_intake_choose
         capability_catalog={"team_ratings": {}, "game_prediction": {}},
     ).understand("Who wins Celtics vs Knicks?")
     assert task.required_evidence == ["team_ratings", "game_prediction"]
-    assert task.season is None
+    from shared.tools._core import last_completed_season
+    assert task.season is not None
+    assert task.season.value == last_completed_season()
+    assert task.season.source == "default"
 
 
 @pytest.mark.anyio

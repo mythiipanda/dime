@@ -624,6 +624,95 @@ def _calculation_reasons(claim: Claim, calculations: Mapping[str, Calculation],
     return reasons, {calculation.result}
 
 
+def _zero_gate_player_rows(
+    envelopes: Sequence[EvidenceEnvelope], names: set[str],
+) -> list[Mapping[str, Any]]:
+    rows: list[Mapping[str, Any]] = []
+    for envelope in envelopes:
+        data = envelope.rows
+        if isinstance(data, dict):
+            data = [data]
+        if not isinstance(data, list):
+            continue
+        for row in data:
+            if not isinstance(row, Mapping):
+                continue
+            identities = {
+                str(value).strip().casefold()
+                for key, value in row.items()
+                if key.casefold() in _ZERO_SCORING_IDENTITY_KEYS
+                and value is not None
+            }
+            if identities & names:
+                rows.append(row)
+    return rows
+
+
+def _zero_gate_genuine_proof(rows: Sequence[Mapping[str, Any]]) -> bool:
+    if not rows:
+        return False
+    active = False
+    totals: list[Decimal | None] = []
+    for row in rows:
+        normalized = {str(key).casefold(): value for key, value in row.items()}
+        for key in ("gp", "g", "games", "min", "mpg", "minutes"):
+            if key in normalized:
+                activity = decimal_value(normalized[key])
+                if activity is not None and activity > 0:
+                    active = True
+        for key in ("pts", "points", "total_points"):
+            if key in normalized:
+                totals.append(decimal_value(normalized[key]))
+    if not active or not totals:
+        return False
+    if any(total is None for total in totals):
+        return False
+    return all(total == 0 for total in totals if total is not None)
+
+
+def _zero_scoring_gate_reasons(
+    task: TaskSpec, claim: Claim,
+    envelopes: Sequence[EvidenceEnvelope],
+) -> list[str]:
+    if not _ZERO_SCORING_RX.search(claim.text):
+        return []
+    if _ZERO_SCORING_DIFFERENCE_RX.search(claim.text):
+        return []
+    text = " ".join(claim.text.casefold().split())
+    subjects: dict[tuple[str, str, str], str] = {}
+    candidates = list(task.entities)
+    candidates.extend(
+        entity for envelope in envelopes for entity in envelope.entities)
+    for entity in candidates:
+        if entity.type != "player":
+            continue
+        key = (entity.type, str(entity.id).casefold(),
+               str(entity.display_name).casefold())
+        names = {part for part in key[1:] if part}
+        if names and any(name in text for name in names):
+            subjects.setdefault(key, entity.display_name)
+    if not subjects:
+        return []
+    season = task.season.value if task.season else None
+    when = f" in {season}" if season else ""
+    reasons: list[str] = []
+    for key, display in subjects.items():
+        rows = _zero_gate_player_rows(envelopes, {part for part in key[1:] if part})
+        if _zero_gate_genuine_proof(rows):
+            continue
+        if rows:
+            detail = (f"cited evidence carries no explicit scoring totals "
+                      f"for {display}; an average without totals cannot "
+                      f"prove a scoreless line")
+        else:
+            detail = (f"cited evidence carries no scoring rows "
+                      f"for {display}")
+        reasons.append(
+            f"Zero-guard: {display} is stated at 0.0 PPG{when}, but "
+            f"{detail}; refusing to publish a missing-data zero")
+    return reasons
+
+
 def verify_mechanical(
     task: TaskSpec,
     draft: DraftReport,
@@ -717,6 +806,7 @@ def verify_mechanical(
             claim, cited, supported_numbers, calculation_values, allowed_numbers))
         reasons.extend(_qualification_coverage_reasons(claim, cited))
         reasons.extend(_record_completeness_reasons(claim, cited))
+        reasons.extend(_zero_scoring_gate_reasons(task, claim, cited))
 
         unique_reasons = list(dict.fromkeys(reasons))
         results.append(ClaimResult(
@@ -927,6 +1017,19 @@ _MINUTES_QUAL_RX = re.compile(
 )
 
 _UNIT_SPLIT_RX = re.compile(r"((?<=[.!?])\s+|\n+)")
+
+_ZERO_SCORING_RX = re.compile(
+    r"(?<![\d.])0(?:\.0+)?\s*(?:PPG|points?\s+per\s+game)\b",
+    re.IGNORECASE)
+_ZERO_SCORING_DIFFERENCE_RX = re.compile(
+    r"\b(?:difference|margin|gap|delta|lead(?:s|ing)?|trail(?:s|ing)?|"
+    r"versus|compared?)\b|\bvs\.?\b|\bby\s+how\s+much\b",
+    re.IGNORECASE)
+_ZERO_SCORING_IDENTITY_KEYS = frozenset({
+    "team", "team_name", "team_abbreviation", "abbrev",
+    "player", "player_name", "full_name", "name",
+})
+
 
 def _iter_units(text: str):
     parts = _UNIT_SPLIT_RX.split(text or "")

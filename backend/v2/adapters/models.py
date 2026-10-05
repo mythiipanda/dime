@@ -1225,6 +1225,16 @@ class ModelIntake(ModelStage):
             required_evidence = list(dict.fromkeys([
                 *required_evidence, "game_prediction",
             ]))
+        if task.season is None:
+            from shared.tools._core import last_completed_season
+            from v2.contracts import SeasonRef
+            _derived_season = last_completed_season()
+            if _derived_season is not None:
+                task = task.model_copy(update={
+                    "season": SeasonRef(
+                        value=_derived_season, source="default",
+                        confidence=1.0),
+                })
         if task.season is not None and task.season.source == "default":
             from shared.tools._core import last_completed_season
             _derived_season = last_completed_season()

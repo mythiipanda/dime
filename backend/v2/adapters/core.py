@@ -469,8 +469,6 @@ def _task_arguments(name: str, node: Any, task: Any, evidence: Iterable[Evidence
         if candidates:
             arguments[argument] = candidates[0].display_name or candidates[0].id
     if name == "game_prediction":
-        if season is not None and season.source == "default":
-            arguments.pop("season", None)
         teams = [entity for entity in task.entities if entity.type == "team"]
         if len(teams) == 2:
             for key, entity in zip(("a", "b"), teams, strict=True):
