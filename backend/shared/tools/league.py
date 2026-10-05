@@ -1798,6 +1798,12 @@ def get_leaders(
                               f"whose qualification cannot be evidenced from "
                               f"the published row: {exc}"),
                     "meta": meta}
+    if not pinned and str(meta.get("error") or "").strip():
+        detail = str(meta.get("error")).strip()
+        return {"tool": "get_leaders", "ok": False, "rows": [],
+                "error": (f"no {stat_category} leaders for {season}: "
+                          f"{detail}"),
+                "meta": meta}
     return {"tool": "get_leaders", "ok": True, "rows": pinned, "meta": meta}
 
 

@@ -262,6 +262,9 @@ _LIST = [
         units={**COUNTING_UNITS, **PER_GAME_UNITS,
                "GP": COUNT, "MIN": MINUTES, "FG_PCT": FRACTION,
                "FG3_PCT": FRACTION, "FT_PCT": FRACTION},
+        metric_definitions={
+            "PLAYER": "Player named on the leaderboard row.",
+        },
         qualification="Qualified players only (NBA leaderboard minimums).",
         coverage="Source-ranked qualified leaderboard; returned rows preserve population ranks.",
         extract_entities=_player_entities,
@@ -595,6 +598,41 @@ def _per_game_column(vocabulary: Mapping[str, str], stem: str) -> str | None:
     return None
 
 
+def _total_column(vocabulary: Mapping[str, str], units: Mapping[str, str],
+                  squashed: str) -> str | None:
+    if not squashed.startswith("TOTAL") or len(squashed) <= len("TOTAL"):
+        return None
+    remainder = squashed[len("TOTAL"):]
+    for candidate in (remainder, _METRIC_DISPLAY_ALIASES.get(remainder)):
+        if candidate is None:
+            continue
+        declared = vocabulary.get(candidate)
+        if declared is not None and units.get(declared) == COUNT:
+            return declared
+    return None
+
+
+def _games_column(vocabulary: Mapping[str, str], squashed: str) -> str | None:
+    if squashed != "GAMESPLAYED":
+        return None
+    return vocabulary.get("GP")
+
+
+def _name_column(vocabulary: Mapping[str, str], squashed: str) -> str | None:
+    if not squashed.endswith("NAME") or len(squashed) <= len("NAME"):
+        return None
+    stem = squashed[: -len("NAME")]
+    declared = vocabulary.get(stem)
+    if declared is not None:
+        return declared
+    alias = _METRIC_DISPLAY_ALIASES.get(stem)
+    if alias is not None:
+        aliased = vocabulary.get(alias)
+        if aliased is not None:
+            return aliased
+    return None
+
+
 def resolve_metric_column(capability: Capability, output_id: str) -> str | None:
     vocabulary: dict[str, str] = {}
     for mapping in (capability.units, capability.metric_definitions):
@@ -604,6 +642,20 @@ def resolve_metric_column(capability: Capability, output_id: str) -> str | None:
     direct = vocabulary.get(squashed)
     if direct is not None:
         return direct
+    explicit = next(
+        (column for name, column in capability.output_aliases.items()
+         if _squashed(name) == squashed), None)
+    if explicit is not None:
+        return explicit
+    total = _total_column(vocabulary, capability.units, squashed)
+    if total is not None:
+        return total
+    games = _games_column(vocabulary, squashed)
+    if games is not None:
+        return games
+    named = _name_column(vocabulary, squashed)
+    if named is not None:
+        return named
     stem = squashed
     for suffix in _AGGREGATION_SUFFIXES:
         if stem.endswith(suffix) and len(stem) > len(suffix):
@@ -620,8 +672,7 @@ def resolve_metric_column(capability: Capability, output_id: str) -> str | None:
         aliased = vocabulary.get(alias)
         if aliased is not None:
             return aliased
-    return next((column for name, column in capability.output_aliases.items()
-                 if _squashed(name) == squashed), None)
+    return None
 
 CAPABILITY_DESCRIPTIONS: dict[str, str] = {
     "entity_resolution": "Resolve a player or team name to canonical identity.",
