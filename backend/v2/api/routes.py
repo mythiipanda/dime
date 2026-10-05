@@ -1428,7 +1428,21 @@ def _public_capability_name(raw) -> str:
     return raw if raw in executable else "tool"
 
 
+def _tool_call_data(name: str, arguments) -> dict:
+    from v2.api.activity import ToolCallData
+    from v2.runtime.recording import argument_counts, publishable_arguments
+
+    argument_count, unknown_argument_count = argument_counts(name, arguments)
+    return ToolCallData(
+        name=name,
+        arguments=publishable_arguments(name, arguments),
+        argument_count=argument_count,
+        unknown_argument_count=unknown_argument_count,
+    ).model_dump(mode="json")
+
+
 def _safe_buffered_event(event):
+    from v2.api.activity import ToolCallData
     from v2.api.events import NodeUpdate, ToolCall, ToolResult
     kind = str(getattr(event, "type", ""))
     public_nodes = {"entry", "data_retrieval", "tools", "analytics", "presentation"}
@@ -1437,8 +1451,10 @@ def _safe_buffered_event(event):
             return None
         return NodeUpdate(node=event.node, status=event.status)
     if kind == "tool_call":
-        return ToolCall(node="tools", name=_public_capability_name(
-            getattr(event, "name", None)))
+        return ToolCall(
+            node="tools", name=_public_capability_name(getattr(event, "name", None)),
+            data=ToolCallData.model_validate(
+                getattr(event, "data", None) or {}).model_dump(mode="json"))
     if kind == "tool_result":
         status = getattr(event, "status", None)
         if status not in {"ok", "fail"}:
@@ -1704,8 +1720,12 @@ async def quick_answer_stream(body: QuickAnswerBody):
                 call = entry if entry.kind == LedgerKind.TOOL_CALL else calls.get(entry.call_id)
                 name = _public_capability_name(
                     call.data.get("name") if call is not None else None)
+                recorded = {}
+                if call is not None:
+                    recorded = (call.data.get("args") or {}).get("node") or {}
                 if entry.kind == LedgerKind.TOOL_CALL:
-                    yield ToolCall(node="tools", name=name)
+                    yield ToolCall(node="tools", name=name, data=_tool_call_data(
+                        name, recorded.get("arguments") or {}))
                 else:
                     payload = entry.data; evidence = payload.get("evidence", {}); rows = evidence.get("rows")
                     yield ToolResult(node="tools", name=name,

@@ -1674,9 +1674,10 @@ def test_stream_tool_events_report_the_capability_the_ledger_recorded(monkeypatc
         ledger=RunLedger(k["run_id"]);ledgers[k["run_id"]]=ledger
         return Broken(),ledger
     text=_stream_with_runtime(monkeypatch,tmp_path,build)
-    assert text.count('"name":"team_ratings"')==2
     assert '"name":"tool"' not in text and "SECRET" not in text
     assert text.count("event: tool_call")==1 and text.count("event: tool_result")==1
+    call=text.split("event: tool_call\ndata: ",1)[1].split("\n\n",1)[0]
+    assert json.loads(call)["data"]=={"name":"team_ratings","arguments":[],"argument_count":0,"unknown_argument_count":0}
 
 
 def test_stream_tool_events_from_the_live_journal_carry_the_capability_name(monkeypatch,tmp_path):
@@ -1706,7 +1707,11 @@ def test_stream_tool_events_from_the_live_journal_carry_the_capability_name(monk
         return Runtime(),ledgers[k["run_id"]]
     text=_stream_with_runtime(monkeypatch,tmp_path,build)
     assert text.count("event: tool_call")==1 and text.count("event: tool_result")==1
-    assert text.count('"name":"team_ratings"')==2
+    call=text.split("event: tool_call\ndata: ",1)[1].split("\n\n",1)[0]
+    result=text.split("event: tool_result\ndata: ",1)[1].split("\n\n",1)[0]
+    assert json.loads(call)["name"]=="team_ratings"
+    assert json.loads(call)["data"]["name"]=="team_ratings"
+    assert json.loads(result)["name"]=="team_ratings"
     assert '"name":"tool"' not in text
 
 
