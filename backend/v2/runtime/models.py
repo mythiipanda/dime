@@ -23,8 +23,9 @@ from v2.contracts import (
 
 
 _IDENTITY_KEYS = {
-    "player": {"PLAYER_ID", "player_id"},
-    "team": {"TEAM_ID", "team_id", "TeamID"},
+    "player": {"PLAYER_ID", "player_id", "PLAYER", "player",
+               "PLAYER_NAME", "player_name", "winner", "coach", "COACH"},
+    "team": {"TEAM_ID", "team_id", "TeamID", "TEAM", "team"},
 }
 
 
