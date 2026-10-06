@@ -1,4 +1,5 @@
 import json
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -10,12 +11,20 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import shared.tools.espn as espn_mod
 from shared.tools import TOOL_NAMES, v1_tools
 
+_REAL_RESOLVE_CLI_PATH = espn_mod._resolve_cli_path
+
 
 @pytest.fixture(autouse=True)
-def _pinned_cli_version(monkeypatch):
+def _pinned_cli_version(monkeypatch, tmp_path):
     monkeypatch.setattr(
         espn_mod, "cli_version_info",
         lambda *args, **kwargs: ("fake-cli", espn_mod.EXPECTED_CLI_VERSION))
+    if "ESPN_CLI_PATH" not in os.environ:
+        fake = tmp_path / "espn-pp-cli"
+        fake.write_bytes(b"#!/bin/sh\nexit 0\n")
+        fake.chmod(0o755)
+        monkeypatch.setattr(
+            espn_mod, "_resolve_cli_path", lambda: str(fake))
 
 
 def _pinned_version(monkeypatch):
@@ -212,6 +221,7 @@ def test_v1_tools_includes_espn_names():
 def test_cli_path_env_override_is_honored(monkeypatch, tmp_path):
     import shared.tools.espn as espn
     monkeypatch.setenv("ESPN_CLI_PATH", str(tmp_path / "no-such-binary"))
+    monkeypatch.setattr(espn, "_resolve_cli_path", _REAL_RESOLVE_CLI_PATH)
     out = espn.get_espn_scores.invoke({"sport": "nfl"})
     assert out["ok"] is False
     assert "binary_not_found" in out["error"]
