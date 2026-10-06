@@ -7,7 +7,9 @@ import {
   contextPills,
   evidenceSources,
   unverifiedSummary,
+  unverifiedValues,
   withCitationMarkers,
+  withUnverifiedMarkers,
   gapMessage,
 } from "./evidence";
 import type { AiMessage } from "./chat";
@@ -154,6 +156,37 @@ test("context pills cap capabilities and skip empties", () => {
   assert.deepEqual(contextPills(aiWith({}, [])), []);
   const tables = [{ ...CLAIM_TABLE, provenance: {} }];
   assert.deepEqual(contextPills(aiWith({}, tables)), []);
+});
+
+test("unverified values come from incomplete typed statuses only", () => {
+  const carry = {
+    output_statuses: [
+      { output_id: "AST", status: "incomplete", value: "64" },
+      { output_id: "OFF_RATING", status: "complete", value: "118.2" },
+      { output_id: "PLAYER_NAME", status: "missing", value: "Trae Young" },
+      { output_id: "APG", status: "incomplete" },
+    ],
+  };
+  assert.deepEqual(unverifiedValues(aiWith(carry, []), []), ["64"]);
+});
+
+test("admitted values never count as unverified", () => {
+  const carry = {
+    output_statuses: [{ output_id: "AST", status: "incomplete", value: "880" }],
+  };
+  assert.deepEqual(unverifiedValues(aiWith(carry, []), ["880"]), []);
+});
+
+test("unverified markers land on literal occurrences with clean boundaries", () => {
+  assert.equal(
+    withUnverifiedMarkers("64 wins and 64 losses.", ["64"]),
+    "64[?](#unverified) wins and 64[?](#unverified) losses.",
+  );
+  assert.equal(
+    withUnverifiedMarkers("In the 2024-25 season, top 3.", ["24", "25", "3"]),
+    "In the 2024-25 season, top 3.",
+  );
+  assert.equal(withUnverifiedMarkers("64 wins.", []), "64 wins.");
 });
 
 test("sources never leak machine ids", () => {

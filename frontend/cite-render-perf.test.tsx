@@ -105,13 +105,19 @@ test("opening one anchor commits once with ledger table", async () => {
 test("markers plus pills render in few commits without blowing the anchor budget", async () => {
   const ai = anchoredAi();
   ai.text += " Also 99 votes and a 4.5 rating showed up unbacked.";
-  ai.carry = { gaps: [{ kind: "missing_evidence" }] } as never;
+  ai.carry = {
+    gaps: [{ kind: "missing_evidence" }],
+    output_statuses: [
+      { output_id: "VOTES", status: "incomplete", value: "99" },
+      { output_id: "RATING", status: "incomplete", value: "4.5" },
+    ],
+  } as never;
   const commits = { n: 0 };
   const { root, container, ms } = await mount(
     <CitedAnswerText text={ai.text} ai={ai} />, commits);
   const unverified = container.querySelectorAll(".unverified-marker");
   console.log(`markers-pills-render: commits=${commits.n} ms=${ms.toFixed(1)} unverified=${unverified.length}`);
-  assert.equal(unverified.length, 0);
+  assert.equal(unverified.length, 2);
   assert.ok(commits.n <= 3);
   await act(async () => {
     root.unmount();

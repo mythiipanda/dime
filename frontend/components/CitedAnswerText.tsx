@@ -9,7 +9,9 @@ import {
   evidenceSources,
   gapReasons,
   unverifiedSummary,
+  unverifiedValues,
   withCitationMarkers,
+  withUnverifiedMarkers,
 } from "../lib/evidence";
 import { Chip } from "./view-shared";
 import type { EvidenceSource } from "../lib/evidence";
@@ -380,7 +382,13 @@ export default function CitedAnswerText({ text, ai }: { text: string; ai: AiMess
   const accepted = stored.accepted;
   const flagged = stored.flagged;
   const sources = evidenceSources(ai);
-  const marked = withCitationMarkers(text, sources);
+  const marked = withUnverifiedMarkers(
+    withCitationMarkers(text, sources),
+    unverifiedValues(
+      ai,
+      sources.map((s) => s.value),
+    ),
+  );
   const persist = (nextFlagged: FlagEntry[], nextAccepted: string[]) => {
     setStored({ flagged: nextFlagged, accepted: nextAccepted });
     saveClaimLog(nextFlagged, nextAccepted);
@@ -423,6 +431,17 @@ export default function CitedAnswerText({ text, ai }: { text: string; ai: AiMess
         components={{
           a: ({ href, children }) => {
             const target = href || "";
+            if (target.startsWith("#unverified")) {
+              return (
+                <span
+                  className="unverified-marker"
+                  title="Not verified against source data"
+                  aria-label="Not verified against source data"
+                >
+                  {children}
+                </span>
+              );
+            }
             if (target.startsWith("#cite-")) {
               const index = Number(target.slice("#cite-".length));
               if (!Number.isInteger(index) || !sources[index]) return <>{children}</>;
