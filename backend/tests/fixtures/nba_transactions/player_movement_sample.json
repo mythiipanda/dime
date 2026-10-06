@@ -1,0 +1,11 @@
+{
+  "source": "stats.nba.com",
+  "file": "NBA_Player_Movement.json",
+  "rows": [
+    {"date": "2015-10-28", "season": "2015-16", "teams": "LAL;NYK", "players": "Player B;Player C;Player D", "picks": "", "type": "Traded"},
+    {"date": "2015-10-28", "season": "2015-16", "teams": "LAL;NYK", "players": "Player B;Player C;Player D", "picks": "", "type": "Trade"},
+    {"date": "2016-02-19", "season": "2015-16", "teams": "GSW", "players": "Player Epsilon", "picks": "", "type": "Signed"},
+    {"date": "2018-01-10", "season": "2017-18", "teams": "TOR", "players": "Player Iota", "picks": "2020 Round 1 Draft Pick (LAL)", "type": "Signed"},
+    {"date": "2024-07-06", "season": "2024-25", "teams": "BOS", "players": "Player Kappa", "picks": "", "type": "Signed"}
+  ]
+}
