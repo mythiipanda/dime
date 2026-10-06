@@ -4,9 +4,16 @@ import { useState } from "react";
 import type { ReactNode } from "react";
 import AnswerText from "./AnswerText";
 import type { AiMessage } from "../lib/chat";
-import { contextPills, evidenceSources, unverifiedSummary, withCitationMarkers } from "../lib/evidence";
+import {
+  contextPills,
+  evidenceSources,
+  gapReasons,
+  unverifiedSummary,
+  withCitationMarkers,
+} from "../lib/evidence";
 import { Chip } from "./view-shared";
 import type { EvidenceSource } from "../lib/evidence";
+import { gradeLimits } from "../lib/grades";
 
 export function CiteTable({ source }: { source: EvidenceSource }) {
   const cells: { head: string; body: string; alignRight?: boolean; strong?: boolean }[] = [];
@@ -113,6 +120,44 @@ function RowActions({
   );
 }
 
+export function GradeTag({ tag }: { tag: string }) {
+  return (
+    <span
+      style={{
+        fontSize: 11,
+        fontWeight: 600,
+        letterSpacing: ".08em",
+        textTransform: "uppercase",
+        color: "var(--color-ash-gray)",
+        whiteSpace: "nowrap",
+      }}
+    >
+      {tag}
+    </span>
+  );
+}
+
+export function EvidenceCard({ source }: { source: EvidenceSource }) {
+  const graded = source.grade;
+  if (!graded) return null;
+  const rows: { head: string; body: string }[] = [{ head: "Scope", body: graded.scope }];
+  if (graded.method) rows.push({ head: "Method", body: graded.method });
+  const limits = gradeLimits(graded.grade, graded.unknownScope);
+  if (limits) rows.push({ head: "Doesn't cover", body: limits });
+  if (graded.gap) rows.push({ head: "Gap", body: graded.gap });
+  if (source.asOf) rows.push({ head: "As of", body: source.asOf });
+  return (
+    <div style={{ margin: "2px 0 4px 8px", fontVariantNumeric: "tabular-nums" }}>
+      {rows.map((r) => (
+        <div key={r.head} style={{ fontSize: 12, lineHeight: 1.5 }}>
+          <span style={{ color: "var(--color-ash-gray)", marginRight: 6 }}>{r.head}</span>
+          <span style={{ color: "var(--color-warm-gray)" }}>{r.body}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 export function EvidenceLedger({
   sources,
   openIndex,
@@ -148,10 +193,17 @@ export function EvidenceLedger({
               }}
             >
               {line || "Dime data"}
+              {source.grade ? (
+                <>
+                  {" · "}
+                  <GradeTag tag={source.grade.tag} />
+                </>
+              ) : null}
             </div>
             {open ? (
               <>
                 <CiteTable source={source} />
+                <EvidenceCard source={source} />
                 {onAccept && onFlag ? (
                   <RowActions
                     flagged={flagged.includes(source.index)}
@@ -174,6 +226,23 @@ export function UnverifiedNote({ ai }: { ai: AiMessage }) {
   return (
     <div style={{ marginTop: 10, fontSize: 12, lineHeight: 1.5, color: "var(--color-ash-gray)" }}>
       {note}
+    </div>
+  );
+}
+
+export function GapPanel({ ai }: { ai: AiMessage }) {
+  const reasons = gapReasons(ai);
+  if (!reasons.length) return null;
+  return (
+    <div style={{ marginTop: 10 }}>
+      <div style={{ fontSize: 12, fontWeight: 500, color: "var(--color-warm-gray)", marginBottom: 4 }}>
+        Couldn't verify
+      </div>
+      {reasons.map((reason) => (
+        <div key={reason} style={{ fontSize: 12, lineHeight: 1.5, color: "var(--color-ash-gray)" }}>
+          {reason}
+        </div>
+      ))}
     </div>
   );
 }
@@ -311,6 +380,7 @@ export default function CitedAnswerText({ text, ai }: { text: string; ai: AiMess
         </button>
       ) : null}
       <UnverifiedNote ai={ai} />
+      <GapPanel ai={ai} />
     </div>
   );
 }

@@ -1,4 +1,5 @@
 import type { AiMessage } from "./chat";
+import { gradeClaim, type GradedClaim } from "./grades";
 
 export interface EvidenceGap {
   kind?: string;
@@ -40,6 +41,52 @@ export interface EvidenceSource {
   stat: string;
   value: string;
   origin: string;
+  grade?: GradedClaim;
+  asOf?: string;
+}
+
+function textField(record: unknown, field: string): string {
+  if (!isRecord(record)) return "";
+  const raw = (record as Record<string, unknown>)[field];
+  return typeof raw === "string" ? raw : "";
+}
+
+function numberField(record: unknown, field: string): number | null {
+  if (!isRecord(record)) return null;
+  const raw = (record as Record<string, unknown>)[field];
+  return typeof raw === "number" && Number.isFinite(raw) ? raw : null;
+}
+
+function gradeInputOf(table: Record<string, unknown>): {
+  method?: string | null;
+  windowN?: number | null;
+  windowKind?: "games" | "meetings" | null;
+  lineage?: string | null;
+  season?: string | null;
+} {
+  const provenance = table.provenance;
+  const meta = table.meta;
+  const method = textField(meta, "method") || undefined;
+  const windowRaw = numberField(meta, "window_n") ?? numberField(meta, "windowN");
+  const kindRaw = isRecord(meta) ? (meta as Record<string, unknown>).window_kind : undefined;
+  return {
+    method,
+    windowN: windowRaw,
+    windowKind: kindRaw === "meetings" ? "meetings" : kindRaw === "games" ? "games" : null,
+    lineage: textField(provenance, "origin") || undefined,
+    season: textField(provenance, "season") || undefined,
+  };
+}
+
+function asOfOf(table: Record<string, unknown>): string {
+  const provenance = table.provenance;
+  const meta = table.meta;
+  return (
+    textField(provenance, "as_of") ||
+    textField(meta, "as_of") ||
+    textField(meta, "fetched_at") ||
+    textField(provenance, "fetched_at")
+  );
 }
 
 const CAPABILITY_LABELS: Record<string, string> = {
@@ -327,6 +374,7 @@ function tableSource(table: unknown, index: number): EvidenceSource | null {
     const outputId = typeof t.output_id === "string" ? t.output_id : "";
     const rawValue = t.value !== undefined ? t.value : t.input_value;
     const value = rawValue === null || rawValue === undefined ? "" : String(rawValue);
+    const asOf = asOfOf(t);
     return {
       key: "claim-" + index,
       index,
@@ -334,6 +382,8 @@ function tableSource(table: unknown, index: number): EvidenceSource | null {
       stat: displayStat(outputId, t.unit, t),
       value,
       origin: originText(t.provenance),
+      grade: gradeClaim(gradeInputOf(t)),
+      ...(asOf ? { asOf } : null),
     };
   }
   if (typeof t.tool === "string") {
@@ -408,6 +458,21 @@ function incompleteLabels(ai: AiMessage): string[] {
     labels.push(label || "a stat");
   });
   return labels;
+}
+
+export function gapReasons(ai: AiMessage): string[] {
+  const carry = carryOf(ai);
+  const gaps = Array.isArray(carry.gaps) ? carry.gaps : [];
+  const seen = new Set<string>();
+  const reasons: string[] = [];
+  gaps.forEach((gap) => {
+    const kind =
+      typeof gap === "string" ? gap : isRecord(gap) ? String(gap.kind || "") : "";
+    if (!kind || seen.has(kind)) return;
+    seen.add(kind);
+    reasons.push(gapMessage(kind));
+  });
+  return reasons;
 }
 
 function reasonText(ai: AiMessage): string {

@@ -6,9 +6,10 @@ import CitedAnswerText, {
   CiteTable,
   ContextPills,
   EvidenceLedger,
+  GapPanel,
   UnverifiedNote,
 } from "./components/CitedAnswerText";
-import { evidenceSources } from "./lib/evidence";
+import { evidenceSources, gapReasons } from "./lib/evidence";
 import type { AiMessage } from "./lib/chat";
 
 function aiWith(carry: unknown, tables: unknown[]): AiMessage {
@@ -180,6 +181,89 @@ describe("context pills", () => {
   });
 });
 
+describe("grade tags", () => {
+  const simTable = {
+    output_id: "WIN_PROB",
+    subject_type: "team",
+    subject_id: "BOS",
+    value: "0.68",
+    unit: "unitless",
+    provenance: { capability: "get_game_prediction", season: "2024-25" },
+    meta: { method: "Pre-game estimate from 10,000 seeded simulations" },
+  };
+  const seasonTable = {
+    output_id: "NET_RATING",
+    subject_type: "team",
+    subject_id: "BOS",
+    value: "9.4",
+    unit: "points_per_100_possessions",
+    provenance: {
+      capability: "team_ratings",
+      season: "2024-25",
+      origin: "warehouse",
+      as_of: "2025-04-14",
+    },
+  };
+  const ai = aiWith(PASS_CARRY, [simTable, seasonTable]);
+
+  it("every ledger row carries exactly one grade tag", () => {
+    const html = renderToStaticMarkup(
+      React.createElement(CitedAnswerText, {
+        text: "Boston at 0.68 with a 9.4 net rating.",
+        ai,
+      }),
+    );
+    assert.ok(html.includes("Model estimate"));
+    assert.ok(html.includes("Full season"));
+  });
+
+  it("open rows show scope, method, limits, and as-of lines", () => {
+    const sources = evidenceSources(ai);
+    const sim = renderToStaticMarkup(
+      React.createElement(EvidenceLedger, { sources, openIndex: 0 }),
+    );
+    assert.ok(sim.includes("Pre-game estimate from 10,000 seeded simulations"));
+    assert.ok(sim.includes("Not observed results"));
+    const season = renderToStaticMarkup(
+      React.createElement(EvidenceLedger, { sources, openIndex: 1 }),
+    );
+    assert.ok(season.includes("Full season · 2024-25"));
+    assert.ok(season.includes("2025-04-14"));
+  });
+
+  it("grade output carries zero infrastructure tokens", () => {
+    const html = renderToStaticMarkup(
+      React.createElement(CitedAnswerText, {
+        text: "Boston at 0.68 with a 9.4 net rating.",
+        ai,
+      }),
+    );
+    for (const token of [
+      "silver_",
+      "warehouse",
+      "evidence_id",
+      "_season",
+      "EvidenceEnvelope",
+      "(missing)",
+      "(rejected)",
+    ]) {
+      assert.ok(!html.includes(token), "leaked " + token);
+    }
+  });
+
+  it("tags use kicker type with tabular numbers", () => {
+    const html = renderToStaticMarkup(
+      React.createElement(CitedAnswerText, {
+        text: "Boston at 0.68.",
+        ai: aiWith(PASS_CARRY, [simTable]),
+      }),
+    );
+    assert.ok(html.includes("font-size:11px"));
+    assert.ok(html.includes("letter-spacing:.08em"));
+    assert.ok(html.includes("font-variant-numeric:tabular-nums"));
+  });
+});
+
 describe("source table", () => {
   it("shows the actual numbers in plain words", () => {
     const sources = evidenceSources(aiWith(PASS_CARRY, TEAM_TABLES));
@@ -223,6 +307,42 @@ describe("unverified note", () => {
   it("renders nothing without any signal", () => {
     const html = renderToStaticMarkup(
       React.createElement(UnverifiedNote, { ai: aiWith(undefined, []) }),
+    );
+    assert.equal(html, "");
+  });
+});
+
+describe("gap panel", () => {
+  const probe39Carry = {
+    verification: "partial",
+    verified_claims: 3,
+    gaps: Array.from({ length: 6 }, () => ({ kind: "missing_evidence", blocks: [] })),
+    output_statuses: [
+      { output_id: "NET_RATING", status: "complete", subject_type: "team", subject_id: "BOS" },
+    ],
+  };
+  const probe39Text =
+    "Boston finished with a 9.4 net rating.";
+
+  it("reads reasons from gap events, never answer prose", () => {
+    assert.deepEqual(gapReasons(aiWith(probe39Carry, [])), ["No data covered this."]);
+  });
+
+  it("renders the panel from gap events with no prose tail", () => {
+    const html = renderToStaticMarkup(
+      React.createElement(CitedAnswerText, {
+        text: probe39Text,
+        ai: aiWith(probe39Carry, []),
+      }),
+    );
+    assert.ok(!html.includes("Some requested outputs could not be verified."));
+    assert.ok(html.includes("Couldn&#x27;t verify"));
+    assert.ok(html.includes("No data covered this."));
+  });
+
+  it("fully verified answers render no panel", () => {
+    const html = renderToStaticMarkup(
+      React.createElement(GapPanel, { ai: aiWith(PASS_CARRY, []) }),
     );
     assert.equal(html, "");
   });

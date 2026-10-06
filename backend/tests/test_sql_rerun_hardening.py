@@ -142,6 +142,8 @@ def test_cors_get_echoes_allowed_origin():
     "INSERT INTO silver_standings VALUES ('X', 1, '2025-26')",
     "UPDATE silver_standings SET WINS = 99",
     "DELETE FROM silver_standings",
+    "SELECT WINS FROM silver_standings; DROP TABLE silver_standings",
+    "SELECT WINS FROM silver_standings; SELECT WINS FROM silver_standings",
 ])
 def test_validate_rejects_write_sql(bad):
     with pytest.raises(ValueError):
@@ -151,6 +153,7 @@ def test_validate_rejects_write_sql(bad):
 @pytest.mark.parametrize("bad", [
     "DROP TABLE silver_standings",
     "INSERT INTO silver_standings VALUES ('X', 1, '2025-26')",
+    "SELECT WINS FROM silver_standings; DROP TABLE silver_standings",
 ])
 def test_rerun_sql_rejects_write_sql(warehouse, bad):
     out = asyncio.run(rerun_sql(bad))
