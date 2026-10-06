@@ -180,6 +180,7 @@ def test_the_published_table_keeps_stamping_the_live_date_for_each_figure() -> N
         "display_name": "NET RATING",
         "subject_type": None,
         "subject_id": None,
+        "subject_display_name": "",
         "value": "9.4",
         "unit": "net_rating",
         "provenance": {"capability": "team_ratings", "origin": "live",
