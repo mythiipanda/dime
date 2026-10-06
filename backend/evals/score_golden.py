@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 import json
 import math
+import re
 import sys
 import unicodedata
 from pathlib import Path
@@ -22,13 +23,26 @@ def load(split: str) -> list[dict]:
             if line.strip()]
 
 
+def contains_bounded(text: str, expected: str) -> bool:
+    if not any(char.isdigit() for char in expected):
+        return expected in text
+    return re.search(
+        r"(?<![\d.])" + re.escape(expected) + r"(?![\d.])", text) is not None
+
+
 def score_item(item: dict, answer: str) -> dict:
     text = fold(answer)
     alts = item.get("exact", [])
     missing_alt = [] if not alts else (
-        [] if any(fold(e) in text for e in alts) else list(alts))
-    missing_all = [e for e in item.get("exact_all", []) if fold(e) not in text]
-    missing_names = [n for n in item["must_contain"] if fold(n) not in text]
+        [] if any(contains_bounded(text, fold(e)) for e in alts)
+        else list(alts))
+    missing_all = [e for e in item.get("exact_all", [])
+                   if not contains_bounded(text, fold(e))]
+    missing_names = [n for n in item.get("must_contain", [])
+                     if fold(n) not in text]
+    any_of = item.get("any_of", [])
+    if any_of and not any(fold(n) in text for n in any_of):
+        missing_names = [*missing_names, f"any_of:{'/'.join(any_of)}"]
     missing_exact = missing_alt + missing_all
     return {"id": item["id"], "pass": not (missing_exact or missing_names),
             "missing_exact": missing_exact, "missing_names": missing_names}
