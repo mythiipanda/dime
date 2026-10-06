@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import MatchupPreviewView, { parsePreview } from "../../components/MatchupPreviewView";
 import { getRevision } from "../../lib/api";
 import {
+  briefFieldDiff,
   briefStale,
   docRev,
   getBrief,
@@ -19,11 +20,13 @@ function briefTitle(doc: BriefDoc): string {
   return doc.title || doc.question.slice(0, 80);
 }
 
-function BriefEditor({ doc, onSaved }: { doc: BriefDoc; onSaved: () => void }) {
+export function BriefEditor({ doc, onSaved, pollMs = 2000 }: { doc: BriefDoc; onSaved: () => void; pollMs?: number }) {
   const [title, setTitle] = useState(doc.title);
   const [question, setQuestion] = useState(doc.question);
   const [conflict, setConflict] = useState(false);
+  const [flash, setFlash] = useState<string[]>([]);
   const saved = useRef({ title: doc.title, question: doc.question, rev: docRev(doc) });
+  const flashTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     if (title === saved.current.title && question === saved.current.question) return;
@@ -39,6 +42,35 @@ function BriefEditor({ doc, onSaved }: { doc: BriefDoc; onSaved: () => void }) {
     }, 600);
     return () => clearTimeout(id);
   }, [title, question, doc.id, onSaved]);
+
+  useEffect(() => {
+    const check = () => {
+      const current = getBrief(doc.id);
+      if (!current || docRev(current) <= saved.current.rev) return;
+      if (title !== saved.current.title || question !== saved.current.question) return;
+      const changed = briefFieldDiff(saved.current, current);
+      saved.current = { title: current.title, question: current.question, rev: docRev(current) };
+      setTitle(current.title);
+      setQuestion(current.question);
+      setFlash(changed);
+      if (flashTimer.current) clearTimeout(flashTimer.current);
+      flashTimer.current = setTimeout(() => setFlash([]), 1500);
+      onSaved();
+    };
+    const id = setInterval(check, pollMs);
+    const onStorage = () => check();
+    window.addEventListener("storage", onStorage);
+    return () => {
+      clearInterval(id);
+      window.removeEventListener("storage", onStorage);
+    };
+  }, [doc.id, pollMs, onSaved, title, question]);
+
+  useEffect(() => {
+    return () => {
+      if (flashTimer.current) clearTimeout(flashTimer.current);
+    };
+  }, []);
 
   const reload = () => {
     const current = getBrief(doc.id);
@@ -60,20 +92,25 @@ function BriefEditor({ doc, onSaved }: { doc: BriefDoc; onSaved: () => void }) {
     color: "var(--color-ink-black)",
     background: "var(--color-pure-white)",
     marginBottom: 8,
+    transition: "background-color 1.4s ease",
+  } as const;
+  const flashed = {
+    ...field,
+    backgroundColor: "var(--color-bg-selected)",
   } as const;
 
   return (
     <div style={{ marginBottom: 12 }}>
       <input
         className="field"
-        style={field}
+        style={flash.includes("title") ? flashed : field}
         value={title}
         onChange={(e) => setTitle(e.target.value)}
         aria-label="Brief title"
       />
       <input
         className="field"
-        style={field}
+        style={flash.includes("question") ? flashed : field}
         value={question}
         onChange={(e) => setQuestion(e.target.value)}
         aria-label="Brief question"

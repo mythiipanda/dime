@@ -164,6 +164,16 @@ export function updateBrief(
   return { ok: true, doc: next };
 }
 
+export function briefFieldDiff(
+  prev: { title: string; question: string },
+  next: { title: string; question: string },
+): string[] {
+  const out: string[] = [];
+  if (prev.title !== next.title) out.push("title");
+  if (prev.question !== next.question) out.push("question");
+  return out;
+}
+
 export function rerunBrief(doc: BriefDoc): string {
   try {
     session().setItem(RERUN_KEY, doc.question);
