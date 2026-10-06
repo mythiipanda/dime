@@ -171,8 +171,10 @@ KNOWN_TABLES = (
 _TABLE_NAME = r"[A-Za-z_][A-Za-z0-9_]*"
 
 _state_lock = threading.RLock()
-_season_cache: dict[str, tuple[Path, tuple[int, int], frozenset[str]]] = {}
-_table_cache: tuple[Path, tuple[int, int], frozenset[str]] | None = None
+_season_caches: dict[tuple[Path, str], tuple[tuple[int, int, int, int, str],
+                                            frozenset[str]]] = {}
+_table_caches: dict[Path, tuple[tuple[int, int, int, int, str],
+                                frozenset[str]]] = {}
 
 
 def table_for_metric(metric: str) -> str:
@@ -365,19 +367,26 @@ def parse_season_start(value: object) -> int | None:
     return start
 
 
-def _freshness(path: Path) -> tuple[int, int] | None:
+def _freshness(path: Path) -> tuple[int, int, int, int, str] | None:
     try:
         stat = path.stat()
     except OSError:
         return None
-    return (stat.st_mtime_ns, stat.st_size)
+    try:
+        from shared.store import _warehouse_sample_hexdigest
+    except Exception:
+        return None
+    sample = _warehouse_sample_hexdigest(path, stat.st_size)
+    if sample is None:
+        return None
+    return (stat.st_mtime_ns, stat.st_size, stat.st_ctime_ns,
+            stat.st_ino, sample)
 
 
 def coverage_cache_clear() -> None:
-    global _table_cache
     with _state_lock:
-        _season_cache.clear()
-        _table_cache = None
+        _season_caches.clear()
+        _table_caches.clear()
 
 
 def _read_table_names(path: Path) -> frozenset[str]:
@@ -395,25 +404,27 @@ def _read_table_names(path: Path) -> frozenset[str]:
 
 
 def warehouse_tables() -> frozenset[str]:
-    global _table_cache
     try:
         path = warehouse_path()
     except Exception:
         return frozenset()
     fresh = _freshness(path)
-    key = path.resolve()
+    try:
+        key = path.resolve()
+    except OSError:
+        return frozenset()
     with _state_lock:
-        entry = _table_cache
-        if (entry is not None and fresh is not None
-                and entry[0] == key and entry[1] == fresh):
-            return entry[2]
+        entry = _table_caches.get(key)
+        if (fresh is not None and entry is not None
+                and entry[0] == fresh):
+            return entry[1]
     try:
         names = _read_table_names(path)
     except Exception:
         return frozenset()
     with _state_lock:
         if fresh is not None:
-            _table_cache = (key, fresh, names)
+            _table_caches[key] = (fresh, names)
     return names
 
 
@@ -448,19 +459,22 @@ def table_seasons(table: str) -> frozenset[str]:
     except Exception:
         return frozenset()
     fresh = _freshness(path)
-    key = path.resolve()
+    try:
+        key = (path.resolve(), name)
+    except OSError:
+        return frozenset()
     with _state_lock:
-        entry = _season_cache.get(name)
-        if (entry is not None and fresh is not None
-                and entry[0] == key and entry[1] == fresh):
-            return entry[2]
+        entry = _season_caches.get(key)
+        if (fresh is not None and entry is not None
+                and entry[0] == fresh):
+            return entry[1]
     try:
         seasons = _read_table_seasons(path, name)
     except Exception:
         return frozenset()
     with _state_lock:
         if fresh is not None:
-            _season_cache[name] = (key, fresh, seasons)
+            _season_caches[key] = (fresh, seasons)
     return seasons
 
 

@@ -126,6 +126,7 @@ def build_runtime(
     run_timeout_s: float | None = None,
     node_timeout_s: float | None = None,
     diagnostics: bool = False,
+    context_token_budget: int | None = None,
 ) -> tuple[Runtime, RunLedger | FileLedger]:
     if not run_id or any(
         char not in "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_"
@@ -183,5 +184,6 @@ def build_runtime(
         pre_tool_timeout_s=pre_tool_timeout_s,
         run_timeout_s=run_timeout_s,
         diagnostics=diagnostics,
+        context_token_budget=context_token_budget,
     )
     return runtime, ledger

@@ -5,6 +5,8 @@ import duckdb
 import fcntl
 import os
 import polars as pl
+import shutil
+import tempfile
 import threading
 import time
 import hashlib
@@ -97,6 +99,14 @@ def warehouse_tables_cache_clear() -> None:
         _tables_cache.clear()
 
 
+class WriteConflictError(TimeoutError):
+    def __init__(self, warehouse: Path | str) -> None:
+        self.warehouse = str(warehouse)
+        super().__init__(
+            f"warehouse write for {Path(self.warehouse).name} refused: "
+            f"another writer holds it; serialize writes through write_guard")
+
+
 def _connection_db_path(con) -> Path | None:
     try:
         rows = con.execute("PRAGMA database_list").fetchall()
@@ -114,7 +124,7 @@ def _connection_db_path(con) -> Path | None:
 
 def _tables_uncached(path: Path) -> tuple[frozenset[str], Path | None]:
     if path == DB_PATH.resolve():
-        con = connect(read_only=True)
+        con = read_connect()
     else:
         con = duckdb.connect(str(path), read_only=True)
     try:
@@ -152,7 +162,7 @@ _PRESEASON_GAME_ID_PREFIX = "001"
 
 
 def seasons_with_data(table: str = _PLAYED_GAME_TABLE) -> list[str]:
-    con = duckdb.connect(str(DB_PATH), read_only=True)
+    con = read_connect()
     try:
         rows = con.execute(
             f"SELECT DISTINCT _season FROM {table} "
@@ -195,12 +205,7 @@ def _connect_once(read_only: bool) -> duckdb.DuckDBPyConnection:
         return duckdb.connect(str(DB_PATH), read_only=True)
     if DB_PATH.resolve() == CANONICAL_DB_PATH:
         raise PermissionError("canonical benchmark warehouse is immutable")
-    try:
-        con = duckdb.connect(str(DB_PATH))
-    except duckdb.IOException as exc:
-        if "lock" in str(exc).lower() or "conflict" in str(exc).lower():
-            raise
-        return duckdb.connect(str(DB_PATH), read_only=True)
+    con = duckdb.connect(str(DB_PATH))
     con.execute(
         """CREATE TABLE IF NOT EXISTS fetch_log(
         dataset VARCHAR, season VARCHAR, entity VARCHAR,
@@ -288,7 +293,9 @@ def _pool_acquire():
     except OSError:
         _pool_drop()
         return None
-    if (st.st_mtime_ns, st.st_size) != (entry[2], entry[3]):
+    sample = _warehouse_sample_hexdigest(DB_PATH, st.st_size)
+    if sample is None or (st.st_mtime_ns, st.st_size, sample) != (
+            entry[2], entry[3], entry[4]):
         _pool_drop()
         try:
             warehouse_tables_cache_clear()
@@ -308,7 +315,11 @@ def _pool_store(con):
         st = os.stat(DB_PATH)
     except OSError:
         return con
-    _pool_state.entry = ((str(DB_PATH.resolve()), True), con, st.st_mtime_ns, st.st_size)
+    sample = _warehouse_sample_hexdigest(DB_PATH, st.st_size)
+    if sample is None:
+        return con
+    _pool_state.entry = ((str(DB_PATH.resolve()), True), con,
+                         st.st_mtime_ns, st.st_size, sample)
     try:
         with _pool_lock:
             if con not in _pool_registry:
@@ -322,23 +333,58 @@ def warehouse_pool_clear() -> None:
     _pool_drop()
 
 
+def read_connect() -> duckdb.DuckDBPyConnection:
+    return connect(read_only=True)
+
+
+def connect_to(path: Path | str,
+               read_only: bool = True) -> duckdb.DuckDBPyConnection:
+    target = Path(path)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        return duckdb.connect(str(target), read_only=read_only)
+    except _LOCK_ERRORS as exc:
+        if not read_only:
+            raise WriteConflictError(target) from exc
+        raise
+
+
+def snapshot_warehouse(dest: Path | str | None = None) -> Path:
+    if dest is None:
+        dest = (Path(tempfile.mkdtemp(prefix="dime-run-", dir="/tmp"))
+                / "warehouse.duckdb")
+    target = Path(dest)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    with write_guard():
+        con = connect(read_only=False)
+        try:
+            con.execute("CHECKPOINT")
+        finally:
+            con.close()
+        shutil.copyfile(DB_PATH, target)
+        wal_source = Path(str(DB_PATH) + ".wal")
+        if wal_source.exists():
+            shutil.copyfile(wal_source, Path(str(target) + ".wal"))
+    return target
+
+
 def connect(read_only: bool | None = None) -> duckdb.DuckDBPyConnection:
     DB_PATH.parent.mkdir(parents=True, exist_ok=True)
     if read_only is None:
         read_only = DB_PATH.resolve() == CANONICAL_DB_PATH
-    if read_only:
-        pooled = _pool_acquire()
-        if pooled is not None:
-            return pooled
-    else:
+    if not read_only:
         _pool_evict_all()
+        try:
+            return _connect_once(False)
+        except _LOCK_ERRORS as exc:
+            raise WriteConflictError(DB_PATH) from exc
+    pooled = _pool_acquire()
+    if pooled is not None:
+        return pooled
     last: Exception | None = None
     for attempt in range(_CONNECT_RETRIES):
         try:
-            con = _connect_once(read_only)
-            if read_only:
-                return _pool_store(con)
-            return con
+            return _pool_store(_connect_once(True))
         except _LOCK_ERRORS as exc:
             last = exc
             try:
@@ -569,7 +615,7 @@ def read_frame(table: str, where: str = "", params: list[object] | None = None) 
     """
     if table not in tables():
         raise TableAbsent(table, DB_PATH)
-    con = connect(read_only=True)
+    con = read_connect()
     try:
         query = f"SELECT * FROM {table}" + (f" WHERE {where}" if where else "")
         rel = con.execute(query, params or [])
@@ -598,7 +644,7 @@ def _read_df(sql: str, params: list, tries: int = 5) -> list[dict[str, object]]:
     last: Exception | None = None
     for _ in range(tries):
         try:
-            con = connect(read_only=True)
+            con = read_connect()
             try:
                 return (
                     con.execute(sql, params)
@@ -614,7 +660,7 @@ def _read_df(sql: str, params: list, tries: int = 5) -> list[dict[str, object]]:
 
 
 def last_fetch(table: str, season: str, entity: str = "") -> str:
-    con = connect(read_only=True)
+    con = read_connect()
     try:
         row = con.execute(
             """SELECT fetched_at FROM fetch_log

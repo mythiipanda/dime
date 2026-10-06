@@ -8,6 +8,7 @@ import math
 from typing import Any
 
 from v2.contracts import (
+    ConversationTurn,
     EvidenceEnvelope,
     TaskSpec,
     canonical_entity_id,
@@ -15,6 +16,273 @@ from v2.contracts import (
     format_window,
     window_of_arguments,
 )
+
+
+DEFAULT_CONTEXT_TOKEN_BUDGET = 4000
+
+PRUNE_LEVEL_ROWS = "rows"
+PRUNE_LEVEL_TOOL_META = "tool_meta"
+PRUNE_LEVEL_TURN_PROSE = "turn_prose"
+
+
+class CitationOrphanError(ValueError):
+    pass
+
+
+@dataclass(frozen=True)
+class PruneReport:
+    tokens_before: int
+    tokens_after: int
+    levels_applied: tuple[str, ...]
+    retained_evidence_ids: tuple[str, ...]
+    dropped_rows: int
+
+
+def count_tokens(text: str) -> int:
+    if not isinstance(text, str):
+        raise TypeError("token counting requires a string")
+    try:
+        import tiktoken
+    except ImportError as exc:
+        raise RuntimeError(
+            "tiktoken is required for context token counts") from exc
+    return len(tiktoken.get_encoding("cl100k_base").encode(text))
+
+
+def turns_tokens(turns: Iterable[ConversationTurn]) -> int:
+    return sum(count_tokens(turn.content) for turn in turns)
+
+
+def envelope_tokens(envelope: EvidenceEnvelope) -> int:
+    return count_tokens(envelope.model_dump_json())
+
+
+def resolve_selector(rows: Any, selector: str) -> Any:
+    if not isinstance(selector, str) or not selector:
+        raise ValueError("selector must be a non-empty string")
+    if selector == "rows":
+        return rows
+    if not selector.startswith("rows"):
+        raise ValueError("selector must start with rows")
+    current = rows
+    rest = selector[4:]
+    while rest:
+        if rest[0] == "[":
+            end = rest.index("]")
+            index = int(rest[1:end])
+            if index < 0 or not isinstance(current, list):
+                raise ValueError("selector indexes a row that is not present")
+            current = current[index]
+            rest = rest[end + 1:]
+        elif rest[0] == ".":
+            cut = len(rest)
+            for pos in range(1, len(rest)):
+                if rest[pos] in {".", "["}:
+                    cut = pos
+                    break
+            key = rest[1:cut]
+            if not key or not isinstance(current, Mapping):
+                raise ValueError("selector names a field that is not present")
+            current = current[key]
+            rest = rest[cut:]
+        else:
+            raise ValueError("selector has an unexpected shape")
+    return current
+
+
+def _cited_row_indices(selectors: Iterable[str]) -> set[int]:
+    found: set[int] = set()
+    for selector in selectors:
+        if not selector.startswith("rows["):
+            continue
+        index = int(selector[5:selector.index("]")])
+        if index < 0:
+            raise ValueError("selector indexes a row that is not present")
+        found.add(index)
+    return found
+
+
+def _selector_top_key(selector: str) -> str:
+    body = selector[len("rows."):] if selector.startswith("rows.") else ""
+    key = body.split(".", 1)[0].split("[", 1)[0]
+    if not key:
+        raise ValueError("selector names a field that is not present")
+    return key
+
+
+def _selector_leaf(selector: str) -> str:
+    tail = selector.rsplit(".", 1)[-1].split("[", 1)[0]
+    if not tail:
+        raise ValueError("selector names a field that is not present")
+    return tail
+
+
+def _require_token_budget(value: int) -> int:
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise TypeError("token budget must be an integer")
+    if value <= 0:
+        raise ValueError("token budget must be positive")
+    return value
+
+
+def compact_evidence_rows(
+    envelope: EvidenceEnvelope, keep_selectors: Iterable[str],
+) -> EvidenceEnvelope:
+    keep = set(keep_selectors)
+    rows = envelope.rows
+    if isinstance(rows, list):
+        kept = _cited_row_indices(keep)
+        narrowed = [row if index in kept else {} for index, row in enumerate(rows)]
+        return envelope.model_copy(update={"rows": narrowed})
+    if isinstance(rows, Mapping):
+        if not keep:
+            return envelope.model_copy(update={"rows": {}})
+        wanted = {_selector_top_key(item) for item in keep}
+        return envelope.model_copy(update={
+            "rows": {key: value for key, value in rows.items() if key in wanted}})
+    raise TypeError("evidence rows must be a list or a mapping")
+
+
+def strip_envelope_meta(
+    envelope: EvidenceEnvelope, cited_fields: Iterable[str],
+) -> EvidenceEnvelope:
+    wanted = set(cited_fields)
+    kept = {key: value for key, value in envelope.metric_definitions.items()
+            if key in wanted}
+    if kept == envelope.metric_definitions:
+        return envelope
+    return envelope.model_copy(update={"metric_definitions": kept})
+
+
+def _head_text(text: str, token_limit: int) -> str:
+    import tiktoken
+
+    encoding = tiktoken.get_encoding("cl100k_base")
+    ids = encoding.encode(text)
+    if len(ids) <= token_limit:
+        return text
+    if token_limit <= 0:
+        raise ValueError("context token budget too small to preserve turn order")
+    return encoding.decode(ids[:token_limit])
+
+
+def _retruncated_turn(turn: ConversationTurn, token_limit: int) -> ConversationTurn:
+    narrowed = _head_text(turn.content, token_limit)
+    return ConversationTurn.model_validate(
+        {"role": turn.role, "content": narrowed})
+
+
+def prune_turn_prose(
+    turns: Iterable[ConversationTurn], token_budget: int,
+) -> tuple[ConversationTurn, ...]:
+    budget = _require_token_budget(token_budget)
+    ordered = tuple(turns)
+    if not ordered:
+        return ordered
+    needs = [count_tokens(turn.content) for turn in ordered]
+    if sum(needs) <= budget:
+        return ordered
+    newest_need = needs[-1]
+    older = list(ordered[:-1])
+    if newest_need >= budget:
+        floor = len(older)
+        if budget <= floor:
+            raise ValueError(
+                "context token budget too small to preserve turn order")
+        narrowed = [_retruncated_turn(turn, 1) for turn in older]
+        return tuple([*narrowed, _retruncated_turn(ordered[-1], budget - floor)])
+    narrowed_older: list[ConversationTurn] = []
+    left = budget - newest_need
+    for position in range(len(older) - 1, -1, -1):
+        give = left - position
+        if give < 1:
+            raise ValueError(
+                "context token budget too small to preserve turn order")
+        need = count_tokens(older[position].content)
+        take = min(need, give)
+        narrowed_older.append(_retruncated_turn(older[position], take))
+        left -= take
+    narrowed_older.reverse()
+    return tuple([*narrowed_older, ordered[-1]])
+
+
+def prune_session_context(
+    turns: Iterable[ConversationTurn],
+    evidence: Mapping[str, EvidenceEnvelope],
+    cited: Mapping[str, Mapping[str, Any]],
+    *,
+    token_budget: int,
+) -> tuple[tuple[ConversationTurn, ...], dict[str, EvidenceEnvelope], PruneReport]:
+    budget = _require_token_budget(token_budget)
+    ordered = tuple(turns)
+    admitted = dict(evidence)
+    wanted = {name: dict(selectors) for name, selectors in cited.items()}
+    for name, selectors in wanted.items():
+        if name not in admitted:
+            raise CitationOrphanError(f"prune would orphan citation: {name}")
+        for selector, value in selectors.items():
+            try:
+                seen = resolve_selector(admitted[name].rows, selector)
+            except Exception as exc:
+                raise CitationOrphanError(
+                    f"prune would orphan citation: {name} {selector}") from exc
+            if seen != value:
+                raise CitationOrphanError(
+                    f"prune would orphan citation: {name} {selector}")
+    before = turns_tokens(ordered) + sum(
+        envelope_tokens(item) for item in admitted.values())
+    levels: list[str] = []
+    narrowed = dict(admitted)
+    dropped = 0
+    row_step = {
+        name: compact_evidence_rows(item, wanted.get(name, {}).keys())
+        for name, item in narrowed.items()
+    }
+    if sum(envelope_tokens(item) for item in row_step.values()) < sum(
+            envelope_tokens(item) for item in narrowed.values()):
+        for name, item in row_step.items():
+            before_rows = narrowed[name].rows
+            after_rows = item.rows
+            if isinstance(before_rows, list) and isinstance(after_rows, list):
+                dropped += sum(
+                    1 for before_row, after_row in zip(before_rows, after_rows)
+                    if before_row != after_row)
+        narrowed = row_step
+        levels.append(PRUNE_LEVEL_ROWS)
+    leaves = {name: {_selector_leaf(selector) for selector in selectors}
+              for name, selectors in wanted.items()}
+    meta_step = {
+        name: strip_envelope_meta(item, leaves.get(name, set()))
+        for name, item in narrowed.items()
+    }
+    if sum(envelope_tokens(item) for item in meta_step.values()) < sum(
+            envelope_tokens(item) for item in narrowed.values()):
+        narrowed = meta_step
+        levels.append(PRUNE_LEVEL_TOOL_META)
+    kept_turns = ordered
+    evidence_cost = sum(envelope_tokens(item) for item in narrowed.values())
+    if turns_tokens(kept_turns) + evidence_cost > budget:
+        kept_turns = prune_turn_prose(ordered, budget - evidence_cost)
+        levels.append(PRUNE_LEVEL_TURN_PROSE)
+    for name, selectors in wanted.items():
+        for selector, value in selectors.items():
+            try:
+                seen = resolve_selector(narrowed[name].rows, selector)
+            except Exception as exc:
+                raise CitationOrphanError(
+                    f"prune would orphan citation: {name} {selector}") from exc
+            if seen != value:
+                raise CitationOrphanError(
+                    f"prune would orphan citation: {name} {selector}")
+    after = turns_tokens(kept_turns) + sum(
+        envelope_tokens(item) for item in narrowed.values())
+    return kept_turns, narrowed, PruneReport(
+        tokens_before=before,
+        tokens_after=after,
+        levels_applied=tuple(levels),
+        retained_evidence_ids=tuple(sorted(narrowed)),
+        dropped_rows=dropped,
+    )
 
 
 @dataclass(frozen=True)

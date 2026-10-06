@@ -44,7 +44,11 @@ from v2.runtime.models import (BindingFormMismatch, ExecutionResult, RuntimeResu
                                admit_verified_claim_bindings,
                                propagate_evidence_to_task,
                                reanchor_verified_claim_bindings)
-from v2.domain.evidence import iter_values
+from v2.domain.evidence import (
+    DEFAULT_CONTEXT_TOKEN_BUDGET,
+    iter_values,
+    prune_turn_prose,
+)
 from v2.runtime.budget import RUN_MODEL_DEADLINE
 
 JUDGE_UNAVAILABLE_BRANCH = "Semantic verification was unavailable; published claims passed deterministic verification."
@@ -75,6 +79,7 @@ class Runtime:
         run_timeout_s: float | None = None,
         diagnostics: bool = False,
         fast_path: bool = False,
+        context_token_budget: int | None = None,
     ) -> None:
         if not isinstance(repair_attempts, int) or isinstance(repair_attempts, bool):
             raise TypeError("repair_attempts must be an integer")
@@ -109,6 +114,14 @@ class Runtime:
         if not isinstance(fast_path, bool):
             raise TypeError("fast_path must be a boolean")
         self._fast_path = fast_path
+        if context_token_budget is not None:
+            if (isinstance(context_token_budget, bool)
+                    or not isinstance(context_token_budget, int)
+                    or context_token_budget <= 0):
+                raise ValueError("context_token_budget must be a positive integer or None")
+        self._context_token_budget = (
+            DEFAULT_CONTEXT_TOKEN_BUDGET if context_token_budget is None
+            else context_token_budget)
 
     async def run(
         self, request: str, *, run_id: str | None = None,
@@ -125,6 +138,7 @@ class Runtime:
         ) for turn in context)
         if len(context) > 8:
             raise ValueError("runtime context cannot exceed 8 turns")
+        context = self._prepare_context(context)
         turn_id = run_id or "turn"
         turn_started = time.perf_counter()
         run_deadline = (None if self._run_timeout_s is None
@@ -511,6 +525,13 @@ class Runtime:
                           (time.perf_counter() - turn_started) * 1000))},
             )
         return result
+
+    def _prepare_context(
+        self, context: tuple[ConversationTurn, ...],
+    ) -> tuple[ConversationTurn, ...]:
+        if not context:
+            return context
+        return prune_turn_prose(context, self._context_token_budget)
 
     def _report_activity(self, payload: dict) -> None:
         if self._activity is None:
