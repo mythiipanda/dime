@@ -177,13 +177,32 @@ class Runtime:
                 return prepared_task
 
             async def plan_task(prepared_task, deadline: float | None = None):
+                from v2.adapters.models import PlanOutputError
                 def remaining() -> float | None:
                     if deadline is None:
                         return None
                     return max(0.000001, deadline - time.perf_counter())
-                prepared_plan = Plan.model_validate((await self._stage(
-                    turn_id, "plan", self._planner.plan(prepared_task),
-                    timeout_s=remaining())).model_dump())
+                try:
+                    plan_raw = await self._stage(
+                        turn_id, "plan", self._planner.plan(prepared_task),
+                        timeout_s=remaining())
+                except PlanOutputError as exc:
+                    if not _planner_accepts_failure_context(self._planner):
+                        raise
+                    plan_raw = await self._stage(
+                        turn_id, "plan_repair",
+                        self._planner.plan(
+                            prepared_task,
+                            failure_context={
+                                "plan_error": str(exc),
+                                "output_id": exc.output_id,
+                                "capability": exc.capability,
+                                "vocabulary": exc.vocabulary,
+                                "node_id": exc.node_id,
+                                "requirement_id": exc.requirement_id,
+                            }),
+                        timeout_s=remaining())
+                prepared_plan = Plan.model_validate(plan_raw.model_dump())
                 catalog = getattr(self._executor, "capability_names", frozenset())
                 self._report_activity({"kind":"plan_update","phase":"plan","status":"complete","title":"Plan accepted","transition":"completed","correlation_id":"stage:plan","data":{"node_count":len(prepared_plan.nodes),"capabilities":sorted({cap for n in prepared_plan.nodes for cap in n.capability_hints if cap in catalog}),"unknown_capability_count":sum(1 for n in prepared_plan.nodes for cap in n.capability_hints if cap not in catalog)}})
                 return prepared_plan
