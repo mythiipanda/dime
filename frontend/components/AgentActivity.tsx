@@ -497,6 +497,7 @@ function ThoughtBlock({ text, running, thoughtMs, thoughtStarted }: { text: stri
 export default function AgentActivity({ ai }: { ai: AiMessage }) {
   const [open, setOpen] = useState(false);
   const [thoughtsOpen, setThoughtsOpen] = useState(false);
+  const [liveOpen, setLiveOpen] = useState(false);
   const thoughts = useMemo(() => thoughtsFor(ai), [ai]);
   const calls = useMemo(() => callsFor(ai), [ai]);
   const reasoning = useMemo(() => reasoningFor(ai), [ai]);
@@ -509,7 +510,11 @@ export default function AgentActivity({ ai }: { ai: AiMessage }) {
     (ai.activity?.length ?? 0) > 0;
 
   if (!hasActivity) {
-    return running ? <div role="status" style={{ marginBottom: 10, fontSize: 12, color: "var(--color-ash-gray)" }}>Analyzing…</div> : null;
+    return (
+      <div data-activity-slot style={{ marginBottom: 10 }}>
+        {running ? <div role="status" style={{ fontSize: 12, color: "var(--color-ash-gray)" }}>Analyzing…</div> : null}
+      </div>
+    );
   }
 
   const label = running
@@ -517,11 +522,44 @@ export default function AgentActivity({ ai }: { ai: AiMessage }) {
     : calls.length > 0
       ? `Used ${calls.length} tool${calls.length === 1 ? "" : "s"}`
       : "Analysis complete";
+  const liveRows = (
+    <div style={{ margin: "7px 0 0 19px", paddingLeft: 10, borderLeft: "1px solid var(--color-stone-border)" }}>
+      {grouped.map((entry) =>
+        "calls" in entry ? (
+          <GroupRow key={entry.key} g={entry} live={running} />
+        ) : (
+          <ToolRow key={entry.id ?? entry.name} c={entry} live={running} />
+        ),
+      )}
+    </div>
+  );
 
   return (
-    <div style={{ marginBottom: 10 }}>
+    <div data-activity-slot style={{ marginBottom: 10 }}>
       {(ai.activity?.length ?? 0) > 0 ? (
         <ActivityTimeline items={ai.activity!} running={running} />
+      ) : running && calls.length >= 2 ? (
+        <details open={liveOpen} style={{ color: "var(--color-warm-gray)", fontSize: 12 }}>
+          <summary
+            style={{ cursor: "pointer", listStyle: "none" }}
+            onClick={(e) => {
+              e.preventDefault();
+              setLiveOpen((o) => !o);
+            }}
+          >
+            <span aria-hidden style={{ marginRight: 7, color: "var(--color-ash-gray)" }}>●</span>
+            {`Did ${calls.length} things`}
+          </summary>
+          {liveOpen && liveRows}
+        </details>
+      ) : running ? (
+        <div style={{ color: "var(--color-warm-gray)", fontSize: 12 }}>
+          <div>
+            <span aria-hidden style={{ marginRight: 7, color: "var(--color-ash-gray)" }}>●</span>
+            {label}
+          </div>
+          {liveRows}
+        </div>
       ) : (
         <details open={open} style={{ color: "var(--color-warm-gray)", fontSize: 12 }}>
           <summary
@@ -531,7 +569,7 @@ export default function AgentActivity({ ai }: { ai: AiMessage }) {
               setOpen((o) => !o);
             }}
           >
-            <span aria-hidden style={{ marginRight: 7, color: "var(--color-ash-gray)" }}>{running ? "●" : "·"}</span>
+            <span aria-hidden style={{ marginRight: 7, color: "var(--color-ash-gray)" }}>·</span>
             {label}
           </summary>
           {open && (
