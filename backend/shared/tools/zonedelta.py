@@ -13,7 +13,6 @@ MIN_SEASON, MAX_SEASON = 2010, 2025
 MIN_FLOOR, MAX_FLOOR = 10, 200
 DEFAULT_FLOOR = 50
 
-
 def clamp_season_year(season: object) -> int:
     try:
         year = int(str(season).strip()[:4])
@@ -21,21 +20,17 @@ def clamp_season_year(season: object) -> int:
         return MAX_SEASON
     return max(MIN_SEASON, min(MAX_SEASON, year))
 
-
 def clamp_floor(value: object) -> int:
     try:
-        return max(MIN_FLOOR, min(MAX_FLOOR, int(value)))  # type: ignore[arg-type]
+        return max(MIN_FLOOR, min(MAX_FLOOR, int(value)))
     except (TypeError, ValueError):
         return DEFAULT_FLOOR
-
 
 def season_label(end_year: int) -> str:
     return f"{end_year - 1}-{str(end_year)[-2:]}"
 
-
 def _is_made(row: dict[str, Any]) -> bool:
     return str(row.get("shot_result") or "").lower() == "made"
-
 
 def _display_name(person_id: int, fallback: str) -> str:
     try:
@@ -50,7 +45,6 @@ def _display_name(person_id: int, fallback: str) -> str:
         pass
     return fallback
 
-
 def fold_zones(shots: list[dict[str, Any]]) -> dict[str, dict[str, int]]:
     out = {key: {"fga": 0, "fgm": 0} for key in ZONE_KEYS}
     for s in shots:
@@ -59,7 +53,6 @@ def fold_zones(shots: list[dict[str, Any]]) -> dict[str, dict[str, int]]:
         if _is_made(s):
             out[zone]["fgm"] += 1
     return out
-
 
 def build_deltas(player: dict[str, dict[str, int]],
                  league: dict[str, dict[str, int]],
@@ -85,14 +78,9 @@ def build_deltas(player: dict[str, dict[str, int]],
     rows.sort(key=lambda r: r["delta_pp"], reverse=True)
     return rows, excluded
 
-
-@tool
+@tool(description='Player-vs-league shooting-zone efficiency: per-zone FG% vs the\npooled league-average FG% for the same season, with delta in\npercentage points. Zones below min_attempts (default 50, clamped\n10..200) are excluded. Season is the end year (2010..2025).')
 def get_zone_deltas(player: str, season: int = MAX_SEASON,
                     min_attempts: int = DEFAULT_FLOOR) -> dict[str, Any]:
-    """Player-vs-league shooting-zone efficiency: per-zone FG% vs the
-    pooled league-average FG% for the same season, with delta in
-    percentage points. Zones below min_attempts (default 50, clamped
-    10..200) are excluded. Season is the end year (2010..2025)."""
     warnings: list[str] = []
     year = clamp_season_year(season)
     try:
@@ -106,7 +94,7 @@ def get_zone_deltas(player: str, season: int = MAX_SEASON,
         warnings.append(f"season {raw_year} clamped to {year}")
     floor = clamp_floor(min_attempts)
     try:
-        raw_floor = int(min_attempts)  # type: ignore[arg-type]
+        raw_floor = int(min_attempts)
         floor_ok = True
     except (TypeError, ValueError):
         raw_floor, floor_ok = DEFAULT_FLOOR, False

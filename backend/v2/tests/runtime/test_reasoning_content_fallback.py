@@ -22,10 +22,8 @@ from v2.adapters.models import (
 )
 from v2.runtime import RequestEnvelope
 
-
 class _Ping(BaseModel):
     answer: str
-
 
 def _reasoning_first_completion(
     *,
@@ -58,7 +56,6 @@ def _reasoning_first_completion(
         }
     )
 
-
 def _shaped_body(
     *, content: Any, reasoning_content: Any, finish_reason: Any = "stop", model: str
 ) -> dict[str, Any]:
@@ -68,7 +65,6 @@ def _shaped_body(
         finish_reason=finish_reason,
         model=model,
     ).model_dump(mode="json")
-
 
 def test_promote_moves_reasoning_content_to_empty_content():
     response = _reasoning_first_completion(
@@ -85,7 +81,6 @@ def test_promote_moves_reasoning_content_to_empty_content():
         }
     ]
 
-
 def test_promote_leaves_populated_content_alone():
     response = _reasoning_first_completion(
         content="real", reasoning_content='{"answer":"other"}'
@@ -94,13 +89,11 @@ def test_promote_leaves_populated_content_alone():
     assert result.choices[0].message.content == "real"
     assert promotions == []
 
-
 def test_promote_handles_missing_reasoning_content():
     response = _reasoning_first_completion(content="", reasoning_content=None)
     result, promotions = _promote_reasoning_content(response)
     assert result.choices[0].message.content == ""
     assert promotions == []
-
 
 def test_promote_handles_none_content():
     response = _reasoning_first_completion(
@@ -109,7 +102,6 @@ def test_promote_handles_none_content():
     result, promotions = _promote_reasoning_content(response)
     assert result.choices[0].message.content == '{"answer":"hi"}'
     assert len(promotions) == 1
-
 
 @pytest.mark.parametrize("finish_reason", ["length", "content_filter", "tool_calls"])
 def test_no_promotion_unless_finish_reason_is_stop(finish_reason):
@@ -122,7 +114,6 @@ def test_no_promotion_unless_finish_reason_is_stop(finish_reason):
     assert result.choices[0].message.content == ""
     assert promotions == []
 
-
 def test_no_promotion_on_length_keeps_truncation_signal():
     response = _reasoning_first_completion(
         content="",
@@ -134,7 +125,6 @@ def test_no_promotion_on_length_keeps_truncation_signal():
     assert result.choices[0].finish_reason == "length"
     assert promotions == []
 
-
 def test_no_promotion_on_content_filter_keeps_filter_signal():
     response = _reasoning_first_completion(
         content="",
@@ -145,7 +135,6 @@ def test_no_promotion_on_content_filter_keeps_filter_signal():
     assert result.choices[0].message.content == ""
     assert result.choices[0].finish_reason == "content_filter"
     assert promotions == []
-
 
 def test_promotion_gating_is_per_choice():
     def choice(finish_reason: Any) -> dict[str, Any]:
@@ -169,7 +158,6 @@ def test_promotion_gating_is_per_choice():
     assert result.choices[1].message.content == '{"answer":"hi"}'
     assert [record["choice_index"] for record in promotions] == [1]
 
-
 def test_promotion_record_carries_no_payload():
     response = _reasoning_first_completion(
         content="", reasoning_content='{"answer":"secret-payload"}'
@@ -183,7 +171,6 @@ def test_promotion_record_carries_no_payload():
         "reasoning_content_chars",
     }
 
-
 def test_fallback_is_model_name_agnostic():
     response = _reasoning_first_completion(
         content="",
@@ -194,7 +181,6 @@ def test_fallback_is_model_name_agnostic():
     assert result.choices[0].message.content == '{"answer":"hi"}'
     assert len(promotions) == 1
 
-
 def test_no_model_name_branching_in_fallback_code():
     source = (
         Path(__file__).resolve().parents[2] / "adapters" / "models.py"
@@ -202,7 +188,6 @@ def test_no_model_name_branching_in_fallback_code():
     assert "deepseek" not in source.lower()
     assert "_promote_reasoning_content" in source
     assert "ReasoningContentFallbackClient" in source
-
 
 @pytest.mark.anyio
 async def test_client_create_applies_fallback():
@@ -228,7 +213,6 @@ async def test_client_create_applies_fallback():
         response_format={"type": "json_object"},
     )
     assert resp.choices[0].message.content == '{"answer":"hi"}'
-
 
 @pytest.mark.anyio
 async def test_client_records_promotion_on_stop():
@@ -260,7 +244,6 @@ async def test_client_records_promotion_on_stop():
         }
     ]
 
-
 @pytest.mark.anyio
 @pytest.mark.parametrize("finish_reason", ["length", "content_filter"])
 async def test_client_records_nothing_when_not_stop(finish_reason):
@@ -287,7 +270,6 @@ async def test_client_records_nothing_when_not_stop(finish_reason):
     assert resp.choices[0].message.content == ""
     assert client.reasoning_content_promotions == []
 
-
 @pytest.mark.anyio
 async def test_client_create_passes_through_non_completion(monkeypatch):
     sentinel = object()
@@ -299,7 +281,6 @@ async def test_client_create_passes_through_non_completion(monkeypatch):
     client = ReasoningContentFallbackClient(api_key="placeholder")
     result = await _ReasoningContentCompletions(client).create()
     assert result is sentinel
-
 
 def _mock_openai_model(
     *, content: Any, reasoning_content: Any, finish_reason: Any = "stop", model: str
@@ -328,7 +309,6 @@ def _mock_openai_model(
             strict_tool_definitions=Support.MEASURED),
     )
 
-
 def _intake_envelope() -> RequestEnvelope:
     return RequestEnvelope.freeze(
         provider="nvidia",
@@ -339,7 +319,6 @@ def _intake_envelope() -> RequestEnvelope:
         tool_schemas={},
         planner_version="v2",
     )
-
 
 @pytest.mark.anyio
 @pytest.mark.parametrize("anyio_backend", ["asyncio"])
@@ -359,7 +338,6 @@ async def test_generate_parses_reasoning_content_structured_output(anyio_backend
     assert isinstance(result, _Ping)
     assert result.answer == "hi"
 
-
 @pytest.mark.anyio
 @pytest.mark.parametrize("anyio_backend", ["asyncio"])
 async def test_generate_still_parses_normal_content(anyio_backend, monkeypatch):
@@ -377,7 +355,6 @@ async def test_generate_still_parses_normal_content(anyio_backend, monkeypatch):
     ).generate(schema=_Ping, prompt="p", payload={}, envelope=_intake_envelope())
     assert isinstance(result, _Ping)
     assert result.answer == "normal"
-
 
 @pytest.mark.anyio
 @pytest.mark.parametrize("anyio_backend", ["asyncio"])
@@ -406,7 +383,6 @@ async def test_generate_records_promotion_in_last_promotions(anyio_backend, monk
         }
     ]
 
-
 @pytest.mark.anyio
 @pytest.mark.parametrize("anyio_backend", ["asyncio"])
 async def test_generate_records_no_promotion_for_normal_content(anyio_backend, monkeypatch):
@@ -425,7 +401,6 @@ async def test_generate_records_no_promotion_for_normal_content(anyio_backend, m
     )
     assert result.answer == "normal"
     assert structured.last_promotions == []
-
 
 @pytest.mark.anyio
 @pytest.mark.parametrize("finish_reason", ["length", "content_filter"])

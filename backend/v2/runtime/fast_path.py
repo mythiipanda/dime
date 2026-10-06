@@ -1,11 +1,9 @@
 from __future__ import annotations
 
-from v2.contracts import DraftReport, EvidenceEnvelope, Plan, PlanNode, TaskSpec, VerificationReport, VerificationStatus
-
+from v2.contracts import EvidenceEnvelope, Plan, PlanNode, TaskSpec, VerificationReport, VerificationStatus
 
 class FastPathUnverifiable(Exception):
     pass
-
 
 def is_fast_path_eligible(task: TaskSpec) -> bool:
     if len(task.requirements) != 1:
@@ -18,7 +16,6 @@ def is_fast_path_eligible(task: TaskSpec) -> bool:
     if len(requirement.capability_options) != 1:
         return False
     return True
-
 
 def build_fast_plan(task: TaskSpec) -> Plan:
     requirement = task.requirements[0]
@@ -38,14 +35,12 @@ def build_fast_plan(task: TaskSpec) -> Plan:
         arguments=arguments,
     )])
 
-
 def check_fast_evidence(evidence: list[EvidenceEnvelope]) -> None:
     from v2.domain.evidence import iter_values
     if not evidence:
         raise FastPathUnverifiable("fast path produced no evidence")
     if not any(True for item in evidence for _ in iter_values(item)):
         raise FastPathUnverifiable("fast path produced no evidence values")
-
 
 def check_fast_verification(verification: VerificationReport, claim_count: int) -> None:
     if claim_count == 0:
@@ -59,23 +54,3 @@ def check_fast_verification(verification: VerificationReport, claim_count: int) 
     if any(not item.supported or item.uncertain for item in verification.claim_results):
         raise FastPathUnverifiable("fast path could not verify")
 
-
-class FastPathDriver:
-    def __init__(self, *, executor, synthesizer, mechanical_verifier) -> None:
-        self._executor = executor
-        self._synthesizer = synthesizer
-        self._mechanical_verifier = mechanical_verifier
-
-    async def run_fast(self, task: TaskSpec):
-        if not is_fast_path_eligible(task):
-            raise FastPathUnverifiable("task shape needs the full loop")
-        plan = build_fast_plan(task)
-        execution = await self._executor.execute(task, plan)
-        check_fast_evidence(list(execution.evidence))
-        draft = await self._synthesizer.synthesize(task, list(execution.evidence))
-        draft = DraftReport.model_validate(draft.model_dump())
-        evidence = {item.evidence_id: item for item in execution.evidence}
-        verification = await self._mechanical_verifier.verify(task, draft, evidence)
-        verification = VerificationReport.model_validate(verification.model_dump())
-        check_fast_verification(verification, len(draft.claims))
-        return execution, draft, verification

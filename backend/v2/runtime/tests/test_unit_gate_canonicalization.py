@@ -22,7 +22,6 @@ _PROSE_UNIT = "points per 100 possessions"
 _SNAKE_UNIT = "points_per_100_possessions"
 _VALUES = (("NET_RATING", 9.4), ("OFF_RATING", 118.2), ("DEF_RATING", 108.8))
 
-
 def _envelope():
     return EvidenceEnvelope(
         evidence_id=_EVIDENCE_ID,
@@ -45,7 +44,6 @@ def _envelope():
         entities=[EntityRef(id="BOS", type="team", display_name="BOS")],
     )
 
-
 def _task():
     return TaskSpec(
         goal="how did the Celtics rate in 2024-25",
@@ -54,7 +52,6 @@ def _task():
         requested_outputs=["NET_RATING", "OFF_RATING", "DEF_RATING"],
         entities=[EntityRef(id="BOS", type="team", display_name="BOS")],
     )
-
 
 def _bindings(unit_value):
     return [
@@ -75,7 +72,6 @@ def _bindings(unit_value):
         )
         for output_id, value in _VALUES
     ]
-
 
 def _admit(bindings):
     envelope = _envelope()
@@ -114,14 +110,12 @@ def _admit(bindings):
     )
     return admit_verified_claim_bindings(_task(), execution, draft, verified)
 
-
 def test_prose_unit_surface_form_admits():
     admitted = _admit(_bindings(_PROSE_UNIT))
     by_output = {item.output_id: item for item in admitted.output_bindings}
     assert by_output["NET_RATING"].value.value == 9.4
     assert by_output["OFF_RATING"].value.value == 118.2
     assert by_output["DEF_RATING"].value.value == 108.8
-
 
 def test_genuine_unit_mismatch_still_rejects():
     with pytest.raises(ValueError, match="binding unit does not match output authority"):

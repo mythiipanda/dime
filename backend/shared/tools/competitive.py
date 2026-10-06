@@ -5,11 +5,9 @@ from typing import Any
 import duckdb
 from langchain_core.tools import tool
 
-from ._core import clamp_season, last_completed_season, resolve_season
+from ._core import clamp_season, resolve_season
 
 _TOOL_NAME = "get_competitive_ratings"
-
-
 
 _MARGIN_SWEEP = (10, 20, 30)
 
@@ -37,21 +35,18 @@ _CAVEATS = (
     "warehouse does not carry."
 )
 
-
 def clamp_blowout_margin(value: object) -> float:
     try:
-        margin = float(value)  # type: ignore[arg-type]
+        margin = float(value)
     except (TypeError, ValueError):
         return 20.0
     if margin != margin:
         return 20.0
     return min(40.0, max(1.0, margin))
 
-
 def _norm_season_type(s: object) -> str:
     return "".join(
         c for c in str(s or "").strip().lower() if c.isalnum())
-
 
 def map_season_type(raw: object, distinct: list[str]) -> str | None:
     want = _norm_season_type(raw)
@@ -73,7 +68,6 @@ def map_season_type(raw: object, distinct: list[str]) -> str | None:
             return cand
     return None
 
-
 def _scope_stats(movs: list[float], margin: float) -> dict[str, Any]:
     gp = len(movs)
     mov_full = round(sum(movs) / gp, 2) if gp else None
@@ -93,7 +87,6 @@ def _scope_stats(movs: list[float], margin: float) -> dict[str, Any]:
         "mov_comp": mov_comp,
         "padding_delta": padding_delta,
     }
-
 
 def summarize_team(
     abbr: str,
@@ -137,7 +130,6 @@ def summarize_team(
         "sensitivity": sensitivity,
     }
 
-
 def _resolve_team_abbr(raw: object) -> str | None:
     from nba_api.stats.static import teams
 
@@ -158,7 +150,6 @@ def _resolve_team_abbr(raw: object) -> str | None:
             return str(t.get("abbreviation")).upper()
     return None
 
-
 def _read(row: dict[str, Any], margin: float) -> str | None:
     if row.get("low_sample"):
         return None
@@ -177,8 +168,7 @@ def _read(row: dict[str, Any], margin: float) -> str | None:
         f"competitive MOV matches full-season MOV "
         f"(margin threshold {margin:g})")
 
-
-@tool
+@tool(description='Competitive MOV: what happens to a team\'s MOV when blowouts are dropped.\n\nteam: 3-letter abbrev, full name, nickname, city, or "league"/"" for\nall teams. season: "YYYY-YY" or "all" for every warehouse season\n(multi-season output is pooled across seasons, not a single\nteam-season -- see meta.season_note). season_type: regular (default),\nplayoffs, or all; matched against the actual distinct warehouse values\nbefore aggregating. NOTE: the default changed from "all" to "regular"\non 2026-09-10 so season-scoped queries no longer silently mix playoff\ngames in; pass "all" explicitly to include playoffs.\nblowout_margin: games with abs(plus_minus) above this are excluded from\nthe competitive set (clamped to [1, 40]). min_games: floor on\ncompetitive games; rows below it are flagged low_sample and carry\nnumbers with no interpretation. Warehouse only; plus_minus is each\nteam\'s own MOV per game.')
 def get_competitive_ratings(
     team: str = "league",
     season: str | None = None,
@@ -186,22 +176,6 @@ def get_competitive_ratings(
     blowout_margin: float = 20,
     min_games: int = 10,
 ) -> dict[str, Any]:
-    """Competitive MOV: what happens to a team's MOV when blowouts are dropped.
-
-    team: 3-letter abbrev, full name, nickname, city, or "league"/"" for
-    all teams. season: "YYYY-YY" or "all" for every warehouse season
-    (multi-season output is pooled across seasons, not a single
-    team-season -- see meta.season_note). season_type: regular (default),
-    playoffs, or all; matched against the actual distinct warehouse values
-    before aggregating. NOTE: the default changed from "all" to "regular"
-    on 2026-09-10 so season-scoped queries no longer silently mix playoff
-    games in; pass "all" explicitly to include playoffs.
-    blowout_margin: games with abs(plus_minus) above this are excluded from
-    the competitive set (clamped to [1, 40]). min_games: floor on
-    competitive games; rows below it are flagged low_sample and carry
-    numbers with no interpretation. Warehouse only; plus_minus is each
-    team's own MOV per game.
-    """
     season = resolve_season(season)
     margin = clamp_blowout_margin(blowout_margin)
     try:

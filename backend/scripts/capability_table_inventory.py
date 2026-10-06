@@ -29,7 +29,6 @@ RESOLUTION_HELPERS = frozenset({
     "shared.tools._core.score_player_candidates",
 })
 
-
 def _tool_entrypoint(tool: object):
     func = getattr(tool, "func", None)
     if inspect.isfunction(func) or inspect.ismethod(func):
@@ -39,17 +38,10 @@ def _tool_entrypoint(tool: object):
         return coroutine
     raise ValueError(f"tool {tool!r} exposes no python entrypoint")
 
-
 def _module_text(module) -> str:
     return Path(inspect.getfile(module)).read_text()
 
-
 def _module_evidence(module) -> str:
-    """Module source with the coverage registry entry removed.
-
-    The registry names the tables, so counting its own text as evidence
-    would let any entry vouch for itself.
-    """
     text = _module_text(module)
     if module.__name__ != _coverage.__name__:
         return text
@@ -60,7 +52,6 @@ def _module_evidence(module) -> str:
                 == "CAPABILITY_TABLES")
     ]
     return ast.unparse(ast.Module(body=kept, type_ignores=[]))
-
 
 def _closure(entrypoint) -> tuple[list, dict[str, object]]:
     seen: set[tuple[str, str]] = set()
@@ -109,7 +100,6 @@ def _closure(entrypoint) -> tuple[list, dict[str, object]]:
                     queue.append((child.id, module, depth + 1))
     return functions, constants
 
-
 def _local_imports(module, tree: ast.AST) -> dict[str, object]:
     scope: dict[str, object] = {}
     for node in ast.walk(tree):
@@ -131,7 +121,6 @@ def _local_imports(module, tree: ast.AST) -> dict[str, object]:
             scope[alias.asname or alias.name] = value
     return scope
 
-
 def _closure_scope(module) -> dict[str, object]:
     scope: dict[str, object] = {}
     for node in ast.parse(_module_text(module)).body:
@@ -148,7 +137,6 @@ def _closure_scope(module) -> dict[str, object]:
                 scope[alias.asname or alias.name.split(".")[0]] = getattr(
                     module, alias.asname or alias.name.split(".")[0], None)
     return scope
-
 
 def _resolve(module, name: str, scope: dict[str, object]):
     target = scope.get(name, getattr(module, name, None))
@@ -168,11 +156,9 @@ def _resolve(module, name: str, scope: dict[str, object]):
         return None
     return str(target)
 
-
 def _scan(text: str, tables: tuple[str, ...]) -> set[str]:
     return {table for table in tables
             if re.search(rf"\b{re.escape(table)}\b", text)}
-
 
 def table_names(path) -> tuple[str, ...]:
     connection = duckdb.connect(str(path), read_only=True)
@@ -181,7 +167,6 @@ def table_names(path) -> tuple[str, ...]:
             row[0] for row in connection.execute("SHOW TABLES").fetchall()))
     finally:
         connection.close()
-
 
 def warehouse_inventory(path=None) -> tuple[tuple[str, ...], dict[str, dict]]:
     target = Path(path) if path is not None else _store.DB_PATH
@@ -208,13 +193,11 @@ def warehouse_inventory(path=None) -> tuple[tuple[str, ...], dict[str, dict]]:
         connection.close()
     return names, detail
 
-
 def warehouse_paths(explicit: list[str] | None = None) -> tuple[Path, ...]:
     if explicit:
         return tuple(Path(item) for item in explicit)
     folder = Path(_store.DB_PATH).parent
     return tuple(sorted(folder.glob("warehouse*.duckdb")))
-
 
 def registry_rosters() -> dict[str, tuple[str, ...]]:
     rosters: dict[str, set[str]] = {}
@@ -232,7 +215,6 @@ def registry_rosters() -> dict[str, tuple[str, ...]]:
     rosters.setdefault(_coverage.DEFAULT_TABLE, set()).add("default_table")
     return {table: tuple(sorted(holders))
             for table, holders in sorted(rosters.items())}
-
 
 def absent_inventory(explicit: list[str] | None = None) -> list[dict]:
     rows: list[dict] = []
@@ -252,7 +234,6 @@ def absent_inventory(explicit: list[str] | None = None) -> list[dict]:
             })
     return rows
 
-
 def _entrypoint_for(tool_name: str):
     by_name = {tool.name: tool for tool in v1_tools}
     tool = by_name.get(tool_name)
@@ -263,7 +244,6 @@ def _entrypoint_for(tool_name: str):
     if inspect.isfunction(func):
         return func, f"v2 coverage {tool_name}"
     raise ValueError(f"capability tool {tool_name} is not registered")
-
 
 def _dynamic_reads(functions, tables: tuple[str, ...]) -> list[str]:
     reasons = []
@@ -277,7 +257,6 @@ def _dynamic_reads(functions, tables: tuple[str, ...]) -> list[str]:
             reasons.append(
                 f"{function.__qualname__} resolves a leaderboard table name")
     return reasons
-
 
 def build() -> list[dict]:
     names, detail = warehouse_inventory()
@@ -353,7 +332,6 @@ def build() -> list[dict]:
         })
     return rows
 
-
 def _dynamic_prefixes(functions, tables: tuple[str, ...]) -> list[str]:
     found = []
     for function in functions:
@@ -372,10 +350,8 @@ def _dynamic_prefixes(functions, tables: tuple[str, ...]) -> list[str]:
                         f"{function.__qualname__}: f-string fragment {text!r}")
     return sorted(set(found))
 
-
 def _fmt(values) -> str:
     return ", ".join(values) if values else "-"
-
 
 def render(rows: list[dict], absent: list[dict]) -> str:
     lines = [
@@ -419,14 +395,12 @@ def render(rows: list[dict], absent: list[dict]) -> str:
                 lines.append(f"  dynamic          {note}")
     return "\n".join(lines)
 
-
 def blind_capabilities(rows: list[dict]) -> list[str]:
     return [
         f"{row['capability']} declares no coverage table"
         for row in rows
         if row["season_scoped"] and not row["declared_tables"]
     ]
-
 
 def unbacked_coverage(rows: list[dict]) -> list[str]:
     found = []
@@ -438,14 +412,12 @@ def unbacked_coverage(rows: list[dict]) -> list[str]:
                     "warehouse does not have it")
     return found
 
-
 def unread_declarations(rows: list[dict]) -> list[str]:
     return [
         f"{row['capability']} names {table} and no tool reads it"
         for row in rows
         for table in row["declared_tables_not_in_tool_source"]
     ]
-
 
 def main() -> int:
     parser = argparse.ArgumentParser()
@@ -520,7 +492,6 @@ def main() -> int:
         return 0
     print(render(rows, absent))
     return 0
-
 
 if __name__ == "__main__":
     raise SystemExit(main())

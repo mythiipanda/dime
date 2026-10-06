@@ -30,7 +30,6 @@ from v2.runtime.models import ExecutionResult, admit_verified_claim_bindings
 KNOWN_REJECTION = "binding selector must locate exactly one value"
 RUN_ID = "run-" + "a" * 32
 
-
 def _meta():
     return {
         "source": "warehouse",
@@ -38,7 +37,6 @@ def _meta():
         "warehouse_id": "frozen-eval",
         "warehouse_sha256": "a" * 64,
     }
-
 
 def _rows():
     return [
@@ -56,7 +54,6 @@ def _rows():
         }
     ]
 
-
 def _envelope():
     return build_envelope(
         CAPABILITIES["team_ratings"],
@@ -65,7 +62,6 @@ def _envelope():
         entities=None,
         observed_at=datetime.now(UTC),
     )
-
 
 def _task():
     return TaskSpec(
@@ -84,7 +80,6 @@ def _task():
         ],
     )
 
-
 def _binding(envelope):
     return EvidenceOutputBinding(
         requirement_kind="evidence",
@@ -101,7 +96,6 @@ def _binding(envelope):
         unit={"kind": "declared", "value": "points_per_100_possessions"},
         domain="team_ratings",
     )
-
 
 def _fixtures():
     envelope = _envelope()
@@ -147,13 +141,11 @@ def _fixtures():
     evidence = {envelope.evidence_id: envelope}
     return task, execution, draft, verification, evidence, candidate, envelope
 
-
 def test_admit_rejects_absent_selector_trio():
     task, execution, draft, verification, evidence, candidate, envelope = _fixtures()
     with pytest.raises(ValueError) as excinfo:
         admit_verified_claim_bindings(task, execution, draft, candidate)
     assert str(excinfo.value) == KNOWN_REJECTION
-
 
 def test_binding_diagnostic_emitted_when_diagnostics_on():
     task, execution, draft, verification, evidence, candidate, envelope = _fixtures()
@@ -194,7 +186,6 @@ def test_binding_diagnostic_emitted_when_diagnostics_on():
     assert KNOWN_REJECTION in rejected[0].message
     assert admitted[0].output_bindings == []
 
-
 def test_default_path_emits_no_binding_diagnostics():
     task, execution, draft, verification, evidence, candidate, envelope = _fixtures()
     sink = []
@@ -204,7 +195,6 @@ def test_default_path_emits_no_binding_diagnostics():
     assert sink == []
     assert len(rejected) == 1
     assert KNOWN_REJECTION in rejected[0].message
-
 
 def test_sse_gate_drops_binding_diagnostic_on_default_path():
     event = BindingDiagnostic(
@@ -234,7 +224,6 @@ def test_sse_gate_drops_binding_diagnostic_on_default_path():
     assert wire.startswith("event: binding_diagnostic\n")
     assert KNOWN_REJECTION in wire
 
-
 def test_final_answer_contract_unchanged_by_diagnostics_flag():
     answer = FinalAnswer(
         text="Some requested outputs could not be published.",
@@ -242,7 +231,6 @@ def test_final_answer_contract_unchanged_by_diagnostics_flag():
     )
     assert encode_event(answer) == encode_event(answer, diagnostics=True)
     assert KNOWN_REJECTION not in encode_event(answer)
-
 
 def test_routes_guard_keeps_default_stream_clean():
     from types import SimpleNamespace

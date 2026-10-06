@@ -32,7 +32,6 @@ from v2.runtime.fast_path import (
 )
 from v2.runtime.interfaces import Intake, Planner, Repairer, Synthesizer, Verifier
 from v2.runtime.interfaces import (
-    RepairAddsEvidenceError,
     freeze_draft,
     freeze_evidence_map,
     freeze_task,
@@ -55,10 +54,8 @@ JUDGE_UNAVAILABLE_BRANCH = "Semantic verification was unavailable; published cla
 JUDGE_UNAVAILABLE_LEGACY_BRANCH = "Semantic completeness review was unavailable; published claims passed deterministic verification."
 JUDGE_UNAVAILABLE_BRANCHES = frozenset({JUDGE_UNAVAILABLE_BRANCH, JUDGE_UNAVAILABLE_LEGACY_BRANCH})
 
-
 class PreToolTimeoutError(TimeoutError):
     pass
-
 
 class Runtime:
     def __init__(
@@ -148,8 +145,6 @@ class Runtime:
             if run_deadline is None:
                 return None
             return max(0.000001, run_deadline - time.perf_counter())
-
-
 
         RUN_MODEL_DEADLINE.set(
             None if settings.dime_v2_model_deadline_s <= 0
@@ -308,9 +303,6 @@ class Runtime:
                 if not str(exc).startswith("all structured-output providers failed"):
                     self._close_failed(turn_id, exc, started=turn_started)
                     raise
-
-
-
 
                 supported = {
                     item.claim_index for item in verification.claim_results
@@ -803,8 +795,6 @@ class Runtime:
                     and all(item.supported for item in semantic.claim_results)):
                 semantic = semantic.model_copy(update={"status": VerificationStatus.PASS})
 
-
-
         if (semantic.status == VerificationStatus.PARTIAL
                 and sorted(item.claim_index for item in semantic.claim_results) == expected
                 and all(item.supported for item in semantic.claim_results)
@@ -837,23 +827,9 @@ class Runtime:
             })
         return merged
 
-
 def _needs_repair(report: VerificationReport) -> bool:
     return (report.status == VerificationStatus.REPAIR
             and any(not item.supported for item in report.claim_results))
-
-
-def _requested_output_identities(task):
-    rows = []
-    for output_id in task.requested_outputs:
-        rows.append(("task", None, output_id))
-    for requirement in task.requirements:
-        for output_id in requirement.requested_outputs:
-            rows.append(("evidence", requirement.id, output_id))
-    for requirement in task.calculation_requirements:
-        for output_id in requirement.requested_outputs:
-            rows.append(("calculation", requirement.id, output_id))
-    return rows
 
 
 def _serving_columns(task, execution, kind, requirement_id, output_id):
@@ -883,7 +859,6 @@ def _serving_columns(task, execution, kind, requirement_id, output_id):
             served.append(f"{column} via {name}")
     return list(dict.fromkeys(served))
 
-
 def _has_serving_values(execution, output_id):
     from v2.adapters.capabilities import CAPABILITIES, resolve_metric_column
     for envelope in execution.evidence:
@@ -899,7 +874,6 @@ def _has_serving_values(execution, output_id):
                 return True
     return False
 
-
 def _completeness_missing(task, execution, draft, verification, evidence):
     from v2.runtime.models import build_output_statuses
     admitted, binding_gaps = _verified_claims(task, execution, draft, verification, evidence)
@@ -914,7 +888,6 @@ def _completeness_missing(task, execution, draft, verification, evidence):
         missing.append((status.requirement_kind, status.requirement_id, status.output_id, serving))
     return missing
 
-
 def _format_completeness_instruction(missing):
     parts = []
     for kind, requirement_id, output_id, serving in missing:
@@ -924,7 +897,6 @@ def _format_completeness_instruction(missing):
             parts.append(f"Bind missing requested output {output_id}")
     return "; ".join(parts)
 
-
 def _with_completeness_findings(verification, missing):
     instruction = _format_completeness_instruction(missing)
     return verification.model_copy(update={
@@ -932,7 +904,6 @@ def _with_completeness_findings(verification, missing):
         "missing_branches": _unique([*verification.missing_branches, instruction], limit=128),
         "repair_instructions": _unique([*verification.repair_instructions, instruction], limit=128),
     })
-
 
 def _format_completeness_failure(missing):
     parts = []
@@ -942,7 +913,6 @@ def _format_completeness_failure(missing):
         else:
             parts.append(f"requested output {output_id} unbound")
     return "Incomplete synthesis: " + "; ".join(parts)
-
 
 def _merge_verification(
     mechanical: VerificationReport, semantic: VerificationReport
@@ -970,7 +940,6 @@ def _merge_verification(
         ),
     )
 
-
 def _merge_claim_results(results: Iterable[ClaimResult]) -> list[ClaimResult]:
     merged: dict[int, ClaimResult] = {}
     for result in results:
@@ -988,7 +957,6 @@ def _merge_claim_results(results: Iterable[ClaimResult]) -> list[ClaimResult]:
         )
     return [merged[index] for index in sorted(merged)]
 
-
 def _planner_accepts_failure_context(planner) -> bool:
     try:
         parameters = inspect.signature(planner.plan).parameters
@@ -998,7 +966,6 @@ def _planner_accepts_failure_context(planner) -> bool:
         parameter.kind is inspect.Parameter.VAR_KEYWORD
         for parameter in parameters.values()
     )
-
 
 def _failure_context(task, execution) -> dict:
     requirements = {item.id: item for item in task.requirements}
@@ -1025,7 +992,6 @@ def _failure_context(task, execution) -> dict:
                 if option not in tried],
         })
     return {"requirements": entries}
-
 
 def _merge_recovery(execution: ExecutionResult, recovery: ExecutionResult) -> ExecutionResult:
     taken = {node.id for node in execution.plan.nodes}
@@ -1086,21 +1052,17 @@ def _merge_recovery(execution: ExecutionResult, recovery: ExecutionResult) -> Ex
         "error_codes": merged_codes,
     })
 
-
 def _unique(values: Iterable[str], *, limit: int | None = None) -> list[str]:
     unique = list(dict.fromkeys(value for value in values if value))
     return unique if limit is None else unique[:limit]
 
-
 _DIAGNOSTIC_TEXT_CAP = 512
-
 
 def _diagnostic_text(value):
     if value is None:
         return None
     text = value if isinstance(value, str) else str(value)
     return text[:_DIAGNOSTIC_TEXT_CAP]
-
 
 def _binding_diagnostic_event(execution, candidate, position, run_id, rejection,
                                evidence=None):
@@ -1145,17 +1107,7 @@ def _binding_diagnostic_event(execution, candidate, position, run_id, rejection,
         rejection=_diagnostic_text(rejection),
     )
 
-
 def _admitted_bindings(task, execution, draft, candidate):
-    """Admit a candidate's bindings, isolating the ones that fail alone.
-
-    Returns the claim to publish, the rejection message per dropped position,
-    and the failure that withholds the claim instead. A binding whose declared
-    shape does not match the row it names drops on its own, so one malformed
-    output costs one output. When every binding drops this way the claim keeps
-    no admitted output and is withheld as unbacked. Any other failure means the
-    claim itself is not trustworthy, so nothing it binds publishes.
-    """
     def admit(bindings):
         return admit_verified_claim_bindings(
             task, execution, draft,
@@ -1187,7 +1139,6 @@ def _admitted_bindings(task, execution, draft, candidate):
         return admit(survivors), rejections, None
     except ValueError as exc:
         return None, rejections, exc
-
 
 def _verified_claims(task, execution, draft, verification, evidence=None, *,
                      diagnostics=False, diagnostics_run_id="",
@@ -1247,7 +1198,6 @@ def _verified_claims(task, execution, draft, verification, evidence=None, *,
     admitted = propagate_evidence_to_task(task, execution, draft, admitted)
     return admitted, rejected
 
-
 def _failures_represented_by_precise_gaps(
     task: TaskSpec, execution: ExecutionResult, messages: Iterable[str],
 ) -> set[str]:
@@ -1274,7 +1224,6 @@ def _failures_represented_by_precise_gaps(
         ):
             represented.add(node.id)
     return represented
-
 
 def _redundant_failed_nodes(task: TaskSpec, execution: ExecutionResult) -> set[str]:
     from v2.runtime.subsumption import (
@@ -1312,7 +1261,6 @@ def _redundant_failed_nodes(task: TaskSpec, execution: ExecutionResult) -> set[s
                 break
     return redundant
 
-
 def _uncovered_requirement_gaps(
     task: TaskSpec, execution: ExecutionResult,
 ) -> list[Gap]:
@@ -1331,7 +1279,6 @@ def _uncovered_requirement_gaps(
         if requirement.id not in covered
     ]
 
-
 def _empty_evidence_gaps(evidence) -> list[Gap]:
     return [
         Gap(
@@ -1342,7 +1289,6 @@ def _empty_evidence_gaps(evidence) -> list[Gap]:
         for item in evidence
         if not any(True for _ in iter_values(item))
     ]
-
 
 def _verification_gaps(draft, verification, execution_errors=None,
                        execution_error_codes=None, evidence_ids=None,

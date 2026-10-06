@@ -6,7 +6,6 @@ import pytest
 
 from v2.contracts import EntityRef, EvidenceEnvelope, RunMode, TaskSpec
 
-
 def _envelope(evidence_id: str, rows, entities=()) -> EvidenceEnvelope:
     return EvidenceEnvelope(
         evidence_id=evidence_id,
@@ -18,7 +17,6 @@ def _envelope(evidence_id: str, rows, entities=()) -> EvidenceEnvelope:
         rows=rows,
     )
 
-
 def _task(entities=()) -> TaskSpec:
     return TaskSpec(
         goal="followup",
@@ -27,7 +25,6 @@ def _task(entities=()) -> TaskSpec:
         entities=list(entities),
     )
 
-
 def _seed_parent(store, owner="o", thread="t"):
     store.append_exchange(owner, thread, "first", "answer",
                           run_id="run-1", turn_id="turn-1")
@@ -35,7 +32,6 @@ def _seed_parent(store, owner="o", thread="t"):
     parent_sequence = refs[0].sequence
     branch = store.create_branch(owner, thread, parent_sequence)
     return branch, parent_sequence
-
 
 def test_followup_reuses_parent_evidence_without_reexecution(tmp_path) -> None:
     from v2.conversations import ConversationStore
@@ -63,7 +59,6 @@ def test_followup_reuses_parent_evidence_without_reexecution(tmp_path) -> None:
     assert [item.evidence_id for item in reuses] == ["ev-1"]
     assert reuses[0].parent_turn_id == "turn-1"
 
-
 def test_followup_with_new_entities_executes_fresh(tmp_path) -> None:
     from v2.conversations import ConversationStore
 
@@ -83,7 +78,6 @@ def test_followup_with_new_entities_executes_fresh(tmp_path) -> None:
     assert decision.reused == []
     assert decision.fresh_required is True
 
-
 def test_stale_reused_evidence_fails_loud(tmp_path) -> None:
     from v2.conversations import ConversationStore, StaleBranchEvidenceError
 
@@ -98,7 +92,6 @@ def test_stale_reused_evidence_fails_loud(tmp_path) -> None:
             "o", "t", branch.branch_id,
             fetch_current_rows={"ev-1": [{"TEAM": "AAA", "WINS": 99}]},
         )
-
 
 def test_branch_creation_never_duplicates_evidence_rows(tmp_path) -> None:
     from v2.conversations import ConversationStore
@@ -120,7 +113,6 @@ def test_branch_creation_never_duplicates_evidence_rows(tmp_path) -> None:
             [_envelope("ev-2", [{"TEAM": "AAA", "WINS": 10}])],
         )
 
-
 def test_branch_names_its_parent_turn(tmp_path) -> None:
     from v2.conversations import ConversationStore
 
@@ -131,7 +123,6 @@ def test_branch_names_its_parent_turn(tmp_path) -> None:
     assert branch.parent_turn_id == "turn-1"
     with pytest.raises(ValueError, match="parent"):
         store.create_branch("o", "t", 999)
-
 
 def test_branch_route_validates_boundaries(tmp_path, monkeypatch) -> None:
     from fastapi import FastAPI
@@ -152,7 +143,6 @@ def test_branch_route_validates_boundaries(tmp_path, monkeypatch) -> None:
     )
     assert response.status_code == 422
 
-
 def test_branch_sse_reports_counts_without_internal_ids() -> None:
     import json
     from v2.api.sse import encode_branch_reuse
@@ -161,7 +151,6 @@ def test_branch_sse_reports_counts_without_internal_ids() -> None:
     assert chunk.startswith("event: branch_reuse\n")
     payload = json.loads(chunk.split("data: ", 1)[1].strip())
     assert payload == {"parent_sequence": 3, "reused_count": 2}
-
 
 def test_branch_endpoints_create_list_and_get(tmp_path, monkeypatch) -> None:
     from fastapi import FastAPI
@@ -202,7 +191,6 @@ def test_branch_endpoints_create_list_and_get(tmp_path, monkeypatch) -> None:
     unknown = client.get("/api/v2/branches/missing",
                          params={"thread": "t", "client": "o"})
     assert unknown.status_code == 404
-
 
 def test_stream_followup_creates_branch_with_parent_snapshot(
     tmp_path, monkeypatch,

@@ -11,7 +11,6 @@ import yaml
 
 _NAME = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
 
-
 @dataclass(frozen=True)
 class Skill:
     name: str
@@ -60,7 +59,6 @@ class Skill:
             "resources": resources,
         }
 
-
 class SkillLibrary:
 
     def __init__(self, root: str | Path | None = None) -> None:
@@ -98,7 +96,6 @@ class SkillLibrary:
             for name in dict.fromkeys(names)
         ]
 
-
 def skill_hashes(activated: list[dict[str, Any]]) -> dict[str, str]:
     hashes: dict[str, str] = {}
     for skill in activated:
@@ -116,11 +113,9 @@ def skill_hashes(activated: list[dict[str, Any]]) -> dict[str, str]:
         hashes[name] = content_hash
     return hashes
 
-
 def _reject_symlinked_path(path: Path, label: str) -> None:
     if any(component.is_symlink() for component in (path, *path.parents)):
         raise ValueError(f"{label} cannot contain symlinks")
-
 
 def _read_skill(path: Path) -> Skill:
     _reject_symlinked_path(path.parent, "skill package")

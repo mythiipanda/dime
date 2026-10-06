@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import json
 
-
 def _parse_status_texts(text: str) -> list[str]:
     out: list[str] = []
     for chunk in text.split("\n\n"):
@@ -11,7 +10,6 @@ def _parse_status_texts(text: str) -> list[str]:
         payload = chunk.split("data: ", 1)[1]
         out.append(json.loads(payload)["text"])
     return out
-
 
 def test_leaders_status_stream_narrates_subject_without_plumbing(monkeypatch, tmp_path) -> None:
     from types import SimpleNamespace
@@ -86,7 +84,6 @@ def test_leaders_status_stream_narrates_subject_without_plumbing(monkeypatch, tm
     ]
     for marker in forbidden:
         assert marker not in joined
-
 
 def test_status_lines_for_phrase_keeps_base_without_doubling() -> None:
     from v2 import contracts

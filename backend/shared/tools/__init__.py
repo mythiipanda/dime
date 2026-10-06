@@ -107,7 +107,7 @@ from .team import (
 from .today import get_today, get_morning_briefing
 from .watchlist import add_watchlist_item, get_watchlist, remove_watchlist_item
 from .wpa import get_wpa_leaders
-from ._core import MAX_ROWS, STAT_CATEGORIES, clamp_stat, last_completed_season, resolve_season
+from ._core import MAX_ROWS, STAT_CATEGORIES, clamp_stat
 
 v1_tools: list[BaseTool] = [
     resolve_entity,

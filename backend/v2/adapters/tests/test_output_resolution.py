@@ -19,7 +19,6 @@ SEASON = "2024-25"
 NODE_ID = "leaders"
 REQUIREMENT_ID = "counting_leader"
 
-
 @pytest.fixture
 def real_warehouse(monkeypatch):
     from shared import store
@@ -43,19 +42,16 @@ def real_warehouse(monkeypatch):
     _core.last_completed_season_cache_clear()
     coverage.coverage_cache_clear()
 
-
 def _spec():
     from v2.adapters.capabilities import CAPABILITIES
 
     return CAPABILITIES["qualified_leaders"]
-
 
 def _envelope(metric):
     from v2.adapters.core import call_capability
 
     return call_capability(
         "qualified_leaders", {"stat_category": metric, "season": SEASON})
-
 
 def _value(raw):
     if isinstance(raw, bool):
@@ -65,7 +61,6 @@ def _value(raw):
     if isinstance(raw, float):
         return {"kind": "float", "value": raw}
     return {"kind": "string", "value": str(raw)}
-
 
 def _binding(output_id, leaf, raw, unit, envelope, row=0):
     from v2.contracts import EvidenceOutputBinding
@@ -88,7 +83,6 @@ def _binding(output_id, leaf, raw, unit, envelope, row=0):
               else {"kind": "unitless"}),
         domain="qualified_leaders",
     )
-
 
 def _task(outputs, envelope, arguments):
     from v2.contracts import (
@@ -118,7 +112,6 @@ def _task(outputs, envelope, arguments):
             requested_outputs=list(outputs))],
     )
 
-
 def _execution(envelope, arguments):
     from v2.contracts import Plan, PlanNode
     from v2.runtime.models import ExecutionResult
@@ -133,7 +126,6 @@ def _execution(envelope, arguments):
         evidence_by_node={NODE_ID: envelope},
         attempts={NODE_ID: 1},
     )
-
 
 def _admit(envelope, bindings, outputs, arguments):
     from v2.contracts import Claim, DraftReport, VerifiedClaim, ClaimSource
@@ -154,7 +146,6 @@ def _admit(envelope, bindings, outputs, arguments):
             capability=envelope.capability, observed_at=envelope.observed_at)],
         output_bindings=list(bindings))
     return admit_verified_claim_bindings(task, execution, draft, verified)
-
 
 def _publish(envelope, bindings, outputs, arguments):
     from v2.api.routes import _answer_text
@@ -187,7 +178,6 @@ def _publish(envelope, bindings, outputs, arguments):
               for row in statuses}
     return admitted, gaps, by_key, answer
 
-
 def test_total_assists_games_played_and_player_bind_for_leaders_row(
         real_warehouse):
     from v2.adapters.capabilities import COUNT, resolve_metric_column
@@ -216,7 +206,6 @@ def test_total_assists_games_played_and_player_bind_for_leaders_row(
     assert [gap for gap in gaps if gap.blocks] == []
     assert "Some requested outputs could not be published." not in answer
 
-
 def test_points_board_binds_its_own_total_games_player_and_per_game(
         real_warehouse):
     from v2.adapters.capabilities import COUNT, PER_GAME, resolve_metric_column
@@ -244,7 +233,6 @@ def test_points_board_binds_its_own_total_games_player_and_per_game(
             for output_id in outputs] == ["complete"] * len(outputs)
     assert "Some requested outputs could not be published." not in answer
 
-
 def test_future_counting_metric_binds_under_its_total_name():
     from v2.adapters.capabilities import (
         Capability,
@@ -261,7 +249,6 @@ def test_future_counting_metric_binds_under_its_total_name():
     assert resolve_metric_column(spec, "TOTAL_WOMBAT") == "WOMBAT"
     assert resolve_metric_column(spec, "WOMBAT") == "WOMBAT"
     assert resolve_metric_column(spec, "TOTAL_HOME_RUNS") is None
-
 
 def test_per_game_companion_binds_under_both_names(real_warehouse):
     from v2.adapters.capabilities import PER_GAME, resolve_metric_column
@@ -284,7 +271,6 @@ def test_per_game_companion_binds_under_both_names(real_warehouse):
     admitted = _admit(
         envelope, [planner], ["ASSISTS_PER_GAME"], arguments)
     assert admitted.output_bindings[0].value.value == top["AST_PER_GAME"]
-
 
 def test_row_belonging_to_a_different_player_is_rejected(real_warehouse):
     from v2.adapters.capabilities import COUNT
@@ -314,7 +300,6 @@ def test_row_belonging_to_a_different_player_is_rejected(real_warehouse):
     with pytest.raises(ValueError, match="row does not match subject"):
         _admit(envelope, [binding], ["TOTAL_ASSISTS"],
                {"stat_category": "AST", "season": SEASON})
-
 
 def test_name_matching_no_rule_and_no_declared_output_resolves_to_nothing():
     spec = _spec()

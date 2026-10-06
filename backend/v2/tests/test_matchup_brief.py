@@ -3,7 +3,6 @@ import pytest
 from v2.adapters import call_capability
 from v2.adapters.core import AdapterError
 
-
 def _ratings_payload():
     return {
         "tool": "get_ratings",
@@ -42,7 +41,6 @@ def _ratings_payload():
         },
     }
 
-
 def _splits_payload(team):
     if team == "BOS":
         rows = [
@@ -62,7 +60,6 @@ def _splits_payload(team):
         "rows": rows,
         "meta": {"source": "warehouse", "season": "2025-26", "team_id": 1},
     }
-
 
 def _impact_payload(team):
     if team == "BOS":
@@ -94,7 +91,6 @@ def _impact_payload(team):
         "meta": {"source": "warehouse", "season": "2025-26"},
     }
 
-
 def _series_payload():
     return {
         "tool": "get_season_series",
@@ -109,7 +105,6 @@ def _series_payload():
         },
         "meta": {"source": "warehouse", "season": "2025-26"},
     }
-
 
 def _prediction_payload():
     return {
@@ -137,7 +132,6 @@ def _prediction_payload():
         },
     }
 
-
 def _patched_call():
     ratings = _ratings_payload()
     series = _series_payload()
@@ -161,7 +155,6 @@ def _patched_call():
         _splits_side_effect,
         _impact_side_effect,
     )
-
 
 def test_matchup_brief_composes_five_sections_from_fixtures():
     patches = _patched_call()
@@ -191,11 +184,9 @@ def test_matchup_brief_composes_five_sections_from_fixtures():
     assert env.qualification
     assert env.coverage
 
-
 def test_matchup_brief_rejects_same_team():
     with pytest.raises(AdapterError):
         call_capability("matchup_brief", {"a": "BOS", "b": "BOS", "season": "2025-26"})
-
 
 def test_matchup_brief_rejects_unknown_team():
     with pytest.raises(AdapterError):

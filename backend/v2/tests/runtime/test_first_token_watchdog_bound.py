@@ -22,12 +22,10 @@ WATCHDOG_S = 1.0
 ROUTE_WATCHDOG_S = 2.0
 REAL_SLEEP = anyio.sleep
 
-
 def _planner_envelope():
     return RequestEnvelope.freeze(
         provider="inception", model="primary", route="planner",
         prompt="p", context={}, tool_schemas={}, planner_version="v2")
-
 
 def _stage_model(budgets: ModelBudgets) -> ProviderStructuredModel:
     import httpx
@@ -46,7 +44,6 @@ def _stage_model(budgets: ModelBudgets) -> ProviderStructuredModel:
     model._models = lambda: [("inception", chat_model)]
     return model
 
-
 def _watchdog() -> ModelBudgets:
     return ModelBudgets(
         transport_timeout_s=600.0,
@@ -54,11 +51,9 @@ def _watchdog() -> ModelBudgets:
                              total_budget_s=ROUTE_WATCHDOG_S),
         routes={})
 
-
 def test_the_shipped_watchdog_is_off_and_the_knob_exists():
     assert route_budgets(None, "planner") == RoutePolicy()
     assert load_model_budgets().routes == {}
-
 
 @pytest.mark.anyio
 async def test_never_tokens_hang_is_bounded_when_a_watchdog_is_configured(
@@ -85,7 +80,6 @@ async def test_never_tokens_hang_is_bounded_when_a_watchdog_is_configured(
     print(f"\nnever-tokens planner hang resolved in {elapsed:.2f}s "
           f"(watchdog {ROUTE_WATCHDOG_S}s)")
 
-
 @pytest.mark.anyio
 async def test_slow_dribble_hang_is_bounded_when_a_watchdog_is_configured(
         monkeypatch):
@@ -111,7 +105,6 @@ async def test_slow_dribble_hang_is_bounded_when_a_watchdog_is_configured(
     print(f"\nslow-dribble planner hang resolved in {elapsed:.2f}s "
           f"(watchdog {ROUTE_WATCHDOG_S}s)")
 
-
 @pytest.mark.anyio
 async def test_healthy_provider_unaffected(monkeypatch):
     class HealthyAgent:
@@ -133,7 +126,6 @@ async def test_healthy_provider_unaffected(monkeypatch):
     assert elapsed < 2.0
     assert model.last_failures == []
     print(f"\nhealthy planner call resolved in {elapsed:.3f}s")
-
 
 async def _no_sleep(value: float) -> None:
     return None

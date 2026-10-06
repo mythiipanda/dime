@@ -1,7 +1,6 @@
 
 from shared.tools import get_trade_check
 
-
 def test_teams_inferred_from_player_names():
     out = get_trade_check.invoke({
         "team_a": "", "players_a": "Jalen Brunson",
@@ -12,7 +11,6 @@ def test_teams_inferred_from_player_names():
     assert rows["team_a"]["team"] == "NYK"
     assert rows["team_b"]["team"] == "SAS"
     assert "legal" in rows
-
 
 def test_still_errors_when_nothing_resolves():
     out = get_trade_check.invoke({

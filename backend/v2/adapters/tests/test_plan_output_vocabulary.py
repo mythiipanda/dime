@@ -14,11 +14,9 @@ pytestmark = pytest.mark.skipif(
     not WAREHOUSE.exists(),
     reason=f"the warehouse is absent at {WAREHOUSE}")
 
-
 @pytest.fixture(params=["asyncio"])
 def anyio_backend(request):
     return request.param
-
 
 def _stub_model_class():
     import importlib.util
@@ -29,12 +27,10 @@ def _stub_model_class():
     spec.loader.exec_module(module)
     return module.StubModel
 
-
 def _real_catalog():
     from v2.runtime.assembly import capability_catalog
 
     return capability_catalog()
-
 
 def _mvp_task(outputs):
     from v2.contracts import EvidenceRequirement, SeasonRef, TaskSpec
@@ -54,7 +50,6 @@ def _mvp_task(outputs):
         )],
     )
 
-
 def _planner_node(node_id, capability, arguments, covers=("mvp_result",)):
     return {
         "id": node_id,
@@ -66,7 +61,6 @@ def _planner_node(node_id, capability, arguments, covers=("mvp_result",)):
         "max_attempts": None,
         "status": None,
     }
-
 
 @pytest.mark.anyio
 async def test_unresolvable_output_is_rejected_with_vocabulary():
@@ -85,7 +79,6 @@ async def test_unresolvable_output_is_rejected_with_vocabulary():
     message = str(caught.value)
     assert "award_results" in message
     assert "VOTE_SHARE" in message or "AWARD_SHARE" in message or "PLAYER" in message
-
 
 @pytest.mark.anyio
 async def test_repaired_plan_with_servable_names_executes_and_publishes(real_warehouse):
@@ -156,7 +149,6 @@ async def test_repaired_plan_with_servable_names_executes_and_publishes(real_war
     admitted = admit_verified_claim_bindings(task, execution, draft, verified)
     assert {binding.output_id for binding in admitted.output_bindings} == {"PLAYER_NAME", "VOTE_SHARE"}
 
-
 @pytest.mark.anyio
 async def test_servable_plan_is_unaffected():
     from v2.adapters.models import ModelPlanner
@@ -172,7 +164,6 @@ async def test_servable_plan_is_unaffected():
     plan = await planner.plan(task)
     assert plan.nodes[0].covers_requirement_ids == ["mvp_result"]
     assert plan.nodes[0].capability_hints == ["award_results"]
-
 
 @pytest.mark.anyio
 async def test_mvp_publishes_with_stable_names_across_runs(real_warehouse):
@@ -201,7 +192,6 @@ async def test_mvp_publishes_with_stable_names_across_runs(real_warehouse):
         published.append((envelope.rows[0]["player"], envelope.rows[0]["award_share"]))
     assert published[0] == published[1]
     assert published[0][0] == "Nikola Jokić"
-
 
 @pytest.fixture
 def real_warehouse(monkeypatch):

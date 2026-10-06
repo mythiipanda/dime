@@ -8,9 +8,9 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from shared import store  # noqa: E402
-from shared.tools import team as team_mod  # noqa: E402
-from v2.adapters import call_capability  # noqa: E402
+from shared import store
+from shared.tools import team as team_mod
+from v2.adapters import call_capability
 
 REPO_WAREHOUSE = (
     Path(__file__).resolve().parent.parent / "data" / "warehouse.duckdb"
@@ -22,7 +22,6 @@ SERIES_TABLES = REGULAR_TABLES + PLAYOFF_TABLES
 
 UNCOVERED_SEASON = "2005-06"
 
-
 @contextmanager
 def _warehouse():
     con = duckdb.connect(str(REPO_WAREHOUSE), read_only=True)
@@ -31,17 +30,14 @@ def _warehouse():
     finally:
         con.close()
 
-
 def _require_warehouse():
     if not REPO_WAREHOUSE.exists():
         pytest.skip(f"no warehouse at {REPO_WAREHOUSE}")
-
 
 def _rows(con, table, season):
     return con.execute(
         f"SELECT COUNT(*) FROM {table} WHERE _season = ?", [season]
     ).fetchone()[0]
-
 
 def _meetings(con, a, b, season):
     return con.execute(
@@ -52,7 +48,6 @@ def _meetings(con, a, b, season):
         [season, a, f"%{b}%", b, f"%{a}%"],
     ).fetchone()[0]
 
-
 def _wins(con, a, b, season):
     return con.execute(
         "SELECT COUNT(*) FILTER (WHERE wl = 'W') FROM silver_hist_gamelogs"
@@ -61,24 +56,20 @@ def _wins(con, a, b, season):
         [season, a, f"%{b}%"],
     ).fetchone()[0]
 
-
 def _series(a, b, season):
     return team_mod.get_season_series.invoke(
         {"team_a": a, "team_b": b, "season": season})
-
 
 def _brief_rows(a, b, season):
     env = call_capability("matchup_brief", {"a": a, "b": b, "season": season})
     assert env.capability == "matchup_brief"
     return env.rows
 
-
 def test_the_uncovered_season_fixture_really_is_uncovered():
     _require_warehouse()
     with _warehouse() as con:
         for table in SERIES_TABLES:
             assert _rows(con, table, UNCOVERED_SEASON) == 0, table
-
 
 def test_a_season_no_table_covers_fails_loud_naming_the_season():
     _require_warehouse()
@@ -89,7 +80,6 @@ def test_a_season_no_table_covers_fails_loud_naming_the_season():
     for table in SERIES_TABLES:
         assert table in out["error"], table
     assert "holds" in out["error"]
-
 
 def test_a_pair_that_never_met_in_a_covered_season_names_the_tables_read():
     _require_warehouse()
@@ -103,7 +93,6 @@ def test_a_pair_that_never_met_in_a_covered_season_names_the_tables_read():
     for table in SERIES_TABLES:
         assert table in out["error"], table
     assert "do not report a 0-0 record" in out["error"].lower()
-
 
 def test_a_pair_with_four_regular_season_meetings_reports_all_four():
     _require_warehouse()
@@ -119,7 +108,6 @@ def test_a_pair_with_four_regular_season_meetings_reports_all_four():
     assert out["meta"]["regular_season_source"] == "silver_hist_gamelogs"
     assert len(out["rows"]["games"]) == 4
 
-
 def test_the_second_battery_pair_reports_its_three_meetings():
     _require_warehouse()
     with _warehouse() as con:
@@ -132,7 +120,6 @@ def test_the_second_battery_pair_reports_its_three_meetings():
     assert summary["games"] == 3
     assert summary["games_by_phase"] == {"regular season": 3}
     assert summary["games_won"] == {"MIN": 2, "DAL": 1}
-
 
 @pytest.mark.parametrize(
     "a, b, season, meetings, wins_a, wins_b",
@@ -159,7 +146,6 @@ def test_every_season_counts_from_the_table_that_holds_it(
     assert out["meta"]["coverage"]["regular season"]["source"] == (
         "silver_hist_gamelogs")
 
-
 def test_an_uncovered_playoff_phase_publishes_no_series_record():
     _require_warehouse()
     with _warehouse() as con:
@@ -177,7 +163,6 @@ def test_an_uncovered_playoff_phase_publishes_no_series_record():
     assert out["meta"]["coverage"]["playoffs"]["consulted"] == list(
         PLAYOFF_TABLES)
 
-
 def test_an_unanswerable_section_publishes_no_number_at_all():
     _require_warehouse()
     section = _brief_rows("ATL", "NOP", "2019-20")["season_series"]
@@ -188,7 +173,6 @@ def test_an_unanswerable_section_publishes_no_number_at_all():
               if isinstance(value, (int, float)) and not isinstance(value, bool)}
     assert counts == {}
 
-
 def test_the_published_reason_is_the_refusal_the_series_tool_gives():
     _require_warehouse()
     out = _series("ATL", "NOP", "2019-20")
@@ -197,7 +181,6 @@ def test_the_published_reason_is_the_refusal_the_series_tool_gives():
     assert section["reason"] == out["error"]
     assert "2019-20" in section["reason"]
 
-
 def test_a_covered_season_publishes_its_meetings_not_a_refusal():
     _require_warehouse()
     section = _brief_rows("CLE", "MIL", "2024-25")["season_series"]
@@ -205,7 +188,6 @@ def test_a_covered_season_publishes_its_meetings_not_a_refusal():
     assert "reason" not in section
     assert section["summary"]["games"] == 4
     assert json.dumps(section).count("silver_hist_gamelogs") >= 0
-
 
 def test_the_brief_never_publishes_a_count_the_tables_cannot_support():
     _require_warehouse()
@@ -220,7 +202,6 @@ def test_the_brief_never_publishes_a_count_the_tables_cannot_support():
         assert section["summary"]["games_by_phase"] == {
             "regular season": meetings}, (a, b, season)
 
-
 class _UnreadableTables:
     def __init__(self, con):
         self._con = con
@@ -232,7 +213,6 @@ class _UnreadableTables:
 
     def close(self):
         self._con.close()
-
 
 def test_an_unreadable_table_fails_loudly_instead_of_reporting_absence(
         monkeypatch):

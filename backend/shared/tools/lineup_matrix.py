@@ -5,7 +5,7 @@ from langchain_core.tools import tool
 
 from .. import store as _store
 from ..sources import nba_stats
-from ._core import MAX_ROWS, TTL_PBPSTATS, _warehouse_or_live, clamp_season, coerce_team_id, last_completed_season, resolve_season
+from ._core import MAX_ROWS, TTL_PBPSTATS, _warehouse_or_live, clamp_season, coerce_team_id, resolve_season
 from .lineup import _dedupe_lineup_rows
 from .team import _lineup_key
 
@@ -37,7 +37,6 @@ _NO_DATA_NOTE = (
     " nothing estimated, nothing fabricated"
 )
 
-
 def _unit_key(players: list) -> UnitKey | None:
     try:
         if len(players) != 5:
@@ -46,10 +45,8 @@ def _unit_key(players: list) -> UnitKey | None:
     except (TypeError, ValueError):
         return None
 
-
 def _unit_from_row(r: dict[str, Any], prefix: str) -> UnitKey | None:
     return _unit_key([r.get(f"{prefix}_player_{i}") for i in range(1, 6)])
-
 
 def _season_lineup_minutes(
     poss_rows: list[dict], team_id: int,
@@ -71,7 +68,6 @@ def _season_lineup_minutes(
                 counts[key] = counts.get(key, 0) + 1
     return counts
 
-
 def _qualifying_lineups(
     poss_rows: list[dict], team_a: int, team_b: int, min_minutes: float,
 ) -> tuple[dict[UnitKey, int], dict[UnitKey, int]]:
@@ -80,7 +76,6 @@ def _qualifying_lineups(
     qual_a = {k: v for k, v in counts_a.items() if v / 2 >= min_minutes}
     qual_b = {k: v for k, v in counts_b.items() if v / 2 >= min_minutes}
     return qual_a, qual_b
-
 
 def _accumulate_pairs(
     poss_rows: list[dict], team_a: int, team_b: int,
@@ -131,7 +126,6 @@ def _accumulate_pairs(
             a["blowout"] += 1
     return agg
 
-
 def _pair_flags(poss: int, blowout_share: float) -> list[str]:
     flags: list[str] = []
     if poss < SMALL_PAIR_POSS:
@@ -146,7 +140,6 @@ def _pair_flags(poss: int, blowout_share: float) -> list[str]:
         "estimated-minutes: shared court time estimated from possessions "
         "(~2 possessions per minute), not play-clock minutes")
     return flags
-
 
 def _pair_row(
     key_a: UnitKey, key_b: UnitKey, agg: dict, name_a: str, name_b: str,
@@ -178,11 +171,9 @@ def _pair_row(
         "flags": _pair_flags(poss, share),
     }
 
-
 def _truncate_note(total: int, shown: int) -> str:
     return (f"showing {shown} of {total} pairs "
             f"(top by estimated minutes)")
-
 
 def _surname_map(season: str) -> dict[int, str]:
     season = resolve_season(season)
@@ -198,7 +189,7 @@ def _surname_map(season: str) -> dict[int, str]:
     try:
         for r in rows or []:
             try:
-                pid = int(r.get("player_id"))  # type: ignore[arg-type]
+                pid = int(r.get("player_id"))
             except (TypeError, ValueError):
                 continue
             name = str(r.get("player_name") or "").strip()
@@ -209,7 +200,6 @@ def _surname_map(season: str) -> dict[int, str]:
         return {}
     return out
 
-
 def _fallback_name(key: UnitKey, surnames: dict[int, str] | None = None) -> str:
     if surnames:
         try:
@@ -218,7 +208,6 @@ def _fallback_name(key: UnitKey, surnames: dict[int, str] | None = None) -> str:
         except (TypeError, KeyError):
             pass
     return "unit " + str(key[0])[:6] + "…"
-
 
 def _build_matrix(
     poss_rows: list[dict], team_a: int, team_b: int,
@@ -242,13 +231,11 @@ def _build_matrix(
     rows.sort(key=lambda r: r["est_minutes"], reverse=True)
     return rows
 
-
 def _poss_num(r: dict[str, Any]) -> int:
     try:
         return int(r.get("possession_number") or 0)
     except (TypeError, ValueError):
         return 0
-
 
 def _team_abbr(tid: int, raw: object) -> str:
     try:
@@ -260,7 +247,6 @@ def _team_abbr(tid: int, raw: object) -> str:
     except Exception:
         pass
     return str(raw)
-
 
 def _lineup_names(team_id: int, season: str) -> tuple[dict[UnitKey, str], dict[str, Any]]:
     season = resolve_season(season)
@@ -280,20 +266,11 @@ def _lineup_names(team_id: int, season: str) -> tuple[dict[UnitKey, str], dict[s
             names[key] = gn
     return names, meta
 
-
-@tool
+@tool(description='Lineup-vs-lineup matrix for a team matchup. Names, abbrevs, or ids.\n\nCrosses every qualifying 5-man unit of team A against every qualifying\nunit of team B over their shared play-level possessions: shared minutes,\nnet rating in those minutes, sample-size flags. Lineups qualify at\nmin_minutes season minutes (poss/2); shared minutes are estimated from\npossessions (~2 per minute), never play-clock minutes.')
 def get_lineup_matchup_matrix(
     team_a: str, team_b: str, min_minutes: float = 10,
     season: str | None = None,
 ) -> dict[str, Any]:
-    """Lineup-vs-lineup matrix for a team matchup. Names, abbrevs, or ids.
-
-    Crosses every qualifying 5-man unit of team A against every qualifying
-    unit of team B over their shared play-level possessions: shared minutes,
-    net rating in those minutes, sample-size flags. Lineups qualify at
-    min_minutes season minutes (poss/2); shared minutes are estimated from
-    possessions (~2 per minute), never play-clock minutes.
-    """
     season = resolve_season(season)
     season = clamp_season(season)
     try:

@@ -8,7 +8,6 @@ from pydantic import BaseModel, ConfigDict, Field, StrictInt, model_validator
 
 from v2.domain.evidence import EvidenceIndex, decimal_value
 
-
 class CalculationOperation(StrEnum):
     ADD = "add"
     SUBTRACT = "subtract"
@@ -18,7 +17,6 @@ class CalculationOperation(StrEnum):
     MEAN = "mean"
     RANK_DESC = "rank_desc"
     RANK_ASC = "rank_asc"
-
 
 class CalculationInput(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
@@ -31,7 +29,6 @@ class CalculationInput(BaseModel):
         if not self.evidence_id.strip() or not self.path.strip():
             raise ValueError("calculation input identity must be non-empty")
         return self
-
 
 class Calculation(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
@@ -68,15 +65,12 @@ class Calculation(BaseModel):
             raise ValueError("subject_input is valid only for rank calculations")
         return self
 
-
 def _input_values(calculation: Calculation,
                   evidence: EvidenceIndex) -> list[Decimal]:
     indexed = list(evidence.values(
         dict.fromkeys(input_.evidence_id for input_ in calculation.inputs)))
     values: list[Decimal] = []
     for input_ in calculation.inputs:
-
-
 
         pattern = re.escape(input_.path).replace(r"\[\]", r"\[\d+\]")
         matches = [item.value for item in indexed
@@ -94,7 +88,6 @@ def _input_values(calculation: Calculation,
                 f"calculation input is missing or non-numeric: "
                 f"{input_.evidence_id}:{input_.path}")
     return values
-
 
 def recompute(calculation: Calculation, evidence: EvidenceIndex) -> Decimal:
     calculation = Calculation.model_validate(calculation.model_dump())
@@ -122,16 +115,12 @@ def recompute(calculation: Calculation, evidence: EvidenceIndex) -> Decimal:
     except (DivisionByZero, InvalidOperation, ZeroDivisionError) as exc:
         raise ValueError(f"calculation cannot be evaluated: {exc}") from exc
 
-
 def validate_calculation(calculation: Calculation, evidence: EvidenceIndex,
                          tolerance: Decimal = Decimal("0.000001")) -> str | None:
     calculation = Calculation.model_validate(calculation.model_dump())
     if not tolerance.is_finite() or tolerance < 0:
         raise ValueError("calculation tolerance must be finite and non-negative")
     actual = recompute(calculation, evidence)
-
-
-
 
     displayed_places = max(0, -calculation.result.as_tuple().exponent)
     display_tolerance = Decimal(5).scaleb(-(displayed_places + 1))

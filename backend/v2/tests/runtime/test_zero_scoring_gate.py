@@ -17,7 +17,6 @@ from v2.runtime.verifier import verify_mechanical
 
 PLAYER = EntityRef(id="9999", type="player", display_name="Test Player")
 
-
 def _task() -> TaskSpec:
     return TaskSpec(
         goal="Season scoring average for Test Player",
@@ -26,7 +25,6 @@ def _task() -> TaskSpec:
         entities=[PLAYER],
         season=SeasonRef(value="2025-26", source="user", confidence=1.0),
     )
-
 
 def _evidence(rows: list[dict], units: dict[str, str]) -> EvidenceEnvelope:
     return EvidenceEnvelope(
@@ -42,12 +40,10 @@ def _evidence(rows: list[dict], units: dict[str, str]) -> EvidenceEnvelope:
         coverage="All players represented in the selected season",
     )
 
-
 def _report(text: str) -> DraftReport:
     claim = Claim(
         text=text, kind=ClaimKind.OBSERVED, evidence_ids=["scoring"])
     return DraftReport(sections=[text], claims=[claim])
-
 
 def test_zero_ppg_without_scoring_totals_is_rejected_and_names_player():
     envelope = _evidence(
@@ -64,7 +60,6 @@ def test_zero_ppg_without_scoring_totals_is_rejected_and_names_player():
     assert any("Test Player" in reason and "PPG" in reason
                for reason in reasons)
 
-
 def test_genuine_scoreless_line_with_zero_totals_passes():
     envelope = _evidence(
         [{"PLAYER_ID": 9999, "PLAYER": "Test Player", "GP": 5,
@@ -78,7 +73,6 @@ def test_genuine_scoreless_line_with_zero_totals_passes():
         [envelope],
     )
     assert result.status == VerificationStatus.PASS
-
 
 def test_nonzero_scoring_line_is_unaffected():
     envelope = _evidence(
@@ -94,7 +88,6 @@ def test_nonzero_scoring_line_is_unaffected():
     )
     assert result.status == VerificationStatus.PASS
 
-
 def test_zero_in_a_non_scoring_metric_is_unaffected():
     envelope = _evidence(
         [{"PLAYER_ID": 9999, "PLAYER": "Test Player", "GP": 20,
@@ -107,7 +100,6 @@ def test_zero_in_a_non_scoring_metric_is_unaffected():
         [envelope],
     )
     assert result.status == VerificationStatus.PASS
-
 
 @pytest.mark.anyio
 async def test_missing_data_zero_is_withheld_from_publication() -> None:

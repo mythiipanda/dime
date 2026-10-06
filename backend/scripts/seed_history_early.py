@@ -9,7 +9,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 try:
     from seed_history import BASE, DATA, FILES, fetch, season_label, unify
 except ImportError:
-    from scripts.seed_history import (  # type: ignore[no-redef]
+    from scripts.seed_history import (
         BASE,
         DATA,
         FILES,
@@ -21,7 +21,6 @@ except ImportError:
 import polars as pl
 
 from shared import store
-
 
 def unify(frames: list) -> list:
     order: dict[str, list[str]] = {}
@@ -52,7 +51,6 @@ HUSTLE_EARLIEST = 2016
 KNOWN_GAPS = {("silver_hist_hustle", y) for y in range(EARLIEST, HUSTLE_EARLIEST)}
 META_COLS = ("_source", "_season", "_fetched_at", "_entity")
 
-
 def parse_seasons(raw: str) -> list[int]:
     years: list[int] = []
     for part in raw.split(","):
@@ -75,8 +73,7 @@ def parse_seasons(raw: str) -> list[int]:
         raise SystemExit("no seasons requested")
     return sorted(years)
 
-
-def _duckdb_to_polars(dtype: str):  # type: ignore[no-untyped-def]
+def _duckdb_to_polars(dtype: str):
     t = dtype.upper()
     if "INT" in t:
         return pl.Int64
@@ -85,7 +82,6 @@ def _duckdb_to_polars(dtype: str):  # type: ignore[no-untyped-def]
     if "BOOL" in t:
         return pl.Boolean
     return pl.String
-
 
 def _polars_to_duckdb(dtype: object) -> str:
     s = str(dtype)
@@ -97,7 +93,6 @@ def _polars_to_duckdb(dtype: object) -> str:
         return "BOOLEAN"
     return "VARCHAR"
 
-
 def _live_columns(table: str) -> dict[str, str] | None:
     con = store.connect()
     try:
@@ -108,7 +103,6 @@ def _live_columns(table: str) -> dict[str, str] | None:
         return {row[1]: row[2] for row in sorted(info, key=lambda r: r[0])}
     finally:
         con.close()
-
 
 def align_to_live(table: str, frame: pl.DataFrame) -> pl.DataFrame:
     live = _live_columns(table)
@@ -144,7 +138,6 @@ def align_to_live(table: str, frame: pl.DataFrame) -> pl.DataFrame:
     ordered = [c for c in live_data if c in out.columns]
     ordered += [c for c in out.columns if c not in live_data]
     return out.select(ordered)
-
 
 def main() -> None:
     args = argparse.ArgumentParser()
@@ -228,7 +221,6 @@ def main() -> None:
         ]:
             print(f"  gap {item}", file=sys.stderr)
         raise SystemExit(1)
-
 
 if __name__ == "__main__":
     main()

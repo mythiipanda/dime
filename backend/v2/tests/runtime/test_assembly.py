@@ -1,10 +1,8 @@
-from datetime import UTC, datetime
 
 import pytest
 
 from v2.adapters.core import ToolCapability
 from v2.contracts import PlanNode, SeasonRef, TaskSpec
-
 
 @pytest.mark.anyio
 async def test_tool_capability_uses_planned_arguments_and_scoped_season():
@@ -28,7 +26,6 @@ async def test_tool_capability_uses_planned_arguments_and_scoped_season():
     assert seen == {"team_id": "1610612738", "season": "2025-26"}
     assert result.capability == "standings"
 
-
 @pytest.mark.anyio
 async def test_seasonless_capability_does_not_receive_season():
     seen = {}
@@ -49,7 +46,6 @@ async def test_seasonless_capability_does_not_receive_season():
         "entity_resolution", tools={"resolve_entity": Tool()}).execute(node, task, [])
     assert seen == {"query": "Boston"}
 
-
 def test_evidence_bound_repair_drops_rejected_claims_and_keeps_gap():
     from v2.contracts import Claim, DraftReport, ClaimResult, VerificationReport
     from v2.runtime.assembly import EvidenceBoundRepair
@@ -67,7 +63,6 @@ def test_evidence_bound_repair_drops_rejected_claims_and_keeps_gap():
     assert [claim.text for claim in result.claims] == ["Grounded 61."]
     assert result.gaps == ["Repair claim 1: uncited numeral 62"]
 
-
 def test_capability_catalog_exposes_real_argument_schemas():
     from v2.runtime.assembly import capability_catalog
 
@@ -79,7 +74,6 @@ def test_capability_catalog_exposes_real_argument_schemas():
     assert catalog["web_search"]["arguments"]["properties"]["query"]
     assert catalog["web_fetch"]["arguments"]["properties"]["result_rank"]
     assert catalog["web_fetch"]["arguments"]["properties"]["search_evidence_id"]
-
 
 def test_build_runtime_wires_configured_checkpoint_store(tmp_path, monkeypatch) -> None:
     from v2.runtime.assembly import build_runtime
@@ -95,7 +89,6 @@ def test_build_runtime_wires_configured_checkpoint_store(tmp_path, monkeypatch) 
     store = runtime._executor._checkpoint_store
     assert store is not None
     assert store._directory == tmp_path / "checkpoints"
-
 
 @pytest.mark.parametrize("mode", ["replay", "eval"])
 def test_build_runtime_never_executes_unsupported_modes_live(
@@ -116,7 +109,6 @@ def test_build_runtime_never_executes_unsupported_modes_live(
             policy=policy,
         )
 
-
 def test_build_runtime_rejects_ambiguous_ledger_configuration(
     tmp_path, monkeypatch,
 ) -> None:
@@ -132,7 +124,6 @@ def test_build_runtime_rejects_ambiguous_ledger_configuration(
             ledger_dir=tmp_path / "argument",
         )
 
-
 def test_build_runtime_rejects_unsafe_run_identity(tmp_path) -> None:
     from v2.runtime.assembly import build_runtime
     from v2.runtime.policy import ExecutionPolicy
@@ -141,7 +132,6 @@ def test_build_runtime_rejects_unsafe_run_identity(tmp_path) -> None:
         build_runtime(provider="inception", model_name="mercury-test",
                       run_id="../escape",
                       policy=ExecutionPolicy.live(ledger_dir=tmp_path))
-
 
 def test_build_runtime_revalidates_mutated_policy(tmp_path, monkeypatch) -> None:
     from pydantic import ValidationError
@@ -154,7 +144,6 @@ def test_build_runtime_revalidates_mutated_policy(tmp_path, monkeypatch) -> None
     with pytest.raises(ValidationError, match="shadow mode cannot publish"):
         build_runtime(provider="inception", model_name="mercury-test",
                       run_id="run", policy=unsafe)
-
 
 def test_capability_catalog_descriptions_are_v2_owned(monkeypatch):
     from shared.tools import v1_tools

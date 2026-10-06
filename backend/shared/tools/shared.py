@@ -3,14 +3,8 @@ import re as _re
 from typing import Any
 from langchain_core.tools import tool
 
-
-@tool
+@tool(description='Resolve a player or team name to canonical ids. Call before any id tool.\n\nScored general matcher from _core plus Wikipedia suggestions\nwhen nothing in static tables scores above 0.5.')
 def resolve_entity(query: str) -> dict[str, Any]:
-    """Resolve a player or team name to canonical ids. Call before any id tool.
-
-    Scored general matcher from _core plus Wikipedia suggestions
-    when nothing in static tables scores above 0.5.
-    """
     try:
         from nba_api.stats.static import teams
 
@@ -21,9 +15,6 @@ def resolve_entity(query: str) -> dict[str, Any]:
         nq = _norm_name(raw)
         ranked = score_player_candidates(raw)
         p = [{**r, "score": s} for s, r in ranked[:8]]
-
-
-
 
         if p and _norm_name(p[0].get("full_name", "")) == nq:
             try:
@@ -40,10 +31,6 @@ def resolve_entity(query: str) -> dict[str, Any]:
             t = [x for x in all_t
                  if nq and (nq in _norm_name(x.get("full_name", ""))
                             or nq == (x.get("abbreviation", "") or "").lower())][:8]
-
-
-
-
 
         exact_team = any(
             nq in {
@@ -70,11 +57,6 @@ def resolve_entity(query: str) -> dict[str, Any]:
             "meta": {"source": "nba_api_static"},
         }
 
-
-
-
-
-
         if " " in raw.strip():
             return out
         _act = [(sc, r.get("full_name", "")) for sc, r in ranked
@@ -89,10 +71,8 @@ def resolve_entity(query: str) -> dict[str, Any]:
     except Exception as exc:
         return {"tool": "resolve_entity", "ok": False, "error": str(exc)[:200]}
 
-
-@tool
+@tool(description='Find NBA players or teams matching a name. Input is a plain name.')
 def search_nba(query: str) -> dict[str, Any]:
-    """Find NBA players or teams matching a name. Input is a plain name."""
     try:
         from nba_api.stats.static import players, teams
 
@@ -109,7 +89,6 @@ def search_nba(query: str) -> dict[str, Any]:
     except Exception as exc:
         return {"tool": "search_nba", "ok": False, "error": str(exc)[:200]}
 
-
 _CODE_BANNED = (
     "import ", "import(", "__", "os.", "sys.", "open(",
     "exec(", "eval(", "compile(", "subprocess", "socket",
@@ -117,15 +96,8 @@ _CODE_BANNED = (
     "getattr(", "setattr(", "delattr(", "input(",
 )
 
-
-@tool
+@tool(description='Run read-only Python over the warehouse. Tables: any silver_* table.\n\nAvailable: con (read-only DuckDB connection), pl (polars), math,\nstatistics. SELECT via con.execute("...").fetchall(). No imports,\nno writes, no network. Print or set `out`. Output capped.')
 def run_python(code: str) -> dict[str, Any]:
-    """Run read-only Python over the warehouse. Tables: any silver_* table.
-
-    Available: con (read-only DuckDB connection), pl (polars), math,
-    statistics. SELECT via con.execute("...").fetchall(). No imports,
-    no writes, no network. Print or set `out`. Output capped.
-    """
     import io as _io
     import math as _math
     import statistics as _stats

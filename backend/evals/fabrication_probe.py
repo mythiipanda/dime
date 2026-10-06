@@ -29,7 +29,6 @@ GROUND_TRUTH_KEYS = frozenset({"table", "season", "filters", "values"})
 
 ModelCallable = Callable[[Mapping[str, Any]], str]
 
-
 REFUSAL_PHRASES = (
     "don't have",
     "do not have",
@@ -66,7 +65,6 @@ DECREASE_WINDOW = 40
 
 ID_TOKEN_MIN_DIGITS = 5
 
-
 def _season_years(season):
     years = set()
     if not isinstance(season, str):
@@ -79,7 +77,6 @@ def _season_years(season):
         if tail is not None:
             years.add(found[0][:2] + tail.group(1))
     return years
-
 
 def _collect_id_tokens(value, seen, out):
     if isinstance(value, bool):
@@ -104,13 +101,11 @@ def _collect_id_tokens(value, seen, out):
                 seen.add(form)
                 out.append(form)
 
-
 def _filter_id_tokens(truth):
     out: list[str] = []
     if isinstance(truth, Mapping):
         _collect_id_tokens(truth.get("filters"), set(), out)
     return out
-
 
 def extract_numbers(answer, season=None, mask=()):
     text = answer if isinstance(answer, str) else ""
@@ -145,12 +140,10 @@ def extract_numbers(answer, season=None, mask=()):
         out.append(value)
     return out
 
-
 class Verdict(NamedTuple):
     row_id: str
     passed: bool
     reason: str
-
 
 @dataclass
 class ProbeReport:
@@ -160,7 +153,6 @@ class ProbeReport:
     failed: int = 0
     by_premise: dict = field(default_factory=dict)
     by_expected: dict = field(default_factory=dict)
-
 
 def load_rows(path: str) -> list[dict]:
     rows: list[dict] = []
@@ -177,12 +169,10 @@ def load_rows(path: str) -> list[dict]:
             rows.append(item)
     return rows
 
-
 def _check_text(row: Mapping[str, Any], key: str, errors: list[str]) -> None:
     value = row[key]
     if not isinstance(value, str) or not value.strip():
         errors.append(f"{key} must be a non-empty string")
-
 
 def _check_ground_truth(row: Mapping[str, Any], errors: list[str]) -> None:
     truth = row["ground_truth"]
@@ -204,7 +194,6 @@ def _check_ground_truth(row: Mapping[str, Any], errors: list[str]) -> None:
         for field_name, number in values.items():
             if isinstance(number, bool) or not isinstance(number, (int, float)):
                 errors.append(f"ground_truth.values.{field_name} must be a number")
-
 
 def validate_row(row: Any) -> list[str]:
     errors: list[str] = []
@@ -243,14 +232,12 @@ def validate_row(row: Any) -> list[str]:
         _check_ground_truth(row, errors)
     return errors
 
-
 def _row_label(index: int, row: Any) -> str:
     if isinstance(row, dict):
         task_id = row.get("task_id")
         if isinstance(task_id, str) and task_id.strip():
             return task_id
     return f"row {index + 1}"
-
 
 def validate_file(path: str) -> list[str]:
     rows = load_rows(path)
@@ -280,7 +267,6 @@ def validate_file(path: str) -> list[str]:
             errors.append(f"sequence gap: missing fab-{want:03d}")
     return errors
 
-
 def _grade_label(row):
     try:
         task_id = row.get("task_id")
@@ -290,14 +276,12 @@ def _grade_label(row):
         return task_id
     return "unknown"
 
-
 def _wanted_values(values):
     return [
         item
         for item in values.values()
         if isinstance(item, (int, float)) and not isinstance(item, bool)
     ]
-
 
 def _grade_evidence(row_id, row, text):
     truth = row.get("ground_truth")
@@ -356,7 +340,6 @@ def _grade_evidence(row_id, row, text):
         reason=row_id + ": all numeric claims match expected values",
     )
 
-
 def _grade_refuse(row_id, text):
     normalized = text.lower().replace("’", "'").replace("‘", "'")
     refused = False
@@ -383,7 +366,6 @@ def _grade_refuse(row_id, text):
         reason=row_id + ": numeric claims present in refusal: " + repr(claimed),
     )
 
-
 def grade_row(row, answer):
     row_id = _grade_label(row)
     try:
@@ -405,7 +387,6 @@ def grade_row(row, answer):
         reason=row_id + ": unknown expected " + repr(expected) + "; failing closed",
     )
 
-
 def _bucket(store, name, passed):
     entry = store.get(name)
     if entry is None:
@@ -416,7 +397,6 @@ def _bucket(store, name, passed):
         entry["passed"] += 1
     else:
         entry["failed"] += 1
-
 
 def run_probe(
     rows: Sequence[Mapping[str, Any]], model: ModelCallable

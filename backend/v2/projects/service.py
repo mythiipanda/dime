@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 import sqlite3
 from datetime import UTC, datetime
 from pathlib import Path
@@ -9,16 +8,13 @@ from uuid import uuid4
 
 from v2.projects.models import Project, ProjectStatus
 
-
 _LOCKS_GUARD = Lock()
 _LOCKS: dict[Path, Lock] = {}
-
 
 def _path_lock(path: Path) -> Lock:
     resolved = path.resolve()
     with _LOCKS_GUARD:
         return _LOCKS.setdefault(resolved, Lock())
-
 
 class ProjectStore:
     def __init__(self, path: str | Path) -> None:
@@ -120,6 +116,5 @@ class ProjectStore:
             "CREATE TABLE IF NOT EXISTS projects (id TEXT PRIMARY KEY, data TEXT NOT NULL)"
         )
         return connection
-
 
 __all__ = ["Project", "ProjectStatus", "ProjectStore"]

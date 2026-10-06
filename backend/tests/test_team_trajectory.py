@@ -1,10 +1,8 @@
 from shared.tools.league import get_team_trajectory
 
-
 class FakeResult:
     def __init__(self, rows): self.rows = rows
     def fetchall(self): return self.rows
-
 
 class FakeConnection:
     def execute(self, sql, params=None):
@@ -20,7 +18,6 @@ class FakeConnection:
             ("2023-24", 64, 18, .780),
         ])
     def close(self): pass
-
 
 def test_team_trajectory_returns_bounded_regular_season_records(monkeypatch):
     monkeypatch.setattr("shared.tools._core.coerce_team_id", lambda team: 1610612738)

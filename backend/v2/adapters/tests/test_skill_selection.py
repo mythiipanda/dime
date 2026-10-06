@@ -2,8 +2,6 @@ import pytest
 
 from v2.adapters.models import ModelIntake, ModelPlanner
 from v2.contracts import EntityRef, Plan, RunMode, TaskSpec
-from v2.runtime.ledger import RequestEnvelope
-
 
 class SelectionModel:
     def __init__(self, skill):
@@ -16,7 +14,6 @@ class SelectionModel:
             return TaskSpec(goal="test", mode=RunMode.QUICK,
                             deliverable="answer", skills=[self.skill] if self.skill else [])
         return Plan(nodes=[])
-
 
 @pytest.mark.parametrize("question,expected", [
     ("Would Brown for Paul George make sense for both teams?", "trade-analysis"),
@@ -41,7 +38,6 @@ async def test_should_trigger_selected_skill_is_loaded_for_planning(question, ex
     assert [item["name"] for item in activated] == [expected]
     assert model.calls[1][2].skill_hashes[expected] == activated[0]["content_hash"]
 
-
 @pytest.mark.anyio
 async def test_should_not_trigger_general_fact_question_loads_no_skill():
     model = SelectionModel(None)
@@ -54,7 +50,6 @@ async def test_should_not_trigger_general_fact_question_loads_no_skill():
     assert model.calls[1][1]["skills"] == []
     assert model.calls[1][2].skill_hashes == {}
 
-
 @pytest.mark.anyio
 async def test_hallucinated_advisory_skill_is_dropped_before_planning():
     model = SelectionModel("not-installed")
@@ -66,14 +61,12 @@ async def test_hallucinated_advisory_skill_is_dropped_before_planning():
                            capability_catalog={})
     assert (await planner.plan(task)).nodes == []
 
-
 class EntityModel:
     def __init__(self, task):
         self.task = task
 
     async def generate(self, *, schema, prompt, payload, envelope, decode=None):
         return self.task
-
 
 @pytest.mark.anyio
 @pytest.mark.parametrize("entities,expected", [
@@ -89,7 +82,6 @@ async def test_intake_derives_subject_level_from_resolved_entities(entities, exp
     intake = ModelIntake(EntityModel(proposed), provider="test", model_name="test",
                          capability_catalog={})
     assert (await intake.understand("anything")).subject_entity_type == expected
-
 
 @pytest.mark.anyio
 async def test_intake_overrides_model_subject_with_resolved_entities():

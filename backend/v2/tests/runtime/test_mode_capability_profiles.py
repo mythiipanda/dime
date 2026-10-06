@@ -7,15 +7,12 @@ import pytest
 from v2.contracts import Plan, PlanNode, RunMode, TaskSpec
 from v2.runtime import FakeCapability, PlanExecutor
 
-
 @pytest.fixture
 def anyio_backend():
     return "asyncio"
 
-
 def _task(mode: RunMode) -> TaskSpec:
     return TaskSpec(goal="answer", mode=mode, deliverable="text")
-
 
 def _node(node_id: str, capability: str, **overrides) -> PlanNode:
     fields = {
@@ -26,10 +23,8 @@ def _node(node_id: str, capability: str, **overrides) -> PlanNode:
     fields.update(overrides)
     return PlanNode(**fields)
 
-
 def _v2_dir() -> Path:
     return Path(__file__).resolve().parents[2]
-
 
 @pytest.mark.anyio
 async def test_lookup_mode_plan_calling_web_search_is_refused_naming_all_three() -> None:
@@ -54,7 +49,6 @@ async def test_lookup_mode_plan_calling_web_search_is_refused_naming_all_three()
     assert "lookup" in message
     assert calls == []
 
-
 @pytest.mark.anyio
 async def test_lookup_mode_plan_calling_web_fetch_is_refused() -> None:
     executor = PlanExecutor({"web_fetch": FakeCapability("web_fetch", {})})
@@ -69,7 +63,6 @@ async def test_lookup_mode_plan_calling_web_fetch_is_refused() -> None:
     assert "quick" in message
     assert "lookup" in message
 
-
 @pytest.mark.anyio
 async def test_comparison_in_full_mode_passes() -> None:
     executor = PlanExecutor({
@@ -79,7 +72,6 @@ async def test_comparison_in_full_mode_passes() -> None:
         _task(RunMode.PROJECT), Plan(nodes=[_node("pair", "player_comparison")]))
     assert result.plan.nodes[0].status.value == "complete"
     assert result.evidence[0].capability == "player_comparison"
-
 
 def test_profiles_derive_from_registry_and_new_capability_denied_by_default(
         monkeypatch) -> None:
@@ -107,7 +99,6 @@ def test_profiles_derive_from_registry_and_new_capability_denied_by_default(
     with pytest.raises(ValueError, match="future_tool"):
         refuse_unprofiled_capability(RunMode.QUICK, "node", "future_tool")
 
-
 @pytest.mark.anyio
 async def test_deny_wins_over_planner_hints_and_requirement_coverage() -> None:
     task = TaskSpec(
@@ -126,7 +117,6 @@ async def test_deny_wins_over_planner_hints_and_requirement_coverage() -> None:
     with pytest.raises(ValueError, match="web_search"):
         await executor.execute(task, plan)
 
-
 def test_no_prompt_text_changed_to_achieve_this() -> None:
     forbidden = (
         "allowlist",
@@ -142,7 +132,6 @@ def test_no_prompt_text_changed_to_achieve_this() -> None:
         text = prompt.read_text()
         for token in forbidden:
             assert token not in text, f"{prompt.name} contains {token!r}"
-
 
 def test_policy_derives_profiles_without_question_text() -> None:
     source = (_v2_dir() / "runtime" / "policy.py").read_text()

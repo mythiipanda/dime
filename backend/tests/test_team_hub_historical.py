@@ -7,9 +7,8 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from shared import store  # noqa: E402
-from shared.tools import team as team_mod  # noqa: E402
-
+from shared import store
+from shared.tools import team as team_mod
 
 def _seed_hist(path: Path) -> None:
     con = duckdb.connect(str(path))
@@ -59,7 +58,6 @@ def _seed_hist(path: Path) -> None:
     finally:
         con.close()
 
-
 @pytest.fixture()
 def hist_db(tmp_path, monkeypatch):
     path = tmp_path / "hist.duckdb"
@@ -71,14 +69,12 @@ def hist_db(tmp_path, monkeypatch):
     monkeypatch.setattr(store, "connect", fake_connect)
     return path
 
-
 def _no_seeded_rows(table, where, params, fetch, season, **kw):
     if table == "silver_team_games":
         return [], {"source": "warehouse", "static_season": True,
                     "error": f"no seeded rows for {table} ({season}); "
                              "season complete, live refetch disabled"}
     return [], {}
-
 
 def test_hist_slice_shape_and_order(hist_db):
     rows = team_mod._hist_team_games(2, "2024-25")
@@ -95,7 +91,6 @@ def test_hist_slice_shape_and_order(hist_db):
     assert r0["_entity"] == "team:2"
     assert r0["_source"] == "sportsdataverse"
 
-
 def test_hist_slice_matches_truth_aggregation(hist_db):
     rows = team_mod._hist_team_games(2, "2024-25")
     gp = len(rows)
@@ -107,11 +102,9 @@ def test_hist_slice_matches_truth_aggregation(hist_db):
     ts = round(100 * pts / (2 * (fga + 0.44 * fta)), 1)
     assert ts == pytest.approx(round(100 * 341 / (2 * (93 + 0.44 * 30)), 1))
 
-
 def test_hist_slice_empty_without_coverage(hist_db):
     assert team_mod._hist_team_games(2, "2021-22") == []
     assert team_mod._hist_team_games(7, "2021-22") == []
-
 
 def test_get_team_hub_falls_back_to_hist(monkeypatch, hist_db):
     monkeypatch.setattr(team_mod, "_warehouse_or_live", _no_seeded_rows)
@@ -123,13 +116,11 @@ def test_get_team_hub_falls_back_to_hist(monkeypatch, hist_db):
     assert out["meta"]["season"] == "2024-25"
     assert out["meta"]["static_season"] is True
 
-
 def test_get_team_hub_keeps_error_without_hist(monkeypatch, hist_db):
     monkeypatch.setattr(team_mod, "_warehouse_or_live", _no_seeded_rows)
     monkeypatch.setattr(team_mod, "coerce_team_id", lambda v: 2)
     out = team_mod.get_team_hub.invoke({"team_id": "BOS", "season": "2021-22"})
     assert out["rows"]["games"] == []
-
 
 def test_get_team_hub_seeded_season_untouched(monkeypatch, hist_db):
     seeded = [{"GAME_DATE": "OCT 01, 2025", "WL": "W", "PTS": 120}]
@@ -144,7 +135,6 @@ def test_get_team_hub_seeded_season_untouched(monkeypatch, hist_db):
     out = team_mod.get_team_hub.invoke({"team_id": "BOS", "season": "2025-26"})
     assert out["rows"]["games"] == seeded
 
-
 def test_summary_exact_on_hist_slice(hist_db):
     rows = team_mod._hist_team_games(2, "2024-25")
     s = team_mod._team_game_summary(rows, True)
@@ -154,7 +144,6 @@ def test_summary_exact_on_hist_slice(hist_db):
     assert s["ppg"] == pytest.approx(341 / 3, abs=0.05)
     assert s["ts_pct"] == pytest.approx(
         round(100 * 341 / (2 * (93 + 0.44 * 30)), 1))
-
 
 def test_summary_realistic_rows_partial_season():
     games = [
@@ -168,18 +157,15 @@ def test_summary_realistic_rows_partial_season():
     assert s["ts_pct"] == pytest.approx(
         round(100 * 223 / (2 * (178 + 0.44 * 40)), 1))
 
-
 def test_summary_no_stat_columns_omits_rates():
     s = team_mod._team_game_summary(
         [{"WL": "W", "GAME_DATE": "OCT 01, 2025"}], True)
     assert s["wins"] == 1 and s["covers_full_season"] is True
     assert "ppg" not in s and "ts_pct" not in s
 
-
 def test_summary_empty_games():
     assert team_mod._team_game_summary([], False) == {
         "games": 0, "wins": 0, "losses": 0, "covers_full_season": False}
-
 
 def test_summary_partial_stats_uses_per_metric_denominators():
     games = [
@@ -195,7 +181,6 @@ def test_summary_partial_stats_uses_per_metric_denominators():
     assert s["ts_pct_games"] == 1
     assert s["covers_full_season"] is False
 
-
 def test_summary_pts_without_fga_counts_only_for_ppg():
     games = [
         {"WL": "W", "PTS": 100, "FGA": 90, "FTA": 20},
@@ -207,13 +192,11 @@ def test_summary_pts_without_fga_counts_only_for_ppg():
     assert s["ts_pct_games"] == 1
     assert s["covers_full_season"] is True
 
-
 def test_summary_full_coverage_carries_game_counts(hist_db):
     rows = team_mod._hist_team_games(2, "2024-25")
     s = team_mod._team_game_summary(rows, True)
     assert s["ppg_games"] == 3 and s["ts_pct_games"] == 3
     assert s["ppg"] == pytest.approx(341 / 3, abs=0.05)
-
 
 def test_get_team_hub_summary_full_season_on_hist(monkeypatch, hist_db):
     monkeypatch.setattr(team_mod, "_warehouse_or_live", _no_seeded_rows)
@@ -226,7 +209,6 @@ def test_get_team_hub_summary_full_season_on_hist(monkeypatch, hist_db):
     assert (s["games"], s["wins"], s["losses"]) == (3, 2, 1)
     assert s["ts_pct"] == pytest.approx(
         round(100 * 341 / (2 * (93 + 0.44 * 30)), 1))
-
 
 def test_get_team_hub_summary_flags_capped_sample(monkeypatch, hist_db):
     sample = [{"WL": "W", "PTS": 120, "FGA": 90, "FTA": 20}] * 25

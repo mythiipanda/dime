@@ -3,10 +3,9 @@ from __future__ import annotations
 import asyncio
 import json
 import math
-from collections.abc import AsyncIterable, AsyncIterator, Iterable
+from collections.abc import AsyncIterable, AsyncIterator
 
 from v2.api.events import EventType, InternalEvent
-
 
 def _bounded_public_value(value, *, depth: int = 0):
     if depth > 8:
@@ -26,7 +25,6 @@ def _bounded_public_value(value, *, depth: int = 0):
             for key, item in list(value.items())[:256]
         }
     return str(value)[:200_000]
-
 
 def _public_payload(event: InternalEvent, *, diagnostics: bool = False) -> dict | None:
     payload = event.model_dump(mode="json", exclude={"type"}, exclude_none=True)
@@ -68,7 +66,6 @@ def _public_payload(event: InternalEvent, *, diagnostics: bool = False) -> dict 
         return out
     return payload
 
-
 def encode_event(event: InternalEvent, *, diagnostics: bool = False) -> str | None:
     payload = _public_payload(event, diagnostics=diagnostics)
     if payload is None:
@@ -78,24 +75,15 @@ def encode_event(event: InternalEvent, *, diagnostics: bool = False) -> str | No
     return f"event: {event_name}\ndata: {json.dumps(payload, separators=(',', ':'), allow_nan=False)}\n\n"
 
 
-def encode_events(events: Iterable[InternalEvent], *, diagnostics: bool = False) -> Iterable[str]:
-    for event in events:
-        chunk = encode_event(event, diagnostics=diagnostics)
-        if chunk is not None:
-            yield chunk
-
-
 async def stream_events(events: AsyncIterable[InternalEvent], *, diagnostics: bool = False) -> AsyncIterator[str]:
     async for event in events:
         chunk = encode_event(event, diagnostics=diagnostics)
         if chunk is not None:
             yield chunk
 
-
 def encode_raw(event_type: str, data: object) -> str:
     return (f"event: {event_type}\ndata: "
             f"{json.dumps(data, separators=(',', ':'), allow_nan=False)}\n\n")
-
 
 def encode_branch_reuse(*, parent_sequence: int, reused_count: int) -> str:
     if isinstance(parent_sequence, bool) or not isinstance(parent_sequence, int):
@@ -109,12 +97,10 @@ def encode_branch_reuse(*, parent_sequence: int, reused_count: int) -> str:
     return encode_raw("branch_reuse", {"parent_sequence": parent_sequence,
                                        "reused_count": reused_count})
 
-
 def encode_replay_verification(report) -> str:
     payload = _bounded_public_value(report.model_dump(
         mode="json", exclude_none=True))
     return encode_raw("replay_verification", payload)
-
 
 async def with_heartbeat(
     inner: AsyncIterator[str], interval_s: float = 15.0

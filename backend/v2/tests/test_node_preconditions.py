@@ -12,11 +12,9 @@ from v2.adapters.capabilities import (
 from v2.contracts import Plan, PlanNode, PreconditionCheck, RunMode, TaskSpec
 from v2.runtime import FakeCapability, PlanExecutor
 
-
 @pytest.fixture
 def anyio_backend():
     return "asyncio"
-
 
 def _task(outputs, capability, requirement_id="ratings"):
     return TaskSpec(
@@ -32,7 +30,6 @@ def _task(outputs, capability, requirement_id="ratings"):
         }],
     )
 
-
 def _plan(node_id, capability, requirement_id="ratings"):
     return Plan(nodes=[PlanNode(
         id=node_id,
@@ -40,7 +37,6 @@ def _plan(node_id, capability, requirement_id="ratings"):
         capability_hints=[capability],
         covers_requirement_ids=[requirement_id],
     )])
-
 
 class _Tracking(FakeCapability):
     def __init__(self, name, rows):
@@ -50,7 +46,6 @@ class _Tracking(FakeCapability):
     async def execute(self, node, task, evidence):
         self.calls.append(node.id)
         return await super().execute(node, task, evidence)
-
 
 @pytest.mark.anyio
 async def test_unresolvable_numeral_refused_before_execution() -> None:
@@ -65,7 +60,6 @@ async def test_unresolvable_numeral_refused_before_execution() -> None:
     assert "HOME_RUNS" in message
     assert capability.calls == []
 
-
 @pytest.mark.anyio
 async def test_resolvable_preconditions_execute_normally() -> None:
     capability = _Tracking("team_ratings", {"NET_RATING": 9.6})
@@ -75,7 +69,6 @@ async def test_resolvable_preconditions_execute_normally() -> None:
     assert capability.calls == ["board"]
     assert result.plan.nodes[0].status.value == "complete"
     assert result.evidence[0].capability == "team_ratings"
-
 
 def test_preconditions_derive_from_task_plus_capability() -> None:
     spec = CAPABILITIES["team_ratings"]
@@ -114,7 +107,6 @@ def test_preconditions_derive_from_task_plus_capability() -> None:
     assert any(not item.resolvable for item in missing
                if item.check == PreconditionCheck.NUMERAL)
 
-
 def test_post_failures_name_check_node_and_requirement() -> None:
     from datetime import UTC, datetime
     from v2.contracts import EvidenceEnvelope, precondition_repair_instruction
@@ -139,7 +131,6 @@ def test_post_failures_name_check_node_and_requirement() -> None:
         PreconditionCheck.NUMERAL, "board", "ratings", "detail")
     assert "board" in expected and "ratings" in expected
 
-
 @pytest.mark.anyio
 async def test_team_ratings_shape_against_warehouse() -> None:
     from v2.adapters.core import ToolCapability
@@ -153,7 +144,6 @@ async def test_team_ratings_shape_against_warehouse() -> None:
     assert isinstance(envelope.rows, list) and envelope.rows
     assert "NET_RATING" in envelope.rows[0]
     assert envelope.units.get("NET_RATING") == "points_per_100_possessions"
-
 
 @pytest.mark.anyio
 async def test_standings_shape_against_warehouse() -> None:

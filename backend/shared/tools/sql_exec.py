@@ -15,29 +15,15 @@ TABLES = tuple(sorted(_SQL_TABLES))
 SOURCE = "warehouse"
 MAX_SQL_CHARS = 8000
 
-
 def tables_in(sql: str) -> list[str]:
     return sorted({a or b for a, b in _TABLE_REF_RE.findall(sql or "")})
-
 
 def _failure(query: str, message: str) -> dict[str, Any]:
     return {"tool": TOOL, "ok": False, "rows": {},
             "meta": {"sql": query[:500]}, "error": message}
 
-
-@tool("sql_exec")
+@tool("sql_exec", description='Run one agent-written read-only analytical query over the warehouse.\n\nThe query must be a single SELECT or WITH statement over the declared\nsilver tables. Writes, stacked statements, and tables outside the\ndeclared set are refused before execution. Results are capped at\nRERUN_ROW_CAP rows with a RERUN_TIMEOUT_S statement timeout, and a\nquery that returns nothing fails instead of publishing an empty\nanswer. Alias the primary numeric answer `n` so citations carry a\ndeclared count unit. Returned rows are computed from the supplied\nSQL, never curated table values.')
 async def sql_exec(sql: str, season: str | None = None) -> dict[str, Any]:
-    """Run one agent-written read-only analytical query over the warehouse.
-
-    The query must be a single SELECT or WITH statement over the declared
-    silver tables. Writes, stacked statements, and tables outside the
-    declared set are refused before execution. Results are capped at
-    RERUN_ROW_CAP rows with a RERUN_TIMEOUT_S statement timeout, and a
-    query that returns nothing fails instead of publishing an empty
-    answer. Alias the primary numeric answer `n` so citations carry a
-    declared count unit. Returned rows are computed from the supplied
-    SQL, never curated table values.
-    """
     query = (sql or "").strip()
     if not query:
         return _failure(query, "sql_exec: sql is required; pass one "

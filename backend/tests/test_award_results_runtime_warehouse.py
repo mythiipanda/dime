@@ -12,7 +12,6 @@ pytestmark = pytest.mark.skipif(
     not RUNTIME_WAREHOUSE.exists(),
     reason=f"the runtime warehouse is absent at {RUNTIME_WAREHOUSE}")
 
-
 @pytest.fixture
 def runtime_awards(monkeypatch):
     from shared import store
@@ -35,19 +34,16 @@ def runtime_awards(monkeypatch):
     _core.last_completed_season_cache_clear()
     coverage.coverage_cache_clear()
 
-
 def _results(**arguments):
     from shared.tools.award_results import get_award_results
 
     return get_award_results.invoke(arguments)
-
 
 MVP_LEADERS = (
     ("2024-25", "Shai Gilgeous-Alexander", "OKC", 26, 913, 1000, 0.913, 71),
     ("2023-24", "Nikola Jokić", "DEN", 28, 926, 990, 0.935, 79),
     ("2019-20", "Giannis Antetokounmpo", "MIL", 25, 962, 1010, 0.952, 85),
 )
-
 
 @pytest.mark.parametrize(
     "season,player,team,age,won,maximum,share,votes",
@@ -78,7 +74,6 @@ def test_a_real_season_returns_the_real_winner_and_share(
     assert result["meta"]["vote_columns"] == ["votes_first"]
     assert result["meta"]["dataset"] == "basketball-reference"
 
-
 def test_a_coach_award_names_its_coach_and_its_votes(runtime_awards):
     result = _results(view="winner", award="COY", season="2015-16")
     assert result["ok"] is True, result
@@ -101,7 +96,6 @@ def test_a_coach_award_names_its_coach_and_its_votes(runtime_awards):
     }]
     assert result["meta"]["award_subject"] == "coach"
 
-
 def test_a_season_whose_ballot_never_existed_fails_loud_naming_the_season(
         runtime_awards):
     result = _results(view="winner", award="MVP", season="1981-82")
@@ -111,7 +105,6 @@ def test_a_season_whose_ballot_never_existed_fails_loud_naming_the_season(
     assert "1976-77" in result["error"]
     assert "2025-26" in result["error"]
     assert "never estimates" in result["error"]
-
 
 def test_a_tied_rank_keeps_the_published_rank_and_marks_the_tie(runtime_awards):
     result = _results(view="field", award="DPOY", season="2024-25")
@@ -123,7 +116,6 @@ def test_a_tied_rank_keeps_the_published_rank_and_marks_the_tie(runtime_awards):
     assert {row["rank"] for row in tied} == {10}
     assert {row["tied"] for row in tied} == {True}
     assert {row["award_share"] for row in tied} == {0.006}
-
 
 def test_a_row_that_made_no_team_keeps_a_null_rank_and_its_published_label(
         runtime_awards):
@@ -138,7 +130,6 @@ def test_a_row_that_made_no_team_keeps_a_null_rank_and_its_published_label(
     assert min(row["rank"] for row in ranked) == 1
     assert placements[-1]["rank"] is None
 
-
 def test_a_tied_first_team_keeps_every_leading_player(runtime_awards):
     result = _results(view="winner", award="ALL_NBA", season="2024-25")
     assert result["ok"] is True, result
@@ -151,7 +142,6 @@ def test_a_tied_first_team_keeps_every_leading_player(runtime_awards):
         "Jayson Tatum", "Donovan Mitchell"}
     assert result["meta"]["honors_teams"] == 3
 
-
 def test_a_team_award_is_not_reported_as_a_tie(runtime_awards):
     result = _results(view="winner", award="ALL_DEFENSE", season="2024-25")
     assert result["ok"] is True, result
@@ -160,7 +150,6 @@ def test_a_team_award_is_not_reported_as_a_tie(runtime_awards):
     assert {row["tied"] for row in placements} == {False}
     assert result["meta"]["ballot"] is False
     assert result["meta"]["vote_columns"] == []
-
 
 def test_the_runtime_warehouse_answers_every_season_it_records(
         runtime_awards):
@@ -181,7 +170,6 @@ def test_the_runtime_warehouse_answers_every_season_it_records(
             _season_guard(season)
         assert season in str(excinfo.value)
 
-
 def test_the_coverage_registry_names_the_table_the_awards_tool_reads(
         runtime_awards):
     from shared.tools.award_results import TABLE
@@ -198,7 +186,6 @@ def test_the_coverage_registry_names_the_table_the_awards_tool_reads(
     coverage_text = CAPABILITIES["award_results"].coverage
     assert "Basketball-Reference" in coverage_text
     assert "nba_api" not in coverage_text
-
 
 def test_intake_accepts_every_award_season_the_runtime_warehouse_records(
         runtime_awards):
@@ -231,7 +218,6 @@ def test_intake_accepts_every_award_season_the_runtime_warehouse_records(
     assert "1981-82" in joined
     assert "silver_bbref_awards" in joined
 
-
 def test_a_wrong_subject_fails_loud_through_the_capability_end_to_end(
         runtime_awards):
     from v2.adapters import call_capability
@@ -245,7 +231,6 @@ def test_a_wrong_subject_fails_loud_through_the_capability_end_to_end(
     assert "get_award_results" in message
     assert "Ada Vega" in message
     assert "2024-25" in message
-
 
 def test_a_missing_table_is_a_loud_absence_naming_the_table(runtime_awards,
                                                           tmp_path,
@@ -273,7 +258,6 @@ def test_a_missing_table_is_a_loud_absence_naming_the_table(runtime_awards,
 
     assert absent_tables_for_capability("award_results", {}) == (
         award_results.TABLE,)
-
 
 def test_a_wrong_subject_fails_loud_through_the_chat_stream(runtime_awards,
                                                            monkeypatch,

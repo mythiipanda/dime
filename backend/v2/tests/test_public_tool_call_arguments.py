@@ -9,7 +9,6 @@ SEASON = "2025-26"
 PROBE = "UNPUBLISHED_PROBE_VALUE"
 PRIVATE_ID = "internal-identity-3f9c"
 
-
 def _events(text: str) -> list[tuple[str, dict]]:
     parsed: list[tuple[str, dict]] = []
     for block in text.split("\n\n"):
@@ -24,12 +23,10 @@ def _events(text: str) -> list[tuple[str, dict]]:
             parsed.append((name, data))
     return parsed
 
-
 def _single(text: str, event: str) -> dict:
     found = [payload for name, payload in _events(text) if name == event]
     assert len(found) == 1, f"expected exactly one {event} event, got {len(found)}"
     return found[0]
-
 
 def _stream(monkeypatch, tmp_path: Path, runtime_factory) -> str:
     from fastapi import FastAPI
@@ -48,7 +45,6 @@ def _stream(monkeypatch, tmp_path: Path, runtime_factory) -> str:
     app.include_router(routes.router, prefix="/api")
     return TestClient(app).post("/api/v2/chat/stream", json={"q": "x"}).text
 
-
 def _quiet_result():
     from v2 import contracts
     from v2.runtime.models import ExecutionResult, RuntimeResult
@@ -59,7 +55,6 @@ def _quiet_result():
         draft=contracts.DraftReport(sections=[], claims=[]),
         verification=contracts.VerificationReport(status="pass"),
     )
-
 
 def _counting_capability(name, rows, calls):
     from v2.runtime.fakes import FakeCapability
@@ -73,7 +68,6 @@ def _counting_capability(name, rows, calls):
 
     capability.execute = counting_execute
     return capability
-
 
 class Invocation:
     def __init__(self) -> None:
@@ -97,7 +91,6 @@ class Invocation:
 
         return [entry for entry in self.ledger.entries
                 if entry.kind == LedgerKind.TOOL_RESULT]
-
 
 def _stream_one_invocation(monkeypatch, tmp_path, name, arguments, rows,
                            activity_from_route=True) -> Invocation:
@@ -130,7 +123,6 @@ def _stream_one_invocation(monkeypatch, tmp_path, name, arguments, rows,
     probe.text = _stream(monkeypatch, tmp_path, build)
     return probe
 
-
 def test_stream_tool_call_publishes_the_arguments_the_ledger_recorded(monkeypatch, tmp_path):
     arguments = {"a": SUBJECT_A, "b": SUBJECT_B, "season": SEASON, "probe_key": PROBE}
 
@@ -155,7 +147,6 @@ def test_stream_tool_call_publishes_the_arguments_the_ledger_recorded(monkeypatc
     assert withheld == {"probe_key"}
     assert len(probe.calls) == 1
 
-
 def test_stream_tool_call_counts_differ_and_agree_with_the_ledger(monkeypatch, tmp_path):
     declared = {"player": SUBJECT_A, "opponent": SUBJECT_B, "season": SEASON}
     arguments = {**declared, "surprise": PROBE, "second_surprise": PROBE}
@@ -171,7 +162,6 @@ def test_stream_tool_call_counts_differ_and_agree_with_the_ledger(monkeypatch, t
     assert probe.recorded_arguments == arguments
     assert PROBE not in probe.text
 
-
 def test_stream_tool_call_withholds_internal_identity_arguments(monkeypatch, tmp_path):
     arguments = {"player_id": PRIVATE_ID, "team_id": PRIVATE_ID}
 
@@ -184,7 +174,6 @@ def test_stream_tool_call_withholds_internal_identity_arguments(monkeypatch, tmp
     assert data["arguments"] == []
     assert probe.recorded_arguments == arguments
     assert PRIVATE_ID not in probe.text
-
 
 def test_stream_refuses_a_capability_invoked_without_required_arguments(monkeypatch, tmp_path):
     probe = _stream_one_invocation(
@@ -208,7 +197,6 @@ def test_stream_refuses_a_capability_invoked_without_required_arguments(monkeypa
     assert '"status":"ok"' not in probe.text
     assert probe.text.count("event: work_log") == 1
     assert '"status":"partial"' in probe.text
-
 
 def test_executor_refuses_a_plan_node_missing_required_arguments_before_it_runs():
     import asyncio

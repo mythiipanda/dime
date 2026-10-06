@@ -14,14 +14,11 @@ from shared.sources import nba_transactions as src
 
 FIXTURES = Path(__file__).resolve().parent / "fixtures" / "nba_transactions"
 
-
 def _csv_text() -> str:
     return (FIXTURES / "player_trans_sample.csv").read_text(encoding="utf-8")
 
-
 def _json_text() -> str:
     return (FIXTURES / "player_movement_sample.json").read_text(encoding="utf-8")
-
 
 def _scratch(tmp_path, monkeypatch):
     monkeypatch.setattr(store, "DB_PATH", tmp_path / "tx.duckdb")
@@ -29,25 +26,21 @@ def _scratch(tmp_path, monkeypatch):
     store.warehouse_tables_cache_clear()
     store.warehouse_pool_clear()
 
-
 def _argv(*extra: str) -> list[str]:
     return ["seed_transactions",
             "--csv-file", str(FIXTURES / "player_trans_sample.csv"),
             "--json-file", str(FIXTURES / "player_movement_sample.json"),
             *extra]
 
-
 def test_parse_csv_carries_schema_and_row_count():
     frame = src.parse_csv(_csv_text())
     assert frame.schema == src.SCHEMA
     assert frame.height == 7
 
-
 def test_parse_json_carries_schema_and_row_count():
     frame = src.parse_json(_json_text())
     assert frame.schema == src.SCHEMA
     assert frame.height == 5
-
 
 def test_union_dedupes_overlap_and_the_survivor_names_both_sources():
     union = src.union(src.parse_csv(_csv_text()), src.parse_json(_json_text()))
@@ -61,7 +54,6 @@ def test_union_dedupes_overlap_and_the_survivor_names_both_sources():
         "DB/Player_Trans.csv", "NBA_Player_Movement.json"}
     assert overlap["FETCHED_AT"][0]
 
-
 def test_provenance_on_every_row():
     union = src.union(src.parse_csv(_csv_text()), src.parse_json(_json_text()))
     assert union.filter(pl.col("SOURCE").str.len_chars() == 0).height == 0
@@ -70,7 +62,6 @@ def test_provenance_on_every_row():
     assert set(union["SOURCE"]) <= {"rossgraham-csv", "stats-nba-json",
                                     "rossgraham-csv+stats-nba-json"}
 
-
 def test_loud_failure_on_empty_sources():
     with pytest.raises(src.TransactionsSourceError, match="rossgraham-csv"):
         src.parse_csv("")
@@ -78,7 +69,6 @@ def test_loud_failure_on_empty_sources():
         src.parse_json("{}")
     with pytest.raises(src.TransactionsSourceError, match="not JSON"):
         src.parse_json("This is not JSON")
-
 
 def test_seeder_writes_every_season_with_provenance(tmp_path, monkeypatch):
     _scratch(tmp_path, monkeypatch)
@@ -97,7 +87,6 @@ def test_seeder_writes_every_season_with_provenance(tmp_path, monkeypatch):
     finally:
         con.close()
 
-
 def test_second_run_is_a_noop_and_table_unchanged(tmp_path, monkeypatch):
     _scratch(tmp_path, monkeypatch)
     progress = tmp_path/ "progress.json"
@@ -111,7 +100,6 @@ def test_second_run_is_a_noop_and_table_unchanged(tmp_path, monkeypatch):
     second = con.execute(f'SELECT * FROM "{seed.TABLE}"').pl()
     con.close()
     assert first.equals(second)
-
 
 def test_rerun_without_progress_still_changes_nothing(tmp_path, monkeypatch):
     _scratch(tmp_path, monkeypatch)
@@ -129,7 +117,6 @@ def test_rerun_without_progress_still_changes_nothing(tmp_path, monkeypatch):
     assert first.equals(second)
     assert first["FETCHED_AT"].equals(second["FETCHED_AT"])
 
-
 def test_dry_run_reports_without_writing(tmp_path, monkeypatch):
     _scratch(tmp_path, monkeypatch)
     progress = tmp_path / "progress.json"
@@ -143,7 +130,6 @@ def test_dry_run_reports_without_writing(tmp_path, monkeypatch):
         assert not progress.exists()
     finally:
         con.close()
-
 
 def test_progress_marks_done_seasons_resume(tmp_path, monkeypatch):
     _scratch(tmp_path, monkeypatch)
@@ -161,7 +147,6 @@ def test_progress_marks_done_seasons_resume(tmp_path, monkeypatch):
     finally:
         con.close()
 
-
 def test_missing_season_slice_fails_loudly(tmp_path, monkeypatch):
     _scratch(tmp_path, monkeypatch)
     progress = tmp_path / "progress.json"
@@ -176,7 +161,6 @@ def test_missing_season_slice_fails_loudly(tmp_path, monkeypatch):
         assert seed.TABLE not in tables
     finally:
         con.close()
-
 
 def test_seed_season_empty_slice_raises_naming_season_and_source():
     union = src.union(src.parse_csv(_csv_text()), src.parse_json(_json_text()))

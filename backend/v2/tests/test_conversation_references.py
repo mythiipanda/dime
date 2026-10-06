@@ -5,7 +5,6 @@ import pytest
 from v2.conversations import ConversationStore
 from v2.runtime.ledger import LedgerKind, RunLedger
 
-
 def _ledger_with_turns() -> RunLedger:
     ledger = RunLedger("run")
     for turn_id, request in (("t1", "ask-one"), ("t2", "ask-two")):
@@ -17,7 +16,6 @@ def _ledger_with_turns() -> RunLedger:
         )
     return ledger
 
-
 def test_append_exchange_stores_a_ledger_reference(tmp_path) -> None:
     store = ConversationStore(tmp_path / "conversations.sqlite3")
     store.append_exchange("o", "t", "ask-one", "a-one", run_id="run", turn_id="t1")
@@ -27,7 +25,6 @@ def test_append_exchange_stores_a_ledger_reference(tmp_path) -> None:
         ("assistant", "run", "t1"),
     ]
 
-
 def test_conversation_resolves_user_content_from_the_ledger_alone(tmp_path) -> None:
     store = ConversationStore(tmp_path / "conversations.sqlite3")
     store.append_exchange("o", "t", "ask-one", "a-one", run_id="run", turn_id="t1")
@@ -35,7 +32,6 @@ def test_conversation_resolves_user_content_from_the_ledger_alone(tmp_path) -> N
     ledger = _ledger_with_turns()
     resolved = store.resolve_user_turns("o", "t", ledger.entries)
     assert resolved == ["ask-one", "ask-two"]
-
 
 def test_conversation_reference_mismatch_fails_loudly_naming_the_turn(
     tmp_path,
@@ -47,7 +43,6 @@ def test_conversation_reference_mismatch_fails_loudly_naming_the_turn(
     ledger.append(LedgerKind.TURN_END, turn_id="t1", data={"reason": "complete"})
     with pytest.raises(ValueError, match="t1"):
         store.resolve_user_turns("o", "t", ledger.entries)
-
 
 def test_legacy_rows_without_references_still_read(tmp_path) -> None:
     store = ConversationStore(tmp_path / "conversations.sqlite3")

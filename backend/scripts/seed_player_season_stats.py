@@ -20,10 +20,8 @@ BASE_COLS = [
 ADV_COLS = ["player_id", "ts_pct", "efg_pct", "usg_pct", "off_rating",
             "def_rating", "net_rating", "pie", "pace"]
 
-
 def label(end_year: int) -> str:
     return f"{end_year - 1}-{str(end_year)[2:]}"
-
 
 def main() -> None:
     args = argparse.ArgumentParser()
@@ -54,7 +52,6 @@ def main() -> None:
         total += n
         print(f"{label(y)}: {n} player-seasons")
     print(f"silver_hist_player_seasons loaded: {total} rows")
-
 
 if __name__ == "__main__":
     main()

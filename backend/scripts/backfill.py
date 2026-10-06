@@ -12,8 +12,6 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-
-
 os.environ.setdefault("DIME_LIVE_ATTEMPTS", "3")
 os.environ.setdefault("DIME_LIVE_BACKOFF_S", "4")
 
@@ -29,7 +27,6 @@ PROGRESS_PATH = Path(__file__).resolve().parent / "backfill_progress.json"
 logger = logging.getLogger(__name__)
 
 FIRST_SEASON = "2015-16"
-
 
 def default_seasons() -> str:
     try:
@@ -61,10 +58,8 @@ _PBP_KEY_RENAME = {
     "playerName": "PLAYER_NAME",
 }
 
-
 def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
-
 
 def parse_seasons(spec: str) -> list[str]:
     out: list[str] = []
@@ -79,7 +74,6 @@ def parse_seasons(spec: str) -> list[str]:
             out.append(part)
     return out
 
-
 def load_progress() -> dict:
     if PROGRESS_PATH.exists():
         try:
@@ -88,17 +82,14 @@ def load_progress() -> dict:
             return {}
     return {}
 
-
 def save_progress(state: dict) -> None:
     state["updated"] = _now()
     PROGRESS_PATH.write_text(json.dumps(state, indent=1))
-
 
 def _is_retryable(msg: str) -> bool:
     m = msg.lower()
     return ("429" in m or "too many" in m or "timeout" in m
             or "timed out" in m or "temporar" in m)
-
 
 def fetch_with_backoff(label: str, fn, sleep_s: float):
     delay = 8.0
@@ -111,7 +102,7 @@ def fetch_with_backoff(label: str, fn, sleep_s: float):
                 res = _base.FetchResult(
                     frame=res,
                     meta=_base.FetchMeta(source="nba_api", season=""))
-        except Exception as exc:  # noqa: BLE001 - driver boundary
+        except Exception as exc:
             res = _base.empty("nba_api", "", f"{type(exc).__name__}: {exc}")
         if res.ok:
             return res, ""
@@ -122,7 +113,6 @@ def fetch_with_backoff(label: str, fn, sleep_s: float):
             continue
         return None, f"{label}: {last_err}"
     return None, f"{label}: backoff exhausted ({last_err[:120]})"
-
 
 def season_games(season: str, sleep_s: float, state: dict) -> list[str]:
     cached = state.get("games", {}).get(season)
@@ -155,10 +145,6 @@ def season_games(season: str, sleep_s: float, state: dict) -> list[str]:
     save_progress(state)
     return [g for st in SEASON_TYPES for g in found.get(st, [])]
 
-
-
-
-
 def _canon(frame: pl.DataFrame) -> pl.DataFrame:
     exprs = []
     for c, dt in frame.schema.items():
@@ -175,14 +161,12 @@ def _canon(frame: pl.DataFrame) -> pl.DataFrame:
             exprs.append(pl.col(c).cast(pl.String))
     return frame.select(exprs)
 
-
 def insert_game_rows(table: str, frame: pl.DataFrame, season: str,
                      source: str, entity: str, game_id: str,
                      view: str = "") -> int:
     if frame.height == 0:
         return 0
     frame = _canon(frame)
-
 
     if "GAME_ID" not in frame.columns and "gameId" in frame.columns:
         frame = frame.with_columns(
@@ -197,14 +181,12 @@ def insert_game_rows(table: str, frame: pl.DataFrame, season: str,
     return store.write_unit(table, frame, season, source, entity,
                             " AND ".join(where), params)
 
-
 def watermarked(table: str, season: str, entity: str) -> bool:
 
     try:
         return bool(store.last_fetch(table, season, entity))
     except Exception:
         return False
-
 
 def watermarked_entities(table: str, season: str) -> set[str]:
     try:
@@ -226,7 +208,6 @@ def watermarked_entities(table: str, season: str) -> set[str]:
     finally:
         con.close()
 
-
 class Counters:
     def __init__(self) -> None:
         self.lock = threading.Lock()
@@ -245,13 +226,11 @@ class Counters:
                 else:
                     setattr(self, k, getattr(self, k) + v)
 
-
 def _rename_traditional(frame: pl.DataFrame) -> pl.DataFrame:
     rename = {"gameId": "GAME_ID", "personId": "PLAYER_ID",
               "teamId": "TEAM_ID"}
     existing = {k: v for k, v in rename.items() if k in frame.columns}
     return frame.rename(existing) if existing else frame
-
 
 def backfill_game(game_id: str, season: str, views: list[str],
                   sleep_s: float, ctr: Counters) -> None:
@@ -304,7 +283,6 @@ def backfill_game(game_id: str, season: str, views: list[str],
                 ctr.bump(rows_ext=n)
     ctr.bump(games=1)
 
-
 def backfill_lineups(season: str, sleep_s: float, ctr: Counters) -> None:
     entity = f"lineups:{season}"
     if watermarked(LINEUP_TABLE, season, entity):
@@ -335,17 +313,14 @@ def backfill_lineups(season: str, sleep_s: float, ctr: Counters) -> None:
     frame = pl.concat(frames, how="diagonal")
     frame = _canon(frame)
 
-
     store.write_unit(LINEUP_TABLE, frame, season, "nba_api", entity,
                      "_season = ? AND _entity LIKE 'lineups:%'", [season])
     print(f"[{season}] lineups: {frame.height} rows", flush=True)
-
 
 def _snake(name: str) -> str:
     import re as _re
     return _re.sub(r"__+", "_",
                    _re.sub(r"(?<!^)(?=[A-Z])", "_", name).upper())
-
 
 def _normalize_pbp(frame: pl.DataFrame) -> pl.DataFrame:
     rename = {}
@@ -353,7 +328,6 @@ def _normalize_pbp(frame: pl.DataFrame) -> pl.DataFrame:
         c = str(c)
         rename[c] = _PBP_KEY_RENAME.get(c, _snake(c))
     return frame.rename(rename)
-
 
 def backfill_pbp_game(game_id: str, season: str, sleep_s: float,
                       ctr: Counters) -> None:
@@ -382,7 +356,6 @@ def backfill_pbp_game(game_id: str, season: str, sleep_s: float,
                          "nba_api", game_id, game_id)
     ctr.bump(rows_ext=n, games=1)
 
-
 def report_watermarks(seasons: list[str], state: dict) -> None:
     for season in seasons:
         games = state.get("games", {}).get(season, {})
@@ -399,7 +372,6 @@ def report_watermarks(seasons: list[str], state: dict) -> None:
         print(f"{season}: {total} games | trad "
               f"{len(done_trad & set(ids))} | ext {len(done_ext & set(ids))} "
               f"| pbp {len(done_pbp & set(ids))} | lineups {lu}")
-
 
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description="Multi-season boxscore + lineup backfill over stats.nba.com (nba_api).")
@@ -489,7 +461,6 @@ def main(argv=None) -> int:
           f"{ctr.skipped} skipped, {len(ctr.failed)} failed "
           f"({el/60:.1f}m elapsed)", flush=True)
     return 0
-
 
 if __name__ == "__main__":
     raise SystemExit(main())

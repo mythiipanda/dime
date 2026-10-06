@@ -11,9 +11,9 @@ HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 sys.path.insert(0, str(HERE.parent))
 
-from shared import store  # noqa: E402
-from shared.sources import nba_transactions as src  # noqa: E402
-from shared.sources.base import FetchMeta, FetchResult  # noqa: E402
+from shared import store
+from shared.sources import nba_transactions as src
+from shared.sources.base import FetchMeta, FetchResult
 
 TABLE = "silver_nba_transactions"
 PROGRESS_FILE = HERE / "seed_transactions_progress.json"
@@ -21,10 +21,8 @@ LOG_FILE = HERE / "seed_transactions.log"
 SOURCE = "nba-transactions"
 SEASON_SHAPE = re.compile(r"^\d{4}-\d{2}$")
 
-
 class SeederError(RuntimeError):
     pass
-
 
 def log(message: str) -> None:
     line = f"{datetime.now().isoformat(timespec='seconds')} {message}"
@@ -32,12 +30,10 @@ def log(message: str) -> None:
     with open(LOG_FILE, "a") as handle:
         handle.write(line + "\n")
 
-
 def load_progress(progress_file: Path) -> dict:
     if progress_file.exists():
         return json.loads(progress_file.read_text())
     return {"done": [], "failed": {}}
-
 
 def mark_done(progress_file: Path, season: str) -> None:
     state = load_progress(progress_file)
@@ -46,17 +42,14 @@ def mark_done(progress_file: Path, season: str) -> None:
     state["failed"].pop(season, None)
     progress_file.write_text(json.dumps(state, indent=1))
 
-
 def mark_failed(progress_file: Path, season: str, reason: str) -> None:
     state = load_progress(progress_file)
     state["failed"][season] = str(reason)[:300]
     state["done"] = [d for d in state["done"] if d != season]
     progress_file.write_text(json.dumps(state, indent=1))
 
-
 def season_rows(frame: pl.DataFrame, season: str) -> pl.DataFrame:
     return frame.filter(pl.col("SEASON") == season)
-
 
 def existing_season(con, season: str) -> pl.DataFrame | None:
     tables = {r[0] for r in con.execute(
@@ -70,7 +63,6 @@ def existing_season(con, season: str) -> pl.DataFrame | None:
     except Exception:
         return None
 
-
 def same_slice(existing: pl.DataFrame | None, incoming: pl.DataFrame) -> bool:
     if existing is None:
         return False
@@ -78,7 +70,6 @@ def same_slice(existing: pl.DataFrame | None, incoming: pl.DataFrame) -> bool:
     existing_rows = existing.sort(keys[:3]).select(keys)
     incoming_rows = incoming.sort(keys[:3]).select(keys)
     return existing_rows.equals(incoming_rows)
-
 
 def seed_season(season: str, frame: pl.DataFrame, con, progress_file: Path,
                 dry_run: bool) -> int:
@@ -103,7 +94,6 @@ def seed_season(season: str, frame: pl.DataFrame, con, progress_file: Path,
     log(f"{season}: {written} rows from {incoming['SOURCE_FILE'][0]}")
     return written
 
-
 def plan_seasons(frame: pl.DataFrame, from_season: str, to_season: str,
                  only: list[str]) -> list[str]:
     available = sorted(frame["SEASON"].unique().to_list())
@@ -115,7 +105,6 @@ def plan_seasons(frame: pl.DataFrame, from_season: str, to_season: str,
     if to_season:
         planned = [s for s in planned if s <= to_season]
     return planned
-
 
 def main(argv: list[str]) -> int:
     parser = argparse.ArgumentParser(prog="seed_transactions")
@@ -178,7 +167,6 @@ def main(argv: list[str]) -> int:
 
     log(f"DONE union_rows={frame.height} progress_done={len(load_progress(progress_file)['done'])}")
     return 0
-
 
 if __name__ == "__main__":
     raise SystemExit(main(sys.argv))

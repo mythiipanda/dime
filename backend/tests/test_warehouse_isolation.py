@@ -16,13 +16,10 @@ from v2.adapters import coverage
 from v2.adapters import core as adapter_core
 from v2.adapters.capabilities import CAPABILITIES
 
-
 _FETCHED_AT = "2026-01-01T00:00:00+00:00"
-
 
 def _make_warehouse(db: Path) -> None:
     _make_warehouse_with_season(db, "2024-25")
-
 
 @pytest.fixture()
 def scratch(monkeypatch):
@@ -42,7 +39,6 @@ def scratch(monkeypatch):
     coverage.coverage_cache_clear()
     shutil.rmtree(directory, ignore_errors=True)
 
-
 def _read_view_rows(view: Path) -> list:
     con = store.connect_to(view, read_only=True)
     try:
@@ -50,7 +46,6 @@ def _read_view_rows(view: Path) -> list:
             row[0] for row in con.execute("SELECT x FROM t").fetchall())
     finally:
         con.close()
-
 
 def test_capability_reads_open_read_only(scratch, monkeypatch):
     modes: list = []
@@ -82,7 +77,6 @@ def test_capability_reads_open_read_only(scratch, monkeypatch):
     assert envelope.source_identity.kind == "warehouse"
     assert modes
     assert all(mode is True for mode in modes)
-
 
 def test_parallel_runs_isolated_and_write_conflict_loud(scratch):
     import subprocess
@@ -126,7 +120,6 @@ def test_parallel_runs_isolated_and_write_conflict_loud(scratch):
     assert _read_view_rows(first) == [1, 2]
     assert _read_view_rows(second) == [1, 2]
 
-
 def test_coverage_freshness_discriminates_same_size_same_mtime():
     directory = Path(tempfile.mkdtemp(prefix="whfresh_", dir="/tmp"))
     try:
@@ -147,7 +140,6 @@ def test_coverage_freshness_discriminates_same_size_same_mtime():
     finally:
         shutil.rmtree(directory, ignore_errors=True)
 
-
 def _make_warehouse_with_season(db: Path, season: str) -> None:
     con = duckdb.connect(str(db))
     try:
@@ -167,7 +159,6 @@ def _make_warehouse_with_season(db: Path, season: str) -> None:
         con.execute("CHECKPOINT")
     finally:
         con.close()
-
 
 def test_coverage_cache_keyed_on_content_identity(scratch):
     db = store.DB_PATH

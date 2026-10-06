@@ -4,7 +4,7 @@ from typing import Any, Callable
 
 from langchain_core.tools import tool
 
-from ._core import clamp_season, clamp_scope, last_completed_season, resolve_season
+from ._core import clamp_season, clamp_scope, resolve_season
 
 STAT_ALIASES = {
     "points": "PTS", "point": "PTS", "pts": "PTS",
@@ -29,7 +29,6 @@ DEFAULT_THRESHOLDS = {
 
 DD_CATS = ("PTS", "REB", "AST", "STL", "BLK")
 
-
 def _num(value: object) -> float:
     try:
         if value is None or value == "":
@@ -38,10 +37,8 @@ def _num(value: object) -> float:
     except (TypeError, ValueError):
         return 0.0
 
-
 def _dd_count(row: dict[str, Any]) -> int:
     return sum(1 for c in DD_CATS if _num(row.get(c)) >= 10)
-
 
 def _cond_for(stat_key: str, threshold: float) -> Callable[[dict], bool]:
     if stat_key == "W":
@@ -54,7 +51,6 @@ def _cond_for(stat_key: str, threshold: float) -> Callable[[dict], bool]:
         return lambda r: _dd_count(r) >= 3
     return lambda r, t=threshold: _num(r.get(stat_key)) >= t
 
-
 def _value_for(stat_key: str) -> Callable[[dict], Any]:
     if stat_key in ("W", "L"):
         return lambda r: str(r.get("WL") or "").upper()
@@ -62,20 +58,17 @@ def _value_for(stat_key: str) -> Callable[[dict], Any]:
         return lambda r: _dd_count(r)
     return lambda r: _num(r.get(stat_key))
 
-
 def _parse_player_date(s: object) -> _dt.date | None:
     try:
         return _dt.datetime.strptime(str(s or "").strip(), "%b %d, %Y").date()
     except (TypeError, ValueError):
         return None
 
-
 def _parse_team_date(s: object) -> _dt.date | None:
     try:
         return _dt.datetime.strptime(str(s or "").strip(), "%Y-%m-%d").date()
     except (TypeError, ValueError):
         return None
-
 
 def compute_streaks(
     games: list[dict[str, Any]],
@@ -130,8 +123,6 @@ def compute_streaks(
     out.sort(key=lambda s: s["end_date"], reverse=True)
     out.sort(key=lambda s: -s["streak"])
 
-
-
     seen: set = set()
     deduped: list[dict[str, Any]] = []
     for s in out:
@@ -141,7 +132,6 @@ def compute_streaks(
         seen.add(key)
         deduped.append(s)
     return deduped[: max(1, min(int(top or 10), 25))]
-
 
 def _load_player_games(season: str) -> tuple[list[dict], dict]:
     season = resolve_season(season)
@@ -175,7 +165,6 @@ def _load_player_games(season: str) -> tuple[list[dict], dict]:
         })
     scanned = len({g["holder_id"] for g in games})
     return games, {"players_scanned": scanned}
-
 
 def _load_team_games(season: str) -> tuple[list[dict], dict]:
     season = resolve_season(season)
@@ -214,20 +203,10 @@ def _load_team_games(season: str) -> tuple[list[dict], dict]:
     scanned = len({g["holder_id"] for g in games})
     return games, {"teams_scanned": scanned, "regular_season_only": True}
 
-
-@tool
+@tool(description="Longest or currently-active streaks, ranked league-wide.\n\nstat: points/rebounds/assists/threes/steals/blocks/double-doubles/\ntriple-doubles, or wins/losses for team scope. threshold: minimum per\ngame (defaults: 30 pts, 10 reb/ast, 4 threes, 3 stl/blk; ignored for\ndouble-doubles, triple-doubles, wins, losses). scope: player or team.\nmode: longest or active. Warehouse only; active means the streak\nincludes the holder's latest game on record.")
 def get_streaks(stat: str = "points", threshold: float | None = None,
                 scope: str = "player", season: str | None = None,
                 mode: str = "longest", top: int = 10) -> dict[str, Any]:
-    """Longest or currently-active streaks, ranked league-wide.
-
-    stat: points/rebounds/assists/threes/steals/blocks/double-doubles/
-    triple-doubles, or wins/losses for team scope. threshold: minimum per
-    game (defaults: 30 pts, 10 reb/ast, 4 threes, 3 stl/blk; ignored for
-    double-doubles, triple-doubles, wins, losses). scope: player or team.
-    mode: longest or active. Warehouse only; active means the streak
-    includes the holder's latest game on record.
-    """
     season = resolve_season(season)
     stat_key = STAT_ALIASES.get(str(stat or "").strip().lower())
     if stat_key is None:

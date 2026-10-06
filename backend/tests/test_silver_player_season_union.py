@@ -19,7 +19,6 @@ from v2.adapters import coverage as coverage_mod
 CURRY = 201939
 LEBRON = 2544
 
-
 @pytest.fixture()
 def scratch(monkeypatch, tmp_path):
     path = tmp_path / "union.duckdb"
@@ -35,14 +34,12 @@ def scratch(monkeypatch, tmp_path):
     core_mod.last_completed_season_cache_clear()
     coverage_mod.coverage_cache_clear()
 
-
 def _save(table: str, frame: pl.DataFrame, season: str,
           source: str = "test-source") -> int:
     return store.save_frame(
         table,
         FetchResult(frame=frame, meta=FetchMeta(source=source, season=season)),
         entity="league", replace_season=True)
-
 
 def _hist_frame() -> pl.DataFrame:
     return pl.DataFrame([{
@@ -53,7 +50,6 @@ def _hist_frame() -> pl.DataFrame:
         "fg3_pct": 0.408, "ft_pct": 0.915, "ts_pct": 0.616,
     }])
 
-
 def _leaders_frame() -> pl.DataFrame:
     return pl.DataFrame([{
         "PLAYER_ID": LEBRON, "PLAYER": "LeBron James", "TEAM": "LAL",
@@ -62,14 +58,12 @@ def _leaders_frame() -> pl.DataFrame:
         "FG3_PCT": 0.410, "FT_PCT": 0.750,
     }])
 
-
 def _advanced_frame() -> pl.DataFrame:
     return pl.DataFrame([{
         "PLAYER_ID": LEBRON, "PLAYER_NAME": "LeBron James",
         "TEAM_ABBREVIATION": "LAL", "AGE": 40.0, "GP": 71,
         "MIN": 35.0, "TS_PCT": 0.610, "FG_PCT": 0.540,
     }])
-
 
 def _seasons(path: Path, table: str) -> set[str]:
     con = duckdb.connect(str(path), read_only=True)
@@ -78,7 +72,6 @@ def _seasons(path: Path, table: str) -> set[str]:
             f"SELECT DISTINCT _season FROM {table}").fetchall()}
     finally:
         con.close()
-
 
 def test_hist_season_copies_rates_with_honest_gs(scratch):
     _save(union.HIST_SOURCE, _hist_frame(), "2023-24")
@@ -98,7 +91,6 @@ def test_hist_season_copies_rates_with_honest_gs(scratch):
     assert row["_prov_PPG"] == union.HIST_SOURCE
     assert row["_prov_GS"] == union.ABSENT
     assert row["_season"] == "2023-24"
-
 
 def test_totals_season_computes_per_game_at_boundary(scratch):
     _save(union.LEADERS_SOURCE, _leaders_frame(), "2025-26")
@@ -121,7 +113,6 @@ def test_totals_season_computes_per_game_at_boundary(scratch):
     assert row["_prov_TS_PCT"] == union.ADV_SOURCE
     assert row["_prov_GS"] == union.ABSENT
 
-
 def test_rerun_skips_loaded_and_never_duplicates(scratch):
     _save(union.HIST_SOURCE, _hist_frame(), "2023-24")
     _save(union.LEADERS_SOURCE, _leaders_frame(), "2025-26")
@@ -136,7 +127,6 @@ def test_rerun_skips_loaded_and_never_duplicates(scratch):
                       "rows": 0}
     assert store.read_frame(union.TABLE).height == before == 2
 
-
 def test_empty_source_names_season_and_writes_nothing(scratch):
     _save(union.HIST_SOURCE, _hist_frame(), "2023-24")
 
@@ -144,7 +134,6 @@ def test_empty_source_names_season_and_writes_nothing(scratch):
         union.seed_season("2021-22")
 
     assert union.loaded_seasons() == set()
-
 
 def test_player_report_returns_real_2025_26_line_with_team(scratch):
     from shared.tools import player as player_mod
@@ -165,7 +154,6 @@ def test_player_report_returns_real_2025_26_line_with_team(scratch):
     assert report["ok"] is True
     assert report["rows"]["season_line"]["TEAM"] == "LAL"
 
-
 def test_season_outside_every_source_fails_loudly_naming_coverage(scratch):
     from shared.tools import player as player_mod
     _save(union.HIST_SOURCE, _hist_frame(), "2023-24")
@@ -181,7 +169,6 @@ def test_season_outside_every_source_fails_loudly_naming_coverage(scratch):
     assert "2005-06" in out["error"]
     assert "2023-24" in out["error"] or "2025-26" in out["error"]
 
-
 def test_wrong_subject_negative_through_true_path(scratch):
     from shared.tools import player as player_mod
     _save(union.LEADERS_SOURCE, _leaders_frame(), "2025-26")
@@ -193,7 +180,6 @@ def test_wrong_subject_negative_through_true_path(scratch):
 
     assert out["ok"] is False
     assert "silver_player_season" not in out.get("error", "")
-
 
 def _bbref_pg() -> pd.DataFrame:
     return pd.DataFrame([
@@ -211,7 +197,6 @@ def _bbref_pg() -> pd.DataFrame:
          "FG%": 0.449, "3P%": 0.408, "FT%": 0.915, "FGA": 19.0},
     ])
 
-
 def test_bbref_tot_team_rule_and_provenance(scratch):
     nm = {"LeBron James": LEBRON, "Stephen Curry": CURRY}
 
@@ -224,7 +209,6 @@ def test_bbref_tot_team_rule_and_provenance(scratch):
     assert lebron["TS_PCT"] is None
     assert lebron["_prov_PPG"] == bbref.BBREF
     assert lebron["_prov_TS_PCT"] == bbref.ABSENT_TS
-
 
 def test_bbref_season_idempotent_and_empty_names_season(scratch):
     nm = {"LeBron James": LEBRON, "Stephen Curry": CURRY}

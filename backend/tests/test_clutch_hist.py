@@ -8,7 +8,6 @@ from shared.tools.league import get_clutch, get_situational_splits
 
 SEASON = "2022-23"
 
-
 def _clutch_rows(season, seconds, margin, season_type):
     con = store.connect(read_only=True)
     try:
@@ -23,14 +22,12 @@ def _clutch_rows(season, seconds, margin, season_type):
     finally:
         con.close()
 
-
 def _parse_clock(clock):
     s = str(clock)
     if not s.startswith("PT") or not s.endswith("S"):
         return None
     bar = s.index("M")
     return int(s[2:bar]) * 60.0 + float(s[bar + 1:-1])
-
 
 def _fold(rows, seconds, margin, prefixes):
     home_of = {}
@@ -79,7 +76,6 @@ def _fold(rows, seconds, margin, prefixes):
             final.setdefault(gid, []).append(r)
     return final, home_of
 
-
 def test_hist_player_clutch_matches_independent_fold():
     out = get_clutch.invoke(
         {"scope": "player", "season": SEASON,
@@ -108,7 +104,6 @@ def test_hist_player_clutch_matches_independent_fold():
     assert top["PTS"] == pts
     assert top["FG_PCT"] == round(fgm / fga, 3)
 
-
 def test_tighter_definition_shrinks_output():
     wide = get_clutch.invoke(
         {"scope": "player", "season": SEASON,
@@ -126,7 +121,6 @@ def test_tighter_definition_shrinks_output():
     assert tight_pts < wide_pts
     assert len(tight["rows"]) <= len(wide["rows"])
 
-
 def test_season_type_playoffs_isolates_postseason():
     reg = get_clutch.invoke(
         {"scope": "player", "season": SEASON,
@@ -140,7 +134,6 @@ def test_season_type_playoffs_isolates_postseason():
     assert reg["meta"]["games"] > po["meta"]["games"]
     assert po["meta"]["clutch_definition"]["season_type"] == "playoffs"
 
-
 def test_pre_pbp_season_returns_honest_gap():
     out = get_clutch.invoke(
         {"scope": "player", "season": "2015-16",
@@ -149,13 +142,11 @@ def test_pre_pbp_season_returns_honest_gap():
     assert out["ok"] is False
     assert "2020-21" in out["error"] and "2024-25" in out["error"]
 
-
 def test_current_season_reads_silver_clutch():
     out = get_clutch.invoke({"scope": "player", "season": "2025-26"})
     assert out["ok"] is True
     assert out["meta"].get("source") != "warehouse:silver_hist_pbp"
     assert len(out["rows"]) > 0
-
 
 def test_team_scope_hist_derivation_sorts_by_pts():
     out = get_clutch.invoke(
@@ -168,7 +159,6 @@ def test_team_scope_hist_derivation_sorts_by_pts():
     pts = [r["PTS"] for r in out["rows"]]
     assert pts == sorted(pts, reverse=True)
     assert all(r["TEAM_ABBREVIATION"] for r in out["rows"])
-
 
 def test_situational_splits_reconcile_to_overall():
     top = get_clutch.invoke(
@@ -192,7 +182,6 @@ def test_situational_splits_reconcile_to_overall():
     assert sum(r["FGA"] for r in states) == overall["FGA"]
     venues = [r for r in out["rows"]["splits"] if r["split"] in ("home", "away")]
     assert sum(r["PTS"] for r in venues) == overall["PTS"]
-
 
 def test_situational_team_splits_cover_entry_states():
     out = get_situational_splits.invoke(

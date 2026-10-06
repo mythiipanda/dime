@@ -1,4 +1,4 @@
-import hashlib,json,pytest
+import hashlib,pytest
 from v2.versioned_persistence import *
 from v2.arguments import RequirementV3
 def test_inspector_only_identifies_and_hashes_v2():

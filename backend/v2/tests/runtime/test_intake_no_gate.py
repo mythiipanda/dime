@@ -2,9 +2,7 @@ import pytest
 
 from v2.adapters.models import ModelIntake
 
-
 REQUEST = "Who led the NBA in assists in the 2025-26 season, and how many?"
-
 
 INTAKE_TASK = {
     "goal": "assists leader",
@@ -24,7 +22,6 @@ INTAKE_TASK = {
     ],
 }
 
-
 def _kwargs():
     return {
         "provider": "stub",
@@ -32,7 +29,6 @@ def _kwargs():
         "capability_catalog": {"standings": {}},
         "requirement_review": False,
     }
-
 
 class _Model:
     def __init__(self, task):
@@ -43,7 +39,6 @@ class _Model:
         self.calls.append(call["envelope"].route)
         return call["schema"].model_validate(self.task)
 
-
 @pytest.mark.anyio
 async def test_understand_makes_exactly_one_model_call_and_admits():
     model = _Model(INTAKE_TASK)
@@ -53,7 +48,6 @@ async def test_understand_makes_exactly_one_model_call_and_admits():
     assert task.season is not None and task.season.value == "2025-26"
     assert task.metric_ids == ["AST"]
     assert task.requirements and task.requirements[0].id == "leader"
-
 
 @pytest.mark.anyio
 async def test_empty_task_admits_without_review_second_pass():
@@ -68,12 +62,10 @@ async def test_empty_task_admits_without_review_second_pass():
     assert task.entities == []
     assert task.requirements == []
 
-
 def test_intake_admission_flag_is_gone():
     model = _Model(INTAKE_TASK)
     with pytest.raises(TypeError):
         ModelIntake(model, **{**_kwargs(), "intake_admission": True})
-
 
 @pytest.mark.anyio
 async def test_verify_mechanical_still_runs_downstream_unchanged():

@@ -10,7 +10,6 @@ from v2.adapters.structured import EndpointCapabilities, OutputStrategy, Support
 from v2.arguments import PlannerOutputWire
 from v2.contracts import EvidenceRequirement, TaskSpec
 
-
 UNION_LITERAL = {
     "type": "object",
     "properties": {
@@ -61,7 +60,6 @@ STRIPPED_LITERAL = {
     "required": ["subjects", "tags"],
 }
 
-
 def _make_model(strategy=OutputStrategy.TOOL_CALL):
     capabilities = EndpointCapabilities(
         endpoint="https://stub.invalid/v1",
@@ -79,14 +77,12 @@ def _make_model(strategy=OutputStrategy.TOOL_CALL):
         capabilities=capabilities,
     )
 
-
 def _wire_schema(schema, name, strategy=OutputStrategy.TOOL_CALL):
     return _make_model(strategy)._map_json_schema(
         OutputObjectDefinition(
             json_schema=schema, name=name, strict=True
         )
     )["json_schema"]["schema"]
-
 
 def _bound_paths(value):
     found = []
@@ -104,19 +100,15 @@ def _bound_paths(value):
     visit(value, "$")
     return sorted(found)
 
-
 def test_union_item_array_bounds_dropped_with_shape_preserved():
     assert _wire_schema(UNION_LITERAL, "Probe") == STRIPPED_LITERAL
-
 
 def test_plain_string_array_bounds_dropped_with_shape_preserved():
     wire = _wire_schema(UNION_LITERAL, "Probe")
     assert wire["properties"]["tags"] == {"type": "array", "items": {"type": "string"}}
 
-
 def test_wire_schema_holds_no_bounds_anywhere():
     assert _bound_paths(_wire_schema(UNION_LITERAL, "Probe")) == []
-
 
 def test_taskspec_wire_drops_plain_array_bound_preserves_items():
     schema = TypeAdapter(TaskSpec).json_schema()
@@ -131,7 +123,6 @@ def test_taskspec_wire_drops_plain_array_bound_preserves_items():
     assert _bound_paths(wire) == []
     assert json.dumps(schema, sort_keys=True) == before
 
-
 def test_planner_wire_path_drops_bounds():
     schema = TypeAdapter(PlannerOutputWire).json_schema()
     assert _bound_paths(schema) != []
@@ -140,7 +131,6 @@ def test_planner_wire_path_drops_bounds():
     assert _bound_paths(wire) == []
     assert "nodes" in wire["properties"]
     assert json.dumps(schema, sort_keys=True) == before
-
 
 def _forbidden_paths(value):
     found = []
@@ -159,7 +149,6 @@ def _forbidden_paths(value):
     visit(value, "$")
     return sorted(found)
 
-
 class _CapturingWireModel:
     def __init__(self):
         self.wire_schemas = []
@@ -173,7 +162,6 @@ class _CapturingWireModel:
         return call["schema"].model_validate(
             {"goal": "g", "mode": "quick", "deliverable": "d"}
         )
-
 
 @pytest.mark.anyio
 async def test_understand_wire_schema_holds_no_gemini_rejected_keys():
@@ -190,7 +178,6 @@ async def test_understand_wire_schema_holds_no_gemini_rejected_keys():
     assert task.goal == "g"
     assert len(model.wire_schemas) == 1
     assert _forbidden_paths(model.wire_schemas[0]) == []
-
 
 def test_const_becomes_single_value_enum_with_shape_preserved():
     schema = {
@@ -210,7 +197,6 @@ def test_const_becomes_single_value_enum_with_shape_preserved():
     assert _forbidden_paths(wire) == []
     assert json.dumps(schema, sort_keys=True) == before
 
-
 def test_taskspec_wire_turns_kind_consts_into_enums_preserves_oneof():
     schema = TypeAdapter(TaskSpec).json_schema()
     assert schema["$defs"]["BoolArg"]["properties"]["kind"] == {
@@ -229,7 +215,6 @@ def test_taskspec_wire_turns_kind_consts_into_enums_preserves_oneof():
     assert len(wire["$defs"]["RequirementArguments"]["properties"]["entries"]["items"]["oneOf"]) == 11
     assert json.dumps(schema, sort_keys=True) == before
 
-
 def test_pydantic_rejects_too_many_skills():
     with pytest.raises(ValidationError) as exc_info:
         TypeAdapter(TaskSpec).validate_python(
@@ -245,7 +230,6 @@ def test_pydantic_rejects_too_many_skills():
         for error in exc_info.value.errors(include_url=False)
         if error["type"] == "too_long"
     ]
-
 
 def test_pydantic_rejects_empty_capability_options():
     with pytest.raises(ValidationError) as exc_info:

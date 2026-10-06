@@ -20,12 +20,10 @@ from v2.runtime import RequestEnvelope
 ATTEMPT_BUDGET_S = 30.0
 ROUTE_BUDGET_S = 60.0
 
-
 def _envelope() -> RequestEnvelope:
     return RequestEnvelope.freeze(
         provider="inception", model="primary", route="requirement_review",
         prompt="p", context={}, tool_schemas={}, planner_version="v2")
-
 
 def _stage_model(budgets: ModelBudgets | None = None) -> ProviderStructuredModel:
     client = httpx.AsyncClient(transport=httpx.MockTransport(
@@ -42,14 +40,12 @@ def _stage_model(budgets: ModelBudgets | None = None) -> ProviderStructuredModel
     model._models = lambda: [("inception", chat_model)]
     return model
 
-
 def _configured_budgets() -> ModelBudgets:
     return ModelBudgets(
         transport_timeout_s=600.0,
         defaults=RoutePolicy(attempt_timeout_s=ATTEMPT_BUDGET_S),
         routes={"requirement_review": RoutePolicy(
             attempt_timeout_s=ATTEMPT_BUDGET_S, total_budget_s=ROUTE_BUDGET_S)})
-
 
 def _budgeted_clock(monkeypatch, seconds: float) -> dict:
     clock = {"value": 0.0}
@@ -84,7 +80,6 @@ def _budgeted_clock(monkeypatch, seconds: float) -> dict:
         "v2.adapters.models.time.perf_counter", lambda: clock["value"])
     return {"clock": clock, "calls": calls, "budgets": budgets_seen}
 
-
 @pytest.mark.anyio
 async def test_a_configured_requirement_review_budget_bounds_the_attempt(
         monkeypatch):
@@ -104,7 +99,6 @@ async def test_a_configured_requirement_review_budget_bounds_the_attempt(
     assert state["clock"]["value"] == 5.25
     assert model.last_failures == []
 
-
 @pytest.mark.anyio
 async def test_a_requirement_review_that_runs_out_of_route_budget_stops(
         monkeypatch):
@@ -120,7 +114,6 @@ async def test_a_requirement_review_that_runs_out_of_route_budget_stops(
             for failure in model.last_failures] == [
                 ("strict_schema", "timeout"), ("tool_call", "timeout"),
                 ("prompted_json", "requirement_review_deadline")]
-
 
 @pytest.mark.anyio
 async def test_a_fast_requirement_review_failure_walks_every_rung(

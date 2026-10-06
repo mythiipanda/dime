@@ -18,13 +18,11 @@ RECORDED = (
     (2026, "2025-26"),
 )
 
-
 def _page(year: int):
     def transport(url: str) -> str:
         return (FIXTURES / f"awards_{year}.html").read_text(encoding="utf-8")
 
     return transport
-
 
 @pytest.fixture(scope="module")
 def recorded_awards(tmp_path_factory):
@@ -44,7 +42,6 @@ def recorded_awards(tmp_path_factory):
         store.DB_PATH, store.LOCK_PATH = original
     return recorded
 
-
 @pytest.fixture
 def awards_warehouse(recorded_awards, tmp_path, monkeypatch):
     from shared import store
@@ -62,7 +59,6 @@ def awards_warehouse(recorded_awards, tmp_path, monkeypatch):
     coverage.coverage_cache_clear()
     return path
 
-
 @pytest.fixture(autouse=True)
 def _open_chat_budget():
     from v2.api import routes
@@ -70,7 +66,6 @@ def _open_chat_budget():
     routes._CHAT_HITS.clear()
     yield
     routes._CHAT_HITS.clear()
-
 
 def test_the_capability_names_its_tool_and_its_coverage_table():
     from shared.tools import v1_tools
@@ -97,7 +92,6 @@ def test_the_capability_names_its_tool_and_its_coverage_table():
     assert spec.task_season_scoped is True
     assert spec.season_arg == "season"
 
-
 def test_the_catalog_publishes_the_view_enum_so_no_routing_can_pick_one():
     from v2.argument_schemas import compile_capability_catalog
     from v2.runtime.assembly import capability_catalog
@@ -110,7 +104,6 @@ def test_the_catalog_publishes_the_view_enum_so_no_routing_can_pick_one():
     assert view["required"] is True
     assert view["branches"][0]["constraints"]["enum"] == [
         "winner", "field", "player_awards"]
-
 
 def test_the_capability_declares_units_for_every_numeric_output():
     from v2.adapters.capabilities import (
@@ -131,7 +124,6 @@ def test_the_capability_declares_units_for_every_numeric_output():
     assert "fraction scale 0-1" in definitions["award_share"]
     assert "points_max" in definitions["points_won"]
 
-
 def test_the_declared_vocabulary_covers_every_field_the_award_tool_returns(
         awards_warehouse):
     from v2.adapters import call_capability
@@ -146,7 +138,6 @@ def test_the_declared_vocabulary_covers_every_field_the_award_tool_returns(
     assert {"player", "coach", "award_share", "points_won", "points_max",
             "votes_first", "votes_second", "votes_third", "rank"} <= declared
 
-
 def test_the_names_a_planner_asks_for_resolve_to_a_returned_field():
     from v2.adapters.capabilities import CAPABILITIES, resolve_metric_column
 
@@ -160,14 +151,12 @@ def test_the_names_a_planner_asks_for_resolve_to_a_returned_field():
     assert resolve_metric_column(spec, "VOTE_SHARE") == "award_share"
     assert resolve_metric_column(spec, "HOME_RUNS") is None
 
-
 def test_the_capability_description_separates_a_result_from_a_race():
     from v2.adapters.capabilities import CAPABILITY_DESCRIPTIONS
 
     description = CAPABILITY_DESCRIPTIONS["award_results"]
     assert "Official NBA award results" in description
     assert "never a model score" in description
-
 
 def test_a_real_season_through_the_capability_returns_the_published_winner(
         awards_warehouse):
@@ -211,7 +200,6 @@ def test_a_real_season_through_the_capability_returns_the_published_winner(
     assert envelope.source == "v1:get_award_results:warehouse"
     assert envelope.as_of is not None
 
-
 def test_every_declared_unit_reaches_a_row_the_verifier_can_find(
         awards_warehouse):
     from v2.adapters import call_capability
@@ -229,7 +217,6 @@ def test_every_declared_unit_reaches_a_row_the_verifier_can_find(
     assert not declared - row_keys
     assert set(envelope.units) <= declared
 
-
 class WinnerIntake:
     def __init__(self) -> None:
         from v2.contracts import RunMode, SeasonRef, TaskSpec
@@ -244,7 +231,6 @@ class WinnerIntake:
     async def understand(self, request: str, context=()):
         return self._task
 
-
 class WinnerPlanner:
     async def plan(self, task, failure_context=None):
         from v2.contracts import Plan, PlanNode
@@ -253,7 +239,6 @@ class WinnerPlanner:
             id="mvp_winner", description="official 2023-24 MVP result",
             capability_hints=["award_results"],
             arguments={"view": "winner", "award": "MVP"})])
-
 
 class WinnerSynthesizer:
     async def synthesize(self, task, evidence):
@@ -278,7 +263,6 @@ class WinnerSynthesizer:
                 evidence_ids=[envelope.evidence_id],
                 output_bindings=[binding])])
 
-
 class WinnerSemantic:
     async def verify(self, task, draft, evidence):
         from v2.contracts import VerificationReport, VerificationStatus
@@ -288,14 +272,12 @@ class WinnerSemantic:
             claim_results=[{"claim_index": index, "supported": True}
                            for index, _claim in enumerate(draft.claims)])
 
-
 def _event(text: str, name: str) -> dict:
     payloads = [chunk.split("data: ", 1)[1]
                 for chunk in text.split("\n\n")
                 if chunk.startswith(f"event: {name}\n")]
     assert payloads
     return json.loads(payloads[-1])
-
 
 def test_the_synthesizer_selector_reaches_a_flat_award_row(
         awards_warehouse, monkeypatch, tmp_path):
@@ -346,7 +328,6 @@ def test_the_synthesizer_selector_reaches_a_flat_award_row(
     assert "rows[0].award_share" not in response.text
     assert "placements" not in response.text
 
-
 RECORDED_BALLOTS = {
     "2023-24": {"player": "Nikola Jokić", "coach": "Mark Daigneault",
                 "award_share": 0.935, "votes_first": 79},
@@ -356,7 +337,6 @@ RECORDED_BALLOTS = {
 AWARD_OUTPUTS = ["PLAYER_NAME", "VOTE_SHARE", "VOTES_FIRST", "COACH"]
 OFF_BALLOT_PLAYER = "Victor Wembanyama"
 REFUSAL = "I could not verify a publishable answer"
-
 
 class BallotIntake:
     def __init__(self, season: str) -> None:
@@ -372,7 +352,6 @@ class BallotIntake:
     async def understand(self, request: str, context=()):
         return self._task
 
-
 class BallotPlanner:
     async def plan(self, task, failure_context=None):
         from v2.contracts import Plan, PlanNode
@@ -385,7 +364,6 @@ class BallotPlanner:
                      capability_hints=["award_results"],
                      arguments={"view": "winner", "award": "COY"})])
 
-
 def _admitted_value(raw):
     if isinstance(raw, bool):
         return {"kind": "boolean", "value": raw}
@@ -394,7 +372,6 @@ def _admitted_value(raw):
     if isinstance(raw, float):
         return {"kind": "float", "value": raw}
     return {"kind": "string", "value": str(raw)}
-
 
 def _award_binding(output_id, node_id, envelope, column, value):
     from v2.contracts import EvidenceOutputBinding
@@ -407,7 +384,6 @@ def _award_binding(output_id, node_id, envelope, column, value):
         unit=({"kind": "declared", "value": unit} if unit
               else {"kind": "unitless"}),
         domain="award_results")
-
 
 class BallotSynthesizer:
     def __init__(self, winner_name: str | None = None) -> None:
@@ -452,7 +428,6 @@ class BallotSynthesizer:
                     ]),
             ])
 
-
 def _ballot_stream(season, monkeypatch, tmp_path, *, winner_name=None):
     from fastapi import FastAPI
     from fastapi.testclient import TestClient
@@ -489,12 +464,10 @@ def _ballot_stream(season, monkeypatch, tmp_path, *, winner_name=None):
     return (_event(response.text, "custom_data"),
             _event(response.text, "final_answer"))
 
-
 def _authority(custom, final):
     return ([(item["output_id"], item["status"])
              for item in final["carry"]["output_statuses"]],
             {row["output_id"]: row["value"] for row in custom["tables"]})
-
 
 @pytest.mark.parametrize("season", sorted(RECORDED_BALLOTS))
 def test_an_award_question_binds_the_player_the_coach_the_share_and_the_votes(
@@ -515,7 +488,6 @@ def test_an_award_question_binds_the_player_the_coach_the_share_and_the_votes(
     assert custom["unverified_numbers"] == []
     assert REFUSAL not in final["text"]
     assert final["carry"]["verified_claims"] == 2
-
 
 def test_an_award_binding_naming_a_player_off_the_ballot_is_rejected(
         awards_warehouse, monkeypatch, tmp_path):
@@ -540,7 +512,6 @@ def test_an_award_binding_naming_a_player_off_the_ballot_is_rejected(
     assert "PLAYER_NAME could not be verified (rejected)." in final["text"]
     assert final["carry"]["verified_claims"] == 2
 
-
 def test_a_coach_asked_for_as_a_player_fails_loudly_end_to_end(awards_warehouse):
     from v2.adapters import call_capability
     from v2.adapters.core import AdapterError
@@ -553,7 +524,6 @@ def test_a_coach_asked_for_as_a_player_fails_loudly_end_to_end(awards_warehouse)
     assert "Larry Brown" in message
     assert "coach, not a player" in message
     assert "COY" in message
-
 
 def test_an_award_a_player_never_won_fails_loudly_end_to_end(awards_warehouse):
     from v2.adapters import call_capability
@@ -568,7 +538,6 @@ def test_an_award_a_player_never_won_fails_loudly_end_to_end(awards_warehouse):
     assert "Nikola Jokić" in message
     assert "MVP" in message and "ALL_NBA" in message
 
-
 def test_a_season_whose_ballot_never_existed_fails_loudly_end_to_end(
         awards_warehouse):
     from v2.adapters import call_capability
@@ -578,7 +547,6 @@ def test_a_season_whose_ballot_never_existed_fails_loudly_end_to_end(
         call_capability("award_results", {
             "view": "winner", "award": "MVP", "season": "1984-85"})
     assert "1984-85" in str(excinfo.value)
-
 
 def test_the_tool_argument_is_rejected_on_an_award_view_end_to_end(
         awards_warehouse):
@@ -590,7 +558,6 @@ def test_the_tool_argument_is_rejected_on_an_award_view_end_to_end(
             "view": "field", "award": "MVP", "season": "2023-24",
             "player": "Nikola Jokić"})
     assert "player_awards" in str(excinfo.value)
-
 
 def test_intake_blames_the_awards_table_for_an_uncovered_award_season(
         awards_warehouse):
@@ -623,7 +590,6 @@ def test_intake_blames_the_awards_table_for_an_uncovered_award_season(
     assert "2025-26" in joined
     assert CAPABILITIES["award_results"].task_season_scoped is True
 
-
 def test_the_projection_and_the_result_declare_themselves_apart(
         awards_warehouse, monkeypatch):
     from shared.tools import awards as projection
@@ -644,7 +610,6 @@ def test_the_projection_and_the_result_declare_themselves_apart(
     assert "not points, probability, vote share" in race["meta"]["score_definition"]
     assert CAPABILITIES["award_results"].tool_name != "get_award_race"
 
-
 GOLDEN_CALLS = {
     "award-mvp-winner": ({"view": "winner", "award": "MVP"}, "answer"),
     "award-coach-of-year-winner": ({"view": "winner", "award": "COY"}, "answer"),
@@ -654,7 +619,6 @@ GOLDEN_CALLS = {
         {"view": "winner", "award": "MVP"}, "refuse"),
 }
 
-
 def _golden_scenarios():
     from v2.tests.compatibility.harness import load_pack
 
@@ -663,14 +627,12 @@ def _golden_scenarios():
     return [scenario for scenario in pack["scenarios"]
             if scenario["id"] in GOLDEN_CALLS]
 
-
 def test_the_pack_carries_a_golden_question_for_every_award_call_shape():
     assert {scenario["id"] for scenario in _golden_scenarios()} == set(
         GOLDEN_CALLS)
     for scenario in _golden_scenarios():
         assert "award" in scenario["tags"]
         assert scenario["budget"]["max_tool_calls"] <= 2
-
 
 def test_every_golden_award_question_is_answered_by_the_recorded_table(
         awards_warehouse):
@@ -702,7 +664,6 @@ def test_every_golden_award_question_is_answered_by_the_recorded_table(
                        for value in envelope.metric_definitions.values()), (
                            question, needle)
 
-
 def test_the_golden_winner_scenarios_are_not_a_race(awards_warehouse):
     from v2.adapters import call_capability
 
@@ -712,7 +673,6 @@ def test_the_golden_winner_scenarios_are_not_a_race(awards_warehouse):
     assert labels == {"1T"}
     assert {row["rank"] for row in envelope.rows} == {1}
     assert "never a model score" in envelope.coverage
-
 
 def test_requirement_alignment_repairs_award_requested_outputs():
     from v2.adapters.models import _align_requirement_requested_outputs
@@ -740,7 +700,6 @@ def test_requirement_alignment_repairs_award_requested_outputs():
     repaired_raw = _align_requirement_requested_outputs(task_with(["PLAYER", "AWARD_SHARE"]))
     assert sorted(repaired_raw.requirements[0].requested_outputs) == ["PLAYER_NAME", "VOTE_SHARE"]
 
-
 class MvpAlignedIntake:
     def __init__(self) -> None:
         from v2.adapters.models import _align_requirement_requested_outputs
@@ -764,7 +723,6 @@ class MvpAlignedIntake:
     async def understand(self, request: str, context=()):
         return self._task
 
-
 class MvpAlignedPlanner:
     async def plan(self, task, failure_context=None):
         from v2.contracts import Plan, PlanNode
@@ -774,7 +732,6 @@ class MvpAlignedPlanner:
             capability_hints=["award_results"],
             covers_requirement_ids=["mvp_result"],
             arguments={"view": "winner", "award": "MVP"})])
-
 
 class MvpAlignedSynthesizer:
     async def synthesize(self, task, evidence):
@@ -805,7 +762,6 @@ class MvpAlignedSynthesizer:
                 kind=ClaimKind.OBSERVED,
                 evidence_ids=[envelope.evidence_id],
                 output_bindings=bindings)])
-
 
 def test_mvp_winner_and_share_publish_through_public_seam(
         awards_warehouse, monkeypatch, tmp_path):

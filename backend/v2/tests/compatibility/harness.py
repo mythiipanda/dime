@@ -3,7 +3,6 @@ from __future__ import annotations
 import hashlib
 from datetime import date
 import json
-import os
 import subprocess
 import time
 import urllib.request
@@ -15,7 +14,6 @@ import math
 from v2.contracts import EvidenceEnvelope, SeasonRef, VerificationReport, VerificationStatus
 from v2.runtime.ledger import LedgerEntry
 from v2.runtime.projections import admitted_evidence, tool_attempts
-
 
 @dataclass(frozen=True)
 class RevisionFingerprint:
@@ -37,7 +35,6 @@ class RevisionFingerprint:
                     digest.update(path.read_bytes())
                     digest.update(b"\0")
         return cls(revision, digest.hexdigest())
-
 
 @dataclass(frozen=True)
 class TurnTrace:
@@ -85,7 +82,6 @@ class TurnTrace:
             text=text,
         )
 
-
 @dataclass(frozen=True)
 class ScenarioResult:
     scenario_id: str
@@ -94,7 +90,6 @@ class ScenarioResult:
     @property
     def passed(self) -> bool:
         return not self.failures
-
 
 def load_pack(path: Path) -> dict[str, Any]:
     pack = json.loads(path.read_text())
@@ -256,7 +251,6 @@ def load_pack(path: Path) -> dict[str, Any]:
         raise ValueError("compatibility scenario ids must be unique")
     return pack
 
-
 def _walk(value: Any) -> Iterable[str]:
     if isinstance(value, dict):
         for item in value.values():
@@ -267,11 +261,9 @@ def _walk(value: Any) -> Iterable[str]:
     elif value is not None:
         yield str(value)
 
-
 def _contains(values: Iterable[str], needle: str) -> bool:
     folded = needle.casefold().replace(",", "")
     return any(folded in value.casefold().replace(",", "") for value in values)
-
 
 def grade_scenario(scenario: dict[str, Any], turns: list[TurnTrace]) -> ScenarioResult:
     failures: list[str] = []
@@ -342,14 +334,12 @@ def grade_scenario(scenario: dict[str, Any], turns: list[TurnTrace]) -> Scenario
                 failures.append(f"warning missing: {needle!r}")
     return ScenarioResult(scenario["id"], tuple(failures))
 
-
 def assert_server_revision(base_url: str, expected: RevisionFingerprint) -> None:
     with urllib.request.urlopen(f"{base_url.rstrip('/')}/api/revision", timeout=5) as response:
         observed = json.load(response)
     actual = RevisionFingerprint(observed["revision"], observed["executable_sha256"])
     if actual != expected:
         raise RuntimeError(f"server revision mismatch: expected {expected}, observed {actual}")
-
 
 class ShadowRunner:
     def __init__(self, primary: Callable[[dict[str, Any]], list[TurnTrace]],
@@ -362,7 +352,6 @@ class ShadowRunner:
             "primary": grade_scenario(scenario, self.primary(scenario)),
             "shadow": grade_scenario(scenario, self.shadow(scenario)),
         }
-
 
 class OwnedServer:
     def __init__(self, command: list[str], base_url: str, expected: RevisionFingerprint,

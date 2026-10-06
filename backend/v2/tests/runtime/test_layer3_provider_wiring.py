@@ -45,7 +45,6 @@ async def test_planner_requires_complete_capability_schema():
  planner=ModelPlanner(model,provider='stub',model_name='stub',capability_catalog=catalog())
  with pytest.raises(ValueError,match='invalid standings'):await planner.plan(TaskSpec(goal='x',mode='quick',deliverable='x'))
 
-
 def test_capability_local_coverage_rejects_wrong_selected_value():
  from v2.contracts import EvidenceRequirement,Plan,PlanNode
  from v2.arguments import CapabilityArgumentSet,RequirementArguments
@@ -60,7 +59,6 @@ def test_capability_local_coverage_rejects_wrong_selected_value():
  assert planner._normalize_requirement_coverage(task,wrong).nodes[0].covers_requirement_ids==[]
  assert planner._normalize_requirement_coverage(task,omitted).nodes[0].covers_requirement_ids==[]
  assert planner._normalize_requirement_coverage(task,extra).nodes[0].covers_requirement_ids==['r']
-
 
 def test_final_openai_request_schema_matches_checked_candidate():
  import pathlib

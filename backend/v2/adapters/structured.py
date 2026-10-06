@@ -18,12 +18,10 @@ from v2.argument_schemas import (
     normalize_provider_wire_schema,
 )
 
-
 class OutputStrategy(StrEnum):
     STRICT_SCHEMA = "strict_schema"
     TOOL_CALL = "tool_call"
     PROMPTED_JSON = "prompted_json"
-
 
 STRATEGY_LADDER: Final[tuple[OutputStrategy, ...]] = (
     OutputStrategy.STRICT_SCHEMA,
@@ -31,10 +29,8 @@ STRATEGY_LADDER: Final[tuple[OutputStrategy, ...]] = (
     OutputStrategy.PROMPTED_JSON,
 )
 
-
 class CapabilityTableError(ValueError):
     pass
-
 
 class Support(StrEnum):
     MEASURED = "measured"
@@ -45,17 +41,14 @@ class Support(StrEnum):
     def supported(self) -> bool:
         return self is Support.MEASURED
 
-
 _SUPPORT_FLAGS: Final[tuple[str, ...]] = (
     "strict_json_schema", "tool_calling", "strict_tool_definitions")
-
 
 @dataclass(frozen=True)
 class CapabilityMeasurement:
     probe: str
     measured_at: str
     models: tuple[str, ...]
-
 
 @dataclass(frozen=True)
 class EndpointCapabilities:
@@ -72,11 +65,9 @@ class EndpointCapabilities:
             return self.tool_calling.supported
         return True
 
-
 def resolve_strategy(capabilities: EndpointCapabilities) -> OutputStrategy:
     return next(strategy for strategy in STRATEGY_LADDER
                 if capabilities.supports(strategy))
-
 
 def output_type_for(strategy: OutputStrategy, schema: type[BaseModel],
                     capabilities: EndpointCapabilities) -> Any:
@@ -87,7 +78,6 @@ def output_type_for(strategy: OutputStrategy, schema: type[BaseModel],
             schema, strict=capabilities.strict_tool_definitions.supported)
     return PromptedOutput(schema)
 
-
 CAPABILITY_TABLE_PATH: Final[Path] = Path(__file__).with_name(
     "endpoint_capabilities.json")
 _CAPABILITY_ENTRY_KEYS: Final[frozenset[str]] = frozenset(
@@ -95,13 +85,11 @@ _CAPABILITY_ENTRY_KEYS: Final[frozenset[str]] = frozenset(
 _MEASUREMENT_KEYS: Final[frozenset[str]] = frozenset(
     {"probe", "measured_at", "models"})
 
-
 def normalize_endpoint(base_url: str) -> str:
     parts = urlsplit(str(base_url or "").strip())
     if parts.scheme != "https" or not parts.netloc:
         raise CapabilityTableError(f"endpoint base_url must be https: {base_url!r}")
     return f"{parts.scheme}://{parts.netloc}{parts.path}".rstrip("/").casefold()
-
 
 def _support(value: object, endpoint: str, flag: str) -> Support:
     try:
@@ -110,7 +98,6 @@ def _support(value: object, endpoint: str, flag: str) -> Support:
         raise CapabilityTableError(
             f"{flag} for {endpoint} must be measured or refused, never an "
             f"assumption: {value!r}") from error
-
 
 def _measurement(entry: Mapping[str, Any]) -> CapabilityMeasurement | None:
     raw = entry.get("measurement")
@@ -129,7 +116,6 @@ def _measurement(entry: Mapping[str, Any]) -> CapabilityMeasurement | None:
     return CapabilityMeasurement(
         probe=raw["probe"], measured_at=raw["measured_at"],
         models=tuple(raw["models"]))
-
 
 def load_capability_table(
     path: Path | None = None,
@@ -162,11 +148,9 @@ def load_capability_table(
             endpoint=endpoint, measurement=measurement, **flags)
     return table
 
-
 @lru_cache(maxsize=1)
 def _shipped_capability_table() -> dict[str, EndpointCapabilities]:
     return load_capability_table()
-
 
 def capabilities_for(
     base_url: str,
@@ -176,19 +160,16 @@ def capabilities_for(
     known = _shipped_capability_table() if table is None else table
     return known.get(endpoint, EndpointCapabilities(endpoint=endpoint))
 
-
 class SchemaNotPortable(ValueError):
     def __init__(self, path: str, construct: str, detail: str) -> None:
         self.path = path
         self.construct = construct
         super().__init__(f"{construct} at {path} has no portable form: {detail}")
 
-
 @dataclass(frozen=True)
 class SchemaSanitization:
     schema: dict[str, Any]
     rewrites: tuple[str, ...]
-
 
 LOOKAROUND_PATTERN: Final[re.Pattern[str]] = re.compile(r"\(\?(?:=|!|<=|<!)")
 STRICT_SAFE_PATTERNS: Final[dict[str, str]] = {
@@ -198,7 +179,6 @@ DROPPED_SCHEMA_KEYWORDS: Final[frozenset[str]] = frozenset(
     {"maxItems", "minItems", "discriminator"})
 OPAQUE_SCHEMA_KEYWORDS: Final[frozenset[str]] = frozenset(
     {"default", "enum", "examples"})
-
 
 def _portable_pattern(pattern: str, path: str,
                       rewrites: list[str]) -> str:
@@ -210,7 +190,6 @@ def _portable_pattern(pattern: str, path: str,
         return pattern
     raise SchemaNotPortable(
         path, "pattern", f"look-around cannot be compiled: {pattern!r}")
-
 
 def sanitize_schema(schema: Mapping[str, Any]) -> SchemaSanitization:
     rewrites: list[str] = []
@@ -240,7 +219,6 @@ def sanitize_schema(schema: Mapping[str, Any]) -> SchemaSanitization:
 
     return SchemaSanitization(walk(dict(schema), "$"), tuple(rewrites))
 
-
 def _free_form_paths(node: Any, path: str = "$") -> list[str]:
     if isinstance(node, list):
         return [found for item in node
@@ -253,7 +231,6 @@ def _free_form_paths(node: Any, path: str = "$") -> list[str]:
     return found + [nested for key, value in node.items()
                     if key not in OPAQUE_SCHEMA_KEYWORDS
                     for nested in _free_form_paths(value, f"{path}.{key}")]
-
 
 def strict_compatible(schema: Mapping[str, Any]) -> SchemaSanitization:
     portable = sanitize_schema(schema)
@@ -272,7 +249,6 @@ def strict_compatible(schema: Mapping[str, Any]) -> SchemaSanitization:
             for loss in report["losses"]),
     )
 
-
 def wire_schema_for(strategy: OutputStrategy,
                     schema: Mapping[str, Any]) -> SchemaSanitization:
     if strategy is OutputStrategy.STRICT_SCHEMA:
@@ -280,7 +256,6 @@ def wire_schema_for(strategy: OutputStrategy,
     if strategy is OutputStrategy.TOOL_CALL:
         return sanitize_schema(schema)
     return SchemaSanitization({}, ())
-
 
 STRICT_SUBSET_KEYWORDS: Final[frozenset[str]] = frozenset({
     "$anchor", "$comment", "$defs", "$dynamicAnchor", "$dynamicRef", "$id",
@@ -299,9 +274,7 @@ STRICT_SUBSET_KEYWORDS: Final[frozenset[str]] = frozenset({
 UNCOMPILABLE_KEYWORDS: Final[frozenset[str]] = frozenset(
     {"const", "discriminator"})
 
-
 def strict_subset_violations(schema: Mapping[str, Any]) -> tuple[str, ...]:
-    """Every construct a strict JSON-Schema grammar refuses to compile."""
     violations: list[str] = []
 
     def walk(node: Any, path: str) -> None:
@@ -328,7 +301,6 @@ def strict_subset_violations(schema: Mapping[str, Any]) -> tuple[str, ...]:
     walk(dict(schema), "$")
     return tuple(violations)
 
-
 def _admits_null(node: Any) -> bool:
     if not isinstance(node, Mapping):
         return False
@@ -337,7 +309,6 @@ def _admits_null(node: Any) -> bool:
         return True
     return any(_admits_null(branch) for keyword in ("anyOf", "oneOf", "allOf")
                for branch in node.get(keyword) or ())
-
 
 def _nullable_paths(node: Any, path: str = "$") -> set[str]:
     if isinstance(node, list):
@@ -357,20 +328,11 @@ def _nullable_paths(node: Any, path: str = "$") -> set[str]:
         found |= _nullable_paths(node["items"], f"{path}.items")
     return found
 
-
 def value_space_widened(source: Mapping[str, Any],
                         wire: Mapping[str, Any]) -> tuple[str, ...]:
-    """Pointers where the wire accepts a value the declared schema refuses.
-
-    A provider told a field may be null will send null, and the contract that
-    declared the field non-nullable then rejects the whole response. Widening
-    the wire past the declared value space is the one rewrite with no lossless
-    form, so it is reported rather than shipped.
-    """
     declared = _nullable_paths(inline_provider_schema_defs(source))
     return tuple(sorted(
         _nullable_paths(inline_provider_schema_defs(wire)) - declared))
-
 
 FENCE_PATTERN: Final[re.Pattern[str]] = re.compile(
     r"\A\s*```[A-Za-z0-9_+-]*[ \t]*\r?\n(?P<body>.*?)\r?\n?[ \t]*```\s*\Z",
@@ -378,11 +340,9 @@ FENCE_PATTERN: Final[re.Pattern[str]] = re.compile(
 TRAILING_COMMA_PATTERN: Final[re.Pattern[str]] = re.compile(
     r",([ \t\r\n]*[}\]])")
 
-
 def strip_code_fence(text: str) -> str:
     match = FENCE_PATTERN.match(text)
     return match.group("body") if match is not None else text
-
 
 def strip_surrounding_prose(text: str) -> str:
     start = min((index for index in (text.find("{"), text.find("[")) if index >= 0),
@@ -392,14 +352,12 @@ def strip_surrounding_prose(text: str) -> str:
         return text
     return text[start:end + 1]
 
-
 def parses_as_json(text: str) -> bool:
     try:
         json.loads(text)
     except ValueError:
         return False
     return True
-
 
 def repair_json_text(text: str) -> str:
     for candidate in (strip_code_fence(text), strip_surrounding_prose(text), text):
@@ -411,18 +369,15 @@ def repair_json_text(text: str) -> str:
             return without_trailing_commas
     return text
 
-
 def repaired_output_payload(_ctx: Any = None, /, *, output: Any,
                             **_ignored: Any) -> Any:
     return repair_json_text(output) if isinstance(output, str) else output
-
 
 class FailureKind(StrEnum):
     TRANSIENT = "transient"
     SCHEMA_REJECTED = "schema_rejected"
     PERMANENT = "permanent"
     UNKNOWN = "unknown"
-
 
 TRANSIENT_STATUS_CODES: Final[frozenset[int]] = frozenset(
     {408, 409, 425, 429, 500, 502, 503, 504})
@@ -455,7 +410,6 @@ STATUS_CODE_ATTRIBUTES: Final[tuple[str, ...]] = ("status_code", "http_status")
 MAX_FAILURE_CARRIERS: Final[int] = 8
 MAX_FAILURE_DETAIL_CHARS: Final[int] = 2000
 
-
 def classify_failure(*, status_code: int | None, detail: str,
                      exception_names: frozenset[str] = frozenset()
                      ) -> FailureKind:
@@ -474,7 +428,6 @@ def classify_failure(*, status_code: int | None, detail: str,
         return FailureKind.SCHEMA_REJECTED
     return FailureKind.UNKNOWN
 
-
 def failure_status_code(carriers: Iterable[BaseException]) -> int | None:
     for carrier in carriers:
         for attribute in STATUS_CODE_ATTRIBUTES:
@@ -483,12 +436,10 @@ def failure_status_code(carriers: Iterable[BaseException]) -> int | None:
                 return value
     return None
 
-
 def failure_detail(carriers: Iterable[BaseException]) -> str:
     return " ".join(
         f"{type(carrier).__name__} {str(carrier)[:MAX_FAILURE_DETAIL_CHARS]}"
         for carrier in carriers).casefold()
-
 
 def classify_exception(exc: BaseException) -> FailureKind:
     carriers = list(_failure_carriers([exc]))
@@ -498,7 +449,6 @@ def classify_exception(exc: BaseException) -> FailureKind:
         detail=failure_detail(carriers),
         exception_names=names,
     )
-
 
 def _failure_carriers(carriers: Iterable[BaseException]) -> Iterable[BaseException]:
     pending: list[BaseException] = list(carriers)
@@ -518,10 +468,8 @@ def _failure_carriers(carriers: Iterable[BaseException]) -> Iterable[BaseExcepti
             pending.extend(child for child in item.exceptions
                            if isinstance(child, BaseException))
 
-
 DESCENDING_KINDS: Final[frozenset[FailureKind]] = frozenset(
     {FailureKind.SCHEMA_REJECTED, FailureKind.TRANSIENT, FailureKind.UNKNOWN})
-
 
 @dataclass(frozen=True)
 class LadderAttempt:
@@ -529,13 +477,7 @@ class LadderAttempt:
     attempt_number: int
     failure_kind: FailureKind | None
 
-
 class StrategyLadder:
-    """The rungs one stage call has left, and the ones it has already lost.
-
-    A stage call owns its ladder, so a stage that has to descend does not
-    move any other stage. The floor is terminal: its failure is the answer.
-    """
 
     def __init__(self, capabilities: EndpointCapabilities) -> None:
         self._index = STRATEGY_LADDER.index(resolve_strategy(capabilities))
@@ -559,7 +501,6 @@ class StrategyLadder:
             LadderAttempt(self.rung, attempt_number, failure_kind))
 
     def descend(self, kind: FailureKind) -> OutputStrategy | None:
-        """The rung given up, or None when the ladder holds its ground."""
         if kind not in DESCENDING_KINDS or self.at_floor:
             return None
         given_up = self.rung

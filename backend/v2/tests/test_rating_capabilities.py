@@ -1,7 +1,6 @@
 from shared.tools.league import get_player_ratings, get_playoff_team_ratings
 from v2.adapters import call_capability
 
-
 def test_player_rating_boards_are_qualified_and_directional():
     offense = get_player_ratings.invoke({
         "season": "2025-26", "metric": "offense", "limit": 5,
@@ -18,7 +17,6 @@ def test_player_rating_boards_are_qualified_and_directional():
         defense["rows"], key=lambda row: row["DEF_RATING"])
     assert all(row["MINUTES"] >= 1000 for row in offense["rows"] + defense["rows"])
 
-
 def test_playoff_team_ratings_are_real_rating_evidence():
     result = get_playoff_team_ratings.invoke({"season": "2025-26"})
     assert result["ok"] and result["rows"]
@@ -30,7 +28,6 @@ def test_playoff_team_ratings_are_real_rating_evidence():
         "playoff_team_ratings", {"season": "2025-26"})
     assert envelope.capability == "playoff_team_ratings"
     assert envelope.coverage == "Completed playoff games only."
-
 
 def test_every_rating_board_declares_rank_scope() -> None:
     for name, arguments in (
@@ -44,7 +41,6 @@ def test_every_rating_board_declares_rank_scope() -> None:
         assert envelope.qualification
         assert envelope.coverage
 
-
 def test_rest_splits_expose_all_three_buckets_with_samples():
     from v2.adapters import call_capability
     result = call_capability("rest_splits", {"team_abbrev": "DEN", "season": "2025-26"})
@@ -54,11 +50,9 @@ def test_rest_splits_expose_all_three_buckets_with_samples():
         assert values["games"] == values["wins"] + values["losses"]
         assert values["win_pct"] is None or 0 <= values["win_pct"] <= 1
 
-
 def test_rookie_capability_declares_first_season_qualification():
     from v2.adapters import CAPABILITIES
     assert "no player row in any prior" in CAPABILITIES["rookie_leaders"].qualification
-
 
 def test_warehouse_freshness_declares_authoritative_source_and_generation_time():
     from shared.tools.league import get_warehouse_freshness

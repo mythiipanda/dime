@@ -8,7 +8,6 @@ from .base import FetchResult, safe
 
 SOURCE = "nba_api_boxscore_ext"
 
-
 def _endpoint(view: str) -> Any:
     from nba_api.stats import endpoints as E
 
@@ -20,7 +19,6 @@ def _endpoint(view: str) -> Any:
         "usage": E.BoxScoreUsageV3,
     }[view]
 
-
 VIEWS = ("advanced", "four_factors", "misc", "scoring", "usage")
 
 PREFIX = {
@@ -31,13 +29,11 @@ PREFIX = {
     "usage": "USG",
 }
 
-
 def _pl(df: Any) -> pl.DataFrame:
     try:
         return pl.from_pandas(df)
     except Exception:
         return pl.DataFrame()
-
 
 def fetch_view(view: str, game_id: str, season: str) -> FetchResult:
     cls = _endpoint(view)
@@ -48,11 +44,9 @@ def fetch_view(view: str, game_id: str, season: str) -> FetchResult:
 
     return safe(SOURCE, season, run)
 
-
 def _snake(name: str) -> str:
     s = re.sub(r"(?<!^)(?=[A-Z])", "_", name).upper()
     return re.sub(r"__+", "_", s)
-
 
 _KEY_RENAME = {
     "gameId": "GAME_ID",
@@ -60,7 +54,6 @@ _KEY_RENAME = {
     "teamTricode": "TEAM_ABBREVIATION",
     "personId": "PLAYER_ID",
 }
-
 
 def to_silver(view: str, frame: pl.DataFrame) -> pl.DataFrame:
     if frame.height == 0:
@@ -94,7 +87,6 @@ def to_silver(view: str, frame: pl.DataFrame) -> pl.DataFrame:
                     if not v.startswith("__drop__")})
     df = df.drop([c for c in df.columns if c.startswith("__drop__")])
     return df
-
 
 def join_views(frames: dict[str, pl.DataFrame]) -> pl.DataFrame:
     keys = ["GAME_ID", "PLAYER_ID"]

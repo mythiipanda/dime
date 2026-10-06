@@ -1,6 +1,5 @@
 from __future__ import annotations
 import copy,hashlib,json,re
-from typing import Any
 
 def canonical_hash(v):return hashlib.sha256(json.dumps(v,sort_keys=True,separators=(',',':')).encode()).hexdigest()
 class SchemaCompileError(ValueError):

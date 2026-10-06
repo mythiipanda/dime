@@ -12,7 +12,6 @@ from shared.tools.league import _describe_warehouse_schema
 
 WH = Path(__file__).resolve().parent.parent / "data" / "warehouse.duckdb"
 
-
 def _leaders_cols():
     cols = [f"C{i}" for i in range(32)]
     cols[0] = "PLAYER_ID"
@@ -21,13 +20,11 @@ def _leaders_cols():
     cols[24] = "PTS"
     return cols
 
-
 def test_schema_description_keeps_late_leader_columns():
     out = _describe_warehouse_schema({"silver_leaders_stl": _leaders_cols()})
     assert "STL" in out
     assert "BLK" in out
     assert "PTS" in out
-
 
 def test_schema_description_truncates_wide_tables():
     wide = [f"C{i}" for i in range(60)]
@@ -36,7 +33,6 @@ def test_schema_description_truncates_wide_tables():
     assert len(parts) == 40
     assert "C39" in out
     assert "C59" not in out
-
 
 def test_steals_leader_matches_warehouse():
     import asyncio

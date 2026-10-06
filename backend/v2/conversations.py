@@ -15,12 +15,10 @@ from v2.contracts import ConversationTurn, EvidenceEnvelope
 _LOCKS_GUARD = Lock()
 _LOCKS: dict[Path, Lock] = {}
 
-
 def _path_lock(path: Path) -> Lock:
     resolved = path.resolve()
     with _LOCKS_GUARD:
         return _LOCKS.setdefault(resolved, Lock())
-
 
 class ConversationReference(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
@@ -47,7 +45,6 @@ class ConversationReference(BaseModel):
             raise ValueError("conversation reference turn id must be non-empty")
         return self
 
-
 class SessionBranch(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
@@ -68,7 +65,6 @@ class SessionBranch(BaseModel):
             raise ValueError("branch parent run and turn travel together")
         return self
 
-
 class BranchReuse(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
@@ -76,7 +72,6 @@ class BranchReuse(BaseModel):
     evidence_id: str = Field(max_length=256)
     parent_run_id: str | None = Field(default=None, max_length=256)
     parent_turn_id: str | None = Field(default=None, max_length=256)
-
 
 class ReuseDecision(BaseModel):
     model_config = ConfigDict(extra="forbid")
@@ -91,18 +86,14 @@ class ReuseDecision(BaseModel):
             raise ValueError("fresh execution cannot reuse evidence")
         return self
 
-
 class StaleBranchEvidenceError(ValueError):
     pass
-
 
 def _canonical_rows(rows: Any) -> str:
     return json.dumps(rows, sort_keys=True, separators=(",", ":"), default=str)
 
-
 def _rows_hash(rows: Any) -> str:
     return hashlib.sha256(_canonical_rows(rows).encode()).hexdigest()
-
 
 class ConversationStore:
     def __init__(self, path: str | Path) -> None:
@@ -521,7 +512,6 @@ class ConversationStore:
                 "SELECT turn FROM conversations WHERE owner=? AND thread=? "
                 "AND sequence=?", (owner, thread, sequence)).fetchone()
         return ConversationTurn.model_validate_json(row[0]).content
-
 
 __all__ = ["BranchReuse", "ConversationReference", "ConversationStore",
            "ReuseDecision", "SessionBranch", "StaleBranchEvidenceError"]

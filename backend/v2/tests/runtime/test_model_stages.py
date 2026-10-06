@@ -18,9 +18,8 @@ from v2.adapters.models import (
     catalog_for_wire,
     provider_to_source,
 )
-from v2.contracts import EvidenceEnvelope, TaskSpec, PlanNode, RequirementReview
+from v2.contracts import EvidenceEnvelope, TaskSpec, RequirementReview
 from v2.arguments import PlannerOutputWire, RequirementReviewWire, SLOTS
-
 
 def _seed_warehouse_seasons(tmp_path, monkeypatch, seasons):
     import duckdb
@@ -41,7 +40,6 @@ def _seed_warehouse_seasons(tmp_path, monkeypatch, seasons):
     core_mod.last_completed_season_cache_clear()
     return db
 
-
 def _structured_endpoint(model_name):
     from v2.adapters.structured import EndpointCapabilities, Support
 
@@ -59,7 +57,6 @@ def _structured_endpoint(model_name):
             return self
 
     return ProviderModel(model_name)
-
 
 class StubModel:
     def __init__(self, values):
@@ -102,11 +99,9 @@ class StubModel:
         self.calls.append(call);value=next(self.values)
         return call["schema"].model_validate(self._migrate_fixture(call['schema'],value))
 
-
 def stage_kwargs():
     return {"provider": "stub", "model_name": "stub-model",
             "capability_catalog": {"standings": {}}}
-
 
 @pytest.mark.anyio
 async def test_model_backed_stages_form_a_structured_slice():
@@ -141,7 +136,6 @@ async def test_model_backed_stages_form_a_structured_slice():
     assert all(call["envelope"].provider == "stub" for call in stub.calls)
     assert len({call["envelope"].route for call in stub.calls}) == 4
 
-
 @pytest.mark.anyio
 async def test_recorded_model_keeps_success_and_failure_attempts():
     from v2.adapters import RecordedStructuredModel
@@ -162,7 +156,6 @@ async def test_recorded_model_keeps_success_and_failure_attempts():
     assert [entry.kind for entry in ledger.entries] == [
         LedgerKind.MODEL_REQUEST, LedgerKind.ASSISTANT_ATTEMPT]
     assert ledger.entries[-1].data["status"] == "failed"
-
 
 @pytest.mark.anyio
 async def test_recorded_model_logs_request_count_in_ledger():
@@ -198,13 +191,12 @@ async def test_recorded_model_logs_request_count_in_ledger():
     assert attempt.data["repaired"] is False
     assert "usage_unknown" not in attempt.data
 
-
 @pytest.mark.anyio
 async def test_recorded_model_logs_typed_unknown_reason_when_usage_unreadable():
     from v2.adapters import RecordedStructuredModel
     from v2.adapters.models import USAGE_UNKNOWN_REASON
     from v2.contracts import TaskSpec
-    from v2.runtime import LedgerKind, RequestEnvelope, RunLedger
+    from v2.runtime import RequestEnvelope, RunLedger
 
     class UnknownUsage:
         def __init__(self):
@@ -231,7 +223,6 @@ async def test_recorded_model_logs_typed_unknown_reason_when_usage_unreadable():
     assert "model_requests" not in attempt.data
     assert attempt.data["usage_unknown"] == "usage_unknown"
 
-
 def test_read_usage_requests_handles_property_and_callable_shapes():
     from v2.adapters.models import _read_usage_requests, USAGE_UNKNOWN_REASON
 
@@ -247,17 +238,14 @@ def test_read_usage_requests_handles_property_and_callable_shapes():
 
     class OldStyleFailure:
 
-
         def usage(self):
             raise TypeError("'Usage' object is not callable")
 
     assert _read_usage_requests(PropertyResult()) == (3, None)
     assert _read_usage_requests(MethodResult()) == (3, None)
 
-
     assert _read_usage_requests(OldStyleFailure()) == (None, USAGE_UNKNOWN_REASON)
     assert _read_usage_requests(object()) == (None, USAGE_UNKNOWN_REASON)
-
 
 @pytest.mark.anyio
 async def test_model_repair_receives_only_typed_admitted_context():
@@ -309,7 +297,6 @@ async def test_intake_receives_bounded_followup_context_without_full_skill_bodie
     assert task.skills == ["trade-analysis"]
     assert all("instructions" not in item for item in payload["skill_catalog"])
 
-
 @pytest.mark.anyio
 async def test_followup_intake_resolves_context_reference_before_user_blocker():
     from v2.contracts import ConversationTurn
@@ -360,7 +347,6 @@ async def test_followup_intake_resolves_context_reference_before_user_blocker():
         ),
     }
 
-
 @pytest.mark.anyio
 async def test_intake_prompt_reserves_open_questions_for_user_blockers():
     from v2.prompts import load_prompt
@@ -369,7 +355,6 @@ async def test_intake_prompt_reserves_open_questions_for_user_blockers():
     assert "only user-answerable ambiguities" in prompt
     assert "Missing evidence, uncertain causes, unspecified explanatory factors" in prompt
     assert 'Never ask the user to preselect causes for "what changed," "why," role, value, fit, or replaceability' in prompt
-
 
 @pytest.mark.anyio
 async def test_semantic_verifier_receives_vintage_and_source_scope() -> None:
@@ -392,7 +377,6 @@ async def test_semantic_verifier_receives_vintage_and_source_scope() -> None:
     assert compact["vintages"] == {"salary_season": "2026-27"}
     assert compact["task_season_scoped"] is False
 
-
 @pytest.mark.anyio
 async def test_intake_receives_explicit_current_date() -> None:
     stub = StubModel([{"goal": "record", "mode": "quick", "deliverable": "answer"}])
@@ -402,11 +386,8 @@ async def test_intake_receives_explicit_current_date() -> None:
     assert len(current_date) == 10
     assert current_date.count("-") == 2
 
-
 def test_pydanticai_provider_boundary_uses_only_configured_model(monkeypatch) -> None:
     from v2.adapters.models import ProviderStructuredModel
-
-
 
     monkeypatch.setattr("v2.adapters.models.settings.nvidia_nim_api_key", "nim-key")
     monkeypatch.setattr("v2.adapters.models.settings.inception_api_key", "configured-paused")
@@ -416,7 +397,6 @@ def test_pydanticai_provider_boundary_uses_only_configured_model(monkeypatch) ->
     models = ProviderStructuredModel("inception", "mercury-test")._models()
     assert [provider for provider, _ in models] == ["inception"]
     assert models[0][1].model_name == "mercury-2.5"
-
 
 def test_pydanticai_models_keep_timeout_and_openrouter_attribution(monkeypatch) -> None:
     from v2.adapters.models import ProviderStructuredModel, load_model_budgets
@@ -434,7 +414,6 @@ def test_pydanticai_models_keep_timeout_and_openrouter_attribution(monkeypatch) 
     assert client.timeout > settings.llm_timeout_s
     assert client.max_retries == 0
     assert client.default_headers["X-Title"] == "Dime NBA Analyst"
-
 
 @pytest.mark.anyio
 async def test_recorded_model_logs_actual_fallback_provenance() -> None:
@@ -461,7 +440,6 @@ async def test_recorded_model_logs_actual_fallback_provenance() -> None:
     assert attempt.data["model"] == "ministral-test"
     assert attempt.data["used_fallback"] is True
 
-
 @pytest.mark.anyio
 async def test_semantic_verifier_allows_omitted_claim_adjudication() -> None:
     from v2.contracts import Claim, DraftReport, TaskSpec
@@ -476,7 +454,6 @@ async def test_semantic_verifier_allows_omitted_claim_adjudication() -> None:
     )
     assert report.claim_results == []
     assert report.status == "partial"
-
 
 @pytest.mark.anyio
 async def test_semantic_verifier_rejects_contradictory_pass() -> None:
@@ -493,7 +470,6 @@ async def test_semantic_verifier_rejects_contradictory_pass() -> None:
             draft, {},
         )
 
-
 @pytest.mark.anyio
 async def test_synthesizer_rejects_unknown_evidence_ids() -> None:
     from v2.contracts import TaskSpec
@@ -508,7 +484,6 @@ async def test_synthesizer_rejects_unknown_evidence_ids() -> None:
         await synthesizer.synthesize(
             TaskSpec(goal="record", mode="quick", deliverable="answer"), [])
 
-
 @pytest.mark.anyio
 async def test_intake_rejects_unknown_required_capability() -> None:
     stub = StubModel([{
@@ -518,7 +493,6 @@ async def test_intake_rejects_unknown_required_capability() -> None:
     intake = ModelIntake(stub, **stage_kwargs())
     with pytest.raises(ValueError, match="unknown capabilities.*invented_tool"):
         await intake.understand("record")
-
 
 @pytest.mark.anyio
 async def test_verifier_structured_output_rejects_unknown_fields() -> None:
@@ -533,7 +507,6 @@ async def test_verifier_structured_output_rejects_unknown_fields() -> None:
             TaskSpec(goal="empty", mode="quick", deliverable="answer"),
             DraftReport(sections=[], claims=[]), {},
         )
-
 
 @pytest.mark.anyio
 async def test_model_repair_cannot_retain_rejected_claim_unchanged() -> None:
@@ -569,7 +542,6 @@ async def test_model_repair_cannot_retain_rejected_claim_unchanged() -> None:
         "calculation_id": None,
     }]
 
-
 @pytest.mark.anyio
 async def test_semantic_verifier_receives_all_evidence_qualifiers() -> None:
     from datetime import date
@@ -602,7 +574,6 @@ async def test_semantic_verifier_receives_all_evidence_qualifiers() -> None:
     assert compact["warnings"] == ["partial season"]
     assert compact["lineage"] == ["parent"]
 
-
 @pytest.mark.parametrize(
     "kwargs,error",
     [
@@ -618,14 +589,12 @@ def test_model_stage_requires_request_identity(kwargs, error) -> None:
     with pytest.raises(ValueError, match=error):
         ModelSynthesizer(StubModel({}), **kwargs)
 
-
 def test_recorded_model_requires_turn_identity():
     from v2.adapters import RecordedStructuredModel
     from v2.runtime import RunLedger
 
     with pytest.raises(ValueError, match="turn id must be non-empty"):
         RecordedStructuredModel(StubModel([]), RunLedger("run"), turn_id=" ")
-
 
 @pytest.mark.anyio
 async def test_recorded_model_rejects_untyped_output_and_records_failure():
@@ -649,7 +618,6 @@ async def test_recorded_model_rejects_untyped_output_and_records_failure():
         )
     assert ledger.entries[-1].data["status"] == "failed"
 
-
 @pytest.mark.anyio
 async def test_recorded_model_marks_same_provider_model_fallback() -> None:
     from v2.adapters import RecordedStructuredModel
@@ -671,7 +639,6 @@ async def test_recorded_model_marks_same_provider_model_fallback() -> None:
     attempt = next(entry for entry in ledger.entries
                    if entry.kind == LedgerKind.ASSISTANT_ATTEMPT)
     assert attempt.data["used_fallback"] is True
-
 
 @pytest.mark.anyio
 async def test_provider_model_clears_last_success_before_failed_generation(monkeypatch) -> None:
@@ -699,7 +666,6 @@ async def test_provider_model_clears_last_success_before_failed_generation(monke
     assert model.last_provider is None
     assert model.last_model is None
 
-
 @pytest.mark.anyio
 async def test_recorded_model_revalidates_copied_structured_output():
     from v2.adapters import RecordedStructuredModel
@@ -721,7 +687,6 @@ async def test_recorded_model_revalidates_copied_structured_output():
             schema=TaskSpec, prompt="prompt", payload={}, envelope=envelope,
         )
     assert ledger.entries[-1].data["status"] == "failed"
-
 
 @pytest.mark.anyio
 async def test_provider_boundary_does_not_expose_provider_error_text(monkeypatch):
@@ -803,7 +768,6 @@ async def test_model_repair_preserves_previously_supported_claims() -> None:
     assert supported in repaired.claims
     assert rejected not in repaired.claims
 
-
 @pytest.mark.anyio
 async def test_tool_capability_binds_dependency_lineage() -> None:
     from v2.adapters import ToolCapability
@@ -832,7 +796,6 @@ async def test_tool_capability_binds_dependency_lineage() -> None:
 
 @pytest.mark.anyio
 async def test_intake_drops_two_sided_evidence_for_one_player_question() -> None:
-    from v2.contracts import EntityRef
 
     stub = StubModel([{
         "goal": "Assess trading Brown", "mode": "quick", "deliverable": "answer",
@@ -950,7 +913,6 @@ async def test_semantic_verifier_does_not_outer_retry_failed_generation() -> Non
 
 @pytest.mark.anyio
 async def test_trade_skill_requires_complete_two_player_evidence_baseline() -> None:
-    from v2.contracts import TaskSpec
 
     stub = StubModel([{
         "goal": "Brown for George", "mode": "deep_dive",
@@ -973,7 +935,6 @@ async def test_trade_skill_requires_complete_two_player_evidence_baseline() -> N
         "player_evaluation", "player_report", "player_comparison",
         "trade_value", "contracts", "trades",
     ]
-
 
 @pytest.mark.anyio
 async def test_trade_skill_baseline_does_not_expand_one_player_question() -> None:
@@ -1031,10 +992,9 @@ async def test_requirement_review_repairs_omitted_compound_branches():
     assert len(stub.calls) == 1
     assert all(call["envelope"].route == "intake" for call in stub.calls)
 
-
 @pytest.mark.anyio
 async def test_planner_replans_when_first_plan_omits_required_evidence():
-    from v2.contracts import Plan, TaskSpec
+    from v2.contracts import TaskSpec
 
     stub = StubModel([
         {"nodes": [{"id": "results", "description": "results",
@@ -1063,7 +1023,6 @@ async def test_planner_replans_when_first_plan_omits_required_evidence():
         "instruction": "Return a complete replacement plan.",
     }
 
-
 @pytest.mark.anyio
 async def test_matchup_winner_requirement_selects_prediction_capability():
     stub = StubModel([{
@@ -1082,7 +1041,6 @@ async def test_matchup_winner_requirement_selects_prediction_capability():
     ).understand("Who wins Celtics vs Knicks?")
     assert task.requirements[0].capability_options == ["game_prediction"]
     assert len(stub.calls) == 1
-
 
 @pytest.mark.anyio
 async def test_planner_drops_false_requirement_coverage_from_supplemental_node():
@@ -1113,7 +1071,6 @@ async def test_planner_drops_false_requirement_coverage_from_supplemental_node()
     assert plan.nodes[0].covers_requirement_ids == ["health"]
     assert plan.nodes[1].covers_requirement_ids == []
 
-
 @pytest.mark.anyio
 async def test_external_discovery_requirement_accepts_fetched_evidence():
     stub = StubModel([
@@ -1133,7 +1090,6 @@ async def test_external_discovery_requirement_accepts_fetched_evidence():
     ).understand("What is the current status?")
     assert task.requirements[0].capability_options == ["web_search"]
     assert len(stub.calls) == 1
-
 
 @pytest.mark.anyio
 async def test_model_repair_keeps_corrected_rejected_branch():
@@ -1166,7 +1122,6 @@ async def test_model_repair_keeps_corrected_rejected_branch():
     assert [claim.text for claim in repaired.claims] == [
         "San Antonio ranked third at 118.7 points per 100 possessions."]
     assert repaired.gaps == []
-
 
 @pytest.mark.anyio
 async def test_model_repair_requires_distinct_replacements_for_shared_evidence():
@@ -1207,7 +1162,6 @@ async def test_model_repair_requires_distinct_replacements_for_shared_evidence()
     assert [claim.text for claim in repaired.claims] == [
         "Boston was first.", "San Antonio was third."]
 
-
 @pytest.mark.anyio
 async def test_matchup_optional_date_does_not_block_general_prediction():
     stub = StubModel([{
@@ -1225,7 +1179,6 @@ async def test_matchup_optional_date_does_not_block_general_prediction():
     assert task.assumptions == [
         "What is the specific date of the game you are interested in?"
     ]
-
 
 @pytest.mark.anyio
 async def test_two_team_winner_request_requires_prediction_even_if_intake_chooses_ratings():
@@ -1245,7 +1198,6 @@ async def test_two_team_winner_request_requires_prediction_even_if_intake_choose
     assert task.season is not None
     assert task.season.value == last_completed_season()
     assert task.season.source == "default"
-
 
 @pytest.mark.anyio
 async def test_implicit_matchup_season_is_pinned_to_prediction_data_vintage(
@@ -1267,7 +1219,6 @@ async def test_implicit_matchup_season_is_pinned_to_prediction_data_vintage(
     ).understand("Who wins Celtics vs Knicks?")
     assert task.season.value == last_completed_season() == "2024-25"
     assert task.season.source == "default"
-
 
 @pytest.mark.anyio
 async def test_league_ratings_skill_requires_rating_populations_not_scoring_leaders():
@@ -1339,7 +1290,6 @@ async def test_planner_rejects_wrong_metric_argument_as_false_coverage():
         "instruction": "Return a complete replacement plan.",
     }
 
-
 def test_requirement_argument_matching_is_generic_and_nested():
     from v2.adapters.models import ModelPlanner
 
@@ -1371,7 +1321,7 @@ async def test_playoff_translation_skill_does_not_force_unrequested_capabilities
 
 @pytest.mark.anyio
 async def test_synthesizer_exhaustion_raises_without_retry_or_empty_draft() -> None:
-    from v2.contracts import Claim, DraftReport, TaskSpec
+    from v2.contracts import TaskSpec
 
     class Down:
         def __init__(self):
@@ -1389,7 +1339,6 @@ async def test_synthesizer_exhaustion_raises_without_retry_or_empty_draft() -> N
             TaskSpec(goal="best record", mode="quick", deliverable="answer"), [])
 
     assert model.calls == 1
-
 
 @pytest.mark.anyio
 async def test_synthesizer_does_not_retry_unrelated_runtime_error() -> None:
@@ -1409,11 +1358,10 @@ async def test_synthesizer_does_not_retry_unrelated_runtime_error() -> None:
             TaskSpec(goal="record", mode="quick", deliverable="answer"), [])
     assert model.calls == 1
 
-
 @pytest.mark.anyio
 async def test_synthesizer_requires_every_independent_calculation_or_named_block():
     from datetime import UTC, datetime
-    from v2.contracts import EvidenceEnvelope, TaskSpec, PlanNode
+    from v2.contracts import EvidenceEnvelope, TaskSpec
 
     task = TaskSpec(
         goal="compare regular season and playoffs", mode="deep_dive",
@@ -1444,11 +1392,10 @@ async def test_synthesizer_requires_every_independent_calculation_or_named_block
             stub, provider="stub", model_name="stub",
         ).synthesize(task, [evidence])
 
-
 @pytest.mark.anyio
 async def test_synthesizer_accepts_declared_or_blocked_calculation_ledger():
     from datetime import UTC, datetime
-    from v2.contracts import EvidenceEnvelope, TaskSpec, PlanNode
+    from v2.contracts import EvidenceEnvelope, TaskSpec
 
     task = TaskSpec(
         goal="compare regular season and playoffs", mode="deep_dive",
@@ -1507,7 +1454,6 @@ async def test_planner_dedupes_semantic_calls_and_keeps_other_branches():
     assert [node.id for node in plan.nodes] == ["assists_a", "unasked_points"]
     assert plan.nodes[0].covers_requirement_ids == ["assists"]
 
-
 @pytest.mark.anyio
 async def test_planner_keeps_same_call_when_parent_lineage_differs():
     task = TaskSpec(goal="compare", mode="quick", deliverable="answer")
@@ -1541,7 +1487,6 @@ async def test_intake_drops_capability_subsumed_required_evidence():
         capability_catalog={"player_report": {}, "shooting_efficiency": {}},
     ).understand("Assess Curry's scoring efficiency")
     assert task.required_evidence == ["player_report"]
-
 
 @pytest.mark.anyio
 async def test_planner_prunes_capability_subsumed_same_subject_call():
@@ -1588,7 +1533,6 @@ async def test_synthesizer_cannot_reclassify_evidence_requirement_as_calculation
         stub, provider="stub", model_name="stub",
     ).synthesize(task, [])
     assert draft.blocked_calculation_requirement_ids == []
-
 
 @pytest.mark.anyio
 async def test_synthesizer_rejects_declared_calculation_for_evidence_requirement():
@@ -1729,7 +1673,6 @@ async def test_planner_replans_call_missing_catalog_required_arguments():
         "instruction": "Return a complete replacement plan.",
     }
 
-
 @pytest.mark.anyio
 async def test_planner_fails_closed_when_replan_still_misses_required_argument():
     task = TaskSpec(
@@ -1824,7 +1767,6 @@ async def test_requirement_metric_and_output_ids_survive_typed_intake():
     assert requirement.metric_ids == ["DEF_RATING"]
     assert requirement.requested_outputs == ["DEF_RATING", "TEAM_NAME"]
 
-
 @pytest.mark.parametrize("field", ["metric_ids", "requested_outputs"])
 @pytest.mark.parametrize("bad", ["def_rating", "", "1PTS", "A" * 129])
 def test_requirement_wire_rejects_malformed_dimension_ids(field, bad):
@@ -1838,7 +1780,6 @@ def test_requirement_wire_rejects_malformed_dimension_ids(field, bad):
         model.model_validate({**row, field: ["DEF_RATING"]})
         with pytest.raises(ValidationError):
             model.model_validate({**row, field: [bad]})
-
 
 @pytest.mark.anyio
 async def test_planner_subsumes_report_and_shooting_split_requirements():
@@ -2076,7 +2017,6 @@ async def test_game_log_aggregate_synthesis_uses_full_population_and_signed_delt
     assert draft.calculations[-1].result == "-3.25652173913043478260869565"
     assert all(inp.evidence_id in {"home", "away"} for calc in draft.calculations for inp in calc.inputs)
 
-
 @pytest.mark.anyio
 async def test_pair_synthesis_failure_class_has_deterministic_supported_answer():
     task = TaskSpec(goal="compare players", mode="quick", deliverable="points TS and margin",
@@ -2128,7 +2068,6 @@ async def test_game_log_builder_maps_separate_mean_requirements():
         task,[ev("home","home","25"),ev("away","away","28")])
     assert [calc.requirement_id for calc in draft.calculations] == ["home_mean","away_mean","home_away_delta"]
 
-
 @pytest.mark.anyio
 async def test_pair_builder_maps_ppg_and_ts_difference_without_duplicate_ids():
     task = TaskSpec(goal="compare", mode="quick", deliverable="differences",
@@ -2158,7 +2097,6 @@ async def test_canonicalizer_creates_split_requirements_from_deliverable():
         ("away_mean","Canonical away points-per-game mean"),
         ("home_away_delta","Canonical home-minus-away points-per-game difference")]
 
-
 def test_canonicalizer_wording_permutations_produce_identical_split_kinds():
     from v2.adapters.models import _canonicalize_calculation_requirements
     variants = [
@@ -2177,11 +2115,9 @@ def test_canonicalizer_wording_permutations_produce_identical_split_kinds():
         outputs.append([x.description for x in _canonicalize_calculation_requirements(task).calculation_requirements])
     assert outputs[0] == outputs[1] == outputs[2]
 
-
 def test_draft_validator_rejects_duplicate_requirement_ownership():
-    from v2.adapters.models import _validate_draft
     from v2.contracts import DraftReport
-    task=TaskSpec(goal="x",mode="quick",deliverable="x",
+    TaskSpec(goal="x",mode="quick",deliverable="x",
         calculation_requirements=[{"id":"same","description":"one"}])
     with pytest.raises(ValueError, match="must not duplicate requirement ids"):
         DraftReport.model_validate({"sections":[],"claims":[],"calculations":[
@@ -2203,7 +2139,6 @@ async def test_sample_size_calc_artifacts_are_observed_not_blocked():
             {"id":"d","description":"Home-minus-away scoring difference."}])
     normalized=_canonicalize_calculation_requirements(task)
     assert [x.id for x in normalized.calculation_requirements] == ["home_mean","away_mean","home_away_delta"]
-
 
 @pytest.mark.parametrize("raw,shown", [(0.584,"58.4%"),(58.4,"58.4%")])
 @pytest.mark.anyio
@@ -2233,7 +2168,6 @@ async def test_intake_primary_transient_retries_then_succeeds(monkeypatch):
     out=await m.generate(schema=TaskSpec,prompt="p",payload={"same":"input"},envelope=e)
     assert out.goal=="ok" and len(calls)==2
     assert [(x["attempt_number"],x["message_class"]) for x in m.last_failures]==[(1,"timeout")]
-
 
 @pytest.mark.anyio
 async def test_intake_primary_exhausted_raises_without_secondary(monkeypatch):
@@ -2267,10 +2201,8 @@ async def test_intake_primary_exhausted_raises_without_secondary(monkeypatch):
     assert [f["output_strategy"] for f in m.last_failures]==[
         "strict_schema","tool_call","prompted_json"]
 
-
 @pytest.mark.anyio
 async def test_intake_schema_failure_raises_without_retry_or_secondary(monkeypatch):
-    from pydantic import ValidationError
     from v2.adapters.models import ProviderStructuredModel
     from v2.runtime import RequestEnvelope
     calls=[]
@@ -2353,7 +2285,6 @@ async def test_intake_global_deadline_stops_single_model_retries(monkeypatch):
             for f in m.last_failures]==[
                 ("strict_schema","timeout"),("tool_call","intake_deadline")]
 
-
 @pytest.mark.anyio
 async def test_exhausted_intake_ledger_keeps_complete_attempt_diagnostics():
     from v2.adapters import RecordedStructuredModel
@@ -2389,7 +2320,6 @@ async def test_fused_intake_returns_unreviewed_task_without_fabricated_nodes():
         capability_catalog={"player_comparison":{}},requirement_review=True).understand("pair")
     assert task.requirements == []
     assert model.calls==1
-
 
 def test_route_policy_table_bounds_model_owned_routes():
     from v2.adapters.models import MODEL_ROUTES, load_model_budgets, route_budgets
@@ -2437,7 +2367,6 @@ async def test_review_combined_home_away_requirement_expands_before_planning():
     assert [(r.id,r.capability_arguments["home_away"]) for r in task.requirements]==[("combined_home","home"),("combined_away","away")]
     assert len(stub.calls)==1
 
-
 def test_verifier_prompt_closes_completeness_over_requested_metrics_only():
     from v2.prompts import load_prompt
     p=load_prompt("verifier")
@@ -2457,7 +2386,6 @@ async def test_model_valid_path_wrong_result_remains_for_mechanical_rejection():
     report=verify_mechanical(task,draft,[ev],[calculation])
     assert report.status.value=="repair"
     assert any("does not recompute" in reason for reason in report.claim_results[0].reasons)
-
 
 def test_calculation_validation_accepts_ordinary_rate_rounding_but_not_wrong_value():
     from v2.domain.calculations import Calculation, validate_calculation
@@ -2577,7 +2505,6 @@ async def test_team_rank_tie_fails_closed():
 async def test_team_entity_extremum_requirements_fail_closed_without_typed_global_scope(description):
     from v2.adapters.models import ModelSynthesizer
     from v2.contracts import EntityRef, EvidenceEnvelope
-    from v2.domain.calculations import Calculation
     from v2.runtime.verifier import verify_mechanical
     task=TaskSpec(goal=description,mode="quick",deliverable="answer",
         entities=[EntityRef(type="team",id="DET",display_name="Detroit Pistons")],
@@ -2605,7 +2532,6 @@ async def test_team_rank_eligible_unsorted_draft_passes_mechanical_verifier():
     result=verify_mechanical(task,draft,[ev],calculations)
     assert result.status.value == "pass"
     assert result.claim_results[0].supported is True
-
 
 @pytest.mark.anyio
 async def test_semantic_verifier_projection_does_not_send_source_identity():
@@ -2655,7 +2581,6 @@ async def test_safe_failure_taxonomy_exact_native_openai_path(anyio_backend,kind
     assert sentinel not in json.dumps(safe)
     assert set(safe)=={'failure_top_class','failure_class_chain','failure_phase','failure_validation_errors','failure_validation_subtype','failure_schema_sha256','failure_route'}
 
-
 def test_safe_failure_taxonomy_nested_exception_group_redacts_messages():
     import json
     from pydantic import ValidationError
@@ -2684,7 +2609,6 @@ def test_safe_failure_taxonomy_sdk_exception_parity(exc,phase):
     safe=ProviderStructuredModel._safe_failure_taxonomy(exc,schema=VerificationReport,route='semantic_verifier')
     assert safe['failure_phase']==phase
 
-
 def test_safe_failure_taxonomy_unknown_location_keys_are_constant_redacted():
     import json
     from pydantic import ValidationError
@@ -2697,10 +2621,8 @@ def test_safe_failure_taxonomy_unknown_location_keys_are_constant_redacted():
     assert sentinel not in json.dumps(safe)
     assert safe['failure_validation_errors']==[{'type':'extra_forbidden','loc':['<unknown-field>']}]
 
-
 def test_safe_failure_taxonomy_redacts_dynamic_exception_class_name_and_error_type():
     import json
-    from pydantic_core import PydanticCustomError
     from v2.adapters.models import ProviderStructuredModel,_safe_pydantic_error_type
     from v2.contracts import VerificationReport
     sentinel='SECRET_SENTINEL_MUST_NOT_LEAK'
@@ -2751,7 +2673,6 @@ async def test_actual_attempt_redacts_dynamic_exception_type_and_ledger_serializ
     attempt=ledger.entries[-1].data['provider_attempts'][0]
     assert attempt['exception_type']=='<unknown-exception>' and attempt['failure_top_class']=='<unknown-exception>'
 
-
 @pytest.mark.anyio
 @pytest.mark.parametrize("anyio_backend", ["asyncio"])
 @pytest.mark.parametrize(('content','subtype'),[
@@ -2786,7 +2707,6 @@ async def test_safe_failure_validation_subtype_exact_native_openai_path(anyio_ba
     assert safe['failure_validation_subtype']==subtype
     assert sentinel not in json.dumps(safe)
 
-
 def test_safe_failure_validation_subtype_nested_and_dynamic_fallback():
     import json
     from pydantic import ValidationError
@@ -2803,7 +2723,6 @@ def test_safe_failure_validation_subtype_nested_and_dynamic_fallback():
     fallback=ProviderStructuredModel._safe_failure_taxonomy(ExceptionGroup('bounded',[dynamic]),schema=VerificationReport,route='semantic_verifier')
     assert fallback['failure_validation_subtype']=='other_contract_invariant'
     assert sentinel not in json.dumps(fallback)
-
 
 @pytest.mark.parametrize(('errors','expected'),[
     (['known','dynamic'],'other_contract_invariant'),
@@ -2833,7 +2752,6 @@ def test_safe_failure_validation_subtype_conservative_mixed_groups(errors,expect
     assert safe['failure_validation_subtype']==expected
     assert sentinel not in json.dumps(safe)
 
-
 @pytest.mark.parametrize(('exc','phase'),[
     (__import__('openai').APITimeoutError(__import__('httpx').Request('GET','https://test.invalid')),'timeout'),
     (__import__('openai').APIConnectionError(request=__import__('httpx').Request('GET','https://test.invalid')),'transport'),
@@ -2849,7 +2767,6 @@ def test_safe_failure_validation_subtype_not_applicable_outside_validation(exc,p
     assert safe['failure_validation_errors']==[]
     assert safe['failure_validation_subtype']=='not_applicable'
 
-
 def test_safe_failure_validation_subtype_validation_phase_without_recoverable_error_is_other():
     from pydantic_ai.exceptions import UnexpectedModelBehavior
     from v2.adapters.models import ProviderStructuredModel
@@ -2863,7 +2780,6 @@ def test_safe_failure_validation_subtype_validation_phase_without_recoverable_er
     assert safe['failure_phase']=='json_or_schema_validation'
     assert safe['failure_validation_errors']==[]
     assert safe['failure_validation_subtype']=='other_contract_invariant'
-
 
 @pytest.mark.anyio
 async def test_semantic_verifier_prompt_exposes_claim_result_alignment():
@@ -2879,7 +2795,6 @@ async def test_semantic_verifier_prompt_exposes_claim_result_alignment():
     assert '`supported: true` requires exactly `reasons: []`' in prompt
     assert '`supported: false` requires at least one rejection reason' in prompt
 
-
 def test_admission_dimension_ids_reject_noncanonical_values_at_task_boundary():
     from pydantic import ValidationError
     for value in ("!!!", "A B", "ÉFG", "lower"):
@@ -2888,14 +2803,12 @@ def test_admission_dimension_ids_reject_noncanonical_values_at_task_boundary():
         with pytest.raises(ValidationError):
             TaskSpec(goal="x",mode="quick",deliverable="x",requested_outputs=[value])
 
-
 def test_evidence_and_calculation_requirement_ids_cannot_collide():
     from pydantic import ValidationError
     with pytest.raises(ValidationError,match="ids overlap"):
         TaskSpec(goal="x",mode="quick",deliverable="x",
             requirements=[{"id":"same","description":"e","capability_options":["standings"]}],
             calculation_requirements=[{"id":"same","description":"c"}])
-
 
 def _typed_catalog():
     from v2.runtime.assembly import capability_catalog
@@ -3265,7 +3178,6 @@ async def test_review_outage_raises_without_deterministic_draft():
 
 def test_plain_team_ratings_question_without_conflict_reaches_synthesizer():
 
-
     from v2.adapters.models import _deterministic_rank_draft
     task = TaskSpec(goal="net rating", mode="quick", deliverable="team",
                     required_evidence=["team_ratings"], requirements=[])
@@ -3290,14 +3202,12 @@ def test_plain_team_ratings_with_conflict_still_gaps():
 
 def test_ranked_conflict_field_excluded_from_model_output_schemas():
 
-
     from v2.contracts import RequirementReview, TaskSpec
     for model in (TaskSpec, RequirementReview):
         assert "ranked_argument_conflicts" not in model.model_json_schema()["properties"]
 
 @pytest.mark.anyio
 async def test_decode_drops_model_written_ranked_conflicts():
-
 
     from v2.adapters import RecordedStructuredModel
     from v2.contracts import TaskSpec
@@ -3443,7 +3353,6 @@ async def test_ranked_request_text_independence():
         intake = ModelIntake(review_model(), provider="stub", model_name="stub",
                              capability_catalog=_typed_catalog())
         reviews.append(await intake._review_requirements(request, task))
-
 
     assert (reviews[0].model_dump(mode="json")
             == reviews[1].model_dump(mode="json"))
@@ -3605,7 +3514,6 @@ def test_no_request_text_regex_routes_ranked_arguments():
             assert "import re" not in src and "re.compile" not in src, \
                 f"{rel}:{node.name} uses regex for ranked argument routing"
 
-
 def test_ranked_rejects_metric_direction_conflict():
     from v2.adapters.models import ranked_team_arguments_error
     assert ranked_team_arguments_error("team_ratings", {
@@ -3630,7 +3538,6 @@ def test_ranked_rejects_metric_direction_conflict():
         "requested_metric": "NET_RATING", "ranking_direction": "desc",
         "team": "", "season": "2025-26"}) is None
 
-
 def _clutch_net_task():
     from v2.arguments import CapabilityArgumentSet, RequirementArguments, encode_argument
     from v2.contracts import EvidenceRequirement
@@ -3645,7 +3552,6 @@ def _clutch_net_task():
     return TaskSpec(goal="clutch net", mode="quick", deliverable="team",
                     season={"value": "2025-26", "source": "user", "confidence": 1},
                     required_evidence=["clutch"], requirements=[req])
-
 
 def test_clutch_net_requirement_rejects_team_ratings_cover():
     from types import SimpleNamespace
@@ -3662,7 +3568,6 @@ def test_clutch_net_requirement_rejects_team_ratings_cover():
              "team": "", "season": "2025-26"},
             requirements)
 
-
 @pytest.mark.anyio
 async def test_clutch_net_plan_with_team_ratings_cover_fails_closed():
     planner = ModelPlanner(StubModel([
@@ -3673,7 +3578,6 @@ async def test_clutch_net_plan_with_team_ratings_cover_fails_closed():
         provider="stub", model_name="stub", capability_catalog=_typed_catalog())
     with pytest.raises(PlannerArgumentError, match="METRIC_IDENTITY_GAP"):
         await planner.plan(_clutch_net_task())
-
 
 @pytest.mark.anyio
 async def test_clutch_node_covering_served_clutch_metric_still_passes():
@@ -3699,16 +3603,13 @@ async def test_clutch_node_covering_served_clutch_metric_still_passes():
     plan = await planner.plan(task)
     assert plan.nodes[0].covers_requirement_ids == ["clutchpts"]
 
-
 def _real_catalog():
     from v2.runtime.assembly import capability_catalog
 
     return capability_catalog()
 
-
 def _wire_bytes(payload):
     return len(json.dumps(payload, sort_keys=True, default=str).encode())
-
 
 def _dependent_entries(catalog):
     return {
@@ -3716,27 +3617,6 @@ def _dependent_entries(catalog):
         for name, entry in catalog.items()
         if "dependent_entity_arguments" in entry
     }
-
-
-@pytest.mark.anyio
-async def test_intake_wire_omits_empty_dependent_entity_arguments():
-    catalog = _real_catalog()
-    stub = StubModel([{"goal": "Boston record", "mode": "quick",
-                       "deliverable": "text", "required_evidence": ["standings"]}])
-    await ModelIntake(stub, provider="stub", model_name="stub",
-                      capability_catalog=catalog).understand("Boston record?")
-    wire = stub.calls[0]["payload"]["capability_catalog"]
-
-    assert _dependent_entries(wire) == {
-        "injury_impact": {"team": "team"},
-        "player_report": {"player": "player"},
-        "player_evaluation": {"player": "player"},
-        "game_logs": {"player": "player"},
-    }
-    assert len(wire) == len(catalog)
-    assert sum(1 for entry in catalog.values()
-               if "dependent_entity_arguments" in entry
-               and not entry["dependent_entity_arguments"]) == len(catalog) - 6
 
 
 @pytest.mark.anyio
@@ -3765,7 +3645,6 @@ async def test_intake_wire_shrinks_34_bytes_per_capability_versus_unstripped_bas
         json.dumps(payload, sort_keys=True, separators=(",", ":"),
                    default=str).encode()).hexdigest()
 
-
 @pytest.mark.anyio
 async def test_planner_wire_omits_empty_dependent_entity_arguments():
     catalog = _real_catalog()
@@ -3784,7 +3663,6 @@ async def test_planner_wire_omits_empty_dependent_entity_arguments():
         "player_evaluation": {"player": "player"},
         "game_logs": {"player": "player"},
     }
-
 
 @pytest.mark.anyio
 async def test_intake_wire_omits_empty_dependent_entity_arguments():
@@ -3810,7 +3688,6 @@ async def test_intake_wire_omits_empty_dependent_entity_arguments():
         "game_logs": {"player": "player"},
     }
 
-
 @pytest.mark.anyio
 async def test_stripped_wire_leaves_shared_catalog_intact_for_server_validation():
     catalog = _real_catalog()
@@ -3826,7 +3703,6 @@ async def test_stripped_wire_leaves_shared_catalog_intact_for_server_validation(
     assert stage._catalog["player_report"]["dependent_entity_arguments"] == {
         "player": "player"}
     assert stage._wire_catalog["standings"] is not stage._catalog["standings"]
-
 
 @pytest.mark.anyio
 async def test_server_validation_still_rejects_provider_authored_dependent_argument():
@@ -3863,7 +3739,6 @@ async def test_server_validation_still_rejects_provider_authored_dependent_argum
         "player": "player"}
     assert planner._catalog["player_report"]["dependent_entity_arguments"] == {
         "player": "player"}
-
 
 @pytest.mark.anyio
 async def test_wire_projection_keeps_empty_dependent_key_off_untouched_input():

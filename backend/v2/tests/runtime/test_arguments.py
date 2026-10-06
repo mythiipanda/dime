@@ -1,6 +1,6 @@
 import pytest
 from pydantic import ValidationError
-from v2.arguments import RequirementArguments,PlannerArguments,ProviderWireArguments,provider_to_source,encode_argument,migrate_legacy_arguments,RequirementV3,RequirementReviewWire,PlannerOutputWire
+from v2.arguments import RequirementArguments,ProviderWireArguments,provider_to_source,migrate_legacy_arguments,RequirementV3,RequirementReviewWire,PlannerOutputWire
 from v2.argument_schemas import compile_capability_catalog,normalize_provider_wire_schema
 
 def entries_map():return {'entries':[{'key':'x','kind':'int','int_value':1}]}

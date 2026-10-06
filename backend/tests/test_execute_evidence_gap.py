@@ -6,14 +6,13 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from shared import store  # noqa: E402
-from shared.tools.league import get_leaders, get_ratings  # noqa: E402
-from v2.adapters import coverage as coverage_mod  # noqa: E402
-from v2.adapters.core import call_capability  # noqa: E402
-from v2.domain.evidence import admit_evidence  # noqa: E402
+from shared import store
+from shared.tools.league import get_leaders, get_ratings
+from v2.adapters import coverage as coverage_mod
+from v2.adapters.core import call_capability
+from v2.domain.evidence import admit_evidence
 
 SEASON = "2024-25"
-
 
 _HIST_COLUMNS = (
     "team_id BIGINT, team_abbreviation VARCHAR, game_id VARCHAR, "
@@ -48,7 +47,6 @@ _HIST_ROWS = [
      9, 30, 39, 21, 7, 4, 16, 23, 128, "playoffs", SEASON),
 ]
 
-
 def _seed(path):
     connection = duckdb.connect(str(path))
     try:
@@ -76,7 +74,6 @@ def _seed(path):
     finally:
         connection.close()
 
-
 @pytest.fixture()
 def warehouse(monkeypatch, tmp_path):
     path = tmp_path / "execgap.duckdb"
@@ -90,7 +87,6 @@ def warehouse(monkeypatch, tmp_path):
     yield path
     coverage_mod.coverage_cache_clear()
 
-
 def test_assists_full_name_selects_assists_board(warehouse):
     result = get_leaders.invoke(
         {"stat_category": "assists", "season": SEASON})
@@ -98,7 +94,6 @@ def test_assists_full_name_selects_assists_board(warehouse):
     assert result["rows"][0]["PLAYER"] == "Trae Young"
     assert result["rows"][0]["AST"] == 880
     assert result["rows"][0]["GP"] == 76
-
 
 def test_descending_direction_accepted(warehouse):
     result = get_leaders.invoke(
@@ -108,7 +103,6 @@ def test_descending_direction_accepted(warehouse):
     assert result["rows"][0]["PLAYER"] == "Trae Young"
     assert result["rows"][0]["AST"] == 880
 
-
 def test_qualified_leaders_capability_binds_full_name(warehouse):
     envelope = call_capability(
         "qualified_leaders",
@@ -116,7 +110,6 @@ def test_qualified_leaders_capability_binds_full_name(warehouse):
     assert envelope.rows[0]["AST"] == 880
     assert envelope.units["AST"] == "count"
     admit_evidence(envelope, required_season=SEASON)
-
 
 def test_missing_ratings_season_estimated_from_gamelogs(warehouse):
     result = get_ratings.invoke({"season": SEASON, "team": "BOS"})
@@ -134,7 +127,6 @@ def test_missing_ratings_season_estimated_from_gamelogs(warehouse):
     assert result["meta"]["ratings_source"] == "silver_hist_gamelogs"
     assert "derived" in result["meta"]["source"]
 
-
 def test_team_ratings_capability_binds_gamelog_fallback(warehouse):
     envelope = call_capability(
         "team_ratings", {"season": SEASON, "team": "Celtics"})
@@ -142,7 +134,6 @@ def test_team_ratings_capability_binds_gamelog_fallback(warehouse):
     assert envelope.rows[0]["NET_RATING"] == 11.1
     assert envelope.units["NET_RATING"] == "points_per_100_possessions"
     admit_evidence(envelope, required_season=SEASON)
-
 
 def test_ratings_refusal_preserved_without_gamelogs(warehouse, monkeypatch):
     from shared.sources import nba_stats
@@ -162,13 +153,11 @@ def test_ratings_refusal_preserved_without_gamelogs(warehouse, monkeypatch):
     assert "2023-24" in str(result["error"])
     assert "not available" in str(result["error"])
 
-
 def test_clamp_stat_rejects_unknown_category():
     from shared.tools import clamp_stat
 
     with pytest.raises(ValueError):
         clamp_stat("total assists")
-
 
 def test_unknown_stat_category_fails_loudly(warehouse):
     result = get_leaders.invoke(
@@ -176,7 +165,6 @@ def test_unknown_stat_category_fails_loudly(warehouse):
     assert result["ok"] is False
     assert result["rows"] == []
     assert "total assists" in result["error"]
-
 
 def test_natural_ratings_claim_passes_without_unit_phrase(warehouse):
     from v2.contracts import (
@@ -209,7 +197,6 @@ def test_natural_ratings_claim_passes_without_unit_phrase(warehouse):
     report = verify_mechanical(task, draft, [envelope])
     assert report.status.value == "pass"
     assert report.claim_results[0].supported is True
-
 
 def test_player_name_output_binds_leader_row(warehouse):
     from v2.contracts import (
@@ -279,7 +266,6 @@ def test_player_name_output_binds_leader_row(warehouse):
     assert admit_verified_claim_bindings(
         task, execution, draft, candidate) is candidate
 
-
 def test_task_scoped_binding_with_requirement_id_stays_task_scoped():
     from v2.contracts import EvidenceOutputBinding
     binding = EvidenceOutputBinding.model_validate({
@@ -296,14 +282,13 @@ def test_task_scoped_binding_with_requirement_id_stays_task_scoped():
     assert binding.requirement_kind == "task"
     assert binding.requirement_id is None
 
-
 def test_synthesizer_keeps_task_scoped_llm_bindings(warehouse):
     import asyncio
     import json
     from pydantic import TypeAdapter
     from v2.adapters.models import ModelSynthesizer
     from v2.contracts import (
-        Claim, ClaimKind, DraftReport, EvidenceRequirement,
+        EvidenceRequirement,
         SeasonRef, TaskSpec,
     )
     envelope = call_capability(
@@ -379,7 +364,6 @@ def test_synthesizer_keeps_task_scoped_llm_bindings(warehouse):
     assert [binding.output_id
             for binding in draft.claims[0].output_bindings] == [
                 "AST", "PLAYER_NAME"]
-
 
 def test_task_scoped_claim_verifies_and_admits(warehouse):
     from v2.contracts import (
@@ -460,7 +444,6 @@ def test_task_scoped_claim_verifies_and_admits(warehouse):
         output_bindings=bindings)
     assert admit_verified_claim_bindings(
         task, execution, draft, candidate) is candidate
-
 
 def test_planner_wire_entries_validate_without_null_value_slot():
     from v2.arguments import ProviderWireArguments, provider_to_source

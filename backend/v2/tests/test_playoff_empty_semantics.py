@@ -1,5 +1,3 @@
-from types import SimpleNamespace
-
 
 def test_playoffs_does_not_convert_missing_source_to_zero(monkeypatch):
     from shared.tools import league
@@ -12,7 +10,6 @@ def test_playoffs_does_not_convert_missing_source_to_zero(monkeypatch):
     result = league.get_playoffs.invoke({"season": "2024-25"})
     assert result == {"tool": "get_playoffs", "ok": False,
                       "error": "no seeded rows"}
-
 
 def test_playoffs_preserves_verified_empty_population(monkeypatch):
     from shared.tools import league

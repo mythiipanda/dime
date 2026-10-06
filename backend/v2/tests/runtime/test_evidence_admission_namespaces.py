@@ -19,7 +19,6 @@ from v2.contracts import (
 )
 from v2.runtime.models import ExecutionResult, admit_verified_claim_bindings
 
-
 def _meta():
     return {
         "source": "warehouse",
@@ -27,7 +26,6 @@ def _meta():
         "warehouse_id": "frozen-eval",
         "warehouse_sha256": "a" * 64,
     }
-
 
 def _team_rows():
     return [
@@ -45,7 +43,6 @@ def _team_rows():
         }
     ]
 
-
 def _leader_rows():
     return [
         {
@@ -57,7 +54,6 @@ def _leader_rows():
         }
     ]
 
-
 def _build(team_rows, capability, arguments):
     return build_envelope(
         CAPABILITIES[capability],
@@ -66,7 +62,6 @@ def _build(team_rows, capability, arguments):
         entities=None,
         observed_at=datetime.now(UTC),
     )
-
 
 def _admit(task, envelope, node_id, binding):
     node = PlanNode(
@@ -104,7 +99,6 @@ def _admit(task, envelope, node_id, binding):
     )
     return admit_verified_claim_bindings(task, execution, draft, verified)
 
-
 def _team_task():
     return TaskSpec(
         goal="team ratings namespace probe",
@@ -121,7 +115,6 @@ def _team_task():
             )
         ],
     )
-
 
 def _team_binding(envelope, subject_id):
     return EvidenceOutputBinding(
@@ -140,12 +133,10 @@ def _team_binding(envelope, subject_id):
         domain="team_ratings",
     )
 
-
 def test_team_abbreviation_subject_admits():
     envelope = _build(_team_rows(), "team_ratings", {"season": "2024-25"})
     admitted = _admit(_team_task(), envelope, "ratings", _team_binding(envelope, "BOS"))
     assert admitted.output_bindings[0].value.value == 8.3
-
 
 def test_team_numeric_subject_admits():
     envelope = _build(_team_rows(), "team_ratings", {"season": "2024-25"})
@@ -153,7 +144,6 @@ def test_team_numeric_subject_admits():
         _team_task(), envelope, "ratings", _team_binding(envelope, "1610612738")
     )
     assert admitted.output_bindings[0].value.value == 8.3
-
 
 def test_league_scoped_player_subject_admits():
     envelope = _build(_leader_rows(), "qualified_leaders", {"season": "2024-25"})
@@ -190,7 +180,6 @@ def test_league_scoped_player_subject_admits():
     admitted = _admit(task, envelope, "leaders", binding)
     assert admitted.output_bindings[0].value.value == 880
 
-
 def test_absent_subject_still_rejected():
     import pytest
 
@@ -198,7 +187,6 @@ def test_absent_subject_still_rejected():
     binding = _team_binding(envelope, "NYK")
     with pytest.raises(ValueError):
         _admit(_team_task(), envelope, "ratings", binding)
-
 
 def _two_team_rows():
     return [
@@ -228,7 +216,6 @@ def _two_team_rows():
         },
     ]
 
-
 def _team_binding_at(envelope, subject_id, index, value):
     return EvidenceOutputBinding(
         requirement_kind="evidence",
@@ -246,7 +233,6 @@ def _team_binding_at(envelope, subject_id, index, value):
         domain="team_ratings",
     )
 
-
 def test_first_row_default_binding_with_team_subject_rejects_on_row_mismatch():
     import pytest
 
@@ -254,7 +240,6 @@ def test_first_row_default_binding_with_team_subject_rejects_on_row_mismatch():
     binding = _team_binding_at(envelope, "BOS", 0, -1.5)
     with pytest.raises(ValueError, match="binding selector row does not match subject"):
         _admit(_team_task(), envelope, "ratings", binding)
-
 
 def test_subject_matching_nonfirst_row_binding_admits():
     envelope = _build(_two_team_rows(), "team_ratings", {"season": "2024-25"})

@@ -5,11 +5,9 @@ from v2.contracts import Claim, ClaimKind, DraftReport, Plan, PlanNode, RunMode,
 from v2.runtime import FakeCapability, PlanExecutor, Runtime
 from v2.runtime.assembly import MechanicalVerifier
 
-
 @pytest.fixture
 def anyio_backend():
     return "asyncio"
-
 
 def _task():
     from v2.contracts import EvidenceRequirement
@@ -26,11 +24,9 @@ def _task():
         )],
     )
 
-
 class _Intake:
     async def understand(self, request: str):
         return _task()
-
 
 class _Planner:
     async def plan(self, task, failure_context=None):
@@ -40,7 +36,6 @@ class _Planner:
             capability_hints=["standings"],
             covers_requirement_ids=["stats"],
         )])
-
 
 def _binding(output_id, value):
     from v2.contracts import EvidenceOutputBinding
@@ -56,7 +51,6 @@ def _binding(output_id, value):
         domain="standings",
     )
 
-
 class _OmitSynth:
     async def synthesize(self, task, evidence):
         envelope = next(iter(evidence))
@@ -69,7 +63,6 @@ class _OmitSynth:
                 output_bindings=[_binding("WINS", 61)],
             )],
         )
-
 
 class _FullSynth:
     async def synthesize(self, task, evidence):
@@ -84,14 +77,12 @@ class _FullSynth:
             )],
         )
 
-
 class _PassSemantic:
     async def verify(self, task, draft, evidence):
         return VerificationReport(
             status=VerificationStatus.PASS,
             claim_results=[{"claim_index": index, "supported": True} for index, _ in enumerate(draft.claims)],
         )
-
 
 def _runtime(synth, repairer):
     return Runtime(
@@ -103,7 +94,6 @@ def _runtime(synth, repairer):
         semantic_verifier=_PassSemantic(),
         repairer=repairer,
     )
-
 
 @pytest.mark.anyio
 async def test_omitted_output_repairs_with_missing_output_named():
@@ -129,7 +119,6 @@ async def test_omitted_output_repairs_with_missing_output_named():
     joined = " ".join(seen["instructions"])
     assert "LOSSES" in joined
 
-
 @pytest.mark.anyio
 async def test_repeated_omission_fails_loud_with_output_and_column():
     class _StubbornRepair:
@@ -143,7 +132,6 @@ async def test_repeated_omission_fails_loud_with_output_and_column():
     assert "LOSSES" in joined
     assert "standings" in joined
 
-
 @pytest.mark.anyio
 async def test_complete_synthesis_passes_without_repair():
     class _NoRepair:
@@ -153,7 +141,6 @@ async def test_complete_synthesis_passes_without_repair():
     result = await _runtime(_FullSynth(), _NoRepair()).run("sample")
     assert result.repaired is False
     assert result.verification.status == VerificationStatus.PASS
-
 
 @pytest.mark.anyio
 async def test_mvp_winner_and_share_publish_through_real_award_tool(monkeypatch, tmp_path):

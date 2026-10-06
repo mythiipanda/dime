@@ -12,13 +12,11 @@ from shared import rate_limit
 
 BACKEND = Path(__file__).resolve().parents[1]
 
-
 @pytest.fixture(autouse=True)
 def _clean_sql_rerun_limiter():
     rate_limit.reset()
     yield
     rate_limit.reset()
-
 
 def _sql_rerun_request():
     return Request({
@@ -29,7 +27,6 @@ def _sql_rerun_request():
         "client": ("127.0.0.1", 5000),
     })
 
-
 def test_v2_entrypoint_standalone_imports():
     code = (
         "import sys; "
@@ -38,7 +35,6 @@ def test_v2_entrypoint_standalone_imports():
         "assert not app_mods, app_mods"
     )
     subprocess.run([sys.executable, "-c", code], cwd=BACKEND, check=True)
-
 
 def test_v2_entrypoint_routes():
     import v2.main
@@ -66,7 +62,6 @@ def test_v2_entrypoint_routes():
     assert not any(p.startswith("/api/v1") for p in paths), \
         sorted(p for p in paths if p.startswith("/api/v1"))
 
-
 def _stub_providers(monkeypatch):
     import sys
     import types
@@ -80,7 +75,6 @@ def _stub_providers(monkeypatch):
     monkeypatch.setitem(sys.modules, "shared.providers", stub)
     return catalog
 
-
 def test_v2_models_returns_catalog_verbatim(monkeypatch):
     _stub_providers(monkeypatch)
     from v2.api.routes import models as models_view
@@ -90,13 +84,11 @@ def test_v2_models_returns_catalog_verbatim(monkeypatch):
         "options": [{"id": "nvidia:x", "engine": "nvidia", "default": True}],
     }
 
-
 def test_v2_health_ok_shape(monkeypatch):
     catalog = _stub_providers(monkeypatch)
     from v2.api.routes import health as health_view
 
     assert health_view() == {"ok": True, "providers": catalog["available"]}
-
 
 def test_v2_chat_stream_has_get_and_post():
     import v2.main
@@ -106,7 +98,6 @@ def test_v2_chat_stream_has_get_and_post():
         if hasattr(r, "path") and r.path == "/api/v2/chat/stream":
             methods |= set(r.methods or set())
     assert methods == {"GET", "POST"}, methods
-
 
 def test_v2_chat_rate_limit_window():
     import time
@@ -121,7 +112,6 @@ def test_v2_chat_rate_limit_window():
     routes._CHAT_HITS[ip] = [time.time() - 61]
     assert routes._chat_allowed(ip) is True
     routes._CHAT_HITS.pop(ip, None)
-
 
 def test_v2_heartbeat_pings_on_idle():
     import asyncio
@@ -140,7 +130,6 @@ def test_v2_heartbeat_pings_on_idle():
     assert chunks[0].startswith("event: ping\n")
     assert chunks[-1] == "event: x\ndata: {}\n\n"
 
-
 def test_v2_rate_limited_stream_frames():
     import asyncio
     from v2.api.routes import _rate_limited_stream
@@ -154,7 +143,6 @@ def test_v2_rate_limited_stream_frames():
     assert "rate limited" in chunks[0]
     assert chunks[-1].startswith("event: graph_end\n")
 
-
 def _stub_shared(monkeypatch, store_stub=None, **module_stubs):
     import sys
     import types
@@ -167,12 +155,10 @@ def _stub_shared(monkeypatch, store_stub=None, **module_stubs):
         monkeypatch.setitem(sys.modules, f"shared.{name}", mod)
     return shared
 
-
 def _stub_store(**fns):
     import types
 
     return types.SimpleNamespace(**fns)
-
 
 def test_v2_datasets_freshness_ttl_cache(monkeypatch):
     from v2.api import routes
@@ -194,7 +180,6 @@ def test_v2_datasets_freshness_ttl_cache(monkeypatch):
     finally:
         routes._DATASETS_FRESHNESS_CACHE.update(at=0.0, payload=None)
 
-
 def test_v2_dataset_unknown_name():
     from v2.api.routes import dataset as dataset_view
 
@@ -202,7 +187,6 @@ def test_v2_dataset_unknown_name():
     assert out["ok"] is False
     assert "unknown dataset" in out["error"]
     assert "standings" in out["error"]
-
 
 def test_v2_dataset_wowy_path(monkeypatch):
     import types
@@ -224,7 +208,6 @@ def test_v2_dataset_wowy_path(monkeypatch):
     assert out["data"] == [{"x": 1}]
     assert out["verdict"] == "v"
 
-
 def test_v2_threads_list(monkeypatch):
     _stub_shared(monkeypatch, store_stub=_stub_store(
         list_threads=lambda owner: [{"thread_id": "t1"}] if owner == "c" else []))
@@ -232,7 +215,6 @@ def test_v2_threads_list(monkeypatch):
     from v2.api.routes import threads as threads_view
 
     assert threads_view(client="c") == {"threads": [{"thread_id": "t1"}]}
-
 
 def test_v2_thread_runs(monkeypatch):
     seen = {}
@@ -247,7 +229,6 @@ def test_v2_thread_runs(monkeypatch):
 
     assert runs_view("t1", client="c") == {"runs": [{"question": "q"}]}
     assert seen == {"thread": "t1", "owner": "c"}
-
 
 def test_v2_thread_export(monkeypatch):
     _stub_shared(monkeypatch, store_stub=_stub_store(
@@ -274,7 +255,6 @@ def test_v2_thread_export(monkeypatch):
     assert "Limit: MIN >= 500" in body
     assert "Limit: w1" in body
 
-
 def test_v2_sql_rerun_empty_sql():
     import asyncio
 
@@ -283,7 +263,6 @@ def test_v2_sql_rerun_empty_sql():
     out = asyncio.run(sql_rerun(_sql_rerun_request(), SqlRerunBody(sql="   ")))
     assert out == {"ok": False, "error": "sql required", "rows": {}}
 
-
 def test_v2_sql_rerun_too_long():
     import asyncio
 
@@ -291,7 +270,6 @@ def test_v2_sql_rerun_too_long():
 
     out = asyncio.run(sql_rerun(_sql_rerun_request(), SqlRerunBody(sql="x" * 8001)))
     assert out == {"ok": False, "error": "sql too long", "rows": {}}
-
 
 def test_v2_sql_rerun_ok(monkeypatch):
     import asyncio
@@ -311,7 +289,6 @@ def test_v2_sql_rerun_ok(monkeypatch):
     out = asyncio.run(sql_rerun(_sql_rerun_request(), SqlRerunBody(sql="SELECT 1")))
     assert out == {"ok": True, "rows": {
         "columns": ["a"], "rows": [[1]], "ms": 5, "capped": False}}
-
 
 def test_v2_chat_persists_to_shared_thread_log(monkeypatch, tmp_path):
     import asyncio
@@ -433,7 +410,6 @@ def test_v2_chat_persists_to_shared_thread_log(monkeypatch, tmp_path):
     assert [m["role"] for m in history] == ["human", "ai"]
     assert history[0]["text"] == "Who leads the league in TS%?"
 
-
 def test_v2_resolve_clamps_query(monkeypatch):
     import types
 
@@ -452,7 +428,6 @@ def test_v2_resolve_clamps_query(monkeypatch):
 
     assert resolve_view(q="x" * 120) == {"ok": True, "entity": "LAL"}
     assert seen == {"query": "x" * 80}
-
 
 def test_v2_trade_check_passthrough(monkeypatch):
     import types
@@ -480,14 +455,12 @@ def test_v2_trade_check_passthrough(monkeypatch):
         "season": "2024-25",
     }
 
-
 def test_v2_trade_body_list_normalization():
     from v2.api.routes import TradeBody
 
     body = TradeBody(players_a=["a", "", " b "], players_b="c")
     assert body.players_a == "a, b"
     assert body.players_b == "c"
-
 
 def _stub_debate_tools(monkeypatch, invoke):
     import types
@@ -502,7 +475,6 @@ def _stub_debate_tools(monkeypatch, invoke):
     core_mod.clamp_season = lambda season: season
     _stub_shared(monkeypatch, **{"tools": tools_mod, "tools._core": core_mod})
 
-
 def test_v2_debate_card_requires_two_names():
     from v2.api.routes import debate_card as card_view
 
@@ -511,9 +483,7 @@ def test_v2_debate_card_requires_two_names():
     assert card_view(a="LeBron", b="   ") == \
         {"ok": False, "error": "two player names required"}
 
-
 def test_v2_debate_card_ok_shape(monkeypatch):
-    import types
 
     seen = {}
 
@@ -538,7 +508,6 @@ def test_v2_debate_card_ok_shape(monkeypatch):
     assert out["rows"]["url"] == out["url"]
     assert out["meta"] == {"season": "2024-25"}
 
-
 def test_v2_debate_card_tool_failure(monkeypatch):
     def boom(_payload):
         raise RuntimeError("down")
@@ -556,7 +525,6 @@ def test_v2_debate_card_tool_failure(monkeypatch):
     assert card_view(a="LeBron", b="Curry") == \
         {"ok": False, "error": "no stats"}
 
-
 def test_v2_debate_card_file_rejects_bad_names():
     from fastapi import HTTPException
 
@@ -572,7 +540,6 @@ def test_v2_debate_card_file_rejects_bad_names():
         else:
             raise AssertionError(f"name {bad!r} accepted")
 
-
 def test_v2_debate_card_file_missing_404():
     from fastapi import HTTPException
 
@@ -585,7 +552,6 @@ def test_v2_debate_card_file_missing_404():
     else:
         raise AssertionError("missing file served")
 
-
 def test_v2_debate_card_file_serves(monkeypatch, tmp_path):
     import v2.api.routes as routes
 
@@ -597,7 +563,6 @@ def test_v2_debate_card_file_serves(monkeypatch, tmp_path):
     assert resp.media_type == "text/html"
     assert resp.headers["Cache-Control"] == "public, max-age=3600"
     assert str(resp.path) == str(card)
-
 
 def _stub_tool_module(monkeypatch, submodule, **fns):
     import types
@@ -617,7 +582,6 @@ def _stub_tool_module(monkeypatch, submodule, **fns):
                                  f"tools.{submodule}": mod})
     return mod
 
-
 def test_v2_today_parses_json_string(monkeypatch):
     import asyncio
 
@@ -627,7 +591,6 @@ def test_v2_today_parses_json_string(monkeypatch):
 
     assert asyncio.run(today_view(season="2024-25")) == {"games": 3}
     assert asyncio.run(today_view(season="2025-26")) == {"x": 1}
-
 
 def test_v2_watchlist_crud(monkeypatch):
     import asyncio
@@ -656,7 +619,6 @@ def test_v2_watchlist_crud(monkeypatch):
                  "season": "2024-25"}),
         ("remove", {"entity_type": "player", "entity_id": "lebron"}),
     ]
-
 
 def test_v2_movers_normalizes(monkeypatch):
     import asyncio
@@ -693,7 +655,6 @@ def test_v2_movers_normalizes(monkeypatch):
     assert asyncio.run(movers_view(season="2024-25", days=14)) == {"movers": []}
     assert seen["league"] == {"season": "2024-25", "days": 14}
     assert seen["norm"] == ({"deltas": []}, "2024-25")
-
 
 def test_v2_briefing_passthrough(monkeypatch):
     import asyncio

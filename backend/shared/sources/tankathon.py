@@ -30,7 +30,6 @@ _YEAR_AGE = re.compile(r'section year-age desktop"><div>([^<]+)</div>'
                        r'<div>([\d.]+)')
 _TITLE_YEAR = re.compile(r"<title>(\d{4}) NBA (?:Mock Draft|Draft Big Board)")
 
-
 def _get(url: str) -> str:
     import httpx
 
@@ -46,10 +45,8 @@ def _get(url: str) -> str:
         return r.text
     raise last or RuntimeError(f"failed fetching {url}")
 
-
 def _clean(s: str) -> str:
     return _html.unescape(s or "").replace("\xa0", " ").strip()
-
 
 def _parse(html_text: str, board: str) -> tuple[pl.DataFrame, str]:
     m = _TITLE_YEAR.search(html_text)
@@ -92,7 +89,6 @@ def _parse(html_text: str, board: str) -> tuple[pl.DataFrame, str]:
         })
     return pl.DataFrame(rows), year
 
-
 def _fetch(board: str, url: str) -> FetchResult:
     holder: dict = {}
 
@@ -111,10 +107,8 @@ def _fetch(board: str, url: str) -> FetchResult:
             res.error = "draft year not observed in page title"
     return res
 
-
 def mock_draft() -> FetchResult:
     return _fetch("mock_draft", MOCK_URL)
-
 
 def big_board() -> FetchResult:
     return _fetch("big_board", BIG_BOARD_URL)

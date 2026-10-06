@@ -32,12 +32,10 @@ CAPABILITIES = EndpointCapabilities(
     measurement=CapabilityMeasurement(
         probe="stub", measured_at="2026-10-05", models=("primary",)))
 
-
 def _envelope(route: str = "intake") -> RequestEnvelope:
     return RequestEnvelope.freeze(
         provider="inception", model="primary", route=route,
         prompt="p", context={}, tool_schemas={}, planner_version="v2")
-
 
 def _stage_model(budgets: ModelBudgets | None = None) -> ProviderStructuredModel:
     client = httpx.AsyncClient(transport=httpx.MockTransport(
@@ -50,7 +48,6 @@ def _stage_model(budgets: ModelBudgets | None = None) -> ProviderStructuredModel
     model = ProviderStructuredModel("inception", "primary", model_budgets=budgets)
     model._models = lambda: [("inception", chat_model)]
     return model
-
 
 def _slow_agent(monkeypatch, seconds: float, *, fails: bool = False) -> list[float]:
     clock = type("Clock", (), {"value": 0.0})()
@@ -83,7 +80,6 @@ def _slow_agent(monkeypatch, seconds: float, *, fails: bool = False) -> list[flo
         "v2.adapters.models.time.perf_counter", lambda: clock.value)
     return spent
 
-
 def test_the_shipped_budgets_impose_no_deadline_on_a_stage_call():
     budgets = load_model_budgets()
     assert MODEL_BUDGETS_PATH.exists()
@@ -95,7 +91,6 @@ def test_the_shipped_budgets_impose_no_deadline_on_a_stage_call():
         assert policy.total_budget_s is None, route
     assert budgets == ModelBudgets(transport_timeout_s=600.0,
                                    defaults=RoutePolicy(), routes={})
-
 
 def test_a_configured_budget_is_read_per_route_and_may_be_very_large(tmp_path):
     path = tmp_path / "budgets.json"
@@ -112,7 +107,6 @@ def test_a_configured_budget_is_read_per_route_and_may_be_very_large(tmp_path):
         attempt_timeout_s=1200.0)
     assert route_budgets(budgets, "unknown_route") == RoutePolicy(
         attempt_timeout_s=1200.0)
-
 
 @pytest.mark.parametrize("document", [
     {"transport_timeout_s": 0, "default": {}, "routes": {}},
@@ -133,7 +127,6 @@ def test_a_malformed_budget_document_fails_loudly(tmp_path, document):
     with pytest.raises(ValueError):
         load_model_budgets(path)
 
-
 @pytest.mark.anyio
 async def test_a_forty_five_second_stage_survives_the_default_budget(monkeypatch):
     spent = _slow_agent(monkeypatch, SLOW_STAGE_SECONDS)
@@ -144,7 +137,6 @@ async def test_a_forty_five_second_stage_survives_the_default_budget(monkeypatch
     assert spent == [SLOW_STAGE_SECONDS]
     assert model.last_failures == []
     assert str(model.last_output_strategy) == "strict_schema"
-
 
 @pytest.mark.anyio
 async def test_a_configured_attempt_budget_kills_the_same_slow_stage(monkeypatch):
@@ -163,7 +155,6 @@ async def test_a_configured_attempt_budget_kills_the_same_slow_stage(monkeypatch
     assert [failure["output_strategy"]
             for failure in model.last_failures] == [
                 "strict_schema", "tool_call", "prompted_json"]
-
 
 @pytest.mark.anyio
 async def test_the_run_deadline_bounds_a_stage_the_budgets_do_not(monkeypatch):

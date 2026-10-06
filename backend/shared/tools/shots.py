@@ -4,10 +4,9 @@ from typing import Any
 from langchain_core.tools import tool
 
 from .. import store as _store
-from ._core import (MAX_ROWS, clamp_season, coerce_player_id, coerce_team_id, last_completed_season, resolve_season)
+from ._core import (MAX_ROWS, clamp_season, coerce_player_id, coerce_team_id, resolve_season)
 
 TABLE = "silver_shots"
-
 
 def _shots_seasons() -> list[str]:
     try:
@@ -44,10 +43,6 @@ ZONE_LEGEND = {
     "atb_3": "Above the Break 3",
 }
 
-
-
-
-
 _PERIOD_TOKEN_MAP = {
     "1": {1}, "2": {2}, "3": {3}, "4": {4},
     "4th": {4}, "ot": {5}, "1h": {1, 2}, "2h": {3, 4},
@@ -56,18 +51,15 @@ _PERIOD_TOKEN_MAP = {
 _MADE_VALUES = ("made", "missed", "any")
 _GROUP_BY_VALUES = ("", "player", "team")
 
-
-
 SMALL_SAMPLE_MIN = 10
 
 _TEAM_ABBR_BY_ID: dict[int, str] = {}
 _PLAYER_NAME_BY_ID: dict[int, str] = {}
 _STATIC_LOADED = {"teams": False, "players": False}
 
-
 def _team_abbr(team_id: object) -> str | None:
     try:
-        tid = int(team_id)  # type: ignore[arg-type]
+        tid = int(team_id)
     except (TypeError, ValueError):
         return None
     if tid in _TEAM_ABBR_BY_ID:
@@ -88,10 +80,9 @@ def _team_abbr(team_id: object) -> str | None:
         _STATIC_LOADED["teams"] = True
     return _TEAM_ABBR_BY_ID.get(tid)
 
-
 def _player_full_name(player_id: object) -> str | None:
     try:
-        pid = int(player_id)  # type: ignore[arg-type]
+        pid = int(player_id)
     except (TypeError, ValueError):
         return None
     if pid in _PLAYER_NAME_BY_ID:
@@ -112,12 +103,10 @@ def _player_full_name(player_id: object) -> str | None:
         _STATIC_LOADED["players"] = True
     return _PLAYER_NAME_BY_ID.get(pid)
 
-
 def zone_of_label(label: object) -> str | None:
     if label is None:
         return None
     return ZONE_LABEL_MAP.get(str(label).strip())
-
 
 def parse_zones(raw: str) -> set[str]:
     token = (raw or "").strip().lower()
@@ -136,7 +125,6 @@ def parse_zones(raw: str) -> set[str]:
         return set(ZONE_KEYS)
     return out
 
-
 def parse_periods(raw: str) -> set[int] | None:
     token = (raw or "").strip().lower()
     if not token:
@@ -154,18 +142,16 @@ def parse_periods(raw: str) -> set[int] | None:
         return None
     return out
 
-
 def period_matches(period: object, allowed: set[int] | None) -> bool:
     if allowed is None:
         return True
     try:
-        p = int(period)  # type: ignore[arg-type]
+        p = int(period)
     except (TypeError, ValueError):
         return False
     if p >= 5:
         return 5 in allowed
     return p in allowed
-
 
 def parse_made(raw: str) -> str:
     value = (raw or "").strip().lower()
@@ -173,7 +159,6 @@ def parse_made(raw: str) -> str:
         raise ValueError(
             f"invalid made filter {raw!r}; use one of: made, missed, any")
     return value
-
 
 def parse_late_clock(raw: str) -> int | None:
     token = (raw or "").strip()
@@ -190,14 +175,12 @@ def parse_late_clock(raw: str) -> int | None:
             f"invalid late_clock {raw!r}; seconds must be 0-720")
     return seconds
 
-
 def parse_group_by(raw: str) -> str:
     value = (raw or "").strip().lower()
     if value in _GROUP_BY_VALUES:
         return value
     raise ValueError(
         f"invalid group_by {raw!r}; use one of: player, team (or empty for none)")
-
 
 def parse_include_ot(raw: str, default: bool) -> bool:
     token = (raw or "").strip().lower()
@@ -210,31 +193,27 @@ def parse_include_ot(raw: str, default: bool) -> bool:
     raise ValueError(
         f"invalid include_ot {raw!r}; use auto, yes, or no")
 
-
 def fold_ot(periods: set[int] | None, include_ot: bool) -> set[int] | None:
     if periods is None or not include_ot:
         return periods
     return set(periods) | {5}
 
-
 def seconds_left(minutes_remaining: object,
                  seconds_remaining: object) -> int | None:
     try:
-        total = int(minutes_remaining) * 60 + int(seconds_remaining)  # type: ignore[arg-type]
+        total = int(minutes_remaining) * 60 + int(seconds_remaining)
     except (TypeError, ValueError):
         return None
     return total if total >= 0 else None
 
-
 def is_heave(distance_ft: object, minutes_remaining: object,
              seconds_remaining: object) -> bool:
     try:
-        far = float(distance_ft) >= 30.0  # type: ignore[arg-type]
+        far = float(distance_ft) >= 30.0
     except (TypeError, ValueError):
         return False
     left = seconds_left(minutes_remaining, seconds_remaining)
     return bool(far and left is not None and left <= 3)
-
 
 def format_clock(minutes_remaining: object,
                  seconds_remaining: object) -> str:
@@ -242,7 +221,6 @@ def format_clock(minutes_remaining: object,
     if left is None:
         return "unknown"
     return f"{left // 60}:{left % 60:02d}"
-
 
 def efficiency(attempts: int, makes: int,
                threes_made: int) -> dict[str, float]:
@@ -253,7 +231,6 @@ def efficiency(attempts: int, makes: int,
         "efg_pct": round((makes + 0.5 * threes_made) / attempts, 4),
     }
 
-
 def summarize(shots: list[dict[str, Any]]) -> dict[str, Any]:
     attempts = len(shots)
     makes = sum(1 for s in shots if s.get("made"))
@@ -263,7 +240,6 @@ def summarize(shots: list[dict[str, Any]]) -> dict[str, Any]:
                  if s.get("game_id") is not None})
     return {"attempts": attempts, "makes": makes, "threes_made": threes,
             "games": games, **efficiency(attempts, makes, threes)}
-
 
 def summarize_by_zone(shots: list[dict[str, Any]]) -> list[dict[str, Any]]:
     out = []
@@ -276,12 +252,11 @@ def summarize_by_zone(shots: list[dict[str, Any]]) -> list[dict[str, Any]]:
                     **efficiency(len(group), makes, threes)})
     return out
 
-
 def summarize_by_period(shots: list[dict[str, Any]]) -> list[dict[str, Any]]:
     buckets: dict[Any, list[dict[str, Any]]] = {}
     for s in shots:
         try:
-            p = int(s.get("period"))  # type: ignore[arg-type]
+            p = int(s.get("period"))
         except (TypeError, ValueError):
             continue
         buckets.setdefault("OT" if p >= 5 else p, []).append(s)
@@ -298,7 +273,6 @@ def summarize_by_period(shots: list[dict[str, Any]]) -> list[dict[str, Any]]:
                     **efficiency(len(group), makes, threes)})
     return out
 
-
 def group_row(attempts: int, makes: int, threes_made: int,
               games: int = 0) -> dict[str, Any]:
     row: dict[str, Any] = {
@@ -313,7 +287,6 @@ def group_row(attempts: int, makes: int, threes_made: int,
         row["games"] = games
     return row
 
-
 def disambiguate_last_name(raw: str,
                            pairs: list[tuple[Any, Any]]) -> dict[str, Any]:
     key = (raw or "").strip().lower()
@@ -322,7 +295,7 @@ def disambiguate_last_name(raw: str,
         if str(name or "").strip().lower() != key:
             continue
         try:
-            pid_int = int(pid)  # type: ignore[arg-type]
+            pid_int = int(pid)
         except (TypeError, ValueError):
             continue
         hits.setdefault(pid_int, str(name))
@@ -334,34 +307,21 @@ def disambiguate_last_name(raw: str,
     return {"player_id": None, "candidates": candidates,
             "ambiguous": len(hits) > 1}
 
-
-
-
-
-
-
-
-
-
 def _warehouse_conn() -> Any:
     return _store.connect(read_only=True)
-
 
 def _zone_case_sql() -> str:
     whens = " ".join(f"WHEN '{label}' THEN '{zone}'"
                      for label, zone in ZONE_LABEL_MAP.items())
     return f"CASE SHOT_ZONE_BASIC {whens} END"
 
-
 def _three_sql(zone_expr: str) -> str:
     return (f"({zone_expr} IN ('corner_3', 'atb_3') "
             f"OR upper(SHOT_TYPE) LIKE '3PT%')")
 
-
 def _heave_sql() -> str:
     return ("(COALESCE(SHOT_DISTANCE, 0) >= 30 AND "
             "COALESCE(MINUTES_REMAINING * 60 + SECONDS_REMAINING, 999999) <= 3)")
-
 
 def _where_sql(season: str, player_id: int | None, team_id: int | None,
                wanted_zones: set[str], allowed_periods: set[int] | None,
@@ -393,11 +353,6 @@ def _where_sql(season: str, player_id: int | None, team_id: int | None,
         clauses.append("(" + " OR ".join(parts) + ")")
     if late_seconds is not None:
 
-
-
-
-
-
         clauses.append("PERIOD >= 4"
                        if (include_ot or allowed_periods is not None)
                        else "PERIOD = 4")
@@ -413,20 +368,17 @@ def _where_sql(season: str, player_id: int | None, team_id: int | None,
         clauses.append("COALESCE(SHOT_MADE_FLAG, '') <> '1'")
     return " AND ".join(clauses), params
 
-
 def _qrows(con: Any, sql: str,
            params: list[object]) -> list[dict[str, Any]]:
     cur = con.execute(sql, params)
     cols = [d[0] for d in cur.description]
     return [dict(zip(cols, row)) for row in cur.fetchall()]
 
-
 _AGG_SELECT = """COUNT(*) AS attempts,
     SUM(CASE WHEN SHOT_MADE_FLAG = '1' THEN 1 ELSE 0 END) AS makes,
     SUM(CASE WHEN SHOT_MADE_FLAG = '1' AND {three} THEN 1 ELSE 0 END)
         AS threes_made,
     COUNT(DISTINCT GAME_ID) AS games"""
-
 
 def _resolve_player(con: Any, season: str,
                     raw: str) -> tuple[int | None, str, Any]:
@@ -445,7 +397,7 @@ def _resolve_player(con: Any, season: str,
         [season, text])]
     if len(pairs) == 1:
         try:
-            return int(pairs[0][1]), "ok", None  # type: ignore[arg-type]
+            return int(pairs[0][1]), "ok", None
         except (TypeError, ValueError):
             pass
     if len(pairs) > 1:
@@ -459,10 +411,8 @@ def _resolve_player(con: Any, season: str,
         [season, last_token])]
     if len(token_pairs) == 1 and last_token.lower() != text.lower():
 
-
-
         try:
-            return int(token_pairs[0][1]), "ok", None  # type: ignore[arg-type]
+            return int(token_pairs[0][1]), "ok", None
         except (TypeError, ValueError):
             pass
     try:
@@ -482,7 +432,6 @@ def _resolve_player(con: Any, season: str,
     if outcome["player_id"] is None:
         return None, "unknown", f"unknown player: {text!r}"
     return outcome["player_id"], "ok", None
-
 
 def _disambiguation_payload(con: Any, season: str, text: str,
                             candidates: list[dict[str, Any]],
@@ -531,33 +480,13 @@ def _disambiguation_payload(con: Any, season: str, text: str,
     out.sort(key=lambda r: r["attempts"], reverse=True)
     return out
 
-
-@tool
+@tool(description='Conversational shot finder: filter warehouse shots by player, team,\nzone, period, makes, and late-clock window, with zone/period aggregates\nplus optional per-player/per-team leaderboards.\n\nzones: rim, short_mid, long_mid, corner_3, atb_3 (comma-separated;\n"" = all). periods: 1-4, ot, 1h, 2h, 4th (comma-separated; "" = all).\nlate_clock: integer seconds remaining (periods 4+, time-based only, not\nscore-aware). group_by: "" | "player" | "team" -- per-player/per-team\nvolume + efficiency leaderboards sorted by attempts (this is how you\nanswer "who takes over fourth quarters"). include_ot: auto (default --\novertime is included when a 4th-quarter/2nd-half window is selected,\nwhen overtime is explicitly selected (periods=\'ot\'), or when late_clock\nis given without an explicit period filter), yes, no.\nperiods=\'4th\' includes overtime by default; pass include_ot=no to get\nexactly the 4th quarter. Zero matches return ok True with empty\naggregates and an explanatory note, never silent zeros. Results are\ntime-based only, never score-aware (meta.clutch_safe=false); TS% is not\nshown because the table has no free-throw attempts.')
 def search_shots(player: str = "", team: str = "", zones: str = "",
                  periods: str = "", three_only: bool = False,
                  made: str = "any", late_clock: str = "",
                  exclude_heaves: bool = True, limit: int = 25,
                  season: str | None = None, group_by: str = "",
                  include_ot: str = "auto") -> dict[str, Any]:
-    """Conversational shot finder: filter warehouse shots by player, team,
-    zone, period, makes, and late-clock window, with zone/period aggregates
-    plus optional per-player/per-team leaderboards.
-
-    zones: rim, short_mid, long_mid, corner_3, atb_3 (comma-separated;
-    "" = all). periods: 1-4, ot, 1h, 2h, 4th (comma-separated; "" = all).
-    late_clock: integer seconds remaining (periods 4+, time-based only, not
-    score-aware). group_by: "" | "player" | "team" -- per-player/per-team
-    volume + efficiency leaderboards sorted by attempts (this is how you
-    answer "who takes over fourth quarters"). include_ot: auto (default --
-    overtime is included when a 4th-quarter/2nd-half window is selected,
-    when overtime is explicitly selected (periods='ot'), or when late_clock
-    is given without an explicit period filter), yes, no.
-    periods='4th' includes overtime by default; pass include_ot=no to get
-    exactly the 4th quarter. Zero matches return ok True with empty
-    aggregates and an explanatory note, never silent zeros. Results are
-    time-based only, never score-aware (meta.clutch_safe=false); TS% is not
-    shown because the table has no free-throw attempts.
-    """
     season = resolve_season(season)
     season = clamp_season(season)
     _shot_seasons = _shots_seasons()
@@ -583,13 +512,6 @@ def search_shots(player: str = "", team: str = "", zones: str = "",
     except (TypeError, ValueError):
         lim = MAX_ROWS
     lim = max(1, min(MAX_ROWS, lim))
-
-
-
-
-
-
-
 
     ot_default = ((allowed_periods is not None
                    and (4 in allowed_periods or 5 in allowed_periods))
@@ -626,7 +548,6 @@ def search_shots(player: str = "", team: str = "", zones: str = "",
     finally:
         con.close()
 
-
 def _ambiguous_response(con: Any, season: str, text: str,
                         candidates: list[dict[str, Any]],
                         team_id: int | None, wanted_zones: set[str],
@@ -635,7 +556,6 @@ def _ambiguous_response(con: Any, season: str, text: str,
                         exclude_heaves: bool, group: str,
                         include_ot: bool = True) -> dict[str, Any]:
     season = resolve_season(season)
-    zone_expr = _zone_case_sql()
     heave_filter = "" if not exclude_heaves else f" AND NOT {_heave_sql()}"
     where_np, params_np = _where_sql(
         season, None, team_id, wanted_zones, folded, late_seconds,
@@ -678,7 +598,6 @@ def _ambiguous_response(con: Any, season: str, text: str,
         "filters": filters,
         "meta": meta,
     }
-
 
 def _run_search(con: Any, season: str, player: str, team: str,
                 player_id: int | None, team_id: int | None,
@@ -805,7 +724,7 @@ def _run_search(con: Any, season: str, player: str, team: str,
         except (TypeError, ValueError):
             distance = None
         try:
-            period = int(r["period"])  # type: ignore[arg-type]
+            period = int(r["period"])
         except (TypeError, ValueError):
             period = None
         shots.append({

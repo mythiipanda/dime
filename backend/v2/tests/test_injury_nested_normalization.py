@@ -1,5 +1,3 @@
-from langchain_core.tools import BaseTool
-
 
 class _FakeCore:
     @staticmethod
@@ -9,7 +7,6 @@ class _FakeCore:
             "injuries": "[{'status': 'Day-To-Day', 'date': '2026-07-27T16:11Z', "
                         "'athlete': {'displayName': 'Jayson Tatum'}}]",
         }]
-
 
 def test_named_player_filter_reads_nested_warehouse_injuries(monkeypatch):
     from shared.tools import league
@@ -32,7 +29,6 @@ def test_named_player_filter_reads_nested_warehouse_injuries(monkeypatch):
     assert nested["athlete"]["displayName"] == "Jayson Tatum"
     assert nested["date"] == "2026-07-27T16:11Z"
     assert "player_note" not in result
-
 
 def test_nested_json_injuries_are_exported_as_structured_values(monkeypatch):
     from shared.tools import league

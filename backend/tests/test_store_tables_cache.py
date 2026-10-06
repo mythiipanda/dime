@@ -9,7 +9,6 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from shared import store
 
-
 @pytest.fixture()
 def warehouse_db(monkeypatch, tmp_path):
     db = tmp_path / "wh.duckdb"
@@ -23,7 +22,6 @@ def warehouse_db(monkeypatch, tmp_path):
     yield db
     store.warehouse_pool_clear()
     store.warehouse_tables_cache_clear()
-
 
 class _CountingProxy:
     def __init__(self, real):
@@ -49,7 +47,6 @@ class _CountingProxy:
     def __exit__(self, *args):
         return False
 
-
 @pytest.fixture()
 def show_counter(monkeypatch):
     counts = []
@@ -63,7 +60,6 @@ def show_counter(monkeypatch):
     monkeypatch.setattr(store, "connect", _counting)
     return counts
 
-
 def test_cache_hit_avoids_requery(warehouse_db, show_counter):
     first = store.tables()
     assert first == {"t1"}
@@ -73,7 +69,6 @@ def test_cache_hit_avoids_requery(warehouse_db, show_counter):
     assert len(show_counter) == 1
     assert second == first
     assert second is not first
-
 
 def test_stat_change_invalidates(warehouse_db, show_counter):
     assert store.tables() == {"t1"}
@@ -100,7 +95,6 @@ def test_stat_change_invalidates(warehouse_db, show_counter):
     assert store.tables() == {"t1", "t2"}
     assert len(show_counter) == 2
 
-
 def test_warm_hit_avg_under_1ms_no_requery(warehouse_db, show_counter):
     import time
     assert store.tables() == {"t1"}
@@ -113,7 +107,6 @@ def test_warm_hit_avg_under_1ms_no_requery(warehouse_db, show_counter):
     assert elapsed / calls < 0.001
     assert len(show_counter) == 1
 
-
 def test_cache_clear_forces_requery(warehouse_db, show_counter):
     assert store.tables() == {"t1"}
     assert store.tables() == {"t1"}
@@ -121,7 +114,6 @@ def test_cache_clear_forces_requery(warehouse_db, show_counter):
     store.warehouse_tables_cache_clear()
     assert store.tables() == {"t1"}
     assert len(show_counter) == 2
-
 
 def test_write_path_eviction_invalidates(warehouse_db, show_counter):
     assert store.tables() == {"t1"}
@@ -136,7 +128,6 @@ def test_write_path_eviction_invalidates(warehouse_db, show_counter):
     names = store.tables()
     assert "t3" in names
     assert len(show_counter) == 2
-
 
 def test_concurrent_access_is_consistent(warehouse_db):
     assert store.tables() == {"t1"}
@@ -162,13 +153,11 @@ def test_concurrent_access_is_consistent(warehouse_db):
     for names in results:
         assert names == {"t1"}
 
-
 def test_missing_path_falls_back_without_caching(warehouse_db, tmp_path):
     missing = tmp_path / "nope.duckdb"
     with pytest.raises(Exception):
         store.tables(path=missing)
     assert store.tables() == {"t1"}
-
 
 def test_external_writer_new_table_visible_without_pool_event(tmp_path):
     db = tmp_path / "ext.duckdb"
@@ -191,7 +180,6 @@ def test_external_writer_new_table_visible_without_pool_event(tmp_path):
         store.warehouse_pool_clear()
         store.warehouse_tables_cache_clear()
 
-
 def test_sample_hexdigest_discriminates_same_size_same_mtime(tmp_path):
     import os
     size = 20000
@@ -211,7 +199,6 @@ def test_sample_hexdigest_discriminates_same_size_same_mtime(tmp_path):
     d2 = store._warehouse_sample_hexdigest(f2, s2.st_size)
     assert d1 is not None and d2 is not None
     assert d1 != d2
-
 
 def test_external_rewrite_restored_mtime_visible_through_tables(tmp_path):
     import os

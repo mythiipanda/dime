@@ -19,7 +19,6 @@ def test_existing_award_output_declares_score_provenance(monkeypatch):
     assert "not points" in meta["score_definition"]
     assert "an official award result" in meta["score_definition"]
 
-
 def test_rookie_leader_surface_declares_source_method_and_stat_unit(monkeypatch):
     from unittest.mock import MagicMock
     from shared.tools import league

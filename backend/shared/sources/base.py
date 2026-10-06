@@ -4,7 +4,6 @@ from datetime import datetime, timezone
 from typing import Any
 import polars as pl
 
-
 @dataclass
 class FetchMeta:
     source: str
@@ -13,14 +12,12 @@ class FetchMeta:
         default_factory=lambda: datetime.now(timezone.utc).isoformat()
     )
 
-
 @dataclass
 class FetchResult:
     frame: pl.DataFrame
     meta: FetchMeta
     ok: bool = True
     error: str = ""
-
 
 def empty(source: str, season: str, error: str) -> FetchResult:
     return FetchResult(
@@ -29,7 +26,6 @@ def empty(source: str, season: str, error: str) -> FetchResult:
         ok=False,
         error=error[:300],
     )
-
 
 def safe(source: str, season: str, fn: Any, *args: Any,
          accept_empty: bool = False, **kwargs: Any) -> FetchResult:

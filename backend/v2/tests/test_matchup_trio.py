@@ -1,7 +1,6 @@
 from v2.adapters import AdapterError, call_capability
 import pytest
 
-
 def _series_payload():
     return {
         "tool": "get_season_series",
@@ -16,7 +15,6 @@ def _series_payload():
         },
         "meta": {"source": "warehouse", "season": "2025-26"},
     }
-
 
 def _h2h_payload():
     return {
@@ -41,7 +39,6 @@ def _h2h_payload():
         "meta": {"source": "warehouse", "season": "2025-26"},
     }
 
-
 def _splits_payload():
     return {
         "tool": "get_matchup_splits",
@@ -61,7 +58,6 @@ def _splits_payload():
         "meta": {"source": "warehouse", "season": "2025-26"},
     }
 
-
 class _Tool:
     def __init__(self, payload):
         self.payload = payload
@@ -70,7 +66,6 @@ class _Tool:
     def invoke(self, arguments):
         self.calls.append(arguments)
         return self.payload
-
 
 def test_season_series_envelope_carries_meetings():
     tool = _Tool(_series_payload())
@@ -87,12 +82,10 @@ def test_season_series_envelope_carries_meetings():
     assert env.qualification
     assert env.coverage
 
-
 def test_season_series_failure_surfaces():
     tool = _Tool({"tool": "get_season_series", "ok": False, "error": "two different teams needed"})
     with pytest.raises(AdapterError, match="two different teams"):
         call_capability("season_series", {"team_a": "BOS", "team_b": "BOS", "season": "2025-26"}, tools={"get_season_series": tool})
-
 
 def test_head_to_head_envelope_carries_deltas():
     tool = _Tool(_h2h_payload())
@@ -111,12 +104,10 @@ def test_head_to_head_envelope_carries_deltas():
     assert env.qualification
     assert env.coverage
 
-
 def test_head_to_head_failure_surfaces():
     tool = _Tool({"tool": "get_head_to_head", "ok": False, "error": "unknown player: ZZZ"})
     with pytest.raises(AdapterError, match="unknown player"):
         call_capability("head_to_head", {"player": "ZZZ", "opponent": "NYK", "season": "2025-26"}, tools={"get_head_to_head": tool})
-
 
 def test_matchup_splits_envelope_carries_splits():
     tool = _Tool(_splits_payload())
@@ -133,7 +124,6 @@ def test_matchup_splits_envelope_carries_splits():
     assert env.units["fg_pct"] == "fraction_0_1"
     assert env.qualification
     assert env.coverage
-
 
 def test_matchup_splits_failure_surfaces():
     tool = _Tool({"tool": "get_matchup_splits", "ok": False, "error": "unknown player: ZZZ"})

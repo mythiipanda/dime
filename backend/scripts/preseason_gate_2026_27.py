@@ -41,7 +41,6 @@ CHECKLIST_FILES = [
     "backend/app/tools/team.py",
 ]
 
-
 def fetch_json(url, timeout, headers=None):
     req = urllib.request.Request(url, headers=headers or {})
     try:
@@ -51,7 +50,6 @@ def fetch_json(url, timeout, headers=None):
         return e.code, {"_http_error": str(e)}
     except Exception as e:
         return -1, {"_error": f"{type(e).__name__}: {e}"}
-
 
 def summarize_espn(date, payload):
     events = payload.get("events", []) if isinstance(payload, dict) else []
@@ -65,7 +63,6 @@ def summarize_espn(date, payload):
         )
     season = ((payload.get("season") or {}) if isinstance(payload, dict) else {}) or {}
     return events, rows, season
-
 
 def check_espn():
     out = {}
@@ -86,7 +83,6 @@ def check_espn():
         for r in rows[:8]:
             print(f"  - {r}")
     return out, ok_all
-
 
 def probe_nba():
     results = {}
@@ -113,7 +109,6 @@ def probe_nba():
     results["cdn.nba.com"] = cdn_state
     return results
 
-
 def grep_pins(repo_root):
     pat = re.compile(r"2025-26")
     hits = {}
@@ -139,7 +134,6 @@ def grep_pins(repo_root):
         print(f"  - {k}: {hits[k]} (extra)")
     return hits
 
-
 def main():
     repo_root = Path(__file__).resolve().parents[2]
     print("== preseason gate 2026-27 (read-only, no warehouse writes) ==")
@@ -164,7 +158,6 @@ def main():
         f"{fallback}; {pins_found} pinned 2025-26 hits still present, cutover stays shut until October"
     )
     return 0
-
 
 if __name__ == "__main__":
     sys.exit(main())

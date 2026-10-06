@@ -17,17 +17,14 @@ from v2.contracts import (
     window_of_arguments,
 )
 
-
 DEFAULT_CONTEXT_TOKEN_BUDGET = 4000
 
 PRUNE_LEVEL_ROWS = "rows"
 PRUNE_LEVEL_TOOL_META = "tool_meta"
 PRUNE_LEVEL_TURN_PROSE = "turn_prose"
 
-
 class CitationOrphanError(ValueError):
     pass
-
 
 @dataclass(frozen=True)
 class PruneReport:
@@ -36,7 +33,6 @@ class PruneReport:
     levels_applied: tuple[str, ...]
     retained_evidence_ids: tuple[str, ...]
     dropped_rows: int
-
 
 def count_tokens(text: str) -> int:
     if not isinstance(text, str):
@@ -48,14 +44,11 @@ def count_tokens(text: str) -> int:
             "tiktoken is required for context token counts") from exc
     return len(tiktoken.get_encoding("cl100k_base").encode(text))
 
-
 def turns_tokens(turns: Iterable[ConversationTurn]) -> int:
     return sum(count_tokens(turn.content) for turn in turns)
 
-
 def envelope_tokens(envelope: EvidenceEnvelope) -> int:
     return count_tokens(envelope.model_dump_json())
-
 
 def resolve_selector(rows: Any, selector: str) -> Any:
     if not isinstance(selector, str) or not selector:
@@ -89,7 +82,6 @@ def resolve_selector(rows: Any, selector: str) -> Any:
             raise ValueError("selector has an unexpected shape")
     return current
 
-
 def _cited_row_indices(selectors: Iterable[str]) -> set[int]:
     found: set[int] = set()
     for selector in selectors:
@@ -101,7 +93,6 @@ def _cited_row_indices(selectors: Iterable[str]) -> set[int]:
         found.add(index)
     return found
 
-
 def _selector_top_key(selector: str) -> str:
     body = selector[len("rows."):] if selector.startswith("rows.") else ""
     key = body.split(".", 1)[0].split("[", 1)[0]
@@ -109,13 +100,11 @@ def _selector_top_key(selector: str) -> str:
         raise ValueError("selector names a field that is not present")
     return key
 
-
 def _selector_leaf(selector: str) -> str:
     tail = selector.rsplit(".", 1)[-1].split("[", 1)[0]
     if not tail:
         raise ValueError("selector names a field that is not present")
     return tail
-
 
 def _require_token_budget(value: int) -> int:
     if isinstance(value, bool) or not isinstance(value, int):
@@ -123,7 +112,6 @@ def _require_token_budget(value: int) -> int:
     if value <= 0:
         raise ValueError("token budget must be positive")
     return value
-
 
 def compact_evidence_rows(
     envelope: EvidenceEnvelope, keep_selectors: Iterable[str],
@@ -142,7 +130,6 @@ def compact_evidence_rows(
             "rows": {key: value for key, value in rows.items() if key in wanted}})
     raise TypeError("evidence rows must be a list or a mapping")
 
-
 def strip_envelope_meta(
     envelope: EvidenceEnvelope, cited_fields: Iterable[str],
 ) -> EvidenceEnvelope:
@@ -152,7 +139,6 @@ def strip_envelope_meta(
     if kept == envelope.metric_definitions:
         return envelope
     return envelope.model_copy(update={"metric_definitions": kept})
-
 
 def _head_text(text: str, token_limit: int) -> str:
     import tiktoken
@@ -165,12 +151,10 @@ def _head_text(text: str, token_limit: int) -> str:
         raise ValueError("context token budget too small to preserve turn order")
     return encoding.decode(ids[:token_limit])
 
-
 def _retruncated_turn(turn: ConversationTurn, token_limit: int) -> ConversationTurn:
     narrowed = _head_text(turn.content, token_limit)
     return ConversationTurn.model_validate(
         {"role": turn.role, "content": narrowed})
-
 
 def prune_turn_prose(
     turns: Iterable[ConversationTurn], token_budget: int,
@@ -204,7 +188,6 @@ def prune_turn_prose(
         left -= take
     narrowed_older.reverse()
     return tuple([*narrowed_older, ordered[-1]])
-
 
 def prune_session_context(
     turns: Iterable[ConversationTurn],
@@ -284,13 +267,11 @@ def prune_session_context(
         dropped_rows=dropped,
     )
 
-
 @dataclass(frozen=True)
 class EvidenceValue:
     evidence_id: str
     path: str
     value: Any
-
 
 def iter_values(evidence: EvidenceEnvelope) -> Iterator[EvidenceValue]:
     def walk(value: Any, path: str) -> Iterator[EvidenceValue]:
@@ -304,7 +285,6 @@ def iter_values(evidence: EvidenceEnvelope) -> Iterator[EvidenceValue]:
             yield EvidenceValue(evidence.evidence_id, path, value)
 
     yield from walk(evidence.rows, "rows")
-
 
 def decimal_value(value: Any) -> Decimal | None:
     if isinstance(value, bool) or value is None:
@@ -323,7 +303,6 @@ def decimal_value(value: Any) -> Decimal | None:
     except InvalidOperation:
         return None
     return result if result.is_finite() else None
-
 
 class EvidenceIndex:
     def __init__(self, envelopes: Iterable[EvidenceEnvelope]) -> None:
@@ -396,7 +375,6 @@ class SourceIntegrityIssue:
     code: str
     message: str
 
-
 def source_integrity_issues(
     evidence: EvidenceEnvelope,
     *,
@@ -449,7 +427,6 @@ class GuardDenial:
     check: str
     message: str
 
-
 NON_EMPTY_ROWS_REQUIRED = frozenset({"sql_exec"})
 
 _SEASON_LIKE_KEYS = frozenset({"season", "through_season"})
@@ -470,7 +447,6 @@ _ROW_ENTITY_KEYS = {
     "team_id": "team",
 }
 
-
 def _is_season_text(value: object) -> bool:
     if not isinstance(value, str):
         return False
@@ -483,7 +459,6 @@ def _is_season_text(value: object) -> bool:
         and int(parts[1]) == (int(parts[0]) + 1) % 100
     )
 
-
 def _call_seasons(arguments: Mapping[str, Any]) -> set[str]:
     found: set[str] = set()
     for value in arguments.values():
@@ -495,7 +470,6 @@ def _call_seasons(arguments: Mapping[str, Any]) -> set[str]:
             found.add(str(value).strip())
     return found
 
-
 def _parse_call_as_of(arguments: Mapping[str, Any]) -> date | None:
     for key in _AS_OF_KEYS:
         value = arguments.get(key)
@@ -506,7 +480,6 @@ def _parse_call_as_of(arguments: Mapping[str, Any]) -> date | None:
         except ValueError:
             continue
     return None
-
 
 def _call_entities(arguments: Mapping[str, Any]) -> set[tuple[str, str]]:
     found: set[tuple[str, str]] = set()
@@ -520,10 +493,8 @@ def _call_entities(arguments: Mapping[str, Any]) -> set[tuple[str, str]]:
         found.add((entity_type, canonical_entity_id(entity_type, text)))
     return found
 
-
 def _task_entities(task: TaskSpec) -> set[tuple[str, str]]:
     return {canonical_entity_ref(entity) for entity in task.entities}
-
 
 def _row_seasons(rows: Any) -> set[str]:
     items = rows if isinstance(rows, list) else [rows]
@@ -537,7 +508,6 @@ def _row_seasons(rows: Any) -> set[str]:
             ):
                 found.add(str(value).strip())
     return found
-
 
 def _row_entities(rows: Any) -> set[tuple[str, str]]:
     items = rows if isinstance(rows, list) else [rows]
@@ -555,11 +525,9 @@ def _row_entities(rows: Any) -> set[tuple[str, str]]:
             found.add((entity_type, canonical_entity_id(entity_type, text)))
     return found
 
-
 def _envelope_entities(envelope: EvidenceEnvelope) -> set[tuple[str, str]]:
     found = {canonical_entity_ref(entity) for entity in envelope.entities}
     return found | _row_entities(envelope.rows)
-
 
 def _rows_empty(rows: Any) -> bool:
     if isinstance(rows, list):
@@ -567,7 +535,6 @@ def _rows_empty(rows: Any) -> bool:
     if isinstance(rows, Mapping):
         return len(rows) == 0
     return False
-
 
 def pre_call_denials(
     task: TaskSpec,
@@ -629,7 +596,6 @@ def pre_call_denials(
                 ),
             ))
     return denials
-
 
 def post_result_denials(
     task: TaskSpec,
@@ -728,12 +694,10 @@ def post_result_denials(
         ))
     return denials
 
-
 class EvidenceAdmissionError(ValueError):
     def __init__(self, issues: list[SourceIntegrityIssue]) -> None:
         self.issues = issues
         super().__init__("; ".join(issue.message for issue in issues))
-
 
 def admit_evidence(
     evidence: EvidenceEnvelope,

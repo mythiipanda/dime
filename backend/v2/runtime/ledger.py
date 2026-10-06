@@ -15,14 +15,12 @@ from typing import Any, Iterable
 _LEDGER_LOCKS_GUARD = Lock()
 _LEDGER_LOCKS: dict[Path, Lock] = {}
 
-
 def _ledger_path_lock(path: Path) -> Lock:
     resolved = path.resolve()
     with _LEDGER_LOCKS_GUARD:
         return _LEDGER_LOCKS.setdefault(resolved, Lock())
 
 from pydantic import BaseModel, ConfigDict, Field, StrictFloat, StrictInt, model_validator
-
 
 class LedgerKind(StrEnum):
     TURN_START = "turn/start"
@@ -35,20 +33,17 @@ class LedgerKind(StrEnum):
     STEP_END = "step/end"
     TURN_END = "turn/end"
 
-
 class TerminalReason(StrEnum):
     COMPLETE = "complete"
     FAILED = "failed"
     CANCELLED = "cancelled"
     TIMEOUT = "timeout"
 
-
 _LIVE_FALLBACK_KEYS = frozenset({
     "capability", "requested_season", "warehouse_table",
     "warehouse_seasons", "live_source", "outcome",
 })
 _LIVE_FALLBACK_CAPABILITY = r"[a-z][a-z0-9_]{0,63}"
-
 
 def _validate_live_fallback_data(data: dict[str, Any]) -> None:
     from v2.contracts import LiveFallback
@@ -73,12 +68,10 @@ def _validate_live_fallback_data(data: dict[str, Any]) -> None:
         raise ValueError(
             f"live fallback data does not match LiveFallback: {exc}") from exc
 
-
 def exception_text(exc: BaseException, *, max_length: int = 4000) -> str:
     prefix = f"{type(exc).__name__}: "
     detail = str(exc)
     return prefix + detail[:max(0, max_length - len(prefix))]
-
 
 class RequestEnvelope(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
@@ -182,7 +175,6 @@ class RequestEnvelope(BaseModel):
             output_strategy=output_strategy,
         )
 
-
 class LedgerEntry(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
@@ -201,7 +193,6 @@ class LedgerEntry(BaseModel):
             raise ValueError("ledger recorded_at must include timezone")
         return self
 
-
 def _validate_start_data(kind: LedgerKind, data: dict[str, Any]) -> None:
     if kind == LedgerKind.TURN_START:
         if (set(data) != {"request"}
@@ -210,7 +201,6 @@ def _validate_start_data(kind: LedgerKind, data: dict[str, Any]) -> None:
             raise ValueError("turn start requires exactly one non-empty request")
     elif kind == LedgerKind.STEP_START and data:
         raise ValueError("step start data must be empty")
-
 
 def _validate_terminal_data(kind: LedgerKind, data: dict[str, Any]) -> None:
     if kind not in (LedgerKind.STEP_END, LedgerKind.TURN_END):
@@ -230,7 +220,6 @@ def _validate_terminal_data(kind: LedgerKind, data: dict[str, Any]) -> None:
         error = data.get("error")
         if error is not None and (not isinstance(error, str) or not error.strip()):
             raise ValueError("terminal event error must be non-empty when present")
-
 
 def _validate_assistant_attempt(data: dict[str, Any]) -> None:
     status = data.get("status")
@@ -397,7 +386,6 @@ def _validate_assistant_attempt(data: dict[str, Any]) -> None:
     if not valid:
         raise ValueError("assistant attempt data does not match its status")
 
-
 def _validate_attempt_identity(envelope: RequestEnvelope, data: dict[str, Any]) -> None:
     if data.get("status") != "accepted":
         return
@@ -405,7 +393,6 @@ def _validate_attempt_identity(envelope: RequestEnvelope, data: dict[str, Any]) 
         envelope.provider, envelope.model)
     if data["used_fallback"] == same_identity:
         raise ValueError("assistant attempt fallback flag must match model identity")
-
 
 class RunLedger:
     def __init__(self, run_id: str, entries: Iterable[LedgerEntry] = ()) -> None:
@@ -716,7 +703,6 @@ class RunLedger:
             data={"reason": reason.value},
         )
 
-
 class _LedgerWriter:
     def write(self, fd: int, payload: bytes) -> None:
         view = memoryview(payload)
@@ -725,7 +711,6 @@ class _LedgerWriter:
             if written <= 0:
                 raise OSError("ledger write made no progress")
             view = view[written:]
-
 
 def _canonical_ledger_path(directory: str | Path, run_id: str) -> Path:
     if not run_id or any(char not in "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_" for char in run_id):
@@ -821,27 +806,22 @@ class FileLedger:
         if any(not line.strip() for line in lines): raise ValueError("ledger cannot contain blank records")
         return [LedgerEntry.model_validate_json(line) for line in lines]
 
-
 def _hash(value: Any) -> str:
     raw = value if isinstance(value, str) else json.dumps(
         value, sort_keys=True, separators=(",", ":"), default=str
     )
     return hashlib.sha256(raw.encode()).hexdigest()
 
-
 def _canonical_json(value: Any) -> str:
     if isinstance(value, str):
         return value
     return json.dumps(value, sort_keys=True, separators=(",", ":"), default=str)
 
-
 def _call_identity(entry: LedgerEntry) -> str:
     return _hash({"name": entry.data.get("name"), "args": entry.data.get("args")})
 
-
 class ReplayMismatchError(ValueError):
     pass
-
 
 class ReplayItem(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
@@ -871,7 +851,6 @@ class ReplayItem(BaseModel):
             raise ValueError("replay attempt status must be accepted or failed")
         return self
 
-
 class ReplayTurn(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
@@ -891,7 +870,6 @@ class ReplayTurn(BaseModel):
             raise ValueError("replay content hash must be lowercase sha256")
         return self
 
-
 class ReplayThread(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
@@ -908,7 +886,6 @@ class ReplayThread(BaseModel):
             raise ValueError("replay turns must not repeat a turn id")
         return self
 
-
 def _replay_item_bytes(data: dict[str, Any], turn_id: str) -> tuple[bytes, bytes, bytes]:
     for name in ("prompt_text", "context_json", "schema_source"):
         value = data.get(name)
@@ -921,7 +898,6 @@ def _replay_item_bytes(data: dict[str, Any], turn_id: str) -> tuple[bytes, bytes
         data["schema_source"].encode(),
     )
 
-
 def _replay_item_hash(
     prompt_bytes: bytes, context_bytes: bytes, schema_bytes: bytes,
     output_strategy: str | None,
@@ -929,7 +905,6 @@ def _replay_item_hash(
     rung = (output_strategy or "").encode()
     joined = b"\0".join([prompt_bytes, context_bytes, schema_bytes, rung])
     return hashlib.sha256(joined).hexdigest()
-
 
 def replay_entries(entries: Iterable[LedgerEntry]) -> ReplayThread:
     records = [LedgerEntry.model_validate(entry.model_dump()) for entry in entries]
@@ -993,13 +968,11 @@ def replay_entries(entries: Iterable[LedgerEntry]) -> ReplayThread:
     ]
     return ReplayThread(run_id=run_id, turns=turns)
 
-
 def turn_content_hash(entries: Iterable[LedgerEntry], turn_id: str) -> str:
     for turn in replay_entries(entries).turns:
         if turn.turn_id == turn_id:
             return turn.content_hash
     raise ValueError(f"replay found no model inputs for turn {turn_id!r}")
-
 
 def replay_run(ledger_dir: str | Path, run_id: str) -> ReplayThread:
     path = _canonical_ledger_path(ledger_dir, run_id)
@@ -1021,7 +994,6 @@ def replay_run(ledger_dir: str | Path, run_id: str) -> ReplayThread:
         raise ReplayMismatchError(
             f"replay failed for run {run_id!r}: {exc}") from exc
 
-
 def _replay_cli(argv: list[str] | None = None) -> int:
     import argparse
 
@@ -1036,7 +1008,6 @@ def _replay_cli(argv: list[str] | None = None) -> int:
         raise SystemExit(f"replay mismatch: {exc}")
     print(thread.model_dump_json(indent=2))
     return 0
-
 
 if __name__ == "__main__":
     import sys

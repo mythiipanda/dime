@@ -10,14 +10,12 @@ from v2.adapters.web import (
     validate_public_url,
 )
 
-
 class DDGFixture:
     def text(self, query, **kwargs):
         assert kwargs["backend"] == "duckduckgo"
         assert "site:espn.com" in query
         return [{"title": "Brown role", "href": "https://espn.com/nba/brown",
                  "body": "Current reporting"}]
-
 
 @pytest.mark.anyio
 async def test_duckduckgo_is_typed_and_labeled_best_effort(monkeypatch):
@@ -30,14 +28,12 @@ async def test_duckduckgo_is_typed_and_labeled_best_effort(monkeypatch):
     assert "not official" not in response.coverage.lower()
     assert "no official full-results API" in response.warnings[0]
 
-
 def test_fetch_request_requires_valid_search_rank_but_can_bind_dependency():
     from pydantic import ValidationError
     from v2.adapters.web import WebFetchRequest
     assert WebFetchRequest(result_rank=1).search_evidence_id is None
     with pytest.raises(ValidationError):
         WebFetchRequest(search_evidence_id="", result_rank=0)
-
 
 @pytest.mark.anyio
 @pytest.mark.parametrize("url", [
@@ -47,7 +43,6 @@ def test_fetch_request_requires_valid_search_rank_but_can_bind_dependency():
 async def test_url_guard_rejects_non_http_or_private_urls(url):
     with pytest.raises(ValueError):
         await validate_public_url(url)
-
 
 @pytest.mark.anyio
 async def test_jina_reader_fetches_selected_source_and_preserves_final_url(monkeypatch):
@@ -72,7 +67,6 @@ async def test_jina_reader_fetches_selected_source_and_preserves_final_url(monke
     assert page.published_at is not None
     assert len(page.content_hash) == 64
 
-
 @pytest.mark.anyio
 async def test_jina_reader_rejects_cross_host_source_substitution(monkeypatch):
     from v2.adapters.web import JinaReader
@@ -92,7 +86,6 @@ async def test_jina_reader_rejects_cross_host_source_substitution(monkeypatch):
         await JinaReader(client=client).fetch(WebSearchResult(
             rank=1, url="https://example.com/story", title="Story", snippet=""))
     await client.aclose()
-
 
 @pytest.mark.anyio
 async def test_jina_reader_rejects_empty_payload(monkeypatch):
@@ -122,18 +115,15 @@ async def test_jina_reader_sends_optional_free_key(monkeypatch):
         rank=1, url="https://example.com", title="Example", snippet=""))
     await client.aclose()
 
-
 def test_jina_key_is_optional_config(monkeypatch):
     monkeypatch.setenv("JINA_API_KEY", "jina-configured")
     from shared.config import Settings
     assert Settings().jina_api_key == "jina-configured"
 
-
 def test_jina_reader_defaults_to_settings_key(monkeypatch):
     monkeypatch.setattr("shared.config.settings.jina_api_key", "jina-from-settings")
     from v2.adapters.web import JinaReader
     assert JinaReader()._api_key == "jina-from-settings"
-
 
 def test_jina_reader_can_force_keyless_with_configured_key(monkeypatch):
     monkeypatch.setattr("shared.config.settings.jina_api_key", "jina-from-settings")
@@ -166,7 +156,6 @@ async def test_web_search_capability_normalizes_discovery_evidence():
     assert envelope.rows[0]["rank"] == 1
     assert envelope.lineage == []
 
-
 @pytest.mark.anyio
 async def test_web_fetch_capability_only_extracts_selected_parent_result():
     from datetime import UTC, datetime
@@ -198,7 +187,6 @@ async def test_web_fetch_capability_only_extracts_selected_parent_result():
     assert envelope.rows["markdown"].startswith("# Story")
     assert envelope.source == "web:https://example.com/story"
 
-
 @pytest.mark.anyio
 async def test_web_fetch_capability_rejects_unselected_or_unrelated_source():
     from datetime import UTC, datetime
@@ -217,7 +205,6 @@ async def test_web_fetch_capability_rejects_unselected_or_unrelated_source():
     with pytest.raises(ValueError, match="selected web_search parent"):
         await WebFetchCapability().execute(
             node, TaskSpec(goal="role", mode="quick", deliverable="answer"), [parent])
-
 
 @pytest.mark.anyio
 async def test_planned_web_dag_binds_fetch_to_content_addressed_parent():
@@ -260,7 +247,6 @@ async def test_planned_web_dag_binds_fetch_to_content_addressed_parent():
     assert result.evidence[1].lineage == [result.evidence[0].evidence_id]
     assert result.evidence[1].rows["markdown"] == "Full source"
 
-
 def test_web_preflight_rejects_unknown_arguments() -> None:
     from v2.adapters.web import WebSearchCapability
     from v2.contracts import PlanNode
@@ -271,7 +257,6 @@ def test_web_preflight_rejects_unknown_arguments() -> None:
     )
     with pytest.raises(ValueError, match="unknown arguments.*url"):
         WebSearchCapability().validate_arguments(node)
-
 
 def test_web_contracts_reject_unknown_fields():
     from datetime import UTC, datetime
@@ -295,7 +280,6 @@ def test_web_contracts_reject_unknown_fields():
         with pytest.raises(ValidationError, match="invented"):
             schema.model_validate(payload)
 
-
 def test_web_search_contract_rejects_ambiguous_domains_and_ranks():
     from datetime import UTC, datetime
     from pydantic import ValidationError
@@ -310,7 +294,6 @@ def test_web_search_contract_rejects_ambiguous_domains_and_ranks():
         WebSearchResponse(provider="fixture", observed_at=datetime.now(UTC),
             query="Brown role", coverage="fixture", results=[
                 WebSearchResult(rank=2, url="https://example.com", title="A", snippet="")])
-
 
 def test_web_page_contract_rejects_blank_content_and_bad_hash():
     from datetime import UTC, datetime
@@ -330,7 +313,6 @@ def test_web_page_contract_rejects_blank_content_and_bad_hash():
         with pytest.raises(ValidationError, match=error):
             WebPage(**{**base, **changes})
 
-
 def test_web_search_result_rejects_blank_title_and_non_http_url():
     from pydantic import ValidationError
 
@@ -338,7 +320,6 @@ def test_web_search_result_rejects_blank_title_and_non_http_url():
         WebSearchResult(rank=1, url="https://example.com", title=" ", snippet="")
     with pytest.raises(ValidationError, match="http.*https"):
         WebSearchResult(rank=1, url="ftp://example.com/file", title="File", snippet="")
-
 
 def test_web_contracts_require_timezone_aware_observation_times() -> None:
     from datetime import datetime
@@ -356,7 +337,6 @@ def test_web_contracts_require_timezone_aware_observation_times() -> None:
             retrieved_at=datetime(2026, 9, 15), markdown="Body",
             content_hash=hashlib.sha256(b"Body").hexdigest(),
         )
-
 
 def test_web_contracts_reject_naive_publication_times():
     from datetime import UTC, datetime
@@ -376,7 +356,6 @@ def test_web_contracts_reject_naive_publication_times():
             retrieved_at=datetime.now(UTC), markdown=markdown,
             content_hash=hashlib.sha256(markdown.encode()).hexdigest(),
         )
-
 
 def test_web_contracts_reject_tzinfo_without_offset() -> None:
     from datetime import datetime, tzinfo
@@ -403,7 +382,6 @@ def test_web_contracts_reject_tzinfo_without_offset() -> None:
             markdown="content", content_hash="a" * 64,
         )
 
-
 @pytest.mark.parametrize("schema,payload", [
     (WebSearchRequest, {"query": "Brown role", "max_results": True}),
     (WebSearchResult, {"rank": "1", "url": "https://example.com",
@@ -413,7 +391,6 @@ def test_web_selection_coordinates_are_strict_integers(schema, payload):
     from pydantic import ValidationError
     with pytest.raises(ValidationError):
         schema.model_validate(payload)
-
 
 def test_web_result_text_has_hard_limits():
     from pydantic import ValidationError

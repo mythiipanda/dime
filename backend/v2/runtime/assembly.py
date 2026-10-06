@@ -26,7 +26,6 @@ from v2.adapters.web import WebFetchRequest, WebSearchRequest
 from v2.adapters.capabilities import CAPABILITY_DESCRIPTIONS
 from v2.skills import SkillLibrary
 
-
 class MechanicalVerifier:
     async def verify(self, task, draft, evidence) -> VerificationReport:
         from pydantic import ValidationError
@@ -53,7 +52,6 @@ class MechanicalVerifier:
             )
         return verify_mechanical(task, draft, list(evidence.values()), calculations)
 
-
 class EvidenceBoundRepair:
     async def repair(self, task, draft, evidence, verification) -> DraftReport:
         rejected = {
@@ -72,7 +70,6 @@ class EvidenceBoundRepair:
         ]))
         return draft.model_copy(update={"claims": claims, "gaps": gaps})
 
-
 def _structural_schema(value):
     if isinstance(value, dict):
         return {
@@ -83,7 +80,6 @@ def _structural_schema(value):
     if isinstance(value, list):
         return [_structural_schema(item) for item in value]
     return value
-
 
 def capability_catalog() -> dict[str, dict]:
     from shared.tools import v1_tools
@@ -111,7 +107,6 @@ def capability_catalog() -> dict[str, dict]:
         },
     })
     return catalog
-
 
 def build_runtime(
     *,

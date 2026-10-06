@@ -19,7 +19,6 @@ from v2.runtime.ledger import (
     turn_content_hash,
 )
 
-
 def _envelope(
     *,
     prompt: str = "ask",
@@ -38,7 +37,6 @@ def _envelope(
         output_strategy=strategy,
     )
 
-
 def _attempt_data() -> dict:
     return {
         "status": "accepted",
@@ -47,7 +45,6 @@ def _attempt_data() -> dict:
         "model": "m",
         "used_fallback": False,
     }
-
 
 def _recorded_turn(ledger: RunLedger, turn_id: str, prompt: str) -> None:
     ledger.append(LedgerKind.TURN_START, turn_id=turn_id, data={"request": prompt})
@@ -77,7 +74,6 @@ def _recorded_turn(ledger: RunLedger, turn_id: str, prompt: str) -> None:
         LedgerKind.TURN_END, turn_id=turn_id, data={"reason": "complete"},
     )
 
-
 def test_recorded_run_replays_to_byte_identical_model_inputs() -> None:
     ledger = RunLedger("run")
     _recorded_turn(ledger, "t1", "ask-one")
@@ -96,7 +92,6 @@ def test_recorded_run_replays_to_byte_identical_model_inputs() -> None:
     assert first.output_strategy == "strict_schema"
     assert thread.turns[0].content_hash == turn_content_hash(ledger.entries, "t1")
     assert thread.turns[1].items[0].prompt_bytes == "ask-two".encode()
-
 
 def test_replay_verifies_hashes_instead_of_trusting_them() -> None:
     ledger = RunLedger("run")
@@ -119,7 +114,6 @@ def test_replay_verifies_hashes_instead_of_trusting_them() -> None:
     with pytest.raises(ReplayMismatchError, match="t1"):
         replay_entries(entries)
 
-
 def test_replay_needs_no_live_state_network_or_warehouse(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -137,7 +131,6 @@ def test_replay_needs_no_live_state_network_or_warehouse(
     thread = replay_run(str(tmp_path), "model_replay_run")
     assert [turn.turn_id for turn in thread.turns] == ["t1", "t2"]
     assert all(item.prompt_bytes for turn in thread.turns for item in turn.items)
-
 
 def test_replay_script_from_file_verifies_every_turn_in_order(
     tmp_path: Path,
@@ -158,7 +151,6 @@ def test_replay_script_from_file_verifies_every_turn_in_order(
     thread = replay_run(str(tmp_path), "run")
     assert [turn.turn_id for turn in thread.turns] == ["t1", "t2"]
     assert sum(len(turn.items) for turn in thread.turns) == 2
-
 
 def test_tampered_file_entry_fails_loudly_naming_the_turn(
     tmp_path: Path,
@@ -187,7 +179,6 @@ def test_tampered_file_entry_fails_loudly_naming_the_turn(
     path.write_text("\n".join(lines) + "\n")
     with pytest.raises(ReplayMismatchError, match="t1"):
         replay_run(str(tmp_path), "run")
-
 
 def test_envelope_without_byte_sources_still_replays_by_hash() -> None:
     envelope = RequestEnvelope.freeze(

@@ -12,13 +12,11 @@ HEADERS = {
     "Referer": "https://barttorvik.com/",
 }
 
-
 def _f(v):
     try:
         return float(v) if v is not None else None
     except (TypeError, ValueError):
         return None
-
 
 def get_player_stats(season_year: int = 2025) -> FetchResult:
     def run() -> pl.DataFrame:

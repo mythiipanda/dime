@@ -1,6 +1,5 @@
 import pytest
 
-
 def _seed_warehouse_seasons(tmp_path, monkeypatch, seasons):
     import duckdb
 
@@ -22,7 +21,6 @@ def _seed_warehouse_seasons(tmp_path, monkeypatch, seasons):
     coverage_mod.coverage_cache_clear()
     return db
 
-
 class StubModel:
     def __init__(self, values):
         self.values = iter(values)
@@ -30,14 +28,12 @@ class StubModel:
     async def generate(self, **call):
         return call["schema"].model_validate(next(self.values))
 
-
 def _intake(stub):
     from v2.adapters.models import ModelIntake
 
     return ModelIntake(
         stub, provider="stub", model_name="stub",
         capability_catalog={"team_ratings": {}})
-
 
 @pytest.mark.anyio
 async def test_resolved_relative_season_survives_without_substitution(
@@ -56,7 +52,6 @@ async def test_resolved_relative_season_survives_without_substitution(
         "Compare the Lakers and Celtics net ratings last season")
     assert task.season.value == "2025-26"
     assert any("2025-26" in question for question in task.open_questions)
-
 
 @pytest.mark.anyio
 async def test_default_season_still_pins_warehouse(

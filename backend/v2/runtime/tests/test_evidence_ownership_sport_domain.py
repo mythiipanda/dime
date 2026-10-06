@@ -17,7 +17,6 @@ SEASON = "2024-25"
 NODE_ID = "assist_leader"
 REQUIREMENT_ID = "assist_leader"
 
-
 @pytest.fixture
 def real_warehouse(monkeypatch):
     from shared import store
@@ -41,13 +40,11 @@ def real_warehouse(monkeypatch):
     _core.last_completed_season_cache_clear()
     coverage.coverage_cache_clear()
 
-
 def _envelope():
     from v2.adapters.core import call_capability
 
     return call_capability(
         "qualified_leaders", {"stat_category": "AST", "season": SEASON})
-
 
 def _value(raw):
     if isinstance(raw, bool):
@@ -57,7 +54,6 @@ def _value(raw):
     if isinstance(raw, float):
         return {"kind": "float", "value": raw}
     return {"kind": "string", "value": str(raw)}
-
 
 def _bindings(envelope, domain):
     from v2.adapters.capabilities import COUNT, PER_GAME
@@ -91,7 +87,6 @@ def _bindings(envelope, domain):
         ))
     return out
 
-
 def _task(envelope, outputs):
     from v2.contracts import EntityRef, EvidenceRequirement, SeasonRef, TaskSpec
 
@@ -115,7 +110,6 @@ def _task(envelope, outputs):
             requested_outputs=list(outputs))],
     )
 
-
 def _execution(envelope):
     from v2.contracts import Plan, PlanNode
     from v2.runtime.models import ExecutionResult
@@ -130,7 +124,6 @@ def _execution(envelope):
         evidence_by_node={NODE_ID: envelope},
         attempts={NODE_ID: 1},
     )
-
 
 def _admit(envelope, bindings, outputs):
     from v2.contracts import Claim, ClaimSource, DraftReport, VerifiedClaim
@@ -152,7 +145,6 @@ def _admit(envelope, bindings, outputs):
         output_bindings=list(bindings))
     return admit_verified_claim_bindings(task, execution, draft, verified)
 
-
 def _publish(envelope, bindings, outputs):
     from v2.runtime.models import build_output_statuses
 
@@ -162,7 +154,6 @@ def _publish(envelope, bindings, outputs):
     by_key = {(row.requirement_kind, row.requirement_id, row.output_id): row
               for row in statuses}
     return admitted, by_key
-
 
 def test_assists_question_publishes_all_four_outputs_with_citations(real_warehouse):
     envelope = _envelope()
@@ -179,13 +170,11 @@ def test_assists_question_publishes_all_four_outputs_with_citations(real_warehou
     assert admitted.evidence_ids == [envelope.evidence_id]
     assert {item.output_id for item in admitted.output_bindings} == set(outputs)
 
-
 def test_binding_naming_sport_publishes(real_warehouse):
     envelope = _envelope()
     outputs = ["TOTAL_ASSISTS"]
     admitted = _admit(envelope, _bindings(envelope, "basketball")[:2][1:], outputs)
     assert admitted.output_bindings[0].value.value == envelope.rows[0]["AST"]
-
 
 def test_binding_naming_capability_name_still_publishes(real_warehouse):
     envelope = _envelope()
@@ -195,7 +184,6 @@ def test_binding_naming_capability_name_still_publishes(real_warehouse):
     admitted = _admit(envelope, selected, outputs)
     assert admitted.output_bindings[0].value.value == envelope.rows[0]["AST"]
 
-
 def test_binding_naming_foreign_domain_is_rejected(real_warehouse):
     envelope = _envelope()
     outputs = ["TOTAL_ASSISTS"]
@@ -203,7 +191,6 @@ def test_binding_naming_foreign_domain_is_rejected(real_warehouse):
     selected = [item for item in bindings if item.output_id == "TOTAL_ASSISTS"]
     with pytest.raises(ValueError, match="binding domain does not match capability"):
         _admit(envelope, selected, outputs)
-
 
 def test_wrong_subject_negative_is_still_rejected(real_warehouse):
     from v2.contracts import EvidenceOutputBinding

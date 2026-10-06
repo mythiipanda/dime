@@ -6,7 +6,6 @@ import pytest
 
 from v2.contracts import ConversationTurn, EvidenceEnvelope
 
-
 def _turns(count: int, *, width: int = 120) -> tuple[ConversationTurn, ...]:
     body = " ".join(f"segment-{index}" for index in range(width))
     return tuple(
@@ -16,7 +15,6 @@ def _turns(count: int, *, width: int = 120) -> tuple[ConversationTurn, ...]:
         )
         for index in range(count)
     )
-
 
 def _envelope(rows) -> EvidenceEnvelope:
     return EvidenceEnvelope(
@@ -30,18 +28,15 @@ def _envelope(rows) -> EvidenceEnvelope:
         metric_definitions={"PTS": "points", "REB": "rebounds"},
     )
 
-
 def _board_rows(count: int) -> list[dict]:
     return [
         {"ID": index, "PTS": 10 + index, "REB": 5}
         for index in range(count)
     ]
 
-
 def _real_tokens(text: str) -> int:
     tiktoken = pytest.importorskip("tiktoken")
     return len(tiktoken.get_encoding("cl100k_base").encode(text))
-
 
 def test_long_session_prunes_row_payloads_before_aggregates():
     from v2.domain.evidence import prune_session_context
@@ -60,7 +55,6 @@ def test_long_session_prunes_row_payloads_before_aggregates():
     assert pruned_map["evidence:board"].rows[0] == {"ID": 0, "PTS": 10, "REB": 5}
     assert pruned_map["evidence:board"].units == {"PTS": "count"}
     assert pruned_map["evidence:board"].evidence_id == "evidence:board"
-
 
 def test_citations_survive_every_prune_level():
     from v2.domain.evidence import (
@@ -84,7 +78,6 @@ def test_citations_survive_every_prune_level():
     assert len(pruned_turns) == 8
     assert pruned_turns[-1] == turns[-1]
 
-
 def test_prune_refuses_when_citation_would_orphan():
     from v2.domain.evidence import CitationOrphanError, prune_session_context
 
@@ -93,7 +86,6 @@ def test_prune_refuses_when_citation_would_orphan():
     with pytest.raises(CitationOrphanError):
         prune_session_context(
             _turns(2), {"evidence:board": envelope}, cited, token_budget=10**9)
-
 
 def test_token_counts_drop_while_answer_completeness_unchanged():
     from v2.domain.evidence import prune_session_context
@@ -143,7 +135,6 @@ def test_token_counts_drop_while_answer_completeness_unchanged():
     assert report.tokens_before > report.tokens_after
     assert after_supported == before_supported == [True]
 
-
 def test_loop_prunes_context_prose_to_budget_without_network():
     import asyncio
 
@@ -152,7 +143,7 @@ def test_loop_prunes_context_prose_to_budget_without_network():
     from v2.runtime.tests.test_loop import (
         Planner, SequenceVerifier, Synthesizer,
     )
-    from v2.contracts import Plan, RunMode, TaskSpec
+    from v2.contracts import RunMode, TaskSpec
 
     class ContextIntake:
         async def understand(self, request: str, context=()) -> TaskSpec:

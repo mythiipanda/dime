@@ -4,7 +4,6 @@ from v2.contracts import EvidenceEnvelope, Plan, PlanNode, PlanStatus
 from v2.runtime.loop import _merge_recovery as merge
 from v2.runtime.models import ExecutionResult
 
-
 def test_recovery_child_lineage_follows_renamed_parent():
     execution = ExecutionResult(
         plan=Plan(nodes=[

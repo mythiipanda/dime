@@ -21,7 +21,6 @@ from v2.contracts import (
 )
 from v2.runtime.models import ExecutionResult, admit_verified_claim_bindings
 
-
 def _meta():
     return {
         "source": "warehouse",
@@ -29,7 +28,6 @@ def _meta():
         "warehouse_id": "frozen-eval",
         "warehouse_sha256": "a" * 64,
     }
-
 
 def _bos_first_rows():
     return [
@@ -59,7 +57,6 @@ def _bos_first_rows():
         },
     ]
 
-
 def _build(rows):
     return build_envelope(
         CAPABILITIES["team_ratings"],
@@ -68,7 +65,6 @@ def _build(rows):
         entities=None,
         observed_at=datetime.now(UTC),
     )
-
 
 def _task(*team_ids):
     return TaskSpec(
@@ -94,7 +90,6 @@ def _task(*team_ids):
         ],
     )
 
-
 def _binding(envelope, subject_id, index, value):
     return EvidenceOutputBinding(
         requirement_kind="evidence",
@@ -111,7 +106,6 @@ def _binding(envelope, subject_id, index, value):
         unit={"kind": "declared", "value": "points_per_100_possessions"},
         domain="team_ratings",
     )
-
 
 def _admit(task, envelope, binding):
     node = PlanNode(
@@ -149,7 +143,6 @@ def _admit(task, envelope, binding):
     )
     return admit_verified_claim_bindings(task, execution, draft, verified)
 
-
 def test_wrong_row_binding_carrying_subject_value_readmits():
     envelope = _build(_bos_first_rows())
     binding = _binding(envelope, "BOS", 1, {"kind": "float", "value": 8.3})
@@ -160,13 +153,11 @@ def test_wrong_row_binding_carrying_subject_value_readmits():
     assert fixed.subject_selector == "rows[0].TEAM_ID"
     assert fixed.value.value == 8.3
 
-
 def test_decimal_declared_value_matching_row_float_admits():
     envelope = _build(_bos_first_rows()[:1])
     binding = _binding(envelope, "BOS", 0, {"kind": "decimal", "value": "8.30"})
     admitted = _admit(_task("BOS"), envelope, binding)
     assert admitted.output_bindings[0].value.value == "8.30"
-
 
 def test_missing_subject_trio_still_rejects():
     envelope = _build(_bos_first_rows())
@@ -183,7 +174,6 @@ def test_missing_subject_trio_still_rejects():
     )
     with pytest.raises(ValueError):
         _admit(_task("BOS"), envelope, binding)
-
 
 def test_different_subject_row_still_rejects():
     envelope = _build(_bos_first_rows())

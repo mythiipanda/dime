@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 import shutil
 import sys
 from datetime import UTC, date, datetime
@@ -16,13 +15,11 @@ FIXTURES = BACKEND / "tests" / "fixtures" / "bbref_awards"
 SEASON = "2023-24"
 AS_OF = date(2026, 9, 8)
 
-
 def _page(year: int):
     def transport(url: str) -> str:
         return (FIXTURES / f"awards_{year}.html").read_text(encoding="utf-8")
 
     return transport
-
 
 @pytest.fixture(scope="module")
 def recorded_awards(tmp_path_factory):
@@ -39,7 +36,6 @@ def recorded_awards(tmp_path_factory):
     finally:
         store.DB_PATH, store.LOCK_PATH = original
     return recorded
-
 
 @pytest.fixture
 def awards_warehouse(recorded_awards, tmp_path, monkeypatch):
@@ -58,7 +54,6 @@ def awards_warehouse(recorded_awards, tmp_path, monkeypatch):
     coverage.coverage_cache_clear()
     return path
 
-
 @pytest.fixture(autouse=True)
 def _open_chat_budget():
     from v2.api import routes
@@ -66,7 +61,6 @@ def _open_chat_budget():
     routes._CHAT_HITS.clear()
     yield
     routes._CHAT_HITS.clear()
-
 
 def _flat_envelope():
     from v2.contracts import EntityRef, EvidenceEnvelope
@@ -86,18 +80,15 @@ def _flat_envelope():
                           "sha256": "a" * 64},
     )
 
-
 def _admit(task, execution, draft, verified):
     from v2.runtime.models import admit_verified_claim_bindings
 
     return admit_verified_claim_bindings(task, execution, draft, verified)
 
-
 def _publish_trace(envelope, binding):
     from v2.api.routes import _traced_value
 
     return _traced_value(envelope, binding)
-
 
 def test_mvp_winner_and_share_publish_with_citations_through_real_tool(
         awards_warehouse, monkeypatch, tmp_path):
@@ -218,7 +209,6 @@ def test_mvp_winner_and_share_publish_with_citations_through_real_tool(
     assert custom["unverified_numbers"] == []
     assert "I could not verify a publishable answer" not in final["text"]
 
-
 def test_flat_envelope_capability_is_unaffected():
     from v2.contracts import (
         Claim, ClaimKind, DraftReport, EvidenceOutputBinding, Plan, PlanNode,
@@ -257,7 +247,6 @@ def test_flat_envelope_capability_is_unaffected():
     value, reason = _publish_trace(envelope, binding)
     assert reason is None
     assert value == 116.6
-
 
 def test_selector_naming_nothing_is_rejected_by_both():
     from v2.contracts import (
@@ -306,7 +295,6 @@ def test_selector_naming_nothing_is_rejected_by_both():
     with pytest.raises(ValueError, match="exactly one value"):
         _admit(task, execution, DraftReport(sections=["x"], claims=[claim]),
                verified)
-
 
 def test_admission_and_publication_agree_by_construction_on_flat_envelope(
         awards_warehouse):
@@ -404,7 +392,6 @@ def test_admission_and_publication_agree_by_construction_on_flat_envelope(
     finally:
         monkey.undo()
 
-
 def test_reanchor_consults_shared_selector_instead_of_exact_path():
     import v2.runtime.models as models_module
 
@@ -420,7 +407,6 @@ def test_reanchor_consults_shared_selector_instead_of_exact_path():
     try:
         from v2.contracts import EvidenceOutputBinding
         from v2.runtime.models import _reanchor_binding
-        from v2.adapters import call_capability  # noqa: F401
 
         envelope = _flat_envelope()
         envelope = envelope.model_copy(update={

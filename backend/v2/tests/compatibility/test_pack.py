@@ -11,19 +11,16 @@ from v2.tests.compatibility.harness import TurnTrace, grade_scenario, load_pack
 HERE = Path(__file__).resolve().parent
 PACK = HERE / "fixtures" / "scenarios.json"
 
-
 def evidence(capability: str = "ratings", rows: dict | None = None, **kwargs) -> EvidenceEnvelope:
     return EvidenceEnvelope(
         evidence_id="ev-1", capability=capability, source="fixture",
         observed_at=datetime(2026, 9, 14, tzinfo=UTC), rows=rows or {}, **kwargs,
     )
 
-
 def test_pack_freezes_all_41_scenarios():
     pack = load_pack(PACK)
     assert len(pack["scenarios"]) == 41
     assert pack["version"] == 3
-
 
 def test_old_routing_pins_are_removed():
     pack = load_pack(PACK)
@@ -31,7 +28,6 @@ def test_old_routing_pins_are_removed():
     formerly_pinned = [scenario for scenario in pack["scenarios"] if "routing" in scenario.get("tags", [])]
     assert formerly_pinned
     assert all("evidence_requirement" in scenario for scenario in formerly_pinned)
-
 
 def test_grades_equivalent_evidence_not_tool_name():
     scenario = next(s for s in load_pack(PACK)["scenarios"] if s["id"] == "f88-team-ratings")
@@ -41,14 +37,12 @@ def test_grades_equivalent_evidence_not_tool_name():
         report=VerificationReport(status="pass"), text="113.8 offense, 114.4 defense, -0.5 net")
     assert grade_scenario(scenario, [turn]).passed
 
-
 def test_missing_evidence_stays_a_failure():
     scenario = next(s for s in load_pack(PACK)["scenarios"] if s["id"] == "f88-team-ratings")
     result = grade_scenario(scenario, [TurnTrace(
         1.0, 1, (), ({"call_id": "call", "name": "tool"},), report=VerificationReport(status="pass"))])
     assert not result.passed
     assert any("missing equivalent evidence" in failure for failure in result.failures)
-
 
 def test_qualification_is_behavioral_requirement():
     scenario = next(s for s in load_pack(PACK)["scenarios"] if s["id"] == "f88-qualified-3p-leader")
@@ -59,14 +53,12 @@ def test_qualification_is_behavioral_requirement():
     assert grade_scenario(scenario, [TurnTrace(1.0, 1, (qualified,), ({"call_id": "call", "name": "tool"},),
         report=VerificationReport(status="pass"), text="Luke Kennard 47.8% on 82+ made threes")]).passed
 
-
 def test_latency_and_tool_budgets_are_hard_failures():
     scenario = next(s for s in load_pack(PACK)["scenarios"] if s["id"] == "efficiency-simple")
     result = grade_scenario(scenario, [TurnTrace(20.1, 6, (), tuple({"call_id": str(i), "name": str(i)} for i in range(6)), report=VerificationReport(status="pass"), text="54")])
     assert set(result.failures) == {
         "latency 20.1s > 20s budget", "6 tool calls > 5 budget",
     }
-
 
 def test_global_banned_text_is_enforced():
     scenario = next(s for s in load_pack(PACK)["scenarios"]
@@ -76,7 +68,6 @@ def test_global_banned_text_is_enforced():
                              text="Try a narrower warehouse query")])
     assert not result.passed
     assert any("contains banned text" in failure for failure in result.failures)
-
 
 def test_multi_turn_scenario_requires_expectation_for_every_turn():
     scenario = {
@@ -91,7 +82,6 @@ def test_multi_turn_scenario_requires_expectation_for_every_turn():
     result = grade_scenario(scenario, turns)
     assert result.failures == ("expected 2 turn expectations, got 1",)
 
-
 def test_scenario_requires_clean_verification_for_every_turn():
     scenario = {"id": "verified", "chain": ["q"], "expect": {}}
     missing = grade_scenario(scenario, [TurnTrace(1.0, 0, (), ())])
@@ -99,7 +89,6 @@ def test_scenario_requires_clean_verification_for_every_turn():
         1.0, 0, (), (), report=VerificationReport(status="partial"))])
     assert missing.failures == ("T1: missing verification report",)
     assert partial.failures == ("T1: verifier status is partial",)
-
 
 @pytest.mark.parametrize("seconds,tool_calls,tools,error", [
     (-1.0, 0, (), "seconds"),
@@ -112,7 +101,6 @@ def test_turn_trace_rejects_impossible_metrics(seconds, tool_calls, tools, error
     with pytest.raises(ValueError, match=error):
         TurnTrace(seconds, tool_calls, (), tools)
 
-
 def test_turn_trace_rejects_duplicate_evidence_and_tool_identities():
     item = evidence()
     with pytest.raises(ValueError, match="evidence ids must be unique"):
@@ -121,7 +109,6 @@ def test_turn_trace_rejects_duplicate_evidence_and_tool_identities():
              {"call_id": "same", "name": "b"})
     with pytest.raises(ValueError, match="call ids must be unique"):
         TurnTrace(1.0, 2, (), tools)
-
 
 @pytest.mark.parametrize("change,error", [
     ({"version": 2}, "unsupported.*version"),
@@ -137,7 +124,6 @@ def test_pack_rejects_malformed_top_level_contract(tmp_path, change, error):
     path.write_text(json.dumps(payload))
     with pytest.raises(ValueError, match=error):
         load_pack(path)
-
 
 @pytest.mark.parametrize("scenario,error", [
     ("not-an-object", "scenarios must be objects"),
@@ -157,7 +143,6 @@ def test_pack_rejects_malformed_scenario_contract(tmp_path, scenario, error):
     path.write_text(json.dumps(payload))
     with pytest.raises(ValueError, match=error):
         load_pack(path)
-
 
 @pytest.mark.parametrize("expectation,error", [
     ({"contains": ["value"], "invented": []}, "unknown expectation fields"),
@@ -179,7 +164,6 @@ def test_pack_validates_expectation_contract(tmp_path, expectation, error):
         with pytest.raises(ValueError, match=error):
             load_pack(path)
 
-
 @pytest.mark.parametrize("changes,error", [
     ({"budget": {"max_second": 2}}, "invalid budget fields"),
     ({"budget": {"max_seconds": float("nan")}}, "finite and non-negative"),
@@ -198,7 +182,6 @@ def test_pack_validates_budget_and_evidence_contracts(tmp_path, changes, error):
     path.write_text(json.dumps(payload))
     with pytest.raises(ValueError, match=error):
         load_pack(path)
-
 
 @pytest.mark.parametrize("changes,error", [
     ({"typo": True}, "unknown fields"),

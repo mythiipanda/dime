@@ -51,10 +51,8 @@ from v2.arguments import PlannerOutputWire, RequirementReviewWire
 from v2.contracts import DraftReport, TaskSpec, VerificationReport
 from v2.runtime import RequestEnvelope
 
-
 class Ping(BaseModel):
     answer: str
-
 
 STAGE_SCHEMAS = (
     ("intake", TaskSpec),
@@ -77,7 +75,6 @@ MEASUREMENT = CapabilityMeasurement(
     probe=MEASUREMENT_JSON["probe"], measured_at=MEASUREMENT_JSON["measured_at"],
     models=tuple(MEASUREMENT_JSON["models"]))
 
-
 def _write_table(path, *, base_url="https://a.invalid/v1",
                  strict_json_schema="unmeasured", tool_calling="unmeasured",
                  strict_tool_definitions="unmeasured", measurement=None,
@@ -91,7 +88,6 @@ def _write_table(path, *, base_url="https://a.invalid/v1",
         entry["assumed"] = True
     path.write_text(json.dumps({"endpoints": [entry]}))
 
-
 def _capabilities(strict=True, tools=True, strict_tools=True):
     return EndpointCapabilities(
         endpoint="https://probe.invalid/v1",
@@ -100,7 +96,6 @@ def _capabilities(strict=True, tools=True, strict_tools=True):
         strict_tool_definitions=(Support.MEASURED if strict_tools
                                  else Support.REFUSED),
         measurement=MEASUREMENT)
-
 
 def _completion(content=None, tool_arguments=None, finish_reason="stop"):
     message: dict = {"role": "assistant", "content": content}
@@ -112,7 +107,6 @@ def _completion(content=None, tool_arguments=None, finish_reason="stop"):
             "object": "chat.completion",
             "choices": [{"index": 0, "finish_reason": finish_reason,
                          "message": message}]}
-
 
 class Wire:
     def __init__(self, bodies):
@@ -131,7 +125,6 @@ class Wire:
         assert self.sent, "no request reached the transport"
         return self.sent[0]
 
-
 def _model(capabilities, wire: Wire) -> DimeOpenAIChatModel:
     client = ReasoningContentFallbackClient(
         api_key="placeholder",
@@ -140,13 +133,11 @@ def _model(capabilities, wire: Wire) -> DimeOpenAIChatModel:
         "probe-model", provider=OpenAIProvider(openai_client=client),
         capabilities=capabilities)
 
-
 REFUSALS = {
     "refused": (400, "invalid schema for response_format"),
     "server_error": (500, "Internal Server Error"),
     "unauthorized": (401, "invalid api key"),
 }
-
 
 def rung_of(body: Mapping[str, Any]) -> OutputStrategy:
     if body.get("response_format", {}).get("type") == "json_schema":
@@ -155,9 +146,7 @@ def rung_of(body: Mapping[str, Any]) -> OutputStrategy:
         return OutputStrategy.TOOL_CALL
     return OutputStrategy.PROMPTED_JSON
 
-
 class LadderEndpoint:
-    """Fake endpoint that answers, or refuses, per rung of the ladder."""
 
     def __init__(self, *, strict="ok", tools="ok", floor="ok"):
         self.behavior = {OutputStrategy.STRICT_SCHEMA: strict,
@@ -186,7 +175,6 @@ class LadderEndpoint:
     def rungs(self) -> list[OutputStrategy]:
         return [rung_of(body) for body in self.sent]
 
-
 def _stage_model(endpoint: LadderEndpoint,
                  capabilities) -> ProviderStructuredModel:
     client = httpx.AsyncClient(transport=endpoint.transport())
@@ -199,14 +187,12 @@ def _stage_model(endpoint: LadderEndpoint,
     model._models = lambda: [("inception", chat_model)]
     return model
 
-
 async def _no_backoff(monkeypatch) -> None:
     async def no_sleep(value: float) -> None:
         return None
 
     monkeypatch.setattr("v2.adapters.models.anyio.sleep", no_sleep)
     monkeypatch.setattr("v2.adapters.models.random.uniform", lambda a, b: 0)
-
 
 async def _run(capabilities, schema, wire: Wire, retries: int = 2):
     model = _model(capabilities, wire)
@@ -217,36 +203,29 @@ async def _run(capabilities, schema, wire: Wire, retries: int = 2):
         capabilities=[Hooks(before_output_validate=repaired_output_payload)])
     return await agent.run("{}")
 
-
 def _envelope(route: str = "intake") -> RequestEnvelope:
     return RequestEnvelope.freeze(
         provider="probe", model="probe-model", route=route, prompt="p",
         context={}, tool_schemas={}, planner_version="v2")
 
-
 def _strict_grammar_accepts(schema) -> None:
     Draft202012Validator.check_schema(schema)
     assert strict_subset_violations(schema) == ()
 
-
 def test_ladder_picks_the_highest_strategy_an_endpoint_supports():
     assert resolve_strategy(_capabilities()) is OutputStrategy.STRICT_SCHEMA
 
-
 def test_ladder_falls_to_tool_calling_when_strict_schemas_are_refused():
     assert resolve_strategy(_capabilities(strict=False)) is OutputStrategy.TOOL_CALL
-
 
 def test_ladder_falls_to_the_prompt_and_repair_floor_when_neither_is_offered():
     capabilities = _capabilities(strict=False, tools=False)
     assert resolve_strategy(capabilities) is OutputStrategy.PROMPTED_JSON
 
-
 def test_the_ladder_is_ordered_by_descending_preference():
     assert STRATEGY_LADDER == (
         OutputStrategy.STRICT_SCHEMA, OutputStrategy.TOOL_CALL,
         OutputStrategy.PROMPTED_JSON)
-
 
 def test_each_strategy_selects_its_own_output_mechanism():
     assert output_type_for(OutputStrategy.STRICT_SCHEMA, Ping,
@@ -256,7 +235,6 @@ def test_each_strategy_selects_its_own_output_mechanism():
     assert output_type_for(OutputStrategy.PROMPTED_JSON, Ping,
                            _capabilities(strict=False, tools=False)).__class__ is (
                                PromptedOutput)
-
 
 def test_the_capability_table_is_data_and_rejects_a_malformed_row(tmp_path):
     table = load_capability_table()
@@ -309,7 +287,6 @@ def test_the_capability_table_is_data_and_rejects_a_malformed_row(tmp_path):
     with pytest.raises(CapabilityTableError, match="duplicate"):
         load_capability_table(path)
 
-
 def test_the_shipped_table_records_where_each_outcome_came_from():
     table = load_capability_table()
     measured = {endpoint: entry for endpoint, entry in table.items()
@@ -324,7 +301,6 @@ def test_the_shipped_table_records_where_each_outcome_came_from():
         if entry.measurement is None:
             assert all(getattr(entry, flag) is Support.UNMEASURED
                        for flag in _SUPPORT_FLAGS), endpoint
-
 
 def test_only_a_measured_observation_reads_as_support():
     assert Support.MEASURED.supported is True
@@ -342,7 +318,6 @@ def test_only_a_measured_observation_reads_as_support():
             endpoint="https://a.invalid/v1", **{flag: Support.MEASURED}
         ).supports(strategy) is True
 
-
 @pytest.mark.anyio
 @pytest.mark.parametrize("anyio_backend", ["asyncio"])
 async def test_the_strict_tier_sends_response_format_and_no_tools():
@@ -352,7 +327,6 @@ async def test_the_strict_tier_sends_response_format_and_no_tools():
     assert body["response_format"]["type"] == "json_schema"
     assert body["response_format"]["json_schema"]["strict"] is True
     assert "tools" not in body
-
 
 @pytest.mark.anyio
 @pytest.mark.parametrize("anyio_backend", ["asyncio"])
@@ -364,7 +338,6 @@ async def test_the_tool_tier_sends_tools_and_never_a_response_format():
     assert "response_format" not in body
     assert [tool["function"]["name"] for tool in body["tools"]] == ["final_result"]
     assert body["tool_choice"] in ("required", "auto")
-
 
 @pytest.mark.anyio
 @pytest.mark.parametrize("anyio_backend", ["asyncio"])
@@ -378,7 +351,6 @@ async def test_strict_tool_definitions_reach_the_tool_wire_as_data():
     await _run(_capabilities(strict=False, strict_tools=True), Ping, enforced)
     assert enforced.body["tools"][0]["function"]["strict"] is True
 
-
 @pytest.mark.anyio
 @pytest.mark.parametrize("anyio_backend", ["asyncio"])
 async def test_the_prompt_floor_recovers_fenced_trailing_comma_json():
@@ -391,7 +363,6 @@ async def test_the_prompt_floor_recovers_fenced_trailing_comma_json():
     system = "\n".join(str(message["content"]) for message in body["messages"])
     assert '"answer"' in system
     assert "JSON" in system
-
 
 def test_every_stage_reaches_the_wire_through_the_same_strategy():
     for stage, schema in STAGE_SCHEMAS:
@@ -407,7 +378,6 @@ def test_every_stage_reaches_the_wire_through_the_same_strategy():
             assert sent["json_schema"]["schema"] == wire_schema_for(
                 strategy, schema.model_json_schema()).schema, stage
 
-
 def test_no_stage_or_provider_name_decides_the_wire_shape():
     source = inspect.getsource(DimeOpenAIChatModel).casefold()
     for forbidden in ("taskspec", "drafterport", "verificationreport",
@@ -416,29 +386,24 @@ def test_no_stage_or_provider_name_decides_the_wire_shape():
                       "inception"):
         assert forbidden not in source
 
-
 def descends(kind: FailureKind) -> bool:
     return StrategyLadder(_capabilities()).descend(kind) is not None
-
 
 def test_a_rate_limit_is_transient_and_descends():
     kind = classify_failure(status_code=429, detail="429 Too Many Requests")
     assert kind is FailureKind.TRANSIENT
     assert descends(kind) is True
 
-
 @pytest.mark.parametrize("code", [500, 502, 503, 504])
 def test_a_server_error_is_transient_and_descends(code):
     assert descends(classify_failure(
         status_code=code, detail="upstream")) is True
-
 
 def test_a_timeout_and_a_connection_reset_are_transient():
     assert descends(classify_failure(
         status_code=None, detail="TimeoutError timed out")) is True
     assert descends(classify_failure(
         status_code=None, detail="Connection reset by peer")) is True
-
 
 def test_a_grammar_refusal_inside_a_500_is_a_schema_rejection():
     detail = (
@@ -450,7 +415,6 @@ def test_a_grammar_refusal_inside_a_500_is_a_schema_rejection():
         FailureKind.SCHEMA_REJECTED)
     assert descends(FailureKind.SCHEMA_REJECTED) is True
 
-
 def test_a_schema_refusal_wrapped_in_a_200_is_a_schema_rejection():
     detail = ("Upstream error: json_schema is not supported, response_format "
               "was rejected")
@@ -458,12 +422,10 @@ def test_a_schema_refusal_wrapped_in_a_200_is_a_schema_rejection():
     assert kind is FailureKind.SCHEMA_REJECTED
     assert descends(kind) is True
 
-
 def test_a_400_schema_complaint_is_a_schema_rejection():
     assert classify_failure(
         status_code=400, detail="invalid schema for response_format") is (
             FailureKind.SCHEMA_REJECTED)
-
 
 def test_a_validation_failure_is_a_schema_rejection():
     assert classify_failure(
@@ -471,14 +433,12 @@ def test_a_validation_failure_is_a_schema_rejection():
         exception_names=frozenset({"ValidationError"})) is (
             FailureKind.SCHEMA_REJECTED)
 
-
 def test_authentication_and_a_daily_quota_wall_do_not_descend():
     assert descends(classify_failure(
         status_code=401, detail="invalid api key")) is False
     assert descends(classify_failure(
         status_code=None,
         detail="429 RESOURCE_EXHAUSTED (PerDay, 500/day) quota reset")) is False
-
 
 @pytest.mark.anyio
 @pytest.mark.parametrize("anyio_backend", ["asyncio"])
@@ -514,7 +474,6 @@ async def test_generate_retries_a_429_then_succeeds(monkeypatch):
     assert [failure["message_class"]
             for failure in model.last_failures] == ["rate_limit"]
 
-
 @pytest.mark.anyio
 @pytest.mark.parametrize("anyio_backend", ["asyncio"])
 async def test_generate_classifies_a_validation_failure_and_walks_the_ladder(
@@ -542,7 +501,6 @@ async def test_generate_classifies_a_validation_failure_and_walks_the_ladder(
     assert [failure["message_class"]
             for failure in model.last_failures] == ["schema_rejected"] * 3
 
-
 @pytest.mark.anyio
 @pytest.mark.parametrize("anyio_backend", ["asyncio"])
 async def test_a_stage_refused_on_the_strict_rung_succeeds_on_the_tool_rung(
@@ -559,7 +517,6 @@ async def test_a_stage_refused_on_the_strict_rung_succeeds_on_the_tool_rung(
     assert [(failure["attempt_number"], failure["output_strategy"])
             for failure in model.last_failures] == [(1, "strict_schema")]
 
-
 @pytest.mark.anyio
 @pytest.mark.parametrize("anyio_backend", ["asyncio"])
 async def test_a_stage_refused_on_the_tool_rung_succeeds_on_the_prompt_floor(
@@ -574,7 +531,6 @@ async def test_a_stage_refused_on_the_tool_rung_succeeds_on_the_prompt_floor(
     assert model.last_output_strategy is OutputStrategy.PROMPTED_JSON
     assert [failure["output_strategy"] for failure in model.last_failures] == [
         "strict_schema", "tool_call"]
-
 
 @pytest.mark.anyio
 @pytest.mark.parametrize("anyio_backend", ["asyncio"])
@@ -591,7 +547,6 @@ async def test_a_transport_failure_on_the_strict_rung_descends(monkeypatch):
             for failure in model.last_failures] == [
                 ("strict_schema", "server_error")]
 
-
 @pytest.mark.anyio
 @pytest.mark.parametrize("anyio_backend", ["asyncio"])
 async def test_the_prompt_floor_is_terminal_and_its_failure_is_a_failure(
@@ -607,7 +562,6 @@ async def test_the_prompt_floor_is_terminal_and_its_failure_is_a_failure(
     assert [failure["output_strategy"] for failure in model.last_failures] == [
         "strict_schema", "tool_call", "prompted_json"]
 
-
 @pytest.mark.anyio
 @pytest.mark.parametrize("anyio_backend", ["asyncio"])
 async def test_a_permanent_failure_does_not_descend_or_retry(monkeypatch):
@@ -621,7 +575,6 @@ async def test_a_permanent_failure_does_not_descend_or_retry(monkeypatch):
     assert endpoint.rungs == [OutputStrategy.STRICT_SCHEMA]
     assert [failure["message_class"]
             for failure in model.last_failures] == ["authentication"]
-
 
 @pytest.mark.anyio
 @pytest.mark.parametrize("anyio_backend", ["asyncio"])
@@ -641,7 +594,6 @@ async def test_a_stage_that_descends_does_not_move_the_next_stage_down(
     assert [(failure["route"], failure["output_strategy"])
             for failure in model.last_failures] == [
                 ("requirement_review", "strict_schema")]
-
 
 @pytest.mark.anyio
 @pytest.mark.parametrize("anyio_backend", ["asyncio"])
@@ -665,7 +617,6 @@ async def test_the_ledger_records_the_accepted_rung_and_every_failed_rung(
             for item in attempt["provider_attempts"]] == [
                 ("strict_schema", 1), ("tool_call", 2)]
 
-
 def test_the_ladder_is_ordered_so_the_floor_is_the_terminal_strategy():
     assert STRATEGY_LADDER[-1] is OutputStrategy.PROMPTED_JSON
     ladder = StrategyLadder(_capabilities())
@@ -677,18 +628,15 @@ def test_the_ladder_is_ordered_so_the_floor_is_the_terminal_strategy():
     assert ladder.descend(FailureKind.SCHEMA_REJECTED) is None
     assert ladder.rung is OutputStrategy.PROMPTED_JSON
 
-
 def test_a_permanent_failure_never_descends_the_ladder():
     ladder = StrategyLadder(_capabilities())
     assert ladder.descend(FailureKind.PERMANENT) is None
     assert ladder.rung is OutputStrategy.STRICT_SCHEMA
 
-
 def test_a_ladder_that_starts_on_the_floor_cannot_move():
     ladder = StrategyLadder(_capabilities(strict=False, tools=False))
     assert ladder.rung is OutputStrategy.PROMPTED_JSON
     assert ladder.descend(FailureKind.TRANSIENT) is None
-
 
 def test_a_ladder_records_every_attempt_it_served():
     ladder = StrategyLadder(_capabilities())
@@ -699,22 +647,18 @@ def test_a_ladder_records_every_attempt_it_served():
         LadderAttempt(OutputStrategy.STRICT_SCHEMA, 1, FailureKind.TRANSIENT),
         LadderAttempt(OutputStrategy.TOOL_CALL, 2, None))
 
-
 def test_repair_recovers_markdown_fenced_json():
     assert repair_json_text('```json\n{"answer": "a"}\n```') == '{"answer": "a"}'
-
 
 def test_repair_recovers_prose_wrapped_fenced_json():
     assert repair_json_text(
         'Here you go:\n```\n{"answer": "a"}\n```\nHope that helps.') == (
             '{"answer": "a"}')
 
-
 def test_repair_removes_trailing_commas_at_every_depth():
     assert json.loads(repair_json_text(
         '{"a": [1, 2, ], "b": {"c": 3, },}')) == {"a": [1, 2],
                                                    "b": {"c": 3}}
-
 
 def test_repair_never_invents_a_value_for_truncated_output():
     truncated = '{"nodes": [{"id": "a"}, {"id": "b"}'
@@ -722,16 +666,13 @@ def test_repair_never_invents_a_value_for_truncated_output():
     with pytest.raises(ValueError):
         json.loads(repair_json_text(truncated))
 
-
 def test_repair_leaves_clean_json_untouched():
     payload = '{"answer": "a", "n": 1}'
     assert repair_json_text(payload) == payload
 
-
 def test_the_repair_hook_passes_a_decoded_payload_through():
     payload = {"answer": "a"}
     assert repaired_output_payload(None, output=payload) is payload
-
 
 @pytest.mark.anyio
 @pytest.mark.parametrize("anyio_backend", ["asyncio"])
@@ -742,7 +683,6 @@ async def test_the_floor_re_asks_the_model_when_repair_cannot_validate():
     assert result.output == Ping(answer="a")
     assert len(wire.sent) == 2
     assert "answer" in wire.sent[1]["messages"][-1]["content"]
-
 
 def test_declared_calculation_result_is_decimal_text_not_a_decimal():
     from v2.contracts import DeclaredCalculation
@@ -762,7 +702,6 @@ def test_declared_calculation_result_is_decimal_text_not_a_decimal():
             "inputs": [{"evidence_id": "e", "path": "rows.a"}],
             "result": "NaN"})
 
-
 def test_a_decimal_derived_pattern_is_rewritten_to_an_equivalent_strict_pattern():
     source, replacement = next(iter(STRICT_SAFE_PATTERNS.items()))
     sanitized = sanitize_schema({"type": "string", "pattern": source})
@@ -774,13 +713,11 @@ def test_a_decimal_derived_pattern_is_rewritten_to_an_equivalent_strict_pattern(
         assert (re.fullmatch(source, candidate) is not None) == (
             re.fullmatch(replacement, candidate) is not None), candidate
 
-
 def test_an_untranslatable_look_around_pattern_fails_loudly():
     with pytest.raises(SchemaNotPortable) as caught:
         sanitize_schema({"type": "string", "pattern": r"^(?!x)y$"})
     assert caught.value.construct == "pattern"
     assert caught.value.path == "$"
-
 
 def test_sanitization_records_every_rewrite_and_drops_no_data():
     source = {
@@ -813,7 +750,6 @@ def test_sanitization_records_every_rewrite_and_drops_no_data():
     ])
     assert source["properties"]["items"]["maxItems"] == 8
 
-
 def test_every_stage_wire_schema_satisfies_a_strict_grammar():
     for strategy in (OutputStrategy.STRICT_SCHEMA, OutputStrategy.TOOL_CALL):
         for stage, schema in STAGE_SCHEMAS:
@@ -822,12 +758,10 @@ def test_every_stage_wire_schema_satisfies_a_strict_grammar():
             _strict_grammar_accepts(sanitized.schema)
             assert LOOKAROUND_PATTERN.search(json.dumps(sanitized.schema)) is None
 
-
 def test_the_prompt_floor_sends_no_schema_on_the_wire():
     assert wire_schema_for(
         OutputStrategy.PROMPTED_JSON,
         TaskSpec.model_json_schema()).schema == {}
-
 
 def test_a_free_form_object_records_the_strict_compatibility_skip():
     intake = wire_schema_for(OutputStrategy.STRICT_SCHEMA,
@@ -839,13 +773,11 @@ def test_a_free_form_object_records_the_strict_compatibility_skip():
     assert not any(rewrite.endswith("free-form-not-strict-compatible")
                    for rewrite in verifier.rewrites)
 
-
 def test_sanitization_does_not_mutate_the_source_schema():
     source = DraftReport.model_json_schema()
     before = json.dumps(source, sort_keys=True)
     wire_schema_for(OutputStrategy.STRICT_SCHEMA, source)
     assert json.dumps(source, sort_keys=True) == before
-
 
 def test_null_choices_do_not_raise_and_keep_the_upstream_body():
     response = ChatCompletion.model_construct(

@@ -38,16 +38,13 @@ GROUP BY TEAM, Team_ID, _season
 ORDER BY EFG_PCT DESC
 """
 
-
 LEAGUE_SIZE = 30
 
 TOOL_TABLE = "silver_team_games"
 TEAM_COLUMN = "Team_ID"
 
-
 def league_seasons() -> tuple[str, ...]:
     return coverage.league_seasons(TOOL_TABLE, TEAM_COLUMN, LEAGUE_SIZE)
-
 
 def build(season: str) -> tuple[dict, int]:
     con = store.connect(read_only=False)
@@ -64,16 +61,13 @@ def build(season: str) -> tuple[dict, int]:
             f"this season is not a complete league season")
     return rows, len(rows)
 
-
 def main() -> None:
-    import polars as pl
 
     seasons = sys.argv[1:] or league_seasons()
     if not seasons:
         raise SystemExit("no league-complete seasons found")
     for season in seasons:
         rows, _ = build(season)
-        frame = pl.DataFrame(rows)
         con = store.connect(read_only=False)
         try:
             con.execute(
@@ -92,7 +86,6 @@ def main() -> None:
         print(f"silver_four_factors_team {season}: {n} rows")
         if n != LEAGUE_SIZE:
             raise SystemExit(1)
-
 
 if __name__ == "__main__":
     main()

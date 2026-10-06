@@ -31,10 +31,8 @@ COLUMNS = list(SCHEMA)
 
 PICK_TOKEN = re.compile(r"round|draft pick|pick", re.IGNORECASE)
 
-
 class TransactionsSourceError(RuntimeError):
     pass
-
 
 def season_label_from_date(text: str) -> str:
     match = re.fullmatch(r"(\d{4})-(\d{2})-(\d{2})", text.strip())
@@ -46,7 +44,6 @@ def season_label_from_date(text: str) -> str:
         return f"{year}-{str(year + 1)[2:]}"
     return f"{year - 1}-{str(year)[2:]}"
 
-
 def season_year(season: str) -> int:
     match = re.fullmatch(r"(\d{4})-(\d{2})", str(season).strip())
     if not match:
@@ -55,18 +52,14 @@ def season_year(season: str) -> int:
     start = int(match.group(1))
     return start + 1
 
-
 def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
-
 
 def _split_teams(text: str) -> list[str]:
     return sorted({part.strip() for part in str(text).split(";") if part.strip()})
 
-
 def _teams(text: str) -> str:
     return ";".join(_split_teams(text))
-
 
 def _split_assets(text: str) -> tuple[str, str]:
     cleaned = str(text).replace("[", "").replace("]", "")
@@ -82,7 +75,6 @@ def _split_assets(text: str) -> tuple[str, str]:
             players.append(token)
     return (";".join(sorted(set(players))), ";".join(sorted(set(picks))))
 
-
 def _row(transaction_date: str, season: str, teams: str, players: str,
          picks: str, transaction_type: str, source: str,
          source_file: str, fetched_at: str) -> dict:
@@ -97,7 +89,6 @@ def _row(transaction_date: str, season: str, teams: str, players: str,
         "SOURCE_FILE": source_file,
         "FETCHED_AT": fetched_at,
     }
-
 
 def parse_csv(text: str, fetched_at: str | None = None, source_file: str = CSV_FILE
               ) -> pl.DataFrame:
@@ -122,7 +113,6 @@ def parse_csv(text: str, fetched_at: str | None = None, source_file: str = CSV_F
             "rossgraham-csv: parsed 0 rows from Player_Trans.csv")
     return pl.DataFrame(rows, schema=SCHEMA).sort(
         ["TRANSACTION_DATE", "TEAMS", "PLAYERS"])
-
 
 def parse_json(text: str, fetched_at: str | None = None, source_file: str = JSON_FILE
                ) -> pl.DataFrame:
@@ -186,7 +176,6 @@ def parse_json(text: str, fetched_at: str | None = None, source_file: str = JSON
     return pl.DataFrame(rows, schema=SCHEMA).sort(
         ["TRANSACTION_DATE", "TEAMS", "PLAYERS"])
 
-
 def dedupe_same_date_teams_players(csv_frame: pl.DataFrame,
                                    json_frame: pl.DataFrame) -> pl.DataFrame:
     combined = pl.concat([json_frame, csv_frame])
@@ -202,15 +191,12 @@ def dedupe_same_date_teams_players(csv_frame: pl.DataFrame,
         pl.col("SOURCE_FILE").list.eval(pl.element().sort()).list.join("+"),
     ).sort(["TRANSACTION_DATE", "TEAMS", "PLAYERS"])
 
-
 def union(csv_frame: pl.DataFrame, json_frame: pl.DataFrame) -> pl.DataFrame:
     return dedupe_same_date_teams_players(csv_frame, json_frame)
-
 
 def fetch(url: str, transport=None) -> str:
     get = transport or paced_transport()
     return get(url)
-
 
 def paced_transport(min_interval_s: float = MIN_INTERVAL_S):
     last_request = [0.0]

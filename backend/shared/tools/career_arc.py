@@ -7,11 +7,9 @@ END_MAX = 2026
 CURRENT_SEASON = "2025-26"
 CURRENT_END_YEAR = 2026
 
-
 def to_label(end_year: int) -> str:
     y = int(end_year)
     return f"{y - 1}-{str(y)[-2:]}"
-
 
 def to_end_year(season: object) -> int | None:
     s = str(season or "").strip()
@@ -21,13 +19,11 @@ def to_end_year(season: object) -> int | None:
         return 2000 + int(s[5:])
     return None
 
-
 def _tables() -> set[str]:
     try:
         return set(store.tables())
     except Exception:
         return set()
-
 
 def _num(value: object) -> float | None:
     try:
@@ -36,7 +32,6 @@ def _num(value: object) -> float | None:
         return float(value)
     except (TypeError, ValueError):
         return None
-
 
 def _rows(sql: str, params: list) -> list[dict[str, Any]]:
     try:
@@ -54,7 +49,6 @@ def _rows(sql: str, params: list) -> list[dict[str, Any]]:
         except Exception:
             pass
 
-
 def raptor_end_year() -> int | None:
     if "silver_raptor_player" not in _tables():
         return None
@@ -63,7 +57,6 @@ def raptor_end_year() -> int | None:
         return None
     v = _num(rows[0].get("m"))
     return int(v) if v is not None else None
-
 
 def _columns(table: str) -> set[str]:
     try:
@@ -78,7 +71,6 @@ def _columns(table: str) -> set[str]:
                 pass
     except Exception:
         return set()
-
 
 def raptor_map(name: str = "", pid: int = 0) -> dict[int, float]:
     if "silver_raptor_player" not in _tables():
@@ -107,7 +99,6 @@ def raptor_map(name: str = "", pid: int = 0) -> dict[int, float]:
             out[int(y)] = float(v)
     return out
 
-
 def _hist_rows(pid: int, name: str = "") -> list[dict[str, Any]]:
     if "silver_hist_player_seasons" not in _tables():
         return []
@@ -132,14 +123,12 @@ def _hist_rows(pid: int, name: str = "") -> list[dict[str, Any]]:
         )
     return []
 
-
 def _per_game(total: object, gp: object, nd: int = 1) -> float | None:
     t = _num(total)
     g = _num(gp)
     if t is None or g is None or g <= 0:
         return None
     return round(t / g, nd)
-
 
 def current_row(pid: int) -> dict[str, Any] | None:
     if "silver_leaders_pts" not in _tables():
@@ -185,7 +174,6 @@ def current_row(pid: int) -> dict[str, Any] | None:
         "ft_pct": _num(r.get("FT_PCT")),
         "ts_pct": ts,
     }
-
 
 def arc_for_id(pid: int) -> list[dict[str, Any]]:
     try:
@@ -249,30 +237,6 @@ def arc_for_id(pid: int) -> list[dict[str, Any]]:
         out.append(cur_out)
     out.sort(key=lambda r: int(r["end_year"]))
     return out
-
-
-def arc_for_name(name: str) -> list[dict[str, Any]]:
-    label = str(name or "").strip()
-    if not label:
-        return []
-    hist = _hist_rows(0, label)
-    if hist:
-        try:
-            return arc_for_id(int(hist[0].get("player_id")))
-        except (TypeError, ValueError):
-            pass
-    if "silver_leaders_pts" in _tables():
-        lead = _rows(
-            "SELECT PLAYER_ID FROM silver_leaders_pts WHERE "
-            "LOWER(PLAYER) = LOWER(?) LIMIT 1",
-            [label],
-        )
-        if lead:
-            try:
-                return arc_for_id(int(lead[0].get("PLAYER_ID")))
-            except (TypeError, ValueError):
-                return []
-    return []
 
 
 def line_for_season(pid: int, season: object) -> dict[str, Any] | None:

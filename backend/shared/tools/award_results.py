@@ -82,12 +82,10 @@ AWARDS: dict[str, dict[str, Any]] = {
     },
 }
 
-
 def _squash(value: object) -> str:
     return "".join(
         character for character in str(value or "").upper()
         if character.isalnum())
-
 
 AWARD_LOOKUP: dict[str, str] = {
     _squash(key): code
@@ -95,14 +93,11 @@ AWARD_LOOKUP: dict[str, str] = {
     for key in (code, *spec["aliases"])
 }
 
-
 def normalize_award(name: object) -> str | None:
     return AWARD_LOOKUP.get(_squash(name))
 
-
 def published_awards() -> str:
     return ", ".join(sorted(AWARDS))
-
 
 RANK_SEMANTICS = (
     "rank is the published leading rank; a tied placement shares that rank and "
@@ -110,10 +105,8 @@ RANK_SEMANTICS = (
     "ballot counted the subject but it made no team, and a null rank with any "
     "other label is a published gap rather than an absence")
 
-
 class AwardResultError(RuntimeError):
     pass
-
 
 def _table_on_hand() -> bool:
     try:
@@ -129,12 +122,10 @@ def _table_on_hand() -> bool:
     finally:
         connection.close()
 
-
 def _seasons_on_hand() -> tuple[str, ...]:
     from v2.adapters.coverage import table_seasons
 
     return tuple(sorted(table_seasons(TABLE)))
-
 
 def _season_guard(requested: object) -> str:
     if not _table_on_hand():
@@ -155,7 +146,6 @@ def _season_guard(requested: object) -> str:
             f"missing ballot.")
     return raw
 
-
 def _award_guard(award: object, *, required: bool) -> str | None:
     raw = str(award or "").strip()
     if not raw:
@@ -170,17 +160,14 @@ def _award_guard(award: object, *, required: bool) -> str | None:
             f"unknown award '{raw}'; published awards: {published_awards()}")
     return canon
 
-
 _SELECT = """
     SEASON, AWARD, RANK, RANK_LABEL, PLAYER, COACH, TEAM, AGE,
     POINTS_WON, POINTS_MAX, AWARD_SHARE,
     VOTES_FIRST, VOTES_SECOND, VOTES_THIRD
 """
 
-
 def _name_match(column: str) -> str:
     return f"strip_accents(lower({column})) = strip_accents(lower(?))"
-
 
 def _read(sql: str, params: list[Any]) -> list[dict[str, Any]]:
     try:
@@ -188,7 +175,6 @@ def _read(sql: str, params: list[Any]) -> list[dict[str, Any]]:
     except Exception as exc:
         raise AwardResultError(
             f"warehouse read of {TABLE} failed: {str(exc)[:200]}") from exc
-
 
 def _ballot_rows(season: str, player: str | None
                  ) -> tuple[list[dict[str, Any]], str | None]:
@@ -209,23 +195,19 @@ def _ballot_rows(season: str, player: str | None
         f"WHERE {' AND '.join(clauses)}", params)
     return rows, (observed[0]["fetched_at"] if observed else None)
 
-
 def _coach_ballots(player: str, season: str) -> list[dict[str, Any]]:
     return _read(
         f"SELECT DISTINCT SEASON, AWARD FROM {TABLE} "
         f"WHERE {_name_match('COACH')} AND _season <= ? ORDER BY SEASON",
         [player, season])
 
-
 def _null(value: Any) -> Any:
     return None if value is None or value != value else value
-
 
 def _tied(rank: Any, rank_label: Any) -> bool:
     text = str(rank_label or "")
     return rank is not None and text.endswith("T") \
         and text[:-1].isdigit()
-
 
 def _placement(row: dict[str, Any]) -> dict[str, Any]:
     rank = _null(row["RANK"])
@@ -249,10 +231,8 @@ def _placement(row: dict[str, Any]) -> dict[str, Any]:
         "winner": _null(row["PLAYER"]) or _null(row["COACH"]),
     }
 
-
 def _placements(raw: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return [_placement(row) for row in raw]
-
 
 def _career_note(placements: list[dict[str, Any]]) -> str:
     grouped: dict[str, list[str]] = {}
@@ -261,7 +241,6 @@ def _career_note(placements: list[dict[str, Any]]) -> str:
     return "; ".join(
         f"{award} in {', '.join(sorted(set(seasons)))}"
         for award, seasons in sorted(grouped.items()))
-
 
 def _absent_subject(player: str, season: str,
                     coach_rows: list[dict[str, Any]]) -> str:
@@ -273,7 +252,6 @@ def _absent_subject(player: str, season: str,
     return (f"{player} is on record as a coach, not a player, on the "
             f"{', '.join(awards)} ballot for {', '.join(seasons)}; no player "
             f"ballot through the {season} season carries that name")
-
 
 def _resolve(placement_rows: list[dict[str, Any]], view: str, canon: str | None,
              season: str, subject: str) -> list[dict[str, Any]]:
@@ -303,7 +281,6 @@ def _resolve(placement_rows: list[dict[str, Any]], view: str, canon: str | None,
             f"placement")
     return [row for row in placement_rows if row["rank"] == leading]
 
-
 def _coverage(view: str, spec: dict[str, Any] | None, season: str) -> str:
     scope = spec["label"] if spec is not None else "every published award"
     what = {
@@ -315,21 +292,13 @@ def _coverage(view: str, spec: dict[str, Any] | None, season: str) -> str:
             f"in {season}, read verbatim from {TABLE}. This is a recorded "
             f"outcome, never a model score, projection, or live race.")
 
-
-@tool
+@tool(description="Recorded NBA award results read from published ballots.\n\nview=winner returns every subject sharing the leading rank for one award in\none season. view=field returns the whole ranked ballot with vote shares and\nvote counts. view=player_awards returns one player's award record through\nthe named season. Use get_award_race for a model score, never for a result.")
 def get_award_results(
     view: Literal["winner", "field", "player_awards"],
     award: str | None = None,
     season: str | None = None,
     player: str | None = None,
 ) -> dict[str, Any]:
-    """Recorded NBA award results read from published ballots.
-
-    view=winner returns every subject sharing the leading rank for one award in
-    one season. view=field returns the whole ranked ballot with vote shares and
-    vote counts. view=player_awards returns one player's award record through
-    the named season. Use get_award_race for a model score, never for a result.
-    """
     try:
         if view not in VIEWS:
             raise AwardResultError(

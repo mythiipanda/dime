@@ -5,7 +5,7 @@ from typing import Any
 from langchain_core.tools import tool
 
 from .. import store
-from ._core import clamp_season, last_completed_season, resolve_season
+from ._core import clamp_season, resolve_season
 from .award_results import normalize_award
 
 MIP_MSG = ("MIP needs prior-season per-player stats; silver_hist_gamelogs "
@@ -45,7 +45,6 @@ FEATURE_LABELS = {
 
 _ROUND3 = {"ts_pct", "team_win_pct"}
 
-
 STANDINGS_FIELDS = ("team_id", "wins", "losses", "opp_points_pg")
 
 STANDINGS_SOURCES: tuple[dict[str, str], ...] = (
@@ -57,10 +56,8 @@ STANDINGS_SOURCES: tuple[dict[str, str], ...] = (
      "opp_points_pg": "opp_points_pg"},
 )
 
-
 class StandingsUnavailable(Exception):
     pass
-
 
 def _standings_for(season: str) -> dict[str, str]:
     con = store.connect(read_only=True)
@@ -86,7 +83,6 @@ def _standings_for(season: str) -> dict[str, str]:
     finally:
         con.close()
 
-
 def _finite(value: object) -> float | None:
     try:
         number = float(value)
@@ -94,17 +90,14 @@ def _finite(value: object) -> float | None:
         return None
     return number if math.isfinite(number) else None
 
-
 def _population_spread(values: list[float]) -> float:
     if len(values) < 2:
         return 0.0
     mean = math.fsum(values) / len(values)
     return math.sqrt(math.fsum((v - mean) ** 2 for v in values) / len(values))
 
-
 def _round_val(key: str, value: object) -> float:
     return round(float(value or 0), 3) if key in _ROUND3 else round(float(value or 0), 1)
-
 
 def _formula(spec: dict[str, Any]) -> str:
     out = ""
@@ -115,7 +108,6 @@ def _formula(spec: dict[str, Any]) -> str:
         else:
             out += f" - {tag}" if sign < 0 else f" + {tag}"
     return out
-
 
 def _qualification(spec: dict[str, Any]) -> str:
     qual = spec.get("qualification", {})
@@ -130,7 +122,6 @@ def _qualification(spec: dict[str, Any]) -> str:
         parts.append(f"MPG<={qual['max_mpg']}")
     return ", ".join(parts)
 
-
 def _missing_table() -> str | None:
     try:
         con = store.connect()
@@ -144,7 +135,6 @@ def _missing_table() -> str | None:
         if table not in tables:
             return table
     return None
-
 
 def _pool(season: str) -> list[dict[str, Any]]:
     season = resolve_season(season)
@@ -175,13 +165,8 @@ def _pool(season: str) -> list[dict[str, Any]]:
         [season],
     )
 
-
-@tool
+@tool(description='Award race top 5 for MVP/DPOY/ROY/6MOY.\n\nThe formula is computed from warehouse stats only and listed in meta.')
 def get_award_race(award: str, season: str | None = None) -> dict[str, Any]:
-    """Award race top 5 for MVP/DPOY/ROY/6MOY.
-
-    The formula is computed from warehouse stats only and listed in meta.
-    """
     canon = normalize_award(award)
     if canon is None or canon not in PROJECTION_SPECS:
         valid = ", ".join(sorted(PROJECTION_SPECS))
@@ -278,16 +263,10 @@ def get_award_race(award: str, season: str | None = None) -> dict[str, Any]:
                         f"at {_round_val(leader, row[leader])}")
         else:
 
-
-
-
             top_feat, top_z = max(
                 contribs, key=lambda t: signs[t[1]] * t[2])[1:3]
             case_for = (f"strongest edge is {FEATURE_LABELS.get(top_feat, top_feat)} "
                         f"at {_round_val(top_feat, row[top_feat])} (z {top_z:+.2f})")
-
-
-
 
         weak_feat, weak_dz = min(
             ((feat, signs[feat] * z) for _, feat, z in contribs),
@@ -296,7 +275,6 @@ def get_award_race(award: str, season: str | None = None) -> dict[str, Any]:
         weak_val = _round_val(weak_feat, row[weak_feat])
         weak_avg = _round_val(weak_feat, means[weak_feat])
         if weak_dz >= 0 or weak_val == weak_avg:
-
 
             case_against = (f"no clear weakness - closest to the pool "
                             f"average in {weak_label} ({weak_val})")
@@ -333,7 +311,6 @@ def get_award_race(award: str, season: str | None = None) -> dict[str, Any]:
                      "the score ranks nothing")
     from ._core import season_static as _season_static
     if _season_static(season):
-
 
         meta["season_complete"] = True
         notes.append(f"{season} is complete. These are formula-based "

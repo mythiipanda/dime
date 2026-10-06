@@ -15,7 +15,6 @@ from v2.contracts import (
 
 PROSE = "The New York Knicks won the 2024-25 season series 4-2."
 
-
 def _binding(output_id: str) -> EvidenceOutputBinding:
     return EvidenceOutputBinding(
         requirement_kind="task",
@@ -28,7 +27,6 @@ def _binding(output_id: str) -> EvidenceOutputBinding:
         unit={"kind": "unitless"},
         domain="season_series",
     )
-
 
 def _result() -> SimpleNamespace:
     claim = Claim(
@@ -72,13 +70,11 @@ def _result() -> SimpleNamespace:
         ),
     )
 
-
 def test_verified_prose_suppresses_contradicting_missing_tails() -> None:
     text = _answer_text(_result())
     assert PROSE in text
     assert "SERIES_WINNER could not be verified (missing)." not in text
     assert "TOTAL_GAMES could not be verified (missing)." not in text
-
 
 def test_genuinely_uncovered_output_still_discloses() -> None:
     result = _result()

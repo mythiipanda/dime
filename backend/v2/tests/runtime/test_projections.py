@@ -4,7 +4,6 @@ from v2.contracts import EvidenceEnvelope
 from v2.runtime.ledger import LedgerKind, RunLedger
 from v2.runtime.projections import admitted_evidence, replay_turn, tool_attempts
 
-
 def ledger_with_attempt():
     ledger = RunLedger("run")
     ledger.append(LedgerKind.TOOL_CALL, turn_id="turn", step_id="facts",
@@ -16,7 +15,6 @@ def ledger_with_attempt():
                   call_id="call", data={"status": "ok", "evidence": evidence.model_dump(mode="json")})
     return ledger, evidence
 
-
 def test_ledger_projects_admitted_evidence_and_attempts():
     ledger, evidence = ledger_with_attempt()
     assert admitted_evidence(ledger.entries) == [evidence]
@@ -24,14 +22,12 @@ def test_ledger_projects_admitted_evidence_and_attempts():
         "call_id": "call", "name": "standings", "args": {"season": "2025-26"},
         "status": "ok", "error": None}]
 
-
 def test_replay_projection_excludes_prompts_questions_and_answers():
     ledger, _ = ledger_with_attempt()
     payload = replay_turn(ledger.entries)
     text = str(payload).casefold()
     assert set(payload) == {"evidence", "tools"}
     assert all(word not in text for word in ("prompt", "question", "answer", "transcript"))
-
 
 def test_successful_tool_projection_rejects_missing_or_extra_evidence_fields():
     import pytest
@@ -57,7 +53,6 @@ def test_successful_tool_projection_rejects_missing_or_extra_evidence_fields():
             "status": "ok", "evidence": evidence.model_dump(mode="json"),
             "unverified": True,
         }))
-
 
 def test_tool_attempt_projection_rejects_partial_call_and_status() -> None:
     import pytest
@@ -86,7 +81,6 @@ def test_tool_attempt_projection_rejects_partial_call_and_status() -> None:
     with pytest.raises(ValueError, match="status must be ok or failed"):
         tool_attempts([call, bad_status])
 
-
 def test_admitted_evidence_rejects_conflicting_duplicate_identity() -> None:
     import pytest
 
@@ -102,7 +96,6 @@ def test_admitted_evidence_rejects_conflicting_duplicate_identity() -> None:
     identical = ledger.entries[-1].model_copy(update={"sequence": 3})
     with pytest.raises(ValueError, match="multiple results"):
         admitted_evidence([*ledger.entries, identical])
-
 
 def test_tool_attempt_projection_rejects_orphan_conflict_and_duplicate_result() -> None:
     import pytest
@@ -124,7 +117,6 @@ def test_tool_attempt_projection_rejects_orphan_conflict_and_duplicate_result() 
     with pytest.raises(ValueError, match="multiple results"):
         tool_attempts([call, result, result.model_copy(update={"sequence": 3})])
 
-
 def test_admitted_evidence_rejects_orphan_successful_result() -> None:
     import pytest
     from v2.runtime.ledger import LedgerEntry
@@ -137,7 +129,6 @@ def test_admitted_evidence_rejects_orphan_successful_result() -> None:
     )
     with pytest.raises(ValueError, match="requires its recorded call"):
         admitted_evidence([result])
-
 
 def test_tool_attempt_projection_rejects_malformed_result_payloads() -> None:
     import pytest
@@ -154,7 +145,6 @@ def test_tool_attempt_projection_rejects_malformed_result_payloads() -> None:
     )
     with pytest.raises(ValueError, match="does not match its status"):
         tool_attempts([call, failed])
-
 
 def test_projections_revalidate_copied_ledger_entries() -> None:
     import pytest

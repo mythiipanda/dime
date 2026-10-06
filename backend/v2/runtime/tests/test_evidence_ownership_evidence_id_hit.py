@@ -30,7 +30,6 @@ _Q2_LIVE_NODE = "node_ratings"
 
 _RATINGS_UNIT = "points_per_100_possessions"
 
-
 def _q1_envelope():
     return EvidenceEnvelope(
         evidence_id=_Q1_EVIDENCE_ID,
@@ -42,7 +41,6 @@ def _q1_envelope():
         units={"AST": "count"},
         entities=[EntityRef(id="1629027", type="player", display_name="Trae Young")],
     )
-
 
 def _q1_task():
     return TaskSpec(
@@ -60,7 +58,6 @@ def _q1_task():
             )
         ],
     )
-
 
 def _q1_bindings(node_id, evidence_id=_Q1_EVIDENCE_ID):
     return [
@@ -96,7 +93,6 @@ def _q1_bindings(node_id, evidence_id=_Q1_EVIDENCE_ID):
         ),
     ]
 
-
 def _q1_node(node_id=_Q1_TRUE_NODE):
     return PlanNode(
         id=node_id,
@@ -105,7 +101,6 @@ def _q1_node(node_id=_Q1_TRUE_NODE):
         covers_requirement_ids=[_Q1_REQUIREMENT],
         status="complete",
     )
-
 
 def _q2_envelope():
     return EvidenceEnvelope(
@@ -129,7 +124,6 @@ def _q2_envelope():
         entities=[EntityRef(id="BOS", type="team", display_name="BOS")],
     )
 
-
 def _q2_task():
     return TaskSpec(
         goal="how did the Celtics rate in 2024-25",
@@ -146,7 +140,6 @@ def _q2_task():
             )
         ],
     )
-
 
 def _q2_bindings(node_id, evidence_id=_Q2_EVIDENCE_ID):
     return [
@@ -197,7 +190,6 @@ def _q2_bindings(node_id, evidence_id=_Q2_EVIDENCE_ID):
         ),
     ]
 
-
 def _q2_node(node_id=_Q2_TRUE_NODE):
     return PlanNode(
         id=node_id,
@@ -206,7 +198,6 @@ def _q2_node(node_id=_Q2_TRUE_NODE):
         covers_requirement_ids=[_Q2_REQUIREMENT],
         status="complete",
     )
-
 
 def _admit(task, envelope, bindings, owner_node_id, nodes):
     execution = ExecutionResult(
@@ -239,7 +230,6 @@ def _admit(task, envelope, bindings, owner_node_id, nodes):
     )
     return admit_verified_claim_bindings(task, execution, draft, verified)
 
-
 def test_stripped_node_id_with_evidence_id_hit_admits():
     admitted = _admit(
         _q1_task(), _q1_envelope(), _q1_bindings(_Q1_STRIPPED_NODE),
@@ -248,7 +238,6 @@ def test_stripped_node_id_with_evidence_id_hit_admits():
     by_output = {item.output_id: item for item in admitted.output_bindings}
     assert by_output["PLAYER_NAME"].value.value == "Trae Young"
     assert by_output["AST"].value.value == 880
-
 
 def test_invented_node_id_with_evidence_id_hit_admits():
     admitted = _admit(
@@ -259,7 +248,6 @@ def test_invented_node_id_with_evidence_id_hit_admits():
     assert by_output["PLAYER_NAME"].value.value == "Trae Young"
     assert by_output["AST"].value.value == 880
 
-
 def test_conflated_node_id_with_evidence_id_hit_admits():
     admitted = _admit(
         _q1_task(), _q1_envelope(), _q1_bindings(_Q1_EVIDENCE_ID),
@@ -268,7 +256,6 @@ def test_conflated_node_id_with_evidence_id_hit_admits():
     by_output = {item.output_id: item for item in admitted.output_bindings}
     assert by_output["PLAYER_NAME"].value.value == "Trae Young"
     assert by_output["AST"].value.value == 880
-
 
 def test_evidence_id_miss_with_true_node_admits_with_corrected_id():
     ghost = "qualified_leaders:0000000000000000"
@@ -282,7 +269,6 @@ def test_evidence_id_miss_with_true_node_admits_with_corrected_id():
     by_output = {item.output_id: item for item in admitted.output_bindings}
     assert by_output["PLAYER_NAME"].value.value == "Trae Young"
     assert by_output["AST"].value.value == 880
-
 
 def test_evidence_id_miss_with_true_node_wrong_values_rejects():
     ghost = "qualified_leaders:0000000000000000"
@@ -298,7 +284,6 @@ def test_evidence_id_miss_with_true_node_wrong_values_rejects():
             _Q1_TRUE_NODE, [_q1_node()],
         )
 
-
 def test_evidence_and_node_miss_rejects():
     ghost = "qualified_leaders:0000000000000000"
     with pytest.raises(ValueError, match="ownership"):
@@ -306,7 +291,6 @@ def test_evidence_and_node_miss_rejects():
             _q1_task(), _q1_envelope(), _q1_bindings(ghost, ghost),
             _Q1_TRUE_NODE, [_q1_node(), _q1_node(ghost)],
         )
-
 
 def test_live_q1_bindings_admit():
     admitted = _admit(
@@ -316,7 +300,6 @@ def test_live_q1_bindings_admit():
     by_output = {item.output_id: item for item in admitted.output_bindings}
     assert by_output["PLAYER_NAME"].value.value == "Trae Young"
     assert by_output["AST"].value.value == 880
-
 
 def test_live_q2_bindings_admit():
     admitted = _admit(

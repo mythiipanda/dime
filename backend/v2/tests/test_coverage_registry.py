@@ -12,18 +12,14 @@ from v2.adapters.coverage import (
 from v2.adapters.models import ModelIntake
 from v2.contracts import SeasonRef, TaskSpec
 
-
 INFRA_WORDS = ("sync", "pipeline", "endpoint", "cache", "warehouse", "tool")
-
 
 def _word_present(text, word):
     return re.search(r"\b" + re.escape(word) + r"\b", text.casefold()) is not None
 
-
 def _assert_plain_language(text):
     for word in INFRA_WORDS:
         assert not _word_present(text, word)
-
 
 def _task(season="2012-13", metric_ids=("POINTS",)):
     return TaskSpec(
@@ -34,7 +30,6 @@ def _task(season="2012-13", metric_ids=("POINTS",)):
         season=SeasonRef(value=season, source="user", confidence=1.0),
     )
 
-
 def _stubbed_seasons(monkeypatch, mapping):
     monkeypatch.setattr(
         coverage,
@@ -42,17 +37,14 @@ def _stubbed_seasons(monkeypatch, mapping):
         lambda table: frozenset(mapping.get(str(table), ())),
     )
 
-
 def test_generic_metric_uses_default_table():
     assert table_for_metric("POINTS") == "silver_boxscores"
     assert table_for_metric("plus-minus") == "silver_boxscores"
-
 
 def test_known_metric_maps_to_its_table():
     assert table_for_metric("RAPTOR") == "silver_raptor_player"
     assert table_for_metric("RAPM-lite") == "silver_rapm"
     assert table_for_metric("true shooting") == "silver_advanced"
-
 
 def test_covered_season_matches_warehouse_set(monkeypatch):
     _stubbed_seasons(monkeypatch, {"silver_boxscores": {"2025-26"}})
@@ -62,7 +54,6 @@ def test_covered_season_matches_warehouse_set(monkeypatch):
     assert verdict["requested_season"] == "2025-26"
     assert verdict["available_seasons"] == ["2025-26"]
     _assert_plain_language(verdict["message"])
-
 
 def test_uncovered_season_names_available_seasons(monkeypatch):
     _stubbed_seasons(monkeypatch, {"silver_boxscores": {"2025-26"}})
@@ -75,7 +66,6 @@ def test_uncovered_season_names_available_seasons(monkeypatch):
     assert "which season" in verdict["message"].casefold()
     _assert_plain_language(verdict["message"])
 
-
 def test_unknown_table_has_empty_set(monkeypatch):
     _stubbed_seasons(monkeypatch, {})
     verdict = coverage_check("points", "2012-13", table="silver_future")
@@ -84,7 +74,6 @@ def test_unknown_table_has_empty_set(monkeypatch):
     assert "which season" in verdict["message"].casefold()
     _assert_plain_language(verdict["message"])
 
-
 def test_malformed_season_is_uncovered(monkeypatch):
     _stubbed_seasons(monkeypatch, {"silver_boxscores": {"2025-26"}})
     verdict = coverage_check("points", "banana")
@@ -92,14 +81,12 @@ def test_malformed_season_is_uncovered(monkeypatch):
     assert "which season" in verdict["message"].casefold()
     _assert_plain_language(verdict["message"])
 
-
 def test_future_season_beyond_upper_bound_is_uncovered(monkeypatch):
     _stubbed_seasons(monkeypatch, {"silver_boxscores": {"2025-26"}})
     verdict = coverage_check("points", "2099-00")
     assert verdict["covered"] is False
     assert "which season" in verdict["message"].casefold()
     _assert_plain_language(verdict["message"])
-
 
 def test_metric_coverage_rows_carry_verdicts(monkeypatch):
     _stubbed_seasons(monkeypatch, {
@@ -118,14 +105,12 @@ def test_metric_coverage_rows_carry_verdicts(monkeypatch):
     covered = metric_coverage(["POINTS"], season="2025-26")
     assert covered["rows"][0]["covered"] is True
 
-
 def test_metric_coverage_without_season_has_no_verdicts():
     result = metric_coverage(["RAPTOR"])
     assert result["ok"] is True
     assert "covered" not in result["rows"][0]
     assert "available_seasons" not in result["rows"][0]
     assert result["rows"][0]["status"] == "available"
-
 
 def test_advanced_gap_refuses_without_rewrite(monkeypatch):
     _stubbed_seasons(monkeypatch, {"silver_advanced": {"2025-26"}})
@@ -149,7 +134,6 @@ def test_advanced_gap_refuses_without_rewrite(monkeypatch):
     assert refused.season.value == "2023-24"
     assert refused.open_questions != []
 
-
 def test_old_boxscore_season_is_not_rewritten(monkeypatch):
     _stubbed_seasons(monkeypatch, {"silver_boxscores": {"2025-26"}})
     result = ModelIntake._mark_uncovered_season(_task())
@@ -160,7 +144,6 @@ def test_old_boxscore_season_is_not_rewritten(monkeypatch):
     assert any("silver_boxscores" in item for item in result.open_questions)
     assert result.goal == "Compare scoring across seasons"
 
-
 def test_absurd_future_season_is_rejected(monkeypatch):
     _stubbed_seasons(monkeypatch, {"silver_boxscores": {"2025-26"}})
     result = ModelIntake._mark_uncovered_season(_task(season="2099-00"))
@@ -168,7 +151,6 @@ def test_absurd_future_season_is_rejected(monkeypatch):
     assert result.season.source == "user"
     assert result.open_questions != []
     assert any("2099-00" in item for item in result.open_questions)
-
 
 def test_covered_season_is_left_alone(monkeypatch):
     _stubbed_seasons(monkeypatch, {
@@ -182,7 +164,6 @@ def test_covered_season_is_left_alone(monkeypatch):
     })
     assert ModelIntake._mark_uncovered_season(raptor) == raptor
 
-
 def test_empty_metrics_falls_back_to_default_table(monkeypatch):
     _stubbed_seasons(monkeypatch, {"silver_boxscores": {"2025-26"}})
     result = ModelIntake._mark_uncovered_season(
@@ -191,11 +172,9 @@ def test_empty_metrics_falls_back_to_default_table(monkeypatch):
     assert result.open_questions != []
     assert any("silver_boxscores" in item for item in result.open_questions)
 
-
 def test_missing_season_is_ignored():
     task = TaskSpec(goal="Compare scoring", mode="quick", deliverable="answer")
     assert ModelIntake._mark_uncovered_season(task) == task
-
 
 def test_table_seasons_read_from_warehouse_file(tmp_path, monkeypatch):
     duckdb = pytest.importorskip("duckdb")
@@ -228,7 +207,6 @@ def test_table_seasons_read_from_warehouse_file(tmp_path, monkeypatch):
     finally:
         coverage.coverage_cache_clear()
 
-
 def test_missing_warehouse_file_degrades_to_empty(tmp_path, monkeypatch):
     monkeypatch.setattr(
         coverage, "warehouse_path",
@@ -245,7 +223,6 @@ def test_missing_warehouse_file_degrades_to_empty(tmp_path, monkeypatch):
         assert refused.open_questions != []
     finally:
         coverage.coverage_cache_clear()
-
 
 def test_a_season_never_leaks_from_one_warehouse_into_another(
         tmp_path, monkeypatch):
@@ -274,7 +251,6 @@ def test_a_season_never_leaks_from_one_warehouse_into_another(
                 {season}), path.name
     finally:
         coverage.coverage_cache_clear()
-
 
 def test_the_season_series_capability_reads_the_series_source_tables():
     from shared.tools.team import _SERIES_PHASES, _SERIES_SOURCES

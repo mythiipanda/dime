@@ -57,11 +57,9 @@ CATEGORY_ALIASES: dict[str, str] = {
     "minutes": "min", "minute": "min", "mins": "min", "min": "min",
 }
 
-
 def season_label(end_year: object) -> str:
     y = int(str(end_year).strip()[:4])
     return f"{y - 1}-{str(y)[-2:]}"
-
 
 def normalize_category(name: object) -> str | None:
     key = str(name or "").strip().lower().replace("-", "_").replace(" ", "_")
@@ -71,7 +69,6 @@ def normalize_category(name: object) -> str | None:
         return key
     return CATEGORY_ALIASES.get(key)
 
-
 def closest_category(name: object) -> str | None:
     key = str(name or "").strip().lower().replace("-", "_").replace(" ", "_")
     pool = sorted(set(CATEGORIES) | set(CATEGORY_ALIASES))
@@ -80,28 +77,23 @@ def closest_category(name: object) -> str | None:
         return None
     return CATEGORY_ALIASES.get(hit[0], hit[0])
 
-
 def _parse_year_raw(value: object, fallback: int) -> tuple[int, bool]:
     try:
         return int(str(value).strip()[:4]), True
     except (TypeError, ValueError, AttributeError):
         return fallback, False
 
-
 def _clamp_limit(value: object) -> int:
     try:
-        return max(1, min(25, int(value)))  # type: ignore[arg-type]
+        return max(1, min(25, int(value)))
     except (TypeError, ValueError):
         return 10
-
 
 def normalize_mode(mode: object) -> str:
     return MODE_ALIASES.get(str(mode or "").strip().lower(), "leaders")
 
-
 RAPTOR_JOIN = ("LEFT JOIN silver_raptor_player r ON LOWER(r.PLAYER_NAME) = "
                "LOWER(h.player_name) AND r.SEASON = h.season")
-
 
 def _tables() -> set[str]:
     con = store.connect()
@@ -110,16 +102,14 @@ def _tables() -> set[str]:
     finally:
         con.close()
 
-
 def _round_value(decimals: int, value: object) -> float | None:
     try:
-        out = round(float(value), decimals)  # type: ignore[arg-type]
+        out = round(float(value), decimals)
     except (TypeError, ValueError):
         return None
     if out != out:
         return None
     return out
-
 
 def _row(spec: dict[str, Any], raw: dict[str, Any]) -> dict[str, Any]:
     value = _round_value(spec["decimals"], raw.get("value"))
@@ -141,7 +131,6 @@ def _row(spec: dict[str, Any], raw: dict[str, Any]) -> dict[str, Any]:
     if raptor is not None:
         out["raptor"] = raptor
     return out
-
 
 def _query(spec: dict[str, Any], where: str, params: list,
            limit: int, raptor: bool) -> list[dict[str, Any]]:
@@ -170,7 +159,6 @@ def _query(spec: dict[str, Any], where: str, params: list,
     )
     return [_row(spec, r) for r in rows if _round_value(spec["decimals"], r.get("value")) is not None]
 
-
 CURRENT_TOTALS = {
     "pts": "PTS", "reb": "REB", "ast": "AST", "stl": "STL", "blk": "BLK",
     "tov": "TOV", "fgm": "FGM", "fga": "FGA", "fg3m": "FG3M", "fg3a": "FG3A",
@@ -178,7 +166,6 @@ CURRENT_TOTALS = {
 }
 
 CURRENT_RATES = {"fg_pct", "fg3_pct", "ft_pct"}
-
 
 def _query_current(spec: dict[str, Any], limit: int) -> list[dict[str, Any]]:
     if spec.get("raptor_only"):
@@ -220,18 +207,12 @@ def _query_current(spec: dict[str, Any], limit: int) -> list[dict[str, Any]]:
         return []
     return [_row(spec, r) for r in rows if _round_value(spec["decimals"], r.get("value")) is not None]
 
-
-@tool
+@tool(description='League leaders per season or best single seasons from history. Seasons are end-years (2026 means 2025-26), clamped to 2015..2026.\n\nSeasons are end-years clamped to 2015..2026. Values are per-game\nwarehouse estimates. Empty ranges report honestly, never fabricated.')
 def get_historical_leaders(category: str = "pts",
                            start_season: Union[int, str, None] = 2015,
                            end_season: Union[int, str, None] = 2026,
                            limit: Union[int, str, None] = 10,
                            mode: str = "leaders") -> dict[str, Any]:
-    """League leaders per season or best single seasons from history. Seasons are end-years (2026 means 2025-26), clamped to 2015..2026.
-
-    Seasons are end-years clamped to 2015..2026. Values are per-game
-    warehouse estimates. Empty ranges report honestly, never fabricated.
-    """
     canon = normalize_category(category)
     if canon is None:
         valid = ", ".join(sorted(CATEGORIES))
@@ -266,7 +247,7 @@ def get_historical_leaders(category: str = "pts",
         warnings.append(f"end_season {end} clamped to {clamped_end}")
     start, end = clamped_start, clamped_end
     try:
-        raw_limit = int(limit)  # type: ignore[arg-type]
+        raw_limit = int(limit)
         limit_ok = True
     except (TypeError, ValueError):
         raw_limit = 10

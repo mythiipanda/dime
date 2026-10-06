@@ -7,13 +7,11 @@ from v2.contracts import Claim, ClaimKind, DraftReport, EntityRef, SeasonRef, Ta
 from v2.domain.calculations import Calculation, CalculationInput, CalculationOperation
 from v2.runtime.verifier import merge_verification_reports, validate_semantic_report, verify_mechanical
 
-
 def task(season="2025-26"):
     from v2.contracts import RunMode
     return TaskSpec(goal="Rank Boston", mode=RunMode.QUICK, deliverable="answer",
         entities=[EntityRef(id="BOS", type="team", display_name="Capital City Stars")],
         season=SeasonRef(value=season, source="user", confidence=1), as_of=date(2026, 4, 15))
-
 
 def evidence(**changes):
     from v2.contracts import EvidenceEnvelope
@@ -28,10 +26,8 @@ def evidence(**changes):
     values.update(changes)
     return EvidenceEnvelope(**values)
 
-
 def report(claim):
     return DraftReport(sections=[claim.text], claims=[claim])
-
 
 def test_observed_claim_passes_with_number_date_season_entity_and_units():
     claim = Claim(text="As of 2026-04-15, the Capital City Stars had 61 wins in 2025-26.",
@@ -39,7 +35,6 @@ def test_observed_claim_passes_with_number_date_season_entity_and_units():
     result = verify_mechanical(task(), report(claim), [evidence()])
     assert result.status == VerificationStatus.PASS
     assert result.claim_results[0].supported
-
 
 def test_rejects_uncited_numeral_date_and_season():
     claim = Claim(text="As of 2026-04-14, Capital City had 62 wins in 2024-25.",
@@ -49,12 +44,10 @@ def test_rejects_uncited_numeral_date_and_season():
     assert "uncited date 2026-04-14" in reasons
     assert "uncited season 2024-25" in reasons
 
-
 def test_percent_scaling_and_declared_constant_are_supported():
     claim = Claim(text="Boston won 74.4% across 82 games.", kind=ClaimKind.OBSERVED,
                   evidence_ids=["standings"])
     assert verify_mechanical(task(), report(claim), [evidence()], allowed_constants=[82]).status == VerificationStatus.PASS
-
 
 def test_maximum_rejected_claims_do_not_overflow_repair_report():
     claims = [Claim(
@@ -69,7 +62,6 @@ def test_maximum_rejected_claims_do_not_overflow_repair_report():
     assert len(result.repair_instructions) == 128
     assert all(not item.supported for item in result.claim_results)
 
-
 def test_entity_season_and_as_of_mismatches_fail():
     bad = evidence(entities=[EntityRef(id="NYK", type="team", display_name="Riverport Ravens")],
                    season="2024-25", as_of=date(2026, 4, 16))
@@ -79,14 +71,12 @@ def test_entity_season_and_as_of_mismatches_fail():
     assert any("does not match task season" in r for r in reasons)
     assert any("after task as-of" in r for r in reasons)
 
-
 def test_rank_requires_qualification_and_coverage():
     claim = Claim(text="Boston ranks 1st with 61 wins.", kind=ClaimKind.OBSERVED, evidence_ids=["standings"])
     result = verify_mechanical(task(), report(claim), [evidence(qualification=None, coverage=None)], allowed_constants=[1])
     assert "rank claim lacks qualification evidence" in result.claim_results[0].reasons
     assert "rank claim lacks coverage evidence" in result.claim_results[0].reasons
     assert "rank claim lacks a recomputable rank calculation" in result.claim_results[0].reasons
-
 
 def test_derived_claim_recomputes_calculation_and_lineage():
     from v2.contracts import EvidenceEnvelope
@@ -102,7 +92,6 @@ def test_derived_claim_recomputes_calculation_and_lineage():
                   evidence_ids=["derived"], calculation_id="gap")
     assert verify_mechanical(task(), report(claim), [raw, derived], [calc]).status == VerificationStatus.PASS
 
-
 def test_bad_calculation_and_unknown_evidence_fail_closed():
     calc = Calculation(calculation_id="gap", operation=CalculationOperation.SUBTRACT,
         inputs=[CalculationInput(evidence_id="standings", path="rows[0].W"),
@@ -114,14 +103,12 @@ def test_bad_calculation_and_unknown_evidence_fail_closed():
     assert any("unknown evidence ids" in r for r in result.claim_results[0].reasons)
     assert any("does not recompute" in r for r in result.claim_results[0].reasons)
 
-
 def test_semantic_contract_rejects_replacement_facts():
     assert validate_semantic_report({"status": "pass", "claim_results": []}).status == VerificationStatus.PASS
     with pytest.raises(ValueError, match="forbidden fields"):
         validate_semantic_report({"status": "repair", "replacement_facts": ["Boston won 61"]})
     with pytest.raises(ValueError, match="one VerificationReport"):
         validate_semantic_report("[]")
-
 
 def test_report_merge_preserves_both_verifiers_failures():
     mechanical = VerificationReport(status="repair",
@@ -134,7 +121,6 @@ def test_report_merge_preserves_both_verifiers_failures():
     assert merged.claim_results[0].reasons == ["number", "inference"]
     assert merged.missing_branches == ["risks"]
 
-
 def test_rank_recomputation_passes_with_complete_population():
     calc = Calculation(
         calculation_id="rank", operation=CalculationOperation.RANK_DESC,
@@ -146,7 +132,6 @@ def test_rank_recomputation_passes_with_complete_population():
                   evidence_ids=["standings"], calculation_id="rank")
     assert verify_mechanical(task(), report(claim), [evidence()], [calc]).status == VerificationStatus.PASS
 
-
 def test_uncited_section_fact_is_rejected():
     claim = Claim(text="Boston led the table.", kind=ClaimKind.OBSERVED,
                   evidence_ids=["standings"])
@@ -154,7 +139,6 @@ def test_uncited_section_fact_is_rejected():
     result = verify_mechanical(task(), draft, [evidence()])
     assert result.status == VerificationStatus.REPAIR
     assert "62" in result.repair_instructions[-1]
-
 
 def test_observation_time_does_not_support_an_as_of_claim():
     claim = Claim(text="As of 2026-04-15, Capital City had 61 wins.",
@@ -165,26 +149,22 @@ def test_observation_time_does_not_support_an_as_of_claim():
     )
     assert "uncited date 2026-04-15" in result.claim_results[0].reasons
 
-
 def test_ordered_list_labels_are_not_factual_numerals():
     claim = Claim(text="Capital City had 61 wins.", kind=ClaimKind.OBSERVED,
                   evidence_ids=["standings"])
     draft = DraftReport(sections=["1. Capital City had 61 wins."], claims=[claim])
     assert verify_mechanical(task(), draft, [evidence()]).status == VerificationStatus.PASS
 
-
 def test_percent_metric_accepts_human_unit_not_internal_unit_name():
     claim = Claim(text="Boston's WIN PCT was 74.4%.", kind=ClaimKind.OBSERVED,
                   evidence_ids=["standings"])
     assert verify_mechanical(task(), report(claim), [evidence()]).status == VerificationStatus.PASS
-
 
 def test_bare_list_ordinals_are_not_factual_numerals():
     from v2.runtime.verifier import _number_tokens
 
     text = "1. Oklahoma City\n2. Boston\n3. Cleveland"
     assert _number_tokens(text) == []
-
 
 def test_mixed_source_claim_requires_provenance_label():
     from v2.contracts import EvidenceEnvelope
@@ -222,7 +202,6 @@ def test_source_ranked_leader_does_not_require_duplicate_calculation():
                   kind=ClaimKind.OBSERVED, evidence_ids=["standings"])
     assert verify_mechanical(task(), report(claim), [ranked]).status == VerificationStatus.PASS
 
-
 def test_multi_vintage_trade_evidence_supports_salary_and_season_claim() -> None:
     from v2.contracts import EvidenceEnvelope
 
@@ -241,7 +220,6 @@ def test_multi_vintage_trade_evidence_supports_salary_and_season_claim() -> None
     )
     assert verify_mechanical(task(), report(claim), [trade]).status == VerificationStatus.PASS
 
-
 def test_task_season_scope_still_rejects_statistical_vintage_mismatch() -> None:
     wrong = evidence(season="2024-25", task_season_scoped=True)
     claim = Claim(text="Capital City had 61 wins.", kind=ClaimKind.OBSERVED,
@@ -249,7 +227,6 @@ def test_task_season_scope_still_rejects_statistical_vintage_mismatch() -> None:
     result = verify_mechanical(task(), report(claim), [wrong])
     assert any("does not match task season" in reason
                for reason in result.claim_results[0].reasons)
-
 
 def test_empty_evidence_cannot_support_a_factual_claim() -> None:
     empty = evidence(rows=[])
@@ -261,7 +238,6 @@ def test_empty_evidence_cannot_support_a_factual_claim() -> None:
     assert "factual claim cites evidence with no values" in (
         result.claim_results[0].reasons)
 
-
 def test_mechanical_verifier_revalidates_copied_inputs() -> None:
     valid = DraftReport(sections=["Answer"], claims=[])
     invalid = valid.model_copy(update={"sections": [" "]})
@@ -270,7 +246,6 @@ def test_mechanical_verifier_revalidates_copied_inputs() -> None:
             TaskSpec(goal="answer", mode="quick", deliverable="text"),
             invalid, [],
         )
-
 
 def test_undeclared_source_identity_cannot_support_factual_claim():
     unknown = evidence(warnings=["source identity not declared by tool"])
@@ -285,9 +260,7 @@ def test_undeclared_source_identity_cannot_support_factual_claim():
     assert "factual claim cites evidence without declared source identity" in (
         result.claim_results[0].reasons)
 
-
 def test_entity_alias_ids_match_on_canonical_display_name():
-    from v2.contracts import EvidenceEnvelope
     task_with_slug = task().model_copy(update={"entities": [EntityRef(
         id="boston-celtics", type="team", display_name="Capital City Stars")]})
     for evidence_entity in (
@@ -302,7 +275,6 @@ def test_entity_alias_ids_match_on_canonical_display_name():
                 task_with_slug, report(claim), [evidence_with_alias])
             assert result.status == VerificationStatus.PASS
 
-
 def test_observed_rank_accepts_matching_explicit_rank_value():
     ranked = evidence(rows={"player": "Jaylen Brown", "usage_rank": 3},
                       qualification="qualified players", coverage="league pool")
@@ -311,9 +283,7 @@ def test_observed_rank_accepts_matching_explicit_rank_value():
     result = verify_mechanical(task(), report(claim), [ranked])
     assert not any("rank claim" in reason for reason in result.claim_results[0].reasons)
 
-
 def test_player_alias_ids_match_on_canonical_identity():
-    from v2.contracts import EvidenceEnvelope
     player_task = task().model_copy(update={"entities": [EntityRef(
         id="jaylen-brown", type="player", display_name="Jaylen Brown")]})
     player_evidence = evidence(entities=[EntityRef(
@@ -325,7 +295,6 @@ def test_player_alias_ids_match_on_canonical_identity():
         result = verify_mechanical(player_task, report(claim), [player_evidence])
         assert result.status == VerificationStatus.PASS
 
-
 def test_natural_language_rating_unit_matches_declared_machine_unit():
     ev = evidence(units={"OFF_RATING": "points_per_100_possessions"})
     ev = ev.model_copy(update={"rows": [{"TEAM": "Denver", "OFF_RATING": 126.1}]})
@@ -333,7 +302,6 @@ def test_natural_language_rating_unit_matches_declared_machine_unit():
     result = verify_mechanical(TaskSpec(goal="ratings", mode="quick", deliverable="answer"), report(claim), [ev], allowed_constants=[1])
     assert result.status == "pass"
     assert result.claim_results[0].supported
-
 
 def test_nested_prediction_metrics_match_declared_units():
     ev = evidence(
@@ -360,7 +328,6 @@ def test_prediction_probability_with_nested_metric_is_publishable():
     result = verify_mechanical(task(), report(claim), [ev])
     assert result.status == "pass"
 
-
 def test_qualification_numeral_is_supported_for_population_claim():
     ev = evidence(rows={"PLAYER": "Nikola Jokic", "OFF_RATING": 126.1})
     ev = ev.model_copy(update={
@@ -375,7 +342,6 @@ def test_qualification_numeral_is_supported_for_population_claim():
     result = verify_mechanical(task(), report(claim), [ev])
     assert result.status == "pass"
 
-
 def test_cross_evidence_comparison_requires_declared_calculation():
     regular = evidence(evidence_id="regular", capability="team_ratings",
         rows=[{"TEAM": "Capital City Stars", "OFF_RATING": 120.0}],
@@ -389,7 +355,6 @@ def test_cross_evidence_comparison_requires_declared_calculation():
     result = verify_mechanical(task(), report(claim), [regular, playoffs])
     assert "cross-evidence comparison lacks a declared calculation" in result.claim_results[0].reasons
 
-
 def test_universal_cross_evidence_claim_requires_declared_calculation():
     regular = evidence(evidence_id="regular", rows=[{"TEAM": "Capital City Stars", "OFF_RATING": 120.0}])
     playoffs = evidence(evidence_id="playoffs", rows=[{"TEAM": "Capital City Stars", "OFF_RATING": 111.4}])
@@ -397,7 +362,6 @@ def test_universal_cross_evidence_claim_requires_declared_calculation():
                   evidence_ids=["regular", "playoffs"])
     result = verify_mechanical(task(), report(claim), [regular, playoffs])
     assert "cross-evidence comparison lacks a declared calculation" in result.claim_results[0].reasons
-
 
 def test_population_claim_numerals_must_match_named_entity_row():
     table = evidence(
@@ -420,7 +384,6 @@ def test_population_claim_numerals_must_match_named_entity_row():
     assert any("named entity row" in reason
                for reason in result.claim_results[0].reasons)
 
-
 def test_population_claim_accepts_numeral_from_named_entity_row():
     table = evidence(
         rows=[
@@ -438,7 +401,6 @@ def test_population_claim_accepts_numeral_from_named_entity_row():
         report(right), [table],
     )
     assert result.status == VerificationStatus.PASS
-
 
 def test_metric_name_digit_is_not_treated_as_an_asserted_measurement():
     table = evidence(
@@ -458,7 +420,6 @@ def test_metric_name_digit_is_not_treated_as_an_asserted_measurement():
     )
     assert result.status == VerificationStatus.PASS
 
-
 def test_hyphenated_metric_labels_do_not_hide_real_measurements():
     table = evidence(
         rows=[
@@ -477,7 +438,6 @@ def test_hyphenated_metric_labels_do_not_hide_real_measurements():
     )
     assert result.status == VerificationStatus.REPAIR
     assert any("61.00%" in reason for reason in result.claim_results[0].reasons)
-
 
 def test_named_entity_values_can_span_multiple_population_envelopes():
     totals = evidence(
@@ -505,7 +465,6 @@ def test_named_entity_values_can_span_multiple_population_envelopes():
     assert not any("named entity row" in reason
                    for reason in result.claim_results[0].reasons)
 
-
 def test_named_entity_values_still_reject_adjacent_rows_across_envelopes():
     totals = evidence(
         evidence_id="totals",
@@ -532,7 +491,6 @@ def test_named_entity_values_still_reject_adjacent_rows_across_envelopes():
     assert any("named entity rows" in reason
                for reason in result.claim_results[0].reasons)
 
-
 def test_draft_declared_calculation_is_recomputed_by_assembly_verifier():
     import asyncio
     from v2.runtime.assembly import MechanicalVerifier
@@ -546,7 +504,6 @@ def test_draft_declared_calculation_is_recomputed_by_assembly_verifier():
                      evidence_ids=[ev.evidence_id], calculation_id="ppg_gap")])
     result = asyncio.run(MechanicalVerifier().verify(task(), draft, {ev.evidence_id: ev}))
     assert result.status == VerificationStatus.PASS
-
 
 def test_best_record_claim_requires_complete_wins_losses_record():
     from datetime import UTC, datetime
@@ -744,7 +701,6 @@ def test_derived_display_rounding_uses_recomputed_calculation(shown, exact, supp
     result=verify_mechanical(TaskSpec(goal="x",mode="quick",deliverable="x"),draft,evidence,[calculation])
     assert result.claim_results[0].supported is supported
 
-
 def test_mechanical_verifier_ignores_source_identity_as_claim_content():
     from datetime import UTC,datetime
     from v2.contracts import EvidenceEnvelope,TaskSpec,DraftReport,Claim
@@ -753,7 +709,6 @@ def test_mechanical_verifier_ignores_source_identity_as_claim_content():
     plain=EvidenceEnvelope(**base);bound=EvidenceEnvelope(**base,source_identity={'kind':'warehouse','warehouse_id':'frozen-eval','sha256':'a'*64})
     task=TaskSpec(goal='g',mode='quick',deliverable='d');draft=DraftReport(sections=['x'],claims=[Claim(text='A has value 1',kind='observed',evidence_ids=['e'])])
     assert verify_mechanical(task,draft,[plain])==verify_mechanical(task,draft,[bound])
-
 
 def test_repeated_unqualified_rate_text_emits_unique_repairs():
     text = "Jaylen Brown averaged 28.7 PPG."
@@ -769,7 +724,6 @@ def test_repeated_unqualified_rate_text_emits_unique_repairs():
     assert any(item.startswith("Minutes-qualify") for item in result.repair_instructions)
     assert len(result.repair_instructions) == len(set(result.repair_instructions))
 
-
 def test_player_subject_rejects_team_level_table():
     player_task = task().model_copy(update={"entities": [], "subject_entity_type": "player"})
     claim = Claim(text="Boston had 61 wins.", kind=ClaimKind.OBSERVED,
@@ -778,7 +732,6 @@ def test_player_subject_rejects_team_level_table():
     assert result.status == VerificationStatus.REPAIR
     assert any("does not match the question's player level" in item
                for item in result.repair_instructions)
-
 
 def test_team_subject_rejects_player_level_table():
     team_task = task().model_copy(update={"entities": [], "subject_entity_type": "team"})
@@ -793,7 +746,6 @@ def test_team_subject_rejects_player_level_table():
     assert any("does not match the question's team level" in item
                for item in result.repair_instructions)
 
-
 def test_player_subject_accepts_player_level_table():
     player_task = task().model_copy(update={"entities": [], "subject_entity_type": "player"})
     player_table = evidence(
@@ -804,7 +756,6 @@ def test_player_subject_accepts_player_level_table():
                   evidence_ids=["players"])
     result = verify_mechanical(player_task, report(claim), [player_table])
     assert result.status == VerificationStatus.PASS
-
 
 def test_unset_subject_leaves_mismatched_table_inert():
     null_task = task().model_copy(update={"entities": []})
@@ -820,7 +771,6 @@ def test_unset_subject_leaves_mismatched_table_inert():
     assert all("does not match the question's" not in item
                for item in result.repair_instructions)
 
-
 def test_count_metric_rejects_percent_alias():
     ev = evidence(
         rows=[{"TEAM": "Capital City Stars", "BLK": 1}, {"TEAM": "Riverport Ravens", "BLK": 2}],
@@ -834,7 +784,6 @@ def test_count_metric_rejects_percent_alias():
     assert not result.claim_results[0].supported
     assert any("100" in reason for reason in result.claim_results[0].reasons)
 
-
 def test_percent_unit_metric_accepts_percent_alias():
     ev = evidence(
         rows=[{"TEAM": "Capital City Stars", "FG_PCT": 0.45}, {"TEAM": "Riverport Ravens", "FG_PCT": 0.40}],
@@ -846,7 +795,6 @@ def test_percent_unit_metric_accepts_percent_alias():
     result = verify_mechanical(task(), report(claim), [ev])
     assert result.status == VerificationStatus.PASS
     assert result.claim_results[0].supported
-
 
 def test_percent_scale_value_rejects_hundredfold_alias():
     ev = evidence(
@@ -861,30 +809,25 @@ def test_percent_scale_value_rejects_hundredfold_alias():
     assert not result.claim_results[0].supported
     assert any("4500" in reason for reason in result.claim_results[0].reasons)
 
-
 def test_exact_one_percent_scale_has_no_hundredfold_alias():
     from v2.runtime.verifier import _canon_number
 
     assert _canon_number(1, "percent_0_100") == {Decimal("1")}
-
 
 def test_just_below_one_percent_scale_has_no_hundredfold_alias():
     from v2.runtime.verifier import _canon_number
 
     assert _canon_number(0.99, "percent_0_100") == {Decimal("0.99")}
 
-
 def test_just_above_one_percent_scale_has_no_alias():
     from v2.runtime.verifier import _canon_number
 
     assert _canon_number(1.01, "percent_0_100") == {Decimal("1.01")}
 
-
 def test_exact_one_fraction_scale_keeps_hundredfold_alias():
     from v2.runtime.verifier import _canon_number
 
     assert _canon_number(1, "fraction_0_1") == {Decimal("1"), Decimal("100")}
-
 
 def test_one_percent_source_rejects_hundred_percent_claim():
     ev = evidence(
@@ -899,7 +842,6 @@ def test_one_percent_source_rejects_hundred_percent_claim():
         assert result.status == VerificationStatus.REPAIR
         assert not result.claim_results[0].supported
         assert any("100" in reason for reason in result.claim_results[0].reasons)
-
 
 def test_one_percent_source_accepts_one_percent_claim():
     ev = evidence(
@@ -924,7 +866,6 @@ def _rating_board(metric, low, high):
             {"TEAM_NAME": "Eastvale Embers", metric: high, f"{metric}_RANK": 2},
         ])
 
-
 def test_inverted_best_defense_claim_fails_direction_check():
     from v2.contracts import TaskSpec
     draft = DraftReport(sections=["Defense"], claims=[Claim(
@@ -936,7 +877,6 @@ def test_inverted_best_defense_claim_fails_direction_check():
     assert result.status == "repair"
     assert not result.claim_results[0].supported
 
-
 def test_correct_best_defense_claim_passes_direction_check():
     from v2.contracts import TaskSpec
     draft = DraftReport(sections=["Defense"], claims=[Claim(
@@ -947,7 +887,6 @@ def test_correct_best_defense_claim_passes_direction_check():
         draft, [_rating_board("DEF_RATING", 104.3, 109.7)])
     assert result.status == "pass"
     assert result.claim_results[0].supported
-
 
 def test_inverted_best_offense_claim_fails_direction_check():
     from v2.contracts import TaskSpec
@@ -974,7 +913,6 @@ def _clutch_team_board():
              "PTS": 48, "FG_PCT": 0.44, "FG3_PCT": 0.36, "PLUS_MINUS": -12},
         ])
 
-
 def test_clutch_net_claim_borrowing_overall_rating_column_fails():
     from v2.contracts import TaskSpec
     draft = DraftReport(sections=["Clutch"], claims=[Claim(
@@ -986,7 +924,6 @@ def test_clutch_net_claim_borrowing_overall_rating_column_fails():
     assert result.status == "repair"
     assert not result.claim_results[0].supported
     assert any("NET_RATING" in reason for reason in result.claim_results[0].reasons)
-
 
 def test_off_rating_value_cannot_pose_as_requested_defense_value():
     from v2.contracts import EvidenceEnvelope, TaskSpec
@@ -1008,7 +945,6 @@ def test_off_rating_value_cannot_pose_as_requested_defense_value():
     assert result.status == "repair"
     assert not result.claim_results[0].supported
 
-
 def test_requested_defense_value_from_own_column_still_passes():
     from v2.contracts import EvidenceEnvelope, TaskSpec
     ev = EvidenceEnvelope(
@@ -1029,12 +965,10 @@ def test_requested_defense_value_from_own_column_still_passes():
     assert result.status == "pass"
     assert result.claim_results[0].supported
 
-
 def windowed_task():
     from v2.contracts import TaskSpec
     return TaskSpec(goal="January form", mode="quick", deliverable="answer",
         window_start=date(2026, 1, 1), window_end=date(2026, 1, 31))
-
 
 def test_windowed_task_rejects_full_season_envelope():
     claim = Claim(text="Capital City Stars had 61 wins.", kind=ClaimKind.OBSERVED,
@@ -1043,7 +977,6 @@ def test_windowed_task_rejects_full_season_envelope():
         windowed_task(), report(claim), [evidence()]).claim_results[0].reasons
     assert any("2026-01-01" in r and "2026-01-31" in r for r in reasons)
 
-
 def test_windowed_task_accepts_matching_window_envelope():
     claim = Claim(text="As of 2026-04-15, the Capital City Stars had 61 wins in 2025-26.",
                   kind=ClaimKind.OBSERVED, evidence_ids=["standings"])
@@ -1051,7 +984,6 @@ def test_windowed_task_accepts_matching_window_envelope():
         [evidence(window_start=date(2026, 1, 1), window_end=date(2026, 1, 31))])
     assert result.status == VerificationStatus.PASS
     assert result.claim_results[0].supported
-
 
 def test_unwindowed_task_ignores_envelope_window():
     claim = Claim(text="As of 2026-04-15, the Capital City Stars had 61 wins in 2025-26.",

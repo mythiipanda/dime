@@ -25,10 +25,8 @@ LEADERS_SOURCE = "silver_leaders_pts"
 
 ABSENT = "absent:no_source"
 
-
 class SeasonBuildError(RuntimeError):
     pass
-
 
 def _start_year(season: str) -> int:
     year, _, tail = str(season).partition("-")
@@ -38,13 +36,11 @@ def _start_year(season: str) -> int:
         raise ValueError(f"season must span consecutive years, got {season!r}")
     return int(year)
 
-
 def season_slugs(first: str, last: str) -> list[str]:
     start, end = _start_year(first), _start_year(last)
     if end < start:
         raise ValueError(f"empty season range: {first} to {last}")
     return [f"{y}-{(y + 1) % 100:02d}" for y in range(start, end + 1)]
-
 
 def _num(value: object) -> float | None:
     try:
@@ -53,7 +49,6 @@ def _num(value: object) -> float | None:
         return float(value)
     except (TypeError, ValueError):
         return None
-
 
 def loaded_seasons() -> set[str]:
     try:
@@ -75,7 +70,6 @@ def loaded_seasons() -> set[str]:
             con.close()
         except Exception:
             pass
-
 
 def source_seasons() -> list[str]:
     found: set[str] = set()
@@ -105,13 +99,11 @@ def source_seasons() -> list[str]:
             pass
     return sorted(s for s in found if _start_year_safe(s) is not None)
 
-
 def _start_year_safe(season: str):
     try:
         return _start_year(season)
     except ValueError:
         return None
-
 
 def coverage_label() -> str:
     seasons = source_seasons()
@@ -121,10 +113,8 @@ def coverage_label() -> str:
         return seasons[0]
     return f"{seasons[0]} through {seasons[-1]}"
 
-
 def _prov(value: str) -> str:
     return value
-
 
 def build_season_frame(season: str) -> pl.DataFrame:
     hist = store.read_frame_optional(
@@ -143,7 +133,6 @@ def build_season_frame(season: str) -> pl.DataFrame:
         f"{TABLE} {season}: no source rows in {HIST_SOURCE}, "
         f"{LEADERS_SOURCE}, or {ADV_SOURCE}; "
         f"sources cover {coverage_label()}")
-
 
 def _from_hist(hist: pl.DataFrame, season: str) -> pl.DataFrame:
     rows: list[dict] = []
@@ -183,7 +172,6 @@ def _from_hist(hist: pl.DataFrame, season: str) -> pl.DataFrame:
             "_prov_TS_PCT": _prov(HIST_SOURCE),
         })
     return pl.DataFrame(rows, strict=False)
-
 
 def _from_totals(leaders: pl.DataFrame, advanced: pl.DataFrame,
                  season: str) -> pl.DataFrame:
@@ -244,20 +232,17 @@ def _from_totals(leaders: pl.DataFrame, advanced: pl.DataFrame,
             f"sources cover {coverage_label()}")
     return pl.DataFrame(rows, strict=False)
 
-
 def _rate(total: object, gp: float) -> float | None:
     value = _num(total)
     if value is None or not gp:
         return None
     return value / gp
 
-
 def require_complete(season: str, frame: pl.DataFrame) -> None:
     if frame.height == 0:
         raise SeasonBuildError(
             f"{TABLE} {season}: builder produced no rows; "
             f"sources cover {coverage_label()}")
-
 
 def seed_season(season: str, frame: pl.DataFrame | None = None) -> int:
     built = frame if frame is not None else build_season_frame(season)
@@ -267,7 +252,6 @@ def seed_season(season: str, frame: pl.DataFrame | None = None) -> int:
         meta=FetchMeta(source="warehouse-union", season=season),
     )
     return store.save_frame(TABLE, res, entity=ENTITY, replace_season=True)
-
 
 def run(seasons: list[str]) -> dict:
     done = loaded_seasons()
@@ -282,9 +266,7 @@ def run(seasons: list[str]) -> dict:
     return {"loaded": loaded, "skipped": skipped,
             "rows": sum(loaded.values())}
 
-
 DEV_ENVS = frozenset({"dev", "local", "test"})
-
 
 def resolve_target(scratch_db: str):
     raw = scratch_db or os.environ.get("DIME_WAREHOUSE", "")
@@ -301,7 +283,6 @@ def resolve_target(scratch_db: str):
         print("refusing: set DIME_ENV=dev or pass --scratch-db")
         return None
     return target
-
 
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(
@@ -324,7 +305,6 @@ def main(argv: list[str] | None = None) -> int:
         return _run(ns)
     finally:
         store.DB_PATH, store.LOCK_PATH = prior_db_path, prior_lock_path
-
 
 def _run(ns) -> int:
     if ns.seasons.strip():
@@ -360,7 +340,6 @@ def _run(ns) -> int:
     print(f"{TABLE}: {len(report['loaded'])} seasons loaded, "
           f"{report['rows']} rows, {len(report['skipped'])} skipped")
     return 0
-
 
 if __name__ == "__main__":
     raise SystemExit(main())

@@ -1,7 +1,6 @@
 from v2.contracts import VerificationReport
 from v2.tests.compatibility.harness import ShadowRunner, TurnTrace
 
-
 def test_shadow_failure_does_not_change_primary_result():
     scenario = {"id": "x", "chain": ["q"], "budget": {"max_tool_calls": 1}}
     runner = ShadowRunner(
@@ -11,7 +10,6 @@ def test_shadow_failure_does_not_change_primary_result():
     result = runner.run(scenario)
     assert result["primary"].passed
     assert not result["shadow"].passed
-
 
 def test_eval_trace_projects_from_the_same_runtime_ledger():
     from datetime import UTC, datetime
@@ -31,7 +29,6 @@ def test_eval_trace_projects_from_the_same_runtime_ledger():
     assert trace.tool_calls == 1
     assert trace.evidence == (evidence,)
     assert trace.tools[0]["name"] == "standings"
-
 
 def test_shadow_outcome_rejects_impossible_metrics():
     import pytest

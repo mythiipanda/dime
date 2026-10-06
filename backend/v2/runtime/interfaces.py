@@ -14,8 +14,6 @@ from v2.contracts import (
     TaskSpec,
     VerificationReport,
 )
-from v2.runtime.models import RuntimeResult
-
 
 class FrozenList(list):
     def _reject(self, action: str) -> None:
@@ -57,7 +55,6 @@ class FrozenList(list):
     def reverse(self, *args: Any, **kwargs: Any) -> Any:
         self._reject("reverse")
 
-
 class FrozenDict(dict):
     def _reject(self, action: str) -> None:
         raise TypeError(f"verifier view is read-only: cannot {action}")
@@ -83,7 +80,6 @@ class FrozenDict(dict):
     def setdefault(self, *args: Any, **kwargs: Any) -> Any:
         self._reject("setdefault")
 
-
 def freeze_value(value: Any) -> Any:
     if isinstance(value, FrozenList | FrozenDict):
         return value
@@ -95,7 +91,6 @@ def freeze_value(value: Any) -> Any:
         return tuple(freeze_value(child) for child in value)
     return value
 
-
 @dataclass(frozen=True)
 class EntityView:
     type: str
@@ -105,7 +100,6 @@ class EntityView:
     def model_dump(self, mode: str | None = None) -> dict[str, Any]:
         return {"type": self.type, "id": self.id, "display_name": self.display_name}
 
-
 @dataclass(frozen=True)
 class SeasonView:
     value: str
@@ -114,7 +108,6 @@ class SeasonView:
 
     def model_dump(self, mode: str | None = None) -> dict[str, Any]:
         return {"value": self.value, "source": self.source, "confidence": self.confidence}
-
 
 @dataclass(frozen=True)
 class RequirementView:
@@ -137,7 +130,6 @@ class RequirementView:
             "requested_outputs": list(self.requested_outputs),
         }
 
-
 @dataclass(frozen=True)
 class CalcReqView:
     id: str
@@ -152,7 +144,6 @@ class CalcReqView:
             "metric_ids": list(self.metric_ids),
             "requested_outputs": list(self.requested_outputs),
         }
-
 
 @dataclass(frozen=True)
 class TaskView:
@@ -202,7 +193,6 @@ class TaskView:
     def model_copy(self, update: Mapping[str, Any] | None = None) -> TaskView:
         raise TypeError("verifier view is read-only: cannot copy task into mutable form")
 
-
 @dataclass(frozen=True)
 class ClaimView:
     text: str
@@ -221,7 +211,6 @@ class ClaimView:
             "confidence": self.confidence,
             "output_bindings": [item.model_dump(mode="json") if hasattr(item, "model_dump") else item for item in self.output_bindings],
         }
-
 
 @dataclass(frozen=True)
 class DraftView:
@@ -245,7 +234,6 @@ class DraftView:
         if update:
             data.update(dict(update))
         return freeze_draft(DraftReport.model_validate(data))
-
 
 @dataclass(frozen=True)
 class EvidenceView:
@@ -312,7 +300,6 @@ class EvidenceView:
     def model_copy(self, update: Mapping[str, Any] | None = None) -> Any:
         raise TypeError("verifier view is read-only: cannot copy evidence into mutable form")
 
-
 def freeze_task(task: TaskSpec) -> TaskView:
     entities = tuple(EntityView(type=item.type, id=item.id, display_name=item.display_name) for item in task.entities)
     season = None if task.season is None else SeasonView(value=task.season.value, source=task.season.source, confidence=task.season.confidence)
@@ -354,7 +341,6 @@ def freeze_task(task: TaskSpec) -> TaskView:
         ranked_argument_conflicts=tuple(task.ranked_argument_conflicts),
     )
 
-
 def freeze_claim(claim: Any) -> ClaimView:
     return ClaimView(
         text=claim.text,
@@ -365,7 +351,6 @@ def freeze_claim(claim: Any) -> ClaimView:
         output_bindings=tuple(claim.output_bindings),
     )
 
-
 def freeze_draft(draft: DraftReport) -> DraftView:
     return DraftView(
         sections=tuple(draft.sections),
@@ -374,7 +359,6 @@ def freeze_draft(draft: DraftReport) -> DraftView:
         blocked_calculation_requirement_ids=tuple(draft.blocked_calculation_requirement_ids),
         gaps=tuple(draft.gaps),
     )
-
 
 def freeze_evidence(envelope: EvidenceEnvelope) -> EvidenceView:
     return EvidenceView(
@@ -400,13 +384,10 @@ def freeze_evidence(envelope: EvidenceEnvelope) -> EvidenceView:
         warnings=tuple(envelope.warnings),
     )
 
-
 def freeze_evidence_map(evidence: Mapping[str, EvidenceEnvelope]) -> Mapping[str, EvidenceView]:
     return MappingProxyType({key: freeze_evidence(item) for key, item in evidence.items()})
 
-
 _SELF_VERIFY_FIELDS = frozenset({"status", "claim_results", "verification", "verified", "verified_claims", "supported", "verification_status"})
-
 
 def reject_self_verified_draft(raw: Any) -> None:
     from v2.contracts import VerificationReport
@@ -426,10 +407,8 @@ def reject_self_verified_draft(raw: Any) -> None:
                     if inner:
                         raise ValueError(f"synthesizer cannot mark its own claims verified: claim fields {inner}")
 
-
 class RepairAddsEvidenceError(ValueError):
     pass
-
 
 def validate_repair_evidence_closed(
     admitted: Mapping[str, EvidenceEnvelope],
@@ -450,7 +429,6 @@ def validate_repair_evidence_closed(
     if extra:
         raise RepairAddsEvidenceError(f"repair introduced unknown evidence ids: {extra}")
     from v2.runtime.models import resolve_selector
-    from v2.domain.evidence import iter_values
 
     by_id = dict(admitted)
     for claim in repaired.claims:
@@ -481,18 +459,15 @@ def validate_repair_evidence_closed(
                         if not _declared_value_matches(declared, resolution.value):
                             raise RepairAddsEvidenceError(f"repair introduced unknown value for {selector} on evidence {evidence_id}: {getattr(declared, 'value', declared)!r}")
 
-
 class Intake(Protocol):
     async def understand(
         self, request: str, context: Sequence[ConversationTurn] = ()
     ) -> TaskSpec: ...
 
-
 class Planner(Protocol):
     async def plan(
         self, task: TaskSpec, failure_context: dict | None = None
     ) -> Plan: ...
-
 
 class Capability(Protocol):
     name: str
@@ -507,12 +482,10 @@ class Capability(Protocol):
         evidence: Sequence[EvidenceEnvelope],
     ) -> EvidenceEnvelope: ...
 
-
 class Synthesizer(Protocol):
     async def synthesize(
         self, task: TaskSpec, evidence: Sequence[EvidenceEnvelope]
     ) -> DraftReport: ...
-
 
 class Verifier(Protocol):
     async def verify(
@@ -521,7 +494,6 @@ class Verifier(Protocol):
         draft: DraftView,
         evidence: Mapping[str, EvidenceView],
     ) -> VerificationReport: ...
-
 
 class Repairer(Protocol):
     async def repair(
@@ -532,12 +504,3 @@ class Repairer(Protocol):
         verification: VerificationReport,
     ) -> DraftReport: ...
 
-
-class Driver(Protocol):
-    async def run(
-        self,
-        request: str,
-        context: Sequence[ConversationTurn] = (),
-        *,
-        run_id: str | None = None,
-    ) -> RuntimeResult: ...

@@ -1,12 +1,3 @@
-"""Recording a capability invocation, and the redaction policy for its arguments.
-
-One policy decides what about an invocation may be published, so the activity
-journal, the chat stream and any later reader see the same value. An argument
-is published when the capability declares it, its name is not an internal
-identity or a secret, prompt or filesystem path, and its value is a JSON
-scalar or a list of JSON scalars. Anything else is withheld whole. The public
-contract for the result is `v2.api.events`.
-"""
 
 from __future__ import annotations
 
@@ -28,13 +19,11 @@ _WITHHELD_ARGUMENT_SUFFIXES = (
 )
 _WITHHELD = object()
 
-
 @dataclass(frozen=True)
 class ArgumentSpec:
     declared: frozenset[str]
     required: tuple[str, ...]
     evidence_satisfied: frozenset[str]
-
 
 @lru_cache(maxsize=1)
 def _argument_specs() -> Mapping[str, ArgumentSpec]:
@@ -49,11 +38,9 @@ def _argument_specs() -> Mapping[str, ArgumentSpec]:
         for name, entry in capability_catalog().items()
     }
 
-
 def _argument_spec(capability_name: str) -> ArgumentSpec:
     return _argument_specs().get(
         capability_name, ArgumentSpec(frozenset(), (), frozenset()))
-
 
 def _is_absent(value: Any) -> bool:
     if value is None:
@@ -64,12 +51,10 @@ def _is_absent(value: Any) -> bool:
         return not value
     return False
 
-
 def argument_counts(capability_name: str, arguments: Mapping[str, Any]) -> tuple[int, int]:
     declared = _argument_spec(capability_name).declared
     return len(arguments), sum(
         1 for key in arguments if key not in declared)
-
 
 def _publishable_value(value: Any) -> Any:
     if value is None or isinstance(value, (bool, int)):
@@ -88,7 +73,6 @@ def _publishable_value(value: Any) -> Any:
         return items
     return _WITHHELD
 
-
 def publishable_arguments(
     capability_name: str, arguments: Mapping[str, Any],
 ) -> list[dict[str, Any]]:
@@ -103,7 +87,6 @@ def publishable_arguments(
         rows.append({"name": key, "value": value})
     return rows
 
-
 def _missing_required_arguments(
     capability_name: str, arguments: Mapping[str, Any],
 ) -> tuple[str, ...]:
@@ -111,7 +94,6 @@ def _missing_required_arguments(
     return tuple(
         key for key in spec.required
         if key not in spec.evidence_satisfied and _is_absent(arguments.get(key)))
-
 
 class RecordedCapability:
     def __init__(self, capability: Capability, ledger: Any, *, turn_id: str, activity=None) -> None:

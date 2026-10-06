@@ -6,7 +6,6 @@ import re
 _PROMPTS_DIR = Path(__file__).parent
 _PROMPT_NAME = re.compile(r"^[a-z][a-z0-9_]*$")
 
-
 @lru_cache(maxsize=None)
 def load_prompt(name: str) -> str:
     if not isinstance(name, str) or not _PROMPT_NAME.fullmatch(name):

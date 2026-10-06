@@ -35,10 +35,7 @@ from shared.providers import (
     GEMINI_BASE_URL,
     GROQ_DEFAULT,
     NVIDIA_NIM_BASE_URL,
-    NVIDIA_NIM_DEFAULT,
     INCEPTION_DEFAULT,
-    MISTRAL_DEFAULT,
-    OPENROUTER_DEFAULT,
     ProviderName,
     _gemini_model,
     _groq_free_model, _mistral_free_model,
@@ -78,28 +75,23 @@ from .capabilities import CAPABILITIES
 
 T = TypeVar("T", bound=BaseModel)
 
-
 def _imported_module_code_sha256() -> str:
     code = __loader__.get_code(__name__) if __loader__ is not None else None
     if code is None:
         raise RuntimeError("provider models module has no loader code identity")
     return hashlib.sha256(marshal.dumps(code)).hexdigest()
 
-
 _LOADED_MODULE_CODE_SHA256 = _imported_module_code_sha256()
-
 
 NIM_THINKING_OFF_EXTRA_BODY: dict[str, Any] = {
     "chat_template_kwargs": {"enable_thinking": False},
 }
-
 
 def strict_output_json_schema(schema: type[BaseModel], *,
                               strict: bool = True) -> dict[str, Any]:
     generated = TypeAdapter(schema).json_schema(
         schema_generator=GenerateToolJsonSchema)
     return OpenAIJsonSchemaTransformer(generated, strict=strict).walk()
-
 
 def _with_thinking_off(kwargs: dict[str, Any]) -> dict[str, Any]:
     merged = dict(kwargs)
@@ -109,7 +101,6 @@ def _with_thinking_off(kwargs: dict[str, Any]) -> dict[str, Any]:
     extra_body["chat_template_kwargs"] = template
     merged["extra_body"] = extra_body
     return merged
-
 
 def _promote_reasoning_content(
     response: ChatCompletion,
@@ -127,7 +118,6 @@ def _promote_reasoning_content(
             })
     return response, promotions
 
-
 class _ReasoningContentCompletions(AsyncCompletions):
 
     async def create(self, *args: Any, **kwargs: Any) -> Any:
@@ -140,12 +130,10 @@ class _ReasoningContentCompletions(AsyncCompletions):
             return promoted
         return response
 
-
 class _ReasoningContentChat(AsyncChat):
     @cached_property
     def completions(self) -> _ReasoningContentCompletions:
         return _ReasoningContentCompletions(self._client)
-
 
 class ReasoningContentFallbackClient(AsyncOpenAI):
 
@@ -160,7 +148,6 @@ class ReasoningContentFallbackClient(AsyncOpenAI):
     def chat(self) -> _ReasoningContentChat:
         return _ReasoningContentChat(self)
 
-
 class StructuredModel(Protocol):
     async def generate(
         self,
@@ -172,7 +159,6 @@ class StructuredModel(Protocol):
         decode: Callable[[Any], dict[str, Any] | None] | None = None,
     ) -> T: ...
 
-
 RETRY_INITIAL_S = 1.0
 RETRY_MULTIPLIER = 2.0
 RETRY_MAX_S = 60.0
@@ -181,14 +167,11 @@ MODEL_BUDGETS_PATH: Final[Path] = Path(__file__).with_name("model_budgets.json")
 ROUTE_POLICY_KEYS: Final[frozenset[str]] = frozenset(
     {"attempt_timeout_s", "total_budget_s"})
 
-
 @dataclass(frozen=True)
 class RoutePolicy:
-    """What the harness may cut a stage call short on. Unset means never."""
 
     attempt_timeout_s: float | None = None
     total_budget_s: float | None = None
-
 
 @dataclass(frozen=True)
 class ModelBudgets:
@@ -199,7 +182,6 @@ class ModelBudgets:
     def policy_for(self, route: str) -> RoutePolicy:
         return self.routes.get(route, self.defaults)
 
-
 def _seconds(value: Any, field_name: str) -> float | None:
     if value is None:
         return None
@@ -208,14 +190,12 @@ def _seconds(value: Any, field_name: str) -> float | None:
         raise ValueError(f"{field_name} must be a positive number or null")
     return float(value)
 
-
 def _policy(entry: Any) -> RoutePolicy:
     if not isinstance(entry, Mapping) or set(entry) - ROUTE_POLICY_KEYS:
         raise ValueError(
             f"route policy needs only {sorted(ROUTE_POLICY_KEYS)}: {entry!r}")
     return RoutePolicy(
         **{name: _seconds(entry.get(name), name) for name in ROUTE_POLICY_KEYS})
-
 
 def load_model_budgets(path: Path | None = None) -> ModelBudgets:
     document = json.loads((path or MODEL_BUDGETS_PATH).read_text())
@@ -236,22 +216,18 @@ def load_model_budgets(path: Path | None = None) -> ModelBudgets:
         defaults=_policy(document.get("default", {})),
         routes={route: _policy(entry) for route, entry in routes.items()})
 
-
 @lru_cache(maxsize=1)
 def _shipped_model_budgets() -> ModelBudgets:
     return load_model_budgets()
 
-
 def route_budgets(budgets: ModelBudgets | None, route: str) -> RoutePolicy:
     return (budgets or _shipped_model_budgets()).policy_for(route)
-
 
 async def _within(awaitable: Any, timeout_s: float | None) -> Any:
     if timeout_s is None:
         return await awaitable
     with anyio.fail_after(timeout_s):
         return await awaitable
-
 
 SAFE_FAILURE_EXCEPTION_CLASSES = frozenset({
     "UnexpectedModelBehavior", "ToolRetryError", "ValidationError",
@@ -288,20 +264,16 @@ _VALIDATION_SUBTYPE_BY_ERROR_TYPE = {
     "verification_finding_duplicate": "duplicate_or_empty_finding",
 }
 
-
 def _safe_exception_name(value: type[BaseException] | str) -> str:
     name = value if isinstance(value, str) else value.__name__
     return name if name in SAFE_FAILURE_EXCEPTION_CLASSES else "<unknown-exception>"
-
 
 def _safe_pydantic_error_type(value: object) -> str:
     name = str(value)
     return name if name in SAFE_PYDANTIC_ERROR_TYPES else "<unknown-error-type>"
 
-
 USAGE_UNKNOWN_REASON = "usage_unknown"
 USAGE_UNKNOWN_REASONS = frozenset({USAGE_UNKNOWN_REASON})
-
 
 def _read_usage_requests(result: Any) -> tuple[int | None, str | None]:
     usage = getattr(result, "usage", None)
@@ -318,7 +290,6 @@ def _read_usage_requests(result: Any) -> tuple[int | None, str | None]:
     except (TypeError, ValueError):
         return None, USAGE_UNKNOWN_REASON
 
-
 class DimeOpenAIChatModel(OpenAIChatModel):
     def __init__(self, model_name: str, *, provider: Any,
                  capabilities: EndpointCapabilities,
@@ -332,7 +303,6 @@ class DimeOpenAIChatModel(OpenAIChatModel):
         return self.ladder.rung
 
     def on_ladder(self, ladder: StrategyLadder) -> DimeOpenAIChatModel:
-        """A twin bound to one stage call's ladder over the same client."""
         return DimeOpenAIChatModel(
             self.model_name, provider=self._provider,
             capabilities=self.capabilities, ladder=ladder)
@@ -354,7 +324,6 @@ class DimeOpenAIChatModel(OpenAIChatModel):
         function["parameters"] = self._wire_schema(function["parameters"])
         return {**mapped, "function": function}
 
-
 def _map_wire_response_format(json_schema: Mapping[str, Any], *,
                               name: str, strict: bool = True
                               ) -> dict[str, Any]:
@@ -365,7 +334,6 @@ def _map_wire_response_format(json_schema: Mapping[str, Any], *,
             "schema": wire_schema_for(
                 OutputStrategy.STRICT_SCHEMA, json_schema).schema},
     }
-
 
 class ProviderStructuredModel:
     def __init__(self, provider: ProviderName, model: str, *,
@@ -756,7 +724,6 @@ class ProviderStructuredModel:
             "all structured-output providers failed"
             + (f" [{summary}]" if summary else ""))
 
-
 _PROVIDER_ROUTE_PROMPT_NAMES = {
     "intake": "intake",
     "requirement_review": "requirement_review_v3",
@@ -768,7 +735,6 @@ _PROVIDER_ROUTE_PROMPT_NAMES = {
 _PROVIDER_ROUTE_PROMPTS: dict[str, str] | None = None
 MODEL_ROUTES = frozenset(_PROVIDER_ROUTE_PROMPT_NAMES)
 
-
 def bind_provider_route_prompts() -> dict[str, str]:
     global _PROVIDER_ROUTE_PROMPTS
     if _PROVIDER_ROUTE_PROMPTS is None:
@@ -778,13 +744,11 @@ def bind_provider_route_prompts() -> dict[str, str]:
         }
     return dict(_PROVIDER_ROUTE_PROMPTS)
 
-
 def provider_route_prompt(route: str, prompt_name: str) -> str:
     expected = _PROVIDER_ROUTE_PROMPT_NAMES.get(route)
     if expected != prompt_name:
         raise ValueError("provider route and prompt name are not registered")
     return bind_provider_route_prompts()[route]
-
 
 class ModelStage:
     prompt_name: str
@@ -843,7 +807,6 @@ class ModelStage:
             call["decode"] = decode
         return await self._model.generate(**call)
 
-
 def catalog_for_wire(catalog: Mapping[str, Any]) -> dict[str, Any]:
     return {
         name: (
@@ -853,7 +816,6 @@ def catalog_for_wire(catalog: Mapping[str, Any]) -> dict[str, Any]:
         )
         for name, entry in catalog.items()
     }
-
 
 def capability_arguments_for(requirement, capability_id: str) -> dict[str, Any]:
     if requirement.capability_argument_sets:
@@ -932,7 +894,6 @@ def ranked_team_arguments_error(
 METRIC_AGREEMENT_CAPABILITIES = (
     "team_ratings", "clutch", "on_off", "lineups", "playoff_team_ratings")
 
-
 def served_capability_metrics(capability_id: str) -> set[str]:
     spec = CAPABILITIES.get(capability_id)
     if spec is None:
@@ -940,7 +901,6 @@ def served_capability_metrics(capability_id: str) -> set[str]:
     names = set(spec.units) | {
         key for key in spec.metric_definitions if not key.startswith("__")}
     return {str(name).upper() for name in names}
-
 
 class ModelIntake(ModelStage):
     prompt_name = "intake"
@@ -1635,7 +1595,6 @@ class ModelIntake(ModelStage):
             raise ValueError(
                 f"requirement review selected unknown capabilities: {unknown_evidence}"
             )
-        from v2.runtime.subsumption import capability_subsumes
         scope = " ".join([request, task.goal, task.deliverable, *task.subquestions]).casefold()
         review = self._expand_home_away_requirements(review, scope)
         requirements = [self._close_requirement_options(requirement)
@@ -1644,14 +1603,12 @@ class ModelIntake(ModelStage):
             "requirements": requirements,
             "ranked_argument_conflicts": conflict_rows})
 
-
 class PlannerArgumentError(ValueError):
 
     def __init__(self, message: str, *, node_id: str, missing_required: list[str]) -> None:
         super().__init__(message)
         self.node_id = node_id
         self.missing_required = missing_required
-
 
 class PlanOutputError(ValueError):
 
@@ -1664,7 +1621,6 @@ class PlanOutputError(ValueError):
         self.vocabulary = list(vocabulary)
         self.node_id = node_id
         self.requirement_id = requirement_id
-
 
 def servable_output_names(capability_id: str) -> list[str]:
     from .capabilities import CAPABILITIES
@@ -1682,12 +1638,10 @@ def servable_output_names(capability_id: str) -> list[str]:
         names.add(str(key).upper())
     return sorted(names)
 
-
 def _is_subject_identity_output(output_id: str) -> bool:
     squashed = "".join(
         character for character in str(output_id).upper() if character.isalnum())
     return squashed.endswith("NAME") or squashed.endswith("ID")
-
 
 def _validate_plan_output_vocabulary(task, plan) -> None:
     from .capabilities import CAPABILITIES, resolve_metric_column
@@ -1754,7 +1708,6 @@ def _validate_plan_output_vocabulary(task, plan) -> None:
                         output_id=str(output_id), capability="plan",
                         vocabulary=vocabulary)
 
-
 def _team_subject_abbreviation(entity) -> str | None:
     from v2.contracts import canonical_entity_id
     canonical = canonical_entity_id(
@@ -1774,7 +1727,6 @@ def _team_subject_abbreviation(entity) -> str | None:
                 entry.get("abbreviation") or "").casefold():
             return str(entry.get("abbreviation"))
     return None
-
 
 class ModelPlanner(ModelStage):
     prompt_name = "planner_v3"
@@ -2328,7 +2280,6 @@ class ModelPlanner(ModelStage):
             feedback["missing_required_arguments"] = invalid_arguments
         return feedback
 
-
 _CANONICAL_CALCULATIONS = {
     "home_mean": ("home_mean", "Canonical home points-per-game mean"),
     "away_mean": ("away_mean", "Canonical away points-per-game mean"),
@@ -2337,7 +2288,6 @@ _CANONICAL_CALCULATIONS = {
     "ts_margin": ("ts_margin", "Canonical true-shooting percentage-point margin"),
 }
 
-
 def _derive_subject_entity_type(task: TaskSpec) -> str | None:
     kinds = {entity.type for entity in task.entities}
     if len(kinds) == 1:
@@ -2345,7 +2295,6 @@ def _derive_subject_entity_type(task: TaskSpec) -> str | None:
         if kind == "player" or kind == "team":
             return kind
     return None
-
 
 def _align_requirement_requested_outputs(task: TaskSpec) -> TaskSpec:
     from v2.adapters.capabilities import CAPABILITIES, resolve_metric_column
@@ -2388,7 +2337,6 @@ def _align_requirement_requested_outputs(task: TaskSpec) -> TaskSpec:
         else:
             aligned.append(requirement.model_copy(update={"requested_outputs": existing}))
     return task.model_copy(update={"requirements": aligned})
-
 
 def _canonicalize_calculation_requirements(task: TaskSpec) -> TaskSpec:
     from v2.contracts import CalculationRequirement
@@ -2449,12 +2397,10 @@ def _canonicalize_calculation_requirements(task: TaskSpec) -> TaskSpec:
     normalized.extend(unused)
     return task.model_copy(update={"calculation_requirements": normalized})
 
-
 class InvalidDraftCalculation(ValueError):
     def __init__(self, message: str, requirement_ids: Sequence[str] = ()) -> None:
         super().__init__(message)
         self.requirement_ids = tuple(requirement_ids)
-
 
 def _validate_draft(
     draft: DraftReport, evidence: Sequence[EvidenceEnvelope],
@@ -2506,7 +2452,6 @@ def _validate_draft(
         if missing:
             raise ValueError(f"draft omits required calculations without a blocking gap: {sorted(missing)}")
     return draft
-
 
 def _deterministic_game_log_draft(
     task: TaskSpec, evidence: Sequence[EvidenceEnvelope],
@@ -2571,7 +2516,6 @@ def _deterministic_game_log_draft(
         blocked_calculation_requirement_ids=unknown_ids,
         gaps=(["Some requested calculations could not be mapped to the admitted split evidence."]
               if unknown_ids else []))
-
 
 def _deterministic_player_comparison_draft(
     task: TaskSpec, evidence: Sequence[EvidenceEnvelope],
@@ -2675,7 +2619,6 @@ def _deterministic_player_comparison_draft(
         calculations=calculations, blocked_calculation_requirement_ids=unknown_ids,
         gaps=(["Some requested calculations could not be mapped to admitted comparison evidence."]
               if unknown_ids else []))
-
 
 def _deterministic_rank_draft(
     task: TaskSpec, evidence: Sequence[EvidenceEnvelope],
@@ -2837,7 +2780,6 @@ def _deterministic_rank_draft(
                   if blocked else []))
     return None
 
-
 class ModelSynthesizer(ModelStage):
     prompt_name = "synthesizer"
     route = "synthesizer"
@@ -2881,7 +2823,6 @@ class ModelSynthesizer(ModelStage):
                 ])),
             })
             return _validate_draft(partial, evidence, task)
-
 
 class ModelRepairer(ModelStage):
     prompt_name = "repair_answer"
@@ -3021,7 +2962,6 @@ class ModelRepairer(ModelStage):
             })
         return DraftReport.model_validate(repaired.model_dump())
 
-
 class ModelSemanticVerifier(ModelStage):
     prompt_name = "verifier"
     route = "semantic_verifier"
@@ -3069,7 +3009,6 @@ class ModelSemanticVerifier(ModelStage):
             raise ValueError(
                 "semantic verifier returned duplicate or unknown claim indices")
         return report
-
 
 class RecordedStructuredModel:
     def __init__(self, model: StructuredModel, ledger: Any, *, turn_id: str) -> None:

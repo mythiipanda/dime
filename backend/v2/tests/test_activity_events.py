@@ -1,4 +1,3 @@
-from pathlib import Path
 import pytest
 from v2.api.activity import ActivityJournal
 from v2.api.events import EVENT_ADAPTER

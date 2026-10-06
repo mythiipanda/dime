@@ -84,7 +84,6 @@ AWARD_OUTPUT_ALIASES = {
     "VOTE_COUNT": "votes_first",
 }
 
-
 def _award_vocabulary() -> tuple[dict[str, str], dict[str, str]]:
     from shared.tools.award_results import _SELECT, _placement
 
@@ -98,9 +97,7 @@ def _award_vocabulary() -> tuple[dict[str, str], dict[str, str]]:
                        "publishes it.")
              for field in fields})
 
-
 AWARD_UNITS, AWARD_DEFINITIONS = _award_vocabulary()
-
 
 SQL_EXEC_UNITS = {
     "n": COUNT,
@@ -130,7 +127,6 @@ SQL_EXEC_OUTPUT_ALIASES = {
     "ROW_COUNT": "n",
 }
 
-
 def _name_entities(*fields: str) -> Callable[[Any], list[EntityRef]]:
     def extract(rows: Any) -> list[EntityRef]:
         items = rows if isinstance(rows, list) else [rows]
@@ -149,7 +145,6 @@ def _name_entities(*fields: str) -> Callable[[Any], list[EntityRef]]:
         return list(found.values())
     return extract
 
-
 def _resolve_entities(rows: Any) -> list[EntityRef]:
     out: list[EntityRef] = []
     if isinstance(rows, Mapping):
@@ -165,7 +160,6 @@ def _resolve_entities(rows: Any) -> list[EntityRef]:
                     display_name=str(team.get("full_name", ""))))
     return out
 
-
 def _player_entity(rows: Any) -> list[EntityRef]:
     if not isinstance(rows, Mapping):
         return []
@@ -176,7 +170,6 @@ def _player_entity(rows: Any) -> list[EntityRef]:
             or line.get("PLAYER") or line.get("PLAYER_NAME"))
     return ([EntityRef(id=str(player_id), type="player", display_name=str(name or player_id))]
             if player_id is not None else [])
-
 
 def _player_entities(rows: Any) -> list[EntityRef]:
     items = rows if isinstance(rows, list) else [rows]
@@ -192,7 +185,6 @@ def _player_entities(rows: Any) -> list[EntityRef]:
                         display_name=str(name or player_id))
         found[ref.id] = ref
     return list(found.values())
-
 
 def _team_entities(rows: Any) -> list[EntityRef]:
     items = rows if isinstance(rows, list) else [rows]
@@ -212,7 +204,6 @@ def _team_entities(rows: Any) -> list[EntityRef]:
         found[ref.id] = ref
     return list(found.values())
 
-
 @dataclass(frozen=True)
 class Capability:
     name: str
@@ -230,7 +221,6 @@ class Capability:
     extract_entities: Callable[[Any], list[EntityRef]] | None = None
     dependent_entity_arguments: Mapping[str, str] = field(default_factory=dict)
     domain: str = "basketball"
-
 
 _LIST = [
     Capability(
@@ -565,7 +555,6 @@ _LIST = [
 
 CAPABILITIES: dict[str, Capability] = {c.name: c for c in _LIST}
 
-
 _METRIC_DISPLAY_ALIASES = {
     "ASSIST": "AST",
     "ASSISTS": "AST",
@@ -595,18 +584,15 @@ _AGGREGATION_SUFFIXES = ("TOTALS", "TOTAL")
 
 _PER_GAME_STEM_SUFFIXES = ("PERGAME", "PG")
 
-
 def _squashed(value: object) -> str:
     return "".join(
         character for character in str(value).upper() if character.isalnum())
-
 
 def _per_game_stem(stem: str) -> str | None:
     for suffix in _PER_GAME_STEM_SUFFIXES:
         if stem.endswith(suffix) and len(stem) > len(suffix):
             return stem[: -len(suffix)]
     return None
-
 
 def _per_game_column(vocabulary: Mapping[str, str], stem: str) -> str | None:
     base = _per_game_stem(stem)
@@ -619,7 +605,6 @@ def _per_game_column(vocabulary: Mapping[str, str], stem: str) -> str | None:
         if declared is not None:
             return declared
     return None
-
 
 def _total_column(vocabulary: Mapping[str, str], units: Mapping[str, str],
                   squashed: str) -> str | None:
@@ -634,12 +619,10 @@ def _total_column(vocabulary: Mapping[str, str], units: Mapping[str, str],
             return declared
     return None
 
-
 def _games_column(vocabulary: Mapping[str, str], squashed: str) -> str | None:
     if squashed != "GAMESPLAYED":
         return None
     return vocabulary.get("GP")
-
 
 def _name_column(vocabulary: Mapping[str, str], squashed: str) -> str | None:
     if not squashed.endswith("NAME") or len(squashed) <= len("NAME"):
@@ -654,7 +637,6 @@ def _name_column(vocabulary: Mapping[str, str], squashed: str) -> str | None:
         if aliased is not None:
             return aliased
     return None
-
 
 def resolve_metric_column(capability: Capability, output_id: str) -> str | None:
     vocabulary: dict[str, str] = {}
@@ -697,11 +679,9 @@ def resolve_metric_column(capability: Capability, output_id: str) -> str | None:
             return aliased
     return None
 
-
 def _is_identity_output(output_id: str) -> bool:
     squashed = _squashed(output_id)
     return squashed.endswith("NAME") or squashed.endswith("ID")
-
 
 def servable_names_for(spec: Capability) -> list[str]:
     names: set[str] = set()
@@ -713,7 +693,6 @@ def servable_names_for(spec: Capability) -> list[str]:
     for key in spec.output_aliases:
         names.add(str(key).upper())
     return sorted(names)
-
 
 def preconditions_for_node(task, node, spec: Capability) -> list:
     from ..contracts import NodePrecondition, PreconditionCheck
@@ -783,7 +762,6 @@ def preconditions_for_node(task, node, spec: Capability) -> list:
             detail=(f"node must serve as-of {task.as_of.isoformat()}")))
     return found
 
-
 def _row_keys_present(rows) -> set[str]:
     from ..domain.evidence import iter_values
     probe = {"evidence_id": "probe", "capability": "probe",
@@ -799,7 +777,6 @@ def _row_keys_present(rows) -> set[str]:
         for segment in str(item.path).split("."):
             keys.add(segment.split("[", 1)[0].casefold())
     return keys
-
 
 def post_evidence_failures(preconditions: list, evidence) -> list[str]:
     from ..contracts import PreconditionCheck, precondition_repair_instruction
@@ -821,7 +798,6 @@ def post_evidence_failures(preconditions: list, evidence) -> list[str]:
                     item.check, item.node_id, item.requirement_id, item.detail
                     + f"; evidence declares {declared!r}"))
     return failures
-
 
 CAPABILITY_DESCRIPTIONS: dict[str, str] = {
     "entity_resolution": "Resolve a player or team name to canonical identity.",

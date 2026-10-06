@@ -33,7 +33,6 @@ EXPECTED = {
     ("2023-24", "fifty"): 7,
 }
 
-
 @pytest.fixture
 def real_warehouse(monkeypatch):
     from shared import store
@@ -57,7 +56,6 @@ def real_warehouse(monkeypatch):
     _core.last_completed_season_cache_clear()
     coverage.coverage_cache_clear()
 
-
 @pytest.fixture(autouse=True)
 def _open_chat_budget():
     from v2.api import routes
@@ -65,7 +63,6 @@ def _open_chat_budget():
     routes._CHAT_HITS.clear()
     yield
     routes._CHAT_HITS.clear()
-
 
 def test_the_capability_names_its_tool_and_its_coverage_tables(
         real_warehouse):
@@ -94,7 +91,6 @@ def test_the_capability_names_its_tool_and_its_coverage_tables(
     assert spec.task_season_scoped is True
     assert spec.season_arg == "season"
 
-
 def test_the_catalog_publishes_sql_as_required(real_warehouse):
     from v2.argument_schemas import compile_capability_catalog
     from v2.runtime.assembly import capability_catalog
@@ -109,7 +105,6 @@ def test_the_catalog_publishes_sql_as_required(real_warehouse):
     season = next(prop for prop in row["properties"]
                   if prop["property"] == "season")
     assert season["required"] is False
-
 
 def test_the_capability_declares_units_for_every_numeric_output(
         real_warehouse):
@@ -129,7 +124,6 @@ def test_the_capability_declares_units_for_every_numeric_output(
         assert numeric and numeric <= set(units)
         assert set(envelope.units) <= set(units)
 
-
 def test_the_names_a_planner_asks_for_resolve_to_a_returned_column():
     from v2.adapters.capabilities import CAPABILITIES, resolve_metric_column
 
@@ -139,7 +133,6 @@ def test_the_names_a_planner_asks_for_resolve_to_a_returned_column():
     assert resolve_metric_column(spec, "WINS") == "wins"
     assert resolve_metric_column(spec, "HOME_RUNS") is None
 
-
 def test_the_capability_description_separates_a_query_from_a_curated_table():
     from v2.adapters.capabilities import CAPABILITY_DESCRIPTIONS
 
@@ -147,7 +140,6 @@ def test_the_capability_description_separates_a_query_from_a_curated_table():
     assert "Agent-written" in description
     assert "no prebuilt tool" in description
     assert "never" in description and "curated" in description
-
 
 @pytest.mark.parametrize("season,kind,expected", [
     ("2023-24", "young", 9),
@@ -172,7 +164,6 @@ def test_a_question_no_prebuilt_tool_answers_returns_real_cited_rows(
     assert "silver_hist_" in envelope.coverage
     assert envelope.source_identity.kind == "warehouse"
 
-
 @pytest.mark.parametrize("season", ["2023-24", "2024-25"])
 def test_the_most_wins_question_names_the_real_team_and_total(
         real_warehouse, season):
@@ -185,7 +176,6 @@ def test_the_most_wins_question_names_the_real_team_and_total(
     assert envelope.rows[0]["team_name"] == (
         "Celtics" if season == "2023-24" else "Thunder")
 
-
 def test_the_query_is_part_of_the_evidence_identity(real_warehouse):
     from v2.adapters import call_capability
 
@@ -197,7 +187,6 @@ def test_the_query_is_part_of_the_evidence_identity(real_warehouse):
         "sql": FIFTY_WIN_COUNT.format(season="2023-24"), "season": "2023-24"})
     assert first.evidence_id == rerun.evidence_id
     assert first.evidence_id != other.evidence_id
-
 
 @pytest.mark.parametrize("bad,violation", [
     ("DROP TABLE silver_standings", "only SELECT/WITH queries are allowed"),
@@ -227,7 +216,6 @@ def test_a_write_attempt_is_refused_before_execution_naming_the_violation(
         "SELECT COUNT(*) FROM silver_hist_standings").fetchone()[0]
     assert before == after
 
-
 def test_a_query_outside_the_declared_set_is_refused(real_warehouse):
     from shared.tools.league import _SQL_TABLES
     from v2.adapters import call_capability
@@ -239,7 +227,6 @@ def test_a_query_outside_the_declared_set_is_refused(real_warehouse):
         call_capability("sql_exec", {"sql": bad, "season": "2024-25"})
     assert "unknown or unavailable tables" in str(excinfo.value)
     assert bad[:60] in str(excinfo.value)
-
 
 def test_a_query_returning_nothing_fails_loudly_with_the_query_attached(
         real_warehouse):
@@ -253,7 +240,6 @@ def test_a_query_returning_nothing_fails_loudly_with_the_query_attached(
     assert "0 rows" in str(excinfo.value)
     assert sql[:60] in str(excinfo.value)
 
-
 def test_a_wrong_subject_negative_fails_loudly_end_to_end(real_warehouse):
     from v2.adapters import call_capability
     from v2.adapters.core import AdapterError
@@ -264,7 +250,6 @@ def test_a_wrong_subject_negative_fails_loudly_end_to_end(real_warehouse):
         call_capability("sql_exec", {"sql": sql, "season": "2024-25"})
     assert "0 rows" in str(excinfo.value)
     assert "Nobody McNobody" in str(excinfo.value)
-
 
 def test_intake_blames_a_declared_table_for_an_uncovered_sql_season(
         real_warehouse):
@@ -298,7 +283,6 @@ def test_intake_blames_a_declared_table_for_an_uncovered_sql_season(
     assert "silver_hist_player_seasons" in joined
     assert CAPABILITIES["sql_exec"].task_season_scoped is True
 
-
 class CountIntake:
     def __init__(self, season: str, sql: str,
                  outputs: list[str] | None = None) -> None:
@@ -314,7 +298,6 @@ class CountIntake:
     async def understand(self, request: str, context=()):
         return self._task
 
-
 class CountPlanner:
     def __init__(self, sql: str) -> None:
         self._sql = sql
@@ -326,7 +309,6 @@ class CountPlanner:
             id="analytics", description="agent-written analytical query",
             capability_hints=["sql_exec"],
             arguments={"sql": self._sql})])
-
 
 class CountSynthesizer:
     async def synthesize(self, task, evidence):
@@ -350,7 +332,6 @@ class CountSynthesizer:
                 evidence_ids=[envelope.evidence_id],
                 output_bindings=[binding])])
 
-
 class CountSemantic:
     async def verify(self, task, draft, evidence):
         from v2.contracts import VerificationReport, VerificationStatus
@@ -360,14 +341,12 @@ class CountSemantic:
             claim_results=[{"claim_index": index, "supported": True}
                            for index, _claim in enumerate(draft.claims)])
 
-
 def _event(text: str, name: str) -> dict:
     payloads = [chunk.split("data: ", 1)[1]
                 for chunk in text.split("\n\n")
                 if chunk.startswith(f"event: {name}\n")]
     assert payloads
     return json.loads(payloads[-1])
-
 
 def _count_stream(season, sql, monkeypatch, tmp_path):
     from fastapi import FastAPI
@@ -404,7 +383,6 @@ def _count_stream(season, sql, monkeypatch, tmp_path):
     return (_event(response.text, "custom_data"),
             _event(response.text, "final_answer"))
 
-
 def test_an_unmapped_count_streams_end_to_end_with_sql_provenance(
         real_warehouse, monkeypatch, tmp_path):
     sql = YOUNG_SCORERS.format(season="2023-24")
@@ -417,7 +395,6 @@ def test_an_unmapped_count_streams_end_to_end_with_sql_provenance(
     assert custom["unverified_numbers"] == []
     assert "I could not verify a publishable answer" not in final["text"]
     assert final["carry"]["verified_claims"] == 1
-
 
 class MixedSynthesizer:
     async def synthesize(self, task, evidence):
@@ -455,7 +432,6 @@ class MixedSynthesizer:
                         unit={"kind": "unitless"},
                         domain="sql_exec")]),
             ])
-
 
 def test_a_binding_naming_a_subject_off_the_rows_is_rejected(
         real_warehouse, monkeypatch, tmp_path):
@@ -511,14 +487,12 @@ def test_a_binding_naming_a_subject_off_the_rows_is_rejected(
             for row in custom["tables"]} == {"sql_exec"}
     assert final["carry"]["verified_claims"] == 2
 
-
 GOLDEN_CALLS = {
     "sql-young-scorers-2324": (
         YOUNG_SCORERS.format(season="2023-24"), "answer"),
     "sql-most-wins-2425": (
         MOST_WINS.format(season="2024-25"), "answer"),
 }
-
 
 def _golden_scenarios():
     from v2.tests.compatibility.harness import load_pack
@@ -528,14 +502,12 @@ def _golden_scenarios():
     return [scenario for scenario in pack["scenarios"]
             if scenario["id"] in GOLDEN_CALLS]
 
-
 def test_the_pack_carries_a_golden_question_for_every_sql_call_shape():
     assert {scenario["id"] for scenario in _golden_scenarios()} == set(
         GOLDEN_CALLS)
     for scenario in _golden_scenarios():
         assert "sql" in scenario["tags"]
         assert scenario["budget"]["max_tool_calls"] <= 2
-
 
 def test_every_golden_sql_question_is_answered_by_the_real_warehouse(
         real_warehouse):

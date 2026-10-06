@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from datetime import UTC, datetime
 
 import pytest
 
@@ -9,7 +8,6 @@ from v2.contracts import (
     ClaimKind,
     DraftReport,
     EntityRef,
-    EvidenceEnvelope,
     EvidenceOutputBinding,
     EvidenceRequirement,
     Plan,
@@ -24,11 +22,9 @@ from v2.runtime import FakeCapability, PlanExecutor, Runtime
 from v2.runtime.assembly import MechanicalVerifier
 from v2.runtime.fast_path import is_fast_path_eligible
 
-
 @pytest.fixture
 def anyio_backend():
     return "asyncio"
-
 
 class CountingModel:
     def __init__(self, task: TaskSpec, claim: Claim | None = None) -> None:
@@ -95,7 +91,6 @@ class CountingModel:
         self.calls.append("repair")
         return draft
 
-
 def _task_single() -> TaskSpec:
     return TaskSpec(
         goal="single fact lookup",
@@ -112,7 +107,6 @@ def _task_single() -> TaskSpec:
             requested_outputs=["AST"],
         )],
     )
-
 
 def _task_comparison() -> TaskSpec:
     return TaskSpec(
@@ -131,7 +125,6 @@ def _task_comparison() -> TaskSpec:
             requested_outputs=["AST"],
         )],
     )
-
 
 def _task_brief() -> TaskSpec:
     return TaskSpec(
@@ -153,7 +146,6 @@ def _task_brief() -> TaskSpec:
         ],
     )
 
-
 def _claim() -> Claim:
     return Claim(
         text="Ada Vega led the league with 880 assists.",
@@ -172,7 +164,6 @@ def _claim() -> Claim:
         )],
     )
 
-
 def _runtime(model: CountingModel, rows) -> Runtime:
     return Runtime(
         intake=model,
@@ -184,7 +175,6 @@ def _runtime(model: CountingModel, rows) -> Runtime:
         repairer=model,
             fast_path=True,
     )
-
 
 def _slow_runtime(model: CountingModel, rows) -> Runtime:
     return Runtime(
@@ -198,18 +188,15 @@ def _slow_runtime(model: CountingModel, rows) -> Runtime:
         fast_path=False,
     )
 
-
 def test_gate_uses_shape_only() -> None:
     assert is_fast_path_eligible(_task_single()) is True
     assert is_fast_path_eligible(_task_comparison()) is False
     assert is_fast_path_eligible(_task_brief()) is False
 
-
 def test_gate_ignores_question_text() -> None:
     base = _task_single()
     altered = base.model_copy(update={"goal": "totally different wording here"})
     assert is_fast_path_eligible(altered) is True
-
 
 @pytest.mark.anyio
 async def test_single_fact_uses_fast_path_with_fewer_model_calls() -> None:
@@ -220,7 +207,6 @@ async def test_single_fact_uses_fast_path_with_fewer_model_calls() -> None:
     assert result.verified_claims[0].claim.text == "Ada Vega led the league with 880 assists."
     assert sorted(model.calls) == ["intake", "synthesizer"]
     assert len(model.calls) == 2
-
 
 @pytest.mark.anyio
 async def test_comparison_takes_full_loop() -> None:
@@ -236,7 +222,6 @@ async def test_comparison_takes_full_loop() -> None:
     assert len(model.calls) > 2
     assert result.verified_claims != [] or result.gaps != []
 
-
 @pytest.mark.anyio
 async def test_unverifiable_fast_path_falls_back_and_answers() -> None:
     rows = [{"PLAYER_ID": 9001, "PLAYER_NAME": "Ada Vega", "AST": 880}]
@@ -251,7 +236,6 @@ async def test_unverifiable_fast_path_falls_back_and_answers() -> None:
     assert model.calls.count("synthesizer") == 2
     assert result.verified_claims != [] or result.gaps != []
 
-
 @pytest.mark.anyio
 async def test_citation_completeness_matches_between_paths() -> None:
     rows = [{"PLAYER_ID": 9001, "PLAYER_NAME": "Ada Vega", "AST": 880}]
@@ -263,7 +247,6 @@ async def test_citation_completeness_matches_between_paths() -> None:
         item.status for item in slow_result.output_statuses
     ]
     assert len(fast_result.verified_claims) == len(slow_result.verified_claims)
-
 
 @pytest.mark.anyio
 async def test_missing_data_zero_never_publishes_through_fast_shape() -> None:
@@ -331,7 +314,6 @@ async def test_missing_data_zero_never_publishes_through_fast_shape() -> None:
     result = await runtime.run("season scoring average")
     assert result.verified_claims == []
     assert any("Test Player" in gap.message for gap in result.gaps)
-
 
 @pytest.mark.anyio
 async def test_real_warehouse_assists_leader_answers_through_fast_path(monkeypatch, tmp_path) -> None:
@@ -450,7 +432,6 @@ async def test_real_warehouse_assists_leader_answers_through_fast_path(monkeypat
     assert planner.calls == 0
     assert result.verified_claims != []
     assert all(item.status == "complete" for item in result.output_statuses)
-
 
 @pytest.mark.anyio
 async def test_real_warehouse_second_single_fact_answers_through_fast_path(monkeypatch, tmp_path) -> None:

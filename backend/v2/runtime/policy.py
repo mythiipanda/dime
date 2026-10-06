@@ -5,13 +5,11 @@ from pathlib import Path
 
 from pydantic import BaseModel, ConfigDict, Field, StrictBool, StrictInt, model_validator
 
-
 class ExecutionMode(StrEnum):
     LIVE = "live"
     REPLAY = "replay"
     EVAL = "eval"
     SHADOW = "shadow"
-
 
 class ExecutionPolicy(BaseModel):
     model_config = ConfigDict(extra="forbid")
@@ -60,7 +58,6 @@ class ExecutionPolicy(BaseModel):
     def replay(cls, path: str | Path) -> "ExecutionPolicy":
         return cls(mode=ExecutionMode.REPLAY, replay_path=path, publish=False)
 
-
 LOOKUP_PROFILE = "lookup"
 STANDARD_PROFILE = "standard"
 FULL_PROFILE = "full"
@@ -101,23 +98,19 @@ _DENIED_BY_PROFILE = {
     FULL_PROFILE: frozenset(),
 }
 
-
 def capability_universe() -> frozenset[str]:
     from v2.adapters.capabilities import CAPABILITIES
     return frozenset(CAPABILITIES) | _WEB_CAPABILITIES
 
-
 def _mode_value(mode: object) -> str:
     value = getattr(mode, "value", mode)
     return str(value)
-
 
 def task_mode_profile(mode: object) -> str:
     try:
         return _PROFILE_BY_MODE_VALUE[_mode_value(mode)]
     except KeyError:
         raise ValueError(f"unknown task mode {mode!r}") from None
-
 
 def allowed_capabilities_for_task_mode(mode: object) -> frozenset[str]:
     profile = task_mode_profile(mode)
@@ -132,7 +125,6 @@ def allowed_capabilities_for_task_mode(mode: object) -> frozenset[str]:
             f"mode profiles miss registry capabilities: {sorted(unprofiled)}; "
             "profile each new capability before use")
     return frozenset(set(_FULL_ALLOWLIST) - set(_DENIED_BY_PROFILE[profile]))
-
 
 def refuse_unprofiled_capability(
     mode: object, node_id: str, capability: str,

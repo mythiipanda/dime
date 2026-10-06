@@ -56,10 +56,8 @@ LADDER = (
      Support.REFUSED),
 )
 
-
 class StageBoundary(BaseException):
-    """Raised at the stage boundary so no stage post-processing runs."""
-
+    pass
 
 class RecordingStructuredModel:
     def __init__(self) -> None:
@@ -70,7 +68,6 @@ class RecordingStructuredModel:
         self.schemas.setdefault(envelope.route, schema)
         raise StageBoundary(envelope.route)
 
-
 def _task() -> TaskSpec:
     return TaskSpec.model_validate({
         "goal": "Report the 2024-25 assists leader.",
@@ -79,7 +76,6 @@ def _task() -> TaskSpec:
         "required_evidence": ["qualified_leaders"],
     })
 
-
 def _draft() -> DraftReport:
     return DraftReport.model_validate({
         "sections": ["Assists leader"],
@@ -87,10 +83,8 @@ def _draft() -> DraftReport:
                          kind=ClaimKind.OBSERVED, evidence_ids=["evidence:n1"])],
     })
 
-
 def _verification() -> VerificationReport:
     return VerificationReport.model_validate({"status": "pass"})
-
 
 def _representative_payload(schema: type[BaseModel]) -> Any:
     if issubclass(schema, DraftReport):
@@ -101,13 +95,11 @@ def _representative_payload(schema: type[BaseModel]) -> Any:
                 "contradictions": [], "repair_instructions": []}
     return {}
 
-
 def _evidence(task: TaskSpec) -> dict[str, EvidenceEnvelope]:
     return {"evidence:n1": EvidenceEnvelope(
         evidence_id="evidence:n1", capability="qualified_leaders",
         source="fake", observed_at=datetime.now(UTC),
         season=task.season.value if task.season else None, rows=[])}
-
 
 def _stages() -> tuple[RecordingStructuredModel, dict[str, ModelStage]]:
     model = RecordingStructuredModel()
@@ -125,15 +117,7 @@ def _stages() -> tuple[RecordingStructuredModel, dict[str, ModelStage]]:
                                                    model_name="probe-model"),
     }
 
-
 async def stage_schemas() -> dict[str, type[BaseModel]]:
-    """The schema every model route puts on the wire, read off the running code.
-
-    Each stage is driven up to the single funnel every stage call passes
-    through, so the schema recorded for a route is the one that route sends. A
-    route the adapter can emit that this drive never reaches fails the caller
-    rather than quietly escaping the guard.
-    """
     recorded, stages = _stages()
     task, draft, evidence = _task(), _draft(), _evidence(_task())
     question = "who led the league in assists in 2024-25?"
@@ -150,14 +134,12 @@ async def stage_schemas() -> dict[str, type[BaseModel]]:
     assert set(recorded.schemas) == set(MODEL_ROUTES), recorded.schemas
     return recorded.schemas
 
-
 def _capabilities(strict: Support, tools: Support,
                   strict_tools: Support | None = None) -> EndpointCapabilities:
     return EndpointCapabilities(
         endpoint="https://probe.invalid/v1", strict_json_schema=strict,
         tool_calling=tools,
         strict_tool_definitions=tools if strict_tools is None else strict_tools)
-
 
 def _completion(payload: Any) -> dict[str, Any]:
     return {"id": "completion-1", "created": 1, "model": "probe-model",
@@ -166,13 +148,11 @@ def _completion(payload: Any) -> dict[str, Any]:
                          "message": {"role": "assistant",
                                      "content": json.dumps(payload)}}]}
 
-
 async def sent_wire_schemas(
         schema: type[BaseModel], payload: Any,
         strict: Support = Support.MEASURED,
         tools: Support = Support.MEASURED,
         strict_tools: Support | None = None) -> dict[OutputStrategy, Any]:
-    """The schemas one stage call actually puts in front of the endpoint."""
     sent: list[dict[str, Any]] = []
 
     def handler(request: httpx.Request) -> httpx.Response:
@@ -204,13 +184,11 @@ async def sent_wire_schemas(
     response_format = body["response_format"]["json_schema"]
     return {OutputStrategy.STRICT_SCHEMA: response_format["schema"]}
 
-
 def assert_portable(wire: dict[str, Any], contract: type[BaseModel],
                     label: str) -> None:
     Draft202012Validator.check_schema(wire)
     assert strict_subset_violations(wire) == (), label
     assert value_space_widened(contract.model_json_schema(), wire) == (), label
-
 
 @pytest.mark.anyio
 @pytest.mark.parametrize("anyio_backend", ["asyncio"])
@@ -219,7 +197,6 @@ async def test_the_guard_reads_every_model_route_from_the_running_code():
     assert set(schemas) == set(MODEL_ROUTES)
     assert schemas["synthesizer"] is DraftReport
     assert schemas["semantic_verifier"] is VerificationReport
-
 
 @pytest.mark.anyio
 @pytest.mark.parametrize("anyio_backend", ["asyncio"])
@@ -233,7 +210,6 @@ async def test_the_schema_each_stage_sends_is_portable(
         assert set(sent) == {strategy}, route
         assert_portable(sent[strategy], schema, route)
 
-
 @pytest.mark.anyio
 @pytest.mark.parametrize("anyio_backend", ["asyncio"])
 @pytest.mark.parametrize("strategy,strict,tools,strict_tools", LADDER)
@@ -243,7 +219,6 @@ async def test_the_schema_each_stage_probe_sends_is_portable(
         sanitized = wire_schema_for(strategy, schema.model_json_schema())
         assert_portable(sanitized.schema, schema, route)
 
-
 @pytest.mark.anyio
 @pytest.mark.parametrize("anyio_backend", ["asyncio"])
 async def test_the_wire_is_the_sanitized_production_schema():
@@ -252,7 +227,6 @@ async def test_the_wire_is_the_sanitized_production_schema():
         assert sent[OutputStrategy.STRICT_SCHEMA] == wire_schema_for(
             OutputStrategy.STRICT_SCHEMA,
             strict_output_json_schema(schema)).schema, route
-
 
 @pytest.mark.anyio
 @pytest.mark.parametrize("anyio_backend", ["asyncio"])
@@ -267,7 +241,6 @@ async def test_no_value_the_contract_refuses_is_reachable_through_the_wire():
         assert not Draft202012Validator(wire).is_valid(instance), field
         with pytest.raises(ValueError):
             DraftReport.model_validate(instance)
-
 
 @pytest.mark.anyio
 @pytest.mark.parametrize("anyio_backend", ["asyncio"])
@@ -287,7 +260,6 @@ async def test_the_guard_catches_an_unportable_field_added_to_a_stage(
         "pattern at $.properties.note has no portable form: "
         r"look-around cannot be compiled: '^(?!x)y$'")
 
-
 @pytest.mark.anyio
 @pytest.mark.parametrize("anyio_backend", ["asyncio"])
 async def test_the_guard_names_the_route_of_the_stage_that_broke(monkeypatch):
@@ -303,7 +275,6 @@ async def test_the_guard_names_the_route_of_the_stage_that_broke(monkeypatch):
         except SchemaNotPortable as exc:
             reported[route] = exc.path
     assert reported == {"semantic_verifier": "$.properties.verdict"}
-
 
 @pytest.mark.anyio
 @pytest.mark.parametrize("anyio_backend", ["asyncio"])
@@ -323,7 +294,6 @@ async def test_an_untranslatable_pattern_raises_instead_of_degrading():
         OutputStrategy.STRICT_SCHEMA,
         strict_output_json_schema(LookaheadDraft)).schema
     assert strict_rung["properties"]["note"] == {"type": "string"}
-
 
 @pytest.mark.anyio
 @pytest.mark.parametrize("anyio_backend", ["asyncio"])

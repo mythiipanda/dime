@@ -35,25 +35,20 @@ _PROJECTS = ProjectStore(
 _CONVERSATIONS = ConversationStore(os.environ.get(
     "DIME_CONVERSATION_STORE", str(_BACKEND / "data" / "v2-conversations.sqlite3")))
 
-
 def _imported_module_code_sha256() -> str:
     code = __loader__.get_code(__name__) if __loader__ is not None else None
     if code is None:
         raise RuntimeError("routes module has no loader code identity")
     return hashlib.sha256(marshal.dumps(code)).hexdigest()
 
-
 _LOADED_MODULE_CODE_SHA256 = _imported_module_code_sha256()
-
 
 def _projects_enabled() -> bool:
     return runtime_v2_mode() == "on"
 
-
 def _require_projects() -> None:
     if not _projects_enabled():
         raise HTTPException(status_code=404, detail="not found")
-
 
 def _revision() -> str:
     configured = os.environ.get("DIME_REVISION")
@@ -71,7 +66,6 @@ def _revision() -> str:
     except (OSError, subprocess.SubprocessError):
         return "unknown"
 
-
 def _executable_sha256() -> str:
     digest = hashlib.sha256()
     for root in (_BACKEND / "app", _BACKEND / "v2"):
@@ -85,14 +79,12 @@ def _executable_sha256() -> str:
                 digest.update(b"\0")
     return digest.hexdigest()
 
-
 @lru_cache(maxsize=1)
 def runtime_warehouse_identity() -> dict[str, str]:
     from shared import store
     identity = store.warehouse_identity()
     return {"warehouse_id": identity["warehouse_id"],
             "sha256": identity["warehouse_sha256"]}
-
 
 @dataclass(frozen=True)
 class RuntimeAssetManifest:
@@ -115,14 +107,12 @@ class RuntimeAssetManifest:
             "typed_argument_assets": dict(self.typed_argument_assets),
         }
 
-
 def _loaded_behavior_sha256(module: ModuleType, config: Mapping[str, object]) -> str:
     code_hash = getattr(module, "_LOADED_MODULE_CODE_SHA256", None)
     if not isinstance(code_hash, str) or len(code_hash) != 64:
         raise RuntimeError("module lacks import-time code identity")
     encoded = json.dumps(config, sort_keys=True, separators=(",", ":")).encode()
     return hashlib.sha256(code_hash.encode() + b"\0" + encoded).hexdigest()
-
 
 def _typed_argument_asset_hashes() -> dict[str, str]:
     paths = {
@@ -169,7 +159,6 @@ def runtime_asset_manifest() -> RuntimeAssetManifest:
         typed_argument_assets=MappingProxyType(_typed_argument_asset_hashes()),
     )
 
-
 def preflight_runtime_assets(expected_path: str | Path | None = None) -> RuntimeAssetManifest:
     configured = expected_path or os.environ.get("DIME_EXPECTED_ASSET_MANIFEST")
     if not configured:
@@ -189,7 +178,6 @@ def preflight_runtime_assets(expected_path: str | Path | None = None) -> Runtime
     if expected != observed_dict:
         import logging
         _log = logging.getLogger(__name__)
-
 
         substantive_keys = {"executable_sha256", "module_sha256", "warehouse",
                            "semantic_baseline", "prompt_sha256",
@@ -211,31 +199,25 @@ def preflight_runtime_assets(expected_path: str | Path | None = None) -> Runtime
         )
     return observed
 
-
 @router.get("/revision")
 def revision() -> dict:
 
     return runtime_asset_manifest().as_dict()
 
-
 def _models_catalog() -> dict:
-
 
     from shared.providers import models_catalog
 
     return models_catalog()
 
-
 @router.get("/models")
 def models() -> dict:
     return _models_catalog()
-
 
 @router.get("/health")
 def health() -> dict:
     catalog = _models_catalog()
     return {"ok": True, "providers": catalog["available"]}
-
 
 @router.get("/healthz")
 def healthz() -> Response:
@@ -270,7 +252,6 @@ def healthz() -> Response:
         content=json.dumps({"ok": True}),
         media_type="application/json", status_code=200)
 
-
 _DATASETS_TABLES = {
     "standings": "silver_standings",
     "leaders": "silver_leaders_pts",
@@ -293,10 +274,8 @@ _DATASETS_TABLES = {
     "player_seasons": "silver_hist_player_seasons",
 }
 
-
 _DATASETS_FRESHNESS_TTL_S = 300
 _DATASETS_FRESHNESS_CACHE = {"at": 0.0, "payload": None}
-
 
 def _datasets_freshness_payload() -> dict:
     from shared import store
@@ -323,7 +302,6 @@ def _datasets_freshness_payload() -> dict:
         con.close()
     return {"ok": True, "rows": rows}
 
-
 @router.get("/datasets/freshness")
 def datasets_freshness() -> dict:
     now = time.monotonic()
@@ -334,7 +312,6 @@ def datasets_freshness() -> dict:
     cached["payload"] = payload
     cached["at"] = now
     return payload
-
 
 def _datasets_envelope(table: str, season: str, frame: object, cached: bool) -> dict:
     import polars as pl
@@ -347,7 +324,6 @@ def _datasets_envelope(table: str, season: str, frame: object, cached: bool) -> 
     rows = frame.to_dicts()
     if table.startswith("silver_leaders_"):
 
-
         stat_col = table.rsplit("_", 1)[-1].upper()
         if stat_col == "FG":
             stat_col = "FG_PCT"
@@ -359,7 +335,6 @@ def _datasets_envelope(table: str, season: str, frame: object, cached: bool) -> 
             pinned.append(keyed)
         rows = pinned
     if table == "silver_standings":
-
 
         pin = ["TeamCity", "TeamName", "Conference", "Record",
                "WINS", "LOSSES", "WinPCT", "PlayoffRank",
@@ -380,7 +355,6 @@ def _datasets_envelope(table: str, season: str, frame: object, cached: bool) -> 
             if tier == "small" and not r.get("SAMPLE"):
                 r["SAMPLE"] = "small: under ~100 possessions"
     return {"data": rows, "meta": meta}
-
 
 def _datasets_fetch_live(
     name: str, season: str, player_id: int, team_id: int,
@@ -430,7 +404,6 @@ def _datasets_fetch_live(
     if name == "hustle":
         return nba_stats.hustle("player", season)
     return None
-
 
 @router.get("/datasets/{name}")
 def dataset(
@@ -490,7 +463,6 @@ def dataset(
     frame = store.read_frame(table, "_season = ?", [season])
     if name == "leaders" and frame.height > 0:
 
-
         from shared.tools import clamp_stat
 
         stat_col = clamp_stat(stat)
@@ -533,7 +505,6 @@ def dataset(
     if (name in ("player_gamelogs", "team_games", "playoff_gamelogs")
             and frame.height > 0 and "GAME_DATE" in frame.columns):
 
-
         for fmt_s in ("%b %d, %Y", "%Y-%m-%d"):
             try:
                 frame = frame.with_columns(
@@ -552,7 +523,6 @@ def dataset(
                 continue
     if name in ("player_gamelogs", "team_games", "playoff_gamelogs") and frame.height > 0:
 
-
         from shared.tools.gamelog import dedupe_game_log_frame
 
         frame = dedupe_game_log_frame(frame)
@@ -566,20 +536,17 @@ def dataset(
     out["ok"] = True
     return out
 
-
 @router.get("/threads")
 def threads(client: str = Query("")) -> dict:
     from shared import store
 
     return {"threads": store.list_threads(owner=client[:80])}
 
-
 @router.get("/threads/{thread_id}/runs")
 def thread_runs(thread_id: str, client: str = Query("")) -> dict:
     from shared import store
 
     return {"runs": store.list_runs(thread_id, owner=client[:80])}
-
 
 @router.get("/threads/{thread_id}/export")
 def thread_export(thread_id: str, client: str = Query("")):
@@ -617,7 +584,6 @@ def thread_export(thread_id: str, client: str = Query("")):
         lines.append("")
     return PlainTextResponse("\n".join(lines), media_type="text/markdown")
 
-
 class CreateBranchBody(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -640,12 +606,10 @@ class CreateBranchBody(BaseModel):
             raise ValueError("branch id must be non-empty when present")
         return value
 
-
 def _branch_identity(thread: str, client: str) -> tuple[str, str]:
     if not thread.strip() or not client.strip():
         raise HTTPException(status_code=400, detail="thread and client required")
     return client.strip()[:80], thread.strip()[:80]
-
 
 @router.post("/v2/branches", status_code=201)
 def create_branch(body: CreateBranchBody) -> dict:
@@ -661,14 +625,12 @@ def create_branch(body: CreateBranchBody) -> dict:
         raise HTTPException(status_code=400, detail=message)
     return branch.model_dump(mode="json")
 
-
 @router.get("/v2/branches")
 def list_branches(thread: str = Query(""), client: str = Query("")) -> dict:
     _require_projects()
     owner, name = _branch_identity(thread, client)
     branches = _CONVERSATIONS.list_branches(owner, name)
     return {"branches": [item.model_dump(mode="json") for item in branches]}
-
 
 @router.get("/v2/branches/{branch_id}")
 def get_branch(branch_id: str, thread: str = Query(""),
@@ -684,12 +646,10 @@ def get_branch(branch_id: str, thread: str = Query(""),
             "evidence_count": len(evidence),
             "reused_count": len(reuses)}
 
-
 class SqlRerunBody(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     sql: str = ""
-
 
 @router.post("/sql/rerun")
 async def sql_rerun(request: Request, body: SqlRerunBody) -> dict:
@@ -710,13 +670,11 @@ async def sql_rerun(request: Request, body: SqlRerunBody) -> dict:
         "ms": out.get("ms", 0), "capped": out.get("capped", False),
     }}
 
-
 @router.get("/resolve")
 def resolve(q: str = Query("")) -> dict:
     from shared.tools import resolve_entity
 
     return resolve_entity.invoke({"query": q[:80]})
-
 
 class TradeBody(BaseModel):
     model_config = ConfigDict(extra="forbid")
@@ -734,7 +692,6 @@ class TradeBody(BaseModel):
             return ", ".join(item.strip() for item in value if item.strip())
         return value
 
-
 @router.post("/trade/check")
 def trade_check(body: TradeBody) -> dict:
     from shared.tools import get_trade_check
@@ -745,10 +702,8 @@ def trade_check(body: TradeBody) -> dict:
         "season": body.season,
     })
 
-
 CARDS_DIR = _BACKEND / "data" / "cards"
 _DEBATE_FILE_RE = re.compile(r"^debate_[A-Za-z0-9]+_vs_[A-Za-z0-9]+_[0-9]+\.html$")
-
 
 @router.get("/debate-card")
 def debate_card(
@@ -791,7 +746,6 @@ def debate_card(
         "meta": {"season": clamped},
     }
 
-
 @router.get("/debate-card/file")
 def debate_card_file(name: str = Query("")) -> FileResponse:
     if not _DEBATE_FILE_RE.fullmatch(name or ""):
@@ -805,7 +759,6 @@ def debate_card_file(name: str = Query("")) -> FileResponse:
         headers={"Cache-Control": "public, max-age=3600"},
     )
 
-
 @router.get("/today")
 async def today(season: str = Query("2025-26")):
     from shared.tools.today import get_today
@@ -815,7 +768,6 @@ async def today(season: str = Query("2025-26")):
         None, lambda: get_today.invoke({"season": season}))
     return json.loads(res) if isinstance(res, str) else res
 
-
 @router.get("/watchlist")
 async def watchlist(season: str = Query("2025-26")):
     from shared.tools.watchlist import get_watchlist
@@ -823,12 +775,10 @@ async def watchlist(season: str = Query("2025-26")):
     res = get_watchlist.invoke({"season": season})
     return json.loads(res) if isinstance(res, str) else res
 
-
 class WatchlistBody(BaseModel):
     entity_type: str
     entity_id: str
     season: str = "2025-26"
-
 
 @router.post("/watchlist")
 async def watchlist_add(body: WatchlistBody):
@@ -840,7 +790,6 @@ async def watchlist_add(body: WatchlistBody):
         "season": body.season,
     })
     return json.loads(res) if isinstance(res, str) else res
-
 
 @router.delete("/watchlist")
 async def watchlist_remove(
@@ -855,7 +804,6 @@ async def watchlist_remove(
     })
     return json.loads(res) if isinstance(res, str) else res
 
-
 @router.get("/movers")
 async def movers(
     season: str = Query("2025-26"),
@@ -868,14 +816,12 @@ async def movers(
     out = json.loads(res) if isinstance(res, str) else res
     return normalize_movers(out, season)
 
-
 @router.get("/briefing")
 async def briefing(season: str = Query("2025-26")):
     from shared.tools.today import get_morning_briefing
 
     res = get_morning_briefing.invoke({"season": season})
     return json.loads(res) if isinstance(res, str) else res
-
 
 def public_evidence_table(item):
     return {"tool": item.capability, "rows": item.rows, "meta": {
@@ -886,7 +832,6 @@ def public_evidence_table(item):
         "qualification": item.qualification, "coverage": item.coverage,
         "warnings": item.warnings,
     }}
-
 
 class CreateProjectBody(BaseModel):
     model_config = ConfigDict(extra="forbid")
@@ -900,18 +845,15 @@ class CreateProjectBody(BaseModel):
             raise ValueError("project goal must be non-empty")
         return value
 
-
 @router.post("/projects", status_code=201)
 def create_project(body: CreateProjectBody) -> dict:
     _require_projects()
     return _PROJECTS.create(body.goal).model_dump(mode="json")
 
-
 @router.get("/projects")
 def list_projects() -> dict:
     _require_projects()
     return {"projects": [item.model_dump(mode="json") for item in _PROJECTS.list()]}
-
 
 @router.get("/projects/{project_id}")
 def get_project(project_id: str) -> dict:
@@ -922,7 +864,6 @@ def get_project(project_id: str) -> dict:
     return project.model_dump(mode="json")
 
 from v2.contracts import ConversationTurn
-
 
 class QuickAnswerBody(BaseModel):
     model_config = ConfigDict(extra="forbid")
@@ -961,7 +902,6 @@ class QuickAnswerBody(BaseModel):
             raise ValueError("thread and client must be provided together")
         return self
 
-
 def _output_line(result, status) -> str:
     binding = status.binding
     if binding.requirement_kind == "calculation":
@@ -978,7 +918,6 @@ def _output_line(result, status) -> str:
                    if binding.subject_entity_id is not None else "")
     return f"{status.output_id}{subject} = {value} ({unit})"
 
-
 LIVE_SOURCE_NAMES = {
     "nba_api": "the NBA's live feed",
     "basketball_reference": "Basketball Reference",
@@ -993,7 +932,6 @@ LIVE_SOURCE_LINES = {
 }
 
 UNTRACED_SUFFIX = " could not be traced to the source data."
-
 
 def _live_source_line(result) -> str | None:
     sources: set[str] = set()
@@ -1019,7 +957,6 @@ def _live_source_line(result) -> str | None:
     return LIVE_SOURCE_LINES[story].format(
         sources=", ".join(names), when=f" on {as_of}" if as_of else "")
 
-
 def _claim_prose(result) -> list[str]:
     from v2.runtime.models import withheld_claim_indices
 
@@ -1038,17 +975,14 @@ def _claim_prose(result) -> list[str]:
             lines.append(prose)
     return list(dict.fromkeys(lines))
 
-
 _SCRUB_REFERRAL = "the data"
 _SCRUB_COVERAGE_LIMIT = 0.6
-
 
 def _scrub_digits(m: re.Match[str]) -> str:
     digits = m.group(0)
     if len(digits) == 4 and 1900 <= int(digits) <= 2100:
         return digits
     return ""
-
 
 _PROSE_SCRUB_RULES: tuple[
     tuple[re.Pattern[str], str | Callable[[re.Match[str]], str]], ...] = (
@@ -1081,7 +1015,6 @@ _PROSE_SCRUB_RULES: tuple[
     (re.compile(r"\d{4,}"), _scrub_digits),
 )
 
-
 _PROSE_TIDY_RULES: tuple[tuple["re.Pattern[str]", str], ...] = (
     (re.compile(r"[(\[{]\s*[)\]}]"), ""),
     (re.compile(r"\bthe the\b", re.IGNORECASE), "the"),
@@ -1095,7 +1028,6 @@ _IDENTIFIER_SHAPE_RX = re.compile(r"[_\-.:\d]")
 _BINDING_INTERNAL_FIELDS = (
     "evidence_id", "node_id", "selector", "row_selector", "subject_selector",
     "subject_entity_id", "requirement_id", "calculation_id", "domain")
-
 
 def _internal_identifiers(result) -> set[str]:
     identifiers = {envelope.evidence_id for envelope in result.execution.evidence}
@@ -1111,7 +1043,6 @@ def _internal_identifiers(result) -> set[str]:
                 if getattr(binding, field, None) is not None}
     return {value for value in identifiers if _IDENTIFIER_SHAPE_RX.search(value)}
 
-
 def _internal_identifier_rx(result) -> "re.Pattern[str] | None":
     identifiers = sorted(_internal_identifiers(result), key=len, reverse=True)
     if not identifiers:
@@ -1119,7 +1050,6 @@ def _internal_identifier_rx(result) -> "re.Pattern[str] | None":
     return re.compile("|".join(
         rf"(?<![A-Za-z0-9_]){re.escape(value)}(?![A-Za-z0-9_])"
         for value in identifiers))
-
 
 def _publishable_prose(
         text: str, internal: re.Pattern[str] | None) -> str | None:
@@ -1140,7 +1070,6 @@ def _publishable_prose(
         return None
     return text
 
-
 def _label_lines(result, bindings) -> list[str]:
     keys = {(binding.requirement_kind, binding.requirement_id,
              binding.output_id) for binding in bindings}
@@ -1148,7 +1077,6 @@ def _label_lines(result, bindings) -> list[str]:
             if status.status == "complete"
             and (status.requirement_kind, status.requirement_id,
                  status.output_id) in keys]
-
 
 def _prose_covered_output_ids(result) -> set[str]:
     from v2.runtime.models import withheld_claim_indices
@@ -1196,7 +1124,6 @@ def _prose_covered_output_ids(result) -> set[str]:
                 if isinstance(output_id, str) and output_id:
                     covered.add(output_id)
     return covered
-
 
 def _answer_text(result) -> str:
     published = {
@@ -1259,7 +1186,6 @@ def _answer_text(result) -> str:
         and item.output_id not in stated))
     return "\n".join(lines) or "I could not verify a publishable answer from the available data."
 
-
 def _output_display_name(output_id: str, definitions=None) -> str:
     definition = (definitions or {}).get(output_id)
     if definition:
@@ -1271,7 +1197,6 @@ def _output_display_name(output_id: str, definitions=None) -> str:
         return humanized.upper()
     return humanized or output_id
 
-
 def _envelope_definitions(result, evidence_id: str) -> dict:
     try:
         for item in result.execution.evidence:
@@ -1281,11 +1206,9 @@ def _envelope_definitions(result, evidence_id: str) -> dict:
         return {}
     return {}
 
-
 def _public_gaps(result) -> list[dict]:
     return [{"kind": gap.kind.value, "blocks": list(gap.blocks)}
             for gap in result.gaps]
-
 
 def _status_subject(task) -> tuple[str, str]:
     entities = getattr(task, "entities", None) or []
@@ -1320,7 +1243,6 @@ def _status_subject(task) -> tuple[str, str]:
         topic = "the numbers"
     return (topic[:80], season)
 
-
 def _status_lines(task) -> list[str]:
     if task is None:
         return []
@@ -1344,7 +1266,6 @@ def _status_lines(task) -> list[str]:
         if line not in deduped:
             deduped.append(line)
     return deduped[:3]
-
 
 def _public_output_status(result, status) -> dict:
     item = {"requirement_kind": status.requirement_kind,
@@ -1371,7 +1292,6 @@ def _public_output_status(result, status) -> dict:
                             _envelope_definitions(result, binding.evidence_id)))
     return item
 
-
 def _citation_provenance(envelope) -> dict:
     identity = envelope.source_identity
     if identity is None:
@@ -1389,7 +1309,6 @@ def _citation_provenance(envelope) -> dict:
             "season": envelope.season,
             "as_of": envelope.as_of.isoformat() if envelope.as_of else None,
             "live_sources": live_sources}
-
 
 def _published_bindings(result) -> list:
     from v2.runtime.models import withheld_claim_indices
@@ -1414,7 +1333,6 @@ def _published_bindings(result) -> list:
                  status.output_id), status.binding)
     return list(bindings.values())
 
-
 def _traced_value(envelope, binding) -> tuple[Any, str | None]:
     from v2.runtime.models import (
         AmbiguousSelector, ResolvedSelector, _declared_value_matches,
@@ -1436,7 +1354,6 @@ def _traced_value(envelope, binding) -> tuple[Any, str | None]:
     if not _declared_value_matches(binding.value, resolution.value):
         raise ValueError("publication evidence changed after admission")
     return resolution.value, None
-
 
 def _public_evidence(result) -> tuple[list[dict], list[str]]:
     from v2.domain.calculations import Calculation, validate_calculation
@@ -1501,12 +1418,10 @@ def _public_evidence(result) -> tuple[list[dict], list[str]]:
               if status.output_id not in cited))))
     return list(rows.values()), untraced
 
-
 def _public_capability_name(raw) -> str:
     from v2.adapters import CAPABILITIES
     executable = set(CAPABILITIES) | {"web_search", "web_fetch"}
     return raw if raw in executable else "tool"
-
 
 def _tool_call_data(name: str, arguments) -> dict:
     from v2.api.activity import ToolCallData
@@ -1519,7 +1434,6 @@ def _tool_call_data(name: str, arguments) -> dict:
         argument_count=argument_count,
         unknown_argument_count=unknown_argument_count,
     ).model_dump(mode="json")
-
 
 def _safe_buffered_event(event):
     from v2.api.activity import ToolCallData
@@ -1551,7 +1465,6 @@ def _safe_buffered_event(event):
             status="error" if status == "failed" else status)
     return None
 
-
 def _stream_binding_diagnostics(result, diagnostics: bool) -> list[str]:
     from v2.api.events import BindingDiagnostic
     from v2.api.sse import encode_event
@@ -1562,7 +1475,6 @@ def _stream_binding_diagnostics(result, diagnostics: bool) -> list[str]:
         encode_event(BindingDiagnostic.model_validate(item), diagnostics=True)
         for item in result.binding_diagnostics
     ]
-
 
 def _stream_run_diagnostic(exc, run_id, last_stage, diagnostics: bool) -> list[str]:
     from v2.api.events import RunDiagnostic
@@ -1579,7 +1491,6 @@ def _stream_run_diagnostic(exc, run_id, last_stage, diagnostics: bool) -> list[s
             last_stage=last_stage,
         ), diagnostics=True)
     ]
-
 
 async def _drain_run(
     task: "asyncio.Task",
@@ -1600,11 +1511,9 @@ async def _drain_run(
     await asyncio.wait_for(_drain_until_done(), timeout=timeout_s)
     return buffered
 
-
 @router.post("/v2/chat/stream")
 async def chat_stream_post(request: Request, body: QuickAnswerBody):
     return await _guarded_chat_stream(request, body)
-
 
 @router.get("/v2/chat/stream")
 async def chat_stream_get(
@@ -1615,7 +1524,6 @@ async def chat_stream_get(
     client: str | None = Query(None),
     diagnostics: bool = Query(False),
 ):
-
 
     conversation_client = (
         (client or request.headers.get("x-dime-client") or None)
@@ -1633,7 +1541,6 @@ async def chat_stream_get(
         ),
     )
 
-
 async def _guarded_chat_stream(request: Request, body: QuickAnswerBody):
     if not _chat_allowed(_client_ip(request)):
         return _rate_limited_stream()
@@ -1641,9 +1548,7 @@ async def _guarded_chat_stream(request: Request, body: QuickAnswerBody):
     response.body_iterator = with_heartbeat(response.body_iterator)
     return response
 
-
 _CHAT_HITS: dict[str, list[float]] = defaultdict(list)
-
 
 def _chat_allowed(ip: str) -> bool:
     from shared.config import settings
@@ -1656,10 +1561,8 @@ def _chat_allowed(ip: str) -> bool:
     window.append(now)
     return True
 
-
 def _client_ip(request: Request) -> str:
     return request.client.host if request.client else "unknown"
-
 
 def _rate_limited_stream():
     from fastapi.responses import StreamingResponse
@@ -1669,7 +1572,6 @@ def _rate_limited_stream():
         yield encode_raw("graph_end", {})
 
     return StreamingResponse(limited(), media_type="text/event-stream")
-
 
 async def quick_answer_stream(body: QuickAnswerBody):
     _require_projects()
@@ -1827,7 +1729,6 @@ async def quick_answer_stream(body: QuickAnswerBody):
 
     async def generate():
 
-
         if body.thread is not None and body.client is not None:
             from shared import store
             store.save_chat(body.thread, "human", body.q[:2000],
@@ -1841,7 +1742,6 @@ async def quick_answer_stream(body: QuickAnswerBody):
             body.q, run_id=run_id, context=context))
         try:
             try:
-
 
                 buffered_events = await _drain_run(
                     task, queue, settings.dime_v2_run_timeout_s)
@@ -1937,7 +1837,6 @@ async def quick_answer_stream(body: QuickAnswerBody):
                                 body.client, body.thread, branch.branch_id,
                                 parent_evidence)
                     if answer:
-
 
                         from shared import store
                         store.save_chat(body.thread, "ai", answer,

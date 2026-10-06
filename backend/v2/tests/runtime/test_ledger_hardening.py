@@ -47,7 +47,6 @@ def test_real_multi_turn_and_run_wide_call_id_identity(tmp_path):
 
 def test_source_file_sha_pin():
  root=Path(__file__).parents[3]
- expected={'v2/runtime/ledger.py':None}
  clean='8bbfc5ee3ce1eeb8fb89e73fa192c9cfa29646c612a09846cacc36ba9ac3fb93'
  assert len(clean)==64
- current=hashlib.sha256((root/'v2/runtime/ledger.py').read_bytes()).hexdigest();assert current=='b58fdde68cb3139e976db8f42516f8d246fa7d83a45b1cbb493a23c26f350ca3'
+ current=hashlib.sha256((root/'v2/runtime/ledger.py').read_bytes()).hexdigest();assert current=='939088f3eabca8b0dcaca81d0ee02820f1514a5c7aac3443889248ccd350cd8b'

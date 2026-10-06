@@ -17,13 +17,11 @@ HEADERS = {
 
 TEAM_ABBR = {"BRK": "BKN", "CHO": "CHA", "PHO": "PHX"}
 
-
 def _fold(name: str) -> str:
     return "".join(
         c for c in unicodedata.normalize("NFKD", str(name or ""))
         if not unicodedata.combining(c)
     ).strip()
-
 
 def _get(url: str) -> str:
     import httpx

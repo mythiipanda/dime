@@ -5,7 +5,6 @@ from v2.runtime.loop import _verification_gaps, _verified_claims
 from v2.runtime.models import ExecutionResult
 from v2.contracts import Plan, PlanNode, TaskSpec
 
-
 def verified(draft, report, evidence=None):
     evidence = evidence or {}
     plan = Plan(nodes=[PlanNode(id=f"n{index}", description="facts",
@@ -20,7 +19,6 @@ def verified(draft, report, evidence=None):
         execution, draft, report, evidence)
     assert gaps == []
     return claims
-
 
 def test_adjudication_keeps_model_prose_and_marks_supported_claims():
     draft = DraftReport(sections=["Answer"], claims=[
@@ -38,7 +36,6 @@ def test_adjudication_keeps_model_prose_and_marks_supported_claims():
     assert gaps[0].kind == "unsupported_claim"
     assert gaps[0].evidence_ids == ["ev"]
     assert gaps[0].blocks == ["claim:1"]
-
 
 def test_verified_claim_carries_per_claim_provenance_for_mixed_sources():
     from datetime import UTC, datetime
@@ -69,7 +66,6 @@ def test_verified_claim_carries_per_claim_provenance_for_mixed_sources():
     assert claims[1].sources[0].source.startswith("fallback:")
     assert claims[0].sources != claims[1].sources
 
-
 def test_execution_errors_surface_as_typed_gaps() -> None:
     draft = DraftReport(sections=["Trade"], claims=[])
     report = VerificationReport(status="partial")
@@ -82,14 +78,12 @@ def test_execution_errors_surface_as_typed_gaps() -> None:
     assert gaps[0].message == "execution failed for salary"
     assert gaps[0].blocks == ["node:salary"]
 
-
 def test_pass_status_without_claim_adjudication_publishes_nothing() -> None:
     draft = DraftReport(sections=["Answer"], claims=[
         Claim(text="Boston won 61 games.", kind="observed", evidence_ids=["ev"]),
     ])
     report = VerificationReport(status="pass", claim_results=[])
     assert verified(draft, report) == []
-
 
 def test_runtime_result_rejects_mismatched_verified_claim() -> None:
     import pytest
@@ -113,7 +107,6 @@ def test_runtime_result_rejects_mismatched_verified_claim() -> None:
                 claim_index=0, claim=draft.claims[0], evidence_ids=["ev"]),
             ],
         )
-
 
 def test_runtime_result_rejects_forged_claim_source() -> None:
     import pytest
@@ -149,7 +142,6 @@ def test_runtime_result_rejects_forged_claim_source() -> None:
             )],
         )
 
-
 def test_runtime_result_rejects_verified_claim_with_unknown_execution_evidence() -> None:
     import pytest
     from pydantic import ValidationError
@@ -172,7 +164,6 @@ def test_runtime_result_rejects_verified_claim_with_unknown_execution_evidence()
             )],
         )
 
-
 def test_runtime_result_rejects_gap_with_unknown_evidence() -> None:
     import pytest
     from pydantic import ValidationError
@@ -189,7 +180,6 @@ def test_runtime_result_rejects_gap_with_unknown_evidence() -> None:
                       evidence_ids=["invented"])],
         )
 
-
 def test_empty_execution_evidence_becomes_a_cited_typed_gap() -> None:
     from datetime import UTC, datetime
     from v2.contracts import EvidenceEnvelope
@@ -204,7 +194,6 @@ def test_empty_execution_evidence_becomes_a_cited_typed_gap() -> None:
     assert gaps[0].kind == "missing_evidence"
     assert gaps[0].evidence_ids == ["search:none"]
     assert gaps[0].message == "web_search returned no evidence values"
-
 
 def test_runtime_result_rejects_adjudication_outside_draft() -> None:
     import pytest
@@ -221,7 +210,6 @@ def test_runtime_result_rejects_adjudication_outside_draft() -> None:
                 ClaimResult(claim_index=7, supported=True),
             ]),
         )
-
 
 def test_runtime_result_rejects_gap_with_unknown_structured_block() -> None:
     import pytest
@@ -240,7 +228,6 @@ def test_runtime_result_rejects_gap_with_unknown_structured_block() -> None:
             RuntimeResult(**base, gaps=[Gap(
                 kind="missing_evidence", message="missing", blocks=[block])])
 
-
 def test_runtime_result_rejects_missing_verified_supported_claim() -> None:
     import pytest
     from pydantic import ValidationError
@@ -257,7 +244,6 @@ def test_runtime_result_rejects_missing_verified_supported_claim() -> None:
                 ClaimResult(claim_index=0, supported=True)]),
             verified_claims=[],
         )
-
 
 def test_runtime_result_rejects_task_scoped_evidence_from_wrong_season() -> None:
     import pytest
@@ -280,7 +266,6 @@ def test_runtime_result_rejects_task_scoped_evidence_from_wrong_season() -> None
             execution=execution, draft=DraftReport(sections=[], claims=[]),
             verification=VerificationReport(status="partial"))
 
-
 def test_runtime_result_rejects_pass_with_partial_publication_state() -> None:
     import pytest
     from pydantic import ValidationError
@@ -296,7 +281,6 @@ def test_runtime_result_rejects_pass_with_partial_publication_state() -> None:
     with pytest.raises(ValidationError, match="publication state"):
         RuntimeResult(**base, gaps=[Gap(kind="missing_evidence", message="missing")])
 
-
 def test_runtime_result_rejects_partial_without_publication_gap() -> None:
     import pytest
     from pydantic import ValidationError
@@ -310,7 +294,6 @@ def test_runtime_result_rejects_partial_without_publication_gap() -> None:
             draft=DraftReport(sections=["Answer"], claims=[]),
             verification=VerificationReport(status="partial"),
         )
-
 
 def test_runtime_result_rejects_duplicate_typed_gaps() -> None:
     import pytest
@@ -328,7 +311,6 @@ def test_runtime_result_rejects_duplicate_typed_gaps() -> None:
             gaps=[gap, gap],
         )
 
-
 def test_unsupported_claim_gap_preserves_multiple_evidence_references() -> None:
     draft = DraftReport(sections=["Answer"], claims=[
         Claim(text="The comparison is conclusive.", kind="judgment",
@@ -345,13 +327,10 @@ def test_unsupported_claim_gap_preserves_multiple_evidence_references() -> None:
     assert gap.evidence_ids == ["stats", "salary"]
     assert gap.blocks == ["claim:0"]
 
-
 def test_output_status_matrix_and_projection_use_only_admitted_bindings():
     from types import SimpleNamespace
     from v2.api.routes import _answer_text
-    from v2.contracts import Gap
-    from v2.contracts import (EvidenceOutputBinding, EvidenceRequirement, Gap,
-                              VerifiedClaim)
+    from v2.contracts import (EvidenceOutputBinding, EvidenceRequirement, VerifiedClaim)
     from v2.runtime.models import build_output_statuses
     binding = EvidenceOutputBinding(requirement_id="record", output_id="WINS",
         node_id="facts", evidence_id="ev", selector="rows.WINS",
@@ -372,7 +351,6 @@ def test_output_status_matrix_and_projection_use_only_admitted_bindings():
     assert _answer_text(result) == "WINS = 61 (count)\nLOSSES could not be verified (missing)."
     assert "999" not in _answer_text(result)
 
-
 def test_projection_uses_canonical_gap_kind_not_untrusted_message():
     from types import SimpleNamespace
     from v2.api.routes import _answer_text
@@ -384,7 +362,6 @@ def test_projection_uses_canonical_gap_kind_not_untrusted_message():
     text = _answer_text(result)
     assert text == "Some requested data was unavailable."
     assert "SECRET" not in text
-
 
 def test_ratings_task_publishes_one_clean_label_and_row_per_metric():
     from datetime import UTC, datetime
@@ -458,12 +435,10 @@ def test_ratings_task_publishes_one_clean_label_and_row_per_metric():
     assert [item["output_id"] for item in tables] == metrics
     assert [item["value"] for item in tables] == ["9.6", "119.8", "110.2"]
 
-
 def test_four_typed_values_project_complete_without_fragments():
     from types import SimpleNamespace
     from v2.contracts import OutputFinalStatus, EvidenceOutputBinding
     from v2.api.routes import _answer_text
-    from v2.contracts import Gap
     values = [("ZERO",{"kind":"integer","value":0}),
               ("FLAG",{"kind":"boolean","value":False}),
               ("RATE",{"kind":"float","value":1.5}),
@@ -481,12 +456,9 @@ def test_four_typed_values_project_complete_without_fragments():
         "FLAG = false (unitless)", "RATE = 1.5 (unitless)",
         "EXACT = 0.123456789123456789 (unitless)"]
 
-
 def test_probe_five_abstains_without_admitted_output_authority():
     from types import SimpleNamespace
     from v2.api.routes import _answer_text
-    claims = [Claim(text=f"Unsupported prose {i}: 999", kind="judgment")
-              for i in range(5)]
     task = TaskSpec(goal="probe", mode="quick", deliverable="answer",
                     requested_outputs=["DECISION"])
     statuses = __import__('v2.runtime.models',fromlist=['build_output_statuses']).build_output_statuses(
@@ -495,7 +467,6 @@ def test_probe_five_abstains_without_admitted_output_authority():
     assert _answer_text(SimpleNamespace(output_statuses=statuses,gaps=[],verified_claims=[],
         execution=SimpleNamespace(evidence=[]))) == (
         "DECISION could not be verified (missing).")
-
 
 def test_mixed_branch_matrix_preserves_complete_and_missing():
     from v2.contracts import EvidenceOutputBinding, EvidenceRequirement, VerifiedClaim
@@ -511,7 +482,6 @@ def test_mixed_branch_matrix_preserves_complete_and_missing():
     matrix=build_output_statuses(task,[VerifiedClaim(claim_index=0,claim=claim,evidence_ids=["ev"],output_bindings=[binding])],[])
     assert [(x.requirement_id,x.status) for x in matrix]==[("record","complete"),("pace","missing")]
 
-
 def test_status_identity_must_match_binding_and_roundtrips():
     import json, pytest
     from v2.contracts import OutputFinalStatus, EvidenceOutputBinding
@@ -524,7 +494,6 @@ def test_status_identity_must_match_binding_and_roundtrips():
     assert OutputFinalStatus.model_validate_json(status.model_dump_json())==status
     payload=status.model_dump(mode="json");payload["output_id"]="LOSSES"
     with pytest.raises(Exception):OutputFinalStatus.model_validate_json(json.dumps(payload))
-
 
 def test_two_subjects_same_output_and_unit_are_self_contained():
     from types import SimpleNamespace
@@ -544,9 +513,7 @@ def test_two_subjects_same_output_and_unit_are_self_contained():
         "PTS [player:23] = 25 (points)",
         "PTS [player:30] = 30 (points)"]
 
-
 def test_calculation_projection_and_input_evidence_filtering():
-    from decimal import Decimal
     from types import SimpleNamespace
     from v2.api.routes import _answer_text, _public_evidence
     from v2.contracts import (OutputFinalStatus, CalculationOutputBinding,
@@ -567,7 +534,6 @@ def test_calculation_projection_and_input_evidence_filtering():
         EvidenceEnvelope(evidence_id="b",capability="player_report",source="b",observed_at=datetime.now(UTC),rows={"PTS":30})]))
     assert _answer_text(result)=="PTS_DELTA = -5 (points)"
     assert len(_public_evidence(result)[0]) == 2
-
 
 def test_public_evidence_projection_excludes_sibling_rows_and_metrics():
     from datetime import UTC, datetime
@@ -590,10 +556,8 @@ def test_public_evidence_projection_excludes_sibling_rows_and_metrics():
     encoded=str(_public_evidence(result)[0])
     assert "25" in encoded and "30" not in encoded and "AST" not in encoded and "curry" not in encoded
 
-
 def test_public_projection_rejects_stale_evidence_and_missing_calculation_input():
     import pytest
-    from copy import deepcopy
     from v2.api.routes import _public_evidence
     from types import SimpleNamespace
     from datetime import UTC, datetime
@@ -609,10 +573,8 @@ def test_public_projection_rejects_stale_evidence_and_missing_calculation_input(
                            execution=SimpleNamespace(evidence=[stale]))
     with pytest.raises(ValueError,match="changed"):_public_evidence(result)
 
-
 def test_calculation_projection_rejects_missing_and_ambiguous_inputs():
     import pytest
-    from decimal import Decimal
     from types import SimpleNamespace
     from datetime import UTC, datetime
     from v2.api.routes import _public_evidence
@@ -639,7 +601,6 @@ def test_calculation_projection_rejects_missing_and_ambiguous_inputs():
         execution=SimpleNamespace(evidence=[b]))
     with pytest.raises((ValueError,KeyError)):_public_evidence(missing_result)
 
-
 def test_buffered_event_projection_drops_secrets_and_internal_ids():
     from types import SimpleNamespace
     from v2.api.routes import _safe_buffered_event
@@ -649,7 +610,6 @@ def test_buffered_event_projection_drops_secrets_and_internal_ids():
     encoded=safe.model_dump_json()
     assert "SECRET" not in encoded and "internal-1" not in encoded
     assert '"node":"analytics"' in encoded
-
 
 def test_public_event_contract_closes_nodes_tools_and_work_log():
     from types import SimpleNamespace
@@ -662,7 +622,6 @@ def test_public_event_contract_closes_nodes_tools_and_work_log():
     assert "SECRET" not in encoded and "rows" not in encoded and "ms" not in encoded
     work=encode_event(WorkLog(run_id="run-"+"a"*32,status="complete"))
     assert '"run_id":"run-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"' in work
-
 
 def _seed_completed_season_boxscores(monkeypatch, tmp_path):
     import duckdb
@@ -716,7 +675,6 @@ def _seed_completed_season_boxscores(monkeypatch, tmp_path):
     connection.close()
     monkeypatch.setattr(store, "DB_PATH", warehouse)
     return warehouse
-
 
 def test_completed_season_assists_leader_publishes_count(monkeypatch, tmp_path):
     import asyncio
@@ -797,7 +755,6 @@ def test_completed_season_assists_leader_publishes_count(monkeypatch, tmp_path):
     assert text.splitlines()[0] == "Trae Young led the NBA with 880 assists in 2024-25."
     assert "AST = 880 (count)" not in text
 
-
 def _display_table(output_id, definitions=None, rows=None):
     from datetime import UTC, datetime
     from types import SimpleNamespace
@@ -818,7 +775,6 @@ def _display_table(output_id, definitions=None, rows=None):
         execution=SimpleNamespace(evidence=[envelope]))
     return _public_evidence(result)[0][0]
 
-
 def test_public_table_display_name_prefers_metric_definition_head():
     table = _display_table("EFG_PCT", definitions={
         "EFG_PCT": "Effective field-goal percentage: (FGM + 0.5 * FG3M) / FGA."},
@@ -826,13 +782,11 @@ def test_public_table_display_name_prefers_metric_definition_head():
     assert table["output_id"] == "EFG_PCT"
     assert table["display_name"] == "Effective field-goal percentage"
 
-
 def test_public_table_display_name_humanizes_bare_output_id():
     from v2.api.routes import _output_display_name
     assert _display_table("PPG")["display_name"] == "PPG"
     assert _display_table("PTS_DELTA")["display_name"] == "PTS DELTA"
     assert _output_display_name("ppg") == "PPG"
-
 
 def test_public_output_status_carries_display_name():
     from types import SimpleNamespace
@@ -845,7 +799,6 @@ def test_public_output_status_carries_display_name():
     status = OutputFinalStatus(requirement_kind="task", output_id="PTS",
         status="complete", claim_index=0, binding=binding)
     assert _public_output_status(SimpleNamespace(), status)["display_name"] == "PTS"
-
 
 def test_public_gaps_plumb_blocks():
     from types import SimpleNamespace

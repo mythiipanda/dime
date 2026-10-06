@@ -11,9 +11,9 @@ HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 sys.path.insert(0, str(HERE.parent))
 
-from shared import store  # noqa: E402
-from shared.sources import bbref_awards as src  # noqa: E402
-from shared.sources.base import FetchMeta, FetchResult  # noqa: E402
+from shared import store
+from shared.sources import bbref_awards as src
+from shared.sources.base import FetchMeta, FetchResult
 
 TABLE = "silver_bbref_awards"
 PROGRESS_FILE = HERE / "seed_bbref_awards_progress.json"
@@ -21,10 +21,8 @@ LOG_FILE = HERE / "seed_bbref_awards.log"
 SEASON_SHAPE = re.compile(r"^\d{4}-\d{2}$")
 CONSECUTIVE_FAILURE_LIMIT = 3
 
-
 class SeasonPlanError(RuntimeError):
     pass
-
 
 def log(message: str) -> None:
     line = f"{datetime.now().isoformat(timespec='seconds')} {message}"
@@ -32,16 +30,13 @@ def log(message: str) -> None:
     with open(LOG_FILE, "a") as handle:
         handle.write(line + "\n")
 
-
 def entity_for(season: str) -> str:
     return f"season:{season}"
-
 
 def load_progress(progress_file: Path = PROGRESS_FILE) -> dict:
     if progress_file.exists():
         return json.loads(progress_file.read_text())
     return {"done": [], "failed": {}}
-
 
 def mark_done(progress_file: Path, season: str) -> None:
     state = load_progress(progress_file)
@@ -50,19 +45,16 @@ def mark_done(progress_file: Path, season: str) -> None:
     state["failed"].pop(season, None)
     progress_file.write_text(json.dumps(state, indent=1))
 
-
 def mark_failed(progress_file: Path, season: str, reason: str) -> None:
     state = load_progress(progress_file)
     state["failed"][season] = str(reason)[:300]
     state["done"] = [done for done in state["done"] if done != season]
     progress_file.write_text(json.dumps(state, indent=1))
 
-
 def pending_seasons(seasons: list[str],
                     progress_file: Path = PROGRESS_FILE) -> list[str]:
     done = set(load_progress(progress_file)["done"])
     return [season for season in seasons if season not in done]
-
 
 def warehouse_seasons(con) -> list[str]:
     found: set[str] = set()
@@ -79,7 +71,6 @@ def warehouse_seasons(con) -> list[str]:
             if value and SEASON_SHAPE.fullmatch(str(value)):
                 found.add(str(value))
     return sorted(found)
-
 
 def plan_seasons(published: list[int], from_season: str = "",
                  to_season: str = "") -> list[str]:
@@ -107,12 +98,10 @@ def plan_seasons(published: list[int], from_season: str = "",
             f"{len(years)} warehouse seasons, {len(published)} published)")
     return planned
 
-
 def save_rows(season: str, rows: pl.DataFrame) -> int:
     result = FetchResult(frame=rows,
                          meta=FetchMeta(source=src.SOURCE, season=season))
     return store.save_frame(TABLE, result, entity=entity_for(season))
-
 
 def seed_season(season: str, transport=None, min_interval_s: float = 0.0,
                 progress_file: Path | None = None,
@@ -131,7 +120,6 @@ def seed_season(season: str, transport=None, min_interval_s: float = 0.0,
         mark_done(progress_file, season)
     log(f"{season}: {written} rows from {src.season_url(year)}")
     return written
-
 
 def main(argv: list[str]) -> int:
     args = argv[1:]
@@ -199,10 +187,8 @@ def main(argv: list[str]) -> int:
         return 1
     return 0
 
-
 def _flag(args: list[str], name: str) -> str | None:
     return args[args.index(name) + 1] if name in args else None
-
 
 if __name__ == "__main__":
     raise SystemExit(main(sys.argv))

@@ -13,13 +13,11 @@ from shared import store
 
 URL = "https://raw.githubusercontent.com/coder-data/NBA-Stats-Salaries-2024-2025/main/NBA%20Salaries%202024-2025.csv"
 
-
 def _fold(name: str) -> str:
     return "".join(
         c for c in unicodedata.normalize("NFKD", str(name or ""))
         if not unicodedata.combining(c)
     ).strip().upper()
-
 
 def load_mapping() -> dict[str, str]:
     r = httpx.get(URL, timeout=60, follow_redirects=True)
@@ -45,7 +43,6 @@ def load_mapping() -> dict[str, str]:
             continue
         mapping[_fold(name)] = tm
     return mapping
-
 
 def main() -> None:
     from datetime import datetime, timezone
@@ -82,7 +79,6 @@ def main() -> None:
         print(f"csv_players={len(mapping)} matched={matched} overridden={overridden}")
     finally:
         con.close()
-
 
 if __name__ == "__main__":
     main()

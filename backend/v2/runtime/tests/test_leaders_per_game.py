@@ -39,11 +39,9 @@ _SECOND = ("Beta Guard", "BBB", 900002, 70, 500)
 _NO_GAMES = ("Gamma Guard", "CCC", 900003, 0, 250)
 _BOARD = (_LEADER, _SECOND, _NO_GAMES)
 
-
 @pytest.fixture()
 def anyio_backend():
     return "asyncio"
-
 
 @pytest.fixture()
 def leaders_warehouse(monkeypatch, tmp_path):
@@ -75,11 +73,9 @@ def leaders_warehouse(monkeypatch, tmp_path):
     yield warehouse
     league._clear_warehouse_schema_cache()
 
-
 def _envelope(metric="AST"):
     return call_capability(
         "qualified_leaders", {"stat_category": metric, "season": _SEASON})
-
 
 def _binding(output_id, leaf, value, unit, *, row=0, subject=_LEADER,
              subject_selector=None):
@@ -99,16 +95,13 @@ def _binding(output_id, leaf, value, unit, *, row=0, subject=_LEADER,
         domain="qualified_leaders",
     )
 
-
 def _counted(output_id, leaf, total, **kwargs):
     return _binding(output_id, leaf, {"kind": "integer", "value": total},
                     COUNT, **kwargs)
 
-
 def _per_game_binding(output_id, leaf, rate, unit=PER_GAME, **kwargs):
     return _binding(output_id, leaf, {"kind": "float", "value": rate},
                     unit, **kwargs)
-
 
 def _task(outputs, entity=_LEADER):
     return TaskSpec(
@@ -127,7 +120,6 @@ def _task(outputs, entity=_LEADER):
             requested_outputs=list(outputs))],
     )
 
-
 def _execution(envelope):
     return ExecutionResult(
         plan=Plan(nodes=[PlanNode(
@@ -139,7 +131,6 @@ def _execution(envelope):
         evidence_by_node={_NODE_ID: envelope},
         attempts={_NODE_ID: 1},
     )
-
 
 def _verified(envelope, bindings, claim_text="leader line"):
     stamped = [binding.model_copy(update={"evidence_id": envelope.evidence_id})
@@ -158,13 +149,11 @@ def _verified(envelope, bindings, claim_text="leader line"):
         output_bindings=stamped)
     return draft, verified
 
-
 def _admit(envelope, bindings, outputs, entity=_LEADER):
     task = _task(outputs, entity)
     execution = _execution(envelope)
     draft, verified = _verified(envelope, bindings)
     return admit_verified_claim_bindings(task, execution, draft, verified)
-
 
 def _publish(envelope, bindings, outputs):
     task = _task(outputs)
@@ -184,7 +173,6 @@ def _publish(envelope, bindings, outputs):
               for row in statuses}
     return admitted, gaps, by_key, answer
 
-
 @pytest.mark.parametrize("metric", _COUNTING_METRICS)
 def test_counting_leader_row_carries_its_own_per_game_companion(
         leaders_warehouse, metric):
@@ -195,13 +183,11 @@ def test_counting_leader_row_carries_its_own_per_game_companion(
     assert envelope.rows[1][f"{metric}_PER_GAME"] == pytest.approx(
         round(_SECOND[4] / _SECOND[3], 1))
 
-
 def test_envelope_units_carry_every_ranked_counting_companion(
         leaders_warehouse):
     assert _envelope().units["GP"] == COUNT
     for metric in _COUNTING_METRICS:
         assert _envelope(metric).units[f"{metric}_PER_GAME"] == PER_GAME
-
 
 def test_every_counting_leader_metric_declares_a_per_game_companion():
     units = CAPABILITIES["qualified_leaders"].units
@@ -211,7 +197,6 @@ def test_every_counting_leader_metric_declares_a_per_game_companion():
     assert companions
     assert {key.removesuffix("_PER_GAME") for key in companions} == counted
 
-
 @pytest.mark.parametrize("unit", ["per_game", "per game"])
 def test_per_game_companion_unit_admits_the_binding(leaders_warehouse, unit):
     envelope = _envelope()
@@ -220,13 +205,11 @@ def test_per_game_companion_unit_admits_the_binding(leaders_warehouse, unit):
     admitted = _admit(envelope, [binding], ["ASSIST_PER_GAME"])
     assert admitted.output_bindings[0].value.value == pytest.approx(11.6)
 
-
 def test_per_game_companion_of_another_stat_is_rejected(leaders_warehouse):
     envelope = _envelope()
     binding = _per_game_binding("ASSIST_PER_GAME", "REB_PER_GAME", 3.1)
     with pytest.raises(ValueError, match="selector metric does not match"):
         _admit(envelope, [binding], ["ASSIST_PER_GAME"])
-
 
 def test_leader_answer_publishes_total_games_and_per_game(leaders_warehouse):
     envelope = _envelope()
@@ -247,7 +230,6 @@ def test_leader_answer_publishes_total_games_and_per_game(leaders_warehouse):
     assert [gap for gap in gaps if gap.blocks] == []
     assert "Some requested outputs could not be published." not in answer
 
-
 def test_per_game_companion_read_off_another_row_is_rejected(leaders_warehouse):
     envelope = _envelope()
     binding = _per_game_binding(
@@ -255,7 +237,6 @@ def test_per_game_companion_read_off_another_row_is_rejected(leaders_warehouse):
         subject_selector="rows[1].PLAYER_ID")
     with pytest.raises(ValueError, match="row does not match subject"):
         _admit(envelope, [binding], ["ASSIST_PER_GAME"])
-
 
 def test_zero_game_row_yields_no_per_game_companion(leaders_warehouse):
     envelope = _envelope()
@@ -267,11 +248,9 @@ def test_zero_game_row_yields_no_per_game_companion(leaders_warehouse):
     with pytest.raises(ValueError, match="exactly one value"):
         _admit(envelope, [binding], ["ASSIST_PER_GAME"], entity=_NO_GAMES)
 
-
 class _RuntimeIntake:
     async def understand(self, request):
         return _task(["AST", "GAMES", "ASSIST_PER_GAME"])
-
 
 class _RuntimePlanner:
     async def plan(self, task):
@@ -280,7 +259,6 @@ class _RuntimePlanner:
             capability_hints=["qualified_leaders"],
             covers_requirement_ids=[_REQUIREMENT_ID],
             arguments={"stat_category": "AST", "season": _SEASON})])
-
 
 class _RuntimeSynthesizer:
     async def synthesize(self, task, evidence):
@@ -298,7 +276,6 @@ class _RuntimeSynthesizer:
             kind="observed", evidence_ids=[envelope.evidence_id],
             output_bindings=bindings)])
 
-
 class _RuntimeSemantic:
     async def verify(self, task, draft, evidence):
         return VerificationReport(
@@ -306,7 +283,6 @@ class _RuntimeSemantic:
             claim_results=[{"claim_index": index, "supported": True,
                             "reasons": []}
                            for index, _claim in enumerate(draft.claims)])
-
 
 @pytest.mark.anyio
 async def test_runtime_publishes_total_games_and_per_game(leaders_warehouse):

@@ -26,9 +26,7 @@ from v2.runtime.models import (
     build_output_statuses,
 )
 
-
 _NODE_ID = "leaders"
-
 
 def _leader_rows():
     return [
@@ -50,7 +48,6 @@ def _leader_rows():
         },
     ]
 
-
 def _warehouse_meta():
     return {
         "source": "warehouse",
@@ -58,7 +55,6 @@ def _warehouse_meta():
         "warehouse_id": "frozen-eval",
         "warehouse_sha256": "a" * 64,
     }
-
 
 def _envelope(rows=None):
     return build_envelope(
@@ -70,14 +66,11 @@ def _envelope(rows=None):
         observed_at=datetime.now(UTC),
     )
 
-
 def _trae():
     return EntityRef(id="1629027", type="player", display_name="Trae Young")
 
-
 def _jokic():
     return EntityRef(id="1628369", type="player", display_name="Nikola Jokic")
-
 
 def _requirement(requirement_id, outputs):
     return EvidenceRequirement(
@@ -86,7 +79,6 @@ def _requirement(requirement_id, outputs):
         capability_options=["qualified_leaders"],
         requested_outputs=list(outputs),
     )
-
 
 def _task(entities, requirements, outputs):
     return TaskSpec(
@@ -98,7 +90,6 @@ def _task(entities, requirements, outputs):
         entities=list(entities),
         requirements=list(requirements),
     )
-
 
 def _binding(output_id, value, requirement_id, row, subject_id, subject_name,
              node_id=_NODE_ID):
@@ -125,7 +116,6 @@ def _binding(output_id, value, requirement_id, row, subject_id, subject_name,
         domain="qualified_leaders",
     )
 
-
 def _q1_bindings(envelope, node_id=_NODE_ID):
     return [
         binding.model_copy(update={"evidence_id": envelope.evidence_id})
@@ -137,7 +127,6 @@ def _q1_bindings(envelope, node_id=_NODE_ID):
         )
     ]
 
-
 def _node(covers):
     return PlanNode(
         id=_NODE_ID,
@@ -147,7 +136,6 @@ def _node(covers):
         status="complete",
     )
 
-
 def _execution(envelope, node):
     return ExecutionResult(
         plan=Plan(nodes=[node]),
@@ -155,13 +143,11 @@ def _execution(envelope, node):
         attempts={node.id: 1},
     )
 
-
 def _report():
     return VerificationReport(
         status="pass",
         claim_results=[{"claim_index": 0, "supported": True, "reasons": []}],
     )
-
 
 def _claim(bindings, evidence_id):
     return Claim(
@@ -170,7 +156,6 @@ def _claim(bindings, evidence_id):
         evidence_ids=[evidence_id],
         output_bindings=list(bindings),
     )
-
 
 def _admitted(task, execution, envelope, bindings):
     claim = _claim(bindings, envelope.evidence_id)
@@ -183,7 +168,6 @@ def _admitted(task, execution, envelope, bindings):
         for row in statuses
     }
 
-
 def _answer(task, execution, envelope, bindings):
     claims, gaps, by_key = _admitted(task, execution, envelope, bindings)
     result = SimpleNamespace(
@@ -191,7 +175,6 @@ def _answer(task, execution, envelope, bindings):
         verified_claims=claims,
         draft=DraftReport(sections=["Assists leader"], claims=[]))
     return _answer_text(result)
-
 
 def test_evidence_only_q1_bindings_own_task_outputs():
     envelope = _envelope()
@@ -207,7 +190,6 @@ def test_evidence_only_q1_bindings_own_task_outputs():
     assert by_key[("task", None, "AST")].status == "complete"
     assert by_key[("task", None, "AST")].binding.value.value == 880
 
-
 def test_binding_naming_a_requirement_instead_of_the_plan_node_still_owns_task_outputs():
     envelope = _envelope()
     task = _task([], [_requirement("player_assists_leader",
@@ -218,7 +200,6 @@ def test_binding_naming_a_requirement_instead_of_the_plan_node_still_owns_task_o
 
     assert _answer(task, execution, envelope, bindings).splitlines() == [
         "Trae Young led the NBA with 880 assists in 2024-25."]
-
 
 def test_league_scoped_task_outputs_own_the_leader_the_envelope_carries():
     envelope = _envelope()
@@ -235,7 +216,6 @@ def test_league_scoped_task_outputs_own_the_leader_the_envelope_carries():
     assert by_key[("task", None, "AST")].status == "complete"
     assert _answer(task, execution, envelope, bindings).splitlines() == [
         "Trae Young led the NBA with 880 assists in 2024-25."]
-
 
 def test_competing_evidence_subjects_leave_task_output_missing():
     envelope = _envelope()
@@ -259,7 +239,6 @@ def test_competing_evidence_subjects_leave_task_output_missing():
     assert by_key[("evidence", "leaders_b", "PLAYER_NAME")].status == "complete"
     assert by_key[("task", None, "PLAYER_NAME")].status == "missing"
 
-
 def test_competing_evidence_subjects_publish_without_claiming_the_metric_is_missing():
     envelope = _envelope()
     task = _task([_trae(), _jokic()],
@@ -279,7 +258,6 @@ def test_competing_evidence_subjects_publish_without_claiming_the_metric_is_miss
 
     assert _answer(task, execution, envelope, bindings).splitlines() == [
         "Trae Young led the NBA with 880 assists in 2024-25."]
-
 
 def test_propagated_task_binding_passes_admission_authority():
     envelope = _envelope()
@@ -313,7 +291,6 @@ def test_propagated_task_binding_passes_admission_authority():
     readmitted = admit_verified_claim_bindings(task, execution, draft, verified)
     assert len(readmitted.output_bindings) == 4
 
-
 def test_preexisting_task_binding_is_not_duplicated():
     envelope = _envelope()
     task = _task([_trae()], [_requirement("player_assists_leader",
@@ -331,7 +308,6 @@ def test_preexisting_task_binding_is_not_duplicated():
     assert by_key[("task", None, "PLAYER_NAME")].binding.requirement_id is None
     assert by_key[("task", None, "AST")].status == "complete"
 
-
 _RATINGS_NODE = "ratings"
 _RATINGS_REQUIREMENT = "ratings_2024_25"
 _RATINGS_ALTERNATE = "ratings_alternate"
@@ -339,11 +315,9 @@ _RATINGS_UNIT = "points_per_100_possessions"
 _RATINGS_TEAM_ID = "9001"
 _RATINGS_VALUES = {"NET_RATING": 9.4, "OFF_RATING": 118.2, "DEF_RATING": 108.8}
 
-
 def _ratings_team():
     return EntityRef(id=_RATINGS_TEAM_ID, type="team",
                      display_name="Sample Athletic")
-
 
 def _ratings_envelope():
     return build_envelope(
@@ -358,7 +332,6 @@ def _ratings_envelope():
         observed_at=datetime.now(UTC),
     )
 
-
 def _ratings_requirement(requirement_id, outputs):
     return EvidenceRequirement(
         id=requirement_id,
@@ -367,7 +340,6 @@ def _ratings_requirement(requirement_id, outputs):
         capability_arguments={"team": _RATINGS_TEAM_ID},
         requested_outputs=list(outputs),
     )
-
 
 def _ratings_task(requirements=None):
     return TaskSpec(
@@ -381,7 +353,6 @@ def _ratings_task(requirements=None):
             _ratings_requirement(_RATINGS_REQUIREMENT, _RATINGS_VALUES)]),
     )
 
-
 def _ratings_node(covers):
     return PlanNode(
         id=_RATINGS_NODE,
@@ -391,7 +362,6 @@ def _ratings_node(covers):
         arguments={"season": "2024-25", "team": _RATINGS_TEAM_ID},
         status="complete",
     )
-
 
 def _ratings_task_bindings(envelope, output_ids=_RATINGS_VALUES):
     return [
@@ -412,7 +382,6 @@ def _ratings_task_bindings(envelope, output_ids=_RATINGS_VALUES):
         )
         for name in output_ids
     ]
-
 
 def _ratings_run(task, node_covers, bindings=None, output_ids=_RATINGS_VALUES):
     envelope = _ratings_envelope()
@@ -441,10 +410,8 @@ def _ratings_run(task, node_covers, bindings=None, output_ids=_RATINGS_VALUES):
         for row in (_public_output_status(result, item) for item in statuses)
     }
 
-
 def _ratings_carry(node_covers=(_RATINGS_REQUIREMENT,), task=None):
     return _ratings_run(task or _ratings_task(), node_covers)
-
 
 def test_task_level_bindings_also_satisfy_the_requirement_that_requests_them():
     carry = _ratings_carry()
@@ -454,7 +421,6 @@ def test_task_level_bindings_also_satisfy_the_requirement_that_requests_them():
         assert requirement_row["status"] == "complete"
         assert requirement_row["value"] == str(value)
         assert requirement_row["requirement_id"] == _RATINGS_REQUIREMENT
-
 
 def test_requirement_rows_publish_the_same_authority_as_the_task_row():
     carry = _ratings_carry()
@@ -467,14 +433,12 @@ def test_requirement_rows_publish_the_same_authority_as_the_task_row():
         assert requirement_row["subject_id"] == task_row["subject_id"]
         assert requirement_row["subject_type"] == task_row["subject_type"] == "team"
 
-
 def test_requirement_the_task_binding_cannot_authorize_stays_missing():
     carry = _ratings_carry(node_covers=())
 
     assert carry[("task", None, "NET_RATING")]["status"] == "complete"
     assert carry[("evidence", _RATINGS_REQUIREMENT,
                   "NET_RATING")]["status"] == "missing"
-
 
 def test_requirement_requesting_only_one_output_leaves_the_others_task_owned():
     task = _ratings_task(requirements=[
@@ -486,7 +450,6 @@ def test_requirement_requesting_only_one_output_leaves_the_others_task_owned():
     assert carry[("task", None, "OFF_RATING")]["status"] == "complete"
     assert ("evidence", _RATINGS_REQUIREMENT, "OFF_RATING") not in carry
     assert ("evidence", _RATINGS_REQUIREMENT, "DEF_RATING") not in carry
-
 
 def test_every_requirement_requesting_the_output_is_satisfied_by_it():
     task = _ratings_task(requirements=[
@@ -505,11 +468,9 @@ def test_every_requirement_requesting_the_output_is_satisfied_by_it():
             == "complete"
     assert carry[("task", None, "NET_RATING")]["status"] == "complete"
 
-
 class _StubModel:
     def __init__(self, payloads):
         self._payloads = list(payloads)
-
 
 def _bos_task():
     return TaskSpec(
@@ -527,7 +488,6 @@ def _bos_task():
             requested_outputs=["NET_RATING", "OFF_RATING", "DEF_RATING"],
         )],
     )
-
 
 def test_planner_narrows_team_ratings_node_to_subject_team():
     from v2.adapters.models import ModelPlanner
@@ -565,7 +525,6 @@ def test_planner_narrows_team_ratings_node_to_subject_team():
     assert result["rows"][0]["DEF_RATING"] == 108.8
     assert result["rows"][0]["NET_RATING"] == 9.4
 
-
 def _best_defense_task():
     from v2.contracts import CalculationRequirement
     return TaskSpec(
@@ -598,7 +557,6 @@ def _best_defense_task():
         required_evidence=["team_ratings"],
     )
 
-
 def _best_defense_envelope():
     from v2.contracts import EvidenceEnvelope
     return EvidenceEnvelope(
@@ -623,7 +581,6 @@ def _best_defense_envelope():
         ],
     )
 
-
 def _best_defense_execution(envelope):
     node = PlanNode(
         id="team_defensive_rating_node",
@@ -640,7 +597,6 @@ def _best_defense_execution(envelope):
         evidence_by_node={node.id: envelope},
         attempts={node.id: 1},
     )
-
 
 def test_entityless_best_defense_rank_draft_owns_nine_outputs():
     from v2.adapters.models import _deterministic_rank_draft

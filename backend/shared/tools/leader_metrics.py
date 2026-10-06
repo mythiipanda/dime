@@ -5,10 +5,8 @@ COUNTING_METRICS = (
 
 PER_GAME_SUFFIX = "_PER_GAME"
 
-
 def per_game_column(metric: str) -> str:
     return f"{metric}{PER_GAME_SUFFIX}"
-
 
 def per_game_value(total, games):
     if isinstance(total, bool) or isinstance(games, bool):

@@ -1,13 +1,12 @@
 from __future__ import annotations
 import hashlib,json
-from typing import Any,Literal
+from typing import Literal
 from pydantic import BaseModel,ConfigDict,Field,StrictInt
-from v2.arguments import TaskSpecV3,PlanV3,PlannerArguments
+from v2.arguments import TaskSpecV3,PlanV3
 class Closed(BaseModel):model_config=ConfigDict(extra='forbid')
 class ContractIdentity(Closed):argument_contract_version:Literal[3]=3;schema_sha256:str=Field(pattern=r'^[0-9a-f]{64}$');catalog_sha256:str=Field(pattern=r'^[0-9a-f]{64}$')
 class OriginIdentity(Closed):origin_version:Literal[2,3];origin_content_sha256:str=Field(pattern=r'^[0-9a-f]{64}$');request_context_hash:str=Field(pattern=r'^[0-9a-f]{64}$')
 class CheckpointV3(Closed):version:Literal[3]=3;run_id:str;contract:ContractIdentity;origin:OriginIdentity;task:TaskSpecV3;plan:PlanV3;evidence_by_node:dict[str,dict]=Field(default_factory=dict,max_length=32);attempts:dict[str,StrictInt]=Field(default_factory=dict,max_length=32);errors:dict[str,list[str]]=Field(default_factory=dict,max_length=32);error_codes:dict[str,list[str]]=Field(default_factory=dict,max_length=32)
-class ToolCallPayloadV3(Closed):payload_contract_version:Literal[3]=3;capability:str;arguments:PlannerArguments;argument_schema_sha256:str=Field(pattern=r'^[0-9a-f]{64}$')
 class PersistenceError(ValueError):
  def __init__(self,code):self.code=code;super().__init__(code)
 def inspect_checkpoint_version(raw):

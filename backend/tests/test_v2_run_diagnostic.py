@@ -9,9 +9,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from v2.api import routes
 from v2.api.sse import encode_event
 
-
 FAIL_MESSAGE = "boom-after-replan"
-
 
 def _install_stubs(monkeypatch, tmp_path):
     monkeypatch.setenv("DIME_RUNTIME_V2", "on")
@@ -79,13 +77,11 @@ def _install_stubs(monkeypatch, tmp_path):
         dime_v2_run_timeout_s=5.0,
         dime_v2_node_timeout_s=5.0))
 
-
 def _collect(body):
     async def drive():
         resp = await routes.quick_answer_stream(body)
         return [chunk async for chunk in resp.body_iterator]
     return asyncio.run(drive())
-
 
 def _parsed(chunks):
     out = []
@@ -95,7 +91,6 @@ def _parsed(chunks):
         payload = json.loads(rest.replace("data: ", "").strip())
         out.append((name, payload))
     return out
-
 
 def test_default_stream_carries_no_run_diagnostic(monkeypatch, tmp_path):
     _install_stubs(monkeypatch, tmp_path)
@@ -107,7 +102,6 @@ def test_default_stream_carries_no_run_diagnostic(monkeypatch, tmp_path):
     assert final["text"] == (
         "I could not verify a publishable answer from the available data. ")
     assert {"kind": "execution_failure", "blocks": []} in final["carry"]["gaps"]
-
 
 def test_diagnostics_stream_surfaces_run_diagnostic(monkeypatch, tmp_path):
     _install_stubs(monkeypatch, tmp_path)
@@ -124,7 +118,6 @@ def test_diagnostics_stream_surfaces_run_diagnostic(monkeypatch, tmp_path):
     assert final["text"] == (
         "I could not verify a publishable answer from the available data. ")
     assert {"kind": "execution_failure", "blocks": []} in final["carry"]["gaps"]
-
 
 def test_run_diagnostic_encode_event_gating():
     from v2.api.events import RunDiagnostic

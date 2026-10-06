@@ -5,7 +5,7 @@ from pathlib import Path
 BACKEND = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(BACKEND))
 
-from evals.schema_conformance import (  # noqa: E402
+from evals.schema_conformance import (
     SchemaConformanceError,
     ConformanceReport,
     EndpointConfig,
@@ -26,7 +26,6 @@ from evals.schema_conformance import (  # noqa: E402
     unattributed,
 )
 
-
 CONFIG = {
     "budget_requests": 4,
     "endpoints": [{
@@ -39,12 +38,10 @@ CONFIG = {
     }],
 }
 
-
 def _write_config(tmp_path, payload):
     path = tmp_path / "endpoints.json"
     path.write_text(json.dumps(payload))
     return path
-
 
 def test_load_plan_reads_every_configured_endpoint(tmp_path):
     path = _write_config(tmp_path, CONFIG)
@@ -53,7 +50,6 @@ def test_load_plan_reads_every_configured_endpoint(tmp_path):
     assert [e.name for e in plan.endpoints] == ["acme"]
     assert plan.endpoints[0].models == ("acme-small", "acme-large")
     assert plan.model_count == 2
-
 
 def test_load_plan_rejects_missing_base_url(tmp_path):
     payload = {"budget_requests": 2, "endpoints": [
@@ -65,7 +61,6 @@ def test_load_plan_rejects_missing_base_url(tmp_path):
     else:
         raise AssertionError("empty base_url must fail closed")
 
-
 def test_load_plan_rejects_endpoint_without_models(tmp_path):
     payload = {"budget_requests": 2, "endpoints": [
         {"name": "acme", "base_url": "https://a.invalid/v1", "models": []}]}
@@ -75,7 +70,6 @@ def test_load_plan_rejects_endpoint_without_models(tmp_path):
         assert "model" in str(exc)
     else:
         raise AssertionError("an endpoint with no models must fail closed")
-
 
 def test_load_plan_rejects_nonpositive_budget(tmp_path):
     payload = {"budget_requests": 0, "endpoints": [
@@ -88,7 +82,6 @@ def test_load_plan_rejects_nonpositive_budget(tmp_path):
     else:
         raise AssertionError("a zero budget must fail closed")
 
-
 def test_missing_key_reports_absence_and_never_the_value():
     endpoint = EndpointConfig(
         name="acme", base_url="https://acme.invalid/v1",
@@ -96,7 +89,6 @@ def test_missing_key_reports_absence_and_never_the_value():
         models=("m",), strict=True, timeout_s=1.0, thinking_off=False)
     assert endpoint.key_present({}) is False
     assert endpoint.resolve_key({}) is None
-
 
 def test_environment_reads_a_dotenv_file_without_exporting_it(tmp_path):
     from evals.schema_conformance import environment
@@ -115,7 +107,6 @@ def test_environment_reads_a_dotenv_file_without_exporting_it(tmp_path):
     assert "not a pair" not in env
     assert "PROBE_PRESENT_KEY" not in __import__("os").environ
 
-
 def test_environment_prefers_an_already_exported_variable(tmp_path,
                                                           monkeypatch):
     from evals.schema_conformance import environment
@@ -124,7 +115,6 @@ def test_environment_prefers_an_already_exported_variable(tmp_path,
     env_file = tmp_path / ".env"
     env_file.write_text("PROBE_OVERRIDE_KEY=from-file\n")
     assert environment(env_file)["PROBE_OVERRIDE_KEY"] == "from-shell"
-
 
 def test_real_config_reaches_every_required_endpoint_with_a_key():
     from evals.schema_conformance import environment
@@ -136,7 +126,6 @@ def test_real_config_reaches_every_required_endpoint_with_a_key():
     for endpoint in plan.endpoints:
         assert endpoint.key_present(env), endpoint.name
         assert endpoint.base_url.startswith("https://")
-
 
 def test_real_config_models_match_the_runtime_allowlists():
     import shared.providers as prov
@@ -159,7 +148,6 @@ def test_real_config_models_match_the_runtime_allowlists():
     assert by_name["nvidia"].base_url == prov.NVIDIA_NIM_BASE_URL
     del env
 
-
 def test_real_config_stays_inside_the_sixty_request_budget():
     plan = load_plan()
     assert plan.budget <= 60
@@ -169,7 +157,6 @@ def test_real_config_stays_inside_the_sixty_request_budget():
         for endpoint in plan.endpoints
         for index, model in enumerate(endpoint.models))
     assert total <= plan.budget, total
-
 
 def test_control_probe_runs_once_per_endpoint_not_once_per_model():
     plan = load_plan()
@@ -184,7 +171,6 @@ def test_control_probe_runs_once_per_endpoint_not_once_per_model():
         assert costs[0] == base + 1, endpoint.name
         assert all(cost == base for cost in costs[1:]), endpoint.name
 
-
 def test_key_present_falls_back_to_the_second_env_name():
     endpoint = EndpointConfig(
         name="acme", base_url="https://acme.invalid/v1",
@@ -193,7 +179,6 @@ def test_key_present_falls_back_to_the_second_env_name():
     env = {"ACME_API_KEY": "   ", "ACME_FALLBACK_API_KEY": "real"}
     assert endpoint.key_present(env) is True
     assert endpoint.resolve_key(env) == "real"
-
 
 def test_classify_http_status_separates_validation_from_http():
     accepted = json.dumps({"choices": [{"message": {"content": "{}"}}]})
@@ -207,7 +192,6 @@ def test_classify_http_status_separates_validation_from_http():
     assert classify_http_status(401, "bad key") == "rejected_http"
     assert classify_http_status(429, "slow down") == "rejected_http"
 
-
 def test_a_quota_wall_on_a_400_is_not_a_schema_rejection():
     verdict = classify_response(400, json.dumps(
         {"error": {"code": 429, "message": "You exceeded your current quota"}}))
@@ -215,13 +199,11 @@ def test_a_quota_wall_on_a_400_is_not_a_schema_rejection():
     assert verdict.schema_attributable is False
     assert verdict.stated_construct is None
 
-
 def test_a_missing_model_404_attributes_nothing():
     verdict = classify_response(404, "404 page not found")
     assert verdict.outcome == "rejected_http"
     assert verdict.schema_attributable is False
     assert verdict.stated_construct is None
-
 
 def test_a_quota_wall_never_blames_a_construct_even_when_the_body_has_one():
     verdict = classify_response(429, json.dumps(
@@ -232,7 +214,6 @@ def test_a_quota_wall_never_blames_a_construct_even_when_the_body_has_one():
         {"choices": None, "error": {"code": 429, "message": "quota"}}))
     assert wrapped.outcome == "rejected_http"
     assert wrapped.stated_construct is None
-
 
 def test_an_expired_key_is_a_credential_failure_not_a_schema_problem():
     verdict = classify_response(
@@ -245,7 +226,6 @@ def test_an_expired_key_is_a_credential_failure_not_a_schema_problem():
         400, "invalid api key and additionalProperties both mentioned")
     assert schema_noise.stated_construct is None
 
-
 def test_a_502_provider_unavailable_blames_no_construct():
     verdict = classify_response(502, json.dumps({
         "message": "Upstream error from Nvidia: Internal server error",
@@ -253,14 +233,12 @@ def test_a_502_provider_unavailable_blames_no_construct():
     assert verdict.outcome == "rejected_http"
     assert verdict.stated_construct is None
 
-
 def test_http_200_with_a_null_choices_is_not_acceptance():
     verdict = classify_response(200, json.dumps(
         {"choices": None, "error": {"message": "Internal error",
                                      "code": 500}}))
     assert verdict.outcome == "rejected_http"
     assert "Internal error" in verdict.detail
-
 
 def test_http_200_wrapping_an_upstream_schema_refusal_is_a_validation_rejection():
     body = json.dumps({
@@ -279,19 +257,16 @@ def test_http_200_wrapping_an_upstream_schema_refusal_is_a_validation_rejection(
     assert verdict.stated_construct == "pattern"
     assert verdict.schema_attributable is True
 
-
 def test_a_lookahead_in_pattern_is_attributed_to_pattern():
     verdict = classify_response(
         400, "grammar error: look-ahead is not supported in this regex")
     assert verdict.outcome == "rejected_validation"
     assert verdict.stated_construct == "pattern"
 
-
 def test_an_additionalproperties_refusal_is_attributed_to_that_keyword():
     verdict = classify_response(
         400, "schema error: additionalProperties is not supported")
     assert verdict.stated_construct == "additionalProperties"
-
 
 def test_a_timeout_attributes_no_construct():
     result = ProbeResult("p", "m", "intake", "timed_out", 60000,
@@ -301,7 +276,6 @@ def test_a_timeout_attributes_no_construct():
     findings = attribute_constructs(report, specs)
     assert findings == []
     assert unattributed(report) == [result]
-
 
 def test_probe_reads_a_wrapped_upstream_refusal_through_the_plain_client(
         monkeypatch):
@@ -348,7 +322,6 @@ def test_probe_reads_a_wrapped_upstream_refusal_through_the_plain_client(
     assert stage.stated_construct == "pattern"
     assert stage.schema_attributable is True
 
-
 def test_thinking_off_reaches_the_request_for_a_nim_endpoint():
     from v2.adapters.models import NIM_THINKING_OFF_EXTRA_BODY
 
@@ -359,7 +332,6 @@ def test_thinking_off_reaches_the_request_for_a_nim_endpoint():
     plain = EndpointConfig("openrouter", "https://or.invalid/v1", ("K",),
                           ("m",), True, 1.0, False)
     assert _request_kwargs(plain) == {}
-
 
 def test_no_artifact_writes_a_credential_value(tmp_path):
     from evals.schema_conformance import build_artifacts
@@ -379,7 +351,6 @@ def test_no_artifact_writes_a_credential_value(tmp_path):
     for path in paths.values():
         assert secret not in path.read_text(), path
         assert "<redacted>" in path.read_text(), path
-
 
 def test_merge_keeps_the_accepted_outcome_across_sweeps(tmp_path):
     from evals.schema_conformance import build_artifacts, merge_report
@@ -405,7 +376,6 @@ def test_merge_keeps_the_accepted_outcome_across_sweeps(tmp_path):
     assert plan_cell.outcome == "rejected_validation"
     assert plan_cell.stated_construct == "pattern"
 
-
 def test_merge_adds_cells_a_fresh_sweep_never_reached(tmp_path):
     from evals.schema_conformance import build_artifacts, merge_report
 
@@ -420,7 +390,6 @@ def test_merge_adds_cells_a_fresh_sweep_never_reached(tmp_path):
     merged = merge_report(fresh, path)
     assert {(r.model) for r in merged.results} == {"m1", "m2"}
 
-
 def test_merge_without_a_prior_file_returns_the_fresh_report(tmp_path):
     from evals.schema_conformance import merge_report
 
@@ -428,7 +397,6 @@ def test_merge_without_a_prior_file_returns_the_fresh_report(tmp_path):
         results=[ProbeResult("p", "m", "intake", "accepted", 1, "a" * 64, 1)],
         requests_spent=1)
     assert merge_report(fresh, tmp_path / "absent.json") is fresh
-
 
 def test_a_shared_wire_schema_is_probed_once_and_fanned_out():
     import asyncio
@@ -478,7 +446,6 @@ def test_a_shared_wire_schema_is_probed_once_and_fanned_out():
     assert synth.outcome == repair.outcome == "accepted"
     assert synth.schema_sha256 == repair.schema_sha256
 
-
 def test_a_stated_construct_wins_over_the_differential_set():
     specs = stage_specs()
     verifier = next(s for s in specs if s.stage == "verifier")
@@ -493,7 +460,6 @@ def test_a_stated_construct_wins_over_the_differential_set():
     findings = attribute_constructs(report, specs)
     assert [f.construct for f in findings] == ["pattern"]
 
-
 def test_unattributed_lists_a_rejection_no_construct_explains():
     specs = stage_specs()
     intake = next(s for s in specs if s.stage == "intake")
@@ -503,7 +469,6 @@ def test_unattributed_lists_a_rejection_no_construct_explains():
     report = ConformanceReport(results=[result])
     assert attribute_constructs(report, specs) == []
     assert unattributed(report) == [result]
-
 
 def test_an_unnamed_http_rejection_never_attributes_by_difference():
     specs = stage_specs()
@@ -516,7 +481,6 @@ def test_an_unnamed_http_rejection_never_attributes_by_difference():
     ])
     assert attribute_constructs(report, specs) == []
 
-
 def test_a_gemini_internal_error_is_not_a_schema_rejection():
     verdict = classify_response(500, json.dumps(
         [{"error": {"code": 500, "message": "Internal error encountered.",
@@ -525,14 +489,12 @@ def test_a_gemini_internal_error_is_not_a_schema_rejection():
     assert verdict.stated_construct is None
     assert verdict.schema_attributable is False
 
-
 def test_a_gemini_demand_spike_is_not_a_schema_rejection():
     verdict = classify_response(503, json.dumps(
         {"error": {"code": 503, "message": "This model is currently "
                                            "experiencing high demand."}}))
     assert verdict.outcome == "rejected_http"
     assert verdict.stated_construct is None
-
 
 def test_collect_constructs_finds_nested_keywords():
     schema = {
@@ -548,11 +510,9 @@ def test_collect_constructs_finds_nested_keywords():
             "anyOf", "pattern", "$ref"} <= found
     assert "enum" not in found
 
-
 def test_collect_constructs_sees_through_lists_of_schemas():
     assert collect_constructs([{"type": "string"}, {"const": 3}]) == {
         "type", "const"}
-
 
 def test_constructs_absent_from_accepted_schema_are_not_attributed():
     specs = stage_specs()
@@ -562,7 +522,6 @@ def test_constructs_absent_from_accepted_schema_are_not_attributed():
     report = ConformanceReport(results=[result])
     attributed = attribute_constructs(report, accepted_specs)
     assert attributed == []
-
 
 def test_construct_present_only_in_rejected_schema_is_attributed():
     specs = stage_specs()
@@ -587,7 +546,6 @@ def test_construct_present_only_in_rejected_schema_is_attributed():
     assert findings[0].broken_models == ("gemini/m",)
     assert findings[0].broken_cells == (f"gemini/m/{intake.stage}",)
 
-
 def test_accepted_constructs_union_covers_every_accepted_schema():
     specs = stage_specs()
     results = [ProbeResult("gemini", "m", s.stage, "accepted", 5, "c" * 64, 1)
@@ -596,11 +554,9 @@ def test_accepted_constructs_union_covers_every_accepted_schema():
     got = accepted_constructs(report, "gemini", "m", specs)
     assert "type" in got and "properties" in got
 
-
 def test_requests_remaining_never_goes_negative():
     report = ConformanceReport(requests_spent=9)
     assert report.requests_remaining(4) == 0
-
 
 def test_render_matrix_marks_every_outcome_kind():
     results = [
@@ -619,19 +575,16 @@ def test_render_matrix_marks_every_outcome_kind():
     assert "TIME 60.0s" in text
     assert "UNREACH 0.0s" in text
 
-
 def test_schema_sha256_is_canonical_and_order_independent():
     left = {"type": "object", "properties": {"a": {"type": "string"}}}
     right = {"properties": {"a": {"type": "string"}}, "type": "object"}
     assert schema_sha256(left) == schema_sha256(right)
-
 
 def test_stage_specs_cover_every_harness_stage_from_running_code():
     specs = stage_specs()
     assert [s.stage for s in specs] == [
         "intake", "plan", "synthesizer", "verifier", "repair"]
     assert len({s.schema.__name__ for s in specs}) == 4
-
 
 def test_wire_schema_is_what_the_adapter_sends_not_the_pydantic_dump():
     from v2.arguments import PlannerOutputWire
@@ -644,13 +597,11 @@ def test_wire_schema_is_what_the_adapter_sends_not_the_pydantic_dump():
     assert wire["json_schema"]["strict"] is True
     assert schema_sha256(raw) != schema_sha256(body)
 
-
 def test_the_wire_schema_no_longer_depends_on_the_model_name():
     specs = stage_specs()
     intake = next(s for s in specs if s.stage == "intake")
     assert intake.wire_response_format("gemini-3.5-flash") == (
         intake.wire_response_format("gemma-4-31b-it"))
-
 
 def test_probe_budget_is_enforced_across_endpoints(monkeypatch):
     import asyncio
@@ -686,7 +637,6 @@ def test_probe_budget_is_enforced_across_endpoints(monkeypatch):
     assert report.requests_spent == 2
     assert calls == [("a", "m1", True), ("b", "m2", True)]
 
-
 def test_probe_model_marks_every_stage_unreachable_without_a_credential(
         monkeypatch):
     import asyncio
@@ -704,7 +654,6 @@ def test_probe_model_marks_every_stage_unreachable_without_a_credential(
     assert [r.outcome for r in results] == ["unreachable"] * len(specs)
     assert all("credential" in r.detail for r in results)
     assert all("DIME_CONFORMANCE_FAKE_KEY" not in r.detail for r in results)
-
 
 def test_probe_model_never_writes_a_credential_into_a_detail(monkeypatch):
     import asyncio
@@ -740,7 +689,6 @@ def test_probe_model_never_writes_a_credential_into_a_detail(monkeypatch):
     assert stage.stage == "intake"
     assert stage.outcome == "rejected_http"
     assert "sk-secret-value" not in stage.detail
-
 
 def test_artifacts_land_in_the_requested_directory(tmp_path):
     from evals.schema_conformance import build_artifacts

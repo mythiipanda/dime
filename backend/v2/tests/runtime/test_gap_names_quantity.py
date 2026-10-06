@@ -12,11 +12,9 @@ from v2.runtime import FakeCapability, PlanExecutor, Runtime
 from v2.runtime.assembly import MechanicalVerifier
 from v2.contracts import VerificationReport, VerificationStatus
 
-
 @pytest.fixture
 def anyio_backend():
     return "asyncio"
-
 
 class Intake:
     async def understand(self, request: str) -> TaskSpec:
@@ -25,18 +23,15 @@ class Intake:
             deliverable="points per game",
             requested_outputs=["PPG"])
 
-
 class Planner:
     async def plan(self, task: TaskSpec) -> Plan:
         return Plan(nodes=[PlanNode(
             id="scoring", description="season scoring line",
             capability_hints=["player_report"])])
 
-
 class EmptySynthesizer:
     async def synthesize(self, task, evidence) -> DraftReport:
         return DraftReport(sections=[], claims=[])
-
 
 class PassingSemantic:
     async def verify(self, task, draft, evidence) -> VerificationReport:
@@ -44,7 +39,6 @@ class PassingSemantic:
             status=VerificationStatus.PASS,
             claim_results=[{"claim_index": index, "supported": True}
                            for index, _claim in enumerate(draft.claims)])
-
 
 @pytest.mark.anyio
 async def test_missing_output_gap_names_the_missing_quantity() -> None:

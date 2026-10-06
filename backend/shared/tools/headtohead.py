@@ -5,11 +5,10 @@ import datetime as _dt
 from langchain_core.tools import tool
 
 from .. import store
-from ._core import clamp_season, coerce_player_id, coerce_team_id, last_completed_season, resolve_season
+from ._core import clamp_season, coerce_player_id, coerce_team_id, resolve_season
 from .splits import _resolve_name, opponent_abbr, parse_game_date
 
 SMALL_SAMPLE_GP = 5
-
 
 class HeadToHeadSchemaError(Exception):
 
@@ -21,7 +20,6 @@ class HeadToHeadSchemaError(Exception):
             "Player game logs lack columns needed for head-to-head"
             + (f": {self.detail}" if self.detail else ""))
 
-
 def _f(value: object) -> float:
     try:
         if value is None or value == "":
@@ -29,7 +27,6 @@ def _f(value: object) -> float:
         return float(value)
     except (TypeError, ValueError):
         return 0.0
-
 
 def summarize(rows: list[dict[str, Any]]) -> dict[str, Any]:
     gp = len(rows or [])
@@ -53,7 +50,6 @@ def summarize(rows: list[dict[str, Any]]) -> dict[str, Any]:
         "l": sum(1 for r in rows if str(r.get("WL") or "").upper() == "L"),
     }
 
-
 def deltas(opp: dict[str, Any], base: dict[str, Any]) -> dict[str, float]:
     out: dict[str, float] = {}
     for key in ("ppg", "rpg", "apg", "fg_pct", "ts_pct"):
@@ -61,15 +57,12 @@ def deltas(opp: dict[str, Any], base: dict[str, Any]) -> dict[str, float]:
         out[key] = round(_f(opp.get(key)) - _f(base.get(key)), places)
     return out
 
-
 def vs_opponent(rows: list[dict[str, Any]], abbr: str) -> list[dict[str, Any]]:
     want = str(abbr or "").strip().upper()
     return [r for r in (rows or [])
             if opponent_abbr(r.get("MATCHUP")) == want]
 
-
 def _load_player_games(pid: int, season: str) -> list[dict[str, Any]]:
-
 
     season = resolve_season(season)
     con = store.connect(read_only=True)
@@ -98,7 +91,6 @@ def _load_player_games(pid: int, season: str) -> list[dict[str, Any]]:
               or _dt.date.min, reverse=True)
     return rows
 
-
 def _team_abbr(opponent: str) -> tuple[str, str]:
     tid = coerce_team_id(opponent)
     from nba_api.stats.static import teams
@@ -108,7 +100,6 @@ def _team_abbr(opponent: str) -> tuple[str, str]:
             return (str(t.get("abbreviation", "")).upper(),
                     str(t.get("full_name", "")))
     return str(opponent).upper(), str(opponent)
-
 
 def _coverage_note() -> str:
     try:
@@ -138,26 +129,9 @@ def _coverage_note() -> str:
             " only; vs-opponent is compared to the season"
             " baseline, not a career baseline")
 
-
-@tool
+@tool(description='How a player has done against one opponent team.\n\nplayer: name, nickname, or id (same resolution as every other tool).\nopponent: team name, abbreviation, or id, e.g. "Knicks" or "NYK".\nseason: 2025-26 only in the warehouse; other seasons clamp.\n\nReturns the player\'s game logs against the opponent (most recent\nfirst), vs-opponent averages next to the season baseline, the deltas\nbetween them, and the player\'s team record in those games. Fewer\nthan 5 games sets small_sample and says so plainly. Warehouse only;\nplayer-vs-player is not supported.\nIf `opponent` names a PLAYER (e.g. "Shai Gilgeous-Alexander"), it\nresolves to that player\'s current team so the lane still answers the\nmeetings between the two players\' teams instead of erroring; the\nresolution is disclosed in the note.')
 def get_head_to_head(player: str, opponent: str,
                      season: str | None = None) -> dict[str, Any]:
-    """How a player has done against one opponent team.
-
-    player: name, nickname, or id (same resolution as every other tool).
-    opponent: team name, abbreviation, or id, e.g. "Knicks" or "NYK".
-    season: 2025-26 only in the warehouse; other seasons clamp.
-
-    Returns the player's game logs against the opponent (most recent
-    first), vs-opponent averages next to the season baseline, the deltas
-    between them, and the player's team record in those games. Fewer
-    than 5 games sets small_sample and says so plainly. Warehouse only;
-    player-vs-player is not supported.
-    If `opponent` names a PLAYER (e.g. "Shai Gilgeous-Alexander"), it
-    resolves to that player's current team so the lane still answers the
-    meetings between the two players' teams instead of erroring; the
-    resolution is disclosed in the note.
-    """
     season = resolve_season(season)
     season = clamp_season(season)
     try:
@@ -168,11 +142,6 @@ def get_head_to_head(player: str, opponent: str,
     try:
         abbr, full_name = _team_abbr(opponent)
     except ValueError:
-
-
-
-
-
 
         try:
             import time as _time

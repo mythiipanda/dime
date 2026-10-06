@@ -11,12 +11,10 @@ import pytest
 
 FIXTURE = Path(__file__).resolve().parent / "fixtures" / "season_consistency_mirror.json"
 
-
 def _load():
     data = json.loads(FIXTURE.read_text())
     assert "header" in data and "cases" in data
     return data
-
 
 def test_fixture_has_source_attribution():
     data = _load()
@@ -25,7 +23,6 @@ def test_fixture_has_source_attribution():
     assert header["canonical_sha"]
     assert header["generated"]
     assert any("2024-25" in r for r in header["rules"])
-
 
 def test_cases_well_formed():
     data = _load()
@@ -37,7 +34,6 @@ def test_cases_well_formed():
         assert isinstance(c["answer"], str) and c["answer"]
         assert isinstance(c["expected"], (int, float))
 
-
 def test_wrong_season_verdicts_are_zero():
     data = _load()
     by_id = {c["id"]: c for c in data["cases"]}
@@ -45,14 +41,12 @@ def test_wrong_season_verdicts_are_zero():
     assert by_id["numeric_right_number_wrong_season_phrasing"]["expected"] == 0.0
     assert by_id["consistency_wrong_season"]["expected"] == 0.0
 
-
 def test_no_penalty_without_season_claim():
     data = _load()
     by_id = {c["id"]: c for c in data["cases"]}
     assert by_id["consistency_no_mention"]["expected"] == 1.0
     assert by_id["numeric_no_season_mention"]["expected"] == 1.0
     assert by_id["consistency_no_season_label"]["expected"] == 1.0
-
 
 def _local_scorer_source():
     for cand in (
@@ -66,11 +60,10 @@ def _local_scorer_source():
             return p.read_text()
     return None
 
-
 def _fetch_pinned_scorer(sha):
     try:
         sys.path.insert(0, "/opt/hatch/skills/skill-creator/bin")
-        from dynamic_credentials import (  # noqa: E402
+        from dynamic_credentials import (
             add_surrogate_to_request, read_json_response)
     except ImportError:
         return None
@@ -88,7 +81,6 @@ def _fetch_pinned_scorer(sha):
     if data.get("sha") != sha:
         return None
     return base64.b64decode(data["content"]).decode("utf-8")
-
 
 def _hermetic_fallback_scorer():
     _SEASON_RE = re.compile(r"(20\d\d)\s*[-–—]\s*(\d{2,4})")
@@ -132,7 +124,6 @@ def _hermetic_fallback_scorer():
             "numeric_acc": numeric_acc,
             "__source__": "hermetic-fallback"}
 
-
 def _canonical_scorer(header):
     src = _local_scorer_source() or _fetch_pinned_scorer(
         header["canonical_sha"])
@@ -142,7 +133,6 @@ def _canonical_scorer(header):
         return ns, ("local-dime-internal" if _local_scorer_source()
                     else "pinned-blob")
     return _hermetic_fallback_scorer(), "hermetic-fallback"
-
 
 def test_expected_outputs_match_canonical_scorer():
     data = _load()

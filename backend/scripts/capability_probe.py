@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 from __future__ import annotations
 
 import argparse
@@ -46,7 +45,6 @@ PROMPT = ("Record the request 'compare the 2023-24 Celtics and Nuggets "
           "offensive ratings' as a task.")
 FLAGS = ("strict_json_schema", "tool_calling", "strict_tool_definitions")
 
-
 @dataclass(frozen=True)
 class Target:
     provider: str
@@ -69,7 +67,6 @@ class Target:
     def api_key(self) -> str:
         return str(getattr(settings, self.credential, "") or "").strip()
 
-
 def declared_targets() -> tuple[Target, ...]:
     return (
         Target("gemini", GEMINI_BASE_URL, _gemini_model(), "gemini_api_key"),
@@ -85,7 +82,6 @@ def declared_targets() -> tuple[Target, ...]:
                "groq_api_key"),
     )
 
-
 def strict_request(model: str) -> dict[str, Any]:
     return {
         "model": model,
@@ -96,7 +92,6 @@ def strict_request(model: str) -> dict[str, Any]:
                 strict_output_json_schema(TaskSpec)).schema}},
         "temperature": 0,
     }
-
 
 def tool_request(model: str, *, strict: bool) -> dict[str, Any]:
     function: dict[str, Any] = {
@@ -112,7 +107,6 @@ def tool_request(model: str, *, strict: bool) -> dict[str, Any]:
         "temperature": 0,
     }
 
-
 def took_the_rung(body: httpx.Response, strategy: OutputStrategy) -> bool:
     try:
         message = body.json()["choices"][0]["message"]
@@ -122,7 +116,6 @@ def took_the_rung(body: httpx.Response, strategy: OutputStrategy) -> bool:
         return bool(message.get("tool_calls"))
     return isinstance(message.get("content"), str)
 
-
 def support_for(body: httpx.Response,
                 strategy: OutputStrategy) -> tuple[Support, str]:
     if body.status_code == 200 and took_the_rung(body, strategy):
@@ -131,7 +124,6 @@ def support_for(body: httpx.Response,
     if kind is FailureKind.SCHEMA_REJECTED:
         return Support.REFUSED, kind.value
     return Support.UNMEASURED, kind.value
-
 
 async def ask(client: httpx.AsyncClient, target: Target, request: dict[str, Any],
               strategy: OutputStrategy, timeout_s: float
@@ -151,7 +143,6 @@ async def ask(client: httpx.AsyncClient, target: Target, request: dict[str, Any]
         return Support.UNMEASURED, type(exc).__name__, 0.0
     support, detail = support_for(body, strategy)
     return support, detail, round(time.monotonic() - started, 1)
-
 
 async def measure(target: Target, client: httpx.AsyncClient,
                   timeout_s: float) -> tuple[dict[str, Support], list[str]]:
@@ -181,7 +172,6 @@ async def measure(target: Target, client: httpx.AsyncClient,
         flags["strict_tool_definitions"] = Support.UNMEASURED
     return flags, trail
 
-
 def row_for(target: Target, entry: dict[str, Any], flags: dict[str, Support],
             measured_at: str) -> dict[str, Any]:
     row = {"base_url": entry["base_url"],
@@ -192,10 +182,8 @@ def row_for(target: Target, entry: dict[str, Any], flags: dict[str, Support],
                               "models": [target.model]}
     return row
 
-
 STRENGTH: dict[Support, int] = {
     Support.UNMEASURED: 0, Support.REFUSED: 1, Support.MEASURED: 2}
-
 
 def merge_row(kept: dict[str, Any] | None, observed: dict[str, Any]
               ) -> dict[str, Any]:
@@ -215,10 +203,9 @@ def merge_row(kept: dict[str, Any] | None, observed: dict[str, Any]
         {*older["models"], *newer["models"]})}
     return merged
 
-
 async def run(timeout_s: float, out: Path) -> int:
     measured_at = datetime.now(UTC).date().isoformat()
-    known = load_capability_table(CAPABILITY_TABLE_PATH)
+    load_capability_table(CAPABILITY_TABLE_PATH)
     entries = json.loads(CAPABILITY_TABLE_PATH.read_text())["endpoints"]
     targets = {target.endpoint: target for target in declared_targets()}
     rows: list[dict[str, Any]] = []
@@ -245,14 +232,12 @@ async def run(timeout_s: float, out: Path) -> int:
     print(f"wrote {out}")
     return 0
 
-
 def main(argv: Sequence[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description=__doc__)
+    parser = argparse.ArgumentParser()
     parser.add_argument("--timeout-s", type=float, default=600.0)
     parser.add_argument("--out", type=Path, default=CAPABILITY_TABLE_PATH)
     parsed = parser.parse_args(argv)
     return asyncio.run(run(parsed.timeout_s, parsed.out))
-
 
 if __name__ == "__main__":
     raise SystemExit(main())

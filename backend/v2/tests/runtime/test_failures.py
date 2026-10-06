@@ -1,13 +1,11 @@
 import pytest
 from v2.runtime.failures import CandidateState, CandidateStore, FailureObservation
 
-
 def observation(summary="mixed provenance"):
     return FailureObservation(
         source="qa", failure_class="source_provenance",
         summary=summary, expected_relation="label each claim's source",
         revision="bad123", trace_id="trace-1")
-
 
 def test_failure_observation_becomes_reviewable_sanitized_candidate(tmp_path):
     store = CandidateStore(tmp_path / "candidates.jsonl")
@@ -17,14 +15,12 @@ def test_failure_observation_becomes_reviewable_sanitized_candidate(tmp_path):
     assert candidate.trace_id == "trace-1"
     assert len(candidate.candidate_id) == 24
 
-
 def test_candidate_intake_deduplicates_same_failure_shape(tmp_path):
     store = CandidateStore(tmp_path / "candidates.jsonl")
     first = store.add(observation("Mixed   provenance"))
     second = store.add(observation("mixed provenance"))
     assert first.candidate_id == second.candidate_id
     assert store.read() == [first]
-
 
 def test_failure_intake_contracts_reject_unknown_fields() -> None:
     import pytest
@@ -43,7 +39,6 @@ def test_failure_intake_contracts_reject_unknown_fields() -> None:
             "first_bad_revision": "bad", "invented": True,
         })
 
-
 def test_failure_intake_rejects_blank_identity_and_duplicate_tags() -> None:
     import pytest
     from pydantic import ValidationError
@@ -59,7 +54,6 @@ def test_failure_intake_rejects_blank_identity_and_duplicate_tags() -> None:
     with pytest.raises(ValidationError, match="trace id must be non-empty"):
         ScenarioCandidate(**{**candidate, "trace_id": " "})
 
-
 def test_candidate_intake_deduplicates_across_concurrent_store_instances(tmp_path):
     from concurrent.futures import ThreadPoolExecutor
 
@@ -69,7 +63,6 @@ def test_candidate_intake_deduplicates_across_concurrent_store_instances(tmp_pat
             lambda _index: CandidateStore(path).add(observation()), range(20)))
     assert len({item.candidate_id for item in candidates}) == 1
     assert CandidateStore(path).read() == [candidates[0]]
-
 
 def test_candidate_store_rejects_blank_and_duplicate_persisted_records(tmp_path):
     import pytest
@@ -85,7 +78,6 @@ def test_candidate_store_rejects_blank_and_duplicate_persisted_records(tmp_path)
     with pytest.raises(ValueError, match="duplicate identities"):
         store.read()
 
-
 def test_candidate_contract_rejects_forged_derived_identity() -> None:
     import pytest
     from pydantic import ValidationError
@@ -97,7 +89,6 @@ def test_candidate_contract_rejects_forged_derived_identity() -> None:
             **candidate.model_dump(), "candidate_id": "0" * 24,
         })
 
-
 def test_candidate_store_rejects_symlinked_record(tmp_path):
     import pytest
 
@@ -108,7 +99,6 @@ def test_candidate_store_rejects_symlinked_record(tmp_path):
     with pytest.raises(ValueError, match="cannot be a symlink"):
         CandidateStore(path).add(observation())
 
-
 def test_candidate_store_rejects_symlinked_parent(tmp_path):
     outside = tmp_path / "outside"
     outside.mkdir()
@@ -117,7 +107,6 @@ def test_candidate_store_rejects_symlinked_parent(tmp_path):
     with pytest.raises(ValueError, match="parent cannot be a symlink"):
         CandidateStore(parent / "candidates.jsonl")
 
-
 def test_candidate_store_revalidates_copied_observation(tmp_path):
     import pytest
     from pydantic import ValidationError
@@ -125,7 +114,6 @@ def test_candidate_store_revalidates_copied_observation(tmp_path):
     with pytest.raises(ValidationError, match="fields must be non-empty"):
         CandidateStore(tmp_path / "candidates.jsonl").add(item)
     assert not (tmp_path / "candidates.jsonl").exists()
-
 
 def test_failure_observation_text_has_hard_limits():
     import pytest

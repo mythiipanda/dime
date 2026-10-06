@@ -8,9 +8,9 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from shared import store  # noqa: E402
-from shared.tools import team as team_mod  # noqa: E402
-from v2.adapters import coverage  # noqa: E402
+from shared import store
+from shared.tools import team as team_mod
+from v2.adapters import coverage
 
 DATA_DIR = Path(__file__).resolve().parent.parent / "data"
 BASELINE = store.CANONICAL_DB_PATH
@@ -23,15 +23,12 @@ SEASON_WIDE_TABLES = (
 SEASONS_SAMPLED = 4
 IDENTITY_META = ("warehouse_id", "warehouse_sha256")
 
-
 class WarehouseWouldBeWritten(RuntimeError):
     pass
-
 
 def _warehouse_files():
     return sorted(path for path in DATA_DIR.glob("warehouse*.duckdb")
                   if path.is_file())
-
 
 def _require_several_warehouses():
     paths = _warehouse_files()
@@ -42,7 +39,6 @@ def _require_several_warehouses():
         pytest.skip(f"no baseline warehouse at {BASELINE}")
     return paths
 
-
 @contextmanager
 def _read_only_file(path):
     con = duckdb.connect(str(path), read_only=True)
@@ -50,7 +46,6 @@ def _read_only_file(path):
         yield con
     finally:
         con.close()
-
 
 @contextmanager
 def _warehouse_open(path, monkeypatch):
@@ -65,7 +60,6 @@ def _warehouse_open(path, monkeypatch):
         store.warehouse_tables_cache_clear()
         coverage.coverage_cache_clear()
 
-
 @contextmanager
 def _no_writes(monkeypatch):
     real = store._connect_once
@@ -79,7 +73,6 @@ def _no_writes(monkeypatch):
 
     monkeypatch.setattr(store, "_connect_once", guarded)
 
-
 @contextmanager
 def _no_network(monkeypatch):
     def blocked(*args, **kwargs):
@@ -89,13 +82,11 @@ def _no_network(monkeypatch):
     monkeypatch.setattr(socket.socket, "connect", blocked)
     monkeypatch.setattr(socket, "create_connection", blocked)
 
-
 def _comparable(out):
     meta = {key: value for key, value in (out.get("meta") or {}).items()
             if key not in IDENTITY_META}
     return {"ok": out.get("ok"), "error": out.get("error"),
             "rows": out.get("rows"), "meta": meta}
-
 
 def _opponent(team, matchup):
     text = str(matchup or "").upper().replace("@", " ").replace("VS.", " ")
@@ -104,7 +95,6 @@ def _opponent(team, matchup):
         if len(token) == 3 and token.isalpha() and token != team:
             return token
     return ""
-
 
 def _supported_questions(path):
     questions = []
@@ -132,7 +122,6 @@ def _supported_questions(path):
                 questions.append((pair[0], pair[1], season))
     return questions
 
-
 def _uncovered_season(paths):
     earliest_per_file = []
     for path in paths:
@@ -155,7 +144,6 @@ def _uncovered_season(paths):
     start = max(earliest_per_file) - 1
     return f"{start}-{start % 100 + 1:02d}"
 
-
 def _holds_no_rows(path, season):
     with _read_only_file(path) as con:
         for table in SEASON_WIDE_TABLES:
@@ -166,24 +154,20 @@ def _holds_no_rows(path, season):
                 return False
     return True
 
-
 def _answer(path, a, b, season, monkeypatch):
     with _warehouse_open(path, monkeypatch):
         return team_mod.get_season_series.invoke(
             {"team_a": a, "team_b": b, "season": season})
 
-
 def _fingerprint(path):
     stat = path.stat()
     return (stat.st_mtime_ns, stat.st_size)
-
 
 def _baseline_questions():
     questions = _supported_questions(BASELINE)
     if not questions:
         pytest.skip(f"no covered pair derived from {BASELINE}")
     return questions
-
 
 def test_the_same_covered_question_answers_the_same_from_every_warehouse(
         monkeypatch):
@@ -200,7 +184,6 @@ def test_the_same_covered_question_answers_the_same_from_every_warehouse(
             assert answer == baseline_answer, (name, a, b, season)
     for path in paths:
         assert _fingerprint(path) == before[path], f"{path.name} was written"
-
 
 def test_a_season_no_table_holds_is_refused_the_same_from_every_warehouse(
         monkeypatch):
@@ -222,7 +205,6 @@ def test_a_season_no_table_holds_is_refused_the_same_from_every_warehouse(
     for name, answer in answers.items():
         assert answer == answers[BASELINE.name], (name, season)
 
-
 def test_a_covered_season_is_answered_without_any_network_call(monkeypatch):
     paths = _require_several_warehouses()
     _no_writes(monkeypatch)
@@ -232,7 +214,6 @@ def test_a_covered_season_is_answered_without_any_network_call(monkeypatch):
         out = _answer(path, a, b, season, monkeypatch)
         assert out["ok"] is True, (path.name, out.get("error"))
         assert out["rows"]["summary"]["games"] > 0, path.name
-
 
 def test_every_warehouse_reports_a_covered_season_it_reads_rows_for(
         monkeypatch):

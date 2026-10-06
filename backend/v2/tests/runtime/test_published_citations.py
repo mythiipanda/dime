@@ -39,11 +39,9 @@ LEADER_ROWS = [
 WAREHOUSE_SOURCE = "silver_leaders:fetch_leaders:warehouse"
 LIVE_SOURCE = "silver_leaders:fetch_leaders:nba_api"
 
-
 @pytest.fixture
 def anyio_backend():
     return "asyncio"
-
 
 @pytest.fixture(autouse=True)
 def _chat_budget():
@@ -52,7 +50,6 @@ def _chat_budget():
     routes._CHAT_HITS.clear()
     yield
     routes._CHAT_HITS.clear()
-
 
 def _envelope(*, identity=None, source=WAREHOUSE_SOURCE,
               rows=None) -> EvidenceEnvelope:
@@ -73,11 +70,9 @@ def _envelope(*, identity=None, source=WAREHOUSE_SOURCE,
         source_identity=identity,
     )
 
-
 def _warehouse_envelope(**kwargs) -> EvidenceEnvelope:
     return _envelope(identity={"kind": "warehouse", "warehouse_id": "frozen-eval",
                                "sha256": "a" * 64}, **kwargs)
-
 
 class StampedCapability(FakeCapability):
     def __init__(self, envelope: EvidenceEnvelope) -> None:
@@ -87,7 +82,6 @@ class StampedCapability(FakeCapability):
     async def execute(self, node, task, evidence):
         return self._envelope
 
-
 class Intake:
     async def understand(self, request: str) -> TaskSpec:
         return TaskSpec(
@@ -96,13 +90,11 @@ class Intake:
             requested_outputs=list(REQUESTED),
             season=SeasonRef(value=SEASON, source="user", confidence=1.0))
 
-
 class Planner:
     async def plan(self, task: TaskSpec) -> Plan:
         return Plan(nodes=[PlanNode(
             id=NODE_ID, description="leaderboard for the season",
             capability_hints=["qualified_leaders"])])
-
 
 class Synthesizer:
     def __init__(self, claim: Claim) -> None:
@@ -111,14 +103,12 @@ class Synthesizer:
     async def synthesize(self, task, evidence) -> DraftReport:
         return DraftReport(sections=["Leader"], claims=[self._claim])
 
-
 class PassingSemantic:
     async def verify(self, task, draft, evidence) -> VerificationReport:
         return VerificationReport(
             status=VerificationStatus.PASS,
             claim_results=[{"claim_index": index, "supported": True}
                            for index, _claim in enumerate(draft.claims)])
-
 
 def _binding(output_id: str, selector: str, value: dict,
              unit: dict) -> EvidenceOutputBinding:
@@ -129,7 +119,6 @@ def _binding(output_id: str, selector: str, value: dict,
         subject_entity_type="player", subject_entity_id="9001",
         subject_selector="rows[0].PLAYER_ID", value=value, unit=unit,
         domain="qualified_leaders")
-
 
 def _leader_claim(*, assists: int) -> Claim:
     return Claim(
@@ -152,7 +141,6 @@ def _leader_claim(*, assists: int) -> Claim:
                      {"kind": "declared", "value": "per_game"}),
         ])
 
-
 def _runtime(claim: Claim, envelope: EvidenceEnvelope,
              after: Callable | None = None) -> Runtime:
     class PublishedRuntime(Runtime):
@@ -166,7 +154,6 @@ def _runtime(claim: Claim, envelope: EvidenceEnvelope,
         synthesizer=Synthesizer(claim),
         mechanical_verifier=MechanicalVerifier(),
         semantic_verifier=PassingSemantic())
-
 
 def _stream(monkeypatch, tmp_path, runtime: Runtime) -> tuple[str, dict, dict]:
     from fastapi import FastAPI
@@ -193,7 +180,6 @@ def _stream(monkeypatch, tmp_path, runtime: Runtime) -> tuple[str, dict, dict]:
             _event(response.text, "custom_data"),
             _event(response.text, "final_answer"))
 
-
 def _event(text: str, name: str) -> dict:
     payloads = [chunk.split("data: ", 1)[1]
                 for chunk in text.split("\n\n")
@@ -202,10 +188,8 @@ def _event(text: str, name: str) -> dict:
         return {}
     return json.loads(payloads[-1])
 
-
 def _cited(custom: dict) -> dict[str, dict]:
     return {row["output_id"]: row for row in custom["tables"]}
-
 
 def test_every_number_the_answer_states_carries_its_own_citation(monkeypatch, tmp_path):
     text, custom, final = _stream(
@@ -223,7 +207,6 @@ def test_every_number_the_answer_states_carries_its_own_citation(monkeypatch, tm
                      "node_id", "evidence_id", "selector", "subject_selector"):
         assert internal not in text
 
-
 def test_every_citation_names_the_source_and_the_vintage_it_came_from(
         monkeypatch, tmp_path):
     text, custom, _ = _stream(
@@ -239,14 +222,12 @@ def test_every_citation_names_the_source_and_the_vintage_it_came_from(
     assert provenance["live_sources"] == []
     assert WAREHOUSE_SOURCE not in text
 
-
 def test_a_figure_whose_tool_declared_no_source_is_not_called_warehouse(
         monkeypatch, tmp_path):
     _, custom, _ = _stream(
         monkeypatch, tmp_path, _runtime(_leader_claim(assists=880), _envelope()))
 
     assert _cited(custom)["TOTAL_ASSISTS"]["provenance"]["origin"] == "undeclared"
-
 
 def test_a_live_figure_is_labelled_live_and_never_reads_as_warehouse(
         monkeypatch, tmp_path):
@@ -261,7 +242,6 @@ def test_a_live_figure_is_labelled_live_and_never_reads_as_warehouse(
     assert all(row["provenance"]["origin"] != "warehouse"
                for row in custom["tables"])
 
-
 def test_a_figure_from_a_refreshed_source_is_labelled_mixed(monkeypatch, tmp_path):
     envelope = _envelope(
         identity={"kind": "composite", "warehouse_id": "frozen-eval",
@@ -274,7 +254,6 @@ def test_a_figure_from_a_refreshed_source_is_labelled_mixed(monkeypatch, tmp_pat
     assert provenance["origin"] == "mixed"
     assert provenance["live_sources"] == ["nba_api"]
 
-
 def test_the_block_names_every_requested_output_it_does_not_cover(
         monkeypatch, tmp_path):
     _, custom, _ = _stream(
@@ -283,7 +262,6 @@ def test_the_block_names_every_requested_output_it_does_not_cover(
 
     assert custom["unverified_numbers"] == [
         "STAT VALUE could not be traced to the source data."]
-
 
 def test_a_missing_evidence_envelope_still_fails_the_run(monkeypatch, tmp_path):
     def vanish(result):
@@ -299,7 +277,6 @@ def test_a_missing_evidence_envelope_still_fails_the_run(monkeypatch, tmp_path):
     assert final["carry"]["verified_claims"] == 0
     assert final["text"].startswith("I could not verify a publishable answer")
     assert "event: custom_data" not in text
-
 
 def test_a_value_the_warehouse_changed_under_the_run_fails_the_run(
         monkeypatch, tmp_path):

@@ -14,10 +14,8 @@ from ..contracts import WINDOW_ARGUMENT_NAMES, window_of_arguments
 from ..domain.evidence import iter_values
 from .capabilities import CAPABILITIES, Capability
 
-
 class AdapterError(RuntimeError):
     pass
-
 
 class LiveFallbackEmpty(AdapterError):
 
@@ -25,14 +23,12 @@ class LiveFallbackEmpty(AdapterError):
         super().__init__(message)
         self.fallback = fallback
 
-
 def _warehouse_seasons(table: str) -> list[str]:
     from . import coverage
 
     return sorted(
         season for season in coverage.table_seasons(table)
         if coverage.parse_season_start(season) is not None)
-
 
 def resolve_live_fallback(spec: Capability, meta: Mapping[str, Any]) -> LiveFallback | None:
     marker = meta.get("live_fallback")
@@ -52,10 +48,8 @@ def resolve_live_fallback(spec: Capability, meta: Mapping[str, Any]) -> LiveFall
         raise AdapterError(
             f"{spec.tool_name}: invalid live fallback marker: {exc}") from exc
 
-
 def _canonical(value: Any) -> str:
     return json.dumps(value, sort_keys=True, default=str, separators=(",", ":"))
-
 
 def evidence_id(
     capability: str, arguments: Mapping[str, Any], rows: Any,
@@ -68,7 +62,6 @@ def evidence_id(
         "rows": rows,
     }).encode()).hexdigest()
     return f"{capability}:{digest[:16]}"
-
 
 async def ainvoke_tool(tool: Any, arguments: Mapping[str, Any]) -> dict[str, Any]:
     ainvoke = getattr(tool, "ainvoke", None)
@@ -90,7 +83,6 @@ async def ainvoke_tool(tool: Any, arguments: Mapping[str, Any]) -> dict[str, Any
             f"unexpected result type {type(result).__name__}")
     return result
 
-
 def invoke_tool(tool: Any, arguments: Mapping[str, Any]) -> dict[str, Any]:
     try:
         asyncio.get_running_loop()
@@ -99,7 +91,6 @@ def invoke_tool(tool: Any, arguments: Mapping[str, Any]) -> dict[str, Any]:
     raise AdapterError(
         "invoke_tool cannot block inside a running event loop; "
         "use acall_capability")
-
 
 def _live_fallback_miss(spec: Capability, fallback: LiveFallback,
                         reported: str = "") -> str:
@@ -111,7 +102,6 @@ def _live_fallback_miss(spec: Capability, fallback: LiveFallback,
         f"answer exists for {fallback.requested_season} (warehouse seasons on "
         f"hand: {on_hand})")
     return f"{message}; tool reported: {reported}" if reported else message
-
 
 def build_envelope(
     spec: Capability,
@@ -319,13 +309,11 @@ def build_envelope(
         live_fallback=live_fallback,
     )
 
-
 def _row_values(rows: Any):
     envelope = EvidenceEnvelope(
         evidence_id="row-scan", capability="row-scan", source="runtime",
         observed_at=datetime.now(timezone.utc), rows=rows)
     return iter_values(envelope)
-
 
 def _default_tools() -> dict[str, Any]:
     from shared.tools import v1_tools
@@ -335,7 +323,6 @@ def _default_tools() -> dict[str, Any]:
     registry = {tool.name: tool for tool in v1_tools}
     registry["metric_coverage"] = coverage.metric_coverage
     return registry
-
 
 async def acall_capability(
     name: str,
@@ -353,7 +340,6 @@ async def acall_capability(
         raise AdapterError(f"v1 tool {spec.tool_name!r} not available")
     result = await ainvoke_tool(tool, arguments or {})
     return build_envelope(spec, arguments or {}, result, entities=entities)
-
 
 def call_capability(
     name: str,
@@ -433,7 +419,6 @@ class ToolCapability:
         return result.model_copy(update={
             "lineage": [item.evidence_id for item in evidence],
         })
-
 
 def _task_arguments(name: str, node: Any, task: Any, evidence: Iterable[EvidenceEnvelope]) -> dict[str, Any]:
     arguments = dict(getattr(node, "arguments", {}) or {})

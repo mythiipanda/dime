@@ -4,7 +4,6 @@ import pytest
 
 from v2.skills import SkillLibrary, skill_hashes
 
-
 def test_builtin_catalog_is_agent_skills_metadata_only():
     library = SkillLibrary()
     catalog = library.catalog()
@@ -18,7 +17,6 @@ def test_builtin_catalog_is_agent_skills_metadata_only():
     }
     assert all(set(item) == {"name", "description"} for item in catalog)
     assert all("# " not in item["description"] for item in catalog)
-
 
 @pytest.mark.parametrize("skill_name", [
     "defensive-analysis",
@@ -39,19 +37,16 @@ def test_phase1_skills_load_with_name_description_and_body(skill_name):
     assert activated[0]["name"] == skill_name
     assert len(activated[0]["content_hash"]) == 64
 
-
 def test_defensive_analysis_skill_has_key_guidance():
     body = SkillLibrary().skills["defensive-analysis"].body
     assert "multi-dimensional" in body
     assert "500+" in body
     assert "What NOT to do" in body
 
-
 def test_followup_correction_skill_has_entity_reset_rule():
     body = SkillLibrary().skills["followup-correction"].body
     assert "league-wide" in body
     assert "reset" in body.lower() or "DROP" in body
-
 
 def test_activation_progressively_discloses_selected_skill_and_hash():
     activated = SkillLibrary().activate(["trade-analysis"])
@@ -62,18 +57,15 @@ def test_activation_progressively_discloses_selected_skill_and_hash():
         "trade-analysis": activated[0]["content_hash"]
     }
 
-
 def test_activation_preserves_order_and_deduplicates():
     names = [item["name"] for item in SkillLibrary().activate([
         "player-comparison", "trade-analysis", "player-comparison"
     ])]
     assert names == ["player-comparison", "trade-analysis"]
 
-
 def test_unknown_skill_fails_closed():
     with pytest.raises(ValueError, match="unknown skills"):
         SkillLibrary().activate(["made-up"])
-
 
 def test_invalid_agent_skill_package_fails_closed(tmp_path: Path):
     directory = tmp_path / "broken"
@@ -81,7 +73,6 @@ def test_invalid_agent_skill_package_fails_closed(tmp_path: Path):
     (directory / "SKILL.md").write_text("# no frontmatter", encoding="utf-8")
     with pytest.raises(ValueError, match="YAML frontmatter"):
         SkillLibrary(tmp_path).catalog()
-
 
 @pytest.mark.parametrize("frontmatter,error", [
     ("name: example\ndescription: Example\ninstructions: hidden",
@@ -97,7 +88,6 @@ def test_skill_frontmatter_contract_is_closed(tmp_path: Path, frontmatter, error
     with pytest.raises(ValueError, match=error):
         SkillLibrary(tmp_path).catalog()
 
-
 def test_skill_hashes_rejects_malformed_activated_context():
     valid = SkillLibrary().activate(["trade-analysis"])[0]
     for changed, error in [
@@ -109,7 +99,6 @@ def test_skill_hashes_rejects_malformed_activated_context():
             skill_hashes([changed])
     with pytest.raises(ValueError, match="names must be unique"):
         skill_hashes([valid, valid])
-
 
 def test_activation_rejects_symlinked_resources(tmp_path: Path):
     package = tmp_path / "example"
@@ -125,7 +114,6 @@ def test_activation_rejects_symlinked_resources(tmp_path: Path):
     with pytest.raises(ValueError, match="cannot be symlinks"):
         SkillLibrary(tmp_path).activate(["example"])
 
-
 def test_catalog_rejects_symlinked_skill_definition(tmp_path: Path):
     package = tmp_path / "example"
     package.mkdir()
@@ -137,7 +125,6 @@ def test_catalog_rejects_symlinked_skill_definition(tmp_path: Path):
     (package / "SKILL.md").symlink_to(outside)
     with pytest.raises(ValueError, match="SKILL.md cannot be a symlink"):
         SkillLibrary(tmp_path).catalog()
-
 
 def test_activation_hash_covers_resource_contents(tmp_path: Path):
     package = tmp_path / "example"
@@ -154,7 +141,6 @@ def test_activation_hash_covers_resource_contents(tmp_path: Path):
     second = SkillLibrary(tmp_path).activate(["example"])[0]["content_hash"]
     assert first != second
 
-
 def test_library_rejects_symlinked_root(tmp_path: Path):
     outside = tmp_path / "outside"
     package = outside / "example"
@@ -167,7 +153,6 @@ def test_library_rejects_symlinked_root(tmp_path: Path):
     root.symlink_to(outside, target_is_directory=True)
     with pytest.raises(ValueError, match="root cannot contain symlinks"):
         SkillLibrary(root).catalog()
-
 
 def test_activation_rejects_resource_directory_symlink(tmp_path: Path):
     package = tmp_path / "example"
@@ -183,7 +168,6 @@ def test_activation_rejects_resource_directory_symlink(tmp_path: Path):
     with pytest.raises(ValueError, match="cannot be symlinks"):
         SkillLibrary(tmp_path).activate(["example"])
 
-
 def test_library_rejects_symlinked_root_ancestor(tmp_path: Path):
     outside = tmp_path / "outside"
     root = outside / "skills"
@@ -198,7 +182,6 @@ def test_library_rejects_symlinked_root_ancestor(tmp_path: Path):
     with pytest.raises(ValueError, match="root cannot contain symlinks"):
         SkillLibrary(linked_parent / "skills").catalog()
 
-
 def test_catalog_rejects_symlinked_skill_package(tmp_path: Path):
     outside = tmp_path / "outside"
     outside.mkdir()
@@ -212,7 +195,6 @@ def test_catalog_rejects_symlinked_skill_package(tmp_path: Path):
     with pytest.raises(ValueError, match="package cannot contain symlinks"):
         SkillLibrary(root).catalog()
 
-
 def test_skill_instructions_have_a_hard_size_limit(tmp_path: Path):
     package = tmp_path / "example"
     package.mkdir()
@@ -222,7 +204,6 @@ def test_skill_instructions_have_a_hard_size_limit(tmp_path: Path):
     )
     with pytest.raises(ValueError, match="instructions are too large"):
         SkillLibrary(tmp_path).catalog()
-
 
 def test_activation_rejects_oversized_resource_bundle(tmp_path: Path):
     package = tmp_path / "example"
@@ -237,7 +218,6 @@ def test_activation_rejects_oversized_resource_bundle(tmp_path: Path):
     with pytest.raises(ValueError, match="resources cannot exceed"):
         SkillLibrary(tmp_path).activate(["example"])
 
-
 def test_analysis_skills_require_fetched_external_evidence():
     library = SkillLibrary()
     trade = library.skills["trade-analysis"].body
@@ -247,7 +227,6 @@ def test_analysis_skills_require_fetched_external_evidence():
     assert "several reports repeating the same original report" in trade
     assert "measured performance separate from reported explanation" in comparison
     assert "Never promote a search snippet" in comparison
-
 
 def test_analysis_skills_encode_questions_contradictions_and_completion():
     library = SkillLibrary()

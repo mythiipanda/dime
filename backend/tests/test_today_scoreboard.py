@@ -7,7 +7,6 @@ from shared.tools.today import (
     get_today,
 )
 
-
 class _Frame:
     def __init__(self, rows):
         self._rows = rows
@@ -16,7 +15,6 @@ class _Frame:
     def to_dicts(self):
         return [dict(r) for r in self._rows]
 
-
 class _Invoke:
     def __init__(self, payload):
         self._payload = payload
@@ -24,13 +22,11 @@ class _Invoke:
     def invoke(self, _args):
         return self._payload
 
-
 def _stub_deltas(monkeypatch, payload=None):
     import shared.tools.league as league
 
     payload = payload if payload is not None else {"ok": False, "error": "boom"}
     monkeypatch.setattr(league, "get_leaderboard_deltas", _Invoke(payload))
-
 
 def _stub_watchlist(monkeypatch):
     import shared.tools.watchlist as watchlist
@@ -41,7 +37,6 @@ def _stub_watchlist(monkeypatch):
         _Invoke({"ok": True, "rows": [], "meta": {"count": 0}}),
     )
 
-
 def test_warehouse_games_empty_is_read_ok(monkeypatch):
     import shared.store as store
     import shared.tools.team as team
@@ -51,7 +46,6 @@ def test_warehouse_games_empty_is_read_ok(monkeypatch):
     rows, read_ok = _warehouse_games("09/28/2026", "2024-25")
     assert rows == []
     assert read_ok is True
-
 
 def test_warehouse_games_rows_is_read_ok(monkeypatch):
     import shared.store as store
@@ -65,7 +59,6 @@ def test_warehouse_games_rows_is_read_ok(monkeypatch):
     assert rows == [{"GAME_ID": "1", "LINKS": {"nba": "1"}}]
     assert read_ok is True
 
-
 def test_warehouse_games_failure_is_not_empty(monkeypatch):
     import shared.store as store
 
@@ -76,7 +69,6 @@ def test_warehouse_games_failure_is_not_empty(monkeypatch):
     rows, read_ok = _warehouse_games("09/28/2026", "2024-25")
     assert rows == []
     assert read_ok is False
-
 
 def test_scoreboards_static_failure_flags_degraded(monkeypatch):
     monkeypatch.setattr(today_mod, "_live_scores_needed", lambda s, d: False)
@@ -96,13 +88,11 @@ def test_scoreboards_static_failure_flags_degraded(monkeypatch):
     assert tonight == []
     assert ok is False
 
-
 def test_scoreboards_static_empty_flags_ok(monkeypatch):
     monkeypatch.setattr(today_mod, "_live_scores_needed", lambda s, d: False)
     monkeypatch.setattr(today_mod, "_warehouse_games", lambda d, s: ([], True))
     last, tonight, ok = _scoreboards("2024-25")
     assert (last, tonight, ok) == ([], [], True)
-
 
 def test_scoreboards_live_path_unchanged(monkeypatch):
     monkeypatch.setattr(today_mod, "_live_scores_needed", lambda s, d: True)
@@ -110,7 +100,6 @@ def test_scoreboards_live_path_unchanged(monkeypatch):
     last, tonight, ok = _scoreboards("2026-27")
     assert last == tonight == [{"GAME_ID": "9"}]
     assert ok is True
-
 
 def test_get_today_marks_warehouse_failure(monkeypatch):
     _stub_deltas(monkeypatch)
@@ -122,7 +111,6 @@ def test_get_today_marks_warehouse_failure(monkeypatch):
     assert out["rows"]["tonight"] == []
     assert out["meta"]["scoreboard_ok"] is False
 
-
 def test_get_today_marks_warehouse_ok(monkeypatch):
     _stub_deltas(monkeypatch)
     monkeypatch.setattr(
@@ -133,7 +121,6 @@ def test_get_today_marks_warehouse_ok(monkeypatch):
     assert out["rows"]["last_night"] == [{"GAME_ID": "1"}]
     assert out["meta"]["scoreboard_ok"] is True
 
-
 def test_briefing_marks_warehouse_failure(monkeypatch):
     _stub_deltas(monkeypatch)
     _stub_watchlist(monkeypatch)
@@ -142,7 +129,6 @@ def test_briefing_marks_warehouse_failure(monkeypatch):
     out = get_morning_briefing.invoke({"season": "2024-25"})
     assert out["rows"]["today"]["last_night"] == []
     assert out["meta"]["scoreboard_ok"] is False
-
 
 def test_briefing_marks_warehouse_ok(monkeypatch):
     _stub_deltas(monkeypatch)
@@ -154,7 +140,6 @@ def test_briefing_marks_warehouse_ok(monkeypatch):
     out = get_morning_briefing.invoke({"season": "2024-25"})
     assert out["rows"]["today"]["last_night"] == [{"GAME_ID": "1"}]
     assert out["meta"]["scoreboard_ok"] is True
-
 
 def test_warehouse_has_games_fails_open(monkeypatch):
     import shared.store as store

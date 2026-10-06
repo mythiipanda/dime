@@ -13,7 +13,6 @@ from v2.runtime.policy import refuse_unprofiled_capability
 from v2.runtime.ledger import exception_text
 from v2.domain.evidence import admit_evidence, post_result_denials, pre_call_denials
 
-
 def _canonical_entity_value(entity_type: str, value: object) -> str:
     text = str(value).strip()
     try:
@@ -27,7 +26,6 @@ def _canonical_entity_value(entity_type: str, value: object) -> str:
         pass
     return " ".join(text.casefold().replace("-", " ").replace("_", " ").split())
 
-
 class NodeTimeoutError(TimeoutError):
 
     def __init__(self, node_id: str, budget_s: float) -> None:
@@ -36,11 +34,9 @@ class NodeTimeoutError(TimeoutError):
         super().__init__(
             f"node {self.node_id} timed out after {self.budget_s:g}s")
 
-
 async def _join_node(node: PlanNode, coro) -> tuple[PlanNode, Any]:
     _, envelope = await coro
     return node, envelope
-
 
 class PlanExecutor:
     def __init__(
@@ -365,11 +361,6 @@ class PlanExecutor:
                 f"plan covers unknown requirements: {sorted(unknown_requirement_ids)}"
             )
 
-
-
-
-
-
         missing = sorted(set(task.required_evidence) - selected)
         uncovered = sorted(known_requirements.keys() - covered.keys())
         if missing and (not known_requirements or uncovered):
@@ -409,11 +400,6 @@ class PlanExecutor:
                     raise ValueError(precondition_repair_instruction(
                         item.check, item.node_id, item.requirement_id,
                         item.detail))
-
-
-
-
-
 
     def _selected_name(self, plan: Plan, node_id: str) -> str | None:
         parent = next(item for item in plan.nodes if item.id == node_id)
@@ -574,7 +560,7 @@ class PlanExecutor:
                 return node, result
             except anyio.get_cancelled_exc_class():
                 raise
-            except Exception as exc:  # noqa: BLE001
+            except Exception as exc:
                 message = exception_text(exc)
                 node_errors = errors.setdefault(node.id, [])
                 if message not in node_errors:

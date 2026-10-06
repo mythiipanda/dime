@@ -27,10 +27,8 @@ TEAM_COLS = [
     "REB", "AST", "STL", "BLK", "TOV", "PF", "PLUS_MINUS",
 ]
 
-
 def canonical_season(end_year: int) -> str:
     return f"{end_year - 1:04d}-{end_year % 100:02d}"
-
 
 def available_team_seasons(con) -> list[int]:
     return [int(row[0]) for row in con.execute(
@@ -38,7 +36,6 @@ def available_team_seasons(con) -> list[int]:
         WHERE season_type = 'playoffs' AND season IS NOT NULL
         ORDER BY season"""
     ).fetchall()]
-
 
 def team_rows(con, end_year: int = END_YEAR) -> pl.DataFrame:
     cols = ", ".join(f'{name.lower()} AS "{name}"' for name in TEAM_COLS)
@@ -48,7 +45,6 @@ def team_rows(con, end_year: int = END_YEAR) -> pl.DataFrame:
         ORDER BY game_date, game_id, team_id""",
         [end_year],
     ).to_arrow_table())
-
 
 def validate_team_rows(frame: pl.DataFrame) -> None:
     if frame.is_empty():
@@ -61,7 +57,6 @@ def validate_team_rows(frame: pl.DataFrame) -> None:
     if frame.select(pl.struct(["TEAM_ID", "GAME_ID"]).n_unique()).item() != frame.height:
         raise ValueError("playoff team seed contains duplicate team-game rows")
 
-
 def seed_team_rows(end_year: int = END_YEAR) -> int:
     season = canonical_season(end_year)
     con = store.connect()
@@ -73,7 +68,6 @@ def seed_team_rows(end_year: int = END_YEAR) -> int:
     result = FetchResult(frame=frame, meta=FetchMeta(source=SOURCE, season=season))
     return store.save_frame("silver_playoffs", result, replace_season=True)
 
-
 def seed_all_team_rows() -> dict[str, int]:
     con = store.connect(read_only=True)
     try:
@@ -82,7 +76,6 @@ def seed_all_team_rows() -> dict[str, int]:
         con.close()
     return {canonical_season(end_year): seed_team_rows(end_year)
             for end_year in seasons}
-
 
 def player_ids(con, end_year: int = END_YEAR) -> list[int]:
     return [int(row[0]) for row in con.execute(
@@ -95,17 +88,14 @@ def player_ids(con, end_year: int = END_YEAR) -> list[int]:
         [end_year, end_year],
     ).fetchall()]
 
-
 def _progress_file(season: str) -> Path:
     return Path(__file__).with_name(f"seed_{season.replace('-', '_')}_playoffs_progress.json")
-
 
 def _progress(season: str = SEASON) -> dict:
     path = _progress_file(season)
     if path.exists():
         return json.loads(path.read_text())
     return {"done": [], "failed": {}}
-
 
 def seed_player_rows(season: str = SEASON, limit: int | None = None) -> dict[str, int]:
     end_year = int(season.split("-")[0]) + 1
@@ -161,7 +151,6 @@ def seed_player_rows(season: str = SEASON, limit: int | None = None) -> dict[str
         time.sleep(0.6)
     return counts
 
-
 def check(season: str = SEASON) -> dict[str, int]:
     con = store.connect(read_only=True)
     try:
@@ -174,7 +163,6 @@ def check(season: str = SEASON) -> dict[str, int]:
         return out
     finally:
         con.close()
-
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser()
@@ -204,7 +192,6 @@ def main(argv: list[str] | None = None) -> int:
     if not args.team_only:
         print(json.dumps(seed_player_rows(args.season, args.limit), sort_keys=True))
     return 0
-
 
 if __name__ == "__main__":
     raise SystemExit(main())

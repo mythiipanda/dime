@@ -26,10 +26,8 @@ EVENT_CHECKS = {
     "fouls": ("Foul", "foul"),
 }
 
-
 def season_label(end_year: int) -> str:
     return f"{end_year - 1}-{str(end_year)[2:]}"
-
 
 def fetch(url: str, dest: Path) -> bool:
     if dest.exists() and dest.stat().st_size > 0:
@@ -42,7 +40,6 @@ def fetch(url: str, dest: Path) -> bool:
     except Exception as exc:
         print(f"skip {url.split('/')[-1]}: {str(exc)[:80]}")
         return False
-
 
 def unify(frames: list) -> list:
     order: dict[str, list[str]] = {}
@@ -67,7 +64,6 @@ def unify(frames: list) -> list:
             {c: t for c, t in target.items()}, strict=False))
     return out
 
-
 def event_counts(frame: pl.DataFrame) -> dict[str, int]:
     cols = set(frame.columns)
     out: dict[str, int] = {}
@@ -90,7 +86,6 @@ def event_counts(frame: pl.DataFrame) -> dict[str, int]:
                 out[key] = desc.str.contains(keyword.lower(), literal=True).sum()
     return {k: int(v) for k, v in out.items()}
 
-
 def parse_years(raw: str) -> list[int]:
     years = [int(y.strip()) for y in raw.split(",") if y.strip()]
     if 2026 in years:
@@ -104,7 +99,6 @@ def parse_years(raw: str) -> list[int]:
         print("no seasons requested")
         raise SystemExit(1)
     return years
-
 
 def main() -> None:
     args = argparse.ArgumentParser()
@@ -157,7 +151,6 @@ def main() -> None:
         print(f"{season_label(y)} {rows} {c['makes']} "
               f"{c['misses']} {c['turnovers']} {c['fouls']} {gaps}")
     print(f"pbp rows loaded: {total}")
-
 
 if __name__ == "__main__":
     main()

@@ -21,16 +21,13 @@ from v2.contracts import (
     canonical_entity_id,
 )
 
-
 _IDENTITY_KEYS = {
     "player": {"PLAYER_ID", "player_id", "PLAYER", "player",
                "PLAYER_NAME", "player_name", "winner", "coach", "COACH"},
     "team": {"TEAM_ID", "team_id", "TeamID", "TEAM", "team"},
 }
 
-
 _VALUE_TOLERANCE = 1e-9
-
 
 def _coerce_number(value):
     if isinstance(value, bool):
@@ -46,7 +43,6 @@ def _coerce_number(value):
             return None
         return result if math.isfinite(result) else None
     return None
-
 
 def _declared_value_matches(declared, selected) -> bool:
     if declared.kind == "boolean":
@@ -70,7 +66,6 @@ def _declared_value_matches(declared, selected) -> bool:
     scale = max(1.0, abs(target), abs(wanted))
     return abs(target - wanted) <= _VALUE_TOLERANCE * scale
 
-
 _UNIT_WORD_FORMS = {
     "points per game": "per_game",
     "rebounds per game": "per_game",
@@ -80,17 +75,14 @@ _UNIT_WORD_FORMS = {
     "minutes per game": "minutes",
 }
 
-
 def _canonical_unit(value):
     words = " ".join(str(value).lower().split())
     if words in _UNIT_WORD_FORMS:
         return _UNIT_WORD_FORMS[words]
     return "_".join(words.split())
 
-
 def _canonical_domain(value):
     return "_".join(str(value).lower().split())
-
 
 def _row_index(row_selector):
     prefix = "rows["
@@ -102,26 +94,21 @@ def _row_index(row_selector):
         return None
     return int(digits)
 
-
 @dataclass(frozen=True)
 class ResolvedSelector:
     path: str
     value: Any
 
-
 @dataclass(frozen=True)
 class UnresolvedSelector:
     selector: str
-
 
 @dataclass(frozen=True)
 class AmbiguousSelector:
     selector: str
     paths: tuple[str, ...]
 
-
 SelectorResolution = ResolvedSelector | UnresolvedSelector | AmbiguousSelector
-
 
 @dataclass(frozen=True)
 class _ColumnLeaf:
@@ -129,7 +116,6 @@ class _ColumnLeaf:
     value: Any
     row: str | None
     position: int | None
-
 
 def _column_leaves(rows, key):
     def walk(value, path, position, row, row_position, own_key):
@@ -148,7 +134,6 @@ def _column_leaves(rows, key):
 
     yield from walk(rows, "rows", None, None, None, None)
 
-
 def _flat_row_field(selector: str) -> tuple[int, str] | None:
     row, sep, key = selector.partition(".")
     if not sep or not key or "." in key or "[" in key:
@@ -160,15 +145,12 @@ def _flat_row_field(selector: str) -> tuple[int, str] | None:
         return None
     return int(digits), key
 
-
 def _row_of(path: str) -> str:
     return path.rsplit(".", 1)[0]
-
 
 def _inside_row(path: str, row: str) -> bool:
     return (path == row or path.startswith(row + ".")
             or path.startswith(row + "["))
-
 
 def resolve_selector(
     envelope: EvidenceEnvelope,
@@ -203,7 +185,6 @@ def resolve_selector(
         return ResolvedSelector(leaves[0].path, leaves[0].value)
     return AmbiguousSelector(selector, tuple(leaf.path for leaf in leaves))
 
-
 def resolve_subject_row(
     envelope: EvidenceEnvelope, binding, identity: str) -> str | None:
     def names_subject(value) -> bool:
@@ -217,7 +198,6 @@ def resolve_subject_row(
         return None
     return _row_of(resolution.path)
 
-
 def resolve_evidence_binding(
     envelope: EvidenceEnvelope, binding, subject_row: str | None) -> SelectorResolution:
     resolution = resolve_selector(
@@ -227,7 +207,6 @@ def resolve_evidence_binding(
             and not _inside_row(resolution.path, subject_row):
         return UnresolvedSelector(binding.selector)
     return resolution
-
 
 def _reanchor_binding(binding, evidence):
     from v2.contracts import EvidenceOutputBinding, canonical_entity_id
@@ -284,7 +263,6 @@ def _reanchor_binding(binding, evidence):
         "subject_selector": new_subject_selector,
     })
 
-
 def reanchor_verified_claim_bindings(execution, verified_claim):
     evidence_by_id = {item.evidence_id: item for item in execution.evidence}
     fixed = []
@@ -302,10 +280,8 @@ def reanchor_verified_claim_bindings(execution, verified_claim):
         return verified_claim
     return verified_claim.model_copy(update={"output_bindings": fixed})
 
-
 class ExecutionErrorCode(StrEnum):
     PROFILE_NAME_RESOLUTION_UNAVAILABLE = "profile/name_resolution_unavailable"
-
 
 class ExecutionResult(BaseModel):
     model_config = ConfigDict(extra="forbid")
@@ -389,7 +365,6 @@ class ExecutionResult(BaseModel):
             if node.status.value == "skipped" and count:
                 raise ValueError(f"skipped node {node.id!r} cannot carry attempts")
         return self
-
 
 class RuntimeResult(BaseModel):
     model_config = ConfigDict(extra="forbid")
@@ -508,7 +483,6 @@ class RuntimeResult(BaseModel):
         self.output_statuses = computed
         return self
 
-
 def withheld_claim_indices(gaps) -> set[int]:
     return {
         int(block.removeprefix("claim:"))
@@ -517,7 +491,6 @@ def withheld_claim_indices(gaps) -> set[int]:
         for block in gap.blocks
         if block.startswith("claim:") and block.removeprefix("claim:").isdigit()
     }
-
 
 def build_output_statuses(task, verified_claims, gaps):
     from v2.contracts import OutputFinalStatus
@@ -556,7 +529,6 @@ def build_output_statuses(task, verified_claims, gaps):
             claim_index=owned[0] if owned else None,
             binding=owned[1] if owned else None))
     return rows
-
 
 def propagate_evidence_to_task(task, execution, draft, admitted):
     from v2.contracts import (
@@ -645,10 +617,8 @@ def propagate_evidence_to_task(task, execution, draft, admitted):
         if claim.claim_index in accepted else claim
         for claim in admitted]
 
-
 class BindingFormMismatch(ValueError):
     pass
-
 
 def admit_verified_claim_bindings(
     task: TaskSpec,

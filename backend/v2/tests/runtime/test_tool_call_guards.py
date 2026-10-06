@@ -8,21 +8,17 @@ from v2.contracts import EntityRef, Plan, PlanNode, RunMode, SeasonRef, TaskSpec
 from v2.domain.evidence import post_result_denials, pre_call_denials
 from v2.runtime import FakeCapability, PlanExecutor
 
-
 @pytest.fixture
 def anyio_backend():
     return "asyncio"
-
 
 def _task(**overrides):
     base = dict(goal="answer", mode=RunMode.QUICK, deliverable="text")
     base.update(overrides)
     return TaskSpec(**base)
 
-
 def _season_task(value="2025-26", **overrides):
     return _task(season=SeasonRef(value=value, source="user", confidence=1), **overrides)
-
 
 class _Probe(FakeCapability):
     def __init__(self, name, rows, **kwargs):
@@ -32,7 +28,6 @@ class _Probe(FakeCapability):
     async def execute(self, node, task, evidence):
         self.calls.append(node.id)
         return await super().execute(node, task, evidence)
-
 
 class _FixedSeason:
     def __init__(self, name, season, rows=None, entities=None):
@@ -57,7 +52,6 @@ class _FixedSeason:
             rows=self._rows,
         )
 
-
 class _FixedSubject:
     def __init__(self, name, entities, rows):
         self.name = name
@@ -79,7 +73,6 @@ class _FixedSubject:
             rows=self._rows,
         )
 
-
 class _FixedEmpty:
     def __init__(self, name, scoped):
         self.name = name
@@ -99,7 +92,6 @@ class _FixedEmpty:
             rows=[],
         )
 
-
 def test_pre_call_denials_name_contradiction_without_execution():
     task = _season_task()
     denials = pre_call_denials(task, "standings", {"season": "2024-25"})
@@ -108,7 +100,6 @@ def test_pre_call_denials_name_contradiction_without_execution():
     assert denials[0].check == "season_mismatch"
     assert "2024-25" in denials[0].message
     assert "2025-26" in denials[0].message
-
 
 @pytest.mark.anyio
 async def test_season_outside_scope_refused_before_execution():
@@ -121,7 +112,6 @@ async def test_season_outside_scope_refused_before_execution():
     assert "standings" in result.errors["a"][0]
     assert "season_mismatch" in result.errors["a"][0]
 
-
 @pytest.mark.anyio
 async def test_wrong_season_rows_refused_after_execution():
     cap = _FixedSeason("standings", "2024-25")
@@ -131,7 +121,6 @@ async def test_wrong_season_rows_refused_after_execution():
     assert cap.calls == ["a"]
     assert result.plan.nodes[0].status.value == "failed"
     assert "season_mismatch" in result.errors["a"][0]
-
 
 @pytest.mark.anyio
 async def test_right_rows_pass_both_guards():
@@ -143,7 +132,6 @@ async def test_right_rows_pass_both_guards():
     assert result.plan.nodes[0].status.value == "complete"
     assert result.evidence_by_node["a"].rows == [{"TEAM_ID": "1610612738", "WINS": 61}]
 
-
 @pytest.mark.anyio
 async def test_wrong_subject_rows_refused():
     wanted = [EntityRef(id="1610612738", type="team", display_name="Boston Celtics")]
@@ -154,7 +142,6 @@ async def test_wrong_subject_rows_refused():
     result = await PlanExecutor({"team_ratings": cap}).execute(task, plan)
     assert result.plan.nodes[0].status.value == "failed"
     assert "entity_mismatch" in result.errors["a"][0]
-
 
 @pytest.mark.anyio
 async def test_guards_run_on_every_capability_call():
@@ -175,7 +162,6 @@ async def test_guards_run_on_every_capability_call():
     assert "alpha" in result.errors["a"][0]
     assert "beta" in result.errors["b"][0]
 
-
 def test_post_result_denials_pass_for_matching_scope():
     from v2.contracts import EvidenceEnvelope
 
@@ -189,7 +175,6 @@ def test_post_result_denials_pass_for_matching_scope():
         rows=[{"WINS": 61, "season": "2025-26"}],
     )
     assert post_result_denials(task, envelope) == []
-
 
 def test_empty_forbidden_by_contract_fails_loud():
     from v2.contracts import EvidenceEnvelope
@@ -207,7 +192,6 @@ def test_empty_forbidden_by_contract_fails_loud():
     assert [item.check for item in denials] == ["empty_rows_forbidden"]
     assert denials[0].capability == "sql_exec"
 
-
 def test_empty_allowed_by_contract_stays_allowed():
     from v2.contracts import EvidenceEnvelope
 
@@ -220,7 +204,6 @@ def test_empty_allowed_by_contract_stays_allowed():
         rows=[],
     )
     assert post_result_denials(task, envelope) == []
-
 
 @pytest.mark.anyio
 async def test_empty_contract_enforced_on_every_call_path():

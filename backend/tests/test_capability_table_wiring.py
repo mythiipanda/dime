@@ -10,7 +10,6 @@ from v2.contracts import EvidenceRequirement, SeasonRef, TaskSpec
 SEASON_SCOPED = tuple(
     name for name, spec in CAPABILITIES.items() if spec.task_season_scoped)
 
-
 def warehouse_tables(path) -> frozenset:
     connection = duckdb.connect(str(path), read_only=True)
     try:
@@ -19,10 +18,8 @@ def warehouse_tables(path) -> frozenset:
     finally:
         connection.close()
 
-
 def on_hand_tables() -> frozenset:
     return warehouse_tables(coverage.warehouse_path())
-
 
 def busiest_season() -> str:
     seasons = set()
@@ -32,7 +29,6 @@ def busiest_season() -> str:
         seasons, key=lambda season: coverage.parse_season_start(season) or 0)
     assert ordered, "the warehouse holds no season on any table"
     return ordered[-1]
-
 
 def task_for(capability: str, season: str) -> TaskSpec:
     return TaskSpec(
@@ -49,7 +45,6 @@ def task_for(capability: str, season: str) -> TaskSpec:
         )],
     )
 
-
 @pytest.fixture()
 def pointed(monkeypatch):
     def point(path) -> None:
@@ -59,14 +54,12 @@ def pointed(monkeypatch):
     yield point
     coverage.coverage_cache_clear()
 
-
 def test_the_registry_names_only_tables_a_tool_really_reads():
     from scripts.capability_table_inventory import build, unread_declarations
 
     assert not unread_declarations(build()), (
         "the registry names tables no tool reads, so coverage is wired to a "
         "table nobody can read")
-
 
 def test_season_coverage_never_reads_a_table_the_warehouse_lacks():
     on_hand = on_hand_tables()
@@ -81,7 +74,6 @@ def test_season_coverage_never_reads_a_table_the_warehouse_lacks():
         "capabilities wired to tables this warehouse does not have, so a "
         f"season verdict rests on a table nobody can read: {phantom}")
 
-
 def test_the_selection_path_reaches_every_capability_without_inventing_a_table():
     season = busiest_season()
     for name in SEASON_SCOPED:
@@ -92,7 +84,6 @@ def test_the_selection_path_reaches_every_capability_without_inventing_a_table()
             assert set(group) == set(
                 coverage.declared_tables_for_capability(name, {})), name
 
-
 def test_qualified_leaders_never_resolves_to_a_table_the_warehouse_lacks():
     on_hand = on_hand_tables()
     for stat in ("PTS", "REB", "AST", "STL", "BLK", "DREB", "FG_PCT",
@@ -101,7 +92,6 @@ def test_qualified_leaders_never_resolves_to_a_table_the_warehouse_lacks():
             "qualified_leaders", {"stat_category": stat})
         assert set(resolved) <= on_hand, (stat, resolved)
     assert set(coverage.tables_for_capability("qualified_leaders", {})) <= on_hand
-
 
 def test_every_warehouse_file_carries_the_registry(pointed):
     files = sorted(coverage.warehouse_path().parent.glob("warehouse*.duckdb"))
@@ -117,7 +107,6 @@ def test_every_warehouse_file_carries_the_registry(pointed):
             assert certify | absent == declared, f"{path.name} {name}"
             assert not certify & absent, f"{path.name} {name}"
             assert not absent & on_hand, f"{path.name} {name}"
-
 
 @pytest.fixture()
 def warehouse_without(monkeypatch, tmp_path):
@@ -147,10 +136,9 @@ def warehouse_without(monkeypatch, tmp_path):
     store.warehouse_identity_cache_clear()
     coverage.coverage_cache_clear()
 
-
 def test_a_capability_whose_table_is_absent_is_not_season_covered(
         warehouse_without):
-    on_hand = warehouse_without([
+    warehouse_without([
         "silver_hist_player_seasons", "silver_team_games"])
     unserved = {
         name: coverage.declared_tables_for_capability(name, {})
@@ -173,7 +161,6 @@ def test_a_capability_whose_table_is_absent_is_not_season_covered(
         for table in tables:
             assert table in joined, (name, table)
 
-
 def test_a_capability_keeps_its_own_coverage_when_only_one_read_is_absent(
         warehouse_without):
     warehouse_without(["silver_hist_player_seasons", "silver_team_games"])
@@ -184,7 +171,6 @@ def test_a_capability_keeps_its_own_coverage_when_only_one_read_is_absent(
     season = busiest_season()
     assert ModelIntake._mark_uncovered_season(
         task_for("rookie_leaders", season)).open_questions == []
-
 
 def test_a_tool_reads_no_season_from_a_table_it_does_not_have(
         warehouse_without):

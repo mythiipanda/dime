@@ -11,8 +11,8 @@ import polars as pl
 import requests
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-from shared import store  # noqa: E402
-from shared.sources.base import FetchMeta, FetchResult  # noqa: E402
+from shared import store
+from shared.sources.base import FetchMeta, FetchResult
 
 HEADERS = {"User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
                          "AppleWebKit/537.36 Chrome/126.0.0.0 Safari/537.36"}
@@ -23,17 +23,14 @@ TABLE = "silver_player_season"
 ZONES_TABLE = "silver_zone_splits"
 ENTITY = "league"
 
-
 class SeasonFetchError(RuntimeError):
     pass
-
 
 def norm(name: str) -> str:
     nfkd = unicodedata.normalize("NFKD", name or "")
     ascii_only = "".join(c for c in nfkd if not unicodedata.combining(c))
     return re.sub(r"\s+(jr|sr|ii|iii|iv)\.?$", "", ascii_only.strip(),
                   flags=re.IGNORECASE)
-
 
 def _start_year(season: str) -> int:
     year, _, tail = str(season).partition("-")
@@ -43,17 +40,14 @@ def _start_year(season: str) -> int:
         raise ValueError(f"season must span consecutive years, got {season!r}")
     return int(year)
 
-
 def season_slugs(first: str, last: str) -> list[str]:
     start, end = _start_year(first), _start_year(last)
     if end < start:
         raise ValueError(f"empty season range: {first} to {last}")
     return [f"{y}-{(y + 1) % 100:02d}" for y in range(start, end + 1)]
 
-
 def bbref_year(season: str) -> int:
     return _start_year(season) + 1
-
 
 def name_map() -> dict:
     from nba_api.stats.static import players as sp
@@ -61,7 +55,6 @@ def name_map() -> dict:
     for r in sp.get_players():
         m.setdefault(norm(r["full_name"]), r["id"])
     return m
-
 
 def fetch(page: str, year: int) -> pd.DataFrame:
     r = requests.get(BASE % (year, page), headers=HEADERS, timeout=30)
@@ -73,7 +66,6 @@ def fetch(page: str, year: int) -> pd.DataFrame:
                       for tup in df.columns]
     df = df[df[df.columns[1]] != "Player"]
     return df
-
 
 def loaded_seasons(table: str = TABLE) -> set[str]:
     try:
@@ -95,7 +87,6 @@ def loaded_seasons(table: str = TABLE) -> set[str]:
             con.close()
         except Exception:
             pass
-
 
 def build_per_game_rows(pg: pd.DataFrame, nm: dict) -> list[dict]:
     staged: list[dict] = []
@@ -131,13 +122,11 @@ def build_per_game_rows(pg: pd.DataFrame, nm: dict) -> list[dict]:
         rows.append(row)
     return rows
 
-
 def require_complete(season: str, rows: list[dict]) -> None:
     if not rows:
         raise SeasonFetchError(
             f"{TABLE} {season}: basketball-reference per_game returned "
             "no usable rows")
-
 
 def save_season(table: str, rows: list[dict], season: str,
                 source: str = BBREF) -> int:
@@ -145,7 +134,6 @@ def save_season(table: str, rows: list[dict], season: str,
     res = FetchResult(frame=frame,
                       meta=FetchMeta("basketball-reference", season))
     return store.save_frame(table, res, ENTITY, replace_season=True)
-
 
 def build_zone_rows(pg: pd.DataFrame, sh: pd.DataFrame, nm: dict) -> list[dict]:
     fga_by_pid: dict = {}
@@ -196,7 +184,6 @@ def build_zone_rows(pg: pd.DataFrame, sh: pd.DataFrame, nm: dict) -> list[dict]:
             })
     return zrows
 
-
 def seed_season(season: str, nm: dict | None = None,
                 fetch_page=None) -> dict[str, int]:
     fetch_page = fetch_page or fetch
@@ -214,7 +201,6 @@ def seed_season(season: str, nm: dict | None = None,
     z = save_season(ZONES_TABLE, zrows, season) if zrows else 0
     return {TABLE: n, ZONES_TABLE: z}
 
-
 def run(seasons: list[str], nm: dict | None = None,
         fetch_page=None) -> dict:
     done = loaded_seasons()
@@ -230,16 +216,13 @@ def run(seasons: list[str], nm: dict | None = None,
     return {"loaded": loaded, "skipped": skipped,
             "rows": sum(loaded.values())}
 
-
 def _f(v):
     try:
         return float(v)
     except (TypeError, ValueError):
         return None
 
-
 DEV_ENVS = frozenset({"dev", "local", "test"})
-
 
 def resolve_target(scratch_db: str):
     raw = scratch_db or os.environ.get("DIME_WAREHOUSE", "")
@@ -256,7 +239,6 @@ def resolve_target(scratch_db: str):
         print("refusing: set DIME_ENV=dev or pass --scratch-db")
         return None
     return target
-
 
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(
@@ -300,7 +282,6 @@ def main(argv: list[str] | None = None) -> int:
         return 0
     finally:
         store.DB_PATH, store.LOCK_PATH = prior_db_path, prior_lock_path
-
 
 if __name__ == "__main__":
     raise SystemExit(main())

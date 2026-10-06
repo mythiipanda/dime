@@ -44,7 +44,6 @@ COLS = ["GAME_DATE_EST", "GAME_SEQUENCE", "GAME_ID", "GAME_STATUS_ID",
         "VISITOR_TEAM_ABBREVIATION", "_source", "_season", "_fetched_at",
         "_entity"]
 
-
 def fetch_day(d: dt.date) -> list[dict]:
     url = ("https://site.api.espn.com/apis/site/v2/sports/basketball/nba/"
            f"scoreboard?dates={d:%Y%m%d}&limit=100")
@@ -83,14 +82,12 @@ def fetch_day(d: dt.date) -> list[dict]:
                     "arena": (comp.get("venue") or {}).get("fullName")})
     return out
 
-
 def prefix_for(d: dt.date) -> str:
     if d <= REGULAR_END:
         return "002"
     if d >= PLAYOFF_START:
         return "004"
     return "005"
-
 
 def main() -> None:
     days = (END - START).days + 1
@@ -101,7 +98,7 @@ def main() -> None:
         d = START + dt.timedelta(days=i)
         try:
             games = fetch_day(d)
-        except Exception as exc:  # noqa: BLE001 - log and continue
+        except Exception as exc:
             print(f"ERR {d}: {exc}", flush=True)
             continue
         entity = f"date:{d:%m/%d/%Y}"
@@ -132,7 +129,6 @@ def main() -> None:
         time.sleep(0.15)
     print(f"DONE days={days} games={total_games} "
           f"regular_seq={seq['002']} playoff_seq={seq['004']}", flush=True)
-
 
 if __name__ == "__main__":
     main()

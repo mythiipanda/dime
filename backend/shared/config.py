@@ -5,7 +5,6 @@ from typing import Literal
 
 RuntimeV2Mode = Literal["off", "on", "shadow"]
 
-
 def runtime_v2_mode() -> RuntimeV2Mode:
     raw = os.environ.get("DIME_RUNTIME_V2", "")
     mode = raw.strip().lower()
@@ -19,7 +18,6 @@ def runtime_v2_mode() -> RuntimeV2Mode:
         "unknown DIME_RUNTIME_V2 value: " + repr(raw)
         + "; expected 'on', 'shadow', or unset/empty for 'off'"
     )
-
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
@@ -55,6 +53,5 @@ class Settings(BaseSettings):
     @property
     def cors_origins(self) -> list[str]:
         return [o.strip() for o in self.cors_allowed_origins.split(",") if o.strip()]
-
 
 settings = Settings()

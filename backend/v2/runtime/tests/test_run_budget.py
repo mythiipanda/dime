@@ -8,22 +8,18 @@ from v2.contracts import Plan, PlanNode, RunMode, TaskSpec
 from v2.runtime import FakeCapability, PlanExecutor, Runtime
 from v2.runtime.ledger import LedgerKind, RunLedger, TerminalReason
 
-
 @pytest.fixture
 def anyio_backend():
     return "asyncio"
-
 
 class SlowCapability(FakeCapability):
     async def execute(self, node, task, evidence):
         await asyncio.sleep(30)
         return await super().execute(node, task, evidence)
 
-
 class Intake:
     async def understand(self, request: str) -> TaskSpec:
         return TaskSpec(goal=request, mode=RunMode.QUICK, deliverable="text")
-
 
 class Planner:
     def __init__(self, hints: list[str]) -> None:
@@ -41,7 +37,6 @@ class Planner:
             ]
         )
 
-
 class Unreached:
     async def __call__(self, *args, **kwargs):
         raise AssertionError("stage must not run after budget timeout")
@@ -58,10 +53,8 @@ class Unreached:
     async def verify(self, *args, **kwargs):
         raise AssertionError("stage must not run after budget timeout")
 
-
 def budget_task() -> TaskSpec:
     return TaskSpec(goal="budget probe", mode=RunMode.QUICK, deliverable="text")
-
 
 @pytest.mark.anyio
 async def test_slow_node_fails_fast_while_sibling_completes():
@@ -86,7 +79,6 @@ async def test_slow_node_fails_fast_while_sibling_completes():
     assert result.errors["slow"] == ["node slow timed out after 0.2s"]
     assert result.evidence_by_node["fast"].rows == {"value": 2}
     assert elapsed < 10
-
 
 @pytest.mark.anyio
 async def test_run_level_timeout_stops_hung_execute():

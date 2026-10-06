@@ -23,7 +23,6 @@ _TEAM_ID = "1610612737"
 _REQUIREMENT = "team_record_2024_25"
 _NODE_ID = "team_standings_2024_25"
 
-
 def _envelope():
     return build_envelope(
         CAPABILITIES["standings"],
@@ -39,7 +38,6 @@ def _envelope():
         }},
         observed_at=datetime.now(UTC),
     )
-
 
 def _task():
     return TaskSpec(
@@ -57,7 +55,6 @@ def _task():
             requested_outputs=["WINS", "LOSSES", "WIN_PCT"],
         )],
     )
-
 
 def _bindings(node_id, evidence_id, wins=68):
     return [
@@ -108,7 +105,6 @@ def _bindings(node_id, evidence_id, wins=68):
         ),
     ]
 
-
 def _node():
     return PlanNode(
         id=_NODE_ID,
@@ -118,7 +114,6 @@ def _node():
         arguments={"season": "2024-25"},
         status="complete",
     )
-
 
 def _admit(bindings):
     envelope = _envelope()
@@ -152,10 +147,8 @@ def _admit(bindings):
     )
     return admit_verified_claim_bindings(_task(), execution, draft, verified)
 
-
 def test_plan_envelope_carries_zero_entities():
     assert _envelope().entities == []
-
 
 def test_entityless_team_record_admits():
     envelope = _envelope()
@@ -165,7 +158,6 @@ def test_entityless_team_record_admits():
     assert by_output["LOSSES"].value.value == 14
     assert by_output["WIN_PCT"].value.value == 0.829
 
-
 def test_invented_evidence_with_true_node_admits_with_corrected_id():
     envelope = _envelope()
     admitted = _admit(_bindings(_NODE_ID, "standings:0000000000000000"))
@@ -173,12 +165,10 @@ def test_invented_evidence_with_true_node_admits_with_corrected_id():
     assert admitted.evidence_ids == [envelope.evidence_id]
     assert [item.evidence_id for item in admitted.sources] == [envelope.evidence_id]
 
-
 def test_invented_value_with_true_evidence_rejects():
     envelope = _envelope()
     with pytest.raises(ValueError, match="exactly match"):
         _admit(_bindings(_NODE_ID, envelope.evidence_id, wins=69))
-
 
 def test_wrong_subject_with_true_evidence_rejects():
     envelope = _envelope()

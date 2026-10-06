@@ -19,7 +19,6 @@ from shared.tools._core import _warehouse_or_live
 def anyio_backend():
     return "asyncio"
 
-
 CELTICS = {
     "TEAM_ID": 1610612738,
     "TEAM_NAME": "Boston Celtics",
@@ -36,7 +35,6 @@ CELTICS = {
 
 SEEDED_SEASON = "2025-26"
 REQUESTED_SEASON = "2024-25"
-
 
 def _seed_single_season_warehouse(monkeypatch, tmp_path, *, season, rows):
     import duckdb
@@ -72,7 +70,6 @@ def _seed_single_season_warehouse(monkeypatch, tmp_path, *, season, rows):
     coverage.coverage_cache_clear()
     return warehouse
 
-
 def _ratings_task() -> TaskSpec:
     return TaskSpec(
         goal=f"Boston Celtics {REQUESTED_SEASON} offensive and defensive rating",
@@ -89,7 +86,6 @@ def _ratings_task() -> TaskSpec:
         ],
     )
 
-
 def _ratings_plan() -> Plan:
     return Plan(nodes=[PlanNode(
         id="ratings",
@@ -98,7 +94,6 @@ def _ratings_plan() -> Plan:
         covers_requirement_ids=["celtics_team_ratings"],
         arguments={"team": "Boston Celtics"},
     )])
-
 
 def _stub_live_ratings(monkeypatch, *, rows, ok=True, error=""):
     import polars as pl
@@ -120,7 +115,6 @@ def _stub_live_ratings(monkeypatch, *, rows, ok=True, error=""):
     monkeypatch.setattr(nba_stats, "team_ratings", fake_team_ratings)
     return calls
 
-
 WAREHOUSE_ROW = {
     "TEAM_ID": 97001,
     "TEAM_NAME": "Warehouse Test Franchise",
@@ -134,7 +128,6 @@ WAREHOUSE_ROW = {
     "TS_PCT": 0.573,
     "TM_TOV_PCT": 13.2,
 }
-
 
 def _unfiltered_ratings_task() -> TaskSpec:
     return TaskSpec(
@@ -151,7 +144,6 @@ def _unfiltered_ratings_task() -> TaskSpec:
         ],
     )
 
-
 def _unfiltered_ratings_plan() -> Plan:
     return Plan(nodes=[PlanNode(
         id="ratings",
@@ -159,7 +151,6 @@ def _unfiltered_ratings_plan() -> Plan:
         capability_hints=["team_ratings"],
         covers_requirement_ids=["team_ratings_table"],
     )])
-
 
 def _recorded_ratings_executor(run_id: str):
     from v2.adapters.core import ToolCapability
@@ -170,11 +161,9 @@ def _recorded_ratings_executor(run_id: str):
         ToolCapability("team_ratings"), ledger, turn_id=run_id)
     return PlanExecutor({"team_ratings": capability}), ledger
 
-
 def _fallback_entries(ledger) -> list:
     return [entry for entry in ledger.entries
             if entry.kind == LedgerKind.LIVE_FALLBACK]
-
 
 @pytest.mark.anyio
 async def test_warehouse_season_miss_falls_back_to_live_source(
@@ -204,7 +193,6 @@ async def test_warehouse_season_miss_falls_back_to_live_source(
         "Boston Celtics"]
     assert envelope.rows[0]["NET_RATING"] == 8.7
 
-
 @pytest.mark.anyio
 async def test_live_miss_on_uncovered_season_fails_with_season_availability_message(
     monkeypatch, tmp_path,
@@ -229,7 +217,6 @@ async def test_live_miss_on_uncovered_season_fails_with_season_availability_mess
     assert f"Team ratings for the {REQUESTED_SEASON} season are not available" in message
     assert f"Available seasons: {SEEDED_SEASON}" in message
 
-
 @pytest.mark.anyio
 async def test_completed_season_warehouse_miss_stays_off_the_live_path_by_default(
     monkeypatch, tmp_path,
@@ -251,7 +238,6 @@ async def test_completed_season_warehouse_miss_stays_off_the_live_path_by_defaul
     assert meta["static_season"] is True
     assert meta["error"].startswith(
         f"no seeded rows for silver_team_ratings ({REQUESTED_SEASON})")
-
 
 @pytest.mark.anyio
 async def test_seeded_season_is_answered_from_the_warehouse_without_live_fetch(
@@ -275,7 +261,6 @@ async def test_seeded_season_is_answered_from_the_warehouse_without_live_fetch(
     assert result.errors == {}
     assert "fixture" in result.evidence[0].source
 
-
 @pytest.mark.anyio
 async def test_warehouse_hit_consults_no_live_source_and_logs_no_fallback(
     monkeypatch, tmp_path,
@@ -298,7 +283,6 @@ async def test_warehouse_hit_consults_no_live_source_and_logs_no_fallback(
     assert result.plan.nodes[0].status == PlanStatus.COMPLETE
     assert result.errors == {}
     assert _fallback_entries(ledger) == []
-
 
 @pytest.mark.anyio
 async def test_warehouse_miss_with_live_success_logs_one_fallback_event_naming_both_seasons(
@@ -326,7 +310,6 @@ async def test_warehouse_miss_with_live_success_logs_one_fallback_event_naming_b
     assert entries[0].call_id is not None
     assert REQUESTED_SEASON in json.dumps(data)
     assert SEEDED_SEASON in json.dumps(data)
-
 
 @pytest.mark.anyio
 async def test_warehouse_miss_with_live_failure_fails_loudly_naming_the_warehouse_season(
@@ -358,7 +341,6 @@ async def test_warehouse_miss_with_live_failure_fails_loudly_naming_the_warehous
     assert tool_results[-1].data["status"] == "failed"
     assert REQUESTED_SEASON in tool_results[-1].data["error"]
 
-
 @pytest.mark.anyio
 async def test_fallback_event_carries_no_free_text_from_the_live_source(
     monkeypatch, tmp_path,
@@ -381,7 +363,6 @@ async def test_fallback_event_carries_no_free_text_from_the_live_source(
         "capability", "requested_season", "warehouse_table",
         "warehouse_seasons", "live_source", "outcome"}
 
-
 def _open_season() -> str:
     from shared.tools._core import (
         calendar_last_completed_season, season_static)
@@ -393,7 +374,6 @@ def _open_season() -> str:
         if not season_static(candidate):
             return candidate
     raise AssertionError("no season is still open to a live refetch")
-
 
 @pytest.mark.anyio
 async def test_stale_warehouse_rows_after_a_failed_live_fetch_keep_the_fallback_record(

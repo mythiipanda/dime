@@ -6,8 +6,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from shared.tools import get_team_four_factors, v1_tools  # noqa: E402
-
+from shared.tools import get_team_four_factors, v1_tools
 
 def _require_team_four_factors_pack():
     from shared import store
@@ -22,10 +21,8 @@ def _require_team_four_factors_pack():
             "run scripts/build_team_four_factors.py"
         )
 
-
 def test_tool_registered():
     assert "get_team_four_factors" in [t.name for t in v1_tools]
-
 
 def test_full_board_30_teams():
     _require_team_four_factors_pack()
@@ -38,7 +35,6 @@ def test_full_board_30_teams():
         assert 0.4 < x["EFG_PCT"] < 0.65
         assert 0.05 < x["TOV_PCT"] < 0.25
 
-
 def test_team_scope_and_names():
     _require_team_four_factors_pack()
     for q in ("Thunder", "OKC", "Oklahoma City Thunder"):
@@ -47,13 +43,11 @@ def test_team_scope_and_names():
         assert len(r["rows"]) == 1 and r["rows"][0]["TEAM"] == "OKC"
         assert "leader_line" in r["meta"]
 
-
 def test_unknown_team_is_honest():
     _require_team_four_factors_pack()
     r = get_team_four_factors.invoke({"team": "Seattle SuperSonics"})
     assert not r["ok"]
     assert "unknown team" in r["error"]
-
 
 def test_factor_identities():
     _require_team_four_factors_pack()

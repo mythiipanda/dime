@@ -9,7 +9,6 @@ from v2.api.events import (
 )
 from v2.api.sse import encode_replay_verification
 
-
 def test_replay_report_carries_hashes_but_no_prompt_bytes() -> None:
     report = ReplayVerification(
         run_id="run-abc",
@@ -22,7 +21,6 @@ def test_replay_report_carries_hashes_but_no_prompt_bytes() -> None:
     assert "ask-one" not in chunk
     assert "t1" in chunk and "verified" in chunk
 
-
 def test_replay_mismatch_report_names_the_turn() -> None:
     report = ReplayVerification(
         run_id="run-abc",
@@ -34,7 +32,6 @@ def test_replay_mismatch_report_names_the_turn() -> None:
     )
     chunk = encode_replay_verification(report)
     assert "t2" in chunk
-
 
 def test_replay_report_rejects_malformed_hashes() -> None:
     with pytest.raises(Exception, match="sha256"):
@@ -54,7 +51,6 @@ def test_replay_report_rejects_malformed_hashes() -> None:
             content_hashes={"t1": "a" * 64},
             mismatched_turn="t1",
         )
-
 
 def test_replay_helpers_build_reports_from_threads() -> None:
     from v2.runtime.ledger import replay_entries, RunLedger, LedgerKind

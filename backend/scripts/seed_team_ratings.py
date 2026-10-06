@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 import argparse
 import os
 import sys
@@ -18,10 +17,8 @@ MAX_ATTEMPTS = 3
 BACKOFF_S = 2.0
 SEASONS = [f"{start}-{str(start + 1)[-2:]}" for start in range(2015, 2025)]
 
-
 def fetch(season: str):
     return nba_stats.team_ratings(season)
-
 
 def unit_complete(season: str) -> bool:
     try:
@@ -47,7 +44,6 @@ def unit_complete(season: str) -> bool:
             pass
     return row is not None and row[0] is not None and int(row[0]) >= 0
 
-
 def record_failure(season: str) -> None:
     from datetime import datetime, timezone
 
@@ -71,7 +67,6 @@ def record_failure(season: str) -> None:
     finally:
         con.close()
 
-
 def run_unit(season: str) -> bool:
     last = ""
     for attempt in range(1, MAX_ATTEMPTS + 1):
@@ -94,9 +89,7 @@ def run_unit(season: str) -> bool:
     print(f"failed {TABLE} {season}: {last}", flush=True)
     return False
 
-
 DEV_ENVS = frozenset({"dev", "local", "test"})
-
 
 def resolve_target(scratch_db: str) -> Path | None:
     raw = scratch_db or os.environ.get("DIME_WAREHOUSE", "")
@@ -113,7 +106,6 @@ def resolve_target(scratch_db: str) -> Path | None:
         print("refusing: set DIME_ENV=dev or pass --scratch-db")
         return None
     return target
-
 
 def table_count(season: str) -> int:
     try:
@@ -136,7 +128,6 @@ def table_count(season: str) -> int:
         except Exception:
             pass
 
-
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--seasons", default=",".join(SEASONS))
@@ -156,7 +147,6 @@ def main(argv: list[str] | None = None) -> int:
         return _run(args, target)
     finally:
         store.DB_PATH, store.LOCK_PATH = prior_db_path, prior_lock_path
-
 
 def _run(args, target: Path) -> int:
     if args.positional:
@@ -186,7 +176,6 @@ def _run(args, target: Path) -> int:
         print(f"{TABLE} {season}: {table_count(season)} rows")
     print(f"done units={done} failed={failed}")
     return 1 if failed else 0
-
 
 if __name__ == "__main__":
     raise SystemExit(main())

@@ -15,13 +15,11 @@ from shared import rate_limit, store
 from shared.config import settings
 from shared.tools.league import _validate_readonly_sql, rerun_sql
 
-
 @pytest.fixture(autouse=True)
 def _clean_limiter():
     rate_limit.reset()
     yield
     rate_limit.reset()
-
 
 @pytest.fixture()
 def warehouse(monkeypatch, tmp_path):
@@ -39,7 +37,6 @@ def warehouse(monkeypatch, tmp_path):
                         lambda **_kw: duckdb.connect(str(wh)))
     return wh
 
-
 def _cors_client():
     app = FastAPI()
     app.add_middleware(
@@ -55,7 +52,6 @@ def _cors_client():
 
     return TestClient(app)
 
-
 def test_check_sql_rerun_trips_429_with_retry_after(monkeypatch):
     monkeypatch.setenv("DIME_SQL_RERUN_RATE_LIMIT", "2")
     rate_limit.check_sql_rerun("10.0.0.1")
@@ -66,7 +62,6 @@ def test_check_sql_rerun_trips_429_with_retry_after(monkeypatch):
     assert "Retry-After" in excinfo.value.headers
     assert int(excinfo.value.headers["Retry-After"]) >= 1
     rate_limit.check_sql_rerun("10.0.0.2")
-
 
 def test_handler_returns_429_when_limit_tripped(monkeypatch):
     import shared.tools.league as league
@@ -90,14 +85,12 @@ def test_handler_returns_429_when_limit_tripped(monkeypatch):
     assert "retry-after" in lowered
     assert int(lowered["retry-after"]) >= 1
 
-
 def test_cors_allows_only_listed_origins():
     assert "http://localhost:3000" in settings.cors_origins
     assert "https://dime-fawn.vercel.app" in settings.cors_origins
     assert "http://127.0.0.1:3000" in settings.cors_origins
     assert "https://evil.example.com" not in settings.cors_origins
     assert "*" not in settings.cors_origins
-
 
 def test_cors_preflight_rejects_unknown_origin():
     resp = _cors_client().options(
@@ -108,7 +101,6 @@ def test_cors_preflight_rejects_unknown_origin():
         },
     )
     assert "access-control-allow-origin" not in resp.headers
-
 
 def test_cors_preflight_echoes_allowed_origin():
     resp = _cors_client().options(
@@ -121,13 +113,11 @@ def test_cors_preflight_echoes_allowed_origin():
     assert resp.headers.get("access-control-allow-origin") == (
         "http://localhost:3000")
 
-
 def test_cors_get_rejects_unknown_origin():
     resp = _cors_client().get(
         "/ping", headers={"Origin": "https://evil.example.com"})
     assert resp.status_code == 200
     assert "access-control-allow-origin" not in resp.headers
-
 
 def test_cors_get_echoes_allowed_origin():
     resp = _cors_client().get(
@@ -135,7 +125,6 @@ def test_cors_get_echoes_allowed_origin():
     assert resp.status_code == 200
     assert resp.headers.get("access-control-allow-origin") == (
         "https://dime-fawn.vercel.app")
-
 
 @pytest.mark.parametrize("bad", [
     "DROP TABLE silver_standings",
@@ -146,7 +135,6 @@ def test_cors_get_echoes_allowed_origin():
 def test_validate_rejects_write_sql(bad):
     with pytest.raises(ValueError):
         _validate_readonly_sql(bad, {"silver_standings"})
-
 
 @pytest.mark.parametrize("bad", [
     "DROP TABLE silver_standings",

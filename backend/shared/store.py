@@ -23,7 +23,6 @@ STATE_LOCK_PATH = STATE_PATH.parent / ".state-write.lock"
 
 PROVENANCE_COLS = ["_source", "_season", "_fetched_at"]
 
-
 def _warehouse_identity_uncached(path: Path, sample: str | None = None) -> dict[str, str]:
     if sample is None:
         try:
@@ -37,16 +36,12 @@ def _warehouse_identity_uncached(path: Path, sample: str | None = None) -> dict[
     return {"warehouse_id": "frozen-eval" if path == CANONICAL_DB_PATH else "configured-runtime",
             "warehouse_sha256": sample}
 
-
 _warehouse_identity_cache: dict[Path, tuple[tuple[int, int, str], dict[str, str]]] = {}
-
 
 def warehouse_identity_cache_clear() -> None:
     _warehouse_identity_cache.clear()
 
-
 _SAMPLE_READ_BYTES = 8192
-
 
 def _warehouse_sample_hexdigest(path: Path, size: int) -> str | None:
     try:
@@ -59,7 +54,6 @@ def _warehouse_sample_hexdigest(path: Path, size: int) -> str | None:
         return h.hexdigest()
     except OSError:
         return None
-
 
 def warehouse_identity() -> dict[str, str]:
     path = DB_PATH.resolve()
@@ -78,10 +72,8 @@ def warehouse_identity() -> dict[str, str]:
     _warehouse_identity_cache[path] = (key, identity)
     return identity
 
-
 _tables_cache: dict[Path, tuple[tuple[int, int, str], frozenset[str]]] = {}
 _tables_lock = threading.RLock()
-
 
 def _tables_freshness_key(path: Path) -> tuple[int, int, str] | None:
     try:
@@ -93,11 +85,9 @@ def _tables_freshness_key(path: Path) -> tuple[int, int, str] | None:
         return None
     return (st.st_mtime_ns, st.st_size, sample)
 
-
 def warehouse_tables_cache_clear() -> None:
     with _tables_lock:
         _tables_cache.clear()
-
 
 class WriteConflictError(TimeoutError):
     def __init__(self, warehouse: Path | str) -> None:
@@ -105,7 +95,6 @@ class WriteConflictError(TimeoutError):
         super().__init__(
             f"warehouse write for {Path(self.warehouse).name} refused: "
             f"another writer holds it; serialize writes through write_guard")
-
 
 def _connection_db_path(con) -> Path | None:
     try:
@@ -121,7 +110,6 @@ def _connection_db_path(con) -> Path | None:
     except Exception:
         return None
 
-
 def _tables_uncached(path: Path) -> tuple[frozenset[str], Path | None]:
     if path == DB_PATH.resolve():
         con = read_connect()
@@ -135,7 +123,6 @@ def _tables_uncached(path: Path) -> tuple[frozenset[str], Path | None]:
             con.close()
         except Exception:
             pass
-
 
 def tables(path: Path | str | None = None) -> set[str]:
     key = DB_PATH if path is None else Path(path)
@@ -155,11 +142,9 @@ def tables(path: Path | str | None = None) -> set[str]:
                 _tables_cache[key] = (freshness, names)
         return set(names)
 
-
 _PLAYED_GAME_TABLE = "silver_boxscores"
 
 _PRESEASON_GAME_ID_PREFIX = "001"
-
 
 def seasons_with_data(table: str = _PLAYED_GAME_TABLE) -> list[str]:
     con = read_connect()
@@ -172,13 +157,6 @@ def seasons_with_data(table: str = _PLAYED_GAME_TABLE) -> list[str]:
     finally:
         con.close()
     return [r[0] for r in rows if r and r[0]]
-
-
-def latest_data_season(table: str = _PLAYED_GAME_TABLE) -> str:
-    seasons = seasons_with_data(table)
-    if not seasons:
-        raise ValueError(f"no played-game rows in warehouse table {table}")
-    return seasons[-1]
 
 
 @contextmanager
@@ -199,7 +177,6 @@ def write_guard(timeout_s: float = 60.0):
         finally:
             fcntl.flock(fh, fcntl.LOCK_UN)
 
-
 def _connect_once(read_only: bool) -> duckdb.DuckDBPyConnection:
     if read_only:
         return duckdb.connect(str(DB_PATH), read_only=True)
@@ -213,16 +190,13 @@ def _connect_once(read_only: bool) -> duckdb.DuckDBPyConnection:
     )
     return con
 
-
 _LOCK_ERRORS = (duckdb.IOException, duckdb.ConnectionException)
 _CONNECT_RETRIES = 6
 _CONNECT_BACKOFF_S = 0.2
 
-
 _pool_state = threading.local()
 _pool_lock = threading.Lock()
 _pool_registry: list = []
-
 
 class _PooledConnection:
     def __init__(self, real):
@@ -240,7 +214,6 @@ class _PooledConnection:
 
     def __exit__(self, exc_type, exc_val, exc_tb):
         return False
-
 
 def _pool_drop():
     entry = getattr(_pool_state, "entry", None)
@@ -262,7 +235,6 @@ def _pool_drop():
         except Exception:
             pass
 
-
 def _pool_evict_all():
     try:
         warehouse_tables_cache_clear()
@@ -279,7 +251,6 @@ def _pool_evict_all():
             con.close()
         except Exception:
             pass
-
 
 def _pool_acquire():
     entry = getattr(_pool_state, "entry", None)
@@ -309,7 +280,6 @@ def _pool_acquire():
         return None
     return _PooledConnection(entry[1])
 
-
 def _pool_store(con):
     try:
         st = os.stat(DB_PATH)
@@ -328,14 +298,11 @@ def _pool_store(con):
         pass
     return _PooledConnection(con)
 
-
 def warehouse_pool_clear() -> None:
     _pool_drop()
 
-
 def read_connect() -> duckdb.DuckDBPyConnection:
     return connect(read_only=True)
-
 
 def connect_to(path: Path | str,
                read_only: bool = True) -> duckdb.DuckDBPyConnection:
@@ -347,7 +314,6 @@ def connect_to(path: Path | str,
         if not read_only:
             raise WriteConflictError(target) from exc
         raise
-
 
 def snapshot_warehouse(dest: Path | str | None = None) -> Path:
     if dest is None:
@@ -366,7 +332,6 @@ def snapshot_warehouse(dest: Path | str | None = None) -> Path:
         if wal_source.exists():
             shutil.copyfile(wal_source, Path(str(target) + ".wal"))
     return target
-
 
 def connect(read_only: bool | None = None) -> duckdb.DuckDBPyConnection:
     DB_PATH.parent.mkdir(parents=True, exist_ok=True)
@@ -401,13 +366,11 @@ def connect(read_only: bool | None = None) -> duckdb.DuckDBPyConnection:
     assert last is not None
     raise last
 
-
 def state_connect() -> duckdb.DuckDBPyConnection:
     STATE_PATH.parent.mkdir(parents=True, exist_ok=True)
     if STATE_PATH.resolve() == CANONICAL_DB_PATH:
         raise PermissionError("operational state cannot target canonical warehouse")
     return duckdb.connect(str(STATE_PATH))
-
 
 @contextmanager
 def state_write_guard(timeout_s: float = 60.0):
@@ -513,7 +476,6 @@ def save_frame(
     finally:
         con.close()
 
-
 _UNIT_DTYPE_SQL = {
     pl.Int8: "TINYINT", pl.Int16: "SMALLINT",
     pl.Int32: "INTEGER", pl.Int64: "BIGINT",
@@ -523,7 +485,6 @@ _UNIT_DTYPE_SQL = {
     pl.Boolean: "BOOLEAN", pl.String: "VARCHAR",
     pl.Date: "DATE", pl.Datetime: "TIMESTAMP",
 }
-
 
 def write_unit(table: str, frame: pl.DataFrame, season: str, source: str,
                entity: str, delete_where: str, delete_params: list,
@@ -593,9 +554,7 @@ def write_unit(table: str, frame: pl.DataFrame, season: str, source: str,
     finally:
         con.close()
 
-
 class TableAbsent(LookupError):
-    """A read named a table the warehouse does not hold."""
 
     def __init__(self, table: str, warehouse: Path | str) -> None:
         self.table = str(table)
@@ -605,14 +564,7 @@ class TableAbsent(LookupError):
             f"{Path(self.warehouse).name}; an empty read here would be "
             f"indistinguishable from a table that holds no matching rows")
 
-
 def read_frame(table: str, where: str = "", params: list[object] | None = None) -> pl.DataFrame:
-    """Read a warehouse table. Raises TableAbsent when the table is absent.
-
-    An empty frame means the table exists and matched no rows. Those are
-    different facts and a caller that conflates them answers as though the
-    data were never built.
-    """
     if table not in tables():
         raise TableAbsent(table, DB_PATH)
     con = read_connect()
@@ -623,20 +575,12 @@ def read_frame(table: str, where: str = "", params: list[object] | None = None) 
     finally:
         con.close()
 
-
 def read_frame_optional(table: str, where: str = "",
                         params: list[object] | None = None) -> pl.DataFrame:
-    """Read a table whose absence is a declared, expected outcome.
-
-    Only for callers that genuinely treat the table as one source among
-    several, or that ask whether it exists yet. Never use it to make a
-    warehouse miss look like an empty result set.
-    """
     try:
         return read_frame(table, where, params)
     except TableAbsent:
         return pl.DataFrame()
-
 
 def _read_df(sql: str, params: list, tries: int = 5) -> list[dict[str, object]]:
     import time as _time
@@ -658,7 +602,6 @@ def _read_df(sql: str, params: list, tries: int = 5) -> list[dict[str, object]]:
             _time.sleep(0.3)
     raise last or RuntimeError("warehouse read failed")
 
-
 def last_fetch(table: str, season: str, entity: str = "") -> str:
     con = read_connect()
     try:
@@ -671,7 +614,6 @@ def last_fetch(table: str, season: str, entity: str = "") -> str:
         return row[0] if row else ""
     finally:
         con.close()
-
 
 def save_chat(thread: str, role: str, text: str, owner: str = "") -> None:
     con = state_connect()
@@ -696,7 +638,6 @@ def save_chat(thread: str, role: str, text: str, owner: str = "") -> None:
     finally:
         con.close()
 
-
 def chat_history(thread: str, limit: int = 6) -> list[dict[str, str]]:
     con = state_connect()
     try:
@@ -711,7 +652,6 @@ def chat_history(thread: str, limit: int = 6) -> list[dict[str, str]]:
         return [{"role": r[0], "text": r[1]} for r in reversed(rows)]
     finally:
         con.close()
-
 
 def save_facts(thread: str, facts: list[str], owner: str = "") -> None:
     if not thread or not facts:
@@ -741,7 +681,6 @@ def save_facts(thread: str, facts: list[str], owner: str = "") -> None:
     finally:
         con.close()
 
-
 def thread_facts(thread: str, limit: int = 20) -> list[str]:
     if not thread:
         return []
@@ -760,7 +699,6 @@ def thread_facts(thread: str, limit: int = 20) -> list[str]:
         return []
     finally:
         con.close()
-
 
 def list_threads(owner: str = "") -> list[dict[str, str]]:
     con = state_connect()
@@ -799,7 +737,6 @@ def list_threads(owner: str = "") -> list[dict[str, str]]:
     finally:
         con.close()
 
-
 def save_run(
     thread: str, question: str, answer: str,
     tables: list[dict], suggestions: list[str], owner: str = "",
@@ -834,7 +771,6 @@ def save_run(
             )
     finally:
         con.close()
-
 
 def list_runs(thread: str, owner: str = "") -> list[dict]:
     import json as _json
@@ -874,7 +810,6 @@ def list_runs(thread: str, owner: str = "") -> list[dict]:
         return out
     finally:
         con.close()
-
 
 def compact_thread(thread: str, keep_recent: int = 4,
                    threshold: int = 12) -> dict:

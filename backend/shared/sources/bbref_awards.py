@@ -29,14 +29,11 @@ VOTE_OUT_COLUMNS = ("VOTES_FIRST", "VOTES_SECOND", "VOTES_THIRD")
 SEASON_LABEL = re.compile(r"\d{4}-\d{2}")
 SHARE_TOLERANCE = 0.001
 
-
 class AwardsPageError(RuntimeError):
     pass
 
-
 class Throttled(RuntimeError):
     pass
-
 
 @dataclass(frozen=True)
 class AwardSection:
@@ -63,13 +60,11 @@ class AwardSection:
         declared += [stat for stat in self.vote_stats if stat]
         return tuple(sorted(set(declared)))
 
-
 @dataclass(frozen=True)
 class WinnerPage:
     award: str
     url: str
     table_id: str
-
 
 WINNER_PAGES: tuple[WinnerPage, ...] = (
     WinnerPage("MVP", "https://www.basketball-reference.com/awards/mvp.html",
@@ -86,7 +81,6 @@ WINNER_PAGES: tuple[WinnerPage, ...] = (
                "coyNBA"),
 )
 WINNER_URLS = frozenset(page.url for page in WINNER_PAGES)
-
 
 @dataclass(frozen=True)
 class Ballot:
@@ -120,7 +114,6 @@ class Ballot:
         }
         row.update(zip(VOTE_OUT_COLUMNS, self.votes))
         return row
-
 
 AWARD_SECTIONS: tuple[AwardSection, ...] = (
     AwardSection("mvp", "MVP", "player", "rank", None,
@@ -164,11 +157,9 @@ SCHEMA = {
 }
 COLUMNS = list(SCHEMA)
 
-
 def season_label(year: int) -> str:
     start = int(year) - 1
     return "%d-%02d" % (start, (start + 1) % 100)
-
 
 def season_year(season: str) -> int:
     match = re.fullmatch(r"(\d{4})-(\d{2})", str(season).strip())
@@ -179,10 +170,8 @@ def season_year(season: str) -> int:
         raise ValueError(f"season '{season}' does not roll over the century")
     return start + 1
 
-
 def season_url(year: int) -> str:
     return SEASON_URL % int(year)
-
 
 def published_years(text: str) -> list[int]:
     years = sorted({int(found) for found
@@ -191,7 +180,6 @@ def published_years(text: str) -> list[int]:
         raise AwardsPageError(
             f"{AWARDS_INDEX_URL} listed no per-season awards pages")
     return years
-
 
 def parse_season_page(text: str, year: int) -> pl.DataFrame:
     label = season_label(year)
@@ -217,7 +205,6 @@ def parse_season_page(text: str, year: int) -> pl.DataFrame:
     return pl.DataFrame(rows, schema=SCHEMA).sort(
         ["SEASON", "AWARD", "RANK", "PLAYER"])
 
-
 def fetch_season(year: int, transport=None,
                  min_interval_s: float = MIN_INTERVAL_S,
                  backoff_s: float = BACKOFF_S, attempts: int = ATTEMPTS
@@ -237,11 +224,9 @@ def fetch_season(year: int, transport=None,
                            meta=FetchMeta(SOURCE, season_label(year)))
     raise throttled or Throttled(url)
 
-
 def fetch_index(transport=None) -> list[int]:
     get = transport or paced_transport()
     return published_years(get(AWARDS_INDEX_URL))
-
 
 def winner_index(text: str, award: str) -> dict[str, tuple[str, ...]]:
     page = _winner_page(award)
@@ -268,24 +253,20 @@ def winner_index(text: str, award: str) -> dict[str, tuple[str, ...]]:
             f"{award} winner can be verified")
     return {season: tuple(named) for season, named in winners.items()}
 
-
 def _identity(text: str | None) -> str:
     cleaned = re.sub(r"\s+", " ", (text or "").replace("\xa0", " ")).strip()
     return re.sub(r"\s*[(*].*$", "", cleaned).strip()
-
 
 def load_winner_index(
         pages: dict[str, str]) -> dict[str, dict[str, tuple[str, ...]]]:
     return {page.award: winner_index(pages[page.award], page.award)
             for page in WINNER_PAGES}
 
-
 def fetch_winner_index(
         transport=None) -> dict[str, dict[str, tuple[str, ...]]]:
     get = transport or paced_transport()
     return load_winner_index({page.award: get(page.url)
                               for page in WINNER_PAGES})
-
 
 def verify_ballots(frame: pl.DataFrame,
                    winners: dict[str, dict[str, tuple[str, ...]]]) -> None:
@@ -307,7 +288,6 @@ def verify_ballots(frame: pl.DataFrame,
             _verify_first_place_budget(section, rows, label, url)
             _verify_published_winner(section, rows, label, url, winners)
 
-
 def _winner_page(award: str) -> WinnerPage:
     for page in WINNER_PAGES:
         if page.award == award:
@@ -315,7 +295,6 @@ def _winner_page(award: str) -> WinnerPage:
     raise AwardsPageError(
         f"award {award} has no winners page in {AWARDS_INDEX_URL}, so its "
         f"winner cannot be verified against the source")
-
 
 def _verify_row_completeness(section: AwardSection, rows: pl.DataFrame,
                              label: str, url: str) -> None:
@@ -330,7 +309,6 @@ def _verify_row_completeness(section: AwardSection, rows: pl.DataFrame,
                     f"{_describe(row)} at {url} has no {column.lower()}, so its "
                     f"identity and its ballot cannot both be read")
 
-
 def _verify_one_ballot_size(section: AwardSection, rows: pl.DataFrame,
                             label: str, url: str) -> None:
     sizes = rows["POINTS_MAX"].drop_nulls().unique().to_list()
@@ -339,7 +317,6 @@ def _verify_one_ballot_size(section: AwardSection, rows: pl.DataFrame,
             f"season {label}: award {section.award} at {url} reports "
             f"{len(sizes)} different voter counts {sorted(sizes)}, so its rows "
             f"do not come from one ballot")
-
 
 def _verify_share_of_points(section: AwardSection, rows: pl.DataFrame,
                             label: str, url: str) -> None:
@@ -355,7 +332,6 @@ def _verify_share_of_points(section: AwardSection, rows: pl.DataFrame,
                 f"{row['POINTS_WON']} of {row['POINTS_MAX']} points, which is "
                 f"{round(exact, 4)}")
 
-
 def _verify_points_fall_with_rank(section: AwardSection, rows: pl.DataFrame,
                                   label: str, url: str) -> None:
     ranked = rows.filter(pl.col("RANK").is_not_null()).sort("RANK")
@@ -368,7 +344,6 @@ def _verify_points_fall_with_rank(section: AwardSection, rows: pl.DataFrame,
                 f"({points[index + 1]}) than rank {ranked['RANK'][index]} "
                 f"({points[index]})")
 
-
 def _verify_first_place_budget(section: AwardSection, rows: pl.DataFrame,
                                label: str, url: str) -> None:
     firsts = rows["VOTES_FIRST"].drop_nulls().sum()
@@ -378,7 +353,6 @@ def _verify_first_place_budget(section: AwardSection, rows: pl.DataFrame,
             f"season {label}: award {section.award} at {url} hands out "
             f"{firsts} first-place votes to {voters} voters, so its rows "
             f"cannot all come from that ballot")
-
 
 def _verify_published_winner(
         section: AwardSection, rows: pl.DataFrame, label: str, url: str,
@@ -404,11 +378,9 @@ def _verify_published_winner(
             f"{_winner_page(section.award).url} names "
             f"{', '.join(repr(name) for name in published)} for that season")
 
-
 def _describe(row: dict) -> str:
     rank = row["RANK"]
     return f"rank {rank}" if rank is not None else "unranked"
-
 
 def paced_transport(min_interval_s: float = MIN_INTERVAL_S):
     last_request = [0.0]
@@ -426,7 +398,6 @@ def paced_transport(min_interval_s: float = MIN_INTERVAL_S):
 
     return get
 
-
 def _document(text: str, label: str):
     if "<table" not in text:
         raise AwardsPageError(
@@ -435,14 +406,12 @@ def _document(text: str, label: str):
         text.encode("utf-8"),
         parser=lxml_html.HTMLParser(remove_comments=False, encoding="utf-8"))
 
-
 def _assert_page_season(doc, label: str) -> None:
     headings = doc.xpath("//h1")
     heading = headings[0].text_content().strip() if headings else ""
     if not heading.startswith(label):
         raise AwardsPageError(
             f"season {label}: page heading '{heading}' is not that season")
-
 
 def _award_tables(doc) -> dict:
     tables: dict = {}
@@ -456,7 +425,6 @@ def _award_tables(doc) -> dict:
                 "//table[@id]"):
             tables.setdefault(table.get("id"), table)
     return tables
-
 
 def _section_rows(section: AwardSection, table, label: str, url: str) -> list[dict]:
     present = {cell.get("data-stat") for cell in table.xpath(".//th|.//td")
@@ -472,7 +440,6 @@ def _section_rows(section: AwardSection, table, label: str, url: str) -> list[di
         if ballot is not None:
             rows.append(ballot.row(url))
     return rows
-
 
 def _ballot(tr, section: AwardSection, label: str, url: str) -> Ballot | None:
     if not tr.xpath("./td"):
@@ -498,7 +465,6 @@ def _ballot(tr, section: AwardSection, label: str, url: str) -> Ballot | None:
                     for stat in section.vote_stats),
     )
 
-
 def _row_cells(tr, context: str, url: str) -> dict:
     cells: dict = {}
     for cell in tr.xpath("./th|./td"):
@@ -512,7 +478,6 @@ def _row_cells(tr, context: str, url: str) -> dict:
         cells[stat] = cell
     return cells
 
-
 def _rank(rank_label: str | None, section: AwardSection, name: str,
           label: str, url: str) -> int | None:
     ordinal = re.match(r"\d+", rank_label or "")
@@ -524,10 +489,8 @@ def _rank(rank_label: str | None, section: AwardSection, name: str,
             f"{rank_label!r} at {url}")
     return None
 
-
 def _cell_text(cell) -> str:
     return cell.text_content().strip() if cell is not None else ""
-
 
 def _cell_number(cell, cast):
     raw = _cell_text(cell).replace(",", "")
@@ -538,10 +501,8 @@ def _cell_number(cell, cast):
     except ValueError:
         return None
 
-
 def _cell_int(cell):
     return _cell_number(cell, lambda raw: int(float(raw)))
-
 
 def _cell_float(cell):
     return _cell_number(cell, float)
