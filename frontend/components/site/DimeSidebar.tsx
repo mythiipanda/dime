@@ -1,21 +1,24 @@
 "use client";
 
 import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
-import { IconArrowLeftRight } from "@central-icons-react/round-outlined-radius-2-stroke-2/IconArrowLeftRight";
-import { IconArchive } from "@central-icons-react/round-outlined-radius-2-stroke-2/IconArchive";
-import { IconArrowsRepeatRightLeft } from "@central-icons-react/round-outlined-radius-2-stroke-2/IconArrowsRepeatRightLeft";
-import { IconBookmark } from "@central-icons-react/round-outlined-radius-2-stroke-2/IconBookmark";
-import { IconCalendar1 } from "@central-icons-react/round-outlined-radius-2-stroke-2/IconCalendar1";
-import { IconChatBubble7 } from "@central-icons-react/round-outlined-radius-2-stroke-2/IconChatBubble7";
-import { IconChevronDownSmall } from "@central-icons-react/round-outlined-radius-2-stroke-2/IconChevronDownSmall";
-import { IconCompassRound } from "@central-icons-react/round-outlined-radius-2-stroke-2/IconCompassRound";
-import { IconCrossSmall } from "@central-icons-react/round-outlined-radius-2-stroke-2/IconCrossSmall";
-import { IconEditBig } from "@central-icons-react/round-outlined-radius-2-stroke-2/IconEditBig";
-import { IconMagnifyingGlass } from "@central-icons-react/round-outlined-radius-2-stroke-2/IconMagnifyingGlass";
-import { IconSidebarLeftArrow } from "@central-icons-react/round-outlined-radius-2-stroke-2/IconSidebarLeftArrow";
-import { IconTarget } from "@central-icons-react/round-outlined-radius-2-stroke-2/IconTarget";
-import { IconTrophy } from "@central-icons-react/round-outlined-radius-2-stroke-2/IconTrophy";
-import { IconUserGroup } from "@central-icons-react/round-outlined-radius-2-stroke-2/IconUserGroup";
+import {
+  Archive,
+  ArrowLeftRight,
+  ArrowRightLeft,
+  Bookmark,
+  Calendar1,
+  ChevronDown,
+  Compass,
+  MessageCircle,
+  PanelLeftClose,
+  PanelLeftOpen,
+  Search,
+  SquarePen,
+  Target,
+  Trophy,
+  UserGroup,
+  X,
+} from "lucide-react";
 import GlideMenu from "@/components/primitives/GlideMenu";
 
 const SIDEBAR_MOTION = {
@@ -79,20 +82,20 @@ function RailButton({
 
 const NAV_GROUPS: { key: string; label: string; icon: ReactNode }[][] = [
   [
-    { key: "chat", label: "Chat", icon: <IconChatBubble7 size={18} /> },
-    { key: "tonight", label: "Tonight", icon: <IconCalendar1 size={18} /> },
-    { key: "explore", label: "Explore", icon: <IconCompassRound size={18} /> },
+    { key: "chat", label: "Chat", icon: <MessageCircle size={18} /> },
+    { key: "tonight", label: "Tonight", icon: <Calendar1 size={18} /> },
+    { key: "explore", label: "Explore", icon: <Compass size={18} /> },
   ],
   [
-    { key: "matchups", label: "Matchups", icon: <IconArrowsRepeatRightLeft size={18} /> },
-    { key: "lineups", label: "Lineups", icon: <IconUserGroup size={18} /> },
-    { key: "trades", label: "Trades", icon: <IconArrowLeftRight size={18} /> },
-    { key: "awards", label: "Awards", icon: <IconTrophy size={18} /> },
-    { key: "props", label: "Props", icon: <IconTarget size={18} /> },
+    { key: "matchups", label: "Matchups", icon: <ArrowRightLeft size={18} /> },
+    { key: "lineups", label: "Lineups", icon: <UserGroup size={18} /> },
+    { key: "trades", label: "Trades", icon: <ArrowLeftRight size={18} /> },
+    { key: "awards", label: "Awards", icon: <Trophy size={18} /> },
+    { key: "props", label: "Props", icon: <Target size={18} /> },
   ],
   [
-    { key: "saved", label: "Saved", icon: <IconBookmark size={18} /> },
-    { key: "warehouse", label: "Warehouse", icon: <IconArchive size={18} /> },
+    { key: "saved", label: "Saved", icon: <Bookmark size={18} /> },
+    { key: "warehouse", label: "Warehouse", icon: <Archive size={18} /> },
   ],
 ];
 
@@ -183,7 +186,7 @@ export default function DimeSidebar({
             }}
             className="sidebar-collapse-control absolute right-2 top-1 flex size-8 items-center justify-center rounded-[8px] text-ink-3 transition-[opacity,background-color,color] duration-150 hover:bg-hover-2 hover:text-ink"
           >
-            <IconSidebarLeftArrow size={18} />
+            <PanelLeftClose size={18} />
           </button>
           <button
             type="button"
@@ -193,13 +196,13 @@ export default function DimeSidebar({
             onClick={() => setCollapsed(false)}
             className="sidebar-expand-control absolute left-2 top-0.5 flex size-9 items-center justify-center rounded-[8px] text-ink-3 transition-[opacity,background-color,color] duration-150 hover:bg-hover-2 hover:text-ink"
           >
-            <IconSidebarLeftArrow size={18} className="rotate-180" />
+            <PanelLeftOpen size={18} />
           </button>
         </div>
 
         <GlideGroup>
           <RailButton
-            icon={<IconEditBig size={18} />}
+            icon={<SquarePen size={18} />}
             label="New analysis"
             onClick={() => {
               onNavChange("chat");
@@ -232,7 +235,7 @@ export default function DimeSidebar({
               className={`absolute inset-0 flex items-center gap-1.5 px-2 text-[12.5px] font-medium text-ink-3 transition-[opacity,transform] ${searchOpen ? "pointer-events-none -translate-x-1 opacity-0" : "translate-x-0 opacity-100"}`}
               style={{ transitionDuration: `${CHAT_SEARCH_MOTION.duration}ms`, transitionTimingFunction: CHAT_SEARCH_MOTION.easing }}
             >
-              <IconChevronDownSmall size={16} />
+              <ChevronDown size={16} />
               <span>Analyses</span>
             </div>
 
@@ -244,7 +247,7 @@ export default function DimeSidebar({
               className={`absolute right-0 top-0 z-10 flex size-8 items-center justify-center rounded-[8px] text-ink-3 transition-[opacity,background-color,color,transform] hover:bg-hover-2 hover:text-ink active:scale-[0.96] ${searchOpen ? "pointer-events-none opacity-0" : "opacity-100"}`}
               style={{ transitionDuration: `${CHAT_SEARCH_MOTION.duration}ms` }}
             >
-              <IconMagnifyingGlass size={16} />
+              <Search size={16} />
             </button>
 
             <div
@@ -256,7 +259,7 @@ export default function DimeSidebar({
               }}
             >
               <span className="ml-2 flex shrink-0 items-center justify-center">
-                <IconMagnifyingGlass size={15} />
+                <Search size={15} />
               </span>
               <input
                 ref={searchRef}
@@ -281,7 +284,7 @@ export default function DimeSidebar({
                 }}
                 className="flex size-8 shrink-0 items-center justify-center rounded-[8px] text-ink-3 transition-[background-color,color,transform] duration-150 hover:bg-hover-2 hover:text-ink active:scale-[0.96]"
               >
-                <IconCrossSmall size={16} />
+                <X size={16} />
               </button>
             </div>
           </div>
