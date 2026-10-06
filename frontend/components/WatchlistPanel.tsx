@@ -162,7 +162,7 @@ export default function WatchlistPanel() {
                 style={{
                   fontSize: 10,
                   fontWeight: 600,
-                  letterSpacing: "0.04em",
+                  letterSpacing: "0.08em",
                   textTransform: "uppercase",
                   color: "var(--color-warm-gray)",
                   border: "1px solid var(--color-stone-border)",
