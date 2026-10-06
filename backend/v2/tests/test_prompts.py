@@ -155,8 +155,8 @@ def test_planner_and_synthesizer_require_analyst_depth_without_filler():
         assert phrase in planner
     for phrase in (
         "complete enough to act on",
-        "counterevidence or\nuncertainty",
-        "practical implication",
+        "counterevidence or uncertainty",
+        "Match the deliverable shape exactly",
         "minimum-viable one-line answer",
     ):
         assert phrase in synth
@@ -168,8 +168,8 @@ def test_planner_and_synthesizer_require_analyst_depth_without_filler():
         assert phrase in planner
     for phrase in (
         "Search snippets are discovery evidence only",
-        "Reconcile evidence before concluding",
-        "repetition across pages is not independent evidence",
+        "Reconcile before concluding",
+        "is not independent evidence",
     ):
         assert phrase in synth
 
@@ -202,3 +202,71 @@ def test_verifier_prompt_aligns_supported_flag_and_reasons_contract():
     assert '`supported: true` requires exactly `reasons: []`' in prompt
     assert '`supported: false` requires at least one rejection reason' in prompt
     assert 'Do not attach supportive commentary to a supported claim.' in prompt
+
+
+ACTIVE_STAGE_PROMPTS = ("planner_v3", "synthesizer", "verifier", "repair_answer")
+
+STAGE_TOKEN_CAPS = {
+    "planner_v3": 1257,
+    "synthesizer": 1557,
+    "verifier": 859,
+    "repair_answer": 687,
+}
+
+KEYWORD_ROUTING_FRAGMENTS = (
+    "trajectory questions need",
+    "role/value questions need",
+    "trade questions need",
+    "For role and value questions",
+    "For a trade analysis",
+    "When the deliverable asks whether to make a trade",
+    "Do not\nsubstitute team payroll",
+    "substitute team payroll",
+    "teammate stat",
+    "For a phase comparison",
+)
+
+HARDCODED_EXAMPLE_FRAGMENTS = (
+    "1610612738",
+    "rows[0].NET_RATING",
+    "rows[0].TEAM_ID",
+    "rows[0].PLAYER_ID",
+    "best defense",
+    "worst offense",
+    "2024-25",
+)
+
+
+def _stage_tokens(text: str) -> int:
+    try:
+        import tiktoken
+    except ImportError:
+        return len(text.split())
+    return len(tiktoken.get_encoding("cl100k_base").encode(text))
+
+
+def test_stage_prompts_carry_no_keyword_routing():
+    for name in ACTIVE_STAGE_PROMPTS:
+        text = load_prompt(name)
+        for fragment in KEYWORD_ROUTING_FRAGMENTS:
+            assert fragment not in text, f"{name}.md routes by keyword: {fragment!r}"
+
+
+def test_stage_prompts_carry_no_hardcoded_examples():
+    for name in ACTIVE_STAGE_PROMPTS:
+        text = load_prompt(name)
+        for fragment in HARDCODED_EXAMPLE_FRAGMENTS:
+            assert fragment not in text, f"{name}.md hardcodes example: {fragment!r}"
+
+
+def test_stage_prompts_stay_within_token_caps():
+    for name, cap in STAGE_TOKEN_CAPS.items():
+        tokens = _stage_tokens(load_prompt(name))
+        assert tokens <= cap, f"{name}.md uses {tokens} tokens, cap is {cap}"
+
+
+def test_synthesizer_states_deliverable_shape_generically():
+    synth = load_prompt("synthesizer")
+    assert "Match the deliverable shape exactly" in synth
+    assert "exactly that many" in synth
+    assert "downside risk" in synth
