@@ -755,7 +755,7 @@ export default function ChatPanel({ thread, onRunDone, preset, onOpenArtifact, a
                 <div
                   key={i}
                   id={`m-${i}`}
-                  className="chat-ai-message chat-answer-reveal"
+                  className="chat-ai-message"
                 >
 
                   <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
