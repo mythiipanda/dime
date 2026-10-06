@@ -92,7 +92,12 @@ export default function LineupsView() {
   return (
     <div className="flex h-full min-h-0 flex-col">
       <div className="flex h-11 shrink-0 items-center justify-between border-b border-line px-4">
-        <span className="text-[13px] font-semibold text-ink">Lineups</span>
+        <span className="text-[13px] font-semibold text-ink">
+          Lineups
+          <span className="ml-2 rounded-full border border-line px-2 py-0.5 align-middle font-mono text-[10.5px] font-normal uppercase tracking-wide text-ink-3">
+            Sample data
+          </span>
+        </span>
         <span className="font-mono text-[11px] tabular-nums text-ink-3">
           {rows.length} of {lineups.length}
         </span>

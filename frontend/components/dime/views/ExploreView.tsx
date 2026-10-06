@@ -36,7 +36,12 @@ export default function ExploreView() {
   return (
     <div className="mx-auto w-full max-w-[900px] px-4 py-6 sm:px-8">
       <div className="flex items-baseline justify-between">
-        <h1 className="text-[15px] font-semibold text-ink">Explore</h1>
+        <h1 className="text-[15px] font-semibold text-ink">
+          Explore
+          <span className="ml-2 rounded-full border border-line px-2 py-0.5 align-middle font-mono text-[10.5px] font-normal uppercase tracking-wide text-ink-3">
+            Sample data
+          </span>
+        </h1>
         <span className="text-[12px] text-ink-3 tabular-nums">{rows.length} {rows.length === 1 ? "player" : "players"}</span>
       </div>
       <div className="mt-4 flex gap-2">

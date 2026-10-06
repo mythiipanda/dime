@@ -54,7 +54,12 @@ export default function PropsView() {
   return (
     <section className="flex min-w-0 flex-1 flex-col overflow-hidden rounded-[14px] border border-line bg-page">
       <div className="flex h-11 shrink-0 items-center justify-between border-b border-line px-4">
-        <h1 className="shrink-0 text-[13.5px] font-medium text-ink">Props</h1>
+        <h1 className="shrink-0 text-[13.5px] font-medium text-ink">
+          Props
+          <span className="ml-2 rounded-full border border-line px-2 py-0.5 align-middle font-mono text-[10.5px] font-normal uppercase tracking-wide text-ink-3">
+            Sample data
+          </span>
+        </h1>
         <div className="flex max-w-full items-center gap-1 overflow-x-auto">
           {propMarkets.map((m) => (
             <button

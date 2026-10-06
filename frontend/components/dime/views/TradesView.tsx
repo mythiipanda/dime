@@ -1,9 +1,37 @@
 "use client";
 
 import { useState } from "react";
+import { apiPath } from "@/lib/api";
+import { BACKEND } from "@/lib/chat";
 import { tradeTeams } from "../../../lib/dime-data-trades";
 
 const money = (v: number) => `$${v.toFixed(1)}M`;
+
+const TRADE_SEASON = "2026-27";
+
+type TradeSideRows = {
+  team: string;
+  out: number;
+  players: string[];
+  payroll: number;
+  allowed_in: number;
+  match_rule: string;
+};
+
+type TradeCheckRows = {
+  legal: boolean;
+  issues: string[];
+  team_a: TradeSideRows;
+  team_b: TradeSideRows;
+  disclaimer: string;
+  salary_date?: string;
+};
+
+type CheckState =
+  | { state: "idle" }
+  | { state: "loading" }
+  | { state: "ready"; rows: TradeCheckRows }
+  | { state: "error"; message: string };
 
 function Check({ on }: { on: boolean }) {
   return (
@@ -91,6 +119,32 @@ export default function TradesView() {
   const bOk = aOut <= bOut * 1.25 + 0.25;
   const legal = !empty && aOk && bOk;
 
+  const [check, setCheck] = useState<CheckState>({ state: "idle" });
+
+  const runRealCheck = () => {
+    setCheck({ state: "loading" });
+    fetch(`${BACKEND}${apiPath("/trade/check")}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        team_a: aAbbr,
+        players_a: aPicked,
+        team_b: bAbbr,
+        players_b: bPicked,
+        season: TRADE_SEASON,
+      }),
+    })
+      .then((res) => res.json())
+      .then((data: { ok?: boolean; rows?: TradeCheckRows; error?: string }) => {
+        if (data.ok === false || !data.rows) {
+          setCheck({ state: "error", message: data.error || "Real check failed." });
+        } else {
+          setCheck({ state: "ready", rows: data.rows });
+        }
+      })
+      .catch(() => setCheck({ state: "error", message: "Could not reach the backend." }));
+  };
+
   const line = (abbr: string, out: number, back: number) => {
     if (out === 0 && back === 0) return `${abbr} sends nothing yet`;
     if (out === 0) return `${abbr} sends nothing, takes back ${money(back)}`;
@@ -129,19 +183,61 @@ export default function TradesView() {
             <div className="flex flex-col gap-1.5 px-1">
               <span className="font-mono text-[12px] tabular-nums text-ink-2">{line(aAbbr, aOut, bOut)}</span>
               <span className="font-mono text-[12px] tabular-nums text-ink-2">{line(bAbbr, bOut, aOut)}</span>
-              <button
-                type="button"
-                onClick={() => { setAPicked([]); setBPicked([]); }}
-                className="mt-1 h-7 w-fit shrink-0 select-none rounded-[7px] px-3 text-[12px] font-medium text-ink-3 transition-[background-color,color,transform] duration-150 hover:bg-hover hover:text-ink active:scale-[0.96]"
-              >
-                Clear picks
-              </button>
+              <div className="mt-1 flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  onClick={runRealCheck}
+                  disabled={check.state === "loading"}
+                  className="h-7 shrink-0 select-none rounded-[7px] bg-ink px-3 text-[12px] font-medium text-[var(--surface)] transition-[transform,opacity] duration-150 active:scale-[0.96] disabled:opacity-50"
+                >
+                  {check.state === "loading" ? "Checking…" : "Check with real cap rules"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => { setAPicked([]); setBPicked([]); setCheck({ state: "idle" }); }}
+                  className="h-7 w-fit shrink-0 select-none rounded-[7px] px-3 text-[12px] font-medium text-ink-3 transition-[background-color,color,transform] duration-150 hover:bg-hover hover:text-ink active:scale-[0.96]"
+                >
+                  Clear picks
+                </button>
+              </div>
+              {check.state === "error" && (
+                <p className="mt-1 text-[12.5px] text-red">{check.message}</p>
+              )}
+              {check.state === "ready" && (
+                <div className="mt-2 rounded-[10px] bg-surface p-4 shadow-hairline">
+                  <p className={`text-[13px] font-medium ${check.rows.legal ? "text-green" : "text-red"}`}>
+                    {check.rows.legal ? "Passes the real cap check" : "Fails the real cap check"}
+                  </p>
+                  {check.rows.issues.length > 0 && (
+                    <ul className="mt-1.5 space-y-1">
+                      {check.rows.issues.map((issue, i) => (
+                        <li key={i} className="text-[12.5px] text-ink-2">{issue}</li>
+                      ))}
+                    </ul>
+                  )}
+                  <div className="mt-2.5 space-y-1.5 border-t border-line pt-2.5">
+                    {[check.rows.team_a, check.rows.team_b].map((side) => (
+                      <div key={side.team} className="flex flex-wrap items-baseline justify-between gap-x-3">
+                        <span className="font-mono text-[12px] text-ink-2">
+                          {side.team} sends {money(side.out / 1_000_000)}
+                        </span>
+                        <span className="font-mono text-[11px] tabular-nums text-ink-3">
+                          can take {money(side.allowed_in / 1_000_000)} · {side.match_rule}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                  <p className="mt-2.5 font-mono text-[11px] leading-[1.6] text-ink-3">
+                    {check.rows.disclaimer}
+                  </p>
+                </div>
+              )}
             </div>
           )}
 
           <p className="px-1 font-mono text-[11px] leading-[1.6] text-ink-3">
-            Each side can take back up to 125% of the salary it sends, plus $250k.
-            This is a rough check, not the full cap rules.
+            Sample rosters. The band math above is a rough check — the real check
+            runs backend cap rules against {TRADE_SEASON} salaries.
           </p>
         </div>
       </div>

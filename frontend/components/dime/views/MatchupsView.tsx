@@ -109,7 +109,12 @@ export default function MatchupsView() {
   return (
     <div className="mx-auto w-full max-w-[760px] px-4 py-6 sm:px-8">
       <div className="flex items-baseline justify-between">
-        <h1 className="text-[15px] font-semibold text-ink">Matchups</h1>
+        <h1 className="text-[15px] font-semibold text-ink">
+          Matchups
+          <span className="ml-2 shrink-0 rounded-full border border-line px-2 py-0.5 align-middle font-mono text-[10.5px] font-normal uppercase tracking-wide text-ink-3">
+            Sample data
+          </span>
+        </h1>
         <span className="text-[12px] tabular-nums text-ink-3">{matchups.length} {matchups.length === 1 ? "game" : "games"}</span>
       </div>
       <div className="mt-4 grid grid-cols-2 gap-2">
