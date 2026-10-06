@@ -226,7 +226,7 @@ def test_executor_refuses_a_plan_node_missing_required_arguments_before_it_runs(
     plan = contracts.Plan(nodes=[contracts.PlanNode(
         id="node", description="describe the work",
         capability_hints=["player_comparison"], arguments={"a": SUBJECT_A})])
-    task = contracts.TaskSpec(goal="x", mode="quick", deliverable="x")
+    task = contracts.TaskSpec(goal="x", mode="deep_dive", deliverable="x")
 
     try:
         asyncio.run(executor.execute(task, plan))

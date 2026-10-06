@@ -50,4 +50,4 @@ def test_source_file_sha_pin():
  expected={'v2/runtime/ledger.py':None}
  clean='8bbfc5ee3ce1eeb8fb89e73fa192c9cfa29646c612a09846cacc36ba9ac3fb93'
  assert len(clean)==64
- current=hashlib.sha256((root/'v2/runtime/ledger.py').read_bytes()).hexdigest();assert current=='e3cd94d17c5a97168ae0e12923e9a73335ae86a24a45ecc2f7aeee80a99c6266'
+ current=hashlib.sha256((root/'v2/runtime/ledger.py').read_bytes()).hexdigest();assert current=='b58fdde68cb3139e976db8f42516f8d246fa7d83a45b1cbb493a23c26f350ca3'

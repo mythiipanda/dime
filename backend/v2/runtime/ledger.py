@@ -92,6 +92,10 @@ class RequestEnvelope(BaseModel):
     planner_version: str = Field(max_length=64)
     budgets: dict[str, StrictInt | StrictFloat] = Field(default_factory=dict, max_length=32)
     skill_hashes: dict[str, str] = Field(default_factory=dict, max_length=32)
+    prompt_text: str | None = Field(default=None, max_length=500_000)
+    context_json: str | None = Field(default=None, max_length=2_000_000)
+    schema_source: str | None = Field(default=None, max_length=2_000_000)
+    output_strategy: str | None = Field(default=None, max_length=64)
 
     @model_validator(mode="after")
     def validate_identity(self):
@@ -118,6 +122,27 @@ class RequestEnvelope(BaseModel):
             raise ValueError("skill hashes must be lowercase sha256")
         return self
 
+    @model_validator(mode="after")
+    def validate_byte_sources(self):
+        from v2.adapters.structured import STRATEGY_LADDER
+
+        rungs = {strategy.value for strategy in STRATEGY_LADDER}
+        if self.prompt_text is not None and not self.prompt_text.strip():
+            raise ValueError("prompt text must be non-empty when present")
+        for name in ("context_json", "schema_source"):
+            value = getattr(self, name)
+            if value is None:
+                continue
+            if not value.strip():
+                raise ValueError(f"{name} must be non-empty when present")
+            try:
+                json.loads(value)
+            except ValueError as exc:
+                raise ValueError(f"{name} must be JSON when present") from exc
+        if self.output_strategy is not None and self.output_strategy not in rungs:
+            raise ValueError("output strategy must be a known ladder rung")
+        return self
+
     @classmethod
     def freeze(
         cls,
@@ -131,6 +156,7 @@ class RequestEnvelope(BaseModel):
         planner_version: str,
         budgets: dict[str, StrictInt | StrictFloat] | None = None,
         skill_hashes: dict[str, str] | None = None,
+        output_strategy: str | None = None,
     ) -> "RequestEnvelope":
         for name, value in {
             "provider": provider, "model": model, "route": route,
@@ -138,6 +164,8 @@ class RequestEnvelope(BaseModel):
         }.items():
             if not value.strip():
                 raise ValueError(f"{name} must be non-empty")
+        if output_strategy is not None and not output_strategy.strip():
+            raise ValueError("output strategy must be non-empty when present")
         return cls(
             provider=provider,
             model=model,
@@ -148,6 +176,10 @@ class RequestEnvelope(BaseModel):
             planner_version=planner_version,
             budgets=budgets or {},
             skill_hashes=skill_hashes or {},
+            prompt_text=prompt,
+            context_json=_canonical_json(context),
+            schema_source=_canonical_json(tool_schemas),
+            output_strategy=output_strategy,
         )
 
 
@@ -797,5 +829,216 @@ def _hash(value: Any) -> str:
     return hashlib.sha256(raw.encode()).hexdigest()
 
 
+def _canonical_json(value: Any) -> str:
+    if isinstance(value, str):
+        return value
+    return json.dumps(value, sort_keys=True, separators=(",", ":"), default=str)
+
+
 def _call_identity(entry: LedgerEntry) -> str:
     return _hash({"name": entry.data.get("name"), "args": entry.data.get("args")})
+
+
+class ReplayMismatchError(ValueError):
+    pass
+
+
+class ReplayItem(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    call_id: str = Field(max_length=512)
+    turn_id: str = Field(max_length=256)
+    route: str = Field(max_length=256)
+    provider: str = Field(max_length=256)
+    model: str = Field(max_length=256)
+    prompt_bytes: bytes = Field(max_length=500_000)
+    context_bytes: bytes = Field(max_length=2_000_000)
+    schema_bytes: bytes = Field(max_length=2_000_000)
+    output_strategy: str | None = Field(default=None, max_length=64)
+    attempt_status: str | None = Field(default=None, max_length=32)
+    item_hash: str = Field(max_length=64)
+
+    @model_validator(mode="after")
+    def validate_item(self) -> "ReplayItem":
+        for name in ("call_id", "turn_id", "route", "provider", "model"):
+            if not getattr(self, name).strip():
+                raise ValueError(f"replay item {name} must be non-empty")
+        if len(self.item_hash) != 64 or any(
+            char not in "0123456789abcdef" for char in self.item_hash
+        ):
+            raise ValueError("replay item hash must be lowercase sha256")
+        if self.attempt_status not in (None, "accepted", "failed"):
+            raise ValueError("replay attempt status must be accepted or failed")
+        return self
+
+
+class ReplayTurn(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    turn_id: str = Field(max_length=256)
+    items: list[ReplayItem] = Field(max_length=64)
+    content_hash: str = Field(max_length=64)
+
+    @model_validator(mode="after")
+    def validate_turn(self) -> "ReplayTurn":
+        if not self.turn_id.strip():
+            raise ValueError("replay turn id must be non-empty")
+        if not self.items:
+            raise ValueError("replay turn must carry at least one model input")
+        if len(self.content_hash) != 64 or any(
+            char not in "0123456789abcdef" for char in self.content_hash
+        ):
+            raise ValueError("replay content hash must be lowercase sha256")
+        return self
+
+
+class ReplayThread(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    run_id: str = Field(max_length=256)
+    turns: list[ReplayTurn] = Field(max_length=256)
+
+    @model_validator(mode="after")
+    def validate_thread(self) -> "ReplayThread":
+        if not self.run_id.strip():
+            raise ValueError("replay run id must be non-empty")
+        if [turn.turn_id for turn in self.turns] != list(
+            dict.fromkeys(turn.turn_id for turn in self.turns)
+        ):
+            raise ValueError("replay turns must not repeat a turn id")
+        return self
+
+
+def _replay_item_bytes(data: dict[str, Any], turn_id: str) -> tuple[bytes, bytes, bytes]:
+    for name in ("prompt_text", "context_json", "schema_source"):
+        value = data.get(name)
+        if not isinstance(value, str) or not value:
+            raise ReplayMismatchError(
+                f"replay found no recorded {name} for turn {turn_id!r}")
+    return (
+        data["prompt_text"].encode(),
+        data["context_json"].encode(),
+        data["schema_source"].encode(),
+    )
+
+
+def _replay_item_hash(
+    prompt_bytes: bytes, context_bytes: bytes, schema_bytes: bytes,
+    output_strategy: str | None,
+) -> str:
+    rung = (output_strategy or "").encode()
+    joined = b"\0".join([prompt_bytes, context_bytes, schema_bytes, rung])
+    return hashlib.sha256(joined).hexdigest()
+
+
+def replay_entries(entries: Iterable[LedgerEntry]) -> ReplayThread:
+    records = [LedgerEntry.model_validate(entry.model_dump()) for entry in entries]
+    if not records:
+        raise ReplayMismatchError("replay found no ledger entries")
+    run_id = records[0].run_id
+    attempts: dict[str, str] = {}
+    for entry in records:
+        if entry.kind == LedgerKind.ASSISTANT_ATTEMPT and entry.call_id:
+            status = entry.data.get("status")
+            if status in ("accepted", "failed"):
+                attempts.setdefault(entry.call_id, status)
+    turn_order: list[str] = []
+    items_by_turn: dict[str, list[ReplayItem]] = {}
+    for entry in records:
+        if entry.kind != LedgerKind.MODEL_REQUEST or not entry.call_id:
+            continue
+        turn_id = entry.turn_id
+        prompt_bytes, context_bytes, schema_bytes = _replay_item_bytes(
+            entry.data, turn_id)
+        for payload, digest in (
+            (prompt_bytes, entry.data.get("prompt_hash")),
+            (context_bytes, entry.data.get("context_hash")),
+            (schema_bytes, entry.data.get("tool_schema_hash")),
+        ):
+            if hashlib.sha256(payload).hexdigest() != digest:
+                raise ReplayMismatchError(
+                    f"replay hash mismatch for turn {turn_id!r}")
+        strategy = entry.data.get("output_strategy")
+        item = ReplayItem(
+            call_id=entry.call_id,
+            turn_id=turn_id,
+            route=entry.data.get("route"),
+            provider=entry.data.get("provider"),
+            model=entry.data.get("model"),
+            prompt_bytes=prompt_bytes,
+            context_bytes=context_bytes,
+            schema_bytes=schema_bytes,
+            output_strategy=strategy,
+            attempt_status=attempts.get(entry.call_id),
+            item_hash=_replay_item_hash(
+                prompt_bytes, context_bytes, schema_bytes, strategy),
+        )
+        if turn_id not in items_by_turn:
+            items_by_turn[turn_id] = []
+            turn_order.append(turn_id)
+        items_by_turn[turn_id].append(item)
+    if not turn_order:
+        raise ReplayMismatchError("replay found no model inputs")
+    turns = [
+        ReplayTurn(
+            turn_id=turn_id,
+            items=items_by_turn[turn_id],
+            content_hash=hashlib.sha256(
+                "\0".join(
+                    item.item_hash for item in items_by_turn[turn_id]
+                ).encode()
+            ).hexdigest(),
+        )
+        for turn_id in turn_order
+    ]
+    return ReplayThread(run_id=run_id, turns=turns)
+
+
+def turn_content_hash(entries: Iterable[LedgerEntry], turn_id: str) -> str:
+    for turn in replay_entries(entries).turns:
+        if turn.turn_id == turn_id:
+            return turn.content_hash
+    raise ValueError(f"replay found no model inputs for turn {turn_id!r}")
+
+
+def replay_run(ledger_dir: str | Path, run_id: str) -> ReplayThread:
+    path = _canonical_ledger_path(ledger_dir, run_id)
+    if path.is_symlink():
+        raise ValueError("ledger file cannot be a symlink")
+    raw = path.read_bytes()
+    if raw and not raw.endswith(b"\n"):
+        raise ValueError("ledger has an incomplete trailing record")
+    lines = raw.splitlines()
+    if any(not line.strip() for line in lines):
+        raise ValueError("ledger cannot contain blank records")
+    entries = [LedgerEntry.model_validate_json(line) for line in lines]
+    RunLedger(run_id, entries)
+    try:
+        return replay_entries(entries)
+    except ReplayMismatchError:
+        raise
+    except ValueError as exc:
+        raise ReplayMismatchError(
+            f"replay failed for run {run_id!r}: {exc}") from exc
+
+
+def _replay_cli(argv: list[str] | None = None) -> int:
+    import argparse
+
+    parser = argparse.ArgumentParser(
+        description="reproduce every model input for a run id")
+    parser.add_argument("run_id")
+    parser.add_argument("--ledger-dir", required=True)
+    args = parser.parse_args(argv)
+    try:
+        thread = replay_run(args.ledger_dir, args.run_id)
+    except ReplayMismatchError as exc:
+        raise SystemExit(f"replay mismatch: {exc}")
+    print(thread.model_dump_json(indent=2))
+    return 0
+
+
+if __name__ == "__main__":
+    import sys
+
+    sys.exit(_replay_cli())

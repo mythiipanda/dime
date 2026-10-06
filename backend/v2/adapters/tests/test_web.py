@@ -253,7 +253,7 @@ async def test_planned_web_dag_binds_fetch_to_content_addressed_parent():
         "web_search": WebSearchCapability(Search()),
         "web_fetch": WebFetchCapability(Fetch()),
     }).execute(TaskSpec(
-        goal="role", mode="quick", deliverable="answer",
+        goal="role", mode="project", deliverable="answer",
         season={"value": "2025-26", "source": "user", "confidence": 1},
     ), plan)
     assert all(item.task_season_scoped is False for item in result.evidence)

@@ -97,6 +97,12 @@ def encode_raw(event_type: str, data: object) -> str:
             f"{json.dumps(data, separators=(',', ':'), allow_nan=False)}\n\n")
 
 
+def encode_replay_verification(report) -> str:
+    payload = _bounded_public_value(report.model_dump(
+        mode="json", exclude_none=True))
+    return encode_raw("replay_verification", payload)
+
+
 async def with_heartbeat(
     inner: AsyncIterator[str], interval_s: float = 15.0
 ) -> AsyncIterator[str]:

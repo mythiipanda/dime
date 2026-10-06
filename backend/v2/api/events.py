@@ -296,6 +296,53 @@ class RunDiagnostic(StrictEvent):
     last_stage: str | None = Field(default=None, max_length=256)
 
 
+class ReplayVerification(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    run_id: str = Field(max_length=256)
+    status: Literal["verified", "mismatch"]
+    turn_count: StrictInt = Field(ge=0)
+    item_count: StrictInt = Field(ge=0)
+    content_hashes: dict[str, str] = Field(max_length=256)
+    mismatched_turn: str | None = Field(default=None, max_length=256)
+
+    @model_validator(mode="after")
+    def validate_replay(self) -> "ReplayVerification":
+        if not self.run_id.strip():
+            raise ValueError("replay run id must be non-empty")
+        for turn_id, digest in self.content_hashes.items():
+            if not turn_id.strip():
+                raise ValueError("replay turn ids must be non-empty")
+            if len(digest) != 64 or any(
+                char not in "0123456789abcdef" for char in digest
+            ):
+                raise ValueError("replay content hashes must be lowercase sha256")
+        if self.status == "verified" and self.mismatched_turn is not None:
+            raise ValueError("verified replay cannot name a mismatched_turn")
+        if self.status == "mismatch" and (
+            self.mismatched_turn is None or not self.mismatched_turn.strip()
+        ):
+            raise ValueError("mismatched replay must name its mismatched_turn")
+        return self
+
+
+def replay_verification_for(run_id: str, thread) -> ReplayVerification:
+    return ReplayVerification(
+        run_id=run_id, status="verified", turn_count=len(thread.turns),
+        item_count=sum(len(turn.items) for turn in thread.turns),
+        content_hashes={
+            turn.turn_id: turn.content_hash for turn in thread.turns
+        })
+
+
+def replay_mismatch_report(run_id: str, turn_id: str) -> ReplayVerification:
+    if not turn_id.strip():
+        raise ValueError("mismatched turn must be non-empty")
+    return ReplayVerification(
+        run_id=run_id, status="mismatch", turn_count=0, item_count=0,
+        content_hashes={}, mismatched_turn=turn_id)
+
+
 from v2.api.activity import StageData, PlanData, EvidenceData, VerificationData
 class ActivityBase(StrictEvent):
     event_id: str = Field(pattern=r'^[A-Za-z0-9_-]+:\d+$')

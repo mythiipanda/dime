@@ -9,6 +9,7 @@ from v2.contracts import EvidenceEnvelope, Plan, PlanNode, PlanStatus, TaskSpec
 from v2.runtime.checkpoints import CheckpointStore, ExecutionCheckpoint
 from v2.runtime.interfaces import Capability
 from v2.runtime.models import ExecutionErrorCode, ExecutionResult
+from v2.runtime.policy import refuse_unprofiled_capability
 from v2.runtime.ledger import exception_text
 from v2.domain.evidence import admit_evidence, post_result_denials, pre_call_denials
 
@@ -327,6 +328,7 @@ class PlanExecutor:
                     f"plan node {node.id!r} must select exactly one registered "
                     f"capability; got {matches!r}")
             selected.add(matches[0])
+            refuse_unprofiled_capability(task.mode, node.id, matches[0])
             capability = self._capabilities[matches[0]]
             validator = getattr(capability, "validate_arguments", None)
             if validator is not None:
