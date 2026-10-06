@@ -1653,6 +1653,108 @@ class PlannerArgumentError(ValueError):
         self.missing_required = missing_required
 
 
+class PlanOutputError(ValueError):
+
+    def __init__(self, message: str, *, output_id: str, capability: str,
+                 vocabulary: list[str], node_id: str | None = None,
+                 requirement_id: str | None = None) -> None:
+        super().__init__(message)
+        self.output_id = output_id
+        self.capability = capability
+        self.vocabulary = list(vocabulary)
+        self.node_id = node_id
+        self.requirement_id = requirement_id
+
+
+def servable_output_names(capability_id: str) -> list[str]:
+    from .capabilities import CAPABILITIES
+
+    spec = CAPABILITIES.get(capability_id)
+    if spec is None:
+        return []
+    names: set[str] = set()
+    for key in spec.units:
+        names.add(str(key).upper())
+    for key in spec.metric_definitions:
+        if not str(key).startswith("__"):
+            names.add(str(key).upper())
+    for key in spec.output_aliases:
+        names.add(str(key).upper())
+    return sorted(names)
+
+
+def _is_subject_identity_output(output_id: str) -> bool:
+    squashed = "".join(
+        character for character in str(output_id).upper() if character.isalnum())
+    return squashed.endswith("NAME") or squashed.endswith("ID")
+
+
+def _validate_plan_output_vocabulary(task, plan) -> None:
+    from .capabilities import CAPABILITIES, resolve_metric_column
+
+    requirements = {item.id: item for item in task.requirements}
+    for node in plan.nodes:
+        selected = [name for name in node.capability_hints if name in CAPABILITIES]
+        if len(selected) != 1:
+            continue
+        capability = selected[0]
+        spec = CAPABILITIES.get(capability)
+        if spec is None:
+            continue
+        if not servable_output_names(capability):
+            continue
+        for requirement_id in node.covers_requirement_ids or []:
+            requirement = requirements.get(requirement_id)
+            if requirement is None:
+                continue
+            if capability not in requirement.capability_options:
+                continue
+            for output_id in requirement.requested_outputs or []:
+                if _is_subject_identity_output(output_id):
+                    continue
+                if resolve_metric_column(spec, output_id) is None:
+                    vocabulary = servable_output_names(capability)
+                    raise PlanOutputError(
+                        f"PLAN_OUTPUT_UNRESOLVABLE: requested output {output_id!r} "
+                        f"for requirement {requirement_id!r} does not resolve "
+                        f"against capability {capability!r} "
+                        f"through resolve_metric_column; servable outputs: "
+                        f"{', '.join(vocabulary)}; "
+                        f"repair by choosing requested outputs only from "
+                        f"{', '.join(vocabulary)}",
+                        output_id=str(output_id), capability=capability,
+                        vocabulary=vocabulary, node_id=node.id,
+                        requirement_id=requirement_id)
+    task_outputs = list(task.requested_outputs or [])
+    if task_outputs and plan.nodes:
+        union: set[str] = set()
+        for node in plan.nodes:
+            selected = [name for name in node.capability_hints if name in CAPABILITIES]
+            if len(selected) != 1:
+                continue
+            union.update(servable_output_names(selected[0]))
+        if union:
+            for output_id in task_outputs:
+                if _is_subject_identity_output(output_id):
+                    continue
+                if not any(
+                    resolve_metric_column(CAPABILITIES[name], output_id) is not None
+                    for name in {
+                        hint for node in plan.nodes for hint in node.capability_hints
+                        if hint in CAPABILITIES and servable_output_names(hint)
+                    }
+                ):
+                    vocabulary = sorted(union)
+                    raise PlanOutputError(
+                        f"PLAN_OUTPUT_UNRESOLVABLE: task requested output "
+                        f"{output_id!r} does not resolve against any planned "
+                        f"capability through resolve_metric_column; servable "
+                        f"outputs: {', '.join(vocabulary)}; repair by choosing "
+                        f"requested outputs only from {', '.join(vocabulary)}",
+                        output_id=str(output_id), capability="plan",
+                        vocabulary=vocabulary)
+
+
 def _team_subject_abbreviation(entity) -> str | None:
     from v2.contracts import canonical_entity_id
     canonical = canonical_entity_id(
@@ -1868,7 +1970,7 @@ class ModelPlanner(ModelStage):
                             "status": "pending"})
                     if resolver_id not in depends_extra.get(node.id, []):
                         depends_extra.setdefault(node.id, []).append(resolver_id)
-        return Plan.model_validate({"nodes": [
+        validated = Plan.model_validate({"nodes": [
             *resolvers,
             *[{
                 "id": node.id, "description": node.description,
@@ -1877,6 +1979,9 @@ class ModelPlanner(ModelStage):
             "covers_requirement_ids": node.covers_requirement_ids or [],
             "arguments": dict(arguments), "max_attempts": node.max_attempts or 1,
             "status": node.status or "pending"} for node, arguments, _ in decoded]]})
+        if task is not None:
+            _validate_plan_output_vocabulary(task, validated)
+        return validated
 
     def __init__(self, *args: Any, capability_catalog: Mapping[str, str], **kwargs: Any) -> None:
         super().__init__(*args, **kwargs)

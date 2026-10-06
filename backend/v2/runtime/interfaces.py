@@ -12,6 +12,7 @@ from v2.contracts import (
     TaskSpec,
     VerificationReport,
 )
+from v2.runtime.models import RuntimeResult
 
 
 class Intake(Protocol):
@@ -63,3 +64,13 @@ class Repairer(Protocol):
         evidence: Mapping[str, EvidenceEnvelope],
         verification: VerificationReport,
     ) -> DraftReport: ...
+
+
+class Driver(Protocol):
+    async def run(
+        self,
+        request: str,
+        context: Sequence[ConversationTurn] = (),
+        *,
+        run_id: str | None = None,
+    ) -> RuntimeResult: ...

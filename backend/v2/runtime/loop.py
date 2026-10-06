@@ -23,6 +23,13 @@ from v2.contracts import (
     VerificationStatus,
 )
 from v2.runtime.executor import PlanExecutor
+from v2.runtime.fast_path import (
+    FastPathUnverifiable,
+    build_fast_plan,
+    check_fast_evidence,
+    check_fast_verification,
+    is_fast_path_eligible,
+)
 from v2.runtime.interfaces import Intake, Planner, Repairer, Synthesizer, Verifier
 from v2.runtime.ledger import LedgerKind, RunLedger, TerminalReason, exception_text
 from v2.runtime.models import (BindingFormMismatch, ExecutionResult, RuntimeResult,
@@ -59,6 +66,7 @@ class Runtime:
         pre_tool_timeout_s: float | None = None,
         run_timeout_s: float | None = None,
         diagnostics: bool = False,
+        fast_path: bool = True,
     ) -> None:
         if not isinstance(repair_attempts, int) or isinstance(repair_attempts, bool):
             raise TypeError("repair_attempts must be an integer")
@@ -90,6 +98,9 @@ class Runtime:
         if not isinstance(diagnostics, bool):
             raise TypeError("diagnostics must be a boolean")
         self._diagnostics = diagnostics
+        if not isinstance(fast_path, bool):
+            raise TypeError("fast_path must be a boolean")
+        self._fast_path = fast_path
 
     async def run(
         self, request: str, *, run_id: str | None = None,
@@ -129,12 +140,11 @@ class Runtime:
                 data={"request": request},
             )
         try:
-            async def prepare(deadline: float | None = None):
+            async def understand(deadline: float | None = None):
                 def remaining() -> float | None:
                     if deadline is None:
                         return None
                     return max(0.000001, deadline - time.perf_counter())
-
                 intake_call = (self._intake.understand(request, context)
                                if context else self._intake.understand(request))
                 prepared_task = TaskSpec.model_validate(
@@ -147,23 +157,53 @@ class Runtime:
                     raise ValueError(
                         "intake left unresolved questions: "
                         + "; ".join(prepared_task.open_questions))
+                return prepared_task
+
+            async def plan_task(prepared_task, deadline: float | None = None):
+                def remaining() -> float | None:
+                    if deadline is None:
+                        return None
+                    return max(0.000001, deadline - time.perf_counter())
                 prepared_plan = Plan.model_validate((await self._stage(
                     turn_id, "plan", self._planner.plan(prepared_task),
                     timeout_s=remaining())).model_dump())
                 catalog = getattr(self._executor, "capability_names", frozenset())
                 self._report_activity({"kind":"plan_update","phase":"plan","status":"complete","title":"Plan accepted","transition":"completed","correlation_id":"stage:plan","data":{"node_count":len(prepared_plan.nodes),"capabilities":sorted({cap for n in prepared_plan.nodes for cap in n.capability_hints if cap in catalog}),"unknown_capability_count":sum(1 for n in prepared_plan.nodes for cap in n.capability_hints if cap not in catalog)}})
-                return prepared_task, prepared_plan
+                return prepared_plan
 
-            if self._pre_tool_timeout_s is None:
-                task, plan = await prepare()
-            else:
+            pre_tool_deadline = (None if self._pre_tool_timeout_s is None
+                                 else time.perf_counter() + self._pre_tool_timeout_s)
+            try:
+                pre_tool_remaining = (lambda: None if pre_tool_deadline is None
+                                      else max(0.000001, pre_tool_deadline - time.perf_counter()))()
+                task = await understand(pre_tool_remaining)
+            except TimeoutError as exc:
+                raise PreToolTimeoutError(
+                    f"intake and planning exceeded "
+                    f"{self._pre_tool_timeout_s:g} seconds") from exc
+            if self._fast_path and is_fast_path_eligible(task):
                 try:
-                    task, plan = await prepare(
-                        time.perf_counter() + self._pre_tool_timeout_s)
-                except TimeoutError as exc:
-                    raise PreToolTimeoutError(
-                        f"intake and planning exceeded "
-                        f"{self._pre_tool_timeout_s:g} seconds") from exc
+                    fast_result = await self._run_fast_path(
+                        turn_id, task, run_remaining=run_remaining)
+                    return fast_result
+                except FastPathUnverifiable as exc:
+                    self._report_activity({"kind":"stage_summary","phase":"fast_path","status":"complete","title":"Fast path fell back","transition":"completed","correlation_id":"stage:fast_path","data":{"reason": str(exc)}})
+                except PreToolTimeoutError:
+                    raise
+                except TimeoutError:
+                    raise
+                except asyncio.CancelledError:
+                    raise
+                except BaseException as exc:
+                    self._report_activity({"kind":"stage_summary","phase":"fast_path","status":"complete","title":"Fast path fell back","transition":"completed","correlation_id":"stage:fast_path","data":{"reason": f"{type(exc).__name__}: {exc}"}})
+            try:
+                pre_tool_remaining = (None if pre_tool_deadline is None
+                                      else max(0.000001, pre_tool_deadline - time.perf_counter()))
+                plan = await plan_task(task, pre_tool_remaining)
+            except TimeoutError as exc:
+                raise PreToolTimeoutError(
+                    f"intake and planning exceeded "
+                    f"{self._pre_tool_timeout_s:g} seconds") from exc
             execution = ExecutionResult.model_validate((await self._stage(
                 turn_id, "execute",
                 self._executor.execute(task, plan, run_id=run_id),
@@ -282,6 +322,33 @@ class Runtime:
                 update={"status": VerificationStatus.PARTIAL}
             )
 
+        return self._publish(
+            task=task,
+            execution=execution,
+            draft=draft,
+            verification=verification,
+            evidence=evidence,
+            turn_id=turn_id,
+            turn_started=turn_started,
+            pre_repair_draft=pre_repair_draft,
+            pre_repair_verification=pre_repair_verification,
+            repaired=repaired,
+        )
+
+    def _publish(
+        self,
+        *,
+        task,
+        execution,
+        draft,
+        verification,
+        evidence,
+        turn_id,
+        turn_started,
+        pre_repair_draft,
+        pre_repair_verification,
+        repaired,
+    ) -> RuntimeResult:
         final_missing = _completeness_missing(task, execution, draft, verification, evidence)
         if final_missing:
             instruction = _format_completeness_instruction(final_missing)
@@ -435,6 +502,70 @@ class Runtime:
 
     def _verification_activity(self, report: VerificationReport, round_id: str) -> None:
         self._report_activity({"kind":"verification_update","phase":"verify","status":report.status.value,"title":"Verification updated","transition":"snapshot","correlation_id":f"verification:{round_id}","data":{"round":round_id,"supported_count":sum(1 for item in report.claim_results if item.supported),"claim_count":len(report.claim_results),"missing_count":len(report.missing_branches),"contradiction_count":len(report.contradictions),"repair_count":len(report.repair_instructions)}})
+
+    async def _run_fast_path(self, turn_id: str, task: TaskSpec, *, run_remaining) -> RuntimeResult:
+        turn_started = time.perf_counter()
+        fast_plan = build_fast_plan(task)
+        try:
+            execution = ExecutionResult.model_validate((await self._stage(
+                turn_id, "fast_execute",
+                self._executor.execute(task, fast_plan),
+                timeout_s=run_remaining())).model_dump())
+        except BaseException as exc:
+            if isinstance(exc, asyncio.CancelledError):
+                raise
+            raise FastPathUnverifiable(f"fast execution unavailable: {exc}") from exc
+        check_fast_evidence(list(execution.evidence))
+        try:
+            draft = DraftReport.model_validate((await self._stage(
+                turn_id, "fast_synthesize",
+                self._synthesizer.synthesize(task, execution.evidence),
+                timeout_s=run_remaining())).model_dump())
+        except BaseException as exc:
+            if isinstance(exc, asyncio.CancelledError):
+                raise
+            raise FastPathUnverifiable(f"fast synthesis unavailable: {exc}") from exc
+        evidence = {item.evidence_id: item for item in execution.evidence}
+        try:
+            verification = await self._stage(
+                turn_id, "fast_verify",
+                self._fast_verify(task, draft, evidence),
+                timeout_s=run_remaining())
+        except BaseException as exc:
+            if isinstance(exc, asyncio.CancelledError):
+                raise
+            if isinstance(exc, FastPathUnverifiable):
+                raise
+            raise FastPathUnverifiable(f"fast verification unavailable: {exc}") from exc
+        check_fast_verification(verification, len(draft.claims))
+        self._verification_activity(verification, "fast")
+        published = self._publish(
+            task=task,
+            execution=execution,
+            draft=draft,
+            verification=verification,
+            evidence=evidence,
+            turn_id=turn_id,
+            turn_started=turn_started,
+            pre_repair_draft=draft.model_copy(deep=True),
+            pre_repair_verification=verification.model_copy(deep=True),
+            repaired=False,
+        )
+        if not published.verified_claims:
+            raise FastPathUnverifiable("fast path published no verified claims")
+        return published
+
+    async def _fast_verify(self, task, draft, evidence) -> VerificationReport:
+        mechanical = VerificationReport.model_validate(
+            (await self._mechanical_verifier.verify(task, draft, evidence)).model_dump()
+        )
+        expected = list(range(len(draft.claims)))
+        mechanical_indices = sorted(
+            result.claim_index for result in mechanical.claim_results)
+        if mechanical_indices != expected:
+            raise FastPathUnverifiable(
+                "mechanical verifier must adjudicate every claim exactly once")
+        return mechanical
 
     def _report_progress(self, step_id: str, status: str) -> None:
         if self._progress is None:
