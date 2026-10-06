@@ -317,6 +317,7 @@ def get_award_race(award: str, season: str | None = None) -> dict[str, Any]:
         "source": "warehouse (nba_api)",
         "method": ("weighted sum of within-qualified-pool population z-scores; "
                    "higher composite score ranks first"),
+        "method_kind": "derived",
         "score_unit": "weighted_z_score",
         "score_definition": ("dimensionless model score; not points, probability, "
                              "vote share, or an official award result"),

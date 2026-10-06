@@ -362,6 +362,7 @@ def get_award_results(
         "result_type": "official_award_result",
         "model_projection": False,
         "method": f"winner rows recorded from nba_api PlayerAwards into {TABLE} with no scoring",
+        "method_kind": "official",
         "rank_semantics": RANK_SEMANTICS,
         "history_through": season,
         "seasons_covered": sorted({str(row["season"]) for row in placements}),

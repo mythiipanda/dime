@@ -390,6 +390,7 @@ def get_ratings(
     source: RatingsSource | None = None
     if rows:
         meta.setdefault("method", "official")
+        meta.setdefault("method_kind", "official")
         source = RatingsSource(RATINGS_STORED, "silver_team_ratings")
     else:
         con = store.connect(read_only=True)
@@ -406,6 +407,8 @@ def get_ratings(
                     "rows": len(rows),
                     "method": ("official" if offline.kind == RATINGS_STORED
                                else "derived"),
+                    "method_kind": ("official" if offline.kind == RATINGS_STORED
+                                    else "derived"),
                     **store.warehouse_identity()}
     if source is None and season_static(season or ""):
         rows, meta = _warehouse_or_live(
@@ -592,6 +595,7 @@ def get_playoff_team_ratings(
             "source": "warehouse:silver_playoffs", "season": season,
             "as_of": str(source_as_of) if source_as_of else None,
             "method": "NBA box-score estimated possessions",
+            "method_kind": "estimate",
             "coverage": "Completed playoff games only.",
             "qualification": "All playoff teams; estimated possessions use the NBA box-score formula.",
         },
@@ -3695,6 +3699,7 @@ def get_rookie_leaders(stat: str = "ppg", min_value: float = 0,
             "method": ("filter to first NBA season by excluding every player "
                        "name present in any prior warehouse season, then rank "
                        f"descending by {col}"),
+            "method_kind": "derived",
             "stat": col,
             "stat_unit": ("fraction_0_1" if col in {"FG_PCT", "FG3_PCT", "FT_PCT"}
                           else "games" if col == "GP"

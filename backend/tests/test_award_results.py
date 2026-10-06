@@ -264,3 +264,9 @@ def test_a_player_name_matches_case_insensitively(awards_warehouse):
     assert loud["ok"] is quiet["ok"] is True
     assert (len(loud["rows"]["placements"]) ==
             len(quiet["rows"]["placements"]) > 0)
+
+
+def test_winner_meta_emits_official_kind(awards_warehouse):
+    result = _results(view="winner", award="MVP", season="2008-09")
+    assert result["ok"] is True, result
+    assert result["meta"]["method_kind"] == "official"
