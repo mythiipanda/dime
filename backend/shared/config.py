@@ -1,4 +1,4 @@
-from pydantic import Field
+from pydantic import AliasChoices, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 import os
 from typing import Literal
@@ -26,7 +26,9 @@ class Settings(BaseSettings):
 
     nvidia_nim_api_key: str = ""
     nvidia_nim_model: str = "z-ai/glm-5.3-flash"
-    gemini_api_key: str = ""
+    gemini_api_key: str = Field(
+        default="",
+        validation_alias=AliasChoices("GEMINI_API_KEY", "GOOGLE_API_KEY"))
     gemini_model: str = "gemini-3.5-flash-lite"
     mistral_api_key: str = ""
     mistral_model: str = "ministral-8b-2512"

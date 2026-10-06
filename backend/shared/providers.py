@@ -39,7 +39,6 @@ NVIDIA_NIM_DEFAULT = "z-ai/glm-5.3-flash"
 NVIDIA_NIM_MODELS: tuple[str, ...] = (
     NVIDIA_NIM_DEFAULT,
     "deepseek-ai/deepseek-v4.1-flash",
-    "deepseek-ai/deepseek-r1",
 )
 NVIDIA_NIM_ALLOWLIST = frozenset(NVIDIA_NIM_MODELS)
 MISTRAL_DEFAULT = "ministral-8b-2512"

@@ -18,6 +18,7 @@ def test_openrouter_paid_and_stale_slugs_clamp(monkeypatch):
     monkeypatch.setattr(settings, "openrouter_model", "openai/gpt-4o")
     monkeypatch.setattr(settings, "nvidia_nim_api_key", "")
     monkeypatch.setattr(settings, "openrouter_api_key", "key")
+    monkeypatch.setattr(settings, "gemini_api_key", "")
     for raw in (None, "openrouter:openai/gpt-4o", "openai/gpt-4o"):
         provider, slug = resolve_model_id(raw)
         assert provider == "openrouter"
@@ -132,7 +133,8 @@ def test_gemini_allowlist_is_workhorse_and_quality_only(monkeypatch):
     import shared.providers as providers
     assert GEMINI_DEFAULT == "gemini-3.5-flash-lite"
     assert set(GEMINI_MODELS) == {
-        "gemini-3.5-flash-lite", "gemini-3.5-flash", "gemma-4-31b-it"}
+        "gemini-3.5-flash-lite", "gemini-3.5-flash", "gemini-3.8-flash",
+        "gemma-4-31b-it"}
     assert GEMINI_ALLOWLIST == set(GEMINI_MODELS)
 
 
