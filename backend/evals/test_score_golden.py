@@ -1,16 +1,17 @@
-import json
 import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from evals.score_golden import score_item
+from evals.score_golden import load, score_item
 
 
 def _dev_items():
-    path = Path(__file__).resolve().parent / "golden_qa_dev.jsonl"
-    return {json.loads(line)["id"]: json.loads(line)
-            for line in path.read_text().splitlines() if line.strip()}
+    return {item["id"]: item for item in load("dev")}
+
+
+def _test_items():
+    return {item["id"]: item for item in load("test")}
 
 
 def _item(**overrides):
@@ -58,3 +59,29 @@ def test_dev_team_items_accept_either_name():
         assert len(item["any_of"]) == 2
         assert score_item(item, first_only)["pass"] is True
         assert score_item(item, second_only)["pass"] is True
+
+
+def test_test_split_team_items_accept_either_name():
+    items = _test_items()
+    cases = {
+        "G013": ("Boston posted 118.2", "The Celtics posted 118.2"),
+        "G017": ("Detroit finished 8.4", "The Pistons finished 8.4"),
+        "G020": ("The Spurs won 1", "San Antonio won 1"),
+        "G021": ("Cleveland posted 121.9 and 112.4",
+                 "The Cavaliers posted 121.9 and 112.4"),
+    }
+    for gid, (first_only, second_only) in cases.items():
+        item = items[gid]
+        assert item["must_contain"] == []
+        assert len(item["any_of"]) == 2
+        assert score_item(item, first_only)["pass"] is True
+        assert score_item(item, second_only)["pass"] is True
+
+
+def test_no_overstrict_name_pairs_outside_genuine_conjunctions():
+    genuine = {"G024"}
+    for split in ("dev", "test"):
+        for item in load(split):
+            if item["id"] in genuine:
+                continue
+            assert len(item.get("must_contain", [])) <= 1, item["id"]
