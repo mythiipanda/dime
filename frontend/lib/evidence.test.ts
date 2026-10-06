@@ -263,3 +263,21 @@ test("no signal means no summary", () => {
   assert.equal(unverifiedSummary(aiWith({}, [])), null);
   assert.equal(unverifiedSummary(aiWith({ verification: "pass", verified_claims: 2, gaps: [] }, [CLAIM_TABLE])), null);
 });
+
+test("evidence sources grade from typed method_kind", () => {
+  const estimated = aiWith({}, [
+    {
+      ...CLAIM_TABLE,
+      meta: { method: "NBA box-score estimated possessions", method_kind: "estimate" },
+    },
+  ]);
+  assert.equal(evidenceSources(estimated)[0]?.grade?.grade, "G4");
+  const official = aiWith({}, [
+    {
+      ...CLAIM_TABLE,
+      meta: { method: "official", method_kind: "official" },
+      provenance: { ...CLAIM_TABLE.provenance, origin: "warehouse" },
+    },
+  ]);
+  assert.equal(evidenceSources(official)[0]?.grade?.grade, "G1");
+});
