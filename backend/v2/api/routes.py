@@ -618,6 +618,73 @@ def thread_export(thread_id: str, client: str = Query("")):
     return PlainTextResponse("\n".join(lines), media_type="text/markdown")
 
 
+class CreateBranchBody(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    thread: str = Field(min_length=1, max_length=80)
+    client: str = Field(min_length=1, max_length=80)
+    parent_sequence: int = Field(ge=1)
+    branch_id: str | None = Field(default=None, max_length=64)
+
+    @field_validator("thread", "client")
+    @classmethod
+    def reject_blank_identity(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("thread and client must be non-empty")
+        return value
+
+    @field_validator("branch_id")
+    @classmethod
+    def reject_blank_branch(cls, value: str | None) -> str | None:
+        if value is not None and not value.strip():
+            raise ValueError("branch id must be non-empty when present")
+        return value
+
+
+def _branch_identity(thread: str, client: str) -> tuple[str, str]:
+    if not thread.strip() or not client.strip():
+        raise HTTPException(status_code=400, detail="thread and client required")
+    return client.strip()[:80], thread.strip()[:80]
+
+
+@router.post("/v2/branches", status_code=201)
+def create_branch(body: CreateBranchBody) -> dict:
+    _require_projects()
+    owner, thread = _branch_identity(body.thread, body.client)
+    try:
+        branch = _CONVERSATIONS.create_branch(
+            owner, thread, body.parent_sequence, branch_id=body.branch_id)
+    except ValueError as exc:
+        message = str(exc)
+        if "duplicate branch" in message:
+            raise HTTPException(status_code=409, detail=message)
+        raise HTTPException(status_code=400, detail=message)
+    return branch.model_dump(mode="json")
+
+
+@router.get("/v2/branches")
+def list_branches(thread: str = Query(""), client: str = Query("")) -> dict:
+    _require_projects()
+    owner, name = _branch_identity(thread, client)
+    branches = _CONVERSATIONS.list_branches(owner, name)
+    return {"branches": [item.model_dump(mode="json") for item in branches]}
+
+
+@router.get("/v2/branches/{branch_id}")
+def get_branch(branch_id: str, thread: str = Query(""),
+               client: str = Query("")) -> dict:
+    _require_projects()
+    owner, name = _branch_identity(thread, client)
+    branch = _CONVERSATIONS.get_branch(owner, name, branch_id)
+    if branch is None:
+        raise HTTPException(status_code=404, detail="branch not found")
+    evidence = _CONVERSATIONS.branch_evidence(owner, name, branch.branch_id)
+    reuses = _CONVERSATIONS.branch_reuses(owner, name, branch.branch_id)
+    return {"branch": branch.model_dump(mode="json"),
+            "evidence_count": len(evidence),
+            "reused_count": len(reuses)}
+
+
 class SqlRerunBody(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -1765,6 +1832,11 @@ async def quick_answer_stream(body: QuickAnswerBody):
             from shared import store
             store.save_chat(body.thread, "human", body.q[:2000],
                             owner=body.client[:80])
+        parent_sequence: int | None = None
+        if body.thread is not None and body.client is not None:
+            existing = _CONVERSATIONS.references(body.client, body.thread)
+            parent_sequence = max(
+                (ref.sequence for ref in existing), default=None)
         task = asyncio.create_task(runtime.run(
             body.q, run_id=run_id, context=context))
         try:
@@ -1849,6 +1921,21 @@ async def quick_answer_stream(body: QuickAnswerBody):
                 if body.thread is not None and body.client is not None:
                     _CONVERSATIONS.append_exchange(
                         body.client, body.thread, body.q, answer)
+                    assistant_sequence = max(
+                        ref.sequence for ref in
+                        _CONVERSATIONS.references(body.client, body.thread))
+                    _CONVERSATIONS.record_turn_evidence(
+                        body.client, body.thread, assistant_sequence,
+                        list(result.execution.evidence))
+                    if parent_sequence is not None:
+                        branch = _CONVERSATIONS.create_branch(
+                            body.client, body.thread, parent_sequence)
+                        parent_evidence = _CONVERSATIONS.turn_evidence(
+                            body.client, body.thread, parent_sequence)
+                        if parent_evidence:
+                            _CONVERSATIONS.attach_branch_evidence(
+                                body.client, body.thread, branch.branch_id,
+                                parent_evidence)
                     if answer:
 
 

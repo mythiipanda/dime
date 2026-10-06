@@ -97,6 +97,19 @@ def encode_raw(event_type: str, data: object) -> str:
             f"{json.dumps(data, separators=(',', ':'), allow_nan=False)}\n\n")
 
 
+def encode_branch_reuse(*, parent_sequence: int, reused_count: int) -> str:
+    if isinstance(parent_sequence, bool) or not isinstance(parent_sequence, int):
+        raise TypeError("branch parent sequence must be an integer")
+    if isinstance(reused_count, bool) or not isinstance(reused_count, int):
+        raise TypeError("branch reused count must be an integer")
+    if parent_sequence < 1:
+        raise ValueError("branch parent sequence must be positive")
+    if reused_count < 1:
+        raise ValueError("branch reused count must be positive")
+    return encode_raw("branch_reuse", {"parent_sequence": parent_sequence,
+                                       "reused_count": reused_count})
+
+
 def encode_replay_verification(report) -> str:
     payload = _bounded_public_value(report.model_dump(
         mode="json", exclude_none=True))
