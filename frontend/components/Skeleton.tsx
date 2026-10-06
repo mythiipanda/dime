@@ -32,10 +32,11 @@ export default function Skeleton({
           {label}
         </div>
       )}
+      <div className="card-progress" aria-hidden />
       {rows.map((w, i) => (
         <div
           key={i}
-          className="skeleton-row skeleton-pulse"
+          className="skeleton-row"
           style={{ width: `${w}%` }}
         />
       ))}

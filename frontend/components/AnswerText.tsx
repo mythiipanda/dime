@@ -62,7 +62,7 @@ export default function AnswerText({ text, components }: { text: string; compone
         fontVariantNumeric: "tabular-nums",
         color: "var(--color-ink-black)",
       }}
-      className="answer-md t-skel-in"
+      className="answer-md"
     >
       {coverage && (
         <div
