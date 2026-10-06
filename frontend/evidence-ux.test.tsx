@@ -6,9 +6,10 @@ import CitedAnswerText, {
   CiteTable,
   ContextPills,
   EvidenceLedger,
+  GapPanel,
   UnverifiedNote,
 } from "./components/CitedAnswerText";
-import { evidenceSources } from "./lib/evidence";
+import { evidenceSources, gapReasons } from "./lib/evidence";
 import type { AiMessage } from "./lib/chat";
 
 function aiWith(carry: unknown, tables: unknown[]): AiMessage {
@@ -306,6 +307,42 @@ describe("unverified note", () => {
   it("renders nothing without any signal", () => {
     const html = renderToStaticMarkup(
       React.createElement(UnverifiedNote, { ai: aiWith(undefined, []) }),
+    );
+    assert.equal(html, "");
+  });
+});
+
+describe("gap panel", () => {
+  const probe39Carry = {
+    verification: "partial",
+    verified_claims: 3,
+    gaps: Array.from({ length: 6 }, () => ({ kind: "missing_evidence", blocks: [] })),
+    output_statuses: [
+      { output_id: "NET_RATING", status: "complete", subject_type: "team", subject_id: "BOS" },
+    ],
+  };
+  const probe39Text =
+    "Boston finished with a 9.4 net rating.";
+
+  it("reads reasons from gap events, never answer prose", () => {
+    assert.deepEqual(gapReasons(aiWith(probe39Carry, [])), ["No data covered this."]);
+  });
+
+  it("renders the panel from gap events with no prose tail", () => {
+    const html = renderToStaticMarkup(
+      React.createElement(CitedAnswerText, {
+        text: probe39Text,
+        ai: aiWith(probe39Carry, []),
+      }),
+    );
+    assert.ok(!html.includes("Some requested outputs could not be verified."));
+    assert.ok(html.includes("Couldn&#x27;t verify"));
+    assert.ok(html.includes("No data covered this."));
+  });
+
+  it("fully verified answers render no panel", () => {
+    const html = renderToStaticMarkup(
+      React.createElement(GapPanel, { ai: aiWith(PASS_CARRY, []) }),
     );
     assert.equal(html, "");
   });
