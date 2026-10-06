@@ -1,5 +1,5 @@
 import type { AiMessage } from "./chat";
-import { gradeClaim, type GradedClaim } from "./grades";
+import { gradeClaim, type GradeInput, type GradedClaim } from "./grades";
 
 export interface EvidenceGap {
   kind?: string;
@@ -57,20 +57,16 @@ function numberField(record: unknown, field: string): number | null {
   return typeof raw === "number" && Number.isFinite(raw) ? raw : null;
 }
 
-function gradeInputOf(table: Record<string, unknown>): {
-  method?: string | null;
-  windowN?: number | null;
-  windowKind?: "games" | "meetings" | null;
-  lineage?: string | null;
-  season?: string | null;
-} {
+function gradeInputOf(table: Record<string, unknown>): GradeInput {
   const provenance = table.provenance;
   const meta = table.meta;
   const method = textField(meta, "method") || undefined;
+  const methodKind = textField(meta, "method_kind") || undefined;
   const windowRaw = numberField(meta, "window_n") ?? numberField(meta, "windowN");
   const kindRaw = isRecord(meta) ? (meta as Record<string, unknown>).window_kind : undefined;
   return {
     method,
+    methodKind,
     windowN: windowRaw,
     windowKind: kindRaw === "meetings" ? "meetings" : kindRaw === "games" ? "games" : null,
     lineage: textField(provenance, "origin") || undefined,

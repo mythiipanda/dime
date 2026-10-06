@@ -122,3 +122,38 @@ test("estimators grade G4 with their method line", () => {
     assert.equal(graded.method, method);
   }
 });
+
+test("typed method_kind beats the string matcher", () => {
+  const official = gradeClaim({
+    method: "NBA box-score estimated possessions",
+    methodKind: "official",
+    lineage: "warehouse",
+    season: "2024-25",
+  });
+  assert.equal(official.grade, "G1");
+  const estimate = gradeClaim({ method: "official", methodKind: "estimate" });
+  assert.equal(estimate.grade, "G4");
+  assert.equal(estimate.tag, "Model estimate");
+  const derived = gradeClaim({
+    method: "derived possessions",
+    methodKind: "derived",
+    lineage: "warehouse",
+    season: "2024-25",
+  });
+  assert.equal(derived.grade, "G1");
+});
+
+test("unknown or missing method_kind keeps the legacy heuristic", () => {
+  assert.equal(
+    gradeClaim({
+      method: "NBA box-score estimated possessions",
+      methodKind: "modeled",
+      season: "2024-25",
+    }).grade,
+    "G4",
+  );
+  assert.equal(
+    gradeClaim({ method: "official", lineage: "warehouse", season: "2024-25" }).grade,
+    "G1",
+  );
+});

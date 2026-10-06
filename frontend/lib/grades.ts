@@ -2,6 +2,7 @@ export type Grade = "G1" | "G2" | "G3" | "G4";
 
 export interface GradeInput {
   method?: string | null;
+  methodKind?: string | null;
   windowN?: number | null;
   windowKind?: "games" | "meetings" | null;
   lineage?: string | null;
@@ -57,10 +58,17 @@ export function isEstimateMethod(method: string): boolean {
   return ESTIMATE_HINTS.some((hint) => lowered.includes(hint));
 }
 
+const ESTIMATE_KINDS = ["estimate"];
+const NON_ESTIMATE_KINDS = ["official", "derived"];
+
 export function gradeClaim(input: GradeInput): GradedClaim {
   const method = cleanLines(input.method);
   const season = cleanLines(input.season);
-  if (method && isEstimateMethod(method)) {
+  const kind = cleanLines(input.methodKind).toLowerCase();
+  const typed = ESTIMATE_KINDS.includes(kind) || NON_ESTIMATE_KINDS.includes(kind);
+  const estimated =
+    ESTIMATE_KINDS.includes(kind) || (!typed && method !== "" && isEstimateMethod(method));
+  if (estimated) {
     return {
       grade: "G4",
       tag: "Model estimate",
