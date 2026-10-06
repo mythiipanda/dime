@@ -44,7 +44,7 @@ class Settings(BaseSettings):
     cors_allowed_origins: str = "http://localhost:3000,https://dime-fawn.vercel.app,http://127.0.0.1:3000"
     llm_timeout_s: int = 60
     llm_max_retries: int = 1
-    dime_v2_pre_tool_timeout_s: float = Field(default=150.0, gt=0)
+    dime_v2_pre_tool_timeout_s: float = Field(default=0.0, ge=0)
     dime_v2_run_timeout_s: float = Field(default=360.0, gt=0)
     dime_v2_model_deadline_s: float = Field(default=0.0, ge=0)
     dime_v2_node_timeout_s: float | None = Field(default=None, gt=0)

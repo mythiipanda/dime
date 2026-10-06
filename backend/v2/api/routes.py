@@ -1708,7 +1708,8 @@ async def quick_answer_stream(body: QuickAnswerBody):
         runtime, ledger = build_runtime(
             provider=provider, model_name=model_name, run_id=run_id,
             progress=progress, activity=activity, policy=policy,
-            pre_tool_timeout_s=settings.dime_v2_pre_tool_timeout_s,
+            pre_tool_timeout_s=(None if settings.dime_v2_pre_tool_timeout_s <= 0
+                                 else settings.dime_v2_pre_tool_timeout_s),
             run_timeout_s=settings.dime_v2_run_timeout_s,
             node_timeout_s=settings.dime_v2_node_timeout_s,
             diagnostics=body.diagnostics)
