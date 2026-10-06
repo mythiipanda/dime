@@ -212,6 +212,24 @@ def test_odds_bad_json_is_typed_error(monkeypatch):
     assert "disabled_pending_stance" in out["error"]
 
 
+def test_espn_success_carries_typed_evidence_status(monkeypatch):
+    monkeypatch.setattr(subprocess, "run", _run_json(SCORES_FIXTURE))
+    out = espn_mod.get_espn_scores.invoke({"sport": "nfl"})
+    assert out["ok"] is True
+    assert out["meta"]["evidence_status"] == "ineligible"
+    assert out["meta"]["evidence_reason"] == (
+        "live_external_no_warehouse_provenance")
+
+
+def test_espn_summary_success_carries_typed_evidence_status(monkeypatch):
+    monkeypatch.setattr(subprocess, "run", _run_json(SUMMARY_FIXTURE))
+    out = espn_mod.get_espn_event_summary.invoke({"event_id": "401872964"})
+    assert out["ok"] is True
+    assert out["meta"]["evidence_status"] == "ineligible"
+    assert out["meta"]["evidence_reason"] == (
+        "live_external_no_warehouse_provenance")
+
+
 def test_v1_tools_includes_espn_names():
     for name in ("get_espn_scores", "get_espn_event_summary", "get_espn_odds"):
         assert name in TOOL_NAMES

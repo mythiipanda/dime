@@ -12,6 +12,8 @@ PROBE_BUDGET_S = 60
 EXPECTED_CLI_VERSION = "2026.9.2"
 EXPECTED_CLI_SHA256 = (
     "6238a03e1afdeb0f64ae81e399b8afc0a7555fe9fa039dc4939147dddc3cf009")
+EVIDENCE_STATUS = "ineligible"
+EVIDENCE_REASON = "live_external_no_warehouse_provenance"
 
 _PAIRS = {
     "nfl": ("football", "nfl"),
@@ -130,7 +132,9 @@ def get_espn_scores(sport: str) -> Any:
         "tool": "get_espn_scores",
         "ok": True,
         "rows": data,
-        "meta": {"sport": sport.strip().lower(), "source": "espn"},
+        "meta": {"sport": sport.strip().lower(), "source": "espn",
+                 "evidence_status": EVIDENCE_STATUS,
+                 "evidence_reason": EVIDENCE_REASON},
     }
 
 
@@ -168,6 +172,8 @@ def get_espn_event_summary(event_id: str) -> Any:
                     "sport": s,
                     "league": l,
                     "source": "espn",
+                    "evidence_status": EVIDENCE_STATUS,
+                    "evidence_reason": EVIDENCE_REASON,
                 },
             }
         failures.append(f"{s}/{l}: no_summary")
