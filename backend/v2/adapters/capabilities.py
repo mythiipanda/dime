@@ -131,6 +131,25 @@ SQL_EXEC_OUTPUT_ALIASES = {
 }
 
 
+def _name_entities(*fields: str) -> Callable[[Any], list[EntityRef]]:
+    def extract(rows: Any) -> list[EntityRef]:
+        items = rows if isinstance(rows, list) else [rows]
+        found: dict[str, EntityRef] = {}
+        for item in items:
+            if not isinstance(item, Mapping):
+                continue
+            for field in fields:
+                name = item.get(field)
+                if isinstance(name, str) and name.strip():
+                    key = name.strip().casefold()
+                    if key not in found:
+                        found[key] = EntityRef(
+                            id=name.strip(), type="player",
+                            display_name=name.strip())
+        return list(found.values())
+    return extract
+
+
 def _resolve_entities(rows: Any) -> list[EntityRef]:
     out: list[EntityRef] = []
     if isinstance(rows, Mapping):
@@ -512,6 +531,7 @@ _LIST = [
         units=AWARD_UNITS,
         metric_definitions=AWARD_DEFINITIONS,
         output_aliases=AWARD_OUTPUT_ALIASES,
+        extract_entities=_name_entities("player", "winner", "coach"),
         qualification=(
             "Every placement the source published on that ballot. A tied "
             "placement keeps the published leading rank and its verbatim "
