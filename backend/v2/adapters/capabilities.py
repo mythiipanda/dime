@@ -697,6 +697,132 @@ def resolve_metric_column(capability: Capability, output_id: str) -> str | None:
             return aliased
     return None
 
+
+def _is_identity_output(output_id: str) -> bool:
+    squashed = _squashed(output_id)
+    return squashed.endswith("NAME") or squashed.endswith("ID")
+
+
+def servable_names_for(spec: Capability) -> list[str]:
+    names: set[str] = set()
+    for key in spec.units:
+        names.add(str(key).upper())
+    for key in spec.metric_definitions:
+        if not str(key).startswith("__"):
+            names.add(str(key).upper())
+    for key in spec.output_aliases:
+        names.add(str(key).upper())
+    return sorted(names)
+
+
+def preconditions_for_node(task, node, spec: Capability) -> list:
+    from ..contracts import NodePrecondition, PreconditionCheck
+    requirements = {item.id: item for item in task.requirements}
+    covered = [requirements[rid] for rid in node.covers_requirement_ids
+               if rid in requirements]
+    found: list = []
+    for requirement in covered:
+        outputs = [str(value) for value in
+                   ([*requirement.metric_ids, *requirement.requested_outputs])]
+        for output_id in outputs:
+            if _is_identity_output(output_id):
+                found.append(NodePrecondition(
+                    check=PreconditionCheck.ENTITY, node_id=node.id,
+                    requirement_id=requirement.id, output_id=output_id,
+                    detail=(f"identity output {output_id!r} must resolve "
+                            f"to a subject row of {spec.name!r} evidence")))
+                continue
+            column = resolve_metric_column(spec, output_id)
+            if column is None:
+                found.append(NodePrecondition(
+                    check=PreconditionCheck.NUMERAL, node_id=node.id,
+                    requirement_id=requirement.id, output_id=output_id,
+                    resolvable=False,
+                    detail=(f"output {output_id!r} does not resolve to "
+                            f"{spec.name!r} vocabulary; servable: "
+                            f"{', '.join(servable_names_for(spec)) or 'none'}")))
+                continue
+            found.append(NodePrecondition(
+                check=PreconditionCheck.NUMERAL, node_id=node.id,
+                requirement_id=requirement.id, output_id=output_id,
+                column=column, resolvable=True,
+                detail=(f"output {output_id!r} resolves to {spec.name!r} "
+                        f"column {column!r}")))
+            unit = dict(spec.units).get(column)
+            if unit is not None:
+                found.append(NodePrecondition(
+                    check=PreconditionCheck.UNIT, node_id=node.id,
+                    requirement_id=requirement.id, output_id=output_id,
+                    column=column, expected_unit=str(unit),
+                    detail=(f"output {output_id!r} column {column!r} must "
+                            f"carry unit {str(unit)!r}")))
+    scope_requirement = covered[0].id if covered else None
+    if task.entities:
+        kinds = sorted({entity.type for entity in task.entities})
+        found.append(NodePrecondition(
+            check=PreconditionCheck.ENTITY, node_id=node.id,
+            requirement_id=scope_requirement,
+            detail=(f"node must serve task entities "
+                    f"of kind {', '.join(kinds)}")))
+    if task.season is not None:
+        found.append(NodePrecondition(
+            check=PreconditionCheck.SCOPE, node_id=node.id,
+            requirement_id=scope_requirement,
+            detail=(f"node must serve season {task.season.value}")))
+    if task.window_start is not None or task.window_end is not None:
+        from ..contracts import format_window
+        found.append(NodePrecondition(
+            check=PreconditionCheck.SCOPE, node_id=node.id,
+            requirement_id=scope_requirement,
+            detail=(f"node must serve window "
+                    f"{format_window(task.window_start, task.window_end)}")))
+    if task.as_of is not None:
+        found.append(NodePrecondition(
+            check=PreconditionCheck.SCOPE, node_id=node.id,
+            requirement_id=scope_requirement,
+            detail=(f"node must serve as-of {task.as_of.isoformat()}")))
+    return found
+
+
+def _row_keys_present(rows) -> set[str]:
+    from ..domain.evidence import iter_values
+    probe = {"evidence_id": "probe", "capability": "probe",
+             "source": "probe", "observed_at": "2026-01-01T00:00:00Z",
+             "rows": rows}
+    try:
+        from ..contracts import EvidenceEnvelope
+        envelope = EvidenceEnvelope.model_validate(probe)
+    except Exception:
+        return set()
+    keys: set[str] = set()
+    for item in iter_values(envelope):
+        for segment in str(item.path).split("."):
+            keys.add(segment.split("[", 1)[0].casefold())
+    return keys
+
+
+def post_evidence_failures(preconditions: list, evidence) -> list[str]:
+    from ..contracts import PreconditionCheck, precondition_repair_instruction
+    failures: list[str] = []
+    units = {str(key).casefold(): str(value)
+             for key, value in dict(evidence.units).items()}
+    for item in preconditions:
+        if item.check == PreconditionCheck.NUMERAL and item.resolvable and item.column:
+            present = _row_keys_present(evidence.rows)
+            if item.column.casefold() not in present:
+                failures.append(precondition_repair_instruction(
+                    item.check, item.node_id, item.requirement_id, item.detail
+                    + f"; evidence {evidence.evidence_id!r} carries no "
+                    f"{item.column!r} column"))
+        elif item.check == PreconditionCheck.UNIT and item.column and item.expected_unit:
+            declared = units.get(item.column.casefold())
+            if declared is not None and declared != item.expected_unit:
+                failures.append(precondition_repair_instruction(
+                    item.check, item.node_id, item.requirement_id, item.detail
+                    + f"; evidence declares {declared!r}"))
+    return failures
+
+
 CAPABILITY_DESCRIPTIONS: dict[str, str] = {
     "entity_resolution": "Resolve a player or team name to canonical identity.",
     "warehouse_freshness": "Authoritative warehouse table freshness, cadence, row counts, and stale status.",

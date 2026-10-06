@@ -42,6 +42,53 @@ class VerificationStatus(StrEnum):
     PARTIAL = "partial"
 
 
+class PreconditionCheck(StrEnum):
+    NUMERAL = "numeral"
+    ENTITY = "entity"
+    UNIT = "unit"
+    SCOPE = "scope"
+
+
+class NodePrecondition(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    check: PreconditionCheck
+    node_id: str = Field(min_length=1, max_length=256)
+    requirement_id: str | None = Field(default=None, max_length=64)
+    output_id: str | None = None
+    column: str | None = None
+    expected_unit: str | None = None
+    resolvable: StrictBool = True
+    detail: str = Field(min_length=1, max_length=4000)
+
+    @model_validator(mode="after")
+    def validate_precondition(self) -> "NodePrecondition":
+        if not self.node_id.strip() or not self.detail.strip():
+            raise ValueError("precondition node and detail must be non-empty")
+        if self.check == PreconditionCheck.NUMERAL and self.output_id is None:
+            raise ValueError("numeral precondition requires an output id")
+        if not self.resolvable and self.check != PreconditionCheck.NUMERAL:
+            raise ValueError("only numeral preconditions may be unresolvable")
+        if self.column is not None and not self.column.strip():
+            raise ValueError("precondition column must be non-empty when present")
+        if self.expected_unit is not None and not self.expected_unit.strip():
+            raise ValueError("precondition unit must be non-empty when present")
+        return self
+
+
+def precondition_repair_instruction(
+    check: PreconditionCheck | str,
+    node_id: str,
+    requirement_id: str | None,
+    detail: str,
+) -> str:
+    requirement = requirement_id if requirement_id is not None else "task"
+    return (
+        f"precondition {str(check)} failed for node {node_id!r} "
+        f"requirement {requirement!r}: {detail}; fix the plan, not the prose"
+    )
+
+
 class GapKind(StrEnum):
     MISSING_EVIDENCE = "missing_evidence"
     SOURCE_CONFLICT = "source_conflict"
