@@ -18,6 +18,14 @@ def test_three_point_percentage_uses_official_makes_floor():
     assert f"{lead['FG3A']} attempts" in answer
 
 
+@pytest.mark.skip(reason="v1 app.graph harness deleted; needs v2 runtime port")
+def test_three_point_prompt_forces_leader_tool():
+    st = _drain("Who leads the league in 3P% this season?")
+    assert [c.split(":")[0] for c in st["calls_made"]] == ["get_leaders"]
+    assert st["tool_results"][0]["rows"]
+    assert st["tool_results"][0]["rows"][0]["PLAYER"]
+
+
 def test_named_team_ratings_is_one_call():
     out = get_ratings.invoke({"team": "Warriors", "season": "2025-26"})
     assert out["ok"]
