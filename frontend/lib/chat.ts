@@ -141,6 +141,10 @@ export interface StreamBatcher {
 
 export const TERMINAL_STREAM_EVENTS = ["final_answer", "graph_end", "error"];
 
+export function isImmediateEvent(type: string): boolean {
+  return type === "token";
+}
+
 export function createStreamBatcher(
   onFlush: (events: BatchedStreamEvent[]) => void,
   schedule: (flush: () => void) => void = (flush) => {

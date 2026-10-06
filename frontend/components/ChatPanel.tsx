@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import {
   AiMessage,
+  BatchedStreamEvent,
   ChatMessage,
   ModelOption,
   NodeName,
@@ -10,6 +11,7 @@ import {
   createStreamBatcher,
   emptyNode,
   isFailureFinal,
+  isImmediateEvent,
 } from "../lib/chat";
 import { RunInfo, appendCachedRun, buildCitation, getModels, getRuns, postChatStream } from "../lib/api";
 import { takeRerun } from "../lib/briefs";
@@ -507,7 +509,7 @@ export default function ChatPanel({ thread, onRunDone, preset, onOpenArtifact, a
         return copy;
       });
     };
-    const batcher = createStreamBatcher((events) => {
+    const applyBatch = (events: BatchedStreamEvent[]) => {
       for (const event of events) {
         if (event.type === "final_answer") {
           const d = event.data as Record<string, unknown>;
@@ -523,13 +525,18 @@ export default function ChatPanel({ thread, onRunDone, preset, onOpenArtifact, a
         ai = applyEvent(ai, event.type, event.data);
       }
       push();
-    });
+    };
+    const batcher = createStreamBatcher(applyBatch);
     await postChatStream(
       q,
       model,
       {
         onEvent: (type, data) => {
-          batcher.push(type, data);
+          if (isImmediateEvent(type)) {
+            applyBatch([{ type, data }]);
+          } else {
+            batcher.push(type, data);
+          }
         },
         onDone: () => {
           batcher.flush();
@@ -746,7 +753,7 @@ export default function ChatPanel({ thread, onRunDone, preset, onOpenArtifact, a
 
                     {m.ai?.streaming && !m.ai.done ? (
                       <div style={{ fontSize: 14, lineHeight: 1.64, color: "var(--color-ink-black)" }}>
-                        <StreamText text={m.text} />
+                        <StreamText text={m.text} streaming />
                       </div>
                     ) : m.ai ? (
                       <CitedAnswerText text={m.text} ai={m.ai} />
