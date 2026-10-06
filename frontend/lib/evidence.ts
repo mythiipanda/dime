@@ -43,6 +43,14 @@ export interface EvidenceSource {
   origin: string;
   grade?: GradedClaim;
   asOf?: string;
+  outputId: string;
+  subjectType: string;
+  subjectId: string;
+}
+
+function strField(table: Record<string, unknown>, field: string): string {
+  const raw = table[field];
+  return raw === null || raw === undefined ? "" : String(raw);
 }
 
 function textField(record: unknown, field: string): string {
@@ -378,6 +386,9 @@ function tableSource(table: unknown, index: number): EvidenceSource | null {
       stat: displayStat(outputId, t.unit, t),
       value,
       origin: originText(t.provenance),
+      outputId,
+      subjectType: strField(t, "subject_type"),
+      subjectId: strField(t, "subject_id"),
       grade: gradeClaim(gradeInputOf(t)),
       ...(asOf ? { asOf } : null),
     };
@@ -390,6 +401,9 @@ function tableSource(table: unknown, index: number): EvidenceSource | null {
       stat: capabilityLabel(t.tool),
       value: "",
       origin: originText(t.meta),
+      outputId: "",
+      subjectType: "",
+      subjectId: "",
     };
   }
   return null;

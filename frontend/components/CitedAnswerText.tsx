@@ -69,6 +69,9 @@ export function CiteTable({ source }: { source: EvidenceSource }) {
 }
 
 export interface FlagEntry {
+  outputId: string;
+  subjectType: string;
+  subjectId: string;
   stat: string;
   subject: string;
   value: string;
@@ -76,14 +79,57 @@ export interface FlagEntry {
   timestamp: string;
 }
 
+export function claimKeyOf(entry: Pick<FlagEntry, "outputId" | "subjectType" | "subjectId" | "value">): string {
+  return [entry.outputId, entry.subjectType, entry.subjectId, entry.value].join("|");
+}
+
 export function flagEntry(source: EvidenceSource, at: string): FlagEntry {
   return {
+    outputId: source.outputId,
+    subjectType: source.subjectType,
+    subjectId: source.subjectId,
     stat: source.stat,
     subject: source.subject,
     value: source.value,
     source: source.origin,
     timestamp: at,
   };
+}
+
+const CLAIM_LOG_KEY = "dime_claim_log_v1";
+
+function loadClaimLog(): { flagged: FlagEntry[]; accepted: string[] } {
+  try {
+    if (typeof window === "undefined" || !window.localStorage) {
+      return { flagged: [], accepted: [] };
+    }
+    const raw = window.localStorage.getItem(CLAIM_LOG_KEY);
+    if (!raw) return { flagged: [], accepted: [] };
+    const parsed: unknown = JSON.parse(raw);
+    if (typeof parsed !== "object" || parsed === null) return { flagged: [], accepted: [] };
+    const record = parsed as Record<string, unknown>;
+    const flagged = Array.isArray(record.flagged)
+      ? (record.flagged as FlagEntry[]).filter(
+          (f) => typeof f === "object" && f !== null && typeof (f as FlagEntry).value === "string",
+        )
+      : [];
+    const accepted = Array.isArray(record.accepted)
+      ? (record.accepted as unknown[]).filter((k): k is string => typeof k === "string")
+      : [];
+    return { flagged, accepted };
+  } catch {
+    return { flagged: [], accepted: [] };
+  }
+}
+
+function saveClaimLog(flagged: FlagEntry[], accepted: string[]) {
+  try {
+    window.localStorage.setItem(CLAIM_LOG_KEY, JSON.stringify({ flagged, accepted }));
+  } catch (e) {
+    try {
+      console.warn("[claims] claim log persistence unavailable", e);
+    } catch {}
+  }
 }
 
 function RowActions({
@@ -294,6 +340,30 @@ export function ContextPills({ ai }: { ai: AiMessage }) {
   );
 }
 
+function CopyLogButton({ entries }: { entries: FlagEntry[] }) {
+  const [copied, setCopied] = useState(false);
+  return (
+    <button
+      type="button"
+      className="pill-ghost"
+      style={{ fontSize: 12, padding: "3px 10px", marginTop: 8, marginLeft: 8 }}
+      onClick={() => {
+        const text = JSON.stringify(entries, null, 2);
+        try {
+          const clipboard = navigator.clipboard;
+          if (!clipboard) return;
+          clipboard.writeText(text).then(
+            () => setCopied(true),
+            () => {},
+          );
+        } catch {}
+      }}
+    >
+      {copied ? "Copied" : "Copy log"}
+    </button>
+  );
+}
+
 function downloadLog(entries: FlagEntry[]) {
   const blob = new Blob([JSON.stringify(entries, null, 2)], { type: "application/json" });
   const url = URL.createObjectURL(blob);
@@ -306,10 +376,15 @@ function downloadLog(entries: FlagEntry[]) {
 
 export default function CitedAnswerText({ text, ai }: { text: string; ai: AiMessage }) {
   const [openCite, setOpenCite] = useState<number | null>(null);
-  const [accepted, setAccepted] = useState<number[]>([]);
-  const [flagged, setFlagged] = useState<FlagEntry[]>([]);
+  const [stored, setStored] = useState(() => loadClaimLog());
+  const accepted = stored.accepted;
+  const flagged = stored.flagged;
   const sources = evidenceSources(ai);
   const marked = withCitationMarkers(text, sources);
+  const persist = (nextFlagged: FlagEntry[], nextAccepted: string[]) => {
+    setStored({ flagged: nextFlagged, accepted: nextAccepted });
+    saveClaimLog(nextFlagged, nextAccepted);
+  };
   const toggle = (index: number) => {
     setOpenCite((cur) => (cur === index ? null : index));
     setTimeout(() => {
@@ -320,19 +395,24 @@ export default function CitedAnswerText({ text, ai }: { text: string; ai: AiMess
     }, 0);
   };
   const accept = (index: number) => {
-    if (!accepted.includes(index)) setAccepted((cur) => [...cur, index]);
+    const source = sources[index];
+    if (!source) return;
+    const key = claimKeyOf(source);
+    if (!accepted.includes(key)) {
+      persist(flagged, [...accepted, key]);
+    }
     setOpenCite((cur) => (cur === index ? null : cur));
   };
   const flag = (index: number) => {
     const source = sources[index];
-    if (!source || flagged.some((f) => f.stat === source.stat && f.subject === source.subject && f.value === source.value)) return;
-    setFlagged((cur) => [...cur, flagEntry(source, new Date().toISOString())]);
+    if (!source) return;
+    const key = claimKeyOf(source);
+    if (flagged.some((f) => claimKeyOf(f) === key)) return;
+    persist([...flagged, flagEntry(source, new Date().toISOString())], accepted);
   };
   const flaggedIndexes = flagged
     .map((f) =>
-      sources.findIndex(
-        (s) => s.stat === f.stat && s.subject === f.subject && s.value === f.value,
-      ),
+      sources.findIndex((s) => claimKeyOf(s) === claimKeyOf(f)),
     )
     .filter((i) => i >= 0);
   return (
@@ -346,7 +426,7 @@ export default function CitedAnswerText({ text, ai }: { text: string; ai: AiMess
             if (target.startsWith("#cite-")) {
               const index = Number(target.slice("#cite-".length));
               if (!Number.isInteger(index) || !sources[index]) return <>{children}</>;
-              if (accepted.includes(index)) return <>{children}</>;
+              if (accepted.includes(claimKeyOf(sources[index]))) return <>{children}</>;
               return (
                 <CiteAnchor
                   index={index}
@@ -370,14 +450,17 @@ export default function CitedAnswerText({ text, ai }: { text: string; ai: AiMess
         onFlag={flag}
       />
       {flagged.length > 0 ? (
-        <button
-          type="button"
-          className="pill-ghost"
-          style={{ fontSize: 12, padding: "3px 10px", marginTop: 8 }}
-          onClick={() => downloadLog(flagged)}
-        >
-          Download log ({flagged.length})
-        </button>
+        <span>
+          <button
+            type="button"
+            className="pill-ghost"
+            style={{ fontSize: 12, padding: "3px 10px", marginTop: 8 }}
+            onClick={() => downloadLog(flagged)}
+          >
+            Download log ({flagged.length})
+          </button>
+          <CopyLogButton entries={flagged} />
+        </span>
       ) : null}
       <UnverifiedNote ai={ai} />
       <GapPanel ai={ai} />

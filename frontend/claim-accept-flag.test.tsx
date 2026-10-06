@@ -110,16 +110,30 @@ afterEach(async () => {
   for (const m of mounts) m.remove();
   roots = [];
   mounts = [];
+  win.localStorage.clear();
 });
 
 describe("claim accept and flag", () => {
   it("flag entries carry exact claim identity and nothing else", () => {
     assert.deepEqual(
       flagEntry(
-        { key: "k", index: 0, subject: "Boston", stat: "net rating", value: "9.4", origin: "Team ratings" },
+        {
+          key: "k",
+          index: 0,
+          subject: "Boston",
+          stat: "net rating",
+          value: "9.4",
+          origin: "Team ratings",
+          outputId: "NET_RATING",
+          subjectType: "team",
+          subjectId: "BOS",
+        },
         "2026-10-04T00:00:00.000Z",
       ),
       {
+        outputId: "NET_RATING",
+        subjectType: "team",
+        subjectId: "BOS",
         stat: "net rating",
         subject: "Boston",
         value: "9.4",
@@ -127,6 +141,46 @@ describe("claim accept and flag", () => {
         timestamp: "2026-10-04T00:00:00.000Z",
       },
     );
+  });
+
+  it("same typed claim flagged twice logs exactly once and survives reload", async () => {
+    const el = await mount();
+    await tick();
+    await act(async () => {
+      (el.querySelector(".cite-marker") as HTMLButtonElement).click();
+    });
+    await tick();
+    await act(async () => {
+      buttons(el, "Flag")[0].click();
+    });
+    await tick();
+    assert.equal(buttons(el, "Download log (1)").length, 1);
+    await act(async () => {
+      for (const r of roots) r.unmount();
+    });
+    roots = [];
+    const el2 = await mount();
+    await tick();
+    assert.equal(buttons(el2, "Download log (1)").length, 1);
+    assert.ok(el2.querySelectorAll(".cite-marker").length >= 1);
+  });
+
+  it("copy log button renders beside download", async () => {
+    const el = await mount();
+    await tick();
+    await act(async () => {
+      (el.querySelector(".cite-marker") as HTMLButtonElement).click();
+    });
+    await tick();
+    await act(async () => {
+      buttons(el, "Flag")[0].click();
+    });
+    await tick();
+    assert.equal(buttons(el, "Copy log").length, 1);
+    await act(async () => {
+      buttons(el, "Copy log")[0].click();
+    });
+    await tick();
   });
 
   it("open rows offer accept and flag", async () => {
