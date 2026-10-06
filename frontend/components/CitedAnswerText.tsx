@@ -4,9 +4,18 @@ import { useState } from "react";
 import type { ReactNode } from "react";
 import AnswerText from "./AnswerText";
 import type { AiMessage } from "../lib/chat";
-import { contextPills, evidenceSources, unverifiedSummary, withCitationMarkers } from "../lib/evidence";
+import {
+  contextPills,
+  evidenceSources,
+  gapReasons,
+  unverifiedSummary,
+  unverifiedValues,
+  withCitationMarkers,
+  withUnverifiedMarkers,
+} from "../lib/evidence";
 import { Chip } from "./view-shared";
 import type { EvidenceSource } from "../lib/evidence";
+import { gradeLimits } from "../lib/grades";
 
 export function CiteTable({ source }: { source: EvidenceSource }) {
   const cells: { head: string; body: string; alignRight?: boolean; strong?: boolean }[] = [];
@@ -62,6 +71,9 @@ export function CiteTable({ source }: { source: EvidenceSource }) {
 }
 
 export interface FlagEntry {
+  outputId: string;
+  subjectType: string;
+  subjectId: string;
   stat: string;
   subject: string;
   value: string;
@@ -69,14 +81,57 @@ export interface FlagEntry {
   timestamp: string;
 }
 
+export function claimKeyOf(entry: Pick<FlagEntry, "outputId" | "subjectType" | "subjectId" | "value">): string {
+  return [entry.outputId, entry.subjectType, entry.subjectId, entry.value].join("|");
+}
+
 export function flagEntry(source: EvidenceSource, at: string): FlagEntry {
   return {
+    outputId: source.outputId,
+    subjectType: source.subjectType,
+    subjectId: source.subjectId,
     stat: source.stat,
     subject: source.subject,
     value: source.value,
     source: source.origin,
     timestamp: at,
   };
+}
+
+const CLAIM_LOG_KEY = "dime_claim_log_v1";
+
+function loadClaimLog(): { flagged: FlagEntry[]; accepted: string[] } {
+  try {
+    if (typeof window === "undefined" || !window.localStorage) {
+      return { flagged: [], accepted: [] };
+    }
+    const raw = window.localStorage.getItem(CLAIM_LOG_KEY);
+    if (!raw) return { flagged: [], accepted: [] };
+    const parsed: unknown = JSON.parse(raw);
+    if (typeof parsed !== "object" || parsed === null) return { flagged: [], accepted: [] };
+    const record = parsed as Record<string, unknown>;
+    const flagged = Array.isArray(record.flagged)
+      ? (record.flagged as FlagEntry[]).filter(
+          (f) => typeof f === "object" && f !== null && typeof (f as FlagEntry).value === "string",
+        )
+      : [];
+    const accepted = Array.isArray(record.accepted)
+      ? (record.accepted as unknown[]).filter((k): k is string => typeof k === "string")
+      : [];
+    return { flagged, accepted };
+  } catch {
+    return { flagged: [], accepted: [] };
+  }
+}
+
+function saveClaimLog(flagged: FlagEntry[], accepted: string[]) {
+  try {
+    window.localStorage.setItem(CLAIM_LOG_KEY, JSON.stringify({ flagged, accepted }));
+  } catch (e) {
+    try {
+      console.warn("[claims] claim log persistence unavailable", e);
+    } catch {}
+  }
 }
 
 function RowActions({
@@ -109,6 +164,44 @@ function RowActions({
       <button type="button" onClick={onFlag} style={action}>
         Flag
       </button>
+    </div>
+  );
+}
+
+export function GradeTag({ tag }: { tag: string }) {
+  return (
+    <span
+      style={{
+        fontSize: 11,
+        fontWeight: 600,
+        letterSpacing: ".08em",
+        textTransform: "uppercase",
+        color: "var(--color-ash-gray)",
+        whiteSpace: "nowrap",
+      }}
+    >
+      {tag}
+    </span>
+  );
+}
+
+export function EvidenceCard({ source }: { source: EvidenceSource }) {
+  const graded = source.grade;
+  if (!graded) return null;
+  const rows: { head: string; body: string }[] = [{ head: "Scope", body: graded.scope }];
+  if (graded.method) rows.push({ head: "Method", body: graded.method });
+  const limits = gradeLimits(graded.grade, graded.unknownScope);
+  if (limits) rows.push({ head: "Doesn't cover", body: limits });
+  if (graded.gap) rows.push({ head: "Gap", body: graded.gap });
+  if (source.asOf) rows.push({ head: "As of", body: source.asOf });
+  return (
+    <div style={{ margin: "2px 0 4px 8px", fontVariantNumeric: "tabular-nums" }}>
+      {rows.map((r) => (
+        <div key={r.head} style={{ fontSize: 12, lineHeight: 1.5 }}>
+          <span style={{ color: "var(--color-ash-gray)", marginRight: 6 }}>{r.head}</span>
+          <span style={{ color: "var(--color-warm-gray)" }}>{r.body}</span>
+        </div>
+      ))}
     </div>
   );
 }
@@ -148,10 +241,17 @@ export function EvidenceLedger({
               }}
             >
               {line || "Dime data"}
+              {source.grade ? (
+                <>
+                  {" · "}
+                  <GradeTag tag={source.grade.tag} />
+                </>
+              ) : null}
             </div>
             {open ? (
               <>
                 <CiteTable source={source} />
+                <EvidenceCard source={source} />
                 {onAccept && onFlag ? (
                   <RowActions
                     flagged={flagged.includes(source.index)}
@@ -168,12 +268,65 @@ export function EvidenceLedger({
   );
 }
 
+const UNTRACED_SUFFIX = " could not be traced to the source data.";
+
+export function untracedOutputs(ai: AiMessage): string[] {
+  const caution = Array.isArray(ai.caution) ? ai.caution : [];
+  return caution.filter((c): c is string => typeof c === "string" && c.length > 0);
+}
+
+export function UntracedNote({ ai }: { ai: AiMessage }) {
+  const outputs = untracedOutputs(ai);
+  if (!outputs.length) return null;
+  return (
+    <div style={{ marginTop: 10 }}>
+      <div style={{ fontSize: 12, fontWeight: 500, color: "var(--color-warm-gray)", marginBottom: 4 }}>
+        Not traced to source
+      </div>
+      {outputs.map((line, i) => {
+        const cut = line.endsWith(UNTRACED_SUFFIX)
+          ? line.slice(0, line.length - UNTRACED_SUFFIX.length)
+          : "";
+        return (
+          <div key={i} style={{ fontSize: 12, lineHeight: 1.5, color: "var(--color-ash-gray)" }}>
+            {cut ? (
+              <>
+                <span style={{ fontWeight: 500, color: "var(--color-ink-black)" }}>{cut}</span>
+                {UNTRACED_SUFFIX}
+              </>
+            ) : (
+              line
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 export function UnverifiedNote({ ai }: { ai: AiMessage }) {
   const note = unverifiedSummary(ai);
   if (!note) return null;
   return (
     <div style={{ marginTop: 10, fontSize: 12, lineHeight: 1.5, color: "var(--color-ash-gray)" }}>
       {note}
+    </div>
+  );
+}
+
+export function GapPanel({ ai }: { ai: AiMessage }) {
+  const reasons = gapReasons(ai);
+  if (!reasons.length) return null;
+  return (
+    <div style={{ marginTop: 10 }}>
+      <div style={{ fontSize: 12, fontWeight: 500, color: "var(--color-warm-gray)", marginBottom: 4 }}>
+        Couldn't verify
+      </div>
+      {reasons.map((reason) => (
+        <div key={reason} style={{ fontSize: 12, lineHeight: 1.5, color: "var(--color-ash-gray)" }}>
+          {reason}
+        </div>
+      ))}
     </div>
   );
 }
@@ -225,6 +378,30 @@ export function ContextPills({ ai }: { ai: AiMessage }) {
   );
 }
 
+function CopyLogButton({ entries }: { entries: FlagEntry[] }) {
+  const [copied, setCopied] = useState(false);
+  return (
+    <button
+      type="button"
+      className="pill-ghost"
+      style={{ fontSize: 12, padding: "3px 10px", marginTop: 8, marginLeft: 8 }}
+      onClick={() => {
+        const text = JSON.stringify(entries, null, 2);
+        try {
+          const clipboard = navigator.clipboard;
+          if (!clipboard) return;
+          clipboard.writeText(text).then(
+            () => setCopied(true),
+            () => {},
+          );
+        } catch {}
+      }}
+    >
+      {copied ? "Copied" : "Copy log"}
+    </button>
+  );
+}
+
 function downloadLog(entries: FlagEntry[]) {
   const blob = new Blob([JSON.stringify(entries, null, 2)], { type: "application/json" });
   const url = URL.createObjectURL(blob);
@@ -237,10 +414,21 @@ function downloadLog(entries: FlagEntry[]) {
 
 export default function CitedAnswerText({ text, ai }: { text: string; ai: AiMessage }) {
   const [openCite, setOpenCite] = useState<number | null>(null);
-  const [accepted, setAccepted] = useState<number[]>([]);
-  const [flagged, setFlagged] = useState<FlagEntry[]>([]);
+  const [stored, setStored] = useState(() => loadClaimLog());
+  const accepted = stored.accepted;
+  const flagged = stored.flagged;
   const sources = evidenceSources(ai);
-  const marked = withCitationMarkers(text, sources);
+  const marked = withUnverifiedMarkers(
+    withCitationMarkers(text, sources),
+    unverifiedValues(
+      ai,
+      sources.map((s) => s.value),
+    ),
+  );
+  const persist = (nextFlagged: FlagEntry[], nextAccepted: string[]) => {
+    setStored({ flagged: nextFlagged, accepted: nextAccepted });
+    saveClaimLog(nextFlagged, nextAccepted);
+  };
   const toggle = (index: number) => {
     setOpenCite((cur) => (cur === index ? null : index));
     setTimeout(() => {
@@ -251,19 +439,24 @@ export default function CitedAnswerText({ text, ai }: { text: string; ai: AiMess
     }, 0);
   };
   const accept = (index: number) => {
-    if (!accepted.includes(index)) setAccepted((cur) => [...cur, index]);
+    const source = sources[index];
+    if (!source) return;
+    const key = claimKeyOf(source);
+    if (!accepted.includes(key)) {
+      persist(flagged, [...accepted, key]);
+    }
     setOpenCite((cur) => (cur === index ? null : cur));
   };
   const flag = (index: number) => {
     const source = sources[index];
-    if (!source || flagged.some((f) => f.stat === source.stat && f.subject === source.subject && f.value === source.value)) return;
-    setFlagged((cur) => [...cur, flagEntry(source, new Date().toISOString())]);
+    if (!source) return;
+    const key = claimKeyOf(source);
+    if (flagged.some((f) => claimKeyOf(f) === key)) return;
+    persist([...flagged, flagEntry(source, new Date().toISOString())], accepted);
   };
   const flaggedIndexes = flagged
     .map((f) =>
-      sources.findIndex(
-        (s) => s.stat === f.stat && s.subject === f.subject && s.value === f.value,
-      ),
+      sources.findIndex((s) => claimKeyOf(s) === claimKeyOf(f)),
     )
     .filter((i) => i >= 0);
   return (
@@ -274,10 +467,21 @@ export default function CitedAnswerText({ text, ai }: { text: string; ai: AiMess
         components={{
           a: ({ href, children }) => {
             const target = href || "";
+            if (target.startsWith("#unverified")) {
+              return (
+                <span
+                  className="unverified-marker"
+                  title="Not verified against source data"
+                  aria-label="Not verified against source data"
+                >
+                  {children}
+                </span>
+              );
+            }
             if (target.startsWith("#cite-")) {
               const index = Number(target.slice("#cite-".length));
               if (!Number.isInteger(index) || !sources[index]) return <>{children}</>;
-              if (accepted.includes(index)) return <>{children}</>;
+              if (accepted.includes(claimKeyOf(sources[index]))) return <>{children}</>;
               return (
                 <CiteAnchor
                   index={index}
@@ -300,17 +504,22 @@ export default function CitedAnswerText({ text, ai }: { text: string; ai: AiMess
         onAccept={accept}
         onFlag={flag}
       />
+      <UntracedNote ai={ai} />
       {flagged.length > 0 ? (
-        <button
-          type="button"
-          className="pill-ghost"
-          style={{ fontSize: 12, padding: "3px 10px", marginTop: 8 }}
-          onClick={() => downloadLog(flagged)}
-        >
-          Download log ({flagged.length})
-        </button>
+        <span>
+          <button
+            type="button"
+            className="pill-ghost"
+            style={{ fontSize: 12, padding: "3px 10px", marginTop: 8 }}
+            onClick={() => downloadLog(flagged)}
+          >
+            Download log ({flagged.length})
+          </button>
+          <CopyLogButton entries={flagged} />
+        </span>
       ) : null}
       <UnverifiedNote ai={ai} />
+      <GapPanel ai={ai} />
     </div>
   );
 }

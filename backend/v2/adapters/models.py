@@ -417,6 +417,7 @@ class ProviderStructuredModel:
     def _failure_class(exc: BaseException) -> str:
         names: list[str] = []
         details: list[str] = []
+        codes: list[int] = []
         seen: set[int] = set()
         pending: list[BaseException] = [exc]
         while pending and len(names) < 8:
@@ -426,6 +427,12 @@ class ProviderStructuredModel:
             seen.add(id(item))
             names.append(type(item).__name__.casefold())
             details.append(str(item)[:2000].casefold())
+            code = getattr(item, "status_code", None)
+            if isinstance(code, bool) or not isinstance(code, int):
+                response = getattr(item, "response", None)
+                code = getattr(response, "status_code", None)
+            if isinstance(code, int) and not isinstance(code, bool):
+                codes.append(code)
             cause = item.__cause__
             context = item.__context__
             if isinstance(cause, BaseException):
@@ -442,6 +449,15 @@ class ProviderStructuredModel:
             return "quota_exhausted"
         if "rate" in name or "429" in detail or "rate limit" in detail:
             return "rate_limit"
+        for code in codes:
+            if code == 429:
+                return "rate_limit"
+            if 500 <= code <= 599:
+                return "server_error"
+            if code in (401, 403):
+                return "authentication"
+            if code in (400, 404):
+                return "client_error"
         if any(code in detail for code in ("500", "502", "503", "504")):
             return "server_error"
         if "auth" in name or "401" in detail or "403" in detail:

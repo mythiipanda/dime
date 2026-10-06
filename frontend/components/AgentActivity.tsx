@@ -467,24 +467,37 @@ function GroupRow({ g, live }: { g: ToolGroup; live: boolean }) {
 }
 
 function ThoughtBlock({ text, running, thoughtMs, thoughtStarted }: { text: string; running: boolean; thoughtMs?: number; thoughtStarted?: number }) {
+  const [userOpen, setUserOpen] = useState(false);
   if (!text) return null;
   const ms = thoughtMs ?? (thoughtStarted ? Date.now() - thoughtStarted : undefined);
   const suffix = ms === undefined ? "" : ` · ${fmtMs(ms) || "0ms"}`;
   const title = thoughtTitle(text);
+  const open = running || userOpen;
   return (
-    <details open={running} style={{ marginTop: 8, color: "var(--color-warm-gray)", fontSize: 12 }}>
-      <summary style={{ cursor: "pointer", listStyle: "none", fontSize: 12 }}>
+    <details open={open} style={{ marginTop: 8, color: "var(--color-warm-gray)", fontSize: 12 }}>
+      <summary
+        style={{ cursor: "pointer", listStyle: "none", fontSize: 12 }}
+        onClick={(e) => {
+          e.preventDefault();
+          setUserOpen((o) => !o);
+        }}
+      >
         <span aria-hidden style={{ marginRight: 7, color: "var(--color-ash-gray)" }}>{running ? "●" : "○"}</span>
         {running ? `Thinking: ${title}` : `Thought: ${title}${suffix}`}
       </summary>
-      <div style={{ margin: "7px 0 0 19px", paddingLeft: 10, borderLeft: "1px solid var(--color-stone-border)", whiteSpace: "pre-wrap" }}>
-        {text}
-      </div>
+      {open && (
+        <div style={{ margin: "7px 0 0 19px", paddingLeft: 10, borderLeft: "1px solid var(--color-stone-border)", whiteSpace: "pre-wrap" }}>
+          {text}
+        </div>
+      )}
     </details>
   );
 }
 
 export default function AgentActivity({ ai }: { ai: AiMessage }) {
+  const [open, setOpen] = useState(false);
+  const [thoughtsOpen, setThoughtsOpen] = useState(false);
+  const [liveOpen, setLiveOpen] = useState(false);
   const thoughts = useMemo(() => thoughtsFor(ai), [ai]);
   const calls = useMemo(() => callsFor(ai), [ai]);
   const reasoning = useMemo(() => reasoningFor(ai), [ai]);
@@ -497,7 +510,11 @@ export default function AgentActivity({ ai }: { ai: AiMessage }) {
     (ai.activity?.length ?? 0) > 0;
 
   if (!hasActivity) {
-    return running ? <div role="status" style={{ marginBottom: 10, fontSize: 12, color: "var(--color-ash-gray)" }}>Analyzing…</div> : null;
+    return (
+      <div data-activity-slot style={{ marginBottom: 10 }}>
+        {running ? <div role="status" style={{ fontSize: 12, color: "var(--color-ash-gray)" }}>Analyzing…</div> : null}
+      </div>
+    );
   }
 
   const label = running
@@ -505,17 +522,57 @@ export default function AgentActivity({ ai }: { ai: AiMessage }) {
     : calls.length > 0
       ? `Used ${calls.length} tool${calls.length === 1 ? "" : "s"}`
       : "Analysis complete";
+  const liveRows = (
+    <div style={{ margin: "7px 0 0 19px", paddingLeft: 10, borderLeft: "1px solid var(--color-stone-border)" }}>
+      {grouped.map((entry) =>
+        "calls" in entry ? (
+          <GroupRow key={entry.key} g={entry} live={running} />
+        ) : (
+          <ToolRow key={entry.id ?? entry.name} c={entry} live={running} />
+        ),
+      )}
+    </div>
+  );
 
   return (
-    <div style={{ marginBottom: 10 }}>
+    <div data-activity-slot style={{ marginBottom: 10 }}>
       {(ai.activity?.length ?? 0) > 0 ? (
         <ActivityTimeline items={ai.activity!} running={running} />
+      ) : running && calls.length >= 2 ? (
+        <details open={liveOpen} style={{ color: "var(--color-warm-gray)", fontSize: 12 }}>
+          <summary
+            style={{ cursor: "pointer", listStyle: "none" }}
+            onClick={(e) => {
+              e.preventDefault();
+              setLiveOpen((o) => !o);
+            }}
+          >
+            <span aria-hidden style={{ marginRight: 7, color: "var(--color-ash-gray)" }}>●</span>
+            {`Did ${calls.length} things`}
+          </summary>
+          {liveOpen && liveRows}
+        </details>
+      ) : running ? (
+        <div style={{ color: "var(--color-warm-gray)", fontSize: 12 }}>
+          <div>
+            <span aria-hidden style={{ marginRight: 7, color: "var(--color-ash-gray)" }}>●</span>
+            {label}
+          </div>
+          {liveRows}
+        </div>
       ) : (
-        <details style={{ color: "var(--color-warm-gray)", fontSize: 12 }}>
-          <summary style={{ cursor: "pointer", listStyle: "none" }}>
-            <span aria-hidden style={{ marginRight: 7, color: "var(--color-ash-gray)" }}>{running ? "●" : "·"}</span>
+        <details open={open} style={{ color: "var(--color-warm-gray)", fontSize: 12 }}>
+          <summary
+            style={{ cursor: "pointer", listStyle: "none" }}
+            onClick={(e) => {
+              e.preventDefault();
+              setOpen((o) => !o);
+            }}
+          >
+            <span aria-hidden style={{ marginRight: 7, color: "var(--color-ash-gray)" }}>·</span>
             {label}
           </summary>
+          {open && (
           <div style={{ margin: "7px 0 0 19px", paddingLeft: 10, borderLeft: "1px solid var(--color-stone-border)" }}>
             {grouped.map((entry) =>
               "calls" in entry ? (
@@ -525,17 +582,26 @@ export default function AgentActivity({ ai }: { ai: AiMessage }) {
               ),
             )}
           </div>
+          )}
         </details>
       )}
       <ThoughtBlock text={reasoning} running={running} thoughtMs={ai.thoughtMs} thoughtStarted={ai.thoughtStarted} />
       {thoughts.length > 0 && (
-        <details style={{ marginTop: 8, color: "var(--color-warm-gray)", fontSize: 12 }}>
-          <summary style={{ cursor: "pointer", listStyle: "none", fontSize: 12, color: "var(--color-ash-gray)" }}>
+        <details open={thoughtsOpen} style={{ marginTop: 8, color: "var(--color-warm-gray)", fontSize: 12 }}>
+          <summary
+            style={{ cursor: "pointer", listStyle: "none", fontSize: 12, color: "var(--color-ash-gray)" }}
+            onClick={(e) => {
+              e.preventDefault();
+              setThoughtsOpen((o) => !o);
+            }}
+          >
             Progress updates · {thoughts.length}
           </summary>
+          {thoughtsOpen && (
           <div style={{ margin: "7px 0 0 19px", paddingLeft: 10, borderLeft: "1px solid var(--color-stone-border)" }}>
             {thoughts.map((text, index) => <div key={`thought-${index}`}>{text}</div>)}
           </div>
+          )}
         </details>
       )}
     </div>

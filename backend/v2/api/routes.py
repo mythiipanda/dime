@@ -1197,14 +1197,39 @@ def _output_display_name(output_id: str, definitions=None) -> str:
         return humanized.upper()
     return humanized or output_id
 
-def _envelope_definitions(result, evidence_id: str) -> dict:
+
+def _evidence_envelope(result, evidence_id: str | None):
     try:
         for item in result.execution.evidence:
             if getattr(item, "evidence_id", None) == evidence_id:
-                return dict(getattr(item, "metric_definitions", None) or {})
+                return item
     except Exception:
+        return None
+    return None
+
+
+def _envelope_definitions(result, evidence_id: str) -> dict:
+    envelope = _evidence_envelope(result, evidence_id)
+    if envelope is None:
         return {}
-    return {}
+    return dict(getattr(envelope, "metric_definitions", None) or {})
+
+
+def _subject_display_name(binding, envelope) -> str:
+    subject_type = getattr(binding, "subject_entity_type", None)
+    subject_id = getattr(binding, "subject_entity_id", None)
+    if envelope is None or subject_type is None or subject_id is None:
+        return ""
+    try:
+        entities = getattr(envelope, "entities", None) or []
+    except Exception:
+        return ""
+    for entity in entities:
+        if (getattr(entity, "type", None) == subject_type
+                and str(getattr(entity, "id", "")) == str(subject_id)):
+            return str(getattr(entity, "display_name", None) or "").strip()
+    return ""
+
 
 def _public_gaps(result) -> list[dict]:
     return [{"kind": gap.kind.value, "blocks": list(gap.blocks)}
@@ -1287,6 +1312,9 @@ def _public_output_status(result, status) -> dict:
                               else "unitless"),
                         subject_type=binding.subject_entity_type,
                         subject_id=binding.subject_entity_id,
+                        subject_display_name=_subject_display_name(
+                            binding, _evidence_envelope(
+                                result, binding.evidence_id)),
                         display_name=_output_display_name(
                             status.output_id,
                             _envelope_definitions(result, binding.evidence_id)))
@@ -1383,6 +1411,8 @@ def _public_evidence(result) -> tuple[list[dict], list[str]]:
                          binding.output_id, envelope.metric_definitions),
                      "subject_type": binding.subject_entity_type,
                      "subject_id": binding.subject_entity_id,
+                     "subject_display_name": _subject_display_name(
+                         binding, envelope),
                      "value": str(value),
                      "unit": (binding.unit.value if binding.unit.kind == "declared"
                               else "unitless"),

@@ -1,4 +1,5 @@
 import type { AiMessage } from "./chat";
+import { gradeClaim, type GradeInput, type GradedClaim } from "./grades";
 
 export interface EvidenceGap {
   kind?: string;
@@ -40,6 +41,56 @@ export interface EvidenceSource {
   stat: string;
   value: string;
   origin: string;
+  grade?: GradedClaim;
+  asOf?: string;
+  outputId: string;
+  subjectType: string;
+  subjectId: string;
+}
+
+function strField(table: Record<string, unknown>, field: string): string {
+  const raw = table[field];
+  return raw === null || raw === undefined ? "" : String(raw);
+}
+
+function textField(record: unknown, field: string): string {
+  if (!isRecord(record)) return "";
+  const raw = (record as Record<string, unknown>)[field];
+  return typeof raw === "string" ? raw : "";
+}
+
+function numberField(record: unknown, field: string): number | null {
+  if (!isRecord(record)) return null;
+  const raw = (record as Record<string, unknown>)[field];
+  return typeof raw === "number" && Number.isFinite(raw) ? raw : null;
+}
+
+function gradeInputOf(table: Record<string, unknown>): GradeInput {
+  const provenance = table.provenance;
+  const meta = table.meta;
+  const method = textField(meta, "method") || undefined;
+  const methodKind = textField(meta, "method_kind") || undefined;
+  const windowRaw = numberField(meta, "window_n") ?? numberField(meta, "windowN");
+  const kindRaw = isRecord(meta) ? (meta as Record<string, unknown>).window_kind : undefined;
+  return {
+    method,
+    methodKind,
+    windowN: windowRaw,
+    windowKind: kindRaw === "meetings" ? "meetings" : kindRaw === "games" ? "games" : null,
+    lineage: textField(provenance, "origin") || undefined,
+    season: textField(provenance, "season") || undefined,
+  };
+}
+
+function asOfOf(table: Record<string, unknown>): string {
+  const provenance = table.provenance;
+  const meta = table.meta;
+  return (
+    textField(provenance, "as_of") ||
+    textField(meta, "as_of") ||
+    textField(meta, "fetched_at") ||
+    textField(provenance, "fetched_at")
+  );
 }
 
 const CAPABILITY_LABELS: Record<string, string> = {
@@ -327,6 +378,7 @@ function tableSource(table: unknown, index: number): EvidenceSource | null {
     const outputId = typeof t.output_id === "string" ? t.output_id : "";
     const rawValue = t.value !== undefined ? t.value : t.input_value;
     const value = rawValue === null || rawValue === undefined ? "" : String(rawValue);
+    const asOf = asOfOf(t);
     return {
       key: "claim-" + index,
       index,
@@ -334,6 +386,11 @@ function tableSource(table: unknown, index: number): EvidenceSource | null {
       stat: displayStat(outputId, t.unit, t),
       value,
       origin: originText(t.provenance),
+      outputId,
+      subjectType: strField(t, "subject_type"),
+      subjectId: strField(t, "subject_id"),
+      grade: gradeClaim(gradeInputOf(t)),
+      ...(asOf ? { asOf } : null),
     };
   }
   if (typeof t.tool === "string") {
@@ -344,6 +401,9 @@ function tableSource(table: unknown, index: number): EvidenceSource | null {
       stat: capabilityLabel(t.tool),
       value: "",
       origin: originText(t.meta),
+      outputId: "",
+      subjectType: "",
+      subjectId: "",
     };
   }
   return null;
@@ -410,6 +470,21 @@ function incompleteLabels(ai: AiMessage): string[] {
   return labels;
 }
 
+export function gapReasons(ai: AiMessage): string[] {
+  const carry = carryOf(ai);
+  const gaps = Array.isArray(carry.gaps) ? carry.gaps : [];
+  const seen = new Set<string>();
+  const reasons: string[] = [];
+  gaps.forEach((gap) => {
+    const kind =
+      typeof gap === "string" ? gap : isRecord(gap) ? String(gap.kind || "") : "";
+    if (!kind || seen.has(kind)) return;
+    seen.add(kind);
+    reasons.push(gapMessage(kind));
+  });
+  return reasons;
+}
+
 function reasonText(ai: AiMessage): string {
   const carry = carryOf(ai);
   const gaps = Array.isArray(carry.gaps) ? carry.gaps : [];
@@ -437,6 +512,56 @@ export function unverifiedSummary(ai: AiMessage): string | null {
 
 function escapeRegExp(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function isStatValue(value: unknown): value is string {
+  return typeof value === "string" && /^(?:\d{2,}(?:\.\d+)?|\d\.\d+)$/.test(value);
+}
+
+function isValueChar(ch: string | undefined): boolean {
+  return ch !== undefined && "0123456789.-–".includes(ch);
+}
+
+function markValue(out: string, value: string): string {
+  let from = 0;
+  let result = "";
+  for (;;) {
+    const at = out.indexOf(value, from);
+    if (at < 0) {
+      result += out.slice(from);
+      break;
+    }
+    if (isValueChar(out[at - 1]) || isValueChar(out[at + value.length])) {
+      result += out.slice(from, at + 1);
+      from = at + 1;
+      continue;
+    }
+    result += out.slice(from, at) + value + "[?](#unverified)";
+    from = at + value.length;
+  }
+  return result;
+}
+
+export function unverifiedValues(ai: AiMessage, admitted: string[]): string[] {
+  const admittedSet = new Set(admitted);
+  const carry = carryOf(ai);
+  const statuses = Array.isArray(carry.output_statuses) ? carry.output_statuses : [];
+  const values: string[] = [];
+  statuses.forEach((status) => {
+    if (!status || status.status === "complete") return;
+    if (isStatValue(status.value) && !admittedSet.has(status.value)) values.push(status.value);
+  });
+  return [...new Set(values)].sort((a, b) => b.length - a.length);
+}
+
+export function withUnverifiedMarkers(text: string, unbacked: string[]): string {
+  if (!text || unbacked.length === 0) return text;
+  let out = text;
+  unbacked.forEach((value) => {
+    if (!isStatValue(value)) return;
+    out = markValue(out, value);
+  });
+  return out;
 }
 
 export function withCitationMarkers(text: string, sources: EvidenceSource[]): string {

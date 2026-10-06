@@ -7,7 +7,7 @@ from typing import Any
 from langchain_core.tools import tool
 
 from .. import store
-from ._core import clamp_season, coerce_player_id, resolve_season
+from ._core import clamp_season, coerce_player_id, is_scope_game, last_completed_season, resolve_season
 from .headtohead import _team_abbr
 from .splits import _resolve_name, is_home, opponent_abbr, parse_game_date
 
@@ -77,8 +77,10 @@ def _table_for(playoffs: bool) -> str:
     return "silver_playoff_gamelogs" if playoffs else "silver_player_gamelogs"
 
 def _load_games(table: str, season: str,
-                pid: int | None = None) -> list[dict[str, Any]]:
+                pid: int | None = None, scope: str | None = None) -> list[dict[str, Any]]:
     season = resolve_season(season)
+    if scope is None:
+        scope = "playoffs" if table == "silver_playoff_gamelogs" else "regular"
     cols = ("GAME_DATE", "Game_ID", "MATCHUP", "WL", "MIN", "FGM", "FGA", "FG3M",
             "FG3A", "FTM", "FTA", "OREB", "DREB", "REB", "AST", "STL",
             "BLK", "TOV", "PF", "PTS", "PLUS_MINUS")
@@ -106,6 +108,8 @@ def _load_games(table: str, season: str,
     games = []
     for raw in fetched:
         r = dict(zip(("Player_ID",) + sel, raw))
+        if not is_scope_game(r.get("Game_ID"), scope):
+            continue
         d = parse_game_date(r.get("GAME_DATE"))
         if d is None:
             continue
@@ -546,7 +550,8 @@ def search_game_logs(
         "opponent": abbr, "month": mon,
         "start_date": lo, "end_date": hi, "home_away": ha,
     }
-    games = _load_games(table, season, pid)
+    games = _load_games(table, season, pid,
+                        scope="playoffs" if playoffs else "regular")
     if not games:
         if league_wide or team_wide:
             return {"tool": "search_game_logs", "ok": False,

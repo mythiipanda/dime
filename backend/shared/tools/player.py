@@ -2387,6 +2387,7 @@ def get_impact_estimate(player: str | int, season: str | None = None) -> dict[st
                            "name": raptor.get("PLAYER_NAME") or name},
                 "estimate_per_100": round(estimate, 2),
                 "method": "raptor_components",
+                "method_kind": "estimate",
                 "methodology": (
                     "Empirical RAPTOR reconstruction: 0.80 * box component +"
                     " 0.20 * on-off component. Weight fitted from 4,684"
@@ -2494,6 +2495,7 @@ def get_impact_estimate(player: str | int, season: str | None = None) -> dict[st
                        "team": row.get("TEAM_ABBREVIATION")},
             "estimate_per_100": round(estimate, 2),
             "method": "box_prior_shrinkage",
+            "method_kind": "estimate",
             "methodology": (
                 "Marginal on-court lift (player on-court NET_RATING minus"
                 " team NET_RATING, per 100 possessions) shrunk toward an OLS"

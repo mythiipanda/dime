@@ -730,7 +730,6 @@ export default function DataArtifacts({
   return (
 
     <div
-      className="t-skel-in"
       style={{
         border: "1px solid var(--color-stone-border)",
         borderRadius: 12,

@@ -24,6 +24,9 @@ def test_explicit_wire_normalizer_inlines_refs_closes_objects_and_reports_no_los
  candidate,report=normalize_provider_wire_schema(source);assert '$defs' not in str(candidate) and candidate['required']==['optional','required']
  assert candidate['properties']['optional']=={'type':'integer','default':2}
  assert report['losses']==[] and len(report['source_schema_sha256'])==64
+@pytest.mark.parametrize('wire',[RequirementReviewWire,PlannerOutputWire])
+def test_live_wire_schemas_survive_provider_normalization(wire):
+ candidate,_=normalize_provider_wire_schema(wire.model_json_schema());assert candidate['type']=='object'
 @pytest.mark.parametrize('bad',[{'$defs':{'X':{'$ref':'#/$defs/X'}},'$ref':'#/$defs/X'},{'$defs':{'X':{'type':'string'}},'$ref':'#/$defs/X','description':'sibling'}])
 def test_normalizer_rejects_ref_cycle_and_siblings(bad):
  with pytest.raises(ValueError):normalize_provider_wire_schema(bad)

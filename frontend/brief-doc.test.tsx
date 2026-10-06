@@ -6,8 +6,8 @@ import { act } from "react";
 import { createRoot } from "react-dom/client";
 import type { Root } from "react-dom/client";
 import DataArtifacts from "./components/DataArtifacts";
-import BriefsPage from "./app/briefs/page";
-import { listBriefs, saveBrief } from "./lib/briefs";
+import BriefsPage, { BriefEditor } from "./app/briefs/page";
+import { briefFieldDiff, listBriefs, saveBrief, updateBrief } from "./lib/briefs";
 import type { AiMessage } from "./lib/chat";
 
 const dom = new JSDOM("<!doctype html><html><body></body></html>", {
@@ -209,6 +209,31 @@ describe("matchup brief doc", () => {
     }
   });
 
+  it("editor fields render the saved values with no conflict notice", async () => {
+    saveBrief({
+      title: "BOS at NYK",
+      question: "How do Boston and New York match up Friday?",
+      rows: PREVIEW_ROWS,
+    });
+    const host = await mountEl(React.createElement(BriefsPage));
+    await act(async () => {
+      buttons(host, "BOS at NYK")[0].click();
+      await new Promise((r) => setTimeout(r, 30));
+    });
+    const titleBox = host.querySelector(
+      'input[aria-label="Brief title"]',
+    ) as HTMLInputElement | null;
+    const questionBox = host.querySelector(
+      'input[aria-label="Brief question"]',
+    ) as HTMLInputElement | null;
+    assert.ok(titleBox, "title field missing");
+    assert.ok(questionBox, "question field missing");
+    assert.equal(titleBox.value, "BOS at NYK");
+    assert.equal(questionBox.value, "How do Boston and New York match up Friday?");
+    assert.ok(!host.textContent?.includes("Brief changed elsewhere"));
+    assert.equal(buttons(host, "Reload saved").length, 0);
+  });
+
   it("briefs page lists, opens, and re-runs a saved brief", async () => {
     const restore = isolateFetch(() => Promise.reject(new TypeError("offline")));
     try {
@@ -232,5 +257,97 @@ describe("matchup brief doc", () => {
     } finally {
       restore();
     }
+  });
+
+  it("briefFieldDiff names exactly the changed regions", () => {
+    const base = { title: "BOS at NYK", question: "How do they match up?" };
+    assert.deepEqual(briefFieldDiff(base, base), []);
+    assert.deepEqual(briefFieldDiff(base, { ...base, title: "LAL at BOS" }), ["title"]);
+    assert.deepEqual(briefFieldDiff(base, { ...base, question: "New question?" }), ["question"]);
+    assert.deepEqual(
+      briefFieldDiff(base, { title: "LAL at BOS", question: "New question?" }),
+      ["title", "question"],
+    );
+  });
+
+  it("clean remote write adopts values and flashes the changed region", async () => {
+    const doc = saveBrief({
+      title: "BOS at NYK",
+      question: "How do Boston and New York match up Friday?",
+      rows: PREVIEW_ROWS,
+    });
+    const host = await mountEl(
+      React.createElement(BriefEditor, { doc, onSaved: () => {}, pollMs: 25 }),
+    );
+    await act(async () => {
+      updateBrief(doc.id, { title: "LAL at BOS" }, 1);
+      await new Promise((r) => setTimeout(r, 150));
+    });
+    const titleBox = host.querySelector('input[aria-label="Brief title"]') as HTMLInputElement;
+    const questionBox = host.querySelector('input[aria-label="Brief question"]') as HTMLInputElement;
+    assert.equal(titleBox.value, "LAL at BOS");
+    assert.equal(questionBox.value, "How do Boston and New York match up Friday?");
+    assert.ok((titleBox.getAttribute("style") || "").includes("bg-selected"));
+    assert.ok(!(questionBox.getAttribute("style") || "").includes("bg-selected"));
+    assert.ok(!host.textContent?.includes("Brief changed elsewhere"));
+  });
+
+  it("flash settles back to the plain field after the sweep", async () => {
+    const doc = saveBrief({
+      title: "BOS at NYK",
+      question: "How do Boston and New York match up Friday?",
+      rows: PREVIEW_ROWS,
+    });
+    const host = await mountEl(
+      React.createElement(BriefEditor, { doc, onSaved: () => {}, pollMs: 25 }),
+    );
+    await act(async () => {
+      updateBrief(doc.id, { question: "New question?" }, 1);
+      await new Promise((r) => setTimeout(r, 150));
+    });
+    const questionBox = host.querySelector('input[aria-label="Brief question"]') as HTMLInputElement;
+    assert.ok((questionBox.getAttribute("style") || "").includes("bg-selected"));
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 1700));
+    });
+    assert.ok(!(questionBox.getAttribute("style") || "").includes("bg-selected"));
+    assert.equal(questionBox.value, "New question?");
+  });
+
+  it("remote write with identical content adopts silently with no flash", async () => {
+    const doc = saveBrief({
+      title: "BOS at NYK",
+      question: "How do Boston and New York match up Friday?",
+      rows: PREVIEW_ROWS,
+    });
+    const host = await mountEl(
+      React.createElement(BriefEditor, { doc, onSaved: () => {}, pollMs: 25 }),
+    );
+    await act(async () => {
+      updateBrief(doc.id, { title: "BOS at NYK" }, 1);
+      await new Promise((r) => setTimeout(r, 150));
+    });
+    const titleBox = host.querySelector('input[aria-label="Brief title"]') as HTMLInputElement;
+    assert.equal(titleBox.value, "BOS at NYK");
+    assert.ok(!(titleBox.getAttribute("style") || "").includes("bg-selected"));
+  });
+
+  it("cross-tab storage event adopts the remote write without waiting for poll", async () => {
+    const doc = saveBrief({
+      title: "BOS at NYK",
+      question: "How do Boston and New York match up Friday?",
+      rows: PREVIEW_ROWS,
+    });
+    const host = await mountEl(
+      React.createElement(BriefEditor, { doc, onSaved: () => {}, pollMs: 60000 }),
+    );
+    await act(async () => {
+      updateBrief(doc.id, { title: "NYK at MIA" }, 1);
+      win.dispatchEvent(new win.Event("storage"));
+      await new Promise((r) => setTimeout(r, 60));
+    });
+    const titleBox = host.querySelector('input[aria-label="Brief title"]') as HTMLInputElement;
+    assert.equal(titleBox.value, "NYK at MIA");
+    assert.ok((titleBox.getAttribute("style") || "").includes("bg-selected"));
   });
 });

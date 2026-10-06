@@ -347,6 +347,21 @@ def test_an_omitted_season_resolves_to_the_latest_published_ballot(
     assert result["meta"]["season"] == "2025-26"
     assert result["rows"][0]["player"] == "Shai Gilgeous-Alexander"
 
+
+def test_a_player_name_matches_case_insensitively(awards_warehouse):
+    loud = _results(view="player_awards", season="2023-24",
+                    player="LeBron James")
+    quiet = _results(view="player_awards", season="2023-24",
+                     player="lebron james")
+    assert loud["ok"] is quiet["ok"] is True
+    assert (len(loud["rows"]) ==
+            len(quiet["rows"]) > 0)
+
+
+def test_winner_meta_emits_official_kind(awards_warehouse):
+    result = _results(view="winner", award="MVP", season="2023-24")
+    assert result["ok"] is True, result
+    assert result["meta"]["method_kind"] == "official"
 def test_a_player_name_matches_without_its_diacritic(awards_warehouse):
     accented = _results(view="player_awards", season="2023-24",
                         player="Nikola Jokić")

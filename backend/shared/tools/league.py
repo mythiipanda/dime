@@ -8,7 +8,7 @@ from langchain_core.tools import tool
 
 from .. import store
 from ..sources import nba_stats
-from ._core import IN_SEASON_MONTHS as _IN_SEASON_MONTHS, TTL_LEADERS, TTL_SCOREBOARD_PAST, clamp_stat, _warehouse_or_live, is_past_game_date, last_completed_season, resolve_season, season_static
+from ._core import IN_SEASON_MONTHS as _IN_SEASON_MONTHS, TTL_LEADERS, TTL_SCOREBOARD_PAST, clamp_stat, _warehouse_or_live, is_past_game_date, is_scope_game, last_completed_season, resolve_season, season_static
 from .leader_metrics import COUNTING_METRICS, per_game_column, per_game_value
 from .rating_metrics import RANKING_DIRECTIONS, TEAM_RATING_METRICS
 
@@ -353,6 +353,7 @@ def get_ratings(
     source: RatingsSource | None = None
     if rows:
         meta.setdefault("method", "official")
+        meta.setdefault("method_kind", "official")
         source = RatingsSource(RATINGS_STORED, "silver_team_ratings")
     else:
         con = store.connect(read_only=True)
@@ -369,6 +370,8 @@ def get_ratings(
                     "rows": len(rows),
                     "method": ("official" if offline.kind == RATINGS_STORED
                                else "derived"),
+                    "method_kind": ("official" if offline.kind == RATINGS_STORED
+                                    else "derived"),
                     **store.warehouse_identity()}
     if source is None and season_static(season or ""):
         rows, meta = _warehouse_or_live(
@@ -543,6 +546,7 @@ def get_playoff_team_ratings(
             "source": "warehouse:silver_playoffs", "season": season,
             "as_of": str(source_as_of) if source_as_of else None,
             "method": "NBA box-score estimated possessions",
+            "method_kind": "estimate",
             "coverage": "Completed playoff games only.",
             "qualification": "All playoff teams; estimated possessions use the NBA box-score formula.",
         },
@@ -2004,6 +2008,10 @@ def get_finder(
             return {"tool": "get_finder", "ok": False, "error": "history empty"}
         q = """SELECT team_abbreviation, game_date, matchup, wl, pts
                FROM silver_hist_gamelogs WHERE _season = ?"""
+        cols = {r[1] for r in
+                con.execute("PRAGMA table_info(silver_hist_gamelogs)").fetchall()}
+        if "season_type" in cols:
+            q += " AND season_type = 'regular-season'"
         params: list[object] = [season]
         if team_abbrev:
             q += " AND team_abbreviation = ?"
@@ -2148,6 +2156,10 @@ def get_rest(team_abbrev: str = "", season: str | None = None) -> dict[str, Any]
             return {"tool": "get_rest", "ok": False, "error": "history empty"}
         q = """SELECT team_abbreviation, game_date, wl FROM silver_hist_gamelogs
                WHERE _season = ?"""
+        cols = {r[1] for r in
+                con.execute("PRAGMA table_info(silver_hist_gamelogs)").fetchall()}
+        if "season_type" in cols:
+            q += " AND season_type = 'regular-season'"
         params: list[object] = [season]
         if team_abbrev:
             q += " AND team_abbreviation = ?"
@@ -2276,6 +2288,7 @@ def get_win_prob(team_a: str = "", team_b: str = "", season: str | None = None,
         ).fetchall()
     finally:
         con.close()
+    rows = [r for r in rows if is_scope_game(r[1], "regular")]
     elo, _, _, _ = _build_elo(rows)
     ra, rb = elo.get(a, ELO_START), elo.get(b, ELO_START)
     ra_adj, rb_adj = ra, rb
@@ -3451,6 +3464,7 @@ def get_rookie_leaders(stat: str = "ppg", min_value: float = 0,
             "method": ("filter to first NBA season by excluding every player "
                        "name present in any prior warehouse season, then rank "
                        f"descending by {col}"),
+            "method_kind": "derived",
             "stat": col,
             "stat_unit": ("fraction_0_1" if col in {"FG_PCT", "FG3_PCT", "FT_PCT"}
                           else "games" if col == "GP"
@@ -3933,6 +3947,7 @@ def get_elo(season: str | None = None) -> dict[str, Any]:
         ).fetchall()
     finally:
         con.close()
+    rows = [r for r in rows if is_scope_game(r[1], "regular")]
     elo, wins, losses, mov_ok = _build_elo(rows)
     table = sorted(
         ({"TEAM": t, "ELO": round(v), "W": wins.get(t, 0),
@@ -3970,6 +3985,7 @@ def get_elo_standings(season: str | None = None, opponent: str | None = None,
                          "data_note": (
                              f"no games in the warehouse for season {season}; "
                              "nothing fabricated")}}
+    rows = [r for r in rows if is_scope_game(r[1], "regular")]
     elo, wins, losses, mov_ok = _build_elo(rows)
     anchor_abbr = "AVG"
     anchor_elo = 1500

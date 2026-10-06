@@ -7,7 +7,9 @@ import {
   contextPills,
   evidenceSources,
   unverifiedSummary,
+  unverifiedValues,
   withCitationMarkers,
+  withUnverifiedMarkers,
   gapMessage,
 } from "./evidence";
 import type { AiMessage } from "./chat";
@@ -156,9 +158,42 @@ test("context pills cap capabilities and skip empties", () => {
   assert.deepEqual(contextPills(aiWith({}, tables)), []);
 });
 
+test("unverified values come from incomplete typed statuses only", () => {
+  const carry = {
+    output_statuses: [
+      { output_id: "AST", status: "incomplete", value: "64" },
+      { output_id: "OFF_RATING", status: "complete", value: "118.2" },
+      { output_id: "PLAYER_NAME", status: "missing", value: "Trae Young" },
+      { output_id: "APG", status: "incomplete" },
+    ],
+  };
+  assert.deepEqual(unverifiedValues(aiWith(carry, []), []), ["64"]);
+});
+
+test("admitted values never count as unverified", () => {
+  const carry = {
+    output_statuses: [{ output_id: "AST", status: "incomplete", value: "880" }],
+  };
+  assert.deepEqual(unverifiedValues(aiWith(carry, []), ["880"]), []);
+});
+
+test("unverified markers land on literal occurrences with clean boundaries", () => {
+  assert.equal(
+    withUnverifiedMarkers("64 wins and 64 losses.", ["64"]),
+    "64[?](#unverified) wins and 64[?](#unverified) losses.",
+  );
+  assert.equal(
+    withUnverifiedMarkers("In the 2024-25 season, top 3.", ["24", "25", "3"]),
+    "In the 2024-25 season, top 3.",
+  );
+  assert.equal(withUnverifiedMarkers("64 wins.", []), "64 wins.");
+});
+
 test("sources never leak machine ids", () => {
   const sources = evidenceSources(aiWith({}, [CLAIM_TABLE, NAME_TABLE]));
-  const joined = JSON.stringify(sources);
+  const joined = JSON.stringify(
+    sources.map((s) => [s.subject, s.stat, s.value, s.origin]),
+  );
   for (const token of ["output_id", "subject_id", "Ppg", "Apg", "Leaders", "verified_claims", "ppg", "NET_RATING", "points_per_100"]) {
     assert.ok(!joined.includes(token), "leaked " + token);
   }
@@ -262,4 +297,22 @@ test("multiple unchecked stats are counted, not listed", () => {
 test("no signal means no summary", () => {
   assert.equal(unverifiedSummary(aiWith({}, [])), null);
   assert.equal(unverifiedSummary(aiWith({ verification: "pass", verified_claims: 2, gaps: [] }, [CLAIM_TABLE])), null);
+});
+
+test("evidence sources grade from typed method_kind", () => {
+  const estimated = aiWith({}, [
+    {
+      ...CLAIM_TABLE,
+      meta: { method: "NBA box-score estimated possessions", method_kind: "estimate" },
+    },
+  ]);
+  assert.equal(evidenceSources(estimated)[0]?.grade?.grade, "G4");
+  const official = aiWith({}, [
+    {
+      ...CLAIM_TABLE,
+      meta: { method: "official", method_kind: "official" },
+      provenance: { ...CLAIM_TABLE.provenance, origin: "warehouse" },
+    },
+  ]);
+  assert.equal(evidenceSources(official)[0]?.grade?.grade, "G1");
 });

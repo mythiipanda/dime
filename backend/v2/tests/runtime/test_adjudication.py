@@ -800,6 +800,60 @@ def test_public_output_status_carries_display_name():
         status="complete", claim_index=0, binding=binding)
     assert _public_output_status(SimpleNamespace(), status)["display_name"] == "PTS"
 
+
+def _subject_table(subject_id, entities):
+    from datetime import UTC, datetime
+    from types import SimpleNamespace
+    from v2.api.routes import _public_evidence
+    from v2.contracts import (DraftReport, EvidenceEnvelope,
+                              EvidenceOutputBinding, OutputFinalStatus)
+    binding = EvidenceOutputBinding(
+        requirement_kind="task", output_id="PTS", node_id="n",
+        evidence_id="ev", selector="rows.r.PTS", row_selector="rows.r",
+        subject_entity_type="player", subject_entity_id=subject_id,
+        subject_selector="rows.r.PLAYER_ID",
+        value={"kind": "integer", "value": 25},
+        unit={"kind": "declared", "value": "points"}, domain="player_report")
+    status = OutputFinalStatus(requirement_kind="task", output_id="PTS",
+        status="complete", claim_index=0, binding=binding)
+    envelope = EvidenceEnvelope(evidence_id="ev", capability="player_report",
+        source="fixture", observed_at=datetime.now(UTC), entities=entities,
+        rows={"r": {"PLAYER_ID": subject_id, "PTS": 25}})
+    result = SimpleNamespace(output_statuses=[status],
+        draft=DraftReport(sections=[], claims=[]),
+        execution=SimpleNamespace(evidence=[envelope]))
+    return _public_evidence(result)[0]
+
+
+def test_public_table_subject_display_name_resolves_numeric_player_id():
+    table = _subject_table("1629027", [{"id": "1629027", "type": "player",
+                                        "display_name": "Trae Young"}])[0]
+    assert table["subject_id"] == "1629027"
+    assert table["subject_display_name"] == "Trae Young"
+
+
+def test_public_table_subject_display_name_empty_for_unknown_id():
+    table = _subject_table("9999999", [{"id": "1629027", "type": "player",
+                                        "display_name": "Trae Young"}])[0]
+    assert table["subject_display_name"] == ""
+
+
+def test_public_output_status_carries_subject_display_name():
+    from types import SimpleNamespace
+    from v2.api.routes import _public_output_status
+    from v2.contracts import EvidenceOutputBinding, OutputFinalStatus
+    binding = EvidenceOutputBinding(
+        requirement_kind="task", output_id="PTS", node_id="n",
+        evidence_id="e", selector="rows.r.PTS", row_selector="rows.r",
+        subject_entity_type="player", subject_entity_id="1629027",
+        subject_selector="rows.r.PLAYER_ID",
+        value={"kind": "integer", "value": 25},
+        unit={"kind": "declared", "value": "points"}, domain="player_report")
+    status = OutputFinalStatus(requirement_kind="task", output_id="PTS",
+        status="complete", claim_index=0, binding=binding)
+    assert _public_output_status(SimpleNamespace(), status)["subject_display_name"] == ""
+
+
 def test_public_gaps_plumb_blocks():
     from types import SimpleNamespace
     from v2.api.routes import _public_gaps

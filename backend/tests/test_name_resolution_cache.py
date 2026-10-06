@@ -50,7 +50,8 @@ def test_slug_order_and_suffix_warehouse_identity_are_normalized():
 
     assert coerce_player_id("curry-stephen") == 201939
 
-    assert coerce_player_id("Tim Hardaway Jr.") == 896
+
+    assert coerce_player_id("Tim Hardaway Jr.") == 203501
 
 def test_unmatched_player_emits_typed_name_resolution_gap():
     coerce_player_id.cache_clear()
