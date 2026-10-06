@@ -22,17 +22,17 @@ import {
   shouldFollow,
 } from "../lib/scroll";
 import { activityRecordFromEvent, mergeActivityRecord } from "../lib/activity";
+import { clearComposerDraft, setComposerDraft } from "../lib/composer";
 import AnswerText from "./AnswerText";
 import CitedAnswerText from "./CitedAnswerText";
+import ChatComposer from "./ChatComposer";
 import { StreamText } from "./StreamText";
 import { ArtifactItem } from "./ArtifactCanvas";
 import DataArtifacts from "./DataArtifacts";
-import ModelPicker from "./ModelPicker";
 import AgentActivity from "./AgentActivity";
 import Skeleton from "./Skeleton";
 import CompareTray, { pinToTray, readTray } from "./CompareTray";
 import DebateCardModal from "./DebateCardModal";
-import { Button } from "@/components/ui/button";
 
 function aiHasTables(ai: AiMessage): boolean {
   return Object.values(ai.nodes).some((n) => n.tables.length > 0);
@@ -341,17 +341,11 @@ export default function ChatPanel({ thread, onRunDone, preset, onOpenArtifact, a
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [debateOpen, setDebateOpen] = useState(false);
   const [debateTopic, setDebateTopic] = useState<string | undefined>(undefined);
-  const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
   const [elapsed, setElapsed] = useState(0);
   const [atBottom, setAtBottom] = useState(true);
   const endRef = useRef<HTMLDivElement | null>(null);
-  const inputRef = useRef<HTMLTextAreaElement | null>(null);
 
-
-  useEffect(() => {
-    if (!input && inputRef.current) inputRef.current.style.height = "";
-  }, [input]);
   const abort = useRef<AbortController | null>(null);
   const timer = useRef<ReturnType<typeof setInterval> | null>(null);
 
@@ -459,7 +453,6 @@ export default function ChatPanel({ thread, onRunDone, preset, onOpenArtifact, a
   useEffect(() => {
     abort.current?.abort();
     setMessages([]);
-    setInput("");
     setBusy(false);
     stopTimer();
     let cancelled = false;
@@ -486,19 +479,12 @@ export default function ChatPanel({ thread, onRunDone, preset, onOpenArtifact, a
   }, [thread]);
 
   useEffect(() => {
-    const el = inputRef.current;
-    if (!el) return;
-    el.style.height = "auto";
-    el.style.height = Math.min(el.scrollHeight, 160) + "px";
-  }, [input]);
-
-  useEffect(() => {
-    if (preset) setInput(preset);
+    if (preset) setComposerDraft(preset);
   }, [preset]);
 
   useEffect(() => {
     const rerun = takeRerun();
-    if (rerun) setInput(rerun);
+    if (rerun) setComposerDraft(rerun);
   }, []);
 
   const sendText = async (raw: string) => {
@@ -507,7 +493,7 @@ export default function ChatPanel({ thread, onRunDone, preset, onOpenArtifact, a
     abort.current?.abort();
     abort.current = new AbortController();
     setAtBottom(true);
-    setInput("");
+    clearComposerDraft();
     setBusy(true);
     startTimer();
     let ai: AiMessage = { text: "", nodes: {}, done: false };
@@ -607,80 +593,20 @@ export default function ChatPanel({ thread, onRunDone, preset, onOpenArtifact, a
           </div>
 
 
-          <div
-            className="composer-card chat-composer chat-composer-hero"
-          >
-            <textarea
-              ref={inputRef}
-              style={{
-                width: "100%",
-                border: "none",
-                outline: "none",
-                fontSize: 13,
-                lineHeight: 1.4,
-                resize: "none",
-                fontFamily: "inherit",
-                background: "transparent",
-                minHeight: 48,
-                maxHeight: 240,
-                overflowY: "auto",
-                boxSizing: "border-box",
-              }}
-              value={input}
-              rows={2}
-              autoFocus
-              onChange={(e) => {
-                setInput(e.target.value);
-                const el = e.target;
-                el.style.height = "auto";
-                el.style.height = Math.min(el.scrollHeight, 240) + "px";
-              }}
-              onKeyDown={(e) => {
-                if (e.key === "Enter" && !e.shiftKey) {
-                  e.preventDefault();
-                  sendText(input);
-                }
-              }}
-              placeholder="Ask about a player, team, lineup, trade, or trend..."
-            />
-
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", paddingTop: 4 }}>
-              <ModelPicker models={models} value={model} onChange={setModel} status={modelStatus} onRetry={() => void loadModels(false)} />
-
-              {busy ? (
-                <Button
-                  variant="ghost"
-                  size="default"
-                  className="pill-ghost interactive-tactile h-auto font-normal"
-                  onClick={stop}
-                  style={{ borderColor: "var(--color-cyan-signal)", color: "var(--color-cyan-edge)" }}
-                >
-                  Stop {elapsed}s
-                </Button>
-              ) : (
-                <Button
-                  type="button"
-                  variant="default"
-                  size="icon"
-                  aria-label="Send"
-                  disabled={!input.trim()}
-                  onClick={() => sendText(input)}
-                  className="interactive-tactile chat-send disabled:opacity-100 [&_svg:not([class*='size-'])]:size-[15px]"
-                  style={{
-                    width: 28, height: 28, borderRadius: 8, border: "none", cursor: input.trim() ? "pointer" : "default",
-                    display: "flex", alignItems: "center", justifyContent: "center",
-                    background: input.trim() ? "var(--color-ink-black)" : "var(--color-stone-muted)",
-                    color: input.trim() ? "var(--color-pure-white)" : "var(--color-warm-gray)",
-                    transition: "background 200ms ease, color 200ms ease",
-                  }}
-                >
-                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
-                    <path d="M12 19V5M5 12l7-7 7 7" />
-                  </svg>
-                </Button>
-              )}
-            </div>
-          </div>
+          <ChatComposer
+            variant="hero"
+            autoFocus
+            placeholder="Ask about a player, team, lineup, trade, or trend..."
+            busy={busy}
+            elapsed={elapsed}
+            models={models}
+            model={model}
+            modelStatus={modelStatus}
+            onModelChange={setModel}
+            onRetryModels={() => void loadModels(false)}
+            onSend={sendText}
+            onStop={stop}
+          />
 
 
 
@@ -941,75 +867,19 @@ export default function ChatPanel({ thread, onRunDone, preset, onOpenArtifact, a
                 </div>
               )}
 
-              <div
-                className="composer-card chat-composer chat-composer-dock"
-              >
-                <ModelPicker models={models} value={model} onChange={setModel} status={modelStatus} onRetry={() => void loadModels(false)} />
-
-                <textarea
-                  ref={inputRef}
-                  style={{
-                    flex: 1,
-                    border: "none",
-                    outline: "none",
-                    fontSize: 13,
-                    resize: "none",
-                    fontFamily: "inherit",
-                    background: "transparent",
-                    maxHeight: 200,
-                    overflowY: "auto",
-                  }}
-                  value={input}
-                  rows={1}
-                  onChange={(e) => {
-                    setInput(e.target.value);
-                    const el = e.target;
-                    el.style.height = "auto";
-                    el.style.height = Math.min(el.scrollHeight, 200) + "px";
-                  }}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter" && !e.shiftKey) {
-                      e.preventDefault();
-                      sendText(input);
-                    }
-                  }}
-              placeholder="Ask a follow-up..."
-                />
-
-                {busy ? (
-                  <Button
-                    variant="ghost"
-                    size="default"
-                    className="pill-ghost h-auto font-normal"
-                    onClick={stop}
-                    style={{ borderColor: "var(--color-cyan-signal)", color: "var(--color-cyan-edge)" }}
-                  >
-                    Stop {elapsed}s
-                  </Button>
-                ) : (
-                  <Button
-                    type="button"
-                    variant="default"
-                    size="icon"
-                    aria-label="Send"
-                    disabled={!input.trim()}
-                    onClick={() => sendText(input)}
-                    className="disabled:opacity-100 [&_svg:not([class*='size-'])]:size-[15px]"
-                    style={{
-                      width: 28, height: 28, borderRadius: 8, border: "none", flexShrink: 0,
-                      cursor: input.trim() ? "pointer" : "default",
-                      display: "flex", alignItems: "center", justifyContent: "center",
-                      background: input.trim() ? "var(--color-ink-black)" : "var(--color-stone-muted)",
-                      color: input.trim() ? "var(--color-pure-white)" : "var(--color-warm-gray)",
-                      transition: "background 200ms ease, color 200ms ease",
-                    }}
-                  >
-                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
-                    <path d="M12 19V5M5 12l7-7 7 7" />
-                  </svg>
-                  </Button>
-                )}
-              </div>
+              <ChatComposer
+                variant="dock"
+                placeholder="Ask a follow-up..."
+                busy={busy}
+                elapsed={elapsed}
+                models={models}
+                model={model}
+                modelStatus={modelStatus}
+                onModelChange={setModel}
+                onRetryModels={() => void loadModels(false)}
+                onSend={sendText}
+                onStop={stop}
+              />
             </div>
           </div>
         </div>
