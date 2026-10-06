@@ -21,6 +21,7 @@ def test_raptor_covered_player_within_documented_tolerance():
     assert out["ok"] is True
     assert out["is_estimate"] is True
     assert out["method"] == "raptor_components"
+    assert out["method_kind"] == "estimate"
     assert out["disclaimer"].startswith("This is a statistical estimate")
     measured = out["measured"]["total_per_100"]
     assert abs(out["estimate_per_100"] - measured) <= RAPTOR_BLEND_TOLERANCE
@@ -44,6 +45,7 @@ def test_current_season_no_coverage_returns_flagged_estimate():
     assert out["ok"] is True
     assert out["is_estimate"] is True
     assert out["method"] == "box_prior_shrinkage"
+    assert out["method_kind"] == "estimate"
     assert out["measured"] is None
     assert isinstance(out["estimate_per_100"], float)
     assert any("RAPTOR" in n and "frozen" in n
