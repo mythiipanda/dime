@@ -1522,24 +1522,48 @@ def _stream_run_diagnostic(exc, run_id, last_stage, diagnostics: bool) -> list[s
         ), diagnostics=True)
     ]
 
-async def _drain_run(
+async def _stream_queue(
     task: "asyncio.Task",
     queue: "asyncio.Queue",
     timeout_s: float,
     drain_tick_s: float = 0.1,
-) -> list:
-    buffered: list = []
+):
+    deadline = time.monotonic() + timeout_s
+    while not task.done() or not queue.empty():
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            raise TimeoutError("run timed out")
+        try:
+            yield await asyncio.wait_for(
+                queue.get(), timeout=max(0.0, min(drain_tick_s, remaining)))
+        except TimeoutError:
+            continue
 
-    async def _drain_until_done():
-        while not task.done() or not queue.empty():
-            try:
-                buffered.append(
-                    await asyncio.wait_for(queue.get(), timeout=drain_tick_s))
-            except TimeoutError:
-                continue
+def _answer_token_chunks(text: str, words_per_chunk: int = 12) -> list[str]:
+    parts = re.findall(r"\S+\s*", text)
+    chunks = ["".join(parts[i:i + words_per_chunk])
+              for i in range(0, len(parts), words_per_chunk)]
+    return [chunk for chunk in chunks if chunk.strip()]
 
-    await asyncio.wait_for(_drain_until_done(), timeout=timeout_s)
-    return buffered
+_FAILURE_KIND_FALLBACK = {
+    "quota_exhausted": "quota",
+    "rate_limit": "rate_limited",
+}
+
+def _failure_kind(exc: BaseException) -> str:
+    try:
+        from v2.adapters.models import ProviderStructuredModel
+        classified = ProviderStructuredModel._failure_class(exc)
+    except Exception:
+        return "execution_failure"
+    return _FAILURE_KIND_FALLBACK.get(classified, "execution_failure")
+
+def _failure_message(kind: str) -> str:
+    return {
+        "timeout": "The run timed out before finishing.",
+        "quota": "The model ran out of quota.",
+        "rate_limited": "Too many requests.",
+    }.get(kind, "Some requested data was unavailable.")
 
 @router.post("/v2/chat/stream")
 async def chat_stream_post(request: Request, body: QuickAnswerBody):
@@ -1596,8 +1620,14 @@ def _client_ip(request: Request) -> str:
 
 def _rate_limited_stream():
     from fastapi.responses import StreamingResponse
+    from v2.api.events import Failure
+    from v2.api.sse import encode_event
 
     async def limited():
+        chunk = encode_event(Failure(
+            kind="rate_limited", message="rate limited, retry soon"))
+        if chunk is not None:
+            yield chunk
         yield encode_raw("error", {"message": "rate limited, retry soon"})
         yield encode_raw("graph_end", {})
 
@@ -1612,7 +1642,8 @@ async def quick_answer_stream(body: QuickAnswerBody):
     from shared.providers import resolve_model_id
     from shared.config import settings
     from v2.api.events import (
-        CustomData, FinalAnswer, GraphEnd, NodeUpdate, ToolCall, ToolResult, WorkLog,
+        CustomData, Failure, FinalAnswer, GraphEnd, NodeUpdate, Token,
+        ToolCall, ToolResult, WorkLog,
     )
     from v2.api.activity import ActivityJournal
     from v2.api.events import EVENT_ADAPTER
@@ -1654,6 +1685,10 @@ async def quick_answer_stream(body: QuickAnswerBody):
 
     def setup_error_stream():
         async def generate_error():
+            chunk = encode_event(Failure(
+                kind="startup", message="Dime could not start this run."))
+            if chunk is not None:
+                yield chunk
             yield "event: error\ndata: " + json.dumps({
                 "message": "Dime could not start this run.",
                 "run_id": run_id,
@@ -1772,12 +1807,15 @@ async def quick_answer_stream(body: QuickAnswerBody):
             body.q, run_id=run_id, context=context))
         try:
             try:
-
-                buffered_events = await _drain_run(
-                    task, queue, settings.dime_v2_run_timeout_s)
+                async for event in _stream_queue(
+                        task, queue, settings.dime_v2_run_timeout_s):
+                    if policy.publish:
+                        safe_event = _safe_buffered_event(event)
+                        if safe_event is not None:
+                            chunk = encode_event(safe_event)
+                            if chunk is not None:
+                                yield chunk
                 result = task.result()
-                while not queue.empty():
-                    buffered_events.append(queue.get_nowait())
 
                 public_tables, untraced_numbers = _public_evidence(result)
                 public_statuses = [_public_output_status(result, item)
@@ -1798,10 +1836,20 @@ async def quick_answer_stream(body: QuickAnswerBody):
                         safe_event = _safe_buffered_event(event)
                         if safe_event is not None:
                             yield encode_event(safe_event)
+                    failure_kind = ("timeout" if timed_out
+                                    else _failure_kind(exc))
+                    yield encode_event(Failure(
+                        kind=failure_kind,
+                        message=_failure_message(failure_kind)))
                     yield encode_event(WorkLog(run_id=run_id, status="partial"))
+                    failure_text = ("I could not verify a publishable answer from the available data. "
+                                    + ("The run timed out before finishing." if timed_out else ""))
+                    for text_chunk in _answer_token_chunks(failure_text):
+                        chunk = encode_event(Token(text=text_chunk))
+                        if chunk is not None:
+                            yield chunk
                     yield encode_event(FinalAnswer(
-                        text=("I could not verify a publishable answer from the available data. "
-                              + ("The run timed out before finishing." if timed_out else "")),
+                        text=failure_text,
                         carry={"run_id": run_id, "verification": "partial",
                                "verified_claims": 0, "structural_flags": [],
                                "gaps": [{"kind": "run_timeout" if timed_out else "execution_failure",
@@ -1818,10 +1866,6 @@ async def quick_answer_stream(body: QuickAnswerBody):
                         continue
                     if chunk is not None:
                         yield chunk
-                for event in buffered_events:
-                    safe_event = _safe_buffered_event(event)
-                    if safe_event is not None:
-                        yield encode_event(safe_event)
                 for event in missing_tool_events():
                     try:
                         safe_event = _safe_buffered_event(event)
@@ -1847,6 +1891,10 @@ async def quick_answer_stream(body: QuickAnswerBody):
                     "gaps": _public_gaps(result),
                     "stage_latencies_ms": stage_latencies_ms(),
                 }
+                for chunk in _answer_token_chunks(answer):
+                    token_chunk = encode_event(Token(text=chunk))
+                    if token_chunk is not None:
+                        yield token_chunk
                 yield encode_event(FinalAnswer(text=answer, carry=carry))
                 if body.thread is not None and body.client is not None:
                     _CONVERSATIONS.append_exchange(

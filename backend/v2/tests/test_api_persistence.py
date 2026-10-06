@@ -1111,7 +1111,7 @@ def test_v2_sse_boundary_hides_draft_reasoning_and_diagnostics():
     import json
 
     cases = [
-        (Token(text="unverified answer 99"), {"text": ""}),
+        (Token(text="streamed answer 99"), {"text": "streamed answer 99"}),
         (ThoughtStream(node="analytics", text="private chain of thought"), {
             "node": "analytics", "text": "Working through the evidence...",
         }),
@@ -1131,10 +1131,58 @@ def test_v2_sse_boundary_hides_draft_reasoning_and_diagnostics():
         assert json.loads(payload) == expected
     combined = "".join(encode_event(event) for event, _ in cases)
     for secret in (
-        "unverified answer 99", "private chain of thought", "SELECT private",
+        "private chain of thought", "SELECT private",
         "provider token secret", "private provider summary",
     ):
         assert secret not in combined
+
+def test_v2_sse_failure_event_carries_typed_kind_and_message():
+    import json
+    from v2.api.events import EVENT_ADAPTER, Failure
+    from v2.api.sse import encode_event
+
+    event = EVENT_ADAPTER.validate_python(
+        {"type": "failure", "kind": "quota",
+         "message": "The model ran out of quota."})
+    assert isinstance(event, Failure)
+    payload = encode_event(event).split("data: ", 1)[1].strip()
+    assert json.loads(payload) == {
+        "kind": "quota", "message": "The model ran out of quota."}
+
+def test_v2_answer_token_chunks_reassemble_exact_text():
+    from v2.api.routes import _answer_token_chunks
+
+    text = "First line.\nSecond  line with  spaces.\n\nThird."
+    chunks = _answer_token_chunks(text)
+    assert chunks
+    assert all(chunk.strip() for chunk in chunks)
+    assert "".join(chunks) == text
+    assert _answer_token_chunks("") == []
+    assert _answer_token_chunks("   ") == []
+
+def test_v2_failure_kind_maps_provider_taxonomy():
+    from v2.api.routes import _failure_kind
+
+    assert _failure_kind(TimeoutError("timed out")) == "execution_failure"
+    assert _failure_kind(Exception("quota_exceeded for the day")) == "quota"
+    assert _failure_kind(Exception("429 rate limit")) == "rate_limited"
+    assert _failure_kind(RuntimeError("boom")) == "execution_failure"
+
+def test_live_route_setup_failure_stream_includes_typed_failure(monkeypatch):
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+    from v2.api import routes
+
+    monkeypatch.setattr(
+        "v2.runtime.assembly.build_runtime",
+        lambda **kwargs: (_ for _ in ()).throw(RuntimeError("private setup detail")),
+    )
+    app = FastAPI()
+    app.include_router(routes.router, prefix="/api")
+    response = TestClient(app).post("/api/v2/chat/stream", json={"q": "record?"})
+    assert "event: failure" in response.text
+    assert '"kind":"startup"' in response.text
+    assert "private setup detail" not in response.text
 
 def test_frontend_can_select_native_v2_chat_runtime():
     from pathlib import Path

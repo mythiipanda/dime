@@ -45,6 +45,7 @@ class EventType(StrEnum):
     FINAL_ANSWER = "final_answer"
     SUGGESTIONS = "suggestions"
     GRAPH_END = "graph_end"
+    FAILURE = "failure"
     BINDING_DIAGNOSTIC = "binding_diagnostic"
     RUN_DIAGNOSTIC = "run_diagnostic"
 
@@ -133,6 +134,11 @@ class Suggestions(StrictEvent):
 
 class GraphEnd(StrictEvent):
     type: Literal[EventType.GRAPH_END] = EventType.GRAPH_END
+
+class Failure(StrictEvent):
+    type: Literal[EventType.FAILURE] = EventType.FAILURE
+    kind: str = Field(max_length=64)
+    message: str = Field(max_length=4000)
 
 class BindingDiagnostic(StrictEvent):
     type: Literal[EventType.BINDING_DIAGNOSTIC] = EventType.BINDING_DIAGNOSTIC
@@ -247,6 +253,7 @@ InternalEvent = Annotated[
     | FinalAnswer
     | Suggestions
     | GraphEnd
+    | Failure
     | BindingDiagnostic
     | RunDiagnostic,
     Field(discriminator="type"),

@@ -10,7 +10,6 @@ import ArtifactShotChart from "@/components/dime/ArtifactShotChart";
 import ArtifactTable, { type ArtifactColumn } from "@/components/dime/ArtifactTable";
 import DimeSidebar from "@/components/site/DimeSidebar";
 import DimeCommandPalette, { type PaletteEntry } from "@/components/site/DimeCommandPalette";
-import { mockReply } from "@/lib/dime-mock-reply";
 import TonightView from "@/components/dime/views/TonightView";
 import ExploreView from "@/components/dime/views/ExploreView";
 import MatchupsView from "@/components/dime/views/MatchupsView";
@@ -31,6 +30,13 @@ import {
   thinkRows,
   tonightGames,
 } from "@/lib/dime-data";
+import {
+  streamDimeChat,
+  failureCopy,
+  type DimeArtifact,
+  type StreamSnapshot,
+  type ToolState,
+} from "@/lib/dime-stream";
 
 function Ico({ d, size = 15 }: { d: React.ReactNode; size?: number }) {
   return (
@@ -208,20 +214,224 @@ function renderView(key: ViewKey) {
   );
 }
 
-type ChatMsg = { role: "user" | "assistant"; text: string };
+type AssistantFailure = { kind: string; message: string };
 
-const REPLY_THINK_ROWS = [
-  { primary: "Parsing the question", secondary: "scope and filters" },
-  { primary: "Planning warehouse queries", secondary: "boxscores · last 30" },
-  { primary: "Checking evidence coverage", secondary: "50+ games each" },
-];
+type ChatMsg =
+  | { role: "user"; text: string }
+  | {
+      role: "assistant";
+      text: string;
+      artifacts: DimeArtifact[];
+      suggestions: string[];
+      failure: AssistantFailure | null;
+    };
+
+type LiveRun = StreamSnapshot & { id: number; startedAt: number };
+
+function toolStepFor(tool: ToolState): ToolStep {
+  const summary =
+    tool.status === "running"
+      ? "running"
+      : tool.status === "fail"
+        ? "failed"
+        : [
+            tool.rows !== undefined ? `${tool.rows} rows` : null,
+            tool.ms !== undefined ? `${tool.ms}ms` : null,
+          ]
+            .filter(Boolean)
+            .join(" · ") || "done";
+  return {
+    icon: "read",
+    label: tool.label,
+    chip: summary,
+    mono: true,
+    detailMono: false,
+    detail: [{ text: summary }],
+  };
+}
+
+function ArtifactBody({ artifact }: { artifact: DimeArtifact }) {
+  if (artifact.kind === "table") {
+    return <ArtifactTable columns={artifact.columns} rows={artifact.rows} />;
+  }
+  if (artifact.kind === "compare") {
+    return (
+      <ArtifactCompare
+        rows={artifact.rows.map((r) => ({
+          label: r.label,
+          a: r.a,
+          b: r.b,
+          fmt: (v: number) => (Number.isInteger(v) ? String(v) : v.toFixed(1)),
+        }))}
+        aName={artifact.aName}
+        bName={artifact.bName}
+      />
+    );
+  }
+  return null;
+}
+
+function FailureCard({ failure }: { failure: AssistantFailure }) {
+  const copy = failureCopy(failure.kind);
+  return (
+    <div
+      className="mt-4 max-w-[620px] rounded-xl border border-line bg-surface px-3.5 py-3 shadow-hairline"
+      style={{ animation: "fade-up 280ms cubic-bezier(0.23,1,0.32,1) both" }}
+    >
+      <div className="text-[13px] font-medium text-ink">{copy.title}</div>
+      <p className="mt-1 text-[12.5px] leading-relaxed text-ink-2">{copy.body}</p>
+    </div>
+  );
+}
+
+const FADE_UP = "fade-up 280ms cubic-bezier(0.23,1,0.32,1) both";
+
+function FollowUpPills({
+  items,
+  onPick,
+}: {
+  items: string[];
+  onPick: (s: string) => void;
+}) {
+  if (!items.length) return null;
+  return (
+    <div className="mt-3 flex flex-wrap gap-1.5">
+      {items.map((s) => (
+        <button
+          key={s}
+          type="button"
+          onClick={() => onPick(s)}
+          className="rounded-full bg-surface px-3 py-1.5 text-left text-[12px] text-ink shadow-btn transition-[background-color,transform] duration-150 hover:bg-hover active:scale-[0.97]"
+        >
+          {s}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function LiveAssistant({ live }: { live: LiveRun }) {
+  const targetRef = useRef(live.text);
+  targetRef.current = live.text;
+  const [shown, setShown] = useState("");
+  useEffect(() => {
+    let raf = 0;
+    const tick = () => {
+      setShown((cur) => {
+        const target = targetRef.current;
+        return cur.length >= target.length
+          ? cur
+          : target.slice(0, cur.length + 48);
+      });
+      raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, []);
+  const steps = live.tools.map(toolStepFor);
+  const secs = Math.max(1, Math.round((Date.now() - live.startedAt) / 1000));
+  return (
+    <>
+      <div className="mt-2">
+        <ThinkingState
+          key={`${live.id}:${live.thinking.length}`}
+          variant="Steps"
+          rows={live.thinking.map((t) => ({
+            primary: t.label,
+            secondary: t.detail,
+          }))}
+          active="Thinking"
+          done={`Thought for ${secs} seconds`}
+        />
+      </div>
+      {steps.length > 0 && (
+        <div className="mt-3">
+          <ToolChips
+            steps={steps}
+            diffs={[]}
+            labels={{
+              header: `${steps.length} tool call${steps.length === 1 ? "" : "s"}`,
+              more: "",
+            }}
+          />
+        </div>
+      )}
+      {live.artifacts.length > 0 && (
+        <div className="mt-5 flex flex-col gap-4">
+          {live.artifacts.map((a, i) => (
+            <ArtifactShell
+              key={i}
+              title={a.title}
+              source={a.source}
+              delay={i * 40}
+            >
+              <ArtifactBody artifact={a} />
+            </ArtifactShell>
+          ))}
+        </div>
+      )}
+      {shown && (
+        <p
+          className="mt-4 max-w-[620px] whitespace-pre-line text-[13.5px] leading-[1.65] text-ink-2"
+          style={{ animation: FADE_UP }}
+        >
+          {shown}
+        </p>
+      )}
+      {live.failed && <FailureCard failure={live.failed} />}
+    </>
+  );
+}
+
+function AssistantTurn({
+  text,
+  artifacts,
+  suggestions,
+  failure,
+  onFollowUp,
+}: {
+  text: string;
+  artifacts: DimeArtifact[];
+  suggestions: string[];
+  failure: AssistantFailure | null;
+  onFollowUp: (s: string) => void;
+}) {
+  return (
+    <>
+      {artifacts.length > 0 && (
+        <div className="mt-5 flex flex-col gap-4">
+          {artifacts.map((a, i) => (
+            <ArtifactShell
+              key={i}
+              title={a.title}
+              source={a.source}
+              delay={i * 40}
+            >
+              <ArtifactBody artifact={a} />
+            </ArtifactShell>
+          ))}
+        </div>
+      )}
+      {text && (
+        <p
+          className="mt-4 max-w-[620px] whitespace-pre-line text-[13.5px] leading-[1.65] text-ink-2"
+          style={{ animation: FADE_UP }}
+        >
+          {text}
+        </p>
+      )}
+      {failure && <FailureCard failure={failure} />}
+      <FollowUpPills items={suggestions} onPick={onFollowUp} />
+    </>
+  );
+}
 
 export default function DimeHarness() {
   const [tabs, setTabs] = useState<Tab[]>([{ id: "t1", label: "SGA vs Luka — Oct 6" }]);
   const [activeTab, setActiveTab] = useState("t1");
   const [activeView, setActiveView] = useState<"chat" | ViewKey>("chat");
   const [messages, setMessages] = useState<ChatMsg[]>([]);
-  const [thinking, setThinking] = useState(false);
+  const [live, setLive] = useState<LiveRun | null>(null);
   const [draft, setDraft] = useState("");
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
@@ -230,7 +440,8 @@ export default function DimeHarness() {
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const menuBtnRef = useRef<HTMLButtonElement | null>(null);
   const sheetRef = useRef<HTMLDivElement | null>(null);
-  const timers = useRef<number[]>([]);
+  const liveId = useRef(0);
+  const abortRef = useRef<AbortController | null>(null);
 
   const addTab = () => {
     const id = `t${Date.now()}`;
@@ -240,20 +451,63 @@ export default function DimeHarness() {
 
   const submit = (raw?: string) => {
     const q = (raw ?? draft).trim();
-    if (!q) return;
+    if (!q || live) return;
+    abortRef.current?.abort();
+    const ctrl = new AbortController();
+    abortRef.current = ctrl;
+    liveId.current += 1;
+    const id = liveId.current;
+    const startedAt = Date.now();
     setMessages((m) => [...m, { role: "user", text: q }]);
     setDraft("");
-    setThinking(true);
-    const t = window.setTimeout(() => {
-      setMessages((m) => [...m, { role: "assistant", text: mockReply(q) }]);
-      setThinking(false);
-    }, 1600);
-    timers.current.push(t);
+    setLive({
+      id,
+      startedAt,
+      text: "",
+      thinking: [],
+      tools: [],
+      artifacts: [],
+      suggestions: [],
+      failed: null,
+      done: false,
+    });
+    streamDimeChat(
+      q,
+      {
+        onUpdate: (snap) =>
+          setLive((cur) => (cur && cur.id === id ? { ...cur, ...snap } : cur)),
+        onDone: (snap) => {
+          setLive((cur) => (cur && cur.id === id ? null : cur));
+          setMessages((m) => [
+            ...m,
+            {
+              role: "assistant",
+              text: snap.text,
+              artifacts: snap.artifacts,
+              suggestions: snap.suggestions,
+              failure: snap.failed,
+            },
+          ]);
+        },
+        onError: (message) => {
+          setLive((cur) => (cur && cur.id === id ? null : cur));
+          setMessages((m) => [
+            ...m,
+            {
+              role: "assistant",
+              text: "",
+              artifacts: [],
+              suggestions: [],
+              failure: { kind: "connection", message },
+            },
+          ]);
+        },
+      },
+      { signal: ctrl.signal },
+    );
   };
 
-  useEffect(() => () => {
-    timers.current.forEach((t) => window.clearTimeout(t));
-  }, []);
+  useEffect(() => () => abortRef.current?.abort(), []);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -345,7 +599,7 @@ export default function DimeHarness() {
     if (!el) return;
     const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
     el.scrollTo({ top: el.scrollHeight, behavior: reduce ? "auto" : "smooth" });
-  }, [messages, thinking]);
+  }, [messages, live]);
 
   const pickFollowUp = (f: string) => {
     submit(f);
@@ -486,27 +740,24 @@ export default function DimeHarness() {
                     <div
                       key={i}
                       className="mt-4 flex justify-end pl-10 sm:pl-24"
-                      style={{ animation: "fade-up 280ms cubic-bezier(0.23,1,0.32,1) both" }}
+                      style={{ animation: FADE_UP }}
                     >
                       <div className="rounded-xl bg-field px-3.5 py-2 text-[13px] leading-relaxed text-ink shadow-hairline">
                         {m.text}
                       </div>
                     </div>
                   ) : (
-                    <p
+                    <AssistantTurn
                       key={i}
-                      className="mt-4 max-w-[620px] text-[13.5px] leading-[1.65] text-ink-2"
-                      style={{ animation: "fade-up 280ms cubic-bezier(0.23,1,0.32,1) both" }}
-                    >
-                      {m.text}
-                    </p>
+                      text={m.text}
+                      artifacts={m.artifacts}
+                      suggestions={m.suggestions}
+                      failure={m.failure}
+                      onFollowUp={pickFollowUp}
+                    />
                   )
                 )}
-                {thinking && (
-                  <div className="mt-2">
-                    <ThinkingState variant="Steps" rows={REPLY_THINK_ROWS} done="Thought for 2 seconds" />
-                  </div>
-                )}
+                {live && <LiveAssistant live={live} />}
                 <div className="h-6" />
               </div>
             </div>
