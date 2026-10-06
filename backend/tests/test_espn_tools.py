@@ -240,6 +240,24 @@ def test_cli_version_pin_matches_adopted_release():
     assert espn.cli_version_info()[1] == espn.EXPECTED_CLI_VERSION
 
 
+def test_vendored_blob_matches_pinned_checksum_and_version(tmp_path):
+    import hashlib
+    import shutil
+    import shared.tools.espn as espn
+    blob = Path(__file__).resolve().parent.parent / "bin" / "espn-pp-cli"
+    assert blob.is_file()
+    digest = hashlib.sha256(blob.read_bytes()).hexdigest()
+    assert digest == espn.EXPECTED_CLI_SHA256
+    exe = tmp_path / "espn-pp-cli"
+    shutil.copyfile(blob, exe)
+    exe.chmod(0o755)
+    proc = subprocess.run(
+        [str(exe), "--version"],
+        capture_output=True, text=True, timeout=30)
+    assert proc.returncode == 0
+    assert proc.stdout.strip().rsplit(None, 1)[-1] == espn.EXPECTED_CLI_VERSION
+
+
 def test_summary_aggregates_all_probe_errors(monkeypatch):
     import shared.tools.espn as espn
 

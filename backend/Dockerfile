@@ -9,6 +9,8 @@ COPY shared ./shared
 COPY bin/espn-pp-cli /usr/local/bin/espn-pp-cli
 RUN chmod +x /usr/local/bin/espn-pp-cli
 ENV ESPN_CLI_PATH=/usr/local/bin/espn-pp-cli
+ENV ESPN_CLI_SHA256=6238a03e1afdeb0f64ae81e399b8afc0a7555fe9fa039dc4939147dddc3cf009
+RUN echo "$ESPN_CLI_SHA256  /usr/local/bin/espn-pp-cli" | sha256sum -c -
 COPY entrypoint.py ./entrypoint.py
 COPY scripts/build_team_four_factors.py scripts/generate_asset_manifest.py scripts/seed_team_ratings.py ./scripts/
 COPY data ./data

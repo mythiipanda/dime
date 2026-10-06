@@ -10,6 +10,8 @@ _BIN_DIR = os.path.expanduser("~/.local/bin")
 _TIMEOUT = 30
 PROBE_BUDGET_S = 60
 EXPECTED_CLI_VERSION = "2026.9.2"
+EXPECTED_CLI_SHA256 = (
+    "6238a03e1afdeb0f64ae81e399b8afc0a7555fe9fa039dc4939147dddc3cf009")
 
 _PAIRS = {
     "nfl": ("football", "nfl"),
