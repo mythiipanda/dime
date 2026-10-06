@@ -48,7 +48,7 @@ def _public_payload(event: InternalEvent, *, diagnostics: bool = False) -> dict 
         common["data"] = {key:data[key] for key in allowed if key in data}
         return common
     if event.type == EventType.TOKEN:
-        return {"text": ""}
+        return {"text": str(payload.get("text", ""))[:200_000]}
     if event.type == EventType.STATUS:
         text = str(payload.get("text", ""))
         return {"text": text[:500]}
