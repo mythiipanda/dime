@@ -5,23 +5,20 @@ import hashlib
 import json
 import math
 import os
-from dataclasses import dataclass
 from enum import StrEnum
 from pathlib import Path
 from threading import Lock
-from typing import Any, Mapping
+from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, StrictBool, StrictFloat, StrictInt, model_validator
 
 _SHADOW_LOCKS_GUARD = Lock()
 _SHADOW_LOCKS: dict[Path, Lock] = {}
 
-
 def _shadow_path_lock(path: Path) -> Lock:
     resolved = path.resolve()
     with _SHADOW_LOCKS_GUARD:
         return _SHADOW_LOCKS.setdefault(resolved, Lock())
-
 
 class DifferenceKind(StrEnum):
     ANSWER = "answer"
@@ -29,13 +26,11 @@ class DifferenceKind(StrEnum):
     GROUNDING = "grounding"
     FAILURE = "failure"
 
-
 class OutcomeStatus(StrEnum):
     OK = "ok"
     PARTIAL = "partial"
     FAILED = "failed"
     CANCELLED = "cancelled"
-
 
 class RunOutcome(BaseModel):
     model_config = ConfigDict(extra="forbid")
@@ -74,7 +69,6 @@ class RunOutcome(BaseModel):
             raise ValueError("shadow outcome duration must be non-negative")
         return self
 
-
 class ShadowComparison(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -106,7 +100,6 @@ class ShadowComparison(BaseModel):
             raise ValueError("shadow comparison id does not match recorded outcomes")
         return self
 
-
 def _difference_kinds(v1: RunOutcome, v2: RunOutcome) -> list[DifferenceKind]:
     differences: list[DifferenceKind] = []
     if v1.status != OutcomeStatus.OK or v2.status != OutcomeStatus.OK:
@@ -121,7 +114,6 @@ def _difference_kinds(v1: RunOutcome, v2: RunOutcome) -> list[DifferenceKind]:
         if v1_grounded != v2_grounded:
             differences.append(DifferenceKind.GROUNDING)
     return differences
-
 
 def compare_outcomes(request: str, v1: RunOutcome, v2: RunOutcome) -> ShadowComparison:
     if not isinstance(request, str):
@@ -146,7 +138,6 @@ def compare_outcomes(request: str, v1: RunOutcome, v2: RunOutcome) -> ShadowComp
         v2=v2,
         differences=differences,
     )
-
 
 class ShadowStore:
     def __init__(self, path: str | Path) -> None:
@@ -232,7 +223,6 @@ class ShadowStore:
                 raise ValueError("shadow store cannot contain blank records")
             return [ShadowComparison.model_validate_json(line) for line in lines]
 
-
 def outcome_from_v2(result: Any, answer: str, duration_ms: int | None = None) -> RunOutcome:
     from v2.runtime.models import RuntimeResult
 
@@ -251,10 +241,8 @@ def outcome_from_v2(result: Any, answer: str, duration_ms: int | None = None) ->
         duration_ms=duration_ms,
     )
 
-
 def _canon(value: str) -> str:
     return " ".join(value.casefold().split())
-
 
 def _hash(value: Any) -> str:
     raw = value if isinstance(value, str) else json.dumps(
@@ -269,7 +257,6 @@ class ShadowGatePolicy(BaseModel):
     maximum_grounding_drift_rate: StrictFloat = Field(default=0.01, ge=0, le=1)
     maximum_route_drift_rate: StrictFloat = Field(default=0.05, ge=0, le=1)
     maximum_answer_drift_rate: StrictFloat = Field(default=0.10, ge=0, le=1)
-
 
 class ShadowGateReport(BaseModel):
     model_config = ConfigDict(extra="forbid")
@@ -297,7 +284,6 @@ class ShadowGateReport(BaseModel):
         if self.ready == bool(self.blockers):
             raise ValueError("shadow gate readiness contradicts blockers")
         return self
-
 
 def evaluate_shadow_gate(
     comparisons: list[ShadowComparison],

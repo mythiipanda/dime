@@ -33,7 +33,6 @@ ADV_COLS = {
     "net rating": "NET_RATING",
 }
 
-
 def _leaders_count() -> int:
     import duckdb
 
@@ -48,11 +47,9 @@ def _leaders_count() -> int:
     except Exception:
         return 0
 
-
 def _require_warehouse() -> None:
     if _leaders_count() == 0:
         pytest.skip("silver_leaders_pts missing/empty")
-
 
 def test_luka_comps_shape():
     _require_warehouse()
@@ -67,7 +64,6 @@ def test_luka_comps_shape():
         assert {"archetype", "drivers", "similarity"} <= set(r)
         assert len(r["drivers"]) == 3
 
-
 def test_luka_archetype_and_neighborhood():
     _require_warehouse()
     res = tools.get_comps.invoke({"player_id": "Luka Doncic"})
@@ -76,7 +72,6 @@ def test_luka_archetype_and_neighborhood():
     allowed = {"high-usage creator", "high-usage scorer",
                "secondary creator", "floor general"}
     assert any(r["archetype"] in allowed for r in res["rows"])
-
 
 def test_driver_values_match_warehouse():
     import duckdb
@@ -108,12 +103,10 @@ def test_driver_values_match_warehouse():
         checked += 1
     assert checked == 3
 
-
 def test_unknown_player():
     res = tools.get_comps.invoke({"player_id": "Not A Real Player XYZ"})
     assert res["ok"] is False
     assert "unknown player" in res["error"]
-
 
 def test_missing_season():
     res = tools.get_comps.invoke(

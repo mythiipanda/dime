@@ -5,7 +5,6 @@ from shared.providers import (
 )
 from shared.config import settings
 
-
 def test_every_runtime_fallback_chain_is_free_only():
     for primary in ("openrouter", "mistral", "inception", "groq", "gemini"):
         assert fallback_order(primary)[0] == "gemini"
@@ -13,11 +12,11 @@ def test_every_runtime_fallback_chain_is_free_only():
             "gemini", "nvidia", "openrouter", "mistral"}
         assert not ({"inception", "groq"} & set(fallback_order(primary)))
 
-
 def test_openrouter_paid_and_stale_slugs_clamp(monkeypatch):
     monkeypatch.setattr(settings, "openrouter_model", "openai/gpt-4o")
     monkeypatch.setattr(settings, "nvidia_nim_api_key", "")
     monkeypatch.setattr(settings, "openrouter_api_key", "key")
+    monkeypatch.setattr(settings, "gemini_api_key", "")
     for raw in (None, "openrouter:openai/gpt-4o", "openai/gpt-4o"):
         provider, slug = resolve_model_id(raw)
         assert provider == "openrouter"
@@ -25,13 +24,11 @@ def test_openrouter_paid_and_stale_slugs_clamp(monkeypatch):
     assert resolve_model_id("openrouter:" + OPENROUTER_AUTO) == (
         "openrouter", OPENROUTER_AUTO)
 
-
 def test_mistral_explicit_slug_clamps_to_configured_free_limit(monkeypatch):
     monkeypatch.setattr(settings, "mistral_model", "owner-free-limit")
     assert resolve_model_id("mistral:paid-looking-other") == (
         "mistral", "owner-free-limit")
     assert is_free_model("mistral", "owner-free-limit")
-
 
 def test_catalog_exposes_only_free_models(monkeypatch):
     monkeypatch.setattr(settings, "openrouter_model", "openai/gpt-4o")
@@ -41,7 +38,6 @@ def test_catalog_exposes_only_free_models(monkeypatch):
     for item in catalog["models"]:
         provider, slug = item["id"].split(":", 1)
         assert is_free_model(provider, slug)
-
 
 def test_structured_models_clamp_configured_paid_openrouter(monkeypatch):
     from v2.adapters.models import ProviderStructuredModel
@@ -55,7 +51,6 @@ def test_structured_models_clamp_configured_paid_openrouter(monkeypatch):
     for provider, model in models:
         assert is_free_model(provider, model.model_name)
 
-
 def test_direct_get_llm_never_constructs_paused_providers(monkeypatch):
     import shared.providers as providers
     constructed = []
@@ -66,7 +61,6 @@ def test_direct_get_llm_never_constructs_paused_providers(monkeypatch):
     assert providers.get_llm("inception", "mercury-2.5") is None
     assert providers.get_llm("groq", "anything") is None
     assert constructed == []
-
 
 def test_structured_mistral_success_ledger_identity_is_free_limit(monkeypatch):
     import asyncio
@@ -89,7 +83,6 @@ def test_structured_mistral_success_ledger_identity_is_free_limit(monkeypatch):
     assert got.value=="ok"
     assert model.last_model==f"mistral_free_limit:{settings.mistral_model}"
 
-
 def test_groq_free_tier_activation_is_exact_and_ordered(monkeypatch):
     import shared.providers as providers
     monkeypatch.setattr(settings, "openrouter_api_key", "free")
@@ -108,14 +101,12 @@ def test_groq_free_tier_activation_is_exact_and_ordered(monkeypatch):
     with __import__("pytest").raises(providers.ProviderPolicyError):
         providers.resolve_model_id("groq:openai/gpt-oss-120b")
 
-
 def test_groq_key_is_inert_without_explicit_activation(monkeypatch):
     import shared.providers as providers
     monkeypatch.setattr(settings, "dime_enable_groq", False)
     monkeypatch.setattr(settings, "groq_api_key", "retained")
     assert "groq" not in providers.active_provider_order()
     assert providers.get_llm("groq") is None
-
 
 @__import__("pytest").mark.parametrize("slug", [
     "openai/gpt-oss-120b", "groq/compound", "", "openai/gpt-oss-20B",
@@ -127,14 +118,12 @@ def test_explicit_unlisted_groq_slugs_fail_closed_before_client(monkeypatch, slu
     with __import__("pytest").raises(providers.ProviderPolicyError):
         providers.resolve_model_id("groq:" + slug)
 
-
 def test_gemini_allowlist_is_workhorse_and_quality_only(monkeypatch):
-    import shared.providers as providers
     assert GEMINI_DEFAULT == "gemini-3.5-flash-lite"
     assert set(GEMINI_MODELS) == {
-        "gemini-3.5-flash-lite", "gemini-3.5-flash", "gemma-4-31b-it"}
+        "gemini-3.5-flash-lite", "gemini-3.5-flash", "gemini-3.8-flash",
+        "gemma-4-31b-it"}
     assert GEMINI_ALLOWLIST == set(GEMINI_MODELS)
-
 
 def test_gemini_boundary_fails_closed_on_unapproved_slugs(monkeypatch):
     monkeypatch.setattr(settings, "gemini_api_key", "key")
@@ -147,7 +136,6 @@ def test_gemini_boundary_fails_closed_on_unapproved_slugs(monkeypatch):
     for unapproved in ("gemini-2.5-pro", "gemini-2.0-flash", ""):
         with __import__("pytest").raises(ProviderPolicyError):
             resolve_model_id("gemini:" + unapproved)
-
 
 def test_gemini_is_free_and_default_when_keyed(monkeypatch):
     import shared.providers as providers
@@ -167,7 +155,6 @@ def test_gemini_is_free_and_default_when_keyed(monkeypatch):
     defaults = [item["id"] for item in catalog["models"] if item["default"]]
     assert defaults == [f"gemini:{GEMINI_DEFAULT}"]
 
-
 def test_gemini_inert_without_key(monkeypatch):
     import shared.providers as providers
     monkeypatch.setattr(settings, "gemini_api_key", "")
@@ -177,7 +164,6 @@ def test_gemini_inert_without_key(monkeypatch):
         "nvidia", providers.NVIDIA_NIM_DEFAULT)
     catalog = models_catalog()
     assert catalog["available"]["gemini"] is False
-
 
 def test_no_keys_falls_back_to_mistral_default_without_crashing(monkeypatch):
     import shared.providers as providers
@@ -193,7 +179,6 @@ def test_no_keys_falls_back_to_mistral_default_without_crashing(monkeypatch):
     assert providers.fallback_order("gemini")[0] == "gemini"
     assert providers.get_llm("gemini") is None
     assert providers.get_llm("mistral") is None
-
 
 def test_gemini_client_uses_openai_compatible_endpoint(monkeypatch):
     import shared.providers as providers

@@ -6,16 +6,12 @@ from langchain_core.tools import tool
 from .. import store as _store
 from .team import _hist_lineup_rows, _lineup_key
 from ..sources import nba_stats
-from ._core import MAX_ROWS, TTL_PBPSTATS, _warehouse_or_live, coerce_team_id, last_completed_season, resolve_season
+from ._core import MAX_ROWS, TTL_PBPSTATS, _warehouse_or_live, coerce_team_id, resolve_season
 
 BLOWOUT_MARGIN = 20
 BLOWOUT_SHARE_FLAG = 0.5
 
-
-
-
 _ALL_ROWS = 100_000
-
 
 def _ratings(pf: float, off_poss: int, pa: float,
             def_poss: int) -> dict[str, float]:
@@ -25,7 +21,6 @@ def _ratings(pf: float, off_poss: int, pa: float,
     deff = round(pa / def_poss * 100, 1)
     return {"OFF_RATING": off, "DEF_RATING": deff,
             "NET_RATING": round(off - deff, 1)}
-
 
 def _flags(poss: int, blowout_share: float, min_possessions: int,
            estimated: bool) -> list[str]:
@@ -43,14 +38,12 @@ def _flags(poss: int, blowout_share: float, min_possessions: int,
                      "ratings from MIN*2 possessions")
     return flags
 
-
 def _canon_row_key(r: dict[str, Any]) -> tuple[float, str]:
     try:
         minutes = float(r.get("MIN") or 0)
     except (TypeError, ValueError):
         minutes = 0.0
     return (minutes, str(r.get("_fetched_at") or ""))
-
 
 def _dedupe_lineup_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
     canon: dict[str, dict[str, Any]] = {}
@@ -60,7 +53,6 @@ def _dedupe_lineup_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
         if prev is None or _canon_row_key(r) > _canon_row_key(prev):
             canon[gid] = r
     return list(canon.values())
-
 
 def _apply_sample_floor(
     units: list[dict[str, Any]], min_possessions: int, include_small: bool,
@@ -86,7 +78,6 @@ def _apply_sample_floor(
             warning += " — pass include_small=True to view them with warnings"
     return visible, hidden, warning
 
-
 def _best_net_unit(units: list[dict[str, Any]],
                    min_possessions: int) -> dict[str, Any] | None:
     eligible = [u for u in units if u.get("poss", 0) >= min_possessions]
@@ -95,7 +86,6 @@ def _best_net_unit(units: list[dict[str, Any]],
     return max(eligible,
                key=lambda u: (u.get("NET_RATING", 0.0),
                               u.get("poss", 0)))
-
 
 def _possession_aggs(team_id: int, season: str) -> dict[tuple[int, ...], dict] | None:
     season = resolve_season(season)
@@ -155,20 +145,11 @@ def _possession_aggs(team_id: int, season: str) -> dict[tuple[int, ...], dict] |
         run[def_tid] = def_run
     return agg or None
 
-
-@tool
+@tool(description='Five-man lineup ratings with sample floors. Names, abbrevs, or ids.\n\nUnits under min_possessions (default 100) are hidden; blowout-heavy\nunits are flagged. Ratings are per 100 possessions, warehouse-first.\nThe best lineup (highest NET_RATING among units meeting the floor) is\nreturned in the top-level best_net_unit field and flagged per-row as\nis_best_net_unit, so it is never the most-used unit by default.')
 def get_lineup_stats(
     team: str | int, season: str | None = None, min_possessions: int = 100,
     include_small: bool = False, limit: int = 10,
 ) -> dict[str, Any]:
-    """Five-man lineup ratings with sample floors. Names, abbrevs, or ids.
-
-    Units under min_possessions (default 100) are hidden; blowout-heavy
-    units are flagged. Ratings are per 100 possessions, warehouse-first.
-    The best lineup (highest NET_RATING among units meeting the floor) is
-    returned in the top-level best_net_unit field and flagged per-row as
-    is_best_net_unit, so it is never the most-used unit by default.
-    """
     season = resolve_season(season)
     try:
         team_id = coerce_team_id(team)
@@ -238,7 +219,6 @@ def get_lineup_stats(
     best = _best_net_unit(visible, min_possessions)
     for u in visible:
         u["is_best_net_unit"] = u is best
-
 
     visible = visible[: min(limit, MAX_ROWS)]
     if hist:

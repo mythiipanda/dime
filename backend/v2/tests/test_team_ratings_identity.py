@@ -4,11 +4,9 @@ from unittest.mock import patch
 from v2.adapters.capabilities import CAPABILITIES
 from v2.adapters.core import build_envelope
 
-
 def _bos_entry():
     from nba_api.stats.static import teams as _teams
     return next(t for t in _teams.get_teams() if t["abbreviation"] == "BOS")
-
 
 def test_team_ratings_envelope_admits_team_identity_binding():
     entry = _bos_entry()

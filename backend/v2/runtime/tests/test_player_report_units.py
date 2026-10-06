@@ -54,7 +54,6 @@ _EXPECTED_UNITS = {
     "TS_PCT": FRACTION,
 }
 
-
 def _envelope():
     return build_envelope(
         CAPABILITIES["player_report"],
@@ -73,7 +72,6 @@ def _envelope():
         observed_at=datetime.now(UTC),
     )
 
-
 def _task():
     return TaskSpec(
         goal="season scoring average",
@@ -82,7 +80,6 @@ def _task():
         requested_outputs=["PPG"],
         entities=[EntityRef(id=_PLAYER_ID, type="player", display_name=_PLAYER_NAME)],
     )
-
 
 def _binding(unit_value):
     envelope = _envelope()
@@ -101,7 +98,6 @@ def _binding(unit_value):
         unit={"kind": "declared", "value": unit_value},
         domain="player_report",
     )
-
 
 def _admit(envelope, binding):
     execution = ExecutionResult(
@@ -135,17 +131,14 @@ def _admit(envelope, binding):
     )
     return admit_verified_claim_bindings(_task(), execution, draft, verified)
 
-
 def test_envelope_carries_season_line_units():
     assert _envelope().units == _EXPECTED_UNITS
-
 
 @pytest.mark.parametrize("unit", ["per_game", "per game", "points per game", "rebounds per game", "assists per game", "steals per game", "blocks per game"])
 def test_ppg_per_game_binding_admits(unit):
     envelope, binding = _binding(unit)
     admitted = _admit(envelope, binding)
     assert admitted.output_bindings[0].value.value == _PPG
-
 
 def test_invented_unit_still_rejects():
     envelope, binding = _binding("lightyears")

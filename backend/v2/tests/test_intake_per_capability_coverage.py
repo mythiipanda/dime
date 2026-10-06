@@ -2,14 +2,12 @@ import v2.adapters.coverage as coverage
 from v2.adapters.models import ModelIntake
 from v2.contracts import EvidenceRequirement, SeasonRef, TaskSpec
 
-
 def _stubbed_seasons(monkeypatch, mapping):
     monkeypatch.setattr(
         coverage,
         "table_seasons",
         lambda table: frozenset(mapping.get(str(table), ())),
     )
-
 
 def _leaders_task(season="2024-25"):
     return TaskSpec(
@@ -31,7 +29,6 @@ def _leaders_task(season="2024-25"):
         ],
     )
 
-
 def _ratings_task(season="2024-25"):
     return TaskSpec(
         goal="Team ratings",
@@ -48,7 +45,6 @@ def _ratings_task(season="2024-25"):
             )
         ],
     )
-
 
 def _playoffs_task(season="2024-25"):
     return TaskSpec(
@@ -67,7 +63,6 @@ def _playoffs_task(season="2024-25"):
         ],
     )
 
-
 def test_assists_leader_resolves_from_leaders_table(monkeypatch):
     _stubbed_seasons(monkeypatch, {
         "silver_boxscores": {"2025-26"},
@@ -75,7 +70,6 @@ def test_assists_leader_resolves_from_leaders_table(monkeypatch):
         "silver_team_ratings": {"2025-26"},
     })
     assert ModelIntake._mark_uncovered_season(_leaders_task()) == _leaders_task()
-
 
 def test_assists_leader_with_metric_id_resolves_from_leaders_table(monkeypatch):
     _stubbed_seasons(monkeypatch, {
@@ -85,7 +79,6 @@ def test_assists_leader_with_metric_id_resolves_from_leaders_table(monkeypatch):
     })
     task = _leaders_task().model_copy(update={"metric_ids": ["AST"]})
     assert ModelIntake._mark_uncovered_season(task) == task
-
 
 def test_ratings_uncovered_season_admits_with_live_gap(monkeypatch):
     _stubbed_seasons(monkeypatch, {
@@ -99,7 +92,6 @@ def test_ratings_uncovered_season_admits_with_live_gap(monkeypatch):
     assert any("silver_team_ratings" in item for item in result.assumptions)
     assert any("2024-25" in item for item in result.assumptions)
 
-
 def test_capability_without_live_path_still_blocks_uncovered_season(monkeypatch):
     _stubbed_seasons(monkeypatch, {
         "silver_boxscores": {"2025-26"},
@@ -110,7 +102,6 @@ def test_capability_without_live_path_still_blocks_uncovered_season(monkeypatch)
     assert result.open_questions != []
     assert any("silver_playoffs" in item for item in result.open_questions)
     assert not any("silver_boxscores" in item for item in result.open_questions)
-
 
 def _series_task(season="2024-25"):
     return TaskSpec(
@@ -129,7 +120,6 @@ def _series_task(season="2024-25"):
         ],
     )
 
-
 def test_season_series_resolves_against_series_source_not_boxscores(monkeypatch):
     _stubbed_seasons(monkeypatch, {
         "silver_boxscores": {"2025-26"},
@@ -138,11 +128,10 @@ def test_season_series_resolves_against_series_source_not_boxscores(monkeypatch)
         "silver_playoffs": {"2024-25", "2025-26"},
         "silver_playoff_gamelogs": {"2024-25", "2025-26"},
     })
-    assert coverage.tables_for_capability("season_series", {}) == (
+    assert coverage.declared_tables_for_capability("season_series", {}) == (
         "silver_team_games", "silver_hist_gamelogs",
         "silver_playoffs", "silver_playoff_gamelogs")
     assert ModelIntake._mark_uncovered_season(_series_task()) == _series_task()
-
 
 def test_season_series_still_blocks_season_missing_everywhere(monkeypatch):
     _stubbed_seasons(monkeypatch, {
@@ -156,7 +145,6 @@ def test_season_series_still_blocks_season_missing_everywhere(monkeypatch):
     assert result.open_questions != []
     assert any("2024-25" in item for item in result.open_questions)
     assert not any("silver_boxscores" in item for item in result.open_questions)
-
 
 def _comparison_task(season="2024-25", arguments=None):
     return TaskSpec(
@@ -175,7 +163,6 @@ def _comparison_task(season="2024-25", arguments=None):
         ],
     )
 
-
 def test_player_comparison_resolves_from_its_own_tables_not_boxscores(
     monkeypatch,
 ):
@@ -184,13 +171,12 @@ def test_player_comparison_resolves_from_its_own_tables_not_boxscores(
         "silver_player_gamelogs": {"2024-25", "2025-26"},
         "silver_on_off": {"2025-26"},
     })
-    tables = coverage.tables_for_capability("player_comparison", {})
+    tables = coverage.declared_tables_for_capability("player_comparison", {})
     assert tables[0] == "silver_player_gamelogs"
     assert "silver_on_off" in tables
     assert "silver_boxscores" not in tables
     assert (ModelIntake._mark_uncovered_season(_comparison_task())
             == _comparison_task())
-
 
 def test_player_comparison_entry_ignores_a_stat_argument(monkeypatch):
     _stubbed_seasons(monkeypatch, {
@@ -207,7 +193,6 @@ def test_player_comparison_entry_ignores_a_stat_argument(monkeypatch):
     assert not any("silver_leaders_pts" in item for item in result.assumptions)
     assert result.open_questions == []
 
-
 def test_player_comparison_uncovered_season_admits_with_live_gap(monkeypatch):
     _stubbed_seasons(monkeypatch, {
         "silver_boxscores": {"2025-26"},
@@ -219,7 +204,6 @@ def test_player_comparison_uncovered_season_admits_with_live_gap(monkeypatch):
     assert result.open_questions == []
     assert any("2024-25" in item for item in result.assumptions)
     assert any("player_comparison" in item for item in result.assumptions)
-
 
 def _player_report_task(season="2024-25", arguments=None):
     return TaskSpec(
@@ -240,7 +224,6 @@ def _player_report_task(season="2024-25", arguments=None):
         ],
     )
 
-
 def test_player_report_resolves_from_its_own_tables_not_boxscores(monkeypatch):
     _stubbed_seasons(monkeypatch, {
         "silver_boxscores": {"2025-26"},
@@ -248,14 +231,13 @@ def test_player_report_resolves_from_its_own_tables_not_boxscores(monkeypatch):
         "silver_hist_player_seasons": {"2024-25", "2025-26"},
         "silver_advanced": {"2025-26"},
     })
-    tables = coverage.tables_for_capability("player_report", {})
+    tables = coverage.declared_tables_for_capability("player_report", {})
     assert tables[0] == "silver_player_season"
     assert "silver_hist_player_seasons" in tables
     assert "silver_advanced" in tables
     assert "silver_boxscores" not in tables
     assert (ModelIntake._mark_uncovered_season(_player_report_task())
             == _player_report_task())
-
 
 def test_player_report_entry_ignores_a_stat_argument(monkeypatch):
     _stubbed_seasons(monkeypatch, {
@@ -273,7 +255,6 @@ def test_player_report_entry_ignores_a_stat_argument(monkeypatch):
     assert any("2024-25" in item for item in result.open_questions)
     assert not any("silver_leaders_pts" in item for item in result.open_questions)
 
-
 def test_player_report_still_blocks_season_missing_everywhere(monkeypatch):
     _stubbed_seasons(monkeypatch, {
         "silver_boxscores": {"2024-25", "2025-26"},
@@ -286,7 +267,6 @@ def test_player_report_still_blocks_season_missing_everywhere(monkeypatch):
     assert result.open_questions != []
     assert any("2024-25" in item for item in result.open_questions)
     assert not any("silver_boxscores" in item for item in result.open_questions)
-
 
 def _brief_task(season="2024-25"):
     return TaskSpec(
@@ -305,9 +285,8 @@ def _brief_task(season="2024-25"):
         ],
     )
 
-
 def test_matchup_brief_names_the_tables_its_sections_read():
-    tables = coverage.tables_for_capability("matchup_brief", {})
+    tables = coverage.declared_tables_for_capability("matchup_brief", {})
     assert "silver_team_ratings" in tables
     assert "silver_boxscores" in tables
     assert "silver_hist_gamelogs" in tables
@@ -316,7 +295,6 @@ def test_matchup_brief_names_the_tables_its_sections_read():
     assert "silver_playoff_gamelogs" in tables
     assert "silver_injuries" in tables
     assert "silver_scoreboard" in tables
-
 
 def test_matchup_brief_resolves_season_against_its_own_tables(monkeypatch):
     _stubbed_seasons(monkeypatch, {
@@ -330,7 +308,6 @@ def test_matchup_brief_resolves_season_against_its_own_tables(monkeypatch):
         "silver_playoff_gamelogs": {"2024-25", "2025-26"},
     })
     assert ModelIntake._mark_uncovered_season(_brief_task()) == _brief_task()
-
 
 def test_matchup_brief_still_blocks_season_missing_from_every_table(
     monkeypatch,

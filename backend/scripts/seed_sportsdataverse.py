@@ -18,10 +18,8 @@ EXPECTED = {"shots": {2025: 233_904}}
 SHOT_TOL = 0.01
 MIN_PLAYER_SEASONS = 400
 
-
 def label(end_year: int) -> str:
     return f"{end_year - 1}-{str(end_year)[2:]}"
-
 
 def download(url: str, dest: Path) -> Path:
     dest.parent.mkdir(parents=True, exist_ok=True)
@@ -33,18 +31,15 @@ def download(url: str, dest: Path) -> Path:
     tmp.replace(dest)
     return dest
 
-
 def have_shots(year: int) -> int:
-    df = store.read_frame("silver_hist_shots", f"season = {year}", [])
+    df = store.read_frame_optional("silver_hist_shots", f"season = {year}", [])
     return len(df)
 
-
 def have_player_seasons(year: int) -> int:
-    df = store.read_frame(
+    df = store.read_frame_optional(
         "silver_hist_player_seasons", "_season = ? AND _entity = 'league'", [label(year)]
     )
     return len(df)
-
 
 def seed_shots(year: int) -> int:
     have = have_shots(year)
@@ -71,7 +66,6 @@ def seed_shots(year: int) -> int:
     print(f"shots {label(year)}: {n} rows")
     return n
 
-
 BASE_COLS = [
     "player_id", "player_name", "team_abbreviation", "season", "age", "gp", "min",
     "pts", "reb", "ast", "stl", "blk", "tov", "fgm", "fga", "fg_pct",
@@ -80,7 +74,6 @@ BASE_COLS = [
 ADV_COLS = ["player_id", "ts_pct", "efg_pct", "usg_pct", "off_rating",
             "def_rating", "net_rating", "pie", "pace"]
 JOIN_KEY = ["player_id", "team_abbreviation"]
-
 
 def seed_player_seasons(year: int) -> int:
     have = have_player_seasons(year)
@@ -113,7 +106,6 @@ def seed_player_seasons(year: int) -> int:
     print(f"player_seasons {label(year)}: {n} rows")
     return n
 
-
 def main() -> None:
     args = argparse.ArgumentParser()
     args.add_argument("--seasons", default="2025")
@@ -123,7 +115,6 @@ def main() -> None:
     for y in years:
         print(f"  {label(y)} shots: {seed_shots(y)}")
         print(f"  {label(y)} player_seasons: {seed_player_seasons(y)}")
-
 
 if __name__ == "__main__":
     main()

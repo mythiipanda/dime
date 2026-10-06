@@ -9,7 +9,6 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from shared import tools
 
-
 def main() -> None:
     args = argparse.ArgumentParser()
     args.add_argument("--date", default="")
@@ -167,7 +166,6 @@ def main() -> None:
     path = out / f"briefing-{day.replace('/', '-')}.md"
     path.write_text("\n".join(lines) + "\n")
     print(f"wrote {path} ({len(lines)} lines)")
-
 
 if __name__ == "__main__":
     main()

@@ -11,7 +11,6 @@ import seed_tracking as seed
 from shared import store
 from shared.sources.base import FetchMeta, FetchResult
 
-
 @pytest.fixture
 def scratch(monkeypatch, tmp_path):
     db = tmp_path / "tracking.duckdb"
@@ -25,13 +24,11 @@ def scratch(monkeypatch, tmp_path):
     store.warehouse_pool_clear()
     return db
 
-
 def _fake(season, rows):
     return FetchResult(
         frame=pl.DataFrame(rows),
         meta=FetchMeta(source="nba_api", season=season),
     )
-
 
 def _count(table, season, entity):
     con = store.connect(read_only=True)
@@ -43,7 +40,6 @@ def _count(table, season, entity):
     finally:
         con.close()
 
-
 def test_replace_same_unit_leaves_no_duplicates(scratch):
     entity = "ptstats:player:Drives"
     store.save_frame(seed.PT_STATS_TABLE, _fake("2024-25", {"ID": [1, 2]}),
@@ -51,7 +47,6 @@ def test_replace_same_unit_leaves_no_duplicates(scratch):
     store.save_frame(seed.PT_STATS_TABLE, _fake("2024-25", {"ID": [1, 2, 3]}),
                      entity=entity)
     assert _count(seed.PT_STATS_TABLE, "2024-25", entity) == 3
-
 
 def test_rerun_skips_completed_units(scratch, monkeypatch):
     calls: list = []
@@ -65,7 +60,6 @@ def test_rerun_skips_completed_units(scratch, monkeypatch):
     assert len(calls) == 2
     assert seed.main(["--seasons", "2024-25", "--limit-units", "2"]) == 0
     assert len(calls) == 2
-
 
 def test_heterogeneous_units_coexist_and_replace(scratch, monkeypatch):
     frames = {
@@ -94,7 +88,6 @@ def test_heterogeneous_units_coexist_and_replace(scratch, monkeypatch):
     assert _count(seed.PT_STATS_TABLE, "2024-25",
                   "ptstats:player:Defense") == 3
 
-
 def test_three_heterogeneous_units_all_persist(scratch, monkeypatch):
     frames = {
         "ptstats:player:CatchShoot": _fake("2024-25", {"ID": [1, 2]}),
@@ -113,7 +106,6 @@ def test_three_heterogeneous_units_all_persist(scratch, monkeypatch):
     assert _count(seed.PT_STATS_TABLE, "2024-25",
                   "ptstats:player:Drives") == 3
 
-
 def test_entity_scheme_unique_and_complete():
     units = seed.planned_units(["2024-25", "2025-26"])
     keys = [(u.season, seed.unit_entity(u)) for u in units]
@@ -127,16 +119,13 @@ def test_entity_scheme_unique_and_complete():
     stats = {(u.season, seed.unit_entity(u)) for u in units if u.kind == "pt_stats"}
     assert len(stats) == 48
 
-
 def test_fail_closed_without_warehouse(tmp_path, monkeypatch):
     monkeypatch.delenv("DIME_WAREHOUSE", raising=False)
     assert seed.main(["--dry-run"]) == 1
 
-
 def test_fail_closed_on_canonical(scratch, monkeypatch):
     monkeypatch.setenv("DIME_WAREHOUSE", str(store.CANONICAL_DB_PATH))
     assert seed.main(["--dry-run"]) == 1
-
 
 def test_failure_records_watermark_and_retries_next_run(scratch, monkeypatch):
     monkeypatch.setattr(

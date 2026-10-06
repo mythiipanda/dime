@@ -7,7 +7,6 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from shared import providers as providers_mod
 from shared import store
 
-
 class _FakeLLM:
     def __init__(self, calls, fail=False):
         self._calls = calls
@@ -24,17 +23,14 @@ class _FakeLLM:
         self._calls.append(prompt)
         return type("Resp", (), {"content": "MEMO :: " + prompt})()
 
-
 def _isolate(tmp_path, monkeypatch):
     monkeypatch.setattr(store, "STATE_PATH", tmp_path / "thread.duckdb")
     monkeypatch.setattr(store, "STATE_LOCK_PATH", tmp_path / ".write.lock")
-
 
 def _seed(thread, n):
     for i in range(n):
         role = "human" if i % 2 == 0 else "ai"
         store.save_chat(thread, role, f"turn-{i} asks about Player{i}")
-
 
 def _rows(thread):
     con = store.state_connect()
@@ -47,11 +43,9 @@ def _rows(thread):
     finally:
         con.close()
 
-
 def _fake_provider(monkeypatch, calls, fail=False):
     monkeypatch.setattr(
         providers_mod, "get_llm", lambda primary, model=None: _FakeLLM(calls, fail))
-
 
 def test_below_threshold_untouched(tmp_path, monkeypatch):
     _isolate(tmp_path, monkeypatch)
@@ -60,7 +54,6 @@ def test_below_threshold_untouched(tmp_path, monkeypatch):
     out = store.compact_thread("t1")
     assert out == {"compacted": False, "kept": 11, "dropped": 0}
     assert len(_rows("t1")) == 11
-
 
 def test_compacts_to_summary_plus_recent(tmp_path, monkeypatch):
     _isolate(tmp_path, monkeypatch)
@@ -77,7 +70,6 @@ def test_compacts_to_summary_plus_recent(tmp_path, monkeypatch):
     assert [r[1] for r in rows[:-1]] == [
         f"turn-{i} asks about Player{i}" for i in (9, 10, 11, 12)]
     assert len(calls) == 1
-
 
 def test_second_compact_preserves_old_memo(tmp_path, monkeypatch):
     _isolate(tmp_path, monkeypatch)
@@ -98,7 +90,6 @@ def test_second_compact_preserves_old_memo(tmp_path, monkeypatch):
     assert len(summaries) == 1
     assert "turn-0" in summaries[0][1]
     assert "turn-13" in summaries[0][1]
-
 
 def test_llm_failure_leaves_history_untouched(tmp_path, monkeypatch):
     _isolate(tmp_path, monkeypatch)

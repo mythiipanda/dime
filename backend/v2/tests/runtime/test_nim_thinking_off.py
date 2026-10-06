@@ -8,7 +8,8 @@ import httpx
 import pytest
 from openai.types.chat import ChatCompletion
 from pydantic import BaseModel
-from pydantic_ai.models.openai import OpenAIChatModel
+from v2.adapters.models import DimeOpenAIChatModel
+from v2.adapters.structured import EndpointCapabilities, Support
 from pydantic_ai.providers.openai import OpenAIProvider
 
 from shared.config import settings
@@ -22,10 +23,8 @@ from v2.adapters.models import (
 from v2.runtime import RequestEnvelope
 from v2.runtime.ledger import LedgerKind, RunLedger
 
-
 class _Ping(BaseModel):
     answer: str
-
 
 def _completion_body(
     *,
@@ -58,7 +57,6 @@ def _completion_body(
         }
     ).model_dump(mode="json")
 
-
 def _capturing_client(
     *,
     thinking_off: bool,
@@ -87,7 +85,6 @@ def _capturing_client(
         thinking_off=thinking_off,
     )
 
-
 def _intake_envelope(*, model: str = "test-model/nim-flash") -> RequestEnvelope:
     return RequestEnvelope.freeze(
         provider="nvidia",
@@ -99,7 +96,6 @@ def _intake_envelope(*, model: str = "test-model/nim-flash") -> RequestEnvelope:
         planner_version="v2",
     )
 
-
 def _clear_provider_keys(monkeypatch: pytest.MonkeyPatch) -> None:
     for attr in (
         "nvidia_nim_api_key",
@@ -109,7 +105,6 @@ def _clear_provider_keys(monkeypatch: pytest.MonkeyPatch) -> None:
         "groq_api_key",
     ):
         monkeypatch.setattr(settings, attr, "")
-
 
 @pytest.mark.anyio
 @pytest.mark.parametrize("thinking_off,extra_body,expected_kwargs", [
@@ -140,7 +135,6 @@ async def test_thinking_off_wire_body(thinking_off, extra_body,
         if extra_body is not None:
             assert captured[0]["some_flag"] is True
 
-
 @pytest.mark.parametrize("model", [*list(NVIDIA_NIM_MODELS),
                                    "not-on/the-allowlist"])
 def test_nim_wiring_enables_thinking_off(
@@ -155,7 +149,6 @@ def test_nim_wiring_enables_thinking_off(
     client = nvidia_models[0][1].client
     assert isinstance(client, ReasoningContentFallbackClient)
     assert client.thinking_off is True
-
 
 @pytest.mark.parametrize(
     "provider,key_attr",
@@ -177,7 +170,6 @@ def test_non_nim_providers_keep_thinking_off_disabled(
     assert isinstance(client, ReasoningContentFallbackClient)
     assert client.thinking_off is False
 
-
 @pytest.mark.anyio
 @pytest.mark.parametrize("anyio_backend", ["asyncio"])
 async def test_generate_sends_thinking_off_wire_body(
@@ -187,9 +179,13 @@ async def test_generate_sends_thinking_off_wire_body(
     assert anyio_backend == "asyncio"
     captured: list[dict[str, Any]] = []
     mock_client = _capturing_client(thinking_off=True, captured=captured)
-    openai_model = OpenAIChatModel(
+    openai_model = DimeOpenAIChatModel(
         "test-model/nim-flash",
         provider=OpenAIProvider(openai_client=mock_client),
+        capabilities=EndpointCapabilities(
+            endpoint="https://integrate.api.nvidia.com/v1",
+            strict_json_schema=Support.MEASURED, tool_calling=Support.MEASURED,
+            strict_tool_definitions=Support.MEASURED),
     )
     monkeypatch.setattr(
         ProviderStructuredModel, "_models", lambda self: [("nvidia", openai_model)]
@@ -201,7 +197,6 @@ async def test_generate_sends_thinking_off_wire_body(
     assert result.answer == "hi"
     assert len(captured) == 1
     assert captured[0]["chat_template_kwargs"] == {"enable_thinking": False}
-
 
 def test_no_model_name_branching_in_thinking_off_wiring():
     source = (
@@ -219,7 +214,6 @@ def test_no_model_name_branching_in_thinking_off_wiring():
                 f"model-name branching in thinking-off wiring: {line.strip()}"
             )
     assert 'thinking_off=(provider == "nvidia")' in source
-
 
 @pytest.mark.anyio
 async def test_promotion_still_applies_with_thinking_off():
@@ -246,7 +240,6 @@ async def test_promotion_still_applies_with_thinking_off():
         }
     ]
 
-
 @pytest.mark.anyio
 @pytest.mark.parametrize("finish_reason", ["length", "content_filter"])
 async def test_no_promotion_unless_stop_with_thinking_off(finish_reason: str):
@@ -266,7 +259,6 @@ async def test_no_promotion_unless_stop_with_thinking_off(finish_reason: str):
     assert resp.choices[0].message.content == ""
     assert client.reasoning_content_promotions == []
 
-
 @pytest.mark.anyio
 @pytest.mark.parametrize("anyio_backend", ["asyncio"])
 async def test_promotion_recorded_on_attempt_ledger(
@@ -282,9 +274,13 @@ async def test_promotion_recorded_on_attempt_ledger(
         finish_reason="stop",
         captured=captured,
     )
-    openai_model = OpenAIChatModel(
+    openai_model = DimeOpenAIChatModel(
         "test-model/nim-flash",
         provider=OpenAIProvider(openai_client=mock_client),
+        capabilities=EndpointCapabilities(
+            endpoint="https://integrate.api.nvidia.com/v1",
+            strict_json_schema=Support.MEASURED, tool_calling=Support.MEASURED,
+            strict_tool_definitions=Support.MEASURED),
     )
     monkeypatch.setattr(
         ProviderStructuredModel, "_models", lambda self: [("nvidia", openai_model)]

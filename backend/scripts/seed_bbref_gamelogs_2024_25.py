@@ -14,7 +14,7 @@ HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 sys.path.insert(0, str(HERE.parent))
 
-from seed_bbref_gamelogs import (  # noqa: E402
+from seed_bbref_gamelogs import (
     COLS,
     HEADERS,
     cell,
@@ -25,8 +25,8 @@ from seed_bbref_gamelogs import (  # noqa: E402
     parse_minutes,
 )
 
-from shared import store  # noqa: E402
-from shared.sources.base import FetchMeta, FetchResult  # noqa: E402
+from shared import store
+from shared.sources.base import FetchMeta, FetchResult
 
 IDS_FILE = HERE / "seed_bbref_gamelogs_player_ids.txt"
 PROGRESS_FILE = HERE / "seed_bbref_gamelogs_2024_25_progress.json"
@@ -44,24 +44,20 @@ DELAY_S = 3.0
 LEGACY_TABLES = ("silver_player_gamelogs", "silver_playoff_gamelogs")
 assert TABLE not in LEGACY_TABLES
 
-
 def log(msg: str) -> None:
     line = f"{datetime.now().isoformat(timespec='seconds')} {msg}"
     print(line, flush=True)
     with open(LOG_FILE, "a") as fh:
         fh.write(line + "\n")
 
-
 def strip_suffix(name: str) -> str:
     return re.sub(r"\s+(jr|sr|ii|iii|iv|v)\.?$", "", name or "", flags=re.IGNORECASE)
-
 
 def lookup_id(name_map: dict, pname: str):
     hit = name_map.get(norm_name(pname))
     if hit is None:
         hit = name_map.get(norm_name(strip_suffix(pname)))
     return hit
-
 
 def load_name_map_2024_25() -> dict:
     con = store.connect()
@@ -83,7 +79,6 @@ def load_name_map_2024_25() -> dict:
     log(f"name map: {len(mapping)} entries")
     return mapping
 
-
 def load_player_paths(ids_file: Path | None = None) -> list:
     candidates = [Path(ids_file)] if ids_file else [IDS_FILE]
     for cand in candidates:
@@ -91,16 +86,13 @@ def load_player_paths(ids_file: Path | None = None) -> list:
             return [l.strip() for l in cand.read_text().splitlines() if l.strip()]
     return []
 
-
 def load_progress() -> dict:
     if PROGRESS_FILE.exists():
         return json.loads(PROGRESS_FILE.read_text())
     return {"done": [], "failed": {}}
 
-
 def save_progress(prog: dict) -> None:
     PROGRESS_FILE.write_text(json.dumps(prog, indent=1))
-
 
 def parse_gamelog_table_2024_25(table, nba_id: int) -> list:
     rows_out = []
@@ -153,7 +145,6 @@ def parse_gamelog_table_2024_25(table, nba_id: int) -> list:
         })
     return rows_out
 
-
 def assert_player_batch(rows: list, nba_id: int) -> None:
     ids = [r["Game_ID"] for r in rows]
     assert len(ids) == len(set(ids)), f"duplicate Game_ID for player {nba_id}"
@@ -162,9 +153,7 @@ def assert_player_batch(rows: list, nba_id: int) -> None:
         assert r["Player_ID"] == nba_id, f"wrong player {r['Player_ID']}"
         assert r["Game_ID"] and r["GAME_DATE"] and r["MATCHUP"]
 
-
 def fetch_page_2024_25(session: requests.Session, url: str, delay_holder: dict) -> str | None:
-
 
     for attempt in range(4):
         time.sleep(delay_holder["delay"])
@@ -187,7 +176,6 @@ def fetch_page_2024_25(session: requests.Session, url: str, delay_holder: dict) 
         time.sleep(10)
     return None
 
-
 def page_player_name_2024_25(doc) -> str | None:
     h1 = doc.xpath("//h1")
     if not h1:
@@ -199,7 +187,6 @@ def page_player_name_2024_25(doc) -> str | None:
         name = name[: -len("2024-25")].strip()
     return name or None
 
-
 def save_rows_2024_25(rows: list, nba_id: int) -> int:
     if not rows:
         return 0
@@ -207,7 +194,6 @@ def save_rows_2024_25(rows: list, nba_id: int) -> int:
     frame = pl.DataFrame(rows, schema=COLS)
     result = FetchResult(frame=frame, meta=FetchMeta(source=SOURCE, season=SEASON))
     return store.save_frame(TABLE, result, entity=f"player:{nba_id}")
-
 
 def build_coverage(targets: list, saved: dict, failed: dict, no_tables: set) -> list:
     gap = []
@@ -222,13 +208,11 @@ def build_coverage(targets: list, saved: dict, failed: dict, no_tables: set) -> 
             gap.append({"player": pid, "status": "not-run", "rows": 0})
     return gap
 
-
 def log_coverage(gap: list) -> None:
     missing = [g for g in gap if g["rows"] == 0]
     log(f"coverage: {len(gap) - len(missing)}/{len(gap)} players with rows")
     for g in missing:
         log(f"  gap {g['player']}: {g['status']}")
-
 
 def main() -> None:
     limit = None
@@ -329,7 +313,6 @@ def main() -> None:
     log_coverage(gap)
     if failed:
         log(f"failed list ({len(failed)}): " + json.dumps(failed)[:2000])
-
 
 if __name__ == "__main__":
     main()

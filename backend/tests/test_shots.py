@@ -15,7 +15,6 @@ from shared.tools.shots import (ZONE_KEYS, ZONE_LABEL_MAP, disambiguate_last_nam
                              seconds_left, summarize, summarize_by_period,
                              summarize_by_zone, zone_of_label, _where_sql)
 
-
 def _require_full_shot_pack():
     from shared import store
     con = store.connect()
@@ -33,10 +32,8 @@ def _require_full_shot_pack():
             f"({count} rows, {teams} teams, {players} players)"
         )
 
-
 def _shot(zone, made, period=4, game="g1"):
     return {"zone": zone, "made": made, "period": period, "game_id": game}
-
 
 @pytest.mark.parametrize("label,expected", [
     ("Restricted Area", "rim"),
@@ -54,14 +51,12 @@ def test_zone_of_label_table(label, expected):
         "Restricted Area", "In The Paint (Non-RA)", "Mid-Range",
         "Left Corner 3", "Right Corner 3", "Above the Break 3"}
 
-
 @pytest.mark.parametrize("text,expected", [
     ("", set(ZONE_KEYS)),
     ("corner_3, atb_3", {"corner_3", "atb_3"}),
 ])
 def test_parse_zones_table(text, expected):
     assert parse_zones(text) == expected
-
 
 @pytest.mark.parametrize("text,expected", [
     ("", None),
@@ -74,7 +69,6 @@ def test_parse_zones_table(text, expected):
 def test_parse_periods_table(text, expected):
     assert parse_periods(text) == expected
 
-
 @pytest.mark.parametrize("period,wanted,expected", [
     (4, {4}, True),
     (5, {5}, True),
@@ -86,7 +80,6 @@ def test_parse_periods_table(text, expected):
 def test_period_matches_table(period, wanted, expected):
     assert period_matches(period, wanted) is expected
 
-
 @pytest.mark.parametrize("text,expected", [
     ("", ""),
     ("player", "player"),
@@ -94,7 +87,6 @@ def test_period_matches_table(period, wanted, expected):
 ])
 def test_parse_group_by_table(text, expected):
     assert parse_group_by(text) == expected
-
 
 @pytest.mark.parametrize("text,default,expected", [
     ("", True, True),
@@ -105,7 +97,6 @@ def test_parse_group_by_table(text, expected):
 ])
 def test_parse_include_ot_table(text, default, expected):
     assert parse_include_ot(text, default) is expected
-
 
 @pytest.mark.parametrize("periods,include,expected", [
     ({4}, True, {4, 5}),
@@ -118,7 +109,6 @@ def test_parse_include_ot_table(text, default, expected):
 def test_fold_ot_table(periods, include, expected):
     assert fold_ot(periods, include) == expected
 
-
 @pytest.mark.parametrize("func,args,expected", [
     (parse_made, ("MADE",), "made"),
     (parse_made, ("any",), "any"),
@@ -130,7 +120,6 @@ def test_fold_ot_table(periods, include, expected):
 def test_parse_value_mappings_table(func, args, expected):
     assert func(*args) == expected
 
-
 @pytest.mark.parametrize("period,secs,left,clock", [
     (1, 5, 65, "1:05"),
     (None, 5, None, None),
@@ -140,7 +129,6 @@ def test_clock_helpers_table(period, secs, left, clock):
     assert seconds_left(period, secs) == left
     if clock is not None:
         assert format_clock(period, secs) == clock
-
 
 @pytest.mark.parametrize("func,args,match", [
     (parse_zones, ("corner_3, paint",), "unknown zone"),
@@ -156,7 +144,6 @@ def test_parse_invalid_rejected(func, args, match):
     with pytest.raises(ValueError, match=match):
         func(*args)
 
-
 def test_group_row_small_sample_flag():
     big = group_row(50, 25, 10, games=12)
     assert big["attempts"] == 50
@@ -167,7 +154,6 @@ def test_group_row_small_sample_flag():
     assert small["small_sample"] is True
     assert "games" not in small
 
-
 def test_is_heave_boundary():
     assert is_heave(29, 0, 3) is False
     assert is_heave(30, 0, 3) is True
@@ -175,7 +161,6 @@ def test_is_heave_boundary():
     assert is_heave(35, 0, 0) is True
     assert is_heave(30, None, None) is False
     assert is_heave(None, 0, 1) is False
-
 
 def test_disambiguate_last_name_unique_and_ambiguous():
     unique = disambiguate_last_name(
@@ -192,7 +177,6 @@ def test_disambiguate_last_name_unique_and_ambiguous():
     missing = disambiguate_last_name("Nobody", [("Williams", 101)])
     assert missing == {"player_id": None, "candidates": [],
                        "ambiguous": False}
-
 
 def test_summarize_overall_and_by_zone_and_period():
     shots = [_shot("corner_3", True, 4, "g1"),
@@ -215,7 +199,6 @@ def test_summarize_overall_and_by_zone_and_period():
     assert by_period["OT"]["attempts"] == 2
     assert by_period["OT"]["makes"] == 1
 
-
 def test_tool_tatum_corner3_4th_matches_verified_numbers():
     _require_full_shot_pack()
     res = search_shots.invoke(
@@ -228,7 +211,6 @@ def test_tool_tatum_corner3_4th_matches_verified_numbers():
     assert agg["small_sample"] is True
     assert "sample_warning" in res["meta"]
 
-
 def test_tool_small_sample_flag_off_for_big_lines():
     _require_full_shot_pack()
     res = search_shots.invoke({"team": "BOS", "zones": "rim"})
@@ -237,7 +219,6 @@ def test_tool_small_sample_flag_off_for_big_lines():
     assert agg["attempts"] > 100
     assert agg["small_sample"] is False
     assert "sample_warning" not in res["meta"]
-
 
 def test_tool_group_by_player_leaderboard():
     _require_full_shot_pack()
@@ -254,7 +235,6 @@ def test_tool_group_by_player_leaderboard():
     assert "small_sample" in top
     assert res["filters"]["group_by"] == "player"
 
-
 def test_tool_by_zone_only_requested_zones():
     res = search_shots.invoke({"zones": "rim"})
     assert res["ok"] is True
@@ -263,7 +243,6 @@ def test_tool_by_zone_only_requested_zones():
     assert all(r["zone"] in {"rim", "corner_3"}
                for r in search_shots.invoke(
                    {"zones": "rim,corner_3"})["by_zone"])
-
 
 def test_tool_performance_smoke():
     _require_full_shot_pack()
@@ -274,7 +253,6 @@ def test_tool_performance_smoke():
     assert res["ok"] is True
     assert res["aggregate"]["attempts"] > 20000
     assert elapsed < 2.0, f"search_shots took {elapsed:.2f}s"
-
 
 def test_group_by_team_leaderboard():
     res = search_shots.invoke(
@@ -290,7 +268,6 @@ def test_group_by_team_leaderboard():
         assert "small_sample" in r
     assert sum(attempts) == res["aggregate"]["attempts"]
 
-
 def test_group_by_player_small_sample():
     _require_full_shot_pack()
     res = search_shots.invoke(
@@ -302,7 +279,6 @@ def test_group_by_player_small_sample():
     assert "sample_warning" in res["meta"]
     assert [r["zone"] for r in res["by_zone"]] == ["corner_3"]
 
-
 def test_ot_included_by_default():
     default = search_shots.invoke({"periods": "4th"})
     explicit = search_shots.invoke({"periods": "4th,ot"})
@@ -312,14 +288,12 @@ def test_ot_included_by_default():
             == explicit["aggregate"]["attempts"])
     assert no_ot["aggregate"]["attempts"] < default["aggregate"]["attempts"]
 
-
 def test_late_clock_includes_ot_by_default():
     default = search_shots.invoke({"late_clock": "300"})
     no_ot = search_shots.invoke({"late_clock": "300", "include_ot": "no"})
     assert default["ok"] and no_ot["ok"]
     assert (default["aggregate"]["attempts"]
             > no_ot["aggregate"]["attempts"])
-
 
 def test_disambiguation_returns_candidates():
     _require_full_shot_pack()
@@ -333,12 +307,10 @@ def test_disambiguation_returns_candidates():
         assert isinstance(c["player"], str) and c["player"]
         assert isinstance(c["teams"], list) and len(c["teams"]) > 0
 
-
 def test_unknown_player_still_fails():
     res = search_shots.invoke({"player": "Nobody XYZ"})
     assert res["ok"] is False
     assert "unknown player" in res["error"]
-
 
 def test_clutch_safe_flag():
     res = search_shots.invoke({"periods": "4th"})
@@ -346,20 +318,17 @@ def test_clutch_safe_flag():
     assert res["meta"]["clutch_safe"] is False
     assert res["meta"]["score_aware"] is False
 
-
 def test_heave_disabled_wording():
     res = search_shots.invoke({"player": "Tatum", "exclude_heaves": False})
     assert res["ok"] is True
     assert "INCLUDED" in res["meta"]["data_note"]
     assert res["meta"]["heaves_excluded"] == 0
 
-
 def test_conflicting_filters_note():
     res = search_shots.invoke({"periods": "1h", "late_clock": "60"})
     assert res["ok"] is True
     assert res["aggregate"]["attempts"] == 0
     assert "late_clock" in res["meta"]["note"]
-
 
 def test_zero_match_note():
     res = search_shots.invoke(
@@ -368,11 +337,9 @@ def test_zero_match_note():
     if res["aggregate"]["attempts"] == 0:
         assert "note" in res["meta"]
 
-
 def test_invalid_group_by():
     res = search_shots.invoke({"group_by": "coach"})
     assert res["ok"] is False
-
 
 def test_sample_rows_spread():
     res = search_shots.invoke({"periods": "4th", "limit": 25})
@@ -380,7 +347,6 @@ def test_sample_rows_spread():
     shots = res["shots"]
     assert len(shots) <= 25
     assert len({s["game_id"] for s in shots}) >= 5
-
 
 def test_performance_smoke():
     search_shots.invoke(
@@ -391,7 +357,6 @@ def test_performance_smoke():
     elapsed = time.perf_counter() - start
     assert res["ok"] is True
     assert elapsed < 2.0, f"search_shots took {elapsed:.2f}s"
-
 
 def test_ot_late_clock_returns_rows_note_free():
     res = search_shots.invoke({"periods": "ot", "late_clock": "60"})
@@ -404,7 +369,6 @@ def test_ot_late_clock_returns_rows_note_free():
     assert all(s["period"] is not None and s["period"] >= 5
                for s in res["shots"])
 
-
 def test_ot_explicit_include_ot_yes_late_clock():
     res = search_shots.invoke(
         {"periods": "ot", "include_ot": "yes", "late_clock": "60"})
@@ -413,7 +377,6 @@ def test_ot_explicit_include_ot_yes_late_clock():
     assert res["aggregate"]["attempts"] > 0
     assert "note" not in res["meta"]
 
-
 def test_late_clock_applies_to_folded_set_no_ot_leak():
     res = search_shots.invoke(
         {"periods": "4th", "include_ot": "no", "late_clock": "60"})
@@ -421,7 +384,6 @@ def test_late_clock_applies_to_folded_set_no_ot_leak():
     assert res["aggregate"]["attempts"] > 0
     assert not any(r["period"] == "OT" for r in res["by_period"])
     assert all(r["period"] == 4 for r in res["by_period"])
-
 
 def test_where_sql_period_bounds():
     wanted = set(ZONE_KEYS)
@@ -443,14 +405,12 @@ def test_where_sql_period_bounds():
     assert "PERIOD >= 5" in sql
     assert "PERIOD = 4" not in sql
 
-
 def test_non_late_period_late_clock_still_contradicts_with_note():
     res = search_shots.invoke({"periods": "3", "late_clock": "60"})
     assert res["ok"] is True
     assert res["aggregate"]["attempts"] == 0
     assert "note" in res["meta"]
     assert "late_clock" in res["meta"]["note"]
-
 
 def test_individual_shot_rows_keep_canonical_player_and_team_ids(monkeypatch):
     class FakeCon:

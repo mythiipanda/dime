@@ -1,31 +1,64 @@
+from __future__ import annotations
+
 import time
 
 import anyio
 import pytest
 
-from v2.adapters.models import ROUTE_POLICIES, ProviderStructuredModel
+from v2.adapters.models import (
+    DimeOpenAIChatModel,
+    ModelBudgets,
+    ProviderStructuredModel,
+    ReasoningContentFallbackClient,
+    RoutePolicy,
+    load_model_budgets,
+    route_budgets,
+)
+from v2.adapters.structured import EndpointCapabilities, Support
 from v2.contracts import TaskSpec
 from v2.runtime import RequestEnvelope
 
+WATCHDOG_S = 1.0
+ROUTE_WATCHDOG_S = 2.0
+REAL_SLEEP = anyio.sleep
 
 def _planner_envelope():
     return RequestEnvelope.freeze(
         provider="inception", model="primary", route="planner",
         prompt="p", context={}, tool_schemas={}, planner_version="v2")
 
+def _stage_model(budgets: ModelBudgets) -> ProviderStructuredModel:
+    import httpx
+    from pydantic_ai.providers.openai import OpenAIProvider
+    client = httpx.AsyncClient(transport=httpx.MockTransport(
+        lambda request: httpx.Response(500, json={"error": {"message": "x"}})))
+    chat_model = DimeOpenAIChatModel(
+        "primary",
+        provider=OpenAIProvider(openai_client=ReasoningContentFallbackClient(
+            api_key="stub", max_retries=0, http_client=client)),
+        capabilities=EndpointCapabilities(
+            endpoint="https://stub.invalid/v1",
+            strict_json_schema=Support.MEASURED, tool_calling=Support.MEASURED,
+            strict_tool_definitions=Support.MEASURED))
+    model = ProviderStructuredModel("inception", "primary", model_budgets=budgets)
+    model._models = lambda: [("inception", chat_model)]
+    return model
 
-class _Model:
-    model_name = "primary"
+def _watchdog() -> ModelBudgets:
+    return ModelBudgets(
+        transport_timeout_s=600.0,
+        defaults=RoutePolicy(attempt_timeout_s=WATCHDOG_S,
+                             total_budget_s=ROUTE_WATCHDOG_S),
+        routes={})
 
-
-def _ok_result():
-    return type("R", (), {
-        "output": TaskSpec(goal="ok", mode="quick", deliverable="x")})()
-
+def test_the_shipped_watchdog_is_off_and_the_knob_exists():
+    assert route_budgets(None, "planner") == RoutePolicy()
+    assert load_model_budgets().routes == {}
 
 @pytest.mark.anyio
-async def test_never_tokens_hang_is_bounded(monkeypatch):
-    policy = ROUTE_POLICIES["planner"]
+async def test_never_tokens_hang_is_bounded_when_a_watchdog_is_configured(
+        monkeypatch):
+    monkeypatch.setattr("v2.adapters.models.anyio.sleep", _no_sleep)
 
     class HangingAgent:
         def __init__(self, *a, **k):
@@ -35,24 +68,22 @@ async def test_never_tokens_hang_is_bounded(monkeypatch):
             await anyio.sleep_forever()
 
     monkeypatch.setattr("v2.adapters.models.Agent", HangingAgent)
-    m = ProviderStructuredModel("inception", "primary")
-    monkeypatch.setattr(m, "_models", lambda: [("inception", _Model())])
+    model = _stage_model(_watchdog())
     started = time.monotonic()
     with pytest.raises(RuntimeError, match="all structured-output providers failed"):
-        await m.generate(schema=TaskSpec, prompt="p",
-                         payload={"q": "x"}, envelope=_planner_envelope())
+        await model.generate(schema=TaskSpec, prompt="p",
+                             payload={"q": "x"}, envelope=_planner_envelope())
     elapsed = time.monotonic() - started
-    budget = policy["total_budget_s"]
-    assert elapsed >= budget - 0.5, f"hung call returned too fast ({elapsed:.2f}s)"
-    assert elapsed <= budget + 5.0, f"hung call exceeded bound ({elapsed:.2f}s)"
-    assert [f["message_class"] for f in m.last_failures] == ["timeout"] * policy["max_attempts"]
+    assert ROUTE_WATCHDOG_S - 0.5 <= elapsed <= ROUTE_WATCHDOG_S + 5.0
+    assert [failure["message_class"] for failure in model.last_failures] == [
+        "timeout", "timeout", "planner_deadline"]
     print(f"\nnever-tokens planner hang resolved in {elapsed:.2f}s "
-          f"(bound: {policy['max_attempts']}x{policy['attempt_timeout_s']}s budget {budget:.1f}s)")
-
+          f"(watchdog {ROUTE_WATCHDOG_S}s)")
 
 @pytest.mark.anyio
-async def test_slow_dribble_hang_is_bounded(monkeypatch):
-    policy = ROUTE_POLICIES["planner"]
+async def test_slow_dribble_hang_is_bounded_when_a_watchdog_is_configured(
+        monkeypatch):
+    monkeypatch.setattr("v2.adapters.models.anyio.sleep", _no_sleep)
 
     class DribblingAgent:
         def __init__(self, *a, **k):
@@ -60,23 +91,19 @@ async def test_slow_dribble_hang_is_bounded(monkeypatch):
 
         async def run(self, prompt):
             for _ in range(1000):
-                await anyio.sleep(0.2)
+                await REAL_SLEEP(0.2)
 
     monkeypatch.setattr("v2.adapters.models.Agent", DribblingAgent)
-    m = ProviderStructuredModel("inception", "primary")
-    monkeypatch.setattr(m, "_models", lambda: [("inception", _Model())])
+    model = _stage_model(_watchdog())
     started = time.monotonic()
     with pytest.raises(RuntimeError, match="all structured-output providers failed"):
-        await m.generate(schema=TaskSpec, prompt="p",
-                         payload={"q": "x"}, envelope=_planner_envelope())
+        await model.generate(schema=TaskSpec, prompt="p",
+                             payload={"q": "x"}, envelope=_planner_envelope())
     elapsed = time.monotonic() - started
-    budget = policy["total_budget_s"]
-    assert elapsed >= budget - 0.5, f"dribble returned too fast ({elapsed:.2f}s)"
-    assert elapsed <= budget + 5.0, f"dribble exceeded bound ({elapsed:.2f}s)"
-    assert [f["message_class"] for f in m.last_failures] == ["timeout"] * policy["max_attempts"]
+    assert ROUTE_WATCHDOG_S - 0.5 <= elapsed <= ROUTE_WATCHDOG_S + 5.0
+    assert len(model.last_failures) == 3
     print(f"\nslow-dribble planner hang resolved in {elapsed:.2f}s "
-          f"(bound: {policy['max_attempts']}x{policy['attempt_timeout_s']}s budget {budget:.1f}s)")
-
+          f"(watchdog {ROUTE_WATCHDOG_S}s)")
 
 @pytest.mark.anyio
 async def test_healthy_provider_unaffected(monkeypatch):
@@ -85,16 +112,20 @@ async def test_healthy_provider_unaffected(monkeypatch):
             pass
 
         async def run(self, prompt):
-            return _ok_result()
+            return type("R", (), {
+                "output": TaskSpec(goal="ok", mode="quick",
+                                   deliverable="x")})()
 
     monkeypatch.setattr("v2.adapters.models.Agent", HealthyAgent)
-    m = ProviderStructuredModel("inception", "primary")
-    monkeypatch.setattr(m, "_models", lambda: [("inception", _Model())])
+    model = _stage_model(_watchdog())
     started = time.monotonic()
-    out = await m.generate(schema=TaskSpec, prompt="p",
-                           payload={"q": "x"}, envelope=_planner_envelope())
+    out = await model.generate(schema=TaskSpec, prompt="p",
+                               payload={"q": "x"}, envelope=_planner_envelope())
     elapsed = time.monotonic() - started
     assert out.goal == "ok"
-    assert elapsed < 2.0, f"healthy call slowed ({elapsed:.2f}s)"
-    assert m.last_failures == []
+    assert elapsed < 2.0
+    assert model.last_failures == []
     print(f"\nhealthy planner call resolved in {elapsed:.3f}s")
+
+async def _no_sleep(value: float) -> None:
+    return None

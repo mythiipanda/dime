@@ -33,7 +33,6 @@ HEADERS = {
     )
 }
 
-
 COLS = [
     "SEASON_ID", "Player_ID", "Game_ID", "GAME_DATE", "MATCHUP", "WL",
     "MIN", "FGM", "FGA", "FG_PCT", "FG3M", "FG3A", "FG3_PCT",
@@ -41,23 +40,19 @@ COLS = [
     "BLK", "TOV", "PF", "PTS", "PLUS_MINUS", "VIDEO_AVAILABLE",
 ]
 
-
 def log(msg: str) -> None:
     line = f"{datetime.now().isoformat(timespec='seconds')} {msg}"
     print(line, flush=True)
     with open(LOG_FILE, "a") as fh:
         fh.write(line + "\n")
 
-
 def strip_suffix(name: str) -> str:
     return re.sub(r"\s+(jr|sr|ii|iii|iv)\.?$", "", name.strip(), flags=re.IGNORECASE)
-
 
 def norm_name(name: str) -> str:
     nfkd = unicodedata.normalize("NFKD", name)
     ascii_only = "".join(c for c in nfkd if not unicodedata.combining(c))
     return re.sub(r"[^a-z0-9]", "", ascii_only.lower())
-
 
 def loose_key(name: str) -> str:
     base = strip_suffix(name)
@@ -65,8 +60,6 @@ def loose_key(name: str) -> str:
     if len(parts) < 2:
         return norm_name(base)
     return norm_name(parts[-1]) + norm_name(parts[0])[:1]
-
-
 
 ALIAS_TARGETS = {
     "Jimmy Butler": "Jimmy Butler III",
@@ -80,7 +73,6 @@ ALIAS_TARGETS = {
     "Adama-Alpha Bal": "Adama Bal",
 }
 
-
 def build_alias_map(name_map: dict) -> dict:
     alias_map: dict = {}
     for alias, target in ALIAS_TARGETS.items():
@@ -92,7 +84,6 @@ def build_alias_map(name_map: dict) -> dict:
     log(f"alias map: {len(alias_map)} entries")
     return alias_map
 
-
 def load_name_map() -> dict:
     con = store.connect()
     try:
@@ -102,7 +93,6 @@ def load_name_map() -> dict:
     finally:
         con.close()
     if not rows:
-
 
         from nba_api.stats.static import players as _static_players
         rows = [(r["id"], r["full_name"]) for r in _static_players.get_players()]
@@ -116,7 +106,6 @@ def load_name_map() -> dict:
             log(f"WARN duplicate normalized name {name!r} -> {pid} (kept {mapping[key]})")
             continue
         mapping[key] = pid
-
 
     loose: dict = {}
     collide: set = set()
@@ -134,16 +123,13 @@ def load_name_map() -> dict:
     log(f"name map: {len(mapping)} entries ({len(loose)} loose keys)")
     return mapping
 
-
 def load_progress() -> dict:
     if PROGRESS_FILE.exists():
         return json.loads(PROGRESS_FILE.read_text())
     return {"done": [], "failed": {}}
 
-
 def save_progress(prog: dict) -> None:
     PROGRESS_FILE.write_text(json.dumps(prog, indent=1))
-
 
 def parse_int(text: str):
     text = (text or "").strip().replace("+", "")
@@ -154,7 +140,6 @@ def parse_int(text: str):
     except ValueError:
         return None
 
-
 def parse_float(text: str):
     text = (text or "").strip()
     if text in ("", "—", "-"):
@@ -164,14 +149,12 @@ def parse_float(text: str):
     except ValueError:
         return None
 
-
 def parse_minutes(text: str):
     text = (text or "").strip()
     m = re.match(r"(\d+):(\d+)", text)
     if not m:
         return None
     return int(m.group(1))
-
 
 def nba_date(iso: str) -> str:
     try:
@@ -180,11 +163,9 @@ def nba_date(iso: str) -> str:
     except ValueError:
         return iso
 
-
 def cell(row, stat: str) -> str:
     tds = row.xpath(f'./td[@data-stat="{stat}"]|./th[@data-stat="{stat}"]')
     return tds[0].text_content().strip() if tds else ""
-
 
 def parse_gamelog_table(table, nba_id: int) -> list:
     rows_out = []
@@ -237,7 +218,6 @@ def parse_gamelog_table(table, nba_id: int) -> list:
         })
     return rows_out
 
-
 def fetch_page(session: requests.Session, url: str, delay_holder: dict) -> str | None:
     for attempt in range(4):
         time.sleep(delay_holder["delay"])
@@ -260,7 +240,6 @@ def fetch_page(session: requests.Session, url: str, delay_holder: dict) -> str |
         time.sleep(10)
     return None
 
-
 def page_player_name(doc) -> str | None:
     h1 = doc.xpath("//h1")
     if not h1:
@@ -269,7 +248,6 @@ def page_player_name(doc) -> str | None:
 
     name = re.sub(r"\s+\d{4}-\d{2}\s+Game Log$", "", name).strip()
     return name or None
-
 
 def parse_inactive_rows(table, nba_id: int) -> list:
     out = []
@@ -290,7 +268,6 @@ def parse_inactive_rows(table, nba_id: int) -> list:
             "REASON": reason,
         })
     return out
-
 
 def save_inactive(rows: list, nba_id: int) -> int:
     if not rows:
@@ -317,14 +294,12 @@ def save_inactive(rows: list, nba_id: int) -> int:
         con.close()
     return len(rows)
 
-
 def save_rows(rows: list, table: str, nba_id: int, season: str) -> int:
     if not rows:
         return 0
     frame = pl.DataFrame(rows, schema=COLS)
     result = FetchResult(frame=frame, meta=FetchMeta(source=SOURCE, season=season))
     return store.save_frame(table, result, entity=f"player:{nba_id}")
-
 
 def main() -> None:
     limit = None
@@ -411,7 +386,6 @@ def main() -> None:
         f"fetch_fail={counts['fetch_fail']}")
     if failed:
         log(f"failed list ({len(failed)}): " + json.dumps(failed)[:2000])
-
 
 if __name__ == "__main__":
     main()

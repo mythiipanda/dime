@@ -1,4 +1,3 @@
-from pathlib import Path
 import pytest
 from v2.api.activity import ActivityJournal
 from v2.api.events import EVENT_ADAPTER
@@ -37,7 +36,7 @@ def test_recorded_capability_live_pair_safe_and_correlated():
  asyncio.run(cap.execute(PlanNode(id='CANARY_STEP',description='CANARY_DESC',capability_hints=['team_ratings'],arguments={'CANARY_KEY':'secret'}),TaskSpec(goal='g',mode='quick',deliverable='d'),[]))
  assert [x['kind'] for x in seen]==['tool_call','tool_result']
  assert seen[0]['correlation_id']==seen[1]['correlation_id']
- assert seen[0]['data']=={'name':'team_ratings','argument_count':1,'unknown_argument_count':1}
+ assert seen[0]['data']=={'name':'team_ratings','arguments':[],'argument_count':1,'unknown_argument_count':1}
  assert 'CANARY' not in str([item['data'] for item in seen])
 
 def test_recorded_capability_observer_failures_never_interfere():

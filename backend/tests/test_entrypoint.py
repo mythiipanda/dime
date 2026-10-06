@@ -18,7 +18,6 @@ PROBE = (
     "print(provider)\n"
 )
 
-
 def _child(value, unset=False):
     env = dict(os.environ)
     env.pop("DIME_RUNTIME_V2", None)
@@ -33,13 +32,11 @@ def _child(value, unset=False):
         timeout=180,
     )
 
-
 def _title_and_provider(proc):
     assert proc.returncode == 0
     lines = proc.stdout.strip().splitlines()
     assert len(lines) == 2
     return lines[0], lines[1]
-
 
 @pytest.mark.parametrize("value,unset", [
     ("on", False),

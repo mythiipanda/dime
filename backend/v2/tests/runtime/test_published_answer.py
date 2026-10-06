@@ -25,17 +25,14 @@ from v2.runtime import FakeCapability, PlanExecutor, Runtime
 from v2.runtime.assembly import MechanicalVerifier
 from v2.runtime.loop import _verified_claims
 from v2.runtime.models import (ExecutionResult, RuntimeResult,
-                               build_output_statuses,
                                withheld_claim_indices)
 
 ASSISTS = 880
 LEADER_ROWS = [{"PLAYER_ID": 9001, "PLAYER_NAME": "Ada Vega", "AST": ASSISTS}]
 
-
 @pytest.fixture
 def anyio_backend():
     return "asyncio"
-
 
 class Intake:
     async def understand(self, request: str) -> TaskSpec:
@@ -44,13 +41,11 @@ class Intake:
             deliverable="assists leader and total",
             requested_outputs=["AST"])
 
-
 class Planner:
     async def plan(self, task: TaskSpec) -> Plan:
         return Plan(nodes=[PlanNode(
             id="leaders", description="assists leaderboard",
             capability_hints=["qualified_leaders"])])
-
 
 class Synthesizer:
     def __init__(self, *claims: Claim) -> None:
@@ -59,14 +54,12 @@ class Synthesizer:
     async def synthesize(self, task, evidence) -> DraftReport:
         return DraftReport(sections=["Assists leader"], claims=list(self._claims))
 
-
 class PassingSemantic:
     async def verify(self, task, draft, evidence) -> VerificationReport:
         return VerificationReport(
             status=VerificationStatus.PASS,
             claim_results=[{"claim_index": index, "supported": True}
                            for index, _claim in enumerate(draft.claims)])
-
 
 def _assists_claim(declared_value: int) -> Claim:
     return Claim(
@@ -81,7 +74,6 @@ def _assists_claim(declared_value: int) -> Claim:
             unit={"kind": "declared", "value": "count"},
             domain="qualified_leaders")])
 
-
 def _runtime(*claims: Claim) -> Runtime:
     return Runtime(
         intake=Intake(),
@@ -91,7 +83,6 @@ def _runtime(*claims: Claim) -> Runtime:
         synthesizer=Synthesizer(*claims),
         mechanical_verifier=MechanicalVerifier(),
         semantic_verifier=PassingSemantic())
-
 
 @pytest.mark.anyio
 async def test_admitted_claim_prose_is_the_published_answer() -> None:
@@ -103,7 +94,6 @@ async def test_admitted_claim_prose_is_the_published_answer() -> None:
     assert text.splitlines()[0] == "Ada Vega led the league with 880 assists."
     assert "[player:" not in text
     assert "(count)" not in text
-
 
 @pytest.mark.anyio
 async def test_every_admitted_claim_publishes_in_claim_order() -> None:
@@ -117,7 +107,6 @@ async def test_every_admitted_claim_publishes_in_claim_order() -> None:
         "Ada Vega led the league with 880 assists.",
         "That lead is too large to catch."]
 
-
 @pytest.mark.anyio
 async def test_a_claim_whose_binding_admission_refused_publishes_no_prose() -> None:
     result = await _runtime(_assists_claim(ASSISTS + 1)).run(
@@ -128,7 +117,6 @@ async def test_a_claim_whose_binding_admission_refused_publishes_no_prose() -> N
     assert "880" not in text
     assert "AST could not be verified (rejected)." in text
     assert "Some requested outputs could not be published." in text
-
 
 _SERIES_NODE = "node_series"
 _SERIES_REQUIREMENT = "req_series"
@@ -189,7 +177,6 @@ _SERIES_TEXTS = [
     "with a score of 119 to 81.",
 ]
 
-
 def _series_envelope() -> EvidenceEnvelope:
     return EvidenceEnvelope(
         evidence_id="season_series:series-repro",
@@ -201,7 +188,6 @@ def _series_envelope() -> EvidenceEnvelope:
         entities=[],
         rows=dict(_SERIES_ROWS),
     )
-
 
 def _series_task() -> TaskSpec:
     return TaskSpec(
@@ -223,7 +209,6 @@ def _series_task() -> TaskSpec:
             requested_outputs=["WINNER", "SCORES"])],
     )
 
-
 def _series_claim(text: str, bindings: list, evidence_id: str) -> Claim:
     return Claim(
         text=text,
@@ -231,7 +216,6 @@ def _series_claim(text: str, bindings: list, evidence_id: str) -> Claim:
         evidence_ids=[evidence_id],
         output_bindings=list(bindings),
     )
-
 
 def _series_draft(envelope: EvidenceEnvelope) -> DraftReport:
     evidence_id = envelope.evidence_id
@@ -267,7 +251,6 @@ def _series_draft(envelope: EvidenceEnvelope) -> DraftReport:
         *(_series_claim(text, [], evidence_id) for text in _SERIES_TEXTS[2:]),
     ]
     return DraftReport(sections=["Season Series Results"], claims=claims)
-
 
 def test_series_answer_keeps_opener_per_game_lines_and_outcome() -> None:
     envelope = _series_envelope()

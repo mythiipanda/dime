@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 import argparse
 import os
 import sys
@@ -19,14 +18,12 @@ FAIL_ROWS = -1
 MAX_ATTEMPTS = 3
 BACKOFF_S = 2.0
 
-
 @dataclass
 class Unit:
     kind: str
     season: str
     scope: str
     label: str
-
 
 def unit_table(unit: Unit) -> str:
     if unit.kind == "pt_stats":
@@ -35,14 +32,12 @@ def unit_table(unit: Unit) -> str:
         return PT_DEFEND_TABLE
     return PT_SHOT_TABLE
 
-
 def unit_entity(unit: Unit) -> str:
     if unit.kind == "pt_stats":
         return f"ptstats:{unit.scope}:{unit.label}"
     if unit.kind == "pt_defend":
         return f"ptdefend:{unit.label}"
     return "ptshot:overall"
-
 
 def planned_units(seasons: list[str]) -> list[Unit]:
     units: list[Unit] = []
@@ -55,14 +50,12 @@ def planned_units(seasons: list[str]) -> list[Unit]:
         units.append(Unit("pt_shot", season, "", "overall"))
     return units
 
-
 def fetch(unit: Unit):
     if unit.kind == "pt_stats":
         return nba_stats.pt_stats(unit.scope, unit.label, unit.season)
     if unit.kind == "pt_defend":
         return nba_stats.pt_defend(unit.label, unit.season)
     return nba_stats.pt_shot(unit.season)
-
 
 def unit_complete(table: str, season: str, entity: str) -> bool:
     try:
@@ -88,7 +81,6 @@ def unit_complete(table: str, season: str, entity: str) -> bool:
             pass
     return row is not None and row[0] is not None and int(row[0]) >= 0
 
-
 def record_failure(table: str, season: str, entity: str) -> None:
     from datetime import datetime, timezone
 
@@ -111,7 +103,6 @@ def record_failure(table: str, season: str, entity: str) -> None:
                 raise
     finally:
         con.close()
-
 
 def run_unit(unit: Unit) -> bool:
     table = unit_table(unit)
@@ -137,7 +128,6 @@ def run_unit(unit: Unit) -> bool:
     print(f"failed {table} {unit.season} {entity}: {last}", flush=True)
     return False
 
-
 def resolve_target(scratch_db: str) -> Path | None:
     raw = scratch_db or os.environ.get("DIME_WAREHOUSE", "")
     if not raw:
@@ -149,7 +139,6 @@ def resolve_target(scratch_db: str) -> Path | None:
         print("refusing: target is the canonical warehouse")
         return None
     return target
-
 
 def table_count(table: str) -> int:
     try:
@@ -169,7 +158,6 @@ def table_count(table: str) -> int:
         except Exception:
             pass
 
-
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--seasons", default="2024-25,2025-26")
@@ -188,7 +176,6 @@ def main(argv: list[str] | None = None) -> int:
         return _run(args, target)
     finally:
         store.DB_PATH, store.LOCK_PATH = prior_db_path, prior_lock_path
-
 
 def _run(args, target) -> int:
     seasons = [s.strip() for s in str(args.seasons).split(",") if s.strip()]
@@ -217,7 +204,6 @@ def _run(args, target) -> int:
         print(f"{table}: {table_count(table)} rows")
     print(f"done units={done} failed={failed}")
     return 1 if failed else 0
-
 
 if __name__ == "__main__":
     raise SystemExit(main())

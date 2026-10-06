@@ -12,7 +12,6 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from shared import store
 from shared.tools import league
 
-
 @pytest.fixture()
 def small_warehouse(monkeypatch, tmp_path):
     wh = tmp_path / "wh.duckdb"
@@ -28,7 +27,6 @@ def small_warehouse(monkeypatch, tmp_path):
     league._clear_warehouse_schema_cache()
     yield wh
     league._clear_warehouse_schema_cache()
-
 
 def test_schema_cache_second_call_issues_no_queries(small_warehouse):
     present1, cols1 = league._get_warehouse_schema()
@@ -56,7 +54,6 @@ def test_schema_cache_second_call_issues_no_queries(small_warehouse):
     assert info2["hits"] >= 1
     assert info2["misses"] == 1
 
-
 def test_schema_cache_clear_rebuilds(small_warehouse):
     league._get_warehouse_schema()
     league._clear_warehouse_schema_cache()
@@ -66,7 +63,6 @@ def test_schema_cache_clear_rebuilds(small_warehouse):
     assert "silver_standings" in present
     assert league._warehouse_schema_cache_info()["misses"] == 1
 
-
 def _leader_rows():
     return [
         {"PLAYER": "A", "RANK": 1},
@@ -75,7 +71,6 @@ def _leader_rows():
         {"PLAYER": "D", "RANK": 0},
         {"PLAYER": "E"},
     ]
-
 
 @pytest.mark.parametrize("category", ["PTS", "REB", "AST"])
 def test_get_leaders_single_read_byte_identical(monkeypatch, category):

@@ -19,10 +19,8 @@ from v2.contracts import (
 )
 from v2.runtime.models import ExecutionResult, admit_verified_claim_bindings
 
-
 _NODE_ID = "qualified_leaders:05b5922eaefae72d"
 _REQUIREMENT_ID = "player_assists_leader_2024_25"
-
 
 def _rows():
     return [
@@ -44,7 +42,6 @@ def _rows():
         },
     ]
 
-
 def _envelope():
     return build_envelope(
         CAPABILITIES["qualified_leaders"],
@@ -58,7 +55,6 @@ def _envelope():
         entities=None,
         observed_at=datetime.now(UTC),
     )
-
 
 def _task():
     return TaskSpec(
@@ -76,7 +72,6 @@ def _task():
             requested_outputs=["PLAYER_NAME", "AST"],
         )],
     )
-
 
 def _bindings(node_id=_NODE_ID, evidence_id=_NODE_ID):
     return [
@@ -112,7 +107,6 @@ def _bindings(node_id=_NODE_ID, evidence_id=_NODE_ID):
         ),
     ]
 
-
 def _node(node_id=_NODE_ID):
     return PlanNode(
         id=node_id,
@@ -122,7 +116,6 @@ def _node(node_id=_NODE_ID):
         arguments={"stat_category": "AST", "season": "2024-25"},
         status="complete",
     )
-
 
 def _admit(task, envelope, bindings, nodes=None):
     nodes = nodes or [_node()]
@@ -158,7 +151,6 @@ def _admit(task, envelope, bindings, nodes=None):
     )
     return admit_verified_claim_bindings(task, execution, draft, verified)
 
-
 def test_evidence_scope_binding_citing_node_id_admits_with_corrected_id():
     envelope = _envelope()
     assert envelope.evidence_id != _NODE_ID
@@ -166,7 +158,6 @@ def test_evidence_scope_binding_citing_node_id_admits_with_corrected_id():
     assert all(item.evidence_id == envelope.evidence_id for item in admitted.output_bindings)
     assert admitted.evidence_ids == [envelope.evidence_id]
     assert [item.evidence_id for item in admitted.sources] == [envelope.evidence_id]
-
 
 def test_evidence_scope_binding_without_node_evidence_still_rejects():
     envelope = _envelope()

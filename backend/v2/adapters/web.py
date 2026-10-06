@@ -12,7 +12,6 @@ from urllib.parse import urlparse
 import httpx
 from pydantic import BaseModel, ConfigDict, Field, HttpUrl, StrictInt, model_validator
 
-
 class WebSearchRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -35,7 +34,6 @@ class WebSearchRequest(BaseModel):
             raise ValueError("include_domains and exclude_domains are exclusive")
         return self
 
-
 class WebSearchResult(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -54,7 +52,6 @@ class WebSearchResult(BaseModel):
         if self.published_at is not None and self.published_at.utcoffset() is None:
             raise ValueError("web search published_at must include timezone")
         return self
-
 
 class WebSearchResponse(BaseModel):
     model_config = ConfigDict(extra="forbid")
@@ -81,13 +78,11 @@ class WebSearchResponse(BaseModel):
             raise ValueError("web search warnings must be unique")
         return self
 
-
 class WebFetchRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     search_evidence_id: str | None = Field(default=None, min_length=1, max_length=256)
     result_rank: StrictInt = Field(ge=1, le=8)
-
 
 class WebPage(BaseModel):
     model_config = ConfigDict(extra="forbid")
@@ -119,18 +114,15 @@ class WebPage(BaseModel):
             raise ValueError("web page content hash does not match markdown")
         return self
 
-
 class WebSearchProvider(Protocol):
     name: str
 
     async def search(self, request: WebSearchRequest) -> WebSearchResponse: ...
 
-
 class WebFetchProvider(Protocol):
     name: str
 
     async def fetch(self, result: WebSearchResult) -> WebPage: ...
-
 
 def _domain(value: str) -> str:
     parsed = urlparse("//" + value if "://" not in value else value)
@@ -139,12 +131,10 @@ def _domain(value: str) -> str:
         raise ValueError(f"invalid domain {value!r}")
     return host
 
-
 def _is_public_ip(value: str) -> bool:
     ip = ipaddress.ip_address(value)
     return not any((ip.is_private, ip.is_loopback, ip.is_link_local,
                     ip.is_multicast, ip.is_reserved, ip.is_unspecified))
-
 
 async def validate_public_url(url: str) -> str:
     parsed = urlparse(url)
@@ -166,7 +156,6 @@ async def validate_public_url(url: str) -> str:
         if not _is_public_ip(str(literal)):
             raise ValueError("web source uses a non-public address")
     return url
-
 
 class DuckDuckGoSearch:
 
@@ -219,7 +208,6 @@ class DuckDuckGoSearch:
             warnings=["DuckDuckGo exposes no official full-results API; availability may change."],
         )
 
-
 class JinaReader:
 
     name = "jina-reader"
@@ -269,7 +257,6 @@ class JinaReader:
             retrieved_at=datetime.now().astimezone(), markdown=markdown,
             content_hash=hashlib.sha256(markdown.encode()).hexdigest())
 
-
 class WebSearchCapability:
 
     name = "web_search"
@@ -308,7 +295,6 @@ class WebSearchCapability:
             coverage=response.coverage,
             warnings=response.warnings,
         )
-
 
 class WebFetchCapability:
 
@@ -377,7 +363,6 @@ class WebFetchCapability:
             coverage="Full extracted page text from one selected discovery result.",
             lineage=[parent.evidence_id],
         )
-
 
 def _web_evidence_id(
     capability: str, arguments: Any, rows: Any,

@@ -1,5 +1,3 @@
-import datetime as dt
-import json
 import sys
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
@@ -9,7 +7,6 @@ from shared import store
 from shared.tools import TOOL_NAMES, get_player_report
 from shared.tools import _core as core_mod
 from v2.adapters import coverage as coverage_mod
-
 
 @pytest.fixture()
 def warehouse(monkeypatch, tmp_path):
@@ -38,18 +35,15 @@ def warehouse(monkeypatch, tmp_path):
     core_mod.last_completed_season_cache_clear()
     coverage_mod.coverage_cache_clear()
 
-
 def test_registered(): assert "get_player_report" in TOOL_NAMES
 
-def test_lebron_report_has_all_four_parts():
-    o=get_player_report.invoke({"player":"LeBron James"})
-    assert o["ok"]
-    assert set(o["rows"]) == {"season_line","advanced","shot_profile","clutch"}
-    assert len(o["rows"]["shot_profile"]) >= 5
-    assert o["rows"]["clutch"]["PTS"] > 0
-    text=o["meta"]["deterministic_answer"]
-    for x in ("20.9 PPG","59.4% true shooting","Restricted Area","Clutch:"):
-        assert x in text
+def test_lebron_report_names_the_absent_season_table():
+    pytest = __import__("pytest")
+    with pytest.raises(store.TableAbsent) as info:
+        get_player_report.invoke({"player": "LeBron James"})
+    assert info.value.table == "silver_player_season"
+    assert str(store.DB_PATH) == info.value.warehouse
+    assert store.DB_PATH.name in str(info.value)
 
 def test_historical_report_stays_warehouse_bounded(monkeypatch):
     from shared.tools import player as module

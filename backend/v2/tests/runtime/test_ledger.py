@@ -11,7 +11,6 @@ from v2.runtime.ledger import (
     TerminalReason,
 )
 
-
 def test_request_envelope_hashes_exact_model_inputs() -> None:
     first = RequestEnvelope.freeze(
         provider="free", model="model", route="prediction", prompt="p",
@@ -33,7 +32,6 @@ def test_request_envelope_hashes_exact_model_inputs() -> None:
     with pytest.raises(Exception):
         first.route = "other"
 
-
 def test_ledger_entry_bounds_top_level_payload_fields() -> None:
     from datetime import UTC, datetime
     from pydantic import ValidationError
@@ -47,7 +45,6 @@ def test_ledger_entry_bounds_top_level_payload_fields() -> None:
             data={str(index): index for index in range(65)},
         )
 
-
 def test_tool_call_identity_is_immutable() -> None:
     ledger = RunLedger("run")
     ledger.append(LedgerKind.TOOL_CALL, turn_id="t", step_id="s", call_id="c",
@@ -60,7 +57,6 @@ def test_tool_call_identity_is_immutable() -> None:
     with pytest.raises(ValueError, match="earlier tool call"):
         ledger.append(LedgerKind.TOOL_RESULT, turn_id="t", call_id="missing",
                       data={"status": "ok"})
-
 
 def test_failed_attempts_remain_in_log_but_not_model_history() -> None:
     ledger = RunLedger("run")
@@ -81,7 +77,6 @@ def test_failed_attempts_remain_in_log_but_not_model_history() -> None:
         "provider": "p", "model": "m", "used_fallback": False,
     }]
 
-
 def test_interrupted_run_gets_explicit_terminal_closers() -> None:
     ledger = RunLedger("run")
     ledger.append(LedgerKind.TURN_START, turn_id="t", data={"request": "q"})
@@ -92,7 +87,6 @@ def test_interrupted_run_gets_explicit_terminal_closers() -> None:
     ]
     assert ledger.entries[-1].data == {"reason": "cancelled"}
 
-
 def test_file_ledger_is_append_only_and_reloadable(tmp_path: Path) -> None:
     path = tmp_path / "run.jsonl"
     file = FileLedger(path, "run")
@@ -102,13 +96,11 @@ def test_file_ledger_is_append_only_and_reloadable(tmp_path: Path) -> None:
     assert loaded.ledger.entries == file.ledger.entries
     assert [entry.sequence for entry in loaded.ledger.entries] == [1, 2]
 
-
 def test_file_ledger_exposes_runtime_surface(tmp_path: Path) -> None:
     file = FileLedger(tmp_path / "run.jsonl", "run")
     file.append(LedgerKind.TURN_START, turn_id="t", data={"request": "q"})
     assert file.run_id == "run"
     assert len(file.entries) == 1
-
 
 def test_ledger_contracts_reject_unknown_fields() -> None:
     from datetime import UTC, datetime
@@ -129,7 +121,6 @@ def test_ledger_contracts_reject_unknown_fields() -> None:
             "extra_field": True,
         })
 
-
 def test_tool_call_has_exactly_one_terminal_result() -> None:
     ledger = RunLedger("run")
     ledger.append(LedgerKind.TOOL_CALL, turn_id="t", call_id="c",
@@ -142,7 +133,6 @@ def test_tool_call_has_exactly_one_terminal_result() -> None:
     with pytest.raises(ValueError, match="cannot follow its result"):
         ledger.append(LedgerKind.TOOL_CALL, turn_id="t", call_id="c",
                       data={"name": "standings", "args": {}})
-
 
 def test_reloaded_ledger_rejects_duplicate_tool_results() -> None:
     from datetime import UTC, datetime
@@ -158,11 +148,9 @@ def test_reloaded_ledger_rejects_duplicate_tool_results() -> None:
     with pytest.raises(ValueError, match="only one result"):
         RunLedger("run", [call, result, duplicate])
 
-
 def test_ledger_run_identity_must_be_non_empty() -> None:
     with pytest.raises(ValueError, match="run id must be non-empty"):
         RunLedger(" ")
-
 
 @pytest.mark.parametrize(
     "kwargs,error",
@@ -175,7 +163,6 @@ def test_ledger_run_identity_must_be_non_empty() -> None:
 def test_ledger_event_identities_must_be_non_empty(kwargs, error) -> None:
     with pytest.raises(ValueError, match=error):
         RunLedger("run").append(LedgerKind.TURN_START, data={"request": "q"}, **kwargs)
-
 
 @pytest.mark.parametrize(
     "data,error",
@@ -190,7 +177,6 @@ def test_tool_call_data_shape_is_strict(data, error) -> None:
         RunLedger("run").append(
             LedgerKind.TOOL_CALL, turn_id="turn", call_id="call", data=data,
         )
-
 
 @pytest.mark.parametrize(
     "data,error",
@@ -208,7 +194,6 @@ def test_tool_result_data_shape_is_strict(data, error) -> None:
                   data={"name": "standings", "args": {}})
     with pytest.raises(ValueError, match=error):
         ledger.append(LedgerKind.TOOL_RESULT, turn_id="turn", call_id="call", data=data)
-
 
 def test_reloaded_ledger_rejects_invalid_turn_and_step_order() -> None:
     from datetime import UTC, datetime
@@ -235,7 +220,6 @@ def test_reloaded_ledger_rejects_invalid_turn_and_step_order() -> None:
         RunLedger("run", [entry(1, "turn/start"), entry(2, "turn/end"),
                           entry(3, "assistant/attempt")])
 
-
 def test_live_ledger_enforces_turn_and_step_lifecycle() -> None:
     ledger = RunLedger("run")
     with pytest.raises(ValueError, match="open turn"):
@@ -250,7 +234,6 @@ def test_live_ledger_enforces_turn_and_step_lifecycle() -> None:
     with pytest.raises(ValueError, match="follow turn end"):
         ledger.append(LedgerKind.ASSISTANT_ATTEMPT, turn_id="turn")
 
-
 def test_reloaded_ledger_rejects_blank_event_identity() -> None:
     from datetime import UTC, datetime
     from v2.runtime.ledger import LedgerEntry
@@ -261,7 +244,6 @@ def test_reloaded_ledger_rejects_blank_event_identity() -> None:
     )
     with pytest.raises(ValueError, match="turn id must be non-empty"):
         RunLedger("run", [entry])
-
 
 def test_reloaded_ledger_rejects_malformed_tool_payload() -> None:
     from datetime import UTC, datetime
@@ -274,7 +256,6 @@ def test_reloaded_ledger_rejects_malformed_tool_payload() -> None:
     with pytest.raises(ValueError, match="exactly name and args"):
         RunLedger("run", [call])
 
-
 @pytest.mark.parametrize("field", ["provider", "model", "route", "planner_version"])
 def test_request_envelope_requires_nonempty_identity(field) -> None:
     values = {
@@ -285,7 +266,6 @@ def test_request_envelope_requires_nonempty_identity(field) -> None:
     values[field] = " "
     with pytest.raises(ValueError, match=field):
         RequestEnvelope.freeze(**values)
-
 
 def test_request_envelope_loaded_contract_validates_identity_and_maps() -> None:
     with pytest.raises(Exception, match="prompt_hash"):
@@ -302,12 +282,10 @@ def test_request_envelope_loaded_contract_validates_identity_and_maps() -> None:
             "budgets": {" ": 1},
         })
 
-
 @pytest.mark.parametrize("kind", [LedgerKind.MODEL_REQUEST, LedgerKind.ASSISTANT_ATTEMPT])
 def test_model_call_events_require_call_id(kind) -> None:
     with pytest.raises(ValueError, match="require call_id"):
         RunLedger("run").append(kind, turn_id="turn", data={})
-
 
 def test_model_request_attempt_pairing_is_strict() -> None:
     envelope = RequestEnvelope.freeze(
@@ -326,7 +304,6 @@ def test_model_request_attempt_pairing_is_strict() -> None:
                       data={"status": "accepted", "output": {}, "provider": "p",
                             "model": "m", "used_fallback": False})
 
-
 @pytest.mark.parametrize("data", [
     {"status": "failed", "error": " "},
     {"status": "accepted", "output": {}, "provider": "p", "model": "m"},
@@ -342,12 +319,10 @@ def test_assistant_attempt_payload_shape_is_strict(data) -> None:
     with pytest.raises(ValueError, match="assistant attempt"):
         ledger.append(LedgerKind.ASSISTANT_ATTEMPT, turn_id="t", call_id="m1", data=data)
 
-
 @pytest.mark.parametrize("kind", [LedgerKind.STEP_START, LedgerKind.STEP_END])
 def test_step_events_require_step_identity(kind) -> None:
     with pytest.raises(ValueError, match="require step_id"):
         RunLedger("run").append(kind, turn_id="turn")
-
 
 @pytest.mark.parametrize("kind", [LedgerKind.TURN_START, LedgerKind.TURN_END])
 def test_turn_events_reject_step_identity(kind) -> None:
@@ -358,7 +333,6 @@ def test_turn_events_reject_step_identity(kind) -> None:
         ledger.append(kind, turn_id="turn", step_id="bad",
                       data=({"reason": "complete"} if kind == LedgerKind.TURN_END
                             else {"request": "q"}))
-
 
 @pytest.mark.parametrize("kind,kwargs", [
     (LedgerKind.STEP_END, {"step_id": "plan"}),
@@ -372,12 +346,10 @@ def test_terminal_ledger_events_require_reason(kind, kwargs) -> None:
     with pytest.raises(ValueError, match="valid reason"):
         ledger.append(kind, turn_id="turn", **kwargs)
 
-
 @pytest.mark.parametrize("data", [{}, {"request": " "}, {"request": "q", "extra": True}])
 def test_turn_start_payload_shape_is_strict(data) -> None:
     with pytest.raises(ValueError, match="non-empty request"):
         RunLedger("run").append(LedgerKind.TURN_START, turn_id="turn", data=data)
-
 
 def test_step_start_payload_must_be_empty() -> None:
     ledger = RunLedger("run")
@@ -385,7 +357,6 @@ def test_step_start_payload_must_be_empty() -> None:
     with pytest.raises(ValueError, match="must be empty"):
         ledger.append(LedgerKind.STEP_START, turn_id="turn", step_id="plan",
                       data={"request": "q"})
-
 
 def test_assistant_attempt_identity_matches_request_and_fallback_flag() -> None:
     envelope = RequestEnvelope.freeze(
@@ -408,7 +379,6 @@ def test_assistant_attempt_identity_matches_request_and_fallback_flag() -> None:
     ledger.append(LedgerKind.ASSISTANT_ATTEMPT, turn_id="t", call_id="m3",
                   data={**accepted, "model": "backup", "used_fallback": True})
 
-
 def test_unfinished_steps_and_interruption_are_turn_scoped() -> None:
     ledger = RunLedger("run")
     ledger.append(LedgerKind.TURN_START, turn_id="t1", data={"request": "q1"})
@@ -424,7 +394,6 @@ def test_unfinished_steps_and_interruption_are_turn_scoped() -> None:
     assert ledger.entries[-2].turn_id == "t2"
     assert ledger.entries[-2].step_id == "shared"
 
-
 @pytest.mark.parametrize("value,error", [
     (-1, "finite non-negative"), (float("nan"), "finite non-negative"),
     (float("inf"), "finite non-negative"), (True, "valid integer|valid number"),
@@ -435,7 +404,6 @@ def test_request_envelope_rejects_invalid_budget_values(value, error) -> None:
             provider="p", model="m", route="answer", prompt="p", context={},
             tool_schemas={}, planner_version="v2", budgets={"seconds": value})
 
-
 @pytest.mark.parametrize("field", ["prompt_hash", "context_hash", "tool_schema_hash"])
 def test_request_envelope_requires_canonical_hashes(field) -> None:
     envelope = RequestEnvelope.freeze(
@@ -445,7 +413,6 @@ def test_request_envelope_requires_canonical_hashes(field) -> None:
     with pytest.raises(Exception, match="lowercase sha256"):
         RequestEnvelope.model_validate(envelope)
 
-
 def test_file_ledger_write_failure_does_not_mutate_memory(tmp_path) -> None:
     class Fail:
         def write(self, fd, payload): raise OSError("disk full")
@@ -453,7 +420,6 @@ def test_file_ledger_write_failure_does_not_mutate_memory(tmp_path) -> None:
     with pytest.raises(OSError, match="disk full"):
         file.append(LedgerKind.TURN_START, turn_id="turn", data={"request": "q"})
     assert file.entries == ()
-
 
 def test_file_ledger_fsyncs_directory_on_creation(tmp_path, monkeypatch) -> None:
     calls = []
@@ -466,7 +432,6 @@ def test_file_ledger_fsyncs_directory_on_creation(tmp_path, monkeypatch) -> None
     file.append(LedgerKind.TURN_START, turn_id="turn", data={"request": "q"})
     assert len(calls) == 2
 
-
 def test_file_ledger_rejects_unterminated_partial_tail(tmp_path) -> None:
     path = tmp_path / "run.jsonl"
     file = FileLedger(path, "run")
@@ -475,13 +440,11 @@ def test_file_ledger_rejects_unterminated_partial_tail(tmp_path) -> None:
     with pytest.raises(ValueError, match="incomplete trailing record"):
         FileLedger(path, "run")
 
-
 def test_ledger_tail_recovery_fsyncs_file_and_directory(tmp_path, monkeypatch) -> None:
     path = tmp_path / "run.jsonl"
     path.write_text('{"sequence":1')
     with pytest.raises(ValueError, match="incomplete trailing record"):
         FileLedger(path, "run")
-
 
 def test_file_ledger_rejects_blank_records(tmp_path) -> None:
     path = tmp_path / "run.jsonl"
@@ -490,7 +453,6 @@ def test_file_ledger_rejects_blank_records(tmp_path) -> None:
     path.write_text(path.read_text() + "\n")
     with pytest.raises(ValueError, match="blank records"):
         FileLedger(path, "run")
-
 
 def test_file_ledgers_for_same_path_share_lock_and_refresh_state(tmp_path) -> None:
     path = tmp_path / "run.jsonl"
@@ -501,7 +463,6 @@ def test_file_ledgers_for_same_path_share_lock_and_refresh_state(tmp_path) -> No
     second.append(LedgerKind.TURN_END, turn_id="turn", data={"reason": "complete"})
     assert [entry.sequence for entry in FileLedger(path, "run").entries] == [1, 2]
 
-
 def test_file_ledger_entries_refresh_after_independent_writer(tmp_path) -> None:
     path = tmp_path / "run.jsonl"
     reader = FileLedger(path, "run")
@@ -509,7 +470,6 @@ def test_file_ledger_entries_refresh_after_independent_writer(tmp_path) -> None:
     writer.append(
         LedgerKind.TURN_START, turn_id="turn", data={"request": "answer"})
     assert [entry.sequence for entry in reader.entries] == [1]
-
 
 def test_file_ledger_load_is_serialized_with_same_path_writes(tmp_path) -> None:
     path = tmp_path / "run.jsonl"
@@ -530,7 +490,6 @@ def test_file_ledger_load_is_serialized_with_same_path_writes(tmp_path) -> None:
     thread.join(timeout=1)
     assert finished.is_set()
 
-
 def test_request_envelope_rejects_malformed_skill_hash() -> None:
     with pytest.raises(ValueError, match="skill hashes must be lowercase sha256"):
         RequestEnvelope.freeze(
@@ -538,7 +497,6 @@ def test_request_envelope_rejects_malformed_skill_hash() -> None:
             context={}, tool_schemas={}, planner_version="v2",
             skill_hashes={"trade-analysis": "not-a-hash"},
         )
-
 
 def test_file_ledger_rejects_symlinked_record(tmp_path) -> None:
     outside = tmp_path / "outside.jsonl"
@@ -549,7 +507,6 @@ def test_file_ledger_rejects_symlinked_record(tmp_path) -> None:
     path.symlink_to(outside)
     with pytest.raises(ValueError, match="cannot be a symlink"):
         FileLedger(path, "run")
-
 
 def test_ledger_entry_requires_timezone_aware_recording_time() -> None:
     from datetime import datetime
@@ -573,7 +530,6 @@ def test_ledger_entry_requires_timezone_aware_recording_time() -> None:
             data={"request": "answer"},
         )
 
-
 def test_run_ledger_rejects_decreasing_timestamps() -> None:
     from datetime import UTC, datetime, timedelta
     from v2.runtime.ledger import LedgerEntry
@@ -592,7 +548,6 @@ def test_run_ledger_rejects_decreasing_timestamps() -> None:
     ]
     with pytest.raises(ValueError, match="timestamps must be nondecreasing"):
         RunLedger("run", entries)
-
 
 def test_run_ledger_clamps_backward_wall_clock(monkeypatch) -> None:
     from datetime import UTC, datetime, timedelta
@@ -614,7 +569,6 @@ def test_run_ledger_clamps_backward_wall_clock(monkeypatch) -> None:
         LedgerKind.TURN_END, turn_id="turn", data={"reason": "complete"})
     assert first.recorded_at == second.recorded_at == first_time
 
-
 def test_file_ledger_rejects_symlinked_parent(tmp_path) -> None:
     outside = tmp_path / "outside"
     outside.mkdir()
@@ -622,7 +576,6 @@ def test_file_ledger_rejects_symlinked_parent(tmp_path) -> None:
     parent.symlink_to(outside, target_is_directory=True)
     with pytest.raises(ValueError, match="parent cannot be a symlink"):
         FileLedger(parent / "run.jsonl", "run")
-
 
 @pytest.mark.parametrize("value", [True, "1", 1.0])
 def test_ledger_sequence_is_a_strict_integer(value) -> None:
@@ -634,7 +587,6 @@ def test_ledger_sequence_is_a_strict_integer(value) -> None:
         LedgerEntry(sequence=value, run_id="run", kind="turn/start",
                     recorded_at=datetime.now(UTC), turn_id="turn",
                     data={"request": "question"})
-
 
 def test_ledger_identity_text_has_hard_limits() -> None:
     from datetime import UTC, datetime
@@ -660,20 +612,17 @@ def test_assistant_attempt_rejects_unclosed_taxonomy_identifiers(field,value):
     if field=='failure_route':attempt['route']=value
     with pytest.raises(ValueError):LedgerEntry(sequence=1,run_id='run',kind='assistant/attempt',turn_id='run',call_id='model:1',data={'status':'failed','error':'bounded','provider_attempts':[attempt]})
 
-
 @pytest.mark.parametrize('value',['', 'private_subtype', None, 1])
 def test_assistant_attempt_rejects_unclosed_validation_subtype(value):
     from v2.runtime import LedgerEntry
     attempt={'route':'semantic_verifier','provider':'inception','model':'mercury-2.5','attempt_number':1,'exception_type':'UnexpectedModelBehavior','message_class':'structured_output','latency_ms':1,'failure_top_class':'UnexpectedModelBehavior','failure_class_chain':['UnexpectedModelBehavior'],'failure_phase':'json_or_schema_validation','failure_validation_errors':[],'failure_validation_subtype':value,'failure_schema_sha256':'a'*64,'failure_route':'semantic_verifier'}
     with pytest.raises(ValueError):LedgerEntry(sequence=1,run_id='run',kind='assistant/attempt',turn_id='run',call_id='model:1',data={'status':'failed','error':'bounded','provider_attempts':[attempt]})
 
-
 def test_assistant_attempt_accepts_not_applicable_validation_subtype():
     from v2.runtime import LedgerEntry
     attempt={'route':'semantic_verifier','provider':'inception','model':'mercury-2.5','attempt_number':1,'exception_type':'APITimeoutError','message_class':'timeout','latency_ms':1,'failure_top_class':'APITimeoutError','failure_class_chain':['APITimeoutError'],'failure_phase':'timeout','failure_validation_errors':[],'failure_validation_subtype':'not_applicable','failure_schema_sha256':'a'*64,'failure_route':'semantic_verifier'}
     from datetime import UTC,datetime
     LedgerEntry(sequence=1,run_id='run',kind='assistant/attempt',recorded_at=datetime.now(UTC),turn_id='run',call_id='model:1',data={'status':'failed','error':'bounded','provider_attempts':[attempt]})
-
 
 @pytest.mark.parametrize(('phase','subtype'),[
     ('timeout','other_contract_invariant'),
@@ -685,13 +634,11 @@ def test_assistant_attempt_rejects_phase_subtype_mismatch(phase,subtype):
     ledger=RunLedger('run');ledger.append('model/request',turn_id='run',call_id='model:1',data={'provider':'inception','model':'mercury-2.5','route':'semantic_verifier','prompt_hash':'a'*64,'context_hash':'b'*64,'tool_schema_hash':'c'*64,'planner_version':'v2','budgets':{},'skill_hashes':{}})
     with pytest.raises(ValueError):ledger.append('assistant/attempt',turn_id='run',call_id='model:1',data={'status':'failed','error':'bounded','provider_attempts':[attempt]})
 
-
 def test_assistant_attempt_accepts_validation_other_contract_subtype():
     from v2.runtime import RunLedger
     attempt={'route':'semantic_verifier','provider':'inception','model':'mercury-2.5','attempt_number':1,'exception_type':'UnexpectedModelBehavior','message_class':'structured_output','latency_ms':1,'failure_top_class':'UnexpectedModelBehavior','failure_class_chain':['UnexpectedModelBehavior'],'failure_phase':'json_or_schema_validation','failure_validation_errors':[],'failure_validation_subtype':'other_contract_invariant','failure_schema_sha256':'a'*64,'failure_route':'semantic_verifier'}
     ledger=RunLedger('run');ledger.append('model/request',turn_id='run',call_id='model:1',data={'provider':'inception','model':'mercury-2.5','route':'semantic_verifier','prompt_hash':'a'*64,'context_hash':'b'*64,'tool_schema_hash':'c'*64,'planner_version':'v2','budgets':{},'skill_hashes':{}})
     ledger.append('assistant/attempt',turn_id='run',call_id='model:1',data={'status':'failed','error':'bounded','provider_attempts':[attempt]})
-
 
 def _carried_row(**overrides):
     row = {"route": "requirement_review", "capability_id": "team_ratings",
@@ -699,14 +646,12 @@ def _carried_row(**overrides):
     row.update(overrides)
     return row
 
-
 def _append_model_request(ledger):
     envelope = RequestEnvelope.freeze(
         provider="p", model="m", route="answer", prompt="p", context={},
         tool_schemas={}, planner_version="v2")
     ledger.append(LedgerKind.MODEL_REQUEST, turn_id="t", call_id="c",
                   data=envelope.model_dump(mode="json"))
-
 
 def test_ledger_accepts_carried_from_intake_shape():
     ledger = RunLedger("run")
@@ -717,7 +662,6 @@ def test_ledger_accepts_carried_from_intake_shape():
         "provider": "p", "model": "m", "used_fallback": False,
         "carried_from_intake": [row]})
     assert ledger.entries[-1].data["carried_from_intake"] == [row]
-
 
 @pytest.mark.parametrize("row", [
     _carried_row(rule="other-rule"),
@@ -734,7 +678,6 @@ def test_ledger_rejects_malformed_carried_from_intake(row):
         ledger.append(LedgerKind.ASSISTANT_ATTEMPT, turn_id="t", call_id="c", data={
             "status": "accepted", "output": {}, "provider": "p", "model": "m",
             "used_fallback": False, "carried_from_intake": [row]})
-
 
 @pytest.mark.anyio
 async def test_recorded_model_ledger_accepts_carried_from_intake_end_to_end():
@@ -767,7 +710,6 @@ async def test_recorded_model_ledger_accepts_carried_from_intake_end_to_end():
     assert last.kind == LedgerKind.ASSISTANT_ATTEMPT
     assert last.data["carried_from_intake"] == [row]
 
-
 @pytest.mark.anyio
 async def test_recorded_model_attempt_carries_wall_clock_duration():
     import anyio
@@ -793,7 +735,6 @@ async def test_recorded_model_attempt_carries_wall_clock_duration():
     assert not isinstance(last.data["duration_ms"], bool)
     assert last.data["duration_ms"] >= 0
 
-
 @pytest.mark.anyio
 async def test_recorded_model_failure_carries_wall_clock_duration():
     from v2.adapters.models import RecordedStructuredModel
@@ -817,7 +758,6 @@ async def test_recorded_model_failure_carries_wall_clock_duration():
     assert isinstance(last.data["duration_ms"], int)
     assert last.data["duration_ms"] >= 0
 
-
 @pytest.mark.parametrize("status,extra", [
     ("accepted", {"output": {}, "provider": "p", "model": "m",
                   "used_fallback": False}),
@@ -830,7 +770,6 @@ def test_ledger_accepts_wall_clock_duration_on_assistant_attempt(
     ledger.append(LedgerKind.ASSISTANT_ATTEMPT, turn_id="t", call_id="c",
                   data={"status": status, "duration_ms": 7, **extra})
     assert ledger.entries[-1].data["duration_ms"] == 7
-
 
 @pytest.mark.parametrize("duration_ms", [-1, True, "7", 1.5, None])
 def test_ledger_rejects_malformed_wall_clock_duration(duration_ms) -> None:

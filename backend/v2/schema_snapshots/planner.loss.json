@@ -1,62 +1,6 @@
 {
-  "candidate_schema_sha256": "b65d638dc789e39c3abbfd1dc23746ca7846855fd5c4253e212f8556bd5bfd89",
+  "candidate_schema_sha256": "549d6faa823766fd1eccf7b0d43875f9b5187b845ac8857d16452399d1f0ca78",
   "hash_canonicalization": "UTF-8 sorted-key compact JSON",
-  "losses": [
-    {
-      "classification": "optional-materialized-nullable",
-      "default": null,
-      "path": "$.properties.nodes.anyOf[].items.properties.arguments.anyOf[].properties.entries.anyOf[].items.properties.value"
-    },
-    {
-      "classification": "optional-materialized-nullable",
-      "default": null,
-      "path": "$.properties.nodes.anyOf[].items.properties.arguments.anyOf[].properties.entries.anyOf[].items.properties.bool_value"
-    },
-    {
-      "classification": "optional-materialized-nullable",
-      "default": null,
-      "path": "$.properties.nodes.anyOf[].items.properties.arguments.anyOf[].properties.entries.anyOf[].items.properties.int_value"
-    },
-    {
-      "classification": "optional-materialized-nullable",
-      "default": null,
-      "path": "$.properties.nodes.anyOf[].items.properties.arguments.anyOf[].properties.entries.anyOf[].items.properties.number_value"
-    },
-    {
-      "classification": "optional-materialized-nullable",
-      "default": null,
-      "path": "$.properties.nodes.anyOf[].items.properties.arguments.anyOf[].properties.entries.anyOf[].items.properties.decimal_value"
-    },
-    {
-      "classification": "optional-materialized-nullable",
-      "default": null,
-      "path": "$.properties.nodes.anyOf[].items.properties.arguments.anyOf[].properties.entries.anyOf[].items.properties.string_value"
-    },
-    {
-      "classification": "optional-materialized-nullable",
-      "default": null,
-      "path": "$.properties.nodes.anyOf[].items.properties.arguments.anyOf[].properties.entries.anyOf[].items.properties.bool_list_value"
-    },
-    {
-      "classification": "optional-materialized-nullable",
-      "default": null,
-      "path": "$.properties.nodes.anyOf[].items.properties.arguments.anyOf[].properties.entries.anyOf[].items.properties.int_list_value"
-    },
-    {
-      "classification": "optional-materialized-nullable",
-      "default": null,
-      "path": "$.properties.nodes.anyOf[].items.properties.arguments.anyOf[].properties.entries.anyOf[].items.properties.number_list_value"
-    },
-    {
-      "classification": "optional-materialized-nullable",
-      "default": null,
-      "path": "$.properties.nodes.anyOf[].items.properties.arguments.anyOf[].properties.entries.anyOf[].items.properties.decimal_list_value"
-    },
-    {
-      "classification": "optional-materialized-nullable",
-      "default": null,
-      "path": "$.properties.nodes.anyOf[].items.properties.arguments.anyOf[].properties.entries.anyOf[].items.properties.string_list_value"
-    }
-  ],
+  "losses": [],
   "source_schema_sha256": "2383483493cd2953239947266648d673b3441f7a01185931a9f10ee3091579c7"
 }

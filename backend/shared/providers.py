@@ -3,7 +3,6 @@ from typing import Any, Literal
 from dataclasses import dataclass
 import asyncio
 import time
-import json
 from langchain_core.messages import BaseMessage
 from langchain_openai import ChatOpenAI
 
@@ -11,12 +10,10 @@ from .config import settings
 
 ProviderName = Literal["gemini", "nvidia", "mistral", "openrouter", "inception", "groq"]
 
-
 class ProviderPolicyError(ValueError):
     pass
 
 FREE_PROVIDER_ORDER: tuple[ProviderName, ...] = ("gemini", "nvidia", "groq", "openrouter", "mistral")
-
 
 def active_provider_order() -> tuple[ProviderName, ...]:
     free = tuple(name for name in FREE_PROVIDER_ORDER if
@@ -30,6 +27,7 @@ GEMINI_DEFAULT = "gemini-3.5-flash-lite"
 GEMINI_MODELS: tuple[str, ...] = (
     GEMINI_DEFAULT,
     "gemini-3.5-flash",
+    "gemini-3.8-flash",
     "gemma-4-31b-it",
 )
 GEMINI_ALLOWLIST = frozenset(GEMINI_MODELS)
@@ -38,7 +36,6 @@ NVIDIA_NIM_DEFAULT = "z-ai/glm-5.3-flash"
 NVIDIA_NIM_MODELS: tuple[str, ...] = (
     NVIDIA_NIM_DEFAULT,
     "deepseek-ai/deepseek-v4.1-flash",
-    "deepseek-ai/deepseek-r1",
 )
 NVIDIA_NIM_ALLOWLIST = frozenset(NVIDIA_NIM_MODELS)
 MISTRAL_DEFAULT = "ministral-8b-2512"
@@ -53,7 +50,6 @@ OPENROUTER_ALLOWLIST: frozenset[str] = frozenset(
         "nvidia/nemotron-3-ultra-550b-a55b:free",
     }
 )
-
 
 def is_free_model(provider: str, slug: str) -> bool:
     value = str(slug or "").strip()
@@ -70,16 +66,13 @@ def is_free_model(provider: str, slug: str) -> bool:
         return value == (settings.mistral_model or MISTRAL_DEFAULT)
     return False
 
-
 def _gemini_model(slug: str | None = None) -> str:
     value = str(slug or settings.gemini_model or "").strip()
     return value if value in GEMINI_ALLOWLIST else GEMINI_DEFAULT
 
-
 def _nvidia_nim_model(slug: str | None = None) -> str:
     value = str(slug or settings.nvidia_nim_model or "").strip()
     return value if value in NVIDIA_NIM_ALLOWLIST else NVIDIA_NIM_DEFAULT
-
 
 def _openrouter_free_model(slug: str | None = None) -> str:
     value = str(slug or settings.openrouter_model or "").strip()
@@ -89,15 +82,12 @@ def _openrouter_free_model(slug: str | None = None) -> str:
         return value
     return OPENROUTER_DEFAULT
 
-
 def _groq_free_model() -> str:
     value = str(settings.groq_model or "").strip()
     return value if value == GROQ_DEFAULT else GROQ_DEFAULT
 
-
 def _mistral_free_model() -> str:
     return settings.mistral_model or MISTRAL_DEFAULT
-
 
 def _default_provider() -> tuple[ProviderName, str]:
     if settings.gemini_api_key:
@@ -111,7 +101,6 @@ def _default_provider() -> tuple[ProviderName, str]:
     if settings.openrouter_api_key:
         return ("openrouter", _openrouter_free_model())
     return ("mistral", _mistral_free_model())
-
 
 def resolve_model_id(model_id: str | None) -> tuple[ProviderName, str]:
     original = model_id or ""
@@ -151,7 +140,6 @@ def resolve_model_id(model_id: str | None) -> tuple[ProviderName, str]:
             return ("openrouter", _openrouter_free_model(raw))
         return _default_provider()
     return _default_provider()
-
 
 def get_llm(name: ProviderName, model: str | None = None) -> ChatOpenAI | None:
     if name not in active_provider_order():
@@ -221,7 +209,6 @@ def get_llm(name: ProviderName, model: str | None = None) -> ChatOpenAI | None:
         },
     )
 
-
 @dataclass(frozen=True)
 class ProviderInvocation:
     response: Any
@@ -237,7 +224,6 @@ class ProviderInvocation:
     def __getattr__(self, name: str) -> Any:
         return getattr(self.response, name)
 
-
 def _failure_class(exc: BaseException) -> str:
     name = type(exc).__name__.casefold(); detail = str(exc).casefold()
     if "timeout" in name or "timed out" in detail: return "timeout"
@@ -251,10 +237,8 @@ def fallback_order(primary: ProviderName) -> list[ProviderName]:
     del primary
     return list(active_provider_order())
 
-
 _PROBE_TTL_S = 600.0
 _probe_state: dict[str, tuple[bool, float]] = {}
-
 
 def probe_verdict(name: str) -> bool | None:
     import time as _t
@@ -264,7 +248,6 @@ def probe_verdict(name: str) -> bool | None:
         return None
     ok, ts = got
     return ok if (_t.time() - ts) < _PROBE_TTL_S else None
-
 
 async def probe_provider(name: ProviderName) -> bool:
     import asyncio as _a
@@ -286,7 +269,6 @@ async def probe_provider(name: ProviderName) -> bool:
     _probe_state[name] = (ok, _t.time())
     return ok
 
-
 def note_provider_failure(name: str) -> None:
     import asyncio as _a
     import time as _t
@@ -298,7 +280,6 @@ def note_provider_failure(name: str) -> None:
         _a.get_running_loop().create_task(probe_provider(name))
     except RuntimeError:
         pass
-
 
 async def invoke_with_fallback(
     primary: ProviderName,
@@ -351,7 +332,6 @@ async def invoke_with_fallback(
         f"{a['provider']}:{a['message_class']}" for a in attempts)
     raise RuntimeError("all providers failed: " + detail)
 
-
 async def ainvoke_with_first_token_timeout(
     client: Any,
     messages: list[BaseMessage],
@@ -360,7 +340,6 @@ async def ainvoke_with_first_token_timeout(
 ):
     return await asyncio.wait_for(
         client.ainvoke(messages, **kwargs), timeout_s)
-
 
 async def _stream_with_first_token_timeout(
     client: Any,
@@ -386,7 +365,6 @@ async def _stream_with_first_token_timeout(
     finally:
         await _aclose_quietly(stream)
 
-
 async def _aclose_quietly(stream: Any) -> None:
     try:
         aclose = getattr(stream, "aclose", None)
@@ -395,9 +373,7 @@ async def _aclose_quietly(stream: Any) -> None:
     except Exception:
         pass
 
-
 stream_with_first_token_timeout = _stream_with_first_token_timeout
-
 
 async def astream_with_fallback(
     primary: ProviderName,
@@ -439,7 +415,6 @@ async def astream_with_fallback(
             note_provider_failure(name)
     raise RuntimeError("all providers failed: " + " | ".join(errors))
 
-
 async def astream_chunks_with_fallback(
     primary: ProviderName,
     model: str,
@@ -478,42 +453,6 @@ async def astream_chunks_with_fallback(
             note_provider_failure(name)
     raise RuntimeError("all providers failed: " + " | ".join(errors))
 
-
-def accumulate_tool_calls(tc_chunks: list[dict]) -> list[dict]:
-    by_idx: dict[int, dict] = {}
-    for tc in tc_chunks:
-        if not isinstance(tc, dict):
-            continue
-        try:
-            idx = int(tc.get("index", 0) or 0)
-        except Exception:
-            idx = 0
-        e = by_idx.setdefault(idx, {"name": "", "args": "", "id": ""})
-        if tc.get("name"):
-            e["name"] = tc["name"]
-        if tc.get("id"):
-            e["id"] = tc["id"]
-        args = tc.get("args")
-        if args:
-            e["args"] += args if isinstance(args, str) else str(args)
-    out: list[dict] = []
-    for idx in sorted(by_idx):
-        e = by_idx[idx]
-        try:
-            args = json.loads(e["args"] or "{}")
-        except Exception:
-            args = {}
-        if not isinstance(args, dict):
-            args = {}
-        out.append({"name": e["name"], "args": args, "id": e["id"]})
-    return out
-
-
-def resolve_available_model(model_id: str | None) -> tuple[ProviderName, str]:
-    primary, model = resolve_model_id(model_id)
-    if get_llm(primary, model) is None:
-        primary, model = _default_provider()
-    return primary, model
 
 
 def models_catalog() -> dict[str, Any]:

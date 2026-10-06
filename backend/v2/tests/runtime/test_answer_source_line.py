@@ -11,7 +11,6 @@ from v2.contracts import EvidenceEnvelope, EvidenceOutputBinding, OutputFinalSta
 AS_OF = date(2026, 10, 3)
 WAREHOUSE_AS_OF = date(2026, 4, 14)
 
-
 def _envelope(evidence_id: str, *, identity: dict, as_of: date | None, source: str) -> EvidenceEnvelope:
     return EvidenceEnvelope(
         evidence_id=evidence_id,
@@ -23,7 +22,6 @@ def _envelope(evidence_id: str, *, identity: dict, as_of: date | None, source: s
         rows=[{"OFF_RATING": 119.5, "DEF_RATING": 110.1, "NET_RATING": 9.4}],
         source_identity=identity,
     )
-
 
 def _result(*envelopes: EvidenceEnvelope) -> SimpleNamespace:
     binding = EvidenceOutputBinding(
@@ -46,12 +44,10 @@ def _result(*envelopes: EvidenceEnvelope) -> SimpleNamespace:
         execution=SimpleNamespace(evidence=list(envelopes)),
     )
 
-
 LIVE_ONLY_LINE = (
     "These figures came from the NBA's live feed on 2026-10-03, not from the "
     "figures I had saved, so they can differ from numbers you saw earlier."
 )
-
 
 def test_live_sourced_answer_states_the_source_and_the_date() -> None:
     result = _result(_envelope(
@@ -62,7 +58,6 @@ def test_live_sourced_answer_states_the_source_and_the_date() -> None:
     assert len(lines) == 2
     assert lines[0].endswith("NET_RATING = 9.4 (net_rating)")
     assert lines[1] == LIVE_ONLY_LINE
-
 
 def test_warehouse_sourced_answer_carries_no_live_label() -> None:
     result = _result(_envelope(
@@ -75,7 +70,6 @@ def test_warehouse_sourced_answer_carries_no_live_label() -> None:
         "NET_RATING = 9.4 (net_rating)"]
     assert "live" not in text
     assert "2026-04-14" not in text
-
 
 def test_restated_answer_separates_the_refreshed_figures_from_the_saved_ones() -> None:
     result = _result(
@@ -92,7 +86,6 @@ def test_restated_answer_separates_the_refreshed_figures_from_the_saved_ones() -
         "2026-10-03; the rest came from the figures I had saved."
     )
 
-
 def test_live_answer_without_a_date_names_the_source_and_claims_no_date() -> None:
     result = _result(_envelope(
         "live", identity={"kind": "live", "source": "nba_api"},
@@ -105,7 +98,6 @@ def test_live_answer_without_a_date_names_the_source_and_claims_no_date() -> Non
     )
     assert "2026" not in text
 
-
 def test_live_line_names_every_live_source_in_the_answer() -> None:
     result = _result(
         _envelope("a", identity={"kind": "live", "source": "nba_api"},
@@ -115,7 +107,6 @@ def test_live_line_names_every_live_source_in_the_answer() -> None:
     )
 
     assert "the NBA's live feed, ESPN" in _answer_text(result)
-
 
 def test_gap_lines_still_render_next_to_the_live_source_line() -> None:
     from v2.contracts import Gap
@@ -130,42 +121,12 @@ def test_gap_lines_still_render_next_to_the_live_source_line() -> None:
     )
 
 
-def test_complete_outputs_never_claim_values_are_unverified() -> None:
-    from v2.contracts import Gap
-
-    result = _result(_envelope(
-        "live", identity={"kind": "live", "source": "nba_api"},
-        as_of=AS_OF, source="silver:team_ratings:nba_api"))
-    result.gaps = [Gap(
-        kind="missing_evidence",
-        message="verification did not establish complete support")]
-
-    text = _answer_text(result)
-    assert "9.4" in text
-    assert "Some requested outputs could not be verified." not in text
-
-
-def test_complete_but_unjudged_keeps_the_double_check_tail() -> None:
-    from v2.contracts import Gap
-    from v2.runtime.loop import JUDGE_UNAVAILABLE_BRANCH
-
-    result = _result(_envelope(
-        "live", identity={"kind": "live", "source": "nba_api"},
-        as_of=AS_OF, source="silver:team_ratings:nba_api"))
-    result.gaps = [Gap(kind="missing_evidence", message=JUDGE_UNAVAILABLE_BRANCH)]
-
-    text = _answer_text(result)
-    assert "9.4" in text
-    assert "Some requested outputs could not be verified." not in text
-    assert "I couldn't double-check this answer" in text
-
 
 def test_unattributed_evidence_never_produces_a_live_label() -> None:
     result = _result(_envelope(
         "unknown", identity=None, as_of=None, source="silver:team_ratings:warehouse"))
 
     assert _answer_text(result).splitlines() == ["NET_RATING = 9.4 (net_rating)"]
-
 
 def test_the_live_label_leaves_both_vintages_of_the_figures_untouched() -> None:
     live = _envelope("live", identity={"kind": "live", "source": "nba_api"},
@@ -188,7 +149,6 @@ def test_the_live_label_leaves_both_vintages_of_the_figures_untouched() -> None:
     assert live_text.splitlines()[1:] == [LIVE_ONLY_LINE]
     assert stored_text.splitlines()[1:] == []
 
-
 @pytest.mark.parametrize("identity", [
     {"kind": "live", "source": "nba_api"},
     {"kind": "live", "source": "basketball_reference"},
@@ -201,7 +161,6 @@ def test_every_live_source_has_plain_language_copy(identity: dict) -> None:
     assert line.startswith("These figures came from ")
     assert "2026-10-03" in line
     assert not any(token in line for token in ("nba_api", "basketball_reference", "espn"))
-
 
 def test_the_published_table_keeps_stamping_the_live_date_for_each_figure() -> None:
     from decimal import Decimal
@@ -228,7 +187,6 @@ def test_the_published_table_keeps_stamping_the_live_date_for_each_figure() -> N
                        "as_of": "2026-10-03", "live_sources": ["nba_api"]},
     }], [])
 
-
 def test_complete_outputs_never_claim_values_are_unverified() -> None:
     from v2.contracts import Gap
 
@@ -242,7 +200,6 @@ def test_complete_outputs_never_claim_values_are_unverified() -> None:
     text = _answer_text(result)
     assert "9.4" in text
     assert "Some requested outputs could not be verified." not in text
-
 
 def test_complete_but_unjudged_keeps_the_double_check_tail() -> None:
     from v2.contracts import Gap

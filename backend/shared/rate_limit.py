@@ -5,7 +5,6 @@ import time
 from collections import deque
 from fastapi import HTTPException
 
-
 class RateLimiter:
     def __init__(self, limit=30, window_s=60):
         self.limit = limit
@@ -60,7 +59,6 @@ class RateLimiter:
         with self._lock:
             self._hits.clear()
 
-
 def _env_limit():
     try:
         value = int(os.environ.get("DIME_SQL_RERUN_RATE_LIMIT", "30"))
@@ -69,7 +67,6 @@ def _env_limit():
     if value < 1:
         return 30
     return value
-
 
 def _env_window():
     try:
@@ -80,17 +77,13 @@ def _env_window():
         return 60.0
     return value
 
-
 _limiter = RateLimiter()
-
 
 def configure(limit=None, window_s=None):
     _limiter.configure(limit=limit, window_s=window_s)
 
-
 def reset():
     _limiter.reset()
-
 
 def client_ip(request) -> str:
     client = request.client
@@ -100,7 +93,6 @@ def client_ip(request) -> str:
     if not host:
         return "unknown"
     return str(host)
-
 
 def check_sql_rerun(ip: str) -> None:
     key = ip if ip else "unknown"

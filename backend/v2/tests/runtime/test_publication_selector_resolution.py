@@ -59,11 +59,9 @@ TIED_TEXT = ("North Bay Kings held a 1.3 net rating (points per 100 possessions)
              "across splits in 2024-25.")
 REFUSAL = "I could not verify a publishable answer"
 
-
 @pytest.fixture
 def anyio_backend():
     return "asyncio"
-
 
 @pytest.fixture(autouse=True)
 def _chat_budget():
@@ -72,7 +70,6 @@ def _chat_budget():
     routes._CHAT_HITS.clear()
     yield
     routes._CHAT_HITS.clear()
-
 
 def _envelope(rows, units=None) -> EvidenceEnvelope:
     return EvidenceEnvelope(
@@ -89,7 +86,6 @@ def _envelope(rows, units=None) -> EvidenceEnvelope:
                          "sha256": "a" * 64},
     )
 
-
 class StampedCapability(FakeCapability):
     def __init__(self, envelope: EvidenceEnvelope) -> None:
         super().__init__("matchup_brief", envelope.rows)
@@ -97,7 +93,6 @@ class StampedCapability(FakeCapability):
 
     async def execute(self, node, task, evidence):
         return self._envelope
-
 
 class Intake:
     async def understand(self, request: str) -> TaskSpec:
@@ -107,13 +102,11 @@ class Intake:
             requested_outputs=list(REQUESTED),
             season=SeasonRef(value=SEASON, source="user", confidence=1.0))
 
-
 class Planner:
     async def plan(self, task: TaskSpec) -> Plan:
         return Plan(nodes=[PlanNode(
             id=NODE_ID, description="matchup brief for the season",
             capability_hints=["matchup_brief"])])
-
 
 class Synthesizer:
     def __init__(self, claims) -> None:
@@ -122,14 +115,12 @@ class Synthesizer:
     async def synthesize(self, task, evidence) -> DraftReport:
         return DraftReport(sections=["Matchup"], claims=self._claims)
 
-
 class PassingSemantic:
     async def verify(self, task, draft, evidence) -> VerificationReport:
         return VerificationReport(
             status=VerificationStatus.PASS,
             claim_results=[{"claim_index": index, "supported": True}
                            for index, _claim in enumerate(draft.claims)])
-
 
 def _binding(output_id: str, selector: str, value: dict, unit: str | None,
              *, subject: bool = True) -> EvidenceOutputBinding:
@@ -145,28 +136,23 @@ def _binding(output_id: str, selector: str, value: dict, unit: str | None,
               else {"kind": "unitless"}),
         domain="matchup_brief")
 
-
 def _off_rating() -> EvidenceOutputBinding:
     return _binding("OFF_RATING", "rows[0].OFF_RATING",
                     {"kind": "float", "value": 116.6},
                     "points_per_100_possessions")
-
 
 def _net_rating(*, subject: bool = True) -> EvidenceOutputBinding:
     return _binding("NET_RATING", "rows[0].NET_RATING",
                     {"kind": "float", "value": 1.3},
                     "points_per_100_possessions", subject=subject)
 
-
 def _injuries() -> EvidenceOutputBinding:
     return _binding("INJURED_PLAYERS", "rows[0].INJURY_COUNT",
                     {"kind": "integer", "value": 3}, None)
 
-
 def _claim(*bindings, text=HOME_TEXT) -> Claim:
     return Claim(text=text, kind=ClaimKind.OBSERVED,
                  evidence_ids=[EVIDENCE_ID], output_bindings=list(bindings))
-
 
 def _runtime(claims, rows, units=None) -> Runtime:
     envelope = _envelope(rows, units)
@@ -176,7 +162,6 @@ def _runtime(claims, rows, units=None) -> Runtime:
         synthesizer=Synthesizer(claims),
         mechanical_verifier=MechanicalVerifier(),
         semantic_verifier=PassingSemantic())
-
 
 def _stream(monkeypatch, tmp_path, runtime: Runtime):
     from fastapi import FastAPI
@@ -203,7 +188,6 @@ def _stream(monkeypatch, tmp_path, runtime: Runtime):
             _event(response.text, "custom_data"),
             _event(response.text, "final_answer"))
 
-
 def _event(text: str, name: str) -> dict:
     payloads = [chunk.split("data: ", 1)[1]
                 for chunk in text.split("\n\n")
@@ -212,10 +196,8 @@ def _event(text: str, name: str) -> dict:
         return {}
     return json.loads(payloads[-1])
 
-
 def _cited(custom: dict) -> dict[str, dict]:
     return {row["output_id"]: row for row in custom["tables"]}
-
 
 def test_the_verified_answer_a_flat_selector_used_to_strand_now_publishes(
         monkeypatch, tmp_path):
@@ -239,7 +221,6 @@ def test_the_verified_answer_a_flat_selector_used_to_strand_now_publishes(
     for internal in (EVIDENCE_ID, "rows[0].OFF_RATING", "TEAM_ID", "ratings"):
         assert internal not in text
 
-
 def test_one_selector_that_names_no_value_drops_only_its_own_field(
         monkeypatch, tmp_path):
     text, custom, final = _stream(
@@ -255,7 +236,6 @@ def test_one_selector_that_names_no_value_drops_only_its_own_field(
         "INJURED PLAYERS could not be traced to the source data."]
     assert REFUSAL not in final["text"]
     assert final["carry"]["verified_claims"] == 1
-
 
 def test_a_binding_that_resolves_keeps_its_authority_when_a_neighbour_does_not(
         monkeypatch, tmp_path):
@@ -278,7 +258,6 @@ def test_a_binding_that_resolves_keeps_its_authority_when_a_neighbour_does_not(
     assert "INJURED_PLAYERS" not in cited
     assert REFUSAL not in final["text"]
 
-
 def test_a_selector_that_names_two_rows_publishes_neither_of_them(
         monkeypatch, tmp_path):
     text, custom, final = _stream(
@@ -294,7 +273,6 @@ def test_a_selector_that_names_two_rows_publishes_neither_of_them(
     ]
     assert REFUSAL not in final["text"]
     assert final["carry"]["verified_claims"] == 1
-
 
 def test_an_ambiguous_selector_withholds_only_its_own_claim(
         monkeypatch, tmp_path):
@@ -312,7 +290,6 @@ def test_an_ambiguous_selector_withholds_only_its_own_claim(
     assert "NET_RATING could not be verified (rejected)." in final["text"]
     assert REFUSAL not in final["text"]
     assert final["carry"]["verified_claims"] == 2
-
 
 def test_a_verified_run_whose_selectors_all_miss_never_reads_as_a_clean_refusal(
         monkeypatch, tmp_path):

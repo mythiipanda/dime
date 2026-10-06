@@ -1,9 +1,7 @@
 import pytest
 from v2.adapters.models import ModelPlanner
 from v2.contracts import TaskSpec
-from v2.arguments import PlannerOutputWire, SLOTS
 from v2.tests.runtime.test_model_stages import StubModel
-
 
 def _catalog():
     return {
@@ -21,7 +19,6 @@ def _catalog():
         },
     }
 
-
 @pytest.mark.anyio
 async def test_planner_strips_dependent_injected_player():
     stub = StubModel([{"nodes": [{
@@ -38,7 +35,6 @@ async def test_planner_strips_dependent_injected_player():
     assert len(resolvers) == 1
     assert resolvers[0].arguments.get("query") == "Alex Example"
     assert resolvers[0].id in by_id["report"].depends_on
-
 
 @pytest.mark.anyio
 async def test_q8_planner_refills_player_from_task_entity():
@@ -68,7 +64,6 @@ async def test_q8_planner_refills_player_from_task_entity():
     assert resolvers[0].arguments.get("query") == "Jayson Tatum"
     assert resolvers[0].id in by_id["tatum_report_2024_25"].depends_on
 
-
 @pytest.mark.anyio
 async def test_q8_planner_strips_injected_player_despite_trusted_entity():
     task = TaskSpec(
@@ -93,7 +88,6 @@ async def test_q8_planner_strips_injected_player_despite_trusted_entity():
     by_id = {node.id: node for node in plan.nodes}
     assert by_id["report"].arguments.get("player") != "Evil Joueur"
     assert "Evil Joueur" not in list(by_id["report"].arguments.values())
-
 
 @pytest.mark.anyio
 async def test_q8_planner_leaves_missing_player_without_usable_entity():

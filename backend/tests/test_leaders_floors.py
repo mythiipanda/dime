@@ -7,19 +7,17 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from shared import store as _store  # noqa: E402
-from shared.tools import league as _league  # noqa: E402
+from shared import store as _store
+from shared.tools import league as _league
 
 SEASON = "2025-26"
 REPO_WAREHOUSE = (
     Path(__file__).resolve().parent.parent / "data" / "warehouse.duckdb"
 )
 
-
 class _FakeResult:
     def fetchall(self):
         return []
-
 
 class _FakeConn:
     def __init__(self):
@@ -32,13 +30,11 @@ class _FakeConn:
     def close(self):
         pass
 
-
 @pytest.fixture()
 def fake_con(monkeypatch):
     con = _FakeConn()
     monkeypatch.setattr(_store, "connect", lambda read_only=True: con)
     return con
-
 
 @pytest.fixture()
 def warehouse(tmp_path, monkeypatch):
@@ -71,10 +67,8 @@ def warehouse(tmp_path, monkeypatch):
     monkeypatch.setattr(_store, "LOCK_PATH", tmp_path / ".write.lock")
     return db
 
-
 def _sql_text(fake_con):
     return "\n".join(sql for sql, _params in fake_con.calls)
-
 
 def test_spg_zero_floor_still_carries_500_minute_floor(fake_con):
     res = _league.get_leaders.invoke(
@@ -84,7 +78,6 @@ def test_spg_zero_floor_still_carries_500_minute_floor(fake_con):
     assert "MIN >= 500" in _sql_text(fake_con)
     assert res["meta"]["qualification"] == "500+ total minutes"
     assert "500" in res["meta"]["qualification"]
-
 
 @pytest.mark.parametrize("min_attempts", [0, 1, 499, 5000])
 @pytest.mark.parametrize("direction", ["desc", "asc"])
@@ -99,7 +92,6 @@ def test_spg_floor_survives_any_caller_floor_and_direction(
     assert "MIN >= 500" in _sql_text(fake_con)
     assert res["meta"]["qualification"] == "500+ total minutes"
 
-
 def test_spg_scrub_excluded_empirically(warehouse):
     res = _league.get_leaders.invoke(
         {"stat_category": "SPG", "season": SEASON, "min_attempts": 0}
@@ -108,7 +100,6 @@ def test_spg_scrub_excluded_empirically(warehouse):
     names = [r["PLAYER"] for r in res["rows"]]
     assert "One Game Wonder" not in names
     assert "Steady Thief" in names
-
 
 def test_ts_pct_zero_floor_uses_1000_minutes(fake_con):
     res = _league.get_leaders.invoke(
@@ -121,7 +112,6 @@ def test_ts_pct_zero_floor_uses_1000_minutes(fake_con):
                 if isinstance(p, (int, float)))
     assert bound == 1000
     assert "1,000" in res["meta"]["qualification"]
-
 
 @pytest.mark.parametrize(
     "min_attempts, expected", [(0, 1000), (500, 1000), (2000, 2000)]
@@ -138,7 +128,6 @@ def test_ts_pct_caller_can_raise_but_not_lower_floor(
                 if isinstance(p, (int, float)))
     assert bound == expected
 
-
 def test_ts_pct_scrub_excluded_empirically(warehouse):
     res = _league.get_leaders.invoke(
         {"stat_category": "TS_PCT", "season": SEASON, "min_attempts": 0}
@@ -149,7 +138,6 @@ def test_ts_pct_scrub_excluded_empirically(warehouse):
     assert "Real Shooter" in names
     for r in res["rows"]:
         assert r["GP"] * r["MPG"] >= 1000
-
 
 def _live_tables():
     if not REPO_WAREHOUSE.exists():
@@ -162,7 +150,6 @@ def _live_tables():
     if not {"silver_leaders_stl", "silver_advanced"} <= tables:
         return None
     return tables
-
 
 def test_live_warehouse_no_floor_violations(monkeypatch):
     if _live_tables() is None:

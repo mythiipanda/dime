@@ -2,10 +2,8 @@ import asyncio
 
 from shared.tools.headtohead import get_head_to_head
 
-
 def _run(args):
     return asyncio.run(get_head_to_head.ainvoke(args))
-
 
 def test_player_opponent_resolves_to_team():
     r = _run({"player": "Luka Dončić",
@@ -14,19 +12,16 @@ def test_player_opponent_resolves_to_team():
     assert r["rows"]["opponent"] == "OKC"
     assert "resolved to team OKC" in (r["rows"].get("note") or "")
 
-
 def test_team_opponent_unchanged():
     r = _run({"player": "Luka Dončić", "opponent": "OKC",
               "season": "2025-26"})
     assert r["ok"] and r["rows"]["opponent"] == "OKC"
     assert "resolved to team" not in (r["rows"].get("note") or "")
 
-
 def test_unknown_opponent_still_errors():
     r = _run({"player": "Luka Dončić", "opponent": "Zorblax Nine",
               "season": "2025-26"})
     assert not r["ok"]
-
 
 def test_compare_different_teams_reports_meetings():
     from shared.tools.player import get_compare
@@ -40,7 +35,6 @@ def test_compare_different_teams_reports_meetings():
     assert len(meetings) == 2
     assert "shared the floor in 2 game(s)" in pair["note"]
     assert "no shared court" not in pair["note"].lower()
-
 
 def test_compare_no_meetings_says_teams_did_not_meet():
     from shared.tools.player import _different_teams_pair

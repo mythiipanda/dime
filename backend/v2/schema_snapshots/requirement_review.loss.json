@@ -1,62 +1,6 @@
 {
-  "candidate_schema_sha256": "d99100ed733f728628e1e33acc47098281339d5216d76ef5c39b6d448373d97c",
+  "candidate_schema_sha256": "7e5e418497a1683f9402814a31eeaff7cc375f230d5c3c782c89a45ee240313a",
   "hash_canonicalization": "UTF-8 sorted-key compact JSON",
-  "losses": [
-    {
-      "classification": "optional-materialized-nullable",
-      "default": null,
-      "path": "$.properties.requirements.anyOf[].items.properties.capability_argument_sets.items.properties.arguments.anyOf[].properties.entries.anyOf[].items.properties.value"
-    },
-    {
-      "classification": "optional-materialized-nullable",
-      "default": null,
-      "path": "$.properties.requirements.anyOf[].items.properties.capability_argument_sets.items.properties.arguments.anyOf[].properties.entries.anyOf[].items.properties.bool_value"
-    },
-    {
-      "classification": "optional-materialized-nullable",
-      "default": null,
-      "path": "$.properties.requirements.anyOf[].items.properties.capability_argument_sets.items.properties.arguments.anyOf[].properties.entries.anyOf[].items.properties.int_value"
-    },
-    {
-      "classification": "optional-materialized-nullable",
-      "default": null,
-      "path": "$.properties.requirements.anyOf[].items.properties.capability_argument_sets.items.properties.arguments.anyOf[].properties.entries.anyOf[].items.properties.number_value"
-    },
-    {
-      "classification": "optional-materialized-nullable",
-      "default": null,
-      "path": "$.properties.requirements.anyOf[].items.properties.capability_argument_sets.items.properties.arguments.anyOf[].properties.entries.anyOf[].items.properties.decimal_value"
-    },
-    {
-      "classification": "optional-materialized-nullable",
-      "default": null,
-      "path": "$.properties.requirements.anyOf[].items.properties.capability_argument_sets.items.properties.arguments.anyOf[].properties.entries.anyOf[].items.properties.string_value"
-    },
-    {
-      "classification": "optional-materialized-nullable",
-      "default": null,
-      "path": "$.properties.requirements.anyOf[].items.properties.capability_argument_sets.items.properties.arguments.anyOf[].properties.entries.anyOf[].items.properties.bool_list_value"
-    },
-    {
-      "classification": "optional-materialized-nullable",
-      "default": null,
-      "path": "$.properties.requirements.anyOf[].items.properties.capability_argument_sets.items.properties.arguments.anyOf[].properties.entries.anyOf[].items.properties.int_list_value"
-    },
-    {
-      "classification": "optional-materialized-nullable",
-      "default": null,
-      "path": "$.properties.requirements.anyOf[].items.properties.capability_argument_sets.items.properties.arguments.anyOf[].properties.entries.anyOf[].items.properties.number_list_value"
-    },
-    {
-      "classification": "optional-materialized-nullable",
-      "default": null,
-      "path": "$.properties.requirements.anyOf[].items.properties.capability_argument_sets.items.properties.arguments.anyOf[].properties.entries.anyOf[].items.properties.decimal_list_value"
-    },
-    {
-      "classification": "optional-materialized-nullable",
-      "default": null,
-      "path": "$.properties.requirements.anyOf[].items.properties.capability_argument_sets.items.properties.arguments.anyOf[].properties.entries.anyOf[].items.properties.string_list_value"
-    }
-  ],
+  "losses": [],
   "source_schema_sha256": "4e7c24a0efcf0454fd0b430daf69a54593e3e741d5ed5c7b6b5876613c39044d"
 }

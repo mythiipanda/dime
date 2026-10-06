@@ -20,10 +20,8 @@ from v2.contracts import (
 from v2.runtime.models import (BindingFormMismatch, ExecutionResult,
                                admit_verified_claim_bindings)
 
-
 _NODE_ID = "qualified_leaders:05b5922eaefae72d"
 _REQUIREMENT_ID = "player_assists_leader_2024_25"
-
 
 def _rows():
     return [
@@ -45,7 +43,6 @@ def _rows():
         },
     ]
 
-
 def _envelope():
     return build_envelope(
         CAPABILITIES["qualified_leaders"],
@@ -59,7 +56,6 @@ def _envelope():
         entities=None,
         observed_at=datetime.now(UTC),
     )
-
 
 def _task():
     return TaskSpec(
@@ -77,7 +73,6 @@ def _task():
             requested_outputs=["PLAYER_NAME", "ASSIST_TOTAL"],
         )],
     )
-
 
 def _bindings(node_id=_NODE_ID, evidence_id=None, metric_leaf="AST", metric_value=880):
     if evidence_id is None:
@@ -115,7 +110,6 @@ def _bindings(node_id=_NODE_ID, evidence_id=None, metric_leaf="AST", metric_valu
         ),
     ]
 
-
 def _node(node_id=_NODE_ID):
     return PlanNode(
         id=node_id,
@@ -125,7 +119,6 @@ def _node(node_id=_NODE_ID):
         arguments={"stat_category": "AST", "season": "2024-25"},
         status="complete",
     )
-
 
 def _admit(task, envelope, bindings, nodes=None):
     nodes = nodes or [_node()]
@@ -161,18 +154,15 @@ def _admit(task, envelope, bindings, nodes=None):
     )
     return admit_verified_claim_bindings(task, execution, draft, verified)
 
-
 def test_q1_assist_total_served_by_ast_column_admits():
     admitted = _admit(_task(), _envelope(), _bindings())
     by_output = {item.output_id: item for item in admitted.output_bindings}
     assert by_output["PLAYER_NAME"].value.value == "Trae Young"
     assert by_output["ASSIST_TOTAL"].value.value == 880
 
-
 def test_pts_leaf_on_assist_total_output_still_rejects():
     with pytest.raises(BindingFormMismatch):
         _admit(_task(), _envelope(), _bindings(metric_leaf="PTS", metric_value=1500))
-
 
 def test_binding_form_mismatch_answers_to_plain_value_error_catchers():
     assert issubclass(BindingFormMismatch, ValueError)

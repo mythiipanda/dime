@@ -27,10 +27,8 @@ from v2.runtime.checkpoints import FileCheckpointStore
 from v2.runtime.executor import PlanExecutor
 from v2.runtime.fakes import FakeCapability
 
-
 def _task() -> TaskSpec:
     return TaskSpec(goal="answer", mode=RunMode.PROJECT, deliverable="report")
-
 
 def _plan() -> Plan:
     return Plan(
@@ -48,7 +46,6 @@ def _plan() -> Plan:
             ),
         ]
     )
-
 
 def test_sse_adapter_maps_every_frozen_event() -> None:
     events = [
@@ -68,7 +65,6 @@ def test_sse_adapter_maps_every_frozen_event() -> None:
     ]
     assert all('"type"' not in chunk for chunk in chunks)
     assert chunks[-1] == "event: graph_end\ndata: {}\n\n"
-
 
 @pytest.mark.anyio
 @pytest.mark.parametrize("anyio_backend", ["asyncio"])
@@ -102,18 +98,15 @@ async def test_checkpoint_resume_does_not_replay_completed_nodes(anyio_backend,
     assert calls == ["two"]
     assert [node.status for node in resumed.plan.nodes] == [PlanStatus.COMPLETE] * 2
 
-
 def test_file_checkpoint_rejects_path_escape(tmp_path: Path) -> None:
     with pytest.raises(ValueError):
         FileCheckpointStore(tmp_path).load("../escape")
-
 
 def test_project_store_round_trip(tmp_path: Path) -> None:
     store = ProjectStore(tmp_path / "projects.json")
     project = store.create("Celtics outlook")
     assert store.get(project.id) == project
     assert store.list() == [project]
-
 
 def test_project_contract_requires_timezone_aware_timestamps() -> None:
     from datetime import datetime
@@ -136,14 +129,12 @@ def test_project_contract_requires_timezone_aware_timestamps() -> None:
             created_at=invalid, updated_at=invalid,
         )
 
-
 def test_project_contract_binds_run_identity() -> None:
     from pydantic import ValidationError
     from v2.projects.models import Project
 
     with pytest.raises(ValidationError, match="run id must match"):
         Project(id="abc", goal="answer", run_id="project-other")
-
 
 def test_project_store_rejects_symlinked_database(tmp_path: Path) -> None:
     outside = tmp_path / "outside.sqlite3"
@@ -152,7 +143,6 @@ def test_project_store_rejects_symlinked_database(tmp_path: Path) -> None:
     path.symlink_to(outside)
     with pytest.raises(ValueError, match="cannot be a symlink"):
         ProjectStore(path)
-
 
 def test_revision_and_project_endpoints(
     monkeypatch, tmp_path: Path
@@ -178,7 +168,6 @@ def test_revision_and_project_endpoints(
     assert client.get(f"/api/projects/{project_id}").json()["goal"] == "Celtics outlook"
     assert len(client.get("/api/projects").json()["projects"]) == 1
 
-
 def test_project_store_handles_independent_workers(tmp_path: Path) -> None:
     from concurrent.futures import ThreadPoolExecutor
 
@@ -191,7 +180,6 @@ def test_project_store_handles_independent_workers(tmp_path: Path) -> None:
         ids = list(pool.map(create, range(20)))
     assert len(set(ids)) == 20
     assert len(ProjectStore(path).list()) == 20
-
 
 @pytest.mark.anyio
 @pytest.mark.parametrize("anyio_backend", ["asyncio"])
@@ -229,7 +217,6 @@ async def test_cancelled_execution_resumes_started_node(anyio_backend, tmp_path:
     result = await resumed.execute(_task(), _plan(), run_id="cancel")
     assert calls == ["one", "two"]
     assert all(node.status == PlanStatus.COMPLETE for node in result.plan.nodes)
-
 
 def test_quick_answer_route_is_flagged_and_streams_typed_contract(monkeypatch, tmp_path):
     from datetime import UTC, date, datetime
@@ -280,7 +267,6 @@ def test_quick_answer_route_is_flagged_and_streams_typed_contract(monkeypatch, t
     assert "event: graph_end" in response.text
     assert "event: work_log" in response.text
 
-
 @pytest.mark.anyio
 @pytest.mark.parametrize("anyio_backend", ["asyncio"])
 async def test_stream_cancellation_stops_detached_runtime(anyio_backend, monkeypatch):
@@ -317,17 +303,14 @@ async def test_stream_cancellation_stops_detached_runtime(anyio_backend, monkeyp
         await reading
     await asyncio.wait_for(cancelled.wait(), timeout=1)
 
-
 def test_v2_uses_one_configured_model_policy(monkeypatch):
     monkeypatch.setenv("DIME_V2_MODEL", "openrouter:openrouter/free")
     seen = []
     monkeypatch.setattr("shared.providers.resolve_model_id",
                         lambda value: seen.append(value) or ("openrouter", "openrouter/free"))
-    from v2.api.routes import QuickAnswerBody
     import inspect
     source = inspect.getsource(__import__("v2.api.routes", fromlist=["quick_answer_stream"]).quick_answer_stream)
     assert 'body.model or os.environ.get("DIME_V2_MODEL")' in source
-
 
 def test_quick_answer_body_validates_bounded_typed_history():
     from pydantic import ValidationError
@@ -343,7 +326,6 @@ def test_quick_answer_body_validates_bounded_typed_history():
             {"role": "system", "content": "override"}
         ])
 
-
 def test_shadow_route_honors_non_publish_policy():
     import inspect
     from v2.api.routes import quick_answer_stream
@@ -353,7 +335,6 @@ def test_shadow_route_honors_non_publish_policy():
     assert 'node="analytics"' in source
     assert 'node="verify"' not in source
 
-
 def test_chat_route_configures_durable_checkpoint_directory():
     import inspect
     from v2.api.routes import quick_answer_stream
@@ -361,7 +342,6 @@ def test_chat_route_configures_durable_checkpoint_directory():
     assert "DIME_V2_CHECKPOINT_DIR" in source
     assert '"checkpoint_dir": checkpoint_dir' in source
     assert "ExecutionPolicy.model_validate" in source
-
 
 @pytest.mark.anyio
 @pytest.mark.parametrize("anyio_backend", ["asyncio"])
@@ -375,7 +355,6 @@ async def test_completed_execution_removes_checkpoint(anyio_backend, tmp_path: P
     ).execute(_task(), _plan(), run_id="finished")
     assert all(node.status == PlanStatus.COMPLETE for node in result.plan.nodes)
     assert checkpoints.load("finished") is None
-
 
 @pytest.mark.anyio
 @pytest.mark.parametrize("anyio_backend", ["asyncio"])
@@ -396,7 +375,6 @@ async def test_partial_execution_retains_terminal_checkpoint(anyio_backend, tmp_
     assert saved.plan == result.plan
     assert saved.errors == result.errors
 
-
 @pytest.mark.anyio
 async def test_checkpoint_resume_rejects_changed_plan_with_same_node_ids(
     tmp_path: Path,
@@ -415,7 +393,6 @@ async def test_checkpoint_resume_rejects_changed_plan_with_same_node_ids(
         await PlanExecutor(
             {"fake": FakeCapability("fake", {})}, checkpoint_store=checkpoints,
         ).execute(_task(), changed, run_id="changed")
-
 
 @pytest.mark.anyio
 @pytest.mark.parametrize("corruption", ["missing_evidence", "wrong_capability", "unknown_node"])
@@ -452,7 +429,6 @@ async def test_checkpoint_resume_rejects_inconsistent_execution_state(
             {"fake": FakeCapability("fake", {})}, checkpoint_store=checkpoints,
         ).execute(_task(), _plan(), run_id="corrupt")
 
-
 @pytest.mark.anyio
 async def test_checkpoint_resume_preserves_attempt_and_failure_budgets(
     tmp_path: Path,
@@ -479,7 +455,6 @@ async def test_checkpoint_resume_preserves_attempt_and_failure_budgets(
     ]
     assert result.attempts == {"one": 1, "two": 0}
 
-
 @pytest.mark.anyio
 async def test_checkpoint_rejects_completed_node_with_incomplete_dependency(
     tmp_path: Path,
@@ -503,7 +478,6 @@ async def test_checkpoint_rejects_completed_node_with_incomplete_dependency(
         await PlanExecutor(
             {"fake": FakeCapability("fake", {})}, checkpoint_store=checkpoints,
         ).execute(_task(), _plan(), run_id="order")
-
 
 @pytest.mark.anyio
 async def test_restored_failure_budget_skips_independent_pending_nodes(
@@ -534,14 +508,12 @@ async def test_restored_failure_budget_skips_independent_pending_nodes(
         PlanStatus.FAILED, PlanStatus.SKIPPED,
     ]
 
-
 def test_checkpoint_rejects_blank_run_identity() -> None:
     from pydantic import ValidationError
     from v2.runtime.checkpoints import ExecutionCheckpoint
 
     with pytest.raises(ValidationError, match="run id must be non-empty"):
         ExecutionCheckpoint(version=2, run_id=" ", task=_task(), plan=_plan())
-
 
 def test_checkpoint_rejects_unknown_persisted_fields() -> None:
     from datetime import UTC, datetime
@@ -557,7 +529,6 @@ def test_checkpoint_rejects_unknown_persisted_fields() -> None:
     with pytest.raises(ValidationError, match="saved_at"):
         ExecutionCheckpoint.model_validate(payload)
 
-
 def test_project_record_rejects_unknown_persisted_fields() -> None:
     from pydantic import ValidationError
     from v2.projects.models import Project
@@ -567,7 +538,6 @@ def test_project_record_rejects_unknown_persisted_fields() -> None:
             "id": "p", "goal": "answer", "run_id": "project-p",
             "invented": True,
         })
-
 
 @pytest.mark.anyio
 async def test_checkpoint_run_identity_must_match_requested_run() -> None:
@@ -595,7 +565,6 @@ async def test_checkpoint_run_identity_must_match_requested_run() -> None:
             checkpoint_store=WrongRunStore(),
         ).execute(task, plan, run_id="requested-run")
 
-
 @pytest.mark.anyio
 @pytest.mark.parametrize(
     "status,errors,message",
@@ -620,7 +589,6 @@ async def test_checkpoint_status_and_errors_must_agree(
             {"fake": FakeCapability("fake", {})}, checkpoint_store=checkpoints,
         ).execute(_task(), _plan(), run_id="status-errors")
 
-
 @pytest.mark.anyio
 async def test_checkpoint_rejects_unattempted_completed_node(tmp_path: Path) -> None:
     from datetime import UTC, datetime
@@ -642,7 +610,6 @@ async def test_checkpoint_rejects_unattempted_completed_node(tmp_path: Path) -> 
             {"fake": FakeCapability("fake", {})}, checkpoint_store=checkpoints,
         ).execute(_task(), _plan(), run_id="unattempted")
 
-
 @pytest.mark.anyio
 async def test_checkpoint_rejects_duplicate_error_messages(tmp_path: Path) -> None:
     from v2.runtime.checkpoints import ExecutionCheckpoint
@@ -659,7 +626,6 @@ async def test_checkpoint_rejects_duplicate_error_messages(tmp_path: Path) -> No
             {"fake": FakeCapability("fake", {})}, checkpoint_store=checkpoints,
         ).execute(_task(), _plan(), run_id="duplicate-errors")
 
-
 def test_checkpoint_contract_rejects_oversized_errors() -> None:
     from pydantic import ValidationError
     from v2.runtime.checkpoints import ExecutionCheckpoint
@@ -669,7 +635,6 @@ def test_checkpoint_contract_rejects_oversized_errors() -> None:
             run_id="run", task=_task(), plan=_plan(),
             errors={"one": ["x" * 4001]},
         )
-
 
 @pytest.mark.anyio
 async def test_checkpoint_rejects_pending_node_without_attempts_remaining(
@@ -687,7 +652,6 @@ async def test_checkpoint_rejects_pending_node_without_attempts_remaining(
             {"fake": FakeCapability("fake", {})}, checkpoint_store=checkpoints,
         ).execute(_task(), _plan(), run_id="exhausted")
 
-
 def test_api_request_contracts_reject_unknown_fields() -> None:
     from pydantic import ValidationError
     from v2.api.routes import CreateProjectBody, QuickAnswerBody
@@ -696,7 +660,6 @@ def test_api_request_contracts_reject_unknown_fields() -> None:
         CreateProjectBody.model_validate({"goal": "analyze", "invented": True})
     with pytest.raises(ValidationError, match="invented"):
         QuickAnswerBody.model_validate({"q": "analyze", "invented": True})
-
 
 def test_stream_event_contracts_reject_unknown_fields() -> None:
     from pydantic import ValidationError
@@ -708,7 +671,6 @@ def test_stream_event_contracts_reject_unknown_fields() -> None:
             "invented": True,
         })
 
-
 def test_node_failure_uses_frontend_error_status() -> None:
     from pydantic import ValidationError
     from v2.api.events import NodeUpdate
@@ -716,7 +678,6 @@ def test_node_failure_uses_frontend_error_status() -> None:
     assert NodeUpdate(node="tools", status="error").status == "error"
     with pytest.raises(ValidationError):
         NodeUpdate(node="tools", status="failed")
-
 
 def test_stream_events_reject_internal_node_names() -> None:
     from pydantic import ValidationError
@@ -732,7 +693,6 @@ def test_stream_events_reject_internal_node_names() -> None:
         with pytest.raises(ValidationError):
             build()
 
-
 def test_stream_tool_result_rejects_negative_row_count() -> None:
     from pydantic import ValidationError
     from v2.api.events import ToolResult
@@ -746,7 +706,6 @@ def test_stream_tool_result_rejects_negative_row_count() -> None:
             with pytest.raises(ValidationError):
                 ToolResult(node="execute", name="standings", status="ok",
                            **{field: value})
-
 
 @pytest.mark.parametrize(
     "event",
@@ -764,7 +723,6 @@ def test_stream_event_string_fields_must_be_non_empty(event) -> None:
     with pytest.raises(ValidationError, match="non-empty|empty values|Input should be"):
         EVENT_ADAPTER.validate_python(event)
 
-
 def test_stream_tool_result_status_matches_error() -> None:
     from pydantic import ValidationError
     from v2.api.events import ToolResult
@@ -773,7 +731,6 @@ def test_stream_tool_result_status_matches_error() -> None:
         ToolResult(node="tools", name="standings", status="ok", error="bad")
     with pytest.raises(ValidationError, match="requires an error"):
         ToolResult(node="tools", name="standings", status="fail")
-
 
 @pytest.mark.anyio
 async def test_checkpoint_resume_rejects_duplicate_evidence_identity(tmp_path: Path) -> None:
@@ -799,7 +756,6 @@ async def test_checkpoint_resume_rejects_duplicate_evidence_identity(tmp_path: P
             {"fake": FakeCapability("fake", {})}, checkpoint_store=checkpoints,
         ).execute(_task(), _plan(), run_id="duplicate-evidence")
 
-
 @pytest.mark.parametrize("changes,error", [
     ({"id": " "}, "identity and goal"),
     ({"status": "complete"}, "requires result"),
@@ -818,7 +774,6 @@ def test_project_record_status_contract(changes, error) -> None:
     with pytest.raises(ValidationError, match=error):
         Project(**values)
 
-
 def test_project_record_rejects_reverse_timestamps() -> None:
     from datetime import UTC, datetime, timedelta
     from pydantic import ValidationError
@@ -828,7 +783,6 @@ def test_project_record_rejects_reverse_timestamps() -> None:
     with pytest.raises(ValidationError, match="cannot precede"):
         Project(id="p", goal="answer", run_id="project-p", created_at=created,
                 updated_at=created - timedelta(seconds=1))
-
 
 @pytest.mark.parametrize("schema,payload,error", [
     ("project", {"goal": " "}, "goal"),
@@ -843,7 +797,6 @@ def test_api_request_contracts_reject_blank_fields(schema, payload, error) -> No
     with pytest.raises(ValidationError, match=error):
         model.model_validate(payload)
 
-
 def test_stream_event_rejects_duplicate_string_lists() -> None:
     from pydantic import ValidationError
     from v2.api.events import CustomData, Suggestions
@@ -852,7 +805,6 @@ def test_stream_event_rejects_duplicate_string_lists() -> None:
         Suggestions(items=["Compare players", "Compare players"])
     with pytest.raises(ValidationError, match="must not contain duplicates"):
         CustomData(node="verify", unverified_numbers=["61", "61"])
-
 
 def test_checkpoint_save_fsyncs_directory_after_replace(tmp_path, monkeypatch) -> None:
     from v2.runtime.checkpoints import ExecutionCheckpoint
@@ -866,7 +818,6 @@ def test_checkpoint_save_fsyncs_directory_after_replace(tmp_path, monkeypatch) -
     FileCheckpointStore(tmp_path).save(ExecutionCheckpoint(version=2,
         run_id="durable", task=_task(), plan=_plan()))
     assert len(calls) == 2
-
 
 def test_checkpoint_delete_fsyncs_directory(tmp_path, monkeypatch) -> None:
     from v2.runtime.checkpoints import ExecutionCheckpoint
@@ -882,7 +833,6 @@ def test_checkpoint_delete_fsyncs_directory(tmp_path, monkeypatch) -> None:
     store.delete("delete-durable")
     assert len(calls) == 1
     assert store.load("delete-durable") is None
-
 
 def test_checkpoint_store_rejects_symlinked_record(tmp_path: Path) -> None:
     from v2.runtime.checkpoints import ExecutionCheckpoint
@@ -902,7 +852,6 @@ def test_checkpoint_store_rejects_symlinked_record(tmp_path: Path) -> None:
         with pytest.raises(ValueError, match="cannot be a symlink"):
             operation()
 
-
 def test_file_checkpoint_store_serializes_same_run_writers(tmp_path: Path) -> None:
     from concurrent.futures import ThreadPoolExecutor
     from v2.runtime.checkpoints import ExecutionCheckpoint
@@ -916,7 +865,6 @@ def test_file_checkpoint_store_serializes_same_run_writers(tmp_path: Path) -> No
     loaded = store.load("shared")
     assert loaded in checkpoints
     assert not list(tmp_path.glob(".checkpoint-*"))
-
 
 def test_checkpoint_store_rejects_symlinked_directory(tmp_path: Path) -> None:
     from v2.runtime.checkpoints import ExecutionCheckpoint
@@ -936,7 +884,6 @@ def test_checkpoint_store_rejects_symlinked_directory(tmp_path: Path) -> None:
             operation()
     assert list(outside.iterdir()) == []
 
-
 def test_project_store_update_rejects_identity_and_unknown_fields(tmp_path: Path) -> None:
     store = ProjectStore(tmp_path / "projects.sqlite3")
     project = store.create("Celtics outlook")
@@ -945,7 +892,6 @@ def test_project_store_update_rejects_identity_and_unknown_fields(tmp_path: Path
         with pytest.raises(ValueError, match="unknown fields"):
             store.update(project.id, **changes)
     assert store.get(project.id) == project
-
 
 def test_project_store_rejects_status_regression_and_terminal_rewrite(tmp_path: Path) -> None:
     store = ProjectStore(tmp_path / "projects.sqlite3")
@@ -957,7 +903,6 @@ def test_project_store_rejects_status_regression_and_terminal_rewrite(tmp_path: 
     with pytest.raises(ValueError, match="complete to running"):
         store.update(project.id, status="running", result=None)
     assert store.get(project.id) == complete
-
 
 def test_project_store_handles_wall_clock_rollback_on_update(
     tmp_path: Path, monkeypatch,
@@ -980,7 +925,6 @@ def test_project_store_handles_wall_clock_rollback_on_update(
     assert updated.updated_at == project.updated_at
     assert updated.status == "running"
 
-
 def test_checkpoint_rejects_noninteger_attempt_counts() -> None:
     from pydantic import ValidationError
     from v2.runtime.checkpoints import ExecutionCheckpoint
@@ -989,7 +933,6 @@ def test_checkpoint_rejects_noninteger_attempt_counts() -> None:
             ExecutionCheckpoint(version=2,
                 run_id="run", task=_task(), plan=_plan(), attempts={"one": count},
             )
-
 
 def test_project_store_rejects_invalid_boundary_inputs(tmp_path: Path) -> None:
     store = ProjectStore(tmp_path / "projects.sqlite3")
@@ -1005,7 +948,6 @@ def test_project_store_rejects_invalid_boundary_inputs(tmp_path: Path) -> None:
     with pytest.raises(ValueError, match="requires changes"):
         store.update(project.id)
 
-
 def test_checkpoint_store_rejects_symlinked_parent_directory(tmp_path: Path) -> None:
     outside = tmp_path / "outside"
     outside.mkdir()
@@ -1013,7 +955,6 @@ def test_checkpoint_store_rejects_symlinked_parent_directory(tmp_path: Path) -> 
     parent.symlink_to(outside, target_is_directory=True)
     with pytest.raises(ValueError, match="parent cannot be a symlink"):
         FileCheckpointStore(parent / "checkpoints")
-
 
 def test_project_store_rejects_symlinked_parent_directory(tmp_path: Path) -> None:
     outside = tmp_path / "outside"
@@ -1024,7 +965,6 @@ def test_project_store_rejects_symlinked_parent_directory(tmp_path: Path) -> Non
         ProjectStore(parent / "projects.sqlite3")
     assert list(outside.iterdir()) == []
 
-
 def test_project_store_rechecks_parent_before_connect(tmp_path: Path) -> None:
     parent = tmp_path / "parent"
     store = ProjectStore(parent / "projects.sqlite3")
@@ -1034,7 +974,6 @@ def test_project_store_rechecks_parent_before_connect(tmp_path: Path) -> None:
     with pytest.raises(ValueError, match="parent cannot be a symlink"):
         store.list()
     assert list(outside.iterdir()) == []
-
 
 @pytest.mark.parametrize("suffix", ["-journal", "-wal", "-shm"])
 def test_project_store_rejects_symlinked_sqlite_auxiliary_files(
@@ -1048,7 +987,6 @@ def test_project_store_rejects_symlinked_sqlite_auxiliary_files(
         ProjectStore(path)
     assert outside.read_text() == "private"
 
-
 def test_checkpoint_store_revalidates_copied_checkpoint(tmp_path: Path) -> None:
     from pydantic import ValidationError
     from v2.runtime.checkpoints import ExecutionCheckpoint
@@ -1057,7 +995,6 @@ def test_checkpoint_store_revalidates_copied_checkpoint(tmp_path: Path) -> None:
     with pytest.raises(ValidationError, match="run id must be non-empty"):
         FileCheckpointStore(tmp_path).save(unsafe)
     assert list(tmp_path.iterdir()) == []
-
 
 def test_executable_hash_rejects_symlinked_source(monkeypatch, tmp_path: Path) -> None:
     from v2.api import routes
@@ -1073,13 +1010,11 @@ def test_executable_hash_rejects_symlinked_source(monkeypatch, tmp_path: Path) -
     with pytest.raises(ValueError, match="source tree cannot contain symlinks"):
         routes._executable_sha256()
 
-
 def test_stream_event_text_has_hard_limits() -> None:
     from pydantic import ValidationError
     from v2.api.events import ToolResult
     with pytest.raises(ValidationError, match="at most 4000 characters"):
         ToolResult(node="execute", name="tool", status="fail", error="x" * 4001)
-
 
 def test_frontend_preserves_public_node_error_status():
     from pathlib import Path
@@ -1089,7 +1024,6 @@ def test_frontend_preserves_public_node_error_status():
 
     assert 'status === "complete" || status === "error" ? status : "running"' in source
     assert 'd.status === "complete" ? "complete" : "running"' not in source
-
 
 def test_frontend_answer_citation_preserves_all_distinct_sources():
     from pathlib import Path
@@ -1101,7 +1035,6 @@ def test_frontend_answer_citation_preserves_all_distinct_sources():
     assert 'lines.join("\\n")' in source
     assert "function firstTableMeta(" not in source
     assert "meta={firstTableMeta(m.ai)}" not in source
-
 
 def test_frontend_evidence_views_preserve_limitations():
     from pathlib import Path
@@ -1117,7 +1050,6 @@ def test_frontend_evidence_views_preserve_limitations():
         assert field in canvas
     assert inline.count("<EvidenceLimitations meta={table.meta} />") == 2
 
-
 def test_frontend_citations_include_evidence_limitations():
     from pathlib import Path
 
@@ -1131,14 +1063,12 @@ def test_frontend_citations_include_evidence_limitations():
         assert f"{field}: meta.{field}" in chat
         assert f"{field}: meta?.{field}" in artifacts
 
-
 def test_v2_tool_call_contract_rejects_raw_arguments():
     from pydantic import ValidationError
     from v2.api.events import ToolCall
 
     with pytest.raises(ValidationError, match="args"):
         ToolCall(node="tools", name="standings", args={"token": "secret"})
-
 
 def test_v2_sse_recursively_bounds_structured_public_payloads():
     import json
@@ -1162,13 +1092,10 @@ def test_v2_sse_recursively_bounds_structured_public_payloads():
     assert cursor["child"] is None
     assert len(public["unverified_numbers"][0]) == 200_000
 
-
 def test_v2_sse_emits_strict_json_for_non_finite_nested_values():
     import json
     import math
     from v2.api.events import CustomData
-
-
 
     event = CustomData.model_construct(
         node="analytics", tables=[{"value": math.nan, "other": math.inf}],
@@ -1179,7 +1106,6 @@ def test_v2_sse_emits_strict_json_for_non_finite_nested_values():
     assert json.loads(payload)["tables"] == [{"value": None, "other": None}]
     assert "NaN" not in payload
     assert "Infinity" not in payload
-
 
 def test_v2_sse_boundary_hides_draft_reasoning_and_diagnostics():
     import json
@@ -1210,19 +1136,16 @@ def test_v2_sse_boundary_hides_draft_reasoning_and_diagnostics():
     ):
         assert secret not in combined
 
-
 def test_frontend_can_select_native_v2_chat_runtime():
     from pathlib import Path
 
     lib = Path(__file__).resolve().parents[3] / "frontend" / "lib"
     api_source = (lib / "api.ts").read_text()
-    runtime_source = (lib / "runtime.ts").read_text()
-    assert 'chatRuntime()' in api_source
-    assert 'NEXT_PUBLIC_CHAT_RUNTIME' in runtime_source
     assert '"/api/v2/chat/stream"' in api_source
+    assert "chatRuntime" not in api_source
+    assert not (lib / "runtime.ts").exists()
     assert 'q,' in api_source and 'model,' in api_source
     assert 'thread,' in api_source and 'client: getClientId()' in api_source
-
 
 def test_live_route_reports_pre_stream_setup_failure_as_sse(monkeypatch):
     from fastapi import FastAPI
@@ -1245,7 +1168,6 @@ def test_live_route_reports_pre_stream_setup_failure_as_sse(monkeypatch):
     assert "private setup detail" not in response.text
     assert response.text.rstrip().endswith("data: {}")
 
-
 def test_live_route_reports_model_resolution_failure_as_sse(monkeypatch):
     from fastapi import FastAPI
     from fastapi.testclient import TestClient
@@ -1263,12 +1185,10 @@ def test_live_route_reports_model_resolution_failure_as_sse(monkeypatch):
     assert "event: error" in response.text
     assert "private model detail" not in response.text
 
-
 def test_final_carry_exports_structural_flags():
     from v2.api import routes
     source = Path(routes.__file__).read_text()
     assert '"structural_flags": list(getattr(result, "structural_flags", []))' in source
-
 
 def test_intake_provider_failure_yields_typed_partial_final_without_error(monkeypatch):
     from fastapi import FastAPI
@@ -1300,7 +1220,6 @@ def test_intake_provider_failure_yields_typed_partial_final_without_error(monkey
     assert response.text.rstrip().endswith("event: graph_end\ndata: {}")
     assert "private provider detail" not in response.text
 
-
 def test_public_sse_projection_omits_real_envelope_source_identity():
     from datetime import UTC,datetime
     from v2.contracts import EvidenceEnvelope
@@ -1310,7 +1229,6 @@ def test_public_sse_projection_omits_real_envelope_source_identity():
     item=EvidenceEnvelope(evidence_id='e',capability='team_ratings',source='fixture',observed_at=datetime.now(UTC),rows=[],source_identity={'kind':'warehouse','warehouse_id':'frozen-eval','sha256':'a'*64})
     payload=encode_event(CustomData(node='analytics',tables=[public_evidence_table(item)]))
     assert 'source_identity' not in payload and 'a'*64 not in payload and 'warehouse_id' not in payload
-
 
 def test_revision_warehouse_identity_is_safe_and_startup_bound(monkeypatch, tmp_path):
     from shared import store
@@ -1329,7 +1247,6 @@ def test_revision_warehouse_identity_is_safe_and_startup_bound(monkeypatch, tmp_
         assert routes.runtime_warehouse_identity() == first
     finally:
         routes.runtime_warehouse_identity.cache_clear()
-
 
 def test_real_lifespan_freezes_revision_warehouse_endpoint(monkeypatch, tmp_path):
     from v2.main import app as v2_app
@@ -1360,7 +1277,6 @@ def test_real_lifespan_freezes_revision_warehouse_endpoint(monkeypatch, tmp_path
     finally:
         routes.runtime_warehouse_identity.cache_clear()
 
-
 def test_full_http_sse_and_activity_omit_private_failure_taxonomy(monkeypatch,tmp_path):
     import json
     from v2.api import routes
@@ -1382,12 +1298,10 @@ def test_full_http_sse_and_activity_omit_private_failure_taxonomy(monkeypatch,tm
         assert key not in combined
     assert sentinel not in combined
 
-
 def _write_expected_manifest(path, manifest):
     import json
     path.write_text(json.dumps(manifest.as_dict()))
     return path
-
 
 def test_runtime_asset_manifest_is_deeply_immutable(monkeypatch):
     from v2.api import routes
@@ -1402,7 +1316,6 @@ def test_runtime_asset_manifest_is_deeply_immutable(monkeypatch):
     copied['typed_argument_assets']['capability_manifest']='x'
     assert manifest.prompt_sha256['semantic_verifier']!='x'
     assert manifest.typed_argument_assets['capability_manifest']!='x'
-
 
 def test_preflight_exact_match_and_each_mismatch(monkeypatch,tmp_path):
     import json
@@ -1419,7 +1332,6 @@ def test_preflight_exact_match_and_each_mismatch(monkeypatch,tmp_path):
     revision_path=tmp_path/'revision.json';revision_path.write_text(json.dumps(revision_only))
     assert routes.preflight_runtime_assets(revision_path) is observed
 
-
 def test_registry_completeness_rejects_missing_and_extra(monkeypatch):
     from v2.api import routes
     from v2.adapters import models
@@ -1431,14 +1343,12 @@ def test_registry_completeness_rejects_missing_and_extra(monkeypatch):
         with pytest.raises(RuntimeError,match='incomplete or has extra'):routes.runtime_asset_manifest()
     monkeypatch.setattr(models,'_PROVIDER_ROUTE_PROMPT_NAMES',original);monkeypatch.setattr(models,'_PROVIDER_ROUTE_PROMPTS',None);routes.runtime_asset_manifest.cache_clear()
 
-
 def test_loaded_module_hash_detects_old_import_against_new_expected(monkeypatch,tmp_path):
     import json
     from v2.api import routes
     old=routes.runtime_asset_manifest();expected=old.as_dict();expected['module_sha256']['routes']='new-loaded-code-hash'
     path=tmp_path/'new.json';path.write_text(json.dumps(expected))
     with pytest.raises(RuntimeError,match='substantive mismatch'):routes.preflight_runtime_assets(path)
-
 
 def test_real_lifespan_freezes_manifest_and_runtime_prompts(monkeypatch,tmp_path):
     from v2.main import app as v2_app
@@ -1457,7 +1367,6 @@ def test_real_lifespan_freezes_manifest_and_runtime_prompts(monkeypatch,tmp_path
             assert hashlib.sha256(models.provider_route_prompt('semantic_verifier','verifier').encode()).hexdigest()==first['prompt_sha256']['semantic_verifier']
         finally:verifier_path.write_bytes(original)
 
-
 def test_lifespan_fails_before_serving_on_expected_mismatch(monkeypatch,tmp_path):
     import json
     from v2.main import app as v2_app
@@ -1467,7 +1376,6 @@ def test_lifespan_fails_before_serving_on_expected_mismatch(monkeypatch,tmp_path
     with pytest.raises(RuntimeError,match='substantive mismatch'):
         with TestClient(v2_app):pass
 
-
 def test_lifespan_starts_on_revision_only_mismatch(monkeypatch,tmp_path):
     import json
     from v2.main import app as v2_app
@@ -1476,7 +1384,6 @@ def test_lifespan_starts_on_revision_only_mismatch(monkeypatch,tmp_path):
     path=tmp_path/'revision-only.json';path.write_text(json.dumps(expected));monkeypatch.setenv('DIME_EXPECTED_ASSET_MANIFEST',str(path))
     with TestClient(v2_app) as client:
         assert client.get('/api/revision').status_code==200
-
 
 def test_loaded_behavior_fingerprint_changes_on_import_time_registry_binding(monkeypatch):
     from v2.api import routes
@@ -1489,7 +1396,6 @@ def test_loaded_behavior_fingerprint_changes_on_import_time_registry_binding(mon
     assert expected['executable_sha256']==observed['executable_sha256']
     assert expected['module_sha256']['models']!=observed['module_sha256']['models']
 
-
 def test_preflight_rejects_expected_manifest_inside_executable_roots(tmp_path):
     import json
     from v2.api import routes
@@ -1500,7 +1406,6 @@ def test_preflight_rejects_expected_manifest_inside_executable_roots(tmp_path):
             routes.preflight_runtime_assets(inside)
     finally:
         inside.unlink(missing_ok=True)
-
 
 def test_typed_public_stream_sanitizes_all_events_and_preserves_lifecycle(monkeypatch,tmp_path):
     from datetime import UTC,datetime
@@ -1563,7 +1468,6 @@ def test_typed_public_stream_sanitizes_all_events_and_preserves_lifecycle(monkey
     assert "node_id" not in str(carry) and "selector" not in str(carry)
     assert text.count('"node":"analytics","status":"complete"')==1
 
-
 def test_public_stream_projection_failure_abstains_and_terminates(monkeypatch,tmp_path):
     from datetime import UTC,datetime
     from fastapi import FastAPI
@@ -1589,7 +1493,6 @@ def test_public_stream_projection_failure_abstains_and_terminates(monkeypatch,tm
     assert text.count("event: final_answer")==1 and text.count("event: graph_end")==1
     assert text.index("event: work_log") < text.index("event: final_answer") < text.index("event: graph_end")
 
-
 def test_typed_terminal_contract_replaces_legacy_failure_and_metadata_cases(monkeypatch,tmp_path):
     from fastapi import FastAPI
     from fastapi.testclient import TestClient
@@ -1605,7 +1508,6 @@ def test_typed_terminal_contract_replaces_legacy_failure_and_metadata_cases(monk
     final=text.split("event: final_answer",1)[1].split("\n\n",1)[0]
     for field in ['"run_id"','"verification":"partial"','"verified_claims":0','"gaps"','"stage_latencies_ms"']:assert field in final
 
-
 def test_public_provenance_separates_season_and_as_of():
     from datetime import UTC,date,datetime
     from types import SimpleNamespace
@@ -1618,14 +1520,12 @@ def test_public_provenance_separates_season_and_as_of():
     assert tables[0]["provenance"]=={"capability":"standings","origin":"undeclared","warehouse_id":None,"season":"2025-26","as_of":"2026-04-01","live_sources":[]}
     assert "private" not in str(tables)
 
-
 def test_no_authority_with_internal_gap_still_nonblank_and_terminal():
     from types import SimpleNamespace
     from v2.api.routes import _answer_text
     from v2.contracts import Gap
     text=_answer_text(SimpleNamespace(output_statuses=[],verified_claims=[],execution=SimpleNamespace(evidence=[]),gaps=[Gap(kind="execution_failure",message="SECRET")]))
     assert text.strip() and "SECRET" not in text
-
 
 def test_journal_setup_and_append_failures_keep_generic_fallback_once(monkeypatch,tmp_path):
     from fastapi import FastAPI
@@ -1647,7 +1547,6 @@ def test_journal_setup_and_append_failures_keep_generic_fallback_once(monkeypatc
         assert '"name":"contracts"' in text and "SECRET" not in text
         assert text.count("event: final_answer")==text.count("event: graph_end")==1
 
-
 def _stream_with_runtime(monkeypatch, tmp_path, runtime_factory):
     from fastapi import FastAPI
     from fastapi.testclient import TestClient
@@ -1658,7 +1557,6 @@ def _stream_with_runtime(monkeypatch, tmp_path, runtime_factory):
     monkeypatch.setattr("v2.runtime.assembly.build_runtime",runtime_factory)
     app=FastAPI();app.include_router(routes.router,prefix="/api")
     return TestClient(app).post("/api/v2/chat/stream",json={"q":"x"}).text
-
 
 def test_stream_tool_events_report_the_capability_the_ledger_recorded(monkeypatch,tmp_path):
     from v2.runtime.ledger import LedgerKind,RunLedger
@@ -1675,10 +1573,10 @@ def test_stream_tool_events_report_the_capability_the_ledger_recorded(monkeypatc
         ledger=RunLedger(k["run_id"]);ledgers[k["run_id"]]=ledger
         return Broken(),ledger
     text=_stream_with_runtime(monkeypatch,tmp_path,build)
-    assert text.count('"name":"team_ratings"')==2
     assert '"name":"tool"' not in text and "SECRET" not in text
     assert text.count("event: tool_call")==1 and text.count("event: tool_result")==1
-
+    call=text.split("event: tool_call\ndata: ",1)[1].split("\n\n",1)[0]
+    assert json.loads(call)["data"]=={"name":"team_ratings","arguments":[],"argument_count":0,"unknown_argument_count":0}
 
 def test_stream_tool_events_from_the_live_journal_carry_the_capability_name(monkeypatch,tmp_path):
     from v2 import contracts
@@ -1707,9 +1605,12 @@ def test_stream_tool_events_from_the_live_journal_carry_the_capability_name(monk
         return Runtime(),ledgers[k["run_id"]]
     text=_stream_with_runtime(monkeypatch,tmp_path,build)
     assert text.count("event: tool_call")==1 and text.count("event: tool_result")==1
-    assert text.count('"name":"team_ratings"')==2
+    call=text.split("event: tool_call\ndata: ",1)[1].split("\n\n",1)[0]
+    result=text.split("event: tool_result\ndata: ",1)[1].split("\n\n",1)[0]
+    assert json.loads(call)["name"]=="team_ratings"
+    assert json.loads(call)["data"]["name"]=="team_ratings"
+    assert json.loads(result)["name"]=="team_ratings"
     assert '"name":"tool"' not in text
-
 
 def test_stream_publishes_claim_prose_and_one_clean_row_per_metric(monkeypatch,tmp_path):
     from datetime import UTC, datetime
@@ -1777,7 +1678,6 @@ def test_stream_publishes_claim_prose_and_one_clean_row_per_metric(monkeypatch,t
     assert [row["output_id"] for row in custom["tables"]]==metrics
     assert [row["value"] for row in custom["tables"]]==["9.6","119.8","110.2"]
 
-
 def test_pretool_timeout_safe_terminal_carries_latency(monkeypatch,tmp_path):
     from fastapi import FastAPI
     from fastapi.testclient import TestClient
@@ -1794,7 +1694,6 @@ def test_pretool_timeout_safe_terminal_carries_latency(monkeypatch,tmp_path):
     assert text.count("event: work_log")==text.count("event: final_answer")==text.count("event: graph_end")==1
     assert response.headers["x-dime-run-id"] in text
     assert text.index("event: work_log") < text.index("event: final_answer") < text.index("event: graph_end")
-
 
 def test_pass_result_final_carry_contract(monkeypatch,tmp_path):
     from datetime import UTC,datetime
@@ -1813,7 +1712,6 @@ def test_pass_result_final_carry_contract(monkeypatch,tmp_path):
     assert carry["run_id"]==r.headers["x-dime-run-id"] and carry["verification"]=="pass"
     assert carry["verified_claims"]==1 and carry["gaps"]==[] and len(carry["output_statuses"])==1
 
-
 def test_no_authority_internal_gap_route_is_nonblank_and_terminal(monkeypatch,tmp_path):
     from fastapi import FastAPI
     from fastapi.testclient import TestClient
@@ -1828,7 +1726,6 @@ def test_no_authority_internal_gap_route_is_nonblank_and_terminal(monkeypatch,tm
     assert "SECRET" not in text and text.count("event: work_log")==text.count("event: final_answer")==text.count("event: graph_end")==1
     payload=__import__("json").loads(text.split("event: final_answer\ndata: ",1)[1].split("\n\n",1)[0]);assert payload["text"].strip()
 
-
 def test_runtime_manifest_pins_accepted_semantic_baseline():
     from v2.api import routes
     assert routes.runtime_asset_manifest().as_dict()["semantic_baseline"] == {
@@ -1837,7 +1734,6 @@ def test_runtime_manifest_pins_accepted_semantic_baseline():
         "logical_content_id": "81969a2d902583aea99c2d8b1a09673b941c63e649bdf6fb6ce09a8aff591a08",
         "manifest_self_hash": "c8ba316cc4d50c666208874a5d04d9788a312e450781d057b823a63aadb446ac",
     }
-
 
 def test_chat_stream_get_with_client_header_and_no_thread_starts_stream(monkeypatch, tmp_path):
     from v2 import contracts
@@ -1858,7 +1754,6 @@ def test_chat_stream_get_with_client_header_and_no_thread_starts_stream(monkeypa
     assert response.text.count("event: final_answer") == 1
     assert response.text.count("event: graph_end") == 1
 
-
 def _healthz_client(monkeypatch, tmp_path):
     import duckdb
     from fastapi import FastAPI
@@ -1872,7 +1767,6 @@ def _healthz_client(monkeypatch, tmp_path):
     app.include_router(routes.router, prefix="/api")
     return TestClient(app), wh
 
-
 def test_healthz_503_when_ratings_table_missing(monkeypatch, tmp_path):
     import duckdb
     client, wh = _healthz_client(monkeypatch, tmp_path)
@@ -1882,7 +1776,6 @@ def test_healthz_503_when_ratings_table_missing(monkeypatch, tmp_path):
     assert response.status_code == 503
     assert response.json() == {"ok": False, "reason": "ratings_table_missing"}
 
-
 def test_healthz_503_when_ratings_table_empty(monkeypatch, tmp_path):
     import duckdb
     client, wh = _healthz_client(monkeypatch, tmp_path)
@@ -1891,7 +1784,6 @@ def test_healthz_503_when_ratings_table_empty(monkeypatch, tmp_path):
     response = client.get("/api/healthz")
     assert response.status_code == 503
     assert response.json() == {"ok": False, "reason": "ratings_table_empty"}
-
 
 def test_healthz_200_when_ratings_present(monkeypatch, tmp_path):
     import duckdb
@@ -1903,7 +1795,6 @@ def test_healthz_200_when_ratings_present(monkeypatch, tmp_path):
     response = client.get("/api/healthz")
     assert response.status_code == 200
     assert response.json() == {"ok": True}
-
 
 def test_healthz_503_when_warehouse_unreadable(monkeypatch, tmp_path):
     import duckdb
@@ -1925,7 +1816,6 @@ def test_healthz_503_when_warehouse_unreadable(monkeypatch, tmp_path):
     response = TestClient(app).get("/api/healthz")
     assert response.status_code == 503
     assert response.json() == {"ok": False, "reason": "warehouse_unreachable"}
-
 
 def test_healthz_503_when_ratings_unreadable(monkeypatch, tmp_path):
     from fastapi import FastAPI

@@ -1,0 +1,70 @@
+{
+  "endpoints": [
+    {
+      "base_url": "https://generativelanguage.googleapis.com/v1beta/openai/",
+      "strict_json_schema": "measured",
+      "tool_calling": "unmeasured",
+      "strict_tool_definitions": "unmeasured",
+      "measurement": {
+        "probe": "schema_conformance",
+        "measured_at": "2026-10-05",
+        "models": [
+          "gemini-3.5-flash",
+          "gemini-3.8-flash",
+          "gemma-4-31b-it"
+        ]
+      }
+    },
+    {
+      "base_url": "https://integrate.api.nvidia.com/v1",
+      "strict_json_schema": "unmeasured",
+      "tool_calling": "unmeasured",
+      "strict_tool_definitions": "unmeasured"
+    },
+    {
+      "base_url": "https://api.mistral.ai/v1",
+      "strict_json_schema": "unmeasured",
+      "tool_calling": "unmeasured",
+      "strict_tool_definitions": "unmeasured"
+    },
+    {
+      "base_url": "https://openrouter.ai/api/v1",
+      "strict_json_schema": "measured",
+      "tool_calling": "unmeasured",
+      "strict_tool_definitions": "unmeasured",
+      "measurement": {
+        "probe": "schema_conformance",
+        "measured_at": "2026-10-05",
+        "models": [
+          "nvidia/nemotron-3-super-120b-a12b:free"
+        ]
+      }
+    },
+    {
+      "base_url": "https://api.inceptionlabs.ai/v1",
+      "strict_json_schema": "measured",
+      "tool_calling": "unmeasured",
+      "strict_tool_definitions": "unmeasured",
+      "measurement": {
+        "probe": "capability_probe",
+        "measured_at": "2026-10-05",
+        "models": [
+          "mercury-2.5"
+        ]
+      }
+    },
+    {
+      "base_url": "https://api.groq.com/openai/v1",
+      "strict_json_schema": "refused",
+      "tool_calling": "refused",
+      "strict_tool_definitions": "refused",
+      "measurement": {
+        "probe": "capability_probe",
+        "measured_at": "2026-10-05",
+        "models": [
+          "openai/gpt-oss-20b"
+        ]
+      }
+    }
+  ]
+}

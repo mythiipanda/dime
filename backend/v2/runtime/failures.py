@@ -12,19 +12,16 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 _CANDIDATE_LOCKS_GUARD = Lock()
 _CANDIDATE_LOCKS: dict[Path, Lock] = {}
 
-
 def _candidate_path_lock(path: Path) -> Lock:
     resolved = path.resolve()
     with _CANDIDATE_LOCKS_GUARD:
         return _CANDIDATE_LOCKS.setdefault(resolved, Lock())
-
 
 class CandidateState(StrEnum):
     PENDING = "pending"
     ACCEPTED = "accepted"
     QUARANTINED = "quarantined"
     REJECTED = "rejected"
-
 
 class FailureObservation(BaseModel):
     model_config = ConfigDict(extra="forbid")
@@ -45,7 +42,6 @@ class FailureObservation(BaseModel):
         if self.trace_id is not None and not self.trace_id.strip():
             raise ValueError("failure observation trace id must be non-empty")
         return self
-
 
 class ScenarioCandidate(BaseModel):
     model_config = ConfigDict(extra="forbid")
@@ -91,7 +87,6 @@ class ScenarioCandidate(BaseModel):
             trace_id=item.trace_id,
         )
 
-
 def _candidate_id(
     failure_class: str, summary: str, expected_relation: str,
 ) -> str:
@@ -102,7 +97,6 @@ def _candidate_id(
     }
     return hashlib.sha256(json.dumps(
         identity, sort_keys=True, separators=(",", ":")).encode()).hexdigest()[:24]
-
 
 class CandidateStore:
     def __init__(self, path: str | Path) -> None:

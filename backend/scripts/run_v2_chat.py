@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 import argparse
 import asyncio
 import os
@@ -10,7 +9,6 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from shared.providers import resolve_model_id
 from v2.runtime.assembly import build_runtime
 from v2.runtime.policy import ExecutionPolicy
-
 
 def main() -> int:
     args = argparse.ArgumentParser()
@@ -33,7 +31,6 @@ def main() -> int:
     print("claims=%d gaps=%d" % (len(result.verified_claims), len(result.gaps)))
     print("ledger: %s" % (Path(ns.ledger_dir) / (ns.run_id + ".jsonl")))
     return 0
-
 
 if __name__ == "__main__":
     raise SystemExit(main())

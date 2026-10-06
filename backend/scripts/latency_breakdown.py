@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 import argparse
 import json
 import sys
@@ -7,10 +6,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-
 def _ms(value):
     return value if isinstance(value, int) and not isinstance(value, bool) and value >= 0 else None
-
 
 def _at(value):
     try:
@@ -20,7 +17,6 @@ def _at(value):
     if parsed.tzinfo is None:
         return None
     return parsed
-
 
 def summarize(lines):
     stages = {}
@@ -90,7 +86,6 @@ def summarize(lines):
         "tools": tools,
     }
 
-
 def main() -> int:
     args = argparse.ArgumentParser()
     args.add_argument("ledger", help="ledger JSONL path")
@@ -106,7 +101,6 @@ def main() -> int:
         print("tool %s: calls=%d total_ms=%d max_ms=%d" % (
             name, entry["calls"], entry["total_ms"], entry["max_ms"]))
     return 0
-
 
 if __name__ == "__main__":
     raise SystemExit(main())

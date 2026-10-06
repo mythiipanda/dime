@@ -1,3 +1,4 @@
+
 from __future__ import annotations
 
 from enum import StrEnum
@@ -5,6 +6,17 @@ from typing import Annotated, Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, StrictBool, StrictInt, TypeAdapter, field_validator, model_validator
 
+PUBLIC_EVENT_DATA_FIELDS: dict[str, tuple[str, ...]] = {
+    "stage_summary": ("mode", "season", "entity_count", "requirement_count",
+                      "calculation_count"),
+    "plan_update": ("node_count", "capabilities", "unknown_capability_count"),
+    "tool_call": ("name", "arguments", "argument_count", "unknown_argument_count"),
+    "tool_result": ("name", "rows"),
+    "evidence_update": ("capability", "season", "as_of", "observed_at", "rows",
+                        "qualification", "coverage", "warning_count"),
+    "verification_update": ("round", "supported_count", "claim_count",
+                            "missing_count", "contradiction_count", "repair_count"),
+}
 
 class StrictEvent(BaseModel):
     model_config = ConfigDict(extra="forbid")
@@ -21,7 +33,6 @@ class StrictEvent(BaseModel):
                 raise ValueError("event string lists must not contain duplicates")
         return value
 
-
 class EventType(StrEnum):
     NODE_UPDATE = "node_update"
     STATUS = "status"
@@ -37,23 +48,19 @@ class EventType(StrEnum):
     BINDING_DIAGNOSTIC = "binding_diagnostic"
     RUN_DIAGNOSTIC = "run_diagnostic"
 
-
 class NodeUpdate(StrictEvent):
     type: Literal[EventType.NODE_UPDATE] = EventType.NODE_UPDATE
     node: Literal["entry", "data_retrieval", "tools", "analytics", "presentation"]
     status: Literal["running", "complete", "error"]
-
 
 class ThoughtStream(StrictEvent):
     type: Literal[EventType.THOUGHT_STREAM] = EventType.THOUGHT_STREAM
     node: Literal["entry", "data_retrieval", "tools", "analytics", "presentation"]
     text: str = Field(max_length=200_000)
 
-
 class StatusUpdate(StrictEvent):
     type: Literal[EventType.STATUS] = EventType.STATUS
     text: str = Field(max_length=500)
-
 
 class ToolCall(StrictEvent):
     event_id: str | None = None
@@ -71,7 +78,6 @@ class ToolCall(StrictEvent):
     label: str | None = Field(default=None, max_length=1000)
     summary: str | None = Field(default=None, max_length=4000)
     agent: str | None = Field(default=None, max_length=256)
-
 
 class ToolResult(StrictEvent):
     event_id: str | None = None
@@ -101,17 +107,14 @@ class ToolResult(StrictEvent):
             raise ValueError("failed tool result requires an error")
         return self
 
-
 class Token(StrictEvent):
     type: Literal[EventType.TOKEN] = EventType.TOKEN
     text: str = Field(max_length=200_000)
-
 
 class WorkLog(StrictEvent):
     type: Literal[EventType.WORK_LOG] = EventType.WORK_LOG
     run_id: str = Field(pattern=r"^run-[0-9a-f]{32}$")
     status: Literal["complete", "partial"]
-
 
 class CustomData(StrictEvent):
     type: Literal[EventType.CUSTOM_DATA] = EventType.CUSTOM_DATA
@@ -119,21 +122,17 @@ class CustomData(StrictEvent):
     tables: list[dict[str, Any]] = Field(default_factory=list, max_length=32)
     unverified_numbers: list[str] = Field(default_factory=list, max_length=128)
 
-
 class FinalAnswer(StrictEvent):
     type: Literal[EventType.FINAL_ANSWER] = EventType.FINAL_ANSWER
     text: str = Field(max_length=200_000)
     carry: dict[str, Any] | None = Field(default=None, max_length=64)
 
-
 class Suggestions(StrictEvent):
     type: Literal[EventType.SUGGESTIONS] = EventType.SUGGESTIONS
     items: list[str] = Field(default_factory=list, max_length=16)
 
-
 class GraphEnd(StrictEvent):
     type: Literal[EventType.GRAPH_END] = EventType.GRAPH_END
-
 
 class BindingDiagnostic(StrictEvent):
     type: Literal[EventType.BINDING_DIAGNOSTIC] = EventType.BINDING_DIAGNOSTIC
@@ -156,7 +155,6 @@ class BindingDiagnostic(StrictEvent):
     reanchor_changed: StrictBool
     rejection: str = Field(max_length=512)
 
-
 class RunDiagnostic(StrictEvent):
     type: Literal[EventType.RUN_DIAGNOSTIC] = EventType.RUN_DIAGNOSTIC
     run_id: str = Field(max_length=256)
@@ -164,6 +162,49 @@ class RunDiagnostic(StrictEvent):
     message: str = Field(max_length=4000)
     last_stage: str | None = Field(default=None, max_length=256)
 
+class ReplayVerification(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    run_id: str = Field(max_length=256)
+    status: Literal["verified", "mismatch"]
+    turn_count: StrictInt = Field(ge=0)
+    item_count: StrictInt = Field(ge=0)
+    content_hashes: dict[str, str] = Field(max_length=256)
+    mismatched_turn: str | None = Field(default=None, max_length=256)
+
+    @model_validator(mode="after")
+    def validate_replay(self) -> "ReplayVerification":
+        if not self.run_id.strip():
+            raise ValueError("replay run id must be non-empty")
+        for turn_id, digest in self.content_hashes.items():
+            if not turn_id.strip():
+                raise ValueError("replay turn ids must be non-empty")
+            if len(digest) != 64 or any(
+                char not in "0123456789abcdef" for char in digest
+            ):
+                raise ValueError("replay content hashes must be lowercase sha256")
+        if self.status == "verified" and self.mismatched_turn is not None:
+            raise ValueError("verified replay cannot name a mismatched_turn")
+        if self.status == "mismatch" and (
+            self.mismatched_turn is None or not self.mismatched_turn.strip()
+        ):
+            raise ValueError("mismatched replay must name its mismatched_turn")
+        return self
+
+def replay_verification_for(run_id: str, thread) -> ReplayVerification:
+    return ReplayVerification(
+        run_id=run_id, status="verified", turn_count=len(thread.turns),
+        item_count=sum(len(turn.items) for turn in thread.turns),
+        content_hashes={
+            turn.turn_id: turn.content_hash for turn in thread.turns
+        })
+
+def replay_mismatch_report(run_id: str, turn_id: str) -> ReplayVerification:
+    if not turn_id.strip():
+        raise ValueError("mismatched turn must be non-empty")
+    return ReplayVerification(
+        run_id=run_id, status="mismatch", turn_count=0, item_count=0,
+        content_hashes={}, mismatched_turn=turn_id)
 
 from v2.api.activity import StageData, PlanData, EvidenceData, VerificationData
 class ActivityBase(StrictEvent):
@@ -189,7 +230,6 @@ class VerificationUpdate(ActivityBase):
     type: Literal["verification_update"]
     data: VerificationData
 ActivityUpdate = StageSummary | PlanUpdate | EvidenceUpdate | VerificationUpdate
-
 
 InternalEvent = Annotated[
     StageSummary

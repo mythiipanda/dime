@@ -104,7 +104,6 @@ async def test_planner_null_drop_lands_in_accepted_attempt_metadata():
  from v2.adapters.models import ModelPlanner,RecordedStructuredModel
  from v2.contracts import TaskSpec
  from v2.runtime import RunLedger
- from v2.runtime.ledger import LedgerKind
  def wire(key,kind,value):
   slots={'value':None,'bool_value':None,'int_value':None,'number_value':None,'decimal_value':None,
    'string_value':None,'bool_list_value':None,'int_list_value':None,'number_list_value':None,

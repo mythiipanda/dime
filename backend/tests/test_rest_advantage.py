@@ -19,7 +19,6 @@ from shared.tools.rest import (
     summarize_team,
 )
 
-
 def _connect_retry(tries=10, sleep_s=10):
     last: Exception | None = None
     for _ in range(tries):
@@ -36,7 +35,6 @@ def _connect_retry(tries=10, sleep_s=10):
     assert last is not None
     raise last
 
-
 def _row(day, home, vis, hp, vp, st="regular"):
     return {
         "date": _dt.date(2026, 1, day),
@@ -47,7 +45,6 @@ def _row(day, home, vis, hp, vp, st="regular"):
         "season_type": st,
     }
 
-
 def _aaa_schedule():
     rows = [
         _row(1, "AAA", "BBB", 110, 100),
@@ -57,7 +54,6 @@ def _aaa_schedule():
     sched = build_schedule(rows)
     return [g for g in sched if g.team == "AAA"]
 
-
 def _aaa_rows():
     return [
         _row(1, "AAA", "BBB", 110, 100),
@@ -65,14 +61,12 @@ def _aaa_rows():
         _row(5, "AAA", "BBB", 120, 115),
     ]
 
-
 def _preview_rows():
     return [
         _row(1, "AAA", "BBB", 110, 100),
         _row(2, "CCC", "AAA", 105, 100),
         _row(5, "AAA", "CCC", 120, 115),
     ]
-
 
 def _hermetic(monkeypatch, rows):
     dropped = {"null_score": 0, "unknown_game_type": 0,
@@ -83,7 +77,6 @@ def _hermetic(monkeypatch, rows):
         rest_mod, "_resolve_team",
         lambda raw: str(raw or "").strip().upper() or None)
 
-
 def test_back_to_back_detection():
     aaa = _aaa_schedule()
     assert [g.rest_days for g in aaa] == [None, 0, 2]
@@ -92,7 +85,6 @@ def test_back_to_back_detection():
     assert aaa[1].home is False
     assert aaa[1].won is False
 
-
 def test_first_game_none_baseline():
     aaa = _aaa_schedule()
     assert aaa[0].rest_days is None
@@ -100,12 +92,10 @@ def test_first_game_none_baseline():
     assert aaa[1].opp_rest_days is None
     assert aaa[1].rest_diff is None
 
-
 def test_rest_diff_sign():
     aaa = _aaa_schedule()
     assert aaa[2].opp_rest_days == 3
     assert aaa[2].rest_diff == -1
-
 
 def test_summary_values():
     summary = summarize_team(_aaa_schedule())
@@ -122,13 +112,11 @@ def test_summary_values():
     assert summary["record_at_disadvantage"] == "1-0"
     assert summary["games_with_edge_measured"] == 1
 
-
 def _hand_game(rest, diff, won):
     return TeamGame(
         date=_dt.date(2026, 1, 10), team="AAA", opponent="BBB", home=True,
         pts_for=100, pts_against=90, won=won, season_type="regular",
         rest_days=rest, opp_rest_days=None, rest_diff=diff)
-
 
 def test_distribution_buckets():
     games = [_hand_game(r, None, True)
@@ -138,7 +126,6 @@ def test_distribution_buckets():
         "b2b": 1, "1_day": 1, "2_days": 1, "3_plus": 3}
     assert summary["back_to_backs"] == 1
     assert summary["avg_rest_days"] == round((0 + 1 + 2 + 3 + 5 + 7) / 6, 2)
-
 
 def test_rest_diff_sign_buckets_and_record_splits():
     games = [
@@ -160,7 +147,6 @@ def test_rest_diff_sign_buckets_and_record_splits():
         "1-1 with a rest edge vs 1-1 at a rest disadvantage"
         " (1-1 on even rest)")
 
-
 def test_classify_scoreboard_rows_counts_drops():
     fetched = [
         ("2026-01-05", "0022500001", "AAA", "BBB", 110, 100),
@@ -174,7 +160,6 @@ def test_classify_scoreboard_rows_counts_drops():
     assert dropped == {"null_score": 1, "unknown_game_type": 1,
                        "unparseable_date": 1}
 
-
 def test_date_returns_single_game_row(monkeypatch):
     _hermetic(monkeypatch, _aaa_rows())
     res = get_rest_advantage.invoke({"team": "AAA", "season": "2025-26",
@@ -187,14 +172,12 @@ def test_date_returns_single_game_row(monkeypatch):
     assert res["meta"]["date"] == "2026-01-05"
     assert res["rows"]["summary"]["games"] == 3
 
-
 def test_date_with_no_game_errors(monkeypatch):
     _hermetic(monkeypatch, _aaa_rows())
     res = get_rest_advantage.invoke({"team": "AAA", "season": "2025-26",
                                      "date": "2026-01-03"})
     assert res["ok"] is False
     assert "no game for" in res["error"]
-
 
 def test_bad_date_format_rejected(monkeypatch):
     _hermetic(monkeypatch, _aaa_rows())
@@ -203,7 +186,6 @@ def test_bad_date_format_rejected(monkeypatch):
     assert res["ok"] is False
     assert "bad date" in res["error"]
 
-
 def test_league_with_date_rejected(monkeypatch):
     _hermetic(monkeypatch, _aaa_rows())
     res = get_rest_advantage.invoke({"team": "league", "season": "2025-26",
@@ -211,14 +193,12 @@ def test_league_with_date_rejected(monkeypatch):
     assert res["ok"] is False
     assert "require a specific team" in res["error"]
 
-
 def test_league_with_opponent_rejected(monkeypatch):
     _hermetic(monkeypatch, _aaa_rows())
     res = get_rest_advantage.invoke({"team": "league", "season": "2025-26",
                                      "opponent": "BBB"})
     assert res["ok"] is False
     assert "require a specific team" in res["error"]
-
 
 def test_opponent_preview_rest_math(monkeypatch):
     _hermetic(monkeypatch, _preview_rows())
@@ -233,7 +213,6 @@ def test_opponent_preview_rest_math(monkeypatch):
     assert preview["team_last_game"] == "2026-01-05"
     assert preview["opp_last_game"] == "2026-01-01"
 
-
 def test_opponent_preview_no_baseline_errors(monkeypatch):
     _hermetic(monkeypatch, _preview_rows())
     res = get_rest_advantage.invoke({"team": "AAA", "season": "2025-26",
@@ -241,7 +220,6 @@ def test_opponent_preview_no_baseline_errors(monkeypatch):
                                      "date": "2026-01-10"})
     assert res["ok"] is False
     assert "cannot establish a rest baseline" in res["error"]
-
 
 def test_opponent_completed_matchup_on_date(monkeypatch):
     _hermetic(monkeypatch, _aaa_rows())
@@ -253,7 +231,6 @@ def test_opponent_completed_matchup_on_date(monkeypatch):
     assert res["rows"]["games"][0]["date"] == "2026-01-05"
     assert res["rows"]["opponent"] == "BBB"
 
-
 def test_opponent_no_date_returns_most_recent_matchup(monkeypatch):
     _hermetic(monkeypatch, _aaa_rows())
     res = get_rest_advantage.invoke({"team": "AAA", "season": "2025-26",
@@ -263,7 +240,6 @@ def test_opponent_no_date_returns_most_recent_matchup(monkeypatch):
     assert res["rows"]["games"][0]["date"] == "2026-01-05"
     assert res["rows"]["opponent"] == "BBB"
 
-
 def test_opponent_no_matchup_errors(monkeypatch):
     _hermetic(monkeypatch, _aaa_rows())
     res = get_rest_advantage.invoke({"team": "AAA", "season": "2025-26",
@@ -271,20 +247,17 @@ def test_opponent_no_matchup_errors(monkeypatch):
     assert res["ok"] is False
     assert "no completed games between" in res["error"]
 
-
 def test_unknown_team_rejected():
     res = get_rest_advantage.invoke({"team": "Not A Team"})
     assert res["ok"] is False
     assert res["tool"] == "get_rest_advantage"
     assert "unknown team" in res["error"]
 
-
 def test_bad_season_type_rejected():
     res = get_rest_advantage.invoke({"season_type": "preseason"})
     assert res["ok"] is False
     assert res["tool"] == "get_rest_advantage"
     assert "season_type" in res["error"]
-
 
 def test_team_name_resolution():
     abbr = get_rest_advantage.invoke({"team": "LAL"})
@@ -296,7 +269,6 @@ def test_team_name_resolution():
     assert full["rows"]["team"] == "LAL"
     assert (full["rows"]["summary"]
             == abbr["rows"]["summary"])
-
 
 def test_integration_regular_season_invariants_real_warehouse():
     league = get_rest_advantage.invoke({"team": "league", "season": "2025-26",

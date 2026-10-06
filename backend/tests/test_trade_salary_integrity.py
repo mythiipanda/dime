@@ -1,6 +1,5 @@
 from shared.tools import get_trade_check
 
-
 def test_trade_check_fails_closed_on_salary_vintage_mismatch():
     out = get_trade_check.invoke({
         "team_a": "LAL", "players_a": "LeBron James",

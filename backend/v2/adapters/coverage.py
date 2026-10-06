@@ -6,6 +6,8 @@ import threading
 from pathlib import Path
 from typing import Any, Iterable
 
+from shared.tools.league import _SQL_TABLES as _AGENT_SQL_TABLES
+
 UNAVAILABLE_METRICS = ("EPM", "LEBRON", "DARKO", "DRIP", "PER", "BPM",
                        "WS", "VORP")
 
@@ -143,7 +145,8 @@ CAPABILITY_TABLES: dict[str, tuple[str, ...]] = {
     "matchup_splits": ("silver_player_gamelogs", "silver_team_ratings"),
     "today": ("silver_scoreboard", "silver_standings"),
     "morning_briefing": ("silver_scoreboard", "silver_standings"),
-    "award_results": ("silver_award_winners",),
+    "award_results": ("silver_bbref_awards",),
+    "sql_exec": tuple(sorted(_AGENT_SQL_TABLES)),
 }
 
 _RATE_TO_TOTAL = {
@@ -156,7 +159,6 @@ _RATE_TO_TOTAL = {
 
 KNOWN_TABLES = (
     "silver_boxscores",
-    "silver_boxscores_ext",
     "silver_lineups",
     "silver_rapm",
     "silver_on_off",
@@ -169,8 +171,10 @@ KNOWN_TABLES = (
 _TABLE_NAME = r"[A-Za-z_][A-Za-z0-9_]*"
 
 _state_lock = threading.RLock()
-_season_cache: dict[str, tuple[tuple[int, int], frozenset[str]]] = {}
-
+_season_caches: dict[tuple[Path, str], tuple[tuple[int, int, int, int, str],
+                                            frozenset[str]]] = {}
+_table_caches: dict[Path, tuple[tuple[int, int, int, int, str],
+                                frozenset[str]]] = {}
 
 def table_for_metric(metric: str) -> str:
     key = _ALIASES.get(_key(metric), _key(metric))
@@ -179,10 +183,8 @@ def table_for_metric(metric: str) -> str:
         return known["table"]
     return DEFAULT_TABLE
 
-
 def _key(metric: str) -> str:
     return re.sub(r"[^A-Z0-9]", "", (metric or "").upper())
-
 
 def _leaders_table_for_stat(stat: object) -> str | None:
     try:
@@ -196,7 +198,6 @@ def _leaders_table_for_stat(stat: object) -> str | None:
     if total == "FG3_PCT":
         return "silver_leaders_pts"
     return f"silver_leaders_{total.lower()}"
-
 
 def _arguments_dict(arguments: object) -> dict[str, Any]:
     if arguments is None:
@@ -221,7 +222,6 @@ def _arguments_dict(arguments: object) -> dict[str, Any]:
             return {}
     return {}
 
-
 def _requirement_arguments(requirement: object, capability: str) -> dict[str, Any]:
     sets = getattr(requirement, "capability_argument_sets", None) or []
     for item in sets:
@@ -229,11 +229,24 @@ def _requirement_arguments(requirement: object, capability: str) -> dict[str, An
             return _arguments_dict(getattr(item, "arguments", None))
     return _arguments_dict(getattr(requirement, "capability_arguments", None))
 
+def _sql_tables_for_arguments(arguments: object) -> tuple[str, ...] | None:
+    values = _arguments_dict(arguments)
+    sql = values.get("sql")
+    if not isinstance(sql, str) or not sql.strip():
+        return None
+    found = {a or b for a, b in re.findall(
+        r"(?i)from\s+(\w+)|join\s+(\w+)", sql)}
+    known = sorted(table for table in found if table in set(_AGENT_SQL_TABLES))
+    return tuple(known) or None
 
-def tables_for_capability(
+def declared_tables_for_capability(
     capability: str, arguments: object = None,
 ) -> tuple[str, ...]:
     name = str(capability or "")
+    if name == "sql_exec":
+        tables = _sql_tables_for_arguments(arguments)
+        if tables is not None:
+            return tables
     if name == "qualified_leaders":
         values = _arguments_dict(arguments)
         for key in ("stat_category", "requested_metric", "stat", "metric"):
@@ -248,9 +261,22 @@ def tables_for_capability(
         return known
     return ()
 
+def tables_for_capability(
+    capability: str, arguments: object = None,
+) -> tuple[str, ...]:
+    on_hand = warehouse_tables()
+    return tuple(
+        table for table in declared_tables_for_capability(capability, arguments)
+        if table in on_hand)
 
-def task_coverage_groups(task: object) -> list[frozenset[str]]:
-    return [tables for _, tables in task_coverage_groups_labeled(task)]
+def absent_tables_for_capability(
+    capability: str, arguments: object = None,
+) -> tuple[str, ...]:
+    on_hand = warehouse_tables()
+    return tuple(
+        table
+        for table in declared_tables_for_capability(capability, arguments)
+        if table not in on_hand)
 
 
 def task_coverage_groups_labeled(
@@ -276,16 +302,13 @@ def task_coverage_groups_labeled(
             if capability not in [str(option) for option in options]:
                 continue
             matched = True
-            tables.update(tables_for_capability(
-                capability,
-                _requirement_arguments(requirement, capability),
-            ))
+            arguments = _requirement_arguments(requirement, capability)
+            tables.update(declared_tables_for_capability(capability, arguments))
         if not matched:
-            tables.update(tables_for_capability(capability, {}))
+            tables.update(declared_tables_for_capability(capability, {}))
         if tables:
             labeled.append((capability, frozenset(tables)))
     return labeled
-
 
 def _classify(metric: str) -> dict[str, str]:
     key = _ALIASES.get(_key(metric), _key(metric))
@@ -300,7 +323,6 @@ def _classify(metric: str) -> dict[str, str]:
     return {"metric": metric, "status": "unknown",
             "note": "not in the coverage registry"}
 
-
 def warehouse_path() -> Path:
     try:
         from shared import store as _store
@@ -311,7 +333,6 @@ def warehouse_path() -> Path:
             return Path(override)
         return (Path(__file__).resolve().parent.parent.parent
                 / "data" / "warehouse.duckdb")
-
 
 def parse_season_start(value: object) -> int | None:
     parts = str(value or "").strip().split("-")
@@ -327,19 +348,62 @@ def parse_season_start(value: object) -> int | None:
         return None
     return start
 
-
-def _freshness(path: Path) -> tuple[int, int] | None:
+def _freshness(path: Path) -> tuple[int, int, int, int, str] | None:
     try:
         stat = path.stat()
     except OSError:
         return None
-    return (stat.st_mtime_ns, stat.st_size)
-
+    try:
+        from shared.store import _warehouse_sample_hexdigest
+    except Exception:
+        return None
+    sample = _warehouse_sample_hexdigest(path, stat.st_size)
+    if sample is None:
+        return None
+    return (stat.st_mtime_ns, stat.st_size, stat.st_ctime_ns,
+            stat.st_ino, sample)
 
 def coverage_cache_clear() -> None:
     with _state_lock:
-        _season_cache.clear()
+        _season_caches.clear()
+        _table_caches.clear()
 
+def _read_table_names(path: Path) -> frozenset[str]:
+    import duckdb
+
+    connection = duckdb.connect(str(path), read_only=True)
+    try:
+        return frozenset(
+            row[0] for row in connection.execute("SHOW TABLES").fetchall())
+    finally:
+        try:
+            connection.close()
+        except Exception:
+            pass
+
+def warehouse_tables() -> frozenset[str]:
+    try:
+        path = warehouse_path()
+    except Exception:
+        return frozenset()
+    fresh = _freshness(path)
+    try:
+        key = path.resolve()
+    except OSError:
+        return frozenset()
+    with _state_lock:
+        entry = _table_caches.get(key)
+        if (fresh is not None and entry is not None
+                and entry[0] == fresh):
+            return entry[1]
+    try:
+        names = _read_table_names(path)
+    except Exception:
+        return frozenset()
+    with _state_lock:
+        if fresh is not None:
+            _table_caches[key] = (fresh, names)
+    return names
 
 def _read_table_seasons(path: Path, table: str) -> frozenset[str]:
     import duckdb
@@ -362,7 +426,6 @@ def _read_table_seasons(path: Path, table: str) -> frozenset[str]:
             pass
     return frozenset(row[0] for row in rows if row and row[0])
 
-
 def table_seasons(table: str) -> frozenset[str]:
     name = str(table or "")
     if re.fullmatch(_TABLE_NAME, name) is None:
@@ -372,9 +435,14 @@ def table_seasons(table: str) -> frozenset[str]:
     except Exception:
         return frozenset()
     fresh = _freshness(path)
+    try:
+        key = (path.resolve(), name)
+    except OSError:
+        return frozenset()
     with _state_lock:
-        entry = _season_cache.get(name)
-        if entry is not None and fresh is not None and entry[0] == fresh:
+        entry = _season_caches.get(key)
+        if (fresh is not None and entry is not None
+                and entry[0] == fresh):
             return entry[1]
     try:
         seasons = _read_table_seasons(path, name)
@@ -382,9 +450,8 @@ def table_seasons(table: str) -> frozenset[str]:
         return frozenset()
     with _state_lock:
         if fresh is not None:
-            _season_cache[name] = (fresh, seasons)
+            _season_caches[key] = (fresh, seasons)
     return seasons
-
 
 def _read_league_seasons(
     path: Path, table: str, team_column: str, league_size: int,
@@ -405,7 +472,6 @@ def _read_league_seasons(
     return tuple(
         str(season) for season, teams in rows
         if season and int(teams or 0) >= int(league_size))
-
 
 def league_seasons(
     table: str, team_column: str, league_size: int,
@@ -431,7 +497,6 @@ def league_seasons(
                     table, team_column, exc)
         return ()
 
-
 def coverage_bounds(
     tables: Iterable[str] | None = None,
 ) -> tuple[str, str] | None:
@@ -445,7 +510,6 @@ def coverage_bounds(
     ranked.sort()
     return (ranked[0][1], ranked[-1][1])
 
-
 def coverage_label(tables: Iterable[str] | None = None) -> str | None:
     bounds = coverage_bounds(tables)
     if bounds is None:
@@ -455,13 +519,11 @@ def coverage_label(tables: Iterable[str] | None = None) -> str | None:
         return low
     return f"{low}–{high}"
 
-
 def tables_seasons(
     tables: Iterable[str] | None = None,
 ) -> dict[str, frozenset[str]]:
     names = list(tables) if tables is not None else list(KNOWN_TABLES)
     return {name: table_seasons(name) for name in names}
-
 
 def max_known_season(
     tables: Iterable[str] | None = None,
@@ -478,7 +540,6 @@ def max_known_season(
                 best = season
     return best
 
-
 def season_beyond_upper_bound(
     season: object,
     tables: Iterable[str] | None = None,
@@ -494,13 +555,11 @@ def season_beyond_upper_bound(
         return False
     return start > ceiling + 1
 
-
 def _available_sorted(seasons: frozenset[str]) -> list[str]:
     known = sorted(
         season for season in seasons
         if parse_season_start(season) is not None)
     return known if known else sorted(seasons)
-
 
 def coverage_check(
     metric: str, season: str, table: str | None = None,
@@ -534,7 +593,6 @@ def coverage_check(
         "available_seasons": available,
         "message": message,
     }
-
 
 def metric_coverage(
     metrics: str | list[str],

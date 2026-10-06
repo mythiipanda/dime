@@ -6,12 +6,10 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from v2.api.routes import _drain_run  # noqa: E402
-
+from v2.api.routes import _drain_run
 
 def _run(coro):
     return asyncio.run(coro)
-
 
 def test_hung_run_hits_timeout_ceiling():
     async def scenario():
@@ -38,7 +36,6 @@ def test_hung_run_hits_timeout_ceiling():
 
     _run(scenario())
 
-
 def test_healthy_run_drains_events_and_returns():
     async def scenario():
         async def quick():
@@ -53,7 +50,6 @@ def test_healthy_run_drains_events_and_returns():
         assert task.result() == "done"
 
     _run(scenario())
-
 
 def test_production_default_is_still_the_six_minute_ceiling():
     from shared.config import settings

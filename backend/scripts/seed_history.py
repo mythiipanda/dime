@@ -25,10 +25,8 @@ FILES = {
     ),
 }
 
-
 def season_label(end_year: int) -> str:
     return f"{end_year - 1}-{str(end_year)[2:]}"
-
 
 def fetch(url: str, dest: Path) -> bool:
     if dest.exists() and dest.stat().st_size > 0:
@@ -41,7 +39,6 @@ def fetch(url: str, dest: Path) -> bool:
     except Exception as exc:
         print(f"skip {url.split('/')[-1]}: {str(exc)[:80]}")
         return False
-
 
 def unify(frames: list) -> list:
     order: dict[str, list[str]] = {}
@@ -65,7 +62,6 @@ def unify(frames: list) -> list:
         out.append(g.select(list(target)).cast(
             {c: t for c, t in target.items()}, strict=False))
     return out
-
 
 def main() -> None:
     args = argparse.ArgumentParser()
@@ -108,7 +104,6 @@ def main() -> None:
             total += n
             print(f"{table} {season_label(y)}: {n} rows")
     print(f"history rows loaded: {total}")
-
 
 if __name__ == "__main__":
     main()

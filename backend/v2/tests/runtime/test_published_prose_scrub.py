@@ -37,11 +37,9 @@ RUN_LEAKY_PROSE = (
     "evidence:leaders at rows.AST."
 )
 
-
 @pytest.fixture
 def anyio_backend():
     return "asyncio"
-
 
 def _binding(*, node: str = NODE_ID, subject: bool = True) -> EvidenceOutputBinding:
     return EvidenceOutputBinding(
@@ -55,15 +53,12 @@ def _binding(*, node: str = NODE_ID, subject: bool = True) -> EvidenceOutputBind
         unit={"kind": "declared", "value": "count"},
         domain="qualified_leaders")
 
-
 def _claim(text: str) -> Claim:
     return Claim(text=text, kind=ClaimKind.OBSERVED, evidence_ids=[EVIDENCE_ID],
                  output_bindings=[_binding()])
 
-
 def _judgment(text: str) -> Claim:
     return Claim(text=text, kind=ClaimKind.JUDGMENT)
-
 
 def _result(*claims: Claim) -> SimpleNamespace:
     verified = [VerifiedClaim(claim_index=index, claim=claim,
@@ -83,7 +78,6 @@ def _result(*claims: Claim) -> SimpleNamespace:
             id=NODE_ID, description="assists leaderboard",
             capability_hints=["qualified_leaders"])])))
 
-
 def test_claim_prose_citing_its_evidence_and_selector_publishes_without_them() -> None:
     result = _result(_claim(LEAKY_PROSE))
 
@@ -92,7 +86,6 @@ def test_claim_prose_citing_its_evidence_and_selector_publishes_without_them() -
     assert EVIDENCE_ID not in text
     assert SELECTOR not in text
     assert "AST" not in text
-
 
 def test_claim_prose_naming_a_capability_and_a_subject_id_publishes_without_them() -> None:
     result = _result(_claim(
@@ -105,19 +98,16 @@ def test_claim_prose_naming_a_capability_and_a_subject_id_publishes_without_them
     assert "qualified_leaders" not in text
     assert PLAYER_ID not in text
 
-
 def test_ordinary_basketball_prose_and_numbers_publish_unchanged() -> None:
     result = _result(_claim(PLAIN_PROSE))
 
     assert _answer_text(result).splitlines() == [PLAIN_PROSE]
-
 
 def test_prose_naming_a_node_id_falls_back_to_the_label_lines() -> None:
     result = _result(_claim(
         "Ada Vega led the league with 880 assists per game per n1."))
 
     assert _answer_text(result) == LABEL_LINE
-
 
 def test_a_leaky_claim_next_to_clean_prose_neither_leaks_nor_disappears() -> None:
     result = _result(
@@ -131,7 +121,6 @@ def test_a_leaky_claim_next_to_clean_prose_neither_leaks_nor_disappears() -> Non
         "That lead is too large to catch.",
     ]
 
-
 def test_published_prose_names_no_identifier_from_its_own_run() -> None:
     result = _result(
         _claim(LEAKY_PROSE),
@@ -143,7 +132,6 @@ def test_published_prose_names_no_identifier_from_its_own_run() -> None:
                        PLAYER_ID):
         assert identifier not in prose
     assert prose.startswith("Ada Vega led the league with 880 assists")
-
 
 def test_live_sourced_prose_survives_the_scrub_intact() -> None:
     from v2.contracts import EvidenceEnvelope
@@ -163,7 +151,6 @@ def test_live_sourced_prose_survives_the_scrub_intact() -> None:
     assert lines[0].startswith("Ada Vega led the league with 880 assists")
     assert lines[-1].startswith("These figures came from the NBA's live feed")
 
-
 def test_a_claim_that_is_mostly_identifiers_publishes_its_label() -> None:
     result = _result(_claim(
         f"{NODE_ID} {EVIDENCE_ID} {SELECTOR} qualified_leaders"))
@@ -172,14 +159,12 @@ def test_a_claim_that_is_mostly_identifiers_publishes_its_label() -> None:
     assert text == LABEL_LINE
     assert NODE_ID not in text
 
-
 def test_an_unbound_leaky_claim_leaves_the_honest_fallback_alone() -> None:
     result = _result(_judgment("Per n1 the outlook looks strong."))
     result.output_statuses = []
 
     assert _answer_text(result) == (
         "I could not verify a publishable answer from the available data.")
-
 
 def _leaky_runtime():
     from v2.runtime import FakeCapability, PlanExecutor, Runtime
@@ -227,7 +212,6 @@ def _leaky_runtime():
                                    "AST": ASSISTS}])}),
         synthesizer=Synthesizer(), mechanical_verifier=MechanicalVerifier(),
         semantic_verifier=PassingSemantic())
-
 
 @pytest.mark.anyio
 async def test_scrubbed_prose_survives_a_real_run() -> None:

@@ -18,14 +18,12 @@ RECORDING = (
     Path(__file__).with_name("fixtures") / "assists_leader_rejected.jsonl"
 )
 
-
 def _frames():
     return [
         json.loads(line)
         for line in RECORDING.read_text().splitlines()
         if line.strip()
     ]
-
 
 def _recording():
     frames = _frames()
@@ -44,10 +42,8 @@ def _recording():
     ]
     return task, evidence, drafts
 
-
 def _row(envelope, key):
     return envelope.rows[0][key]
-
 
 def _minutes_metric(envelope):
     return next(
@@ -55,10 +51,8 @@ def _minutes_metric(envelope):
         if unit == "minutes"
     )
 
-
 def _unit_of(envelope, metric):
     return envelope.units[metric]
-
 
 def _leaderboard_of(envelope):
     leader = next(
@@ -70,15 +64,12 @@ def _leaderboard_of(envelope):
         "rows": [envelope.rows[0]],
     })
 
-
 def _claim(text, evidence_ids):
     from v2.contracts import Claim
     return Claim(text=text, kind="observed", evidence_ids=list(evidence_ids))
 
-
 def _draft(claim):
     return DraftReport(sections=[claim.text], claims=[claim])
-
 
 def test_recorded_answer_with_every_number_in_evidence_passes_with_zero_repairs():
     task, evidence, drafts = _recording()
@@ -89,7 +80,6 @@ def test_recorded_answer_with_every_number_in_evidence_passes_with_zero_repairs(
     assert result.repair_instructions == []
     assert [item.supported for item in result.claim_results] == [True]
     assert [item.reasons for item in result.claim_results] == [[]]
-
 
 def test_competition_reference_is_not_an_unsupported_entity_claim():
     task, evidence, drafts = _recording()
@@ -105,7 +95,6 @@ def test_competition_reference_is_not_an_unsupported_entity_claim():
         for repair in result.repair_instructions
     )
 
-
 def test_metric_name_inside_an_ordinary_word_is_not_that_metric():
     task, evidence, _ = _recording()
     envelope = evidence[0]
@@ -120,7 +109,6 @@ def test_metric_name_inside_an_ordinary_word_is_not_that_metric():
     reasons = verify_mechanical(task, _draft(claim), [envelope]).claim_results[0].reasons
 
     assert not any(unit in reason for reason in reasons)
-
 
 def test_metric_named_on_a_word_boundary_without_its_unit_is_rejected():
     task, evidence, _ = _recording()
@@ -139,7 +127,6 @@ def test_metric_named_on_a_word_boundary_without_its_unit_is_rejected():
     assert f"metric {metric} is stated without its declared unit {unit}" in (
         result.claim_results[0].reasons
     )
-
 
 def test_entity_absent_from_cited_evidence_is_still_rejected():
     task, evidence, _ = _recording()
@@ -163,7 +150,6 @@ def test_entity_absent_from_cited_evidence_is_still_rejected():
         result.claim_results[0].reasons
     )
 
-
 def test_generator_verdict_cannot_clear_a_mechanical_repair():
     task, evidence, _ = _recording()
     envelope = evidence[0]
@@ -183,7 +169,6 @@ def test_generator_verdict_cannot_clear_a_mechanical_repair():
     assert merged.status == VerificationStatus.REPAIR
     assert merged.claim_results[0].supported is False
     assert merged.claim_results[0].reasons == mechanical.claim_results[0].reasons
-
 
 def test_league_entity_task_still_requires_evidence_for_named_players():
     task, evidence, _ = _recording()

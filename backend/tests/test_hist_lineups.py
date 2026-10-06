@@ -14,7 +14,6 @@ SEASON = "2022-23"
 TOP_UNIT = "A. Horford - M. Smart - J. Brown - J. Tatum - D. White"
 TOP_MIN = 432.4
 
-
 def test_get_lineup_stats_hist_season_returns_rows():
     res = get_lineup_stats.invoke(
         {"team": "BOS", "season": SEASON, "min_possessions": 100})
@@ -23,14 +22,12 @@ def test_get_lineup_stats_hist_season_returns_rows():
     assert res["best_net_unit"] is not None
     assert res["meta"].get("coverage") == "historical_lineups"
 
-
 def test_get_lineup_stats_hist_floor_hides_everything_when_absurd():
     res = get_lineup_stats.invoke(
         {"team": "BOS", "season": SEASON, "min_possessions": 100000})
     assert res["ok"] is True
     assert res["rows"] == []
     assert "hidden" in res["meta"].get("data_note", "")
-
 
 def test_get_lineup_stats_hist_uses_real_minutes_without_play_data(monkeypatch):
     import shared.tools.lineup as _lineup
@@ -52,7 +49,6 @@ def test_get_lineup_stats_hist_uses_real_minutes_without_play_data(monkeypatch):
                for f in res["rows"][0]["flags"])
     assert "clock minutes" in res["meta"].get("data_note", "")
 
-
 def test_get_lineups_hist_season_returns_rows_sorted_by_min():
     res = get_lineups.invoke({"team_id": "BOS", "season": SEASON})
     assert res["ok"] is True
@@ -63,7 +59,6 @@ def test_get_lineups_hist_season_returns_rows_sorted_by_min():
     mins = [float(r.get("MIN") or 0) for r in res["rows"]]
     assert mins == sorted(mins, reverse=True)
 
-
 def test_get_wowy_hist_season_uses_real_minutes():
     res = get_wowy.invoke({"player_a": str(TATUM), "player_b": str(BROWN),
                            "team_id": "BOS", "season": SEASON})
@@ -72,14 +67,12 @@ def test_get_wowy_hist_season_uses_real_minutes():
     assert both["minutes"] == 1433.6
     assert res["meta"].get("source") == "silver_hist_lineups"
 
-
 def test_get_on_off_hist_season_returns_rows():
     res = get_on_off.invoke({"player_id": str(TATUM),
                              "team_id": "BOS", "season": SEASON})
     assert res["ok"] is True
     stats = [r["Stat"] for r in res["rows"]]
     assert "Net Rating" in stats
-
 
 def test_get_lineup_stats_current_season_still_serves_warehouse():
     res = get_lineup_stats.invoke({"team": "BOS", "season": "2025-26"})

@@ -26,12 +26,10 @@ OUTPUT_CONTRACTS = {
 
 PROMPT_NAMES = tuple(OUTPUT_CONTRACTS)
 
-
 def output_section(text: str) -> str:
     match = re.search(r"^## Output\n(.*?)(?=^## )", text, re.M | re.S)
     assert match, "prompt is missing an Output section"
     return match.group(1)
-
 
 def test_manifest_prompt_hashes_match_live_files():
     import hashlib, json
@@ -43,7 +41,6 @@ def test_manifest_prompt_hashes_match_live_files():
             (PROMPTS_DIR / filename).read_bytes()).hexdigest()
         assert manifest[f"{route}.prompt"]["sha256"] == live, (
             f"{filename} changed without a manifest hash regeneration")
-
 
 def test_ranked_metric_ids_in_prompts_match_source():
     from v2.adapters.models import TEAM_RATING_METRICS
@@ -57,20 +54,17 @@ def test_ranked_metric_ids_in_prompts_match_source():
             f"{filename} lists {sorted(listed)}, source has "
             f"{sorted(TEAM_RATING_METRICS)}")
 
-
 def test_prompt_files_match_expected_set():
     from v2.adapters.models import _PROVIDER_ROUTE_PROMPT_NAMES
     stems = {p.stem for p in PROMPTS_DIR.glob("*.md")}
     assert stems == set(PROMPT_NAMES) | set(_PROVIDER_ROUTE_PROMPT_NAMES.values())
     assert not any(PROMPTS_DIR.glob("*/*.md")), "nested prompt copies are not loaded"
 
-
 @pytest.mark.parametrize("name", PROMPT_NAMES)
 def test_required_sections_in_order(name):
     text = load_prompt(name)
     headings = re.findall(r"^## (.+)$", text, re.M)
     assert headings == list(PROMPT_SECTION_OVERRIDES.get(name, REQUIRED_SECTIONS))
-
 
 @pytest.mark.parametrize("name", PROMPT_NAMES)
 def test_output_section_covers_contract_fields(name):
@@ -81,38 +75,31 @@ def test_output_section_covers_contract_fields(name):
         for field in model.model_json_schema().get("properties", {}):
             assert field in section, f"{name}.md Output omits {model.__name__}.{field}"
 
-
 @pytest.mark.parametrize("name", PROMPT_NAMES)
 def test_every_prompt_declares_a_stop_condition_with_content(name):
     text = load_prompt(name)
     match = re.search(r"^## Stop condition\n(.+)", text, re.M | re.S)
     assert match and match.group(1).strip()
 
-
 def test_prompts_are_static_text_without_template_syntax():
     for name in PROMPT_NAMES:
         text = load_prompt(name)
         assert "{{" not in text and "{%" not in text
 
-
 def test_load_prompt_returns_verbatim_file_text():
     for name in PROMPT_NAMES:
         assert load_prompt(name) == (PROMPTS_DIR / f"{name}.md").read_text(encoding="utf-8")
 
-
 def test_load_prompt_is_cached():
     assert load_prompt("intake") is load_prompt("intake")
-
 
 def test_load_prompt_missing_name_raises():
     with pytest.raises(FileNotFoundError):
         load_prompt("does_not_exist")
 
-
 def test_load_prompt_rejects_path_traversal():
     with pytest.raises(ValueError, match="prompt name"):
         load_prompt("../contracts")
-
 
 def test_load_prompt_rejects_symlink(monkeypatch, tmp_path):
     outside = tmp_path / "outside.md"
@@ -128,7 +115,6 @@ def test_load_prompt_rejects_symlink(monkeypatch, tmp_path):
     finally:
         load_prompt.cache_clear()
 
-
 def test_load_prompt_rejects_symlinked_directory(monkeypatch, tmp_path):
     outside = tmp_path / "outside"
     outside.mkdir()
@@ -143,7 +129,6 @@ def test_load_prompt_rejects_symlinked_directory(monkeypatch, tmp_path):
     finally:
         load_prompt.cache_clear()
 
-
 def test_planner_and_synthesizer_require_analyst_depth_without_filler():
     planner = load_prompt("planner")
     synth = load_prompt("synthesizer")
@@ -155,8 +140,8 @@ def test_planner_and_synthesizer_require_analyst_depth_without_filler():
         assert phrase in planner
     for phrase in (
         "complete enough to act on",
-        "counterevidence or\nuncertainty",
-        "practical implication",
+        "counterevidence or uncertainty",
+        "Match the deliverable shape exactly",
         "minimum-viable one-line answer",
     ):
         assert phrase in synth
@@ -168,11 +153,10 @@ def test_planner_and_synthesizer_require_analyst_depth_without_filler():
         assert phrase in planner
     for phrase in (
         "Search snippets are discovery evidence only",
-        "Reconcile evidence before concluding",
-        "repetition across pages is not independent evidence",
+        "Reconcile before concluding",
+        "is not independent evidence",
     ):
         assert phrase in synth
-
 
 def test_synthesis_and_verification_require_per_fact_source_vintage() -> None:
     synth = load_prompt("synthesizer")
@@ -181,7 +165,6 @@ def test_synthesis_and_verification_require_per_fact_source_vintage() -> None:
         assert "each conflicting fact" in prompt
         assert "`vintages`, then `as_of`" in prompt
         assert "`observed_at`" in prompt
-
 
 def test_synthesizer_prompt_documents_binding_rules():
     synth = load_prompt("synthesizer")
@@ -195,10 +178,71 @@ def test_synthesizer_prompt_documents_binding_rules():
     ):
         assert field in synth
 
-
 def test_verifier_prompt_aligns_supported_flag_and_reasons_contract():
     from v2.prompts import load_prompt
     prompt=load_prompt('verifier')
     assert '`supported: true` requires exactly `reasons: []`' in prompt
     assert '`supported: false` requires at least one rejection reason' in prompt
     assert 'Do not attach supportive commentary to a supported claim.' in prompt
+
+ACTIVE_STAGE_PROMPTS = ("planner_v3", "synthesizer", "verifier", "repair_answer")
+
+STAGE_TOKEN_CAPS = {
+    "planner_v3": 1257,
+    "synthesizer": 1557,
+    "verifier": 859,
+    "repair_answer": 687,
+}
+
+KEYWORD_ROUTING_FRAGMENTS = (
+    "trajectory questions need",
+    "role/value questions need",
+    "trade questions need",
+    "For role and value questions",
+    "For a trade analysis",
+    "When the deliverable asks whether to make a trade",
+    "Do not\nsubstitute team payroll",
+    "substitute team payroll",
+    "teammate stat",
+    "For a phase comparison",
+)
+
+HARDCODED_EXAMPLE_FRAGMENTS = (
+    "1610612738",
+    "rows[0].NET_RATING",
+    "rows[0].TEAM_ID",
+    "rows[0].PLAYER_ID",
+    "best defense",
+    "worst offense",
+    "2024-25",
+)
+
+def _stage_tokens(text: str) -> int:
+    try:
+        import tiktoken
+    except ImportError:
+        return len(text.split())
+    return len(tiktoken.get_encoding("cl100k_base").encode(text))
+
+def test_stage_prompts_carry_no_keyword_routing():
+    for name in ACTIVE_STAGE_PROMPTS:
+        text = load_prompt(name)
+        for fragment in KEYWORD_ROUTING_FRAGMENTS:
+            assert fragment not in text, f"{name}.md routes by keyword: {fragment!r}"
+
+def test_stage_prompts_carry_no_hardcoded_examples():
+    for name in ACTIVE_STAGE_PROMPTS:
+        text = load_prompt(name)
+        for fragment in HARDCODED_EXAMPLE_FRAGMENTS:
+            assert fragment not in text, f"{name}.md hardcodes example: {fragment!r}"
+
+def test_stage_prompts_stay_within_token_caps():
+    for name, cap in STAGE_TOKEN_CAPS.items():
+        tokens = _stage_tokens(load_prompt(name))
+        assert tokens <= cap, f"{name}.md uses {tokens} tokens, cap is {cap}"
+
+def test_synthesizer_states_deliverable_shape_generically():
+    synth = load_prompt("synthesizer")
+    assert "Match the deliverable shape exactly" in synth
+    assert "exactly that many" in synth
+    assert "downside risk" in synth

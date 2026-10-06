@@ -18,7 +18,6 @@ from .zonedelta import clamp_floor as _clamp_hist_floor
 
 _logger = _logging.getLogger(__name__)
 
-
 def _num(value: object) -> float | None:
     try:
         if value is None or value == "":
@@ -27,26 +26,15 @@ def _num(value: object) -> float | None:
     except (TypeError, ValueError):
         return None
 
-
 def _is_three_zone(name: object) -> bool:
     z = str(name or "").lower()
     return "3" in z or "corner" in z or "break" in z
 
-
 _CAREER_STAT_KEYS = ("GP", "MIN", "PTS", "REB", "AST", "STL", "BLK",
                      "FG3M")
 
-
-@tool
+@tool(description='Full NBA regular-season career totals for one player.\n\nLive primary source first (true full career); when the live source\nis unreachable, sums the warehouse season lines (2014-15 onward,\nper-game rates x games) and marks the coverage partial instead of\ninventing a full-career figure (F77: text_to_sql used to sum a\nwrong slice and ship fabricated totals like "291.5 career points").')
 def get_career_totals(player: str) -> dict[str, Any]:
-    """Full NBA regular-season career totals for one player.
-
-    Live primary source first (true full career); when the live source
-    is unreachable, sums the warehouse season lines (2014-15 onward,
-    per-game rates x games) and marks the coverage partial instead of
-    inventing a full-career figure (F77: text_to_sql used to sum a
-    wrong slice and ship fabricated totals like "291.5 career points").
-    """
     try:
         pid = coerce_player_id(player)
     except Exception:
@@ -64,31 +52,23 @@ def get_career_totals(player: str) -> dict[str, Any]:
         return {"tool": "get_career_totals", "ok": True, "rows": [out],
                 "meta": {"source": "nba_api", "coverage": "full_career"}}
 
-    try:
-        hist = store.read_frame(
-            "silver_hist_player_seasons", "player_id = ?", [int(pid)])
-    except Exception:
-        hist = None
+    hist = store.read_frame(
+        "silver_hist_player_seasons", "player_id = ?", [int(pid)])
     sums: dict[str, float] = {}
-    seasons = 0
-    if hist is not None and hist.height > 0:
-        seasons = hist.height
-        for r in hist.to_dicts():
-            gp = _num(r.get("gp")) or 0.0
-            sums["GP"] = sums.get("GP", 0.0) + gp
-            for key, col in (("MIN", "min"), ("PTS", "pts"), ("REB", "reb"),
-                             ("AST", "ast"), ("STL", "stl"), ("BLK", "blk"),
-                             ("FG3M", "fg3m")):
-                rate = _num(r.get(col))
-                if rate is not None:
-                    sums[key] = sums.get(key, 0.0) + rate * gp
+    seasons = hist.height
+    for r in hist.to_dicts():
+        gp = _num(r.get("gp")) or 0.0
+        sums["GP"] = sums.get("GP", 0.0) + gp
+        for key, col in (("MIN", "min"), ("PTS", "pts"), ("REB", "reb"),
+                         ("AST", "ast"), ("STL", "stl"), ("BLK", "blk"),
+                         ("FG3M", "fg3m")):
+            rate = _num(r.get(col))
+            if rate is not None:
+                sums[key] = sums.get(key, 0.0) + rate * gp
     through = "2024-25"
-    try:
-        cur = store.read_frame(
-            "silver_player_season", "PLAYER_ID = ?", [int(pid)])
-    except Exception:
-        cur = None
-    if cur is not None and cur.height > 0:
+    cur = store.read_frame(
+        "silver_player_season", "PLAYER_ID = ?", [int(pid)])
+    if cur.height > 0:
         r = cur.to_dicts()[0]
         gp = _num(r.get("GP")) or 0.0
         if gp:
@@ -114,7 +94,6 @@ def get_career_totals(player: str) -> dict[str, Any]:
                      "through": through,
                      "seasons_on_file": seasons}}
 
-
 def _display_name(raw: object) -> str:
     txt = str(raw or "").strip()
     if not txt.isdigit():
@@ -127,7 +106,6 @@ def _display_name(raw: object) -> str:
     except Exception:
         pass
     return txt
-
 
 def zone_diet(rows: object) -> dict[str, float | None]:
     try:
@@ -152,7 +130,6 @@ def zone_diet(rows: object) -> dict[str, float | None]:
             found_three = True
     return {"rim_share": rim, "three_share": round(three, 3) if found_three else None}
 
-
 def pair_history(wowy: object) -> dict[str, object]:
     if not isinstance(wowy, dict) or not wowy.get("ok"):
         err = wowy.get("error", "wowy failed") if isinstance(wowy, dict) else "wowy failed"
@@ -175,10 +152,8 @@ def pair_history(wowy: object) -> dict[str, object]:
             "note": f"Shared court net {net:+.1f} across {mins} minutes."
             if net is not None else "Shared court time found."}
 
-
 def portability_fit(a: dict[str, Any], b: dict[str, Any]) -> dict[str, str]:
     au, bu = _num(a.get("usg_pct")), _num(b.get("usg_pct"))
-    at, bt = _num(a.get("ts_pct")), _num(b.get("ts_pct"))
     an, bn = _num(a.get("net_onoff")), _num(b.get("net_onoff"))
     na = str(a.get("name") or "A")
     nb = str(b.get("name") or "B")
@@ -208,7 +183,6 @@ def portability_fit(a: dict[str, Any], b: dict[str, Any]) -> dict[str, str]:
         verdict["note"] += f" Shot diet rim {ar:.0%} vs {br:.0%}, three {ath:.0%} vs {bth:.0%}."
     return verdict
 
-
 def _read_df(sql: str, params: list, tries: int = 5) -> list[dict[str, Any]]:
     import time as _time
 
@@ -233,7 +207,6 @@ def _read_df(sql: str, params: list, tries: int = 5) -> list[dict[str, Any]]:
             _time.sleep(0.3)
     raise last or RuntimeError("warehouse read failed")
 
-
 def _player_season_team(pid: int, season: str) -> str:
     try:
         rows = _read_df(
@@ -247,7 +220,6 @@ def _player_season_team(pid: int, season: str) -> str:
     if not rows:
         return ""
     return str(rows[0].get("TEAM") or "")
-
 
 def _different_teams_pair(left: dict[str, Any], right: dict[str, Any],
                           season: str) -> dict[str, Any]:
@@ -313,12 +285,10 @@ def _different_teams_pair(left: dict[str, Any], right: dict[str, Any],
                         "this season.")
     return base
 
-
-@tool
+@tool(description='Side-by-side compare of two players. Names or ids. One call.')
 async def get_compare(
     a: str, b: str, season: str | None = None,
 ) -> dict[str, Any]:
-    """Side-by-side compare of two players. Names or ids. One call."""
     season = resolve_season(season)
     async def one(who: str) -> dict[str, Any]:
         from collections import Counter as _Counter
@@ -337,13 +307,6 @@ async def get_compare(
                 return []
 
         def _team_id(abbr: str) -> int:
-
-
-
-
-
-
-
 
             if abbr:
                 try:
@@ -369,8 +332,6 @@ async def get_compare(
 
         games = await loop.run_in_executor(None, _gamelogs)
 
-
-
         job_defs: dict[str, tuple[Any, dict[str, Any]]] = {}
         if not games:
             job_defs["intel"] = (get_player_intel,
@@ -388,7 +349,7 @@ async def get_compare(
             for attempt in range(4):
                 try:
                     return await subtool.ainvoke(args)
-                except Exception as exc:  # noqa: BLE001 - transient contention
+                except Exception as exc:
                     last = exc
                     _logger.warning(
                         "get_compare sub-call %s failed for %s (try %d/4): %r",
@@ -412,7 +373,6 @@ async def get_compare(
         if not games:
             games = res.get("intel", {}).get("rows", []) or []
         if not games:
-
 
             return {
                 "name": _display_name(who), "player_id": pid,
@@ -442,8 +402,6 @@ async def get_compare(
                 "rim_share": None, "three_share": None}
         except Exception:
             diet = {"rim_share": None, "three_share": None}
-
-
 
         missing: list[str] = []
         if diet.get("three_share") is None:
@@ -594,7 +552,6 @@ async def get_compare(
                      "pair_rule": "same team abbrev runs wowy, Both ON net plus minutes",
                      "sub_call_errors": sub_call_errors}}
 
-
 def _metric_row(metric: str, label: str, method: str, a: object, b: object,
                 na: str, nb: str, higher_wins: bool = True,
                 ) -> dict[str, Any]:
@@ -604,8 +561,6 @@ def _metric_row(metric: str, label: str, method: str, a: object, b: object,
         except (TypeError, ValueError):
             return None
     fa, fb = _f(a), _f(b)
-
-
 
     if fa is not None and fb is not None and max(abs(fa), abs(fb)) <= 1.5:
         eps = 0.02
@@ -629,15 +584,8 @@ def _metric_row(metric: str, label: str, method: str, a: object, b: object,
     return {"metric": metric, "label": label, "method": method,
             "a": fa, "b": fb, "leader": leader, "note": note}
 
-
-@tool
+@tool(description='Cross-metric adjudication for two players. Referees impact metrics.\n\nPulls RAPTOR, RAPM-lite, on-off net, and PIE/TS from the warehouse and\nreports which metrics agree. EPM, LEBRON, DARKO, and DRIP are listed\nas unavailable, never invented.')
 def compare_metrics(a: str | int, b: str | int, season: str | None = None) -> dict[str, Any]:
-    """Cross-metric adjudication for two players. Referees impact metrics.
-
-    Pulls RAPTOR, RAPM-lite, on-off net, and PIE/TS from the warehouse and
-    reports which metrics agree. EPM, LEBRON, DARKO, and DRIP are listed
-    as unavailable, never invented.
-    """
     season = resolve_season(season)
     try:
         pida = coerce_player_id(a)
@@ -729,9 +677,6 @@ def compare_metrics(a: str | int, b: str | int, season: str | None = None) -> di
                     ma.get("TS_PCT"), mb.get("TS_PCT"), na, nb),
     ]
 
-
-
-
     raptor_current = bool(vintage) and vintage == {season}
     for row in rows:
         row["eligible_for_verdict"] = (
@@ -773,54 +718,42 @@ def compare_metrics(a: str | int, b: str | int, season: str | None = None) -> di
 
 def _season_line(player_id: object, season: str) -> dict[str, Any] | None:
     season = resolve_season(season)
-    try:
-        frame = store.read_frame(
-            "silver_player_season",
-            "_season = ? AND CAST(PLAYER_ID AS VARCHAR) = CAST(? AS VARCHAR)",
-            [season, str(player_id)])
-        if frame is not None and frame.height > 0:
-            row = frame.to_dicts()[0]
+    frame = store.read_frame(
+        "silver_player_season",
+        "_season = ? AND CAST(PLAYER_ID AS VARCHAR) = CAST(? AS VARCHAR)",
+        [season, str(player_id)])
+    if frame.height > 0:
+        row = frame.to_dicts()[0]
 
+        if str(row.get("TEAM") or "").endswith("TM"):
+            n = str(row["TEAM"])[:-2]
+            row["TEAM"] = (f"traded mid-season ({n} teams)")
+        return {k: v for k, v in row.items() if not k.startswith("_")}
 
-            if str(row.get("TEAM") or "").endswith("TM"):
-                n = str(row["TEAM"])[:-2]
-                row["TEAM"] = (f"traded mid-season ({n} teams)")
-            return {k: v for k, v in row.items() if not k.startswith("_")}
-    except Exception:
-        pass
-
-
-
-
-
-
-    try:
-        frame = store.read_frame(
-            "silver_hist_player_seasons",
-            "_season = ? AND CAST(player_id AS VARCHAR) = CAST(? AS VARCHAR)",
-            [season, str(player_id)])
-        if frame is not None and frame.height > 0:
-            h = frame.to_dicts()[0]
-            row = {
-                "PLAYER_ID": h.get("player_id"),
-                "PLAYER": h.get("player_name"),
-                "TEAM": h.get("team_abbreviation"),
-                "AGE": h.get("age"),
-                "GP": h.get("gp"),
-                "MPG": h.get("min"),
-                "PPG": h.get("pts"),
-                "RPG": h.get("reb"),
-                "APG": h.get("ast"),
-                "SPG": h.get("stl"),
-                "BPG": h.get("blk"),
-                "FG_PCT": h.get("fg_pct"),
-                "FG3_PCT": h.get("fg3_pct"),
-                "FT_PCT": h.get("ft_pct"),
-                "TS_PCT": h.get("ts_pct"),
-            }
-            return {k: v for k, v in row.items() if v is not None}
-    except Exception:
-        pass
+    frame = store.read_frame(
+        "silver_hist_player_seasons",
+        "_season = ? AND CAST(player_id AS VARCHAR) = CAST(? AS VARCHAR)",
+        [season, str(player_id)])
+    if frame.height > 0:
+        h = frame.to_dicts()[0]
+        row = {
+            "PLAYER_ID": h.get("player_id"),
+            "PLAYER": h.get("player_name"),
+            "TEAM": h.get("team_abbreviation"),
+            "AGE": h.get("age"),
+            "GP": h.get("gp"),
+            "MPG": h.get("min"),
+            "PPG": h.get("pts"),
+            "RPG": h.get("reb"),
+            "APG": h.get("ast"),
+            "SPG": h.get("stl"),
+            "BPG": h.get("blk"),
+            "FG_PCT": h.get("fg_pct"),
+            "FG3_PCT": h.get("fg3_pct"),
+            "FT_PCT": h.get("ft_pct"),
+            "TS_PCT": h.get("ts_pct"),
+        }
+        return {k: v for k, v in row.items() if v is not None}
     try:
         from .career_arc import line_for_season as _arc_line
         arc = _arc_line(int(str(player_id)) if str(player_id).isdigit() else 0, season)
@@ -848,7 +781,6 @@ def _season_line(player_id: object, season: str) -> dict[str, Any] | None:
         pass
     return None
 
-
 def _season_line_seasons() -> set[str] | None:
     try:
         from v2.adapters.coverage import table_seasons as _seasons
@@ -860,7 +792,6 @@ def _season_line_seasons() -> set[str] | None:
     except Exception:
         return None
 
-
 def _season_line_coverage() -> str:
     _covered = _season_line_seasons()
     if not _covered:
@@ -869,7 +800,6 @@ def _season_line_coverage() -> str:
     if _lo == _hi:
         return f"season lines cover {_lo}"
     return f"season lines cover {_lo} through {_hi}"
-
 
 def _gamelog_coverage() -> str:
     try:
@@ -891,13 +821,10 @@ def _gamelog_coverage() -> str:
         return f"game logs cover {seasons[0]}"
     return f"game logs cover {seasons[0]}–{seasons[-1]}"
 
-
-@tool
+@tool(description='Game log plus shot sample for one player id. Warehouse first.')
 def get_player_intel(player_id: str | int, season: str | None = None) -> dict[str, Any]:
-    """Game log plus shot sample for one player id. Warehouse first."""
     season = resolve_season(season)
     player_id = coerce_player_id(player_id)
-
 
     rows, meta = _warehouse_or_live(
         "silver_player_gamelogs", "_season = ? AND _entity = ?",
@@ -916,7 +843,6 @@ def get_player_intel(player_id: str | int, season: str | None = None) -> dict[st
         from .splits import _resolve_name as _rname3
         _d = _rname3(int(player_id), str(player_id))
 
-
         return {"tool": "get_player_intel", "ok": False,
 
                 "error": (f"No {season} game log rows for {_d}; "
@@ -932,18 +858,13 @@ def get_player_intel(player_id: str | int, season: str | None = None) -> dict[st
                      _rname4(int(player_id), str(player_id)))
         if _note:
 
-
             out["inactive_note"] = _note
     except Exception:
         pass
     return out
 
-
-@tool
+@tool(description='Per-game season averages (PPG, RPG, APG, SPG, BPG, percentages,\ngames played) for one player. Names or ids. Warehouse only, seeded\nfrom basketball-reference; no game-by-game detail.')
 def get_season_averages(player_id: str | int, season: str | None = None) -> dict[str, Any]:
-    """Per-game season averages (PPG, RPG, APG, SPG, BPG, percentages,
-    games played) for one player. Names or ids. Warehouse only, seeded
-    from basketball-reference; no game-by-game detail."""
     season = resolve_season(season)
     try:
         pid = coerce_player_id(player_id)
@@ -975,10 +896,8 @@ def get_season_averages(player_id: str | int, season: str | None = None) -> dict
                      "coverage": "season_line",
                      "deterministic_answer": answer}}
 
-
-@tool
+@tool(description='Playoff game log for one player. Names or ids. Warehouse first.')
 def get_playoff_intel(player_id: str | int, season: str | None = None) -> dict[str, Any]:
-    """Playoff game log for one player. Names or ids. Warehouse first."""
     season = resolve_season(season)
     try:
         pid = coerce_player_id(player_id)
@@ -1026,14 +945,10 @@ def get_playoff_intel(player_id: str | int, season: str | None = None) -> dict[s
     cols = ["GAME_DATE", "MATCHUP", "PTS", "REB", "AST", "MIN"]
     slim = [{k: r.get(k) for k in cols if k in r} for r in rows]
 
-
     from .splits import _resolve_name as _pnm
     _disp = _pnm(pid, str(player_id))
     for r in slim:
         r["PLAYER"] = _disp
-
-
-
 
     def _sum(col: str) -> int:
         return int(sum(float(r.get(col) or 0) for r in slim))
@@ -1054,14 +969,10 @@ def get_playoff_intel(player_id: str | int, season: str | None = None) -> dict[s
             f"games in the {season} season.")
     return {"tool": "get_playoff_intel", "ok": True, "rows": slim, "meta": meta}
 
-
-@tool
+@tool(description='Last n games for one player id, most recent first.')
 def get_last_x(player_id: str | int, n: int = 10, season: str | None = None) -> dict[str, Any]:
-    """Last n games for one player id, most recent first."""
     season = resolve_season(season)
     player_id = coerce_player_id(player_id)
-
-
 
     rows, meta = _warehouse_or_live(
         "silver_player_gamelogs", "_season = ? AND _entity = ?",
@@ -1090,13 +1001,10 @@ def get_last_x(player_id: str | int, n: int = 10, season: str | None = None) -> 
     out = frame.head(min(max(n, 1), 25)).to_dicts()
     return {"tool": "get_last_x", "ok": True, "rows": out, "meta": meta}
 
-
-@tool
+@tool(description='Decay-weighted recent form versus season baseline. DARKO-lite.')
 def get_trend(player_id: str | int, season: str | None = None) -> dict[str, Any]:
-    """Decay-weighted recent form versus season baseline. DARKO-lite."""
     season = resolve_season(season)
     player_id = coerce_player_id(player_id)
-
 
     rows, meta = _warehouse_or_live(
         "silver_player_gamelogs", "_season = ? AND _entity = ?",
@@ -1107,7 +1015,6 @@ def get_trend(player_id: str | int, season: str | None = None) -> dict[str, Any]
     if not rows:
         return {"tool": "get_trend", "ok": False,
                 "error": meta.get("error") or "empty upstream response"}
-
 
     from .splits import parse_game_date as _pgd
     rows = sorted(rows, key=lambda r: _pgd(r.get("GAME_DATE")) or _dt.min)
@@ -1131,18 +1038,14 @@ def get_trend(player_id: str | int, season: str | None = None) -> dict[str, Any]
                      "direction": "up" if form > base + 1 else (
                          "down" if form < base - 1 else "flat"),
 
-
-
                      "log_from": rows[0].get("GAME_DATE"),
                      "log_to": rows[-1].get("GAME_DATE"),
                      "form_from": rows[-len(recent)].get("GAME_DATE"),
                      "form_games": len(recent)},
             "meta": meta}
 
-
-@tool
+@tool(description='Percentile ranks for one player id across PTS REB AST STL BLK.')
 def get_percentiles(player_id: str | int, season: str | None = None) -> dict[str, Any]:
-    """Percentile ranks for one player id across PTS REB AST STL BLK."""
     season = resolve_season(season)
     player_id = coerce_player_id(player_id)
     cats = ["PTS", "REB", "AST", "STL", "BLK"]
@@ -1164,10 +1067,8 @@ def get_percentiles(player_id: str | int, season: str | None = None) -> dict[str
     return {"tool": "get_percentiles", "ok": True, "rows": out,
             "meta": {"source": "nba_api", "season": season}}
 
-
-@tool
+@tool(description='Nearest statistical neighbors by per-36 + advanced shape. Same-season only.')
 def get_comps(player_id: str | int, season: str | None = None, k: int = 5) -> dict[str, Any]:
-    """Nearest statistical neighbors by per-36 + advanced shape. Same-season only."""
     season = resolve_season(season)
     import math
 
@@ -1445,16 +1346,13 @@ def get_comps(player_id: str | int, season: str | None = None, k: int = 5) -> di
                                    "Euclidean distance over kept features",
                      "notes": notes}}
 
-
 ADVANCED_COLS = ["PLAYER_NAME", "TEAM_ABBREVIATION", "GP", "MIN",
                  "USG_PCT", "TS_PCT", "EFG_PCT", "AST_PCT", "TM_TOV_PCT",
                  "PIE", "OFF_RATING", "DEF_RATING", "NET_RATING",
                  "USG_PCT_RANK", "TS_PCT_RANK", "PIE_RANK", "NET_RATING_RANK"]
 
-
-@tool
+@tool(description='Advanced box metrics for one player: usage, efficiency, PIE, ratings.')
 def get_advanced(player: str | int, season: str | None = None) -> dict[str, Any]:
-    """Advanced box metrics for one player: usage, efficiency, PIE, ratings."""
     season = resolve_season(season)
     player_id = coerce_player_id(player)
     rows: list[dict[str, Any]] = []
@@ -1483,9 +1381,6 @@ def get_advanced(player: str | int, season: str | None = None) -> dict[str, Any]
                 "error": f"no advanced row for player {player_id}"}
     slim = {k: rows[0].get(k) for k in ADVANCED_COLS if k in rows[0]}
 
-
-
-
     for k in ("USG_PCT", "TS_PCT", "EFG_PCT", "AST_PCT", "PIE"):
         v = slim.get(k)
         if isinstance(v, (int, float)) and v <= 1.0:
@@ -1493,9 +1388,6 @@ def get_advanced(player: str | int, season: str | None = None) -> dict[str, Any]
     return {"tool": "get_advanced", "ok": True, "rows": slim,
             "meta": {"source": "nba_api", "season": season,
                      "units": "percentages on 0-100 scale"}}
-
-
-
 
 _BUCKET_TO_ZONE = {
     "0-3ft": "Restricted Area",
@@ -1505,9 +1397,7 @@ _BUCKET_TO_ZONE = {
     "3P": "Above the Break 3",
 }
 
-
 _HIST_THREE_ZONES = frozenset({"corner_3", "atb_3"})
-
 
 def _fold_hist_shots(rows: list[dict[str, Any]], person_id: int) -> tuple[dict, dict, int]:
     player = {key: [0, 0] for key in _HIST_ZONE_KEYS}
@@ -1532,7 +1422,6 @@ def _fold_hist_shots(rows: list[dict[str, Any]], person_id: int) -> tuple[dict, 
                 pslot[0] += 1
     return player, league, total
 
-
 def _hist_zone_rows(player: dict, league: dict, total: int, floor: int) -> tuple[list, list]:
     rows: list[dict[str, Any]] = []
     excluded: list[str] = []
@@ -1556,17 +1445,8 @@ def _hist_zone_rows(player: dict, league: dict, total: int, floor: int) -> tuple
                      "LEAGUE_DELTA": round(efg - league_efg, 3)})
     return rows, excluded
 
-
-@tool
+@tool(description='Zone splits for one player id: rim, midrange, three with shares.\n\nWarehouse-first: historical silver_hist_shots geometric zones, then\nseeded silver_shots, then seeded silver_zone_splits\n(basketball-reference distance buckets, league-wide), then live\nshot_chart (fail-fast; endpoint-blocked from datacenter IPs).\nZones below min_attempts (default 50, clamped 10..200) are excluded.')
 def get_shot_zones(player_id: str | int, season: str | None = None, min_attempts: int = 50) -> dict[str, Any]:
-    """Zone splits for one player id: rim, midrange, three with shares.
-
-    Warehouse-first: historical silver_hist_shots geometric zones, then
-    seeded silver_shots, then seeded silver_zone_splits
-    (basketball-reference distance buckets, league-wide), then live
-    shot_chart (fail-fast; endpoint-blocked from datacenter IPs).
-    Zones below min_attempts (default 50, clamped 10..200) are excluded.
-    """
     season = resolve_season(season)
     player_id = coerce_player_id(player_id)
     import math
@@ -1577,12 +1457,9 @@ def get_shot_zones(player_id: str | int, season: str | None = None, min_attempts
     except Exception:
         hist_year = 0
     if hist_year:
-        try:
-            hist_frame = store.read_frame(
-                "silver_hist_shots", "season = ?", [hist_year])
-        except Exception:
-            hist_frame = None
-        if hist_frame is not None and hist_frame.height > 0:
+        hist_frame = store.read_frame(
+            "silver_hist_shots", "season = ?", [hist_year])
+        if hist_frame.height > 0:
             folded_player, folded_league, hist_total = _fold_hist_shots(
                 hist_frame.to_dicts(), player_id)
             if hist_total > 0:
@@ -1609,108 +1486,93 @@ def get_shot_zones(player_id: str | int, season: str | None = None, min_attempts
                         "rows": hist_rows, "meta": meta}
 
     res = None
-    live_error = ""
     shot_dicts: list[dict[str, Any]] = []
     shot_source = ""
     shot_fetched = ""
-    try:
-        w = store.read_frame(
-            "silver_shots",
-            "_season = ? AND CAST(PLAYER_ID AS VARCHAR) = CAST(? AS VARCHAR)",
-            [season, str(player_id)])
-        if w is not None and w.height > 0:
-            shot_dicts = w.to_dicts()
-            shot_source = "warehouse:silver_shots"
-            if "_fetched_at" in w.columns:
-                shot_fetched = str(w["_fetched_at"][0])
-    except Exception:
-        pass
+    w = store.read_frame(
+        "silver_shots",
+        "_season = ? AND CAST(PLAYER_ID AS VARCHAR) = CAST(? AS VARCHAR)",
+        [season, str(player_id)])
+    if w.height > 0:
+        shot_dicts = w.to_dicts()
+        shot_source = "warehouse:silver_shots"
+        if "_fetched_at" in w.columns:
+            shot_fetched = str(w["_fetched_at"][0])
     if not shot_dicts:
 
-        try:
-            zb = store.read_frame(
-                "silver_zone_splits",
-                "_season = ? AND CAST(PLAYER_ID AS VARCHAR) = CAST(? AS VARCHAR)",
-                [season, str(player_id)])
-            if zb is not None and zb.height > 0:
+        zb = store.read_frame(
+            "silver_zone_splits",
+            "_season = ? AND CAST(PLAYER_ID AS VARCHAR) = CAST(? AS VARCHAR)",
+            [season, str(player_id)])
+        if zb.height > 0:
 
-                league_fg: dict[str, float] = {}
-                try:
-                    lz = store.read_frame(
-                        "silver_zone_splits", "_season = ?", [season])
-                    if lz is not None and lz.height > 0:
-                        agg: dict[str, list] = {}
-                        for lr in lz.to_dicts():
-                            zone = _BUCKET_TO_ZONE.get(str(lr.get("ZONE")))
-                            if zone is None:
-                                continue
-                            m_v = float(lr.get("FGM") or 0)
-                            a_v = float(lr.get("FGA") or 0)
-                            if not (math.isfinite(m_v) and math.isfinite(a_v)):
-                                continue
-                            a = agg.setdefault(zone, [0.0, 0.0])
-                            a[0] += m_v
-                            a[1] += a_v
-                        for zone, (m, a) in agg.items():
-                            if a >= 50:
-                                league_fg[zone] = round(m / a, 3)
-                except Exception:
-                    pass
-
-
-
-
-
-                merged: dict[str, list[float]] = {}
-                for r in zb.to_dicts():
-                    zone = _BUCKET_TO_ZONE.get(str(r.get("ZONE")))
+            league_fg: dict[str, float] = {}
+            lz = store.read_frame(
+                "silver_zone_splits", "_season = ?", [season])
+            if lz.height > 0:
+                agg: dict[str, list] = {}
+                for lr in lz.to_dicts():
+                    zone = _BUCKET_TO_ZONE.get(str(lr.get("ZONE")))
                     if zone is None:
                         continue
-                    slot = merged.setdefault(zone, [0.0, 0.0])
-                    slot[0] += float(r.get("FGM") or 0)
-                    slot[1] += float(r.get("FGA") or 0)
-                bucket_rows = [{"ZONE": z, "FGM": m, "FGA": a}
-                               for z, (m, a) in merged.items()]
-                zb_rows = bucket_rows
-                out_rows = []
-                for r in zb_rows:
-                    fga = float(r.get("FGA") or 0)
-                    fgm = float(r.get("FGM") or 0)
-                    fgp = round(fgm / fga, 3) if fga else 0.0
-                    zone_name = str(r.get("ZONE"))
+                    m_v = float(lr.get("FGM") or 0)
+                    a_v = float(lr.get("FGA") or 0)
+                    if not (math.isfinite(m_v) and math.isfinite(a_v)):
+                        continue
+                    a = agg.setdefault(zone, [0.0, 0.0])
+                    a[0] += m_v
+                    a[1] += a_v
+                for zone, (m, a) in agg.items():
+                    if a >= 50:
+                        league_fg[zone] = round(m / a, 3)
 
+            merged: dict[str, list[float]] = {}
+            for r in zb.to_dicts():
+                zone = _BUCKET_TO_ZONE.get(str(r.get("ZONE")))
+                if zone is None:
+                    continue
+                slot = merged.setdefault(zone, [0.0, 0.0])
+                slot[0] += float(r.get("FGM") or 0)
+                slot[1] += float(r.get("FGA") or 0)
+            bucket_rows = [{"ZONE": z, "FGM": m, "FGA": a}
+                           for z, (m, a) in merged.items()]
+            zb_rows = bucket_rows
+            out_rows = []
+            for r in zb_rows:
+                fga = float(r.get("FGA") or 0)
+                fgm = float(r.get("FGM") or 0)
+                fgp = round(fgm / fga, 3) if fga else 0.0
+                zone_name = str(r.get("ZONE"))
 
-                    efgp = (round(fgp * 1.5, 3) if _is_three_zone(zone_name)
-                            else fgp)
-                    row = {
-                        "zone": zone_name, "FGM": int(fgm), "FGA": int(fga),
-                        "FG_PCT": fgp,
-                        "eFG_PCT": efgp,
-                        "share": round(float(r.get("FGA_PCT") or 0), 3),
-                        "fgm": int(fgm), "fga": int(fga),
-                        "fg_pct": fgp,
-                        "freq_pct": round(float(r.get("FGA_PCT") or 0), 3),
-                    }
-                    if str(r.get("ZONE")) in league_fg:
-                        row["LEAGUE_DELTA"] = round(fgp - league_fg[str(r.get("ZONE"))], 3)
-                    out_rows.append(row)
-                total = sum(r["FGA"] for r in out_rows) or 1
-                for r in out_rows:
-                    r["share"] = round(r["FGA"] / total, 3)
-                    r["freq_pct"] = r["share"]
-                meta = {"source": "basketball-reference",
-                        "season": season, "rows": len(out_rows),
-                        "cached": True,
-                        "note": "distance buckets mapped onto court zones "
-                                "(3-10ft counts as paint, both mid buckets "
-                                "merge, corner threes included in "
-                                "above-the-break), not exact NBA zones"}
-                if league_fg:
-                    meta["baseline"] = "silver_zone_splits league bucket FG%"
-                return {"tool": "get_shot_zones", "ok": True, "rows": out_rows,
-                        "meta": meta}
-        except Exception:
-            pass
+                efgp = (round(fgp * 1.5, 3) if _is_three_zone(zone_name)
+                        else fgp)
+                row = {
+                    "zone": zone_name, "FGM": int(fgm), "FGA": int(fga),
+                    "FG_PCT": fgp,
+                    "eFG_PCT": efgp,
+                    "share": round(float(r.get("FGA_PCT") or 0), 3),
+                    "fgm": int(fgm), "fga": int(fga),
+                    "fg_pct": fgp,
+                    "freq_pct": round(float(r.get("FGA_PCT") or 0), 3),
+                }
+                if str(r.get("ZONE")) in league_fg:
+                    row["LEAGUE_DELTA"] = round(fgp - league_fg[str(r.get("ZONE"))], 3)
+                out_rows.append(row)
+            total = sum(r["FGA"] for r in out_rows) or 1
+            for r in out_rows:
+                r["share"] = round(r["FGA"] / total, 3)
+                r["freq_pct"] = r["share"]
+            meta = {"source": "basketball-reference",
+                    "season": season, "rows": len(out_rows),
+                    "cached": True,
+                    "note": "distance buckets mapped onto court zones "
+                            "(3-10ft counts as paint, both mid buckets "
+                            "merge, corner threes included in "
+                            "above-the-break), not exact NBA zones"}
+            if league_fg:
+                meta["baseline"] = "silver_zone_splits league bucket FG%"
+            return {"tool": "get_shot_zones", "ok": True, "rows": out_rows,
+                    "meta": meta}
     if not shot_dicts:
         res = nba_stats.shot_chart(player_id, season)
         if not res.ok or res.frame.height == 0:
@@ -1784,33 +1646,28 @@ def get_shot_zones(player_id: str | int, season: str | None = None, min_attempts
         baseline_detail = str(exc)[:120]
     bucket_fg: dict[str, float] = {}
     if baseline_missing:
-
-
-        try:
-            lz = store.read_frame("silver_zone_splits", "_season = ?", [season])
-            if lz is not None and lz.height > 0:
-                agg_b: dict[str, list] = {}
-                for lr in lz.to_dicts():
-                    zone = _BUCKET_TO_ZONE.get(str(lr.get("ZONE")))
-                    if zone is None:
-                        continue
-                    m_v = float(lr.get("FGM") or 0)
-                    a_v = float(lr.get("FGA") or 0)
-                    if not (math.isfinite(m_v) and math.isfinite(a_v)):
-                        continue
-                    slot = agg_b.setdefault(zone, [0.0, 0.0])
-                    slot[0] += m_v
-                    slot[1] += a_v
-                for zone, (m, a) in agg_b.items():
-                    if a >= 50:
-                        bucket_fg[zone] = round(m / a, 3)
-                if "Above the Break 3" in bucket_fg:
-                    bucket_fg.setdefault("Left Corner 3",
-                                         bucket_fg["Above the Break 3"])
-                    bucket_fg.setdefault("Right Corner 3",
-                                         bucket_fg["Above the Break 3"])
-        except Exception:
-            bucket_fg = {}
+        lz = store.read_frame("silver_zone_splits", "_season = ?", [season])
+        if lz.height > 0:
+            agg_b: dict[str, list] = {}
+            for lr in lz.to_dicts():
+                zone = _BUCKET_TO_ZONE.get(str(lr.get("ZONE")))
+                if zone is None:
+                    continue
+                m_v = float(lr.get("FGM") or 0)
+                a_v = float(lr.get("FGA") or 0)
+                if not (math.isfinite(m_v) and math.isfinite(a_v)):
+                    continue
+                slot = agg_b.setdefault(zone, [0.0, 0.0])
+                slot[0] += m_v
+                slot[1] += a_v
+            for zone, (m, a) in agg_b.items():
+                if a >= 50:
+                    bucket_fg[zone] = round(m / a, 3)
+            if "Above the Break 3" in bucket_fg:
+                bucket_fg.setdefault("Left Corner 3",
+                                     bucket_fg["Above the Break 3"])
+                bucket_fg.setdefault("Right Corner 3",
+                                     bucket_fg["Above the Break 3"])
         if not bucket_fg:
             baseline_detail = ("league baseline unavailable: shot-level data "
                                "seeded for few players and bucket table "
@@ -1843,10 +1700,8 @@ def get_shot_zones(player_id: str | int, season: str | None = None, min_attempts
         meta["baseline"] = "silver_shots league zone eFG"
     return {"tool": "get_shot_zones", "ok": True, "rows": rows, "meta": meta}
 
-
 def _opp_tier_splits(frame: Any, season: str) -> list[dict[str, Any]]:
     season = resolve_season(season)
-    import polars as _pl
 
     if "MATCHUP" not in frame.columns or "PTS" not in frame.columns:
         return []
@@ -1877,10 +1732,8 @@ def _opp_tier_splits(frame: Any, season: str) -> list[dict[str, Any]]:
                     "PPG": round(sum(pts) / len(pts), 1)})
     return out
 
-
-@tool
+@tool(description='Home/away plus monthly, wins/losses, last-10, starter splits from the game log.')
 def get_splits(player_id: str | int, season: str | None = None) -> dict[str, Any]:
-    """Home/away plus monthly, wins/losses, last-10, starter splits from the game log."""
     season = resolve_season(season)
     player_id = coerce_player_id(player_id)
 
@@ -2029,7 +1882,6 @@ def get_splits(player_id: str | int, season: str | None = None) -> dict[str, Any
             "meta": {"source": meta_source, "fetched_at": meta_fetched,
                      "rows": len(rows), "cached": False}}
 
-
 def _hist_on_off_rows(pid: int, tid: int, season: str) -> list[dict[str, Any]]:
     season = resolve_season(season)
     try:
@@ -2101,10 +1953,8 @@ def _hist_on_off_rows(pid: int, tid: int, season: str) -> list[dict[str, Any]]:
                 "Off": str(int(off[3])), "On-Off": ""})
     return out
 
-
-@tool
+@tool(description='On and off splits for one player on one team. Possession level.')
 def get_on_off(player_id: str | int, team_id: str | int, season: str | None = None) -> dict[str, Any]:
-    """On and off splits for one player on one team. Possession level."""
     season = resolve_season(season)
     player_id = coerce_player_id(player_id)
     team_id = coerce_team_id(team_id)
@@ -2129,8 +1979,7 @@ def get_on_off(player_id: str | int, team_id: str | int, season: str | None = No
                           f"season.")}
     return {"tool": "get_on_off", "ok": True, "rows": rows, "meta": meta}
 
-
-@tool
+@tool(description='With-or-without-you (WOWY) 4-way lineup combination splits for two players.\n\nAccepts player_a and player_b by name or id, or comma-separated player_ids.\nComputes Both ON, A ON / B OFF, B ON / A OFF, and Both OFF with minutes,\noffensive rating, defensive rating, and net rating from warehouse lineups.')
 def get_wowy(
     player_a: str = "",
     player_b: str = "",
@@ -2138,12 +1987,6 @@ def get_wowy(
     team_id: str | int = 0,
     season: str | None = None,
 ) -> dict[str, Any]:
-    """With-or-without-you (WOWY) 4-way lineup combination splits for two players.
-
-    Accepts player_a and player_b by name or id, or comma-separated player_ids.
-    Computes Both ON, A ON / B OFF, B ON / A OFF, and Both OFF with minutes,
-    offensive rating, defensive rating, and net rating from warehouse lineups.
-    """
     season = resolve_season(season)
     raw_a = (player_a or "").strip()
     raw_b = (player_b or "").strip()
@@ -2227,8 +2070,8 @@ def get_wowy(
             if tid:
                 df = con.execute(
                     f"""
-                    SELECT 
-                      CASE 
+                    SELECT
+                      CASE
                         WHEN GROUP_ID LIKE '%-' || ? || '-%' AND GROUP_ID LIKE '%-' || ? || '-%' THEN 'Both ON'
                         WHEN GROUP_ID LIKE '%-' || ? || '-%' AND GROUP_ID NOT LIKE '%-' || ? || '-%' THEN ? || ' ON, ' || ? || ' OFF'
                         WHEN GROUP_ID NOT LIKE '%-' || ? || '-%' AND GROUP_ID LIKE '%-' || ? || '-%' THEN ? || ' ON, ' || ? || ' OFF'
@@ -2273,7 +2116,6 @@ def get_wowy(
         finally:
             con.close()
 
-
     from ..sources import pbpstats
 
     ids = [p for p in (pid_a, pid_b) if p]
@@ -2287,10 +2129,8 @@ def get_wowy(
     )
     return {"tool": "get_wowy", "ok": True, "rows": rows, "meta": meta}
 
-
-@tool
+@tool(description='Four factor on-off splits for one player on one team.')
 def get_four_factors(player_id: str | int, team_id: str | int, season: str | None = None) -> dict[str, Any]:
-    """Four factor on-off splits for one player on one team."""
     season = resolve_season(season)
     player_id = coerce_player_id(player_id)
     team_id = coerce_team_id(team_id)
@@ -2304,16 +2144,8 @@ def get_four_factors(player_id: str | int, team_id: str | int, season: str | Non
     )
     return {"tool": "get_four_factors", "ok": True, "rows": rows, "meta": meta}
 
-
-@tool
+@tool(description='Shot-diet showdown: zone eFG and share for two players.\n\nMissing zone data stays null, never 0.0: a player without a seeded\nzone row has NO data there, not a 0% shooter. Edges and the verdict\nare computed only where BOTH players have data; takeaways must never\nbe built on a missing cell.')
 async def get_shot_compare(a: str, b: str, season: str | None = None) -> dict[str, Any]:
-    """Shot-diet showdown: zone eFG and share for two players.
-
-    Missing zone data stays null, never 0.0: a player without a seeded
-    zone row has NO data there, not a 0% shooter. Edges and the verdict
-    are computed only where BOTH players have data; takeaways must never
-    be built on a missing cell.
-    """
     season = resolve_season(season)
     async def _zones(who: str) -> dict[str, dict]:
         try:
@@ -2335,7 +2167,6 @@ async def get_shot_compare(a: str, b: str, season: str | None = None) -> dict[st
         return None
 
     ma, mb = await _asyncio.gather(_zones(a), _zones(b))
-
 
     a, b = _display_name(a), _display_name(b)
     missing = [n for n, m in ((a, ma), (b, mb)) if not m]
@@ -2394,10 +2225,8 @@ async def get_shot_compare(a: str, b: str, season: str | None = None) -> dict[st
     return {"tool": "get_shot_compare", "ok": True, "rows": rows,
             "verdict": verdict, "meta": meta}
 
-
-@tool
+@tool(description='Season-by-season RAPTOR and WAR for one player name. Warehouse only.')
 def get_raptor_history(player: str, season: str = "") -> dict[str, Any]:
-    """Season-by-season RAPTOR and WAR for one player name. Warehouse only."""
     season = resolve_season(season)
     name = (player or "").strip()
     if not name:
@@ -2433,12 +2262,6 @@ def get_raptor_history(player: str, season: str = "") -> dict[str, Any]:
             "meta": {"source": "fivethirtyeight:raptor", "seasons": len(rows),
                      "coverage": "RAPTOR ends 2021-22; later seasons read as gaps, never estimates"}}
 
-
-
-
-
-
-
 IMPACT_PRIOR_FEATURES = ("USG_PCT", "TS_PCT", "AST_PCT", "REB_PCT", "TM_TOV_PCT")
 IMPACT_PRIOR_MIN_POSS = 3000
 IMPACT_PRIOR_MIN_N = 30
@@ -2446,10 +2269,8 @@ IMPACT_SHRINK_K = 1500
 
 IMPACT_RAPTOR_ONOFF_W = 0.20
 
-
 IMPACT_DISCLAIMER = ("This is a statistical estimate, not a measured impact "
                      "metric. Never present it as RAPTOR, RAPM, or BPM.")
-
 
 def _solve_linear(a: list[list[float]], b: list[float]) -> list[float] | None:
     n = len(b)
@@ -2470,7 +2291,6 @@ def _solve_linear(a: list[list[float]], b: list[float]) -> list[float] | None:
         if abs(m[i][i]) < 1e-12:
             return None
     return x
-
 
 def _fit_box_prior(season: str) -> dict[str, Any] | None:
     season = resolve_season(season)
@@ -2516,7 +2336,6 @@ def _fit_box_prior(season: str) -> dict[str, Any] | None:
     return {"intercept": beta[0], "coefs": dict(zip(IMPACT_PRIOR_FEATURES, beta[1:])),
             "n": len(trainers), "r2": r2}
 
-
 def _raptor_row(player_id: int, name: str, season: str) -> dict[str, Any] | None:
     season = resolve_season(season)
     rows = _read_df(
@@ -2527,7 +2346,6 @@ def _raptor_row(player_id: int, name: str, season: str) -> dict[str, Any] | None
         [season, str(player_id), name],
     )
     return rows[0] if rows else None
-
 
 def _stale_raptor(player_id: int, name: str, season: str) -> dict[str, Any] | None:
     season = resolve_season(season)
@@ -2541,18 +2359,8 @@ def _stale_raptor(player_id: int, name: str, season: str) -> dict[str, Any] | No
     )
     return rows[0] if rows else None
 
-
-@tool
+@tool(description='Estimated per-100-possession impact for players lacking direct metrics.\n\nRookies, call-ups, and low-minute players have no RAPTOR/RAPM/BPM in the\nwarehouse, so this synthesizes an estimate from available components.\nALWAYS an estimate (is_estimate=True): never present it as measured.\nMethods: box_prior_shrinkage (marginal on-court lift shrunk toward an\nOLS box-score prior, current season) or raptor_components (empirical\n80/20 box/on-off blend, historical seasons with RAPTOR components).')
 def get_impact_estimate(player: str | int, season: str | None = None) -> dict[str, Any]:
-    """Estimated per-100-possession impact for players lacking direct metrics.
-
-    Rookies, call-ups, and low-minute players have no RAPTOR/RAPM/BPM in the
-    warehouse, so this synthesizes an estimate from available components.
-    ALWAYS an estimate (is_estimate=True): never present it as measured.
-    Methods: box_prior_shrinkage (marginal on-court lift shrunk toward an
-    OLS box-score prior, current season) or raptor_components (empirical
-    80/20 box/on-off blend, historical seasons with RAPTOR components).
-    """
     season = resolve_season(season)
     base: dict[str, Any] = {"tool": "get_impact_estimate", "is_estimate": True,
                             "disclaimer": IMPACT_DISCLAIMER}
@@ -2708,16 +2516,12 @@ def get_impact_estimate(player: str | int, season: str | None = None) -> dict[st
             "stale_measured": stale_out,
             "confidence": {"level": level, "notes": notes}}
 
-
 DPOY_MINUTES = 500
 UNSUNG_MIN_MINUTES = 200
 UNSUNG_MAX_MINUTES = 1000
 
-
-@tool
+@tool(description='Hustle leaderboards from warehouse only: DPOY composite, screen-assist\nkings, and unsung defenders with elite per-minute hustle in small roles.')
 def get_hustle_boards(season: str | None = None, top: int = 10) -> dict[str, Any]:
-    """Hustle leaderboards from warehouse only: DPOY composite, screen-assist
-    kings, and unsung defenders with elite per-minute hustle in small roles."""
     season = resolve_season(season)
     try:
         top = max(1, min(int(top or 10), 25))
@@ -2773,16 +2577,9 @@ def get_hustle_boards(season: str | None = None, top: int = 10) -> dict[str, Any
                      "unsung_rule": "MIN 200-1000 with G >= 20,"
                      " ranked by hustle per 36, ppg joined for usage context"}}
 
-
-@tool
+@tool(description='Generate a shareable HTML debate card comparing two players.\n\nReturns a self-contained HTML file with side-by-side stats,\nstyled for sharing. Saves to workspace and returns the path.\nOptional topic labels the debate (e.g. "MVP race").')
 def get_debate_card(a: str, b: str, season: str | None = None,
                     topic: str = "") -> dict[str, Any]:
-    """Generate a shareable HTML debate card comparing two players.
-
-    Returns a self-contained HTML file with side-by-side stats,
-    styled for sharing. Saves to workspace and returns the path.
-    Optional topic labels the debate (e.g. "MVP race").
-    """
     season = resolve_season(season)
     import html as _html
     from pathlib import Path as _Path
@@ -2905,7 +2702,6 @@ h1 {{ font-size: 22px; margin: 0; color: #1c1917; }}
 <div class="footer">Settle the debate with data</div>
 </div></body></html>"""
 
-
     out_dir = _Path(__file__).resolve().parent.parent.parent / "data" / "cards"
     out_dir.mkdir(parents=True, exist_ok=True)
     import unicodedata as _ud
@@ -2935,10 +2731,8 @@ h1 {{ font-size: 22px; margin: 0; color: #1c1917; }}
                      "stats": [_line(p) for p in players]},
             "meta": {"season": season, "format": "html"}}
 
-
-@tool
+@tool(description='Multi-part player report: season line, advanced profile, shots, clutch.')
 def get_player_report(player: str | int, season: str | None = None) -> dict[str, Any]:
-    """Multi-part player report: season line, advanced profile, shots, clutch."""
     season = resolve_season(season)
     from .league import get_clutch
 
@@ -2955,10 +2749,6 @@ def get_player_report(player: str | int, season: str | None = None) -> dict[str,
             _err["season_error"] = True
         return _err
     line = avg["rows"][0]
-
-
-
-
 
     historical = season != last_completed_season()
     adv = ({"ok": False} if historical else
@@ -3004,14 +2794,8 @@ def get_player_report(player: str | int, season: str | None = None) -> dict[str,
                      "season": season, "player": name,
                      "deterministic_answer": "\n".join(lines)}}
 
-
-@tool
+@tool(description='Grounded player tier, advanced profile, modeled value, and comps.\n\nTier rules are deterministic and transparent. Current-season impact uses\nRAPM-lite as a context metric, never as the sole tier label.')
 def get_player_evaluation(player: str | int, season: str | None = None) -> dict[str, Any]:
-    """Grounded player tier, advanced profile, modeled value, and comps.
-
-    Tier rules are deterministic and transparent. Current-season impact uses
-    RAPM-lite as a context metric, never as the sole tier label.
-    """
     season = resolve_season(season)
     from .league import get_contract_value
 
@@ -3048,10 +2832,6 @@ def get_player_evaluation(player: str | int, season: str | None = None) -> dict[
             rapm_n = int(rows[0]["impact_n"])
     except Exception:
         pass
-
-
-
-
 
     if gp >= 40 and pie_rank <= 10 and rapm_rank is not None and rapm_rank <= 25:
         tier = "superstar"
@@ -3118,7 +2898,6 @@ def get_player_evaluation(player: str | int, season: str | None = None) -> dict[
         },
     }
 
-
 def _rapm_note() -> str:
     try:
         con = store.connect(read_only=True)
@@ -3141,16 +2920,8 @@ def _rapm_note() -> str:
     return (f"RAPM-lite covers {seasons[0]}–{seasons[-1]}; "
             "FiveThirtyEight RAPTOR covers 2014-15 through 2021-22.")
 
-
-@tool
+@tool(description='Overall top-N players board ranked by the warehouse impact metric.\n\nCurrent seasons (RAPM-lite coverage, e.g. 2025-26): rank by RAPM-lite\nwith a possessions floor. Historical seasons 2014-15..2021-22: rank by\nFiveThirtyEight WAR. Other seasons return an honest coverage note -\nnever a single-stat board presented as an overall ranking.')
 def get_player_rankings(n: int = 15, season: str | None = None) -> dict[str, Any]:
-    """Overall top-N players board ranked by the warehouse impact metric.
-
-    Current seasons (RAPM-lite coverage, e.g. 2025-26): rank by RAPM-lite
-    with a possessions floor. Historical seasons 2014-15..2021-22: rank by
-    FiveThirtyEight WAR. Other seasons return an honest coverage note -
-    never a single-stat board presented as an overall ranking.
-    """
     season = resolve_season(season)
     try:
         n = max(1, min(int(n), 50))

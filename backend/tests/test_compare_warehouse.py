@@ -24,11 +24,9 @@ ZONE_ROWS = [
 EDWARDS_ON = 118.5
 EDWARDS_OFF = 112.3
 
-
 class _ZoneStub:
     async def ainvoke(self, args):
         return {"ok": True, "rows": [dict(r) for r in ZONE_ROWS]}
-
 
 class _EmptyStub:
     def __init__(self):
@@ -37,7 +35,6 @@ class _EmptyStub:
     async def ainvoke(self, args):
         self.calls.append(dict(args))
         return {"ok": True, "rows": []}
-
 
 def _seed_warehouse(wh: Path):
     con = duckdb.connect(str(wh))
@@ -132,7 +129,6 @@ def _seed_warehouse(wh: Path):
     finally:
         con.close()
 
-
 @pytest.fixture()
 def warehouse(monkeypatch, tmp_path):
     wh = tmp_path / "wh.duckdb"
@@ -141,11 +137,9 @@ def warehouse(monkeypatch, tmp_path):
                         lambda **_kw: duckdb.connect(str(wh)))
     return wh
 
-
 class _EmptyDictStub:
     async def ainvoke(self, args):
         return {"ok": True, "rows": {}}
-
 
 class _IntelStub:
     async def ainvoke(self, args):
@@ -157,7 +151,6 @@ class _IntelStub:
             "STL": 0, "BLK": 0, "TOV": 1,
         }]}
 
-
 def _patch_no_live(monkeypatch):
     import nba_api.stats.endpoints as _ep
     calls = []
@@ -167,7 +160,6 @@ def _patch_no_live(monkeypatch):
             raise AssertionError("live HTTP touched")
     monkeypatch.setattr(_ep, "CommonPlayerInfo", _NoLive)
     return calls
-
 
 def test_warehouse_hit_makes_zero_live_calls(warehouse, monkeypatch):
     calls = _patch_no_live(monkeypatch)
@@ -180,7 +172,6 @@ def test_warehouse_hit_makes_zero_live_calls(warehouse, monkeypatch):
     assert rows["b"]["team"] == "LAL"
     assert rows["a"]["net_onoff"] == round(EDWARDS_ON - EDWARDS_OFF, 1)
     assert calls == []
-
 
 def test_warehouse_miss_falls_back_to_live(warehouse, monkeypatch):
     import pandas as pd
@@ -208,11 +199,9 @@ def test_warehouse_miss_falls_back_to_live(warehouse, monkeypatch):
         {"a": "1628983", "b": "1630162", "season": SEASON}))
     assert result["ok"] is True
 
-
     assert calls == []
     assert onoff_rec.calls
     assert onoff_rec.calls[0].get("team_id") == 1610612747
-
 
 def test_real_warehouse_zero_live_calls(monkeypatch):
     calls = _patch_no_live(monkeypatch)
@@ -239,7 +228,6 @@ def test_real_warehouse_zero_live_calls(monkeypatch):
     expected = Counter(t for t in first_tokens if t).most_common(1)[0][0]
     assert rows["a"]["team"] == expected
     assert calls == []
-
 
 def test_warehouse_team_ids_match_live_path(monkeypatch):
     import pandas as pd
@@ -302,7 +290,6 @@ def test_warehouse_team_ids_match_live_path(monkeypatch):
     assert fast["rows"]["a"]["team"] == "MIN"
     assert fast["rows"]["b"]["team"] == "LAL"
 
-
 class _FlakyLastStub:
 
     def __init__(self):
@@ -314,17 +301,14 @@ class _FlakyLastStub:
             raise RuntimeError("transient boom")
         return {"ok": True, "rows": [{"PTS": 30}, {"PTS": 28}]}
 
-
 class _BoomStub:
     async def ainvoke(self, args):
         raise RuntimeError("boom")
-
 
 def _patch_compare_stubs(monkeypatch, last_stub):
     monkeypatch.setattr(pm, "get_last_x", last_stub)
     monkeypatch.setattr(pm, "get_advanced", _EmptyDictStub())
     monkeypatch.setattr(pm, "get_shot_zones", _EmptyStub())
-
 
 def test_last5_recovers_after_transient_failure(warehouse, monkeypatch):
     _patch_no_live(monkeypatch)
@@ -335,7 +319,6 @@ def test_last5_recovers_after_transient_failure(warehouse, monkeypatch):
     assert result["ok"] is True
     assert result["rows"]["a"]["last5"] == [30, 28]
     assert result["meta"]["sub_call_errors"] == {}
-
 
 def test_last5_failure_surfaced_in_meta(warehouse, monkeypatch):
     _patch_no_live(monkeypatch)

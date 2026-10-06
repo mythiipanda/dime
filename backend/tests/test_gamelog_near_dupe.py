@@ -7,12 +7,11 @@ import polars as pl
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from shared.tools.gamelog import (  # noqa: E402
+from shared.tools.gamelog import (
     _dedupe_games,
     _row_out,
     dedupe_game_log_frame,
 )
-
 
 def _row(game_id="0022500087", date="2025-11-18", matchup="LAL vs. UTA",
          pid=2544, reb=5.0, stl=1.0, fetched_at=None, **kw):
@@ -27,14 +26,12 @@ def _row(game_id="0022500087", date="2025-11-18", matchup="LAL vs. UTA",
     row.update(kw)
     return row
 
-
 def test_exact_dupes_still_collapse_silently():
     rows = [_row(), _row(game_id="202511180LAL")]
     out = _dedupe_games(rows)
     assert len(out) == 1
     assert out[0] is rows[0]
     assert "stat_conflict" not in out[0]
-
 
 def test_near_dupe_latest_fetch_wins_and_flags():
     old = _row(reb=5.0, fetched_at="2025-11-19T08:00:00")
@@ -45,14 +42,12 @@ def test_near_dupe_latest_fetch_wins_and_flags():
     assert out[0]["stat_conflict"] is True
     assert "stat_conflict" not in old and "stat_conflict" not in new
 
-
 def test_near_dupe_order_independent_latest_fetch_wins():
     old = _row(reb=5.0, fetched_at="2025-11-19T08:00:00")
     new = _row(reb=6.0, fetched_at="2025-11-20T08:00:00")
     out = _dedupe_games([new, old])
     assert len(out) == 1
     assert out[0]["reb"] == 6.0
-
 
 def test_near_dupe_no_provenance_most_complete_wins():
     sparse = _row(reb=5.0, stl=None)
@@ -62,7 +57,6 @@ def test_near_dupe_no_provenance_most_complete_wins():
     assert out[0]["stl"] == 2.0
     assert out[0]["stat_conflict"] is True
 
-
 def test_near_dupe_full_tie_first_occurrence_wins():
     a = _row(reb=5.0)
     b = _row(reb=6.0)
@@ -71,18 +65,15 @@ def test_near_dupe_full_tie_first_occurrence_wins():
     assert out[0] is not None and out[0]["stat_conflict"] is True
     assert out[0]["reb"] == 5.0
 
-
 def test_distinct_games_same_day_kept():
     rows = [_row(matchup="LAL vs. UTA"), _row(matchup="LAL vs. BOS")]
     out = _dedupe_games(rows)
     assert len(out) == 2
 
-
 def test_distinct_players_same_game_kept():
     rows = [_row(pid=2544), _row(pid=203999)]
     out = _dedupe_games(rows)
     assert len(out) == 2
-
 
 def test_row_out_surfaces_conflict_flag():
     out = _dedupe_games([_row(reb=5.0), _row(reb=6.0)])
@@ -90,7 +81,6 @@ def test_row_out_surfaces_conflict_flag():
     assert rendered["stat_conflict"] is True
     clean = _row_out(_dedupe_games([_row(), _row()])[0])
     assert "stat_conflict" not in clean
-
 
 def _frame_row(game_id="0022500087", date="NOV 18, 2025", matchup="LAL vs. UTA",
                pid=2544, oreb=2, fetched_at="2025-11-19T08:00:00"):
@@ -102,14 +92,12 @@ def _frame_row(game_id="0022500087", date="NOV 18, 2025", matchup="LAL vs. UTA",
         "_fetched_at": fetched_at, "_entity": "player",
     }
 
-
 def test_frame_exact_dupes_collapse_keep_first():
     frame = pl.DataFrame([_frame_row(), _frame_row(game_id="202511180LAL")])
     out = dedupe_game_log_frame(frame)
     assert out.height == 1
     assert out.columns == frame.columns + ["stat_conflict"]
     assert out["stat_conflict"].to_list() == [False]
-
 
 def test_frame_near_dupe_latest_fetch_wins():
     old = _frame_row(oreb=2, fetched_at="2025-11-19T08:00:00")
@@ -121,7 +109,6 @@ def test_frame_near_dupe_latest_fetch_wins():
     assert out.columns == pl.DataFrame([old]).columns + ["stat_conflict"]
     assert out["stat_conflict"][0] is True
 
-
 def test_frame_near_dupe_mixed_date_formats_group_together():
     old = _frame_row(date="NOV 18, 2025", oreb=2,
                      fetched_at="2025-11-19T08:00:00")
@@ -130,7 +117,6 @@ def test_frame_near_dupe_mixed_date_formats_group_together():
     out = dedupe_game_log_frame(pl.DataFrame([old, new]))
     assert out.height == 1
     assert out["OREB"][0] == 3
-
 
 def test_frame_preserves_row_order():
     a1 = _frame_row(date="NOV 20, 2025", matchup="LAL vs. BOS")
@@ -143,7 +129,6 @@ def test_frame_preserves_row_order():
     assert out["MATCHUP"].to_list() == ["LAL vs. BOS", "LAL vs. UTA"]
     assert out["OREB"].to_list() == [2, 3]
 
-
 def test_frame_team_games_entity_key():
     r1 = _frame_row(oreb=2, fetched_at="2025-11-19T08:00:00")
     r2 = _frame_row(oreb=3, fetched_at="2025-11-20T08:00:00")
@@ -154,7 +139,6 @@ def test_frame_team_games_entity_key():
     assert out.height == 1
     assert out["OREB"][0] == 3
 
-
 def test_frame_without_matchup_falls_back_to_exact_unique():
     r1 = _frame_row(oreb=2)
     r2 = _frame_row(oreb=3)
@@ -163,7 +147,6 @@ def test_frame_without_matchup_falls_back_to_exact_unique():
     out = dedupe_game_log_frame(pl.DataFrame([r1, r2]))
     assert out.height == 2
     assert out["stat_conflict"].to_list() == [False, False]
-
 
 def _sgl_row(reb=5.0, fetched_at=None):
     d = _dt.date(2025, 11, 18)
@@ -175,7 +158,6 @@ def _sgl_row(reb=5.0, fetched_at=None):
         "fgm": 8.0, "fga": 16.0, "fg3m": 2.0, "fg3a": 6.0,
         "plus_minus": 4.0, "dd_count": 0, "_fetched_at": fetched_at,
     }
-
 
 def test_search_game_logs_dedupes_before_filter_crossing_threshold(monkeypatch):
     from shared.tools import gamelog
@@ -190,7 +172,6 @@ def test_search_game_logs_dedupes_before_filter_crossing_threshold(monkeypatch):
     assert out["ok"] is True
     assert out["rows"]["total"] == 0
     assert out["rows"]["matches"] == []
-
 
 def test_search_game_logs_canonical_row_qualifies_and_flags(monkeypatch):
     from shared.tools import gamelog
@@ -207,7 +188,6 @@ def test_search_game_logs_canonical_row_qualifies_and_flags(monkeypatch):
     match = out["rows"]["matches"][0]
     assert match["reb"] == 6.0
     assert match["stat_conflict"] is True
-
 
 def test_frame_non_gamelog_unchanged():
     frame = pl.DataFrame([{"a": 1}, {"a": 1}])

@@ -4,8 +4,7 @@ from typing import Any
 
 from langchain_core.tools import tool
 
-from ._core import clamp_season, coerce_team_id, is_past_game_date, last_completed_season, resolve_season
-
+from ._core import clamp_season, coerce_team_id, is_past_game_date, resolve_season
 
 def _abbrev(who: str) -> str:
     try:
@@ -19,7 +18,6 @@ def _abbrev(who: str) -> str:
             return t.get("abbreviation", str(who).upper())
     return str(who).upper()
 
-
 def _id_to_abbr(tid: object, fallback: str = "") -> str:
     try:
         from nba_api.stats.static import teams
@@ -31,18 +29,15 @@ def _id_to_abbr(tid: object, fallback: str = "") -> str:
         pass
     return fallback
 
-
 def _num(value: object) -> float | None:
     try:
         return float(value)
     except (TypeError, ValueError):
         return None
 
-
 def _r1(value: object) -> float | None:
     n = _num(value)
     return round(n, 1) if n is not None else None
-
 
 def _row_team_ids(row: dict[str, Any]) -> tuple[int | None, int | None]:
     home, away = None, None
@@ -56,13 +51,11 @@ def _row_team_ids(row: dict[str, Any]) -> tuple[int | None, int | None]:
         away = None
     return home, away
 
-
 def _row_abbrs(row: dict[str, Any]) -> tuple[str, str]:
     home_id, away_id = _row_team_ids(row)
     home = str(row.get("HOME_TEAM_ABBREVIATION") or "") or _id_to_abbr(home_id)
     away = str(row.get("VISITOR_TEAM_ABBREVIATION") or "") or _id_to_abbr(away_id)
     return home, away
-
 
 def _scoreboard_warehouse(season: str, dates: list[str]) -> list[dict[str, Any]]:
     season = resolve_season(season)
@@ -91,17 +84,14 @@ def _scoreboard_warehouse(season: str, dates: list[str]) -> list[dict[str, Any]]
         except Exception:
             pass
 
-
 def _match_pair(row: dict[str, Any], ida: int, idb: int) -> bool:
     home, away = _row_team_ids(row)
     return (home is not None and away is not None
             and {home, away} == {ida, idb})
 
-
 def _entity_date(row: dict[str, Any]) -> str:
     ent = str(row.get("_entity") or "")
     return ent[5:] if ent.startswith("date:") else ""
-
 
 def _pick_marquee(rows: list[dict[str, Any]], season: str) -> dict[str, Any]:
     season = resolve_season(season)
@@ -144,7 +134,6 @@ def _pick_marquee(rows: list[dict[str, Any]], season: str) -> dict[str, Any]:
             best = r
     return best or rows[0]
 
-
 def _parse_team_date(value: object):
     from datetime import datetime as _dt
 
@@ -152,7 +141,6 @@ def _parse_team_date(value: object):
         return _dt.strptime(str(value).title(), "%b %d, %Y")
     except (TypeError, ValueError):
         return None
-
 
 def _parse_gamelog_date(value: object):
     from datetime import datetime as _dt
@@ -166,10 +154,7 @@ def _parse_gamelog_date(value: object):
     except (TypeError, ValueError):
         return None
 
-
 def _form_card(team_id: int, season: str) -> tuple[dict[str, Any], str | None]:
-
-
 
     season = resolve_season(season)
     from .. import store
@@ -226,7 +211,6 @@ def _form_card(team_id: int, season: str) -> tuple[dict[str, Any], str | None]:
     streak = f"{first}{n}" if first in ("W", "L") else None
     return {"record": record, "last10": last10, "streak": streak}, record
 
-
 def _leaders_card(abbr: str, team_id: int, season: str) -> list[dict[str, Any]]:
     season = resolve_season(season)
     from .. import store
@@ -268,7 +252,6 @@ def _leaders_card(abbr: str, team_id: int, season: str) -> list[dict[str, Any]]:
         except (TypeError, ValueError):
             gp_int = 0
 
-
         div = gp_int or 1
         out.append({
             "name": str(name or ""),
@@ -279,7 +262,6 @@ def _leaders_card(abbr: str, team_id: int, season: str) -> list[dict[str, Any]]:
             "gp": gp_int,
         })
     return out
-
 
 def _net_card(abbr: str, season: str) -> tuple[float | None, Any]:
     season = resolve_season(season)
@@ -294,7 +276,6 @@ def _net_card(abbr: str, season: str) -> tuple[float | None, Any]:
             return _num(r.get("NET_RATING")), r.get("NET_RATING_RANK")
     return None, None
 
-
 def _injury_rank(out_name: str, leaders: list[dict[str, Any]]) -> int | None:
     parts = str(out_name or "").strip().split()
     last = parts[-1].lower() if parts else ""
@@ -304,7 +285,6 @@ def _injury_rank(out_name: str, leaders: list[dict[str, Any]]) -> int | None:
         if last in str(lead.get("name", "")).lower():
             return i + 1
     return None
-
 
 async def _injuries_card(abbr: str, season: str,
                          leaders: list[dict[str, Any]]) -> dict[str, Any]:
@@ -331,7 +311,6 @@ async def _injuries_card(abbr: str, season: str,
         outs.append({"name": str(name), "impact": impact})
     questionable = [str(n) for n in (rows.get("questionable", []) or [])[:3]]
     return {"out": outs, "questionable": questionable}
-
 
 def _xfactor_card(leaders: list[dict[str, Any]], season: str) -> dict[str, Any]:
     season = resolve_season(season)
@@ -394,7 +373,6 @@ def _xfactor_card(leaders: list[dict[str, Any]], season: str) -> dict[str, Any]:
         "line": f"Averaging {l5r} ppg over his last 5 (season {sr})" + tail,
     }
 
-
 async def _team_card(team_id: int, abbr: str, season: str) -> dict[str, Any]:
     season = resolve_season(season)
     form, record = _form_card(team_id, season)
@@ -420,7 +398,6 @@ async def _team_card(team_id: int, abbr: str, season: str) -> dict[str, Any]:
         "injuries": injuries,
         "xfactor": xfactor,
     }
-
 
 def _build_matchups(card_a: dict[str, Any],
                     card_b: dict[str, Any]) -> list[dict[str, Any]]:
@@ -450,7 +427,6 @@ def _build_matchups(card_a: dict[str, Any],
             })
     return out
 
-
 def _side_label(abbr: str, rec: str | None, net: float | None) -> str:
     inner: list[str] = []
     if rec:
@@ -458,7 +434,6 @@ def _side_label(abbr: str, rec: str | None, net: float | None) -> str:
     if net is not None:
         inner.append(f"net {net:+.1f}")
     return f"{abbr} ({', '.join(inner)})" if inner else abbr
-
 
 def _why_watch(away_abbr: str, home_abbr: str, date: str,
                card_a: dict[str, Any], card_b: dict[str, Any],
@@ -492,10 +467,8 @@ def _why_watch(away_abbr: str, home_abbr: str, date: str,
             s3 = "The bench minutes decide the margins."
     return f"{s1} {s2} {s3}"
 
-
 def _err(message: str) -> dict[str, Any]:
     return {"tool": "get_matchup_preview", "ok": False, "error": message}
-
 
 def _already_played(row: dict[str, Any], resolved: str,
                     season: str) -> dict[str, Any]:
@@ -536,12 +509,10 @@ def _already_played(row: dict[str, Any], resolved: str,
         "meta": {"season": season, "source": "warehouse"},
     }
 
-
-@tool
+@tool(description="Narrative preview of a scheduled NBA game: recent form, key player matchups, injury impact, x-factors, why-watch. Pass two team names/abbrevs/ids, or a date (MM/DD/YYYY) to preview that day's marquee game. Never predicts scores.")
 async def get_matchup_preview(a: str = "", b: str = "",
                               game_date: str = "",
                               season: str | None = None) -> dict[str, Any]:
-    """Narrative preview of a scheduled NBA game: recent form, key player matchups, injury impact, x-factors, why-watch. Pass two team names/abbrevs/ids, or a date (MM/DD/YYYY) to preview that day's marquee game. Never predicts scores."""
     season = resolve_season(season)
     from datetime import datetime as _dt
 
@@ -561,7 +532,6 @@ async def get_matchup_preview(a: str = "", b: str = "",
             _dt.strptime(game_date, "%m/%d/%Y")
         except (TypeError, ValueError):
             return _err("game_date must be MM/DD/YYYY")
-
 
         rows = _scoreboard_warehouse(season, [game_date])
         if not rows:
@@ -624,7 +594,6 @@ async def get_matchup_preview(a: str = "", b: str = "",
         now = _dt.now(ZoneInfo("America/New_York"))
         days = [(now + _td(days=i)).strftime("%m/%d/%Y") for i in range(14)]
 
-
         cands = sorted(
             (r for r in _scoreboard_warehouse(season, days)
              if _match_pair(r, ida, idb)),
@@ -654,7 +623,6 @@ async def get_matchup_preview(a: str = "", b: str = "",
         home_abbr = _abbrev(str(home_id))
     if not away_abbr:
         away_abbr = _abbrev(str(away_id))
-
 
     card_away, card_home = await asyncio.gather(
         _team_card(away_id, away_abbr, season),

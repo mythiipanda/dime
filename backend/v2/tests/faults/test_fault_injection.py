@@ -15,10 +15,8 @@ from v2.tests.faults.injection import (
     run_nodes,
 )
 
-
 def run(coro):
     return asyncio.run(coro)
-
 
 def test_planner_timeout_is_not_swallowed():
     injector = FaultInjector()
@@ -26,13 +24,11 @@ def test_planner_timeout_is_not_swallowed():
     with pytest.raises(InjectedTimeout, match="planner timed out"):
         run(injector.call("planner", lambda: asyncio.sleep(0)))
 
-
 def test_provider_timeout_is_not_swallowed():
     injector = FaultInjector()
     injector.inject("provider", InjectedTimeout("provider timed out"))
     with pytest.raises(InjectedTimeout, match="provider timed out"):
         run(injector.call("provider", lambda: asyncio.sleep(0)))
-
 
 def test_tool_failure_consumes_only_injected_attempt():
     injector = FaultInjector()
@@ -45,14 +41,12 @@ def test_tool_failure_consumes_only_injected_attempt():
     run(run_nodes(["ratings"], checkpoint, injector, execute))
     assert checkpoint.completed == {"ratings"}
 
-
 def test_malformed_evidence_is_rejected_at_contract_wall():
     with pytest.raises(ValidationError):
         EvidenceEnvelope(
             evidence_id="bad", capability="ratings", source="fixture",
             observed_at="not-a-date", rows=None,
         )
-
 
 def test_contradictory_evidence_can_be_preserved_for_verifier():
     first = EvidenceEnvelope(
@@ -69,7 +63,6 @@ def test_contradictory_evidence_can_be_preserved_for_verifier():
     assert report.status == VerificationStatus.REPAIR
     assert report.contradictions
 
-
 def test_checkpoint_restart_skips_completed_nodes():
     checkpoint = MemoryCheckpoint(completed={"a"}, evidence={"a": 1})
     injector = FaultInjector()
@@ -81,7 +74,6 @@ def test_checkpoint_restart_skips_completed_nodes():
     assert called == ["b", "c"]
     assert checkpoint.completed == {"a", "b", "c"}
 
-
 def test_verifier_rejection_is_a_repair_not_publish_signal():
     report = VerificationReport(
         status=VerificationStatus.REPAIR,
@@ -89,7 +81,6 @@ def test_verifier_rejection_is_a_repair_not_publish_signal():
         repair_instructions=["cite evidence or remove claim"],
     )
     assert report.status != VerificationStatus.PASS
-
 
 def test_cancellation_stops_before_next_checkpoint():
     checkpoint = MemoryCheckpoint()
@@ -106,7 +97,6 @@ def test_cancellation_stops_before_next_checkpoint():
             await task
     run(scenario())
     assert checkpoint.completed == set()
-
 
 @pytest.mark.anyio
 async def test_executor_does_not_admit_wrong_season_evidence():

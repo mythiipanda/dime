@@ -16,13 +16,11 @@ TOOL_MODULES = {tool.name: tool for tool in v1_tools}
 SEASON_SCOPED = tuple(
     name for name, spec in CAPABILITIES.items() if spec.task_season_scoped)
 
-
 def _tool_sources() -> str:
     root = Path(inspect.getfile(store)).parent / "tools"
     return "\n".join(
         path.read_text() for path in sorted(root.glob("*.py"))) \
         + "\n" + inspect.getsource(coverage)
-
 
 def test_every_capability_names_a_registered_tool():
     unregistered = sorted(
@@ -31,7 +29,6 @@ def test_every_capability_names_a_registered_tool():
         and not callable(getattr(coverage, spec.tool_name, None))
     )
     assert not unregistered, f"unregistered tools: {unregistered}"
-
 
 def _seasonless_evidence_task(season: str) -> TaskSpec:
     return TaskSpec(
@@ -48,25 +45,22 @@ def _seasonless_evidence_task(season: str) -> TaskSpec:
         )],
     )
 
-
 def test_wire_catalog_offers_every_capability_the_registry_covers():
     assert set(CAPABILITIES) <= set(capability_catalog())
 
-
 def test_season_scoped_capability_names_coverage_tables():
-    invisible = {
+    blind = {
         name for name in SEASON_SCOPED
-        if not coverage.tables_for_capability(name, {})
+        if not (coverage.tables_for_capability(name, {})
+                or coverage.declared_tables_for_capability(name, {}))
     }
-    assert not invisible, (
+    assert not blind, (
         "capabilities season coverage cannot see, so intake blames "
-        f"silver_boxscores for them: {sorted(invisible)}")
-
+        f"silver_boxscores for them: {sorted(blind)}")
 
 def test_registry_never_names_a_non_season_scoped_capability():
     stray = sorted(set(coverage.CAPABILITY_TABLES) - set(SEASON_SCOPED))
     assert not stray, f"entries for capabilities no season can gate: {stray}"
-
 
 def test_named_tables_are_warehouse_tables_the_tool_layer_reads():
     warehouse = store.tables()
@@ -79,7 +73,6 @@ def test_named_tables_are_warehouse_tables_the_tool_layer_reads():
             if re.search(rf"\b{re.escape(table)}\b", sources) is None:
                 invented.setdefault(name, []).append(table)
     assert not invented, f"registry names tables no tool reads: {invented}"
-
 
 def test_registry_tables_carry_a_season_column_in_the_warehouse():
     connection = duckdb.connect(str(store.DB_PATH), read_only=True)
@@ -98,7 +91,6 @@ def test_registry_tables_carry_a_season_column_in_the_warehouse():
     assert not without_season, (
         f"registry names tables that hold no season: {without_season}")
 
-
 def test_capability_with_no_season_source_leaves_the_task_alone():
     task = _seasonless_evidence_task("2015-16")
     assert ModelIntake._mark_uncovered_season(task) == task
@@ -115,7 +107,6 @@ def _scratch_warehouse(tmp_path):
     connection.close()
     return path
 
-
 def test_league_seasons_excludes_a_season_slice_that_is_one_team(
     tmp_path, monkeypatch):
     from shared import store
@@ -125,7 +116,6 @@ def test_league_seasons_excludes_a_season_slice_that_is_one_team(
     coverage.coverage_cache_clear()
     assert coverage.league_seasons("silver_team_games", "Team_ID", 3) == (
         "2025-26",)
-
 
 def test_league_seasons_rejects_a_table_or_column_it_cannot_quote(
     tmp_path, monkeypatch):

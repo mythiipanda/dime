@@ -15,7 +15,6 @@ from shared import store
 OFF = [f"off_player_{i}" for i in range(1, 6)]
 DEF = [f"def_player_{i}" for i in range(1, 6)]
 
-
 def main() -> None:
     args = argparse.ArgumentParser()
     args.add_argument("--season", default="2025-26")
@@ -81,7 +80,6 @@ def main() -> None:
     res = FetchResult(frame=frame, meta=FetchMeta(source="rapm-lite", season=ns.season))
     store.save_frame("silver_rapm", res, entity=f"season:{ns.season}")
     print(f"saved {len(out)} players")
-
 
 if __name__ == "__main__":
     main()

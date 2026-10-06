@@ -13,6 +13,7 @@ FRACTION = "fraction_0_1"
 PERCENT = "percent_0_100"
 POINTS_PER_100 = "points_per_100_possessions"
 MINUTES = "minutes"
+BALLOT_POINTS = "ballot_points"
 YEARS = "years"
 
 COUNTING_UNITS = {metric: COUNT for metric in COUNTING_METRICS}
@@ -33,27 +34,55 @@ FOUR_FACTORS_DEFS = {
     "ft_rate": "Free-throw rate: FTM / FGA, fraction scale 0-1.",
 }
 
-AWARD_WINNER_UNITS = {
+AWARD_SHARE_DEF = ("Award share: share of the maximum ballot points available "
+                   "to the placement, fraction scale 0-1. The official winner "
+                   "usually lands near 0.9, so 0.913 is 91.3 percent.")
+POINTS_WON_DEF = ("Points won: weighted ballot points credited to the "
+                  "placement. points_max is the largest point total on that "
+                  "ballot, so the winner's points_won equals points_max.")
+VOTES_DEF = ("First, second, and third place votes a placement received on a "
+             "published ballot, counted in ballots. Null where the source "
+             "publishes no vote count for that award.")
+
+AWARD_FIELD_UNITS = {
+    "age": YEARS,
+    "award_share": FRACTION,
+    "points_max": BALLOT_POINTS,
+    "points_won": BALLOT_POINTS,
     "rank": COUNT,
+    "votes_first": COUNT,
+    "votes_second": COUNT,
+    "votes_third": COUNT,
 }
 
-AWARD_WINNER_DEFINITIONS = {
-    "award": "Award code the source recorded the winner under.",
-    "coach": ("Coach named on the winner row; always null, the dataset "
-              "covers players only."),
-    "player": "Player named as the award winner.",
-    "rank": "Always 1: every row is a recorded winner.",
-    "rank_label": "Winner rank label, always \"1\".",
-    "season": "Season the source recorded the award for.",
-    "team": "Team name the source recorded with the winner.",
-    "tied": "Always false: winners are recorded one row per award and season.",
+AWARD_FIELD_DEFINITIONS = {
+    "age": ("Age in years the player was on the ballot; null on a coach row."),
+    "award": "Award code the source published the placement under.",
+    "award_share": AWARD_SHARE_DEF,
+    "coach": ("Coach named on the placement; null on a player award, so a "
+              "Coach-of-the-Year question reads this column."),
+    "player": ("Player named on the placement; null on a Coach-of-the-Year "
+               "row, so a player-award question reads this column."),
+    "points_max": POINTS_WON_DEF,
+    "points_won": POINTS_WON_DEF,
+    "rank": ("Published leading rank on the ballot. A tied placement shares "
+             "the leading rank; null for an ORV row."),
+    "rank_label": "Verbatim published rank label, including a tie suffix.",
+    "season": "Season the source published the ballot for.",
+    "team": "Team abbreviation published with the placement.",
+    "tied": "True when the published rank label marks a tied placement.",
+    "votes_first": VOTES_DEF,
+    "votes_second": VOTES_DEF,
+    "votes_third": VOTES_DEF,
 }
 
 AWARD_OUTPUT_ALIASES = {
     "PLAYER_NAME": "player",
     "COACH_NAME": "coach",
+    "VOTE_SHARE": "award_share",
+    "WINNER": "winner",
+    "VOTE_COUNT": "votes_first",
 }
-
 
 def _award_vocabulary() -> tuple[dict[str, str], dict[str, str]]:
     from shared.tools.award_results import _SELECT, _placement
@@ -61,16 +90,60 @@ def _award_vocabulary() -> tuple[dict[str, str], dict[str, str]]:
     source_row = dict.fromkeys(
         name.strip() for name in _SELECT.replace("\n", " ").split(","))
     fields = tuple(_placement(source_row))
-    return ({field: AWARD_WINNER_UNITS[field] for field in fields
-             if field in AWARD_WINNER_UNITS},
-            {field: AWARD_WINNER_DEFINITIONS.get(
-                field, f"{field.replace('_', ' ')} as the award winners "
-                       "dataset records it.")
+    return ({field: AWARD_FIELD_UNITS[field] for field in fields
+             if field in AWARD_FIELD_UNITS},
+            {field: AWARD_FIELD_DEFINITIONS.get(
+                field, f"{field.replace('_', ' ')} as the award ballot "
+                       "publishes it.")
              for field in fields})
-
 
 AWARD_UNITS, AWARD_DEFINITIONS = _award_vocabulary()
 
+SQL_EXEC_UNITS = {
+    "n": COUNT,
+    "count": COUNT,
+    "total": COUNT,
+    "players": COUNT,
+    "teams": COUNT,
+    "games": COUNT,
+    "wins": COUNT,
+    "losses": COUNT,
+}
+
+SQL_EXEC_DEFINITIONS = {
+    "n": ("Primary numeric answer the agent-written aggregate returned, "
+          "counted in rows or wins as the SQL aliases it."),
+    "count": "Row count the agent-written aggregate returned.",
+    "total": "Total the agent-written aggregate summed or counted.",
+    "players": "Players counted by the agent-written aggregate.",
+    "teams": "Teams counted by the agent-written aggregate.",
+    "games": "Games counted by the agent-written aggregate.",
+    "wins": "Wins counted by the agent-written aggregate.",
+    "losses": "Losses counted by the agent-written aggregate.",
+}
+
+SQL_EXEC_OUTPUT_ALIASES = {
+    "TOTAL_COUNT": "n",
+    "ROW_COUNT": "n",
+}
+
+def _name_entities(*fields: str) -> Callable[[Any], list[EntityRef]]:
+    def extract(rows: Any) -> list[EntityRef]:
+        items = rows if isinstance(rows, list) else [rows]
+        found: dict[str, EntityRef] = {}
+        for item in items:
+            if not isinstance(item, Mapping):
+                continue
+            for field in fields:
+                name = item.get(field)
+                if isinstance(name, str) and name.strip():
+                    key = name.strip().casefold()
+                    if key not in found:
+                        found[key] = EntityRef(
+                            id=name.strip(), type="player",
+                            display_name=name.strip())
+        return list(found.values())
+    return extract
 
 def _resolve_entities(rows: Any) -> list[EntityRef]:
     out: list[EntityRef] = []
@@ -87,7 +160,6 @@ def _resolve_entities(rows: Any) -> list[EntityRef]:
                     display_name=str(team.get("full_name", ""))))
     return out
 
-
 def _player_entity(rows: Any) -> list[EntityRef]:
     if not isinstance(rows, Mapping):
         return []
@@ -98,7 +170,6 @@ def _player_entity(rows: Any) -> list[EntityRef]:
             or line.get("PLAYER") or line.get("PLAYER_NAME"))
     return ([EntityRef(id=str(player_id), type="player", display_name=str(name or player_id))]
             if player_id is not None else [])
-
 
 def _player_entities(rows: Any) -> list[EntityRef]:
     items = rows if isinstance(rows, list) else [rows]
@@ -114,7 +185,6 @@ def _player_entities(rows: Any) -> list[EntityRef]:
                         display_name=str(name or player_id))
         found[ref.id] = ref
     return list(found.values())
-
 
 def _team_entities(rows: Any) -> list[EntityRef]:
     items = rows if isinstance(rows, list) else [rows]
@@ -134,7 +204,6 @@ def _team_entities(rows: Any) -> list[EntityRef]:
         found[ref.id] = ref
     return list(found.values())
 
-
 @dataclass(frozen=True)
 class Capability:
     name: str
@@ -151,7 +220,7 @@ class Capability:
     live_fallback: bool = False
     extract_entities: Callable[[Any], list[EntityRef]] | None = None
     dependent_entity_arguments: Mapping[str, str] = field(default_factory=dict)
-
+    domain: str = "basketball"
 
 _LIST = [
     Capability(
@@ -205,6 +274,9 @@ _LIST = [
         units={**COUNTING_UNITS, **PER_GAME_UNITS,
                "GP": COUNT, "MIN": MINUTES, "FG_PCT": FRACTION,
                "FG3_PCT": FRACTION, "FT_PCT": FRACTION},
+        metric_definitions={
+            "PLAYER": "Player named on the leaderboard row.",
+        },
         qualification="Qualified players only (NBA leaderboard minimums).",
         coverage="Source-ranked qualified leaderboard; returned rows preserve population ranks.",
         extract_entities=_player_entities,
@@ -449,19 +521,39 @@ _LIST = [
         units=AWARD_UNITS,
         metric_definitions=AWARD_DEFINITIONS,
         output_aliases=AWARD_OUTPUT_ALIASES,
+        extract_entities=_name_entities("player", "winner", "coach"),
         qualification=(
-            "Recorded award winners only: one row per award and season, rank "
-            "always 1. No vote counts, vote shares, or ranked fields, so the "
-            "field view fails loud; Coach of the Year is not in the dataset."),
+            "Every placement the source published on that ballot. A tied "
+            "placement keeps the published leading rank and its verbatim "
+            "rank_label; a null rank labelled ORV is a subject that got votes "
+            "but made no team. Coach-of-the-Year rows name a coach and no "
+            "player."),
         coverage=(
-            "Recorded NBA award winners from nba_api PlayerAwards, read from "
-            "silver_award_winners. Never a model score, projection, or live "
-            "race."),
+            "Published Basketball-Reference award ballots, 1976-77 onward, "
+            "with the seasons the source publishes named per request. Never a "
+            "model score, projection, or live race."),
+    ),
+    Capability(
+        name="sql_exec",
+        tool_name="sql_exec",
+        units=SQL_EXEC_UNITS,
+        metric_definitions=SQL_EXEC_DEFINITIONS,
+        output_aliases=SQL_EXEC_OUTPUT_ALIASES,
+        qualification=(
+            "Agent-written read-only SQL for an analyst question no prebuilt "
+            "tool covers. The agent supplies one SELECT or WITH statement; "
+            "writes, stacked statements, and tables outside the declared "
+            "set are refused before execution, results are row-capped with "
+            "a statement timeout, and an empty result fails instead of "
+            "publishing. The primary numeric answer is aliased `n`."),
+        coverage=(
+            "Read-only analytical SQL over the declared warehouse tables, "
+            "computed per query. Rows are computed from the supplied SQL, "
+            "never curated table values."),
     ),
 ]
 
 CAPABILITIES: dict[str, Capability] = {c.name: c for c in _LIST}
-
 
 _METRIC_DISPLAY_ALIASES = {
     "ASSIST": "AST",
@@ -492,18 +584,15 @@ _AGGREGATION_SUFFIXES = ("TOTALS", "TOTAL")
 
 _PER_GAME_STEM_SUFFIXES = ("PERGAME", "PG")
 
-
 def _squashed(value: object) -> str:
     return "".join(
         character for character in str(value).upper() if character.isalnum())
-
 
 def _per_game_stem(stem: str) -> str | None:
     for suffix in _PER_GAME_STEM_SUFFIXES:
         if stem.endswith(suffix) and len(stem) > len(suffix):
             return stem[: -len(suffix)]
     return None
-
 
 def _per_game_column(vocabulary: Mapping[str, str], stem: str) -> str | None:
     base = _per_game_stem(stem)
@@ -517,6 +606,37 @@ def _per_game_column(vocabulary: Mapping[str, str], stem: str) -> str | None:
             return declared
     return None
 
+def _total_column(vocabulary: Mapping[str, str], units: Mapping[str, str],
+                  squashed: str) -> str | None:
+    if not squashed.startswith("TOTAL") or len(squashed) <= len("TOTAL"):
+        return None
+    remainder = squashed[len("TOTAL"):]
+    for candidate in (remainder, _METRIC_DISPLAY_ALIASES.get(remainder)):
+        if candidate is None:
+            continue
+        declared = vocabulary.get(candidate)
+        if declared is not None and units.get(declared) == COUNT:
+            return declared
+    return None
+
+def _games_column(vocabulary: Mapping[str, str], squashed: str) -> str | None:
+    if squashed != "GAMESPLAYED":
+        return None
+    return vocabulary.get("GP")
+
+def _name_column(vocabulary: Mapping[str, str], squashed: str) -> str | None:
+    if not squashed.endswith("NAME") or len(squashed) <= len("NAME"):
+        return None
+    stem = squashed[: -len("NAME")]
+    declared = vocabulary.get(stem)
+    if declared is not None:
+        return declared
+    alias = _METRIC_DISPLAY_ALIASES.get(stem)
+    if alias is not None:
+        aliased = vocabulary.get(alias)
+        if aliased is not None:
+            return aliased
+    return None
 
 def resolve_metric_column(capability: Capability, output_id: str) -> str | None:
     vocabulary: dict[str, str] = {}
@@ -527,6 +647,20 @@ def resolve_metric_column(capability: Capability, output_id: str) -> str | None:
     direct = vocabulary.get(squashed)
     if direct is not None:
         return direct
+    explicit = next(
+        (column for name, column in capability.output_aliases.items()
+         if _squashed(name) == squashed), None)
+    if explicit is not None:
+        return explicit
+    total = _total_column(vocabulary, capability.units, squashed)
+    if total is not None:
+        return total
+    games = _games_column(vocabulary, squashed)
+    if games is not None:
+        return games
+    named = _name_column(vocabulary, squashed)
+    if named is not None:
+        return named
     stem = squashed
     for suffix in _AGGREGATION_SUFFIXES:
         if stem.endswith(suffix) and len(stem) > len(suffix):
@@ -543,8 +677,127 @@ def resolve_metric_column(capability: Capability, output_id: str) -> str | None:
         aliased = vocabulary.get(alias)
         if aliased is not None:
             return aliased
-    return next((column for name, column in capability.output_aliases.items()
-                 if _squashed(name) == squashed), None)
+    return None
+
+def _is_identity_output(output_id: str) -> bool:
+    squashed = _squashed(output_id)
+    return squashed.endswith("NAME") or squashed.endswith("ID")
+
+def servable_names_for(spec: Capability) -> list[str]:
+    names: set[str] = set()
+    for key in spec.units:
+        names.add(str(key).upper())
+    for key in spec.metric_definitions:
+        if not str(key).startswith("__"):
+            names.add(str(key).upper())
+    for key in spec.output_aliases:
+        names.add(str(key).upper())
+    return sorted(names)
+
+def preconditions_for_node(task, node, spec: Capability) -> list:
+    from ..contracts import NodePrecondition, PreconditionCheck
+    requirements = {item.id: item for item in task.requirements}
+    covered = [requirements[rid] for rid in node.covers_requirement_ids
+               if rid in requirements]
+    found: list = []
+    for requirement in covered:
+        outputs = [str(value) for value in
+                   ([*requirement.metric_ids, *requirement.requested_outputs])]
+        for output_id in outputs:
+            if _is_identity_output(output_id):
+                found.append(NodePrecondition(
+                    check=PreconditionCheck.ENTITY, node_id=node.id,
+                    requirement_id=requirement.id, output_id=output_id,
+                    detail=(f"identity output {output_id!r} must resolve "
+                            f"to a subject row of {spec.name!r} evidence")))
+                continue
+            column = resolve_metric_column(spec, output_id)
+            if column is None:
+                found.append(NodePrecondition(
+                    check=PreconditionCheck.NUMERAL, node_id=node.id,
+                    requirement_id=requirement.id, output_id=output_id,
+                    resolvable=False,
+                    detail=(f"output {output_id!r} does not resolve to "
+                            f"{spec.name!r} vocabulary; servable: "
+                            f"{', '.join(servable_names_for(spec)) or 'none'}")))
+                continue
+            found.append(NodePrecondition(
+                check=PreconditionCheck.NUMERAL, node_id=node.id,
+                requirement_id=requirement.id, output_id=output_id,
+                column=column, resolvable=True,
+                detail=(f"output {output_id!r} resolves to {spec.name!r} "
+                        f"column {column!r}")))
+            unit = dict(spec.units).get(column)
+            if unit is not None:
+                found.append(NodePrecondition(
+                    check=PreconditionCheck.UNIT, node_id=node.id,
+                    requirement_id=requirement.id, output_id=output_id,
+                    column=column, expected_unit=str(unit),
+                    detail=(f"output {output_id!r} column {column!r} must "
+                            f"carry unit {str(unit)!r}")))
+    scope_requirement = covered[0].id if covered else None
+    if task.entities:
+        kinds = sorted({entity.type for entity in task.entities})
+        found.append(NodePrecondition(
+            check=PreconditionCheck.ENTITY, node_id=node.id,
+            requirement_id=scope_requirement,
+            detail=(f"node must serve task entities "
+                    f"of kind {', '.join(kinds)}")))
+    if task.season is not None:
+        found.append(NodePrecondition(
+            check=PreconditionCheck.SCOPE, node_id=node.id,
+            requirement_id=scope_requirement,
+            detail=(f"node must serve season {task.season.value}")))
+    if task.window_start is not None or task.window_end is not None:
+        from ..contracts import format_window
+        found.append(NodePrecondition(
+            check=PreconditionCheck.SCOPE, node_id=node.id,
+            requirement_id=scope_requirement,
+            detail=(f"node must serve window "
+                    f"{format_window(task.window_start, task.window_end)}")))
+    if task.as_of is not None:
+        found.append(NodePrecondition(
+            check=PreconditionCheck.SCOPE, node_id=node.id,
+            requirement_id=scope_requirement,
+            detail=(f"node must serve as-of {task.as_of.isoformat()}")))
+    return found
+
+def _row_keys_present(rows) -> set[str]:
+    from ..domain.evidence import iter_values
+    probe = {"evidence_id": "probe", "capability": "probe",
+             "source": "probe", "observed_at": "2026-01-01T00:00:00Z",
+             "rows": rows}
+    try:
+        from ..contracts import EvidenceEnvelope
+        envelope = EvidenceEnvelope.model_validate(probe)
+    except Exception:
+        return set()
+    keys: set[str] = set()
+    for item in iter_values(envelope):
+        for segment in str(item.path).split("."):
+            keys.add(segment.split("[", 1)[0].casefold())
+    return keys
+
+def post_evidence_failures(preconditions: list, evidence) -> list[str]:
+    from ..contracts import PreconditionCheck, precondition_repair_instruction
+    failures: list[str] = []
+    units = {str(key).casefold(): str(value)
+             for key, value in dict(evidence.units).items()}
+    for item in preconditions:
+        if item.check == PreconditionCheck.NUMERAL and item.resolvable and item.column:
+            present = _row_keys_present(evidence.rows)
+            if item.column.casefold() not in present:
+                failures.append(precondition_repair_instruction(
+                    item.check, item.node_id, item.requirement_id, item.detail
+                    + f"; evidence {evidence.evidence_id!r} carries no "
+                    f"{item.column!r} column"))
+        elif item.check == PreconditionCheck.UNIT and item.column and item.expected_unit:
+            declared = units.get(item.column.casefold())
+            if declared is not None and declared != item.expected_unit:
+                failures.append(precondition_repair_instruction(
+                    item.check, item.node_id, item.requirement_id, item.detail
+                    + f"; evidence declares {declared!r}"))
+    return failures
 
 CAPABILITY_DESCRIPTIONS: dict[str, str] = {
     "entity_resolution": "Resolve a player or team name to canonical identity.",
@@ -605,11 +858,20 @@ CAPABILITY_DESCRIPTIONS: dict[str, str] = {
     "today": "Date-scoped scoreboard snapshot with last night, tonight, movers, and streaks.",
     "morning_briefing": "Date-scoped bundle of today snapshot, watchlist updates, and leaderboard deltas.",
     "award_results": (
-        "Official recorded NBA award winners from nba_api PlayerAwards: who "
-        "won an award in a season, and one player's award-winner record "
-        "through a season. Winners only, no ballot detail; Coach of the Year "
-        "is not covered. This is a recorded outcome, never a model score, so "
-        "use it instead of any award race for a result."
+        "Official NBA award results recorded on published ballots: who won an "
+        "award in a season, the full ranked field with award share and vote "
+        "counts, and one player's award record through a season. Coach-of-the-"
+        "Year is included; a tied rank and an ORV row are reported as "
+        "published. This is a recorded outcome, never a model score, so use it "
+        "instead of any award race for a result."
+    ),
+    "sql_exec": (
+        "Agent-written read-only SQL over the warehouse for an analyst "
+        "question no prebuilt tool covers. The agent supplies one SELECT or "
+        "WITH statement and the rows come back as evidence. Rows are "
+        "computed from that SQL over the named tables, so the SQL is part "
+        "of the evidence identity and a number from this capability never "
+        "reads as a curated table value."
     ),
 }
 

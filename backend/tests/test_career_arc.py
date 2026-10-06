@@ -7,10 +7,8 @@ import duckdb
 
 from shared import store
 
-
 PID = 2544
 NAME = "LeBron James"
-
 
 def _seed(path):
     con = duckdb.connect(str(path))
@@ -45,6 +43,18 @@ def _seed(path):
             "560, 1100, 0.509, 120, 300, 0.40, 260, 340, 0.765, '2025-26')"
         )
         con.execute(
+            "CREATE TABLE silver_player_season ("
+            "PLAYER_ID BIGINT, PLAYER VARCHAR, TEAM VARCHAR, AGE DOUBLE, "
+            "GP BIGINT, MPG DOUBLE, PPG DOUBLE, RPG DOUBLE, APG DOUBLE, "
+            "SPG DOUBLE, BPG DOUBLE, FG_PCT DOUBLE, FG3_PCT DOUBLE, "
+            "FT_PCT DOUBLE, _season VARCHAR)"
+        )
+        con.execute(
+            "INSERT INTO silver_player_season VALUES "
+            "(2544, 'LeBron James', 'LAL', 40.0, 60, 33.1, 25.0, 6.1, 7.2, "
+            "1.2, 0.6, 0.515, 0.317, 0.737, '2025-26')"
+        )
+        con.execute(
             "CREATE TABLE silver_advanced ("
             "PLAYER_ID BIGINT, TS_PCT DOUBLE, _season VARCHAR)"
         )
@@ -64,7 +74,6 @@ def _seed(path):
     finally:
         con.close()
 
-
 def _warehouse(monkeypatch, tmp_path):
     path = tmp_path / "arc.duckdb"
     _seed(path)
@@ -73,7 +82,6 @@ def _warehouse(monkeypatch, tmp_path):
     store.warehouse_tables_cache_clear()
     store.warehouse_pool_clear()
     return path
-
 
 def test_arc_reads_as_one_series_with_honest_gaps(monkeypatch, tmp_path):
     _warehouse(monkeypatch, tmp_path)
@@ -94,14 +102,12 @@ def test_arc_reads_as_one_series_with_honest_gaps(monkeypatch, tmp_path):
     assert by_year[2026]["source"] == "current"
     assert by_year[2024]["season"] == "2023-24"
 
-
 def test_arc_never_fabricates_missing_seasons(monkeypatch, tmp_path):
     _warehouse(monkeypatch, tmp_path)
     from shared.tools import career_arc as arc
 
     rows = arc.arc_for_id(999999)
     assert rows == []
-
 
 def test_season_line_covers_current_season(monkeypatch, tmp_path):
     _warehouse(monkeypatch, tmp_path)
@@ -113,7 +119,6 @@ def test_season_line_covers_current_season(monkeypatch, tmp_path):
     line = out["rows"][0]
     assert line["PPG"] == 25.0
     assert line["GP"] == 60
-
 
 def test_history_covers_current_season(monkeypatch, tmp_path):
     _warehouse(monkeypatch, tmp_path)
@@ -127,7 +132,6 @@ def test_history_covers_current_season(monkeypatch, tmp_path):
     seasons = [s["season"] for s in res["rows"]["seasons"]]
     assert 2026 in seasons
     assert res["meta"]["end_season"] == 2026
-
 
 def test_compare_metrics_flags_raptor_gap(monkeypatch, tmp_path):
     _warehouse(monkeypatch, tmp_path)

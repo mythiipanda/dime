@@ -6,7 +6,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from shared.tools.lineup_matrix import (  # noqa: E402
+from shared.tools.lineup_matrix import (
     SMALL_PAIR_POSS,
     _accumulate_pairs,
     _build_matrix,
@@ -26,7 +26,6 @@ A2 = (21, 22, 23, 24, 25)
 B1 = (11, 12, 13, 14, 15)
 BX = (31, 32, 33, 34, 35)
 
-
 def _prow(game, n, off, deff, pts, off_unit, def_unit):
     row = {"game_id": game, "possession_number": n,
            "offense_team_id": off, "defense_team_id": deff, "points": pts}
@@ -36,21 +35,17 @@ def _prow(game, n, off, deff, pts, off_unit, def_unit):
         row[f"def_player_{i}"] = p
     return row
 
-
 def test_unit_key_sorts_five_valid_players():
     assert _unit_key([5, 3, 1, 4, 2]) == (1, 2, 3, 4, 5)
     assert _unit_key(["5", "4", "3", "2", "1"]) == (1, 2, 3, 4, 5)
-
 
 def test_unit_key_missing_player_is_none():
     assert _unit_key([1, 2, None, 4, 5]) is None
     assert _unit_key([1, 2, 4, 5]) is None
 
-
 def test_unit_key_non_int_is_none():
     assert _unit_key(["1", "2", "x", "4", "5"]) is None
     assert _unit_key([1, 2, 3.5j, 4, 5]) is None
-
 
 def test_season_lineup_minutes_counts_both_ends():
     rows = [
@@ -60,7 +55,6 @@ def test_season_lineup_minutes_counts_both_ends():
     ]
     assert _season_lineup_minutes(rows, A) == {A1: 3}
     assert _season_lineup_minutes(rows, B) == {B1: 2}
-
 
 def test_qualifying_lineups_applies_minute_floor():
     rows = []
@@ -77,7 +71,6 @@ def test_qualifying_lineups_applies_minute_floor():
     assert set(qual_b) == {B1}
     assert qual_b == {B1: 50}
 
-
 def _matrix_fixture():
     return [
         _prow("g1", 1, A, B, 3, A1, B1),
@@ -92,12 +85,10 @@ def _matrix_fixture():
         _prow("g1", 10, A, B, 3, A1, B1),
     ]
 
-
 def test_accumulate_pairs_literal_counts():
     acc = _accumulate_pairs(_matrix_fixture(), A, B, {A1}, {B1})
     assert acc == {(A1, B1): {"poss": 8, "off_poss_a": 8, "off_poss_b": 0,
                               "pts_a": 24, "pts_b": 0, "blowout": 1}}
-
 
 def test_accumulate_pairs_counts_unparseable_points_as_zero():
     rows = [
@@ -108,7 +99,6 @@ def test_accumulate_pairs_counts_unparseable_points_as_zero():
     acc = _accumulate_pairs(rows, A, B, {A1}, {B1})
     assert acc == {(A1, B1): {"poss": 3, "off_poss_a": 1, "off_poss_b": 2,
                               "pts_a": 2, "pts_b": 2, "blowout": 0}}
-
 
 def test_pair_row_literal_ratings_math():
     agg = {"poss": 100, "off_poss_a": 50, "off_poss_b": 50,
@@ -134,7 +124,6 @@ def test_pair_row_literal_ratings_math():
                   "not play-clock minutes"],
     }
 
-
 def test_pair_row_zero_off_poss_no_crash():
     row = _pair_row(A1, B1,
                     {"poss": 4, "off_poss_a": 0, "off_poss_b": 4,
@@ -145,7 +134,6 @@ def test_pair_row_zero_off_poss_no_crash():
     assert row["NET_RATING_A"] == -200.0
     assert row["est_minutes"] == 2.0
 
-
 def test_pair_flags_tiny_sample():
     flags = _pair_flags(12, 0.0)
     assert flags[0] == (f"tiny-sample: 12 shared possessions under the "
@@ -153,14 +141,12 @@ def test_pair_flags_tiny_sample():
     assert any("estimated-minutes" in f for f in flags)
     assert not any("blowout-heavy" in f for f in flags)
 
-
 def test_pair_flags_blowout_at_half_share():
     flags = _pair_flags(50, 0.5)
     assert any("blowout-heavy" in f for f in flags)
     assert "50%" in next(f for f in flags if "blowout-heavy" in f)
     assert not any("tiny-sample" in f for f in flags)
     assert any("estimated-minutes" in f for f in flags)
-
 
 def test_build_matrix_sorts_by_est_minutes_desc():
     rows = []
@@ -176,13 +162,11 @@ def test_build_matrix_sorts_by_est_minutes_desc():
     assert out[1]["team_b_lineup"] == "beta"
     assert out[1]["pts_b"] == 6
 
-
 def test_build_matrix_falls_back_to_unit_name():
     rows = [_prow("g1", 1, A, B, 2, A1, B1)]
     out = _build_matrix(rows, A, B, {A1}, {B1}, {}, {})
     assert out[0]["team_a_lineup"] == "unit " + str(A1[0])[:6] + "…"
     assert out[0]["team_b_lineup"] == "unit " + str(B1[0])[:6] + "…"
-
 
 def test_fallback_name_all_surnames():
     surnames = {1: "Alpha", 2: "Beta", 3: "Gamma", 4: "Delta",
@@ -190,12 +174,10 @@ def test_fallback_name_all_surnames():
     assert _fallback_name(A1, surnames) == (
         "Alpha, Beta, Gamma, Delta, Epsilon")
 
-
 def test_fallback_name_partial_surnames():
     assert _fallback_name(A1, {1: "Alpha"}) == (
         "unit " + str(A1[0])[:6] + "…")
     assert _fallback_name(A1, None) == "unit " + str(A1[0])[:6] + "…"
-
 
 def test_build_matrix_uses_surname_labels():
     rows = [_prow("g1", 1, A, B, 2, A1, B1)]
@@ -205,24 +187,20 @@ def test_build_matrix_uses_surname_labels():
                         surnames_a=surnames_a)
     assert out[0]["team_a_lineup"] == "Alpha, Beta, Gamma, Delta, Epsilon"
 
-
 def test_truncate_note_literal():
     assert _truncate_note(174, 25) == (
         "showing 25 of 174 pairs (top by estimated minutes)")
-
 
 def test_tool_rejects_same_team():
     res = get_lineup_matchup_matrix.invoke({"team_a": "BOS", "team_b": "BOS"})
     assert res["ok"] is False
     assert "error" in res
 
-
 def test_tool_rejects_unknown_team():
     res = get_lineup_matchup_matrix.invoke(
         {"team_a": "Not A Real Team XYZ", "team_b": "BOS"})
     assert res["ok"] is False
     assert "error" in res
-
 
 def test_tool_end_to_end_warehouse_structural():
     try:

@@ -6,10 +6,7 @@ import polars as pl
 from .. import store
 from ..sources.base import FetchResult
 
-
-
 HIST_SEASON_START = "2009-10"
-
 
 COVERAGE_START = HIST_SEASON_START
 
@@ -17,7 +14,6 @@ COVERAGE_END: str | None = None
 
 _LAST_SEASON_KEY: tuple | None = None
 _LAST_SEASON_VALUE: str | None = None
-
 
 def last_completed_season() -> str | None:
     global _LAST_SEASON_KEY, _LAST_SEASON_VALUE
@@ -37,17 +33,15 @@ def last_completed_season() -> str | None:
     _LAST_SEASON_VALUE = value
     return value
 
-
 def last_completed_season_cache_clear() -> None:
     global _LAST_SEASON_KEY, _LAST_SEASON_VALUE
     _LAST_SEASON_KEY = None
     _LAST_SEASON_VALUE = None
 
-
 def completed_season_for_date(day: object) -> str | None:
     try:
-        year = int(day.year)  # type: ignore[union-attr]
-        month = int(day.month)  # type: ignore[union-attr]
+        year = int(day.year)
+        month = int(day.month)
     except Exception:
         return None
     if month < 1 or month > 12:
@@ -55,14 +49,12 @@ def completed_season_for_date(day: object) -> str | None:
     start = year - 1 if month >= 7 else year - 2
     return f"{start}-{(start + 1) % 100:02d}"
 
-
 def calendar_last_completed_season(today: object = None) -> str | None:
     if today is None:
         import datetime as _dt
 
         today = _dt.date.today()
     return completed_season_for_date(today)
-
 
 def resolve_season(season: object | None = None,
                    table: str | None = None) -> str | None:
@@ -82,10 +74,8 @@ def resolve_season(season: object | None = None,
             pass
     return last_completed_season()
 
-
 def coverage_end() -> str:
     return last_completed_season() or COVERAGE_START
-
 
 class InvalidSeasonError(Exception):
 
@@ -100,7 +90,6 @@ class InvalidSeasonError(Exception):
         self.nearest = nearest
         super().__init__(season_error_message(
             self.requested, nearest, coverage_start, coverage_end))
-
 
 def season_error_message(requested: object, nearest: str | None = None,
                          coverage_start: str = COVERAGE_START,
@@ -117,7 +106,6 @@ def season_error_message(requested: object, nearest: str | None = None,
             f"{coverage_start} through {coverage_end}; "
             f"nearest season with data is {nearest}.")
 
-
 def _canonical_parts(text: str) -> str | None:
     s = str(text or "").strip()
     if (len(s) == 7 and s[:4].isdigit() and s[4] == "-" and s[5:].isdigit()
@@ -125,14 +113,12 @@ def _canonical_parts(text: str) -> str | None:
         return s
     return None
 
-
 def _bare_year_slug(text: str) -> str | None:
     s = str(text or "").strip()
     if len(s) == 4 and s.isdigit() and s[:2] in ("19", "20"):
         start = int(s)
         return f"{start - 1}-{start % 100:02d}"
     return None
-
 
 def clamp_season(season: object, coverage_start: str = COVERAGE_START,
                  coverage_end: str | None = None) -> str:
@@ -161,7 +147,6 @@ def clamp_season(season: object, coverage_start: str = COVERAGE_START,
             slug, coverage_start=coverage_start,
             coverage_end=coverage_end, nearest=coverage_end)
     return slug
-
 
 TOOL_LABELS = {
     "resolve_entity": "Identifying players and teams",
@@ -204,7 +189,6 @@ _DESK_LABEL_OVERRIDES = {
     "query_warehouse": "Warehouse query",
 }
 
-
 def tool_label(name: str, desk: bool = False) -> str:
     if not name:
         return "Checking data"
@@ -215,8 +199,6 @@ def tool_label(name: str, desk: bool = False) -> str:
     return name.replace("_", " ").strip().title() or "Checking data"
 
 MAX_ROWS = 25
-
-
 
 IN_SEASON_MONTHS = frozenset({10, 11, 12, 1, 2, 3, 4, 5, 6})
 TTL_SCOREBOARD_PAST = 12 * 3600
@@ -232,7 +214,6 @@ STAT_CATEGORIES = frozenset({
     "OREB", "DREB", "TOV", "PF", "EFF", "DD2", "TD3",
     "USG_PCT", "TOV_PCT", "TS_PCT", "SPG", "PIE",
 })
-
 
 def clamp_stat(stat: str) -> str:
     upper = (stat or "").strip().upper().replace("-", "_")
@@ -250,11 +231,9 @@ def clamp_stat(stat: str) -> str:
         raise ValueError(f"unknown stat_category: {stat!r}")
     return upper
 
-
 def clamp_scope(scope: str) -> str:
     lower = (scope or "").strip().lower()
     return lower if lower in ("player", "team") else "player"
-
 
 def sample_tier(minutes: object) -> tuple[str, int]:
     try:
@@ -267,7 +246,6 @@ def sample_tier(minutes: object) -> tuple[str, int]:
     if mins >= 50:
         return "medium", est
     return "small", est
-
 
 NICKNAMES = {
     "sga": "Shai Gilgeous-Alexander",
@@ -298,7 +276,6 @@ NICKNAMES = {
     "sixers": "Philadelphia 76ers",
 }
 
-
 def _norm_name(s: object) -> str:
     import unicodedata as _ud
 
@@ -306,10 +283,8 @@ def _norm_name(s: object) -> str:
         c for c in _ud.normalize("NFKD", str(s or "").lower())
         if not _ud.combining(c)).strip()
 
-
 _PLAYER_ROWS: list[dict] = []
 _PLAYER_NORMS: list[str] = []
-
 
 def _build_player_index() -> None:
     try:
@@ -325,49 +300,10 @@ def _build_player_index() -> None:
     _PLAYER_ROWS.extend(rows)
     _PLAYER_NORMS.extend(norms)
 
-
 _build_player_index()
 
 _ID_NAME: dict[int, str] = {int(r["id"]): r.get("full_name", "")
                             for r in _PLAYER_ROWS if r.get("id")}
-
-
-def attach_names(rows: object) -> object:
-    if not isinstance(rows, list):
-        return rows
-    team_by_id: dict[int, str] = {}
-    out = []
-    for r in rows:
-        if isinstance(r, dict):
-            has_name = any(k in r for k in ("name", "player", "PLAYER",
-                                            "team", "TEAM"))
-            if not has_name:
-                pid = r.get("player_id")
-                if pid is not None:
-                    try:
-                        nm = _ID_NAME.get(int(pid))
-                    except (TypeError, ValueError):
-                        nm = None
-                    if nm:
-                        r = {"name": nm, **r}
-                tid = r.get("team_id")
-                if tid is not None and "name" not in r:
-                    if not team_by_id:
-                        try:
-                            from nba_api.stats.static import teams as _t
-                            team_by_id = {int(x["id"]): x.get(
-                                "abbreviation", "") for x in
-                                _t.get_teams()}
-                        except Exception:
-                            team_by_id = {}
-                    try:
-                        ab = team_by_id.get(int(tid))
-                    except (TypeError, ValueError):
-                        ab = None
-                    if ab:
-                        r = {"team": ab, **r}
-        out.append(r)
-    return out
 
 
 def score_player_candidates(raw: str) -> list[tuple[float, dict]]:
@@ -442,13 +378,8 @@ def score_player_candidates(raw: str) -> list[tuple[float, dict]]:
                     break
     return sorted(scored.values(), key=lambda t: -t[0])
 
-
 def _resolve_player_id_uncached(key: str) -> int:
     ranked = score_player_candidates(key)
-
-
-
-
 
     if " " not in key.strip():
         nq = _norm_name(key)
@@ -470,9 +401,7 @@ def _resolve_player_id_uncached(key: str) -> int:
     hints = ", ".join(r[1].get("full_name", "?") for r in ranked[:3])
     raise ValueError(f"unknown player: {key}" + (f" (did you mean {hints}?)" if hints else ""))
 
-
 _coerce_player_id_cached = lru_cache(maxsize=2048)(_resolve_player_id_uncached)
-
 
 class PlayerNameResolutionUnavailable(ValueError):
 
@@ -486,7 +415,6 @@ class PlayerNameResolutionUnavailable(ValueError):
             message += f": {detail}"
         super().__init__(message)
 
-
 def coerce_player_id(value: object) -> int:
     raw = str(value).strip()
     try:
@@ -494,10 +422,6 @@ def coerce_player_id(value: object) -> int:
     except (TypeError, ValueError):
         pass
     key = raw.lower()
-
-
-
-
 
     if "-" in key or "_" in key:
         slug_tokens = [token for token in key.replace("_", "-").split("-")
@@ -511,9 +435,6 @@ def coerce_player_id(value: object) -> int:
                 return int(ranked[0][1]["id"])
     try:
         resolved = _coerce_player_id_cached(key)
-
-
-
 
         try:
             _vintage = last_completed_season()
@@ -539,10 +460,8 @@ def coerce_player_id(value: object) -> int:
             raise PlayerNameResolutionUnavailable(value, detail) from None
         raise
 
-
-coerce_player_id.cache_info = _coerce_player_id_cached.cache_info  # type: ignore[attr-defined]
-coerce_player_id.cache_clear = _coerce_player_id_cached.cache_clear  # type: ignore[attr-defined]
-
+coerce_player_id.cache_info = _coerce_player_id_cached.cache_info
+coerce_player_id.cache_clear = _coerce_player_id_cached.cache_clear
 
 _STATIC_TEAMS = (
     ("ATL", "Atlanta Hawks", 1610612737),
@@ -577,7 +496,6 @@ _STATIC_TEAMS = (
     ("WAS", "Washington Wizards", 1610612764),
 )
 
-
 def _team_alias_index() -> dict[str, list[int]]:
     index: dict[str, list[int]] = {}
     for abbr, full, team_id in _STATIC_TEAMS:
@@ -590,9 +508,7 @@ def _team_alias_index() -> dict[str, list[int]]:
             index.setdefault(key, []).append(team_id)
     return index
 
-
 _TEAM_ALIAS_INDEX = _team_alias_index()
-
 
 def _static_team_id(value: object, raw: str) -> int:
     name = " ".join(raw.lower().replace("-", " ").replace("_", " ").split())
@@ -602,7 +518,6 @@ def _static_team_id(value: object, raw: str) -> int:
     if len(hits) == 1:
         return hits[0]
     raise ValueError(f"unknown team: {value}")
-
 
 def coerce_team_id(value: object) -> int:
     raw = str(value).strip()
@@ -656,7 +571,6 @@ def _cache_age_s(frame) -> float | None:
         newest = newest.replace(tzinfo=_tz.utc)
     return (_dt.now(_tz.utc) - newest).total_seconds()
 
-
 def is_past_game_date(game_date: str) -> bool:
     try:
         from zoneinfo import ZoneInfo
@@ -666,7 +580,6 @@ def is_past_game_date(game_date: str) -> bool:
         return day < _dt.now(ZoneInfo("America/New_York")).date()
     except (TypeError, ValueError):
         return False
-
 
 def season_static(season: str) -> bool:
     import datetime as _dt
@@ -678,24 +591,19 @@ def season_static(season: str) -> bool:
     end_year = 2000 + int(s[5:])
     return _dt.date.today() > _dt.date(end_year, 7, 15)
 
-
 def _bound_warehouse_read(table, where, params):
-
-
 
     with store.write_guard():
         before = store.warehouse_identity()
-        frame = store.read_frame(table, where, params)
+        frame = store.read_frame_optional(table, where, params)
         if store.warehouse_identity() != before:
             raise RuntimeError("warehouse identity changed during query")
         return frame, before
-
 
 def _live_fallback_marker(table: str, season: str, live: FetchResult,
                           outcome: str) -> dict[str, str]:
     return {"table": table, "requested_season": season,
             "live_source": str(live.meta.source), "outcome": outcome}
-
 
 def _warehouse_or_live(table: str, where: str, params: list[object], fetch: Any, season: str | None,
     entity: str = "", limit: int = MAX_ROWS, live_first: bool = False, ttl_s: float | None = None,

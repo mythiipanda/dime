@@ -5,12 +5,9 @@ from typing import Any
 from langchain_core.tools import tool
 
 from .. import store as _store
-from ._core import InvalidSeasonError, clamp_season, coerce_team_id, last_completed_season, resolve_season
+from ._core import InvalidSeasonError, clamp_season, coerce_team_id, resolve_season
 
 TABLE = "silver_hist_shots"
-
-
-
 
 ZONE_RULES: tuple[tuple[str, Any], ...] = (
     ("rim", lambda dist, ax, three: dist < 8.0),
@@ -30,7 +27,6 @@ ZONE_LEGEND = {
     "atb_3": "3pt shots above the break",
 }
 
-
 def zone_of(x: float, y: float, shot_value: int) -> str:
     try:
         dist = math.hypot(float(x), float(y)) / 10.0
@@ -46,15 +42,12 @@ def zone_of(x: float, y: float, shot_value: int) -> str:
             return key
     return "long_mid"
 
-
 def season_year(season: str) -> int:
     season = resolve_season(season)
     return int(clamp_season(season)[:4]) + 1
 
-
 def _blank_zone() -> dict[str, int]:
     return {"fga": 0, "fgm": 0, "three_made": 0}
-
 
 def aggregate_zones(shots: list[dict[str, Any]]) -> dict[int, dict[str, Any]]:
     teams: dict[int, dict[str, Any]] = {}
@@ -78,7 +71,6 @@ def aggregate_zones(shots: list[dict[str, Any]]) -> dict[int, dict[str, Any]]:
                 z["three_made"] += 1
     return teams
 
-
 def league_baselines(teams: dict[int, dict[str, Any]]) -> dict[str, dict[str, float]]:
     total_fga = sum(z["fga"] for t in teams.values()
                     for z in t["zones"].values())
@@ -93,7 +85,6 @@ def league_baselines(teams: dict[int, dict[str, Any]]) -> dict[str, dict[str, fl
             "efg": round((fgm + 0.5 * threes) / fga, 4) if fga else 0.0,
         }
     return out
-
 
 def build_rows(teams: dict[int, dict[str, Any]],
                baselines: dict[str, dict[str, float]]) -> list[dict[str, Any]]:
@@ -122,7 +113,6 @@ def build_rows(teams: dict[int, dict[str, Any]],
         rows.append(row)
     return rows
 
-
 def _zone_leaders(rows: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
     out: dict[str, dict[str, Any]] = {}
     for key in ZONE_KEYS:
@@ -137,7 +127,6 @@ def _zone_leaders(rows: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
             "shots": best["shots"],
         }
     return out
-
 
 def _parse_teams(raw: str, frame_team_ids: set[int]) -> tuple[set[int], list[str]]:
     wanted: set[int] = set()
@@ -155,7 +144,6 @@ def _parse_teams(raw: str, frame_team_ids: set[int]) -> tuple[set[int], list[str
             unknown.append(piece)
     return wanted, unknown
 
-
 def _coverage_bounds() -> str:
     try:
         rows = _store._read_df(
@@ -166,14 +154,9 @@ def _coverage_bounds() -> str:
         return "unknown"
     return f"{rows[0].get('lo')} through {rows[0].get('hi')}"
 
-
-@tool
+@tool(description='League-wide team shot-zone diet: per-zone attempt share and eFG\nwith league baselines and deltas. teams is "league" or a comma-separated\nlist of team names/abbrevs/ids. Zones: rim, short_mid, long_mid,\ncorner_3, atb_3.')
 def get_team_shot_zones(teams: str = "league",
                         season: str | None = None) -> dict[str, Any]:
-    """League-wide team shot-zone diet: per-zone attempt share and eFG
-    with league baselines and deltas. teams is "league" or a comma-separated
-    list of team names/abbrevs/ids. Zones: rim, short_mid, long_mid,
-    corner_3, atb_3."""
     season = resolve_season(season)
     try:
         season = clamp_season(season)

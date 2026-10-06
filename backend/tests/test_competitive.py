@@ -16,7 +16,6 @@ from shared.tools.competitive import (
     summarize_team,
 )
 
-
 def _connect_retry(tries=6, sleep_s=2):
     last: Exception | None = None
     for _ in range(tries):
@@ -32,7 +31,6 @@ def _connect_retry(tries=6, sleep_s=2):
             time.sleep(sleep_s)
     assert last is not None
     raise last
-
 
 def test_known_movs_padding_delta():
     movs = [40.0, 35.0, 2.0, 1.0, 0.0]
@@ -54,7 +52,6 @@ def test_known_movs_padding_delta():
     assert "verdict" not in row
     assert row["low_sample"] is False
 
-
 def test_boundary_abs_equals_margin_stays_in():
     row = summarize_team("AAA", [20.0, -20.0, 21.0], 20, min_games=2)
     assert row["gp_comp"] == 2
@@ -62,7 +59,6 @@ def test_boundary_abs_equals_margin_stays_in():
     assert row["blowout_wins_gp"] == 1
     assert row["mov_comp"] == 0.0
     assert row["competitive_record"] == {"w": 1, "l": 1}
-
 
 def test_delta_sign_without_verdict():
     neg = summarize_team("AAA", [-30.0, 2.0, 3.0, 1.0], 20, min_games=1)
@@ -74,7 +70,6 @@ def test_delta_sign_without_verdict():
     assert zero["padding_delta"] == 0.0
     assert "verdict" not in zero
 
-
 def test_blowout_split_wins_vs_losses():
     movs = [30.0, 25.0, -35.0, 2.0, 1.0, -1.0]
     row = summarize_team("AAA", movs, 20, min_games=1)
@@ -83,7 +78,6 @@ def test_blowout_split_wins_vs_losses():
     assert row["blowout_gp"] == 3
     assert row["blowout_wins_share"] == round(2 / 6, 3)
     assert row["blowout_losses_share"] == round(1 / 6, 3)
-
 
 def test_empty_competitive_set_returns_nulls():
     row = summarize_team("AAA", [25.0, -30.0], 1)
@@ -101,7 +95,6 @@ def test_empty_competitive_set_returns_nulls():
     assert sens[20] is None
     assert sens[30] == 0.0
 
-
 def test_fully_empty_movs():
     row = summarize_team("AAA", [], 20)
     assert row["gp"] == 0
@@ -115,7 +108,6 @@ def test_fully_empty_movs():
     assert row["competitive_record"] == {"w": 0, "l": 0}
     assert row["low_sample"] is True
 
-
 def test_low_sample_flag_keeps_numbers():
     movs = [5.0] * 12
     row = summarize_team("AAA", movs, 20, min_games=15)
@@ -125,7 +117,6 @@ def test_low_sample_flag_keeps_numbers():
     assert row["padding_delta"] == 0.0
     ok = summarize_team("AAA", movs, 20, min_games=12)
     assert ok["low_sample"] is False
-
 
 def test_sensitivity_shows_threshold_dependence():
     movs = [12.0, -25.0, 3.0, 1.0]
@@ -137,14 +128,12 @@ def test_sensitivity_shows_threshold_dependence():
     assert sens[20] == round(-2.25 - round(16 / 3, 2), 2)
     assert sens[30] == 0.0
 
-
 def test_blowout_margin_clamp():
     assert clamp_blowout_margin(0) == 1.0
     assert clamp_blowout_margin(100) == 40.0
     assert clamp_blowout_margin(-5) == 1.0
     assert clamp_blowout_margin(20) == 20.0
     assert clamp_blowout_margin("bogus") == 20.0
-
 
 def test_season_type_mapping():
     distinct = ["Regular Season", "Playoffs"]
@@ -158,19 +147,16 @@ def test_season_type_mapping():
     assert map_season_type("regular", warehouse_style) == "regular-season"
     assert map_season_type("playoffs", warehouse_style) == "playoffs"
 
-
 def test_unknown_team_rejected():
     res = get_competitive_ratings.invoke({"team": "Not A Team"})
     assert res["ok"] is False
     assert res["tool"] == "get_competitive_ratings"
     assert "unknown team" in res["error"]
 
-
 def test_bad_season_type_rejected():
     res = get_competitive_ratings.invoke({"season_type": "preseason"})
     assert res["ok"] is False
     assert "season_type" in res["error"]
-
 
 def test_integration_team_matches_raw_reaggregation_real_warehouse():
     try:
@@ -222,7 +208,6 @@ def test_integration_team_matches_raw_reaggregation_real_warehouse():
     assert "both directions" in res["caveats"]
     assert "lens, not purification" in res["caveats"]
 
-
 def test_integration_default_season_type_is_regular():
     try:
         _connect_retry().close()
@@ -233,7 +218,6 @@ def test_integration_default_season_type_is_regular():
     assert "regular" in res["meta"]["season_type"].lower()
     split = res["meta"]["season_type_split"]
     assert sum(split.values()) == res["rows"][0]["gp"]
-
 
 def test_integration_league_mode_flags_no_verdicts():
     try:
@@ -254,7 +238,6 @@ def test_integration_league_mode_flags_no_verdicts():
     assert deltas[:len(non_null)] == sorted(non_null, reverse=True)
     assert all(d is None for d in deltas[len(non_null):])
 
-
 def test_integration_playoffs_team_is_low_sample_without_read():
     try:
         _connect_retry().close()
@@ -269,7 +252,6 @@ def test_integration_playoffs_team_is_low_sample_without_read():
     assert res["read"] is None
     assert "low-sample" in res["note"]
     assert row["mov_full"] is not None
-
 
 def test_integration_pooled_season_label():
     try:

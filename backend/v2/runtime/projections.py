@@ -5,10 +5,8 @@ from typing import Any, Iterable
 from v2.contracts import EvidenceEnvelope
 from v2.runtime.ledger import LedgerEntry, LedgerKind
 
-
 def _validated_entries(entries: Iterable[LedgerEntry]) -> list[LedgerEntry]:
     return [LedgerEntry.model_validate(entry.model_dump()) for entry in entries]
-
 
 def admitted_evidence(entries: Iterable[LedgerEntry]) -> list[EvidenceEnvelope]:
     records = _validated_entries(entries)
@@ -32,7 +30,6 @@ def admitted_evidence(entries: Iterable[LedgerEntry]) -> list[EvidenceEnvelope]:
             evidence.append(item)
             seen[item.evidence_id] = item
     return evidence
-
 
 def tool_attempts(entries: Iterable[LedgerEntry]) -> list[dict[str, Any]]:
     records = _validated_entries(entries)
@@ -81,7 +78,6 @@ def tool_attempts(entries: Iterable[LedgerEntry]) -> list[dict[str, Any]]:
             "error": entry.data.get("error"),
         })
     return attempts
-
 
 def replay_turn(entries: Iterable[LedgerEntry]) -> dict[str, Any]:
     return {

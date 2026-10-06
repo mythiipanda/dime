@@ -16,7 +16,6 @@ from v2.contracts import (
 
 PROSE = "The New York Knicks won the 2024-25 season series 4-2."
 
-
 def _binding(output_id: str) -> EvidenceOutputBinding:
     return EvidenceOutputBinding(
         requirement_kind="task",
@@ -29,7 +28,6 @@ def _binding(output_id: str) -> EvidenceOutputBinding:
         unit={"kind": "unitless"},
         domain="season_series",
     )
-
 
 def _result(*gap_kinds: str) -> SimpleNamespace:
     claim = Claim(
@@ -73,18 +71,15 @@ def _result(*gap_kinds: str) -> SimpleNamespace:
         ),
     )
 
-
 def test_prose_covered_outputs_suppress_unpublished_tail() -> None:
     text = _answer_text(_result("synthesis_incomplete"))
     assert PROSE in text
     assert "Some requested outputs could not be published." not in text
 
-
 def test_prose_covered_outputs_suppress_unverified_tail() -> None:
     text = _answer_text(_result("missing_evidence"))
     assert PROSE in text
     assert "Some requested outputs could not be verified." not in text
-
 
 def test_genuinely_uncovered_output_keeps_kind_tail() -> None:
     result = _result("synthesis_incomplete")

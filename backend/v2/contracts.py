@@ -8,18 +8,16 @@ import math
 import re
 from typing import Any, Literal, Mapping
 
-from pydantic import (BaseModel, ConfigDict, Field, StrictBool, StrictFloat,
-                    StrictInt, field_validator, model_validator)
+from pydantic import (AfterValidator, BaseModel, ConfigDict, Field, StrictBool,
+                    StrictFloat, StrictInt, field_validator, model_validator)
 from pydantic_core import PydanticCustomError
 from typing import Annotated
 from v2.arguments import CapabilityArgumentSet
-
 
 class RunMode(StrEnum):
     QUICK = "quick"
     DEEP_DIVE = "deep_dive"
     PROJECT = "project"
-
 
 class PlanStatus(StrEnum):
     PENDING = "pending"
@@ -28,19 +26,60 @@ class PlanStatus(StrEnum):
     FAILED = "failed"
     SKIPPED = "skipped"
 
-
 class ClaimKind(StrEnum):
     OBSERVED = "observed"
     DERIVED = "derived"
     PROJECTION = "projection"
     JUDGMENT = "judgment"
 
-
 class VerificationStatus(StrEnum):
     PASS = "pass"
     REPAIR = "repair"
     PARTIAL = "partial"
 
+class PreconditionCheck(StrEnum):
+    NUMERAL = "numeral"
+    ENTITY = "entity"
+    UNIT = "unit"
+    SCOPE = "scope"
+
+class NodePrecondition(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    check: PreconditionCheck
+    node_id: str = Field(min_length=1, max_length=256)
+    requirement_id: str | None = Field(default=None, max_length=64)
+    output_id: str | None = None
+    column: str | None = None
+    expected_unit: str | None = None
+    resolvable: StrictBool = True
+    detail: str = Field(min_length=1, max_length=4000)
+
+    @model_validator(mode="after")
+    def validate_precondition(self) -> "NodePrecondition":
+        if not self.node_id.strip() or not self.detail.strip():
+            raise ValueError("precondition node and detail must be non-empty")
+        if self.check == PreconditionCheck.NUMERAL and self.output_id is None:
+            raise ValueError("numeral precondition requires an output id")
+        if not self.resolvable and self.check != PreconditionCheck.NUMERAL:
+            raise ValueError("only numeral preconditions may be unresolvable")
+        if self.column is not None and not self.column.strip():
+            raise ValueError("precondition column must be non-empty when present")
+        if self.expected_unit is not None and not self.expected_unit.strip():
+            raise ValueError("precondition unit must be non-empty when present")
+        return self
+
+def precondition_repair_instruction(
+    check: PreconditionCheck | str,
+    node_id: str,
+    requirement_id: str | None,
+    detail: str,
+) -> str:
+    requirement = requirement_id if requirement_id is not None else "task"
+    return (
+        f"precondition {str(check)} failed for node {node_id!r} "
+        f"requirement {requirement!r}: {detail}; fix the plan, not the prose"
+    )
 
 class GapKind(StrEnum):
     MISSING_EVIDENCE = "missing_evidence"
@@ -51,12 +90,10 @@ class GapKind(StrEnum):
     PROFILE_NAME_RESOLUTION_UNAVAILABLE = "profile/name_resolution_unavailable"
     JUDGE_UNAVAILABLE = "judge_unavailable"
 
-
 MAX_INTAKE_CONTEXT_TURNS = 8
 CanonicalDimensionId = Annotated[
     str, Field(min_length=1, max_length=128, pattern=r"^[A-Z][A-Z0-9_]*$")]
 RequirementKind = Literal["evidence", "calculation", "task"]
-
 
 class EntityRef(BaseModel):
     model_config = ConfigDict(extra="forbid")
@@ -70,7 +107,6 @@ class EntityRef(BaseModel):
         if not self.id.strip() or not self.display_name.strip():
             raise ValueError("entity id and display name must be non-empty")
         return self
-
 
 def canonical_entity_id(entity_type: str, entity_id: str, display_name: str = "") -> str:
     try:
@@ -87,10 +123,8 @@ def canonical_entity_id(entity_type: str, entity_id: str, display_name: str = ""
         pass
     return " ".join(entity_id.casefold().replace("-", " ").replace("_", " ").split())
 
-
 def canonical_entity_ref(entity) -> tuple[str, str]:
     return (entity.type, canonical_entity_id(entity.type, entity.id, entity.display_name))
-
 
 def _is_canonical_season(value: str) -> bool:
     parts = value.split("-")
@@ -98,9 +132,7 @@ def _is_canonical_season(value: str) -> bool:
             and all(part.isdigit() for part in parts)
             and int(parts[1]) == (int(parts[0]) + 1) % 100)
 
-
 WINDOW_ARGUMENT_NAMES = frozenset({"start_date", "end_date", "month"})
-
 
 def _parse_window_bound(value: Any) -> date | None:
     if value is None:
@@ -112,7 +144,6 @@ def _parse_window_bound(value: Any) -> date | None:
         return date.fromisoformat(text.split("T", 1)[0])
     except ValueError:
         return None
-
 
 def _parse_month_number(month: Any) -> tuple[int | None, int | None]:
     if month is None:
@@ -134,7 +165,6 @@ def _parse_month_number(month: Any) -> tuple[int | None, int | None]:
     number = names.get(text)
     return None, number
 
-
 def _month_window(month: Any, season: str | None) -> tuple[date | None, date | None]:
     year, number = _parse_month_number(month)
     if number is None:
@@ -147,7 +177,6 @@ def _month_window(month: Any, season: str | None) -> tuple[date | None, date | N
     last_day = calendar.monthrange(year, number)[1]
     return date(year, number, 1), date(year, number, last_day)
 
-
 def window_of_arguments(
     arguments: Mapping[str, Any],
     season: str | None = None,
@@ -158,7 +187,6 @@ def window_of_arguments(
         start, end = _month_window(arguments.get("month"), season)
     return start, end
 
-
 def format_window(start: date | None, end: date | None) -> str:
     if start is not None and end is not None:
         return f"{start.isoformat()} to {end.isoformat()}"
@@ -168,11 +196,9 @@ def format_window(start: date | None, end: date | None) -> str:
         return f"through {end.isoformat()}"
     return "full season"
 
-
 def validate_window_order(start: date | None, end: date | None) -> None:
     if start is not None and end is not None and start > end:
         raise ValueError("window start must not be after window end")
-
 
 class SeasonRef(BaseModel):
     model_config = ConfigDict(extra="forbid")
@@ -189,7 +215,6 @@ class SeasonRef(BaseModel):
             raise ValueError("season must use consecutive YYYY-YY format")
         return self
 
-
 class ConversationTurn(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -201,7 +226,6 @@ class ConversationTurn(BaseModel):
         if not self.content.strip():
             raise ValueError("conversation content must be non-empty")
         return self
-
 
 class CalculationRequirement(BaseModel):
     model_config = ConfigDict(extra="forbid")
@@ -218,7 +242,6 @@ class CalculationRequirement(BaseModel):
                 raise ValueError(f"{field_name} must not contain duplicates")
         return self
 
-
 class EvidenceRequirement(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
@@ -226,8 +249,6 @@ class EvidenceRequirement(BaseModel):
     id: str = Field(min_length=1, max_length=64, pattern=r"^[a-z][a-z0-9_]*$")
     description: str = Field(min_length=1, max_length=1000)
     capability_options: list[str] = Field(min_length=1, max_length=8)
-
-
 
     capability_arguments: dict[str, Any] = Field(default_factory=dict, max_length=32)
     capability_argument_sets: list[CapabilityArgumentSet] = Field(default_factory=list, max_length=8)
@@ -253,7 +274,6 @@ class EvidenceRequirement(BaseModel):
                 raise ValueError(f"{field_name} must not contain duplicates")
         return self
 
-
 def _drop_ranked_argument_conflicts_from_schema(schema: dict) -> dict:
     properties = schema.get("properties")
     if isinstance(properties, dict):
@@ -262,7 +282,6 @@ def _drop_ranked_argument_conflicts_from_schema(schema: dict) -> dict:
     if isinstance(required, list) and "ranked_argument_conflicts" in required:
         required.remove("ranked_argument_conflicts")
     return schema
-
 
 class TaskSpec(BaseModel):
     model_config = ConfigDict(extra="forbid")
@@ -278,7 +297,6 @@ class TaskSpec(BaseModel):
     window_start: date | None = None
     window_end: date | None = None
 
-
     subject_entity_type: str | None = Field(default=None, max_length=64)
     subquestions: list[str] = Field(default_factory=list, max_length=32)
     required_evidence: list[str] = Field(default_factory=list, max_length=32)
@@ -289,10 +307,6 @@ class TaskSpec(BaseModel):
     assumptions: list[str] = Field(default_factory=list, max_length=32)
     open_questions: list[str] = Field(default_factory=list, max_length=32)
     skills: list[str] = Field(default_factory=list, max_length=16)
-
-
-
-
 
     ranked_argument_conflicts: list[dict[str, str]] = Field(
         default_factory=list, max_length=32)
@@ -343,7 +357,6 @@ class TaskSpec(BaseModel):
             raise ValueError("entities must not contain duplicate identities")
         return self
 
-
 class RequirementReview(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
@@ -354,8 +367,6 @@ class RequirementReview(BaseModel):
         default_factory=list, max_length=32)
     missing_subquestions: list[str] = Field(default_factory=list, max_length=32)
     missing_skills: list[str] = Field(default_factory=list, max_length=16)
-
-
 
     ranked_argument_conflicts: list[dict[str, str]] = Field(
         default_factory=list, max_length=32)
@@ -379,7 +390,6 @@ class RequirementReview(BaseModel):
             if len(values) != len(set(values)):
                 raise ValueError(f"{field_name} must not contain duplicates")
         return self
-
 
 class PlanNode(BaseModel):
     model_config = ConfigDict(extra="forbid")
@@ -425,7 +435,6 @@ class PlanNode(BaseModel):
         validate_finite(self.arguments)
         return self
 
-
 class Plan(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -462,19 +471,16 @@ class Plan(BaseModel):
             visit(node_id)
         return self
 
-
 class WarehouseSourceIdentity(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
     kind: Literal["warehouse"] = "warehouse"
     warehouse_id: Literal["frozen-eval", "configured-runtime"]
     sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
 
-
 class LiveSourceIdentity(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
     kind: Literal["live"] = "live"
     source: Literal["nba_api", "basketball_reference", "espn", "fixture"]
-
 
 class CompositeSourceIdentity(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
@@ -490,12 +496,10 @@ class CompositeSourceIdentity(BaseModel):
             raise ValueError("composite live sources must be unique")
         return self
 
-
 SourceIdentity = Annotated[
     WarehouseSourceIdentity | LiveSourceIdentity | CompositeSourceIdentity,
     Field(discriminator="kind"),
 ]
-
 
 class LiveFallback(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
@@ -514,7 +518,6 @@ class LiveFallback(BaseModel):
         if len(self.warehouse_seasons) != len(set(self.warehouse_seasons)):
             raise ValueError("warehouse seasons must be unique")
         return self
-
 
 class EvidenceEnvelope(BaseModel):
     model_config = ConfigDict(extra="forbid")
@@ -600,12 +603,10 @@ class EvidenceEnvelope(BaseModel):
         validate_rows(self.rows)
         return self
 
-
 class BooleanOutputValue(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
     kind: Literal["boolean"] = "boolean"
     value: StrictBool
-
 
 class IntegerOutputValue(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
@@ -619,7 +620,6 @@ class IntegerOutputValue(BaseModel):
         if isinstance(raw, bool) or not isinstance(raw, int):
             raise ValueError("integer output value requires an integer input")
         return value
-
 
 class FloatOutputValue(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
@@ -640,25 +640,29 @@ class FloatOutputValue(BaseModel):
             raise ValueError("float output value must be finite")
         return self
 
+DECIMAL_TEXT_PATTERN = (
+    r"^-?(?:0|[1-9][0-9]*)(?:\.[0-9]+)?(?:[eE][+-]?[0-9]+)?$")
+
+def _finite_decimal_text(value: str) -> str:
+    if not Decimal(value).is_finite():
+        raise ValueError("decimal text must be finite")
+    return value
+
+FiniteDecimalText = Annotated[
+    str,
+    Field(min_length=1, max_length=1000, pattern=DECIMAL_TEXT_PATTERN),
+    AfterValidator(_finite_decimal_text),
+]
 
 class DecimalOutputValue(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
     kind: Literal["decimal"] = "decimal"
-    value: str = Field(min_length=1, max_length=1000,
-                       pattern=r"^-?(?:0|[1-9][0-9]*)(?:\.[0-9]+)?(?:[eE][+-]?[0-9]+)?$")
-
-    @model_validator(mode="after")
-    def finite(self) -> "DecimalOutputValue":
-        if not Decimal(self.value).is_finite():
-            raise ValueError("decimal output value must be finite")
-        return self
-
+    value: FiniteDecimalText
 
 class StringOutputValue(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
     kind: Literal["string"] = "string"
     value: str = Field(max_length=200000)
-
 
 AdmittedOutputValue = Annotated[
     BooleanOutputValue | IntegerOutputValue | FloatOutputValue |
@@ -666,21 +670,17 @@ AdmittedOutputValue = Annotated[
     Field(discriminator="kind"),
 ]
 
-
 class DeclaredOutputUnit(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
     kind: Literal["declared"] = "declared"
     value: str = Field(min_length=1, max_length=256)
 
-
 class UnitlessOutput(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
     kind: Literal["unitless"] = "unitless"
 
-
 OutputUnitAuthority = Annotated[
     DeclaredOutputUnit | UnitlessOutput, Field(discriminator="kind")]
-
 
 class EvidenceOutputBinding(BaseModel):
 
@@ -713,7 +713,6 @@ class EvidenceOutputBinding(BaseModel):
             raise ValueError("binding subject type, id, and selector must be supplied together")
         return self
 
-
 class CalculationOutputBinding(BaseModel):
 
     model_config = ConfigDict(extra="forbid", frozen=True)
@@ -723,12 +722,10 @@ class CalculationOutputBinding(BaseModel):
     output_id: CanonicalDimensionId
     calculation_id: str = Field(min_length=1, max_length=256)
 
-
 ClaimOutputBinding = Annotated[
     EvidenceOutputBinding | CalculationOutputBinding,
     Field(discriminator="requirement_kind"),
 ]
-
 
 class Claim(BaseModel):
     model_config = ConfigDict(extra="forbid")
@@ -778,12 +775,10 @@ class Claim(BaseModel):
             raise ValueError("only projection claims may name confidence")
         return self
 
-
 class DeclaredCalculationInput(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
     evidence_id: str = Field(min_length=1, max_length=256)
     path: str = Field(min_length=1, max_length=1000)
-
 
 class DeclaredCalculation(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
@@ -792,10 +787,9 @@ class DeclaredCalculation(BaseModel):
     operation: Literal["add", "subtract", "multiply", "divide", "percent",
                        "mean", "rank_desc", "rank_asc"]
     inputs: list[DeclaredCalculationInput] = Field(min_length=1, max_length=256)
-    result: Decimal
+    result: FiniteDecimalText
     unit: str | None = Field(default=None, max_length=256)
     subject_input: StrictInt | None = Field(default=None, ge=0)
-
 
 class DraftReport(BaseModel):
     model_config = ConfigDict(extra="forbid")
@@ -826,7 +820,6 @@ class DraftReport(BaseModel):
                 raise ValueError(f"draft {field_name} must not contain duplicates")
         return self
 
-
 class Gap(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -846,7 +839,6 @@ class Gap(BaseModel):
             if len(values) != len(set(values)):
                 raise ValueError(f"gap {field_name} must not contain duplicates")
         return self
-
 
 class OutputFinalStatus(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
@@ -871,7 +863,6 @@ class OutputFinalStatus(BaseModel):
                 raise ValueError("output status identity must match admitted binding")
         return self
 
-
 class ClaimSource(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -894,7 +885,6 @@ class ClaimSource(BaseModel):
                for key, value in self.vintages.items()):
             raise ValueError("claim source vintages must be non-empty")
         return self
-
 
 class VerifiedClaim(BaseModel):
     model_config = ConfigDict(extra="forbid")
@@ -932,7 +922,6 @@ class VerifiedClaim(BaseModel):
             raise ValueError("verified calculation binding must cite claim calculation")
         return self
 
-
 class ClaimResult(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -957,7 +946,6 @@ class ClaimResult(BaseModel):
         if len(self.evidence_spans) != len(set(self.evidence_spans)):
             raise ValueError("claim result evidence spans must not contain duplicates")
         return self
-
 
 class VerificationReport(BaseModel):
     model_config = ConfigDict(extra="forbid")

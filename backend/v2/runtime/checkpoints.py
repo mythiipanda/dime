@@ -11,16 +11,13 @@ from pydantic import BaseModel, ConfigDict, Field, StrictInt, model_validator
 from v2.contracts import EvidenceEnvelope, Plan, TaskSpec
 from v2.runtime.models import ExecutionErrorCode
 
-
 _CHECKPOINT_LOCKS_GUARD = Lock()
 _CHECKPOINT_LOCKS: dict[Path, Lock] = {}
-
 
 def _checkpoint_path_lock(path: Path) -> Lock:
     resolved = path.resolve()
     with _CHECKPOINT_LOCKS_GUARD:
         return _CHECKPOINT_LOCKS.setdefault(resolved, Lock())
-
 
 class ExecutionCheckpoint(BaseModel):
     model_config = ConfigDict(extra="forbid")
@@ -54,12 +51,10 @@ class ExecutionCheckpoint(BaseModel):
             raise ValueError("checkpoint errors cannot exceed 4000 characters")
         return self
 
-
 class CheckpointStore(Protocol):
     def load(self, run_id: str) -> ExecutionCheckpoint | None: ...
     def save(self, checkpoint: ExecutionCheckpoint) -> None: ...
     def delete(self, run_id: str) -> None: ...
-
 
 class FileCheckpointStore:
     def __init__(self, directory: str | Path) -> None:

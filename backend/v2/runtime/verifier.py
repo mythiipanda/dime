@@ -24,8 +24,6 @@ from v2.domain.evidence import EvidenceIndex, decimal_value, iter_values
 
 _NUMBER = re.compile(
 
-
-
     r"(?<![A-Za-z0-9])(?:\d{4}-\d{2}-\d{2}|\d{4}-\d{2}|[-+]?\$?\d[\d,]*(?:\.\d+)?(?:%|[KMB])?)(?![A-Za-z0-9]|-[A-Za-z])",
     re.IGNORECASE,
 )
@@ -45,9 +43,8 @@ _WORD = re.compile(r"[A-Za-z0-9]+")
 COMPETITION_ENTITY_TYPES = frozenset({"league"})
 
 class SemanticVerifier(Protocol):
-    async def verify(self, task: TaskSpec, draft: DraftReport,
-                     evidence: Sequence[EvidenceEnvelope]) -> VerificationReport: ...
-
+    async def verify(self, task: Any, draft: Any,
+                     evidence: Sequence[Any] | Mapping[str, Any]) -> VerificationReport: ...
 
 def _canon_number(raw: Any, unit: str | None = None) -> set[Decimal]:
     value = decimal_value(raw)
@@ -64,7 +61,6 @@ def _canon_number(raw: Any, unit: str | None = None) -> set[Decimal]:
         values.add(value * 100)
     return values
 
-
 def _matches_calculation_display(raw: str, values: set[Decimal]) -> bool:
     parsed = decimal_value(raw)
     if parsed is None or not values:
@@ -80,16 +76,13 @@ def _matches_calculation_display(raw: str, values: set[Decimal]) -> bool:
             return True
     return False
 
-
 def _number_tokens(text: str) -> list[str]:
     label_numbers = {match.start(1) for match in _LIST_LABEL.finditer(text)}
     return [match.group(0) for match in _NUMBER.finditer(text)
             if match.start() not in label_numbers]
 
-
 def _words(text: str) -> list[str]:
     return [word.casefold() for word in _WORD.findall(text)]
-
 
 def _states_name(words: Sequence[str], name: str) -> bool:
     run = _words(str(name))
@@ -98,7 +91,6 @@ def _states_name(words: Sequence[str], name: str) -> bool:
     span = len(run)
     return any(words[start:start + span] == run
                for start in range(len(words) - span + 1))
-
 
 def _text_values(envelopes: Iterable[EvidenceEnvelope]) -> set[str]:
     values: set[str] = set()
@@ -114,7 +106,6 @@ def _text_values(envelopes: Iterable[EvidenceEnvelope]) -> set[str]:
             if item.value is not None:
                 values.add(str(item.value).strip().casefold())
     return values
-
 
 def _numeric_values(envelopes: Iterable[EvidenceEnvelope]) -> set[Decimal]:
     values: set[Decimal] = set()
@@ -133,13 +124,11 @@ def _numeric_values(envelopes: Iterable[EvidenceEnvelope]) -> set[Decimal]:
                     values.update(_canon_number(token, unit))
     return values
 
-
 def _claim_dates_supported(claim: Claim,
                            envelopes: Sequence[EvidenceEnvelope]) -> list[str]:
     supported = _text_values(envelopes)
     return [value for value in _DATE.findall(claim.text)
             if value.casefold() not in supported]
-
 
 def _claim_seasons_supported(claim: Claim,
                              envelopes: Sequence[EvidenceEnvelope]) -> list[str]:
@@ -147,11 +136,9 @@ def _claim_seasons_supported(claim: Claim,
     return [value for value in _SEASON.findall(claim.text)
             if value.casefold() not in supported]
 
-
 def _canonical_entity(entity) -> tuple[str, str]:
     from v2.contracts import canonical_entity_ref
     return canonical_entity_ref(entity)
-
 
 def _entity_reasons(task: TaskSpec, claim: Claim,
                     envelopes: Sequence[EvidenceEnvelope]) -> list[str]:
@@ -189,7 +176,6 @@ def _entity_reasons(task: TaskSpec, claim: Claim,
             reasons.append(f"entity {entity.display_name} is not supported by cited evidence")
     return reasons
 
-
 def _row_entity_value_reasons(
     claim: Claim, envelopes: Sequence[EvidenceEnvelope],
     calculation_values: set[Decimal] | None = None,
@@ -217,10 +203,6 @@ def _row_entity_value_reasons(
             matched_envelopes.append(envelope.model_copy(update={"rows": matched}))
     if not matched_envelopes:
         return []
-
-
-
-
 
     requested_metrics = {
         envelope.metric_definitions.get("__requested_metric__")
@@ -257,7 +239,6 @@ def _row_entity_value_reasons(
             + ", ".join(unsupported)
         ]
     return []
-
 
 def _direction_reasons(
     claim: Claim, envelopes: Sequence[EvidenceEnvelope],
@@ -304,7 +285,6 @@ def _direction_reasons(
             )
     return reasons
 
-
 def _scope_reasons(task: TaskSpec,
                    envelopes: Sequence[EvidenceEnvelope]) -> list[str]:
     reasons: list[str] = []
@@ -341,7 +321,6 @@ def _scope_reasons(task: TaskSpec,
                     f"{format_window(*asked)}"
                 )
     return reasons
-
 
 def _metric_unit_reasons(claim: Claim,
                          envelopes: Sequence[EvidenceEnvelope]) -> list[str]:
@@ -392,13 +371,10 @@ def _metric_unit_reasons(claim: Claim,
                             f"metric {metric} is stated without its declared unit {unit}")
             elif unit_name == "count":
 
-
-
                 continue
             elif unit_name.replace("_", " ") not in text:
                 reasons.append(f"metric {metric} is stated without its declared unit {unit}")
     return reasons
-
 
 def _column_canon_values(envelope: EvidenceEnvelope, metric: str) -> set[Decimal]:
     unit_map = {str(key).casefold(): str(item)
@@ -419,7 +395,6 @@ def _column_canon_values(envelope: EvidenceEnvelope, metric: str) -> set[Decimal
             for token in _number_tokens(item.value):
                 values.update(_canon_number(token, unit))
     return values
-
 
 def _metric_identity_reasons(
     claim: Claim,
@@ -496,7 +471,6 @@ def _metric_identity_reasons(
         )
     return reasons
 
-
 def _mixed_source_reasons(claim: Claim,
                           envelopes: Sequence[EvidenceEnvelope]) -> list[str]:
     source_classes = {envelope.source.split(":", 1)[0].casefold()
@@ -509,7 +483,6 @@ def _mixed_source_reasons(claim: Claim,
     if labels_sources:
         return []
     return ["mixed-source claim does not label differing provenance"]
-
 
 def _record_completeness_reasons(
     claim: Claim, envelopes: Sequence[EvidenceEnvelope],
@@ -553,7 +526,6 @@ def _record_completeness_reasons(
         return ["best-record claim must state the complete wins-losses record"]
     return []
 
-
 def _qualification_coverage_reasons(claim: Claim,
                                     envelopes: Sequence[EvidenceEnvelope]) -> list[str]:
     if not _RANK.search(claim.text) and not re.search(
@@ -579,7 +551,6 @@ def _qualification_coverage_reasons(claim: Claim,
     if not claim.calculation_id and not explicit_rank:
         reasons.append("rank claim lacks a recomputable rank calculation")
     return reasons
-
 
 def _cross_evidence_calculation_reasons(
     claim: Claim, envelopes: Sequence[EvidenceEnvelope],
@@ -623,6 +594,91 @@ def _calculation_reasons(claim: Claim, calculations: Mapping[str, Calculation],
         reasons.append(error)
     return reasons, {calculation.result}
 
+def _zero_gate_player_rows(
+    envelopes: Sequence[EvidenceEnvelope], names: set[str],
+) -> list[Mapping[str, Any]]:
+    rows: list[Mapping[str, Any]] = []
+    for envelope in envelopes:
+        data = envelope.rows
+        if isinstance(data, dict):
+            data = [data]
+        if not isinstance(data, list):
+            continue
+        for row in data:
+            if not isinstance(row, Mapping):
+                continue
+            identities = {
+                str(value).strip().casefold()
+                for key, value in row.items()
+                if key.casefold() in _ZERO_SCORING_IDENTITY_KEYS
+                and value is not None
+            }
+            if identities & names:
+                rows.append(row)
+    return rows
+
+def _zero_gate_genuine_proof(rows: Sequence[Mapping[str, Any]]) -> bool:
+    if not rows:
+        return False
+    active = False
+    totals: list[Decimal | None] = []
+    for row in rows:
+        normalized = {str(key).casefold(): value for key, value in row.items()}
+        for key in ("gp", "g", "games", "min", "mpg", "minutes"):
+            if key in normalized:
+                activity = decimal_value(normalized[key])
+                if activity is not None and activity > 0:
+                    active = True
+        for key in ("pts", "points", "total_points"):
+            if key in normalized:
+                totals.append(decimal_value(normalized[key]))
+    if not active or not totals:
+        return False
+    if any(total is None for total in totals):
+        return False
+    return all(total == 0 for total in totals if total is not None)
+
+def _zero_scoring_gate_reasons(
+    task: TaskSpec, claim: Claim,
+    envelopes: Sequence[EvidenceEnvelope],
+) -> list[str]:
+    if not _ZERO_SCORING_RX.search(claim.text):
+        return []
+    if _ZERO_SCORING_DIFFERENCE_RX.search(claim.text):
+        return []
+    text = " ".join(claim.text.casefold().split())
+    subjects: dict[tuple[str, str, str], str] = {}
+    candidates = list(task.entities)
+    candidates.extend(
+        entity for envelope in envelopes for entity in envelope.entities)
+    for entity in candidates:
+        if entity.type != "player":
+            continue
+        key = (entity.type, str(entity.id).casefold(),
+               str(entity.display_name).casefold())
+        names = {part for part in key[1:] if part}
+        if names and any(name in text for name in names):
+            subjects.setdefault(key, entity.display_name)
+    if not subjects:
+        return []
+    season = task.season.value if task.season else None
+    when = f" in {season}" if season else ""
+    reasons: list[str] = []
+    for key, display in subjects.items():
+        rows = _zero_gate_player_rows(envelopes, {part for part in key[1:] if part})
+        if _zero_gate_genuine_proof(rows):
+            continue
+        if rows:
+            detail = (f"cited evidence carries no explicit scoring totals "
+                      f"for {display}; an average without totals cannot "
+                      f"prove a scoreless line")
+        else:
+            detail = (f"cited evidence carries no scoring rows "
+                      f"for {display}")
+        reasons.append(
+            f"Zero-guard: {display} is stated at 0.0 PPG{when}, but "
+            f"{detail}; refusing to publish a missing-data zero")
+    return reasons
 
 def verify_mechanical(
     task: TaskSpec,
@@ -717,6 +773,7 @@ def verify_mechanical(
             claim, cited, supported_numbers, calculation_values, allowed_numbers))
         reasons.extend(_qualification_coverage_reasons(claim, cited))
         reasons.extend(_record_completeness_reasons(claim, cited))
+        reasons.extend(_zero_scoring_gate_reasons(task, claim, cited))
 
         unique_reasons = list(dict.fromkeys(reasons))
         results.append(ClaimResult(
@@ -734,9 +791,6 @@ def verify_mechanical(
         if token not in claim_tokens
     ]
     report_repairs = []
-
-
-
 
     record_task = bool(re.search(r"\brecord\b", " ".join(
         (task.goal, task.deliverable, *task.subquestions)), re.IGNORECASE))
@@ -756,8 +810,6 @@ def verify_mechanical(
         if not has_complete_record:
             report_repairs.append(
                 "State the best team's complete wins-losses record in W-L form.")
-
-
 
     task_text = " ".join((task.goal, task.deliverable, *task.subquestions)).casefold()
     requested_metrics = {
@@ -802,7 +854,6 @@ def verify_mechanical(
         repair_instructions=repairs,
     )
 
-
 def _gate_tables(evidence: Sequence[EvidenceEnvelope]) -> list[dict]:
     tables: list[dict] = []
     for envelope in evidence:
@@ -819,7 +870,6 @@ def _gate_tables(evidence: Sequence[EvidenceEnvelope]) -> list[dict]:
             "meta": meta,
         })
     return tables
-
 
 def _termination_gate_repairs(task: TaskSpec, draft: DraftReport,
                               evidence: Sequence[EvidenceEnvelope]) -> list[str]:
@@ -841,7 +891,6 @@ def _termination_gate_repairs(task: TaskSpec, draft: DraftReport,
             "Minutes-qualify or drop this rate-stat claim: " + violation)
     return list(dict.fromkeys(gate_repairs))
 
-
 def validate_semantic_report(value: str | bytes | Mapping[str, Any] |
                              VerificationReport) -> VerificationReport:
     if isinstance(value, VerificationReport):
@@ -859,7 +908,6 @@ def validate_semantic_report(value: str | bytes | Mapping[str, Any] |
         return VerificationReport.model_validate(parsed)
     except ValidationError as exc:
         raise ValueError("invalid VerificationReport") from exc
-
 
 def merge_verification_reports(mechanical: VerificationReport,
                                semantic: VerificationReport) -> VerificationReport:
@@ -898,13 +946,6 @@ def merge_verification_reports(mechanical: VerificationReport,
         )),
     )
 
-
-
-
-
-
-
-
 _GATE_TEAM_TABLE_RX = re.compile(
     r"team splits|team totals|standings|four factors|matchup splits",
     re.IGNORECASE,
@@ -928,11 +969,22 @@ _MINUTES_QUAL_RX = re.compile(
 
 _UNIT_SPLIT_RX = re.compile(r"((?<=[.!?])\s+|\n+)")
 
+_ZERO_SCORING_RX = re.compile(
+    r"(?<![\d.])0(?:\.0+)?\s*(?:PPG|points?\s+per\s+game)\b",
+    re.IGNORECASE)
+_ZERO_SCORING_DIFFERENCE_RX = re.compile(
+    r"\b(?:difference|margin|gap|delta|lead(?:s|ing)?|trail(?:s|ing)?|"
+    r"versus|compared?)\b|\bvs\.?\b|\bby\s+how\s+much\b",
+    re.IGNORECASE)
+_ZERO_SCORING_IDENTITY_KEYS = frozenset({
+    "team", "team_name", "team_abbreviation", "abbrev",
+    "player", "player_name", "full_name", "name",
+})
+
 def _iter_units(text: str):
     parts = _UNIT_SPLIT_RX.split(text or "")
     for i in range(0, len(parts), 2):
         yield parts[i], (parts[i + 1] if i + 1 < len(parts) else "")
-
 
 def _gate_question_kind(question: str,
                        detect=None) -> str:
@@ -948,7 +1000,6 @@ def _gate_question_kind(question: str,
         return "mixed"
     return "other"
 
-
 def _gate_table_level(table: dict) -> str:
     rows = table.get("rows")
     if isinstance(rows, list) and rows and isinstance(rows[0], dict):
@@ -960,7 +1011,6 @@ def _gate_table_level(table: dict) -> str:
     if _GATE_TEAM_TABLE_RX.search(str(table.get("title") or "")):
         return "team"
     return "unknown"
-
 
 def verify_table_kind(question: str, table: dict,
                       question_kind: str | None = None) -> bool:
@@ -975,7 +1025,6 @@ def verify_table_kind(question: str, table: dict,
     if level not in ("player", "team"):
         return True
     return kind == level
-
 
 def verify_minutes_qual(answer_text: str, tables: list) -> list[str]:
     try:

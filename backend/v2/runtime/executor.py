@@ -9,9 +9,9 @@ from v2.contracts import EvidenceEnvelope, Plan, PlanNode, PlanStatus, TaskSpec
 from v2.runtime.checkpoints import CheckpointStore, ExecutionCheckpoint
 from v2.runtime.interfaces import Capability
 from v2.runtime.models import ExecutionErrorCode, ExecutionResult
+from v2.runtime.policy import refuse_unprofiled_capability
 from v2.runtime.ledger import exception_text
-from v2.domain.evidence import admit_evidence
-
+from v2.domain.evidence import admit_evidence, post_result_denials, pre_call_denials
 
 def _canonical_entity_value(entity_type: str, value: object) -> str:
     text = str(value).strip()
@@ -26,7 +26,6 @@ def _canonical_entity_value(entity_type: str, value: object) -> str:
         pass
     return " ".join(text.casefold().replace("-", " ").replace("_", " ").split())
 
-
 class NodeTimeoutError(TimeoutError):
 
     def __init__(self, node_id: str, budget_s: float) -> None:
@@ -35,11 +34,9 @@ class NodeTimeoutError(TimeoutError):
         super().__init__(
             f"node {self.node_id} timed out after {self.budget_s:g}s")
 
-
 async def _join_node(node: PlanNode, coro) -> tuple[PlanNode, Any]:
     _, envelope = await coro
     return node, envelope
-
 
 class PlanExecutor:
     def __init__(
@@ -327,6 +324,7 @@ class PlanExecutor:
                     f"plan node {node.id!r} must select exactly one registered "
                     f"capability; got {matches!r}")
             selected.add(matches[0])
+            refuse_unprofiled_capability(task.mode, node.id, matches[0])
             capability = self._capabilities[matches[0]]
             validator = getattr(capability, "validate_arguments", None)
             if validator is not None:
@@ -363,11 +361,6 @@ class PlanExecutor:
                 f"plan covers unknown requirements: {sorted(unknown_requirement_ids)}"
             )
 
-
-
-
-
-
         missing = sorted(set(task.required_evidence) - selected)
         uncovered = sorted(known_requirements.keys() - covered.keys())
         if missing and (not known_requirements or uncovered):
@@ -375,11 +368,38 @@ class PlanExecutor:
                       if uncovered else "")
             raise ValueError(
                 f"plan does not cover required evidence: {missing}{detail}")
+        self._enforce_node_preconditions(task, plan)
 
+    def _vocabulary_spec(self, selected_name: str):
+        from v2.adapters.capabilities import CAPABILITIES, Capability
+        spec = CAPABILITIES.get(selected_name)
+        if spec is not None:
+            return spec
+        capability = self._capabilities.get(selected_name)
+        return Capability(
+            name=getattr(capability, "name", selected_name),
+            tool_name=getattr(capability, "tool_name", selected_name),
+            units=dict(getattr(capability, "units", {}) or {}),
+            metric_definitions=dict(
+                getattr(capability, "metric_definitions", {}) or {}),
+            output_aliases=dict(
+                getattr(capability, "output_aliases", {}) or {}),
+        )
 
-
-
-
+    def _enforce_node_preconditions(self, task: TaskSpec, plan: Plan) -> None:
+        from v2.adapters.capabilities import preconditions_for_node
+        from v2.contracts import PreconditionCheck, precondition_repair_instruction
+        for node in plan.nodes:
+            selected_name = self._selected_name(plan, node.id)
+            if selected_name is None:
+                continue
+            spec = self._vocabulary_spec(selected_name)
+            for item in preconditions_for_node(task, node, spec):
+                if (item.check == PreconditionCheck.NUMERAL
+                        and not item.resolvable):
+                    raise ValueError(precondition_repair_instruction(
+                        item.check, item.node_id, item.requirement_id,
+                        item.detail))
 
     def _selected_name(self, plan: Plan, node_id: str) -> str | None:
         parent = next(item for item in plan.nodes if item.id == node_id)
@@ -458,6 +478,25 @@ class PlanExecutor:
             try:
                 self._validate_dependent_entity_arguments(
                     capability, node, parent_evidence)
+                pre_denials = pre_call_denials(
+                    task, capability.name, dict(node.arguments),
+                    task_season_scoped=getattr(
+                        capability, "task_season_scoped", True),
+                )
+                if pre_denials:
+                    from v2.contracts import (
+                        PreconditionCheck as _PreCheck,
+                        precondition_repair_instruction as _repair,
+                    )
+                    requirement = (node.covers_requirement_ids[0]
+                                   if node.covers_requirement_ids else None)
+                    raise ValueError("; ".join(
+                        _repair(
+                            _PreCheck.ENTITY
+                            if item.check == "entity_mismatch"
+                            else _PreCheck.SCOPE,
+                            node.id, requirement, item.message)
+                        for item in pre_denials))
                 result = await capability.execute(node, task, parent_evidence)
                 task_season_scoped = getattr(
                     capability, "task_season_scoped", True)
@@ -468,6 +507,23 @@ class PlanExecutor:
                     **result.model_dump(),
                     "task_season_scoped": task_season_scoped,
                 })
+                post_denials = post_result_denials(task, result)
+                if post_denials:
+                    from v2.contracts import (
+                        PreconditionCheck as _PostCheck,
+                        precondition_repair_instruction as _post_repair,
+                    )
+                    requirement = (node.covers_requirement_ids[0]
+                                   if node.covers_requirement_ids else None)
+                    raise ValueError("; ".join(
+                        _post_repair(
+                            _PostCheck.ENTITY
+                            if item.check == "entity_mismatch"
+                            else _PostCheck.SCOPE
+                            if item.check != "empty_rows_forbidden"
+                            else _PostCheck.NUMERAL,
+                            node.id, requirement, item.message)
+                        for item in post_denials))
                 required_season = (
                     task.season.value
                     if task.season and task_season_scoped
@@ -486,6 +542,15 @@ class PlanExecutor:
                     raise ValueError(
                         f"capability returned {result.capability!r}, expected {capability.name!r}"
                     )
+                from v2.adapters.capabilities import (
+                    post_evidence_failures as _post_failures,
+                    preconditions_for_node as _preconditions_for,
+                )
+                _spec = self._vocabulary_spec(capability.name)
+                _failures = _post_failures(
+                    _preconditions_for(task, node, _spec), result)
+                if _failures:
+                    raise ValueError("; ".join(_failures))
                 if self._evidence_activity is not None:
                     rows = result.rows
                     try:
@@ -495,7 +560,7 @@ class PlanExecutor:
                 return node, result
             except anyio.get_cancelled_exc_class():
                 raise
-            except Exception as exc:  # noqa: BLE001
+            except Exception as exc:
                 message = exception_text(exc)
                 node_errors = errors.setdefault(node.id, [])
                 if message not in node_errors:

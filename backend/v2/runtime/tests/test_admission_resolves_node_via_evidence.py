@@ -24,7 +24,6 @@ _GHOST_EVIDENCE_ID = "standings:0000000000000000"
 _REQUIREMENT = "okc_record_2024_25"
 _TEAM_ID = "1610612737"
 
-
 def _envelope():
     return EvidenceEnvelope(
         evidence_id=_EVIDENCE_ID,
@@ -36,7 +35,6 @@ def _envelope():
         units={"WINS": "count", "LOSSES": "count"},
         entities=[EntityRef(id=_TEAM_ID, type="team", display_name="Test Club")],
     )
-
 
 def _task():
     return TaskSpec(
@@ -54,7 +52,6 @@ def _task():
             )
         ],
     )
-
 
 def _bindings(node_id, evidence_id):
     return [
@@ -90,7 +87,6 @@ def _bindings(node_id, evidence_id):
         ),
     ]
 
-
 def _node():
     return PlanNode(
         id=_TRUE_NODE,
@@ -99,7 +95,6 @@ def _node():
         covers_requirement_ids=[_REQUIREMENT],
         status="complete",
     )
-
 
 def _admit(bindings):
     envelope = _envelope()
@@ -133,13 +128,11 @@ def _admit(bindings):
     )
     return admit_verified_claim_bindings(_task(), execution, draft, verified)
 
-
 def test_nonexistent_node_with_real_evidence_binds():
     admitted = _admit(_bindings(_GHOST_NODE, _EVIDENCE_ID))
     by_output = {item.output_id: item for item in admitted.output_bindings}
     assert by_output["WINS"].value.value == 68
     assert by_output["LOSSES"].value.value == 14
-
 
 def test_invented_evidence_with_true_node_admits_with_corrected_id():
     admitted = _admit(_bindings(_TRUE_NODE, _GHOST_EVIDENCE_ID))
@@ -149,7 +142,6 @@ def test_invented_evidence_with_true_node_admits_with_corrected_id():
     by_output = {item.output_id: item for item in admitted.output_bindings}
     assert by_output["WINS"].value.value == 68
     assert by_output["LOSSES"].value.value == 14
-
 
 def test_invented_evidence_with_true_node_wrong_values_rejects():
     bindings = _bindings(_TRUE_NODE, _GHOST_EVIDENCE_ID)

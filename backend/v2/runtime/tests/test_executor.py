@@ -10,7 +10,6 @@ from v2.runtime import FakeCapability, PlanExecutor
 def anyio_backend():
     return "asyncio"
 
-
 def node(
     node_id: str, *, parents: list[str] | None = None, attempts: int = 1
 ) -> PlanNode:
@@ -21,7 +20,6 @@ def node(
         capability_hints=["fake"],
         max_attempts=attempts,
     )
-
 
 @pytest.mark.parametrize("field,value,error", [
     ("max_concurrency", 0, "between 1 and 16"),
@@ -37,10 +35,8 @@ def test_executor_rejects_invalid_operational_limits(field, value, error) -> Non
     with pytest.raises((TypeError, ValueError), match=error):
         PlanExecutor({"fake": FakeCapability("fake", {})}, **{field: value})
 
-
 def test_executor_allows_explicit_unlimited_failure_budget() -> None:
     PlanExecutor({"fake": FakeCapability("fake", {})}, max_failures=None)
-
 
 @pytest.mark.anyio
 async def test_executes_dag_and_preserves_lineage() -> None:
@@ -57,7 +53,6 @@ async def test_executes_dag_and_preserves_lineage() -> None:
     assert result.evidence[-1].lineage == ["evidence:a", "evidence:b"]
     assert all(count == 1 for count in result.attempts.values())
 
-
 @pytest.mark.anyio
 async def test_retries_without_weakening_failure() -> None:
     result = await PlanExecutor(
@@ -70,7 +65,6 @@ async def test_retries_without_weakening_failure() -> None:
     assert result.plan.nodes[0].status == PlanStatus.COMPLETE
     assert result.attempts == {"a": 2}
     assert result.errors["a"] == ["RuntimeError: injected capability failure"]
-
 
 @pytest.mark.anyio
 async def test_repeated_identical_failures_return_a_failed_partial_result() -> None:
@@ -86,7 +80,6 @@ async def test_repeated_identical_failures_return_a_failed_partial_result() -> N
     assert result.errors == {
         "a": ["RuntimeError: injected capability failure"],
     }
-
 
 @pytest.mark.anyio
 async def test_duplicate_evidence_identity_uses_remaining_attempt_budget() -> None:
@@ -114,7 +107,6 @@ async def test_duplicate_evidence_identity_uses_remaining_attempt_budget() -> No
     assert result.attempts == {"a": 1, "b": 2}
     assert result.errors == {"b": ["duplicate evidence id: same"]}
 
-
 @pytest.mark.anyio
 async def test_capability_error_is_bounded_for_result_and_stream_contracts() -> None:
     class NoisyCapability:
@@ -133,7 +125,6 @@ async def test_capability_error_is_bounded_for_result_and_stream_contracts() -> 
     assert len(result.errors["a"][0]) == 4000
     assert result.errors["a"][0].startswith("RuntimeError: ")
 
-
 @pytest.mark.anyio
 async def test_unknown_capability_fails_preflight() -> None:
     with pytest.raises(ValueError, match="exactly one registered capability"):
@@ -141,7 +132,6 @@ async def test_unknown_capability_fails_preflight() -> None:
             TaskSpec(goal="answer", mode=RunMode.QUICK, deliverable="text"),
             Plan(nodes=[node("a"), node("b", parents=["a"])]),
         )
-
 
 @pytest.mark.anyio
 async def test_independent_nodes_run_concurrently() -> None:
@@ -165,7 +155,6 @@ async def test_independent_nodes_run_concurrently() -> None:
     )
     assert peak == 2
 
-
 @pytest.mark.anyio
 async def test_executor_rejects_untyped_capability_season_scope() -> None:
     class Invalid(FakeCapability):
@@ -182,7 +171,6 @@ async def test_executor_rejects_untyped_capability_season_scope() -> None:
     assert result.errors["record"] == [
         "TypeError: capability task_season_scoped must be boolean",
     ]
-
 
 @pytest.mark.anyio
 async def test_non_task_season_capability_admits_next_vintage_contracts() -> None:
@@ -209,7 +197,6 @@ async def test_non_task_season_capability_admits_next_vintage_contracts() -> Non
     assert result.evidence[0].season == "2026-27"
     assert result.evidence[0].task_season_scoped is False
 
-
 @pytest.mark.anyio
 async def test_task_season_capability_still_rejects_wrong_vintage() -> None:
     from datetime import UTC, datetime
@@ -232,7 +219,6 @@ async def test_task_season_capability_still_rejects_wrong_vintage() -> None:
     assert result.plan.nodes[0].status == PlanStatus.FAILED
     assert "does not match" in result.errors["record"][0]
 
-
 @pytest.mark.anyio
 async def test_ambiguous_capability_hints_fail_before_any_execution() -> None:
     calls: list[str] = []
@@ -252,7 +238,6 @@ async def test_ambiguous_capability_hints_fail_before_any_execution() -> None:
         await PlanExecutor(capabilities).execute(
             TaskSpec(goal="answer", mode="quick", deliverable="text"), plan)
     assert calls == []
-
 
 @pytest.mark.anyio
 async def test_invalid_arguments_fail_before_any_execution() -> None:
@@ -276,7 +261,6 @@ async def test_invalid_arguments_fail_before_any_execution() -> None:
             TaskSpec(goal="answer", mode="quick", deliverable="text"), plan)
     assert calls == []
 
-
 @pytest.mark.anyio
 async def test_missing_required_evidence_fails_before_execution() -> None:
     calls: list[str] = []
@@ -295,7 +279,6 @@ async def test_missing_required_evidence_fails_before_execution() -> None:
             task, Plan(nodes=[node("only")]))
     assert calls == []
 
-
 @pytest.mark.anyio
 async def test_model_plan_cannot_predeclare_node_complete() -> None:
     plan = Plan(nodes=[PlanNode(
@@ -304,7 +287,6 @@ async def test_model_plan_cannot_predeclare_node_complete() -> None:
     with pytest.raises(ValueError, match="must start pending"):
         await PlanExecutor({"fake": FakeCapability("fake", {})}).execute(
             TaskSpec(goal="answer", mode="quick", deliverable="text"), plan)
-
 
 def test_execution_result_rejects_unknown_state_nodes_and_duplicate_evidence() -> None:
     from datetime import UTC, datetime
@@ -321,7 +303,6 @@ def test_execution_result_rejects_unknown_state_nodes_and_duplicate_evidence() -
     )
     with pytest.raises(ValidationError, match="evidence ids must be unique"):
         ExecutionResult(plan=Plan(nodes=[node("a"), node("b")]), evidence_by_node={"a": evidence, "b": evidence})
-
 
 def test_execution_result_requires_one_evidence_per_completed_node() -> None:
     from datetime import UTC, datetime
@@ -340,7 +321,6 @@ def test_execution_result_requires_one_evidence_per_completed_node() -> None:
         ExecutionResult(plan=Plan(nodes=[pending]), evidence_by_node={"pending": evidence})
     with pytest.raises(ValidationError, match="non-negative"):
         ExecutionResult(plan=Plan(nodes=[pending]), attempts={"pending": -1})
-
 
 def test_execution_result_binds_evidence_capability_and_lineage_to_plan() -> None:
     from datetime import UTC, datetime
@@ -368,7 +348,6 @@ def test_execution_result_binds_evidence_capability_and_lineage_to_plan() -> Non
     wrong_capability = parent_evidence.model_copy(update={"capability": "other"})
     with pytest.raises(ValidationError, match="capability does not match"):
         ExecutionResult(plan=Plan(nodes=[parent]), evidence_by_node={"parent": wrong_capability}, attempts={"parent": 1})
-
 
 @pytest.mark.anyio
 async def test_nonseason_entity_resolution_admits_on_season_resolved_task() -> None:
@@ -399,7 +378,6 @@ async def test_nonseason_entity_resolution_admits_on_season_resolved_task() -> N
     assert result.plan.nodes[0].status == PlanStatus.COMPLETE
     assert result.evidence[0].task_season_scoped is False
 
-
 def test_execution_result_binds_attempts_and_errors_to_node_state() -> None:
     from pydantic import ValidationError
     from v2.runtime.models import ExecutionResult
@@ -415,7 +393,6 @@ def test_execution_result_binds_attempts_and_errors_to_node_state() -> None:
         ExecutionResult(
             plan=Plan(nodes=[skipped]), errors={"pending": ["contradiction"]},
         )
-
 
 def test_execution_result_rejects_unattempted_completed_or_failed_node() -> None:
     from datetime import UTC, datetime
@@ -436,7 +413,6 @@ def test_execution_result_rejects_unattempted_completed_or_failed_node() -> None
             plan=Plan(nodes=[failed]), errors={"failed": ["failure"]},
         )
 
-
 @pytest.mark.parametrize("errors,message", [([" "], "empty errors"), (["same", "same"], "duplicate errors")])
 def test_execution_result_rejects_invalid_error_messages(errors, message) -> None:
     from pydantic import ValidationError
@@ -449,7 +425,6 @@ def test_execution_result_rejects_invalid_error_messages(errors, message) -> Non
             errors={"failed": errors},
         )
 
-
 def test_execution_result_rejects_nonterminal_node_without_attempts_remaining() -> None:
     from pydantic import ValidationError
     from v2.runtime.models import ExecutionResult
@@ -457,7 +432,6 @@ def test_execution_result_rejects_nonterminal_node_without_attempts_remaining() 
     pending = node("pending", attempts=1)
     with pytest.raises(ValidationError, match="no attempts remaining"):
         ExecutionResult(plan=Plan(nodes=[pending]), attempts={"pending": 1})
-
 
 @pytest.mark.anyio
 async def test_cancelling_execution_cancels_every_inflight_node() -> None:
@@ -487,7 +461,6 @@ async def test_cancelling_execution_cancels_every_inflight_node() -> None:
         await running
     assert cancelled == {"a", "b"}
 
-
 def test_execution_result_rejects_failed_node_with_attempts_remaining() -> None:
     from pydantic import ValidationError
     from v2.runtime.models import ExecutionResult
@@ -499,7 +472,6 @@ def test_execution_result_rejects_failed_node_with_attempts_remaining() -> None:
             errors={"failed": ["failure"]},
         )
 
-
 def test_execution_result_rejects_skipped_node_with_attempts() -> None:
     from pydantic import ValidationError
     from v2.runtime.models import ExecutionResult
@@ -508,14 +480,12 @@ def test_execution_result_rejects_skipped_node_with_attempts() -> None:
     with pytest.raises(ValidationError, match="cannot carry attempts"):
         ExecutionResult(plan=Plan(nodes=[skipped]), attempts={"skipped": 1})
 
-
 @pytest.mark.parametrize("count", [True, 1.5, "1"])
 def test_execution_result_rejects_noninteger_attempt_counts(count) -> None:
     from pydantic import ValidationError
     from v2.runtime.models import ExecutionResult
     with pytest.raises(ValidationError, match="valid integer|attempt counts must be integers"):
         ExecutionResult(plan=Plan(nodes=[node("pending")]), attempts={"pending": count})
-
 
 @pytest.mark.anyio
 async def test_executor_revalidates_capability_evidence_before_admission() -> None:
@@ -538,7 +508,6 @@ async def test_executor_revalidates_capability_evidence_before_admission() -> No
     )
     assert result.plan.nodes[0].status == PlanStatus.FAILED
     assert "evidence identity" in result.errors["record"][0]
-
 
 def test_execution_result_bounds_errors_per_node() -> None:
     from pydantic import ValidationError
@@ -602,7 +571,6 @@ async def test_requirement_coverage_rejects_semantically_wrong_capability() -> N
     )])
     with pytest.raises(ValueError, match="cannot satisfy requirement"):
         await executor.execute(task, wrong)
-
 
 @pytest.mark.anyio
 async def test_matchup_plan_executes_prediction_with_covered_requirement():
@@ -680,7 +648,6 @@ async def test_dependent_entity_argument_cannot_drift_from_resolution():
         "ValueError: dependent argument 'team' requires a resolved team identity"
     ]
 
-
 @pytest.mark.anyio
 async def test_dependent_entity_argument_accepts_canonical_alias():
     from datetime import UTC, datetime
@@ -727,7 +694,6 @@ async def test_typed_requirements_allow_supported_execution_when_intake_evidence
         "player_report", {"ppg": 33.9})}).execute(task, plan)
     assert result.evidence[0].capability == "player_report"
 
-
 def _owned_execution(*, reordered=False, control=False):
     from datetime import UTC,datetime
     from v2.contracts import EvidenceEnvelope,Plan,PlanNode
@@ -740,12 +706,10 @@ def _owned_execution(*, reordered=False, control=False):
     attempts={n.id:1 for n in nodes}
     return ExecutionResult(plan=Plan(nodes=nodes),evidence_by_node=owned,attempts=attempts)
 
-
 def test_execution_ownership_is_explicit_under_reorder_and_control_node():
     execution=_owned_execution(reordered=True,control=True)
     assert execution.evidence_by_node["n1"].evidence_id=="one"
     assert "resolve" not in execution.evidence_by_node
-
 
 def test_execution_rejects_orphan_wrong_node_and_duplicate_evidence():
     from pydantic import ValidationError
@@ -754,7 +718,6 @@ def test_execution_rejects_orphan_wrong_node_and_duplicate_evidence():
     with pytest.raises(ValidationError):type(good).model_validate(payload)
     payload=good.model_dump();payload["evidence_by_node"]["n2"]=payload["evidence_by_node"]["n1"]
     with pytest.raises(ValidationError):type(good).model_validate(payload)
-
 
 def test_evidence_binding_preserves_zero_false_and_rejects_wrong_authority():
     from v2.contracts import TaskSpec,EvidenceRequirement,DraftReport,Claim,VerifiedClaim,EvidenceOutputBinding
@@ -772,7 +735,6 @@ def test_evidence_binding_preserves_zero_false_and_rejects_wrong_authority():
         bad_claim=Claim(text="bad",kind="observed",evidence_ids=["one"],output_bindings=[binding])
         verified=VerifiedClaim(claim_index=0,claim=bad_claim,evidence_ids=["one"],output_bindings=[binding])
         with pytest.raises(ValueError):admit_verified_claim_bindings(task,execution,draft,verified)
-
 
 def test_binding_rejects_existing_wrong_metric_and_wrong_capability():
     from v2.contracts import (TaskSpec, EvidenceRequirement, DraftReport, Claim,
@@ -813,7 +775,6 @@ def test_binding_rejects_existing_wrong_metric_and_wrong_capability():
             VerifiedClaim(claim_index=0, claim=claim,
                 evidence_ids=["one"], output_bindings=[binding]))
 
-
 def test_task_output_binding_and_selector_local_subject():
     from datetime import UTC, datetime
     from v2.contracts import (TaskSpec, DraftReport, Claim, VerifiedClaim,
@@ -845,13 +806,11 @@ def test_task_output_binding_and_selector_local_subject():
             VerifiedClaim(claim_index=0, claim=wrong_claim,
                 evidence_ids=["pair"], output_bindings=[wrong]))
 
-
 def test_calculation_binding_requires_exact_calculation_and_requirement():
-    from decimal import Decimal
     from v2.contracts import TaskSpec,CalculationRequirement,DraftReport,Claim,VerifiedClaim,CalculationOutputBinding,DeclaredCalculation,DeclaredCalculationInput
     from v2.runtime.models import admit_verified_claim_bindings
     task=TaskSpec(goal="delta",mode="quick",deliverable="answer",calculation_requirements=[CalculationRequirement(id="delta",description="delta",requested_outputs=["PTS_DELTA"])])
-    execution=_owned_execution();calc=DeclaredCalculation(calculation_id="c",requirement_id="delta",operation="subtract",inputs=[DeclaredCalculationInput(evidence_id="one",path="rows.WINS"),DeclaredCalculationInput(evidence_id="two",path="rows.LOSSES")],result=Decimal("-7"))
+    execution=_owned_execution();calc=DeclaredCalculation(calculation_id="c",requirement_id="delta",operation="subtract",inputs=[DeclaredCalculationInput(evidence_id="one",path="rows.WINS"),DeclaredCalculationInput(evidence_id="two",path="rows.LOSSES")],result="-7")
     binding=CalculationOutputBinding(requirement_id="delta",output_id="PTS_DELTA",calculation_id="c")
     claim=Claim(text="delta is -7",kind="derived",evidence_ids=["one","two"],calculation_id="c",output_bindings=[binding]);draft=DraftReport(sections=[],claims=[claim],calculations=[calc]);verified=VerifiedClaim(claim_index=0,claim=claim,evidence_ids=["one","two"],output_bindings=[binding])
     assert admit_verified_claim_bindings(task,execution,draft,verified) is verified
@@ -860,39 +819,32 @@ def test_calculation_binding_requires_exact_calculation_and_requirement():
     bad=VerifiedClaim(claim_index=0,claim=bad_claim,evidence_ids=["one","two"],output_bindings=[wrong])
     with pytest.raises(ValueError):admit_verified_claim_bindings(task,execution,draft,bad)
 
-
 def _rank_admit(*, unit, result):
     from datetime import UTC,datetime
-    from decimal import Decimal
     from v2.contracts import CalculationRequirement,Claim,DraftReport,EvidenceEnvelope,Plan,PlanNode,TaskSpec,VerifiedClaim,CalculationOutputBinding,DeclaredCalculation,DeclaredCalculationInput
     from v2.runtime.models import ExecutionResult,admit_verified_claim_bindings
     task=TaskSpec(goal="rank",mode="quick",deliverable="rank",calculation_requirements=[CalculationRequirement(id="r",description="rank",requested_outputs=["RANK"])])
     envelope=EvidenceEnvelope(evidence_id="ev",capability="standings",source="fixture",observed_at=datetime.now(UTC),rows=[{"SCORE":119.5},{"SCORE":110.1}])
     execution=ExecutionResult(plan=Plan(nodes=[PlanNode(id="n",description="n",capability_hints=["standings"],status="complete")]),evidence_by_node={"n":envelope},attempts={"n":1})
-    calc=DeclaredCalculation(calculation_id="rank1",requirement_id="r",operation="rank_desc",inputs=[DeclaredCalculationInput(evidence_id="ev",path="rows[0].SCORE"),DeclaredCalculationInput(evidence_id="ev",path="rows[1].SCORE")],result=Decimal(str(result)),unit=unit,subject_input=0)
+    calc=DeclaredCalculation(calculation_id="rank1",requirement_id="r",operation="rank_desc",inputs=[DeclaredCalculationInput(evidence_id="ev",path="rows[0].SCORE"),DeclaredCalculationInput(evidence_id="ev",path="rows[1].SCORE")],result=str(result),unit=unit,subject_input=0)
     binding=CalculationOutputBinding(requirement_id="r",output_id="RANK",calculation_id="rank1")
     claim=Claim(text="rank is 1",kind="derived",evidence_ids=["ev"],calculation_id="rank1",output_bindings=[binding]);draft=DraftReport(sections=[],claims=[claim],calculations=[calc]);verified=VerifiedClaim(claim_index=0,claim=claim,evidence_ids=["ev"],output_bindings=[binding])
     return admit_verified_claim_bindings(task,execution,draft,verified)
 
-
 def test_rank_calculation_with_rank_unit_admits():
     assert _rank_admit(unit="rank",result="1") is not None
-
 
 @pytest.mark.parametrize("unit",[None,"unitless"])
 def test_rank_calculation_with_unitless_admits(unit):
     assert _rank_admit(unit=unit,result="1") is not None
 
-
 def test_rank_calculation_with_metric_unit_rejects():
     with pytest.raises(ValueError,match="rank calculation unit must be rank or unitless"):
         _rank_admit(unit="points_per_100_possessions",result="1")
 
-
 def test_invented_rank_value_fails_recomputation():
     with pytest.raises(ValueError,match="did not pass recomputation"):
         _rank_admit(unit="rank",result="2")
-
 
 def test_checkpoint_v2_roundtrip_and_rejects_legacy_shape(tmp_path):
     import json
@@ -902,7 +854,6 @@ def test_checkpoint_v2_roundtrip_and_rejects_legacy_shape(tmp_path):
     assert loaded==checkpoint and loaded.version==2
     payload=checkpoint.model_dump();payload.pop("version");(tmp_path/"old.json").write_text(json.dumps(payload,default=str))
     with pytest.raises(Exception):store.load("old")
-
 
 def test_execution_and_binding_serialization_preserves_explicit_identity():
     from v2.contracts import Claim, EvidenceOutputBinding, VerifiedClaim
@@ -927,7 +878,6 @@ def test_execution_and_binding_serialization_preserves_explicit_identity():
     assert VerifiedClaim.model_validate_json(
         verified.model_dump_json()) == verified
 
-
 def test_verified_claim_authority_is_separate_from_untrusted_claim_proposal():
     from v2.contracts import Claim, EvidenceOutputBinding, VerifiedClaim
 
@@ -941,7 +891,6 @@ def test_verified_claim_authority_is_separate_from_untrusted_claim_proposal():
         claim_index=0, claim=claim, evidence_ids=["one"], output_bindings=[])
     assert verified.claim.output_bindings == [binding]
     assert verified.output_bindings == []
-
 
 def test_binding_value_exactness_numeric_types_and_boolean_zero_distinction():
     from v2.contracts import (TaskSpec, EvidenceRequirement, DraftReport, Claim,
@@ -963,7 +912,6 @@ def test_binding_value_exactness_numeric_types_and_boolean_zero_distinction():
                 evidence_ids=["one"], output_bindings=[binding]))
     assert check("WINS", "rows.WINS", {"kind":"integer","value":0},
                  {"kind":"declared","value":"count"})
-    from decimal import Decimal
     with pytest.raises(Exception):
         check("WINS", "rows.WINS", {"kind":"integer","value":"0"},
               {"kind":"declared","value":"count"})
@@ -977,7 +925,6 @@ def test_binding_value_exactness_numeric_types_and_boolean_zero_distinction():
         with pytest.raises(ValueError, match="value"):
             check("WINS", "rows.WINS", value,
                   {"kind":"declared","value":"count"})
-
 
 def test_numeric_output_json_boundary_rejects_strings_and_roundtrips_numbers():
     import json
@@ -1006,7 +953,6 @@ def test_numeric_output_json_boundary_rejects_strings_and_roundtrips_numbers():
         if value["kind"] == "decimal":
             assert binding.value.value == value["value"]
             assert Decimal(binding.value.value).is_finite()
-
 
 def test_subject_selector_rejects_mixed_entity_id_and_allows_nested_metric():
     from datetime import UTC, datetime
@@ -1039,7 +985,6 @@ def test_subject_selector_rejects_mixed_entity_id_and_allows_nested_metric():
     evidence.rows[0]["PLAYER_ID"] = "23"
     assert validate("rows[0].PLAYER_ID")
 
-
 def test_numeric_variants_reject_cross_type_coercion_in_json_and_python():
     import json
     from v2.contracts import EvidenceOutputBinding
@@ -1058,7 +1003,6 @@ def test_numeric_variants_reject_cross_type_coercion_in_json_and_python():
         with pytest.raises(Exception):
             EvidenceOutputBinding.model_validate_json(
                 json.dumps(dict(base, value=value)))
-
 
 def test_keyed_map_row_selector_blocks_sibling_and_prefix_tricks():
     from datetime import UTC, datetime
@@ -1096,7 +1040,6 @@ def test_keyed_map_row_selector_blocks_sibling_and_prefix_tricks():
     with pytest.raises(ValueError, match="direct row child"):
         validate("rows.lebron_extra.PLAYER_ID", "rows.lebron")
 
-
 def test_broad_row_selector_cannot_join_sibling_subject_and_metric():
     from datetime import UTC, datetime
     from v2.contracts import (TaskSpec, DraftReport, Claim, VerifiedClaim,
@@ -1129,7 +1072,6 @@ def test_broad_row_selector_cannot_join_sibling_subject_and_metric():
             {"PLAYER_ID":"23","stats":{"PTS":30}}],
            "rows[0].stats.PTS", "rows[1].PLAYER_ID", "rows")
 
-
 @pytest.mark.anyio
 async def test_declared_replan_supersedes_the_recorded_checkpoint_plan(tmp_path):
     from v2.runtime.checkpoints import FileCheckpointStore
@@ -1151,7 +1093,6 @@ async def test_declared_replan_supersedes_the_recorded_checkpoint_plan(tmp_path)
         item.status == PlanStatus.COMPLETE for item in result.plan.nodes)
     assert not (tmp_path / "r.json").exists()
 
-
 @pytest.mark.anyio
 async def test_silent_plan_drift_against_the_checkpoint_still_raises(tmp_path):
     from v2.runtime.checkpoints import FileCheckpointStore
@@ -1165,7 +1106,6 @@ async def test_silent_plan_drift_against_the_checkpoint_still_raises(tmp_path):
     with pytest.raises(ValueError, match="checkpoint plan does not match"):
         await PlanExecutor(capabilities, checkpoint_store=store).execute(
             task, Plan(nodes=[node("b")]), run_id="r")
-
 
 @pytest.mark.anyio
 async def test_structured_name_resolution_error_code_survives_checkpoint_replay(tmp_path):
@@ -1185,7 +1125,6 @@ async def test_structured_name_resolution_error_code_survives_checkpoint_replay(
     assert result.error_codes == {"profile": [ExecutionErrorCode.PROFILE_NAME_RESOLUTION_UNAVAILABLE]}
     raw = (tmp_path / "r.json").read_text()
     assert '"profile/name_resolution_unavailable"' in raw
-
 
 def _seed_completed_season_boxscores(monkeypatch, tmp_path):
     import duckdb
@@ -1239,7 +1178,6 @@ def _seed_completed_season_boxscores(monkeypatch, tmp_path):
     connection.close()
     monkeypatch.setattr(store, "DB_PATH", warehouse)
     return warehouse
-
 
 @pytest.mark.anyio
 async def test_completed_season_leader_executes_with_valued_evidence(

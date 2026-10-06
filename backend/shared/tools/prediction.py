@@ -5,7 +5,7 @@ from typing import Any, NamedTuple
 import numpy as np
 from langchain_core.tools import tool
 
-from ._core import clamp_season, coerce_team_id, is_past_game_date, last_completed_season, resolve_season
+from ._core import clamp_season, coerce_team_id, is_past_game_date, resolve_season
 from .preview import (
     _abbrev,
     _entity_date,
@@ -29,17 +29,14 @@ STATUS_PENALTY = {
 MAX_INJURY_PENALTY = 3.0
 STALE_HOURS = 72
 
-
 def _err(message: str) -> dict[str, Any]:
     return {"tool": "get_game_prediction", "ok": False, "error": message}
-
 
 def _num(value: object) -> float | None:
     try:
         return float(value)
     except (TypeError, ValueError):
         return None
-
 
 def _full_name(team_id: int) -> str:
     from nba_api.stats.static import teams
@@ -48,7 +45,6 @@ def _full_name(team_id: int) -> str:
         if t.get("id") == team_id:
             return str(t.get("full_name", ""))
     return ""
-
 
 STORED_RATINGS_TABLE = "silver_team_ratings"
 HIST_RATINGS_TABLE = "silver_hist_gamelogs"
@@ -100,25 +96,19 @@ _RATINGS_DECLARED = {
     RATINGS_DERIVED: f"{HIST_RATINGS_TABLE} (derived offline)",
 }
 
-
 class RatingsSource(NamedTuple):
-    """Which source produced a season's team ratings, and from what."""
 
     kind: str
     table: str
 
     @property
     def declared(self) -> str:
-        """Source token that names what produced the numbers."""
         return _RATINGS_DECLARED[self.kind]
-
 
 STORED_RATINGS = RatingsSource(RATINGS_STORED, STORED_RATINGS_TABLE)
 DERIVED_RATINGS = RatingsSource(RATINGS_DERIVED, HIST_RATINGS_TABLE)
 
-
 def ratings_unavailable(season: str, available: list[str] | None = None) -> str:
-    """Why no ratings exist for a season, naming every candidate source."""
     message = (f"Team ratings for the {season} season are not available: "
                f"{STORED_RATINGS_TABLE} has no rows for it and "
                f"{HIST_RATINGS_TABLE} has no game log to derive them from.")
@@ -126,14 +116,12 @@ def ratings_unavailable(season: str, available: list[str] | None = None) -> str:
         message += f" Available seasons: {', '.join(available)}."
     return message + " Which season should be used instead?"
 
-
 def _rating_values(row: tuple) -> dict[str, Any]:
     vals = {k: _num(v) for k, v in zip(("off", "def", "net", "pace"),
                                        row[1:5])}
     if any(v is None for v in vals.values()):
         return {}
     return {**vals, "gp": int(row[5]), "w": int(row[6]), "l": int(row[7])}
-
 
 def _stored_ratings(con: Any, season: str) -> dict[int, dict[str, Any]]:
     rows = con.execute(
@@ -149,7 +137,6 @@ def _stored_ratings(con: Any, season: str) -> dict[int, dict[str, Any]]:
             out[row[0]] = {**values, "fetched_at": row[8]}
     return out
 
-
 def _derived_ratings(con: Any, season: str) -> dict[int, dict[str, Any]]:
     rows = con.execute(_HIST_RATINGS_SQL, [season]).fetchall()
     out: dict[int, dict[str, Any]] = {}
@@ -159,18 +146,9 @@ def _derived_ratings(con: Any, season: str) -> dict[int, dict[str, Any]]:
             out[row[0]] = {**values, "fetched_at": None}
     return out
 
-
 def season_team_ratings(
     con: Any, season: str,
 ) -> tuple[dict[int, dict[str, Any]], RatingsSource | None]:
-    """Team ratings for one season keyed by team id, plus the one source.
-
-    Stored rows win whenever the stored ratings table holds the season;
-    otherwise the offline game-log derivation answers. A season no offline
-    source can serve returns no ratings and no source, so callers fail loud
-    instead of reaching for the network. Every consumer of team ratings reads
-    this one function, so one quantity carries one provenance.
-    """
     season = resolve_season(season)
     tables = {row[0] for row in con.execute("SHOW TABLES").fetchall()}
     if STORED_RATINGS_TABLE in tables:
@@ -183,13 +161,11 @@ def season_team_ratings(
             return derived, DERIVED_RATINGS
     return {}, None
 
-
 def _league_ratings(ratings: dict[int, dict[str, Any]]) -> dict[str, float]:
     if not ratings:
         return {}
     return {"off": float(np.mean([r["off"] for r in ratings.values()])),
             "def": float(np.mean([r["def"] for r in ratings.values()]))}
-
 
 def _injury_penalty(con: Any, full_name: str,
                     season: str) -> dict[str, Any]:
@@ -235,7 +211,6 @@ def _injury_penalty(con: Any, full_name: str,
         "no players listed out; no adjustment applied"
     return out
 
-
 def _simulate(home_ppg: float, away_ppg: float,
               n_sims: int, seed: int) -> dict[str, Any]:
     rng = np.random.default_rng(seed)
@@ -257,7 +232,6 @@ def _simulate(home_ppg: float, away_ppg: float,
         "margin_ci90": [float(np.percentile(margin, 5)),
                         float(np.percentile(margin, 95))],
     }
-
 
 def _find_meeting(season: str, ida: int, idb: int,
                   game_date: str) -> tuple[int | None, int | None, str, bool]:
@@ -282,12 +256,10 @@ def _find_meeting(season: str, ida: int, idb: int,
     home, away = _row_team_ids(row)
     return home, away, _entity_date(row) or days[0], True
 
-
-@tool
+@tool(description='Pre-game Monte Carlo prediction: win probability, projected score/total, and confidence intervals. Model estimates with documented methodology, not betting picks. Two team names/abbrevs/ids; optional game_date (MM/DD/YYYY), n_sims, seed for reproducibility.')
 def get_game_prediction(a: str = "", b: str = "", game_date: str = "",
                         season: str | None = None, n_sims: int = DEFAULT_SIMS,
                         seed: int = DEFAULT_SEED) -> dict[str, Any]:
-    """Pre-game Monte Carlo prediction: win probability, projected score/total, and confidence intervals. Model estimates with documented methodology, not betting picks. Two team names/abbrevs/ids; optional game_date (MM/DD/YYYY), n_sims, seed for reproducibility."""
     season = resolve_season(season)
     from .. import store
 
@@ -363,7 +335,6 @@ def get_game_prediction(a: str = "", b: str = "", game_date: str = "",
     home_ppg = home_per100 * pace / 100
     away_ppg = away_per100 * pace / 100
     hca = 0.0 if neutral else HOME_COURT_PTS
-
 
     hp, ap = home_inj["penalty"], away_inj["penalty"]
     home_ppg = home_ppg + hca / 2 - hp / 2 + ap / 2

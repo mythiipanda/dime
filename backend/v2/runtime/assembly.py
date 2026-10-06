@@ -26,7 +26,6 @@ from v2.adapters.web import WebFetchRequest, WebSearchRequest
 from v2.adapters.capabilities import CAPABILITY_DESCRIPTIONS
 from v2.skills import SkillLibrary
 
-
 class MechanicalVerifier:
     async def verify(self, task, draft, evidence) -> VerificationReport:
         from pydantic import ValidationError
@@ -53,7 +52,6 @@ class MechanicalVerifier:
             )
         return verify_mechanical(task, draft, list(evidence.values()), calculations)
 
-
 class EvidenceBoundRepair:
     async def repair(self, task, draft, evidence, verification) -> DraftReport:
         rejected = {
@@ -72,7 +70,6 @@ class EvidenceBoundRepair:
         ]))
         return draft.model_copy(update={"claims": claims, "gaps": gaps})
 
-
 def _structural_schema(value):
     if isinstance(value, dict):
         return {
@@ -83,7 +80,6 @@ def _structural_schema(value):
     if isinstance(value, list):
         return [_structural_schema(item) for item in value]
     return value
-
 
 def capability_catalog() -> dict[str, dict]:
     from shared.tools import v1_tools
@@ -112,7 +108,6 @@ def capability_catalog() -> dict[str, dict]:
     })
     return catalog
 
-
 def build_runtime(
     *,
     provider: ProviderName,
@@ -126,6 +121,7 @@ def build_runtime(
     run_timeout_s: float | None = None,
     node_timeout_s: float | None = None,
     diagnostics: bool = False,
+    context_token_budget: int | None = None,
 ) -> tuple[Runtime, RunLedger | FileLedger]:
     if not run_id or any(
         char not in "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_"
@@ -183,5 +179,6 @@ def build_runtime(
         pre_tool_timeout_s=pre_tool_timeout_s,
         run_timeout_s=run_timeout_s,
         diagnostics=diagnostics,
+        context_token_budget=context_token_budget,
     )
     return runtime, ledger

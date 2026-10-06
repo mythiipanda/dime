@@ -3,7 +3,6 @@ from v2.runtime.shadow import (
     DifferenceKind, RunOutcome, ShadowStore, compare_outcomes,
 )
 
-
 def outcome(**updates):
     values = {
         "status": "ok", "answer": "Boston won 61 games.",
@@ -13,7 +12,6 @@ def outcome(**updates):
     values.update(updates)
     return RunOutcome(**values)
 
-
 def test_shadow_comparison_validates_request_boundary():
     for request in (" ", "x" * 2001):
         with pytest.raises(ValueError, match="shadow request"):
@@ -21,20 +19,17 @@ def test_shadow_comparison_validates_request_boundary():
     with pytest.raises(TypeError, match="shadow request"):
         compare_outcomes(7, outcome(), outcome())
 
-
 def test_equal_outcomes_have_no_differences_and_hide_request():
     comparison = compare_outcomes("What is Boston's record?", outcome(), outcome())
     assert comparison.differences == []
     assert "Boston's" not in comparison.model_dump_json()
     assert len(comparison.request_hash) == 64
 
-
 def test_ok_shadow_outcome_cannot_encode_blank_success():
     from pydantic import ValidationError
 
     with pytest.raises(ValidationError, match="non-empty answer"):
         outcome(answer=" ")
-
 
 def test_comparison_classifies_answer_route_grounding_and_failure():
     comparison = compare_outcomes(
@@ -46,7 +41,6 @@ def test_comparison_classifies_answer_route_grounding_and_failure():
         DifferenceKind.FAILURE, DifferenceKind.ANSWER,
         DifferenceKind.ROUTE, DifferenceKind.GROUNDING,
     ]
-
 
 def test_grounding_drift_requires_comparable_claim_metrics():
     comparison = compare_outcomes(
@@ -70,14 +64,12 @@ def test_equal_non_ok_outcomes_remain_failure_drift() -> None:
         "record?", outcome(status="partial"), outcome(status="partial"))
     assert comparison.differences == [DifferenceKind.FAILURE]
 
-
 def test_shadow_store_is_append_only(tmp_path):
     store = ShadowStore(tmp_path / "shadow.jsonl")
     comparison = compare_outcomes("record?", outcome(), outcome())
     store.append(comparison)
     store.append(comparison)
     assert store.read() == [comparison, comparison]
-
 
 def test_shadow_gate_requires_volume_and_bounded_drift():
     from v2.runtime.shadow import ShadowGatePolicy, evaluate_shadow_gate
@@ -93,7 +85,6 @@ def test_shadow_gate_requires_volume_and_bounded_drift():
     assert report.ready
     assert report.answer_drift_rate == .5
 
-
 def test_shadow_gate_counts_repeated_equal_runs():
     from v2.runtime.shadow import ShadowGatePolicy, evaluate_shadow_gate
 
@@ -102,7 +93,6 @@ def test_shadow_gate_counts_repeated_equal_runs():
         [comparison, comparison], ShadowGatePolicy(minimum_runs=2))
     assert report.ready
     assert report.total_runs == 2
-
 
 def test_shadow_gate_reports_every_failed_threshold():
     from v2.runtime.shadow import ShadowGatePolicy, evaluate_shadow_gate
@@ -120,7 +110,6 @@ def test_shadow_gate_reports_every_failed_threshold():
     assert not report.ready
     assert len(report.blockers) == 5
     assert report.blockers[0] == "need 1 more shadow runs"
-
 
 def test_shadow_persisted_contracts_reject_unknown_fields() -> None:
     import pytest
@@ -146,7 +135,6 @@ def test_shadow_persisted_contracts_reject_unknown_fields() -> None:
             "invented": True,
         })
 
-
 def test_shadow_outcome_rejects_unknown_status() -> None:
     import pytest
     from pydantic import ValidationError
@@ -155,7 +143,6 @@ def test_shadow_outcome_rejects_unknown_status() -> None:
         with pytest.raises(ValidationError, match="Input should be"):
             outcome(status=status)
 
-
 def test_shadow_claim_metrics_are_jointly_known_or_unknown() -> None:
     from pydantic import ValidationError
 
@@ -163,14 +150,12 @@ def test_shadow_claim_metrics_are_jointly_known_or_unknown() -> None:
     with pytest.raises(ValidationError, match="both be known or unknown"):
         outcome(supported_claims=None, total_claims=1)
 
-
 def test_ok_shadow_outcome_rejects_incomplete_claim_support() -> None:
     import pytest
     from pydantic import ValidationError
 
     with pytest.raises(ValidationError, match="every claim"):
         outcome(status="ok", supported_claims=0, total_claims=1)
-
 
 def test_shadow_comparison_rejects_bad_identity_and_duplicate_differences() -> None:
     import pytest
@@ -186,7 +171,6 @@ def test_shadow_comparison_rejects_bad_identity_and_duplicate_differences() -> N
     ]:
         with pytest.raises(ValidationError, match=error):
             ShadowComparison(**{**base, **changes})
-
 
 def test_shadow_gate_report_rejects_impossible_state() -> None:
     import pytest
@@ -205,7 +189,6 @@ def test_shadow_gate_report_rejects_impossible_state() -> None:
         with pytest.raises(ValidationError, match=error):
             ShadowGateReport(**{**base, **changes})
 
-
 def test_v2_outcome_preserves_nonpassing_verification_status() -> None:
     from v2.contracts import DraftReport, Plan, TaskSpec, VerificationReport
     from v2.runtime.models import ExecutionResult, RuntimeResult
@@ -223,7 +206,6 @@ def test_v2_outcome_preserves_nonpassing_verification_status() -> None:
     comparison = compare_outcomes("answer?", outcome(status="ok"), v2_outcome)
     assert DifferenceKind.FAILURE in comparison.differences
 
-
 def test_shadow_store_serializes_independent_writers(tmp_path):
     from concurrent.futures import ThreadPoolExecutor
 
@@ -236,7 +218,6 @@ def test_shadow_store_serializes_independent_writers(tmp_path):
         item.comparison_id for item in comparisons
     }
 
-
 def test_shadow_store_rejects_blank_persisted_records(tmp_path):
     import pytest
 
@@ -246,7 +227,6 @@ def test_shadow_store_rejects_blank_persisted_records(tmp_path):
     path.write_text(path.read_text() + "\n")
     with pytest.raises(ValueError, match="blank records"):
         store.read()
-
 
 def test_shadow_comparison_rejects_forged_derived_fields() -> None:
     import pytest
@@ -259,7 +239,6 @@ def test_shadow_comparison_rejects_forged_derived_fields() -> None:
         ShadowComparison.model_validate({**payload, "differences": []})
     with pytest.raises(ValidationError, match="comparison id does not match"):
         ShadowComparison.model_validate({**payload, "comparison_id": "0" * 24})
-
 
 def test_v2_outcome_deduplicates_reused_capability_route() -> None:
     from datetime import UTC, datetime
@@ -300,14 +279,12 @@ def test_v2_outcome_deduplicates_reused_capability_route() -> None:
     )
     assert outcome_from_v2(result, "answer").capabilities == ["player_report"]
 
-
 def test_v2_outcome_revalidates_runtime_result() -> None:
     from v2.runtime.shadow import outcome_from_v2
 
     invalid = outcome(status="partial")
     with pytest.raises(Exception):
         outcome_from_v2(invalid, "answer")
-
 
 def test_shadow_store_rejects_symlinked_record(tmp_path):
     import pytest
@@ -320,7 +297,6 @@ def test_shadow_store_rejects_symlinked_record(tmp_path):
         ShadowStore(path)
     assert outside.read_text() == ""
 
-
 @pytest.mark.parametrize("value", [float("nan"), float("inf"), float("-inf")])
 def test_shadow_gate_report_rejects_nonfinite_rates(value) -> None:
     from pydantic import ValidationError
@@ -332,7 +308,6 @@ def test_shadow_gate_report_rejects_nonfinite_rates(value) -> None:
             route_drift_rate=0, answer_drift_rate=0, ready=True,
         )
 
-
 @pytest.mark.parametrize("field", [
     "evidence_count", "supported_claims", "total_claims", "duration_ms",
 ])
@@ -340,7 +315,6 @@ def test_shadow_outcome_rejects_boolean_counts(field) -> None:
     from pydantic import ValidationError
     with pytest.raises(ValidationError):
         outcome(**{field: True})
-
 
 def test_shadow_gate_counts_reject_booleans() -> None:
     from pydantic import ValidationError
@@ -353,7 +327,6 @@ def test_shadow_gate_counts_reject_booleans() -> None:
             route_drift_rate=0, answer_drift_rate=0, ready=True,
         )
 
-
 def test_shadow_store_rejects_symlinked_parent(tmp_path):
     outside = tmp_path / "outside"
     outside.mkdir()
@@ -361,7 +334,6 @@ def test_shadow_store_rejects_symlinked_parent(tmp_path):
     parent.symlink_to(outside, target_is_directory=True)
     with pytest.raises(ValueError, match="parent cannot be a symlink"):
         ShadowStore(parent / "shadow.jsonl")
-
 
 @pytest.mark.parametrize("field_name", [
     "maximum_failure_rate", "maximum_grounding_drift_rate",
@@ -373,7 +345,6 @@ def test_shadow_policy_rates_are_strict_floats(field_name) -> None:
     with pytest.raises(ValidationError):
         ShadowGatePolicy(**{field_name: "0.1"})
 
-
 def test_shadow_gate_revalidates_copied_policy() -> None:
     from pydantic import ValidationError
     from v2.runtime.shadow import ShadowGatePolicy, evaluate_shadow_gate
@@ -381,7 +352,6 @@ def test_shadow_gate_revalidates_copied_policy() -> None:
         update={"maximum_failure_rate": float("nan")})
     with pytest.raises(ValidationError, match="less than or equal"):
         evaluate_shadow_gate([], unsafe)
-
 
 def test_shadow_gate_revalidates_copied_comparisons() -> None:
     from pydantic import ValidationError
@@ -391,7 +361,6 @@ def test_shadow_gate_revalidates_copied_comparisons() -> None:
     with pytest.raises(ValidationError, match="do not match recorded outcomes"):
         evaluate_shadow_gate([unsafe])
 
-
 def test_shadow_store_revalidates_copied_comparison(tmp_path):
     from pydantic import ValidationError
     valid = compare_outcomes("request", outcome(), outcome())
@@ -400,13 +369,11 @@ def test_shadow_store_revalidates_copied_comparison(tmp_path):
         ShadowStore(tmp_path / "shadow.jsonl").append(unsafe)
     assert not (tmp_path / "shadow.jsonl").exists()
 
-
 def test_compare_outcomes_revalidates_copied_inputs() -> None:
     from pydantic import ValidationError
     invalid = outcome().model_copy(update={"supported_claims": -1})
     with pytest.raises(ValidationError, match="non-negative"):
         compare_outcomes("request", invalid, outcome())
-
 
 def test_shadow_store_serializes_independent_processes(tmp_path):
     import multiprocessing
@@ -430,7 +397,6 @@ def test_shadow_store_serializes_independent_processes(tmp_path):
     assert sorted(item.comparison_id for item in ShadowStore(path).read()) == sorted(
         item.comparison_id for item in comparisons)
 
-
 def test_shadow_store_repairs_truncated_final_record(tmp_path):
     path = tmp_path / "shadow.jsonl"
     store = ShadowStore(path)
@@ -444,7 +410,6 @@ def test_shadow_store_repairs_truncated_final_record(tmp_path):
     assert path.read_text().endswith("\n")
     store.append(second)
     assert store.read() == [first, second]
-
 
 def test_shadow_store_normalizes_complete_record_without_newline(tmp_path):
     path = tmp_path / "shadow.jsonl"

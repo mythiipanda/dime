@@ -5,12 +5,10 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from shared.tools._core import coerce_team_id  # noqa: E402
-
+from shared.tools._core import coerce_team_id
 
 def _without_nba_teams(monkeypatch):
     monkeypatch.setitem(sys.modules, "nba_api.stats.static.teams", None)
-
 
 def test_aliases_resolve_without_nba_api(monkeypatch):
     _without_nba_teams(monkeypatch)
@@ -20,12 +18,10 @@ def test_aliases_resolve_without_nba_api(monkeypatch):
     assert coerce_team_id("1610612738") == 1610612738
     assert coerce_team_id("ATL") == 1610612737
 
-
 def test_unknown_team_still_raises_without_nba_api(monkeypatch):
     _without_nba_teams(monkeypatch)
     with pytest.raises(ValueError, match="unknown team"):
         coerce_team_id("London Lions")
-
 
 def test_blank_team_name_is_rejected(monkeypatch):
     _without_nba_teams(monkeypatch)
@@ -33,12 +29,10 @@ def test_blank_team_name_is_rejected(monkeypatch):
         with pytest.raises(ValueError, match="unknown team"):
             coerce_team_id(probe)
 
-
 def test_blank_team_name_is_rejected_with_live_lookup():
     for probe in ("", "   "):
         with pytest.raises(ValueError, match="unknown team"):
             coerce_team_id(probe)
-
 
 def test_short_fragments_are_not_guessed_as_teams(monkeypatch):
     _without_nba_teams(monkeypatch)
@@ -46,12 +40,10 @@ def test_short_fragments_are_not_guessed_as_teams(monkeypatch):
         with pytest.raises(ValueError, match="unknown team"):
             coerce_team_id(probe)
 
-
 def test_short_fragments_are_not_guessed_with_live_lookup():
     for probe in ("a", "LA", "NY"):
         with pytest.raises(ValueError, match="unknown team"):
             coerce_team_id(probe)
-
 
 def test_fabricated_longer_names_are_rejected(monkeypatch):
     _without_nba_teams(monkeypatch)
@@ -60,13 +52,11 @@ def test_fabricated_longer_names_are_rejected(monkeypatch):
         with pytest.raises(ValueError, match="unknown team"):
             coerce_team_id(probe)
 
-
 def test_fabricated_longer_names_are_rejected_with_live_lookup():
     for probe in ("Springfield Thunder", "Queens Cobras", "Hawk",
                   "Los Angeles", "Los", "New"):
         with pytest.raises(ValueError, match="unknown team"):
             coerce_team_id(probe)
-
 
 def test_legit_city_and_nickname_aliases_resolve(monkeypatch):
     _without_nba_teams(monkeypatch)
@@ -81,7 +71,6 @@ def test_legit_city_and_nickname_aliases_resolve(monkeypatch):
     assert coerce_team_id("State Warriors") == 1610612744
     assert coerce_team_id("Boston Celtics") == 1610612738
     assert coerce_team_id("dubs") == 1610612744
-
 
 def test_static_aliases_match_live_lookup_for_all_teams():
     from nba_api.stats.static import teams as live

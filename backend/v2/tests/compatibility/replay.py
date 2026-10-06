@@ -14,14 +14,12 @@ _ALLOWED_TURN = {"evidence", "tools"}
 _FORBIDDEN = {"prompt", "question", "answer", "messages", "transcript"}
 _ALLOWED_TOOL = {"call_id", "name", "args", "status", "error"}
 
-
 def _reject_symlinked_path(path: Path) -> None:
     if path.is_symlink():
         raise ValueError("replay file cannot be a symlink")
     parent = path.parent
     if any(component.is_symlink() for component in (parent, *parent.parents)):
         raise ValueError("replay file parent cannot be a symlink")
-
 
 def _validate_tool(tool: Any) -> dict[str, Any]:
     if not isinstance(tool, dict) or set(tool) != _ALLOWED_TOOL:
@@ -42,7 +40,6 @@ def _validate_tool(tool: Any) -> dict[str, Any]:
         raise ValueError("replay tool status must be ok or failed")
     return tool
 
-
 def _reject_forbidden(value: Any) -> None:
     if isinstance(value, dict):
         forbidden = sorted(
@@ -54,7 +51,6 @@ def _reject_forbidden(value: Any) -> None:
     elif isinstance(value, list):
         for child in value:
             _reject_forbidden(child)
-
 
 def save_replay(path: Path, scenario_id: str, revision: str,
                 turns: list[tuple[list[EvidenceEnvelope], list[dict[str, Any]]]]) -> None:
@@ -88,7 +84,6 @@ def save_replay(path: Path, scenario_id: str, revision: str,
     finally:
         if os.path.exists(temporary):
             os.unlink(temporary)
-
 
 def load_replay(path: Path) -> dict[str, Any]:
     _reject_symlinked_path(path)

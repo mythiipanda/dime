@@ -6,7 +6,6 @@ from typing import Any
 
 from v2.contracts import EvidenceEnvelope, PlanNode, TaskSpec
 
-
 class FakeCapability:
     def __init__(
         self,

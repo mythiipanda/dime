@@ -3,11 +3,9 @@ import random
 SEED = 42
 HOME_ELO = 400 * math.log10(0.55 / 0.45)
 
-
 def _amap():
     from nba_api.stats.static import teams as _t
     return {t["id"]: t["abbreviation"] for t in _t.get_teams()}
-
 
 def _strengths(con, season, amap):
     season = resolve_season(season)
@@ -38,7 +36,6 @@ def _strengths(con, season, amap):
             return s, "silver_standings win-pct proxy (ELO-scale)"
     return {}, "empty"
 
-
 def _field(con, season, strength, amap):
     season = resolve_season(season)
     try:
@@ -65,7 +62,6 @@ def _field(con, season, strength, amap):
         return {(None, i + 1): a for i, a in enumerate(top)}, "reseeded-1-16"
     return {}, "empty"
 
-
 def _series(a, b, strength):
     hi, lo = (a, b) if strength[a] >= strength[b] else (b, a)
     d = strength[hi] - strength[lo]
@@ -80,7 +76,6 @@ def _series(a, b, strength):
         if w == 4 or l == 4:
             break
     return hi if w == 4 else lo
-
 
 def run_playoff_sim(season=None, sims=2000):
     season = resolve_season(season)

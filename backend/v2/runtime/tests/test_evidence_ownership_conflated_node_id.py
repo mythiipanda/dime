@@ -21,7 +21,6 @@ _SHORT_NODE_ID = "qualified_leaders"
 _LIVE_EVIDENCE_ID = "qualified_leaders:05b5922eaefae72d"
 _REQUIREMENT_ID = "assist_leader_2024_25"
 
-
 def _envelope():
     return EvidenceEnvelope(
         evidence_id=_LIVE_EVIDENCE_ID,
@@ -33,7 +32,6 @@ def _envelope():
         units={"AST": "count"},
         entities=[EntityRef(id="1629027", type="player", display_name="Trae Young")],
     )
-
 
 def _task():
     return TaskSpec(
@@ -51,7 +49,6 @@ def _task():
             )
         ],
     )
-
 
 def _bindings(node_id, evidence_id=_LIVE_EVIDENCE_ID, requirement_kind="evidence",
                requirement_id=_REQUIREMENT_ID):
@@ -88,7 +85,6 @@ def _bindings(node_id, evidence_id=_LIVE_EVIDENCE_ID, requirement_kind="evidence
         ),
     ]
 
-
 def _node(node_id=_SHORT_NODE_ID):
     return PlanNode(
         id=node_id,
@@ -97,7 +93,6 @@ def _node(node_id=_SHORT_NODE_ID):
         covers_requirement_ids=[_REQUIREMENT_ID],
         status="complete",
     )
-
 
 def _admit(task, envelope, bindings, nodes):
     execution = ExecutionResult(
@@ -130,13 +125,11 @@ def _admit(task, envelope, bindings, nodes):
     )
     return admit_verified_claim_bindings(task, execution, draft, verified)
 
-
 def test_evidence_scope_conflated_evidence_id_admits():
     admitted = _admit(_task(), _envelope(), _bindings(_LIVE_EVIDENCE_ID), [_node()])
     by_output = {item.output_id: item for item in admitted.output_bindings}
     assert by_output["PLAYER_NAME"].value.value == "Trae Young"
     assert by_output["AST"].value.value == 880
-
 
 def test_task_scope_conflated_evidence_id_admits():
     task = TaskSpec(
@@ -152,13 +145,11 @@ def test_task_scope_conflated_evidence_id_admits():
     assert by_output["PLAYER_NAME"].value.value == "Trae Young"
     assert by_output["AST"].value.value == 880
 
-
 def test_true_node_id_match_still_admits():
     admitted = _admit(_task(), _envelope(), _bindings(_SHORT_NODE_ID), [_node()])
     by_output = {item.output_id: item for item in admitted.output_bindings}
     assert by_output["PLAYER_NAME"].value.value == "Trae Young"
     assert by_output["AST"].value.value == 880
-
 
 def test_unknown_evidence_and_node_still_rejects():
     ghost = "qualified_leaders:0000000000000000"

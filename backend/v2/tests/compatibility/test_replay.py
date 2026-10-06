@@ -8,7 +8,6 @@ import pytest
 from v2.contracts import EvidenceEnvelope
 from v2.tests.compatibility.replay import load_replay, save_replay
 
-
 def test_replay_round_trip_is_prompt_free(tmp_path):
     item = EvidenceEnvelope(
         evidence_id="ev", capability="ratings", source="fixture",
@@ -22,14 +21,12 @@ def test_replay_round_trip_is_prompt_free(tmp_path):
     replay = load_replay(path)
     assert replay["turns"][0]["evidence"][0] == item
 
-
 def test_replay_rejects_prompt_material(tmp_path):
     path = tmp_path / "bad.json"
     path.write_text(json.dumps({"version": 2, "scenario_id": "x", "revision": "a",
                                 "prompt": "hidden", "turns": []}))
     with pytest.raises(ValueError, match="prompt"):
         load_replay(path)
-
 
 @pytest.mark.parametrize("payload,error", [
     ({"version": 2, "scenario_id": "x", "revision": "r"}, "top-level"),
@@ -48,7 +45,6 @@ def test_replay_rejects_partial_or_mistyped_structure(tmp_path, payload, error):
     with pytest.raises(ValueError, match=error):
         load_replay(path)
 
-
 @pytest.mark.parametrize("nested", [
     {"evidence": [], "tools": [{"name": "ratings", "args": {"prompt": "hidden"}}]},
     {"evidence": [{"transcript": "hidden"}], "tools": []},
@@ -62,7 +58,6 @@ def test_replay_rejects_nested_prompt_material(tmp_path, nested):
     with pytest.raises(ValueError, match="forbidden prompt material"):
         load_replay(path)
 
-
 def test_save_replay_rejects_prompt_material_in_tool_payload(tmp_path):
     with pytest.raises(ValueError, match="forbidden prompt material"):
         save_replay(
@@ -71,7 +66,6 @@ def test_save_replay_rejects_prompt_material_in_tool_payload(tmp_path):
                     "args": {"question": "hidden"}, "status": "ok", "error": None}])],
         )
     assert not (tmp_path / "bad.json").exists()
-
 
 def test_replay_io_rejects_symlinked_file(tmp_path):
     target = tmp_path / "target.json"
@@ -90,7 +84,6 @@ def test_replay_io_rejects_symlinked_file(tmp_path):
             operation()
     assert target.read_text() == "{}"
 
-
 def test_save_replay_leaves_no_partial_or_temporary_file_on_serialization_failure(
     tmp_path, monkeypatch,
 ):
@@ -103,7 +96,6 @@ def test_save_replay_leaves_no_partial_or_temporary_file_on_serialization_failur
     assert not path.exists()
     assert not list(tmp_path.glob(".replay-*"))
 
-
 def test_replay_rejects_cross_turn_conflicting_evidence_identity(tmp_path):
     first = EvidenceEnvelope(
         evidence_id="same", capability="ratings", source="fixture",
@@ -114,7 +106,6 @@ def test_replay_rejects_cross_turn_conflicting_evidence_identity(tmp_path):
     save_replay(path, "x", "r", [([first], []), ([second], [])])
     with pytest.raises(ValueError, match="conflicting payloads"):
         load_replay(path)
-
 
 @pytest.mark.parametrize("tool,error", [
     ({"name": "ratings", "status": "ok"}, "missing or unknown"),
@@ -136,7 +127,6 @@ def test_replay_rejects_malformed_tool_attempt(tmp_path, tool, error):
     with pytest.raises(ValueError, match=error):
         load_replay(path)
 
-
 def test_replay_rejects_unknown_cross_turn_evidence_lineage(tmp_path):
     orphan = EvidenceEnvelope(
         evidence_id="child", capability="calculation", source="runtime",
@@ -146,7 +136,6 @@ def test_replay_rejects_unknown_cross_turn_evidence_lineage(tmp_path):
     save_replay(path, "x", "r", [([orphan], [])])
     with pytest.raises(ValueError, match="unknown evidence lineage"):
         load_replay(path)
-
 
 def test_replay_accepts_lineage_to_evidence_from_earlier_turn(tmp_path):
     parent = EvidenceEnvelope(
@@ -161,7 +150,6 @@ def test_replay_accepts_lineage_to_evidence_from_earlier_turn(tmp_path):
     save_replay(path, "x", "r", [([parent], []), ([child], [])])
     replay = load_replay(path)
     assert replay["turns"][1]["evidence"][0] == child
-
 
 def test_replay_io_rejects_symlinked_parent(tmp_path):
     outside = tmp_path / "outside"

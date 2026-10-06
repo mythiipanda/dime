@@ -1,7 +1,6 @@
 from v2.adapters import AdapterError, call_capability
 import pytest
 
-
 def _today_payload():
     return {
         "tool": "get_today",
@@ -28,7 +27,6 @@ def _today_payload():
                  "date": "10/02/2026", "scoreboard_ok": True},
     }
 
-
 def _today_empty_payload():
     return {
         "tool": "get_today",
@@ -38,7 +36,6 @@ def _today_empty_payload():
         "meta": {"source": "nba_api+warehouse", "season": "2025-26",
                  "date": "07/15/2026", "scoreboard_ok": True},
     }
-
 
 def _briefing_payload():
     return {
@@ -80,7 +77,6 @@ def _briefing_payload():
                  "scoreboard_ok": True, "watchlist_count": 1},
     }
 
-
 def _briefing_empty_payload():
     return {
         "tool": "get_morning_briefing",
@@ -95,7 +91,6 @@ def _briefing_empty_payload():
                  "scoreboard_ok": True, "watchlist_count": 0},
     }
 
-
 class _Tool:
     def __init__(self, payload):
         self.payload = payload
@@ -104,7 +99,6 @@ class _Tool:
     def invoke(self, arguments):
         self.calls.append(arguments)
         return self.payload
-
 
 def test_today_envelope_carries_scoreboard_sections():
     tool = _Tool(_today_payload())
@@ -121,7 +115,6 @@ def test_today_envelope_carries_scoreboard_sections():
     assert env.qualification
     assert env.coverage
 
-
 def test_today_honest_empty_offseason_stays_empty():
     tool = _Tool(_today_empty_payload())
     env = call_capability("today", {"season": "2025-26"},
@@ -133,14 +126,12 @@ def test_today_honest_empty_offseason_stays_empty():
     assert env.rows["movers"] == []
     assert env.rows["streaks"] == []
 
-
 def test_today_failure_surfaces():
     tool = _Tool({"tool": "get_today", "ok": False,
                   "error": "scoreboard unavailable"})
     with pytest.raises(AdapterError, match="scoreboard unavailable"):
         call_capability("today", {"season": "2025-26"},
                         tools={"get_today": tool})
-
 
 def test_morning_briefing_envelope_carries_sections():
     tool = _Tool(_briefing_payload())
@@ -156,7 +147,6 @@ def test_morning_briefing_envelope_carries_sections():
     assert env.qualification
     assert env.coverage
 
-
 def test_morning_briefing_honest_empty_offseason_stays_empty():
     tool = _Tool(_briefing_empty_payload())
     env = call_capability("morning_briefing", {"season": "2025-26"},
@@ -167,7 +157,6 @@ def test_morning_briefing_honest_empty_offseason_stays_empty():
     assert env.rows["today"]["tonight"] == []
     assert env.rows["watchlist"] == []
     assert env.rows["movers"]["climbers"] == []
-
 
 def test_morning_briefing_failure_surfaces():
     tool = _Tool({"tool": "get_morning_briefing", "ok": False,

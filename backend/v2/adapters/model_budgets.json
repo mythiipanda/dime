@@ -1,0 +1,8 @@
+{
+  "transport_timeout_s": 600.0,
+  "default": {
+    "attempt_timeout_s": null,
+    "total_budget_s": null
+  },
+  "routes": {}
+}

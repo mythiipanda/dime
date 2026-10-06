@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import anyio
-import copy
+import httpx
 import json
 import hashlib
 import random
@@ -9,20 +9,25 @@ import re
 import time
 import marshal
 from collections.abc import Callable, Mapping, Sequence
+from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from decimal import Decimal
-from functools import cached_property
-from typing import Any, Protocol, TypeVar
+from functools import cached_property, lru_cache
+from pathlib import Path
+from typing import Any, Final, Protocol, TypeVar
 
 from openai import AsyncOpenAI, APITimeoutError, APIConnectionError, RateLimitError
 from openai.resources.chat import AsyncChat
 from openai.resources.chat.completions import AsyncCompletions
 from openai.types.chat import ChatCompletion
-from pydantic import BaseModel, ValidationError
-from pydantic_ai import Agent, NativeOutput
+from pydantic import BaseModel, TypeAdapter, ValidationError
+from pydantic_ai import Agent
+from pydantic_ai.capabilities import Hooks
 from pydantic_ai.exceptions import ContentFilterError, ModelHTTPError, UnexpectedModelBehavior
 from pydantic_ai.models.openai import OpenAIChatModel
+from pydantic_ai.profiles.openai import OpenAIJsonSchemaTransformer
 from pydantic_ai.providers.openai import OpenAIProvider
+from pydantic_ai.tools import GenerateToolJsonSchema
 
 from shared.config import settings
 from shared.tools.rating_metrics import RANKING_DIRECTIONS, TEAM_RATING_METRICS
@@ -30,10 +35,7 @@ from shared.providers import (
     GEMINI_BASE_URL,
     GROQ_DEFAULT,
     NVIDIA_NIM_BASE_URL,
-    NVIDIA_NIM_DEFAULT,
     INCEPTION_DEFAULT,
-    MISTRAL_DEFAULT,
-    OPENROUTER_DEFAULT,
     ProviderName,
     _gemini_model,
     _groq_free_model, _mistral_free_model,
@@ -57,10 +59,21 @@ from v2.runtime.ledger import RequestEnvelope, exception_text
 from v2.runtime.budget import RUN_MODEL_DEADLINE
 from v2.skills import SkillLibrary, skill_hashes
 from v2.arguments import RequirementReviewWire, PlannerOutputWire, provider_to_source
+from v2.adapters.structured import (
+    STRATEGY_LADDER,
+    EndpointCapabilities,
+    FailureKind,
+    OutputStrategy,
+    StrategyLadder,
+    capabilities_for,
+    classify_exception,
+    output_type_for,
+    repaired_output_payload,
+    wire_schema_for,
+)
 from .capabilities import CAPABILITIES
 
 T = TypeVar("T", bound=BaseModel)
-
 
 def _imported_module_code_sha256() -> str:
     code = __loader__.get_code(__name__) if __loader__ is not None else None
@@ -68,14 +81,17 @@ def _imported_module_code_sha256() -> str:
         raise RuntimeError("provider models module has no loader code identity")
     return hashlib.sha256(marshal.dumps(code)).hexdigest()
 
-
 _LOADED_MODULE_CODE_SHA256 = _imported_module_code_sha256()
-
 
 NIM_THINKING_OFF_EXTRA_BODY: dict[str, Any] = {
     "chat_template_kwargs": {"enable_thinking": False},
 }
 
+def strict_output_json_schema(schema: type[BaseModel], *,
+                              strict: bool = True) -> dict[str, Any]:
+    generated = TypeAdapter(schema).json_schema(
+        schema_generator=GenerateToolJsonSchema)
+    return OpenAIJsonSchemaTransformer(generated, strict=strict).walk()
 
 def _with_thinking_off(kwargs: dict[str, Any]) -> dict[str, Any]:
     merged = dict(kwargs)
@@ -86,12 +102,11 @@ def _with_thinking_off(kwargs: dict[str, Any]) -> dict[str, Any]:
     merged["extra_body"] = extra_body
     return merged
 
-
 def _promote_reasoning_content(
     response: ChatCompletion,
 ) -> tuple[ChatCompletion, list[dict[str, Any]]]:
     promotions: list[dict[str, Any]] = []
-    for index, choice in enumerate(response.choices):
+    for index, choice in enumerate(response.choices or ()):
         message = choice.message
         if (choice.finish_reason == "stop" and not message.content
                 and getattr(message, "reasoning_content", None)):
@@ -102,7 +117,6 @@ def _promote_reasoning_content(
                 "reasoning_content_chars": len(message.reasoning_content),
             })
     return response, promotions
-
 
 class _ReasoningContentCompletions(AsyncCompletions):
 
@@ -116,12 +130,10 @@ class _ReasoningContentCompletions(AsyncCompletions):
             return promoted
         return response
 
-
 class _ReasoningContentChat(AsyncChat):
     @cached_property
     def completions(self) -> _ReasoningContentCompletions:
         return _ReasoningContentCompletions(self._client)
-
 
 class ReasoningContentFallbackClient(AsyncOpenAI):
 
@@ -136,7 +148,6 @@ class ReasoningContentFallbackClient(AsyncOpenAI):
     def chat(self) -> _ReasoningContentChat:
         return _ReasoningContentChat(self)
 
-
 class StructuredModel(Protocol):
     async def generate(
         self,
@@ -148,51 +159,75 @@ class StructuredModel(Protocol):
         decode: Callable[[Any], dict[str, Any] | None] | None = None,
     ) -> T: ...
 
-
 RETRY_INITIAL_S = 1.0
 RETRY_MULTIPLIER = 2.0
 RETRY_MAX_S = 60.0
 
-_TRANSIENT_FAILURE_CLASSES = frozenset({
-    "timeout", "rate_limit", "network", "server_error", "provider_error"})
+MODEL_BUDGETS_PATH: Final[Path] = Path(__file__).with_name("model_budgets.json")
+ROUTE_POLICY_KEYS: Final[frozenset[str]] = frozenset(
+    {"attempt_timeout_s", "total_budget_s"})
 
-ROUTE_POLICIES: dict[str, dict[str, Any]] = {
-    "intake": {"max_attempts": 2, "attempt_timeout_s": 30.0,
-               "total_budget_s": 60.0,
-               "transient_classes": _TRANSIENT_FAILURE_CLASSES},
-    "requirement_review": {"max_attempts": 2, "attempt_timeout_s": 30.0,
-               "total_budget_s": 60.0,
-               "transient_classes": _TRANSIENT_FAILURE_CLASSES},
-    "planner": {"max_attempts": 2, "attempt_timeout_s": 30.0,
-               "total_budget_s": 60.0,
-               "transient_classes": _TRANSIENT_FAILURE_CLASSES},
-    "synthesizer": {"max_attempts": 2, "attempt_timeout_s": 25.0,
-               "total_budget_s": 50.0,
-               "transient_classes": _TRANSIENT_FAILURE_CLASSES},
-    "semantic_verifier": {"max_attempts": 2, "attempt_timeout_s": 30.0,
-               "total_budget_s": 60.0,
-               "transient_classes": _TRANSIENT_FAILURE_CLASSES},
-}
-_DEFAULT_ROUTE_POLICY = {"max_attempts": 2, "attempt_timeout_s": 25.0,
-    "total_budget_s": 50.0,
-    "transient_classes": _TRANSIENT_FAILURE_CLASSES}
+@dataclass(frozen=True)
+class RoutePolicy:
 
-GEMMA_ROUTE_POLICY_OVERRIDES = {"attempt_timeout_s": 90.0,
-    "total_budget_s": 200.0}
-GEMMA_HTTP_TIMEOUT_S = 120.0
+    attempt_timeout_s: float | None = None
+    total_budget_s: float | None = None
 
+@dataclass(frozen=True)
+class ModelBudgets:
+    transport_timeout_s: float
+    defaults: RoutePolicy = RoutePolicy()
+    routes: Mapping[str, RoutePolicy] = field(default_factory=dict)
 
-def _is_gemma_model(model_name: str) -> bool:
-    return "gemma" in str(model_name or "").casefold()
+    def policy_for(self, route: str) -> RoutePolicy:
+        return self.routes.get(route, self.defaults)
 
+def _seconds(value: Any, field_name: str) -> float | None:
+    if value is None:
+        return None
+    if (isinstance(value, bool) or not isinstance(value, (int, float))
+            or value <= 0):
+        raise ValueError(f"{field_name} must be a positive number or null")
+    return float(value)
 
-def _route_policy(provider: str, model_name: str,
-                  route: str) -> dict[str, Any]:
-    policy = ROUTE_POLICIES.get(route, _DEFAULT_ROUTE_POLICY)
-    if provider == "gemini" and _is_gemma_model(model_name):
-        policy = {**policy, **GEMMA_ROUTE_POLICY_OVERRIDES}
-    return policy
+def _policy(entry: Any) -> RoutePolicy:
+    if not isinstance(entry, Mapping) or set(entry) - ROUTE_POLICY_KEYS:
+        raise ValueError(
+            f"route policy needs only {sorted(ROUTE_POLICY_KEYS)}: {entry!r}")
+    return RoutePolicy(
+        **{name: _seconds(entry.get(name), name) for name in ROUTE_POLICY_KEYS})
 
+def load_model_budgets(path: Path | None = None) -> ModelBudgets:
+    document = json.loads((path or MODEL_BUDGETS_PATH).read_text())
+    if not isinstance(document, Mapping) or set(document) - {
+            "transport_timeout_s", "default", "routes"}:
+        raise ValueError("model budgets need transport_timeout_s, "
+                         "default and routes")
+    transport = _seconds(document.get("transport_timeout_s"),
+                         "transport_timeout_s")
+    if transport is None:
+        raise ValueError("transport_timeout_s must bound a socket read")
+    routes = document.get("routes", {})
+    if not isinstance(routes, Mapping) or not all(
+            isinstance(route, str) for route in routes):
+        raise ValueError("routes must map a route name to its policy")
+    return ModelBudgets(
+        transport_timeout_s=transport,
+        defaults=_policy(document.get("default", {})),
+        routes={route: _policy(entry) for route, entry in routes.items()})
+
+@lru_cache(maxsize=1)
+def _shipped_model_budgets() -> ModelBudgets:
+    return load_model_budgets()
+
+def route_budgets(budgets: ModelBudgets | None, route: str) -> RoutePolicy:
+    return (budgets or _shipped_model_budgets()).policy_for(route)
+
+async def _within(awaitable: Any, timeout_s: float | None) -> Any:
+    if timeout_s is None:
+        return await awaitable
+    with anyio.fail_after(timeout_s):
+        return await awaitable
 
 SAFE_FAILURE_EXCEPTION_CLASSES = frozenset({
     "UnexpectedModelBehavior", "ToolRetryError", "ValidationError",
@@ -203,7 +238,6 @@ SAFE_FAILURE_EXCEPTION_CLASSES = frozenset({
 })
 SAFE_FAILURE_PHASES = frozenset({"content_filter", "no_tool_or_empty",
     "json_or_schema_validation", "http", "transport", "timeout", "unknown"})
-MODEL_ROUTES = frozenset(ROUTE_POLICIES)
 SAFE_PYDANTIC_ERROR_TYPES = frozenset({
     "extra_forbidden", "json_invalid", "literal_error", "missing",
     "model_type", "string_type", "int_type", "int_parsing", "bool_type",
@@ -230,20 +264,16 @@ _VALIDATION_SUBTYPE_BY_ERROR_TYPE = {
     "verification_finding_duplicate": "duplicate_or_empty_finding",
 }
 
-
 def _safe_exception_name(value: type[BaseException] | str) -> str:
     name = value if isinstance(value, str) else value.__name__
     return name if name in SAFE_FAILURE_EXCEPTION_CLASSES else "<unknown-exception>"
-
 
 def _safe_pydantic_error_type(value: object) -> str:
     name = str(value)
     return name if name in SAFE_PYDANTIC_ERROR_TYPES else "<unknown-error-type>"
 
-
 USAGE_UNKNOWN_REASON = "usage_unknown"
 USAGE_UNKNOWN_REASONS = frozenset({USAGE_UNKNOWN_REASON})
-
 
 def _read_usage_requests(result: Any) -> tuple[int | None, str | None]:
     usage = getattr(result, "usage", None)
@@ -260,54 +290,65 @@ def _read_usage_requests(result: Any) -> tuple[int | None, str | None]:
     except (TypeError, ValueError):
         return None, USAGE_UNKNOWN_REASON
 
-
-def strip_array_length_bounds(schema):
-    stripped = copy.deepcopy(schema)
-    stack = [stripped]
-    while stack:
-        node = stack.pop()
-        if isinstance(node, dict):
-            node.pop("maxItems", None)
-            node.pop("minItems", None)
-            node.pop("discriminator", None)
-            if "const" in node:
-                const_value = node.pop("const")
-                if "enum" not in node:
-                    node["enum"] = [const_value]
-            for key, value in node.items():
-                if key in {"default", "examples", "const", "enum"}:
-                    continue
-                stack.append(value)
-        elif isinstance(node, list):
-            stack.extend(node)
-    return stripped
-
-
 class DimeOpenAIChatModel(OpenAIChatModel):
-    _GEMMA_INLINE_SCHEMAS = frozenset({"TaskSpec", "DraftReport", "VerificationReport"})
+    def __init__(self, model_name: str, *, provider: Any,
+                 capabilities: EndpointCapabilities,
+                 ladder: StrategyLadder | None = None) -> None:
+        super().__init__(model_name, provider=provider)
+        self.capabilities = capabilities
+        self.ladder = ladder or StrategyLadder(capabilities)
+
+    @property
+    def strategy(self) -> OutputStrategy:
+        return self.ladder.rung
+
+    def on_ladder(self, ladder: StrategyLadder) -> DimeOpenAIChatModel:
+        return DimeOpenAIChatModel(
+            self.model_name, provider=self._provider,
+            capabilities=self.capabilities, ladder=ladder)
+
+    def _wire_schema(self, schema: Mapping[str, Any]) -> dict[str, Any]:
+        return wire_schema_for(self.strategy, schema).schema
 
     def _map_json_schema(self, output_object):
         from dataclasses import replace
-        from v2.argument_schemas import (
-            inline_provider_schema_defs,
-            normalize_provider_wire_schema,
-        )
-        if output_object.name not in {"RequirementReviewWire", "PlannerOutputWire"}:
-            if _is_gemma_model(getattr(self, "model_name", "")) and output_object.name in self._GEMMA_INLINE_SCHEMAS:
-                inlined = inline_provider_schema_defs(output_object.json_schema)
-                return super()._map_json_schema(replace(output_object, json_schema=strip_array_length_bounds(inlined)))
-            return super()._map_json_schema(replace(output_object, json_schema=strip_array_length_bounds(output_object.json_schema)))
-        candidate, _ = normalize_provider_wire_schema(output_object.json_schema)
-        return super()._map_json_schema(replace(output_object, json_schema=strip_array_length_bounds(candidate)))
+        return super()._map_json_schema(replace(
+            output_object,
+            json_schema=self._wire_schema(output_object.json_schema)))
 
+    def _map_tool_definition(self, tool_def, model_settings):
+        mapped = super()._map_tool_definition(tool_def, model_settings)
+        if self.strategy is not OutputStrategy.TOOL_CALL:
+            return mapped
+        function = dict(mapped["function"])
+        function["parameters"] = self._wire_schema(function["parameters"])
+        return {**mapped, "function": function}
+
+def _map_wire_response_format(json_schema: Mapping[str, Any], *,
+                              name: str, strict: bool = True
+                              ) -> dict[str, Any]:
+    return {
+        "type": "json_schema",
+        "json_schema": {
+            "name": name, "strict": strict,
+            "schema": wire_schema_for(
+                OutputStrategy.STRICT_SCHEMA, json_schema).schema},
+    }
 
 class ProviderStructuredModel:
-    def __init__(self, provider: ProviderName, model: str) -> None:
+    def __init__(self, provider: ProviderName, model: str, *,
+                 capabilities: Mapping[str, EndpointCapabilities] | None = None,
+                 model_budgets: ModelBudgets | None = None,
+                 http_client: httpx.AsyncClient | None = None) -> None:
         self.provider = provider
         self.model = model
+        self._capabilities = capabilities
+        self._budgets = model_budgets
+        self._http_client = http_client
         self.last_provider: ProviderName | None = None
         self.last_model: str | None = None
-        self.last_failures: list[dict[str, str]] = []
+        self.last_output_strategy: OutputStrategy | None = None
+        self.last_failures: list[dict[str, Any]] = []
         self.last_request_count: int | None = None
         self.last_usage_unknown: str | None = None
         self.last_promotions: list[dict[str, Any]] = []
@@ -526,7 +567,7 @@ class ProviderStructuredModel:
             "failure_route": route,
         }
 
-    def _models(self) -> list[tuple[ProviderName, OpenAIChatModel]]:
+    def _models(self) -> list[tuple[ProviderName, DimeOpenAIChatModel]]:
         configs = {
             "gemini": (GEMINI_BASE_URL, settings.gemini_api_key,
                        _gemini_model()),
@@ -571,16 +612,17 @@ class ProviderStructuredModel:
         client = ReasoningContentFallbackClient(
             base_url=base_url,
             api_key=api_key,
-            timeout=(GEMMA_HTTP_TIMEOUT_S
-                     if provider == "gemini" and _is_gemma_model(accepted_model)
-                     else settings.llm_timeout_s),
+            timeout=(self._budgets
+                     or _shipped_model_budgets()).transport_timeout_s,
             max_retries=0,
             default_headers=headers,
             thinking_off=(provider == "nvidia"),
+            http_client=self._http_client,
         )
         return [(provider, DimeOpenAIChatModel(
             accepted_model,
             provider=OpenAIProvider(openai_client=client),
+            capabilities=capabilities_for(base_url, self._capabilities),
         ))]
 
     async def generate(
@@ -597,36 +639,46 @@ class ProviderStructuredModel:
             raise RuntimeError("no configured structured-output provider")
         self.last_provider = None
         self.last_model = None
+        self.last_output_strategy = None
         self.last_failures = []
         self.last_promotions = []
         self.last_decode_extra = None
         user_prompt = json.dumps(payload, sort_keys=True, default=str)
         provider, model = models[0]
-        policy = _route_policy(provider, model.model_name, envelope.route)
-        now = time.monotonic()
-        run_deadline = RUN_MODEL_DEADLINE.get()
-        deadline = min(now + float(policy["total_budget_s"]),
-                       run_deadline if run_deadline is not None else float("inf"))
+        policy = route_budgets(self._budgets, envelope.route)
+        budget_deadline = (None if policy.total_budget_s is None
+                           else time.monotonic() + policy.total_budget_s)
+        deadlines = [value for value in
+                     (budget_deadline, RUN_MODEL_DEADLINE.get())
+                     if value is not None]
+        deadline = min(deadlines) if deadlines else None
         budget_exhausted = False
-        max_attempts = int(policy["max_attempts"])
-        for attempt_number in range(1, max_attempts + 1):
-            remaining = deadline - time.monotonic()
-            if remaining <= 0:
+        ladder = StrategyLadder(model.capabilities)
+        for attempt_number in range(1, len(STRATEGY_LADDER) + 1):
+            remaining = (None if deadline is None
+                         else deadline - time.monotonic())
+            if remaining is not None and remaining <= 0:
                 budget_exhausted = True
                 break
+            rung = ladder.rung
+            attempt_model = model.on_ladder(ladder)
+            attempt_timeout = policy.attempt_timeout_s
+            if attempt_timeout is not None and remaining is not None:
+                attempt_timeout = min(attempt_timeout, remaining)
             started = time.perf_counter()
             try:
                 agent = Agent(
-                    model,
+                    attempt_model,
                     instructions=prompt,
-                    output_type=NativeOutput(schema, strict=provider != "groq"),
+                    output_type=output_type_for(
+                        rung, schema, model.capabilities),
                     retries=settings.llm_max_retries,
+                    capabilities=[Hooks(
+                        before_output_validate=repaired_output_payload)],
                 )
-                run = agent.run(user_prompt)
-                with anyio.fail_after(
-                    min(float(policy["attempt_timeout_s"]), remaining)
-                ):
-                    result = await run
+                result = await _within(agent.run(user_prompt), attempt_timeout)
+                ladder.record(attempt_number=attempt_number, failure_kind=None)
+                self.last_output_strategy = rung
                 self.last_provider = provider
                 self.last_model = (
                     f"mistral_free_limit:{model.model_name}"
@@ -640,26 +692,31 @@ class ProviderStructuredModel:
                     self.last_decode_extra = decode(result.output)
                 return result.output
             except Exception as exc:
-                failure_class = self._failure_class(exc)
+                failure_kind = classify_exception(exc)
+                ladder.record(
+                    attempt_number=attempt_number, failure_kind=failure_kind)
                 self.last_failures.append({
                     "route": envelope.route,
                     "provider": provider,
                     "model": (f"mistral_free_limit:{model.model_name}"
                               if provider == "mistral" else model.model_name),
                     "attempt_number": attempt_number,
+                    "output_strategy": str(rung),
                     "exception_type": _safe_exception_name(type(exc)),
-                    "message_class": failure_class,
+                    "message_class": (
+                        str(FailureKind.SCHEMA_REJECTED)
+                        if failure_kind is FailureKind.SCHEMA_REJECTED
+                        else self._failure_class(exc)),
                     "latency_ms": max(0, round(
                         (time.perf_counter() - started) * 1000)),
                     **self._safe_failure_taxonomy(
                         exc, schema=schema, route=envelope.route),
                 })
-                transient = failure_class in policy["transient_classes"]
-                if attempt_number >= max_attempts or not transient:
+                if ladder.descend(failure_kind) is None:
                     break
                 wait = self._backoff_delay_s(
                     attempt_number - 1, self._retry_after_s(exc))
-                if wait >= deadline - time.monotonic():
+                if deadline is not None and wait >= deadline - time.monotonic():
                     budget_exhausted = True
                     break
                 await anyio.sleep(wait)
@@ -669,6 +726,7 @@ class ProviderStructuredModel:
                 "provider": envelope.route,
                 "model": "deadline",
                 "attempt_number": len(self.last_failures) + 1,
+                "output_strategy": str(ladder.rung),
                 "exception_type": "TimeoutError",
                 "message_class": f"{envelope.route}_deadline",
                 "latency_ms": 0,
@@ -682,7 +740,6 @@ class ProviderStructuredModel:
             "all structured-output providers failed"
             + (f" [{summary}]" if summary else ""))
 
-
 _PROVIDER_ROUTE_PROMPT_NAMES = {
     "intake": "intake",
     "requirement_review": "requirement_review_v3",
@@ -692,7 +749,7 @@ _PROVIDER_ROUTE_PROMPT_NAMES = {
     "semantic_verifier": "verifier",
 }
 _PROVIDER_ROUTE_PROMPTS: dict[str, str] | None = None
-
+MODEL_ROUTES = frozenset(_PROVIDER_ROUTE_PROMPT_NAMES)
 
 def bind_provider_route_prompts() -> dict[str, str]:
     global _PROVIDER_ROUTE_PROMPTS
@@ -703,13 +760,11 @@ def bind_provider_route_prompts() -> dict[str, str]:
         }
     return dict(_PROVIDER_ROUTE_PROMPTS)
 
-
 def provider_route_prompt(route: str, prompt_name: str) -> str:
     expected = _PROVIDER_ROUTE_PROMPT_NAMES.get(route)
     if expected != prompt_name:
         raise ValueError("provider route and prompt name are not registered")
     return bind_provider_route_prompts()[route]
-
 
 class ModelStage:
     prompt_name: str
@@ -768,7 +823,6 @@ class ModelStage:
             call["decode"] = decode
         return await self._model.generate(**call)
 
-
 def catalog_for_wire(catalog: Mapping[str, Any]) -> dict[str, Any]:
     return {
         name: (
@@ -778,7 +832,6 @@ def catalog_for_wire(catalog: Mapping[str, Any]) -> dict[str, Any]:
         )
         for name, entry in catalog.items()
     }
-
 
 def capability_arguments_for(requirement, capability_id: str) -> dict[str, Any]:
     if requirement.capability_argument_sets:
@@ -857,7 +910,6 @@ def ranked_team_arguments_error(
 METRIC_AGREEMENT_CAPABILITIES = (
     "team_ratings", "clutch", "on_off", "lineups", "playoff_team_ratings")
 
-
 def served_capability_metrics(capability_id: str) -> set[str]:
     spec = CAPABILITIES.get(capability_id)
     if spec is None:
@@ -865,7 +917,6 @@ def served_capability_metrics(capability_id: str) -> set[str]:
     names = set(spec.units) | {
         key for key in spec.metric_definitions if not key.startswith("__")}
     return {str(name).upper() for name in names}
-
 
 class ModelIntake(ModelStage):
     prompt_name = "intake"
@@ -1150,6 +1201,16 @@ class ModelIntake(ModelStage):
             required_evidence = list(dict.fromkeys([
                 *required_evidence, "game_prediction",
             ]))
+        if task.season is None:
+            from shared.tools._core import last_completed_season
+            from v2.contracts import SeasonRef
+            _derived_season = last_completed_season()
+            if _derived_season is not None:
+                task = task.model_copy(update={
+                    "season": SeasonRef(
+                        value=_derived_season, source="default",
+                        confidence=1.0),
+                })
         if task.season is not None and task.season.source == "default":
             from shared.tools._core import last_completed_season
             _derived_season = last_completed_season()
@@ -1173,6 +1234,7 @@ class ModelIntake(ModelStage):
         if unknown:
             raise ValueError(f"intake selected unknown capabilities: {unknown}")
         task = _canonicalize_calculation_requirements(task)
+        task = _align_requirement_requested_outputs(task)
         task = task.model_copy(update={
             "subject_entity_type": _derive_subject_entity_type(task),
         })
@@ -1549,7 +1611,6 @@ class ModelIntake(ModelStage):
             raise ValueError(
                 f"requirement review selected unknown capabilities: {unknown_evidence}"
             )
-        from v2.runtime.subsumption import capability_subsumes
         scope = " ".join([request, task.goal, task.deliverable, *task.subquestions]).casefold()
         review = self._expand_home_away_requirements(review, scope)
         requirements = [self._close_requirement_options(requirement)
@@ -1558,7 +1619,6 @@ class ModelIntake(ModelStage):
             "requirements": requirements,
             "ranked_argument_conflicts": conflict_rows})
 
-
 class PlannerArgumentError(ValueError):
 
     def __init__(self, message: str, *, node_id: str, missing_required: list[str]) -> None:
@@ -1566,6 +1626,103 @@ class PlannerArgumentError(ValueError):
         self.node_id = node_id
         self.missing_required = missing_required
 
+class PlanOutputError(ValueError):
+
+    def __init__(self, message: str, *, output_id: str, capability: str,
+                 vocabulary: list[str], node_id: str | None = None,
+                 requirement_id: str | None = None) -> None:
+        super().__init__(message)
+        self.output_id = output_id
+        self.capability = capability
+        self.vocabulary = list(vocabulary)
+        self.node_id = node_id
+        self.requirement_id = requirement_id
+
+def servable_output_names(capability_id: str) -> list[str]:
+    from .capabilities import CAPABILITIES
+
+    spec = CAPABILITIES.get(capability_id)
+    if spec is None:
+        return []
+    names: set[str] = set()
+    for key in spec.units:
+        names.add(str(key).upper())
+    for key in spec.metric_definitions:
+        if not str(key).startswith("__"):
+            names.add(str(key).upper())
+    for key in spec.output_aliases:
+        names.add(str(key).upper())
+    return sorted(names)
+
+def _is_subject_identity_output(output_id: str) -> bool:
+    squashed = "".join(
+        character for character in str(output_id).upper() if character.isalnum())
+    return squashed.endswith("NAME") or squashed.endswith("ID")
+
+def _validate_plan_output_vocabulary(task, plan) -> None:
+    from .capabilities import CAPABILITIES, resolve_metric_column
+
+    requirements = {item.id: item for item in task.requirements}
+    for node in plan.nodes:
+        selected = [name for name in node.capability_hints if name in CAPABILITIES]
+        if len(selected) != 1:
+            continue
+        capability = selected[0]
+        spec = CAPABILITIES.get(capability)
+        if spec is None:
+            continue
+        if not servable_output_names(capability):
+            continue
+        for requirement_id in node.covers_requirement_ids or []:
+            requirement = requirements.get(requirement_id)
+            if requirement is None:
+                continue
+            if capability not in requirement.capability_options:
+                continue
+            for output_id in requirement.requested_outputs or []:
+                if _is_subject_identity_output(output_id):
+                    continue
+                if resolve_metric_column(spec, output_id) is None:
+                    vocabulary = servable_output_names(capability)
+                    raise PlanOutputError(
+                        f"PLAN_OUTPUT_UNRESOLVABLE: requested output {output_id!r} "
+                        f"for requirement {requirement_id!r} does not resolve "
+                        f"against capability {capability!r} "
+                        f"through resolve_metric_column; servable outputs: "
+                        f"{', '.join(vocabulary)}; "
+                        f"repair by choosing requested outputs only from "
+                        f"{', '.join(vocabulary)}",
+                        output_id=str(output_id), capability=capability,
+                        vocabulary=vocabulary, node_id=node.id,
+                        requirement_id=requirement_id)
+    task_outputs = list(task.requested_outputs or [])
+    if task_outputs and plan.nodes:
+        union: set[str] = set()
+        for node in plan.nodes:
+            selected = [name for name in node.capability_hints if name in CAPABILITIES]
+            if len(selected) != 1:
+                continue
+            union.update(servable_output_names(selected[0]))
+        if union:
+            for output_id in task_outputs:
+                if _is_subject_identity_output(output_id):
+                    continue
+                if not any(
+                    resolve_metric_column(CAPABILITIES[name], output_id) is not None
+                    for name in {
+                        hint for node in plan.nodes for hint in node.capability_hints
+                        if hint in CAPABILITIES and servable_output_names(hint)
+                    }
+                ):
+                    vocabulary = sorted(union)
+                    raise PlanOutputError(
+                        f"PLAN_OUTPUT_UNRESOLVABLE: task requested output "
+                        f"{output_id!r} does not resolve against any planned "
+                        f"capability through resolve_metric_column; servable "
+                        f"outputs: {', '.join(vocabulary)}; repair by choosing "
+                        f"requested outputs only from {', '.join(vocabulary)}",
+                        output_id=str(output_id), capability="plan",
+                        vocabulary=vocabulary)
 
 def _team_subject_abbreviation(entity) -> str | None:
     from v2.contracts import canonical_entity_id
@@ -1586,7 +1743,6 @@ def _team_subject_abbreviation(entity) -> str | None:
                 entry.get("abbreviation") or "").casefold():
             return str(entry.get("abbreviation"))
     return None
-
 
 class ModelPlanner(ModelStage):
     prompt_name = "planner_v3"
@@ -1782,7 +1938,7 @@ class ModelPlanner(ModelStage):
                             "status": "pending"})
                     if resolver_id not in depends_extra.get(node.id, []):
                         depends_extra.setdefault(node.id, []).append(resolver_id)
-        return Plan.model_validate({"nodes": [
+        validated = Plan.model_validate({"nodes": [
             *resolvers,
             *[{
                 "id": node.id, "description": node.description,
@@ -1791,6 +1947,9 @@ class ModelPlanner(ModelStage):
             "covers_requirement_ids": node.covers_requirement_ids or [],
             "arguments": dict(arguments), "max_attempts": node.max_attempts or 1,
             "status": node.status or "pending"} for node, arguments, _ in decoded]]})
+        if task is not None:
+            _validate_plan_output_vocabulary(task, validated)
+        return validated
 
     def __init__(self, *args: Any, capability_catalog: Mapping[str, str], **kwargs: Any) -> None:
         super().__init__(*args, **kwargs)
@@ -2137,7 +2296,6 @@ class ModelPlanner(ModelStage):
             feedback["missing_required_arguments"] = invalid_arguments
         return feedback
 
-
 _CANONICAL_CALCULATIONS = {
     "home_mean": ("home_mean", "Canonical home points-per-game mean"),
     "away_mean": ("away_mean", "Canonical away points-per-game mean"),
@@ -2145,7 +2303,6 @@ _CANONICAL_CALCULATIONS = {
     "ppg_margin": ("ppg_margin", "Canonical points-per-game margin"),
     "ts_margin": ("ts_margin", "Canonical true-shooting percentage-point margin"),
 }
-
 
 def _derive_subject_entity_type(task: TaskSpec) -> str | None:
     kinds = {entity.type for entity in task.entities}
@@ -2155,6 +2312,47 @@ def _derive_subject_entity_type(task: TaskSpec) -> str | None:
             return kind
     return None
 
+def _align_requirement_requested_outputs(task: TaskSpec) -> TaskSpec:
+    from v2.adapters.capabilities import CAPABILITIES, resolve_metric_column
+    if not task.requested_outputs or not task.requirements:
+        return task
+    aligned = []
+    for requirement in task.requirements:
+        options = [name for name in requirement.capability_options if name in CAPABILITIES]
+        if not options:
+            aligned.append(requirement)
+            continue
+        existing = list(requirement.requested_outputs)
+        for wanted in task.requested_outputs:
+            if wanted in existing:
+                continue
+            wanted_columns = set()
+            for name in options:
+                column = resolve_metric_column(CAPABILITIES[name], wanted)
+                if column is not None:
+                    wanted_columns.add(column)
+            if not wanted_columns:
+                continue
+            replaced = False
+            for index, current in enumerate(list(existing)):
+                current_columns = set()
+                for name in options:
+                    column = resolve_metric_column(CAPABILITIES[name], current)
+                    if column is not None:
+                        current_columns.add(column)
+                if wanted_columns & current_columns:
+                    existing[index] = wanted
+                    replaced = True
+                    break
+            if not replaced:
+                if len(existing) >= 16:
+                    continue
+                existing.append(wanted)
+        if existing == list(requirement.requested_outputs):
+            aligned.append(requirement)
+        else:
+            aligned.append(requirement.model_copy(update={"requested_outputs": existing}))
+    return task.model_copy(update={"requirements": aligned})
 
 def _canonicalize_calculation_requirements(task: TaskSpec) -> TaskSpec:
     from v2.contracts import CalculationRequirement
@@ -2215,12 +2413,10 @@ def _canonicalize_calculation_requirements(task: TaskSpec) -> TaskSpec:
     normalized.extend(unused)
     return task.model_copy(update={"calculation_requirements": normalized})
 
-
 class InvalidDraftCalculation(ValueError):
     def __init__(self, message: str, requirement_ids: Sequence[str] = ()) -> None:
         super().__init__(message)
         self.requirement_ids = tuple(requirement_ids)
-
 
 def _validate_draft(
     draft: DraftReport, evidence: Sequence[EvidenceEnvelope],
@@ -2273,7 +2469,6 @@ def _validate_draft(
             raise ValueError(f"draft omits required calculations without a blocking gap: {sorted(missing)}")
     return draft
 
-
 def _deterministic_game_log_draft(
     task: TaskSpec, evidence: Sequence[EvidenceEnvelope],
 ) -> DraftReport | None:
@@ -2313,7 +2508,7 @@ def _deterministic_game_log_draft(
             calculations.append({"calculation_id":calculation_id,
                 "requirement_id":requirement_id, "operation":"mean",
                 "inputs":[{"evidence_id":item.evidence_id,"path":"rows.matches[].pts"}],
-                "result":value, "unit":"points_per_game"})
+                "result":str(value), "unit":"points_per_game"})
             if index == 0:
                 claims.append(Claim(
                     text=f"{player} averaged {one(value)} points per game in {count} {label} games in {season}.",
@@ -2326,7 +2521,7 @@ def _deterministic_game_log_draft(
             "requirement_id":requirement_id, "operation":"subtract",
             "inputs":[{"evidence_id":home.evidence_id,"path":"rows.average_pts"},
                       {"evidence_id":away.evidence_id,"path":"rows.average_pts"}],
-            "result":delta, "unit":"points_per_game"})
+            "result":str(delta), "unit":"points_per_game"})
         if index == 0:
             claims.append(Claim(
                 text=f"The home-minus-away scoring difference was {one(delta)} points per game.",
@@ -2337,7 +2532,6 @@ def _deterministic_game_log_draft(
         blocked_calculation_requirement_ids=unknown_ids,
         gaps=(["Some requested calculations could not be mapped to the admitted split evidence."]
               if unknown_ids else []))
-
 
 def _deterministic_player_comparison_draft(
     task: TaskSpec, evidence: Sequence[EvidenceEnvelope],
@@ -2390,7 +2584,7 @@ def _deterministic_player_comparison_draft(
             "operation":"rank_desc", "inputs":[
                 {"evidence_id":item.evidence_id,"path":high_path},
                 {"evidence_id":item.evidence_id,"path":low_path}],
-            "result":1, "unit":"rank", "subject_input":0})
+            "result":"1", "unit":"rank", "subject_input":0})
         if index == 0:
             claims.append(Claim(text=f"{high_name} scored more points per game than {low_name}.",
                 kind="derived", evidence_ids=[item.evidence_id], calculation_id=cid))
@@ -2404,7 +2598,7 @@ def _deterministic_player_comparison_draft(
             "operation":"subtract", "inputs":[
                 {"evidence_id":item.evidence_id,"path":high_path},
                 {"evidence_id":item.evidence_id,"path":low_path}],
-            "result":margin,"unit":"points per game"})
+            "result":str(margin),"unit":"points per game"})
         if index == 0:
             claims.append(Claim(text=f"{high_name} scored {margin} points per game more than {low_name}.",
                 kind="derived", evidence_ids=[item.evidence_id], calculation_id=cid))
@@ -2431,7 +2625,7 @@ def _deterministic_player_comparison_draft(
                 "operation":"subtract", "inputs":[
                     {"evidence_id":hi_ev.evidence_id,"path":"rows.TS_PCT"},
                     {"evidence_id":lo_ev.evidence_id,"path":"rows.TS_PCT"}],
-                "result":hi_ts-lo_ts,"unit":"percentage points"})
+                "result":str(hi_ts-lo_ts),"unit":"percentage points"})
             if index == 0:
                 claims.append(Claim(text=f"{hi_name}'s true shooting was {hi_ts-lo_ts} percentage points higher than {lo_name}'s.",
                     kind="derived", evidence_ids=[hi_ev.evidence_id, lo_ev.evidence_id], calculation_id=cid))
@@ -2441,7 +2635,6 @@ def _deterministic_player_comparison_draft(
         calculations=calculations, blocked_calculation_requirement_ids=unknown_ids,
         gaps=(["Some requested calculations could not be mapped to admitted comparison evidence."]
               if unknown_ids else []))
-
 
 def _deterministic_rank_draft(
     task: TaskSpec, evidence: Sequence[EvidenceEnvelope],
@@ -2517,7 +2710,7 @@ def _deterministic_rank_draft(
             "calculation_id": f"requested_metric_rank_{index + 1}",
             "requirement_id": requirement.id,
             "operation": "rank_asc" if direction == "asc" else "rank_desc",
-            "inputs": inputs, "subject_input": subject_input, "result": 1, "unit": "rank",
+            "inputs": inputs, "subject_input": subject_input, "result": "1", "unit": "rank",
         } for index, requirement in enumerate(eligible)]
         calculation_id = calculations[0]["calculation_id"] if calculations else None
         from v2.contracts import (
@@ -2603,7 +2796,6 @@ def _deterministic_rank_draft(
                   if blocked else []))
     return None
 
-
 class ModelSynthesizer(ModelStage):
     prompt_name = "synthesizer"
     route = "synthesizer"
@@ -2647,7 +2839,6 @@ class ModelSynthesizer(ModelStage):
                 ])),
             })
             return _validate_draft(partial, evidence, task)
-
 
 class ModelRepairer(ModelStage):
     prompt_name = "repair_answer"
@@ -2787,7 +2978,6 @@ class ModelRepairer(ModelStage):
             })
         return DraftReport.model_validate(repaired.model_dump())
 
-
 class ModelSemanticVerifier(ModelStage):
     prompt_name = "verifier"
     route = "semantic_verifier"
@@ -2836,7 +3026,6 @@ class ModelSemanticVerifier(ModelStage):
                 "semantic verifier returned duplicate or unknown claim indices")
         return report
 
-
 class RecordedStructuredModel:
     def __init__(self, model: StructuredModel, ledger: Any, *, turn_id: str) -> None:
         if not turn_id.strip():
@@ -2863,6 +3052,8 @@ class RecordedStructuredModel:
             self._model.last_request_count = None
         if hasattr(self._model, "last_usage_unknown"):
             self._model.last_usage_unknown = None
+        if hasattr(self._model, "last_output_strategy"):
+            self._model.last_output_strategy = None
         self._ledger.append(
             LedgerKind.MODEL_REQUEST,
             turn_id=self._turn_id,
@@ -2905,6 +3096,7 @@ class RecordedStructuredModel:
             extra = decode(result)
         request_count = getattr(self._model, "last_request_count", None)
         usage_unknown = getattr(self._model, "last_usage_unknown", None)
+        output_strategy = getattr(self._model, "last_output_strategy", None)
         data = {
                 "status": "accepted",
                 "output": result.model_dump(mode="json"),
@@ -2921,6 +3113,8 @@ class RecordedStructuredModel:
                 "reasoning_content_promotions": list(getattr(
                     self._model, "last_promotions", [])),
             }
+        if output_strategy is not None:
+            data["output_strategy"] = str(output_strategy)
         if request_count is not None:
             data["model_requests"] = request_count
             data["repaired"] = request_count > 1

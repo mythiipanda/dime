@@ -6,7 +6,7 @@ from langchain_core.tools import tool
 
 from .. import store
 from ..sources import nba_stats
-from ._core import (TTL_GAMELOG, _warehouse_or_live, clamp_season, clamp_stat, coerce_player_id, last_completed_season, resolve_season)
+from ._core import (TTL_GAMELOG, _warehouse_or_live, clamp_season, clamp_stat, coerce_player_id, resolve_season)
 
 VERDICT_RULES = [
     'window gp < 5 -> "too early", note "fewer than 5 games in the window".',
@@ -24,13 +24,10 @@ VERDICT_RULES = [
     ' "no underlying driver found; expected to drift back toward baseline".',
 ]
 
-
-
 CAREER_UNAVAILABLE_NOTE = (
     "Career baseline is not available for this player yet, so the "
     "verdict leans on this season's baseline plus driver analysis."
 )
-
 
 def parse_game_date(s: object) -> _dt.date | None:
     try:
@@ -38,15 +35,12 @@ def parse_game_date(s: object) -> _dt.date | None:
     except (TypeError, ValueError):
         return None
 
-
 def opponent_abbr(matchup: object) -> str:
     parts = str(matchup or "").split()
     return parts[-1].upper() if parts else ""
 
-
 def is_home(matchup: object) -> bool:
     return "vs." in str(matchup or "")
-
 
 def _f(value: object) -> float:
     try:
@@ -56,12 +50,9 @@ def _f(value: object) -> float:
     except (TypeError, ValueError):
         return 0.0
 
-
 def aggregate(rows: list[dict[str, Any]]) -> dict[str, Any]:
     gp = len(rows or [])
     if gp == 0:
-
-
 
         return {"gp": 0, "ppg": None, "rpg": None, "apg": None,
                 "fg_pct": None, "plus_minus": None}
@@ -76,7 +67,6 @@ def aggregate(rows: list[dict[str, Any]]) -> dict[str, Any]:
         "plus_minus": round(
             sum(_f(r.get("PLUS_MINUS")) for r in rows) / gp, 1),
     }
-
 
 def ts_of(rows: list[dict[str, Any]]) -> float | None:
     try:
@@ -93,7 +83,6 @@ def ts_of(rows: list[dict[str, Any]]) -> float | None:
         return None
     return round(pts / denom, 3)
 
-
 def rest_days(games_asc: list[dict[str, Any]]) -> list[tuple[dict, str]]:
     dated = [(g, parse_game_date(g.get("GAME_DATE")))
              for g in (games_asc or [])]
@@ -109,7 +98,6 @@ def rest_days(games_asc: list[dict[str, Any]]) -> list[tuple[dict, str]]:
         out.append((dated[i][0], bucket))
     return out
 
-
 def defense_rank(ratings_rows: list[dict[str, Any]]) -> dict[Any, int]:
     def _rate(r: dict) -> float:
         try:
@@ -120,7 +108,6 @@ def defense_rank(ratings_rows: list[dict[str, Any]]) -> dict[Any, int]:
 
     ordered = sorted(ratings_rows or [], key=_rate)
     return {r.get("TEAM_ID"): i + 1 for i, r in enumerate(ordered)}
-
 
 def verdict_for(gap: float, ts_delta: float, min_delta: float,
                 opp_soft: float, window_gp: int,
@@ -163,7 +150,6 @@ def verdict_for(gap: float, ts_delta: float, min_delta: float,
             "no underlying driver found;"
             " expected to drift back toward baseline")
 
-
 def _read_df(sql: str, params: list, tries: int = 5) -> list[dict[str, Any]]:
     import time as _time
 
@@ -184,7 +170,6 @@ def _read_df(sql: str, params: list, tries: int = 5) -> list[dict[str, Any]]:
             _time.sleep(0.3)
     raise last or RuntimeError("warehouse read failed")
 
-
 def _resolve_name(pid: int, fallback: str) -> str:
     try:
         from nba_api.stats.static import players
@@ -196,13 +181,11 @@ def _resolve_name(pid: int, fallback: str) -> str:
         pass
     return fallback
 
-
 def _clamp_n(n: object, default: int = 15) -> int:
     try:
         return max(1, min(int(n), 25))
     except (TypeError, ValueError):
         return default
-
 
 def _sort_by_date(rows: list[dict[str, Any]],
                   desc: bool = True) -> list[dict[str, Any]]:
@@ -212,7 +195,6 @@ def _sort_by_date(rows: list[dict[str, Any]],
                    key=lambda t: (t[0], t[1]), reverse=desc)
     nulls = [t for t in dated if t[0] is None]
     return [r for _, _, r in valid + nulls]
-
 
 def _defense_lookup(season: str) -> tuple[dict[str, Any] | None, str | None]:
     season = resolve_season(season)
@@ -233,7 +215,6 @@ def _defense_lookup(season: str) -> tuple[dict[str, Any] | None, str | None]:
     except Exception as exc:
         return None, str(exc)[:120]
 
-
 def _load_gamelogs(player: str, season: str
                    ) -> tuple[int, list[dict], dict[str, Any] | None]:
     season = resolve_season(season)
@@ -246,18 +227,15 @@ def _load_gamelogs(player: str, season: str
     )
     return pid, rows, meta
 
-
 def _split_row(label: str, games: list[dict[str, Any]]) -> dict[str, Any]:
     agg = aggregate(games)
     agg["split"] = label
     agg["low_sample"] = agg["gp"] < 5
     return agg
 
-
-@tool
+@tool(description='Situational splits over the last N games: defense tier, home/away, rest.')
 def get_matchup_splits(player: str, n: int = 15,
                        season: str | None = None) -> dict[str, Any]:
-    """Situational splits over the last N games: defense tier, home/away, rest."""
     season = resolve_season(season)
     season = clamp_season(season)
     n = _clamp_n(n)
@@ -314,7 +292,6 @@ def get_matchup_splits(player: str, n: int = 15,
                      "defense_splits": defense_status},
             "meta": meta}
 
-
 def _summarize(games: list[dict[str, Any]],
                stat: str) -> dict[str, Any]:
     gp = len(games or [])
@@ -328,7 +305,6 @@ def _summarize(games: list[dict[str, Any]],
         "fga_pg": round(sum(_f(g.get("FGA")) for g in games) / gp, 1),
         "ts_pct": ts_of(games),
     }
-
 
 def _career_baseline(pid: int, stat: str) -> dict[str, Any]:
     try:
@@ -346,9 +322,6 @@ def _career_baseline(pid: int, stat: str) -> dict[str, Any]:
         )
         if not rows:
             raise LookupError("empty")
-
-
-
 
         seasons = len(rows)
         key = stat.lower()
@@ -368,11 +341,9 @@ def _career_baseline(pid: int, stat: str) -> dict[str, Any]:
     except Exception:
         return {"available": False, "note": CAREER_UNAVAILABLE_NOTE}
 
-
-@tool
+@tool(description='Sustainability check on a hot stat line: window vs season plus drivers.')
 def get_regression_check(player: str, stat: str = "PTS", n: int = 10,
                          season: str | None = None) -> dict[str, Any]:
-    """Sustainability check on a hot stat line: window vs season plus drivers."""
     season = resolve_season(season)
     try:
         stat = clamp_stat(stat)
@@ -422,8 +393,6 @@ def get_regression_check(player: str, stat: str = "PTS", n: int = 10,
     scales = {"true_shooting": 20.0, "minutes": 0.25, "shot_volume": 1.0 / 3.0,
               "opponent_defense": 0.25}
 
-
-
     _UNITS = {"true_shooting": "pct", "minutes": "min", "shot_volume": "fga",
               "opponent_defense": "rank"}
     for d in drivers_all:
@@ -448,7 +417,6 @@ def get_regression_check(player: str, stat: str = "PTS", n: int = 10,
                  "verdict_rules": VERDICT_RULES,
                  "driver_scaling": "ts*20, minutes/4, fga/3, opponent/4"
                  " so factors are comparable; drivers ranked by scaled |delta|",
-
 
                  "opponent_defense_meaning":
                  "average defensive rank of opponents faced, 1 = best "

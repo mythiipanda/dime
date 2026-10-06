@@ -3,7 +3,6 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import pytest
 
-
 def test_2026_finals_winner_is_pinned_to_warehouse():
     from shared import store
     con = store.connect(read_only=True)

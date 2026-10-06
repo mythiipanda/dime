@@ -1,4 +1,3 @@
-import datetime as _dt
 import sys
 from pathlib import Path
 
@@ -19,7 +18,6 @@ GAMES = [
     ("0022401200", "2025-04-11", "LAL vs. HOU", "W", 130, 125),
     ("0022401230", "2025-04-13", "LAL @ POR", "L", 81, 109),
 ]
-
 
 def _seed(path: Path) -> None:
     con = duckdb.connect(str(path))
@@ -48,7 +46,6 @@ def _seed(path: Path) -> None:
     finally:
         con.close()
 
-
 @pytest.fixture
 def hist_warehouse(tmp_path, monkeypatch):
     db = tmp_path / "hist.duckdb"
@@ -60,7 +57,6 @@ def hist_warehouse(tmp_path, monkeypatch):
     monkeypatch.setattr(_store, "connect", fake_connect)
     return db
 
-
 def test_hist_slice_returns_most_recent_first(hist_warehouse):
     out = _team.get_team_game_log.invoke(
         {"team": "Lakers", "limit": 2, "season": "2024-25"})
@@ -71,7 +67,6 @@ def test_hist_slice_returns_most_recent_first(hist_warehouse):
     assert games[1]["date"] == "APR 11, 2025"
     assert games[0]["opp_pts"] == 109
     assert games[1]["opp_pts"] == 125
-
 
 def test_hist_window_meta_states_full_range(hist_warehouse):
     out = _team.get_team_game_log.invoke(
@@ -87,14 +82,12 @@ def test_hist_window_meta_states_full_range(hist_warehouse):
     assert "4 games from 2024-10-22 to 2025-04-13" in meta["coverage_note"]
     assert "documented estimates" not in str(meta)
 
-
 def test_hist_full_pull_clears_partial_flag(hist_warehouse):
     out = _team.get_team_game_log.invoke(
         {"team": "Lakers", "limit": 10, "season": "2024-25"})
     assert out["ok"], out.get("error")
     assert len(out["games"]) == 4
     assert out["meta"]["partial_window"] is False
-
 
 def test_empty_window_error_names_coverage(hist_warehouse):
     out = _team.get_team_game_log.invoke(

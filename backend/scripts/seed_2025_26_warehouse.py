@@ -90,7 +90,6 @@ WHERE season = ?
                    if c not in ("_source", "_season", "_fetched_at", "_entity"))
 )
 
-
 def report(con) -> dict[str, int]:
     counts = {}
     for t in ("silver_team_games", "silver_lineups"):
@@ -98,7 +97,6 @@ def report(con) -> dict[str, int]:
         counts[t] = n
         print(f"{t}: {n} rows")
     return counts
-
 
 def check() -> int:
     con = store.connect(read_only=True)
@@ -110,12 +108,10 @@ def check() -> int:
     lu = con_check_target("silver_lineups", 48188, counts["silver_lineups"])
     return 0 if (tg and lu) else 1
 
-
 def con_check_target(name, expected, actual) -> bool:
     ok = actual == expected
     print(f"  {'OK' if ok else 'MISMATCH'}: {name} expected {expected}, got {actual}")
     return ok
-
 
 def seed() -> None:
     fetched_at = dt.datetime.now(dt.timezone.utc).isoformat()
@@ -159,7 +155,6 @@ def seed() -> None:
     finally:
         con.close()
 
-
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--check", action="store_true",
@@ -169,7 +164,6 @@ def main(argv=None) -> int:
         return check()
     seed()
     return 0
-
 
 if __name__ == "__main__":
     raise SystemExit(main())

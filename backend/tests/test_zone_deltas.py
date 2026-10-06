@@ -12,7 +12,6 @@ from shared.tools.zonedelta import (build_deltas, clamp_floor,
 PLAYER = "Shai Gilgeous-Alexander"
 SEASON = 2025
 
-
 def test_happy_path_shape_and_sort():
     out = get_zone_deltas.invoke({"player": PLAYER, "season": SEASON})
     assert out["ok"] is True
@@ -30,7 +29,6 @@ def test_happy_path_shape_and_sort():
     assert zones[0]["zone"] == "long_mid"
     assert out["meta"]["source"] == "warehouse silver_hist_shots"
 
-
 def test_floor_enforcement_excludes_thin_zones():
     loose = get_zone_deltas.invoke({"player": PLAYER, "season": SEASON,
                                     "min_attempts": 10})
@@ -44,19 +42,16 @@ def test_floor_enforcement_excludes_thin_zones():
     assert kept == {"rim", "short_mid", "long_mid", "atb_3"}
     assert strict["meta"]["excluded_zones"] == ["corner_3"]
 
-
 def test_unknown_player_is_honest():
     out = get_zone_deltas.invoke({"player": "Not A Real Player XYZ",
                                   "season": SEASON})
     assert out["ok"] is False
     assert "unknown player" in out["error"]
 
-
 def test_player_without_coverage_is_honest():
     out = get_zone_deltas.invoke({"player": PLAYER, "season": 2010})
     assert out["ok"] is False
     assert "no shot rows for player" in out["error"]
-
 
 def test_season_clamp_flows_through_tool():
     assert clamp_season_year(2005) == 2010
@@ -69,7 +64,6 @@ def test_season_clamp_flows_through_tool():
     assert high["ok"] is True
     assert high["meta"]["season"] == 2025
 
-
 def test_floor_clamp_bounds():
     assert clamp_floor(5) == 10
     assert clamp_floor(500) == 200
@@ -79,7 +73,6 @@ def test_floor_clamp_bounds():
     assert out["meta"]["min_attempts"] == 200
     assert {z["zone"] for z in out["rows"]["zones"]} == {
         "rim", "short_mid", "long_mid", "atb_3"}
-
 
 def test_league_average_sanity_vs_raw_sql():
     from shared import store
@@ -126,7 +119,6 @@ def test_league_average_sanity_vs_raw_sql():
         assert z["league_fg_pct"] == round(made / att, 3)
         assert z["league_attempts"] == att
 
-
 def test_fully_excluded_view_has_note_and_lists():
     out = get_zone_deltas.invoke({"player": "Terry Taylor", "season": SEASON,
                                   "min_attempts": 10})
@@ -136,7 +128,6 @@ def test_fully_excluded_view_has_note_and_lists():
     assert set(out["meta"]["excluded_zones"]) == {
         "rim", "short_mid", "long_mid", "corner_3", "atb_3"}
 
-
 def test_season_2026_clamps_with_warning():
     out = get_zone_deltas.invoke({"player": PLAYER, "season": 2026})
     assert out["ok"] is True
@@ -144,14 +135,12 @@ def test_season_2026_clamps_with_warning():
     assert "warning" in out["meta"]
     assert "2026" in out["meta"]["warning"] and "2025" in out["meta"]["warning"]
 
-
 def test_floor_clamp_warns():
     out = get_zone_deltas.invoke({"player": PLAYER, "season": SEASON,
                                   "min_attempts": 500})
     assert out["meta"]["min_attempts"] == 200
     assert "warning" in out["meta"]
     assert "500" in out["meta"]["warning"] and "200" in out["meta"]["warning"]
-
 
 def test_error_meta_season_label_consistent():
     unknown = get_zone_deltas.invoke({"player": "Not A Real Player XYZ",
@@ -161,7 +150,6 @@ def test_error_meta_season_label_consistent():
     nocov = get_zone_deltas.invoke({"player": PLAYER, "season": 2010})
     assert nocov["ok"] is False
     assert nocov["meta"]["season_label"] == "2009-10"
-
 
 def test_pure_helpers_fold_and_delta_math():
     shots = ([{"x": 0, "y": 50, "shot_value": 2, "shot_result": "Made"}] * 3

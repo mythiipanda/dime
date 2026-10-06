@@ -23,30 +23,23 @@ from v2.runtime.models import (
     propagate_evidence_to_task,
 )
 
-
 NODE_ID = "qualified_leaders:05b5922eaefae72d"
 REQ_ID = "assist_leader_2024_25"
-
 
 def _trae():
     return EntityRef(id="1629027", type="player", display_name="Trae Young")
 
-
 def _jokic():
     return EntityRef(id="1628369", type="player", display_name="Nikola Jokic")
-
 
 def _league():
     return EntityRef(id="NBA", type="league", display_name="NBA")
 
-
 def _bos():
     return EntityRef(id="1610612738", type="team", display_name="Boston Celtics")
 
-
 def _rows():
     return [{"PLAYER_NAME": "Trae Young", "PLAYER_ID": "1629027", "AST": 880}]
-
 
 def _envelope(with_player):
     return EvidenceEnvelope(
@@ -60,7 +53,6 @@ def _envelope(with_player):
         units={"AST": "count"},
     )
 
-
 def _plan(covers):
     return Plan(nodes=[
         PlanNode(
@@ -72,7 +64,6 @@ def _plan(covers):
         ),
     ])
 
-
 def _execution(envelope, covers=(REQ_ID,)):
     return ExecutionResult(
         plan=_plan(list(covers)),
@@ -80,10 +71,8 @@ def _execution(envelope, covers=(REQ_ID,)):
         attempts={NODE_ID: 1},
     )
 
-
 def _draft():
     return DraftReport(sections=["summary"], claims=[])
-
 
 def _task(entities, requirements):
     return TaskSpec(
@@ -95,7 +84,6 @@ def _task(entities, requirements):
         requirements=list(requirements),
     )
 
-
 def _requirement(requirement_id, outputs):
     return EvidenceRequirement(
         id=requirement_id,
@@ -103,7 +91,6 @@ def _requirement(requirement_id, outputs):
         capability_options=["qualified_leaders"],
         requested_outputs=list(outputs),
     )
-
 
 def _binding(output_id, value, requirement_id, unit):
     return EvidenceOutputBinding(
@@ -122,7 +109,6 @@ def _binding(output_id, value, requirement_id, unit):
         domain="qualified_leaders",
     )
 
-
 def _bindings():
     return [
         _binding(
@@ -139,7 +125,6 @@ def _bindings():
         ),
     ]
 
-
 def _claim(bindings, claim_index=0):
     return VerifiedClaim(
         claim_index=claim_index,
@@ -153,14 +138,12 @@ def _claim(bindings, claim_index=0):
         output_bindings=list(bindings),
     )
 
-
 def _statuses(task, claims):
     rows = build_output_statuses(task, claims, [])
     return {
         (row.requirement_kind, row.requirement_id, row.output_id): row
         for row in rows
     }
-
 
 def test_empty_task_entities_admit_and_propagate():
     task = _task([], [_requirement(REQ_ID, ["PLAYER_NAME", "AST"])])
@@ -173,7 +156,6 @@ def test_empty_task_entities_admit_and_propagate():
     assert by_key[("task", None, "PLAYER_NAME")].status == "complete"
     assert by_key[("task", None, "AST")].status == "complete"
 
-
 def test_league_task_entities_admit_and_propagate():
     task = _task([_league()], [_requirement(REQ_ID, ["PLAYER_NAME", "AST"])])
     execution = _execution(_envelope(True))
@@ -185,7 +167,6 @@ def test_league_task_entities_admit_and_propagate():
     assert by_key[("task", None, "PLAYER_NAME")].status == "complete"
     assert by_key[("task", None, "AST")].status == "complete"
 
-
 def test_team_scoped_task_rejects_player_subject():
     task = _task([_bos()], [_requirement(REQ_ID, ["PLAYER_NAME", "AST"])])
     execution = _execution(_envelope(True))
@@ -195,7 +176,6 @@ def test_team_scoped_task_rejects_player_subject():
         admit_verified_claim_bindings(
             task, execution, _draft(), _claim(_bindings()))
 
-
 def test_empty_envelope_entities_stays_rejected():
     task = _task([], [_requirement(REQ_ID, ["PLAYER_NAME", "AST"])])
     execution = _execution(_envelope(False))
@@ -204,7 +184,6 @@ def test_empty_envelope_entities_stays_rejected():
     ):
         admit_verified_claim_bindings(
             task, execution, _draft(), _claim(_bindings()))
-
 
 def test_competing_claims_leave_task_output_unchanged():
     rows = [
@@ -275,7 +254,6 @@ def test_competing_claims_leave_task_output_unchanged():
     by_key = _statuses(task, propagated)
     assert by_key[("task", None, "PLAYER_NAME")].status == "missing"
 
-
 def test_player_task_with_entityless_envelope_admits_row_local_match():
     task = _task([_trae()], [_requirement(REQ_ID, ["PLAYER_NAME", "AST"])])
     execution = _execution(_envelope(False))
@@ -284,7 +262,6 @@ def test_player_task_with_entityless_envelope_admits_row_local_match():
     by_output = {item.output_id: item for item in admitted.output_bindings}
     assert by_output["PLAYER_NAME"].value.value == "Trae Young"
     assert by_output["AST"].value.value == 880
-
 
 def test_player_task_with_entityless_envelope_rejects_wrong_subject():
     task = _task([_trae()], [_requirement(REQ_ID, ["PLAYER_NAME", "AST"])])
@@ -299,14 +276,11 @@ def test_player_task_with_entityless_envelope_rejects_wrong_subject():
         admit_verified_claim_bindings(
             task, execution, _draft(), _claim(wrong))
 
-
 ASSIST_REQ_ID = "assists_leader_2024_25"
-
 
 def _assist_rows():
     return [{"PLAYER_NAME": "Trae Young", "PLAYER_ID": "1629027",
              "AST": 880, "PTS": 1900}]
-
 
 def _assist_envelope():
     return EvidenceEnvelope(
@@ -320,7 +294,6 @@ def _assist_envelope():
         units={"AST": "count", "PTS": "count"},
     )
 
-
 def _assist_task():
     return TaskSpec(
         goal="Who led the 2024-25 season in assists?",
@@ -333,7 +306,6 @@ def _assist_task():
         ],
     )
 
-
 def _assist_name_binding():
     return _binding(
         "PLAYER_NAME",
@@ -341,7 +313,6 @@ def _assist_name_binding():
         ASSIST_REQ_ID,
         {"kind": "unitless"},
     )
-
 
 def _assist_total_binding(selector="rows[0].AST", value=880):
     return EvidenceOutputBinding(
@@ -360,7 +331,6 @@ def _assist_total_binding(selector="rows[0].AST", value=880):
         domain="qualified_leaders",
     )
 
-
 def test_assist_total_admits_ast_column():
     task = _assist_task()
     execution = _execution(_assist_envelope(), (ASSIST_REQ_ID,))
@@ -369,7 +339,6 @@ def test_assist_total_admits_ast_column():
         _claim([_assist_name_binding(), _assist_total_binding()]))
     assert [binding.output_id for binding in admitted.output_bindings] == [
         "PLAYER_NAME", "ASSIST_TOTAL"]
-
 
 def test_pts_leaf_on_assist_total_still_rejected():
     task = _assist_task()
@@ -380,11 +349,9 @@ def test_pts_leaf_on_assist_total_still_rejected():
             _claim([_assist_name_binding(),
                     _assist_total_binding("rows[0].PTS", 1900)]))
 
-
 LIVE_SHORT = "qualified_leaders"
 LIVE_DIGEST = "qualified_leaders:05b5922eaefae72d"
 LIVE_REQ = "assist_leader_2024_25"
-
 
 def _live_envelope():
     return EvidenceEnvelope(
@@ -398,7 +365,6 @@ def _live_envelope():
         units={"AST": "count"},
     )
 
-
 def _live_plan():
     return Plan(nodes=[
         PlanNode(
@@ -410,14 +376,12 @@ def _live_plan():
         ),
     ])
 
-
 def _live_execution():
     return ExecutionResult(
         plan=_live_plan(),
         evidence_by_node={LIVE_SHORT: _live_envelope()},
         attempts={LIVE_SHORT: 1},
     )
-
 
 def _live_task():
     return TaskSpec(
@@ -428,7 +392,6 @@ def _live_task():
         entities=[],
         requirements=[_requirement(LIVE_REQ, ["PLAYER_NAME", "AST"])],
     )
-
 
 def _live_binding(output_id, value, unit):
     return EvidenceOutputBinding(
@@ -446,7 +409,6 @@ def _live_binding(output_id, value, unit):
         unit=unit,
         domain="qualified_leaders",
     )
-
 
 def _live_claim():
     bindings = [
@@ -472,7 +434,6 @@ def _live_claim():
         evidence_ids=[LIVE_DIGEST],
         output_bindings=list(bindings),
     )
-
 
 def test_short_slug_keyed_propagate_resolves_by_evidence_id():
     task = _live_task()

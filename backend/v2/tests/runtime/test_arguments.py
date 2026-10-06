@@ -1,6 +1,6 @@
 import pytest
 from pydantic import ValidationError
-from v2.arguments import RequirementArguments,PlannerArguments,ProviderWireArguments,provider_to_source,encode_argument,migrate_legacy_arguments,RequirementV3,RequirementReviewWire,PlannerOutputWire
+from v2.arguments import RequirementArguments,ProviderWireArguments,provider_to_source,migrate_legacy_arguments,RequirementV3,RequirementReviewWire,PlannerOutputWire
 from v2.argument_schemas import compile_capability_catalog,normalize_provider_wire_schema
 
 def entries_map():return {'entries':[{'key':'x','kind':'int','int_value':1}]}
@@ -19,7 +19,7 @@ def test_provider_semantic_boundary():
  with pytest.raises(ValueError):provider_to_source(ProviderWireArguments(entries=[row]),'planner')
 def test_capability_local_sets_exact():
  r=RequirementV3(id='r',description='r',capability_options=['a','b'],capability_argument_sets=[{'capability_id':'a','arguments':entries_map()},{'capability_id':'b','arguments':{'entries':[]}}]);assert r.select('a')=={'x':1}
-def test_explicit_wire_normalizer_inlines_refs_materializes_optional_and_reports_loss():
+def test_explicit_wire_normalizer_inlines_refs_closes_objects_and_reports_no_loss():
  source={'$defs':{'S':{'type':'string','maxLength':4}},'type':'object','additionalProperties':False,'properties':{'required':{'$ref':'#/$defs/S'},'optional':{'type':'integer','default':2}},'required':['required']}
  candidate,report=normalize_provider_wire_schema(source);assert '$defs' not in str(candidate) and candidate['required']==['optional','required'];assert candidate['properties']['optional']['anyOf'][-1]=={'type':'null'};assert report['losses'] and len(report['source_schema_sha256'])==64
 @pytest.mark.parametrize('wire',[RequirementReviewWire,PlannerOutputWire])
@@ -62,13 +62,13 @@ def _assert_snapshot_binding(root, live):
  assert manifest['catalog_canonical_sha256']==canonical_hash(live)==canonical_hash(source)
  assert manifest['compiled_canonical_sha256']==canonical_hash(actual)==canonical_hash(aggregate)
  rows={x['capability_id']:x for x in aggregate['capabilities']}
- assert len(rows)==manifest['count']==46
+ assert len(rows)==manifest['count']==47
  files={p.stem:p for p in root.glob('*.json') if p.name not in {'catalog.source.json','catalog.compiled.json','manifest.json'}}
  assert set(rows)==set(files)
  assert all(json.loads(files[name].read_text())==row for name,row in rows.items())
  assert all(hashlib.sha256((root/name).read_bytes()).hexdigest()==digest for name,digest in manifest['files'].items())
 
-def test_all_46_capability_snapshots_bind_live_source_aggregate_and_rows():
+def test_all_47_capability_snapshots_bind_live_source_aggregate_and_rows():
  import pathlib
  from v2.runtime.assembly import capability_catalog
  _assert_snapshot_binding(pathlib.Path(__file__).parents[2]/'capability_snapshots',capability_catalog())

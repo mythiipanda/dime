@@ -17,7 +17,6 @@ from v2.contracts import (
     EntityRef,
 )
 
-
 def test_plan_accepts_dag():
     plan = Plan(nodes=[
         PlanNode(id="baseline", description="Get baseline"),
@@ -26,7 +25,6 @@ def test_plan_accepts_dag():
     ])
     assert plan.nodes[1].depends_on == ["baseline"]
 
-
 def test_plan_rejects_cycle():
     with pytest.raises(ValidationError, match="acyclic"):
         Plan(nodes=[
@@ -34,14 +32,12 @@ def test_plan_rejects_cycle():
             PlanNode(id="b", description="B", depends_on=["a"]),
         ])
 
-
 def test_claim_support_rules():
     with pytest.raises(ValidationError, match="require evidence"):
         Claim(text="Boston won 60 games", kind=ClaimKind.OBSERVED)
     claim = Claim(text="Boston projects to 55 wins", kind=ClaimKind.PROJECTION,
                   confidence=0.6, evidence_ids=["baseline"])
     assert claim.confidence == 0.6
-
 
 def test_evidence_round_trip():
     evidence = EvidenceEnvelope(
@@ -55,7 +51,6 @@ def test_evidence_round_trip():
     )
     assert EvidenceEnvelope.model_validate_json(
         evidence.model_dump_json()).rows[0]["TEAM"] == "BOS"
-
 
 def test_task_scope_rejects_duplicate_contract_entries() -> None:
     from pydantic import ValidationError
@@ -73,11 +68,9 @@ def test_task_scope_rejects_duplicate_contract_entries() -> None:
         TaskSpec(goal="trade", mode="deep_dive", deliverable="analysis",
                  skills=["trade-analysis", "trade-analysis"])
 
-
 def test_plan_node_exposes_only_enforced_execution_contract() -> None:
     assert "expected_schema" not in PlanNode.model_fields
     assert "completion_test" not in PlanNode.model_fields
-
 
 def test_plan_node_rejects_unenforced_model_fields() -> None:
     with pytest.raises(ValidationError, match="Extra inputs are not permitted"):
@@ -86,7 +79,6 @@ def test_plan_node_rejects_unenforced_model_fields() -> None:
             description="facts",
             expected_schema={"wins": "integer"},
         )
-
 
 @pytest.mark.parametrize("model,payload", [
     (TaskSpec, {"goal": "record", "mode": "quick", "deliverable": "answer",
@@ -99,7 +91,6 @@ def test_model_authored_contracts_reject_unknown_fields(model, payload) -> None:
     with pytest.raises(ValidationError, match="Extra inputs are not permitted"):
         model.model_validate(payload)
 
-
 @pytest.mark.parametrize("payload,error", [
     ({"status": "pass", "missing_branches": ["salary"]}, "pass status contradicts"),
     ({"status": "repair"}, "repair status requires"),
@@ -110,20 +101,17 @@ def test_verification_status_must_match_findings(payload, error) -> None:
     with pytest.raises(ValidationError, match=error):
         VerificationReport.model_validate(payload)
 
-
 def test_supported_claim_result_rejects_rejection_reasons() -> None:
     from v2.contracts import ClaimResult
 
     with pytest.raises(ValidationError, match="cannot carry rejection reasons"):
         ClaimResult(claim_index=0, supported=True, reasons=["maybe"])
 
-
 def test_unsupported_claim_result_requires_a_reason() -> None:
     from v2.contracts import ClaimResult
 
     with pytest.raises(ValidationError, match="requires a reason"):
         ClaimResult(claim_index=0, supported=False)
-
 
 @pytest.mark.parametrize("payload,error", [
     ({"text": "Observed.", "kind": "observed", "evidence_ids": ["ev", "ev"]},
@@ -136,7 +124,6 @@ def test_unsupported_claim_result_requires_a_reason() -> None:
 def test_claim_kind_rejects_inapplicable_or_duplicate_support(payload, error) -> None:
     with pytest.raises(ValidationError, match=error):
         Claim.model_validate(payload)
-
 
 @pytest.mark.parametrize("field,value", [
     ("goal", "  "),
@@ -151,7 +138,6 @@ def test_task_scope_rejects_empty_or_duplicate_semantics(field, value) -> None:
     with pytest.raises(ValidationError, match=field):
         TaskSpec.model_validate(payload)
 
-
 @pytest.mark.parametrize("payload,error", [
     ({"id": " ", "description": "facts"}, "non-empty"),
     ({"id": "facts", "description": " "}, "non-empty"),
@@ -164,7 +150,6 @@ def test_plan_node_rejects_ambiguous_identity_or_selection(payload, error) -> No
     with pytest.raises(ValidationError, match=error):
         PlanNode.model_validate(payload)
 
-
 @pytest.mark.parametrize("value", [
     float("nan"), float("inf"), float("-inf"),
     {"nested": [1, float("nan")]},
@@ -172,7 +157,6 @@ def test_plan_node_rejects_ambiguous_identity_or_selection(payload, error) -> No
 def test_plan_node_rejects_nonfinite_arguments(value) -> None:
     with pytest.raises(ValidationError, match="arguments must contain only finite"):
         PlanNode(id="facts", description="facts", arguments={"value": value})
-
 
 @pytest.mark.parametrize("payload,error", [
     ({"sections": ["Answer", "Answer"], "claims": [], "gaps": ["missing"]},
@@ -183,7 +167,6 @@ def test_plan_node_rejects_nonfinite_arguments(value) -> None:
 def test_draft_report_rejects_empty_or_duplicate_content(payload, error) -> None:
     with pytest.raises(ValidationError, match=error):
         DraftReport.model_validate(payload)
-
 
 @pytest.mark.parametrize("payload,error", [
     ({"status": "partial", "claim_results": [
@@ -201,7 +184,6 @@ def test_verification_report_rejects_duplicate_or_empty_findings(payload, error)
     with pytest.raises(ValidationError, match=error):
         VerificationReport.model_validate(payload)
 
-
 @pytest.mark.parametrize("payload,error", [
     ({"kind": "missing_evidence", "message": " ", "blocks": []},
      "message must be non-empty"),
@@ -214,13 +196,11 @@ def test_gap_rejects_empty_or_duplicate_references(payload, error) -> None:
     with pytest.raises(ValidationError, match=error):
         Gap.model_validate(payload)
 
-
 def test_claim_result_rejects_duplicate_reasons() -> None:
     from v2.contracts import ClaimResult
 
     with pytest.raises(ValidationError, match="reasons must not contain duplicates"):
         ClaimResult(claim_index=0, supported=False, reasons=["bad", "bad"])
-
 
 def test_claim_source_and_verified_claim_reject_ambiguous_identity() -> None:
     from v2.contracts import ClaimSource, VerifiedClaim
@@ -231,7 +211,6 @@ def test_claim_source_and_verified_claim_reject_ambiguous_identity() -> None:
     with pytest.raises(ValidationError, match="evidence_ids must not contain duplicates"):
         VerifiedClaim(claim_index=0, claim=claim, evidence_ids=["ev", "ev"])
 
-
 def test_entity_and_season_identity_must_be_non_empty() -> None:
     from v2.contracts import SeasonRef
 
@@ -240,11 +219,9 @@ def test_entity_and_season_identity_must_be_non_empty() -> None:
     with pytest.raises(ValidationError, match="season value must be non-empty"):
         SeasonRef(value=" ", source="user", confidence=1)
 
-
 def test_projection_requires_scenario_evidence() -> None:
     with pytest.raises(ValidationError, match="projection claims require evidence"):
         Claim(text="Boston projects to improve.", kind="projection", confidence=0.6)
-
 
 @pytest.mark.parametrize("payload,error", [
     ({"text": " ", "kind": "judgment"}, "claim text must be non-empty"),
@@ -254,7 +231,6 @@ def test_projection_requires_scenario_evidence() -> None:
 def test_claim_rejects_empty_text_or_evidence_identity(payload, error) -> None:
     with pytest.raises(ValidationError, match=error):
         Claim.model_validate(payload)
-
 
 def test_verified_claim_requires_exact_source_binding() -> None:
     from v2.contracts import ClaimSource, VerifiedClaim
@@ -268,14 +244,12 @@ def test_verified_claim_requires_exact_source_binding() -> None:
     with pytest.raises(ValidationError, match="belong to its evidence"):
         VerifiedClaim(claim_index=0, claim=claim, evidence_ids=["ev"], sources=[unknown])
 
-
 def test_conversation_turn_rejects_blank_content() -> None:
     from pydantic import ValidationError
     from v2.contracts import ConversationTurn
 
     with pytest.raises(ValidationError, match="content must be non-empty"):
         ConversationTurn(role="user", content=" ")
-
 
 @pytest.mark.parametrize("changes,error", [
     ({"evidence_id": " "}, "evidence identity"),
@@ -291,12 +265,10 @@ def test_evidence_rejects_blank_optional_metadata(changes, error) -> None:
     with pytest.raises(ValidationError, match=error):
         EvidenceEnvelope.model_validate(payload)
 
-
 def test_derived_claim_rejects_blank_calculation_identity() -> None:
     with pytest.raises(ValidationError, match="non-empty calculation id"):
         Claim(text="Derived.", kind="derived", evidence_ids=["ev"],
               calculation_id=" ")
-
 
 @pytest.mark.parametrize("value", [float("nan"), float("inf"), float("-inf")])
 def test_evidence_rejects_nonfinite_row_values(value) -> None:
@@ -305,20 +277,17 @@ def test_evidence_rejects_nonfinite_row_values(value) -> None:
             evidence_id="ev", capability="ratings", source="fixture",
             observed_at=datetime(2026, 9, 15, tzinfo=UTC), rows={"rating": value})
 
-
 @pytest.mark.parametrize("value", ["2025", "25-26", "2025-27", "2025/26"])
 def test_season_ref_requires_consecutive_canonical_format(value) -> None:
     from v2.contracts import SeasonRef
     with pytest.raises(ValidationError, match="consecutive YYYY-YY"):
         SeasonRef(value=value, source="user", confidence=1)
 
-
 def test_evidence_season_requires_canonical_format() -> None:
     with pytest.raises(ValidationError, match="consecutive YYYY-YY"):
         EvidenceEnvelope(
             evidence_id="ev", capability="standings", source="fixture",
             observed_at=datetime(2026, 9, 15, tzinfo=UTC), season="2025-27", rows={})
-
 
 def test_evidence_contract_requires_timezone_aware_observation_time() -> None:
     from datetime import datetime
@@ -329,7 +298,6 @@ def test_evidence_contract_requires_timezone_aware_observation_time() -> None:
             evidence_id="ev", capability="standings", source="fixture",
             observed_at=datetime(2026, 9, 15), rows={"wins": 61},
         )
-
 
 def test_evidence_rejects_tzinfo_without_utc_offset() -> None:
     from datetime import datetime, tzinfo
@@ -344,7 +312,6 @@ def test_evidence_rejects_tzinfo_without_utc_offset() -> None:
             observed_at=datetime(2026, 9, 15, tzinfo=MissingOffset()), rows={},
         )
 
-
 @pytest.mark.parametrize("schema,payload", [
     (EvidenceEnvelope, {"evidence_id": "ev", "capability": "test",
      "source": "fixture", "observed_at": "2026-09-15T00:00:00Z",
@@ -355,7 +322,6 @@ def test_truth_bearing_contract_flags_are_strict(schema, payload) -> None:
     with pytest.raises(ValidationError):
         schema.model_validate(payload)
 
-
 @pytest.mark.parametrize("schema,payload", [
     (PlanNode, {"id": "node", "description": "work", "max_attempts": True}),
     (ClaimResult, {"claim_index": "0", "supported": False, "reasons": ["bad"]}),
@@ -363,7 +329,6 @@ def test_truth_bearing_contract_flags_are_strict(schema, payload) -> None:
 def test_execution_coordinates_are_strict_integers(schema, payload) -> None:
     with pytest.raises(ValidationError):
         schema.model_validate(payload)
-
 
 @pytest.mark.parametrize("schema,payload", [
     (SeasonRef, {"value": "2025-26", "source": "user", "confidence": "1"}),
@@ -374,14 +339,12 @@ def test_confidence_values_are_strict_floats(schema, payload) -> None:
     with pytest.raises(ValidationError):
         schema.model_validate(payload)
 
-
 def test_plan_has_a_hard_execution_node_limit() -> None:
     with pytest.raises(ValidationError, match="at most 32 items"):
         Plan(nodes=[
             PlanNode(id=f"node-{index}", description="work")
             for index in range(33)
         ])
-
 
 @pytest.mark.parametrize("field_name,limit", [
     ("subquestions", 32), ("required_evidence", 32),
@@ -392,12 +355,10 @@ def test_task_scope_lists_have_hard_limits(field_name, limit) -> None:
         TaskSpec(goal="answer", mode="quick", deliverable="text",
                  **{field_name: [f"value-{index}" for index in range(limit + 1)]})
 
-
 def test_plan_node_selection_lists_have_hard_limits() -> None:
     with pytest.raises(ValidationError, match="at most 16 items"):
         PlanNode(id="node", description="work",
                  capability_hints=[f"cap-{index}" for index in range(17)])
-
 
 def test_draft_and_verification_lists_have_hard_limits() -> None:
     with pytest.raises(ValidationError, match="at most 32 items"):
@@ -408,7 +369,6 @@ def test_draft_and_verification_lists_have_hard_limits() -> None:
             repair_instructions=[f"repair-{index}" for index in range(129)],
         )
 
-
 def test_evidence_lineage_and_warning_lists_have_hard_limits() -> None:
     base = {"evidence_id": "ev", "capability": "test", "source": "fixture",
             "observed_at": "2026-09-15T00:00:00Z", "rows": {}}
@@ -417,12 +377,10 @@ def test_evidence_lineage_and_warning_lists_have_hard_limits() -> None:
     with pytest.raises(ValidationError, match="at most 64 items"):
         EvidenceEnvelope(**base, warnings=[f"warning-{index}" for index in range(65)])
 
-
 def test_plan_argument_map_has_a_hard_limit() -> None:
     with pytest.raises(ValidationError, match="at most 64 items"):
         PlanNode(id="node", description="work",
                  arguments={f"key-{index}": index for index in range(65)})
-
 
 def test_core_text_contracts_have_hard_limits() -> None:
     with pytest.raises(ValidationError, match="at most 2000 characters"):
@@ -430,13 +388,11 @@ def test_core_text_contracts_have_hard_limits() -> None:
     with pytest.raises(ValidationError, match="at most 4000 characters"):
         Claim(text="x" * 4001, kind="opinion")
 
-
 def test_evidence_optional_metadata_text_has_hard_limits() -> None:
     with pytest.raises(ValidationError, match="at most 4000 characters"):
         EvidenceEnvelope(evidence_id="ev", capability="test", source="fixture",
                          observed_at="2026-09-15T00:00:00Z", rows={},
                          coverage="x" * 4001)
-
 
 def test_source_identity_is_typed_frozen_and_does_not_change_evidence_id():
     from datetime import UTC,datetime
@@ -449,7 +405,6 @@ def test_source_identity_is_typed_frozen_and_does_not_change_evidence_id():
       {'kind':'unknown'},
       {'kind':'live','source':'https://private','extra':'x'}]:
         with pytest.raises(Exception):EvidenceEnvelope(**base,source_identity=bad)
-
 
 def test_generated_evidence_id_unchanged_by_source_identity():
     from datetime import UTC,datetime
@@ -489,13 +444,11 @@ def test_build_envelope_rejects_empty_or_unknown_provenance_markers(meta):
     with pytest.raises(AdapterError,match='source identity|source identity kind'):
         build_envelope(CAPABILITIES['team_ratings'],{}, {'ok':True,'rows':[],'meta':meta})
 
-
 def test_bare_display_source_is_not_inferred_as_live_provenance():
     from v2.adapters.capabilities import CAPABILITIES
     from v2.adapters.core import build_envelope
     item=build_envelope(CAPABILITIES['team_ratings'],{}, {'ok':True,'rows':[],'meta':{'source':'nba_api'}})
     assert item.source=='v1:get_ratings:nba_api' and item.source_identity is None
-
 
 def test_composite_warehouse_identity_is_typed_and_complete():
     from datetime import UTC, datetime
@@ -510,14 +463,12 @@ def test_composite_warehouse_identity_is_typed_and_complete():
         "kind": "composite", "warehouse_id": "configured-runtime",
         "sha256": "a" * 64, "live_sources": ["espn", "nba_api"]}
 
-
 def test_fabricated_team_name_does_not_collapse_to_real_team_id():
     from v2.contracts import canonical_entity_id
     for probe in ("Queens Cobras", "Springfield Atoms", "Springfield Thunder",
                   "Hawk", "Los Angeles", ""):
         assert canonical_entity_id("team", probe) != "1610612737"
     assert canonical_entity_id("team", "Springfield Thunder") == "springfield thunder"
-
 
 def test_task_spec_and_envelope_carry_optional_date_window():
     from datetime import date
@@ -532,7 +483,6 @@ def test_task_spec_and_envelope_carry_optional_date_window():
         observed_at=datetime.now(UTC), rows=[],
         window_start=date(2026, 1, 1), window_end=date(2026, 1, 31))
     assert (item.window_start, item.window_end) == (date(2026, 1, 1), date(2026, 1, 31))
-
 
 def test_date_window_rejects_start_after_end():
     from datetime import date

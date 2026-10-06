@@ -18,9 +18,7 @@ from v2.contracts import (
 )
 from v2.runtime.models import ExecutionResult, admit_verified_claim_bindings
 
-
 _NODE_ID = "qualified_leaders:05b5922eaefae72d"
-
 
 def _rows():
     return [
@@ -42,7 +40,6 @@ def _rows():
         },
     ]
 
-
 def _envelope():
     return build_envelope(
         CAPABILITIES["qualified_leaders"],
@@ -57,7 +54,6 @@ def _envelope():
         observed_at=datetime.now(UTC),
     )
 
-
 def _task():
     return TaskSpec(
         goal="Who led the NBA in assists in the 2024-25 season, and how many?",
@@ -67,7 +63,6 @@ def _task():
         season=SeasonRef(value="2024-25", source="user", confidence=1.0),
         entities=[EntityRef(id="1629027", type="player", display_name="Trae Young")],
     )
-
 
 def _bindings(node_id=_NODE_ID, evidence_id=_NODE_ID,
               requirement_kind="task", requirement_id=None):
@@ -103,7 +98,6 @@ def _bindings(node_id=_NODE_ID, evidence_id=_NODE_ID,
             domain="qualified_leaders",
         ),
     ]
-
 
 def _admit(task, envelope, bindings, nodes=None, attempts=None):
     nodes = nodes or [PlanNode(
@@ -143,7 +137,6 @@ def _admit(task, envelope, bindings, nodes=None, attempts=None):
     )
     return admit_verified_claim_bindings(task, execution, draft, verified)
 
-
 def test_task_scope_binding_citing_node_id_admits_with_corrected_id():
     envelope = _envelope()
     assert envelope.evidence_id != _NODE_ID
@@ -151,7 +144,6 @@ def test_task_scope_binding_citing_node_id_admits_with_corrected_id():
     assert all(item.evidence_id == envelope.evidence_id for item in admitted.output_bindings)
     assert admitted.evidence_ids == [envelope.evidence_id]
     assert [item.evidence_id for item in admitted.sources] == [envelope.evidence_id]
-
 
 def test_task_scope_binding_without_node_evidence_still_rejects():
     envelope = _envelope()

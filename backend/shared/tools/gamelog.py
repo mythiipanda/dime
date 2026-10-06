@@ -21,7 +21,6 @@ MONTH_NAMES = {
 
 DD_CATS = ("PTS", "REB", "AST", "STL", "BLK")
 
-
 def _f(value: object) -> float:
     try:
         if value is None or value == "":
@@ -30,10 +29,8 @@ def _f(value: object) -> float:
     except (TypeError, ValueError):
         return 0.0
 
-
 def _dd_count(row: dict[str, Any]) -> int:
     return sum(1 for c in DD_CATS if _f(row.get(c)) >= 10)
-
 
 def _parse_month(month: object) -> int | None:
     if month is None or month == "":
@@ -53,13 +50,11 @@ def _parse_month(month: object) -> int | None:
     short = {k[:3]: v for k, v in MONTH_NAMES.items()}
     return short.get(s[:3])
 
-
 def _parse_iso_date(s: object) -> _dt.date | None:
     try:
         return _dt.date.fromisoformat(str(s or "").strip())
     except (TypeError, ValueError):
         return None
-
 
 def _positive(value: object, name: str) -> float | None:
     if value is None:
@@ -72,17 +67,14 @@ def _positive(value: object, name: str) -> float | None:
         raise ValueError(f"{name} must be >= 0, got {value!r}")
     return v
 
-
 def _clamp_limit(value: object) -> int:
     try:
         return max(1, min(int(value), MAX_LIMIT))
     except (TypeError, ValueError):
         return MAX_LIMIT
 
-
 def _table_for(playoffs: bool) -> str:
     return "silver_playoff_gamelogs" if playoffs else "silver_player_gamelogs"
-
 
 def _load_games(table: str, season: str,
                 pid: int | None = None, scope: str | None = None) -> list[dict[str, Any]]:
@@ -97,7 +89,6 @@ def _load_games(table: str, season: str,
         tables = {r[0] for r in con.execute("SHOW TABLES").fetchall()}
         if table not in tables:
             return []
-
 
         info = con.execute(f"PRAGMA table_info({table})").fetchall()
         has_fetched = any(str(r[1]).upper() == "_FETCHED_AT" for r in info)
@@ -150,11 +141,9 @@ def _load_games(table: str, season: str,
     games.sort(key=lambda g: g["date"], reverse=True)
     return games
 
-
 def _load_player_games(pid: int, season: str) -> list[dict[str, Any]]:
     season = resolve_season(season)
     return _load_games(_table_for(False), season, pid)
-
 
 def _playoff_coverage(season: str | None = None) -> str:
     season = resolve_season(season)
@@ -192,7 +181,6 @@ def _playoff_coverage(season: str | None = None) -> str:
         )
         return player_text + team_text
     return player_text
-
 
 def playoff_inactive_note(pid: int, season: str, name: str | None = None) -> str | None:
     season = resolve_season(season)
@@ -232,7 +220,6 @@ def playoff_inactive_note(pid: int, season: str, name: str | None = None) -> str
     return (f"{who} was listed {reason} for all {len(rows)} "
             f"{team} playoff games{span}")
 
-
 def _matches(g: dict[str, Any], f: dict[str, Any]) -> bool:
     if f["min_points"] is not None and g["pts"] < f["min_points"]:
         return False
@@ -264,7 +251,6 @@ def _matches(g: dict[str, Any], f: dict[str, Any]) -> bool:
         return False
     return True
 
-
 def _game_signature(g: dict[str, Any]) -> tuple:
     date = g.get("date")
     return (
@@ -279,7 +265,6 @@ def _game_signature(g: dict[str, Any]) -> tuple:
         g.get("ftm"), g.get("fta"), g.get("plus_minus"),
     )
 
-
 def _game_key(g: dict[str, Any]) -> tuple:
     date = g.get("date")
     if isinstance(date, _dt.datetime):
@@ -289,7 +274,6 @@ def _game_key(g: dict[str, Any]) -> tuple:
         date.isoformat() if isinstance(date, _dt.date) else date,
         g.get("matchup"),
     )
-
 
 def _fetch_rank(value: object) -> tuple[int, _dt.datetime]:
     oldest = (0, _dt.datetime.min)
@@ -320,7 +304,6 @@ def _fetch_rank(value: object) -> tuple[int, _dt.datetime]:
         dt = dt.astimezone(_dt.timezone.utc).replace(tzinfo=None)
     return (1, dt)
 
-
 def _pick_canonical(rows: list[dict[str, Any]], sig_of,
                     stat_keys: list[str]) -> tuple[dict[str, Any], bool]:
     if len({sig_of(r) for r in rows}) == 1:
@@ -336,10 +319,8 @@ def _pick_canonical(rows: list[dict[str, Any]], sig_of,
     )
     return rows[order[0]], True
 
-
 _DICT_STAT_KEYS = ["min", "pts", "reb", "ast", "stl", "blk", "tov", "pf",
                    "fgm", "fga", "fg3m", "fg3a", "plus_minus"]
-
 
 def _dedupe_games(games: list[dict[str, Any]]) -> list[dict[str, Any]]:
     groups: dict[tuple, list[dict[str, Any]]] = {}
@@ -360,7 +341,6 @@ def _dedupe_games(games: list[dict[str, Any]]) -> list[dict[str, Any]]:
         unique.append(winner)
     return unique
 
-
 def _frame_game_date_key() -> "pl.Expr":
     import polars as pl
 
@@ -372,7 +352,6 @@ def _frame_game_date_key() -> "pl.Expr":
     return pl.coalesce([parsed.cast(pl.String),
                         pl.col("GAME_DATE").cast(pl.String)])
 
-
 def dedupe_game_log_frame(frame):
     import polars as pl
 
@@ -383,7 +362,6 @@ def dedupe_game_log_frame(frame):
            if c not in ("Game_ID", "_source", "_season", "_fetched_at", "_entity")]
     entity = "Player_ID" if "Player_ID" in cols else "Team_ID"
     if "MATCHUP" not in cols:
-
 
         return (frame.unique(subset=sig, keep="first", maintain_order=True)
                 .with_columns(pl.lit(False).alias("stat_conflict")))
@@ -409,12 +387,10 @@ def dedupe_game_log_frame(frame):
         .drop(["_ri", "_gdate"])
     )
 
-
 def _record_for_scope(games: list[dict[str, Any]], scope: str) -> dict[str, Any]:
     wl = Counter(str(g.get("wl") or "").upper() for g in games)
     w, l = wl.get("W", 0), wl.get("L", 0)
     return {"w": w, "l": l, "games": w + l, "scope": scope}
-
 
 def _record_note(record_games: int, total: int, scope: str) -> str | None:
     if record_games == total:
@@ -422,7 +398,6 @@ def _record_note(record_games: int, total: int, scope: str) -> str | None:
     return (f"record covers {record_games} of {total} matched {scope}"
             " games; games without a W/L result are excluded"
             " from wins/losses")
-
 
 def _describe_filters(f: dict[str, Any], playoffs: bool = False) -> str:
     bits = []
@@ -460,7 +435,6 @@ def _describe_filters(f: dict[str, Any], playoffs: bool = False) -> str:
         bits.append("home games" if f["home_away"] == "home" else "away games")
     return ", ".join(bits) or "all games"
 
-
 def _row_out(g: dict[str, Any]) -> dict[str, Any]:
     out = {
         "date": g["date"].isoformat(),
@@ -482,14 +456,11 @@ def _row_out(g: dict[str, Any]) -> dict[str, Any]:
         "wl": g["wl"],
     }
 
-
-
     if g.get("stat_conflict"):
         out["stat_conflict"] = True
     return out
 
-
-@tool
+@tool(description='Filter game logs by stat thresholds, opponent, time, or home/away.\n\nplayer: name, nickname, or id (same resolution as every other tool).\nRequired unless league_wide=True or team_wide=True.\nleague_wide: when True, ignore player and return per-player match\ncounts across the whole warehouse (answers "who had the most\n50-point games this season").\nteam_wide: when True, ignore player and return per-team match\ncounts across the whole warehouse (answers "which team had the\nmost 50-point games this season"). Each matched game counts for\nthe team the player was on that night (first token of MATCHUP,\ne.g. "LAL vs. BOS" -> "LAL"), so a mid-season trade attributes\neach game to the team at game time, not the current team.\nplayoffs: when True, read silver_playoff_gamelogs instead of the\nregular-season table.\nmin_points / min_rebounds / min_assists: per-game stat floors\n(e.g. min_points=40 for 40-point games). min_pra: points + rebounds\n+ assists floor. max_points / max_rebounds / max_assists: per-game\nstat ceilings, exclusive (max_points=20 keeps 0-19 games -\n"under 20"). triple_double / double_double: keep only games\nwith 10+ in 3 (or 2) of PTS/REB/AST/STL/BLK. opponent: team name or\nabbreviation, e.g. "Knicks" or "NYK". month: name, number, or\nYYYY-MM. start_date / end_date: YYYY-MM-DD, inclusive. home_away:\n"home" or "away". season: 2025-26 only in the warehouse.\nbest_game: when True, ignore the limit and return only the single\nhighest-scoring game (answers "best game" / "career high" phrasing).\nReturns matching games, most recent first, with the total match\ncount (rows beyond limit are counted, not returned). A player with\nno rows in the chosen scope is an explicit ok:False error, never a\nsilent 0.\nWarehouse only; 2025-26 only.')
 def search_game_logs(
     player: str | None = None,
     league_wide: bool = False,
@@ -513,38 +484,6 @@ def search_game_logs(
     season: str | None = None,
     limit: int = 50,
 ) -> dict[str, Any]:
-    """Filter game logs by stat thresholds, opponent, time, or home/away.
-
-    player: name, nickname, or id (same resolution as every other tool).
-    Required unless league_wide=True or team_wide=True.
-    league_wide: when True, ignore player and return per-player match
-    counts across the whole warehouse (answers "who had the most
-    50-point games this season").
-    team_wide: when True, ignore player and return per-team match
-    counts across the whole warehouse (answers "which team had the
-    most 50-point games this season"). Each matched game counts for
-    the team the player was on that night (first token of MATCHUP,
-    e.g. "LAL vs. BOS" -> "LAL"), so a mid-season trade attributes
-    each game to the team at game time, not the current team.
-    playoffs: when True, read silver_playoff_gamelogs instead of the
-    regular-season table.
-    min_points / min_rebounds / min_assists: per-game stat floors
-    (e.g. min_points=40 for 40-point games). min_pra: points + rebounds
-    + assists floor. max_points / max_rebounds / max_assists: per-game
-    stat ceilings, exclusive (max_points=20 keeps 0-19 games -
-    "under 20"). triple_double / double_double: keep only games
-    with 10+ in 3 (or 2) of PTS/REB/AST/STL/BLK. opponent: team name or
-    abbreviation, e.g. "Knicks" or "NYK". month: name, number, or
-    YYYY-MM. start_date / end_date: YYYY-MM-DD, inclusive. home_away:
-    "home" or "away". season: 2025-26 only in the warehouse.
-    best_game: when True, ignore the limit and return only the single
-    highest-scoring game (answers "best game" / "career high" phrasing).
-    Returns matching games, most recent first, with the total match
-    count (rows beyond limit are counted, not returned). A player with
-    no rows in the chosen scope is an explicit ok:False error, never a
-    silent 0.
-    Warehouse only; 2025-26 only.
-    """
     season = resolve_season(season)
     season = clamp_season(season)
     table = _table_for(bool(playoffs))
@@ -629,11 +568,6 @@ def search_game_logs(
             err += f"; {note}" if note else f"; {_playoff_coverage(season)}"
         return {"tool": "search_game_logs", "ok": False, "error": err}
 
-
-
-
-
-
     games = _dedupe_games(games)
     matched = [g for g in games if _matches(g, filters)]
     lim = _clamp_limit(limit)
@@ -669,9 +603,6 @@ def search_game_logs(
         }
     if team_wide:
 
-
-
-
         counts_t: dict[str, int] = {}
         for g in matched:
             tabbr = str(g.get("matchup") or "").split(" ")[0].upper() or "UNK"
@@ -705,9 +636,6 @@ def search_game_logs(
         }
     assert pid is not None
 
-
-
-
     supplied_name = str(player).strip() if player is not None else ""
     name = (supplied_name if supplied_name and not supplied_name.isdigit()
             else _resolve_name(pid, supplied_name or str(pid)))
@@ -735,8 +663,6 @@ def search_game_logs(
             "filters": _describe_filters(filters, playoffs),
             "total": len(matched),
 
-
-
             "average_pts": (Decimal(sum(g["pts"] for g in matched)) / Decimal(len(matched))
                             if matched else None),
             "window_start": (min((g["date"] for g in matched), default=None)),
@@ -748,7 +674,6 @@ def search_game_logs(
         },
         "meta": meta,
     }
-
 
 def _coverage_note(table: str) -> str:
     if table == "silver_playoff_gamelogs":

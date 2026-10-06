@@ -20,11 +20,9 @@ from v2.contracts import (
 from v2.runtime import Runtime
 from v2.runtime.models import ExecutionResult
 
-
 @pytest.fixture
 def anyio_backend():
     return "asyncio"
-
 
 def make_task() -> TaskSpec:
     return TaskSpec(
@@ -39,7 +37,6 @@ def make_task() -> TaskSpec:
         ],
     )
 
-
 def recovery_nodes() -> list[PlanNode]:
     return [
         PlanNode(
@@ -52,7 +49,6 @@ def recovery_nodes() -> list[PlanNode]:
         ),
     ]
 
-
 def fail_all(plan: Plan) -> ExecutionResult:
     return ExecutionResult(
         plan=Plan(nodes=[
@@ -63,7 +59,6 @@ def fail_all(plan: Plan) -> ExecutionResult:
         errors={node.id: [f"RuntimeError: {node.id} failed"]
                 for node in plan.nodes},
     )
-
 
 def complete_all(plan: Plan) -> ExecutionResult:
     return ExecutionResult(
@@ -84,11 +79,9 @@ def complete_all(plan: Plan) -> ExecutionResult:
         attempts={node.id: 1 for node in plan.nodes},
     )
 
-
 class Intake:
     async def understand(self, request: str) -> TaskSpec:
         return make_task()
-
 
 class Planner:
     def __init__(self, recovery: list[PlanNode]) -> None:
@@ -114,7 +107,6 @@ class Planner:
             node.model_copy() for node in self.recovery
         ])
 
-
 class FailThenCompleteExecutor:
     def __init__(self) -> None:
         self.calls = 0
@@ -125,7 +117,6 @@ class FailThenCompleteExecutor:
             return fail_all(plan)
         return complete_all(plan)
 
-
 class AlwaysFailExecutor:
     def __init__(self) -> None:
         self.calls = 0
@@ -133,7 +124,6 @@ class AlwaysFailExecutor:
     async def execute(self, task, plan, run_id=None, resume=True) -> ExecutionResult:
         self.calls += 1
         return fail_all(plan)
-
 
 class FailsThenSucceeds:
     def __init__(self, name: str, message: str, failures: int) -> None:
@@ -150,7 +140,6 @@ class FailsThenSucceeds:
         return await FakeCapability(self.name, {"value": 1}).execute(
             node, task, evidence)
 
-
 def recovery_capabilities(message: str, *, cap_a_failures: int = 99) -> dict:
     return {
         "cap_a": FailsThenSucceeds("cap_a", message, cap_a_failures),
@@ -158,7 +147,6 @@ def recovery_capabilities(message: str, *, cap_a_failures: int = 99) -> dict:
         "cap_b": FailsThenSucceeds("cap_b", message, 0),
         "cap_d": FailsThenSucceeds("cap_d", message, 0),
     }
-
 
 class PartialExecutor:
     def __init__(self) -> None:
@@ -186,7 +174,6 @@ class PartialExecutor:
                     for node in rest},
         )
 
-
 class Synthesizer:
     def __init__(self) -> None:
         self.seen: list = []
@@ -204,7 +191,6 @@ class Synthesizer:
             )],
         )
 
-
 class PassVerifier:
     async def verify(self, task, draft, evidence) -> VerificationReport:
         return VerificationReport(
@@ -215,7 +201,6 @@ class PassVerifier:
             ],
         )
 
-
 def build_runtime(planner, executor, synthesizer) -> Runtime:
     return Runtime(
         intake=Intake(),
@@ -225,7 +210,6 @@ def build_runtime(planner, executor, synthesizer) -> Runtime:
         mechanical_verifier=PassVerifier(),
         semantic_verifier=PassVerifier(),
     )
-
 
 @pytest.mark.anyio
 async def test_total_failure_replans_once_and_synthesizes_recovery_evidence() -> None:
@@ -242,7 +226,6 @@ async def test_total_failure_replans_once_and_synthesizes_recovery_evidence() ->
     assert result.verification.status == VerificationStatus.PASS
     assert [item.claim.text for item in result.verified_claims] == [
         "Recovered value is 1."]
-
 
 @pytest.mark.anyio
 async def test_checkpointed_recovery_executes_the_replan_instead_of_raising(tmp_path) -> None:
@@ -274,7 +257,6 @@ async def test_checkpointed_recovery_executes_the_replan_instead_of_raising(tmp_
     assert result.execution.errors["a1"] == [f"RuntimeError: {message}"]
     assert not (tmp_path / "checkpoints" / "turn-1.json").exists()
 
-
 @pytest.mark.anyio
 async def test_checkpointed_recovery_reenters_the_same_replanned_node(tmp_path) -> None:
     from v2.runtime import PlanExecutor
@@ -305,7 +287,6 @@ async def test_checkpointed_recovery_reenters_the_same_replanned_node(tmp_path) 
     assert result.verification.status == VerificationStatus.PASS
     assert not (tmp_path / "checkpoints" / "turn-1.json").exists()
 
-
 @pytest.mark.anyio
 async def test_partial_completion_skips_replan() -> None:
     planner = Planner(recovery_nodes())
@@ -315,7 +296,6 @@ async def test_partial_completion_skips_replan() -> None:
 
     assert len(planner.calls) == 1
     assert executor.calls == 1
-
 
 @pytest.mark.anyio
 async def test_failure_context_lists_failed_nodes_reasons_and_remaining_options() -> None:
@@ -342,7 +322,6 @@ async def test_failure_context_lists_failed_nodes_reasons_and_remaining_options(
         "RuntimeError: c1 failed"]
     assert by_requirement["efficiency"]["remaining_capability_options"] == [
         "cap_d"]
-
 
 @pytest.mark.anyio
 async def test_failed_recovery_does_not_replan_again() -> None:

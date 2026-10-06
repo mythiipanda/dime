@@ -11,11 +11,9 @@ EXPECTED = {
     "SGA": 1628983,
 }
 
-
 def test_index_built_once():
     assert len(core_mod._PLAYER_ROWS) > 1000
     assert len(core_mod._PLAYER_ROWS) == len(core_mod._PLAYER_NORMS)
-
 
 def test_resolution_stable_and_cached():
     coerce_player_id.cache_clear()
@@ -28,7 +26,6 @@ def test_resolution_stable_and_cached():
     info = coerce_player_id.cache_info()
     assert info.hits >= len(EXPECTED)
 
-
 def test_cache_key_is_stripped_lowercase():
     coerce_player_id.cache_clear()
     base = coerce_player_id("LeBron James")
@@ -36,7 +33,6 @@ def test_cache_key_is_stripped_lowercase():
     assert coerce_player_id("  LEBRON JAMES  ") == base
     assert coerce_player_id("sga") == coerce_player_id("SGA")
     assert coerce_player_id.cache_info().hits >= 3
-
 
 def test_unknown_names_still_miss():
     coerce_player_id.cache_clear()
@@ -56,7 +52,6 @@ def test_slug_order_and_suffix_warehouse_identity_are_normalized():
 
 
     assert coerce_player_id("Tim Hardaway Jr.") == 203501
-
 
 def test_unmatched_player_emits_typed_name_resolution_gap():
     coerce_player_id.cache_clear()

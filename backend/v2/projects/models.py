@@ -5,13 +5,11 @@ from enum import StrEnum
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-
 class ProjectStatus(StrEnum):
     PENDING = "pending"
     RUNNING = "running"
     COMPLETE = "complete"
     FAILED = "failed"
-
 
 class Project(BaseModel):
     model_config = ConfigDict(extra="forbid")

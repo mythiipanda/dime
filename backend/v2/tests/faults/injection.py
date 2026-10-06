@@ -5,18 +5,14 @@ from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from typing import Any
 
-
 class InjectedTimeout(TimeoutError):
     pass
-
 
 class InjectedToolFailure(RuntimeError):
     pass
 
-
 class InjectedVerifierRejection(RuntimeError):
     pass
-
 
 @dataclass
 class FaultInjector:
@@ -33,7 +29,6 @@ class FaultInjector:
     def inject(self, point: str, error: BaseException) -> None:
         self.faults.setdefault(point, []).append(error)
 
-
 @dataclass
 class MemoryCheckpoint:
     completed: set[str] = field(default_factory=set)
@@ -42,7 +37,6 @@ class MemoryCheckpoint:
     def save(self, node_id: str, evidence: Any) -> None:
         self.completed.add(node_id)
         self.evidence[node_id] = evidence
-
 
 async def run_nodes(node_ids: list[str], checkpoint: MemoryCheckpoint,
                     injector: FaultInjector,

@@ -7,15 +7,14 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from shared import store  # noqa: E402
-from shared.tools import league as league_mod  # noqa: E402
-from shared.tools import team as team_mod  # noqa: E402
-from v2.adapters import call_capability  # noqa: E402
+from shared import store
+from shared.tools import league as league_mod
+from shared.tools import team as team_mod
+from v2.adapters import call_capability
 
 REPO_WAREHOUSE = (
     Path(__file__).resolve().parent.parent / "data" / "warehouse.duckdb"
 )
-
 
 @contextmanager
 def _warehouse():
@@ -25,13 +24,11 @@ def _warehouse():
     finally:
         con.close()
 
-
 def _skip_without_warehouse():
     if not REPO_WAREHOUSE.exists():
         pytest.skip(f"no warehouse at {REPO_WAREHOUSE}")
     with _warehouse() as con:
         return con.execute("SHOW TABLES").fetchall()
-
 
 def _trailing_games(con, team, season, count):
     return con.execute(
@@ -45,7 +42,6 @@ def _trailing_games(con, team, season, count):
         [season, team, count],
     ).fetchall()
 
-
 def _season_games_won(con, team, opponent, season):
     return con.execute(
         "SELECT COUNT(*) FILTER (WHERE wl = 'W') FROM silver_hist_gamelogs"
@@ -54,14 +50,12 @@ def _season_games_won(con, team, opponent, season):
         [season, team, f"%{opponent}%"],
     ).fetchone()[0]
 
-
 def _season_points_pg(con, team_city, season):
     return con.execute(
         "SELECT PointsPG FROM silver_standings"
         " WHERE _season = ? AND TeamCity = ?",
         [season, team_city],
     ).fetchone()[0]
-
 
 def _playoff_round_wins(con, team, opponent, season, round_code):
     return con.execute(
@@ -72,16 +66,13 @@ def _playoff_round_wins(con, team, opponent, season, round_code):
         [season, team, f"%{opponent}%", round_code],
     ).fetchone()
 
-
 def _brief(a, b, season):
     env = call_capability("matchup_brief", {"a": a, "b": b, "season": season})
     assert env.capability == "matchup_brief"
     return env.rows
 
-
 def _split(rows, name):
     return next(row for row in rows if row["split"] == name)
-
 
 def test_warehouse_carries_the_tables_the_number_assertions_read():
     tables = {row[0] for row in _skip_without_warehouse()}
@@ -89,7 +80,6 @@ def test_warehouse_carries_the_tables_the_number_assertions_read():
         "silver_hist_gamelogs", "silver_standings", "silver_playoffs",
         "silver_leaders_ast", "silver_advanced",
     } <= tables
-
 
 @pytest.mark.parametrize(
     "a, b, season, city_a, city_b",
@@ -112,7 +102,6 @@ def test_brief_last_ten_rate_equals_the_warehouse_last_ten_games(
             assert published["PPG_GAMES"] == len(games) == published["GP"]
             assert published["window"]["games"] == len(games)
 
-
 @pytest.mark.parametrize(
     "a, b, season, city_a, city_b",
     [
@@ -134,7 +123,6 @@ def test_last_ten_rate_is_not_answering_the_season_points_per_game(
             assert published["window"]["games"] == 10
             assert published["window"]["season"] == season
 
-
 def test_every_split_rate_names_the_window_it_was_measured_over():
     _skip_without_warehouse()
     rows = _brief("MIN", "DAL", "2024-25")
@@ -146,7 +134,6 @@ def test_every_split_rate_names_the_window_it_was_measured_over():
         assert row["PPG_GAMES"] <= row["GP"], name
         assert row["PPG"] is None or row["PPG_GAMES"] == window["games"], name
 
-
 _GAMELOG_DDL = (
     "CREATE TABLE silver_hist_gamelogs ("
     "team_id INTEGER, team_abbreviation VARCHAR, game_id VARCHAR, "
@@ -156,7 +143,6 @@ _GAMELOG_DDL = (
 
 SYNTHETIC_TEAM = "POR"
 SYNTHETIC_SEASON = "2024-25"
-
 
 def _synthetic(tmp_path, monkeypatch, pts_values, wl_values):
     path = tmp_path / "synthetic.duckdb"
@@ -188,13 +174,11 @@ def _synthetic(tmp_path, monkeypatch, pts_values, wl_values):
     monkeypatch.setattr(store, "connect", fake_connect)
     return path
 
-
 def _synthetic_splits():
     out = team_mod.get_team_splits.invoke(
         {"team": SYNTHETIC_TEAM, "season": SYNTHETIC_SEASON})
     assert out["ok"] is True
     return out
-
 
 def test_split_omits_a_rate_the_warehouse_cannot_supply(tmp_path, monkeypatch):
     _synthetic(tmp_path, monkeypatch, [None, None, None], ["W", "W", "L"])
@@ -202,7 +186,6 @@ def test_split_omits_a_rate_the_warehouse_cannot_supply(tmp_path, monkeypatch):
     assert row["GP"] == 3
     assert row["PPG"] is None
     assert row["PPG_GAMES"] == 0
-
 
 def test_split_divides_a_rate_by_the_games_that_carry_a_score(
     tmp_path, monkeypatch,
@@ -212,7 +195,6 @@ def test_split_divides_a_rate_by_the_games_that_carry_a_score(
     assert row["GP"] == 3
     assert row["PPG_GAMES"] == 2
     assert row["PPG"] == pytest.approx(round((120.0 + 90.0) / 2, 1))
-
 
 def test_split_does_not_count_an_undecided_game_as_a_loss(
     tmp_path, monkeypatch,
@@ -224,7 +206,6 @@ def test_split_does_not_count_an_undecided_game_as_a_loss(
     assert row["L"] == 1
     assert row["UNDECIDED"] == 1
     assert row["W"] + row["L"] + row["UNDECIDED"] == row["GP"]
-
 
 def test_warehouse_undecided_game_is_not_published_as_a_loss():
     _skip_without_warehouse()
@@ -240,7 +221,6 @@ def test_warehouse_undecided_game_is_not_published_as_a_loss():
         assert out["ok"] is True
         row = _split(out["rows"], "last10")
         assert row["UNDECIDED"] == row["GP"] - row["W"] - row["L"]
-
 
 @pytest.mark.parametrize(
     "a, b, season, round_code",
@@ -275,7 +255,6 @@ def test_season_series_keeps_game_wins_and_series_wins_distinct(
     assert summary["series"][0]["games_won"] == {a: series_a, b: series_b}
     assert summary["games_undecided"] == 0
 
-
 def test_a_game_count_never_satisfies_a_series_count():
     _skip_without_warehouse()
     summary = _brief("BOS", "NYK", "2024-25")["season_series"]["summary"]
@@ -288,7 +267,6 @@ def test_a_game_count_never_satisfies_a_series_count():
     assert series_games != summary["games_won"]
     assert sum(summary["series_won"].values()) <= summary["series_played"]
 
-
 def test_a_pairing_with_no_playoff_meeting_reports_no_series():
     _skip_without_warehouse()
     summary = _brief("LAL", "GSW", "2024-25")["season_series"]["summary"]
@@ -297,13 +275,11 @@ def test_a_pairing_with_no_playoff_meeting_reports_no_series():
     assert summary["series"] == []
     assert summary["games_won"] == {"LAL": 3, "GSW": 1}
 
-
 def _leader_floor(con, table, season, player):
     return con.execute(
         f"SELECT MIN FROM {table} WHERE _season = ? AND PLAYER = ?",
         [season, player],
     ).fetchone()[0]
-
 
 def test_leader_qualification_publishes_the_value_the_floor_applies_to():
     _skip_without_warehouse()
@@ -324,7 +300,6 @@ def test_leader_qualification_publishes_the_value_the_floor_applies_to():
         assert minutes >= floor["floor"] == 500
         assert f"{round(minutes):,}" in out["meta"]["deterministic_answer"]
         assert "total minutes" in out["meta"]["deterministic_answer"]
-
 
 def test_per_game_minutes_cannot_answer_the_total_minutes_floor():
     _skip_without_warehouse()
@@ -347,12 +322,10 @@ def test_per_game_minutes_cannot_answer_the_total_minutes_floor():
         out["meta"]["deterministic_answer"])
     assert "per game" not in out["meta"]["qualification"]
 
-
 _LEADERS_WITHOUT_MINUTES = (
     "CREATE TABLE silver_leaders_ast ("
     "PLAYER TEXT, TEAM TEXT, GP INTEGER, AST INTEGER, _season VARCHAR)"
 )
-
 
 def _floorless_warehouse(tmp_path, monkeypatch):
     path = tmp_path / "floorless.duckdb"
@@ -374,7 +347,6 @@ def _floorless_warehouse(tmp_path, monkeypatch):
     monkeypatch.setattr(store, "connect", fake_connect)
     return path
 
-
 def test_leader_answer_fails_loud_when_the_qualification_value_is_missing(
     tmp_path, monkeypatch,
 ):
@@ -386,7 +358,6 @@ def test_leader_answer_fails_loud_when_the_qualification_value_is_missing(
     assert "total minutes" in out["error"]
     assert "silver_leaders_ast" in out["error"]
     assert "refusing to publish" in out["error"]
-
 
 def test_leader_board_publishes_the_floor_value_for_every_row():
     _skip_without_warehouse()
@@ -404,7 +375,6 @@ def test_leader_board_publishes_the_floor_value_for_every_row():
     lead = out["rows"][0]
     assert f"{lead['MIN']:,.0f} total minutes" in (
         out["meta"]["deterministic_answer"])
-
 
 def test_leader_rate_in_the_row_and_in_the_answer_are_one_number():
     _skip_without_warehouse()

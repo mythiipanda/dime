@@ -5,8 +5,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from shared import store  # noqa: E402
-
+from shared import store
 
 def _point_db_at(monkeypatch, tmp_path):
     db = tmp_path / "wh.duckdb"
@@ -14,7 +13,6 @@ def _point_db_at(monkeypatch, tmp_path):
     monkeypatch.setattr(store, "DB_PATH", db)
     store.warehouse_identity_cache_clear()
     return db
-
 
 def test_repeated_calls_do_not_rehash(monkeypatch, tmp_path):
     _point_db_at(monkeypatch, tmp_path)
@@ -32,7 +30,6 @@ def test_repeated_calls_do_not_rehash(monkeypatch, tmp_path):
     assert first.keys() == {"warehouse_id", "warehouse_sha256"}
     assert len(calls) == 2
 
-
 def test_modifying_file_yields_new_sha256(monkeypatch, tmp_path):
     db = _point_db_at(monkeypatch, tmp_path)
     before = store.warehouse_identity()
@@ -41,7 +38,6 @@ def test_modifying_file_yields_new_sha256(monkeypatch, tmp_path):
     assert after.keys() == {"warehouse_id", "warehouse_sha256"}
     assert after["warehouse_sha256"] != before["warehouse_sha256"]
     assert after["warehouse_id"] == before["warehouse_id"]
-
 
 def test_cache_clear_forces_recompute(monkeypatch, tmp_path):
     _point_db_at(monkeypatch, tmp_path)
@@ -60,7 +56,6 @@ def test_cache_clear_forces_recompute(monkeypatch, tmp_path):
     again = store.warehouse_identity()
     assert len(calls) == 3
     assert again.keys() == {"warehouse_id", "warehouse_sha256"}
-
 
 def test_byte_swap_same_size_restored_mtime_yields_new_sha256(monkeypatch, tmp_path):
     db = _point_db_at(monkeypatch, tmp_path)

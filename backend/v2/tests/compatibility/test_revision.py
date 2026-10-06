@@ -8,7 +8,6 @@ import pytest
 
 from v2.tests.compatibility.harness import RevisionFingerprint, assert_server_revision
 
-
 class Handler(BaseHTTPRequestHandler):
     payload = {"revision": "new", "executable_sha256": "sha"}
 
@@ -23,7 +22,6 @@ class Handler(BaseHTTPRequestHandler):
     def log_message(self, *_):
         pass
 
-
 def test_runner_rejects_stale_server_revision():
     server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
     thread = threading.Thread(target=server.serve_forever, daemon=True)
@@ -36,7 +34,6 @@ def test_runner_rejects_stale_server_revision():
     finally:
         server.shutdown()
         server.server_close()
-
 
 def test_local_fingerprint_matches_revision_endpoint_hash():
     from pathlib import Path

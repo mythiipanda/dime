@@ -13,7 +13,6 @@ from shared.tools.gamelog import (
     _positive,
 )
 
-
 def _game(date, pts=20, reb=5, ast=5, stl=1, blk=1, matchup="LAL vs. UTA"):
     d = _dt.date.fromisoformat(date)
     return {
@@ -25,7 +24,6 @@ def _game(date, pts=20, reb=5, ast=5, stl=1, blk=1, matchup="LAL vs. UTA"):
         "dd_count": sum(1 for v in (pts, reb, ast, stl, blk) if v >= 10),
     }
 
-
 def _filters(**kw):
     base = {
         "min_points": None, "min_rebounds": None, "min_assists": None,
@@ -36,12 +34,10 @@ def _filters(**kw):
     base.update(kw)
     return base
 
-
 def test_matches_points_threshold():
     g = _game("2026-03-01", pts=30)
     assert _matches(g, _filters(min_points=30)) is True
     assert _matches(g, _filters(min_points=31)) is False
-
 
 def test_matches_rebounds_and_assists():
     g = _game("2026-03-01", reb=12, ast=11)
@@ -49,12 +45,10 @@ def test_matches_rebounds_and_assists():
     assert _matches(g, f) is True
     assert _matches(g, _filters(min_rebounds=13)) is False
 
-
 def test_matches_pra_combined():
     g = _game("2026-03-01", pts=25, reb=8, ast=8)
     assert _matches(g, _filters(min_pra=40)) is True
     assert _matches(g, _filters(min_pra=42)) is False
-
 
 def test_matches_double_and_triple_double():
     dd = _game("2026-03-01", pts=20, reb=12)
@@ -64,7 +58,6 @@ def test_matches_double_and_triple_double():
     assert _matches(td, _filters(triple_double=True)) is True
     assert _matches(_game("2026-03-03"), _filters(double_double=True)) is False
 
-
 def test_matches_opponent_and_home_away():
     home_nyk = _game("2026-03-01", matchup="BOS vs. NYK")
     away_bos = _game("2026-03-02", matchup="LAL @ BOS")
@@ -73,7 +66,6 @@ def test_matches_opponent_and_home_away():
     assert _matches(home_nyk, _filters(home_away="home")) is True
     assert _matches(home_nyk, _filters(home_away="away")) is False
     assert _matches(away_bos, _filters(home_away="away")) is True
-
 
 def test_matches_month_and_date_range():
     march = _game("2026-03-15")
@@ -85,7 +77,6 @@ def test_matches_month_and_date_range():
     assert _matches(march, rng) is True
     assert _matches(april, rng) is False
 
-
 def test_parse_month_accepts_names_numbers_iso():
     assert _parse_month("March") == 3
     assert _parse_month("mar") == 3
@@ -94,7 +85,6 @@ def test_parse_month_accepts_names_numbers_iso():
     assert _parse_month("notamonth") is None
     assert _parse_month(13) is None
     assert _parse_month(None) is None
-
 
 def test_positive_rejects_garbage():
     assert _positive("40", "min_points") == 40.0
@@ -112,14 +102,12 @@ def test_positive_rejects_garbage():
     else:
         raise AssertionError("expected ValueError")
 
-
 def test_describe_filters_readable():
     s = _describe_filters(_filters(min_points=40, opponent="BOS",
                                    month=3, home_away="away"))
     assert "40+ points" in s and "vs BOS" in s and "March" in s
     assert "away games" in s
     assert _describe_filters(_filters()) == "all games"
-
 
 def test_integration_lebron_30pt_games_filter():
     res = search_game_logs.invoke({"player": "LeBron James",
@@ -136,7 +124,6 @@ def test_integration_lebron_30pt_games_filter():
     assert res["meta"]["source"] == "warehouse"
     assert res["meta"]["season"] == "2025-26"
 
-
 def test_integration_lebron_vs_celtics():
     res = search_game_logs.invoke({"player": "LeBron James",
                                    "opponent": "Celtics"})
@@ -144,7 +131,6 @@ def test_integration_lebron_vs_celtics():
     rows = res["rows"]
     assert rows["total"] >= 1
     assert all(g["opponent"] == "BOS" for g in rows["matches"])
-
 
 def test_integration_lebron_march_games():
     res = search_game_logs.invoke({"player": "LeBron James",
@@ -155,7 +141,6 @@ def test_integration_lebron_march_games():
     assert rows["total"] == 14
     assert all(g["date"][:7] == "2026-03" for g in rows["matches"])
 
-
 def test_integration_month_name_filter_matches_date_range():
     by_month = search_game_logs.invoke({"player": "LeBron James",
                                         "month": "March"})
@@ -165,7 +150,6 @@ def test_integration_month_name_filter_matches_date_range():
     assert by_month["ok"] is True
     assert by_month["rows"]["total"] == by_range["rows"]["total"] == 14
 
-
 def test_integration_cap_counts_beyond_limit():
     res = search_game_logs.invoke({"player": "LeBron James", "limit": 10})
     assert res["ok"] is True
@@ -174,13 +158,11 @@ def test_integration_cap_counts_beyond_limit():
     assert rows["returned"] == 10
     assert rows["capped"] is True
 
-
 def test_integration_unknown_player_clean_error():
     res = search_game_logs.invoke({"player": "Player McNotreal zzz",
                                    "min_points": 40})
     assert res["ok"] is False
     assert "unknown player" in res["error"]
-
 
 def test_integration_unknown_team_clean_error():
     res = search_game_logs.invoke({"player": "LeBron James",
@@ -188,13 +170,11 @@ def test_integration_unknown_team_clean_error():
     assert res["ok"] is False
     assert "unknown team" in res["error"]
 
-
 def test_integration_bad_month_clean_error():
     res = search_game_logs.invoke({"player": "LeBron James",
                                    "month": "Smarch"})
     assert res["ok"] is False
     assert "month" in res["error"]
-
 
 def _rs_only_player():
     from shared import store as _store
@@ -218,7 +198,6 @@ def _rs_only_player():
         con.close()
     return None
 
-
 def _playoff_player():
     from shared import store as _store
     from shared.tools._core import coerce_player_id as _coerce
@@ -237,7 +216,6 @@ def _playoff_player():
         con.close()
     return None
 
-
 def test_integration_playoffs_no_rows_explicit():
     found = _rs_only_player()
     if found is None:
@@ -250,7 +228,6 @@ def test_integration_playoffs_no_rows_explicit():
     assert res["ok"] is False
     assert "playoff" in res["error"]
     assert pname in res["error"]
-
 
 def test_integration_playoffs_reads_playoff_table():
     from shared import store as _store
@@ -279,7 +256,6 @@ def test_integration_playoffs_reads_playoff_table():
     assert "playoff" in res["rows"]["filters"]
     assert res["rows"]["total"] == expect
 
-
 def test_integration_playoffs_player_team_present():
     found = _playoff_player()
     if found is None:
@@ -292,7 +268,6 @@ def test_integration_playoffs_player_team_present():
     assert res["rows"]["total"] == total
     assert res["rows"]["returned"] == min(2, total)
     assert res["rows"]["player_team"]
-
 
 def test_integration_league_wide_50pt_leaders():
     res = search_game_logs.invoke({"league_wide": True, "min_points": 50})
@@ -317,7 +292,6 @@ def test_integration_league_wide_50pt_leaders():
         con.close()
     assert sum(counts) == total50
 
-
 def test_integration_league_wide_counts_match_player_path():
     wide = search_game_logs.invoke({"league_wide": True, "min_points": 40})
     assert wide["ok"] is True
@@ -327,14 +301,12 @@ def test_integration_league_wide_counts_match_player_path():
     assert scoped["ok"] is True
     assert top["count"] == scoped["rows"]["total"]
 
-
 def test_integration_league_wide_playoffs_compose():
     res = search_game_logs.invoke({"league_wide": True, "min_points": 30,
                                    "playoffs": True})
     assert res["ok"] is True
     assert res["rows"]["scope"] == "playoffs"
     assert "playoff" in res["rows"]["filters"]
-
 
 def test_player_required_unless_league_wide():
     res = search_game_logs.invoke({"min_points": 50})

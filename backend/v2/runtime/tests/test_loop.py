@@ -18,11 +18,9 @@ from v2.runtime import FakeCapability, PlanExecutor, Runtime
 def anyio_backend():
     return "asyncio"
 
-
 class Intake:
     async def understand(self, request: str) -> TaskSpec:
         return TaskSpec(goal=request, mode=RunMode.QUICK, deliverable="text")
-
 
 class Planner:
     async def plan(self, task: TaskSpec) -> Plan:
@@ -36,7 +34,6 @@ class Planner:
             ]
         )
 
-
 class Synthesizer:
     async def synthesize(self, task, evidence) -> DraftReport:
         return DraftReport(
@@ -47,7 +44,6 @@ class Synthesizer:
                 )
             ],
         )
-
 
 class SequenceVerifier:
     def __init__(self, *statuses: VerificationStatus) -> None:
@@ -70,11 +66,9 @@ class SequenceVerifier:
             ),
         )
 
-
 class Repairer:
     async def repair(self, task, draft, evidence, verification) -> DraftReport:
         return draft.model_copy(update={"sections": ["Repaired"]})
-
 
 class RecordingRepairer(Repairer):
     def __init__(self) -> None:
@@ -83,7 +77,6 @@ class RecordingRepairer(Repairer):
     async def repair(self, task, draft, evidence, verification) -> DraftReport:
         self.calls.append(verification)
         return await super().repair(task, draft, evidence, verification)
-
 
 def runtime(mechanical, semantic, repairer=None, ledger=None) -> Runtime:
     return Runtime(
@@ -96,7 +89,6 @@ def runtime(mechanical, semantic, repairer=None, ledger=None) -> Runtime:
         repairer=repairer,
         ledger=ledger,
     )
-
 
 @pytest.mark.parametrize("attempts,error", [
     (-1, "between 0 and 2"),
@@ -114,7 +106,6 @@ def test_runtime_rejects_invalid_repair_budget(attempts, error) -> None:
             semantic_verifier=SequenceVerifier(VerificationStatus.PASS),
             repair_attempts=attempts,
         )
-
 
 @pytest.mark.anyio
 async def test_runtime_validates_direct_request_and_context_boundary() -> None:
@@ -139,7 +130,6 @@ async def test_runtime_validates_direct_request_and_context_boundary() -> None:
     with pytest.raises(ValueError, match="conversation content"):
         await instance.run("answer", context=(invalid,))
 
-
 @pytest.mark.anyio
 async def test_passes_verified_quick_slice() -> None:
     result = await runtime(
@@ -149,7 +139,6 @@ async def test_passes_verified_quick_slice() -> None:
 
     assert result.verification.status == VerificationStatus.PASS
     assert result.repaired is False
-
 
 @pytest.mark.anyio
 async def test_runtime_rejects_incomplete_swappable_mechanical_verifier() -> None:
@@ -163,7 +152,6 @@ async def test_runtime_rejects_incomplete_swappable_mechanical_verifier() -> Non
             SequenceVerifier(VerificationStatus.PASS),
         ).run("answer")
 
-
 @pytest.mark.anyio
 async def test_runtime_preserves_mechanical_support_when_semantic_omits_claim() -> None:
     class IncompleteSemanticVerifier:
@@ -176,7 +164,6 @@ async def test_runtime_preserves_mechanical_support_when_semantic_omits_claim() 
     ).run("answer")
     assert [item.claim_index for item in result.verified_claims] == [0]
     assert result.verification.status == VerificationStatus.PARTIAL
-
 
 def test_verification_merge_respects_report_field_limits() -> None:
     from v2.contracts import ClaimResult
@@ -206,7 +193,6 @@ def test_verification_merge_respects_report_field_limits() -> None:
     assert len(merged.missing_branches) == 128
     assert merged.missing_branches == mechanical.missing_branches
 
-
 @pytest.mark.anyio
 async def test_repairs_once_and_reverifies() -> None:
     result = await runtime(
@@ -218,7 +204,6 @@ async def test_repairs_once_and_reverifies() -> None:
     assert result.repaired is True
     assert result.draft.sections == ["Repaired"]
     assert result.verification.status == VerificationStatus.PASS
-
 
 @pytest.mark.anyio
 async def test_coverage_only_repair_status_skips_the_repair_round() -> None:
@@ -263,7 +248,6 @@ async def test_coverage_only_repair_status_skips_the_repair_round() -> None:
             if entry.kind == LedgerKind.STEP_START] == [
                 "understand", "plan", "execute", "synthesize", "verify"]
 
-
 @pytest.mark.anyio
 async def test_unsupported_claim_still_enters_the_repair_round() -> None:
     class RejectFirstThenPass:
@@ -298,7 +282,6 @@ async def test_unsupported_claim_still_enters_the_repair_round() -> None:
     assert result.draft.sections == ["Repaired"]
     assert result.verification.status == VerificationStatus.PASS
 
-
 @pytest.mark.anyio
 async def test_runtime_revalidates_repairer_output() -> None:
     class InvalidRepairer:
@@ -312,7 +295,6 @@ async def test_runtime_revalidates_repairer_output() -> None:
     )
     with pytest.raises(ValueError, match="draft sections"):
         await instance.run("answer")
-
 
 @pytest.mark.anyio
 async def test_exhausted_repair_bounds_combined_draft_gaps() -> None:
@@ -338,7 +320,6 @@ async def test_exhausted_repair_bounds_combined_draft_gaps() -> None:
     assert result.verification.status == VerificationStatus.PARTIAL
     assert len(result.draft.gaps) == 128
     assert result.draft.gaps == [f"missing-{index}" for index in range(128)]
-
 
 @pytest.mark.anyio
 async def test_exhausted_repair_returns_named_partial() -> None:
@@ -395,7 +376,6 @@ async def test_runtime_ledger_owns_turn_and_stage_lifecycle() -> None:
     assert all(entry.data["duration_ms"] >= 0 for entry in ledger.entries
                if entry.kind == LedgerKind.STEP_END)
 
-
 @pytest.mark.anyio
 async def test_progress_observer_failure_cannot_break_runtime_or_ledger() -> None:
     from v2.runtime import LedgerKind, RunLedger
@@ -422,7 +402,6 @@ async def test_progress_observer_failure_cannot_break_runtime_or_ledger() -> Non
     assert statuses[-1] == ("verify", "complete")
     assert ledger.entries[-1].kind == LedgerKind.TURN_END
     assert ledger.entries[-1].data["reason"] == "complete"
-
 
 @pytest.mark.anyio
 async def test_runtime_ledger_closes_failed_stage_and_turn() -> None:
@@ -469,7 +448,6 @@ async def test_runtime_passes_typed_context_to_intake() -> None:
         context=(ConversationTurn(role="user", content="Tell me about the Celtics"),),
     )
 
-
 @pytest.mark.anyio
 async def test_semantic_verifier_never_sees_mechanically_rejected_draft() -> None:
     class MechanicalReject:
@@ -490,7 +468,6 @@ async def test_semantic_verifier_never_sees_mechanically_rejected_draft() -> Non
     assert result.gaps[0].kind == "judge_unavailable"
     assert result.gaps[1].message == "uncited numeral 43"
 
-
 @pytest.mark.anyio
 async def test_runtime_honors_zero_repair_budget() -> None:
     mechanical = SequenceVerifier(VerificationStatus.REPAIR)
@@ -500,7 +477,6 @@ async def test_runtime_honors_zero_repair_budget() -> None:
     result = await instance.run("answer")
     assert result.repaired is False
     assert result.verification.status == VerificationStatus.PARTIAL
-
 
 @pytest.mark.anyio
 async def test_runtime_honors_two_repair_budget() -> None:
@@ -513,7 +489,6 @@ async def test_runtime_honors_two_repair_budget() -> None:
     result = await instance.run("answer")
     assert result.repaired is True
     assert result.verification.status == VerificationStatus.PASS
-
 
 @pytest.mark.anyio
 async def test_unresolved_intake_questions_stop_before_planning() -> None:
@@ -537,7 +512,6 @@ async def test_unresolved_intake_questions_stop_before_planning() -> None:
     with pytest.raises(ValueError, match="Which Brown"):
         await instance.run("assess Brown")
 
-
 @pytest.mark.anyio
 async def test_empty_synthesis_cannot_publish_a_blank_clean_pass() -> None:
     class EmptySynthesizer:
@@ -559,7 +533,6 @@ async def test_empty_synthesis_cannot_publish_a_blank_clean_pass() -> None:
         "synthesis produced no publishable claims",
     ]
 
-
 @pytest.mark.anyio
 async def test_empty_evidence_cannot_finish_as_a_clean_pass() -> None:
     class EmptySynthesizer:
@@ -578,7 +551,6 @@ async def test_empty_evidence_cannot_finish_as_a_clean_pass() -> None:
     assert len(result.gaps) == 1
     assert result.gaps[0].kind == "missing_evidence"
     assert result.gaps[0].evidence_ids == ["evidence:facts"]
-
 
 @pytest.mark.anyio
 async def test_execution_failure_prevents_clean_pass_status() -> None:
@@ -603,7 +575,6 @@ async def test_execution_failure_prevents_clean_pass_status() -> None:
     unsupported = [gap for gap in result.gaps if gap.kind == "unsupported_claim"]
     assert unsupported
     assert unsupported[0].evidence_ids == []
-
 
 @pytest.mark.anyio
 async def test_recovered_retry_error_does_not_downgrade_verified_result() -> None:
@@ -630,7 +601,6 @@ async def test_recovered_retry_error_does_not_downgrade_verified_result() -> Non
     assert result.verification.status == VerificationStatus.PASS
     assert result.gaps == []
 
-
 @pytest.mark.anyio
 async def test_model_authored_gap_downgrades_clean_verification_to_partial() -> None:
     class GapSynthesizer:
@@ -653,7 +623,6 @@ async def test_model_authored_gap_downgrades_clean_verification_to_partial() -> 
         "The requested split was unavailable",
     ]
 
-
 @pytest.mark.anyio
 async def test_unexplained_partial_verification_does_not_create_generic_gap() -> None:
     class UnexplainedPartialVerifier:
@@ -673,7 +642,6 @@ async def test_unexplained_partial_verification_does_not_create_generic_gap() ->
     assert result.verification.status == VerificationStatus.PASS
     assert result.gaps == []
     assert result.verified_claims[0].claim.text == "42"
-
 
 @pytest.mark.anyio
 async def test_partial_repair_instruction_surfaces_as_typed_gap() -> None:
@@ -696,7 +664,6 @@ async def test_partial_repair_instruction_surfaces_as_typed_gap() -> None:
     assert [gap.message for gap in result.gaps] == [
         "verification did not establish complete support",
     ]
-
 
 @pytest.mark.anyio
 async def test_runtime_bounds_combined_typed_publication_gaps() -> None:
@@ -732,7 +699,6 @@ async def test_runtime_bounds_combined_typed_publication_gaps() -> None:
         f"missing-{index}" for index in range(128)
     ]
 
-
 @pytest.mark.anyio
 async def test_skipped_execution_node_prevents_clean_pass() -> None:
     class SkippedExecutor:
@@ -759,7 +725,6 @@ async def test_skipped_execution_node_prevents_clean_pass() -> None:
     assert result.gaps[0].kind == "execution_failure"
     assert result.gaps[0].message == "execution skipped node facts"
     assert result.gaps[0].blocks == ["node:facts"]
-
 
 @pytest.mark.anyio
 async def test_runtime_revalidates_component_results() -> None:
@@ -802,7 +767,6 @@ async def test_progress_never_projects_stage_before_start_is_recorded() -> None:
         await instance.run("answer", run_id="run")
 
     assert statuses == []
-
 
 @pytest.mark.anyio
 async def test_progress_never_projects_completion_before_end_is_recorded() -> None:
@@ -869,7 +833,6 @@ async def test_incomplete_semantic_results_preserve_mechanically_supported_claim
     assert [item.claim.text for item in result.verified_claims] == ["First fact", "Second fact"]
     assert result.verification.status == VerificationStatus.PARTIAL
 
-
 def test_unresolved_repair_instructions_do_not_become_public_gaps():
     from v2.runtime.loop import _verification_gaps
     report = VerificationReport(status="repair", repair_instructions=[
@@ -917,7 +880,6 @@ async def test_runtime_flags_repair_that_strips_evidence_claim():
 
     assert result.structural_flags == ["repair_stripped_evidence_claim"]
 
-
 @pytest.mark.anyio
 async def test_runtime_does_not_flag_repair_that_preserves_evidence_claim():
     result = await runtime(
@@ -926,7 +888,6 @@ async def test_runtime_does_not_flag_repair_that_preserves_evidence_claim():
         Repairer(),
     ).run("answer")
     assert result.structural_flags == []
-
 
 @pytest.mark.anyio
 async def test_pre_tool_timeout_closes_stage_and_turn_without_execution() -> None:
@@ -953,7 +914,6 @@ async def test_pre_tool_timeout_closes_stage_and_turn_without_execution() -> Non
     assert [entry.data["reason"] for entry in terminal] == ["timeout", "timeout"]
     assert all(entry.data["duration_ms"] >= 0 for entry in terminal)
     assert not any(entry.kind == LedgerKind.TOOL_CALL for entry in ledger.entries)
-
 
 @pytest.mark.anyio
 async def test_verified_claim_sources_preserve_per_fact_vintage() -> None:
@@ -1140,9 +1100,7 @@ async def test_uncovered_requirement_preserves_supported_partial_branch():
 
 @pytest.mark.anyio
 async def test_semantic_missing_branch_cannot_erase_recomputed_calculation():
-    from v2.contracts import CalculationRequirement, EvidenceEnvelope
-    from v2.domain.calculations import Calculation
-    from datetime import UTC, datetime
+    from v2.contracts import CalculationRequirement
 
     class MarginIntake:
         async def understand(self, request):
@@ -1245,8 +1203,7 @@ def test_verification_gaps_merge_semantically_duplicate_missing_branch():
         "What were Luka's primary stats in the 2023-24 playoffs?"]
 
 def test_precise_root_gap_suppresses_redundant_execution_failure():
-    from datetime import UTC, datetime
-    from v2.contracts import EvidenceEnvelope, PlanStatus
+    from v2.contracts import PlanStatus
     from v2.runtime.loop import _failures_represented_by_precise_gaps
     from v2.runtime.models import ExecutionResult
     task = TaskSpec(goal="comparison", mode="quick", deliverable="answer",
@@ -1352,12 +1309,11 @@ async def test_invalid_model_calculation_path_is_safe_partial_not_runtime_failur
             ev=EvidenceEnvelope(evidence_id="ev",capability="fake",source="f",observed_at=datetime.now(UTC),rows={"a":2,"b":1})
             return ExecutionResult(plan=Plan(nodes=[plan.nodes[0].model_copy(update={"status":PlanStatus.COMPLETE})]),evidence_by_node={"facts":ev},attempts={"facts":1},errors={})
     class DraftModel:
-        async def generate(self,**call):return call["schema"].model_validate({"sections":[],"claims":[{"text":"Wrong difference 99.","kind":"derived","evidence_ids":["ev"],"calculation_id":"bad"}],"calculations":[{"calculation_id":"bad","requirement_id":"delta","operation":"subtract","inputs":[{"evidence_id":"ev","path":"rows.missing"},{"evidence_id":"ev","path":"rows.b"}],"result":99}]})
+        async def generate(self,**call):return call["schema"].model_validate({"sections":[],"claims":[{"text":"Wrong difference 99.","kind":"derived","evidence_ids":["ev"],"calculation_id":"bad"}],"calculations":[{"calculation_id":"bad","requirement_id":"delta","operation":"subtract","inputs":[{"evidence_id":"ev","path":"rows.missing"},{"evidence_id":"ev","path":"rows.b"}],"result":"99"}]})
     result=await Runtime(intake=IntakeCalc(),planner=PlannerCalc(),executor=ExecCalc(),synthesizer=ModelSynthesizer(DraftModel(),provider="p",model_name="m"),mechanical_verifier=SequenceVerifier(VerificationStatus.PASS),semantic_verifier=SequenceVerifier(VerificationStatus.PASS)).run("split")
     assert result.verification.status==VerificationStatus.PARTIAL
     assert result.verified_claims==[]
     assert any("outside admitted evidence" in gap.message for gap in result.gaps)
-
 
 def _record_binding(output_id, value=61):
     from v2.contracts import EvidenceOutputBinding
@@ -1365,7 +1321,6 @@ def _record_binding(output_id, value=61):
         unit={"kind": "declared", "value": "count"}, domain="standings",
         requirement_id="stats", output_id=output_id, node_id="facts",
         evidence_id="ev", selector="rows.WINS")
-
 
 def _record_admission(bindings):
     from datetime import UTC, datetime
@@ -1387,7 +1342,6 @@ def _record_admission(bindings):
         {"claim_index":0,"supported":True}])
     return task, execution, draft, report, {"ev":envelope}
 
-
 def test_binding_form_mismatch_keeps_prose_and_leaves_the_claim_unwithheld():
     from v2.runtime.loop import _verified_claims
     task, execution, draft, report, evidence = _record_admission([
@@ -1401,7 +1355,6 @@ def test_binding_form_mismatch_keeps_prose_and_leaves_the_claim_unwithheld():
     assert [(gap.kind, gap.blocks) for gap in gaps] == [
         ("synthesis_incomplete", [])]
 
-
 def test_admission_value_rejection_withholds_the_claim():
     from v2.runtime.loop import _verified_claims
     task, execution, draft, report, evidence = _record_admission([
@@ -1413,7 +1366,6 @@ def test_admission_value_rejection_withholds_the_claim():
     assert claims[0].output_bindings == []
     assert [(gap.kind, gap.blocks) for gap in gaps] == [
         ("synthesis_incomplete", ["claim:0"])]
-
 
 def test_binding_form_path_follows_the_exception_type_not_its_wording(monkeypatch):
     from v2.runtime import loop
@@ -1432,7 +1384,6 @@ def test_binding_form_path_follows_the_exception_type_not_its_wording(monkeypatc
     assert claims[0].output_bindings == []
     assert [(gap.kind, gap.blocks) for gap in gaps] == [
         ("synthesis_incomplete", ["claim:0"])]
-
 
 def test_claim_with_every_binding_form_mismatched_shows_unbacked_not_verified(monkeypatch):
     from v2.runtime import loop
@@ -1460,7 +1411,6 @@ def test_claim_with_every_binding_form_mismatched_shows_unbacked_not_verified(mo
     assert by_output == {"WINS": "rejected", "LOSSES": "rejected"}
     assert all(item.status != "complete" for item in statuses)
 
-
 def test_unmatched_player_execution_error_becomes_typed_gap():
     from v2.runtime.loop import _verification_gaps
     from v2.contracts import DraftReport, VerificationReport, GapKind
@@ -1477,7 +1427,6 @@ def test_unmatched_player_execution_error_becomes_typed_gap():
         GapKind.PROFILE_NAME_RESOLUTION_UNAVAILABLE,
         "profile/name_resolution unavailable", ["node:profile"])]
 
-
 def test_error_prose_cannot_select_name_resolution_gap_kind():
     from v2.runtime.loop import _verification_gaps
     from v2.contracts import DraftReport, VerificationReport, GapKind
@@ -1487,7 +1436,6 @@ def test_error_prose_cannot_select_name_resolution_gap_kind():
         execution_error_codes={},
     )
     assert gaps[0].kind == GapKind.EXECUTION_FAILURE
-
 
 @pytest.mark.anyio
 async def test_runtime_caller_maps_structured_execution_code_to_typed_gap():

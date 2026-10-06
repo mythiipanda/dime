@@ -4,7 +4,7 @@ from pathlib import Path
 from threading import Lock
 from typing import Literal, Union
 import os,re
-from pydantic import BaseModel, ConfigDict, Field, StrictInt, TypeAdapter, field_validator
+from pydantic import BaseModel, ConfigDict, Field, StrictBool, StrictFloat, StrictInt, StrictStr, TypeAdapter, field_validator
 
 Phase=Literal['understand','plan','execute','verify']
 Status=Literal['running','complete','failed','pass','partial','repair']
@@ -20,8 +20,12 @@ class PlanData(Safe):
  def safe_caps(cls,v):
   if any(not re.fullmatch(r'[a-z][a-z0-9_]{0,63}',x) for x in v):raise ValueError('invalid capability')
   return v
+PublicArgumentItem=Union[StrictBool,StrictInt,StrictFloat,StrictStr]
+PublicArgumentValue=Union[PublicArgumentItem,list[PublicArgumentItem],None]
+class PublicArgument(Safe):
+ name:str=Field(pattern=r'^[A-Za-z_][A-Za-z0-9_]{0,127}$');value:PublicArgumentValue=None
 class ToolCallData(Safe):
- name:str=Field(pattern=r'^[a-z][a-z0-9_]{0,63}$');argument_count:StrictInt=Field(ge=0);unknown_argument_count:StrictInt=Field(ge=0)
+ name:str=Field(pattern=r'^[a-z][a-z0-9_]{0,63}$');arguments:list[PublicArgument]=Field(default_factory=list,max_length=64);argument_count:StrictInt=Field(ge=0);unknown_argument_count:StrictInt=Field(ge=0)
 class ToolResultData(Safe):
  name:str=Field(pattern=r'^[a-z][a-z0-9_]{0,63}$');rows:StrictInt|None=Field(default=None,ge=0)
 class EvidenceData(Safe):

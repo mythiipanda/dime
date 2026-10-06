@@ -12,7 +12,6 @@ from v2.adapters import (
 from v2.adapters import coverage
 from v2.contracts import EntityRef, EvidenceEnvelope
 
-
 class FakeTool:
 
     def __init__(self, payload):
@@ -24,7 +23,6 @@ class FakeTool:
         self.calls.append(arguments)
         return self.payload
 
-
 class FakeAsyncTool:
 
     def __init__(self, payload):
@@ -33,7 +31,6 @@ class FakeAsyncTool:
 
     async def ainvoke(self, arguments):
         return self.payload
-
 
 STANDINGS_PAYLOAD = {
     "tool": "get_standings",
@@ -92,7 +89,6 @@ COMPARE_PAYLOAD = {
     "meta": {"source": "warehouse", "season": "2025-26"},
 }
 
-
 PREDICTION_PAYLOAD = {
     "tool": "get_game_prediction", "ok": True,
     "matchup": {"home": "NYK", "away": "BOS"},
@@ -120,13 +116,11 @@ async def test_tool_invocation_ignores_noncallable_ainvoke() -> None:
         "ok": True, "rows": {"value": 1},
     }
 
-
 @pytest.mark.anyio
 async def test_tool_invocation_rejects_noncallable_tool() -> None:
     from v2.adapters.core import ainvoke_tool
     with pytest.raises(AdapterError, match="must be callable"):
         await ainvoke_tool(object(), {})
-
 
 def test_registry_covers_initial_pack():
     expected = {
@@ -140,12 +134,11 @@ def test_registry_covers_initial_pack():
         "team_shot_zones", "player_shot_zones", "team_splits",
         "injury_impact", "lineup_matchups", "competitive_ratings",
         "matchup_brief", "season_series", "head_to_head", "matchup_splits",
-        "today", "morning_briefing", "award_results",
+        "today", "morning_briefing", "award_results", "sql_exec",
     }
     assert set(CAPABILITIES) == expected
     tool_names = [c.tool_name for c in CAPABILITIES.values()]
     assert len(tool_names) == len(set(tool_names))
-
 
 def test_standings_envelope_shape():
     tool = FakeTool(STANDINGS_PAYLOAD)
@@ -161,14 +154,12 @@ def test_standings_envelope_shape():
     assert env.units["WINS"] == "count"
     assert env.observed_at.tzinfo is not None
 
-
 def test_response_season_must_match_scoped_request():
     payload = {**STANDINGS_PAYLOAD,
                "meta": {"source": "warehouse", "season": "2024-25"}}
     with pytest.raises(AdapterError, match="does not match requested season"):
         call_capability("standings", {"season": "2025-26"},
                         tools={"get_standings": FakeTool(payload)})
-
 
 def test_matching_response_season_is_preserved():
     env = call_capability("standings", {"season": "2025-26"},
@@ -187,7 +178,6 @@ def test_evidence_id_is_stable_and_content_addressed():
     third = call_capability("standings", args,
                             tools={"get_standings": FakeTool(changed)})
     assert third.evidence_id != first.evidence_id
-
 
 def test_evidence_identity_and_as_of_are_bound_to_source_revision():
     first_payload = {
@@ -214,7 +204,6 @@ def test_evidence_identity_and_as_of_are_bound_to_source_revision():
     assert first.as_of.isoformat() == "2026-09-10"
     assert later.as_of.isoformat() == "2026-09-15"
 
-
 def test_qualification_prefers_meta_then_capability_default():
     env = call_capability("qualified_leaders",
                           {"stat_category": "FG3_PCT", "season": "2025-26"},
@@ -227,7 +216,6 @@ def test_qualification_prefers_meta_then_capability_default():
                           tools={"get_leaders": FakeTool(no_meta_qual)})
     assert env.qualification == "Qualified players only (NBA leaderboard minimums)."
 
-
 def test_entity_resolution_extracts_entity_refs():
     env = call_capability("entity_resolution", {"query": "giannis"},
                           tools={"resolve_entity": FakeTool(RESOLVE_PAYLOAD)})
@@ -236,14 +224,12 @@ def test_entity_resolution_extracts_entity_refs():
     assert ("1610612749", "team") in kinds
     assert env.season is None
 
-
 def test_async_tool_round_trips():
     env = call_capability("player_comparison",
                           {"a": "Jayson Tatum", "b": "Jaylen Brown",
                            "season": "2025-26"},
                           tools={"get_compare": FakeAsyncTool(COMPARE_PAYLOAD)})
     assert env.rows == COMPARE_PAYLOAD["rows"]
-
 
 def test_acall_capability_inside_running_loop():
     import asyncio
@@ -258,7 +244,6 @@ def test_acall_capability_inside_running_loop():
     assert env.units["TS_PCT"] == "percent_0_100"
     assert env.rows["EFG_PCT"] == 49.3
 
-
 def test_failed_tool_raises_adapter_error():
     payload = {"tool": "get_standings", "ok": False,
                "error": "No standings on file for 1995-96"}
@@ -266,19 +251,16 @@ def test_failed_tool_raises_adapter_error():
         call_capability("standings", {"season": "1995-96"},
                         tools={"get_standings": FakeTool(payload)})
 
-
 def test_missing_rows_raises_adapter_error():
     with pytest.raises(AdapterError, match="no rows"):
         call_capability("standings", {"season": "2025-26"},
                         tools={"get_standings": FakeTool({"ok": True})})
-
 
 def test_unknown_capability_and_missing_tool():
     with pytest.raises(AdapterError, match="unknown capability"):
         call_capability("not_a_capability", {}, tools={})
     with pytest.raises(AdapterError, match="not available"):
         call_capability("standings", {"season": "2025-26"}, tools={})
-
 
 def test_ambiguity_note_and_empty_rows_become_warnings():
     payload = dict(RESOLVE_PAYLOAD)
@@ -291,7 +273,6 @@ def test_ambiguity_note_and_empty_rows_become_warnings():
     env = call_capability("standings", {"season": "2025-26"},
                           tools={"get_standings": FakeTool(empty)})
     assert "empty result set" in env.warnings
-
 
 def test_adapter_preserves_stale_fallback_and_source_limitations():
     stale = {
@@ -320,7 +301,6 @@ def test_adapter_preserves_stale_fallback_and_source_limitations():
         "source limitation: snapshot coverage is incomplete",
     ]
 
-
 def test_adapter_rejects_malformed_fallback_metadata():
     for changes, error in [
         ({"stale": "yes"}, "stale marker must be boolean"),
@@ -336,7 +316,6 @@ def test_adapter_rejects_malformed_fallback_metadata():
                 tools={"get_standings": FakeTool(payload)},
             )
 
-
 def test_caller_entities_are_preserved():
     entity = EntityRef(id="1610612738", type="team",
                        display_name="Boston Celtics")
@@ -344,7 +323,6 @@ def test_caller_entities_are_preserved():
                           entities=[entity],
                           tools={"get_standings": FakeTool(STANDINGS_PAYLOAD)})
     assert env.entities == [entity]
-
 
 def test_extracted_and_caller_entities_deduplicate_or_reject_conflict():
     entity = EntityRef(id="1610612738", type="team", display_name="Boston Celtics")
@@ -371,14 +349,12 @@ def test_extracted_and_caller_entities_deduplicate_or_reject_conflict():
             })},
         )
 
-
 def test_observed_at_is_deterministic_when_injected():
     spec = CAPABILITIES["standings"]
     when = datetime(2026, 9, 14, 18, 0, tzinfo=timezone.utc)
     env = build_envelope(spec, {"season": "2025-26"}, STANDINGS_PAYLOAD,
                          observed_at=when)
     assert env.observed_at == when
-
 
 def test_sync_tool_runs_off_event_loop():
     import asyncio
@@ -399,9 +375,7 @@ def test_sync_tool_runs_off_event_loop():
 
     assert asyncio.run(run()) != loop_thread
 
-
 COVERAGE_TOOLS = {"metric_coverage": coverage.metric_coverage}
-
 
 def test_metric_coverage_proprietary_one_player():
     env = call_capability(
@@ -421,7 +395,6 @@ def test_metric_coverage_proprietary_one_player():
     answer = env.rows and env.warnings[0] or ""
     assert "LeBron James" not in answer
 
-
 def test_metric_coverage_available_metric_names_table():
     env = call_capability(
         "metric_coverage", {"metrics": ["RAPM-lite", "true shooting"]},
@@ -431,7 +404,6 @@ def test_metric_coverage_available_metric_names_table():
     assert "silver_rapm" in by_metric["RAPM-lite"]["note"]
     assert by_metric["true shooting"]["status"] == "available"
     assert env.warnings == []
-
 
 def test_metric_coverage_string_metrics_and_unknown():
     env = call_capability(
@@ -443,14 +415,12 @@ def test_metric_coverage_string_metrics_and_unknown():
     assert statuses["plus/minus"] == "unknown"
     assert any("not a recognized metric" in w for w in env.warnings)
 
-
 def test_metric_coverage_without_player_or_season():
     env = call_capability("metric_coverage", {"metrics": ["DARKO"]},
                           tools=COVERAGE_TOOLS)
     assert env.season is None
     assert "player" not in env.rows[0]
     assert "not available" in env.warnings[0]
-
 
 def test_default_registry_includes_native_coverage_tool():
     from v2.adapters.core import _default_tools
@@ -461,7 +431,6 @@ def test_tool_capability_rejects_noncallable_arguments_adapter() -> None:
     from v2.adapters import ToolCapability
     with pytest.raises(TypeError, match="arguments adapter must be callable"):
         ToolCapability("standings", arguments={})
-
 
 @pytest.mark.anyio
 async def test_tool_capability_rejects_nonmapping_adapted_arguments() -> None:
@@ -474,7 +443,6 @@ async def test_tool_capability_rejects_nonmapping_adapted_arguments() -> None:
                      capability_hints=["standings"]),
             TaskSpec(goal="record", mode="quick", deliverable="answer"), [],
         )
-
 
 @pytest.mark.anyio
 async def test_tool_capability_executes_through_runtime_protocol():
@@ -507,7 +475,6 @@ def test_leader_envelope_filters_units_and_declares_rank_coverage():
     assert set(env.units) == {"GP", "MIN", "FG3M", "FG3A", "FG3_PCT"}
     assert "population ranks" in env.coverage
 
-
 def test_multi_vintage_trade_metadata_is_preserved() -> None:
     payload = {
         "tool": "get_trade_value", "ok": True,
@@ -524,7 +491,6 @@ def test_multi_vintage_trade_metadata_is_preserved() -> None:
     assert env.vintages == {"production_season": "2025-26",
                             "salary_season": "2026-27"}
     assert env.task_season_scoped is False
-
 
 def test_trade_legality_inherits_salary_vintage_from_contract_parent() -> None:
     from datetime import UTC, datetime
@@ -547,7 +513,6 @@ def test_trade_legality_inherits_salary_vintage_from_contract_parent() -> None:
     arguments = _task_arguments("trades", node, task, [contract])
     assert arguments["season"] == "2026-27"
 
-
 def test_tool_capability_preflight_ignores_unknown_arguments() -> None:
     from v2.adapters import ToolCapability
     from v2.contracts import PlanNode
@@ -558,7 +523,6 @@ def test_tool_capability_preflight_ignores_unknown_arguments() -> None:
         arguments={"season": "2025-26", "invented": True},
     )
     capability.validate_arguments(node)
-
 
 def test_trajectory_and_evaluation_extract_canonical_entities() -> None:
     trajectory = call_capability(
@@ -584,7 +548,6 @@ def test_trajectory_and_evaluation_extract_canonical_entities() -> None:
     assert evaluation.entities[0].model_dump() == {
         "id": "1627759", "type": "player", "display_name": "Jaylen Brown"}
 
-
 @pytest.mark.parametrize(
     ("meta_warning", "expected"),
     [
@@ -608,7 +571,6 @@ def test_adapter_preserves_singular_and_string_source_warnings(
     )
     assert env.warnings == expected
 
-
 def test_adapter_rejects_unordered_warning_payloads() -> None:
     payload = {
         "ok": True,
@@ -623,7 +585,6 @@ def test_adapter_rejects_unordered_warning_payloads() -> None:
             "standings", {"season": "2025-26"},
             tools={"get_standings": FakeTool(payload)},
         )
-
 
 @pytest.mark.parametrize("rows", [
     {"team": "LAKERS", "payroll": 0, "players": []},
@@ -640,7 +601,6 @@ def test_contract_ledger_fails_closed_on_empty_payroll_roster(rows) -> None:
             "contracts", {"team": "LAKERS"},
             tools={"get_cap_ledger": FakeTool(payload)},
         )
-
 
 def test_adapter_preserves_source_as_of_and_warns_on_bad_date() -> None:
     payload = {
@@ -663,7 +623,6 @@ def test_adapter_preserves_source_as_of_and_warns_on_bad_date() -> None:
     assert env.as_of is None
     assert env.warnings == ["unparseable salary_date: unknown"]
 
-
 @pytest.mark.parametrize("meta", ["warehouse", ["season", "2025-26"], False, 0])
 def test_non_object_result_metadata_fails_closed(meta) -> None:
     payload = {"ok": True, "rows": [{"wins": 61}], "meta": meta}
@@ -673,7 +632,6 @@ def test_non_object_result_metadata_fails_closed(meta) -> None:
             tools={"get_standings": FakeTool(payload)},
         )
 
-
 @pytest.mark.parametrize("ok", [1, "true", {"truthy": True}])
 def test_non_boolean_success_flag_fails_closed(ok) -> None:
     payload = {"ok": ok, "rows": [{"wins": 61}], "meta": {}}
@@ -682,7 +640,6 @@ def test_non_boolean_success_flag_fails_closed(ok) -> None:
             "standings", {"season": "2025-26"},
             tools={"get_standings": FakeTool(payload)},
         )
-
 
 def test_adapter_preserves_sample_and_data_limitations_as_warnings():
     payload = {
@@ -706,7 +663,6 @@ def test_adapter_preserves_sample_and_data_limitations_as_warnings():
         "results are time-based, not score-aware",
     ]
 
-
 @pytest.mark.parametrize("key,value", [
     ("sample_warning", []),
     ("data_note", {"note": "not score-aware"}),
@@ -723,7 +679,6 @@ def test_adapter_rejects_malformed_sample_limitations(key, value):
             "shots", {"season": "2025-26"},
             tools={"search_shots": FakeTool(payload)},
         )
-
 
 def test_adapter_admits_source_coverage_note():
     payload = {
@@ -742,7 +697,6 @@ def test_adapter_admits_source_coverage_note():
     )
 
     assert envelope.coverage == "regular season logs cover 57 seeded players"
-
 
 def test_trade_value_data_gaps_are_admitted_as_warnings():
     payload = {
@@ -770,7 +724,6 @@ def test_trade_value_data_gaps_are_admitted_as_warnings():
 
     assert envelope.warnings == payload["rows"]["data_gaps"]
 
-
 @pytest.mark.parametrize("data_gaps", ["missing", ["ok", ""], {"gap": "missing"}])
 def test_trade_value_rejects_malformed_data_gaps(data_gaps):
     payload = {
@@ -784,7 +737,6 @@ def test_trade_value_rejects_malformed_data_gaps(data_gaps):
                             "team_b": "LAC", "players_b": "Paul George"},
             tools={"get_trade_value": FakeTool(payload)},
         )
-
 
 def test_evidence_identity_is_bound_to_non_fetch_source_vintage():
     base = {
@@ -815,7 +767,6 @@ def test_evidence_identity_is_bound_to_non_fetch_source_vintage():
     assert first.as_of != later.as_of
     assert first.vintages != later.vintages
     assert first.evidence_id != later.evidence_id
-
 
 def test_adapter_marks_undeclared_source_identity():
     payload = {
@@ -871,7 +822,6 @@ async def test_tool_capability_strips_unsupported_planner_arguments() -> None:
         "team_b": "LAC", "players_b": "Paul George",
     }
 
-
 def test_performance_capabilities_override_planner_contract_season():
     from v2.adapters.core import _task_arguments
     from v2.contracts import PlanNode, SeasonRef, TaskSpec
@@ -881,7 +831,6 @@ def test_performance_capabilities_override_planner_contract_season():
         node = PlanNode(id=capability, description="performance",
                         capability_hints=[capability], arguments={"season": "2026-27"})
         assert _task_arguments(capability, node, task, [])["season"] == "2025-26"
-
 
 def test_game_prediction_envelope_preserves_matchup_arguments_and_units():
     tool = FakeTool(PREDICTION_PAYLOAD)
@@ -900,8 +849,7 @@ def test_game_prediction_envelope_preserves_matchup_arguments_and_units():
     }
     assert env.rows["matchup"] == {"home": "NYK", "away": "BOS"}
 
-
-def test_prediction_uses_tool_default_season_for_implicit_matchup_date():
+def test_prediction_carries_task_default_season_for_implicit_matchup_date():
     from v2.adapters.core import _task_arguments
     from v2.contracts import EntityRef, PlanNode, SeasonRef, TaskSpec
 
@@ -918,9 +866,8 @@ def test_prediction_uses_tool_default_season_for_implicit_matchup_date():
         arguments={"a": "team-celtics", "b": "team-knicks", "season": "2026-27"},
     )
     assert _task_arguments("game_prediction", node, task, []) == {
-        "a": "Boston Celtics", "b": "New York Knicks",
+        "a": "Boston Celtics", "b": "New York Knicks", "season": "2026-27",
     }
-
 
 def test_warehouse_freshness_preserves_tri_state_status_and_cadence():
     payload = {
@@ -968,7 +915,6 @@ async def test_dependent_player_argument_is_bound_from_parent_evidence():
         TaskSpec(goal="profile",mode="quick",deliverable="answer"),[parent])
     assert result.entities[0].display_name == "Shai Gilgeous-Alexander"
 
-
 def test_warehouse_game_logs_and_composed_injury_evidence_keep_identity(monkeypatch, tmp_path):
     from shared import store
     from v2.adapters.core import call_capability
@@ -986,7 +932,6 @@ def test_warehouse_game_logs_and_composed_injury_evidence_keep_identity(monkeypa
     injury_env=call_capability("injury_impact",{"season":"2025-26","team":"SEA"},tools={"get_injury_impact":Tool(injury)})
     assert game_env.source_identity.model_dump()=={"kind":"warehouse","warehouse_id":"configured-runtime","sha256":expected}
     assert injury_env.source_identity.model_dump()=={"kind":"composite","warehouse_id":"configured-runtime","sha256":expected,"live_sources":["espn","nba_api"]}
-
 
 def _seed_completed_season_boxscores(monkeypatch, tmp_path):
     import duckdb
@@ -1045,7 +990,6 @@ def _seed_completed_season_boxscores(monkeypatch, tmp_path):
     store.warehouse_identity_cache_clear()
     return warehouse
 
-
 def test_completed_season_totals_come_from_game_logs(monkeypatch, tmp_path):
     from shared import store
     from shared.tools.league import get_leaders
@@ -1076,7 +1020,6 @@ def test_completed_season_totals_come_from_game_logs(monkeypatch, tmp_path):
     assert result["rows"][0]["GP"] == len(oracle_top[1][0])
     assert result["rows"][0]["AST"] == oracle_top[1][1]
 
-
 def test_completed_season_leader_rows_keep_player_id(monkeypatch, tmp_path):
     from shared.tools.league import get_leaders
 
@@ -1086,7 +1029,6 @@ def test_completed_season_leader_rows_keep_player_id(monkeypatch, tmp_path):
     assert result["rows"][0]["PLAYER"] == "Trae Young"
     assert result["rows"][0]["PLAYER_ID"] == 1629027
     assert all("PLAYER_ID" in row for row in result["rows"])
-
 
 def test_task_arguments_propagates_window_to_game_logs_only() -> None:
     from datetime import date
@@ -1102,7 +1044,6 @@ def test_task_arguments_propagates_window_to_game_logs_only() -> None:
         id="r", description="ratings", capability_hints=["team_ratings"], arguments={}), task, [])
     assert "start_date" not in ratings and "end_date" not in ratings and "month" not in ratings
 
-
 def test_task_arguments_never_overwrites_explicit_window_arguments() -> None:
     from datetime import date
     from v2.adapters.core import _task_arguments
@@ -1115,7 +1056,6 @@ def test_task_arguments_never_overwrites_explicit_window_arguments() -> None:
     arguments = _task_arguments("game_logs", node, task, [])
     assert (arguments["start_date"], arguments["end_date"]) == ("2026-01-10", "2026-01-20")
 
-
 def test_validated_arguments_rejects_window_args_on_season_only_schema() -> None:
     from v2.adapters import ToolCapability
     from v2.adapters.core import AdapterError
@@ -1127,7 +1067,6 @@ def test_validated_arguments_rejects_window_args_on_season_only_schema() -> None
     with pytest.raises(AdapterError, match="start_date"):
         capability.validate_arguments(node)
 
-
 def test_validated_arguments_keeps_window_args_on_game_logs_schema() -> None:
     from v2.adapters import ToolCapability
     from v2.contracts import PlanNode
@@ -1135,7 +1074,6 @@ def test_validated_arguments_keeps_window_args_on_game_logs_schema() -> None:
     node = PlanNode(id="g", description="logs", capability_hints=["game_logs"],
         arguments={"start_date": "2026-01-01", "end_date": "2026-01-31"})
     capability.validate_arguments(node)
-
 
 def test_build_envelope_records_served_window_from_game_log_arguments() -> None:
     from datetime import UTC, datetime
@@ -1148,7 +1086,6 @@ def test_build_envelope_records_served_window_from_game_log_arguments() -> None:
             "warehouse_id": "frozen-eval", "warehouse_sha256": "a" * 64}},
         observed_at=datetime.now(UTC))
     assert (item.window_start, item.window_end) == (date(2026, 1, 1), date(2026, 1, 31))
-
 
 def test_build_envelope_leaves_season_only_envelope_unwindowed() -> None:
     from datetime import UTC, datetime

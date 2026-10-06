@@ -76,6 +76,7 @@ from .preview import get_matchup_preview
 from .prediction import get_game_prediction
 from .priors import get_rapm_prior
 from .shared import resolve_entity, run_python, search_nba
+from .sql_exec import sql_exec
 from .query import query_warehouse_tool
 from .headtohead import get_head_to_head
 from .team import get_season_series
@@ -107,12 +108,13 @@ from .team import (
 from .today import get_today, get_morning_briefing
 from .watchlist import add_watchlist_item, get_watchlist, remove_watchlist_item
 from .wpa import get_wpa_leaders
-from ._core import MAX_ROWS, STAT_CATEGORIES, clamp_stat, last_completed_season, resolve_season
+from ._core import MAX_ROWS, STAT_CATEGORIES, clamp_stat
 
 v1_tools: list[BaseTool] = [
     resolve_entity,
     search_nba,
     run_python,
+    sql_exec,
     get_player_intel,
     get_season_averages,
     get_career_totals,

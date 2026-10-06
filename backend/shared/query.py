@@ -45,7 +45,6 @@ array list_value struct struct_pack row
 list_contains list_has typeof
 """.split())
 
-
 def _split_statements(sql: str) -> list[str]:
     parts: list[str] = []
     depth = 0
@@ -95,7 +94,6 @@ def _split_statements(sql: str) -> list[str]:
     parts.append("".join(cur))
     return parts
 
-
 def _parse_one(stmt: str) -> exp.Expression:
     try:
         trees = [t for t in sqlglot.parse(stmt, read="duckdb")
@@ -109,12 +107,10 @@ def _parse_one(stmt: str) -> exp.Expression:
                          "multiple statements are not allowed")
     return trees[0]
 
-
 def _func_name(fn: exp.Func) -> str:
     if isinstance(fn, exp.Anonymous):
         return fn.name.lower()
     return fn.sql_name().lower()
-
 
 def _allowed_tables(con) -> set[str]:
     present = {
@@ -134,9 +130,7 @@ def _allowed_tables(con) -> set[str]:
         return present & curated
     return present
 
-
 _READ_SCHEMAS = frozenset({"main", "public", "memory"})
-
 
 def _resolve_table(tbl: exp.Table, allowed: set[str],
                    scope: dict[str, bool]) -> None:
@@ -156,7 +150,6 @@ def _resolve_table(tbl: exp.Table, allowed: set[str],
         return
     if name not in allowed and name not in scope:
         raise ValueError("blocked: unknown table(s): " + tbl.name)
-
 
 def _walk_tables(node: exp.Expression, allowed: set[str],
                  scope: dict[str, bool]) -> None:
@@ -181,7 +174,6 @@ def _walk_tables(node: exp.Expression, allowed: set[str],
             for item in child:
                 if isinstance(item, exp.Expression):
                     _walk_tables(item, allowed, local)
-
 
 def _check(sql: str, allowed: set[str]) -> str:
     text = (sql or "").strip()
@@ -220,7 +212,6 @@ def _check(sql: str, allowed: set[str]) -> str:
             raise ValueError("blocked: function not allowed: " + fname)
     return stmt
 
-
 def _run_with_timeout(con, sql: str, timeout_s: float,
                       max_rows: int) -> tuple[list[str], list[tuple], bool]:
     out: dict = {}
@@ -246,7 +237,6 @@ def _run_with_timeout(con, sql: str, timeout_s: float,
     if "error" in out:
         raise out["error"]
     return out["result"]
-
 
 def query_warehouse(sql: str, max_rows: int = ROW_CAP,
                     timeout_s: float = STATEMENT_TIMEOUT_S) -> dict:
