@@ -182,6 +182,7 @@ def _runtime(model: CountingModel, rows) -> Runtime:
         mechanical_verifier=MechanicalVerifier(),
         semantic_verifier=model,
         repairer=model,
+            fast_path=True,
     )
 
 
@@ -325,6 +326,7 @@ async def test_missing_data_zero_never_publishes_through_fast_shape() -> None:
         synthesizer=Synthesizer(),
         mechanical_verifier=AssembledMechanical(),
         semantic_verifier=Semantic(),
+            fast_path=True,
     )
     result = await runtime.run("season scoring average")
     assert result.verified_claims == []
@@ -442,6 +444,7 @@ async def test_real_warehouse_assists_leader_answers_through_fast_path(monkeypat
         synthesizer=WarehouseSynthesizer(),
         mechanical_verifier=MechanicalVerifier(),
         semantic_verifier=Semantic(),
+            fast_path=True,
     )
     result = await runtime.run("real assists leader lookup")
     assert planner.calls == 0
@@ -555,6 +558,7 @@ async def test_real_warehouse_second_single_fact_answers_through_fast_path(monke
         synthesizer=WarehouseSynthesizer(),
         mechanical_verifier=MechanicalVerifier(),
         semantic_verifier=Semantic(),
+            fast_path=True,
     )
     result = await runtime.run("real ratings lookup")
     assert planner.calls == 0

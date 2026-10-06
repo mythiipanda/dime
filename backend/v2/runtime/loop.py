@@ -66,7 +66,7 @@ class Runtime:
         pre_tool_timeout_s: float | None = None,
         run_timeout_s: float | None = None,
         diagnostics: bool = False,
-        fast_path: bool = True,
+        fast_path: bool = False,
     ) -> None:
         if not isinstance(repair_attempts, int) or isinstance(repair_attempts, bool):
             raise TypeError("repair_attempts must be an integer")
