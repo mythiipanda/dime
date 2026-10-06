@@ -31,6 +31,14 @@ from v2.runtime.fast_path import (
     is_fast_path_eligible,
 )
 from v2.runtime.interfaces import Intake, Planner, Repairer, Synthesizer, Verifier
+from v2.runtime.interfaces import (
+    RepairAddsEvidenceError,
+    freeze_draft,
+    freeze_evidence_map,
+    freeze_task,
+    reject_self_verified_draft,
+    validate_repair_evidence_closed,
+)
 from v2.runtime.ledger import LedgerKind, RunLedger, TerminalReason, exception_text
 from v2.runtime.models import (BindingFormMismatch, ExecutionResult, RuntimeResult,
                                admit_verified_claim_bindings,
@@ -226,10 +234,12 @@ class Runtime:
                         task, recovery_plan, run_id=run_id, resume=False),
                     timeout_s=run_remaining())).model_dump())
                 execution = _merge_recovery(execution, recovery)
-            draft = DraftReport.model_validate((await self._stage(
+            synth_raw = await self._stage(
                 turn_id, "synthesize",
                 self._synthesizer.synthesize(task, execution.evidence),
-                timeout_s=run_remaining())).model_dump())
+                timeout_s=run_remaining())
+            reject_self_verified_draft(synth_raw)
+            draft = DraftReport.model_validate(synth_raw.model_dump() if hasattr(synth_raw, "model_dump") else synth_raw)
         except BaseException as exc:
             self._close_failed(turn_id, exc, started=turn_started)
             raise
@@ -256,11 +266,21 @@ class Runtime:
                 effective = _with_completeness_findings(verification, missing)
             suffix = "" if attempt == 0 else f":{attempt + 1}"
             try:
+                frozen_task = freeze_task(task)
+                draft_for_repair = draft.model_copy(deep=True)
+                frozen_evidence = freeze_evidence_map(evidence)
+                evidence_before = {key: item.model_dump() for key, item in evidence.items()}
                 repair_call = self._repairer.repair(
-                    task, draft, evidence, effective)
-                draft = DraftReport.model_validate((await self._stage(
+                    frozen_task, draft_for_repair, frozen_evidence, effective)
+                repair_raw = await self._stage(
                     turn_id, f"repair{suffix}", repair_call,
-                    timeout_s=run_remaining())).model_dump())
+                    timeout_s=run_remaining())
+                if {key: item.model_dump() for key, item in evidence.items()} != evidence_before:
+                    raise ValueError("repairer mutated evidence")
+                reject_self_verified_draft(repair_raw)
+                repaired_draft = DraftReport.model_validate(repair_raw.model_dump() if hasattr(repair_raw, "model_dump") else repair_raw)
+                validate_repair_evidence_closed(evidence, repaired_draft)
+                draft = repaired_draft
                 repaired = True
                 verification = await self._stage(
                     turn_id, f"reverify{suffix}",
@@ -517,10 +537,12 @@ class Runtime:
             raise FastPathUnverifiable(f"fast execution unavailable: {exc}") from exc
         check_fast_evidence(list(execution.evidence))
         try:
-            draft = DraftReport.model_validate((await self._stage(
+            fast_raw = await self._stage(
                 turn_id, "fast_synthesize",
                 self._synthesizer.synthesize(task, execution.evidence),
-                timeout_s=run_remaining())).model_dump())
+                timeout_s=run_remaining())
+            reject_self_verified_draft(fast_raw)
+            draft = DraftReport.model_validate(fast_raw.model_dump() if hasattr(fast_raw, "model_dump") else fast_raw)
         except BaseException as exc:
             if isinstance(exc, asyncio.CancelledError):
                 raise
@@ -556,9 +578,19 @@ class Runtime:
         return published
 
     async def _fast_verify(self, task, draft, evidence) -> VerificationReport:
+        draft_before = draft.model_dump()
+        evidence_before = {key: item.model_dump() for key, item in evidence.items()}
+        frozen_task = freeze_task(task)
+        frozen_draft = freeze_draft(draft)
+        frozen_evidence = freeze_evidence_map(evidence)
+        mech_raw = await self._mechanical_verifier.verify(frozen_task, frozen_draft, frozen_evidence)
         mechanical = VerificationReport.model_validate(
-            (await self._mechanical_verifier.verify(task, draft, evidence)).model_dump()
+            mech_raw.model_dump() if hasattr(mech_raw, "model_dump") else mech_raw
         )
+        if draft.model_dump() != draft_before:
+            raise ValueError("mechanical verifier mutated the draft")
+        if {key: item.model_dump() for key, item in evidence.items()} != evidence_before:
+            raise ValueError("mechanical verifier mutated evidence")
         expected = list(range(len(draft.claims)))
         mechanical_indices = sorted(
             result.claim_index for result in mechanical.claim_results)
@@ -641,9 +673,19 @@ class Runtime:
         )
 
     async def _verify(self, task, draft, evidence) -> VerificationReport:
+        draft_before = draft.model_dump()
+        evidence_before = {key: item.model_dump() for key, item in evidence.items()}
+        frozen_task = freeze_task(task)
+        frozen_draft = freeze_draft(draft)
+        frozen_evidence = freeze_evidence_map(evidence)
+        mech_raw = await self._mechanical_verifier.verify(frozen_task, frozen_draft, frozen_evidence)
         mechanical = VerificationReport.model_validate(
-            (await self._mechanical_verifier.verify(task, draft, evidence)).model_dump()
+            mech_raw.model_dump() if hasattr(mech_raw, "model_dump") else mech_raw
         )
+        if draft.model_dump() != draft_before:
+            raise ValueError("mechanical verifier mutated the draft")
+        if {key: item.model_dump() for key, item in evidence.items()} != evidence_before:
+            raise ValueError("mechanical verifier mutated evidence")
         expected = list(range(len(draft.claims)))
         mechanical_indices = sorted(
             result.claim_index for result in mechanical.claim_results)
@@ -657,9 +699,14 @@ class Runtime:
                     limit=128),
             })
         try:
+            sem_raw = await self._semantic_verifier.verify(frozen_task, frozen_draft, frozen_evidence)
             semantic = VerificationReport.model_validate(
-                (await self._semantic_verifier.verify(task, draft, evidence)).model_dump()
+                sem_raw.model_dump() if hasattr(sem_raw, "model_dump") else sem_raw
             )
+            if draft.model_dump() != draft_before:
+                raise ValueError("semantic verifier mutated the draft")
+            if {key: item.model_dump() for key, item in evidence.items()} != evidence_before:
+                raise ValueError("semantic verifier mutated evidence")
         except asyncio.CancelledError:
             raise
         except Exception:

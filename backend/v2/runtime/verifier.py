@@ -45,8 +45,8 @@ _WORD = re.compile(r"[A-Za-z0-9]+")
 COMPETITION_ENTITY_TYPES = frozenset({"league"})
 
 class SemanticVerifier(Protocol):
-    async def verify(self, task: TaskSpec, draft: DraftReport,
-                     evidence: Sequence[EvidenceEnvelope]) -> VerificationReport: ...
+    async def verify(self, task: Any, draft: Any,
+                     evidence: Sequence[Any] | Mapping[str, Any]) -> VerificationReport: ...
 
 
 def _canon_number(raw: Any, unit: str | None = None) -> set[Decimal]:
