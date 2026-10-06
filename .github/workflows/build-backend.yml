@@ -25,7 +25,7 @@ jobs:
           cache: pip
           cache-dependency-path: backend/requirements.txt
       - name: Install backend dependencies
-        run: pip install --no-cache-dir -r backend/requirements.txt
+        run: pip install --no-cache-dir -r backend/requirements.txt pytest
       - name: Run contract-boundary gate subset
         run: |
           python -m pytest backend/tests/test_sql_rerun_hardening.py backend/tests/test_v2_wire_schema_strip.py -q
