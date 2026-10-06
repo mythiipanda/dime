@@ -207,12 +207,17 @@ class Runtime:
         repaired = False
 
         for attempt in range(self._repair_attempts):
-            if not _needs_repair(verification) or self._repairer is None:
+            missing = _completeness_missing(task, execution, draft, verification, evidence)
+            needs_verification = _needs_repair(verification)
+            if (not needs_verification and not missing) or self._repairer is None:
                 break
+            effective = verification
+            if missing:
+                effective = _with_completeness_findings(verification, missing)
             suffix = "" if attempt == 0 else f":{attempt + 1}"
             try:
                 repair_call = self._repairer.repair(
-                    task, draft, evidence, verification)
+                    task, draft, evidence, effective)
                 draft = DraftReport.model_validate((await self._stage(
                     turn_id, f"repair{suffix}", repair_call,
                     timeout_s=run_remaining())).model_dump())
@@ -276,6 +281,18 @@ class Runtime:
             verification = verification.model_copy(
                 update={"status": VerificationStatus.PARTIAL}
             )
+
+        final_missing = _completeness_missing(task, execution, draft, verification, evidence)
+        if final_missing:
+            instruction = _format_completeness_instruction(final_missing)
+            failure_message = _format_completeness_failure(final_missing)
+            verification = verification.model_copy(update={
+                "status": VerificationStatus.PARTIAL,
+                "missing_branches": _unique([*verification.missing_branches, instruction], limit=128),
+            })
+            draft = draft.model_copy(update={
+                "gaps": _unique([*draft.gaps, failure_message], limit=128),
+            })
 
         unavailable_claims = {
             index: sorted(set(claim.evidence_ids) - set(evidence))
@@ -625,6 +642,107 @@ class Runtime:
 def _needs_repair(report: VerificationReport) -> bool:
     return (report.status == VerificationStatus.REPAIR
             and any(not item.supported for item in report.claim_results))
+
+
+def _requested_output_identities(task):
+    rows = []
+    for output_id in task.requested_outputs:
+        rows.append(("task", None, output_id))
+    for requirement in task.requirements:
+        for output_id in requirement.requested_outputs:
+            rows.append(("evidence", requirement.id, output_id))
+    for requirement in task.calculation_requirements:
+        for output_id in requirement.requested_outputs:
+            rows.append(("calculation", requirement.id, output_id))
+    return rows
+
+
+def _serving_columns(task, execution, kind, requirement_id, output_id):
+    from v2.adapters.capabilities import CAPABILITIES, resolve_metric_column
+    if kind == "calculation":
+        return []
+    if kind == "evidence":
+        requirement = next((item for item in task.requirements if item.id == requirement_id), None)
+        if requirement is None:
+            candidates = []
+        else:
+            candidates = list(requirement.capability_options)
+    else:
+        names = set()
+        for requirement in task.requirements:
+            names.update(requirement.capability_options)
+        for envelope in execution.evidence:
+            names.add(envelope.capability)
+        candidates = sorted(names)
+    served = []
+    for name in candidates:
+        capability = CAPABILITIES.get(name)
+        if capability is None:
+            continue
+        column = resolve_metric_column(capability, output_id)
+        if column is not None:
+            served.append(f"{column} via {name}")
+    return list(dict.fromkeys(served))
+
+
+def _has_serving_values(execution, output_id):
+    from v2.adapters.capabilities import CAPABILITIES, resolve_metric_column
+    for envelope in execution.evidence:
+        capability = CAPABILITIES.get(envelope.capability)
+        if capability is None:
+            continue
+        column = resolve_metric_column(capability, output_id)
+        if column is None:
+            continue
+        for item in iter_values(envelope):
+            leaf = item.path.rsplit(".", 1)[-1].split("[", 1)[0]
+            if leaf == column and item.value is not None:
+                return True
+    return False
+
+
+def _completeness_missing(task, execution, draft, verification, evidence):
+    from v2.runtime.models import build_output_statuses
+    admitted, binding_gaps = _verified_claims(task, execution, draft, verification, evidence)
+    statuses = build_output_statuses(task, admitted, binding_gaps)
+    missing = []
+    for status in statuses:
+        if status.status == "complete":
+            continue
+        serving = _serving_columns(task, execution, status.requirement_kind, status.requirement_id, status.output_id)
+        if status.requirement_kind != "calculation" and not _has_serving_values(execution, status.output_id):
+            continue
+        missing.append((status.requirement_kind, status.requirement_id, status.output_id, serving))
+    return missing
+
+
+def _format_completeness_instruction(missing):
+    parts = []
+    for kind, requirement_id, output_id, serving in missing:
+        if serving:
+            parts.append(f"Bind missing requested output {output_id} served by {', '.join(serving)}")
+        else:
+            parts.append(f"Bind missing requested output {output_id}")
+    return "; ".join(parts)
+
+
+def _with_completeness_findings(verification, missing):
+    instruction = _format_completeness_instruction(missing)
+    return verification.model_copy(update={
+        "status": VerificationStatus.REPAIR,
+        "missing_branches": _unique([*verification.missing_branches, instruction], limit=128),
+        "repair_instructions": _unique([*verification.repair_instructions, instruction], limit=128),
+    })
+
+
+def _format_completeness_failure(missing):
+    parts = []
+    for kind, requirement_id, output_id, serving in missing:
+        if serving:
+            parts.append(f"requested output {output_id} unbound; expected evidence {', '.join(serving)}")
+        else:
+            parts.append(f"requested output {output_id} unbound")
+    return "Incomplete synthesis: " + "; ".join(parts)
 
 
 def _merge_verification(
