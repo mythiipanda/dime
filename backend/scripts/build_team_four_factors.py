@@ -62,12 +62,13 @@ def build(season: str) -> tuple[dict, int]:
     return rows, len(rows)
 
 def main() -> None:
-
+    import polars as pl
     seasons = sys.argv[1:] or league_seasons()
     if not seasons:
         raise SystemExit("no league-complete seasons found")
     for season in seasons:
         rows, _ = build(season)
+        frame = pl.DataFrame(rows)
         con = store.connect(read_only=False)
         try:
             con.execute(
