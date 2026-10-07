@@ -5,7 +5,7 @@ import * as React from "react";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
 import type { Root } from "react-dom/client";
-import CitedAnswerText, { flagEntry } from "./components/CitedAnswerText";
+import CitedAnswerText, { dedupedFlagLog, flagEntry, validFlagEntry } from "./components/CitedAnswerText";
 import type { AiMessage } from "./lib/chat";
 
 const dom = new JSDOM("<!doctype html><html><body></body></html>", {
@@ -225,5 +225,42 @@ describe("claim accept and flag", () => {
     assert.equal(el.querySelectorAll(".cite-marker").length, 1);
     assert.ok(el.textContent?.includes("9.4"));
     assert.ok(el.textContent?.includes("118.2"));
+  });
+});
+
+describe("flagged-claim eval contract", () => {
+  const entry = {
+    outputId: "NET_RATING",
+    subjectType: "team",
+    subjectId: "BOS",
+    stat: "Net rating",
+    subject: "Boston",
+    value: "9.4",
+    source: "Team ratings, 2024-25 season",
+    timestamp: "2026-10-06T12:00:00.000Z",
+  };
+  it("validates a well-formed export round-trip", () => {
+    const wire = JSON.parse(JSON.stringify([entry]));
+    assert.equal(wire.length, 1);
+    assert.ok(validFlagEntry(wire[0]));
+    assert.deepEqual(dedupedFlagLog(wire), [entry]);
+  });
+  it("rejects missing fields, wrong types, and bad timestamps", () => {
+    const { timestamp, ...missing } = entry;
+    assert.equal(validFlagEntry(missing), false);
+    assert.equal(validFlagEntry({ ...entry, value: 9.4 }), false);
+    assert.equal(validFlagEntry({ ...entry, timestamp: "yesterday" }), false);
+    assert.equal(validFlagEntry(null), false);
+    assert.equal(validFlagEntry("claim"), false);
+  });
+  it("a same-claim-twice export validates exactly once", () => {
+    const dup = { ...entry, timestamp: "2026-10-06T12:05:00.000Z" };
+    const out = dedupedFlagLog([entry, dup]);
+    assert.equal(out.length, 1);
+    assert.ok(validFlagEntry(out[0]));
+  });
+  it("drops invalid entries from the export", () => {
+    const out = dedupedFlagLog([entry, { ...entry, value: 9.4 } as never]);
+    assert.deepEqual(out, [entry]);
   });
 });
