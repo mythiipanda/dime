@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { AiMessage, NodeName } from "../lib/chat";
 import { ArtifactItem } from "./ArtifactCanvas";
 import AutoChart from "./AutoChart";
@@ -432,9 +432,8 @@ export default function DataArtifacts({
   const [heat, setHeat] = useState(false);
   const [viewMode, setViewMode] = useState<"table" | "chart" | "court">("table");
   const [showInline, setShowInline] = useState(false);
-  
-  
-
+  const panelOpenRef = useRef(!!activeArtifactId);
+  panelOpenRef.current = !!activeArtifactId;
 
   const [expanded, setExpanded] = useState(true);
 
@@ -973,15 +972,17 @@ export default function DataArtifacts({
             }}
             question={question}
             onOpenBrief={
-              onOpenArtifact && shouldAutoOpenBrief(briefViewerSeen(), !!activeArtifactId)
-                ? (doc) =>
+              onOpenArtifact
+                ? (doc) => {
+                    if (!shouldAutoOpenBrief(briefViewerSeen(), panelOpenRef.current)) return;
                     onOpenArtifact({
                       id: `brief-${doc.id}`,
                       tool: "brief",
                       title: doc.title,
                       rows: doc.rows,
                       meta: (doc.meta ?? undefined) as ArtifactItem["meta"],
-                    })
+                    });
+                  }
                 : undefined
             }
           />
