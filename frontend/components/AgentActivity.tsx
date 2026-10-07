@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 import type { AiMessage, NodeName, ToolCall } from "../lib/chat";
 import ActivityTimeline from "./ActivityTimeline";
+import { toolFailureNote } from "../lib/evidence";
 import { rerunSql, type SqlRerunRows } from "../lib/api";
 
 const AGENT_NODES: NodeName[] = ["data_retrieval", "tools", "analytics", "presentation"];
@@ -63,7 +64,7 @@ function callMs(c: ToolCall, live: boolean): number | undefined {
 }
 
 function metaLine(c: ToolCall, live: boolean): string {
-  if (c.status === "fail") return (c.error || "failed").slice(0, 160);
+  if (c.status === "fail") return toolFailureNote(c.reason) ?? (c.error || "failed").slice(0, 160);
   const bits: string[] = [];
   if (typeof c.rows === "number") bits.push(`${c.rows} row${c.rows === 1 ? "" : "s"}`);
   const ms = callMs(c, live);

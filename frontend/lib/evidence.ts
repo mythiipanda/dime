@@ -96,6 +96,7 @@ function asOfOf(table: Record<string, unknown>): string {
 const CAPABILITY_LABELS: Record<string, string> = {
   get_advanced: "Advanced stats",
   get_award_race: "Award races",
+  get_award_results: "Award results",
   get_boxscore: "Box scores",
   get_briefing: "Briefing",
   get_cap_ledger: "Cap sheet",
@@ -111,6 +112,9 @@ const CAPABILITY_LABELS: Record<string, string> = {
   get_draft_model: "Draft model",
   get_elo: "Elo",
   get_elo_standings: "Elo standings",
+  get_espn_event_summary: "Game recap",
+  get_espn_odds: "Odds",
+  get_espn_scores: "Live scores",
   get_finder: "Finder",
   get_four_factors: "Four factors",
   get_game_prediction: "Game predictions",
@@ -183,6 +187,9 @@ const CAPABILITY_LABELS: Record<string, string> = {
   get_zone_deltas: "Zone changes",
   qualified_leaders: "League leaders",
   team_ratings: "Team ratings",
+  query_warehouse_tool: "SQL query",
+  run_python: "Python",
+  search_nba: "Search",
 };
 
 const STAT_LABELS: Record<string, string> = {
@@ -278,6 +285,27 @@ function sentenceCase(token: string): string {
   if (words.length > 1 && (words[0] === "get" || words[0] === "fetch")) words.shift();
   const joined = words.join(" ");
   return joined ? joined.charAt(0).toUpperCase() + joined.slice(1) : joined;
+}
+
+const AWARD_FAILURE_NOTES: Record<string, string> = {
+  table_missing: "Award results aren't available right now.",
+  no_ballots: "No award ballots on hand for that question.",
+  season_uncovered: "No ballots cover that season.",
+  award_required: "Tell me which award to look up.",
+  unknown_award: "That award isn't published here.",
+  warehouse_read_failed: "Award results couldn't be read right now.",
+  subject_award_absent: "No ballot row for that pick.",
+  award_season_absent: "No ballot for that season.",
+  ballot_unranked: "That ballot publishes no ranked field.",
+  unknown_view: "That view isn't available.",
+  player_required: "That view needs a player name.",
+  player_unsupported: "Player names only work in the player view.",
+  subject_absent: "That pick isn't on the ballot.",
+};
+
+export function toolFailureNote(reason: unknown): string | null {
+  if (typeof reason !== "string" || !reason) return null;
+  return AWARD_FAILURE_NOTES[reason] ?? null;
 }
 
 export function capabilityLabel(capability: string): string {

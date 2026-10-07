@@ -1,11 +1,14 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { readFileSync, readdirSync } from "node:fs";
+import { join } from "node:path";
 import {
   capabilityLabel,
   statLabel,
   subjectName,
   contextPills,
   evidenceSources,
+  toolFailureNote,
   unverifiedSummary,
   unverifiedValues,
   withCitationMarkers,
@@ -315,4 +318,71 @@ test("evidence sources grade from typed method_kind", () => {
     },
   ]);
   assert.equal(evidenceSources(official)[0]?.grade?.grade, "G1");
+});
+
+test("award and plumbing tools have curated display names", () => {
+  assert.equal(capabilityLabel("get_award_results"), "Award results");
+  assert.equal(capabilityLabel("query_warehouse_tool"), "SQL query");
+  assert.equal(capabilityLabel("run_python"), "Python");
+  assert.equal(capabilityLabel("search_nba"), "Search");
+});
+
+test("award machine reasons map to plain words", () => {
+  const cases: Array<[string, string]> = [
+    ["table_missing", "Award results aren't available right now."],
+    ["no_ballots", "No award ballots on hand for that question."],
+    ["season_uncovered", "No ballots cover that season."],
+    ["award_required", "Tell me which award to look up."],
+    ["unknown_award", "That award isn't published here."],
+    ["warehouse_read_failed", "Award results couldn't be read right now."],
+    ["subject_award_absent", "No ballot row for that pick."],
+    ["award_season_absent", "No ballot for that season."],
+    ["ballot_unranked", "That ballot publishes no ranked field."],
+    ["unknown_view", "That view isn't available."],
+    ["player_required", "That view needs a player name."],
+    ["player_unsupported", "Player names only work in the player view."],
+    ["subject_absent", "That pick isn't on the ballot."],
+  ];
+  for (const [reason, note] of cases) assert.equal(toolFailureNote(reason), note);
+  assert.equal(toolFailureNote("something_new"), null);
+  assert.equal(toolFailureNote(""), null);
+  assert.equal(toolFailureNote(null), null);
+  assert.equal(toolFailureNote(42), null);
+});
+
+const BANNED_TOKENS = ["silver_", "warehouse", "evidence_id", "_season", "EvidenceEnvelope", "(missing)", "(rejected)"];
+
+test("registry tools all have a display decision", () => {
+  const toolsDir = join(process.cwd(), "..", "backend", "shared", "tools");
+  const names = new Set<string>();
+  for (const file of readdirSync(toolsDir)) {
+    if (!file.endsWith(".py")) continue;
+    const src = readFileSync(join(toolsDir, file), "utf8");
+    for (const m of src.matchAll(/@tool\b[^\n]*\ndef ([a-z_0-9]+)/g)) names.add(m[1]);
+  }
+  assert.ok(names.size > 50);
+  const fallbackOk: Record<string, string> = {
+    add_watchlist_item: "tray plumbing, never evidence",
+    remove_watchlist_item: "tray plumbing, never evidence",
+    compare_metrics: "fallback adequate",
+    get_situational_splits: "fallback adequate",
+    get_splits: "fallback adequate",
+    get_standings: "fallback adequate",
+    get_standings_deep: "fallback adequate",
+    get_streaks: "fallback adequate",
+    resolve_entity: "internal resolution, never evidence",
+    search_game_logs: "fallback adequate",
+    search_shots: "fallback adequate",
+    snapshot_leaderboard: "fallback adequate",
+  };
+  const src = readFileSync(join(process.cwd(), "lib", "evidence.ts"), "utf8");
+  const mapped = new Set<string>();
+  for (const m of src.matchAll(/^  ([a-z_0-9]+): "/gm)) mapped.add(m[1]);
+  const undecided = [...names].filter((n) => !mapped.has(n) && !(n in fallbackOk)).sort();
+  assert.deepEqual(undecided, []);
+  for (const name of Object.keys(fallbackOk)) {
+    if (mapped.has(name)) continue;
+    const label = capabilityLabel(name);
+    for (const token of BANNED_TOKENS) assert.ok(!label.includes(token), `${name} fallback leaks ${token}`);
+  }
 });

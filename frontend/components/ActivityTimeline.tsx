@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { ActivityRecord } from "../lib/chat";
 import { isNoiseRecord, pairToolItems, planSteps, recordField, recordKey, recordLabel, type PlanStep, type ToolPair } from "../lib/activity";
+import { toolFailureNote } from "../lib/evidence";
 
 type View={label:string;meta:string;fields:[string,string][]};
 const words=(v:unknown)=>String(v??"").replace(/_/g," ");
@@ -28,6 +29,10 @@ function pairFailed(pair:ToolPair):boolean{
   return !!r&&(r.transition==="failed"||r.status==="fail"||r.status==="failed");
 }
 function pairError(pair:ToolPair):string|undefined{
+  if(pair.result){
+    const note=toolFailureNote(recordField(pair.result,"reason"));
+    if(note)return note;
+  }
   const summary=pair.result?.summary;
   if(typeof summary==="string"&&summary)return summary.slice(0,160);
   const v=pair.result?recordField(pair.result,"error"):undefined;
@@ -91,7 +96,7 @@ function buildRows(items:ActivityRecord[]):Row[]{
   for(const i of shown){
     if(i.kind==="tool_call"){
       const p=pairForCall.get(i.eventId);
-      if(p&&!pairFailed(p))rows.push({key:`pair:${i.eventId}`,kind:"pair",pair:p});
+      if(p)rows.push({key:`pair:${i.eventId}`,kind:"pair",pair:p});
       continue;
     }
     if(i.kind==="tool_result"){

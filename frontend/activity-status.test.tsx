@@ -96,3 +96,44 @@ describe("activity status narration", () => {
     assert.ok(!html.includes("Complete"), "Complete row leaked");
   });
 });
+
+describe("award failure notes", () => {
+  const RAW = "warehouse table missing: silver_bbref_awards; no award result can be read";
+  const FAIL_ITEMS = [
+    rec({
+      eventId: "e1",
+      sequence: 1,
+      kind: "tool_call",
+      title: "Tool call",
+      node: "tools",
+      data: { name: "get_award_results" },
+    }),
+    rec({
+      eventId: "e2",
+      sequence: 2,
+      kind: "tool_result",
+      title: "Tool result",
+      status: "fail",
+      transition: "failed",
+      node: "tools",
+      data: { name: "get_award_results", reason: "table_missing", error: RAW },
+    }),
+  ];
+  it("timeline rows show the plain note, never the raw backend error", () => {
+    const html = clean(
+      renderToStaticMarkup(
+        React.createElement(ActivityTimeline, { items: FAIL_ITEMS, running: false }),
+      ),
+    );
+    assert.ok(html.includes("Used 1 tool"));
+    assert.ok(!html.includes("silver_bbref_awards"));
+  });
+  it("expanding a failed row shows the plain note as its error", () => {
+    const pairs = pairToolItems(FAIL_ITEMS);
+    assert.equal(pairs.length, 1);
+    const view = describePair(pairs[0], false);
+    assert.ok(view.label.includes("unavailable"));
+    const error = view.fields.find(([k]) => k === "Error");
+    assert.equal(error && error[1], "Award results aren't available right now.");
+  });
+});
