@@ -17,7 +17,7 @@ import ImpactView, { parseImpact } from "./ImpactView";
 import LineupMatrixView, { parseLineupMatrix } from "./LineupMatrixView";
 import LineupStatsView, { parseLineupStats } from "./LineupStatsView";
 import MatchupPreviewView, { parsePreview } from "./MatchupPreviewView";
-import { packHashOf, saveBrief } from "../lib/briefs";
+import { briefViewerSeen, packHashOf, saveBrief, shouldAutoOpenBrief, type BriefDoc } from "../lib/briefs";
 import { getRevision } from "../lib/api";
 import PredictionView, { parsePrediction } from "./PredictionView";
 import RegressionView, { parseRegression } from "./RegressionView";
@@ -354,9 +354,11 @@ function flattenHistoricalLeaders(rows: unknown, statLabel?: string): Record<str
 function SaveBrief({
   table,
   question,
+  onOpenBrief,
 }: {
   table: { rows: unknown; meta?: Record<string, unknown> };
   question?: string;
+  onOpenBrief?: (doc: BriefDoc) => void;
 }) {
   const [savedId, setSavedId] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -395,6 +397,7 @@ function SaveBrief({
                   : question.slice(0, 80);
             const doc = saveBrief({ title, question, rows: table.rows, meta: table.meta, packHash });
             setSavedId(doc.id);
+            if (onOpenBrief) onOpenBrief(doc);
           })
           .finally(() => setSaving(false));
       }}
@@ -966,6 +969,18 @@ export default function DataArtifacts({
               meta: table.meta as Record<string, unknown> | undefined,
             }}
             question={question}
+            onOpenBrief={
+              onOpenArtifact && shouldAutoOpenBrief(briefViewerSeen(), !!activeArtifactId)
+                ? (doc) =>
+                    onOpenArtifact({
+                      id: `brief-${doc.id}`,
+                      tool: "brief",
+                      title: doc.title,
+                      rows: doc.rows,
+                      meta: (doc.meta ?? undefined) as ArtifactItem["meta"],
+                    })
+                : undefined
+            }
           />
         </>
       ) : toolName === "get_streaks" && parseStreaks(table.rows) ? (

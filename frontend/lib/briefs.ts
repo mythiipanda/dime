@@ -15,6 +15,7 @@ export function docRev(doc: BriefDoc | null): number {
 
 const KEY = "dime_briefs_v1";
 const RERUN_KEY = "dime_rerun";
+const SEEN_KEY = "dime_brief_viewer_seen";
 
 type Store = Pick<Storage, "getItem" | "setItem" | "removeItem">;
 
@@ -172,6 +173,27 @@ export function briefFieldDiff(
   if (prev.title !== next.title) out.push("title");
   if (prev.question !== next.question) out.push("question");
   return out;
+}
+
+export function briefViewerSeen(): boolean {
+  try {
+    return store().getItem(SEEN_KEY) === "1";
+  } catch (e) {
+    warn(`read ${SEEN_KEY}`, e);
+    return false;
+  }
+}
+
+export function markBriefViewerSeen() {
+  try {
+    store().setItem(SEEN_KEY, "1");
+  } catch (e) {
+    warn(`write ${SEEN_KEY}`, e);
+  }
+}
+
+export function shouldAutoOpenBrief(viewerSeen: boolean, panelOpen: boolean): boolean {
+  return !viewerSeen && !panelOpen;
 }
 
 export function rerunBrief(doc: BriefDoc): string {
