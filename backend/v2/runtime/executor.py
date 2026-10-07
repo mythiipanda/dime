@@ -84,7 +84,7 @@ class PlanExecutor:
         self, task: TaskSpec, plan: Plan, *, run_id: str | None = None,
         resume: bool = True,
     ) -> ExecutionResult:
-        self._preflight(task, plan)
+        self._preflight(task, plan, repairable_only=True)
         checkpoint = (
             self._checkpoint_store.load(run_id)
             if self._checkpoint_store is not None and run_id is not None
@@ -319,7 +319,9 @@ class PlanExecutor:
                 raise ValueError(
                     f"checkpoint node {node_id!r} evidence lineage mismatch")
 
-    def _preflight(self, task: TaskSpec, plan: Plan) -> None:
+    def _preflight(
+        self, task: TaskSpec, plan: Plan, *,
+        repairable_only: bool = False) -> None:
         selected: set[str] = set()
         for node in plan.nodes:
             if node.status != PlanStatus.PENDING:
@@ -372,12 +374,19 @@ class PlanExecutor:
 
         missing = sorted(set(task.required_evidence) - selected)
         uncovered = sorted(known_requirements.keys() - covered.keys())
-        if missing and (not known_requirements or uncovered):
+        servable = repairable_only and self._servable_subset(plan)
+        if missing and (not known_requirements or uncovered) and not servable:
             detail = (f"; uncovered requirement ids: {uncovered}"
                       if uncovered else "")
             raise ValueError(
                 f"plan does not cover required evidence: {missing}{detail}")
         self._enforce_node_preconditions(task, plan)
+
+    def _servable_subset(self, plan: Plan) -> bool:
+        return any(
+            self._selected_name(plan, node.id) is not None
+            and node.covers_requirement_ids
+            for node in plan.nodes)
 
     def _vocabulary_spec(self, selected_name: str):
         from v2.adapters.capabilities import CAPABILITIES, Capability

@@ -196,15 +196,22 @@ class Runtime:
                              else self._planner.plan(prepared_task)),
                             timeout_s=remaining())
                         candidate = Plan.model_validate(plan_raw.model_dump())
-                        if validate_plan is not None:
-                            validate_plan(prepared_task, candidate)
-                    except (PlanOutputError, PlanValidationError) as exc:
+                    except PlanOutputError as exc:
                         if (attempt
                                 or not _planner_accepts_failure_context(
                                     self._planner)):
                             raise
                         failure_context = _plan_failure_context(exc)
                         continue
+                    if validate_plan is not None:
+                        try:
+                            validate_plan(prepared_task, candidate)
+                        except PlanValidationError as exc:
+                            if (not attempt
+                                    and _planner_accepts_failure_context(
+                                        self._planner)):
+                                failure_context = _plan_failure_context(exc)
+                                continue
                     prepared_plan = candidate
                     break
                 catalog = getattr(self._executor, "capability_names", frozenset())

@@ -112,3 +112,46 @@ async def test_a_planner_without_failure_context_still_fails_loud() -> None:
         await runtime(planner).run("assists")
 
     assert planner.calls == [None]
+
+class TwoRequirementTask:
+    async def understand(self, request: str) -> TaskSpec:
+        return TaskSpec(
+            goal="assists and awards",
+            mode=RunMode.QUICK,
+            deliverable="text",
+            required_evidence=["fake", "other"],
+            requirements=[
+                {"id": "r1", "description": "assists",
+                 "capability_options": ["fake"]},
+                {"id": "r2", "description": "awards",
+                 "capability_options": ["other"]},
+            ],
+        )
+
+class OneNodePlanner:
+    async def plan(self, task: TaskSpec, failure_context=None) -> Plan:
+        return Plan(nodes=[
+            PlanNode(
+                id="n1", description="assists",
+                capability_hints=["fake"], covers_requirement_ids=["r1"],
+            )
+        ])
+
+@pytest.mark.anyio
+async def test_a_partial_plan_executes_and_gaps_the_uncovered_branch() -> None:
+    runtime = Runtime(
+        intake=TwoRequirementTask(),
+        planner=OneNodePlanner(),
+        executor=PlanExecutor({"fake": FakeCapability("fake", {"value": 42})}),
+        synthesizer=Synthesizer(),
+        mechanical_verifier=PassVerifier(),
+        semantic_verifier=PassVerifier(),
+    )
+
+    result = await runtime.run("assists and awards")
+
+    assert [node.status for node in result.execution.plan.nodes] == [
+        PlanStatus.COMPLETE]
+    assert [gap.kind for gap in result.gaps] == [
+        "missing_evidence"]
+    assert "awards" in " ".join(gap.message for gap in result.gaps)
