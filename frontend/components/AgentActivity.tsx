@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { memo, useMemo, useState } from "react";
 import type { AiMessage, NodeName, ToolCall } from "../lib/chat";
 import ActivityTimeline from "./ActivityTimeline";
 import { rerunSql, type SqlRerunRows } from "../lib/api";
@@ -494,7 +494,7 @@ function ThoughtBlock({ text, running, thoughtMs, thoughtStarted }: { text: stri
   );
 }
 
-export default function AgentActivity({ ai }: { ai: AiMessage }) {
+function AgentActivity({ ai }: { ai: AiMessage }) {
   const [open, setOpen] = useState(false);
   const [thoughtsOpen, setThoughtsOpen] = useState(false);
   const [liveOpen, setLiveOpen] = useState(false);
@@ -607,3 +607,5 @@ export default function AgentActivity({ ai }: { ai: AiMessage }) {
     </div>
   );
 }
+
+export default memo(AgentActivity);

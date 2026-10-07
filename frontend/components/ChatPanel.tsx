@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { memo, useEffect, useRef, useState } from "react";
 import {
   AiMessage,
   BatchedStreamEvent,
@@ -46,6 +46,26 @@ function priorQuestion(messages: ChatMessage[], i: number): string {
   }
   return "";
 }
+
+export const AiTurnBody = memo(function AiTurnBody({ m }: { m: ChatMessage }) {
+  return (
+    <>
+      {m.ai && <AgentActivity ai={m.ai} />}
+      {m.ai?.streaming && !m.ai.done ? (
+        <div style={{ fontSize: 14, lineHeight: 1.64, color: "var(--color-ink-black)" }}>
+          <StreamText text={m.text} streaming />
+        </div>
+      ) : m.ai ? (
+        <CitedAnswerText text={m.text} ai={m.ai} />
+      ) : (
+        <AnswerText text={m.text} />
+      )}
+      {m.ai && !m.ai.done && !m.ai.text && !aiHasTables(m.ai) && (
+        <Skeleton lines={3} />
+      )}
+    </>
+  );
+});
 
 function applyEvent(ai: AiMessage, type: string, data: unknown): AiMessage {
   const d = data as Record<string, unknown>;
@@ -697,7 +717,7 @@ export default function ChatPanel({ thread, onRunDone, preset, onOpenArtifact, a
                     </span>
                   </div>
 
-                  {m.ai && <AgentActivity ai={m.ai} />}
+                  {m.ai && <AiTurnBody m={m} />}
 
                     {m.ai?.error && (
                       <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 8 }}>
@@ -747,19 +767,7 @@ export default function ChatPanel({ thread, onRunDone, preset, onOpenArtifact, a
                       </div>
                     )}
 
-                    {m.ai?.streaming && !m.ai.done ? (
-                      <div style={{ fontSize: 14, lineHeight: 1.64, color: "var(--color-ink-black)" }}>
-                        <StreamText text={m.text} streaming />
-                      </div>
-                    ) : m.ai ? (
-                      <CitedAnswerText text={m.text} ai={m.ai} />
-                    ) : (
-                      <AnswerText text={m.text} />
-                    )}
-
-                    {m.ai && !m.ai.done && !m.ai.text && !aiHasTables(m.ai) && (
-                      <Skeleton lines={3} />
-                    )}
+                    {m.ai && <AiTurnBody m={m} />}
 
                     {m.ai && (
                       <DataArtifacts
