@@ -617,7 +617,47 @@ def _run_search(con: Any, season: str, player: str, team: str,
     scanned = con.execute(
         "SELECT COUNT(*) FROM silver_shots WHERE _season = ?",
         [season]).fetchone()[0]
+    aggregate, heaves_excluded = _shot_totals(
+        con, where, params, zone_expr, heave, heave_filter, exclude_heaves)
+    by_zone = _shots_by_zone(con, where, params, zone_expr, heave_filter)
+    by_period = _shots_by_period(con, where, params, zone_expr, heave_filter)
+    grouped = _shots_grouped(con, where, params, zone_expr, heave_filter, group)
+    shots = _shot_rows(con, where, params, zone_expr, heave_filter, lim)
+    filters = {
+        "player": player, "player_id": player_id,
+        "team": team, "team_id": team_id,
+        "zones": sorted(wanted_zones),
+        "periods": ([p if p != 5 else "OT" for p in sorted(folded)]
+                    if folded is not None else "all"),
+        "three_only": bool(three_only), "made": made_filter,
+        "late_clock_seconds": late_seconds,
+        "exclude_heaves": bool(exclude_heaves), "limit": lim,
+        "season": season,
+        "group_by": group,
+        "include_ot": ot,
+    }
+    meta = _shot_meta(
+        season, _shot_seasons, scanned, aggregate, heaves_excluded,
+        aggregate["games"], len(shots), ot, folded, exclude_heaves)
+    if aggregate["small_sample"]:
+        meta["sample_warning"] = (
+            f"only {aggregate['attempts']} attempts -- percentages are noisy; "
+            f"treat fg/efg as illustrative, not quotable")
+    if aggregate["attempts"] == 0:
+        meta["note"] = _empty_note(folded, late_seconds, periods_raw)
+    out: dict[str, Any] = {
+        "tool": "search_shots", "ok": True, "filters": filters,
+        "aggregate": aggregate, "by_zone": by_zone,
+        "by_period": by_period, "shots": shots, "meta": meta,
+    }
+    if group == "player":
+        out["by_player"] = grouped
+    elif group == "team":
+        out["by_team"] = grouped
+    return out
 
+def _shot_totals(con, where, params, zone_expr, heave, heave_filter,
+                 exclude_heaves):
     agg = _qrows(
         con,
         f"""SELECT {_AGG_SELECT.format(three=_three_sql(zone_expr))}
@@ -633,12 +673,13 @@ def _run_search(con: Any, season: str, player: str, team: str,
             con,
             f"SELECT COUNT(*) AS n FROM silver_shots "
             f"WHERE {where} AND {heave}", params)[0]["n"] or 0)
-
     aggregate = {"attempts": attempts, "makes": makes,
                  "threes_made": threes, "games": games,
                  **efficiency(attempts, makes, threes),
                  "small_sample": attempts < SMALL_SAMPLE_MIN}
+    return aggregate, heaves_excluded
 
+def _shots_by_zone(con, where, params, zone_expr, heave_filter):
     by_zone = []
     for r in _qrows(
             con,
@@ -655,7 +696,9 @@ def _run_search(con: Any, season: str, player: str, team: str,
                         "small_sample": z_attempts < SMALL_SAMPLE_MIN})
     by_zone.sort(key=lambda r: ZONE_KEYS.index(r["zone"])
                  if r["zone"] in ZONE_KEYS else 99)
+    return by_zone
 
+def _shots_by_period(con, where, params, zone_expr, heave_filter):
     by_period = []
     for r in _qrows(
             con,
@@ -673,15 +716,16 @@ def _run_search(con: Any, season: str, player: str, team: str,
                           **efficiency(p_attempts, p_makes, p_threes),
                           "small_sample": p_attempts < SMALL_SAMPLE_MIN})
     by_period.sort(key=lambda r: 99 if r["period"] == "OT" else r["period"])
+    return by_period
 
+def _shots_grouped(con, where, params, zone_expr, heave_filter, group):
     grouped: list[dict[str, Any]] = []
     if group == "player":
-        for r in _qrows(
-                con,
-                f"""SELECT PLAYER_ID,
+        sql = f"""SELECT PLAYER_ID,
                         {_AGG_SELECT.format(three=_three_sql(zone_expr))}
                     FROM silver_shots WHERE {where}{heave_filter}
-                    GROUP BY PLAYER_ID ORDER BY attempts DESC""", params):
+                    GROUP BY PLAYER_ID ORDER BY attempts DESC"""
+        for r in _qrows(con, sql, params):
             pid = r["PLAYER_ID"]
             row = group_row(int(r["attempts"] or 0), int(r["makes"] or 0),
                             int(r["threes_made"] or 0),
@@ -690,12 +734,11 @@ def _run_search(con: Any, season: str, player: str, team: str,
             row["player"] = _player_full_name(pid) or f"id:{pid}"
             grouped.append(row)
     elif group == "team":
-        for r in _qrows(
-                con,
-                f"""SELECT TEAM_ID,
+        sql = f"""SELECT TEAM_ID,
                         {_AGG_SELECT.format(three=_three_sql(zone_expr))}
                     FROM silver_shots WHERE {where}{heave_filter}
-                    GROUP BY TEAM_ID ORDER BY attempts DESC""", params):
+                    GROUP BY TEAM_ID ORDER BY attempts DESC"""
+        for r in _qrows(con, sql, params):
             tid = r["TEAM_ID"]
             row = group_row(int(r["attempts"] or 0), int(r["makes"] or 0),
                             int(r["threes_made"] or 0),
@@ -703,7 +746,9 @@ def _run_search(con: Any, season: str, player: str, team: str,
             row["team_id"] = int(tid)
             row["team"] = _team_abbr(tid)
             grouped.append(row)
+    return grouped
 
+def _shot_rows(con, where, params, zone_expr, heave_filter, lim):
     shots = []
     for r in _qrows(
             con,
@@ -742,20 +787,17 @@ def _run_search(con: Any, season: str, player: str, team: str,
             "made": str(r["SHOT_MADE_FLAG"] or "").strip() == "1",
             "game_id": r["GAME_ID"],
         })
+    return shots
 
-    filters = {
-        "player": player, "player_id": player_id,
-        "team": team, "team_id": team_id,
-        "zones": sorted(wanted_zones),
-        "periods": ([p if p != 5 else "OT" for p in sorted(folded)]
-                    if folded is not None else "all"),
-        "three_only": bool(three_only), "made": made_filter,
-        "late_clock_seconds": late_seconds,
-        "exclude_heaves": bool(exclude_heaves), "limit": lim,
-        "season": season,
-        "group_by": group,
-        "include_ot": ot,
-    }
+def _ot_msg(ot, folded) -> str:
+    if ot and folded is not None and 4 in folded and 5 in folded:
+        return "'4th' selects the 4th quarter plus overtime"
+    if folded is not None and 5 not in folded:
+        return "overtime excluded by include_ot=no"
+    return "all periods selected (overtime included)"
+
+def _shot_meta(season, shot_seasons, scanned, aggregate, heaves_excluded,
+               games, rows_returned, ot, folded, exclude_heaves):
     if exclude_heaves:
         heave_msg = (
             f"Heave scrub is an estimate (30+ ft with 3 or fewer seconds "
@@ -764,25 +806,21 @@ def _run_search(con: Any, season: str, player: str, team: str,
         heave_msg = (
             "Heave scrub is DISABLED; heaves are INCLUDED in these "
             "aggregates (30+ ft with 3 or fewer seconds left in the period).")
-    ot_msg = ("'4th' selects the 4th quarter plus overtime"
-              if ot and folded is not None and 4 in folded and 5 in folded
-              else ("overtime excluded by include_ot=no"
-                    if folded is not None and 5 not in folded
-                    else "all periods selected (overtime included)"))
-    meta: dict[str, Any] = {
+    ot_msg = _ot_msg(ot, folded)
+    return {
         "source": f"warehouse {TABLE}",
         "season": season,
         "shots_scanned": int(scanned),
-        "shots_matched": attempts,
+        "shots_matched": aggregate["attempts"],
         "heaves_excluded": heaves_excluded,
         "games": games,
-        "rows_returned": len(shots),
+        "rows_returned": rows_returned,
         "zones": ZONE_LEGEND,
         "clutch_safe": False,
         "score_aware": False,
         "data_note": (
             f"Warehouse silver_shots coverage is "
-            f"{', '.join(_shot_seasons) or 'no season on hand'} "
+            f"{', '.join(shot_seasons) or 'no season on hand'} "
             f"(233,632 shots, regular season and playoffs). PLAYER_NAME "
             f"is last-name-only (e.g. 'Gilgeous-Alexander'). TEAM_NAME/HTM/VTM "
             f"columns are not populated in this table, so team abbreviations "
@@ -800,31 +838,17 @@ def _run_search(con: Any, season: str, player: str, team: str,
             f"latest games; the aggregates are the answer."
         ),
     }
-    if aggregate["small_sample"]:
-        meta["sample_warning"] = (
-            f"only {attempts} attempts -- percentages are noisy; "
-            f"treat fg/efg as illustrative, not quotable")
-    if attempts == 0:
-        if (late_seconds is not None and folded is not None
-                and not any(p >= 4 for p in folded)):
-            meta["note"] = (
-                f"late_clock={late_seconds}s only applies to periods 4+ "
-                f"(incl. overtime), but periods={periods_raw!r} excludes "
-                f"them, so zero shots can match by construction. Drop "
-                f"late_clock or widen periods (e.g. '2h', '4th', 'ot').")
-        else:
-            meta["note"] = (
-                "No shots matched the combined filters. PLAYER_NAME is "
-                "last-name-only (e.g. 'Tatum'), teams resolve from "
-                "abbreviations or full names, and late_clock only applies "
-                "to periods 4+ (incl. overtime).")
-    out: dict[str, Any] = {
-        "tool": "search_shots", "ok": True, "filters": filters,
-        "aggregate": aggregate, "by_zone": by_zone,
-        "by_period": by_period, "shots": shots, "meta": meta,
-    }
-    if group == "player":
-        out["by_player"] = grouped
-    elif group == "team":
-        out["by_team"] = grouped
-    return out
+
+def _empty_note(folded, late_seconds, periods_raw) -> str:
+    if (late_seconds is not None and folded is not None
+            and not any(p >= 4 for p in folded)):
+        return (
+            f"late_clock={late_seconds}s only applies to periods 4+ "
+            f"(incl. overtime), but periods={periods_raw!r} excludes "
+            f"them, so zero shots can match by construction. Drop "
+            f"late_clock or widen periods (e.g. '2h', '4th', 'ot').")
+    return (
+        "No shots matched the combined filters. PLAYER_NAME is "
+        "last-name-only (e.g. 'Tatum'), teams resolve from "
+        "abbreviations or full names, and late_clock only applies "
+        "to periods 4+ (incl. overtime).")

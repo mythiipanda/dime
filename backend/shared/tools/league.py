@@ -1814,7 +1814,7 @@ def get_leaders(
         board, lead_answer = _leaders_rate_board(
             stat_category, season, order, direction, min_attempts)
         if board is None:
-            return board
+            return lead_answer
         rows, meta = board
     else:
         rows, meta = _leaders_table_board(stat_category, season, order)

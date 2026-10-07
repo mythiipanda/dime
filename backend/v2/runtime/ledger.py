@@ -248,43 +248,6 @@ def _validate_assistant_attempt(data: dict[str, Any]) -> None:
     safe_error_types = {*SAFE_PYDANTIC_ERROR_TYPES, "<unknown-error-type>"}
     def safe_string(value: Any, limit: int = 120) -> bool:
         return isinstance(value, str) and bool(value.strip()) and len(value) <= limit
-    def safe_taxonomy(item: dict[str, Any]) -> bool:
-        subtype = {"failure_top_class", "failure_class_chain", "failure_phase",
-                   "failure_validation_errors", "failure_validation_subtype",
-                   "failure_schema_sha256", "failure_route"}
-        present = subtype & set(item)
-        if not present:
-            return True
-        if present != subtype:
-            return False
-        chain = item["failure_class_chain"]
-        errors = item["failure_validation_errors"]
-        return (
-            safe_string(item["failure_top_class"])
-            and isinstance(chain, list) and len(chain) <= 12
-            and all(value in safe_exception_names for value in chain)
-            and item["failure_top_class"] in safe_exception_names
-            and item["failure_phase"] in SAFE_FAILURE_PHASES
-            and isinstance(errors, list) and len(errors) <= 16
-            and all(isinstance(error, dict)
-                    and set(error) == {"type", "loc"}
-                    and error["type"] in safe_error_types
-                    and isinstance(error["loc"], list) and len(error["loc"]) <= 16
-                    and all((isinstance(part, int) and not isinstance(part, bool))
-                            or safe_string(part) for part in error["loc"])
-                    for error in errors)
-            and item["failure_validation_subtype"] in SAFE_FAILURE_VALIDATION_SUBTYPES
-            and (
-                item["failure_validation_subtype"] != "not_applicable"
-                if item["failure_phase"] == "json_or_schema_validation"
-                else item["failure_validation_subtype"] == "not_applicable"
-            )
-            and isinstance(item["failure_schema_sha256"], str)
-            and re.fullmatch(r"[0-9a-f]{64}", item["failure_schema_sha256"])
-            is not None
-            and item["failure_route"] in MODEL_ROUTES
-            and item["failure_route"] == item.get("route")
-        )
     attempts_valid = isinstance(provider_attempts, list) and all(
         isinstance(item, dict)
         and set(item) <= safe_attempt_keys
@@ -301,13 +264,12 @@ def _validate_assistant_attempt(data: dict[str, Any]) -> None:
         and isinstance(item.get("latency_ms"), int)
         and not isinstance(item.get("latency_ms"), bool)
         and item["latency_ms"] >= 0
-        and safe_taxonomy(item)
+        and _safe_taxonomy(item, safe_exception_names, safe_error_types)
         for item in provider_attempts)
-    safe_promotion_keys = {"provider", "choice_index", "finish_reason",
-                           "reasoning_content_chars"}
     promotions_valid = isinstance(promotions, list) and all(
         isinstance(item, dict)
-        and set(item) <= safe_promotion_keys
+        and set(item) <= {"provider", "choice_index", "finish_reason",
+                         "reasoning_content_chars"}
         and safe_string(item.get("provider"))
         and isinstance(item.get("choice_index"), int)
         and not isinstance(item.get("choice_index"), bool)
@@ -324,67 +286,116 @@ def _validate_assistant_attempt(data: dict[str, Any]) -> None:
         isinstance(duration_ms, int) and not isinstance(duration_ms, bool)
         and duration_ms >= 0))
     if status == "failed":
-        valid = (required_failed <= set(data) <= {*required_failed, *attempt_keys}
-                 and isinstance(data.get("error"), str)
-                 and bool(data["error"].strip()) and attempts_valid
-                 and promotions_valid and duration_valid)
+        valid = _failed_attempt_valid(data, required_failed, attempt_keys,
+                                      attempts_valid, promotions_valid, duration_valid)
     elif status == "accepted":
-        requests = data.get("model_requests")
-        requests_valid = ("model_requests" not in data or (
-            isinstance(requests, int) and not isinstance(requests, bool)
-            and requests >= 1))
-        repaired_valid = ("repaired" not in data
-                          or isinstance(data["repaired"], bool))
-        unknown_reason = data.get("usage_unknown")
-        usage_unknown_valid = ("usage_unknown" not in data
-                               or unknown_reason in USAGE_UNKNOWN_REASONS)
-        drops = data.get("null_as_omitted_drops", [])
-        drops_valid = (
-            isinstance(drops, list)
-            and all(isinstance(item, dict)
-                    and set(item) == {"route", "capability_id", "key", "rule"}
-                    and item["route"] in MODEL_ROUTES
-                    and safe_string(item["capability_id"], 64)
-                    and safe_string(item["key"], 64)
-                    and item["rule"] == "null-as-omitted"
-                    for item in drops))
-        carries = data.get("carried_from_intake", [])
-        carries_valid = (
-            isinstance(carries, list)
-            and all(isinstance(item, dict)
-                    and set(item) == {"route", "capability_id", "key", "rule"}
-                    and item["route"] in MODEL_ROUTES
-                    and safe_string(item["capability_id"], 64)
-                    and safe_string(item["key"], 64)
-                    and item["rule"] == "carried-from-intake"
-                    for item in carries))
-        conflicts = data.get("ranked_argument_conflicts", [])
-        conflicts_valid = (
-            isinstance(conflicts, list)
-            and all(isinstance(item, dict)
-                    and set(item) == {"route", "capability_id", "key", "rule"}
-                    and item["route"] in MODEL_ROUTES
-                    and safe_string(item["capability_id"], 64)
-                    and safe_string(item["key"], 64)
-                    and item["rule"] == "ranked-argument-conflict"
-                    for item in conflicts))
-        valid = (required_accepted <= set(data) <= {*required_accepted, *attempt_keys}
-                 and attempts_valid and promotions_valid
-                 and isinstance(data.get("output"), dict)
-                 and (data.get("output_strategy") is None
-                      or data["output_strategy"] in output_strategies)
-                 and isinstance(data.get("provider"), str)
-                 and bool(data["provider"].strip())
-                 and isinstance(data.get("model"), str)
-                 and bool(data["model"].strip())
-                 and isinstance(data.get("used_fallback"), bool)
-                 and requests_valid and repaired_valid and drops_valid
-                 and carries_valid and conflicts_valid
-                 and usage_unknown_valid and duration_valid)
+        valid = _accepted_attempt_valid(data, required_accepted, attempt_keys,
+                                        attempts_valid, promotions_valid,
+                                        duration_valid, output_strategies, MODEL_ROUTES)
     else:
         raise ValueError("assistant attempt status must be accepted or failed")
     if not valid:
         raise ValueError("assistant attempt data does not match its status")
+
+
+def _safe_taxonomy(item: dict[str, Any], safe_exception_names, safe_error_types) -> bool:
+    from v2.adapters.models import (
+        MODEL_ROUTES, SAFE_FAILURE_PHASES, SAFE_FAILURE_VALIDATION_SUBTYPES,
+    )
+    subtype = {"failure_top_class", "failure_class_chain", "failure_phase",
+               "failure_validation_errors", "failure_validation_subtype",
+               "failure_schema_sha256", "failure_route"}
+    present = subtype & set(item)
+    if not present:
+        return True
+    if present != subtype:
+        return False
+    chain = item["failure_class_chain"]
+    errors = item["failure_validation_errors"]
+    def safe_string(value: Any, limit: int = 120) -> bool:
+        return isinstance(value, str) and bool(value.strip()) and len(value) <= limit
+    return (
+        safe_string(item["failure_top_class"])
+        and isinstance(chain, list) and len(chain) <= 12
+        and all(value in safe_exception_names for value in chain)
+        and item["failure_top_class"] in safe_exception_names
+        and item["failure_phase"] in SAFE_FAILURE_PHASES
+        and isinstance(errors, list) and len(errors) <= 16
+        and all(isinstance(error, dict)
+                and set(error) == {"type", "loc"}
+                and error["type"] in safe_error_types
+                and isinstance(error["loc"], list) and len(error["loc"]) <= 16
+                and all((isinstance(part, int) and not isinstance(part, bool))
+                        or safe_string(part) for part in error["loc"])
+                for error in errors)
+        and item["failure_validation_subtype"] in SAFE_FAILURE_VALIDATION_SUBTYPES
+        and (
+            item["failure_validation_subtype"] != "not_applicable"
+            if item["failure_phase"] == "json_or_schema_validation"
+            else item["failure_validation_subtype"] == "not_applicable"
+        )
+        and isinstance(item["failure_schema_sha256"], str)
+        and re.fullmatch(r"[0-9a-f]{64}", item["failure_schema_sha256"])
+        is not None
+        and item["failure_route"] in MODEL_ROUTES
+        and item["failure_route"] == item.get("route")
+    )
+
+
+def _failed_attempt_valid(data, required_failed, attempt_keys,
+                          attempts_valid, promotions_valid, duration_valid) -> bool:
+    return (required_failed <= set(data) <= {*required_failed, *attempt_keys}
+            and isinstance(data.get("error"), str)
+            and bool(data["error"].strip()) and attempts_valid
+            and promotions_valid and duration_valid)
+
+
+def _rule_items_valid(items, rule, MODEL_ROUTES) -> bool:
+    def safe_string(value: Any, limit: int = 120) -> bool:
+        return isinstance(value, str) and bool(value.strip()) and len(value) <= limit
+    return (
+        isinstance(items, list)
+        and all(isinstance(item, dict)
+                and set(item) == {"route", "capability_id", "key", "rule"}
+                and item["route"] in MODEL_ROUTES
+                and safe_string(item["capability_id"], 64)
+                and safe_string(item["key"], 64)
+                and item["rule"] == rule
+                for item in items))
+
+
+def _accepted_attempt_valid(data, required_accepted, attempt_keys,
+                            attempts_valid, promotions_valid, duration_valid,
+                            output_strategies, MODEL_ROUTES) -> bool:
+    from v2.adapters.models import USAGE_UNKNOWN_REASONS
+    requests = data.get("model_requests")
+    requests_valid = ("model_requests" not in data or (
+        isinstance(requests, int) and not isinstance(requests, bool)
+        and requests >= 1))
+    repaired_valid = ("repaired" not in data
+                      or isinstance(data["repaired"], bool))
+    unknown_reason = data.get("usage_unknown")
+    usage_unknown_valid = ("usage_unknown" not in data
+                           or unknown_reason in USAGE_UNKNOWN_REASONS)
+    drops_valid = _rule_items_valid(data.get("null_as_omitted_drops", []),
+                                    "null-as-omitted", MODEL_ROUTES)
+    carries_valid = _rule_items_valid(data.get("carried_from_intake", []),
+                                      "carried-from-intake", MODEL_ROUTES)
+    conflicts_valid = _rule_items_valid(data.get("ranked_argument_conflicts", []),
+                                        "ranked-argument-conflict", MODEL_ROUTES)
+    return (required_accepted <= set(data) <= {*required_accepted, *attempt_keys}
+            and attempts_valid and promotions_valid
+            and isinstance(data.get("output"), dict)
+            and (data.get("output_strategy") is None
+                 or data["output_strategy"] in output_strategies)
+            and isinstance(data.get("provider"), str)
+            and bool(data["provider"].strip())
+            and isinstance(data.get("model"), str)
+            and bool(data["model"].strip())
+            and isinstance(data.get("used_fallback"), bool)
+            and requests_valid and repaired_valid and drops_valid
+            and carries_valid and conflicts_valid
+            and usage_unknown_valid and duration_valid)
 
 def _validate_attempt_identity(envelope: RequestEnvelope, data: dict[str, Any]) -> None:
     if data.get("status") != "accepted":
@@ -420,104 +431,59 @@ class RunLedger:
         open_steps: set[tuple[str, str]] = set()
         closed_turns: set[str] = set()
         for entry in self._entries:
-            if not entry.turn_id.strip():
-                raise ValueError("ledger turn id must be non-empty")
-            if entry.step_id is not None and not entry.step_id.strip():
-                raise ValueError("ledger step id must be non-empty when present")
-            if entry.call_id is not None and not entry.call_id.strip():
-                raise ValueError("ledger call id must be non-empty when present")
-            if entry.kind in (LedgerKind.STEP_START, LedgerKind.STEP_END)                     and not entry.step_id:
-                raise ValueError("step events require step_id")
-            if entry.kind in (LedgerKind.TURN_START, LedgerKind.TURN_END)                     and entry.step_id is not None:
-                raise ValueError("turn events cannot carry step_id")
-            _validate_start_data(entry.kind, entry.data)
-            _validate_terminal_data(entry.kind, entry.data)
-            if entry.kind == LedgerKind.LIVE_FALLBACK:
-                if not entry.call_id:
-                    raise ValueError("live fallback requires call_id")
-                if entry.call_id not in self._calls:
-                    raise ValueError("live fallback requires an earlier tool call")
-                _validate_live_fallback_data(entry.data)
-                self._live_fallbacks.add(entry.call_id)
-            if entry.kind == LedgerKind.TURN_START:
-                if entry.turn_id in open_turns or entry.turn_id in closed_turns:
-                    raise ValueError("turn may start only once")
-                open_turns.add(entry.turn_id)
-            elif entry.kind == LedgerKind.TURN_END:
-                if entry.turn_id not in open_turns:
-                    raise ValueError("turn end requires an open turn")
-                if any(turn == entry.turn_id for turn, _ in open_steps):
-                    raise ValueError("turn cannot end with open steps")
-                open_turns.remove(entry.turn_id)
-                closed_turns.add(entry.turn_id)
-            elif entry.turn_id in closed_turns:
-                raise ValueError("events cannot follow turn end")
-            if entry.kind == LedgerKind.STEP_START and entry.step_id:
-                key = (entry.turn_id, entry.step_id)
-                if key in open_steps:
-                    raise ValueError("step may start only once before ending")
-                open_steps.add(key)
-            elif entry.kind == LedgerKind.STEP_END and entry.step_id:
-                key = (entry.turn_id, entry.step_id)
-                if key not in open_steps:
-                    raise ValueError("step end requires an open step")
-                open_steps.remove(key)
-            if entry.kind == LedgerKind.MODEL_REQUEST:
-                if not entry.call_id:
-                    raise ValueError("model request requires call_id")
-                if entry.call_id in self._model_requests:
-                    raise ValueError("model request call id must be unique")
-                envelope = RequestEnvelope.model_validate(entry.data)
-                self._model_requests[entry.call_id] = envelope
-            elif entry.kind == LedgerKind.ASSISTANT_ATTEMPT:
-                _validate_assistant_attempt(entry.data)
-                if not entry.call_id or entry.call_id not in self._model_requests:
-                    raise ValueError("assistant attempt requires an earlier model request")
-                if entry.call_id in self._model_attempts:
-                    raise ValueError("model request may have only one assistant attempt")
-                _validate_attempt_identity(
-                    self._model_requests[entry.call_id], entry.data)
-                self._model_attempts.add(entry.call_id)
-            if entry.kind == LedgerKind.TOOL_CALL and entry.call_id:
-                if set(entry.data) != {"name", "args"}:
-                    raise ValueError("tool call data must contain exactly name and args")
-                if not isinstance(entry.data["name"], str)                         or not entry.data["name"].strip():
-                    raise ValueError("tool call name must be non-empty")
-                if not isinstance(entry.data["args"], dict):
-                    raise ValueError("tool call args must be an object")
-                identity = _call_identity(entry)
-                previous = self._calls.get(entry.call_id)
-                if previous is not None and previous != identity:
-                    raise ValueError("a call id cannot change tool identity or arguments")
-                if entry.call_id in self._results:
-                    raise ValueError("tool call cannot follow its result")
-                self._calls[entry.call_id] = identity
-            elif entry.kind == LedgerKind.TOOL_RESULT:
-                if not entry.call_id or entry.call_id not in self._calls:
-                    raise ValueError("tool result requires an earlier tool call")
-                if entry.call_id in self._results:
-                    raise ValueError("tool call may have only one result")
-                status = entry.data.get("status")
-                duration_ms = entry.data.get("duration_ms")
-                allowed_duration = (
-                    {"duration_ms"} if "duration_ms" in entry.data else set())
-                if status == "ok":
-                    valid = (set(entry.data) == {"status", "evidence"} | allowed_duration
-                             and isinstance(entry.data.get("evidence"), dict))
-                elif status == "failed":
-                    valid = (set(entry.data) == {"status", "error"} | allowed_duration
-                             and isinstance(entry.data.get("error"), str)
-                             and bool(entry.data["error"].strip()))
-                else:
-                    raise ValueError("tool result status must be ok or failed")
-                if (duration_ms is not None
-                        and (not isinstance(duration_ms, int)
-                             or isinstance(duration_ms, bool) or duration_ms < 0)):
-                    raise ValueError(
-                        "tool result duration_ms must be a non-negative integer")
-                if not valid:
-                    raise ValueError("tool result data does not match its status")
-                self._results.add(entry.call_id)
+            self._init_entry(entry, open_turns, open_steps, closed_turns)
+
+    def _init_entry(self, entry, open_turns, open_steps, closed_turns) -> None:
+        if not entry.turn_id.strip():
+            raise ValueError("ledger turn id must be non-empty")
+        if entry.step_id is not None and not entry.step_id.strip():
+            raise ValueError("ledger step id must be non-empty when present")
+        if entry.call_id is not None and not entry.call_id.strip():
+            raise ValueError("ledger call id must be non-empty when present")
+        if entry.kind in (LedgerKind.STEP_START, LedgerKind.STEP_END)                     and not entry.step_id:
+            raise ValueError("step events require step_id")
+        if entry.kind in (LedgerKind.TURN_START, LedgerKind.TURN_END)                     and entry.step_id is not None:
+            raise ValueError("turn events cannot carry step_id")
+        _validate_start_data(entry.kind, entry.data)
+        _validate_terminal_data(entry.kind, entry.data)
+        if entry.kind == LedgerKind.LIVE_FALLBACK:
+            if not entry.call_id:
+                raise ValueError("live fallback requires call_id")
+            if entry.call_id not in self._calls:
+                raise ValueError("live fallback requires an earlier tool call")
+            _validate_live_fallback_data(entry.data)
+            self._live_fallbacks.add(entry.call_id)
+        self._check_lifecycle(entry.kind, entry.turn_id, entry.step_id,
+                              open_turns, open_steps, closed_turns)
+        if entry.kind == LedgerKind.TURN_START:
+            open_turns.add(entry.turn_id)
+        elif entry.kind == LedgerKind.TURN_END:
+            open_turns.remove(entry.turn_id)
+            closed_turns.add(entry.turn_id)
+        elif entry.kind == LedgerKind.STEP_START and entry.step_id:
+            open_steps.add((entry.turn_id, entry.step_id))
+        elif entry.kind == LedgerKind.STEP_END and entry.step_id:
+            open_steps.remove((entry.turn_id, entry.step_id))
+        if entry.kind == LedgerKind.MODEL_REQUEST:
+            if not entry.call_id:
+                raise ValueError("model request requires call_id")
+            if entry.call_id in self._model_requests:
+                raise ValueError("model request call id must be unique")
+            envelope = RequestEnvelope.model_validate(entry.data)
+            self._model_requests[entry.call_id] = envelope
+        elif entry.kind == LedgerKind.ASSISTANT_ATTEMPT:
+            _validate_assistant_attempt(entry.data)
+            if not entry.call_id or entry.call_id not in self._model_requests:
+                raise ValueError("assistant attempt requires an earlier model request")
+            if entry.call_id in self._model_attempts:
+                raise ValueError("model request may have only one assistant attempt")
+            _validate_attempt_identity(
+                self._model_requests[entry.call_id], entry.data)
+            self._model_attempts.add(entry.call_id)
+        if entry.kind == LedgerKind.TOOL_CALL and entry.call_id:
+            self._init_tool_call(entry)
+        elif entry.kind == LedgerKind.TOOL_RESULT:
+            self._init_tool_result(entry)
 
     @property
     def entries(self) -> tuple[LedgerEntry, ...]:
@@ -534,22 +500,7 @@ class RunLedger:
     ) -> LedgerEntry:
         payload = dict(data or {})
         open_turns, open_steps, closed_turns = self._lifecycle_state()
-        if kind == LedgerKind.TURN_START:
-            if turn_id in open_turns or turn_id in closed_turns:
-                raise ValueError("turn may start only once")
-        elif kind == LedgerKind.TURN_END:
-            if turn_id not in open_turns:
-                raise ValueError("turn end requires an open turn")
-            if any(turn == turn_id for turn, _ in open_steps):
-                raise ValueError("turn cannot end with open steps")
-        elif turn_id in closed_turns:
-            raise ValueError("events cannot follow turn end")
-        if kind == LedgerKind.STEP_START and step_id:
-            if (turn_id, step_id) in open_steps:
-                raise ValueError("step may start only once before ending")
-        elif kind == LedgerKind.STEP_END and step_id:
-            if (turn_id, step_id) not in open_steps:
-                raise ValueError("step end requires an open step")
+        self._check_lifecycle(kind, turn_id, step_id, open_turns, open_steps, closed_turns)
         if not turn_id.strip():
             raise ValueError("ledger turn id must be non-empty")
         if step_id is not None and not step_id.strip():
@@ -567,67 +518,17 @@ class RunLedger:
         _validate_start_data(kind, payload)
         _validate_terminal_data(kind, payload)
         if kind == LedgerKind.MODEL_REQUEST:
-            if call_id in self._model_requests:
-                raise ValueError("model request call id must be unique")
-            envelope = RequestEnvelope.model_validate(payload)
-            self._model_requests[call_id] = envelope
+            self._append_model_request(call_id, payload)
         elif kind == LedgerKind.ASSISTANT_ATTEMPT:
-            _validate_assistant_attempt(payload)
-            if call_id not in self._model_requests:
-                raise ValueError("assistant attempt requires an earlier model request")
-            if call_id in self._model_attempts:
-                raise ValueError("model request may have only one assistant attempt")
-            _validate_attempt_identity(self._model_requests[call_id], payload)
-            self._model_attempts.add(call_id)
+            self._append_assistant_attempt(call_id, payload)
         if kind == LedgerKind.TOOL_CALL:
-            if set(payload) != {"name", "args"}:
-                raise ValueError("tool call data must contain exactly name and args")
-            if not isinstance(payload["name"], str) or not payload["name"].strip():
-                raise ValueError("tool call name must be non-empty")
-            if not isinstance(payload["args"], dict):
-                raise ValueError("tool call args must be an object")
-            identity = _hash({"name": payload["name"], "args": payload["args"]})
-            previous = self._calls.get(call_id)
-            if previous is not None and previous != identity:
-                raise ValueError("a call id cannot change tool identity or arguments")
-            self._calls[call_id] = identity
+            self._append_tool_call(call_id, payload)
         if kind == LedgerKind.TOOL_CALL and call_id in self._results:
             raise ValueError("tool call cannot follow its result")
         if kind == LedgerKind.TOOL_RESULT:
-            if call_id not in self._calls:
-                raise ValueError("tool result requires an earlier tool call")
-            if call_id in self._results:
-                raise ValueError("tool call may have only one result")
-            status = payload.get("status")
-            duration_ms = payload.get("duration_ms")
-            allowed_duration = ({"duration_ms"} if "duration_ms" in payload else set())
-            if status == "ok":
-                if (set(payload) != {"status", "evidence"} | allowed_duration
-                        or not isinstance(payload.get("evidence"), dict)):
-                    raise ValueError(
-                        "successful tool result requires exactly status and evidence object")
-            elif status == "failed":
-                if (set(payload) != {"status", "error"} | allowed_duration
-                        or not isinstance(payload.get("error"), str)
-                        or not payload["error"].strip()):
-                    raise ValueError(
-                        "failed tool result requires exactly status and non-empty error")
-            else:
-                raise ValueError("tool result status must be ok or failed")
-            if (duration_ms is not None
-                    and (not isinstance(duration_ms, int) or isinstance(duration_ms, bool)
-                         or duration_ms < 0)):
-                raise ValueError("tool result duration_ms must be a non-negative integer")
-            self._results.add(call_id)
+            self._append_tool_result(call_id, payload)
         if kind == LedgerKind.LIVE_FALLBACK:
-            if call_id not in self._calls:
-                raise ValueError("live fallback requires an earlier tool call")
-            if call_id in self._live_fallbacks:
-                raise ValueError("a tool call may have only one live fallback event")
-            if call_id in self._results:
-                raise ValueError("live fallback cannot follow its tool result")
-            _validate_live_fallback_data(payload)
-            self._live_fallbacks.add(call_id)
+            self._append_live_fallback(call_id, payload)
         recorded_at = datetime.now(UTC)
         if self._entries and recorded_at < self._entries[-1].recorded_at:
             recorded_at = self._entries[-1].recorded_at
@@ -643,6 +544,131 @@ class RunLedger:
         )
         self._entries.append(entry)
         return entry
+
+    def _init_tool_call(self, entry) -> None:
+        if set(entry.data) != {"name", "args"}:
+            raise ValueError("tool call data must contain exactly name and args")
+        if not isinstance(entry.data["name"], str)             or not entry.data["name"].strip():
+            raise ValueError("tool call name must be non-empty")
+        if not isinstance(entry.data["args"], dict):
+            raise ValueError("tool call args must be an object")
+        identity = _call_identity(entry)
+        previous = self._calls.get(entry.call_id)
+        if previous is not None and previous != identity:
+            raise ValueError("a call id cannot change tool identity or arguments")
+        if entry.call_id in self._results:
+            raise ValueError("tool call cannot follow its result")
+        self._calls[entry.call_id] = identity
+
+    def _init_tool_result(self, entry) -> None:
+        if not entry.call_id or entry.call_id not in self._calls:
+            raise ValueError("tool result requires an earlier tool call")
+        if entry.call_id in self._results:
+            raise ValueError("tool call may have only one result")
+        status = entry.data.get("status")
+        duration_ms = entry.data.get("duration_ms")
+        allowed_duration = (
+            {"duration_ms"} if "duration_ms" in entry.data else set())
+        if status == "ok":
+            valid = (set(entry.data) == {"status", "evidence"} | allowed_duration
+                     and isinstance(entry.data.get("evidence"), dict))
+        elif status == "failed":
+            valid = (set(entry.data) == {"status", "error"} | allowed_duration
+                     and isinstance(entry.data.get("error"), str)
+                     and bool(entry.data["error"].strip()))
+        else:
+            raise ValueError("tool result status must be ok or failed")
+        if (duration_ms is not None
+                and (not isinstance(duration_ms, int)
+                     or isinstance(duration_ms, bool) or duration_ms < 0)):
+            raise ValueError(
+                "tool result duration_ms must be a non-negative integer")
+        if not valid:
+            raise ValueError("tool result data does not match its status")
+        self._results.add(entry.call_id)
+
+    def _check_lifecycle(self, kind, turn_id, step_id, open_turns, open_steps, closed_turns) -> None:
+        if kind == LedgerKind.TURN_START:
+            if turn_id in open_turns or turn_id in closed_turns:
+                raise ValueError("turn may start only once")
+        elif kind == LedgerKind.TURN_END:
+            if turn_id not in open_turns:
+                raise ValueError("turn end requires an open turn")
+            if any(turn == turn_id for turn, _ in open_steps):
+                raise ValueError("turn cannot end with open steps")
+        elif turn_id in closed_turns:
+            raise ValueError("events cannot follow turn end")
+        if kind == LedgerKind.STEP_START and step_id:
+            if (turn_id, step_id) in open_steps:
+                raise ValueError("step may start only once before ending")
+        elif kind == LedgerKind.STEP_END and step_id:
+            if (turn_id, step_id) not in open_steps:
+                raise ValueError("step end requires an open step")
+
+    def _append_model_request(self, call_id, payload) -> None:
+        if call_id in self._model_requests:
+            raise ValueError("model request call id must be unique")
+        envelope = RequestEnvelope.model_validate(payload)
+        self._model_requests[call_id] = envelope
+
+    def _append_assistant_attempt(self, call_id, payload) -> None:
+        _validate_assistant_attempt(payload)
+        if call_id not in self._model_requests:
+            raise ValueError("assistant attempt requires an earlier model request")
+        if call_id in self._model_attempts:
+            raise ValueError("model request may have only one assistant attempt")
+        _validate_attempt_identity(self._model_requests[call_id], payload)
+        self._model_attempts.add(call_id)
+
+    def _append_tool_call(self, call_id, payload) -> None:
+        if set(payload) != {"name", "args"}:
+            raise ValueError("tool call data must contain exactly name and args")
+        if not isinstance(payload["name"], str) or not payload["name"].strip():
+            raise ValueError("tool call name must be non-empty")
+        if not isinstance(payload["args"], dict):
+            raise ValueError("tool call args must be an object")
+        identity = _hash({"name": payload["name"], "args": payload["args"]})
+        previous = self._calls.get(call_id)
+        if previous is not None and previous != identity:
+            raise ValueError("a call id cannot change tool identity or arguments")
+        self._calls[call_id] = identity
+
+    def _append_tool_result(self, call_id, payload) -> None:
+        if call_id not in self._calls:
+            raise ValueError("tool result requires an earlier tool call")
+        if call_id in self._results:
+            raise ValueError("tool call may have only one result")
+        status = payload.get("status")
+        duration_ms = payload.get("duration_ms")
+        allowed_duration = ({"duration_ms"} if "duration_ms" in payload else set())
+        if status == "ok":
+            if (set(payload) != {"status", "evidence"} | allowed_duration
+                    or not isinstance(payload.get("evidence"), dict)):
+                raise ValueError(
+                    "successful tool result requires exactly status and evidence object")
+        elif status == "failed":
+            if (set(payload) != {"status", "error"} | allowed_duration
+                    or not isinstance(payload.get("error"), str)
+                    or not payload["error"].strip()):
+                raise ValueError(
+                    "failed tool result requires exactly status and non-empty error")
+        else:
+            raise ValueError("tool result status must be ok or failed")
+        if (duration_ms is not None
+                and (not isinstance(duration_ms, int) or isinstance(duration_ms, bool)
+                     or duration_ms < 0)):
+            raise ValueError("tool result duration_ms must be a non-negative integer")
+        self._results.add(call_id)
+
+    def _append_live_fallback(self, call_id, payload) -> None:
+        if call_id not in self._calls:
+            raise ValueError("live fallback requires an earlier tool call")
+        if call_id in self._live_fallbacks:
+            raise ValueError("a tool call may have only one live fallback event")
+        if call_id in self._results:
+            raise ValueError("live fallback cannot follow its tool result")
+        _validate_live_fallback_data(payload)
+        self._live_fallbacks.add(call_id)
 
     def _lifecycle_state(self):
         open_turns: set[str] = set()
