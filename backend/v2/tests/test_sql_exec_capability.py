@@ -566,3 +566,16 @@ def test_the_planner_sees_the_schema_only_when_the_rail_is_a_candidate() -> None
 
     assert "declared_schema" not in planner._catalog_for(without)["sql_exec"]
     assert "declared_schema" in planner._catalog_for(with_rail)["sql_exec"]
+
+def test_intake_sees_the_schema_so_it_can_author_valid_sql() -> None:
+    from v2.adapters.models import ModelIntake, catalog_for_wire
+    from v2.runtime.assembly import capability_catalog
+
+    intake = ModelIntake.__new__(ModelIntake)
+    intake._catalog = dict(capability_catalog())
+    intake._wire_catalog = catalog_for_wire(intake._catalog)
+
+    catalog = intake._catalog_with_declared_schemas()
+
+    assert "declared_schema" in catalog["sql_exec"]
+    assert "declared_schema" not in catalog["award_results"]

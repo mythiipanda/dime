@@ -929,6 +929,20 @@ class ModelIntake(ModelStage):
         self._catalog = dict(capability_catalog)
         self._wire_catalog = catalog_for_wire(self._catalog)
 
+    def _catalog_with_declared_schemas(self) -> dict:
+        from v2.runtime.assembly import declared_schema_for
+
+        enriched = {}
+        for capability_id, entry in self._wire_catalog.items():
+            if not isinstance(entry, Mapping):
+                enriched[capability_id] = entry
+                continue
+            schema = declared_schema_for(capability_id)
+            enriched[capability_id] = (
+                {**entry, "declared_schema": schema}
+                if schema is not None else entry)
+        return enriched
+
     @staticmethod
     def _bounded_context(context: Sequence[ConversationTurn]) -> tuple[ConversationTurn, ...]:
         from v2.contracts import MAX_INTAKE_CONTEXT_TURNS
@@ -1061,7 +1075,7 @@ class ModelIntake(ModelStage):
             "current_date": datetime.now(UTC).date().isoformat(),
             "conversation_context": [turn.model_dump(mode="json")
                                      for turn in bounded],
-            "capability_catalog": self._wire_catalog,
+            "capability_catalog": self._catalog_with_declared_schemas(),
             "skill_catalog": self._skills.catalog(),
         }
         if bounded:
