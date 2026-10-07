@@ -25,7 +25,7 @@ def last_completed_season() -> str | None:
     if _LAST_SEASON_KEY == key:
         return _LAST_SEASON_VALUE
     try:
-        seasons = store.seasons_with_data()
+        seasons = store.completed_seasons_across_tables()
     except Exception:
         return None
     value = seasons[-1] if seasons else None
@@ -124,14 +124,19 @@ def clamp_season(season: object, coverage_start: str = COVERAGE_START,
                  coverage_end: str | None = None) -> str:
     if coverage_end is None:
         coverage_end = last_completed_season() or coverage_start
-    raw = "" if season is None else str(season).strip()
-    if not raw:
+    if season is None:
         derived = last_completed_season()
         if derived is None:
             raise InvalidSeasonError(
                 season, coverage_start=coverage_start,
                 coverage_end=coverage_end)
         raw = derived
+    else:
+        raw = str(season).strip()
+        if not raw:
+            raise InvalidSeasonError(
+                season, coverage_start=coverage_start,
+                coverage_end=coverage_end)
     slug = _canonical_parts(raw)
     if slug is None:
         slug = _bare_year_slug(raw)

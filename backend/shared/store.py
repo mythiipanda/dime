@@ -142,7 +142,14 @@ def tables(path: Path | str | None = None) -> set[str]:
                 _tables_cache[key] = (freshness, names)
         return set(names)
 
-_PLAYED_GAME_TABLE = "silver_boxscores"
+_PLAYED_GAME_TABLE = "silver_hist_gamelogs"
+
+_SEASON_TABLES = (
+    _PLAYED_GAME_TABLE,
+    "silver_boxscores",
+    "silver_team_games",
+    "silver_player_gamelogs",
+)
 
 _PRESEASON_GAME_ID_PREFIX = "001"
 
@@ -157,6 +164,16 @@ def seasons_with_data(table: str = _PLAYED_GAME_TABLE) -> list[str]:
     finally:
         con.close()
     return [r[0] for r in rows if r and r[0]]
+
+
+def completed_seasons_across_tables() -> list[str]:
+    found: set[str] = set()
+    for table in _SEASON_TABLES:
+        try:
+            found.update(seasons_with_data(table))
+        except Exception:
+            continue
+    return sorted(found)
 
 
 @contextmanager
