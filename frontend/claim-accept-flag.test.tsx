@@ -264,3 +264,38 @@ describe("flagged-claim eval contract", () => {
     assert.deepEqual(out, [entry]);
   });
 });
+
+describe("flagged-claim contract tightening", () => {
+  const entry = {
+    outputId: "NET_RATING",
+    subjectType: "team",
+    subjectId: "BOS",
+    stat: "Net rating",
+    subject: "Boston",
+    value: "9.4",
+    source: "Team ratings, 2024-25 season",
+    timestamp: "2026-10-06T12:00:00.000Z",
+  };
+  it("rejects empty identity, value, and source strings", () => {
+    for (const field of ["outputId", "subjectType", "subjectId", "value", "source"]) {
+      assert.equal(validFlagEntry({ ...entry, [field]: "" }), false, field);
+    }
+  });
+  it("accepts strict ISO timestamps with or without millis or offset", () => {
+    assert.equal(validFlagEntry({ ...entry, timestamp: "2026-10-06T12:00:00Z" }), true);
+    assert.equal(validFlagEntry({ ...entry, timestamp: "2026-10-06T12:00:00.000Z" }), true);
+    assert.equal(validFlagEntry({ ...entry, timestamp: "2026-10-06T12:00:00+02:00" }), true);
+  });
+  it("rejects non-ISO timestamps Date.parse would accept", () => {
+    assert.equal(validFlagEntry({ ...entry, timestamp: "2026-10-06" }), false);
+    assert.equal(validFlagEntry({ ...entry, timestamp: "10/06/2026" }), false);
+    assert.equal(validFlagEntry({ ...entry, timestamp: "Oct 6, 2026" }), false);
+    assert.equal(validFlagEntry({ ...entry, timestamp: "2026-10-06 12:00:00" }), false);
+  });
+  it("same claim from a different source still logs once by identity", () => {
+    const other = { ...entry, source: "Other origin", timestamp: "2026-10-06T13:00:00.000Z" };
+    const out = dedupedFlagLog([entry, other]);
+    assert.equal(out.length, 1);
+    assert.equal(out[0].source, entry.source);
+  });
+});
