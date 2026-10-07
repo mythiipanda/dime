@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { memo, useState } from "react";
 import type { ReactNode } from "react";
 import AnswerText from "./AnswerText";
 import type { AiMessage } from "../lib/chat";
@@ -412,7 +412,7 @@ function downloadLog(entries: FlagEntry[]) {
   URL.revokeObjectURL(url);
 }
 
-export default function CitedAnswerText({ text, ai }: { text: string; ai: AiMessage }) {
+function CitedAnswerText({ text, ai }: { text: string; ai: AiMessage }) {
   const [openCite, setOpenCite] = useState<number | null>(null);
   const [stored, setStored] = useState(() => loadClaimLog());
   const accepted = stored.accepted;
@@ -523,3 +523,5 @@ export default function CitedAnswerText({ text, ai }: { text: string; ai: AiMess
     </div>
   );
 }
+
+export default memo(CitedAnswerText);
