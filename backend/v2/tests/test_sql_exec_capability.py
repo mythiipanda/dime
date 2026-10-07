@@ -532,3 +532,37 @@ def test_every_golden_sql_question_is_answered_by_the_real_warehouse(
             assert any(needle in value
                        for value in envelope.metric_definitions.values()), (
                            question, needle)
+
+def test_the_declared_schema_names_the_served_tables_and_columns() -> None:
+    from v2.runtime.assembly import declared_schema_for
+    from shared.tools.league import _SQL_TABLES
+
+    declared = declared_schema_for("sql_exec")
+
+    assert set(declared["tables"]) <= set(_SQL_TABLES)
+    assert declared["tables"]
+    assert declared_schema_for("award_results") is None
+
+
+def test_the_planner_sees_the_schema_only_when_the_rail_is_a_candidate() -> None:
+    from v2.adapters.models import ModelPlanner, catalog_for_wire
+    from v2.contracts import EvidenceRequirement, RunMode, TaskSpec
+    from v2.runtime.assembly import capability_catalog
+
+    planner = ModelPlanner.__new__(ModelPlanner)
+    planner._catalog = dict(capability_catalog())
+    planner._wire_catalog = catalog_for_wire(planner._catalog)
+
+    without = TaskSpec(
+        goal="mvp", mode=RunMode.QUICK, deliverable="winner",
+        requirements=[EvidenceRequirement(
+            id="award", description="official MVP result",
+            capability_options=["award_results"])])
+    with_rail = TaskSpec(
+        goal="rates", mode=RunMode.DEEP_DIVE, deliverable="table",
+        requirements=[EvidenceRequirement(
+            id="rates", description="agent-written rate query",
+            capability_options=["sql_exec"])])
+
+    assert "declared_schema" not in planner._catalog_for(without)["sql_exec"]
+    assert "declared_schema" in planner._catalog_for(with_rail)["sql_exec"]

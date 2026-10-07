@@ -1952,10 +1952,27 @@ class ModelPlanner(ModelStage):
         self._catalog = dict(capability_catalog)
         self._wire_catalog = catalog_for_wire(self._catalog)
 
+    def _catalog_for(self, task: TaskSpec) -> dict:
+        from v2.runtime.assembly import declared_schema_for
+
+        relevant = set(task.required_evidence)
+        for requirement in task.requirements:
+            relevant.update(requirement.capability_options)
+        trimmed = {}
+        for capability_id, entry in self._wire_catalog.items():
+            if capability_id not in relevant or not isinstance(entry, Mapping):
+                trimmed[capability_id] = entry
+                continue
+            schema = declared_schema_for(capability_id)
+            trimmed[capability_id] = (
+                {**entry, "declared_schema": schema}
+                if schema is not None else entry)
+        return trimmed
+
     async def plan(self, task: TaskSpec, failure_context: dict | None = None) -> Plan:
         payload = {
             "task": task.model_dump(mode="json"),
-            "capability_catalog": self._wire_catalog,
+            "capability_catalog": self._catalog_for(task),
             "skills": self._skills.activate(task.skills),
         }
         if failure_context is not None:

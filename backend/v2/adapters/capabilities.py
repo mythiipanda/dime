@@ -222,6 +222,7 @@ class Capability:
     dependent_entity_arguments: Mapping[str, str] = field(default_factory=dict)
     domain: str = "basketball"
     open_vocabulary: bool = False
+    publishes_declared_schema: bool = False
 
 _LIST = [
     Capability(
@@ -538,6 +539,7 @@ _LIST = [
         name="sql_exec",
         tool_name="sql_exec",
         open_vocabulary=True,
+        publishes_declared_schema=True,
         units=SQL_EXEC_UNITS,
         metric_definitions=SQL_EXEC_DEFINITIONS,
         output_aliases=SQL_EXEC_OUTPUT_ALIASES,

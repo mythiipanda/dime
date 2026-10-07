@@ -81,6 +81,18 @@ def _structural_schema(value):
         return [_structural_schema(item) for item in value]
     return value
 
+def declared_schema_for(capability_id: str) -> dict | None:
+    from v2.adapters.capabilities import CAPABILITIES
+
+    spec = CAPABILITIES.get(capability_id)
+    if spec is None or not spec.publishes_declared_schema:
+        return None
+    from shared.tools.league import _get_warehouse_schema
+
+    present, columns = _get_warehouse_schema()
+    return {"tables": {name: columns[name] for name in present}}
+
+
 def capability_catalog() -> dict[str, dict]:
     from shared.tools import v1_tools
 
