@@ -815,6 +815,22 @@ def post_evidence_failures(preconditions: list, evidence) -> list[str]:
                     + f"; evidence declares {declared!r}"))
     return failures
 
+def _award_description() -> str:
+    from shared.tools.award_results import AWARDS
+
+    labels = ", ".join(
+        f"{code} ({spec['label']})" for code, spec in AWARDS.items())
+    return (
+        "Official NBA award results recorded on published ballots: who won "
+        "an award in a season, the full ranked field with award share and "
+        "vote counts, and one player's award record through a season. A tied "
+        "rank and an ORV row are reported as published. This is a recorded "
+        "outcome, never a model score, so use it instead of any award race "
+        f"for a result. The award argument is one of exactly these codes: "
+        f"{labels}. Any other award, including Finals MVP, is outside this "
+        "capability, so leave that requirement uncovered and let it gap "
+        "rather than naming an unpublished award.")
+
 CAPABILITY_DESCRIPTIONS: dict[str, str] = {
     "entity_resolution": "Resolve a player or team name to canonical identity.",
     "warehouse_freshness": "Authoritative warehouse table freshness, cadence, row counts, and stale status.",
@@ -873,14 +889,7 @@ CAPABILITY_DESCRIPTIONS: dict[str, str] = {
     "matchup_splits": "Situational splits for one player over the last N games by defense tier, venue, and rest.",
     "today": "Date-scoped scoreboard snapshot with last night, tonight, movers, and streaks.",
     "morning_briefing": "Date-scoped bundle of today snapshot, watchlist updates, and leaderboard deltas.",
-    "award_results": (
-        "Official NBA award results recorded on published ballots: who won an "
-        "award in a season, the full ranked field with award share and vote "
-        "counts, and one player's award record through a season. Coach-of-the-"
-        "Year is included; a tied rank and an ORV row are reported as "
-        "published. This is a recorded outcome, never a model score, so use it "
-        "instead of any award race for a result."
-    ),
+    "award_results": _award_description(),
     "sql_exec": (
         "Agent-written read-only SQL over the warehouse for an analyst "
         "question no prebuilt tool covers. The agent supplies one SELECT or "

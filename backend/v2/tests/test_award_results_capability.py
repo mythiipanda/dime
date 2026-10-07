@@ -814,3 +814,19 @@ def test_mvp_winner_and_share_publish_through_public_seam(
     assert custom["unverified_numbers"] == []
     assert REFUSAL not in final["text"]
     assert final["carry"]["verified_claims"] == 1
+def test_the_catalog_description_names_every_published_award_code() -> None:
+    from v2.runtime.assembly import capability_catalog
+    from shared.tools.award_results import AWARDS
+
+    description = capability_catalog()["award_results"]["description"]
+
+    for code in AWARDS:
+        assert code in description
+
+def test_the_catalog_description_forbids_inventing_an_unpublished_award() -> None:
+    from v2.runtime.assembly import capability_catalog
+
+    description = capability_catalog()["award_results"]["description"]
+
+    assert "Finals MVP" in description
+    assert "gap" in description

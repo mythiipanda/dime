@@ -50,7 +50,7 @@
       "type": "object"
     },
     "dependent_entity_arguments": {},
-    "description": "Official NBA award results recorded on published ballots: who won an award in a season, the full ranked field with award share and vote counts, and one player's award record through a season. Coach-of-the-Year is included; a tied rank and an ORV row are reported as published. This is a recorded outcome, never a model score, so use it instead of any award race for a result."
+    "description": "Official NBA award results recorded on published ballots: who won an award in a season, the full ranked field with award share and vote counts, and one player's award record through a season. A tied rank and an ORV row are reported as published. This is a recorded outcome, never a model score, so use it instead of any award race for a result. The award argument is one of exactly these codes: MVP (Most Valuable Player), DPOY (Defensive Player of the Year), ROY (Rookie of the Year), 6MOY (Sixth Man of the Year), MIP (Most Improved Player), COY (Coach of the Year), ALL_NBA (All-NBA Team), ALL_DEFENSE (All-Defensive Team), ALL_ROOKIE (All-Rookie Team). Any other award, including Finals MVP, is outside this capability, so leave that requirement uncovered and let it gap rather than naming an unpublished award."
   },
   "clutch": {
     "arguments": {
