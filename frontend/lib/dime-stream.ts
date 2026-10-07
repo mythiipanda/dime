@@ -21,6 +21,8 @@ export interface ToolActivityEvent {
   status: ToolActivityStatus;
   rows?: number;
   ms?: number;
+  args?: string[];
+  error?: string;
 }
 
 export interface TableArtifactPayload {
@@ -85,50 +87,78 @@ export type DimeStreamEvent =
   | FinalEvent
   | FailureEvent;
 
-const TOOL_LABELS: Record<string, string> = {
-  entity_resolution: "Resolving players and teams",
-  warehouse_freshness: "Checking data freshness",
-  standings: "Pulling standings",
-  team_trajectory: "Charting team trajectory",
-  team_totals: "Pulling team totals",
-  qualified_leaders: "Pulling league leaders",
-  team_splits: "Pulling team splits",
-  injury_impact: "Checking injury impact",
-  lineup_matchups: "Building lineup matchups",
-  competitive_ratings: "Computing competitive ratings",
-  injuries: "Checking injuries",
-  team_shot_zones: "Mapping team shot zones",
-  player_shot_zones: "Mapping shot zones",
-  rest_splits: "Pulling rest splits",
-  rookie_leaders: "Pulling rookie leaders",
-  team_ratings: "Pulling team ratings",
-  shots: "Pulling shot data",
-  shooting_efficiency: "Computing shooting efficiency",
-  on_off: "Computing on/off numbers",
-  lineups: "Pulling lineup data",
-  clutch: "Pulling clutch numbers",
-  player_ratings: "Pulling player ratings",
-  playoff_team_ratings: "Pulling playoff ratings",
-  game_prediction: "Running game prediction",
-  four_factors: "Computing four factors",
-  team_four_factors: "Computing team four factors",
-  matchup_brief: "Building matchup brief",
-  season_series: "Pulling season series",
-  head_to_head: "Pulling head-to-head",
-  matchup_splits: "Pulling matchup splits",
-  today: "Checking today's games",
-  morning_briefing: "Building the morning briefing",
-  award_results: "Pulling award results",
-  player_comparison: "Comparing players",
-  sql_exec: "Querying warehouse",
-  web_search: "Searching the web",
-  web_fetch: "Reading a web page",
-  tool: "Running a tool",
+type ToolNarration = { running: string; done: string };
+
+const TOOL_LABELS: Record<string, ToolNarration> = {
+  entity_resolution: { running: "Resolving players and teams", done: "Resolved players and teams" },
+  warehouse_freshness: { running: "Checking data freshness", done: "Checked data freshness" },
+  standings: { running: "Pulling standings", done: "Pulled standings" },
+  team_trajectory: { running: "Charting team trajectory", done: "Charted team trajectory" },
+  team_totals: { running: "Pulling team totals", done: "Pulled team totals" },
+  qualified_leaders: { running: "Pulling league leaders", done: "Pulled league leaders" },
+  team_splits: { running: "Pulling team splits", done: "Pulled team splits" },
+  injury_impact: { running: "Checking injury impact", done: "Checked injury impact" },
+  lineup_matchups: { running: "Building lineup matchups", done: "Built lineup matchups" },
+  competitive_ratings: { running: "Computing competitive ratings", done: "Computed competitive ratings" },
+  injuries: { running: "Checking injuries", done: "Checked injuries" },
+  team_shot_zones: { running: "Mapping team shot zones", done: "Mapped team shot zones" },
+  player_shot_zones: { running: "Mapping shot zones", done: "Mapped shot zones" },
+  rest_splits: { running: "Pulling rest splits", done: "Pulled rest splits" },
+  rookie_leaders: { running: "Pulling rookie leaders", done: "Pulled rookie leaders" },
+  team_ratings: { running: "Pulling team ratings", done: "Pulled team ratings" },
+  shots: { running: "Pulling shot data", done: "Pulled shot data" },
+  shooting_efficiency: { running: "Computing shooting efficiency", done: "Computed shooting efficiency" },
+  on_off: { running: "Computing on/off numbers", done: "Computed on/off numbers" },
+  lineups: { running: "Pulling lineup data", done: "Pulled lineup data" },
+  clutch: { running: "Pulling clutch numbers", done: "Pulled clutch numbers" },
+  player_ratings: { running: "Pulling player ratings", done: "Pulled player ratings" },
+  playoff_team_ratings: { running: "Pulling playoff ratings", done: "Pulled playoff ratings" },
+  game_prediction: { running: "Running game prediction", done: "Ran game prediction" },
+  four_factors: { running: "Computing four factors", done: "Computed four factors" },
+  team_four_factors: { running: "Computing team four factors", done: "Computed team four factors" },
+  matchup_brief: { running: "Building matchup brief", done: "Built matchup brief" },
+  season_series: { running: "Pulling season series", done: "Pulled season series" },
+  head_to_head: { running: "Pulling head-to-head", done: "Pulled head-to-head" },
+  matchup_splits: { running: "Pulling matchup splits", done: "Pulled matchup splits" },
+  today: { running: "Checking today's games", done: "Checked today's games" },
+  morning_briefing: { running: "Building the morning briefing", done: "Built the morning briefing" },
+  award_results: { running: "Pulling award results", done: "Pulled award results" },
+  player_comparison: { running: "Comparing players", done: "Compared players" },
+  sql_exec: { running: "Querying warehouse", done: "Queried warehouse" },
+  web_search: { running: "Searching the web", done: "Searched the web" },
+  web_fetch: { running: "Reading a web page", done: "Read a web page" },
+  tool: { running: "Running a tool", done: "Ran a tool" },
 };
 
-export function toolLabelFor(name: unknown): string {
+export function toolLabelFor(
+  name: unknown,
+  status: ToolActivityStatus = "running",
+): string {
   const key = typeof name === "string" ? name : "";
-  return TOOL_LABELS[key] ?? "Running a tool";
+  const narration = TOOL_LABELS[key] ?? TOOL_LABELS.tool;
+  return status === "running" ? narration.running : narration.done;
+}
+
+function argumentLine(name: string, value: unknown): string {
+  if (typeof value === "string") return `${name}=${value}`;
+  return `${name}=${JSON.stringify(value)}`;
+}
+
+function publishableArgumentLines(data: unknown): string[] | undefined {
+  const call = asRecord(data);
+  const declared = Array.isArray(call.arguments) ? call.arguments : [];
+  const lines: string[] = [];
+  for (const item of declared) {
+    const argument = asRecord(item);
+    const name = asString(argument.name);
+    if (!name) continue;
+    lines.push(argumentLine(name, argument.value));
+  }
+  const unknown = asNumber(call.unknown_argument_count) ?? 0;
+  if (unknown > 0) {
+    lines.push(`+${unknown} more not shown`);
+  }
+  return lines.length ? lines : undefined;
 }
 
 const NODE_LABELS: Record<string, string> = {
@@ -294,6 +324,8 @@ export interface ToolState {
   status: ToolActivityStatus;
   rows?: number;
   ms?: number;
+  args?: string[];
+  error?: string;
 }
 
 export interface StreamFailure {
@@ -365,22 +397,25 @@ export function reduceBackendEvent(type: string, data: unknown): DimeStreamEvent
           type: "tool_activity",
           id: asString(d.event_id) || null,
           name,
-          label: toolLabelFor(name),
+          label: toolLabelFor(name, "running"),
           status: "running",
+          args: publishableArgumentLines(d.data),
         },
       ];
     }
     case "tool_result": {
       const name = asString(d.name) || "tool";
+      const status: ToolActivityStatus = d.status === "fail" ? "fail" : "ok";
       return [
         {
           type: "tool_activity",
           id: asString(d.event_id) || null,
           name,
-          label: toolLabelFor(name),
-          status: d.status === "fail" ? "fail" : "ok",
+          label: toolLabelFor(name, status),
+          status,
           rows: asNumber(d.rows),
           ms: asNumber(d.ms),
+          error: status === "fail" ? asString(d.error) || "Tool failed" : undefined,
         },
       ];
     }
@@ -483,6 +518,8 @@ export class DimeStream {
             status: event.status,
             rows: event.rows ?? next[idx].rows,
             ms: event.ms ?? next[idx].ms,
+            args: event.args ?? next[idx].args,
+            error: event.error ?? next[idx].error,
           };
           this.snap.tools = next;
         } else if (event.status === "running") {
@@ -496,6 +533,8 @@ export class DimeStream {
               status: event.status,
               rows: event.rows,
               ms: event.ms,
+              args: event.args,
+              error: event.error,
             },
           ].slice(-MAX_TOOLS);
         } else {
@@ -509,6 +548,8 @@ export class DimeStream {
               status: event.status,
               rows: event.rows,
               ms: event.ms,
+              args: event.args,
+              error: event.error,
             },
           ].slice(-MAX_TOOLS);
         }

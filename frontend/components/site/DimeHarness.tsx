@@ -240,17 +240,21 @@ function toolStepFor(tool: ToolState): ToolStep {
           ]
             .filter(Boolean)
             .join(" · ") || "done";
+  const detail = [
+    ...(tool.args ?? []),
+    ...(tool.error ? [tool.error] : []),
+  ].map((text) => ({ text }));
   return {
     icon: "read",
     label: tool.label,
     chip: summary,
     mono: true,
-    detailMono: false,
-    detail: [{ text: summary }],
+    detailMono: true,
+    detail: detail.length ? detail : [{ text: summary }],
   };
 }
 
-function ArtifactBody({ artifact }: { artifact: DimeArtifact }) {
+export function ArtifactBody({ artifact }: { artifact: DimeArtifact }) {
   if (artifact.kind === "table") {
     return <ArtifactTable columns={artifact.columns} rows={artifact.rows} />;
   }
@@ -267,6 +271,24 @@ function ArtifactBody({ artifact }: { artifact: DimeArtifact }) {
         bName={artifact.bName}
       />
     );
+  }
+  if (artifact.kind === "chart") {
+    const series = artifact.series.filter((s) => s.values.length > 0);
+    if (!series.length) return null;
+    return (
+      <ArtifactChart
+        series={series.map((s, i) => ({
+          name: s.name,
+          values: s.values,
+          tone: i === 0 ? "ink" : "muted",
+        }))}
+        footnote={artifact.footnote}
+      />
+    );
+  }
+  if (artifact.kind === "shot_chart") {
+    if (!artifact.zones.length) return null;
+    return <ArtifactShotChart zones={artifact.zones} />;
   }
   return null;
 }
@@ -311,25 +333,11 @@ function FollowUpPills({
 }
 
 function LiveAssistant({ live }: { live: LiveRun }) {
-  const targetRef = useRef(live.text);
-  targetRef.current = live.text;
-  const [shown, setShown] = useState("");
-  useEffect(() => {
-    let raf = 0;
-    const tick = () => {
-      setShown((cur) => {
-        const target = targetRef.current;
-        return cur.length >= target.length
-          ? cur
-          : target.slice(0, cur.length + 48);
-      });
-      raf = requestAnimationFrame(tick);
-    };
-    raf = requestAnimationFrame(tick);
-    return () => cancelAnimationFrame(raf);
-  }, []);
   const steps = live.tools.map(toolStepFor);
   const secs = Math.max(1, Math.round((Date.now() - live.startedAt) / 1000));
+  const statusLine = live.thinking.length
+    ? live.thinking[live.thinking.length - 1].label
+    : "Thinking";
   return (
     <>
       <div className="mt-2">
@@ -340,7 +348,7 @@ function LiveAssistant({ live }: { live: LiveRun }) {
             primary: t.label,
             secondary: t.detail,
           }))}
-          active="Thinking"
+          active={statusLine}
           done={`Thought for ${secs} seconds`}
         />
       </div>
@@ -370,12 +378,9 @@ function LiveAssistant({ live }: { live: LiveRun }) {
           ))}
         </div>
       )}
-      {shown && (
-        <p
-          className="mt-4 max-w-[620px] whitespace-pre-line text-[13.5px] leading-[1.65] text-ink-2"
-          style={{ animation: FADE_UP }}
-        >
-          {shown}
+      {live.text && (
+        <p className="mt-4 max-w-[620px] whitespace-pre-line text-[13.5px] leading-[1.65] text-ink-2">
+          {live.text}
         </p>
       )}
       {live.failed && <FailureCard failure={live.failed} />}

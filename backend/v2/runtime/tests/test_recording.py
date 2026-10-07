@@ -142,3 +142,49 @@ async def test_recorded_capability_revalidates_copied_evidence() -> None:
             TaskSpec(goal="record", mode=RunMode.QUICK, deliverable="text"), [],
         )
     assert ledger.entries[-1].data["status"] == "failed"
+
+def test_publishable_arguments_publish_the_declared_public_values() -> None:
+    from v2.runtime.recording import argument_counts, publishable_arguments
+
+    arguments = {"a": "Subject Alpha", "b": "Subject Bravo",
+                 "season": "2025-26", "surprise": "hidden"}
+
+    assert publishable_arguments("player_comparison", arguments) == [
+        {"name": "a", "value": "Subject Alpha"},
+        {"name": "b", "value": "Subject Bravo"},
+        {"name": "season", "value": "2025-26"},
+    ]
+    assert "hidden" not in str(publishable_arguments("player_comparison", arguments))
+    assert argument_counts("player_comparison", arguments) == (4, 1)
+
+def test_publishable_arguments_withhold_declared_identity_arguments() -> None:
+    from v2.runtime.recording import argument_counts, publishable_arguments
+
+    arguments = {"player_id": "internal-identity-3f9c",
+                 "team_id": "internal-identity-3f9c",
+                 "season": "2025-26"}
+    rows = publishable_arguments("four_factors", arguments)
+
+    assert rows == [{"name": "season", "value": "2025-26"}]
+    assert "internal-identity" not in str(rows)
+    assert argument_counts("four_factors", arguments) == (3, 0)
+
+def test_publishable_arguments_withhold_identity_and_secret_arguments() -> None:
+    from v2.runtime.recording import publishable_arguments
+
+    fetch_arguments = {"result_rank": 1, "search_evidence_id": "evidence:42"}
+    fetch_rows = publishable_arguments("web_fetch", fetch_arguments)
+
+    assert fetch_rows == [{"name": "result_rank", "value": 1}]
+    assert "evidence:42" not in str(fetch_rows)
+
+    search_rows = publishable_arguments(
+        "web_search", {"query": "luka stats", "api_key": "sk-live-secret",
+                       "max_results": 5})
+
+    assert search_rows == [
+        {"name": "max_results", "value": 5},
+        {"name": "query", "value": "luka stats"},
+    ]
+    assert "sk-live-secret" not in str(search_rows)
+

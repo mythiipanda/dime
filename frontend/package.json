@@ -6,7 +6,7 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "test": "tsx --test lib/api.test.ts lib/briefs.test.ts lib/chat.test.ts lib/diagnostics.test.ts lib/dime-stream.test.ts lib/evidence.test.ts lib/grades.test.ts lib/exploreFeed.test.ts lib/exploreFeedAction.test.ts lib/exploreIndex.test.ts lib/exploreSearch.test.ts lib/freshness.test.ts lib/scroll.test.ts stream-batcher.test.tsx",
+    "test": "tsx --test lib/api.test.ts lib/briefs.test.ts lib/chat.test.ts lib/diagnostics.test.ts lib/dime-stream.test.ts lib/evidence.test.ts lib/grades.test.ts lib/exploreFeed.test.ts lib/exploreFeedAction.test.ts lib/exploreIndex.test.ts lib/exploreSearch.test.ts lib/freshness.test.ts lib/scroll.test.ts stream-batcher.test.tsx chat-artifacts.test.tsx",
     "test:activity": "tsx --test lib/activity.test.ts",
     "test:api": "tsx --test lib/api.test.ts",
     "test:chat": "tsx --test lib/chat.test.ts"

@@ -17,11 +17,42 @@ function streamed(events: [string, unknown][]): DimeStream {
 
 test("sql_exec maps to a human warehouse label", () => {
   assert.equal(toolLabelFor("sql_exec"), "Querying warehouse");
+  assert.equal(toolLabelFor("sql_exec", "ok"), "Queried warehouse");
+  assert.equal(toolLabelFor("lineups", "running"), "Pulling lineup data");
+  assert.equal(toolLabelFor("lineups", "ok"), "Pulled lineup data");
+  assert.equal(toolLabelFor("game_prediction", "ok"), "Ran game prediction");
+  assert.equal(toolLabelFor("web_fetch", "ok"), "Read a web page");
 });
 
 test("unknown tool names fall back to a generic label", () => {
   assert.equal(toolLabelFor("mystery_capability"), "Running a tool");
   assert.equal(toolLabelFor(undefined), "Running a tool");
+  assert.equal(toolLabelFor("mystery_capability", "ok"), "Ran a tool");
+});
+
+test("tool narration switches to past tense once the tool finishes", () => {
+  const stream = streamed([
+    ["tool_call", { name: "lineups", event_id: "d:4" }],
+  ]);
+  assert.equal(stream.snapshot().tools[0].label, "Pulling lineup data");
+  stream.handle("tool_result", {
+    name: "lineups", event_id: "d:4", status: "ok", rows: 8, ms: 240,
+  });
+  assert.equal(stream.snapshot().tools[0].label, "Pulled lineup data");
+});
+
+test("tool narration never leaks capability names", () => {
+  const names = [
+    "sql_exec", "lineups", "entity_resolution", "web_search",
+    "matchup_brief", "unknown_capability",
+  ];
+  for (const name of names) {
+    for (const status of ["running", "ok"] as const) {
+      const label = toolLabelFor(name, status);
+      assert.ok(!label.includes("_"), label);
+      assert.ok(!/^[a-z][a-z0-9_]+$/.test(label), label);
+    }
+  }
 });
 
 test("node names map to human thinking labels without stage names", () => {
@@ -57,7 +88,7 @@ test("tool_call then tool_result updates one running chip", () => {
   ]);
   const snap = stream.snapshot();
   assert.equal(snap.tools.length, 1);
-  assert.equal(snap.tools[0].label, "Querying warehouse");
+  assert.equal(snap.tools[0].label, "Queried warehouse");
   assert.equal(snap.tools[0].status, "ok");
   assert.equal(snap.tools[0].rows, 12);
   assert.equal(snap.tools[0].ms, 412);
@@ -184,13 +215,62 @@ test("failure copy stays human with no infra jargon", () => {
   assert.equal(failureCopy("unknown_kind").title, "Something went wrong");
 });
 
-test("reduceBackendEvent never exposes raw args or sql", () => {
+test("tool rows carry the arguments the backend declared safe to show", () => {
   const events = reduceBackendEvent("tool_call", {
-    name: "sql_exec",
+    name: "lineups",
     event_id: "c:3",
-    data: { arguments: [{ name: "q", value: "SELECT secret" }] },
+    data: {
+      arguments: [
+        { name: "season", value: "2025-26" },
+        { name: "stat", value: "PTS" },
+      ],
+      argument_count: 4,
+      unknown_argument_count: 2,
+    },
   });
   assert.equal(events.length, 1);
-  const text = JSON.stringify(events);
-  assert.ok(!text.includes("SELECT"), text);
+  const event = events[0];
+  assert.equal(event.type, "tool_activity");
+  if (event.type === "tool_activity") {
+    assert.deepEqual(event.args, ["season=2025-26", "stat=PTS", "+2 more not shown"]);
+  }
+});
+
+test("only the arguments the backend declared safe are shown", () => {
+  const call = reduceBackendEvent("tool_call", {
+    name: "sql_exec",
+    event_id: "c:4",
+    q: "SELECT secret FROM vault",
+    data: { arguments: [{ name: "season", value: "2025-26" }] },
+  });
+  const result = reduceBackendEvent("tool_result", {
+    name: "sql_exec",
+    event_id: "c:4",
+    status: "ok",
+    rows: 12,
+    sql: "SELECT secret FROM vault",
+  });
+  const event = call[0];
+  assert.equal(event.type, "tool_activity");
+  if (event.type === "tool_activity") {
+    assert.deepEqual(event.args, ["season=2025-26"]);
+    assert.ok(!JSON.stringify(call).includes("SELECT"), JSON.stringify(call));
+  }
+  assert.ok(!JSON.stringify(result).includes("SELECT"), JSON.stringify(result));
+});
+
+test("failed tools carry plain failure copy instead of a raw payload", () => {
+  const events = reduceBackendEvent("tool_result", {
+    name: "standings",
+    event_id: "e:5",
+    status: "fail",
+    error: "Tool failed",
+  });
+  const event = events[0];
+  assert.equal(event.type, "tool_activity");
+  if (event.type === "tool_activity") {
+    assert.equal(event.status, "fail");
+    assert.equal(event.error, "Tool failed");
+    assert.equal(event.label, "Pulled standings");
+  }
 });
