@@ -84,3 +84,16 @@ def test_unmatched_season_column_fails_loud_not_wrong_value(
          "team_b": "MIA", "players_b": "LeBron James"})
     assert out["ok"] is False
     assert out["reason"] == "salary_column_unmatched"
+
+
+def test_cap_ledger_vintage_only_schema_fails_typed(
+        monkeypatch, tmp_path):
+    from shared.tools import league as league_mod
+
+    _vintaged_warehouse(
+        tmp_path, monkeypatch,
+        "SALARY_2024_25 INTEGER, SALARY_2025_26 INTEGER",
+        [("LeBron James", "LAL", 10, 20, "2025-26")])
+    out = league_mod.get_cap_ledger.invoke({"team": "LAL"})
+    assert out["ok"] is False
+    assert out["reason"] == "salary_column_unmatched"

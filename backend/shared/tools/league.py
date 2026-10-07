@@ -2682,7 +2682,11 @@ def get_cap_ledger(team: str = "") -> dict[str, Any]:
 
     con = _store.connect()
     try:
-        total, players = _payroll(team, con)
+        try:
+            total, players = _payroll(team, con)
+        except SalaryColumnError as exc:
+            return {"tool": "get_cap_ledger", "ok": False,
+                    "reason": exc.reason, "error": str(exc)}
         source = _payroll_source(con)
         salary_date = _salary_date(con)
         season, _, _ = _salary_vintage(con)
