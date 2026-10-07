@@ -96,13 +96,20 @@ const FLAG_FIELDS = [
   "timestamp",
 ];
 
+const NON_EMPTY_FLAG_FIELDS = ["outputId", "subjectType", "subjectId", "value", "source"];
+
+const ISO_TIMESTAMP_RX = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?(Z|[+-]\d{2}:?\d{2})$/;
+
 export function validFlagEntry(value: unknown): value is FlagEntry {
   if (typeof value !== "object" || value === null) return false;
   const record = value as Record<string, unknown>;
   for (const field of FLAG_FIELDS) {
     if (typeof record[field] !== "string") return false;
   }
-  return !Number.isNaN(Date.parse(record.timestamp as string));
+  for (const field of NON_EMPTY_FLAG_FIELDS) {
+    if ((record[field] as string).length === 0) return false;
+  }
+  return ISO_TIMESTAMP_RX.test(record.timestamp as string);
 }
 
 export function dedupedFlagLog(entries: FlagEntry[]): FlagEntry[] {
