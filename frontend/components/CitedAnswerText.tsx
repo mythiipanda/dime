@@ -85,6 +85,37 @@ export function claimKeyOf(entry: Pick<FlagEntry, "outputId" | "subjectType" | "
   return [entry.outputId, entry.subjectType, entry.subjectId, entry.value].join("|");
 }
 
+const FLAG_FIELDS = [
+  "outputId",
+  "subjectType",
+  "subjectId",
+  "stat",
+  "subject",
+  "value",
+  "source",
+  "timestamp",
+];
+
+export function validFlagEntry(value: unknown): value is FlagEntry {
+  if (typeof value !== "object" || value === null) return false;
+  const record = value as Record<string, unknown>;
+  for (const field of FLAG_FIELDS) {
+    if (typeof record[field] !== "string") return false;
+  }
+  return !Number.isNaN(Date.parse(record.timestamp as string));
+}
+
+export function dedupedFlagLog(entries: FlagEntry[]): FlagEntry[] {
+  const seen = new Set<string>();
+  return entries.filter((entry) => {
+    if (!validFlagEntry(entry)) return false;
+    const key = claimKeyOf(entry);
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
 export function flagEntry(source: EvidenceSource, at: string): FlagEntry {
   return {
     outputId: source.outputId,
@@ -386,7 +417,7 @@ function CopyLogButton({ entries }: { entries: FlagEntry[] }) {
       className="pill-ghost"
       style={{ fontSize: 12, padding: "3px 10px", marginTop: 8, marginLeft: 8 }}
       onClick={() => {
-        const text = JSON.stringify(entries, null, 2);
+        const text = JSON.stringify(dedupedFlagLog(entries), null, 2);
         try {
           const clipboard = navigator.clipboard;
           if (!clipboard) return;
@@ -403,7 +434,7 @@ function CopyLogButton({ entries }: { entries: FlagEntry[] }) {
 }
 
 function downloadLog(entries: FlagEntry[]) {
-  const blob = new Blob([JSON.stringify(entries, null, 2)], { type: "application/json" });
+  const blob = new Blob([JSON.stringify(dedupedFlagLog(entries), null, 2)], { type: "application/json" });
   const url = URL.createObjectURL(blob);
   const link = document.createElement("a");
   link.href = url;
