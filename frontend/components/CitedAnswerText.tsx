@@ -278,6 +278,11 @@ export function EvidenceLedger({
                   <GradeTag tag={source.grade.tag} />
                 </>
               ) : null}
+              {source.note ? (
+                <div style={{ fontSize: 12, color: "var(--color-ash-gray)", marginTop: 2 }}>
+                  {source.note}
+                </div>
+              ) : null}
             </div>
             {open ? (
               <>
