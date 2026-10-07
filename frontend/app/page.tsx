@@ -12,6 +12,7 @@ import OnboardingModal from "../components/OnboardingModal";
 import DebateCardModal from "../components/DebateCardModal";
 import ExploreWorkspace from "../components/ExploreWorkspace";
 import { ThreadInfo, getQueryParam, getThreads, setQueryParam } from "../lib/api";
+import { markBriefViewerSeen } from "../lib/briefs";
 
 type Tab = "chat" | "data" | "today";
 
@@ -125,6 +126,7 @@ export default function Home() {
 
   const closeArtifact = () => {
     if (artifactClosing) return;
+    if (activeArtifact?.tool === "brief") markBriefViewerSeen();
     setArtifactClosing(true);
     artifactCloseTimer.current = window.setTimeout(() => {
       artifactCloseTimer.current = null;

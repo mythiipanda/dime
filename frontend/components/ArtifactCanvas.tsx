@@ -72,7 +72,8 @@ export default function ArtifactCanvas({ artifact, onClose, onAsk }: ArtifactCan
     toolName === "get_streaks" ||
     toolName === "get_game_prediction" ||
     toolName === "search_game_logs" ||
-    toolName === "get_rotation_check";
+    toolName === "get_rotation_check" ||
+    toolName === "brief";
 
   const tableRows =
     (artifact?.rows as { rows?: unknown } | undefined)?.rows ?? artifact?.rows;
@@ -275,6 +276,8 @@ export default function ArtifactCanvas({ artifact, onClose, onAsk }: ArtifactCan
           <GameLogView rows={artifact.rows} meta={artifact.meta} />
         ) : toolName === "get_rotation_check" && parseRotation(artifact.rows) ? (
           <RotationCheckView rows={artifact.rows} meta={artifact.meta} />
+        ) : toolName === "brief" && parsePreview(artifact.rows) ? (
+          <MatchupPreviewView rows={artifact.rows} meta={artifact.meta} />
         ) : isShotTool && viewMode === "court" ? (
           <CourtHeatmap rows={artifact.rows} meta={artifact.meta} verdict={artifact.verdict} />
         ) : toolName === "run_python" ? (
