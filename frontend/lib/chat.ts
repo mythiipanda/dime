@@ -43,6 +43,7 @@ export interface ToolCall {
   ms?: number;
   rows?: number;
   error?: string;
+  reason?: string;
   agent?: string;
   sql?: string;
   startedAt?: number;

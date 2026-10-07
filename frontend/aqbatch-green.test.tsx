@@ -123,7 +123,7 @@ describe("aqbatch green-after", () => {
     assert.ok(html.includes("Source: warehouse"));
   });
 
-  it("A5 failed calls hidden, never raw plumbing", () => {
+  it("A5 failed calls visible with plain notes, never raw plumbing", () => {
     const agent = renderToStaticMarkup(
       React.createElement(AgentActivity, { ai: aiWithFailedCall() }),
     );
@@ -134,9 +134,8 @@ describe("aqbatch green-after", () => {
     const timeline = renderToStaticMarkup(
       React.createElement(ActivityTimeline, { items: failedActivity(), running: false }),
     );
-    assert.ok(!timeline.includes("unavailable"));
-    assert.ok(!timeline.includes(">Failed<"));
-    assert.ok(timeline.includes("Used 1 tool"));
+    assert.ok(timeline.includes("Used 2 tools"));
     assert.ok(!timeline.includes("argument_count"));
+    assert.ok(!timeline.includes("warehouse read failed"));
   });
 });

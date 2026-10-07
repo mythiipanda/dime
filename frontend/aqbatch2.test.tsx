@@ -170,7 +170,7 @@ describe("aqbatch2 answer quality", () => {
     assert.ok(html.includes("Jokic leads qualified passers."));
   });
 
-  it("A5 failed steps hidden from activity surfaces", () => {
+  it("A5 failed steps visible with plain notes, never raw plumbing", () => {
     const agent = renderToStaticMarkup(
       React.createElement(AgentActivity, { ai: aiWithFailedCall() }),
     );
@@ -180,8 +180,7 @@ describe("aqbatch2 answer quality", () => {
     const timeline = renderToStaticMarkup(
       React.createElement(ActivityTimeline, { items: failedActivity(), running: false }),
     );
-    assert.ok(!timeline.includes("unavailable"));
-    assert.ok(!timeline.includes(">Failed<"));
-    assert.ok(timeline.includes("Used 1 tool"));
+    assert.ok(timeline.includes("Used 2 tools"));
+    assert.ok(!timeline.includes("warehouse read failed"));
   });
 });
