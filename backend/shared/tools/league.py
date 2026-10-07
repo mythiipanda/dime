@@ -2505,7 +2505,7 @@ def _norm_trade_teams(team_a: str, team_b: str) -> tuple[str, str] | None:
     return a, b
 
 def _auto_correct_side(unks: list[str], old_team: str, plist: str,
-                       con: object):
+                       con: object, season: str | None = None):
     located = []
     for u in unks:
         base = u.split(" (suggestions")[0].strip()
@@ -2519,7 +2519,7 @@ def _auto_correct_side(unks: list[str], old_team: str, plist: str,
     new_team = new_teams.pop()
     if new_team == str(old_team).upper():
         return None
-    matched = _match_trade_players(new_team, plist, con)
+    matched = _match_trade_players(new_team, plist, con, season)
     corrections = [
         f"{cname} is on {t} per the 2026-27 salary sheet "
         f"(not {str(old_team).upper()}); computed for the corrected team"
@@ -2527,7 +2527,24 @@ def _auto_correct_side(unks: list[str], old_team: str, plist: str,
     ]
     return new_team, matched, corrections
 
-def _payroll(team: str, con: object = None) -> tuple[int, list[dict]]:
+class SalaryColumnError(RuntimeError):
+    def __init__(self, reason: str, detail: str) -> None:
+        self.reason = reason
+        super().__init__(detail)
+
+
+def _resolve_salary_column(scols: set[str], season: str | None) -> str:
+    if "SALARY" in scols:
+        return "SALARY"
+    if season:
+        want = "SALARY_" + str(season).strip().replace("-", "_")
+        if want in scols:
+            return want
+    return ""
+
+
+def _payroll(team: str, con: object = None,
+             season: str | None = None) -> tuple[int, list[dict]]:
     from .. import store as _store
 
     own = con is None
@@ -2538,17 +2555,20 @@ def _payroll(team: str, con: object = None) -> tuple[int, list[dict]]:
         if "silver_salaries" in tables:
             scols = [r[1] for r in con.execute(
                 "PRAGMA table_info(silver_salaries)").fetchall()]
-            scol = ("SALARY" if "SALARY" in scols else next(
-                (c for c in scols if "SALARY" in c.upper()), ""))
-            if scol:
-                rows = con.execute(
-                    f"SELECT PLAYER_NAME, {scol} FROM silver_salaries "
-                    "WHERE TEAM = ?",
-                    [team.upper()],
-                ).fetchall()
-                if rows:
-                    players = [{"player": r[0], "salary": r[1]} for r in rows]
-                    return sum(r[1] or 0 for r in rows), players
+            scol = _resolve_salary_column(set(scols), season)
+            if not scol:
+                raise SalaryColumnError(
+                    "salary_column_unmatched",
+                    f"silver_salaries has no salary column for season "
+                    f"{season or 'unknown'}")
+            rows = con.execute(
+                f"SELECT PLAYER_NAME, {scol} FROM silver_salaries "
+                "WHERE TEAM = ?",
+                [team.upper()],
+            ).fetchall()
+            if rows:
+                players = [{"player": r[0], "salary": r[1]} for r in rows]
+                return sum(r[1] or 0 for r in rows), players
         if "silver_cap_players" in tables:
             rows = con.execute(
                 """SELECT player, salary FROM silver_cap_players
@@ -2679,7 +2699,8 @@ def get_cap_ledger(team: str = "") -> dict[str, Any]:
                      **{k: v for k, v in CAP.items()}}}
 
 def _match_trade_players(team: str, names: str,
-                         con: object = None) -> tuple[int, list[str], list[str]]:
+                         con: object = None,
+                         season: str | None = None) -> tuple[int, list[str], list[str]]:
     import difflib as _dl
 
     from .. import store as _store
@@ -2688,7 +2709,7 @@ def _match_trade_players(team: str, names: str,
     if own:
         con = _store.connect()
     try:
-        total, roster = _payroll(team, con)
+        total, roster = _payroll(team, con, season)
         want = [n.strip() for n in names.split(",") if n.strip()]
         lows = [p["player"].lower() for p in roster]
         by_low = {p["player"].lower(): p for p in roster}
@@ -2842,21 +2863,29 @@ def get_trade_check(
 
     con = _store.connect()
     try:
-        out_a, names_a, unk_a = _match_trade_players(team_a, players_a, con)
-        out_b, names_b, unk_b = _match_trade_players(team_b, players_b, con)
-        corrections: list[str] = []
-        if unk_a or unk_b:
+        try:
+            out_a, names_a, unk_a = _match_trade_players(
+                team_a, players_a, con, season)
+            out_b, names_b, unk_b = _match_trade_players(
+                team_b, players_b, con, season)
+            corrections: list[str] = []
+            if unk_a or unk_b:
 
-            if unk_a:
-                fix = _auto_correct_side(unk_a, team_a, players_a, con)
-                if fix:
-                    team_a, (out_a, names_a, unk_a), corr = fix
-                    corrections.extend(corr)
-            if unk_b:
-                fix = _auto_correct_side(unk_b, team_b, players_b, con)
-                if fix:
-                    team_b, (out_b, names_b, unk_b), corr = fix
-                    corrections.extend(corr)
+                if unk_a:
+                    fix = _auto_correct_side(unk_a, team_a, players_a, con,
+                                               season)
+                    if fix:
+                        team_a, (out_a, names_a, unk_a), corr = fix
+                        corrections.extend(corr)
+                if unk_b:
+                    fix = _auto_correct_side(unk_b, team_b, players_b, con,
+                                               season)
+                    if fix:
+                        team_b, (out_b, names_b, unk_b), corr = fix
+                        corrections.extend(corr)
+        except SalaryColumnError as exc:
+            return {"tool": "get_trade_check", "ok": False,
+                    "reason": exc.reason, "error": str(exc)}
         if unk_a or unk_b:
             parts = []
             if unk_a:
@@ -2876,8 +2905,8 @@ def get_trade_check(
                               f"not grading a one-sided 'trade'. If you "
                               f"meant a past real-world trade, say which "
                               f"teams and players were in it.")}
-        pay_a, _ = _payroll(team_a, con)
-        pay_b, _ = _payroll(team_b, con)
+        pay_a, _ = _payroll(team_a, con, season)
+        pay_b, _ = _payroll(team_b, con, season)
         salary_date = _salary_date(con)
         source = _payroll_source(con)
     finally:
@@ -2963,17 +2992,25 @@ def get_trade_value(
                 "error": "two teams needed"}
     con = _store.connect()
     try:
-        _, names_a, unk_a = _match_trade_players(team_a, players_a, con)
-        _, names_b, unk_b = _match_trade_players(team_b, players_b, con)
-        if unk_a or unk_b:
-            if unk_a:
-                fix = _auto_correct_side(unk_a, team_a, players_a, con)
-                if fix:
-                    team_a, (_, names_a, unk_a), _c = fix
-            if unk_b:
-                fix = _auto_correct_side(unk_b, team_b, players_b, con)
-                if fix:
-                    team_b, (_, names_b, unk_b), _c = fix
+        try:
+            _, names_a, unk_a = _match_trade_players(
+                team_a, players_a, con, SAL_SEASON)
+            _, names_b, unk_b = _match_trade_players(
+                team_b, players_b, con, SAL_SEASON)
+            if unk_a or unk_b:
+                if unk_a:
+                    fix = _auto_correct_side(unk_a, team_a, players_a, con,
+                                             SAL_SEASON)
+                    if fix:
+                        team_a, (_, names_a, unk_a), _c = fix
+                if unk_b:
+                    fix = _auto_correct_side(unk_b, team_b, players_b, con,
+                                             SAL_SEASON)
+                    if fix:
+                        team_b, (_, names_b, unk_b), _c = fix
+        except SalaryColumnError as exc:
+            return {"tool": "get_trade_value", "ok": False,
+                    "reason": exc.reason, "error": str(exc)}
         if unk_a or unk_b:
             parts = []
             if unk_a:
