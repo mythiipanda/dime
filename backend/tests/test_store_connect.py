@@ -87,3 +87,15 @@ def test_representative_read_and_state_workflow_preserves_canonical(monkeypatch,
     assert store.list_runs("thread", "owner")[0]["answer"] == "a"
     after = hashlib.sha256(store.CANONICAL_DB_PATH.read_bytes()).hexdigest()
     assert after == before
+
+def test_absent_warehouse_fails_fast_without_retry_burn(monkeypatch, tmp_path):
+    import pytest
+    import time as time_mod
+    monkeypatch.setattr(store, "DB_PATH", tmp_path / "absent.duckdb")
+    sleeps = []
+    monkeypatch.setattr(time_mod, "sleep", lambda s: sleeps.append(s))
+    start = time_mod.monotonic()
+    with pytest.raises(FileNotFoundError, match="warehouse absent"):
+        store.connect(read_only=True)
+    assert time_mod.monotonic() - start < 5.0
+    assert sleeps == []

@@ -343,6 +343,8 @@ def connect(read_only: bool | None = None) -> duckdb.DuckDBPyConnection:
             return _connect_once(False)
         except _LOCK_ERRORS as exc:
             raise WriteConflictError(DB_PATH) from exc
+    if not DB_PATH.exists():
+        raise FileNotFoundError(f"warehouse absent: {DB_PATH}")
     pooled = _pool_acquire()
     if pooled is not None:
         return pooled
