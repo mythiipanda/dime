@@ -726,7 +726,8 @@ def admit_verified_claim_bindings(
                     if resolved is None or resolved != leaf:
                         raise BindingFormMismatch("binding selector metric does not match output")
                     metric_column = resolved
-                catalog_unit = capability.units.get(metric_column)
+                catalog_unit = (None if capability.open_vocabulary
+                                 else capability.units.get(metric_column))
                 evidence_unit = evidence.units.get(metric_column)
                 if catalog_unit is not None and evidence_unit is not None \
                         and catalog_unit != evidence_unit:

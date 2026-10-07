@@ -131,7 +131,7 @@ def test_the_names_a_planner_asks_for_resolve_to_a_returned_column():
     assert resolve_metric_column(spec, "n") == "n"
     assert resolve_metric_column(spec, "TOTAL_COUNT") == "n"
     assert resolve_metric_column(spec, "WINS") == "wins"
-    assert resolve_metric_column(spec, "HOME_RUNS") is None
+    assert resolve_metric_column(spec, "HOME_RUNS") == "HOME_RUNS"
 
 def test_the_capability_description_separates_a_query_from_a_curated_table():
     from v2.adapters.capabilities import CAPABILITY_DESCRIPTIONS

@@ -221,6 +221,7 @@ class Capability:
     extract_entities: Callable[[Any], list[EntityRef]] | None = None
     dependent_entity_arguments: Mapping[str, str] = field(default_factory=dict)
     domain: str = "basketball"
+    open_vocabulary: bool = False
 
 _LIST = [
     Capability(
@@ -536,6 +537,7 @@ _LIST = [
     Capability(
         name="sql_exec",
         tool_name="sql_exec",
+        open_vocabulary=True,
         units=SQL_EXEC_UNITS,
         metric_definitions=SQL_EXEC_DEFINITIONS,
         output_aliases=SQL_EXEC_OUTPUT_ALIASES,
@@ -545,7 +547,9 @@ _LIST = [
             "writes, stacked statements, and tables outside the declared "
             "set are refused before execution, results are row-capped with "
             "a statement timeout, and an empty result fails instead of "
-            "publishing. The primary numeric answer is aliased `n`."),
+            "publishing. The primary numeric column is named for what it "
+            "measures, so the agent's own alias is the column a citation "
+            "binds to."),
         coverage=(
             "Read-only analytical SQL over the declared warehouse tables, "
             "computed per query. Rows are computed from the supplied SQL, "
@@ -677,13 +681,15 @@ def resolve_metric_column(capability: Capability, output_id: str) -> str | None:
         aliased = vocabulary.get(alias)
         if aliased is not None:
             return aliased
-    return None
+    return output_id if capability.open_vocabulary else None
 
 def _is_identity_output(output_id: str) -> bool:
     squashed = _squashed(output_id)
     return squashed.endswith("NAME") or squashed.endswith("ID")
 
 def servable_names_for(spec: Capability) -> list[str]:
+    if spec.open_vocabulary:
+        return []
     names: set[str] = set()
     for key in spec.units:
         names.add(str(key).upper())
@@ -693,6 +699,14 @@ def servable_names_for(spec: Capability) -> list[str]:
     for key in spec.output_aliases:
         names.add(str(key).upper())
     return sorted(names)
+
+def _servable_clause(spec: Capability) -> str:
+    names = servable_names_for(spec)
+    if names:
+        return ", ".join(names)
+    if spec.open_vocabulary:
+        return "any column the query returns, since the capability has no fixed vocabulary"
+    return "none"
 
 def preconditions_for_node(task, node, spec: Capability) -> list:
     from ..contracts import NodePrecondition, PreconditionCheck
@@ -719,7 +733,7 @@ def preconditions_for_node(task, node, spec: Capability) -> list:
                     resolvable=False,
                     detail=(f"output {output_id!r} does not resolve to "
                             f"{spec.name!r} vocabulary; servable: "
-                            f"{', '.join(servable_names_for(spec)) or 'none'}")))
+                            f"{_servable_clause(spec)}")))
                 continue
             found.append(NodePrecondition(
                 check=PreconditionCheck.NUMERAL, node_id=node.id,
@@ -727,6 +741,8 @@ def preconditions_for_node(task, node, spec: Capability) -> list:
                 column=column, resolvable=True,
                 detail=(f"output {output_id!r} resolves to {spec.name!r} "
                         f"column {column!r}")))
+            if spec.open_vocabulary:
+                continue
             unit = dict(spec.units).get(column)
             if unit is not None:
                 found.append(NodePrecondition(

@@ -1641,20 +1641,12 @@ class PlanOutputError(ValueError):
         self.requirement_id = requirement_id
 
 def servable_output_names(capability_id: str) -> list[str]:
-    from .capabilities import CAPABILITIES
+    from .capabilities import CAPABILITIES, servable_names_for
 
     spec = CAPABILITIES.get(capability_id)
     if spec is None:
         return []
-    names: set[str] = set()
-    for key in spec.units:
-        names.add(str(key).upper())
-    for key in spec.metric_definitions:
-        if not str(key).startswith("__"):
-            names.add(str(key).upper())
-    for key in spec.output_aliases:
-        names.add(str(key).upper())
-    return sorted(names)
+    return servable_names_for(spec)
 
 def _is_subject_identity_output(output_id: str) -> bool:
     squashed = "".join(
@@ -1671,7 +1663,7 @@ def _validate_plan_output_vocabulary(task, plan) -> None:
             continue
         capability = selected[0]
         spec = CAPABILITIES.get(capability)
-        if spec is None:
+        if spec is None or spec.open_vocabulary:
             continue
         if not servable_output_names(capability):
             continue
@@ -1706,15 +1698,17 @@ def _validate_plan_output_vocabulary(task, plan) -> None:
                 continue
             union.update(servable_output_names(selected[0]))
         if union:
+            planned = {
+                hint for node in plan.nodes for hint in node.capability_hints
+                if hint in CAPABILITIES and (servable_output_names(hint)
+                                             or CAPABILITIES[hint].open_vocabulary)
+            }
             for output_id in task_outputs:
                 if _is_subject_identity_output(output_id):
                     continue
                 if not any(
                     resolve_metric_column(CAPABILITIES[name], output_id) is not None
-                    for name in {
-                        hint for node in plan.nodes for hint in node.capability_hints
-                        if hint in CAPABILITIES and servable_output_names(hint)
-                    }
+                    for name in planned
                 ):
                     vocabulary = sorted(union)
                     raise PlanOutputError(
@@ -2363,12 +2357,12 @@ def _drop_unresolvable_requested_outputs(task: TaskSpec) -> TaskSpec:
     def resolvable(output_id: str, requirement) -> bool:
         if _is_subject_identity_output(output_id):
             return True
-        vocabularies = [
-            name for name in requirement.capability_options
-            if name in CAPABILITIES and servable_output_names(name)]
-        structural = [
-            name for name in requirement.capability_options
-            if name in CAPABILITIES and not servable_output_names(name)]
+        options = [name for name in requirement.capability_options
+                 if name in CAPABILITIES]
+        if any(CAPABILITIES[name].open_vocabulary for name in options):
+            return True
+        vocabularies = [name for name in options if servable_output_names(name)]
+        structural = [name for name in options if not servable_output_names(name)]
         if not vocabularies:
             return bool(structural)
         return all(
