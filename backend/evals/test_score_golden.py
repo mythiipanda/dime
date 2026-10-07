@@ -21,6 +21,18 @@ def _item(**overrides):
     return base
 
 
+def test_contradicted_expect_does_not_score():
+    item = _item(exact=["880"])
+    assert score_item(
+        item, "880 is incorrect. The total was 900.")["pass"] is False
+    assert score_item(
+        item, "The total was not 880 but 900")["pass"] is False
+    assert score_item(
+        item, "Trae Young total 880 assists")["pass"] is True
+    assert score_item(
+        item, "880, second-most ever")["pass"] is True
+
+
 def test_numeric_expect_does_not_match_inside_longer_number():
     assert score_item(
         _item(exact=["0107"]), "total 10107")[ "pass"] is False
