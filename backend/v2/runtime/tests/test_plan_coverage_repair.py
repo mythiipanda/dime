@@ -155,3 +155,41 @@ async def test_a_partial_plan_executes_and_gaps_the_uncovered_branch() -> None:
     assert [gap.kind for gap in result.gaps] == [
         "missing_evidence"]
     assert "awards" in " ".join(gap.message for gap in result.gaps)
+
+class OpenQuestionIntake:
+    def __init__(self, task: TaskSpec) -> None:
+        self.task = task
+
+    async def understand(self, request: str) -> TaskSpec:
+        return self.task
+
+@pytest.mark.anyio
+async def test_an_open_question_reaches_the_planner_instead_of_killing_the_run() -> None:
+    task = make_task().model_copy(update={
+        "open_questions": ["is the leader qualified for a minimum threshold"]})
+    planner = UnderCoveringPlanner()
+    captured: list = []
+
+    async def plan(record, failure_context=None):
+        captured.append((failure_context, record.open_questions))
+        return Plan(nodes=[
+            PlanNode(
+                id="n1", description="assists",
+                capability_hints=["fake"],
+                covers_requirement_ids=["r1"],
+            )
+        ])
+
+    planner.plan = plan
+
+    result = await Runtime(
+        intake=OpenQuestionIntake(task),
+        planner=planner,
+        executor=PlanExecutor({"fake": FakeCapability("fake", {"value": 42})}),
+        synthesizer=Synthesizer(),
+        mechanical_verifier=PassVerifier(),
+        semantic_verifier=PassVerifier(),
+    ).run("assists")
+
+    assert result.verification.status == VerificationStatus.PASS
+    assert captured[0][1] == task.open_questions

@@ -170,7 +170,7 @@ class Runtime:
                         timeout_s=remaining())).model_dump()
                 )
                 self._report_activity({"kind":"stage_summary","phase":"understand","status":"complete","title":"Request understood","transition":"completed","correlation_id":"stage:understand","data":{"mode":prepared_task.mode.value,"season":prepared_task.season.value if prepared_task.season else None,"entity_count":len(prepared_task.entities),"requirement_count":len(prepared_task.requirements),"calculation_count":len(prepared_task.calculation_requirements)}})
-                if prepared_task.open_questions:
+                if prepared_task.open_questions and not prepared_task.requirements:
                     raise ValueError(
                         "intake left unresolved questions: "
                         + "; ".join(prepared_task.open_questions))
@@ -184,15 +184,19 @@ class Runtime:
                     return max(0.000001, deadline - time.perf_counter())
                 validate_plan = getattr(self._executor, "validate_plan", None)
                 failure_context: dict | None = None
+                if not _planner_accepts_failure_context(self._planner):
+                    open_context = None
+                else:
+                    open_context = _open_question_context(prepared_task)
                 prepared_plan = None
                 for attempt in range(2):
+                    context = failure_context if attempt else open_context
                     try:
                         plan_raw = await self._stage(
                             turn_id,
                             "plan" if attempt == 0 else "plan_repair",
-                            (self._planner.plan(
-                                prepared_task, failure_context=failure_context)
-                             if failure_context is not None
+                            (self._planner.plan(prepared_task, failure_context=context)
+                             if context is not None
                              else self._planner.plan(prepared_task)),
                             timeout_s=remaining())
                         candidate = Plan.model_validate(plan_raw.model_dump())
@@ -996,6 +1000,19 @@ def _planner_accepts_failure_context(planner) -> bool:
         parameter.kind is inspect.Parameter.VAR_KEYWORD
         for parameter in parameters.values()
     )
+
+def _open_question_context(task: TaskSpec) -> dict | None:
+    if not task.open_questions:
+        return None
+    return {
+        "open_questions": list(task.open_questions),
+        "instruction": (
+            "Resolve each question from the task, the catalog, and the "
+            "evidence the plan gathers. A question the plan can settle "
+            "needs no open_questions entry; a question it cannot settle "
+            "belongs to a node so the branch gaps with its reason."),
+    }
+
 
 def _plan_failure_context(exc: BaseException) -> dict:
     context = {"plan_error": str(exc)}
