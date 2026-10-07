@@ -80,11 +80,11 @@ _FULL_ALLOWLIST = frozenset({
 })
 
 _QUICK_DENIED = frozenset({
-    "web_search", "web_fetch", "player_comparison", "metric_adjudication",
+    "player_comparison", "metric_adjudication",
     "trades", "trade_value", "lineup_matchups",
 })
 
-_STANDARD_DENIED = frozenset({"web_search", "web_fetch"})
+_STANDARD_DENIED = frozenset()
 
 _PROFILE_BY_MODE_VALUE = {
     "quick": LOOKUP_PROFILE,
