@@ -256,7 +256,28 @@ def test_a_season_before_the_first_published_ballot_fails_naming_the_season(
 def test_a_missing_awards_table_fails_naming_the_table(empty_warehouse):
     result = _results(view="winner", award="MVP", season="2023-24")
     assert result["ok"] is False
+    assert result["reason"] == "table_missing"
     assert "silver_bbref_awards" in result["error"]
+
+
+def test_a_missing_awards_table_fails_every_view_with_the_same_reason(
+        empty_warehouse):
+    for view, arguments in (
+            ("winner", {"award": "MVP"}),
+            ("field", {"award": "MVP"}),
+            ("player_awards", {"player": "LeBron James"})):
+        result = _results(view=view, season="2023-24", **arguments)
+        assert result["ok"] is False, view
+        assert result["reason"] == "table_missing", view
+
+
+def test_an_unknown_view_fails_with_a_machine_reason(empty_warehouse):
+    from shared.tools.award_results import get_award_results
+
+    result = get_award_results.func(
+        view="podiums", award="MVP", season="2023-24")
+    assert result["ok"] is False
+    assert result["reason"] == "unknown_view"
 
 def test_an_award_surface_form_normalizes_to_its_published_code(awards_warehouse):
     result = _results(view="winner", award="Most Improved Player of the Year",
