@@ -718,8 +718,6 @@ export default function ChatPanel({ thread, onRunDone, preset, onOpenArtifact, a
                     </span>
                   </div>
 
-                  {m.ai && <AiTurnBody m={m} />}
-
                     {m.ai?.error && (
                       <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 8 }}>
                         <span style={{ color: "var(--color-ember)", fontSize: 13 }}>{m.ai.error} If this keeps happening, switch models and ask again.</span>
@@ -768,7 +766,7 @@ export default function ChatPanel({ thread, onRunDone, preset, onOpenArtifact, a
                       </div>
                     )}
 
-                    {m.ai && <AiTurnBody m={m} />}
+                    <AiTurnBody m={m} />
 
                     {m.ai && (
                       <DataArtifacts
