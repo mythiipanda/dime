@@ -32,20 +32,24 @@ def load_questions(path):
 
 def _score_attempt(solver, question):
     try:
-        return score(solver(question["question"], question["guidelines"]), question["answer"])
-    except Exception:
-        return 0.0
+        return (score(solver(question["question"], question["guidelines"]),
+                       question["answer"]), None)
+    except Exception as exc:
+        return (0.0, "%s: %s" % (type(exc).__name__, exc))
 
 
 def _run_one(solver, question, hard_attempts):
     level = question["level"]
     n = 1 if level == "easy" else hard_attempts
-    scores = [_score_attempt(solver, question) for _ in range(n)]
+    scored = [_score_attempt(solver, question) for _ in range(n)]
+    scores = [s for s, _ in scored]
+    errors = [e for _, e in scored if e is not None]
     return {
         "task_id": question["task_id"],
         "level": level,
         "attempts": n,
         "scores": scores,
+        "errors": errors,
         "passed": all(s == 1.0 for s in scores),
     }
 
@@ -63,7 +67,10 @@ def _accuracy(group):
     return sum(1.0 for r in group if r["passed"]) / len(group)
 
 
-def run_benchmark(solver, questions, hard_attempts=2):
+def run_benchmark(solver, questions, hard_attempts=3):
+    if (isinstance(hard_attempts, bool)
+            or not isinstance(hard_attempts, int) or hard_attempts < 1):
+        raise ValueError("hard_attempts must be a positive integer")
     results = [_run_one(solver, q, hard_attempts) for q in questions]
     groups = _split(results)
     return {

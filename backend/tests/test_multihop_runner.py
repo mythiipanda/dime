@@ -68,8 +68,8 @@ def test_perfect_solver_scores_full_accuracy():
     assert out["n_easy"] == 1
     assert out["n_hard"] == 1
     assert out["results"] == [
-        {"task_id": "e1", "level": "easy", "attempts": 1, "scores": [1.0], "passed": True},
-        {"task_id": "h1", "level": "hard", "attempts": 2, "scores": [1.0, 1.0], "passed": True},
+        {"task_id": "e1", "level": "easy", "attempts": 1, "scores": [1.0], "errors": [], "passed": True},
+        {"task_id": "h1", "level": "hard", "attempts": 3, "scores": [1.0, 1.0, 1.0], "errors": [], "passed": True},
     ]
 
 
@@ -84,7 +84,8 @@ def test_always_wrong_solver_scores_zero():
     assert out["hard_pass2_accuracy"] == 0.0
     assert out["results"][0]["passed"] is False
     assert out["results"][1]["passed"] is False
-    assert out["results"][1]["scores"] == [0.0, 0.0]
+    assert out["results"][1]["scores"] == [0.0, 0.0, 0.0]
+    assert out["results"][1]["errors"] == []
 
 
 def test_flaky_hard_solver_fails_pass_squared():
@@ -119,6 +120,7 @@ def test_solver_exception_recorded_as_zero_without_crash():
         "level": "easy",
         "attempts": 1,
         "scores": [0.0],
+        "errors": ["RuntimeError: boom"],
         "passed": False,
     }
     assert out["results"][1]["passed"] is True
@@ -138,7 +140,28 @@ def test_hard_solver_exception_on_second_attempt_fails():
 
     out = run_benchmark(solver, questions, hard_attempts=2)
     assert out["results"][0]["scores"] == [1.0, 0.0]
+    assert out["results"][0]["errors"] == ["RuntimeError: boom"]
     assert out["results"][0]["passed"] is False
+
+
+def test_hard_attempts_rejects_non_positive():
+    questions = [_hard()]
+    for bad in (0, -1, -10, True):
+        with pytest.raises(ValueError):
+            run_benchmark(_gold_solver(questions), questions,
+                          hard_attempts=bad)
+
+
+def test_hard_attempts_default_is_three():
+    questions = [_hard()]
+
+    def solver(question, guidelines):
+        return "27.5"
+
+    out = run_benchmark(solver, questions)
+    assert out["results"][0]["attempts"] == 3
+    assert out["results"][0]["scores"] == [1.0, 1.0, 1.0]
+    assert out["results"][0]["errors"] == []
 
 
 def test_hard_attempts_override():
