@@ -84,12 +84,6 @@
 
 
 
-.stream-tail {
-  filter: blur(1.6px);
-  -webkit-mask-image: linear-gradient(to right, oklch(0 0 0) 20%, oklch(0 0 0 / 0.2));
-  mask-image: linear-gradient(to right, oklch(0 0 0) 20%, oklch(0 0 0 / 0.2));
-}
-
 .stream-caret {
   display: inline-block;
   width: 2px;
@@ -113,7 +107,6 @@
 
 @media (prefers-reduced-motion: reduce) {
   .stream-caret { animation: none; }
-  .stream-tail { filter: none; -webkit-mask-image: none; mask-image: none; }
 }
 
 .dark {
@@ -574,7 +567,6 @@ button, input, select, textarea {
 @media (max-width: 600px) { .leader-summary-item { padding: 10px 8px; }.leader-summary-item strong { font-size: 18px; }.leader-summary-rank { display: none; } }
 
 
-.command-backdrop { position: fixed; inset: 0; z-index: 50; display: flex; justify-content: center; padding-top: min(15vh,120px); background: color-mix(in oklab,var(--color-ink-black) 28%,transparent); backdrop-filter: blur(3px); }
 .command-panel { width: min(560px,calc(100vw - 28px)); max-height: min(620px,70vh); overflow: hidden; border: 1px solid var(--color-stone-border); border-radius: 14px; background: var(--color-pure-white); box-shadow: 0 24px 80px color-mix(in oklab,var(--color-ink-black) 20%,transparent); }
 .command-search { display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 10px; padding: 13px 14px; border-bottom: 1px solid var(--color-stone-border); color: var(--color-ash-gray); }
 .command-search input { min-width: 0; border: 0; outline: 0; color: var(--color-ink-black); background: transparent; font: inherit; font-size: 13px; }.command-search kbd { padding: 2px 6px; border: 1px solid var(--color-stone-border); border-radius: 5px; background: var(--color-field); font-size: 9px; }

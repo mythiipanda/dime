@@ -33,7 +33,7 @@ gx.requestAnimationFrame = (cb: FrameRequestCallback) => setTimeout(cb, 0);
 Object.defineProperty(globalThis, "navigator", { value: dom.window.navigator, configurable: true });
 gx.IS_REACT_ACT_ENVIRONMENT = true;
 
-const BLUR_ALLOWLIST = ["stream-tail", "command-backdrop", "backdrop-blur-xs"];
+const BLUR_ALLOWLIST = ["backdrop-blur-xs"];
 
 function shellFilters(container: Element): Element[] {
   return [...container.querySelectorAll("*")].filter((el) => {
@@ -177,4 +177,44 @@ test("blur sources are limited to the transient allowlist", () => {
   walk(join(process.cwd(), "components"));
   walk(join(process.cwd(), "app"));
   assert.deepEqual(hits, []);
+});
+
+test("dialog overlay mounts only while open", async () => {
+  const { Dialog, DialogOverlay } = await import("./components/ui/dialog");
+  const container = document.createElement("div");
+  document.body.appendChild(container);
+  const root = createRoot(container);
+  await act(async () => {
+    root.render(
+      React.createElement(Dialog, { open: true }, React.createElement(DialogOverlay)),
+    );
+    await new Promise((r) => setTimeout(r, 120));
+  });
+  assert.ok(document.querySelectorAll('[data-slot="dialog-overlay"]').length >= 1);
+  await act(async () => {
+    root.unmount();
+  });
+  container.remove();
+  assert.equal(document.querySelectorAll('[data-slot="dialog-overlay"]').length, 0);
+  (globalThis as unknown as { localStorage: Storage }).localStorage.clear();
+});
+
+test("streaming caret clears when the stream settles", async () => {
+  const { StreamText } = await import("./components/StreamText");
+  const container = document.createElement("div");
+  document.body.appendChild(container);
+  const root = createRoot(container);
+  await act(async () => {
+    root.render(React.createElement(StreamText, { text: "typing", streaming: true }));
+  });
+  assert.equal(container.querySelectorAll(".stream-caret").length, 1);
+  await act(async () => {
+    root.render(React.createElement(StreamText, { text: "typing", streaming: false }));
+  });
+  assert.equal(container.querySelectorAll(".stream-caret").length, 0);
+  assert.equal(shellFilters(container).length, 0);
+  await act(async () => {
+    root.unmount();
+  });
+  container.remove();
 });
