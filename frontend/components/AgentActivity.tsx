@@ -1,8 +1,9 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { memo, useMemo, useState } from "react";
 import type { AiMessage, NodeName, ToolCall } from "../lib/chat";
 import ActivityTimeline from "./ActivityTimeline";
+import { callKey, groupKey } from "../lib/renderPlan";
 import { rerunSql, type SqlRerunRows } from "../lib/api";
 
 const AGENT_NODES: NodeName[] = ["data_retrieval", "tools", "analytics", "presentation"];
@@ -494,14 +495,25 @@ function ThoughtBlock({ text, running, thoughtMs, thoughtStarted }: { text: stri
   );
 }
 
+const MemoToolRow = memo(ToolRow);
+const MemoGroupRow = memo(GroupRow);
+const MemoThoughtBlock = memo(ThoughtBlock);
+
 export default function AgentActivity({ ai }: { ai: AiMessage }) {
   const [open, setOpen] = useState(false);
   const [thoughtsOpen, setThoughtsOpen] = useState(false);
   const [liveOpen, setLiveOpen] = useState(false);
-  const thoughts = useMemo(() => thoughtsFor(ai), [ai]);
-  const calls = useMemo(() => callsFor(ai), [ai]);
-  const reasoning = useMemo(() => reasoningFor(ai), [ai]);
-  const grouped = useMemo(() => groupCalls(calls), [calls]);
+  const plan = useMemo(() => {
+    const thoughts = thoughtsFor(ai);
+    const calls = callsFor(ai);
+    return {
+      thoughts,
+      calls,
+      reasoning: reasoningFor(ai),
+      grouped: groupCalls(calls),
+    };
+  }, [ai]);
+  const { thoughts, calls, reasoning, grouped } = plan;
   const running = !ai.done;
   const hasActivity =
     thoughts.length > 0 ||
@@ -526,9 +538,9 @@ export default function AgentActivity({ ai }: { ai: AiMessage }) {
     <div style={{ margin: "7px 0 0 19px", paddingLeft: 10, borderLeft: "1px solid var(--color-stone-border)" }}>
       {grouped.map((entry) =>
         "calls" in entry ? (
-          <GroupRow key={entry.key} g={entry} live={running} />
+          <MemoGroupRow key={groupKey(entry.name, entry.agent, entry.calls[0])} g={entry} live={running} />
         ) : (
-          <ToolRow key={entry.id ?? entry.name} c={entry} live={running} />
+          <MemoToolRow key={callKey(entry)} c={entry} live={running} />
         ),
       )}
     </div>
@@ -576,16 +588,16 @@ export default function AgentActivity({ ai }: { ai: AiMessage }) {
           <div style={{ margin: "7px 0 0 19px", paddingLeft: 10, borderLeft: "1px solid var(--color-stone-border)" }}>
             {grouped.map((entry) =>
               "calls" in entry ? (
-                <GroupRow key={entry.key} g={entry} live={running} />
+                <MemoGroupRow key={groupKey(entry.name, entry.agent, entry.calls[0])} g={entry} live={running} />
               ) : (
-                <ToolRow key={entry.id ?? entry.name} c={entry} live={running} />
+                <MemoToolRow key={callKey(entry)} c={entry} live={running} />
               ),
             )}
           </div>
           )}
         </details>
       )}
-      <ThoughtBlock text={reasoning} running={running} thoughtMs={ai.thoughtMs} thoughtStarted={ai.thoughtStarted} />
+      <MemoThoughtBlock text={reasoning} running={running} thoughtMs={ai.thoughtMs} thoughtStarted={ai.thoughtStarted} />
       {thoughts.length > 0 && (
         <details open={thoughtsOpen} style={{ marginTop: 8, color: "var(--color-warm-gray)", fontSize: 12 }}>
           <summary
