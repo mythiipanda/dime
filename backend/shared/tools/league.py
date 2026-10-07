@@ -2536,19 +2536,27 @@ def _payroll(team: str, con: object = None) -> tuple[int, list[dict]]:
     try:
         tables = {r[0] for r in con.execute("SHOW TABLES").fetchall()}
         if "silver_salaries" in tables:
+            scols = [r[1] for r in con.execute(
+                "PRAGMA table_info(silver_salaries)").fetchall()]
+            scol = ("SALARY" if "SALARY" in scols else next(
+                (c for c in scols if "SALARY" in c.upper()), ""))
+            if scol:
+                rows = con.execute(
+                    f"SELECT PLAYER_NAME, {scol} FROM silver_salaries "
+                    "WHERE TEAM = ?",
+                    [team.upper()],
+                ).fetchall()
+                if rows:
+                    players = [{"player": r[0], "salary": r[1]} for r in rows]
+                    return sum(r[1] or 0 for r in rows), players
+        if "silver_cap_players" in tables:
             rows = con.execute(
-                """SELECT PLAYER_NAME, SALARY FROM silver_salaries
-                WHERE TEAM = ?""",
+                """SELECT player, salary FROM silver_cap_players
+                WHERE team = ?""",
                 [team.upper()],
             ).fetchall()
-            if rows:
-                players = [{"player": r[0], "salary": r[1]} for r in rows]
-                return sum(r[1] or 0 for r in rows), players
-        rows = con.execute(
-            """SELECT player, salary FROM silver_cap_players
-            WHERE team = ?""",
-            [team.upper()],
-        ).fetchall()
+        else:
+            rows = []
     finally:
         if own:
             con.close()
@@ -2976,7 +2984,8 @@ def get_trade_value(
             msg = "unknown players: " + " | ".join(parts)
             if hints:
                 msg += ". " + "; ".join(hints)
-            return {"tool": "get_trade_value", "ok": False, "error": msg}
+            return {"tool": "get_trade_value", "ok": False,
+                    "reason": "unknown_players", "error": msg}
         if not names_a or not names_b:
 
             return {"tool": "get_trade_value", "ok": False,
