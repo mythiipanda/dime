@@ -27,14 +27,22 @@ _DENIALS = (
     "incorrect", "wrong", "is not", "isn't", "isnt", "was not", "wasn't",
     "wasnt", "not correct", "false", "mistake", "correction", "retract",
 )
-_DENIAL_WINDOW = 24
+_DENIAL_WINDOW = 12
+_NEGATOR_RE = re.compile(r"(not|n't|never|no)\s*$")
+_NEGATED_RE = re.compile(r"^\s*(wrong|incorrect|false|mistake)\b")
 
 
 def contradicted(text: str, start: int, end: int) -> bool:
-    before = text[max(0, start - _DENIAL_WINDOW):start]
-    after = text[end:end + _DENIAL_WINDOW]
-    return any(denial in before or denial in after
-               for denial in _DENIALS)
+    for denial in _DENIALS:
+        for occurrence in re.finditer(re.escape(denial), text):
+            first, last = occurrence.start(), occurrence.end()
+            if _NEGATOR_RE.search(text[max(0, first - 6):first]):
+                continue
+            if _NEGATED_RE.match(text[last:last + 10]):
+                continue
+            if first - end <= _DENIAL_WINDOW and start - last <= _DENIAL_WINDOW:
+                return True
+    return False
 
 
 def _match_spans(text: str, expected: str) -> list[tuple[int, int]]:
