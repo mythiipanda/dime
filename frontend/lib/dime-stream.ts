@@ -251,6 +251,42 @@ function formatMetricValue(value: number): string | number {
   return Number.isInteger(value) ? value : Math.round(value * 10) / 10;
 }
 
+const RESOLVED_CHART_KINDS = new Set(["chart"]);
+
+function asResolvedArtifacts(raw: unknown): DimeArtifact[] {
+  if (!Array.isArray(raw)) return [];
+  const artifacts: DimeArtifact[] = [];
+  for (const item of raw) {
+    if (typeof item !== "object" || item === null) continue;
+    const entry = item as Record<string, unknown>;
+    const kind = typeof entry.kind === "string" ? entry.kind : "";
+    if (!RESOLVED_CHART_KINDS.has(kind)) continue;
+    const title = typeof entry.title === "string" ? entry.title : "";
+    if (!title) continue;
+    const series: { name: string; values: number[] }[] = [];
+    for (const line of Array.isArray(entry.series) ? entry.series : []) {
+      if (typeof line !== "object" || line === null) continue;
+      const record = line as Record<string, unknown>;
+      const name = typeof record.name === "string" ? record.name : "";
+      const values = (Array.isArray(record.values) ? record.values : [])
+        .filter((value): value is number =>
+          typeof value === "number" && Number.isFinite(value));
+      if (name && values.length > 0) series.push({ name, values });
+    }
+    if (series.length === 0) continue;
+    artifacts.push({
+      kind: "chart",
+      title,
+      series,
+      footnote:
+        typeof entry.footnote === "string" && entry.footnote
+          ? entry.footnote
+          : undefined,
+    });
+  }
+  return artifacts;
+}
+
 export function deriveArtifacts(tables: unknown): DimeArtifact[] {
   const rows = asEvidenceRows(tables);
   if (!rows.length) return [];
@@ -420,8 +456,12 @@ export function reduceBackendEvent(type: string, data: unknown): DimeStreamEvent
       ];
     }
     case "custom_data": {
-      const artifacts = deriveArtifacts(d.tables);
-      return artifacts.map((artifact) => ({ type: "artifact", artifact }));
+      const derived = deriveArtifacts(d.tables);
+      const resolved = asResolvedArtifacts(d.artifacts);
+      return [...derived, ...resolved].map((artifact) => ({
+        type: "artifact",
+        artifact,
+      }));
     }
     case "final_answer": {
       return [{ type: "final", text: asString(d.text) }];
