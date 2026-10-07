@@ -281,6 +281,19 @@ def note_provider_failure(name: str) -> None:
     except RuntimeError:
         pass
 
+def _accepted_model(name: ProviderName, primary: ProviderName, model: str) -> str:
+    if name == "gemini":
+        return _gemini_model(model if name == primary else None)
+    if name == "nvidia":
+        return _nvidia_nim_model(model if name == primary else None)
+    if name == "openrouter":
+        return _openrouter_free_model(model if name == primary else None)
+    if name == "mistral":
+        return _mistral_free_model()
+    if name == "groq":
+        return _groq_free_model()
+    return settings.inception_model or INCEPTION_DEFAULT
+
 async def invoke_with_fallback(
     primary: ProviderName,
     model: str,
@@ -290,17 +303,7 @@ async def invoke_with_fallback(
     attempts: list[dict[str, Any]] = []
     started_all = time.perf_counter()
     for number, name in enumerate(fallback_order(primary), 1):
-        accepted_model = (
-            _gemini_model(model if name == primary else None)
-            if name == "gemini" else
-            _nvidia_nim_model(model if name == primary else None)
-            if name == "nvidia" else
-            _openrouter_free_model(model if name == primary else None)
-            if name == "openrouter" else
-            _mistral_free_model() if name == "mistral" else
-            _groq_free_model() if name == "groq" else
-            settings.inception_model or INCEPTION_DEFAULT
-        )
+        accepted_model = _accepted_model(name, primary, model)
         verdict = probe_verdict(name)
         if verdict is False:
             attempts.append({"provider": name, "model": accepted_model,
@@ -387,17 +390,7 @@ async def astream_with_fallback(
         if verdict is False:
             errors.append(f"{name}: probe failed recently")
             continue
-        accepted_model = (
-            _gemini_model(model if name == primary else None)
-            if name == "gemini" else
-            _nvidia_nim_model(model if name == primary else None)
-            if name == "nvidia" else
-            _openrouter_free_model(model if name == primary else None)
-            if name == "openrouter" else
-            _mistral_free_model() if name == "mistral" else
-            _groq_free_model() if name == "groq" else
-            settings.inception_model or INCEPTION_DEFAULT
-        )
+        accepted_model = _accepted_model(name, primary, model)
         client = get_llm(name, accepted_model)
         if client is None:
             errors.append(f"{name}: missing key")
@@ -427,17 +420,7 @@ async def astream_chunks_with_fallback(
         if verdict is False:
             errors.append(f"{name}: probe failed recently")
             continue
-        accepted_model = (
-            _gemini_model(model if name == primary else None)
-            if name == "gemini" else
-            _nvidia_nim_model(model if name == primary else None)
-            if name == "nvidia" else
-            _openrouter_free_model(model if name == primary else None)
-            if name == "openrouter" else
-            _mistral_free_model() if name == "mistral" else
-            _groq_free_model() if name == "groq" else
-            settings.inception_model or INCEPTION_DEFAULT
-        )
+        accepted_model = _accepted_model(name, primary, model)
         client = get_llm(name, accepted_model)
         if client is None:
             errors.append(f"{name}: missing key")

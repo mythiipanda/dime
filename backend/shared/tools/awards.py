@@ -200,29 +200,7 @@ def get_award_race(award: str, season: str | None = None) -> dict[str, Any]:
                 "error": f"no rows for season {season}"}
     qual = spec.get("qualification", {})
     comps = spec["components"]
-    eligible = []
-    unscored: dict[str, int] = {}
-    for row in pool:
-        try:
-            gp = row.get("gp") or 0
-            mins = row.get("mins") or 0
-            if gp < qual.get("min_gp", 0) or mins < qual.get("min_minutes", 0):
-                continue
-            if "max_age" in qual and (row.get("age") is None
-                                      or float(row["age"]) > qual["max_age"]):
-                continue
-            if "max_mpg" in qual and (row.get("mpg") is None
-                                      or float(row["mpg"]) > qual["max_mpg"]):
-                continue
-            missing = [feat for feat, _, _ in comps
-                       if _finite(row.get(feat)) is None]
-            if missing:
-                for feat in missing:
-                    unscored[feat] = unscored.get(feat, 0) + 1
-                continue
-        except (TypeError, ValueError):
-            continue
-        eligible.append(row)
+    eligible, unscored = _eligible_pool(pool, qual, comps)
     if not eligible:
         error = f"no qualified candidates for {canon} in season {season}"
         if unscored:
@@ -231,59 +209,7 @@ def get_award_race(award: str, season: str | None = None) -> dict[str, Any]:
             error += f"; the warehouse holds no value for {gaps}"
         return {"tool": "get_award_race", "ok": False, "rows": {},
                 "meta": {"award": canon, "season": season}, "error": error}
-    means, stds, bests = {}, {}, {}
-    signs = {feat: sign for feat, _, sign in comps}
-    for feat, _, _ in comps:
-        vals = [float(r[feat]) for r in eligible]
-        means[feat] = math.fsum(vals) / len(vals)
-        stds[feat] = _population_spread(vals)
-        bests[feat] = max(vals) if signs[feat] > 0 else min(vals)
-    scored = []
-    for row in eligible:
-        contribs = []
-        total = 0.0
-        for feat, weight, sign in comps:
-            std = stds[feat]
-            z = 0.0 if std < 1e-9 else (float(row[feat]) - means[feat]) / std
-            contrib = weight * sign * z
-            total += contrib
-            contribs.append((contrib, feat, z))
-        contribs.sort(key=lambda t: t[0], reverse=True)
-        scored.append((total, row, contribs))
-    scored.sort(key=lambda t: t[0], reverse=True)
-    candidates = []
-    for rank, (total, row, contribs) in enumerate(scored[:5], 1):
-        drivers = [{"stat": FEATURE_LABELS.get(feat, feat),
-                    "value": _round_val(feat, row[feat]),
-                    "z": round(z, 2)} for _, feat, z in contribs[:3]]
-        leader = next((f for _, f, _ in contribs[:3]
-                       if float(row[f]) == bests[f]), None)
-        if leader is not None:
-            case_for = (f"leads the pool in {FEATURE_LABELS.get(leader, leader)} "
-                        f"at {_round_val(leader, row[leader])}")
-        else:
-
-            top_feat, top_z = max(
-                contribs, key=lambda t: signs[t[1]] * t[2])[1:3]
-            case_for = (f"strongest edge is {FEATURE_LABELS.get(top_feat, top_feat)} "
-                        f"at {_round_val(top_feat, row[top_feat])} (z {top_z:+.2f})")
-
-        weak_feat, weak_dz = min(
-            ((feat, signs[feat] * z) for _, feat, z in contribs),
-            key=lambda t: t[1])
-        weak_label = FEATURE_LABELS.get(weak_feat, weak_feat)
-        weak_val = _round_val(weak_feat, row[weak_feat])
-        weak_avg = _round_val(weak_feat, means[weak_feat])
-        if weak_dz >= 0 or weak_val == weak_avg:
-
-            case_against = (f"no clear weakness - closest to the pool "
-                            f"average in {weak_label} ({weak_val})")
-        else:
-            case_against = (f"weakest edge is {weak_label} "
-                            f"({weak_val} vs pool avg {weak_avg})")
-        candidates.append({"rank": rank, "player": row["player"], "team": row["team"],
-                           "score": round(total, 2), "drivers": drivers,
-                           "case_for": case_for, "case_against": case_against})
+    candidates, means, bests, signs = _ranked_candidates(eligible, comps)
     meta: dict[str, Any] = {
         "award": canon, "season": season, "formula": _formula(spec),
         "qualification": _qualification(spec),
@@ -323,3 +249,85 @@ def get_award_race(award: str, season: str | None = None) -> dict[str, Any]:
         meta["note"] = " ".join(notes)
     return {"tool": "get_award_race", "ok": True,
             "rows": {"candidates": candidates}, "meta": meta}
+
+def _eligible_pool(pool: list[dict[str, Any]], qual: dict[str, Any], comps: list[tuple[str, float, int]]) -> tuple[list[dict[str, Any]], dict[str, int]]:
+    eligible = []
+    unscored: dict[str, int] = {}
+    for row in pool:
+        try:
+            gp = row.get("gp") or 0
+            mins = row.get("mins") or 0
+            if gp < qual.get("min_gp", 0) or mins < qual.get("min_minutes", 0):
+                continue
+            if "max_age" in qual and (row.get("age") is None
+                                      or float(row["age"]) > qual["max_age"]):
+                continue
+            if "max_mpg" in qual and (row.get("mpg") is None
+                                      or float(row["mpg"]) > qual["max_mpg"]):
+                continue
+            missing = [feat for feat, _, _ in comps
+                       if _finite(row.get(feat)) is None]
+            if missing:
+                for feat in missing:
+                    unscored[feat] = unscored.get(feat, 0) + 1
+                continue
+        except (TypeError, ValueError):
+            continue
+        eligible.append(row)
+    return eligible, unscored
+
+def _ranked_candidates(eligible: list[dict[str, Any]], comps: list[tuple[str, float, int]]) -> tuple[list[dict[str, Any]], dict[str, float], dict[str, float], dict[str, int]]:
+    means, stds, bests = {}, {}, {}
+    signs = {feat: sign for feat, _, sign in comps}
+    for feat, _, _ in comps:
+        vals = [float(r[feat]) for r in eligible]
+        means[feat] = math.fsum(vals) / len(vals)
+        stds[feat] = _population_spread(vals)
+        bests[feat] = max(vals) if signs[feat] > 0 else min(vals)
+    scored = []
+    for row in eligible:
+        contribs = []
+        total = 0.0
+        for feat, weight, sign in comps:
+            std = stds[feat]
+            z = 0.0 if std < 1e-9 else (float(row[feat]) - means[feat]) / std
+            contrib = weight * sign * z
+            total += contrib
+            contribs.append((contrib, feat, z))
+        contribs.sort(key=lambda t: t[0], reverse=True)
+        scored.append((total, row, contribs))
+    scored.sort(key=lambda t: t[0], reverse=True)
+    candidates = []
+    for rank, (total, row, contribs) in enumerate(scored[:5], 1):
+        candidates.append(_candidate_row(rank, total, row, contribs, bests, signs, means))
+    return candidates, means, bests, signs
+
+def _candidate_row(rank: int, total: float, row: dict[str, Any], contribs: list[tuple[float, str, float]], bests: dict[str, float], signs: dict[str, int], means: dict[str, float]) -> dict[str, Any]:
+    drivers = [{"stat": FEATURE_LABELS.get(feat, feat),
+                "value": _round_val(feat, row[feat]),
+                "z": round(z, 2)} for _, feat, z in contribs[:3]]
+    leader = next((f for _, f, _ in contribs[:3]
+                   if float(row[f]) == bests[f]), None)
+    if leader is not None:
+        case_for = (f"leads the pool in {FEATURE_LABELS.get(leader, leader)} "
+                    f"at {_round_val(leader, row[leader])}")
+    else:
+        top_feat, top_z = max(
+            contribs, key=lambda t: signs[t[1]] * t[2])[1:3]
+        case_for = (f"strongest edge is {FEATURE_LABELS.get(top_feat, top_feat)} "
+                    f"at {_round_val(top_feat, row[top_feat])} (z {top_z:+.2f})")
+    weak_feat, weak_dz = min(
+        ((feat, signs[feat] * z) for _, feat, z in contribs),
+        key=lambda t: t[1])
+    weak_label = FEATURE_LABELS.get(weak_feat, weak_feat)
+    weak_val = _round_val(weak_feat, row[weak_feat])
+    weak_avg = _round_val(weak_feat, means[weak_feat])
+    if weak_dz >= 0 or weak_val == weak_avg:
+        case_against = (f"no clear weakness - closest to the pool "
+                        f"average in {weak_label} ({weak_val})")
+    else:
+        case_against = (f"weakest edge is {weak_label} "
+                        f"({weak_val} vs pool avg {weak_avg})")
+    return {"rank": rank, "player": row["player"], "team": row["team"],
+            "score": round(total, 2), "drivers": drivers,
+            "case_for": case_for, "case_against": case_against}

@@ -189,6 +189,33 @@ def prune_turn_prose(
     narrowed_older.reverse()
     return tuple([*narrowed_older, ordered[-1]])
 
+def _check_cited_selectors(evidence: Mapping[str, EvidenceEnvelope],
+                           wanted: Mapping[str, Mapping[str, Any]]) -> None:
+    for name, selectors in wanted.items():
+        if name not in evidence:
+            raise CitationOrphanError(f"prune would orphan citation: {name}")
+        for selector, value in selectors.items():
+            try:
+                seen = resolve_selector(evidence[name].rows, selector)
+            except Exception as exc:
+                raise CitationOrphanError(
+                    f"prune would orphan citation: {name} {selector}") from exc
+            if seen != value:
+                raise CitationOrphanError(
+                    f"prune would orphan citation: {name} {selector}")
+
+def _dropped_row_count(before: Mapping[str, EvidenceEnvelope],
+                       after: Mapping[str, EvidenceEnvelope]) -> int:
+    dropped = 0
+    for name, item in after.items():
+        before_rows = before[name].rows
+        after_rows = item.rows
+        if isinstance(before_rows, list) and isinstance(after_rows, list):
+            dropped += sum(
+                1 for before_row, after_row in zip(before_rows, after_rows)
+                if before_row != after_row)
+    return dropped
+
 def prune_session_context(
     turns: Iterable[ConversationTurn],
     evidence: Mapping[str, EvidenceEnvelope],
@@ -200,18 +227,7 @@ def prune_session_context(
     ordered = tuple(turns)
     admitted = dict(evidence)
     wanted = {name: dict(selectors) for name, selectors in cited.items()}
-    for name, selectors in wanted.items():
-        if name not in admitted:
-            raise CitationOrphanError(f"prune would orphan citation: {name}")
-        for selector, value in selectors.items():
-            try:
-                seen = resolve_selector(admitted[name].rows, selector)
-            except Exception as exc:
-                raise CitationOrphanError(
-                    f"prune would orphan citation: {name} {selector}") from exc
-            if seen != value:
-                raise CitationOrphanError(
-                    f"prune would orphan citation: {name} {selector}")
+    _check_cited_selectors(admitted, wanted)
     before = turns_tokens(ordered) + sum(
         envelope_tokens(item) for item in admitted.values())
     levels: list[str] = []
@@ -223,13 +239,7 @@ def prune_session_context(
     }
     if sum(envelope_tokens(item) for item in row_step.values()) < sum(
             envelope_tokens(item) for item in narrowed.values()):
-        for name, item in row_step.items():
-            before_rows = narrowed[name].rows
-            after_rows = item.rows
-            if isinstance(before_rows, list) and isinstance(after_rows, list):
-                dropped += sum(
-                    1 for before_row, after_row in zip(before_rows, after_rows)
-                    if before_row != after_row)
+        dropped += _dropped_row_count(narrowed, row_step)
         narrowed = row_step
         levels.append(PRUNE_LEVEL_ROWS)
     leaves = {name: {_selector_leaf(selector) for selector in selectors}
@@ -247,16 +257,7 @@ def prune_session_context(
     if turns_tokens(kept_turns) + evidence_cost > budget:
         kept_turns = prune_turn_prose(ordered, budget - evidence_cost)
         levels.append(PRUNE_LEVEL_TURN_PROSE)
-    for name, selectors in wanted.items():
-        for selector, value in selectors.items():
-            try:
-                seen = resolve_selector(narrowed[name].rows, selector)
-            except Exception as exc:
-                raise CitationOrphanError(
-                    f"prune would orphan citation: {name} {selector}") from exc
-            if seen != value:
-                raise CitationOrphanError(
-                    f"prune would orphan citation: {name} {selector}")
+    _check_cited_selectors(narrowed, wanted)
     after = turns_tokens(kept_turns) + sum(
         envelope_tokens(item) for item in narrowed.values())
     return kept_turns, narrowed, PruneReport(

@@ -103,30 +103,7 @@ def _live_fallback_miss(spec: Capability, fallback: LiveFallback,
         f"hand: {on_hand})")
     return f"{message}; tool reported: {reported}" if reported else message
 
-def build_envelope(
-    spec: Capability,
-    arguments: Mapping[str, Any],
-    result: dict[str, Any],
-    *,
-    entities: Iterable[EntityRef] | None = None,
-    observed_at: datetime | None = None,
-) -> EvidenceEnvelope:
-    raw_meta = result.get("meta")
-    if raw_meta is not None and not isinstance(raw_meta, Mapping):
-        raise AdapterError(f"{spec.tool_name}: result meta must be an object")
-    meta = raw_meta or {}
-    live_fallback = resolve_live_fallback(spec, meta)
-    failed = result.get("ok") is not True
-    if (live_fallback is not None and live_fallback.outcome == "empty"
-            and (failed or not result.get("rows"))):
-        raise LiveFallbackEmpty(
-            _live_fallback_miss(
-                spec, live_fallback,
-                str(result.get("error") or "unknown error") if failed else ""),
-            live_fallback)
-    if failed:
-        raise AdapterError(
-            f"{spec.tool_name}: {result.get('error') or 'unknown error'}")
+def _envelope_rows(spec: Capability, result: dict[str, Any]) -> Any:
     rows = result.get("rows")
     if rows is None and spec.name == "game_prediction":
         fields = ("matchup", "estimate", "inputs", "methodology",
@@ -135,6 +112,10 @@ def build_envelope(
             rows = {key: result[key] for key in fields if key in result}
     if rows is None:
         raise AdapterError(f"{spec.tool_name}: result carries no rows")
+    return rows
+
+
+def _check_rows(spec: Capability, rows: Any, row_warnings: list[str]) -> None:
     if spec.name == "contracts":
         if not isinstance(rows, Mapping):
             raise AdapterError(f"{spec.tool_name}: contract ledger must be an object")
@@ -144,7 +125,6 @@ def build_envelope(
                 or payroll <= 0 or not isinstance(players, list) or not players):
             raise AdapterError(
                 f"{spec.tool_name}: contract ledger has no usable payroll roster")
-    row_warnings: list[str] = []
     if spec.name == "trade_value" and isinstance(rows, Mapping):
         data_gaps = rows.get("data_gaps")
         if data_gaps is not None:
@@ -154,6 +134,9 @@ def build_envelope(
                 raise AdapterError(
                     f"{spec.tool_name}: data_gaps must be an array of non-empty text")
             row_warnings.extend(data_gaps)
+
+
+def _source_identity_markers(spec: Capability, meta: Mapping[str, Any]) -> tuple[dict, set, bool, bool]:
     declared_sources = {
         token.strip() for token in str(meta.get("source") or "").split("+")
         if token.strip()
@@ -183,6 +166,10 @@ def build_envelope(
         raise AdapterError(f"{spec.tool_name}: conflicting source identity markers")
     if is_live and not meta.get("source"):
         raise AdapterError(f"{spec.tool_name}: live source identity missing")
+    return dict(meta), declared_sources, has_warehouse_id, has_warehouse_sha
+
+
+def _resolve_season(spec: Capability, arguments: Mapping[str, Any], meta: Mapping[str, Any]) -> Any:
     season = meta.get("season")
     requested_season = arguments.get(spec.season_arg) if spec.season_arg else None
     if season is None:
@@ -192,6 +179,10 @@ def build_envelope(
         raise AdapterError(
             f"{spec.tool_name}: response season {season} does not match "
             f"requested season {requested_season}")
+    return season
+
+
+def _collect_warnings(spec: Capability, meta: Mapping[str, Any], row_warnings: list[str], result: dict[str, Any], rows: Any) -> list[str]:
     warning_values = meta.get("warnings") or []
     if isinstance(warning_values, str):
         warnings = [warning_values]
@@ -231,6 +222,10 @@ def build_envelope(
         warnings.append(result["ambiguity_note"])
     if isinstance(rows, list) and not rows:
         warnings.append("empty result set")
+    return warnings
+
+
+def _as_of_date(meta: Mapping[str, Any], warnings: list[str]) -> Any:
     as_of = None
     for key in ("as_of", "salary_date", "production_date", "fetched_at"):
         value = meta.get(key)
@@ -240,10 +235,10 @@ def build_envelope(
             except ValueError:
                 warnings.append(f"unparseable {key}: {value}")
             break
-    served_window = window_of_arguments(arguments, season)
-    envelope_entities = list(entities or [])
-    if spec.extract_entities is not None:
-        envelope_entities = spec.extract_entities(rows) + envelope_entities
+    return as_of
+
+
+def _dedupe_entities(envelope_entities: Iterable[EntityRef]) -> list[EntityRef]:
     deduplicated_entities: dict[tuple[str, str], EntityRef] = {}
     for entity in envelope_entities:
         key = (entity.type, entity.id)
@@ -253,7 +248,69 @@ def build_envelope(
                 raise AdapterError(
                     f"conflicting entity identity {entity.type}:{entity.id}")
         deduplicated_entities[key] = entity
-    envelope_entities = list(deduplicated_entities.values())
+    return list(deduplicated_entities.values())
+
+
+def _served_units(spec: Capability, rows: Any) -> dict:
+    return {key: unit for key, unit in spec.units.items()
+            if any(key.casefold() in {
+                segment.split("[", 1)[0].casefold()
+                for segment in item.path.split(".")
+            } for item in _row_values(rows))}
+
+
+def _source_identity(meta: Mapping[str, Any], declared_sources: set, has_warehouse_id: bool, has_warehouse_sha: bool) -> dict | None:
+    return (
+            {"kind": "composite",
+             "warehouse_id": str(meta["warehouse_id"]),
+             "sha256": str(meta["warehouse_sha256"]),
+             "live_sources": sorted(declared_sources - {"warehouse"})}
+            if has_warehouse_id and has_warehouse_sha
+            and "warehouse" in declared_sources
+            and declared_sources - {"warehouse"} else
+            {"kind": "warehouse", "warehouse_id": str(meta["warehouse_id"]),
+             "sha256": str(meta["warehouse_sha256"])}
+            if has_warehouse_id and has_warehouse_sha else
+            {"kind": "live", "source": str(meta["source"])}
+            if meta.get("lineage_kind") == "live" and meta.get("source") else None)
+
+
+def build_envelope(
+    spec: Capability,
+    arguments: Mapping[str, Any],
+    result: dict[str, Any],
+    *,
+    entities: Iterable[EntityRef] | None = None,
+    observed_at: datetime | None = None,
+) -> EvidenceEnvelope:
+    raw_meta = result.get("meta")
+    if raw_meta is not None and not isinstance(raw_meta, Mapping):
+        raise AdapterError(f"{spec.tool_name}: result meta must be an object")
+    meta = raw_meta or {}
+    live_fallback = resolve_live_fallback(spec, meta)
+    failed = result.get("ok") is not True
+    if (live_fallback is not None and live_fallback.outcome == "empty"
+            and (failed or not result.get("rows"))):
+        raise LiveFallbackEmpty(
+            _live_fallback_miss(
+                spec, live_fallback,
+                str(result.get("error") or "unknown error") if failed else ""),
+            live_fallback)
+    if failed:
+        raise AdapterError(
+            f"{spec.tool_name}: {result.get('error') or 'unknown error'}")
+    rows = _envelope_rows(spec, result)
+    row_warnings: list[str] = []
+    _check_rows(spec, rows, row_warnings)
+    meta, declared_sources, has_warehouse_id, has_warehouse_sha = _source_identity_markers(spec, meta)
+    season = _resolve_season(spec, arguments, meta)
+    warnings = _collect_warnings(spec, meta, row_warnings, result, rows)
+    as_of = _as_of_date(meta, warnings)
+    served_window = window_of_arguments(arguments, season)
+    envelope_entities = list(entities or [])
+    if spec.extract_entities is not None:
+        envelope_entities = spec.extract_entities(rows) + envelope_entities
+    envelope_entities = _dedupe_entities(envelope_entities)
     vintages = {
         str(key): str(value).split(" (", 1)[0]
         for key, value in meta.items()
@@ -279,11 +336,7 @@ def build_envelope(
         window_end=served_window[1],
         entities=envelope_entities,
         rows=rows,
-        units={key: unit for key, unit in spec.units.items()
-               if any(key.casefold() in {
-                   segment.split("[", 1)[0].casefold()
-                   for segment in item.path.split(".")
-               } for item in _row_values(rows))},
+        units=_served_units(spec, rows),
         metric_definitions={
             **dict(spec.metric_definitions),
             **({"__requested_metric__": str(meta["requested_metric"])}
@@ -293,19 +346,7 @@ def build_envelope(
         coverage=(meta.get("coverage") or meta.get("coverage_note")
                   or spec.coverage),
         warnings=warnings,
-        source_identity=(
-            {"kind": "composite",
-             "warehouse_id": str(meta["warehouse_id"]),
-             "sha256": str(meta["warehouse_sha256"]),
-             "live_sources": sorted(declared_sources - {"warehouse"})}
-            if has_warehouse_id and has_warehouse_sha
-            and "warehouse" in declared_sources
-            and declared_sources - {"warehouse"} else
-            {"kind": "warehouse", "warehouse_id": str(meta["warehouse_id"]),
-             "sha256": str(meta["warehouse_sha256"])}
-            if has_warehouse_id and has_warehouse_sha else
-            {"kind": "live", "source": str(meta["source"])}
-            if meta.get("lineage_kind") == "live" and meta.get("source") else None),
+        source_identity=_source_identity(meta, declared_sources, has_warehouse_id, has_warehouse_sha),
         live_fallback=live_fallback,
     )
 
@@ -420,31 +461,42 @@ class ToolCapability:
             "lineage": [item.evidence_id for item in evidence],
         })
 
-def _task_arguments(name: str, node: Any, task: Any, evidence: Iterable[EvidenceEnvelope]) -> dict[str, Any]:
-    arguments = dict(getattr(node, "arguments", {}) or {})
+def _apply_season_argument(name: str, task: Any, arguments: dict[str, Any]) -> None:
     season = getattr(task, "season", None)
-    if season is not None:
-        spec = CAPABILITIES[name]
-        if spec.season_arg and (spec.task_season_scoped
-                                or spec.season_arg not in arguments):
-            arguments[spec.season_arg] = season.value
+    if season is None:
+        return
+    spec = CAPABILITIES[name]
+    if spec.season_arg and (spec.task_season_scoped
+                            or spec.season_arg not in arguments):
+        arguments[spec.season_arg] = season.value
+
+
+def _apply_window_arguments(name: str, task: Any, arguments: dict[str, Any]) -> None:
     window = CAPABILITIES[name].window_args
-    if window is not None:
-        start_key, end_key = window
-        window_start = getattr(task, "window_start", None)
-        window_end = getattr(task, "window_end", None)
-        if window_start is not None and not arguments.get(start_key):
-            arguments[start_key] = window_start.isoformat()
-        if window_end is not None and not arguments.get(end_key):
-            arguments[end_key] = window_end.isoformat()
-    if name == "trades" and "season" not in arguments:
-        for item in evidence:
-            salary_season = item.vintages.get("salary_season")
-            if salary_season is None and item.capability == "contracts":
-                salary_season = item.season
-            if salary_season:
-                arguments["season"] = salary_season
-                break
+    if window is None:
+        return
+    start_key, end_key = window
+    window_start = getattr(task, "window_start", None)
+    window_end = getattr(task, "window_end", None)
+    if window_start is not None and not arguments.get(start_key):
+        arguments[start_key] = window_start.isoformat()
+    if window_end is not None and not arguments.get(end_key):
+        arguments[end_key] = window_end.isoformat()
+
+
+def _apply_trades_season(evidence: Iterable[EvidenceEnvelope], arguments: dict[str, Any]) -> None:
+    if "season" in arguments:
+        return
+    for item in evidence:
+        salary_season = item.vintages.get("salary_season")
+        if salary_season is None and item.capability == "contracts":
+            salary_season = item.season
+        if salary_season:
+            arguments["season"] = salary_season
+            break
+
+
+def _apply_dependent_entity_arguments(name: str, evidence: Iterable[EvidenceEnvelope], arguments: dict[str, Any]) -> None:
     declarations = CAPABILITIES[name].dependent_entity_arguments
     for argument, entity_type in declarations.items():
         if arguments.get(argument) is not None:
@@ -453,11 +505,25 @@ def _task_arguments(name: str, node: Any, task: Any, evidence: Iterable[Evidence
                       if entity.type == entity_type]
         if candidates:
             arguments[argument] = candidates[0].display_name or candidates[0].id
+
+
+def _apply_game_prediction_teams(task: Any, arguments: dict[str, Any]) -> None:
+    teams = [entity for entity in task.entities if entity.type == "team"]
+    if len(teams) != 2:
+        return
+    for key, entity in zip(("a", "b"), teams, strict=True):
+        candidate = str(arguments.get(key, "")).strip()
+        if candidate not in {entity.id, entity.display_name}:
+            arguments[key] = entity.display_name or entity.id
+
+
+def _task_arguments(name: str, node: Any, task: Any, evidence: Iterable[EvidenceEnvelope]) -> dict[str, Any]:
+    arguments = dict(getattr(node, "arguments", {}) or {})
+    _apply_season_argument(name, task, arguments)
+    _apply_window_arguments(name, task, arguments)
+    if name == "trades":
+        _apply_trades_season(evidence, arguments)
+    _apply_dependent_entity_arguments(name, evidence, arguments)
     if name == "game_prediction":
-        teams = [entity for entity in task.entities if entity.type == "team"]
-        if len(teams) == 2:
-            for key, entity in zip(("a", "b"), teams, strict=True):
-                candidate = str(arguments.get(key, "")).strip()
-                if candidate not in {entity.id, entity.display_name}:
-                    arguments[key] = entity.display_name or entity.id
+        _apply_game_prediction_teams(task, arguments)
     return arguments
