@@ -106,7 +106,9 @@ RANK_SEMANTICS = (
     "other label is a published gap rather than an absence")
 
 class AwardResultError(RuntimeError):
-    pass
+    def __init__(self, reason: str, detail: str) -> None:
+        self.reason = reason
+        super().__init__(detail)
 
 def _table_on_hand() -> bool:
     try:
@@ -130,16 +132,19 @@ def _seasons_on_hand() -> tuple[str, ...]:
 def _season_guard(requested: object) -> str:
     if not _table_on_hand():
         raise AwardResultError(
+            "table_missing",
             f"warehouse table missing: {TABLE}; no award result can be read")
     seasons = _seasons_on_hand()
     raw = str(requested or "").strip()
     if not seasons:
         raise AwardResultError(
+            "no_ballots",
             f"{TABLE} holds no award ballots, so no season can be answered")
     if not raw:
         return seasons[-1]
     if raw not in seasons:
         raise AwardResultError(
+            "season_uncovered",
             f"no {TABLE} ballot for the {raw} season; award results on hand "
             f"cover {seasons[0]} through {seasons[-1]} "
             f"({len(seasons)} seasons published). Dime never estimates a "
@@ -152,11 +157,13 @@ def _award_guard(award: object, *, required: bool) -> str | None:
         if not required:
             return None
         raise AwardResultError(
+            "award_required",
             "the winner and field views need an award; published awards: "
             f"{published_awards()}")
     canon = normalize_award(raw)
     if canon is None:
         raise AwardResultError(
+            "unknown_award",
             f"unknown award '{raw}'; published awards: {published_awards()}")
     return canon
 
@@ -174,6 +181,7 @@ def _read(sql: str, params: list[Any]) -> list[dict[str, Any]]:
         return store._read_df(sql, params)
     except Exception as exc:
         raise AwardResultError(
+            "warehouse_read_failed",
             f"warehouse read of {TABLE} failed: {str(exc)[:200]}") from exc
 
 def _ballot_rows(season: str, player: str | None
@@ -261,6 +269,7 @@ def _resolve(placement_rows: list[dict[str, Any]], view: str, canon: str | None,
         narrowed = [row for row in placement_rows if row["award"] == canon]
         if not narrowed:
             raise AwardResultError(
+                "subject_award_absent",
                 f"no {canon} ballot row for {subject} through the {season} "
                 f"season; {subject} is on record for "
                 f"{_career_note(placement_rows)}")
@@ -270,6 +279,7 @@ def _resolve(placement_rows: list[dict[str, Any]], view: str, canon: str | None,
                           if row["award"] == canon]
         if not placement_rows:
             raise AwardResultError(
+                "award_season_absent",
                 f"no {canon} ballot for the {season} season")
     if view == "field":
         return placement_rows
@@ -277,6 +287,7 @@ def _resolve(placement_rows: list[dict[str, Any]], view: str, canon: str | None,
                    if row["rank"] is not None), default=None)
     if leading is None:
         raise AwardResultError(
+            "ballot_unranked",
             f"the {canon} ballot for the {season} season publishes no ranked "
             f"placement")
     return [row for row in placement_rows if row["rank"] == leading]
@@ -302,14 +313,17 @@ def get_award_results(
     try:
         if view not in VIEWS:
             raise AwardResultError(
+                "unknown_view",
                 f"unknown view '{view}'; valid views: {', '.join(VIEWS)}")
         history = view == "player_awards"
         named = str(player or "").strip()
         if history and not named:
             raise AwardResultError(
+                "player_required",
                 "the player_awards view needs a player name")
         if not history and named:
             raise AwardResultError(
+                "player_unsupported",
                 "a player name is only accepted by the player_awards view")
         canon = _award_guard(award, required=not history)
         season = _season_guard(season)
@@ -317,11 +331,12 @@ def get_award_results(
         placements = _placements(raw)
         if history and not placements:
             raise AwardResultError(
+                "subject_absent",
                 _absent_subject(named, season, _coach_ballots(named, season)))
         rows = _resolve(placements, view, canon, season, named or canon or "")
     except AwardResultError as exc:
         return {"tool": TOOL, "ok": False, "rows": {}, "meta": {},
-                "error": str(exc)}
+                "reason": exc.reason, "error": str(exc)}
 
     spec = AWARDS[canon] if canon is not None else None
     vote_columns = [name for name in VOTE_COLUMNS
