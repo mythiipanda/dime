@@ -2372,9 +2372,14 @@ def _drop_unresolvable_requested_outputs(task: TaskSpec) -> TaskSpec:
     for requirement in task.requirements:
         kept = [output_id for output_id in requirement.requested_outputs
                 if resolvable(output_id, requirement)]
-        aligned.append(
-            requirement if kept == list(requirement.requested_outputs)
-            else requirement.model_copy(update={"requested_outputs": kept}))
+        metrics = [output_id for output_id in requirement.metric_ids
+                   if resolvable(output_id, requirement)]
+        if (kept == list(requirement.requested_outputs)
+                and metrics == list(requirement.metric_ids)):
+            aligned.append(requirement)
+            continue
+        aligned.append(requirement.model_copy(update={
+            "requested_outputs": kept, "metric_ids": metrics}))
     calculation_outputs = {
         output_id
         for requirement in task.calculation_requirements

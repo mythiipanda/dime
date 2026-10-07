@@ -197,3 +197,43 @@ def test_backfilled_authority_admits_claims_and_completes_every_status():
     rows = build_output_statuses(task, mirrored, [])
     assert len(rows) == 8
     assert {row.status for row in rows} == {"complete"}
+
+def test_a_metric_id_no_capability_can_serve_is_dropped() -> None:
+    from v2.adapters.models import _drop_unresolvable_requested_outputs
+    from v2.contracts import EvidenceRequirement, TaskSpec
+
+    task = TaskSpec(
+        goal="mvp",
+        mode="quick",
+        deliverable="winner and share",
+        requirements=[EvidenceRequirement(
+            id="award",
+            description="official MVP result",
+            capability_options=["award_results"],
+            requested_outputs=["PLAYER", "AWARD_SHARE"],
+            metric_ids=["MVP", "AWARD_SHARE"],
+        )],
+    )
+
+    result = _drop_unresolvable_requested_outputs(task)
+
+    assert result.requirements[0].metric_ids == ["AWARD_SHARE"]
+
+def test_an_open_vocabulary_capability_keeps_the_metric_id() -> None:
+    from v2.adapters.models import _drop_unresolvable_requested_outputs
+    from v2.contracts import EvidenceRequirement, TaskSpec
+
+    task = TaskSpec(
+        goal="rates",
+        mode="deep_dive",
+        deliverable="table",
+        requirements=[EvidenceRequirement(
+            id="rates",
+            description="agent-written rate query",
+            capability_options=["sql_exec"],
+            requested_outputs=["TS_PCT"],
+            metric_ids=["TS_PCT"],
+        )],
+    )
+
+    assert _drop_unresolvable_requested_outputs(task) == task
