@@ -3903,8 +3903,9 @@ def get_briefing(game_date: str = "", season: str | None = None) -> dict[str, An
             "rows": {"date": day, "games": games, "top_scorers": top},
             "meta": gmeta}
 
-def _describe_warehouse_schema(cols: dict[str, list[str]]) -> str:
-    return "\n".join(f"{t}: {', '.join(c[:40])}" for t, c in cols.items())
+def _describe_warehouse_schema(cols: dict[str, dict]) -> str:
+    return "\n".join(
+        f"{table}: {', '.join(columns)}" for table, columns in cols.items())
 
 _SQL_TABLES = [
     "silver_standings", "silver_playoffs", "silver_team_ratings",
@@ -3940,7 +3941,53 @@ def _warehouse_schema_cache_info() -> dict[str, float]:
             "misses": _schema_cache_stats["misses"],
             "at": _schema_cache["at"]}
 
-def _get_warehouse_schema() -> tuple[list[str], dict[str, list[str]]]:
+_COLUMN_UNITS: dict[str, tuple[str, str]] = {
+    "PCT": ("fraction_0_1", "fraction on a 0-1 scale, not a 0-100 number"),
+    "MPG": ("minutes_per_game", "minutes per game, not total minutes; "
+                               "multiply by GP for a season total"),
+    "PPG": ("points_per_game", "points per game, not a season total"),
+    "RPG": ("rebounds_per_game", "rebounds per game, not a season total"),
+    "APG": ("assists_per_game", "assists per game, not a season total"),
+    "SPG": ("steals_per_game", "steals per game, not a season total"),
+    "BPG": ("blocks_per_game", "blocks per game, not a season total"),
+    "GP": ("games_played", "games played; the denominator for a per-game rate"),
+    "GS": ("games_started", "games started, at most GP"),
+    "MP": ("total_minutes", "total minutes played across the season"),
+    "AGE": ("years", "age in years"),
+    "RANK": ("rank", "leading rank; a tie shares it"),
+    "RATE": ("per_100_possessions", "rate per 100 possessions"),
+}
+_COLUMN_PREFIX_UNITS: tuple[tuple[str, tuple[str, str]], ...] = (
+    ("_PCT", ("fraction_0_1",
+              "fraction on a 0-1 scale, not a 0-100 number")),
+    ("_PTS_PER_100", ("points_per_100_possessions",
+                      "points per 100 possessions")),
+)
+_COLUMN_SUFFIXES = ("_PTS", "_REB", "_AST", "_STL", "_BLK", "_TOV", "_MIN")
+_PROVENANCE_PREFIXES = ("_PROV_",)
+
+
+def _column_semantics(name: str) -> tuple[str, str]:
+    upper = str(name or "").upper()
+    if any(upper.startswith(prefix) for prefix in _PROVENANCE_PREFIXES):
+        return ("provenance", "provenance column; never filter or group on it")
+    if upper.startswith("_PROV") or upper in {"_SOURCE", "_FETCHED_AT", "_ENTITY"}:
+        return ("provenance", "provenance column; never filter or group on it")
+    if upper == "_SEASON":
+        return ("season", "the season these rows describe; filter on this")
+    for prefix, entry in _COLUMN_PREFIX_UNITS:
+        if upper.endswith(prefix):
+            return entry
+    if upper in _COLUMN_UNITS:
+        return _COLUMN_UNITS[upper]
+    for suffix in _COLUMN_SUFFIXES:
+        if upper.endswith(suffix):
+            return (f"total_{suffix.lstrip('_').lower()}",
+                    f"season total, not per game")
+    return ("", "")
+
+
+def _get_warehouse_schema() -> tuple[list[str], dict[str, dict[str, dict]]]:
     import time as _time
 
     from .. import store as _store
@@ -3950,23 +3997,28 @@ def _get_warehouse_schema() -> tuple[list[str], dict[str, list[str]]]:
     if now - at < _SCHEMA_TTL_S and _schema_cache.get("present"):
         _schema_cache_stats["hits"] += 1
         return (list(_schema_cache["present"]),
-                {k: list(v) for k, v in
+                {k: dict(v) for k, v in
                  _schema_cache["cols"].items()})
     _schema_cache_stats["misses"] += 1
     con = _store.connect()
     try:
         tables = {r[0] for r in con.execute("SHOW TABLES").fetchall()}
         present = [t for t in _SQL_TABLES if t in tables]
-        cols: dict[str, list[str]] = {}
+        cols: dict[str, dict[str, dict[str, str]]] = {}
         for t in present:
-            cols[t] = [r[1] for r in
-                       con.execute(f"PRAGMA table_info({t})").fetchall()][:40]
+            cols[t] = {}
+            for row in con.execute(
+                    f"PRAGMA table_info({t})").fetchall()[:40]:
+                unit, note = _column_semantics(row[1])
+                cols[t][row[1]] = {
+                    "type": str(row[2]), "unit": unit, "note": note}
     finally:
         con.close()
     _schema_cache["at"] = now
     _schema_cache["present"] = present
     _schema_cache["cols"] = cols
-    return (list(present), {k: list(v) for k, v in cols.items()})
+    return (list(present),
+            {k: dict(v) for k, v in cols.items()})
 
 import re as _re_mod
 

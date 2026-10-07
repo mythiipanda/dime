@@ -579,3 +579,42 @@ def test_intake_sees_the_schema_so_it_can_author_valid_sql() -> None:
 
     assert "declared_schema" in catalog["sql_exec"]
     assert "declared_schema" not in catalog["award_results"]
+
+@pytest.fixture
+def canonical_warehouse(monkeypatch):
+    from shared import store
+    from shared.tools import league
+    from v2.api import routes
+
+    monkeypatch.setattr(store, "DB_PATH", store.CANONICAL_DB_PATH)
+    league._clear_warehouse_schema_cache()
+    store.warehouse_identity_cache_clear()
+    routes.runtime_warehouse_identity.cache_clear()
+    routes.runtime_asset_manifest.cache_clear()
+    yield
+    league._clear_warehouse_schema_cache()
+
+
+def test_the_declared_schema_carries_a_column_type(canonical_warehouse) -> None:
+    from v2.runtime.assembly import declared_schema_for
+
+    columns = declared_schema_for("sql_exec")["tables"]["silver_player_season"]
+
+    assert columns["TS_PCT"]["unit"] == "fraction_0_1"
+    assert columns["_season"]["unit"] == "season"
+
+def test_a_per_game_column_says_per_game_so_the_model_stops_guessing(canonical_warehouse) -> None:
+    from v2.runtime.assembly import declared_schema_for
+
+    columns = declared_schema_for("sql_exec")["tables"]["silver_player_season"]
+
+    assert columns["MPG"]["unit"] == "minutes_per_game"
+    assert "per game" in columns["MPG"]["note"]
+
+def test_an_unmapped_column_still_publishes_its_name_and_type(canonical_warehouse) -> None:
+    from v2.runtime.assembly import declared_schema_for
+
+    columns = declared_schema_for("sql_exec")["tables"]["silver_player_season"]
+
+    assert columns["PLAYER_ID"]["unit"] == ""
+    assert columns["PLAYER_ID"]["type"]
