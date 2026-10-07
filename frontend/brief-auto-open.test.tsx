@@ -201,3 +201,74 @@ describe("brief auto-open governance", () => {
     assert.ok(host.textContent?.includes("NYK"));
   });
 });
+
+describe("brief auto-open race hardening", () => {
+  function deferredFetch() {
+    let reject!: (e: unknown) => void;
+    const impl = () => new Promise((_, rej) => { reject = rej; });
+    return { impl, fire: () => reject(new TypeError("offline")) };
+  }
+  function artifactProps(extra: Record<string, unknown> = {}) {
+    return {
+      ai: previewAi(),
+      question: "How do Boston and New York match up Friday?",
+      ...extra,
+    };
+  }
+  it("a panel opened mid-save is not replaced when the save lands", async () => {
+    const gate = deferredFetch();
+    const prev = gx.fetch;
+    gx.fetch = gate.impl as unknown as typeof fetch;
+    try {
+      const opened: unknown[] = [];
+      const host = await mountEl(
+        React.createElement(DataArtifacts, artifactProps({
+          onOpenArtifact: (a: unknown) => opened.push(a),
+        }) as never),
+      );
+      buttons(host, "Save brief")[0].click();
+      const root = roots[roots.length - 1];
+      await act(async () => {
+        root.render(
+          React.createElement(DataArtifacts, artifactProps({
+            onOpenArtifact: (a: unknown) => opened.push(a),
+            activeArtifactId: "get_leaders-3",
+          }) as never),
+        );
+      });
+      await act(async () => {
+        gate.fire();
+        await new Promise((r) => setTimeout(r, 120));
+      });
+      assert.equal(opened.length, 0);
+      assert.ok(host.textContent?.includes("Open briefs"));
+    } finally {
+      if (prev === undefined) delete gx.fetch;
+      else gx.fetch = prev;
+    }
+  });
+  it("viewer-seen flipping mid-save suppresses the pop", async () => {
+    const gate = deferredFetch();
+    const prev = gx.fetch;
+    gx.fetch = gate.impl as unknown as typeof fetch;
+    try {
+      const opened: unknown[] = [];
+      const host = await mountEl(
+        React.createElement(DataArtifacts, artifactProps({
+          onOpenArtifact: (a: unknown) => opened.push(a),
+        }) as never),
+      );
+      buttons(host, "Save brief")[0].click();
+      markBriefViewerSeen();
+      await act(async () => {
+        gate.fire();
+        await new Promise((r) => setTimeout(r, 120));
+      });
+      assert.equal(opened.length, 0);
+      assert.ok(host.textContent?.includes("Open briefs"));
+    } finally {
+      if (prev === undefined) delete gx.fetch;
+      else gx.fetch = prev;
+    }
+  });
+});
