@@ -306,77 +306,130 @@ _ID_NAME: dict[int, str] = {int(r["id"]): r.get("full_name", "")
                             for r in _PLAYER_ROWS if r.get("id")}
 
 
-def score_player_candidates(raw: str) -> list[tuple[float, dict]]:
-    import difflib as _dl
+class _CandidateScores:
 
-    from nba_api.stats.static import players
+    __slots__ = ("by_id",)
 
-    nq = _norm_name(raw)
-    qtokens = nq.split()
-    scored: dict[int, tuple[float, dict]] = {}
+    def __init__(self) -> None:
+        self.by_id: dict[int, tuple[float, dict]] = {}
 
-    def _add(pid: int, score: float, row: dict) -> None:
-        if pid not in scored or scored[pid][0] < score:
-            scored[pid] = (score, row)
+    def add(self, pid: int, score: float, row: dict) -> None:
+        current = self.by_id.get(pid)
+        if current is None or current[0] < score:
+            self.by_id[pid] = (score, row)
 
+    def holds_below(self, pid: object, ceiling: float) -> bool:
+        current = self.by_id.get(pid)
+        return current is None or current[0] < ceiling
+
+    def holds(self, pid: object) -> bool:
+        return pid not in self.by_id
+
+def _indexed_player_norm(index: int, row: dict, use_cache: bool) -> str:
+    if use_cache:
+        return _PLAYER_NORMS[index]
+    return _norm_name(row.get("full_name", ""))
+
+def _score_nickname_matches(scores: _CandidateScores, players, nq: str) -> None:
     full = NICKNAMES.get(nq)
-    if full:
-        for x in players.find_players_by_full_name(full)[:2]:
-            if _norm_name(x.get("full_name", "")) == _norm_name(full):
-                _add(x["id"], 1.0, x)
+    if not full:
+        return
+    for x in players.find_players_by_full_name(full)[:2]:
+        if _norm_name(x.get("full_name", "")) == _norm_name(full):
+            scores.add(x["id"], 1.0, x)
+
+def _score_full_name_matches(scores: _CandidateScores, players, raw: str,
+                             nq: str) -> None:
     for x in players.find_players_by_full_name(raw)[:8]:
         xn = _norm_name(x.get("full_name", ""))
         if xn == nq:
-            _add(x["id"], 1.0, x)
+            scores.add(x["id"], 1.0, x)
         elif len(nq) >= 4 and xn.startswith(nq):
-            _add(x["id"], 0.85, x)
+            scores.add(x["id"], 0.85, x)
         else:
-            _add(x["id"], 0.7, x)
-    for fn, is_last in ((players.find_players_by_last_name, True),
-                         (players.find_players_by_first_name, False)):
+            scores.add(x["id"], 0.7, x)
+
+def _score_surname_matches(scores: _CandidateScores, players, raw: str,
+                           nq: str) -> None:
+    for finder, is_last in ((players.find_players_by_last_name, True),
+                            (players.find_players_by_first_name, False)):
         try:
-            for x in fn(raw)[:8]:
+            for x in finder(raw)[:8]:
                 idx = 1 if is_last else 0
                 parts = _norm_name(x.get("full_name", "")).split()
                 exact = len(parts) > idx and parts[idx] == nq
-                _add(x["id"], 0.9 if exact else 0.7, x)
+                scores.add(x["id"], 0.9 if exact else 0.7, x)
         except Exception:
             pass
-    all_p = _PLAYER_ROWS if _PLAYER_ROWS else players.get_players()
-    use_cache = bool(_PLAYER_ROWS and len(_PLAYER_NORMS) == len(_PLAYER_ROWS))
-    for _i, x in enumerate(all_p):
-        name = _PLAYER_NORMS[_i] if use_cache else _norm_name(x.get("full_name", ""))
-        if not name or x.get("id") in scored:
+
+def _score_prefix_overlap(scores: _CandidateScores, pid: int, nospace: str,
+                          ntokens: list[str], x: dict) -> None:
+    if not scores.holds_below(pid, 0.8):
+        return
+    if len(nospace) < 3:
+        return
+    if not any(t.startswith(nospace) for t in ntokens):
+        return
+    best = max(len(nospace) / max(len(t), 1) for t in ntokens
+               if t.startswith(nospace))
+    scores.add(pid, round(0.7 + 0.25 * best, 2), x)
+
+def _score_token_alias(scores: _CandidateScores, pid: int, nospace: str,
+                       qtokens: list[str], ntokens: list[str], name: str,
+                       x: dict) -> None:
+    if scores.holds(pid) and len(nospace) >= 3 and nospace in name.replace(" ", ""):
+        scores.add(pid, 0.65, x)
+        return
+    if (len(qtokens) > 1 and len(ntokens) > 1
+            and all(len(q) >= 2 and any(t.startswith(q) for t in ntokens)
+                    for q in qtokens)):
+        scores.add(pid, 0.6, x)
+    elif nospace and "".join(t[0] for t in ntokens if t) == nospace:
+        scores.add(pid, 0.5, x)
+
+def _score_roster_matches(scores: _CandidateScores, nq: str, qtokens: list[str],
+                          all_p: list[dict], use_cache: bool) -> None:
+    for index, x in enumerate(all_p):
+        name = _indexed_player_norm(index, x, use_cache)
+        if not name or x.get("id") in scores.by_id:
             continue
+        pid = x.get("id")
         ntokens = name.split()
         nospace = nq.replace(" ", "")
         if nq and nq in name:
-            _add(x["id"], 0.7, x)
-        if (not scored.get(x.get("id")) or scored[x["id"]][0] < 0.8) and (
-                len(nospace) >= 3
-                and any(t.startswith(nospace) for t in ntokens)):
-            best = max(len(nospace) / max(len(t), 1) for t in ntokens
-                       if t.startswith(nospace))
-            _add(x["id"], round(0.7 + 0.25 * best, 2), x)
-        if (not scored.get(x.get("id"))) and (
-                len(nospace) >= 3 and nospace in name.replace(" ", "")):
-            _add(x["id"], 0.65, x)
-        elif (len(qtokens) > 1 and len(ntokens) > 1
-                and all(len(q) >= 2 and any(t.startswith(q) for t in ntokens)
-                        for q in qtokens)):
-            _add(x["id"], 0.6, x)
-        elif nq and "".join(t[0] for t in ntokens if t) == nq.replace(" ", ""):
-            _add(x["id"], 0.5, x)
-    if nq:
-        norms = _PLAYER_NORMS if use_cache else [_norm_name(x.get("full_name", "")) for x in all_p]
-        for match in _dl.get_close_matches(nq, norms, n=5, cutoff=0.6):
-            for _j, x in enumerate(all_p):
-                xn = _PLAYER_NORMS[_j] if use_cache else _norm_name(x.get("full_name", ""))
-                if xn == match:
-                    ratio = _dl.SequenceMatcher(None, nq, match).ratio()
-                    _add(x["id"], round(min(ratio, 0.89), 2), x)
-                    break
-    return sorted(scored.values(), key=lambda t: -t[0])
+            scores.add(x["id"], 0.7, x)
+        _score_prefix_overlap(scores, pid, nospace, ntokens, x)
+        _score_token_alias(scores, pid, nospace, qtokens, ntokens, name, x)
+
+def _score_close_matches(scores: _CandidateScores, nq: str, all_p: list[dict],
+                         use_cache: bool) -> None:
+    import difflib as _dl
+
+    if not nq:
+        return
+    norms = (_PLAYER_NORMS if use_cache
+             else [_norm_name(x.get("full_name", "")) for x in all_p])
+    for match in _dl.get_close_matches(nq, norms, n=5, cutoff=0.6):
+        for index, x in enumerate(all_p):
+            if _indexed_player_norm(index, x, use_cache) != match:
+                continue
+            ratio = _dl.SequenceMatcher(None, nq, match).ratio()
+            scores.add(x["id"], round(min(ratio, 0.89), 2), x)
+            break
+
+def score_player_candidates(raw: str) -> list[tuple[float, dict]]:
+    from nba_api.stats.static import players
+
+    nq = _norm_name(raw)
+    scores = _CandidateScores()
+    _score_nickname_matches(scores, players, nq)
+    _score_full_name_matches(scores, players, raw, nq)
+    _score_surname_matches(scores, players, raw, nq)
+    all_p = _PLAYER_ROWS if _PLAYER_ROWS else players.get_players()
+    use_cache = bool(_PLAYER_ROWS and len(_PLAYER_NORMS) == len(_PLAYER_ROWS))
+    _score_roster_matches(scores, nq, nq.split(), all_p, use_cache)
+    _score_close_matches(scores, nq, all_p, use_cache)
+    return sorted(scores.by_id.values(), key=lambda t: -t[0])
 
 def _resolve_player_id_uncached(key: str) -> int:
     ranked = score_player_candidates(key)
@@ -605,6 +658,81 @@ def _live_fallback_marker(table: str, season: str, live: FetchResult,
     return {"table": table, "requested_season": season,
             "live_source": str(live.meta.source), "outcome": outcome}
 
+def _frame_meta(frame, identity: dict | None, base: dict) -> dict:
+    meta = {**base, **(identity or {})}
+    if "_source" in frame.columns:
+        meta.update(source=frame["_source"][0],
+                    fetched_at=frame["_fetched_at"][0])
+    return meta
+
+def _cached_season_frame(table: str, where: str, params: list[object],
+                         ttl_s: float | None):
+    frame, identity = _bound_warehouse_read(table, where, params)
+    if frame is None or frame.height == 0 or ttl_s is None:
+        return frame, identity
+    age = _cache_age_s(frame)
+    if age is not None and age > ttl_s:
+        return None, identity
+    return frame, identity
+
+def _static_season_miss(table: str, where: str, params: list[object],
+                        season: str, limit: int):
+    frame, identity = _bound_warehouse_read(table, where, params)
+    if frame is not None and frame.height > 0:
+        meta = _frame_meta(frame, identity,
+                           {"rows": frame.height, "cached": True,
+                            "static_season": True})
+        return frame.head(limit).to_dicts(), meta
+    return [], {"source": "warehouse", "static_season": True,
+                "error": (f"no seeded rows for {table} ({season}); season "
+                          "complete, live refetch disabled"),
+                **(identity or {})}
+
+def _empty_live_fallback(table: str, where: str, params: list[object],
+                         season: str, limit: int, live: FetchResult):
+    frame, identity = _bound_warehouse_read(table, where, params)
+    if frame is not None and frame.height > 0:
+        meta = _frame_meta(
+            frame, identity,
+            {"rows": frame.height, "cached": True, "stale": True,
+             "live_error": live.error or "empty upstream response",
+             "live_fallback": _live_fallback_marker(
+                 table, season, live, "stale")})
+        return frame.head(limit).to_dicts(), meta
+    return [], {"source": live.meta.source,
+                "error": live.error or "empty upstream response",
+                "live_fallback": _live_fallback_marker(
+                    table, season, live, "empty"),
+                **(identity or {})}
+
+def _served_live_frame(frame, limit: int, live: FetchResult, table: str,
+                       season: str):
+    annotated = frame.with_columns([
+        pl.lit(live.meta.source).alias("_source"),
+        pl.lit(live.meta.season).alias("_season"),
+        pl.lit(live.meta.fetched_at).alias("_fetched_at")])
+    return annotated.head(limit).to_dicts(), {
+        "rows": annotated.height, "cached": False,
+        "source": live.meta.source, "fetched_at": live.meta.fetched_at,
+        "lineage_kind": "live",
+        "live_fallback": _live_fallback_marker(table, season, live, "served")}
+
+def _live_result(table: str, where: str, params: list[object], limit: int,
+                 live: FetchResult, static: bool, season: str,
+                 entity: str):
+    frame = None
+    identity = None
+    if not static:
+        store.save_frame(table, live, entity)
+        frame, identity = _bound_warehouse_read(table, where, params)
+    if frame is not None and frame.height > 0:
+        return frame.head(limit).to_dicts(), {
+            "rows": frame.height, "cached": False,
+            "source": live.meta.source, "fetched_at": live.meta.fetched_at,
+            "live_fallback": _live_fallback_marker(
+                table, season, live, "served"), **identity}
+    return _served_live_frame(live.frame, limit, live, table, season)
+
 def _warehouse_or_live(table: str, where: str, params: list[object], fetch: Any, season: str | None,
     entity: str = "", limit: int = MAX_ROWS, live_first: bool = False, ttl_s: float | None = None,
     live_on_static_miss: bool = False):
@@ -612,36 +740,19 @@ def _warehouse_or_live(table: str, where: str, params: list[object], fetch: Any,
     if not season:
         return [], {"source": "warehouse",
                     "error": "warehouse has no season with data"}
-    frame = None; identity = None
+    frame = None
+    identity = None
     if not live_first:
-        frame, identity = _bound_warehouse_read(table, where, params)
-        if frame is not None and frame.height > 0 and ttl_s is not None:
-            age = _cache_age_s(frame)
-            if age is not None and age > ttl_s: frame = None
+        frame, identity = _cached_season_frame(table, where, params, ttl_s)
     if frame is None or frame.height == 0:
         static = season_static(season)
         if static and not live_on_static_miss:
-            frame, identity = _bound_warehouse_read(table, where, params)
-            if frame is not None and frame.height > 0:
-                meta = {"rows": frame.height, "cached": True, "static_season": True, **identity}
-                if "_source" in frame.columns: meta.update(source=frame["_source"][0], fetched_at=frame["_fetched_at"][0])
-                return frame.head(limit).to_dicts(), meta
-            return [], {"source":"warehouse","static_season":True,"error":f"no seeded rows for {table} ({season}); season complete, live refetch disabled", **(identity or {})}
+            return _static_season_miss(table, where, params, season, limit)
         live: FetchResult = fetch()
         if not live.ok or live.frame.height == 0:
-            frame, identity = _bound_warehouse_read(table, where, params)
-            if frame is not None and frame.height > 0:
-                meta={"rows":frame.height,"cached":True,"stale":True,"live_error":live.error or "empty upstream response","live_fallback": _live_fallback_marker(table, season, live, "stale"),**identity}
-                if "_source" in frame.columns:meta.update(source=frame["_source"][0],fetched_at=frame["_fetched_at"][0])
-                return frame.head(limit).to_dicts(),meta
-            return [],{"source":live.meta.source,"error":live.error or "empty upstream response","live_fallback": _live_fallback_marker(table, season, live, "empty"),**(identity or {})}
-        if not static:
-            store.save_frame(table, live, entity)
-            frame, identity = _bound_warehouse_read(table, where, params)
-        if frame is None or frame.height == 0:
-            frame=live.frame.with_columns([pl.lit(live.meta.source).alias("_source"),pl.lit(live.meta.season).alias("_season"),pl.lit(live.meta.fetched_at).alias("_fetched_at")])
-            return frame.head(limit).to_dicts(),{"rows":frame.height,"cached":False,"source":live.meta.source,"fetched_at":live.meta.fetched_at,"lineage_kind":"live","live_fallback": _live_fallback_marker(table, season, live, "served")}
-        return frame.head(limit).to_dicts(),{"rows":frame.height,"cached":False,"source":live.meta.source,"fetched_at":live.meta.fetched_at,"live_fallback": _live_fallback_marker(table, season, live, "served"),**identity}
-    meta={"rows":frame.height,"cached":True,**(identity or {})}
-    if "_source" in frame.columns:meta.update(source=frame["_source"][0],fetched_at=frame["_fetched_at"][0])
-    return frame.head(limit).to_dicts(),meta
+            return _empty_live_fallback(table, where, params, season, limit,
+                                        live)
+        return _live_result(table, where, params, limit, live, static, season,
+                            entity)
+    meta = _frame_meta(frame, identity, {"rows": frame.height, "cached": True})
+    return frame.head(limit).to_dicts(), meta
