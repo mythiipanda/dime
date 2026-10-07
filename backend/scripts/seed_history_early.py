@@ -139,63 +139,54 @@ def align_to_live(table: str, frame: pl.DataFrame) -> pl.DataFrame:
     ordered += [c for c in out.columns if c not in live_data]
     return out.select(ordered)
 
-def main() -> None:
-    args = argparse.ArgumentParser()
-    args.add_argument(
-        "--seasons", default="2010,2011,2012,2013,2014,2015,2016,2017,2018,2019,2020,2021"
-    )
-    ns = args.parse_args()
-    years = parse_seasons(ns.seasons)
-    DATA.mkdir(parents=True, exist_ok=True)
-
+def _seed_table(table, tag, pattern, years, counts, problems, documented) -> int:
     from shared.sources.base import FetchMeta, FetchResult
 
-    counts: dict[tuple[str, str], int] = {}
-    problems: list[str] = []
-    documented: list[str] = []
-    total = 0
-    for table, (tag, pattern) in FILES.items():
-        staged: list[tuple] = []
-        for y in years:
-            label = season_label(y)
-            assert y != FORBIDDEN and label != "2025-26", label
-            if (table, y) in KNOWN_GAPS:
-                documented.append(f"{table} {label}: no upstream tracking data before 2015-16")
-                counts[(table, label)] = 0
-                continue
-            name = pattern.format(y=y)
-            dest = DATA / f"{table}_{y}.parquet"
-            if not fetch(f"{BASE}/{tag}/{name}", dest):
-                problems.append(f"{table} {label}: missing upstream asset")
-                counts[(table, label)] = 0
-                continue
-            try:
-                staged.append((y, pl.read_parquet(dest)))
-            except Exception as exc:
-                problems.append(f"{table} {label}: unreadable parquet ({exc})")
-                counts[(table, label)] = 0
-        if not staged:
+    staged: list[tuple] = []
+    for y in years:
+        label = season_label(y)
+        assert y != FORBIDDEN and label != "2025-26", label
+        if (table, y) in KNOWN_GAPS:
+            documented.append(f"{table} {label}: no upstream tracking data before 2015-16")
+            counts[(table, label)] = 0
             continue
-        unified = unify([f for _, f in staged])
-        for (y, _), frame in zip(staged, unified):
-            label = season_label(y)
-            assert y != FORBIDDEN and label != "2025-26", label
-            ready = align_to_live(table, frame)
-            res = FetchResult(
-                frame=ready,
-                meta=FetchMeta(source=f"sportsdataverse:{tag}", season=label),
-            )
-            n = store.save_frame(
-                table,
-                res,
-                entity=f"season:{label}",
-                replace_season=True,
-            )
-            counts[(table, label)] = n
-            total += n
-            print(f"{table} {label}: {n} rows")
-            if n <= 0:
-                problems.append(f"{table} {label}: loaded 0 rows")
+        name = pattern.format(y=y)
+        dest = DATA / f"{table}_{y}.parquet"
+        if not fetch(f"{BASE}/{tag}/{name}", dest):
+            problems.append(f"{table} {label}: missing upstream asset")
+            counts[(table, label)] = 0
+            continue
+        try:
+            staged.append((y, pl.read_parquet(dest)))
+        except Exception as exc:
+            problems.append(f"{table} {label}: unreadable parquet ({exc})")
+            counts[(table, label)] = 0
+    if not staged:
+        return 0
+    total = 0
+    unified = unify([f for _, f in staged])
+    for (y, _), frame in zip(staged, unified):
+        label = season_label(y)
+        assert y != FORBIDDEN and label != "2025-26", label
+        ready = align_to_live(table, frame)
+        res = FetchResult(
+            frame=ready,
+            meta=FetchMeta(source=f"sportsdataverse:{tag}", season=label),
+        )
+        n = store.save_frame(
+            table,
+            res,
+            entity=f"season:{label}",
+            replace_season=True,
+        )
+        counts[(table, label)] = n
+        total += n
+        print(f"{table} {label}: {n} rows")
+        if n <= 0:
+            problems.append(f"{table} {label}: loaded 0 rows")
+    return total
+
+def _report(years, counts, problems, documented, total) -> None:
     print("table | " + " | ".join(season_label(y) for y in years))
     for table in FILES:
         row = " | ".join(
@@ -221,6 +212,23 @@ def main() -> None:
         ]:
             print(f"  gap {item}", file=sys.stderr)
         raise SystemExit(1)
+
+def main() -> None:
+    args = argparse.ArgumentParser()
+    args.add_argument(
+        "--seasons", default="2010,2011,2012,2013,2014,2015,2016,2017,2018,2019,2020,2021"
+    )
+    ns = args.parse_args()
+    years = parse_seasons(ns.seasons)
+    DATA.mkdir(parents=True, exist_ok=True)
+
+    counts: dict[tuple[str, str], int] = {}
+    problems: list[str] = []
+    documented: list[str] = []
+    total = 0
+    for table, (tag, pattern) in FILES.items():
+        total += _seed_table(table, tag, pattern, years, counts, problems, documented)
+    _report(years, counts, problems, documented, total)
 
 if __name__ == "__main__":
     main()

@@ -373,6 +373,49 @@ def report_watermarks(seasons: list[str], state: dict) -> None:
               f"{len(done_trad & set(ids))} | ext {len(done_ext & set(ids))} "
               f"| pbp {len(done_pbp & set(ids))} | lineups {lu}")
 
+def _backfill_season(season, args, views, state, ctr, t0) -> None:
+    try:
+        games = season_games(season, args.sleep, state)
+    except RuntimeError as exc:
+        print(f"[{season}] game enumeration failed: {exc}", flush=True)
+        return
+    if args.limit:
+        games = games[:args.limit]
+    done_ext = watermarked_entities(EXT_TABLE, season)
+    done_trad = watermarked_entities(GAME_TABLE, season)
+    pending = [g for g in games
+               if not (g in done_ext
+                       and ("traditional" not in views
+                            or g in done_trad))]
+    print(f"[{season}] {len(games)} games, {len(pending)} pending",
+          flush=True)
+    if args.lineups:
+        backfill_lineups(season, args.sleep, ctr)
+    if pending:
+        with ThreadPoolExecutor(
+                max_workers=max(1, args.workers)) as pool:
+            futs = [pool.submit(backfill_game, g, season, views,
+                                args.sleep, ctr) for g in pending]
+            for f in futs:
+                f.result()
+    el = time.time() - t0
+    print(f"[{season}] done: {ctr.games} games, {ctr.rows_trad} trad "
+          f"rows, {ctr.rows_ext} ext rows, {ctr.fetches} fetches, "
+          f"{ctr.skipped} skipped, {len(ctr.failed)} failed "
+          f"({el/60:.1f}m elapsed)", flush=True)
+
+def _backfill_pbp_season(season, args, state, ctr) -> None:
+    games = season_games(season, args.sleep, state)
+    done_pbp = watermarked_entities(PBP_TABLE, season)
+    pending = [g for g in games if g not in done_pbp]
+    print(f"[pbp {season}] {len(games)} games, {len(pending)} pending",
+          flush=True)
+    with ThreadPoolExecutor(max_workers=max(1, args.workers)) as pool:
+        futs = [pool.submit(backfill_pbp_game, g, season, args.sleep,
+                            ctr) for g in pending]
+        for f in futs:
+            f.result()
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description="Multi-season boxscore + lineup backfill over stats.nba.com (nba_api).")
     ap.add_argument("--seasons", default=default_seasons(),
@@ -406,49 +449,12 @@ def main(argv=None) -> int:
     t0 = time.time()
 
     for season in seasons:
-        try:
-            games = season_games(season, args.sleep, state)
-        except RuntimeError as exc:
-            print(f"[{season}] game enumeration failed: {exc}", flush=True)
-            continue
-        if args.limit:
-            games = games[:args.limit]
-        done_ext = watermarked_entities(EXT_TABLE, season)
-        done_trad = watermarked_entities(GAME_TABLE, season)
-        pending = [g for g in games
-                   if not (g in done_ext
-                           and ("traditional" not in views
-                                or g in done_trad))]
-        print(f"[{season}] {len(games)} games, {len(pending)} pending",
-              flush=True)
-        if args.lineups:
-            backfill_lineups(season, args.sleep, ctr)
-        if pending:
-            with ThreadPoolExecutor(
-                    max_workers=max(1, args.workers)) as pool:
-                futs = [pool.submit(backfill_game, g, season, views,
-                                    args.sleep, ctr) for g in pending]
-                for f in futs:
-                    f.result()
-        el = time.time() - t0
-        print(f"[{season}] done: {ctr.games} games, {ctr.rows_trad} trad "
-              f"rows, {ctr.rows_ext} ext rows, {ctr.fetches} fetches, "
-              f"{ctr.skipped} skipped, {len(ctr.failed)} failed "
-              f"({el/60:.1f}m elapsed)", flush=True)
+        _backfill_season(season, args, views, state, ctr, t0)
 
     pbp_seasons = [s.strip() for s in args.pbp_seasons.split(",")
                    if s.strip()]
     for season in pbp_seasons:
-        games = season_games(season, args.sleep, state)
-        done_pbp = watermarked_entities(PBP_TABLE, season)
-        pending = [g for g in games if g not in done_pbp]
-        print(f"[pbp {season}] {len(games)} games, {len(pending)} pending",
-              flush=True)
-        with ThreadPoolExecutor(max_workers=max(1, args.workers)) as pool:
-            futs = [pool.submit(backfill_pbp_game, g, season, args.sleep,
-                                ctr) for g in pending]
-            for f in futs:
-                f.result()
+        _backfill_pbp_season(season, args, state, ctr)
 
     if ctr.failed:
         print(f"failed ({len(ctr.failed)}), first 10:", flush=True)
