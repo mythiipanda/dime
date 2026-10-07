@@ -18,72 +18,94 @@ def _at(value):
         return None
     return parsed
 
+def _span(data, started, here):
+    span = _ms(data.get("duration_ms"))
+    if span is None and started is not None and here is not None:
+        span = max(0, round((here - started).total_seconds() * 1000))
+    return span
+
+def _step_start(row, data, here, acc):
+    acc["open_steps"][(row.get("turn_id"), row.get("step_id"))] = here
+
+def _step_end(row, data, here, acc):
+    key = (row.get("turn_id"), row.get("step_id"))
+    started = acc["open_steps"].pop(key, None)
+    span = _span(data, started, here)
+    if span is not None and row.get("step_id"):
+        acc["stages"][str(row["step_id"])] = span
+
+def _model_request(row, data, here, acc):
+    if row.get("call_id"):
+        acc["open_models"][row["call_id"]] = here
+
+def _assistant_attempt(row, data, here, acc):
+    started = acc["open_models"].pop(row.get("call_id"), None)
+    span = _span(data, started, here)
+    if span is not None:
+        acc["llm_ms"].append(span)
+
+def _tool_call(row, data, here, acc):
+    if row.get("call_id"):
+        acc["open_tools"][row["call_id"]] = (here, str(data.get("name") or ""))
+
+def _tool_result(row, data, here, acc):
+    started = acc["open_tools"].pop(row.get("call_id"), (None, ""))
+    span = _span(data, started[0], here)
+    if span is None:
+        return
+    entry = acc["tools"].setdefault(started[1] or "unknown",
+                                     {"calls": 0, "total_ms": 0, "max_ms": 0})
+    entry["calls"] += 1
+    entry["total_ms"] += span
+    entry["max_ms"] = max(entry["max_ms"], span)
+
+def _turn_end(row, data, here, acc):
+    span = _ms(data.get("duration_ms"))
+    acc["turn_ms"] = span if acc["turn_ms"] is None else acc["turn_ms"] + span
+
+_HANDLERS = {
+    "step/start": _step_start,
+    "step/end": _step_end,
+    "model/request": _model_request,
+    "assistant/attempt": _assistant_attempt,
+    "tool/call": _tool_call,
+    "tool/result": _tool_result,
+    "turn/end": _turn_end,
+}
+
+def _row(line):
+    if not str(line or "").strip():
+        return None
+    try:
+        row = json.loads(line)
+    except (TypeError, ValueError):
+        return None
+    return row if isinstance(row, dict) else None
+
+def _ledger():
+    return {"turn_ms": None, "stages": {}, "llm_ms": [], "tools": {},
+            "open_steps": {}, "open_models": {}, "open_tools": {}}
+
 def summarize(lines):
-    stages = {}
-    llm_ms = []
-    tools = {}
-    turn_ms = None
-    open_steps = {}
-    open_models = {}
-    open_tools = {}
+    acc = _ledger()
     for line in lines:
-        if not str(line or "").strip():
+        row = _row(line)
+        if row is None:
             continue
-        try:
-            row = json.loads(line)
-        except (TypeError, ValueError):
+        handler = _HANDLERS.get(row.get("kind"))
+        if handler is None:
             continue
-        if not isinstance(row, dict):
-            continue
-        kind = row.get("kind")
         data = row.get("data") or {}
         if not isinstance(data, dict):
             data = {}
-        here = _at(row.get("recorded_at"))
-        if kind == "step/start":
-            open_steps[(row.get("turn_id"), row.get("step_id"))] = here
-        elif kind == "step/end":
-            key = (row.get("turn_id"), row.get("step_id"))
-            started = open_steps.pop(key, None)
-            span = _ms(data.get("duration_ms"))
-            if span is None and started is not None and here is not None:
-                span = max(0, round((here - started).total_seconds() * 1000))
-            if span is not None and row.get("step_id"):
-                stages[str(row["step_id"])] = span
-        elif kind == "model/request":
-            if row.get("call_id"):
-                open_models[row["call_id"]] = here
-        elif kind == "assistant/attempt":
-            started = open_models.pop(row.get("call_id"), None)
-            span = _ms(data.get("duration_ms"))
-            if span is None and started is not None and here is not None:
-                span = max(0, round((here - started).total_seconds() * 1000))
-            if span is not None:
-                llm_ms.append(span)
-        elif kind == "tool/call":
-            if row.get("call_id"):
-                name = (data.get("name") or "")
-                open_tools[row["call_id"]] = (here, str(name))
-        elif kind == "tool/result":
-            started = open_tools.pop(row.get("call_id"), (None, ""))
-            span = _ms(data.get("duration_ms"))
-            if span is None and started[0] is not None and here is not None:
-                span = max(0, round((here - started[0]).total_seconds() * 1000))
-            if span is not None:
-                entry = tools.setdefault(started[1] or "unknown",
-                                         {"calls": 0, "total_ms": 0, "max_ms": 0})
-                entry["calls"] += 1
-                entry["total_ms"] += span
-                entry["max_ms"] = max(entry["max_ms"], span)
-        elif kind == "turn/end":
-            span = _ms(data.get("duration_ms"))
-            turn_ms = span if turn_ms is None else turn_ms + span
+        handler(row, data, _at(row.get("recorded_at")), acc)
+    llm_ms = acc["llm_ms"]
     return {
-        "turn_ms": turn_ms,
-        "stages": stages,
+        "turn_ms": acc["turn_ms"],
+        "stages": acc["stages"],
         "llm": {"calls": len(llm_ms), "total_ms": sum(llm_ms),
                 "max_ms": max(llm_ms) if llm_ms else 0},
-        "tools": tools,
+        "tools": acc["tools"],
     }
 
 def main() -> int:
