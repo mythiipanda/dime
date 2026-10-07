@@ -16,6 +16,7 @@ One JSON object matching DraftReport and Claim, and nothing else:
 - claims: rewritten Claim objects;
 - calculations: declared arithmetic objects preserved for derived claims;
 - blocked_calculation_requirement_ids: requested calculations still blocked by missing evidence;
+- artifacts: preserved unchanged from the draft you were given. Never add, remove, or edit one here; an artifact whose points you stopped publishing simply stops rendering.
 - gaps: specific limits that remain.
 
 Each Claim contains:
@@ -26,6 +27,7 @@ Each Claim contains:
 - confidence: required for a projection claim;
 - output_bindings: claim-local typed output proposals. Preserve valid existing proposals when the repaired claim still states that exact output; otherwise remove or replace them with exact requirement/output, evidence selector/value/subject/unit/domain, or calculation identity proposals for deterministic admission.
 - Binding path format (mechanical, must match exactly): evidence rows live under `rows`. A row value uses selector "rows[i].COLUMN", row_selector "rows[i]", subject_selector "rows[i].ID_COLUMN" where ID_COLUMN is the identity key for the subject type, subject_entity_id the exact identity value from that column, and node_id the exact plan node id that produced the evidence. Never use filter expressions, display names, or bare column names as selectors.
+- artifact_id: preserved from the draft you were given, or absent. Never invent one.
 
 ## Invariants
 - Never add a fact, number, date, entity, season, rank, or unit absent from admitted evidence.

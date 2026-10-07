@@ -5,6 +5,7 @@ import hashlib
 import io
 import json
 import logging
+import math
 import os
 import re
 import subprocess
@@ -1484,6 +1485,61 @@ def _public_evidence(result) -> tuple[list[dict], list[str]]:
               if status.output_id not in cited))))
     return list(rows.values()), untraced
 
+def _artifact_number(raw: object) -> float | None:
+    if isinstance(raw, bool):
+        return None
+    if isinstance(raw, (int, float)):
+        return float(raw) if math.isfinite(float(raw)) else None
+    text = str(raw or "").strip().replace(",", "")
+    if not text:
+        return None
+    try:
+        value = float(text)
+    except ValueError:
+        return None
+    return value if math.isfinite(value) else None
+
+
+def _published_index(rows: list[dict]) -> dict[tuple[str, str], float]:
+    index: dict[tuple[str, str], float] = {}
+    for row in rows:
+        output_id = str(row.get("output_id") or "")
+        subject = str(row.get("subject_display_name") or "")
+        if not output_id:
+            continue
+        value = _artifact_number(row.get("value"))
+        if value is not None:
+            index.setdefault((output_id, subject), value)
+    return index
+
+
+def _resolve_artifacts(
+        intents: list, rows: list[dict]) -> list[dict]:
+    index = _published_index(rows)
+    resolved: list[dict] = []
+    for intent in intents:
+        series = []
+        for entry in intent.series:
+            values = []
+            for point in entry.points:
+                value = index.get((point.output_id, entry.name))
+                if value is not None:
+                    values.append(value)
+            if values:
+                series.append({"name": entry.name, "values": values})
+        if not series:
+            continue
+        artifact: dict = {
+            "kind": intent.kind.value,
+            "title": intent.title,
+            "series": series,
+        }
+        if intent.footnote:
+            artifact["footnote"] = intent.footnote
+        resolved.append(artifact)
+    return resolved
+
+
 def _public_capability_name(raw) -> str:
     from v2.adapters import CAPABILITIES
     executable = set(CAPABILITIES) | {"web_search", "web_fetch"}
@@ -1884,6 +1940,10 @@ async def quick_answer_stream(body: QuickAnswerBody):
         yield encode_event(CustomData(
             node="analytics",
             tables=public_tables,
+            artifacts=_resolve_artifacts(
+                list(getattr(getattr(result, "draft", None),
+                             "artifacts", None) or []),
+                public_tables),
             unverified_numbers=untraced_numbers))
         for chunk in _stream_binding_diagnostics(result, body.diagnostics):
             yield chunk

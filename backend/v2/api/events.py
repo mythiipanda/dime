@@ -121,6 +121,7 @@ class CustomData(StrictEvent):
     type: Literal[EventType.CUSTOM_DATA] = EventType.CUSTOM_DATA
     node: Literal["entry", "data_retrieval", "tools", "analytics", "presentation"]
     tables: list[dict[str, Any]] = Field(default_factory=list, max_length=32)
+    artifacts: list[dict[str, Any]] = Field(default_factory=list, max_length=8)
     unverified_numbers: list[str] = Field(default_factory=list, max_length=128)
 
 class FinalAnswer(StrictEvent):
