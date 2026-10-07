@@ -22,7 +22,7 @@ from v2.contracts import (
     TaskSpec,
     VerificationStatus,
 )
-from v2.runtime.executor import PlanExecutor
+from v2.runtime.executor import PlanExecutor, PlanValidationError
 from v2.runtime.fast_path import (
     FastPathUnverifiable,
     build_fast_plan,
@@ -182,27 +182,31 @@ class Runtime:
                     if deadline is None:
                         return None
                     return max(0.000001, deadline - time.perf_counter())
-                try:
-                    plan_raw = await self._stage(
-                        turn_id, "plan", self._planner.plan(prepared_task),
-                        timeout_s=remaining())
-                except PlanOutputError as exc:
-                    if not _planner_accepts_failure_context(self._planner):
-                        raise
-                    plan_raw = await self._stage(
-                        turn_id, "plan_repair",
-                        self._planner.plan(
-                            prepared_task,
-                            failure_context={
-                                "plan_error": str(exc),
-                                "output_id": exc.output_id,
-                                "capability": exc.capability,
-                                "vocabulary": exc.vocabulary,
-                                "node_id": exc.node_id,
-                                "requirement_id": exc.requirement_id,
-                            }),
-                        timeout_s=remaining())
-                prepared_plan = Plan.model_validate(plan_raw.model_dump())
+                validate_plan = getattr(self._executor, "validate_plan", None)
+                failure_context: dict | None = None
+                prepared_plan = None
+                for attempt in range(2):
+                    try:
+                        plan_raw = await self._stage(
+                            turn_id,
+                            "plan" if attempt == 0 else "plan_repair",
+                            (self._planner.plan(
+                                prepared_task, failure_context=failure_context)
+                             if failure_context is not None
+                             else self._planner.plan(prepared_task)),
+                            timeout_s=remaining())
+                        candidate = Plan.model_validate(plan_raw.model_dump())
+                        if validate_plan is not None:
+                            validate_plan(prepared_task, candidate)
+                    except (PlanOutputError, PlanValidationError) as exc:
+                        if (attempt
+                                or not _planner_accepts_failure_context(
+                                    self._planner)):
+                            raise
+                        failure_context = _plan_failure_context(exc)
+                        continue
+                    prepared_plan = candidate
+                    break
                 catalog = getattr(self._executor, "capability_names", frozenset())
                 self._report_activity({"kind":"plan_update","phase":"plan","status":"complete","title":"Plan accepted","transition":"completed","correlation_id":"stage:plan","data":{"node_count":len(prepared_plan.nodes),"capabilities":sorted({cap for n in prepared_plan.nodes for cap in n.capability_hints if cap in catalog}),"unknown_capability_count":sum(1 for n in prepared_plan.nodes for cap in n.capability_hints if cap not in catalog)}})
                 return prepared_plan
@@ -985,6 +989,15 @@ def _planner_accepts_failure_context(planner) -> bool:
         parameter.kind is inspect.Parameter.VAR_KEYWORD
         for parameter in parameters.values()
     )
+
+def _plan_failure_context(exc: BaseException) -> dict:
+    context = {"plan_error": str(exc)}
+    for field in ("output_id", "capability", "vocabulary", "node_id",
+                  "requirement_id"):
+        value = getattr(exc, field, None)
+        if value is not None:
+            context[field] = value
+    return context
 
 def _failure_context(task, execution) -> dict:
     requirements = {item.id: item for item in task.requirements}

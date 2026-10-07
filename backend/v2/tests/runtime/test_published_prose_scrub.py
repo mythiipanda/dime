@@ -103,6 +103,23 @@ def test_ordinary_basketball_prose_and_numbers_publish_unchanged() -> None:
 
     assert _answer_text(result).splitlines() == [PLAIN_PROSE]
 
+def test_decimal_fraction_values_publish_unchanged() -> None:
+    prose = (
+        "The Thunder posted a 0.5613 effective field-goal percentage "
+        "and a 0.1077 turnover percentage in 2025-26.")
+    result = _result(_claim(prose))
+
+    assert _answer_text(result).splitlines() == [prose]
+
+def test_parenthesized_output_label_drops_without_a_placeholder() -> None:
+    result = _result(_claim(
+        "The effective field-goal percentage (EFG_PCT) reached 0.5613."))
+
+    text = _answer_text(result)
+    assert "(EFG_PCT)" not in text
+    assert "the data" not in text
+    assert "0.5613" in text
+
 def test_prose_naming_a_node_id_falls_back_to_the_label_lines() -> None:
     result = _result(_claim(
         "Ada Vega led the league with 880 assists per game per n1."))

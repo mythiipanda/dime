@@ -1234,7 +1234,9 @@ class ModelIntake(ModelStage):
         if unknown:
             raise ValueError(f"intake selected unknown capabilities: {unknown}")
         task = _canonicalize_calculation_requirements(task)
+        task = _drop_unresolvable_requested_outputs(task)
         task = _align_requirement_requested_outputs(task)
+        task = _backfill_open_question_outputs(task)
         task = task.model_copy(update={
             "subject_entity_type": _derive_subject_entity_type(task),
         })
@@ -2354,6 +2356,77 @@ def _align_requirement_requested_outputs(task: TaskSpec) -> TaskSpec:
             aligned.append(requirement.model_copy(update={"requested_outputs": existing}))
     return task.model_copy(update={"requirements": aligned})
 
+def _drop_unresolvable_requested_outputs(task: TaskSpec) -> TaskSpec:
+    from v2.adapters.capabilities import CAPABILITIES, resolve_metric_column
+    if not task.requirements:
+        return task
+    def resolvable(output_id: str, requirement) -> bool:
+        if _is_subject_identity_output(output_id):
+            return True
+        vocabularies = [
+            name for name in requirement.capability_options
+            if name in CAPABILITIES and servable_output_names(name)]
+        structural = [
+            name for name in requirement.capability_options
+            if name in CAPABILITIES and not servable_output_names(name)]
+        if not vocabularies:
+            return bool(structural)
+        return all(
+            resolve_metric_column(CAPABILITIES[name], output_id) is not None
+            for name in vocabularies)
+    aligned = []
+    for requirement in task.requirements:
+        kept = [output_id for output_id in requirement.requested_outputs
+                if resolvable(output_id, requirement)]
+        aligned.append(
+            requirement if kept == list(requirement.requested_outputs)
+            else requirement.model_copy(update={"requested_outputs": kept}))
+    calculation_outputs = {
+        output_id
+        for requirement in task.calculation_requirements
+        for output_id in requirement.requested_outputs}
+    task_kept = [
+        output_id for output_id in task.requested_outputs
+        if output_id in calculation_outputs
+        or _is_subject_identity_output(output_id)
+        or any(resolvable(output_id, requirement) for requirement in aligned)]
+    if task_kept == list(task.requested_outputs):
+        return task.model_copy(update={"requirements": aligned})
+    return task.model_copy(update={
+        "requirements": aligned,
+        "requested_outputs": task_kept,
+    })
+
+def _backfill_open_question_outputs(task: TaskSpec) -> TaskSpec:
+    if task.requested_outputs or not task.requirements:
+        return task
+    filled = []
+    union: list[str] = []
+    for requirement in task.requirements:
+        for output_id in requirement.requested_outputs:
+            if output_id not in union:
+                union.append(output_id)
+        if requirement.requested_outputs:
+            filled.append(requirement)
+            continue
+        servable = servable_output_names(requirement.capability_options[0])
+        for name in requirement.capability_options[1:]:
+            allowed = set(servable_output_names(name))
+            servable = [item for item in servable if item in allowed]
+        servable = servable[:16]
+        if not servable:
+            filled.append(requirement)
+            continue
+        filled.append(requirement.model_copy(
+            update={"requested_outputs": servable}))
+        union.extend(item for item in servable if item not in union)
+    if not union:
+        return task
+    return task.model_copy(update={
+        "requirements": filled,
+        "requested_outputs": union[:32],
+    })
+
 def _canonicalize_calculation_requirements(task: TaskSpec) -> TaskSpec:
     from v2.contracts import CalculationRequirement
     scope = " ".join([task.goal, task.deliverable, *task.subquestions,
@@ -2428,6 +2501,29 @@ def _validate_draft(
                       if evidence_id not in known})
     if unknown:
         raise ValueError(f"draft cites unknown evidence ids: {unknown}")
+    from v2.adapters.capabilities import CAPABILITIES
+    envelope_capabilities = {
+        item.evidence_id: item.capability for item in evidence}
+    def _normalized(binding):
+        declared = getattr(binding, "domain", None)
+        capability = envelope_capabilities.get(
+            getattr(binding, "evidence_id", None))
+        if declared is None or capability is None:
+            return binding
+        spec = CAPABILITIES.get(capability)
+        allowed = {capability}
+        if spec is not None:
+            allowed.update({spec.domain, spec.tool_name})
+        if declared in allowed:
+            return binding
+        return binding.model_copy(update={"domain": capability})
+    normalized_claims = [
+        claim.model_copy(update={
+            "output_bindings": [_normalized(binding)
+                                 for binding in claim.output_bindings]})
+        for claim in draft.claims]
+    if normalized_claims != draft.claims:
+        draft = draft.model_copy(update={"claims": normalized_claims})
     from v2.domain.evidence import EvidenceIndex
     from v2.domain.calculations import Calculation
     index = EvidenceIndex(evidence)
@@ -2726,12 +2822,14 @@ def _deterministic_rank_draft(
                 "subject_entity_type": "team",
                 "subject_entity_id": str(subject_id),
                 "subject_selector": f"{row_selector}.TEAM_ID",
+                "row_selector": row_selector,
             }
         else:
             subject_fields = {
                 "subject_entity_type": None,
                 "subject_entity_id": None,
                 "subject_selector": None,
+                "row_selector": None,
             }
 
         def _binding_value(raw):
@@ -2763,7 +2861,6 @@ def _deterministic_rank_draft(
                 node_id=owner.id,
                 evidence_id=item.evidence_id,
                 selector=f"{row_selector}.{output_id}",
-                row_selector=row_selector,
                 value=_binding_value(winner_row[output_id]),
                 unit=unit,
                 domain=item.capability,

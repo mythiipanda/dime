@@ -60,6 +60,9 @@ yarn-error.log*
 
 # local-only: agent config, plans, working docs (never on remote)
 .opencode/
+opencode.json
+backend/manifest/
+progress.md
 .taskmaster/
 DESIGN.MD
 ROADMAP.md

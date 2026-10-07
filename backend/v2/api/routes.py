@@ -1012,10 +1012,11 @@ _PROSE_SCRUB_RULES: tuple[
         r"\b(?:rows?|lines?|columns?|cells?|season_line|matches|meta|values)\b"
         r"(?:\s*\[\s*\d*\s*\]|\s*\[\s*\]|\.[A-Za-z_][A-Za-z0-9_]*)+",
         re.IGNORECASE), _SCRUB_REFERRAL),
-    (re.compile(r"\d{4,}"), _scrub_digits),
+    (re.compile(r"(?<!\.)\d{4,}"), _scrub_digits),
 )
 
 _PROSE_TIDY_RULES: tuple[tuple["re.Pattern[str]", str], ...] = (
+    (re.compile(r"[(\[{]\s*the data\s*[)\]}]", re.IGNORECASE), ""),
     (re.compile(r"[(\[{]\s*[)\]}]"), ""),
     (re.compile(r"\bthe the\b", re.IGNORECASE), "the"),
     (re.compile(r" +([.,;:!?])"), r"\1"),

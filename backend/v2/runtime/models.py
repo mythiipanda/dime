@@ -715,27 +715,29 @@ def admit_verified_claim_bindings(
             capability = CAPABILITIES.get(evidence.capability)
             if capability is None:
                 raise ValueError("binding capability lacks catalog authority")
-            leaf = binding.selector.rsplit(".", 1)[-1]
-            leaf = leaf.split("[", 1)[0]
-            if leaf == binding.output_id:
-                metric_column = leaf
-            else:
-                resolved = resolve_metric_column(capability, binding.output_id)
-                if resolved is None or resolved != leaf:
-                    raise BindingFormMismatch("binding selector metric does not match output")
-                metric_column = resolved
-            catalog_unit = capability.units.get(metric_column)
-            evidence_unit = evidence.units.get(metric_column)
-            if catalog_unit is not None and evidence_unit is not None \
-                    and catalog_unit != evidence_unit:
-                raise ValueError("catalog and evidence units disagree")
-            authoritative_unit = evidence_unit or catalog_unit
-            if authoritative_unit is None:
-                if binding.unit.kind != "unitless":
-                    raise ValueError("unitless output must be explicit")
-            elif binding.unit.kind != "declared" \
-                    or _canonical_unit(binding.unit.value) != _canonical_unit(authoritative_unit):
-                raise ValueError("binding unit does not match output authority")
+            if capability.units or capability.metric_definitions \
+                    or capability.output_aliases:
+                leaf = binding.selector.rsplit(".", 1)[-1]
+                leaf = leaf.split("[", 1)[0]
+                if leaf == binding.output_id:
+                    metric_column = leaf
+                else:
+                    resolved = resolve_metric_column(capability, binding.output_id)
+                    if resolved is None or resolved != leaf:
+                        raise BindingFormMismatch("binding selector metric does not match output")
+                    metric_column = resolved
+                catalog_unit = capability.units.get(metric_column)
+                evidence_unit = evidence.units.get(metric_column)
+                if catalog_unit is not None and evidence_unit is not None \
+                        and catalog_unit != evidence_unit:
+                    raise ValueError("catalog and evidence units disagree")
+                authoritative_unit = evidence_unit or catalog_unit
+                if authoritative_unit is None:
+                    if binding.unit.kind != "unitless":
+                        raise ValueError("unitless output must be explicit")
+                elif binding.unit.kind != "declared" \
+                        or _canonical_unit(binding.unit.value) != _canonical_unit(authoritative_unit):
+                    raise ValueError("binding unit does not match output authority")
             if _canonical_domain(binding.domain) not in {
                     _canonical_domain(capability.domain),
                     _canonical_domain(capability.name),

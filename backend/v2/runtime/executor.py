@@ -34,6 +34,9 @@ class NodeTimeoutError(TimeoutError):
         super().__init__(
             f"node {self.node_id} timed out after {self.budget_s:g}s")
 
+class PlanValidationError(ValueError):
+    pass
+
 async def _join_node(node: PlanNode, coro) -> tuple[PlanNode, Any]:
     _, envelope = await coro
     return node, envelope
@@ -70,6 +73,12 @@ class PlanExecutor:
         self._checkpoint_store = checkpoint_store
         self._evidence_activity = evidence_activity
         self._node_timeout_s = node_timeout_s
+
+    def validate_plan(self, task: TaskSpec, plan: Plan) -> None:
+        try:
+            self._preflight(task, plan)
+        except ValueError as exc:
+            raise PlanValidationError(str(exc)) from exc
 
     async def execute(
         self, task: TaskSpec, plan: Plan, *, run_id: str | None = None,
