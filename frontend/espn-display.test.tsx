@@ -77,6 +77,21 @@ test("ineligible evidence carries a plain-words note", () => {
   assert.equal(evidenceNote(null), null);
 });
 
+test("other ineligible reasons render a neutral note, never the live label", () => {
+  assert.equal(
+    evidenceNote({ evidence_status: "ineligible", evidence_reason: "unlisted_kind" }),
+    "Couldn't be traced to source data.",
+  );
+  assert.equal(
+    evidenceNote({ evidence_status: "ineligible" }),
+    "Couldn't be traced to source data.",
+  );
+  assert.equal(
+    evidenceNote({ evidence_status: "ineligible", evidence_reason: "live_external_no_warehouse_provenance", source: "espn" }),
+    "ESPN live data — couldn't be traced to source data.",
+  );
+});
+
 test("espn evidence row renders display name plus note, zero infra tokens", async () => {
   const sources = evidenceSources(espnAi());
   assert.equal(sources.length, 1);

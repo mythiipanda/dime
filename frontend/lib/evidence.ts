@@ -51,16 +51,19 @@ export interface EvidenceSource {
 
 export function evidenceNote(meta: unknown): string | null {
   if (!isRecord(meta)) return null;
-  const status = (meta as Record<string, unknown>).evidence_status;
-  if (status !== "ineligible") return null;
-  const source = (meta as Record<string, unknown>).source;
-  const raw = typeof source === "string" ? source : "";
-  const name = !raw
-    ? "Outside"
-    : raw.length <= 4
-      ? raw.toUpperCase()
-      : raw.charAt(0).toUpperCase() + raw.slice(1);
-  return `${name} live data — couldn't be traced to source data.`;
+  const record = meta as Record<string, unknown>;
+  if (record.evidence_status !== "ineligible") return null;
+  if (record.evidence_reason === "live_external_no_warehouse_provenance") {
+    const source = record.source;
+    const raw = typeof source === "string" ? source : "";
+    const name = !raw
+      ? "Outside"
+      : raw.length <= 4
+        ? raw.toUpperCase()
+        : raw.charAt(0).toUpperCase() + raw.slice(1);
+    return `${name} live data — couldn't be traced to source data.`;
+  }
+  return "Couldn't be traced to source data.";
 }
 
 function strField(table: Record<string, unknown>, field: string): string {
