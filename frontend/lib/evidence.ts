@@ -42,10 +42,25 @@ export interface EvidenceSource {
   value: string;
   origin: string;
   grade?: GradedClaim;
+  note?: string;
   asOf?: string;
   outputId: string;
   subjectType: string;
   subjectId: string;
+}
+
+export function evidenceNote(meta: unknown): string | null {
+  if (!isRecord(meta)) return null;
+  const status = (meta as Record<string, unknown>).evidence_status;
+  if (status !== "ineligible") return null;
+  const source = (meta as Record<string, unknown>).source;
+  const raw = typeof source === "string" ? source : "";
+  const name = !raw
+    ? "Outside"
+    : raw.length <= 4
+      ? raw.toUpperCase()
+      : raw.charAt(0).toUpperCase() + raw.slice(1);
+  return `${name} live data — couldn't be traced to source data.`;
 }
 
 function strField(table: Record<string, unknown>, field: string): string {
@@ -111,6 +126,9 @@ const CAPABILITY_LABELS: Record<string, string> = {
   get_draft_model: "Draft model",
   get_elo: "Elo",
   get_elo_standings: "Elo standings",
+  get_espn_event_summary: "Game recap",
+  get_espn_odds: "Odds",
+  get_espn_scores: "Live scores",
   get_finder: "Finder",
   get_four_factors: "Four factors",
   get_game_prediction: "Game predictions",
@@ -394,6 +412,7 @@ function tableSource(table: unknown, index: number): EvidenceSource | null {
     };
   }
   if (typeof t.tool === "string") {
+    const note = evidenceNote(t.meta);
     return {
       key: "tool-" + index,
       index,
@@ -401,6 +420,7 @@ function tableSource(table: unknown, index: number): EvidenceSource | null {
       stat: capabilityLabel(t.tool),
       value: "",
       origin: originText(t.meta),
+      ...(note ? { note } : null),
       outputId: "",
       subjectType: "",
       subjectId: "",
