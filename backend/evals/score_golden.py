@@ -23,25 +23,45 @@ def load(split: str) -> list[dict]:
             if line.strip()]
 
 
-def contains_bounded(text: str, expected: str) -> bool:
+_DENIALS = (
+    "incorrect", "wrong", "is not", "isn't", "isnt", "was not", "wasn't",
+    "wasnt", "not correct", "false", "mistake", "correction", "retract",
+)
+_DENIAL_WINDOW = 24
+
+
+def contradicted(text: str, start: int, end: int) -> bool:
+    before = text[max(0, start - _DENIAL_WINDOW):start]
+    after = text[end:end + _DENIAL_WINDOW]
+    return any(denial in before or denial in after
+               for denial in _DENIALS)
+
+
+def _match_spans(text: str, expected: str) -> list[tuple[int, int]]:
     if not any(char.isdigit() for char in expected):
-        return expected in text
-    return re.search(
-        r"(?<![\d.])" + re.escape(expected) + r"(?![\d.])", text) is not None
+        return [(match.start(), match.end()) for match in
+                re.finditer(re.escape(expected), text)]
+    return [(match.start(), match.end()) for match in re.finditer(
+        r"(?<![\d.])" + re.escape(expected) + r"(?![\d.])", text)]
+
+
+def matched(text: str, expected: str) -> bool:
+    return any(not contradicted(text, start, end)
+               for start, end in _match_spans(text, expected))
 
 
 def score_item(item: dict, answer: str) -> dict:
     text = fold(answer)
     alts = item.get("exact", [])
     missing_alt = [] if not alts else (
-        [] if any(contains_bounded(text, fold(e)) for e in alts)
+        [] if any(matched(text, fold(e)) for e in alts)
         else list(alts))
     missing_all = [e for e in item.get("exact_all", [])
-                   if not contains_bounded(text, fold(e))]
+                   if not matched(text, fold(e))]
     missing_names = [n for n in item.get("must_contain", [])
-                     if fold(n) not in text]
+                     if not matched(text, fold(n))]
     any_of = item.get("any_of", [])
-    if any_of and not any(fold(n) in text for n in any_of):
+    if any_of and not any(matched(text, fold(n)) for n in any_of):
         missing_names = [*missing_names, f"any_of:{'/'.join(any_of)}"]
     missing_exact = missing_alt + missing_all
     return {"id": item["id"], "pass": not (missing_exact or missing_names),
