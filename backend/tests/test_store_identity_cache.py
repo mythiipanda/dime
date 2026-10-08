@@ -64,12 +64,10 @@ def test_byte_swap_same_size_restored_mtime_yields_new_sha256(monkeypatch, tmp_p
     payload = bytes(range(256)) * 128
     db.write_bytes(payload)
     store.warehouse_identity_cache_clear()
-    real_sha256 = hashlib.sha256
     first = store.warehouse_identity()
-    assert first["warehouse_sha256"] == real_sha256(
-        len(payload).to_bytes(8, "little") + payload[:8192]
-        + payload[16384:24576] + payload[24576:32768]).hexdigest()
-    assert first["warehouse_sha256"] != real_sha256(payload).hexdigest()
+    assert first["warehouse_sha256"] == hashlib.sha256(payload).hexdigest()
+    probe = store._warehouse_probe_hexdigest(db, len(payload))
+    assert probe is not None and first["warehouse_sha256"] != probe
     st = db.stat()
     swapped = payload[::-1]
     assert len(swapped) == len(payload)
@@ -79,10 +77,7 @@ def test_byte_swap_same_size_restored_mtime_yields_new_sha256(monkeypatch, tmp_p
     assert db.stat().st_mtime_ns == st.st_mtime_ns
     assert db.stat().st_size == st.st_size
     second = store.warehouse_identity()
-    assert second["warehouse_sha256"] == real_sha256(
-        len(swapped).to_bytes(8, "little") + swapped[:8192]
-        + swapped[16384:24576] + swapped[24576:32768]).hexdigest()
-    assert second["warehouse_sha256"] != real_sha256(swapped).hexdigest()
+    assert second["warehouse_sha256"] == hashlib.sha256(swapped).hexdigest()
     assert second["warehouse_sha256"] != first["warehouse_sha256"]
     third = store.warehouse_identity()
     assert third == second
@@ -164,14 +159,15 @@ def test_warehouse_vanishing_between_stat_and_hash_raises_the_absent_error(
     assert str(caught.value) == f"warehouse absent: {db}"
 
 
-def test_sampled_identity_differs_from_full_file_fallback_for_identical_bytes(
+def test_identical_bytes_report_one_identity_whether_or_not_the_probe_works(
         monkeypatch, tmp_path):
     db = tmp_path / "deriv.duckdb"
     payload = bytes(range(256)) * 128
     db.write_bytes(payload)
     monkeypatch.setattr(store, "DB_PATH", db)
     store.warehouse_identity_cache_clear()
-    sampled = store.warehouse_identity()
+    with_probe = store.warehouse_identity()
+    probe = store._warehouse_probe_hexdigest(db, len(payload))
     real_new = store.hashlib.new
 
     def failing_new(*args, **kwargs):
@@ -179,17 +175,125 @@ def test_sampled_identity_differs_from_full_file_fallback_for_identical_bytes(
 
     store.warehouse_identity_cache_clear()
     monkeypatch.setattr(store.hashlib, "new", failing_new)
-    fallback = store.warehouse_identity()
+    without_probe = store.warehouse_identity()
     monkeypatch.setattr(store.hashlib, "new", real_new)
 
-    assert fallback["warehouse_id"] == sampled["warehouse_id"]
-    assert fallback["warehouse_sha256"] != sampled["warehouse_sha256"]
-    assert sampled["warehouse_sha256"] != hashlib.sha256(payload).hexdigest()
-    assert fallback["warehouse_sha256"] == hashlib.sha256(payload).hexdigest()
+    assert probe is not None
+    assert with_probe["warehouse_id"] == without_probe["warehouse_id"]
+    assert with_probe["warehouse_sha256"] == without_probe["warehouse_sha256"]
+    assert with_probe["warehouse_sha256"] == hashlib.sha256(payload).hexdigest()
+    assert with_probe["warehouse_sha256"] != probe
+
+
+def test_probe_failure_degrades_caching_only_and_never_substitutes_a_second_derivation(
+        monkeypatch, tmp_path):
+    db = _point_db_at(monkeypatch, tmp_path)
+    payload = bytes(range(256)) * 128
+    db.write_bytes(payload)
+    real_new = store.hashlib.new
+
+    def failing_new(*args, **kwargs):
+        raise PermissionError(13, "Permission denied")
+
+    monkeypatch.setattr(store.hashlib, "new", failing_new)
+    identity = store.warehouse_identity()
+    monkeypatch.setattr(store.hashlib, "new", real_new)
+    assert identity["warehouse_sha256"] == hashlib.sha256(payload).hexdigest()
+    assert db not in store._warehouse_identity_cache
+    assert store.warehouse_identity() == identity
+
+
+def test_reported_sha_is_never_the_probe_digest_for_any_payload(tmp_path):
+    for size in (0, 1, 8191, 8192, 8193, 24576, 32768):
+        payload = bytes((index * 7 + 3) % 256 for index in range(size))
+        db = tmp_path / f"probe-never-{size}.bin"
+        db.write_bytes(payload)
+        probe = store._warehouse_probe_hexdigest(db, size)
+        assert probe is not None
+        assert store._warehouse_full_file_hexdigest(db) == hashlib.sha256(payload).hexdigest()
+        assert probe != hashlib.sha256(payload).hexdigest() or size == 0
+
+
+def test_whole_file_read_happens_once_per_warehouse_state_not_per_call(
+        monkeypatch, tmp_path):
+    db = _point_db_at(monkeypatch, tmp_path)
+    payload = bytes(range(256)) * 512
+    db.write_bytes(payload)
+    real_sha256 = store.hashlib.sha256
+    reads = []
+
+    def counting_sha256(data=b"", *args, **kwargs):
+        reads.append(len(data) if data else 0)
+        return real_sha256(data, *args, **kwargs)
+
+    monkeypatch.setattr(store.hashlib, "sha256", counting_sha256)
+    first = store.warehouse_identity()
+    reads_after_first = list(reads)
+    second = store.warehouse_identity()
+    third = store.warehouse_identity()
+    assert first == second == third
+    assert first["warehouse_sha256"] == real_sha256(payload).hexdigest()
+    assert reads == reads_after_first
+    assert reads_after_first == [0]
+    assert db in store._warehouse_identity_cache
+
+
+def test_derivation_contract_is_a_named_version():
+    assert store.WAREHOUSE_SHA256_DERIVATION == "sha256-full-file"
+    import inspect
+    signature = inspect.signature(store._warehouse_identity_uncached)
+    assert list(signature.parameters) == ["path"]
+    assert "probe" not in inspect.getsource(store._warehouse_identity_uncached)
+    assert "sample" not in inspect.getsource(store._warehouse_identity_uncached)
+
+
+def test_manifest_records_the_derivation_version(monkeypatch, tmp_path):
+    db = _point_db_at(monkeypatch, tmp_path)
+    from v2.api import routes
+    routes.runtime_warehouse_identity.cache_clear()
+    try:
+        recorded = routes.runtime_warehouse_identity()
+        assert recorded["sha256_derivation"] == store.WAREHOUSE_SHA256_DERIVATION
+        assert recorded["sha256"] == hashlib.sha256(b"warehouse-bytes-v1").hexdigest()
+        routes.runtime_asset_manifest.cache_clear()
+        manifest = routes.runtime_asset_manifest()
+        assert dict(manifest.warehouse) == recorded
+    finally:
+        routes.runtime_warehouse_identity.cache_clear()
+        routes.runtime_asset_manifest.cache_clear()
+
+
+def test_manifest_recorded_under_another_derivation_is_rejected_as_incompatible(
+        monkeypatch, tmp_path):
+    import json
+    from v2.api import routes
+    db = _point_db_at(monkeypatch, tmp_path)
+    routes.runtime_warehouse_identity.cache_clear()
+    routes.runtime_asset_manifest.cache_clear()
+    try:
+        observed = routes.runtime_asset_manifest().as_dict()
+    finally:
+        routes.runtime_warehouse_identity.cache_clear()
+        routes.runtime_asset_manifest.cache_clear()
+    for recorded_derivation in (None, "sha256-sampled"):
+        candidate = json.loads(json.dumps(observed))
+        if recorded_derivation is None:
+            del candidate["warehouse"]["sha256_derivation"]
+        else:
+            candidate["warehouse"]["sha256_derivation"] = recorded_derivation
+        path = tmp_path / f"stale-derivation-{recorded_derivation}.json"
+        path.write_text(json.dumps(candidate))
+        with pytest.raises(RuntimeError, match="derivation"):
+            routes.preflight_runtime_assets(path)
 
 
 def test_absent_error_factory_is_single_sourced():
     source = Path(store.__file__).read_text(encoding="utf-8")
     assert source.count("f\"warehouse absent: {path}\"") == 1
     assert "f\"warehouse absent: {DB_PATH}\"" not in source
-    assert source.count("raise _warehouse_absent_error(") == 3
+    factory_definition = "def _warehouse_absent_error(path: Path | str) -> FileNotFoundError:"
+    assert factory_definition in source
+    constructions = [line.strip() for line in source.splitlines()
+                     if "FileNotFoundError(" in line]
+    assert constructions == ["return FileNotFoundError(f\"warehouse absent: {path}\")"]
+    assert source.count("raise _warehouse_absent_error(") == 2

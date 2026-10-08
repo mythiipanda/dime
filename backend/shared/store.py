@@ -23,46 +23,45 @@ STATE_LOCK_PATH = STATE_PATH.parent / ".state-write.lock"
 
 PROVENANCE_COLS = ["_source", "_season", "_fetched_at"]
 
+WAREHOUSE_SHA256_DERIVATION = "sha256-full-file"
+
 def _warehouse_absent_error(path: Path | str) -> FileNotFoundError:
     return FileNotFoundError(f"warehouse absent: {path}")
 
-def _warehouse_identity_uncached(path: Path, sample: str | None = None) -> dict[str, str]:
-    if sample is None:
-        try:
-            size: int | None = path.stat().st_size
-        except FileNotFoundError:
-            raise _warehouse_absent_error(path) from None
-        except OSError:
-            size = None
-        sample = (_warehouse_sample_hexdigest(path, size)
-                  if size is not None else None)
-        if sample is None:
-            try:
-                payload = path.read_bytes()
-            except FileNotFoundError:
-                raise _warehouse_absent_error(path) from None
-            sample = hashlib.sha256(payload).hexdigest()
+def _warehouse_identity_uncached(path: Path) -> dict[str, str]:
     return {"warehouse_id": "frozen-eval" if path == CANONICAL_DB_PATH else "configured-runtime",
-            "warehouse_sha256": sample}
+            "warehouse_sha256": _warehouse_full_file_hexdigest(path)}
 
 _warehouse_identity_cache: dict[Path, tuple[tuple[int, int, str], dict[str, str]]] = {}
 
 def warehouse_identity_cache_clear() -> None:
     _warehouse_identity_cache.clear()
 
-_SAMPLE_READ_BYTES = 8192
+_PROBE_READ_BYTES = 8192
 
-def _warehouse_sample_hexdigest(path: Path, size: int) -> str | None:
+_FULL_FILE_READ_BYTES = 1 << 20
+
+def _warehouse_probe_hexdigest(path: Path, size: int) -> str | None:
     try:
         h = hashlib.new("sha256")
         h.update(size.to_bytes(8, "little", signed=False))
         with open(path, "rb") as fh:
-            for off in (0, size // 2, size - _SAMPLE_READ_BYTES):
+            for off in (0, size // 2, size - _PROBE_READ_BYTES):
                 fh.seek(max(off, 0))
-                h.update(fh.read(_SAMPLE_READ_BYTES))
+                h.update(fh.read(_PROBE_READ_BYTES))
         return h.hexdigest()
     except OSError:
         return None
+
+def _warehouse_full_file_hexdigest(path: Path) -> str:
+    digest = hashlib.sha256()
+    try:
+        with open(path, "rb") as fh:
+            for block in iter(lambda: fh.read(_FULL_FILE_READ_BYTES), b""):
+                digest.update(block)
+    except FileNotFoundError:
+        raise _warehouse_absent_error(path) from None
+    return digest.hexdigest()
 
 def warehouse_identity() -> dict[str, str]:
     path = DB_PATH.resolve()
@@ -70,14 +69,14 @@ def warehouse_identity() -> dict[str, str]:
         st = path.stat()
     except OSError:
         return _warehouse_identity_uncached(path)
-    sample = _warehouse_sample_hexdigest(path, st.st_size)
-    if sample is None:
+    probe = _warehouse_probe_hexdigest(path, st.st_size)
+    if probe is None:
         return _warehouse_identity_uncached(path)
-    key = (st.st_mtime_ns, st.st_size, sample)
+    key = (st.st_mtime_ns, st.st_size, probe)
     entry = _warehouse_identity_cache.get(path)
     if entry is not None and entry[0] == key:
         return entry[1]
-    identity = _warehouse_identity_uncached(path, sample)
+    identity = _warehouse_identity_uncached(path)
     _warehouse_identity_cache[path] = (key, identity)
     return identity
 
@@ -89,7 +88,7 @@ def _tables_freshness_key(path: Path) -> tuple[int, int, str] | None:
         st = path.stat()
     except OSError:
         return None
-    sample = _warehouse_sample_hexdigest(path, st.st_size)
+    sample = _warehouse_probe_hexdigest(path, st.st_size)
     if sample is None:
         return None
     return (st.st_mtime_ns, st.st_size, sample)
@@ -290,7 +289,7 @@ def _pool_acquire():
     except OSError:
         _pool_drop()
         return None
-    sample = _warehouse_sample_hexdigest(DB_PATH, st.st_size)
+    sample = _warehouse_probe_hexdigest(DB_PATH, st.st_size)
     if sample is None or (st.st_mtime_ns, st.st_size, sample) != (
             entry[2], entry[3], entry[4]):
         _pool_drop()
@@ -311,7 +310,7 @@ def _pool_store(con):
         st = os.stat(DB_PATH)
     except OSError:
         return con
-    sample = _warehouse_sample_hexdigest(DB_PATH, st.st_size)
+    sample = _warehouse_probe_hexdigest(DB_PATH, st.st_size)
     if sample is None:
         return con
     _pool_state.entry = ((str(DB_PATH.resolve()), True), con,

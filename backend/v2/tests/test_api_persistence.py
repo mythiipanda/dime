@@ -158,7 +158,7 @@ def test_revision_and_project_endpoints(
     revision = client.get("/api/revision")
     assert revision.status_code == 200
     assert set(revision.json()) == {"revision", "executable_sha256", "module_sha256", "prompt_sha256", "warehouse", "semantic_baseline", "typed_argument_assets"}
-    assert set(revision.json()["warehouse"]) == {"warehouse_id", "sha256"}
+    assert set(revision.json()["warehouse"]) == {"warehouse_id", "sha256", "sha256_derivation"}
     assert revision.json()["warehouse"]["warehouse_id"] in {"frozen-eval", "configured-runtime"}
     assert re.fullmatch(r"[0-9a-f]{64}", revision.json()["warehouse"]["sha256"])
     assert len(revision.json()["executable_sha256"]) == hashlib.sha256().digest_size * 2
@@ -1289,8 +1289,9 @@ def test_revision_warehouse_identity_is_safe_and_startup_bound(monkeypatch, tmp_
     try:
         first = routes.runtime_warehouse_identity()
         assert first == {"warehouse_id": "configured-runtime",
-                         "sha256": store._warehouse_sample_hexdigest(warehouse, len(b"startup bytes"))}
-        assert set(first) == {"warehouse_id", "sha256"}
+                         "sha256": hashlib.sha256(b"startup bytes").hexdigest(),
+                         "sha256_derivation": store.WAREHOUSE_SHA256_DERIVATION}
+        assert set(first) == {"warehouse_id", "sha256", "sha256_derivation"}
         assert str(warehouse) not in repr(first)
         warehouse.write_bytes(b"mutated later")
         assert routes.runtime_warehouse_identity() == first
@@ -1314,7 +1315,8 @@ def test_real_lifespan_freezes_revision_warehouse_endpoint(monkeypatch, tmp_path
     try:
         with TestClient(v2_app) as client:
             expected = {"warehouse_id": "configured-runtime",
-                        "sha256": store._warehouse_sample_hexdigest(warehouse, len(startup))}
+                        "sha256": hashlib.sha256(startup).hexdigest(),
+                        "sha256_derivation": store.WAREHOUSE_SHA256_DERIVATION}
             first = client.get("/api/revision").json()["warehouse"]
             assert first == expected
             assert re.fullmatch(r"[0-9a-f]{64}", first["sha256"])

@@ -85,7 +85,8 @@ def runtime_warehouse_identity() -> dict[str, str]:
     from shared import store
     identity = store.warehouse_identity()
     return {"warehouse_id": identity["warehouse_id"],
-            "sha256": identity["warehouse_sha256"]}
+            "sha256": identity["warehouse_sha256"],
+            "sha256_derivation": store.WAREHOUSE_SHA256_DERIVATION}
 
 @dataclass(frozen=True)
 class RuntimeAssetManifest:
@@ -160,6 +161,25 @@ def runtime_asset_manifest() -> RuntimeAssetManifest:
         typed_argument_assets=MappingProxyType(_typed_argument_asset_hashes()),
     )
 
+def _require_matching_warehouse_derivation(
+        expected: Mapping[str, object], observed_dict: Mapping[str, object]) -> None:
+    from shared import store
+    recorded = expected.get("warehouse")
+    if not isinstance(recorded, Mapping):
+        raise RuntimeError("expected asset manifest has no warehouse identity")
+    observed_warehouse = observed_dict["warehouse"]
+    if not isinstance(observed_warehouse, Mapping):
+        raise RuntimeError("observed asset manifest has no warehouse identity")
+    observed_derivation = observed_warehouse["sha256_derivation"]
+    if recorded.get("sha256_derivation") == observed_derivation:
+        return
+    raise RuntimeError(
+        "expected asset manifest records warehouse sha256 derivation "
+        f"{recorded.get('sha256_derivation')!r}; this build derives "
+        f"{observed_derivation!r}; re-record the manifest, a manifest "
+        "written under another derivation is incompatible and its sha256 "
+        f"cannot be compared against {store.WAREHOUSE_SHA256_DERIVATION}")
+
 def preflight_runtime_assets(expected_path: str | Path | None = None) -> RuntimeAssetManifest:
     configured = expected_path or os.environ.get("DIME_EXPECTED_ASSET_MANIFEST")
     if not configured:
@@ -176,6 +196,7 @@ def preflight_runtime_assets(expected_path: str | Path | None = None) -> Runtime
         raise RuntimeError("expected asset manifest has wrong fields")
     observed = runtime_asset_manifest()
     observed_dict = observed.as_dict()
+    _require_matching_warehouse_derivation(expected, observed_dict)
     if expected != observed_dict:
         import logging
         _log = logging.getLogger(__name__)

@@ -357,10 +357,10 @@ def _freshness(path: Path) -> tuple[int, int, int, int, str] | None:
     except OSError:
         return None
     try:
-        from shared.store import _warehouse_sample_hexdigest
+        from shared.store import _warehouse_probe_hexdigest
     except Exception:
         return None
-    sample = _warehouse_sample_hexdigest(path, stat.st_size)
+    sample = _warehouse_probe_hexdigest(path, stat.st_size)
     if sample is None:
         return None
     return (stat.st_mtime_ns, stat.st_size, stat.st_ctime_ns,

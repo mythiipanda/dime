@@ -195,8 +195,8 @@ def test_sample_hexdigest_discriminates_same_size_same_mtime(tmp_path):
     assert s1.st_size == s2.st_size == size
     assert s1.st_mtime_ns == s2.st_mtime_ns == same_ns
     assert f1.read_bytes() != f2.read_bytes()
-    d1 = store._warehouse_sample_hexdigest(f1, s1.st_size)
-    d2 = store._warehouse_sample_hexdigest(f2, s2.st_size)
+    d1 = store._warehouse_probe_hexdigest(f1, s1.st_size)
+    d2 = store._warehouse_probe_hexdigest(f2, s2.st_size)
     assert d1 is not None and d2 is not None
     assert d1 != d2
 
