@@ -310,6 +310,9 @@ _build_player_index()
 _ID_NAME: dict[int, str] = {int(r["id"]): r.get("full_name", "")
                             for r in _PLAYER_ROWS if r.get("id")}
 
+_EXACT_NAME_INDEX: dict[str, list[dict]] = {}
+for _r, _n in zip(_PLAYER_ROWS, _PLAYER_NORMS):
+    _EXACT_NAME_INDEX.setdefault(_n, []).append(_r)
 
 class _CandidateScores:
 
@@ -422,10 +425,13 @@ def _score_close_matches(scores: _CandidateScores, nq: str, all_p: list[dict],
             scores.add(x["id"], round(min(ratio, 0.89), 2), x)
             break
 
-def score_player_candidates(raw: str) -> list[tuple[float, dict]]:
+def _score_player_candidates_uncached(raw: str) -> list[tuple[float, dict]]:
+    nq = _norm_name(raw)
+    exact = _EXACT_NAME_INDEX.get(nq) if nq else None
+    if exact is not None and len(exact) == 1:
+        return [(1.0, exact[0])]
     from nba_api.stats.static import players
 
-    nq = _norm_name(raw)
     scores = _CandidateScores()
     _score_nickname_matches(scores, players, nq)
     _score_full_name_matches(scores, players, raw, nq)
@@ -435,6 +441,8 @@ def score_player_candidates(raw: str) -> list[tuple[float, dict]]:
     _score_roster_matches(scores, nq, nq.split(), all_p, use_cache)
     _score_close_matches(scores, nq, all_p, use_cache)
     return sorted(scores.by_id.values(), key=lambda t: -t[0])
+
+score_player_candidates = lru_cache(maxsize=2048)(_score_player_candidates_uncached)
 
 def _resolve_player_id_uncached(key: str) -> int:
     ranked = score_player_candidates(key)

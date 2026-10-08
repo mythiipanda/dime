@@ -170,13 +170,25 @@ def _read_df(sql: str, params: list, tries: int = 5) -> list[dict[str, Any]]:
             _time.sleep(0.3)
     raise last or RuntimeError("warehouse read failed")
 
+_ID_TO_NAME: dict | None = None
+
+def _id_to_name() -> dict:
+    global _ID_TO_NAME
+    if _ID_TO_NAME is None:
+        try:
+            from nba_api.stats.static import players
+
+            _ID_TO_NAME = {p.get("id"): p.get("full_name")
+                           for p in players.get_players()}
+        except Exception:
+            _ID_TO_NAME = {}
+    return _ID_TO_NAME
+
 def _resolve_name(pid: int, fallback: str) -> str:
     try:
-        from nba_api.stats.static import players
-
-        for p in players.get_players():
-            if p.get("id") == pid:
-                return p.get("full_name") or fallback
+        name = _id_to_name().get(pid)
+        if name:
+            return name
     except Exception:
         pass
     return fallback

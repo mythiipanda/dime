@@ -138,7 +138,7 @@ def _load_player_games(season: str) -> tuple[list[dict], dict]:
     from .. import store as _store
     from .splits import _resolve_name
 
-    con = _store.connect()
+    con = _store.connect(read_only=True)
     try:
         tables = {r[0] for r in con.execute("SHOW TABLES").fetchall()}
         if "silver_player_gamelogs" not in tables:
@@ -170,7 +170,7 @@ def _load_team_games(season: str) -> tuple[list[dict], dict]:
     season = resolve_season(season)
     from .. import store as _store
 
-    con = _store.connect()
+    con = _store.connect(read_only=True)
     try:
         tables = {r[0] for r in con.execute("SHOW TABLES").fetchall()}
         if "silver_hist_gamelogs" not in tables:

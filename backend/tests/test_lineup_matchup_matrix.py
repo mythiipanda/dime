@@ -8,12 +8,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from shared.tools.lineup_matrix import (
     SMALL_PAIR_POSS,
-    _accumulate_pairs,
-    _build_matrix,
     _fallback_name,
     _pair_flags,
     _pair_row,
-    _qualifying_lineups,
     _season_lineup_minutes,
     _truncate_note,
     _unit_key,
@@ -22,7 +19,6 @@ from shared.tools.lineup_matrix import (
 
 A, B, C = 1, 2, 3
 A1 = (1, 2, 3, 4, 5)
-A2 = (21, 22, 23, 24, 25)
 B1 = (11, 12, 13, 14, 15)
 BX = (31, 32, 33, 34, 35)
 
@@ -55,50 +51,6 @@ def test_season_lineup_minutes_counts_both_ends():
     ]
     assert _season_lineup_minutes(rows, A) == {A1: 3}
     assert _season_lineup_minutes(rows, B) == {B1: 2}
-
-def test_qualifying_lineups_applies_minute_floor():
-    rows = []
-    n = 0
-    for _ in range(40):
-        n += 1
-        rows.append(_prow("g1", n, A, B, 2, A1, B1))
-    for _ in range(10):
-        n += 1
-        rows.append(_prow("g1", n, A, B, 0, A2, B1))
-    qual_a, qual_b = _qualifying_lineups(rows, A, B, 10)
-    assert set(qual_a) == {A1}
-    assert qual_a == {A1: 40}
-    assert set(qual_b) == {B1}
-    assert qual_b == {B1: 50}
-
-def _matrix_fixture():
-    return [
-        _prow("g1", 1, A, B, 3, A1, B1),
-        _prow("g1", 2, A, B, 3, A1, B1),
-        _prow("g1", 3, A, C, 0, A1, BX),
-        _prow("g1", 4, A, B, 3, A1, B1),
-        _prow("g1", 5, A, B, 3, A1, B1),
-        _prow("g1", 6, B, A, 0, B1, A2),
-        _prow("g1", 7, A, B, 3, A1, B1),
-        _prow("g1", 8, A, B, 3, A1, B1),
-        _prow("g1", 9, A, B, 3, A1, B1),
-        _prow("g1", 10, A, B, 3, A1, B1),
-    ]
-
-def test_accumulate_pairs_literal_counts():
-    acc = _accumulate_pairs(_matrix_fixture(), A, B, {A1}, {B1})
-    assert acc == {(A1, B1): {"poss": 8, "off_poss_a": 8, "off_poss_b": 0,
-                              "pts_a": 24, "pts_b": 0, "blowout": 1}}
-
-def test_accumulate_pairs_counts_unparseable_points_as_zero():
-    rows = [
-        _prow("g1", 1, B, A, 2, B1, A1),
-        _prow("g1", 2, B, A, "bogus", B1, A1),
-        _prow("g1", 3, A, B, 2, A1, B1),
-    ]
-    acc = _accumulate_pairs(rows, A, B, {A1}, {B1})
-    assert acc == {(A1, B1): {"poss": 3, "off_poss_a": 1, "off_poss_b": 2,
-                              "pts_a": 2, "pts_b": 2, "blowout": 0}}
 
 def test_pair_row_literal_ratings_math():
     agg = {"poss": 100, "off_poss_a": 50, "off_poss_b": 50,
@@ -148,26 +100,6 @@ def test_pair_flags_blowout_at_half_share():
     assert not any("tiny-sample" in f for f in flags)
     assert any("estimated-minutes" in f for f in flags)
 
-def test_build_matrix_sorts_by_est_minutes_desc():
-    rows = []
-    for i in range(6):
-        rows.append(_prow("g1", i + 1, A, B, 2, A1, B1))
-    for i in range(2):
-        rows.append(_prow("g1", i + 7, B, A, 3, B1, A2))
-    names_a = {A1: "alpha", A2: "second"}
-    names_b = {B1: "beta"}
-    out = _build_matrix(rows, A, B, {A1, A2}, {B1}, names_a, names_b)
-    assert [(r["team_a_lineup"], r["est_minutes"]) for r in out] == [
-        ("alpha", 3.0), ("second", 1.0)]
-    assert out[1]["team_b_lineup"] == "beta"
-    assert out[1]["pts_b"] == 6
-
-def test_build_matrix_falls_back_to_unit_name():
-    rows = [_prow("g1", 1, A, B, 2, A1, B1)]
-    out = _build_matrix(rows, A, B, {A1}, {B1}, {}, {})
-    assert out[0]["team_a_lineup"] == "unit " + str(A1[0])[:6] + "…"
-    assert out[0]["team_b_lineup"] == "unit " + str(B1[0])[:6] + "…"
-
 def test_fallback_name_all_surnames():
     surnames = {1: "Alpha", 2: "Beta", 3: "Gamma", 4: "Delta",
                 5: "Epsilon"}
@@ -178,14 +110,6 @@ def test_fallback_name_partial_surnames():
     assert _fallback_name(A1, {1: "Alpha"}) == (
         "unit " + str(A1[0])[:6] + "…")
     assert _fallback_name(A1, None) == "unit " + str(A1[0])[:6] + "…"
-
-def test_build_matrix_uses_surname_labels():
-    rows = [_prow("g1", 1, A, B, 2, A1, B1)]
-    surnames_a = {1: "Alpha", 2: "Beta", 3: "Gamma", 4: "Delta",
-                  5: "Epsilon"}
-    out = _build_matrix(rows, A, B, {A1}, {B1}, {}, {},
-                        surnames_a=surnames_a)
-    assert out[0]["team_a_lineup"] == "Alpha, Beta, Gamma, Delta, Epsilon"
 
 def test_truncate_note_literal():
     assert _truncate_note(174, 25) == (

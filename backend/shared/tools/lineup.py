@@ -87,63 +87,109 @@ def _best_net_unit(units: list[dict[str, Any]],
                key=lambda u: (u.get("NET_RATING", 0.0),
                               u.get("poss", 0)))
 
+_POSSESSION_AGGS_SQL = (
+    "SELECT p1, p2, p3, p4, p5,"
+    " COUNT(*) FILTER (offense_team_id = ?) AS off_poss,"
+    " COUNT(*) FILTER (offense_team_id <> ?) AS def_poss,"
+    " COALESCE(SUM(points) FILTER (offense_team_id = ?), 0) AS pf,"
+    " COALESCE(SUM(points) FILTER (offense_team_id <> ?), 0) AS pa,"
+    " COUNT(*) FILTER (ABS(margin) >= ?) AS blowout"
+    " FROM ("
+    " SELECT offense_team_id, COALESCE(points, 0) AS points,"
+    " CASE WHEN offense_team_id = ?"
+    " THEN off_player_1 ELSE def_player_1 END AS p1,"
+    " CASE WHEN offense_team_id = ?"
+    " THEN off_player_2 ELSE def_player_2 END AS p2,"
+    " CASE WHEN offense_team_id = ?"
+    " THEN off_player_3 ELSE def_player_3 END AS p3,"
+    " CASE WHEN offense_team_id = ?"
+    " THEN off_player_4 ELSE def_player_4 END AS p4,"
+    " CASE WHEN offense_team_id = ?"
+    " THEN off_player_5 ELSE def_player_5 END AS p5,"
+    " COALESCE(SUM(CASE WHEN offense_team_id = ?"
+    " THEN COALESCE(points, 0) ELSE 0 END) OVER w"
+    " - SUM(CASE WHEN offense_team_id <> ?"
+    " THEN COALESCE(points, 0) ELSE 0 END) OVER w, 0) AS margin"
+    " FROM silver_hist_possessions"
+    " WHERE _season = ? AND (offense_team_id = ? OR defense_team_id = ?)"
+    " AND count_as_possession = 'true'"
+    " AND ((offense_team_id = ?"
+    " AND off_player_1 IS NOT NULL AND off_player_2 IS NOT NULL"
+    " AND off_player_3 IS NOT NULL AND off_player_4 IS NOT NULL"
+    " AND off_player_5 IS NOT NULL)"
+    " OR (offense_team_id <> ? AND defense_team_id = ?"
+    " AND def_player_1 IS NOT NULL AND def_player_2 IS NOT NULL"
+    " AND def_player_3 IS NOT NULL AND def_player_4 IS NOT NULL"
+    " AND def_player_5 IS NOT NULL))"
+    " WINDOW w AS (PARTITION BY game_id ORDER BY possession_number"
+    " ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING)"
+    " ) GROUP BY p1, p2, p3, p4, p5"
+)
+
 def _possession_aggs(team_id: int, season: str) -> dict[tuple[int, ...], dict] | None:
     season = resolve_season(season)
+    key = _aggs_cache_key(team_id, season)
+    hit = _AGGS_CACHE.get(key)
+    if hit is not None:
+        return {u: dict(v) for u, v in hit.items()} or None
     try:
         rows = _store._read_df(
-            "SELECT game_id, possession_number, offense_team_id,"
-            " defense_team_id, points,"
-            " off_player_1, off_player_2, off_player_3, off_player_4, off_player_5,"
-            " def_player_1, def_player_2, def_player_3, def_player_4, def_player_5"
-            " FROM silver_hist_possessions"
-            " WHERE _season = ? AND (offense_team_id = ? OR defense_team_id = ?)"
-            " AND count_as_possession = 'true'",
-            [season, team_id, team_id],
+            _POSSESSION_AGGS_SQL,
+            [team_id, team_id, team_id, team_id, BLOWOUT_MARGIN,
+             team_id, team_id, team_id, team_id, team_id,
+             team_id, team_id, season, team_id, team_id,
+             team_id, team_id, team_id],
         )
     except Exception:
         return None
     if not rows:
         return None
-    rows.sort(key=lambda r: (str(r.get("game_id")),
-                             int(r.get("possession_number") or 0)))
     agg: dict[tuple[int, ...], dict] = {}
-    runs: dict[str, dict[int, int]] = {}
     for r in rows:
         try:
-            off_tid, def_tid = int(r["offense_team_id"]), int(r["defense_team_id"])
-            pts = int(r["points"] or 0)
+            unit = tuple(sorted(int(r[f"p{i}"]) for i in range(1, 6)))
+            agg[unit] = {"off_poss": int(r["off_poss"] or 0),
+                         "def_poss": int(r["def_poss"] or 0),
+                         "pf": int(r["pf"] or 0),
+                         "pa": int(r["pa"] or 0),
+                         "blowout": int(r["blowout"] or 0)}
         except (TypeError, ValueError, KeyError):
             continue
-        game = str(r.get("game_id"))
-        run = runs.setdefault(game, {})
-        off_run, def_run = run.get(off_tid, 0), run.get(def_tid, 0)
-        if off_tid == team_id:
-            margin = off_run - def_run
-            players = [r.get(f"off_player_{i}") for i in range(1, 6)]
-        elif def_tid == team_id:
-            margin = def_run - off_run
-            players = [r.get(f"def_player_{i}") for i in range(1, 6)]
-        else:
-            continue
-        if any(p is None for p in players):
-            continue
-        try:
-            unit = tuple(sorted(int(p) for p in players))
-        except (TypeError, ValueError):
-            continue
-        a = agg.setdefault(unit, {"off_poss": 0, "def_poss": 0, "pf": 0,
-                                  "pa": 0, "blowout": 0})
-        if off_tid == team_id:
-            a["off_poss"] += 1
-            a["pf"] += pts
-        else:
-            a["def_poss"] += 1
-            a["pa"] += pts
-        if abs(margin) >= BLOWOUT_MARGIN:
-            a["blowout"] += 1
-        run[off_tid] = off_run + pts
-        run[def_tid] = def_run
-    return agg or None
+    if len(_AGGS_CACHE) > 96:
+        _AGGS_CACHE.clear()
+    _AGGS_CACHE[key] = agg
+    return {u: dict(v) for u, v in agg.items()} or None
+
+
+def _aggs_cache_key(team_id: int, season: str) -> tuple:
+    try:
+        frozen = tuple(sorted(_store.warehouse_identity().items()))
+    except Exception:
+        frozen = ()
+    return (team_id, season, frozen)
+
+
+_AGGS_CACHE: dict[tuple, dict[tuple[int, ...], dict]] = {}
+
+
+def _safe_aggs(team_id: int, season: str) -> dict[tuple[int, ...], dict] | None:
+    try:
+        return _possession_aggs(team_id, season)
+    except Exception:
+        return None
+
+
+def _fetch_lineup_inputs(
+    team_id: int, season: str,
+) -> tuple[list[dict[str, Any]], dict[str, Any], dict | None]:
+    rows, meta = _warehouse_or_live(
+        "silver_lineups",
+        "_season = ? AND TEAM_ID = ? AND (_entity LIKE 'lineups:%' OR _entity = ?)",
+        [season, team_id, f"team:{team_id}"],
+        lambda: nba_stats.lineups(team_id, season), season,
+        entity=f"team:{team_id}", ttl_s=TTL_PBPSTATS, limit=_ALL_ROWS,
+    )
+    return rows, meta, _safe_aggs(team_id, season)
 
 @tool(description='Five-man lineup ratings with sample floors. Names, abbrevs, or ids.\n\nUnits under min_possessions (default 100) are hidden; blowout-heavy\nunits are flagged. Ratings are per 100 possessions, warehouse-first.\nThe best lineup (highest NET_RATING among units meeting the floor) is\nreturned in the top-level best_net_unit field and flagged per-row as\nis_best_net_unit, so it is never the most-used unit by default.')
 def get_lineup_stats(
@@ -156,12 +202,7 @@ def get_lineup_stats(
     except ValueError as exc:
         return {"tool": "get_lineup_stats", "ok": False,
                 "error": str(exc)[:160]}
-    rows, meta = _warehouse_or_live(
-        "silver_lineups", "_season = ? AND TEAM_ID = ? AND (_entity LIKE 'lineups:%' OR _entity = ?)",
-        [season, team_id, f"team:{team_id}"],
-        lambda: nba_stats.lineups(team_id, season), season,
-        entity=f"team:{team_id}", ttl_s=TTL_PBPSTATS, limit=_ALL_ROWS,
-    )
+    rows, meta, agg = _fetch_lineup_inputs(team_id, season)
     hist = False
     if not rows:
         rows = _hist_lineup_rows(team_id, season)
@@ -179,11 +220,6 @@ def get_lineup_stats(
     rows = _dedupe_lineup_rows(rows)
     meta = {**meta, "rows_before_dedupe": rows_in,
             "rows_after_dedupe": len(rows)}
-    agg = None
-    try:
-        agg = _possession_aggs(team_id, season)
-    except Exception:
-        agg = None
     estimated = agg is None
     units: list[dict[str, Any]] = []
     for r in rows:
