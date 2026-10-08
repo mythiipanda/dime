@@ -41,7 +41,10 @@ Fields:
 ## Invariants
 - Resolve entities to canonical identity using the context; never invent
   an id.
-- Resolve season and as_of explicitly. If neither the question nor the
+- Resolve season and as_of explicitly. A season named anywhere in the
+  question or the context is never null: set it with source "resolved"
+  and never emit null while one is named. Only leave season null when
+  nothing names one. If neither the question nor the
   context names a season, use the most recent season with warehouse data
   and mark source "default". Relative phrases such as "last season",
   "this season", and "current season" resolve to the last completed
