@@ -135,6 +135,7 @@ def test_registry_covers_initial_pack():
         "injury_impact", "lineup_matchups", "competitive_ratings",
         "matchup_brief", "season_series", "head_to_head", "matchup_splits",
         "today", "morning_briefing", "award_results", "sql_exec",
+        "stint_timeline", "tracking_profile", "defensive_matchups",
     }
     assert set(CAPABILITIES) == expected
     tool_names = [c.tool_name for c in CAPABILITIES.values()]

@@ -141,6 +141,23 @@
     "dependent_entity_arguments": {},
     "description": "Team payroll, player salaries, and apron room."
   },
+  "defensive_matchups": {
+    "arguments": {
+      "properties": {
+        "player": {
+          "default": "",
+          "type": "string"
+        },
+        "season": {
+          "default": "2025-26",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "dependent_entity_arguments": {},
+    "description": "One defender's defended-shot frequency and shooter results."
+  },
   "entity_resolution": {
     "arguments": {
       "properties": {
@@ -1284,6 +1301,19 @@
     "dependent_entity_arguments": {},
     "description": "League standings for one season."
   },
+  "stint_timeline": {
+    "arguments": {
+      "properties": {
+        "game_id": {
+          "default": "",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "dependent_entity_arguments": {},
+    "description": "Ordered 5-man stint timeline for one game."
+  },
   "team_four_factors": {
     "arguments": {
       "properties": {
@@ -1491,6 +1521,31 @@
     },
     "dependent_entity_arguments": {},
     "description": "Date-scoped scoreboard snapshot with last night, tonight, movers, and streaks."
+  },
+  "tracking_profile": {
+    "arguments": {
+      "properties": {
+        "measure_type": {
+          "default": "",
+          "type": "string"
+        },
+        "player": {
+          "default": "",
+          "type": "string"
+        },
+        "season": {
+          "default": "2025-26",
+          "type": "string"
+        },
+        "team": {
+          "default": "",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "dependent_entity_arguments": {},
+    "description": "Player or team tracking profile for one measure type or all."
   },
   "trade_value": {
     "arguments": {

@@ -69,6 +69,7 @@ _FULL_ALLOWLIST = frozenset({
     "team_totals", "qualified_leaders", "team_splits", "injury_impact",
     "lineup_matchups", "competitive_ratings", "injuries", "team_shot_zones",
     "player_shot_zones", "rest_splits", "rookie_leaders", "team_ratings",
+    "stint_timeline", "tracking_profile", "defensive_matchups",
     "roster", "player_report", "player_evaluation", "player_comparison",
     "metric_adjudication", "metric_coverage", "shots", "shooting_efficiency",
     "on_off", "lineups", "clutch", "playoffs", "player_ratings",
