@@ -1,3 +1,5 @@
+import { TEAM_IDS, isTeamAbbr } from "./teams";
+
 export interface BriefDoc {
   id: string;
   title: string;
@@ -142,6 +144,27 @@ export function saveBrief(input: {
 
 export function removeBrief(id: string) {
   writeAll(readAll().filter((b) => b.id !== id));
+}
+
+export const MATCHUP_TEAM_ABBRS = Object.keys(TEAM_IDS).sort();
+
+export interface MatchupBriefInput {
+  title: string;
+  question: string;
+  rows: unknown;
+  meta: Record<string, unknown>;
+}
+
+export function matchupBriefInput(away: string, home: string): MatchupBriefInput | null {
+  const a = away.trim().toUpperCase();
+  const h = home.trim().toUpperCase();
+  if (!a || !h || a === h || !isTeamAbbr(a) || !isTeamAbbr(h)) return null;
+  return {
+    title: `${a} at ${h}`,
+    question: `Preview ${a} at ${h}: ratings, key matchups, decisive stats`,
+    rows: { game: { away: a, home: h } },
+    meta: { template: "matchup" },
+  };
 }
 
 export function updateBrief(

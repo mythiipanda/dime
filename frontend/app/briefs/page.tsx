@@ -4,14 +4,17 @@ import { useEffect, useRef, useState } from "react";
 import MatchupPreviewView, { parsePreview } from "../../components/MatchupPreviewView";
 import { getRevision } from "../../lib/api";
 import {
+  MATCHUP_TEAM_ABBRS,
   briefFieldDiff,
   briefStale,
   docRev,
   getBrief,
   listBriefs,
+  matchupBriefInput,
   packHashOf,
   removeBrief,
   rerunBrief,
+  saveBrief,
   updateBrief,
   type BriefDoc,
 } from "../../lib/briefs";
@@ -140,6 +143,49 @@ export function BriefEditor({ doc, onSaved, pollMs = 2000 }: { doc: BriefDoc; on
   );
 }
 
+export function MatchupBriefComposer({ onCreated }: { onCreated: (id: string) => void }) {
+  const awayRef = useRef<HTMLSelectElement | null>(null);
+  const homeRef = useRef<HTMLSelectElement | null>(null);
+  const selectStyle = {
+    border: "1px solid var(--color-stone-border)",
+    borderRadius: 8,
+    padding: "6px 10px",
+    fontSize: 13,
+    color: "var(--color-ink-black)",
+    background: "var(--color-pure-white)",
+  } as const;
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 16, flexWrap: "wrap" }}>
+      <select ref={awayRef} defaultValue="" aria-label="Away team" style={selectStyle}>
+        <option value="">Away</option>
+        {MATCHUP_TEAM_ABBRS.map((abbr) => (
+          <option key={abbr} value={abbr}>{abbr}</option>
+        ))}
+      </select>
+      <span style={{ fontSize: 12, color: "var(--color-ash-gray)" }}>at</span>
+      <select ref={homeRef} defaultValue="" aria-label="Home team" style={selectStyle}>
+        <option value="">Home</option>
+        {MATCHUP_TEAM_ABBRS.map((abbr) => (
+          <option value={abbr}>{abbr}</option>
+        ))}
+      </select>
+      <button
+        type="button"
+        className="pill-ghost"
+        style={{ fontSize: 12, padding: "5px 12px" }}
+        onClick={() => {
+          const input = matchupBriefInput(awayRef.current?.value || "", homeRef.current?.value || "");
+          if (!input) return;
+          const doc = saveBrief({ ...input, rows: input.rows, meta: input.meta });
+          onCreated(doc.id);
+        }}
+      >
+        New matchup brief
+      </button>
+    </div>
+  );
+}
+
 export default function BriefsPage() {
   const [docs, setDocs] = useState<BriefDoc[]>([]);
   const [activeId, setActiveId] = useState<string | null>(null);
@@ -190,6 +236,12 @@ export default function BriefsPage() {
       <div style={{ fontSize: 13, color: "var(--color-warm-gray)", marginBottom: 16 }}>
         Cited matchup briefs, kept where you can find them.
       </div>
+      <MatchupBriefComposer
+        onCreated={(id) => {
+          refresh();
+          setActiveId(id);
+        }}
+      />
       {!docs.length ? (
         <div style={{ fontSize: 13, color: "var(--color-warm-gray)" }}>
           No briefs yet. Save one from a matchup answer in chat.
