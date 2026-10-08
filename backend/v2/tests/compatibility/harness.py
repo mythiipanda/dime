@@ -341,18 +341,6 @@ def assert_server_revision(base_url: str, expected: RevisionFingerprint) -> None
     if actual != expected:
         raise RuntimeError(f"server revision mismatch: expected {expected}, observed {actual}")
 
-class ShadowRunner:
-    def __init__(self, primary: Callable[[dict[str, Any]], list[TurnTrace]],
-                 shadow: Callable[[dict[str, Any]], list[TurnTrace]]) -> None:
-        self.primary = primary
-        self.shadow = shadow
-
-    def run(self, scenario: dict[str, Any]) -> dict[str, ScenarioResult]:
-        return {
-            "primary": grade_scenario(scenario, self.primary(scenario)),
-            "shadow": grade_scenario(scenario, self.shadow(scenario)),
-        }
-
 class OwnedServer:
     def __init__(self, command: list[str], base_url: str, expected: RevisionFingerprint,
                  cwd: Path, startup_seconds: float = 10.0) -> None:
