@@ -1,0 +1,50 @@
+{"task_id": "g-001", "question": "Who led the league in total assists in the 2024-25 NBA regular season?", "guidelines": "Answer with a single player name.", "level": 1, "answer": "Trae Young"}
+{"task_id": "g-002", "question": "How many total assists did the 2024-25 NBA regular-season assists leader record?", "guidelines": "Answer with a single number.", "level": 1, "answer": "880"}
+{"task_id": "g-003", "question": "How many regular-season games did Trae Young play in 2024-25?", "guidelines": "Answer with a single number.", "level": 1, "answer": "76"}
+{"task_id": "g-004", "question": "What was the Boston Celtics net rating in the 2024-25 NBA regular season?", "guidelines": "Answer with a single number.", "level": 2, "answer": "8.3"}
+{"task_id": "g-005", "question": "What was the Boston Celtics offensive rating in the 2024-25 NBA regular season?", "guidelines": "Answer with a single number.", "level": 2, "answer": "120"}
+{"task_id": "g-006", "question": "What was the Boston Celtics defensive rating in the 2024-25 NBA regular season?", "guidelines": "Answer with a single number.", "level": 2, "answer": "111.7"}
+{"task_id": "g-007", "question": "How many regular-season games did the Boston Celtics win in 2024-25?", "guidelines": "Answer with a single number.", "level": 1, "answer": "61"}
+{"task_id": "g-008", "question": "How many regular-season games did the Oklahoma City Thunder win in 2024-25?", "guidelines": "Answer with a single number.", "level": 1, "answer": "68"}
+{"task_id": "g-009", "question": "How many regular-season games did the Cleveland Cavaliers win in 2024-25?", "guidelines": "Answer with a single number.", "level": 1, "answer": "64"}
+{"task_id": "g-010", "question": "How many points per game did the Boston Celtics average in the 2024-25 NBA regular season?", "guidelines": "Answer with a single number.", "level": 2, "answer": "116.3"}
+{"task_id": "g-011", "question": "What was the Boston Celtics per-game point differential in the 2024-25 NBA regular season?", "guidelines": "Answer with a single number.", "level": 2, "answer": "9.1"}
+{"task_id": "g-012", "question": "How many distinct regular-season games were played league-wide in the 2024-25 NBA season?", "guidelines": "Answer with a single number.", "level": 2, "answer": "1230"}
+{"task_id": "g-013", "question": "How many total points did the Cleveland Cavaliers score in the 2024-25 NBA regular season?", "guidelines": "Answer with a single number.", "level": 3, "answer": "9999"}
+{"task_id": "g-014", "question": "How many points per game did Shai Gilgeous-Alexander average in the 2024-25 NBA regular season?", "guidelines": "Answer with a single number.", "level": 1, "answer": "32.7"}
+{"task_id": "g-015", "question": "How many regular-season games did Shai Gilgeous-Alexander play in 2024-25?", "guidelines": "Answer with a single number.", "level": 1, "answer": "76"}
+{"task_id": "g-016", "question": "How many points per game did Nikola Jokic average in the 2024-25 NBA regular season?", "guidelines": "Answer with a single number.", "level": 2, "answer": "29.6"}
+{"task_id": "g-017", "question": "How many points per game did Jayson Tatum average in the 2024-25 NBA regular season?", "guidelines": "Answer with a single number.", "level": 2, "answer": "26.8"}
+{"task_id": "g-018", "question": "How many total points did Shai Gilgeous-Alexander score in the 2025 NBA playoffs?", "guidelines": "Answer with a single number.", "level": 3, "answer": "688"}
+{"task_id": "g-019", "question": "How many playoff games did Shai Gilgeous-Alexander play in the 2025 NBA playoffs?", "guidelines": "Answer with a single number.", "level": 2, "answer": "23"}
+{"task_id": "g-020", "question": "How many teams appear in the 2024-25 NBA regular-season standings?", "guidelines": "Answer with a single number.", "level": 1, "answer": "30"}
+{"task_id": "g-021", "question": "How many regular-season games did the Houston Rockets win in 2024-25?", "guidelines": "Answer with a single number.", "level": 2, "answer": "52"}
+{"task_id": "g-022", "question": "How many shot attempts are recorded for the 2024-25 NBA season?", "guidelines": "Answer with a single number.", "level": 3, "answer": "233904"}
+{"task_id": "g-023", "question": "How many regular-season games did the New York Knicks win in 2024-25?", "guidelines": "Answer with a single number.", "level": 1, "answer": "51"}
+{"task_id": "g-024", "question": "How many regular-season games did the Denver Nuggets win in 2024-25?", "guidelines": "Answer with a single number.", "level": 1, "answer": "50"}
+{"task_id": "g-025", "question": "What was the Oklahoma City Thunder per-game point differential in the 2024-25 NBA regular season?", "guidelines": "Answer with a single number.", "level": 2, "answer": "12.9"}
+{"task_id": "g-026", "question": "How many points per game did the Cleveland Cavaliers average in the 2024-25 NBA regular season?", "guidelines": "Answer with a single number.", "level": 2, "answer": "121.9"}
+{"task_id": "g-027", "question": "How many total points did the Memphis Grizzlies score in the 2024-25 NBA regular season?", "guidelines": "Answer with a single number.", "level": 3, "answer": "9980"}
+{"task_id": "g-028", "question": "How many regular-season games did the Washington Wizards win in 2024-25?", "guidelines": "Answer with a single number.", "level": 1, "answer": "18"}
+{"task_id": "g-029", "question": "How many points per game did Giannis Antetokounmpo average in the 2024-25 NBA regular season?", "guidelines": "Answer with a single number.", "level": 1, "answer": "30.4"}
+{"task_id": "g-030", "question": "How many points per game did Anthony Edwards average in the 2024-25 NBA regular season?", "guidelines": "Answer with a single number.", "level": 2, "answer": "27.6"}
+{"task_id": "g-031", "question": "How many rebounds per game did Domantas Sabonis average in the 2024-25 NBA regular season?", "guidelines": "Answer with a single number.", "level": 2, "answer": "13.9"}
+{"task_id": "g-032", "question": "How many assists per game did Trae Young average in the 2024-25 NBA regular season?", "guidelines": "Answer with a single number.", "level": 2, "answer": "11.6"}
+{"task_id": "g-033", "question": "How many regular-season games did Anthony Edwards play in 2024-25?", "guidelines": "Answer with a single number.", "level": 1, "answer": "79"}
+{"task_id": "g-034", "question": "How many points per game did Kevin Durant average in the 2024-25 NBA regular season?", "guidelines": "Answer with a single number.", "level": 2, "answer": "26.6"}
+{"task_id": "g-035", "question": "How many assists did Shai Gilgeous-Alexander record in the 2025 NBA playoffs?", "guidelines": "Answer with a single number.", "level": 3, "answer": "150"}
+{"task_id": "g-036", "question": "How many rebounds did Shai Gilgeous-Alexander record in the 2025 NBA playoffs?", "guidelines": "Answer with a single number.", "level": 3, "answer": "123"}
+{"task_id": "g-037", "question": "How many shot attempts did the Oklahoma City Thunder record in the 2024-25 NBA regular season?", "guidelines": "Answer with a single number.", "level": 3, "answer": "9666"}
+{"task_id": "g-038", "question": "How many shots were made league-wide in the 2024-25 NBA regular season?", "guidelines": "Answer with a single number.", "level": 3, "answer": "109109"}
+{"task_id": "g-039", "question": "How many points did the Indiana Pacers score in their highest-scoring game of the 2024-25 NBA regular season?", "guidelines": "Answer with a single number.", "level": 2, "answer": "162"}
+{"task_id": "g-040", "question": "How many total assists did the Denver Nuggets record in the 2024-25 NBA regular season?", "guidelines": "Answer with a single number.", "level": 3, "answer": "2542"}
+{"task_id": "g-041", "question": "How many regular-season games did the Los Angeles Lakers win in 2024-25?", "guidelines": "Answer with a single number.", "level": 1, "answer": "50"}
+{"task_id": "g-042", "question": "How many regular-season games did the Detroit Pistons win in 2024-25?", "guidelines": "Answer with a single number.", "level": 1, "answer": "44"}
+{"task_id": "g-043", "question": "What was the Denver Nuggets per-game point differential in the 2024-25 NBA regular season?", "guidelines": "Answer with a single number.", "level": 2, "answer": "3.9"}
+{"task_id": "g-044", "question": "How many points per game did the Memphis Grizzlies average in the 2024-25 NBA regular season?", "guidelines": "Answer with a single number.", "level": 2, "answer": "121.7"}
+{"task_id": "g-045", "question": "How many points per game did Jalen Brunson average in the 2024-25 NBA regular season?", "guidelines": "Answer with a single number.", "level": 2, "answer": "26.0"}
+{"task_id": "g-046", "question": "How many regular-season games did Nikola Jokić play in 2024-25?", "guidelines": "Answer with a single number.", "level": 1, "answer": "70"}
+{"task_id": "g-047", "question": "How many rebounds per game did Karl-Anthony Towns average in the 2024-25 NBA regular season?", "guidelines": "Answer with a single number.", "level": 2, "answer": "12.8"}
+{"task_id": "g-048", "question": "How many assists per game did Tyrese Haliburton average in the 2024-25 NBA regular season?", "guidelines": "Answer with a single number.", "level": 2, "answer": "9.2"}
+{"task_id": "g-049", "question": "How many total points did the Denver Nuggets score in the 2024-25 NBA regular season?", "guidelines": "Answer with a single number.", "level": 3, "answer": "9902"}
+{"task_id": "g-050", "question": "How many shot attempts did the Indiana Pacers record in the 2024-25 NBA regular season?", "guidelines": "Answer with a single number.", "level": 3, "answer": "9266"}
