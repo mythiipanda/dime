@@ -106,6 +106,7 @@ from .team import (
     get_team_splits,
 )
 from .today import get_today, get_morning_briefing
+from .tracking import get_defensive_matchups, get_tracking_profile
 from .watchlist import add_watchlist_item, get_watchlist, remove_watchlist_item
 from .wpa import get_wpa_leaders
 from ._core import MAX_ROWS, STAT_CATEGORIES, clamp_stat
@@ -220,6 +221,8 @@ WAREHOUSE_TOOLS: list[BaseTool] = [
     get_espn_scores,
     get_espn_event_summary,
     get_espn_odds,
+    get_tracking_profile,
+    get_defensive_matchups,
 ]
 
 TOOL_NAMES = [t.name for t in WAREHOUSE_TOOLS]
