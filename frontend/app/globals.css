@@ -1350,12 +1350,6 @@ th.is-colsel .records-header-icon {
   }
 }
 
-.stream-tail {
-  filter: blur(1.6px);
-  -webkit-mask-image: linear-gradient(to right, oklch(0 0 0) 20%, oklch(0 0 0 / 0.2));
-  mask-image: linear-gradient(to right, oklch(0 0 0) 20%, oklch(0 0 0 / 0.2));
-}
-
 .stream-caret {
   display: inline-block;
   width: 2px;
@@ -1385,11 +1379,6 @@ th.is-colsel .records-header-icon {
 @media (prefers-reduced-motion: reduce) {
   .stream-caret {
     animation: none;
-  }
-  .stream-tail {
-    filter: none;
-    -webkit-mask-image: none;
-    mask-image: none;
   }
 }
 
