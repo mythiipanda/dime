@@ -187,6 +187,92 @@ test("legacy error event maps to a typed failure", () => {
   assert.equal(snap.failed?.kind, "rate_limited");
 });
 
+test("a typed failure survives the compatibility error frame that follows it", () => {
+  const cases: [string, string][] = [
+    ["quota", "quota exhausted"],
+    ["timeout", "the analysis ran past its time limit"],
+    ["provider_error", "the model provider did not respond"],
+    ["rate_limited", "too many requests right now"],
+  ];
+  for (const [kind, message] of cases) {
+    const stream = streamed([
+      ["token", { text: "partial answer" }],
+      ["failure", { kind, message }],
+      ["error", { message: "Unable to complete this run." }],
+      ["graph_end", {}],
+    ]);
+    stream.finish();
+    const snap = stream.snapshot();
+    assert.deepEqual(snap.failed, { kind, message }, kind);
+    assert.equal(snap.done, true, kind);
+    assert.equal(snap.text, "partial answer", kind);
+  }
+});
+
+test("a standalone compatibility error still surfaces a failure", () => {
+  const snap = streamed([
+    ["error", { message: "Unable to complete this run." }],
+  ]).snapshot();
+  assert.deepEqual(snap.failed, {
+    kind: "execution_failure",
+    message: "Unable to complete this run.",
+  });
+});
+
+test("a compatibility error with no message falls back to failure copy", () => {
+  const snap = streamed([["error", {}]]).snapshot();
+  assert.equal(snap.failed?.kind, "execution_failure");
+  assert.equal(snap.failed?.message, failureCopy("execution_failure").body);
+});
+
+test("a later typed failure replaces a compatibility error fallback", () => {
+  const snap = streamed([
+    ["error", { message: "Unable to complete this run." }],
+    ["failure", { kind: "quota", message: "quota exhausted" }],
+  ]).snapshot();
+  assert.deepEqual(snap.failed, { kind: "quota", message: "quota exhausted" });
+});
+
+test("the latest typed failure wins even across a compatibility error", () => {
+  const snap = streamed([
+    ["failure", { kind: "quota", message: "quota exhausted" }],
+    ["error", { message: "Unable to complete this run." }],
+    ["failure", { kind: "timeout", message: "the analysis ran past its time limit" }],
+  ]).snapshot();
+  assert.deepEqual(snap.failed, {
+    kind: "timeout",
+    message: "the analysis ran past its time limit",
+  });
+});
+
+test("repeated compatibility errors keep the latest fallback", () => {
+  const snap = streamed([
+    ["error", { message: "Unable to complete this run." }],
+    ["error", { message: "the stream closed early" }],
+  ]).snapshot();
+  assert.deepEqual(snap.failed, {
+    kind: "execution_failure",
+    message: "the stream closed early",
+  });
+});
+
+test("a transport failure does not replace a typed failure", () => {
+  const stream = streamed([["failure", { kind: "quota", message: "quota exhausted" }]]);
+  stream.fail("connection", "socket closed");
+  assert.deepEqual(stream.snapshot().failed, {
+    kind: "quota",
+    message: "quota exhausted",
+  });
+});
+
+test("a transport failure with no typed failure still records itself", () => {
+  const stream = streamed([["token", { text: "hello" }]]);
+  stream.fail("connection", "socket closed");
+  const snap = stream.snapshot();
+  assert.deepEqual(snap.failed, { kind: "connection", message: "socket closed" });
+  assert.equal(snap.text, "hello");
+});
+
 test("unknown events are ignored", () => {
   const stream = streamed([
     ["ping", { ok: true }],

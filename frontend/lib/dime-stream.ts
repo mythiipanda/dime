@@ -490,9 +490,18 @@ export function reduceBackendEvent(type: string, data: unknown): DimeStreamEvent
   }
 }
 
+type FailureAuthority = "typed" | "fallback";
+
+function failureAuthorityFor(type: string): FailureAuthority | null {
+  if (type === "failure") return "typed";
+  if (type === "error") return "fallback";
+  return null;
+}
+
 export class DimeStream {
   private snap = emptySnapshot();
   private seq = 0;
+  private hasTypedFailure = false;
 
   snapshot(): StreamSnapshot {
     return {
@@ -506,8 +515,9 @@ export class DimeStream {
   }
 
   handle(type: string, data: unknown): void {
+    const authority = failureAuthorityFor(type);
     for (const event of reduceBackendEvent(type, data)) {
-      this.apply(event);
+      this.apply(event, authority);
     }
     if (type === "suggestions") {
       const items = asRecord(data).items;
@@ -524,10 +534,25 @@ export class DimeStream {
   }
 
   fail(kind: string, message: string): void {
-    this.snap.failed = { kind, message };
+    this.recordFailure({ type: "failure", kind, message }, "fallback");
   }
 
-  private apply(event: DimeStreamEvent): void {
+  private recordFailure(
+    event: FailureEvent,
+    authority: FailureAuthority | null,
+  ): void {
+    if (authority === "typed") {
+      this.hasTypedFailure = true;
+    } else if (this.hasTypedFailure) {
+      return;
+    }
+    this.snap.failed = { kind: event.kind, message: event.message };
+  }
+
+  private apply(
+    event: DimeStreamEvent,
+    authority: FailureAuthority | null,
+  ): void {
     switch (event.type) {
       case "text_delta":
         this.snap.text += event.text;
@@ -606,7 +631,7 @@ export class DimeStream {
         this.snap.text = event.text;
         break;
       case "failure":
-        this.snap.failed = { kind: event.kind, message: event.message };
+        this.recordFailure(event, authority);
         break;
     }
   }
