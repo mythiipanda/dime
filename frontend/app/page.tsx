@@ -3,7 +3,7 @@ import DimeHarness from "@/components/site/DimeHarness";
 import styles from "./scrollbars.module.css";
 
 export const metadata: Metadata = {
-  title: "Dime",
+  title: "dime",
   description: "An AI analyst workbench for NBA data.",
 };
 

@@ -20,6 +20,7 @@ import {
   X,
 } from "lucide-react";
 import GlideMenu from "@/components/primitives/GlideMenu";
+import { DimeMark } from "@/components/brand/DimeMark";
 
 const SIDEBAR_MOTION = {
   expandedWidth: 224,
@@ -153,7 +154,7 @@ export default function DimeSidebar({
   return (
     <aside
       data-sidebar-collapsed={collapsed}
-      aria-label="Dime navigation"
+      aria-label="dime navigation"
       className={`relative flex h-full shrink-0 overflow-hidden transition-[width] ${forceVisible ? "" : "max-lg:hidden"} ${className}`}
       style={{
         width: collapsed ? SIDEBAR_MOTION.collapsedWidth : SIDEBAR_MOTION.expandedWidth,
@@ -165,13 +166,11 @@ export default function DimeSidebar({
       } as CSSProperties}
     >
       <div className="flex min-h-0 w-[224px] shrink-0 flex-col">
-        <div className="relative mb-2.5 h-10 shrink-0">
-          <div className="sidebar-workspace-control absolute left-2 top-1 flex h-8 w-[164px] items-center px-2">
-            <span className="flex size-5 shrink-0 items-center justify-center rounded-[7px] bg-ink text-[11px] font-semibold text-surface">
-              D
-            </span>
-            <span className="sidebar-copy ml-1.5 min-w-0 flex-1 truncate text-[14px] font-medium text-ink-2">
-              Dime
+        <div className="relative mb-2.5 flex h-10 shrink-0 items-center gap-1 pl-2 pr-2">
+          <div className="sidebar-workspace-control flex min-w-0 flex-1 items-center">
+            <DimeMark size={20} className="shrink-0 text-ink" />
+            <span className="sidebar-copy ml-2 min-w-0 truncate text-[14px] font-medium tracking-[-0.01em] text-ink-2">
+              dime
             </span>
           </div>
 
@@ -184,7 +183,7 @@ export default function DimeSidebar({
               if (overlay) onRequestClose();
               else collapse();
             }}
-            className="sidebar-collapse-control absolute right-2 top-1 flex size-8 items-center justify-center rounded-[8px] text-ink-3 transition-[opacity,background-color,color] duration-150 hover:bg-hover-2 hover:text-ink"
+            className="sidebar-collapse-control flex size-8 shrink-0 items-center justify-center rounded-[8px] text-ink-3 transition-[opacity,background-color,color] duration-150 hover:bg-hover-2 hover:text-ink"
           >
             <PanelLeftClose size={18} />
           </button>
