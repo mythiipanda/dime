@@ -3,9 +3,17 @@ import sys
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
+import pytest
+
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from shared import store
+
+@pytest.fixture(autouse=True)
+def _isolated_pool():
+    store.warehouse_pool_clear()
+    yield
+    store.warehouse_pool_clear()
 
 def test_concurrent_reads_all_succeed():
     def _read(_i):
