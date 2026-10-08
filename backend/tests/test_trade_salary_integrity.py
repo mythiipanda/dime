@@ -1,6 +1,30 @@
 from shared.tools import get_trade_check
 
-def test_trade_check_fails_closed_on_salary_vintage_mismatch():
+def test_trade_check_fails_closed_on_salary_vintage_mismatch(
+        monkeypatch, tmp_path):
+    import duckdb
+
+    from shared import store
+
+    path = tmp_path / "vintage.duckdb"
+    con = duckdb.connect(str(path))
+    try:
+        con.execute(
+            "CREATE TABLE silver_salaries (PLAYER_NAME VARCHAR, "
+            "TEAM VARCHAR, SALARY INTEGER, _season VARCHAR, "
+            "_fetched_at VARCHAR)")
+        con.execute(
+            "INSERT INTO silver_salaries VALUES ('LeBron James', 'LAL', "
+            "50000000, '2026-27', NULL)")
+        con.execute(
+            "INSERT INTO silver_salaries VALUES "
+            "('Giannis Antetokounmpo', 'MIA', 40000000, '2026-27', NULL)")
+    finally:
+        con.close()
+    monkeypatch.setattr(store, "DB_PATH", path)
+    monkeypatch.setattr(store, "LOCK_PATH", tmp_path / ".write.lock")
+    store.warehouse_tables_cache_clear()
+    store.warehouse_pool_clear()
     out = get_trade_check.invoke({
         "team_a": "LAL", "players_a": "LeBron James",
         "team_b": "MIA", "players_b": "Giannis Antetokounmpo",
