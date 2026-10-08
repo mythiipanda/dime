@@ -42,12 +42,16 @@ MISTRAL_DEFAULT = "ministral-8b-2512"
 OPENROUTER_DEFAULT = "nvidia/nemotron-3-super-120b-a12b:free"
 OPENROUTER_AUTO = "openrouter/free"
 INCEPTION_DEFAULT = "mercury-2.5"
-GROQ_DEFAULT = "openai/gpt-oss-20b"
+GROQ_DEFAULT = "openai/gpt-oss-120b"
+GROQ_MODELS: tuple[str, ...] = (
+    "openai/gpt-oss-120b",
+    "openai/gpt-oss-20b",
+)
 
 OPENROUTER_ALLOWLIST: frozenset[str] = frozenset(
     {
         "nvidia/nemotron-3-super-120b-a12b:free",
-        "nvidia/nemotron-3-ultra-550b-a55b:free",
+        "dots-studio/dots-3-note-preview:free",
     }
 )
 
@@ -61,7 +65,7 @@ def is_free_model(provider: str, slug: str) -> bool:
         return value == OPENROUTER_AUTO or (
             value in OPENROUTER_ALLOWLIST and value.endswith(":free"))
     if provider == "groq":
-        return value == GROQ_DEFAULT
+        return value in GROQ_MODELS
     if provider == "mistral":
         return value == (settings.mistral_model or MISTRAL_DEFAULT)
     return False
@@ -82,9 +86,9 @@ def _openrouter_free_model(slug: str | None = None) -> str:
         return value
     return OPENROUTER_DEFAULT
 
-def _groq_free_model() -> str:
-    value = str(settings.groq_model or "").strip()
-    return value if value == GROQ_DEFAULT else GROQ_DEFAULT
+def _groq_free_model(slug: str | None = None) -> str:
+    value = str(slug or settings.groq_model or "").strip()
+    return value if value in GROQ_MODELS else GROQ_DEFAULT
 
 def _mistral_free_model() -> str:
     return settings.mistral_model or MISTRAL_DEFAULT
@@ -107,11 +111,11 @@ def resolve_model_id(model_id: str | None) -> tuple[ProviderName, str]:
     raw = original.strip()
     if original.startswith("groq:"):
         slug = original.split(":", 1)[1]
-        if slug != GROQ_DEFAULT:
+        if slug not in GROQ_MODELS:
             raise ProviderPolicyError("unapproved Groq model")
         if not (settings.dime_enable_groq and settings.groq_api_key):
             raise ProviderPolicyError("Groq free-tier route is not activated")
-        return ("groq", GROQ_DEFAULT)
+        return ("groq", _groq_free_model(slug))
     if original.startswith("gemini:"):
         slug = original.split(":", 1)[1]
         if slug.strip() not in GEMINI_ALLOWLIST:
@@ -176,16 +180,17 @@ def get_llm(name: ProviderName, model: str | None = None) -> ChatOpenAI | None:
             max_retries=settings.llm_max_retries,
         )
     if name == "groq":
-        if model is not None and model != GROQ_DEFAULT:
+        if model is not None and model not in GROQ_MODELS:
             raise ProviderPolicyError("unapproved Groq model")
         if not (settings.dime_enable_groq and settings.groq_api_key):
             return None
         return ChatOpenAI(
-            model=_groq_free_model(),
+            model=_groq_free_model(model),
             base_url="https://api.groq.com/openai/v1",
             api_key=settings.groq_api_key,
             timeout=settings.llm_timeout_s,
             max_retries=0,
+            default_headers={"User-Agent": "dime-agent/1.0"},
         )
     if name == "inception":
         return ChatOpenAI(

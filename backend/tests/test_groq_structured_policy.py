@@ -72,9 +72,11 @@ def test_ordinary_groq_client_requires_activation_and_has_fixed_config(monkeypat
     assert providers.get_llm("groq") is None
     monkeypatch.setattr(settings,"dime_enable_groq",True)
     with __import__("pytest").raises(providers.ProviderPolicyError):
-        providers.get_llm("groq","openai/gpt-oss-120b")
+        providers.get_llm("groq","qwen/qwen3.8-27b")
+    assert providers.get_llm("groq","openai/gpt-oss-120b") is not None
+    captured.clear()
     assert providers.get_llm("groq",providers.GROQ_DEFAULT) is not None
-    assert captured == [{"model":"openai/gpt-oss-20b","base_url":"https://api.groq.com/openai/v1","api_key":"key","timeout":settings.llm_timeout_s,"max_retries":0}]
+    assert captured == [{"model":"openai/gpt-oss-120b","base_url":"https://api.groq.com/openai/v1","api_key":"key","timeout":settings.llm_timeout_s,"max_retries":0,"default_headers":{"User-Agent":"dime-agent/1.0"}}]
 
 def test_streaming_groq_uses_same_gated_fixed_client(monkeypatch):
     import asyncio

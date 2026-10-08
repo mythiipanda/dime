@@ -1163,6 +1163,7 @@ _GAP_MESSAGES = {
     "source_conflict": "Available sources conflict for some requested outputs.",
     "unsupported_claim": "Some requested outputs were not supported.",
     "execution_failure": "Some requested data was unavailable.",
+    "provider_error": "The model provider is unavailable.",
     "synthesis_incomplete": "Some requested outputs could not be published.",
     "judge_unavailable": "I couldn't double-check this answer, so treat the details with extra care.",
 }
@@ -1640,6 +1641,7 @@ def _answer_token_chunks(text: str, words_per_chunk: int = 12) -> list[str]:
 _FAILURE_KIND_FALLBACK = {
     "quota_exhausted": "quota",
     "rate_limit": "rate_limited",
+    "server_error": "provider_error",
 }
 
 def _failure_kind(exc: BaseException) -> str:
@@ -1655,6 +1657,7 @@ def _failure_message(kind: str) -> str:
         "timeout": "The run timed out before finishing.",
         "quota": "The model ran out of quota.",
         "rate_limited": "Too many requests.",
+        "provider_error": "The model provider is unavailable.",
     }.get(kind, "Some requested data was unavailable.")
 
 @router.post("/v2/chat/stream")

@@ -97,9 +97,11 @@ def test_groq_free_tier_activation_is_exact_and_ordered(monkeypatch):
     assert providers.fallback_order("inception") == [
         "gemini", "nvidia", "groq", "openrouter", "mistral", "inception"]
     assert providers.is_free_model("groq", "openai/gpt-oss-20b")
-    assert not providers.is_free_model("groq", "openai/gpt-oss-120b")
+    assert providers.is_free_model("groq", "openai/gpt-oss-120b")
+    assert providers.resolve_model_id("groq:openai/gpt-oss-120b") == (
+        "groq", "openai/gpt-oss-120b")
     with __import__("pytest").raises(providers.ProviderPolicyError):
-        providers.resolve_model_id("groq:openai/gpt-oss-120b")
+        providers.resolve_model_id("groq:qwen/qwen3.8-27b")
 
 def test_groq_key_is_inert_without_explicit_activation(monkeypatch):
     import shared.providers as providers
@@ -109,8 +111,8 @@ def test_groq_key_is_inert_without_explicit_activation(monkeypatch):
     assert providers.get_llm("groq") is None
 
 @__import__("pytest").mark.parametrize("slug", [
-    "openai/gpt-oss-120b", "groq/compound", "", "openai/gpt-oss-20B",
-    "openai/gpt-oss-20b ", "openai/gpt-oss-20b-extra"])
+    "qwen/qwen3.8-27b", "groq/compound", "", "openai/gpt-oss-20B",
+    "openai/gpt-oss-20b ", "openai/gpt-oss-120b-extra"])
 def test_explicit_unlisted_groq_slugs_fail_closed_before_client(monkeypatch, slug):
     import shared.providers as providers
     monkeypatch.setattr(settings, "dime_enable_groq", True)

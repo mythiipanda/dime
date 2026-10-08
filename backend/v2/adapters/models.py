@@ -446,9 +446,10 @@ class ProviderStructuredModel:
         names, details, codes = ProviderStructuredModel._failure_chain_walk(exc)
         name = " ".join(names)
         detail = " ".join(details)
+        detail = detail + " " + detail.replace("_", " ")
         if "timeout" in name or "timed out" in detail or re.search(r"\b408\b", detail):
             return "timeout"
-        if ("quota_exceeded" in detail or "perday" in detail
+        if ("quota exhausted" in detail or "quota_exceeded" in detail or "perday" in detail
                 or "per_day" in detail or "/day" in detail
                 or "daily quota" in detail or "quota reset" in detail):
             return "quota_exhausted"
@@ -464,6 +465,8 @@ class ProviderStructuredModel:
             if code in (400, 404):
                 return "client_error"
         if any(code in detail for code in ("500", "502", "503", "504")):
+            return "server_error"
+        if "server_error" in detail or "server error" in detail:
             return "server_error"
         if "auth" in name or "401" in detail or "403" in detail:
             return "authentication"
