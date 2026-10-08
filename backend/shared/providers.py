@@ -39,7 +39,7 @@ NVIDIA_NIM_MODELS: tuple[str, ...] = (
 )
 NVIDIA_NIM_TIMEOUT_S = 20
 NVIDIA_NIM_ALLOWLIST = frozenset(NVIDIA_NIM_MODELS)
-MISTRAL_DEFAULT = "mistral-large-4-0"
+MISTRAL_DEFAULT = "ministral-8b-2512"
 OPENROUTER_DEFAULT = "nvidia/nemotron-3-super-120b-a12b:free"
 OPENROUTER_AUTO = "openrouter/free"
 INCEPTION_DEFAULT = "mercury-2.5"
