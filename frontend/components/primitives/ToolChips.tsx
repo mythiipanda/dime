@@ -180,10 +180,10 @@ export default function ToolChips({
         {}
         <div className="-mx-1 overflow-hidden px-1.5 pb-1">
         <div className="mt-1.5 flex flex-col gap-1">
-          {steps.slice(0, step).map((row) => {
+          {steps.slice(0, step).map((row, i) => {
             const rowOpen = openRows.has(row.label);
             return (
-            <div key={row.label} style={{ animation: "fade-up 300ms cubic-bezier(0.23,1,0.32,1) both" }}>
+            <div key={`t-${i}`} style={{ animation: "fade-up 300ms cubic-bezier(0.23,1,0.32,1) both" }}>
               <button
                 type="button"
                 aria-expanded={rowOpen}
@@ -222,9 +222,9 @@ export default function ToolChips({
               >
                 <div className="min-h-0 overflow-hidden">
                   <div className="mt-0.5 mb-1 ml-2 flex flex-col gap-0.5 border-l border-line py-0.5 pl-3.5">
-                    {row.detail.map((line) => (
+                    {row.detail.map((line, j) => (
                       <span
-                        key={line.text}
+                        key={`d-${j}`}
                         className={`break-words text-[11.5px] leading-[1.6] ${row.detailMono ? "font-mono" : ""} ${line.tone === "add" ? "text-green" : "text-ink-2"}`}
                       >
                         {line.text}

@@ -9,7 +9,8 @@
     "test": "tsx --test lib/api.test.ts lib/briefs.test.ts lib/chat.test.ts lib/diagnostics.test.ts lib/dime-stream.test.ts lib/resolved-artifacts.test.ts lib/evidence.test.ts lib/grades.test.ts lib/exploreFeed.test.ts lib/exploreFeedAction.test.ts lib/exploreIndex.test.ts lib/exploreSearch.test.ts lib/freshness.test.ts lib/scroll.test.ts stream-batcher.test.tsx chat-artifacts.test.tsx",
     "test:activity": "tsx --test lib/activity.test.ts",
     "test:api": "tsx --test lib/api.test.ts",
-    "test:chat": "tsx --test lib/chat.test.ts"
+    "test:chat": "tsx --test lib/chat.test.ts",
+    "qa": "node qa-verify.mjs"
   },
   "dependencies": {
     "@base-ui/react": "^1.8.0",
@@ -33,6 +34,7 @@
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "jsdom": "^30.1.1",
+    "playwright": "^1.64.0",
     "tailwindcss": "^4",
     "tsx": "^4.23.13",
     "typescript": "^5"

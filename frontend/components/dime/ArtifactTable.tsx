@@ -55,7 +55,7 @@ export default function ArtifactTable<T extends (string | number)[]>({
       <thead className="sticky top-0 z-10 bg-surface">
         <tr className="border-b border-line">
           {columns.map((c, i) => (
-            <th key={c.key} className={`p-0 text-[13px] font-medium ${i === 0 ? "pl-4" : ""} ${i === columns.length - 1 ? "pr-4" : ""}`}>
+            <th key={c.key} className={`p-0 text-[13px] font-medium ${i === 0 ? "pl-4" : "pl-3"} ${i === columns.length - 1 ? "pr-4" : "pr-3"}`}>
               <button
                 type="button"
                 onClick={() => toggle(i)}
@@ -76,7 +76,7 @@ export default function ArtifactTable<T extends (string | number)[]>({
             {columns.map((c, i) => (
               <td
                 key={c.key}
-                className={`${i === 0 ? "pl-4" : ""} ${i === columns.length - 1 ? "pr-4" : ""} ${
+                className={`${i === 0 ? "pl-4" : "pl-3"} ${i === columns.length - 1 ? "pr-4" : "pr-3"} ${
                   c.numeric ? "text-right font-mono tabular-nums" : ""
                 }`}
               >

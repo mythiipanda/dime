@@ -310,7 +310,7 @@ export function deriveArtifacts(tables: unknown): DimeArtifact[] {
     artifacts.push({
       kind: "compare",
       title: "Head-to-head",
-      source: "Dime warehouse",
+      source: "dime warehouse",
       aName,
       bName,
       rows: sharedMetrics.map(([metric, group]) => {
@@ -330,7 +330,7 @@ export function deriveArtifacts(tables: unknown): DimeArtifact[] {
     artifacts.push({
       kind: "table",
       title: "Verified numbers",
-      source: "Dime warehouse",
+      source: "dime warehouse",
       columns: [
         { key: "metric", label: "Metric" },
         { key: "subject", label: "Subject" },

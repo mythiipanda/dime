@@ -11,7 +11,6 @@ import {
   Compass,
   MessageCircle,
   PanelLeftClose,
-  PanelLeftOpen,
   Search,
   SquarePen,
   Target,
@@ -166,37 +165,46 @@ export default function DimeSidebar({
       } as CSSProperties}
     >
       <div className="flex min-h-0 w-[224px] shrink-0 flex-col">
-        <div className="relative mb-2.5 flex h-10 shrink-0 items-center gap-1 pl-2 pr-2">
-          <div className="sidebar-workspace-control flex min-w-0 flex-1 items-center">
-            <DimeMark size={20} className="shrink-0 text-ink" />
-            <span className="sidebar-copy ml-2 min-w-0 truncate text-[14px] font-medium tracking-[-0.01em] text-ink-2">
-              dime
-            </span>
-          </div>
-
-          <button
-            type="button"
-            aria-label={overlay ? "Close navigation" : "Collapse sidebar"}
-            aria-hidden={collapsed}
-            tabIndex={collapsed ? -1 : 0}
-            onClick={() => {
-              if (overlay) onRequestClose();
-              else collapse();
-            }}
-            className="sidebar-collapse-control flex size-8 shrink-0 items-center justify-center rounded-[8px] text-ink-3 transition-[opacity,background-color,color] duration-150 hover:bg-hover-2 hover:text-ink"
-          >
-            <PanelLeftClose size={18} />
-          </button>
-          <button
-            type="button"
-            aria-label="Expand sidebar"
-            aria-hidden={!collapsed}
-            tabIndex={collapsed ? 0 : -1}
-            onClick={() => setCollapsed(false)}
-            className="sidebar-expand-control absolute left-2 top-0.5 flex size-9 items-center justify-center rounded-[8px] text-ink-3 transition-[opacity,background-color,color] duration-150 hover:bg-hover-2 hover:text-ink"
-          >
-            <PanelLeftOpen size={18} />
-          </button>
+        <div
+          className={`relative mb-2.5 flex h-10 shrink-0 items-center ${
+            collapsed ? "w-[52px]" : "w-full"
+          }`}
+        >
+          {collapsed ? (
+            <button
+              type="button"
+              aria-label={overlay ? "Close navigation" : "Expand sidebar"}
+              aria-expanded={false}
+              onClick={() => {
+                if (overlay) onRequestClose();
+                else setCollapsed(false);
+              }}
+              className="mx-auto flex size-8 shrink-0 items-center justify-center rounded-[8px] text-ink transition-transform duration-150 hover:bg-hover-2 active:scale-[0.97]"
+            >
+              <DimeMark size={20} />
+            </button>
+          ) : (
+            <>
+              <div className="sidebar-workspace-control ml-2 mr-1 flex min-w-0 flex-1 items-center gap-2 px-2 py-1">
+                <DimeMark size={20} className="shrink-0 text-ink" />
+                <span className="sidebar-copy min-w-0 truncate text-[14px] font-medium tracking-[-0.01em] text-ink-2">
+                  dime
+                </span>
+              </div>
+              <button
+                type="button"
+                aria-label={overlay ? "Close navigation" : "Collapse sidebar"}
+                aria-expanded
+                onClick={() => {
+                  if (overlay) onRequestClose();
+                  else collapse();
+                }}
+                className="sidebar-collapse-control flex size-8 shrink-0 items-center justify-center rounded-[8px] text-ink-3 transition-[background-color,color] duration-150 hover:bg-hover-2 hover:text-ink active:scale-[0.97]"
+              >
+                <PanelLeftClose size={18} />
+              </button>
+            </>
+          )}
         </div>
 
         <GlideGroup>

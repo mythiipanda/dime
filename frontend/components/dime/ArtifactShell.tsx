@@ -12,6 +12,21 @@ function Ico({ d, size = 14 }: { d: React.ReactNode; size?: number }) {
 const iconBtn =
   "flex size-7 items-center justify-center rounded-[6px] text-ink-3 transition-[background-color,color,transform] duration-150 hover:bg-hover hover:text-ink active:scale-[0.94]";
 
+const SOURCE_LABELS: Record<string, string> = {
+  silver_boxscores: "Player game logs",
+  silver_schedule: "League schedule",
+  silver_lineups: "Lineup data",
+  silver_team_ratings: "Team ratings",
+  silver_players: "Player profiles",
+  tracking_feed: "Tracking feed",
+};
+
+function sourceLabel(source?: string) {
+  if (!source) return null;
+  const head = source.split("·")[0].trim();
+  return SOURCE_LABELS[head] ?? source.trim();
+}
+
 export default function ArtifactShell({
   title,
   source,
@@ -27,6 +42,7 @@ export default function ArtifactShell({
 }) {
   const [tall, setTall] = useState(false);
   const [copied, setCopied] = useState(false);
+  const label = sourceLabel(source);
 
   const copy = async () => {
     const text = copyText ?? title;
@@ -58,10 +74,8 @@ export default function ArtifactShell({
       <div className="flex h-10 shrink-0 items-center justify-between border-b border-line pl-4 pr-2">
         <span className="truncate text-[13px] font-semibold text-ink">{title}</span>
         <div className="flex shrink-0 items-center gap-0.5">
-          {source && (
-            <span className="mr-1.5 truncate font-mono text-[11px] text-ink-3">
-              {source}
-            </span>
+          {label && (
+            <span className="mr-1.5 truncate text-[11px] text-ink-3">{label}</span>
           )}
           <button type="button" aria-label={tall ? "Collapse" : "Expand"} title={tall ? "Collapse" : "Expand"}
             onClick={() => setTall((v) => !v)} className={iconBtn}>

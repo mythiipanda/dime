@@ -50,14 +50,14 @@ const TOOL_STEPS: ToolStep[] = [
     icon: "read", label: "boxscores.query", chip: "per-game scoring · last 30", mono: true, detailMono: true,
     detail: [
       { text: "SELECT player, AVG(pts), AVG(ts_pct)" },
-      { text: "FROM silver_boxscores · 2 rows · 412ms" },
+      { text: "FROM player_game_logs · 2 rows · 412ms" },
     ],
   },
   {
     icon: "read", label: "lineups.query", chip: "on/off net rating", mono: true, detailMono: true,
     detail: [
       { text: "SELECT on_court_net, off_court_net" },
-      { text: "FROM silver_lineups · 2 rows · 388ms" },
+      { text: "FROM lineup_data · 2 rows · 388ms" },
     ],
   },
   {
@@ -165,6 +165,8 @@ function DimeComposer({
 }
 
 type Tab = { id: string; label: string };
+
+const REFERENCE_TAB = "t1";
 
 type ViewKey =
   | "tonight"
@@ -432,11 +434,12 @@ function AssistantTurn({
 }
 
 export default function DimeHarness() {
-  const [tabs, setTabs] = useState<Tab[]>([{ id: "t1", label: "New analysis" }]);
-  const [activeTab, setActiveTab] = useState("t1");
+  const [tabs, setTabs] = useState<Tab[]>([{ id: REFERENCE_TAB, label: "New analysis" }]);
+  const [activeTab, setActiveTab] = useState(REFERENCE_TAB);
   const [messagesByTab, setMessagesByTab] = useState<Record<string, ChatMsg[]>>({});
   const [activeView, setActiveView] = useState<"chat" | ViewKey>("chat");
   const messages = messagesByTab[activeTab] ?? [];
+  const showReference = activeTab === REFERENCE_TAB && messages.length === 0;
   const [live, setLive] = useState<LiveRun | null>(null);
   const [draft, setDraft] = useState("");
   const [paletteOpen, setPaletteOpen] = useState(false);
@@ -679,7 +682,7 @@ export default function DimeHarness() {
                   <button
                     type="button"
                     onClick={() => setActiveTab(t.id)}
-                    className="max-w-[180px] truncate px-2 text-[12.5px] font-medium transition-transform duration-150 active:scale-[0.97]"
+                    className="flex h-full max-w-[180px] items-center truncate px-2 text-[12.5px] font-medium transition-transform duration-150 active:scale-[0.97]"
                   >
                     {t.label}
                   </button>
@@ -688,9 +691,9 @@ export default function DimeHarness() {
                       type="button"
                       aria-label={`Close ${t.label}`}
                       onClick={() => closeTab(t.id)}
-                      className="flex size-4 items-center justify-center rounded-[4px] text-ink-3 transition-[background-color,color,transform] duration-150 hover:bg-page hover:text-ink active:scale-[0.9]"
+                      className="mr-0.5 flex size-6 shrink-0 items-center justify-center rounded-[5px] text-ink-3 transition-[background-color,color,transform] duration-150 hover:bg-page hover:text-ink active:scale-[0.9]"
                     >
-                      <Ico d={<path d="M6 6l12 12M18 6L6 18" />} size={10} />
+                      <Ico d={<path d="M6 6l12 12M18 6L6 18" />} size={11} />
                     </button>
                   )}
                 </span>
@@ -707,6 +710,16 @@ export default function DimeHarness() {
 
             <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto">
               <div className="mx-auto w-full max-w-[760px] px-4 py-8 sm:px-8">
+                {showReference && (
+                  <>
+                <div className="mb-3 flex items-center gap-2">
+                  <span className="rounded-full border border-line px-2 py-0.5 text-[11px] font-medium text-ink-3">
+                    Sample analysis
+                  </span>
+                  <span className="text-[11px] text-ink-3">
+                    A worked example. Ask anything to start your own.
+                  </span>
+                </div>
                 <div className="flex justify-end pl-10 sm:pl-24" style={{ animation: "fade-up 280ms cubic-bezier(0.23,1,0.32,1) both" }}>
                   <div className="rounded-xl bg-field px-3.5 py-2 text-[13px] leading-relaxed text-ink shadow-hairline">
                     Compare SGA and Luka this season — scoring, efficiency, and team impact.
@@ -769,6 +782,8 @@ export default function DimeHarness() {
                     <TonightStrip />
                   </ArtifactShell>
                 </div>
+                  </>
+                )}
                 {messages.map((m, i) =>
                   m.role === "user" ? (
                     <div

@@ -130,7 +130,7 @@ export default function ThinkingState({
       className="flex w-full max-w-95 flex-col"
       style={{
         minHeight: working || expanded ? 176 : undefined,
-        transition: "min-height 400ms cubic-bezier(0.23,1,0.32,1)",
+        transition: "min-height 240ms cubic-bezier(0.23,1,0.32,1)",
       }}
     >
       {}
@@ -183,7 +183,7 @@ export default function ThinkingState({
 
       {}
       <div
-        className="grid transition-[grid-template-rows,opacity] duration-400"
+        className="grid transition-[grid-template-rows,opacity] duration-240"
         style={{
           gridTemplateRows: expanded ? "1fr" : "0fr",
           opacity: expanded ? 1 : 0,
@@ -195,7 +195,7 @@ export default function ThinkingState({
             <span
               aria-hidden
               className="absolute left-[3px] w-px bg-line"
-              style={{ top: -8, height: lineHeight ? lineHeight - 2 : 0, transition: "height 500ms cubic-bezier(0.23,1,0.32,1)" }}
+              style={{ top: -8, height: lineHeight ? lineHeight - 2 : 0, transition: "height 240ms cubic-bezier(0.23,1,0.32,1)" }}
             />
             <div ref={traceRef} className="flex flex-col gap-1 py-1">
             {v.query && (
@@ -242,7 +242,7 @@ export default function ThinkingState({
               if (variant === "Search") {
                 return (
                   <a
-                    key={row.primary}
+                    key={`s-${i}`}
                     href={row.href}
                     target="_blank"
                     rel="noreferrer"
@@ -258,7 +258,7 @@ export default function ThinkingState({
                 const selected = selectedTool === row.primary;
                 return (
                   <button
-                    key={row.primary}
+                    key={`s-${i}`}
                     type="button"
                     aria-pressed={selected}
                     onClick={() => setSelectedTool(selected ? null : row.primary)}
@@ -271,7 +271,7 @@ export default function ThinkingState({
               }
 
               return (
-                <div key={row.primary} className={rowClass} style={animation}>
+                <div key={`s-${i}`} className={rowClass} style={animation}>
                   {content}
                 </div>
               );

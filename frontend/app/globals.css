@@ -387,15 +387,9 @@ a:focus-visible .animated-underline::after {
 }
 
 .sidebar-logo,
-.sidebar-collapse-control,
-.sidebar-expand-control {
+.sidebar-collapse-control {
   transition-duration: var(--sidebar-copy-duration);
   transition-timing-function: ease-out;
-}
-
-.sidebar-expand-control {
-  pointer-events: none;
-  opacity: 0;
 }
 
 .sidebar-glide-highlight {
@@ -411,10 +405,6 @@ a:focus-visible .animated-underline::after {
   pointer-events: none;
   opacity: 0;
   transform: translateX(calc(var(--sidebar-copy-offset) * -1));
-}
-
-[data-sidebar-collapsed="true"] .sidebar-workspace-control {
-  pointer-events: none;
 }
 
 [data-sidebar-collapsed="true"] .sidebar-logo,
