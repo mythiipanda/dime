@@ -94,9 +94,9 @@ def declared_schema_for(capability_id: str) -> dict | None:
 
 
 def capability_catalog() -> dict[str, dict]:
-    from shared.tools import v1_tools
+    from shared.tools import WAREHOUSE_TOOLS
 
-    by_tool = {tool.name: tool for tool in v1_tools}
+    by_tool = {tool.name: tool for tool in WAREHOUSE_TOOLS}
     catalog: dict[str, dict] = {}
     for name, spec in CAPABILITIES.items():
         tool = by_tool.get(spec.tool_name)

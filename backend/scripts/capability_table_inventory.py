@@ -17,7 +17,7 @@ if str(BACKEND) not in sys.path:
 import duckdb
 
 from shared import store as _store
-from shared.tools import v1_tools
+from shared.tools import WAREHOUSE_TOOLS
 from v2.adapters import coverage as _coverage
 from v2.adapters.capabilities import CAPABILITIES
 
@@ -240,7 +240,7 @@ def absent_inventory(explicit: list[str] | None = None) -> list[dict]:
     return rows
 
 def _entrypoint_for(tool_name: str):
-    by_name = {tool.name: tool for tool in v1_tools}
+    by_name = {tool.name: tool for tool in WAREHOUSE_TOOLS}
     tool = by_name.get(tool_name)
     if tool is not None:
         return _tool_entrypoint(tool), f"shared tool {tool_name}"

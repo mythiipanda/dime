@@ -9,7 +9,7 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import shared.tools.espn as espn_mod
-from shared.tools import TOOL_NAMES, v1_tools
+from shared.tools import TOOL_NAMES, WAREHOUSE_TOOLS
 
 _REAL_RESOLVE_CLI_PATH = espn_mod._resolve_cli_path
 
@@ -230,10 +230,10 @@ def test_espn_summary_success_carries_typed_evidence_status(monkeypatch):
         "live_external_no_warehouse_provenance")
 
 
-def test_v1_tools_includes_espn_names():
+def test_warehouse_tools_includes_espn_names():
     for name in ("get_espn_scores", "get_espn_event_summary", "get_espn_odds"):
         assert name in TOOL_NAMES
-        assert name in [t.name for t in v1_tools]
+        assert name in [t.name for t in WAREHOUSE_TOOLS]
 
 
 def test_cli_path_env_override_is_honored(monkeypatch, tmp_path):

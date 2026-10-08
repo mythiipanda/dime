@@ -66,7 +66,7 @@ def _open_chat_budget():
 
 def test_the_capability_names_its_tool_and_its_coverage_tables(
         real_warehouse):
-    from shared.tools import v1_tools
+    from shared.tools import WAREHOUSE_TOOLS
     from shared.tools.league import _SQL_TABLES
     from shared.tools.sql_exec import TABLES
     from v2.adapters.capabilities import CAPABILITIES
@@ -81,7 +81,7 @@ def test_the_capability_names_its_tool_and_its_coverage_tables(
     assert TABLES == tuple(sorted(_SQL_TABLES))
     spec = CAPABILITIES["sql_exec"]
     assert spec.tool_name == "sql_exec"
-    assert spec.tool_name in {tool.name for tool in v1_tools}
+    assert spec.tool_name in {tool.name for tool in WAREHOUSE_TOOLS}
     assert declared_tables_for_capability("sql_exec", {}) == TABLES
     on_hand = warehouse_tables()
     assert set(tables_for_capability("sql_exec", {})) <= on_hand

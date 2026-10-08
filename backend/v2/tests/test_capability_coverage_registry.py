@@ -5,14 +5,14 @@ from pathlib import Path
 import duckdb
 
 from shared import store
-from shared.tools import v1_tools
+from shared.tools import WAREHOUSE_TOOLS
 from v2.adapters import coverage
 from v2.adapters.capabilities import CAPABILITIES
 from v2.adapters.models import ModelIntake
 from v2.contracts import EvidenceRequirement, SeasonRef, TaskSpec
 from v2.runtime.assembly import capability_catalog
 
-TOOL_MODULES = {tool.name: tool for tool in v1_tools}
+TOOL_MODULES = {tool.name: tool for tool in WAREHOUSE_TOOLS}
 SEASON_SCOPED = tuple(
     name for name, spec in CAPABILITIES.items() if spec.task_season_scoped)
 

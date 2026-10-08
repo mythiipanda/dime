@@ -55,10 +55,10 @@ def _cost_for(name: str) -> str:
     return "cheap"
 
 def build_cards() -> list[dict]:
-    from . import v1_tools
+    from . import WAREHOUSE_TOOLS
 
     cards = []
-    for tool in v1_tools:
+    for tool in WAREHOUSE_TOOLS:
         description = (getattr(tool, "description", None) or "").strip()
         purpose = description.splitlines()[0].strip() if description else ""
         triggers = _tokens(description)

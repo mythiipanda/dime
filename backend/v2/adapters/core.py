@@ -357,11 +357,11 @@ def _row_values(rows: Any):
     return iter_values(envelope)
 
 def _default_tools() -> dict[str, Any]:
-    from shared.tools import v1_tools
+    from shared.tools import WAREHOUSE_TOOLS
 
     from . import coverage
 
-    registry = {tool.name: tool for tool in v1_tools}
+    registry = {tool.name: tool for tool in WAREHOUSE_TOOLS}
     registry["metric_coverage"] = coverage.metric_coverage
     return registry
 
