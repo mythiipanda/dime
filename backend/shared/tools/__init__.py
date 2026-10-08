@@ -83,6 +83,7 @@ from .team import get_season_series
 from .gamelog import search_game_logs
 from .splits import get_matchup_splits, get_regression_check
 from .playtypes import get_playtype_profile
+from .stints import get_stint_timeline
 from .streaks import get_streaks
 from .rest import get_rest_advantage
 from .competitive import get_competitive_ratings
@@ -209,6 +210,7 @@ WAREHOUSE_TOOLS: list[BaseTool] = [
     get_watchlist,
     remove_watchlist_item,
     get_streaks,
+    get_stint_timeline,
     get_head_to_head,
     get_season_series,
     search_game_logs,
