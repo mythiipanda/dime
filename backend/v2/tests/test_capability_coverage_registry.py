@@ -58,6 +58,22 @@ def test_season_scoped_capability_names_coverage_tables():
         "capabilities season coverage cannot see, so intake blames "
         f"silver_boxscores for them: {sorted(blind)}")
 
+def test_capabilities_from_parallel_tool_branches_declare_their_tool_tables():
+    from shared.tools import stints, tracking
+
+    expected = {
+        "tracking_profile": (tracking._TRACKING_TABLE,),
+        "defensive_matchups": (tracking._DEFEND_TABLE,),
+        "stint_timeline": (stints._TABLE,),
+    }
+    undeclared = {
+        name: coverage.declared_tables_for_capability(name, {})
+        for name, tables in expected.items()
+        if coverage.declared_tables_for_capability(name, {}) != tables
+    }
+    assert not undeclared, (
+        f"capabilities do not declare the table their own tool reads: {undeclared}")
+
 def test_registry_never_names_a_non_season_scoped_capability():
     stray = sorted(set(coverage.CAPABILITY_TABLES) - set(SEASON_SCOPED))
     assert not stray, f"entries for capabilities no season can gate: {stray}"
