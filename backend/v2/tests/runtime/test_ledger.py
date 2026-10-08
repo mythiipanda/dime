@@ -5,13 +5,14 @@ import os
 
 import pytest
 
+from shared.durability import DIRECTORY_FSYNC_SUPPORTED
+
 from v2.runtime.ledger import (
     FileLedger,
     LedgerKind,
     RequestEnvelope,
     RunLedger,
     TerminalReason,
-    _DIRECTORY_FSYNC_SUPPORTED,
 )
 
 def test_request_envelope_hashes_exact_model_inputs() -> None:
@@ -433,8 +434,8 @@ def test_file_ledger_fsyncs_directory_on_creation(tmp_path, monkeypatch) -> None
     monkeypatch.setattr("v2.runtime.ledger.os.fsync", record)
     file = FileLedger(tmp_path / "new" / "run.jsonl", "run")
     file.append(LedgerKind.TURN_START, turn_id="turn", data={"request": "q"})
-    assert len(calls) == (2 if _DIRECTORY_FSYNC_SUPPORTED else 1)
-    if not _DIRECTORY_FSYNC_SUPPORTED:
+    assert len(calls) == (2 if DIRECTORY_FSYNC_SUPPORTED else 1)
+    if not DIRECTORY_FSYNC_SUPPORTED:
         with pytest.raises(OSError):
             os.open(tmp_path / "new", os.O_RDONLY)
 

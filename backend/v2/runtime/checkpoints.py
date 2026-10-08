@@ -8,6 +8,7 @@ from typing import Literal, Protocol
 
 from pydantic import BaseModel, ConfigDict, Field, StrictInt, model_validator
 
+from shared import durability
 from v2.contracts import EvidenceEnvelope, Plan, TaskSpec
 from v2.runtime.models import ExecutionErrorCode
 
@@ -112,7 +113,9 @@ class FileCheckpointStore:
             raise ValueError("checkpoint directory parent cannot be a symlink")
 
     def _fsync_directory(self) -> None:
-        directory_fd = os.open(self._directory, os.O_RDONLY)
+        directory_fd = durability.open_directory_for_fsync(self._directory)
+        if directory_fd is None:
+            return
         try:
             os.fsync(directory_fd)
         finally:

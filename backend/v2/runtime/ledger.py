@@ -21,16 +21,16 @@ def _ledger_path_lock(path: Path) -> Lock:
 
 from pydantic import BaseModel, ConfigDict, Field, StrictFloat, StrictInt, model_validator
 
+from shared import durability
 from shared import file_lock
 
 _LEDGER_LOCK_TIMEOUT_S = 60.0
-_DIRECTORY_FSYNC_SUPPORTED = os.name == "posix"
 
 
 def _fsync_directory(path: Path) -> None:
-    if not _DIRECTORY_FSYNC_SUPPORTED:
+    directory_fd = durability.open_directory_for_fsync(path)
+    if directory_fd is None:
         return
-    directory_fd = os.open(path, os.O_RDONLY)
     try:
         os.fsync(directory_fd)
     finally:

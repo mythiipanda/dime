@@ -6,6 +6,7 @@ import os
 import tempfile
 from typing import Any
 
+from shared import durability
 from v2.contracts import EvidenceEnvelope
 from v2.domain.evidence import EvidenceIndex
 
@@ -76,11 +77,12 @@ def save_replay(path: Path, scenario_id: str, revision: str,
             handle.flush()
             os.fsync(handle.fileno())
         os.replace(temporary, path)
-        directory_fd = os.open(path.parent, os.O_RDONLY)
-        try:
-            os.fsync(directory_fd)
-        finally:
-            os.close(directory_fd)
+        directory_fd = durability.open_directory_for_fsync(path.parent)
+        if directory_fd is not None:
+            try:
+                os.fsync(directory_fd)
+            finally:
+                os.close(directory_fd)
     finally:
         if os.path.exists(temporary):
             os.unlink(temporary)

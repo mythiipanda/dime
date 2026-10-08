@@ -8,6 +8,7 @@ from pathlib import Path
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
+from shared.durability import DIRECTORY_FSYNC_SUPPORTED
 from v2.api.events import (
     CustomData,
     FinalAnswer,
@@ -817,7 +818,7 @@ def test_checkpoint_save_fsyncs_directory_after_replace(tmp_path, monkeypatch) -
     monkeypatch.setattr("v2.runtime.checkpoints.os.fsync", record)
     FileCheckpointStore(tmp_path).save(ExecutionCheckpoint(version=2,
         run_id="durable", task=_task(), plan=_plan()))
-    assert len(calls) == 2
+    assert len(calls) == (2 if DIRECTORY_FSYNC_SUPPORTED else 1)
 
 def test_checkpoint_delete_fsyncs_directory(tmp_path, monkeypatch) -> None:
     from v2.runtime.checkpoints import ExecutionCheckpoint
@@ -831,7 +832,7 @@ def test_checkpoint_delete_fsyncs_directory(tmp_path, monkeypatch) -> None:
         return real_fsync(fd)
     monkeypatch.setattr("v2.runtime.checkpoints.os.fsync", record)
     store.delete("delete-durable")
-    assert len(calls) == 1
+    assert len(calls) == (1 if DIRECTORY_FSYNC_SUPPORTED else 0)
     assert store.load("delete-durable") is None
 
 def test_checkpoint_store_rejects_symlinked_record(tmp_path: Path) -> None:
