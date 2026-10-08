@@ -472,6 +472,8 @@ def _stub_debate_tools(monkeypatch, invoke):
     tools_mod = types.ModuleType("shared.tools")
     tools_mod.get_debate_card = FakeTool()
     core_mod = types.ModuleType("shared.tools._core")
+    from shared.tools._core import InvalidSeasonError
+    core_mod.InvalidSeasonError = InvalidSeasonError
     core_mod.clamp_season = lambda season: season
     _stub_shared(monkeypatch, **{"tools": tools_mod, "tools._core": core_mod})
 
