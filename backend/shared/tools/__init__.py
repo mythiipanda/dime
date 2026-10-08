@@ -111,7 +111,8 @@ from .tracking import get_defensive_matchups, get_tracking_profile
 from .transactions import get_transactions
 from .watchlist import add_watchlist_item, get_watchlist, remove_watchlist_item
 from .wpa import get_wpa_leaders
-from ._core import MAX_ROWS, STAT_CATEGORIES, clamp_stat
+from .possessions import get_possession_log
+from ._core import MAX_ROWS, STAT_CATEGORIES, clamp_stat, last_completed_season, resolve_season
 
 WAREHOUSE_TOOLS: list[BaseTool] = [
     resolve_entity,
@@ -227,6 +228,7 @@ WAREHOUSE_TOOLS: list[BaseTool] = [
     get_tracking_profile,
     get_defensive_matchups,
     get_transactions,
+    get_possession_log,
 ]
 
 TOOL_NAMES = [t.name for t in WAREHOUSE_TOOLS]
