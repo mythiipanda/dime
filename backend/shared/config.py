@@ -27,7 +27,7 @@ class Settings(BaseSettings):
     gemini_api_key: str = Field(
         default="",
         validation_alias=AliasChoices("GEMINI_API_KEY", "GOOGLE_API_KEY"))
-    gemini_model: str = "gemini-3.5-flash-lite"
+    gemini_model: str = ""
     mistral_api_key: str = ""
     mistral_model: str = "ministral-8b-2512"
     openrouter_api_key: str = ""

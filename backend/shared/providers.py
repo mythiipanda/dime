@@ -23,12 +23,12 @@ def active_provider_order() -> tuple[ProviderName, ...]:
             else free)
 
 GEMINI_BASE_URL = "https://generativelanguage.googleapis.com/v1beta/openai/"
-GEMINI_DEFAULT = "gemini-3.5-flash-lite"
+GEMINI_DEFAULT = "gemini-3.5-flash"
 GEMINI_MODELS: tuple[str, ...] = (
     GEMINI_DEFAULT,
-    "gemini-3.5-flash",
     "gemini-3.8-flash",
     "gemma-4-31b-it",
+    "gemini-3.5-flash-lite",
 )
 GEMINI_ALLOWLIST = frozenset(GEMINI_MODELS)
 NVIDIA_NIM_BASE_URL = "https://integrate.api.nvidia.com/v1"
@@ -37,8 +37,9 @@ NVIDIA_NIM_MODELS: tuple[str, ...] = (
     NVIDIA_NIM_DEFAULT,
     "deepseek-ai/deepseek-v4.1-flash",
 )
+NVIDIA_NIM_TIMEOUT_S = 20
 NVIDIA_NIM_ALLOWLIST = frozenset(NVIDIA_NIM_MODELS)
-MISTRAL_DEFAULT = "ministral-8b-2512"
+MISTRAL_DEFAULT = "mistral-large-4-0"
 OPENROUTER_DEFAULT = "nvidia/nemotron-3-super-120b-a12b:free"
 OPENROUTER_AUTO = "openrouter/free"
 INCEPTION_DEFAULT = "mercury-2.5"
@@ -165,7 +166,7 @@ def get_llm(name: ProviderName, model: str | None = None) -> ChatOpenAI | None:
             model=_nvidia_nim_model(model),
             base_url=NVIDIA_NIM_BASE_URL,
             api_key=settings.nvidia_nim_api_key,
-            timeout=settings.llm_timeout_s,
+            timeout=NVIDIA_NIM_TIMEOUT_S,
             max_retries=settings.llm_max_retries,
             extra_body={"chat_template_kwargs": {"enable_thinking": False}},
         )

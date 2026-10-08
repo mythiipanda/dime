@@ -121,7 +121,7 @@ def test_explicit_unlisted_groq_slugs_fail_closed_before_client(monkeypatch, slu
         providers.resolve_model_id("groq:" + slug)
 
 def test_gemini_allowlist_is_workhorse_and_quality_only(monkeypatch):
-    assert GEMINI_DEFAULT == "gemini-3.5-flash-lite"
+    assert GEMINI_DEFAULT == "gemini-3.5-flash"
     assert set(GEMINI_MODELS) == {
         "gemini-3.5-flash-lite", "gemini-3.5-flash", "gemini-3.8-flash",
         "gemma-4-31b-it"}
@@ -147,6 +147,7 @@ def test_gemini_is_free_and_default_when_keyed(monkeypatch):
     assert not is_free_model("gemini", "gemini-2.5-pro")
     assert providers._default_provider() == ("gemini", GEMINI_DEFAULT)
     assert providers._gemini_model("gemini-3.5-flash") == "gemini-3.5-flash"
+    assert providers._gemini_model("gemini-3.5-flash-lite") == "gemini-3.5-flash-lite"
     assert providers._gemini_model("gemini-2.5-pro") == GEMINI_DEFAULT
     catalog = models_catalog()
     assert catalog["available"]["gemini"] is True
