@@ -22,7 +22,7 @@ def _failure(query: str, message: str) -> dict[str, Any]:
     return {"tool": TOOL, "ok": False, "rows": {},
             "meta": {"sql": query[:500]}, "error": message}
 
-@tool("sql_exec", description='Run one agent-written read-only analytical query over the warehouse.\n\nThe query must be a single SELECT or WITH statement over the declared\nsilver tables. Writes, stacked statements, and tables outside the\ndeclared set are refused before execution. Results are capped at\nRERUN_ROW_CAP rows with a RERUN_TIMEOUT_S statement timeout, and a\nquery that returns nothing fails instead of publishing an empty\nanswer. Alias the primary numeric answer `n` so citations carry a\ndeclared count unit. Returned rows are computed from the supplied\nSQL, never curated table values.')
+@tool("sql_exec", description='Run one agent-written read-only analytical query over the warehouse.\n\nThe query must be a single SELECT or WITH statement over the declared\nsilver tables. Writes, stacked statements, and tables outside the\ndeclared set are refused before execution. Results are capped at\nRERUN_ROW_CAP rows with a RERUN_TIMEOUT_S statement timeout, and a\nquery that returns nothing fails instead of publishing an empty\nanswer. Name the primary numeric column for what it measures, so a\npercentage answers as TS_PCT and a count as `n`; the column you\nalias is the column a citation binds to. Returned rows are computed\nfrom the supplied SQL, never curated table values.')
 async def sql_exec(sql: str, season: str | None = None) -> dict[str, Any]:
     query = (sql or "").strip()
     if not query:

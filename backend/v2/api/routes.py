@@ -5,6 +5,7 @@ import hashlib
 import io
 import json
 import logging
+import math
 import os
 import re
 import subprocess
@@ -313,6 +314,25 @@ def datasets_freshness() -> dict:
     cached["at"] = now
     return payload
 
+def _pinned_rows(rows: list[dict], pin: list[str]) -> list[dict]:
+    pinned = []
+    for r in rows:
+        keyed = {k: r[k] for k in pin if k in r}
+        keyed.update({k: v for k, v in r.items() if k not in keyed})
+        pinned.append(keyed)
+    return pinned
+
+def _sample_tier_rows(rows: list[dict]) -> list[dict]:
+    from shared.tools._core import sample_tier
+
+    for r in rows:
+        tier, est = sample_tier(r.get("MIN"))
+        r["SAMPLE_TIER"] = tier
+        r["EST_POSS"] = est
+        if tier == "small" and not r.get("SAMPLE"):
+            r["SAMPLE"] = "small: under ~100 possessions"
+    return rows
+
 def _datasets_envelope(table: str, season: str, frame: object, cached: bool) -> dict:
     import polars as pl
 
@@ -323,37 +343,16 @@ def _datasets_envelope(table: str, season: str, frame: object, cached: bool) -> 
         meta["fetched_at"] = frame["_fetched_at"][0]
     rows = frame.to_dicts()
     if table.startswith("silver_leaders_"):
-
         stat_col = table.rsplit("_", 1)[-1].upper()
         if stat_col == "FG":
             stat_col = "FG_PCT"
-        pin = ["RANK", "PLAYER", "TEAM", stat_col, "GP", "MIN"]
-        pinned = []
-        for r in rows:
-            keyed = {k: r[k] for k in pin if k in r}
-            keyed.update({k: v for k, v in r.items() if k not in keyed})
-            pinned.append(keyed)
-        rows = pinned
+        rows = _pinned_rows(rows, ["RANK", "PLAYER", "TEAM", stat_col, "GP", "MIN"])
     if table == "silver_standings":
-
-        pin = ["TeamCity", "TeamName", "Conference", "Record",
-               "WINS", "LOSSES", "WinPCT", "PlayoffRank",
-               "ClinchIndicator"]
-        pinned = []
-        for r in rows:
-            keyed = {k: r[k] for k in pin if k in r}
-            keyed.update({k: v for k, v in r.items() if k not in keyed})
-            pinned.append(keyed)
-        rows = pinned
+        rows = _pinned_rows(rows, ["TeamCity", "TeamName", "Conference", "Record",
+                                   "WINS", "LOSSES", "WinPCT", "PlayoffRank",
+                                   "ClinchIndicator"])
     if table == "silver_lineups":
-        from shared.tools._core import sample_tier
-
-        for r in rows:
-            tier, est = sample_tier(r.get("MIN"))
-            r["SAMPLE_TIER"] = tier
-            r["EST_POSS"] = est
-            if tier == "small" and not r.get("SAMPLE"):
-                r["SAMPLE"] = "small: under ~100 possessions"
+        rows = _sample_tier_rows(rows)
     return {"data": rows, "meta": meta}
 
 def _datasets_fetch_live(
@@ -405,6 +404,80 @@ def _datasets_fetch_live(
         return nba_stats.hustle("player", season)
     return None
 
+def _wowy_dataset(season: str, player_a: str, player_b: str, team_id: int, fmt: str):
+    import polars as pl
+    from shared.tools.player import get_wowy
+
+    res = get_wowy.invoke(
+        {"player_a": player_a, "player_b": player_b, "team_id": team_id, "season": season}
+    )
+    if not res.get("ok"):
+        return {"ok": False, "error": res.get("error", "wowy failed")}
+    rows = res.get("rows", [])
+    if fmt == "csv":
+        df = pl.DataFrame(rows)
+        return Response(df.write_csv(), media_type="text/csv")
+    return {"ok": True, "data": rows, "verdict": res.get("verdict"), "meta": res.get("meta")}
+
+def _clamp_leaders_stat(stat: str) -> str:
+    from shared.tools import clamp_stat
+
+    try:
+        return clamp_stat(stat)
+    except ValueError:
+        return "PTS"
+
+def _dataset_entity(player_id: int, team_id: int, game_id: str, game_date: str, ids: str) -> str:
+    if player_id:
+        return f"player:{player_id}"
+    if team_id:
+        return f"team:{team_id}"
+    if game_id:
+        return f"game:{game_id}"
+    if game_date:
+        return f"date:{game_date}"
+    if ids:
+        return f"wowy:{ids}"
+    return ""
+
+def _failed_live_response(live, entity_scoped: bool, entity: str, table: str, season: str) -> dict:
+    from shared import store
+
+    stale = None
+    if entity_scoped and entity:
+        stale = store.read_frame(table, "_entity = ?", [entity])
+    if stale is not None and stale.height > 0:
+        out = _datasets_envelope(table, season, stale, True)
+        out["ok"] = True
+        out["meta"]["stale"] = True
+        out["meta"]["live_error"] = live.error or "empty upstream response"
+        out["meta"]["live_source"] = live.meta.source
+        return out
+    return {"ok": False, "error": live.error,
+            "source": live.meta.source,
+            "detail": "live source failed and no cached rows for this entity"}
+
+def _sort_frame_by_game_date(frame):
+    import polars as pl
+
+    for fmt_s in ("%b %d, %Y", "%Y-%m-%d"):
+        try:
+            frame = frame.with_columns(
+                pl.col("GAME_DATE").str.strptime(
+                    pl.Date, fmt_s, strict=False).alias("_d"))
+            if frame["_d"].null_count() < frame.height:
+                frame = frame.sort("_d", descending=True,
+                                   nulls_last=True).drop("_d")
+            else:
+                frame = frame.drop("_d")
+                continue
+            break
+        except Exception:
+            if "_d" in frame.columns:
+                frame = frame.drop("_d")
+            continue
+    return frame
+
 @router.get("/datasets/{name}")
 def dataset(
     name: str,
@@ -422,18 +495,7 @@ def dataset(
     import polars as pl
 
     if name == "wowy" and (player_a or ids):
-        from shared.tools.player import get_wowy
-
-        res = get_wowy.invoke(
-            {"player_a": player_a or ids, "player_b": player_b, "team_id": team_id, "season": season}
-        )
-        if not res.get("ok"):
-            return {"ok": False, "error": res.get("error", "wowy failed")}
-        rows = res.get("rows", [])
-        if fmt == "csv":
-            df = pl.DataFrame(rows)
-            return Response(df.write_csv(), media_type="text/csv")
-        return {"ok": True, "data": rows, "verdict": res.get("verdict"), "meta": res.get("meta")}
+        return _wowy_dataset(season, player_a or ids, player_b, team_id, fmt)
 
     if name not in _DATASETS_TABLES:
         return {"ok": False, "error": f"unknown dataset, pick one of {sorted(_DATASETS_TABLES)}"}
@@ -441,28 +503,12 @@ def dataset(
 
     table = _DATASETS_TABLES[name]
     if name == "leaders":
-        from shared.tools import clamp_stat
-
-        try:
-            stat = clamp_stat(stat)
-        except ValueError:
-            stat = "PTS"
+        stat = _clamp_leaders_stat(stat)
         table = f"silver_leaders_{stat.lower()}"
     entity_scoped = name in ("player_gamelogs", "team_games", "shots", "scoreboard", "lineups", "on_off", "wowy", "four_factors")
-    entity = ""
-    if player_id:
-        entity = f"player:{player_id}"
-    elif team_id:
-        entity = f"team:{team_id}"
-    elif game_id:
-        entity = f"game:{game_id}"
-    elif game_date:
-        entity = f"date:{game_date}"
-    elif ids:
-        entity = f"wowy:{ids}"
+    entity = _dataset_entity(player_id, team_id, game_id, game_date, ids)
     frame = store.read_frame(table, "_season = ?", [season])
     if name == "leaders" and frame.height > 0:
-
         from shared.tools import clamp_stat
 
         stat_col = clamp_stat(stat)
@@ -481,20 +527,7 @@ def dataset(
         if live is None:
             return {"ok": False, "error": "missing id param for this dataset"}
         if not live.ok:
-
-            stale = None
-            if entity_scoped and entity:
-                stale = store.read_frame(table, "_entity = ?", [entity])
-            if stale is not None and stale.height > 0:
-                out = _datasets_envelope(table, season, stale, True)
-                out["ok"] = True
-                out["meta"]["stale"] = True
-                out["meta"]["live_error"] = live.error or "empty upstream response"
-                out["meta"]["live_source"] = live.meta.source
-                return out
-            return {"ok": False, "error": live.error,
-                    "source": live.meta.source,
-                    "detail": "live source failed and no cached rows for this entity"}
+            return _failed_live_response(live, entity_scoped, entity, table, season)
         store.save_frame(table, live, entity)
         if entity_scoped:
             frame = store.read_frame(
@@ -504,23 +537,7 @@ def dataset(
             frame = store.read_frame(table, "_season = ?", [season])
     if (name in ("player_gamelogs", "team_games", "playoff_gamelogs")
             and frame.height > 0 and "GAME_DATE" in frame.columns):
-
-        for fmt_s in ("%b %d, %Y", "%Y-%m-%d"):
-            try:
-                frame = frame.with_columns(
-                    pl.col("GAME_DATE").str.strptime(
-                        pl.Date, fmt_s, strict=False).alias("_d"))
-                if frame["_d"].null_count() < frame.height:
-                    frame = frame.sort("_d", descending=True,
-                                       nulls_last=True).drop("_d")
-                else:
-                    frame = frame.drop("_d")
-                    continue
-                break
-            except Exception:
-                if "_d" in frame.columns:
-                    frame = frame.drop("_d")
-                continue
+        frame = _sort_frame_by_game_date(frame)
     if name in ("player_gamelogs", "team_games", "playoff_gamelogs") and frame.height > 0:
 
         from shared.tools.gamelog import dedupe_game_log_frame
@@ -548,6 +565,28 @@ def thread_runs(thread_id: str, client: str = Query("")) -> dict:
 
     return {"runs": store.list_runs(thread_id, owner=client[:80])}
 
+def _export_table_lines(t: dict) -> list[str]:
+    lines = [f"Source table: {t.get('tool', '?')}"]
+    meta = t.get("meta") if isinstance(t.get("meta"), dict) else {}
+    source = meta.get("source")
+    fetched_at = meta.get("fetched_at")
+    season = meta.get("season")
+    identity = [
+        f"source {source}" if source else "",
+        f"season {season}" if season else "",
+        f"fetched {str(fetched_at)[:10]}" if fetched_at else "",
+    ]
+    if any(identity):
+        lines.append("Evidence: " + ", ".join(filter(None, identity)))
+    limits = [meta.get("qualification"), meta.get("coverage")]
+    warnings = meta.get("warnings")
+    if isinstance(warnings, list):
+        limits.extend(str(item) for item in warnings if str(item).strip())
+    for limit in limits:
+        if isinstance(limit, str) and limit.strip():
+            lines.append(f"Limit: {limit}")
+    return lines
+
 @router.get("/threads/{thread_id}/export")
 def thread_export(thread_id: str, client: str = Query("")):
     from shared import store
@@ -562,25 +601,7 @@ def thread_export(thread_id: str, client: str = Query("")):
         for t in r["tables"] if isinstance(r["tables"], list) else []:
             if not isinstance(t, dict):
                 continue
-            lines.append(f"Source table: {t.get('tool', '?')}")
-            meta = t.get("meta") if isinstance(t.get("meta"), dict) else {}
-            source = meta.get("source")
-            fetched_at = meta.get("fetched_at")
-            season = meta.get("season")
-            identity = [
-                f"source {source}" if source else "",
-                f"season {season}" if season else "",
-                f"fetched {str(fetched_at)[:10]}" if fetched_at else "",
-            ]
-            if any(identity):
-                lines.append("Evidence: " + ", ".join(filter(None, identity)))
-            limits = [meta.get("qualification"), meta.get("coverage")]
-            warnings = meta.get("warnings")
-            if isinstance(warnings, list):
-                limits.extend(str(item) for item in warnings if str(item).strip())
-            for limit in limits:
-                if isinstance(limit, str) and limit.strip():
-                    lines.append(f"Limit: {limit}")
+            lines.extend(_export_table_lines(t))
         lines.append("")
     return PlainTextResponse("\n".join(lines), media_type="text/markdown")
 
@@ -898,7 +919,7 @@ class QuickAnswerBody(BaseModel):
 
     @model_validator(mode="after")
     def require_complete_conversation_identity(self):
-        if (self.thread is None) != (self.client is None):
+        if self.thread is not None and self.client is None:
             raise ValueError("thread and client must be provided together")
         return self
 
@@ -1012,10 +1033,11 @@ _PROSE_SCRUB_RULES: tuple[
         r"\b(?:rows?|lines?|columns?|cells?|season_line|matches|meta|values)\b"
         r"(?:\s*\[\s*\d*\s*\]|\s*\[\s*\]|\.[A-Za-z_][A-Za-z0-9_]*)+",
         re.IGNORECASE), _SCRUB_REFERRAL),
-    (re.compile(r"\d{4,}"), _scrub_digits),
+    (re.compile(r"(?<!\.)\d{4,}"), _scrub_digits),
 )
 
 _PROSE_TIDY_RULES: tuple[tuple["re.Pattern[str]", str], ...] = (
+    (re.compile(r"[(\[{]\s*the data\s*[)\]}]", re.IGNORECASE), ""),
     (re.compile(r"[(\[{]\s*[)\]}]"), ""),
     (re.compile(r"\bthe the\b", re.IGNORECASE), "the"),
     (re.compile(r" +([.,;:!?])"), r"\1"),
@@ -1078,6 +1100,14 @@ def _label_lines(result, bindings) -> list[str]:
             and (status.requirement_kind, status.requirement_id,
                  status.output_id) in keys]
 
+def _binding_output_ids(bindings) -> set[str]:
+    covered: set[str] = set()
+    for binding in bindings or []:
+        output_id = getattr(binding, "output_id", None)
+        if isinstance(output_id, str) and output_id:
+            covered.add(output_id)
+    return covered
+
 def _prose_covered_output_ids(result) -> set[str]:
     from v2.runtime.models import withheld_claim_indices
     verified = list(getattr(result, "verified_claims", None) or [])
@@ -1108,42 +1138,14 @@ def _prose_covered_output_ids(result) -> set[str]:
             continue
         if prose is None:
             continue
-        for binding in (getattr(claim, "output_bindings", None) or []):
-            output_id = getattr(binding, "output_id", None)
-            if isinstance(output_id, str) and output_id:
-                covered.add(output_id)
-        for binding in (getattr(item, "output_bindings", None) or []):
-            output_id = getattr(binding, "output_id", None)
-            if isinstance(output_id, str) and output_id:
-                covered.add(output_id)
+        covered |= _binding_output_ids(getattr(claim, "output_bindings", None))
+        covered |= _binding_output_ids(getattr(item, "output_bindings", None))
         if isinstance(index, int) and 0 <= index < len(draft_claims):
-            for binding in (
-                    getattr(draft_claims[index], "output_bindings", None)
-                    or []):
-                output_id = getattr(binding, "output_id", None)
-                if isinstance(output_id, str) and output_id:
-                    covered.add(output_id)
+            covered |= _binding_output_ids(
+                getattr(draft_claims[index], "output_bindings", None))
     return covered
 
-def _answer_text(result) -> str:
-    published = {
-        item.output_id for item in result.output_statuses
-        if item.status == "complete"
-    }
-    stated = _prose_covered_output_ids(result)
-    lines = _claim_prose(result) or list(dict.fromkeys(
-        _output_line(result, item) for item in result.output_statuses
-        if item.status == "complete"))
-    source_line = _live_source_line(result)
-    if source_line is not None:
-        lines.append(source_line)
-    gap_messages = {
-        "source_conflict": "Available sources conflict for some requested outputs.",
-        "unsupported_claim": "Some requested outputs were not supported.",
-        "execution_failure": "Some requested data was unavailable.",
-        "synthesis_incomplete": "Some requested outputs could not be published.",
-        "judge_unavailable": "I couldn't double-check this answer, so treat the details with extra care.",
-    }
+def _gap_kinds(result) -> list[str]:
     kinds = []
     for gap in result.gaps:
         if gap.kind.value not in kinds:
@@ -1155,14 +1157,19 @@ def _answer_text(result) -> str:
     if any(getattr(gap, "message", None) in _judge_branches
            for gap in result.gaps) and "judge_unavailable" not in kinds:
         kinds.append("judge_unavailable")
-    all_complete = bool(result.output_statuses) and all(
-        item.status == "complete" for item in result.output_statuses)
-    requested_ids = {item.output_id for item in result.output_statuses}
-    fully_covered = bool(result.output_statuses) and requested_ids <= (published | stated)
-    unverified_output_ids = [
-        item.output_id for item in result.output_statuses
-        if item.status != "complete" and item.output_id not in published
-        and item.output_id not in stated]
+    return kinds
+
+_GAP_MESSAGES = {
+    "source_conflict": "Available sources conflict for some requested outputs.",
+    "unsupported_claim": "Some requested outputs were not supported.",
+    "execution_failure": "Some requested data was unavailable.",
+    "provider_error": "The model provider is unavailable.",
+    "synthesis_incomplete": "Some requested outputs could not be published.",
+    "judge_unavailable": "I couldn't double-check this answer, so treat the details with extra care.",
+}
+
+def _gap_lines(result, kinds, all_complete, fully_covered, unverified_output_ids) -> list[str]:
+    lines: list[str] = []
     for kind in kinds:
         if kind == "missing_evidence" and all_complete:
             continue
@@ -1178,7 +1185,31 @@ def _answer_text(result) -> str:
                     gap.message for gap in result.gaps
                     if gap.kind.value == "missing_evidence")
             continue
-        lines.append(gap_messages[kind])
+        lines.append(_GAP_MESSAGES[kind])
+    return lines
+
+def _answer_text(result) -> str:
+    published = {
+        item.output_id for item in result.output_statuses
+        if item.status == "complete"
+    }
+    stated = _prose_covered_output_ids(result)
+    lines = _claim_prose(result) or list(dict.fromkeys(
+        _output_line(result, item) for item in result.output_statuses
+        if item.status == "complete"))
+    source_line = _live_source_line(result)
+    if source_line is not None:
+        lines.append(source_line)
+    kinds = _gap_kinds(result)
+    all_complete = bool(result.output_statuses) and all(
+        item.status == "complete" for item in result.output_statuses)
+    requested_ids = {item.output_id for item in result.output_statuses}
+    fully_covered = bool(result.output_statuses) and requested_ids <= (published | stated)
+    unverified_output_ids = [
+        item.output_id for item in result.output_statuses
+        if item.status != "complete" and item.output_id not in published
+        and item.output_id not in stated]
+    lines += _gap_lines(result, kinds, all_complete, fully_covered, unverified_output_ids)
     lines += list(dict.fromkeys(
         f"{item.output_id} could not be verified ({item.status})."
         for item in result.output_statuses
@@ -1383,9 +1414,32 @@ def _traced_value(envelope, binding) -> tuple[Any, str | None]:
         raise ValueError("publication evidence changed after admission")
     return resolution.value, None
 
-def _public_evidence(result) -> tuple[list[dict], list[str]]:
+def _calculation_evidence_rows(binding, calculation, evidence) -> list[dict]:
     from v2.domain.calculations import Calculation, validate_calculation
     from v2.domain.evidence import EvidenceIndex, iter_values
+
+    checked = Calculation.model_validate({
+        "calculation_id": calculation.calculation_id,
+        "operation": calculation.operation,
+        "inputs": [item.model_dump() for item in calculation.inputs],
+        "result": calculation.result, "unit": calculation.unit,
+        "subject_input": calculation.subject_input})
+    if validate_calculation(checked, EvidenceIndex(evidence.values())) is not None:
+        raise ValueError("publication calculation no longer recomputes")
+    rows = []
+    for input_ in calculation.inputs:
+        envelope = evidence.get(input_.evidence_id)
+        selected = ([item.value for item in iter_values(envelope)
+                     if item.path == input_.path] if envelope else [])
+        if len(selected) != 1:
+            raise ValueError("publication calculation input must resolve exactly once")
+        rows.append({"output_id": binding.output_id,
+                     "display_name": _output_display_name(binding.output_id),
+                     "input_value": str(selected[0]),
+                     "provenance": _citation_provenance(envelope)})
+    return rows
+
+def _public_evidence(result) -> tuple[list[dict], list[str]]:
     evidence = {item.evidence_id: item for item in result.execution.evidence}
     calculations = {item.calculation_id: item for item in result.draft.calculations}
     rows: dict[str, dict] = {}
@@ -1421,24 +1475,8 @@ def _public_evidence(result) -> tuple[list[dict], list[str]]:
         calculation = calculations.get(binding.calculation_id)
         if calculation is None:
             raise ValueError("publication calculation is missing")
-        checked = Calculation.model_validate({
-            "calculation_id": calculation.calculation_id,
-            "operation": calculation.operation,
-            "inputs": [item.model_dump() for item in calculation.inputs],
-            "result": calculation.result, "unit": calculation.unit,
-            "subject_input": calculation.subject_input})
-        if validate_calculation(checked, EvidenceIndex(evidence.values())) is not None:
-            raise ValueError("publication calculation no longer recomputes")
-        for input_ in calculation.inputs:
-            envelope = evidence.get(input_.evidence_id)
-            selected = ([item.value for item in iter_values(envelope)
-                         if item.path == input_.path] if envelope else [])
-            if len(selected) != 1:
-                raise ValueError("publication calculation input must resolve exactly once")
-            publish({"output_id": binding.output_id,
-                     "display_name": _output_display_name(binding.output_id),
-                     "input_value": str(selected[0]),
-                     "provenance": _citation_provenance(envelope)})
+        for row in _calculation_evidence_rows(binding, calculation, evidence):
+            publish(row)
     cited = {row["output_id"] for row in rows.values()}
     untraced = list(dict.fromkeys(
         _output_display_name(output_id) + UNTRACED_SUFFIX
@@ -1447,6 +1485,61 @@ def _public_evidence(result) -> tuple[list[dict], list[str]]:
             *(status.output_id for status in result.output_statuses
               if status.output_id not in cited))))
     return list(rows.values()), untraced
+
+def _artifact_number(raw: object) -> float | None:
+    if isinstance(raw, bool):
+        return None
+    if isinstance(raw, (int, float)):
+        return float(raw) if math.isfinite(float(raw)) else None
+    text = str(raw or "").strip().replace(",", "")
+    if not text:
+        return None
+    try:
+        value = float(text)
+    except ValueError:
+        return None
+    return value if math.isfinite(value) else None
+
+
+def _published_index(rows: list[dict]) -> dict[tuple[str, str], float]:
+    index: dict[tuple[str, str], float] = {}
+    for row in rows:
+        output_id = str(row.get("output_id") or "")
+        subject = str(row.get("subject_display_name") or "")
+        if not output_id:
+            continue
+        value = _artifact_number(row.get("value"))
+        if value is not None:
+            index.setdefault((output_id, subject), value)
+    return index
+
+
+def _resolve_artifacts(
+        intents: list, rows: list[dict]) -> list[dict]:
+    index = _published_index(rows)
+    resolved: list[dict] = []
+    for intent in intents:
+        series = []
+        for entry in intent.series:
+            values = []
+            for point in entry.points:
+                value = index.get((point.output_id, entry.name))
+                if value is not None:
+                    values.append(value)
+            if values:
+                series.append({"name": entry.name, "values": values})
+        if not series:
+            continue
+        artifact: dict = {
+            "kind": intent.kind.value,
+            "title": intent.title,
+            "series": series,
+        }
+        if intent.footnote:
+            artifact["footnote"] = intent.footnote
+        resolved.append(artifact)
+    return resolved
+
 
 def _public_capability_name(raw) -> str:
     from v2.adapters import CAPABILITIES
@@ -1522,24 +1615,50 @@ def _stream_run_diagnostic(exc, run_id, last_stage, diagnostics: bool) -> list[s
         ), diagnostics=True)
     ]
 
-async def _drain_run(
+async def _stream_queue(
     task: "asyncio.Task",
     queue: "asyncio.Queue",
     timeout_s: float,
     drain_tick_s: float = 0.1,
-) -> list:
-    buffered: list = []
+):
+    deadline = time.monotonic() + timeout_s
+    while not task.done() or not queue.empty():
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            raise TimeoutError("run timed out")
+        try:
+            yield await asyncio.wait_for(
+                queue.get(), timeout=max(0.0, min(drain_tick_s, remaining)))
+        except TimeoutError:
+            continue
 
-    async def _drain_until_done():
-        while not task.done() or not queue.empty():
-            try:
-                buffered.append(
-                    await asyncio.wait_for(queue.get(), timeout=drain_tick_s))
-            except TimeoutError:
-                continue
+def _answer_token_chunks(text: str, words_per_chunk: int = 12) -> list[str]:
+    parts = re.findall(r"\S+\s*", text)
+    chunks = ["".join(parts[i:i + words_per_chunk])
+              for i in range(0, len(parts), words_per_chunk)]
+    return [chunk for chunk in chunks if chunk.strip()]
 
-    await asyncio.wait_for(_drain_until_done(), timeout=timeout_s)
-    return buffered
+_FAILURE_KIND_FALLBACK = {
+    "quota_exhausted": "quota",
+    "rate_limit": "rate_limited",
+    "server_error": "provider_error",
+}
+
+def _failure_kind(exc: BaseException) -> str:
+    try:
+        from v2.adapters.models import ProviderStructuredModel
+        classified = ProviderStructuredModel._failure_class(exc)
+    except Exception:
+        return "execution_failure"
+    return _FAILURE_KIND_FALLBACK.get(classified, "execution_failure")
+
+def _failure_message(kind: str) -> str:
+    return {
+        "timeout": "The run timed out before finishing.",
+        "quota": "The model ran out of quota.",
+        "rate_limited": "Too many requests.",
+        "provider_error": "The model provider is unavailable.",
+    }.get(kind, "Some requested data was unavailable.")
 
 @router.post("/v2/chat/stream")
 async def chat_stream_post(request: Request, body: QuickAnswerBody):
@@ -1596,8 +1715,14 @@ def _client_ip(request: Request) -> str:
 
 def _rate_limited_stream():
     from fastapi.responses import StreamingResponse
+    from v2.api.events import Failure
+    from v2.api.sse import encode_event
 
     async def limited():
+        chunk = encode_event(Failure(
+            kind="rate_limited", message="rate limited, retry soon"))
+        if chunk is not None:
+            yield chunk
         yield encode_raw("error", {"message": "rate limited, retry soon"})
         yield encode_raw("graph_end", {})
 
@@ -1612,7 +1737,8 @@ async def quick_answer_stream(body: QuickAnswerBody):
     from shared.providers import resolve_model_id
     from shared.config import settings
     from v2.api.events import (
-        CustomData, FinalAnswer, GraphEnd, NodeUpdate, ToolCall, ToolResult, WorkLog,
+        CustomData, Failure, FinalAnswer, GraphEnd, NodeUpdate, Token,
+        ToolCall, ToolResult, WorkLog,
     )
     from v2.api.activity import ActivityJournal
     from v2.api.events import EVENT_ADAPTER
@@ -1654,6 +1780,10 @@ async def quick_answer_stream(body: QuickAnswerBody):
 
     def setup_error_stream():
         async def generate_error():
+            chunk = encode_event(Failure(
+                kind="startup", message="Dime could not start this run."))
+            if chunk is not None:
+                yield chunk
             yield "event: error\ndata: " + json.dumps({
                 "message": "Dime could not start this run.",
                 "run_id": run_id,
@@ -1757,8 +1887,115 @@ async def quick_answer_stream(body: QuickAnswerBody):
             and isinstance(entry.data.get("duration_ms"), int)
         }
 
-    async def generate():
+    def failure_chunks(exc, timed_out: bool):
+        if policy.publish:
+            stages = stage_latencies_ms()
+            last_stage = list(stages)[-1] if stages else None
+            for chunk in _stream_run_diagnostic(
+                    exc, run_id, last_stage, body.diagnostics):
+                yield chunk
+            for event in missing_tool_events():
+                safe_event = _safe_buffered_event(event)
+                if safe_event is not None:
+                    yield encode_event(safe_event)
+            failure_kind = ("timeout" if timed_out
+                            else _failure_kind(exc))
+            yield encode_event(Failure(
+                kind=failure_kind,
+                message=_failure_message(failure_kind)))
+            yield encode_event(WorkLog(run_id=run_id, status="partial"))
+            failure_text = ("I could not verify a publishable answer from the available data. "
+                            + ("The run timed out before finishing." if timed_out else ""))
+            for text_chunk in _answer_token_chunks(failure_text):
+                chunk = encode_event(Token(text=text_chunk))
+                if chunk is not None:
+                    yield chunk
+            yield encode_event(FinalAnswer(
+                text=failure_text,
+                carry={"run_id": run_id, "verification": "partial",
+                       "verified_claims": 0, "structural_flags": [],
+                       "gaps": [{"kind": "run_timeout" if timed_out else "execution_failure",
+                                 "blocks": []}],
+                       "stage_latencies_ms": stage_latencies_ms()}))
+        yield encode_event(GraphEnd())
 
+    def success_chunks(result, public_tables, untraced_numbers,
+                       public_statuses, answer):
+        from v2.api.events import StatusUpdate
+
+        for line in _status_lines(getattr(result, "task", None)):
+            try:
+                chunk = encode_event(StatusUpdate(text=line))
+            except Exception:
+                continue
+            if chunk is not None:
+                yield chunk
+        for event in missing_tool_events():
+            try:
+                safe_event = _safe_buffered_event(event)
+                if safe_event is not None:
+                    yield encode_event(safe_event)
+            except Exception:
+                continue
+        yield encode_event(WorkLog(
+            run_id=run_id,
+            status="complete" if result.verification.status.value == "pass" else "partial"))
+        yield encode_event(CustomData(
+            node="analytics",
+            tables=public_tables,
+            artifacts=_resolve_artifacts(
+                list(getattr(getattr(result, "draft", None),
+                             "artifacts", None) or []),
+                public_tables),
+            unverified_numbers=untraced_numbers))
+        for chunk in _stream_binding_diagnostics(result, body.diagnostics):
+            yield chunk
+        carry = {
+            "run_id": run_id,
+            "verification": result.verification.status.value,
+            "verified_claims": len(result.verified_claims),
+            "output_statuses": public_statuses,
+            "structural_flags": list(getattr(result, "structural_flags", [])),
+            "gaps": _public_gaps(result),
+            "stage_latencies_ms": stage_latencies_ms(),
+        }
+        for chunk in _answer_token_chunks(answer):
+            token_chunk = encode_event(Token(text=chunk))
+            if token_chunk is not None:
+                yield token_chunk
+        yield encode_event(FinalAnswer(text=answer, carry=carry))
+
+    def record_thread_outcome(parent_sequence, result, answer,
+                              public_tables, untraced_numbers):
+        if body.thread is None or body.client is None:
+            return
+        _CONVERSATIONS.append_exchange(
+            body.client, body.thread, body.q, answer)
+        assistant_sequence = max(
+            ref.sequence for ref in
+            _CONVERSATIONS.references(body.client, body.thread))
+        _CONVERSATIONS.record_turn_evidence(
+            body.client, body.thread, assistant_sequence,
+            list(result.execution.evidence))
+        if parent_sequence is not None:
+            branch = _CONVERSATIONS.create_branch(
+                body.client, body.thread, parent_sequence)
+            parent_evidence = _CONVERSATIONS.turn_evidence(
+                body.client, body.thread, parent_sequence)
+            if parent_evidence:
+                _CONVERSATIONS.attach_branch_evidence(
+                    body.client, body.thread, branch.branch_id,
+                    parent_evidence)
+        if answer:
+            from shared import store
+            store.save_chat(body.thread, "ai", answer,
+                            owner=body.client[:80])
+            store.save_run(body.thread, body.q[:2000], answer,
+                           public_tables, untraced_numbers,
+                           owner=body.client[:80],
+                           run_id=run_id)
+
+    async def generate():
         if body.thread is not None and body.client is not None:
             from shared import store
             store.save_chat(body.thread, "human", body.q[:2000],
@@ -1772,12 +2009,15 @@ async def quick_answer_stream(body: QuickAnswerBody):
             body.q, run_id=run_id, context=context))
         try:
             try:
-
-                buffered_events = await _drain_run(
-                    task, queue, settings.dime_v2_run_timeout_s)
+                async for event in _stream_queue(
+                        task, queue, settings.dime_v2_run_timeout_s):
+                    if policy.publish:
+                        safe_event = _safe_buffered_event(event)
+                        if safe_event is not None:
+                            chunk = encode_event(safe_event)
+                            if chunk is not None:
+                                yield chunk
                 result = task.result()
-                while not queue.empty():
-                    buffered_events.append(queue.get_nowait())
 
                 public_tables, untraced_numbers = _public_evidence(result)
                 public_statuses = [_public_output_status(result, item)
@@ -1788,93 +2028,16 @@ async def quick_answer_stream(body: QuickAnswerBody):
                 if timed_out and not task.done():
                     task.cancel()
                 logging.getLogger(__name__).exception("v2 run failed: %r", exc)
-                if policy.publish:
-                    stages = stage_latencies_ms()
-                    last_stage = list(stages)[-1] if stages else None
-                    for chunk in _stream_run_diagnostic(
-                            exc, run_id, last_stage, body.diagnostics):
-                        yield chunk
-                    for event in missing_tool_events():
-                        safe_event = _safe_buffered_event(event)
-                        if safe_event is not None:
-                            yield encode_event(safe_event)
-                    yield encode_event(WorkLog(run_id=run_id, status="partial"))
-                    yield encode_event(FinalAnswer(
-                        text=("I could not verify a publishable answer from the available data. "
-                              + ("The run timed out before finishing." if timed_out else "")),
-                        carry={"run_id": run_id, "verification": "partial",
-                               "verified_claims": 0, "structural_flags": [],
-                               "gaps": [{"kind": "run_timeout" if timed_out else "execution_failure",
-                                         "blocks": []}],
-                               "stage_latencies_ms": stage_latencies_ms()}))
-                yield encode_event(GraphEnd())
+                for chunk in failure_chunks(exc, timed_out):
+                    yield chunk
                 return
             if policy.publish:
-                from v2.api.events import StatusUpdate
-                for line in _status_lines(getattr(result, "task", None)):
-                    try:
-                        chunk = encode_event(StatusUpdate(text=line))
-                    except Exception:
-                        continue
-                    if chunk is not None:
-                        yield chunk
-                for event in buffered_events:
-                    safe_event = _safe_buffered_event(event)
-                    if safe_event is not None:
-                        yield encode_event(safe_event)
-                for event in missing_tool_events():
-                    try:
-                        safe_event = _safe_buffered_event(event)
-                        if safe_event is not None:
-                            yield encode_event(safe_event)
-                    except Exception:
-                        continue
-                yield encode_event(WorkLog(
-                    run_id=run_id,
-                    status="complete" if result.verification.status.value == "pass" else "partial"))
-                yield encode_event(CustomData(
-                    node="analytics",
-                    tables=public_tables,
-                    unverified_numbers=untraced_numbers))
-                for chunk in _stream_binding_diagnostics(result, body.diagnostics):
+                for chunk in success_chunks(result, public_tables,
+                                            untraced_numbers, public_statuses,
+                                            answer):
                     yield chunk
-                carry = {
-                    "run_id": run_id,
-                    "verification": result.verification.status.value,
-                    "verified_claims": len(result.verified_claims),
-                    "output_statuses": public_statuses,
-                    "structural_flags": list(getattr(result, "structural_flags", [])),
-                    "gaps": _public_gaps(result),
-                    "stage_latencies_ms": stage_latencies_ms(),
-                }
-                yield encode_event(FinalAnswer(text=answer, carry=carry))
-                if body.thread is not None and body.client is not None:
-                    _CONVERSATIONS.append_exchange(
-                        body.client, body.thread, body.q, answer)
-                    assistant_sequence = max(
-                        ref.sequence for ref in
-                        _CONVERSATIONS.references(body.client, body.thread))
-                    _CONVERSATIONS.record_turn_evidence(
-                        body.client, body.thread, assistant_sequence,
-                        list(result.execution.evidence))
-                    if parent_sequence is not None:
-                        branch = _CONVERSATIONS.create_branch(
-                            body.client, body.thread, parent_sequence)
-                        parent_evidence = _CONVERSATIONS.turn_evidence(
-                            body.client, body.thread, parent_sequence)
-                        if parent_evidence:
-                            _CONVERSATIONS.attach_branch_evidence(
-                                body.client, body.thread, branch.branch_id,
-                                parent_evidence)
-                    if answer:
-
-                        from shared import store
-                        store.save_chat(body.thread, "ai", answer,
-                                        owner=body.client[:80])
-                        store.save_run(body.thread, body.q[:2000], answer,
-                                       public_tables, untraced_numbers,
-                                       owner=body.client[:80],
-                                       run_id=run_id)
+                record_thread_outcome(parent_sequence, result, answer,
+                                      public_tables, untraced_numbers)
             yield encode_event(GraphEnd())
         finally:
             if not task.done():

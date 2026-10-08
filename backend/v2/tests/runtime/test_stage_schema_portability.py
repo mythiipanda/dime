@@ -234,9 +234,11 @@ async def test_no_value_the_contract_refuses_is_reachable_through_the_wire():
     declared = DraftReport.model_json_schema()
     wire = wire_schema_for(OutputStrategy.STRICT_SCHEMA, declared).schema
     base = {"sections": ["Assists leader"], "claims": [], "calculations": [],
-            "blocked_calculation_requirement_ids": [], "gaps": []}
+            "blocked_calculation_requirement_ids": [], "gaps": [],
+            "artifacts": []}
     assert Draft202012Validator(wire).is_valid(base)
-    for field in ("gaps", "calculations", "blocked_calculation_requirement_ids"):
+    for field in ("gaps", "calculations", "blocked_calculation_requirement_ids",
+                 "artifacts"):
         instance = {**base, field: None}
         assert not Draft202012Validator(wire).is_valid(instance), field
         with pytest.raises(ValueError):

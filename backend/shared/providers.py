@@ -8,27 +8,31 @@ from langchain_openai import ChatOpenAI
 
 from .config import settings
 
-ProviderName = Literal["gemini", "nvidia", "mistral", "openrouter", "inception", "groq"]
+ProviderName = Literal["gemini", "nvidia", "mistral", "openrouter", "inception", "groq",
+                   "cerebras"]
 
 class ProviderPolicyError(ValueError):
     pass
 
-FREE_PROVIDER_ORDER: tuple[ProviderName, ...] = ("gemini", "nvidia", "groq", "openrouter", "mistral")
+FREE_PROVIDER_ORDER: tuple[ProviderName, ...] = ("cerebras", "gemini", "nvidia", "groq",
+                                          "openrouter", "mistral")
 
 def active_provider_order() -> tuple[ProviderName, ...]:
     free = tuple(name for name in FREE_PROVIDER_ORDER if
         name != "groq" or (settings.dime_enable_groq and settings.groq_api_key))
-    return ((*free, "inception")
+    ordered = tuple(name for name in free
+                    if name != "cerebras" or settings.cerebras_api_key)
+    return ((*ordered, "inception")
             if settings.dime_enable_inception and settings.inception_api_key
-            else free)
+            else ordered)
 
 GEMINI_BASE_URL = "https://generativelanguage.googleapis.com/v1beta/openai/"
-GEMINI_DEFAULT = "gemini-3.5-flash-lite"
+GEMINI_DEFAULT = "gemini-3.5-flash"
 GEMINI_MODELS: tuple[str, ...] = (
     GEMINI_DEFAULT,
-    "gemini-3.5-flash",
     "gemini-3.8-flash",
     "gemma-4-31b-it",
+    "gemini-3.5-flash-lite",
 )
 GEMINI_ALLOWLIST = frozenset(GEMINI_MODELS)
 NVIDIA_NIM_BASE_URL = "https://integrate.api.nvidia.com/v1"
@@ -37,17 +41,28 @@ NVIDIA_NIM_MODELS: tuple[str, ...] = (
     NVIDIA_NIM_DEFAULT,
     "deepseek-ai/deepseek-v4.1-flash",
 )
+NVIDIA_NIM_TIMEOUT_S = 20
 NVIDIA_NIM_ALLOWLIST = frozenset(NVIDIA_NIM_MODELS)
+CEREBRAS_BASE_URL = "https://api.cerebras.ai/v1"
+CEREBRAS_DEFAULT = "gpt-oss-120b"
+CEREBRAS_MODELS: tuple[str, ...] = (
+    "gpt-oss-120b",
+    "qwen-3.8-27b",
+)
 MISTRAL_DEFAULT = "ministral-8b-2512"
 OPENROUTER_DEFAULT = "nvidia/nemotron-3-super-120b-a12b:free"
 OPENROUTER_AUTO = "openrouter/free"
 INCEPTION_DEFAULT = "mercury-2.5"
-GROQ_DEFAULT = "openai/gpt-oss-20b"
+GROQ_DEFAULT = "openai/gpt-oss-120b"
+GROQ_MODELS: tuple[str, ...] = (
+    "openai/gpt-oss-120b",
+    "openai/gpt-oss-20b",
+)
 
 OPENROUTER_ALLOWLIST: frozenset[str] = frozenset(
     {
         "nvidia/nemotron-3-super-120b-a12b:free",
-        "nvidia/nemotron-3-ultra-550b-a55b:free",
+        "dots-studio/dots-3-note-preview:free",
     }
 )
 
@@ -61,7 +76,9 @@ def is_free_model(provider: str, slug: str) -> bool:
         return value == OPENROUTER_AUTO or (
             value in OPENROUTER_ALLOWLIST and value.endswith(":free"))
     if provider == "groq":
-        return value == GROQ_DEFAULT
+        return value in GROQ_MODELS
+    if provider == "cerebras":
+        return value in CEREBRAS_MODELS
     if provider == "mistral":
         return value == (settings.mistral_model or MISTRAL_DEFAULT)
     return False
@@ -82,12 +99,16 @@ def _openrouter_free_model(slug: str | None = None) -> str:
         return value
     return OPENROUTER_DEFAULT
 
-def _groq_free_model() -> str:
-    value = str(settings.groq_model or "").strip()
-    return value if value == GROQ_DEFAULT else GROQ_DEFAULT
+def _groq_free_model(slug: str | None = None) -> str:
+    value = str(slug or settings.groq_model or "").strip()
+    return value if value in GROQ_MODELS else GROQ_DEFAULT
 
 def _mistral_free_model() -> str:
     return settings.mistral_model or MISTRAL_DEFAULT
+
+def _cerebras_model(slug: str | None = None) -> str:
+    value = str(slug or settings.cerebras_model or "").strip()
+    return value if value in CEREBRAS_MODELS else CEREBRAS_DEFAULT
 
 def _default_provider() -> tuple[ProviderName, str]:
     if settings.gemini_api_key:
@@ -100,6 +121,8 @@ def _default_provider() -> tuple[ProviderName, str]:
         return ("groq", _groq_free_model())
     if settings.openrouter_api_key:
         return ("openrouter", _openrouter_free_model())
+    if settings.cerebras_api_key:
+        return ("cerebras", _cerebras_model())
     return ("mistral", _mistral_free_model())
 
 def resolve_model_id(model_id: str | None) -> tuple[ProviderName, str]:
@@ -107,11 +130,11 @@ def resolve_model_id(model_id: str | None) -> tuple[ProviderName, str]:
     raw = original.strip()
     if original.startswith("groq:"):
         slug = original.split(":", 1)[1]
-        if slug != GROQ_DEFAULT:
+        if slug not in GROQ_MODELS:
             raise ProviderPolicyError("unapproved Groq model")
         if not (settings.dime_enable_groq and settings.groq_api_key):
             raise ProviderPolicyError("Groq free-tier route is not activated")
-        return ("groq", GROQ_DEFAULT)
+        return ("groq", _groq_free_model(slug))
     if original.startswith("gemini:"):
         slug = original.split(":", 1)[1]
         if slug.strip() not in GEMINI_ALLOWLIST:
@@ -122,6 +145,13 @@ def resolve_model_id(model_id: str | None) -> tuple[ProviderName, str]:
     if raw.startswith("openrouter:"):
         slug = raw.split(":", 1)[1]
         return ("openrouter", _openrouter_free_model(slug))
+    if raw.startswith("cerebras:"):
+        slug = raw.split(":", 1)[1]
+        if slug not in CEREBRAS_MODELS:
+            raise ProviderPolicyError("unapproved Cerebras model")
+        if not settings.cerebras_api_key:
+            raise ProviderPolicyError("Cerebras route has no key")
+        return ("cerebras", _cerebras_model(slug))
     if raw.startswith("mistral:"):
         return ("mistral", _mistral_free_model())
     if raw.startswith("inception:"):
@@ -161,7 +191,7 @@ def get_llm(name: ProviderName, model: str | None = None) -> ChatOpenAI | None:
             model=_nvidia_nim_model(model),
             base_url=NVIDIA_NIM_BASE_URL,
             api_key=settings.nvidia_nim_api_key,
-            timeout=settings.llm_timeout_s,
+            timeout=NVIDIA_NIM_TIMEOUT_S,
             max_retries=settings.llm_max_retries,
             extra_body={"chat_template_kwargs": {"enable_thinking": False}},
         )
@@ -175,17 +205,31 @@ def get_llm(name: ProviderName, model: str | None = None) -> ChatOpenAI | None:
             timeout=settings.llm_timeout_s,
             max_retries=settings.llm_max_retries,
         )
+    if name == "cerebras":
+        if model is not None and model not in CEREBRAS_MODELS:
+            raise ProviderPolicyError("unapproved Cerebras model")
+        if not settings.cerebras_api_key:
+            return None
+        return ChatOpenAI(
+            model=_cerebras_model(model),
+            base_url=CEREBRAS_BASE_URL,
+            api_key=settings.cerebras_api_key,
+            timeout=settings.llm_timeout_s,
+            max_retries=settings.llm_max_retries,
+            default_headers={"User-Agent": "dime-agent/1.0"},
+        )
     if name == "groq":
-        if model is not None and model != GROQ_DEFAULT:
+        if model is not None and model not in GROQ_MODELS:
             raise ProviderPolicyError("unapproved Groq model")
         if not (settings.dime_enable_groq and settings.groq_api_key):
             return None
         return ChatOpenAI(
-            model=_groq_free_model(),
+            model=_groq_free_model(model),
             base_url="https://api.groq.com/openai/v1",
             api_key=settings.groq_api_key,
             timeout=settings.llm_timeout_s,
             max_retries=0,
+            default_headers={"User-Agent": "dime-agent/1.0"},
         )
     if name == "inception":
         return ChatOpenAI(
@@ -281,6 +325,19 @@ def note_provider_failure(name: str) -> None:
     except RuntimeError:
         pass
 
+def _accepted_model(name: ProviderName, primary: ProviderName, model: str) -> str:
+    if name == "gemini":
+        return _gemini_model(model if name == primary else None)
+    if name == "nvidia":
+        return _nvidia_nim_model(model if name == primary else None)
+    if name == "openrouter":
+        return _openrouter_free_model(model if name == primary else None)
+    if name == "mistral":
+        return _mistral_free_model()
+    if name == "groq":
+        return _groq_free_model()
+    return settings.inception_model or INCEPTION_DEFAULT
+
 async def invoke_with_fallback(
     primary: ProviderName,
     model: str,
@@ -290,17 +347,7 @@ async def invoke_with_fallback(
     attempts: list[dict[str, Any]] = []
     started_all = time.perf_counter()
     for number, name in enumerate(fallback_order(primary), 1):
-        accepted_model = (
-            _gemini_model(model if name == primary else None)
-            if name == "gemini" else
-            _nvidia_nim_model(model if name == primary else None)
-            if name == "nvidia" else
-            _openrouter_free_model(model if name == primary else None)
-            if name == "openrouter" else
-            _mistral_free_model() if name == "mistral" else
-            _groq_free_model() if name == "groq" else
-            settings.inception_model or INCEPTION_DEFAULT
-        )
+        accepted_model = _accepted_model(name, primary, model)
         verdict = probe_verdict(name)
         if verdict is False:
             attempts.append({"provider": name, "model": accepted_model,
@@ -387,17 +434,7 @@ async def astream_with_fallback(
         if verdict is False:
             errors.append(f"{name}: probe failed recently")
             continue
-        accepted_model = (
-            _gemini_model(model if name == primary else None)
-            if name == "gemini" else
-            _nvidia_nim_model(model if name == primary else None)
-            if name == "nvidia" else
-            _openrouter_free_model(model if name == primary else None)
-            if name == "openrouter" else
-            _mistral_free_model() if name == "mistral" else
-            _groq_free_model() if name == "groq" else
-            settings.inception_model or INCEPTION_DEFAULT
-        )
+        accepted_model = _accepted_model(name, primary, model)
         client = get_llm(name, accepted_model)
         if client is None:
             errors.append(f"{name}: missing key")
@@ -427,17 +464,7 @@ async def astream_chunks_with_fallback(
         if verdict is False:
             errors.append(f"{name}: probe failed recently")
             continue
-        accepted_model = (
-            _gemini_model(model if name == primary else None)
-            if name == "gemini" else
-            _nvidia_nim_model(model if name == primary else None)
-            if name == "nvidia" else
-            _openrouter_free_model(model if name == primary else None)
-            if name == "openrouter" else
-            _mistral_free_model() if name == "mistral" else
-            _groq_free_model() if name == "groq" else
-            settings.inception_model or INCEPTION_DEFAULT
-        )
+        accepted_model = _accepted_model(name, primary, model)
         client = get_llm(name, accepted_model)
         if client is None:
             errors.append(f"{name}: missing key")
@@ -476,6 +503,11 @@ def models_catalog() -> dict[str, Any]:
         options.append({"id": f"openrouter:{OPENROUTER_AUTO}",
                         "engine": "openrouter",
                         "default": default_id == f"openrouter:{OPENROUTER_AUTO}"})
+    if is_free_model("cerebras", CEREBRAS_DEFAULT):
+        options.extend(
+            {"id": f"cerebras:{slug}", "engine": "cerebras",
+             "default": default_id == f"cerebras:{slug}"}
+            for slug in CEREBRAS_MODELS)
     mistral = _mistral_free_model()
     if is_free_model("mistral", mistral):
         options.append({"id": f"mistral:{mistral}", "engine": "mistral",
@@ -493,6 +525,7 @@ def models_catalog() -> dict[str, Any]:
         "nvidia": bool(settings.nvidia_nim_api_key),
         "openrouter": bool(settings.openrouter_api_key),
         "mistral": bool(settings.mistral_api_key),
+        "cerebras": bool(settings.cerebras_api_key),
     }
     if settings.dime_enable_groq and settings.groq_api_key:
         available["groq"] = True

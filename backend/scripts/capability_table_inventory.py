@@ -17,7 +17,7 @@ if str(BACKEND) not in sys.path:
 import duckdb
 
 from shared import store as _store
-from shared.tools import v1_tools
+from shared.tools import WAREHOUSE_TOOLS
 from v2.adapters import coverage as _coverage
 from v2.adapters.capabilities import CAPABILITIES
 
@@ -81,24 +81,29 @@ def _closure(entrypoint) -> tuple[list, dict[str, object]]:
         module = importlib.import_module(node.__module__)
         scope = dict(_closure_scope(module))
         scope.update(_local_imports(module, tree))
-        for child in ast.walk(tree):
-            if isinstance(child, ast.Call):
-                callee = child.func
-                if isinstance(callee, ast.Attribute) and callee.attr in _CALL_METHODS:
-                    owner = callee.value
-                    if isinstance(owner, ast.Name):
-                        queue.append(
-                            (_resolve(module, owner.id, scope), module, depth + 1))
-                    continue
-                name = (callee.id if isinstance(callee, ast.Name)
-                        else callee.attr if isinstance(callee, ast.Attribute)
-                        else None)
-                if name:
-                    queue.append((_resolve(module, name, scope), module, depth + 1))
-            elif isinstance(child, ast.Name) and isinstance(child.ctx, ast.Load):
-                if child.id in scope:
-                    queue.append((child.id, module, depth + 1))
+        for child in _closure_refs(tree, module, scope):
+            queue.append((child, module, depth + 1))
     return functions, constants
+
+def _closure_refs(tree, module, scope) -> list:
+    out = []
+    for child in ast.walk(tree):
+        if isinstance(child, ast.Call):
+            callee = child.func
+            if isinstance(callee, ast.Attribute) and callee.attr in _CALL_METHODS:
+                owner = callee.value
+                if isinstance(owner, ast.Name):
+                    out.append(_resolve(module, owner.id, scope))
+                continue
+            name = (callee.id if isinstance(callee, ast.Name)
+                    else callee.attr if isinstance(callee, ast.Attribute)
+                    else None)
+            if name:
+                out.append(_resolve(module, name, scope))
+        elif isinstance(child, ast.Name) and isinstance(child.ctx, ast.Load):
+            if child.id in scope:
+                out.append(child.id)
+    return out
 
 def _local_imports(module, tree: ast.AST) -> dict[str, object]:
     scope: dict[str, object] = {}
@@ -235,7 +240,7 @@ def absent_inventory(explicit: list[str] | None = None) -> list[dict]:
     return rows
 
 def _entrypoint_for(tool_name: str):
-    by_name = {tool.name: tool for tool in v1_tools}
+    by_name = {tool.name: tool for tool in WAREHOUSE_TOOLS}
     tool = by_name.get(tool_name)
     if tool is not None:
         return _tool_entrypoint(tool), f"shared tool {tool_name}"
@@ -258,78 +263,81 @@ def _dynamic_reads(functions, tables: tuple[str, ...]) -> list[str]:
                 f"{function.__qualname__} resolves a leaderboard table name")
     return reasons
 
+def _build_row(capability, spec, names, detail) -> dict:
+    entrypoint, origin = _entrypoint_for(spec.tool_name)
+    functions, constants = _closure(entrypoint)
+    read: set[str] = set()
+    result_functions = [
+        function for function in functions
+        if f"{function.__module__}.{function.__qualname__}"
+        not in RESOLUTION_HELPERS
+    ]
+    resolution: set[str] = set()
+    for function in functions:
+        found = _scan(textwrap.dedent(inspect.getsource(function)), names)
+        if f"{function.__module__}.{function.__qualname__}" in RESOLUTION_HELPERS:
+            resolution |= found
+            continue
+        read |= found
+    for value in constants.values():
+        if isinstance(value, str):
+            read |= _scan(value, names)
+    dynamic = _dynamic_reads(functions, names)
+    prefixed = _dynamic_prefixes(functions, names)
+    season_tables = tuple(
+        sorted(name for name in read if detail[name]["seasons"]))
+    read_without_season = tuple(
+        sorted(name for name in read if not detail[name]["seasons"]))
+    registry = _coverage.tables_for_capability(capability, {})
+    declared = _coverage.declared_tables_for_capability(capability, {})
+    missing = tuple(sorted(set(season_tables) - set(declared)))
+    extra = tuple(sorted(set(declared) - set(season_tables)))
+    sources = "\n".join(
+        [textwrap.dedent(inspect.getsource(function))
+         for function in functions]
+        + [_module_evidence(importlib.import_module(module))
+           for module in sorted({f.__module__ for f in functions})])
+    unread = tuple(
+        table for table in declared
+        if re.search(rf"\b{re.escape(table)}\b", sources) is None)
+    return {
+        "capability": capability,
+        "tool": spec.tool_name,
+        "tool_origin": origin,
+        "season_scoped": spec.task_season_scoped,
+        "live_fallback": spec.live_fallback,
+        "closure_size": len(functions),
+        "read_tables": season_tables,
+        "read_without_season": read_without_season,
+        "resolution_tables": tuple(sorted(resolution - read)),
+        "closure_functions": len(result_functions),
+        "registry_tables": tuple(registry),
+        "declared_tables": tuple(declared),
+        "declared_tables_not_in_tool_source": unread,
+        "absent_tables": tuple(
+            _coverage.absent_tables_for_capability(capability, {})),
+        "missing_from_registry": missing,
+        "not_read_by_tool": extra,
+        "dynamic_reads": dynamic,
+        "dynamic_prefixes": prefixed,
+        "seasons": {
+            name: sorted(detail[name]["seasons"])
+            for name in season_tables
+        },
+        "rows_in": {name: detail[name]["rows"] for name in season_tables},
+        "registry_seasons": {
+            name: sorted(detail[name]["seasons"])
+            for name in registry if name in detail
+        },
+        "registry_unknown_tables": tuple(
+            sorted(name for name in declared if name not in detail)),
+    }
+
 def build() -> list[dict]:
     names, detail = warehouse_inventory()
     rows: list[dict] = []
     for capability, spec in CAPABILITIES.items():
-        entrypoint, origin = _entrypoint_for(spec.tool_name)
-        functions, constants = _closure(entrypoint)
-        read: set[str] = set()
-        result_functions = [
-            function for function in functions
-            if f"{function.__module__}.{function.__qualname__}"
-            not in RESOLUTION_HELPERS
-        ]
-        resolution: set[str] = set()
-        for function in functions:
-            found = _scan(textwrap.dedent(inspect.getsource(function)), names)
-            if f"{function.__module__}.{function.__qualname__}" in RESOLUTION_HELPERS:
-                resolution |= found
-                continue
-            read |= found
-        for value in constants.values():
-            if isinstance(value, str):
-                read |= _scan(value, names)
-        dynamic = _dynamic_reads(functions, names)
-        prefixed = _dynamic_prefixes(functions, names)
-        season_tables = tuple(
-            sorted(name for name in read if detail[name]["seasons"]))
-        read_without_season = tuple(
-            sorted(name for name in read if not detail[name]["seasons"]))
-        registry = _coverage.tables_for_capability(capability, {})
-        declared = _coverage.declared_tables_for_capability(capability, {})
-        missing = tuple(sorted(set(season_tables) - set(declared)))
-        extra = tuple(sorted(set(declared) - set(season_tables)))
-        sources = "\n".join(
-            [textwrap.dedent(inspect.getsource(function))
-             for function in functions]
-            + [_module_evidence(importlib.import_module(module))
-               for module in sorted({f.__module__ for f in functions})])
-        unread = tuple(
-            table for table in declared
-            if re.search(rf"\b{re.escape(table)}\b", sources) is None)
-        rows.append({
-            "capability": capability,
-            "tool": spec.tool_name,
-            "tool_origin": origin,
-            "season_scoped": spec.task_season_scoped,
-            "live_fallback": spec.live_fallback,
-            "closure_size": len(functions),
-            "read_tables": season_tables,
-            "read_without_season": read_without_season,
-            "resolution_tables": tuple(sorted(resolution - read)),
-            "closure_functions": len(result_functions),
-            "registry_tables": tuple(registry),
-            "declared_tables": tuple(declared),
-            "declared_tables_not_in_tool_source": unread,
-            "absent_tables": tuple(
-                _coverage.absent_tables_for_capability(capability, {})),
-            "missing_from_registry": missing,
-            "not_read_by_tool": extra,
-            "dynamic_reads": dynamic,
-            "dynamic_prefixes": prefixed,
-            "seasons": {
-                name: sorted(detail[name]["seasons"])
-                for name in season_tables
-            },
-            "rows_in": {name: detail[name]["rows"] for name in season_tables},
-            "registry_seasons": {
-                name: sorted(detail[name]["seasons"])
-                for name in registry if name in detail
-            },
-            "registry_unknown_tables": tuple(
-                sorted(name for name in declared if name not in detail)),
-        })
+        rows.append(_build_row(capability, spec, names, detail))
     return rows
 
 def _dynamic_prefixes(functions, tables: tuple[str, ...]) -> list[str]:

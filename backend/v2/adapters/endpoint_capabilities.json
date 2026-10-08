@@ -3,11 +3,11 @@
     {
       "base_url": "https://generativelanguage.googleapis.com/v1beta/openai/",
       "strict_json_schema": "measured",
-      "tool_calling": "unmeasured",
-      "strict_tool_definitions": "unmeasured",
+      "tool_calling": "measured",
+      "strict_tool_definitions": "measured",
       "measurement": {
-        "probe": "schema_conformance",
-        "measured_at": "2026-10-05",
+        "probe": "capability_probe",
+        "measured_at": "2026-10-08",
         "models": [
           "gemini-3.5-flash",
           "gemini-3.8-flash",
@@ -17,15 +17,29 @@
     },
     {
       "base_url": "https://integrate.api.nvidia.com/v1",
-      "strict_json_schema": "unmeasured",
-      "tool_calling": "unmeasured",
-      "strict_tool_definitions": "unmeasured"
+      "strict_json_schema": "refused",
+      "tool_calling": "refused",
+      "strict_tool_definitions": "refused",
+      "measurement": {
+        "probe": "capability_probe",
+        "measured_at": "2026-10-08",
+        "models": [
+          "z-ai/glm-5.3-flash"
+        ]
+      }
     },
     {
       "base_url": "https://api.mistral.ai/v1",
-      "strict_json_schema": "unmeasured",
-      "tool_calling": "unmeasured",
-      "strict_tool_definitions": "unmeasured"
+      "strict_json_schema": "measured",
+      "tool_calling": "measured",
+      "strict_tool_definitions": "measured",
+      "measurement": {
+        "probe": "capability_probe",
+        "measured_at": "2026-10-08",
+        "models": [
+          "ministral-8b-2512"
+        ]
+      }
     },
     {
       "base_url": "https://openrouter.ai/api/v1",
@@ -43,11 +57,11 @@
     {
       "base_url": "https://api.inceptionlabs.ai/v1",
       "strict_json_schema": "measured",
-      "tool_calling": "unmeasured",
-      "strict_tool_definitions": "unmeasured",
+      "tool_calling": "measured",
+      "strict_tool_definitions": "measured",
       "measurement": {
         "probe": "capability_probe",
-        "measured_at": "2026-10-05",
+        "measured_at": "2026-10-08",
         "models": [
           "mercury-2.5"
         ]
@@ -60,9 +74,23 @@
       "strict_tool_definitions": "refused",
       "measurement": {
         "probe": "capability_probe",
-        "measured_at": "2026-10-05",
+        "measured_at": "2026-10-08",
         "models": [
+          "openai/gpt-oss-120b",
           "openai/gpt-oss-20b"
+        ]
+      }
+    },
+    {
+      "base_url": "https://api.cerebras.ai/v1",
+      "strict_json_schema": "measured",
+      "tool_calling": "measured",
+      "strict_tool_definitions": "measured",
+      "measurement": {
+        "probe": "capability_probe",
+        "measured_at": "2026-10-08",
+        "models": [
+          "gpt-oss-120b"
         ]
       }
     }

@@ -68,7 +68,7 @@ def _open_chat_budget():
     routes._CHAT_HITS.clear()
 
 def test_the_capability_names_its_tool_and_its_coverage_table():
-    from shared.tools import v1_tools
+    from shared.tools import WAREHOUSE_TOOLS
     from shared.tools.award_results import TABLE
     from v2.adapters.capabilities import CAPABILITIES
     from v2.adapters.coverage import (
@@ -81,7 +81,7 @@ def test_the_capability_names_its_tool_and_its_coverage_table():
 
     spec = CAPABILITIES["award_results"]
     assert spec.tool_name == "get_award_results"
-    assert spec.tool_name in {tool.name for tool in v1_tools}
+    assert spec.tool_name in {tool.name for tool in WAREHOUSE_TOOLS}
     declared = declared_tables_for_capability("award_results", {})
     assert declared == (TABLE,)
     on_hand = warehouse_tables()
@@ -814,3 +814,19 @@ def test_mvp_winner_and_share_publish_through_public_seam(
     assert custom["unverified_numbers"] == []
     assert REFUSAL not in final["text"]
     assert final["carry"]["verified_claims"] == 1
+def test_the_catalog_description_names_every_published_award_code() -> None:
+    from v2.runtime.assembly import capability_catalog
+    from shared.tools.award_results import AWARDS
+
+    description = capability_catalog()["award_results"]["description"]
+
+    for code in AWARDS:
+        assert code in description
+
+def test_the_catalog_description_forbids_inventing_an_unpublished_award() -> None:
+    from v2.runtime.assembly import capability_catalog
+
+    description = capability_catalog()["award_results"]["description"]
+
+    assert "Finals MVP" in description
+    assert "gap" in description

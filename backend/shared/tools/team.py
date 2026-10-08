@@ -267,68 +267,11 @@ def get_team_game_log(team: str, limit: int = 10,
     con = _store.connect()
     try:
         tables = {r[0] for r in con.execute("SHOW TABLES").fetchall()}
-        games: list[dict[str, Any]] = []
-        if not playoffs and "silver_team_games" in tables:
-            rows = con.execute(
-                """SELECT g.Game_ID, g.GAME_DATE, g.MATCHUP, g.WL,
-                          g.PTS, o.PTS, g.REB, g.AST, g.STL, g.BLK, g.TOV
-                   FROM silver_team_games g
-                   LEFT JOIN silver_team_games o
-                     ON o._season = g._season AND o.Game_ID = g.Game_ID
-                    AND o._entity != g._entity
-                   WHERE g._season = ? AND g._entity = ?
-                   ORDER BY strptime(g.GAME_DATE, '%b %d, %Y') DESC
-                   LIMIT ?""",
-                [season, f"team:{tid}", limit * 4],
-            ).fetchall()
-            seen: set[str] = set()
-            for (gid, gdate, matchup, wl, pts, opp_pts, reb, ast, stl,
-                 blk, tov) in rows:
-                if str(gid) in seen:
-                    continue
-                seen.add(str(gid))
-                games.append({
-                    "game_id": str(gid), "date": str(gdate),
-                    "matchup": str(matchup),
-                    "wl": str(wl).upper() if wl else None,
-                    "pts": pts, "opp_pts": opp_pts, "reb": reb,
-                    "ast": ast, "stl": stl, "blk": blk, "tov": tov,
-                })
-                if len(games) >= limit:
-                    break
-        elif playoffs and "silver_playoffs" in tables:
-            rows = con.execute(
-                """SELECT g.GAME_ID, g.GAME_DATE, g.MATCHUP, g.WL,
-                          g.PTS, o.PTS, g.REB, g.AST, g.STL, g.BLK, g.TOV
-                   FROM silver_playoffs g
-                   LEFT JOIN silver_playoffs o
-                     ON o._season = g._season AND o.GAME_ID = g.GAME_ID
-                    AND o.TEAM_ABBREVIATION != g.TEAM_ABBREVIATION
-                   WHERE g._season = ? AND g.TEAM_ABBREVIATION = ?
-                   ORDER BY coalesce(try_strptime(g.GAME_DATE, '%b %d, %Y'),
-                                     try_strptime(g.GAME_DATE, '%Y-%m-%d')) DESC
-                   LIMIT ?""",
-                [season, abbr, limit * 4],
-            ).fetchall()
-            seen2: set[str] = set()
-            for (gid, gdate, matchup, wl, pts, opp_pts, reb, ast, stl,
-                 blk, tov) in rows:
-                if str(gid) in seen2:
-                    continue
-                seen2.add(str(gid))
-                games.append({
-                    "game_id": str(gid), "date": str(gdate),
-                    "matchup": str(matchup),
-                    "wl": str(wl).upper() if wl else None,
-                    "pts": pts, "opp_pts": opp_pts, "reb": reb,
-                    "ast": ast, "stl": stl, "blk": blk, "tov": tov,
-                })
-                if len(games) >= limit:
-                    break
-        else:
-            if playoffs:
-                return {"tool": "get_team_game_log", "ok": False,
-                        "error": "team game table not present in warehouse"}
+        games, err = _team_games_rows(con, tables, tid, abbr, season,
+                                      limit, playoffs)
+        if err is not None:
+            return {"tool": "get_team_game_log", "ok": False,
+                    "error": err}
     finally:
         con.close()
     _source = "warehouse:silver_team_games"
@@ -365,6 +308,60 @@ def get_team_game_log(team: str, limit: int = 10,
             f"showing {len(games)} most recent.")
     return {"tool": "get_team_game_log", "ok": True,
             "team": abbr, "games": games, "rows": games, "meta": _meta}
+
+def _team_games_rows(con, tables, tid, abbr, season, limit, playoffs):
+    games: list[dict[str, Any]] = []
+    if not playoffs and "silver_team_games" in tables:
+        rows = con.execute(
+            """SELECT g.Game_ID, g.GAME_DATE, g.MATCHUP, g.WL,
+                      g.PTS, o.PTS, g.REB, g.AST, g.STL, g.BLK, g.TOV
+               FROM silver_team_games g
+               LEFT JOIN silver_team_games o
+                 ON o._season = g._season AND o.Game_ID = g.Game_ID
+                AND o._entity != g._entity
+               WHERE g._season = ? AND g._entity = ?
+               ORDER BY strptime(g.GAME_DATE, '%b %d, %Y') DESC
+               LIMIT ?""",
+            [season, f"team:{tid}", limit * 4],
+        ).fetchall()
+        return _collect_games(rows, limit), None
+    if playoffs and "silver_playoffs" in tables:
+        rows = con.execute(
+            """SELECT g.GAME_ID, g.GAME_DATE, g.MATCHUP, g.WL,
+                      g.PTS, o.PTS, g.REB, g.AST, g.STL, g.BLK, g.TOV
+               FROM silver_playoffs g
+               LEFT JOIN silver_playoffs o
+                 ON o._season = g._season AND o.GAME_ID = g.GAME_ID
+                AND o.TEAM_ABBREVIATION != g.TEAM_ABBREVIATION
+               WHERE g._season = ? AND g.TEAM_ABBREVIATION = ?
+               ORDER BY coalesce(try_strptime(g.GAME_DATE, '%b %d, %Y'),
+                                 try_strptime(g.GAME_DATE, '%Y-%m-%d')) DESC
+               LIMIT ?""",
+            [season, abbr, limit * 4],
+        ).fetchall()
+        return _collect_games(rows, limit), None
+    if playoffs:
+        return [], "team game table not present in warehouse"
+    return [], None
+
+def _collect_games(rows, limit):
+    games: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for (gid, gdate, matchup, wl, pts, opp_pts, reb, ast, stl,
+         blk, tov) in rows:
+        if str(gid) in seen:
+            continue
+        seen.add(str(gid))
+        games.append({
+            "game_id": str(gid), "date": str(gdate),
+            "matchup": str(matchup),
+            "wl": str(wl).upper() if wl else None,
+            "pts": pts, "opp_pts": opp_pts, "reb": reb,
+            "ast": ast, "stl": stl, "blk": blk, "tov": tov,
+        })
+        if len(games) >= limit:
+            break
+    return games
 
 _SERIES_PHASES = ("regular season", "playoffs")
 
@@ -514,25 +511,10 @@ def _series_unreadable_error(season: str, cause: object) -> str:
 def get_season_series(team_a: str, team_b: str,
                       season: str | None = None) -> dict[str, Any]:
     season = resolve_season(season)
-    from .competitive import _resolve_team_abbr
-    from nba_api.stats.static import teams as _static_teams
-
-    a = _resolve_team_abbr(team_a)
-    b = _resolve_team_abbr(team_b)
-    if not a or not b:
-        return {"tool": "get_season_series", "ok": False,
-                "error": f"could not resolve team(s): {team_a} / {team_b}"}
-    if a == b:
-        return {"tool": "get_season_series", "ok": False,
-                "error": "two different teams needed"}
-    ids = {str(t.get("abbreviation") or "").upper(): t.get("id")
-           for t in _static_teams.get_teams()}
-    id_a, id_b = ids.get(a), ids.get(b)
-    if id_a is None or id_b is None:
-        return {"tool": "get_season_series", "ok": False,
-                "error": (f"no warehouse team id for "
-                          f"{a if id_a is None else b}, so {season} meetings "
-                          f"cannot be looked up without guessing")}
+    resolved, err = _resolve_series_teams(team_a, team_b, season)
+    if err is not None:
+        return {"tool": "get_season_series", "ok": False, "error": err}
+    a, b, id_a, id_b = resolved
 
     from .. import store as _store
 
@@ -557,6 +539,32 @@ def get_season_series(team_a: str, team_b: str,
         return {"tool": "get_season_series", "ok": False,
                 "error": _no_meetings_error(a, b, season, coverage)}
     games.sort(key=lambda g: _series_date_key(g["date"]))
+    summary = _series_summary(games, a, b, playoff_source)
+    return {"tool": "get_season_series", "ok": True,
+            "rows": {"teams": [a, b], "summary": summary, "games": games},
+            "meta": _series_meta(a, b, season, reg_source, playoff_source,
+                                 tables, _SERIES_SOURCES, coverage, games)}
+
+def _resolve_series_teams(team_a, team_b, season):
+    from .competitive import _resolve_team_abbr
+    from nba_api.stats.static import teams as _static_teams
+
+    a = _resolve_team_abbr(team_a)
+    b = _resolve_team_abbr(team_b)
+    if not a or not b:
+        return None, f"could not resolve team(s): {team_a} / {team_b}"
+    if a == b:
+        return None, "two different teams needed"
+    ids = {str(t.get("abbreviation") or "").upper(): t.get("id")
+           for t in _static_teams.get_teams()}
+    id_a, id_b = ids.get(a), ids.get(b)
+    if id_a is None or id_b is None:
+        return None, (f"no warehouse team id for "
+                      f"{a if id_a is None else b}, so {season} meetings "
+                      f"cannot be looked up without guessing")
+    return (a, b, id_a, id_b), None
+
+def _series_summary(games, a, b, playoff_source):
     phases = sorted({g["phase"] for g in games})
     games_won = {a: sum(1 for g in games if g.get("winner") == a),
                  b: sum(1 for g in games if g.get("winner") == b)}
@@ -586,23 +594,25 @@ def get_season_series(team_a: str, team_b: str,
         summary["series_won"] = {a: sum(1 for s in series if s["winner"] == a),
                                  b: sum(1 for s in series if s["winner"] == b)}
         summary["series"] = series
-    return {"tool": "get_season_series", "ok": True,
-            "rows": {"teams": [a, b], "summary": summary, "games": games},
-            "meta": {"source": "warehouse team + playoff gamelogs",
-                     "season": season,
-                     "regular_season_source": reg_source,
-                     "playoff_source": playoff_source,
-                     "playoff_tables_present": {
-                         source.table: source.table in tables
-                         for source in _SERIES_SOURCES
-                         if source.phase == "playoffs"},
-                     "coverage": coverage,
-                     "unscored_games": sorted(
-                         g["game_id"] for g in games
-                         if f"{a.lower()}_pts" not in g
-                         or g.get(f"{a.lower()}_pts") is None),
-                     "note": ("games_won counts games; series_won counts "
-                              "playoff series, one per round")}}
+    return summary
+
+def _series_meta(a, b, season, reg_source, playoff_source,
+                 tables, series_sources, coverage, games):
+    return {"source": "warehouse team + playoff gamelogs",
+            "season": season,
+            "regular_season_source": reg_source,
+            "playoff_source": playoff_source,
+            "playoff_tables_present": {
+                source.table: source.table in tables
+                for source in series_sources
+                if source.phase == "playoffs"},
+            "coverage": coverage,
+            "unscored_games": sorted(
+                g["game_id"] for g in games
+                if f"{a.lower()}_pts" not in g
+                or g.get(f"{a.lower()}_pts") is None),
+            "note": ("games_won counts games; series_won counts "
+                     "playoff series, one per round")}
 
 _HIST_TEAM_GAMES_SQL = """
 SELECT
@@ -956,48 +966,59 @@ def get_lineups(team_id: str | int, season: str | None = None) -> dict[str, Any]
         comp = _competitive_lineup_nets(team_id, season)
     except Exception:
         comp = None
+    _apply_competitive_nets(rows, comp)
+    meta = {**meta,
+            "scope": f"Lineup nets are full-game totals for season {season} "
+            "with no margin or clock filter, so garbage time is included."}
+    return {"tool": "get_lineups", "ok": True, "rows": rows, "meta": meta}
+
+def _by_last_name_index():
+    try:
+        from nba_api.stats.static import players as _static_players
+
+        _all = _static_players.get_players()
+        _by_last = {}
+        for p in _all:
+            last = str(p.get("last_name", "")).lower()
+            if last:
+                _by_last.setdefault(last, p["id"])
+        return _by_last
+    except Exception:
+        return {}
+
+def _lineup_key_fuzzy(r, _by_last):
+    try:
+        parts = [t.strip().lower().split()[-1]
+                 for t in str(r.get("GROUP_NAME", "")).split("-")]
+        ids = [_by_last[t] for t in parts if t in _by_last]
+        if len(ids) == 5:
+            return tuple(sorted(ids))
+    except (TypeError, ValueError, IndexError):
+        pass
+    return None
+
+def _apply_competitive_nets(rows, comp):
     if comp is None:
         for r in rows:
             r["competitive_net"] = None
             r["competitive_poss"] = None
             r["competitive_note"] = "possessions missing for team/season"
-    else:
-        try:
-            from nba_api.stats.static import players as _static_players
-
-            _all = _static_players.get_players()
-            _by_last = {}
-            for p in _all:
-                last = str(p.get("last_name", "")).lower()
-                if last:
-                    _by_last.setdefault(last, p["id"])
-        except Exception:
-            _by_last = {}
-        for r in rows:
-            key = _lineup_key(r)
-            if key is None and _by_last:
-                try:
-                    parts = [t.strip().lower().split()[-1]
-                             for t in str(r.get("GROUP_NAME", "")).split("-")]
-                    ids = [_by_last[t] for t in parts if t in _by_last]
-                    if len(ids) == 5:
-                        key = tuple(sorted(ids))
-                except (TypeError, ValueError, IndexError):
-                    key = None
-            if key is not None and key in comp:
-                net, poss = comp[key]
-                r["competitive_net"] = net
-                r["competitive_poss"] = poss
-                if poss < 50:
-                    r["SAMPLE"] = "small: under 50 competitive possessions"
-            else:
-                r["competitive_net"] = None
-                r["competitive_poss"] = 0
+        return
+    _by_last = _by_last_name_index()
+    for r in rows:
+        key = _lineup_key(r)
+        if key is None and _by_last:
+            key = _lineup_key_fuzzy(r, _by_last)
+        if key is not None and key in comp:
+            net, poss = comp[key]
+            r["competitive_net"] = net
+            r["competitive_poss"] = poss
+            if poss < 50:
                 r["SAMPLE"] = "small: under 50 competitive possessions"
-    meta = {**meta,
-            "scope": f"Lineup nets are full-game totals for season {season} "
-            "with no margin or clock filter, so garbage time is included."}
-    return {"tool": "get_lineups", "ok": True, "rows": rows, "meta": meta}
+        else:
+            r["competitive_net"] = None
+            r["competitive_poss"] = 0
+            r["SAMPLE"] = "small: under 50 competitive possessions"
 
 @tool(description='One-call dossier: record, roster, lineups, leaders context.')
 def get_scouting_report(team_id: str | int, season: str | None = None) -> dict[str, Any]:
@@ -1552,8 +1573,6 @@ def get_team_splits(team: str | int, season: str | None = None) -> dict[str, Any
 @tool(description='Injury impact in one call: outs, net rating, last-10, heuristic impact.')
 async def get_injury_impact(team: str = "", season: str | None = None) -> dict[str, Any]:
     season = resolve_season(season)
-    import ast as _ast
-    import json as _json
 
     from .league import get_injuries, get_ratings
 
@@ -1565,23 +1584,7 @@ async def get_injury_impact(team: str = "", season: str | None = None) -> dict[s
     last10 = None
     try:
         inj = await get_injuries.ainvoke({"team": abbr, "season": season})
-        for r in inj.get("rows", []) or []:
-            raw = r.get("injuries", "")
-            try:
-                try:
-                    items = _json.loads(raw) if isinstance(raw, str) else raw
-                except Exception:
-                    items = _ast.literal_eval(raw) if isinstance(raw, str) else raw
-            except Exception:
-                items = []
-            for it in items or []:
-                if not isinstance(it, dict):
-                    continue
-                name = (it.get("athlete") or {}).get("displayName", "?")
-                if "out" in str(it.get("status", "")).lower():
-                    out.append(str(name))
-                else:
-                    questionable.append(str(name))
+        out, questionable = _injury_status_lists(inj.get("rows", []) or [])
     except Exception:
         pass
     try:
@@ -1625,6 +1628,31 @@ async def get_injury_impact(team: str = "", season: str | None = None) -> dict[s
                      "impact": impact},
             "meta": meta}
 
+def _injury_status_lists(rows):
+    import ast as _ast
+    import json as _json
+
+    out: list[str] = []
+    questionable: list[str] = []
+    for r in rows or []:
+        raw = r.get("injuries", "")
+        try:
+            try:
+                items = _json.loads(raw) if isinstance(raw, str) else raw
+            except Exception:
+                items = _ast.literal_eval(raw) if isinstance(raw, str) else raw
+        except Exception:
+            items = []
+        for it in items or []:
+            if not isinstance(it, dict):
+                continue
+            name = (it.get("athlete") or {}).get("displayName", "?")
+            if "out" in str(it.get("status", "")).lower():
+                out.append(str(name))
+            else:
+                questionable.append(str(name))
+    return out, questionable
+
 @tool(description="Two-team matchup brief with ratings, form, injuries, season series, and win probability.")
 async def get_matchup_brief(a: str = "", b: str = "", season: str | None = None) -> dict[str, Any]:
     from .league import get_ratings
@@ -1648,12 +1676,65 @@ async def get_matchup_brief(a: str = "", b: str = "", season: str | None = None)
         return {"tool": "get_matchup_brief", "ok": False, "error": "a and b must be different teams"}
     abbr_a = str(_abbrev(a) or "").strip().upper()
     abbr_b = str(_abbrev(b) or "").strip().upper()
+    card_provenance, row_a, row_b, err = await _brief_rating_rows(
+        get_ratings, abbr_a, abbr_b, season)
+    if err is not None:
+        return {"tool": "get_matchup_brief", "ok": False, "error": err}
+    form, err2 = await _brief_form(abbr_a, abbr_b, season)
+    if err2 is not None:
+        return {"tool": "get_matchup_brief", "ok": False, "error": err2}
+    injuries, err3 = await _brief_injuries(abbr_a, abbr_b, season)
+    if err3 is not None:
+        return {"tool": "get_matchup_brief", "ok": False, "error": err3}
+    series_rows, warnings = await _brief_series(abbr_a, abbr_b, season)
+    pred = await get_game_prediction.ainvoke({"a": abbr_a, "b": abbr_b, "season": season})
+    if not isinstance(pred, dict) or not pred.get("ok"):
+        err4 = ""
+        if isinstance(pred, dict):
+            err4 = str(pred.get("error") or "prediction unavailable")
+        return {"tool": "get_matchup_brief", "ok": False, "error": err4}
+    est = pred.get("estimate") or {}
+    inputs = pred.get("inputs") or {}
+    prediction_provenance = {
+        "kind": str(inputs.get("ratings_provenance") or ""),
+        "source": str(inputs.get("ratings_source") or ""),
+    }
+    provenance_err = _provenance_error(card_provenance,
+                                       prediction_provenance, season)
+    if provenance_err is not None:
+        return {"tool": "get_matchup_brief", "ok": False,
+                "error": provenance_err}
+    pred_meta = pred.get("meta") if isinstance(pred.get("meta"), dict) else {}
+    prediction_rows = {"matchup": pred.get("matchup") or {}, "win_prob": est.get("win_prob") or {}, "projected_score": est.get("projected_score") or {}, "projected_total": est.get("projected_total"), "win_prob_ci90": est.get("win_prob_ci90") or {}, "total_ci90": est.get("total_ci90") or [], "margin_ci90": est.get("margin_ci90") or [], "ratings_source": prediction_provenance["source"], "ratings_provenance": prediction_provenance["kind"]}
+    from .. import store as _store
+
+    meta = {"source": str(pred_meta.get("source") or "warehouse"), "season": season, "ratings_provenance": card_provenance, **_store.warehouse_identity()}
+    if warnings:
+        meta["warnings"] = warnings
+    return {"tool": "get_matchup_brief", "ok": True, "rows": {"teams": [abbr_a, abbr_b], "ratings_provenance": card_provenance, "ratings": {abbr_a: _rating_card(row_a), abbr_b: _rating_card(row_b)}, "form": form, "injuries": injuries, "season_series": series_rows, "prediction": prediction_rows}, "meta": meta}
+
+
+
+def _rating_card(r):
+    w = r.get("W")
+    l = r.get("L")
+    record = str(w) + "-" + str(l) if w is not None and l is not None else None
+    return {"TEAM": r.get("TEAM"), "TEAM_NAME": r.get("TEAM_NAME"), "TEAM_ID": r.get("TEAM_ID"), "OFF_RATING": r.get("OFF_RATING"), "DEF_RATING": r.get("DEF_RATING"), "NET_RATING": r.get("NET_RATING"), "PACE": r.get("PACE"), "W": w, "L": l, "record": record, "OFF_RATING_RANK": r.get("OFF_RATING_RANK"), "DEF_RATING_RANK": r.get("DEF_RATING_RANK"), "NET_RATING_RANK": r.get("NET_RATING_RANK")}
+
+def _last10(rows_in):
+    item = next(
+        (x for x in rows_in if x.get("split") == _TRAILING_SPLIT), None)
+    if not item:
+        return None
+    return str(item.get("W")) + "-" + str(item.get("L"))
+
+async def _brief_rating_rows(get_ratings, abbr_a, abbr_b, season):
     rat = await get_ratings.ainvoke({"season": season})
     if not isinstance(rat, dict) or not rat.get("ok"):
         err = ""
         if isinstance(rat, dict):
             err = str(rat.get("error") or "ratings unavailable")
-        return {"tool": "get_matchup_brief", "ok": False, "error": err}
+        return None, None, None, err
     ratings_meta = rat.get("meta") if isinstance(rat.get("meta"), dict) else {}
     card_provenance = {
         "kind": str(ratings_meta.get("ratings_provenance") or ""),
@@ -1668,18 +1749,21 @@ async def get_matchup_brief(a: str = "", b: str = "", season: str | None = None)
             missing.append(abbr_a)
         if row_b is None:
             missing.append(abbr_b)
-        return {"tool": "get_matchup_brief", "ok": False, "error": "ratings missing for " + ", ".join(missing)}
-    def _rating_card(r):
-        w = r.get("W")
-        l = r.get("L")
-        record = str(w) + "-" + str(l) if w is not None and l is not None else None
-        return {"TEAM": r.get("TEAM"), "TEAM_NAME": r.get("TEAM_NAME"), "TEAM_ID": r.get("TEAM_ID"), "OFF_RATING": r.get("OFF_RATING"), "DEF_RATING": r.get("DEF_RATING"), "NET_RATING": r.get("NET_RATING"), "PACE": r.get("PACE"), "W": w, "L": l, "record": record, "OFF_RATING_RANK": r.get("OFF_RATING_RANK"), "DEF_RATING_RANK": r.get("DEF_RATING_RANK"), "NET_RATING_RANK": r.get("NET_RATING_RANK")}
-    def _last10(rows_in):
-        item = next(
-            (x for x in rows_in if x.get("split") == _TRAILING_SPLIT), None)
-        if not item:
-            return None
-        return str(item.get("W")) + "-" + str(item.get("L"))
+        return None, None, None, "ratings missing for " + ", ".join(missing)
+    return card_provenance, row_a, row_b, None
+
+def _provenance_error(card_provenance, prediction_provenance, season):
+    if (not all(card_provenance.values())
+            or card_provenance != prediction_provenance):
+        return (
+            f"ratings provenance disagrees inside the brief for season "
+            f"{season}: the ratings card reports "
+            f"{_provenance_label(card_provenance)} and the simulation reports "
+            f"{_provenance_label(prediction_provenance)}, so one quantity "
+            f"would carry two provenances; refusing to answer")
+    return None
+
+async def _brief_form(abbr_a, abbr_b, season):
     form = {}
     for abbr in (abbr_a, abbr_b):
         sp = await get_team_splits.ainvoke({"team": abbr, "season": season})
@@ -1687,9 +1771,12 @@ async def get_matchup_brief(a: str = "", b: str = "", season: str | None = None)
             err2 = ""
             if isinstance(sp, dict):
                 err2 = str(sp.get("error") or "splits unavailable")
-            return {"tool": "get_matchup_brief", "ok": False, "error": err2}
+            return None, err2
         sprows = sp.get("rows") or []
         form[abbr] = {"last10": _last10(sprows), "splits": sprows}
+    return form, None
+
+async def _brief_injuries(abbr_a, abbr_b, season):
     injuries = {}
     for abbr in (abbr_a, abbr_b):
         imp = await get_injury_impact.ainvoke({"team": abbr, "season": season})
@@ -1697,8 +1784,11 @@ async def get_matchup_brief(a: str = "", b: str = "", season: str | None = None)
             err3 = ""
             if isinstance(imp, dict):
                 err3 = str(imp.get("error") or "injury data unavailable")
-            return {"tool": "get_matchup_brief", "ok": False, "error": err3}
+            return None, err3
         injuries[abbr] = imp.get("rows") or {}
+    return injuries, None
+
+async def _brief_series(abbr_a, abbr_b, season):
     ser = await get_season_series.ainvoke({"team_a": abbr_a, "team_b": abbr_b, "season": season})
     warnings = []
     if isinstance(ser, dict) and ser.get("ok"):
@@ -1711,34 +1801,7 @@ async def get_matchup_brief(a: str = "", b: str = "", season: str | None = None)
                        "summary": None, "games": [], "reason": reason}
         if reason:
             warnings.append(reason)
-    pred = await get_game_prediction.ainvoke({"a": abbr_a, "b": abbr_b, "season": season})
-    if not isinstance(pred, dict) or not pred.get("ok"):
-        err4 = ""
-        if isinstance(pred, dict):
-            err4 = str(pred.get("error") or "prediction unavailable")
-        return {"tool": "get_matchup_brief", "ok": False, "error": err4}
-    est = pred.get("estimate") or {}
-    inputs = pred.get("inputs") or {}
-    prediction_provenance = {
-        "kind": str(inputs.get("ratings_provenance") or ""),
-        "source": str(inputs.get("ratings_source") or ""),
-    }
-    if (not all(card_provenance.values())
-            or card_provenance != prediction_provenance):
-        return {"tool": "get_matchup_brief", "ok": False, "error": (
-            f"ratings provenance disagrees inside the brief for season "
-            f"{season}: the ratings card reports "
-            f"{_provenance_label(card_provenance)} and the simulation reports "
-            f"{_provenance_label(prediction_provenance)}, so one quantity "
-            f"would carry two provenances; refusing to answer")}
-    pred_meta = pred.get("meta") if isinstance(pred.get("meta"), dict) else {}
-    prediction_rows = {"matchup": pred.get("matchup") or {}, "win_prob": est.get("win_prob") or {}, "projected_score": est.get("projected_score") or {}, "projected_total": est.get("projected_total"), "win_prob_ci90": est.get("win_prob_ci90") or {}, "total_ci90": est.get("total_ci90") or [], "margin_ci90": est.get("margin_ci90") or [], "ratings_source": prediction_provenance["source"], "ratings_provenance": prediction_provenance["kind"]}
-    from .. import store as _store
-
-    meta = {"source": str(pred_meta.get("source") or "warehouse"), "season": season, "ratings_provenance": card_provenance, **_store.warehouse_identity()}
-    if warnings:
-        meta["warnings"] = warnings
-    return {"tool": "get_matchup_brief", "ok": True, "rows": {"teams": [abbr_a, abbr_b], "ratings_provenance": card_provenance, "ratings": {abbr_a: _rating_card(row_a), abbr_b: _rating_card(row_b)}, "form": form, "injuries": injuries, "season_series": series_rows, "prediction": prediction_rows}, "meta": meta}
+    return series_rows, warnings
 
 def _provenance_label(provenance: dict[str, str]) -> str:
     kind = str(provenance.get("kind") or "").strip()

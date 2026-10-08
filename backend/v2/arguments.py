@@ -24,15 +24,37 @@ class StringListArg(Closed):key:KEY;kind:Literal['string_list'];string_list_valu
 ArgumentEntry=Annotated[Union[NullArg,BoolArg,IntArg,NumberArg,DecimalArg,StringArg,BoolListArg,IntListArg,NumberListArg,DecimalListArg,StringListArg],Field(discriminator='kind')]
 SLOTS={k:('value' if k=='null' else k+'_value') for k in ('null','bool','int','number','decimal','string','bool_list','int_list','number_list','decimal_list','string_list')}
 
-def encode_argument(key:str,value:Any,schema:dict[str,Any]|None=None)->dict[str,Any]:
- schema=schema or {};exact=schema.get('x-dime-exact-decimal') is True;items=schema.get('items',{});exact_list=items.get('x-dime-exact-decimal') is True or schema.get('x-dime-exact-decimal-list') is True
- pattern=r'-?(0|[1-9][0-9]*)(\.[0-9]+)?'
+def _exact_decimal_entry(key:str,value:Any,schema:dict[str,Any],pattern:str)->dict[str,Any]|None:
+ exact=schema.get('x-dime-exact-decimal') is True
+ items=schema.get('items',{})
+ exact_list=items.get('x-dime-exact-decimal') is True or schema.get('x-dime-exact-decimal-list') is True
  if exact:
   if type(value) is not str or re.fullmatch(pattern,value) is None:raise ValueError('unrepresentable exact decimal')
   return {'key':key,'kind':'decimal','decimal_value':value}
  if exact_list:
   if type(value) is not list or any(type(x) is not str or re.fullmatch(pattern,x) is None for x in value):raise ValueError('unrepresentable exact decimal list')
   return {'key':key,'kind':'decimal_list','decimal_list_value':value}
+ return None
+
+def _empty_list_entry(key:str,schema:dict[str,Any])->dict[str,Any]:
+ branches=schema.get('anyOf') or [schema]
+ types={x.get('items',{}).get('type') for x in branches if x.get('type')=='array'}
+ kind={'boolean':'bool_list','integer':'int_list','number':'number_list','string':'string_list'}.get(next(iter(types)) if len(types)==1 else None)
+ if kind is None:raise ValueError('empty list item type is ambiguous')
+ return {'key':key,'kind':kind,kind+'_value':[]}
+
+def _list_entry(key:str,value:list)->dict[str,Any]:
+ types={type(x) for x in value}
+ if len(types)!=1 or next(iter(types)) not in {bool,int,float,str}:raise ValueError('only homogeneous scalar lists are supported')
+ typ=next(iter(types));kind={bool:'bool_list',int:'int_list',float:'number_list',str:'string_list'}[typ]
+ if typ is float and any(not math.isfinite(x) for x in value):raise ValueError('numbers must be finite')
+ return {'key':key,'kind':kind,kind+'_value':value}
+
+def encode_argument(key:str,value:Any,schema:dict[str,Any]|None=None)->dict[str,Any]:
+ schema=schema or {}
+ pattern=r'-?(0|[1-9][0-9]*)(\.[0-9]+)?'
+ exact_entry=_exact_decimal_entry(key,value,schema,pattern)
+ if exact_entry is not None:return exact_entry
  if value is None:return {'key':key,'kind':'null','value':None}
  if type(value) is bool:return {'key':key,'kind':'bool','bool_value':value}
  if type(value) is int:return {'key':key,'kind':'int','int_value':value}
@@ -44,15 +66,8 @@ def encode_argument(key:str,value:Any,schema:dict[str,Any]|None=None)->dict[str,
   return {'key':key,'kind':'decimal','decimal_value':str(value)}
  if type(value) is str:return {'key':key,'kind':'string','string_value':value}
  if type(value) is list:
-  if not value:
-   branches=schema.get('anyOf') or [schema];types={x.get('items',{}).get('type') for x in branches if x.get('type')=='array'};kind={'boolean':'bool_list','integer':'int_list','number':'number_list','string':'string_list'}.get(next(iter(types)) if len(types)==1 else None)
-   if kind is None:raise ValueError('empty list item type is ambiguous')
-   return {'key':key,'kind':kind,kind+'_value':[]}
-  types={type(x) for x in value}
-  if len(types)!=1 or next(iter(types)) not in {bool,int,float,str}:raise ValueError('only homogeneous scalar lists are supported')
-  typ=next(iter(types));kind={bool:'bool_list',int:'int_list',float:'number_list',str:'string_list'}[typ]
-  if typ is float and any(not math.isfinite(x) for x in value):raise ValueError('numbers must be finite')
-  return {'key':key,'kind':kind,kind+'_value':value}
+  if not value:return _empty_list_entry(key,schema)
+  return _list_entry(key,value)
  raise ValueError('unsupported argument value')
 
 class TypedArguments(Closed,Mapping[str,Any]):

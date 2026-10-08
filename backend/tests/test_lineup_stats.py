@@ -69,7 +69,7 @@ def test_estimated_flagged_when_no_play_data():
 
 def test_registered_in_tool_registry():
     assert "get_lineup_stats" in tools.TOOL_NAMES
-    names = [t.name for t in tools.v1_tools]
+    names = [t.name for t in tools.WAREHOUSE_TOOLS]
     assert len(names) == len(set(names))
 
 def test_invalid_team_fails_cleanly():

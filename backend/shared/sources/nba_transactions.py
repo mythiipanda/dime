@@ -114,6 +114,48 @@ def parse_csv(text: str, fetched_at: str | None = None, source_file: str = CSV_F
     return pl.DataFrame(rows, schema=SCHEMA).sort(
         ["TRANSACTION_DATE", "TEAMS", "PLAYERS"])
 
+_REQUIRED_JSON_FIELDS = ("TRANSACTION_DATE", "SEASON", "TEAMS",
+                         "PLAYERS", "TRANSACTION_TYPE")
+
+_JSON_ALIASES = {
+    "TRANSACTION_DATE": ("date", "transaction_date", "DATE", "transactionDate", "TRANSACTION_DATE"),
+    "SEASON": ("season", "SEASON", "season_label", "SEASON_LABEL"),
+    "TEAMS": ("teams", "team", "TEAMS", "TEAM", "teamsInvolved"),
+    "PLAYERS": ("players", "player", "PLAYERS", "PLAYER", "playersInvolved"),
+    "PICKS": ("picks", "pick", "PICKS", "PICK"),
+    "TRANSACTION_TYPE": ("type", "transaction_type", "TYPE", "transactionType", "TRANSACTION_TYPE"),
+}
+
+def _json_document_payload(document: dict):
+    payload = document.get("rows") or document.get("results") \
+        or document.get("data") or document.get("resultSets") or []
+    if payload and isinstance(payload[0], dict) and "rowSet" in payload[0]:
+        headers = payload[0].get("headers", [])
+        payload = [dict(zip(headers, row)) for row in payload[0].get("rowSet", [])]
+    if isinstance(document.get("rows"), dict) is False and not payload:
+        for value in document.values():
+            if isinstance(value, list) and value and isinstance(value[0], dict):
+                payload = value
+                break
+    return payload
+
+def _json_record_fields(record, index: int, aliases) -> dict:
+    if not isinstance(record, dict):
+        raise TransactionsSourceError(
+            f"stats-nba-json: row {index} is not an object")
+    found: dict[str, str] = {}
+    for canonical, names in aliases.items():
+        for name in names:
+            if name in record and record[name] not in (None, ""):
+                found[canonical] = str(record[name])
+                break
+    missing = [key for key in _REQUIRED_JSON_FIELDS if key not in found]
+    if missing:
+        raise TransactionsSourceError(
+            f"stats-nba-json: row {index} missing field(s) "
+            f"{','.join(missing)}")
+    return found
+
 def parse_json(text: str, fetched_at: str | None = None, source_file: str = JSON_FILE
                ) -> pl.DataFrame:
     fetched_at = fetched_at or _now()
@@ -124,46 +166,16 @@ def parse_json(text: str, fetched_at: str | None = None, source_file: str = JSON
             f"stats-nba-json: NBA_Player_Movement.json is not JSON "
             f"({exc})")
     if isinstance(document, dict):
-        payload = document.get("rows") or document.get("results") \
-            or document.get("data") or document.get("resultSets") or []
-        if payload and isinstance(payload[0], dict) and "rowSet" in payload[0]:
-            headers = payload[0].get("headers", [])
-            payload = [dict(zip(headers, row)) for row in payload[0].get("rowSet", [])]
-        if isinstance(document.get("rows"), dict) is False and not payload:
-            for value in document.values():
-                if isinstance(value, list) and value and isinstance(value[0], dict):
-                    payload = value
-                    break
+        payload = _json_document_payload(document)
     else:
         payload = document
     if not isinstance(payload, list):
         raise TransactionsSourceError(
             "stats-nba-json: NBA_Player_Movement.json has no row list")
-    aliases = {
-        "TRANSACTION_DATE": ("date", "transaction_date", "DATE", "transactionDate", "TRANSACTION_DATE"),
-        "SEASON": ("season", "SEASON", "season_label", "SEASON_LABEL"),
-        "TEAMS": ("teams", "team", "TEAMS", "TEAM", "teamsInvolved"),
-        "PLAYERS": ("players", "player", "PLAYERS", "PLAYER", "playersInvolved"),
-        "PICKS": ("picks", "pick", "PICKS", "PICK"),
-        "TRANSACTION_TYPE": ("type", "transaction_type", "TYPE", "transactionType", "TRANSACTION_TYPE"),
-    }
+    aliases = _JSON_ALIASES
     rows: list[dict] = []
     for index, record in enumerate(payload):
-        if not isinstance(record, dict):
-            raise TransactionsSourceError(
-                f"stats-nba-json: row {index} is not an object")
-        found: dict[str, str] = {}
-        for canonical, names in aliases.items():
-            for name in names:
-                if name in record and record[name] not in (None, ""):
-                    found[canonical] = str(record[name])
-                    break
-        missing = [key for key in ("TRANSACTION_DATE", "SEASON", "TEAMS",
-                                   "PLAYERS", "TRANSACTION_TYPE") if key not in found]
-        if missing:
-            raise TransactionsSourceError(
-                f"stats-nba-json: row {index} missing field(s) "
-                f"{','.join(missing)}")
+        found = _json_record_fields(record, index, aliases)
         players, extra_picks = _split_assets(found["PLAYERS"])
         picks = found.get("PICKS", "")
         picks = ";".join([p for p in [picks, extra_picks] if p])

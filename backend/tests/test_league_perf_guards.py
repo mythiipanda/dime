@@ -31,7 +31,8 @@ def small_warehouse(monkeypatch, tmp_path):
 def test_schema_cache_second_call_issues_no_queries(small_warehouse):
     present1, cols1 = league._get_warehouse_schema()
     assert "silver_standings" in present1
-    assert cols1["silver_standings"][:3] == ["TEAM", "WINS", "_season"]
+    assert list(cols1["silver_standings"])[:3] == ["TEAM", "WINS", "_season"]
+    assert cols1["silver_standings"]["_season"]["unit"] == "season"
     info1 = league._warehouse_schema_cache_info()
     assert info1["misses"] == 1
 

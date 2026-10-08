@@ -32,11 +32,13 @@ from pydantic_ai.tools import GenerateToolJsonSchema
 from shared.config import settings
 from shared.tools.rating_metrics import RANKING_DIRECTIONS, TEAM_RATING_METRICS
 from shared.providers import (
+    CEREBRAS_DEFAULT,
     GEMINI_BASE_URL,
     GROQ_DEFAULT,
     NVIDIA_NIM_BASE_URL,
     INCEPTION_DEFAULT,
     ProviderName,
+    _cerebras_model,
     _gemini_model,
     _groq_free_model, _mistral_free_model,
     _nvidia_nim_model,
@@ -414,12 +416,12 @@ class ProviderStructuredModel:
         return delay
 
     @staticmethod
-    def _failure_class(exc: BaseException) -> str:
-        names: list[str] = []
-        details: list[str] = []
-        codes: list[int] = []
-        seen: set[int] = set()
-        pending: list[BaseException] = [exc]
+    def _failure_chain_walk(exc: BaseException) -> tuple[list, list, list]:
+        names: list = []
+        details: list = []
+        codes: list = []
+        seen: set = set()
+        pending: list = [exc]
         while pending and len(names) < 8:
             item = pending.pop(0)
             if id(item) in seen or not isinstance(item, BaseException):
@@ -439,11 +441,17 @@ class ProviderStructuredModel:
                 pending.append(cause)
             if isinstance(context, BaseException) and context is not cause:
                 pending.append(context)
+        return names, details, codes
+
+    @staticmethod
+    def _failure_class(exc: BaseException) -> str:
+        names, details, codes = ProviderStructuredModel._failure_chain_walk(exc)
         name = " ".join(names)
         detail = " ".join(details)
+        detail = detail + " " + detail.replace("_", " ")
         if "timeout" in name or "timed out" in detail or re.search(r"\b408\b", detail):
             return "timeout"
-        if ("quota_exceeded" in detail or "perday" in detail
+        if ("quota exhausted" in detail or "quota_exceeded" in detail or "perday" in detail
                 or "per_day" in detail or "/day" in detail
                 or "daily quota" in detail or "quota reset" in detail):
             return "quota_exhausted"
@@ -459,6 +467,8 @@ class ProviderStructuredModel:
             if code in (400, 404):
                 return "client_error"
         if any(code in detail for code in ("500", "502", "503", "504")):
+            return "server_error"
+        if "server_error" in detail or "server error" in detail:
             return "server_error"
         if "auth" in name or "401" in detail or "403" in detail:
             return "authentication"
@@ -476,8 +486,27 @@ class ProviderStructuredModel:
         return "provider_error"
 
     @staticmethod
-    def _safe_failure_taxonomy(exc: BaseException, *, schema: type[BaseModel],
-                               route: str) -> dict[str, Any]:
+    def _failure_phase(exc: BaseException, names: set) -> str:
+        if isinstance(exc, ContentFilterError) or "ContentFilterError" in names:
+            return "content_filter"
+        if isinstance(exc, (TimeoutError, APITimeoutError)) or names & {
+                "TimeoutError", "APITimeoutError"}:
+            return "timeout"
+        if isinstance(exc, (ModelHTTPError, RateLimitError)) or names & {
+                "ModelHTTPError", "RateLimitError"}:
+            return "http"
+        if isinstance(exc, APIConnectionError) or names & {
+                "APIConnectionError", "ConnectError", "NetworkError"}:
+            return "transport"
+        if isinstance(exc, UnexpectedModelBehavior):
+            return ("json_or_schema_validation" if "ValidationError" in names
+                    else "no_tool_or_empty")
+        if "ValidationError" in names:
+            return "json_or_schema_validation"
+        return "unknown"
+
+    @staticmethod
+    def _validation_error_chain(exc: BaseException) -> tuple[list, list]:
         classes: list[str] = []
         validation_errors: list[dict[str, Any]] = []
         pending: list[BaseException] = [exc]
@@ -503,26 +532,10 @@ class ProviderStructuredModel:
             if isinstance(item, BaseExceptionGroup):
                 pending.extend(child for child in item.exceptions
                                if isinstance(child, BaseException))
-        names = set(classes)
-        if isinstance(exc, ContentFilterError) or "ContentFilterError" in names:
-            phase = "content_filter"
-        elif isinstance(exc, (TimeoutError, APITimeoutError)) or names & {
-                "TimeoutError", "APITimeoutError"}:
-            phase = "timeout"
-        elif isinstance(exc, (ModelHTTPError, RateLimitError)) or names & {
-                "ModelHTTPError", "RateLimitError"}:
-            phase = "http"
-        elif isinstance(exc, APIConnectionError) or names & {
-                "APIConnectionError", "ConnectError", "NetworkError"}:
-            phase = "transport"
-        elif isinstance(exc, UnexpectedModelBehavior):
-            phase = ("json_or_schema_validation" if "ValidationError" in names
-                     else "no_tool_or_empty")
-        elif "ValidationError" in names:
-            phase = "json_or_schema_validation"
-        else:
-            phase = "unknown"
-        schema_json = schema.model_json_schema()
+        return classes, validation_errors
+
+    @staticmethod
+    def _mask_validation_error_locs(validation_errors: list[dict[str, Any]], schema_json: dict) -> None:
         known_fields: set[str] = set(schema_json.get("properties", {}))
         for definition in schema_json.get("$defs", {}).values():
             if isinstance(definition, dict):
@@ -535,8 +548,9 @@ class ProviderStructuredModel:
                 "<unknown-field>"
                 for part in error["loc"]
             ]
-        schema_bytes = json.dumps(
-            schema_json, sort_keys=True, separators=(",", ":")).encode()
+
+    @staticmethod
+    def _validation_subtype(phase: str, validation_errors: list[dict[str, Any]]) -> str:
         validation_subtypes = {
             _VALIDATION_SUBTYPE_BY_ERROR_TYPE[error["type"]]
             for error in validation_errors
@@ -547,16 +561,26 @@ class ProviderStructuredModel:
             for error in validation_errors
         )
         if phase != "json_or_schema_validation":
-            validation_subtype = "not_applicable"
-        elif not validation_errors:
-            validation_subtype = "other_contract_invariant"
-        else:
-            validation_subtype = (
-                next(iter(validation_subtypes))
-                if len(validation_subtypes) == 1
-                and not has_unrecognized_validation_error
-                else "other_contract_invariant"
-            )
+            return "not_applicable"
+        if not validation_errors:
+            return "other_contract_invariant"
+        return (
+            next(iter(validation_subtypes))
+            if len(validation_subtypes) == 1
+            and not has_unrecognized_validation_error
+            else "other_contract_invariant"
+        )
+
+    @staticmethod
+    def _safe_failure_taxonomy(exc: BaseException, *, schema: type[BaseModel],
+                               route: str) -> dict[str, Any]:
+        classes, validation_errors = ProviderStructuredModel._validation_error_chain(exc)
+        phase = ProviderStructuredModel._failure_phase(exc, set(classes))
+        schema_json = schema.model_json_schema()
+        ProviderStructuredModel._mask_validation_error_locs(validation_errors, schema_json)
+        schema_bytes = json.dumps(
+            schema_json, sort_keys=True, separators=(",", ":")).encode()
+        validation_subtype = ProviderStructuredModel._validation_subtype(phase, validation_errors)
         return {
             "failure_top_class": _safe_exception_name(type(exc)),
             "failure_class_chain": classes,
@@ -581,6 +605,8 @@ class ProviderStructuredModel:
                           settings.inception_model or INCEPTION_DEFAULT),
             "groq": ("https://api.groq.com/openai/v1", settings.groq_api_key,
                      settings.groq_model or GROQ_DEFAULT),
+            "cerebras": ("https://api.cerebras.ai/v1", settings.cerebras_api_key,
+                         settings.cerebras_model or CEREBRAS_DEFAULT),
         }
         provider = self.provider
         entry = configs.get(provider)
@@ -593,6 +619,8 @@ class ProviderStructuredModel:
             "HTTP-Referer": "https://github.com/mythiipanda/dime",
             "X-Title": "Dime NBA Analyst",
         } if provider == "openrouter" else None)
+        if provider == "cerebras":
+            headers = {**(headers or {}), "User-Agent": "dime-agent/1.0"}
         requested = self.model
         if provider == "gemini":
             accepted_model = _gemini_model(requested)
@@ -603,7 +631,9 @@ class ProviderStructuredModel:
         elif provider == "mistral":
             accepted_model = _mistral_free_model()
         elif provider == "groq":
-            accepted_model = _groq_free_model()
+            accepted_model = _groq_free_model(requested)
+        elif provider == "cerebras":
+            accepted_model = _cerebras_model(requested)
         else:
             accepted_model = settings.inception_model or INCEPTION_DEFAULT
         if (provider != "inception"
@@ -929,6 +959,20 @@ class ModelIntake(ModelStage):
         self._catalog = dict(capability_catalog)
         self._wire_catalog = catalog_for_wire(self._catalog)
 
+    def _catalog_with_declared_schemas(self) -> dict:
+        from v2.runtime.assembly import declared_schema_for
+
+        enriched = {}
+        for capability_id, entry in self._wire_catalog.items():
+            if not isinstance(entry, Mapping):
+                enriched[capability_id] = entry
+                continue
+            schema = declared_schema_for(capability_id)
+            enriched[capability_id] = (
+                {**entry, "declared_schema": schema}
+                if schema is not None else entry)
+        return enriched
+
     @staticmethod
     def _bounded_context(context: Sequence[ConversationTurn]) -> tuple[ConversationTurn, ...]:
         from v2.contracts import MAX_INTAKE_CONTEXT_TURNS
@@ -948,42 +992,26 @@ class ModelIntake(ModelStage):
         return False
 
     @classmethod
-    def _mark_uncovered_season(cls, task: TaskSpec) -> TaskSpec:
-        if task.season is None:
-            return task
+    def _coverage_table_groups(cls, task: TaskSpec):
         from v2.adapters.coverage import (
             DEFAULT_TABLE,
-            parse_season_start,
-            season_beyond_upper_bound,
             table_for_metric,
-            table_seasons,
             task_coverage_groups_labeled,
         )
         labeled = task_coverage_groups_labeled(task)
         if not labeled:
             if list(getattr(task, "required_evidence", None) or []) \
                     and not list(task.metric_ids or []):
-                return task
+                return None
             implied = [table_for_metric(metric) for metric in task.metric_ids]
             if not implied:
                 implied = [DEFAULT_TABLE]
             labeled = [(None, frozenset({name}))
                        for name in dict.fromkeys(implied)]
-        groups = [tables for _, tables in labeled]
-        names = list(dict.fromkeys(
-            table for group in groups for table in sorted(group)))
-        requested = task.season.value
-        sets = {name: table_seasons(name) for name in names}
-        covered_groups = [
-            any(requested in sets.get(table, frozenset()) for table in group)
-            for group in groups
-        ]
-        if (
-            parse_season_start(requested) is not None
-            and all(covered_groups)
-            and not season_beyond_upper_bound(requested)
-        ):
-            return task
+        return labeled
+
+    @classmethod
+    def _uncovered_table_split(cls, task: TaskSpec, labeled, covered_groups, sets, requested):
         blocked = []
         live_tables = []
         live_capabilities = []
@@ -1001,23 +1029,72 @@ class ModelIntake(ModelStage):
                             live_capabilities.append(label)
                     elif table not in blocked:
                         blocked.append(table)
+        return blocked, live_tables, live_capabilities
+
+    @staticmethod
+    def _live_source_note(requested: str, live_tables, live_capabilities) -> str:
+        if len(live_capabilities) == 1:
+            return (
+                f"Requested {requested} season has no rows in "
+                f"{', '.join(live_tables)}; "
+                f"{live_capabilities[0]} will attempt its live source "
+                f"instead."
+            )
+        return (
+            f"Requested {requested} season has no rows in "
+            f"{', '.join(live_tables)}; "
+            f"{', '.join(live_capabilities)} will attempt their "
+            f"live sources instead."
+        )
+
+    @staticmethod
+    def _season_unavailable_question(requested: str, blocked, known) -> str:
+        if known:
+            return (
+                f"Numbers for the {requested} season are not available "
+                f"for {', '.join(blocked)}. "
+                f"Available seasons: {', '.join(known)}. "
+                "Which season should be used instead?"
+            )
+        return (
+            f"Numbers for the {requested} season are not available "
+            f"for {', '.join(blocked)}. "
+            "Which season should be used instead?"
+        )
+
+    @classmethod
+    def _mark_uncovered_season(cls, task: TaskSpec) -> TaskSpec:
+        if task.season is None:
+            return task
+        from v2.adapters.coverage import (
+            parse_season_start,
+            season_beyond_upper_bound,
+            table_seasons,
+        )
+        labeled = cls._coverage_table_groups(task)
+        if labeled is None:
+            return task
+        groups = [tables for _, tables in labeled]
+        names = list(dict.fromkeys(
+            table for group in groups for table in sorted(group)))
+        requested = task.season.value
+        sets = {name: table_seasons(name) for name in names}
+        covered_groups = [
+            any(requested in sets.get(table, frozenset()) for table in group)
+            for group in groups
+        ]
+        if (
+            parse_season_start(requested) is not None
+            and all(covered_groups)
+            and not season_beyond_upper_bound(requested)
+        ):
+            return task
+        blocked, live_tables, live_capabilities = cls._uncovered_table_split(
+            task, labeled, covered_groups, sets, requested)
         assumptions = list(task.assumptions)
         if live_tables:
-            if len(live_capabilities) == 1:
-                live_note = (
-                    f"Requested {requested} season has no rows in "
-                    f"{', '.join(live_tables)}; "
-                    f"{live_capabilities[0]} will attempt its live source "
-                    f"instead."
-                )
-            else:
-                live_note = (
-                    f"Requested {requested} season has no rows in "
-                    f"{', '.join(live_tables)}; "
-                    f"{', '.join(live_capabilities)} will attempt their "
-                    f"live sources instead."
-                )
-            assumptions.append(live_note)
+            assumptions.append(
+                cls._live_source_note(requested, live_tables, live_capabilities))
         if not blocked:
             return task.model_copy(update={
                 "assumptions": list(dict.fromkeys(assumptions)),
@@ -1028,19 +1105,7 @@ class ModelIntake(ModelStage):
             for season in seasons
             if parse_season_start(season) is not None
         })
-        if known:
-            question = (
-                f"Numbers for the {requested} season are not available "
-                f"for {', '.join(blocked)}. "
-                f"Available seasons: {', '.join(known)}. "
-                "Which season should be used instead?"
-            )
-        else:
-            question = (
-                f"Numbers for the {requested} season are not available "
-                f"for {', '.join(blocked)}. "
-                "Which season should be used instead?"
-            )
+        question = cls._season_unavailable_question(requested, blocked, known)
         note = (
             f"Requested {requested} season has no rows in "
             f"{', '.join(blocked)}; leaving the request unchanged."
@@ -1052,34 +1117,7 @@ class ModelIntake(ModelStage):
                 [*assumptions, note])),
         })
 
-    async def understand(
-        self, request: str, context: Sequence[ConversationTurn] = ()
-    ) -> TaskSpec:
-        bounded = self._bounded_context(context)
-        payload = {
-            "question": request,
-            "current_date": datetime.now(UTC).date().isoformat(),
-            "conversation_context": [turn.model_dump(mode="json")
-                                     for turn in bounded],
-            "capability_catalog": self._wire_catalog,
-            "skill_catalog": self._skills.catalog(),
-        }
-        if bounded:
-            payload["reference_resolution"] = {
-                "instruction": (
-                    "Resolve references and omitted subjects from the "
-                    "bounded conversation context before leaving a user "
-                    "question open. Preserve an open question only when "
-                    "the context supports multiple materially different "
-                    "referents or supplies none. Return a complete "
-                    "replacement TaskSpec."
-                ),
-            }
-        task = await self._generate(payload)
-        task = task.model_copy(update={
-            "skills": [name for name in task.skills
-                       if name in self._skills.skills],
-        })
+    def _apply_context_season(self, task: TaskSpec, context: Sequence[ConversationTurn]) -> TaskSpec:
         if (task.season is not None and task.season.source == "default"
                 and "trade-analysis" in task.skills):
             context_seasons = [
@@ -1087,7 +1125,7 @@ class ModelIntake(ModelStage):
                 for season in re.findall(r"\b20\d{2}-\d{2}\b", turn.content)
             ]
             if context_seasons:
-                task = task.model_copy(update={
+                return task.model_copy(update={
                     "season": task.season.model_copy(update={
                         "value": context_seasons[-1], "source": "context",
                         "confidence": 1.0,
@@ -1097,6 +1135,9 @@ class ModelIntake(ModelStage):
                         "Performance uses the prior context season; contracts may use the forward trade window.",
                     ])),
                 })
+        return task
+
+    def _fold_resolvable_questions(self, task: TaskSpec) -> TaskSpec:
         resolvable_questions = []
         for question in task.open_questions:
             folded = question.casefold()
@@ -1121,36 +1162,15 @@ class ModelIntake(ModelStage):
             if evidence_lookup or analytical_assumption or optional_capability_argument:
                 resolvable_questions.append(question)
         if resolvable_questions:
-            task = task.model_copy(update={
+            return task.model_copy(update={
                 "open_questions": [question for question in task.open_questions
                                    if question not in resolvable_questions],
                 "assumptions": list(dict.fromkeys([
                     *task.assumptions, *resolvable_questions])),
             })
-        task = task.model_copy(update={
-            "required_evidence": [
-                name for name in task.required_evidence
-                if name not in set(task.skills)
-            ],
-        })
-        if self._requirement_review and not task.open_questions:
-            unknown_requirements = sorted(
-                {capability for requirement in task.requirements
-                 for capability in requirement.capability_options}
-                - self._catalog.keys()
-            )
-            if unknown_requirements:
-                raise ValueError(
-                    "requirement review selected unknown capabilities: "
-                    f"{unknown_requirements}"
-                )
-            scope = " ".join([request, task.goal, task.deliverable,
-                              *task.subquestions]).casefold()
-            task = self._expand_home_away_requirements(task, scope)
-            task = task.model_copy(update={
-                "skills": [name for name in task.skills
-                           if name in self._skills.skills],
-            })
+        return task
+
+    def _adjusted_required_evidence(self, task: TaskSpec, request: str) -> list[str]:
         player_count = sum(entity.type == "player" for entity in task.entities)
         optional_evidence = set()
         if player_count < 2:
@@ -1201,6 +1221,9 @@ class ModelIntake(ModelStage):
             required_evidence = list(dict.fromkeys([
                 *required_evidence, "game_prediction",
             ]))
+        return required_evidence
+
+    def _ensure_default_season(self, task: TaskSpec) -> TaskSpec:
         if task.season is None:
             from shared.tools._core import last_completed_season
             from v2.contracts import SeasonRef
@@ -1219,6 +1242,64 @@ class ModelIntake(ModelStage):
                     "season": task.season.model_copy(
                         update={"value": _derived_season}),
                 })
+        return task
+
+    async def understand(
+        self, request: str, context: Sequence[ConversationTurn] = ()
+    ) -> TaskSpec:
+        bounded = self._bounded_context(context)
+        payload = {
+            "question": request,
+            "current_date": datetime.now(UTC).date().isoformat(),
+            "conversation_context": [turn.model_dump(mode="json")
+                                     for turn in bounded],
+            "capability_catalog": self._catalog_with_declared_schemas(),
+            "skill_catalog": self._skills.catalog(),
+        }
+        if bounded:
+            payload["reference_resolution"] = {
+                "instruction": (
+                    "Resolve references and omitted subjects from the "
+                    "bounded conversation context before leaving a user "
+                    "question open. Preserve an open question only when "
+                    "the context supports multiple materially different "
+                    "referents or supplies none. Return a complete "
+                    "replacement TaskSpec."
+                ),
+            }
+        task = await self._generate(payload)
+        task = task.model_copy(update={
+            "skills": [name for name in task.skills
+                       if name in self._skills.skills],
+        })
+        task = self._apply_context_season(task, context)
+        task = self._fold_resolvable_questions(task)
+        task = task.model_copy(update={
+            "required_evidence": [
+                name for name in task.required_evidence
+                if name not in set(task.skills)
+            ],
+        })
+        if self._requirement_review and not task.open_questions:
+            unknown_requirements = sorted(
+                {capability for requirement in task.requirements
+                 for capability in requirement.capability_options}
+                - self._catalog.keys()
+            )
+            if unknown_requirements:
+                raise ValueError(
+                    "requirement review selected unknown capabilities: "
+                    f"{unknown_requirements}"
+                )
+            scope = " ".join([request, task.goal, task.deliverable,
+                              *task.subquestions]).casefold()
+            task = self._expand_home_away_requirements(task, scope)
+            task = task.model_copy(update={
+                "skills": [name for name in task.skills
+                           if name in self._skills.skills],
+            })
+        required_evidence = self._adjusted_required_evidence(task, request)
+        task = self._ensure_default_season(task)
         task = self._mark_uncovered_season(task)
         task = task.model_copy(update={
             "required_evidence": required_evidence,
@@ -1234,7 +1315,9 @@ class ModelIntake(ModelStage):
         if unknown:
             raise ValueError(f"intake selected unknown capabilities: {unknown}")
         task = _canonicalize_calculation_requirements(task)
+        task = _drop_unresolvable_requested_outputs(task)
         task = _align_requirement_requested_outputs(task)
+        task = _backfill_open_question_outputs(task)
         task = task.model_copy(update={
             "subject_entity_type": _derive_subject_entity_type(task),
         })
@@ -1639,20 +1722,12 @@ class PlanOutputError(ValueError):
         self.requirement_id = requirement_id
 
 def servable_output_names(capability_id: str) -> list[str]:
-    from .capabilities import CAPABILITIES
+    from .capabilities import CAPABILITIES, servable_names_for
 
     spec = CAPABILITIES.get(capability_id)
     if spec is None:
         return []
-    names: set[str] = set()
-    for key in spec.units:
-        names.add(str(key).upper())
-    for key in spec.metric_definitions:
-        if not str(key).startswith("__"):
-            names.add(str(key).upper())
-    for key in spec.output_aliases:
-        names.add(str(key).upper())
-    return sorted(names)
+    return servable_names_for(spec)
 
 def _is_subject_identity_output(output_id: str) -> bool:
     squashed = "".join(
@@ -1660,16 +1735,21 @@ def _is_subject_identity_output(output_id: str) -> bool:
     return squashed.endswith("NAME") or squashed.endswith("ID")
 
 def _validate_plan_output_vocabulary(task, plan) -> None:
+    requirements = {item.id: item for item in task.requirements}
+    _check_plan_node_outputs(task, plan, requirements)
+    _check_plan_task_outputs(task, plan)
+
+
+def _check_plan_node_outputs(task, plan, requirements) -> None:
     from .capabilities import CAPABILITIES, resolve_metric_column
 
-    requirements = {item.id: item for item in task.requirements}
     for node in plan.nodes:
         selected = [name for name in node.capability_hints if name in CAPABILITIES]
         if len(selected) != 1:
             continue
         capability = selected[0]
         spec = CAPABILITIES.get(capability)
-        if spec is None:
+        if spec is None or spec.open_vocabulary:
             continue
         if not servable_output_names(capability):
             continue
@@ -1695,6 +1775,11 @@ def _validate_plan_output_vocabulary(task, plan) -> None:
                         output_id=str(output_id), capability=capability,
                         vocabulary=vocabulary, node_id=node.id,
                         requirement_id=requirement_id)
+
+
+def _check_plan_task_outputs(task, plan) -> None:
+    from .capabilities import CAPABILITIES, resolve_metric_column
+
     task_outputs = list(task.requested_outputs or [])
     if task_outputs and plan.nodes:
         union: set[str] = set()
@@ -1704,25 +1789,33 @@ def _validate_plan_output_vocabulary(task, plan) -> None:
                 continue
             union.update(servable_output_names(selected[0]))
         if union:
+            planned = {
+                hint for node in plan.nodes for hint in node.capability_hints
+                if hint in CAPABILITIES and (servable_output_names(hint)
+                                             or CAPABILITIES[hint].open_vocabulary)
+            }
             for output_id in task_outputs:
-                if _is_subject_identity_output(output_id):
-                    continue
-                if not any(
-                    resolve_metric_column(CAPABILITIES[name], output_id) is not None
-                    for name in {
-                        hint for node in plan.nodes for hint in node.capability_hints
-                        if hint in CAPABILITIES and servable_output_names(hint)
-                    }
-                ):
-                    vocabulary = sorted(union)
-                    raise PlanOutputError(
-                        f"PLAN_OUTPUT_UNRESOLVABLE: task requested output "
-                        f"{output_id!r} does not resolve against any planned "
-                        f"capability through resolve_metric_column; servable "
-                        f"outputs: {', '.join(vocabulary)}; repair by choosing "
-                        f"requested outputs only from {', '.join(vocabulary)}",
-                        output_id=str(output_id), capability="plan",
-                        vocabulary=vocabulary)
+                _check_task_output_resolvable(output_id, union, planned)
+
+
+def _check_task_output_resolvable(output_id, union, planned) -> None:
+    from .capabilities import CAPABILITIES, resolve_metric_column
+    if _is_subject_identity_output(output_id):
+        return
+    if not any(
+        resolve_metric_column(CAPABILITIES[name], output_id) is not None
+        for name in planned
+    ):
+        vocabulary = sorted(union)
+        raise PlanOutputError(
+            f"PLAN_OUTPUT_UNRESOLVABLE: task requested output "
+            f"{output_id!r} does not resolve against any planned "
+            f"capability through resolve_metric_column; servable "
+            f"outputs: {', '.join(vocabulary)}; repair by choosing "
+            f"requested outputs only from {', '.join(vocabulary)}",
+            output_id=str(output_id), capability="plan",
+            vocabulary=vocabulary)
+
 
 def _team_subject_abbreviation(entity) -> str | None:
     from v2.contracts import canonical_entity_id
@@ -1840,8 +1933,24 @@ class ModelPlanner(ModelStage):
 
     async def _generate_plan(self, payload, task: TaskSpec | None = None):
         wire = await self._generate(payload, decode=self._collect_planner_drops)
-        from jsonschema import Draft202012Validator
         requirements = {item.id: item for item in task.requirements} if task is not None else {}
+        decoded = self._decode_planner_nodes(wire, requirements)
+        resolvers, depends_extra = self._collect_entity_resolvers(decoded, task, requirements)
+        validated = Plan.model_validate({"nodes": [
+            *resolvers,
+            *[{
+                "id": node.id, "description": node.description,
+                "depends_on": list(dict.fromkeys([*(node.depends_on or []), *depends_extra.get(node.id, [])])),
+            "capability_hints": [node.capability],
+            "covers_requirement_ids": node.covers_requirement_ids or [],
+            "arguments": dict(arguments), "max_attempts": node.max_attempts or 1,
+            "status": node.status or "pending"} for node, arguments, _ in decoded]]})
+        if task is not None:
+            _validate_plan_output_vocabulary(task, validated)
+        return validated
+
+    def _decode_planner_nodes(self, wire, requirements):
+        from jsonschema import Draft202012Validator
         decoded = []
         for node in (wire.nodes or []):
             schema = self._planner_argument_schema(node.capability)
@@ -1872,94 +1981,103 @@ class ModelPlanner(ModelStage):
             for key in set(declarations) & set(values):
                 stripped[key] = values.pop(key)
             decoded.append((node, values, stripped))
+        return decoded
+
+    def _collect_entity_resolvers(self, decoded, task, requirements):
         resolvers: list[dict[str, Any]] = []
         existing = {node.id for node, _, _ in decoded}
         resolver_for: dict[tuple[str, str], str] = {}
         depends_extra: dict[str, list[str]] = {}
-        if "entity_resolution" in self._catalog:
-            for node, _, stripped in decoded:
-                entry = self._catalog.get(node.capability)
-                declarations = entry.get("dependent_entity_arguments", {}) if isinstance(entry, Mapping) else {}
-                for key, value in stripped.items():
-                    if value is None or (isinstance(value, str) and not value.strip()):
-                        continue
-                    entity_type = declarations.get(key)
-                    if not isinstance(entity_type, str) or not entity_type:
-                        continue
-                    fold = (str(entity_type), str(value).strip().casefold())
-                    resolver_id = resolver_for.get(fold)
-                    if resolver_id is None:
-                        base = f"resolve_{str(entity_type).replace('-', '_')}"
-                        resolver_id = base
-                        suffix = 2
-                        while resolver_id in existing:
-                            resolver_id = f"{base}_{suffix}"
-                            suffix += 1
-                        existing.add(resolver_id)
-                        resolver_for[fold] = resolver_id
-                        resolvers.append({
-                            "id": resolver_id, "description": f"Resolve {entity_type} identity for dependent tools",
-                            "depends_on": [], "capability_hints": ["entity_resolution"],
-                            "covers_requirement_ids": [],
-                            "arguments": {"query": value}, "max_attempts": 1,
-                            "status": "pending"})
-                    depends_extra.setdefault(node.id, []).append(resolver_id)
-        if "entity_resolution" in self._catalog:
-            for node, values, stripped in decoded:
-                entry = self._catalog.get(node.capability)
-                declarations = entry.get("dependent_entity_arguments", {}) if isinstance(entry, Mapping) else {}
-                for key, entity_type in declarations.items():
-                    current = values.get(key)
-                    if current is not None and not (isinstance(current, str) and not current.strip()):
-                        continue
-                    if not isinstance(entity_type, str) or not entity_type:
-                        continue
-                    candidate = self._dependent_source_candidate(
-                        task, requirements, node, node.capability, key, entity_type)
-                    if candidate is None or not candidate.strip():
-                        continue
-                    values[key] = candidate
-                    fold = (str(entity_type), candidate.strip().casefold())
-                    resolver_id = resolver_for.get(fold)
-                    if resolver_id is None:
-                        base = f"resolve_{str(entity_type).replace('-', '_')}"
-                        resolver_id = base
-                        suffix = 2
-                        while resolver_id in existing:
-                            resolver_id = f"{base}_{suffix}"
-                            suffix += 1
-                        existing.add(resolver_id)
-                        resolver_for[fold] = resolver_id
-                        resolvers.append({
-                            "id": resolver_id, "description": f"Resolve {entity_type} identity for dependent tools",
-                            "depends_on": [], "capability_hints": ["entity_resolution"],
-                            "covers_requirement_ids": [],
-                            "arguments": {"query": candidate}, "max_attempts": 1,
-                            "status": "pending"})
-                    if resolver_id not in depends_extra.get(node.id, []):
-                        depends_extra.setdefault(node.id, []).append(resolver_id)
-        validated = Plan.model_validate({"nodes": [
-            *resolvers,
-            *[{
-                "id": node.id, "description": node.description,
-                "depends_on": list(dict.fromkeys([*(node.depends_on or []), *depends_extra.get(node.id, [])])),
-            "capability_hints": [node.capability],
-            "covers_requirement_ids": node.covers_requirement_ids or [],
-            "arguments": dict(arguments), "max_attempts": node.max_attempts or 1,
-            "status": node.status or "pending"} for node, arguments, _ in decoded]]})
-        if task is not None:
-            _validate_plan_output_vocabulary(task, validated)
-        return validated
+        if "entity_resolution" not in self._catalog:
+            return resolvers, depends_extra
+        self._resolvers_from_stripped(decoded, existing, resolver_for, depends_extra, resolvers)
+        self._resolvers_from_sources(decoded, task, requirements, existing, resolver_for, depends_extra, resolvers)
+        return resolvers, depends_extra
+
+    def _add_entity_resolver(self, entity_type, query, node_id, *, existing, resolver_for, depends_extra, resolvers, dedupe):
+        fold = (str(entity_type), str(query).strip().casefold())
+        resolver_id = resolver_for.get(fold)
+        if resolver_id is None:
+            base = f"resolve_{str(entity_type).replace('-', '_')}"
+            resolver_id = base
+            suffix = 2
+            while resolver_id in existing:
+                resolver_id = f"{base}_{suffix}"
+                suffix += 1
+            existing.add(resolver_id)
+            resolver_for[fold] = resolver_id
+            resolvers.append({
+                "id": resolver_id, "description": f"Resolve {entity_type} identity for dependent tools",
+                "depends_on": [], "capability_hints": ["entity_resolution"],
+                "covers_requirement_ids": [],
+                "arguments": {"query": query}, "max_attempts": 1,
+                "status": "pending"})
+        if dedupe:
+            if resolver_id not in depends_extra.get(node_id, []):
+                depends_extra.setdefault(node_id, []).append(resolver_id)
+        else:
+            depends_extra.setdefault(node_id, []).append(resolver_id)
+        return resolver_id
+
+    def _resolvers_from_stripped(self, decoded, existing, resolver_for, depends_extra, resolvers):
+        for node, _, stripped in decoded:
+            entry = self._catalog.get(node.capability)
+            declarations = entry.get("dependent_entity_arguments", {}) if isinstance(entry, Mapping) else {}
+            for key, value in stripped.items():
+                if value is None or (isinstance(value, str) and not value.strip()):
+                    continue
+                entity_type = declarations.get(key)
+                if not isinstance(entity_type, str) or not entity_type:
+                    continue
+                self._add_entity_resolver(entity_type, value, node.id, existing=existing,
+                                          resolver_for=resolver_for, depends_extra=depends_extra,
+                                          resolvers=resolvers, dedupe=False)
+
+    def _resolvers_from_sources(self, decoded, task, requirements, existing, resolver_for, depends_extra, resolvers):
+        for node, values, stripped in decoded:
+            entry = self._catalog.get(node.capability)
+            declarations = entry.get("dependent_entity_arguments", {}) if isinstance(entry, Mapping) else {}
+            for key, entity_type in declarations.items():
+                current = values.get(key)
+                if current is not None and not (isinstance(current, str) and not current.strip()):
+                    continue
+                if not isinstance(entity_type, str) or not entity_type:
+                    continue
+                candidate = self._dependent_source_candidate(
+                    task, requirements, node, node.capability, key, entity_type)
+                if candidate is None or not candidate.strip():
+                    continue
+                values[key] = candidate
+                self._add_entity_resolver(entity_type, candidate, node.id, existing=existing,
+                                          resolver_for=resolver_for, depends_extra=depends_extra,
+                                          resolvers=resolvers, dedupe=True)
 
     def __init__(self, *args: Any, capability_catalog: Mapping[str, str], **kwargs: Any) -> None:
         super().__init__(*args, **kwargs)
         self._catalog = dict(capability_catalog)
         self._wire_catalog = catalog_for_wire(self._catalog)
 
+    def _catalog_for(self, task: TaskSpec) -> dict:
+        from v2.runtime.assembly import declared_schema_for
+
+        relevant = set(task.required_evidence)
+        for requirement in task.requirements:
+            relevant.update(requirement.capability_options)
+        trimmed = {}
+        for capability_id, entry in self._wire_catalog.items():
+            if capability_id not in relevant or not isinstance(entry, Mapping):
+                trimmed[capability_id] = entry
+                continue
+            schema = declared_schema_for(capability_id)
+            trimmed[capability_id] = (
+                {**entry, "declared_schema": schema}
+                if schema is not None else entry)
+        return trimmed
+
     async def plan(self, task: TaskSpec, failure_context: dict | None = None) -> Plan:
         payload = {
             "task": task.model_dump(mode="json"),
-            "capability_catalog": self._wire_catalog,
+            "capability_catalog": self._catalog_for(task),
             "skills": self._skills.activate(task.skills),
         }
         if failure_context is not None:
@@ -2003,73 +2121,86 @@ class ModelPlanner(ModelStage):
         return replacement
 
     def _normalize_plan(self, task: TaskSpec, plan: Plan) -> Plan:
-        import json
-        from v2.runtime.subsumption import (
-            arguments_share_subject, capability_subsumes,
-        )
-
         requirements = {item.id: item for item in task.requirements}
         if "entity_resolution" in self._catalog:
-            existing = {node.id for node in plan.nodes}
-            added = []
-            normalized_nodes = []
-            resolver_for: dict[tuple[str, str], str] = {}
-            for node in plan.nodes:
-                selected_name = next((name for name in node.capability_hints
-                                      if name in self._catalog), None)
-                entry = self._catalog.get(selected_name, {}) if selected_name else {}
-                declarations = (entry.get("dependent_entity_arguments", {})
-                                if isinstance(entry, Mapping) else {})
-                dependencies = list(node.depends_on)
-                updated_arguments: dict[str, Any] | None = None
-                for argument, entity_type in declarations.items():
-                    value = (updated_arguments.get(argument, node.arguments.get(argument))
-                             if updated_arguments is not None else node.arguments.get(argument))
-                    if value is None or (isinstance(value, str) and not value.strip()):
-                        candidate = self._dependent_source_candidate(
-                            task, requirements, node,
-                            selected_name or "", argument, entity_type)
-                        if candidate is not None and candidate.strip():
-                            if updated_arguments is None:
-                                updated_arguments = dict(node.arguments)
-                            updated_arguments[argument] = candidate
-                            value = candidate
-                        else:
-                            continue
-                    has_resolver = any(
-                        parent in existing and any(
-                            candidate.id == parent
-                            and "entity_resolution" in candidate.capability_hints
-                            for candidate in plan.nodes)
-                        for parent in dependencies)
-                    if has_resolver:
-                        continue
-                    key = (str(entity_type), str(value).strip().casefold())
-                    resolver_id = resolver_for.get(key)
-                    if resolver_id is None:
-                        base = f"resolve_{str(entity_type).replace('-', '_')}"
-                        resolver_id = base
-                        suffix = 2
-                        while resolver_id in existing:
-                            resolver_id = f"{base}_{suffix}"
-                            suffix += 1
-                        existing.add(resolver_id)
-                        resolver_for[key] = resolver_id
-                        added.append(PlanNode(
-                            id=resolver_id,
-                            description=f"Resolve {entity_type} identity for dependent tools",
-                            capability_hints=["entity_resolution"],
-                            arguments={"query": value},
-                        ))
-                    dependencies.append(resolver_id)
-                update: dict[str, Any] = {
-                    "depends_on": list(dict.fromkeys(dependencies))}
-                if updated_arguments is not None:
-                    update["arguments"] = updated_arguments
-                normalized_nodes.append(node.model_copy(update=update))
-            if added:
-                plan = plan.model_copy(update={"nodes": [*added, *normalized_nodes]})
-        plan = plan.model_copy(update={"nodes": [
+            plan = self._inject_entity_resolvers(task, plan, requirements)
+        plan = self._join_resolver_queries(plan)
+        plan = self._downgrade_game_logs(plan, requirements)
+        plan = self._absorb_subsumed_nodes(plan, requirements)
+        kept = self._dedupe_plan_nodes(plan)
+        kept = self._abbreviate_team_argument(task, kept)
+        return plan.model_copy(update={"nodes": kept})
+
+    def _inject_entity_resolvers(self, task, plan, requirements):
+        existing = {node.id for node in plan.nodes}
+        added = []
+        normalized_nodes = []
+        resolver_for: dict[tuple[str, str], str] = {}
+        for node in plan.nodes:
+            normalized_nodes.append(self._attach_resolvers_to_node(
+                task, plan, node, requirements, existing, resolver_for, added))
+        if added:
+            plan = plan.model_copy(update={"nodes": [*added, *normalized_nodes]})
+        return plan
+
+    def _attach_resolvers_to_node(self, task, plan, node, requirements, existing, resolver_for, added):
+        selected_name = next((name for name in node.capability_hints
+                              if name in self._catalog), None)
+        entry = self._catalog.get(selected_name, {}) if selected_name else {}
+        declarations = (entry.get("dependent_entity_arguments", {})
+                        if isinstance(entry, Mapping) else {})
+        dependencies = list(node.depends_on)
+        updated_arguments: dict[str, Any] | None = None
+        for argument, entity_type in declarations.items():
+            value = (updated_arguments.get(argument, node.arguments.get(argument))
+                     if updated_arguments is not None else node.arguments.get(argument))
+            if value is None or (isinstance(value, str) and not value.strip()):
+                candidate = self._dependent_source_candidate(
+                    task, requirements, node,
+                    selected_name or "", argument, entity_type)
+                if candidate is not None and candidate.strip():
+                    if updated_arguments is None:
+                        updated_arguments = dict(node.arguments)
+                    updated_arguments[argument] = candidate
+                    value = candidate
+                else:
+                    continue
+            if self._node_has_resolver(plan, existing, dependencies):
+                continue
+            key = (str(entity_type), str(value).strip().casefold())
+            resolver_id = resolver_for.get(key)
+            if resolver_id is None:
+                base = f"resolve_{str(entity_type).replace('-', '_')}"
+                resolver_id = base
+                suffix = 2
+                while resolver_id in existing:
+                    resolver_id = f"{base}_{suffix}"
+                    suffix += 1
+                existing.add(resolver_id)
+                resolver_for[key] = resolver_id
+                added.append(PlanNode(
+                    id=resolver_id,
+                    description=f"Resolve {entity_type} identity for dependent tools",
+                    capability_hints=["entity_resolution"],
+                    arguments={"query": value},
+                ))
+            dependencies.append(resolver_id)
+        update: dict[str, Any] = {
+            "depends_on": list(dict.fromkeys(dependencies))}
+        if updated_arguments is not None:
+            update["arguments"] = updated_arguments
+        return node.model_copy(update=update)
+
+    def _node_has_resolver(self, plan, existing, dependencies) -> bool:
+        return any(
+            parent in existing and any(
+                candidate.id == parent
+                and "entity_resolution" in candidate.capability_hints
+                for candidate in plan.nodes)
+            for parent in dependencies)
+
+    def _join_resolver_queries(self, plan):
+        return plan.model_copy(update={"nodes": [
             node.model_copy(update={
                 "arguments": {**node.arguments, "query": ", ".join(
                     str(value) for value in node.arguments["query"])}
@@ -2079,7 +2210,9 @@ class ModelPlanner(ModelStage):
             else node
             for node in plan.nodes
         ]})
-        plan = plan.model_copy(update={"nodes": [
+
+    def _downgrade_game_logs(self, plan, requirements):
+        return plan.model_copy(update={"nodes": [
             node.model_copy(update={
                 "capability_hints": ["player_report"],
                 "arguments": {
@@ -2099,6 +2232,43 @@ class ModelPlanner(ModelStage):
             else node
             for node in plan.nodes
         ]})
+
+    def _absorb_subsumed_nodes(self, plan, requirements):
+        subsumed = self._find_subsumed_nodes(plan, requirements)
+        if not subsumed:
+            return plan
+        kept_nodes = []
+        for node in plan.nodes:
+            if node.id in subsumed:
+                continue
+            absorbed = [
+                item for item in plan.nodes
+                if subsumed.get(item.id) == node.id
+            ]
+            kept_nodes.append(node.model_copy(update={
+                "covers_requirement_ids": list(dict.fromkeys([
+                    *node.covers_requirement_ids,
+                    *(requirement_id for item in absorbed
+                      for requirement_id in item.covers_requirement_ids),
+                ])),
+                "depends_on": list(dict.fromkeys(
+                    subsumed.get(parent, parent) for parent in node.depends_on
+                    if subsumed.get(parent, parent) != node.id
+                )),
+            }))
+        return plan.model_copy(update={"nodes": [
+            node.model_copy(update={
+                "depends_on": list(dict.fromkeys(
+                    subsumed.get(parent, parent) for parent in node.depends_on
+                    if subsumed.get(parent, parent) != node.id
+                ))
+            }) for node in kept_nodes
+        ]})
+
+    def _find_subsumed_nodes(self, plan, requirements):
+        from v2.runtime.subsumption import (
+            arguments_share_subject, capability_subsumes,
+        )
         selected = {
             node.id: next((name for name in node.capability_hints
                            if name in self._catalog), None)
@@ -2124,35 +2294,10 @@ class ModelPlanner(ModelStage):
                 if transferable:
                     subsumed[narrower.id] = broader.id
                     break
-        if subsumed:
-            kept_nodes = []
-            for node in plan.nodes:
-                if node.id in subsumed:
-                    continue
-                absorbed = [
-                    item for item in plan.nodes
-                    if subsumed.get(item.id) == node.id
-                ]
-                kept_nodes.append(node.model_copy(update={
-                    "covers_requirement_ids": list(dict.fromkeys([
-                        *node.covers_requirement_ids,
-                        *(requirement_id for item in absorbed
-                          for requirement_id in item.covers_requirement_ids),
-                    ])),
-                    "depends_on": list(dict.fromkeys(
-                        subsumed.get(parent, parent) for parent in node.depends_on
-                        if subsumed.get(parent, parent) != node.id
-                    )),
-                }))
-            plan = plan.model_copy(update={"nodes": [
-                node.model_copy(update={
-                    "depends_on": list(dict.fromkeys(
-                        subsumed.get(parent, parent) for parent in node.depends_on
-                        if subsumed.get(parent, parent) != node.id
-                    ))
-                }) for node in kept_nodes
-            ]})
+        return subsumed
 
+    def _dedupe_plan_nodes(self, plan):
+        import json
         canonical: dict[tuple[str, str, tuple[str, ...]], PlanNode] = {}
         aliases: dict[str, str] = {}
         kept: list[PlanNode] = []
@@ -2177,23 +2322,26 @@ class ModelPlanner(ModelStage):
                 update={"covers_requirement_ids": merged})
             canonical[key] = replacement
             kept[kept.index(previous)] = replacement
-
         if aliases:
             kept = [node.model_copy(update={
                 "depends_on": list(dict.fromkeys(
                     aliases.get(parent, parent) for parent in node.depends_on))
             }) for node in kept]
+        return kept
+
+    def _abbreviate_team_argument(self, task, kept):
         teams = [entity for entity in task.entities if entity.type == "team"]
-        if len(teams) == 1:
-            abbreviation = _team_subject_abbreviation(teams[0])
-            if abbreviation is not None:
-                kept = [node.model_copy(update={"arguments": {
-                    **node.arguments, "team": abbreviation}})
-                    if (next((name for name in node.capability_hints
-                              if name in self._catalog), None) == "team_ratings"
-                        and "team" not in node.arguments)
-                    else node for node in kept]
-        return plan.model_copy(update={"nodes": kept})
+        if len(teams) != 1:
+            return kept
+        abbreviation = _team_subject_abbreviation(teams[0])
+        if abbreviation is None:
+            return kept
+        return [node.model_copy(update={"arguments": {
+            **node.arguments, "team": abbreviation}})
+            if (next((name for name in node.capability_hints
+                      if name in self._catalog), None) == "team_ratings"
+                and "team" not in node.arguments)
+            else node for node in kept]
 
     @staticmethod
     def _arguments_cover(expected: Mapping[str, Any], actual: Mapping[str, Any]) -> bool:
@@ -2318,41 +2466,120 @@ def _align_requirement_requested_outputs(task: TaskSpec) -> TaskSpec:
         return task
     aligned = []
     for requirement in task.requirements:
-        options = [name for name in requirement.capability_options if name in CAPABILITIES]
-        if not options:
+        aligned.append(_align_one_requirement(requirement, task.requested_outputs))
+    return task.model_copy(update={"requirements": aligned})
+
+
+def _align_one_requirement(requirement, wanted_outputs):
+    from v2.adapters.capabilities import CAPABILITIES, resolve_metric_column
+    options = [name for name in requirement.capability_options if name in CAPABILITIES]
+    if not options:
+        return requirement
+    existing = list(requirement.requested_outputs)
+    for wanted in wanted_outputs:
+        if wanted in existing:
+            continue
+        wanted_columns = set()
+        for name in options:
+            column = resolve_metric_column(CAPABILITIES[name], wanted)
+            if column is not None:
+                wanted_columns.add(column)
+        if not wanted_columns:
+            continue
+        replaced = False
+        for index, current in enumerate(list(existing)):
+            current_columns = set()
+            for name in options:
+                column = resolve_metric_column(CAPABILITIES[name], current)
+                if column is not None:
+                    current_columns.add(column)
+            if wanted_columns & current_columns:
+                existing[index] = wanted
+                replaced = True
+                break
+        if not replaced:
+            if len(existing) >= 16:
+                continue
+            existing.append(wanted)
+    if existing == list(requirement.requested_outputs):
+        return requirement
+    return requirement.model_copy(update={"requested_outputs": existing})
+
+def _drop_unresolvable_requested_outputs(task: TaskSpec) -> TaskSpec:
+    from v2.adapters.capabilities import CAPABILITIES, resolve_metric_column
+    if not task.requirements:
+        return task
+    def resolvable(output_id: str, requirement) -> bool:
+        if _is_subject_identity_output(output_id):
+            return True
+        options = [name for name in requirement.capability_options
+                 if name in CAPABILITIES]
+        if any(CAPABILITIES[name].open_vocabulary for name in options):
+            return True
+        vocabularies = [name for name in options if servable_output_names(name)]
+        structural = [name for name in options if not servable_output_names(name)]
+        if not vocabularies:
+            return bool(structural)
+        return all(
+            resolve_metric_column(CAPABILITIES[name], output_id) is not None
+            for name in vocabularies)
+    aligned = []
+    for requirement in task.requirements:
+        kept = [output_id for output_id in requirement.requested_outputs
+                if resolvable(output_id, requirement)]
+        metrics = [output_id for output_id in requirement.metric_ids
+                   if resolvable(output_id, requirement)]
+        if (kept == list(requirement.requested_outputs)
+                and metrics == list(requirement.metric_ids)):
             aligned.append(requirement)
             continue
-        existing = list(requirement.requested_outputs)
-        for wanted in task.requested_outputs:
-            if wanted in existing:
-                continue
-            wanted_columns = set()
-            for name in options:
-                column = resolve_metric_column(CAPABILITIES[name], wanted)
-                if column is not None:
-                    wanted_columns.add(column)
-            if not wanted_columns:
-                continue
-            replaced = False
-            for index, current in enumerate(list(existing)):
-                current_columns = set()
-                for name in options:
-                    column = resolve_metric_column(CAPABILITIES[name], current)
-                    if column is not None:
-                        current_columns.add(column)
-                if wanted_columns & current_columns:
-                    existing[index] = wanted
-                    replaced = True
-                    break
-            if not replaced:
-                if len(existing) >= 16:
-                    continue
-                existing.append(wanted)
-        if existing == list(requirement.requested_outputs):
-            aligned.append(requirement)
-        else:
-            aligned.append(requirement.model_copy(update={"requested_outputs": existing}))
-    return task.model_copy(update={"requirements": aligned})
+        aligned.append(requirement.model_copy(update={
+            "requested_outputs": kept, "metric_ids": metrics}))
+    calculation_outputs = {
+        output_id
+        for requirement in task.calculation_requirements
+        for output_id in requirement.requested_outputs}
+    task_kept = [
+        output_id for output_id in task.requested_outputs
+        if output_id in calculation_outputs
+        or _is_subject_identity_output(output_id)
+        or any(resolvable(output_id, requirement) for requirement in aligned)]
+    if task_kept == list(task.requested_outputs):
+        return task.model_copy(update={"requirements": aligned})
+    return task.model_copy(update={
+        "requirements": aligned,
+        "requested_outputs": task_kept,
+    })
+
+def _backfill_open_question_outputs(task: TaskSpec) -> TaskSpec:
+    if task.requested_outputs or not task.requirements:
+        return task
+    filled = []
+    union: list[str] = []
+    for requirement in task.requirements:
+        for output_id in requirement.requested_outputs:
+            if output_id not in union:
+                union.append(output_id)
+        if requirement.requested_outputs:
+            filled.append(requirement)
+            continue
+        servable = servable_output_names(requirement.capability_options[0])
+        for name in requirement.capability_options[1:]:
+            allowed = set(servable_output_names(name))
+            servable = [item for item in servable if item in allowed]
+        servable = servable[:16]
+        if not servable:
+            filled.append(requirement)
+            continue
+        filled.append(requirement.model_copy(
+            update={"requested_outputs": servable}))
+        union.extend(item for item in servable if item not in union)
+    if not union:
+        return task
+    return task.model_copy(update={
+        "requirements": filled,
+        "requested_outputs": union[:32],
+    })
 
 def _canonicalize_calculation_requirements(task: TaskSpec) -> TaskSpec:
     from v2.contracts import CalculationRequirement
@@ -2428,45 +2655,78 @@ def _validate_draft(
                       if evidence_id not in known})
     if unknown:
         raise ValueError(f"draft cites unknown evidence ids: {unknown}")
+    envelope_capabilities = {
+        item.evidence_id: item.capability for item in evidence}
+    normalized_claims = [
+        claim.model_copy(update={
+            "output_bindings": [_normalized_binding_domain(binding, envelope_capabilities)
+                                for binding in claim.output_bindings]})
+        for claim in draft.claims]
+    if normalized_claims != draft.claims:
+        draft = draft.model_copy(update={"claims": normalized_claims})
     from v2.domain.evidence import EvidenceIndex
-    from v2.domain.calculations import Calculation
     index = EvidenceIndex(evidence)
     for declared in draft.calculations:
-        calculation = Calculation.model_validate({key: value for key, value in declared.model_dump().items()
-                                                  if key != "requirement_id"})
-        try:
-            from v2.domain.calculations import recompute
-            recompute(calculation, index)
-        except (KeyError, ValueError) as exc:
-            requirement_ids = ([declared.requirement_id]
-                               if declared.requirement_id is not None else [])
-            raise InvalidDraftCalculation(
-                f"draft calculation path is outside admitted evidence: {exc}",
-                requirement_ids) from exc
+        _recompute_draft_calculation(declared, index)
     if task is not None:
-        required = {item.id for item in task.calculation_requirements}
-        declared = {item.requirement_id for item in draft.calculations
-                    if item.requirement_id is not None}
-        blocked = set(draft.blocked_calculation_requirement_ids)
-        unknown_declared = declared - required
-        if unknown_declared:
-            draft = draft.model_copy(update={
-                "calculations": [
-                    calculation.model_copy(update={"requirement_id": None})
-                    if calculation.requirement_id in unknown_declared
-                    else calculation
-                    for calculation in draft.calculations
-                ],
-            })
-            declared -= unknown_declared
-        blocked &= required
-        if blocked != set(draft.blocked_calculation_requirement_ids):
-            draft = draft.model_copy(update={
-                "blocked_calculation_requirement_ids": sorted(blocked),
-            })
-        missing = required - declared - blocked
-        if missing:
-            raise ValueError(f"draft omits required calculations without a blocking gap: {sorted(missing)}")
+        draft = _reconcile_draft_calculation_requirements(draft, task)
+    return draft
+
+
+def _normalized_binding_domain(binding, envelope_capabilities):
+    from v2.adapters.capabilities import CAPABILITIES
+    declared = getattr(binding, "domain", None)
+    capability = envelope_capabilities.get(
+        getattr(binding, "evidence_id", None))
+    if declared is None or capability is None:
+        return binding
+    spec = CAPABILITIES.get(capability)
+    allowed = {capability}
+    if spec is not None:
+        allowed.update({spec.domain, spec.tool_name})
+    if declared in allowed:
+        return binding
+    return binding.model_copy(update={"domain": capability})
+
+
+def _recompute_draft_calculation(declared, index) -> None:
+    from v2.domain.calculations import Calculation, recompute
+    calculation = Calculation.model_validate({key: value for key, value in declared.model_dump().items()
+                                              if key != "requirement_id"})
+    try:
+        recompute(calculation, index)
+    except (KeyError, ValueError) as exc:
+        requirement_ids = ([declared.requirement_id]
+                           if declared.requirement_id is not None else [])
+        raise InvalidDraftCalculation(
+            f"draft calculation path is outside admitted evidence: {exc}",
+            requirement_ids) from exc
+
+
+def _reconcile_draft_calculation_requirements(draft, task):
+    required = {item.id for item in task.calculation_requirements}
+    declared = {item.requirement_id for item in draft.calculations
+                if item.requirement_id is not None}
+    blocked = set(draft.blocked_calculation_requirement_ids)
+    unknown_declared = declared - required
+    if unknown_declared:
+        draft = draft.model_copy(update={
+            "calculations": [
+                calculation.model_copy(update={"requirement_id": None})
+                if calculation.requirement_id in unknown_declared
+                else calculation
+                for calculation in draft.calculations
+            ],
+        })
+        declared -= unknown_declared
+    blocked &= required
+    if blocked != set(draft.blocked_calculation_requirement_ids):
+        draft = draft.model_copy(update={
+            "blocked_calculation_requirement_ids": sorted(blocked),
+        })
+    missing = required - declared - blocked
+    if missing:
+        raise ValueError(f"draft omits required calculations without a blocking gap: {sorted(missing)}")
     return draft
 
 def _deterministic_game_log_draft(
@@ -2559,14 +2819,7 @@ def _deterministic_player_comparison_draft(
     shooting = [ev for ev in evidence if ev.capability == "shooting_efficiency"
                 and isinstance(ev.rows, Mapping) and ev.rows.get("PLAYER_NAME")
                 and ev.rows.get("TS_PCT") is not None]
-    def display_name(raw):
-        raw_text = str(raw)
-        key = raw_text.casefold().replace("_", " ").replace("č", "c").replace("ć", "c")
-        candidates = [entity.display_name for entity in task.entities]
-        candidates += [str(ev.rows["PLAYER_NAME"]) for ev in shooting]
-        return next((name for name in candidates
-                     if name.casefold().replace("č", "c").replace("ć", "c") == key), raw_text)
-    a_name, b_name = display_name(a.get("name")), display_name(b.get("name"))
+    a_name, b_name = _comparison_display_name(a.get("name"), task, shooting), _comparison_display_name(b.get("name"), task, shooting)
     high_name, high_ppg, high_path = ((a_name, a_ppg, "rows.a.ppg")
                                       if a_ppg >= b_ppg else (b_name, b_ppg, "rows.b.ppg"))
     low_name, low_ppg, low_path = ((b_name, b_ppg, "rows.b.ppg")
@@ -2578,6 +2831,43 @@ def _deterministic_player_comparison_draft(
         Claim(text=f"{b_name} averaged {b_ppg} points per game in {item.season or 'the selected season'}.",
               kind="observed", evidence_ids=[item.evidence_id]),
     ]
+    _leader_rank_block(calculations, claims, leader_ids, item, high_path, low_path, high_name, low_name)
+    if ppg_ids:
+        claims.append(Claim(text=f"{high_name} scored more points per game than {low_name}.",
+                            kind="observed", evidence_ids=[item.evidence_id]))
+    _ppg_margin_block(calculations, claims, ppg_ids, item, high_path, low_path, high_ppg, low_ppg, high_name, low_name)
+    by_name = {str(ev.rows["PLAYER_NAME"]): ev for ev in shooting}
+    matched = [(name, next((ev for candidate, ev in by_name.items()
+                            if _comparison_display_name(candidate, task, shooting) == name), None))
+               for name in (a_name, b_name)]
+    def percent_value(raw: Any) -> Decimal:
+        value = Decimal(str(raw))
+        return value * 100 if abs(value) <= 1 else value
+    for name, ev in matched:
+        if ev is not None:
+            value = percent_value(ev.rows["TS_PCT"]).normalize()
+            claims.append(Claim(text=f"{name} had a {value}% true shooting percentage.",
+                                kind="observed", evidence_ids=[ev.evidence_id]))
+    if len(matched) == 2 and all(ev is not None for _, ev in matched):
+        _ts_margin_block(calculations, claims, ts_ids, matched, percent_value)
+    elif ts_ids:
+        unknown_ids.extend(ts_ids)
+    return DraftReport(sections=["Player comparison"], claims=claims,
+        calculations=calculations, blocked_calculation_requirement_ids=unknown_ids,
+        gaps=(["Some requested calculations could not be mapped to admitted comparison evidence."]
+              if unknown_ids else []))
+
+
+def _comparison_display_name(raw, task, shooting) -> str:
+    raw_text = str(raw)
+    key = raw_text.casefold().replace("_", " ").replace("č", "c").replace("ć", "c")
+    candidates = [entity.display_name for entity in task.entities]
+    candidates += [str(ev.rows["PLAYER_NAME"]) for ev in shooting]
+    return next((name for name in candidates
+                 if name.casefold().replace("č", "c").replace("ć", "c") == key), raw_text)
+
+
+def _leader_rank_block(calculations, claims, leader_ids, item, high_path, low_path, high_name, low_name) -> None:
     for index, rid in enumerate(leader_ids):
         cid = "ppg_leader_rank" + (f"_{index + 1}" if index else "")
         calculations.append({"calculation_id":cid, "requirement_id":rid,
@@ -2588,9 +2878,9 @@ def _deterministic_player_comparison_draft(
         if index == 0:
             claims.append(Claim(text=f"{high_name} scored more points per game than {low_name}.",
                 kind="derived", evidence_ids=[item.evidence_id], calculation_id=cid))
-    if ppg_ids:
-        claims.append(Claim(text=f"{high_name} scored more points per game than {low_name}.",
-                            kind="observed", evidence_ids=[item.evidence_id]))
+
+
+def _ppg_margin_block(calculations, claims, ppg_ids, item, high_path, low_path, high_ppg, low_ppg, high_name, low_name) -> None:
     for index, rid in enumerate(ppg_ids):
         cid = "ppg_difference" + (f"_{index + 1}" if index else "")
         margin = high_ppg - low_ppg
@@ -2602,53 +2892,47 @@ def _deterministic_player_comparison_draft(
         if index == 0:
             claims.append(Claim(text=f"{high_name} scored {margin} points per game more than {low_name}.",
                 kind="derived", evidence_ids=[item.evidence_id], calculation_id=cid))
-    by_name = {str(ev.rows["PLAYER_NAME"]): ev for ev in shooting}
-    matched = [(name, next((ev for candidate, ev in by_name.items()
-                            if display_name(candidate) == name), None))
-               for name in (a_name, b_name)]
-    def percent_value(raw: Any) -> Decimal:
-        value = Decimal(str(raw))
-        return value * 100 if abs(value) <= 1 else value
-    for name, ev in matched:
-        if ev is not None:
-            value = percent_value(ev.rows["TS_PCT"]).normalize()
-            claims.append(Claim(text=f"{name} had a {value}% true shooting percentage.",
-                                kind="observed", evidence_ids=[ev.evidence_id]))
-    if len(matched) == 2 and all(ev is not None for _, ev in matched):
-        (name_a, ev_a), (name_b, ev_b) = matched
-        ts_a, ts_b = percent_value(ev_a.rows["TS_PCT"]), percent_value(ev_b.rows["TS_PCT"])
-        hi_name, hi_ev, hi_ts, lo_name, lo_ev, lo_ts = ((name_a, ev_a, ts_a, name_b, ev_b, ts_b)
-            if ts_a >= ts_b else (name_b, ev_b, ts_b, name_a, ev_a, ts_a))
-        for index, rid in enumerate(ts_ids):
-            cid = "ts_difference" + (f"_{index + 1}" if index else "")
-            calculations.append({"calculation_id":cid, "requirement_id":rid,
-                "operation":"subtract", "inputs":[
-                    {"evidence_id":hi_ev.evidence_id,"path":"rows.TS_PCT"},
-                    {"evidence_id":lo_ev.evidence_id,"path":"rows.TS_PCT"}],
-                "result":str(hi_ts-lo_ts),"unit":"percentage points"})
-            if index == 0:
-                claims.append(Claim(text=f"{hi_name}'s true shooting was {hi_ts-lo_ts} percentage points higher than {lo_name}'s.",
-                    kind="derived", evidence_ids=[hi_ev.evidence_id, lo_ev.evidence_id], calculation_id=cid))
-    elif ts_ids:
-        unknown_ids.extend(ts_ids)
-    return DraftReport(sections=["Player comparison"], claims=claims,
-        calculations=calculations, blocked_calculation_requirement_ids=unknown_ids,
-        gaps=(["Some requested calculations could not be mapped to admitted comparison evidence."]
-              if unknown_ids else []))
+
+
+def _ts_margin_block(calculations, claims, ts_ids, matched, percent_value) -> None:
+    (name_a, ev_a), (name_b, ev_b) = matched
+    ts_a, ts_b = percent_value(ev_a.rows["TS_PCT"]), percent_value(ev_b.rows["TS_PCT"])
+    hi_name, hi_ev, hi_ts, lo_name, lo_ev, lo_ts = ((name_a, ev_a, ts_a, name_b, ev_b, ts_b)
+        if ts_a >= ts_b else (name_b, ev_b, ts_b, name_a, ev_a, ts_a))
+    for index, rid in enumerate(ts_ids):
+        cid = "ts_difference" + (f"_{index + 1}" if index else "")
+        calculations.append({"calculation_id":cid, "requirement_id":rid,
+            "operation":"subtract", "inputs":[
+                {"evidence_id":hi_ev.evidence_id,"path":"rows.TS_PCT"},
+                {"evidence_id":lo_ev.evidence_id,"path":"rows.TS_PCT"}],
+            "result":str(hi_ts-lo_ts),"unit":"percentage points"})
+        if index == 0:
+            claims.append(Claim(text=f"{hi_name}'s true shooting was {hi_ts-lo_ts} percentage points higher than {lo_name}'s.",
+                kind="derived", evidence_ids=[hi_ev.evidence_id, lo_ev.evidence_id], calculation_id=cid))
+
+def _ranked_requirement_for(task: TaskSpec, item: EvidenceEnvelope,
+                            metric: str):
+    return next(
+        (requirement for requirement in task.requirements
+         if item.capability in requirement.capability_options
+         and capability_arguments_for(
+             requirement, item.capability).get("requested_metric") == metric),
+        None)
+
+def _rating_numeric_rows(item: EvidenceEnvelope, metric: str, decimal_value):
+    numeric = []
+    for row_index, candidate in enumerate(item.rows):
+        value = decimal_value(candidate.get(metric))
+        team = candidate.get("TEAM_NAME") or candidate.get("TEAM")
+        if value is not None and team:
+            numeric.append((row_index, value, str(team)))
+    return numeric
 
 def _deterministic_rank_draft(
     task: TaskSpec, evidence: Sequence[EvidenceEnvelope],
 ) -> DraftReport | None:
     from v2.domain.evidence import decimal_value
     from shared.tools.rating_metrics import RANKING_DIRECTIONS, TEAM_RATING_METRICS
-    def _has_typed_ranked_arguments(requirement) -> bool:
-        if "team_ratings" not in requirement.capability_options:
-            return False
-        try:
-            arguments = capability_arguments_for(requirement, "team_ratings")
-        except ValueError:
-            return False
-        return bool(arguments.get("requested_metric"))
     if ("team_ratings" in task.required_evidence
             and task.ranked_argument_conflicts
             and not any(map(_has_typed_ranked_arguments, task.requirements))):
@@ -2666,135 +2950,148 @@ def _deterministic_rank_draft(
         metric = item.metric_definitions.get("__requested_metric__")
         if metric not in TEAM_RATING_METRICS:
             continue
-        label = TEAM_RATING_METRICS[metric]["label"]
-        owner = next((requirement for requirement in task.requirements
-                      if item.capability in requirement.capability_options
-                      and capability_arguments_for(requirement, item.capability).get("requested_metric") == metric), None)
+        owner = _ranked_requirement_for(task, item, metric)
         if owner is None:
             continue
-        direction = capability_arguments_for(owner, item.capability).get("ranking_direction")
+        direction = capability_arguments_for(
+            owner, item.capability).get("ranking_direction")
         if direction not in RANKING_DIRECTIONS:
             continue
-        numeric = []
-        for row_index, candidate in enumerate(item.rows):
-            value = decimal_value(candidate.get(metric))
-            team = candidate.get("TEAM_NAME") or candidate.get("TEAM")
-            if value is not None and team:
-                numeric.append((row_index, value, str(team)))
+        numeric = _rating_numeric_rows(item, metric, decimal_value)
         if not numeric:
             continue
         extreme = (min(value for _, value, _ in numeric) if direction == "asc"
                    else max(value for _, value, _ in numeric))
         winners = [(index, value, team) for index, value, team in numeric if value == extreme]
-
-        has_team_subject = any(entity.type == "team" for entity in task.entities)
-        eligible, blocked = [], []
-        for requirement in task.calculation_requirements:
-            if not has_team_subject and metric in set(requirement.metric_ids or []):
-                eligible.append(requirement)
-            else:
-                blocked.append(requirement.id)
-
-        if len(winners) != 1:
-            return DraftReport(
-                sections=["Team rating leader"], claims=[], calculations=[],
-                blocked_calculation_requirement_ids=[item.id for item in task.calculation_requirements],
-                gaps=[f"The requested {label} extremum is tied across {len(winners)} teams."])
-
-        winner_index, value, team = winners[0]
-        inputs = [{"evidence_id": item.evidence_id, "path": f"rows[{row_index}].{metric}"}
-                  for row_index, _, _ in numeric]
-        subject_input = next(index for index, (row_index, _, _) in enumerate(numeric)
-                             if row_index == winner_index)
-        calculations = [{
-            "calculation_id": f"requested_metric_rank_{index + 1}",
-            "requirement_id": requirement.id,
-            "operation": "rank_asc" if direction == "asc" else "rank_desc",
-            "inputs": inputs, "subject_input": subject_input, "result": "1", "unit": "rank",
-        } for index, requirement in enumerate(eligible)]
-        calculation_id = calculations[0]["calculation_id"] if calculations else None
-        from v2.contracts import (
-            CalculationOutputBinding,
-            Claim,
-            EvidenceOutputBinding,
-        )
-        winner_row = item.rows[winner_index]
-        row_selector = f"rows[{winner_index}]"
-        subject_id = winner_row.get("TEAM_ID")
-        if subject_id is not None and str(subject_id).strip():
-            subject_fields: dict = {
-                "subject_entity_type": "team",
-                "subject_entity_id": str(subject_id),
-                "subject_selector": f"{row_selector}.TEAM_ID",
-            }
-        else:
-            subject_fields = {
-                "subject_entity_type": None,
-                "subject_entity_id": None,
-                "subject_selector": None,
-            }
-
-        def _binding_value(raw):
-            if isinstance(raw, bool):
-                return {"kind": "boolean", "value": raw}
-            if isinstance(raw, int):
-                return {"kind": "integer", "value": raw}
-            if isinstance(raw, float):
-                return {"kind": "float", "value": raw}
-            if isinstance(raw, Decimal):
-                return {"kind": "decimal", "value": str(raw)}
-            return {"kind": "string", "value": str(raw)}
-
-        from v2.adapters.capabilities import CAPABILITIES
-        capability_units = getattr(
-            CAPABILITIES.get(item.capability), "units", {}) or {}
-        output_bindings: list = []
-        for output_id in owner.requested_outputs:
-            if output_id not in winner_row or winner_row[output_id] is None:
-                continue
-            unit_name = (item.units or {}).get(output_id) \
-                or capability_units.get(output_id)
-            unit = {"kind": "declared", "value": unit_name} \
-                if unit_name else {"kind": "unitless"}
-            output_bindings.append(EvidenceOutputBinding(
-                requirement_kind="evidence",
-                requirement_id=owner.id,
-                output_id=output_id,
-                node_id=owner.id,
-                evidence_id=item.evidence_id,
-                selector=f"{row_selector}.{output_id}",
-                row_selector=row_selector,
-                value=_binding_value(winner_row[output_id]),
-                unit=unit,
-                domain=item.capability,
-                **subject_fields,
-            ))
-        if calculation_id is not None:
-            cited_requirement_id = calculations[0]["requirement_id"]
-            cited_requirement = next(
-                (requirement for requirement in eligible
-                 if requirement.id == cited_requirement_id), None)
-            if cited_requirement is not None:
-                for output_id in cited_requirement.requested_outputs:
-                    output_bindings.append(CalculationOutputBinding(
-                        requirement_kind="calculation",
-                        requirement_id=cited_requirement.id,
-                        output_id=output_id,
-                        calculation_id=calculation_id,
-                    ))
-        return DraftReport(
-            sections=["Team rating leader"],
-            claims=[Claim(
-                text=(f"{team} had the {direction_words[direction]} {label} "
-                      f"in {item.season or 'the selected season'}: {value}."),
-                kind="derived" if calculation_id else "observed",
-                evidence_ids=[item.evidence_id], calculation_id=calculation_id,
-                output_bindings=output_bindings)],
-            calculations=calculations,
-            blocked_calculation_requirement_ids=blocked,
-            gaps=(["Some requested calculations do not declare the requested metric in their metric_ids."]
-                  if blocked else []))
+        return _rank_draft_report(
+            task, item, owner, metric, TEAM_RATING_METRICS[metric]["label"],
+            direction, direction_words, numeric, winners, decimal_value)
     return None
+
+
+def _has_typed_ranked_arguments(requirement) -> bool:
+    if "team_ratings" not in requirement.capability_options:
+        return False
+    try:
+        arguments = capability_arguments_for(requirement, "team_ratings")
+    except ValueError:
+        return False
+    return bool(arguments.get("requested_metric"))
+
+
+def _rank_draft_report(task, item, owner, metric, label, direction,
+                       direction_words, numeric, winners, decimal_value):
+    has_team_subject = any(entity.type == "team" for entity in task.entities)
+    eligible, blocked = [], []
+    for requirement in task.calculation_requirements:
+        if not has_team_subject and metric in set(requirement.metric_ids or []):
+            eligible.append(requirement)
+        else:
+            blocked.append(requirement.id)
+    if len(winners) != 1:
+        return DraftReport(
+            sections=["Team rating leader"], claims=[], calculations=[],
+            blocked_calculation_requirement_ids=[item.id for item in task.calculation_requirements],
+            gaps=[f"The requested {label} extremum is tied across {len(winners)} teams."])
+    winner_index, value, team = winners[0]
+    inputs = [{"evidence_id": item.evidence_id, "path": f"rows[{row_index}].{metric}"}
+              for row_index, _, _ in numeric]
+    subject_input = next(index for index, (row_index, _, _) in enumerate(numeric)
+                         if row_index == winner_index)
+    calculations = [{
+        "calculation_id": f"requested_metric_rank_{index + 1}",
+        "requirement_id": requirement.id,
+        "operation": "rank_asc" if direction == "asc" else "rank_desc",
+        "inputs": inputs, "subject_input": subject_input, "result": "1", "unit": "rank",
+    } for index, requirement in enumerate(eligible)]
+    calculation_id = calculations[0]["calculation_id"] if calculations else None
+    output_bindings = _rank_output_bindings(owner, item, winner_index, calculations, eligible)
+    from v2.contracts import Claim
+    return DraftReport(
+        sections=["Team rating leader"],
+        claims=[Claim(
+            text=(f"{team} had the {direction_words[direction]} {label} "
+                  f"in {item.season or 'the selected season'}: {value}."),
+            kind="derived" if calculation_id else "observed",
+            evidence_ids=[item.evidence_id], calculation_id=calculation_id,
+            output_bindings=output_bindings)],
+        calculations=calculations,
+        blocked_calculation_requirement_ids=blocked,
+        gaps=(["Some requested calculations do not declare the requested metric in their metric_ids."]
+              if blocked else []))
+
+
+def _rank_output_bindings(owner, item, winner_index, calculations, eligible):
+    from v2.contracts import CalculationOutputBinding, EvidenceOutputBinding
+    winner_row = item.rows[winner_index]
+    row_selector = f"rows[{winner_index}]"
+    subject_fields = _rank_subject_fields(winner_row, row_selector)
+    from v2.adapters.capabilities import CAPABILITIES
+    capability_units = getattr(
+        CAPABILITIES.get(item.capability), "units", {}) or {}
+    output_bindings: list = []
+    for output_id in owner.requested_outputs:
+        if output_id not in winner_row or winner_row[output_id] is None:
+            continue
+        unit_name = (item.units or {}).get(output_id) \
+            or capability_units.get(output_id)
+        unit = {"kind": "declared", "value": unit_name} \
+            if unit_name else {"kind": "unitless"}
+        output_bindings.append(EvidenceOutputBinding(
+            requirement_kind="evidence",
+            requirement_id=owner.id,
+            output_id=output_id,
+            node_id=owner.id,
+            evidence_id=item.evidence_id,
+            selector=f"{row_selector}.{output_id}",
+            value=_rank_binding_value(winner_row[output_id]),
+            unit=unit,
+            domain=item.capability,
+            **subject_fields,
+        ))
+    if calculations:
+        cited_requirement_id = calculations[0]["requirement_id"]
+        cited_requirement = next(
+            (requirement for requirement in eligible
+             if requirement.id == cited_requirement_id), None)
+        if cited_requirement is not None:
+            for output_id in cited_requirement.requested_outputs:
+                output_bindings.append(CalculationOutputBinding(
+                    requirement_kind="calculation",
+                    requirement_id=cited_requirement.id,
+                    output_id=output_id,
+                    calculation_id=calculations[0]["calculation_id"],
+                ))
+    return output_bindings
+
+
+def _rank_subject_fields(winner_row, row_selector) -> dict:
+    subject_id = winner_row.get("TEAM_ID")
+    if subject_id is not None and str(subject_id).strip():
+        return {
+            "subject_entity_type": "team",
+            "subject_entity_id": str(subject_id),
+            "subject_selector": f"{row_selector}.TEAM_ID",
+            "row_selector": row_selector,
+        }
+    return {
+        "subject_entity_type": None,
+        "subject_entity_id": None,
+        "subject_selector": None,
+        "row_selector": None,
+    }
+
+
+def _rank_binding_value(raw):
+    if isinstance(raw, bool):
+        return {"kind": "boolean", "value": raw}
+    if isinstance(raw, int):
+        return {"kind": "integer", "value": raw}
+    if isinstance(raw, float):
+        return {"kind": "float", "value": raw}
+    if isinstance(raw, Decimal):
+        return {"kind": "decimal", "value": str(raw)}
+    return {"kind": "string", "value": str(raw)}
 
 class ModelSynthesizer(ModelStage):
     prompt_name = "synthesizer"

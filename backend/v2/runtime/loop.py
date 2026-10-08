@@ -22,7 +22,7 @@ from v2.contracts import (
     TaskSpec,
     VerificationStatus,
 )
-from v2.runtime.executor import PlanExecutor
+from v2.runtime.executor import PlanExecutor, PlanValidationError
 from v2.runtime.fast_path import (
     FastPathUnverifiable,
     build_fast_plan,
@@ -56,6 +56,11 @@ JUDGE_UNAVAILABLE_BRANCHES = frozenset({JUDGE_UNAVAILABLE_BRANCH, JUDGE_UNAVAILA
 
 class PreToolTimeoutError(TimeoutError):
     pass
+
+def _remaining_seconds(deadline: float | None) -> float | None:
+    if deadline is None:
+        return None
+    return max(0.000001, deadline - time.perf_counter())
 
 class Runtime:
     def __init__(
@@ -142,9 +147,7 @@ class Runtime:
                         else turn_started + self._run_timeout_s)
 
         def run_remaining() -> float | None:
-            if run_deadline is None:
-                return None
-            return max(0.000001, run_deadline - time.perf_counter())
+            return _remaining_seconds(run_deadline)
 
         RUN_MODEL_DEADLINE.set(
             None if settings.dime_v2_model_deadline_s <= 0
@@ -157,43 +160,12 @@ class Runtime:
                 data={"request": request},
             )
         try:
-            async def understand(deadline: float | None = None):
-                def remaining() -> float | None:
-                    if deadline is None:
-                        return None
-                    return max(0.000001, deadline - time.perf_counter())
-                intake_call = (self._intake.understand(request, context)
-                               if context else self._intake.understand(request))
-                prepared_task = TaskSpec.model_validate(
-                    (await self._stage(
-                        turn_id, "understand", intake_call,
-                        timeout_s=remaining())).model_dump()
-                )
-                self._report_activity({"kind":"stage_summary","phase":"understand","status":"complete","title":"Request understood","transition":"completed","correlation_id":"stage:understand","data":{"mode":prepared_task.mode.value,"season":prepared_task.season.value if prepared_task.season else None,"entity_count":len(prepared_task.entities),"requirement_count":len(prepared_task.requirements),"calculation_count":len(prepared_task.calculation_requirements)}})
-                if prepared_task.open_questions:
-                    raise ValueError(
-                        "intake left unresolved questions: "
-                        + "; ".join(prepared_task.open_questions))
-                return prepared_task
-
-            async def plan_task(prepared_task, deadline: float | None = None):
-                def remaining() -> float | None:
-                    if deadline is None:
-                        return None
-                    return max(0.000001, deadline - time.perf_counter())
-                prepared_plan = Plan.model_validate((await self._stage(
-                    turn_id, "plan", self._planner.plan(prepared_task),
-                    timeout_s=remaining())).model_dump())
-                catalog = getattr(self._executor, "capability_names", frozenset())
-                self._report_activity({"kind":"plan_update","phase":"plan","status":"complete","title":"Plan accepted","transition":"completed","correlation_id":"stage:plan","data":{"node_count":len(prepared_plan.nodes),"capabilities":sorted({cap for n in prepared_plan.nodes for cap in n.capability_hints if cap in catalog}),"unknown_capability_count":sum(1 for n in prepared_plan.nodes for cap in n.capability_hints if cap not in catalog)}})
-                return prepared_plan
-
             pre_tool_deadline = (None if self._pre_tool_timeout_s is None
                                  else time.perf_counter() + self._pre_tool_timeout_s)
             try:
-                pre_tool_remaining = (lambda: None if pre_tool_deadline is None
-                                      else max(0.000001, pre_tool_deadline - time.perf_counter()))()
-                task = await understand(pre_tool_remaining)
+                pre_tool_remaining = _remaining_seconds(pre_tool_deadline)
+                task = await self._intake_task(turn_id, request, context,
+                                               pre_tool_remaining)
             except TimeoutError as exc:
                 raise PreToolTimeoutError(
                     f"intake and planning exceeded "
@@ -214,35 +186,14 @@ class Runtime:
                 except BaseException as exc:
                     self._report_activity({"kind":"stage_summary","phase":"fast_path","status":"complete","title":"Fast path fell back","transition":"completed","correlation_id":"stage:fast_path","data":{"reason": f"{type(exc).__name__}: {exc}"}})
             try:
-                pre_tool_remaining = (None if pre_tool_deadline is None
-                                      else max(0.000001, pre_tool_deadline - time.perf_counter()))
-                plan = await plan_task(task, pre_tool_remaining)
+                pre_tool_remaining = _remaining_seconds(pre_tool_deadline)
+                plan = await self._plan_task(turn_id, task, pre_tool_remaining)
             except TimeoutError as exc:
                 raise PreToolTimeoutError(
                     f"intake and planning exceeded "
                     f"{self._pre_tool_timeout_s:g} seconds") from exc
-            execution = ExecutionResult.model_validate((await self._stage(
-                turn_id, "execute",
-                self._executor.execute(task, plan, run_id=run_id),
-                timeout_s=run_remaining())).model_dump())
-            if (execution.plan.nodes
-                    and not any(node.status.value == "complete"
-                                for node in execution.plan.nodes)
-                    and _planner_accepts_failure_context(self._planner)):
-                recovery_plan = Plan.model_validate((await self._stage(
-                    turn_id, "replan",
-                    self._planner.plan(
-                        task,
-                        failure_context=_failure_context(task, execution)),
-                    timeout_s=run_remaining()
-                )).model_dump())
-                self._report_activity({"kind":"stage_summary","phase":"replan","status":"complete","title":"Recovery plan accepted","transition":"completed","correlation_id":"stage:replan","data":{"node_count":len(recovery_plan.nodes),"capabilities":sorted({cap for n in recovery_plan.nodes for cap in n.capability_hints})}})
-                recovery = ExecutionResult.model_validate((await self._stage(
-                    turn_id, "recover",
-                    self._executor.execute(
-                        task, recovery_plan, run_id=run_id, resume=False),
-                    timeout_s=run_remaining())).model_dump())
-                execution = _merge_recovery(execution, recovery)
+            execution = await self._execute_with_recovery(
+                turn_id, task, plan, run_id=run_id, run_remaining=run_remaining)
             synth_raw = await self._stage(
                 turn_id, "synthesize",
                 self._synthesizer.synthesize(task, execution.evidence),
@@ -263,8 +214,121 @@ class Runtime:
         self._verification_activity(verification, "initial")
         pre_repair_draft = draft.model_copy(deep=True)
         pre_repair_verification = verification.model_copy(deep=True)
-        repaired = False
+        draft, verification, repaired = await self._repair_loop(
+            turn_id, task, execution, draft, verification, evidence,
+            run_remaining, turn_started)
+        if verification.status == VerificationStatus.REPAIR:
+            gaps = _unique(
+                [
+                    *draft.gaps,
+                    *verification.missing_branches,
+                    *verification.contradictions,
+                ],
+                limit=128,
+            )
+            draft = DraftReport.model_validate(
+                draft.model_copy(update={"gaps": gaps}).model_dump())
+            verification = verification.model_copy(
+                update={"status": VerificationStatus.PARTIAL}
+            )
 
+        return self._publish(
+            task=task,
+            execution=execution,
+            draft=draft,
+            verification=verification,
+            evidence=evidence,
+            turn_id=turn_id,
+            turn_started=turn_started,
+            pre_repair_draft=pre_repair_draft,
+            pre_repair_verification=pre_repair_verification,
+            repaired=repaired,
+        )
+
+    async def _intake_task(self, turn_id, request, context, deadline):
+        intake_call = (self._intake.understand(request, context)
+                       if context else self._intake.understand(request))
+        prepared_task = TaskSpec.model_validate(
+            (await self._stage(
+                turn_id, "understand", intake_call,
+                timeout_s=_remaining_seconds(deadline))).model_dump()
+        )
+        self._report_activity({"kind":"stage_summary","phase":"understand","status":"complete","title":"Request understood","transition":"completed","correlation_id":"stage:understand","data":{"mode":prepared_task.mode.value,"season":prepared_task.season.value if prepared_task.season else None,"entity_count":len(prepared_task.entities),"requirement_count":len(prepared_task.requirements),"calculation_count":len(prepared_task.calculation_requirements)}})
+        if prepared_task.open_questions and not prepared_task.requirements:
+            raise ValueError(
+                "intake left unresolved questions: "
+                + "; ".join(prepared_task.open_questions))
+        return prepared_task
+
+    async def _plan_task(self, turn_id, prepared_task, deadline):
+        from v2.adapters.models import PlanOutputError
+        validate_plan = getattr(self._executor, "validate_plan", None)
+        failure_context: dict | None = None
+        if not _planner_accepts_failure_context(self._planner):
+            open_context = None
+        else:
+            open_context = _open_question_context(prepared_task)
+        prepared_plan = None
+        for attempt in range(2):
+            context = failure_context if attempt else open_context
+            try:
+                plan_raw = await self._stage(
+                    turn_id,
+                    "plan" if attempt == 0 else "plan_repair",
+                    (self._planner.plan(prepared_task, failure_context=context)
+                     if context is not None
+                     else self._planner.plan(prepared_task)),
+                    timeout_s=_remaining_seconds(deadline))
+                candidate = Plan.model_validate(plan_raw.model_dump())
+            except PlanOutputError as exc:
+                if (attempt
+                        or not _planner_accepts_failure_context(
+                            self._planner)):
+                    raise
+                failure_context = _plan_failure_context(exc)
+                continue
+            if validate_plan is not None:
+                try:
+                    validate_plan(prepared_task, candidate)
+                except PlanValidationError as exc:
+                    if (not attempt
+                            and _planner_accepts_failure_context(
+                                self._planner)):
+                        failure_context = _plan_failure_context(exc)
+                        continue
+            prepared_plan = candidate
+            break
+        catalog = getattr(self._executor, "capability_names", frozenset())
+        self._report_activity({"kind":"plan_update","phase":"plan","status":"complete","title":"Plan accepted","transition":"completed","correlation_id":"stage:plan","data":{"node_count":len(prepared_plan.nodes),"capabilities":sorted({cap for n in prepared_plan.nodes for cap in n.capability_hints if cap in catalog}),"unknown_capability_count":sum(1 for n in prepared_plan.nodes for cap in n.capability_hints if cap not in catalog)}})
+        return prepared_plan
+
+    async def _execute_with_recovery(self, turn_id, task, plan, *, run_id, run_remaining):
+        execution = ExecutionResult.model_validate((await self._stage(
+            turn_id, "execute",
+            self._executor.execute(task, plan, run_id=run_id),
+            timeout_s=run_remaining())).model_dump())
+        if (execution.plan.nodes
+                and not any(node.status.value == "complete"
+                            for node in execution.plan.nodes)
+                and _planner_accepts_failure_context(self._planner)):
+            recovery_plan = Plan.model_validate((await self._stage(
+                turn_id, "replan",
+                self._planner.plan(
+                    task,
+                    failure_context=_failure_context(task, execution)),
+                timeout_s=run_remaining()
+            )).model_dump())
+            self._report_activity({"kind":"stage_summary","phase":"replan","status":"complete","title":"Recovery plan accepted","transition":"completed","correlation_id":"stage:replan","data":{"node_count":len(recovery_plan.nodes),"capabilities":sorted({cap for n in recovery_plan.nodes for cap in n.capability_hints})}})
+            recovery = ExecutionResult.model_validate((await self._stage(
+                turn_id, "recover",
+                self._executor.execute(
+                    task, recovery_plan, run_id=run_id, resume=False),
+                timeout_s=run_remaining())).model_dump())
+            execution = _merge_recovery(execution, recovery)
+        return execution
+
+    async def _repair_loop(self, turn_id, task, execution, draft, verification, evidence, run_remaining, turn_started):
+        repaired = False
         for attempt in range(self._repair_attempts):
             missing = _completeness_missing(task, execution, draft, verification, evidence)
             needs_verification = _needs_repair(verification)
@@ -303,63 +367,9 @@ class Runtime:
                 if not str(exc).startswith("all structured-output providers failed"):
                     self._close_failed(turn_id, exc, started=turn_started)
                     raise
-
-                supported = {
-                    item.claim_index for item in verification.claim_results
-                    if item.supported
-                }
-                draft = draft.model_copy(update={
-                    "claims": [claim for index, claim in enumerate(draft.claims)
-                               if index in supported],
-                    "calculations": [calculation for calculation in draft.calculations
-                                     if any(claim.calculation_id == calculation.calculation_id
-                                            for index, claim in enumerate(draft.claims)
-                                            if index in supported)],
-                    "gaps": _unique([
-                        *draft.gaps, *verification.missing_branches,
-                        *verification.contradictions,
-                        *verification.repair_instructions,
-                        "Model repair was unavailable; unsupported claims were withheld."
-                    ], limit=128),
-                })
-                verification = VerificationReport(
-                    status=VerificationStatus.PARTIAL,
-                    claim_results=[ClaimResult(
-                        claim_index=index, supported=True)
-                        for index, _claim in enumerate(draft.claims)],
-                    missing_branches=[
-                        "Model repair was unavailable; unsupported claims were withheld."
-                    ],
-                )
+                draft, verification = _withhold_unsupported_claims(draft, verification)
                 break
-
-        if verification.status == VerificationStatus.REPAIR:
-            gaps = _unique(
-                [
-                    *draft.gaps,
-                    *verification.missing_branches,
-                    *verification.contradictions,
-                ],
-                limit=128,
-            )
-            draft = DraftReport.model_validate(
-                draft.model_copy(update={"gaps": gaps}).model_dump())
-            verification = verification.model_copy(
-                update={"status": VerificationStatus.PARTIAL}
-            )
-
-        return self._publish(
-            task=task,
-            execution=execution,
-            draft=draft,
-            verification=verification,
-            evidence=evidence,
-            turn_id=turn_id,
-            turn_started=turn_started,
-            pre_repair_draft=pre_repair_draft,
-            pre_repair_verification=pre_repair_verification,
-            repaired=repaired,
-        )
+        return draft, verification, repaired
 
     def _publish(
         self,
@@ -375,39 +385,8 @@ class Runtime:
         pre_repair_verification,
         repaired,
     ) -> RuntimeResult:
-        final_missing = _completeness_missing(task, execution, draft, verification, evidence)
-        if final_missing:
-            instruction = _format_completeness_instruction(final_missing)
-            failure_message = _format_completeness_failure(final_missing)
-            verification = verification.model_copy(update={
-                "status": VerificationStatus.PARTIAL,
-                "missing_branches": _unique([*verification.missing_branches, instruction], limit=128),
-            })
-            draft = draft.model_copy(update={
-                "gaps": _unique([*draft.gaps, failure_message], limit=128),
-            })
-
-        unavailable_claims = {
-            index: sorted(set(claim.evidence_ids) - set(evidence))
-            for index, claim in enumerate(draft.claims)
-            if set(claim.evidence_ids) - set(evidence)
-        }
-        if unavailable_claims:
-            claim_results = [
-                ClaimResult(
-                    claim_index=result.claim_index,
-                    supported=False,
-                    reasons=[f"unknown execution evidence ids: "
-                             f"{unavailable_claims[result.claim_index]}"])
-                if result.supported and result.claim_index in unavailable_claims
-                else result
-                for result in verification.claim_results
-            ]
-            verification = verification.model_copy(update={
-                "status": VerificationStatus.PARTIAL,
-                "claim_results": claim_results,
-            })
-
+        draft, verification = _apply_final_completeness(task, execution, draft, verification, evidence)
+        verification = _withhold_unknown_evidence_claims(draft, verification, evidence)
         empty_evidence_gaps = _empty_evidence_gaps(execution.evidence)
         uncovered_requirement_gaps = _uncovered_requirement_gaps(task, execution)
         failed_nodes = {
@@ -449,27 +428,13 @@ class Runtime:
         if binding_gaps and verification.status == VerificationStatus.PASS:
             verification = verification.model_copy(
                 update={"status": VerificationStatus.PARTIAL})
-        gaps = [
-            *_verification_gaps(
-                draft, verification, unresolved_errors,
-                execution_error_codes=execution.error_codes,
-                evidence_ids=set(evidence),
-                satisfied_requirement_ids={
-                    requirement_id for node in execution.plan.nodes
-                    if node.status.value == "complete"
-                    for requirement_id in node.covers_requirement_ids
-                }),
-            *binding_gaps,
-            *empty_evidence_gaps,
-            *uncovered_requirement_gaps,
-            *empty_draft_gaps,
-            *[
-                Gap(kind=GapKind.EXECUTION_FAILURE,
-                    message=f"execution skipped node {node_id}",
-                    blocks=[f"node:{node_id}"])
-                for node_id in skipped_nodes
-            ],
-        ]
+        gaps = _publish_gaps(
+            draft, verification, unresolved_errors, execution, evidence,
+            binding_gaps=binding_gaps,
+            empty_evidence_gaps=empty_evidence_gaps,
+            uncovered_requirement_gaps=uncovered_requirement_gaps,
+            empty_draft_gaps=empty_draft_gaps,
+            skipped_nodes=skipped_nodes)
         if verification.status == VerificationStatus.PARTIAL and not gaps:
             gaps.append(Gap(
                 kind=GapKind.MISSING_EVIDENCE,
@@ -686,115 +651,21 @@ class Runtime:
         )
 
     async def _verify(self, task, draft, evidence) -> VerificationReport:
-        draft_before = draft.model_dump()
-        evidence_before = {key: item.model_dump() for key, item in evidence.items()}
-        frozen_task = freeze_task(task)
-        frozen_draft = freeze_draft(draft)
-        frozen_evidence = freeze_evidence_map(evidence)
-        mech_raw = await self._mechanical_verifier.verify(frozen_task, frozen_draft, frozen_evidence)
-        mechanical = VerificationReport.model_validate(
-            mech_raw.model_dump() if hasattr(mech_raw, "model_dump") else mech_raw
-        )
-        if draft.model_dump() != draft_before:
-            raise ValueError("mechanical verifier mutated the draft")
-        if {key: item.model_dump() for key, item in evidence.items()} != evidence_before:
-            raise ValueError("mechanical verifier mutated evidence")
         expected = list(range(len(draft.claims)))
-        mechanical_indices = sorted(
-            result.claim_index for result in mechanical.claim_results)
-        if mechanical_indices != expected:
-            raise ValueError(
-                "mechanical verifier must adjudicate every claim exactly once")
+        mechanical = await self._mechanical_verdict(task, draft, evidence, expected)
         if mechanical.status == VerificationStatus.REPAIR:
             return mechanical.model_copy(update={
                 "missing_branches": _unique(
                     [*mechanical.missing_branches, JUDGE_UNAVAILABLE_BRANCH],
                     limit=128),
             })
-        try:
-            sem_raw = await self._semantic_verifier.verify(frozen_task, frozen_draft, frozen_evidence)
-            semantic = VerificationReport.model_validate(
-                sem_raw.model_dump() if hasattr(sem_raw, "model_dump") else sem_raw
-            )
-            if draft.model_dump() != draft_before:
-                raise ValueError("semantic verifier mutated the draft")
-            if {key: item.model_dump() for key, item in evidence.items()} != evidence_before:
-                raise ValueError("semantic verifier mutated evidence")
-        except asyncio.CancelledError:
-            raise
-        except Exception:
-            if all(item.supported for item in mechanical.claim_results):
-                return mechanical.model_copy(update={
-                    "status": VerificationStatus.PARTIAL,
-                    "missing_branches": _unique(
-                        [*mechanical.missing_branches, JUDGE_UNAVAILABLE_BRANCH],
-                        limit=128),
-                })
-            return mechanical.model_copy(update={
-                "missing_branches": _unique(
-                    [*mechanical.missing_branches, JUDGE_UNAVAILABLE_BRANCH],
-                    limit=128),
-            })
-        satisfied_calculation_ids = {
-            calculation.requirement_id
-            for calculation in draft.calculations
-            if calculation.requirement_id is not None
-            and any(claim.calculation_id == calculation.calculation_id
-                    for claim in draft.claims)
-        }
-        satisfied_calculations = [
-            requirement for requirement in task.calculation_requirements
-            if requirement.id in satisfied_calculation_ids
-        ]
-        def repeats_satisfied_calculation(message: str) -> bool:
-            folded = " ".join(message.casefold().replace("_", " ").split())
-            return any(
-                requirement.id.replace("_", " ").casefold() in folded
-                or requirement.description.casefold() in folded
-                for requirement in satisfied_calculations
-            )
+        semantic = await self._semantic_verdict(task, draft, evidence, mechanical)
+        satisfied_calculations = self._satisfied_calculations(task, draft)
         if satisfied_calculations:
-            semantic = semantic.model_copy(update={
-                "missing_branches": [item for item in semantic.missing_branches
-                                     if not repeats_satisfied_calculation(item)],
-                "repair_instructions": [item for item in semantic.repair_instructions
-                                        if not repeats_satisfied_calculation(item)],
-            })
-            if (semantic.status == VerificationStatus.REPAIR
-                    and not semantic.missing_branches
-                    and not semantic.contradictions
-                    and not semantic.repair_instructions
-                    and all(item.supported for item in semantic.claim_results)):
-                semantic = semantic.model_copy(update={"status": VerificationStatus.PASS})
-        populated_capabilities = {
-            item.capability for item in evidence.values()
-            if any(True for _ in iter_values(item))
-        }
-        satisfied_requirements = [
-            requirement for requirement in task.requirements
-            if set(requirement.capability_options) & populated_capabilities
-        ]
-        def repeats_satisfied_requirement(message: str) -> bool:
-            folded = " ".join(message.casefold().replace("_", " ").split())
-            return any(
-                requirement.id.replace("_", " ").casefold() in folded
-                or requirement.description.casefold() in folded
-                for requirement in satisfied_requirements
-            )
+            semantic = _drop_satisfied_messages(semantic, satisfied_calculations)
+        satisfied_requirements = self._satisfied_requirements(task, evidence)
         if satisfied_requirements:
-            semantic = semantic.model_copy(update={
-                "missing_branches": [item for item in semantic.missing_branches
-                                     if not repeats_satisfied_requirement(item)],
-                "repair_instructions": [item for item in semantic.repair_instructions
-                                        if not repeats_satisfied_requirement(item)],
-            })
-            if (semantic.status == VerificationStatus.REPAIR
-                    and not semantic.missing_branches
-                    and not semantic.contradictions
-                    and not semantic.repair_instructions
-                    and all(item.supported for item in semantic.claim_results)):
-                semantic = semantic.model_copy(update={"status": VerificationStatus.PASS})
-
+            semantic = _drop_satisfied_messages(semantic, satisfied_requirements)
         if (semantic.status == VerificationStatus.PARTIAL
                 and sorted(item.claim_index for item in semantic.claim_results) == expected
                 and all(item.supported for item in semantic.claim_results)
@@ -826,6 +697,198 @@ class Runtime:
                     limit=128),
             })
         return merged
+
+    async def _mechanical_verdict(self, task, draft, evidence, expected) -> VerificationReport:
+        draft_before = draft.model_dump()
+        evidence_before = {key: item.model_dump() for key, item in evidence.items()}
+        mech_raw = await self._mechanical_verifier.verify(
+            freeze_task(task), freeze_draft(draft), freeze_evidence_map(evidence))
+        mechanical = VerificationReport.model_validate(
+            mech_raw.model_dump() if hasattr(mech_raw, "model_dump") else mech_raw
+        )
+        if draft.model_dump() != draft_before:
+            raise ValueError("mechanical verifier mutated the draft")
+        if {key: item.model_dump() for key, item in evidence.items()} != evidence_before:
+            raise ValueError("mechanical verifier mutated evidence")
+        mechanical_indices = sorted(
+            result.claim_index for result in mechanical.claim_results)
+        if mechanical_indices != expected:
+            raise ValueError(
+                "mechanical verifier must adjudicate every claim exactly once")
+        return mechanical
+
+    async def _semantic_verdict(self, task, draft, evidence, mechanical) -> VerificationReport:
+        draft_before = draft.model_dump()
+        evidence_before = {key: item.model_dump() for key, item in evidence.items()}
+        try:
+            sem_raw = await self._semantic_verifier.verify(
+                freeze_task(task), freeze_draft(draft), freeze_evidence_map(evidence))
+            semantic = VerificationReport.model_validate(
+                sem_raw.model_dump() if hasattr(sem_raw, "model_dump") else sem_raw
+            )
+            if draft.model_dump() != draft_before:
+                raise ValueError("semantic verifier mutated the draft")
+            if {key: item.model_dump() for key, item in evidence.items()} != evidence_before:
+                raise ValueError("semantic verifier mutated evidence")
+            return semantic
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            if all(item.supported for item in mechanical.claim_results):
+                return mechanical.model_copy(update={
+                    "status": VerificationStatus.PARTIAL,
+                    "missing_branches": _unique(
+                        [*mechanical.missing_branches, JUDGE_UNAVAILABLE_BRANCH],
+                        limit=128),
+                })
+            return mechanical.model_copy(update={
+                "missing_branches": _unique(
+                    [*mechanical.missing_branches, JUDGE_UNAVAILABLE_BRANCH],
+                    limit=128),
+            })
+
+    def _satisfied_calculations(self, task, draft) -> list:
+        satisfied_calculation_ids = {
+            calculation.requirement_id
+            for calculation in draft.calculations
+            if calculation.requirement_id is not None
+            and any(claim.calculation_id == calculation.calculation_id
+                    for claim in draft.claims)
+        }
+        return [
+            requirement for requirement in task.calculation_requirements
+            if requirement.id in satisfied_calculation_ids
+        ]
+
+    def _satisfied_requirements(self, task, evidence) -> list:
+        populated_capabilities = {
+            item.capability for item in evidence.values()
+            if any(True for _ in iter_values(item))
+        }
+        return [
+            requirement for requirement in task.requirements
+            if set(requirement.capability_options) & populated_capabilities
+        ]
+
+def _withhold_unsupported_claims(draft, verification):
+    supported = {
+        item.claim_index for item in verification.claim_results
+        if item.supported
+    }
+    draft = draft.model_copy(update={
+        "claims": [claim for index, claim in enumerate(draft.claims)
+                   if index in supported],
+        "calculations": [calculation for calculation in draft.calculations
+                         if any(claim.calculation_id == calculation.calculation_id
+                                for index, claim in enumerate(draft.claims)
+                                if index in supported)],
+        "gaps": _unique([
+            *draft.gaps, *verification.missing_branches,
+            *verification.contradictions,
+            *verification.repair_instructions,
+            "Model repair was unavailable; unsupported claims were withheld."
+        ], limit=128),
+    })
+    verification = VerificationReport(
+        status=VerificationStatus.PARTIAL,
+        claim_results=[ClaimResult(
+            claim_index=index, supported=True)
+            for index, _claim in enumerate(draft.claims)],
+        missing_branches=[
+            "Model repair was unavailable; unsupported claims were withheld."
+        ],
+    )
+    return draft, verification
+
+
+def _apply_final_completeness(task, execution, draft, verification, evidence):
+    final_missing = _completeness_missing(task, execution, draft, verification, evidence)
+    if not final_missing:
+        return draft, verification
+    instruction = _format_completeness_instruction(final_missing)
+    failure_message = _format_completeness_failure(final_missing)
+    verification = verification.model_copy(update={
+        "status": VerificationStatus.PARTIAL,
+        "missing_branches": _unique([*verification.missing_branches, instruction], limit=128),
+    })
+    draft = draft.model_copy(update={
+        "gaps": _unique([*draft.gaps, failure_message], limit=128),
+    })
+    return draft, verification
+
+
+def _withhold_unknown_evidence_claims(draft, verification, evidence):
+    unavailable_claims = {
+        index: sorted(set(claim.evidence_ids) - set(evidence))
+        for index, claim in enumerate(draft.claims)
+        if set(claim.evidence_ids) - set(evidence)
+    }
+    if not unavailable_claims:
+        return verification
+    claim_results = [
+        ClaimResult(
+            claim_index=result.claim_index,
+            supported=False,
+            reasons=[f"unknown execution evidence ids: "
+                     f"{unavailable_claims[result.claim_index]}"])
+        if result.supported and result.claim_index in unavailable_claims
+        else result
+        for result in verification.claim_results
+    ]
+    return verification.model_copy(update={
+        "status": VerificationStatus.PARTIAL,
+        "claim_results": claim_results,
+    })
+
+
+def _publish_gaps(draft, verification, unresolved_errors, execution, evidence, *,
+                  binding_gaps, empty_evidence_gaps, uncovered_requirement_gaps,
+                  empty_draft_gaps, skipped_nodes) -> list[Gap]:
+    return [
+        *_verification_gaps(
+            draft, verification, unresolved_errors,
+            execution_error_codes=execution.error_codes,
+            evidence_ids=set(evidence),
+            satisfied_requirement_ids={
+                requirement_id for node in execution.plan.nodes
+                if node.status.value == "complete"
+                for requirement_id in node.covers_requirement_ids
+            }),
+        *binding_gaps,
+        *empty_evidence_gaps,
+        *uncovered_requirement_gaps,
+        *empty_draft_gaps,
+        *[
+            Gap(kind=GapKind.EXECUTION_FAILURE,
+                message=f"execution skipped node {node_id}",
+                blocks=[f"node:{node_id}"])
+            for node_id in skipped_nodes
+        ],
+    ]
+
+
+def _drop_satisfied_messages(semantic, satisfied):
+    def repeats(message: str) -> bool:
+        folded = " ".join(message.casefold().replace("_", " ").split())
+        return any(
+            requirement.id.replace("_", " ").casefold() in folded
+            or requirement.description.casefold() in folded
+            for requirement in satisfied
+        )
+    semantic = semantic.model_copy(update={
+        "missing_branches": [item for item in semantic.missing_branches
+                             if not repeats(item)],
+        "repair_instructions": [item for item in semantic.repair_instructions
+                                if not repeats(item)],
+    })
+    if (semantic.status == VerificationStatus.REPAIR
+            and not semantic.missing_branches
+            and not semantic.contradictions
+            and not semantic.repair_instructions
+            and all(item.supported for item in semantic.claim_results)):
+        semantic = semantic.model_copy(update={"status": VerificationStatus.PASS})
+    return semantic
+
 
 def _needs_repair(report: VerificationReport) -> bool:
     return (report.status == VerificationStatus.REPAIR
@@ -966,6 +1029,28 @@ def _planner_accepts_failure_context(planner) -> bool:
         parameter.kind is inspect.Parameter.VAR_KEYWORD
         for parameter in parameters.values()
     )
+
+def _open_question_context(task: TaskSpec) -> dict | None:
+    if not task.open_questions:
+        return None
+    return {
+        "open_questions": list(task.open_questions),
+        "instruction": (
+            "Resolve each question from the task, the catalog, and the "
+            "evidence the plan gathers. A question the plan can settle "
+            "needs no open_questions entry; a question it cannot settle "
+            "belongs to a node so the branch gaps with its reason."),
+    }
+
+
+def _plan_failure_context(exc: BaseException) -> dict:
+    context = {"plan_error": str(exc)}
+    for field in ("output_id", "capability", "vocabulary", "node_id",
+                  "requirement_id"):
+        value = getattr(exc, field, None)
+        if value is not None:
+            context[field] = value
+    return context
 
 def _failure_context(task, execution) -> dict:
     requirements = {item.id: item for item in task.requirements}
@@ -1290,65 +1375,85 @@ def _empty_evidence_gaps(evidence) -> list[Gap]:
         if not any(True for _ in iter_values(item))
     ]
 
-def _verification_gaps(draft, verification, execution_errors=None,
-                       execution_error_codes=None, evidence_ids=None,
-                       satisfied_requirement_ids=None) -> list[Gap]:
-    missing_messages = [*draft.gaps]
-    def message_terms(message: str) -> set[str]:
-        return {
-            token for token in re.findall(r"[a-z0-9]+", message.casefold())
-            if token not in {"a", "an", "and", "for", "in", "of", "the",
+_VERIFICATION_STOP_TOKENS = {"a", "an", "and", "for", "in", "of", "the",
                              "to", "was", "were", "what", "with"}
-        }
+
+def _gap_message_terms(message: str) -> set[str]:
+    return {
+        token for token in re.findall(r"[a-z0-9]+", message.casefold())
+        if token not in _VERIFICATION_STOP_TOKENS
+    }
+
+def _novel_missing_messages(draft, verification) -> list[str]:
+    missing_messages = [*draft.gaps]
     for message in verification.missing_branches:
-        terms = message_terms(message)
+        terms = _gap_message_terms(message)
         if not any(
             terms and other_terms
             and len(terms & other_terms) >= min(3, len(terms), len(other_terms))
-            for other_terms in map(message_terms, missing_messages)
+            for other_terms in map(_gap_message_terms, missing_messages)
         ):
             missing_messages.append(message)
+    return missing_messages
+
+def _gap_kind(message: str, satisfied_requirement_ids) -> GapKind:
+    if message in JUDGE_UNAVAILABLE_BRANCHES:
+        return GapKind.JUDGE_UNAVAILABLE
+    if any(requirement_id.casefold().replace("_", " ") in
+           message.casefold().replace("_", " ")
+           for requirement_id in satisfied_requirement_ids):
+        return GapKind.SYNTHESIS_INCOMPLETE
+    return GapKind.MISSING_EVIDENCE
+
+def _execution_error_gaps(execution_errors, execution_error_codes) -> list[Gap]:
+    gaps = []
+    for node_id, errors in (execution_errors or {}).items():
+        if not errors:
+            continue
+        name_resolution = (
+            "profile/name_resolution_unavailable"
+            in {str(code) for code in (execution_error_codes or {}).get(node_id, [])}
+        )
+        gaps.append(Gap(
+            kind=(GapKind.PROFILE_NAME_RESOLUTION_UNAVAILABLE
+                  if name_resolution else GapKind.EXECUTION_FAILURE),
+            message=("profile/name_resolution unavailable"
+                     if name_resolution
+                     else f"execution failed for {node_id}"),
+            blocks=[f"node:{node_id}"],
+        ))
+    return gaps
+
+def _unsupported_claim_gaps(draft, verification, evidence_ids) -> list[Gap]:
+    gaps = []
+    for result in verification.claim_results:
+        if result.supported:
+            continue
+        claim_evidence = (
+            list(draft.claims[result.claim_index].evidence_ids)
+            if result.claim_index < len(draft.claims) else []
+        )
+        if evidence_ids is not None:
+            claim_evidence = [
+                evidence_id for evidence_id in claim_evidence
+                if evidence_id in evidence_ids
+            ]
+        gaps.extend(Gap(kind=GapKind.UNSUPPORTED_CLAIM, message=reason,
+                        evidence_ids=claim_evidence,
+                        blocks=[f"claim:{result.claim_index}"])
+                    for reason in result.reasons)
+    return gaps
+
+def _verification_gaps(draft, verification, execution_errors=None,
+                       execution_error_codes=None, evidence_ids=None,
+                       satisfied_requirement_ids=None) -> list[Gap]:
     satisfied_requirement_ids = satisfied_requirement_ids or set()
-    gaps = [Gap(
-        kind=(GapKind.JUDGE_UNAVAILABLE
-              if message in JUDGE_UNAVAILABLE_BRANCHES
-              else GapKind.SYNTHESIS_INCOMPLETE
-              if any(requirement_id.casefold().replace("_", " ") in
-                     message.casefold().replace("_", " ")
-                     for requirement_id in satisfied_requirement_ids)
-              else GapKind.MISSING_EVIDENCE),
-        message=message,
-    ) for message in missing_messages]
+    gaps = [Gap(kind=_gap_kind(message, satisfied_requirement_ids),
+                message=message)
+            for message in _novel_missing_messages(draft, verification)]
     gaps.extend(Gap(kind=GapKind.SOURCE_CONFLICT, message=message)
                 for message in verification.contradictions)
-    for node_id, errors in (execution_errors or {}).items():
-        if errors:
-            name_resolution = (
-                "profile/name_resolution_unavailable"
-                in {str(code) for code in (execution_error_codes or {}).get(node_id, [])}
-            )
-            gaps.append(Gap(
-                kind=(GapKind.PROFILE_NAME_RESOLUTION_UNAVAILABLE
-                      if name_resolution else GapKind.EXECUTION_FAILURE),
-                message=("profile/name_resolution unavailable"
-                         if name_resolution
-                         else f"execution failed for {node_id}"),
-                blocks=[f"node:{node_id}"],
-            ))
-    for result in verification.claim_results:
-        if not result.supported:
-            claim_evidence = (
-                list(draft.claims[result.claim_index].evidence_ids)
-                if result.claim_index < len(draft.claims) else []
-            )
-            if evidence_ids is not None:
-                claim_evidence = [
-                    evidence_id for evidence_id in claim_evidence
-                    if evidence_id in evidence_ids
-                ]
-            gaps.extend(Gap(kind=GapKind.UNSUPPORTED_CLAIM, message=reason,
-                            evidence_ids=claim_evidence,
-                            blocks=[f"claim:{result.claim_index}"])
-                        for reason in result.reasons)
+    gaps.extend(_execution_error_gaps(execution_errors, execution_error_codes))
+    gaps.extend(_unsupported_claim_gaps(draft, verification, evidence_ids))
     return list({(gap.kind, gap.message, tuple(gap.blocks)): gap
                  for gap in gaps}.values())

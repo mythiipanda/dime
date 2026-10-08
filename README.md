@@ -50,7 +50,7 @@ uv pip install -r requirements.txt
 cp .env.example .env   # add your LLM keys for chat; the server boots without them
 python scripts/generate_asset_manifest.py manifest/expected_asset_manifest.json
 DIME_EXPECTED_ASSET_MANIFEST=$PWD/manifest/expected_asset_manifest.json \
-  uvicorn app.main:app --port 8010
+  uvicorn v2.main:app --port 8010
 ```
 
 The manifest step is required. Without

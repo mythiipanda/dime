@@ -185,42 +185,9 @@ def _row_entity_value_reasons(
         "team", "team_name", "team_abbreviation", "abbrev",
         "player", "player_name", "full_name", "name",
     }
-    matched_envelopes = []
-    for envelope in envelopes:
-        if not isinstance(envelope.rows, list) or len(envelope.rows) < 2:
-            continue
-        rows = [row for row in envelope.rows if isinstance(row, Mapping)]
-        matched = []
-        for row in rows:
-            identities = [
-                str(value).strip().casefold()
-                for key, value in row.items()
-                if key.casefold() in identity_keys and value is not None
-            ]
-            if any(value and value in text for value in identities):
-                matched.append(row)
-        if matched:
-            matched_envelopes.append(envelope.model_copy(update={"rows": matched}))
+    matched_envelopes = _matched_row_envelopes(envelopes, text, identity_keys)
     if not matched_envelopes:
         return []
-
-    requested_metrics = {
-        envelope.metric_definitions.get("__requested_metric__")
-        for envelope in envelopes
-        if envelope.metric_definitions.get("__requested_metric__")
-    }
-    if not matched_envelopes and len(requested_metrics) == 1:
-        metric = next(iter(requested_metrics))
-        scoped = []
-        for envelope in envelopes:
-            if (not isinstance(envelope.rows, list) or not envelope.rows
-                    or not isinstance(envelope.rows[0], Mapping)):
-                continue
-            value = envelope.rows[0].get(metric)
-            if value is not None:
-                scoped.append(envelope.model_copy(update={"rows": [{metric: value}]}))
-        if scoped:
-            matched_envelopes = scoped
     row_numbers = _numeric_values(matched_envelopes) | (calculation_values or set())
     unsupported = []
     rank_numbers = {
@@ -240,10 +207,30 @@ def _row_entity_value_reasons(
         ]
     return []
 
+def _matched_row_envelopes(
+    envelopes: Sequence[EvidenceEnvelope], text: str, identity_keys: set[str],
+) -> list:
+    matched_envelopes = []
+    for envelope in envelopes:
+        if not isinstance(envelope.rows, list) or len(envelope.rows) < 2:
+            continue
+        rows = [row for row in envelope.rows if isinstance(row, Mapping)]
+        matched = []
+        for row in rows:
+            identities = [
+                str(value).strip().casefold()
+                for key, value in row.items()
+                if key.casefold() in identity_keys and value is not None
+            ]
+            if any(value and value in text for value in identities):
+                matched.append(row)
+        if matched:
+            matched_envelopes.append(envelope.model_copy(update={"rows": matched}))
+    return matched_envelopes
+
 def _direction_reasons(
     claim: Claim, envelopes: Sequence[EvidenceEnvelope],
 ) -> list[str]:
-    from shared.tools.rating_metrics import TEAM_RATING_METRICS
     claimed: set[Decimal] = set()
     for raw in _number_tokens(claim.text):
         if _DATE.fullmatch(raw) or _SEASON.fullmatch(raw):
@@ -253,37 +240,46 @@ def _direction_reasons(
         return []
     reasons: list[str] = []
     for envelope in envelopes:
-        metric = envelope.metric_definitions.get("__requested_metric__")
-        entry = TEAM_RATING_METRICS.get(metric)
-        if not entry:
-            continue
-        direction = entry.get("direction")
-        if direction == "asc":
-            if not _DIRECTION_MIN_WORDS.search(claim.text):
-                continue
-        elif direction == "desc":
-            if not _DIRECTION_MAX_WORDS.search(claim.text):
-                continue
-        else:
-            continue
-        rows = envelope.rows
-        if isinstance(rows, dict):
-            rows = [rows]
-        if not isinstance(rows, list):
-            continue
-        values = [decimal_value(row.get(metric)) for row in rows
-                  if isinstance(row, Mapping)]
-        values = [value for value in values if value is not None]
-        if len(values) < 2:
-            continue
-        extreme = min(values) if direction == "asc" else max(values)
-        if extreme not in claimed:
-            bound = "minimum" if direction == "asc" else "maximum"
-            reasons.append(
-                f"best {entry.get('label', metric)} claim must state the {bound} "
-                f"{entry.get('label', metric)} on the board"
-            )
+        reason = _direction_reason(claim, claimed, envelope)
+        if reason is not None:
+            reasons.append(reason)
     return reasons
+
+def _direction_reason(claim: Claim, claimed: set[Decimal],
+                      envelope: EvidenceEnvelope) -> str | None:
+    from shared.tools.rating_metrics import TEAM_RATING_METRICS
+
+    metric = envelope.metric_definitions.get("__requested_metric__")
+    entry = TEAM_RATING_METRICS.get(metric)
+    if not entry:
+        return None
+    direction = entry.get("direction")
+    if direction == "asc":
+        if not _DIRECTION_MIN_WORDS.search(claim.text):
+            return None
+    elif direction == "desc":
+        if not _DIRECTION_MAX_WORDS.search(claim.text):
+            return None
+    else:
+        return None
+    rows = envelope.rows
+    if isinstance(rows, dict):
+        rows = [rows]
+    if not isinstance(rows, list):
+        return None
+    values = [decimal_value(row.get(metric)) for row in rows
+              if isinstance(row, Mapping)]
+    values = [value for value in values if value is not None]
+    if len(values) < 2:
+        return None
+    extreme = min(values) if direction == "asc" else max(values)
+    if extreme in claimed:
+        return None
+    bound = "minimum" if direction == "asc" else "maximum"
+    return (
+        f"best {entry.get('label', metric)} claim must state the {bound} "
+        f"{entry.get('label', metric)} on the board"
+    )
 
 def _scope_reasons(task: TaskSpec,
                    envelopes: Sequence[EvidenceEnvelope]) -> list[str]:
@@ -341,40 +337,49 @@ def _metric_unit_reasons(claim: Claim,
                 f"{sorted(unknown_units)}"
             )
         for metric, unit in envelope.units.items():
-            if not _states_name(words, metric):
-                continue
-            unit_name = unit.casefold()
-            percent_shown = "%" in claim.text or "percent" in text
-            if unit_name in _PERCENT_LIKE_UNITS:
-                if not percent_shown:
-                    reasons.append(f"metric {metric} is stated without a percent unit")
-            elif unit_name == "points_per_100_possessions":
-                if not re.search(r"points?\s+per\s+100\s+possessions?", text):
-                    same_unit_values: set[Decimal] = set()
-                    for other, other_unit in envelope.units.items():
-                        if other_unit.casefold() == unit_name:
-                            same_unit_values.update(
-                                _column_canon_values(envelope, other))
-                    rank_numbers = {
-                        value for match in _RANK.finditer(claim.text)
-                        for value in match.groups() if value is not None
-                    }
-                    unbound = [
-                        raw for raw in _number_tokens(claim.text)
-                        if not (_DATE.fullmatch(raw)
-                                or _SEASON.fullmatch(raw)
-                                or raw in rank_numbers)
-                        and not (_canon_number(raw) & same_unit_values)
-                    ]
-                    if unbound:
-                        reasons.append(
-                            f"metric {metric} is stated without its declared unit {unit}")
-            elif unit_name == "count":
-
-                continue
-            elif unit_name.replace("_", " ") not in text:
-                reasons.append(f"metric {metric} is stated without its declared unit {unit}")
+            reason = _metric_unit_reason(claim, text, words, envelope, metric, unit)
+            if reason is not None:
+                reasons.append(reason)
     return reasons
+
+def _metric_unit_reason(claim: Claim, text: str, words: Sequence[str],
+                        envelope: EvidenceEnvelope, metric: str,
+                        unit: str) -> str | None:
+    if not _states_name(words, metric):
+        return None
+    unit_name = unit.casefold()
+    percent_shown = "%" in claim.text or "percent" in text
+    if unit_name in _PERCENT_LIKE_UNITS:
+        if not percent_shown:
+            return f"metric {metric} is stated without a percent unit"
+        return None
+    if unit_name == "count":
+        return None
+    if unit_name == "points_per_100_possessions":
+        if re.search(r"points?\s+per\s+100\s+possessions?", text):
+            return None
+        same_unit_values: set[Decimal] = set()
+        for other, other_unit in envelope.units.items():
+            if other_unit.casefold() == unit_name:
+                same_unit_values.update(
+                    _column_canon_values(envelope, other))
+        rank_numbers = {
+            value for match in _RANK.finditer(claim.text)
+            for value in match.groups() if value is not None
+        }
+        unbound = [
+            raw for raw in _number_tokens(claim.text)
+            if not (_DATE.fullmatch(raw)
+                    or _SEASON.fullmatch(raw)
+                    or raw in rank_numbers)
+            and not (_canon_number(raw) & same_unit_values)
+        ]
+        if unbound:
+            return f"metric {metric} is stated without its declared unit {unit}"
+        return None
+    if unit_name.replace("_", " ") not in text:
+        return f"metric {metric} is stated without its declared unit {unit}"
+    return None
 
 def _column_canon_values(envelope: EvidenceEnvelope, metric: str) -> set[Decimal]:
     unit_map = {str(key).casefold(): str(item)
@@ -417,19 +422,7 @@ def _metric_identity_reasons(
         for metric in requested
     }
     for metric in requested:
-        carriers = {evidence_id for evidence_id, values in columns[metric].items()
-                    if values}
-        if not carriers:
-            reasons.append(
-                f"claim about {metric} cites no evidence carrying a {metric} column"
-            )
-            continue
-        for envelope in envelopes:
-            if envelope.evidence_id not in carriers:
-                reasons.append(
-                    f"cited {envelope.capability} evidence {envelope.evidence_id} "
-                    f"carries no {metric} column"
-                )
+        reasons.extend(_metric_carrier_reasons(metric, columns[metric], envelopes))
     bound: set[Decimal] = set()
     for metric in requested:
         for values in columns[metric].values():
@@ -445,31 +438,54 @@ def _metric_identity_reasons(
         for value in match.groups() if value is not None
     }
     for raw in _number_tokens(claim.text):
-        if _DATE.fullmatch(raw) or _SEASON.fullmatch(raw):
-            continue
-        if (raw == "100" and "points_per_100_possessions" in {
-                unit.casefold() for envelope in envelopes
-                for unit in envelope.units.values()}
-                and re.search(r"points?\s+per\s+100\s+possessions?",
-                              claim.text, re.IGNORECASE)):
-            continue
-        if raw in rank_numbers:
-            continue
-        canon = _canon_number(raw)
-        if canon & bound:
-            continue
-        if not (canon & supported_numbers):
-            continue
-        if canon & grounded:
-            continue
-        if (claim.kind == ClaimKind.DERIVED and claim.calculation_id
-                and _matches_calculation_display(raw, calculation_values or set())):
-            continue
-        reasons.append(
-            f"numeral {raw} does not match a {', '.join(requested)} column "
-            f"value in cited evidence"
-        )
+        reason = _metric_identity_numeral_reason(
+            raw, claim, envelopes, requested, rank_numbers,
+            bound, supported_numbers, grounded, calculation_values)
+        if reason is not None:
+            reasons.append(reason)
     return reasons
+
+def _metric_carrier_reasons(metric, columns_by_envelope, envelopes) -> list[str]:
+    carriers = {evidence_id for evidence_id, values in columns_by_envelope.items()
+                if values}
+    if not carriers:
+        return [f"claim about {metric} cites no evidence carrying a {metric} column"]
+    reasons = []
+    for envelope in envelopes:
+        if envelope.evidence_id not in carriers:
+            reasons.append(
+                f"cited {envelope.capability} evidence {envelope.evidence_id} "
+                f"carries no {metric} column"
+            )
+    return reasons
+
+def _metric_identity_numeral_reason(raw, claim, envelopes, requested,
+                                    rank_numbers, bound, supported_numbers,
+                                    grounded, calculation_values) -> str | None:
+    if _DATE.fullmatch(raw) or _SEASON.fullmatch(raw):
+        return None
+    if (raw == "100" and "points_per_100_possessions" in {
+            unit.casefold() for envelope in envelopes
+            for unit in envelope.units.values()}
+            and re.search(r"points?\s+per\s+100\s+possessions?",
+                          claim.text, re.IGNORECASE)):
+        return None
+    if raw in rank_numbers:
+        return None
+    canon = _canon_number(raw)
+    if canon & bound:
+        return None
+    if not (canon & supported_numbers):
+        return None
+    if canon & grounded:
+        return None
+    if (claim.kind == ClaimKind.DERIVED and claim.calculation_id
+            and _matches_calculation_display(raw, calculation_values or set())):
+        return None
+    return (
+        f"numeral {raw} does not match a {', '.join(requested)} column "
+        f"value in cited evidence"
+    )
 
 def _mixed_source_reasons(claim: Claim,
                           envelopes: Sequence[EvidenceEnvelope]) -> list[str]:
@@ -711,75 +727,9 @@ def verify_mechanical(
     results: list[ClaimResult] = []
 
     for claim_index, claim in enumerate(draft.claims):
-        reasons: list[str] = []
-        try:
-            cited = index.require(claim.evidence_ids)
-        except KeyError as exc:
-            cited = []
-            reasons.append(str(exc))
-
-        if claim.kind in (ClaimKind.OBSERVED, ClaimKind.DERIVED) and not cited:
-            reasons.append("factual claim has no resolvable evidence")
-        if claim.kind in (ClaimKind.OBSERVED, ClaimKind.DERIVED) and any(
-            not any(True for _ in iter_values(envelope)) for envelope in cited
-        ):
-            reasons.append("factual claim cites evidence with no values")
-        if claim.kind in (ClaimKind.OBSERVED, ClaimKind.DERIVED) and any(
-            "source identity not declared by tool" in envelope.warnings
-            for envelope in cited
-        ):
-            reasons.append("factual claim cites evidence without declared source identity")
-        if duplicate_calculations:
-            reasons.append("calculation ids must be unique")
-
-        calculation_reasons, calculation_values = _calculation_reasons(
-            claim, calculation_map, index
-        )
-        reasons.extend(calculation_reasons)
-        supported_numbers = _numeric_values(cited) | calculation_values | allowed_numbers
-        for envelope in cited:
-            for qualifier in (envelope.qualification, envelope.coverage):
-                if qualifier:
-                    for token in _number_tokens(qualifier):
-                        supported_numbers.update(_canon_number(token))
-        for raw in _number_tokens(claim.text):
-            if _DATE.fullmatch(raw) or _SEASON.fullmatch(raw):
-                continue
-            if (raw == "100" and "points_per_100_possessions" in {
-                    unit.casefold() for envelope in cited
-                    for unit in envelope.units.values()}
-                    and re.search(r"points?\s+per\s+100\s+possessions?",
-                                  claim.text, re.IGNORECASE)):
-                continue
-            if not (_canon_number(raw) & supported_numbers
-                    or (claim.kind == ClaimKind.DERIVED
-                        and claim.calculation_id
-                        and _matches_calculation_display(raw, calculation_values))):
-                reasons.append(f"uncited numeral {raw}")
-
-        for value in _claim_dates_supported(claim, cited):
-            reasons.append(f"uncited date {value}")
-        for value in _claim_seasons_supported(claim, cited):
-            reasons.append(f"uncited season {value}")
-        reasons.extend(_entity_reasons(task, claim, cited))
-        reasons.extend(_row_entity_value_reasons(
-            claim, cited, calculation_values))
-        reasons.extend(_direction_reasons(claim, cited))
-        reasons.extend(_scope_reasons(task, cited))
-        reasons.extend(_mixed_source_reasons(claim, cited))
-        reasons.extend(_cross_evidence_calculation_reasons(claim, cited))
-        reasons.extend(_metric_unit_reasons(claim, cited))
-        reasons.extend(_metric_identity_reasons(
-            claim, cited, supported_numbers, calculation_values, allowed_numbers))
-        reasons.extend(_qualification_coverage_reasons(claim, cited))
-        reasons.extend(_record_completeness_reasons(claim, cited))
-        reasons.extend(_zero_scoring_gate_reasons(task, claim, cited))
-
-        unique_reasons = list(dict.fromkeys(reasons))
-        results.append(ClaimResult(
-            claim_index=claim_index,
-            supported=not unique_reasons,
-            reasons=unique_reasons,
+        results.append(_claim_result(
+            task, claim, claim_index, index, calculation_map, duplicate_calculations,
+            allowed_numbers,
         ))
 
     failed = [result for result in results if not result.supported]
@@ -790,8 +740,116 @@ def verify_mechanical(
         token for section in draft.sections for token in _number_tokens(section)
         if token not in claim_tokens
     ]
-    report_repairs = []
+    report_repairs = _report_section_repairs(task, draft, evidence, unclaimed_tokens)
+    repairs = [
+        f"Repair claim {result.claim_index}: {'; '.join(result.reasons)}"
+        for result in failed
+    ]
+    repairs.extend(report_repairs[:max(0, 128 - len(repairs))])
+    repairs.extend(_termination_gate_repairs(
+        task, draft, evidence)[:max(0, 128 - len(repairs))])
+    repairs = list(dict.fromkeys(repairs))
+    return VerificationReport(
+        status=(VerificationStatus.REPAIR if repairs else VerificationStatus.PASS),
+        claim_results=results,
+        repair_instructions=repairs,
+    )
 
+def _claim_result(task, claim, claim_index, index, calculation_map,
+                  duplicate_calculations, allowed_numbers) -> ClaimResult:
+    reasons: list[str] = []
+    try:
+        cited = index.require(claim.evidence_ids)
+    except KeyError as exc:
+        cited = []
+        reasons.append(str(exc))
+
+    if claim.kind in (ClaimKind.OBSERVED, ClaimKind.DERIVED) and not cited:
+        reasons.append("factual claim has no resolvable evidence")
+    if claim.kind in (ClaimKind.OBSERVED, ClaimKind.DERIVED) and any(
+        not any(True for _ in iter_values(envelope)) for envelope in cited
+    ):
+        reasons.append("factual claim cites evidence with no values")
+    if claim.kind in (ClaimKind.OBSERVED, ClaimKind.DERIVED) and any(
+        "source identity not declared by tool" in envelope.warnings
+        for envelope in cited
+    ):
+        reasons.append("factual claim cites evidence without declared source identity")
+    if duplicate_calculations:
+        reasons.append("calculation ids must be unique")
+
+    calculation_reasons, calculation_values = _calculation_reasons(
+        claim, calculation_map, index
+    )
+    reasons.extend(calculation_reasons)
+    supported_numbers = _numeric_values(cited) | calculation_values | allowed_numbers
+    for envelope in cited:
+        for qualifier in (envelope.qualification, envelope.coverage):
+            if qualifier:
+                for token in _number_tokens(qualifier):
+                    supported_numbers.update(_canon_number(token))
+    for raw in _number_tokens(claim.text):
+        reason = _uncited_numeral_reason(
+            raw, claim, cited, supported_numbers, calculation_values)
+        if reason is not None:
+            reasons.append(reason)
+
+    for value in _claim_dates_supported(claim, cited):
+        reasons.append(f"uncited date {value}")
+    for value in _claim_seasons_supported(claim, cited):
+        reasons.append(f"uncited season {value}")
+    reasons.extend(_entity_reasons(task, claim, cited))
+    reasons.extend(_row_entity_value_reasons(
+        claim, cited, calculation_values))
+    reasons.extend(_direction_reasons(claim, cited))
+    reasons.extend(_scope_reasons(task, cited))
+    reasons.extend(_mixed_source_reasons(claim, cited))
+    reasons.extend(_cross_evidence_calculation_reasons(claim, cited))
+    reasons.extend(_metric_unit_reasons(claim, cited))
+    reasons.extend(_metric_identity_reasons(
+        claim, cited, supported_numbers, calculation_values, allowed_numbers))
+    reasons.extend(_qualification_coverage_reasons(claim, cited))
+    reasons.extend(_record_completeness_reasons(claim, cited))
+    reasons.extend(_zero_scoring_gate_reasons(task, claim, cited))
+
+    unique_reasons = list(dict.fromkeys(reasons))
+    return ClaimResult(
+        claim_index=claim_index,
+        supported=not unique_reasons,
+        reasons=unique_reasons,
+    )
+
+def _uncited_numeral_reason(raw, claim, cited, supported_numbers,
+                            calculation_values) -> str | None:
+    if _DATE.fullmatch(raw) or _SEASON.fullmatch(raw):
+        return None
+    if (raw == "100" and "points_per_100_possessions" in {
+            unit.casefold() for envelope in cited
+            for unit in envelope.units.values()}
+            and re.search(r"points?\s+per\s+100\s+possessions?",
+                          claim.text, re.IGNORECASE)):
+        return None
+    if not (_canon_number(raw) & supported_numbers
+            or (claim.kind == ClaimKind.DERIVED
+                and claim.calculation_id
+                and _matches_calculation_display(raw, calculation_values))):
+        return f"uncited numeral {raw}"
+    return None
+
+def _report_section_repairs(task, draft, evidence, unclaimed_tokens) -> list[str]:
+    report_repairs = []
+    if _record_task_missing_record(task, draft, evidence):
+        report_repairs.append(
+            "State the best team's complete wins-losses record in W-L form.")
+    report_repairs.extend(_missing_requested_metric_repairs(task, draft, evidence))
+    if unclaimed_tokens:
+        report_repairs.append(
+            "Move factual section values into claims with evidence: "
+            + ", ".join(dict.fromkeys(unclaimed_tokens))
+        )
+    return report_repairs
+
+def _record_task_missing_record(task, draft, evidence) -> bool:
     record_task = bool(re.search(r"\brecord\b", " ".join(
         (task.goal, task.deliverable, *task.subquestions)), re.IGNORECASE))
     standings_rows = [
@@ -799,18 +857,19 @@ def verify_mechanical(
         and isinstance(envelope.rows, list)
         for row in envelope.rows if isinstance(row, Mapping)
     ]
-    if record_task and standings_rows:
-        has_complete_record = any(
-            re.search(r"\b\d+\s*[-–]\s*\d+\b", claim.text)
-            or re.search(
-                r"\b\d+\s+wins?\b.{0,32}?\b\d+\s+loss(?:es)?\b",
-                claim.text, re.IGNORECASE,
-            )
-            for claim in draft.claims)
-        if not has_complete_record:
-            report_repairs.append(
-                "State the best team's complete wins-losses record in W-L form.")
+    if not record_task or not standings_rows:
+        return False
+    has_complete_record = any(
+        re.search(r"\b\d+\s*[-–]\s*\d+\b", claim.text)
+        or re.search(
+            r"\b\d+\s+wins?\b.{0,32}?\b\d+\s+loss(?:es)?\b",
+            claim.text, re.IGNORECASE,
+        )
+        for claim in draft.claims)
+    return not has_complete_record
 
+def _missing_requested_metric_repairs(task, draft, evidence) -> list[str]:
+    repairs = []
     task_text = " ".join((task.goal, task.deliverable, *task.subquestions)).casefold()
     requested_metrics = {
         "TS_PCT": ("true shooting", "shooting efficiency", "efficiency"),
@@ -833,26 +892,9 @@ def verify_mechanical(
                 claimed.update(_canon_number(token))
         if not any(_canon_number(value) & claimed for value in values):
             label = metric.replace("_PCT", "").replace("_", " ").lower()
-            report_repairs.append(
+            repairs.append(
                 f"State the requested {label} metric from admitted evidence.")
-    if unclaimed_tokens:
-        report_repairs.append(
-            "Move factual section values into claims with evidence: "
-            + ", ".join(dict.fromkeys(unclaimed_tokens))
-        )
-    repairs = [
-        f"Repair claim {result.claim_index}: {'; '.join(result.reasons)}"
-        for result in failed
-    ]
-    repairs.extend(report_repairs[:max(0, 128 - len(repairs))])
-    repairs.extend(_termination_gate_repairs(
-        task, draft, evidence)[:max(0, 128 - len(repairs))])
-    repairs = list(dict.fromkeys(repairs))
-    return VerificationReport(
-        status=(VerificationStatus.REPAIR if repairs else VerificationStatus.PASS),
-        claim_results=results,
-        repair_instructions=repairs,
-    )
+    return repairs
 
 def _gate_tables(evidence: Sequence[EvidenceEnvelope]) -> list[dict]:
     tables: list[dict] = []
@@ -1031,35 +1073,7 @@ def verify_minutes_qual(answer_text: str, tables: list) -> list[str]:
         _answer_has_qual = bool(_MINUTES_QUAL_RX.search(answer_text or ""))
     except Exception:
         _answer_has_qual = False
-    _table_has_qual = False
-    try:
-        for _t in (tables or []):
-            try:
-                if not isinstance(_t, dict):
-                    continue
-                _meta = _t.get("meta")
-                if (isinstance(_meta, dict)
-                        and _MINUTES_QUAL_RX.search(str(_meta.get("qualification") or ""))):
-                    _table_has_qual = True
-                    break
-                _rows = _t.get("rows")
-                if isinstance(_rows, list):
-                    for _r in _rows:
-                        try:
-                            if isinstance(_r, dict) and any(
-                                str(_k).strip().upper() in ("MIN", "MPG", "MINUTES")
-                                for _k in _r.keys()
-                            ):
-                                _table_has_qual = True
-                                break
-                        except Exception:
-                            continue
-                    if _table_has_qual:
-                        break
-            except Exception:
-                continue
-    except Exception:
-        _table_has_qual = False
+    _table_has_qual = _tables_have_minutes_qual(tables)
     if _answer_has_qual or _table_has_qual:
         return []
     violations: list[str] = []
@@ -1076,3 +1090,30 @@ def verify_minutes_qual(answer_text: str, tables: list) -> list[str]:
             if not _MINUTES_QUAL_RX.search(_s):
                 violations.append(_s)
     return violations
+
+def _tables_have_minutes_qual(tables) -> bool:
+    try:
+        for _t in (tables or []):
+            try:
+                if not isinstance(_t, dict):
+                    continue
+                _meta = _t.get("meta")
+                if (isinstance(_meta, dict)
+                        and _MINUTES_QUAL_RX.search(str(_meta.get("qualification") or ""))):
+                    return True
+                _rows = _t.get("rows")
+                if isinstance(_rows, list):
+                    for _r in _rows:
+                        try:
+                            if isinstance(_r, dict) and any(
+                                str(_k).strip().upper() in ("MIN", "MPG", "MINUTES")
+                                for _k in _r.keys()
+                            ):
+                                return True
+                        except Exception:
+                            continue
+            except Exception:
+                continue
+    except Exception:
+        return False
+    return False

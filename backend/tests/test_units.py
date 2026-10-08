@@ -45,7 +45,7 @@ def test_resolve_model_rejects_bare_names():
     assert resolve_model_id("LeBron James") == _default_provider()
 
 def test_registry_unique_names():
-    names = [t.name for t in tools.v1_tools]
+    names = [t.name for t in tools.WAREHOUSE_TOOLS]
     assert len(names) == len(set(names))
     assert len(names) >= 20
 

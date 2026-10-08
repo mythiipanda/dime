@@ -45,6 +45,7 @@ class EventType(StrEnum):
     FINAL_ANSWER = "final_answer"
     SUGGESTIONS = "suggestions"
     GRAPH_END = "graph_end"
+    FAILURE = "failure"
     BINDING_DIAGNOSTIC = "binding_diagnostic"
     RUN_DIAGNOSTIC = "run_diagnostic"
 
@@ -120,6 +121,7 @@ class CustomData(StrictEvent):
     type: Literal[EventType.CUSTOM_DATA] = EventType.CUSTOM_DATA
     node: Literal["entry", "data_retrieval", "tools", "analytics", "presentation"]
     tables: list[dict[str, Any]] = Field(default_factory=list, max_length=32)
+    artifacts: list[dict[str, Any]] = Field(default_factory=list, max_length=8)
     unverified_numbers: list[str] = Field(default_factory=list, max_length=128)
 
 class FinalAnswer(StrictEvent):
@@ -133,6 +135,11 @@ class Suggestions(StrictEvent):
 
 class GraphEnd(StrictEvent):
     type: Literal[EventType.GRAPH_END] = EventType.GRAPH_END
+
+class Failure(StrictEvent):
+    type: Literal[EventType.FAILURE] = EventType.FAILURE
+    kind: str = Field(max_length=64)
+    message: str = Field(max_length=4000)
 
 class BindingDiagnostic(StrictEvent):
     type: Literal[EventType.BINDING_DIAGNOSTIC] = EventType.BINDING_DIAGNOSTIC
@@ -247,6 +254,7 @@ InternalEvent = Annotated[
     | FinalAnswer
     | Suggestions
     | GraphEnd
+    | Failure
     | BindingDiagnostic
     | RunDiagnostic,
     Field(discriminator="type"),

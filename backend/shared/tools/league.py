@@ -3,6 +3,7 @@ import ast
 import json
 import re
 import duckdb
+from contextlib import contextmanager
 from typing import Any, Literal
 from langchain_core.tools import tool
 
@@ -15,6 +16,64 @@ from .rating_metrics import RANKING_DIRECTIONS, TEAM_RATING_METRICS
 _RequestedMetric = Literal.__getitem__(tuple(["", *TEAM_RATING_METRICS]))
 _RankingDirection = Literal.__getitem__(tuple(["", *RANKING_DIRECTIONS]))
 
+def _injury_entries(raw: object) -> list:
+    if not isinstance(raw, str):
+        return []
+    try:
+        raw = json.loads(raw)
+    except (TypeError, ValueError, json.JSONDecodeError):
+        try:
+            raw = ast.literal_eval(raw)
+        except (SyntaxError, ValueError):
+            raw = []
+    return raw if isinstance(raw, list) else []
+
+def _injury_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    normalized = []
+    for row in rows:
+        row = dict(row)
+        if isinstance(row.get("injuries"), str):
+            row["injuries"] = _injury_entries(row["injuries"])
+        normalized.append(row)
+    return normalized
+
+def _injury_playoff_note(player: str, season: str | None) -> str | None:
+    try:
+        from ._core import coerce_player_id
+        from .gamelog import playoff_inactive_note as _pin
+        from .splits import _resolve_name as _rn
+
+        pid = coerce_player_id(player)
+        return _pin(pid, season, _rn(pid, str(player)))
+    except Exception:
+        return None
+
+def _injury_player_rows(rows: list[dict[str, Any]],
+                        player: str) -> list[dict[str, Any]]:
+    low = str(player).strip().lower()
+    return [
+        r for r in rows
+        if low in str(r.get("player") or r.get("name") or "").lower()
+        or any(
+            low in str((item.get("athlete") or {}).get("displayName", "")).lower()
+            for item in (r.get("injuries") or [])
+            if isinstance(item, dict)
+        )
+    ]
+
+def _injury_team_rows(rows: list[dict[str, Any]],
+                      team: str) -> list[dict[str, Any]]:
+    from nba_api.stats.static import teams as _teams
+
+    want = team.strip().upper()
+    full = next(
+        (t["full_name"] for t in _teams.get_teams()
+         if t["abbreviation"] == want or t["full_name"].upper() == want),
+        want,
+    )
+    return [r for r in rows
+            if full.lower() in str(r.get("display_name", "")).lower()]
+
 @tool(description="Injury report, optional team abbreviation or player filter.\n\nWith a player name, also joins playoff inactive listings so\n'is X injured?' surfaces 'inactive for the entire playoff run'\ninstead of a bare 'active' (F45).")
 def get_injuries(team: str = "", player: str = "",
                  season: str | None = None) -> dict[str, Any]:
@@ -25,54 +84,13 @@ def get_injuries(team: str = "", player: str = "",
         "silver_injuries", "_season = ?",
         [season], lambda: espn.injuries(season), season,
     )
+    rows = _injury_rows(rows)
 
-    normalized_rows = []
-    for row in rows:
-        row = dict(row)
-        raw = row.get("injuries")
-        if isinstance(raw, str):
-            try:
-                raw = json.loads(raw)
-            except (TypeError, ValueError, json.JSONDecodeError):
-                try:
-                    raw = ast.literal_eval(raw)
-                except (SyntaxError, ValueError):
-                    raw = []
-            row["injuries"] = raw if isinstance(raw, list) else []
-        normalized_rows.append(row)
-    rows = normalized_rows
-
-    note = None
+    note = _injury_playoff_note(player, season) if player else None
     if player:
-        try:
-            from ._core import coerce_player_id
-            from .gamelog import playoff_inactive_note as _pin
-            from .splits import _resolve_name as _rn
-
-            pid = coerce_player_id(player)
-            note = _pin(pid, season, _rn(pid, str(player)))
-        except Exception:
-            note = None
-        low = str(player).strip().lower()
-        rows = [
-            r for r in rows
-            if low in str(r.get("player") or r.get("name") or "").lower()
-            or any(
-                low in str((item.get("athlete") or {}).get("displayName", "")).lower()
-                for item in (r.get("injuries") or [])
-                if isinstance(item, dict)
-            )
-        ]
+        rows = _injury_player_rows(rows, player)
     if team:
-        from nba_api.stats.static import teams as _teams
-
-        want = team.strip().upper()
-        full = next(
-            (t["full_name"] for t in _teams.get_teams()
-             if t["abbreviation"] == want or t["full_name"].upper() == want),
-            want,
-        )
-        rows = [r for r in rows if full.lower() in str(r.get("display_name", "")).lower()]
+        rows = _injury_team_rows(rows, team)
     meta = dict(meta)
     if not rows and not player:
 
@@ -170,99 +188,79 @@ def get_standings(season: str | None = None) -> dict[str, Any]:
     return {"tool": "get_standings", "ok": True,
             "rows": _slim_standings(rows), "meta": meta}
 
-@tool(description='Standings deep cuts: clutch records, comeback kings, blown leads, monthly momentum.')
-def get_standings_deep(season: str | None = None, top: int = 5) -> dict[str, Any]:
-    season = resolve_season(season)
-    from .. import store as _store
+_STANDINGS_DEEP_COLUMNS = (
+    'TeamCity, TeamName, WinPCT, '
+    '"ThreePTSOrLess", "AheadAtHalf", "BehindAtHalf", '
+    '"L10", "strCurrentStreak", '
+    '"Oct", "Nov", "Dec", "Jan", "Feb", "Mar", "Apr"')
 
-    season = str(season or "").strip() or resolve_season(None)
+_STANDINGS_DEEP_HIST_COLUMNS = (
+    "team_city, team_name, win_pct, "
+    "three_pts_or_less, ahead_at_half, behind_at_half, "
+    "l10, str_current_streak, "
+    "oct, nov, dec, jan, feb, mar, apr")
+
+_MONTH_NAMES = ["Oct", "Nov", "Dec", "Jan", "Feb", "Mar", "Apr"]
+
+def _standings_split(rec: object) -> tuple[int, int] | None:
     try:
-        top = max(1, min(int(top or 5), 15))
+        w, loss = str(rec or "").strip().split("-")
+        return int(w), int(loss)
     except (TypeError, ValueError):
-        top = 5
+        return None
 
-    def _split(rec: object) -> tuple[int, int] | None:
-        try:
-            w, loss = str(rec or "").strip().split("-")
-            return int(w), int(loss)
-        except (TypeError, ValueError):
-            return None
+def _standings_pct(w: int, loss: int) -> float:
+    return round(w / (w + loss), 3) if w + loss else 0.0
 
-    def _pct(w: int, loss: int) -> float:
-        return round(w / (w + loss), 3) if w + loss else 0.0
+def _standings_deep_query(con, season: str) -> list[tuple]:
+    tables = {r[0] for r in con.execute("SHOW TABLES").fetchall()}
+    if "silver_standings" in tables:
+        rows = con.execute(
+            f"SELECT {_STANDINGS_DEEP_COLUMNS} "
+            "FROM silver_standings WHERE _season = ?", [season]).fetchall()
+        if rows:
+            return rows
+    if "silver_hist_standings" in tables:
+        return con.execute(
+            f"SELECT {_STANDINGS_DEEP_HIST_COLUMNS} "
+            "FROM silver_hist_standings WHERE _season = ?", [season]).fetchall()
+    return []
 
-    con = _store.connect()
-    try:
-        tables = {r[0] for r in con.execute("SHOW TABLES").fetchall()}
-        if "silver_standings" not in tables:
-            return {"tool": "get_standings_deep", "ok": False,
-                    "error": "standings empty"}
-        if "silver_standings" in tables:
-            rows = con.execute(
-                """SELECT TeamCity, TeamName, WinPCT,
-                "ThreePTSOrLess", "AheadAtHalf", "BehindAtHalf",
-                "L10", "strCurrentStreak",
-                "Oct", "Nov", "Dec", "Jan", "Feb", "Mar", "Apr"
-                FROM silver_standings WHERE _season = ?""",
-                [season],
-            ).fetchall()
-        else:
-            rows = []
-        if not rows and "silver_hist_standings" in tables:
-
-            rows = con.execute(
-                """SELECT team_city, team_name, win_pct,
-                three_pts_or_less, ahead_at_half, behind_at_half,
-                l10, str_current_streak,
-                oct, nov, dec, jan, feb, mar, apr
-                FROM silver_hist_standings WHERE _season = ?""",
-                [season],
-            ).fetchall()
-    finally:
-        con.close()
-    if not rows:
-        return {"tool": "get_standings_deep", "ok": False,
-                "error": f"no standings for {season}"}
+def _standings_deep_teams(rows: list[tuple]) -> list[dict[str, Any]]:
     teams = []
     for city, name, winpct, clutch, ahead, behind, l10, streak, *months in rows:
-        label = f"{city or ''} {name or ''}".strip()
         teams.append({
-            "TEAM": label,
+            "TEAM": f"{city or ''} {name or ''}".strip(),
             "SEASON_PCT": round(float(winpct or 0), 3),
-            "clutch": _split(clutch),
-            "ahead": _split(ahead),
-            "behind": _split(behind),
+            "clutch": _standings_split(clutch),
+            "ahead": _standings_split(ahead),
+            "behind": _standings_split(behind),
             "L10": l10,
             "STREAK": streak,
             "months": months,
         })
-    clutch_rank = sorted(
-        ({"TEAM": t["TEAM"], "W": t["clutch"][0], "L": t["clutch"][1],
-          "PCT": _pct(*t["clutch"]), "RECORD": f"{t['clutch'][0]}-{t['clutch'][1]}"}
-         for t in teams if t["clutch"]),
-        key=lambda d: (d["PCT"], d["W"]), reverse=True,
+    return teams
+
+def _halftime_board(teams: list[dict[str, Any]], key: str,
+                    top: int, by_loss: bool) -> list[dict[str, Any]]:
+    board = sorted(
+        ({"TEAM": t["TEAM"], "W": t[key][0], "L": t[key][1],
+          "PCT": _standings_pct(*t[key])}
+         for t in teams if t[key]),
+        key=lambda d: d["L"] if by_loss else (d["W"], d["PCT"]),
+        reverse=True,
     )
-    comeback = sorted(
-        ({"TEAM": t["TEAM"], "W": t["behind"][0], "L": t["behind"][1],
-          "PCT": _pct(*t["behind"])}
-         for t in teams if t["behind"]),
-        key=lambda d: (d["W"], d["PCT"]), reverse=True,
-    )[:top]
-    blown = sorted(
-        ({"TEAM": t["TEAM"], "W": t["ahead"][0], "L": t["ahead"][1],
-          "PCT": _pct(*t["ahead"])}
-         for t in teams if t["ahead"]),
-        key=lambda d: d["L"], reverse=True,
-    )[:top]
-    month_names = ["Oct", "Nov", "Dec", "Jan", "Feb", "Mar", "Apr"]
+    return board[:top]
+
+def _standings_deep_months(teams: list[dict[str, Any]]) -> list[dict[str, Any]]:
     by_month = []
-    for i, month in enumerate(month_names):
+    for i, month in enumerate(_MONTH_NAMES):
         entries = []
         for t in teams:
-            parsed = _split(t["months"][i])
+            parsed = _standings_split(t["months"][i])
             if parsed and parsed[0] + parsed[1] >= 3:
                 entries.append((t["TEAM"], parsed[0], parsed[1],
-                                _pct(*parsed)))
+                                _standings_pct(*parsed)))
         if not entries:
             continue
         best = max(entries, key=lambda e: (e[3], e[1]))
@@ -274,35 +272,77 @@ def get_standings_deep(season: str | None = None, top: int = 5) -> dict[str, Any
                          "WORST_TEAM": worst[0],
                          "WORST_RECORD": f"{worst[1]}-{worst[2]}",
                          "WORST_PCT": worst[3]})
+    return by_month
+
+def _standings_deep_momentum(teams: list[dict[str, Any]]) -> list[dict[str, Any]]:
     momentum = []
     for t in teams:
-        mar = _split(t["months"][5])
-        apr = _split(t["months"][6])
+        mar = _standings_split(t["months"][5])
+        apr = _standings_split(t["months"][6])
         lw = (mar[0] if mar else 0) + (apr[0] if apr else 0)
         ll = (mar[1] if mar else 0) + (apr[1] if apr else 0)
         if lw + ll < 5:
             continue
-        late = _pct(lw, ll)
+        late = _standings_pct(lw, ll)
         momentum.append({"TEAM": t["TEAM"], "LATE": f"{lw}-{ll}",
                          "LATE_PCT": late, "SEASON_PCT": t["SEASON_PCT"],
                          "DELTA": round(late - t["SEASON_PCT"], 3),
                          "L10": t["L10"], "STREAK": t["STREAK"]})
     momentum.sort(key=lambda d: d["DELTA"], reverse=True)
+    return momentum
+
+def _standings_deep_comeback_leader(comeback: list[dict[str, Any]]) -> str:
+    if not comeback:
+        return ""
+    return (f"{comeback[0]['TEAM']} lead with "
+            f"{comeback[0]['W']} wins when trailing at halftime")
+
+@tool(description='Standings deep cuts: clutch records, comeback kings, blown leads, monthly momentum.')
+def get_standings_deep(season: str | None = None, top: int = 5) -> dict[str, Any]:
+    from .. import store as _store
+
+    season = str(resolve_season(season) or "").strip() or resolve_season(None)
+    try:
+        top = max(1, min(int(top or 5), 15))
+    except (TypeError, ValueError):
+        top = 5
+
+    con = _store.connect()
+    try:
+        if "silver_standings" not in {
+                r[0] for r in con.execute("SHOW TABLES").fetchall()}:
+            return {"tool": "get_standings_deep", "ok": False,
+                    "error": "standings empty"}
+        rows = _standings_deep_query(con, season)
+    finally:
+        con.close()
+    if not rows:
+        return {"tool": "get_standings_deep", "ok": False,
+                "error": f"no standings for {season}"}
+    teams = _standings_deep_teams(rows)
+    clutch_rank = sorted(
+        ({"TEAM": t["TEAM"], "W": t["clutch"][0], "L": t["clutch"][1],
+          "PCT": _standings_pct(*t["clutch"]),
+          "RECORD": f"{t['clutch'][0]}-{t['clutch'][1]}"}
+         for t in teams if t["clutch"]),
+        key=lambda d: (d["PCT"], d["W"]), reverse=True,
+    )
+    comeback = _halftime_board(teams, "behind", top, False)
+    blown = _halftime_board(teams, "ahead", top, True)
+    momentum = _standings_deep_momentum(teams)
     return {"tool": "get_standings_deep", "ok": True,
             "rows": {"clutch": clutch_rank[:top],
                      "clutch_cold": clutch_rank[-top:][::-1],
                      "comeback_kings": comeback,
                      "blown_leads": blown,
-                     "monthly": {"by_month": by_month,
+                     "monthly": {"by_month": _standings_deep_months(teams),
                                  "surging": momentum[:top],
                                  "fading": momentum[-top:][::-1]}},
             "meta": {"source": "warehouse", "season": season, "top": top,
                      "teams": len(teams),
 
-                     "comeback_leader": (
-                         f"{comeback[0]['TEAM']} lead with "
-                         f"{comeback[0]['W']} wins when trailing at "
-                         f"halftime" if comeback else ""),
+                     "comeback_leader": _standings_deep_comeback_leader(
+                         comeback),
                      "note": "comeback_kings and blown_leads use "
                              "behind/ahead-at-halftime records as the "
                              "proxy. Play-by-play in-game margin data "
@@ -324,6 +364,90 @@ def _rating_board_row(card: dict[str, Any], team_id: int,
         "PACE": round(card["pace"], 2),
     }
 
+_RATINGS_KEEP = ["TEAM_ID", "TEAM_NAME", "GP", "W", "L",
+                 "OFF_RATING", "DEF_RATING", "NET_RATING", "PACE",
+                 "TS_PCT", "TM_TOV_PCT",
+                 "OFF_RATING_RANK", "DEF_RATING_RANK", "NET_RATING_RANK",
+                 "TS_PCT_RANK", "TM_TOV_PCT_RANK"]
+
+def _ratings_live_read(season: str, live_on_static_miss: bool):
+    return _warehouse_or_live(
+        "silver_team_ratings", "_season = ?",
+        [season], lambda: nba_stats.team_ratings(season), season,
+        limit=30, live_on_static_miss=live_on_static_miss,
+    )
+
+def _ratings_offline_rows(season: str, teams_by_id: dict):
+    from .prediction import RATINGS_STORED, season_team_ratings
+
+    con = store.connect(read_only=True)
+    try:
+        ratings, offline = season_team_ratings(con, season)
+    finally:
+        con.close()
+    if offline is None:
+        return [], None, {}
+    rows = [_rating_board_row(card, tid, teams_by_id)
+            for tid, card in ratings.items()]
+    rows.sort(key=lambda row: row["NET_RATING"], reverse=True)
+    official = offline.kind == RATINGS_STORED
+    return rows, offline, {"source": offline.declared, "season": season,
+                           "rows": len(rows),
+                           "method": "official" if official else "derived",
+                           "method_kind": "official" if official else "derived",
+                           **store.warehouse_identity()}
+
+def _ratings_stored_meta(meta: dict) -> None:
+    meta.setdefault("method", "official")
+    meta.setdefault("method_kind", "official")
+
+def _ratings_leader_answer(leader: dict, metric: str, direction: str,
+                           season: str) -> str:
+    raw = float(leader[metric])
+    label = TEAM_RATING_METRICS[metric]["label"]
+    value = (f"{raw:.3f}"
+             if TEAM_RATING_METRICS[metric]["format"] == "decimal3"
+             else f"{raw:g}")
+    return (f"{leader.get('TEAM_NAME') or leader.get('TEAM')} had the "
+            f"{'lowest' if direction == 'asc' else 'highest'} "
+            f"{label} in {season}: {value}.")
+
+def _ratings_rank(slim: list[dict[str, Any]], metric: str, direction: str,
+                  meta: dict) -> list[dict[str, Any]]:
+    present = [r for r in slim if r.get(metric) is not None]
+    present.sort(key=lambda r: float(r[metric]),
+                 reverse=direction == "desc")
+    meta.update({"requested_metric": metric,
+                 "stat_category": metric,
+                 "ranking_direction": direction,
+                 "claim_value_field": metric,
+                 "claim_entity_field": "TEAM_NAME"})
+    return present
+
+def _ratings_team_scope(slim: list[dict[str, Any]], team: str,
+                        meta: dict) -> list[dict[str, Any]]:
+    want = str(team).strip().lower()
+    return [r for r in slim if (
+        want == str(r.get("TEAM") or "").lower()
+        or want in str(r.get("TEAM_NAME") or "").lower()
+        or str(r.get("TEAM_NAME") or "").lower() in want)]
+
+def _ratings_team_answer(row: dict, season: str) -> str:
+    return (f"{row.get('TEAM_NAME') or row.get('TEAM')} ratings, {season}: "
+            f"{row.get('OFF_RATING')} offense, {row.get('DEF_RATING')} "
+            f"defense, {row.get('NET_RATING'):+g} net, and "
+            f"{row.get('PACE')} pace. Record: {row.get('W')}-{row.get('L')}.")
+
+def _ratings_available_seasons() -> list[str]:
+    try:
+        from v2.adapters.coverage import parse_season_start
+        from v2.adapters.coverage import table_seasons
+        return sorted(
+            found for found in table_seasons("silver_team_ratings")
+            if parse_season_start(found) is not None)
+    except Exception:
+        return []
+
 @tool(description='Team ratings, optionally bound to one requested ranked metric.\n\nWhen ``requested_metric`` and ``ranking_direction`` are set, rows are\nordered by that metric field and the payload owns the leader claim.\n``team`` narrows a direct team-ratings question.')
 def get_ratings(
     season: str | None = None,
@@ -339,113 +463,53 @@ def get_ratings(
         RATINGS_STORED,
         RatingsSource,
         ratings_unavailable,
-        season_team_ratings,
     )
 
     teams_by_id = {int(t["id"]): t for t in _teams.get_teams()}
     abbrev = {tid: str(t.get("abbreviation") or "")
               for tid, t in teams_by_id.items()}
-    rows, meta = _warehouse_or_live(
-        "silver_team_ratings", "_season = ?",
-        [season], lambda: nba_stats.team_ratings(season), season,
-        limit=30,
-    )
+    rows, meta = _ratings_live_read(season, False)
     source: RatingsSource | None = None
     if rows:
-        meta.setdefault("method", "official")
-        meta.setdefault("method_kind", "official")
+        _ratings_stored_meta(meta)
         source = RatingsSource(RATINGS_STORED, "silver_team_ratings")
     else:
-        con = store.connect(read_only=True)
-        try:
-            ratings, offline = season_team_ratings(con, season)
-        finally:
-            con.close()
+        rows, offline, offline_meta = _ratings_offline_rows(season, teams_by_id)
         if offline is not None:
-            rows = [_rating_board_row(card, tid, teams_by_id)
-                    for tid, card in ratings.items()]
-            rows.sort(key=lambda row: row["NET_RATING"], reverse=True)
             source = offline
-            meta = {"source": offline.declared, "season": season,
-                    "rows": len(rows),
-                    "method": ("official" if offline.kind == RATINGS_STORED
-                               else "derived"),
-                    "method_kind": ("official" if offline.kind == RATINGS_STORED
-                                    else "derived"),
-                    **store.warehouse_identity()}
+            meta = offline_meta
     if source is None and season_static(season or ""):
-        rows, meta = _warehouse_or_live(
-            "silver_team_ratings", "_season = ?",
-            [season], lambda: nba_stats.team_ratings(season), season,
-            limit=30, live_on_static_miss=True,
-        )
+        rows, meta = _ratings_live_read(season, True)
         if rows:
             source = RatingsSource(RATINGS_LIVE,
                                    str(meta.get("source") or "live"))
     meta["ratings_provenance"] = source.kind if source else ""
     meta["ratings_source"] = source.table if source else ""
-    keep = ["TEAM_ID", "TEAM_NAME", "GP", "W", "L",
-            "OFF_RATING", "DEF_RATING", "NET_RATING", "PACE",
-            "TS_PCT", "TM_TOV_PCT",
-            "OFF_RATING_RANK", "DEF_RATING_RANK", "NET_RATING_RANK",
-            "TS_PCT_RANK", "TM_TOV_PCT_RANK"]
     slim = []
     for r in rows:
-        d = {k: r.get(k) for k in keep if k in r}
+        d = {k: r.get(k) for k in _RATINGS_KEEP if k in r}
         d["TEAM"] = abbrev.get(r.get("TEAM_ID"), str(r.get("TEAM_NAME") or ""))
         slim.append(d)
     metric = str(requested_metric or "").strip().upper()
     direction = str(ranking_direction or "").strip().lower()
-    allowed_metrics = TEAM_RATING_METRICS
     if metric:
-        if metric not in allowed_metrics:
+        if metric not in TEAM_RATING_METRICS:
             return {"tool": "get_ratings", "ok": False,
                     "error": f"unsupported requested_metric: {metric}"}
         if direction not in RANKING_DIRECTIONS:
             return {"tool": "get_ratings", "ok": False,
                     "error": "ranking_direction must be 'asc' or 'desc'"}
-        present = [r for r in slim if r.get(metric) is not None]
-        present.sort(key=lambda r: float(r[metric]),
-                     reverse=direction == "desc")
-        slim = present
-        meta.update({"requested_metric": metric,
-                     "stat_category": metric,
-                     "ranking_direction": direction,
-                     "claim_value_field": metric,
-                     "claim_entity_field": "TEAM_NAME"})
+        slim = _ratings_rank(slim, metric, direction, meta)
         if slim:
-            leader = slim[0]
-            raw = float(leader[metric])
-            label = TEAM_RATING_METRICS[metric]["label"]
-            value = (f"{raw:.3f}" if TEAM_RATING_METRICS[metric]["format"] == "decimal3"
-                     else f"{raw:g}")
-            meta["deterministic_answer"] = (
-                f"{leader.get('TEAM_NAME') or leader.get('TEAM')} had the "
-                f"{'lowest' if direction == 'asc' else 'highest'} "
-                f"{label} in {season}: {value}.")
+            meta["deterministic_answer"] = _ratings_leader_answer(
+                slim[0], metric, direction, season)
     if team:
-        want = str(team).strip().lower()
-        slim = [r for r in slim if (
-            want == str(r.get("TEAM") or "").lower()
-            or want in str(r.get("TEAM_NAME") or "").lower()
-            or str(r.get("TEAM_NAME") or "").lower() in want)]
+        slim = _ratings_team_scope(slim, team, meta)
         meta["team"] = team
         if slim and not metric:
-            r = slim[0]
-            meta["deterministic_answer"] = (
-                f"{r.get('TEAM_NAME') or r.get('TEAM')} ratings, {season}: "
-                f"{r.get('OFF_RATING')} offense, {r.get('DEF_RATING')} "
-                f"defense, {r.get('NET_RATING'):+g} net, and "
-                f"{r.get('PACE')} pace. Record: {r.get('W')}-{r.get('L')}.")
+            meta["deterministic_answer"] = _ratings_team_answer(slim[0], season)
     if not slim and season:
-        try:
-            from v2.adapters.coverage import parse_season_start
-            from v2.adapters.coverage import table_seasons
-            available = sorted(
-                found for found in table_seasons("silver_team_ratings")
-                if parse_season_start(found) is not None)
-        except Exception:
-            available = []
+        available = _ratings_available_seasons()
         if season not in available:
             ask = ratings_unavailable(season, available)
             return {"tool": "get_ratings", "ok": False, "rows": [],
@@ -736,11 +800,166 @@ def _clutch_player_teams(events: dict[str, list]) -> dict[tuple[str, str], str]:
     return {key: tally.most_common(1)[0][0] for key, tally in per.items()
             if tally}
 
+def _clutch_shot_slot(r: tuple) -> tuple[int, int, int, int, int, int, int]:
+    action = str(r[10])
+    pts, fgm, fg3m = _clutch_points(r[10], r[11], r[12], r[13], r[14])
+    fga = 1 if action in ("Made Shot", "Missed Shot") else 0
+    if action == "Missed Shot":
+        fgm = 0
+        fg3m = 0
+    fg3a = 1 if _clutch_int(r[13]) == 3 and fga else 0
+    ftm = fta = 0
+    if action == "Free Throw":
+        fta = 1
+        ftm = 1 if pts else 0
+    return pts, fgm, fga, fg3m, fg3a, ftm, fta
+
+def _clutch_slot_credit(slot: dict[str, Any], r: tuple) -> None:
+    pts, fgm, fga, fg3m, fg3a, ftm, fta = _clutch_shot_slot(r)
+    slot["pts"] += pts
+    slot["fgm"] += fgm
+    slot["fga"] += fga
+    slot["fg3m"] += fg3m
+    slot["fg3a"] += fg3a
+    slot["ftm"] += ftm
+    slot["fta"] += fta
+
+def _clutch_empty_slot(label: str, team: str) -> dict[str, Any]:
+    return {"label": label, "team": team, "gp_set": set(),
+            "w": 0, "l": 0, "pts": 0, "fgm": 0, "fga": 0,
+            "fg3m": 0, "fg3a": 0, "ftm": 0, "fta": 0}
+
+def _clutch_player_totals(events: dict[str, list], teams: dict, names_out: dict):
+    from .wpa import _display_name as _wpa_name
+
+    agg: dict[str, dict[str, Any]] = {}
+    game_of: dict[str, set[str]] = {}
+    for gid, evts in events.items():
+        for r, _ in evts:
+            pid = r[5]
+            if pid is None or pid == 0:
+                continue
+            key = str(pid)
+            tri = teams.get((gid, key), "")
+            if not tri and r[4]:
+                tri = str(r[4])
+            label = _wpa_name(pid, str(r[6] or key))
+            names_out[key] = label
+            if key not in agg:
+                agg[key] = _clutch_empty_slot(label, tri)
+            _clutch_slot_credit(agg[key], r)
+            game_of.setdefault(key, set()).add(gid)
+    return agg, game_of
+
+def _clutch_player_records(teams: dict, home_of: dict, finals: dict,
+                           events: dict[str, list]) -> tuple[dict, dict]:
+    won: dict[str, int] = {}
+    lost: dict[str, int] = {}
+    for (gid, key), tri in teams.items():
+        if gid not in events:
+            continue
+        home = home_of.get(gid)
+        final = finals.get(gid)
+        if home is None or final is None or not tri:
+            continue
+        if (final[0] > final[1]) == (tri == home):
+            won[key] = won.get(key, 0) + 1
+        else:
+            lost[key] = lost.get(key, 0) + 1
+    return won, lost
+
+def _clutch_shooting_row(fga: int, fgm: int, fg3a: int, fg3m: int) -> dict:
+    return {"FGA": fga, "FG_PCT": round(fgm / fga, 3) if fga else 0.0,
+            "FG3M": fg3m, "FG3A": fg3a,
+            "FG3_PCT": round(fg3m / fg3a, 3) if fg3a else 0.0}
+
+def _clutch_team_totals(events: dict[str, list], home_of: dict,
+                        finals: dict):
+    team_agg: dict[str, dict[str, Any]] = {}
+    team_games: dict[str, set[str]] = {}
+    team_wins: dict[str, int] = {}
+    team_losses: dict[str, int] = {}
+    for gid, evts in events.items():
+        seen: set[str] = set()
+        for r, _ in evts:
+            tri = str(r[4] or "")
+            if not tri:
+                continue
+            slot = team_agg.setdefault(
+                tri, {"pts": 0, "fgm": 0, "fga": 0, "fg3m": 0, "fg3a": 0,
+                      "ftm": 0, "fta": 0})
+            _clutch_slot_credit(slot, r)
+            seen.add(tri)
+        for tri in seen:
+            team_games.setdefault(tri, set()).add(gid)
+        _clutch_team_records(seen, home_of.get(gid), finals.get(gid),
+                             team_wins, team_losses)
+    return team_agg, team_games, team_wins, team_losses
+
+def _clutch_team_records(seen: set[str], home: str | None,
+                         final: tuple[int, int] | None,
+                         team_wins: dict[str, int],
+                         team_losses: dict[str, int]) -> None:
+    if home is None or final is None:
+        return
+    home_won = final[0] > final[1]
+    for tri in seen:
+        if (tri == home) == home_won:
+            team_wins[tri] = team_wins.get(tri, 0) + 1
+        else:
+            team_losses[tri] = team_losses.get(tri, 0) + 1
+
+def _clutch_players(agg: dict, game_of: dict, names: dict,
+                    won: dict, lost: dict) -> list[dict[str, Any]]:
+    players = []
+    for key, slot in agg.items():
+        players.append({
+            "PLAYER_ID": int(key) if key.isdigit() else key,
+            "PLAYER_NAME": names.get(key, slot["label"]),
+            "TEAM_ABBREVIATION": slot["team"],
+            "GP": len(game_of.get(key, set())),
+            "W": won.get(key, 0), "L": lost.get(key, 0),
+            "PTS": slot["pts"],
+            "FGM": slot["fgm"],
+            **_clutch_shooting_row(slot["fga"], slot["fgm"],
+                                   slot["fg3a"], slot["fg3m"]),
+            "FTM": slot["ftm"], "FTA": slot["fta"],
+            "PLUS_MINUS": None,
+        })
+    return players
+
+def _clutch_squads(team_agg: dict, team_games: dict, team_wins: dict,
+                   team_losses: dict) -> list[dict[str, Any]]:
+    squads = []
+    for tri, slot in team_agg.items():
+        squads.append({
+            "TEAM_ABBREVIATION": tri,
+            "GP": len(team_games.get(tri, set())),
+            "W": team_wins.get(tri, 0), "L": team_losses.get(tri, 0),
+            "PTS": slot["pts"],
+            "FGM": slot["fgm"],
+            **_clutch_shooting_row(slot["fga"], slot["fgm"],
+                                   slot["fg3a"], slot["fg3m"]),
+            "FTM": slot["ftm"], "FTA": slot["fta"],
+            "PLUS_MINUS": None,
+        })
+    return squads
+
+def _clutch_hist_meta(season: str, seconds: int, margin: int,
+                      season_type: str, games: int,
+                      scored: int) -> dict[str, Any]:
+    return {"source": "warehouse:silver_hist_pbp", "season": season,
+            "clutch_definition": {"seconds": seconds, "margin": margin,
+                                  "season_type": season_type},
+            "games": games, "clutch_events": scored,
+            "coverage": "clutch events use the score before each play; "
+                        "wins follow the final score of games with a clutch "
+                        "appearance; plus-minus needs on-court lineups and "
+                        "is not derivable from play-by-play"}
+
 def _derive_hist_clutch(season: str, scope: str, seconds: int, margin: int,
                         season_type: str) -> tuple[list | None, dict]:
-    from .wpa import _display_name as _wpa_name
-    prefixes = _clutch_prefixes(season_type)
-    rows = _clutch_pbp_rows(season, prefixes)
+    rows = _clutch_pbp_rows(season, _clutch_prefixes(season_type))
     if not rows:
         return None, {"source": "warehouse:silver_hist_pbp",
                       "season": season,
@@ -752,152 +971,39 @@ def _derive_hist_clutch(season: str, scope: str, seconds: int, margin: int,
                     "clutch_definition": {"seconds": seconds, "margin": margin,
                                           "season_type": season_type},
                     "games": 0, "clutch_events": 0}
+    if scope == "team":
+        team_agg, team_games, team_wins, team_losses = _clutch_team_totals(
+            events, home_of, finals)
+        meta = _clutch_hist_meta(season, seconds, margin, season_type,
+                                 len(events), scored)
+        return _clutch_squads(team_agg, team_games, team_wins,
+                              team_losses), meta
     teams = _clutch_player_teams(events)
     names: dict[str, str] = {}
-    agg: dict[str, dict[str, Any]] = {}
-    game_of: dict[str, set[str]] = {}
+    agg, game_of = _clutch_player_totals(events, teams, names)
+    won, lost = _clutch_player_records(teams, home_of, finals, events)
+    meta = _clutch_hist_meta(season, seconds, margin, season_type,
+                             len(events), scored)
+    return _clutch_players(agg, game_of, names, won, lost), meta
 
-    def _slot(key: str, label: str, team: str) -> dict[str, Any]:
-        slot = agg.get(key)
-        if slot is None:
-            slot = {"label": label, "team": team, "gp_set": set(),
-                    "w": 0, "l": 0, "pts": 0, "fgm": 0, "fga": 0,
-                    "fg3m": 0, "fg3a": 0, "ftm": 0, "fta": 0}
-            agg[key] = slot
-        return slot
-    for gid, evts in events.items():
-        home = home_of.get(gid)
-        final = finals.get(gid)
-        home_won: bool | None = None
-        if final is not None and home is not None:
-            home_won = final[0] > final[1]
-        for r, pending in evts:
-            pid = r[5]
-            if pid is None or pid == 0:
-                continue
-            key = str(pid)
-            tri = teams.get((gid, key), "")
-            if not tri and r[4]:
-                tri = str(r[4])
-            label = _wpa_name(pid, str(r[6] or key))
-            names[key] = label
-            slot = _slot(key, label, tri)
-            pts, fgm, fg3m = _clutch_points(r[10], r[11], r[12], r[13], r[14])
-            fga = 1 if str(r[10]) in ("Made Shot", "Missed Shot") else 0
-            if str(r[10]) == "Missed Shot":
-                fgm = 0
-                fg3m = 0
-            fg3a = fga if _clutch_int(r[13]) == 3 and fga else 0
-            slot["pts"] += pts
-            slot["fgm"] += fgm
-            slot["fga"] += fga
-            slot["fg3m"] += fg3m
-            slot["fg3a"] += fg3a
-            if str(r[10]) == "Free Throw":
-                slot["fta"] += 1
-                if pts:
-                    slot["ftm"] += 1
-            game_of.setdefault(key, set()).add(gid)
-    won: dict[str, int] = {}
-    lost: dict[str, int] = {}
-    for (gid, key), tri in teams.items():
-        if gid not in events:
-            continue
-        home = home_of.get(gid)
-        final = finals.get(gid)
-        if home is None or final is None or not tri:
-            continue
-        is_home = tri == home
-        home_won = final[0] > final[1]
-        if home_won == is_home:
-            won[key] = won.get(key, 0) + 1
-        else:
-            lost[key] = lost.get(key, 0) + 1
-    players = []
-    for key, slot in agg.items():
-        fga = slot["fga"]
-        fg3a = slot["fg3a"]
-        players.append({
-            "PLAYER_ID": int(key) if key.isdigit() else key,
-            "PLAYER_NAME": names.get(key, slot["label"]),
-            "TEAM_ABBREVIATION": slot["team"],
-            "GP": len(game_of.get(key, set())),
-            "W": won.get(key, 0), "L": lost.get(key, 0),
-            "PTS": slot["pts"],
-            "FGM": slot["fgm"], "FGA": fga,
-            "FG_PCT": round(slot["fgm"] / fga, 3) if fga else 0.0,
-            "FG3M": slot["fg3m"], "FG3A": fg3a,
-            "FG3_PCT": round(slot["fg3m"] / fg3a, 3) if fg3a else 0.0,
-            "FTM": slot["ftm"], "FTA": slot["fta"],
-            "PLUS_MINUS": None,
-        })
-    team_agg: dict[str, dict[str, Any]] = {}
-    team_games: dict[str, set[str]] = {}
-    team_wins: dict[str, int] = {}
-    team_losses: dict[str, int] = {}
-    for gid, evts in events.items():
-        home = home_of.get(gid)
-        final = finals.get(gid)
-        seen: set[str] = set()
-        for r, _ in evts:
-            tri = str(r[4] or "")
-            if not tri:
-                continue
-            slot = team_agg.setdefault(tri, {"pts": 0, "fgm": 0, "fga": 0,
-                                             "fg3m": 0, "fg3a": 0,
-                                             "ftm": 0, "fta": 0})
-            pts, fgm, fg3m = _clutch_points(r[10], r[11], r[12], r[13], r[14])
-            fga = 1 if str(r[10]) in ("Made Shot", "Missed Shot") else 0
-            if str(r[10]) == "Missed Shot":
-                fgm = 0
-                fg3m = 0
-            slot["pts"] += pts
-            slot["fgm"] += fgm
-            slot["fga"] += fga
-            slot["fg3m"] += fg3m
-            if _clutch_int(r[13]) == 3 and fga:
-                slot["fg3a"] += 1
-            if str(r[10]) == "Free Throw":
-                slot["fta"] += 1
-                if pts:
-                    slot["ftm"] += 1
-            seen.add(tri)
-        for tri in seen:
-            team_games.setdefault(tri, set()).add(gid)
-        if home is not None and final is not None:
-            home_won = final[0] > final[1]
-            for tri in seen:
-                if (tri == home) == home_won:
-                    team_wins[tri] = team_wins.get(tri, 0) + 1
-                else:
-                    team_losses[tri] = team_losses.get(tri, 0) + 1
-    squads = []
-    for tri, slot in team_agg.items():
-        fga = slot["fga"]
-        fg3a = slot["fg3a"]
-        squads.append({
-            "TEAM_ABBREVIATION": tri,
-            "GP": len(team_games.get(tri, set())),
-            "W": team_wins.get(tri, 0), "L": team_losses.get(tri, 0),
-            "PTS": slot["pts"],
-            "FGM": slot["fgm"], "FGA": fga,
-            "FG_PCT": round(slot["fgm"] / fga, 3) if fga else 0.0,
-            "FG3M": slot["fg3m"], "FG3A": fg3a,
-            "FG3_PCT": round(slot["fg3m"] / fg3a, 3) if fg3a else 0.0,
-            "FTM": slot["ftm"], "FTA": slot["fta"],
-            "PLUS_MINUS": None,
-        })
-    meta = {"source": "warehouse:silver_hist_pbp", "season": season,
-            "clutch_definition": {"seconds": seconds, "margin": margin,
-                                 "season_type": season_type},
-            "games": len(events), "clutch_events": scored,
-            "coverage": "clutch events use the score before each play; "
-                        "wins follow the final score of games with a clutch "
-                        "appearance; plus-minus needs on-court lineups and "
-                        "is not derivable from play-by-play"}
-    if scope == "team":
-        return squads, meta
-    return players, meta
+def _clutch_row_common(row: dict[str, Any]) -> dict[str, Any]:
+    return {"GP": row.get("GP"), "W": row.get("W"), "L": row.get("L"),
+            "PTS": row.get("PTS"), "FG_PCT": row.get("FG_PCT"),
+            "FG3_PCT": row.get("FG3_PCT"), "PLUS_MINUS": row.get("PLUS_MINUS")}
+
+def _clutch_player_row(row: dict[str, Any]) -> dict[str, Any]:
+    return {"PLAYER_ID": row.get("PLAYER_ID"),
+            "PLAYER_NAME": row.get("PLAYER_NAME"),
+            **_clutch_row_common(row)}
+
+def _clutch_team_row(row: dict[str, Any]) -> dict[str, Any]:
+    return {"TEAM_ABBREVIATION": row.get("TEAM_ABBREVIATION"),
+            **_clutch_row_common(row)}
+
+def _clutch_slim(scope: str, rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    shape = _clutch_team_row if scope == "team" else _clutch_player_row
+    return sorted((shape(r) for r in rows),
+                  key=lambda d: (d.get("PTS") or 0), reverse=True)
 
 def _clutch_team_abbr(value: object) -> str | None:
     raw = str(value or "").strip()
@@ -960,22 +1066,8 @@ def get_clutch(scope: str = "player", season: str | None = None,
             derived = [r for r in derived
                        if str(r.get("PLAYER_NAME") or "").strip().lower()
                        == want]
-        slim = sorted(
-            ({"PLAYER_ID": r.get("PLAYER_ID"),
-              "PLAYER_NAME": r.get("PLAYER_NAME"), "GP": r.get("GP"),
-              "W": r.get("W"), "L": r.get("L"), "PTS": r.get("PTS"),
-              "FG_PCT": r.get("FG_PCT"), "FG3_PCT": r.get("FG3_PCT"),
-              "PLUS_MINUS": r.get("PLUS_MINUS")} if scope == "player"
-             else {"TEAM_ABBREVIATION": r.get("TEAM_ABBREVIATION"),
-                   "GP": r.get("GP"), "W": r.get("W"), "L": r.get("L"),
-                   "PTS": r.get("PTS"), "FG_PCT": r.get("FG_PCT"),
-                   "FG3_PCT": r.get("FG3_PCT"),
-                   "PLUS_MINUS": r.get("PLUS_MINUS")}
-             for r in derived),
-            key=lambda d: (d.get("PTS") or 0), reverse=True,
-        )
-        return {"tool": "get_clutch", "ok": True, "rows": slim[:30],
-                "meta": meta}
+        return {"tool": "get_clutch", "ok": True,
+                "rows": _clutch_slim(scope, derived)[:30], "meta": meta}
     if not standard:
         return {
             "tool": "get_clutch", "ok": False, "rows": [],
@@ -1003,7 +1095,6 @@ def get_clutch(scope: str = "player", season: str | None = None,
                       "player clutch wins and losses cannot be aggregated"),
             "meta": meta,
         }
-    name_col = "TEAM_ABBREVIATION" if scope == "team" else "PLAYER_NAME"
     if player and scope == "player":
         _want = str(player).strip().lower()
         rows = [r for r in rows
@@ -1011,18 +1102,7 @@ def get_clutch(scope: str = "player", season: str | None = None,
     if warnings:
         meta = dict(meta)
         meta["warning"] = "; ".join(warnings)
-    slim = sorted(
-        ({"PLAYER_ID": r.get("PLAYER_ID"), name_col: r.get(name_col),
-          "GP": r.get("GP"), "W": r.get("W"),
-          "L": r.get("L"), "PTS": r.get("PTS"),
-          "FG_PCT": r.get("FG_PCT"), "FG3_PCT": r.get("FG3_PCT"),
-          "PLUS_MINUS": r.get("PLUS_MINUS")} if scope == "player"
-         else {name_col: r.get(name_col), "GP": r.get("GP"), "W": r.get("W"),
-          "L": r.get("L"), "PTS": r.get("PTS"),
-          "FG_PCT": r.get("FG_PCT"), "FG3_PCT": r.get("FG3_PCT"),
-          "PLUS_MINUS": r.get("PLUS_MINUS")} for r in rows),
-        key=lambda d: (d.get("PTS") or 0), reverse=True,
-    )
+    slim = _clutch_slim(scope, rows)
     if not slim and year is not None and year < _CLUTCH_PBP_FIRST:
         return {"tool": "get_clutch", "ok": False, "rows": [],
                 "error": (f"no clutch coverage for season {season}; "
@@ -1056,6 +1136,82 @@ def _split_finalize(bucket: dict[str, Any]) -> None:
     bucket["FG_PCT"] = round(bucket["FGM"] / fga, 3) if fga else 0.0
     bucket["FG3_PCT"] = round(bucket["FG3M"] / fg3a, 3) if fg3a else 0.0
 
+_SPLIT_ORDER = ["overall", "ahead", "tied", "behind", "home", "away"]
+
+def _split_definition(seconds: int, margin: int, stype: str) -> dict[str, Any]:
+    return {"seconds": seconds, "margin": margin, "season_type": stype}
+
+def _split_failure(season: str, error: str,
+                   definition: dict[str, Any] | None = None) -> dict[str, Any]:
+    meta: dict[str, Any] = {"season": season}
+    if definition is not None:
+        meta["clutch_definition"] = definition
+    return {"tool": "get_situational_splits", "ok": False, "rows": {},
+            "error": error, "meta": meta}
+
+def _split_entity_id(scope: str, name: str) -> tuple[int | None, str | None]:
+    if scope != "player":
+        abbr = _clutch_team_abbr(name)
+        return None, (None if abbr is None else abbr)
+    from ._core import coerce_player_id as _cpid
+    return _cpid(name), None
+
+def _split_event_tricode(scope: str, r: tuple, gid: str, home: str | None,
+                         pid: int | None, abbr: str | None,
+                         fallbacks: dict) -> str | None:
+    if scope == "player":
+        try:
+            if pid is None or int(r[5] or 0) != pid:
+                return None
+        except (TypeError, ValueError):
+            return None
+        return str(r[4] or "") or fallbacks.get((gid, str(pid)), "")
+    tri_raw = _CLUTCH_PBP_ALIAS.get(str(r[4] or ""), str(r[4] or ""))
+    return None if tri_raw != abbr else tri_raw
+
+def _split_credit_event(buckets: dict[str, Any], state: str,
+                        is_home: bool, r: tuple) -> None:
+    pts, fgm, fga, fg3m, fg3a, ftm, fta = _clutch_shot_slot(r)
+    for label in ("overall", state, "home" if is_home else "away"):
+        _split_credit(buckets[label], pts, fgm, fga, fg3m, fg3a, ftm, fta)
+
+def _split_events(scope: str, events: dict[str, list], home_of: dict,
+                  pid: int | None, abbr: str | None,
+                  fallbacks: dict) -> tuple[dict[str, Any], set[str], str]:
+    from .wpa import _display_name as _wpa_name
+
+    buckets = {label: _split_bucket(label) for label in _SPLIT_ORDER}
+    games: set[str] = set()
+    resolved = ""
+    for gid, evts in events.items():
+        home = home_of.get(gid)
+        for r, pending in evts:
+            tri_raw = _split_event_tricode(scope, r, gid, home, pid, abbr,
+                                           fallbacks)
+            if tri_raw is None:
+                continue
+            if scope == "player" and r[6]:
+                resolved = _wpa_name(pid, str(r[6]))
+            is_home = _clutch_is_home(r[7], tri_raw, str(home or ""))
+            if is_home is None:
+                continue
+            signed = pending[0] - pending[1]
+            if not is_home:
+                signed = -signed
+            games.add(gid)
+            _split_credit_event(buckets, _clutch_state(signed), is_home, r)
+    return buckets, games, resolved
+
+def _split_rows_out(scope: str, name: str, resolved: str, pid: int | None,
+                    abbr: str | None, season: str,
+                    buckets: dict[str, Any]) -> dict[str, Any]:
+    if scope == "player":
+        return {"player": resolved or name, "player_id": pid,
+                "season": season,
+                "splits": [buckets[label] for label in _SPLIT_ORDER]}
+    return {"team": abbr, "season": season,
+            "splits": [buckets[label] for label in _SPLIT_ORDER]}
+
 @tool(description='Clutch situational splits for one player or team: score state plus venue.')
 def get_situational_splits(scope: str = "player", entity: str = "",
                             season: str | None = None,
@@ -1070,125 +1226,53 @@ def get_situational_splits(scope: str = "player", entity: str = "",
     stype, stype_warning = _clutch_season_type_of(season_type)
     warnings = [w for w in
                 (seconds_warning, margin_warning, stype_warning) if w]
+    definition = _split_definition(seconds, margin, stype)
     year = _clutch_end_year(season)
     if year is None or not (_CLUTCH_PBP_FIRST <= year <= _CLUTCH_PBP_LAST):
-        return {
-            "tool": "get_situational_splits", "ok": False, "rows": {},
-            "error": (f"no play-by-play coverage for season {season}; "
-                      f"situational splits cover "
-                      f"{_CLUTCH_PBP_FIRST - 1}-"
-                      f"{str(_CLUTCH_PBP_FIRST)[-2:]} through "
-                      f"{_CLUTCH_PBP_LAST - 1}-"
-                      f"{str(_CLUTCH_PBP_LAST)[-2:]} only"),
-            "meta": {"season": season,
-                     "clutch_definition": {"seconds": seconds,
-                                          "margin": margin,
-                                          "season_type": stype}},
-        }
+        return _split_failure(
+            season,
+            (f"no play-by-play coverage for season {season}; "
+             f"situational splits cover "
+             f"{_CLUTCH_PBP_FIRST - 1}-"
+             f"{str(_CLUTCH_PBP_FIRST)[-2:]} through "
+             f"{_CLUTCH_PBP_LAST - 1}-"
+             f"{str(_CLUTCH_PBP_LAST)[-2:]} only"),
+            definition)
     name = str(entity or "").strip()
     if not name:
-        return {"tool": "get_situational_splits", "ok": False, "rows": {},
-                "error": "pass one player or team entity",
-                "meta": {"season": season}}
-    pid: int | None = None
-    abbr: str | None = None
-    if scope == "player":
-        from ._core import coerce_player_id as _cpid
-        try:
-            pid = _cpid(name)
-        except ValueError as exc:
-            return {"tool": "get_situational_splits", "ok": False,
-                    "rows": {}, "error": str(exc)[:160],
-                    "meta": {"season": season}}
-    else:
-        abbr = _clutch_team_abbr(name)
-        if abbr is None:
-            return {"tool": "get_situational_splits", "ok": False,
-                    "rows": {}, "error": f"unknown team: {name}",
-                    "meta": {"season": season}}
-    prefixes = _clutch_prefixes(stype)
-    rows = _clutch_pbp_rows(season, prefixes)
+        return _split_failure(season, "pass one player or team entity")
+    try:
+        pid, abbr = _split_entity_id(scope, name)
+    except ValueError as exc:
+        return _split_failure(season, str(exc)[:160])
+    if abbr is None and scope != "player":
+        return _split_failure(season, f"unknown team: {name}")
+    rows = _clutch_pbp_rows(season, _clutch_prefixes(stype))
     home_of = _clutch_home_of(rows)
     events, _, _, scored = _clutch_fold(rows, home_of, seconds, margin)
     fallbacks = _clutch_player_teams(events) if scope == "player" else {}
-    buckets = {label: _split_bucket(label) for label in
-               ("overall", "ahead", "tied", "behind", "home", "away")}
-    games: set[str] = set()
-    resolved = name
-    for gid, evts in events.items():
-        home = home_of.get(gid)
-        for r, pending in evts:
-            if scope == "player":
-                try:
-                    match = pid is not None and int(r[5] or 0) == pid
-                except (TypeError, ValueError):
-                    match = False
-                if not match:
-                    continue
-                if r[6]:
-                    from .wpa import _display_name as _wpa_name
-                    resolved = _wpa_name(pid, str(r[6]))
-                tri_raw = str(r[4] or "") or fallbacks.get(
-                    (gid, str(pid)), "")
-            else:
-                tri_raw = _CLUTCH_PBP_ALIAS.get(str(r[4] or ""),
-                                                str(r[4] or ""))
-                if tri_raw != abbr:
-                    continue
-            is_home = _clutch_is_home(r[7], tri_raw, str(home or ""))
-            if is_home is None:
-                continue
-            signed = pending[0] - pending[1]
-            if not is_home:
-                signed = -signed
-            state = _clutch_state(signed)
-            pts, fgm, fg3m = _clutch_points(r[10], r[11], r[12], r[13],
-                                            r[14])
-            fga = 1 if str(r[10]) in ("Made Shot", "Missed Shot") else 0
-            if str(r[10]) == "Missed Shot":
-                fgm = 0
-                fg3m = 0
-            fg3a = 1 if _clutch_int(r[13]) == 3 and fga else 0
-            ftm = fta = 0
-            if str(r[10]) == "Free Throw":
-                fta = 1
-                ftm = 1 if pts else 0
-            games.add(gid)
-            for label in ("overall", state,
-                          "home" if is_home else "away"):
-                _split_credit(buckets[label], pts, fgm, fga, fg3m, fg3a,
-                              ftm, fta)
+    buckets, games, resolved = _split_events(scope, events, home_of, pid,
+                                             abbr, fallbacks)
     for bucket in buckets.values():
         _split_finalize(bucket)
     buckets["overall"]["GP"] = len(games)
     if not games:
-        return {"tool": "get_situational_splits", "ok": False, "rows": {},
-                "error": f"no clutch appearances for {name} in {season}",
-                "meta": {"season": season,
-                         "clutch_definition": {"seconds": seconds,
-                                              "margin": margin,
-                                              "season_type": stype}}}
-    order = ["overall", "ahead", "tied", "behind", "home", "away"]
+        return _split_failure(
+            season, f"no clutch appearances for {name} in {season}",
+            definition)
     meta: dict[str, Any] = {
         "source": "warehouse:silver_hist_pbp", "season": season,
-        "clutch_definition": {"seconds": seconds, "margin": margin,
-                             "season_type": stype},
+        "clutch_definition": definition,
         "clutch_events": scored,
         "state_rule": "score state from the entity side at each play, "
                       "using the score before the play",
     }
     if warnings:
         meta["warning"] = "; ".join(warnings)
-    if scope == "player":
-        rows_out: dict[str, Any] = {"player": resolved, "player_id": pid,
-                                    "season": season,
-                                    "splits": [buckets[label]
-                                               for label in order]}
-    else:
-        rows_out = {"team": abbr, "season": season,
-                    "splits": [buckets[label] for label in order]}
     return {"tool": "get_situational_splits", "ok": True,
-            "rows": rows_out, "meta": meta}
+            "rows": _split_rows_out(scope, name, resolved, pid, abbr, season,
+                                    buckets),
+            "meta": meta}
 
 def _finals_game_scores(finals: list[dict[str, Any]],
                         season: str) -> dict[str, dict[str, int]]:
@@ -1227,14 +1311,125 @@ def _finals_game_scores(finals: list[dict[str, Any]],
             out.setdefault(iso, {})[str(team)] = int(pts or 0)
     return out
 
-@tool(description='Playoff wins per team plus champion for one season.')
-def get_playoffs(season: str | None = None) -> dict[str, Any]:
-    season = resolve_season(season)
-    rows, meta = _warehouse_or_live(
-        "silver_playoffs", "_season = ?",
-        [season], lambda: nba_stats.playoff_results(season), season,
-        limit=600,
-    )
+def _playoff_home_team(matchup: str) -> str:
+    if " @ " in matchup:
+        return matchup.split(" @ ")[1].strip()
+    if " vs. " in matchup:
+        return matchup.split(" vs. ")[0].strip()
+    return ""
+
+def _playoff_finals_game(g: dict, ta: str, tb: str,
+                         scores: dict) -> dict[str, Any]:
+    matchup = str(g.get("MATCHUP"))
+    game = {"game_id": str(g.get("GAME_ID")),
+            "date": str(g.get("GAME_DATE")),
+            "matchup": matchup,
+            "home": _playoff_home_team(matchup),
+            "winner": (ta if g.get("WL") == "W" else tb)}
+    sc = scores.get(str(g.get("GAME_DATE")) or "")
+    if sc:
+        game["score"] = sc
+        game["scoreline"] = ", ".join(
+            f"{t} {sc[t]}" for t in (ta, tb) if t in sc)
+    return game
+
+def _playoff_finals_games(finals: list[dict[str, Any]], ta: str, tb: str,
+                          scores: dict) -> list[dict[str, Any]]:
+    return [_playoff_finals_game(g, ta, tb, scores) for g in finals
+            if str(g.get("TEAM_ABBREVIATION")) == ta]
+
+def _playoff_finals_wins(finals: list[dict[str, Any]]) -> dict[str, int]:
+    fwins: dict[str, int] = {}
+    for r in finals:
+        t = str(r.get("TEAM_ABBREVIATION") or "")
+        if r.get("WL") == "W":
+            fwins[t] = fwins.get(t, 0) + 1
+    return fwins
+
+def _playoff_finals_rows(finals: list[dict[str, Any]], fteams: list[str],
+                         season: str) -> dict[str, Any] | None:
+    if len(fteams) != 2:
+        return None
+    ta, tb = fteams[0], fteams[1]
+    fwins = _playoff_finals_wins(finals)
+    return {
+        "round": "NBA Finals",
+        "teams": [ta, tb],
+        "series_score": (f"{ta} {fwins.get(ta, 0)} - "
+                         f"{fwins.get(tb, 0)} {tb}"),
+        "winner": max(fwins, key=fwins.get) if fwins else "",
+        "games": _playoff_finals_games(
+            finals, ta, tb, _finals_game_scores(finals, season)),
+    }
+
+def _playoff_finals_dates(finals: list[dict[str, Any]]) -> set[str]:
+    from datetime import datetime as _dt
+
+    fdates = set()
+    for g in finals:
+        try:
+            fdates.add(_dt.strptime(
+                str(g.get("GAME_DATE")), "%Y-%m-%d"
+            ).strftime("%b %-d, %Y"))
+        except (TypeError, ValueError):
+            pass
+    return fdates
+
+def _playoff_finals_leader(season: str, fdates: set[str]):
+    from .. import store as _store
+
+    con = _store.connect(read_only=True)
+    try:
+        ph = ",".join("?" * len(fdates))
+        row = con.execute(
+            f"SELECT _entity, COUNT(*), ROUND(AVG(PTS), 1) FROM "
+            f"silver_playoff_gamelogs WHERE _season = ? "
+            f"AND GAME_DATE IN ({ph}) GROUP BY 1 "
+            f"ORDER BY 3 DESC LIMIT 1",
+            [season, *sorted(fdates)]).fetchone()
+        if not row or not row[1]:
+            return None
+        pid = str(row[0]).replace("player:", "")
+        named = con.execute(
+            "SELECT DISTINCT PLAYER FROM silver_leaders_pts WHERE "
+            "CAST(PLAYER_ID AS VARCHAR) = ?", [pid]).fetchone()
+        return (named[0] if named else pid), row[2], len(fdates)
+    finally:
+        con.close()
+
+def _playoff_finals_mvp_note(finals: dict[str, Any], rows: list[dict],
+                             season: str) -> None:
+    try:
+        fdates = _playoff_finals_dates(rows)
+        if not fdates:
+            return
+        leader = _playoff_finals_leader(season, fdates)
+        if leader is None:
+            return
+        name, ppg, game_count = leader
+        finals["finals_mvp_note"] = (
+            "The Finals MVP award is not recorded in "
+            "this dataset. The leading Finals scorer "
+            f"was {name} at {ppg} points per "
+            f"game over the {game_count}-game series.")
+    except Exception:
+        pass
+
+def _playoff_finals_answer(fin: dict[str, Any], season: str) -> str:
+    from nba_api.stats.static import teams as _static
+
+    names = {t["abbreviation"]: t["full_name"] for t in _static.get_teams()}
+    winner = fin["winner"]
+    loser = next((t for t in fin.get("teams", []) if t != winner), "")
+    games = fin.get("games", [])
+    won = sum(1 for g in games if g.get("winner") == winner)
+    lost = (len(games) or 0) - won
+    year = season.split("-")[0]
+    year = str(int(year) + 1) if year.isdigit() else season
+    return (f"The {names.get(winner, winner)} won the {year} NBA Finals, "
+            f"beating the {names.get(loser, loser)} {won}-{lost}.")
+
+def _playoff_wins_rows(rows: list[dict[str, Any]]) -> tuple[dict, dict, int]:
     wins: dict[str, int] = {}
     losses: dict[str, int] = {}
     games = 0
@@ -1247,6 +1442,17 @@ def get_playoffs(season: str | None = None) -> dict[str, Any]:
             wins[team] = wins.get(team, 0) + 1
         else:
             losses[team] = losses.get(team, 0) + 1
+    return wins, losses, games
+
+@tool(description='Playoff wins per team plus champion for one season.')
+def get_playoffs(season: str | None = None) -> dict[str, Any]:
+    season = resolve_season(season)
+    rows, meta = _warehouse_or_live(
+        "silver_playoffs", "_season = ?",
+        [season], lambda: nba_stats.playoff_results(season), season,
+        limit=600,
+    )
+    wins, losses, games = _playoff_wins_rows(rows)
     if not rows and meta.get("error"):
 
         return {"tool": "get_playoffs", "ok": False,
@@ -1262,93 +1468,14 @@ def get_playoffs(season: str | None = None) -> dict[str, Any]:
                      for t, w in table[:16]],
             "games_total": games // 2}
 
-    finals = [r for r in rows if str(r.get("GAME_ID") or "")[7:8] == "4"]
-    if finals:
+    finals_rows = [r for r in rows if str(r.get("GAME_ID") or "")[7:8] == "4"]
+    if finals_rows:
         fteams = sorted({str(r.get("TEAM_ABBREVIATION") or "")
-                         for r in finals} - {""})
-        fwins: dict[str, int] = {}
-        for r in finals:
-            t = str(r.get("TEAM_ABBREVIATION") or "")
-            if r.get("WL") == "W":
-                fwins[t] = fwins.get(t, 0) + 1
-        if len(fteams) == 2:
-            ta, tb = fteams[0], fteams[1]
-
-            _scores = _finals_game_scores(finals, season)
-            games_out = []
-            for g in finals:
-                if str(g.get("TEAM_ABBREVIATION")) != ta:
-                    continue
-                matchup = str(g.get("MATCHUP"))
-                if " @ " in matchup:
-                    home = matchup.split(" @ ")[1].strip()
-                elif " vs. " in matchup:
-                    home = matchup.split(" vs. ")[0].strip()
-                else:
-                    home = ""
-                game = {"game_id": str(g.get("GAME_ID")),
-                        "date": str(g.get("GAME_DATE")),
-                        "matchup": matchup,
-                        "home": home,
-                        "winner": (ta if g.get("WL") == "W"
-                                   else tb)}
-                sc = _scores.get(str(g.get("GAME_DATE")) or "")
-                if sc:
-                    game["score"] = sc
-                    game["scoreline"] = ", ".join(
-                        f"{t} {sc[t]}" for t in (ta, tb) if t in sc)
-                games_out.append(game)
-            rows_out["finals"] = {
-                "round": "NBA Finals",
-                "teams": [ta, tb],
-                "series_score": (f"{ta} {fwins.get(ta, 0)} - "
-                                 f"{fwins.get(tb, 0)} {tb}"),
-                "winner": max(fwins, key=fwins.get) if fwins else "",
-                "games": games_out,
-            }
-
-            try:
-                from datetime import datetime as _dt
-
-                fdates = set()
-                for g in finals:
-                    try:
-                        fdates.add(_dt.strptime(
-                            str(g.get("GAME_DATE")), "%Y-%m-%d"
-                        ).strftime("%b %-d, %Y"))
-                    except (TypeError, ValueError):
-                        pass
-                if fdates:
-                    from .. import store as _store
-
-                    _con = _store.connect(read_only=True)
-                    try:
-                        _ph = ",".join("?" * len(fdates))
-                        _sc = _con.execute(
-                            f"SELECT _entity, COUNT(*), "
-                            f"ROUND(AVG(PTS), 1) FROM "
-                            f"silver_playoff_gamelogs WHERE _season = ? "
-                            f"AND GAME_DATE IN ({_ph}) GROUP BY 1 "
-                            f"ORDER BY 3 DESC LIMIT 1",
-                            [season, *sorted(fdates)]).fetchone()
-                        if _sc and _sc[1]:
-                            _pid = str(_sc[0]).replace("player:", "")
-                            _nm = _con.execute(
-                                "SELECT DISTINCT PLAYER FROM "
-                                "silver_leaders_pts WHERE "
-                                "CAST(PLAYER_ID AS VARCHAR) = ?",
-                                [_pid]).fetchone()
-                            _name = _nm[0] if _nm else _pid
-                            rows_out["finals"]["finals_mvp_note"] = (
-                                "The Finals MVP award is not recorded in "
-                                "this dataset. The leading Finals scorer "
-                                f"was {_name} at {_sc[2]} points per "
-                                f"game over the {len(fdates)}-game "
-                                "series.")
-                    finally:
-                        _con.close()
-            except Exception:
-                pass
+                         for r in finals_rows} - {""})
+        finals = _playoff_finals_rows(finals_rows, fteams, season)
+        if finals is not None:
+            rows_out["finals"] = finals
+            _playoff_finals_mvp_note(finals, finals_rows, season)
     from ._core import season_static as _season_static
     if _season_static(season):
 
@@ -1360,25 +1487,10 @@ def get_playoffs(season: str | None = None) -> dict[str, Any]:
               "If the ask was to simulate, say simulated odds are "
               "unavailable for a completed season.")
 
-    _fin = rows_out.get("finals")
-    if isinstance(_fin, dict) and _fin.get("winner"):
+    fin = rows_out.get("finals")
+    if isinstance(fin, dict) and fin.get("winner"):
         try:
-            from nba_api.stats.static import teams as _static
-            _name = {t["abbreviation"]: t["full_name"]
-                     for t in _static.get_teams()}
-            _w = _fin["winner"]
-            _l = next((t for t in _fin.get("teams", []) if t != _w), "")
-            _wt = _name.get(_w, _w)
-            _lt = _name.get(_l, _l)
-            _ww = sum(1 for g in _fin.get("games", [])
-                      if g.get("winner") == _w)
-            _tot = len(_fin.get("games", [])) or 0
-            _lw = _tot - _ww
-            _yr = season.split("-")[0]
-            _yr = str(int(_yr) + 1) if _yr.isdigit() else season
-            meta["deterministic_answer"] = (
-                f"The {_wt} won the {_yr} NBA Finals, beating the "
-                f"{_lt} {_ww}-{_lw}.")
+            meta["deterministic_answer"] = _playoff_finals_answer(fin, season)
         except Exception:
             pass
     return {"tool": "get_playoffs", "ok": True,
@@ -1538,6 +1650,149 @@ def _cleared(lead: dict[str, Any], floor: QualificationFloor) -> str:
     return f"{observed:,.0f} {floor.metric.replace('_', ' ')} over " \
            f"{lead.get('GP')} games"
 
+_RATE_BOARD_CATEGORIES = {"TS_PCT", "PPG", "RPG", "APG", "SPG", "BPG"}
+
+_DIRECTION_ALIASES = {"ascending": "asc", "ascend": "asc",
+                      "descending": "desc", "descend": "desc"}
+
+def _leaders_direction(ranking_direction: str) -> str:
+    direction = _DIRECTION_ALIASES.get(
+        str(ranking_direction).strip().casefold(),
+        str(ranking_direction).strip().casefold())
+    if direction not in {"asc", "desc"}:
+        raise ValueError("ranking_direction must be 'asc' or 'desc'")
+    return direction
+
+def _leaders_check_min_attempts(min_attempts: object) -> None:
+    if isinstance(min_attempts, bool) or not isinstance(min_attempts, int):
+        raise TypeError("min_attempts must be an integer")
+    if not 0 <= min_attempts <= 5000:
+        raise ValueError("min_attempts must be between 0 and 5000")
+
+def _leaders_unevidenced(stat_category: str, exc: Exception, season: str,
+                         direction: str, min_attempts: int) -> dict[str, Any]:
+    return {"tool": "get_leaders", "ok": False, "rows": [],
+            "error": (f"{exc}; refusing to publish a "
+                      f"{stat_category} board whose "
+                      f"qualification cannot be evidenced"),
+            "meta": {"source": "warehouse", "season": season,
+                     "stat_category": stat_category,
+                     "ranking_direction": direction,
+                     "min_attempts": min_attempts}}
+
+def _leaders_rate_board(stat_category: str, season: str, order: str,
+                        direction: str, min_attempts: int):
+    con = store.connect(read_only=True)
+    try:
+        rows, qualification, value = _qualified_rate_board(
+            con, stat_category, season, order, min_attempts)
+    except _FloorValueUnavailable as exc:
+        return None, _leaders_unevidenced(stat_category, exc, season,
+                                          direction, min_attempts)
+    finally:
+        con.close()
+    meta = {
+        "source": "warehouse", "season": season,
+        "stat_category": stat_category, "rows": len(rows),
+        "ranking_direction": direction, "min_attempts": min_attempts,
+        "qualification": qualification.label,
+        "qualification_floor": qualification.payload(),
+    }
+    return (rows, meta), (value, qualification)
+
+def _leaders_table_board(stat_category: str, season: str, order: str):
+    table = f"silver_leaders_{stat_category.lower()}"
+    rows, meta = _warehouse_or_live(
+        table, "_season = ?",
+        [season], lambda: nba_stats.leaders(stat_category, season), season,
+    )
+    meta["stat_category"] = stat_category
+    needs_id_fallback = bool(rows) and not any(
+        "PLAYER_ID" in row or "player_id" in row for row in rows
+    )
+    if (not rows or needs_id_fallback) and season_static(season):
+        fallback = _completed_season_totals(stat_category, season, order)
+        if fallback is not None:
+            rows, meta = fallback
+    return rows, meta
+
+def _leaders_fg3_rows(season: str, order: str, min_attempts: int) -> list:
+    con = store.connect(read_only=True)
+    try:
+        raw = con.execute(
+            "SELECT PLAYER, TEAM, GP, MIN, FG3M, FG3A, FG3_PCT "
+            "FROM silver_leaders_pts WHERE _season = ? "
+            f"AND FG3M >= ? AND FG3A >= ? "
+            f"ORDER BY FG3_PCT {order}, FG3M DESC",
+            [season, 0 if min_attempts else 82, min_attempts]).fetchall()
+    finally:
+        con.close()
+    return [
+        {"RANK": i, "PLAYER": r[0], "TEAM": r[1], "GP": r[2],
+         "MPG": r[3], "FG3M": r[4], "FG3A": r[5],
+         "FG3_PCT": r[6]}
+        for i, r in enumerate(raw, 1)
+    ]
+
+def _leaders_fg3_meta(rows: list, season: str, direction: str,
+                      min_attempts: int, stat_category: str) -> dict[str, Any]:
+    qualification = (f"{min_attempts}+ three-point attempts"
+                     if min_attempts else "82+ made threes")
+    meta = {"source": "warehouse", "season": season,
+            "stat_category": stat_category, "rows": len(rows),
+            "ranking_direction": direction,
+            "min_attempts": min_attempts,
+            "qualification": qualification}
+    if rows:
+        leaders = "; ".join(
+            f"{row['PLAYER']} {row['FG3_PCT'] * 100:.1f}% "
+            f"({row['FG3M']} makes on {row['FG3A']} attempts)"
+            for row in rows[:5]
+        )
+        meta["deterministic_answer"] = (
+            f"Qualified three-point percentage leaders: {leaders}. "
+            f"Qualification: {qualification}.")
+    return meta
+
+def _leaders_fg3_board(season: str, order: str, direction: str,
+                       min_attempts: int, stat_category: str,
+                       meta: dict[str, Any]):
+    try:
+        rows = _leaders_fg3_rows(season, order, min_attempts)
+    except Exception:
+        return [], meta
+    return rows, _leaders_fg3_meta(rows, season, direction, min_attempts,
+                                   stat_category)
+
+def _leaders_pin_columns(stat_category: str) -> list[str]:
+    pin = ["RANK", "PLAYER", "TEAM", stat_category]
+    if stat_category == "FG3_PCT":
+        pin.extend(["FG3M", "FG3A"])
+    pin.extend(["GP", "MIN", "MPG", "TOTAL_MINUTES"])
+    return pin
+
+def _pin_leader_row(r: Any, pin: list[str]) -> Any:
+    if not isinstance(r, dict):
+        return r
+    slim = {k: r[k] for k in pin if k in r}
+    for metric in COUNTING_METRICS:
+        rate = per_game_value(slim.get(metric), slim.get("GP"))
+        if rate is not None:
+            slim[per_game_column(metric)] = rate
+    for identifier in ("PLAYER_ID", "player_id", "TEAM_ID", "team_id"):
+        if identifier in r and identifier not in slim:
+            slim[identifier] = r[identifier]
+    if "PLAYER" in slim and "PLAYER_NAME" not in slim:
+        slim["PLAYER_NAME"] = slim["PLAYER"]
+    return slim
+
+def _leaders_lead_answer(pinned: list, lead_answer: tuple, season: str):
+    value, qualification = lead_answer
+    return (f"{pinned[0]['PLAYER']} leads qualified players at "
+            f"{value(pinned[0])} in {season}. Qualification: "
+            f"{qualification.label}; "
+            f"{_cleared(pinned[0], qualification)}.")
+
 @tool(description='Qualified league leaderboard for one stat category.\n\nranking_direction is ``desc`` for highest-first or ``asc`` for\nlowest-first. min_attempts carries an explicit user volume floor for\npercentage metrics; zero keeps the league qualification.\n\nPercentage boards use the NBA minimums carried by the warehouse\ninstead of an arbitrary attempts floor. For 3P%, the qualification is\n82 made threes over an 82-game season. This keeps the board comparable\nto the official league leaderboard and excludes tiny samples.')
 def get_leaders(
     stat_category: str = "PTS", season: str | None = None,
@@ -1550,128 +1805,30 @@ def get_leaders(
         return {"tool": "get_leaders", "ok": False, "rows": [],
                 "error": f"unknown stat_category: {stat_category!r}",
                 "meta": {"source": "warehouse", "season": season}}
-    direction = str(ranking_direction).strip().casefold()
-    if direction in {"ascending", "ascend"}:
-        direction = "asc"
-    elif direction in {"descending", "descend"}:
-        direction = "desc"
-    if direction not in {"asc", "desc"}:
-        raise ValueError("ranking_direction must be 'asc' or 'desc'")
-    if isinstance(min_attempts, bool) or not isinstance(min_attempts, int):
-        raise TypeError("min_attempts must be an integer")
-    if not 0 <= min_attempts <= 5000:
-        raise ValueError("min_attempts must be between 0 and 5000")
+    direction = _leaders_direction(ranking_direction)
+    _leaders_check_min_attempts(min_attempts)
     order = "ASC" if direction == "asc" else "DESC"
 
     lead_answer: tuple[Any, QualificationFloor] | None = None
-    if stat_category in {"TS_PCT", "PPG", "RPG", "APG", "SPG", "BPG"}:
-        con = store.connect(read_only=True)
-        try:
-            try:
-                rows, qualification, value = _qualified_rate_board(
-                    con, stat_category, season, order, min_attempts)
-            except _FloorValueUnavailable as exc:
-                con.close()
-                return {"tool": "get_leaders", "ok": False, "rows": [],
-                        "error": (f"{exc}; refusing to publish a "
-                                  f"{stat_category} board whose "
-                                  f"qualification cannot be evidenced"),
-                        "meta": {"source": "warehouse", "season": season,
-                                 "stat_category": stat_category,
-                                 "ranking_direction": direction,
-                                 "min_attempts": min_attempts}}
-        finally:
-            con.close()
-        meta = {
-            "source": "warehouse", "season": season,
-            "stat_category": stat_category, "rows": len(rows),
-            "ranking_direction": direction, "min_attempts": min_attempts,
-            "qualification": qualification.label,
-            "qualification_floor": qualification.payload(),
-        }
-        lead_answer = (value, qualification)
+    if stat_category in _RATE_BOARD_CATEGORIES:
+        board, lead_answer = _leaders_rate_board(
+            stat_category, season, order, direction, min_attempts)
+        if board is None:
+            return lead_answer
+        rows, meta = board
     else:
-        table = f"silver_leaders_{stat_category.lower()}"
-        rows, meta = _warehouse_or_live(
-            table, "_season = ?",
-            [season], lambda: nba_stats.leaders(stat_category, season), season,
-        )
-        meta["stat_category"] = stat_category
-        needs_id_fallback = bool(rows) and not any(
-            "PLAYER_ID" in row or "player_id" in row for row in rows
-        )
-        if (not rows or needs_id_fallback) and season_static(season):
-            fallback = _completed_season_totals(stat_category, season, order)
-            if fallback is not None:
-                rows, meta = fallback
+        rows, meta = _leaders_table_board(stat_category, season, order)
 
     if stat_category == "FG3_PCT":
-        try:
-            con = store.connect(read_only=True)
-            try:
-                raw = con.execute(
-                    "SELECT PLAYER, TEAM, GP, MIN, FG3M, FG3A, FG3_PCT "
-                    "FROM silver_leaders_pts WHERE _season = ? "
-                    f"AND FG3M >= ? AND FG3A >= ? "
-                    f"ORDER BY FG3_PCT {order}, FG3M DESC",
-                    [season, 0 if min_attempts else 82, min_attempts]).fetchall()
-            finally:
-                con.close()
-            rows = [
-                {"RANK": i, "PLAYER": r[0], "TEAM": r[1], "GP": r[2],
-                 "MPG": r[3], "FG3M": r[4], "FG3A": r[5],
-                 "FG3_PCT": r[6]}
-                for i, r in enumerate(raw, 1)
-            ]
-            qualification = (
-                f"{min_attempts}+ three-point attempts"
-                if min_attempts else "82+ made threes"
-            )
-            meta = {"source": "warehouse", "season": season,
-                    "stat_category": stat_category, "rows": len(rows),
-                    "ranking_direction": direction,
-                    "min_attempts": min_attempts,
-                    "qualification": qualification}
-            if rows:
-                leaders = "; ".join(
-                    f"{row['PLAYER']} {row['FG3_PCT'] * 100:.1f}% "
-                    f"({row['FG3M']} makes on {row['FG3A']} attempts)"
-                    for row in rows[:5]
-                )
-                meta["deterministic_answer"] = (
-                    f"Qualified three-point percentage leaders: {leaders}. "
-                    f"Qualification: {qualification}.")
-        except Exception:
-            rows = []
+        rows, meta = _leaders_fg3_board(season, order, direction,
+                                        min_attempts, stat_category, meta)
 
-    pin = ["RANK", "PLAYER", "TEAM", stat_category]
-    if stat_category == "FG3_PCT":
-        pin.extend(["FG3M", "FG3A"])
-    pin.extend(["GP", "MIN", "MPG", "TOTAL_MINUTES"])
-    pinned = []
-    for r in rows:
-        if not isinstance(r, dict):
-            pinned.append(r)
-            continue
-        slim = {k: r[k] for k in pin if k in r}
-        for _metric in COUNTING_METRICS:
-            _rate = per_game_value(slim.get(_metric), slim.get("GP"))
-            if _rate is not None:
-                slim[per_game_column(_metric)] = _rate
-        for _id in ("PLAYER_ID", "player_id", "TEAM_ID", "team_id"):
-            if _id in r and _id not in slim:
-                slim[_id] = r[_id]
-        if "PLAYER" in slim and "PLAYER_NAME" not in slim:
-            slim["PLAYER_NAME"] = slim["PLAYER"]
-        pinned.append(slim)
+    pin = _leaders_pin_columns(stat_category)
+    pinned = [_pin_leader_row(r, pin) for r in rows]
     if lead_answer is not None and pinned:
-        value, qualification = lead_answer
         try:
-            meta["deterministic_answer"] = (
-                f"{pinned[0]['PLAYER']} leads qualified players at "
-                f"{value(pinned[0])} in {season}. Qualification: "
-                f"{qualification.label}; "
-                f"{_cleared(pinned[0], qualification)}.")
+            meta["deterministic_answer"] = _leaders_lead_answer(
+                pinned, lead_answer, season)
         except (ValueError, KeyError, TypeError) as exc:
             return {"tool": "get_leaders", "ok": False, "rows": [],
                     "error": (f"refusing to publish a {stat_category} answer "
@@ -1993,140 +2150,34 @@ def get_rapm(player: str = "", top: int = 10, season: str | None = None) -> dict
                                       "excluded; estimates shrink "
                                       "toward the prior"}}
 
-@tool(description='Team finder across history seasons. Modes: streak, versus, span,\nplayer_streak, head2head.')
-def get_finder(
-    mode: str = "streak", team_abbrev: str = "", opponent: str = "",
-    season: str | None = None, window: int = 5,
-) -> dict[str, Any]:
-    season = resolve_season(season)
-    from .. import store as _store
+def _finder_result(rows: Any, season: str) -> dict[str, Any]:
+    return {"tool": "get_finder", "ok": True, "rows": rows,
+            "meta": {"source": "warehouse", "season": season}}
 
-    con = _store.connect()
-    try:
-        tables = {r[0] for r in con.execute("SHOW TABLES").fetchall()}
-        if "silver_hist_gamelogs" not in tables:
-            return {"tool": "get_finder", "ok": False, "error": "history empty"}
-        q = """SELECT team_abbreviation, game_date, matchup, wl, pts
-               FROM silver_hist_gamelogs WHERE _season = ?"""
-        cols = {r[1] for r in
-                con.execute("PRAGMA table_info(silver_hist_gamelogs)").fetchall()}
-        if "season_type" in cols:
-            q += " AND season_type = 'regular-season'"
-        params: list[object] = [season]
-        if team_abbrev:
-            q += " AND team_abbreviation = ?"
-            params.append(team_abbrev.upper())
-        rows = con.execute(q + " ORDER BY game_date", params).fetchall()
-    finally:
-        con.close()
-    if mode == "player_streak":
-        from datetime import datetime as _dt
+def _finder_error(error: str) -> dict[str, Any]:
+    return {"tool": "get_finder", "ok": False, "error": error}
 
-        from ._core import coerce_player_id as _cpid
+def _finder_history_rows(con, season: str, team_abbrev: str) -> list | None:
+    if "silver_hist_gamelogs" not in _warehouse_tables(con):
+        return None
+    q = """SELECT team_abbreviation, game_date, matchup, wl, pts
+           FROM silver_hist_gamelogs WHERE _season = ?"""
+    cols = {r[1] for r in
+            con.execute("PRAGMA table_info(silver_hist_gamelogs)").fetchall()}
+    params: list[object] = [season]
+    if "season_type" in cols:
+        q += " AND season_type = 'regular-season'"
+    if team_abbrev:
+        q += " AND team_abbreviation = ?"
+        params.append(team_abbrev.upper())
+    return con.execute(q + " ORDER BY game_date", params).fetchall()
 
-        if not team_abbrev:
-            return {"tool": "get_finder", "ok": False, "error": "player needed"}
-        try:
-            _pid = _cpid(team_abbrev)
-        except ValueError as exc:
-            return {"tool": "get_finder", "ok": False, "error": str(exc)[:160]}
-        _con = _store.connect()
-        try:
-            _tables = {r[0] for r in _con.execute("SHOW TABLES").fetchall()}
-            if "silver_player_gamelogs" not in _tables:
-                return {"tool": "get_finder", "ok": False,
-                        "error": "player gamelogs empty"}
-            _prows = _con.execute(
-                """SELECT GAME_DATE, PTS FROM silver_player_gamelogs
-                WHERE _season = ? AND Player_ID = ?""",
-                [season, _pid],
-            ).fetchall()
-        finally:
-            _con.close()
-        if not _prows:
-            return {"tool": "get_finder", "ok": False,
-                    "error": f"no cached games for player {_pid}"}
+def _finder_player_pts(con, season: str, pid: int) -> list:
+    return con.execute(
+        """SELECT PTS FROM silver_player_gamelogs
+        WHERE _season = ? AND Player_ID = ?""", [season, pid]).fetchall()
 
-        def _dkey(d: object) -> object:
-            try:
-                return _dt.strptime(str(d), "%b %d, %Y")
-            except (TypeError, ValueError):
-                return _dt.min
-
-        _prows = sorted(_prows, key=lambda r: _dkey(r[0]))
-        _best = _cur = 0
-        for _, _pts in _prows:
-            if (_pts or 0) >= 20:
-                _cur += 1
-                _best = max(_best, _cur)
-            else:
-                _cur = 0
-        return {"tool": "get_finder", "ok": True,
-                "rows": {"player_id": _pid, "longest_20pt_streak": _best,
-                         "games": len(_prows)},
-                "meta": {"source": "warehouse", "season": season}}
-    if mode == "head2head":
-        from ._core import coerce_player_id as _cpid2
-
-        if not team_abbrev or not opponent:
-            return {"tool": "get_finder", "ok": False,
-                    "error": "two players needed"}
-        try:
-            _pa = _cpid2(team_abbrev)
-            _pb = _cpid2(opponent)
-        except ValueError as exc:
-            return {"tool": "get_finder", "ok": False, "error": str(exc)[:160]}
-
-        def _pts_for(_pid: int) -> list:
-            _c = _store.connect()
-            try:
-                return _c.execute(
-                    """SELECT PTS FROM silver_player_gamelogs
-                    WHERE _season = ? AND Player_ID = ?""",
-                    [season, _pid],
-                ).fetchall()
-            finally:
-                _c.close()
-
-        _ra = _pts_for(_pa)
-        _rb = _pts_for(_pb)
-        if not _ra:
-            return {"tool": "get_finder", "ok": False,
-                    "error": f"no cached games for player {team_abbrev}"}
-        if not _rb:
-            return {"tool": "get_finder", "ok": False,
-                    "error": f"no cached games for player {opponent}"}
-        _ga, _gb = len(_ra), len(_rb)
-        _pa_avg = round(sum((_x[0] or 0) for _x in _ra) / _ga, 1)
-        _pb_avg = round(sum((_x[0] or 0) for _x in _rb) / _gb, 1)
-        return {"tool": "get_finder", "ok": True,
-                "rows": {"a": {"player_id": _pa, "gp": _ga, "ppg": _pa_avg},
-                         "b": {"player_id": _pb, "gp": _gb, "ppg": _pb_avg}},
-                "meta": {"source": "warehouse", "season": season}}
-    if not rows:
-        return {"tool": "get_finder", "ok": False, "error": "no games found"}
-    if mode == "versus" and opponent:
-        opp = opponent.upper()
-        rel = [r for r in rows if opp in (r[2] or "")]
-        w = sum(1 for r in rel if r[3] == "W")
-        return {"tool": "get_finder", "ok": True,
-                "rows": {"record": f"{w}-{len(rel) - w}", "games": len(rel)},
-                "meta": {"source": "warehouse", "season": season}}
-    if mode == "span":
-        best = None
-        for i in range(len(rows) - window + 1):
-            chunk = rows[i:i + window]
-            if len({c[0] for c in chunk}) > 1:
-                continue
-            total = sum(c[4] or 0 for c in chunk)
-            if best is None or total > best[0]:
-                best = (total, chunk[0][0], chunk[0][1], chunk[-1][1])
-        if best is None:
-            return {"tool": "get_finder", "ok": False, "error": "no span found"}
-        return {"tool": "get_finder", "ok": True,
-                "rows": {"team": best[1], "window": window, "points": best[0],
-                         "from": best[2], "to": best[3]},
-                "meta": {"source": "warehouse", "season": season}}
+def _finder_streak_rows(rows: list) -> dict[str, Any]:
     best_w = best_l = cur_w = cur_l = 0
     for r in rows:
         if r[3] == "W":
@@ -2137,10 +2188,125 @@ def get_finder(
             cur_w = 0
         best_w = max(best_w, cur_w)
         best_l = max(best_l, cur_l)
-    return {"tool": "get_finder", "ok": True,
-            "rows": {"longest_win_streak": best_w, "longest_loss_streak": best_l,
-                     "games": len(rows)},
-            "meta": {"source": "warehouse", "season": season}}
+    return {"longest_win_streak": best_w, "longest_loss_streak": best_l,
+            "games": len(rows)}
+
+def _finder_versus_rows(rows: list, opponent: str) -> dict[str, Any]:
+    opp = opponent.upper()
+    rel = [r for r in rows if opp in (r[2] or "")]
+    won = sum(1 for r in rel if r[3] == "W")
+    return {"record": f"{won}-{len(rel) - won}", "games": len(rel)}
+
+def _finder_span_best(rows: list, window: int):
+    best = None
+    for i in range(len(rows) - window + 1):
+        chunk = rows[i:i + window]
+        if len({c[0] for c in chunk}) > 1:
+            continue
+        total = sum(c[4] or 0 for c in chunk)
+        if best is None or total > best[0]:
+            best = (total, chunk[0][0], chunk[0][1], chunk[-1][1])
+    return best
+
+def _finder_span_rows(rows: list, window: int):
+    best = _finder_span_best(rows, window)
+    if best is None:
+        return None
+    return {"team": best[1], "window": window, "points": best[0],
+            "from": best[2], "to": best[3]}
+
+def _finder_player_game_rows(season: str, pid: int):
+    with _owned_connection(None) as con:
+        if "silver_player_gamelogs" not in _warehouse_tables(con):
+            return "player gamelogs empty", None
+        return None, con.execute(
+            """SELECT GAME_DATE, PTS FROM silver_player_gamelogs
+            WHERE _season = ? AND Player_ID = ?""", [season, pid]).fetchall()
+
+def _finder_streak_key(clock: object):
+    from datetime import datetime as _dt
+
+    try:
+        return _dt.strptime(str(clock), "%b %d, %Y")
+    except (TypeError, ValueError):
+        return _dt.min
+
+def _finder_player_streak(season: str, team_abbrev: str):
+    from ._core import coerce_player_id as _cpid
+
+    if not team_abbrev:
+        return _finder_error("player needed")
+    try:
+        pid = _cpid(team_abbrev)
+    except ValueError as exc:
+        return _finder_error(str(exc)[:160])
+    err, prows = _finder_player_game_rows(season, pid)
+    if err:
+        return _finder_error(err)
+    if not prows:
+        return _finder_error(f"no cached games for player {pid}")
+    prows = sorted(prows, key=lambda r: _finder_streak_key(r[0]))
+    best = cur = 0
+    for _, pts in prows:
+        if (pts or 0) >= 20:
+            cur += 1
+            best = max(best, cur)
+        else:
+            cur = 0
+    return _finder_result({"player_id": pid, "longest_20pt_streak": best,
+                           "games": len(prows)}, season)
+
+def _finder_head2head_player(season: str, pid: int) -> list:
+    with _owned_connection(None) as con:
+        return _finder_player_pts(con, season, pid)
+
+def _finder_ppg(games: list) -> float:
+    return round(sum((g[0] or 0) for g in games) / len(games), 1)
+
+def _finder_head2head(season: str, team_abbrev: str, opponent: str):
+    from ._core import coerce_player_id as _cpid2
+
+    if not team_abbrev or not opponent:
+        return _finder_error("two players needed")
+    try:
+        pa = _cpid2(team_abbrev)
+        pb = _cpid2(opponent)
+    except ValueError as exc:
+        return _finder_error(str(exc)[:160])
+    ra = _finder_head2head_player(season, pa)
+    rb = _finder_head2head_player(season, pb)
+    if not ra:
+        return _finder_error(f"no cached games for player {team_abbrev}")
+    if not rb:
+        return _finder_error(f"no cached games for player {opponent}")
+    return _finder_result(
+        {"a": {"player_id": pa, "gp": len(ra), "ppg": _finder_ppg(ra)},
+         "b": {"player_id": pb, "gp": len(rb), "ppg": _finder_ppg(rb)}},
+        season)
+
+@tool(description='Team finder across history seasons. Modes: streak, versus, span,\nplayer_streak, head2head.')
+def get_finder(
+    mode: str = "streak", team_abbrev: str = "", opponent: str = "",
+    season: str | None = None, window: int = 5,
+) -> dict[str, Any]:
+    season = resolve_season(season)
+    if mode == "player_streak":
+        return _finder_player_streak(season, team_abbrev)
+    if mode == "head2head":
+        return _finder_head2head(season, team_abbrev, opponent)
+    with _owned_connection(None) as con:
+        rows = _finder_history_rows(con, season, team_abbrev)
+    if rows is None:
+        return _finder_error("history empty")
+    if not rows:
+        return _finder_error("no games found")
+    if mode == "versus" and opponent:
+        return _finder_result(_finder_versus_rows(rows, opponent), season)
+    if mode == "span":
+        span = _finder_span_rows(rows, window)
+        return _finder_result(span, season) if span else _finder_error(
+            "no span found")
+    return _finder_result(_finder_streak_rows(rows), season)
 
 @tool(description='Back-to-back plus rest-day splits from history game dates.')
 def get_rest(team_abbrev: str = "", season: str | None = None) -> dict[str, Any]:
@@ -2307,85 +2473,98 @@ def get_win_prob(team_a: str = "", team_b: str = "", season: str | None = None,
 CAP = {"cap": 165_000_000, "tax": 201_048_000,
        "apron1": 209_661_000, "apron2": 222_372_000}
 
+def _team_salary_lookup(con, name: str) -> str | None:
+    from ._core import season_static as _season_static
+
+    if not (_season_static(last_completed_season())
+            and "silver_salaries" in _warehouse_tables(con)):
+        return None
+    try:
+        row = con.execute(
+            "SELECT TEAM FROM silver_salaries "
+            "WHERE LOWER(PLAYER_NAME) = LOWER(?) LIMIT 1", [name]).fetchone()
+    except Exception:
+        return None
+    return str(row[0]) if row and row[0] else None
+
+def _team_leaders_lookup(con, name: str, tables: set[str]) -> str | None:
+    if not name or "silver_leaders_pts" not in tables:
+        return None
+    try:
+        row = con.execute(
+            "SELECT TEAM FROM silver_leaders_pts "
+            "WHERE _season = ? AND LOWER(PLAYER) = LOWER(?) LIMIT 1",
+            [last_completed_season(), name]).fetchone()
+    except Exception:
+        return None
+    return str(row[0]) if row and row[0] else None
+
+def _player_id_lookup(con, name: str, tables: set[str]) -> object:
+    if not name or "silver_leaders_pts" not in tables:
+        return None
+    try:
+        found = con.execute(
+            "SELECT PLAYER_ID FROM silver_leaders_pts "
+            "WHERE LOWER(PLAYER) = LOWER(?) LIMIT 1", [name]).fetchone()
+    except Exception:
+        return None
+    return int(found[0]) if found and found[0] is not None else None
+
+def _gamelog_team_lookup(con, pid: object, tables: set[str]) -> str | None:
+    if pid is None or "silver_player_gamelogs" not in tables:
+        return None
+    for where, params in (
+            ("Player_ID = ? AND _season = ?", [pid, last_completed_season()]),
+            ("Player_ID = ?", [pid])):
+        try:
+            row = con.execute(
+                f"SELECT MATCHUP FROM silver_player_gamelogs "
+                f"WHERE {where} LIMIT 1", params).fetchone()
+        except Exception:
+            row = None
+        if row and row[0]:
+            return str(row[0]).split()[0].upper()
+        if row:
+            break
+    return None
+
+def _warehouse_tables(con) -> set[str]:
+    return {r[0] for r in con.execute("SHOW TABLES").fetchall()}
+
+@contextmanager
+def _owned_connection(con: object):
+    if con is not None:
+        yield con
+        return
+    own = store.connect()
+    try:
+        yield own
+    finally:
+        try:
+            own.close()
+        except Exception:
+            pass
+
 def _current_team_for_player(
     player_name: str, player_id: object = None, fallback: str = "",
     con: object = None,
 ) -> str:
-    from .. import store as _store
-
     name = str(player_name or "").strip()
-    own = con is None
     try:
-        if own:
-            con = _store.connect()
+        with _owned_connection(con) as live:
+            tables = _warehouse_tables(live)
+            for found in (_team_salary_lookup(live, name),
+                          _team_leaders_lookup(live, name, tables)):
+                if found:
+                    return found
+            pid = player_id
+            if pid is None:
+                pid = _player_id_lookup(live, name, tables)
+            abbr = _gamelog_team_lookup(live, pid, tables)
+            if abbr:
+                return abbr
     except Exception:
         return fallback
-    try:
-        tables = {r[0] for r in con.execute("SHOW TABLES").fetchall()}
-        from ._core import season_static as _season_static
-        if _season_static(last_completed_season()) and name and "silver_salaries" in tables:
-
-            try:
-                row = con.execute(
-                    "SELECT TEAM FROM silver_salaries "
-                    "WHERE LOWER(PLAYER_NAME) = LOWER(?) LIMIT 1",
-                    [name],
-                ).fetchone()
-                if row and row[0]:
-                    return str(row[0])
-            except Exception:
-                pass
-        if name and "silver_leaders_pts" in tables:
-            try:
-                row = con.execute(
-                    "SELECT TEAM FROM silver_leaders_pts "
-                    "WHERE _season = ? AND LOWER(PLAYER) = LOWER(?) LIMIT 1",
-                    [last_completed_season(), name],
-                ).fetchone()
-                if row and row[0]:
-                    return str(row[0])
-            except Exception:
-                pass
-        pid: object = player_id
-        if pid is None and name and "silver_leaders_pts" in tables:
-            try:
-                found = con.execute(
-                    "SELECT PLAYER_ID FROM silver_leaders_pts "
-                    "WHERE LOWER(PLAYER) = LOWER(?) LIMIT 1",
-                    [name],
-                ).fetchone()
-                if found and found[0] is not None:
-                    pid = int(found[0])
-            except Exception:
-                pid = None
-        if pid is not None and "silver_player_gamelogs" in tables:
-            try:
-                for where, params in (
-                    ("Player_ID = ? AND _season = ?", [pid, last_completed_season()]),
-                    ("Player_ID = ?", [pid]),
-                ):
-                    try:
-                        grow = con.execute(
-                            f"SELECT MATCHUP FROM silver_player_gamelogs "
-                            f"WHERE {where} LIMIT 1",
-                            params,
-                        ).fetchone()
-                    except Exception:
-                        grow = None
-                    if grow and grow[0]:
-                        abbr = str(grow[0]).split()[0].upper()
-                        if abbr:
-                            return abbr
-                    if grow:
-                        break
-            except Exception:
-                pass
-    finally:
-        if own:
-            try:
-                con.close()
-            except Exception:
-                pass
     return fallback
 
 def _first_name_compatible(want: str, cand: str) -> bool:
@@ -2403,95 +2582,80 @@ def _first_name_compatible(want: str, cand: str) -> bool:
         return True
     return _dl.SequenceMatcher(None, a, b).ratio() >= 0.9
 
-def _resolve_stale_trade_player(want: str, team: str,
-                                con: object = None) -> tuple[str, int] | None:
+def _salary_sheet_rows(con: object) -> list | None:
+    try:
+        if "silver_salaries" not in _warehouse_tables(con):
+            return None
+        return con.execute(
+            "SELECT PLAYER_NAME, SALARY, TEAM FROM silver_salaries").fetchall()
+    except Exception:
+        return None
+
+def _name_match_tiers(rows: list, wl: str) -> tuple[list, list, list]:
     import difflib as _dl
 
-    from .. import store as _store
+    exact = [r for r in rows if str(r[0]).lower() == wl]
+    subs = [r for r in rows if wl in str(r[0]).lower() and r not in exact]
+    lows = [str(r[0]).lower() for r in rows]
+    try:
+        fuzzy = [r for m in _dl.get_close_matches(wl, lows, n=3, cutoff=0.8)
+                 for r in rows
+                 if str(r[0]).lower() == m and r not in exact and r not in subs]
+    except Exception:
+        fuzzy = []
+    return exact, subs, fuzzy
 
+def _stale_candidate_team(cand: tuple, con: object) -> str:
+    cname, cteam = str(cand[0]), str(cand[2] or "")
+    try:
+        return _current_team_for_player(cname, None, cteam, con)
+    except Exception:
+        return cteam
+
+def _resolve_stale_trade_player(want: str, team: str,
+                                con: object = None) -> tuple[str, int] | None:
     target = str(team or "").upper()
     w = str(want or "").strip()
     if not w or not target:
         return None
-    own = con is None
     try:
-        if own:
-            con = _store.connect()
+        with _owned_connection(con) as live:
+            rows = _salary_sheet_rows(live)
+            if rows is None:
+                return None
+            wl = w.lower()
+            exact, subs, fuzzy = _name_match_tiers(rows, wl)
+            wl_first = wl.split()[0] if wl.split() else ""
+            strict = len(exact) + len(subs)
+            for i, cand in enumerate(exact + subs + fuzzy):
+                cname = str(cand[0])
+                if i >= strict:
+                    c_first = cname.lower().split()[0] if cname.split() else ""
+                    if not _first_name_compatible(wl_first, c_first):
+                        continue
+                if str(_stale_candidate_team(cand, live)).upper() == target:
+                    return cname, int(cand[1] or 0)
     except Exception:
         return None
-    try:
-        tables = {r[0] for r in con.execute("SHOW TABLES").fetchall()}
-        if "silver_salaries" not in tables:
-            return None
-        try:
-            rows = con.execute(
-                "SELECT PLAYER_NAME, SALARY, TEAM FROM silver_salaries"
-            ).fetchall()
-        except Exception:
-            return None
-    finally:
-        if own:
-            try:
-                con.close()
-            except Exception:
-                pass
-    wl = w.lower()
-    exact = [r for r in rows if str(r[0]).lower() == wl]
-    subs = [r for r in rows if wl in str(r[0]).lower() and r not in exact]
-    lows = [str(r[0]).lower() for r in rows]
-    fuzzy: list = []
-    try:
-        for m in _dl.get_close_matches(wl, lows, n=3, cutoff=0.8):
-            for r in rows:
-                if str(r[0]).lower() == m and r not in exact and r not in subs:
-                    fuzzy.append(r)
-    except Exception:
-        fuzzy = []
-    wl_first = wl.split()[0] if wl.split() else ""
-    for i, cand in enumerate(exact + subs + fuzzy):
-        cname, csal, cteam = str(cand[0]), cand[1] or 0, str(cand[2] or "")
-
-        if i >= len(exact) + len(subs):
-            c_first = cname.lower().split()[0] if cname.split() else ""
-            if not _first_name_compatible(wl_first, c_first):
-                continue
-        try:
-            cur = _current_team_for_player(cname, None, cteam, con)
-        except Exception:
-            cur = cteam
-        if str(cur).upper() == target:
-            return cname, int(csal)
     return None
 
-def _locate_player_team(name: str, con: object) -> tuple[str, str, int] | None:
-    import difflib as _dl
+def _first_token(text: str) -> str:
+    parts = str(text or "").lower().split()
+    return parts[0] if parts else ""
 
+def _locate_player_team(name: str, con: object) -> tuple[str, str, int] | None:
     w = str(name or "").strip().lower()
     if not w:
         return None
-    try:
-        rows = con.execute(
-            "SELECT PLAYER_NAME, SALARY, TEAM FROM silver_salaries"
-        ).fetchall()
-    except Exception:
+    rows = _salary_sheet_rows(con)
+    if rows is None:
         return None
-    exact = [r for r in rows if str(r[0]).lower() == w]
-    subs = [r for r in rows if w in str(r[0]).lower() and r not in exact]
-    lows = [str(r[0]).lower() for r in rows]
-    fuzzy: list = []
-    wf = w.split()[0] if w.split() else ""
-    for m in _dl.get_close_matches(w, lows, n=3, cutoff=0.8):
-        for r in rows:
-            if str(r[0]).lower() == m and r not in exact and r not in subs:
-                cf = str(r[0]).lower().split()[0]
-                if _first_name_compatible(wf, cf):
-                    fuzzy.append(r)
+    exact, subs, loose = _name_match_tiers(rows, w)
+    fuzzy = [r for r in loose
+             if _first_name_compatible(_first_token(w), _first_token(str(r[0])))]
     for cand in (exact + subs + fuzzy)[:1]:
         cname, csal, cteam = str(cand[0]), int(cand[1] or 0), str(cand[2] or "")
-        try:
-            cur = _current_team_for_player(cname, None, cteam, con)
-        except Exception:
-            cur = cteam
+        cur = _stale_candidate_team(cand, con)
         return cname, str(cur or cteam).upper(), csal
     return None
 
@@ -2702,51 +2866,63 @@ def get_cap_ledger(team: str = "") -> dict[str, Any]:
                      "salary_date": salary_date,
                      **{k: v for k, v in CAP.items()}}}
 
+class _RosterIndex:
+
+    __slots__ = ("roster", "lows", "by_low", "disp")
+
+    def __init__(self, roster: list[dict]) -> None:
+        import difflib as _dl
+
+        self.roster = roster
+        self.lows = [p["player"].lower() for p in roster]
+        self.by_low = {p["player"].lower(): p for p in roster}
+        self.disp = {p["player"].lower(): p["player"] for p in roster}
+
+    def close_hit(self, w: str) -> dict | None:
+        import difflib as _dl
+
+        hit = next((p for p in self.roster if w in p["player"].lower()), None)
+        if hit is not None:
+            return hit
+        fb = _dl.get_close_matches(w, self.lows, n=1, cutoff=0.8)
+        if fb and _first_name_compatible(_first_token(w), _first_token(fb[0])):
+            return self.by_low[fb[0]]
+        return None
+
+    def suggestions(self, w: str) -> list[str]:
+        import difflib as _dl
+
+        return [self.disp[s]
+                for s in _dl.get_close_matches(w, self.lows, n=2, cutoff=0.6)
+                if _first_name_compatible(_first_token(w), _first_token(s))]
+
+def _match_trade_player(orig: str, team: str, index: _RosterIndex,
+                        con: object) -> tuple[str, int] | None:
+    hit = index.close_hit(orig.lower())
+    if hit:
+        return hit["player"], hit["salary"] or 0
+    return _resolve_stale_trade_player(orig, team, con)
+
+def _unknown_trade_name(orig: str, index: _RosterIndex) -> str:
+    sug = index.suggestions(orig.lower())
+    return f"{orig} (suggestions: {', '.join(sug)})" if sug else orig
+
 def _match_trade_players(team: str, names: str,
                          con: object = None,
                          season: str | None = None) -> tuple[int, list[str], list[str]]:
-    import difflib as _dl
-
-    from .. import store as _store
-
-    own = con is None
-    if own:
-        con = _store.connect()
-    try:
-        total, roster = _payroll(team, con, season)
-        want = [n.strip() for n in names.split(",") if n.strip()]
-        lows = [p["player"].lower() for p in roster]
-        by_low = {p["player"].lower(): p for p in roster}
-        disp = {p["player"].lower(): p["player"] for p in roster}
+    with _owned_connection(con) as live:
+        _, roster = _payroll(team, live, season)
+        index = _RosterIndex(roster)
         matched: list[str] = []
         unknown: list[str] = []
         total_out = 0
-        for orig in want:
-            w = orig.lower()
-            hit = next((p for p in roster if w in p["player"].lower()), None)
-            if hit is None:
-                fb = _dl.get_close_matches(w, lows, n=1, cutoff=0.8)
-                if fb and _first_name_compatible(
-                        w.split()[0] if w.split() else "",
-                        fb[0].split()[0] if fb[0].split() else ""):
-                    hit = by_low[fb[0]]
-            if hit:
-                matched.append(hit["player"])
-                total_out += hit["salary"] or 0
+        for orig in [n.strip() for n in names.split(",") if n.strip()]:
+            found = _match_trade_player(orig, team, index, live)
+            if found:
+                matched.append(found[0])
+                total_out += found[1]
             else:
-                stale = _resolve_stale_trade_player(orig, team, con)
-                if stale:
-                    matched.append(stale[0])
-                    total_out += stale[1]
-                else:
-                    sug = [disp[s] for s in _dl.get_close_matches(w, lows, n=2, cutoff=0.6)
-                           if _first_name_compatible(
-                               w.split()[0] if w.split() else "",
-                               s.split()[0] if s.split() else "")]
-                    unknown.append(f"{orig} (suggestions: {', '.join(sug)})" if sug else orig)
-    finally:
-        if own:
-            con.close()
+                unknown.append(_unknown_trade_name(orig, index))
     return total_out, matched, unknown
 
 def _unknown_player_hints(unknown: list[str], con: object = None) -> list[str]:
@@ -2799,6 +2975,118 @@ def _pick_value_for_slot(slot: int, is_frp: bool) -> float:
         return 2.5
     return 1.0
 
+_TRADE_CHECK_UNMODELED = (
+    "cash in trade", "prior trade exceptions", "taxpayer midlevel hard cap",
+    "frozen pick plus Stepien",
+    "base-year plus trade-kicker plus minimum-salary plus sign-and-trade",
+)
+
+def _trade_guard_vintage_error(con, season: str) -> str | None:
+    salary_season, salary_rows, _ = _salary_vintage(con)
+    if not (salary_rows and salary_season and salary_season != season):
+        return None
+    return (f"salary data is for {salary_season}, not {season}; "
+            "trade math was not calculated")
+
+def _trade_guard_team_error(con, team: str, players: str) -> str | None:
+    for player in [x.strip() for x in str(players).split(",") if x.strip()]:
+        row = con.execute(
+            "SELECT TEAM FROM silver_salaries WHERE lower(PLAYER_NAME) = lower(?) LIMIT 1",
+            [player]).fetchone()
+        if row and str(row[0] or "").upper() != team.upper():
+            return (f"salary data lists {player} with {row[0]}, "
+                    f"not {team.upper()}; trade math was not calculated")
+    return None
+
+def _trade_guard(con, season: str, team_a: str, players_a: str, team_b: str,
+                 players_b: str) -> str | None:
+    guard_error = _trade_guard_vintage_error(con, season)
+    if guard_error:
+        return guard_error
+    for team, players in ((team_a, players_a), (team_b, players_b)):
+        if not team:
+            continue
+        team_error = _trade_guard_team_error(con, team, players)
+        if team_error:
+            return team_error
+    return None
+
+def _infer_trade_side(plist: str, con: object) -> str:
+    teams: set[str] = set()
+    for nm in [x.strip() for x in str(plist).split(",") if x.strip()]:
+        hit = _locate_player_team(nm, con)
+        if hit is None:
+            return ""
+        teams.add(str(hit[1]))
+    return teams.pop() if len(teams) == 1 else ""
+
+def _trade_unknown_message(team_a: str, unk_a: list[str], team_b: str,
+                           unk_b: list[str], con: object) -> str:
+    parts = []
+    if unk_a:
+        parts.append(f"{team_a.upper()}: {'; '.join(unk_a)}")
+    if unk_b:
+        parts.append(f"{team_b.upper()}: {'; '.join(unk_b)}")
+    msg = "unknown players: " + " | ".join(parts)
+    hints = _unknown_player_hints(unk_a + unk_b, con)
+    return msg + ". " + "; ".join(hints) if hints else msg
+
+def _trade_autocorrect_side(unknown: list[str], team: str, plist: str,
+                            con: object, matched: tuple,
+                            season: str | None = None) -> tuple:
+    if not unknown:
+        return team, matched, []
+    fix = _auto_correct_side(unknown, team, plist, con, season)
+    if not fix:
+        return team, matched, []
+    return fix
+
+def _trade_match_sides(team_a: str, players_a: str, team_b: str,
+                       players_b: str, con: object,
+                       season: str | None = None):
+    side_a = _match_trade_players(team_a, players_a, con, season)
+    side_b = _match_trade_players(team_b, players_b, con, season)
+    corrections: list[str] = []
+    team_a, side_a, corr_a = _trade_autocorrect_side(
+        side_a[2], team_a, players_a, con, side_a, season)
+    corrections.extend(corr_a)
+    team_b, side_b, corr_b = _trade_autocorrect_side(
+        side_b[2], team_b, players_b, con, side_b, season)
+    corrections.extend(corr_b)
+    return team_a, side_a, team_b, side_b, corrections
+
+def _trade_side_rows(team: str, side: tuple, payroll: int, state: dict,
+                     allow: int, rule: str) -> dict[str, Any]:
+    return {"team": team.upper(), "out": side[0], "players": side[1],
+            "payroll": payroll, "allowed_in": allow, "match_rule": rule,
+            **{k: v for k, v in state.items()}}
+
+def _trade_check_issues(team_a: str, state_a: dict, names_a: list[str],
+                        team_b: str, state_b: dict, names_b: list[str],
+                        out_a: int, allow_a: int, out_b: int,
+                        allow_b: int) -> list[str]:
+    issues = []
+    if state_a["over_apron2"] and len(names_a) > 1:
+        issues.append(f"{team_a.upper()} cannot aggregate above second apron")
+    if state_b["over_apron2"] and len(names_b) > 1:
+        issues.append(f"{team_b.upper()} cannot aggregate above second apron")
+    if out_b > allow_a:
+        issues.append(f"{team_a.upper()} takes back too much")
+    if out_a > allow_b:
+        issues.append(f"{team_b.upper()} takes back too much")
+    return issues
+
+def _trade_check_checks(team_a: str, rule_a: str, team_b: str,
+                        rule_b: str) -> list[dict[str, Any]]:
+    return [
+        {"rule": "salary matching", "checked": True,
+         "note": f"{team_a.upper()} {rule_a}, {team_b.upper()} {rule_b}"},
+        {"rule": "second apron aggregation ban", "checked": True,
+         "note": "multi player out banned above second apron"},
+        *({"rule": rule, "checked": False, "note": "not modeled"}
+          for rule in _TRADE_CHECK_UNMODELED),
+    ]
+
 @tool(description='Trade legality check. Player names comma separated per side.\n\nSimplified 2023 CBA: 125 percent plus 250k matching below the first\napron, 100 percent above it, no aggregation above the second apron.\nPicks and exceptions stay out of v1.')
 def get_trade_check(
     team_a: str = "", players_a: str = "", team_b: str = "", players_b: str = "",
@@ -2810,97 +3098,40 @@ def get_trade_check(
         return {"tool": "get_trade_check", "ok": False,
                 "error": "two teams needed"}
 
-    from .. import store as _store
-
-    guard_con = _store.connect()
-    try:
-        salary_season, salary_rows, _ = _salary_vintage(guard_con)
-        if salary_rows and salary_season and salary_season != season:
-            return {"tool": "get_trade_check", "ok": False,
-                    "error": (f"salary data is for {salary_season}, not {season}; "
-                              "trade math was not calculated")}
-        for supplied_team, players in ((team_a, players_a), (team_b, players_b)):
-            if not supplied_team:
-                continue
-            for player in [x.strip() for x in str(players).split(",") if x.strip()]:
-                row = guard_con.execute(
-                    "SELECT TEAM FROM silver_salaries WHERE lower(PLAYER_NAME) = lower(?) LIMIT 1",
-                    [player],
-                ).fetchone()
-                if row and str(row[0] or "").upper() != supplied_team.upper():
-                    return {"tool": "get_trade_check", "ok": False,
-                            "error": (f"salary data lists {player} with {row[0]}, "
-                                      f"not {supplied_team.upper()}; trade math was not calculated")}
-    finally:
-        guard_con.close()
+    with _owned_connection(None) as guard_con:
+        guard_error = _trade_guard(guard_con, season, team_a, players_a,
+                                   team_b, players_b)
+    if guard_error:
+        return {"tool": "get_trade_check", "ok": False, "error": guard_error}
 
     if (not team_a or not team_b) and players_a and players_b:
-
-        from .. import store as _store
-
-        def _infer_side(plist: str) -> str:
-            ts: set[str] = set()
-            for nm in [x.strip() for x in str(plist).split(",") if x.strip()]:
-                hit = _locate_player_team(nm, con)
-                if hit is None:
-                    return ""
-                ts.add(str(hit[1]))
-            return ts.pop() if len(ts) == 1 else ""
-
-        con = _store.connect()
-        try:
-            team_a = team_a or _infer_side(players_a)
-            team_b = team_b or _infer_side(players_b)
-        finally:
-            con.close()
+        with _owned_connection(None) as infer_con:
+            team_a = team_a or _infer_trade_side(players_a, infer_con)
+            team_b = team_b or _infer_trade_side(players_b, infer_con)
     if not team_a or not team_b:
         return {"tool": "get_trade_check", "ok": False,
                 "error": "two teams needed"}
-    _norm = _norm_trade_teams(team_a, team_b)
-    if _norm is None:
+    norm = _norm_trade_teams(team_a, team_b)
+    if norm is None:
         return {"tool": "get_trade_check", "ok": False,
                 "error": (f"both sides resolve to the same team "
                           f"({team_a} / {team_b}) - a trade needs two "
                           f"different teams; check the team names")}
-    team_a, team_b = _norm
-    from .. import store as _store
+    team_a, team_b = norm
 
-    con = _store.connect()
-    try:
+    with _owned_connection(None) as con:
         try:
-            out_a, names_a, unk_a = _match_trade_players(
-                team_a, players_a, con, season)
-            out_b, names_b, unk_b = _match_trade_players(
-                team_b, players_b, con, season)
-            corrections: list[str] = []
-            if unk_a or unk_b:
-
-                if unk_a:
-                    fix = _auto_correct_side(unk_a, team_a, players_a, con,
-                                               season)
-                    if fix:
-                        team_a, (out_a, names_a, unk_a), corr = fix
-                        corrections.extend(corr)
-                if unk_b:
-                    fix = _auto_correct_side(unk_b, team_b, players_b, con,
-                                               season)
-                    if fix:
-                        team_b, (out_b, names_b, unk_b), corr = fix
-                        corrections.extend(corr)
+            team_a, side_a, team_b, side_b, corrections = _trade_match_sides(
+                team_a, players_a, team_b, players_b, con, season)
         except SalaryColumnError as exc:
             return {"tool": "get_trade_check", "ok": False,
                     "reason": exc.reason, "error": str(exc)}
+        out_a, names_a, unk_a = side_a
+        out_b, names_b, unk_b = side_b
         if unk_a or unk_b:
-            parts = []
-            if unk_a:
-                parts.append(f"{team_a.upper()}: {'; '.join(unk_a)}")
-            if unk_b:
-                parts.append(f"{team_b.upper()}: {'; '.join(unk_b)}")
-            hints = _unknown_player_hints(unk_a + unk_b, con)
-            msg = "unknown players: " + " | ".join(parts)
-            if hints:
-                msg += ". " + "; ".join(hints)
-            return {"tool": "get_trade_check", "ok": False, "error": msg}
+            return {"tool": "get_trade_check", "ok": False,
+                    "error": _trade_unknown_message(
+                        team_a, unk_a, team_b, unk_b, con)}
         if not names_a or not names_b:
 
             empty = team_a.upper() if not names_a else team_b.upper()
@@ -2913,45 +3144,20 @@ def get_trade_check(
         pay_b, _ = _payroll(team_b, con, season)
         salary_date = _salary_date(con)
         source = _payroll_source(con)
-    finally:
-        con.close()
     state_a = _apron_state(pay_a)
     state_b = _apron_state(pay_b)
     allow_a, rule_a = _allowed_incoming(out_a, bool(state_a["over_apron1"]))
     allow_b, rule_b = _allowed_incoming(out_b, bool(state_b["over_apron1"]))
-    issues = []
-    if state_a["over_apron2"] and len(names_a) > 1:
-        issues.append(f"{team_a.upper()} cannot aggregate above second apron")
-    if state_b["over_apron2"] and len(names_b) > 1:
-        issues.append(f"{team_b.upper()} cannot aggregate above second apron")
-    ok_a = out_b <= allow_a
-    ok_b = out_a <= allow_b
-    if not ok_a:
-        issues.append(f"{team_a.upper()} takes back too much")
-    if not ok_b:
-        issues.append(f"{team_b.upper()} takes back too much")
-    checks = [
-        {"rule": "salary matching", "checked": True,
-         "note": f"{team_a.upper()} {rule_a}, {team_b.upper()} {rule_b}"},
-        {"rule": "second apron aggregation ban", "checked": True,
-         "note": "multi player out banned above second apron"},
-        {"rule": "cash in trade", "checked": False, "note": "not modeled"},
-        {"rule": "prior trade exceptions", "checked": False, "note": "not modeled"},
-        {"rule": "taxpayer midlevel hard cap", "checked": False, "note": "not modeled"},
-        {"rule": "frozen pick plus Stepien", "checked": False, "note": "not modeled"},
-        {"rule": "base-year plus trade-kicker plus minimum-salary plus sign-and-trade",
-         "checked": False, "note": "not modeled"},
-    ]
+    issues = _trade_check_issues(team_a, state_a, names_a, team_b, state_b,
+                                 names_b, out_a, allow_a, out_b, allow_b)
     return {"tool": "get_trade_check", "ok": True,
-            "rows": {"team_a": {"team": team_a.upper(), "out": out_a,
-                                "players": names_a, "payroll": pay_a,
-                                "allowed_in": allow_a, "match_rule": rule_a,
-                                **{k: v for k, v in state_a.items()}},
-                     "team_b": {"team": team_b.upper(), "out": out_b,
-                                "players": names_b, "payroll": pay_b,
-                                "allowed_in": allow_b, "match_rule": rule_b,
-                                **{k: v for k, v in state_b.items()}},
-                     "legal": not issues, "issues": issues, "checks": checks,
+            "rows": {"team_a": _trade_side_rows(
+                         team_a, side_a, pay_a, state_a, allow_a, rule_a),
+                     "team_b": _trade_side_rows(
+                         team_b, side_b, pay_b, state_b, allow_b, rule_b),
+                     "legal": not issues, "issues": issues,
+                     "checks": _trade_check_checks(team_a, rule_a, team_b,
+                                                   rule_b),
                      "salary_date": salary_date,
                      **({"attribution_corrections": corrections}
                         if corrections else {}),
@@ -2962,405 +3168,476 @@ def get_trade_check(
             "meta": {"source": source, "rules": "v1-simplified",
                      "salary_date": salary_date}}
 
+_TRADE_VALUE_WEIGHTS = {"PTS": 1.0, "REB": 1.2, "AST": 1.5,
+                        "STL": 2.0, "BLK": 2.0, "TOV": -1.5}
+
+_TRADE_LEADERS_COLUMNS = ["PLAYER", "GP", "PTS", "REB", "AST", "STL",
+                         "BLK", "TOV", "FG3M", "FG3_PCT"]
+
+_TRADE_RANK_COLUMNS = ["OFF_RATING_RANK", "DEF_RATING_RANK",
+                       "NET_RATING_RANK", "TS_PCT_RANK", "AST_PCT_RANK",
+                       "REB_PCT_RANK"]
+
+_TRADE_NEED_COLUMNS = [("need_offense", "OFF_RATING_RANK"),
+                       ("need_defense", "DEF_RATING_RANK"),
+                       ("need_shooting", "TS_PCT_RANK"),
+                       ("need_playmaking", "AST_PCT_RANK"),
+                       ("need_rebounding", "REB_PCT_RANK")]
+
+_TRADE_TAG_NEEDS = {"spacer": "need_shooting",
+                    "playmaker": "need_playmaking",
+                    "defensive playmaker": "need_defense",
+                    "efficient scorer": "need_offense",
+                    "high-usage creator": "need_offense"}
+
+def _trade_value_norm(s: object) -> str:
+    import unicodedata as _ud
+
+    return "".join(c for c in _ud.normalize("NFKD", str(s or ""))
+                   if not _ud.combining(c)).strip().lower()
+
+class _TradeWarehouse:
+
+    __slots__ = ("tables", "cols", "gaps")
+
+    def __init__(self, con, prod_season: str, sal_season: str) -> None:
+        self.tables = _warehouse_tables(con)
+        self.cols = {t: {r[1] for r in
+                         con.execute(f"PRAGMA table_info({t})").fetchall()}
+                     for t in self.tables if t.startswith("silver_")}
+        self.gaps: list[str] = []
+
+    def missing(self, table: str, required: list[str]) -> list[str]:
+        have = self.cols.get(table, set())
+        return [c for c in required if c not in have]
+
+    def has_leaders(self) -> bool:
+        return "silver_leaders_pts" in self.tables
+
+    def note(self, text: str) -> None:
+        self.gaps.append(text)
+
+def _trade_leader_rows(con, prod_season: str) -> dict[str, dict]:
+    rows: dict[str, dict] = {}
+    for r in con.execute(
+            "SELECT PLAYER, TEAM, GP, PTS, REB, AST, STL, BLK, TOV,"
+            " FG3M, FG3_PCT FROM silver_leaders_pts WHERE _season = ?",
+            [prod_season]).fetchall():
+        rows.setdefault(_trade_value_norm(r[0]), {
+            "name": r[0], "team": r[1], "gp": r[2] or 0,
+            "tot": {"PTS": r[3] or 0, "REB": r[4] or 0, "AST": r[5] or 0,
+                    "STL": r[6] or 0, "BLK": r[7] or 0, "TOV": r[8] or 0},
+            "fg3m": r[9] or 0, "fg3_pct": r[10]})
+    return rows
+
+def _trade_leader_weights(warehouse: _TradeWarehouse) -> dict[str, float]:
+    missing = warehouse.missing("silver_leaders_pts", _TRADE_LEADERS_COLUMNS)
+    if missing:
+        warehouse.note(
+            "silver_leaders_pts missing columns skipped at zero weight: "
+            + ", ".join(missing))
+    return {c: (0.0 if c in missing else w)
+            for c, w in _TRADE_VALUE_WEIGHTS.items()}
+
+def _trade_adv_rows(con, warehouse: _TradeWarehouse,
+                    prod_season: str) -> dict[str, dict]:
+    if "silver_advanced" not in warehouse.tables:
+        warehouse.note("silver_advanced missing: age, TS_PCT, USG_PCT "
+                       "and NET_RATING unavailable")
+        return {}
+    missing = warehouse.missing(
+        "silver_advanced", ["PLAYER_NAME", "AGE", "TS_PCT", "USG_PCT"])
+    if missing:
+        warehouse.note("silver_advanced missing columns: " + ", ".join(missing))
+    rows: dict[str, dict] = {}
+    for r in con.execute(
+            "SELECT PLAYER_NAME, AGE, TS_PCT, USG_PCT FROM "
+            "silver_advanced WHERE _season = ?", [prod_season]).fetchall():
+        rows.setdefault(_trade_value_norm(r[0]),
+                        {"age": r[1], "ts": r[2], "usg": r[3]})
+    return rows
+
+def _trade_salary_column(scols: set[str]) -> str:
+    if "SALARY" in scols:
+        return "SALARY"
+    return next((c for c in scols if "SALARY" in c.upper()), "")
+
+def _trade_season_scoped(table: str, name_col: str, val_col: str,
+                         scols: set[str], sal_season: str):
+    if "_season" in scols:
+        return (f"SELECT {name_col}, {val_col} FROM {table} WHERE _season = ?",
+                [sal_season])
+    return f"SELECT {name_col}, {val_col} FROM {table}", []
+
+def _trade_sheet_salaries(con, warehouse: _TradeWarehouse,
+                          sal_season: str) -> dict[str, int]:
+    salaries: dict[str, int] = {}
+    for table, name_col, val_col in (
+            ("silver_salaries", "PLAYER_NAME", None),
+            ("silver_cap_players", "player", "salary")):
+        if table not in warehouse.tables:
+            continue
+        scols = warehouse.cols.get(table, set())
+        val = val_col or _trade_salary_column(scols)
+        if not val:
+            continue
+        query, params = _trade_season_scoped(table, name_col, val, scols,
+                                             sal_season)
+        for r in con.execute(query, params).fetchall():
+            if r[1] is not None:
+                salaries.setdefault(_trade_value_norm(r[0]), int(r[1]))
+    return salaries
+
+def _trade_team_id_to_abbr() -> dict:
+    try:
+        from nba_api.stats.static import teams as _static
+
+        return {t["id"]: t["abbreviation"] for t in _static.get_teams()}
+    except Exception:
+        return {}
+
+def _trade_rating_rows(con, warehouse: _TradeWarehouse,
+                       prod_season: str) -> dict[str, dict]:
+    if "silver_team_ratings" not in warehouse.tables:
+        warehouse.note("silver_team_ratings missing: pick slots assumed "
+                       "mid-first and team needs unavailable")
+        return {}
+    have = warehouse.cols.get("silver_team_ratings", set())
+    ranks = [c for c in _TRADE_RANK_COLUMNS if c in have]
+    if len(ranks) < len(_TRADE_RANK_COLUMNS):
+        warehouse.note("silver_team_ratings missing columns: " + ", ".join(
+            c for c in _TRADE_RANK_COLUMNS if c not in ranks))
+    names = ["TEAM_ID", "TEAM_NAME"] + ranks
+    id_to_abbr = _trade_team_id_to_abbr()
+    ratings: dict[str, dict] = {}
+    for r in con.execute(
+            f"SELECT {', '.join(names)} FROM silver_team_ratings "
+            f"WHERE _season = ?", [prod_season]).fetchall():
+        row = dict(zip(names, r))
+        abbr = id_to_abbr.get(row["TEAM_ID"], "")
+        if abbr:
+            ratings[str(abbr).upper()] = row
+    return ratings
+
+def _trade_dollars_per_point(leaders: dict, salaries: dict,
+                             use_w: dict[str, float]) -> float:
+    total = score = 0.0
+    for key, lead in leaders.items():
+        gp = lead["gp"]
+        if gp < 20 or key not in salaries:
+            continue
+        total += salaries[key]
+        score += sum(lead["tot"][c] / gp * use_w[c] for c in use_w)
+    return (total / score) if score > 0 else 0.0
+
+def _trade_archetypes(lead: dict, gp: int, advanced: dict) -> list[str]:
+    per = {c: lead["tot"][c] / gp for c in lead["tot"]}
+    tags = []
+    if (lead["fg3m"] or 0) / gp >= 2.0:
+        tags.append("spacer")
+    if per["AST"] >= 5.0:
+        tags.append("playmaker")
+    if per["STL"] + per["BLK"] >= 1.5:
+        tags.append("defensive playmaker")
+    if advanced.get("ts") is not None and advanced["ts"] >= 0.60:
+        tags.append("efficient scorer")
+    if advanced.get("usg") is not None and advanced["usg"] >= 0.28:
+        tags.append("high-usage creator")
+    return tags
+
+def _trade_value_player(display: str, leaders: dict, adv: dict,
+                        salaries: dict, use_w: dict, dpp: float,
+                        gaps: list[str]) -> dict[str, Any]:
+    key = _trade_value_norm(display)
+    lead = leaders.get(key)
+    advanced = adv.get(key, {})
+    gp = lead["gp"] if lead else 0
+    out: dict[str, Any] = {
+        "name": display, "salary_26_27": salaries.get(key),
+        "age": advanced.get("age"), "gp": gp,
+        "ppg": round(lead["tot"]["PTS"] / gp, 1) if lead and gp else 0.0,
+        "production_score": None, "est_market_value_m": "unknown",
+        "residual_m": "unknown", "archetypes": [],
+        "production_source": "2025-26 totals"}
+    if not lead or gp < 10:
+        gaps.append(
+            f"{display}: unknown value treated as 0 in side total "
+            "(GP < 10 or no 2025-26 production row)")
+        return out
+    score = round(sum(lead["tot"][c] / gp * use_w[c] for c in use_w), 2)
+    est_m = round(score * dpp / 1e6, 1)
+    out["production_score"] = score
+    out["est_market_value_m"] = est_m
+    if out["salary_26_27"] is not None:
+        out["residual_m"] = round(
+            (est_m * 1e6 - out["salary_26_27"]) / 1e6, 1)
+        rv = out["residual_m"]
+        out["residual_note"] = (
+            f"surplus value of about ${rv}M (outperforming the contract)"
+            if rv >= 0 else
+            f"overpaid by an estimated ${abs(rv)}M on this production")
+    out["archetypes"] = _trade_archetypes(lead, gp, advanced)
+    return out
+
+def _trade_first_round_slot(entry: dict, net_rank: object,
+                            giving_abbr: str, prot) -> None:
+    if net_rank is None:
+        slot = 15
+        entry["assumptions"].append(
+            f"no ratings row for {giving_abbr.upper()}: assumed "
+            "mid-first slot 15")
+    else:
+        slot = max(1, min(round(31 - net_rank * 0.85), 30))
+        entry["assumptions"].append(
+            f"slot estimated from {giving_abbr.upper()} net rank {net_rank}")
+    if prot:
+        n = int(prot.group(1))
+        slot = max(slot, n + 1)
+        entry["assumptions"].append(
+            f"top-{n} protected: conveyance risk applied")
+    value = _pick_value_for_slot(slot, True)
+    if prot:
+        value = round(value * 0.8, 1)
+    entry.update(est_slot=slot, est_value_m=value)
+
+def _trade_second_round_slot(entry: dict, desc: str) -> None:
+    import re as _re
+
+    m = _re.search(r"\b([3-5]\d)\b", desc)
+    slot = int(m.group(1)) if m and 31 <= int(m.group(1)) <= 60 else 45
+    entry.update(est_slot=slot,
+                 est_value_m=_pick_value_for_slot(slot, False))
+    entry["assumptions"].append("second-round slot estimate")
+
+def _trade_value_pick(desc: str, giving_abbr: str, ratings: dict,
+                      gaps: list[str]) -> dict[str, Any]:
+    import re as _re
+
+    low = desc.lower()
+    year = _re.search(r"(\d{4})", desc)
+    is_frp = bool(_re.search(r"frp|first[\s-]?round", low))
+    is_srp = bool(_re.search(r"\bsrp\b|second[\s-]?round", low))
+    prot = _re.search(r"top[-\s]?(\d+)\s*protect", low)
+    entry: dict[str, Any] = {"desc": desc, "est_slot": None,
+                             "est_value_m": 0.0, "assumptions": []}
+    if not year or (not is_frp and not is_srp):
+        entry["assumptions"].append("unparseable pick description")
+        gaps.append(f"{desc}: unparseable pick, valued at 0")
+        return entry
+    if is_frp:
+        net_rank = (ratings.get(giving_abbr.upper(), {}) or {}).get(
+            "NET_RATING_RANK")
+        _trade_first_round_slot(entry, net_rank, giving_abbr, prot)
+    else:
+        _trade_second_round_slot(entry, desc)
+    return entry
+
+def _trade_value_picks(raw: str, giving_abbr: str, ratings: dict,
+                       gaps: list[str]) -> list[dict]:
+    return [_trade_value_pick(desc, giving_abbr, ratings, gaps)
+            for desc in [p.strip() for p in str(raw or "").split(",")
+                         if p.strip()]]
+
+def _trade_side_total(players: list[dict], picks: list[dict]) -> float:
+    return round(sum(p["est_market_value_m"] for p in players
+                     if isinstance(p["est_market_value_m"], (int, float)))
+                 + sum(k["est_value_m"] for k in picks), 1)
+
+def _trade_grades(winner: str, delta: float, total_a: float, total_b: float,
+                  abbr_a: str, abbr_b: str) -> dict[str, str]:
+    if winner == "even":
+        return {abbr_a: "B", abbr_b: "B"}
+    share = abs(delta) / max(total_a, total_b, 1)
+    top = abbr_a if winner == abbr_a else abbr_b
+    bottom = abbr_b if top == abbr_a else abbr_a
+    top_grade = "A" if share >= 0.25 else "A-" if share >= 0.15 else "B+"
+    bottom_grade = ("F" if share >= 0.40 else "D" if share >= 0.25
+                    else "C+" if share >= 0.15 else "B-")
+    return {top: top_grade, bottom: bottom_grade}
+
+def _trade_timeline(ratings: dict, team_abbr: str) -> tuple[str, list]:
+    r = ratings.get(team_abbr.upper(), {})
+    needs = [name for name, col in _TRADE_NEED_COLUMNS
+             if isinstance(r.get(col), (int, float)) and r[col] >= 20]
+    net_rank = r.get("NET_RATING_RANK")
+    timeline = ("unknown" if not isinstance(net_rank, (int, float))
+                else "contender" if net_rank <= 8
+                else "rebuilding" if net_rank >= 22 else "middle")
+    return timeline, needs
+
+def _trade_fit_notes(player: dict, timeline: str, needs: list) -> list:
+    notes = []
+    for tag in player.get("archetypes", []):
+        need = _TRADE_TAG_NEEDS.get(tag)
+        if need and need in needs:
+            notes.append(f"{player['name']} fills {need} ({tag})")
+    age = player.get("age")
+    if isinstance(age, (int, float)) and age >= 32 and timeline == "rebuilding":
+        notes.append(f"{player['name']}: timeline clash (age {age:g} "
+                     "joining a rebuild)")
+    if isinstance(age, (int, float)) and age <= 23 and timeline == "contender":
+        notes.append(f"{player['name']}: developmental piece on a contender")
+    return notes
+
+def _trade_fit(team_abbr: str, received: list[dict],
+               ratings: dict) -> dict[str, Any]:
+    timeline, needs = _trade_timeline(ratings, team_abbr)
+    notes = [note for player in received
+             for note in _trade_fit_notes(player, timeline, needs)]
+    notes.append("positional logjam not assessed: no position data "
+                 "in warehouse")
+    return {"needs": needs, "timeline": timeline, "notes": notes}
+
+def _trade_driver(players_a: list, players_b: list):
+    valued = [p for p in players_a + players_b
+              if isinstance(p["est_market_value_m"], (int, float))]
+    if not valued:
+        return None
+    return max(valued, key=lambda p: (abs(p["residual_m"])
+                                      if isinstance(p["residual_m"],
+                                                    (int, float)) else 0))
+
+def _trade_key_add(winner: str, abbr_a: str, players_a: list,
+                   players_b: list):
+    win_side = players_b if winner == abbr_a else players_a
+    got = [p for p in win_side
+           if isinstance(p["est_market_value_m"], (int, float))]
+    return max(got, key=lambda p: p["est_market_value_m"], default=None)
+
+def _trade_key_fit_note(winner: str, fit: dict, key_add: dict | None) -> str:
+    if key_add is None or winner == "even":
+        return ""
+    notes = fit[winner]["notes"]
+    hit = next((n for n in notes if n.startswith(key_add["name"])), "")
+    if hit:
+        return (f" {key_add['name']} {hit[len(key_add['name']) + 1:]} "
+                f"for {winner}.")
+    return (f" {key_add['name']} headlines the return for {winner} "
+            f"({fit[winner]['timeline']} timeline).")
+
+def _trade_verdict_line(winner: str, total_a: float, total_b: float,
+                        delta: float, abbr_a: str, abbr_b: str) -> str:
+    if winner == "even":
+        return (f"This grades as roughly even, with {abbr_a} at an estimated "
+                f"${total_a}M and {abbr_b} at an estimated ${total_b}M, "
+                f"a gap of about ${abs(delta)}M.")
+    return (f"{winner} wins on estimated value by about ${abs(delta)}M, "
+            f"${max(total_a, total_b)}M to ${min(total_a, total_b)}M.")
+
+def _trade_driver_line(driver: dict | None) -> str:
+    if driver is None:
+        return "No player had enough production data to name a value driver."
+    residual = driver["residual_m"]
+    res_txt = ("the best value in the deal"
+               if isinstance(residual, (int, float)) and residual < 0
+               else "the largest gap between salary and production")
+    return (f"The biggest driver is {driver['name']}, with an estimated "
+            f"${driver['est_market_value_m']}M market value against a "
+            f"${(driver['salary_26_27'] or 0) / 1e6:.1f}M salary, "
+            f"{res_txt}.")
+
+def _trade_value_sides(con, team_a: str, players_a: str, team_b: str,
+                       players_b: str, season: str | None = None):
+    _, names_a, unk_a = _match_trade_players(team_a, players_a, con, season)
+    _, names_b, unk_b = _match_trade_players(team_b, players_b, con, season)
+    if unk_a:
+        fix = _auto_correct_side(unk_a, team_a, players_a, con, season)
+        if fix:
+            team_a, (_, names_a, unk_a), _c = fix
+    if unk_b:
+        fix = _auto_correct_side(unk_b, team_b, players_b, con, season)
+        if fix:
+            team_b, (_, names_b, unk_b), _c = fix
+    return team_a, names_a, unk_a, team_b, names_b, unk_b
+
+def _trade_value_error(msg: str) -> dict[str, Any]:
+    return {"tool": "get_trade_value", "ok": False, "error": msg}
+
 @tool(description='Trade value grade: estimated production value vs salary per side, plus picks.\n\nReasoning layer on top of get_trade_check (which covers cap legality).\nAll dollar figures are rough estimates from 2025-26 production versus\n2026-27 salaries. Picks like "2029 FRP" or "2030 FRP top-4 protected".')
 def get_trade_value(
     team_a: str = "", players_a: str = "", team_b: str = "",
     players_b: str = "", picks_a: str = "", picks_b: str = "",
 ) -> dict[str, Any]:
-    import re as _re
-    import unicodedata as _ud
-
-    from .. import store as _store
-
     if team_a and team_b:
-        _norm = _norm_trade_teams(team_a, team_b)
-        if _norm is None:
-            return {"tool": "get_trade_value", "ok": False,
-                    "error": (f"both sides resolve to the same team "
-                              f"({team_a} / {team_b}) - check the team "
-                              f"names")}
-        team_a, team_b = _norm
+        norm = _norm_trade_teams(team_a, team_b)
+        if norm is None:
+            return _trade_value_error(
+                f"both sides resolve to the same team ({team_a} / {team_b}) "
+                "- check the team names")
+        team_a, team_b = norm
     from ._core import last_completed_season as _trade_lcs
-    PROD_SEASON = _trade_lcs()
-    SAL_SEASON = "2026-27"
-    DISCLAIMER = (f"All dollar figures are rough estimates from {PROD_SEASON} "
-                  "production vs 2026-27 salary data. Not cap-legality advice; "
-                  "pair with get_trade_check.")
-
-    def _norm(s: object) -> str:
-        return "".join(c for c in _ud.normalize("NFKD", str(s or ""))
-                        if not _ud.combining(c)).strip().lower()
+    prod_season = _trade_lcs()
+    sal_season = "2026-27"
+    disclaimer = (f"All dollar figures are rough estimates from {prod_season} "
+                   "production vs 2026-27 salary data. Not cap-legality advice; "
+                   "pair with get_trade_check.")
 
     if not team_a or not team_b:
-        return {"tool": "get_trade_value", "ok": False,
-                "error": "two teams needed"}
-    con = _store.connect()
-    try:
+        return _trade_value_error("two teams needed")
+    with _owned_connection(None) as con:
         try:
-            _, names_a, unk_a = _match_trade_players(
-                team_a, players_a, con, SAL_SEASON)
-            _, names_b, unk_b = _match_trade_players(
-                team_b, players_b, con, SAL_SEASON)
-            if unk_a or unk_b:
-                if unk_a:
-                    fix = _auto_correct_side(unk_a, team_a, players_a, con,
-                                             SAL_SEASON)
-                    if fix:
-                        team_a, (_, names_a, unk_a), _c = fix
-                if unk_b:
-                    fix = _auto_correct_side(unk_b, team_b, players_b, con,
-                                             SAL_SEASON)
-                    if fix:
-                        team_b, (_, names_b, unk_b), _c = fix
+            team_a, names_a, unk_a, team_b, names_b, unk_b = _trade_value_sides(
+                con, team_a, players_a, team_b, players_b, sal_season)
         except SalaryColumnError as exc:
             return {"tool": "get_trade_value", "ok": False,
                     "reason": exc.reason, "error": str(exc)}
         if unk_a or unk_b:
-            parts = []
-            if unk_a:
-                parts.append(f"{team_a.upper()}: {'; '.join(unk_a)}")
-            if unk_b:
-                parts.append(f"{team_b.upper()}: {'; '.join(unk_b)}")
-            hints = _unknown_player_hints(unk_a + unk_b, con)
-            msg = "unknown players: " + " | ".join(parts)
-            if hints:
-                msg += ". " + "; ".join(hints)
-            return {"tool": "get_trade_value", "ok": False,
-                    "reason": "unknown_players", "error": msg}
+            out = _trade_value_error(_trade_unknown_message(
+                team_a, unk_a, team_b, unk_b, con))
+            out["reason"] = "unknown_players"
+            return out
         if not names_a or not names_b:
-
             return {"tool": "get_trade_value", "ok": False,
-
                     "terminal": True,
                     "error": ("I can only grade proposed trades where "
                               "both sides name players. What a past "
                               "trade's other side actually received is "
                               "not in this dataset.")}
 
-        tables = {r[0] for r in con.execute("SHOW TABLES").fetchall()}
-        cols = {t: {r[1] for r in con.execute(f"PRAGMA table_info({t})").fetchall()}
-                for t in tables if t.startswith("silver_")}
-
-        def _need(table: str, required: list[str]) -> list[str]:
-            return [c for c in required if c not in cols.get(table, set())]
-
-        data_gaps: list[str] = []
-        if "silver_leaders_pts" not in tables:
-            return {"tool": "get_trade_value", "ok": False,
-                    "error": "cannot value players: silver_leaders_pts missing "
-                             "from warehouse"}
-        leaders_missing = _need("silver_leaders_pts",
-                                ["PLAYER", "GP", "PTS", "REB", "AST", "STL",
-                                 "BLK", "TOV", "FG3M", "FG3_PCT"])
-        if leaders_missing:
-            data_gaps.append(
-                "silver_leaders_pts missing columns skipped at zero weight: "
-                + ", ".join(leaders_missing))
-        weights = {"PTS": 1.0, "REB": 1.2, "AST": 1.5,
-                   "STL": 2.0, "BLK": 2.0, "TOV": -1.5}
-        use_w = {c: (0.0 if c in leaders_missing else w)
-                 for c, w in weights.items()}
-
-        leaders: dict[str, dict] = {}
-        for r in con.execute(
-                "SELECT PLAYER, TEAM, GP, PTS, REB, AST, STL, BLK, TOV,"
-                " FG3M, FG3_PCT FROM silver_leaders_pts WHERE _season = ?",
-                [PROD_SEASON]).fetchall():
-            leaders.setdefault(_norm(r[0]), {
-                "name": r[0], "team": r[1], "gp": r[2] or 0,
-                "tot": {"PTS": r[3] or 0, "REB": r[4] or 0, "AST": r[5] or 0,
-                        "STL": r[6] or 0, "BLK": r[7] or 0, "TOV": r[8] or 0},
-                "fg3m": r[9] or 0, "fg3_pct": r[10]})
-
-        adv: dict[str, dict] = {}
-        if "silver_advanced" not in tables:
-            data_gaps.append("silver_advanced missing: age, TS_PCT, USG_PCT "
-                             "and NET_RATING unavailable")
-        else:
-            adv_missing = _need("silver_advanced",
-                                ["PLAYER_NAME", "AGE", "TS_PCT", "USG_PCT"])
-            if adv_missing:
-                data_gaps.append("silver_advanced missing columns: "
-                                 + ", ".join(adv_missing))
-            for r in con.execute(
-                    "SELECT PLAYER_NAME, AGE, TS_PCT, USG_PCT FROM "
-                    "silver_advanced WHERE _season = ?", [PROD_SEASON]).fetchall():
-                adv.setdefault(_norm(r[0]), {"age": r[1], "ts": r[2],
-                                             "usg": r[3]})
-
-        salaries: dict[str, int] = {}
-        if "silver_salaries" in tables:
-            scols = cols.get("silver_salaries", set())
-            scol = ("SALARY" if "SALARY" in scols
-                    else next((c for c in scols if "SALARY" in c.upper()), ""))
-            if scol:
-                q = (f"SELECT PLAYER_NAME, {scol} FROM silver_salaries "
-                     "WHERE _season = ?" if "_season" in scols
-                     else f"SELECT PLAYER_NAME, {scol} FROM silver_salaries")
-                params = [SAL_SEASON] if "_season" in scols else []
-                for r in con.execute(q, params).fetchall():
-                    if r[1] is not None:
-                        salaries.setdefault(_norm(r[0]), int(r[1]))
-        if "silver_cap_players" in tables:
-            ccols = cols.get("silver_cap_players", set())
-            q = ("SELECT player, salary FROM silver_cap_players "
-                 "WHERE _season = ?" if "_season" in ccols
-                 else "SELECT player, salary FROM silver_cap_players")
-            params = [SAL_SEASON] if "_season" in ccols else []
-            for r in con.execute(q, params).fetchall():
-                if r[1] is not None:
-                    salaries.setdefault(_norm(r[0]), int(r[1]))
+        warehouse = _TradeWarehouse(con, prod_season, sal_season)
+        if not warehouse.has_leaders():
+            return _trade_value_error(
+                "cannot value players: silver_leaders_pts missing from "
+                "warehouse")
+        use_w = _trade_leader_weights(warehouse)
+        leaders = _trade_leader_rows(con, prod_season)
+        adv = _trade_adv_rows(con, warehouse, prod_season)
+        salaries = _trade_sheet_salaries(con, warehouse, sal_season)
         if not salaries:
-            data_gaps.append("no 2026-27 salary rows: residuals unavailable")
-
-        ratings: dict[str, dict] = {}
-        if "silver_team_ratings" not in tables:
-            data_gaps.append("silver_team_ratings missing: pick slots assumed "
-                             "mid-first and team needs unavailable")
-        else:
-            rank_cols = ["OFF_RATING_RANK", "DEF_RATING_RANK",
-                         "NET_RATING_RANK", "TS_PCT_RANK", "AST_PCT_RANK",
-                         "REB_PCT_RANK"]
-            have_ranks = [c for c in rank_cols
-                          if c in cols.get("silver_team_ratings", set())]
-            if len(have_ranks) < len(rank_cols):
-                data_gaps.append("silver_team_ratings missing columns: " + ", ".join(
-                    c for c in rank_cols if c not in have_ranks))
-            sel = ", ".join(["TEAM_ID", "TEAM_NAME"] + have_ranks)
-            id_to_abbr = {}
-            try:
-                from nba_api.stats.static import teams as _static
-
-                id_to_abbr = {t["id"]: t["abbreviation"]
-                              for t in _static.get_teams()}
-            except Exception:
-                pass
-            for r in con.execute(
-                    f"SELECT {sel} FROM silver_team_ratings WHERE _season = ?",
-                    [PROD_SEASON]).fetchall():
-                row = dict(zip(["TEAM_ID", "TEAM_NAME"] + have_ranks, r))
-                abbr = id_to_abbr.get(row["TEAM_ID"], "")
-                if abbr:
-                    ratings[str(abbr).upper()] = row
+            warehouse.note("no 2026-27 salary rows: residuals unavailable")
+        ratings = _trade_rating_rows(con, warehouse, prod_season)
         payroll_source = _payroll_source(con)
-    finally:
-        con.close()
 
-    def _score(tot: dict, gp: int) -> float:
-        return sum(tot[c] / gp * use_w[c] for c in use_w)
+    dpp = _trade_dollars_per_point(leaders, salaries, use_w)
+    if not dpp:
+        return _trade_value_error(
+            "cannot value players: no qualified salary plus production "
+            "overlap in warehouse")
 
-    dpp_total = dpp_score = 0.0
-    for key, lead in leaders.items():
-        gp = lead["gp"]
-        if gp < 20 or key not in salaries:
-            continue
-        dpp_total += salaries[key]
-        dpp_score += _score(lead["tot"], gp)
-    dollars_per_point = (dpp_total / dpp_score) if dpp_score > 0 else 0.0
-    if not dollars_per_point:
-        return {"tool": "get_trade_value", "ok": False,
-                "error": "cannot value players: no qualified salary plus "
-                         "production overlap in warehouse"}
+    players_a = [_trade_value_player(n, leaders, adv, salaries, use_w, dpp,
+                                     warehouse.gaps) for n in names_a]
+    players_b = [_trade_value_player(n, leaders, adv, salaries, use_w, dpp,
+                                     warehouse.gaps) for n in names_b]
+    picks_list_a = _trade_value_picks(picks_a, team_a, ratings, warehouse.gaps)
+    picks_list_b = _trade_value_picks(picks_b, team_b, ratings, warehouse.gaps)
 
-    def _value_player(display: str) -> dict:
-        lead = leaders.get(_norm(display))
-        a = adv.get(_norm(display), {})
-        gp = lead["gp"] if lead else 0
-        ppg = round(lead["tot"]["PTS"] / gp, 1) if lead and gp else 0.0
-        out: dict[str, Any] = {
-            "name": display, "salary_26_27": salaries.get(_norm(display)),
-            "age": a.get("age"), "gp": gp, "ppg": ppg,
-            "production_score": None, "est_market_value_m": "unknown",
-            "residual_m": "unknown", "archetypes": [],
-            "production_source": "2025-26 totals"}
-        if not lead or gp < 10:
-            data_gaps.append(
-                f"{display}: unknown value treated as 0 in side total "
-                "(GP < 10 or no 2025-26 production row)")
-            return out
-        score = round(_score(lead["tot"], gp), 2)
-        est_m = round(score * dollars_per_point / 1e6, 1)
-        out["production_score"] = score
-        out["est_market_value_m"] = est_m
-        if out["salary_26_27"] is not None:
-
-            out["residual_m"] = round((est_m * 1e6 - out["salary_26_27"]) / 1e6, 1)
-            _rv = out["residual_m"]
-
-            out["residual_note"] = (
-                f"surplus value of about ${_rv}M (outperforming the "
-                f"contract)" if _rv >= 0 else
-                f"overpaid by an estimated ${abs(_rv)}M on this "
-                f"production")
-        per = {c: lead["tot"][c] / gp for c in lead["tot"]}
-        tags = []
-        if (lead["fg3m"] or 0) / gp >= 2.0:
-            tags.append("spacer")
-        if per["AST"] >= 5.0:
-            tags.append("playmaker")
-        if per["STL"] + per["BLK"] >= 1.5:
-            tags.append("defensive playmaker")
-        if a.get("ts") is not None and a["ts"] >= 0.60:
-            tags.append("efficient scorer")
-        if a.get("usg") is not None and a["usg"] >= 0.28:
-            tags.append("high-usage creator")
-        out["archetypes"] = tags
-        return out
-
-    def _value_picks(raw: str, giving_abbr: str) -> list[dict]:
-        picks = []
-        for desc in [p.strip() for p in str(raw or "").split(",") if p.strip()]:
-            low = desc.lower()
-            year = _re.search(r"(\d{4})", desc)
-            is_frp = bool(_re.search(r"frp|first[\s-]?round", low))
-            is_srp = bool(_re.search(r"\bsrp\b|second[\s-]?round", low))
-            prot = _re.search(r"top[-\s]?(\d+)\s*protect", low)
-            entry: dict[str, Any] = {"desc": desc, "est_slot": None,
-                                     "est_value_m": 0.0, "assumptions": []}
-            if not year or (not is_frp and not is_srp):
-                entry["assumptions"].append("unparseable pick description")
-                data_gaps.append(f"{desc}: unparseable pick, valued at 0")
-                picks.append(entry)
-                continue
-            if is_frp:
-                net_rank = (ratings.get(giving_abbr.upper(), {}) or {}).get(
-                    "NET_RATING_RANK")
-                if net_rank is None:
-                    slot = 15
-                    entry["assumptions"].append(
-                        f"no ratings row for {giving_abbr.upper()}: assumed "
-                        "mid-first slot 15")
-                else:
-                    slot = max(1, min(round(31 - net_rank * 0.85), 30))
-                    entry["assumptions"].append(
-                        f"slot estimated from {giving_abbr.upper()} net rank "
-                        f"{net_rank}")
-                if prot:
-                    n = int(prot.group(1))
-                    slot = max(slot, n + 1)
-                    entry["assumptions"].append(
-                        f"top-{n} protected: conveyance risk applied")
-                value = _pick_value_for_slot(slot, True)
-                if prot:
-                    value = round(value * 0.8, 1)
-                entry.update(est_slot=slot, est_value_m=value)
-            else:
-                m = _re.search(r"\b([3-5]\d)\b", desc)
-                slot = int(m.group(1)) if m and 31 <= int(m.group(1)) <= 60 else 45
-                entry.update(est_slot=slot,
-                             est_value_m=_pick_value_for_slot(slot, False))
-                entry["assumptions"].append("second-round slot estimate")
-            picks.append(entry)
-        return picks
-
-    players_a = [_value_player(n) for n in names_a]
-    players_b = [_value_player(n) for n in names_b]
-    picks_list_a = _value_picks(picks_a, team_a)
-    picks_list_b = _value_picks(picks_b, team_b)
-
-    def _side_total(plist: list[dict], klist: list[dict]) -> float:
-        return round(sum(p["est_market_value_m"] for p in plist
-                         if isinstance(p["est_market_value_m"], (int, float)))
-                     + sum(k["est_value_m"] for k in klist), 1)
-
-    total_a = _side_total(players_a, picks_list_a)
-    total_b = _side_total(players_b, picks_list_b)
+    total_a = _trade_side_total(players_a, picks_list_a)
+    total_b = _trade_side_total(players_b, picks_list_b)
     delta = round(total_a - total_b, 1)
     abbr_a, abbr_b = team_a.upper(), team_b.upper()
     winner = abbr_a if delta >= 0.5 else abbr_b if delta <= -0.5 else "even"
 
-    def _grades() -> dict[str, str]:
-        if winner == "even":
-            return {abbr_a: "B", abbr_b: "B"}
-        share = abs(delta) / max(total_a, total_b, 1)
-        w = abbr_a if winner == abbr_a else abbr_b
-        loser = abbr_b if w == abbr_a else abbr_a
-        wg = "A" if share >= 0.25 else "A-" if share >= 0.15 else "B+"
-        lg = ("F" if share >= 0.40 else "D" if share >= 0.25
-              else "C+" if share >= 0.15 else "B-")
-        return {w: wg, loser: lg}
+    fit = {abbr_a: _trade_fit(abbr_a, players_b, ratings),
+           abbr_b: _trade_fit(abbr_b, players_a, ratings)}
 
-    need_cols = [("need_offense", "OFF_RATING_RANK"),
-                 ("need_defense", "DEF_RATING_RANK"),
-                 ("need_shooting", "TS_PCT_RANK"),
-                 ("need_playmaking", "AST_PCT_RANK"),
-                 ("need_rebounding", "REB_PCT_RANK")]
-    tag_to_need = {"spacer": "need_shooting",
-                   "playmaker": "need_playmaking",
-                   "defensive playmaker": "need_defense",
-                   "efficient scorer": "need_offense",
-                   "high-usage creator": "need_offense"}
-
-    def _fit(team_abbr: str, received: list[dict]) -> dict:
-        r = ratings.get(team_abbr.upper(), {})
-        needs = [name for name, col in need_cols
-                 if isinstance(r.get(col), (int, float)) and r[col] >= 20]
-        net_rank = r.get("NET_RATING_RANK")
-        timeline = ("unknown" if not isinstance(net_rank, (int, float))
-                    else "contender" if net_rank <= 8
-                    else "rebuilding" if net_rank >= 22 else "middle")
-        notes = []
-        for p in received:
-            for tag in p.get("archetypes", []):
-                need = tag_to_need.get(tag)
-                if need and need in needs:
-                    notes.append(f"{p['name']} fills {need} ({tag})")
-            age = p.get("age")
-            if (isinstance(age, (int, float)) and age >= 32
-                    and timeline == "rebuilding"):
-                notes.append(f"{p['name']}: timeline clash (age {age:g} "
-                             "joining a rebuild)")
-            if (isinstance(age, (int, float)) and age <= 23
-                    and timeline == "contender"):
-                notes.append(f"{p['name']}: developmental piece on a contender")
-        notes.append("positional logjam not assessed: no position data "
-                     "in warehouse")
-        return {"needs": needs, "timeline": timeline, "notes": notes}
-
-    fit = {abbr_a: _fit(abbr_a, players_b), abbr_b: _fit(abbr_b, players_a)}
-
-    valued = [p for p in players_a + players_b
-              if isinstance(p["est_market_value_m"], (int, float))]
-    driver = (max(valued, key=lambda p: (abs(p["residual_m"])
-                 if isinstance(p["residual_m"], (int, float)) else 0))
-              if valued else None)
-    win_side = players_b if winner == abbr_a else players_a
-    win_got = [p for p in win_side
-               if isinstance(p["est_market_value_m"], (int, float))]
-    key_add = max(win_got, key=lambda p: p["est_market_value_m"],
-                  default=None)
-    key_fit_note = ""
-    if key_add is not None and winner != "even":
-        wfit = fit[winner]
-        hit = next((n for n in wfit["notes"]
-                    if n.startswith(key_add["name"])), "")
-        key_fit_note = (f" {key_add['name']} {hit[len(key_add['name']) + 1:]} "
-                        f"for {winner}." if hit
-                        else f" {key_add['name']} headlines the return "
-                             f"for {winner} ({wfit['timeline']} timeline).")
-    if winner == "even":
-        s1 = (f"This grades as roughly even, with {abbr_a} at an estimated "
-              f"${total_a}M and {abbr_b} at an estimated ${total_b}M, "
-              f"a gap of about ${abs(delta)}M.")
-    else:
-        s1 = (f"{winner} wins on estimated value by about ${abs(delta)}M, "
-              f"${max(total_a, total_b)}M to ${min(total_a, total_b)}M.")
-    if driver is not None:
-        res = driver["residual_m"]
-        res_txt = ("the best value in the deal"
-                   if isinstance(res, (int, float)) and res < 0
-                   else "the largest gap between salary and production")
-        s2 = (f"The biggest driver is {driver['name']}, with an estimated "
-              f"${driver['est_market_value_m']}M market value against a "
-              f"${(driver['salary_26_27'] or 0) / 1e6:.1f}M salary, "
-              f"{res_txt}.")
-    else:
-        s2 = "No player had enough production data to name a value driver."
+    key_fit_note = _trade_key_fit_note(
+        winner, fit, _trade_key_add(winner, abbr_a, players_a, players_b))
+    s1 = _trade_verdict_line(winner, total_a, total_b, delta, abbr_a, abbr_b)
+    s2 = _trade_driver_line(_trade_driver(players_a, players_b))
     s3 = key_fit_note.strip() or "Fit notes are limited by missing team data."
     s4 = ("All values are rough estimates from 2025-26 production versus "
           "2026-27 salaries, so this is not cap-legality advice: pair it "
           "with get_trade_check.")
-    text = " ".join([s1, s2, s3, s4])
 
     return {"tool": "get_trade_value", "ok": True,
             "rows": {"team_a": {"team": abbr_a, "players": players_a,
@@ -3369,14 +3646,17 @@ def get_trade_value(
                                 "picks": picks_list_b, "side_total_m": total_b},
                      "fit": fit,
                      "verdict": {"winner": winner, "delta_m": delta,
-                                 "grades": _grades(), "text": text},
-                     "data_gaps": data_gaps,
-                     "disclaimer": DISCLAIMER,
+                                 "grades": _trade_grades(
+                                     winner, delta, total_a, total_b,
+                                     abbr_a, abbr_b),
+                                 "text": " ".join([s1, s2, s3, s4])},
+                     "data_gaps": warehouse.gaps,
+                     "disclaimer": disclaimer,
                      "residual_meaning": "residual_m = estimated market "
                      "value minus salary; positive = surplus value "
                      "(outperforming the contract), negative = overpaid"},
             "meta": {"source": payroll_source,
-                     "production_season": PROD_SEASON,
+                     "production_season": prod_season,
                      "salary_season": _salary_vintage()[0] or "2026-27",
                      "estimates": True}}
 
@@ -3668,8 +3948,9 @@ def get_briefing(game_date: str = "", season: str | None = None) -> dict[str, An
             "rows": {"date": day, "games": games, "top_scorers": top},
             "meta": gmeta}
 
-def _describe_warehouse_schema(cols: dict[str, list[str]]) -> str:
-    return "\n".join(f"{t}: {', '.join(c[:40])}" for t, c in cols.items())
+def _describe_warehouse_schema(cols: dict[str, dict]) -> str:
+    return "\n".join(
+        f"{table}: {', '.join(columns)}" for table, columns in cols.items())
 
 _SQL_TABLES = [
     "silver_standings", "silver_playoffs", "silver_team_ratings",
@@ -3705,7 +3986,53 @@ def _warehouse_schema_cache_info() -> dict[str, float]:
             "misses": _schema_cache_stats["misses"],
             "at": _schema_cache["at"]}
 
-def _get_warehouse_schema() -> tuple[list[str], dict[str, list[str]]]:
+_COLUMN_UNITS: dict[str, tuple[str, str]] = {
+    "PCT": ("fraction_0_1", "fraction on a 0-1 scale, not a 0-100 number"),
+    "MPG": ("minutes_per_game", "minutes per game, not total minutes; "
+                               "multiply by GP for a season total"),
+    "PPG": ("points_per_game", "points per game, not a season total"),
+    "RPG": ("rebounds_per_game", "rebounds per game, not a season total"),
+    "APG": ("assists_per_game", "assists per game, not a season total"),
+    "SPG": ("steals_per_game", "steals per game, not a season total"),
+    "BPG": ("blocks_per_game", "blocks per game, not a season total"),
+    "GP": ("games_played", "games played; the denominator for a per-game rate"),
+    "GS": ("games_started", "games started, at most GP"),
+    "MP": ("total_minutes", "total minutes played across the season"),
+    "AGE": ("years", "age in years"),
+    "RANK": ("rank", "leading rank; a tie shares it"),
+    "RATE": ("per_100_possessions", "rate per 100 possessions"),
+}
+_COLUMN_PREFIX_UNITS: tuple[tuple[str, tuple[str, str]], ...] = (
+    ("_PCT", ("fraction_0_1",
+              "fraction on a 0-1 scale, not a 0-100 number")),
+    ("_PTS_PER_100", ("points_per_100_possessions",
+                      "points per 100 possessions")),
+)
+_COLUMN_SUFFIXES = ("_PTS", "_REB", "_AST", "_STL", "_BLK", "_TOV", "_MIN")
+_PROVENANCE_PREFIXES = ("_PROV_",)
+
+
+def _column_semantics(name: str) -> tuple[str, str]:
+    upper = str(name or "").upper()
+    if any(upper.startswith(prefix) for prefix in _PROVENANCE_PREFIXES):
+        return ("provenance", "provenance column; never filter or group on it")
+    if upper.startswith("_PROV") or upper in {"_SOURCE", "_FETCHED_AT", "_ENTITY"}:
+        return ("provenance", "provenance column; never filter or group on it")
+    if upper == "_SEASON":
+        return ("season", "the season these rows describe; filter on this")
+    for prefix, entry in _COLUMN_PREFIX_UNITS:
+        if upper.endswith(prefix):
+            return entry
+    if upper in _COLUMN_UNITS:
+        return _COLUMN_UNITS[upper]
+    for suffix in _COLUMN_SUFFIXES:
+        if upper.endswith(suffix):
+            return (f"total_{suffix.lstrip('_').lower()}",
+                    f"season total, not per game")
+    return ("", "")
+
+
+def _get_warehouse_schema() -> tuple[list[str], dict[str, dict[str, dict]]]:
     import time as _time
 
     from .. import store as _store
@@ -3715,23 +4042,28 @@ def _get_warehouse_schema() -> tuple[list[str], dict[str, list[str]]]:
     if now - at < _SCHEMA_TTL_S and _schema_cache.get("present"):
         _schema_cache_stats["hits"] += 1
         return (list(_schema_cache["present"]),
-                {k: list(v) for k, v in
+                {k: dict(v) for k, v in
                  _schema_cache["cols"].items()})
     _schema_cache_stats["misses"] += 1
     con = _store.connect()
     try:
         tables = {r[0] for r in con.execute("SHOW TABLES").fetchall()}
         present = [t for t in _SQL_TABLES if t in tables]
-        cols: dict[str, list[str]] = {}
+        cols: dict[str, dict[str, dict[str, str]]] = {}
         for t in present:
-            cols[t] = [r[1] for r in
-                       con.execute(f"PRAGMA table_info({t})").fetchall()][:40]
+            cols[t] = {}
+            for row in con.execute(
+                    f"PRAGMA table_info({t})").fetchall()[:40]:
+                unit, note = _column_semantics(row[1])
+                cols[t][row[1]] = {
+                    "type": str(row[2]), "unit": unit, "note": note}
     finally:
         con.close()
     _schema_cache["at"] = now
     _schema_cache["present"] = present
     _schema_cache["cols"] = cols
-    return (list(present), {k: list(v) for k, v in cols.items()})
+    return (list(present),
+            {k: dict(v) for k, v in cols.items()})
 
 import re as _re_mod
 
@@ -4135,69 +4467,49 @@ def get_playoff_sim(season: str | None = None, sims: int = 2000) -> dict[str, An
     return {"tool": "get_playoff_sim", "ok": True, "rows": out,
             "meta": {**out.get("meta", {}), "season": season, "sims": sims}}
 
-@tool(description="Contract value residuals from production vs salary.\n\nReturns league leaders by default; pass team for one roster or player for\none named player's modeled salary and residual.")
-def get_contract_value(season: str | None = None, min_gp: int = 20,
-                       team: str = "", player: str = "") -> dict[str, Any]:
-    season = resolve_season(season)
+_CONTRACT_WEIGHTS = {"PTS": 1.0, "REB": 1.2, "AST": 1.5,
+                     "STL": 2.0, "BLK": 2.0, "TOV": -1.5}
+
+def _contract_norm(s: object) -> str:
     import unicodedata as _ud
 
-    from .. import store as _store
+    return "".join(
+        c for c in _ud.normalize("NFKD", str(s or ""))
+        if not _ud.combining(c)
+    ).strip().lower()
 
-    season = str(season or "").strip() or resolve_season(None)
+def _contract_tables(con) -> tuple[bool, set[str]]:
+    tables = _warehouse_tables(con)
+    return ({"silver_cap_players", "silver_leaders_pts"} <= tables,
+            {r[1] for r in
+             con.execute("PRAGMA table_info(silver_leaders_pts)").fetchall()})
+
+def _contract_fetched(con) -> tuple[object, object]:
     try:
+        return (con.execute(
+            "SELECT MAX(_fetched_at) FROM silver_leaders_pts").fetchall()[0][0],
+            con.execute(
+                "SELECT MAX(_fetched_at) FROM silver_cap_players").fetchall()[0][0])
+    except Exception:
+        return None, None
 
-        min_gp = max(10, min(int(min_gp), 82))
-    except (TypeError, ValueError):
-        min_gp = 20
+def _contract_read(con, season: str):
+    ready, have = _contract_tables(con)
+    if not ready:
+        return "empty", None, None, None, None
+    prod = con.execute(
+        """SELECT PLAYER, TEAM, GP, PTS, REB, AST, STL, BLK, TOV
+        FROM silver_leaders_pts WHERE _season = ?""", [season]).fetchall()
+    cap = con.execute(
+        "SELECT player, team, salary FROM silver_cap_players").fetchall()
+    prod_date, cap_date = _contract_fetched(con)
+    return None, have, prod, cap, (prod_date, cap_date)
 
-    team_arg = str(team or "").strip()
-    player_arg = str(player or "").strip()
-
-    weights = {"PTS": 1.0, "REB": 1.2, "AST": 1.5,
-               "STL": 2.0, "BLK": 2.0, "TOV": -1.5}
-
-    def _norm(s: object) -> str:
-        return "".join(
-            c for c in _ud.normalize("NFKD", str(s or ""))
-            if not _ud.combining(c)
-        ).strip().lower()
-
-    con = _store.connect()
-    try:
-        tables = {r[0] for r in con.execute("SHOW TABLES").fetchall()}
-        if "silver_cap_players" not in tables or "silver_leaders_pts" not in tables:
-            return {"tool": "get_contract_value", "ok": False,
-                    "error": "warehouse empty"}
-        have = {r[1] for r in
-                con.execute("PRAGMA table_info(silver_leaders_pts)").fetchall()}
-        prod = con.execute(
-            """SELECT PLAYER, TEAM, GP, PTS, REB, AST, STL, BLK, TOV
-            FROM silver_leaders_pts WHERE _season = ?""",
-            [season],
-        ).fetchall()
-        cap = con.execute(
-            "SELECT player, team, salary FROM silver_cap_players"
-        ).fetchall()
-        try:
-            prod_date = con.execute(
-                "SELECT MAX(_fetched_at) FROM silver_leaders_pts").fetchall()[0][0]
-            cap_date = con.execute(
-                "SELECT MAX(_fetched_at) FROM silver_cap_players").fetchall()[0][0]
-        except Exception:
-            prod_date = cap_date = None
-    finally:
-        con.close()
-    if not prod:
-        return {"tool": "get_contract_value", "ok": False,
-                "error": f"no production rows for {season}"}
-    missing = [c for c in weights if c not in have]
-    use_w = {c: (0.0 if c in missing else w) for c, w in weights.items()}
-    by_name: dict[str, tuple] = {}
-    for r in prod:
-        by_name.setdefault(_norm(r[0]), r)
+def _contract_fitted(cap: list, by_name: dict, min_gp: int,
+                     use_w: dict) -> list[dict[str, Any]]:
     fitted = []
     for player, team, salary in cap:
-        r = by_name.get(_norm(player))
+        r = by_name.get(_contract_norm(player))
         if r is None:
             continue
         _, lteam, gp, pts, reb, ast, stl, blk, tov = r
@@ -4206,70 +4518,110 @@ def get_contract_value(season: str | None = None, min_gp: int = 20,
             continue
         vals = {"PTS": pts or 0, "REB": reb or 0, "AST": ast or 0,
                 "STL": stl or 0, "BLK": blk or 0, "TOV": tov or 0}
-        score = sum(vals[c] / gp * use_w[c] for c in use_w)
-        fitted.append({"PLAYER": player, "TEAM": team or lteam,
-                       "SALARY": salary or 0, "GP": gp, "SCORE": score})
+        fitted.append({
+            "PLAYER": player, "TEAM": team or lteam,
+            "SALARY": salary or 0, "GP": gp,
+            "SCORE": sum(vals[c] / gp * use_w[c] for c in use_w)})
+    return fitted
+
+def _contract_regression(fitted: list[dict[str, Any]]) -> tuple[float, float]:
     n = len(fitted)
-    if n < 2:
-        return {"tool": "get_contract_value", "ok": False,
-                "error": "not enough qualified players"}
     mx = sum(f["SCORE"] for f in fitted) / n
     my = sum(f["SALARY"] for f in fitted) / n
     var = sum((f["SCORE"] - mx) ** 2 for f in fitted)
     if var <= 0:
-        return {"tool": "get_contract_value", "ok": False,
-                "error": "no production variance"}
-    cov = sum((f["SCORE"] - mx) * (f["SALARY"] - my) for f in fitted)
-    slope = cov / var
+        raise ValueError("no production variance")
+    slope = sum((f["SCORE"] - mx) * (f["SALARY"] - my)
+                for f in fitted) / var
     intercept = my - slope * mx
     for f in fitted:
         f["PREDICTED"] = int(round(slope * f["SCORE"] + intercept))
         f["RESIDUAL"] = int(f["SALARY"]) - int(f["PREDICTED"])
         f["SCORE"] = round(f["SCORE"], 2)
-    team_scope = ""
-    if team_arg:
-        try:
-            from ._core import coerce_team_id as _cti
-            _tid = _cti(team_arg)
-            from nba_api.stats.static import teams as _teams
+    return slope, intercept
 
-            for _t in _teams.get_teams():
-                if _t.get("id") == _tid:
-                    team_scope = str(_t.get("abbreviation", "")).upper()
-                    break
-        except (ValueError, TypeError):
-            team_scope = ""
+def _contract_team_scope(team_arg: str) -> str:
+    if not team_arg:
+        return ""
+    try:
+        from ._core import coerce_team_id as _cti
+        from nba_api.stats.static import teams as _teams
+
+        tid = _cti(team_arg)
+        for t in _teams.get_teams():
+            if t.get("id") == tid:
+                return str(t.get("abbreviation", "")).upper()
+    except (ValueError, TypeError):
+        return ""
+    return ""
+
+def _contract_over_under(fitted: list[dict], span: int) -> list[dict]:
+    return (sorted(fitted, key=lambda f: f["RESIDUAL"], reverse=True)[:span]
+            + sorted(fitted, key=lambda f: f["RESIDUAL"])[:span])
+
+def _contract_rows(fitted: list[dict], player_arg: str, team_scope: str):
     if player_arg:
-        want = _norm(player_arg)
-        matched = [f for f in fitted if _norm(f.get("PLAYER")) == want]
+        want = _contract_norm(player_arg)
+        matched = [f for f in fitted if _contract_norm(f.get("PLAYER")) == want]
         if not matched:
-            return {"tool": "get_contract_value", "ok": False,
-                    "error": f"no qualified value row for {player_arg}"}
-        rows = matched[:1]
-    elif team_scope:
-        fitted = [f for f in fitted
+            return None, f"no qualified value row for {player_arg}"
+        return matched[:1], None
+    if team_scope:
+        scoped = [f for f in fitted
                   if str(f.get("TEAM") or "").upper() == team_scope]
-        if not fitted:
-            return {"tool": "get_contract_value", "ok": False,
-                    "error": f"no qualified players on {team_scope}"}
-        over = sorted(fitted, key=lambda f: f["RESIDUAL"],
-                      reverse=True)[:5]
-        under = sorted(fitted, key=lambda f: f["RESIDUAL"])[:5]
-        rows = over + under
-    else:
-        over = sorted(fitted, key=lambda f: f["RESIDUAL"],
-                      reverse=True)[:10]
-        under = sorted(fitted, key=lambda f: f["RESIDUAL"])[:10]
-        rows = over + under
-    formula = ("score = PTS + 1.2*REB + 1.5*AST + 2*STL + 2*BLK - 1.5*TOV "
-               "(per game); salary_hat = slope*score + intercept (OLS by hand); "
-               "residual = salary - salary_hat")
+        if not scoped:
+            return None, f"no qualified players on {team_scope}"
+        return _contract_over_under(scoped, 5), None
+    return _contract_over_under(fitted, 10), None
+
+@tool(description="Contract value residuals from production vs salary.\n\nReturns league leaders by default; pass team for one roster or player for\none named player's modeled salary and residual.")
+def get_contract_value(season: str | None = None, min_gp: int = 20,
+                       team: str = "", player: str = "") -> dict[str, Any]:
+    season = str(resolve_season(season) or "").strip() or resolve_season(None)
+    try:
+        min_gp = max(10, min(int(min_gp), 82))
+    except (TypeError, ValueError):
+        min_gp = 20
+
+    with _owned_connection(None) as con:
+        err, have, prod, cap, dates = _contract_read(con, season)
+    if err:
+        return {"tool": "get_contract_value", "ok": False, "error": err}
+    if not prod:
+        return {"tool": "get_contract_value", "ok": False,
+                "error": f"no production rows for {season}"}
+    missing = [c for c in _CONTRACT_WEIGHTS if c not in have]
+    use_w = {c: (0.0 if c in missing else w)
+             for c, w in _CONTRACT_WEIGHTS.items()}
+    by_name: dict[str, tuple] = {}
+    for r in prod:
+        by_name.setdefault(_contract_norm(r[0]), r)
+    fitted = _contract_fitted(cap, by_name, min_gp, use_w)
+    if len(fitted) < 2:
+        return {"tool": "get_contract_value", "ok": False,
+                "error": "not enough qualified players"}
+    try:
+        slope, intercept = _contract_regression(fitted)
+    except ValueError as exc:
+        return {"tool": "get_contract_value", "ok": False, "error": str(exc)}
+    team_scope = _contract_team_scope(str(team or "").strip())
+    rows, row_error = _contract_rows(fitted, str(player or "").strip(),
+                                     team_scope)
+    if rows is None:
+        return {"tool": "get_contract_value", "ok": False, "error": row_error}
+    prod_date, cap_date = dates
     return {"tool": "get_contract_value", "ok": True, "rows": rows,
-            "meta": {"formula": formula, "weights": weights,
+            "meta": {"formula": (
+                          "score = PTS + 1.2*REB + 1.5*AST + 2*STL + 2*BLK - "
+                          "1.5*TOV (per game); salary_hat = slope*score + "
+                          "intercept (OLS by hand); residual = salary - "
+                          "salary_hat"),
+                     "weights": _CONTRACT_WEIGHTS,
                      "missing_columns_zero_weight": missing,
                      "slope": round(slope, 2), "intercept": round(intercept, 2),
-                     "n_qualified": n, "min_gp": min_gp,
-                     "production_season": season, "salary_season": _salary_vintage()[0] or "2026-27",
+                     "n_qualified": len(fitted), "min_gp": min_gp,
+                     "production_season": season,
+                     "salary_season": _salary_vintage()[0] or "2026-27",
                      "production_date": prod_date, "salary_date": cap_date,
                      "overpaid_first": True,
                      "team_scope": team_scope or None}}

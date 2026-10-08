@@ -136,31 +136,8 @@ def run_python(code: str) -> dict[str, Any]:
                  {"__builtins__": __builtins__}, g)
     except Exception as exc:
         msg = str(exc)
-        if ("does not exist" in msg or "Catalog" in msg
-                or "Referenced column" in msg or "Binder" in msg):
-            try:
-                rows = con.execute("SHOW TABLES").fetchall()
-                valid = sorted(str(r[0]) for r in rows
-                               if str(r[0]).startswith("silver_"))
-            except Exception:
-                valid = []
-            hint = ", ".join(valid) if valid else "no silver tables available"
-            col_hint = ""
-            try:
-                import re as _re2
-
-                for t in valid:
-                    if _re2.search(r"\b" + _re2.escape(t) + r"\b", code,
-                                   _re2.IGNORECASE):
-                        cols = con.execute(
-                            f"PRAGMA table_info({t})").fetchall()
-                        names = [str(c[1]) for c in cols
-                                 if not str(c[1]).startswith("_")]
-                        col_hint = f" Columns of {t}: " + ", ".join(names[:25]
-                                                                     )
-                        break
-            except Exception:
-                pass
+        if any(h in msg for h in _EXEC_MSG_HINTS):
+            col_hint, hint = _run_python_table_hint(con, code)
             return {"tool": "run_python", "ok": False,
                     "error": f"unknown table or column.{col_hint} "
                              f"Valid tables: {hint}"}
@@ -180,3 +157,31 @@ def run_python(code: str) -> dict[str, Any]:
     return {"tool": "run_python", "ok": True,
             "rows": {"printed": text, "out": out},
             "meta": {"source": "warehouse"}}
+
+_EXEC_MSG_HINTS = ("does not exist", "Catalog", "Referenced column", "Binder")
+
+def _run_python_table_hint(con: Any, code: str) -> str:
+    try:
+        rows = con.execute("SHOW TABLES").fetchall()
+        valid = sorted(str(r[0]) for r in rows
+                       if str(r[0]).startswith("silver_"))
+    except Exception:
+        valid = []
+    hint = ", ".join(valid) if valid else "no silver tables available"
+    col_hint = ""
+    try:
+        import re as _re2
+
+        for t in valid:
+            if _re2.search(r"\b" + _re2.escape(t) + r"\b", code,
+                           _re2.IGNORECASE):
+                cols = con.execute(
+                    f"PRAGMA table_info({t})").fetchall()
+                names = [str(c[1]) for c in cols
+                         if not str(c[1]).startswith("_")]
+                col_hint = f" Columns of {t}: " + ", ".join(names[:25]
+                                                             )
+                break
+    except Exception:
+        pass
+    return col_hint, hint

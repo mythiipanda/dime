@@ -6,7 +6,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from shared.tools import get_team_four_factors, v1_tools
+from shared.tools import get_team_four_factors, WAREHOUSE_TOOLS
 
 def _require_team_four_factors_pack():
     from shared import store
@@ -22,7 +22,7 @@ def _require_team_four_factors_pack():
         )
 
 def test_tool_registered():
-    assert "get_team_four_factors" in [t.name for t in v1_tools]
+    assert "get_team_four_factors" in [t.name for t in WAREHOUSE_TOOLS]
 
 def test_full_board_30_teams():
     _require_team_four_factors_pack()

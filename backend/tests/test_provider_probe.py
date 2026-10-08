@@ -55,10 +55,12 @@ def test_fallback_skips_probe_failed_provider(monkeypatch):
         "mistral", "m", []))
     assert out.content == "ok"
     assert "mistral" not in calls, "probe-failed primary was not skipped"
-    assert calls[0] == "gemini"
+    assert calls[0] in ("gemini", "cerebras")
 
 def test_invoke_exposes_accepted_provider_and_sanitized_attempts(monkeypatch):
     _reset(); calls=[]
+    monkeypatch.setattr(prov.settings, 'cerebras_api_key', '')
+    monkeypatch.setattr(prov.settings, 'dime_enable_groq', False)
     class C:
         def __init__(self,name): self.name=name
         async def ainvoke(self,messages,**kwargs):
@@ -84,6 +86,7 @@ def test_invoke_exposes_accepted_provider_and_sanitized_attempts(monkeypatch):
 
 def test_paid_openrouter_primary_provenance_matches_constructed_free_slug(monkeypatch):
     _reset(); seen=[]
+    monkeypatch.setattr(prov.settings, 'cerebras_api_key', '')
     class C:
         async def ainvoke(self,messages,**kwargs):
             class R: content='ok'
@@ -99,6 +102,7 @@ def test_paid_openrouter_primary_provenance_matches_constructed_free_slug(monkey
 
 def test_arbitrary_mistral_primary_provenance_matches_free_limit(monkeypatch):
     _reset(); seen=[]
+    monkeypatch.setattr(prov.settings, 'cerebras_api_key', '')
     class C:
         async def ainvoke(self,messages,**kwargs):
             class R: content='ok'

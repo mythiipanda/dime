@@ -267,20 +267,14 @@ def get_game_prediction(a: str = "", b: str = "", game_date: str = "",
     a = str(a or "").strip()
     b = str(b or "").strip()
     game_date = str(game_date or "").strip()
-    try:
-        n_sims = max(1000, min(int(n_sims or DEFAULT_SIMS), 100_000))
-    except (TypeError, ValueError):
-        n_sims = DEFAULT_SIMS
+    n_sims = _clamp_sims(n_sims)
     try:
         seed = int(seed)
     except (TypeError, ValueError):
         seed = DEFAULT_SEED
-    if game_date:
-        from datetime import datetime as _dt
-        try:
-            _dt.strptime(game_date, "%m/%d/%Y")
-        except (TypeError, ValueError):
-            return _err("game_date must be MM/DD/YYYY")
+    err = _check_game_date(game_date)
+    if err:
+        return _err(err)
     if not a or not b:
         return _err("pass two teams (a, b)")
     try:
@@ -323,6 +317,30 @@ def get_game_prediction(a: str = "", b: str = "", game_date: str = "",
         return _err("ratings missing for " + ", ".join(missing) +
                     f" (season {season}); cannot simulate without them")
 
+    return _prediction_payload(
+        store, season, a, b, home_id, away_id, ida, idb, resolved, found,
+        ratings, ratings_source, league, home_r, away_r, home_inj, away_inj,
+        n_sims, seed)
+
+def _clamp_sims(n_sims) -> int:
+    try:
+        return max(1000, min(int(n_sims or DEFAULT_SIMS), 100_000))
+    except (TypeError, ValueError):
+        return DEFAULT_SIMS
+
+def _check_game_date(game_date: str):
+    if not game_date:
+        return None
+    from datetime import datetime as _dt
+    try:
+        _dt.strptime(game_date, "%m/%d/%Y")
+    except (TypeError, ValueError):
+        return "game_date must be MM/DD/YYYY"
+    return None
+
+def _prediction_payload(store, season, a, b, home_id, away_id, ida, idb,
+                        resolved, found, ratings, ratings_source, league,
+                        home_r, away_r, home_inj, away_inj, n_sims, seed):
     lg_off = league["off"]
     lg_def = league["def"]
     neutral = not found

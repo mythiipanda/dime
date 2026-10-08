@@ -652,7 +652,7 @@ interface CitationInput {
 export function buildCitation(c: CitationInput): string {
   const bits = [
     c.title || "NBA data",
-    `via ${c.source || "Dime warehouse"}`,
+    `via ${c.source || "dime warehouse"}`,
     c.season ? `covering ${c.season}` : "",
     c.fetchedAt ? `fetched ${String(c.fetchedAt).slice(0, 10)}` : "",
   ].filter(Boolean);

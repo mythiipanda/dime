@@ -15,8 +15,11 @@ def test_quick_answer_requires_complete_nonblank_conversation_identity():
 
     for payload in (
         {"q": "question", "thread": "thread"},
-        {"q": "question", "client": "browser"},
         {"q": "question", "thread": " ", "client": "browser"},
     ):
         with pytest.raises(ValidationError):
             QuickAnswerBody.model_validate(payload)
+
+    body = QuickAnswerBody.model_validate(
+        {"q": "question", "thread": None, "client": "browser"})
+    assert body.client == "browser"

@@ -736,6 +736,7 @@ class Claim(BaseModel):
     calculation_id: str | None = Field(default=None, max_length=256)
     confidence: StrictFloat | None = Field(default=None, ge=0, le=1)
     output_bindings: list[ClaimOutputBinding] = Field(default_factory=list, max_length=64)
+    artifact_id: str | None = Field(default=None, max_length=256)
 
     @model_validator(mode="after")
     def validate_support(self) -> Claim:
@@ -791,11 +792,70 @@ class DeclaredCalculation(BaseModel):
     unit: str | None = Field(default=None, max_length=256)
     subject_input: StrictInt | None = Field(default=None, ge=0)
 
+class ArtifactKind(StrEnum):
+    CHART = "chart"
+    SHOT_CHART = "shot_chart"
+    TABLE = "table"
+    COMPARE = "compare"
+
+
+class ArtifactPoint(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    x: str = Field(min_length=1, max_length=256)
+    output_id: str = Field(min_length=1, max_length=64)
+
+    @model_validator(mode="after")
+    def validate_point(self) -> "ArtifactPoint":
+        if not self.x.strip() or not self.output_id.strip():
+            raise ValueError("artifact point x and output_id must be non-empty")
+        return self
+
+
+class ArtifactSeries(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    name: str = Field(min_length=1, max_length=256)
+    points: list[ArtifactPoint] = Field(max_length=512)
+
+    @model_validator(mode="after")
+    def validate_series(self) -> "ArtifactSeries":
+        if not self.name.strip():
+            raise ValueError("artifact series name must be non-empty")
+        labels = [point.x for point in self.points]
+        if len(labels) != len(set(labels)):
+            raise ValueError("artifact series points must have distinct x")
+        return self
+
+
+class ArtifactIntent(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    id: str = Field(min_length=1, max_length=256)
+    kind: ArtifactKind
+    title: str = Field(min_length=1, max_length=256)
+    footnote: str | None = Field(default=None, max_length=512)
+    series: list[ArtifactSeries] = Field(max_length=32)
+
+    @model_validator(mode="after")
+    def validate_intent(self) -> "ArtifactIntent":
+        if not self.title.strip():
+            raise ValueError("artifact title must be non-empty")
+        if not self.id.strip():
+            raise ValueError("artifact id must be non-empty")
+        if self.kind in {ArtifactKind.CHART, ArtifactKind.SHOT_CHART} \
+                and not any(series.points for series in self.series):
+            raise ValueError(
+                f"a {self.kind.value} artifact needs at least one point")
+        return self
+
+
 class DraftReport(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     sections: list[str] = Field(max_length=32)
     claims: list[Claim] = Field(max_length=128)
+    artifacts: list[ArtifactIntent] = Field(default_factory=list, max_length=8)
     calculations: list[DeclaredCalculation] = Field(default_factory=list, max_length=128)
     blocked_calculation_requirement_ids: list[str] = Field(default_factory=list, max_length=32)
     gaps: list[str] = Field(default_factory=list, max_length=128)

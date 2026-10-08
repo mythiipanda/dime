@@ -18,7 +18,7 @@ Fields:
   satisfy the goal.
 - deliverable (str): what the answer must contain to satisfy the goal.
 - metric_ids (list of canonical uppercase IDs): explicit metrics requested by the user.
-- requested_outputs (list of canonical uppercase IDs): explicit answer outputs requested by the user.
+- requested_outputs (list of canonical uppercase IDs): the answer outputs the goal and deliverable ask for. Name them with canonical IDs even when the question implies them instead of spelling them out; a question about a named metric family asks for that family's outputs. [] only when the question asks for no named output.
 - entities (list of {id, type, display_name}): canonical NBA entities;
   type is "player" | "team" | "game" | "league".
 - season ({value, source, confidence}) or null: the resolved NBA season,
@@ -41,7 +41,10 @@ Fields:
 ## Invariants
 - Resolve entities to canonical identity using the context; never invent
   an id.
-- Resolve season and as_of explicitly. If neither the question nor the
+- Resolve season and as_of explicitly. A season named anywhere in the
+  question or the context is never null: set it with source "resolved"
+  and never emit null while one is named. Only leave season null when
+  nothing names one. If neither the question nor the
   context names a season, use the most recent season with warehouse data
   and mark source "default". Relative phrases such as "last season",
   "this season", and "current season" resolve to the last completed
@@ -57,6 +60,12 @@ Fields:
 - Never ask the user to preselect causes for "what changed," "why," role, value, fit, or replaceability. Those are the analysis to perform. Plan the supported factors and carry unsupported causes as evidence limits.
 - Never silently guess on identity, season, metric, or qualification. If those cannot be resolved from the request and context and block planning, use open_questions.
 - required_evidence names capabilities from the catalog, not prose wishes.
+- required_evidence is exactly what the question asks for and nothing
+  adjacent. A capability is not required when it answers a question the
+  user did not ask: a per-player stat over games needs that player's game
+  logs, never splits, matchup context, or ratings the user never mentioned.
+  Adding an unasked capability makes the plan incomplete and fails the run.
+  Prefer one well-chosen capability over a broad net.
 - Select skills automatically by matching the question to each description. Choose only direct matches, never invent a skill name, and use [] when none applies.
 - Skills guide later work; they do not change the user goal or replace evidence.
 - Do not answer the question. Do not plan tool calls.

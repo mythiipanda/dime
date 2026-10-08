@@ -542,69 +542,15 @@ async def get_matchup_preview(a: str = "", b: str = "",
                 live_used = True
             except Exception:
                 rows = []
-        if a and b:
-            try:
-                ida = coerce_team_id(a)
-            except ValueError:
-                return _err(f"unknown team: {a}")
-            try:
-                idb = coerce_team_id(b)
-            except ValueError:
-                return _err(f"unknown team: {b}")
-            for r in rows:
-                home, away = _row_team_ids(r)
-                if {home, away} == {ida, idb}:
-                    row = r
-                    break
-            if row is None:
-                return _err(f"{_abbrev(a)} and {_abbrev(b)}"
-                            f" do not play on {game_date}")
-            resolved = game_date
-        elif a or b:
-            who = a or b
-            try:
-                tid = coerce_team_id(who)
-            except ValueError:
-                return _err(f"unknown team: {who}")
-            for r in rows:
-                home, away = _row_team_ids(r)
-                if tid in (home, away):
-                    row = r
-                    break
-            if row is None:
-                return _err(f"{_abbrev(who)} does not play on {game_date}")
-            resolved = game_date
-        else:
-            if not rows:
-                return _err(f"no games scheduled on {game_date}")
-            row = _pick_marquee(rows, season)
-            resolved = game_date
+        row, err = _row_for_date_query(rows, a, b, game_date, season)
+        if err is not None:
+            return _err(err)
+        resolved = game_date
     elif a and b:
-        try:
-            ida = coerce_team_id(a)
-        except ValueError:
-            return _err(f"unknown team: {a}")
-        try:
-            idb = coerce_team_id(b)
-        except ValueError:
-            return _err(f"unknown team: {b}")
-        from datetime import timedelta as _td
-        from zoneinfo import ZoneInfo
-
-        now = _dt.now(ZoneInfo("America/New_York"))
-        days = [(now + _td(days=i)).strftime("%m/%d/%Y") for i in range(14)]
-
-        cands = sorted(
-            (r for r in _scoreboard_warehouse(season, days)
-             if _match_pair(r, ida, idb)),
-            key=_entity_date,
-        )
-        if cands:
-            row = cands[0]
-            resolved = _entity_date(row) or days[0]
-        if row is None:
-            return _err(f"no scheduled {_abbrev(a)} vs {_abbrev(b)}"
-                        " in the next 14 days")
+        row, resolved_date, err = _row_for_pair(a, b, season)
+        if err is not None:
+            return _err(err)
+        resolved = resolved_date
     else:
         return _err("pass two teams (a, b) or a game_date")
 
@@ -657,3 +603,58 @@ async def get_matchup_preview(a: str = "", b: str = "",
                     " no score predictions by design",
         },
     }
+
+def _row_for_date_query(rows, a, b, game_date, season):
+    if a and b:
+        try:
+            ida = coerce_team_id(a)
+        except ValueError:
+            return None, f"unknown team: {a}"
+        try:
+            idb = coerce_team_id(b)
+        except ValueError:
+            return None, f"unknown team: {b}"
+        for r in rows:
+            home, away = _row_team_ids(r)
+            if {home, away} == {ida, idb}:
+                return r, None
+        return None, f"{_abbrev(a)} and {_abbrev(b)} do not play on {game_date}"
+    if a or b:
+        who = a or b
+        try:
+            tid = coerce_team_id(who)
+        except ValueError:
+            return None, f"unknown team: {who}"
+        for r in rows:
+            home, away = _row_team_ids(r)
+            if tid in (home, away):
+                return r, None
+        return None, f"{_abbrev(who)} does not play on {game_date}"
+    if not rows:
+        return None, f"no games scheduled on {game_date}"
+    return _pick_marquee(rows, season), None
+
+def _row_for_pair(a, b, season):
+    try:
+        ida = coerce_team_id(a)
+    except ValueError:
+        return None, "", f"unknown team: {a}"
+    try:
+        idb = coerce_team_id(b)
+    except ValueError:
+        return None, "", f"unknown team: {b}"
+    from datetime import datetime as _dt
+    from datetime import timedelta as _td
+    from zoneinfo import ZoneInfo
+
+    now = _dt.now(ZoneInfo("America/New_York"))
+    days = [(now + _td(days=i)).strftime("%m/%d/%Y") for i in range(14)]
+    cands = sorted(
+        (r for r in _scoreboard_warehouse(season, days)
+         if _match_pair(r, ida, idb)),
+        key=_entity_date,
+    )
+    if not cands:
+        return None, "", (f"no scheduled {_abbrev(a)} vs {_abbrev(b)}"
+                          " in the next 14 days")
+    return cands[0], _entity_date(cands[0]) or days[0], None

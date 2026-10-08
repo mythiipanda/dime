@@ -410,11 +410,7 @@ def reject_self_verified_draft(raw: Any) -> None:
 class RepairAddsEvidenceError(ValueError):
     pass
 
-def validate_repair_evidence_closed(
-    admitted: Mapping[str, EvidenceEnvelope],
-    repaired: DraftReport,
-) -> None:
-    admitted_ids = set(admitted)
+def _cited_evidence_ids(repaired: DraftReport) -> set[str]:
     cited: set[str] = set()
     for claim in repaired.claims:
         cited.update(claim.evidence_ids)
@@ -425,39 +421,50 @@ def validate_repair_evidence_closed(
     for calculation in repaired.calculations:
         for item in calculation.inputs:
             cited.add(item.evidence_id)
-    extra = sorted(cited - admitted_ids)
+    return cited
+
+
+def _check_binding_selector(binding: Any, by_id: Mapping[str, EvidenceEnvelope]) -> None:
+    if getattr(binding, "requirement_kind", None) == "calculation":
+        return
+    evidence_id = getattr(binding, "evidence_id", None)
+    if evidence_id is None:
+        return
+    envelope = by_id.get(evidence_id)
+    if envelope is None:
+        return
+    selector = getattr(binding, "selector", None)
+    if selector is None:
+        return
+    from v2.runtime.models import AmbiguousSelector, ResolvedSelector, UnresolvedSelector, resolve_selector
+
+    subject_row = getattr(binding, "row_selector", None)
+    resolution = resolve_selector(envelope, selector, row=subject_row)
+    if isinstance(resolution, UnresolvedSelector):
+        raise RepairAddsEvidenceError(f"repair introduced unknown row: {selector} for evidence {evidence_id}")
+    if isinstance(resolution, AmbiguousSelector):
+        raise RepairAddsEvidenceError(f"repair introduced ambiguous row: {selector} for evidence {evidence_id}")
+    if isinstance(resolution, ResolvedSelector):
+        declared = getattr(binding, "value", None)
+        if declared is not None:
+            from v2.runtime.models import _declared_value_matches
+
+            if not _declared_value_matches(declared, resolution.value):
+                raise RepairAddsEvidenceError(f"repair introduced unknown value for {selector} on evidence {evidence_id}: {getattr(declared, 'value', declared)!r}")
+
+
+def validate_repair_evidence_closed(
+    admitted: Mapping[str, EvidenceEnvelope],
+    repaired: DraftReport,
+) -> None:
+    admitted_ids = set(admitted)
+    extra = sorted(_cited_evidence_ids(repaired) - admitted_ids)
     if extra:
         raise RepairAddsEvidenceError(f"repair introduced unknown evidence ids: {extra}")
-    from v2.runtime.models import resolve_selector
-
     by_id = dict(admitted)
     for claim in repaired.claims:
         for binding in claim.output_bindings:
-            if getattr(binding, "requirement_kind", None) == "calculation":
-                continue
-            evidence_id = getattr(binding, "evidence_id", None)
-            if evidence_id is None:
-                continue
-            envelope = by_id.get(evidence_id)
-            if envelope is None:
-                continue
-            selector = getattr(binding, "selector", None)
-            if selector is not None:
-                from v2.runtime.models import AmbiguousSelector, ResolvedSelector, UnresolvedSelector
-
-                subject_row = getattr(binding, "row_selector", None)
-                resolution = resolve_selector(envelope, selector, row=subject_row)
-                if isinstance(resolution, UnresolvedSelector):
-                    raise RepairAddsEvidenceError(f"repair introduced unknown row: {selector} for evidence {evidence_id}")
-                if isinstance(resolution, AmbiguousSelector):
-                    raise RepairAddsEvidenceError(f"repair introduced ambiguous row: {selector} for evidence {evidence_id}")
-                if isinstance(resolution, ResolvedSelector):
-                    declared = getattr(binding, "value", None)
-                    if declared is not None:
-                        from v2.runtime.models import _declared_value_matches
-
-                        if not _declared_value_matches(declared, resolution.value):
-                            raise RepairAddsEvidenceError(f"repair introduced unknown value for {selector} on evidence {evidence_id}: {getattr(declared, 'value', declared)!r}")
+            _check_binding_selector(binding, by_id)
 
 class Intake(Protocol):
     async def understand(

@@ -60,25 +60,32 @@ def _kinds(schema):
    out.append(ks[0]+'_list');continue
   raise ValueError(f'unsupported type {t!r}')
  return out
+_BRANCH_CONSTRAINT_KEYS = ('enum','minimum','maximum','exclusiveMinimum','exclusiveMaximum','multipleOf','minLength','maxLength','pattern','minItems','maxItems')
+_ITEM_CONSTRAINT_KEYS = ('enum','minimum','maximum','exclusiveMinimum','exclusiveMaximum','multipleOf','minLength','maxLength','pattern')
+
+def _compile_branch(branch):
+ try:branch_kinds=_kinds(branch)
+ except ValueError:branch_kinds=[]
+ constraints={key:branch[key] for key in _BRANCH_CONSTRAINT_KEYS if key in branch}
+ item_schema=branch.get('items') if isinstance(branch.get('items'),dict) else {}
+ item_constraints={key:item_schema[key] for key in _ITEM_CONSTRAINT_KEYS if key in item_schema}
+ return {'compiled_kinds':branch_kinds,'constraints':constraints,'item_constraints':item_constraints,
+ 'scalar_exact_decimal':branch.get('x-dime-exact-decimal',False),
+ 'list_item_exact_decimal':(branch.get('items',{}).get('x-dime-exact-decimal',False) if isinstance(branch.get('items'),dict) else False),
+ 'schema_sha256':canonical_hash(branch)}
+
+def _compile_property(name,prop,required,reasons):
+ try:kinds=_kinds(prop)
+ except ValueError as exc:kinds=[];reasons.append(f'{name}: {exc}')
+ branches=[_compile_branch(branch) for branch in prop.get('anyOf') or [prop]]
+ return {'property':name,'required':required,'default_present':'default' in prop,'default':prop.get('default'),'nullable':'null' in kinds,'compiled_kinds':kinds,'branches':branches,'scalar_exact_decimal':prop.get('x-dime-exact-decimal',False),'list_item_exact_decimal':(prop.get('items',{}).get('x-dime-exact-decimal',False) if isinstance(prop.get('items'),dict) else False),'schema_sha256':canonical_hash(prop)}
+
 def compile_capability_catalog(catalog):
  rows=[]
  for cap,entry in sorted(catalog.items()):
   schema=entry.get('arguments',{});props=schema.get('properties',{});compiled=[];reasons=[]
   if schema.get('type')!='object' or schema.get('additionalProperties',False) is not False:reasons.append('arguments must be closed object')
   for name,prop in sorted(props.items()):
-   try:kinds=_kinds(prop)
-   except ValueError as exc:kinds=[];reasons.append(f'{name}: {exc}')
-   branches=[]
-   for branch in prop.get('anyOf') or [prop]:
-    try:branch_kinds=_kinds(branch)
-    except ValueError:branch_kinds=[]
-    constraints={key:branch[key] for key in ('enum','minimum','maximum','exclusiveMinimum','exclusiveMaximum','multipleOf','minLength','maxLength','pattern','minItems','maxItems') if key in branch}
-    item_schema=branch.get('items') if isinstance(branch.get('items'),dict) else {}
-    item_constraints={key:item_schema[key] for key in ('enum','minimum','maximum','exclusiveMinimum','exclusiveMaximum','multipleOf','minLength','maxLength','pattern') if key in item_schema}
-    branches.append({'compiled_kinds':branch_kinds,'constraints':constraints,'item_constraints':item_constraints,
-     'scalar_exact_decimal':branch.get('x-dime-exact-decimal',False),
-     'list_item_exact_decimal':(branch.get('items',{}).get('x-dime-exact-decimal',False) if isinstance(branch.get('items'),dict) else False),
-     'schema_sha256':canonical_hash(branch)})
-   compiled.append({'property':name,'required':name in schema.get('required',[]),'default_present':'default' in prop,'default':prop.get('default'),'nullable':'null' in kinds,'compiled_kinds':kinds,'branches':branches,'scalar_exact_decimal':prop.get('x-dime-exact-decimal',False),'list_item_exact_decimal':(prop.get('items',{}).get('x-dime-exact-decimal',False) if isinstance(prop.get('items'),dict) else False),'schema_sha256':canonical_hash(prop)})
+   compiled.append(_compile_property(name,prop,name in schema.get('required',[]),reasons))
   rows.append({'capability_id':cap,'status':'UNREPRESENTABLE' if reasons else 'REPRESENTABLE','reasons':reasons,'properties':compiled,'dependent_entity_arguments':entry.get('dependent_entity_arguments',{}),'schema_sha256':canonical_hash(schema)})
  return {'catalog_sha256':canonical_hash(catalog),'capabilities':rows}

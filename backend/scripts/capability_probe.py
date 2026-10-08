@@ -18,9 +18,11 @@ if str(BACKEND) not in sys.path:
 
 from shared.config import settings
 from shared.providers import (
+    CEREBRAS_BASE_URL,
     GEMINI_BASE_URL,
     INCEPTION_DEFAULT,
     NVIDIA_NIM_BASE_URL,
+    _cerebras_model,
     _gemini_model,
     _groq_free_model,
     _mistral_free_model,
@@ -59,6 +61,8 @@ class Target:
 
     @property
     def headers(self) -> dict[str, str]:
+        if self.provider == "cerebras":
+            return {"User-Agent": "dime-agent/1.0"}
         if self.provider != "openrouter":
             return {}
         return {"HTTP-Referer": "https://github.com/mythiipanda/dime",
@@ -80,6 +84,8 @@ def declared_targets() -> tuple[Target, ...]:
                settings.inception_model or INCEPTION_DEFAULT, "inception_api_key"),
         Target("groq", "https://api.groq.com/openai/v1", _groq_free_model(),
                "groq_api_key"),
+        Target("cerebras", CEREBRAS_BASE_URL, _cerebras_model(),
+               "cerebras_api_key"),
     )
 
 def strict_request(model: str) -> dict[str, Any]:

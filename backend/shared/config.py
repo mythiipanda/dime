@@ -27,7 +27,7 @@ class Settings(BaseSettings):
     gemini_api_key: str = Field(
         default="",
         validation_alias=AliasChoices("GEMINI_API_KEY", "GOOGLE_API_KEY"))
-    gemini_model: str = "gemini-3.5-flash-lite"
+    gemini_model: str = ""
     mistral_api_key: str = ""
     mistral_model: str = "ministral-8b-2512"
     openrouter_api_key: str = ""
@@ -38,7 +38,9 @@ class Settings(BaseSettings):
     inception_model: str = "mercury-2.5"
     groq_api_key: str = ""
     dime_enable_groq: bool = False
-    groq_model: str = "openai/gpt-oss-20b"
+    groq_model: str = ""
+    cerebras_api_key: str = ""
+    cerebras_model: str = ""
     cors_allowed_origins: str = "http://localhost:3000,https://dime-fawn.vercel.app,http://127.0.0.1:3000"
     llm_timeout_s: int = 60
     llm_max_retries: int = 1

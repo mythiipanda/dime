@@ -196,88 +196,20 @@ def get_competitive_ratings(
         seasons: list[str] | None = None
     else:
         seasons = [clamp_season(season_raw)]
-    try:
-        from .. import store as _store
-
-        con = _store.connect(read_only=True)
-        try:
-            tables = {r[0] for r in con.execute("SHOW TABLES").fetchall()}
-            if "silver_hist_gamelogs" not in tables:
-                return {"tool": _TOOL_NAME, "ok": False,
-                        "error": "warehouse is empty "
-                                 "(silver_hist_gamelogs missing)"}
-            distinct = [r[0] for r in con.execute(
-                "SELECT DISTINCT season_type "
-                "FROM silver_hist_gamelogs").fetchall() if r[0]]
-            mapped = map_season_type(season_type, distinct)
-            if mapped is None:
-                return {"tool": _TOOL_NAME, "ok": False,
-                        "error": f"bad season_type: {season_type} "
-                                 "(use regular, playoffs, or all)"}
-            q = ("SELECT game_id, team_abbreviation, team_name, "
-                 "plus_minus, season_type, _season, wl "
-                 "FROM silver_hist_gamelogs")
-            clauses: list[str] = []
-            params: list[object] = []
-            if seasons is not None:
-                clauses.append("_season = ?")
-                params.append(seasons[0])
-            if mapped != "all":
-                clauses.append("season_type = ?")
-                params.append(mapped)
-            if abbr is not None:
-                clauses.append("team_abbreviation = ?")
-                params.append(abbr)
-            if clauses:
-                q += " WHERE " + " AND ".join(clauses)
-            fetched = con.execute(q, params).fetchall()
-            if seasons is None:
-                seasons = sorted(
-                    {r[0] for r in con.execute(
-                        "SELECT DISTINCT _season "
-                        "FROM silver_hist_gamelogs").fetchall() if r[0]})
-        finally:
-            con.close()
-    except (duckdb.IOException, duckdb.ConnectionException, duckdb.Error):
-        return {"tool": _TOOL_NAME, "ok": False,
-                "error": "warehouse temporarily unavailable "
-                         "(file lock contention); retry shortly"}
+    fetched, seasons, mapped, err = _fetch_scope(seasons, season_type, abbr)
+    if err is not None:
+        return {"tool": _TOOL_NAME, "ok": False, "error": err}
     if not fetched:
         detail = f"no games for {season_raw or 'league'}"
         if seasons is not None:
             detail = f"no games for {seasons[0]}"
         return {"tool": _TOOL_NAME, "ok": False, "error": detail}
-    by_team: dict[str, dict[str, Any]] = {}
-    for _, tabbr, tname, mov, _st, _seas, _wl in fetched:
-        if mov is None:
-            continue
-        key = str(tabbr or "").upper()
-        if not key:
-            continue
-        slot = by_team.setdefault(
-            key, {"name": str(tname or ""), "movs": []})
-        try:
-            slot["movs"].append(float(mov))
-        except (TypeError, ValueError):
-            continue
-        if tname and not slot["name"]:
-            slot["name"] = str(tname)
+    by_team = _movs_by_team(fetched)
     if not by_team:
         return {"tool": _TOOL_NAME, "ok": False,
                 "error": "no usable MOV rows in scope"}
     type_split = dict(Counter(str(r[4] or "unknown") for r in fetched))
-    n_seasons = len(seasons) if seasons else 0
-    if n_seasons > 1:
-        season_scope = "pooled"
-        season_note = (
-            f"pooled across {n_seasons} seasons "
-            f"({seasons[0]}-{seasons[-1]}), not a single team-season")
-    elif n_seasons == 1:
-        season_scope = "single"
-        season_note = f"single season {seasons[0]}"
-    else:
-        season_scope = "unknown"
-        season_note = "no seasons in scope"
+    season_scope, season_note = _season_scope_note(seasons)
     meta: dict[str, Any] = {
         "source": "warehouse",
         "seasons": seasons if seasons is not None else [],
@@ -312,18 +244,93 @@ def get_competitive_ratings(
     row = summarize_team(abbr, slot["movs"], margin, floor)
     row["team_name"] = slot["name"]
     read = _read(row, margin)
-    if row["gp_comp"] == 0:
-        note = (f"no competitive games at margin threshold {margin:g}; "
-                "mov_comp and padding_delta are null")
-    elif row["low_sample"]:
-        note = (f"low-sample: {row['gp_comp']} competitive game(s), below "
-                f"the {floor}-game floor; numbers reported with no "
-                "interpretation")
-    elif (row["blowout_wins_share"] + row["blowout_losses_share"]) > 0.5:
-        note = ("over half of this team's games were excluded as blowouts; "
-                "the 'competitive' set is a minority of the schedule")
-    else:
-        note = ""
+    note = _single_note(row, margin, floor)
     return {"tool": _TOOL_NAME, "ok": True, "rows": [row], "read": read,
             "note": note, "definition": _DEFINITION, "caveats": _CAVEATS,
             "meta": meta}
+
+def _fetch_scope(seasons, season_type, abbr):
+    from .. import store as _store
+
+    try:
+        con = _store.connect(read_only=True)
+        try:
+            tables = {r[0] for r in con.execute("SHOW TABLES").fetchall()}
+            if "silver_hist_gamelogs" not in tables:
+                return None, seasons, None, ("warehouse is empty "
+                                            "(silver_hist_gamelogs missing)")
+            distinct = [r[0] for r in con.execute(
+                "SELECT DISTINCT season_type "
+                "FROM silver_hist_gamelogs").fetchall() if r[0]]
+            mapped = map_season_type(season_type, distinct)
+            if mapped is None:
+                return None, seasons, None, (f"bad season_type: {season_type} "
+                                            "(use regular, playoffs, or all)")
+            q = ("SELECT game_id, team_abbreviation, team_name, "
+                 "plus_minus, season_type, _season, wl "
+                 "FROM silver_hist_gamelogs")
+            clauses: list[str] = []
+            params: list[object] = []
+            if seasons is not None:
+                clauses.append("_season = ?")
+                params.append(seasons[0])
+            if mapped != "all":
+                clauses.append("season_type = ?")
+                params.append(mapped)
+            if abbr is not None:
+                clauses.append("team_abbreviation = ?")
+                params.append(abbr)
+            if clauses:
+                q += " WHERE " + " AND ".join(clauses)
+            fetched = con.execute(q, params).fetchall()
+            if seasons is None:
+                seasons = sorted(
+                    {r[0] for r in con.execute(
+                        "SELECT DISTINCT _season "
+                        "FROM silver_hist_gamelogs").fetchall() if r[0]})
+            return fetched, seasons, mapped, None
+        finally:
+            con.close()
+    except (duckdb.IOException, duckdb.ConnectionException, duckdb.Error):
+        return None, seasons, None, ("warehouse temporarily unavailable "
+                                    "(file lock contention); retry shortly")
+
+def _movs_by_team(fetched) -> dict[str, dict[str, Any]]:
+    by_team: dict[str, dict[str, Any]] = {}
+    for _, tabbr, tname, mov, _st, _seas, _wl in fetched:
+        if mov is None:
+            continue
+        key = str(tabbr or "").upper()
+        if not key:
+            continue
+        slot = by_team.setdefault(
+            key, {"name": str(tname or ""), "movs": []})
+        try:
+            slot["movs"].append(float(mov))
+        except (TypeError, ValueError):
+            continue
+        if tname and not slot["name"]:
+            slot["name"] = str(tname)
+    return by_team
+
+def _season_scope_note(seasons):
+    n_seasons = len(seasons) if seasons else 0
+    if n_seasons > 1:
+        return "pooled", (f"pooled across {n_seasons} seasons "
+                          f"({seasons[0]}-{seasons[-1]}), not a single team-season")
+    if n_seasons == 1:
+        return "single", f"single season {seasons[0]}"
+    return "unknown", "no seasons in scope"
+
+def _single_note(row, margin, floor) -> str:
+    if row["gp_comp"] == 0:
+        return (f"no competitive games at margin threshold {margin:g}; "
+                "mov_comp and padding_delta are null")
+    if row["low_sample"]:
+        return (f"low-sample: {row['gp_comp']} competitive game(s), below "
+                f"the {floor}-game floor; numbers reported with no "
+                "interpretation")
+    if (row["blowout_wins_share"] + row["blowout_losses_share"]) > 0.5:
+        return ("over half of this team's games were excluded as blowouts; "
+                "the 'competitive' set is a minority of the schedule")
+    return ""

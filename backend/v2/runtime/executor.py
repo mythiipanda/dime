@@ -34,6 +34,9 @@ class NodeTimeoutError(TimeoutError):
         super().__init__(
             f"node {self.node_id} timed out after {self.budget_s:g}s")
 
+class PlanValidationError(ValueError):
+    pass
+
 async def _join_node(node: PlanNode, coro) -> tuple[PlanNode, Any]:
     _, envelope = await coro
     return node, envelope
@@ -71,11 +74,17 @@ class PlanExecutor:
         self._evidence_activity = evidence_activity
         self._node_timeout_s = node_timeout_s
 
+    def validate_plan(self, task: TaskSpec, plan: Plan) -> None:
+        try:
+            self._preflight(task, plan)
+        except ValueError as exc:
+            raise PlanValidationError(str(exc)) from exc
+
     async def execute(
         self, task: TaskSpec, plan: Plan, *, run_id: str | None = None,
         resume: bool = True,
     ) -> ExecutionResult:
-        self._preflight(task, plan)
+        self._preflight(task, plan, repairable_only=True)
         checkpoint = (
             self._checkpoint_store.load(run_id)
             if self._checkpoint_store is not None and run_id is not None
@@ -87,123 +96,29 @@ class PlanExecutor:
             checkpoint = None
         if checkpoint is not None:
             self._validate_checkpoint(checkpoint)
-            nodes = {
-                node.id: node.model_copy(deep=True) for node in checkpoint.plan.nodes
-            }
-            for node in nodes.values():
-                if node.status == PlanStatus.RUNNING:
-                    node.status = PlanStatus.PENDING
-            evidence_by_node = dict(checkpoint.evidence_by_node)
-            attempts = {
-                node_id: checkpoint.attempts.get(node_id, 0) for node_id in nodes
-            }
-            errors = {key: list(value) for key, value in checkpoint.errors.items()}
-            error_codes = {key: list(value) for key, value in checkpoint.error_codes.items()}
-        else:
-            nodes = {node.id: node.model_copy(deep=True) for node in plan.nodes}
-            evidence_by_node: dict[str, EvidenceEnvelope] = {}
-            attempts = {node_id: 0 for node_id in nodes}
-            errors: dict[str, list[str]] = {}
-            error_codes: dict[str, list[ExecutionErrorCode]] = {}
+        nodes, evidence_by_node, attempts, errors, error_codes = (
+            self._initial_node_state(plan, checkpoint))
         failures = sum(
             node.status == PlanStatus.FAILED for node in nodes.values()
         )
 
         while any(node.status == PlanStatus.PENDING for node in nodes.values()):
             if self._max_failures is not None and failures >= self._max_failures:
-                for node in nodes.values():
-                    if node.status == PlanStatus.PENDING:
-                        node.status = PlanStatus.SKIPPED
+                self._mark_capped_nodes_skipped(nodes)
                 self._save_checkpoint(
                     run_id, task, plan, nodes, evidence_by_node, attempts, errors, error_codes
                 )
                 break
-            progressed = False
-            for node in nodes.values():
-                if node.status != PlanStatus.PENDING:
-                    continue
-                dependency_states = [nodes[parent].status for parent in node.depends_on]
-                if any(
-                    state in (PlanStatus.FAILED, PlanStatus.SKIPPED)
-                    for state in dependency_states
-                ):
-                    node.status = PlanStatus.SKIPPED
-                    progressed = True
-
+            progressed = self._skip_dependents_of_failures(nodes)
             self._save_checkpoint(
                 run_id, task, plan, nodes, evidence_by_node, attempts, errors, error_codes
             )
-            ready = [
-                node
-                for node in nodes.values()
-                if node.status == PlanStatus.PENDING
-                and all(
-                    nodes[parent].status == PlanStatus.COMPLETE
-                    for parent in node.depends_on
-                )
-            ]
+            ready = self._ready_nodes(nodes)
             if ready:
                 progressed = True
-                batch = ready[: self._max_concurrency]
-                for node in batch:
-                    node.status = PlanStatus.RUNNING
-                self._save_checkpoint(
-                    run_id, task, plan, nodes, evidence_by_node, attempts, errors, error_codes
-                )
-                sender, receiver = anyio.create_memory_object_stream(len(batch))
-
-                async def _produce(node, coro) -> None:
-                    try:
-                        await sender.send(await _join_node(node, coro))
-                    except Exception as exc:
-                        await sender.send(exc)
-
-                async with anyio.create_task_group() as task_group:
-                    for node in batch:
-                        if self._node_timeout_s is None:
-                            coro = self._run_node(
-                                node, task, evidence_by_node, attempts, errors,
-                                error_codes)
-                        else:
-                            coro = self._run_node_bounded(
-                                node, task, evidence_by_node, attempts, errors,
-                                error_codes)
-                        task_group.start_soon(_produce, node, coro)
-                    for _ in batch:
-                        item = await receiver.receive()
-                        if isinstance(item, NodeTimeoutError):
-                            node = nodes[item.node_id]
-                            envelope = None
-                            attempts[node.id] = node.max_attempts
-                            node_errors = errors.setdefault(node.id, [])
-                            if str(item) not in node_errors:
-                                node_errors.append(str(item))
-                        elif isinstance(item, Exception):
-                            raise item
-                        else:
-                            node, envelope = item
-                        if envelope is None:
-                            node.status = PlanStatus.FAILED
-                            failures += 1
-                        else:
-                            if envelope.evidence_id in {
-                                item.evidence_id for item in evidence_by_node.values()
-                            }:
-                                message = f"duplicate evidence id: {envelope.evidence_id}"
-                                node_errors = errors.setdefault(node.id, [])
-                                if message not in node_errors:
-                                    node_errors.append(message)
-                                if attempts[node.id] < node.max_attempts:
-                                    node.status = PlanStatus.PENDING
-                                else:
-                                    node.status = PlanStatus.FAILED
-                                    failures += 1
-                            else:
-                                node.status = PlanStatus.COMPLETE
-                                evidence_by_node[node.id] = envelope
-                        self._save_checkpoint(
-                            run_id, task, plan, nodes, evidence_by_node, attempts, errors, error_codes
-                        )
+                failures = await self._run_batch(
+                    ready[: self._max_concurrency], nodes, plan, task, run_id,
+                    evidence_by_node, attempts, errors, error_codes, failures)
 
             if not progressed:
                 raise RuntimeError("validated plan made no execution progress")
@@ -224,6 +139,125 @@ class PlanExecutor:
                         for node in completed_plan.nodes)):
             self._checkpoint_store.delete(run_id)
         return result
+
+    def _mark_capped_nodes_skipped(self, nodes) -> None:
+        for node in nodes.values():
+            if node.status == PlanStatus.PENDING:
+                node.status = PlanStatus.SKIPPED
+
+    def _skip_dependents_of_failures(self, nodes) -> bool:
+        progressed = False
+        for node in nodes.values():
+            if node.status != PlanStatus.PENDING:
+                continue
+            dependency_states = [nodes[parent].status for parent in node.depends_on]
+            if any(
+                state in (PlanStatus.FAILED, PlanStatus.SKIPPED)
+                for state in dependency_states
+            ):
+                node.status = PlanStatus.SKIPPED
+                progressed = True
+        return progressed
+
+    def _ready_nodes(self, nodes) -> list:
+        return [
+            node
+            for node in nodes.values()
+            if node.status == PlanStatus.PENDING
+            and all(
+                nodes[parent].status == PlanStatus.COMPLETE
+                for parent in node.depends_on
+            )
+        ]
+
+    def _initial_node_state(self, plan, checkpoint):
+        if checkpoint is None:
+            nodes = {node.id: node.model_copy(deep=True) for node in plan.nodes}
+            evidence_by_node: dict[str, EvidenceEnvelope] = {}
+            attempts = {node_id: 0 for node_id in nodes}
+            errors: dict[str, list[str]] = {}
+            error_codes: dict[str, list[ExecutionErrorCode]] = {}
+            return nodes, evidence_by_node, attempts, errors, error_codes
+        nodes = {
+            node.id: node.model_copy(deep=True) for node in checkpoint.plan.nodes
+        }
+        for node in nodes.values():
+            if node.status == PlanStatus.RUNNING:
+                node.status = PlanStatus.PENDING
+        evidence_by_node = dict(checkpoint.evidence_by_node)
+        attempts = {
+            node_id: checkpoint.attempts.get(node_id, 0) for node_id in nodes
+        }
+        errors = {key: list(value) for key, value in checkpoint.errors.items()}
+        error_codes = {key: list(value) for key, value in checkpoint.error_codes.items()}
+        return nodes, evidence_by_node, attempts, errors, error_codes
+
+    async def _run_batch(self, batch, nodes, plan, task, run_id,
+                         evidence_by_node, attempts, errors, error_codes, failures):
+        for node in batch:
+            node.status = PlanStatus.RUNNING
+        self._save_checkpoint(
+            run_id, task, plan, nodes, evidence_by_node, attempts, errors, error_codes
+        )
+        sender, receiver = anyio.create_memory_object_stream(len(batch))
+
+        async def _produce(node, coro) -> None:
+            try:
+                await sender.send(await _join_node(node, coro))
+            except Exception as exc:
+                await sender.send(exc)
+
+        async with anyio.create_task_group() as task_group:
+            for node in batch:
+                if self._node_timeout_s is None:
+                    coro = self._run_node(
+                        node, task, evidence_by_node, attempts, errors,
+                        error_codes)
+                else:
+                    coro = self._run_node_bounded(
+                        node, task, evidence_by_node, attempts, errors,
+                        error_codes)
+                task_group.start_soon(_produce, node, coro)
+            for _ in batch:
+                item = await receiver.receive()
+                failures = self._absorb_batch_item(
+                    item, nodes, evidence_by_node, attempts, errors, failures)
+                self._save_checkpoint(
+                    run_id, task, plan, nodes, evidence_by_node, attempts, errors, error_codes
+                )
+        return failures
+
+    def _absorb_batch_item(self, item, nodes, evidence_by_node, attempts,
+                           errors, failures):
+        if isinstance(item, NodeTimeoutError):
+            node = nodes[item.node_id]
+            envelope = None
+            attempts[node.id] = node.max_attempts
+            node_errors = errors.setdefault(node.id, [])
+            if str(item) not in node_errors:
+                node_errors.append(str(item))
+        elif isinstance(item, Exception):
+            raise item
+        else:
+            node, envelope = item
+        if envelope is None:
+            node.status = PlanStatus.FAILED
+            return failures + 1
+        if envelope.evidence_id in {
+            existing.evidence_id for existing in evidence_by_node.values()
+        }:
+            message = f"duplicate evidence id: {envelope.evidence_id}"
+            node_errors = errors.setdefault(node.id, [])
+            if message not in node_errors:
+                node_errors.append(message)
+            if attempts[node.id] < node.max_attempts:
+                node.status = PlanStatus.PENDING
+                return failures
+            node.status = PlanStatus.FAILED
+            return failures + 1
+        node.status = PlanStatus.COMPLETE
+        evidence_by_node[node.id] = envelope
+        return failures
 
     def _checkpoint_covers(
         self, checkpoint: ExecutionCheckpoint, run_id: str, task: TaskSpec,
@@ -257,89 +291,101 @@ class PlanExecutor:
         if len(evidence_ids) != len(set(evidence_ids)):
             raise ValueError("checkpoint evidence ids must be unique")
         for node_id, node in nodes.items():
-            evidence = checkpoint.evidence_by_node.get(node_id)
-            if (node.status == PlanStatus.COMPLETE) != (evidence is not None):
-                raise ValueError(
-                    f"checkpoint node {node_id!r} completion/evidence mismatch")
-            node_errors = checkpoint.errors.get(node_id, [])
-            if any(not error.strip() for error in node_errors):
-                raise ValueError(f"checkpoint node {node_id!r} has empty errors")
-            if len(node_errors) != len(set(node_errors)):
-                raise ValueError(f"checkpoint node {node_id!r} has duplicate errors")
-            if node.status == PlanStatus.FAILED and not node_errors:
-                raise ValueError(
-                    f"checkpoint node {node_id!r} failed without errors")
-            if (node.status == PlanStatus.FAILED
-                    and checkpoint.attempts.get(node_id, 0) != node.max_attempts):
-                raise ValueError(
-                    f"checkpoint node {node_id!r} failed before exhausting attempts")
-            if node.status == PlanStatus.SKIPPED and node_id in checkpoint.errors:
-                raise ValueError(
-                    f"checkpoint node {node_id!r} skipped but carries errors")
-            attempts = checkpoint.attempts.get(node_id, 0)
-            if node.status == PlanStatus.SKIPPED and attempts:
-                raise ValueError(
-                    f"checkpoint node {node_id!r} skipped but carries attempts")
-            if attempts < 0 or attempts > node.max_attempts:
-                raise ValueError(
-                    f"checkpoint node {node_id!r} has invalid attempt count {attempts}")
-            if node.status in (PlanStatus.COMPLETE, PlanStatus.FAILED) and attempts == 0:
-                raise ValueError(
-                    f"checkpoint node {node_id!r} reached terminal state without an attempt")
-            if node.status in (PlanStatus.PENDING, PlanStatus.RUNNING)                     and attempts >= node.max_attempts:
-                raise ValueError(
-                    f"checkpoint node {node_id!r} has no attempts remaining")
-            if node.status == PlanStatus.COMPLETE and any(
-                nodes[parent].status != PlanStatus.COMPLETE
-                for parent in node.depends_on
-            ):
-                raise ValueError(
-                    f"checkpoint node {node_id!r} completed before its dependencies")
-            if evidence is None:
-                continue
-            selected = self._selected_name(checkpoint.plan, node_id)
-            if evidence.capability != selected:
-                raise ValueError(
-                    f"checkpoint node {node_id!r} evidence capability mismatch")
-            expected_lineage = [
-                checkpoint.evidence_by_node[parent].evidence_id
-                for parent in node.depends_on
-                if parent in checkpoint.evidence_by_node
-            ]
-            if evidence.lineage != expected_lineage:
-                raise ValueError(
-                    f"checkpoint node {node_id!r} evidence lineage mismatch")
+            self._validate_checkpoint_node(checkpoint, nodes, node_id, node)
 
-    def _preflight(self, task: TaskSpec, plan: Plan) -> None:
+    def _validate_checkpoint_node(self, checkpoint, nodes, node_id, node) -> None:
+        evidence = checkpoint.evidence_by_node.get(node_id)
+        if (node.status == PlanStatus.COMPLETE) != (evidence is not None):
+            raise ValueError(
+                f"checkpoint node {node_id!r} completion/evidence mismatch")
+        node_errors = checkpoint.errors.get(node_id, [])
+        if any(not error.strip() for error in node_errors):
+            raise ValueError(f"checkpoint node {node_id!r} has empty errors")
+        if len(node_errors) != len(set(node_errors)):
+            raise ValueError(f"checkpoint node {node_id!r} has duplicate errors")
+        if node.status == PlanStatus.FAILED and not node_errors:
+            raise ValueError(
+                f"checkpoint node {node_id!r} failed without errors")
+        if (node.status == PlanStatus.FAILED
+                and checkpoint.attempts.get(node_id, 0) != node.max_attempts):
+            raise ValueError(
+                f"checkpoint node {node_id!r} failed before exhausting attempts")
+        if node.status == PlanStatus.SKIPPED and node_id in checkpoint.errors:
+            raise ValueError(
+                f"checkpoint node {node_id!r} skipped but carries errors")
+        attempts = checkpoint.attempts.get(node_id, 0)
+        if node.status == PlanStatus.SKIPPED and attempts:
+            raise ValueError(
+                f"checkpoint node {node_id!r} skipped but carries attempts")
+        if attempts < 0 or attempts > node.max_attempts:
+            raise ValueError(
+                f"checkpoint node {node_id!r} has invalid attempt count {attempts}")
+        if node.status in (PlanStatus.COMPLETE, PlanStatus.FAILED) and attempts == 0:
+            raise ValueError(
+                f"checkpoint node {node_id!r} reached terminal state without an attempt")
+        if node.status in (PlanStatus.PENDING, PlanStatus.RUNNING)                     and attempts >= node.max_attempts:
+            raise ValueError(
+                f"checkpoint node {node_id!r} has no attempts remaining")
+        if node.status == PlanStatus.COMPLETE and any(
+            nodes[parent].status != PlanStatus.COMPLETE
+            for parent in node.depends_on
+        ):
+            raise ValueError(
+                f"checkpoint node {node_id!r} completed before its dependencies")
+        if evidence is None:
+            return
+        selected = self._selected_name(checkpoint.plan, node_id)
+        if evidence.capability != selected:
+            raise ValueError(
+                f"checkpoint node {node_id!r} evidence capability mismatch")
+        expected_lineage = [
+            checkpoint.evidence_by_node[parent].evidence_id
+            for parent in node.depends_on
+            if parent in checkpoint.evidence_by_node
+        ]
+        if evidence.lineage != expected_lineage:
+            raise ValueError(
+                f"checkpoint node {node_id!r} evidence lineage mismatch")
+
+    def _preflight(
+        self, task: TaskSpec, plan: Plan, *,
+        repairable_only: bool = False) -> None:
         selected: set[str] = set()
         for node in plan.nodes:
-            if node.status != PlanStatus.PENDING:
+            selected.add(self._preflight_node(task, plan, node))
+        self._preflight_requirements(task, plan, selected, repairable_only)
+        self._enforce_node_preconditions(task, plan)
+
+    def _preflight_node(self, task: TaskSpec, plan: Plan, node) -> str:
+        if node.status != PlanStatus.PENDING:
+            raise ValueError(
+                f"new plan node {node.id!r} must start pending, got "
+                f"{node.status.value!r}")
+        matches = [name for name in node.capability_hints
+                   if name in self._capabilities]
+        if len(matches) != 1:
+            raise ValueError(
+                f"plan node {node.id!r} must select exactly one registered "
+                f"capability; got {matches!r}")
+        refuse_unprofiled_capability(task.mode, node.id, matches[0])
+        capability = self._capabilities[matches[0]]
+        validator = getattr(capability, "validate_arguments", None)
+        if validator is not None:
+            try:
+                validator(node)
+            except Exception as exc:
                 raise ValueError(
-                    f"new plan node {node.id!r} must start pending, got "
-                    f"{node.status.value!r}")
-            matches = [name for name in node.capability_hints
-                       if name in self._capabilities]
-            if len(matches) != 1:
+                    f"invalid arguments for plan node {node.id!r}: {exc}") from exc
+        if matches[0] == "web_fetch":
+            parents = [item for item in node.depends_on
+                       if self._selected_name(plan, item) == "web_search"]
+            if len(parents) != 1 or len(node.depends_on) != 1:
                 raise ValueError(
-                    f"plan node {node.id!r} must select exactly one registered "
-                    f"capability; got {matches!r}")
-            selected.add(matches[0])
-            refuse_unprofiled_capability(task.mode, node.id, matches[0])
-            capability = self._capabilities[matches[0]]
-            validator = getattr(capability, "validate_arguments", None)
-            if validator is not None:
-                try:
-                    validator(node)
-                except Exception as exc:
-                    raise ValueError(
-                        f"invalid arguments for plan node {node.id!r}: {exc}") from exc
-            if matches[0] == "web_fetch":
-                parents = [item for item in node.depends_on
-                           if self._selected_name(plan, item) == "web_search"]
-                if len(parents) != 1 or len(node.depends_on) != 1:
-                    raise ValueError(
-                        f"web_fetch node {node.id!r} requires exactly one "
-                        "web_search dependency")
+                    f"web_fetch node {node.id!r} requires exactly one "
+                    "web_search dependency")
+        return matches[0]
+
+    def _preflight_requirements(self, task, plan, selected, repairable_only) -> None:
         known_requirements = {item.id: item for item in task.requirements}
         covered: dict[str, set[str]] = {}
         unknown_requirement_ids: set[str] = set()
@@ -363,12 +409,18 @@ class PlanExecutor:
 
         missing = sorted(set(task.required_evidence) - selected)
         uncovered = sorted(known_requirements.keys() - covered.keys())
-        if missing and (not known_requirements or uncovered):
+        servable = repairable_only and self._servable_subset(plan)
+        if missing and (not known_requirements or uncovered) and not servable:
             detail = (f"; uncovered requirement ids: {uncovered}"
                       if uncovered else "")
             raise ValueError(
                 f"plan does not cover required evidence: {missing}{detail}")
-        self._enforce_node_preconditions(task, plan)
+
+    def _servable_subset(self, plan: Plan) -> bool:
+        return any(
+            self._selected_name(plan, node.id) is not None
+            and node.covers_requirement_ids
+            for node in plan.nodes)
 
     def _vocabulary_spec(self, selected_name: str):
         from v2.adapters.capabilities import CAPABILITIES, Capability
@@ -476,102 +528,115 @@ class PlanExecutor:
         for _ in range(remaining_attempts):
             attempts[node.id] += 1
             try:
-                self._validate_dependent_entity_arguments(
-                    capability, node, parent_evidence)
-                pre_denials = pre_call_denials(
-                    task, capability.name, dict(node.arguments),
-                    task_season_scoped=getattr(
-                        capability, "task_season_scoped", True),
-                )
-                if pre_denials:
-                    from v2.contracts import (
-                        PreconditionCheck as _PreCheck,
-                        precondition_repair_instruction as _repair,
-                    )
-                    requirement = (node.covers_requirement_ids[0]
-                                   if node.covers_requirement_ids else None)
-                    raise ValueError("; ".join(
-                        _repair(
-                            _PreCheck.ENTITY
-                            if item.check == "entity_mismatch"
-                            else _PreCheck.SCOPE,
-                            node.id, requirement, item.message)
-                        for item in pre_denials))
-                result = await capability.execute(node, task, parent_evidence)
-                task_season_scoped = getattr(
-                    capability, "task_season_scoped", True)
-                if not isinstance(task_season_scoped, bool):
-                    raise TypeError(
-                        "capability task_season_scoped must be boolean")
-                result = EvidenceEnvelope.model_validate({
-                    **result.model_dump(),
-                    "task_season_scoped": task_season_scoped,
-                })
-                post_denials = post_result_denials(task, result)
-                if post_denials:
-                    from v2.contracts import (
-                        PreconditionCheck as _PostCheck,
-                        precondition_repair_instruction as _post_repair,
-                    )
-                    requirement = (node.covers_requirement_ids[0]
-                                   if node.covers_requirement_ids else None)
-                    raise ValueError("; ".join(
-                        _post_repair(
-                            _PostCheck.ENTITY
-                            if item.check == "entity_mismatch"
-                            else _PostCheck.SCOPE
-                            if item.check != "empty_rows_forbidden"
-                            else _PostCheck.NUMERAL,
-                            node.id, requirement, item.message)
-                        for item in post_denials))
-                required_season = (
-                    task.season.value
-                    if task.season and task_season_scoped
-                    else None
-                )
-                required_window = (
-                    getattr(task, "window_start", None),
-                    getattr(task, "window_end", None),
-                )
-                if required_window == (None, None):
-                    required_window = None
-                result = admit_evidence(
-                    result, required_season=required_season,
-                    required_window=required_window)
-                if result.capability != capability.name:
-                    raise ValueError(
-                        f"capability returned {result.capability!r}, expected {capability.name!r}"
-                    )
-                from v2.adapters.capabilities import (
-                    post_evidence_failures as _post_failures,
-                    preconditions_for_node as _preconditions_for,
-                )
-                _spec = self._vocabulary_spec(capability.name)
-                _failures = _post_failures(
-                    _preconditions_for(task, node, _spec), result)
-                if _failures:
-                    raise ValueError("; ".join(_failures))
+                result = await self._run_node_attempt(
+                    capability, node, task, parent_evidence)
                 if self._evidence_activity is not None:
-                    rows = result.rows
-                    try:
-                        self._evidence_activity({"kind":"evidence_update","phase":"execute","status":"complete","title":"Evidence admitted","transition":"admitted","correlation_id":result.evidence_id,"data":{"capability":result.capability,"season":result.season,"as_of":result.as_of.isoformat() if result.as_of else None,"observed_at":result.observed_at.isoformat(),"qualification":"present" if result.qualification else "missing","coverage":"present" if result.coverage else "missing","warning_count":len(result.warnings),"rows":len(rows) if isinstance(rows,list) else None}})
-                    except Exception:
-                        pass
+                    self._emit_evidence_activity(result)
                 return node, result
             except anyio.get_cancelled_exc_class():
                 raise
             except Exception as exc:
-                message = exception_text(exc)
-                node_errors = errors.setdefault(node.id, [])
-                if message not in node_errors:
-                    node_errors.append(message)
-                code = getattr(exc, "gap_kind", None)
-                if code == ExecutionErrorCode.PROFILE_NAME_RESOLUTION_UNAVAILABLE:
-                    codes = error_codes.setdefault(node.id, [])
-                    typed = ExecutionErrorCode.PROFILE_NAME_RESOLUTION_UNAVAILABLE
-                    if typed not in codes:
-                        codes.append(typed)
+                self._record_node_error(node, exc, errors, error_codes)
         return node, None
+
+    async def _run_node_attempt(
+        self, capability, node, task, parent_evidence,
+    ) -> EvidenceEnvelope:
+        self._validate_dependent_entity_arguments(
+            capability, node, parent_evidence)
+        pre_denials = pre_call_denials(
+            task, capability.name, dict(node.arguments),
+            task_season_scoped=getattr(
+                capability, "task_season_scoped", True),
+        )
+        if pre_denials:
+            from v2.contracts import (
+                PreconditionCheck as _PreCheck,
+                precondition_repair_instruction as _repair,
+            )
+            requirement = (node.covers_requirement_ids[0]
+                           if node.covers_requirement_ids else None)
+            raise ValueError("; ".join(
+                _repair(
+                    _PreCheck.ENTITY
+                    if item.check == "entity_mismatch"
+                    else _PreCheck.SCOPE,
+                    node.id, requirement, item.message)
+                for item in pre_denials))
+        result = await capability.execute(node, task, parent_evidence)
+        task_season_scoped = getattr(
+            capability, "task_season_scoped", True)
+        if not isinstance(task_season_scoped, bool):
+            raise TypeError(
+                "capability task_season_scoped must be boolean")
+        result = EvidenceEnvelope.model_validate({
+            **result.model_dump(),
+            "task_season_scoped": task_season_scoped,
+        })
+        post_denials = post_result_denials(task, result)
+        if post_denials:
+            from v2.contracts import (
+                PreconditionCheck as _PostCheck,
+                precondition_repair_instruction as _post_repair,
+            )
+            requirement = (node.covers_requirement_ids[0]
+                           if node.covers_requirement_ids else None)
+            raise ValueError("; ".join(
+                _post_repair(
+                    _PostCheck.ENTITY
+                    if item.check == "entity_mismatch"
+                    else _PostCheck.SCOPE
+                    if item.check != "empty_rows_forbidden"
+                    else _PostCheck.NUMERAL,
+                    node.id, requirement, item.message)
+                for item in post_denials))
+        required_season = (
+            task.season.value
+            if task.season and task_season_scoped
+            else None
+        )
+        required_window = (
+            getattr(task, "window_start", None),
+            getattr(task, "window_end", None),
+        )
+        if required_window == (None, None):
+            required_window = None
+        result = admit_evidence(
+            result, required_season=required_season,
+            required_window=required_window)
+        if result.capability != capability.name:
+            raise ValueError(
+                f"capability returned {result.capability!r}, expected {capability.name!r}"
+            )
+        from v2.adapters.capabilities import (
+            post_evidence_failures as _post_failures,
+            preconditions_for_node as _preconditions_for,
+        )
+        _spec = self._vocabulary_spec(capability.name)
+        _failures = _post_failures(
+            _preconditions_for(task, node, _spec), result)
+        if _failures:
+            raise ValueError("; ".join(_failures))
+        return result
+
+    def _emit_evidence_activity(self, result) -> None:
+        rows = result.rows
+        try:
+            self._evidence_activity({"kind":"evidence_update","phase":"execute","status":"complete","title":"Evidence admitted","transition":"admitted","correlation_id":result.evidence_id,"data":{"capability":result.capability,"season":result.season,"as_of":result.as_of.isoformat() if result.as_of else None,"observed_at":result.observed_at.isoformat(),"qualification":"present" if result.qualification else "missing","coverage":"present" if result.coverage else "missing","warning_count":len(result.warnings),"rows":len(rows) if isinstance(rows,list) else None}})
+        except Exception:
+            pass
+
+    def _record_node_error(self, node, exc, errors, error_codes) -> None:
+        message = exception_text(exc)
+        node_errors = errors.setdefault(node.id, [])
+        if message not in node_errors:
+            node_errors.append(message)
+        code = getattr(exc, "gap_kind", None)
+        if code == ExecutionErrorCode.PROFILE_NAME_RESOLUTION_UNAVAILABLE:
+            codes = error_codes.setdefault(node.id, [])
+            typed = ExecutionErrorCode.PROFILE_NAME_RESOLUTION_UNAVAILABLE
+            if typed not in codes:
+                codes.append(typed)
 
     @staticmethod
     def _validate_dependent_entity_arguments(

@@ -3628,13 +3628,14 @@ async def test_intake_wire_shrinks_34_bytes_per_capability_versus_unstripped_bas
                         capability_catalog=catalog)
     await stage.understand("Boston record?")
     payload = stub.calls[0]["payload"]
-    baseline = {**payload, "capability_catalog": stage._catalog}
+    baseline = {**payload,
+               "capability_catalog": stage._catalog_with_declared_schemas()}
 
     wire = payload["capability_catalog"]
     per_entry = {
         name: len(json.dumps(entry, sort_keys=True, default=str).encode())
         - len(json.dumps(wire[name], sort_keys=True, default=str).encode())
-        for name, entry in catalog.items()
+        for name, entry in baseline["capability_catalog"].items()
     }
     assert set(per_entry.values()) <= {0, 34}
     saved = 34 * sum(1 for value in per_entry.values() if value)

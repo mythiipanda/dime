@@ -227,38 +227,10 @@ def get_rest_advantage(team: str = "league", season: str | None = None,
                        opponent: str = "") -> dict[str, Any]:
     season = resolve_season(season)
     season = clamp_season(season)
-    st = str(season_type or "all").strip().lower()
-    if st not in ("regular", "playoffs", "all"):
-        return {"tool": "get_rest_advantage", "ok": False,
-                "error": f"bad season_type: {season_type}"
-                         " (use regular, playoffs, or all)"}
-    want_all = (not str(team or "").strip()
-                or str(team).strip().lower() == "league")
-    date_str = str(date or "").strip()
-    opp_raw = str(opponent or "").strip()
-    if want_all and (date_str or opp_raw):
-        return {"tool": "get_rest_advantage", "ok": False,
-                "error": "date and opponent require a specific team"
-                         " (not league)"}
-    day: _dt.date | None = None
-    if date_str:
-        try:
-            day = _dt.datetime.strptime(date_str, "%Y-%m-%d").date()
-        except (TypeError, ValueError):
-            return {"tool": "get_rest_advantage", "ok": False,
-                    "error": f"bad date: {date_str} (use YYYY-MM-DD)"}
-    abbr: str | None = None
-    if not want_all:
-        abbr = _resolve_team(team)
-        if abbr is None:
-            return {"tool": "get_rest_advantage", "ok": False,
-                    "error": f"unknown team: {team}"}
-    opp_abbr: str | None = None
-    if opp_raw:
-        opp_abbr = _resolve_team(opp_raw)
-        if opp_abbr is None:
-            return {"tool": "get_rest_advantage", "ok": False,
-                    "error": f"unknown team: {opponent}"}
+    args, err = _rest_args(team, season_type, date, opponent)
+    if err is not None:
+        return {"tool": "get_rest_advantage", "ok": False, "error": err}
+    want_all, st, date_str, opp_raw, day, abbr, opp_abbr = args
     try:
         rows, dropped, error = _load_scoreboard(season)
     except (duckdb.IOException, duckdb.ConnectionException, duckdb.Error):
@@ -306,48 +278,8 @@ def get_rest_advantage(team: str = "league", season: str | None = None,
                 "error": f"no {st} games for {abbr} in {season}"}
     summary = summarize_team(games)
     if opp_abbr is not None and day is not None:
-        on_date = [g for g in games
-                   if g.date == day and g.opponent == opp_abbr]
-        if on_date:
-            g = on_date[0]
-            return {"tool": "get_rest_advantage", "ok": True,
-                    "rows": {"team": abbr, "opponent": opp_abbr,
-                             "summary": summary,
-                             "games": [_game_row(g)]}, "meta": meta}
-
-        assert day is not None
-        own_prior = [g for g in games if g.date < day]
-        opp_prior = [g for g in by_team.get(opp_abbr, [])
-                     if g.date < day]
-        if not own_prior:
-            return {"tool": "get_rest_advantage", "ok": False,
-                    "error": f"no completed games for {abbr} before "
-                             f"{date_str} — cannot establish a rest "
-                             "baseline"}
-        if not opp_prior:
-            return {"tool": "get_rest_advantage", "ok": False,
-                    "error": f"no completed games for {opp_abbr} before "
-                             f"{date_str} — cannot establish a rest "
-                             "baseline"}
-        last_own = own_prior[-1]
-        last_opp = opp_prior[-1]
-        rest_own = (day - last_own.date).days - 1
-        rest_opp = (day - last_opp.date).days - 1
-        meta["note"] = meta["note"] + " Pre-tip-off projection computed" \
-            " from each team's last completed game; not a warehouse" \
-            " game record."
-        return {"tool": "get_rest_advantage", "ok": True,
-                "rows": {"team": abbr, "opponent": opp_abbr,
-                         "summary": summary,
-                         "preview": {"date": date_str,
-                                     "team_rest_days": rest_own,
-                                     "team_last_game":
-                                         last_own.date.isoformat(),
-                                     "opp_rest_days": rest_opp,
-                                     "opp_last_game":
-                                         last_opp.date.isoformat(),
-                                     "rest_diff": rest_own - rest_opp}},
-                "meta": meta}
+        return _preview_result(games, by_team, abbr, opp_abbr, day,
+                               date_str, season, st, summary, meta)
     if opp_abbr is not None:
         matchups = [g for g in games if g.opponent == opp_abbr]
         if not matchups:
@@ -371,3 +303,76 @@ def get_rest_advantage(team: str = "league", season: str | None = None,
     return {"tool": "get_rest_advantage", "ok": True,
             "rows": {"team": abbr, "summary": summary,
                      "games": [_game_row(g) for g in games]}, "meta": meta}
+
+def _rest_args(team, season_type, date, opponent):
+    st = str(season_type or "all").strip().lower()
+    if st not in ("regular", "playoffs", "all"):
+        return None, (f"bad season_type: {season_type}"
+                      " (use regular, playoffs, or all)")
+    want_all = (not str(team or "").strip()
+                or str(team).strip().lower() == "league")
+    date_str = str(date or "").strip()
+    opp_raw = str(opponent or "").strip()
+    if want_all and (date_str or opp_raw):
+        return None, ("date and opponent require a specific team"
+                      " (not league)")
+    day: _dt.date | None = None
+    if date_str:
+        try:
+            day = _dt.datetime.strptime(date_str, "%Y-%m-%d").date()
+        except (TypeError, ValueError):
+            return None, f"bad date: {date_str} (use YYYY-MM-DD)"
+    abbr: str | None = None
+    if not want_all:
+        abbr = _resolve_team(team)
+        if abbr is None:
+            return None, f"unknown team: {team}"
+    opp_abbr: str | None = None
+    if opp_raw:
+        opp_abbr = _resolve_team(opp_raw)
+        if opp_abbr is None:
+            return None, f"unknown team: {opponent}"
+    return (want_all, st, date_str, opp_raw, day, abbr, opp_abbr), None
+
+def _preview_result(games, by_team, abbr, opp_abbr, day,
+                    date_str, season, st, summary, meta):
+    on_date = [g for g in games
+               if g.date == day and g.opponent == opp_abbr]
+    if on_date:
+        g = on_date[0]
+        return {"tool": "get_rest_advantage", "ok": True,
+                "rows": {"team": abbr, "opponent": opp_abbr,
+                         "summary": summary,
+                         "games": [_game_row(g)]}, "meta": meta}
+    own_prior = [g for g in games if g.date < day]
+    opp_prior = [g for g in by_team.get(opp_abbr, []) if g.date < day]
+    if not own_prior:
+        return {"tool": "get_rest_advantage", "ok": False,
+                "error": f"no completed games for {abbr} before "
+                         f"{date_str} — cannot establish a rest "
+                         "baseline"}
+    if not opp_prior:
+        return {"tool": "get_rest_advantage", "ok": False,
+                "error": f"no completed games for {opp_abbr} before "
+                         f"{date_str} — cannot establish a rest "
+                         "baseline"}
+    last_own = own_prior[-1]
+    last_opp = opp_prior[-1]
+    rest_own = (day - last_own.date).days - 1
+    rest_opp = (day - last_opp.date).days - 1
+    meta = dict(meta)
+    meta["note"] = meta["note"] + " Pre-tip-off projection computed" \
+        " from each team's last completed game; not a warehouse" \
+        " game record."
+    return {"tool": "get_rest_advantage", "ok": True,
+            "rows": {"team": abbr, "opponent": opp_abbr,
+                     "summary": summary,
+                     "preview": {"date": date_str,
+                                 "team_rest_days": rest_own,
+                                 "team_last_game":
+                                     last_own.date.isoformat(),
+                                 "opp_rest_days": rest_opp,
+                                 "opp_last_game":
+                                     last_opp.date.isoformat(),
+                                 "rest_diff": rest_own - rest_opp}},
+            "meta": meta}

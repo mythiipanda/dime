@@ -110,7 +110,7 @@ from .watchlist import add_watchlist_item, get_watchlist, remove_watchlist_item
 from .wpa import get_wpa_leaders
 from ._core import MAX_ROWS, STAT_CATEGORIES, clamp_stat
 
-v1_tools: list[BaseTool] = [
+WAREHOUSE_TOOLS: list[BaseTool] = [
     resolve_entity,
     search_nba,
     run_python,
@@ -222,9 +222,9 @@ v1_tools: list[BaseTool] = [
     get_espn_odds,
 ]
 
-TOOL_NAMES = [t.name for t in v1_tools]
+TOOL_NAMES = [t.name for t in WAREHOUSE_TOOLS]
 
 __all__ = [
     "MAX_ROWS", "STAT_CATEGORIES", "clamp_stat",
-    "v1_tools", "TOOL_NAMES",
+    "WAREHOUSE_TOOLS", "TOOL_NAMES",
 ]

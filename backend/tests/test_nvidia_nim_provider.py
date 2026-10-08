@@ -13,13 +13,16 @@ from shared.providers import (
 
 def test_gemini_is_priority_one_and_exact_models_are_exposed(monkeypatch):
     monkeypatch.setattr(settings, "gemini_api_key", "key")
+    monkeypatch.setattr(settings, "cerebras_api_key", "")
     for primary in ("gemini", "nvidia", "openrouter", "mistral", "inception", "groq"):
         assert fallback_order(primary)[0] == "gemini"
     catalog = models_catalog()
     assert catalog["available"]["gemini"] is True
-    assert [item["id"] for item in catalog["models"] if item["engine"] == "gemini"] == [
-        f"gemini:{model}" for model in GEMINI_MODELS
+    assert sorted(item["id"] for item in catalog["models"] if item["engine"] == "gemini") == [
+        f"gemini:{model}" for model in sorted(GEMINI_MODELS)
     ]
+    gemini_ids = [item["id"] for item in catalog["models"] if item["engine"] == "gemini"]
+    assert gemini_ids.index(f"gemini:{GEMINI_DEFAULT}") == 0
     assert catalog["models"][0]["id"] == f"gemini:{GEMINI_DEFAULT}"
     assert catalog["models"][0]["default"] is True
 

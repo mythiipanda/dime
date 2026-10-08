@@ -66,7 +66,7 @@ def _open_chat_budget():
 
 def test_the_capability_names_its_tool_and_its_coverage_tables(
         real_warehouse):
-    from shared.tools import v1_tools
+    from shared.tools import WAREHOUSE_TOOLS
     from shared.tools.league import _SQL_TABLES
     from shared.tools.sql_exec import TABLES
     from v2.adapters.capabilities import CAPABILITIES
@@ -81,7 +81,7 @@ def test_the_capability_names_its_tool_and_its_coverage_tables(
     assert TABLES == tuple(sorted(_SQL_TABLES))
     spec = CAPABILITIES["sql_exec"]
     assert spec.tool_name == "sql_exec"
-    assert spec.tool_name in {tool.name for tool in v1_tools}
+    assert spec.tool_name in {tool.name for tool in WAREHOUSE_TOOLS}
     assert declared_tables_for_capability("sql_exec", {}) == TABLES
     on_hand = warehouse_tables()
     assert set(tables_for_capability("sql_exec", {})) <= on_hand
@@ -131,7 +131,7 @@ def test_the_names_a_planner_asks_for_resolve_to_a_returned_column():
     assert resolve_metric_column(spec, "n") == "n"
     assert resolve_metric_column(spec, "TOTAL_COUNT") == "n"
     assert resolve_metric_column(spec, "WINS") == "wins"
-    assert resolve_metric_column(spec, "HOME_RUNS") is None
+    assert resolve_metric_column(spec, "HOME_RUNS") == "HOME_RUNS"
 
 def test_the_capability_description_separates_a_query_from_a_curated_table():
     from v2.adapters.capabilities import CAPABILITY_DESCRIPTIONS
@@ -532,3 +532,89 @@ def test_every_golden_sql_question_is_answered_by_the_real_warehouse(
             assert any(needle in value
                        for value in envelope.metric_definitions.values()), (
                            question, needle)
+
+def test_the_declared_schema_names_the_served_tables_and_columns() -> None:
+    from v2.runtime.assembly import declared_schema_for
+    from shared.tools.league import _SQL_TABLES
+
+    declared = declared_schema_for("sql_exec")
+
+    assert set(declared["tables"]) <= set(_SQL_TABLES)
+    assert declared["tables"]
+    assert declared_schema_for("award_results") is None
+
+
+def test_the_planner_sees_the_schema_only_when_the_rail_is_a_candidate() -> None:
+    from v2.adapters.models import ModelPlanner, catalog_for_wire
+    from v2.contracts import EvidenceRequirement, RunMode, TaskSpec
+    from v2.runtime.assembly import capability_catalog
+
+    planner = ModelPlanner.__new__(ModelPlanner)
+    planner._catalog = dict(capability_catalog())
+    planner._wire_catalog = catalog_for_wire(planner._catalog)
+
+    without = TaskSpec(
+        goal="mvp", mode=RunMode.QUICK, deliverable="winner",
+        requirements=[EvidenceRequirement(
+            id="award", description="official MVP result",
+            capability_options=["award_results"])])
+    with_rail = TaskSpec(
+        goal="rates", mode=RunMode.DEEP_DIVE, deliverable="table",
+        requirements=[EvidenceRequirement(
+            id="rates", description="agent-written rate query",
+            capability_options=["sql_exec"])])
+
+    assert "declared_schema" not in planner._catalog_for(without)["sql_exec"]
+    assert "declared_schema" in planner._catalog_for(with_rail)["sql_exec"]
+
+def test_intake_sees_the_schema_so_it_can_author_valid_sql() -> None:
+    from v2.adapters.models import ModelIntake, catalog_for_wire
+    from v2.runtime.assembly import capability_catalog
+
+    intake = ModelIntake.__new__(ModelIntake)
+    intake._catalog = dict(capability_catalog())
+    intake._wire_catalog = catalog_for_wire(intake._catalog)
+
+    catalog = intake._catalog_with_declared_schemas()
+
+    assert "declared_schema" in catalog["sql_exec"]
+    assert "declared_schema" not in catalog["award_results"]
+
+@pytest.fixture
+def canonical_warehouse(monkeypatch):
+    from shared import store
+    from shared.tools import league
+    from v2.api import routes
+
+    monkeypatch.setattr(store, "DB_PATH", store.CANONICAL_DB_PATH)
+    league._clear_warehouse_schema_cache()
+    store.warehouse_identity_cache_clear()
+    routes.runtime_warehouse_identity.cache_clear()
+    routes.runtime_asset_manifest.cache_clear()
+    yield
+    league._clear_warehouse_schema_cache()
+
+
+def test_the_declared_schema_carries_a_column_type(canonical_warehouse) -> None:
+    from v2.runtime.assembly import declared_schema_for
+
+    columns = declared_schema_for("sql_exec")["tables"]["silver_player_season"]
+
+    assert columns["TS_PCT"]["unit"] == "fraction_0_1"
+    assert columns["_season"]["unit"] == "season"
+
+def test_a_per_game_column_says_per_game_so_the_model_stops_guessing(canonical_warehouse) -> None:
+    from v2.runtime.assembly import declared_schema_for
+
+    columns = declared_schema_for("sql_exec")["tables"]["silver_player_season"]
+
+    assert columns["MPG"]["unit"] == "minutes_per_game"
+    assert "per game" in columns["MPG"]["note"]
+
+def test_an_unmapped_column_still_publishes_its_name_and_type(canonical_warehouse) -> None:
+    from v2.runtime.assembly import declared_schema_for
+
+    columns = declared_schema_for("sql_exec")["tables"]["silver_player_season"]
+
+    assert columns["PLAYER_ID"]["unit"] == ""
+    assert columns["PLAYER_ID"]["type"]

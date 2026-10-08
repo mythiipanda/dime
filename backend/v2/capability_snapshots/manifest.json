@@ -1,11 +1,9 @@
 {
-  "catalog_canonical_sha256": "20a855d59617423164131d37f9cf2b2db392ed7d49a8ab3a72a4f7405d38c206",
-  "compiled_canonical_sha256": "ba22aa3b7fda64a6880e855ce2cdd8a58cf415355ef129f5802f44eaab34a515",
+  "catalog_canonical_sha256": "012f1c1585e8e8b0dd7e0252422fa2b52944f3bf847aa0336717173cf9c4b069",
+  "compiled_canonical_sha256": "47b342f2ac8d25bc57c87efd8d5f543f6ed212692482d95786f008432acf077f",
   "count": 47,
   "files": {
     "award_results.json": "e6c0c61d768cbd0578d25baa45ea9894c0f86fa02cf50bc181c7a5b13f9acc4c",
-    "catalog.compiled.json": "db85402dab8c5b45323c08e16f2cf080ff3c7cfd226fcffb76222cd341094c7e",
-    "catalog.source.json": "f6619a8723f6b57b275f22fe5d9ce94a887a049091e7d386a844e990ac449bb6",
     "clutch.json": "73f49dcc25f3aba079f74aa67155e7b45d3b4c36712f932de83116623b921a9e",
     "competitive_ratings.json": "bb629f15bbfe574c8007af94a048562feeb92d83b155f686780d0aaa57f8caa6",
     "contracts.json": "7c36293493ec0780c9671cdf0376d9a886ba34c55a56d05a935b48a3a828b4c7",
