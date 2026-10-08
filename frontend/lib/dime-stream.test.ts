@@ -207,7 +207,8 @@ test("suggestions are captured from the suggestions event", () => {
 });
 
 test("failure copy stays human with no infra jargon", () => {
-  for (const kind of ["timeout", "quota", "rate_limited", "execution_failure", "connection", "startup"]) {
+  for (const kind of ["timeout", "quota", "rate_limited", "execution_failure",
+                      "provider_error", "connection", "startup"]) {
     const copy = failureCopy(kind);
     assert.ok(copy.title.length > 0, kind);
     assert.ok(!/gemini|verifier|stage|sse/i.test(copy.title + copy.body), kind);

@@ -191,6 +191,10 @@ const FAILURE_COPY: Record<string, { title: string; body: string }> = {
     title: "Some data was unavailable",
     body: "Dime couldn't pull everything this question needed. Try again or narrow the question.",
   },
+  provider_error: {
+    title: "The analyst is down",
+    body: "Dime's model provider didn't respond. Nothing is wrong with your question — try again shortly.",
+  },
   connection: {
     title: "Couldn't reach Dime",
     body: "The connection to the backend dropped. Check your connection and try again.",
