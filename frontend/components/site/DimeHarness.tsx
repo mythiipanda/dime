@@ -10,6 +10,7 @@ import ArtifactShotChart from "@/components/dime/ArtifactShotChart";
 import ArtifactTable, { type ArtifactColumn } from "@/components/dime/ArtifactTable";
 import DimeSidebar from "@/components/site/DimeSidebar";
 import DimeCommandPalette, { type PaletteEntry } from "@/components/site/DimeCommandPalette";
+import DimeModelPicker, { type PickerModel } from "@/components/site/DimeModelPicker";
 import TonightView from "@/components/dime/views/TonightView";
 import ExploreView from "@/components/dime/views/ExploreView";
 import MatchupsView from "@/components/dime/views/MatchupsView";
@@ -37,6 +38,7 @@ import {
   type StreamSnapshot,
   type ToolState,
 } from "@/lib/dime-stream";
+import { getModels } from "@/lib/api";
 
 function Ico({ d, size = 15 }: { d: React.ReactNode; size?: number }) {
   return (
@@ -119,11 +121,17 @@ function DimeComposer({
   setDraft,
   onSubmit,
   inputRef,
+  modelOptions,
+  model,
+  setModel,
 }: {
   draft: string;
   setDraft: (v: string) => void;
   onSubmit: () => void;
   inputRef: React.RefObject<HTMLTextAreaElement | null>;
+  modelOptions: PickerModel[];
+  model: string | null;
+  setModel: (v: string | null) => void;
 }) {
   const canSend = draft.trim().length > 0;
   return (
@@ -142,7 +150,13 @@ function DimeComposer({
         rows={1}
         className="w-full resize-none bg-transparent px-1 pt-0.5 text-[13.5px] leading-[1.5] text-ink placeholder:text-ink-3 focus:outline-none [@media(pointer:coarse)]:text-base"
       />
-      <div className="flex items-center justify-end px-1 pb-0.5 pt-1.5">
+      <div className="flex items-center justify-between gap-2 px-1 pb-0.5 pt-1.5">
+        <DimeModelPicker
+          models={modelOptions}
+          value={model}
+          onChange={setModel}
+          disabled={false}
+        />
         <button
           type="button"
           aria-label="Send"
@@ -437,6 +451,8 @@ export default function DimeHarness() {
   const [tabs, setTabs] = useState<Tab[]>([{ id: REFERENCE_TAB, label: "New analysis" }]);
   const [activeTab, setActiveTab] = useState(REFERENCE_TAB);
   const [messagesByTab, setMessagesByTab] = useState<Record<string, ChatMsg[]>>({});
+  const [modelOptions, setModelOptions] = useState<PickerModel[]>([]);
+  const [model, setModel] = useState<string | null>(null);
   const [activeView, setActiveView] = useState<"chat" | ViewKey>("chat");
   const messages = messagesByTab[activeTab] ?? [];
   const showReference = activeTab === REFERENCE_TAB && messages.length === 0;
@@ -526,11 +542,33 @@ export default function DimeHarness() {
           });
         },
       },
-      { signal: ctrl.signal },
+      { signal: ctrl.signal, model },
     );
   };
 
   useEffect(() => () => abortRef.current?.abort(), []);
+
+  useEffect(() => {
+    let live = true;
+    getModels()
+      .then((res) => {
+        if (live) {
+          setModelOptions(
+            res.models.map((m) => ({
+              id: m.id,
+              engine: m.engine,
+              label: m.id.split(":").slice(1).join(":").replace(/:free$/, ""),
+              default: m.default,
+              available: m.available,
+            })),
+          );
+        }
+      })
+      .catch(() => undefined);
+    return () => {
+      live = false;
+    };
+  }, []);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -813,7 +851,8 @@ export default function DimeHarness() {
 
             <div className="shrink-0 px-4 pb-4">
               <div className="mx-auto max-w-[760px]">
-                <DimeComposer draft={draft} setDraft={setDraft} onSubmit={() => submit()} inputRef={inputRef} />
+                <DimeComposer draft={draft} setDraft={setDraft} onSubmit={() => submit()} inputRef={inputRef}
+                  modelOptions={modelOptions} model={model} setModel={setModel} />
               </div>
             </div>
           </section>
