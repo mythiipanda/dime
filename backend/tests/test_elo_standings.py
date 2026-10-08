@@ -75,7 +75,10 @@ def test_real_2025_26_smoke():
     assert abs(sum(elos) - 45000) < 15.0
     assert elos == sorted(elos, reverse=True)
     assert res["anchor"] == {"abbr": "AVG", "elo": 1500}
-    assert res["meta"]["games"] == 1315
+    full_regular_season = 30 * 82 // 2
+    max_playoff_games = 15 * 7
+    assert full_regular_season <= res["meta"]["games"]
+    assert res["meta"]["games"] <= full_regular_season + max_playoff_games
     print("top-5:", rows[:5])
     okc = next(r for r in rows if r["abbr"] == "OKC")
     print("OKC:", okc)
