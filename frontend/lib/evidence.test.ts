@@ -4,6 +4,7 @@ import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import {
   capabilityLabel,
+  evidenceNote,
   statLabel,
   subjectName,
   contextPills,
@@ -399,4 +400,51 @@ test("salary machine reasons map to plain words with a family fallback", () => {
   assert.equal(toolFailureNote("some_future_reason", "get_leaders"), null);
   assert.equal(toolFailureNote("some_future_reason"), null);
   assert.equal(toolFailureNote("table_missing", "get_cap_ledger"), "Award results aren't available right now.");
+});
+
+const ESPN_META = {
+  source: "espn",
+  evidence_status: "ineligible",
+  evidence_reason: "live_external_no_warehouse_provenance",
+};
+
+const ESPN_TABLE = {
+  tool: "get_espn_scores",
+  rows: [{ home: "LAL", away: "BOS", status: "Final" }],
+  meta: ESPN_META,
+};
+
+test("espn capabilities have plain-word display names", () => {
+  assert.equal(capabilityLabel("get_espn_scores"), "Live scores");
+  assert.equal(capabilityLabel("get_espn_event_summary"), "Game recap");
+  assert.equal(capabilityLabel("get_espn_odds"), "Odds");
+});
+
+test("ineligible evidence carries a plain-words note", () => {
+  assert.equal(evidenceNote(ESPN_META), "ESPN live data — couldn't be traced to source data.");
+  assert.equal(evidenceNote({ evidence_status: "ok" }), null);
+  assert.equal(evidenceNote({}), null);
+  assert.equal(evidenceNote(null), null);
+});
+
+test("other ineligible reasons stay neutral and never borrow the live label", () => {
+  assert.equal(
+    evidenceNote({ evidence_status: "ineligible", evidence_reason: "unlisted_kind" }),
+    "Couldn't be traced to source data.",
+  );
+  assert.equal(
+    evidenceNote({ evidence_status: "ineligible" }),
+    "Couldn't be traced to source data.",
+  );
+});
+
+test("espn evidence reads as plain words with no infra tokens", () => {
+  const sources = evidenceSources(aiWith({}, [ESPN_TABLE]));
+  assert.equal(sources.length, 1);
+  assert.equal(sources[0].stat, "Live scores");
+  assert.ok(sources[0].note?.includes("couldn't be traced to source data."));
+  const shown = JSON.stringify([sources[0].stat, sources[0].note]);
+  for (const token of [...BANNED_TOKENS, "live_external_no_warehouse_provenance"]) {
+    assert.ok(!shown.includes(token), "leaked " + token);
+  }
 });

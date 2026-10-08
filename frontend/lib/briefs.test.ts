@@ -1,13 +1,18 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  MATCHUP_TEAM_ABBRS,
   briefStale,
+  briefViewerSeen,
   getBrief,
   listBriefs,
+  markBriefViewerSeen,
+  matchupBriefInput,
   packHashOf,
   removeBrief,
   rerunBrief,
   saveBrief,
+  shouldAutoOpenBrief,
   takeRerun,
   updateBrief,
 } from "./briefs";
@@ -152,4 +157,40 @@ test("corrupt storage reads as empty, never throws", () => {
     "not-json{{{",
   );
   assert.deepEqual(listBriefs(), []);
+});
+
+test("a matchup brief input is built from a valid team pair", () => {
+  const input = matchupBriefInput("bos", "nyk");
+  assert.ok(input);
+  assert.equal(input.title, "BOS at NYK");
+  assert.ok(input.question.includes("BOS"));
+  assert.ok(input.question.includes("NYK"));
+  assert.deepEqual(input.rows, { game: { away: "BOS", home: "NYK" } });
+});
+
+test("matchup brief input rejects same-team, unknown, and empty pairs", () => {
+  assert.equal(matchupBriefInput("BOS", "bos"), null);
+  assert.equal(matchupBriefInput("BOS", "ZZZ"), null);
+  assert.equal(matchupBriefInput("", "NYK"), null);
+  assert.equal(matchupBriefInput("BOS", ""), null);
+});
+
+test("every team can anchor a matchup brief", () => {
+  assert.equal(MATCHUP_TEAM_ABBRS.length, 30);
+  assert.ok(MATCHUP_TEAM_ABBRS.includes("BOS"));
+  assert.ok(MATCHUP_TEAM_ABBRS.includes("OKC"));
+});
+
+test("the brief panel opens only once, for an unseen viewer on a quiet panel", () => {
+  assert.equal(shouldAutoOpenBrief(false, false), true);
+  assert.equal(shouldAutoOpenBrief(true, false), false);
+  assert.equal(shouldAutoOpenBrief(false, true), false);
+  assert.equal(shouldAutoOpenBrief(true, true), false);
+});
+
+test("the seen flag round-trips through storage", () => {
+  installLocalStorage();
+  assert.equal(briefViewerSeen(), false);
+  markBriefViewerSeen();
+  assert.equal(briefViewerSeen(), true);
 });
