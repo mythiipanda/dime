@@ -1,7 +1,6 @@
 import argparse
 import datetime
 import difflib
-import fcntl
 import hashlib
 import json
 import os
@@ -13,6 +12,8 @@ from pathlib import Path
 import duckdb
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
+from shared import file_lock
 
 _SAMPLE_READ_BYTES = 8192
 _PACK_MEMBER = "data/warehouse.duckdb"
@@ -201,10 +202,13 @@ def main(argv=None):
     lock_path.parent.mkdir(parents=True, exist_ok=True)
     lock_fh = open(lock_path, "w")
     try:
-        fcntl.flock(lock_fh, fcntl.LOCK_EX | fcntl.LOCK_NB)
-    except OSError:
+        file_lock.try_lock_exclusive(lock_fh)
+    except BlockingIOError:
         emit_verdict(busy_verdict())
         return 0
+    except OSError as exc:
+        print("release_pack: lock could not be acquired: " + str(exc), file=sys.stderr)
+        return 2
     with lock_fh:
         return _run(args, stage_dir)
 

@@ -2,7 +2,6 @@
 from pathlib import Path
 from contextlib import contextmanager
 import duckdb
-import fcntl
 import os
 import polars as pl
 import shutil
@@ -11,6 +10,7 @@ import threading
 import time
 import hashlib
 
+from . import file_lock
 from .sources.base import FetchResult
 
 DB_PATH = Path(os.environ.get("DIME_WAREHOUSE") or
@@ -179,20 +179,20 @@ def completed_seasons_across_tables() -> list[str]:
 @contextmanager
 def write_guard(timeout_s: float = 60.0):
     DB_PATH.parent.mkdir(parents=True, exist_ok=True)
-    start = time.time()
+    start = time.monotonic()
     with open(LOCK_PATH, "w") as fh:
         while True:
             try:
-                fcntl.flock(fh, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                file_lock.try_lock_exclusive(fh)
                 break
             except BlockingIOError:
-                if time.time() - start > timeout_s:
+                if time.monotonic() - start > timeout_s:
                     raise TimeoutError("warehouse write lock timed out")
-                time.sleep(0.05)
+                time.sleep(file_lock.POLL_INTERVAL_S)
         try:
             yield
         finally:
-            fcntl.flock(fh, fcntl.LOCK_UN)
+            file_lock.unlock(fh)
 
 def _connect_once(read_only: bool) -> duckdb.DuckDBPyConnection:
     if read_only:
@@ -394,19 +394,19 @@ def state_connect() -> duckdb.DuckDBPyConnection:
 @contextmanager
 def state_write_guard(timeout_s: float = 60.0):
     STATE_PATH.parent.mkdir(parents=True, exist_ok=True)
-    start = time.time()
+    start = time.monotonic()
     with open(STATE_LOCK_PATH, "w") as fh:
         while True:
             try:
-                fcntl.flock(fh, fcntl.LOCK_EX | fcntl.LOCK_NB); break
+                file_lock.try_lock_exclusive(fh); break
             except BlockingIOError:
-                if time.time() - start > timeout_s:
+                if time.monotonic() - start > timeout_s:
                     raise TimeoutError("state write lock timed out")
-                time.sleep(0.05)
+                time.sleep(file_lock.POLL_INTERVAL_S)
         try:
             yield
         finally:
-            fcntl.flock(fh, fcntl.LOCK_UN)
+            file_lock.unlock(fh)
 
 def save_frame(
     table: str,

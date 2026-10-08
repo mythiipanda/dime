@@ -1,6 +1,8 @@
 from pathlib import Path
 from threading import Event, Thread
 
+import os
+
 import pytest
 
 from v2.runtime.ledger import (
@@ -9,6 +11,7 @@ from v2.runtime.ledger import (
     RequestEnvelope,
     RunLedger,
     TerminalReason,
+    _DIRECTORY_FSYNC_SUPPORTED,
 )
 
 def test_request_envelope_hashes_exact_model_inputs() -> None:
@@ -430,7 +433,10 @@ def test_file_ledger_fsyncs_directory_on_creation(tmp_path, monkeypatch) -> None
     monkeypatch.setattr("v2.runtime.ledger.os.fsync", record)
     file = FileLedger(tmp_path / "new" / "run.jsonl", "run")
     file.append(LedgerKind.TURN_START, turn_id="turn", data={"request": "q"})
-    assert len(calls) == 2
+    assert len(calls) == (2 if _DIRECTORY_FSYNC_SUPPORTED else 1)
+    if not _DIRECTORY_FSYNC_SUPPORTED:
+        with pytest.raises(OSError):
+            os.open(tmp_path / "new", os.O_RDONLY)
 
 def test_file_ledger_rejects_unterminated_partial_tail(tmp_path) -> None:
     path = tmp_path / "run.jsonl"
