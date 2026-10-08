@@ -23,16 +23,25 @@ STATE_LOCK_PATH = STATE_PATH.parent / ".state-write.lock"
 
 PROVENANCE_COLS = ["_source", "_season", "_fetched_at"]
 
+def _warehouse_absent_error(path: Path | str) -> FileNotFoundError:
+    return FileNotFoundError(f"warehouse absent: {path}")
+
 def _warehouse_identity_uncached(path: Path, sample: str | None = None) -> dict[str, str]:
     if sample is None:
         try:
             size: int | None = path.stat().st_size
+        except FileNotFoundError:
+            raise _warehouse_absent_error(path) from None
         except OSError:
             size = None
         sample = (_warehouse_sample_hexdigest(path, size)
                   if size is not None else None)
         if sample is None:
-            sample = hashlib.sha256(path.read_bytes()).hexdigest()
+            try:
+                payload = path.read_bytes()
+            except FileNotFoundError:
+                raise _warehouse_absent_error(path) from None
+            sample = hashlib.sha256(payload).hexdigest()
     return {"warehouse_id": "frozen-eval" if path == CANONICAL_DB_PATH else "configured-runtime",
             "warehouse_sha256": sample}
 
@@ -361,7 +370,7 @@ def connect(read_only: bool | None = None) -> duckdb.DuckDBPyConnection:
         except _LOCK_ERRORS as exc:
             raise WriteConflictError(DB_PATH) from exc
     if not DB_PATH.exists():
-        raise FileNotFoundError(f"warehouse absent: {DB_PATH}")
+        raise _warehouse_absent_error(DB_PATH)
     pooled = _pool_acquire()
     if pooled is not None:
         return pooled
