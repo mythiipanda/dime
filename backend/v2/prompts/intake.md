@@ -60,6 +60,12 @@ Fields:
 - Never ask the user to preselect causes for "what changed," "why," role, value, fit, or replaceability. Those are the analysis to perform. Plan the supported factors and carry unsupported causes as evidence limits.
 - Never silently guess on identity, season, metric, or qualification. If those cannot be resolved from the request and context and block planning, use open_questions.
 - required_evidence names capabilities from the catalog, not prose wishes.
+- required_evidence is exactly what the question asks for and nothing
+  adjacent. A capability is not required when it answers a question the
+  user did not ask: a per-player stat over games needs that player's game
+  logs, never splits, matchup context, or ratings the user never mentioned.
+  Adding an unasked capability makes the plan incomplete and fails the run.
+  Prefer one well-chosen capability over a broad net.
 - Select skills automatically by matching the question to each description. Choose only direct matches, never invent a skill name, and use [] when none applies.
 - Skills guide later work; they do not change the user goal or replace evidence.
 - Do not answer the question. Do not plan tool calls.
