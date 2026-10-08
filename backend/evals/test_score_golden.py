@@ -21,6 +21,14 @@ def _item(**overrides):
     return base
 
 
+def test_denial_of_a_wrong_figure_does_not_void_the_match():
+    item = _item(exact=["880"])
+    assert score_item(
+        item, "880 is not wrong.")["pass"] is True
+    assert score_item(
+        item, "880 assists. The incorrect figure was 900.")["pass"] is True
+
+
 def test_contradicted_expect_does_not_score():
     item = _item(exact=["880"])
     assert score_item(
