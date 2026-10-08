@@ -1,6 +1,6 @@
 @import "tailwindcss";
 
-@import "shadow-plugin/unprefixed";
+@import "../node_modules/shadow-plugin/dist/shadow-plugin.unprefixed.css";
 
 @custom-variant dark (&:where(.dark, .dark *));
 

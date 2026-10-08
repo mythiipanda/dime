@@ -919,7 +919,7 @@ class QuickAnswerBody(BaseModel):
 
     @model_validator(mode="after")
     def require_complete_conversation_identity(self):
-        if (self.thread is None) != (self.client is None):
+        if self.thread is not None and self.client is None:
             raise ValueError("thread and client must be provided together")
         return self
 

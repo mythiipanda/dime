@@ -432,10 +432,11 @@ function AssistantTurn({
 }
 
 export default function DimeHarness() {
-  const [tabs, setTabs] = useState<Tab[]>([{ id: "t1", label: "SGA vs Luka — Oct 6" }]);
+  const [tabs, setTabs] = useState<Tab[]>([{ id: "t1", label: "New analysis" }]);
   const [activeTab, setActiveTab] = useState("t1");
+  const [messagesByTab, setMessagesByTab] = useState<Record<string, ChatMsg[]>>({});
   const [activeView, setActiveView] = useState<"chat" | ViewKey>("chat");
-  const [messages, setMessages] = useState<ChatMsg[]>([]);
+  const messages = messagesByTab[activeTab] ?? [];
   const [live, setLive] = useState<LiveRun | null>(null);
   const [draft, setDraft] = useState("");
   const [paletteOpen, setPaletteOpen] = useState(false);
@@ -451,19 +452,39 @@ export default function DimeHarness() {
   const addTab = () => {
     const id = `t${Date.now()}`;
     setTabs((t) => [...t, { id, label: "New analysis" }]);
+    setMessagesByTab((m) => ({ ...m, [id]: [] }));
     setActiveTab(id);
+  };
+
+  const closeTab = (id: string) => {
+    setTabs((current) => {
+      const remaining = current.filter((t) => t.id !== id);
+      const next = remaining.length > 0 ? remaining : [{ id: `t${Date.now()}`, label: "New analysis" }];
+      setActiveTab((was) => (was === id ? next[next.length - 1].id : was));
+      return next;
+    });
+    setMessagesByTab((m) => {
+      const next = { ...m };
+      delete next[id];
+      return next;
+    });
+  };
+
+  const appendMessage = (tabId: string, message: ChatMsg) => {
+    setMessagesByTab((m) => ({ ...m, [tabId]: [...(m[tabId] ?? []), message] }));
   };
 
   const submit = (raw?: string) => {
     const q = (raw ?? draft).trim();
     if (!q || live) return;
+    const tabId = activeTab;
     abortRef.current?.abort();
     const ctrl = new AbortController();
     abortRef.current = ctrl;
     liveId.current += 1;
     const id = liveId.current;
     const startedAt = Date.now();
-    setMessages((m) => [...m, { role: "user", text: q }]);
+    appendMessage(tabId, { role: "user", text: q });
     setDraft("");
     setLive({
       id,
@@ -483,29 +504,23 @@ export default function DimeHarness() {
           setLive((cur) => (cur && cur.id === id ? { ...cur, ...snap } : cur)),
         onDone: (snap) => {
           setLive((cur) => (cur && cur.id === id ? null : cur));
-          setMessages((m) => [
-            ...m,
-            {
-              role: "assistant",
-              text: snap.text,
-              artifacts: snap.artifacts,
-              suggestions: snap.suggestions,
-              failure: snap.failed,
-            },
-          ]);
+          appendMessage(tabId, {
+            role: "assistant",
+            text: snap.text,
+            artifacts: snap.artifacts,
+            suggestions: snap.suggestions,
+            failure: snap.failed,
+          });
         },
         onError: (message) => {
           setLive((cur) => (cur && cur.id === id ? null : cur));
-          setMessages((m) => [
-            ...m,
-            {
-              role: "assistant",
-              text: "",
-              artifacts: [],
-              suggestions: [],
-              failure: { kind: "connection", message },
-            },
-          ]);
+          appendMessage(tabId, {
+            role: "assistant",
+            text: "",
+            artifacts: [],
+            suggestions: [],
+            failure: { kind: "connection", message },
+          });
         },
       },
       { signal: ctrl.signal },
@@ -655,16 +670,30 @@ export default function DimeHarness() {
           <section className="flex min-w-0 flex-1 flex-col overflow-hidden rounded-[14px] border border-line bg-page">
             <div className="flex h-11 shrink-0 items-center gap-1 overflow-x-auto border-b border-line px-2">
               {tabs.map((t) => (
-                <button
+                <span
                   key={t.id}
-                  type="button"
-                  onClick={() => setActiveTab(t.id)}
-                  className={`flex h-7 shrink-0 items-center gap-2 rounded-[7px] px-2.5 text-[12.5px] font-medium transition-[background-color,color,transform] duration-150 active:scale-[0.97] ${
+                  className={`flex h-7 shrink-0 items-center gap-1 rounded-[7px] pr-1 transition-[background-color,color] duration-150 ${
                     activeTab === t.id ? "bg-hover text-ink" : "text-ink-3 hover:bg-hover hover:text-ink-2"
                   }`}
                 >
-                  {t.label}
-                </button>
+                  <button
+                    type="button"
+                    onClick={() => setActiveTab(t.id)}
+                    className="max-w-[180px] truncate px-2 text-[12.5px] font-medium transition-transform duration-150 active:scale-[0.97]"
+                  >
+                    {t.label}
+                  </button>
+                  {tabs.length > 1 && (
+                    <button
+                      type="button"
+                      aria-label={`Close ${t.label}`}
+                      onClick={() => closeTab(t.id)}
+                      className="flex size-4 items-center justify-center rounded-[4px] text-ink-3 transition-[background-color,color,transform] duration-150 hover:bg-page hover:text-ink active:scale-[0.9]"
+                    >
+                      <Ico d={<path d="M6 6l12 12M18 6L6 18" />} size={10} />
+                    </button>
+                  )}
+                </span>
               ))}
               <button
                 type="button"
