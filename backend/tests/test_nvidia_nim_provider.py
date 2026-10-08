@@ -13,6 +13,7 @@ from shared.providers import (
 
 def test_gemini_is_priority_one_and_exact_models_are_exposed(monkeypatch):
     monkeypatch.setattr(settings, "gemini_api_key", "key")
+    monkeypatch.setattr(settings, "cerebras_api_key", "")
     for primary in ("gemini", "nvidia", "openrouter", "mistral", "inception", "groq"):
         assert fallback_order(primary)[0] == "gemini"
     catalog = models_catalog()

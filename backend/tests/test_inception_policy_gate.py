@@ -5,6 +5,8 @@ def _keys(monkeypatch):
     monkeypatch.setattr(settings,"openrouter_api_key","free")
     monkeypatch.setattr(settings,"mistral_api_key","free")
     monkeypatch.setattr(settings,"inception_api_key","retained")
+    monkeypatch.setattr(settings,"cerebras_api_key","")
+    monkeypatch.setattr(settings,"dime_enable_groq",False)
 
 def test_retained_key_is_inert_by_default(monkeypatch):
     _keys(monkeypatch); monkeypatch.setattr(settings,"dime_enable_inception",False)

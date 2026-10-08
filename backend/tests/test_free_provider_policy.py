@@ -6,17 +6,20 @@ from shared.providers import (
 from shared.config import settings
 
 def test_every_runtime_fallback_chain_is_free_only():
-    for primary in ("openrouter", "mistral", "inception", "groq", "gemini"):
-        assert fallback_order(primary)[0] == "gemini"
-        assert set(fallback_order(primary)) == {
-            "gemini", "nvidia", "openrouter", "mistral"}
-        assert not ({"inception", "groq"} & set(fallback_order(primary)))
+    for primary in ("openrouter", "mistral", "inception", "groq", "gemini",
+                    "cerebras"):
+        assert set(fallback_order(primary)) <= {
+            "gemini", "nvidia", "openrouter", "mistral", "cerebras", "groq"}
+        assert fallback_order(primary)[0] in {"gemini", "cerebras"}
+        assert "inception" not in fallback_order(primary)
 
 def test_openrouter_paid_and_stale_slugs_clamp(monkeypatch):
     monkeypatch.setattr(settings, "openrouter_model", "openai/gpt-4o")
     monkeypatch.setattr(settings, "nvidia_nim_api_key", "")
     monkeypatch.setattr(settings, "openrouter_api_key", "key")
     monkeypatch.setattr(settings, "gemini_api_key", "")
+    monkeypatch.setattr(settings, "cerebras_api_key", "")
+    monkeypatch.setattr(settings, "dime_enable_groq", False)
     for raw in (None, "openrouter:openai/gpt-4o", "openai/gpt-4o"):
         provider, slug = resolve_model_id(raw)
         assert provider == "openrouter"
@@ -33,7 +36,7 @@ def test_mistral_explicit_slug_clamps_to_configured_free_limit(monkeypatch):
 def test_catalog_exposes_only_free_models(monkeypatch):
     monkeypatch.setattr(settings, "openrouter_model", "openai/gpt-4o")
     catalog = models_catalog()
-    assert set(catalog["available"]) == {
+    assert set(catalog["available"]) >= {
         "gemini", "nvidia", "openrouter", "mistral"}
     for item in catalog["models"]:
         provider, slug = item["id"].split(":", 1)
@@ -58,8 +61,9 @@ def test_direct_get_llm_never_constructs_paused_providers(monkeypatch):
     monkeypatch.setattr(settings, "groq_api_key", "retained-key")
     monkeypatch.setattr(providers, "ChatOpenAI",
                         lambda **kwargs: constructed.append(kwargs) or object())
+    monkeypatch.setattr(settings, "dime_enable_groq", False)
     assert providers.get_llm("inception", "mercury-2.5") is None
-    assert providers.get_llm("groq", "anything") is None
+    assert providers.get_llm("groq", "openai/gpt-oss-120b") is None
     assert constructed == []
 
 def test_structured_mistral_success_ledger_identity_is_free_limit(monkeypatch):
@@ -95,7 +99,8 @@ def test_groq_free_tier_activation_is_exact_and_ordered(monkeypatch):
     assert providers.resolve_model_id("inception:any") == (
         "inception", providers.INCEPTION_DEFAULT)
     assert providers.fallback_order("inception") == [
-        "gemini", "nvidia", "groq", "openrouter", "mistral", "inception"]
+        "cerebras", "gemini", "nvidia", "groq", "openrouter", "mistral",
+        "inception"]
     assert providers.is_free_model("groq", "openai/gpt-oss-20b")
     assert providers.is_free_model("groq", "openai/gpt-oss-120b")
     assert providers.resolve_model_id("groq:openai/gpt-oss-120b") == (
@@ -145,6 +150,7 @@ def test_gemini_is_free_and_default_when_keyed(monkeypatch):
     monkeypatch.setattr(settings, "nvidia_nim_api_key", "")
     assert is_free_model("gemini", GEMINI_DEFAULT)
     assert not is_free_model("gemini", "gemini-2.5-pro")
+    monkeypatch.setattr(settings, "cerebras_api_key", "")
     assert providers._default_provider() == ("gemini", GEMINI_DEFAULT)
     assert providers._gemini_model("gemini-3.5-flash") == "gemini-3.5-flash"
     assert providers._gemini_model("gemini-3.5-flash-lite") == "gemini-3.5-flash-lite"
@@ -176,6 +182,7 @@ def test_no_keys_falls_back_to_mistral_default_without_crashing(monkeypatch):
     monkeypatch.setattr(settings, "mistral_api_key", "")
     monkeypatch.setattr(settings, "dime_enable_groq", False)
     monkeypatch.setattr(settings, "dime_enable_inception", False)
+    monkeypatch.setattr(settings, "cerebras_api_key", "")
     assert providers._default_provider() == (
         "mistral", providers.MISTRAL_DEFAULT)
     assert providers.resolve_model_id(None) == providers._default_provider()

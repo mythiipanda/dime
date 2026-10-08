@@ -8,19 +8,23 @@ from langchain_openai import ChatOpenAI
 
 from .config import settings
 
-ProviderName = Literal["gemini", "nvidia", "mistral", "openrouter", "inception", "groq"]
+ProviderName = Literal["gemini", "nvidia", "mistral", "openrouter", "inception", "groq",
+                   "cerebras"]
 
 class ProviderPolicyError(ValueError):
     pass
 
-FREE_PROVIDER_ORDER: tuple[ProviderName, ...] = ("gemini", "nvidia", "groq", "openrouter", "mistral")
+FREE_PROVIDER_ORDER: tuple[ProviderName, ...] = ("cerebras", "gemini", "nvidia", "groq",
+                                          "openrouter", "mistral")
 
 def active_provider_order() -> tuple[ProviderName, ...]:
     free = tuple(name for name in FREE_PROVIDER_ORDER if
         name != "groq" or (settings.dime_enable_groq and settings.groq_api_key))
-    return ((*free, "inception")
+    ordered = tuple(name for name in free
+                    if name != "cerebras" or settings.cerebras_api_key)
+    return ((*ordered, "inception")
             if settings.dime_enable_inception and settings.inception_api_key
-            else free)
+            else ordered)
 
 GEMINI_BASE_URL = "https://generativelanguage.googleapis.com/v1beta/openai/"
 GEMINI_DEFAULT = "gemini-3.5-flash"
@@ -39,6 +43,12 @@ NVIDIA_NIM_MODELS: tuple[str, ...] = (
 )
 NVIDIA_NIM_TIMEOUT_S = 20
 NVIDIA_NIM_ALLOWLIST = frozenset(NVIDIA_NIM_MODELS)
+CEREBRAS_BASE_URL = "https://api.cerebras.ai/v1"
+CEREBRAS_DEFAULT = "gpt-oss-120b"
+CEREBRAS_MODELS: tuple[str, ...] = (
+    "gpt-oss-120b",
+    "qwen-3.8-27b",
+)
 MISTRAL_DEFAULT = "ministral-8b-2512"
 OPENROUTER_DEFAULT = "nvidia/nemotron-3-super-120b-a12b:free"
 OPENROUTER_AUTO = "openrouter/free"
@@ -67,6 +77,8 @@ def is_free_model(provider: str, slug: str) -> bool:
             value in OPENROUTER_ALLOWLIST and value.endswith(":free"))
     if provider == "groq":
         return value in GROQ_MODELS
+    if provider == "cerebras":
+        return value in CEREBRAS_MODELS
     if provider == "mistral":
         return value == (settings.mistral_model or MISTRAL_DEFAULT)
     return False
@@ -94,6 +106,10 @@ def _groq_free_model(slug: str | None = None) -> str:
 def _mistral_free_model() -> str:
     return settings.mistral_model or MISTRAL_DEFAULT
 
+def _cerebras_model(slug: str | None = None) -> str:
+    value = str(slug or settings.cerebras_model or "").strip()
+    return value if value in CEREBRAS_MODELS else CEREBRAS_DEFAULT
+
 def _default_provider() -> tuple[ProviderName, str]:
     if settings.gemini_api_key:
         return ("gemini", _gemini_model())
@@ -105,6 +121,8 @@ def _default_provider() -> tuple[ProviderName, str]:
         return ("groq", _groq_free_model())
     if settings.openrouter_api_key:
         return ("openrouter", _openrouter_free_model())
+    if settings.cerebras_api_key:
+        return ("cerebras", _cerebras_model())
     return ("mistral", _mistral_free_model())
 
 def resolve_model_id(model_id: str | None) -> tuple[ProviderName, str]:
@@ -127,6 +145,13 @@ def resolve_model_id(model_id: str | None) -> tuple[ProviderName, str]:
     if raw.startswith("openrouter:"):
         slug = raw.split(":", 1)[1]
         return ("openrouter", _openrouter_free_model(slug))
+    if raw.startswith("cerebras:"):
+        slug = raw.split(":", 1)[1]
+        if slug not in CEREBRAS_MODELS:
+            raise ProviderPolicyError("unapproved Cerebras model")
+        if not settings.cerebras_api_key:
+            raise ProviderPolicyError("Cerebras route has no key")
+        return ("cerebras", _cerebras_model(slug))
     if raw.startswith("mistral:"):
         return ("mistral", _mistral_free_model())
     if raw.startswith("inception:"):
@@ -179,6 +204,19 @@ def get_llm(name: ProviderName, model: str | None = None) -> ChatOpenAI | None:
             api_key=settings.mistral_api_key,
             timeout=settings.llm_timeout_s,
             max_retries=settings.llm_max_retries,
+        )
+    if name == "cerebras":
+        if model is not None and model not in CEREBRAS_MODELS:
+            raise ProviderPolicyError("unapproved Cerebras model")
+        if not settings.cerebras_api_key:
+            return None
+        return ChatOpenAI(
+            model=_cerebras_model(model),
+            base_url=CEREBRAS_BASE_URL,
+            api_key=settings.cerebras_api_key,
+            timeout=settings.llm_timeout_s,
+            max_retries=settings.llm_max_retries,
+            default_headers={"User-Agent": "dime-agent/1.0"},
         )
     if name == "groq":
         if model is not None and model not in GROQ_MODELS:
@@ -465,6 +503,11 @@ def models_catalog() -> dict[str, Any]:
         options.append({"id": f"openrouter:{OPENROUTER_AUTO}",
                         "engine": "openrouter",
                         "default": default_id == f"openrouter:{OPENROUTER_AUTO}"})
+    if is_free_model("cerebras", CEREBRAS_DEFAULT):
+        options.extend(
+            {"id": f"cerebras:{slug}", "engine": "cerebras",
+             "default": default_id == f"cerebras:{slug}"}
+            for slug in CEREBRAS_MODELS)
     mistral = _mistral_free_model()
     if is_free_model("mistral", mistral):
         options.append({"id": f"mistral:{mistral}", "engine": "mistral",
@@ -482,6 +525,7 @@ def models_catalog() -> dict[str, Any]:
         "nvidia": bool(settings.nvidia_nim_api_key),
         "openrouter": bool(settings.openrouter_api_key),
         "mistral": bool(settings.mistral_api_key),
+        "cerebras": bool(settings.cerebras_api_key),
     }
     if settings.dime_enable_groq and settings.groq_api_key:
         available["groq"] = True

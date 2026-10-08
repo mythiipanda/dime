@@ -32,11 +32,13 @@ from pydantic_ai.tools import GenerateToolJsonSchema
 from shared.config import settings
 from shared.tools.rating_metrics import RANKING_DIRECTIONS, TEAM_RATING_METRICS
 from shared.providers import (
+    CEREBRAS_DEFAULT,
     GEMINI_BASE_URL,
     GROQ_DEFAULT,
     NVIDIA_NIM_BASE_URL,
     INCEPTION_DEFAULT,
     ProviderName,
+    _cerebras_model,
     _gemini_model,
     _groq_free_model, _mistral_free_model,
     _nvidia_nim_model,
@@ -603,6 +605,8 @@ class ProviderStructuredModel:
                           settings.inception_model or INCEPTION_DEFAULT),
             "groq": ("https://api.groq.com/openai/v1", settings.groq_api_key,
                      settings.groq_model or GROQ_DEFAULT),
+            "cerebras": ("https://api.cerebras.ai/v1", settings.cerebras_api_key,
+                         settings.cerebras_model or CEREBRAS_DEFAULT),
         }
         provider = self.provider
         entry = configs.get(provider)
@@ -615,6 +619,8 @@ class ProviderStructuredModel:
             "HTTP-Referer": "https://github.com/mythiipanda/dime",
             "X-Title": "Dime NBA Analyst",
         } if provider == "openrouter" else None)
+        if provider == "cerebras":
+            headers = {**(headers or {}), "User-Agent": "dime-agent/1.0"}
         requested = self.model
         if provider == "gemini":
             accepted_model = _gemini_model(requested)
@@ -625,7 +631,9 @@ class ProviderStructuredModel:
         elif provider == "mistral":
             accepted_model = _mistral_free_model()
         elif provider == "groq":
-            accepted_model = _groq_free_model()
+            accepted_model = _groq_free_model(requested)
+        elif provider == "cerebras":
+            accepted_model = _cerebras_model(requested)
         else:
             accepted_model = settings.inception_model or INCEPTION_DEFAULT
         if (provider != "inception"

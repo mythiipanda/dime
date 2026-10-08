@@ -96,6 +96,7 @@ def test_structured_groq_client_is_fixed_one_attempt_and_activation_gated(monkey
     monkeypatch.setattr(settings,"dime_enable_inception",False)
     monkeypatch.setattr(settings,"dime_enable_groq",False)
     monkeypatch.setattr(settings,"groq_api_key","key")
+    monkeypatch.setattr(settings,"groq_model","openai/gpt-oss-20b")
     assert "groq" not in providers.fallback_order("openrouter")
     monkeypatch.setattr(settings,"dime_enable_groq",True)
     got=ProviderStructuredModel("groq","openai/gpt-oss-20b")._models()
