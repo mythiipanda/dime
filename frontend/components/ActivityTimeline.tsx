@@ -30,7 +30,8 @@ function pairFailed(pair:ToolPair):boolean{
 }
 function pairError(pair:ToolPair):string|undefined{
   if(pair.result){
-    const note=toolFailureNote(recordField(pair.result,"reason"));
+    const tool = pair.call ? recordField(pair.call,"name") : recordField(pair.result,"name");
+    const note=toolFailureNote(recordField(pair.result,"reason"), tool);
     if(note)return note;
   }
   const summary=pair.result?.summary;

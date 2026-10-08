@@ -321,9 +321,22 @@ const AWARD_FAILURE_NOTES: Record<string, string> = {
   subject_absent: "That pick isn't on the ballot.",
 };
 
-export function toolFailureNote(reason: unknown): string | null {
+const SALARY_TOOLS = ["get_cap_ledger", "get_trade_check", "get_trade_value"];
+
+const SALARY_FAILURE_NOTES: Record<string, string> = {
+  salary_column_unmatched: "Salary data doesn't cover that season.",
+  unknown_players: "Couldn't match those player names.",
+  unknown_player: "Couldn't match those player names.",
+};
+
+export function toolFailureNote(reason: unknown, tool?: unknown): string | null {
   if (typeof reason !== "string" || !reason) return null;
-  return AWARD_FAILURE_NOTES[reason] ?? null;
+  const known = AWARD_FAILURE_NOTES[reason] ?? SALARY_FAILURE_NOTES[reason];
+  if (known) return known;
+  if (typeof tool === "string" && SALARY_TOOLS.includes(tool)) {
+    return "Salary data couldn't be read right now.";
+  }
+  return null;
 }
 
 export function capabilityLabel(capability: string): string {
