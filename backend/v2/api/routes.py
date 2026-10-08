@@ -1579,11 +1579,23 @@ def _tool_call_data(name: str, arguments) -> dict:
         unknown_argument_count=unknown_argument_count,
     ).model_dump(mode="json")
 
+PUBLICATION_NODE = "analytics"
+
+_PUBLIC_NODES = {"entry", "data_retrieval", "tools", PUBLICATION_NODE, "presentation"}
+
+_PHASE_NODES = {"understand": "entry", "plan": "data_retrieval",
+                "execute": "tools", "verify": PUBLICATION_NODE}
+
+
+def _is_publication_node_event(event) -> bool:
+    return getattr(event, "node", None) == PUBLICATION_NODE
+
+
 def _safe_buffered_event(event):
     from v2.api.activity import ToolCallData
     from v2.api.events import NodeUpdate, ToolCall, ToolResult
     kind = str(getattr(event, "type", ""))
-    public_nodes = {"entry", "data_retrieval", "tools", "analytics", "presentation"}
+    public_nodes = _PUBLIC_NODES
     if kind == "node_update":
         if event.node not in public_nodes or event.status not in {"running","complete","error"}:
             return None
@@ -1602,8 +1614,7 @@ def _safe_buffered_event(event):
                           error="Tool failed" if status == "fail" else None)
     status = getattr(event, "status", None)
     phase = getattr(event, "phase", None)
-    phase_nodes = {"understand":"entry","plan":"data_retrieval",
-                   "execute":"tools","verify":"analytics"}
+    phase_nodes = _PHASE_NODES
     if phase in phase_nodes and status in {"running", "complete", "failed"}:
         return NodeUpdate(node=phase_nodes[phase],
             status="error" if status == "failed" else status)
@@ -1941,9 +1952,13 @@ async def quick_answer_stream(body: QuickAnswerBody):
         yield encode_event(GraphEnd())
 
     def success_chunks(result, public_tables, untraced_numbers,
-                       public_statuses, answer):
+                       public_statuses, answer, withheld_publication):
         from v2.api.events import StatusUpdate
 
+        for event in withheld_publication:
+            chunk = encode_event(event)
+            if chunk is not None:
+                yield chunk
         for line in _status_lines(getattr(result, "task", None)):
             try:
                 chunk = encode_event(StatusUpdate(text=line))
@@ -2028,6 +2043,7 @@ async def quick_answer_stream(body: QuickAnswerBody):
                 (ref.sequence for ref in existing), default=None)
         task = asyncio.create_task(runtime.run(
             body.q, run_id=run_id, context=context))
+        withheld_publication: list = []
         try:
             try:
                 async for event in _stream_queue(
@@ -2037,7 +2053,10 @@ async def quick_answer_stream(body: QuickAnswerBody):
                         if safe_event is not None:
                             chunk = encode_event(safe_event)
                             if chunk is not None:
-                                yield chunk
+                                if _is_publication_node_event(safe_event):
+                                    withheld_publication.append(safe_event)
+                                else:
+                                    yield chunk
                 result = task.result()
 
                 public_tables, untraced_numbers = _public_evidence(result)
@@ -2055,7 +2074,7 @@ async def quick_answer_stream(body: QuickAnswerBody):
             if policy.publish:
                 for chunk in success_chunks(result, public_tables,
                                             untraced_numbers, public_statuses,
-                                            answer):
+                                            answer, withheld_publication):
                     yield chunk
                 record_thread_outcome(parent_sequence, result, answer,
                                       public_tables, untraced_numbers)

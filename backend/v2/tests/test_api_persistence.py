@@ -1544,6 +1544,66 @@ def test_public_stream_projection_failure_abstains_and_terminates(monkeypatch,tm
     assert text.count("event: final_answer")==1 and text.count("event: graph_end")==1
     assert text.index("event: work_log") < text.index("event: final_answer") < text.index("event: graph_end")
 
+def test_admitted_run_keeps_non_publication_nodes_live_and_publishes_analytics_once(monkeypatch,tmp_path):
+    from datetime import UTC,datetime
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+    from v2 import contracts
+    from v2.api import routes
+    from v2.runtime.ledger import RunLedger
+    from types import SimpleNamespace
+    binding=contracts.EvidenceOutputBinding(requirement_kind="task",output_id="WINS",node_id="n",evidence_id="e",selector="rows.WINS",value={"kind":"integer","value":61},unit={"kind":"declared","value":"count"},domain="standings")
+    status=contracts.OutputFinalStatus(requirement_kind="task",output_id="WINS",status="complete",claim_index=0,binding=binding)
+    matched=contracts.EvidenceEnvelope(evidence_id="e",capability="standings",source="private",observed_at=datetime.now(UTC),rows={"WINS":61})
+    result=SimpleNamespace(output_statuses=[status],draft=contracts.DraftReport(sections=[],claims=[]),execution=SimpleNamespace(evidence=[matched]),verification=SimpleNamespace(status=SimpleNamespace(value="pass")),verified_claims=[],gaps=[],structural_flags=[])
+    holder={}
+    class Runtime:
+        async def run(self,*a,**k):
+            import asyncio
+            holder["progress"]("execute","running")
+            holder["progress"]("verify","running")
+            asyncio.get_running_loop().call_soon(holder["progress"],"verify","complete")
+            await asyncio.sleep(0)
+            return result
+    def build(**kwargs):holder["progress"]=kwargs["progress"];return Runtime(),RunLedger(kwargs["run_id"])
+    monkeypatch.setattr("shared.providers.resolve_model_id",lambda value:("openrouter","fixture"));monkeypatch.setattr("v2.runtime.assembly.build_runtime",build);monkeypatch.setattr(routes,"_PROJECTS",ProjectStore(tmp_path/"p.sqlite"))
+    app=FastAPI();app.include_router(routes.router,prefix="/api")
+    text=TestClient(app).post("/api/v2/chat/stream",json={"q":"x"}).text
+    assert text.count('"node":"tools","status":"running"')==1
+    analytics_updates=[line for line in text.splitlines() if '"node":"analytics","status"' in line]
+    assert len(analytics_updates)==2
+    assert '"status":"running"' in analytics_updates[0] and '"status":"complete"' in analytics_updates[1]
+    assert text.index(analytics_updates[0]) < text.index("event: work_log")
+    assert text.count("event: final_answer")==1 and text.count("event: graph_end")==1
+    assert text[text.index("event: final_answer"):].count("event: ")==2
+
+def test_abstained_run_still_reports_the_nodes_that_are_not_publication_bearing(monkeypatch,tmp_path):
+    from datetime import UTC,datetime
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+    from v2 import contracts
+    from v2.api import routes
+    from v2.runtime.ledger import RunLedger
+    from types import SimpleNamespace
+    binding=contracts.EvidenceOutputBinding(requirement_kind="task",output_id="WINS",node_id="n",evidence_id="e",selector="rows.WINS",value={"kind":"integer","value":61},unit={"kind":"declared","value":"count"},domain="standings")
+    status=contracts.OutputFinalStatus(requirement_kind="task",output_id="WINS",status="complete",claim_index=0,binding=binding)
+    stale=contracts.EvidenceEnvelope(evidence_id="e",capability="standings",source="private",observed_at=datetime.now(UTC),rows={"WINS":62})
+    result=SimpleNamespace(output_statuses=[status],draft=contracts.DraftReport(sections=[],claims=[]),execution=SimpleNamespace(evidence=[stale]),verification=SimpleNamespace(status=SimpleNamespace(value="pass")),verified_claims=[],gaps=[],structural_flags=[])
+    holder={}
+    class Runtime:
+        async def run(self,*a,**k):
+            holder["progress"]("execute","running")
+            holder["progress"]("verify","running")
+            return result
+    def build(**kwargs):holder["progress"]=kwargs["progress"];return Runtime(),RunLedger(kwargs["run_id"])
+    monkeypatch.setattr("shared.providers.resolve_model_id",lambda value:("openrouter","fixture"));monkeypatch.setattr("v2.runtime.assembly.build_runtime",build);monkeypatch.setattr(routes,"_PROJECTS",ProjectStore(tmp_path/"p.sqlite"))
+    app=FastAPI();app.include_router(routes.router,prefix="/api")
+    text=TestClient(app).post("/api/v2/chat/stream",json={"q":"x"}).text
+    assert text.count('"node":"tools","status":"running"')==1
+    assert '"node":"analytics"' not in text
+    assert text.index('"node":"tools"') < text.index("event: work_log")
+    assert text.count("event: work_log")==text.count("event: final_answer")==text.count("event: graph_end")==1
+
 def test_typed_terminal_contract_replaces_legacy_failure_and_metadata_cases(monkeypatch,tmp_path):
     from fastapi import FastAPI
     from fastapi.testclient import TestClient
