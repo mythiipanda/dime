@@ -137,3 +137,44 @@ describe("award failure notes", () => {
     assert.equal(error && error[1], "Award results aren't available right now.");
   });
 });
+
+describe("salary failure notes", () => {
+  const RAW = "silver_salaries has no salary column for season 2024-25";
+  const SALARY_ITEMS = [
+    rec({
+      eventId: "e1",
+      sequence: 1,
+      kind: "tool_call",
+      title: "Tool call",
+      node: "tools",
+      data: { name: "get_cap_ledger" },
+    }),
+    rec({
+      eventId: "e2",
+      sequence: 2,
+      kind: "tool_result",
+      title: "Tool result",
+      status: "fail",
+      transition: "failed",
+      node: "tools",
+      data: { name: "get_cap_ledger", reason: "salary_column_unmatched", error: RAW },
+    }),
+  ];
+  it("timeline shows the plain note, never the raw backend error", () => {
+    const html = clean(
+      renderToStaticMarkup(
+        React.createElement(ActivityTimeline, { items: SALARY_ITEMS, running: false }),
+      ),
+    );
+    assert.ok(html.includes("Used 1 tool"));
+    assert.ok(!html.includes("silver_salaries"));
+  });
+  it("expanding a failed salary row shows the plain note as its error", () => {
+    const pairs = pairToolItems(SALARY_ITEMS);
+    assert.equal(pairs.length, 1);
+    const view = describePair(pairs[0], false);
+    assert.ok(view.label.includes("unavailable"));
+    const error = view.fields.find(([k]) => k === "Error");
+    assert.equal(error && error[1], "Salary data doesn't cover that season.");
+  });
+});

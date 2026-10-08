@@ -386,3 +386,17 @@ test("registry tools all have a display decision", () => {
     for (const token of BANNED_TOKENS) assert.ok(!label.includes(token), `${name} fallback leaks ${token}`);
   }
 });
+
+test("salary machine reasons map to plain words with a family fallback", () => {
+  assert.equal(toolFailureNote("salary_column_unmatched"), "Salary data doesn't cover that season.");
+  assert.equal(toolFailureNote("unknown_players"), "Couldn't match those player names.");
+  assert.equal(toolFailureNote("unknown_player"), "Couldn't match those player names.");
+  assert.equal(
+    toolFailureNote("some_future_reason", "get_cap_ledger"),
+    "Salary data couldn't be read right now.",
+  );
+  assert.equal(toolFailureNote("some_future_reason", "get_trade_value"), "Salary data couldn't be read right now.");
+  assert.equal(toolFailureNote("some_future_reason", "get_leaders"), null);
+  assert.equal(toolFailureNote("some_future_reason"), null);
+  assert.equal(toolFailureNote("table_missing", "get_cap_ledger"), "Award results aren't available right now.");
+});

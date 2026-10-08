@@ -64,7 +64,7 @@ function callMs(c: ToolCall, live: boolean): number | undefined {
 }
 
 function metaLine(c: ToolCall, live: boolean): string {
-  if (c.status === "fail") return toolFailureNote(c.reason) ?? (c.error || "failed").slice(0, 160);
+  if (c.status === "fail") return toolFailureNote(c.reason, c.name) ?? (c.error || "failed").slice(0, 160);
   const bits: string[] = [];
   if (typeof c.rows === "number") bits.push(`${c.rows} row${c.rows === 1 ? "" : "s"}`);
   const ms = callMs(c, live);
