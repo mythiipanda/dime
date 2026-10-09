@@ -71,6 +71,7 @@ def encode_argument(key:str,value:Any,schema:dict[str,Any]|None=None)->dict[str,
  raise ValueError('unsupported argument value')
 
 class TypedArguments(Closed,Mapping[str,Any]):
+ model_config=ConfigDict(extra='forbid',json_schema_extra={'description':'Typed capability arguments. The object holds exactly one key, "entries", whose value is an array of discriminated argument entries - it is NOT a flat {"key": "value"} map. Each entry is {"key": <name>, "kind": <kind>, "<kind>_value": <value>} with kind one of null, bool, int, number, decimal, string, bool_list, int_list, number_list, decimal_list, string_list; supply only the matching <kind>_value field and omit every other value slot.'})
  entries:list[ArgumentEntry]=Field(default_factory=list,max_length=64)
  @model_validator(mode='after')
  def canonical(self):
@@ -102,7 +103,7 @@ def migrate_legacy_arguments(capability_id:str,values:dict[str,Any],schema:dict[
  rows=[encode_argument(k,v,props[k]) for k,v in values.items()]
  return (RequirementArguments if target=='requirement' else PlannerArguments).model_validate({'entries':rows})
 
-class RequirementArguments(TypedArguments):entries:list[ArgumentEntry]=Field(default_factory=list,max_length=32)
+class RequirementArguments(TypedArguments):entries:list[ArgumentEntry]=Field(default_factory=list,max_length=32,description='One entry per argument: {"key": <name>, "kind": <kind>, "<kind>_value": <value>}, where kind is one of null, bool, int, number, decimal, string, bool_list, int_list, number_list, decimal_list, string_list. Example: [{"key": "season", "kind": "string", "string_value": "2025-26"}]. Do NOT emit a flat {"season": "2025-26"} map - put each argument in its own entries item using the value field named after its kind, and omit the other value slots.')
 class PlannerArguments(TypedArguments):entries:list[ArgumentEntry]=Field(default_factory=list,max_length=64)
 class ProviderWireEntry(Closed):
  key:KEY
@@ -150,6 +151,7 @@ def provider_to_source(value:ProviderWireArguments|None,target:Literal['requirem
 
 CAPABILITY_ID=Annotated[StrictStr,Field(min_length=1,max_length=64,pattern=r'^[a-z][a-z0-9_]*$')]
 class CapabilityArgumentSet(Closed):
+ model_config=ConfigDict(extra='forbid',json_schema_extra={'description':'The arguments for exactly one capability. The object holds a single "entries" array, NOT a flat {"key": "value"} dict. Correct: {"entries": [{"key": "season", "kind": "string", "string_value": "2025-26"}]}. Every entry carries "key", "kind", and exactly one value field named after that kind.'})
  capability_id:CAPABILITY_ID
  arguments:RequirementArguments=Field(default_factory=RequirementArguments)
 class RequirementV3(Closed):

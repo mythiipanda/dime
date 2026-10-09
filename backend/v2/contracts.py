@@ -244,7 +244,19 @@ class CalculationRequirement(BaseModel):
 
 class EvidenceRequirement(BaseModel):
 
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(
+        extra="forbid",
+        json_schema_extra={
+            "description":
+                "A single evidence requirement. Task scope lives ONLY on the "
+                "enclosing TaskSpec: season, as_of, window_start and window_end "
+                "are NOT fields of this object and any other unlisted key is "
+                "rejected as an extra field. Per-capability inputs go in "
+                "capability_argument_sets[].arguments, which is a typed "
+                "arguments object containing an \"entries\" array - never a flat "
+                "{\"key\": \"value\"} map."
+        },
+    )
 
     id: str = Field(min_length=1, max_length=64, pattern=r"^[a-z][a-z0-9_]*$")
     description: str = Field(min_length=1, max_length=1000)
@@ -292,10 +304,30 @@ class TaskSpec(BaseModel):
     metric_ids: list[CanonicalDimensionId] = Field(default_factory=list, max_length=32)
     requested_outputs: list[CanonicalDimensionId] = Field(default_factory=list, max_length=32)
     entities: list[EntityRef] = Field(default_factory=list, max_length=64)
-    season: SeasonRef | None = None
-    as_of: date | None = None
-    window_start: date | None = None
-    window_end: date | None = None
+    season: SeasonRef | None = Field(
+        default=None,
+        description="Task-wide season scope, set HERE on the TaskSpec and nowhere "
+                    "else. Object form: {\"value\": \"2025-26\", \"source\": "
+                    "\"user\"|\"context\"|\"default\"|\"resolved\", \"confidence\": "
+                    "0.0-1.0}. Do not repeat season inside requirements[] entries: "
+                    "requirements forbid extra fields and will reject it.")
+    as_of: date | None = Field(
+        default=None,
+        description="Task-wide as-of date (YYYY-MM-DD), set HERE on the TaskSpec "
+                    "only. Never place as_of on a requirements[] entry; "
+                    "requirements forbid extra fields and will reject it.")
+    window_start: date | None = Field(
+        default=None,
+        description="Inclusive start of the task-wide time window (YYYY-MM-DD), "
+                    "set HERE on the TaskSpec only. Never place window_start on a "
+                    "requirements[] entry; requirements forbid extra fields and "
+                    "will reject it.")
+    window_end: date | None = Field(
+        default=None,
+        description="Inclusive end of the task-wide time window (YYYY-MM-DD), not "
+                    "before window_start, set HERE on the TaskSpec only. Never "
+                    "place window_end on a requirements[] entry; requirements "
+                    "forbid extra fields and will reject it.")
 
     subject_entity_type: str | None = Field(default=None, max_length=64)
     subquestions: list[str] = Field(default_factory=list, max_length=32)
