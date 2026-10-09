@@ -1,5 +1,4 @@
 import importlib.util
-import fcntl
 import hashlib
 import json
 import subprocess
@@ -10,6 +9,8 @@ import zipfile
 from pathlib import Path
 
 import duckdb
+
+from shared import file_lock
 
 SCRIPT = Path(__file__).resolve().parent.parent / "scripts" / "release_pack.py"
 
@@ -269,13 +270,13 @@ def test_cli_flock_single_flight_exits_cleanly(tmp_path):
     rp = _load()
     rp.build_pack(warehouse, baseline)
     with open(lock, "w") as fh:
-        fcntl.flock(fh, fcntl.LOCK_EX)
+        file_lock.lock_exclusive(fh)
         proc = _run_cli(
             ["--warehouse", str(warehouse), "--pack-path", str(baseline),
              "--lock-path", str(lock)],
             tmp_path,
         )
-        fcntl.flock(fh, fcntl.LOCK_UN)
+        file_lock.unlock(fh)
     assert proc.returncode == 0
     verdict = json.loads(proc.stdout)
     assert verdict["drift"] is False

@@ -5,7 +5,6 @@ import json
 import re
 import os
 import math
-import fcntl
 from datetime import UTC, datetime
 from enum import StrEnum
 from pathlib import Path
@@ -21,6 +20,21 @@ def _ledger_path_lock(path: Path) -> Lock:
         return _LEDGER_LOCKS.setdefault(resolved, Lock())
 
 from pydantic import BaseModel, ConfigDict, Field, StrictFloat, StrictInt, model_validator
+
+from shared import durability
+from shared import file_lock
+
+_LEDGER_LOCK_TIMEOUT_S = 60.0
+
+
+def _fsync_directory(path: Path) -> None:
+    directory_fd = durability.open_directory_for_fsync(path)
+    if directory_fd is None:
+        return
+    try:
+        os.fsync(directory_fd)
+    finally:
+        os.close(directory_fd)
 
 class LedgerKind(StrEnum):
     TURN_START = "turn/start"
@@ -782,11 +796,11 @@ class FileLedger:
         self.path.parent.mkdir(parents=True, exist_ok=True)
         with self._lock:
             with self._lock_path.open("a+b") as lock_handle:
-                fcntl.flock(lock_handle.fileno(), fcntl.LOCK_EX)
+                file_lock.lock_exclusive(lock_handle, timeout_s=_LEDGER_LOCK_TIMEOUT_S)
                 try:
                     yield
                 finally:
-                    fcntl.flock(lock_handle.fileno(), fcntl.LOCK_UN)
+                    file_lock.unlock(lock_handle)
 
     def append(self, *args: Any, **kwargs: Any) -> LedgerEntry:
         expected_sequence = kwargs.pop("_expected_sequence", None)
@@ -810,9 +824,7 @@ class FileLedger:
             finally:
                 os.close(fd)
             if file_was_missing:
-                directory_fd = os.open(self.path.parent, os.O_RDONLY)
-                try: os.fsync(directory_fd)
-                finally: os.close(directory_fd)
+                _fsync_directory(self.path.parent)
             self.ledger = staged
             return entry
 

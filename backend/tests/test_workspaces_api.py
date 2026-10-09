@@ -1,5 +1,8 @@
+import os
 import sys
 from pathlib import Path
+
+import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
@@ -8,6 +11,14 @@ from fastapi.testclient import TestClient
 
 from workspaces.routes import router as workspaces_router
 from workspaces.service import WorkspaceStore
+
+PROC_SELF_FD = Path("/proc/self/fd")
+
+requires_fd_enumeration = pytest.mark.skipif(
+    not PROC_SELF_FD.is_dir(),
+    reason=("open-handle enumeration has no stdlib equivalent off POSIX; "
+            "the leak check is only provable where /proc/self/fd exists"),
+)
 
 
 def _client(monkeypatch, tmp_path):
@@ -105,17 +116,17 @@ def test_rejects_empty_name_owner_and_blank_members(monkeypatch, tmp_path):
         json={"add_thread_ids": [" "]}, headers=auth).status_code == 422
 
 
+@requires_fd_enumeration
 def test_no_connection_growth_across_crud_sequence(tmp_path):
-    import os
     from workspaces.service import WorkspaceStore
 
     path = str(tmp_path / "leak.sqlite3")
 
     def open_handles():
         count = 0
-        for fd in os.listdir("/proc/self/fd"):
+        for fd in os.listdir(PROC_SELF_FD):
             try:
-                if os.readlink(f"/proc/self/fd/{fd}") == path:
+                if os.readlink(f"{PROC_SELF_FD}/{fd}") == path:
                     count += 1
             except OSError:
                 pass
@@ -158,3 +169,21 @@ def test_patch_delete_require_owner_token(monkeypatch, tmp_path):
                         headers=good).status_code == 200
     assert client.delete(f"/api/workspaces/{wid}", headers=good).status_code == 200
     assert client.get(f"/api/workspaces/{wid}").status_code == 404
+
+
+def test_fd_enumeration_assumption_is_single_sourced_across_backend():
+    backend = Path(__file__).resolve().parent.parent
+    offenders = []
+    for path in sorted(backend.rglob("*.py")):
+        if path.resolve() == Path(__file__).resolve():
+            continue
+        if "/proc/self/fd" in path.read_text(encoding="utf-8"):
+            offenders.append(str(path.relative_to(backend)))
+    assert offenders == []
+
+
+def test_leak_check_skips_exactly_when_fd_enumeration_is_unavailable():
+    marker = test_no_connection_growth_across_crud_sequence.pytestmark[0]
+    assert marker.name == "skipif"
+    assert marker.args[0] == (not PROC_SELF_FD.is_dir())
+    assert isinstance(marker.kwargs["reason"], str) and marker.kwargs["reason"]

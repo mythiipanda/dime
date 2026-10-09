@@ -81,6 +81,38 @@ def test_profiles_derive_from_registry_and_new_capability_denied_by_default(
     with pytest.raises(ValueError, match="future_tool"):
         refuse_unprofiled_capability(RunMode.QUICK, "node", "future_tool")
 
+def test_capabilities_added_by_parallel_tool_branches_are_profiled_in_every_mode() -> None:
+    from v2.adapters.capabilities import (
+        CAPABILITIES,
+        CAPABILITY_DESCRIPTIONS,
+    )
+    from v2.runtime.policy import (
+        _DENIED_BY_PROFILE,
+        _FULL_ALLOWLIST,
+        allowed_capabilities_for_task_mode,
+        capability_universe,
+        refuse_unprofiled_capability,
+        task_mode_profile,
+    )
+
+    merged = ("defensive_matchups", "stint_timeline", "tracking_profile")
+    for name in merged:
+        spec = CAPABILITIES[name]
+        assert spec.tool_name, f"{name} declares no tool"
+        assert CAPABILITY_DESCRIPTIONS[name].strip(), f"{name} has no description"
+        assert name in _FULL_ALLOWLIST, f"{name} is unprofiled"
+        for mode in (RunMode.QUICK, RunMode.DEEP_DIVE, RunMode.PROJECT):
+            allowed = allowed_capabilities_for_task_mode(mode)
+            denied = _DENIED_BY_PROFILE[task_mode_profile(mode)]
+            assert (name in allowed) is (name not in denied), (
+                f"{name} profile disagrees with {mode} denial set")
+            try:
+                refuse_unprofiled_capability(mode, "node", name)
+            except ValueError as exc:
+                assert name in denied, (
+                    f"{name} refused in {mode} without being denied: {exc}")
+    assert set(_FULL_ALLOWLIST) == set(capability_universe())
+
 def test_no_prompt_text_changed_to_achieve_this() -> None:
     forbidden = (
         "allowlist",
