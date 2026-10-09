@@ -29,6 +29,11 @@ _NUMBER = re.compile(
 )
 _DATE = re.compile(r"\b\d{4}-\d{2}-\d{2}\b")
 _SEASON = re.compile(r"\b\d{4}-\d{2}\b(?!-\d{2})")
+_LOOKALIKE_SEPARATORS = "\u2011\u2013\u2014\u2212"
+_SEASON_SPAN_RX = re.compile(r"\d{4}[\u2011\u2013\u2014\u2212]\d{2}")
+_SEPARATOR_FOLD = str.maketrans(
+    {character: "-" for character in _LOOKALIKE_SEPARATORS}
+)
 _RANK = re.compile(r"(?:#\s*(\d+)|\b(\d+)(?:st|nd|rd|th)\b)", re.IGNORECASE)
 _DIRECTION_MIN_WORDS = re.compile(r"\b(?:best|lowest|fewest)\b", re.IGNORECASE)
 _DIRECTION_MAX_WORDS = re.compile(r"\b(?:best|highest|most)\b", re.IGNORECASE)
@@ -76,9 +81,32 @@ def _matches_calculation_display(raw: str, values: set[Decimal]) -> bool:
             return True
     return False
 
+def _fold_separators(text: str) -> str:
+    """Fold look-alike separators inside ``YYYY<sep>YY`` spans to ASCII ``-``.
+
+    The fold is one character for one character, so every offset of the result
+    maps to the same offset of ``text`` and the wording the model actually
+    wrote stays available for the reported reasons.
+    """
+    characters: list[str] | None = None
+    for match in _SEASON_SPAN_RX.finditer(text):
+        if characters is None:
+            characters = list(text)
+        for index in range(match.start(), match.end()):
+            characters[index] = characters[index].translate(_SEPARATOR_FOLD)
+    return text if characters is None else "".join(characters)
+
+def _is_date_token(raw: str) -> bool:
+    return _DATE.fullmatch(_fold_separators(raw)) is not None
+
+def _is_season_token(raw: str) -> bool:
+    return _SEASON.fullmatch(_fold_separators(raw)) is not None
+
 def _number_tokens(text: str) -> list[str]:
-    label_numbers = {match.start(1) for match in _LIST_LABEL.finditer(text)}
-    return [match.group(0) for match in _NUMBER.finditer(text)
+    folded = _fold_separators(text)
+    label_numbers = {match.start(1) for match in _LIST_LABEL.finditer(folded)}
+    return [text[match.start():match.end()]
+            for match in _NUMBER.finditer(folded)
             if match.start() not in label_numbers]
 
 def _words(text: str) -> list[str]:
@@ -127,14 +155,18 @@ def _numeric_values(envelopes: Iterable[EvidenceEnvelope]) -> set[Decimal]:
 def _claim_dates_supported(claim: Claim,
                            envelopes: Sequence[EvidenceEnvelope]) -> list[str]:
     supported = _text_values(envelopes)
-    return [value for value in _DATE.findall(claim.text)
-            if value.casefold() not in supported]
+    text = claim.text
+    return [text[match.start():match.end()]
+            for match in _DATE.finditer(_fold_separators(text))
+            if match.group(0).casefold() not in supported]
 
 def _claim_seasons_supported(claim: Claim,
                              envelopes: Sequence[EvidenceEnvelope]) -> list[str]:
     supported = _text_values(envelopes)
-    return [value for value in _SEASON.findall(claim.text)
-            if value.casefold() not in supported]
+    text = claim.text
+    return [text[match.start():match.end()]
+            for match in _SEASON.finditer(_fold_separators(text))
+            if match.group(0).casefold() not in supported]
 
 def _canonical_entity(entity) -> tuple[str, str]:
     from v2.contracts import canonical_entity_ref
@@ -195,7 +227,7 @@ def _row_entity_value_reasons(
         for value in match.groups() if value is not None
     }
     for raw in _number_tokens(claim.text):
-        if (_DATE.fullmatch(raw) or _SEASON.fullmatch(raw) or raw == "100"
+        if (_is_date_token(raw) or _is_season_token(raw) or raw == "100"
                 or raw in rank_numbers):
             continue
         if not (_canon_number(raw) & row_numbers):
@@ -233,7 +265,7 @@ def _direction_reasons(
 ) -> list[str]:
     claimed: set[Decimal] = set()
     for raw in _number_tokens(claim.text):
-        if _DATE.fullmatch(raw) or _SEASON.fullmatch(raw):
+        if _is_date_token(raw) or _is_season_token(raw):
             continue
         claimed.update(_canon_number(raw))
     if not claimed:
@@ -369,8 +401,8 @@ def _metric_unit_reason(claim: Claim, text: str, words: Sequence[str],
         }
         unbound = [
             raw for raw in _number_tokens(claim.text)
-            if not (_DATE.fullmatch(raw)
-                    or _SEASON.fullmatch(raw)
+            if not (_is_date_token(raw)
+                    or _is_season_token(raw)
                     or raw in rank_numbers)
             and not (_canon_number(raw) & same_unit_values)
         ]
@@ -460,9 +492,9 @@ def _metric_carrier_reasons(metric, columns_by_envelope, envelopes) -> list[str]
     return reasons
 
 def _metric_identity_numeral_reason(raw, claim, envelopes, requested,
-                                    rank_numbers, bound, supported_numbers,
-                                    grounded, calculation_values) -> str | None:
-    if _DATE.fullmatch(raw) or _SEASON.fullmatch(raw):
+                                     rank_numbers, bound, supported_numbers,
+                                     grounded, calculation_values) -> str | None:
+    if _is_date_token(raw) or _is_season_token(raw):
         return None
     if (raw == "100" and "points_per_100_possessions" in {
             unit.casefold() for envelope in envelopes
@@ -820,8 +852,8 @@ def _claim_result(task, claim, claim_index, index, calculation_map,
     )
 
 def _uncited_numeral_reason(raw, claim, cited, supported_numbers,
-                            calculation_values) -> str | None:
-    if _DATE.fullmatch(raw) or _SEASON.fullmatch(raw):
+                             calculation_values) -> str | None:
+    if _is_date_token(raw) or _is_season_token(raw):
         return None
     if (raw == "100" and "points_per_100_possessions" in {
             unit.casefold() for envelope in cited
