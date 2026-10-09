@@ -163,9 +163,8 @@ class Runtime:
             pre_tool_deadline = (None if self._pre_tool_timeout_s is None
                                  else time.perf_counter() + self._pre_tool_timeout_s)
             try:
-                pre_tool_remaining = _remaining_seconds(pre_tool_deadline)
                 task = await self._intake_task(turn_id, request, context,
-                                               pre_tool_remaining)
+                                               pre_tool_deadline)
             except TimeoutError as exc:
                 raise PreToolTimeoutError(
                     f"intake and planning exceeded "
@@ -186,8 +185,7 @@ class Runtime:
                 except BaseException as exc:
                     self._report_activity({"kind":"stage_summary","phase":"fast_path","status":"complete","title":"Fast path fell back","transition":"completed","correlation_id":"stage:fast_path","data":{"reason": f"{type(exc).__name__}: {exc}"}})
             try:
-                pre_tool_remaining = _remaining_seconds(pre_tool_deadline)
-                plan = await self._plan_task(turn_id, task, pre_tool_remaining)
+                plan = await self._plan_task(turn_id, task, pre_tool_deadline)
             except TimeoutError as exc:
                 raise PreToolTimeoutError(
                     f"intake and planning exceeded "
