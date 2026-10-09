@@ -342,6 +342,7 @@ async def test_real_warehouse_assists_leader_answers_through_fast_path(monkeypat
     )
     connection.close()
     monkeypatch.setattr(store, "DB_PATH", warehouse)
+    monkeypatch.setattr(store, "LOCK_PATH", warehouse.parent / ".write.lock")
     store.warehouse_identity_cache_clear()
 
     task = TaskSpec(
@@ -462,6 +463,7 @@ async def test_real_warehouse_second_single_fact_answers_through_fast_path(monke
     )
     connection.close()
     monkeypatch.setattr(store, "DB_PATH", warehouse)
+    monkeypatch.setattr(store, "LOCK_PATH", warehouse.parent / ".write.lock")
     store.warehouse_identity_cache_clear()
 
     task = TaskSpec(
