@@ -16,7 +16,7 @@ from ._core import (
 def _coverage() -> list[str]:
     try:
         frame = store.read_frame("silver_playtypes", "1 = 1", [])
-    except Exception:
+    except (FileNotFoundError, store.TableAbsent):
         return []
     if frame.height == 0 or "_season" not in frame.columns:
         return []
