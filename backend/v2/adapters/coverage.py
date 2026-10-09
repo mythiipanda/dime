@@ -351,20 +351,12 @@ def parse_season_start(value: object) -> int | None:
         return None
     return start
 
-def _freshness(path: Path) -> tuple[int, int, int, int, str] | None:
+def _freshness(path: Path) -> tuple[int, int, int, int, int] | None:
     try:
-        stat = path.stat()
-    except OSError:
-        return None
-    try:
-        from shared.store import _warehouse_probe_hexdigest
+        from shared.store import _warehouse_freshness_key
+        return _warehouse_freshness_key(path)
     except Exception:
         return None
-    sample = _warehouse_probe_hexdigest(path, stat.st_size)
-    if sample is None:
-        return None
-    return (stat.st_mtime_ns, stat.st_size, stat.st_ctime_ns,
-            stat.st_ino, sample)
 
 def coverage_cache_clear() -> None:
     with _state_lock:

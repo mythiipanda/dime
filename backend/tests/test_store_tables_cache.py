@@ -180,7 +180,7 @@ def test_external_writer_new_table_visible_without_pool_event(tmp_path):
         store.warehouse_pool_clear()
         store.warehouse_tables_cache_clear()
 
-def test_sample_hexdigest_discriminates_same_size_same_mtime(tmp_path):
+def test_freshness_key_discriminates_same_size_same_mtime(tmp_path):
     import os
     size = 20000
     same_ns = 1700000000000000000
@@ -195,10 +195,7 @@ def test_sample_hexdigest_discriminates_same_size_same_mtime(tmp_path):
     assert s1.st_size == s2.st_size == size
     assert s1.st_mtime_ns == s2.st_mtime_ns == same_ns
     assert f1.read_bytes() != f2.read_bytes()
-    d1 = store._warehouse_probe_hexdigest(f1, s1.st_size)
-    d2 = store._warehouse_probe_hexdigest(f2, s2.st_size)
-    assert d1 is not None and d2 is not None
-    assert d1 != d2
+    assert store._warehouse_freshness_key(f1) != store._warehouse_freshness_key(f2)
 
 def test_external_rewrite_restored_mtime_visible_through_tables(tmp_path):
     import os

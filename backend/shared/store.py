@@ -10,6 +10,7 @@ import threading
 import time
 import hashlib
 
+from . import change_token
 from . import file_lock
 from .sources.base import FetchResult
 
@@ -25,73 +26,107 @@ PROVENANCE_COLS = ["_source", "_season", "_fetched_at"]
 
 WAREHOUSE_SHA256_DERIVATION = "sha256-full-file"
 
+class WarehouseChangedDuringRead(RuntimeError):
+    pass
+
 def _warehouse_absent_error(path: Path | str) -> FileNotFoundError:
     return FileNotFoundError(f"warehouse absent: {path}")
 
-def _warehouse_identity_uncached(path: Path) -> dict[str, str]:
-    return {"warehouse_id": "frozen-eval" if path == CANONICAL_DB_PATH else "configured-runtime",
-            "warehouse_sha256": _warehouse_full_file_hexdigest(path)}
-
-_warehouse_identity_cache: dict[Path, tuple[tuple[int, int, str], dict[str, str]]] = {}
-
-def warehouse_identity_cache_clear() -> None:
-    _warehouse_identity_cache.clear()
-
-_PROBE_READ_BYTES = 8192
-
 _FULL_FILE_READ_BYTES = 1 << 20
 
-def _warehouse_probe_hexdigest(path: Path, size: int) -> str | None:
+_STABLE_READ_ATTEMPTS = 3
+
+_OPEN_READ_ONLY = os.O_RDONLY | getattr(os, "O_BINARY", 0)
+
+def _descriptor_shape(descriptor: int) -> tuple[int, int, int, int] | None:
     try:
-        h = hashlib.new("sha256")
-        h.update(size.to_bytes(8, "little", signed=False))
-        with open(path, "rb") as fh:
-            for off in (0, size // 2, size - _PROBE_READ_BYTES):
-                fh.seek(max(off, 0))
-                h.update(fh.read(_PROBE_READ_BYTES))
-        return h.hexdigest()
+        st = os.fstat(descriptor)
     except OSError:
         return None
+    return (st.st_dev, st.st_ino, st.st_size, st.st_mtime_ns)
+
+def _descriptor_freshness(descriptor: int) -> tuple[int, int, int, int, int] | None:
+    shape = _descriptor_shape(descriptor)
+    if shape is None:
+        return None
+    token = change_token.change_token(descriptor)
+    if token is None:
+        return None
+    return shape + (token,)
+
+def _warehouse_freshness_key(path: Path | str) -> tuple[int, int, int, int, int] | None:
+    try:
+        descriptor = os.open(path, _OPEN_READ_ONLY)
+    except OSError:
+        return None
+    try:
+        return _descriptor_freshness(descriptor)
+    finally:
+        os.close(descriptor)
+
+def _digest_descriptor(descriptor: int) -> str:
+    digest = hashlib.sha256()
+    os.lseek(descriptor, 0, os.SEEK_SET)
+    while True:
+        block = os.read(descriptor, _FULL_FILE_READ_BYTES)
+        if not block:
+            return digest.hexdigest()
+        digest.update(block)
+
+def _stable_full_file_hexdigest(path: Path) -> tuple[str, tuple[int, int, int, int, int] | None]:
+    unstable: tuple | None = None
+    for _ in range(_STABLE_READ_ATTEMPTS):
+        try:
+            descriptor = os.open(path, _OPEN_READ_ONLY)
+        except FileNotFoundError:
+            raise _warehouse_absent_error(path) from None
+        try:
+            opened_shape = _descriptor_shape(descriptor)
+            opened = _descriptor_freshness(descriptor)
+            digest = _digest_descriptor(descriptor)
+            closed_shape = _descriptor_shape(descriptor)
+            closed = _descriptor_freshness(descriptor)
+            if opened_shape == closed_shape and opened == closed:
+                return digest, opened
+        finally:
+            os.close(descriptor)
+        unstable = (opened_shape, closed_shape, opened, closed)
+    raise WarehouseChangedDuringRead(
+        f"warehouse {path} changed while it was being hashed; refusing to report "
+        f"an identity for bytes that never coexisted (last shapes {unstable!r})")
+
+def _warehouse_identity_uncached(path: Path) -> dict[str, str]:
+    digest, _ = _stable_full_file_hexdigest(path)
+    return {"warehouse_id": "frozen-eval" if path == CANONICAL_DB_PATH else "configured-runtime",
+            "warehouse_sha256": digest}
+
+_warehouse_identity_cache: dict[Path, tuple[tuple[int, int, int, int, int], dict[str, str]]] = {}
+_identity_lock = threading.RLock()
+
+def warehouse_identity_cache_clear() -> None:
+    with _identity_lock:
+        _warehouse_identity_cache.clear()
 
 def _warehouse_full_file_hexdigest(path: Path) -> str:
-    digest = hashlib.sha256()
-    try:
-        with open(path, "rb") as fh:
-            for block in iter(lambda: fh.read(_FULL_FILE_READ_BYTES), b""):
-                digest.update(block)
-    except FileNotFoundError:
-        raise _warehouse_absent_error(path) from None
-    return digest.hexdigest()
+    return _stable_full_file_hexdigest(path)[0]
 
 def warehouse_identity() -> dict[str, str]:
     path = DB_PATH.resolve()
-    try:
-        st = path.stat()
-    except OSError:
+    freshness = _warehouse_freshness_key(path)
+    if freshness is None:
         return _warehouse_identity_uncached(path)
-    probe = _warehouse_probe_hexdigest(path, st.st_size)
-    if probe is None:
-        return _warehouse_identity_uncached(path)
-    key = (st.st_mtime_ns, st.st_size, probe)
-    entry = _warehouse_identity_cache.get(path)
-    if entry is not None and entry[0] == key:
-        return entry[1]
+    with _identity_lock:
+        entry = _warehouse_identity_cache.get(path)
+        if entry is not None and entry[0] == freshness:
+            return entry[1]
     identity = _warehouse_identity_uncached(path)
-    _warehouse_identity_cache[path] = (key, identity)
+    with _identity_lock:
+        if _warehouse_freshness_key(path) == freshness:
+            _warehouse_identity_cache[path] = (freshness, identity)
     return identity
 
-_tables_cache: dict[Path, tuple[tuple[int, int, str], frozenset[str]]] = {}
+_tables_cache: dict[Path, tuple[tuple[int, int, int, int, int], frozenset[str]]] = {}
 _tables_lock = threading.RLock()
-
-def _tables_freshness_key(path: Path) -> tuple[int, int, str] | None:
-    try:
-        st = path.stat()
-    except OSError:
-        return None
-    sample = _warehouse_probe_hexdigest(path, st.st_size)
-    if sample is None:
-        return None
-    return (st.st_mtime_ns, st.st_size, sample)
 
 def warehouse_tables_cache_clear() -> None:
     with _tables_lock:
@@ -134,7 +169,7 @@ def _tables_uncached(path: Path) -> tuple[frozenset[str], Path | None]:
 
 def tables(path: Path | str | None = None) -> set[str]:
     key = DB_PATH if path is None else Path(path)
-    freshness = _tables_freshness_key(key)
+    freshness = _warehouse_freshness_key(key)
     with _tables_lock:
         entry = _tables_cache.get(key)
         if freshness is not None and entry is not None and entry[0] == freshness:
@@ -284,14 +319,7 @@ def _pool_acquire():
     if entry[0] != (str(DB_PATH.resolve()), True):
         _pool_drop()
         return None
-    try:
-        st = os.stat(DB_PATH)
-    except OSError:
-        _pool_drop()
-        return None
-    sample = _warehouse_probe_hexdigest(DB_PATH, st.st_size)
-    if sample is None or (st.st_mtime_ns, st.st_size, sample) != (
-            entry[2], entry[3], entry[4]):
+    if _warehouse_freshness_key(DB_PATH) != entry[2]:
         _pool_drop()
         try:
             warehouse_tables_cache_clear()
@@ -306,15 +334,10 @@ def _pool_acquire():
     return _PooledConnection(entry[1])
 
 def _pool_store(con):
-    try:
-        st = os.stat(DB_PATH)
-    except OSError:
+    freshness = _warehouse_freshness_key(DB_PATH)
+    if freshness is None:
         return con
-    sample = _warehouse_probe_hexdigest(DB_PATH, st.st_size)
-    if sample is None:
-        return con
-    _pool_state.entry = ((str(DB_PATH.resolve()), True), con,
-                         st.st_mtime_ns, st.st_size, sample)
+    _pool_state.entry = ((str(DB_PATH.resolve()), True), con, freshness)
     try:
         with _pool_lock:
             if con not in _pool_registry:
