@@ -1,4 +1,5 @@
 import polars as pl
+import pytest
 
 from shared import store
 from shared.tools import _core as core
@@ -163,3 +164,76 @@ def test_unbackfilled_season_refusal(tmp_path, monkeypatch):
         "side": "offense", "season": "2023-24"})
     assert out["ok"] is False
     assert "2024-25" in out["error"] or "2023-24" in out["error"]
+
+
+def _read_frame_raising(exc):
+    def _read_frame(table, where="", params=None):
+        raise exc
+    return _read_frame
+
+
+def test_coverage_propagates_runtime_error(tmp_path, monkeypatch):
+    _use_scratch(tmp_path, monkeypatch)
+    from shared.tools import playtypes
+    monkeypatch.setattr(store, "read_frame",
+                        _read_frame_raising(RuntimeError("warehouse on fire")))
+    with pytest.raises(RuntimeError, match="warehouse on fire"):
+        playtypes._coverage()
+
+
+def test_coverage_propagates_permission_error(tmp_path, monkeypatch):
+    _use_scratch(tmp_path, monkeypatch)
+    from shared.tools import playtypes
+    monkeypatch.setattr(store, "read_frame",
+                        _read_frame_raising(PermissionError("denied")))
+    with pytest.raises(PermissionError, match="denied"):
+        playtypes._coverage()
+
+
+def test_tool_surfaces_warehouse_read_error(tmp_path, monkeypatch):
+    _use_scratch(tmp_path, monkeypatch)
+    from shared.tools import playtypes
+    monkeypatch.setattr(store, "read_frame",
+                        _read_frame_raising(RuntimeError("duckdb blew up")))
+    with pytest.raises(RuntimeError, match="duckdb blew up"):
+        playtypes.get_playtype_profile.invoke({
+            "subject": "Jayson Tatum", "kind": "player",
+            "side": "offense", "season": "2024-25"})
+
+
+def test_tool_surfaces_permission_error(tmp_path, monkeypatch):
+    _use_scratch(tmp_path, monkeypatch)
+    from shared.tools import playtypes
+    monkeypatch.setattr(store, "read_frame",
+                        _read_frame_raising(PermissionError("read only")))
+    with pytest.raises(PermissionError, match="read only"):
+        playtypes.get_playtype_profile.invoke({
+            "subject": "Jayson Tatum", "kind": "player",
+            "side": "offense", "season": "2024-25"})
+
+
+def test_missing_warehouse_file_reports_no_data(tmp_path, monkeypatch):
+    _use_scratch(tmp_path, monkeypatch)
+    from shared.tools import playtypes
+    monkeypatch.setattr(store, "read_frame",
+                        _read_frame_raising(FileNotFoundError("warehouse absent")))
+    assert playtypes._coverage() == []
+    out = playtypes.get_playtype_profile.invoke({
+        "subject": "Jayson Tatum", "kind": "player",
+        "side": "offense", "season": "2024-25"})
+    assert out == {"tool": "get_playtype_profile", "ok": False,
+                   "error": "no playtype data in the warehouse yet"}
+
+
+def test_absent_table_reports_no_data(tmp_path, monkeypatch):
+    _use_scratch(tmp_path, monkeypatch)
+    from shared.tools import playtypes
+    monkeypatch.setattr(store, "read_frame",
+                        _read_frame_raising(
+                            store.TableAbsent("silver_playtypes", "scratch.duckdb")))
+    assert playtypes._coverage() == []
+    out = playtypes.get_playtype_profile.invoke({
+        "subject": "Jayson Tatum", "kind": "player",
+        "side": "offense", "season": "2024-25"})
+    assert out == {"tool": "get_playtype_profile", "ok": False,
+                   "error": "no playtype data in the warehouse yet"}
