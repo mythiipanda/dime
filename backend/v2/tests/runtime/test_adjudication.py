@@ -674,6 +674,7 @@ def _seed_completed_season_boxscores(monkeypatch, tmp_path):
     connection.execute("INSERT INTO silver_boxscores VALUES " + ",".join(rows))
     connection.close()
     monkeypatch.setattr(store, "DB_PATH", warehouse)
+    monkeypatch.setattr(store, "LOCK_PATH", warehouse.parent / ".write.lock")
     return warehouse
 
 def test_completed_season_assists_leader_publishes_count(monkeypatch, tmp_path):
