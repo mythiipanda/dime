@@ -252,6 +252,20 @@ type ChatMsg =
 
 export type LiveRun = StreamSnapshot & { id: number; startedAt: number };
 
+export function assistantMessageFromSnapshot(
+  snap: StreamSnapshot,
+  message: string,
+): Extract<ChatMsg, { role: "assistant" }> {
+  return {
+    role: "assistant",
+    text: snap.text,
+    artifacts: snap.artifacts,
+    suggestions: snap.suggestions,
+    carry: snap.carry,
+    failure: snap.failed ?? (message ? { kind: "connection", message } : null),
+  };
+}
+
 function toolStepFor(tool: ToolState): ToolStep {
   const summary =
     tool.status === "running"
@@ -352,7 +366,7 @@ function ProvenanceFields({ provenance }: { provenance: DimeProvenance }) {
       <ProvenanceRow label="Season">{provenance.season ?? "not provided"}</ProvenanceRow>
       <ProvenanceRow label="As of">{provenance.asOf ?? "not provided"}</ProvenanceRow>
       <ProvenanceRow label="Live sources">
-        {provenance.liveSources.length > 0 ? (
+        {provenance.liveSources.length > 0 || (provenance.liveSourceIds?.length ?? 0) > 0 ? (
           <span className="flex flex-col gap-0.5">
             {provenance.liveSources.map((url) => (
               <a
@@ -364,6 +378,11 @@ function ProvenanceFields({ provenance }: { provenance: DimeProvenance }) {
               >
                 {url}
               </a>
+            ))}
+            {(provenance.liveSourceIds ?? []).map((id) => (
+              <span key={id} className="break-all text-ink-2">
+                {id}
+              </span>
             ))}
           </span>
         ) : (
@@ -626,25 +645,11 @@ export default function DimeHarness() {
           setLive((cur) => (cur && cur.id === id ? { ...cur, ...snap } : cur)),
         onDone: (snap) => {
           setLive((cur) => (cur && cur.id === id ? null : cur));
-          appendMessage(tabId, {
-            role: "assistant",
-            text: snap.text,
-            artifacts: snap.artifacts,
-            suggestions: snap.suggestions,
-            carry: snap.carry,
-            failure: snap.failed,
-          });
+          appendMessage(tabId, assistantMessageFromSnapshot(snap, ""));
         },
-        onError: (message) => {
+        onError: (snap, message) => {
           setLive((cur) => (cur && cur.id === id ? null : cur));
-          appendMessage(tabId, {
-            role: "assistant",
-            text: "",
-            artifacts: [],
-            suggestions: [],
-            carry: null,
-            failure: { kind: "connection", message },
-          });
+          appendMessage(tabId, assistantMessageFromSnapshot(snap, message));
         },
       },
       { signal: ctrl.signal, model },

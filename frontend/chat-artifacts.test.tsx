@@ -4,6 +4,7 @@ import * as React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { ArtifactBody, AssistantTurn, LiveAssistant } from "./components/site/DimeHarness";
 import { DimeStream, type DimeArtifact, type StreamSnapshot } from "./lib/dime-stream";
+import { assistantMessageFromSnapshot } from "./components/site/DimeHarness";
 
 function render(artifact: DimeArtifact): string {
   return renderToStaticMarkup(<ArtifactBody artifact={artifact} />);
@@ -410,4 +411,110 @@ test("zero verified claims never headline as partly verified", () => {
   assert.match(html, /Verification status: partial/, html);
   assert.match(html, /0 verified claims/, html);
   assert.ok(html.includes("fixture-gap"), html);
+});
+
+function idProvenance() {
+  return {
+    capability: "fixture_capability",
+    origin: "live",
+    warehouse_id: null,
+    season: "fixture-season",
+    as_of: "2000-01-01",
+    live_sources: ["nba_api", "espn"],
+  };
+}
+
+function mixedIdProvenance() {
+  return {
+    capability: "fixture_capability",
+    origin: "mixed",
+    warehouse_id: "fixture-warehouse",
+    season: "fixture-season",
+    as_of: "2000-01-01",
+    live_sources: ["basketball_reference"],
+  };
+}
+
+function interruptedRun(frames: [string, unknown][], transport: string | null): LiveRun {
+  const stream = new DimeStream();
+  for (const [type, data] of frames) stream.handle(type, data);
+  if (transport !== null) stream.fail("connection", transport);
+  stream.finish();
+  return { id: 1, startedAt: 0, ...stream.snapshot() };
+}
+
+test("enum source ids render as text without links", () => {
+  const run = runOf(answerFrames([row("A", idProvenance())], PARTIAL_CARRY));
+  for (const html of [persistedAnswer(run), liveAnswer(run)]) {
+    assert.ok(html.includes("nba_api"), html);
+    assert.ok(html.includes("espn"), html);
+    assert.ok(!html.includes('href="nba_api"'), html);
+    assert.ok(!html.includes('href="espn"'), html);
+    assert.match(html, /live/i);
+    assert.ok(!/dime warehouse/i.test(html), html);
+  }
+});
+
+test("a mixed warehouse id with enum ids stays mixed", () => {
+  const run = runOf(answerFrames([row("A", mixedIdProvenance())], PARTIAL_CARRY));
+  for (const html of [persistedAnswer(run), liveAnswer(run)]) {
+    assert.match(html, /mixed/i);
+    assert.ok(html.includes("basketball_reference"), html);
+    assert.ok(!html.includes('href="basketball_reference"'), html);
+    assert.ok(html.includes("fixture-warehouse"), html);
+    assert.ok(!/partly undeclared/i.test(html), html);
+  }
+});
+
+test("a typed quota failure then an EOF keeps text artifacts carry and quota", () => {
+  const run = interruptedRun(
+    [
+      ["custom_data", { node: "analytics", tables: [row("A", idProvenance())], artifacts: [] }],
+      ["final_answer", { text: ANSWER_TEXT, carry: PARTIAL_CARRY }],
+      ["failure", { kind: "quota", message: "quota exhausted" }],
+    ],
+    "Connection to the backend ended before the run completed. Try again.",
+  );
+  const msg = assistantMessageFromSnapshot(run, "Connection to the backend ended before the run completed. Try again.");
+  assert.equal(msg.text, ANSWER_TEXT);
+  assert.equal(msg.artifacts.length, 1);
+  assert.deepEqual(msg.failure, { kind: "quota", message: "quota exhausted" });
+  assert.deepEqual(msg.carry?.gaps, [{ kind: "fixture-gap", blocks: [] }]);
+  const html = persistedAnswer({ ...run });
+  assert.ok(html.includes(ANSWER_TEXT), html);
+  assert.match(html, /out of quota/i);
+  assert.ok(!/reach Dime/.test(html), html);
+  assert.ok(html.includes("nba_api"), html);
+  assert.ok(html.includes("fixture-gap"), html);
+});
+
+test("an untyped interruption keeps text artifacts carry with a connection failure", () => {
+  const run = interruptedRun(
+    [
+      ["custom_data", { node: "analytics", tables: [row("A", idProvenance())], artifacts: [] }],
+      ["final_answer", { text: ANSWER_TEXT, carry: PARTIAL_CARRY }],
+    ],
+    "socket closed",
+  );
+  const msg = assistantMessageFromSnapshot(run, "socket closed");
+  assert.equal(msg.text, ANSWER_TEXT);
+  assert.equal(msg.artifacts.length, 1);
+  assert.deepEqual(msg.failure, { kind: "connection", message: "socket closed" });
+  const html = persistedAnswer({ ...run, failed: msg.failure });
+  assert.ok(html.includes(ANSWER_TEXT), html);
+  assert.match(html, /reach Dime/);
+  assert.ok(html.includes("fixture-gap"), html);
+});
+
+test("a normal graph_end keeps text artifacts carry with no failure", () => {
+  const run = runOf(answerFrames([row("A", idProvenance())], PARTIAL_CARRY));
+  const msg = assistantMessageFromSnapshot(run, "");
+  assert.equal(msg.text, ANSWER_TEXT);
+  assert.equal(msg.artifacts.length, 1);
+  assert.equal(msg.failure, null);
+  assert.equal(msg.carry?.verifiedClaims, 0);
+  const html = persistedAnswer(run);
+  assert.ok(html.includes(ANSWER_TEXT), html);
+  assert.ok(!/reach Dime/.test(html), html);
+  assert.ok(!/out of quota/i.test(html), html);
 });

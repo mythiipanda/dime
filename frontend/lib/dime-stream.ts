@@ -44,6 +44,7 @@ export interface DimeProvenance {
   season?: string;
   asOf?: string;
   liveSources: string[];
+  liveSourceIds?: string[];
   evidence?: ProvenanceEvidence[];
 }
 
@@ -279,6 +280,14 @@ function safeSourceUrl(raw: unknown): string | null {
   return /^https?:\/\/\S+$/i.test(trimmed) ? trimmed : null;
 }
 
+const LIVE_SOURCE_IDS = new Set(["nba_api", "basketball_reference", "espn"]);
+
+function validSourceId(raw: unknown): string | null {
+  if (typeof raw !== "string") return null;
+  const trimmed = raw.trim();
+  return LIVE_SOURCE_IDS.has(trimmed) ? trimmed : null;
+}
+
 function trimmedString(raw: unknown): string | undefined {
   if (typeof raw !== "string") return undefined;
   const trimmed = raw.trim();
@@ -294,6 +303,9 @@ function compactProvenance(fields: DimeProvenance): DimeProvenance {
   if (fields.warehouseId) provenance.warehouseId = fields.warehouseId;
   if (fields.season) provenance.season = fields.season;
   if (fields.asOf) provenance.asOf = fields.asOf;
+  if (fields.liveSourceIds && fields.liveSourceIds.length > 0) {
+    provenance.liveSourceIds = fields.liveSourceIds;
+  }
   return provenance;
 }
 
@@ -325,14 +337,21 @@ function originParts(
 export function parseProvenance(raw: unknown): DimeProvenance {
   const record = asRecord(raw);
   const warehouseId = trimmedString(record.warehouse_id);
-  const liveSources = Array.isArray(record.live_sources)
-    ? record.live_sources
-        .map(safeSourceUrl)
-        .filter((url): url is string => url !== null)
-    : [];
+  const rawSources = Array.isArray(record.live_sources) ? record.live_sources : [];
+  const liveSources = [...new Set(
+    rawSources
+      .map(safeSourceUrl)
+      .filter((url): url is string => url !== null),
+  )];
+  const liveSourceIds = [...new Set(
+    rawSources
+      .map(validSourceId)
+      .filter((id): id is string => id !== null),
+  )];
   const producer = record.origin;
   const declaresMixed = producer === "mixed";
-  const live = producer === "live" || (declaresMixed && liveSources.length > 0);
+  const hasLive = liveSources.length > 0 || liveSourceIds.length > 0;
+  const live = producer === "live" || (declaresMixed && hasLive);
   const warehouse =
     (producer === "warehouse" || declaresMixed) && warehouseId !== undefined;
   return compactProvenance({
@@ -341,7 +360,8 @@ export function parseProvenance(raw: unknown): DimeProvenance {
     warehouseId,
     season: trimmedString(record.season),
     asOf: trimmedString(record.as_of),
-    liveSources: [...new Set(liveSources)],
+    liveSources,
+    liveSourceIds,
   });
 }
 
@@ -406,6 +426,9 @@ export function mergeProvenance(
     asOf: agreedValue(entries.map((entry) => entry?.asOf)),
     liveSources: [
       ...new Set(entries.flatMap((entry) => entry?.liveSources ?? [])),
+    ],
+    liveSourceIds: [
+      ...new Set(entries.flatMap((entry) => entry?.liveSourceIds ?? [])),
     ],
   });
   const evidence = coalescedEvidence(entries);
@@ -1014,7 +1037,7 @@ export class DimeStream {
 export interface DimeStreamCallbacks {
   onUpdate: (snap: StreamSnapshot) => void;
   onDone: (snap: StreamSnapshot) => void;
-  onError: (message: string) => void;
+  onError: (snap: StreamSnapshot, message: string) => void;
 }
 
 export function streamDimeChat(
@@ -1044,7 +1067,9 @@ export function streamDimeChat(
         if (settled) return;
         settled = true;
         stream.fail("connection", message);
-        callbacks.onError(message);
+        stream.finish();
+        const snap = stream.snapshot();
+        callbacks.onError(snap, message);
       },
     },
     opts?.signal,
