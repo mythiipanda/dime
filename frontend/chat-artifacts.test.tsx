@@ -73,6 +73,47 @@ function liveAnswer(run: LiveRun): string {
   return renderToStaticMarkup(<LiveAssistant live={run} />);
 }
 
+const CHECKMARK_PATH = "M20 6L9 17l-5-5";
+
+const STATIC_DEMO_ROWS = ["Reading flavor briefs", "Scanning supplier lists", "Comparing tasting notes", "Writing the scoop report"];
+
+function statusRun(finished: boolean): LiveRun {
+  const run = runOf([
+    ["node_update", { node: "entry", status: "running" }],
+    ["node_update", { node: "tools", status: "running" }],
+    ["node_update", { node: "analytics", status: "running" }],
+    ["final_answer", { text: ANSWER_TEXT, carry: PARTIAL_CARRY }],
+    ["graph_end", {}],
+  ]);
+  return finished ? run : { ...run, done: false };
+}
+
+test("a running live stream shows one plain-language phase line and no checkmark rows", () => {
+  const run = statusRun(false);
+  assert.equal(run.thinking.length, 3);
+  const html = liveAnswer(run);
+  for (const row of STATIC_DEMO_ROWS) {
+    assert.ok(!html.includes(row), html);
+  }
+  assert.ok(!html.includes(CHECKMARK_PATH), html);
+  assert.ok(html.includes("Checking the numbers"), html);
+  assert.ok(html.includes("shimmer-text"), html);
+  assert.ok(html.includes(ANSWER_TEXT), html);
+});
+
+test("a finished live stream collapses to one settled line and leaks no demo chrome", () => {
+  const run = statusRun(true);
+  const html = liveAnswer(run);
+  for (const row of STATIC_DEMO_ROWS) {
+    assert.ok(!html.includes(row), html);
+  }
+  assert.ok(!html.includes(CHECKMARK_PATH), html);
+  assert.ok(!html.includes("shimmer-text"), html);
+  assert.ok(!html.includes("Thought for 4 seconds"), html);
+  assert.match(html, /Thought for \d+ seconds/, html);
+  assert.ok(html.includes(ANSWER_TEXT), html);
+});
+
 function bothAnswers(run: LiveRun): string {
   return `${persistedAnswer(run)}${liveAnswer(run)}`;
 }
