@@ -1,18 +1,22 @@
 import hashlib
 import json
-import os
 import threading
 from datetime import UTC, datetime
 from pathlib import Path
 
 import duckdb
-import pytest
 
 from v2.contracts import EvidenceEnvelope
 from v2.runtime.analysis_execution import (
     AnalysisRequest,
     build_envelope,
     execute_analysis,
+)
+
+PREDECESSOR_MODULE = (
+    Path(__file__).resolve().parent
+    / "_negctrl"
+    / "predecessor_analysis_execution.py"
 )
 
 
@@ -25,6 +29,8 @@ def make_fixture(path, total=200):
         "INSERT INTO silver_smoke VALUES (?, ?)",
         [(i, float(i) * 1.5) for i in range(1, total + 1)],
     )
+    con.execute("CREATE TABLE secret_table(s VARCHAR)")
+    con.execute("INSERT INTO secret_table VALUES ('SECRET')")
     con.close()
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
@@ -100,13 +106,79 @@ def test_unauthorized_table_policy_rejected(tmp_path):
     assert result.pid is None
 
 
-def test_non_select_policy_rejected(tmp_path):
+def test_quoted_table_reference_policy_rejected(tmp_path):
     sha = make_fixture(tmp_path / "fixture.duckdb")
-    request = make_request(tmp_path, "DELETE FROM silver_smoke", sha)
+    request = make_request(tmp_path, 'SELECT * FROM "secret_table"', sha)
     result = execute_analysis(request)
     assert result.status == "policy_rejected"
     assert result.rows is None
     assert result.pid is None
+    assert result.error is not None
+    assert "secret_table" in result.error
+
+
+def test_single_quoted_table_reference_policy_rejected(tmp_path):
+    sha = make_fixture(tmp_path / "fixture.duckdb")
+    request = make_request(tmp_path, "SELECT * FROM 'secret_table'", sha)
+    result = execute_analysis(request)
+    assert result.status == "policy_rejected"
+    assert result.rows is None
+    assert result.pid is None
+    assert "secret_table" in result.error
+
+
+def test_function_form_table_reference_policy_rejected(tmp_path):
+    sha = make_fixture(tmp_path / "fixture.duckdb")
+    request = make_request(
+        tmp_path, "SELECT * FROM query_table('secret_table')", sha
+    )
+    result = execute_analysis(request)
+    assert result.status == "policy_rejected"
+    assert result.rows is None
+    assert result.pid is None
+    assert "secret_table" in result.error
+
+
+def test_join_quoted_table_reference_policy_rejected(tmp_path):
+    sha = make_fixture(tmp_path / "fixture.duckdb")
+    request = make_request(
+        tmp_path,
+        'SELECT silver_smoke.id FROM silver_smoke JOIN "secret_table" ON true',
+        sha,
+    )
+    result = execute_analysis(request)
+    assert result.status == "policy_rejected"
+    assert result.rows is None
+    assert result.pid is None
+    assert "secret_table" in result.error
+
+
+def test_allowed_quoted_table_still_succeeds(tmp_path):
+    sha = make_fixture(tmp_path / "fixture.duckdb")
+    request = make_request(
+        tmp_path,
+        'SELECT SUM(pts) AS total FROM "silver_smoke"',
+        sha,
+    )
+    result = execute_analysis(request)
+    assert result.status == "success"
+    assert result.rows == [[30150.0]]
+
+
+def test_write_statement_policy_rejected(tmp_path):
+    sha = make_fixture(tmp_path / "fixture.duckdb")
+    for sql in (
+        "DELETE FROM silver_smoke",
+        "INSERT INTO secret_table VALUES ('x')",
+        "UPDATE secret_table SET s = 'x'",
+        "DROP TABLE secret_table",
+        "CREATE TABLE evil(x INTEGER)",
+    ):
+        request = make_request(tmp_path, sql, sha)
+        result = execute_analysis(request)
+        assert result.status == "policy_rejected", sql
+        assert result.rows is None, sql
+        assert result.pid is None, sql
 
 
 def test_input_pin_mismatch_policy_rejected(tmp_path):
@@ -191,27 +263,57 @@ def test_cancel_kills_child_with_dead_pid(tmp_path):
     assert outcome["result"].dead is True
 
 
-def test_predecessor_negative_control_fails():
+def test_no_python_exec_exposure_in_module():
     import inspect
 
-    import shared.store as store
-    import shared.tools.league as league
+    import v2.runtime.analysis_execution as module
 
-    repo = Path("C:/Users/15980/Downloads/dime/hermes-isolation-sql")
-    shared_src = (repo / "backend/shared/tools/shared.py").read_text(encoding="utf-8")
-    assert "exec(compile" in shared_src
-    assert "__builtins__" in shared_src
-    assert "pass" in inspect.getsource(store._PooledConnection.close)
-    timeout_src = inspect.getsource(league._execute_with_timeout)
-    assert "daemon=True" in timeout_src
-    assert "pid" not in timeout_src.lower()
-
-
-def test_no_python_exec_exposure_in_module():
-    repo = Path("C:/Users/15980/Downloads/dime/hermes-isolation-sql")
-    src = (repo / "backend/v2/runtime/analysis_execution.py").read_text(encoding="utf-8")
+    src = inspect.getsource(module)
     for token in ("exec(", "eval(", "compile(", "__builtins__"):
         assert token not in src
+
+
+def test_memory_limit_configured_and_success(tmp_path, monkeypatch):
+    import v2.runtime.analysis_execution as module
+
+    sha = make_fixture(tmp_path / "fixture.duckdb")
+    request = make_request(
+        tmp_path,
+        "SELECT SUM(pts) AS total FROM silver_smoke",
+        sha,
+        memory_limit_bytes=256 * 1024 * 1024,
+    )
+    observed = []
+    real_create = module._create_job
+
+    def tracking_create(limit):
+        outcome = real_create(limit)
+        observed.append((limit, outcome[1]))
+        return outcome
+
+    monkeypatch.setattr(module, "_create_job", tracking_create)
+    result = execute_analysis(request)
+    assert observed, "memory limit never reached the job constructor"
+    assert observed[0][0] == 256 * 1024 * 1024
+    assert result.status == "success"
+    assert result.rows == [[30150.0]]
+    assert "established" in result.enforcement.job_object
+
+
+def test_os_rejected_memory_limit_returns_unsupported(tmp_path):
+    sha = make_fixture(tmp_path / "fixture.duckdb")
+    request = make_request(
+        tmp_path,
+        "SELECT SUM(pts) AS total FROM silver_smoke",
+        sha,
+        memory_limit_bytes=1024,
+    )
+    result = execute_analysis(request)
+    assert result.status == "unsupported"
+    assert result.rows is None
+    assert result.pid is None
+    assert result.enforcement.job_object is not None
+    assert "unsupported" in result.enforcement.job_object
 
 
 def test_unsupported_enforcement_is_fail_closed(tmp_path, monkeypatch):
@@ -225,3 +327,89 @@ def test_unsupported_enforcement_is_fail_closed(tmp_path, monkeypatch):
     assert result.rows is None
     assert result.pid is None
     assert "unsupported" in result.enforcement.job_object
+
+
+def test_job_assignment_failure_returns_execution_failed(tmp_path, monkeypatch):
+    import v2.runtime.analysis_execution as module
+
+    sha = make_fixture(tmp_path / "fixture.duckdb")
+    request = make_request(tmp_path, "SELECT 1 AS a", sha)
+    monkeypatch.setattr(module, "_assign_to_job", lambda job, proc: False)
+    result = execute_analysis(request)
+    assert result.status == "execution_failed"
+    assert result.rows is None
+    assert result.error is not None
+    assert "job" in result.error.lower()
+    assert result.dead is True
+
+
+def test_comma_separated_unauthorized_table_policy_rejected(tmp_path):
+    sha = make_fixture(tmp_path / "fixture.duckdb")
+    request = make_request(
+        tmp_path,
+        "SELECT * FROM silver_smoke, secret_table",
+        sha,
+    )
+    result = execute_analysis(request)
+    assert result.status == "policy_rejected"
+    assert result.rows is None
+    assert result.pid is None
+    assert "secret_table" in result.error
+
+
+def test_schema_qualified_unauthorized_table_policy_rejected(tmp_path):
+    sha = make_fixture(tmp_path / "fixture.duckdb")
+    request = make_request(tmp_path, "SELECT * FROM main.secret_table", sha)
+    result = execute_analysis(request)
+    assert result.status == "policy_rejected"
+    assert result.rows is None
+    assert result.pid is None
+    assert "secret_table" in result.error
+
+
+def test_schema_qualified_allowed_table_succeeds(tmp_path):
+    sha = make_fixture(tmp_path / "fixture.duckdb")
+    request = make_request(
+        tmp_path,
+        "SELECT SUM(pts) AS total FROM main.silver_smoke",
+        sha,
+    )
+    result = execute_analysis(request)
+    assert result.status == "success"
+    assert result.rows == [[30150.0]]
+
+
+def test_subquery_unauthorized_table_policy_rejected(tmp_path):
+    sha = make_fixture(tmp_path / "fixture.duckdb")
+    request = make_request(
+        tmp_path,
+        "SELECT COUNT(*) AS n FROM (SELECT * FROM secret_table) AS sub",
+        sha,
+    )
+    result = execute_analysis(request)
+    assert result.status == "policy_rejected"
+    assert result.rows is None
+    assert result.pid is None
+    assert "secret_table" in result.error
+
+
+def test_function_form_external_file_reaches_duckdb(tmp_path):
+    sha = make_fixture(tmp_path / "fixture.duckdb")
+    request = make_request(
+        tmp_path,
+        "SELECT * FROM read_csv('C:/nope/missing.csv')",
+        sha,
+    )
+    result = execute_analysis(request)
+    assert result.status == "execution_failed"
+    assert result.error is not None
+    assert "duckdb" in result.error.lower()
+
+
+def test_predecessor_negative_control_fails():
+    pred_src = PREDECESSOR_MODULE.read_text(encoding="utf-8")
+    assert "SetInformationJobObject" not in pred_src
+    assert "JOBOBJECT_EXTENDED_LIMIT_INFORMATION" not in pred_src
+    assert "JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE" not in pred_src
+    assert 'FROM\\s+([A-Za-z_][\\w]*)' in pred_src
+    assert "_assign_to_job(job, proc)" in pred_src

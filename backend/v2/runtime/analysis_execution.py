@@ -82,15 +82,116 @@ def _first_word(sql: str):
     if not m:
         return ""
     return m.group(1).upper()
-def _referenced_tables(sql: str):
-    names = []
-    for pat in (r"FROM\s+([A-Za-z_][\w]*)", r"JOIN\s+([A-Za-z_][\w]*)"):
-        for m in re.finditer(pat, sql, flags=re.IGNORECASE):
-            end = m.end(1)
-            rest = sql[end:end + 1]
-            if rest == "(":
+_TABLE_FUNCTIONS = frozenset(["query_table", "read_csv", "read_csv_auto", "read_parquet", "read_json", "read_json_auto", "parquet_scan", "csv_scan", "sniff_csv"])
+_STOP_WORDS = frozenset(["WHERE", "GROUP", "ORDER", "HAVING", "LIMIT", "OFFSET", "UNION", "INTERSECT", "EXCEPT", "ON", "USING", "AS", "WINDOW", "QUALIFY", "RETURNING", "SET", "VALUES", "SELECT"])
+def _tokenize_identifiers(sql: str):
+    tokens = []
+    i = 0
+    n = len(sql)
+    while i < n:
+        c = sql[i]
+        if c == ".":
+            tokens.append(("dot", "."))
+            i += 1
+            continue
+        if c == ",":
+            tokens.append(("comma", ","))
+            i += 1
+            continue
+        if c in ('"', "'", "`"):
+            quote = c
+            j = i + 1
+            buf = []
+            while j < n:
+                if sql[j] == quote:
+                    if j + 1 < n and sql[j + 1] == quote:
+                        buf.append(quote)
+                        j += 2
+                        continue
+                    break
+                buf.append(sql[j])
+                j += 1
+            tokens.append(("quoted", "".join(buf)))
+            i = j + 1
+            continue
+        if c.isalpha() or c == "_":
+            j = i
+            while j < n and (sql[j].isalnum() or sql[j] == "_"):
+                j += 1
+            word = sql[i:j]
+            k = j
+            while k < n and sql[k] in " \t\r\n":
+                k += 1
+            if k < n and sql[k] == "(":
+                tokens.append(("func", word))
+                i = j
                 continue
-            names.append(m.group(1))
+            tokens.append(("word", word))
+            i = j
+            continue
+        i += 1
+    return tokens
+def _is_path_like(value):
+    if not value:
+        return False
+    if value.startswith(("http://", "https://", "s3://", "file://", "gs://", "gcs://", "az://", "s3a://", "abfs://")):
+        return True
+    if "/" in value or "\\" in value:
+        return True
+    if len(value) > 1 and value[1] == ":" and value[0].isalpha():
+        return True
+    low = value.lower()
+    if low.endswith((".csv", ".parquet", ".json", ".jsonl", ".ndjson", ".tsv", ".gz", ".zip", ".duckdb", ".db", ".sqlite", ".xlsx")):
+        return True
+    return False
+def _table_component(name):
+    return name.split(".")[-1]
+def _referenced_tables(sql: str):
+    tokens = _tokenize_identifiers(sql)
+    names = []
+    n = len(tokens)
+    i = 0
+    while i < n:
+        kind, value = tokens[i]
+        if kind == "word" and value.upper() in ("FROM", "JOIN"):
+            j = i + 1
+            while j < n and tokens[j][0] == "func" and tokens[j][1].upper() == "LATERAL":
+                j += 1
+            while j < n:
+                tk, tv = tokens[j]
+                if tk == "word" and tv.upper() in _STOP_WORDS:
+                    break
+                if tk == "quoted":
+                    names.append(tv)
+                elif tk == "func":
+                    if j + 1 < n and tokens[j + 1][0] == "quoted":
+                        arg = tokens[j + 1][1]
+                        if not _is_path_like(arg):
+                            names.append(arg)
+                    break
+                elif tk == "word":
+                    k = j
+                    parts = []
+                    while k < n and tokens[k][0] == "word":
+                        parts.append(tokens[k][1])
+                        k += 1
+                        if k < n and tokens[k][0] == "dot":
+                            k += 1
+                            continue
+                        break
+                    names.append(".".join(parts))
+                    j = k - 1
+                if j + 1 < n and tokens[j + 1][0] == "comma":
+                    j += 2
+                    continue
+                break
+        if kind == "func" and value.lower() in _TABLE_FUNCTIONS:
+            j = i + 1
+            while j < n and tokens[j][0] == "func" and tokens[j][1].upper() == "LATERAL":
+                j += 1
+            if j < n and tokens[j][0] == "quoted" and not _is_path_like(tokens[j][1]):
+                names.append(tokens[j][1])
+        i += 1
     return names
 def _local_names(sql: str):
     found = set()
@@ -98,6 +199,40 @@ def _local_names(sql: str):
         for m in re.finditer(pat, sql, flags=re.IGNORECASE):
             found.add(m.group(1))
     return found
+class _IO_COUNTERS(ctypes.Structure):
+    _fields_ = [
+        ("ReadOperationCount", ctypes.c_ulonglong),
+        ("WriteOperationCount", ctypes.c_ulonglong),
+        ("OtherOperationCount", ctypes.c_ulonglong),
+        ("ReadTransferCount", ctypes.c_ulonglong),
+        ("WriteTransferCount", ctypes.c_ulonglong),
+        ("OtherTransferCount", ctypes.c_ulonglong),
+    ]
+class _JOBOBJECT_BASIC_LIMIT_INFORMATION(ctypes.Structure):
+    _fields_ = [
+        ("PerProcessUserTimeLimit", ctypes.c_longlong),
+        ("PerJobUserTimeLimit", ctypes.c_longlong),
+        ("LimitFlags", ctypes.c_ulong),
+        ("MinimumWorkingSetSize", ctypes.c_size_t),
+        ("MaximumWorkingSetSize", ctypes.c_size_t),
+        ("ActiveProcessLimit", ctypes.c_ulong),
+        ("Affinity", ctypes.c_ulonglong),
+        ("PriorityClass", ctypes.c_ulong),
+        ("SchedulingClass", ctypes.c_ulong),
+    ]
+class _JOBOBJECT_EXTENDED_LIMIT_INFORMATION(ctypes.Structure):
+    _fields_ = [
+        ("BasicLimitInformation", _JOBOBJECT_BASIC_LIMIT_INFORMATION),
+        ("IoInfo", _IO_COUNTERS),
+        ("ProcessMemoryLimit", ctypes.c_size_t),
+        ("JobMemoryLimit", ctypes.c_size_t),
+        ("PeakProcessMemoryUsed", ctypes.c_size_t),
+        ("PeakJobMemoryUsed", ctypes.c_size_t),
+    ]
+_JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE = 0x00002000
+_JOB_OBJECT_LIMIT_PROCESS_MEMORY = 0x00000100
+_JOB_OBJECT_LIMIT_JOB_MEMORY = 0x00000200
+_JOBOBJECT_EXTENDED_LIMIT_INFORMATION_CLASS = 9
 def _create_job(limit):
     if os.name != "nt":
         return (None, "unsupported: non-windows host")
@@ -105,9 +240,41 @@ def _create_job(limit):
         k = ctypes.windll.kernel32
         k.CreateJobObjectW.restype = wintypes.HANDLE
         k.CreateJobObjectW.argtypes = [wintypes.LPVOID, wintypes.LPCWSTR]
+        k.SetInformationJobObject.restype = wintypes.BOOL
+        k.SetInformationJobObject.argtypes = [wintypes.HANDLE, ctypes.c_int, wintypes.LPVOID, wintypes.DWORD]
         handle = k.CreateJobObjectW(None, None)
         if not handle:
             return (None, "unsupported: CreateJobObjectW failed")
+        ext = _JOBOBJECT_EXTENDED_LIMIT_INFORMATION()
+        flags = _JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE
+        limit_val = None
+        if limit is not None:
+            try:
+                limit_val = int(limit)
+            except Exception as e:
+                k.CloseHandle(wintypes.HANDLE(handle))
+                return (None, "unsupported: memory limit not an integer: " + str(e))
+            if limit_val <= 0:
+                k.CloseHandle(wintypes.HANDLE(handle))
+                return (None, "unsupported: memory limit must be positive")
+            flags |= _JOB_OBJECT_LIMIT_PROCESS_MEMORY | _JOB_OBJECT_LIMIT_JOB_MEMORY
+            ext.ProcessMemoryLimit = limit_val
+            ext.JobMemoryLimit = limit_val
+        ext.BasicLimitInformation.LimitFlags = flags
+        ok = k.SetInformationJobObject(
+            wintypes.HANDLE(handle),
+            _JOBOBJECT_EXTENDED_LIMIT_INFORMATION_CLASS,
+            ctypes.byref(ext),
+            ctypes.sizeof(ext),
+        )
+        if not ok:
+            err = ctypes.get_last_error()
+            k.CloseHandle(wintypes.HANDLE(handle))
+            if limit is not None:
+                return (None, "unsupported: memory limit rejected by OS: " + str(err))
+            return (None, "unsupported: SetInformationJobObject failed: " + str(err))
+        if limit is not None:
+            return (int(handle), "established with memory limit " + str(limit_val))
         return (int(handle), "established")
     except Exception as e:
         return (None, "unsupported: " + str(e))
@@ -158,7 +325,8 @@ def execute_analysis(request, cancel_event=None):
         return _policy_rejected(request, "statement rejected: " + word)
     allowed = set(request.allowed_tables or ()) | _local_names(request.sql)
     for name in _referenced_tables(request.sql):
-        if allowed and name not in allowed and name.lower() not in ("duckdb_memory",):
+        component = _table_component(name)
+        if allowed and name not in allowed and component not in allowed and component.lower() not in ("duckdb_memory",):
             return _policy_rejected(request, "unauthorized table: " + name)
     job, job_reason = _create_job(request.memory_limit_bytes)
     if job is None:
@@ -171,7 +339,19 @@ def execute_analysis(request, cancel_event=None):
         _close_job(job)
         return AnalysisResult(status="execution_failed", rows=None, columns=None, error="spawn failed: " + str(e), dead=False, pid=None, enforcement=enforcement, run_id=request.run_id, node_id=request.node_id, input_sha256=request.input_sha256)
     pid = proc.pid
-    _assign_to_job(job, proc)
+    assigned = _assign_to_job(job, proc)
+    if not assigned:
+        _terminate_job(job)
+        try:
+            proc.kill()
+        except Exception:
+            pass
+        try:
+            proc.wait(timeout=10)
+        except Exception:
+            pass
+        _close_job(job)
+        return AnalysisResult(status="execution_failed", rows=None, columns=None, error="job assignment failed", dead=True, pid=pid, enforcement=enforcement, run_id=request.run_id, node_id=request.node_id, input_sha256=request.input_sha256)
     try:
         proc.stdin.write(payload.encode("utf-8"))
         proc.stdin.close()
