@@ -461,7 +461,7 @@ test("a gap ledger renders as human-wording disclosure, not as enum kinds", () =
       verification: "partial",
       verified_claims: 1,
       gaps: [
-        { kind: "missing_evidence", blocks: ["fixture-metric"] },
+        { kind: "missing_evidence", blocks: ["requirement:req_season_series"] },
         { kind: "source_conflict", blocks: [] },
         { kind: "fixture-gap", blocks: [] },
       ],
@@ -470,7 +470,7 @@ test("a gap ledger renders as human-wording disclosure, not as enum kinds", () =
   for (const html of [persistedAnswer(run), liveAnswer(run)]) {
     assert.match(html, /What this answer could not confirm/, html);
     assert.ok(
-      html.includes("Some of what you asked for isn&#x27;t backed by data: fixture-metric."),
+      html.includes("Some of what you asked for isn&#x27;t backed by data."),
       html,
     );
     assert.ok(
@@ -488,6 +488,36 @@ test("a gap ledger renders as human-wording disclosure, not as enum kinds", () =
     assert.ok(!withoutAttributes.includes("missing_evidence"), withoutAttributes);
     assert.ok(!withoutAttributes.includes("source_conflict"), withoutAttributes);
     assert.ok(!/>Gap: /.test(html), html);
+  }
+});
+
+test("backend gap block ids never reach the visible answer text", () => {
+  const run = runOf(
+    answerFrames([row("A", warehouseProvenance())], {
+      run_id: "run-fixture",
+      verification: "partial",
+      verified_claims: 1,
+      gaps: [
+        { kind: "missing_evidence", blocks: ["requirement:req_season_series"] },
+        { kind: "fixture-gap", blocks: ["claim:17", "requirement:req_head_to_head"] },
+      ],
+    }),
+  );
+  for (const html of [persistedAnswer(run), liveAnswer(run)]) {
+    assert.match(html, /What this answer could not confirm/, html);
+    assert.ok(
+      html.includes("Some of what you asked for isn&#x27;t backed by data."),
+      html,
+    );
+    assert.ok(html.includes("Part of this answer could not be fully verified."), html);
+    const visible = html.replace(/<[^>]*>/g, "");
+    for (const block of [
+      "requirement:req_season_series",
+      "requirement:req_head_to_head",
+      "claim:17",
+    ]) {
+      assert.ok(!visible.includes(block), `${block} reached the visible copy`);
+    }
   }
 });
 

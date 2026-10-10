@@ -534,14 +534,6 @@ const GAP_COPY: Record<string, string> = {
 const UNKNOWN_GAP_SENTENCE = "Part of this answer could not be fully verified.";
 
 export function gapSentence(gap: EvidenceGapNote): string {
-  const blocks = (Array.isArray(gap.blocks) ? gap.blocks : [])
-    .map((block) => block.trim())
-    .filter((block) => block !== "");
-  if (gap.kind === "missing_evidence") {
-    return blocks.length > 0
-      ? `Some of what you asked for isn't backed by data: ${blocks.join(", ")}.`
-      : "Some of what you asked for isn't backed by data.";
-  }
   return GAP_COPY[gap.kind] ?? UNKNOWN_GAP_SENTENCE;
 }
 

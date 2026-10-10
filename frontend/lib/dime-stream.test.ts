@@ -1097,17 +1097,44 @@ test("an unknown gap kind falls back to the generic sentence, never the raw kind
     assert.equal(sentence, "Part of this answer could not be fully verified.", kind);
     assert.ok(!sentence.includes(kind), sentence);
   }
+  for (const blocks of [["requirement:req_season_series"], ["claim:17"]]) {
+    const sentence = gapSentence({ kind: "totally_unknown_kind", blocks });
+    assert.equal(sentence, "Part of this answer could not be fully verified.", JSON.stringify(blocks));
+    for (const block of blocks) assert.ok(!sentence.includes(block), sentence);
+  }
 });
 
-test("missing evidence names the blocked items without adding a cause", () => {
-  assert.equal(
-    gapSentence({ kind: "missing_evidence", blocks: ["first_metric", "second_metric"] }),
-    "Some of what you asked for isn't backed by data: first_metric, second_metric.",
-  );
-  assert.equal(
-    gapSentence({ kind: "missing_evidence", blocks: [] }),
-    "Some of what you asked for isn't backed by data.",
-  );
+test("missing evidence wording never names the ledger's internal block ids", () => {
+  for (const blocks of [
+    ["requirement:req_season_series"],
+    ["first_metric", "requirement:req_season_series"],
+    [],
+  ]) {
+    const label = JSON.stringify(blocks);
+    const sentence = gapSentence({ kind: "missing_evidence", blocks });
+    assert.equal(sentence, "Some of what you asked for isn't backed by data.", label);
+    for (const block of blocks) assert.ok(!sentence.includes(block), sentence);
+  }
+});
+
+test("the gap ledger keeps its exact backend blocks while the visible sentence drops them", () => {
+  const blocks = ["requirement:req_season_series", "requirement:req_head_to_head"];
+  const gaps = [{ kind: "missing_evidence", blocks }];
+  const carry = parseCarry({
+    run_id: "run-fixture",
+    verification: "partial",
+    verified_claims: 0,
+    gaps,
+  });
+  assert.equal(carry?.gapsReadable, true);
+  assert.deepEqual(carry?.gaps, gaps);
+  const disclosure = verificationDisclosure(carry, parseProvenance(LIVE_PROVENANCE));
+  assert.deepEqual(disclosure.gaps, gaps);
+  for (const gap of disclosure.gaps) {
+    for (const block of gap.blocks) {
+      assert.ok(!gapSentence(gap).includes(block), block);
+    }
+  }
 });
 
 test("gap sentences stay in Dime's voice and leak no enum jargon", () => {
