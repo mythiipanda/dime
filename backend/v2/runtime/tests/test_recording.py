@@ -240,3 +240,54 @@ def test_publishable_arguments_publish_normal_player_comparison_args() -> None:
         {"name": "season", "value": "2025-26"},
     ]
 
+def _declare_arguments(monkeypatch, names: set[str]) -> None:
+    from v2.runtime.recording import ArgumentSpec
+
+    spec = ArgumentSpec(declared=frozenset(names), required=(),
+                        evidence_satisfied=frozenset())
+    monkeypatch.setattr("v2.runtime.recording._argument_spec",
+                       lambda capability_name: spec)
+
+def test_publishable_arguments_withhold_statement_text_suffixes_when_declared(
+    monkeypatch,
+) -> None:
+    from v2.runtime.recording import argument_counts, publishable_arguments
+
+    _declare_arguments(monkeypatch, {"sql", "agent_sql", "season"})
+    statements = {
+        "sql": "SELECT secret FROM vault",
+        "agent_sql": "SELECT secret FROM vault",
+        "season": "2025-26",
+    }
+
+    assert argument_counts("sql_exec_fixture", statements) == (3, 0)
+    rows = publishable_arguments("sql_exec_fixture", statements)
+
+    assert rows == [{"name": "season", "value": "2025-26"}]
+    assert "SELECT" not in str(rows)
+    assert "secret FROM vault" not in str(rows)
+
+def test_publishable_arguments_publish_declared_non_sql_keys_when_declared(
+    monkeypatch,
+) -> None:
+    from v2.runtime.recording import argument_counts, publishable_arguments
+
+    _declare_arguments(monkeypatch, {"sql", "agent_sql", "season", "query"})
+    statements = {
+        "sql": "SELECT secret FROM vault",
+        "agent_sql": "SELECT secret FROM vault",
+        "season": "2025-26",
+        "query": "luka stats",
+    }
+
+    assert argument_counts("sql_exec_fixture", statements) == (4, 0)
+    rows = publishable_arguments("sql_exec_fixture", statements)
+
+    assert rows == [
+        {"name": "query", "value": "luka stats"},
+        {"name": "season", "value": "2025-26"},
+    ]
+    assert "SELECT" not in str(rows)
+    assert "secret FROM vault" not in str(rows)
+    assert "luka stats" in str(rows)
+
