@@ -967,7 +967,7 @@ export class DimeStream {
         const tools = this.snap.tools;
         let idx =
           event.id !== null ? tools.findIndex((t) => t.key === event.id) : -1;
-        if (idx < 0 && event.status !== "running") {
+        if (idx < 0 && event.id === null && event.status !== "running") {
           for (let i = tools.length - 1; i >= 0; i -= 1) {
             if (tools[i].status === "running" && tools[i].name === event.name) {
               idx = i;

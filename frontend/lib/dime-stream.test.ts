@@ -508,6 +508,87 @@ test("the result of a repeated call marks only its own row", () => {
   assert.deepEqual(snap.tools[1].args, ["season=2024-25"]);
 });
 
+test("a matched result id still completes exactly its own running row", () => {
+  const snap = streamed([
+    ["tool_call", { name: "lineups", event_id: "x:1" }],
+    ["tool_result", { name: "lineups", event_id: "x:1", status: "ok", rows: 5, ms: 130 }],
+  ]).snapshot();
+  assert.equal(snap.tools.length, 1);
+  assert.equal(snap.tools[0].key, "x:1");
+  assert.equal(snap.tools[0].status, "ok");
+  assert.equal(snap.tools[0].rows, 5);
+  assert.equal(snap.tools[0].ms, 130);
+  assert.equal(snap.tools[0].label, "Pulled lineup data");
+});
+
+test("an unmatched explicit result id never completes a different running call", () => {
+  const snap = streamed([
+    ["tool_call", { name: "lineups", event_id: "x:1" }],
+    ["tool_call", { name: "lineups", event_id: "x:2" }],
+    ["tool_result", { name: "lineups", event_id: "x:9", status: "ok", rows: 7, ms: 90 }],
+  ]).snapshot();
+  assert.equal(snap.tools.length, 3);
+  assert.equal(snap.tools[0].key, "x:1");
+  assert.equal(snap.tools[0].status, "running");
+  assert.equal(snap.tools[0].rows, undefined);
+  assert.equal(snap.tools[0].ms, undefined);
+  assert.equal(snap.tools[0].label, "Pulling lineup data");
+  assert.equal(snap.tools[1].key, "x:2");
+  assert.equal(snap.tools[1].status, "running");
+  assert.equal(snap.tools[1].rows, undefined);
+  assert.equal(snap.tools[1].ms, undefined);
+  assert.equal(snap.tools[1].label, "Pulling lineup data");
+  const orphan = snap.tools[2];
+  assert.equal(orphan.key, "x:9");
+  assert.equal(orphan.name, "lineups");
+  assert.equal(orphan.status, "ok");
+  assert.equal(orphan.rows, 7);
+  assert.equal(orphan.ms, 90);
+  assert.equal(orphan.label, "Pulled lineup data");
+});
+
+test("an unmatched explicit result id on a failed result stays standalone too", () => {
+  const snap = streamed([
+    ["tool_call", { name: "standings", event_id: "x:1" }],
+    ["tool_call", { name: "standings", event_id: "x:2" }],
+    [
+      "tool_result",
+      { name: "standings", event_id: "x:9", status: "fail", error: "upstream timeout" },
+    ],
+  ]).snapshot();
+  assert.equal(snap.tools.length, 3);
+  assert.equal(snap.tools[0].status, "running");
+  assert.equal(snap.tools[1].status, "running");
+  assert.equal(snap.tools[2].key, "x:9");
+  assert.equal(snap.tools[2].status, "fail");
+  assert.equal(snap.tools[2].error, "upstream timeout");
+});
+
+test("a result id that matches an already finished row updates that row again", () => {
+  const snap = streamed([
+    ["tool_call", { name: "lineups", event_id: "x:1" }],
+    ["tool_result", { name: "lineups", event_id: "x:1", status: "ok", rows: 5 }],
+    ["tool_result", { name: "lineups", event_id: "x:1", status: "ok", rows: 6, ms: 40 }],
+  ]).snapshot();
+  assert.equal(snap.tools.length, 1);
+  assert.equal(snap.tools[0].key, "x:1");
+  assert.equal(snap.tools[0].status, "ok");
+  assert.equal(snap.tools[0].rows, 6);
+  assert.equal(snap.tools[0].ms, 40);
+});
+
+test("a result with no id still falls back to the latest running same-name row", () => {
+  const snap = streamed([
+    ["tool_call", { name: "sql_exec", event_id: null }],
+    ["tool_result", { name: "sql_exec", event_id: null, status: "ok", rows: 3, ms: 12 }],
+  ]).snapshot();
+  assert.equal(snap.tools.length, 1);
+  assert.equal(snap.tools[0].key, "local:1");
+  assert.equal(snap.tools[0].status, "ok");
+  assert.equal(snap.tools[0].rows, 3);
+  assert.equal(snap.tools[0].ms, 12);
+});
+
 const LIVE_PROVENANCE = {
   capability: "fixture_capability",
   origin: "live",
