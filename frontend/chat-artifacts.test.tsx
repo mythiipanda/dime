@@ -454,6 +454,57 @@ test("zero verified claims never headline as partly verified", () => {
   assert.ok(html.includes("fixture-gap"), html);
 });
 
+test("a gap ledger renders as human-wording disclosure, not as enum kinds", () => {
+  const run = runOf(
+    answerFrames([row("A", warehouseProvenance())], {
+      run_id: "run-fixture",
+      verification: "partial",
+      verified_claims: 1,
+      gaps: [
+        { kind: "missing_evidence", blocks: ["fixture-metric"] },
+        { kind: "source_conflict", blocks: [] },
+        { kind: "fixture-gap", blocks: [] },
+      ],
+    }),
+  );
+  for (const html of [persistedAnswer(run), liveAnswer(run)]) {
+    assert.match(html, /What this answer could not confirm/, html);
+    assert.ok(
+      html.includes("Some of what you asked for isn&#x27;t backed by data: fixture-metric."),
+      html,
+    );
+    assert.ok(
+      html.includes("The sources behind this disagree with each other."),
+      html,
+    );
+    assert.ok(
+      html.includes("Part of this answer could not be fully verified."),
+      html,
+    );
+    assert.ok(html.includes('data-gap-kind="missing_evidence"'), html);
+    assert.ok(html.includes('data-gap-kind="source_conflict"'), html);
+    assert.ok(html.includes('data-gap-kind="fixture-gap"'), html);
+    const withoutAttributes = html.replace(/data-gap-kind="[^"]*"/g, "");
+    assert.ok(!withoutAttributes.includes("missing_evidence"), withoutAttributes);
+    assert.ok(!withoutAttributes.includes("source_conflict"), withoutAttributes);
+    assert.ok(!/>Gap: /.test(html), html);
+  }
+});
+
+test("an unreadable gap report is never shown as gap wording", () => {
+  const run = runOf(
+    answerFrames([row("A", warehouseProvenance())], {
+      verification: "pass",
+      verified_claims: 1,
+      gaps: "invalid",
+    }),
+  );
+  for (const html of [persistedAnswer(run), liveAnswer(run)]) {
+    assert.match(html, /gap report could not be read/i, html);
+    assert.ok(!/What this answer could not confirm/.test(html), html);
+  }
+});
+
 function idProvenance() {
   return {
     capability: "fixture_capability",
