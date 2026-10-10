@@ -188,3 +188,55 @@ def test_publishable_arguments_withhold_identity_and_secret_arguments() -> None:
     ]
     assert "sk-live-secret" not in str(search_rows)
 
+def test_publishable_arguments_withhold_raw_sql_statement_text() -> None:
+    from v2.runtime.recording import argument_counts, publishable_arguments
+
+    statements = {
+        "sql": "SELECT secret FROM vault",
+        "season": "2025-26",
+    }
+    rows = publishable_arguments("sql_exec", statements)
+
+    assert rows == [{"name": "season", "value": "2025-26"}]
+    assert "SELECT" not in str(rows)
+    assert "secret FROM vault" not in str(rows)
+    assert argument_counts("sql_exec", statements) == (2, 0)
+
+def test_publishable_arguments_withhold_declared_statement_text_suffixes() -> None:
+    from v2.runtime.recording import publishable_arguments
+
+    rows = publishable_arguments(
+        "sql_exec", {"agent_sql": "SELECT 1", "base_sql": "SELECT 2",
+                     "season": "2025-26"})
+
+    assert rows == [{"name": "season", "value": "2025-26"}]
+    assert "SELECT" not in str(rows)
+
+def test_publishable_arguments_publish_non_sql_query_arguments() -> None:
+    from v2.runtime.recording import publishable_arguments
+
+    search_rows = publishable_arguments(
+        "web_search", {"query": "luka stats", "max_results": 5})
+
+    assert search_rows == [
+        {"name": "max_results", "value": 5},
+        {"name": "query", "value": "luka stats"},
+    ]
+
+    resolution_rows = publishable_arguments(
+        "entity_resolution", {"query": "luka stats"})
+
+    assert resolution_rows == [{"name": "query", "value": "luka stats"}]
+
+def test_publishable_arguments_publish_normal_player_comparison_args() -> None:
+    from v2.runtime.recording import publishable_arguments
+
+    arguments = {"a": "Subject Alpha", "b": "Subject Bravo",
+                 "season": "2025-26"}
+
+    assert publishable_arguments("player_comparison", arguments) == [
+        {"name": "a", "value": "Subject Alpha"},
+        {"name": "b", "value": "Subject Bravo"},
+        {"name": "season", "value": "2025-26"},
+    ]
+
