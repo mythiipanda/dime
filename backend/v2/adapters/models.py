@@ -1889,9 +1889,18 @@ class ModelPlanner(ModelStage):
                     f"'{node.id}' cannot cover requirement '{requirement_id}' "
                     f"which disallows {node.capability}{detail}",
                     node_id=node.id, missing_required=[])
-            for key in ("requested_metric", "ranking_direction"):
-                node_value = arguments.get(key, "")
-                expected_value = expected.get(key, "")
+            node_metric = str(arguments.get("requested_metric", "") or "").upper()
+            if metrics and node_metric and node_metric not in metrics:
+                raise PlannerArgumentError(
+                    f"RANKED_ARGUMENT_CONFLICT: planner {node.capability} node "
+                    f"'{node.id}' requested_metric={node_metric!r} is not in the "
+                    f"covered requirement's typed metric_ids {metrics}",
+                    node_id=node.id, missing_required=[])
+            for key in ("requested_metric", "ranking_direction", "team"):
+                expected_value = str(expected.get(key, "") or "").strip()
+                if not expected_value:
+                    continue
+                node_value = str(arguments.get(key, "") or "").strip()
                 if node_value != expected_value:
                     raise PlannerArgumentError(
                         f"RANKED_ARGUMENT_CONFLICT: planner {node.capability} node "

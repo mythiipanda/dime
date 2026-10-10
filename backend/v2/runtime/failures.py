@@ -9,6 +9,8 @@ from threading import Lock
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from shared import durability
+
 _CANDIDATE_LOCKS_GUARD = Lock()
 _CANDIDATE_LOCKS: dict[Path, Lock] = {}
 
@@ -126,11 +128,12 @@ class CandidateStore:
                 handle.flush()
                 os.fsync(handle.fileno())
             if parent_was_missing or file_was_missing:
-                directory_fd = os.open(self.path.parent, os.O_RDONLY)
-                try:
-                    os.fsync(directory_fd)
-                finally:
-                    os.close(directory_fd)
+                directory_fd = durability.open_directory_for_fsync(self.path.parent)
+                if directory_fd is not None:
+                    try:
+                        os.fsync(directory_fd)
+                    finally:
+                        os.close(directory_fd)
             return candidate
 
     def read(self) -> list[ScenarioCandidate]:

@@ -2,7 +2,6 @@
 from pathlib import Path
 from contextlib import contextmanager
 import duckdb
-import fcntl
 import os
 import polars as pl
 import shutil
@@ -11,6 +10,8 @@ import threading
 import time
 import hashlib
 
+from . import change_token
+from . import file_lock
 from .sources.base import FetchResult
 
 DB_PATH = Path(os.environ.get("DIME_WAREHOUSE") or
@@ -23,67 +24,109 @@ STATE_LOCK_PATH = STATE_PATH.parent / ".state-write.lock"
 
 PROVENANCE_COLS = ["_source", "_season", "_fetched_at"]
 
-def _warehouse_identity_uncached(path: Path, sample: str | None = None) -> dict[str, str]:
-    if sample is None:
-        try:
-            size: int | None = path.stat().st_size
-        except OSError:
-            size = None
-        sample = (_warehouse_sample_hexdigest(path, size)
-                  if size is not None else None)
-        if sample is None:
-            sample = hashlib.sha256(path.read_bytes()).hexdigest()
-    return {"warehouse_id": "frozen-eval" if path == CANONICAL_DB_PATH else "configured-runtime",
-            "warehouse_sha256": sample}
+WAREHOUSE_SHA256_DERIVATION = "sha256-full-file"
 
-_warehouse_identity_cache: dict[Path, tuple[tuple[int, int, str], dict[str, str]]] = {}
+class WarehouseChangedDuringRead(RuntimeError):
+    pass
 
-def warehouse_identity_cache_clear() -> None:
-    _warehouse_identity_cache.clear()
+def _warehouse_absent_error(path: Path | str) -> FileNotFoundError:
+    return FileNotFoundError(f"warehouse absent: {path}")
 
-_SAMPLE_READ_BYTES = 8192
+_FULL_FILE_READ_BYTES = 1 << 20
 
-def _warehouse_sample_hexdigest(path: Path, size: int) -> str | None:
+_STABLE_READ_ATTEMPTS = 3
+
+_OPEN_READ_ONLY = os.O_RDONLY | getattr(os, "O_BINARY", 0)
+
+def _descriptor_shape(descriptor: int) -> tuple[int, int, int, int] | None:
     try:
-        h = hashlib.new("sha256")
-        h.update(size.to_bytes(8, "little", signed=False))
-        with open(path, "rb") as fh:
-            for off in (0, size // 2, size - _SAMPLE_READ_BYTES):
-                fh.seek(max(off, 0))
-                h.update(fh.read(_SAMPLE_READ_BYTES))
-        return h.hexdigest()
+        st = os.fstat(descriptor)
     except OSError:
         return None
+    return (st.st_dev, st.st_ino, st.st_size, st.st_mtime_ns)
+
+def _descriptor_freshness(descriptor: int) -> tuple[int, int, int, int, int] | None:
+    shape = _descriptor_shape(descriptor)
+    if shape is None:
+        return None
+    token = change_token.change_token(descriptor)
+    if token is None:
+        return None
+    return shape + (token,)
+
+def _warehouse_freshness_key(path: Path | str) -> tuple[int, int, int, int, int] | None:
+    try:
+        descriptor = os.open(path, _OPEN_READ_ONLY)
+    except OSError:
+        return None
+    try:
+        return _descriptor_freshness(descriptor)
+    finally:
+        os.close(descriptor)
+
+def _digest_descriptor(descriptor: int) -> str:
+    digest = hashlib.sha256()
+    os.lseek(descriptor, 0, os.SEEK_SET)
+    while True:
+        block = os.read(descriptor, _FULL_FILE_READ_BYTES)
+        if not block:
+            return digest.hexdigest()
+        digest.update(block)
+
+def _stable_full_file_hexdigest(path: Path) -> tuple[str, tuple[int, int, int, int, int] | None]:
+    unstable: tuple | None = None
+    for _ in range(_STABLE_READ_ATTEMPTS):
+        try:
+            descriptor = os.open(path, _OPEN_READ_ONLY)
+        except FileNotFoundError:
+            raise _warehouse_absent_error(path) from None
+        try:
+            opened_shape = _descriptor_shape(descriptor)
+            opened = _descriptor_freshness(descriptor)
+            digest = _digest_descriptor(descriptor)
+            closed_shape = _descriptor_shape(descriptor)
+            closed = _descriptor_freshness(descriptor)
+            if opened_shape == closed_shape and opened == closed:
+                return digest, opened
+        finally:
+            os.close(descriptor)
+        unstable = (opened_shape, closed_shape, opened, closed)
+    raise WarehouseChangedDuringRead(
+        f"warehouse {path} changed while it was being hashed; refusing to report "
+        f"an identity for bytes that never coexisted (last shapes {unstable!r})")
+
+def _warehouse_identity_uncached(path: Path) -> dict[str, str]:
+    digest, _ = _stable_full_file_hexdigest(path)
+    return {"warehouse_id": "frozen-eval" if path == CANONICAL_DB_PATH else "configured-runtime",
+            "warehouse_sha256": digest}
+
+_warehouse_identity_cache: dict[Path, tuple[tuple[int, int, int, int, int], dict[str, str]]] = {}
+_identity_lock = threading.RLock()
+
+def warehouse_identity_cache_clear() -> None:
+    with _identity_lock:
+        _warehouse_identity_cache.clear()
+
+def _warehouse_full_file_hexdigest(path: Path) -> str:
+    return _stable_full_file_hexdigest(path)[0]
 
 def warehouse_identity() -> dict[str, str]:
     path = DB_PATH.resolve()
-    try:
-        st = path.stat()
-    except OSError:
+    freshness = _warehouse_freshness_key(path)
+    if freshness is None:
         return _warehouse_identity_uncached(path)
-    sample = _warehouse_sample_hexdigest(path, st.st_size)
-    if sample is None:
-        return _warehouse_identity_uncached(path)
-    key = (st.st_mtime_ns, st.st_size, sample)
-    entry = _warehouse_identity_cache.get(path)
-    if entry is not None and entry[0] == key:
-        return entry[1]
-    identity = _warehouse_identity_uncached(path, sample)
-    _warehouse_identity_cache[path] = (key, identity)
+    with _identity_lock:
+        entry = _warehouse_identity_cache.get(path)
+        if entry is not None and entry[0] == freshness:
+            return entry[1]
+    identity = _warehouse_identity_uncached(path)
+    with _identity_lock:
+        if _warehouse_freshness_key(path) == freshness:
+            _warehouse_identity_cache[path] = (freshness, identity)
     return identity
 
-_tables_cache: dict[Path, tuple[tuple[int, int, str], frozenset[str]]] = {}
+_tables_cache: dict[Path, tuple[tuple[int, int, int, int, int], frozenset[str]]] = {}
 _tables_lock = threading.RLock()
-
-def _tables_freshness_key(path: Path) -> tuple[int, int, str] | None:
-    try:
-        st = path.stat()
-    except OSError:
-        return None
-    sample = _warehouse_sample_hexdigest(path, st.st_size)
-    if sample is None:
-        return None
-    return (st.st_mtime_ns, st.st_size, sample)
 
 def warehouse_tables_cache_clear() -> None:
     with _tables_lock:
@@ -126,7 +169,7 @@ def _tables_uncached(path: Path) -> tuple[frozenset[str], Path | None]:
 
 def tables(path: Path | str | None = None) -> set[str]:
     key = DB_PATH if path is None else Path(path)
-    freshness = _tables_freshness_key(key)
+    freshness = _warehouse_freshness_key(key)
     with _tables_lock:
         entry = _tables_cache.get(key)
         if freshness is not None and entry is not None and entry[0] == freshness:
@@ -179,20 +222,20 @@ def completed_seasons_across_tables() -> list[str]:
 @contextmanager
 def write_guard(timeout_s: float = 60.0):
     DB_PATH.parent.mkdir(parents=True, exist_ok=True)
-    start = time.time()
+    start = time.monotonic()
     with open(LOCK_PATH, "w") as fh:
         while True:
             try:
-                fcntl.flock(fh, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                file_lock.try_lock_exclusive(fh)
                 break
             except BlockingIOError:
-                if time.time() - start > timeout_s:
+                if time.monotonic() - start > timeout_s:
                     raise TimeoutError("warehouse write lock timed out")
-                time.sleep(0.05)
+                time.sleep(file_lock.POLL_INTERVAL_S)
         try:
             yield
         finally:
-            fcntl.flock(fh, fcntl.LOCK_UN)
+            file_lock.unlock(fh)
 
 def _connect_once(read_only: bool) -> duckdb.DuckDBPyConnection:
     if read_only:
@@ -276,14 +319,7 @@ def _pool_acquire():
     if entry[0] != (str(DB_PATH.resolve()), True):
         _pool_drop()
         return None
-    try:
-        st = os.stat(DB_PATH)
-    except OSError:
-        _pool_drop()
-        return None
-    sample = _warehouse_sample_hexdigest(DB_PATH, st.st_size)
-    if sample is None or (st.st_mtime_ns, st.st_size, sample) != (
-            entry[2], entry[3], entry[4]):
+    if _warehouse_freshness_key(DB_PATH) != entry[2]:
         _pool_drop()
         try:
             warehouse_tables_cache_clear()
@@ -298,15 +334,10 @@ def _pool_acquire():
     return _PooledConnection(entry[1])
 
 def _pool_store(con):
-    try:
-        st = os.stat(DB_PATH)
-    except OSError:
+    freshness = _warehouse_freshness_key(DB_PATH)
+    if freshness is None:
         return con
-    sample = _warehouse_sample_hexdigest(DB_PATH, st.st_size)
-    if sample is None:
-        return con
-    _pool_state.entry = ((str(DB_PATH.resolve()), True), con,
-                         st.st_mtime_ns, st.st_size, sample)
+    _pool_state.entry = ((str(DB_PATH.resolve()), True), con, freshness)
     try:
         with _pool_lock:
             if con not in _pool_registry:
@@ -361,7 +392,7 @@ def connect(read_only: bool | None = None) -> duckdb.DuckDBPyConnection:
         except _LOCK_ERRORS as exc:
             raise WriteConflictError(DB_PATH) from exc
     if not DB_PATH.exists():
-        raise FileNotFoundError(f"warehouse absent: {DB_PATH}")
+        raise _warehouse_absent_error(DB_PATH)
     pooled = _pool_acquire()
     if pooled is not None:
         return pooled
@@ -394,19 +425,19 @@ def state_connect() -> duckdb.DuckDBPyConnection:
 @contextmanager
 def state_write_guard(timeout_s: float = 60.0):
     STATE_PATH.parent.mkdir(parents=True, exist_ok=True)
-    start = time.time()
+    start = time.monotonic()
     with open(STATE_LOCK_PATH, "w") as fh:
         while True:
             try:
-                fcntl.flock(fh, fcntl.LOCK_EX | fcntl.LOCK_NB); break
+                file_lock.try_lock_exclusive(fh); break
             except BlockingIOError:
-                if time.time() - start > timeout_s:
+                if time.monotonic() - start > timeout_s:
                     raise TimeoutError("state write lock timed out")
-                time.sleep(0.05)
+                time.sleep(file_lock.POLL_INTERVAL_S)
         try:
             yield
         finally:
-            fcntl.flock(fh, fcntl.LOCK_UN)
+            file_lock.unlock(fh)
 
 def save_frame(
     table: str,

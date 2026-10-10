@@ -139,8 +139,11 @@ def test_v2_rate_limited_stream_frames():
 
     response = _rate_limited_stream()
     chunks = asyncio.run(collect(response))
-    assert chunks[0].startswith("event: error\n")
-    assert "rate limited" in chunks[0]
+    assert len(chunks) == 3
+    assert chunks[0].startswith("event: failure\n")
+    assert '"kind":"rate_limited"' in chunks[0]
+    assert chunks[1].startswith("event: error\n")
+    assert "rate limited" in chunks[1]
     assert chunks[-1].startswith("event: graph_end\n")
 
 def _stub_shared(monkeypatch, store_stub=None, **module_stubs):
@@ -344,6 +347,7 @@ def test_v2_chat_persists_to_shared_thread_log(monkeypatch, tmp_path):
         verified_claims=[],
         output_statuses=[],
         gaps=[],
+        execution=types.SimpleNamespace(evidence=[]),
     )
 
     class _FakeRuntime:
@@ -371,7 +375,9 @@ def test_v2_chat_persists_to_shared_thread_log(monkeypatch, tmp_path):
 
     import shared.config as real_config
     monkeypatch.setattr(real_config, "settings", types.SimpleNamespace(
-        dime_v2_pre_tool_timeout_s=5.0))
+        dime_v2_pre_tool_timeout_s=5.0,
+        dime_v2_run_timeout_s=5.0,
+        dime_v2_node_timeout_s=5.0))
 
     answer_text = "The Celtics lead the league in TS%."
     evidence_tables = [{"tool": "get_leaders",
@@ -601,8 +607,8 @@ def test_v2_watchlist_crud(monkeypatch):
     _stub_tool_module(
         monkeypatch, "watchlist",
         get_watchlist=lambda p: calls.append(("get", p)) or '{"items": []}',
-        add_watchlist_item=lambda p: calls.append(("add", p)) or '{"ok": True}',
-        remove_watchlist_item=lambda p: calls.append(("remove", p)) or '{"ok": True}',
+        add_watchlist_item=lambda p: calls.append(("add", p)) or '{"ok": true}',
+        remove_watchlist_item=lambda p: calls.append(("remove", p)) or '{"ok": true}',
     )
     from v2.api.routes import (watchlist as wl_view,
                                watchlist_add as wl_add,

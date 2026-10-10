@@ -62,6 +62,8 @@ CAPABILITY_TABLES: dict[str, tuple[str, ...]] = {
         "silver_hist_gamelogs",
     ),
     "lineup_matchups": ("silver_lineups",),
+    "defensive_matchups": ("silver_tracking_pt_defend",),
+    "tracking_profile": ("silver_tracking_pt_stats",),
     "competitive_ratings": ("silver_hist_gamelogs",),
     "team_shot_zones": ("silver_hist_shots",),
     "player_shot_zones": ("silver_hist_shots", "silver_shots"),
@@ -114,6 +116,7 @@ CAPABILITY_TABLES: dict[str, tuple[str, ...]] = {
     ),
     "clutch": ("silver_clutch", "silver_hist_pbp"),
     "playoffs": ("silver_playoffs", "silver_playoff_gamelogs"),
+    "stint_timeline": ("silver_stints",),
     "player_ratings": ("silver_advanced",),
     "playoff_team_ratings": ("silver_playoffs",),
     "game_prediction": (
@@ -348,20 +351,12 @@ def parse_season_start(value: object) -> int | None:
         return None
     return start
 
-def _freshness(path: Path) -> tuple[int, int, int, int, str] | None:
+def _freshness(path: Path) -> tuple[int, int, int, int, int] | None:
     try:
-        stat = path.stat()
-    except OSError:
-        return None
-    try:
-        from shared.store import _warehouse_sample_hexdigest
+        from shared.store import _warehouse_freshness_key
+        return _warehouse_freshness_key(path)
     except Exception:
         return None
-    sample = _warehouse_sample_hexdigest(path, stat.st_size)
-    if sample is None:
-        return None
-    return (stat.st_mtime_ns, stat.st_size, stat.st_ctime_ns,
-            stat.st_ino, sample)
 
 def coverage_cache_clear() -> None:
     with _state_lock:

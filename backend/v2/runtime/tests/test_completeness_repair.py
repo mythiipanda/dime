@@ -1,9 +1,16 @@
 from __future__ import annotations
 
+import os
+from pathlib import Path
+
 import pytest
 from v2.contracts import Claim, ClaimKind, DraftReport, Plan, PlanNode, RunMode, TaskSpec, VerificationReport, VerificationStatus
 from v2.runtime import FakeCapability, PlanExecutor, Runtime
 from v2.runtime.assembly import MechanicalVerifier
+
+BACKEND = Path(__file__).resolve().parents[3]
+RUNTIME_WAREHOUSE = Path(os.environ.get("DIME_WAREHOUSE") or
+                         BACKEND / "data" / "warehouse-runtime.duckdb")
 
 @pytest.fixture
 def anyio_backend():
@@ -142,20 +149,19 @@ async def test_complete_synthesis_passes_without_repair():
     assert result.repaired is False
     assert result.verification.status == VerificationStatus.PASS
 
+@pytest.mark.skipif(
+    not RUNTIME_WAREHOUSE.exists(),
+    reason=f"the runtime warehouse is absent at {RUNTIME_WAREHOUSE}")
 @pytest.mark.anyio
 async def test_mvp_winner_and_share_publish_through_real_award_tool(monkeypatch, tmp_path):
-    from pathlib import Path
     from v2.contracts import EvidenceOutputBinding, SeasonRef
     from v2.adapters.core import ToolCapability
 
-    backend = Path(__file__).resolve().parents[3]
-    warehouse = backend / "data" / "warehouse-runtime.duckdb"
-    assert warehouse.exists()
     from shared import store
     from shared.tools import _core
     from v2.adapters import coverage
     connect = store.connect
-    monkeypatch.setattr(store, "DB_PATH", warehouse)
+    monkeypatch.setattr(store, "DB_PATH", RUNTIME_WAREHOUSE)
     monkeypatch.setattr(store, "connect", lambda read_only=True: connect(read_only=True))
     store.warehouse_tables_cache_clear()
     store.warehouse_pool_clear()

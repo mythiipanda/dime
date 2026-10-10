@@ -916,6 +916,64 @@ async def test_pre_tool_timeout_closes_stage_and_turn_without_execution() -> Non
     assert not any(entry.kind == LedgerKind.TOOL_CALL for entry in ledger.entries)
 
 @pytest.mark.anyio
+async def test_pre_tool_budget_is_in_force_for_intake_within_budget() -> None:
+    import asyncio
+    from v2.runtime import LedgerKind, RunLedger
+
+    class SlowIntake:
+        def __init__(self) -> None:
+            self.completed = False
+
+        async def understand(self, request):
+            await asyncio.sleep(0.05)
+            self.completed = True
+            return TaskSpec(goal=request, mode=RunMode.QUICK, deliverable="text")
+
+    intake = SlowIntake()
+    ledger = RunLedger("run")
+    instance = Runtime(
+        intake=intake, planner=Planner(),
+        executor=PlanExecutor({"fake": FakeCapability("fake", {"value": 42})}),
+        synthesizer=Synthesizer(),
+        mechanical_verifier=SequenceVerifier(VerificationStatus.PASS),
+        semantic_verifier=SequenceVerifier(VerificationStatus.PASS),
+        ledger=ledger, pre_tool_timeout_s=5.0)
+    result = await instance.run("answer", run_id="run")
+
+    assert intake.completed is True
+    assert [item.claim.text for item in result.verified_claims] == ["42"]
+    completed = {entry.step_id for entry in ledger.entries
+                 if entry.kind is LedgerKind.STEP_END
+                 and entry.data["reason"] == "complete"}
+    assert {"understand", "plan", "execute"} <= completed
+
+@pytest.mark.anyio
+async def test_pre_tool_budget_still_bounds_intake_beyond_budget() -> None:
+    import asyncio
+    from v2.runtime import PreToolTimeoutError
+
+    class SlowIntake:
+        def __init__(self) -> None:
+            self.completed = False
+
+        async def understand(self, request):
+            await asyncio.sleep(0.5)
+            self.completed = True
+            return TaskSpec(goal=request, mode=RunMode.QUICK, deliverable="text")
+
+    intake = SlowIntake()
+    instance = Runtime(
+        intake=intake, planner=Planner(), executor=PlanExecutor({}),
+        synthesizer=Synthesizer(),
+        mechanical_verifier=SequenceVerifier(VerificationStatus.PASS),
+        semantic_verifier=SequenceVerifier(VerificationStatus.PASS),
+        pre_tool_timeout_s=0.05)
+    with pytest.raises(PreToolTimeoutError, match="intake and planning exceeded"):
+        await instance.run("answer")
+
+    assert intake.completed is False
+
+@pytest.mark.anyio
 async def test_verified_claim_sources_preserve_per_fact_vintage() -> None:
     from datetime import UTC, date, datetime
     from v2.contracts import EvidenceEnvelope
