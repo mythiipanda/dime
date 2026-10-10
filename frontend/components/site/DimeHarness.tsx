@@ -289,6 +289,8 @@ function toolStepFor(tool: ToolState): ToolStep {
     mono: true,
     detailMono: true,
     detail: detail.length ? detail : [{ text: summary }],
+    args: tool.args,
+    key: tool.key,
   };
 }
 

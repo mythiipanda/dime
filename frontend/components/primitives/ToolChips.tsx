@@ -21,6 +21,8 @@ export type ToolStep = {
   mono: boolean;
   detailMono: boolean;
   detail: ToolDetailLine[];
+  args?: string[];
+  key?: string;
 };
 
 export type ToolDiff = { file: string; add: number; del: number };
@@ -118,7 +120,8 @@ export default function ToolChips({
   const [step, setStep] = useState(0);
   const [open, setOpen] = useState(true);
   const [openRows, setOpenRows] = useState<Set<string>>(new Set());
-  
+  const [openEvidence, setOpenEvidence] = useState<Set<string>>(new Set());
+
   const [preview, setPreview] = useState<{
     file: string;
     x: number;
@@ -155,6 +158,15 @@ export default function ToolChips({
       return next;
     });
 
+  const toggleEvidence = (label: string) =>
+    setOpenEvidence((current) => {
+      const next = new Set(current);
+      next.has(label) ? next.delete(label) : next.add(label);
+      return next;
+    });
+
+  const rowKey = (row: ToolStep, i: number): string => row.key ?? `${row.label}#${i}`;
+
   return (
     <div className={`min-h-[220px] w-full max-w-80 pb-1${className ? ` ${className}` : ""}`}>
       {}
@@ -182,13 +194,17 @@ export default function ToolChips({
         <div className="mt-1.5 flex flex-col gap-1">
           {steps.slice(0, step).map((row, i) => {
             const rowOpen = openRows.has(row.label);
+            const key = rowKey(row, i);
+            const evidenceOpen = openEvidence.has(key);
+            const args = row.args?.length ? row.args : undefined;
             return (
-            <div key={`t-${i}`} style={{ animation: "fade-up 300ms cubic-bezier(0.23,1,0.32,1) both" }}>
+            <div key={key} style={{ animation: "fade-up 300ms cubic-bezier(0.23,1,0.32,1) both" }}>
+              <div className="-mx-[3px] flex h-7 w-[calc(100%+6px)] min-w-0 items-center gap-1.5">
               <button
                 type="button"
                 aria-expanded={rowOpen}
                 onClick={() => toggleRow(row.label)}
-                className="group/row -mx-[3px] flex h-7 w-[calc(100%+6px)] min-w-0 items-center gap-2 rounded-control px-[3px] text-left transition-colors duration-100 hover:bg-hover-2"
+                className="group/row -mx-[3px] flex h-7 min-w-0 flex-1 items-center gap-2 rounded-control px-[3px] text-left transition-colors duration-100 hover:bg-hover-2"
               >
                 <span className="relative flex size-4 shrink-0 items-center justify-center text-ink-3">
                   <svg
@@ -214,6 +230,27 @@ export default function ToolChips({
                   {row.chip}
                 </span>
               </button>
+              {args && (
+                <button
+                  type="button"
+                  aria-expanded={evidenceOpen}
+                  aria-label={`${evidenceOpen ? "Hide" : "Show"} arguments for ${row.label}`}
+                  onClick={() => toggleEvidence(key)}
+                  className="group/args inline-flex h-5.5 shrink-0 items-center gap-1 rounded-chip bg-field px-1.5
+                    font-mono text-[11.5px] text-ink-2 shadow-hairline transition-colors duration-100
+                    hover:bg-hover-2 focus-visible:bg-hover-2 focus-visible:outline-none"
+                >
+                  Args
+                  <svg
+                    width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"
+                    className="transition-transform duration-200"
+                    style={{ transform: evidenceOpen ? "rotate(0deg)" : "rotate(-90deg)" }}
+                  >
+                    <path d="M6 9l6 6 6-6" />
+                  </svg>
+                </button>
+              )}
+              </div>
 
               {}
               <div
@@ -233,6 +270,25 @@ export default function ToolChips({
                   </div>
                 </div>
               </div>
+              {args && (
+                <div
+                  className="grid transition-[grid-template-rows,opacity] duration-300"
+                  style={{ gridTemplateRows: evidenceOpen ? "1fr" : "0fr", opacity: evidenceOpen ? 1 : 0, transitionTimingFunction: "cubic-bezier(0.23, 1, 0.32, 1)" }}
+                >
+                  <div className="min-h-0 overflow-hidden">
+                    <div className="mt-0.5 mb-1 ml-2 flex flex-col gap-0.5 border-l border-line bg-inset py-0.5 pl-3.5">
+                      {args.map((text, j) => (
+                        <span
+                          key={`a-${j}`}
+                          className="break-words font-mono text-[11.5px] leading-[1.6] text-ink-2"
+                        >
+                          {text}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
             );
           })}

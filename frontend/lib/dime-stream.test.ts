@@ -355,6 +355,98 @@ test("only the arguments the backend declared safe are shown", () => {
   assert.ok(!JSON.stringify(result).includes("SELECT"), JSON.stringify(result));
 });
 
+test("declared arguments reach the live tool row as the evidence drawer source", () => {
+  const snap = streamed([
+    ["tool_call", {
+      name: "lineups",
+      event_id: "f:6",
+      data: {
+        arguments: [
+          { name: "season", value: "2025-26" },
+          { name: "stat", value: "PTS" },
+        ],
+        argument_count: 4,
+        unknown_argument_count: 2,
+      },
+    }],
+  ]).snapshot();
+  assert.equal(snap.tools.length, 1);
+  const row = snap.tools[0];
+  assert.equal(row.label, "Pulling lineup data");
+  assert.deepEqual(row.args, ["season=2025-26", "stat=PTS", "+2 more not shown"]);
+  assert.ok(row.args.every((line) => line.includes("=") || line.startsWith("+")), JSON.stringify(row.args));
+});
+
+test("a tool row without declared arguments has no evidence to open", () => {
+  for (const data of [
+    undefined,
+    {},
+    { arguments: [] },
+    { arguments: "season=2025-26" },
+    { arguments: [{ value: "2025-26" }] },
+    { arguments: [null, 7, "season=2025-26"] },
+    { unknown_argument_count: 0 },
+    { unknown_argument_count: -3 },
+  ]) {
+    const events = reduceBackendEvent("tool_call", { name: "lineups", event_id: "f:7", data });
+    assert.equal(events.length, 1);
+    const event = events[0];
+    assert.equal(event.type, "tool_activity");
+    if (event.type === "tool_activity") {
+      assert.equal(event.args, undefined, JSON.stringify(data));
+    }
+  }
+  const snap = streamed([
+    ["tool_call", { name: "lineups", event_id: "f:8" }],
+  ]).snapshot();
+  assert.equal(snap.tools[0].args, undefined);
+});
+
+test("a published SQL string never reaches the tool row through either event", () => {
+  const snap = streamed([
+    ["tool_call", {
+      name: "sql_exec",
+      event_id: "f:9",
+      q: "SELECT secret FROM vault",
+      sql: "SELECT secret FROM vault",
+      data: { arguments: [{ name: "season", value: "2025-26" }] },
+    }],
+    ["tool_result", {
+      name: "sql_exec",
+      event_id: "f:9",
+      status: "ok",
+      rows: 12,
+      ms: 340,
+      sql: "SELECT secret FROM vault",
+      query: "SELECT secret FROM vault",
+      payload: { q: "SELECT secret FROM vault" },
+      data: { q: "SELECT secret FROM vault" },
+    }],
+  ]).snapshot();
+  assert.equal(snap.tools.length, 1);
+  const row = snap.tools[0];
+  assert.deepEqual(row.args, ["season=2025-26"]);
+  assert.equal(row.rows, 12);
+  assert.equal(row.ms, 340);
+  assert.ok(!JSON.stringify(row).includes("SELECT"), JSON.stringify(row));
+  assert.ok(!JSON.stringify(snap).includes("SELECT"), JSON.stringify(snap));
+});
+
+test("two calls to the same tool stay distinct rows with their own arguments", () => {
+  const snap = streamed([
+    ["tool_call", { name: "lineups", event_id: "g:1", data: { arguments: [{ name: "season", value: "2025-26" }] } }],
+    ["tool_result", { name: "lineups", event_id: "g:1", status: "ok", rows: 8, ms: 120 }],
+    ["tool_call", { name: "lineups", event_id: "g:2", data: { arguments: [{ name: "season", value: "2024-25" }] } }],
+    ["tool_result", { name: "lineups", event_id: "g:2", status: "ok", rows: 6, ms: 90 }],
+  ]).snapshot();
+  assert.equal(snap.tools.length, 2);
+  assert.notEqual(snap.tools[0].key, snap.tools[1].key);
+  assert.deepEqual(snap.tools[0].args, ["season=2025-26"]);
+  assert.deepEqual(snap.tools[1].args, ["season=2024-25"]);
+  assert.equal(snap.tools[0].rows, 8);
+  assert.equal(snap.tools[1].rows, 6);
+});
+
 const LIVE_PROVENANCE = {
   capability: "fixture_capability",
   origin: "live",
