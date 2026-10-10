@@ -34,6 +34,7 @@ import {
 import {
   streamDimeChat,
   failureCopy,
+  gapSentence,
   mergeArtifactProvenance,
   originPhrase,
   undeclaredProvenance,
@@ -453,13 +454,36 @@ export function AnswerVerification({
         </p>
       )}
       {disclosure.gaps.length > 0 && (
-        <ul className="mt-1.5 flex flex-col gap-0.5">
-          {disclosure.gaps.map((gap, i) => (
-            <li key={i} className="text-[11.5px] leading-relaxed text-ink-3">
-              {`Gap: ${gap.kind}${gap.blocks.length ? ` · blocks ${gap.blocks.join(", ")}` : ""}`}
-            </li>
-          ))}
-        </ul>
+        <div className="mt-2 flex gap-2 rounded-[8px] border border-line bg-orange-tint px-2.5 py-2">
+          <span className="mt-px shrink-0 text-orange">
+            <Ico
+              size={13}
+              d={
+                <>
+                  <path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0Z" />
+                  <line x1="12" y1="9" x2="12" y2="13" />
+                  <line x1="12" y1="17" x2="12.01" y2="17" />
+                </>
+              }
+            />
+          </span>
+          <div className="min-w-0">
+            <div className="text-[12px] font-medium text-ink">
+              What this answer could not confirm
+            </div>
+            <ul className="mt-0.5 flex flex-col gap-0.5">
+              {disclosure.gaps.map((gap, i) => (
+                <li
+                  key={i}
+                  data-gap-kind={gap.kind}
+                  className="text-[11.5px] leading-relaxed text-ink-2"
+                >
+                  {gapSentence(gap)}
+                </li>
+              ))}
+            </ul>
+          </div>
+        </div>
       )}
     </div>
   );
