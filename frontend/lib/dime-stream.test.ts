@@ -4,6 +4,7 @@ import {
   DimeStream,
   deriveArtifacts,
   failureCopy,
+  gapSentence,
   mergeArtifactProvenance,
   mergeProvenance,
   originPhrase,
@@ -1070,6 +1071,62 @@ test("zero verified claims do not headline as partly verified", () => {
   assert.match(disclosure.detail, /0 verified claims/);
   assert.match(disclosure.detail, /1 gap reported/);
   assert.deepEqual(disclosure.gaps, [{ kind: "fixture-gap", blocks: [] }]);
+});
+
+test("every canonical gap kind is worded as a plain sentence", () => {
+  const copy = {
+    missing_evidence: "Some of what you asked for isn't backed by data.",
+    source_conflict: "The sources behind this disagree with each other.",
+    unsupported_claim: "Some of this isn't supported by the data behind it.",
+    execution_failure: "Some of the data behind this was unavailable.",
+    synthesis_incomplete: "Part of this answer couldn't be finished.",
+    "profile/name_resolution_unavailable":
+      "Some players or teams couldn't be matched to their profile data.",
+    judge_unavailable:
+      "This answer couldn't be double-checked, so treat the details with extra care.",
+    provider_error: "The model behind the double-check was unavailable.",
+  };
+  for (const [kind, sentence] of Object.entries(copy)) {
+    assert.equal(gapSentence({ kind, blocks: [] }), sentence, kind);
+  }
+});
+
+test("an unknown gap kind falls back to the generic sentence, never the raw kind", () => {
+  for (const kind of ["fixture-gap", "totally_unknown_kind"]) {
+    const sentence = gapSentence({ kind, blocks: [] });
+    assert.equal(sentence, "Part of this answer could not be fully verified.", kind);
+    assert.ok(!sentence.includes(kind), sentence);
+  }
+});
+
+test("missing evidence names the blocked items without adding a cause", () => {
+  assert.equal(
+    gapSentence({ kind: "missing_evidence", blocks: ["first_metric", "second_metric"] }),
+    "Some of what you asked for isn't backed by data: first_metric, second_metric.",
+  );
+  assert.equal(
+    gapSentence({ kind: "missing_evidence", blocks: [] }),
+    "Some of what you asked for isn't backed by data.",
+  );
+});
+
+test("gap sentences stay in Dime's voice and leak no enum jargon", () => {
+  for (const kind of [
+    "missing_evidence",
+    "source_conflict",
+    "unsupported_claim",
+    "execution_failure",
+    "synthesis_incomplete",
+    "profile/name_resolution_unavailable",
+    "judge_unavailable",
+    "provider_error",
+    "fixture-gap",
+  ]) {
+    const sentence = gapSentence({ kind, blocks: [] });
+    assert.ok(!/_/.test(sentence), sentence);
+    assert.ok(sentence.endsWith("."), sentence);
+    assert.ok(sentence === "Part of this answer could not be fully verified." || !sentence.includes("gap"), sentence);
+  }
 });
 
 test("an absent or empty carry is not reported as verification", () => {

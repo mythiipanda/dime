@@ -518,6 +518,33 @@ export function parseCarry(raw: unknown): VerificationCarry | null {
   return carry;
 }
 
+const GAP_COPY: Record<string, string> = {
+  missing_evidence: "Some of what you asked for isn't backed by data.",
+  source_conflict: "The sources behind this disagree with each other.",
+  unsupported_claim: "Some of this isn't supported by the data behind it.",
+  execution_failure: "Some of the data behind this was unavailable.",
+  synthesis_incomplete: "Part of this answer couldn't be finished.",
+  "profile/name_resolution_unavailable":
+    "Some players or teams couldn't be matched to their profile data.",
+  judge_unavailable:
+    "This answer couldn't be double-checked, so treat the details with extra care.",
+  provider_error: "The model behind the double-check was unavailable.",
+};
+
+const UNKNOWN_GAP_SENTENCE = "Part of this answer could not be fully verified.";
+
+export function gapSentence(gap: EvidenceGapNote): string {
+  const blocks = (Array.isArray(gap.blocks) ? gap.blocks : [])
+    .map((block) => block.trim())
+    .filter((block) => block !== "");
+  if (gap.kind === "missing_evidence") {
+    return blocks.length > 0
+      ? `Some of what you asked for isn't backed by data: ${blocks.join(", ")}.`
+      : "Some of what you asked for isn't backed by data.";
+  }
+  return GAP_COPY[gap.kind] ?? UNKNOWN_GAP_SENTENCE;
+}
+
 function originSentence(provenance: DimeProvenance | undefined): string {
   return `Origin: ${originPhrase(provenance)}.`;
 }
