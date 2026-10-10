@@ -491,6 +491,43 @@ function FollowUpPills({
   );
 }
 
+function LiveStatus({
+  label,
+  secs,
+  done,
+}: {
+  label: string;
+  secs: number;
+  done: boolean;
+}) {
+  if (done) {
+    return (
+      <div
+        className="text-[13px] font-medium text-ink-2"
+        style={{ animation: FADE_UP }}
+      >
+        {`Thought for ${secs} seconds`}
+      </div>
+    );
+  }
+  return (
+    <span role="status" className="contents">
+      <span
+        className="bg-clip-text text-[13px] font-medium whitespace-nowrap text-transparent"
+        style={{
+          backgroundImage:
+            "linear-gradient(90deg, var(--ink-3) 35%, var(--ink) 50%, var(--ink-3) 65%)",
+          backgroundSize: "200% 100%",
+          animation:
+            "shimmer-text 1.4s linear infinite, fade-up 280ms cubic-bezier(0.23,1,0.32,1) both",
+        }}
+      >
+        {label}
+      </span>
+    </span>
+  );
+}
+
 export function LiveAssistant({ live }: { live: LiveRun }) {
   const steps = live.tools.map(toolStepFor);
   const secs = Math.max(1, Math.round((Date.now() - live.startedAt) / 1000));
@@ -500,15 +537,11 @@ export function LiveAssistant({ live }: { live: LiveRun }) {
   return (
     <>
       <div className="mt-2">
-        <ThinkingState
+        <LiveStatus
           key={`${live.id}:${live.thinking.length}`}
-          variant="Steps"
-          rows={live.thinking.map((t) => ({
-            primary: t.label,
-            secondary: t.detail,
-          }))}
-          active={statusLine}
-          done={`Thought for ${secs} seconds`}
+          label={statusLine}
+          secs={secs}
+          done={live.done}
         />
       </div>
       {steps.length > 0 && (
