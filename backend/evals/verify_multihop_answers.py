@@ -13,16 +13,31 @@ con = duckdb.connect(WAREHOUSE, read_only=True) if WAREHOUSE else duckdb.connect
     r"C:/Users/15980/Downloads/dime/dime-hermes-evidence/data/warehouse-runtime.duckdb",
     read_only=True)
 
-NUMBER_RUN = re.compile(r"[+-]?(?:\d(?:[\d,]*\d)?(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?")
+NUMBER_RUN = re.compile(r"[+\-\u2212]?(?:\d(?:[\d,]*\d)?(?:\.\d*)?|\.\d+)(?:[eE][+\-\u2212]?\d+)?")
 GROUPED_INTEGER = re.compile(r"\A\d{1,3}(?:,\d{3})*\Z")
-INNER_HYPHEN = re.compile(r"(?<=\d)-(?=\d)")
+INNER_HYPHEN = re.compile(r"(?<=\d)[\-\u2212](?=\d)")
 
 failures = []
 total = 0
 
 
+def validate_answer(answer):
+    if answer is None:
+        return "MISSING ANSWER"
+    if isinstance(answer, bool):
+        return "BOOLEAN ANSWER"
+    if isinstance(answer, (list, dict)):
+        return "STRUCTURED ANSWER"
+    if not isinstance(answer, str):
+        return "NON-STRING ANSWER"
+    if not answer.strip():
+        return "EMPTY ANSWER"
+    return None
+
+
 def number_runs(text):
-    return NUMBER_RUN.findall(INNER_HYPHEN.sub(" ", str(text)))
+    normalized = text.replace("\u2212", "-")
+    return NUMBER_RUN.findall(INNER_HYPHEN.sub(" ", str(normalized)))
 
 
 def parse_run(token):
@@ -103,7 +118,12 @@ for line in path.read_text(encoding="utf-8").splitlines():
     task_id = row.get("task_id", row_id)
     if isinstance(task_id, bool) or not isinstance(task_id, (str, int)):
         task_id = row_id
-    required, unsupported = literal_values(row.get("answer", ""))
+    answer = row.get("answer", "")
+    error = validate_answer(answer)
+    if error:
+        fail(task_id, "answer", error)
+        continue
+    required, unsupported = literal_values(answer)
     for token in unsupported:
         fail(task_id, "answer", "UNSUPPORTED NUMERIC LITERAL %s" % token)
     paths = row.get("expected_paths")
