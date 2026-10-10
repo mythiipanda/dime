@@ -270,11 +270,13 @@ function toolStepFor(tool: ToolState): ToolStep {
   ].map((text) => ({ text }));
   return {
     icon: "read",
+    key: tool.key,
     label: tool.label,
     chip: summary,
     mono: true,
     detailMono: true,
     detail: detail.length ? detail : [{ text: summary }],
+    args: tool.args,
   };
 }
 
