@@ -5,6 +5,18 @@ from typing import Any, Iterable
 from v2.contracts import EvidenceEnvelope
 from v2.runtime.ledger import LedgerEntry, LedgerKind
 
+_TIMING_KEY = "duration_ms"
+
+def _timing_ms(data: dict[str, Any]) -> int | None:
+    if _TIMING_KEY not in data:
+        return None
+    duration_ms = data[_TIMING_KEY]
+    if (not isinstance(duration_ms, int) or isinstance(duration_ms, bool)
+            or duration_ms < 0):
+        raise ValueError(
+            "tool result duration_ms must be a non-negative integer")
+    return duration_ms
+
 def _validated_entries(entries: Iterable[LedgerEntry]) -> list[LedgerEntry]:
     return [LedgerEntry.model_validate(entry.model_dump()) for entry in entries]
 
@@ -16,7 +28,8 @@ def admitted_evidence(entries: Iterable[LedgerEntry]) -> list[EvidenceEnvelope]:
     for entry in records:
         if entry.kind != LedgerKind.TOOL_RESULT or entry.data.get("status") != "ok":
             continue
-        if set(entry.data) != {"status", "evidence"}:
+        _timing_ms(entry.data)
+        if set(entry.data) - {_TIMING_KEY} != {"status", "evidence"}:
             raise ValueError("successful tool result has unexpected fields")
         payload = entry.data.get("evidence")
         if not isinstance(payload, dict):
@@ -59,24 +72,28 @@ def tool_attempts(entries: Iterable[LedgerEntry]) -> list[dict[str, Any]]:
         if not isinstance(call.data["args"], dict):
             raise ValueError("tool call requires an args object")
         status = entry.data.get("status")
+        duration_ms = _timing_ms(entry.data)
         if status == "ok":
-            valid = (set(entry.data) == {"status", "evidence"}
+            valid = (set(entry.data) - {_TIMING_KEY} == {"status", "evidence"}
                      and isinstance(entry.data.get("evidence"), dict))
         elif status == "failed":
-            valid = (set(entry.data) == {"status", "error"}
+            valid = (set(entry.data) - {_TIMING_KEY} == {"status", "error"}
                      and isinstance(entry.data.get("error"), str)
                      and bool(entry.data["error"].strip()))
         else:
             raise ValueError("tool result status must be ok or failed")
         if not valid:
             raise ValueError("tool result data does not match its status")
-        attempts.append({
+        attempt: dict[str, Any] = {
             "call_id": entry.call_id,
             "name": call.data["name"],
             "args": call.data["args"],
             "status": status,
             "error": entry.data.get("error"),
-        })
+        }
+        if duration_ms is not None:
+            attempt[_TIMING_KEY] = duration_ms
+        attempts.append(attempt)
     return attempts
 
 def replay_turn(entries: Iterable[LedgerEntry]) -> dict[str, Any]:
