@@ -34,9 +34,16 @@ import {
 import {
   streamDimeChat,
   failureCopy,
+  mergeArtifactProvenance,
+  originPhrase,
+  undeclaredProvenance,
+  verificationDisclosure,
   type DimeArtifact,
+  type DimeProvenance,
+  type ProvenanceEvidence,
   type StreamSnapshot,
   type ToolState,
+  type VerificationCarry,
 } from "@/lib/dime-stream";
 import { getModels } from "@/lib/api";
 
@@ -239,10 +246,25 @@ type ChatMsg =
       text: string;
       artifacts: DimeArtifact[];
       suggestions: string[];
+      carry: VerificationCarry | null;
       failure: AssistantFailure | null;
     };
 
-type LiveRun = StreamSnapshot & { id: number; startedAt: number };
+export type LiveRun = StreamSnapshot & { id: number; startedAt: number };
+
+export function assistantMessageFromSnapshot(
+  snap: StreamSnapshot,
+  message: string,
+): Extract<ChatMsg, { role: "assistant" }> {
+  return {
+    role: "assistant",
+    text: snap.text,
+    artifacts: snap.artifacts,
+    suggestions: snap.suggestions,
+    carry: snap.carry,
+    failure: snap.failed ?? (message ? { kind: "connection", message } : null),
+  };
+}
 
 function toolStepFor(tool: ToolState): ToolStep {
   const summary =
@@ -267,6 +289,8 @@ function toolStepFor(tool: ToolState): ToolStep {
     mono: true,
     detailMono: true,
     detail: detail.length ? detail : [{ text: summary }],
+    args: tool.args,
+    key: tool.key,
   };
 }
 
@@ -322,6 +346,125 @@ function FailureCard({ failure }: { failure: AssistantFailure }) {
   );
 }
 
+function ProvenanceRow({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div className="flex gap-2">
+      <dt className="w-[92px] shrink-0 text-ink-3">{label}</dt>
+      <dd className="min-w-0 flex-1 break-words text-ink-2">{children}</dd>
+    </div>
+  );
+}
+
+function ProvenanceFields({ provenance }: { provenance: DimeProvenance }) {
+  return (
+    <>
+      <ProvenanceRow label="Capability">{provenance.capability ?? "not provided"}</ProvenanceRow>
+      <ProvenanceRow label="Origin">{originPhrase(provenance)}</ProvenanceRow>
+      {provenance.warehouseId && (
+        <ProvenanceRow label="Warehouse">{provenance.warehouseId}</ProvenanceRow>
+      )}
+      <ProvenanceRow label="Season">{provenance.season ?? "not provided"}</ProvenanceRow>
+      <ProvenanceRow label="As of">{provenance.asOf ?? "not provided"}</ProvenanceRow>
+      <ProvenanceRow label="Live sources">
+        {provenance.liveSources.length > 0 || (provenance.liveSourceIds?.length ?? 0) > 0 ? (
+          <span className="flex flex-col gap-0.5">
+            {provenance.liveSources.map((url) => (
+              <a
+                key={url}
+                href={url}
+                target="_blank"
+                rel="noreferrer noopener"
+                className="break-all text-ink underline decoration-line-strong underline-offset-2"
+              >
+                {url}
+              </a>
+            ))}
+            {(provenance.liveSourceIds ?? []).map((id) => (
+              <span key={id} className="break-all text-ink-2">
+                {id}
+              </span>
+            ))}
+          </span>
+        ) : (
+          "none provided"
+        )}
+      </ProvenanceRow>
+    </>
+  );
+}
+
+export function ProvenancePanel({ provenance }: { provenance: DimeProvenance }) {
+  const evidence: ProvenanceEvidence[] = provenance.evidence?.length
+    ? provenance.evidence
+    : [{ label: "", provenance }];
+  return (
+    <details className="mt-3 rounded-[10px] border border-line bg-field px-3 py-2">
+      <summary className="cursor-pointer text-[12px] font-medium text-ink-2">
+        Sources &amp; provenance
+      </summary>
+      <dl className="mt-2 flex flex-col gap-2.5 text-[12px] leading-relaxed">
+        {evidence.map((entry, i) => (
+          <div key={i} className="flex flex-col gap-1">
+            {entry.label && <div className="font-medium text-ink-2">{entry.label}</div>}
+            <ProvenanceFields provenance={entry.provenance} />
+          </div>
+        ))}
+      </dl>
+    </details>
+  );
+}
+
+export function StreamArtifacts({ artifacts }: { artifacts: DimeArtifact[] }) {
+  if (artifacts.length === 0) return null;
+  return (
+    <div className="mt-5 flex flex-col gap-4">
+      {artifacts.map((artifact, i) => (
+        <ArtifactShell
+          key={i}
+          title={artifact.title}
+          source={artifact.source}
+          delay={i * 40}
+        >
+          <ArtifactBody artifact={artifact} />
+          <ProvenancePanel provenance={artifact.provenance ?? undeclaredProvenance()} />
+        </ArtifactShell>
+      ))}
+    </div>
+  );
+}
+
+export function AnswerVerification({
+  carry,
+  artifacts,
+}: {
+  carry: VerificationCarry | null;
+  artifacts: DimeArtifact[];
+}) {
+  const provenance = mergeArtifactProvenance(artifacts);
+  if (!carry && !provenance) return null;
+  const disclosure = verificationDisclosure(carry, provenance);
+  return (
+    <div className="mt-3 max-w-[620px] rounded-[10px] border border-line bg-field px-3 py-2.5">
+      <div className="text-[12px] font-medium text-ink">{disclosure.headline}</div>
+      <p className="mt-1 text-[12px] leading-relaxed text-ink-2">{disclosure.detail}</p>
+      {carry && (
+        <p className="mt-1 text-[11.5px] text-ink-3">
+          {`Verification status: ${carry.verification === "unknown" ? "not reported" : carry.verification}`}
+        </p>
+      )}
+      {disclosure.gaps.length > 0 && (
+        <ul className="mt-1.5 flex flex-col gap-0.5">
+          {disclosure.gaps.map((gap, i) => (
+            <li key={i} className="text-[11.5px] leading-relaxed text-ink-3">
+              {`Gap: ${gap.kind}${gap.blocks.length ? ` · blocks ${gap.blocks.join(", ")}` : ""}`}
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
 const FADE_UP = "fade-up 280ms cubic-bezier(0.23,1,0.32,1) both";
 
 function FollowUpPills({
@@ -348,7 +491,7 @@ function FollowUpPills({
   );
 }
 
-function LiveAssistant({ live }: { live: LiveRun }) {
+export function LiveAssistant({ live }: { live: LiveRun }) {
   const steps = live.tools.map(toolStepFor);
   const secs = Math.max(1, Math.round((Date.now() - live.startedAt) / 1000));
   const statusLine = live.thinking.length
@@ -380,59 +523,36 @@ function LiveAssistant({ live }: { live: LiveRun }) {
           />
         </div>
       )}
-      {live.artifacts.length > 0 && (
-        <div className="mt-5 flex flex-col gap-4">
-          {live.artifacts.map((a, i) => (
-            <ArtifactShell
-              key={i}
-              title={a.title}
-              source={a.source}
-              delay={i * 40}
-            >
-              <ArtifactBody artifact={a} />
-            </ArtifactShell>
-          ))}
-        </div>
-      )}
+      <StreamArtifacts artifacts={live.artifacts} />
       {live.text && (
         <p className="mt-4 max-w-[620px] whitespace-pre-line text-[13.5px] leading-[1.65] text-ink-2">
           {live.text}
         </p>
       )}
+      <AnswerVerification carry={live.carry} artifacts={live.artifacts} />
       {live.failed && <FailureCard failure={live.failed} />}
     </>
   );
 }
 
-function AssistantTurn({
+export function AssistantTurn({
   text,
   artifacts,
   suggestions,
+  carry,
   failure,
   onFollowUp,
 }: {
   text: string;
   artifacts: DimeArtifact[];
   suggestions: string[];
+  carry: VerificationCarry | null;
   failure: AssistantFailure | null;
   onFollowUp: (s: string) => void;
 }) {
   return (
     <>
-      {artifacts.length > 0 && (
-        <div className="mt-5 flex flex-col gap-4">
-          {artifacts.map((a, i) => (
-            <ArtifactShell
-              key={i}
-              title={a.title}
-              source={a.source}
-              delay={i * 40}
-            >
-              <ArtifactBody artifact={a} />
-            </ArtifactShell>
-          ))}
-        </div>
-      )}
+      <StreamArtifacts artifacts={artifacts} />
       {text && (
         <p
           className="mt-4 max-w-[620px] whitespace-pre-line text-[13.5px] leading-[1.65] text-ink-2"
@@ -441,6 +561,7 @@ function AssistantTurn({
           {text}
         </p>
       )}
+      <AnswerVerification carry={carry} artifacts={artifacts} />
       {failure && <FailureCard failure={failure} />}
       <FollowUpPills items={suggestions} onPick={onFollowUp} />
     </>
@@ -513,6 +634,7 @@ export default function DimeHarness() {
       tools: [],
       artifacts: [],
       suggestions: [],
+      carry: null,
       failed: null,
       done: false,
     });
@@ -523,23 +645,11 @@ export default function DimeHarness() {
           setLive((cur) => (cur && cur.id === id ? { ...cur, ...snap } : cur)),
         onDone: (snap) => {
           setLive((cur) => (cur && cur.id === id ? null : cur));
-          appendMessage(tabId, {
-            role: "assistant",
-            text: snap.text,
-            artifacts: snap.artifacts,
-            suggestions: snap.suggestions,
-            failure: snap.failed,
-          });
+          appendMessage(tabId, assistantMessageFromSnapshot(snap, ""));
         },
-        onError: (message) => {
+        onError: (snap, message) => {
           setLive((cur) => (cur && cur.id === id ? null : cur));
-          appendMessage(tabId, {
-            role: "assistant",
-            text: "",
-            artifacts: [],
-            suggestions: [],
-            failure: { kind: "connection", message },
-          });
+          appendMessage(tabId, assistantMessageFromSnapshot(snap, message));
         },
       },
       { signal: ctrl.signal, model },
@@ -839,6 +949,7 @@ export default function DimeHarness() {
                       text={m.text}
                       artifacts={m.artifacts}
                       suggestions={m.suggestions}
+                      carry={m.carry}
                       failure={m.failure}
                       onFollowUp={pickFollowUp}
                     />

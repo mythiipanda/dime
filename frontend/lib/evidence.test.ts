@@ -388,6 +388,84 @@ test("registry tools all have a display decision", () => {
   }
 });
 
+const NEW_REGISTRY_CASES: Array<[string, string]> = [
+  ["get_defensive_matchups", "Defensive matchups"],
+  ["get_playtype_profile", "Play types"],
+  ["get_possession_log", "Possession log"],
+  ["get_stint_timeline", "Lineup stints"],
+  ["get_tracking_profile", "Tracking stats"],
+  ["get_transactions", "Transactions"],
+];
+
+test("newly registered capabilities are curated, not left to the fallback", () => {
+  for (const [capability, label] of NEW_REGISTRY_CASES) {
+    assert.equal(capabilityLabel(capability), label);
+    assert.ok(!label.includes("_"), label + " keeps a machine token");
+    assert.ok(!label.includes("get"), label + " keeps the tool prefix");
+  }
+});
+
+test("new capability claims read as plain sources and pills", () => {
+  const tables = NEW_REGISTRY_CASES.map(([capability]) => ({
+    ...CLAIM_TABLE,
+    provenance: { capability, season: "2024-25", as_of: "2025-04-14" },
+  }));
+  const sources = evidenceSources(aiWith({}, tables));
+  assert.equal(sources.length, 6);
+  assert.deepEqual(sources.map((s) => s.origin), [
+    "Defensive matchups, 2024-25 season",
+    "Play types, 2024-25 season",
+    "Possession log, 2024-25 season",
+    "Lineup stints, 2024-25 season",
+    "Tracking stats, 2024-25 season",
+    "Transactions, 2024-25 season",
+  ]);
+  assert.deepEqual(contextPills(aiWith({}, tables)), [
+    "2024-25",
+    "Defensive matchups",
+    "Play types",
+  ]);
+  const shown = JSON.stringify(sources.map((s) => [s.subject, s.stat, s.value, s.origin]));
+  for (const [capability] of NEW_REGISTRY_CASES) {
+    assert.ok(!shown.includes(capability), "leaked " + capability);
+  }
+});
+
+test("new capability tools keep their truthful evidence note", () => {
+  const live = {
+    tool: "get_transactions",
+    rows: [{ team: "BOS" }],
+    meta: {
+      capability: "get_transactions",
+      season: "2024-25",
+      source: "espn",
+      evidence_status: "ineligible",
+      evidence_reason: "live_external_no_warehouse_provenance",
+    },
+  };
+  const unlisted = {
+    tool: "get_playtype_profile",
+    rows: [{ subject: "BOS" }],
+    meta: {
+      capability: "get_playtype_profile",
+      season: "2024-25",
+      evidence_status: "ineligible",
+      evidence_reason: "unlisted_kind",
+    },
+  };
+  const sources = evidenceSources(aiWith({}, [live, unlisted]));
+  assert.equal(sources[0].stat, "Transactions");
+  assert.equal(sources[0].origin, "Transactions, 2024-25 season");
+  assert.equal(sources[0].note, "ESPN live data — couldn't be traced to source data.");
+  assert.equal(sources[1].stat, "Play types");
+  assert.equal(sources[1].origin, "Play types, 2024-25 season");
+  assert.equal(sources[1].note, "Couldn't be traced to source data.");
+  const shown = JSON.stringify(sources.map((s) => [s.stat, s.origin, s.note]));
+  for (const token of [...BANNED_TOKENS, "live_external_no_warehouse_provenance", ...NEW_REGISTRY_CASES.map(([c]) => c)]) {
+    assert.ok(!shown.includes(token), "leaked " + token);
+  }
+});
+
 test("salary machine reasons map to plain words with a family fallback", () => {
   assert.equal(toolFailureNote("salary_column_unmatched"), "Salary data doesn't cover that season.");
   assert.equal(toolFailureNote("unknown_players"), "Couldn't match those player names.");
