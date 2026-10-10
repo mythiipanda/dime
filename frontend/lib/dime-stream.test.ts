@@ -952,3 +952,377 @@ test("failed tools carry plain failure copy instead of a raw payload", () => {
     assert.equal(event.label, "Pulled standings");
   }
 });
+
+test("a live producer with enum source ids keeps them apart from urls", () => {
+  const provenance = parseProvenance({
+    capability: "fixture_capability",
+    origin: "live",
+    warehouse_id: null,
+    season: "fixture-season",
+    as_of: "2000-01-01",
+    live_sources: ["nba_api", "espn", "https://fixture.invalid/source", "javascript:alert(1)"],
+  });
+  assert.equal(provenance.origin, "live");
+  assert.deepEqual(provenance.liveSources, ["https://fixture.invalid/source"]);
+  assert.deepEqual(provenance.liveSourceIds, ["nba_api", "espn"]);
+  assert.equal(provenanceSource(provenance), "live sources");
+});
+
+test("unknown source ids are dropped and unsafe urls stay excluded", () => {
+  const provenance = parseProvenance({
+    origin: "live",
+    live_sources: ["not_a_source", "NBA_API", "", 42, "data:text/plain,hi"],
+  });
+  assert.equal(provenance.origin, "live");
+  assert.deepEqual(provenance.liveSources, []);
+  assert.equal(provenance.liveSourceIds, undefined);
+});
+
+test("a mixed producer with a warehouse id and enum ids stays mixed", () => {
+  const provenance = parseProvenance({
+    capability: "fixture_capability",
+    origin: "mixed",
+    warehouse_id: "fixture-warehouse",
+    season: "fixture-season",
+    as_of: "2000-01-01",
+    live_sources: ["basketball_reference", "nba_api"],
+  });
+  assert.equal(provenance.origin, "mixed");
+  assert.equal(provenance.warehouseId, "fixture-warehouse");
+  assert.deepEqual(provenance.liveSourceIds, ["basketball_reference", "nba_api"]);
+  assert.deepEqual(provenance.liveSources, []);
+  assert.equal(provenanceSource(provenance), "mixed sources");
+  assert.equal(originPhrase(provenance), "mixed live and warehouse sources");
+});
+
+test("a mixed producer with urls and ids keeps both", () => {
+  const provenance = parseProvenance({
+    origin: "mixed",
+    warehouse_id: "fixture-warehouse",
+    live_sources: ["espn", "https://fixture.invalid/source"],
+  });
+  assert.equal(provenance.origin, "mixed");
+  assert.deepEqual(provenance.liveSources, ["https://fixture.invalid/source"]);
+  assert.deepEqual(provenance.liveSourceIds, ["espn"]);
+});
+
+test("merged provenance unions enum ids without inventing an origin", () => {
+  const a = parseProvenance({ origin: "live", live_sources: ["nba_api"] });
+  const b = parseProvenance({
+    origin: "mixed",
+    warehouse_id: "fixture-warehouse",
+    live_sources: ["espn", "https://fixture.invalid/source"],
+  });
+  const merged = mergeProvenance([a, b]);
+  assert.equal(merged.origin, "mixed");
+  assert.deepEqual(merged.liveSourceIds, ["nba_api", "espn"]);
+  assert.deepEqual(merged.liveSources, ["https://fixture.invalid/source"]);
+  assert.deepEqual(mergeProvenance([a]).liveSourceIds, ["nba_api"]);
+  assert.equal(parseProvenance(undefined).liveSourceIds, undefined);
+});
+
+test("derived evidence keeps enum ids from the declaring run", () => {
+  const artifact = firstArtifact(
+    deriveArtifacts([
+      evidenceRow("A", {
+        capability: "fixture_capability",
+        origin: "live",
+        warehouse_id: null,
+        season: "fixture-season",
+        as_of: "2000-01-01",
+        live_sources: ["nba_api"],
+      }),
+    ]),
+  );
+  assert.equal(artifact.provenance?.origin, "live");
+  assert.deepEqual(artifact.provenance?.liveSourceIds, ["nba_api"]);
+  assert.deepEqual(artifact.provenance?.liveSources, []);
+  assert.equal(artifact.source, "live sources");
+});
+
+test("a resolved artifact keeps enum ids the run declared", () => {
+  const events = reduceBackendEvent("custom_data", {
+    tables: [],
+    artifacts: [
+      {
+        kind: "chart",
+        title: "QA FIXTURE resolved chart",
+        series: [{ name: "QA Fixture A", values: [12.3] }],
+        provenance: {
+          capability: "fixture_capability",
+          origin: "live",
+          warehouse_id: null,
+          season: "fixture-season",
+          as_of: "2000-01-01",
+          live_sources: ["basketball_reference"],
+        },
+      },
+    ],
+  });
+  assert.equal(events.length, 1);
+  const chunk = events[0];
+  assert.equal(chunk.type, "artifact");
+  if (chunk.type !== "artifact") return;
+  assert.deepEqual(chunk.artifact.provenance?.liveSourceIds, ["basketball_reference"]);
+  assert.deepEqual(chunk.artifact.provenance?.liveSources, []);
+});
+
+test("a typed quota failure then a transport interruption keeps every accumulated field", () => {
+  const stream = streamed([
+    ["custom_data", { node: "analytics", tables: [evidenceRow("A", LIVE_PROVENANCE)], artifacts: [] }],
+    ["suggestions", { items: ["Try a narrower question"] }],
+    [
+      "final_answer",
+      {
+        text: "partial answer",
+        carry: {
+          run_id: "run-fixture",
+          verification: "partial",
+          verified_claims: 0,
+          gaps: [{ kind: "fixture-gap", blocks: [] }],
+        },
+      },
+    ],
+    ["failure", { kind: "quota", message: "quota exhausted" }],
+  ]);
+  stream.fail("connection", "Connection to the backend ended before the run completed. Try again.");
+  stream.finish();
+  const snap = stream.snapshot();
+  assert.deepEqual(snap.failed, { kind: "quota", message: "quota exhausted" });
+  assert.equal(snap.text, "partial answer");
+  assert.equal(snap.artifacts.length, 1);
+  assert.equal(snap.artifacts[0].provenance?.origin, "live");
+  assert.deepEqual(snap.suggestions, ["Try a narrower question"]);
+  assert.deepEqual(snap.carry?.gaps, [{ kind: "fixture-gap", blocks: [] }]);
+  assert.equal(snap.carry?.verifiedClaims, 0);
+  assert.equal(snap.done, true);
+});
+
+test("an untyped interruption keeps accumulated data with a connection failure", () => {
+  const stream = streamed([
+    ["custom_data", { node: "analytics", tables: [evidenceRow("A", LIVE_PROVENANCE)], artifacts: [] }],
+    [
+      "final_answer",
+      {
+        text: "partial answer",
+        carry: {
+          run_id: "run-fixture",
+          verification: "partial",
+          verified_claims: 0,
+          gaps: [{ kind: "fixture-gap", blocks: [] }],
+        },
+      },
+    ],
+  ]);
+  stream.fail("connection", "socket closed");
+  stream.finish();
+  const snap = stream.snapshot();
+  assert.deepEqual(snap.failed, { kind: "connection", message: "socket closed" });
+  assert.equal(snap.text, "partial answer");
+  assert.equal(snap.artifacts.length, 1);
+  assert.equal(snap.carry?.verifiedClaims, 0);
+});
+
+test("a normal graph_end keeps accumulated data with no failure", () => {
+  const stream = streamed([
+    ["custom_data", { node: "analytics", tables: [evidenceRow("A", LIVE_PROVENANCE)], artifacts: [] }],
+    [
+      "final_answer",
+      {
+        text: "partial answer",
+        carry: {
+          run_id: "run-fixture",
+          verification: "partial",
+          verified_claims: 0,
+          gaps: [{ kind: "fixture-gap", blocks: [] }],
+        },
+      },
+    ],
+    ["graph_end", {}],
+  ]);
+  stream.finish();
+  const snap = stream.snapshot();
+  assert.equal(snap.failed, null);
+  assert.equal(snap.done, true);
+  assert.equal(snap.text, "partial answer");
+  assert.equal(snap.artifacts.length, 1);
+  assert.equal(snap.carry?.verifiedClaims, 0);
+});
+
+test("streamDimeChat passes the authoritative snapshot to onError on an EOF without graph_end", async () => {
+  const { streamDimeChat } = await import("./dime-stream");
+  const encoder = new TextEncoder();
+  function frame(type: string, data: unknown): Uint8Array {
+    return encoder.encode(`event: ${type}\ndata: ${JSON.stringify(data)}\n\n`);
+  }
+  const tables = [
+    {
+      output_id: "fixture-metric",
+      display_name: "Fixture metric",
+      subject_display_name: "QA Fixture A",
+      value: 12.3,
+      unit: "points",
+      provenance: {
+        capability: "fixture_capability",
+        origin: "live",
+        warehouse_id: null,
+        season: "fixture-season",
+        as_of: "2000-01-01",
+        live_sources: ["nba_api"],
+      },
+    },
+  ];
+  const carry = {
+    run_id: "run-fixture",
+    verification: "partial",
+    verified_claims: 0,
+    gaps: [{ kind: "fixture-gap", blocks: [] }],
+  };
+  const chunks = [
+    frame("custom_data", { tables, artifacts: [] }),
+    frame("final_answer", { text: "partial answer", carry }),
+    frame("failure", { kind: "quota", message: "quota exhausted" }),
+  ];
+  let index = 0;
+  const reader = {
+    read(): Promise<{ done: boolean; value?: Uint8Array }> {
+      if (index < chunks.length) {
+        const value = chunks[index];
+        index += 1;
+        return Promise.resolve({ done: false, value });
+      }
+      return Promise.resolve({ done: true });
+    },
+  };
+  (globalThis as Record<string, unknown>).fetch = async () => ({
+    ok: true,
+    headers: { get: () => "text/event-stream" },
+    body: { getReader: () => reader },
+  });
+  try {
+    const result = await new Promise<{ snap: import("./dime-stream").StreamSnapshot; message: string }>(
+      (resolve, reject) => {
+        const timer = setTimeout(() => reject(new Error("onError never fired")), 5000);
+        streamDimeChat(
+          "fixture question",
+          {
+            onUpdate: () => undefined,
+            onDone: () => reject(new Error("onDone must not fire without graph_end")),
+            onError: (snap, message) => {
+              clearTimeout(timer);
+              resolve({ snap, message });
+            },
+          },
+          {},
+        );
+      },
+    );
+    assert.deepEqual(result.snap.failed, { kind: "quota", message: "quota exhausted" });
+    assert.equal(result.snap.text, "partial answer");
+    assert.equal(result.snap.artifacts.length, 1);
+    assert.equal(result.snap.artifacts[0].provenance?.origin, "live");
+    assert.deepEqual(result.snap.artifacts[0].provenance?.liveSourceIds, ["nba_api"]);
+    assert.equal(result.snap.carry?.verifiedClaims, 0);
+    assert.deepEqual(result.snap.carry?.gaps, [{ kind: "fixture-gap", blocks: [] }]);
+    assert.ok(result.message.length > 0);
+  } finally {
+    delete (globalThis as Record<string, unknown>).fetch;
+  }
+});
+
+test("streamDimeChat keeps a true connection failure when no typed failure arrived", async () => {
+  const { streamDimeChat } = await import("./dime-stream");
+  const encoder = new TextEncoder();
+  const chunks = [
+    encoder.encode(`event: token\ndata: ${JSON.stringify({ text: "partial answer" })}\n\n`),
+  ];
+  let index = 0;
+  const reader = {
+    read(): Promise<{ done: boolean; value?: Uint8Array }> {
+      if (index < chunks.length) {
+        const value = chunks[index];
+        index += 1;
+        return Promise.resolve({ done: false, value });
+      }
+      return Promise.resolve({ done: true });
+    },
+  };
+  (globalThis as Record<string, unknown>).fetch = async () => ({
+    ok: true,
+    headers: { get: () => "text/event-stream" },
+    body: { getReader: () => reader },
+  });
+  try {
+    const result = await new Promise<{ snap: import("./dime-stream").StreamSnapshot; message: string }>(
+      (resolve, reject) => {
+        const timer = setTimeout(() => reject(new Error("onError never fired")), 5000);
+        streamDimeChat(
+          "fixture question",
+          {
+            onUpdate: () => undefined,
+            onDone: () => reject(new Error("onDone must not fire without graph_end")),
+            onError: (snap, message) => {
+              clearTimeout(timer);
+              resolve({ snap, message });
+            },
+          },
+          {},
+        );
+      },
+    );
+    assert.equal(result.snap.failed?.kind, "connection");
+    assert.equal(result.snap.text, "partial answer");
+  } finally {
+    delete (globalThis as Record<string, unknown>).fetch;
+  }
+});
+
+test("streamDimeChat completes through graph_end without an error", async () => {
+  const { streamDimeChat } = await import("./dime-stream");
+  const encoder = new TextEncoder();
+  function frame(type: string, data: unknown): Uint8Array {
+    return encoder.encode(`event: ${type}\ndata: ${JSON.stringify(data)}\n\n`);
+  }
+  const chunks = [
+    frame("token", { text: "partial answer" }),
+    frame("graph_end", {}),
+  ];
+  let index = 0;
+  const reader = {
+    read(): Promise<{ done: boolean; value?: Uint8Array }> {
+      if (index < chunks.length) {
+        const value = chunks[index];
+        index += 1;
+        return Promise.resolve({ done: false, value });
+      }
+      return Promise.resolve({ done: true });
+    },
+  };
+  (globalThis as Record<string, unknown>).fetch = async () => ({
+    ok: true,
+    headers: { get: () => "text/event-stream" },
+    body: { getReader: () => reader },
+  });
+  try {
+    const snap = await new Promise<import("./dime-stream").StreamSnapshot>((resolve, reject) => {
+      const timer = setTimeout(() => reject(new Error("onDone never fired")), 5000);
+      streamDimeChat(
+        "fixture question",
+        {
+          onUpdate: () => undefined,
+          onDone: (doneSnap) => {
+            clearTimeout(timer);
+            resolve(doneSnap);
+          },
+          onError: () => reject(new Error("onError must not fire after graph_end")),
+        },
+        {},
+      );
+    });
+    assert.equal(snap.failed, null);
+    assert.equal(snap.text, "partial answer");
+    assert.equal(snap.done, true);
+  } finally {
+    delete (globalThis as Record<string, unknown>).fetch;
+  }
+});
