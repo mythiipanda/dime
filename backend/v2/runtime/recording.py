@@ -17,6 +17,8 @@ _WITHHELD_ARGUMENT_SUFFIXES = (
     "_dir", "_url", "_uri", "_prompt", "_instructions", "_key", "_keys",
     "_token", "_secret", "_password", "_credential", "_credentials",
 )
+_WITHHELD_STATEMENT_ARGUMENT_NAMES = ("sql",)
+_WITHHELD_STATEMENT_ARGUMENT_SUFFIXES = ("_sql",)
 _WITHHELD = object()
 
 @dataclass(frozen=True)
@@ -73,13 +75,20 @@ def _publishable_value(value: Any) -> Any:
         return items
     return _WITHHELD
 
+def _publishable_argument(key: str) -> bool:
+    if key in _WITHHELD_STATEMENT_ARGUMENT_NAMES:
+        return False
+    if key.endswith(_WITHHELD_STATEMENT_ARGUMENT_SUFFIXES):
+        return False
+    return not key.endswith(_WITHHELD_ARGUMENT_SUFFIXES)
+
 def publishable_arguments(
     capability_name: str, arguments: Mapping[str, Any],
 ) -> list[dict[str, Any]]:
     declared = _argument_spec(capability_name).declared
     rows = []
     for key in sorted(arguments):
-        if key not in declared or key.endswith(_WITHHELD_ARGUMENT_SUFFIXES):
+        if key not in declared or not _publishable_argument(key):
             continue
         value = _publishable_value(arguments[key])
         if value is _WITHHELD:

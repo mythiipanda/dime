@@ -25,10 +25,58 @@ export interface ToolActivityEvent {
   error?: string;
 }
 
+export type ProvenanceOrigin =
+  | "live"
+  | "warehouse"
+  | "mixed"
+  | "partly-undeclared"
+  | "undeclared";
+
+export interface ProvenanceEvidence {
+  label: string;
+  provenance: DimeProvenance;
+}
+
+export interface DimeProvenance {
+  origin: ProvenanceOrigin;
+  capability?: string;
+  warehouseId?: string;
+  season?: string;
+  asOf?: string;
+  liveSources: string[];
+  liveSourceIds?: string[];
+  evidence?: ProvenanceEvidence[];
+}
+
+export type VerificationStatus = "pass" | "partial" | "unknown";
+
+export interface EvidenceGapNote {
+  kind: string;
+  blocks: string[];
+}
+
+export interface VerificationCarry {
+  verification: VerificationStatus;
+  verifiedClaims: number | null;
+  runId?: string;
+  gaps: EvidenceGapNote[];
+  gapsReadable: boolean;
+}
+
+export type VerificationState = "verified" | "partial" | "unverified" | "unknown";
+
+export interface VerificationDisclosure {
+  state: VerificationState;
+  headline: string;
+  detail: string;
+  gaps: EvidenceGapNote[];
+}
+
 export interface TableArtifactPayload {
   kind: "table";
   title: string;
   source?: string;
+  provenance?: DimeProvenance;
   columns: { key: string; label: string; numeric?: boolean }[];
   rows: (string | number)[][];
 }
@@ -37,6 +85,7 @@ export interface CompareArtifactPayload {
   kind: "compare";
   title: string;
   source?: string;
+  provenance?: DimeProvenance;
   aName: string;
   bName: string;
   rows: { label: string; a: number; b: number }[];
@@ -46,6 +95,7 @@ export interface ChartArtifactPayload {
   kind: "chart";
   title: string;
   source?: string;
+  provenance?: DimeProvenance;
   series: { name: string; values: number[] }[];
   footnote?: string;
 }
@@ -54,6 +104,7 @@ export interface ShotChartArtifactPayload {
   kind: "shot_chart";
   title: string;
   source?: string;
+  provenance?: DimeProvenance;
   zones: { x: number; y: number; att: number; pct: number }[];
 }
 
@@ -71,6 +122,7 @@ export interface ArtifactEvent {
 export interface FinalEvent {
   type: "final";
   text: string;
+  carry: VerificationCarry | null;
 }
 
 export interface FailureEvent {
@@ -219,6 +271,324 @@ interface EvidenceRow {
   subject: string;
   value: number | null;
   unit: string;
+  provenance: DimeProvenance;
+}
+
+function safeSourceUrl(raw: unknown): string | null {
+  if (typeof raw !== "string") return null;
+  const trimmed = raw.trim();
+  return /^https?:\/\/\S+$/i.test(trimmed) ? trimmed : null;
+}
+
+const LIVE_SOURCE_IDS = new Set(["nba_api", "basketball_reference", "espn"]);
+
+function validSourceId(raw: unknown): string | null {
+  if (typeof raw !== "string") return null;
+  const trimmed = raw.trim();
+  return LIVE_SOURCE_IDS.has(trimmed) ? trimmed : null;
+}
+
+function trimmedString(raw: unknown): string | undefined {
+  if (typeof raw !== "string") return undefined;
+  const trimmed = raw.trim();
+  return trimmed ? trimmed : undefined;
+}
+
+function compactProvenance(fields: DimeProvenance): DimeProvenance {
+  const provenance: DimeProvenance = {
+    origin: fields.origin,
+    liveSources: fields.liveSources,
+  };
+  if (fields.capability) provenance.capability = fields.capability;
+  if (fields.warehouseId) provenance.warehouseId = fields.warehouseId;
+  if (fields.season) provenance.season = fields.season;
+  if (fields.asOf) provenance.asOf = fields.asOf;
+  if (fields.liveSourceIds && fields.liveSourceIds.length > 0) {
+    provenance.liveSourceIds = fields.liveSourceIds;
+  }
+  return provenance;
+}
+
+export function undeclaredProvenance(): DimeProvenance {
+  return { origin: "undeclared", liveSources: [] };
+}
+
+function originFromParts(
+  live: boolean,
+  warehouse: boolean,
+  unknown: boolean,
+): ProvenanceOrigin {
+  if (live && warehouse) return "mixed";
+  if ((live || warehouse) && unknown) return "partly-undeclared";
+  if (live) return "live";
+  if (warehouse) return "warehouse";
+  return "undeclared";
+}
+
+function originParts(
+  origin: ProvenanceOrigin | undefined,
+): { live: boolean; warehouse: boolean } {
+  if (origin === "live") return { live: true, warehouse: false };
+  if (origin === "warehouse") return { live: false, warehouse: true };
+  if (origin === "mixed") return { live: true, warehouse: true };
+  return { live: false, warehouse: false };
+}
+
+export function parseProvenance(raw: unknown): DimeProvenance {
+  const record = asRecord(raw);
+  const warehouseId = trimmedString(record.warehouse_id);
+  const rawSources = Array.isArray(record.live_sources) ? record.live_sources : [];
+  const liveSources = [...new Set(
+    rawSources
+      .map(safeSourceUrl)
+      .filter((url): url is string => url !== null),
+  )];
+  const liveSourceIds = [...new Set(
+    rawSources
+      .map(validSourceId)
+      .filter((id): id is string => id !== null),
+  )];
+  const producer = record.origin;
+  const declaresMixed = producer === "mixed";
+  const hasLive = liveSources.length > 0 || liveSourceIds.length > 0;
+  const live = producer === "live" || (declaresMixed && hasLive);
+  const warehouse =
+    (producer === "warehouse" || declaresMixed) && warehouseId !== undefined;
+  return compactProvenance({
+    origin: originFromParts(live, warehouse, declaresMixed && !(live && warehouse)),
+    capability: trimmedString(record.capability),
+    warehouseId,
+    season: trimmedString(record.season),
+    asOf: trimmedString(record.as_of),
+    liveSources,
+    liveSourceIds,
+  });
+}
+
+function agreedValue(values: (string | undefined)[]): string | undefined {
+  const [first, ...rest] = values;
+  if (first === undefined) return undefined;
+  return rest.every((value) => value === first) ? first : undefined;
+}
+
+function readableProvenance(raw: unknown): DimeProvenance | null {
+  const record = asRecord(raw);
+  const origin = trimmedString(record.origin);
+  if (origin === undefined || !Array.isArray(record.liveSources)) return null;
+  return raw as DimeProvenance;
+}
+
+function coalescedEvidence(
+  entries: (DimeProvenance | undefined)[],
+): ProvenanceEvidence[] | undefined {
+  let nested = false;
+  const collected: ProvenanceEvidence[] = [];
+  for (const entry of entries) {
+    const evidence = entry?.evidence;
+    if (!Array.isArray(evidence) || evidence.length === 0) continue;
+    nested = true;
+    for (const item of evidence) {
+      const provenance = readableProvenance(item?.provenance);
+      const label = trimmedString(item?.label);
+      if (label === undefined || provenance === null) return undefined;
+      collected.push({ label, provenance });
+    }
+  }
+  if (!nested) return undefined;
+  const unique: ProvenanceEvidence[] = [];
+  const seen = new Set<string>();
+  for (const item of collected) {
+    const key = `${item.label}\u0000${JSON.stringify(item.provenance)}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    unique.push(item);
+  }
+  return unique.length ? unique : undefined;
+}
+
+export function mergeProvenance(
+  entries: (DimeProvenance | undefined)[],
+): DimeProvenance {
+  let live = false;
+  let warehouse = false;
+  let unknown = false;
+  for (const entry of entries) {
+    const parts = originParts(entry?.origin);
+    live ||= parts.live;
+    warehouse ||= parts.warehouse;
+    unknown ||= !parts.live && !parts.warehouse;
+  }
+  const merged = compactProvenance({
+    origin: originFromParts(live, warehouse, unknown),
+    capability: agreedValue(entries.map((entry) => entry?.capability)),
+    warehouseId: agreedValue(entries.map((entry) => entry?.warehouseId)),
+    season: agreedValue(entries.map((entry) => entry?.season)),
+    asOf: agreedValue(entries.map((entry) => entry?.asOf)),
+    liveSources: [
+      ...new Set(entries.flatMap((entry) => entry?.liveSources ?? [])),
+    ],
+    liveSourceIds: [
+      ...new Set(entries.flatMap((entry) => entry?.liveSourceIds ?? [])),
+    ],
+  });
+  const evidence = coalescedEvidence(entries);
+  if (evidence) merged.evidence = evidence;
+  return merged;
+}
+
+export function mergeArtifactProvenance(
+  artifacts: DimeArtifact[],
+): DimeProvenance | undefined {
+  if (artifacts.length === 0) return undefined;
+  return mergeProvenance(
+    artifacts.map((artifact) => artifact.provenance ?? undeclaredProvenance()),
+  );
+}
+
+export function originPhrase(
+  provenance: DimeProvenance | undefined,
+): string {
+  if (!provenance) return "not declared";
+  if (provenance.origin === "warehouse") {
+    return provenance.warehouseId
+      ? `declared warehouse ${provenance.warehouseId}`
+      : "declared warehouse";
+  }
+  if (provenance.origin === "live") return "live source";
+  if (provenance.origin === "mixed") return "mixed live and warehouse sources";
+  if (provenance.origin === "partly-undeclared") return "mixed sources, partly undeclared";
+  return "not declared";
+}
+
+export function provenanceSource(
+  provenance: DimeProvenance | undefined,
+): string | undefined {
+  if (!provenance) return undefined;
+  if (provenance.origin === "warehouse") {
+    return provenance.warehouseId
+      ? `dime warehouse · ${provenance.warehouseId}`
+      : "dime warehouse";
+  }
+  if (provenance.origin === "live") return "live sources";
+  if (provenance.origin === "mixed") return "mixed sources";
+  if (provenance.origin === "partly-undeclared") return "mixed sources, partly undeclared";
+  return "source not declared";
+}
+
+function parseGap(raw: unknown): EvidenceGapNote | null {
+  if (typeof raw !== "object" || raw === null || Array.isArray(raw)) return null;
+  const record = raw as Record<string, unknown>;
+  const kind = trimmedString(record.kind);
+  if (kind === undefined) return null;
+  const rawBlocks = record.blocks;
+  if (rawBlocks === undefined) return { kind, blocks: [] };
+  if (!Array.isArray(rawBlocks)) return null;
+  const blocks: string[] = [];
+  for (const item of rawBlocks) {
+    const block = trimmedString(item);
+    if (block === undefined) return null;
+    blocks.push(block);
+  }
+  return { kind, blocks };
+}
+
+function checkedClaimCount(raw: unknown): number | null {
+  const claims = asNumber(raw);
+  return claims !== undefined && Number.isInteger(claims) && claims >= 0 ? claims : null;
+}
+
+export function parseCarry(raw: unknown): VerificationCarry | null {
+  if (raw === null || raw === undefined) return null;
+  const record = asRecord(raw);
+  const verification: VerificationStatus =
+    record.verification === "pass" || record.verification === "partial"
+      ? record.verification
+      : "unknown";
+  const verifiedClaims = checkedClaimCount(record.verified_claims);
+  const rawGaps = record.gaps;
+  const parsedGaps = Array.isArray(rawGaps) ? rawGaps.map(parseGap) : [];
+  const gaps = parsedGaps.filter((gap): gap is EvidenceGapNote => gap !== null);
+  const gapsReadable = Array.isArray(rawGaps) && gaps.length === rawGaps.length;
+  const runId = trimmedString(record.run_id);
+  if (verification === "unknown" && verifiedClaims === null && !runId && gaps.length === 0) {
+    return null;
+  }
+  const carry: VerificationCarry = { verification, verifiedClaims, gaps, gapsReadable };
+  if (runId) carry.runId = runId;
+  return carry;
+}
+
+function originSentence(provenance: DimeProvenance | undefined): string {
+  return `Origin: ${originPhrase(provenance)}.`;
+}
+
+function unverifiedReason(carry: VerificationCarry): string {
+  if (carry.verification === "unknown") {
+    return "This run did not report a verification status.";
+  }
+  if (!carry.gapsReadable) {
+    return "The run reported a pass, but its gap report could not be read.";
+  }
+  if (carry.verifiedClaims === null) {
+    return "The run reported a pass, but not how many claims it checked.";
+  }
+  return "The run reported a pass, but these numbers are not all from a declared warehouse source.";
+}
+
+export function verificationDisclosure(
+  carry: VerificationCarry | null,
+  provenance: DimeProvenance | undefined,
+): VerificationDisclosure {
+  const origin = originSentence(provenance);
+  if (!carry) {
+    return {
+      state: "unknown",
+      headline: "Verification unknown",
+      detail: `This run did not report whether its numbers were checked. ${origin}`,
+      gaps: [],
+    };
+  }
+  const claims = carry.verifiedClaims;
+  const claimText =
+    claims === null
+      ? "verified claim count not reported"
+      : `${claims} verified claim${claims === 1 ? "" : "s"}`;
+  const gapCount = carry.gaps.length;
+  const unreadableText = carry.gapsReadable ? "" : " The run's gap report could not be read.";
+  const gapText = gapCount
+    ? ` ${gapCount} gap${gapCount === 1 ? "" : "s"} reported.${unreadableText}`
+    : unreadableText;
+  const passReported =
+    carry.verification === "pass" &&
+    claims !== null &&
+    claims > 0 &&
+    carry.gapsReadable &&
+    gapCount === 0;
+  if (passReported && provenance?.origin === "warehouse") {
+    const where = provenance.warehouseId
+      ? `declared warehouse ${provenance.warehouseId}`
+      : "declared warehouse";
+    return {
+      state: "verified",
+      headline: "Verified",
+      detail: `${claimText} from the ${where}.`,
+      gaps: carry.gaps,
+    };
+  }
+  if (carry.verification === "partial" || claims === 0 || gapCount > 0) {
+    return {
+      state: "partial",
+      headline: claims === 0 ? "No verified claims" : "Verification partial",
+      detail: `${claimText}.${gapText} ${origin}`,
+      gaps: carry.gaps,
+    };
+  }
+  return {
+    state: "unverified",
+    headline: "Not verified",
+    detail: `${unverifiedReason(carry)} This answer is not shown as verified. ${origin}`,
+    gaps: carry.gaps,
+  };
 }
 
 function asEvidenceRows(tables: unknown): EvidenceRow[] {
@@ -246,7 +616,7 @@ function asEvidenceRows(tables: unknown): EvidenceRow[] {
           ? Number(raw)
           : null;
     const unit = typeof row.unit === "string" && row.unit !== "unitless" ? row.unit : "";
-    rows.push({ metric, subject, value, unit });
+    rows.push({ metric, subject, value, unit, provenance: parseProvenance(row.provenance) });
   }
   return rows;
 }
@@ -278,10 +648,16 @@ function asResolvedArtifacts(raw: unknown): DimeArtifact[] {
       if (name && values.length > 0) series.push({ name, values });
     }
     if (series.length === 0) continue;
+    const provenance =
+      entry.provenance === undefined || entry.provenance === null
+        ? undefined
+        : parseProvenance(entry.provenance);
     artifacts.push({
       kind: "chart",
       title,
       series,
+      source: provenanceSource(provenance),
+      provenance,
       footnote:
         typeof entry.footnote === "string" && entry.footnote
           ? entry.footnote
@@ -289,6 +665,18 @@ function asResolvedArtifacts(raw: unknown): DimeArtifact[] {
     });
   }
   return artifacts;
+}
+
+function evidenceProvenance(rows: EvidenceRow[]): DimeProvenance {
+  const summary = mergeProvenance(rows.map((row) => row.provenance));
+  if (rows.length < 2) return summary;
+  return {
+    ...summary,
+    evidence: rows.map((row) => ({
+      label: `${row.subject} · ${row.metric}`,
+      provenance: row.provenance,
+    })),
+  };
 }
 
 export function deriveArtifacts(tables: unknown): DimeArtifact[] {
@@ -311,10 +699,13 @@ export function deriveArtifacts(tables: unknown): DimeArtifact[] {
   );
   if (subjects.length === 2 && sharedMetrics.length > 0) {
     const [aName, bName] = subjects;
+    const compared = sharedMetrics.flatMap(([, group]) => group);
+    const provenance = evidenceProvenance(compared);
     artifacts.push({
       kind: "compare",
       title: "Head-to-head",
-      source: "dime warehouse",
+      source: provenanceSource(provenance),
+      provenance,
       aName,
       bName,
       rows: sharedMetrics.map(([metric, group]) => {
@@ -331,10 +722,12 @@ export function deriveArtifacts(tables: unknown): DimeArtifact[] {
   const compared = new Set(sharedMetrics.map(([metric]) => metric));
   const tableRows = rows.filter((r) => !compared.has(r.metric));
   if (tableRows.length > 0) {
+    const provenance = evidenceProvenance(tableRows);
     artifacts.push({
       kind: "table",
-      title: "Verified numbers",
-      source: "dime warehouse",
+      title: "Evidence",
+      source: provenanceSource(provenance),
+      provenance,
       columns: [
         { key: "metric", label: "Metric" },
         { key: "subject", label: "Subject" },
@@ -379,6 +772,7 @@ export interface StreamSnapshot {
   tools: ToolState[];
   artifacts: DimeArtifact[];
   suggestions: string[];
+  carry: VerificationCarry | null;
   failed: StreamFailure | null;
   done: boolean;
 }
@@ -390,6 +784,7 @@ function emptySnapshot(): StreamSnapshot {
     tools: [],
     artifacts: [],
     suggestions: [],
+    carry: null,
     failed: null,
     done: false,
   };
@@ -468,7 +863,7 @@ export function reduceBackendEvent(type: string, data: unknown): DimeStreamEvent
       }));
     }
     case "final_answer": {
-      return [{ type: "final", text: asString(d.text) }];
+      return [{ type: "final", text: asString(d.text), carry: parseCarry(d.carry) }];
     }
     case "failure": {
       const kind = asString(d.kind) || "execution_failure";
@@ -490,9 +885,18 @@ export function reduceBackendEvent(type: string, data: unknown): DimeStreamEvent
   }
 }
 
+type FailureAuthority = "typed" | "fallback";
+
+function failureAuthorityFor(type: string): FailureAuthority | null {
+  if (type === "failure") return "typed";
+  if (type === "error") return "fallback";
+  return null;
+}
+
 export class DimeStream {
   private snap = emptySnapshot();
   private seq = 0;
+  private hasTypedFailure = false;
 
   snapshot(): StreamSnapshot {
     return {
@@ -501,13 +905,15 @@ export class DimeStream {
       tools: this.snap.tools.map((t) => ({ ...t })),
       artifacts: [...this.snap.artifacts],
       suggestions: [...this.snap.suggestions],
+      carry: this.snap.carry ? { ...this.snap.carry } : null,
       failed: this.snap.failed ? { ...this.snap.failed } : null,
     };
   }
 
   handle(type: string, data: unknown): void {
+    const authority = failureAuthorityFor(type);
     for (const event of reduceBackendEvent(type, data)) {
-      this.apply(event);
+      this.apply(event, authority);
     }
     if (type === "suggestions") {
       const items = asRecord(data).items;
@@ -524,10 +930,25 @@ export class DimeStream {
   }
 
   fail(kind: string, message: string): void {
-    this.snap.failed = { kind, message };
+    this.recordFailure({ type: "failure", kind, message }, "fallback");
   }
 
-  private apply(event: DimeStreamEvent): void {
+  private recordFailure(
+    event: FailureEvent,
+    authority: FailureAuthority | null,
+  ): void {
+    if (authority === "typed") {
+      this.hasTypedFailure = true;
+    } else if (this.hasTypedFailure) {
+      return;
+    }
+    this.snap.failed = { kind: event.kind, message: event.message };
+  }
+
+  private apply(
+    event: DimeStreamEvent,
+    authority: FailureAuthority | null,
+  ): void {
     switch (event.type) {
       case "text_delta":
         this.snap.text += event.text;
@@ -604,9 +1025,10 @@ export class DimeStream {
         break;
       case "final":
         this.snap.text = event.text;
+        this.snap.carry = event.carry;
         break;
       case "failure":
-        this.snap.failed = { kind: event.kind, message: event.message };
+        this.recordFailure(event, authority);
         break;
     }
   }
@@ -615,7 +1037,7 @@ export class DimeStream {
 export interface DimeStreamCallbacks {
   onUpdate: (snap: StreamSnapshot) => void;
   onDone: (snap: StreamSnapshot) => void;
-  onError: (message: string) => void;
+  onError: (snap: StreamSnapshot, message: string) => void;
 }
 
 export function streamDimeChat(
@@ -645,7 +1067,9 @@ export function streamDimeChat(
         if (settled) return;
         settled = true;
         stream.fail("connection", message);
-        callbacks.onError(message);
+        stream.finish();
+        const snap = stream.snapshot();
+        callbacks.onError(snap, message);
       },
     },
     opts?.signal,

@@ -10,6 +10,7 @@ const Icons: Record<string, React.ReactNode> = {
   write: <g fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17 3a2.8 2.8 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5z" /></g>,
   run: <g fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 17l6-5-6-5M12 19h8" /></g>,
   read: <g fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><path d="M14 2v6h6" /></g>,
+  args: <g fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M8 3H7a2 2 0 0 0-2 2v5a2 2 0 0 1-2 2 2 2 0 0 1 2 2v5a2 2 0 0 0 2 2h1" /><path d="M16 21h1a2 2 0 0 0 2-2v-5a2 2 0 0 1 2-2 2 2 0 0 1-2-2V5a2 2 0 0 0-2-2h-1" /></g>,
 };
 
 export type ToolDetailLine = { text: string; tone?: "add" };
@@ -21,6 +22,8 @@ export type ToolStep = {
   mono: boolean;
   detailMono: boolean;
   detail: ToolDetailLine[];
+  key?: string;
+  args?: string[];
 };
 
 export type ToolDiff = { file: string; add: number; del: number };
@@ -74,6 +77,14 @@ const DIFFS: ToolDiff[] = [
   { file: "menu.ts", add: 8, del: 2 },
 ];
 
+function stepIdentity(row: ToolStep, index: number): string {
+  return row.key ?? `${row.label}#${index}`;
+}
+
+function hasDeclaredArgs(row: ToolStep): boolean {
+  return (row.args?.length ?? 0) > 0;
+}
+
 const DIFF_LINES: Record<string, ToolDiffLine[]> = {
   "flavors.css": [
     { text: ".scoop-card {", tone: "ctx" },
@@ -118,7 +129,8 @@ export default function ToolChips({
   const [step, setStep] = useState(0);
   const [open, setOpen] = useState(true);
   const [openRows, setOpenRows] = useState<Set<string>>(new Set());
-  
+  const [openArgs, setOpenArgs] = useState<Set<string>>(new Set());
+
   const [preview, setPreview] = useState<{
     file: string;
     x: number;
@@ -147,11 +159,18 @@ export default function ToolChips({
     return () => clearTimeout(t);
   }, [step, total]);
 
-  const toggleRow = (label: string) =>
+  const toggleRow = (identity: string) =>
     setOpenRows((current) => {
       const next = new Set(current);
-      next.has(label) ? next.delete(label) : next.add(label);
-      onToggleRow?.(label, next.has(label));
+      next.has(identity) ? next.delete(identity) : next.add(identity);
+      onToggleRow?.(identity, next.has(identity));
+      return next;
+    });
+
+  const toggleArgs = (identity: string) =>
+    setOpenArgs((current) => {
+      const next = new Set(current);
+      next.has(identity) ? next.delete(identity) : next.add(identity);
       return next;
     });
 
@@ -181,39 +200,57 @@ export default function ToolChips({
         <div className="-mx-1 overflow-hidden px-1.5 pb-1">
         <div className="mt-1.5 flex flex-col gap-1">
           {steps.slice(0, step).map((row, i) => {
-            const rowOpen = openRows.has(row.label);
+            const identity = stepIdentity(row, i);
+            const rowOpen = openRows.has(identity);
+            const argsOpen = openArgs.has(identity);
+            const declaredArgs = row.args ?? [];
             return (
-            <div key={`t-${i}`} style={{ animation: "fade-up 300ms cubic-bezier(0.23,1,0.32,1) both" }}>
-              <button
-                type="button"
-                aria-expanded={rowOpen}
-                onClick={() => toggleRow(row.label)}
-                className="group/row -mx-[3px] flex h-7 w-[calc(100%+6px)] min-w-0 items-center gap-2 rounded-control px-[3px] text-left transition-colors duration-100 hover:bg-hover-2"
-              >
-                <span className="relative flex size-4 shrink-0 items-center justify-center text-ink-3">
-                  <svg
-                    width="13" height="13" viewBox="0 0 24 24" fill={row.icon === "think" ? "currentColor" : "none"} stroke="currentColor"
-                    className={`transition-opacity duration-100 group-hover/row:opacity-0 ${rowOpen ? "opacity-0" : ""}`}
-                  >
-                    {Icons[row.icon]}
-                  </svg>
-                  <svg
-                    width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"
-                    className={`absolute transition-[opacity,transform] duration-150 group-hover/row:opacity-100 ${rowOpen ? "opacity-100" : "opacity-0"}`}
-                    style={{ transform: rowOpen ? "rotate(0deg)" : "rotate(-90deg)" }}
-                  >
-                    <path d="M6 9l6 6 6-6" />
-                  </svg>
-                </span>
-                <span className="shrink-0 text-[12.5px] font-medium text-ink">{row.label}</span>
-                <span
-                  className={`inline-flex h-5.5 min-w-0 flex-1 cursor-pointer items-center truncate rounded-chip bg-field px-1.5
-                    text-[11.5px] text-ink-2 shadow-hairline transition-colors duration-100 hover:bg-hover-2
-                    ${row.mono ? "font-mono" : ""}`}
+            <div key={identity} style={{ animation: "fade-up 300ms cubic-bezier(0.23,1,0.32,1) both" }}>
+              <div className="group/row -mx-[3px] flex h-7 w-[calc(100%+6px)] min-w-0 items-center gap-2 rounded-control px-[3px] transition-colors duration-100 hover:bg-hover-2">
+                <button
+                  type="button"
+                  aria-expanded={rowOpen}
+                  onClick={() => toggleRow(identity)}
+                  className="flex min-w-0 flex-1 items-center gap-2 text-left"
                 >
-                  {row.chip}
-                </span>
-              </button>
+                  <span className="relative flex size-4 shrink-0 items-center justify-center text-ink-3">
+                    <svg
+                      width="13" height="13" viewBox="0 0 24 24" fill={row.icon === "think" ? "currentColor" : "none"} stroke="currentColor"
+                      className={`transition-opacity duration-100 group-hover/row:opacity-0 ${rowOpen ? "opacity-0" : ""}`}
+                    >
+                      {Icons[row.icon]}
+                    </svg>
+                    <svg
+                      width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"
+                      className={`absolute transition-[opacity,transform] duration-150 group-hover/row:opacity-100 ${rowOpen ? "opacity-100" : "opacity-0"}`}
+                      style={{ transform: rowOpen ? "rotate(0deg)" : "rotate(-90deg)" }}
+                    >
+                      <path d="M6 9l6 6 6-6" />
+                    </svg>
+                  </span>
+                  <span className="shrink-0 text-[12.5px] font-medium text-ink">{row.label}</span>
+                  <span
+                    className={`inline-flex h-5.5 min-w-0 flex-1 cursor-pointer items-center truncate rounded-chip bg-field px-1.5
+                      text-[11.5px] text-ink-2 shadow-hairline transition-colors duration-100 hover:bg-hover-2
+                      ${row.mono ? "font-mono" : ""}`}
+                  >
+                    {row.chip}
+                  </span>
+                </button>
+                {hasDeclaredArgs(row) && (
+                  <button
+                    type="button"
+                    aria-expanded={argsOpen}
+                    aria-label={`Show arguments for ${row.label}`}
+                    onClick={() => toggleArgs(identity)}
+                    className={`flex size-5 shrink-0 items-center justify-center rounded-control text-ink-3 transition-colors duration-100 hover:bg-hover-2 hover:text-ink-2 focus-visible:bg-hover-2 focus-visible:outline-none ${argsOpen ? "text-ink" : ""}`}
+                  >
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" className="transition-transform duration-200" style={{ transform: argsOpen ? "rotate(0deg)" : "rotate(-90deg)" }}>
+                      {Icons.args}
+                    </svg>
+                  </button>
+                )}
+              </div>
 
               {}
               <div
@@ -233,6 +270,26 @@ export default function ToolChips({
                   </div>
                 </div>
               </div>
+
+              {hasDeclaredArgs(row) && (
+                <div
+                  className="grid transition-[grid-template-rows,opacity] duration-300"
+                  style={{ gridTemplateRows: argsOpen ? "1fr" : "0fr", opacity: argsOpen ? 1 : 0, transitionTimingFunction: "cubic-bezier(0.23, 1, 0.32, 1)" }}
+                >
+                  <div className="min-h-0 overflow-hidden">
+                    <div className="mt-1 mb-1 ml-2 flex flex-col gap-0.5 rounded-chip bg-inset px-2 py-1">
+                      {declaredArgs.map((line, j) => (
+                        <span
+                          key={`a-${j}`}
+                          className="break-words font-mono text-[11.5px] leading-[1.6] text-ink-2"
+                        >
+                          {line}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
             );
           })}
