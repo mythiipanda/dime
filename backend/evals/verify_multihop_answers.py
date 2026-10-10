@@ -36,8 +36,8 @@ def validate_answer(answer):
 
 
 def number_runs(text):
-    normalized = text.replace("\u2212", "-")
-    return NUMBER_RUN.findall(INNER_HYPHEN.sub(" ", str(normalized)))
+    normalized = str(text).replace("\u2212", "-")
+    return NUMBER_RUN.findall(INNER_HYPHEN.sub(" ", normalized))
 
 
 def parse_run(token):
@@ -176,6 +176,9 @@ for line in path.read_text(encoding="utf-8").splitlines():
             fail(task_id, "answer", "MISSING VALUE %s" % value)
 
 print("\nrows=%d failures=%d" % (total, len(failures)))
+if total == 0:
+    print("EMPTY CORPUS")
+    raise SystemExit(1)
 for f in failures:
     print("FAIL", f)
 raise SystemExit(1 if failures else 0)

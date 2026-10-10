@@ -323,3 +323,149 @@ def test_unreadable_row_fails_visibly(tmp_path):
     assert run.returncode == 1
     assert "UNREADABLE ROW" in run.stdout
     assert "rows=2 failures=1" in run.stdout
+
+
+def test_typed_cell_date_does_not_crash(tmp_path):
+    run = run_records(tmp_path, [{
+        "task_id": "date_cell",
+        "answer": "2026",
+        "verification_sql": "SELECT DATE '2026-10-10'",
+    }])
+    assert run.returncode == 0
+    assert "rows=1 failures=0" in run.stdout
+    assert "Traceback" not in run.stderr
+
+
+def test_typed_cell_list_does_not_crash(tmp_path):
+    run = run_records(tmp_path, [{
+        "task_id": "list_cell",
+        "answer": "7",
+        "verification_sql": "SELECT [7]",
+    }])
+    assert run.returncode == 0
+    assert "rows=1 failures=0" in run.stdout
+    assert "Traceback" not in run.stderr
+
+
+def test_typed_cell_interval_does_not_crash(tmp_path):
+    run = run_records(tmp_path, [{
+        "task_id": "interval_cell",
+        "answer": "7",
+        "verification_sql": "SELECT INTERVAL '7 days'",
+    }])
+    assert run.returncode == 0
+    assert "rows=1 failures=0" in run.stdout
+    assert "Traceback" not in run.stderr
+
+
+def test_unicode_minus_correct_sign_accepted(tmp_path):
+    run = run_records(tmp_path, [{
+        "task_id": "unicode_minus_ok",
+        "answer": "\u22127",
+        "verification_sql": "SELECT -7",
+    }])
+    assert run.returncode == 0
+    assert "rows=1 failures=0" in run.stdout
+
+
+def test_unicode_minus_wrong_sign_rejected(tmp_path):
+    run = run_records(tmp_path, [{
+        "task_id": "unicode_minus_bad",
+        "answer": "\u22127",
+        "verification_sql": "SELECT 7",
+    }])
+    assert run.returncode == 1
+    assert "MISSING VALUE -7" in run.stdout
+
+
+def test_ascii_negative_preserved(tmp_path):
+    run = run_records(tmp_path, [{
+        "task_id": "ascii_neg_ok",
+        "answer": "-7",
+        "verification_sql": "SELECT -7",
+    }])
+    assert run.returncode == 0
+    assert "rows=1 failures=0" in run.stdout
+    run = run_records(tmp_path, [{
+        "task_id": "ascii_neg_bad",
+        "answer": "-7",
+        "verification_sql": "SELECT 7",
+    }], name="ascii_neg_bad.jsonl")
+    assert run.returncode == 1
+    assert "MISSING VALUE -7" in run.stdout
+
+
+def test_empty_answer_fails(tmp_path):
+    run = run_records(tmp_path, [{
+        "task_id": "empty_ans",
+        "answer": "",
+        "verification_sql": "SELECT 7",
+    }])
+    assert run.returncode == 1
+    assert "EMPTY ANSWER" in run.stdout
+
+
+def test_whitespace_answer_fails(tmp_path):
+    run = run_records(tmp_path, [{
+        "task_id": "ws_ans",
+        "answer": "   ",
+        "verification_sql": "SELECT 7",
+    }])
+    assert run.returncode == 1
+    assert "EMPTY ANSWER" in run.stdout
+
+
+def test_null_answer_fails(tmp_path):
+    run = run_records(tmp_path, [{
+        "task_id": "null_ans",
+        "answer": None,
+        "verification_sql": "SELECT 7",
+    }])
+    assert run.returncode == 1
+    assert "MISSING ANSWER" in run.stdout
+
+
+def test_boolean_answer_fails(tmp_path):
+    run = run_records(tmp_path, [{
+        "task_id": "bool_ans",
+        "answer": True,
+        "verification_sql": "SELECT 7",
+    }])
+    assert run.returncode == 1
+    assert "BOOLEAN ANSWER" in run.stdout
+
+
+def test_array_answer_fails(tmp_path):
+    run = run_records(tmp_path, [{
+        "task_id": "array_ans",
+        "answer": [7],
+        "verification_sql": "SELECT 7",
+    }])
+    assert run.returncode == 1
+    assert "STRUCTURED ANSWER" in run.stdout
+
+
+def test_numeric_answer_fails(tmp_path):
+    run = run_records(tmp_path, [{
+        "task_id": "num_ans",
+        "answer": 7,
+        "verification_sql": "SELECT 7",
+    }])
+    assert run.returncode == 1
+    assert "NON-STRING ANSWER" in run.stdout
+
+
+def test_empty_corpus_fails(tmp_path):
+    warehouse = tmp_path / "empty.jsonl.duckdb"
+    duckdb.connect(str(warehouse)).close()
+    records_path = tmp_path / "empty.jsonl"
+    records_path.write_text("", encoding="utf-8")
+    run = subprocess.run(
+        [sys.executable, str(SCRIPT), str(records_path), str(warehouse)],
+        capture_output=True,
+        text=True,
+        timeout=120,
+    )
+    assert run.returncode == 1
+    assert "EMPTY CORPUS" in run.stdout
+    assert "rows=0 failures=0" in run.stdout
