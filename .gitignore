@@ -79,3 +79,6 @@ agent/
 research/
 dime-arch/
 .cccc.cache
+
+.hark-briefs/
+warehouse-runtime.duckdb
