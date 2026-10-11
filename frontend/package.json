@@ -10,7 +10,8 @@
     "test:activity": "tsx --test lib/activity.test.ts",
     "test:api": "tsx --test lib/api.test.ts",
     "test:chat": "tsx --test lib/chat.test.ts",
-    "qa": "node qa-verify.mjs"
+    "qa": "node qa-verify.mjs",
+    "test:provenance": "node qa-provenance-734-take2.mjs"
   },
   "dependencies": {
     "@base-ui/react": "^1.8.0",
