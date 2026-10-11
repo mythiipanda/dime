@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import DimeHarness from "@/components/site/DimeHarness";
+import WorkspaceShell from "@/components/site/WorkspaceShell";
 import styles from "./scrollbars.module.css";
 
 export const metadata: Metadata = {
@@ -9,8 +10,10 @@ export const metadata: Metadata = {
 
 export default function DimePage() {
   return (
-    <div className={styles.scope}>
-      <DimeHarness />
-    </div>
+    <WorkspaceShell active="chat">
+      <div className={styles.scope}>
+        <DimeHarness />
+      </div>
+    </WorkspaceShell>
   );
 }
