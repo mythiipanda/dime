@@ -7,7 +7,7 @@ import { spawn } from "node:child_process";
 import * as net from "node:net";
 import { createRequire } from "node:module";
 import { isActiveDestination, normalizeActive } from "./shell";
-import { hasSeason2627 } from "./warehouse";
+import { hasSeason2627, parseSeasonValue } from "./warehouse";
 
 function read(rel: string[]) {
   return readFileSync(join(process.cwd(), ...rel), "utf8");
@@ -268,6 +268,30 @@ test("season 2026-27 statement derives from returned rows", () => {
       { name: "a", row_count: 1, column_count: 1, season_range: { min: "2025-26", max: "2026-27" }, source_badge: "nba_official", description: "x" },
     ]),
     true,
+  );
+  assert.deepEqual(parseSeasonValue("2025-26"), { start_year: 2025, end_year: 2026 });
+  assert.deepEqual(parseSeasonValue("2025-2026"), { start_year: 2025, end_year: 2026 });
+  assert.deepEqual(parseSeasonValue("2026-27"), { start_year: 2026, end_year: 2027 });
+  assert.equal(parseSeasonValue("2026"), null);
+  assert.equal(parseSeasonValue("22026"), null);
+  assert.equal(parseSeasonValue("42026"), null);
+  assert.equal(
+    hasSeason2627([
+      { name: "silver_scoreboard", row_count: 1, column_count: 1, season_range: { min: "2026", max: "2026" }, source_badge: "nba_official", description: "x" },
+    ]),
+    false,
+  );
+  assert.equal(
+    hasSeason2627([
+      { name: "b", row_count: 1, column_count: 1, season_range: { min: "22026", max: "22026" }, source_badge: "nba_official", description: "x" },
+    ]),
+    false,
+  );
+  assert.equal(
+    hasSeason2627([
+      { name: "c", row_count: 1, column_count: 1, season_range: { min: "42026", max: "42026" }, source_badge: "nba_official", description: "x" },
+    ]),
+    false,
   );
   assert.equal(
     hasSeason2627([
