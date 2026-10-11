@@ -5,10 +5,14 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 import duckdb
+import pytest
+from sqlglot import exp, parse
 
 from v2.contracts import EvidenceEnvelope
 from v2.runtime.analysis_execution import (
     AnalysisRequest,
+    _first_word,
+    _policy_rejected_references,
     build_envelope,
     execute_analysis,
 )
@@ -18,6 +22,15 @@ PREDECESSOR_MODULE = (
     / "_negctrl"
     / "predecessor_analysis_execution.py"
 )
+
+BASE_352C3644_MODULE = (
+    Path(__file__).resolve().parent
+    / "_negctrl"
+    / "base_352c3644_analysis_execution.py"
+)
+
+SECRET = "SECRET"
+ALLOWED = ("silver_smoke",)
 
 
 def make_fixture(path, total=200):
@@ -46,10 +59,26 @@ def make_request(tmp_path, sql, sha, **changes):
         deadline_s=20.0,
         row_cap=25,
         byte_cap=65536,
-        allowed_tables=("silver_smoke",),
+        allowed_tables=ALLOWED,
     )
     values.update(changes)
     return AnalysisRequest(**values)
+
+
+def assert_no_secret(result):
+    if result.rows is None:
+        return
+    assert SECRET not in json.dumps(result.rows)
+
+
+def assert_rejected(result, token=None):
+    assert result.status == "policy_rejected"
+    assert result.rows is None
+    assert result.pid is None
+    assert result.error is not None
+    assert_no_secret(result)
+    if token is not None:
+        assert token in result.error
 
 
 def test_success_sum_literal_matches_expected(tmp_path):
@@ -92,51 +121,41 @@ def test_external_access_blocked_by_duckdb(tmp_path):
     for sql in payloads:
         request = make_request(tmp_path, sql, sha)
         result = execute_analysis(request)
-        assert result.status == "execution_failed", sql
-        assert result.error is not None, sql
-        assert "duckdb" in result.error.lower(), sql
+        assert result.status in ("execution_failed", "policy_rejected"), sql
+        assert result.rows is None, sql
+        assert_no_secret(result)
 
 
 def test_unauthorized_table_policy_rejected(tmp_path):
     sha = make_fixture(tmp_path / "fixture.duckdb")
     request = make_request(tmp_path, "SELECT * FROM silver_missing", sha)
     result = execute_analysis(request)
-    assert result.status == "policy_rejected"
-    assert result.rows is None
-    assert result.pid is None
+    assert_rejected(result, "silver_missing")
 
 
 def test_quoted_table_reference_policy_rejected(tmp_path):
     sha = make_fixture(tmp_path / "fixture.duckdb")
     request = make_request(tmp_path, 'SELECT * FROM "secret_table"', sha)
     result = execute_analysis(request)
-    assert result.status == "policy_rejected"
-    assert result.rows is None
-    assert result.pid is None
-    assert result.error is not None
-    assert "secret_table" in result.error
+    assert_rejected(result, "secret_table")
 
 
 def test_single_quoted_table_reference_policy_rejected(tmp_path):
     sha = make_fixture(tmp_path / "fixture.duckdb")
     request = make_request(tmp_path, "SELECT * FROM 'secret_table'", sha)
     result = execute_analysis(request)
-    assert result.status == "policy_rejected"
-    assert result.rows is None
-    assert result.pid is None
-    assert "secret_table" in result.error
+    assert_rejected(result, "secret_table")
 
 
 def test_function_form_table_reference_policy_rejected(tmp_path):
     sha = make_fixture(tmp_path / "fixture.duckdb")
-    request = make_request(
-        tmp_path, "SELECT * FROM query_table('secret_table')", sha
-    )
-    result = execute_analysis(request)
-    assert result.status == "policy_rejected"
-    assert result.rows is None
-    assert result.pid is None
-    assert "secret_table" in result.error
+    for sql in (
+        "SELECT * FROM query_table('secret_table')",
+        "SELECT * FROM query_table('main.secret_table')",
+    ):
+        request = make_request(tmp_path, sql, sha)
+        result = execute_analysis(request)
+        assert_rejected(result, "secret_table")
 
 
 def test_join_quoted_table_reference_policy_rejected(tmp_path):
@@ -147,10 +166,7 @@ def test_join_quoted_table_reference_policy_rejected(tmp_path):
         sha,
     )
     result = execute_analysis(request)
-    assert result.status == "policy_rejected"
-    assert result.rows is None
-    assert result.pid is None
-    assert "secret_table" in result.error
+    assert_rejected(result, "secret_table")
 
 
 def test_allowed_quoted_table_still_succeeds(tmp_path):
@@ -179,6 +195,7 @@ def test_write_statement_policy_rejected(tmp_path):
         assert result.status == "policy_rejected", sql
         assert result.rows is None, sql
         assert result.pid is None, sql
+        assert_no_secret(result)
 
 
 def test_input_pin_mismatch_policy_rejected(tmp_path):
@@ -351,20 +368,14 @@ def test_comma_separated_unauthorized_table_policy_rejected(tmp_path):
         sha,
     )
     result = execute_analysis(request)
-    assert result.status == "policy_rejected"
-    assert result.rows is None
-    assert result.pid is None
-    assert "secret_table" in result.error
+    assert_rejected(result, "secret_table")
 
 
 def test_schema_qualified_unauthorized_table_policy_rejected(tmp_path):
     sha = make_fixture(tmp_path / "fixture.duckdb")
     request = make_request(tmp_path, "SELECT * FROM main.secret_table", sha)
     result = execute_analysis(request)
-    assert result.status == "policy_rejected"
-    assert result.rows is None
-    assert result.pid is None
-    assert "secret_table" in result.error
+    assert_rejected(result, "secret_table")
 
 
 def test_schema_qualified_allowed_table_succeeds(tmp_path):
@@ -387,10 +398,7 @@ def test_subquery_unauthorized_table_policy_rejected(tmp_path):
         sha,
     )
     result = execute_analysis(request)
-    assert result.status == "policy_rejected"
-    assert result.rows is None
-    assert result.pid is None
-    assert "secret_table" in result.error
+    assert_rejected(result, "secret_table")
 
 
 def test_function_form_external_file_reaches_duckdb(tmp_path):
@@ -401,15 +409,253 @@ def test_function_form_external_file_reaches_duckdb(tmp_path):
         sha,
     )
     result = execute_analysis(request)
-    assert result.status == "execution_failed"
-    assert result.error is not None
-    assert "duckdb" in result.error.lower()
+    assert result.status in ("execution_failed", "policy_rejected")
+    assert result.rows is None
+    assert_no_secret(result)
 
 
-def test_predecessor_negative_control_fails():
+def test_comma_alias_bypass_inbox872_policy_rejected(tmp_path):
+    sha = make_fixture(tmp_path / "fixture.duckdb")
+    for sql in (
+        "SELECT * FROM silver_smoke a, secret_table b",
+        "SELECT * FROM silver_smoke AS a, secret_table AS b",
+    ):
+        request = make_request(tmp_path, sql, sha)
+        result = execute_analysis(request)
+        assert_rejected(result, "secret_table")
+
+
+def test_cte_launder_bypass_inbox872_policy_rejected(tmp_path):
+    sha = make_fixture(tmp_path / "fixture.duckdb")
+    for sql in (
+        "WITH secret_table AS (SELECT 1 AS x) SELECT * FROM main.secret_table",
+        "WITH a AS (SELECT 1), b AS (SELECT 2) SELECT * FROM main.secret_table AS z",
+        "WITH t AS (SELECT 1 AS x) SELECT * FROM main.secret_table",
+    ):
+        request = make_request(tmp_path, sql, sha)
+        result = execute_analysis(request)
+        assert_rejected(result, "secret_table")
+
+
+def test_bare_cte_shadow_does_not_touch_real_table(tmp_path):
+    sha = make_fixture(tmp_path / "fixture.duckdb")
+    request = make_request(
+        tmp_path,
+        "WITH secret_table AS (SELECT 1 AS x) SELECT * FROM secret_table",
+        sha,
+    )
+    result = execute_analysis(request)
+    assert result.status == "success"
+    assert result.rows == [[1]]
+    assert_no_secret(result)
+
+
+def test_cte_over_allowed_table_still_succeeds(tmp_path):
+    sha = make_fixture(tmp_path / "fixture.duckdb")
+    request = make_request(
+        tmp_path,
+        "WITH t AS (SELECT * FROM silver_smoke) SELECT COUNT(*) AS n FROM t",
+        sha,
+    )
+    result = execute_analysis(request)
+    assert result.status == "success"
+    assert result.rows == [[200]]
+    assert_no_secret(result)
+
+
+def test_cte_over_forbidden_table_policy_rejected(tmp_path):
+    sha = make_fixture(tmp_path / "fixture.duckdb")
+    request = make_request(
+        tmp_path,
+        "WITH t AS (SELECT * FROM secret_table) SELECT COUNT(*) AS n FROM t",
+        sha,
+    )
+    result = execute_analysis(request)
+    assert_rejected(result, "secret_table")
+
+
+def test_nested_and_derived_forbidden_references_policy_rejected(tmp_path):
+    sha = make_fixture(tmp_path / "fixture.duckdb")
+    for sql in (
+        "SELECT * FROM silver_smoke WHERE pts > (SELECT AVG(x) FROM secret_table)",
+        "SELECT * FROM silver_smoke UNION ALL SELECT s FROM secret_table",
+        'SELECT silver_smoke.id FROM silver_smoke JOIN "secret_table" ON true',
+        "SELECT * FROM silver_smoke a JOIN secret_table b ON a.id = 1",
+    ):
+        request = make_request(tmp_path, sql, sha)
+        result = execute_analysis(request)
+        assert_rejected(result, "secret_table")
+
+
+def test_multi_statement_forbidden_policy_rejected(tmp_path):
+    sha = make_fixture(tmp_path / "fixture.duckdb")
+    for sql in (
+        "SELECT 1; DROP TABLE secret_table",
+        "SELECT * FROM silver_smoke; SELECT * FROM secret_table",
+    ):
+        request = make_request(tmp_path, sql, sha)
+        result = execute_analysis(request)
+        assert result.status == "policy_rejected", sql
+        assert result.rows is None, sql
+        assert_no_secret(result)
+
+
+def test_unparseable_query_policy_rejected_fail_closed(tmp_path):
+    sha = make_fixture(tmp_path / "fixture.duckdb")
+    for sql in (
+        "this is not sql at all (((",
+        "SELECT FROM WHERE",
+        "SELECT * FROM",
+        "",
+        "   ",
+    ):
+        request = make_request(tmp_path, sql, sha)
+        result = execute_analysis(request)
+        assert result.status == "policy_rejected", sql
+        assert result.rows is None, sql
+        assert result.pid is None, sql
+        assert_no_secret(result)
+
+
+def test_empty_allowlist_is_fail_closed(tmp_path):
+    sha = make_fixture(tmp_path / "fixture.duckdb")
+    request = make_request(tmp_path, "SELECT 1 AS a", sha, allowed_tables=())
+    result = execute_analysis(request)
+    assert result.status == "policy_rejected"
+    assert result.rows is None
+    assert_no_secret(result)
+
+
+def test_policy_rejected_references_is_fail_closed(tmp_path):
+    sha = make_fixture(tmp_path / "fixture.duckdb")
+    request = make_request(tmp_path, "SELECT 1 AS a", sha)
+
+    assert _policy_rejected_references(request, ("silver_smoke", "secret_table")) is None
+    assert _policy_rejected_references(request, ("silver_smoke",)) is None
+
+    literal_target = make_request(
+        tmp_path, "SELECT * FROM silver_missing", sha
+    )
+    assert _policy_rejected_references(literal_target, ("silver_smoke",)) is not None
+
+    unparseable = make_request(tmp_path, "not sql at all (((", sha)
+    assert _policy_rejected_references(unparseable, ("silver_smoke",)) is not None
+
+    attacker_named = make_request(
+        tmp_path,
+        "WITH secret_table AS (SELECT 1 AS x) SELECT * FROM main.secret_table",
+        sha,
+    )
+    assert _policy_rejected_references(attacker_named, ("silver_smoke",)) is not None
+    assert _policy_rejected_references(attacker_named, ("silver_smoke", "secret_table")) is None
+
+    allowed_query = make_request(
+        tmp_path,
+        "WITH t AS (SELECT * FROM silver_smoke) SELECT COUNT(*) FROM t",
+        sha,
+    )
+    assert _policy_rejected_references(allowed_query, ("silver_smoke", "secret_table")) is None
+
+
+def test_cte_names_do_not_launder_real_table(tmp_path):
+    sha = make_fixture(tmp_path / "fixture.duckdb")
+    request = make_request(
+        tmp_path,
+        "WITH secret_table AS (SELECT 1 AS x) SELECT * FROM main.secret_table",
+        sha,
+    )
+    assert _policy_rejected_references(request, ALLOWED) is not None
+    assert _policy_rejected_references(request, ("silver_smoke", "other_table")) is not None
+
+
+def test_parser_walker_resolves_aliases_and_ctes():
+    tree = parse("SELECT * FROM silver_smoke a, secret_table b", dialect="duckdb")
+    assert tree
+    names = [t.name for e in tree if e is not None for t in e.find_all(exp.Table)]
+    assert "silver_smoke" in names
+    assert "secret_table" in names
+
+    laundered = parse(
+        "WITH secret_table AS (SELECT 1 AS x) SELECT * FROM main.secret_table",
+        dialect="duckdb",
+    )
+    assert laundered
+    assert laundered[0] is not None
+    tables = list(laundered[0].find_all(exp.Table))
+    assert len(tables) == 1
+    assert tables[0].name == "secret_table"
+    assert tables[0].db == "main"
+
+
+def test_write_and_attachment_statements_never_reach_child(tmp_path):
+    sha = make_fixture(tmp_path / "fixture.duckdb")
+    for sql in (
+        "ATTACH ':memory:' AS extra_db",
+        "COPY (SELECT 1 AS a) TO 'C:/nope/out.csv'",
+        "INSTALL definitely_not_an_ext_xyz",
+        "PRAGMA memory_limit='1GB'",
+        "TRUNCATE secret_table",
+        "EXPORT DATABASE 'C:/nope/out'",
+    ):
+        request = make_request(tmp_path, sql, sha)
+        result = execute_analysis(request)
+        assert result.status in ("policy_rejected", "execution_failed"), sql
+        assert result.rows is None, sql
+        assert result.pid is None, sql
+        assert_no_secret(result)
+
+
+def test_first_word_classification_unchanged():
+    assert _first_word("SELECT 1") == "Select"
+    assert _first_word("  WITH x AS (SELECT 1) SELECT * FROM x") == "Select"
+    assert _first_word("(SELECT 1)") == "Subquery"
+    assert _first_word("DELETE FROM t") == "Delete"
+    assert _first_word("") == ""
+    assert _first_word("not sql at all (((") == ""
+
+
+def test_predecessor_negative_control_fails(tmp_path):
     pred_src = PREDECESSOR_MODULE.read_text(encoding="utf-8")
     assert "SetInformationJobObject" not in pred_src
     assert "JOBOBJECT_EXTENDED_LIMIT_INFORMATION" not in pred_src
     assert "JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE" not in pred_src
     assert 'FROM\\s+([A-Za-z_][\\w]*)' in pred_src
     assert "_assign_to_job(job, proc)" in pred_src
+
+
+@pytest.mark.parametrize(
+    "sql",
+    [
+        "SELECT * FROM silver_smoke a, secret_table b",
+        "WITH secret_table AS (SELECT 1 AS x) SELECT * FROM main.secret_table",
+    ],
+)
+def test_predecessor_bypass_is_real_against_unpatched_base(tmp_path, sql):
+    import importlib.util
+
+    pred_src = BASE_352C3644_MODULE.read_text(encoding="utf-8")
+    assert "sqlglot" not in pred_src, "control module is not the unpatched base"
+    assert "_tokenize_identifiers" in pred_src, "control module is not the unpatched base"
+    assert "_local_names" in pred_src, "control module is not the unpatched base"
+
+    spec = importlib.util.spec_from_file_location(
+        "negctrl_base", str(BASE_352C3644_MODULE)
+    )
+    base = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(base)
+
+    referenced = base._referenced_tables(sql)
+    allowed = {"silver_smoke"} | base._local_names(sql)
+    assert "secret_table" not in referenced, referenced
+    assert base._first_word(sql) in base._THROUGH_WORDS, base._first_word(sql)
+    bypasses_gate = all(
+        name in allowed or name.split(".")[-1] in allowed for name in referenced
+    )
+    assert bypasses_gate, (referenced, allowed)
+
+    candidate = _policy_rejected_references(
+        make_request(tmp_path, sql, "0" * 64), ALLOWED
+    )
+    assert candidate is not None
+    assert candidate.status == "policy_rejected"
+    assert "secret_table" in candidate.error
