@@ -25,7 +25,7 @@ class WarehouseTable(BaseModel):
 
 router = APIRouter()
 
-SOURCE_BADGES = ("nba_official", "bbref", "derived", "internal")
+SOURCE_BADGES = ("nba_official", "bbref", "derived", "internal", "unknown")
 
 BBREF_PREFIX = "silver_bbref_"
 
@@ -111,26 +111,53 @@ DESCRIPTIONS = {
 
 _lock = threading.Lock()
 
-_snapshot = {"path": "", "mtime": None, "tables": []}
+_snapshot = {"path": "", "key": None, "tables": []}
+
+
+def _default_warehouse_path() -> Path:
+    try:
+        from shared.store import DB_PATH as configured_default
+        return Path(configured_default)
+    except Exception:
+        return Path(__file__).resolve().parent / "data" / "warehouse.duckdb"
 
 
 def warehouse_path() -> Path:
     configured = os.environ.get("DIME_WAREHOUSE", "").strip()
     if configured:
         return Path(configured)
-    return Path(__file__).resolve().parent.parent / "warehouse-runtime.duckdb"
+    return _default_warehouse_path()
 
 
-def source_badge_for(name: str) -> str:
+def _badge_for_evidence(value: str) -> str:
+    s = (value or "").strip().lower()
+    if not s:
+        return "unknown"
+    if "basketball-reference" in s or s.startswith("bref") or "bref_" in s:
+        return "bbref"
+    if s == "nba_api" or s.startswith("sportsdataverse"):
+        return "nba_official"
+    if s in ("pbpstats", "warehouse-union", "rapm-lite", "rapm-prior") or s.startswith("rapm") or "fivethirtyeight" in s or "raptor" in s or "orojas" in s or "salary-cap" in s:
+        return "derived"
+    return "unknown"
+
+
+def source_badge_for(name: str, sources: list[str] | None = None) -> str:
     if name in INTERNAL_NAMES:
         return "internal"
+    if sources is not None:
+        cleaned = sorted({(s or "").strip() for s in sources if (s or "").strip()})
+        if not cleaned:
+            return "unknown"
+        badges = {_badge_for_evidence(s) for s in cleaned}
+        if len(badges) == 1:
+            return next(iter(badges))
+        return "unknown"
     if name in BBREF_NAMES or name.startswith(BBREF_PREFIX):
         return "bbref"
     if name in DERIVED_NAMES:
         return "derived"
-    if name.startswith("silver_"):
-        return "nba_official"
-    return "derived"
+    return "unknown"
 
 
 def season_column_for(columns: list[str]) -> str | None:
@@ -161,26 +188,54 @@ def describe_table(con: object, name: str) -> dict:
         ).fetchone()
         if bounds[0] is not None and bounds[1] is not None:
             season_range = {"min": str(bounds[0]), "max": str(bounds[1])}
+    sources: list[str] = []
+    if "_source" in columns and row_count > 0:
+        try:
+            sources = [row[0] for row in con.execute(f"SELECT DISTINCT _source FROM {quoted}").fetchall()]
+        except Exception:
+            sources = []
     return {
         "name": name,
         "row_count": int(row_count),
         "column_count": len(columns),
         "season_range": season_range,
-        "source_badge": source_badge_for(name),
+        "source_badge": source_badge_for(name, sources),
         "description": DESCRIPTIONS.get(name, ""),
     }
 
 
+def _stat_key(path: Path):
+    st = path.stat()
+    size = st.st_size
+    mtime = st.st_mtime_ns
+    ctime = getattr(st, "st_ctime_ns", None)
+    token = None
+    try:
+        flags = os.O_RDONLY | getattr(os, "O_BINARY", 0)
+        fd = os.open(path, flags)
+        try:
+            try:
+                from shared.change_token import change_token as _change_token
+                token = _change_token(fd)
+            except Exception:
+                token = None
+        finally:
+            os.close(fd)
+    except OSError:
+        token = None
+    return (mtime, size, ctime, token)
+
+
 def load_snapshot(path: Path) -> list:
     try:
-        freshness = path.stat().st_mtime_ns
+        freshness = _stat_key(path)
     except OSError:
         raise HTTPException(status_code=503, detail="warehouse unavailable")
     with _lock:
         if (
             _snapshot["tables"]
             and _snapshot["path"] == str(path)
-            and _snapshot["mtime"] == freshness
+            and _snapshot["key"] == freshness
         ):
             return _snapshot["tables"]
     try:
@@ -197,7 +252,7 @@ def load_snapshot(path: Path) -> list:
             pass
     with _lock:
         _snapshot["path"] = str(path)
-        _snapshot["mtime"] = freshness
+        _snapshot["key"] = freshness
         _snapshot["tables"] = tables
     return tables
 
@@ -205,7 +260,7 @@ def load_snapshot(path: Path) -> list:
 def snapshot_clear() -> None:
     with _lock:
         _snapshot["path"] = ""
-        _snapshot["mtime"] = None
+        _snapshot["key"] = None
         _snapshot["tables"] = []
 
 

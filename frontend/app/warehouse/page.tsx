@@ -7,6 +7,9 @@ import {
   type WarehouseSourceBadge,
   type WarehouseTableRow,
 } from "@/lib/api";
+import { hasSeason2627 } from "@/lib/warehouse";
+
+export { hasSeason2627 };
 
 type SourceFilter = "all" | WarehouseSourceBadge;
 type SeasonFilter = "all" | "with-season" | "without-season";
@@ -18,6 +21,7 @@ const SOURCE_OPTIONS: { value: SourceFilter; label: string }[] = [
   { value: "bbref", label: "Basketball-Reference" },
   { value: "derived", label: "Derived" },
   { value: "internal", label: "Internal" },
+  { value: "unknown", label: "Unknown" },
 ];
 
 const SEASON_OPTIONS: { value: SeasonFilter; label: string }[] = [
@@ -37,6 +41,7 @@ const SOURCE_LABEL: Record<WarehouseSourceBadge, string> = {
   bbref: "Basketball-Reference",
   derived: "Derived",
   internal: "Internal",
+  unknown: "Unknown",
 };
 
 function fmtRows(n: number) {
@@ -51,12 +56,13 @@ function fmtSeason(table: WarehouseTableRow) {
 }
 
 function selectClass() {
-  return "h-8 rounded-[8px] border border-line bg-field px-2 text-[13px] text-ink shadow-hairline outline-none";
+  return "h-8 min-w-0 max-w-full rounded-[8px] border border-line bg-field px-2 text-[13px] text-ink shadow-hairline outline-none";
 }
 
 export default function WarehousePage() {
   const [tables, setTables] = useState<WarehouseTableRow[]>([]);
   const [failed, setFailed] = useState(false);
+  const [loaded, setLoaded] = useState(false);
   const [source, setSource] = useState<SourceFilter>("all");
   const [season, setSeason] = useState<SeasonFilter>("all");
   const [sort, setSort] = useState<SortKey>("rows-desc");
@@ -65,10 +71,16 @@ export default function WarehousePage() {
     let cancelled = false;
     getWarehouseTables()
       .then((rows) => {
-        if (!cancelled) setTables(rows);
+        if (!cancelled) {
+          setTables(rows);
+          setLoaded(true);
+        }
       })
       .catch(() => {
-        if (!cancelled) setFailed(true);
+        if (!cancelled) {
+          setFailed(true);
+          setLoaded(true);
+        }
       });
     return () => {
       cancelled = true;
@@ -99,16 +111,16 @@ export default function WarehousePage() {
     <WorkspaceShell active="Warehouse">
       <main className="flex min-h-0 flex-1 flex-col overflow-hidden bg-page">
         <section className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-[14px] border border-line bg-page">
-          <div className="flex h-11 shrink-0 items-center justify-between gap-3 border-b border-line px-4">
-            <h1 className="truncate text-[13.5px] font-medium text-ink">
+          <div className="flex min-h-11 shrink-0 flex-col gap-2 border-b border-line px-4 py-2 sm:flex-row sm:items-center sm:justify-between sm:py-0">
+            <h1 className="w-full min-w-0 truncate text-[13.5px] font-medium text-ink sm:w-auto sm:flex-1">
               Warehouse
-              {!failed && tables.length > 0 && (
+              {!failed && loaded && tables.length > 0 && (
                 <span className="ml-2 font-mono text-[11px] tabular-nums text-ink-3">
                   {tables.length} tables · {fmtRows(totalRows)} rows
                 </span>
               )}
             </h1>
-            <div className="flex shrink-0 items-center gap-2">
+            <div className="flex w-full max-w-full flex-wrap items-center gap-2 sm:w-auto sm:flex-nowrap sm:shrink-0">
               <label className="sr-only" htmlFor="warehouse-source">
                 Filter by source
               </label>
@@ -157,21 +169,29 @@ export default function WarehousePage() {
             </div>
           </div>
 
-          <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4">
+          <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4" aria-busy={!loaded}>
             <p className="text-[13px] text-ink-2">
               Live inventory of the DuckDB warehouse behind your analysis.{" "}
-              <span className="text-ink-3">
-                2026-27 season: no data yet (offseason).
-              </span>
+              {loaded && tables.length > 0 && (
+                <span className="text-ink-3">
+                  {hasSeason2627(tables)
+                    ? "2026-27 season: data available."
+                    : "2026-27 season: no data yet (offseason)."}
+                </span>
+              )}
             </p>
 
             {failed ? (
               <p className="py-10 text-center text-[13px] text-ink-3">
                 Could not reach the warehouse.
               </p>
-            ) : tables.length === 0 ? (
-              <p className="py-10 text-center text-[13px] text-ink-3">
+            ) : !loaded ? (
+              <p role="status" aria-live="polite" className="py-10 text-center text-[13px] text-ink-3">
                 Loading tables…
+              </p>
+            ) : tables.length === 0 ? (
+              <p role="status" data-state="empty" className="py-10 text-center text-[13px] font-medium text-ink-2">
+                No tables in the warehouse.
               </p>
             ) : visible.length === 0 ? (
               <p className="py-10 text-center text-[13px] text-ink-3">

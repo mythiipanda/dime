@@ -181,7 +181,7 @@ export function getFreshness(): Promise<FreshRow[]> {
   return getEnvelope<FreshRow[]>(apiPath("/datasets/freshness"));
 }
 
-export type WarehouseSourceBadge = "nba_official" | "bbref" | "derived" | "internal";
+export type WarehouseSourceBadge = "nba_official" | "bbref" | "derived" | "internal" | "unknown";
 
 export interface WarehouseSeasonRange {
   min: string;

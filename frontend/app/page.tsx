@@ -11,7 +11,7 @@ export const metadata: Metadata = {
 export default function DimePage() {
   return (
     <WorkspaceShell active="chat">
-      <div className={styles.scope}>
+      <div className={`${styles.scope} flex min-h-0 flex-1 flex-col overflow-visible`}>
         <DimeHarness />
       </div>
     </WorkspaceShell>

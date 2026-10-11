@@ -834,7 +834,7 @@ export default function DimeHarness() {
   };
 
   return (
-    <main className="flex h-[100dvh] gap-0 overscroll-none bg-canvas p-2.5 text-ink lg:pl-0">
+    <main className="flex min-h-[calc(100dvh-20px)] w-full flex-1 gap-0 overscroll-none bg-canvas p-2.5 text-ink lg:pl-0">
       <DimeSidebar
         activeNav={activeView}
         onNavChange={(key: string) => setActiveView(key as "chat" | ViewKey)}
