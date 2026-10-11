@@ -27,7 +27,7 @@ export default function WorkspaceShell({ children, active }: { children: ReactNo
   const selected = resolveSelected(active, pathname ?? undefined);
 
   return (
-    <div className="flex min-h-[100dvh] gap-2.5 bg-canvas p-2.5 text-ink">
+    <div className="flex h-[100dvh] gap-2.5 overflow-hidden bg-canvas p-2.5 text-ink">
       <aside aria-label="Workspace navigation" className="flex w-[48px] shrink-0 flex-col rounded-[14px] border border-line bg-page px-1 py-3 sm:w-[216px] sm:px-2">
         <div className="mb-6 flex h-9 items-center justify-center gap-2 px-1 sm:justify-start sm:px-2">
           <span className="flex size-6 items-center justify-center rounded-[7px] bg-ink text-[11px] font-semibold text-page">d</span>
@@ -57,7 +57,7 @@ export default function WorkspaceShell({ children, active }: { children: ReactNo
           </div>
         </div>
       </aside>
-      <div className="workspace-content flex min-h-0 min-w-0 flex-1 flex-col overflow-visible rounded-[14px]">{children}</div>
+      <div className="workspace-content flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-[14px]">{children}</div>
       <style jsx global>{`.workspace-content main aside[aria-label="dime navigation"] { display: none; }`}</style>
     </div>
   );

@@ -834,7 +834,7 @@ export default function DimeHarness() {
   };
 
   return (
-    <main className="flex min-h-[calc(100dvh-20px)] w-full flex-1 gap-0 overscroll-none bg-canvas p-2.5 text-ink lg:pl-0">
+    <main className="flex h-full min-h-0 w-full flex-1 gap-0 overflow-hidden overscroll-none bg-canvas p-2.5 text-ink lg:pl-0">
       <DimeSidebar
         activeNav={activeView}
         onNavChange={(key: string) => setActiveView(key as "chat" | ViewKey)}
@@ -844,7 +844,7 @@ export default function DimeHarness() {
         }}
       />
 
-      <div className="flex min-w-0 flex-1 flex-col gap-2.5">
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-2.5">
         <div className="flex h-12 shrink-0 items-center gap-1 rounded-[14px] border border-line bg-page px-1 lg:hidden">
           <button
             ref={menuBtnRef}
@@ -873,9 +873,9 @@ export default function DimeHarness() {
             </svg>
           </button>
         </div>
-        <div className="flex min-h-0 flex-1 gap-2.5">
+        <div className="flex min-h-0 min-w-0 flex-1 gap-2.5 overflow-hidden">
           {activeView === "chat" ? (
-          <section className="flex min-w-0 flex-1 flex-col overflow-hidden rounded-[14px] border border-line bg-page">
+          <section className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-[14px] border border-line bg-page">
             <div className="flex h-11 shrink-0 items-center gap-1 overflow-x-auto border-b border-line px-2">
               {tabs.map((t) => (
                 <span
