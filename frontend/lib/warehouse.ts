@@ -7,7 +7,7 @@ export function parseSeasonValue(value: string): CanonicalSeason | null {
   const v = value.trim();
   if (/^\d{4}$/.test(v)) return null;
   if (/^[24]\d{4}$/.test(v)) return null;
-  const span = v.match(/^(\d{4})-(\d{2,4})$/);
+  const span = v.match(/^(\d{4})-(\d{2}|\d{4})$/);
   if (span) {
     const start_year = Number(span[1]);
     const suffix = span[2];
