@@ -4,6 +4,7 @@ import json
 import os
 import subprocess
 import sys
+import threading
 import time
 from ctypes import wintypes
 from dataclasses import dataclass, field
@@ -399,7 +400,22 @@ def execute_analysis(request, cancel_event=None):
         pass
     start = time.monotonic()
     status = None
-    stdout_data = b""
+    stdout_chunks = []
+    stderr_chunks = []
+
+    def drain_pipe(stream, chunks):
+        read = getattr(stream, "read1", stream.read)
+        while True:
+            chunk = read(65536)
+            if not chunk:
+                break
+            chunks.append(chunk)
+
+    stdout_thread = threading.Thread(target=drain_pipe, args=(proc.stdout, stdout_chunks), daemon=True)
+    stderr_thread = threading.Thread(target=drain_pipe, args=(proc.stderr, stderr_chunks), daemon=True)
+    stdout_thread.start()
+    stderr_thread.start()
+
     while True:
         if cancel_event is not None and cancel_event.is_set():
             status = "cancelled"
@@ -420,18 +436,26 @@ def execute_analysis(request, cancel_event=None):
             proc.wait(timeout=10)
         except Exception:
             pass
-        try:
-            stdout_data, _ = proc.communicate(timeout=5)
-        except Exception:
-            stdout_data = b""
+        stdout_thread.join(timeout=5)
+        stderr_thread.join(timeout=5)
         dead = proc.poll() is not None
         _close_job(job)
         return AnalysisResult(status=status, rows=None, columns=None, error=None, dead=bool(dead), pid=pid, enforcement=enforcement, run_id=request.run_id, node_id=request.node_id, input_sha256=request.input_sha256)
     try:
-        stdout_data, _ = proc.communicate(timeout=10)
+        proc.wait(timeout=10)
+        stdout_thread.join(timeout=10)
+        stderr_thread.join(timeout=10)
+        if stdout_thread.is_alive() or stderr_thread.is_alive():
+            raise RuntimeError("child pipe drain did not finish")
+        stdout_data = b"".join(stdout_chunks)
     except Exception as e:
+        _terminate_job(job)
         try:
             proc.kill()
+        except Exception:
+            pass
+        try:
+            proc.wait(timeout=10)
         except Exception:
             pass
         _close_job(job)

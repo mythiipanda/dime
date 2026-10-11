@@ -1,6 +1,7 @@
 import hashlib
 import json
 import threading
+import time
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -31,6 +32,23 @@ BASE_352C3644_MODULE = (
 
 SECRET = "SECRET"
 ALLOWED = ("silver_smoke",)
+RECURSIVE_SQL = (
+    "WITH RECURSIVE t(x) AS (SELECT 1 UNION ALL SELECT x + 1 FROM t)"
+    " SELECT COUNT(*) FROM t"
+)
+
+
+def make_large_fixture(path, total=20000, note_chars=200):
+    if path.exists():
+        path.unlink()
+    con = duckdb.connect(str(path))
+    con.execute("CREATE TABLE silver_smoke(id INTEGER, pts DOUBLE, note VARCHAR)")
+    con.executemany(
+        "INSERT INTO silver_smoke VALUES (?, ?, ?)",
+        [(i, float(i) * 1.5, "n" + str(i) + "-" + "x" * note_chars) for i in range(1, total + 1)],
+    )
+    con.close()
+    return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
 def make_fixture(path, total=200):
@@ -659,3 +677,94 @@ def test_predecessor_bypass_is_real_against_unpatched_base(tmp_path, sql):
     assert candidate is not None
     assert candidate.status == "policy_rejected"
     assert "secret_table" in candidate.error
+
+
+def _pid_alive(pid):
+    import subprocess as sp
+
+    if pid is None:
+        return False
+    out = sp.run(
+        ["tasklist", "/FI", "PID eq " + str(pid), "/NH"],
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+    text = (out.stdout or "") + (out.stderr or "")
+    for line in text.splitlines():
+        stripped = line.strip()
+        if stripped.startswith(str(pid) + " ") or (" " + str(pid) + " ") in (" " + stripped + " "):
+            return True
+    return False
+
+
+def test_large_allowed_result_set_returns_rows_not_timeout(tmp_path):
+    sha = make_large_fixture(tmp_path / "fixture.duckdb")
+    request = make_request(
+        tmp_path,
+        "SELECT id, pts, note FROM silver_smoke",
+        sha,
+        deadline_s=45.0,
+        row_cap=25,
+        byte_cap=65536,
+    )
+    start = time.monotonic()
+    result = execute_analysis(request)
+    wall = time.monotonic() - start
+    assert result.status == "success", result.error
+    assert result.rows is not None
+    assert result.columns == ("id", "pts", "note")
+    assert len(result.rows) == 25
+    assert result.rows[0][0] == 1
+    assert result.row_cap_hit is True
+    assert result.truncated is False
+    assert wall < 40.0, wall
+
+
+def test_small_allowed_query_returns_literal_aggregate(tmp_path):
+    sha = make_large_fixture(tmp_path / "fixture.duckdb", total=200)
+    request = make_request(
+        tmp_path, "SELECT COUNT(*) AS n, SUM(pts) AS total FROM silver_smoke", sha
+    )
+    result = execute_analysis(request)
+    assert result.status == "success", result.error
+    assert result.rows == [[200, 30150.0]]
+    assert result.row_cap_hit is False
+    assert result.truncated is False
+
+
+def test_large_allowed_result_set_over_byte_cap_reports_truncation(tmp_path):
+    sha = make_large_fixture(tmp_path / "fixture.duckdb", total=500)
+    request = make_request(
+        tmp_path,
+        "SELECT id, pts, note FROM silver_smoke ORDER BY id",
+        sha,
+        deadline_s=45.0,
+        row_cap=500,
+        byte_cap=2048,
+    )
+    result = execute_analysis(request)
+    assert result.status == "success", result.error
+    assert result.rows is not None
+    assert result.truncated is True
+    assert len(json.dumps(result.rows)) <= 2048
+    assert len(result.rows) < 500
+    assert len(result.rows) > 0
+
+
+def test_slow_child_times_out_and_is_reaped(tmp_path):
+    sha = make_fixture(tmp_path / "fixture.duckdb")
+    request = make_request(tmp_path, RECURSIVE_SQL, sha, deadline_s=3.0)
+    start = time.monotonic()
+    result = execute_analysis(request)
+    wall = time.monotonic() - start
+    assert result.status == "timeout"
+    assert result.pid is not None
+    assert result.dead is True
+    assert wall < 20.0, wall
+    deadline = time.monotonic() + 10.0
+    while time.monotonic() < deadline:
+        if not _pid_alive(result.pid):
+            break
+        time.sleep(0.25)
+    assert not _pid_alive(result.pid), "orphaned child pid " + str(result.pid)
