@@ -181,6 +181,28 @@ export function getFreshness(): Promise<FreshRow[]> {
   return getEnvelope<FreshRow[]>(apiPath("/datasets/freshness"));
 }
 
+export type WarehouseSourceBadge = "nba_official" | "bbref" | "derived" | "internal";
+
+export interface WarehouseSeasonRange {
+  min: string;
+  max: string;
+}
+
+export interface WarehouseTableRow {
+  name: string;
+  row_count: number;
+  column_count: number;
+  season_range: WarehouseSeasonRange | null;
+  source_badge: WarehouseSourceBadge;
+  description: string;
+}
+
+export async function getWarehouseTables(): Promise<WarehouseTableRow[]> {
+  const res = await fetch(`${BACKEND}${apiPath("/v2/warehouse/tables")}`);
+  if (!res.ok) throw new Error(`warehouse failed: ${res.status}`);
+  return (await res.json()) as WarehouseTableRow[];
+}
+
 export async function getRevision(): Promise<unknown> {
   const res = await fetch(`${BACKEND}/api/revision`);
   if (!res.ok) throw new Error(`revision failed: ${res.status}`);
