@@ -7,7 +7,7 @@ import { spawn } from "node:child_process";
 import * as net from "node:net";
 import { createRequire } from "node:module";
 import { isActiveDestination, normalizeActive } from "./shell";
-import { hasSeason2627, parseSeasonValue } from "./warehouse";
+import { getSeason2627Coverage, hasSeason2627, parseSeasonValue } from "./warehouse";
 
 function read(rel: string[]) {
   return readFileSync(join(process.cwd(), ...rel), "utf8");
@@ -264,10 +264,10 @@ test("empty states are honest and share one action", () => {
 
 test("season 2026-27 statement derives from returned rows", () => {
   assert.equal(
-    hasSeason2627([
+    getSeason2627Coverage([
       { name: "a", row_count: 1, column_count: 1, season_range: { min: "2025-26", max: "2026-27" }, source_badge: "nba_official", description: "x" },
     ]),
-    true,
+    "unknown",
   );
   assert.deepEqual(parseSeasonValue("2025-26"), { start_year: 2025, end_year: 2026 });
   assert.deepEqual(parseSeasonValue("2025-2026"), { start_year: 2025, end_year: 2026 });
@@ -276,34 +276,78 @@ test("season 2026-27 statement derives from returned rows", () => {
   assert.equal(parseSeasonValue("22026"), null);
   assert.equal(parseSeasonValue("42026"), null);
   assert.equal(
-    hasSeason2627([
+    getSeason2627Coverage([
       { name: "silver_scoreboard", row_count: 1, column_count: 1, season_range: { min: "2026", max: "2026" }, source_badge: "nba_official", description: "x" },
     ]),
-    false,
+    "unknown",
   );
   assert.equal(
-    hasSeason2627([
+    getSeason2627Coverage([
       { name: "b", row_count: 1, column_count: 1, season_range: { min: "22026", max: "22026" }, source_badge: "nba_official", description: "x" },
     ]),
-    false,
+    "unknown",
   );
   assert.equal(
-    hasSeason2627([
+    getSeason2627Coverage([
       { name: "c", row_count: 1, column_count: 1, season_range: { min: "42026", max: "42026" }, source_badge: "nba_official", description: "x" },
     ]),
-    false,
+    "unknown",
   );
   assert.equal(
-    hasSeason2627([
+    getSeason2627Coverage([
       { name: "a", row_count: 1, column_count: 1, season_range: { min: "2025-26", max: "2025-26" }, source_badge: "nba_official", description: "x" },
     ]),
-    false,
+    "unknown",
   );
-  assert.equal(hasSeason2627([]), false);
+  assert.equal(getSeason2627Coverage([]), "unknown");
+  assert.equal(
+    getSeason2627Coverage([
+      { name: "a", row_count: 1, column_count: 1, season_range: { min: "2024-25", max: "2028-29" }, source_badge: "nba_official", description: "x" },
+    ]),
+    "unknown",
+  );
+  assert.equal(
+    getSeason2627Coverage([
+      { name: "a", row_count: 1, column_count: 1, season_range: { min: "2028-29", max: "2024-25" }, source_badge: "nba_official", description: "x" },
+    ]),
+    "unknown",
+  );
+  assert.equal(
+    getSeason2627Coverage([
+      { name: "a", row_count: 1, column_count: 1, season_range: { min: "2026", max: "2027" }, source_badge: "nba_official", description: "x" },
+    ]),
+    "unknown",
+  );
+  assert.equal(
+    getSeason2627Coverage([
+      { name: "a", row_count: 1, column_count: 1, season_range: null, source_badge: "nba_official", description: "x" },
+    ]),
+    "unknown",
+  );
+  assert.equal(
+    getSeason2627Coverage([
+      { name: "a", row_count: 0, column_count: 1, season_range: { min: "2025-26", max: "2026-27" }, source_badge: "nba_official", description: "x" },
+    ]),
+    "unknown",
+  );
+  assert.equal(
+    getSeason2627Coverage([
+      { name: "a", row_count: 1, column_count: 1, season_range: { min: "2026-027", max: "2026-027" }, source_badge: "nba_official", description: "x" },
+    ]),
+    "unknown",
+  );
+  assert.equal(
+    getSeason2627Coverage([
+      { name: "a", row_count: 1, column_count: 1, season_range: { min: "2020-21", max: "2025-26" }, source_badge: "nba_official", description: "x" },
+    ]),
+    "unknown",
+  );
   const page = read(["app", "warehouse", "page.tsx"]);
-  assert.ok(page.includes("hasSeason2627(tables)"));
+  assert.ok(page.includes("getSeason2627Coverage(tables)"));
+  assert.ok(page.includes("2026-27 season coverage is unknown."));
   assert.ok(page.includes("2026-27 season: data available."));
-  assert.ok(page.includes("2026-27 season: no data yet (offseason)."));
+  assert.ok(page.includes("No 2026-27 season data in the warehouse yet."));
+  assert.ok(!page.includes("offseason"));
   assert.ok(page.includes("No tables in the warehouse."));
   assert.ok(page.includes("data-state="));
   assert.ok(page.includes("aria-busy"));

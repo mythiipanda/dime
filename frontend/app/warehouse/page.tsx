@@ -7,9 +7,9 @@ import {
   type WarehouseSourceBadge,
   type WarehouseTableRow,
 } from "@/lib/api";
-import { hasSeason2627 } from "@/lib/warehouse";
+import { getSeason2627Coverage, hasSeason2627 } from "@/lib/warehouse";
 
-export { hasSeason2627 };
+export { getSeason2627Coverage, hasSeason2627 };
 
 type SourceFilter = "all" | WarehouseSourceBadge;
 type SeasonFilter = "all" | "with-season" | "without-season";
@@ -174,9 +174,12 @@ export default function WarehousePage() {
               Live inventory of the DuckDB warehouse behind your analysis.{" "}
               {loaded && tables.length > 0 && (
                 <span className="text-ink-3">
-                  {hasSeason2627(tables)
-                    ? "2026-27 season: data available."
-                    : "2026-27 season: no data yet (offseason)."}
+                  {(() => {
+                    const coverage = getSeason2627Coverage(tables);
+                    if (coverage === "available") return "2026-27 season: data available.";
+                    if (coverage === "unavailable") return "No 2026-27 season data in the warehouse yet.";
+                    return "2026-27 season coverage is unknown.";
+                  })()}
                 </span>
               )}
             </p>

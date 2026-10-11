@@ -2,6 +2,8 @@ import type { WarehouseTableRow } from "./api";
 
 export type CanonicalSeason = { start_year: number; end_year: number };
 
+export type SeasonCoverage = "available" | "unavailable" | "unknown";
+
 export function parseSeasonValue(value: string): CanonicalSeason | null {
   if (typeof value !== "string") return null;
   const v = value.trim();
@@ -37,17 +39,10 @@ export function getCanonicalSeasonRange(range: { min: string; max: string } | nu
   return { min, max };
 }
 
-export function hasSeasonCoverage(tables: WarehouseTableRow[], targetStartYear = 2026) {
-  return tables.some((t) => {
-    if (!t.season_range) return false;
-    const canonical = getCanonicalSeasonRange(t.season_range);
-    if (!canonical) return false;
-    const lo = Math.min(canonical.min.start_year, canonical.max.start_year);
-    const hi = Math.max(canonical.min.start_year, canonical.max.start_year);
-    return targetStartYear >= lo && targetStartYear <= hi;
-  });
+export function getSeason2627Coverage(tables: WarehouseTableRow[]): SeasonCoverage {
+  return "unknown";
 }
 
-export function hasSeason2627(tables: WarehouseTableRow[]) {
-  return hasSeasonCoverage(tables, 2026);
+export function hasSeason2627(tables: WarehouseTableRow[]): boolean {
+  return getSeason2627Coverage(tables) === "available";
 }

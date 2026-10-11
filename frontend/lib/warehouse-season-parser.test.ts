@@ -1,6 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { parseSeasonValue } from "./warehouse";
+import { parseSeasonValue, getSeason2627Coverage } from "./warehouse";
+import type { WarehouseTableRow } from "./api";
 
 test("three-digit span suffixes are rejected", () => {
   assert.equal(parseSeasonValue("2026-027"), null);
@@ -51,4 +52,60 @@ test("malformed span widths are rejected", () => {
 
 test("surrounding whitespace is trimmed", () => {
   assert.deepEqual(parseSeasonValue("  2026-27  "), { start_year: 2026, end_year: 2027 });
+});
+
+test("getSeason2627Coverage returns unknown for exact single-season span", () => {
+  const tables: WarehouseTableRow[] = [
+    { name: "a", row_count: 1, column_count: 1, season_range: { min: "2026-27", max: "2026-27" }, source_badge: "nba_official", description: "x" },
+  ];
+  assert.equal(getSeason2627Coverage(tables), "unknown");
+});
+
+test("getSeason2627Coverage returns unknown for sparse range", () => {
+  const tables: WarehouseTableRow[] = [
+    { name: "a", row_count: 1, column_count: 1, season_range: { min: "2024-25", max: "2028-29" }, source_badge: "nba_official", description: "x" },
+  ];
+  assert.equal(getSeason2627Coverage(tables), "unknown");
+});
+
+test("getSeason2627Coverage returns unknown for reversed range", () => {
+  const tables: WarehouseTableRow[] = [
+    { name: "a", row_count: 1, column_count: 1, season_range: { min: "2028-29", max: "2024-25" }, source_badge: "nba_official", description: "x" },
+  ];
+  assert.equal(getSeason2627Coverage(tables), "unknown");
+});
+
+test("getSeason2627Coverage returns unknown for bare-year range", () => {
+  const tables: WarehouseTableRow[] = [
+    { name: "a", row_count: 1, column_count: 1, season_range: { min: "2026", max: "2027" }, source_badge: "nba_official", description: "x" },
+  ];
+  assert.equal(getSeason2627Coverage(tables), "unknown");
+});
+
+test("getSeason2627Coverage returns unknown for null range", () => {
+  const tables: WarehouseTableRow[] = [
+    { name: "a", row_count: 1, column_count: 1, season_range: null, source_badge: "nba_official", description: "x" },
+  ];
+  assert.equal(getSeason2627Coverage(tables), "unknown");
+});
+
+test("getSeason2627Coverage returns unknown for zero-row table", () => {
+  const tables: WarehouseTableRow[] = [
+    { name: "a", row_count: 0, column_count: 1, season_range: { min: "2025-26", max: "2026-27" }, source_badge: "nba_official", description: "x" },
+  ];
+  assert.equal(getSeason2627Coverage(tables), "unknown");
+});
+
+test("getSeason2627Coverage returns unknown for malformed 2026-027", () => {
+  const tables: WarehouseTableRow[] = [
+    { name: "a", row_count: 1, column_count: 1, season_range: { min: "2026-027", max: "2026-027" }, source_badge: "nba_official", description: "x" },
+  ];
+  assert.equal(getSeason2627Coverage(tables), "unknown");
+});
+
+test("getSeason2627Coverage returns unknown for range excluding 2026-27 but cannot prove completeness", () => {
+  const tables: WarehouseTableRow[] = [
+    { name: "a", row_count: 1, column_count: 1, season_range: { min: "2020-21", max: "2025-26" }, source_badge: "nba_official", description: "x" },
+  ];
+  assert.equal(getSeason2627Coverage(tables), "unknown");
 });
