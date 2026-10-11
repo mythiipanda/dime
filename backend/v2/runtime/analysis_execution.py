@@ -2,7 +2,6 @@ import ctypes
 import hashlib
 import json
 import os
-import re
 import subprocess
 import sys
 import time
@@ -10,6 +9,9 @@ from ctypes import wintypes
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
+
+import sqlglot
+from sqlglot import exp
 _CHILD_SRC = (
 "import sys,json\n"
 "def main():\n"
@@ -77,64 +79,34 @@ def _sha_of(path: str):
         for chunk in iter(lambda: f.read(65536), b""):
             h.update(chunk)
     return h.hexdigest()
-def _first_word(sql: str):
-    m = re.match(r"\s*\(?\s*([A-Za-z]+)", sql)
-    if not m:
+def _first_word(sql):
+    nodes = _statement_nodes(sql)
+    if nodes is None:
         return ""
-    return m.group(1).upper()
-_TABLE_FUNCTIONS = frozenset(["query_table", "read_csv", "read_csv_auto", "read_parquet", "read_json", "read_json_auto", "parquet_scan", "csv_scan", "sniff_csv"])
-_STOP_WORDS = frozenset(["WHERE", "GROUP", "ORDER", "HAVING", "LIMIT", "OFFSET", "UNION", "INTERSECT", "EXCEPT", "ON", "USING", "AS", "WINDOW", "QUALIFY", "RETURNING", "SET", "VALUES", "SELECT"])
-def _tokenize_identifiers(sql: str):
-    tokens = []
-    i = 0
-    n = len(sql)
-    while i < n:
-        c = sql[i]
-        if c == ".":
-            tokens.append(("dot", "."))
-            i += 1
-            continue
-        if c == ",":
-            tokens.append(("comma", ","))
-            i += 1
-            continue
-        if c in ('"', "'", "`"):
-            quote = c
-            j = i + 1
-            buf = []
-            while j < n:
-                if sql[j] == quote:
-                    if j + 1 < n and sql[j + 1] == quote:
-                        buf.append(quote)
-                        j += 2
-                        continue
-                    break
-                buf.append(sql[j])
-                j += 1
-            tokens.append(("quoted", "".join(buf)))
-            i = j + 1
-            continue
-        if c.isalpha() or c == "_":
-            j = i
-            while j < n and (sql[j].isalnum() or sql[j] == "_"):
-                j += 1
-            word = sql[i:j]
-            k = j
-            while k < n and sql[k] in " \t\r\n":
-                k += 1
-            if k < n and sql[k] == "(":
-                tokens.append(("func", word))
-                i = j
-                continue
-            tokens.append(("word", word))
-            i = j
-            continue
-        i += 1
-    return tokens
+    return type(nodes[0]).__name__
+_THROUGH_TYPES = frozenset(["Select", "Values", "Union", "Intersect", "Except"])
+_GATE_TYPES = frozenset(["Attach", "Copy", "Install", "Command", "Pragma", "Set"])
+_DIALECT = "duckdb"
+_LITERAL_FUNCTIONS = frozenset([
+    "read_csv",
+    "read_csv_auto",
+    "read_parquet",
+    "read_json",
+    "read_json_auto",
+    "read_blob",
+    "parquet_scan",
+    "csv_scan",
+    "parquet_metadata",
+    "sniff_csv",
+    "delta_scan",
+    "iceberg_scan",
+    "glob",
+])
+_BARE_FUNCTIONS = frozenset(["current_schema", "current_catalog", "current_database"])
 def _is_path_like(value):
     if not value:
         return False
-    if value.startswith(("http://", "https://", "s3://", "file://", "gs://", "gcs://", "az://", "s3a://", "abfs://")):
+    if value.startswith(("http://", "https://", "s3://", "file://", "gs://", "gcs://", "az://", "s3a://", "abfs://", "hf://")):
         return True
     if "/" in value or "\\" in value:
         return True
@@ -144,61 +116,129 @@ def _is_path_like(value):
     if low.endswith((".csv", ".parquet", ".json", ".jsonl", ".ndjson", ".tsv", ".gz", ".zip", ".duckdb", ".db", ".sqlite", ".xlsx")):
         return True
     return False
-def _table_component(name):
-    return name.split(".")[-1]
-def _referenced_tables(sql: str):
-    tokens = _tokenize_identifiers(sql)
-    names = []
-    n = len(tokens)
-    i = 0
-    while i < n:
-        kind, value = tokens[i]
-        if kind == "word" and value.upper() in ("FROM", "JOIN"):
-            j = i + 1
-            while j < n and tokens[j][0] == "func" and tokens[j][1].upper() == "LATERAL":
-                j += 1
-            while j < n:
-                tk, tv = tokens[j]
-                if tk == "word" and tv.upper() in _STOP_WORDS:
-                    break
-                if tk == "quoted":
-                    names.append(tv)
-                elif tk == "func":
-                    if j + 1 < n and tokens[j + 1][0] == "quoted":
-                        arg = tokens[j + 1][1]
-                        if not _is_path_like(arg):
-                            names.append(arg)
-                    break
-                elif tk == "word":
-                    k = j
-                    parts = []
-                    while k < n and tokens[k][0] == "word":
-                        parts.append(tokens[k][1])
-                        k += 1
-                        if k < n and tokens[k][0] == "dot":
-                            k += 1
-                            continue
-                        break
-                    names.append(".".join(parts))
-                    j = k - 1
-                if j + 1 < n and tokens[j + 1][0] == "comma":
-                    j += 2
+def _collect_arguments(node):
+    args = []
+    if isinstance(node, exp.Anonymous):
+        args = list(node.args.get("expressions") or [])
+    elif isinstance(node, exp.Func):
+        for key in ("this", "expression", "path", "table", "table_name", "name"):
+            if key in node.args:
+                args.append(node.args[key])
+    else:
+        args = list(node.args.values()) if node.args else []
+    out = []
+    for arg in args:
+        if isinstance(arg, exp.Expression):
+            out.append(arg)
+        elif isinstance(arg, list):
+            out.extend(v for v in arg if isinstance(v, exp.Expression))
+    return out
+def _literal_of(node):
+    if node is None:
+        return None
+    if isinstance(node, exp.Literal):
+        return node.this
+    if isinstance(node, exp.Var):
+        return node.name
+    if isinstance(node, exp.Column):
+        return ".".join(p for p in (node.catalog, node.db, node.name) if p)
+    return None
+def _relation_key(name):
+    if name is None:
+        return None
+    parts = []
+    for part in str(name).split("."):
+        part = part.strip().strip('"').strip("'").strip("`")
+        if part != "":
+            parts.append(part)
+    if not parts:
+        return None
+    return tuple(parts)
+def _statement_nodes(sql):
+    try:
+        trees = sqlglot.parse(sql, read=_DIALECT)
+    except Exception:
+        return None
+    nodes = [t for t in trees if t is not None]
+    if not nodes:
+        return None
+    return nodes
+def _cte_aliases(nodes):
+    aliases = set()
+    for node in nodes:
+        for cte in node.find_all(exp.CTE):
+            if cte.alias:
+                aliases.add(cte.alias.lower())
+    return aliases
+def _referenced_relations(nodes):
+    relations = []
+    seen = set()
+    cte_aliases = _cte_aliases(nodes)
+    for node in nodes:
+        for table in node.find_all(exp.Table):
+            qualified = bool(table.db or table.catalog)
+            if not qualified and table.name.lower() in cte_aliases:
+                continue
+            if qualified:
+                parts = [p for p in (table.catalog, table.db, table.name) if p]
+            else:
+                parts = [table.name]
+            key = _relation_key(".".join(parts))
+            if key is None or key in seen:
+                continue
+            seen.add(key)
+            relations.append(key)
+        for func in node.find_all(exp.Anonymous):
+            if func.name.lower() in _BARE_FUNCTIONS:
+                continue
+            for arg in _collect_arguments(func):
+                text = _literal_of(arg)
+                if text is None or _is_path_like(text):
                     continue
-                break
-        if kind == "func" and value.lower() in _TABLE_FUNCTIONS:
-            j = i + 1
-            while j < n and tokens[j][0] == "func" and tokens[j][1].upper() == "LATERAL":
-                j += 1
-            if j < n and tokens[j][0] == "quoted" and not _is_path_like(tokens[j][1]):
-                names.append(tokens[j][1])
-        i += 1
-    return names
-def _local_names(sql: str):
-    found = set()
-    for pat in (r"WITH\s+(?:RECURSIVE\s+)?([A-Za-z_][\w]*)", r",\s*([A-Za-z_][\w]*)\s*(?:\([^)]*\))?\s+AS\s*\("):
-        for m in re.finditer(pat, sql, flags=re.IGNORECASE):
-            found.add(m.group(1))
-    return found
+                key = _relation_key(text)
+                if key is None or key in seen:
+                    continue
+                seen.add(key)
+                relations.append(key)
+    return relations
+def _relation_allowed(key, allowed):
+    if not key:
+        return False
+    lowered = tuple(part.lower() for part in key)
+    component = lowered[-1]
+    if component == "duckdb_memory":
+        return True
+    if component == "information_schema":
+        return True
+    for candidate in allowed:
+        cand = _relation_key(candidate)
+        if not cand:
+            continue
+        cand = tuple(part.lower() for part in cand)
+        if cand[-1] != component:
+            continue
+        if len(cand) > len(lowered):
+            continue
+        if lowered[-len(cand):] == cand:
+            return True
+    return False
+def _policy_rejected_references(request, allowed_names):
+    allowed = set(allowed_names or ())
+    if not allowed:
+        return _policy_rejected(request, "no tables approved for this run")
+    nodes = _statement_nodes(request.sql)
+    if nodes is None:
+        return _policy_rejected(request, "statement could not be parsed")
+    for node in nodes:
+        if not isinstance(node, (exp.Select, exp.SetOperation, exp.Values, exp.With)):
+            return _policy_rejected(request, "statement rejected: " + type(node).__name__)
+        for func in node.find_all(exp.Anonymous):
+            if func.name.lower() in _LITERAL_FUNCTIONS:
+                return _policy_rejected(request, "external file function rejected: " + func.name.lower())
+    for key in _referenced_relations(nodes):
+        if not _relation_allowed(key, allowed):
+            return _policy_rejected(request, "unauthorized table: " + ".".join(key))
+    return None
 class _IO_COUNTERS(ctypes.Structure):
     _fields_ = [
         ("ReadOperationCount", ctypes.c_ulonglong),
@@ -316,18 +356,18 @@ def execute_analysis(request, cancel_event=None):
         return AnalysisResult(status="execution_failed", rows=None, columns=None, error="input read failed: " + str(e), dead=False, pid=None, enforcement=EnforcementState(), run_id=request.run_id, node_id=request.node_id, input_sha256=request.input_sha256)
     if actual.lower() != str(request.input_sha256).lower():
         return _policy_rejected(request, "input pin mismatch")
-    word = _first_word(request.sql)
-    if word in _WRITE_WORDS:
-        return _policy_rejected(request, "write statement rejected")
-    if word not in _THROUGH_WORDS and word not in ("ATTACH", "COPY", "INSTALL", "LOAD", "PRAGMA", "SET"):
-        if word == "":
-            return _policy_rejected(request, "empty statement rejected")
-        return _policy_rejected(request, "statement rejected: " + word)
-    allowed = set(request.allowed_tables or ()) | _local_names(request.sql)
-    for name in _referenced_tables(request.sql):
-        component = _table_component(name)
-        if allowed and name not in allowed and component not in allowed and component.lower() not in ("duckdb_memory",):
-            return _policy_rejected(request, "unauthorized table: " + name)
+    nodes = _statement_nodes(request.sql)
+    if nodes is None:
+        return _policy_rejected(request, "statement could not be parsed")
+    for node in nodes:
+        kind = type(node).__name__
+        if kind in _WRITE_WORDS:
+            return _policy_rejected(request, "write statement rejected")
+        if kind not in _THROUGH_TYPES and kind not in _GATE_TYPES:
+            return _policy_rejected(request, "statement rejected: " + kind)
+    rejected = _policy_rejected_references(request, request.allowed_tables or ())
+    if rejected is not None:
+        return rejected
     job, job_reason = _create_job(request.memory_limit_bytes)
     if job is None:
         return AnalysisResult(status="unsupported", rows=None, columns=None, error=job_reason, dead=False, pid=None, enforcement=EnforcementState(job_object=job_reason), run_id=request.run_id, node_id=request.node_id, input_sha256=request.input_sha256)
