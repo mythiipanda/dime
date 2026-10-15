@@ -207,6 +207,8 @@ def _check(sql: str, allowed: set[str]) -> str:
             raise ValueError("blocked: table functions are not allowed; "
                              "query the warehouse tables")
     for fn in tree.find_all(exp.Func):
+        if isinstance(fn, exp.Connector):
+            continue
         fname = _func_name(fn)
         if fname not in _SAFE_FUNCTIONS:
             raise ValueError("blocked: function not allowed: " + fname)
