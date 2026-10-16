@@ -103,7 +103,7 @@ def test_the_catalog_publishes_the_view_enum_so_no_routing_can_pick_one():
     view = next(prop for prop in row["properties"] if prop["property"] == "view")
     assert view["required"] is True
     assert view["branches"][0]["constraints"]["enum"] == [
-        "winner", "field", "player_awards"]
+        "winner", "field", "player_awards", "winner_history"]
 
 def test_the_capability_declares_units_for_every_numeric_output():
     from v2.adapters.capabilities import (

@@ -69,6 +69,7 @@ def test_a_real_season_returns_the_real_winner_and_share(
         "votes_first": votes,
         "votes_second": None,
         "votes_third": None,
+        "winner": player,
     }]
     assert result["meta"]["ballot"] is True
     assert result["meta"]["vote_columns"] == ["votes_first"]
@@ -93,6 +94,7 @@ def test_a_coach_award_names_its_coach_and_its_votes(runtime_awards):
         "votes_first": 64,
         "votes_second": None,
         "votes_third": None,
+        "winner": "Steve Kerr",
     }]
     assert result["meta"]["award_subject"] == "coach"
 
@@ -137,7 +139,7 @@ def test_a_tied_first_team_keeps_every_leading_player(runtime_awards):
     assert {row["rank"] for row in placements} == {1}
     assert {row["rank_label"] for row in placements} == {"1T"}
     assert {row["tied"] for row in placements} == {True}
-    assert {row["player"] for row in placements} == {
+    assert {row["winner"] for row in placements} == {
         "Giannis Antetokounmpo", "Shai Gilgeous-Alexander", "Nikola Jokić",
         "Jayson Tatum", "Donovan Mitchell"}
     assert result["meta"]["honors_teams"] == 3

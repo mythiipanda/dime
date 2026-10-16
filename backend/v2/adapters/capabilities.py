@@ -842,19 +842,23 @@ def post_evidence_failures(preconditions: list, evidence) -> list[str]:
     return failures
 
 def _award_description() -> str:
-    from shared.tools.award_results import AWARDS
+    from shared.tools.award_results import AWARDS, VIEWS
 
     labels = ", ".join(
         f"{code} ({spec['label']})" for code, spec in AWARDS.items())
+    views = ", ".join(VIEWS)
     return (
+        f"The view argument selects the result shape and is one of exactly "
+        f"these: {views}. The winner_history view returns the winner of one "
+        "award across every published season, not a single season. "
         "Official NBA award results recorded on published ballots: who won "
         "an award in a season, the full ranked field with award share and "
-        "vote counts, and one player's award record through a season. A tied "
-        "rank and an ORV row are reported as published. This is a recorded "
-        "outcome, never a model score, so use it instead of any award race "
-        f"for a result. The award argument is one of exactly these codes: "
-        f"{labels}. Any other award, including Finals MVP, is outside this "
-        "capability, so leave that requirement uncovered and let it gap "
+        "vote counts, and one player's award record through a season. "
+        "A tied rank and an ORV row are reported as published. This is a "
+        "recorded outcome, never a model score, so use it instead of any "
+        "award race for a result. The award argument is one of exactly these "
+        f"codes: {labels}. Any other award, including Finals MVP, is outside "
+        "this capability, so leave that requirement uncovered and let it gap "
         "rather than naming an unpublished award.")
 
 CAPABILITY_DESCRIPTIONS: dict[str, str] = {
