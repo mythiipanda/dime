@@ -830,3 +830,46 @@ def test_the_catalog_description_forbids_inventing_an_unpublished_award() -> Non
 
     assert "Finals MVP" in description
     assert "gap" in description
+
+def test_points_won_points_max_and_award_share_stay_distinct_public_semantics(
+        awards_warehouse):
+    from v2.adapters import call_capability
+    from v2.adapters.capabilities import CAPABILITIES
+
+    def row_for(view: str):
+        envelope = call_capability("award_results", {
+            "view": view, "award": "MVP", "season": "2023-24"})
+        return envelope, next(entry for entry in envelope.rows
+                              if entry["season"] == "2023-24")
+
+    winner, placement = row_for("winner")
+    assert placement["points_won"] == 926
+    assert placement["points_max"] == 990
+    assert placement["award_share"] == 0.935
+    assert placement["points_won"] < placement["points_max"]
+    assert placement["award_share"] != (
+        placement["points_won"] / placement["points_max"])
+    assert placement["award_share"] == round(
+        placement["points_won"] / placement["points_max"], 3)
+
+    definitions = CAPABILITIES["award_results"].metric_definitions
+    assert definitions["points_won"] != definitions["points_max"]
+    assert "published" in definitions["points_won"]
+    assert "points_max" in definitions["points_won"]
+    assert "maximum" in definitions["points_max"]
+    assert "largest point total" not in definitions["points_won"]
+    assert "equals points_max" not in definitions["points_won"]
+    assert "0.9" not in definitions["award_share"]
+    assert "fraction scale 0-1" in definitions["award_share"]
+    assert "points_max" in definitions["award_share"]
+    assert winner.metric_definitions["points_won"] == definitions["points_won"]
+    assert winner.metric_definitions["points_max"] == definitions["points_max"]
+    assert winner.metric_definitions["award_share"] == (
+        definitions["award_share"])
+
+    history, leader = row_for("winner_history")
+    assert leader["player"] == placement["player"]
+    assert leader["points_won"] == 926
+    assert leader["points_max"] == 990
+    assert leader["award_share"] == 0.935
+    assert history.metric_definitions["points_max"] == definitions["points_max"]

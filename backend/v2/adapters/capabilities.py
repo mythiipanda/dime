@@ -34,12 +34,18 @@ FOUR_FACTORS_DEFS = {
     "ft_rate": "Free-throw rate: FTM / FGA, fraction scale 0-1.",
 }
 
-AWARD_SHARE_DEF = ("Award share: share of the maximum ballot points available "
-                   "to the placement, fraction scale 0-1. The official winner "
-                   "usually lands near 0.9, so 0.913 is 91.3 percent.")
-POINTS_WON_DEF = ("Points won: weighted ballot points credited to the "
-                  "placement. points_max is the largest point total on that "
-                  "ballot, so the winner's points_won equals points_max.")
+AWARD_SHARE_DEF = ("Award share: the published fraction of the maximum "
+                   "ballot points the placement earned, fraction scale 0-1. "
+                   "The source may round it, so it need not equal points_won "
+                   "divided by points_max.")
+POINTS_WON_DEF = ("Points won: the weighted ballot points the source "
+                  "published for the placement. It is that placement's own "
+                  "total, distinct from points_max, the maximum the ballot "
+                  "rules allow.")
+POINTS_MAX_DEF = ("Points max: the maximum possible ballot points under the "
+                  "ballot rules, independent of any one placement's own total. "
+                  "A leading placement's points_won can be less than "
+                  "points_max.")
 VOTES_DEF = ("First, second, and third place votes a placement received on a "
              "published ballot, counted in ballots. Null where the source "
              "publishes no vote count for that award.")
@@ -63,7 +69,7 @@ AWARD_FIELD_DEFINITIONS = {
               "Coach-of-the-Year question reads this column."),
     "player": ("Player named on the placement; null on a Coach-of-the-Year "
                "row, so a player-award question reads this column."),
-    "points_max": POINTS_WON_DEF,
+    "points_max": POINTS_MAX_DEF,
     "points_won": POINTS_WON_DEF,
     "rank": ("Published leading rank on the ballot. A tied placement shares "
              "the leading rank; null for an ORV row."),
