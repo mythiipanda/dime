@@ -126,8 +126,14 @@ def collect_capability_numbers(evidence_data):
     return nums
 
 
-def usage_capability_calls(evidence_data, answer_text):
-    """Capability calls the answer actually leans on, by cited id or by name."""
+def usage_capability_calls(evidence_data, answer_text, answer_nums=None):
+    """Capability calls the answer actually leans on, by cited id, name, or data.
+
+    Citation is the strongest signal, but an answer often cites a follow-up
+    query evidence id (say E6) while restating numbers the capability returned
+    under a different id (E1). Link those calls by the numbers they produced so
+    capability-grounded answers are not scored as if the capability was unused.
+    """
     cap_calls = capability_calls(evidence_data)
     if not cap_calls:
         return []
@@ -139,7 +145,22 @@ def usage_capability_calls(evidence_data, answer_text):
         return used
     cap_ids = {cap for _eid, cap, _r in cap_calls if cap}
     mentioned = {cap for cap in cap_ids if cap.lower() in lower}
-    return [t for t in cap_calls if t[1] in mentioned]
+    used = [t for t in cap_calls if t[1] in mentioned]
+    if used:
+        return used
+    if answer_nums:
+        linked = []
+        for eid, cap, result in cap_calls:
+            rows = capability_result_rows(result)
+            nums = []
+            if rows:
+                collect_numbers(rows, nums)
+            if nums and any(fuzzy_match(n, an)
+                            for n in nums for an in answer_nums):
+                linked.append((eid, cap, result))
+        if linked:
+            return linked
+    return []
 
 
 def reexecute_queries(queries, warehouse_path):
@@ -162,13 +183,21 @@ def reexecute_queries(queries, warehouse_path):
 
 def extract_answer_numbers(text):
     """Extract numeric tokens from the answer, filtering out non-factual numbers."""
+    # Season spans (2023-24, 2024/25) are context labels, not claim values, so
+    # drop them before tokenizing. Otherwise "2023-24" leaks a stray 24 into
+    # the pool and depresses match rates.
+    text = re.sub(r"\b\d{4}\s*[-/]\s*\d{2,4}\b", " ", text)
+    # Evidence-id references (E6, e12) are citations, not claim numbers. Strip
+    # them so the digits are not mistaken for values the answer reports.
+    text = re.sub(r"\b[Ee]\d+\b", " ", text)
     # Match numbers including negative and percentage
     toks = re.findall(r"-?\d{1,3}(?:,\d{3})*(?:\.\d+)?%?\b|-?\d+(?:\.\d+)?%?\b", text)
     out = []
     for t in toks:
+        is_pct = t.endswith("%")
         s = t.replace(",", "").rstrip("%")
-        # Skip years (4-digit standalone) and evidence IDs (E followed by digits)
-        if re.match(r"^-?\d{4}$", s):
+        # Skip calendar years (1900-2100); keep 4-digit counts such as 1000.
+        if re.match(r"^-?\d{4}$", s) and 1900 <= abs(int(s)) <= 2100:
             continue
         if re.match(r"^-?[eE]\d+$", s):
             continue
@@ -178,12 +207,12 @@ def extract_answer_numbers(text):
             continue
         if val == 0:
             continue
-        # Handle percentages: 54.55 -> 0.5455 (same number, different representation)
-        if val > 1 and val <= 100:
-            out.append(val)      # keep as percentage value
-            out.append(val / 100.0)  # also as decimal
-        else:
-            out.append(val)
+        out.append(val)
+        # A percentage may be restated as its decimal fraction
+        # (54.55% -> 0.5455). Only do this for real percentage tokens so plain
+        # integers do not spawn a phantom fractional twin.
+        if is_pct and 1 < val <= 100:
+            out.append(val / 100.0)
     return out
 
 def fuzzy_match(a, b, tol=0.01, rel=0.005):
@@ -233,8 +262,10 @@ def auto_score(answer_text, rubric, attempt_dir=None):
 
     # Capability outputs are warehouse-derived too: a capability_execute result
     # (e.g. an official award ballot read verbatim) returns numbers a direct
-    # SELECT cannot reproduce. Fold those numbers into the match pool so a
-    # capability-grounded answer is judged against the evidence it actually used.
+    # SELECT cannot reproduce. Fold those numbers into the match pool whenever a
+    # capability_execute call exists, regardless of which evidence id the answer
+    # happens to cite, so a capability-grounded answer is judged against the
+    # evidence it actually used.
     capability_nums = collect_capability_numbers(evidence_data)
     warehouse_nums.extend(capability_nums)
 
@@ -242,7 +273,7 @@ def auto_score(answer_text, rubric, attempt_dir=None):
     # with data. A cited capability that errored or came back empty cannot
     # substantiate a numeric claim.
     cap_calls = capability_calls(evidence_data)
-    used_cap_calls = usage_capability_calls(evidence_data, answer_text)
+    used_cap_calls = usage_capability_calls(evidence_data, answer_text, ans_nums)
     capability_evidence_used = bool(used_cap_calls)
     capability_verified = bool(used_cap_calls) and all(
         capability_returned_data(result) for _eid, _cap, result in used_cap_calls)
@@ -345,6 +376,25 @@ def auto_score(answer_text, rubric, attempt_dir=None):
     else:
         match_rate = 1.0
         match_count = 0
+
+    # Capability-grounded answers: score by how many of the answer's numbers the
+    # capability actually returned. SQL re-execution can contribute unrelated
+    # numbers (or none), and the capability envelope carries rows the answer was
+    # never asked to restate, so recall against the whole pool understates
+    # correctness. Precision over the answer's own numbers against the
+    # capability pool is the fairer signal for these answers.
+    if capability_nums and ans_nums and not is_negative_finding:
+        unique_cap = []
+        for n in capability_nums:
+            if not any(fuzzy_match(n, u) for u in unique_cap):
+                unique_cap.append(n)
+        cap_matched_ans = sum(
+            1 for an in ans_nums
+            if any(fuzzy_match(cn, an) for cn in unique_cap))
+        cap_answer_rate = cap_matched_ans / len(ans_nums)
+        if cap_answer_rate > match_rate:
+            match_rate = cap_answer_rate
+            match_count = cap_matched_ans
 
     correctness = int(round(match_rate * 5))
     correctness = max(0, min(5, correctness))
