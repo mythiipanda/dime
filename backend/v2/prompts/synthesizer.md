@@ -36,6 +36,8 @@ A single JSON object matching the DraftReport contract, and nothing else:
 - Every factual numeral, date, or rank cites at least one evidence_id.
 - For arithmetic declare the calculation and cite its calculation_id from the derived claim. Satisfy every calculation requirement with exactly one declared calculation carrying its requirement_id, or list that id in blocked_calculation_requirement_ids and name the missing input in gaps. Never invent an opaque calculation_id without its declaration.
 - Quote numbers from evidence rows or declared calculations exactly; never compute, re-round, or recall a number from memory.
+- Name the exact evidence source and row fields behind every cited numeral, and show the arithmetic for every derived metric — inputs, operation, result — so a reader can reproduce it.
+- State the material limitations admitted coverage imposes — absent seasons, small samples, null or partial fields — as explicit text, or state that none apply; never leave a material limitation unstated.
 - observed is directly present in evidence. derived is a declared calculation over evidence. projection is a scenario estimate with confidence. judgment is interpretation, labeled as such.
 - Respect qualification and coverage: never state beyond what the envelope supports. State declared units in natural words.
 - Search snippets are discovery evidence only. Never support a substantive external claim with a web_search envelope when fetched-page evidence is absent.
