@@ -1,0 +1,779 @@
+from __future__ import annotations
+
+import argparse
+import hashlib
+import json
+import os
+import sys
+import tempfile
+import time
+from pathlib import Path
+
+from provider import MODEL_ID, SERVER_BASE, Provider, ProviderError
+
+from backend_binding import validate_and_bind_backend, get_backend_root, BindingError
+
+ROOT = Path(__file__).resolve().parent
+PARENT = ROOT.parent
+TASKS_JSON = PARENT / "tasks.json"
+WAREHOUSE = PARENT / "warehouse-owned.duckdb"
+EXPECTED_SHA256 = "8b8e0e4ac811b489c6b3fd05661eb00747b3f5894cff4f493c01deaefddffc7c"
+
+N_CTX = 131072
+MAX_TOKENS = 4096
+RESERVE = 4096
+QUESTION_ID = None
+RUN_DEADLINE_S = 180.0
+PER_CALL_MAX_S = 75.0
+MAX_TURNS_DEFAULT = 6
+MAX_TURNS_MIN = 10
+RUN_DEADLINE_S = 180.0
+RUN_DEADLINE_MIN_S = 180.0
+QUERY_ROW_CAP = 30
+QUERY_TIMEOUT_S = 10.0
+
+os.environ["DIME_WAREHOUSE"] = str(WAREHOUSE)
+# Set up attempt-scoped hash cache file (inherits from env or creates temp)
+_hash_cache_file = os.environ.get("DIME_HASH_CACHE_FILE")
+if not _hash_cache_file:
+    _hash_cache_file = str(Path(tempfile.gettempdir()) / f"dime_hash_cache_{os.getpid()}.json")
+    os.environ["DIME_HASH_CACHE_FILE"] = _hash_cache_file
+BACKEND_PROVENANCE = validate_and_bind_backend()
+
+from capability_tools import TOOL_REGISTRY as CAPABILITY_TOOLS, open_capability_child  # noqa: E402
+from shared import query as shared_query  # noqa: E402
+from shared import store  # noqa: E402
+
+# Revalidate SQL and shared modules immediately post imports
+POST_IMPORT_PROVENANCE = validate_and_bind_backend()
+
+
+
+SYSTEM_PROMPT = (
+    "You are a read-only warehouse analyst. You answer the user's question "
+    "using only the five tools: schema, query, coverage, capability_catalog, "
+    "and capability_execute. Choose one action "
+    "per turn and return exactly one JSON object.\n"
+    "Action forms:\n"
+    '{"action": "schema", "arguments": {}} lists every queryable table.\n'
+    '{"action": "schema", "arguments": {"table": "<name>"}} lists that table\'s '
+    "columns and up to two sample rows. A large sample cell value appears as a "
+    "structured preview with keys preview, original_type, original_bytes, "
+    "sha256, truncated, serialization, and retrieval instead of its full value. "
+    "The preview is truncated display only and is not certification that data "
+    "is absent. The full value remains in the warehouse and is retrievable with "
+    "the query tool using an authorized SELECT or SUBSTRING on that column.\n"
+    '{"action": "query", "arguments": {"sql": "<single SELECT statement>"}} '
+    "runs a read-only query. Only SELECT or WITH, one statement, row cap 30, "
+    "timeout 10s.\n"
+    '{"action": "coverage", "arguments": {}} reports complete queryable '
+    "catalog metadata for every authorized table: column names, season and "
+    "season-type values, and provenance. It certifies that catalog metadata "
+    "only, not warehouse semantic content. Embedded JSON payload contents are "
+    "not inspected. Semantic data absence is not certified. Private or "
+    "unregistered contents are unknown, never empty.\n"
+    '{"action": "capability_catalog", "arguments": {}} lists every '
+    "capability by id and description.\n"
+    '{"action": "capability_catalog", "arguments": {"capability_id": "<id>"}} '
+    "returns that capability's exact argument schema.\n"
+    '{"action": "capability_execute", "arguments": {"capability_id": "<id>", '
+    '"arguments": {}}} runs one capability and returns its evidence envelope, '
+    "whose own evidence id is preserved.\n"
+    '{"action": "final", "answer": "<your answer>"} ends the run with your answer.\n'
+    "Each tool result arrives with an evidence id such as E1, E2. Reserve your "
+    "first turn for the schema action so you learn the real table and column "
+    "names before writing SQL. Inspect sample rows to discover conventions "
+    "such as how the season and playoffs are encoded.\n"
+    'When you return {"action": "final", ...}, cite the evidence ids you used. Name the '
+    "table, the exact filters you applied, the source fields, and show the "
+    "arithmetic for every number. Do not state a number that no tool result "
+    "supports. Do not invent tables or columns. When you claim that data is "
+    "absent, cite the coverage evidence that establishes the full scope of "
+    "what was inspected.\n"
+    "NBA analysis guidance: seasons are stored as strings like '2024-25' in _season "
+    "(historical silver_* tables) or SeasonID like '22025' (standings). Playoffs "
+    "are separate silver_playoffs / silver_playoff_gamelogs tables, not a flag. "
+    "Team/player names vary by table (PLAYER vs playerSlug; TeamCity+TeamName). "
+    "Always filter _season explicitly. Use provenance columns (_source, _prov_*) "
+    "when citing. Prefer views v_* for shot/PBP aggregations. Rate stats: compute "
+    "Tool return types and usage patterns: schema no-args returns {tables:[str]}; schema({table}) returns {table, columns:[{name,type}], sample_rows:[dict]} (max 2 rows; large cells as structured preview). query({sql}) returns {ok, rows:[dict], row_count, truncated?, elapsed_ms}; row cap 30, timeout 10s; only SELECT/WITH single statement. coverage({}) returns {queryable_table_count, non_queryable_table_count, tables:{name:{row_count,columns,seasons,season_type_values,sources,fetched_at_range}}, scope_certificate}; certifies catalog metadata only. capability_catalog({}) returns {count, capabilities:[{capability_id,description,source_tool,available,registered,execution_verification,controls}]}; capability_catalog({capability_id}) returns argument_schema. capability_execute({capability_id, arguments:{}}) returns {capability_id, arguments, evidence:{envelope with evidence id preserved}}. Common patterns: (1) discover tables -> schema; (2) inspect columns/samples -> schema({table}); (3) run metric -> query; (4) certify scope -> coverage; (5) list caps -> capability_catalog; (6) run cap -> capability_execute. "
+    "Data quality deep-dive: Authoritative (gold) tables: silver_advanced, silver_player_season, silver_team_games, silver_player_gamelogs, silver_team_games, silver_playoffs, silver_playoff_gamelogs, v_shots_* views. Derived/convenience: sp_work_* and silver_*_work columns (computed helpers; prefer base columns and cross-check). Normalized join keys: canonical_season, canonical_season_type. Known gaps: (a) minutes NULL for some early-season players; (b) lineup_source NULL on older games; (c) lineup tables contain a garbage sentinel column - filter garbage=1 rows OUT; (d) award/voting history sparse before 2000; (e) partial in-progress seasons (note games-played denominator); (f) team name variants (TeamCity+TeamName vs Team vs TEAM_ABBREVIATION). Reliability tiers: Tier1 authoritative base tables; Tier2 derived columns (use but verify); Tier3 sparse/historical (disclose). SEASON AVAILABILITY BY TABLE — use silver_team_games for current-season team data (2023-24, 2025-26 only), silver_player_gamelogs for player game logs (2024-25, 2025-26 only), silver_playoff_gamelogs (2024-25, 2025-26 only), silver_hist_gamelogs for historical multi-season data (2009-10 through 2025-26, ALL seasons/types), silver_player_season for player-season aggregates (2014-15 through 2025-26), silver_hist_player_seasons (2014-15 through 2024-25), silver_advanced (2019-20 through 2025-26), silver_playoffs (2024-25, 2025-26), silver_hist_standings (2009-10 through 2025-26), silver_bbref_awards (1976-77 through 2025-26), silver_hist_draft (1996-97 through 2023-24), silver_rosters (2023-24, 2025-26), silver_standings (2023-24, 2024-25, 2025-26), silver_four_factors (2025-26). For seasons BEFORE 2014: silver_hist_gamelogs is the PRIMARY source for historical team/player game logs (do NOT use silver_team_games, silver_player_gamelogs, or silver_playoff_gamelogs — they only cover recent seasons). KEY SCHEMA (most-quoted columns; skip schema lookups for these): silver_team_games: Team_ID, Game_ID, GAME_DATE, MATCHUP (contains team abbreviation e.g. 'BOS'), WL ('W'/'L'), W, L, PTS, FG_PCT, FG3_PCT, FT_PCT, OREB, DREB, REB, AST, STL, BLK, TOV, PF, _season (NO season_type column). silver_player_gamelogs: PLAYER, TEAM_ABBREVIATION, Game_ID, GAME_DATE, MIN, PTS, REB, AST, STL, BLK, TOV, FG_PCT, FG3_PCT, FT_PCT, _season, season_type, _source. silver_player_season: PLAYER_ID, PLAYER, TEAM_ABBREVIATION, SEASON (_season), PTS, REB, AST, STL, BLK, TOV, GP, MIN, TS_PCT, FG_PCT, FG3_PCT, FT_PCT, _source. silver_hist_gamelogs: team_id, team_abbreviation, team_name, game_id, game_date, matchup, wl, pts, _season, season_type, _source (lowercase columns). silver_hist_standings: Team_ID, Season (_season), season_type, W, L, W_PCT, PTS, _source. silver_bbref_awards is NOT queryable (disclose absence). Team abbreviations: BOS=Boston, GSW=Golden State, OKC=Oklahoma City. Decisive execution: after one schema lookup to confirm table availability, write the aggregation query directly — do NOT re-query schema for tables already reviewed. Always check COUNT(*) first. Always cite E_ids for each numeric claim. Always check COUNT(*) and null rates (COUNT(col)) before aggregating; report null rate when >5%. "
+    "per-game or per-100-possessions explicitly and show denominators. Tool usage examples (NBA): schema first turn always; query single SELECT/WITH row cap 30 10s timeout; per-game SELECT PLAYER, AVG(PTS) ppg; coverage certify full catalog scope; capability_catalog/execute discover then run by id. Edge cases: missing data cite coverage evidence; ambiguous state assumption and filter; multi-season filter each _season separately; partial season note games played denominator; rate stats show denominator. If a large sample cell appears as structured preview, full value still retrievable via query. "
+    "Consult DATA_CATALOG.md for the full 74-table catalog, column names, and "
+    "provenance before writing SQL. "
+    "SQL patterns (concrete): "
+    "(1) Per-game averages: SELECT PLAYER, COUNT(*) games, AVG(PTS) ppg, AVG(REB) rpg, AVG(AST) apg FROM silver_player_gamelogs WHERE _season='2024-25' GROUP BY PLAYER; "
+    "(2) Team win pct: SELECT Team, SUM(CASE WHEN WL='W' THEN 1 ELSE 0 END)*1.0/COUNT(*) win_pct FROM silver_team_games WHERE _season='2024-25' GROUP BY Team; "
+    "(3) Per-100-possessions: SELECT PLAYER, 100.0*SUM(PTS)/SUM(POSS) pts_per100 FROM silver_player_gamelogs WHERE _season='2024-25' GROUP BY PLAYER HAVING SUM(POSS)>0; "
+    "(4) Multi-season compare: run separate SELECTs each with _season='2023-24' and _season='2024-25', never combine seasons in one AVG; "
+    "(5) Player vs team: aggregate player rows then join to team aggregates on Team/_season; "
+    "(6) Top-N with ties: SELECT PLAYER, ppg FROM (...) ORDER BY ppg DESC LIMIT 10 (or RANK() OVER (ORDER BY ppg DESC) for ties); "
+    "(7) Date range: WHERE GAME_DATE BETWEEN '2024-10-01' AND '2024-12-31' (ISO dates). "
+    "Multi-step analysis: decompose complex questions into sequential queries - "
+    "(a) identify needed tables via schema/coverage, (b) run base aggregation per entity, "
+    "(c) run follow-up filters/rankings on those results, (d) combine with arithmetic in final answer; "
+    "never try one giant query; cite each evidence id; carry denominators forward. "
+    "Answer verification (self-check): after computing a key number, independently verify it by "
+    "re-running the same metric against a different but equivalent table/column (e.g. points from "
+    "silver_player_gamelogs vs silver_playoffs, or team totals from teamgamelogs vs sum of player gamelogs), "
+    "or by re-running with COUNT(*)/SUM cross-checks; if two independent computations disagree, report "
+    "the discrepancy and evidence ids, do not pick a number. Re-verify denominators (games played, "
+    "possessions) with a separate COUNT. Include a short 'verification' line in the final answer citing "
+    "the cross-check evidence id. "
+    "Advanced analysis patterns: " \
+    "(A) Team head-to-head: join teamgamelogs both sides on GAME_ID; compute win% differential and home/away splits; cite both team rows. " \
+    "(B) Trend analysis: group by _season or month; report month-over-month / season-over-season delta with game counts; rolling averages only with explicit window and sample. " \
+    "(C) Player impact: on/off via plus/minus; lineup combos from lineup tables; require minutes floor before claiming impact; label derived sp_work_* columns. " \
+    "(D) Award voting: aggregate from award/voting tables; note sparse pre-2000 coverage; report voter counts and point totals with denominators. " \
+    "(E) Playoff vs regular season: query separate silver_playoffs / silver_playoff_gamelogs tables, never a flag; compare same metric; note sample size differences. " \
+    "Confidence calibration: say 'I'm not sure' when (1) two independent computations disagree, (2) sample below stated floor, (3) data sparse/missing for period, (4) derived columns used without base cross-check. " \
+    "Flag data limitations explicitly (null rates, missing minutes, sparse award history, partial season). Recommend further analysis when a question needs a table not in catalog, a larger sample, or a different metric. " \
+    "Never overstate; distinguish observed fact vs inference; include caveat line when any limitation applies. " \
+    "FEW-SHOT EXAMPLES (illustrative format only; use real evidence ids from your run): "
+    "Example 1 (simple average): Q='Who led the NBA in PPG in 2024-25?' -> query SELECT PLAYER, COUNT(*) games, AVG(PTS) ppg FROM silver_player_gamelogs WHERE _season='2024-25' GROUP BY PLAYER HAVING COUNT(*)>=20 ORDER BY ppg DESC LIMIT 5 (E1). Answer: 'L. Doncic led with 33.9 PPG (E1, silver_player_gamelogs, _season=2024-25, 68 games). Verification: re-counted games via SELECT PLAYER, COUNT(*) FROM silver_player_gamelogs WHERE _season='2024-25' AND PLAYER='L. Doncic' (E2) = 68, matches.' "
+    "Example 2 (multi-step): Q='Did team X improve its win% from 2023-24 to 2024-25?' -> E1 win% 2023-24, E2 win% 2024-25, E3 cross-check teamgamelogs row counts. Answer shows both win% with denominators and a verification line. "
+    "Example 3 (absence): Q='Is there playoff data for 2025-26?' -> schema/coverage E1 lists silver_playoffs seasons; answer cites E1 and states absence if 2025-26 not listed, no invented rows. " \
+    "Example 4 (team comparison): Q='How did Lakers vs Celtics compare in 2024-25?' -> E1 Lakers home/away win% from silver_team_games, E2 Celtics, E3 head-to-head GAME_ID join; answer shows win% differential, home/away splits, H2H record, verification line. " \
+    "Example 5 (trend): Q='Is player X scoring trending up?' -> E1 monthly AVG(PTS) grouped by month, E2 game counts per month; answer shows month-over-month deltas and sample sizes, flags small-sample months. " \
+    "Example 6 (impact): Q='What is player X on/off impact?' -> E1 silver_advanced plus/minus, E2 minutes floor check, E3 lineup combo rows; answer labels derived columns, states uncertainty if minutes<floor. "
+    "Example 7 (team comparison complex): Q='Compare Lakers vs Celtics 2024-25 on offense and defense' -> E1 Lakers silver_team_games (PTS/G, ORTG, DRTG, pace), E2 Celtics same, E3 head-to-head silver_team_games GAME_ID join (W-L, point diff), E4 home/away splits; answer shows per-game deltas, H2H record, home/away splits, verification line cross-checking team totals vs sum of player gamelogs. "
+    "Example 8 (trend analysis): Q='Is player X scoring trending up over last 3 seasons?' -> E1 per-season AVG(PTS) with COUNT(*) games for 2022-23/2023-24/2024-25, E2 monthly breakdown for current season, E3 sample-size flags; answer shows season-over-season deltas, month-over-month deltas, flags small-sample months (<10 games), confidence caveat if fewer than 20 games in a season. "
+    "Example 9 (award voting): Q='Who won MVP in 2023-24 and by what margin?' -> E1 award/voting table rows (player, first-place votes, total points), E2 voter count, E3 cross-check player stats for that season; answer reports winner, point totals, vote margin, voter count denominator, notes sparse pre-2000 coverage, verification line. "
+    "CITATION CHECKLIST (HARD requirement): every numeric claim MUST carry at least one evidence id (E1, E2, ...) "
+    "immediately after the number, e.g. '33.9 PPG (E1)'. MUST cite at least 3 distinct evidence IDs (E1, E2, E3). "
+    "If you cannot find 3, explicitly state why in the Caveats section. "
+    "SELF-CHECK: Count distinct evidence IDs cited. If fewer than 3, go back and query more evidence before finalizing. "
+    "Name the table, exact filters applied, and source fields for each cited number. Show arithmetic for every "
+    "computed metric (e.g. 'win% = 42/82 = 0.512 (E1)'). Never state a number no tool result supports. "
+    "UNCERTAINTY & EDGE-CASE FLAGGING (required in EVERY answer): include a dedicated 'Caveats / uncertainty' "
+    "section listing (1) data limitations (null rates, missing minutes, sparse award history, partial season), "
+    "(2) small-sample flags (any metric based on <20 games or <10 players), (3) missing-data disclosures "
+    "(tables/seasons not present per coverage), (4) inference vs observed fact distinctions, (5) any derived "
+    "column (sp_work_*) used without base cross-check. If none apply, state 'No material limitations identified' "
+    "explicitly. Recommend further analysis when a needed table/sample/metric is unavailable. "
+    "GRADING (what makes a good answer): correctness of numbers vs warehouse; cite evidence IDs for key claims; "
+    "report all requested metrics; structure with headers/tables; flag uncertainty and edge cases (sparse coverage, small samples). "
+    "Aim for weighted score >= 0.75 on grading_rubric.json. "
+    "Example 10 (citation density + uncertainty): Q='Top 5 scorers 2024-25' -> E1 SELECT PLAYER, COUNT(*) games, AVG(PTS) ppg ... (E1); E2 independent game-count cross-check (E2); E3 coverage for table scope (E3). Answer: table with 5 rows each 'PLAYER: 33.9 PPG (E1, 68 games)' + 'Verification: game counts match E2' + 'Caveats: partial season (games played <82); players with <20 games excluded; minutes null rate 3% (E3); Tier1 authoritative base table.' "
+    "Example 11 (edge-case heavy): Q='MVP margin 2023-24' -> E1 voting rows, E2 voter count, E3 coverage showing award tables sparse pre-2000. Answer reports winner, point totals, vote margin, voter denominator, plus 'Caveats: award voting history sparse before 2000 (E3); 2023-24 only; inference vs observed fact labeled; derived columns cross-checked.' "
+    "Example 12 (missing data): Q='Playoff stats 2025-26' -> E1 schema/coverage shows silver_playoffs seasons. Answer: 'No 2025-26 playoff data found in silver_playoffs (E1, coverage). Caveats: season not yet in catalog; cannot compute; recommend re-run after data refresh.' "     "Example 13 (rate stat per-game + per-100): Q='Top 5 in PPG and PTS/100 in 2024-25' -> E1 SELECT PLAYER, COUNT(*) games, AVG(PTS) ppg FROM silver_player_gamelogs WHERE _season='2024-25' GROUP BY PLAYER HAVING COUNT(*)>=20 (E1); E2 SELECT PLAYER, 100.0*SUM(PTS)/SUM(POSS) pts_per100 ... HAVING SUM(POSS)>0 (E2); E3 game-count cross-check (E3). Answer: table with both metrics, each '33.9 PPG (E1, 68 games); 38.2 PTS/100 (E2, 2,412 poss)'; Verification: game counts match E3; Caveats: players <20 games excluded; poss NULL rate 2% (E1). "     "Example 14 (ranking with ties): Q='Top 10 in AST/G in 2024-25 with ties' -> E1 SELECT PLAYER, AVG(AST) apg, RANK() OVER (ORDER BY AVG(AST) DESC) rnk FROM silver_player_gamelogs WHERE _season='2024-25' GROUP BY PLAYER HAVING COUNT(*)>=20 (E1); E2 cross-check counts (E2). Answer: ranked list noting ties (e.g. 'T-3rd: X and Y, 8.4 APG (E1)'); Verification: counts match E2; Caveats: ties at boundary included; small-sample players excluded. "     "Example 15 (playoff vs regular season): Q='Did player X score more in playoffs than regular season 2023-24?' -> E1 silver_player_gamelogs AVG(PTS) regular (E1); E2 silver_playoff_gamelogs AVG(PTS) playoffs (E2); E3 game counts both (E3). Answer: 'Regular: 26.8 PPG (E1, 72 games); Playoffs: 28.1 PPG (E2, 17 games); delta +1.3 (E1,E2)'; Verification: counts match E3; Caveats: playoff sample 17 games (<20) flagged; different tables (never a flag); minutes null rate 4%. "     "Example 16 (award voting margin + sample size): Q='MVP 2023-24 margin and voter count' -> E1 award/voting rows (player, first-place votes, total points) (E1); E2 voter count (E2); E3 coverage showing award tables sparse pre-2000 (E3); E4 cross-check player stats (E4). Answer: 'Winner: N. Jokic, 79 first-place votes, 926 pts (E1); runner-up 18 first-place, 640 pts (E1); margin 286 pts (E1); voters: 100 (E2)'; Caveats: award history sparse pre-2000 (E3); derived columns cross-checked (E4). "     "LOW-MATCH-RATE HANDLING: when a grader/verification shows answer numbers not matching evidence (low match rate), do NOT guess. Re-run the supporting query, compare each cited number to evidence rows, and if a discrepancy remains, report it explicitly: 'Discrepancy: computed X from E1 vs Y from E2; reporting X (E1) as primary, flagging mismatch.' Never silently pick a number. Include the mismatch in Caveats. "     "CITATION CHECKLIST (before final answer): (1) Count distinct evidence ids cited; require >=3. If fewer, run another query/coverage to gain evidence. (2) Every numeric claim has an evidence id immediately after it. (3) Table name + exact filters + source fields named for each number. (4) Arithmetic shown for every computed metric. (5) Caveats section present (or 'No material limitations identified'). (6) Verification line citing cross-check evidence id. Only then emit final. "
+    )
+
+ACTION_SCHEMA = {
+    "name": "warehouse_action",
+    "strict": True,
+    "schema": {
+        "type": "object",
+        "additionalProperties": False,
+        "properties": {
+            "action": {"enum": ["query", "schema", "coverage",
+                                "capability_catalog", "capability_execute",
+                                "final"]},
+            "arguments": {"type": "object"},
+            "answer": {"type": "string"},
+        },
+        "required": ["action"],
+    },
+}
+
+
+class LoopFailure(RuntimeError):
+    pass
+
+
+def jsonable(value):
+    return json.loads(json.dumps(value, default=str))
+
+
+def sha256_file(path: Path) -> str:
+    digest = hashlib.sha256()
+    with open(path, "rb") as fh:
+        for block in iter(lambda: fh.read(1 << 20), b""):
+            digest.update(block)
+    return digest.hexdigest()
+
+
+def write_json(path: Path, payload) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(payload, indent=2, sort_keys=True, default=str),
+                    encoding="utf-8")
+
+
+def warehouse_pin() -> dict:
+    actual = sha256_file(WAREHOUSE) if WAREHOUSE.is_file() else None
+    return {
+        "path": str(WAREHOUSE),
+        "expected_sha256": EXPECTED_SHA256,
+        "actual_sha256": actual,
+        "match": actual == EXPECTED_SHA256,
+        "identity": store.warehouse_identity() if actual else None,
+    }
+
+
+def require_warehouse() -> dict:
+    pin = warehouse_pin()
+    if not pin["match"]:
+        raise LoopFailure(
+            f"warehouse sha256 mismatch: expected {EXPECTED_SHA256} "
+            f"got {pin['actual_sha256']} at {WAREHOUSE}")
+    return pin
+
+
+def queryable_tables() -> list[str]:
+    con = store.connect(read_only=True)
+    try:
+        return sorted(shared_query._allowed_tables(con))
+    finally:
+        try:
+            con.close()
+        except Exception:
+            pass
+
+
+def resolve_out(arg: str) -> Path:
+    out = Path(arg).resolve()
+    root = ROOT.resolve()
+    if out == root:
+        raise LoopFailure(f"--out cannot be ROOT {root}")
+    if root not in out.parents:
+        raise SystemExit(f"--out must be a child directory of {root}")
+    if out.exists():
+        raise LoopFailure(f"output directory already exists: {out}")
+    journal_path = out / "inference-journal.jsonl"
+    os.environ["DIME_CLOUD_JOURNAL"] = str(journal_path)
+    return out
+
+def acquire_out(out: Path) -> Path:
+    out = out.resolve()
+    root = ROOT.resolve()
+    if out == root:
+        raise LoopFailure(f"--out cannot be ROOT {root}")
+    if root not in out.parents:
+        raise SystemExit(f"--out must be a child directory of {root}")
+    if out.exists():
+        raise LoopFailure(f"output directory already exists: {out}")
+    out.mkdir(parents=True, exist_ok=False)
+    journal_path = out / "inference-journal.jsonl"
+    if journal_path.exists():
+        raise LoopFailure(f"journal already exists: {journal_path}")
+    os.environ["DIME_CLOUD_JOURNAL"] = str(journal_path)
+    return out
+
+
+
+
+
+
+def load_question() -> str:
+    data = json.loads(TASKS_JSON.read_text(encoding="utf-8"))
+    for entry in data:
+        if entry.get("id") == QUESTION_ID:
+            return entry["question"]
+    raise SystemExit(f"{QUESTION_ID} not found in {TASKS_JSON}")
+
+
+PREVIEW_MAX_BYTES = 256
+
+_PREVIEW_RETRIEVAL = {
+    "tool": "query",
+    "description": (
+        "The full value remains in the warehouse. Use the query tool to run an "
+        "authorized SELECT or SUBSTRING on this column to retrieve it."),
+}
+
+
+def canonical_json(value) -> str:
+    return json.dumps(value, sort_keys=True, ensure_ascii=False,
+                      separators=(",", ":"), default=str)
+
+
+def _cell_bytes(value) -> tuple[bytes, str]:
+    if isinstance(value, str):
+        return value.encode("utf-8"), "utf8-raw"
+    return canonical_json(value).encode("utf-8"), "json-canonical"
+
+
+def _utf8_prefix(data: bytes, limit: int) -> str:
+    cut = data[:limit]
+    while cut:
+        try:
+            return cut.decode("utf-8")
+        except UnicodeDecodeError:
+            cut = cut[:-1]
+    return ""
+
+
+def preview_cell(value):
+    data, serialization = _cell_bytes(value)
+    if len(data) <= PREVIEW_MAX_BYTES:
+        return value
+    return {
+        "preview": _utf8_prefix(data, PREVIEW_MAX_BYTES),
+        "original_type": type(value).__name__,
+        "original_bytes": len(data),
+        "sha256": hashlib.sha256(data).hexdigest(),
+        "truncated": True,
+        "serialization": serialization,
+        "retrieval": dict(_PREVIEW_RETRIEVAL),
+    }
+
+
+def apply_schema_previews(result: dict) -> dict:
+    if not isinstance(result, dict):
+        return result
+    rows = result.get("sample_rows")
+    if not isinstance(rows, list):
+        return result
+    preview_rows = [
+        ({k: preview_cell(v) for k, v in row.items()} if isinstance(row, dict)
+         else row)
+        for row in rows
+    ]
+    return {**result, "sample_rows": preview_rows}
+
+
+def schema_result(arguments: dict) -> dict:
+    tables = queryable_tables()
+    lowered = {t.lower(): t for t in tables}
+    out = {"tables": tables}
+    table = arguments.get("table") if isinstance(arguments, dict) else None
+    if table:
+        name = str(table).strip().lower()
+        if name not in lowered:
+            return {"ok": False, "error": f"unknown table: {table}"}
+        real = lowered[name]
+        ident = '"' + real.replace('"', '""') + '"'
+        con = store.connect(read_only=True)
+        try:
+            cols = con.execute(f"PRAGMA table_info({ident})").fetchall()
+            names = [c[1] for c in cols]
+            row_cursor = con.execute(f"SELECT * FROM {ident} LIMIT 2")
+            rows = row_cursor.fetchall()
+        finally:
+            try:
+                con.close()
+            except Exception:
+                pass
+        out["table"] = real
+        out["columns"] = [{"name": c[1], "type": c[2]} for c in cols]
+        out["sample_rows"] = [dict(zip(names, row)) for row in rows]
+    return {"ok": True, **out}
+
+
+def tool_schema(arguments: dict) -> dict:
+    return apply_schema_previews(schema_result(arguments))
+
+
+def tool_query(arguments: dict) -> dict:
+    sql = str((arguments or {}).get("sql") or "")
+    if not sql.strip():
+        return {"ok": False, "error": "missing sql"}
+    return shared_query.query_warehouse(
+        sql, max_rows=QUERY_ROW_CAP, timeout_s=QUERY_TIMEOUT_S)
+
+
+def tool_coverage(arguments: dict) -> dict:
+    tables = queryable_tables()
+    con = store.connect(read_only=True)
+    try:
+        all_tables = {
+            r[0] for r in con.execute(
+                "SELECT table_name FROM information_schema.tables "
+                "WHERE table_schema IN ('main', 'public')"
+            ).fetchall()
+        }
+        non_queryable = all_tables - set(tables)
+        table_info = {}
+        for t in tables:
+            ident = '"' + t.replace('"', '""') + '"'
+            cols = con.execute(f"PRAGMA table_info({ident})").fetchall()
+            col_names = [c[1] for c in cols]
+            row_count = con.execute(f"SELECT count(*) FROM {ident}").fetchone()[0]
+            seasons = []
+            if "_season" in col_names:
+                seasons = [
+                    r[0] for r in con.execute(
+                        f"SELECT DISTINCT _season FROM {ident} "
+                        "WHERE _season IS NOT NULL ORDER BY _season"
+                    ).fetchall()
+                ]
+            season_type_values = []
+            for st_col in ("season_type", "canonical_season_type"):
+                if st_col in col_names:
+                    season_type_values = [
+                        r[0] for r in con.execute(
+                            f"SELECT DISTINCT {st_col} FROM {ident} "
+                            f"WHERE {st_col} IS NOT NULL ORDER BY {st_col}"
+                        ).fetchall()
+                    ]
+                    break
+            sources = []
+            if "_source" in col_names:
+                sources = [
+                    r[0] for r in con.execute(
+                        f"SELECT DISTINCT _source FROM {ident} "
+                        "WHERE _source IS NOT NULL ORDER BY _source"
+                    ).fetchall()
+                ]
+            fetched_at_range = None
+            if "_fetched_at" in col_names:
+                row = con.execute(
+                    f"SELECT MIN(_fetched_at), MAX(_fetched_at) FROM {ident}"
+                ).fetchone()
+                if row and row[0]:
+                    fetched_at_range = {"min": row[0], "max": row[1]}
+            table_info[t] = {
+                "row_count": row_count,
+                "columns": col_names,
+                "seasons": seasons,
+                "season_type_values": season_type_values,
+                "sources": sources,
+                "fetched_at_range": fetched_at_range,
+            }
+        scope_certificate = {
+            "complete_for": "queryable_catalog_metadata",
+            "catalog_sources": list(tables),
+            "columns": "all top-level physical column names in listed tables",
+            "seasons": "DISTINCT nonnull _season values only, not payload seasons",
+            "season_types": (
+                "first present existing season_type/canonical_season_type field"
+            ),
+            "provenance": (
+                "DISTINCT nonnull _source and _fetched_at extrema only"
+            ),
+            "physical_table_count": len(all_tables),
+            "physical_table_count_semantics": (
+                "count only, not authority over semantic content"
+            ),
+            "semantic_data_absence_certified": False,
+            "json_payload_contents_inspected": False,
+            "private_or_unregistered_contents": "unknown",
+            "instruction": "Only rows/columns described, not source semantic absence.",
+        }
+        return {
+            "ok": True,
+            "queryable_table_count": len(tables),
+            "non_queryable_table_count": len(non_queryable),
+            "tables": table_info,
+            "scope_certificate": scope_certificate,
+        }
+    finally:
+        try:
+            con.close()
+        except Exception:
+            pass
+
+
+TOOL_REGISTRY = {
+    "schema": tool_schema,
+    "query": tool_query,
+    "coverage": tool_coverage,
+    "capability_catalog": CAPABILITY_TOOLS["capability_catalog"],
+    "capability_execute": CAPABILITY_TOOLS["capability_execute"],
+}
+
+
+def run_tool(name: str, arguments: dict, archive: Path | None = None,
+             child=None) -> dict:
+    if name not in TOOL_REGISTRY:
+        return {"ok": False, "error": f"unknown tool: {name}"}
+    try:
+        if name == "schema" and archive is not None:
+            raw = schema_result(arguments)
+            if "sample_rows" in raw:
+                write_json(archive, jsonable(raw))
+            return jsonable(apply_schema_previews(raw))
+        if name in ("capability_catalog", "capability_execute"):
+            return jsonable(TOOL_REGISTRY[name](arguments, child=child))
+        return jsonable(TOOL_REGISTRY[name](arguments))
+    except Exception as exc:
+        return {"ok": False, "error": f"{type(exc).__name__}: {exc}"}
+
+
+def parse_action(content: str) -> dict:
+    from action_decoder import decode_action_json
+    text = (content or "").strip()
+    if not text:
+        raise LoopFailure("model returned empty content")
+    try:
+        action = decode_action_json(content)
+    except Exception as exc:
+        raise LoopFailure(f"action parse error: {exc}: {content[:300]}")
+    action_name = action.get("action")
+    if action_name == "final":
+        return {"kind": "final", "text": action["answer"]}
+    if action_name in ("schema", "query", "coverage",
+                        "capability_catalog", "capability_execute"):
+        return {"kind": "tool", "tool": action_name, "arguments": action["arguments"]}
+    raise LoopFailure(
+        f"action has unknown or missing 'action' field: {content[:300]}")
+
+
+
+
+def _evict_old_tool_results(messages: list, provider, max_tokens: int) -> list:
+    """Bound context growth by replacing old tool results with pointers.
+
+    Full evidence is already archived on disk (evidence/E*.json) and remains
+    citable by id, so an old result can be replaced by a short reference once the
+    prompt approaches the model's context. The most recent tool results are kept
+    verbatim because the model is actively reasoning over them.
+    """
+    n_ctx = getattr(provider, "context", None) or N_CTX
+    budget = n_ctx - max_tokens
+    if budget <= 0:
+        # Context is smaller than the output reserve: keep only the newest tool
+        # results so the prompt can still fit. Evidence stays archived on disk.
+        budget = max(1, n_ctx // 2)
+    measure = provider.measure(messages, time.monotonic() + 30.0, PER_CALL_MAX_S)
+    if measure["prompt_tokens"] <= budget:
+        return messages
+
+    # Identify tool-result messages (role user, content starts with TOOL RESULT).
+    idxs = [i for i, m in enumerate(messages)
+            if m.get("role") == "user"
+            and str(m.get("content", "")).startswith("TOOL RESULT ")]
+    # Keep the newest few verbatim; collapse older ones to a pointer.
+    keep = set(idxs[-3:])
+    for i in idxs:
+        if i in keep:
+            continue
+        content = str(messages[i].get("content", ""))
+        header = content.split("\n", 1)[0]  # "TOOL RESULT E3:"
+        messages[i] = {
+            "role": "user",
+            "content": (f"{header} (full result archived as evidence/"
+                        f"{header.split()[-1].rstrip(':')}.json; still citable by id)"),
+        }
+        measure = provider.measure(messages, time.monotonic() + 30.0, PER_CALL_MAX_S)
+        if measure["prompt_tokens"] <= budget:
+            break
+    return messages
+
+
+def generate_one(provider: Provider, out: Path, label: str, messages: list,
+                 deadline: float, response_format: dict | None) -> dict:
+    messages = _evict_old_tool_results(messages, provider, MAX_TOKENS)
+    measure = provider.measure(messages, deadline, PER_CALL_MAX_S)
+    n_ctx = getattr(provider, "context", None) or N_CTX
+    if measure["prompt_tokens"] + MAX_TOKENS > n_ctx:
+        raise LoopFailure(
+            f"{label}: prompt_tokens={measure['prompt_tokens']} plus reserve "
+            f"{MAX_TOKENS} exceeds n_ctx {n_ctx}")
+    gen = provider.generate(messages, MAX_TOKENS, deadline, response_format,
+                            PER_CALL_MAX_S)
+    write_json(out / f"{label}-request.json", {
+        "messages": messages,
+        "response_format": response_format,
+        "prompt_measurement": {
+            "apply_template_status": measure["apply_template_status"],
+            "prompt": measure["prompt"],
+            "prompt_chars": measure["prompt_chars"],
+            "tokenize_status": measure["tokenize_status"],
+            "prompt_tokens": measure["prompt_tokens"],
+        },
+    })
+    write_json(out / f"{label}-response.json", gen)
+    if gen.get("outcome") != "chat":
+        raise LoopFailure(
+            f"{label}: generation did not produce a chat response: "
+            f"{gen.get('outcome')} status={gen.get('status_code')} "
+            f"{str(gen.get('raw_response_text') or gen.get('exception'))[:300]}")
+    if gen.get("finish_reason") == "length":
+        raise LoopFailure(f"{label}: finish_reason=length, output truncated")
+    return {"measure": measure, "gen": gen}
+
+
+def base_pins(max_turns: int = MAX_TURNS_DEFAULT,
+              deadline_s: float = RUN_DEADLINE_S) -> dict:
+    return {
+        "endpoint": SERVER_BASE,
+        "model": MODEL_ID,
+        "n_ctx": N_CTX,
+        "max_tokens": MAX_TOKENS,
+        "reserve_output_tokens": RESERVE,
+        "max_turns": max_turns,
+        "run_deadline_s": deadline_s,
+        "per_call_max_s": PER_CALL_MAX_S,
+        "query_row_cap": QUERY_ROW_CAP,
+        "query_timeout_s": QUERY_TIMEOUT_S,
+        "question_id": QUESTION_ID,
+        "tasks_json": str(TASKS_JSON),
+        "auth_headers_saved": False,
+        "tools": sorted(TOOL_REGISTRY),
+    }
+
+
+def run_mode(out: Path, max_turns: int, deadline_s: float) -> dict:
+    out = acquire_out(out)
+    pin_before = require_warehouse()
+    question = load_question()
+    deadline = time.monotonic() + deadline_s
+    child = open_capability_child(deadline=deadline)
+    try:
+        provider = Provider()
+        messages = [
+            {"role": "system", "content": SYSTEM_PROMPT},
+            {"role": "user", "content": question},
+        ]
+        evidence: list[dict] = []
+        final_text = None
+        turn_log: list[dict] = []
+        for turn in range(1, max_turns + 1):
+            if provider.remaining(deadline) <= 0:
+                raise LoopFailure(f"run deadline exceeded before turn {turn}")
+            label = f"turn-{turn:02d}"
+            turn_dir = out / label
+            turn_started = time.monotonic()
+            produced = generate_one(provider, turn_dir, "provider", messages,
+                                    deadline, ACTION_SCHEMA)
+            gen = produced["gen"]
+            action = parse_action(gen.get("content"))
+            entry = {
+                "turn": turn,
+                "finish_reason": gen.get("finish_reason"),
+                "usage": gen.get("usage"),
+                "prompt_tokens": produced["measure"]["prompt_tokens"],
+                "action_kind": action["kind"],
+                "elapsed_s": round(time.monotonic() - turn_started, 3),
+            }
+            if action["kind"] == "final":
+                final_text = action["text"]
+                write_json(turn_dir / "action.json", action)
+                turn_log.append(entry)
+                break
+            eid = f"E{len(evidence) + 1}"
+            archive = (out / "raw-schema" / f"{eid}.json"
+                       if action["tool"] == "schema" else None)
+            result = run_tool(action["tool"], action["arguments"],
+                              archive=archive, child=child)
+            record = {
+                "id": eid,
+                "turn": turn,
+                "tool": action["tool"],
+                "arguments": action["arguments"],
+                "result": result,
+            }
+            evidence.append(record)
+            write_json(out / "evidence" / f"{eid}.json", record)
+            entry["evidence_id"] = eid
+            entry["tool_ok"] = bool(result.get("ok"))
+            turn_log.append(entry)
+            messages.append({"role": "assistant", "content": gen.get("content") or "",
+                             "reasoning_content": gen.get("reasoning_content") or ""})
+            messages.append({
+                "role": "user",
+                "content": f"TOOL RESULT {eid}:\n"
+                           + json.dumps(record, sort_keys=True, default=str),
+            })
+        if final_text is None:
+            raise LoopFailure(f"no final answer within {max_turns} turns")
+        pin_after = require_warehouse()
+        (out / "final.txt").write_text(final_text, encoding="utf-8")
+        summary = {
+            "mode": "run",
+            "ok": True,
+            "question_id": QUESTION_ID,
+            "question": question,
+            "turns": turn_log,
+            "evidence_ids": [e["id"] for e in evidence],
+            "pins": {**base_pins(max_turns, deadline_s),
+                     "warehouse_before": pin_before,
+                     "warehouse_after": pin_after},
+            "final_chars": len(final_text),
+            "elapsed_s": round(deadline_s - provider.remaining(deadline), 3),
+        }
+        write_json(out / "summary.json", summary)
+        return summary
+    finally:
+        child.close()
+
+
+def smoke_mode(out: Path) -> dict:
+    out = acquire_out(out)
+    pin = require_warehouse()
+    deadline = time.monotonic() + RUN_DEADLINE_S
+
+    provider = Provider()
+    messages = [
+        {"role": "system", "content":
+            "Return one JSON object. To list the warehouse tables use "
+            '{"action": "schema", "arguments": {}}.'},
+        {"role": "user", "content":
+            "Choose the schema action to list the queryable warehouse tables."},
+    ]
+    turn_dir = out / "smoke"
+    produced = generate_one(provider, turn_dir, "provider", messages, deadline,
+                            ACTION_SCHEMA)
+    gen = produced["gen"]
+    action = parse_action(gen.get("content"))
+    ok = action["kind"] == "tool" and action.get("tool") == "schema"
+    write_json(turn_dir / "action.json", action)
+    summary = {
+        "mode": "smoke",
+        "ok": ok,
+        "selected_tool": action.get("tool") if action["kind"] == "tool" else None,
+        "action_kind": action["kind"],
+        "finish_reason": gen.get("finish_reason"),
+        "usage": gen.get("usage"),
+        "prompt_tokens": produced["measure"]["prompt_tokens"],
+        "pins": {**base_pins(), "warehouse": pin},
+    }
+    write_json(out / "summary.json", summary)
+    if not ok:
+        raise LoopFailure(f"smoke did not select the schema action: {action}")
+    return summary
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(
+        description="Minimal read-only warehouse schema + SQL analyst loop")
+    parser.add_argument("--mode", choices=("smoke", "run"), required=True)
+    parser.add_argument("--out", required=True,
+                        help="output directory, must be inside this prototype")
+    parser.add_argument("--turn-budget", type=int, default=MAX_TURNS_MIN,
+                        help=f"maximum turns (minimum {MAX_TURNS_MIN})")
+    parser.add_argument("--run-deadline-s", type=float,
+                        default=RUN_DEADLINE_MIN_S,
+                        help="elapsed generation cap in seconds "
+                             f"(minimum {RUN_DEADLINE_MIN_S})")
+    args = parser.parse_args()
+    if args.turn_budget < MAX_TURNS_MIN:
+        raise SystemExit(
+            f"--turn-budget={args.turn_budget} below required minimum "
+            f"{MAX_TURNS_MIN}")
+    if args.run_deadline_s < RUN_DEADLINE_MIN_S:
+        raise SystemExit(
+            f"--run-deadline-s={args.run_deadline_s} below required minimum "
+            f"{RUN_DEADLINE_MIN_S}")
+    budget = {"max_turns": args.turn_budget,
+              "run_deadline_s": args.run_deadline_s}
+    print(f"turn_budget: {budget['max_turns']} turns, "
+          f"deadline: {budget['run_deadline_s']}s", file=sys.stderr)
+    out = resolve_out(args.out)
+    started = time.monotonic()
+    try:
+        if args.mode == "smoke":
+            summary = smoke_mode(out)
+        else:
+            summary = run_mode(out, budget["max_turns"],
+                               budget["run_deadline_s"])
+    except (LoopFailure, ProviderError) as exc:
+        failure = {
+            "mode": args.mode,
+            "ok": False,
+            "error_type": type(exc).__name__,
+            "error": str(exc),
+            "pins": base_pins(budget["max_turns"], budget["run_deadline_s"]),
+            "elapsed_s": round(time.monotonic() - started, 3),
+        }
+        if out.is_dir():
+            write_json(out / "summary.json", failure)
+        print(json.dumps(failure, indent=2))
+        raise SystemExit(1)
+    print(json.dumps(summary, indent=2))
+
+
+
+if __name__ == "__main__":
+    main()
