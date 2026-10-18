@@ -156,23 +156,26 @@ def test_evict_old_evidence_keeps_newest_three_and_protects_citations():
 
 def test_prune_session_evicts_stale_evidence_before_turn_prose():
     from v2.domain.evidence import (
-        count_tokens, envelope_tokens, evict_old_evidence,
-        prune_session_context)
+        count_tokens, envelope_tokens, prune_session_context)
 
     names = [f"evidence:e{index}" for index in range(5)]
     evidence = {name: _named_envelope(name, _board_rows(20)) for name in names}
     turns = _turns(2)
     _, compacted, _ = prune_session_context(
         turns, evidence, {}, token_budget=10**9)
-    _, evicted_names = evict_old_evidence(compacted, {})
-    budget = 1300
+    budget = (sum(count_tokens(turn.content) for turn in turns)
+              + sum(envelope_tokens(item) for item in compacted.values()) - 1)
 
     pruned_turns, pruned_map, report = prune_session_context(
         turns, evidence, {}, token_budget=budget)
 
     assert "evidence_eviction" in report.levels_applied
+    assert "turn_prose" not in report.levels_applied
+    assert pruned_turns == turns
     assert pruned_map[names[0]].rows == {}
+    assert pruned_map[names[1]].rows == {}
     assert pruned_map[names[0]].warnings
+    assert pruned_map[names[4]] == compacted[names[4]]
 
 def test_loop_prunes_context_prose_to_budget_without_network():
     import asyncio
