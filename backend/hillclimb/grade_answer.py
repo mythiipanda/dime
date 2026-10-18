@@ -70,6 +70,78 @@ def extract_sql_from_evidence(evidence_data):
     return queries
 
 
+def capability_calls(evidence_data):
+    """Return (eid, capability_id, result) for every capability_execute record."""
+    calls = []
+    for ev in evidence_data:
+        if ev.get("tool") != "capability_execute":
+            continue
+        args = ev.get("arguments")
+        cap_id = ""
+        if isinstance(args, dict):
+            cap_id = args.get("capability_id") or args.get("tool") or ""
+        cap_id = cap_id or ev.get("capability_id") or ""
+        result = ev.get("result") if isinstance(ev.get("result"), dict) else {}
+        calls.append((ev.get("id", ""), str(cap_id), result))
+    return calls
+
+
+def capability_result_rows(result):
+    """Return the data rows a capability call produced, or None if it produced none."""
+    if not isinstance(result, dict) or result.get("ok") is False:
+        return None
+    evidence = result.get("evidence")
+    if isinstance(evidence, dict):
+        rows = evidence.get("rows")
+        if isinstance(rows, list):
+            return rows
+    rows = result.get("rows")
+    if isinstance(rows, list):
+        return rows
+    return None
+
+
+def capability_returned_data(result):
+    """True when a capability call succeeded and returned at least one data row."""
+    rows = capability_result_rows(result)
+    if rows is not None:
+        return len(rows) > 0
+    # Envelopes without rows still count as data when they report success.
+    return bool(isinstance(result, dict) and result.get("ok"))
+
+
+def collect_capability_numbers(evidence_data):
+    """Numbers read from capability_execute data rows.
+
+    A capability result is warehouse-derived evidence (for example an official
+    award ballot read verbatim from a table), so its numbers belong in the same
+    pool the answer is matched against. Only data rows are collected; envelope
+    scalars such as a row count or a declared maximum are skipped because they
+    are not data values the answer is expected to restate."""
+    nums = []
+    for _eid, _cap, result in capability_calls(evidence_data):
+        rows = capability_result_rows(result)
+        if rows:
+            collect_numbers(rows, nums)
+    return nums
+
+
+def usage_capability_calls(evidence_data, answer_text):
+    """Capability calls the answer actually leans on, by cited id or by name."""
+    cap_calls = capability_calls(evidence_data)
+    if not cap_calls:
+        return []
+    lower = answer_text.lower()
+    cited_ids = set(re.findall(r"E\d+", answer_text))
+    used = [(eid, cap, result) for (eid, cap, result) in cap_calls
+            if eid and eid in cited_ids]
+    if used:
+        return used
+    cap_ids = {cap for _eid, cap, _r in cap_calls if cap}
+    mentioned = {cap for cap in cap_ids if cap.lower() in lower}
+    return [t for t in cap_calls if t[1] in mentioned]
+
+
 def reexecute_queries(queries, warehouse_path):
     """Re-execute SQL queries against the warehouse and return result numbers."""
     import duckdb
@@ -158,6 +230,22 @@ def auto_score(answer_text, rubric, attempt_dir=None):
         warehouse_reachable = True
     except Exception as e:
         warehouse_error = str(e)
+
+    # Capability outputs are warehouse-derived too: a capability_execute result
+    # (e.g. an official award ballot read verbatim) returns numbers a direct
+    # SELECT cannot reproduce. Fold those numbers into the match pool so a
+    # capability-grounded answer is judged against the evidence it actually used.
+    capability_nums = collect_capability_numbers(evidence_data)
+    warehouse_nums.extend(capability_nums)
+
+    # Which capability calls the answer rests on, and whether each succeeded
+    # with data. A cited capability that errored or came back empty cannot
+    # substantiate a numeric claim.
+    cap_calls = capability_calls(evidence_data)
+    used_cap_calls = usage_capability_calls(evidence_data, answer_text)
+    capability_evidence_used = bool(used_cap_calls)
+    capability_verified = bool(used_cap_calls) and all(
+        capability_returned_data(result) for _eid, _cap, result in used_cap_calls)
 
     # Match answer numbers against warehouse query results
     # Use recall: for each unique warehouse number, check if a fuzzy match exists in answer
@@ -273,6 +361,21 @@ def auto_score(answer_text, rubric, attempt_dir=None):
             and any(t in lower for t in disclosure_terms)):
         match_rate = 0.8
         correctness = max(correctness, 4)
+
+    # Capability grounding check: when the answer rests on a capability_execute
+    # result, that call must have succeeded and returned data. A cited
+    # capability that errored or came back empty cannot substantiate a numeric
+    # claim, so cap correctness rather than letting the number pool mask it.
+    # A genuine absence the answer discloses is exempt (the empty result is the
+    # finding, and the negative-finding proxy above already handles it).
+    answer_discloses_absence = any(t in lower for t in [
+        "not queryable", "not present", "not in catalog", "cannot compute",
+        "no data", "not available", "absent", "does not exist", "not in scope",
+    ])
+    if (capability_evidence_used and not capability_verified
+            and not answer_discloses_absence):
+        match_rate = min(match_rate, 0.2)
+        correctness = min(correctness, 1)
     scores["correctness"] = correctness
 
     distinct_cites = len(set(re.findall(r"E\d+", answer_text)))
@@ -307,6 +410,10 @@ def auto_score(answer_text, rubric, attempt_dir=None):
                     "warehouse_queries_re_executed": verified_queries,
                     "warehouse_reachable": warehouse_reachable,
                     "unique_warehouse_numbers": len(unique_wh),
+                    "capability_call_count": len(cap_calls),
+                    "capability_number_count": len(capability_nums),
+                    "capability_evidence_used": capability_evidence_used,
+                    "capability_verified": capability_verified,
     }
     wh = os.environ.get("DIME_WAREHOUSE", os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "warehouse-owned.duckdb"))
     try:
