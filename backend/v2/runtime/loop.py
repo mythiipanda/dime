@@ -46,7 +46,7 @@ from v2.runtime.models import (BindingFormMismatch, ExecutionResult, RuntimeResu
 from v2.domain.evidence import (
     DEFAULT_CONTEXT_TOKEN_BUDGET,
     iter_values,
-    prune_turn_prose,
+    prune_session_context,
 )
 from v2.runtime.budget import RUN_MODEL_DEADLINE
 
@@ -486,7 +486,9 @@ class Runtime:
     ) -> tuple[ConversationTurn, ...]:
         if not context:
             return context
-        return prune_turn_prose(context, self._context_token_budget)
+        pruned_turns, _, _ = prune_session_context(
+            context, {}, {}, token_budget=self._context_token_budget)
+        return pruned_turns
 
     def _report_activity(self, payload: dict) -> None:
         if self._activity is None:
