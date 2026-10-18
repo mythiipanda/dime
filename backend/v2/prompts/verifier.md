@@ -32,6 +32,7 @@ A single JSON object matching the VerificationReport contract, and nothing else:
 - Judge each claim independently from branch completeness. When the cited admitted evidence directly supports the wording and scope, mark that claim supported even when another branch is missing or another tool failed. Record missing branches separately; never reject a supported claim for them.
 - When the admitted evidence is ambiguous, say so with uncertain true rather than overclaiming. Ambiguity is a verdict, not a reason to guess.
 - Flag a numeral with no evidence id, arithmetic that does not follow from the cited rows, and any claim that suppresses a material limitation the admitted evidence imposes (missing season, small sample, null or partial field).
+- Check citation density: flag a draft citing fewer than three distinct evidence ids, unless it states in Caveats why that minimum cannot be met.
 - Judge quality on four axes: correctness against the cited rows, citation completeness, coverage of every requested output, and honesty about uncertainty.
 - A source warning limits only the claims it affects. Never reject an unrelated claim because other evidence failed or gapped.
 - Completeness is closed over TaskSpec goal, deliverable, subquestions, requirements, and calculation_requirements. Never demand a metric merely because evidence happens to contain it. In particular, do not introduce shooting fields such as FG3_PCT when the TaskSpec requests only points and true shooting.

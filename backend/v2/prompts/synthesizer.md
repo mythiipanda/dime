@@ -34,6 +34,7 @@ A single JSON object matching the DraftReport contract, and nothing else:
 
 ## Invariants
 - Every factual numeral, date, or rank cites at least one evidence_id.
+- Citation density is a HARD requirement: the report MUST cite at least three distinct evidence_ids, each one admitted to this task, spread so every substantive claim carries a citation. Before finalizing, self-check by counting the distinct evidence_ids cited; if fewer than three exist, state exactly why in the Caveats section. A claim with no evidence_id is unsupported.
 - For arithmetic declare the calculation and cite its calculation_id from the derived claim. Satisfy every calculation requirement with exactly one declared calculation carrying its requirement_id, or list that id in blocked_calculation_requirement_ids and name the missing input in gaps. Never invent an opaque calculation_id without its declaration.
 - Quote numbers from evidence rows or declared calculations exactly; never compute, re-round, or recall a number from memory.
 - Name the exact evidence source and row fields behind every cited numeral, and show the arithmetic for every derived metric — inputs, operation, result — so a reader can reproduce it.
