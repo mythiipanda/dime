@@ -9,7 +9,7 @@ from langchain_openai import ChatOpenAI
 from .config import settings
 
 ProviderName = Literal["gemini", "nvidia", "mistral", "openrouter", "inception", "groq",
-                   "cerebras"]
+                   "cerebras", "flm", "reflection"]
 
 class ProviderPolicyError(ValueError):
     pass
@@ -59,6 +59,28 @@ GROQ_MODELS: tuple[str, ...] = (
     "openai/gpt-oss-20b",
 )
 
+FLM_BASE_URL = "https://flm.stonech.at/v1"
+FLM_DEFAULT = "auto"
+FLM_MODELS: tuple[str, ...] = (
+    FLM_DEFAULT,
+)
+FLM_ALLOWLIST = frozenset(FLM_MODELS)
+FLM_TOKEN_FIELD = "max_tokens"
+FLM_PLACEHOLDER_KEY = "not-needed"
+
+REFLECTION_BASE_URL = "https://api.reflection.ai/openai/v1"
+REFLECTION_DEFAULT = "Beam-1.0-501B-A23B"
+REFLECTION_ALIASES: dict[str, str] = {
+    "beam-1": REFLECTION_DEFAULT,
+}
+REFLECTION_MODELS: tuple[str, ...] = (
+    REFLECTION_DEFAULT,
+)
+REFLECTION_ALLOWLIST = frozenset(REFLECTION_MODELS)
+REFLECTION_TOKEN_FIELD = "max_tokens"
+
+INSECURE_TLS_HOSTS: tuple[str, ...] = ("flm.stonech.at", "api.reflection.ai")
+
 OPENROUTER_ALLOWLIST: frozenset[str] = frozenset(
     {
         "nvidia/nemotron-3-super-120b-a12b:free",
@@ -79,6 +101,8 @@ def is_free_model(provider: str, slug: str) -> bool:
         return value in GROQ_MODELS
     if provider == "cerebras":
         return value in CEREBRAS_MODELS
+    if provider == "flm":
+        return value in FLM_ALLOWLIST
     if provider == "mistral":
         return value == (settings.mistral_model or MISTRAL_DEFAULT)
     return False
@@ -109,6 +133,72 @@ def _mistral_free_model() -> str:
 def _cerebras_model(slug: str | None = None) -> str:
     value = str(slug or settings.cerebras_model or "").strip()
     return value if value in CEREBRAS_MODELS else CEREBRAS_DEFAULT
+
+def _flm_model(slug: str | None = None) -> str:
+    value = str(slug or settings.flm_model or "").strip()
+    return value if value in FLM_ALLOWLIST else FLM_DEFAULT
+
+def _reflection_model(slug: str | None = None) -> str:
+    value = str(slug or settings.reflection_model or "").strip()
+    value = REFLECTION_ALIASES.get(value, value)
+    return value if value in REFLECTION_ALLOWLIST else REFLECTION_DEFAULT
+
+def _needs_insecure_tls(base_url: str) -> bool:
+    return any(host in str(base_url) for host in INSECURE_TLS_HOSTS)
+
+def _insecure_http_clients(base_url: str) -> tuple[Any, Any]:
+    if not _needs_insecure_tls(base_url):
+        return None, None
+    import httpx
+    return httpx.Client(verify=False), httpx.AsyncClient(verify=False)
+
+def _promote_reasoning_content(response: Any) -> Any:
+    """Fill an empty ``content`` from ``reasoning_content`` on a clean stop.
+
+    Mirror of ``v2.adapters.models._promote_reasoning_content`` for the
+    LangChain invocation path, which otherwise discards the reasoning text.
+    Truncated or filtered completions keep their empty content so the
+    finish_reason signal survives.
+    """
+    choices = (response.get("choices") if isinstance(response, dict)
+               else getattr(response, "choices", None)) or ()
+    for choice in choices:
+        if isinstance(choice, dict):
+            finish_reason = choice.get("finish_reason")
+            message = choice.get("message")
+        else:
+            finish_reason = getattr(choice, "finish_reason", None)
+            message = getattr(choice, "message", None)
+        if message is None:
+            continue
+        if isinstance(message, dict):
+            content = message.get("content")
+            reasoning = message.get("reasoning_content")
+        else:
+            content = getattr(message, "content", None)
+            reasoning = getattr(message, "reasoning_content", None)
+        if finish_reason == "stop" and not content and reasoning:
+            if isinstance(message, dict):
+                message["content"] = reasoning
+            else:
+                message.content = reasoning
+    return response
+
+def _reasoning_content_client(**kwargs: Any) -> Any:
+    """Build a ChatOpenAI that promotes ``reasoning_content`` responses.
+
+    The base class is resolved from the module global at call time so tests
+    that substitute ``ChatOpenAI`` still see their recording double used.
+    """
+    base = ChatOpenAI
+
+    class _ReasoningContentChatOpenAI(base):
+        def _create_chat_result(self, response: Any,
+                                generation_info: Any = None) -> Any:
+            return super()._create_chat_result(
+                _promote_reasoning_content(response), generation_info)
+
+    return _ReasoningContentChatOpenAI(**kwargs)
 
 def _default_provider() -> tuple[ProviderName, str]:
     if settings.gemini_api_key:
@@ -152,6 +242,16 @@ def resolve_model_id(model_id: str | None) -> tuple[ProviderName, str]:
         if not settings.cerebras_api_key:
             raise ProviderPolicyError("Cerebras route has no key")
         return ("cerebras", _cerebras_model(slug))
+    if raw.startswith("flm:"):
+        slug = raw.split(":", 1)[1].strip()
+        if slug not in FLM_ALLOWLIST:
+            raise ProviderPolicyError("unapproved FLM model")
+        return ("flm", _flm_model(slug))
+    if raw.startswith("reflection:"):
+        slug = raw.split(":", 1)[1].strip()
+        if slug not in REFLECTION_ALIASES and slug not in REFLECTION_ALLOWLIST:
+            raise ProviderPolicyError("unapproved Reflection model")
+        return ("reflection", _reflection_model(slug))
     if raw.startswith("mistral:"):
         return ("mistral", _mistral_free_model())
     if raw.startswith("inception:"):
@@ -172,6 +272,30 @@ def resolve_model_id(model_id: str | None) -> tuple[ProviderName, str]:
     return _default_provider()
 
 def get_llm(name: ProviderName, model: str | None = None) -> ChatOpenAI | None:
+    if name == "flm":
+        sync_client, async_client = _insecure_http_clients(FLM_BASE_URL)
+        return _reasoning_content_client(
+            model=_flm_model(model),
+            base_url=FLM_BASE_URL,
+            api_key=FLM_PLACEHOLDER_KEY,
+            timeout=settings.llm_timeout_s,
+            max_retries=settings.llm_max_retries,
+            http_client=sync_client,
+            http_async_client=async_client,
+        )
+    if name == "reflection":
+        if not settings.reflection_api_key:
+            return None
+        sync_client, async_client = _insecure_http_clients(REFLECTION_BASE_URL)
+        return _reasoning_content_client(
+            model=_reflection_model(model),
+            base_url=REFLECTION_BASE_URL,
+            api_key=settings.reflection_api_key,
+            timeout=settings.llm_timeout_s,
+            max_retries=settings.llm_max_retries,
+            http_client=sync_client,
+            http_async_client=async_client,
+        )
     if name not in active_provider_order():
         return None
     if name == "gemini":
@@ -278,8 +402,10 @@ def _failure_class(exc: BaseException) -> str:
     return "provider_error"
 
 def fallback_order(primary: ProviderName) -> list[ProviderName]:
-    del primary
-    return list(active_provider_order())
+    order = list(active_provider_order())
+    if primary in ("flm", "reflection"):
+        return [primary, *order]
+    return order
 
 _PROBE_TTL_S = 600.0
 _probe_state: dict[str, tuple[bool, float]] = {}
@@ -336,6 +462,10 @@ def _accepted_model(name: ProviderName, primary: ProviderName, model: str) -> st
         return _mistral_free_model()
     if name == "groq":
         return _groq_free_model()
+    if name == "flm":
+        return _flm_model(model if name == primary else None)
+    if name == "reflection":
+        return _reflection_model(model if name == primary else None)
     return settings.inception_model or INCEPTION_DEFAULT
 
 async def invoke_with_fallback(

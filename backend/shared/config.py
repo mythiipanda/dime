@@ -45,6 +45,9 @@ class Settings(BaseSettings):
     groq_model: str = ""
     cerebras_api_key: str = ""
     cerebras_model: str = ""
+    flm_model: str = ""
+    reflection_api_key: str = ""
+    reflection_model: str = ""
     cors_allowed_origins: str = "http://localhost:3000,https://dime-fawn.vercel.app,http://127.0.0.1:3000"
     llm_timeout_s: int = 60
     llm_max_retries: int = 1
