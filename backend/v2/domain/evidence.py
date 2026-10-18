@@ -21,7 +21,10 @@ DEFAULT_CONTEXT_TOKEN_BUDGET = 4000
 
 PRUNE_LEVEL_ROWS = "rows"
 PRUNE_LEVEL_TOOL_META = "tool_meta"
+PRUNE_LEVEL_EVIDENCE_EVICTION = "evidence_eviction"
 PRUNE_LEVEL_TURN_PROSE = "turn_prose"
+
+EVIDENCE_EVICTION_KEEP = 3
 
 class CitationOrphanError(ValueError):
     pass
@@ -189,6 +192,48 @@ def prune_turn_prose(
     narrowed_older.reverse()
     return tuple([*narrowed_older, ordered[-1]])
 
+def _has_evidence_payload(envelope: EvidenceEnvelope) -> bool:
+    return bool(envelope.rows) or bool(envelope.units) or bool(
+        envelope.metric_definitions)
+
+def _evicted_evidence_pointer(envelope: EvidenceEnvelope) -> EvidenceEnvelope:
+    note = (
+        f"payload evicted from context; full result archived as "
+        f"evidence/{envelope.evidence_id} and still citable by id")
+    return envelope.model_copy(update={
+        "rows": {},
+        "units": {},
+        "metric_definitions": {},
+        "qualification": None,
+        "coverage": None,
+        "warnings": [note],
+    })
+
+def evict_old_evidence(
+    evidence: Mapping[str, EvidenceEnvelope],
+    cited: Mapping[str, Mapping[str, Any]] | None = None,
+    *,
+    keep: int = EVIDENCE_EVICTION_KEEP,
+) -> tuple[dict[str, EvidenceEnvelope], tuple[str, ...]]:
+    if isinstance(keep, bool) or not isinstance(keep, int):
+        raise TypeError("keep must be an integer")
+    if keep < 0:
+        raise ValueError("keep must be non-negative")
+    protected = set(cited or {})
+    names = list(evidence)
+    kept = set(names[-keep:]) if keep else set()
+    evicted: list[str] = []
+    result: dict[str, EvidenceEnvelope] = {}
+    for name in names:
+        envelope = evidence[name]
+        if (name in kept or name in protected
+                or not _has_evidence_payload(envelope)):
+            result[name] = envelope
+            continue
+        result[name] = _evicted_evidence_pointer(envelope)
+        evicted.append(name)
+    return result, tuple(evicted)
+
 def _check_cited_selectors(evidence: Mapping[str, EvidenceEnvelope],
                            wanted: Mapping[str, Mapping[str, Any]]) -> None:
     for name, selectors in wanted.items():
@@ -252,6 +297,13 @@ def prune_session_context(
             envelope_tokens(item) for item in narrowed.values()):
         narrowed = meta_step
         levels.append(PRUNE_LEVEL_TOOL_META)
+    if (turns_tokens(ordered)
+            + sum(envelope_tokens(item) for item in narrowed.values())
+            > budget):
+        eviction_step, evicted = evict_old_evidence(narrowed, wanted)
+        if evicted:
+            narrowed = eviction_step
+            levels.append(PRUNE_LEVEL_EVIDENCE_EVICTION)
     kept_turns = ordered
     evidence_cost = sum(envelope_tokens(item) for item in narrowed.values())
     if turns_tokens(kept_turns) + evidence_cost > budget:

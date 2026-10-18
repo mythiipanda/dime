@@ -135,6 +135,45 @@ def test_token_counts_drop_while_answer_completeness_unchanged():
     assert report.tokens_before > report.tokens_after
     assert after_supported == before_supported == [True]
 
+def _named_envelope(name: str, rows) -> EvidenceEnvelope:
+    return _envelope(rows).model_copy(update={"evidence_id": name})
+
+def test_evict_old_evidence_keeps_newest_three_and_protects_citations():
+    from v2.domain.evidence import envelope_tokens, evict_old_evidence
+
+    names = [f"evidence:e{index}" for index in range(5)]
+    evidence = {name: _named_envelope(name, _board_rows(10)) for name in names}
+    cited = {names[0]: {"rows[0].PTS": 10}}
+    narrowed, evicted = evict_old_evidence(evidence, cited)
+
+    assert evicted == (names[1],)
+    assert narrowed[names[0]] == evidence[names[0]]
+    assert narrowed[names[1]].rows == {}
+    assert narrowed[names[1]].warnings
+    assert envelope_tokens(narrowed[names[1]]) < envelope_tokens(evidence[names[1]])
+    for name in names[2:]:
+        assert narrowed[name] == evidence[name]
+
+def test_prune_session_evicts_stale_evidence_before_turn_prose():
+    from v2.domain.evidence import (
+        count_tokens, envelope_tokens, evict_old_evidence,
+        prune_session_context)
+
+    names = [f"evidence:e{index}" for index in range(5)]
+    evidence = {name: _named_envelope(name, _board_rows(20)) for name in names}
+    turns = _turns(2)
+    _, compacted, _ = prune_session_context(
+        turns, evidence, {}, token_budget=10**9)
+    _, evicted_names = evict_old_evidence(compacted, {})
+    budget = 1300
+
+    pruned_turns, pruned_map, report = prune_session_context(
+        turns, evidence, {}, token_budget=budget)
+
+    assert "evidence_eviction" in report.levels_applied
+    assert pruned_map[names[0]].rows == {}
+    assert pruned_map[names[0]].warnings
+
 def test_loop_prunes_context_prose_to_budget_without_network():
     import asyncio
 
