@@ -189,6 +189,17 @@ def table_for_metric(metric: str) -> str:
 def _key(metric: str) -> str:
     return re.sub(r"[^A-Z0-9]", "", (metric or "").upper())
 
+def _positively_supported(metric: str) -> bool:
+    key = _ALIASES.get(_key(metric), _key(metric))
+    if key in AVAILABLE_METRICS:
+        return True
+    try:
+        from shared.tools._core import clamp_stat
+        clamp_stat(str(metric or ""))
+    except Exception:
+        return False
+    return True
+
 def _leaders_table_for_stat(stat: object) -> str | None:
     try:
         from shared.tools._core import clamp_stat
@@ -602,7 +613,8 @@ def metric_coverage(
         row = _classify(raw)
         if player:
             row["player"] = player
-        if season is not None and row["status"] != "unavailable":
+        if (season is not None and row["status"] != "unavailable"
+                and _positively_supported(raw)):
             verdict = coverage_check(raw, season)
             row["covered"] = verdict["covered"]
             row["available_seasons"] = verdict["available_seasons"]

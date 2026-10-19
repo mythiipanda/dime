@@ -140,6 +140,35 @@ def test_unavailable_metric_reads_no_warehouse_source(tmp_path, monkeypatch):
     finally:
         coverage.coverage_cache_clear()
 
+def test_unrecognized_metric_carries_no_season_verdict(monkeypatch):
+    _stubbed_seasons(monkeypatch, {"silver_boxscores": {"2025-26"}})
+    result = metric_coverage(["banana", "POINTS"], season="2025-26")
+    by_metric = {row["metric"]: row for row in result["rows"]}
+    assert by_metric["banana"]["status"] == "unknown"
+    assert "covered" not in by_metric["banana"]
+    assert "available_seasons" not in by_metric["banana"]
+    assert by_metric["POINTS"]["status"] == "unknown"
+    assert by_metric["POINTS"]["covered"] is True
+    assert by_metric["POINTS"]["available_seasons"] == ["2025-26"]
+
+def test_unrecognized_metric_reads_no_warehouse_source(tmp_path, monkeypatch):
+    duckdb = pytest.importorskip("duckdb")
+    path = tmp_path / "warehouse.duckdb"
+    connection = duckdb.connect(str(path))
+    connection.execute("CREATE TABLE silver_boxscores (_season VARCHAR, PTS INTEGER)")
+    connection.execute("INSERT INTO silver_boxscores VALUES ('2025-26', 30)")
+    connection.close()
+    monkeypatch.setattr(coverage, "warehouse_path", lambda: path)
+    coverage.coverage_cache_clear()
+    try:
+        result = metric_coverage(["banana", "POINTS"], season="2025-26")
+        by_metric = {row["metric"]: row for row in result["rows"]}
+        assert "covered" not in by_metric["banana"]
+        assert "available_seasons" not in by_metric["banana"]
+        assert by_metric["POINTS"]["covered"] is True
+    finally:
+        coverage.coverage_cache_clear()
+
 def test_advanced_gap_refuses_without_rewrite(monkeypatch):
     _stubbed_seasons(monkeypatch, {"silver_advanced": {"2025-26"}})
     task = _task(season="2023-24", metric_ids=("PIE",))
