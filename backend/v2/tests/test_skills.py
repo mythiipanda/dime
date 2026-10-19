@@ -14,6 +14,7 @@ def test_builtin_catalog_is_agent_skills_metadata_only():
         "matchup-brief",
         "followup-correction", "schedule-rest", "draft-prospects",
         "in-progress-games", "odds-lines", "visual-choice",
+        "warehouse-investigation",
     }
     assert all(set(item) == {"name", "description"} for item in catalog)
     assert all("# " not in item["description"] for item in catalog)
