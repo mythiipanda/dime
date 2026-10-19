@@ -57,10 +57,40 @@ JUDGE_UNAVAILABLE_BRANCHES = frozenset({JUDGE_UNAVAILABLE_BRANCH, JUDGE_UNAVAILA
 class PreToolTimeoutError(TimeoutError):
     pass
 
+class RunTimeoutError(TimeoutError):
+    pass
+
 def _remaining_seconds(deadline: float | None) -> float | None:
     if deadline is None:
         return None
     return max(0.000001, deadline - time.perf_counter())
+
+def _earliest_deadline(*deadlines: float | None) -> float | None:
+    present = [deadline for deadline in deadlines if deadline is not None]
+    return min(present) if present else None
+
+def _run_budget_governs_pre_llm(
+    run_deadline: float | None, pre_tool_deadline: float | None,
+) -> bool:
+    if run_deadline is None:
+        return False
+    if pre_tool_deadline is None:
+        return True
+    return run_deadline <= pre_tool_deadline
+
+def _pre_llm_timeout_error(
+    run_governs: bool, run_timeout_s: float | None,
+    pre_tool_timeout_s: float | None,
+) -> TimeoutError:
+    if run_governs and run_timeout_s is not None:
+        return RunTimeoutError(
+            f"run budget exceeded {run_timeout_s:g} seconds "
+            "during intake and planning")
+    if pre_tool_timeout_s is not None:
+        return PreToolTimeoutError(
+            f"intake and planning exceeded {pre_tool_timeout_s:g} seconds")
+    return PreToolTimeoutError(
+        "intake and planning exceeded the available budget")
 
 class Runtime:
     def __init__(
@@ -162,13 +192,17 @@ class Runtime:
         try:
             pre_tool_deadline = (None if self._pre_tool_timeout_s is None
                                  else time.perf_counter() + self._pre_tool_timeout_s)
+            pre_llm_deadline = _earliest_deadline(
+                run_deadline, pre_tool_deadline)
+            run_governs_pre_llm = _run_budget_governs_pre_llm(
+                run_deadline, pre_tool_deadline)
             try:
                 task = await self._intake_task(turn_id, request, context,
-                                               pre_tool_deadline)
+                                               pre_llm_deadline)
             except TimeoutError as exc:
-                raise PreToolTimeoutError(
-                    f"intake and planning exceeded "
-                    f"{self._pre_tool_timeout_s:g} seconds") from exc
+                raise _pre_llm_timeout_error(
+                    run_governs_pre_llm, self._run_timeout_s,
+                    self._pre_tool_timeout_s) from exc
             if self._fast_path and is_fast_path_eligible(task):
                 try:
                     fast_result = await self._run_fast_path(
@@ -185,11 +219,11 @@ class Runtime:
                 except BaseException as exc:
                     self._report_activity({"kind":"stage_summary","phase":"fast_path","status":"complete","title":"Fast path fell back","transition":"completed","correlation_id":"stage:fast_path","data":{"reason": f"{type(exc).__name__}: {exc}"}})
             try:
-                plan = await self._plan_task(turn_id, task, pre_tool_deadline)
+                plan = await self._plan_task(turn_id, task, pre_llm_deadline)
             except TimeoutError as exc:
-                raise PreToolTimeoutError(
-                    f"intake and planning exceeded "
-                    f"{self._pre_tool_timeout_s:g} seconds") from exc
+                raise _pre_llm_timeout_error(
+                    run_governs_pre_llm, self._run_timeout_s,
+                    self._pre_tool_timeout_s) from exc
             execution = await self._execute_with_recovery(
                 turn_id, task, plan, run_id=run_id, run_remaining=run_remaining)
             synth_raw = await self._stage(
