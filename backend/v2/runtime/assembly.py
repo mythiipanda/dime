@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import httpx
 from collections.abc import Callable
 from pathlib import Path
 
@@ -134,6 +135,7 @@ def build_runtime(
     node_timeout_s: float | None = None,
     diagnostics: bool = False,
     context_token_budget: int | None = None,
+    http_client: httpx.AsyncClient | None = None,
 ) -> tuple[Runtime, RunLedger | FileLedger]:
     if not run_id or any(
         char not in "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_"
@@ -152,7 +154,9 @@ def build_runtime(
               if resolved_ledger_dir is not None else RunLedger(run_id))
     skills = SkillLibrary()
     model = RecordedStructuredModel(
-        ProviderStructuredModel(provider, model_name), ledger, turn_id=run_id)
+        ProviderStructuredModel(
+            provider, model_name, http_client=http_client),
+        ledger, turn_id=run_id)
     catalog = capability_catalog()
     capabilities = {
         name: RecordedCapability(ToolCapability(name), ledger, turn_id=run_id, activity=activity)

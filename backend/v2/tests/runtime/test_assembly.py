@@ -1,5 +1,6 @@
 
 import pytest
+import httpx
 
 from v2.adapters.core import ToolCapability
 from v2.contracts import PlanNode, SeasonRef, TaskSpec
@@ -80,7 +81,7 @@ def test_build_runtime_wires_configured_checkpoint_store(tmp_path, monkeypatch) 
     from v2.runtime.policy import ExecutionPolicy
 
     monkeypatch.setattr("v2.runtime.assembly.ProviderStructuredModel",
-                        lambda *args: object())
+                        lambda *args, **kwargs: object())
     policy = ExecutionPolicy.live(ledger_dir=tmp_path / "ledgers").model_copy(
         update={"checkpoint_dir": tmp_path / "checkpoints"})
     runtime, _ = build_runtime(
@@ -89,6 +90,25 @@ def test_build_runtime_wires_configured_checkpoint_store(tmp_path, monkeypatch) 
     store = runtime._executor._checkpoint_store
     assert store is not None
     assert store._directory == tmp_path / "checkpoints"
+
+def test_build_runtime_forwards_injected_http_client_without_owning_it(
+    monkeypatch,
+) -> None:
+    from v2.runtime.assembly import build_runtime
+    from v2.runtime.policy import ExecutionPolicy
+
+    client = httpx.AsyncClient()
+    monkeypatch.setattr("v2.runtime.assembly.capability_catalog", lambda: {})
+    runtime, _ = build_runtime(
+        provider="inception", model_name="mercury-test", run_id="run",
+        policy=ExecutionPolicy.live(), http_client=client,
+    )
+    model = runtime._intake._model._model
+    assert model.__class__.__name__ == "ProviderStructuredModel"
+    assert model._http_client is client
+    assert not client.is_closed
+    import asyncio
+    asyncio.run(client.aclose())
 
 @pytest.mark.parametrize("mode", ["replay", "eval"])
 def test_build_runtime_never_executes_unsupported_modes_live(
@@ -116,7 +136,7 @@ def test_build_runtime_rejects_ambiguous_ledger_configuration(
     from v2.runtime.policy import ExecutionPolicy
 
     monkeypatch.setattr("v2.runtime.assembly.ProviderStructuredModel",
-                        lambda *args: object())
+                        lambda *args, **kwargs: object())
     with pytest.raises(ValueError, match="configured through policy"):
         build_runtime(
             provider="inception", model_name="mercury-test", run_id="run",
