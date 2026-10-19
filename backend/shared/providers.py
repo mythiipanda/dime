@@ -9,7 +9,7 @@ from langchain_openai import ChatOpenAI
 from .config import settings
 
 ProviderName = Literal["gemini", "nvidia", "mistral", "openrouter", "inception", "groq",
-                   "cerebras"]
+                   "cerebras", "reflection"]
 
 class ProviderPolicyError(ValueError):
     pass
@@ -58,6 +58,11 @@ GROQ_MODELS: tuple[str, ...] = (
     "openai/gpt-oss-120b",
     "openai/gpt-oss-20b",
 )
+REFLECTION_BASE_URL = "https://api.reflection.ai/openai/v1"
+REFLECTION_DEFAULT = "Beam-1.0-501B-A23B"
+REFLECTION_ALIASES: dict[str, str] = {"beam-1": REFLECTION_DEFAULT}
+REFLECTION_MODELS: tuple[str, ...] = (REFLECTION_DEFAULT,)
+REFLECTION_ALLOWLIST = frozenset(REFLECTION_MODELS)
 
 OPENROUTER_ALLOWLIST: frozenset[str] = frozenset(
     {
@@ -81,6 +86,8 @@ def is_free_model(provider: str, slug: str) -> bool:
         return value in CEREBRAS_MODELS
     if provider == "mistral":
         return value == (settings.mistral_model or MISTRAL_DEFAULT)
+    if provider == "reflection":
+        return value in REFLECTION_ALLOWLIST
     return False
 
 def _gemini_model(slug: str | None = None) -> str:
@@ -110,6 +117,11 @@ def _cerebras_model(slug: str | None = None) -> str:
     value = str(slug or settings.cerebras_model or "").strip()
     return value if value in CEREBRAS_MODELS else CEREBRAS_DEFAULT
 
+def _reflection_model(slug: str | None = None) -> str:
+    value = str(slug or settings.reflection_model or "").strip()
+    value = REFLECTION_ALIASES.get(value, value)
+    return value if value in REFLECTION_ALLOWLIST else REFLECTION_DEFAULT
+
 def _default_provider() -> tuple[ProviderName, str]:
     if settings.gemini_api_key:
         return ("gemini", _gemini_model())
@@ -135,6 +147,13 @@ def resolve_model_id(model_id: str | None) -> tuple[ProviderName, str]:
         if not (settings.dime_enable_groq and settings.groq_api_key):
             raise ProviderPolicyError("Groq free-tier route is not activated")
         return ("groq", _groq_free_model(slug))
+    if original.startswith("reflection:"):
+        slug = original.split(":", 1)[1]
+        if slug not in REFLECTION_ALIASES and slug not in REFLECTION_ALLOWLIST:
+            raise ProviderPolicyError("unapproved Reflection model")
+        if not (settings.dime_enable_reflection and settings.reflection_api_key):
+            raise ProviderPolicyError("Reflection route is not activated")
+        return ("reflection", _reflection_model(slug))
     if original.startswith("gemini:"):
         slug = original.split(":", 1)[1]
         if slug.strip() not in GEMINI_ALLOWLIST:
@@ -516,6 +535,11 @@ def models_catalog() -> dict[str, Any]:
         groq = _groq_free_model()
         options.append({"id": f"groq:{groq}", "engine": "groq",
                         "default": default_id == f"groq:{groq}"})
+    if settings.dime_enable_reflection and settings.reflection_api_key:
+        reflection_default = _reflection_model()
+        options.append({"id": f"reflection:{reflection_default}",
+                        "engine": "reflection",
+                        "default": default_id == f"reflection:{reflection_default}"})
     if settings.dime_enable_inception and settings.inception_api_key:
         inception = settings.inception_model or INCEPTION_DEFAULT
         options.append({"id": f"inception:{inception}", "engine": "inception",
@@ -529,6 +553,8 @@ def models_catalog() -> dict[str, Any]:
     }
     if settings.dime_enable_groq and settings.groq_api_key:
         available["groq"] = True
+    if settings.dime_enable_reflection and settings.reflection_api_key:
+        available["reflection"] = True
     if settings.dime_enable_inception and settings.inception_api_key:
         available["inception"] = True
     for option in options:

@@ -36,6 +36,7 @@ from shared.providers import (
     GEMINI_BASE_URL,
     GROQ_DEFAULT,
     NVIDIA_NIM_BASE_URL,
+    REFLECTION_BASE_URL,
     INCEPTION_DEFAULT,
     ProviderName,
     _cerebras_model,
@@ -43,6 +44,7 @@ from shared.providers import (
     _groq_free_model, _mistral_free_model,
     _nvidia_nim_model,
     _openrouter_free_model,
+    _reflection_model,
     is_free_model,
 )
 from v2.contracts import (
@@ -607,6 +609,11 @@ class ProviderStructuredModel:
                      settings.groq_model or GROQ_DEFAULT),
             "cerebras": ("https://api.cerebras.ai/v1", settings.cerebras_api_key,
                          settings.cerebras_model or CEREBRAS_DEFAULT),
+            "reflection": (
+                REFLECTION_BASE_URL,
+                settings.reflection_api_key if settings.dime_enable_reflection
+                else "",
+                _reflection_model()),
         }
         provider = self.provider
         entry = configs.get(provider)
@@ -634,6 +641,8 @@ class ProviderStructuredModel:
             accepted_model = _groq_free_model(requested)
         elif provider == "cerebras":
             accepted_model = _cerebras_model(requested)
+        elif provider == "reflection":
+            accepted_model = _reflection_model(requested)
         else:
             accepted_model = settings.inception_model or INCEPTION_DEFAULT
         if (provider != "inception"
