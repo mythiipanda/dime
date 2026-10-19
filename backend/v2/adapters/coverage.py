@@ -602,7 +602,7 @@ def metric_coverage(
         row = _classify(raw)
         if player:
             row["player"] = player
-        if season is not None:
+        if season is not None and row["status"] != "unavailable":
             verdict = coverage_check(raw, season)
             row["covered"] = verdict["covered"]
             row["available_seasons"] = verdict["available_seasons"]
