@@ -9,10 +9,15 @@ import pytest
 from sqlglot import exp, parse
 
 from v2.contracts import EvidenceEnvelope
+from v2.runtime import analysis_execution as analysis_module
 from v2.runtime.analysis_execution import (
     AnalysisRequest,
+    EnforcementState,
+    _admit_request,
     _first_word,
     _policy_rejected_references,
+    _shape_result,
+    _spawn_child,
     build_envelope,
     execute_analysis,
 )
@@ -659,3 +664,71 @@ def test_predecessor_bypass_is_real_against_unpatched_base(tmp_path, sql):
     assert candidate is not None
     assert candidate.status == "policy_rejected"
     assert "secret_table" in candidate.error
+
+
+
+def test_shape_result_rejects_malformed_child_output(tmp_path):
+    request = make_request(tmp_path, "SELECT 1", "0" * 64)
+    enforcement = EnforcementState()
+    result = _shape_result(request, b"{not json", True, 4242, enforcement)
+    assert result.status == "execution_failed"
+    assert result.rows is None
+    assert result.error.startswith("bad child output: ")
+    assert result.dead is True
+    assert result.pid == 4242
+    assert result.enforcement is enforcement
+
+
+def test_shape_result_surfaces_child_error_or_fallback(tmp_path):
+    request = make_request(tmp_path, "SELECT 1", "0" * 64)
+    enforcement = EnforcementState()
+    reported = _shape_result(
+        request, b'{"ok": false, "error": "child exploded"}', False, 77, enforcement
+    )
+    assert reported.status == "execution_failed"
+    assert reported.error == "child exploded"
+    assert reported.dead is False
+    assert reported.pid == 77
+    silent = _shape_result(request, b'{"ok": false}', False, 77, enforcement)
+    assert silent.error == "duckdb failed"
+
+
+def test_admit_request_rejects_unreadable_input(tmp_path):
+    request = make_request(
+        tmp_path,
+        "SELECT 1",
+        "0" * 64,
+        input_path=str(tmp_path / "absent.duckdb"),
+    )
+    result = _admit_request(request)
+    assert result.status == "execution_failed"
+    assert result.error.startswith("input read failed: ")
+    assert result.pid is None
+    assert result.dead is False
+
+
+def test_admit_request_rejects_artifact_path_that_is_a_file(tmp_path):
+    (tmp_path / "artifacts").write_text("occupied", encoding="utf-8")
+    request = make_request(tmp_path, "SELECT 1", "0" * 64)
+    result = _admit_request(request)
+    assert result.status == "execution_failed"
+    assert result.error.startswith("artifact dir failed: ")
+    assert result.rows is None
+
+
+def test_spawn_child_reports_failure_without_starting_process(tmp_path, monkeypatch):
+    request = make_request(tmp_path, "SELECT 1", "0" * 64)
+    enforcement = EnforcementState()
+    job, _ = analysis_module._create_job(None)
+    assert job is not None
+
+    def refuse(*args, **kwargs):
+        raise OSError("spawn blocked")
+
+    monkeypatch.setattr(analysis_module.subprocess, "Popen", refuse)
+    proc, failure = _spawn_child(request, job, enforcement)
+    assert proc is None
+    assert failure.status == "execution_failed"
+    assert failure.error == "spawn failed: spawn blocked"
+    assert failure.enforcement is enforcement
+    assert failure.dead is False

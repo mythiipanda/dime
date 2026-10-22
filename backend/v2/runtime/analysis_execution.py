@@ -170,36 +170,40 @@ def _cte_aliases(nodes):
             if cte.alias:
                 aliases.add(cte.alias.lower())
     return aliases
+def _table_reference(table, cte_aliases):
+    qualified = bool(table.db or table.catalog)
+    if not qualified and table.name.lower() in cte_aliases:
+        return None
+    if qualified:
+        parts = [p for p in (table.catalog, table.db, table.name) if p]
+    else:
+        parts = [table.name]
+    return _relation_key(".".join(parts))
+def _function_references(func):
+    if func.name.lower() in _BARE_FUNCTIONS:
+        return []
+    keys = []
+    for arg in _collect_arguments(func):
+        text = _literal_of(arg)
+        if text is None or _is_path_like(text):
+            continue
+        keys.append(_relation_key(text))
+    return keys
+def _record_relation(relations, seen, key):
+    if key is None or key in seen:
+        return
+    seen.add(key)
+    relations.append(key)
 def _referenced_relations(nodes):
     relations = []
     seen = set()
     cte_aliases = _cte_aliases(nodes)
     for node in nodes:
         for table in node.find_all(exp.Table):
-            qualified = bool(table.db or table.catalog)
-            if not qualified and table.name.lower() in cte_aliases:
-                continue
-            if qualified:
-                parts = [p for p in (table.catalog, table.db, table.name) if p]
-            else:
-                parts = [table.name]
-            key = _relation_key(".".join(parts))
-            if key is None or key in seen:
-                continue
-            seen.add(key)
-            relations.append(key)
+            _record_relation(relations, seen, _table_reference(table, cte_aliases))
         for func in node.find_all(exp.Anonymous):
-            if func.name.lower() in _BARE_FUNCTIONS:
-                continue
-            for arg in _collect_arguments(func):
-                text = _literal_of(arg)
-                if text is None or _is_path_like(text):
-                    continue
-                key = _relation_key(text)
-                if key is None or key in seen:
-                    continue
-                seen.add(key)
-                relations.append(key)
+            for key in _function_references(func):
+                _record_relation(relations, seen, key)
     return relations
 def _relation_allowed(key, allowed):
     if not key:
@@ -345,17 +349,21 @@ def _close_job(job):
         pass
 def _policy_rejected(request, reason):
     return AnalysisResult(status="policy_rejected", rows=None, columns=None, error=reason, dead=False, pid=None, enforcement=EnforcementState(), run_id=request.run_id, node_id=request.node_id, input_sha256=request.input_sha256)
-def execute_analysis(request, cancel_event=None):
+def _failure(request, error, dead, pid, enforcement):
+    return AnalysisResult(status="execution_failed", rows=None, columns=None, error=error, dead=dead, pid=pid, enforcement=enforcement, run_id=request.run_id, node_id=request.node_id, input_sha256=request.input_sha256)
+def _admit_request(request):
     try:
         os.makedirs(request.artifact_dir, exist_ok=True)
     except Exception as e:
-        return AnalysisResult(status="execution_failed", rows=None, columns=None, error="artifact dir failed: " + str(e), dead=False, pid=None, enforcement=EnforcementState(), run_id=request.run_id, node_id=request.node_id, input_sha256=request.input_sha256)
+        return _failure(request, "artifact dir failed: " + str(e), False, None, EnforcementState())
     try:
         actual = _sha_of(request.input_path)
     except Exception as e:
-        return AnalysisResult(status="execution_failed", rows=None, columns=None, error="input read failed: " + str(e), dead=False, pid=None, enforcement=EnforcementState(), run_id=request.run_id, node_id=request.node_id, input_sha256=request.input_sha256)
+        return _failure(request, "input read failed: " + str(e), False, None, EnforcementState())
     if actual.lower() != str(request.input_sha256).lower():
         return _policy_rejected(request, "input pin mismatch")
+    return None
+def _admit_statement(request):
     nodes = _statement_nodes(request.sql)
     if nodes is None:
         return _policy_rejected(request, "statement could not be parsed")
@@ -365,68 +373,58 @@ def execute_analysis(request, cancel_event=None):
             return _policy_rejected(request, "write statement rejected")
         if kind not in _THROUGH_TYPES and kind not in _GATE_TYPES:
             return _policy_rejected(request, "statement rejected: " + kind)
-    rejected = _policy_rejected_references(request, request.allowed_tables or ())
-    if rejected is not None:
-        return rejected
-    job, job_reason = _create_job(request.memory_limit_bytes)
-    if job is None:
-        return AnalysisResult(status="unsupported", rows=None, columns=None, error=job_reason, dead=False, pid=None, enforcement=EnforcementState(job_object=job_reason), run_id=request.run_id, node_id=request.node_id, input_sha256=request.input_sha256)
-    enforcement = EnforcementState(job_object=job_reason, tree_termination="job terminate", stdin_gate="stdin request gate", isolated_environment="-I -B allowlist")
-    payload = json.dumps({"input_path": request.input_path, "sql": request.sql, "row_cap": request.row_cap})
+    return _policy_rejected_references(request, request.allowed_tables or ())
+def _child_payload(request):
+    return json.dumps({"input_path": request.input_path, "sql": request.sql, "row_cap": request.row_cap})
+def _spawn_child(request, job, enforcement):
     try:
         proc = subprocess.Popen([sys.executable, "-I", "-B", "-c", _CHILD_SRC], stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     except Exception as e:
         _close_job(job)
-        return AnalysisResult(status="execution_failed", rows=None, columns=None, error="spawn failed: " + str(e), dead=False, pid=None, enforcement=enforcement, run_id=request.run_id, node_id=request.node_id, input_sha256=request.input_sha256)
-    pid = proc.pid
-    assigned = _assign_to_job(job, proc)
-    if not assigned:
-        _terminate_job(job)
-        try:
-            proc.kill()
-        except Exception:
-            pass
-        try:
-            proc.wait(timeout=10)
-        except Exception:
-            pass
-        _close_job(job)
-        return AnalysisResult(status="execution_failed", rows=None, columns=None, error="job assignment failed", dead=True, pid=pid, enforcement=enforcement, run_id=request.run_id, node_id=request.node_id, input_sha256=request.input_sha256)
+        return None, _failure(request, "spawn failed: " + str(e), False, None, enforcement)
+    return proc, None
+def _reap_child(job, proc):
+    _terminate_job(job)
+    try:
+        proc.kill()
+    except Exception:
+        pass
+    try:
+        proc.wait(timeout=10)
+    except Exception:
+        pass
+def _assign_child(job, proc, request, enforcement):
+    if _assign_to_job(job, proc):
+        return None
+    _reap_child(job, proc)
+    _close_job(job)
+    return _failure(request, "job assignment failed", True, proc.pid, enforcement)
+def _write_payload(proc, payload):
     try:
         proc.stdin.write(payload.encode("utf-8"))
         proc.stdin.close()
     except Exception:
         pass
+def _child_status(proc, request, cancel_event):
     start = time.monotonic()
-    status = None
-    stdout_data = b""
     while True:
         if cancel_event is not None and cancel_event.is_set():
-            status = "cancelled"
-            break
+            return "cancelled"
         if proc.poll() is not None:
-            break
+            return None
         if (time.monotonic() - start) > float(request.deadline_s):
-            status = "timeout"
-            break
+            return "timeout"
         time.sleep(0.02)
-    if status in ("cancelled", "timeout"):
-        _terminate_job(job)
-        try:
-            proc.kill()
-        except Exception:
-            pass
-        try:
-            proc.wait(timeout=10)
-        except Exception:
-            pass
-        try:
-            stdout_data, _ = proc.communicate(timeout=5)
-        except Exception:
-            stdout_data = b""
-        dead = proc.poll() is not None
-        _close_job(job)
-        return AnalysisResult(status=status, rows=None, columns=None, error=None, dead=bool(dead), pid=pid, enforcement=enforcement, run_id=request.run_id, node_id=request.node_id, input_sha256=request.input_sha256)
+def _stop_child(job, proc, status, request, enforcement):
+    _reap_child(job, proc)
+    try:
+        proc.communicate(timeout=5)
+    except Exception:
+        pass
+    dead = proc.poll() is not None
+    _close_job(job)
+    return AnalysisResult(status=status, rows=None, columns=None, error=None, dead=bool(dead), pid=proc.pid, enforcement=enforcement, run_id=request.run_id, node_id=request.node_id, input_sha256=request.input_sha256)
+def _collect_child(job, proc, request, enforcement):
     try:
         stdout_data, _ = proc.communicate(timeout=10)
     except Exception as e:
@@ -435,27 +433,58 @@ def execute_analysis(request, cancel_event=None):
         except Exception:
             pass
         _close_job(job)
-        return AnalysisResult(status="execution_failed", rows=None, columns=None, error="collect failed: " + str(e), dead=proc.poll() is not None, pid=pid, enforcement=enforcement, run_id=request.run_id, node_id=request.node_id, input_sha256=request.input_sha256)
+        dead = proc.poll() is not None
+        return None, dead, _failure(request, "collect failed: " + str(e), dead, proc.pid, enforcement)
     dead = proc.poll() is not None
     _close_job(job)
+    return stdout_data, dead, None
+def _truncate_rows(rows, cap):
+    truncated = False
+    while rows and len(json.dumps(rows)) > cap:
+        rows = rows[:-1]
+        truncated = True
+    return rows, truncated
+def _shape_result(request, stdout_data, dead, pid, enforcement):
     try:
         doc = json.loads(stdout_data.decode("utf-8", errors="replace") or "{}")
     except Exception as e:
-        return AnalysisResult(status="execution_failed", rows=None, columns=None, error="bad child output: " + str(e), dead=bool(dead), pid=pid, enforcement=enforcement, run_id=request.run_id, node_id=request.node_id, input_sha256=request.input_sha256)
+        return _failure(request, "bad child output: " + str(e), bool(dead), pid, enforcement)
     if not doc.get("ok"):
-        return AnalysisResult(status="execution_failed", rows=None, columns=None, error=doc.get("error") or "duckdb failed", dead=bool(dead), pid=pid, enforcement=enforcement, run_id=request.run_id, node_id=request.node_id, input_sha256=request.input_sha256)
+        return _failure(request, doc.get("error") or "duckdb failed", bool(dead), pid, enforcement)
     columns = tuple(doc.get("columns") or [])
     rows = [list(r) for r in (doc.get("rows") or [])]
     row_cap_hit = False
     if len(rows) > int(request.row_cap):
         rows = rows[:int(request.row_cap)]
         row_cap_hit = True
-    truncated = False
-    cap = int(request.byte_cap)
-    while rows and len(json.dumps(rows)) > cap:
-        rows = rows[:-1]
-        truncated = True
+    rows, truncated = _truncate_rows(rows, int(request.byte_cap))
     return AnalysisResult(status="success", rows=rows, columns=columns, error=None, dead=bool(dead), pid=pid, row_cap_hit=row_cap_hit, truncated=truncated, enforcement=enforcement, run_id=request.run_id, node_id=request.node_id, input_sha256=request.input_sha256)
+def execute_analysis(request, cancel_event=None):
+    rejected = _admit_request(request)
+    if rejected is not None:
+        return rejected
+    rejected = _admit_statement(request)
+    if rejected is not None:
+        return rejected
+    job, job_reason = _create_job(request.memory_limit_bytes)
+    if job is None:
+        return AnalysisResult(status="unsupported", rows=None, columns=None, error=job_reason, dead=False, pid=None, enforcement=EnforcementState(job_object=job_reason), run_id=request.run_id, node_id=request.node_id, input_sha256=request.input_sha256)
+    enforcement = EnforcementState(job_object=job_reason, tree_termination="job terminate", stdin_gate="stdin request gate", isolated_environment="-I -B allowlist")
+    payload = _child_payload(request)
+    proc, failure = _spawn_child(request, job, enforcement)
+    if failure is not None:
+        return failure
+    failure = _assign_child(job, proc, request, enforcement)
+    if failure is not None:
+        return failure
+    _write_payload(proc, payload)
+    status = _child_status(proc, request, cancel_event)
+    if status is not None:
+        return _stop_child(job, proc, status, request, enforcement)
+    stdout_data, dead, failure = _collect_child(job, proc, request, enforcement)
+    if failure is not None:
+        return failure
+    return _shape_result(request, stdout_data, dead, proc.pid, enforcement)
 def build_envelope(result, evidence_id, capability, source, observed_at):
     from v2.contracts import EvidenceEnvelope
     table = []
