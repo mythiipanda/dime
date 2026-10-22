@@ -250,13 +250,15 @@ SAFE_PYDANTIC_ERROR_TYPES = frozenset({
     "claim_unsupported_missing_reason", "claim_supported_has_reasons",
     "verification_duplicate_claim_index", "verification_finding_empty",
     "verification_finding_duplicate", "verification_pass_with_findings",
-    "verification_repair_without_findings",
+    "verification_repair_without_findings", "evidence_requirement_id_missing",
+    "binding_subject_scope_partial",
 })
 SAFE_FAILURE_VALIDATION_SUBTYPES = frozenset({
     "unsupported_claim_missing_reason", "supported_claim_has_reasons",
     "pass_with_findings", "repair_without_findings", "duplicate_claim_index",
     "duplicate_or_empty_finding", "other_contract_invariant",
-    "not_applicable",
+    "not_applicable", "evidence_requirement_id_missing",
+    "binding_subject_scope_partial",
 })
 _VALIDATION_SUBTYPE_BY_ERROR_TYPE = {
     "claim_unsupported_missing_reason": "unsupported_claim_missing_reason",
@@ -266,6 +268,8 @@ _VALIDATION_SUBTYPE_BY_ERROR_TYPE = {
     "verification_duplicate_claim_index": "duplicate_claim_index",
     "verification_finding_empty": "duplicate_or_empty_finding",
     "verification_finding_duplicate": "duplicate_or_empty_finding",
+    "evidence_requirement_id_missing": "evidence_requirement_id_missing",
+    "binding_subject_scope_partial": "binding_subject_scope_partial",
 }
 
 def _safe_exception_name(value: type[BaseException] | str) -> str:

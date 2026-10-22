@@ -737,12 +737,16 @@ class EvidenceOutputBinding(BaseModel):
         if self.requirement_kind == "task" and self.requirement_id is not None:
             return self.model_copy(update={"requirement_id": None})
         if self.requirement_kind == "evidence" and self.requirement_id is None:
-            raise ValueError("evidence binding requires requirement id")
+            raise PydanticCustomError(
+                "evidence_requirement_id_missing",
+                "evidence binding requires requirement id")
         subject_fields = (self.subject_entity_type, self.subject_entity_id,
                           self.subject_selector, self.row_selector)
         if any(value is None for value in subject_fields) and any(
                 value is not None for value in subject_fields):
-            raise ValueError("binding subject type, id, and selector must be supplied together")
+            raise PydanticCustomError(
+                "binding_subject_scope_partial",
+                "binding subject type, id, and selector must be supplied together")
         return self
 
 class CalculationOutputBinding(BaseModel):
