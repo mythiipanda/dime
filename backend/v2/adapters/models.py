@@ -54,6 +54,8 @@ from v2.contracts import (
     EvidenceEnvelope,
     Plan,
     PlanNode,
+    PeriodScope,
+    PeriodScopeSource,
     RequirementReview,
     TaskSpec,
     VerificationReport,
@@ -968,6 +970,58 @@ def served_capability_metrics(capability_id: str) -> set[str]:
         key for key in spec.metric_definitions if not key.startswith("__")}
     return {str(name).upper() for name in names}
 
+_PERIOD_SCOPE_PATTERNS = (
+    (PeriodScope.REGULAR_SEASON,
+     re.compile(r"\bregular[ -]season\b", re.IGNORECASE)),
+    (PeriodScope.PLAYOFFS,
+     re.compile(r"\b(?:playoffs?|postseason)\b", re.IGNORECASE)),
+    (PeriodScope.ALL, re.compile(r"\ball\s+games\b", re.IGNORECASE)),
+)
+_PERIOD_SCOPE_EXCLUSION_PREFIX = re.compile(
+    r"\b(?:excluding|exclude|except|without|not|no)\s+"
+    r"(?:(?:including|included|in)\s+)?(?:the\s+)?$",
+    re.IGNORECASE,
+)
+_PERIOD_SCOPE_EXCLUSION_SUFFIX = re.compile(
+    r"^\s*(?:(?:is|are|was|were)\s+)?"
+    r"(?:not\s+(?:included|in\s+scope|requested|wanted|counted)|"
+    r"excluded|omitted)\b",
+    re.IGNORECASE,
+)
+
+def _period_scope_mention_is_excluded(request: str, match: re.Match) -> bool:
+    return bool(
+        _PERIOD_SCOPE_EXCLUSION_PREFIX.search(request[:match.start()])
+        or _PERIOD_SCOPE_EXCLUSION_SUFFIX.match(request[match.end():])
+    )
+
+def _requested_period_scope(
+    request: str,
+) -> tuple[PeriodScope, PeriodScopeSource]:
+    positive_scopes = []
+    excluded_scopes = []
+    for scope, pattern in _PERIOD_SCOPE_PATTERNS:
+        for match in pattern.finditer(request):
+            scopes = (excluded_scopes
+                      if _period_scope_mention_is_excluded(request, match)
+                      else positive_scopes)
+            if scope not in scopes:
+                scopes.append(scope)
+    if excluded_scopes and (
+        not positive_scopes
+        or PeriodScope.ALL in positive_scopes
+        or PeriodScope.ALL in excluded_scopes
+        or set(positive_scopes).intersection(excluded_scopes)
+    ):
+        raise ValueError("conflicting period scopes in current request")
+    if len(positive_scopes) > 1 and PeriodScope.ALL not in positive_scopes:
+        raise ValueError("conflicting period scopes in current request")
+    if not positive_scopes:
+        return PeriodScope.UNSPECIFIED, PeriodScopeSource.DEFAULT
+    scope = (PeriodScope.ALL if PeriodScope.ALL in positive_scopes
+             else positive_scopes[0])
+    return scope, PeriodScopeSource.EXPLICIT_REQUEST
+
 class ModelIntake(ModelStage):
     prompt_name = "intake"
     route = "intake"
@@ -1267,9 +1321,11 @@ class ModelIntake(ModelStage):
     async def understand(
         self, request: str, context: Sequence[ConversationTurn] = ()
     ) -> TaskSpec:
+        period_scope, period_scope_source = _requested_period_scope(request)
         bounded = self._bounded_context(context)
         payload = {
             "question": request,
+            "period_scope_hint": period_scope.value,
             "current_date": datetime.now(UTC).date().isoformat(),
             "conversation_context": [turn.model_dump(mode="json")
                                      for turn in bounded],
@@ -1291,6 +1347,8 @@ class ModelIntake(ModelStage):
         task = task.model_copy(update={
             "skills": [name for name in task.skills
                        if name in self._skills.skills],
+            "period_scope": period_scope,
+            "period_scope_source": period_scope_source,
         })
         task = self._apply_context_season(task, context)
         task = self._fold_resolvable_questions(task)

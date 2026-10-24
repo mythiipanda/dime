@@ -37,6 +37,16 @@ class VerificationStatus(StrEnum):
     REPAIR = "repair"
     PARTIAL = "partial"
 
+class PeriodScope(StrEnum):
+    REGULAR_SEASON = "regular_season"
+    PLAYOFFS = "playoffs"
+    ALL = "all"
+    UNSPECIFIED = "unspecified"
+
+class PeriodScopeSource(StrEnum):
+    EXPLICIT_REQUEST = "explicit_request"
+    DEFAULT = "default"
+
 class PreconditionCheck(StrEnum):
     NUMERAL = "numeral"
     ENTITY = "entity"
@@ -287,12 +297,16 @@ class EvidenceRequirement(BaseModel):
         return self
 
 def _drop_ranked_argument_conflicts_from_schema(schema: dict) -> dict:
+    server_owned_fields = (
+        "ranked_argument_conflicts", "period_scope", "period_scope_source")
     properties = schema.get("properties")
     if isinstance(properties, dict):
-        properties.pop("ranked_argument_conflicts", None)
+        for field_name in server_owned_fields:
+            properties.pop(field_name, None)
     required = schema.get("required")
-    if isinstance(required, list) and "ranked_argument_conflicts" in required:
-        required.remove("ranked_argument_conflicts")
+    if isinstance(required, list):
+        required[:] = [field_name for field_name in required
+                       if field_name not in server_owned_fields]
     return schema
 
 class TaskSpec(BaseModel):
@@ -311,6 +325,8 @@ class TaskSpec(BaseModel):
                     "\"user\"|\"context\"|\"default\"|\"resolved\", \"confidence\": "
                     "0.0-1.0}. Do not repeat season inside requirements[] entries: "
                     "requirements forbid extra fields and will reject it.")
+    period_scope: PeriodScope = PeriodScope.UNSPECIFIED
+    period_scope_source: PeriodScopeSource = PeriodScopeSource.DEFAULT
     as_of: date | None = Field(
         default=None,
         description="Task-wide as-of date (YYYY-MM-DD), set HERE on the TaskSpec "
@@ -366,6 +382,9 @@ class TaskSpec(BaseModel):
     @model_validator(mode="after")
     def validate_scope(self) -> "TaskSpec":
         validate_window_order(self.window_start, self.window_end)
+        if ((self.period_scope == PeriodScope.UNSPECIFIED)
+                != (self.period_scope_source == PeriodScopeSource.DEFAULT)):
+            raise ValueError("period scope source does not match its value")
         if not self.goal.strip() or not self.deliverable.strip():
             raise ValueError("task goal and deliverable must be non-empty")
         for field_name in ("subquestions", "required_evidence", "assumptions",
