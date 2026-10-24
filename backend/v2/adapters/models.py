@@ -599,6 +599,20 @@ class ProviderStructuredModel:
             "failure_route": route,
         }
 
+    @staticmethod
+    def _stage_model_settings(
+        provider: ProviderName,
+        model_name: str,
+        route: str,
+    ) -> dict[str, Any] | None:
+        if (
+            provider == "reflection"
+            and str(model_name).casefold() in ("beam-1.0-501b-a23b", "beam-1")
+            and route == "intake"
+        ):
+            return {"openai_reasoning_effort": "low"}
+        return None
+
     def _models(self) -> list[tuple[ProviderName, DimeOpenAIChatModel]]:
         configs = {
             "gemini": (GEMINI_BASE_URL, settings.gemini_api_key,
@@ -724,6 +738,8 @@ class ProviderStructuredModel:
                     instructions=prompt,
                     output_type=output_type_for(
                         rung, schema, model.capabilities),
+                    model_settings=self._stage_model_settings(
+                        provider, model.model_name, envelope.route),
                     retries=settings.llm_max_retries,
                     capabilities=[Hooks(
                         before_output_validate=repaired_output_payload)],
