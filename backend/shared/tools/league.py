@@ -4081,8 +4081,27 @@ def _validate_readonly_sql(sql: str, present: set[str]) -> str:
         raise ValueError("stacked statements are not allowed")
     if _WRITE_RE.search(sql):
         raise ValueError("write operations are not allowed")
-    used = {a or b for a, b in _TABLE_REF_RE.findall(sql)}
-    if not used or not used.issubset(set(present)):
+    from sqlglot import exp as _sql_exp, parse_one as _parse_one
+    from sqlglot.errors import ParseError as _ParseError
+    from sqlglot.optimizer.scope import (
+        Scope as _Scope,
+        traverse_scope as _traverse_scope,
+    )
+
+    try:
+        statement = _parse_one(sql, read="duckdb")
+    except _ParseError as exc:
+        raise ValueError("invalid SQL syntax") from exc
+    used = set()
+    for scope in _traverse_scope(statement):
+        for source in scope.sources.values():
+            if isinstance(source, _Scope):
+                continue
+            if (not isinstance(source, _sql_exp.Table) or source.db
+                    or source.catalog or not source.name):
+                raise ValueError("unknown or unavailable tables")
+            used.add(source.name)
+    if not used or not used.issubset(present):
         raise ValueError("unknown or unavailable tables")
     return sql
 
