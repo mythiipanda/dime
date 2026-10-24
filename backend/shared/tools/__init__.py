@@ -106,6 +106,7 @@ from .team import (
     get_team_game_log,
     get_team_hub,
     get_team_splits,
+    get_team_season_summary,
 )
 from .today import get_today, get_morning_briefing
 from .tracking import get_defensive_matchups, get_tracking_profile
@@ -179,6 +180,7 @@ WAREHOUSE_TOOLS: list[BaseTool] = [
     get_scout_pack,
     get_rotation_check,
     get_team_splits,
+    get_team_season_summary,
     get_injury_impact,
     get_cap_ledger,
     get_trade_check,

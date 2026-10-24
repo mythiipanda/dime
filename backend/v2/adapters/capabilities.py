@@ -223,6 +223,7 @@ class Capability:
     domain: str = "basketball"
     open_vocabulary: bool = False
     publishes_declared_schema: bool = False
+    period_arg: str | None = None
 
 _LIST = [
     Capability(
@@ -287,6 +288,30 @@ _LIST = [
         name="team_splits", tool_name="get_team_splits",
         units={"GP": COUNT, "W": COUNT, "L": COUNT, "PPG": PER_GAME},
         coverage="Home, away, result, last-10, and monthly splits from cached team games.",
+    ),
+    Capability(
+        name="team_season_summary",
+        tool_name="get_team_season_summary",
+        period_arg="period_scope",
+        dependent_entity_arguments={"team_id": "team"},
+        units={"GAMES": COUNT, "WINS": COUNT, "LOSSES": COUNT,
+               "PTS": "points", "PPG": PER_GAME},
+        metric_definitions={
+            "GAMES": "Count of available team-game rows for the selected scope.",
+            "WINS": "Count of available team-game rows marked W.",
+            "LOSSES": "Count of available team-game rows marked L.",
+            "PTS": "Sum of team points across available team-game rows.",
+            "PPG": "Available team points divided by available team-game rows.",
+        },
+        output_aliases={
+            "TOTAL_POINTS": "PTS",
+            "POINTS_PER_GAME": "PPG",
+            "MEAN_PPG": "PPG",
+        },
+        coverage=(
+            "Available silver_hist_gamelogs regular-season rows for one "
+            "team and season; season completeness is unverified."),
+        extract_entities=_team_entities,
     ),
     Capability(
         name="injury_impact", tool_name="get_injury_impact",
@@ -871,6 +896,10 @@ CAPABILITY_DESCRIPTIONS: dict[str, str] = {
                           "ranking_direction and an explicit min_attempts "
                           "volume floor for percentage boards."),
     "team_splits": "Team home/away, result, last-10, and monthly records and scoring.",
+    "team_season_summary": (
+        "Available regular-season games, wins, losses, total points, and "
+        "points per game for one resolved team and season. Does not certify "
+        "complete season coverage."),
     "injury_impact": "Current injuries combined with team ratings and recent form.",
     "lineup_matchups": "Observed lineup-vs-lineup shared possessions for two teams with sample flags.",
     "competitive_ratings": "Team margin performance with blowouts separated from competitive games.",

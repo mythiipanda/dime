@@ -744,6 +744,86 @@ def _team_game_summary(games: list[dict[str, Any]],
         out["ts_pct_games"] = ts_games
     return out
 
+@tool(description=(
+    "Available warehouse regular-season summary for one resolved team and "
+    "season: games, wins, losses, total points, and points per game. "
+    "Uses all matching silver_hist_gamelogs rows; warehouse completeness "
+    "is not guaranteed. Requires an explicit regular-season task scope."))
+def get_team_season_summary(
+    team_id: str | int | None = None,
+    season: str | None = None,
+    period_scope: str = "unspecified",
+) -> dict[str, Any]:
+    if period_scope != "regular_season":
+        return {"tool": "get_team_season_summary", "ok": False,
+                "error": "only explicit regular-season scope is supported"}
+    if team_id is None:
+        return {"tool": "get_team_season_summary", "ok": False,
+                "error": "a resolved team is required"}
+    try:
+        resolved_team_id = coerce_team_id(team_id)
+        resolved_season = resolve_season(season)
+    except (TypeError, ValueError):
+        return {"tool": "get_team_season_summary", "ok": False,
+                "error": "team and season scope could not be resolved"}
+
+    games = _hist_team_games(resolved_team_id, resolved_season)
+    if not games:
+        return {"tool": "get_team_season_summary", "ok": False,
+                "error": "regular-season rows are unavailable for this team and season"}
+
+    game_ids: set[str] = set()
+    wins = losses = total_points = 0
+    for game in games:
+        game_id = str(game.get("Game_ID") or "").strip()
+        row_team_id = game.get("Team_ID")
+        row_season = game.get("_season")
+        result = str(game.get("WL") or "").strip().upper()
+        raw_points = game.get("PTS")
+        if (not game_id or game_id in game_ids
+                or str(row_team_id) != str(resolved_team_id)
+                or str(row_season) != resolved_season
+                or result not in {"W", "L"}
+                or isinstance(raw_points, bool)):
+            return {"tool": "get_team_season_summary", "ok": False,
+                    "error": "warehouse rows do not establish team-game summary fields"}
+        try:
+            points = int(raw_points)
+        except (TypeError, ValueError, OverflowError):
+            return {"tool": "get_team_season_summary", "ok": False,
+                    "error": "warehouse rows do not establish team-game summary fields"}
+        if points != raw_points:
+            return {"tool": "get_team_season_summary", "ok": False,
+                    "error": "warehouse rows do not establish team-game summary fields"}
+        game_ids.add(game_id)
+        wins += result == "W"
+        losses += result == "L"
+        total_points += points
+
+    count = len(games)
+    return {
+        "tool": "get_team_season_summary",
+        "ok": True,
+        "rows": [{
+            "TEAM_ID": resolved_team_id,
+            "SEASON": resolved_season,
+            "PERIOD_SCOPE": period_scope,
+            "GAMES": count,
+            "WINS": wins,
+            "LOSSES": losses,
+            "PTS": total_points,
+            "PPG": total_points / count,
+        }],
+        "meta": {
+            "source": "warehouse:silver_hist_gamelogs",
+            "season": resolved_season,
+            "coverage": (
+                "Summary of rows available for this team, season, and "
+                "regular-season source; season completeness is unverified."),
+            "data_note": "Values describe available warehouse rows only.",
+        },
+    }
+
 @tool(description='Game log plus roster for one team id. Warehouse first.')
 def get_team_hub(team_id: str | int, season: str | None = None) -> dict[str, Any]:
     season = resolve_season(season)

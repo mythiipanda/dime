@@ -470,6 +470,13 @@ def _apply_season_argument(name: str, task: Any, arguments: dict[str, Any]) -> N
                             or spec.season_arg not in arguments):
         arguments[spec.season_arg] = season.value
 
+def _apply_period_argument(name: str, task: Any,
+                           arguments: dict[str, Any]) -> None:
+    argument = CAPABILITIES[name].period_arg
+    period_scope = getattr(task, "period_scope", None)
+    if argument is not None and period_scope is not None:
+        arguments[argument] = str(getattr(period_scope, "value", period_scope))
+
 
 def _apply_window_arguments(name: str, task: Any, arguments: dict[str, Any]) -> None:
     window = CAPABILITIES[name].window_args
@@ -520,10 +527,22 @@ def _apply_game_prediction_teams(task: Any, arguments: dict[str, Any]) -> None:
 def _task_arguments(name: str, node: Any, task: Any, evidence: Iterable[EvidenceEnvelope]) -> dict[str, Any]:
     arguments = dict(getattr(node, "arguments", {}) or {})
     _apply_season_argument(name, task, arguments)
+    _apply_period_argument(name, task, arguments)
     _apply_window_arguments(name, task, arguments)
     if name == "trades":
         _apply_trades_season(evidence, arguments)
     _apply_dependent_entity_arguments(name, evidence, arguments)
+    if name == "team_season_summary":
+        team_ids = {
+            str(entity.id)
+            for item in evidence
+            for entity in item.entities
+            if entity.type == "team"
+        }
+        if len(team_ids) == 1:
+            arguments["team_id"] = team_ids.pop()
+        else:
+            arguments.pop("team_id", None)
     if name == "game_prediction":
         _apply_game_prediction_teams(task, arguments)
     return arguments

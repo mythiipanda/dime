@@ -134,6 +134,7 @@ def test_registry_covers_initial_pack():
         "team_four_factors", "player_ratings", "playoff_team_ratings",
         "game_prediction", "rest_splits", "rookie_leaders", "injuries",
         "team_shot_zones", "player_shot_zones", "team_splits",
+        "team_season_summary",
         "injury_impact", "lineup_matchups", "competitive_ratings",
         "matchup_brief", "season_series", "head_to_head", "matchup_splits",
         "today", "morning_briefing", "award_results", "sql_exec",

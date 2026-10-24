@@ -54,6 +54,7 @@ CAPABILITY_TABLES: dict[str, tuple[str, ...]] = {
     "team_trajectory": ("silver_hist_standings",),
     "team_totals": ("silver_boxscores",),
     "team_splits": ("silver_team_games", "silver_hist_gamelogs"),
+    "team_season_summary": ("silver_hist_gamelogs",),
     "injury_impact": (
         "silver_injuries",
         "silver_team_ratings",
