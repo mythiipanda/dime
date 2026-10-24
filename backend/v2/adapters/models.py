@@ -608,7 +608,7 @@ class ProviderStructuredModel:
         if (
             provider == "reflection"
             and str(model_name).casefold() in ("beam-1.0-501b-a23b", "beam-1")
-            and route == "intake"
+            and route in ("intake", "synthesizer")
         ):
             return {"openai_reasoning_effort": "low"}
         return None

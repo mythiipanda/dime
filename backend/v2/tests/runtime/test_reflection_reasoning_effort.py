@@ -103,22 +103,22 @@ def _envelope(
 
 
 def test_stage_model_settings_unit_isolation():
-    assert ProviderStructuredModel._stage_model_settings(
-        "reflection", "Beam-1.0-501B-A23B", "intake"
-    ) == {"openai_reasoning_effort": "low"}
-    assert ProviderStructuredModel._stage_model_settings(
-        "reflection", "beam-1", "intake"
-    ) == {"openai_reasoning_effort": "low"}
+    for route in ("intake", "synthesizer"):
+        assert ProviderStructuredModel._stage_model_settings(
+            "reflection", "Beam-1.0-501B-A23B", route
+        ) == {"openai_reasoning_effort": "low"}
+        assert ProviderStructuredModel._stage_model_settings(
+            "reflection", "beam-1", route
+        ) == {"openai_reasoning_effort": "low"}
 
-    for non_intake_route in (
+    for other_route in (
         "planner",
-        "synthesizer",
         "repair",
         "semantic_verifier",
         "requirement_review",
     ):
         assert ProviderStructuredModel._stage_model_settings(
-            "reflection", "Beam-1.0-501B-A23B", non_intake_route
+            "reflection", "Beam-1.0-501B-A23B", other_route
         ) is None
 
     for other_provider in (
@@ -131,18 +131,25 @@ def test_stage_model_settings_unit_isolation():
         "cerebras",
         "agnes",
     ):
+        for route in ("intake", "synthesizer"):
+            assert ProviderStructuredModel._stage_model_settings(
+                other_provider, "Beam-1.0-501B-A23B", route
+            ) is None
+            assert ProviderStructuredModel._stage_model_settings(
+                other_provider, "default-model", route
+            ) is None
+
+    for route in ("intake", "synthesizer"):
         assert ProviderStructuredModel._stage_model_settings(
-            other_provider, "Beam-1.0-501B-A23B", "intake"
-        ) is None
-        assert ProviderStructuredModel._stage_model_settings(
-            other_provider, "default-model", "intake"
+            "reflection", "unrelated-model", route
         ) is None
 
 
 @pytest.mark.anyio
 @pytest.mark.parametrize("anyio_backend", ["asyncio"])
-async def test_reflection_intake_outbound_request_carries_low_reasoning_effort(
-    anyio_backend, monkeypatch
+@pytest.mark.parametrize("route", ["intake", "synthesizer"])
+async def test_reflection_intake_and_synthesizer_outbound_requests_carry_low_reasoning_effort(
+    anyio_backend, route, monkeypatch
 ):
     assert anyio_backend == "asyncio"
     captured: list[dict[str, Any]] = []
@@ -156,7 +163,7 @@ async def test_reflection_intake_outbound_request_carries_low_reasoning_effort(
         prompt="test prompt",
         payload={"query": "celtics"},
         envelope=_envelope(
-            provider="reflection", model="Beam-1.0-501B-A23B", route="intake"
+            provider="reflection", model="Beam-1.0-501B-A23B", route=route
         ),
     )
     assert isinstance(result, _Ping)
@@ -174,9 +181,9 @@ async def test_reflection_intake_outbound_request_carries_low_reasoning_effort(
 @pytest.mark.anyio
 @pytest.mark.parametrize("anyio_backend", ["asyncio"])
 @pytest.mark.parametrize(
-    "route", ["planner", "synthesizer", "repair", "semantic_verifier"]
+    "route", ["planner", "repair", "semantic_verifier", "requirement_review"]
 )
-async def test_reflection_non_intake_stages_omit_reasoning_effort(
+async def test_reflection_other_stages_omit_reasoning_effort(
     anyio_backend, route, monkeypatch
 ):
     assert anyio_backend == "asyncio"
@@ -203,6 +210,7 @@ async def test_reflection_non_intake_stages_omit_reasoning_effort(
 
 @pytest.mark.anyio
 @pytest.mark.parametrize("anyio_backend", ["asyncio"])
+@pytest.mark.parametrize("route", ["intake", "synthesizer"])
 @pytest.mark.parametrize(
     "provider,model_name",
     [
@@ -211,8 +219,8 @@ async def test_reflection_non_intake_stages_omit_reasoning_effort(
         ("groq", "openai/gpt-oss-120b"),
     ],
 )
-async def test_other_providers_intake_omit_reasoning_effort(
-    anyio_backend, provider, model_name, monkeypatch
+async def test_other_providers_omit_reasoning_effort(
+    anyio_backend, route, provider, model_name, monkeypatch
 ):
     assert anyio_backend == "asyncio"
     captured: list[dict[str, Any]] = []
@@ -229,7 +237,7 @@ async def test_other_providers_intake_omit_reasoning_effort(
         schema=_Ping,
         prompt="test prompt",
         payload={"query": "celtics"},
-        envelope=_envelope(provider=provider, model=model_name, route="intake"),
+        envelope=_envelope(provider=provider, model=model_name, route=route),
     )
     assert isinstance(result, _Ping)
     assert len(captured) == 1
