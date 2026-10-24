@@ -43,6 +43,9 @@ class Settings(BaseSettings):
     groq_api_key: str = ""
     dime_enable_groq: bool = False
     groq_model: str = ""
+    agnes_api_key: str = ""
+    dime_enable_agnes: bool = False
+    agnes_model: str = "agnes-3.0-flash"
     cerebras_api_key: str = ""
     cerebras_model: str = ""
     reflection_api_key: str = ""

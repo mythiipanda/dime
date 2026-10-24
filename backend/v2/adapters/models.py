@@ -611,6 +611,10 @@ class ProviderStructuredModel:
                           settings.inception_model or INCEPTION_DEFAULT),
             "groq": ("https://api.groq.com/openai/v1", settings.groq_api_key,
                      settings.groq_model or GROQ_DEFAULT),
+            "agnes": (
+                "https://apihub.agnes-ai.com/v1",
+                settings.agnes_api_key if settings.dime_enable_agnes else "",
+                settings.agnes_model or "agnes-3.0-flash"),
             "cerebras": ("https://api.cerebras.ai/v1", settings.cerebras_api_key,
                          settings.cerebras_model or CEREBRAS_DEFAULT),
             "reflection": (
@@ -643,6 +647,9 @@ class ProviderStructuredModel:
             accepted_model = _mistral_free_model()
         elif provider == "groq":
             accepted_model = _groq_free_model(requested)
+        elif provider == "agnes":
+            from shared.providers import _agnes_free_model
+            accepted_model = _agnes_free_model(requested)
         elif provider == "cerebras":
             accepted_model = _cerebras_model(requested)
         elif provider == "reflection":

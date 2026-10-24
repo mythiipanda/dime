@@ -200,41 +200,31 @@ def resolve_target(raw_db):
     return target
 
 
-def main(argv=None):
-    ap = argparse.ArgumentParser()
-    ap.add_argument("--season", default="")
-    ap.add_argument("--game-id", default="")
-    ap.add_argument("--db", default="")
-    ap.add_argument("--source-db", default="")
-    ap.add_argument("--limit", type=int, default=0)
-    ap.add_argument("--dry-run", action="store_true")
-    args = ap.parse_args(argv)
-    target = resolve_target(args.db)
-    if target is None:
-        return 1
-    target.parent.mkdir(parents=True, exist_ok=True)
-    store.DB_PATH = target
-    store.LOCK_PATH = target.parent / ".write.lock"
-    source_db = args.source_db or str(store.CANONICAL_DB_PATH)
+def _load_plan(args, source_db):
     if args.game_id:
         rows, row_season = load_possessions(source_db, args.game_id)
         seasons = [row_season] if row_season else []
         games = {row_season: [args.game_id]} if row_season else {}
-    else:
-        picked = [s.strip() for s in str(args.season).split(",") if s.strip()]
-        seasons = picked or available_seasons(source_db)
-        games = {}
-        for season in seasons:
-            ids = season_games(source_db, season)
-            if args.limit and args.limit > 0:
-                ids = ids[:args.limit]
-            games[season] = ids
-    if args.dry_run:
-        for season in seasons:
-            for gid in games.get(season, []):
-                print(f"{TABLE} {season} {gid}")
-        print(f"games: {sum(len(v) for v in games.values())}")
-        return 0
+        return seasons, games
+    picked = [s.strip() for s in str(args.season).split(",") if s.strip()]
+    seasons = picked or available_seasons(source_db)
+    games = {}
+    for season in seasons:
+        ids = season_games(source_db, season)
+        if args.limit and args.limit > 0:
+            ids = ids[:args.limit]
+        games[season] = ids
+    return seasons, games
+
+
+def _print_plan(seasons, games):
+    for season in seasons:
+        for gid in games.get(season, []):
+            print(f"{TABLE} {season} {gid}")
+    print(f"games: {sum(len(v) for v in games.values())}")
+
+
+def _materialize_games(seasons, games, source_db):
     done = skipped = failed = 0
     for season in seasons:
         for gid in games.get(season, []):
@@ -255,6 +245,30 @@ def main(argv=None):
             else:
                 print(f"skip {TABLE} {season} {gid}: {note}", flush=True)
                 skipped += 1
+    return done, skipped, failed
+
+
+def main(argv=None):
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--season", default="")
+    ap.add_argument("--game-id", default="")
+    ap.add_argument("--db", default="")
+    ap.add_argument("--source-db", default="")
+    ap.add_argument("--limit", type=int, default=0)
+    ap.add_argument("--dry-run", action="store_true")
+    args = ap.parse_args(argv)
+    target = resolve_target(args.db)
+    if target is None:
+        return 1
+    target.parent.mkdir(parents=True, exist_ok=True)
+    store.DB_PATH = target
+    store.LOCK_PATH = target.parent / ".write.lock"
+    source_db = args.source_db or str(store.CANONICAL_DB_PATH)
+    seasons, games = _load_plan(args, source_db)
+    if args.dry_run:
+        _print_plan(seasons, games)
+        return 0
+    done, skipped, failed = _materialize_games(seasons, games, source_db)
     print(f"done games={done} skipped={skipped} failed={failed}")
     return 1 if failed else 0
 

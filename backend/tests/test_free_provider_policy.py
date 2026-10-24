@@ -5,13 +5,38 @@ from shared.providers import (
 )
 from shared.config import settings
 
-def test_every_runtime_fallback_chain_is_free_only():
+def test_every_runtime_fallback_chain_is_free_only(monkeypatch):
+    for name, value in {
+        "dime_enable_groq": True, "groq_api_key": "fake-groq",
+        "dime_enable_agnes": True, "agnes_api_key": "fake-agnes",
+        "cerebras_api_key": "fake-cerebras", "nvidia_nim_api_key": "fake-nvidia",
+        "openrouter_api_key": "fake-openrouter", "mistral_api_key": "fake-mistral",
+        "gemini_api_key": "fake-gemini", "dime_enable_inception": False,
+    }.items():
+        monkeypatch.setattr(settings, name, value)
     for primary in ("openrouter", "mistral", "inception", "groq", "gemini",
                     "cerebras"):
-        assert set(fallback_order(primary)) <= {
-            "gemini", "nvidia", "openrouter", "mistral", "cerebras", "groq"}
-        assert fallback_order(primary)[0] in {"gemini", "cerebras"}
+        order = fallback_order(primary)
+        assert order == [
+            "groq", "agnes", "cerebras", "nvidia", "openrouter", "mistral", "gemini"]
+        assert set(order) <= {
+            "gemini", "nvidia", "openrouter", "mistral", "cerebras", "groq", "agnes"}
         assert "inception" not in fallback_order(primary)
+def test_fallback_order_skips_unconfigured_free_providers_and_keeps_gemini_last(monkeypatch):
+    import shared.providers as providers
+    monkeypatch.setattr(settings, "dime_enable_groq", True)
+    monkeypatch.setattr(settings, "groq_api_key", "fake-groq")
+    monkeypatch.setattr(settings, "dime_enable_agnes", True)
+    monkeypatch.setattr(settings, "agnes_api_key", "fake-agnes")
+    monkeypatch.setattr(settings, "cerebras_api_key", "")
+    monkeypatch.setattr(settings, "nvidia_nim_api_key", "fake-nvidia")
+    monkeypatch.setattr(settings, "openrouter_api_key", "")
+    monkeypatch.setattr(settings, "mistral_api_key", "fake-mistral")
+    monkeypatch.setattr(settings, "gemini_api_key", "fake-gemini")
+    assert providers.active_provider_order() == (
+        "groq", "agnes", "nvidia", "mistral", "gemini")
+    assert providers.fallback_order("groq") == [
+        "groq", "agnes", "nvidia", "mistral", "gemini"]
 
 def test_openrouter_paid_and_stale_slugs_clamp(monkeypatch):
     monkeypatch.setattr(settings, "openrouter_model", "openai/gpt-4o")
@@ -98,9 +123,9 @@ def test_groq_free_tier_activation_is_exact_and_ordered(monkeypatch):
     monkeypatch.setattr(settings, "groq_model", providers.GROQ_DEFAULT)
     assert providers.resolve_model_id("inception:any") == (
         "inception", providers.INCEPTION_DEFAULT)
-    assert providers.fallback_order("inception") == [
-        "cerebras", "gemini", "nvidia", "groq", "openrouter", "mistral",
-        "inception"]
+    order = providers.fallback_order("inception")
+    assert order[:3] == ["groq", "openrouter", "mistral"]
+    assert order[-1] == "inception"
     assert providers.is_free_model("groq", "openai/gpt-oss-20b")
     assert providers.is_free_model("groq", "openai/gpt-oss-120b")
     assert providers.resolve_model_id("groq:openai/gpt-oss-120b") == (
@@ -146,6 +171,10 @@ def test_gemini_boundary_fails_closed_on_unapproved_slugs(monkeypatch):
 
 def test_gemini_is_free_and_default_when_keyed(monkeypatch):
     import shared.providers as providers
+    monkeypatch.setattr(settings, "dime_enable_groq", False)
+    monkeypatch.setattr(settings, "groq_api_key", "")
+    monkeypatch.setattr(settings, "dime_enable_agnes", False)
+    monkeypatch.setattr(settings, "agnes_api_key", "")
     monkeypatch.setattr(settings, "gemini_api_key", "key")
     monkeypatch.setattr(settings, "nvidia_nim_api_key", "")
     assert is_free_model("gemini", GEMINI_DEFAULT)
@@ -160,7 +189,7 @@ def test_gemini_is_free_and_default_when_keyed(monkeypatch):
     gemini_ids = [item["id"] for item in catalog["models"]
                   if item["engine"] == "gemini"]
     assert gemini_ids == [f"gemini:{m}" for m in GEMINI_MODELS]
-    assert providers.fallback_order("nvidia")[0] == "gemini"
+    assert providers.fallback_order("nvidia") == ["gemini"]
     defaults = [item["id"] for item in catalog["models"] if item["default"]]
     assert defaults == [f"gemini:{GEMINI_DEFAULT}"]
 
@@ -182,11 +211,13 @@ def test_no_keys_falls_back_to_mistral_default_without_crashing(monkeypatch):
     monkeypatch.setattr(settings, "mistral_api_key", "")
     monkeypatch.setattr(settings, "dime_enable_groq", False)
     monkeypatch.setattr(settings, "dime_enable_inception", False)
+    monkeypatch.setattr(settings, "dime_enable_agnes", False)
+    monkeypatch.setattr(settings, "agnes_api_key", "")
     monkeypatch.setattr(settings, "cerebras_api_key", "")
     assert providers._default_provider() == (
         "mistral", providers.MISTRAL_DEFAULT)
     assert providers.resolve_model_id(None) == providers._default_provider()
-    assert providers.fallback_order("gemini")[0] == "gemini"
+    assert providers.fallback_order("gemini") == []
     assert providers.get_llm("gemini") is None
     assert providers.get_llm("mistral") is None
 

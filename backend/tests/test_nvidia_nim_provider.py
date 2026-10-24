@@ -11,11 +11,20 @@ from shared.providers import (
     resolve_model_id,
 )
 
-def test_gemini_is_priority_one_and_exact_models_are_exposed(monkeypatch):
+def test_gemini_is_last_configured_free_fallback_and_exact_models_are_exposed(monkeypatch):
+    monkeypatch.setattr(settings, "dime_enable_groq", False)
+    monkeypatch.setattr(settings, "groq_api_key", "")
+    monkeypatch.setattr(settings, "dime_enable_agnes", False)
+    monkeypatch.setattr(settings, "agnes_api_key", "")
+    monkeypatch.setattr(settings, "nvidia_nim_api_key", "")
+    monkeypatch.setattr(settings, "cerebras_api_key", "")
+    monkeypatch.setattr(settings, "openrouter_api_key", "")
+    monkeypatch.setattr(settings, "mistral_api_key", "")
+    monkeypatch.setattr(settings, "dime_enable_inception", False)
     monkeypatch.setattr(settings, "gemini_api_key", "key")
     monkeypatch.setattr(settings, "cerebras_api_key", "")
     for primary in ("gemini", "nvidia", "openrouter", "mistral", "inception", "groq"):
-        assert fallback_order(primary)[0] == "gemini"
+        assert fallback_order(primary) == ["gemini"]
     catalog = models_catalog()
     assert catalog["available"]["gemini"] is True
     assert sorted(item["id"] for item in catalog["models"] if item["engine"] == "gemini") == [

@@ -38,3 +38,23 @@ def test_home_away_resolves_from_location_column():
 def test_home_away_unresolvable_without_sides():
     assert seed_possessions.resolve_home_away([_loc_row(0, "h")]) is None
     assert seed_possessions.resolve_home_away([]) is None
+
+
+def test_main_dry_run_prints_pilot_plan(monkeypatch, tmp_path, capsys):
+    game_id = "0022400001"
+    parquet = tmp_path / "season.parquet"
+    monkeypatch.setattr(seed_possessions, "season_for_game", lambda value: 2024)
+    monkeypatch.setattr(seed_possessions, "ensure_parquet", lambda year, path: parquet)
+    monkeypatch.setattr(seed_possessions, "season_games", lambda path: [game_id])
+    target = tmp_path / "target.duckdb"
+    parquet_dir = tmp_path / "parquet"
+    result = seed_possessions.main([
+        "--target", str(target), "--parquet-dir", str(parquet_dir),
+        "--source-db", str(tmp_path / "source.duckdb"), "--pilot-game", game_id,
+        "--dry-run",
+    ])
+    assert result == 0
+    assert capsys.readouterr().out.splitlines()[-2:] == [
+        f"{seed_possessions.TABLE} 2023-24 {game_id}",
+        "games: 1",
+    ]

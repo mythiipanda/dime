@@ -267,6 +267,76 @@ def parse_years(raw):
     return years
 
 
+def _build_plans(args, parquet_dir):
+    if args.pilot_game:
+        gid = str(args.pilot_game).strip()
+        year = season_for_game(gid)
+        if year not in SEASONS:
+            print(f"pilot game {gid} maps outside 2016..2025")
+            return None
+        path = ensure_parquet(year, parquet_dir)
+        if path is None:
+            print(f"pilot parquet missing for {year}")
+            return None
+        if gid not in season_games(path):
+            print(f"pilot game {gid} not in {path.name}")
+            return None
+        return [(season_label(year), path, [gid])]
+    plans = []
+    for year in parse_years(args.seasons):
+        path = ensure_parquet(year, parquet_dir)
+        if path is None:
+            print(f"FAIL season {season_label(year)}: download failed")
+            return None
+        ids = season_games(path)
+        if args.limit and args.limit > 0:
+            ids = ids[:args.limit]
+        plans.append((season_label(year), path, ids))
+    return plans
+
+
+def _print_plan(plans):
+    total = 0
+    for season, path, ids in plans:
+        for gid in ids:
+            print(f"{TABLE} {season} {gid}")
+            total += 1
+    print(f"games: {total}")
+
+
+def _run_plans(plans, args):
+    done = skipped = failed = 0
+    for season, path, ids in plans:
+        frame = None
+        if not args.dry_run and ids:
+            frame = pl.read_parquet(path)
+        for gid in ids:
+            reason = scope_reason(gid)
+            if reason is not None:
+                print(f"skip {TABLE} {season} {gid}: {reason}", flush=True)
+                skipped += 1
+                continue
+            if unit_complete(season, entity_for(gid)):
+                print(f"skip {TABLE} {season} {gid}", flush=True)
+                done += 1
+                continue
+            try:
+                rows = game_rows(frame, gid) if frame is not None else []
+                ok, note = materialize_game(rows, args.source_db, gid, season)
+            except Exception as exc:
+                print(f"failed {TABLE} {season} {gid}: {exc}"[:200],
+                      flush=True)
+                failed += 1
+                continue
+            if ok:
+                print(f"saved {TABLE} {season} {gid} {note}", flush=True)
+                done += 1
+            else:
+                print(f"skip {TABLE} {season} {gid}: {note}", flush=True)
+                skipped += 1
+    return done, skipped, failed
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser()
     ap.add_argument("--target", default=str(DEFAULT_TARGET))
@@ -285,70 +355,13 @@ def main(argv=None):
     store.LOCK_PATH = target.parent / ".write.lock"
     parquet_dir = Path(args.parquet_dir)
     parquet_dir.mkdir(parents=True, exist_ok=True)
-    if args.pilot_game:
-        gid = str(args.pilot_game).strip()
-        year = season_for_game(gid)
-        if year not in SEASONS:
-            print(f"pilot game {gid} maps outside 2016..2025")
-            return 1
-        path = ensure_parquet(year, parquet_dir)
-        if path is None:
-            print(f"pilot parquet missing for {year}")
-            return 1
-        if gid not in season_games(path):
-            print(f"pilot game {gid} not in {path.name}")
-            return 1
-        plans = [(season_label(year), path, [gid])]
-    else:
-        years = parse_years(args.seasons)
-        plans = []
-        for year in years:
-            path = ensure_parquet(year, parquet_dir)
-            if path is None:
-                print(f"FAIL season {season_label(year)}: download failed")
-                return 1
-            ids = season_games(path)
-            if args.limit and args.limit > 0:
-                ids = ids[:args.limit]
-            plans.append((season_label(year), path, ids))
+    plans = _build_plans(args, parquet_dir)
+    if plans is None:
+        return 1
     if args.dry_run:
-        total = 0
-        for season, path, ids in plans:
-            for gid in ids:
-                print(f"{TABLE} {season} {gid}")
-                total += 1
-        print(f"games: {total}")
+        _print_plan(plans)
         return 0
-    done = skipped = failed = 0
-    for season, path, ids in plans:
-        frame = None
-        if not args.dry_run and ids:
-            frame = pl.read_parquet(path)
-        for gid in ids:
-            reason = scope_reason(gid)
-            if reason is not None:
-                print(f"skip {TABLE} {season} {gid}: {reason}", flush=True)
-                skipped += 1
-                continue
-            if unit_complete(season, entity_for(gid)):
-                print(f"skip {TABLE} {season} {gid}", flush=True)
-                done += 1
-                continue
-            try:
-                rows = game_rows(frame, gid) if frame is not None else []
-                ok, note = materialize_game(rows, args.source_db, gid,
-                                            season)
-            except Exception as exc:
-                print(f"failed {TABLE} {season} {gid}: {exc}"[:200],
-                      flush=True)
-                failed += 1
-                continue
-            if ok:
-                print(f"saved {TABLE} {season} {gid} {note}", flush=True)
-                done += 1
-            else:
-                print(f"skip {TABLE} {season} {gid}: {note}", flush=True)
-                skipped += 1
+    done, skipped, failed = _run_plans(plans, args)
     print(f"done games={done} skipped={skipped} failed={failed}")
     return 1 if failed else 0
 

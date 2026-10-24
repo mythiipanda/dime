@@ -199,6 +199,33 @@ def _resolve_name(pid: int, fallback: str) -> str:
     return _name(pid, fallback)
 
 
+def _profile_rows(measures: list[str], scope: str, pid: int | None,
+                  tid: int | None, want_team: str, season: str
+                  ) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    identity = _PLAYER_IDENTITY if scope == "player" else _TEAM_IDENTITY
+    for kind in measures:
+        entity = f"ptstats:{scope}:{kind}"
+        frame = store.read_frame(
+            _TRACKING_TABLE, "_season = ? AND _entity = ?",
+            [season, entity])
+        if frame is None or frame.height == 0:
+            continue
+        for raw in frame.to_dicts():
+            if scope == "player" and _as_int(raw.get("PLAYER_ID")) != pid:
+                continue
+            if scope == "team":
+                same_id = _as_int(raw.get("TEAM_ID")) == tid
+                same_abbr = (str(raw.get("TEAM_ABBREVIATION") or "").strip().upper()
+                             == want_team.upper())
+                if not (same_id or same_abbr):
+                    continue
+            slim = _curated(raw, identity, _MEASURE_COLUMNS[kind])
+            slim["measure_type"] = kind
+            rows.append(slim)
+    return rows
+
+
 @tool
 def get_tracking_profile(player: str = "", team: str = "",
                          season: str = "2025-26",
@@ -240,28 +267,7 @@ def get_tracking_profile(player: str = "", team: str = "",
 
     if season not in table_seasons(_TRACKING_TABLE):
         return _no_coverage("get_tracking_profile", _TRACKING_TABLE, season)
-    rows: list[dict[str, Any]] = []
-    identity = _PLAYER_IDENTITY if scope == "player" else _TEAM_IDENTITY
-    for kind in measures:
-        entity = f"ptstats:{scope}:{kind}"
-        frame = store.read_frame(
-            _TRACKING_TABLE, "_season = ? AND _entity = ?",
-            [season, entity])
-        if frame is None or frame.height == 0:
-            continue
-        for raw in frame.to_dicts():
-            if scope == "player":
-                if _as_int(raw.get("PLAYER_ID")) != pid:
-                    continue
-            else:
-                same_id = _as_int(raw.get("TEAM_ID")) == tid
-                same_abbr = (str(raw.get("TEAM_ABBREVIATION") or "").strip().upper()
-                             == want_team.upper())
-                if not (same_id or same_abbr):
-                    continue
-            slim = _curated(raw, identity, _MEASURE_COLUMNS[kind])
-            slim["measure_type"] = kind
-            rows.append(slim)
+    rows = _profile_rows(measures, scope, pid, tid, want_team, season)
     if not rows:
         subject = want_player or want_team
         label = measure if measure else "tracking"

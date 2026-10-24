@@ -147,3 +147,18 @@ def test_resolve_home_away_from_matchups(dbs):
 def test_resolve_home_away_unknown_game_is_none(dbs):
     source, _ = dbs
     assert seed.resolve_home_away(str(source), "0000000000") is None
+
+
+def test_main_dry_run_prints_season_plan(monkeypatch, tmp_path, capsys):
+    source = tmp_path / "unused.duckdb"
+    monkeypatch.setattr(seed, "season_games", lambda db, season: ["game-a"])
+    target = tmp_path / "target.duckdb"
+    result = seed.main([
+        "--db", str(target), "--source-db", str(source),
+        "--season", "2024-25", "--dry-run",
+    ])
+    assert result == 0
+    assert capsys.readouterr().out.splitlines()[-2:] == [
+        f"{seed.TABLE} 2024-25 game-a",
+        "games: 1",
+    ]

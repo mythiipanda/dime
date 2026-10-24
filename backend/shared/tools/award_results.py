@@ -261,53 +261,85 @@ def _absent_subject(player: str, season: str,
             f"{', '.join(awards)} ballot for {', '.join(seasons)}; no player "
             f"ballot through the {season} season carries that name")
 
-def _resolve(placement_rows: list[dict[str, Any]], view: str, canon: str | None,
-             season: str, subject: str) -> list[dict[str, Any]]:
-    if view == "player_awards":
-        if canon is None:
-            return placement_rows
-        narrowed = [row for row in placement_rows if row["award"] == canon]
-        if not narrowed:
-            raise AwardResultError(
-                "subject_award_absent",
-                f"no {canon} ballot row for {subject} through the {season} "
-                f"season; {subject} is on record for "
-                f"{_career_note(placement_rows)}")
-        return narrowed
-    if canon is not None:
-        placement_rows = [row for row in placement_rows
-                          if row["award"] == canon]
-        if not placement_rows:
-            raise AwardResultError(
-                "award_season_absent",
-                f"no {canon} ballot for the {season} season")
-    if view == "field":
+
+def _resolve_player_awards(placement_rows: list[dict[str, Any]], canon: str | None,
+                           season: str, subject: str) -> list[dict[str, Any]]:
+    if canon is None:
         return placement_rows
-    if view in ("winner", "winner_history"):
-        leading_by_season: dict[str, int] = {}
-        for row in placement_rows:
-            if row["rank"] is not None:
-                season_key = row["season"]
-                leading_by_season[season_key] = min(
-                    leading_by_season.get(season_key, row["rank"]), row["rank"])
-        if view == "winner_history":
-            if not leading_by_season:
-                raise AwardResultError(
-                    "ballot_unranked",
-                    f"the {canon} ballots through the {season} season publish "
-                    "no ranked placement")
-            return [row for row in placement_rows
-                    if row["rank"] is not None
-                    and row["rank"] == leading_by_season[row["season"]]]
-        leading = min(leading_by_season.values(), default=None)
-    else:
-        leading = None
+    narrowed = [row for row in placement_rows if row["award"] == canon]
+    if not narrowed:
+        raise AwardResultError(
+            "subject_award_absent",
+            f"no {canon} ballot row for {subject} through the {season} "
+            f"season; {subject} is on record for "
+            f"{_career_note(placement_rows)}")
+    return narrowed
+
+
+def _filter_award_rows(placement_rows: list[dict[str, Any]], canon: str | None,
+                       season: str) -> list[dict[str, Any]]:
+    if canon is None:
+        return placement_rows
+    filtered = [row for row in placement_rows if row["award"] == canon]
+    if not filtered:
+        raise AwardResultError(
+            "award_season_absent",
+            f"no {canon} ballot for the {season} season")
+    return filtered
+
+
+def _leading_ranks(placement_rows: list[dict[str, Any]]) -> dict[str, int]:
+    leading_by_season: dict[str, int] = {}
+    for row in placement_rows:
+        if row["rank"] is not None:
+            season_key = row["season"]
+            leading_by_season[season_key] = min(
+                leading_by_season.get(season_key, row["rank"]), row["rank"])
+    return leading_by_season
+
+
+def _resolve_winner_history(placement_rows: list[dict[str, Any]],
+                            leading_by_season: dict[str, int],
+                            canon: str, season: str) -> list[dict[str, Any]]:
+    if not leading_by_season:
+        raise AwardResultError(
+            "ballot_unranked",
+            f"the {canon} ballots through the {season} season publish "
+            "no ranked placement")
+    return [row for row in placement_rows
+            if row["rank"] is not None
+            and row["rank"] == leading_by_season[row["season"]]]
+
+
+def _resolve_winner(placement_rows: list[dict[str, Any]], canon: str,
+                    season: str) -> list[dict[str, Any]]:
+    leading = min((row["rank"] for row in placement_rows
+                   if row["rank"] is not None), default=None)
     if leading is None:
         raise AwardResultError(
             "ballot_unranked",
             f"the {canon} ballot for the {season} season publishes no ranked "
             "placement")
     return [row for row in placement_rows if row["rank"] == leading]
+
+
+def _resolve(placement_rows: list[dict[str, Any]], view: str, canon: str | None,
+             season: str, subject: str) -> list[dict[str, Any]]:
+    if view == "player_awards":
+        return _resolve_player_awards(placement_rows, canon, season, subject)
+    placement_rows = _filter_award_rows(placement_rows, canon, season)
+    if view == "field":
+        return placement_rows
+    leading_by_season = _leading_ranks(placement_rows)
+    if view == "winner_history":
+        return _resolve_winner_history(
+            placement_rows, leading_by_season, canon, season)
+    if view != "winner":
+        raise AwardResultError(
+            "ballot_unranked",
+            f"the {canon} ballot for the {season} season publishes no ranked "
+            "placement")
+    return _resolve_winner(placement_rows, canon, season)
 
 def _coverage(view: str, spec: dict[str, Any] | None, season: str) -> str:
     scope = spec["label"] if spec is not None else "every published award"

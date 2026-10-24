@@ -117,6 +117,29 @@ def _slim(row: dict[str, Any]) -> dict[str, Any]:
     return {col: row.get(col) for col in _COLUMNS if col in row}
 
 
+def _matching_rows(raws: list[dict[str, Any]], start: str, end: str,
+                   team_id: int | None, team: str,
+                   txn_type: str | None) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    for raw in raws:
+        day = str(raw.get("txn_date") or "")
+        if start and day < start:
+            continue
+        if end and day > end:
+            continue
+        if team_id is not None:
+            same_id = _as_int(raw.get("team_id")) == team_id
+            same_abbr = (str(raw.get("team") or "").strip().upper()
+                         == team.upper())
+            if not (same_id or same_abbr):
+                continue
+        if txn_type and str(raw.get("txn_type") or "") != txn_type:
+            continue
+        rows.append(_slim(raw))
+    rows.sort(key=lambda row: str(row.get("txn_date") or ""), reverse=True)
+    return rows
+
+
 @tool
 def get_transactions(team: str = "", start: str = "", end: str = "",
                      txn_type: str = "") -> dict[str, Any]:
@@ -169,24 +192,7 @@ def get_transactions(team: str = "", start: str = "", end: str = "",
             raws = frame.to_dicts()
         except Exception:
             raws = []
-    rows: list[dict[str, Any]] = []
-    for raw in raws:
-        day = str(raw.get("txn_date") or "")
-        if want_start and day < want_start:
-            continue
-        if want_end and day > want_end:
-            continue
-        if tid is not None:
-            same_id = _as_int(raw.get("team_id")) == tid
-            same_abbr = (str(raw.get("team") or "").strip().upper()
-                         == want_team.upper())
-            if not (same_id or same_abbr):
-                continue
-        if canonical:
-            if str(raw.get("txn_type") or "") != canonical:
-                continue
-        rows.append(_slim(raw))
-    rows.sort(key=lambda r: str(r.get("txn_date") or ""), reverse=True)
+    rows = _matching_rows(raws, want_start, want_end, tid, want_team, canonical)
     if not rows:
         subject = want_team.upper() if want_team else "the league"
         bounds = want_start or want_end

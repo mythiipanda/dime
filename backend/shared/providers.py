@@ -9,24 +9,34 @@ from langchain_openai import ChatOpenAI
 from .config import settings
 
 ProviderName = Literal["gemini", "nvidia", "mistral", "openrouter", "inception", "groq",
-                   "cerebras", "reflection"]
+                   "cerebras", "reflection", "agnes"]
 
 class ProviderPolicyError(ValueError):
     pass
 
-FREE_PROVIDER_ORDER: tuple[ProviderName, ...] = ("cerebras", "gemini", "nvidia", "groq",
-                                          "openrouter", "mistral")
+FREE_PROVIDER_ORDER: tuple[ProviderName, ...] = (
+    "groq", "agnes", "cerebras", "nvidia", "openrouter", "mistral", "gemini")
 
 def active_provider_order() -> tuple[ProviderName, ...]:
-    free = tuple(name for name in FREE_PROVIDER_ORDER if
-        name != "groq" or (settings.dime_enable_groq and settings.groq_api_key))
-    ordered = tuple(name for name in free
-                    if name != "cerebras" or settings.cerebras_api_key)
+    keys = {
+        "groq": settings.dime_enable_groq and settings.groq_api_key,
+        "agnes": settings.dime_enable_agnes and settings.agnes_api_key,
+        "cerebras": settings.cerebras_api_key,
+        "nvidia": settings.nvidia_nim_api_key,
+        "openrouter": settings.openrouter_api_key,
+        "mistral": settings.mistral_api_key,
+        "gemini": settings.gemini_api_key,
+    }
+    ordered = tuple(name for name in FREE_PROVIDER_ORDER if keys[name])
     return ((*ordered, "inception")
             if settings.dime_enable_inception and settings.inception_api_key
             else ordered)
 
 GEMINI_BASE_URL = "https://generativelanguage.googleapis.com/v1beta/openai/"
+AGNES_BASE_URL = "https://apihub.agnes-ai.com/v1"
+AGNES_DEFAULT = "agnes-3.0-flash"
+AGNES_MODELS: tuple[str, ...] = (AGNES_DEFAULT, "agnes-2.5-flash")
+AGNES_ALLOWLIST = frozenset(AGNES_MODELS)
 GEMINI_DEFAULT = "gemini-3.5-flash"
 GEMINI_MODELS: tuple[str, ...] = (
     GEMINI_DEFAULT,
@@ -82,6 +92,8 @@ def is_free_model(provider: str, slug: str) -> bool:
             value in OPENROUTER_ALLOWLIST and value.endswith(":free"))
     if provider == "groq":
         return value in GROQ_MODELS
+    if provider == "agnes":
+        return value in AGNES_ALLOWLIST
     if provider == "cerebras":
         return value in CEREBRAS_MODELS
     if provider == "mistral":
@@ -110,6 +122,12 @@ def _groq_free_model(slug: str | None = None) -> str:
     value = str(slug or settings.groq_model or "").strip()
     return value if value in GROQ_MODELS else GROQ_DEFAULT
 
+def _agnes_free_model(slug: str | None = None) -> str:
+    value = str(slug or settings.agnes_model or AGNES_DEFAULT).strip()
+    if value not in AGNES_ALLOWLIST:
+        raise ProviderPolicyError("unapproved Agnes model")
+    return value
+
 def _mistral_free_model() -> str:
     return settings.mistral_model or MISTRAL_DEFAULT
 
@@ -123,23 +141,12 @@ def _reflection_model(slug: str | None = None) -> str:
     return value if value in REFLECTION_ALLOWLIST else REFLECTION_DEFAULT
 
 def _default_provider() -> tuple[ProviderName, str]:
-    if settings.gemini_api_key:
-        return ("gemini", _gemini_model())
-    if settings.nvidia_nim_api_key:
-        return ("nvidia", _nvidia_nim_model())
-    if settings.dime_enable_inception and settings.inception_api_key:
-        return ("inception", settings.inception_model or INCEPTION_DEFAULT)
-    if settings.dime_enable_groq and settings.groq_api_key:
-        return ("groq", _groq_free_model())
-    if settings.openrouter_api_key:
-        return ("openrouter", _openrouter_free_model())
-    if settings.cerebras_api_key:
-        return ("cerebras", _cerebras_model())
+    active = active_provider_order()
+    if active:
+        return active[0], _accepted_model(active[0], active[0], "")
     return ("mistral", _mistral_free_model())
 
-def resolve_model_id(model_id: str | None) -> tuple[ProviderName, str]:
-    original = model_id or ""
-    raw = original.strip()
+def _resolve_original_prefix(original: str) -> tuple[ProviderName, str] | None:
     if original.startswith("groq:"):
         slug = original.split(":", 1)[1]
         if slug not in GROQ_MODELS:
@@ -147,6 +154,13 @@ def resolve_model_id(model_id: str | None) -> tuple[ProviderName, str]:
         if not (settings.dime_enable_groq and settings.groq_api_key):
             raise ProviderPolicyError("Groq free-tier route is not activated")
         return ("groq", _groq_free_model(slug))
+    if original.startswith("agnes:"):
+        slug = original.split(":", 1)[1]
+        if slug not in AGNES_ALLOWLIST:
+            raise ProviderPolicyError("unapproved Agnes model")
+        if not (settings.dime_enable_agnes and settings.agnes_api_key):
+            raise ProviderPolicyError("Agnes free-tier route is not activated")
+        return ("agnes", _agnes_free_model(slug))
     if original.startswith("reflection:"):
         slug = original.split(":", 1)[1]
         if slug not in REFLECTION_ALIASES and slug not in REFLECTION_ALLOWLIST:
@@ -159,6 +173,10 @@ def resolve_model_id(model_id: str | None) -> tuple[ProviderName, str]:
         if slug.strip() not in GEMINI_ALLOWLIST:
             raise ProviderPolicyError("unapproved Gemini model")
         return ("gemini", slug.strip())
+    return None
+
+
+def _resolve_trimmed_prefix(raw: str) -> tuple[ProviderName, str] | None:
     if raw.startswith("nvidia:"):
         return ("nvidia", _nvidia_nim_model(raw.split(":", 1)[1]))
     if raw.startswith("openrouter:"):
@@ -177,6 +195,18 @@ def resolve_model_id(model_id: str | None) -> tuple[ProviderName, str]:
         if settings.dime_enable_inception and settings.inception_api_key:
             return ("inception", settings.inception_model or INCEPTION_DEFAULT)
         return _default_provider()
+    return None
+
+
+def resolve_model_id(model_id: str | None) -> tuple[ProviderName, str]:
+    original = model_id or ""
+    raw = original.strip()
+    routed = _resolve_original_prefix(original)
+    if routed is not None:
+        return routed
+    routed = _resolve_trimmed_prefix(raw)
+    if routed is not None:
+        return routed
     if raw:
         if raw in GEMINI_ALLOWLIST:
             return ("gemini", raw)
@@ -246,6 +276,19 @@ def get_llm(name: ProviderName, model: str | None = None) -> ChatOpenAI | None:
             model=_groq_free_model(model),
             base_url="https://api.groq.com/openai/v1",
             api_key=settings.groq_api_key,
+            timeout=settings.llm_timeout_s,
+            max_retries=0,
+            default_headers={"User-Agent": "dime-agent/1.0"},
+        )
+    if name == "agnes":
+        if model is not None and model not in AGNES_ALLOWLIST:
+            raise ProviderPolicyError("unapproved Agnes model")
+        if not (settings.dime_enable_agnes and settings.agnes_api_key):
+            return None
+        return ChatOpenAI(
+            model=_agnes_free_model(model),
+            base_url=AGNES_BASE_URL,
+            api_key=settings.agnes_api_key,
             timeout=settings.llm_timeout_s,
             max_retries=0,
             default_headers={"User-Agent": "dime-agent/1.0"},
@@ -345,6 +388,10 @@ def note_provider_failure(name: str) -> None:
         pass
 
 def _accepted_model(name: ProviderName, primary: ProviderName, model: str) -> str:
+    if name == "agnes":
+        return _agnes_free_model(model if name == primary else None)
+    if name == "cerebras":
+        return _cerebras_model(model if name == primary else None)
     if name == "gemini":
         return _gemini_model(model if name == primary else None)
     if name == "nvidia":
@@ -535,6 +582,11 @@ def models_catalog() -> dict[str, Any]:
         groq = _groq_free_model()
         options.append({"id": f"groq:{groq}", "engine": "groq",
                         "default": default_id == f"groq:{groq}"})
+    if settings.dime_enable_agnes and settings.agnes_api_key:
+        agnes = _agnes_free_model()
+        options.extend({"id": f"agnes:{slug}", "engine": "agnes",
+                        "default": default_id == f"agnes:{slug}"}
+                       for slug in AGNES_MODELS)
     if settings.dime_enable_reflection and settings.reflection_api_key:
         reflection_default = _reflection_model()
         options.append({"id": f"reflection:{reflection_default}",
@@ -553,6 +605,8 @@ def models_catalog() -> dict[str, Any]:
     }
     if settings.dime_enable_groq and settings.groq_api_key:
         available["groq"] = True
+    if settings.dime_enable_agnes and settings.agnes_api_key:
+        available["agnes"] = True
     if settings.dime_enable_reflection and settings.reflection_api_key:
         available["reflection"] = True
     if settings.dime_enable_inception and settings.inception_api_key:

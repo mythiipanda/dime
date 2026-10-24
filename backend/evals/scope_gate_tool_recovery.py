@@ -244,6 +244,80 @@ def _check_ground_truth(truth: Any, errors: list[str]) -> None:
                 errors.append(f"ground_truth.values.{name} must be a number")
 
 
+def _validate_task_id(task_id: Any, errors: list[str]) -> str | None:
+    if not isinstance(task_id, str):
+        errors.append("task_id must be a string")
+        return None
+    match = TASK_ID_RE.match(task_id)
+    if not match:
+        errors.append("task_id must match format sg-NNN or tr-NNN")
+        return None
+    prefix = match.group(1)
+    number = int(match.group(2))
+    if prefix == "sg" and not SG_NUMBER_MIN <= number <= SG_NUMBER_MAX:
+        errors.append("sg task_id number must be in range 001..060")
+    if prefix == "tr" and not TR_NUMBER_MIN <= number <= TR_NUMBER_MAX:
+        errors.append("tr task_id number must be in range 001..040")
+    return prefix
+
+
+def _validate_expected_fields(row: dict[str, Any], prefix: str | None,
+                              errors: list[str]) -> bool:
+    expected = row["expected"]
+    if not isinstance(expected, str) or expected not in EXPECTED_VALUES:
+        errors.append("expected must be one of refuse, recover")
+        return False
+    premise_slice = row["slice"]
+    if not isinstance(premise_slice, str) or premise_slice not in PREMISE_TYPES:
+        errors.append("slice must be one of scope_gate, tool_recovery")
+    premise = row["premise_type"]
+    if isinstance(premise, str) and premise in PREMISE_TYPES:
+        _check_premise(row, prefix, premise, premise_slice, expected, errors)
+    if expected == "refuse":
+        _check_refusal(row, errors)
+    else:
+        _check_recovery(row, errors)
+    return True
+
+
+def _check_premise(row: dict[str, Any], prefix: str | None, premise: str,
+                   premise_slice: Any, expected: str, errors: list[str]) -> None:
+    if premise_slice != premise:
+        errors.append("slice must equal premise_type")
+    if prefix == "sg" and premise != "scope_gate":
+        errors.append("sg task_id requires premise_type scope_gate")
+    if prefix == "tr" and premise != "tool_recovery":
+        errors.append("tr task_id requires premise_type tool_recovery")
+    want = "refuse" if premise == "scope_gate" else "recover"
+    if expected != want:
+        errors.append(f"expected must be {want} when premise_type is {premise}")
+
+
+def _check_refusal(row: dict[str, Any], errors: list[str]) -> None:
+    if row["ground_truth"] is not None:
+        errors.append("ground_truth must be null when expected is refuse")
+    reason = row.get("refusal_reason")
+    if not isinstance(reason, str) or reason not in REFUSAL_REASONS:
+        errors.append("refusal_reason must be one of " + ", ".join(sorted(REFUSAL_REASONS)))
+    for key in ("fault_kind", "recovery_mode"):
+        if row.get(key) is not None:
+            errors.append(f"{key} must be null when premise_type is scope_gate")
+
+
+def _check_recovery(row: dict[str, Any], errors: list[str]) -> None:
+    if row.get("refusal_reason") is not None:
+        errors.append("refusal_reason must be null when premise_type is tool_recovery")
+    fault = row.get("fault_kind")
+    if not isinstance(fault, str) or fault not in FAULT_KINDS:
+        errors.append("fault_kind must be one of timeout, empty_result, malformed_payload")
+    mode = row.get("recovery_mode")
+    if not isinstance(mode, str) or mode not in RECOVERY_MODES:
+        errors.append("recovery_mode must be one of retry, fallback_tool, partial_with_caveat")
+    truth = row["ground_truth"]
+    if truth is not None:
+        _check_ground_truth(truth, errors)
+
+
 def validate_row(row: Any) -> list[str]:
     errors: list[str] = []
     if not isinstance(row, dict):
@@ -253,21 +327,7 @@ def validate_row(row: Any) -> list[str]:
             errors.append(f"missing required key: {key}")
     if errors:
         return errors
-    task_id = row["task_id"]
-    prefix = None
-    if not isinstance(task_id, str):
-        errors.append("task_id must be a string")
-    else:
-        match = TASK_ID_RE.match(task_id)
-        if not match:
-            errors.append("task_id must match format sg-NNN or tr-NNN")
-        else:
-            prefix = match.group(1)
-            number = int(match.group(2))
-            if prefix == "sg" and not SG_NUMBER_MIN <= number <= SG_NUMBER_MAX:
-                errors.append("sg task_id number must be in range 001..060")
-            if prefix == "tr" and not TR_NUMBER_MIN <= number <= TR_NUMBER_MAX:
-                errors.append("tr task_id number must be in range 001..040")
+    prefix = _validate_task_id(row["task_id"], errors)
     _check_text(row, "question", errors)
     _check_text(row, "guidelines", errors)
     _check_text(row, "answer", errors)
@@ -278,46 +338,8 @@ def validate_row(row: Any) -> list[str]:
     if not isinstance(premise, str) or premise not in PREMISE_TYPES:
         errors.append("premise_type must be one of scope_gate, tool_recovery")
         premise = None
-    expected = row["expected"]
-    if not isinstance(expected, str) or expected not in EXPECTED_VALUES:
-        errors.append("expected must be one of refuse, recover")
+    if not _validate_expected_fields(row, prefix, errors):
         return errors
-    premise_slice = row["slice"]
-    if not isinstance(premise_slice, str) or premise_slice not in PREMISE_TYPES:
-        errors.append("slice must be one of scope_gate, tool_recovery")
-    if premise is not None:
-        if premise_slice != premise:
-            errors.append("slice must equal premise_type")
-        if prefix == "sg" and premise != "scope_gate":
-            errors.append("sg task_id requires premise_type scope_gate")
-        if prefix == "tr" and premise != "tool_recovery":
-            errors.append("tr task_id requires premise_type tool_recovery")
-        want = "refuse" if premise == "scope_gate" else "recover"
-        if expected != want:
-            errors.append(f"expected must be {want} when premise_type is {premise}")
-    if expected == "refuse":
-        if row["ground_truth"] is not None:
-            errors.append("ground_truth must be null when expected is refuse")
-        reason = row.get("refusal_reason")
-        if not isinstance(reason, str) or reason not in REFUSAL_REASONS:
-            errors.append(
-                "refusal_reason must be one of " + ", ".join(sorted(REFUSAL_REASONS))
-            )
-        for key in ("fault_kind", "recovery_mode"):
-            if row.get(key) is not None:
-                errors.append(f"{key} must be null when premise_type is scope_gate")
-    else:
-        if row.get("refusal_reason") is not None:
-            errors.append("refusal_reason must be null when premise_type is tool_recovery")
-        fault = row.get("fault_kind")
-        if not isinstance(fault, str) or fault not in FAULT_KINDS:
-            errors.append("fault_kind must be one of timeout, empty_result, malformed_payload")
-        mode = row.get("recovery_mode")
-        if not isinstance(mode, str) or mode not in RECOVERY_MODES:
-            errors.append("recovery_mode must be one of retry, fallback_tool, partial_with_caveat")
-        truth = row["ground_truth"]
-        if truth is not None:
-            _check_ground_truth(truth, errors)
     return errors
 
 

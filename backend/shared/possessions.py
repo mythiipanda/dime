@@ -284,6 +284,36 @@ class _Open:
         self.foul_seen = False
         self.team_points = {}
 
+    def _set_decisive(self, row):
+        if self.decisive is not None:
+            return
+        tid = _team_of(row)
+        tricode = str(row.get("team_tricode") or "").strip()
+        if tid and tid in self.id_to_abbr:
+            self.decisive = (tid, self.id_to_abbr.get(tid) or "")
+        elif tricode:
+            self.decisive = (tid, tricode)
+
+    def _attach_scoring_action(self, row, action):
+        if action == "Made Shot":
+            self.events.append(_shot_token(row))
+            tid = _team_of(row)
+            value = _shot_value(row)
+            self.team_points[tid] = self.team_points.get(tid, 0) + value
+            self.scored = True
+            self.shooter = tid
+            self.score_sec = _sec_remaining(row)
+            return
+        self.events.append(_ft_token(row))
+        if not _ft_made(row):
+            return
+        tid = _team_of(row)
+        self.team_points[tid] = self.team_points.get(tid, 0) + 1
+        if _is_final_ft(row):
+            self.scored = True
+            self.shooter = tid
+            self.score_sec = _sec_remaining(row)
+
     def attach(self, row):
         self.rows.append(row)
         action = row.get("action_type") or ""
@@ -298,41 +328,14 @@ class _Open:
             self.events.append("TEAM-DREB" if team_event else "DREB")
             return True
         if action in ("Made Shot", "Missed Shot", "Free Throw"):
-            if self.decisive is None:
-                tid = _team_of(row)
-                tricode = str(row.get("team_tricode") or "").strip()
-                if tid and tid in self.id_to_abbr:
-                    self.decisive = (tid, self.id_to_abbr.get(tid) or "")
-                elif tricode:
-                    self.decisive = (tid, tricode)
-            if action in ("Made Shot", "Missed Shot"):
+            self._set_decisive(row)
+            if action == "Missed Shot":
                 self.events.append(_shot_token(row))
             else:
-                self.events.append(_ft_token(row))
-            if action == "Made Shot":
-                tid = _team_of(row)
-                value = _shot_value(row)
-                self.team_points[tid] = self.team_points.get(tid, 0) + value
-                self.scored = True
-                self.shooter = tid
-                self.score_sec = _sec_remaining(row)
-            elif action == "Free Throw":
-                if _ft_made(row):
-                    tid = _team_of(row)
-                    self.team_points[tid] = self.team_points.get(tid, 0) + 1
-                    if _is_final_ft(row):
-                        self.scored = True
-                        self.shooter = tid
-                        self.score_sec = _sec_remaining(row)
+                self._attach_scoring_action(row, action)
             return False
         if action == "Turnover":
-            if self.decisive is None:
-                tid = _team_of(row)
-                tricode = str(row.get("team_tricode") or "").strip()
-                if tid and tid in self.id_to_abbr:
-                    self.decisive = (tid, self.id_to_abbr.get(tid) or "")
-                elif tricode:
-                    self.decisive = (tid, tricode)
+            self._set_decisive(row)
             self.events.append("TOV")
             return True
         self.events.append(_static_token(row))
@@ -374,6 +377,68 @@ class _Open:
         }
 
 
+def _initial_score(rows):
+    home = 0
+    away = 0
+    if rows:
+        first_home = _score_value(rows[0].get("score_home"))
+        if first_home is not None:
+            home = first_home
+        first_away = _score_value(rows[0].get("score_away"))
+        if first_away is not None:
+            away = first_away
+    return home, away
+
+
+def _close_open(current, out, number, home, away):
+    try:
+        record = current.close(number, (home, away))
+    except ValueError:
+        if out:
+            out[-1]["events"].extend(current.events)
+        return
+    out.append(record)
+
+
+def _skip_unopened_row(row, action, sub, out, home, away):
+    if action == "period" and sub == "end":
+        return True, _track_score(home, row.get("score_home")), \
+            _track_score(away, row.get("score_away"))
+    teamless = not _team_of(row) and not str(
+        row.get("team_tricode") or "").strip()
+    if teamless and action != "Timeout" and not (
+            action == "period" and sub == "start"):
+        home = _track_score(home, row.get("score_home"))
+        away = _track_score(away, row.get("score_away"))
+        if out:
+            out[-1]["events"].append(_static_token(row))
+        return True, home, away
+    return False, home, away
+
+
+def _current_boundary(current, row, action, sub):
+    if action == "period" and sub == "start":
+        return "period_start"
+    if action == "period" and sub == "end":
+        return "period_end"
+    if action == "Jump Ball" and (current.decisive is not None
+                                  or current.scored):
+        return "jump_ball"
+    if current.scored:
+        continues = (
+            (action == "Free Throw"
+             and _team_of(row) == current.shooter)
+            or (action == "Foul"
+                and _sec_remaining(row) == current.score_sec)
+            or (action in ("Timeout", "Substitution", "Instant Replay")
+                and current.foul_seen
+                and _sec_remaining(row) == current.score_sec)
+        )
+        if not continues:
+            return "score"
+    return None
+
+
 def parse_game_possessions(pbp_rows):
     rows = sorted(list(pbp_rows or []), key=_order_of)
     team_ids = []
@@ -392,25 +457,8 @@ def parse_game_possessions(pbp_rows):
     _normalize_teamless(rows, abbr_to_id)
     out = []
     current = None
-    home = 0
-    away = 0
+    home, away = _initial_score(rows)
     game_id = ""
-    if rows:
-        first_home = _score_value(rows[0].get("score_home"))
-        if first_home is not None:
-            home = first_home
-        first_away = _score_value(rows[0].get("score_away"))
-        if first_away is not None:
-            away = first_away
-
-    def shut(number):
-        try:
-            record = current.close(number, (home, away))
-        except ValueError:
-            if out:
-                out[-1]["events"].extend(current.events)
-            return
-        out.append(record)
 
     for row in rows:
         gid = row.get("game_id")
@@ -419,56 +467,34 @@ def parse_game_possessions(pbp_rows):
         action = row.get("action_type") or ""
         sub = row.get("sub_type") or ""
         if current is None:
-            if action == "period" and sub == "end":
-                home = _track_score(home, row.get("score_home"))
-                away = _track_score(away, row.get("score_away"))
-                continue
-            teamless = not _team_of(row) and not str(
-                row.get("team_tricode") or "").strip()
-            if teamless and action != "Timeout" and not (
-                    action == "period" and sub == "start"):
-                home = _track_score(home, row.get("score_home"))
-                away = _track_score(away, row.get("score_away"))
-                if out:
-                    out[-1]["events"].append(_static_token(row))
+            skipped, home, away = _skip_unopened_row(
+                row, action, sub, out, home, away)
+            if skipped:
                 continue
             current = _Open(team_ids, id_to_abbr, abbr_to_id, (home, away))
-        elif action == "period" and sub == "start":
-            shut(len(out) + 1)
-            current = _Open(team_ids, id_to_abbr, abbr_to_id, (home, away))
-        elif action == "period" and sub == "end":
-            home = _track_score(home, row.get("score_home"))
-            away = _track_score(away, row.get("score_away"))
-            current.attach(row)
-            shut(len(out) + 1)
-            current = None
-            continue
-        elif action == "Jump Ball" and (current.decisive is not None
-                                       or current.scored):
-            shut(len(out) + 1)
-            current = _Open(team_ids, id_to_abbr, abbr_to_id, (home, away))
-        elif current.scored:
-            continues = (
-                (action == "Free Throw"
-                 and _team_of(row) == current.shooter)
-                or (action == "Foul"
-                    and _sec_remaining(row) == current.score_sec)
-                or (action in ("Timeout", "Substitution", "Instant Replay")
-                    and current.foul_seen
-                    and _sec_remaining(row) == current.score_sec)
-            )
-            if not continues:
-                shut(len(out) + 1)
-                current = _Open(team_ids, id_to_abbr, abbr_to_id,
-                                (home, away))
+        else:
+            boundary = _current_boundary(current, row, action, sub)
+            if boundary == "period_start":
+                _close_open(current, out, len(out) + 1, home, away)
+                current = _Open(team_ids, id_to_abbr, abbr_to_id, (home, away))
+            elif boundary == "period_end":
+                home = _track_score(home, row.get("score_home"))
+                away = _track_score(away, row.get("score_away"))
+                current.attach(row)
+                _close_open(current, out, len(out) + 1, home, away)
+                current = None
+                continue
+            elif boundary in ("jump_ball", "score"):
+                _close_open(current, out, len(out) + 1, home, away)
+                current = _Open(team_ids, id_to_abbr, abbr_to_id, (home, away))
         home = _track_score(home, row.get("score_home"))
         away = _track_score(away, row.get("score_away"))
         ended = current.attach(row)
         if ended:
-            shut(len(out) + 1)
+            _close_open(current, out, len(out) + 1, home, away)
             current = None
     if current is not None and current.rows:
-        shut(len(out) + 1)
+        _close_open(current, out, len(out) + 1, home, away)
     for record in out:
         record["game_id"] = game_id
     return out
