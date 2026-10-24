@@ -898,8 +898,9 @@ CAPABILITY_DESCRIPTIONS: dict[str, str] = {
     "team_splits": "Team home/away, result, last-10, and monthly records and scoring.",
     "team_season_summary": (
         "Available regular-season games, wins, losses, total points, and "
-        "points per game for one resolved team and season. Does not certify "
-        "complete season coverage."),
+        "points per game from historical team game logs (silver_hist_gamelogs) "
+        "for one resolved team and season. Does not certify complete season "
+        "coverage."),
     "injury_impact": "Current injuries combined with team ratings and recent form.",
     "lineup_matchups": "Observed lineup-vs-lineup shared possessions for two teams with sample flags.",
     "competitive_ratings": "Team margin performance with blowouts separated from competitive games.",

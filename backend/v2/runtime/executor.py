@@ -103,7 +103,9 @@ def _validate_period_scope_sql(task: TaskSpec, node: PlanNode) -> None:
                     and not source.db and not source.catalog):
                 source_scopes.append((scope, alias))
     if (not source_scopes or len(source_scopes) != len(physical_sources)):
-        raise ValueError("period scope cannot be verified for SQL source")
+        raise ValueError(
+            "period scope requires silver_hist_gamelogs.season_type = "
+            f"{expected!r} in its source scope")
     for scope, source_alias in source_scopes:
         where = scope.expression.args.get("where")
         if (where is None or not _has_direct_period_filter(

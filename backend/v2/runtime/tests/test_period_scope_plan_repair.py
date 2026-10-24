@@ -298,3 +298,56 @@ async def test_model_planner_attaches_bounded_feedback_from_failure_context() ->
     assert feedback.get("invalid_arguments") == failure_message
     assert feedback.get("instruction") == "Return a complete replacement plan."
     assert plan.nodes[0].arguments["sql"] == REPAIRED_CELTICS_SQL
+
+
+R5_CAPTURED_CELTICS_SQL = (
+    "SELECT Team_ID, COUNT(*) AS games_played, "
+    "SUM(CASE WHEN WL = 'W' THEN 1 ELSE 0 END) AS wins, "
+    "SUM(CASE WHEN WL = 'L' THEN 1 ELSE 0 END) AS losses, "
+    "SUM(PTS) AS total_points_scored, "
+    "CAST(SUM(PTS) AS DOUBLE) / COUNT(*) AS mean_points_per_game "
+    "FROM silver_team_games WHERE _season = '2024-25' "
+    "AND Team_ID = (SELECT TeamID FROM silver_standings WHERE TeamName = "
+    "'Boston Celtics' LIMIT 1) GROUP BY Team_ID"
+)
+
+class CapturedR5Planner:
+    def __init__(self) -> None:
+        self.calls: list[Any] = []
+
+    async def plan(self, task: TaskSpec, failure_context: Any = None) -> Plan:
+        self.calls.append(failure_context)
+        selected_sql = (
+            REPAIRED_CELTICS_SQL
+            if failure_context is not None
+            else R5_CAPTURED_CELTICS_SQL
+        )
+        return Plan(nodes=[
+            PlanNode(
+                id="query_node",
+                description="query celtics",
+                capability_hints=["sql_exec"],
+                covers_requirement_ids=["celtics_aggregation"],
+                arguments={"sql": selected_sql},
+            )
+        ])
+
+@pytest.mark.anyio
+async def test_captured_r5_source_scope_failure_provides_server_constraint_and_repairs() -> None:
+    task = make_celtics_task()
+    planner = CapturedR5Planner()
+    runtime = Runtime(
+        intake=CelticsIntake(task),
+        planner=planner,
+        executor=PlanExecutor({"sql_exec": FakeCapability("sql_exec", {"games": 82})}),
+        synthesizer=CelticsSynthesizer(),
+        mechanical_verifier=PassVerifier(),
+        semantic_verifier=PassVerifier(),
+    )
+    result = await runtime.run("Report the Boston Celtics 2024-25 regular-season statistics.")
+    assert result.verification.status == VerificationStatus.PASS
+    assert len(planner.calls) == 2
+    assert planner.calls[0] is None
+    assert "period scope requires silver_hist_gamelogs.season_type = 'regular-season'" in str(planner.calls[1])
+    assert result.execution.plan.nodes[0].arguments["sql"] == REPAIRED_CELTICS_SQL
+    assert result.execution.plan.nodes[0].status == PlanStatus.COMPLETE
