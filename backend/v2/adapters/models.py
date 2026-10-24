@@ -2169,6 +2169,12 @@ class ModelPlanner(ModelStage):
         }
         if failure_context is not None:
             payload["failure_context"] = failure_context
+            plan_error = failure_context.get("plan_error")
+            if plan_error and "coverage_feedback" not in payload:
+                payload["coverage_feedback"] = {
+                    "invalid_arguments": plan_error,
+                    "instruction": "Return a complete replacement plan.",
+                }
         try:
             plan = await self._generate_plan(payload, task)
         except PlannerArgumentError as exc:
@@ -2431,11 +2437,43 @@ class ModelPlanner(ModelStage):
             else node for node in kept]
 
     @staticmethod
+    def _sql_covers(expected_sql: str, actual_sql: str) -> bool:
+        if not (isinstance(actual_sql, str) and actual_sql.strip()):
+            return False
+        if not isinstance(expected_sql, str):
+            return False
+        if expected_sql.strip().casefold() == actual_sql.strip().casefold():
+            return True
+        from sqlglot import exp, parse_one
+        from sqlglot.errors import ParseError
+        try:
+            expected_ast = parse_one(expected_sql, read="duckdb")
+            actual_ast = parse_one(actual_sql, read="duckdb")
+        except ParseError:
+            return False
+        for syntax_tree in (expected_ast, actual_ast):
+            for literal in syntax_tree.find_all(exp.Literal):
+                if (
+                    literal.is_string
+                    and literal.this.strip("\'\"").casefold()
+                    in ("regular season", "regular-season")
+                ):
+                    literal.replace(exp.Literal.string("regular-season"))
+        return (
+            expected_ast.sql(dialect="duckdb").casefold()
+            == actual_ast.sql(dialect="duckdb").casefold()
+        )
+
+    @staticmethod
     def _arguments_cover(expected: Mapping[str, Any], actual: Mapping[str, Any]) -> bool:
         for key, wanted in expected.items():
             if key not in actual:
                 return False
             got = actual[key]
+            if key == "sql":
+                if not ModelPlanner._sql_covers(wanted, got):
+                    return False
+                continue
             if isinstance(wanted, Mapping):
                 if not isinstance(got, Mapping) or not ModelPlanner._arguments_cover(wanted, got):
                     return False

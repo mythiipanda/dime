@@ -319,17 +319,13 @@ class Runtime:
                     raise
                 failure_context = _plan_failure_context(exc)
                 continue
-            if validate_plan is not None:
-                try:
-                    validate_plan(prepared_task, candidate)
-                except PlanValidationError as exc:
-                    if (not attempt
-                            and _planner_accepts_failure_context(
-                                self._planner)):
-                        failure_context = _plan_failure_context(exc)
-                        continue
-            prepared_plan = candidate
-            break
+            admitted, failure_context = _validate_candidate_plan(
+                validate_plan, prepared_task, candidate, attempt,
+                self._planner, self._executor,
+            )
+            if admitted:
+                prepared_plan = candidate
+                break
         catalog = getattr(self._executor, "capability_names", frozenset())
         self._report_activity({"kind":"plan_update","phase":"plan","status":"complete","title":"Plan accepted","transition":"completed","correlation_id":"stage:plan","data":{"node_count":len(prepared_plan.nodes),"capabilities":sorted({cap for n in prepared_plan.nodes for cap in n.capability_hints if cap in catalog}),"unknown_capability_count":sum(1 for n in prepared_plan.nodes for cap in n.capability_hints if cap not in catalog)}})
         return prepared_plan
@@ -1073,6 +1069,34 @@ def _open_question_context(task: TaskSpec) -> dict | None:
             "needs no open_questions entry; a question it cannot settle "
             "belongs to a node so the branch gaps with its reason."),
     }
+
+
+def _admits_servable_subset(executor: Any, candidate: Plan, error: BaseException) -> bool:
+    if not str(error).startswith("plan does not cover required evidence"):
+        return False
+    servable_subset = getattr(executor, "_servable_subset", None)
+    return servable_subset is not None and bool(servable_subset(candidate))
+
+
+def _validate_candidate_plan(
+    validate_plan: Any,
+    task: TaskSpec,
+    candidate: Plan,
+    attempt: int,
+    planner: Any,
+    executor: Any,
+) -> tuple[bool, dict | None]:
+    if validate_plan is None:
+        return True, None
+    try:
+        validate_plan(task, candidate)
+        return True, None
+    except PlanValidationError as validation_error:
+        if not attempt and _planner_accepts_failure_context(planner):
+            return False, _plan_failure_context(validation_error)
+        if attempt and _admits_servable_subset(executor, candidate, validation_error):
+            return True, None
+        raise
 
 
 def _plan_failure_context(exc: BaseException) -> dict:
