@@ -5,7 +5,14 @@ import time
 from collections.abc import Mapping, Sequence
 from typing import Any
 
-from v2.contracts import EvidenceEnvelope, Plan, PlanNode, PlanStatus, TaskSpec
+from v2.contracts import (
+    EvidenceEnvelope,
+    PeriodScope,
+    Plan,
+    PlanNode,
+    PlanStatus,
+    TaskSpec,
+)
 from v2.runtime.checkpoints import CheckpointStore, ExecutionCheckpoint
 from v2.runtime.interfaces import Capability
 from v2.runtime.models import ExecutionErrorCode, ExecutionResult
@@ -36,6 +43,74 @@ class NodeTimeoutError(TimeoutError):
 
 class PlanValidationError(ValueError):
     pass
+
+def _has_direct_period_filter(
+    expression, source_alias: str, source_count: int, expected: str, exp,
+) -> bool:
+    if isinstance(expression, exp.Paren):
+        return _has_direct_period_filter(
+            expression.this, source_alias, source_count, expected, exp)
+    if isinstance(expression, exp.And):
+        return (_has_direct_period_filter(
+                    expression.this, source_alias, source_count, expected, exp)
+                or _has_direct_period_filter(
+                    expression.expression, source_alias, source_count,
+                    expected, exp))
+    if not isinstance(expression, exp.EQ):
+        return False
+    for column, literal in (
+        (expression.this, expression.expression),
+        (expression.expression, expression.this),
+    ):
+        if (not isinstance(column, exp.Column)
+                or column.name.casefold() != "season_type"):
+            continue
+        if column.table and column.table.casefold() != source_alias.casefold():
+            continue
+        if not column.table and source_count != 1:
+            continue
+        if (isinstance(literal, exp.Literal) and literal.is_string
+                and literal.this == expected):
+            return True
+    return False
+
+def _validate_period_scope_sql(task: TaskSpec, node: PlanNode) -> None:
+    expected = {
+        PeriodScope.REGULAR_SEASON: "regular-season",
+        PeriodScope.PLAYOFFS: "playoffs",
+    }.get(task.period_scope)
+    if expected is None:
+        return
+    sql = node.arguments.get("sql")
+    if not isinstance(sql, str):
+        raise ValueError("period scope cannot be verified for SQL")
+    from sqlglot import exp, parse_one
+    from sqlglot.errors import ParseError
+    from sqlglot.optimizer.scope import traverse_scope
+
+    try:
+        expression = parse_one(sql, read="duckdb")
+    except ParseError as exc:
+        raise ValueError("period scope cannot be verified for SQL") from exc
+    source_scopes = []
+    physical_sources = []
+    for scope in traverse_scope(expression):
+        for alias, source in scope.sources.items():
+            if not isinstance(source, exp.Table):
+                continue
+            physical_sources.append(source)
+            if (source.name.casefold() == "silver_hist_gamelogs"
+                    and not source.db and not source.catalog):
+                source_scopes.append((scope, alias))
+    if (not source_scopes or len(source_scopes) != len(physical_sources)):
+        raise ValueError("period scope cannot be verified for SQL source")
+    for scope, source_alias in source_scopes:
+        where = scope.expression.args.get("where")
+        if (where is None or not _has_direct_period_filter(
+                where.this, source_alias, len(scope.sources), expected, exp)):
+            raise ValueError(
+                "period scope requires silver_hist_gamelogs.season_type = "
+                f"{expected!r} in its source scope")
 
 async def _join_node(node: PlanNode, coro) -> tuple[PlanNode, Any]:
     _, envelope = await coro
@@ -376,6 +451,8 @@ class PlanExecutor:
             except Exception as exc:
                 raise ValueError(
                     f"invalid arguments for plan node {node.id!r}: {exc}") from exc
+        if matches[0] == "sql_exec":
+            _validate_period_scope_sql(task, node)
         if matches[0] == "web_fetch":
             parents = [item for item in node.depends_on
                        if self._selected_name(plan, item) == "web_search"]
