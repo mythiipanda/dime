@@ -801,6 +801,8 @@ def get_team_season_summary(
         total_points += points
 
     count = len(games)
+    from .. import store as _store
+
     return {
         "tool": "get_team_season_summary",
         "ok": True,
@@ -816,6 +818,7 @@ def get_team_season_summary(
         }],
         "meta": {
             "source": "warehouse:silver_hist_gamelogs",
+            **_store.warehouse_identity(),
             "season": resolved_season,
             "coverage": (
                 "Summary of rows available for this team, season, and "

@@ -76,6 +76,7 @@ _FULL_ALLOWLIST = frozenset({
     "playoff_team_ratings", "trades", "trade_value", "contracts",
     "game_prediction", "game_logs", "four_factors", "team_four_factors",
     "matchup_brief", "season_series", "head_to_head", "matchup_splits",
+    "team_season_summary",
     "today", "morning_briefing", "award_results", "sql_exec",
     "web_search", "web_fetch",
 })

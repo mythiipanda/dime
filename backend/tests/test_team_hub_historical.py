@@ -145,6 +145,43 @@ def test_summary_exact_on_hist_slice(hist_db):
     assert s["ts_pct"] == pytest.approx(
         round(100 * 341 / (2 * (93 + 0.44 * 30)), 1))
 
+def test_team_season_capability_builds_evidence_from_hist_slice(
+    monkeypatch, hist_db,
+):
+    import asyncio
+
+    from v2.adapters.core import acall_capability
+
+    monkeypatch.setattr(store, "warehouse_identity", lambda: {
+        "warehouse_id": "configured-runtime",
+        "warehouse_sha256": "0" * 64,
+    })
+    evidence = asyncio.run(acall_capability(
+        "team_season_summary",
+        {"team_id": 2, "season": "2024-25",
+         "period_scope": "regular_season"},
+        tools={"get_team_season_summary": team_mod.get_team_season_summary},
+    ))
+
+    assert evidence.season == "2024-25"
+    assert evidence.rows == [{
+        "TEAM_ID": 2,
+        "SEASON": "2024-25",
+        "PERIOD_SCOPE": "regular_season",
+        "GAMES": 3,
+        "WINS": 2,
+        "LOSSES": 1,
+        "PTS": 341,
+        "PPG": pytest.approx(341 / 3),
+    }]
+    assert evidence.units == {
+        "GAMES": "count", "WINS": "count", "LOSSES": "count",
+        "PTS": "points", "PPG": "per_game",
+    }
+    assert evidence.source_identity.kind == "warehouse"
+    assert evidence.source_identity.warehouse_id == "configured-runtime"
+    assert evidence.coverage and "completeness is unverified" in evidence.coverage
+
 def test_summary_realistic_rows_partial_season():
     games = [
         {"wl": "w", "pts": 115, "fga": 88, "fta": 22},

@@ -1,4 +1,5 @@
 from datetime import UTC, datetime
+from decimal import Decimal
 
 import pytest
 
@@ -82,6 +83,7 @@ class _WarehouseFixture:
     def __init__(self, rows):
         self.rows = rows
         self.read_query = None
+        self.read_parameters = None
 
     def execute(self, sql, parameters=None):
         if sql == "SHOW TABLES":
@@ -90,6 +92,7 @@ class _WarehouseFixture:
             return _Cursor([(index, name) for index, name
                             in enumerate(sorted(self._columns))])
         self.read_query = sql
+        self.read_parameters = parameters
         assert "g.season_type = 'regular-season'" in sql
         assert "g._season = ?" in sql
         assert parameters[0] == _SEASON
@@ -135,6 +138,14 @@ def _resolved_team_evidence():
         rows={"team_id": str(_TEAM_ID)},
         entities=[entity],
     )
+
+
+def _patch_fixture_warehouse(monkeypatch, warehouse):
+    monkeypatch.setattr(store, "connect", lambda *, read_only=False: warehouse)
+    monkeypatch.setattr(store, "warehouse_identity", lambda: {
+        "warehouse_id": "configured-runtime",
+        "warehouse_sha256": "0" * 64,
+    })
 
 
 def _admit_summary_bindings(task, envelope, outputs=None):
@@ -218,7 +229,7 @@ async def test_full_regular_rows_flow_through_tool_envelope_and_typed_bindings(
     monkeypatch,
 ):
     warehouse = _WarehouseFixture(_game_rows())
-    monkeypatch.setattr(store, "connect", lambda *, read_only=False: warehouse)
+    _patch_fixture_warehouse(monkeypatch, warehouse)
     monkeypatch.setattr(team_tools, "_abbrev", lambda _team: "BOS")
     evidence = _resolved_team_evidence()
     task = _task()
@@ -267,7 +278,7 @@ async def test_full_regular_rows_flow_through_tool_envelope_and_typed_bindings(
 @pytest.mark.anyio
 async def test_authored_output_aliases_bind_to_typed_summary_fields(monkeypatch):
     warehouse = _WarehouseFixture(_game_rows())
-    monkeypatch.setattr(store, "connect", lambda *, read_only=False: warehouse)
+    _patch_fixture_warehouse(monkeypatch, warehouse)
     monkeypatch.setattr(team_tools, "_abbrev", lambda _team: "BOS")
     evidence = _resolved_team_evidence()
     task = _task()
@@ -292,6 +303,301 @@ async def test_authored_output_aliases_bind_to_typed_summary_fields(monkeypatch)
             "TOTAL_POINTS"] == "PTS"
         assert CAPABILITIES["team_season_summary"].output_aliases[
             ppg_alias] == "PPG"
+
+
+@pytest.mark.anyio
+async def test_runtime_request_reaches_public_answer_with_typed_summary_and_calculation(
+    monkeypatch, tmp_path,
+):
+    import json
+
+    import httpx
+    from fastapi import FastAPI
+
+    from v2.adapters import coverage
+    from v2.api import routes
+    from v2.projects.service import ProjectStore
+    from v2.runtime import Runtime
+    from v2.runtime import assembly
+
+    request = (
+        "For the Boston Celtics, summarize the 2024-25 regular season: "
+        "games, wins, losses, total points, and points per game."
+    )
+    outputs = [
+        "GAMES", "WINS", "LOSSES", "TOTAL_POINTS", "POINTS_PER_GAME",
+    ]
+    warehouse = _WarehouseFixture(_game_rows())
+    _patch_fixture_warehouse(monkeypatch, warehouse)
+    monkeypatch.setattr(team_tools, "_abbrev", lambda _team: "BOS")
+    monkeypatch.setattr(coverage, "table_seasons", lambda _table: frozenset({_SEASON}))
+    monkeypatch.setattr(assembly, "declared_schema_for", lambda _capability: None)
+    monkeypatch.setattr(
+        "shared.providers.resolve_model_id",
+        lambda _model: ("openrouter", "fixture-model"),
+    )
+    monkeypatch.setenv("DIME_RUNTIME_V2", "on")
+    monkeypatch.setenv("DIME_V2_LEDGER_DIR", str(tmp_path / "ledger"))
+    monkeypatch.setenv("DIME_V2_ACTIVITY_DIR", str(tmp_path / "activity"))
+    monkeypatch.setenv("DIME_V2_CHECKPOINT_DIR", str(tmp_path / "checkpoints"))
+    monkeypatch.setenv("DIME_REVISION", "fixture-runtime")
+    monkeypatch.setattr(routes, "_PROJECTS", ProjectStore(tmp_path / "projects.sqlite"))
+
+    class DeterministicStructuredModel:
+        instances = []
+
+        def __init__(self, _provider, _model_name, **_kwargs):
+            self.calls = []
+            self.instances.append(self)
+
+        async def generate(self, *, schema, prompt, payload, envelope, **_kwargs):
+            self.calls.append({
+                "route": envelope.route,
+                "payload": payload,
+                "prompt": prompt,
+            })
+            if envelope.route == "intake":
+                return schema.model_validate({
+                    "goal": request,
+                    "mode": "quick",
+                    "deliverable": "Available regular-season team summary",
+                    "metric_ids": outputs,
+                    "requested_outputs": outputs,
+                    "entities": [{
+                        "id": str(_TEAM_ID),
+                        "type": "team",
+                        "display_name": "Boston Celtics",
+                    }],
+                    "season": {
+                        "value": _SEASON, "source": "user", "confidence": 1.0,
+                    },
+                    "period_scope": "playoffs",
+                    "period_scope_source": "explicit_request",
+                    "required_evidence": ["team_season_summary"],
+                    "calculation_requirements": [{
+                        "id": "ppg_arithmetic",
+                        "description": "Calculate points per game as total points divided by games",
+                        "requested_outputs": ["POINTS_PER_GAME"],
+                    }],
+                })
+            if envelope.route == "planner":
+                return schema.model_validate({"nodes": [{
+                    "id": "team_summary",
+                    "description": "Summarize the selected team and season",
+                    "depends_on": [],
+                    "capability": "team_season_summary",
+                    "covers_requirement_ids": [],
+                    "arguments": {"entries": [
+                        {"key": "team_id", "kind": "string",
+                         "string_value": "Boston Celtics"},
+                        {"key": "season", "kind": "string",
+                         "string_value": _SEASON},
+                        {"key": "period_scope", "kind": "string",
+                         "string_value": "regular_season"},
+                    ]},
+                    "max_attempts": 1,
+                    "status": "pending",
+                }]})
+            if envelope.route == "synthesizer":
+                summaries = [
+                    item for item in payload["evidence"]
+                    if item.get("capability") == "team_season_summary"
+                ]
+                assert summaries, payload["evidence"]
+                summary = summaries[0]
+                assert summary["season"] == _SEASON
+                assert summary["source_identity"]["kind"] == "warehouse"
+                assert summary["source_identity"]["warehouse_id"] == (
+                    "configured-runtime")
+                assert "completeness is unverified" in summary["coverage"]
+                assert any(
+                    entity["type"] == "team"
+                    and entity["id"] == str(_TEAM_ID)
+                    for entity in summary["entities"]
+                )
+                evidence_id = summary["evidence_id"]
+                row = summary["rows"][0]
+                columns = {
+                    "GAMES": "GAMES", "WINS": "WINS", "LOSSES": "LOSSES",
+                    "TOTAL_POINTS": "PTS", "POINTS_PER_GAME": "PPG",
+                }
+                units = {
+                    "GAMES": "count", "WINS": "count", "LOSSES": "count",
+                    "TOTAL_POINTS": "points", "POINTS_PER_GAME": "per_game",
+                }
+                bindings = []
+                for output_id, column in columns.items():
+                    value = row[column]
+                    bindings.append({
+                        "requirement_kind": "task",
+                        "output_id": output_id,
+                        "node_id": "team_summary",
+                        "evidence_id": evidence_id,
+                        "selector": f"rows[0].{column}",
+                        "row_selector": "rows[0]",
+                        "value": {
+                            "kind": "float" if output_id == "POINTS_PER_GAME" else "integer",
+                            "value": value,
+                        },
+                        "subject_entity_type": "team",
+                        "subject_entity_id": str(_TEAM_ID),
+                        "subject_selector": "rows[0].TEAM_ID",
+                        "unit": {"kind": "declared", "value": units[output_id]},
+                        "domain": "team_season_summary",
+                    })
+                bindings.append({
+                    "requirement_kind": "calculation",
+                    "requirement_id": "ppg_arithmetic",
+                    "output_id": "POINTS_PER_GAME",
+                    "calculation_id": "ppg_from_points_and_games",
+                })
+                ppg = Decimal(str(row["PTS"])) / Decimal(str(row["GAMES"]))
+                text = (
+                    "Boston Celtics had "
+                    f"{row['GAMES']} available 2024-25 regular-season games, "
+                    f"with {row['WINS']} wins and {row['LOSSES']} losses and "
+                    f"{row['PTS']:,} total points. Points per game is total "
+                    f"points divided by games: {row['PTS']:,} / "
+                    f"{row['GAMES']} = {row['PPG']:g}. "
+                    "Season completeness is unverified."
+                )
+                return schema.model_validate({
+                    "sections": ["Available team summary"],
+                    "claims": [{
+                        "text": text,
+                        "kind": "derived",
+                        "evidence_ids": [evidence_id],
+                        "calculation_id": "ppg_from_points_and_games",
+                        "output_bindings": bindings,
+                    }],
+                    "calculations": [{
+                        "calculation_id": "ppg_from_points_and_games",
+                        "requirement_id": "ppg_arithmetic",
+                        "operation": "divide",
+                        "inputs": [
+                            {"evidence_id": evidence_id, "path": "rows[0].PTS"},
+                            {"evidence_id": evidence_id, "path": "rows[0].GAMES"},
+                        ],
+                        "result": str(ppg),
+                        "unit": "per_game",
+                    }],
+                })
+            if envelope.route == "semantic_verifier":
+                draft = payload["draft"]
+                return schema.model_validate({
+                    "status": "pass",
+                    "claim_results": [
+                        {"claim_index": index, "supported": True}
+                        for index, _claim in enumerate(draft["claims"])
+                    ],
+                })
+            raise AssertionError(f"unexpected model route: {envelope.route}")
+
+    monkeypatch.setattr(
+        assembly, "ProviderStructuredModel", DeterministicStructuredModel)
+    original_build_runtime = assembly.build_runtime
+    built = {}
+
+    def capture_runtime(**kwargs):
+        runtime, ledger = original_build_runtime(**kwargs)
+        built["runtime"] = runtime
+        built["ledger"] = ledger
+        return runtime, ledger
+
+    monkeypatch.setattr(assembly, "build_runtime", capture_runtime)
+    app = FastAPI()
+    app.include_router(routes.router, prefix="/api")
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app), base_url="http://testserver",
+    ) as client:
+        response = await client.post("/api/v2/chat/stream", json={"q": request})
+
+    assert response.status_code == 200
+    assert isinstance(built["runtime"], Runtime)
+    model = DeterministicStructuredModel.instances[-1]
+    assert [call["route"] for call in model.calls] == [
+        "intake", "planner", "synthesizer", "semantic_verifier",
+    ]
+    assert model.calls[0]["payload"]["period_scope_hint"] == "regular_season"
+    assert model.calls[1]["payload"]["task"]["period_scope"] == "regular_season"
+    assert model.calls[1]["payload"]["task"]["season"]["value"] == _SEASON
+    assert warehouse.read_query is not None
+    assert "g.season_type = 'regular-season'" in warehouse.read_query
+    assert warehouse.read_parameters[0] == _SEASON
+    assert warehouse.read_parameters[3] == _TEAM_ID
+    assert warehouse.read_parameters[4] == "BOS"
+
+    def event_data(name):
+        payloads = [
+            chunk.split("data: ", 1)[1]
+            for chunk in response.text.split("\n\n")
+            if chunk.startswith(f"event: {name}\n")
+        ]
+        assert payloads, f"missing {name} event"
+        return json.loads(payloads[-1])
+
+    custom = event_data("custom_data")
+    final = event_data("final_answer")
+    expected_values = {
+        "GAMES": 37,
+        "WINS": 24,
+        "LOSSES": 13,
+        "TOTAL_POINTS": 3996,
+        "POINTS_PER_GAME": 108.0,
+    }
+    evidence_rows = [row for row in custom["tables"] if "value" in row]
+    assert {row["output_id"] for row in evidence_rows} == set(outputs)
+    assert {row["output_id"]: row["value"] for row in evidence_rows} == {
+        "GAMES": "37", "WINS": "24", "LOSSES": "13",
+        "TOTAL_POINTS": "3996", "POINTS_PER_GAME": "108.0",
+    }
+    assert {row["output_id"]: row["unit"] for row in evidence_rows} == {
+        "GAMES": "count", "WINS": "count", "LOSSES": "count",
+        "TOTAL_POINTS": "points", "POINTS_PER_GAME": "per_game",
+    }
+    assert all(row["subject_id"] == str(_TEAM_ID)
+               for row in evidence_rows)
+    assert all(row["provenance"] == {
+        "capability": "team_season_summary",
+        "origin": "warehouse",
+        "warehouse_id": "configured-runtime",
+        "season": _SEASON,
+        "as_of": None,
+        "live_sources": [],
+    } for row in evidence_rows)
+    calculation_rows = [
+        row for row in custom["tables"] if "input_value" in row]
+    assert [(row["input_value"], row["output_id"])
+            for row in calculation_rows] == [
+        ("3996", "POINTS_PER_GAME"), ("37", "POINTS_PER_GAME"),
+    ]
+    assert custom["unverified_numbers"] == []
+    task_statuses = {
+        row["output_id"]: row["status"]
+        for row in final["carry"]["output_statuses"]
+        if row["requirement_kind"] == "task"
+    }
+    assert task_statuses == {output_id: "complete" for output_id in outputs}
+    calculation_statuses = [
+        row for row in final["carry"]["output_statuses"]
+        if row["requirement_kind"] == "calculation"
+    ]
+    assert any(
+        row["requirement_kind"] == "calculation"
+        and row["requirement_id"] == "ppg_arithmetic"
+        and row["output_id"] == "POINTS_PER_GAME"
+        and row["status"] == "complete"
+        and row["value"] == "108"
+        for row in calculation_statuses
+    ), [(row.get("requirement_id"), row.get("status"), row.get("value"),
+         row.get("unit")) for row in calculation_statuses]
+    assert final["carry"]["verification"] == "pass", {
+        "verified_claims": final["carry"]["verified_claims"],
+        "gaps": final["carry"]["gaps"],
+        "statuses": final["carry"]["output_statuses"],
+    }
+    assert "3,996 / 37 = 108" in final["text"]
+    assert "completeness is unverified" in final["text"]
 
 
 @pytest.mark.anyio
