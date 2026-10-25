@@ -668,6 +668,38 @@ async def test_semantic_verifier_receives_all_evidence_qualifiers() -> None:
     assert compact["warnings"] == ["partial season"]
     assert compact["lineage"] == ["parent"]
 
+@pytest.mark.anyio
+async def test_synthesizer_request_carries_evidence_limits_and_prompt_guidance() -> None:
+    from v2.contracts import EntityRef, TaskSpec
+
+    stub = StubModel([{
+        "sections": ["Record"],
+        "claims": [{"text": "Boston won 61 available games.", "kind": "observed",
+                    "evidence_ids": ["ev"]}],
+    }])
+    synthesizer = ModelSynthesizer(stub, provider="stub", model_name="stub-model")
+    evidence = EvidenceEnvelope(
+        evidence_id="ev", capability="standings", source="fixture",
+        observed_at=datetime(2026, 9, 15, tzinfo=UTC),
+        entities=[EntityRef(id="BOS", type="team", display_name="Boston Celtics")],
+        rows={"GAMES": 82, "WINS": 61}, units={"GAMES": "count"},
+        metric_definitions={"GAMES": "Count of available team-game rows."},
+        qualification="regular_season",
+        coverage="Available rows only; season completeness is unverified.",
+        warnings=["Values describe available warehouse rows only."],
+    )
+    await synthesizer.synthesize(
+        TaskSpec(goal="record", mode="quick", deliverable="answer"), [evidence])
+
+    call = stub.calls[0]
+    assert call["envelope"].route == "synthesizer"
+    assert "state that limit in the claim's own prose" in call["prompt"]
+    sent = call["payload"]["evidence"][0]
+    assert sent["rows"] == {"GAMES": 82, "WINS": 61}
+    assert sent["qualification"] == "regular_season"
+    assert sent["coverage"] == "Available rows only; season completeness is unverified."
+    assert sent["warnings"] == ["Values describe available warehouse rows only."]
+
 @pytest.mark.parametrize(
     "kwargs,error",
     [

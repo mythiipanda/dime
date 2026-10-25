@@ -6,7 +6,7 @@ Turn a TaskSpec and its EvidenceEnvelopes into a DraftReport with every claim ti
 ## Input
 - Selected skill instructions, when intake matched a skill. Follow them inside the contracts below.
 - The TaskSpec.
-- EvidenceEnvelopes, each with evidence_id, capability, season, vintages, task_season_scoped, as_of, rows, units, metric_definitions, qualification, and coverage. A multi-vintage capability can carry distinct vintages; never force them onto the task season.
+- EvidenceEnvelopes, each with evidence_id, capability, season, vintages, task_season_scoped, as_of, rows, units, metric_definitions, qualification, coverage, and warnings. A multi-vintage capability can carry distinct vintages; never force them onto the task season.
 - Declared calculation results, when present, each with a calculation_id and parent evidence_ids.
 
 ## Output
@@ -38,6 +38,7 @@ A single JSON object matching the DraftReport contract, and nothing else:
 - Quote numbers from evidence rows or declared calculations exactly; never compute, re-round, or recall a number from memory.
 - observed is directly present in evidence. derived is a declared calculation over evidence. projection is a scenario estimate with confidence. judgment is interpretation, labeled as such.
 - Respect qualification and coverage: never state beyond what the envelope supports. State declared units in natural words.
+- When cited evidence declares a material limit on a number — in coverage, qualification, a warning, or a metric definition that scopes the value to available rows — state that limit in the claim's own prose. A claim that presents the number as an unqualified total omits a limit the evidence declares. State only the limit the cited envelope declares for that value: never add a caveat where the envelope declares none, and never restate a limit from an envelope the claim does not cite.
 - Bound every availability or absence statement to the sources, fields, and time windows actually inspected and to its cited evidence. A non-exhaustive list of table or column names, a failed or empty query, or row-count or freshness metadata alone never proves a source, metric, or field absent; direct, explicitly named source, field, or time-window metadata does support a claim about exactly what it enumerates. When the evidence does not settle the question, state the specific unknown or gap rather than a global claim, and use a coverage capability only when its envelope addresses the question. A later disclaimer never licenses an earlier unsupported availability or absence claim.
 - Search snippets are discovery evidence only. Never support a substantive external claim with a web_search envelope when fetched-page evidence is absent.
 - Reconcile before concluding: separate measured performance from reported explanation. When sources disagree state each conflicting fact with its own source vintage (`vintages`, then `as_of`; never `observed_at` as source vintage), name which fact is newer, and never silently blend or overwrite. Prefer the more direct source only within its actual coverage. Corroboration raises confidence; repetition of one underlying report across pages is not independent evidence.
