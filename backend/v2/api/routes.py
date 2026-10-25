@@ -1163,8 +1163,17 @@ def _claim_numbers(result, verified_claim) -> set[Decimal]:
             values.add(number)
     return values
 
-def _claim_source_labels(result, verified_claim) -> set[str]:
+def _warehouse_source_table(source: str, capability_id: str) -> str | None:
     from v2.adapters import CAPABILITIES
+
+    match = _WAREHOUSE_SOURCE_RX.fullmatch(source)
+    capability = CAPABILITIES.get(capability_id)
+    if (match is None or capability is None
+            or match.group(1) != capability.tool_name):
+        return None
+    return match.group(2).casefold()
+
+def _claim_source_labels(result, verified_claim) -> set[str]:
     from v2.contracts import EvidenceOutputBinding
 
     bound_evidence_ids = {
@@ -1189,12 +1198,9 @@ def _claim_source_labels(result, verified_claim) -> set[str]:
         identity = getattr(envelope, "source_identity", None)
         if getattr(identity, "kind", None) != "warehouse":
             continue
-        match = _WAREHOUSE_SOURCE_RX.fullmatch(source.source)
-        capability = CAPABILITIES.get(source.capability)
-        if (match is None or capability is None
-                or match.group(1) != capability.tool_name):
-            continue
-        labels.add(match.group(2).casefold())
+        table = _warehouse_source_table(source.source, source.capability)
+        if table is not None:
+            labels.add(table)
     return labels
 
 def _claim_numbers_are_admitted(
@@ -1525,6 +1531,118 @@ def _citation_provenance(envelope) -> dict:
             "season": envelope.season,
             "as_of": envelope.as_of.isoformat() if envelope.as_of else None,
             "live_sources": live_sources}
+
+def _citation_entry(grouped, nodes, claim_index, source, envelope, node_id):
+    key = (claim_index, source.evidence_id, node_id or "")
+    existing = grouped.get(key)
+    if existing is not None:
+        return existing
+    node = nodes.get(node_id) if node_id is not None else None
+    existing = {
+        "claim_index": claim_index,
+        "evidence_id": source.evidence_id,
+        "node_id": node_id,
+        "source": source.source,
+        "table": _warehouse_source_table(source.source, source.capability),
+        "observed_at": (source.observed_at.isoformat()
+                        if source.observed_at is not None else None),
+        "vintages": dict(source.vintages),
+        "provenance": _citation_provenance(envelope),
+        "window_start": (envelope.window_start.isoformat()
+                         if envelope.window_start is not None else None),
+        "window_end": (envelope.window_end.isoformat()
+                       if envelope.window_end is not None else None),
+        "entities": [item.model_dump(mode="json")
+                     for item in envelope.entities],
+        "node_arguments": dict(node.arguments) if node is not None else {},
+        "outputs": [],
+        "calculations": [],
+    }
+    grouped[key] = existing
+    return existing
+
+def _citation_source(sources, evidence, evidence_id):
+    source = sources.get(evidence_id)
+    envelope = evidence.get(evidence_id)
+    if (source is None or envelope is None
+            or source.source != envelope.source
+            or source.capability != envelope.capability):
+        return None
+    return source, envelope
+
+def _evidence_citation(grouped, nodes, evidence, sources, claim_index, binding):
+    pair = _citation_source(sources, evidence, binding.evidence_id)
+    if pair is None:
+        return
+    source, envelope = pair
+    entry = _citation_entry(
+        grouped, nodes, claim_index, source, envelope, binding.node_id)
+    entry["outputs"].append(binding.model_dump(mode="json"))
+
+def _calculation_citations(grouped, nodes, evidence_nodes, evidence, sources,
+                           calculations, claim_index, binding):
+    calculation = calculations.get(binding.calculation_id)
+    if calculation is None:
+        return
+    operands = []
+    for input_ in calculation.inputs:
+        pair = _citation_source(sources, evidence, input_.evidence_id)
+        if pair is None:
+            return
+        operands.append((input_, *pair))
+    for input_, source, envelope in operands:
+        entry = _citation_entry(
+            grouped, nodes, claim_index, source, envelope,
+            evidence_nodes.get(input_.evidence_id))
+        record = {
+            "calculation_id": calculation.calculation_id,
+            "output_id": binding.output_id,
+            "requirement_id": binding.requirement_id,
+            "operation": calculation.operation,
+            "result": str(calculation.result),
+            "unit": calculation.unit,
+            "input_path": input_.path,
+            "inputs": [{"evidence_id": operand.evidence_id,
+                        "path": operand.path}
+                       for operand in calculation.inputs],
+        }
+        if record not in entry["calculations"]:
+            entry["calculations"].append(record)
+
+def _public_citations(result) -> list[dict]:
+    from v2.contracts import CalculationOutputBinding, EvidenceOutputBinding
+    from v2.runtime.models import withheld_claim_indices
+
+    evidence = {item.evidence_id: item for item in result.execution.evidence}
+    evidence_nodes = {
+        envelope.evidence_id: node_id
+        for node_id, envelope in result.execution.evidence_by_node.items()
+    }
+    nodes = {node.id: node for node in result.execution.plan.nodes}
+    withheld = withheld_claim_indices(getattr(result, "gaps", None) or [])
+    internal = _internal_identifier_rx(result)
+    calculations = {
+        item.calculation_id: item
+        for item in getattr(getattr(result, "draft", None), "calculations", []) or []
+    }
+    grouped: dict[tuple[int, str, str], dict] = {}
+
+    for claim in getattr(result, "verified_claims", None) or []:
+        if claim.claim_index in withheld:
+            continue
+        if _publishable_claim_prose(result, claim, internal) is None:
+            continue
+        sources = {item.evidence_id: item for item in claim.sources}
+        for binding in claim.output_bindings:
+            if isinstance(binding, EvidenceOutputBinding):
+                _evidence_citation(
+                    grouped, nodes, evidence, sources, claim.claim_index, binding)
+            elif isinstance(binding, CalculationOutputBinding):
+                _calculation_citations(
+                    grouped, nodes, evidence_nodes, evidence, sources,
+                    calculations, claim.claim_index, binding)
+    return [grouped[key] for key in sorted(
+        grouped, key=lambda item: (item[0], item[1], item[2]))]
 
 def _published_bindings(result) -> list:
     from v2.runtime.models import withheld_claim_indices
@@ -2129,6 +2247,7 @@ async def quick_answer_stream(body: QuickAnswerBody):
             "output_statuses": public_statuses,
             "structural_flags": list(getattr(result, "structural_flags", [])),
             "gaps": _public_gaps(result),
+            "citations": _public_citations(result),
             "stage_latencies_ms": stage_latencies_ms(),
         }
         for chunk in _answer_token_chunks(answer):
