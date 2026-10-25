@@ -1408,11 +1408,7 @@ class ModelIntake(ModelStage):
         unknown = sorted(set(task.required_evidence) - self._catalog.keys())
         if unknown:
             raise ValueError(f"intake selected unknown capabilities: {unknown}")
-        task = _canonicalize_calculation_requirements(task)
-        task = _align_calculation_requirement_requested_outputs(task)
-        task = _drop_unresolvable_requested_outputs(task)
-        task = _align_requirement_requested_outputs(task)
-        task = _backfill_open_question_outputs(task)
+        task = _finalize_requested_outputs(task)
         task = task.model_copy(update={
             "subject_entity_type": _derive_subject_entity_type(task),
         })
@@ -2601,6 +2597,14 @@ def _derive_subject_entity_type(task: TaskSpec) -> str | None:
         if kind == "player" or kind == "team":
             return kind
     return None
+
+def _finalize_requested_outputs(task: TaskSpec) -> TaskSpec:
+    task = _canonicalize_calculation_requirements(task)
+    task = _align_calculation_requirement_requested_outputs(task)
+    task = _drop_unresolvable_requested_outputs(task)
+    task = _align_requirement_requested_outputs(task)
+    task = _backfill_open_question_outputs(task)
+    return _align_calculation_requirement_requested_outputs(task)
 
 def _align_requirement_requested_outputs(task: TaskSpec) -> TaskSpec:
     from v2.adapters.capabilities import CAPABILITIES, resolve_metric_column

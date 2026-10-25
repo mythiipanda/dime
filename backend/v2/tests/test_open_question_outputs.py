@@ -3,11 +3,15 @@ from datetime import UTC, datetime
 from v2.adapters.capabilities import CAPABILITIES
 from v2.adapters.core import build_envelope
 from v2.adapters.models import (_backfill_open_question_outputs,
-                                _drop_unresolvable_requested_outputs)
+                                _drop_unresolvable_requested_outputs,
+                                _finalize_requested_outputs)
 from v2.contracts import (
+    CalculationOutputBinding,
     CalculationRequirement,
     Claim,
     ClaimSource,
+    DeclaredCalculation,
+    DeclaredCalculationInput,
     DraftReport,
     EntityRef,
     EvidenceOutputBinding,
@@ -237,3 +241,226 @@ def test_an_open_vocabulary_capability_keeps_the_metric_id() -> None:
     )
 
     assert _drop_unresolvable_requested_outputs(task) == task
+
+_CELTICS_NODE = "celtics_2024_25_regular_summary"
+_CELTICS_REQUIREMENT = "celtics_2024_25_regular_summary"
+_CELTICS_ROW = {
+    "TEAM_ID": 1610612738,
+    "TEAM_NAME": "Boston Celtics",
+    "SEASON": "2024-25",
+    "PERIOD_SCOPE": "regular_season",
+    "GAMES": 82,
+    "WINS": 61,
+    "LOSSES": 21,
+    "PTS": 9534,
+    "PPG": 116.26829268292683,
+}
+
+def _captured_task():
+    return TaskSpec(
+        goal=(
+            "For the Boston Celtics in the 2024-25 regular season only, "
+            "report games, wins, losses, total points scored, and mean "
+            "points per game. Use historical team game logs, exclude "
+            "playoffs, and cite the table, season filter, and source "
+            "evidence. Show the arithmetic."
+        ),
+        mode="quick",
+        deliverable="Boston Celtics 2024-25 regular-season summary",
+        season=SeasonRef(value="2024-25", source="user", confidence=1.0),
+        entities=[EntityRef(id="1610612738", type="team",
+                            display_name="Boston Celtics")],
+        required_evidence=["entity_resolution", "team_season_summary"],
+        requirements=[
+            EvidenceRequirement(
+                id="resolve_celtics",
+                description="Resolve the Celtics to the canonical team.",
+                capability_options=["entity_resolution"],
+            ),
+            EvidenceRequirement(
+                id=_CELTICS_REQUIREMENT,
+                description="Celtics 2024-25 regular-season summary",
+                capability_options=["team_season_summary"],
+                capability_arguments={"period_scope": "regular_season"},
+            ),
+        ],
+        calculation_requirements=[
+            CalculationRequirement(
+                id="mean_ppg",
+                description=("Compute mean points per game as total points "
+                             "scored divided by games played."),
+            ),
+            CalculationRequirement(
+                id="games_check",
+                description="Verify that wins plus losses equals games.",
+            ),
+        ],
+    )
+
+def _captured_envelope():
+    return build_envelope(
+        CAPABILITIES["team_season_summary"],
+        {"team_id": 1610612738, "season": "2024-25",
+         "period_scope": "regular_season"},
+        {"ok": True, "rows": [dict(_CELTICS_ROW)], "meta": {
+            "source": "warehouse",
+            "season": "2024-25",
+            "warehouse_id": "frozen-eval",
+            "warehouse_sha256": "a" * 64,
+        }},
+        entities=None,
+        observed_at=datetime.now(UTC),
+    )
+
+def _celtics_binding(envelope, output_id, selector, value, kind, unit):
+    return EvidenceOutputBinding(
+        requirement_kind="evidence",
+        requirement_id=_CELTICS_REQUIREMENT,
+        output_id=output_id,
+        node_id=_CELTICS_NODE,
+        evidence_id=envelope.evidence_id,
+        selector=selector,
+        row_selector="rows[0]",
+        value={"kind": kind, "value": value},
+        subject_entity_type="team",
+        subject_entity_id="1610612738",
+        subject_selector="rows[0].TEAM_ID",
+        unit={"kind": "declared", "value": unit},
+        domain="team_season_summary",
+    )
+
+def test_captured_intake_aligns_calculation_authority_after_backfill():
+    task = _finalize_requested_outputs(_captured_task())
+    calculations = {item.id: item for item in task.calculation_requirements}
+    assert calculations["mean_ppg"].requested_outputs == ["MEAN_PPG"]
+    assert calculations["games_check"].requested_outputs == []
+    requirement = task.requirements[1]
+    for output_id in ("GAMES", "WINS", "LOSSES", "PTS", "PPG",
+                      "TOTAL_POINTS", "POINTS_PER_GAME", "MEAN_PPG"):
+        assert output_id in requirement.requested_outputs
+        assert output_id in task.requested_outputs
+
+def test_captured_mean_ppg_keeps_calculation_authority_and_alias_outputs():
+    task = _finalize_requested_outputs(_captured_task())
+    envelope = _captured_envelope()
+    node = PlanNode(
+        id=_CELTICS_NODE,
+        description="Celtics 2024-25 regular-season summary",
+        capability_hints=["team_season_summary"],
+        covers_requirement_ids=[_CELTICS_REQUIREMENT],
+        arguments={"team_id": 1610612738, "season": "2024-25",
+                   "period_scope": "regular_season"},
+        status="complete",
+    )
+    execution = ExecutionResult(
+        plan=Plan(nodes=[node]),
+        evidence_by_node={_CELTICS_NODE: envelope},
+        attempts={_CELTICS_NODE: 1},
+    )
+    observed = [
+        _celtics_binding(envelope, "GAMES", "rows[0].GAMES", 82,
+                         "integer", "count"),
+        _celtics_binding(envelope, "WINS", "rows[0].WINS", 61,
+                         "integer", "count"),
+        _celtics_binding(envelope, "LOSSES", "rows[0].LOSSES", 21,
+                         "integer", "count"),
+        _celtics_binding(envelope, "PTS", "rows[0].PTS", 9534,
+                         "integer", "points"),
+        _celtics_binding(envelope, "TOTAL_POINTS", "rows[0].PTS", 9534,
+                         "integer", "points"),
+        _celtics_binding(envelope, "PPG", "rows[0].PPG",
+                         116.26829268292683, "float", "per_game"),
+        _celtics_binding(envelope, "POINTS_PER_GAME", "rows[0].PPG",
+                         116.26829268292683, "float", "per_game"),
+    ]
+    mean = _celtics_binding(envelope, "MEAN_PPG", "rows[0].PPG",
+                            116.26829268292683, "float", "per_game")
+    calculations = [
+        DeclaredCalculation(
+            calculation_id="mean_ppg",
+            requirement_id="mean_ppg",
+            operation="divide",
+            inputs=[DeclaredCalculationInput(
+                        evidence_id=envelope.evidence_id,
+                        path="rows[0].PTS"),
+                    DeclaredCalculationInput(
+                        evidence_id=envelope.evidence_id,
+                        path="rows[0].GAMES")],
+            result="116.26829268292683",
+            unit="per_game",
+        ),
+        DeclaredCalculation(
+            calculation_id="games_check",
+            requirement_id="games_check",
+            operation="add",
+            inputs=[DeclaredCalculationInput(
+                        evidence_id=envelope.evidence_id,
+                        path="rows[0].WINS"),
+                    DeclaredCalculationInput(
+                        evidence_id=envelope.evidence_id,
+                        path="rows[0].LOSSES")],
+            result="82",
+            unit="count",
+        ),
+    ]
+    claims = [
+        Claim(
+            text=("The Celtics played 82 games, won 61, lost 21, and "
+                  "scored 9,534 points in 2024-25."),
+            kind="observed",
+            evidence_ids=[envelope.evidence_id],
+            output_bindings=observed,
+        ),
+        Claim(
+            text=("The Celtics averaged 116.26829268292683 points per "
+                  "game: 9,534 divided by 82."),
+            kind="derived",
+            evidence_ids=[envelope.evidence_id],
+            calculation_id="mean_ppg",
+            output_bindings=[
+                CalculationOutputBinding(
+                    requirement_kind="calculation",
+                    requirement_id="mean_ppg",
+                    output_id="MEAN_PPG",
+                    calculation_id="mean_ppg",
+                ),
+                mean,
+            ],
+        ),
+    ]
+    draft = DraftReport(sections=["Celtics summary"], claims=claims,
+                        calculations=calculations)
+    admitted = [
+        admit_verified_claim_bindings(
+            task, execution, draft,
+            VerifiedClaim(
+                claim_index=index,
+                claim=claim,
+                evidence_ids=[envelope.evidence_id],
+                sources=[ClaimSource(
+                    evidence_id=envelope.evidence_id,
+                    source=envelope.source,
+                    capability=envelope.capability,
+                    observed_at=envelope.observed_at,
+                )],
+                output_bindings=claim.output_bindings,
+            ),
+        )
+        for index, claim in enumerate(claims)
+    ]
+    assert sorted(item.output_id for item in admitted[1].output_bindings) == [
+        "MEAN_PPG", "MEAN_PPG"]
+    mirrored = propagate_evidence_to_task(task, execution, draft, admitted)
+    rows = build_output_statuses(task, mirrored, [])
+    assert {row.status for row in rows} == {"complete"}
+    assert all(row.status == "complete"
+               for row in rows if row.output_id == "MEAN_PPG")
+    published = {row.output_id for row in rows}
+    assert {"GAMES", "WINS", "LOSSES", "PTS", "TOTAL_POINTS", "PPG",
+            "POINTS_PER_GAME", "MEAN_PPG"} <= published
+    assert envelope.rows[0]["SEASON"] == "2024-25"
+    assert envelope.rows[0]["TEAM_ID"] == 1610612738
+    assert envelope.rows[0]["PTS"] == 9534
+    assert "season completeness is unverified" in envelope.coverage
+    assert abs(envelope.rows[0]["PTS"] / envelope.rows[0]["GAMES"]
+               - 116.26829268292683) < 1e-12
