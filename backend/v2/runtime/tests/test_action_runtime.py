@@ -61,8 +61,11 @@ def task() -> TaskSpec:
             capability_options=["standings"])])
 
 def tool_action():
-    return {"action": "tool", "capability": "standings", "node_id": "facts",
-            "arguments": {"season": "2024-25"}}
+    return {"action": "tool", "plan": {"nodes": [{
+        "id": "facts", "description": "standings",
+        "capability_hints": ["standings"], "covers_requirement_ids": ["wins"],
+        "arguments": {"season": "2024-25"},
+    }]}}
 
 def answer():
     binding = EvidenceOutputBinding(

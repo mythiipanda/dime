@@ -30,9 +30,7 @@ class _ActionBase(BaseModel):
 
 class ToolAction(_ActionBase):
     action: Literal["tool"]
-    capability: str = Field(min_length=1)
-    node_id: str = Field(min_length=1)
-    arguments: dict[str, Any] = Field(default_factory=dict)
+    plan: Plan
 
 class AnswerAction(_ActionBase):
     action: Literal["answer"]
@@ -147,33 +145,29 @@ class ActionLoop:
         async with asyncio.timeout(remaining):
             return await awaitable
 
-    async def _run_tool(self, tool: ToolAction, task, state, deadline) -> None:
-        if tool.node_id in state.used_node_ids:
+    async def _run_plan(self, tool: ToolAction, task, state, deadline) -> None:
+        plan = tool.plan
+        node_ids = [node.id for node in plan.nodes]
+        duplicate_ids = sorted(state.used_node_ids.intersection(node_ids))
+        if duplicate_ids:
             state.defects.append(TypedDefect(
                 kind="duplicate_node",
-                message=f"node id {tool.node_id!r} already has evidence authority"))
-            state.history.append({"action": "tool", "node_id": tool.node_id,
+                message=f"node ids already have evidence authority: {duplicate_ids}"))
+            state.history.append({"action": "tool", "nodes": node_ids,
                                   "status": "rejected"})
             return
-        covers = [item.id for item in task.requirements
-                  if tool.capability in item.capability_options]
-        node = PlanNode(
-            id=tool.node_id, description=tool.capability,
-            capability_hints=[tool.capability],
-            covers_requirement_ids=covers,
-            arguments=tool.arguments, max_attempts=1, status="pending")
-        plan = Plan(nodes=[node])
         try:
             self._executor.validate_plan(task, plan)
             execution = await self._within(
                 self._executor.execute(
-                    task, plan, run_id=f"{self._turn_id}:{tool.node_id}",
+                    task, plan,
+                    run_id=f"{self._turn_id}:plan{len(state.history) + 1}",
                     resume=False),
                 deadline)
         except PlanValidationError as exc:
             state.defects.append(TypedDefect(
-                kind="invalid_tool", message=str(exc)))
-            state.history.append({"action": "tool", "node_id": tool.node_id,
+                kind="invalid_plan", message=str(exc)))
+            state.history.append({"action": "tool", "nodes": node_ids,
                                   "status": "rejected"})
             return
         except (asyncio.CancelledError, TimeoutError):
@@ -181,10 +175,10 @@ class ActionLoop:
         except Exception as exc:
             state.defects.append(TypedDefect(
                 kind="tool_failure", message=f"{type(exc).__name__}: {exc}"))
-            state.history.append({"action": "tool", "node_id": tool.node_id,
+            state.history.append({"action": "tool", "nodes": node_ids,
                                   "status": "failed"})
             return
-        state.used_node_ids.add(tool.node_id)
+        state.used_node_ids.update(node_ids)
         state.nodes.extend(execution.plan.nodes)
         state.evidence_by_node.update(execution.evidence_by_node)
         state.attempts.update(execution.attempts)
@@ -195,10 +189,10 @@ class ActionLoop:
             for message in messages:
                 state.defects.append(TypedDefect(
                     kind="tool_failure", message=f"{node_id}: {message}"))
+        complete = set(execution.evidence_by_node)
         state.history.append({
-            "action": "tool", "node_id": tool.node_id,
-            "status": ("complete" if tool.node_id in execution.evidence_by_node
-                       else "failed")})
+            "action": "tool", "nodes": node_ids,
+            "status": "complete" if complete == set(node_ids) else "partial"})
 
     async def _run_answer(self, answer: AnswerAction, task, state, started, deadline) -> RuntimeResult:
         state.last_draft = answer.draft
@@ -264,7 +258,7 @@ class ActionLoop:
                         payload=payload, envelope=envelope),
                     deadline)
                 if isinstance(action.step, ToolAction):
-                    await self._run_tool(action.step, task, state, deadline)
+                    await self._run_plan(action.step, task, state, deadline)
                     continue
                 return await self._run_answer(
                     action.step, task, state, started, deadline)

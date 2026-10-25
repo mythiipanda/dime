@@ -69,8 +69,12 @@ def _envelope(route: str) -> RequestEnvelope:
 async def test_action_loop_provider_route_reaches_ledger(monkeypatch):
     captured: list[dict[str, Any]] = []
     content = json.dumps({
-        "step": {"action": "tool", "capability": "standings",
-                 "node_id": "facts", "arguments": {"season": "2024-25"}}
+        "step": {"action": "tool", "plan": {"nodes": [{
+            "id": "facts", "description": "standings",
+            "capability_hints": ["standings"],
+            "covers_requirement_ids": ["wins"],
+            "arguments": {"season": "2024-25"},
+        }]}}
     })
     provider = ProviderStructuredModel("reflection", "Beam-1.0-501B-A23B")
     monkeypatch.setattr(
@@ -84,7 +88,7 @@ async def test_action_loop_provider_route_reaches_ledger(monkeypatch):
         payload={"task": "wins"}, envelope=_envelope("action_loop"))
 
     assert result.step.action == "tool"
-    assert result.step.capability == "standings"
+    assert result.step.plan.nodes[0].id == "facts"
     assert len(captured) == 1
     kinds = [item.kind for item in ledger.entries]
     assert LedgerKind.MODEL_REQUEST in kinds

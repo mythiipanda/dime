@@ -59,18 +59,22 @@ def task() -> TaskSpec:
             capability_options=["standings"])])
 
 def tool_action(node_id="facts"):
-    return {"action": "tool", "capability": "standings", "node_id": node_id,
-            "arguments": {"season": "2024-25"}}
+    return {"action": "tool", "plan": {"nodes": [{
+        "id": node_id, "description": "standings",
+        "capability_hints": ["standings"], "covers_requirement_ids": ["wins"],
+        "arguments": {"season": "2024-25"},
+    }]}}
 
-def binding(selector="rows[0].WINS"):
+def binding(selector="rows[0].WINS", evidence_id="evidence:facts",
+            node_id="facts", domain="standings"):
     return EvidenceOutputBinding(
         requirement_kind="task", requirement_id=None, output_id="WINS",
-        node_id="facts", evidence_id="evidence:facts",
+        node_id=node_id, evidence_id=evidence_id,
         selector=selector, row_selector="rows[0]",
         value={"kind": "integer", "value": 61},
         subject_entity_type="team", subject_entity_id="1610612738",
         subject_selector="rows[0].TEAM_ID",
-        unit={"kind": "declared", "value": "count"}, domain="standings")
+        unit={"kind": "declared", "value": "count"}, domain=domain)
 
 def answer(bindings=None, evidence_ids=None):
     return {"action": "answer", "draft": DraftReport(
@@ -127,6 +131,95 @@ async def test_tool_answer_publishes_through_full_publication():
             LedgerKind.TURN_START.value, LedgerKind.TURN_END.value} <= kinds
 
 @pytest.mark.anyio
+async def test_complete_dependency_plan_executes_both_tools_and_publishes():
+    dependency_task = TaskSpec(
+        goal="wins", mode="quick", deliverable="wins",
+        requested_outputs=["WINS"],
+        season=SeasonRef(value="2024-25", source="user", confidence=1.0),
+        entities=[EntityRef(id="1610612738", type="team",
+                            display_name="Boston Celtics")],
+        required_evidence=["entity_resolution", "team_season_summary"],
+        requirements=[
+            EvidenceRequirement(id="resolve_celtics", description="resolve team",
+                                capability_options=["entity_resolution"]),
+            EvidenceRequirement(id="celtics_regular_season_summary",
+                                description="summary",
+                                capability_options=["team_season_summary"]),
+        ])
+    plan = {"action": "tool", "plan": {"nodes": [
+        {"id": "resolve_celtics", "description": "resolve team",
+         "capability_hints": ["entity_resolution"],
+         "covers_requirement_ids": ["resolve_celtics"],
+         "arguments": {"query": "Boston Celtics"}},
+        {"id": "celtics_regular_season_summary", "description": "summary",
+         "depends_on": ["resolve_celtics"],
+         "capability_hints": ["team_season_summary"],
+         "covers_requirement_ids": ["celtics_regular_season_summary"],
+         "arguments": {"season": "2024-25", "period_scope": "regular_season"}},
+    ]}}
+    summary_binding = binding(
+        evidence_id="evidence:celtics_regular_season_summary",
+        node_id="celtics_regular_season_summary",
+        domain="team_season_summary")
+    loop, _, ledger = run_loop(
+        [plan, answer(bindings=[summary_binding],
+                      evidence_ids=["evidence:celtics_regular_season_summary"])],
+        capabilities={
+            "entity_resolution": FakeCapability(
+                "entity_resolution",
+                [{"TEAM_ID": 1610612738, "TEAM_NAME": "Boston Celtics"}]),
+            "team_season_summary": FakeCapability(
+                "team_season_summary",
+                [{"TEAM_ID": 1610612738, "TEAM_NAME": "Boston Celtics",
+                  "GAMES": 82, "WINS": 61, "LOSSES": 21,
+                  "TOTAL_POINTS": 9795}]),
+        }, max_actions=2)
+    result = await loop.run(dependency_task)
+    assert result.verification.status == VerificationStatus.PASS
+    assert result.gaps == []
+    assert len(result.verified_claims) == 1
+    assert [(item.output_id, item.status) for item in result.output_statuses] == [
+        ("WINS", "complete")]
+    tool_calls = [item for item in ledger.entries
+                  if item.kind == LedgerKind.TOOL_CALL]
+    assert sorted(item.step_id for item in tool_calls) == [
+        "celtics_regular_season_summary", "resolve_celtics"]
+    assert {item.step_id for item in ledger.entries
+            if item.kind == LedgerKind.TOOL_RESULT} == {
+                "celtics_regular_season_summary", "resolve_celtics"}
+
+@pytest.mark.anyio
+async def test_incomplete_plan_is_rejected_without_tool_execution():
+    dependency_task = TaskSpec(
+        goal="wins", mode="quick", deliverable="wins",
+        requested_outputs=["WINS"],
+        required_evidence=["entity_resolution", "team_season_summary"],
+        requirements=[
+            EvidenceRequirement(id="resolve_celtics", description="resolve team",
+                                capability_options=["entity_resolution"]),
+            EvidenceRequirement(id="celtics_regular_season_summary",
+                                description="summary",
+                                capability_options=["team_season_summary"]),
+        ])
+    plan = {"action": "tool", "plan": {"nodes": [{
+        "id": "celtics_regular_season_summary", "description": "summary",
+        "capability_hints": ["team_season_summary"],
+        "covers_requirement_ids": ["celtics_regular_season_summary"],
+        "arguments": {"season": "2024-25"},
+    }]}}
+    loop, _, ledger = run_loop(
+        [plan], capabilities={
+            "entity_resolution": FakeCapability("entity_resolution", []),
+            "team_season_summary": FakeCapability("team_season_summary", []),
+        }, max_actions=1)
+    result = await loop.run(dependency_task)
+    assert result.verified_claims == []
+    assert any("plan does not cover required evidence" in gap.message
+               for gap in result.gaps)
+    assert not any(item.kind in {LedgerKind.TOOL_CALL, LedgerKind.TOOL_RESULT}
+                   for item in ledger.entries)
+
+@pytest.mark.anyio
 async def test_unknown_evidence_is_withheld():
     loop, _, _ = run_loop(
         [tool_action(), answer(bindings=[], evidence_ids=["missing"])],
@@ -149,8 +242,11 @@ async def test_invalid_selector_is_not_published_as_complete():
 @pytest.mark.anyio
 async def test_typed_tool_defect_returns_to_same_loop():
     loop, scripted, _ = run_loop([
-        {"action": "tool", "capability": "missing", "node_id": "bad",
-         "arguments": {}},
+        {"action": "tool", "plan": {"nodes": [{
+            "id": "bad", "description": "bad",
+            "capability_hints": ["missing"],
+            "covers_requirement_ids": ["wins"], "arguments": {},
+        }]}},
         tool_action(), answer(),
     ], max_actions=3)
     result = await loop.run(task())
@@ -200,9 +296,13 @@ async def test_captured_league_aggregate_is_withheld_by_admission():
                     domain="sql_exec"),
             ])])
     actions = [
-        {"action": "tool", "capability": "sql_exec",
-         "node_id": "mean_ts_pct_2024_25_sql-replan2",
-         "arguments": {"season": "2024-25", "sql": sql}},
+        {"action": "tool", "plan": {"nodes": [{
+            "id": "mean_ts_pct_2024_25_sql-replan2",
+            "description": "SQL aggregate",
+            "capability_hints": ["sql_exec"],
+            "covers_requirement_ids": ["mean_ts_pct_2024_25"],
+            "arguments": {"season": "2024-25", "sql": sql},
+        }]}},
         {"action": "answer", "draft": draft.model_dump(mode="json")},
     ]
     loop, _, _ = run_loop(
