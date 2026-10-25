@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import time
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import Annotated, Any, Literal
 
@@ -10,12 +10,12 @@ from pydantic import BaseModel, ConfigDict, Field, RootModel
 
 from v2.adapters.models import StructuredModel, _model_evidence_dump, _validate_draft
 from v2.contracts import (
-    DraftReport, EvidenceEnvelope, Plan, PlanNode, TaskSpec,
+    ConversationTurn, DraftReport, EvidenceEnvelope, Plan, PlanNode, TaskSpec,
     VerificationReport, VerificationStatus,
 )
 from v2.runtime.executor import PlanExecutor, PlanValidationError
 from v2.runtime.interfaces import (
-    Verifier, freeze_draft, freeze_evidence_map, freeze_task,
+    Intake, Verifier, freeze_draft, freeze_evidence_map, freeze_task,
 )
 from v2.runtime.ledger import LedgerKind, RequestEnvelope, RunLedger
 from v2.runtime.loop import close_failed, publish_result
@@ -231,11 +231,20 @@ class ActionLoop:
         return self._publish(
             task, state, draft, state.last_verification, started)
 
-    async def run(self, task: TaskSpec, request: str = "action loop") -> RuntimeResult:
-        started = time.perf_counter()
-        deadline = (None if self._run_timeout_s is None
-                    else started + self._run_timeout_s)
-        if self._ledger is not None:
+    async def run(
+        self,
+        task: TaskSpec,
+        request: str = "action loop",
+        *,
+        owns_turn: bool = True,
+        started: float | None = None,
+        deadline: float | None = None,
+    ) -> RuntimeResult:
+        if started is None:
+            started = time.perf_counter()
+        if deadline is None and self._run_timeout_s is not None:
+            deadline = started + self._run_timeout_s
+        if owns_turn and self._ledger is not None:
             self._ledger.append(
                 LedgerKind.TURN_START, turn_id=self._turn_id,
                 data={"request": request})
@@ -269,7 +278,121 @@ class ActionLoop:
             return self._publish(
                 task, state, state.last_draft, state.last_verification, started)
         except BaseException as exc:
+            if owns_turn:
+                close_failed(
+                    ledger=self._ledger, turn_id=self._turn_id,
+                    exc=exc, started=started)
+            raise
+
+
+async def _within(awaitable, deadline):
+    if deadline is None:
+        return await awaitable
+    remaining = deadline - time.perf_counter()
+    if remaining <= 0:
+        raise TimeoutError("action runtime deadline exceeded")
+    async with asyncio.timeout(remaining):
+        return await awaitable
+
+
+class ActionRuntime:
+    def __init__(
+        self,
+        *,
+        intake: Intake,
+        model: StructuredModel,
+        executor: PlanExecutor,
+        mechanical_verifier: Verifier,
+        semantic_verifier: Verifier,
+        ledger: RunLedger | None,
+        tool_catalog: Mapping[str, Any],
+        run_timeout_s: float | None = None,
+        pre_tool_timeout_s: float | None = None,
+        max_actions: int = 4,
+        diagnostics: bool = False,
+        provider: str = "offline",
+        model_name: str = "scripted",
+        planner_version: str = "v2",
+        progress: Callable[[str, str], None] | None = None,
+    ) -> None:
+        for name, value in (
+            ("run_timeout_s", run_timeout_s),
+            ("pre_tool_timeout_s", pre_tool_timeout_s),
+        ):
+            if (value is not None
+                    and (isinstance(value, bool)
+                         or not isinstance(value, (int, float))
+                         or value <= 0)):
+                raise ValueError(f"{name} must be positive or None")
+        self._intake = intake
+        self._model = model
+        self._executor = executor
+        self._mechanical = mechanical_verifier
+        self._semantic = semantic_verifier
+        self._ledger = ledger
+        self._tool_catalog = dict(tool_catalog)
+        self._run_timeout_s = run_timeout_s
+        self._pre_tool_timeout_s = pre_tool_timeout_s
+        self._max_actions = max_actions
+        self._diagnostics = diagnostics
+        self._provider = provider
+        self._model_name = model_name
+        self._planner_version = planner_version
+        self._progress = progress
+
+    def _report(self, status: str) -> None:
+        if self._progress is not None:
+            self._progress("understand", status)
+
+    async def run(
+        self,
+        request: str,
+        *,
+        run_id: str | None = None,
+        context: Sequence[ConversationTurn] = (),
+    ) -> RuntimeResult:
+        if not isinstance(request, str):
+            raise TypeError("runtime request must be a string")
+        if not request.strip():
+            raise ValueError("runtime request must be non-empty")
+        if len(request) > 2000:
+            raise ValueError("runtime request cannot exceed 2000 characters")
+        context = tuple(context)
+        if len(context) > 8:
+            raise ValueError("runtime context cannot exceed 8 turns")
+        turn_id = run_id or "turn"
+        started = time.perf_counter()
+        deadline = (None if self._run_timeout_s is None
+                    else started + self._run_timeout_s)
+        pre_deadline = deadline
+        if self._pre_tool_timeout_s is not None:
+            pre = started + self._pre_tool_timeout_s
+            pre_deadline = pre if pre_deadline is None else min(pre_deadline, pre)
+        if self._ledger is not None:
+            self._ledger.append(
+                LedgerKind.TURN_START, turn_id=turn_id,
+                data={"request": request})
+        try:
+            self._report("running")
+            intake_call = (self._intake.understand(request, context)
+                           if context else self._intake.understand(request))
+            raw_task = await _within(intake_call, pre_deadline)
+            task = TaskSpec.model_validate(
+                raw_task.model_dump() if hasattr(raw_task, "model_dump")
+                else raw_task)
+            self._report("complete")
+            loop = ActionLoop(
+                model=self._model, executor=self._executor,
+                mechanical_verifier=self._mechanical,
+                semantic_verifier=self._semantic, ledger=self._ledger,
+                tool_catalog=self._tool_catalog, turn_id=turn_id,
+                max_actions=self._max_actions, run_timeout_s=None,
+                diagnostics=self._diagnostics, provider=self._provider,
+                model_name=self._model_name,
+                planner_version=self._planner_version)
+            return await loop.run(
+                task, owns_turn=False, started=started, deadline=deadline)
+        except BaseException as exc:
             close_failed(
-                ledger=self._ledger, turn_id=self._turn_id,
-                exc=exc, started=started)
+                ledger=self._ledger, turn_id=turn_id, exc=exc, started=started)
             raise

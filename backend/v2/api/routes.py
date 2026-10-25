@@ -46,7 +46,7 @@ def _imported_module_code_sha256() -> str:
 _LOADED_MODULE_CODE_SHA256 = _imported_module_code_sha256()
 
 def _projects_enabled() -> bool:
-    return runtime_v2_mode() == "on"
+    return runtime_v2_mode() in {"on", "action_loop"}
 
 def _require_projects() -> None:
     if not _projects_enabled():
@@ -2117,6 +2117,8 @@ async def quick_answer_stream(body: QuickAnswerBody):
         policy = ExecutionPolicy.shadow(ledger_dir=ledger_dir)
     elif runtime_mode == "on":
         policy = ExecutionPolicy.live(ledger_dir=ledger_dir)
+    elif runtime_mode == "action_loop":
+        policy = ExecutionPolicy.live(ledger_dir=ledger_dir)
     else:
         raise HTTPException(status_code=404, detail="not found")
     policy = ExecutionPolicy.model_validate({
@@ -2130,7 +2132,8 @@ async def quick_answer_stream(body: QuickAnswerBody):
                                  else settings.dime_v2_pre_tool_timeout_s),
             run_timeout_s=settings.dime_v2_run_timeout_s,
             node_timeout_s=settings.dime_v2_node_timeout_s,
-            diagnostics=body.diagnostics)
+            diagnostics=body.diagnostics,
+            action_loop=(runtime_mode == "action_loop"))
     except Exception:
         return setup_error_stream()
     context = tuple(body.history)

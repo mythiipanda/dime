@@ -20,6 +20,7 @@ from v2.adapters import (
 )
 from v2.contracts import DraftReport, VerificationReport
 from v2.runtime import FileLedger, PlanExecutor, RecordedCapability, RunLedger, Runtime
+from v2.runtime.action_loop import ActionRuntime
 from v2.runtime.checkpoints import FileCheckpointStore
 from v2.runtime.policy import ExecutionMode, ExecutionPolicy
 from v2.runtime.verifier import verify_mechanical
@@ -135,8 +136,9 @@ def build_runtime(
     node_timeout_s: float | None = None,
     diagnostics: bool = False,
     context_token_budget: int | None = None,
+    action_loop: bool = False,
     http_client: httpx.AsyncClient | None = None,
-) -> tuple[Runtime, RunLedger | FileLedger]:
+) -> tuple[Runtime | ActionRuntime, RunLedger | FileLedger]:
     if not run_id or any(
         char not in "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_"
         for char in run_id
@@ -168,24 +170,39 @@ def build_runtime(
         "web_fetch": RecordedCapability(
             WebFetchCapability(), ledger, turn_id=run_id, activity=activity),
     })
+    intake = ModelIntake(
+        model, provider=provider, model_name=model_name,
+        capability_catalog=catalog, skill_library=skills,
+        requirement_review=True)
+    executor = PlanExecutor(
+        capabilities, max_concurrency=policy.max_concurrency,
+        max_failures=policy.max_failures,
+        checkpoint_store=(FileCheckpointStore(policy.checkpoint_dir)
+                          if policy.checkpoint_dir is not None else None),
+        evidence_activity=activity,
+        node_timeout_s=node_timeout_s)
+    mechanical = MechanicalVerifier()
+    semantic = ModelSemanticVerifier(
+        model, provider=provider, model_name=model_name, skill_library=skills)
+    if action_loop:
+        return ActionRuntime(
+            intake=intake, model=model, executor=executor,
+            mechanical_verifier=mechanical, semantic_verifier=semantic,
+            ledger=ledger, tool_catalog=catalog,
+            run_timeout_s=run_timeout_s,
+            pre_tool_timeout_s=pre_tool_timeout_s,
+            diagnostics=diagnostics, provider=provider, model_name=model_name,
+            progress=progress,
+        ), ledger
     runtime = Runtime(
-        intake=ModelIntake(model, provider=provider, model_name=model_name,
-                           capability_catalog=catalog, skill_library=skills,
-                           requirement_review=True),
+        intake=intake,
         planner=ModelPlanner(model, provider=provider, model_name=model_name,
                              capability_catalog=catalog, skill_library=skills),
-        executor=PlanExecutor(
-            capabilities, max_concurrency=policy.max_concurrency,
-            max_failures=policy.max_failures,
-            checkpoint_store=(FileCheckpointStore(policy.checkpoint_dir)
-                              if policy.checkpoint_dir is not None else None),
-            evidence_activity=activity,
-            node_timeout_s=node_timeout_s),
+        executor=executor,
         synthesizer=ModelSynthesizer(
             model, provider=provider, model_name=model_name, skill_library=skills),
-        mechanical_verifier=MechanicalVerifier(),
-        semantic_verifier=ModelSemanticVerifier(
-            model, provider=provider, model_name=model_name, skill_library=skills),
+        mechanical_verifier=mechanical,
+        semantic_verifier=semantic,
         repairer=ModelRepairer(
             model, provider=provider, model_name=model_name, skill_library=skills),
         repair_attempts=policy.repair_attempts,
