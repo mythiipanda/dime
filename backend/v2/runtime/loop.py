@@ -53,6 +53,12 @@ from v2.runtime.budget import RUN_MODEL_DEADLINE
 JUDGE_UNAVAILABLE_BRANCH = "Semantic verification was unavailable; published claims passed deterministic verification."
 JUDGE_UNAVAILABLE_LEGACY_BRANCH = "Semantic completeness review was unavailable; published claims passed deterministic verification."
 JUDGE_UNAVAILABLE_BRANCHES = frozenset({JUDGE_UNAVAILABLE_BRANCH, JUDGE_UNAVAILABLE_LEGACY_BRANCH})
+_SYNTHESIS_GAP_PREFIXES = (
+    "draft omits required calculations without a blocking gap:",
+    "draft calculation path is outside admitted evidence:",
+    "Incomplete synthesis:",
+    "Bind missing requested output ",
+)
 
 class PreToolTimeoutError(TimeoutError):
     pass
@@ -1468,6 +1474,8 @@ def _novel_missing_messages(draft, verification) -> list[str]:
 def _gap_kind(message: str, satisfied_requirement_ids) -> GapKind:
     if message in JUDGE_UNAVAILABLE_BRANCHES:
         return GapKind.JUDGE_UNAVAILABLE
+    if message.startswith(_SYNTHESIS_GAP_PREFIXES):
+        return GapKind.SYNTHESIS_INCOMPLETE
     if any(requirement_id.casefold().replace("_", " ") in
            message.casefold().replace("_", " ")
            for requirement_id in satisfied_requirement_ids):

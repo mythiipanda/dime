@@ -1372,6 +1372,124 @@ async def test_invalid_model_calculation_path_is_safe_partial_not_runtime_failur
     assert result.verification.status==VerificationStatus.PARTIAL
     assert result.verified_claims==[]
     assert any("outside admitted evidence" in gap.message for gap in result.gaps)
+    assert [gap.kind for gap in result.gaps] == ["synthesis_incomplete"]
+
+@pytest.mark.anyio
+async def test_runtime_classifies_omitted_required_calculation_as_synthesis_incomplete():
+    from v2.adapters.models import ModelSynthesizer
+    from v2.contracts import (
+        CalculationRequirement, EvidenceRequirement, GapKind)
+    from v2.runtime.assembly import MechanicalVerifier
+
+    class IntakeCalc:
+        async def understand(self, request):
+            return TaskSpec(
+                goal=request, mode="quick", deliverable="wins and margin",
+                requirements=[EvidenceRequirement(
+                    id="stats", description="record",
+                    capability_options=["standings"],
+                    requested_outputs=["WINS"])],
+                calculation_requirements=[CalculationRequirement(
+                    id="margin", description="wins minus losses",
+                    requested_outputs=["MARGIN"])])
+
+    class PlannerCalc:
+        async def plan(self, task):
+            return Plan(nodes=[PlanNode(
+                id="facts", description="record",
+                capability_hints=["standings"],
+                covers_requirement_ids=["stats"])])
+
+    class DraftModel:
+        def __init__(self):
+            self.calls = 0
+
+        async def generate(self, **call):
+            self.calls += 1
+            return call["schema"].model_validate({
+                "sections": ["Answer"],
+                "claims": [{
+                    "text": "Boston won 61 games.",
+                    "kind": "observed",
+                    "evidence_ids": ["evidence:facts"],
+                    "output_bindings": [{
+                        "requirement_kind": "evidence",
+                        "requirement_id": "stats",
+                        "output_id": "WINS",
+                        "node_id": "facts",
+                        "evidence_id": "evidence:facts",
+                        "selector": "rows.WINS",
+                        "value": {"kind": "integer", "value": 61},
+                        "unit": {"kind": "declared", "value": "count"},
+                        "domain": "standings",
+                    }],
+                }],
+                "calculations": [],
+                "blocked_calculation_requirement_ids": [],
+                "gaps": [],
+            })
+
+    model = DraftModel()
+    result = await Runtime(
+        intake=IntakeCalc(),
+        planner=PlannerCalc(),
+        executor=PlanExecutor({
+            "standings": FakeCapability(
+                "standings", {"WINS": 61, "LOSSES": 21}),
+        }),
+        synthesizer=ModelSynthesizer(
+            model, provider="stub", model_name="stub"),
+        mechanical_verifier=MechanicalVerifier(),
+        semantic_verifier=SequenceVerifier(VerificationStatus.PASS),
+        repairer=None,
+    ).run("record and margin")
+
+    assert model.calls == 1
+    assert result.verification.status == VerificationStatus.PARTIAL
+    assert result.draft.blocked_calculation_requirement_ids == ["margin"]
+    assert [claim.claim.text for claim in result.verified_claims] == [
+        "Boston won 61 games."]
+    assert [binding.output_id
+            for binding in result.verified_claims[0].output_bindings] == [
+                "WINS"]
+
+    outputs = {
+        (item.requirement_kind, item.requirement_id, item.output_id): item
+        for item in result.output_statuses
+    }
+    assert outputs[("evidence", "stats", "WINS")].status == "complete"
+    assert outputs[("evidence", "stats", "WINS")].binding is not None
+    margin = outputs[("calculation", "margin", "MARGIN")]
+    assert margin.status == "missing"
+    assert margin.binding is None
+    assert margin.claim_index is None
+
+    assert result.gaps
+    assert all(gap.kind == GapKind.SYNTHESIS_INCOMPLETE
+               for gap in result.gaps)
+    joined = " ".join(gap.message for gap in result.gaps)
+    assert "omits required calculations" in joined
+    assert "Incomplete synthesis" in joined
+
+
+def test_missing_evidence_and_operand_gaps_stay_missing_evidence():
+    from v2.contracts import GapKind
+    from v2.runtime.loop import _verification_gaps
+
+    gaps = _verification_gaps(
+        DraftReport(sections=[], claims=[]),
+        VerificationReport(status=VerificationStatus.PARTIAL, missing_branches=[
+            "missing operand: margin unavailable",
+            "source table unavailable",
+        ]),
+    )
+
+    assert [gap.kind for gap in gaps] == [
+        GapKind.MISSING_EVIDENCE, GapKind.MISSING_EVIDENCE]
+    assert [gap.message for gap in gaps] == [
+        "missing operand: margin unavailable",
+        "source table unavailable",
+    ]
 
 def _record_binding(output_id, value=61):
     from v2.contracts import EvidenceOutputBinding

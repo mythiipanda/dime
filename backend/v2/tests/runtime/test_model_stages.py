@@ -1602,7 +1602,134 @@ async def test_synthesizer_requires_every_independent_calculation_or_named_block
         }],
         "blocked_calculation_requirement_ids": [], "gaps": [],
     }])
-    with pytest.raises(ValueError, match="def_change.*net_change"):
+    draft = await ModelSynthesizer(
+        stub, provider="stub", model_name="stub",
+    ).synthesize(task, [evidence])
+    assert len(stub.calls) == 1
+    assert [item.requirement_id for item in draft.calculations] == ["off_change"]
+    assert draft.blocked_calculation_requirement_ids == ["def_change", "net_change"]
+    assert any("omits required calculations" in gap for gap in draft.gaps)
+
+
+def _captured_ts_draft():
+    return {
+        "sections": ["League-wide true shooting percentage, 2024-25"],
+        "claims": [
+            {
+                "text": "The unweighted arithmetic mean TS% across 569 player-season rows with non-null TS_PCT in silver_player_season for 2024-25 is 0.545548330404218.",
+                "kind": "observed",
+                "evidence_ids": ["sql_exec:0e0ae8fa732bf5d7"],
+                "calculation_id": None,
+                "confidence": None,
+                "output_bindings": [{
+                    "requirement_kind": "evidence",
+                    "requirement_id": "player_season_ts_mean",
+                    "output_id": "MEAN_TS_PCT",
+                    "node_id": "player_season_ts_mean",
+                    "evidence_id": "sql_exec:0e0ae8fa732bf5d7",
+                    "selector": "rows[0].mean_ts_pct",
+                    "row_selector": "rows[0]",
+                    "value": {"kind": "float", "value": 0.545548330404218},
+                    "subject_entity_type": "league",
+                    "subject_entity_id": "league",
+                    "subject_selector": "rows[0]",
+                    "unit": {"kind": "declared", "value": "fraction (0-1)"},
+                    "domain": "sql_exec",
+                }],
+                "artifact_id": None,
+            },
+            {
+                "text": "The mean includes 569 players with a non-null TS_PCT value in silver_player_season for 2024-25.",
+                "kind": "observed",
+                "evidence_ids": ["sql_exec:0e0ae8fa732bf5d7"],
+                "calculation_id": None,
+                "confidence": None,
+                "output_bindings": [{
+                    "requirement_kind": "evidence",
+                    "requirement_id": "player_season_ts_mean",
+                    "output_id": "PLAYER_COUNT",
+                    "node_id": "player_season_ts_mean",
+                    "evidence_id": "sql_exec:0e0ae8fa732bf5d7",
+                    "selector": "rows[0].player_count",
+                    "row_selector": "rows[0]",
+                    "value": {"kind": "integer", "value": 569},
+                    "subject_entity_type": "league",
+                    "subject_entity_id": "league",
+                    "subject_selector": "rows[0]",
+                    "unit": {"kind": "declared", "value": "players"},
+                    "domain": "sql_exec",
+                }],
+                "artifact_id": None,
+            },
+        ],
+        "artifacts": [],
+        "calculations": [],
+        "blocked_calculation_requirement_ids": [],
+        "gaps": [],
+    }
+
+
+@pytest.mark.anyio
+async def test_synthesizer_converts_captured_omitted_calculations_to_blocked_gap():
+    from datetime import UTC, datetime
+    from v2.contracts import EvidenceEnvelope, TaskSpec
+
+    task = TaskSpec(
+        goal="Compute the league-wide mean true shooting percentage for all "
+             "players in the 2024-25 season.",
+        mode="quick",
+        deliverable="mean TS% and player count",
+        calculation_requirements=[
+            {"id": "mean_ts_pct",
+             "description": "Compute AVG(TS_PCT) over included 2024-25 player-season rows.",
+             "requested_outputs": ["MEAN_TS_PCT"]},
+            {"id": "player_count",
+             "description": "Count included 2024-25 player-season rows with non-null TS_PCT.",
+             "requested_outputs": ["PLAYER_COUNT"]},
+        ],
+    )
+    evidence = EvidenceEnvelope(
+        evidence_id="sql_exec:0e0ae8fa732bf5d7", capability="sql_exec",
+        source="fixture", observed_at=datetime.now(UTC), season="2024-25",
+        rows=[{"mean_ts_pct": 0.545548330404218, "player_count": 569}],
+    )
+    stub = StubModel([_captured_ts_draft()])
+    draft = await ModelSynthesizer(
+        stub, provider="stub", model_name="stub",
+    ).synthesize(task, [evidence])
+    assert len(stub.calls) == 1
+    assert draft.calculations == []
+    assert draft.blocked_calculation_requirement_ids == [
+        "mean_ts_pct", "player_count"]
+    assert any("omits required calculations" in gap for gap in draft.gaps)
+    assert [claim.output_bindings[0].output_id
+            for claim in draft.claims] == ["MEAN_TS_PCT", "PLAYER_COUNT"]
+    assert [claim.output_bindings[0].value.value
+            for claim in draft.claims] == [0.545548330404218, 569]
+
+
+@pytest.mark.anyio
+async def test_synthesizer_missing_calculations_do_not_swallow_unknown_evidence():
+    from datetime import UTC, datetime
+    from v2.contracts import EvidenceEnvelope, TaskSpec
+
+    task = TaskSpec(
+        goal="Compute the league-wide mean true shooting percentage.",
+        mode="quick", deliverable="mean TS%",
+        calculation_requirements=[
+            {"id": "mean_ts_pct", "description": "mean true shooting"},
+        ],
+    )
+    evidence = EvidenceEnvelope(
+        evidence_id="sql_exec:0e0ae8fa732bf5d7", capability="sql_exec",
+        source="fixture", observed_at=datetime.now(UTC),
+        rows=[{"mean_ts_pct": 0.545548330404218}],
+    )
+    draft = _captured_ts_draft()
+    draft["claims"][0]["evidence_ids"] = ["invented"]
+    draft["claims"][0]["output_bindings"][0]["evidence_id"] = "invented"
+    stub = StubModel([draft])
+    with pytest.raises(ValueError, match="unknown evidence ids.*invented"):
         await ModelSynthesizer(
             stub, provider="stub", model_name="stub",
         ).synthesize(task, [evidence])

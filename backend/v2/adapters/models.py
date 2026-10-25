@@ -2954,7 +2954,10 @@ def _reconcile_draft_calculation_requirements(draft, task):
         })
     missing = required - declared - blocked
     if missing:
-        raise ValueError(f"draft omits required calculations without a blocking gap: {sorted(missing)}")
+        raise InvalidDraftCalculation(
+            f"draft omits required calculations without a blocking gap: {sorted(missing)}",
+            sorted(missing),
+        )
     return draft
 
 def _deterministic_game_log_draft(
