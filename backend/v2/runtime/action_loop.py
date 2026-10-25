@@ -1,0 +1,275 @@
+from __future__ import annotations
+
+import asyncio
+import time
+from collections.abc import Mapping
+from dataclasses import dataclass, field
+from typing import Annotated, Any, Literal
+
+from pydantic import BaseModel, ConfigDict, Field, RootModel
+
+from v2.adapters.models import StructuredModel, _model_evidence_dump, _validate_draft
+from v2.contracts import (
+    DraftReport, EvidenceEnvelope, Plan, PlanNode, TaskSpec,
+    VerificationReport, VerificationStatus,
+)
+from v2.runtime.executor import PlanExecutor, PlanValidationError
+from v2.runtime.interfaces import (
+    Verifier, freeze_draft, freeze_evidence_map, freeze_task,
+)
+from v2.runtime.ledger import LedgerKind, RequestEnvelope, RunLedger
+from v2.runtime.loop import close_failed, publish_result
+from v2.runtime.models import ExecutionResult, RuntimeResult
+from v2.runtime.verifier import merge_verification_reports
+
+ACTION_LOOP_PROMPT = (
+    "Return exactly one action. Use action=tool to run one listed capability, "
+    "or action=answer with a cited DraftReport. Use only admitted evidence. "
+    "Answer only from the evidence you have actually received."
+)
+
+class _ActionBase(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+class ToolAction(_ActionBase):
+    action: Literal["tool"]
+    capability: str = Field(min_length=1)
+    node_id: str = Field(min_length=1)
+    arguments: dict[str, Any] = Field(default_factory=dict)
+
+class AnswerAction(_ActionBase):
+    action: Literal["answer"]
+    draft: DraftReport
+
+LoopActionPayload = Annotated[ToolAction | AnswerAction, Field(discriminator="action")]
+
+class LoopAction(RootModel[LoopActionPayload]):
+    pass
+
+class TypedDefect(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    kind: str
+    message: str
+
+@dataclass
+class _LoopState:
+    nodes: list[PlanNode] = field(default_factory=list)
+    evidence_by_node: dict[str, EvidenceEnvelope] = field(default_factory=dict)
+    attempts: dict[str, int] = field(default_factory=dict)
+    errors: dict[str, list[str]] = field(default_factory=dict)
+    error_codes: dict[str, list[Any]] = field(default_factory=dict)
+    used_node_ids: set[str] = field(default_factory=set)
+    history: list[dict[str, Any]] = field(default_factory=list)
+    defects: list[TypedDefect] = field(default_factory=list)
+    last_draft: DraftReport | None = None
+    last_verification: VerificationReport | None = None
+
+class ActionLoop:
+    def __init__(
+        self,
+        *,
+        model: StructuredModel,
+        executor: PlanExecutor,
+        mechanical_verifier: Verifier,
+        semantic_verifier: Verifier,
+        ledger: RunLedger | None,
+        tool_catalog: Mapping[str, Any],
+        turn_id: str,
+        max_actions: int = 4,
+        run_timeout_s: float | None = None,
+        diagnostics: bool = False,
+        provider: str = "offline",
+        model_name: str = "scripted",
+        planner_version: str = "v2",
+    ) -> None:
+        if not turn_id.strip():
+            raise ValueError("turn_id must be non-empty")
+        if not isinstance(max_actions, int) or isinstance(max_actions, bool):
+            raise TypeError("max_actions must be an integer")
+        if max_actions < 1:
+            raise ValueError("max_actions must be positive")
+        if (run_timeout_s is not None
+                and (isinstance(run_timeout_s, bool)
+                     or not isinstance(run_timeout_s, (int, float))
+                     or run_timeout_s <= 0)):
+            raise ValueError("run_timeout_s must be positive or None")
+        if not isinstance(diagnostics, bool):
+            raise TypeError("diagnostics must be a boolean")
+        self._model = model
+        self._executor = executor
+        self._mechanical = mechanical_verifier
+        self._semantic = semantic_verifier
+        self._ledger = ledger
+        self._tool_catalog = dict(tool_catalog)
+        self._turn_id = turn_id
+        self._max_actions = max_actions
+        self._run_timeout_s = run_timeout_s
+        self._diagnostics = diagnostics
+        self._provider = provider
+        self._model_name = model_name
+        self._planner_version = planner_version
+
+    def _payload(self, task, evidence, state):
+        return {
+            "task": task.model_dump(mode="json"),
+            "tools": self._tool_catalog,
+            "admitted_evidence": [_model_evidence_dump(item) for item in evidence],
+            "actions": list(state.history),
+            "defects": [item.model_dump(mode="json") for item in state.defects],
+            "remaining_actions": self._max_actions - len(state.history),
+        }
+
+    def _aggregate(self, state: _LoopState) -> ExecutionResult:
+        return ExecutionResult(
+            plan=Plan(nodes=list(state.nodes)),
+            evidence_by_node=dict(state.evidence_by_node),
+            attempts=dict(state.attempts),
+            errors=dict(state.errors),
+            error_codes=dict(state.error_codes),
+        )
+
+    def _publish(self, task, state, draft, verification, started) -> RuntimeResult:
+        return publish_result(
+            task=task, execution=self._aggregate(state),
+            draft=draft, verification=verification,
+            evidence={item.evidence_id: item
+                      for item in state.evidence_by_node.values()},
+            turn_id=self._turn_id,
+            turn_started=started, pre_repair_draft=draft,
+            pre_repair_verification=verification, repaired=False,
+            ledger=self._ledger, diagnostics=self._diagnostics)
+
+    async def _within(self, awaitable, deadline):
+        if deadline is None:
+            return await awaitable
+        remaining = deadline - time.perf_counter()
+        if remaining <= 0:
+            raise TimeoutError("action loop deadline exceeded")
+        async with asyncio.timeout(remaining):
+            return await awaitable
+
+    async def _run_tool(self, tool: ToolAction, task, state, deadline) -> None:
+        if tool.node_id in state.used_node_ids:
+            state.defects.append(TypedDefect(
+                kind="duplicate_node",
+                message=f"node id {tool.node_id!r} already has evidence authority"))
+            state.history.append({"action": "tool", "node_id": tool.node_id,
+                                  "status": "rejected"})
+            return
+        covers = [item.id for item in task.requirements
+                  if tool.capability in item.capability_options]
+        node = PlanNode(
+            id=tool.node_id, description=tool.capability,
+            capability_hints=[tool.capability],
+            covers_requirement_ids=covers,
+            arguments=tool.arguments, max_attempts=1, status="pending")
+        plan = Plan(nodes=[node])
+        try:
+            self._executor.validate_plan(task, plan)
+            execution = await self._within(
+                self._executor.execute(
+                    task, plan, run_id=f"{self._turn_id}:{tool.node_id}",
+                    resume=False),
+                deadline)
+        except PlanValidationError as exc:
+            state.defects.append(TypedDefect(
+                kind="invalid_tool", message=str(exc)))
+            state.history.append({"action": "tool", "node_id": tool.node_id,
+                                  "status": "rejected"})
+            return
+        except (asyncio.CancelledError, TimeoutError):
+            raise
+        except Exception as exc:
+            state.defects.append(TypedDefect(
+                kind="tool_failure", message=f"{type(exc).__name__}: {exc}"))
+            state.history.append({"action": "tool", "node_id": tool.node_id,
+                                  "status": "failed"})
+            return
+        state.used_node_ids.add(tool.node_id)
+        state.nodes.extend(execution.plan.nodes)
+        state.evidence_by_node.update(execution.evidence_by_node)
+        state.attempts.update(execution.attempts)
+        state.errors.update(execution.errors)
+        for node_id, codes in execution.error_codes.items():
+            state.error_codes.setdefault(node_id, []).extend(codes)
+        for node_id, messages in execution.errors.items():
+            for message in messages:
+                state.defects.append(TypedDefect(
+                    kind="tool_failure", message=f"{node_id}: {message}"))
+        state.history.append({
+            "action": "tool", "node_id": tool.node_id,
+            "status": ("complete" if tool.node_id in execution.evidence_by_node
+                       else "failed")})
+
+    async def _run_answer(self, answer: AnswerAction, task, state, started, deadline) -> RuntimeResult:
+        state.last_draft = answer.draft
+        evidence = list(state.evidence_by_node.values())
+        try:
+            draft = _validate_draft(answer.draft, evidence, task)
+        except ValueError as exc:
+            state.last_verification = VerificationReport(
+                status=VerificationStatus.PARTIAL,
+                missing_branches=[str(exc)])
+            return self._publish(
+                task, state, answer.draft, state.last_verification, started)
+        evidence_map = {item.evidence_id: item for item in evidence}
+        mechanical = await self._within(
+            self._mechanical.verify(
+                freeze_task(task), freeze_draft(draft),
+                freeze_evidence_map(evidence_map)), deadline)
+        mechanical = VerificationReport.model_validate(
+            mechanical.model_dump() if hasattr(mechanical, "model_dump")
+            else mechanical)
+        semantic = await self._within(
+            self._semantic.verify(
+                freeze_task(task), freeze_draft(draft),
+                freeze_evidence_map(evidence_map)), deadline)
+        semantic = VerificationReport.model_validate(
+            semantic.model_dump() if hasattr(semantic, "model_dump")
+            else semantic)
+        state.last_verification = merge_verification_reports(mechanical, semantic)
+        return self._publish(
+            task, state, draft, state.last_verification, started)
+
+    async def run(self, task: TaskSpec, request: str = "action loop") -> RuntimeResult:
+        started = time.perf_counter()
+        deadline = (None if self._run_timeout_s is None
+                    else started + self._run_timeout_s)
+        if self._ledger is not None:
+            self._ledger.append(
+                LedgerKind.TURN_START, turn_id=self._turn_id,
+                data={"request": request})
+        state = _LoopState()
+        try:
+            for _ in range(self._max_actions):
+                payload = self._payload(
+                    task, list(state.evidence_by_node.values()), state)
+                envelope = RequestEnvelope.freeze(
+                    provider=self._provider, model=self._model_name,
+                    route="action_loop", prompt=ACTION_LOOP_PROMPT,
+                    context=payload, tool_schemas=LoopAction.model_json_schema(),
+                    planner_version=self._planner_version,
+                    output_strategy="prompted_json")
+                action = await self._within(
+                    self._model.generate(
+                        schema=LoopAction, prompt=ACTION_LOOP_PROMPT,
+                        payload=payload, envelope=envelope),
+                    deadline)
+                if isinstance(action.root, ToolAction):
+                    await self._run_tool(action.root, task, state, deadline)
+                    continue
+                return await self._run_answer(
+                    action.root, task, state, started, deadline)
+            message = ("action budget exhausted" if not state.defects
+                       else "; ".join(item.message for item in state.defects))
+            state.last_draft = state.last_draft or DraftReport(
+                sections=[], claims=[], gaps=[message])
+            state.last_verification = state.last_verification or VerificationReport(
+                status=VerificationStatus.PARTIAL, missing_branches=[message])
+            return self._publish(
+                task, state, state.last_draft, state.last_verification, started)
+        except BaseException as exc:
+            close_failed(
+                ledger=self._ledger, turn_id=self._turn_id,
+                exc=exc, started=started)
+            raise

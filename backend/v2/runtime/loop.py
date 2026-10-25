@@ -419,103 +419,20 @@ class Runtime:
         pre_repair_verification,
         repaired,
     ) -> RuntimeResult:
-        draft, verification = _apply_final_completeness(task, execution, draft, verification, evidence)
-        verification = _withhold_unknown_evidence_claims(draft, verification, evidence)
-        empty_evidence_gaps = _empty_evidence_gaps(execution.evidence)
-        uncovered_requirement_gaps = _uncovered_requirement_gaps(task, execution)
-        failed_nodes = {
-            node.id for node in execution.plan.nodes
-            if node.status.value == "failed"
-        }
-        redundant_failures = _redundant_failed_nodes(task, execution)
-        represented_failures = _failures_represented_by_precise_gaps(
-            task, execution, [*draft.gaps, *verification.missing_branches])
-        unresolved_errors = {
-            node_id: errors for node_id, errors in execution.errors.items()
-            if node_id in failed_nodes
-            and node_id not in redundant_failures
-            and node_id not in represented_failures
-        }
-        skipped_nodes = [
-            node.id for node in execution.plan.nodes
-            if node.status.value == "skipped"
-        ]
-        empty_draft_gaps = ([] if (
-            draft.claims or draft.gaps or empty_evidence_gaps
-            or uncovered_requirement_gaps or unresolved_errors or skipped_nodes
-        ) else [Gap(
-            kind=GapKind.MISSING_EVIDENCE,
-            message="synthesis produced no publishable claims",
-        )])
-        if ((draft.gaps or empty_evidence_gaps or uncovered_requirement_gaps
-                or empty_draft_gaps or unresolved_errors or skipped_nodes)
-                and verification.status == VerificationStatus.PASS):
-            verification = verification.model_copy(
-                update={"status": VerificationStatus.PARTIAL}
-            )
-        binding_diagnostics = []
-        verified_claims, binding_gaps = _verified_claims(
-            task, execution, draft, verification, evidence,
-            diagnostics=self._diagnostics,
-            diagnostics_run_id=turn_id,
-            diagnostics_events=binding_diagnostics)
-        if binding_gaps and verification.status == VerificationStatus.PASS:
-            verification = verification.model_copy(
-                update={"status": VerificationStatus.PARTIAL})
-        gaps = _publish_gaps(
-            draft, verification, unresolved_errors, execution, evidence,
-            binding_gaps=binding_gaps,
-            empty_evidence_gaps=empty_evidence_gaps,
-            uncovered_requirement_gaps=uncovered_requirement_gaps,
-            empty_draft_gaps=empty_draft_gaps,
-            skipped_nodes=skipped_nodes)
-        if verification.status == VerificationStatus.PARTIAL and not gaps:
-            gaps.append(Gap(
-                kind=GapKind.MISSING_EVIDENCE,
-                message="verification did not establish complete support",
-            ))
-        pre_repair_supported = {
-            result.claim_index for result in pre_repair_verification.claim_results
-            if result.supported
-        }
-        pre_repair_keys = {
-            (claim.text, claim.kind, tuple(claim.evidence_ids), claim.calculation_id)
-            for index, claim in enumerate(pre_repair_draft.claims)
-            if index in pre_repair_supported
-            and claim.kind.value in {"observed", "derived"}
-        }
-        published_keys = {
-            (claim.text, claim.kind, tuple(claim.evidence_ids), claim.calculation_id)
-            for claim in draft.claims
-        }
-        structural_flags = []
-        if repaired and pre_repair_keys - published_keys:
-            structural_flags.append("repair_stripped_evidence_claim")
-        if redundant_failures:
-            structural_flags.append("false_partial_downgrade")
-        result = RuntimeResult(
+        return publish_result(
             task=task,
             execution=execution,
             draft=draft,
             verification=verification,
+            evidence=evidence,
+            turn_id=turn_id,
+            turn_started=turn_started,
+            pre_repair_draft=pre_repair_draft,
+            pre_repair_verification=pre_repair_verification,
             repaired=repaired,
-            structural_flags=structural_flags,
-            verified_claims=verified_claims,
-            gaps=gaps[:256],
-            binding_diagnostics=[
-                event.model_dump(mode="json", exclude_none=True)
-                for event in binding_diagnostics
-            ],
+            ledger=self._ledger,
+            diagnostics=self._diagnostics,
         )
-        if self._ledger is not None:
-            self._ledger.append(
-                LedgerKind.TURN_END, turn_id=turn_id,
-                data={"reason": TerminalReason.COMPLETE.value,
-                      "verification": verification.status.value,
-                      "duration_ms": max(0, round(
-                          (time.perf_counter() - turn_started) * 1000))},
-            )
-        return result
 
     def _prepare_context(
         self, context: tuple[ConversationTurn, ...],
@@ -669,20 +586,8 @@ class Runtime:
     def _close_failed(
         self, turn_id: str, exc: BaseException, *, started: float,
     ) -> None:
-        if self._ledger is None:
-            return
-        reason = (TerminalReason.CANCELLED
-                  if isinstance(exc, asyncio.CancelledError)
-                  else TerminalReason.TIMEOUT
-                  if isinstance(exc, (TimeoutError, PreToolTimeoutError))
-                  else TerminalReason.FAILED)
-        self._ledger.append(
-            LedgerKind.TURN_END, turn_id=turn_id,
-            data={"reason": reason.value,
-                  "error": exception_text(exc),
-                  "duration_ms": max(0, round(
-                      (time.perf_counter() - started) * 1000))},
-        )
+        close_failed(
+            ledger=self._ledger, turn_id=turn_id, exc=exc, started=started)
 
     async def _verify(self, task, draft, evidence) -> VerificationReport:
         expected = list(range(len(draft.claims)))
@@ -803,6 +708,143 @@ class Runtime:
             requirement for requirement in task.requirements
             if set(requirement.capability_options) & populated_capabilities
         ]
+
+def close_failed(
+    *,
+    ledger: RunLedger | None,
+    turn_id: str,
+    exc: BaseException,
+    started: float,
+) -> None:
+    if ledger is None:
+        return
+    reason = (TerminalReason.CANCELLED
+              if isinstance(exc, asyncio.CancelledError)
+              else TerminalReason.TIMEOUT
+              if isinstance(exc, (TimeoutError, PreToolTimeoutError))
+              else TerminalReason.FAILED)
+    ledger.append(
+        LedgerKind.TURN_END, turn_id=turn_id,
+        data={"reason": reason.value,
+              "error": exception_text(exc),
+              "duration_ms": max(0, round(
+                  (time.perf_counter() - started) * 1000))},
+    )
+
+
+def publish_result(
+    *,
+    task,
+    execution,
+    draft,
+    verification,
+    evidence,
+    turn_id,
+    turn_started,
+    pre_repair_draft,
+    pre_repair_verification,
+    repaired,
+    ledger: RunLedger | None,
+    diagnostics: bool = False,
+) -> RuntimeResult:
+    draft, verification = _apply_final_completeness(task, execution, draft, verification, evidence)
+    verification = _withhold_unknown_evidence_claims(draft, verification, evidence)
+    empty_evidence_gaps = _empty_evidence_gaps(execution.evidence)
+    uncovered_requirement_gaps = _uncovered_requirement_gaps(task, execution)
+    failed_nodes = {
+        node.id for node in execution.plan.nodes
+        if node.status.value == "failed"
+    }
+    redundant_failures = _redundant_failed_nodes(task, execution)
+    represented_failures = _failures_represented_by_precise_gaps(
+        task, execution, [*draft.gaps, *verification.missing_branches])
+    unresolved_errors = {
+        node_id: errors for node_id, errors in execution.errors.items()
+        if node_id in failed_nodes
+        and node_id not in redundant_failures
+        and node_id not in represented_failures
+    }
+    skipped_nodes = [
+        node.id for node in execution.plan.nodes
+        if node.status.value == "skipped"
+    ]
+    empty_draft_gaps = ([] if (
+        draft.claims or draft.gaps or empty_evidence_gaps
+        or uncovered_requirement_gaps or unresolved_errors or skipped_nodes
+    ) else [Gap(
+        kind=GapKind.MISSING_EVIDENCE,
+        message="synthesis produced no publishable claims",
+    )])
+    if ((draft.gaps or empty_evidence_gaps or uncovered_requirement_gaps
+            or empty_draft_gaps or unresolved_errors or skipped_nodes)
+            and verification.status == VerificationStatus.PASS):
+        verification = verification.model_copy(
+            update={"status": VerificationStatus.PARTIAL}
+        )
+    binding_diagnostics = []
+    verified_claims, binding_gaps = _verified_claims(
+        task, execution, draft, verification, evidence,
+        diagnostics=diagnostics,
+        diagnostics_run_id=turn_id,
+        diagnostics_events=binding_diagnostics)
+    if binding_gaps and verification.status == VerificationStatus.PASS:
+        verification = verification.model_copy(
+            update={"status": VerificationStatus.PARTIAL})
+    gaps = _publish_gaps(
+        draft, verification, unresolved_errors, execution, evidence,
+        binding_gaps=binding_gaps,
+        empty_evidence_gaps=empty_evidence_gaps,
+        uncovered_requirement_gaps=uncovered_requirement_gaps,
+        empty_draft_gaps=empty_draft_gaps,
+        skipped_nodes=skipped_nodes)
+    if verification.status == VerificationStatus.PARTIAL and not gaps:
+        gaps.append(Gap(
+            kind=GapKind.MISSING_EVIDENCE,
+            message="verification did not establish complete support",
+        ))
+    pre_repair_supported = {
+        result.claim_index for result in pre_repair_verification.claim_results
+        if result.supported
+    }
+    pre_repair_keys = {
+        (claim.text, claim.kind, tuple(claim.evidence_ids), claim.calculation_id)
+        for index, claim in enumerate(pre_repair_draft.claims)
+        if index in pre_repair_supported
+        and claim.kind.value in {"observed", "derived"}
+    }
+    published_keys = {
+        (claim.text, claim.kind, tuple(claim.evidence_ids), claim.calculation_id)
+        for claim in draft.claims
+    }
+    structural_flags = []
+    if repaired and pre_repair_keys - published_keys:
+        structural_flags.append("repair_stripped_evidence_claim")
+    if redundant_failures:
+        structural_flags.append("false_partial_downgrade")
+    result = RuntimeResult(
+        task=task,
+        execution=execution,
+        draft=draft,
+        verification=verification,
+        repaired=repaired,
+        structural_flags=structural_flags,
+        verified_claims=verified_claims,
+        gaps=gaps[:256],
+        binding_diagnostics=[
+            event.model_dump(mode="json", exclude_none=True)
+            for event in binding_diagnostics
+        ],
+    )
+    if ledger is not None:
+        ledger.append(
+            LedgerKind.TURN_END, turn_id=turn_id,
+            data={"reason": TerminalReason.COMPLETE.value,
+                  "verification": verification.status.value,
+                  "duration_ms": max(0, round(
+                      (time.perf_counter() - turn_started) * 1000))},
+        )
+    return result
+
 
 def _withhold_unsupported_claims(draft, verification):
     supported = {
