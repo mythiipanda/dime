@@ -178,6 +178,19 @@ def test_synthesizer_prompt_documents_binding_rules():
     ):
         assert field in synth
 
+def test_synthesizer_prompt_distinguishes_total_rows_from_non_null_denominator():
+    rows = [0.50, None, 0.70]
+    contributing = [value for value in rows if value is not None]
+    assert len(rows) == 3
+    assert len(contributing) == 2
+    assert sum(contributing) / len(contributing) == pytest.approx(0.60)
+
+    synth = load_prompt("synthesizer")
+    assert "never claim computation over the total row count" in synth
+    assert "may exclude NULLs" in synth
+    assert "State a denominator or non-NULL count only when evidence declares it" in synth
+    assert "without inventing a count" in synth
+
 def test_verifier_prompt_aligns_supported_flag_and_reasons_contract():
     from v2.prompts import load_prompt
     prompt=load_prompt('verifier')
