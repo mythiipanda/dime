@@ -161,7 +161,7 @@ class ActionLoop:
             execution = await self._within(
                 self._executor.execute(
                     task, plan,
-                    run_id=f"{self._turn_id}:plan{len(state.history) + 1}",
+                    run_id=f"{self._turn_id}-plan{len(state.history) + 1}",
                     resume=False),
                 deadline)
         except PlanValidationError as exc:

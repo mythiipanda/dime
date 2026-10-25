@@ -14,6 +14,7 @@ from v2.contracts import (
 from v2.runtime import FakeCapability, PlanExecutor
 from v2.runtime.action_loop import ActionLoop, LoopAction
 from v2.runtime.assembly import MechanicalVerifier, capability_catalog
+from v2.runtime.checkpoints import FileCheckpointStore
 from v2.runtime.ledger import LedgerKind, RunLedger
 from v2.runtime.recording import RecordedCapability
 
@@ -84,7 +85,8 @@ def answer(bindings=None, evidence_ids=None):
             output_bindings=bindings if bindings is not None else [binding()],
         )]).model_dump(mode="json")}
 
-def run_loop(actions, *, capabilities=None, max_actions=4, cancel=False):
+def run_loop(actions, *, capabilities=None, max_actions=4, cancel=False,
+             checkpoint_store=None):
     ledger = RunLedger("action-loop-test")
     scripted = ScriptedModel(actions, cancel=cancel)
     model = RecordedStructuredModel(scripted, ledger, turn_id="action-loop-test")
@@ -99,7 +101,8 @@ def run_loop(actions, *, capabilities=None, max_actions=4, cancel=False):
     }
     catalog = capability_catalog()
     loop = ActionLoop(
-        model=model, executor=PlanExecutor(caps),
+        model=model, executor=PlanExecutor(
+            caps, checkpoint_store=checkpoint_store),
         mechanical_verifier=MechanicalVerifier(),
         semantic_verifier=PassSemantic(), ledger=ledger,
         tool_catalog={name: catalog[name] for name in caps},
@@ -131,7 +134,7 @@ async def test_tool_answer_publishes_through_full_publication():
             LedgerKind.TURN_START.value, LedgerKind.TURN_END.value} <= kinds
 
 @pytest.mark.anyio
-async def test_complete_dependency_plan_executes_both_tools_and_publishes():
+async def test_complete_dependency_plan_executes_both_tools_and_publishes(tmp_path):
     dependency_task = TaskSpec(
         goal="wins", mode="quick", deliverable="wins",
         requested_outputs=["WINS"],
@@ -173,7 +176,7 @@ async def test_complete_dependency_plan_executes_both_tools_and_publishes():
                 [{"TEAM_ID": 1610612738, "TEAM_NAME": "Boston Celtics",
                   "GAMES": 82, "WINS": 61, "LOSSES": 21,
                   "TOTAL_POINTS": 9795}]),
-        }, max_actions=2)
+        }, max_actions=2, checkpoint_store=FileCheckpointStore(tmp_path))
     result = await loop.run(dependency_task)
     assert result.verification.status == VerificationStatus.PASS
     assert result.gaps == []
