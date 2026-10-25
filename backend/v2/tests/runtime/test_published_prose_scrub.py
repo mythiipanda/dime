@@ -53,9 +53,9 @@ def _binding(*, node: str = NODE_ID, subject: bool = True) -> EvidenceOutputBind
         unit={"kind": "declared", "value": "count"},
         domain="qualified_leaders")
 
-def _claim(text: str) -> Claim:
+def _claim(text: str, bindings=None) -> Claim:
     return Claim(text=text, kind=ClaimKind.OBSERVED, evidence_ids=[EVIDENCE_ID],
-                 output_bindings=[_binding()])
+                 output_bindings=bindings or [_binding()])
 
 def _judgment(text: str) -> Claim:
     return Claim(text=text, kind=ClaimKind.JUDGMENT)
@@ -98,22 +98,34 @@ def test_claim_prose_naming_a_capability_and_a_subject_id_publishes_without_them
     assert "qualified_leaders" not in text
     assert PLAYER_ID not in text
 
-def test_ordinary_basketball_prose_and_numbers_publish_unchanged() -> None:
+def test_prose_with_unbound_numbers_falls_back_to_verified_output() -> None:
     result = _result(_claim(PLAIN_PROSE))
 
-    assert _answer_text(result).splitlines() == [PLAIN_PROSE]
+    assert _answer_text(result) == LABEL_LINE
 
-def test_decimal_fraction_values_publish_unchanged() -> None:
+def _number_binding(output_id: str, value: str, unit: str) -> EvidenceOutputBinding:
+    return EvidenceOutputBinding(
+        requirement_kind="task", output_id=output_id, node_id=NODE_ID,
+        evidence_id=EVIDENCE_ID, selector=f"rows[0].{output_id}",
+        value={"kind": "decimal", "value": value},
+        unit={"kind": "declared", "value": unit}, domain="team_summary")
+
+def test_bound_decimal_values_and_exact_task_season_publish_unchanged() -> None:
     prose = (
         "The Thunder posted a 0.5613 effective field-goal percentage "
         "and a 0.1077 turnover percentage in 2025-26.")
-    result = _result(_claim(prose))
+    result = _result(_claim(prose, [
+        _number_binding("EFG_PCT", "0.5613", "percent"),
+        _number_binding("TOV_PCT", "0.1077", "percent"),
+    ]))
+    result.task = SimpleNamespace(season=SimpleNamespace(value="2025-26"))
 
     assert _answer_text(result).splitlines() == [prose]
 
 def test_parenthesized_output_label_drops_without_a_placeholder() -> None:
     result = _result(_claim(
-        "The effective field-goal percentage (EFG_PCT) reached 0.5613."))
+        "The effective field-goal percentage (EFG_PCT) reached 0.5613.",
+        [_number_binding("EFG_PCT", "0.5613", "percent")]))
 
     text = _answer_text(result)
     assert "(EFG_PCT)" not in text
@@ -240,3 +252,145 @@ async def test_scrubbed_prose_survives_a_real_run() -> None:
     assert "Ada Vega led the league with 880 assists per game" in text
     assert EVIDENCE_ID not in text
     assert SELECTOR not in text
+
+def test_source_label_survives_only_when_bound_warehouse_metadata_names_it() -> None:
+    from v2.contracts import ClaimSource, EvidenceEnvelope
+
+    prose = "Boston had 880 assists in 2024-25 from silver_hist_gamelogs."
+    result = _result(_claim(prose))
+    result.task = SimpleNamespace(season=SimpleNamespace(value="2024-25"))
+    envelope = EvidenceEnvelope(
+        evidence_id=EVIDENCE_ID, capability="team_season_summary",
+        source="v1:get_team_season_summary:warehouse:silver_hist_gamelogs",
+        observed_at="2026-10-24T00:00:00Z", season="2024-25",
+        rows={"AST": ASSISTS},
+        source_identity={"kind": "warehouse", "warehouse_id": "configured-runtime",
+                         "sha256": "a" * 64})
+    result.execution.evidence = [envelope]
+    result.verified_claims = [result.verified_claims[0].model_copy(update={
+        "sources": [ClaimSource(
+            evidence_id=EVIDENCE_ID, source=envelope.source,
+            capability=envelope.capability)]})]
+
+    text = _answer_text(result)
+    assert "silver_hist_gamelogs" in text
+    assert EVIDENCE_ID not in text
+    assert "team_season_summary" not in text
+    assert "from the data" not in text
+
+def test_bound_source_label_remains_when_unbound_number_withholds_prose() -> None:
+    from v2.contracts import ClaimSource, EvidenceEnvelope
+
+    envelope = EvidenceEnvelope(
+        evidence_id=EVIDENCE_ID, capability="team_season_summary",
+        source="v1:get_team_season_summary:warehouse:silver_hist_gamelogs",
+        observed_at="2026-10-24T00:00:00Z", season="2024-25",
+        rows={"AST": ASSISTS},
+        source_identity={"kind": "warehouse", "warehouse_id": "configured-runtime",
+                         "sha256": "a" * 64})
+    claim = _claim(
+        "Boston had 2024 wins in 2024-25 from silver_hist_gamelogs.")
+    result = _result(claim)
+    result.task = SimpleNamespace(season=SimpleNamespace(value="2024-25"))
+    result.execution.evidence = [envelope]
+    result.verified_claims = [result.verified_claims[0].model_copy(update={
+        "sources": [ClaimSource(
+            evidence_id=EVIDENCE_ID, source=envelope.source,
+            capability=envelope.capability)]})]
+
+    assert _answer_text(result).splitlines() == [
+        LABEL_LINE, "Source: silver_hist_gamelogs."]
+
+def test_source_tool_name_must_match_registered_capability() -> None:
+    from v2.contracts import ClaimSource, EvidenceEnvelope
+
+    envelope = EvidenceEnvelope(
+        evidence_id=EVIDENCE_ID, capability="team_season_summary",
+        source="v1:unregistered_summary_tool:warehouse:silver_hist_gamelogs",
+        observed_at="2026-10-24T00:00:00Z", season="2024-25",
+        rows={"AST": ASSISTS},
+        source_identity={"kind": "warehouse", "warehouse_id": "configured-runtime",
+                         "sha256": "a" * 64})
+    result = _result(_claim("Boston had 880 assists in 2024-25."))
+    result.task = SimpleNamespace(season=SimpleNamespace(value="2024-25"))
+    result.execution.evidence = [envelope]
+    result.verified_claims = [result.verified_claims[0].model_copy(update={
+        "sources": [ClaimSource(
+            evidence_id=EVIDENCE_ID, source=envelope.source,
+            capability=envelope.capability)]})]
+
+    assert "Source:" not in _answer_text(result)
+
+
+def test_unbound_table_like_identifier_does_not_use_source_exception() -> None:
+    prose = "Boston had 880 assists from silver_private_table."
+    result = _result(_claim(prose))
+
+    text = _answer_text(result)
+    assert "silver_private_table" not in text
+    assert "880 assists" in text
+
+
+def test_repeated_scrub_placeholders_are_removed() -> None:
+    prose = "Boston had 880 assists (the data; the data, the data)."
+    result = _result(_claim(prose))
+
+    text = _answer_text(result)
+    assert text == "Boston had 880 assists."
+    assert "the data" not in text
+
+
+@pytest.mark.parametrize("shown,expected", [
+    ("116.26829268292683", "116.26829268292683"),
+    ("116.2", "116.26829268292683"),
+])
+def test_calculation_prose_requires_exact_admitted_number(shown, expected) -> None:
+    from v2.contracts import (
+        CalculationOutputBinding,
+        DeclaredCalculation,
+        DeclaredCalculationInput,
+    )
+
+    calculation = DeclaredCalculation(
+        calculation_id="mean_ppg_calc", requirement_id="mean_ppg",
+        operation="divide", inputs=[
+            DeclaredCalculationInput(evidence_id=EVIDENCE_ID,
+                                     path="rows[0].PTS"),
+            DeclaredCalculationInput(evidence_id=EVIDENCE_ID,
+                                     path="rows[0].GAMES"),
+        ], result="116.26829268292683", unit="points per game")
+    calculation_binding = CalculationOutputBinding(
+        requirement_id="mean_ppg", output_id="MEAN_PPG",
+        calculation_id="mean_ppg_calc")
+    points_binding = _number_binding("PTS", "9534", "points")
+    games_binding = _number_binding("GAMES", "82", "count")
+    claim = Claim(
+        text=f"Mean points per game = 9,534 / 82 = {shown}.",
+        kind=ClaimKind.DERIVED, evidence_ids=[EVIDENCE_ID],
+        calculation_id="mean_ppg_calc",
+        output_bindings=[points_binding, games_binding, calculation_binding])
+    result = _result(claim)
+    result.draft = SimpleNamespace(calculations=[calculation])
+    result.task = SimpleNamespace(season=SimpleNamespace(value="2024-25"))
+    from v2.api.routes import _claim_numbers_are_admitted
+    assert _claim_numbers_are_admitted(
+        result, result.verified_claims[0], None) is (shown == expected)
+
+    text = _answer_text(result)
+    if shown == expected:
+        assert text == claim.text
+    else:
+        assert text.splitlines() == [
+            "PTS = 9534 (points)",
+            "GAMES = 82 (count)",
+            f"MEAN_PPG = {expected} (points per game)",
+        ]
+        assert f"= {shown}." not in text
+
+
+def test_unbound_four_digit_number_is_not_treated_as_verified_season() -> None:
+    prose = "Boston recorded 2024 wins during the 2024-25 season."
+    result = _result(_claim(prose, [_number_binding("MEAN_PPG", "116.2", "points per game")]))
+    result.task = SimpleNamespace(season=SimpleNamespace(value="2024-25"))
+
+    assert _answer_text(result) == "MEAN_PPG = 116.2 (points per game)"

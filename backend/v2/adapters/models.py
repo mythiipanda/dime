@@ -1409,6 +1409,7 @@ class ModelIntake(ModelStage):
         if unknown:
             raise ValueError(f"intake selected unknown capabilities: {unknown}")
         task = _canonicalize_calculation_requirements(task)
+        task = _align_calculation_requirement_requested_outputs(task)
         task = _drop_unresolvable_requested_outputs(task)
         task = _align_requirement_requested_outputs(task)
         task = _backfill_open_question_outputs(task)
@@ -2609,6 +2610,23 @@ def _align_requirement_requested_outputs(task: TaskSpec) -> TaskSpec:
     for requirement in task.requirements:
         aligned.append(_align_one_requirement(requirement, task.requested_outputs))
     return task.model_copy(update={"requirements": aligned})
+
+def _align_calculation_requirement_requested_outputs(task: TaskSpec) -> TaskSpec:
+    outputs_by_id = {output_id: output_id
+                     for output_id in task.requested_outputs}
+    aligned = []
+    for requirement in task.calculation_requirements:
+        if requirement.requested_outputs:
+            aligned.append(requirement)
+            continue
+        output_id = outputs_by_id.get(requirement.id.upper())
+        aligned.append(
+            requirement.model_copy(update={"requested_outputs": [output_id]})
+            if output_id is not None else requirement)
+    if all(left is right for left, right in zip(
+            aligned, task.calculation_requirements)):
+        return task
+    return task.model_copy(update={"calculation_requirements": aligned})
 
 
 def _align_one_requirement(requirement, wanted_outputs):

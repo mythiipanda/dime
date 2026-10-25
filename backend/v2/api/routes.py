@@ -12,6 +12,7 @@ import subprocess
 import marshal
 import time
 from collections import defaultdict
+from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from functools import lru_cache
 from dataclasses import dataclass
@@ -1010,21 +1011,23 @@ def _claim_prose(result) -> list[str]:
     internal = _internal_identifier_rx(result)
     lines: list[str] = []
     for item in claims:
-        prose = _publishable_prose(item.claim.text, internal)
+        prose = _publishable_claim_prose(result, item, internal)
         if prose is None:
             lines.extend(_label_lines(result, item.claim.output_bindings))
+            sources = sorted(_claim_source_labels(result, item))
+            if sources:
+                lines.append(f"Source: {', '.join(sources)}.")
         else:
             lines.append(prose)
     return list(dict.fromkeys(lines))
 
 _SCRUB_REFERRAL = "the data"
 _SCRUB_COVERAGE_LIMIT = 0.6
-
-def _scrub_digits(m: re.Match[str]) -> str:
-    digits = m.group(0)
-    if len(digits) == 4 and 1900 <= int(digits) <= 2100:
-        return digits
-    return ""
+_PROSE_NUMBER_RX = re.compile(
+    r"(?<![\w.])[-+]?(?:(?:\d{1,3}(?:,\d{3})+)|\d+)"
+    r"(?:\.\d+)?(?:[eE][+-]?\d+)?%?(?![\w]|\.\d)")
+_WAREHOUSE_SOURCE_RX = re.compile(
+    r"^v1:([a-z][a-z0-9_]*):warehouse:([a-z][a-z0-9_]*)$")
 
 _PROSE_SCRUB_RULES: tuple[
     tuple[re.Pattern[str], str | Callable[[re.Match[str]], str]], ...] = (
@@ -1054,12 +1057,13 @@ _PROSE_SCRUB_RULES: tuple[
         r"\b(?:rows?|lines?|columns?|cells?|season_line|matches|meta|values)\b"
         r"(?:\s*\[\s*\d*\s*\]|\s*\[\s*\]|\.[A-Za-z_][A-Za-z0-9_]*)+",
         re.IGNORECASE), _SCRUB_REFERRAL),
-    (re.compile(r"(?<!\.)\d{4,}"), _scrub_digits),
 )
 
 _PROSE_TIDY_RULES: tuple[tuple["re.Pattern[str]", str], ...] = (
+    (re.compile(r"\bfrom\s+the data\b", re.IGNORECASE), ""),
+    (re.compile(r"\bthe data(?:\s*[,;]\s*the data)+\b", re.IGNORECASE), ""),
     (re.compile(r"[(\[{]\s*the data\s*[)\]}]", re.IGNORECASE), ""),
-    (re.compile(r"[(\[{]\s*[)\]}]"), ""),
+    (re.compile(r"\(\s*\)"), ""),
     (re.compile(r"\bthe the\b", re.IGNORECASE), "the"),
     (re.compile(r" +([.,;:!?])"), r"\1"),
     (re.compile(r"[ \t]{2,}"), " "),
@@ -1093,6 +1097,112 @@ def _internal_identifier_rx(result) -> "re.Pattern[str] | None":
     return re.compile("|".join(
         rf"(?<![A-Za-z0-9_]){re.escape(value)}(?![A-Za-z0-9_])"
         for value in identifiers))
+
+def _decimal_literal(value: object) -> Decimal | None:
+    if isinstance(value, bool) or value is None:
+        return None
+    try:
+        parsed = Decimal(str(value).replace(",", "").removesuffix("%"))
+    except (InvalidOperation, ValueError):
+        return None
+    return parsed if parsed.is_finite() else None
+
+def _claim_numbers(result, verified_claim) -> set[Decimal]:
+    from v2.contracts import EvidenceOutputBinding
+
+    calculations = {
+        item.calculation_id: item
+        for item in getattr(getattr(result, "draft", None), "calculations", [])
+    }
+    values: set[Decimal] = set()
+    for status in getattr(result, "output_statuses", []) or []:
+        if (status.status != "complete"
+                or status.claim_index != verified_claim.claim_index
+                or status.binding is None):
+            continue
+        binding = status.binding
+        if isinstance(binding, EvidenceOutputBinding):
+            if binding.value.kind not in {"integer", "float", "decimal"}:
+                continue
+            raw = binding.value.value
+        else:
+            calculation = calculations.get(binding.calculation_id)
+            if (calculation is None
+                    or calculation.requirement_id != binding.requirement_id
+                    or verified_claim.claim.calculation_id != binding.calculation_id):
+                continue
+            raw = calculation.result
+        number = _decimal_literal(raw)
+        if number is not None:
+            values.add(number)
+    return values
+
+def _claim_source_labels(result, verified_claim) -> set[str]:
+    from v2.adapters import CAPABILITIES
+    from v2.contracts import EvidenceOutputBinding
+
+    bound_evidence_ids = {
+        binding.evidence_id
+        for binding in verified_claim.claim.output_bindings
+        if isinstance(binding, EvidenceOutputBinding)
+    }
+    if not bound_evidence_ids:
+        return set()
+    evidence = {
+        item.evidence_id: item
+        for item in getattr(getattr(result, "execution", None), "evidence", []) or []
+    }
+    labels: set[str] = set()
+    for source in verified_claim.sources:
+        if source.evidence_id not in bound_evidence_ids:
+            continue
+        envelope = evidence.get(source.evidence_id)
+        if (envelope is None or source.source != envelope.source
+                or source.capability != envelope.capability):
+            continue
+        identity = getattr(envelope, "source_identity", None)
+        if getattr(identity, "kind", None) != "warehouse":
+            continue
+        match = _WAREHOUSE_SOURCE_RX.fullmatch(source.source)
+        capability = CAPABILITIES.get(source.capability)
+        if (match is None or capability is None
+                or match.group(1) != capability.tool_name):
+            continue
+        labels.add(match.group(2).casefold())
+    return labels
+
+def _claim_numbers_are_admitted(
+        result, verified_claim, internal: re.Pattern[str] | None) -> bool:
+    text = verified_claim.claim.text
+    if internal is not None:
+        text = internal.sub("", text)
+    season = getattr(getattr(result, "task", None), "season", None)
+    season_value = getattr(season, "value", season)
+    if isinstance(season_value, str) and season_value:
+        text = re.sub(
+            rf"(?<!\d){re.escape(season_value)}(?!\d)", "", text)
+    allowed = _claim_numbers(result, verified_claim)
+    return all(
+        (number := _decimal_literal(match.group(0))) is not None
+        and number in allowed
+        for match in _PROSE_NUMBER_RX.finditer(text))
+
+def _publishable_claim_prose(
+        result, verified_claim, internal: re.Pattern[str] | None) -> str | None:
+    has_complete_binding = any(
+        status.status == "complete"
+        and status.claim_index == verified_claim.claim_index
+        for status in getattr(result, "output_statuses", []) or [])
+    if (has_complete_binding
+            and not _claim_numbers_are_admitted(result, verified_claim, internal)):
+        return None
+    prose = _publishable_prose(verified_claim.claim.text, internal)
+    if prose is None:
+        return None
+    sources = sorted(_claim_source_labels(result, verified_claim))
+    if sources:
+        prose += f" Source: {', '.join(sources)}."
+    return prose
 
 def _publishable_prose(
         text: str, internal: re.Pattern[str] | None) -> str | None:
@@ -1154,7 +1264,7 @@ def _prose_covered_output_ids(result) -> set[str]:
         if not isinstance(text, str) or not text:
             continue
         try:
-            prose = _publishable_prose(text, internal)
+            prose = _publishable_claim_prose(result, item, internal)
         except Exception:
             continue
         if prose is None:
@@ -1401,7 +1511,7 @@ def _published_bindings(result) -> list:
         for item in verified:
             if item.claim_index in withheld:
                 continue
-            if _publishable_prose(item.claim.text, internal) is None:
+            if _publishable_claim_prose(result, item, internal) is None:
                 continue
             for binding in item.claim.output_bindings:
                 bindings[(binding.requirement_kind, binding.requirement_id,

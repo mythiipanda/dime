@@ -104,6 +104,100 @@ def stage_kwargs():
             "capability_catalog": {"standings": {}}}
 
 @pytest.mark.anyio
+async def test_intake_binds_only_same_named_calculation_output() -> None:
+    from v2.contracts import (
+        CalculationOutputBinding,
+        Claim,
+        ClaimKind,
+        ClaimSource,
+        DeclaredCalculation,
+        DeclaredCalculationInput,
+        DraftReport,
+        Plan,
+        PlanNode,
+        PlanStatus,
+        VerifiedClaim,
+    )
+    from v2.runtime.models import ExecutionResult, admit_verified_claim_bindings
+
+    stub = StubModel([{
+        "goal": "Calculate mean points per game",
+        "mode": "quick",
+        "deliverable": "answer",
+        "requested_outputs": ["MEAN_PPG", "WINS", "TOTAL_POINTS"],
+        "calculation_requirements": [
+            {"id": "mean_ppg", "description": "Mean points per game"},
+            {"id": "custom_average", "description": "Custom average"},
+            {"id": "other_average", "description": "Explicit output",
+             "requested_outputs": ["TOTAL_POINTS"]},
+        ],
+    }])
+    task = await ModelIntake(
+        stub, provider="stub", model_name="stub-model",
+        capability_catalog={},
+    ).understand("Calculate mean points per game")
+
+    requirements = {item.id: item.requested_outputs
+                    for item in task.calculation_requirements}
+    assert requirements == {
+        "mean_ppg": ["MEAN_PPG"],
+        "custom_average": [],
+        "other_average": ["TOTAL_POINTS"],
+    }
+
+    evidence = EvidenceEnvelope(
+        evidence_id="summary-evidence", capability="team_summary",
+        source="fixture", observed_at=datetime.now(UTC),
+        rows=[{"PTS": 9534, "GAMES": 82}],
+    )
+    execution = ExecutionResult(
+        plan=Plan(nodes=[PlanNode(
+            id="summary", description="team summary",
+            capability_hints=["team_summary"], status=PlanStatus.COMPLETE,
+        )]),
+        evidence_by_node={"summary": evidence}, attempts={"summary": 1},
+    )
+    calculation = DeclaredCalculation(
+        calculation_id="mean_ppg_calc", requirement_id="mean_ppg",
+        operation="divide", inputs=[
+            DeclaredCalculationInput(
+                evidence_id="summary-evidence", path="rows[0].PTS"),
+            DeclaredCalculationInput(
+                evidence_id="summary-evidence", path="rows[0].GAMES"),
+        ], result="116.26829268292683", unit="points per game",
+    )
+    binding = CalculationOutputBinding(
+        requirement_id="mean_ppg", output_id="MEAN_PPG",
+        calculation_id="mean_ppg_calc",
+    )
+    claim = Claim(
+        text="Boston's mean is 116.26829268292683 points per game.",
+        kind=ClaimKind.DERIVED, evidence_ids=["summary-evidence"],
+        calculation_id="mean_ppg_calc", output_bindings=[binding],
+    )
+    draft = DraftReport(
+        sections=["Mean points per game"], claims=[claim],
+        calculations=[calculation],
+    )
+    verified = VerifiedClaim(
+        claim_index=0, claim=claim,
+        evidence_ids=["summary-evidence"],
+        sources=[ClaimSource(
+            evidence_id="summary-evidence", source="fixture",
+            capability="team_summary")],
+        output_bindings=[binding],
+    )
+
+    admitted = admit_verified_claim_bindings(task, execution, draft, verified)
+    assert admitted.output_bindings == [binding]
+    overbroad = binding.model_copy(update={"output_id": "WINS"})
+    invalid_claim = claim.model_copy(update={"output_bindings": [overbroad]})
+    invalid_verified = verified.model_copy(update={
+        "claim": invalid_claim, "output_bindings": [overbroad]})
+    with pytest.raises(ValueError, match="outside requirement"):
+        admit_verified_claim_bindings(task, execution, draft, invalid_verified)
+
+@pytest.mark.anyio
 async def test_model_backed_stages_form_a_structured_slice():
     stub = StubModel([
         {"goal": "Boston record", "mode": "quick", "deliverable": "text",
