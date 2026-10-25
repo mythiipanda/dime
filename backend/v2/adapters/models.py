@@ -3382,12 +3382,17 @@ class ModelRepairer(ModelStage):
             for result in verification.claim_results
             if not result.supported and result.claim_index < len(original.claims)
         }
+        repaired_by_key = {self._key(claim): claim for claim in repaired.claims}
         claims = [
-            *supported,
-            *[claim for claim in repaired.claims
-              if self._key(claim) not in supported_keys
-              and self._key(claim) not in rejected_keys],
+            claim.model_copy(update={
+                "output_bindings": repaired_by_key[self._key(claim)].output_bindings})
+            if self._key(claim) in repaired_by_key else claim
+            for claim in supported
         ]
+        claims.extend(
+            claim for claim in repaired.claims
+            if self._key(claim) not in supported_keys
+            and self._key(claim) not in rejected_keys)
         return DraftReport.model_validate(repaired.model_copy(
             update={"claims": claims, "calculations": list(original.calculations),
                     "blocked_calculation_requirement_ids": list(original.blocked_calculation_requirement_ids), "gaps": list(original.gaps)}).model_dump())

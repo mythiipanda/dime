@@ -3997,3 +3997,59 @@ def test_unmatched_numeric_identity_keeps_numeric_query_without_substitution(
         {"query": normalized.nodes[0].arguments["query"]})
     assert resolved["ok"] is True
     assert resolved["rows"]["teams"] == []
+
+@pytest.mark.anyio
+async def test_repair_keeps_corrected_binding_for_supported_claim():
+    from v2.contracts import (
+        Claim, DraftReport, EvidenceEnvelope, TaskSpec, VerificationReport,
+    )
+    from v2.runtime.interfaces import validate_repair_evidence_closed
+
+    evidence = EvidenceEnvelope(
+        evidence_id="season_stats", capability="team_season_summary",
+        source="warehouse", observed_at=datetime.now(UTC), season="2024-25",
+        rows=[{"TEAM_ID": 1610612738, "GAMES": 82, "PTS": 9534,
+               "PPG": 116.26829268292683}],
+        qualification="Available rows", coverage="Season unverified",
+    )
+    calculation = {
+        "calculation_id": "calc_mean_ppg", "requirement_id": "mean_ppg",
+        "operation": "divide",
+        "inputs": [{"evidence_id": "season_stats", "path": "rows[0].PTS"},
+                   {"evidence_id": "season_stats", "path": "rows[0].GAMES"}],
+        "result": "116.26829268292683",
+    }
+    claim = {
+        "text": "Boston averaged 116.26829268292683 points per game.",
+        "kind": "derived", "evidence_ids": ["season_stats"],
+        "calculation_id": "calc_mean_ppg", "artifact_id": "artifact_original",
+        "output_bindings": [{
+            "requirement_kind": "evidence", "requirement_id": "season_summary",
+            "output_id": "MEAN_PPG", "node_id": "summary",
+            "evidence_id": "season_stats",
+            "selector": "rows[0].PTS",
+            "value": {"kind": "float", "value": 116.26829268292683},
+            "unit": {"kind": "unitless"}, "domain": "team_season_summary",
+        }],
+    }
+    corrected = {**claim, "artifact_id": "artifact_changed",
+                 "output_bindings": [
+        {**claim["output_bindings"][0], "selector": "rows[0].PPG"}]}
+    stub = StubModel([{"sections": ["Summary"], "claims": [corrected],
+                       "calculations": [calculation]}])
+    repairer = ModelRepairer(stub, provider="stub", model_name="stub")
+    draft = DraftReport(sections=["Summary"], claims=[Claim(**claim)],
+                        calculations=[calculation])
+    verification = VerificationReport(
+        status="repair", claim_results=[{"claim_index": 0, "supported": True}],
+        repair_instructions=["Bind missing requested output MEAN_PPG."])
+    repaired = await repairer.repair(
+        TaskSpec(goal="summarize season", mode="quick", deliverable="answer"),
+        draft, {"season_stats": evidence}, verification,
+    )
+    assert len(stub.calls) == 1
+    assert repaired.claims[0].text == claim["text"]
+    assert repaired.claims[0].artifact_id == "artifact_original"
+    assert [binding.selector for binding in repaired.claims[0].output_bindings] == [
+        "rows[0].PPG"]
+    validate_repair_evidence_closed({"season_stats": evidence}, repaired)
