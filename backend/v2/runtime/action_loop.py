@@ -21,7 +21,7 @@ from v2.runtime.interfaces import (
     Intake, Verifier, freeze_draft, freeze_evidence_map, freeze_task,
 )
 from v2.runtime.ledger import LedgerKind, RequestEnvelope, RunLedger
-from v2.runtime.loop import close_failed, publish_result
+from v2.runtime.loop import _verified_claims, close_failed, publish_result
 from v2.runtime.models import ExecutionResult, RuntimeResult
 from v2.runtime.verifier import merge_verification_reports
 
@@ -194,17 +194,50 @@ class ActionLoop:
             "action": "tool", "nodes": node_ids,
             "status": "complete" if complete == set(node_ids) else "partial"})
 
-    async def _run_answer(self, answer: AnswerAction, task, state, started, deadline) -> RuntimeResult:
-        state.last_draft = answer.draft
+    def _answer_contract(self, task, state, draft):
         evidence = list(state.evidence_by_node.values())
+        evidence_map = {item.evidence_id: item for item in evidence}
+        validated = draft
+        messages: list[tuple[str, str]] = []
         try:
-            draft = _validate_draft(answer.draft, evidence, task)
+            validated = _validate_draft(draft, evidence, task)
         except ValueError as exc:
-            state.last_verification = VerificationReport(
-                status=VerificationStatus.PARTIAL,
-                missing_branches=[str(exc)])
-            return self._publish(
-                task, state, answer.draft, state.last_verification, started)
+            messages.append(("invalid_draft", str(exc)))
+        structural = VerificationReport(
+            status=VerificationStatus.PASS,
+            claim_results=[
+                {"claim_index": index, "supported": True}
+                for index, _claim in enumerate(validated.claims)])
+        binding_messages: list[str] = []
+        try:
+            _, gaps = _verified_claims(
+                task, self._aggregate(state), validated, structural, evidence_map)
+        except ValueError as exc:
+            binding_messages.append(str(exc))
+        else:
+            binding_messages.extend(gap.message for gap in gaps if gap.message)
+        messages.extend(
+            ("invalid_binding", message)
+            for message in dict.fromkeys(binding_messages))
+        seen = set()
+        defects = []
+        for kind, message in messages:
+            if message in seen:
+                continue
+            seen.add(message)
+            defects.append(TypedDefect(kind=kind, message=message))
+        return validated, defects
+
+    async def _run_answer(self, answer: AnswerAction, task, state, started, deadline) -> RuntimeResult | None:
+        draft, defects = self._answer_contract(task, state, answer.draft)
+        if defects:
+            state.last_draft = None
+            state.last_verification = None
+            state.defects.extend(defects)
+            state.history.append({"action": "answer", "status": "rejected"})
+            return None
+        state.last_draft = draft
+        evidence = list(state.evidence_by_node.values())
         evidence_map = {item.evidence_id: item for item in evidence}
         mechanical = await self._within(
             self._mechanical.verify(
@@ -260,16 +293,20 @@ class ActionLoop:
                 if isinstance(action.step, ToolAction):
                     await self._run_plan(action.step, task, state, deadline)
                     continue
-                return await self._run_answer(
+                result = await self._run_answer(
                     action.step, task, state, started, deadline)
+                if result is not None:
+                    return result
             message = ("action budget exhausted" if not state.defects
                        else "; ".join(item.message for item in state.defects))
-            state.last_draft = state.last_draft or DraftReport(
-                sections=[], claims=[], gaps=[message])
-            state.last_verification = state.last_verification or VerificationReport(
-                status=VerificationStatus.PARTIAL, missing_branches=[message])
-            return self._publish(
-                task, state, state.last_draft, state.last_verification, started)
+            if state.last_draft is not None and state.last_verification is not None:
+                draft, verification = state.last_draft, state.last_verification
+            else:
+                draft = DraftReport(
+                    sections=[], claims=[], gaps=[message])
+                verification = VerificationReport(
+                    status=VerificationStatus.PARTIAL, missing_branches=[message])
+            return self._publish(task, state, draft, verification, started)
         except BaseException as exc:
             if owns_turn:
                 close_failed(

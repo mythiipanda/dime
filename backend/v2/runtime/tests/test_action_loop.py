@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
@@ -8,8 +9,10 @@ from pydantic import ValidationError
 
 from v2.adapters.models import RecordedStructuredModel
 from v2.contracts import (
-    Claim, DraftReport, EntityRef, EvidenceOutputBinding, EvidenceRequirement,
-    SeasonRef, TaskSpec, VerificationReport, VerificationStatus,
+    CalculationOutputBinding, Claim, DeclaredCalculation,
+    DeclaredCalculationInput, DraftReport, EntityRef, EvidenceEnvelope,
+    EvidenceOutputBinding, EvidenceRequirement, SeasonRef, TaskSpec,
+    VerificationReport, VerificationStatus,
 )
 from v2.runtime import FakeCapability, PlanExecutor
 from v2.runtime.action_loop import ActionLoop, LoopAction
@@ -330,6 +333,212 @@ async def test_action_budget_exhausts_to_partial_publication():
     assert result.verified_claims == []
     assert any("action budget exhausted" in gap.message for gap in result.gaps)
     assert len(scripted.calls) == 2
+
+@pytest.mark.anyio
+async def test_invalid_answer_contract_returns_to_same_loop_then_publishes_supported_outputs():
+    outputs = ["GAMES", "WINS", "LOSSES", "PTS", "TOTAL_POINTS", "PPG",
+               "POINTS_PER_GAME", "MEAN_PPG"]
+    evidence_id = "evidence:celtics_regular_season_summary"
+    node_id = "celtics_regular_season_summary"
+    requirement_id = "celtics_regular_season_summary"
+    summary_task = TaskSpec(
+        goal="Boston Celtics 2024-25 regular-season summary",
+        mode="quick", deliverable="games, record, points, and points per game",
+        requested_outputs=outputs,
+        season=SeasonRef(value="2024-25", source="user", confidence=1.0),
+        entities=[EntityRef(id="1610612738", type="team",
+                            display_name="Boston Celtics")],
+        required_evidence=["entity_resolution", "team_season_summary"],
+        requirements=[
+            EvidenceRequirement(id="resolve_celtics", description="resolve team",
+                                capability_options=["entity_resolution"]),
+            EvidenceRequirement(
+                id=requirement_id, description="available rows summary",
+                capability_options=["team_season_summary"],
+                requested_outputs=outputs),
+        ])
+    plan = {"action": "tool", "plan": {"nodes": [
+        {"id": "resolve_celtics", "description": "resolve team",
+         "capability_hints": ["entity_resolution"],
+         "covers_requirement_ids": ["resolve_celtics"],
+         "arguments": {"query": "Boston Celtics"}},
+        {"id": node_id, "description": "available rows summary",
+         "depends_on": ["resolve_celtics"],
+         "capability_hints": ["team_season_summary"],
+         "covers_requirement_ids": [requirement_id],
+         "arguments": {"season": "2024-25", "period_scope": "regular_season"}},
+    ]}}
+
+    class CapturedSummary:
+        name = "team_season_summary"
+        task_season_scoped = True
+
+        async def execute(self, node, task, evidence):
+            return EvidenceEnvelope(
+                evidence_id=evidence_id,
+                capability="team_season_summary",
+                source="v1:get_team_season_summary:warehouse:silver_hist_gamelogs",
+                observed_at=datetime.now(UTC),
+                season="2024-25",
+                task_season_scoped=True,
+                entities=[EntityRef(id="1610612738", type="team",
+                                    display_name="1610612738")],
+                rows=[{"TEAM_ID": 1610612738, "SEASON": "2024-25",
+                       "PERIOD_SCOPE": "regular_season", "GAMES": 82,
+                       "WINS": 61, "LOSSES": 21, "PTS": 9534,
+                       "PPG": 116.26829268292683}],
+                units={"GAMES": "count", "WINS": "count", "LOSSES": "count",
+                       "PTS": "points", "PPG": "per_game"},
+                coverage=("Summary of rows available for this team, season, "
+                          "and regular-season source; season completeness is "
+                          "unverified."),
+                lineage=[item.evidence_id for item in evidence],
+                warnings=["Values describe available warehouse rows only."])
+
+    def observed(output_id, selector, kind, value, unit):
+        return EvidenceOutputBinding(
+            requirement_kind="evidence", requirement_id=requirement_id,
+            output_id=output_id, node_id=node_id, evidence_id=evidence_id,
+            selector=selector, row_selector="rows[0]",
+            value={"kind": kind, "value": value},
+            subject_entity_type="team", subject_entity_id="1610612738",
+            subject_selector="rows[0].TEAM_ID",
+            unit={"kind": "declared", "value": unit},
+            domain="team_season_summary")
+
+    def captured_invalid_answer():
+        return {"action": "answer", "draft": DraftReport(
+            sections=["Answer"], claims=[
+                Claim(
+                    text="Boston Celtics played 82 games in 2024-25.",
+                    kind="observed", evidence_ids=[evidence_id],
+                    output_bindings=[EvidenceOutputBinding(
+                        requirement_kind="evidence",
+                        requirement_id=requirement_id, output_id="GAMES",
+                        node_id=node_id, evidence_id=evidence_id,
+                        selector="$.rows[0].GAMES",
+                        row_selector="$.rows[0]",
+                        value={"kind": "integer", "value": 82},
+                        subject_entity_type="team",
+                        subject_entity_id="1610612738",
+                        subject_selector="$.rows[0]",
+                        unit={"kind": "declared", "value": "count"},
+                        domain="team_season_summary")]),
+                Claim(
+                    text=("Mean points per game = 9534 / 82 = "
+                          "116.26829268292683."),
+                    kind="derived", evidence_ids=[evidence_id],
+                    calculation_id="mean_ppg_fixture",
+                    output_bindings=[CalculationOutputBinding(
+                        requirement_id=requirement_id,
+                        output_id="MEAN_PPG",
+                        calculation_id="mean_ppg_fixture")]),
+            ], calculations=[DeclaredCalculation(
+                calculation_id="mean_ppg_fixture",
+                requirement_id=requirement_id, operation="divide",
+                inputs=[
+                    DeclaredCalculationInput(
+                        evidence_id=evidence_id, path="$.rows[0].PTS"),
+                    DeclaredCalculationInput(
+                        evidence_id=evidence_id, path="$.rows[0].GAMES"),
+                ], result="116.26829268292683", unit="per_game")],
+        ).model_dump(mode="json")}
+
+    def unauthorized_calculation_answer():
+        return {"action": "answer", "draft": DraftReport(
+            sections=["Answer"], claims=[
+                Claim(
+                    text="Boston Celtics played 82 games in 2024-25.",
+                    kind="observed", evidence_ids=[evidence_id],
+                    output_bindings=[observed(
+                        "GAMES", "rows[0].GAMES", "integer", 82, "count")]),
+                Claim(
+                    text=("Mean points per game = 9534 / 82 = "
+                          "116.26829268292683."),
+                    kind="derived", evidence_ids=[evidence_id],
+                    calculation_id="mean_ppg_fixture",
+                    output_bindings=[CalculationOutputBinding(
+                        requirement_id=requirement_id,
+                        output_id="MEAN_PPG",
+                        calculation_id="mean_ppg_fixture")]),
+            ], calculations=[DeclaredCalculation(
+                calculation_id="mean_ppg_fixture",
+                requirement_id=requirement_id, operation="divide",
+                inputs=[
+                    DeclaredCalculationInput(
+                        evidence_id=evidence_id, path="rows[0].PTS"),
+                    DeclaredCalculationInput(
+                        evidence_id=evidence_id, path="rows[0].GAMES"),
+                ], result="116.26829268292683", unit="per_game")],
+        ).model_dump(mode="json")}
+
+    def canonical_answer():
+        return {"action": "answer", "draft": DraftReport(
+            sections=["Answer"], claims=[
+                Claim(
+                    text=("Boston Celtics 2024-25 regular season: 82 games, "
+                          "61 wins, 21 losses, 9,534 points, and "
+                          "116.26829268292683 points per game."),
+                    kind="observed", evidence_ids=[evidence_id],
+                    output_bindings=[
+                        observed("GAMES", "rows[0].GAMES", "integer", 82, "count"),
+                        observed("WINS", "rows[0].WINS", "integer", 61, "count"),
+                        observed("LOSSES", "rows[0].LOSSES", "integer", 21, "count"),
+                        observed("PTS", "rows[0].PTS", "integer", 9534, "points"),
+                        observed("TOTAL_POINTS", "rows[0].PTS", "integer", 9534,
+                                 "points"),
+                        observed("PPG", "rows[0].PPG", "float",
+                                 116.26829268292683, "per_game"),
+                        observed("POINTS_PER_GAME", "rows[0].PPG", "float",
+                                 116.26829268292683, "per_game"),
+                        observed("MEAN_PPG", "rows[0].PPG", "float",
+                                 116.26829268292683, "per_game"),
+                    ]),
+            ]).model_dump(mode="json")}
+
+    loop, scripted, _ = run_loop(
+        [plan, captured_invalid_answer(), unauthorized_calculation_answer(),
+         canonical_answer()],
+        capabilities={
+            "entity_resolution": FakeCapability("entity_resolution", [
+                {"TEAM_ID": 1610612738, "TEAM_NAME": "Boston Celtics"}]),
+            "team_season_summary": CapturedSummary(),
+        }, max_actions=4)
+    result = await loop.run(summary_task)
+
+    assert len(scripted.calls) == 4
+    assert [item["status"] for item in
+            scripted.calls[3]["payload"]["actions"]] == [
+        "complete", "rejected", "rejected"]
+    first_defects = " ".join(
+        item["message"] for item in scripted.calls[2]["payload"]["defects"])
+    assert "$.rows[0].PTS" in first_defects
+    assert "subject selector" in first_defects
+    assert "calculation output is outside requirement" in first_defects
+    second_defects = " ".join(
+        item["message"] for item in scripted.calls[3]["payload"]["defects"])
+    assert "binding calculation output is outside requirement" in second_defects
+    summary = next(
+        item for item in scripted.calls[1]["payload"]["admitted_evidence"]
+        if item["capability"] == "team_season_summary")
+    assert "season completeness is unverified" in summary["coverage"]
+    assert summary["warnings"] == [
+        "Values describe available warehouse rows only."]
+
+    assert result.verification.status == VerificationStatus.PASS
+    assert result.gaps == []
+    assert result.draft.calculations == []
+    assert len(result.verified_claims) == 1
+    assert result.verified_claims[0].sources[0].source == (
+        "v1:get_team_season_summary:warehouse:silver_hist_gamelogs")
+    complete = {
+        (item.requirement_kind, item.requirement_id, item.output_id)
+        for item in result.output_statuses if item.status == "complete"}
+    for output in outputs:
+        assert ("task", None, output) in complete
+        assert ("evidence", requirement_id, output) in complete
+    assert all(item.requirement_kind != "calculation"
+               for item in result.output_statuses)
 
 @pytest.mark.anyio
 async def test_cancellation_closes_ledger_and_propagates():
