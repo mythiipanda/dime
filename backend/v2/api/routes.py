@@ -1035,6 +1035,10 @@ _PROSE_SCRUB_RULES: tuple[
         r"\[[a-z_]{2,20}:\s*(?=[A-Za-z0-9_.\-]*\d)[A-Za-z0-9_.\-]{1,64}\]",
         re.IGNORECASE), ""),
     (re.compile(
+        r"\b(?:player|team|game|league)\s+id\s*[:=#]?\s*"
+        r"[A-Za-z0-9_.\-]{1,64}\b",
+        re.IGNORECASE), ""),
+    (re.compile(
         r"\b(?:evidence|evidence_id|node|node_id|claim|claim_index|"
         r"requirement|requirement_id|calculation|calculation_id|capability|"
         r"selector|row_selector|subject_selector|resolve|row-scan|"
@@ -1107,12 +1111,33 @@ def _decimal_literal(value: object) -> Decimal | None:
         return None
     return parsed if parsed.is_finite() else None
 
+def _calculation_input_numbers(calculation, evidence) -> set[Decimal]:
+    from v2.domain.evidence import iter_values
+
+    values: set[Decimal] = set()
+    for input_ in calculation.inputs:
+        envelope = evidence.get(input_.evidence_id)
+        if envelope is None:
+            continue
+        for item in iter_values(envelope):
+            if item.path != input_.path:
+                continue
+            number = _decimal_literal(item.value)
+            if number is not None:
+                values.add(number)
+    return values
+
+
 def _claim_numbers(result, verified_claim) -> set[Decimal]:
     from v2.contracts import EvidenceOutputBinding
 
     calculations = {
         item.calculation_id: item
         for item in getattr(getattr(result, "draft", None), "calculations", [])
+    }
+    evidence = {
+        item.evidence_id: item
+        for item in getattr(getattr(result, "execution", None), "evidence", []) or []
     }
     values: set[Decimal] = set()
     for status in getattr(result, "output_statuses", []) or []:
@@ -1132,6 +1157,7 @@ def _claim_numbers(result, verified_claim) -> set[Decimal]:
                     or verified_claim.claim.calculation_id != binding.calculation_id):
                 continue
             raw = calculation.result
+            values |= _calculation_input_numbers(calculation, evidence)
         number = _decimal_literal(raw)
         if number is not None:
             values.add(number)

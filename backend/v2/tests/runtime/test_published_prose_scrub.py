@@ -138,6 +138,31 @@ def test_prose_naming_a_node_id_falls_back_to_the_label_lines() -> None:
 
     assert _answer_text(result) == LABEL_LINE
 
+def test_team_id_label_form_scrubs_and_keeps_identity_and_season() -> None:
+    team_id = "1610612738"
+
+    def team_binding(output_id: str, value: int, unit: str) -> EvidenceOutputBinding:
+        return EvidenceOutputBinding(
+            requirement_kind="task", requirement_id=None, output_id=output_id,
+            node_id=NODE_ID, evidence_id=EVIDENCE_ID,
+            selector=f"rows[0].{output_id}", row_selector="rows[0]",
+            subject_entity_type="team", subject_entity_id=team_id,
+            subject_selector="rows[0].TEAM_ID",
+            value={"kind": "integer", "value": value},
+            unit={"kind": "declared", "value": unit}, domain="team_summary")
+
+    result = _result(_claim(
+        "The Boston Celtics (team ID 1610612738) had 82 games and "
+        "9,534 points in 2024-25.",
+        [team_binding("GAMES", 82, "count"),
+         team_binding("PTS", 9534, "points")]))
+    result.task = SimpleNamespace(season=SimpleNamespace(value="2024-25"))
+
+    text = _answer_text(result)
+    assert text == (
+        "The Boston Celtics had 82 games and 9,534 points in 2024-25.")
+    assert team_id not in text
+
 def test_a_leaky_claim_next_to_clean_prose_neither_leaks_nor_disappears() -> None:
     result = _result(
         _claim("Per n1 the qualified_leaders rows[0].AST player:9001 value "
@@ -386,6 +411,44 @@ def test_calculation_prose_requires_exact_admitted_number(shown, expected) -> No
             f"MEAN_PPG = {expected} (points per game)",
         ]
         assert f"= {shown}." not in text
+
+
+def test_derived_claim_arithmetic_operands_publish_from_calculation_inputs() -> None:
+    from v2.contracts import (
+        CalculationOutputBinding,
+        DeclaredCalculation,
+        DeclaredCalculationInput,
+        EvidenceEnvelope,
+    )
+
+    evidence_id = "team_season_summary:3ae6a6161d11237a"
+    calculation = DeclaredCalculation(
+        calculation_id="mean_ppg", requirement_id="mean_ppg",
+        operation="divide", inputs=[
+            DeclaredCalculationInput(evidence_id=evidence_id,
+                                     path="rows[0].PTS"),
+            DeclaredCalculationInput(evidence_id=evidence_id,
+                                     path="rows[0].GAMES"),
+        ], result="116.26829268292683", unit="per_game")
+    calculation_binding = CalculationOutputBinding(
+        requirement_id="mean_ppg", output_id="MEAN_PPG",
+        calculation_id="mean_ppg")
+    claim = Claim(
+        text="Mean points per game is 116.26829268292683, computed as "
+             "9,534 total points divided by 82 games.",
+        kind=ClaimKind.DERIVED, evidence_ids=[evidence_id],
+        calculation_id="mean_ppg", output_bindings=[calculation_binding])
+    result = _result(claim)
+    result.draft = SimpleNamespace(calculations=[calculation])
+    result.execution.evidence = [EvidenceEnvelope(
+        evidence_id=evidence_id, capability="team_season_summary",
+        source="v1:get_team_season_summary:warehouse:silver_hist_gamelogs",
+        observed_at="2026-10-25T05:11:40Z", season="2024-25",
+        rows=[{"GAMES": 82, "PTS": 9534,
+               "PPG": 116.26829268292683}],
+        units={"GAMES": "count", "PTS": "points", "PPG": "per_game"})]
+
+    assert _answer_text(result) == claim.text
 
 
 def test_unbound_four_digit_number_is_not_treated_as_verified_season() -> None:
