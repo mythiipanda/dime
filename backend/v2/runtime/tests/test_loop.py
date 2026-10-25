@@ -1519,3 +1519,114 @@ async def test_runtime_caller_maps_structured_execution_code_to_typed_gap():
     assert any(gap.kind == "profile/name_resolution_unavailable"
                for gap in result.gaps)
     assert not any(gap.kind == "execution_failure" for gap in result.gaps)
+
+
+def test_verified_claims_drops_only_identical_duplicate_output_bindings():
+    from datetime import UTC, datetime
+
+    from v2.contracts import (
+        CalculationOutputBinding,
+        CalculationRequirement,
+        DeclaredCalculation,
+        DeclaredCalculationInput,
+        EvidenceEnvelope,
+        EvidenceOutputBinding,
+        EvidenceRequirement,
+        EntityRef,
+        SeasonRef,
+    )
+    from v2.runtime.loop import _verified_claims
+    from v2.runtime.models import ExecutionResult, build_output_statuses
+
+    evidence_id = "team_season_summary:3ae6a6161d11237a"
+    envelope = EvidenceEnvelope(
+        evidence_id=evidence_id, capability="team_season_summary",
+        source="v1:get_team_season_summary:warehouse:silver_hist_gamelogs",
+        observed_at=datetime.now(UTC), season="2024-25",
+        entities=[EntityRef(id="1610612738", type="team",
+                            display_name="Boston Celtics")],
+        rows=[{"TEAM_ID": 1610612738, "GAMES": 82, "PTS": 9534,
+               "PPG": 116.26829268292683}],
+        units={"GAMES": "count", "PTS": "points", "PPG": "per_game"},
+        metric_definitions={
+            "GAMES": "Count of available team-game rows for the selected scope.",
+            "PTS": "Sum of team points across available team-game rows.",
+            "PPG": "Available team points divided by available team-game rows.",
+        })
+    execution = ExecutionResult(
+        plan=Plan(nodes=[PlanNode(
+            id="summary", description="summary",
+            capability_hints=["team_season_summary"],
+            covers_requirement_ids=["summary"], status="complete")]),
+        evidence_by_node={"summary": envelope}, attempts={"summary": 1})
+
+    def evidence_binding(output_id):
+        return EvidenceOutputBinding(
+            requirement_kind="evidence", requirement_id="summary",
+            output_id=output_id, node_id="summary", evidence_id=evidence_id,
+            selector="rows[0].PPG", row_selector="rows[0]",
+            subject_entity_type="team", subject_entity_id="1610612738",
+            subject_selector="rows[0].TEAM_ID",
+            value={"kind": "float", "value": 116.26829268292683},
+            unit={"kind": "declared", "value": "per_game"},
+            domain="team_season_summary")
+
+    first = Claim(
+        text="The same available rows report 116.26829268292683 points per game.",
+        kind=ClaimKind.OBSERVED, evidence_ids=[evidence_id],
+        output_bindings=[evidence_binding(output_id)
+                         for output_id in ("PPG", "MEAN_PPG", "POINTS_PER_GAME")])
+    duplicated = [evidence_binding("MEAN_PPG"), evidence_binding("POINTS_PER_GAME")]
+    calculation_bindings = [
+        CalculationOutputBinding(
+            requirement_id="mean_ppg", output_id=output_id,
+            calculation_id="mean_ppg_calc")
+        for output_id in ("MEAN_PPG", "POINTS_PER_GAME")]
+    second = Claim(
+        text=("Dividing 9,534 total points by 82 games gives "
+              "116.26829268292683 points per game."),
+        kind=ClaimKind.DERIVED, evidence_ids=[evidence_id],
+        calculation_id="mean_ppg_calc",
+        output_bindings=[*calculation_bindings, *duplicated])
+    calculation = DeclaredCalculation(
+        calculation_id="mean_ppg_calc", requirement_id="mean_ppg",
+        operation="divide",
+        inputs=[
+            DeclaredCalculationInput(evidence_id=evidence_id,
+                                     path="rows[0].PTS"),
+            DeclaredCalculationInput(evidence_id=evidence_id,
+                                     path="rows[0].GAMES"),
+        ], result="116.26829268292683", unit="per_game")
+    task = TaskSpec(
+        goal="mean points per game", mode=RunMode.QUICK, deliverable="answer",
+        requested_outputs=["PPG", "MEAN_PPG", "POINTS_PER_GAME"],
+        season=SeasonRef(value="2024-25", source="user", confidence=1.0),
+        requirements=[EvidenceRequirement(
+            id="summary", description="summary",
+            capability_options=["team_season_summary"],
+            requested_outputs=["PPG", "MEAN_PPG", "POINTS_PER_GAME"])],
+        calculation_requirements=[CalculationRequirement(
+            id="mean_ppg", description="mean points per game",
+            requested_outputs=["MEAN_PPG", "POINTS_PER_GAME"])])
+    draft = DraftReport(sections=["Answer"], claims=[first, second],
+                        calculations=[calculation])
+    verification = VerificationReport(
+        status=VerificationStatus.PASS,
+        claim_results=[{"claim_index": 0, "supported": True},
+                       {"claim_index": 1, "supported": True}])
+
+    admitted, rejected = _verified_claims(
+        task, execution, draft, verification, {evidence_id: envelope})
+    assert rejected == []
+    assert [(binding.requirement_kind, binding.requirement_id,
+             binding.output_id) for binding in admitted[1].output_bindings] == [
+        ("calculation", "mean_ppg", "MEAN_PPG"),
+        ("calculation", "mean_ppg", "POINTS_PER_GAME"),
+    ]
+    statuses = build_output_statuses(task, admitted, rejected)
+    by_key = {(item.requirement_kind, item.requirement_id, item.output_id): item
+              for item in statuses}
+    assert by_key[("calculation", "mean_ppg", "MEAN_PPG")].status == "complete"
+    assert by_key[("calculation", "mean_ppg",
+                   "POINTS_PER_GAME")].status == "complete"
+    assert by_key[("evidence", "summary", "MEAN_PPG")].status == "complete"

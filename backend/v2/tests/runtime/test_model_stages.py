@@ -197,6 +197,39 @@ async def test_intake_binds_only_same_named_calculation_output() -> None:
     with pytest.raises(ValueError, match="outside requirement"):
         admit_verified_claim_bindings(task, execution, draft, invalid_verified)
 
+
+def test_finalize_aligns_human_readable_mean_points_per_game() -> None:
+    from v2.adapters.models import _finalize_requested_outputs
+    from v2.contracts import (
+        CalculationRequirement,
+        EvidenceRequirement,
+        RunMode,
+        TaskSpec,
+    )
+
+    task = TaskSpec(
+        goal=("Report the Boston Celtics' 2024-25 regular-season games, wins, "
+              "losses, total points scored, and mean points per game."),
+        mode=RunMode.QUICK,
+        deliverable="Season summary with mean points per game arithmetic.",
+        requirements=[EvidenceRequirement(
+            id="celtics_regular_season_summary",
+            description="Regular-season summary",
+            capability_options=["team_season_summary"],
+        )],
+        calculation_requirements=[CalculationRequirement(
+            id="mean_points_per_game",
+            description=("Divide total points scored by games played to show "
+                         "mean points per game."),
+        )],
+    )
+
+    finalized = _finalize_requested_outputs(task)
+    assert [(item.id, list(item.requested_outputs))
+            for item in finalized.calculation_requirements] == [
+        ("mean_points_per_game", ["MEAN_PPG", "POINTS_PER_GAME"]),
+    ]
+
 @pytest.mark.anyio
 async def test_model_backed_stages_form_a_structured_slice():
     stub = StubModel([

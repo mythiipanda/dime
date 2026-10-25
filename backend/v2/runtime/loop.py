@@ -1288,9 +1288,18 @@ def _verified_claims(task, execution, draft, verification, evidence=None, *,
                  if result.supported and not result.uncertain}
     admitted: list[VerifiedClaim] = []
     rejected: list[Gap] = []
+    owned: dict[tuple, object] = {}
     for index, claim in enumerate(draft.claims):
         if index not in supported:
             continue
+        bindings = []
+        for binding in claim.output_bindings:
+            key = (binding.requirement_kind, binding.requirement_id,
+                   binding.output_id)
+            previous = owned.get(key)
+            if previous is not None and previous.model_dump() == binding.model_dump():
+                continue
+            bindings.append(binding)
         candidate = VerifiedClaim(
             claim_index=index, claim=claim,
             evidence_ids=list(claim.evidence_ids),
@@ -1302,7 +1311,7 @@ def _verified_claims(task, execution, draft, verification, evidence=None, *,
                 vintages=dict(evidence[evidence_id].vintages))
                 for evidence_id in claim.evidence_ids
                 if evidence and evidence_id in evidence],
-            output_bindings=list(claim.output_bindings))
+            output_bindings=bindings)
         admitted_claim, rejections, withheld = _admitted_bindings(
             task, execution, draft, candidate)
         if diagnostics and diagnostics_events is not None:
@@ -1322,6 +1331,10 @@ def _verified_claims(task, execution, draft, verification, evidence=None, *,
                 blocks=[f"claim:{index}"]))
             continue
         admitted.append(admitted_claim)
+        for binding in admitted_claim.output_bindings:
+            owned.setdefault(
+                (binding.requirement_kind, binding.requirement_id,
+                 binding.output_id), binding)
         if rejections and not admitted_claim.output_bindings:
             rejected.append(Gap(
                 kind=GapKind.SYNTHESIS_INCOMPLETE,

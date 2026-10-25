@@ -2632,6 +2632,49 @@ def _align_requirement_requested_outputs(task: TaskSpec) -> TaskSpec:
         aligned.append(_align_one_requirement(requirement, task.requested_outputs))
     return task.model_copy(update={"requirements": aligned})
 
+def _squashed(value: str) -> str:
+    return "".join(character for character in value.upper()
+                   if character.isalnum())
+
+
+def _calculation_alias_outputs(task: TaskSpec, requirement) -> list[str]:
+    from v2.adapters.capabilities import CAPABILITIES, PER_GAME
+    text = _squashed(f"{requirement.id} {requirement.description}")
+    per_game = any(token in text
+                   for token in ("MEAN", "AVERAGE", "PERGAME", "PPG"))
+    capabilities = list({
+        name: CAPABILITIES[name]
+        for evidence in task.requirements
+        for name in evidence.capability_options
+        if name in CAPABILITIES
+    }.values())
+    columns: set[str] = set()
+    for capability in capabilities:
+        for alias, column in capability.output_aliases.items():
+            if _squashed(alias) not in text:
+                continue
+            if per_game and capability.units.get(column) != PER_GAME:
+                continue
+            columns.add(column)
+    if not columns:
+        return []
+    selected: set[str] = set()
+    for capability in capabilities:
+        for alias, column in capability.output_aliases.items():
+            if (column not in columns
+                    or alias not in task.requested_outputs
+                    or (per_game and capability.units.get(column) != PER_GAME)):
+                continue
+            alias_key = _squashed(alias)
+            column_key = _squashed(column)
+            extra = (alias_key.replace(column_key, "")
+                     if column_key in alias_key else alias_key)
+            if alias_key in text or (extra and extra in text):
+                selected.add(alias)
+    return [output_id for output_id in task.requested_outputs
+            if output_id in selected]
+
+
 def _align_calculation_requirement_requested_outputs(task: TaskSpec) -> TaskSpec:
     outputs_by_id = {output_id: output_id
                      for output_id in task.requested_outputs}
@@ -2641,9 +2684,14 @@ def _align_calculation_requirement_requested_outputs(task: TaskSpec) -> TaskSpec
             aligned.append(requirement)
             continue
         output_id = outputs_by_id.get(requirement.id.upper())
+        if output_id is not None:
+            aligned.append(
+                requirement.model_copy(update={"requested_outputs": [output_id]}))
+            continue
+        alias_outputs = _calculation_alias_outputs(task, requirement)
         aligned.append(
-            requirement.model_copy(update={"requested_outputs": [output_id]})
-            if output_id is not None else requirement)
+            requirement.model_copy(update={"requested_outputs": alias_outputs})
+            if alias_outputs else requirement)
     if all(left is right for left, right in zip(
             aligned, task.calculation_requirements)):
         return task
