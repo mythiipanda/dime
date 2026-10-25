@@ -402,6 +402,62 @@ async def test_model_repair_receives_only_typed_admitted_context():
     assert repaired.claims[0].text == "Boston won 61 games."
 
 @pytest.mark.anyio
+async def test_model_repair_accepts_frozen_evidence_views_and_omits_execution_arguments():
+    from v2.contracts import Claim, DraftReport, TaskSpec, VerificationReport
+    from v2.runtime.interfaces import freeze_evidence_map
+
+    stub = StubModel([{
+        "sections": ["Record"],
+        "claims": [{"text": "Boston won 61 games.", "kind": "observed",
+                    "evidence_ids": ["ev"]}],
+        "gaps": [],
+    }])
+    repairer = ModelRepairer(stub, provider="stub", model_name="stub-model")
+    task = TaskSpec(goal="record", mode="quick", deliverable="text")
+    draft = DraftReport(sections=["Record"], claims=[
+        Claim(text="Boston won 62 games.", kind="observed", evidence_ids=["ev"])])
+    report = VerificationReport(status="repair", repair_instructions=[
+        "Repair claim 0: uncited numeral 62"])
+    evidence = EvidenceEnvelope(
+        evidence_id="ev", capability="standings", source="fixture",
+        observed_at=datetime.now(UTC), rows={"team": "Boston", "wins": 61},
+        execution_arguments={"season": "2025-26", "team_id": "1610612738"})
+    frozen = freeze_evidence_map({"ev": evidence})
+
+    repaired = await repairer.repair(task, draft, frozen, report)
+
+    payload = stub.calls[0]["payload"]
+    assert set(payload) == {
+        "task", "draft", "verification", "admitted_evidence", "skills"}
+    assert payload["admitted_evidence"][0]["evidence_id"] == "ev"
+    assert "execution_arguments" not in payload["admitted_evidence"][0]
+    assert repaired.claims[0].text == "Boston won 61 games."
+
+@pytest.mark.anyio
+async def test_model_synthesizer_omits_execution_arguments_from_evidence_payload():
+    from v2.contracts import TaskSpec
+
+    stub = StubModel([{
+        "sections": ["Answer"],
+        "claims": [{"text": "Boston won 61 games.", "kind": "observed",
+                    "evidence_ids": ["ev"]}],
+    }])
+    synthesizer = ModelSynthesizer(
+        stub, provider="stub", model_name="stub-model")
+    task = TaskSpec(goal="record", mode="quick", deliverable="answer")
+    evidence = EvidenceEnvelope(
+        evidence_id="ev", capability="standings", source="fixture",
+        observed_at=datetime.now(UTC), rows={"team": "Boston", "wins": 61},
+        execution_arguments={"season": "2025-26", "team_id": "1610612738"})
+
+    draft = await synthesizer.synthesize(task, [evidence])
+
+    payload = stub.calls[0]["payload"]
+    assert payload["evidence"][0]["evidence_id"] == "ev"
+    assert "execution_arguments" not in payload["evidence"][0]
+    assert draft.claims[0].text == "Boston won 61 games."
+
+@pytest.mark.anyio
 async def test_intake_receives_bounded_followup_context_without_full_skill_bodies():
     from v2.contracts import ConversationTurn
 

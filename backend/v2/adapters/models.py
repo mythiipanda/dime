@@ -3321,6 +3321,11 @@ def _rank_binding_value(raw):
         return {"kind": "decimal", "value": str(raw)}
     return {"kind": "string", "value": str(raw)}
 
+def _model_evidence_dump(item) -> dict[str, Any]:
+    dumped = item.model_dump(mode="json")
+    dumped.pop("execution_arguments", None)
+    return dumped
+
 class ModelSynthesizer(ModelStage):
     prompt_name = "synthesizer"
     route = "synthesizer"
@@ -3337,10 +3342,7 @@ class ModelSynthesizer(ModelStage):
             return _validate_draft(canonical, evidence, task)
         payload = {
             "task": task.model_dump(mode="json"),
-            "evidence": [
-                item.model_dump(mode="json", exclude={"execution_arguments"})
-                for item in evidence
-            ],
+            "evidence": [_model_evidence_dump(item) for item in evidence],
             "skills": self._skills.activate(task.skills),
         }
         draft = await self._generate(payload)
@@ -3480,8 +3482,7 @@ class ModelRepairer(ModelStage):
             "verification": verification.model_dump(mode="json"),
             "skills": self._skills.activate(task.skills),
             "admitted_evidence": [
-                item.model_dump(mode="json", exclude={"execution_arguments"})
-                for item in evidence.values()
+                _model_evidence_dump(item) for item in evidence.values()
             ],
         }
         try:
