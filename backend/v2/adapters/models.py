@@ -815,6 +815,7 @@ _PROVIDER_ROUTE_PROMPT_NAMES = {
     "synthesizer": "synthesizer",
     "repair": "repair_answer",
     "semantic_verifier": "verifier",
+    "action_loop": "action_loop",
 }
 _PROVIDER_ROUTE_PROMPTS: dict[str, str] | None = None
 MODEL_ROUTES = frozenset(_PROVIDER_ROUTE_PROMPT_NAMES)

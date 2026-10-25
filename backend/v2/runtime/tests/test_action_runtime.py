@@ -24,7 +24,9 @@ class ScriptedModel:
 
     async def generate(self, *, schema, prompt, payload, envelope, decode=None):
         self.calls.append(payload)
-        return schema.model_validate(self.actions.pop(0))
+        value = self.actions.pop(0)
+        return schema.model_validate(
+            value if "step" in value else {"step": value})
 
 class StubIntake:
     def __init__(self, task):

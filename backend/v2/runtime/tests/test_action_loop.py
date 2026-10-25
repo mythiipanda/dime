@@ -27,7 +27,9 @@ class ScriptedModel:
         self.calls.append({"schema": schema, "payload": payload, "envelope": envelope})
         if self.cancel:
             raise asyncio.CancelledError()
-        return schema.model_validate(self.actions.pop(0))
+        value = self.actions.pop(0)
+        return schema.model_validate(
+            value if "step" in value else {"step": value})
 
 class PassSemantic:
     def __init__(self):
@@ -237,8 +239,10 @@ async def test_cancellation_closes_ledger_and_propagates():
 
 def test_action_union_rejects_mixed_shapes():
     with pytest.raises(ValidationError):
-        LoopAction.model_validate({"action": "tool", "capability": "standings",
-                                   "node_id": "facts", "draft": {}})
+        LoopAction.model_validate({"step": {
+            "action": "tool", "capability": "standings",
+            "node_id": "facts", "draft": {}}})
     with pytest.raises(ValidationError):
-        LoopAction.model_validate({"action": "answer", "capability": "standings",
-                                   "draft": {}})
+        LoopAction.model_validate({"step": {
+            "action": "answer", "capability": "standings",
+            "draft": {}}})

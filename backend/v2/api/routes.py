@@ -135,7 +135,7 @@ def runtime_asset_manifest() -> RuntimeAssetManifest:
     expected_routes = set(models._PROVIDER_ROUTE_PROMPT_NAMES)
     if set(prompts) != expected_routes or expected_routes != {
             "intake", "requirement_review", "planner", "synthesizer",
-            "repair", "semantic_verifier"}:
+            "repair", "semantic_verifier", "action_loop"}:
         raise RuntimeError("provider prompt registry is incomplete or has extra routes")
     for module in (__import__(__name__, fromlist=["x"]), models):
         path = Path(module.__file__).resolve()

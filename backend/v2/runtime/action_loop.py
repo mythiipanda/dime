@@ -6,9 +6,12 @@ from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import Annotated, Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, RootModel
+from pydantic import BaseModel, ConfigDict, Field
 
-from v2.adapters.models import StructuredModel, _model_evidence_dump, _validate_draft
+from v2.adapters.models import (
+    StructuredModel, _model_evidence_dump, _validate_draft,
+    provider_route_prompt,
+)
 from v2.contracts import (
     ConversationTurn, DraftReport, EvidenceEnvelope, Plan, PlanNode, TaskSpec,
     VerificationReport, VerificationStatus,
@@ -21,12 +24,6 @@ from v2.runtime.ledger import LedgerKind, RequestEnvelope, RunLedger
 from v2.runtime.loop import close_failed, publish_result
 from v2.runtime.models import ExecutionResult, RuntimeResult
 from v2.runtime.verifier import merge_verification_reports
-
-ACTION_LOOP_PROMPT = (
-    "Return exactly one action. Use action=tool to run one listed capability, "
-    "or action=answer with a cited DraftReport. Use only admitted evidence. "
-    "Answer only from the evidence you have actually received."
-)
 
 class _ActionBase(BaseModel):
     model_config = ConfigDict(extra="forbid")
@@ -43,8 +40,9 @@ class AnswerAction(_ActionBase):
 
 LoopActionPayload = Annotated[ToolAction | AnswerAction, Field(discriminator="action")]
 
-class LoopAction(RootModel[LoopActionPayload]):
-    pass
+class LoopAction(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    step: LoopActionPayload
 
 class TypedDefect(BaseModel):
     model_config = ConfigDict(extra="forbid")
@@ -108,6 +106,7 @@ class ActionLoop:
         self._provider = provider
         self._model_name = model_name
         self._planner_version = planner_version
+        self._prompt = provider_route_prompt("action_loop", "action_loop")
 
     def _payload(self, task, evidence, state):
         return {
@@ -255,20 +254,20 @@ class ActionLoop:
                     task, list(state.evidence_by_node.values()), state)
                 envelope = RequestEnvelope.freeze(
                     provider=self._provider, model=self._model_name,
-                    route="action_loop", prompt=ACTION_LOOP_PROMPT,
+                    route="action_loop", prompt=self._prompt,
                     context=payload, tool_schemas=LoopAction.model_json_schema(),
                     planner_version=self._planner_version,
                     output_strategy="prompted_json")
                 action = await self._within(
                     self._model.generate(
-                        schema=LoopAction, prompt=ACTION_LOOP_PROMPT,
+                        schema=LoopAction, prompt=self._prompt,
                         payload=payload, envelope=envelope),
                     deadline)
-                if isinstance(action.root, ToolAction):
-                    await self._run_tool(action.root, task, state, deadline)
+                if isinstance(action.step, ToolAction):
+                    await self._run_tool(action.step, task, state, deadline)
                     continue
                 return await self._run_answer(
-                    action.root, task, state, started, deadline)
+                    action.step, task, state, started, deadline)
             message = ("action budget exhausted" if not state.defects
                        else "; ".join(item.message for item in state.defects))
             state.last_draft = state.last_draft or DraftReport(
