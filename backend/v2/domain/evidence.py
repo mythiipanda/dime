@@ -48,7 +48,8 @@ def turns_tokens(turns: Iterable[ConversationTurn]) -> int:
     return sum(count_tokens(turn.content) for turn in turns)
 
 def envelope_tokens(envelope: EvidenceEnvelope) -> int:
-    return count_tokens(envelope.model_dump_json())
+    return count_tokens(envelope.model_dump_json(
+        exclude={"execution_arguments"}))
 
 def resolve_selector(rows: Any, selector: str) -> Any:
     if not isinstance(selector, str) or not selector:

@@ -371,7 +371,8 @@ async def test_final_carry_preserves_admitted_citation_with_executed_scope(
         "as_of": AS_OF.isoformat(), "live_sources": []}
     assert citation["window_start"] is None
     assert citation["window_end"] is None
-    assert citation["node_arguments"] == scope
+    assert citation["executed_arguments"] is None
+    assert citation["planned_arguments"] == scope
     assert {item["output_id"] for item in citation["outputs"]} == {
         "PLAYER_NAME", "TOTAL_ASSISTS", "GAMES_PLAYED", "ASSISTS_PER_GAME"}
     assert citation["calculations"] == []
@@ -466,6 +467,8 @@ def test_citation_traces_derived_output_to_operand_evidence():
     citation = citations[0]
     assert citation["evidence_id"] == envelope.evidence_id
     assert citation["node_id"] == "calc_node"
+    assert citation["executed_arguments"] is None
+    assert citation["planned_arguments"] == {"season": SEASON}
     assert citation["outputs"] == []
     assert [item["input_path"] for item in citation["calculations"]] == [
         "rows[0].A", "rows[0].B"]
@@ -487,6 +490,7 @@ def test_sql_exec_citation_preserves_exact_sql_without_inventing_table():
         source="v1:sql_exec:warehouse",
         observed_at=datetime(2026, 9, 8, 12, tzinfo=UTC),
         season="2025-26", rows=[{"TEAM": "BOS", "EFG_PCT": 0.5}],
+        execution_arguments={"season": "2025-26", "sql": sql},
         source_identity={"kind": "warehouse", "warehouse_id": "frozen-eval",
                          "sha256": "a" * 64})
     binding = EvidenceOutputBinding(
@@ -504,14 +508,16 @@ def test_sql_exec_citation_preserves_exact_sql_without_inventing_table():
         claims=[verified], evidence=[envelope],
         evidence_by_node={"sql": envelope},
         nodes=[PlanNode(id="sql", description="sql", capability_hints=["sql_exec"],
-                        arguments={"season": "2025-26", "sql": sql})])
+                        arguments={"season": "2024-25", "sql": "planned stale"})])
 
     citations = _public_citations(result)
     assert len(citations) == 1
     citation = citations[0]
     assert citation["table"] is None
     assert citation["source"] == "v1:sql_exec:warehouse"
-    assert citation["node_arguments"] == {"season": "2025-26", "sql": sql}
+    assert citation["executed_arguments"] == {"season": "2025-26", "sql": sql}
+    assert citation["planned_arguments"] == {
+        "season": "2024-25", "sql": "planned stale"}
     assert citation["outputs"][0]["selector"] == "rows[0].EFG_PCT"
 
 def test_citation_does_not_invent_missing_calculation_operand_lineage():

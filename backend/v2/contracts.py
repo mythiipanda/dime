@@ -589,6 +589,8 @@ class EvidenceEnvelope(BaseModel):
     metric_definitions: dict[str, str] = Field(default_factory=dict, max_length=256)
     qualification: str | None = Field(default=None, max_length=4000)
     coverage: str | None = Field(default=None, max_length=4000)
+    execution_arguments: dict[str, Any] | None = Field(
+        default=None, exclude_if=lambda value: value is None)
     lineage: list[str] = Field(default_factory=list, max_length=32)
     source_identity: SourceIdentity | None = None
     live_fallback: LiveFallback | None = None

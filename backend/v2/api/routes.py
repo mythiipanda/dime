@@ -1554,7 +1554,10 @@ def _citation_entry(grouped, nodes, claim_index, source, envelope, node_id):
                        if envelope.window_end is not None else None),
         "entities": [item.model_dump(mode="json")
                      for item in envelope.entities],
-        "node_arguments": dict(node.arguments) if node is not None else {},
+        "executed_arguments": (
+            dict(envelope.execution_arguments)
+            if envelope.execution_arguments is not None else None),
+        "planned_arguments": dict(node.arguments) if node is not None else None,
         "outputs": [],
         "calculations": [],
     }

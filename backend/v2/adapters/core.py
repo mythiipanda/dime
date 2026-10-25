@@ -459,6 +459,7 @@ class ToolCapability:
         result = await acall_capability(self.name, arguments, tools=self._tools)
         return result.model_copy(update={
             "lineage": [item.evidence_id for item in evidence],
+            "execution_arguments": dict(arguments),
         })
 
 def _apply_season_argument(name: str, task: Any, arguments: dict[str, Any]) -> None:

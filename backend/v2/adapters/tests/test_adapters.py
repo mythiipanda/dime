@@ -473,6 +473,75 @@ async def test_tool_capability_executes_through_runtime_protocol():
     assert result.evidence[0].capability == "standings"
     assert result.evidence[0].rows == [{"team": "Boston", "wins": 61}]
 
+@pytest.mark.anyio
+async def test_tool_capability_records_actual_executed_arguments_not_planned():
+    from datetime import UTC, datetime
+    from pydantic import BaseModel
+    from v2.adapters import ToolCapability
+    from v2.contracts import (
+        EntityRef, EvidenceEnvelope, PeriodScope, PeriodScopeSource, PlanNode,
+        RunMode, SeasonRef, TaskSpec)
+
+    class Args(BaseModel):
+        period_scope: str
+        season: str
+        team_id: str
+
+    class TeamSummaryTool:
+        name = "get_team_season_summary"
+        args_schema = Args
+
+        def __init__(self):
+            self.arguments = None
+
+        async def ainvoke(self, arguments):
+            self.arguments = dict(arguments)
+            return {
+                "ok": True,
+                "rows": [{"GAMES": 82}],
+                "meta": {"source": "fixture", "season": arguments["season"]},
+            }
+
+    resolver = EvidenceEnvelope(
+        evidence_id="entity_resolution:fixture",
+        capability="entity_resolution",
+        source="fixture",
+        observed_at=datetime(2026, 10, 25, tzinfo=UTC),
+        season="2024-25",
+        entities=[EntityRef(
+            id="1610612738", type="team", display_name="Boston Celtics")],
+        rows={"team": "Boston Celtics"})
+    tool = TeamSummaryTool()
+    capability = ToolCapability(
+        "team_season_summary", tools={"get_team_season_summary": tool})
+    task = TaskSpec(
+        goal="Boston record", mode=RunMode.QUICK, deliverable="record",
+        season=SeasonRef(value="2024-25", source="resolved", confidence=1),
+        period_scope=PeriodScope.REGULAR_SEASON,
+        period_scope_source=PeriodScopeSource.EXPLICIT_REQUEST)
+    planned = {
+        "period_scope": "playoffs",
+        "season": "2023-24",
+        "team_id": "stale-team",
+    }
+    node = PlanNode(
+        id="summary", description="summary",
+        capability_hints=["team_season_summary"], arguments=dict(planned))
+
+    envelope = await capability.execute(node, task, [resolver])
+
+    expected = {
+        "period_scope": "regular_season",
+        "season": "2024-25",
+        "team_id": "1610612738",
+    }
+    assert tool.arguments == expected
+    assert envelope.execution_arguments == expected
+    assert envelope.execution_arguments is not tool.arguments
+    assert envelope.model_dump()["execution_arguments"] == expected
+    assert "execution_arguments" not in resolver.model_dump()
+    assert node.arguments == planned
+
 def test_leader_envelope_filters_units_and_declares_rank_coverage():
     env = call_capability("qualified_leaders", {"season": "2025-26"},
                           tools={"get_leaders": FakeTool(LEADERS_PAYLOAD)})

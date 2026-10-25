@@ -3337,7 +3337,10 @@ class ModelSynthesizer(ModelStage):
             return _validate_draft(canonical, evidence, task)
         payload = {
             "task": task.model_dump(mode="json"),
-            "evidence": [item.model_dump(mode="json") for item in evidence],
+            "evidence": [
+                item.model_dump(mode="json", exclude={"execution_arguments"})
+                for item in evidence
+            ],
             "skills": self._skills.activate(task.skills),
         }
         draft = await self._generate(payload)
@@ -3477,7 +3480,8 @@ class ModelRepairer(ModelStage):
             "verification": verification.model_dump(mode="json"),
             "skills": self._skills.activate(task.skills),
             "admitted_evidence": [
-                item.model_dump(mode="json") for item in evidence.values()
+                item.model_dump(mode="json", exclude={"execution_arguments"})
+                for item in evidence.values()
             ],
         }
         try:
