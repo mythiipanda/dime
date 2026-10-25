@@ -2100,6 +2100,58 @@ def test_dependent_player_tool_gets_entity_resolution_parent_when_provider_omits
     assert normalized.nodes[0].arguments == {"query": "Tim Hardaway Jr."}
     assert normalized.nodes[1].depends_on == ["resolve_player"]
 
+def _typed_team_catalog():
+    return {
+        "entity_resolution": {"arguments": {"type": "object", "properties": {
+            "query": {"type": "string"}}, "required": ["query"]}},
+        "team_season_summary": {"arguments": {"type": "object", "properties": {
+            "team_id": {"type": "integer"}, "season": {"type": "string"},
+            "period_scope": {"type": "string"}}},
+            "dependent_entity_arguments": {"team_id": "team"}},
+    }
+
+def test_dependent_team_tool_with_integer_identity_resolves_query_as_string():
+    from v2.contracts import Plan
+    planner = ModelPlanner(StubModel([]), provider="stub", model_name="stub",
+                           capability_catalog=_typed_team_catalog())
+    task = TaskSpec(goal="summary", mode="quick", deliverable="answer")
+    plan = Plan.model_validate({"nodes": [{
+        "id": "summary", "description": "summary",
+        "capability_hints": ["team_season_summary"],
+        "arguments": {"team_id": 1610612738, "season": "2024-25",
+                      "period_scope": "regular_season"},
+    }]})
+    normalized = planner._normalize_plan(task, plan)
+    assert [node.id for node in normalized.nodes] == ["resolve_team", "summary"]
+    assert normalized.nodes[0].arguments == {"query": "1610612738"}
+    assert normalized.nodes[1].depends_on == ["resolve_team"]
+    assert normalized.nodes[1].arguments["team_id"] == 1610612738
+
+@pytest.mark.anyio
+async def test_planner_stringifies_stripped_entity_resolver_query():
+    task = TaskSpec(
+        goal="Report the Boston Celtics 2024-25 regular-season summary",
+        mode="quick", deliverable="summary",
+        required_evidence=["team_season_summary"],
+        requirements=[{
+            "id": "celtics_2024_25_regular_season_summary",
+            "description": "summary", "capability_options": ["team_season_summary"],
+            "capability_arguments": {"season": "2024-25"}}])
+    wire = {"nodes": [{
+        "id": "celtics_2024_25_regular_season_summary", "description": "summary",
+        "capability_hints": ["team_season_summary"],
+        "covers_requirement_ids": ["celtics_2024_25_regular_season_summary"],
+        "arguments": {"team_id": 1610612738, "season": "2024-25",
+                      "period_scope": "regular_season"}}]}
+    result = await ModelPlanner(
+        StubModel([wire]), provider="stub", model_name="stub",
+        capability_catalog=_typed_team_catalog()).plan(task)
+    resolver = next(node for node in result.nodes
+                    if "entity_resolution" in node.capability_hints)
+    assert resolver.id == "resolve_team"
+    assert resolver.arguments == {"query": "1610612738"}
+    assert isinstance(resolver.arguments["query"], str)
+
 @pytest.mark.anyio
 async def test_team_rank_synthesis_is_deterministic_and_uses_requested_field_only():
     from v2.adapters.models import ModelSynthesizer
@@ -3882,3 +3934,66 @@ async def test_wire_projection_keeps_empty_dependent_key_off_untouched_input():
         "web_search": {"description": "search", "arguments": {}},
     }
     assert catalog["standings"]["dependent_entity_arguments"] == {}
+
+def _stub_nba_teams(monkeypatch, rows):
+    from nba_api.stats.static import teams
+    monkeypatch.setattr(
+        teams, "find_teams_by_full_name",
+        lambda name: [row for row in rows
+                      if row["full_name"].lower() == name.strip().lower()])
+    monkeypatch.setattr(teams, "get_teams", lambda: list(rows))
+
+def _celtics_task():
+    from v2.contracts import EntityRef
+    return TaskSpec(
+        goal="summary", mode="quick", deliverable="answer",
+        entities=[EntityRef(id="1610612738", type="team",
+                           display_name="Boston Celtics")])
+
+def test_numeric_identity_matching_task_entity_resolves_by_display_name(
+        monkeypatch):
+    from shared.tools.shared import resolve_entity
+    from v2.contracts import Plan
+    planner = ModelPlanner(StubModel([]), provider="stub", model_name="stub",
+                           capability_catalog=_typed_team_catalog())
+    plan = Plan.model_validate({"nodes": [{
+        "id": "summary", "description": "summary",
+        "capability_hints": ["team_season_summary"],
+        "arguments": {"team_id": 1610612738, "season": "2024-25",
+                      "period_scope": "regular_season"},
+    }]})
+    normalized = planner._normalize_plan(_celtics_task(), plan)
+    assert [node.id for node in normalized.nodes] == ["resolve_team", "summary"]
+    assert normalized.nodes[0].arguments == {"query": "Boston Celtics"}
+    assert normalized.nodes[1].arguments["team_id"] == 1610612738
+    _stub_nba_teams(monkeypatch, [{"id": 1610612738,
+                                   "full_name": "Boston Celtics",
+                                   "nickname": "Celtics",
+                                   "abbreviation": "BOS"}])
+    resolved = resolve_entity.invoke(
+        {"query": normalized.nodes[0].arguments["query"]})
+    assert resolved["ok"] is True
+    assert [row["id"] for row in resolved["rows"]["teams"]] == [1610612738]
+
+def test_unmatched_numeric_identity_keeps_numeric_query_without_substitution(
+        monkeypatch):
+    from shared.tools.shared import resolve_entity
+    from v2.contracts import Plan
+    planner = ModelPlanner(StubModel([]), provider="stub", model_name="stub",
+                           capability_catalog=_typed_team_catalog())
+    plan = Plan.model_validate({"nodes": [{
+        "id": "summary", "description": "summary",
+        "capability_hints": ["team_season_summary"],
+        "arguments": {"team_id": 999999999, "season": "2024-25",
+                      "period_scope": "regular_season"},
+    }]})
+    normalized = planner._normalize_plan(_celtics_task(), plan)
+    assert normalized.nodes[0].arguments == {"query": "999999999"}
+    _stub_nba_teams(monkeypatch, [{"id": 1610612738,
+                                   "full_name": "Boston Celtics",
+                                   "nickname": "Celtics",
+                                   "abbreviation": "BOS"}])
+    resolved = resolve_entity.invoke(
+        {"query": normalized.nodes[0].arguments["query"]})
+    assert resolved["ok"] is True
+    assert resolved["rows"]["teams"] == []

@@ -2031,6 +2031,20 @@ class ModelPlanner(ModelStage):
                     return str(candidate)
         return None
 
+    def _resolver_query(self, entity_type, value, task):
+        if isinstance(value, list):
+            return value
+        text = value if isinstance(value, str) else str(value)
+        token = text.strip()
+        if token.isdigit() and task is not None:
+            for entity in task.entities:
+                if entity.type != entity_type or entity.id != token:
+                    continue
+                name = entity.display_name.strip()
+                if name:
+                    return name
+        return text
+
     async def _generate_plan(self, payload, task: TaskSpec | None = None):
         wire = await self._generate(payload, decode=self._collect_planner_drops)
         requirements = {item.id: item for item in task.requirements} if task is not None else {}
@@ -2090,12 +2104,13 @@ class ModelPlanner(ModelStage):
         depends_extra: dict[str, list[str]] = {}
         if "entity_resolution" not in self._catalog:
             return resolvers, depends_extra
-        self._resolvers_from_stripped(decoded, existing, resolver_for, depends_extra, resolvers)
+        self._resolvers_from_stripped(decoded, task, existing, resolver_for, depends_extra, resolvers)
         self._resolvers_from_sources(decoded, task, requirements, existing, resolver_for, depends_extra, resolvers)
         return resolvers, depends_extra
 
-    def _add_entity_resolver(self, entity_type, query, node_id, *, existing, resolver_for, depends_extra, resolvers, dedupe):
-        fold = (str(entity_type), str(query).strip().casefold())
+    def _add_entity_resolver(self, entity_type, query, node_id, *, task, existing, resolver_for, depends_extra, resolvers, dedupe):
+        text = self._resolver_query(entity_type, query, task)
+        fold = (str(entity_type), str(text).strip().casefold())
         resolver_id = resolver_for.get(fold)
         if resolver_id is None:
             base = f"resolve_{str(entity_type).replace('-', '_')}"
@@ -2110,7 +2125,7 @@ class ModelPlanner(ModelStage):
                 "id": resolver_id, "description": f"Resolve {entity_type} identity for dependent tools",
                 "depends_on": [], "capability_hints": ["entity_resolution"],
                 "covers_requirement_ids": [],
-                "arguments": {"query": query}, "max_attempts": 1,
+                "arguments": {"query": text}, "max_attempts": 1,
                 "status": "pending"})
         if dedupe:
             if resolver_id not in depends_extra.get(node_id, []):
@@ -2119,7 +2134,7 @@ class ModelPlanner(ModelStage):
             depends_extra.setdefault(node_id, []).append(resolver_id)
         return resolver_id
 
-    def _resolvers_from_stripped(self, decoded, existing, resolver_for, depends_extra, resolvers):
+    def _resolvers_from_stripped(self, decoded, task, existing, resolver_for, depends_extra, resolvers):
         for node, _, stripped in decoded:
             entry = self._catalog.get(node.capability)
             declarations = entry.get("dependent_entity_arguments", {}) if isinstance(entry, Mapping) else {}
@@ -2129,7 +2144,7 @@ class ModelPlanner(ModelStage):
                 entity_type = declarations.get(key)
                 if not isinstance(entity_type, str) or not entity_type:
                     continue
-                self._add_entity_resolver(entity_type, value, node.id, existing=existing,
+                self._add_entity_resolver(entity_type, value, node.id, task=task, existing=existing,
                                           resolver_for=resolver_for, depends_extra=depends_extra,
                                           resolvers=resolvers, dedupe=False)
 
@@ -2148,8 +2163,9 @@ class ModelPlanner(ModelStage):
                 if candidate is None or not candidate.strip():
                     continue
                 values[key] = candidate
-                self._add_entity_resolver(entity_type, candidate, node.id, existing=existing,
-                                          resolver_for=resolver_for, depends_extra=depends_extra,
+                self._add_entity_resolver(entity_type, candidate, node.id, task=task,
+                                          existing=existing, resolver_for=resolver_for,
+                                          depends_extra=depends_extra,
                                           resolvers=resolvers, dedupe=True)
 
     def __init__(self, *args: Any, capability_catalog: Mapping[str, str], **kwargs: Any) -> None:
@@ -2273,7 +2289,8 @@ class ModelPlanner(ModelStage):
                     continue
             if self._node_has_resolver(plan, existing, dependencies):
                 continue
-            key = (str(entity_type), str(value).strip().casefold())
+            text = self._resolver_query(entity_type, value, task)
+            key = (str(entity_type), str(text).strip().casefold())
             resolver_id = resolver_for.get(key)
             if resolver_id is None:
                 base = f"resolve_{str(entity_type).replace('-', '_')}"
@@ -2288,7 +2305,7 @@ class ModelPlanner(ModelStage):
                     id=resolver_id,
                     description=f"Resolve {entity_type} identity for dependent tools",
                     capability_hints=["entity_resolution"],
-                    arguments={"query": value},
+                    arguments={"query": text},
                 ))
             dependencies.append(resolver_id)
         update: dict[str, Any] = {
