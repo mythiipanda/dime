@@ -771,8 +771,12 @@ async def test_synthesizer_request_carries_evidence_limits_and_prompt_guidance()
         evidence_id="ev", capability="standings", source="fixture",
         observed_at=datetime(2026, 9, 15, tzinfo=UTC),
         entities=[EntityRef(id="BOS", type="team", display_name="Boston Celtics")],
-        rows={"GAMES": 82, "WINS": 61}, units={"GAMES": "count"},
-        metric_definitions={"GAMES": "Count of available team-game rows."},
+        rows={"GAMES": 82, "WINS": 61, "WIN_PCT": 0.744},
+        units={"GAMES": "count", "WIN_PCT": "fraction_0_1"},
+        metric_definitions={
+            "GAMES": "Count of available team-game rows.",
+            "WIN_PCT": "Fraction of games won on a 0-1 scale.",
+        },
         qualification="regular_season",
         coverage="Available rows only; season completeness is unverified.",
         warnings=["Values describe available warehouse rows only."],
@@ -784,7 +788,10 @@ async def test_synthesizer_request_carries_evidence_limits_and_prompt_guidance()
     assert call["envelope"].route == "synthesizer"
     assert "state that limit in the claim's own prose" in call["prompt"]
     sent = call["payload"]["evidence"][0]
-    assert sent["rows"] == {"GAMES": 82, "WINS": 61}
+    assert sent["rows"] == {"GAMES": 82, "WINS": 61, "WIN_PCT": 0.744}
+    assert sent["units"] == {"GAMES": "count", "WIN_PCT": "fraction_0_1"}
+    assert sent["metric_definitions"]["WIN_PCT"] == (
+        "Fraction of games won on a 0-1 scale.")
     assert sent["qualification"] == "regular_season"
     assert sent["coverage"] == "Available rows only; season completeness is unverified."
     assert sent["warnings"] == ["Values describe available warehouse rows only."]
