@@ -17,6 +17,8 @@ from pydantic_ai.models import OutputObjectDefinition
 from pydantic_ai.providers.openai import OpenAIProvider
 from v2.adapters.models import (
     DimeOpenAIChatModel,
+    ModelRequestPolicy,
+    ProviderRequestLimitExceeded,
     ProviderStructuredModel,
     ReasoningContentFallbackClient,
     _promote_reasoning_content,
@@ -175,15 +177,17 @@ class LadderEndpoint:
     def rungs(self) -> list[OutputStrategy]:
         return [rung_of(body) for body in self.sent]
 
-def _stage_model(endpoint: LadderEndpoint,
-                 capabilities) -> ProviderStructuredModel:
+def _stage_model(endpoint: LadderEndpoint, capabilities,
+                 request_policy: ModelRequestPolicy | None = None
+                 ) -> ProviderStructuredModel:
     client = httpx.AsyncClient(transport=endpoint.transport())
+    model = ProviderStructuredModel(
+        "inception", "probe-model", request_policy=request_policy)
     chat_model = DimeOpenAIChatModel(
         "probe-model",
         provider=OpenAIProvider(openai_client=ReasoningContentFallbackClient(
             api_key="placeholder", max_retries=0, http_client=client)),
-        capabilities=capabilities)
-    model = ProviderStructuredModel("inception", "probe-model")
+        capabilities=capabilities, request_budget=model._request_budget)
     model._models = lambda: [("inception", chat_model)]
     return model
 
@@ -214,6 +218,23 @@ def _strict_grammar_accepts(schema) -> None:
 
 def test_ladder_picks_the_highest_strategy_an_endpoint_supports():
     assert resolve_strategy(_capabilities()) is OutputStrategy.STRICT_SCHEMA
+
+@pytest.mark.parametrize("updates", [
+    {"max_output_tokens": 0},
+    {"agent_retries": True},
+    {"max_strategy_attempts": len(STRATEGY_LADDER) + 1},
+    {"max_provider_requests": 0},
+])
+def test_request_policy_rejects_invalid_bounds(updates):
+    values = {
+        "max_output_tokens": 64,
+        "agent_retries": 0,
+        "max_strategy_attempts": 1,
+        "max_provider_requests": 2,
+    }
+    values.update(updates)
+    with pytest.raises(ValidationError):
+        ModelRequestPolicy(**values)
 
 def test_ladder_falls_to_tool_calling_when_strict_schemas_are_refused():
     assert resolve_strategy(_capabilities(strict=False)) is OutputStrategy.TOOL_CALL
@@ -546,6 +567,61 @@ async def test_a_transport_failure_on_the_strict_rung_descends(monkeypatch):
     assert [(failure["output_strategy"], failure["message_class"])
             for failure in model.last_failures] == [
                 ("strict_schema", "server_error")]
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("anyio_backend", ["asyncio"])
+async def test_opt_in_request_policy_pins_provider_request_and_disables_retries(
+        monkeypatch):
+    endpoint = LadderEndpoint(strict="server_error")
+    model = _stage_model(
+        endpoint, _capabilities(),
+        ModelRequestPolicy(
+            max_output_tokens=47, agent_retries=0,
+            max_strategy_attempts=1, max_provider_requests=3))
+    original_agent = Agent
+    retry_values = []
+
+    def capture_agent(*args, **kwargs):
+        retry_values.append(kwargs["retries"])
+        return original_agent(*args, **kwargs)
+
+    monkeypatch.setattr("v2.adapters.models.Agent", capture_agent)
+    with pytest.raises(RuntimeError, match="all structured-output providers failed"):
+        await model.generate(
+            schema=Ping, prompt="p", payload={}, envelope=_envelope())
+
+    assert retry_values == [0]
+    assert len(endpoint.sent) == 1
+    request = endpoint.sent[0]
+    assert request["model"] == "probe-model"
+    assert request.get("max_completion_tokens", request.get("max_tokens")) == 47
+    assert endpoint.rungs == [OutputStrategy.STRICT_SCHEMA]
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("anyio_backend", ["asyncio"])
+async def test_request_budget_counts_failed_attempts_across_stages_and_rungs(
+        monkeypatch):
+    await _no_backoff(monkeypatch)
+    endpoint = LadderEndpoint(strict="server_error")
+    model = _stage_model(
+        endpoint, _capabilities(),
+        ModelRequestPolicy(
+            max_output_tokens=31, agent_retries=0,
+            max_strategy_attempts=len(STRATEGY_LADDER),
+            max_provider_requests=1))
+
+    with pytest.raises(ProviderRequestLimitExceeded, match="limit of 1 reached"):
+        await model.generate(
+            schema=Ping, prompt="p", payload={}, envelope=_envelope("intake"))
+    assert [(failure["output_strategy"], failure["message_class"])
+            for failure in model.last_failures] == [
+                ("strict_schema", "server_error")]
+    with pytest.raises(ProviderRequestLimitExceeded, match="limit of 1 reached"):
+        await model.generate(
+            schema=Ping, prompt="p", payload={},
+            envelope=_envelope("synthesizer"))
+
+    assert endpoint.rungs == [OutputStrategy.STRICT_SCHEMA]
 
 @pytest.mark.anyio
 @pytest.mark.parametrize("anyio_backend", ["asyncio"])

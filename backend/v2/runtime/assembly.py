@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import httpx
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 from pathlib import Path
 
 from shared.providers import ProviderName
@@ -18,11 +18,16 @@ from v2.adapters import (
     WebFetchCapability,
     WebSearchCapability,
 )
+from v2.adapters.models import ModelRequestPolicy
 from v2.contracts import DraftReport, VerificationReport
 from v2.runtime import FileLedger, PlanExecutor, RecordedCapability, RunLedger, Runtime
 from v2.runtime.action_loop import ActionRuntime
 from v2.runtime.checkpoints import FileCheckpointStore
-from v2.runtime.policy import ExecutionMode, ExecutionPolicy
+from v2.runtime.policy import (
+    ExecutionMode,
+    ExecutionPolicy,
+    capability_universe,
+)
 from v2.runtime.verifier import verify_mechanical
 from v2.adapters.web import WebFetchRequest, WebSearchRequest
 from v2.adapters.capabilities import CAPABILITY_DESCRIPTIONS
@@ -140,6 +145,8 @@ def build_runtime(
     context_token_budget: int | None = None,
     action_loop: bool = False,
     http_client: httpx.AsyncClient | None = None,
+    model_request_policy: ModelRequestPolicy | None = None,
+    capability_allowlist: Iterable[str] | None = None,
 ) -> tuple[Runtime | ActionRuntime, RunLedger | FileLedger]:
     if not run_id or any(
         char not in "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_"
@@ -148,6 +155,24 @@ def build_runtime(
         raise ValueError("run_id may contain only letters, numbers, '-' and '_'")
     if policy is not None and ledger_dir is not None:
         raise ValueError("ledger_dir must be configured through policy when policy is provided")
+    model_request_policy = (
+        None if model_request_policy is None
+        else ModelRequestPolicy.model_validate(model_request_policy))
+    available_capabilities = capability_universe()
+    if capability_allowlist is None:
+        selected_capabilities = available_capabilities
+    else:
+        if isinstance(capability_allowlist, str):
+            raise TypeError("capability_allowlist must be an iterable of names")
+        selected_capabilities = frozenset(capability_allowlist)
+        if any(not isinstance(name, str) or not name.strip()
+               for name in selected_capabilities):
+            raise ValueError("capability_allowlist names must be non-empty strings")
+        unknown_capabilities = selected_capabilities - available_capabilities
+        if unknown_capabilities:
+            raise ValueError(
+                "capability_allowlist contains unknown names: "
+                f"{sorted(unknown_capabilities)}")
     policy = (ExecutionPolicy.live(ledger_dir=ledger_dir) if policy is None
               else ExecutionPolicy.model_validate(policy.model_dump()))
     if policy.mode in {ExecutionMode.REPLAY, ExecutionMode.EVAL}:
@@ -159,19 +184,23 @@ def build_runtime(
     skills = SkillLibrary()
     model = RecordedStructuredModel(
         ProviderStructuredModel(
-            provider, model_name, http_client=http_client),
+            provider, model_name, http_client=http_client,
+            request_policy=model_request_policy),
         ledger, turn_id=run_id)
-    catalog = capability_catalog()
+    catalog = {
+        name: entry for name, entry in capability_catalog().items()
+        if name in selected_capabilities
+    }
     capabilities = {
         name: RecordedCapability(ToolCapability(name), ledger, turn_id=run_id, activity=activity)
-        for name in CAPABILITIES
+        for name in CAPABILITIES if name in selected_capabilities
     }
-    capabilities.update({
-        "web_search": RecordedCapability(
-            WebSearchCapability(), ledger, turn_id=run_id, activity=activity),
-        "web_fetch": RecordedCapability(
-            WebFetchCapability(), ledger, turn_id=run_id, activity=activity),
-    })
+    if "web_search" in selected_capabilities:
+        capabilities["web_search"] = RecordedCapability(
+            WebSearchCapability(), ledger, turn_id=run_id, activity=activity)
+    if "web_fetch" in selected_capabilities:
+        capabilities["web_fetch"] = RecordedCapability(
+            WebFetchCapability(), ledger, turn_id=run_id, activity=activity)
     intake = ModelIntake(
         model, provider=provider, model_name=model_name,
         capability_catalog=catalog, skill_library=skills,
