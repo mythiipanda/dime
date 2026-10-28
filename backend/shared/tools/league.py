@@ -4143,7 +4143,7 @@ def _get_warehouse_schema() -> tuple[list[str], dict[str, dict[str, dict]]]:
                 {k: dict(v) for k, v in
                  _schema_cache["cols"].items()})
     _schema_cache_stats["misses"] += 1
-    con = _store.connect()
+    con = _store.connect(read_only=True)
     try:
         tables = {r[0] for r in con.execute("SHOW TABLES").fetchall()}
         present = [t for t in _SQL_TABLES if t in tables]

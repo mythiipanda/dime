@@ -383,6 +383,41 @@ def test_declared_schema_uses_table_aware_per_game_units(
             "SILVER_LEADERS_PTS", "ast")
 
 
+def test_declared_schema_reads_without_requesting_a_writer(
+        unit_synthetic_warehouse, monkeypatch) -> None:
+    from shared import store
+    from shared.tools.league import _column_semantics
+    from v2.adapters.models import ModelIntake
+
+    real_connect_once = store._connect_once
+    requested_modes = []
+
+    def refuse_write_connection(read_only: bool):
+        requested_modes.append(read_only)
+        if not read_only:
+            raise store.WriteConflictError(store.DB_PATH)
+        return real_connect_once(read_only)
+
+    monkeypatch.setattr(store, "_connect_once", refuse_write_connection)
+    intake = ModelIntake(
+        object(), provider="test", model_name="test",
+        capability_catalog={"sql_exec": {"description": "SQL evidence"}})
+    declared = intake._catalog_with_declared_schemas()[
+        "sql_exec"]["declared_schema"]["tables"]
+
+    assert declared["silver_hist_player_seasons"]["PTS"] == {
+        "type": "DOUBLE",
+        "unit": "points_per_game",
+        "note": _column_semantics("silver_hist_player_seasons", "PTS")[1],
+    }
+    assert "per_mode='pergame'" in declared[
+        "silver_hist_player_seasons"]["PTS"]["note"]
+    assert "not cumulative totals" in declared[
+        "silver_hist_player_seasons"]["PTS"]["note"]
+    assert declared["silver_leaders_pts"]["PTS"]["unit"] == "total_points"
+    assert requested_modes == [True]
+
+
 def test_sql_exec_preserves_hist_per_game_values_and_query(
         unit_synthetic_warehouse) -> None:
     sql = (
