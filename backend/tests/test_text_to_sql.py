@@ -33,6 +33,7 @@ def test_schema_description_truncates_wide_tables():
     assert len(parts) == 40
     assert "C39" in out
     assert "C59" not in out
+    assert "schema truncated: showing 40 of 60 columns; 20 omitted" in out
 
 def test_steals_leader_matches_warehouse():
     import asyncio

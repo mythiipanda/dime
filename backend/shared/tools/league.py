@@ -3949,8 +3949,67 @@ def get_briefing(game_date: str = "", season: str | None = None) -> dict[str, An
             "meta": gmeta}
 
 def _describe_warehouse_schema(cols: dict[str, dict]) -> str:
-    return "\n".join(
-        f"{table}: {', '.join(columns)}" for table, columns in cols.items())
+    display, budget = _schema_for_display(cols)
+    lines = []
+    truncated = budget["truncated_tables"]
+    for table, columns in display.items():
+        line = f"{table}: {', '.join(columns)}"
+        omitted = truncated.get(table)
+        if omitted:
+            line += (
+                f" (schema truncated: showing {omitted['shown_columns']} of "
+                f"{omitted['total_columns']} columns; "
+                f"{omitted['omitted_columns']} omitted)"
+            )
+        lines.append(line)
+    return "\n".join(lines)
+
+
+def _schema_for_display(
+        cols: dict[str, dict]
+        ) -> tuple[dict[str, dict], dict[str, Any]]:
+    from .season_semantics import annotate_schema
+
+    schema_cols = {
+        table: (columns if isinstance(columns, dict)
+                else {name: {} for name in columns})
+        for table, columns in cols.items()
+    }
+    annotated = annotate_schema({"tables": schema_cols})["tables"]
+    display: dict[str, dict] = {}
+    truncated_tables: dict[str, dict[str, int]] = {}
+    provenance = {name.lower() for name in store.PROVENANCE_COLS}
+    limit = _SCHEMA_DISPLAY_COLUMN_LIMIT
+    for table, columns in annotated.items():
+        names = list(columns)
+        preferred = []
+        for name, metadata in columns.items():
+            semantics = metadata.get("season_semantics", {})
+            if (name.lower() in provenance
+                    or (semantics.get("encoding") not in (None, "unknown")
+                        and semantics.get("source")
+                        != "no source-backed mapping")):
+                preferred.append(name)
+        selected = set(preferred[:limit])
+        for name in names:
+            if len(selected) >= limit:
+                break
+            selected.add(name)
+        display[table] = {
+            name: metadata for name, metadata in columns.items()
+            if name in selected
+        }
+        if len(names) > len(display[table]):
+            shown = len(display[table])
+            truncated_tables[table] = {
+                "total_columns": len(names),
+                "shown_columns": shown,
+                "omitted_columns": len(names) - shown,
+            }
+    return display, {
+        "max_columns_per_table": limit,
+        "truncated_tables": truncated_tables,
+    }
 
 _SQL_TABLES = [
     "silver_standings", "silver_playoffs", "silver_team_ratings",
@@ -3971,6 +4030,7 @@ RERUN_ROW_CAP = 25
 RERUN_TIMEOUT_S = 30
 
 _SCHEMA_TTL_S = 3600.0
+_SCHEMA_DISPLAY_COLUMN_LIMIT = 40
 _schema_cache: dict[str, object] = {"at": 0.0, "present": [], "cols": {}}
 _schema_cache_stats: dict[str, int] = {"hits": 0, "misses": 0}
 
@@ -4012,8 +4072,46 @@ _COLUMN_SUFFIXES = ("_PTS", "_REB", "_AST", "_STL", "_BLK", "_TOV", "_MIN")
 _PROVENANCE_PREFIXES = ("_PROV_",)
 
 
-def _column_semantics(name: str) -> tuple[str, str]:
+def _column_semantics(table: str, name: str) -> tuple[str, str]:
+    table_key = str(table or "").lower()
     upper = str(name or "").upper()
+    if table_key == "silver_leaders_pts":
+        cumulative_units = {
+            "PTS": ("total_points", "points"),
+            "REB": ("total_rebounds", "rebounds"),
+            "AST": ("total_assists", "assists"),
+        }
+        if upper in cumulative_units:
+            unit, stat = cumulative_units[upper]
+            note = (
+                f"cumulative season {stat}; scripts/seed.py loads this table "
+                "from nba_stats.leaders, whose LeagueLeaders endpoint defaults "
+                "per_mode48 to PerMode48.default='Totals'"
+            )
+            return unit, note
+    if table_key == "silver_hist_player_seasons":
+        per_game_units = {
+            "PTS": (
+                "points_per_game",
+                "per-game average; seed_player_season_stats.py stores "
+                "regular-season rows filtered to per_mode='pergame', not "
+                "cumulative totals",
+            ),
+            "REB": (
+                "rebounds_per_game",
+                "per-game average; seed_player_season_stats.py stores "
+                "regular-season rows filtered to per_mode='pergame', not "
+                "cumulative totals",
+            ),
+            "AST": (
+                "assists_per_game",
+                "per-game average; seed_player_season_stats.py stores "
+                "regular-season rows filtered to per_mode='pergame', not "
+                "cumulative totals",
+            ),
+        }
+        if upper in per_game_units:
+            return per_game_units[upper]
     if any(upper.startswith(prefix) for prefix in _PROVENANCE_PREFIXES):
         return ("provenance", "provenance column; never filter or group on it")
     if upper.startswith("_PROV") or upper in {"_SOURCE", "_FETCHED_AT", "_ENTITY"}:
@@ -4053,8 +4151,8 @@ def _get_warehouse_schema() -> tuple[list[str], dict[str, dict[str, dict]]]:
         for t in present:
             cols[t] = {}
             for row in con.execute(
-                    f"PRAGMA table_info({t})").fetchall()[:40]:
-                unit, note = _column_semantics(row[1])
+                    f"PRAGMA table_info({t})").fetchall():
+                unit, note = _column_semantics(t, row[1])
                 cols[t][row[1]] = {
                     "type": str(row[2]), "unit": unit, "note": note}
     finally:
