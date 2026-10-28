@@ -299,6 +299,41 @@ def _attribution(sql: object, tables: list[str]) -> dict[str, Any]:
     return result
 
 
+def _declared_column_semantics(
+    schema: Mapping[str, Any] | None,
+    attribution: Mapping[str, Any],
+) -> dict[str, dict[str, str]]:
+    """Carry source-backed units only for proven direct output columns."""
+    tables = (schema or {}).get("tables") or {}
+    lineage = attribution.get("columns") or {}
+    declared: dict[str, dict[str, str]] = {}
+    for item in lineage.values():
+        if not isinstance(item, Mapping) or not item.get("supported"):
+            continue
+        table = item.get("table")
+        column = item.get("column")
+        if not isinstance(table, str) or not isinstance(column, str):
+            continue
+        table_schema = next(
+            (value for name, value in tables.items()
+             if str(name).casefold() == table.casefold()), {})
+        metadata = next(
+            (value for name, value in table_schema.items()
+             if str(name).casefold() == column.casefold()), {})
+        if not isinstance(metadata, Mapping):
+            continue
+        unit = metadata.get("unit")
+        note = metadata.get("note")
+        semantics = {"table": table, "column": column}
+        if isinstance(unit, str) and unit.strip():
+            semantics["unit"] = unit
+        if isinstance(note, str) and note.strip():
+            semantics["note"] = note
+        if "unit" in semantics or "note" in semantics:
+            declared[column] = semantics
+    return declared
+
+
 def _schema_candidates(schema: Mapping[str, Any] | None,
                        tables: list[str]) -> dict[str, list[dict[str, Any]]]:
     candidates: dict[str, list[dict[str, Any]]] = {}
@@ -474,6 +509,7 @@ def annotate_result(
         "contradictions": [],
     }
     if not tables or not isinstance(rows, list):
+        output["declared_column_semantics"] = {}
         output["season_semantics"] = semantics
         return output
     candidates = _schema_candidates(schema, tables)
@@ -483,6 +519,8 @@ def annotate_result(
         if name.lower() in candidates or name.lower() in _SEASON_NAMES
     ]
     attribution = _attribution(result.get("sql"), tables)
+    output["declared_column_semantics"] = _declared_column_semantics(
+        schema, attribution)
     semantics["query_attribution"] = {
         key: attribution.get(key) for key in (
             "mode", "reason", "lineage_proven")

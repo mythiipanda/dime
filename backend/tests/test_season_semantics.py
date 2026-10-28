@@ -140,6 +140,9 @@ def unit_synthetic_warehouse(monkeypatch, tmp_path):
                 f"CREATE TABLE {table} (PLAYER_ID INTEGER, PTS INTEGER, "
                 "REB INTEGER, AST INTEGER)"
             )
+            con.execute(
+                f"INSERT INTO {table} VALUES (42, 71, 14, 25)"
+            )
     finally:
         con.close()
 
@@ -354,6 +357,8 @@ def test_declared_schema_uses_table_aware_per_game_units(
     for name in ("PTS", "REB", "AST"):
         assert "per_mode='pergame'" in hist[name]["note"]
         assert "not cumulative totals" in hist[name]["note"]
+    assert hist["gp"]["unit"] == "games_played"
+    assert "denominator" in hist["gp"]["note"]
     assert hist["player_id"]["unit"] == ""
     assert hist["player_id"]["type"] == "INTEGER"
 
@@ -418,6 +423,149 @@ def test_sql_exec_exposes_cumulative_values_without_rewriting_either_basis(
         "PLAYER_ID": 42, "GP": 6, "PTS": 71, "REB": 14, "AST": 25,
     }]
     assert hist["rows"][0]["PTS"] * hist["rows"][0]["gp"] != totals["rows"][0]["PTS"]
+
+
+def _execute_sql_capability(sql: str):
+    from v2.adapters.core import ToolCapability
+    from v2.contracts import PlanNode, RunMode, TaskSpec
+
+    capability = ToolCapability("sql_exec")
+    task = TaskSpec(
+        goal="Read the selected warehouse columns",
+        mode=RunMode.QUICK,
+        deliverable="Rows with declared source units",
+    )
+    node = PlanNode(
+        id="sql-evidence",
+        description="Read selected columns",
+        capability_hints=["sql_exec"],
+        arguments={"sql": sql},
+    )
+    return asyncio.run(capability.execute(node, task, []))
+
+
+def test_sql_capability_carries_proven_column_units_into_evidence(
+        unit_synthetic_warehouse) -> None:
+    hist_sql = (
+        "SELECT player_id, gp, PTS, REB, AST "
+        "FROM silver_hist_player_seasons WHERE player_id = 42"
+    )
+    total_sql = (
+        "SELECT PLAYER_ID, GP, PTS, REB, AST "
+        "FROM silver_leaders_pts WHERE PLAYER_ID = 42"
+    )
+    hist = _execute_sql_capability(hist_sql)
+    totals = _execute_sql_capability(total_sql)
+
+    assert hist.rows == [{
+        "player_id": 42, "gp": 6, "PTS": 11.8, "REB": 2.3, "AST": 4.1,
+    }]
+    assert hist.execution_arguments["sql"] == hist_sql
+    assert {name: hist.units[name] for name in ("PTS", "REB", "AST")} == {
+        "PTS": "points_per_game",
+        "REB": "rebounds_per_game",
+        "AST": "assists_per_game",
+    }
+    assert "per_mode='pergame'" in hist.metric_definitions["PTS"]
+    assert "not cumulative totals" in hist.metric_definitions["PTS"]
+
+    assert totals.rows == [{
+        "PLAYER_ID": 42, "GP": 6, "PTS": 71, "REB": 14, "AST": 25,
+    }]
+    assert totals.execution_arguments["sql"] == total_sql
+    assert {name: totals.units[name] for name in ("PTS", "REB", "AST")} == {
+        "PTS": "total_points",
+        "REB": "total_rebounds",
+        "AST": "total_assists",
+    }
+    assert "PerMode48.default='Totals'" in totals.metric_definitions["PTS"]
+
+
+def test_sql_capability_preserves_existing_per_game_fields_and_unmapped_leaders(
+        unit_synthetic_warehouse) -> None:
+    player = _execute_sql_capability(
+        "SELECT PPG, RPG, APG FROM silver_player_season WHERE PLAYER_ID = 42"
+    )
+    assert player.rows == [{"PPG": 11.8, "RPG": 2.3, "APG": 4.1}]
+    assert player.units == {
+        "PPG": "points_per_game",
+        "RPG": "rebounds_per_game",
+        "APG": "assists_per_game",
+    }
+
+    for table in ("silver_leaders_reb", "silver_leaders_ast"):
+        evidence = _execute_sql_capability(
+            f"SELECT PTS, REB, AST FROM {table} WHERE PLAYER_ID = 42"
+        )
+        assert evidence.rows == [{"PTS": 71, "REB": 14, "AST": 25}]
+        assert not {"PTS", "REB", "AST"}.intersection(evidence.units)
+        assert not {"PTS", "REB", "AST"}.intersection(
+            evidence.metric_definitions)
+
+
+def test_sql_capability_keeps_generic_aggregate_units(
+        unit_synthetic_warehouse) -> None:
+    evidence = _execute_sql_capability(
+        "SELECT COUNT(*) AS n FROM silver_hist_player_seasons"
+    )
+    assert evidence.rows == [{"n": 1}]
+    assert evidence.units == {"n": "count"}
+    assert "count" in evidence.metric_definitions["n"]
+
+
+def test_synthesizer_request_receives_sql_column_units(
+        unit_synthetic_warehouse) -> None:
+    from v2.adapters.models import ModelSynthesizer
+    from v2.contracts import DraftReport, RunMode, TaskSpec
+
+    class Capture:
+        payload = None
+
+        async def generate(self, **call):
+            self.payload = call["payload"]
+            return DraftReport(sections=[], claims=[], gaps=[])
+
+    evidence = _execute_sql_capability(
+        "SELECT PTS, REB, AST FROM silver_hist_player_seasons"
+    )
+    capture = Capture()
+    synthesizer = ModelSynthesizer(
+        capture, provider="fixture", model_name="capture")
+    task = TaskSpec(
+        goal="Describe the returned evidence",
+        mode=RunMode.QUICK,
+        deliverable="Evidence summary",
+    )
+    asyncio.run(synthesizer.synthesize(task, [evidence]))
+
+    sent_evidence = capture.payload["evidence"][0]
+    assert sent_evidence["units"] == {
+        "PTS": "points_per_game",
+        "REB": "rebounds_per_game",
+        "AST": "assists_per_game",
+    }
+    assert "per_mode='pergame'" in sent_evidence["metric_definitions"]["PTS"]
+
+
+@pytest.mark.parametrize("sql", [
+    "SELECT PTS AS player_points FROM silver_hist_player_seasons",
+    "SELECT PTS * 2 AS PTS FROM silver_hist_player_seasons",
+    "SELECT SUM(PTS) AS PTS FROM silver_hist_player_seasons",
+    "SELECT h.PTS FROM silver_hist_player_seasons h "
+    "JOIN silver_leaders_pts l USING (PLAYER_ID)",
+    "WITH rates AS (SELECT PTS FROM silver_hist_player_seasons) "
+    "SELECT PTS FROM rates",
+    "SELECT * FROM silver_hist_player_seasons",
+    "SELECT PTS, PTS FROM silver_hist_player_seasons",
+    "SELECT PTS FROM silver_hist_player_seasons "
+    "UNION ALL SELECT PTS FROM silver_leaders_pts",
+])
+def test_sql_capability_does_not_guess_units_for_unsupported_projections(
+        unit_synthetic_warehouse, sql: str) -> None:
+    evidence = _execute_sql_capability(sql)
+    assert not {"PTS", "PTS_1", "player_points"}.intersection(evidence.units)
+    assert not {"PTS", "PTS_1", "player_points"}.intersection(
+        evidence.metric_definitions)
 
 
 def test_actual_sql_exec_resolves_generic_off_by_one_shape_and_preserves_raw(
