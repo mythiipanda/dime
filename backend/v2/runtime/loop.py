@@ -261,6 +261,7 @@ class Runtime:
                     *draft.gaps,
                     *verification.missing_branches,
                     *verification.contradictions,
+                    *verification.repair_instructions,
                 ],
                 limit=128,
             )
@@ -592,12 +593,6 @@ class Runtime:
     async def _verify(self, task, draft, evidence) -> VerificationReport:
         expected = list(range(len(draft.claims)))
         mechanical = await self._mechanical_verdict(task, draft, evidence, expected)
-        if mechanical.status == VerificationStatus.REPAIR:
-            return mechanical.model_copy(update={
-                "missing_branches": _unique(
-                    [*mechanical.missing_branches, JUDGE_UNAVAILABLE_BRANCH],
-                    limit=128),
-            })
         semantic = await self._semantic_verdict(task, draft, evidence, mechanical)
         satisfied_calculations = self._satisfied_calculations(task, draft)
         if satisfied_calculations:
@@ -673,17 +668,16 @@ class Runtime:
         except asyncio.CancelledError:
             raise
         except Exception:
-            if all(item.supported for item in mechanical.claim_results):
-                return mechanical.model_copy(update={
-                    "status": VerificationStatus.PARTIAL,
-                    "missing_branches": _unique(
-                        [*mechanical.missing_branches, JUDGE_UNAVAILABLE_BRANCH],
-                        limit=128),
-                })
-            return mechanical.model_copy(update={
+            update = {
                 "missing_branches": _unique(
                     [*mechanical.missing_branches, JUDGE_UNAVAILABLE_BRANCH],
                     limit=128),
+            }
+            if (mechanical.status != VerificationStatus.REPAIR
+                    and all(item.supported for item in mechanical.claim_results)):
+                update["status"] = VerificationStatus.PARTIAL
+            return mechanical.model_copy(update={
+                **update,
             })
 
     def _satisfied_calculations(self, task, draft) -> list:
