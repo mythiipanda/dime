@@ -626,16 +626,37 @@ def post_result_denials(
                     f"{required_season}"
                 ),
             ))
+    row_scope_endpoint = required_season
+    if envelope.season_scope == "at_or_before":
+        row_scope_endpoint = required_season or envelope.season
+    if (envelope.season_scope == "at_or_before"
+            and envelope.task_season_scoped and row_scope_endpoint is None):
+        denials.append(GuardDenial(
+            capability=capability_id,
+            check="season_mismatch",
+            message=(
+                f"{capability_id} post-result season_mismatch: "
+                "history result has no endpoint season"),
+        ))
+    if row_scope_endpoint is not None and envelope.task_season_scoped:
         for row_season in sorted(_row_seasons(envelope.rows)):
-            if row_season != required_season:
+            in_scope = (
+                row_season == row_scope_endpoint
+                or envelope.season_scope == "at_or_before"
+                and int(row_season[:4]) <= int(row_scope_endpoint[:4]))
+            if not in_scope:
+                detail = (
+                    f"row season {row_season} is after history endpoint "
+                    f"{row_scope_endpoint}"
+                    if envelope.season_scope == "at_or_before" else
+                    f"row season {row_season} does not match task season "
+                    f"{row_scope_endpoint}"
+                )
                 denials.append(GuardDenial(
                     capability=capability_id,
                     check="row_season_mismatch",
-                    message=(
-                        f"{capability_id} post-result row_season_mismatch: "
-                        f"row season {row_season} does not match task season "
-                        f"{required_season}"
-                    ),
+                    message=(f"{capability_id} post-result "
+                             f"row_season_mismatch: {detail}"),
                 ))
                 break
     asked_window = (task.window_start, task.window_end)
@@ -675,7 +696,11 @@ def post_result_denials(
     if task.entities:
         wanted = _task_entities(task)
         served_entities = _envelope_entities(envelope)
-        if served_entities and wanted and served_entities.isdisjoint(wanted):
+        population_matches = (
+            envelope.population_scope is not None
+            and wanted == {canonical_entity_ref(envelope.population_scope)})
+        if (served_entities and wanted and served_entities.isdisjoint(wanted)
+                and not population_matches):
             denials.append(GuardDenial(
                 capability=capability_id,
                 check="entity_mismatch",

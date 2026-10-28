@@ -311,6 +311,12 @@ def build_envelope(
     if spec.extract_entities is not None:
         envelope_entities = spec.extract_entities(rows) + envelope_entities
     envelope_entities = _dedupe_entities(envelope_entities)
+    history_view = (
+        spec.history_view is not None
+        and arguments.get("view") == spec.history_view)
+    population_scope = (
+        spec.history_population
+        if history_view and not arguments.get("player") else None)
     vintages = {
         str(key): str(value).split(" (", 1)[0]
         for key, value in meta.items()
@@ -331,6 +337,8 @@ def build_envelope(
         season=str(season) if season is not None else None,
         vintages=vintages,
         task_season_scoped=spec.task_season_scoped,
+        season_scope="at_or_before" if history_view else "exact",
+        population_scope=population_scope,
         as_of=as_of,
         window_start=served_window[0],
         window_end=served_window[1],

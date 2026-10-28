@@ -224,6 +224,8 @@ class Capability:
     open_vocabulary: bool = False
     publishes_declared_schema: bool = False
     period_arg: str | None = None
+    history_view: str | None = None
+    history_population: EntityRef | None = None
 
 _LIST = [
     Capability(
@@ -557,6 +559,9 @@ _LIST = [
         metric_definitions=AWARD_DEFINITIONS,
         output_aliases=AWARD_OUTPUT_ALIASES,
         extract_entities=_name_entities("player", "winner", "coach"),
+        history_view="winner_history",
+        history_population=EntityRef(
+            id="league", type="league", display_name="NBA"),
         qualification=(
             "Every placement the source published on that ballot. A tied "
             "placement keeps the published leading rank and its verbatim "
