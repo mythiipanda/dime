@@ -580,6 +580,8 @@ class EvidenceEnvelope(BaseModel):
     season: str | None = Field(default=None, max_length=7)
     vintages: dict[str, str] = Field(default_factory=dict, max_length=64)
     task_season_scoped: StrictBool = True
+    season_scope: Literal["exact", "at_or_before"] = "exact"
+    population_scope: EntityRef | None = None
     as_of: date | None = None
     window_start: date | None = None
     window_end: date | None = None
