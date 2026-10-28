@@ -259,6 +259,44 @@ def _served_units(spec: Capability, rows: Any) -> dict:
             } for item in _row_values(rows))}
 
 
+def _sql_column_semantics(
+    spec: Capability, result: Mapping[str, Any], rows: Any,
+) -> dict[str, dict[str, str]]:
+    if spec.name != "sql_exec":
+        return {}
+    declared = result.get("declared_column_semantics")
+    if not isinstance(declared, Mapping):
+        return {}
+    row_columns = {
+        segment.split("[", 1)[0].casefold()
+        for item in _row_values(rows)
+        for segment in item.path.split(".")
+    }
+    reserved = {key.casefold() for key in spec.units}
+    reserved.update(key.casefold() for key in spec.metric_definitions)
+    semantics: dict[str, dict[str, str]] = {}
+    for output, metadata in declared.items():
+        if (not isinstance(output, str)
+                or output.casefold() not in row_columns
+                or output.casefold() in reserved
+                or not isinstance(metadata, Mapping)):
+            continue
+        source_column = metadata.get("column")
+        if (not isinstance(source_column, str)
+                or source_column.casefold() != output.casefold()
+                or not isinstance(metadata.get("table"), str)
+                or not metadata["table"].strip()):
+            continue
+        item = {}
+        for key in ("unit", "note"):
+            value = metadata.get(key)
+            if isinstance(value, str) and value.strip():
+                item[key] = value
+        if item:
+            semantics[output] = item
+    return semantics
+
+
 def _source_identity(meta: Mapping[str, Any], declared_sources: set, has_warehouse_id: bool, has_warehouse_sha: bool) -> dict | None:
     return (
             {"kind": "composite",
@@ -300,6 +338,7 @@ def build_envelope(
         raise AdapterError(
             f"{spec.tool_name}: {result.get('error') or 'unknown error'}")
     rows = _envelope_rows(spec, result)
+    sql_column_semantics = _sql_column_semantics(spec, result, rows)
     row_warnings: list[str] = []
     _check_rows(spec, rows, row_warnings)
     meta, declared_sources, has_warehouse_id, has_warehouse_sha = _source_identity_markers(spec, meta)
@@ -344,9 +383,17 @@ def build_envelope(
         window_end=served_window[1],
         entities=envelope_entities,
         rows=rows,
-        units=_served_units(spec, rows),
+        units={
+            **_served_units(spec, rows),
+            **{column: item["unit"]
+               for column, item in sql_column_semantics.items()
+               if "unit" in item},
+        },
         metric_definitions={
             **dict(spec.metric_definitions),
+            **{column: item["note"]
+               for column, item in sql_column_semantics.items()
+               if "note" in item},
             **({"__requested_metric__": str(meta["requested_metric"])}
                if meta.get("requested_metric") else {}),
         },
