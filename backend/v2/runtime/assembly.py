@@ -89,10 +89,12 @@ def declared_schema_for(capability_id: str) -> dict | None:
     spec = CAPABILITIES.get(capability_id)
     if spec is None or not spec.publishes_declared_schema:
         return None
-    from shared.tools.league import _get_warehouse_schema
+    from shared.tools.league import _get_warehouse_schema, _schema_for_display
 
     present, columns = _get_warehouse_schema()
-    return {"tables": {name: columns[name] for name in present}}
+    tables, column_budget = _schema_for_display(
+        {name: columns[name] for name in present})
+    return {"tables": tables, "column_budget": column_budget}
 
 
 def capability_catalog() -> dict[str, dict]:

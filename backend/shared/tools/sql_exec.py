@@ -7,8 +7,10 @@ from .league import (
     RERUN_TIMEOUT_S,
     _SQL_TABLES,
     _TABLE_REF_RE,
+    _get_warehouse_schema,
     rerun_sql,
 )
+from .season_semantics import annotate_result, annotate_schema
 
 TOOL = "sql_exec"
 TABLES = tuple(sorted(_SQL_TABLES))
@@ -64,5 +66,14 @@ async def sql_exec(sql: str, season: str | None = None) -> dict[str, Any]:
                      f"computed rows, never a curated table. "
                      f"SQL: {query[:300]}"),
     }
-    return {"tool": TOOL, "ok": True, "rows": rows,
-            "columns": out.get("columns", []), "sql": query, "meta": meta}
+    result = {"tool": TOOL, "ok": True, "rows": rows,
+              "columns": out.get("columns", []), "sql": query, "meta": meta}
+    schema_tables: dict[str, Any] = {}
+    if tables:
+        _present, columns = _get_warehouse_schema()
+        for name in tables:
+            if name in columns:
+                schema_tables[name] = columns[name]
+            elif name.lower() in columns:
+                schema_tables[name] = columns[name.lower()]
+    return annotate_result(result, annotate_schema({"tables": schema_tables}))
