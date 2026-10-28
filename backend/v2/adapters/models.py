@@ -9,6 +9,7 @@ import re
 import time
 import marshal
 from collections.abc import Callable, Mapping, Sequence
+from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from decimal import Decimal
@@ -20,11 +21,15 @@ from openai import AsyncOpenAI, APITimeoutError, APIConnectionError, RateLimitEr
 from openai.resources.chat import AsyncChat
 from openai.resources.chat.completions import AsyncCompletions
 from openai.types.chat import ChatCompletion
-from pydantic import BaseModel, TypeAdapter, ValidationError
+from pydantic import BaseModel, ConfigDict, Field, StrictInt, TypeAdapter, ValidationError
 from pydantic_ai import Agent
 from pydantic_ai.capabilities import Hooks
 from pydantic_ai.exceptions import ContentFilterError, ModelHTTPError, UnexpectedModelBehavior
 from pydantic_ai.models.openai import OpenAIChatModel
+from pydantic_ai.models import ModelRequestParameters
+from pydantic_ai.messages import ModelMessage, ModelResponse
+from pydantic_ai.settings import ModelSettings
+from pydantic_ai.tools import RunContext
 from pydantic_ai.profiles.openai import OpenAIJsonSchemaTransformer
 from pydantic_ai.providers.openai import OpenAIProvider
 from pydantic_ai.tools import GenerateToolJsonSchema
@@ -80,6 +85,33 @@ from v2.adapters.structured import (
 from .capabilities import CAPABILITIES
 
 T = TypeVar("T", bound=BaseModel)
+
+class ModelRequestPolicy(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    max_output_tokens: StrictInt = Field(gt=0)
+    agent_retries: StrictInt = Field(ge=0)
+    max_strategy_attempts: StrictInt = Field(
+        ge=1, le=len(STRATEGY_LADDER))
+    max_provider_requests: StrictInt = Field(ge=1)
+
+class ProviderRequestLimitExceeded(RuntimeError):
+    pass
+
+class _ProviderRequestBudget:
+    def __init__(self, limit: int) -> None:
+        self._limit = limit
+        self._requests = 0
+
+    @property
+    def exhausted(self) -> bool:
+        return self._requests >= self._limit
+
+    def reserve(self) -> None:
+        if self.exhausted:
+            raise ProviderRequestLimitExceeded(
+                f"provider request limit of {self._limit} reached")
+        self._requests += 1
 
 def _imported_module_code_sha256() -> str:
     code = __loader__.get_code(__name__) if __loader__ is not None else None
@@ -303,10 +335,41 @@ def _read_usage_requests(result: Any) -> tuple[int | None, str | None]:
 class DimeOpenAIChatModel(OpenAIChatModel):
     def __init__(self, model_name: str, *, provider: Any,
                  capabilities: EndpointCapabilities,
-                 ladder: StrategyLadder | None = None) -> None:
+                 ladder: StrategyLadder | None = None,
+                 request_budget: _ProviderRequestBudget | None = None) -> None:
         super().__init__(model_name, provider=provider)
         self.capabilities = capabilities
         self.ladder = ladder or StrategyLadder(capabilities)
+        self._request_budget = request_budget
+
+    def _reserve_request(self) -> None:
+        if self._request_budget is not None:
+            self._request_budget.reserve()
+
+    async def request(
+        self,
+        messages: list[ModelMessage],
+        model_settings: ModelSettings | None,
+        model_request_parameters: ModelRequestParameters,
+    ) -> ModelResponse:
+        self._reserve_request()
+        return await super().request(
+            messages, model_settings, model_request_parameters)
+
+    @asynccontextmanager
+    async def request_stream(
+        self,
+        messages: list[ModelMessage],
+        model_settings: ModelSettings | None,
+        model_request_parameters: ModelRequestParameters,
+        run_context: RunContext[Any] | None = None,
+    ):
+        self._reserve_request()
+        async with super().request_stream(
+            messages, model_settings, model_request_parameters,
+            run_context=run_context,
+        ) as response:
+            yield response
 
     @property
     def strategy(self) -> OutputStrategy:
@@ -315,7 +378,8 @@ class DimeOpenAIChatModel(OpenAIChatModel):
     def on_ladder(self, ladder: StrategyLadder) -> DimeOpenAIChatModel:
         return DimeOpenAIChatModel(
             self.model_name, provider=self._provider,
-            capabilities=self.capabilities, ladder=ladder)
+            capabilities=self.capabilities, ladder=ladder,
+            request_budget=self._request_budget)
 
     def _wire_schema(self, schema: Mapping[str, Any]) -> dict[str, Any]:
         return wire_schema_for(self.strategy, schema).schema
@@ -349,12 +413,17 @@ class ProviderStructuredModel:
     def __init__(self, provider: ProviderName, model: str, *,
                  capabilities: Mapping[str, EndpointCapabilities] | None = None,
                  model_budgets: ModelBudgets | None = None,
-                 http_client: httpx.AsyncClient | None = None) -> None:
+                 http_client: httpx.AsyncClient | None = None,
+                 request_policy: ModelRequestPolicy | None = None) -> None:
         self.provider = provider
         self.model = model
         self._capabilities = capabilities
         self._budgets = model_budgets
         self._http_client = http_client
+        self._request_policy = request_policy
+        self._request_budget = (
+            _ProviderRequestBudget(request_policy.max_provider_requests)
+            if request_policy is not None else None)
         self.last_provider: ProviderName | None = None
         self.last_model: str | None = None
         self.last_output_strategy: OutputStrategy | None = None
@@ -362,6 +431,32 @@ class ProviderStructuredModel:
         self.last_request_count: int | None = None
         self.last_usage_unknown: str | None = None
         self.last_promotions: list[dict[str, Any]] = []
+
+    @property
+    def _strategy_attempt_limit(self) -> int:
+        return (len(STRATEGY_LADDER) if self._request_policy is None
+                else self._request_policy.max_strategy_attempts)
+
+    def _ensure_request_budget(self) -> None:
+        if (self._request_budget is not None
+                and self._request_budget.exhausted):
+            raise ProviderRequestLimitExceeded(
+                f"provider request limit of "
+                f"{self._request_policy.max_provider_requests} reached")
+
+    def _agent_request_settings(
+        self, provider: ProviderName, model: DimeOpenAIChatModel,
+        route: str,
+    ) -> tuple[dict[str, Any] | None, int]:
+        model_settings = self._stage_model_settings(
+            provider, model.model_name, route)
+        if self._request_policy is None:
+            return model_settings, settings.llm_max_retries
+        return (
+            {**(model_settings or {}),
+             "max_tokens": self._request_policy.max_output_tokens},
+            self._request_policy.agent_retries,
+        )
 
     @staticmethod
     def _reasoning_content_promotions(
@@ -689,6 +784,7 @@ class ProviderStructuredModel:
             accepted_model,
             provider=OpenAIProvider(openai_client=client),
             capabilities=capabilities_for(base_url, self._capabilities),
+            request_budget=self._request_budget,
         ))]
 
     async def generate(
@@ -703,6 +799,7 @@ class ProviderStructuredModel:
         models = self._models()
         if not models:
             raise RuntimeError("no configured structured-output provider")
+        self._ensure_request_budget()
         self.last_provider = None
         self.last_model = None
         self.last_output_strategy = None
@@ -720,7 +817,8 @@ class ProviderStructuredModel:
         deadline = min(deadlines) if deadlines else None
         budget_exhausted = False
         ladder = StrategyLadder(model.capabilities)
-        for attempt_number in range(1, len(STRATEGY_LADDER) + 1):
+        for attempt_number in range(1, self._strategy_attempt_limit + 1):
+            self._ensure_request_budget()
             remaining = (None if deadline is None
                          else deadline - time.monotonic())
             if remaining is not None and remaining <= 0:
@@ -733,14 +831,15 @@ class ProviderStructuredModel:
                 attempt_timeout = min(attempt_timeout, remaining)
             started = time.perf_counter()
             try:
+                model_settings, agent_retries = self._agent_request_settings(
+                    provider, model, envelope.route)
                 agent = Agent(
                     attempt_model,
                     instructions=prompt,
                     output_type=output_type_for(
                         rung, schema, model.capabilities),
-                    model_settings=self._stage_model_settings(
-                        provider, model.model_name, envelope.route),
-                    retries=settings.llm_max_retries,
+                    model_settings=model_settings,
+                    retries=agent_retries,
                     capabilities=[Hooks(
                         before_output_validate=repaired_output_payload)],
                 )

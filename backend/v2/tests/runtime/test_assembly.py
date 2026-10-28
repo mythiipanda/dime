@@ -91,6 +91,83 @@ def test_build_runtime_wires_configured_checkpoint_store(tmp_path, monkeypatch) 
     assert store is not None
     assert store._directory == tmp_path / "checkpoints"
 
+@pytest.mark.anyio
+async def test_build_runtime_allowlist_filters_planner_catalog_and_executor(
+        monkeypatch):
+    from v2.contracts import Plan, PlanNode, TaskSpec
+    from v2.adapters.models import ModelRequestPolicy
+    from v2.runtime.assembly import build_runtime
+    from v2.runtime.policy import ExecutionPolicy
+
+    provider_models = []
+
+    def provider_model(*args, **kwargs):
+        provider_models.append(kwargs)
+        return object()
+
+    monkeypatch.setattr("v2.runtime.assembly.ProviderStructuredModel",
+                        provider_model)
+    calls = []
+
+    class DisallowedCapability:
+        name = "sql_exec"
+        task_season_scoped = False
+
+        def validate_arguments(self, node):
+            return None
+
+        async def execute(self, node, task, evidence):
+            calls.append(node.id)
+            raise AssertionError("disallowed capability executed")
+
+    original_tool_capability = ToolCapability
+
+    def tool_capability(name, **kwargs):
+        if name == "sql_exec":
+            return DisallowedCapability()
+        return original_tool_capability(name, **kwargs)
+
+    monkeypatch.setattr("v2.runtime.assembly.ToolCapability", tool_capability)
+    selected = {"standings", "web_search"}
+    request_policy = ModelRequestPolicy(
+        max_output_tokens=47, agent_retries=0,
+        max_strategy_attempts=1, max_provider_requests=8)
+    runtime, _ = build_runtime(
+        provider="inception", model_name="mercury-test", run_id="run",
+        policy=ExecutionPolicy.shadow(), capability_allowlist=selected,
+        model_request_policy=request_policy)
+
+    assert provider_models[0]["request_policy"] == request_policy
+    assert set(runtime._intake._catalog) == selected
+    assert set(runtime._planner._catalog) == selected
+    assert runtime._executor.capability_names == selected
+
+    plan = Plan(nodes=[PlanNode(
+        id="sql", description="query", capability_hints=["sql_exec"])])
+    task = TaskSpec(goal="answer", mode="quick", deliverable="text")
+    with pytest.raises(ValueError, match="exactly one registered capability"):
+        await runtime._executor.execute(task, plan)
+    assert calls == []
+
+    empty_runtime, _ = build_runtime(
+        provider="inception", model_name="mercury-test", run_id="empty",
+        policy=ExecutionPolicy.shadow(), capability_allowlist=())
+    assert empty_runtime._intake._catalog == {}
+    assert empty_runtime._planner._catalog == {}
+    assert empty_runtime._executor.capability_names == frozenset()
+
+def test_build_runtime_rejects_unknown_capability_allowlist_names(monkeypatch):
+    from v2.runtime.assembly import build_runtime
+    from v2.runtime.policy import ExecutionPolicy
+
+    monkeypatch.setattr("v2.runtime.assembly.ProviderStructuredModel",
+                        lambda *args, **kwargs: object())
+    with pytest.raises(ValueError, match="unknown names.*fake_tool"):
+        build_runtime(
+            provider="inception", model_name="mercury-test", run_id="run",
+            policy=ExecutionPolicy.shadow(),
+            capability_allowlist={"fake_tool"})
+
 def test_build_runtime_forwards_injected_http_client_without_owning_it(
     monkeypatch,
 ) -> None:
