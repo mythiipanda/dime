@@ -965,6 +965,22 @@ def _needs_repair(report: VerificationReport) -> bool:
             and any(not item.supported for item in report.claim_results))
 
 
+def _served_column(envelope, column):
+    """Return the envelope's own row key for ``column``, or ``None``.
+
+    Column identity is exact-or-casefold, but a row set that carries two keys
+    equal under casefolding (for example ``pts`` and ``PTS``) is ambiguous and
+    serves neither, even when one of them matches exactly.
+    """
+    keys: list[str] = []
+    rows = envelope.rows if isinstance(envelope.rows, list) else [envelope.rows]
+    for row in rows:
+        for key in row:
+            if key not in keys:
+                keys.append(key)
+    matches = [key for key in keys if key.casefold() == column.casefold()]
+    return matches[0] if len(matches) == 1 else None
+
 def _serving_columns(task, execution, kind, requirement_id, output_id):
     from v2.adapters.capabilities import CAPABILITIES, resolve_metric_column
     if kind == "calculation":
@@ -988,8 +1004,15 @@ def _serving_columns(task, execution, kind, requirement_id, output_id):
         if capability is None:
             continue
         column = resolve_metric_column(capability, output_id)
-        if column is not None:
-            served.append(f"{column} via {name}")
+        if column is None:
+            continue
+        actual = list(dict.fromkeys(
+            _served_column(envelope, column)
+            for envelope in execution.evidence
+            if envelope.capability == name))
+        actual = [key for key in actual if key is not None]
+        for served_column in actual or [column]:
+            served.append(f"{served_column} via {name}")
     return list(dict.fromkeys(served))
 
 def _has_serving_values(execution, output_id):
@@ -1001,9 +1024,12 @@ def _has_serving_values(execution, output_id):
         column = resolve_metric_column(capability, output_id)
         if column is None:
             continue
+        served = _served_column(envelope, column)
+        if served is None:
+            continue
         for item in iter_values(envelope):
             leaf = item.path.rsplit(".", 1)[-1].split("[", 1)[0]
-            if leaf == column and item.value is not None:
+            if leaf == served and item.value is not None:
                 return True
     return False
 

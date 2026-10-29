@@ -1491,6 +1491,62 @@ def test_missing_evidence_and_operand_gaps_stay_missing_evidence():
         "source table unavailable",
     ]
 
+def _serving_execution(rows, outputs):
+    from datetime import UTC, datetime
+    from v2.contracts import EvidenceEnvelope
+    from v2.runtime.models import ExecutionResult
+    task = TaskSpec(goal="totals", mode="quick", deliverable="answer",
+                    requested_outputs=list(outputs))
+    envelope = EvidenceEnvelope(evidence_id="ev", capability="sql_exec",
+        source="fixture", observed_at=datetime.now(UTC), rows=rows)
+    execution = ExecutionResult(plan=Plan(nodes=[PlanNode(id="totals_sql",
+        description="totals", capability_hints=["sql_exec"],
+        status="complete")]), evidence_by_node={"totals_sql": envelope},
+        attempts={"totals_sql": 1})
+    return task, execution, {"ev": envelope}
+
+def _completeness(task, execution, evidence):
+    from v2.runtime.loop import _completeness_missing
+    return _completeness_missing(task, execution,
+        DraftReport(sections=[], claims=[]),
+        VerificationReport(status="pass", claim_results=[]), evidence)
+
+def test_completeness_gate_reports_requested_outputs_by_actual_row_column():
+    from v2.runtime.loop import (
+        _format_completeness_instruction, _has_serving_values)
+    task, execution, evidence = _serving_execution(
+        [{"player_name": "Shai Gilgeous-Alexander",
+          "pts": 32.7, "reb": 5.0, "ast": 6.4}],
+        ["PTS", "REB", "AST"])
+
+    missing = _completeness(task, execution, evidence)
+
+    assert [item[2] for item in missing] == ["PTS", "REB", "AST"]
+    assert [item[3] for item in missing] == [
+        ["pts via sql_exec"], ["reb via sql_exec"], ["ast via sql_exec"]]
+    assert _format_completeness_instruction(missing) == (
+        "Bind missing requested output PTS served by pts via sql_exec; "
+        "Bind missing requested output REB served by reb via sql_exec; "
+        "Bind missing requested output AST served by ast via sql_exec")
+    for output_id in ("PTS", "REB", "AST"):
+        assert _has_serving_values(execution, output_id)
+
+def test_completeness_gate_treats_case_colliding_columns_as_unserved():
+    from v2.runtime.loop import _has_serving_values
+    task, execution, evidence = _serving_execution(
+        [{"player_name": "Shai Gilgeous-Alexander", "pts": 2.0, "PTS": 2.0}],
+        ["PTS"])
+
+    assert not _has_serving_values(execution, "PTS")
+    assert _completeness(task, execution, evidence) == []
+
+def test_completeness_gate_keeps_exact_case_columns_served():
+    task, execution, evidence = _serving_execution(
+        [{"player_name": "Shai Gilgeous-Alexander", "PTS": 32.7}], ["PTS"])
+
+    assert [item[3] for item in _completeness(task, execution, evidence)] == [
+        ["PTS via sql_exec"]]
+
 def _record_binding(output_id, value=61):
     from v2.contracts import EvidenceOutputBinding
     return EvidenceOutputBinding(value={"kind": "integer", "value": value},
