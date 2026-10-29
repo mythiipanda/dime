@@ -21,6 +21,21 @@ async def test_requirement_review_uses_exact_wire_schema_and_v3_prompt():
  assert review.requirements[0].capability_argument_sets and review.requirements[0].capability_arguments=={'season':'2025-26'}
  assert 'additionalProperties' in json.dumps(call['schema'].model_json_schema())
 @pytest.mark.anyio
+async def test_intake_delivers_measure_preservation_rule_and_catalog_metadata_once():
+ request='Report cumulative totals and per-game averages from the sample table; note any missing basis.'
+ units={'pts':'cumulative','ppg':'per_game'}
+ capability={'arguments':{'type':'object','additionalProperties':False,'properties':{'season':{'type':'string'}},'required':['season']},'description':'standings','units':units}
+ model=Capture([{'goal':request,'mode':'quick','deliverable':'Report cumulative totals and per-game averages.','requirements':[]}])
+ intake=ModelIntake(model,provider='stub',model_name='stub',capability_catalog={'standings':capability})
+ task=await intake.understand(request)
+ call=model.calls[0]
+ assert call['schema'] is TaskSpec
+ assert call['payload']['question']==request
+ assert call['prompt'].count('Preserve the requested measure and basis')==1
+ assert json.loads(call['envelope'].schema_source)==TaskSpec.model_json_schema()
+ sent=call['payload']['capability_catalog']['standings']
+ assert sent['units']==units and sent['arguments']==capability['arguments'] and sent['description']=='standings'
+@pytest.mark.anyio
 async def test_planner_uses_wire_schema_and_copies_selected_arguments():
  model=Capture([{'nodes':[{'id':'n','description':'record','capability':'standings','arguments':{'entries':[wire('season','string','2025-26')]},'depends_on':None,'covers_requirement_ids':None,'max_attempts':None,'status':None}]}])
  planner=ModelPlanner(model,provider='stub',model_name='stub',capability_catalog=catalog())

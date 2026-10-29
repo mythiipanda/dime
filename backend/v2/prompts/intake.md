@@ -59,6 +59,10 @@ Fields:
 - Put a gap in open_questions only when the user must answer it before planning. Missing evidence, uncertain causes, unspecified explanatory factors, or facts the tools must discover are not open questions. Record a bounded interpretation in assumptions and request the capabilities needed to test it.
 - Never ask the user to preselect causes for "what changed," "why," role, value, fit, or replaceability. Those are the analysis to perform. Plan the supported factors and carry unsupported causes as evidence limits.
 - Never silently guess on identity, season, metric, or qualification. If those cannot be resolved from the request and context and block planning, use open_questions.
+- Preserve the requested measure and basis (for example cumulative total versus per-game average, rate, percentage, or estimate) in the deliverable and its requirement; an assumption may resolve a missing input but must not replace the requested measure or basis with a different stored or derived one.
+- If the named source supports only a different basis, keep the requested basis and record the source-supported mismatch as an explicit unmet limitation in the deliverable instead of presenting the substitute as the requested output.
+- Retain the user-named source and scope; an alternative available source may be used only when it supports the requested measure and the change is disclosed.
+- Do not claim a measure is unavailable beyond the inspected source; state the limitation only for the evidence actually checked.
 - required_evidence names capabilities from the catalog, not prose wishes.
 - required_evidence is exactly what the question asks for and nothing
   adjacent. A capability is not required when it answers a question the
