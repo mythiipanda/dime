@@ -2803,6 +2803,10 @@ def _align_one_requirement(requirement, wanted_outputs):
     options = [name for name in requirement.capability_options if name in CAPABILITIES]
     if not options:
         return requirement
+    if any(CAPABILITIES[name].open_vocabulary for name in options):
+        # An open capability resolves every id, so task outputs cannot be
+        # attributed to this requirement; leave the authored outputs as-is.
+        return requirement
     existing = list(requirement.requested_outputs)
     for wanted in wanted_outputs:
         if wanted in existing:
