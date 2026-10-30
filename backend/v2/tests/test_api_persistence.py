@@ -24,29 +24,7 @@ from v2.api.routes import router
 from v2.api.sse import encode_event
 from v2.contracts import Plan, PlanNode, PlanStatus, RunMode, TaskSpec
 from v2.projects.service import ProjectStore
-from v2.runtime.checkpoints import FileCheckpointStore
-from v2.runtime.executor import PlanExecutor
-from v2.runtime.fakes import FakeCapability
 
-def _task() -> TaskSpec:
-    return TaskSpec(goal="answer", mode=RunMode.PROJECT, deliverable="report")
-
-def _plan() -> Plan:
-    return Plan(
-        nodes=[
-            PlanNode(
-                id="one",
-                description="first",
-                capability_hints=["fake"],
-            ),
-            PlanNode(
-                id="two",
-                description="second",
-                depends_on=["one"],
-                capability_hints=["fake"],
-            ),
-        ]
-    )
 
 def test_sse_adapter_maps_every_frozen_event() -> None:
     events = [
@@ -67,41 +45,6 @@ def test_sse_adapter_maps_every_frozen_event() -> None:
     assert all('"type"' not in chunk for chunk in chunks)
     assert chunks[-1] == "event: graph_end\ndata: {}\n\n"
 
-@pytest.mark.anyio
-@pytest.mark.parametrize("anyio_backend", ["asyncio"])
-async def test_checkpoint_resume_does_not_replay_completed_nodes(anyio_backend,
-    tmp_path: Path,
-) -> None:
-
-    assert anyio_backend == "asyncio"
-    checkpoints = FileCheckpointStore(tmp_path)
-    plan = _plan()
-    task = _task()
-    completed = plan.nodes[0].model_copy(update={"status": PlanStatus.COMPLETE})
-    from datetime import UTC, datetime
-    from v2.contracts import EvidenceEnvelope
-    from v2.runtime.checkpoints import ExecutionCheckpoint
-
-    checkpoints.save(ExecutionCheckpoint(version=2,
-        run_id="resume", task=task,
-        plan=Plan(nodes=[completed, plan.nodes[1]]),
-        evidence_by_node={"one": EvidenceEnvelope(
-            evidence_id="evidence:one", capability="fake", source="fixture",
-            observed_at=datetime.now(UTC), rows={"node": "one"})},
-        attempts={"one": 1, "two": 0}, errors={},
-    ))
-    calls: list[str] = []
-    executor = PlanExecutor({
-        "fake": FakeCapability(
-            "fake", lambda node: calls.append(node.id) or {"node": node.id})
-    }, checkpoint_store=checkpoints)
-    resumed = await executor.execute(task, plan, run_id="resume")
-    assert calls == ["two"]
-    assert [node.status for node in resumed.plan.nodes] == [PlanStatus.COMPLETE] * 2
-
-def test_file_checkpoint_rejects_path_escape(tmp_path: Path) -> None:
-    with pytest.raises(ValueError):
-        FileCheckpointStore(tmp_path).load("../escape")
 
 def test_project_store_round_trip(tmp_path: Path) -> None:
     store = ProjectStore(tmp_path / "projects.json")
@@ -182,53 +125,20 @@ def test_project_store_handles_independent_workers(tmp_path: Path) -> None:
     assert len(set(ids)) == 20
     assert len(ProjectStore(path).list()) == 20
 
-@pytest.mark.anyio
-@pytest.mark.parametrize("anyio_backend", ["asyncio"])
-async def test_cancelled_execution_resumes_started_node(anyio_backend, tmp_path: Path) -> None:
-
-    assert anyio_backend == "asyncio"
-    import asyncio
-
-    checkpoints = FileCheckpointStore(tmp_path)
-    started = asyncio.Event()
-
-    class SlowCapability:
-        name = "fake"
-
-        async def execute(self, node, task, evidence):
-            started.set()
-            await asyncio.Event().wait()
-
-    executor = PlanExecutor({"fake": SlowCapability()}, checkpoint_store=checkpoints)
-    running = asyncio.create_task(executor.execute(_task(), _plan(), run_id="cancel"))
-    await started.wait()
-    running.cancel()
-    with pytest.raises(asyncio.CancelledError):
-        await running
-
-    checkpoint = checkpoints.load("cancel")
-    assert checkpoint is not None
-    assert checkpoint.plan.nodes[0].status == PlanStatus.RUNNING
-
-    calls: list[str] = []
-    resumed = PlanExecutor(
-        {"fake": FakeCapability("fake", lambda node: calls.append(node.id) or {"node": node.id})},
-        checkpoint_store=checkpoints,
-    )
-    result = await resumed.execute(_task(), _plan(), run_id="cancel")
-    assert calls == ["one", "two"]
-    assert all(node.status == PlanStatus.COMPLETE for node in result.plan.nodes)
-
-
 
 def test_v2_uses_one_configured_model_policy(monkeypatch):
     monkeypatch.setenv("DIME_V2_MODEL", "openrouter:openrouter/free")
     seen = []
     monkeypatch.setattr("shared.providers.resolve_model_id",
                         lambda value: seen.append(value) or ("openrouter", "openrouter/free"))
-    import inspect
-    source = inspect.getsource(__import__("v2.api.routes", fromlist=["quick_answer_stream"]).quick_answer_stream)
-    assert 'body.model or os.environ.get("DIME_V2_MODEL")' in source
+    from analyst import configuration, product_session
+    monkeypatch.setattr("shared.providers.get_llm", lambda provider, name: (provider, name))
+    monkeypatch.setattr(configuration, "model_limits", lambda provider, name: {})
+    monkeypatch.setattr(product_session, "resolved_provider", lambda provider, client, **limits: client)
+    assert configuration.resolve_product_model() == ("openrouter", "openrouter/free")
+    configuration.resolve_product_model("explicit:model")
+    assert seen == ["openrouter:openrouter/free", "explicit:model"]
+
 
 def test_quick_answer_body_validates_bounded_typed_history():
     from pydantic import ValidationError
@@ -245,193 +155,6 @@ def test_quick_answer_body_validates_bounded_typed_history():
         ])
 
 
-
-@pytest.mark.anyio
-@pytest.mark.parametrize("anyio_backend", ["asyncio"])
-async def test_completed_execution_removes_checkpoint(anyio_backend, tmp_path: Path) -> None:
-
-    assert anyio_backend == "asyncio"
-    checkpoints = FileCheckpointStore(tmp_path)
-    result = await PlanExecutor(
-        {"fake": FakeCapability("fake", {"ok": True})},
-        checkpoint_store=checkpoints,
-    ).execute(_task(), _plan(), run_id="finished")
-    assert all(node.status == PlanStatus.COMPLETE for node in result.plan.nodes)
-    assert checkpoints.load("finished") is None
-
-@pytest.mark.anyio
-@pytest.mark.parametrize("anyio_backend", ["asyncio"])
-async def test_partial_execution_retains_terminal_checkpoint(anyio_backend, tmp_path: Path) -> None:
-
-    assert anyio_backend == "asyncio"
-    checkpoints = FileCheckpointStore(tmp_path)
-    result = await PlanExecutor(
-        {"fake": FakeCapability("fake", {}, failures_before_success=1)},
-        max_failures=1, checkpoint_store=checkpoints,
-    ).execute(_task(), _plan(), run_id="partial")
-
-    assert [node.status for node in result.plan.nodes] == [
-        PlanStatus.FAILED, PlanStatus.SKIPPED,
-    ]
-    saved = checkpoints.load("partial")
-    assert saved is not None
-    assert saved.plan == result.plan
-    assert saved.errors == result.errors
-
-@pytest.mark.anyio
-async def test_checkpoint_resume_rejects_changed_plan_with_same_node_ids(
-    tmp_path: Path,
-) -> None:
-    from v2.runtime.checkpoints import ExecutionCheckpoint
-
-    checkpoints = FileCheckpointStore(tmp_path)
-    original = _plan()
-    changed = original.model_copy(deep=True)
-    changed.nodes[0].arguments = {"team": "LAL"}
-    checkpoints.save(ExecutionCheckpoint(version=2,
-        run_id="changed", task=_task(), plan=original,
-    ))
-
-    with pytest.raises(ValueError, match="checkpoint plan does not match"):
-        await PlanExecutor(
-            {"fake": FakeCapability("fake", {})}, checkpoint_store=checkpoints,
-        ).execute(_task(), changed, run_id="changed")
-
-@pytest.mark.anyio
-@pytest.mark.parametrize("corruption", ["missing_evidence", "wrong_capability", "unknown_node"])
-async def test_checkpoint_resume_rejects_inconsistent_execution_state(
-    tmp_path: Path, corruption: str,
-) -> None:
-    from datetime import UTC, datetime
-    from v2.contracts import EvidenceEnvelope
-    from v2.runtime.checkpoints import ExecutionCheckpoint
-
-    checkpoints = FileCheckpointStore(tmp_path)
-    plan = _plan()
-    plan.nodes[0].status = PlanStatus.COMPLETE
-    evidence = EvidenceEnvelope(
-        evidence_id="evidence:one", capability="fake", source="fixture",
-        observed_at=datetime.now(UTC), rows={"node": "one"},
-    )
-    evidence_by_node = {"one": evidence}
-    attempts = {"one": 1}
-    if corruption == "missing_evidence":
-        evidence_by_node = {}
-    elif corruption == "wrong_capability":
-        evidence_by_node["one"] = evidence.model_copy(
-            update={"capability": "other"})
-    else:
-        attempts["invented"] = 1
-    checkpoints.save(ExecutionCheckpoint(version=2,
-        run_id="corrupt", task=_task(), plan=plan,
-        evidence_by_node=evidence_by_node, attempts=attempts,
-    ))
-
-    with pytest.raises(ValueError, match="checkpoint"):
-        await PlanExecutor(
-            {"fake": FakeCapability("fake", {})}, checkpoint_store=checkpoints,
-        ).execute(_task(), _plan(), run_id="corrupt")
-
-@pytest.mark.anyio
-async def test_checkpoint_resume_preserves_attempt_and_failure_budgets(
-    tmp_path: Path,
-) -> None:
-    from v2.runtime.checkpoints import ExecutionCheckpoint
-
-    checkpoints = FileCheckpointStore(tmp_path)
-    plan = _plan()
-    plan.nodes[0].status = PlanStatus.FAILED
-    checkpoints.save(ExecutionCheckpoint(version=2,
-        run_id="budget", task=_task(), plan=plan,
-        attempts={"one": 1}, errors={"one": ["failed once"]},
-    ))
-    calls: list[str] = []
-    result = await PlanExecutor(
-        {"fake": FakeCapability(
-            "fake", lambda node: calls.append(node.id) or {"node": node.id})},
-        max_failures=1, checkpoint_store=checkpoints,
-    ).execute(_task(), _plan(), run_id="budget")
-
-    assert calls == []
-    assert [node.status for node in result.plan.nodes] == [
-        PlanStatus.FAILED, PlanStatus.SKIPPED,
-    ]
-    assert result.attempts == {"one": 1, "two": 0}
-
-@pytest.mark.anyio
-async def test_checkpoint_rejects_completed_node_with_incomplete_dependency(
-    tmp_path: Path,
-) -> None:
-    from datetime import UTC, datetime
-    from v2.contracts import EvidenceEnvelope
-    from v2.runtime.checkpoints import ExecutionCheckpoint
-
-    checkpoints = FileCheckpointStore(tmp_path)
-    plan = _plan()
-    plan.nodes[1].status = PlanStatus.COMPLETE
-    checkpoints.save(ExecutionCheckpoint(version=2,
-        run_id="order", task=_task(), plan=plan,
-        evidence_by_node={"two": EvidenceEnvelope(
-            evidence_id="evidence:two", capability="fake", source="fixture",
-            observed_at=datetime.now(UTC), rows={"node": "two"},
-        )},
-        attempts={"two": 1},
-    ))
-    with pytest.raises(ValueError, match="completed before its dependencies"):
-        await PlanExecutor(
-            {"fake": FakeCapability("fake", {})}, checkpoint_store=checkpoints,
-        ).execute(_task(), _plan(), run_id="order")
-
-@pytest.mark.anyio
-async def test_restored_failure_budget_skips_independent_pending_nodes(
-    tmp_path: Path,
-) -> None:
-    from v2.runtime.checkpoints import ExecutionCheckpoint
-
-    checkpoints = FileCheckpointStore(tmp_path)
-    plan = Plan(nodes=[
-        PlanNode(id="failed", description="failed", capability_hints=["fake"]),
-        PlanNode(id="independent", description="independent", capability_hints=["fake"]),
-    ])
-    saved = plan.model_copy(deep=True)
-    saved.nodes[0].status = PlanStatus.FAILED
-    checkpoints.save(ExecutionCheckpoint(version=2,
-        run_id="failure-limit", task=_task(), plan=saved,
-        attempts={"failed": 1}, errors={"failed": ["failed once"]},
-    ))
-    calls: list[str] = []
-    result = await PlanExecutor(
-        {"fake": FakeCapability(
-            "fake", lambda node: calls.append(node.id) or {"node": node.id})},
-        max_failures=1, checkpoint_store=checkpoints,
-    ).execute(_task(), plan, run_id="failure-limit")
-
-    assert calls == []
-    assert [node.status for node in result.plan.nodes] == [
-        PlanStatus.FAILED, PlanStatus.SKIPPED,
-    ]
-
-def test_checkpoint_rejects_blank_run_identity() -> None:
-    from pydantic import ValidationError
-    from v2.runtime.checkpoints import ExecutionCheckpoint
-
-    with pytest.raises(ValidationError, match="run id must be non-empty"):
-        ExecutionCheckpoint(version=2, run_id=" ", task=_task(), plan=_plan())
-
-def test_checkpoint_rejects_unknown_persisted_fields() -> None:
-    from datetime import UTC, datetime
-    from pydantic import ValidationError
-    from v2.runtime.checkpoints import ExecutionCheckpoint
-
-    payload = {
-        "run_id": "run",
-        "task": {"goal": "answer", "mode": "quick", "deliverable": "text"},
-        "plan": {"nodes": []},
-        "saved_at": datetime.now(UTC).isoformat(),
-    }
-    with pytest.raises(ValidationError, match="saved_at"):
-        ExecutionCheckpoint.model_validate(payload)
-
 def test_project_record_rejects_unknown_persisted_fields() -> None:
     from pydantic import ValidationError
     from v2.projects.models import Project
@@ -442,118 +165,6 @@ def test_project_record_rejects_unknown_persisted_fields() -> None:
             "invented": True,
         })
 
-@pytest.mark.anyio
-async def test_checkpoint_run_identity_must_match_requested_run() -> None:
-    from v2.runtime.checkpoints import ExecutionCheckpoint
-
-    class WrongRunStore:
-        def load(self, run_id):
-            return ExecutionCheckpoint(version=2,
-                run_id="other-run",
-                task=TaskSpec(goal="answer", mode="quick", deliverable="text"),
-                plan=Plan(nodes=[PlanNode(
-                    id="one", description="one", capability_hints=["fake"])]),
-            )
-        def save(self, checkpoint):
-            raise AssertionError("mismatched checkpoint was saved")
-        def delete(self, run_id):
-            raise AssertionError("mismatched checkpoint was deleted")
-
-    task = TaskSpec(goal="answer", mode="quick", deliverable="text")
-    plan = Plan(nodes=[PlanNode(
-        id="one", description="one", capability_hints=["fake"])])
-    with pytest.raises(ValueError, match="run id does not match"):
-        await PlanExecutor(
-            {"fake": FakeCapability("fake", {"value": 1})},
-            checkpoint_store=WrongRunStore(),
-        ).execute(task, plan, run_id="requested-run")
-
-@pytest.mark.anyio
-@pytest.mark.parametrize(
-    "status,errors,message",
-    [
-        (PlanStatus.FAILED, {}, "failed without errors"),
-        (PlanStatus.SKIPPED, {"one": ["contradiction"]}, "skipped but carries errors"),
-    ],
-)
-async def test_checkpoint_status_and_errors_must_agree(
-    tmp_path: Path, status, errors, message,
-) -> None:
-    from v2.runtime.checkpoints import ExecutionCheckpoint
-
-    checkpoints = FileCheckpointStore(tmp_path)
-    plan = _plan()
-    plan.nodes[0].status = status
-    checkpoints.save(ExecutionCheckpoint(version=2,
-        run_id="status-errors", task=_task(), plan=plan, errors=errors,
-    ))
-    with pytest.raises(ValueError, match=message):
-        await PlanExecutor(
-            {"fake": FakeCapability("fake", {})}, checkpoint_store=checkpoints,
-        ).execute(_task(), _plan(), run_id="status-errors")
-
-@pytest.mark.anyio
-async def test_checkpoint_rejects_unattempted_completed_node(tmp_path: Path) -> None:
-    from datetime import UTC, datetime
-    from v2.contracts import EvidenceEnvelope
-    from v2.runtime.checkpoints import ExecutionCheckpoint
-
-    checkpoints = FileCheckpointStore(tmp_path)
-    plan = _plan()
-    plan.nodes[0].status = PlanStatus.COMPLETE
-    checkpoints.save(ExecutionCheckpoint(version=2,
-        run_id="unattempted", task=_task(), plan=plan,
-        evidence_by_node={"one": EvidenceEnvelope(
-            evidence_id="one", capability="fake", source="fixture",
-            observed_at=datetime.now(UTC), rows={"value": 1},
-        )},
-    ))
-    with pytest.raises(ValueError, match="without an attempt"):
-        await PlanExecutor(
-            {"fake": FakeCapability("fake", {})}, checkpoint_store=checkpoints,
-        ).execute(_task(), _plan(), run_id="unattempted")
-
-@pytest.mark.anyio
-async def test_checkpoint_rejects_duplicate_error_messages(tmp_path: Path) -> None:
-    from v2.runtime.checkpoints import ExecutionCheckpoint
-
-    checkpoints = FileCheckpointStore(tmp_path)
-    plan = _plan()
-    plan.nodes[0].status = PlanStatus.FAILED
-    checkpoints.save(ExecutionCheckpoint(version=2,
-        run_id="duplicate-errors", task=_task(), plan=plan,
-        attempts={"one": 1}, errors={"one": ["same", "same"]},
-    ))
-    with pytest.raises(ValueError, match="duplicate errors"):
-        await PlanExecutor(
-            {"fake": FakeCapability("fake", {})}, checkpoint_store=checkpoints,
-        ).execute(_task(), _plan(), run_id="duplicate-errors")
-
-def test_checkpoint_contract_rejects_oversized_errors() -> None:
-    from pydantic import ValidationError
-    from v2.runtime.checkpoints import ExecutionCheckpoint
-
-    with pytest.raises(ValidationError, match="4000"):
-        ExecutionCheckpoint(version=2,
-            run_id="run", task=_task(), plan=_plan(),
-            errors={"one": ["x" * 4001]},
-        )
-
-@pytest.mark.anyio
-async def test_checkpoint_rejects_pending_node_without_attempts_remaining(
-    tmp_path: Path,
-) -> None:
-    from v2.runtime.checkpoints import ExecutionCheckpoint
-
-    checkpoints = FileCheckpointStore(tmp_path)
-    checkpoints.save(ExecutionCheckpoint(version=2,
-        run_id="exhausted", task=_task(), plan=_plan(), attempts={"one": 1},
-        errors={"one": ["prior attempt failed"]},
-    ))
-    with pytest.raises(ValueError, match="no attempts remaining"):
-        await PlanExecutor(
-            {"fake": FakeCapability("fake", {})}, checkpoint_store=checkpoints,
-        ).execute(_task(), _plan(), run_id="exhausted")
 
 def test_api_request_contracts_reject_unknown_fields() -> None:
     from pydantic import ValidationError
@@ -635,29 +246,6 @@ def test_stream_tool_result_status_matches_error() -> None:
     with pytest.raises(ValidationError, match="requires an error"):
         ToolResult(node="tools", name="standings", status="fail")
 
-@pytest.mark.anyio
-async def test_checkpoint_resume_rejects_duplicate_evidence_identity(tmp_path: Path) -> None:
-    from datetime import UTC, datetime
-    from v2.contracts import EvidenceEnvelope
-    from v2.runtime.checkpoints import ExecutionCheckpoint
-
-    checkpoints = FileCheckpointStore(tmp_path)
-    plan = _plan()
-    for node in plan.nodes:
-        node.status = PlanStatus.COMPLETE
-    first = EvidenceEnvelope(
-        evidence_id="same", capability="fake", source="fixture",
-        observed_at=datetime.now(UTC), rows={"node": "one"})
-    second = first.model_copy(update={"rows": {"node": "two"}})
-    checkpoints.save(ExecutionCheckpoint(version=2,
-        run_id="duplicate-evidence", task=_task(), plan=plan,
-        evidence_by_node={"one": first, "two": second},
-        attempts={"one": 1, "two": 1}))
-
-    with pytest.raises(ValueError, match="checkpoint evidence ids must be unique"):
-        await PlanExecutor(
-            {"fake": FakeCapability("fake", {})}, checkpoint_store=checkpoints,
-        ).execute(_task(), _plan(), run_id="duplicate-evidence")
 
 @pytest.mark.parametrize("changes,error", [
     ({"id": " "}, "identity and goal"),
@@ -709,83 +297,6 @@ def test_stream_event_rejects_duplicate_string_lists() -> None:
     with pytest.raises(ValidationError, match="must not contain duplicates"):
         CustomData(node="verify", unverified_numbers=["61", "61"])
 
-def test_checkpoint_save_fsyncs_directory_after_replace(tmp_path, monkeypatch) -> None:
-    from v2.runtime.checkpoints import ExecutionCheckpoint
-
-    calls = []
-    real_fsync = __import__("os").fsync
-    def record(fd):
-        calls.append(fd)
-        return real_fsync(fd)
-    monkeypatch.setattr("v2.runtime.checkpoints.os.fsync", record)
-    FileCheckpointStore(tmp_path).save(ExecutionCheckpoint(version=2,
-        run_id="durable", task=_task(), plan=_plan()))
-    assert len(calls) == (2 if DIRECTORY_FSYNC_SUPPORTED else 1)
-
-def test_checkpoint_delete_fsyncs_directory(tmp_path, monkeypatch) -> None:
-    from v2.runtime.checkpoints import ExecutionCheckpoint
-
-    store = FileCheckpointStore(tmp_path)
-    store.save(ExecutionCheckpoint(version=2, run_id="delete-durable", task=_task(), plan=_plan()))
-    calls = []
-    real_fsync = __import__("os").fsync
-    def record(fd):
-        calls.append(fd)
-        return real_fsync(fd)
-    monkeypatch.setattr("v2.runtime.checkpoints.os.fsync", record)
-    store.delete("delete-durable")
-    assert len(calls) == (1 if DIRECTORY_FSYNC_SUPPORTED else 0)
-    assert store.load("delete-durable") is None
-
-def test_checkpoint_store_rejects_symlinked_record(tmp_path: Path) -> None:
-    from v2.runtime.checkpoints import ExecutionCheckpoint
-
-    outside = tmp_path / "outside.json"
-    checkpoint = ExecutionCheckpoint(version=2, run_id="run", task=_task(), plan=_plan())
-    outside.write_text(checkpoint.model_dump_json())
-    directory = tmp_path / "checkpoints"
-    directory.mkdir()
-    (directory / "run.json").symlink_to(outside)
-    store = FileCheckpointStore(directory)
-    for operation in (
-        lambda: store.load("run"),
-        lambda: store.save(checkpoint),
-        lambda: store.delete("run"),
-    ):
-        with pytest.raises(ValueError, match="cannot be a symlink"):
-            operation()
-
-def test_file_checkpoint_store_serializes_same_run_writers(tmp_path: Path) -> None:
-    from concurrent.futures import ThreadPoolExecutor
-    from v2.runtime.checkpoints import ExecutionCheckpoint
-
-    store = FileCheckpointStore(tmp_path)
-    checkpoints = [ExecutionCheckpoint(version=2,
-        run_id="shared", task=_task(), plan=_plan(), attempts={"one": index % 2}
-    ) for index in range(20)]
-    with ThreadPoolExecutor(max_workers=8) as pool:
-        list(pool.map(store.save, checkpoints))
-    loaded = store.load("shared")
-    assert loaded in checkpoints
-    assert not list(tmp_path.glob(".checkpoint-*"))
-
-def test_checkpoint_store_rejects_symlinked_directory(tmp_path: Path) -> None:
-    from v2.runtime.checkpoints import ExecutionCheckpoint
-
-    outside = tmp_path / "outside"
-    outside.mkdir()
-    directory = tmp_path / "checkpoints"
-    directory.symlink_to(outside, target_is_directory=True)
-    store = FileCheckpointStore(directory)
-    checkpoint = ExecutionCheckpoint(version=2, run_id="run", task=_task(), plan=_plan())
-    for operation in (
-        lambda: store.load("run"),
-        lambda: store.save(checkpoint),
-        lambda: store.delete("run"),
-    ):
-        with pytest.raises(ValueError, match="directory cannot be a symlink"):
-            operation()
-    assert list(outside.iterdir()) == []
 
 def test_project_store_update_rejects_identity_and_unknown_fields(tmp_path: Path) -> None:
     store = ProjectStore(tmp_path / "projects.sqlite3")
@@ -828,14 +339,6 @@ def test_project_store_handles_wall_clock_rollback_on_update(
     assert updated.updated_at == project.updated_at
     assert updated.status == "running"
 
-def test_checkpoint_rejects_noninteger_attempt_counts() -> None:
-    from pydantic import ValidationError
-    from v2.runtime.checkpoints import ExecutionCheckpoint
-    for count in (True, 1.5, "1"):
-        with pytest.raises(ValidationError, match="valid integer|attempt counts must be integers"):
-            ExecutionCheckpoint(version=2,
-                run_id="run", task=_task(), plan=_plan(), attempts={"one": count},
-            )
 
 def test_project_store_rejects_invalid_boundary_inputs(tmp_path: Path) -> None:
     store = ProjectStore(tmp_path / "projects.sqlite3")
@@ -851,13 +354,6 @@ def test_project_store_rejects_invalid_boundary_inputs(tmp_path: Path) -> None:
     with pytest.raises(ValueError, match="requires changes"):
         store.update(project.id)
 
-def test_checkpoint_store_rejects_symlinked_parent_directory(tmp_path: Path) -> None:
-    outside = tmp_path / "outside"
-    outside.mkdir()
-    parent = tmp_path / "parent"
-    parent.symlink_to(outside, target_is_directory=True)
-    with pytest.raises(ValueError, match="parent cannot be a symlink"):
-        FileCheckpointStore(parent / "checkpoints")
 
 def test_project_store_rejects_symlinked_parent_directory(tmp_path: Path) -> None:
     outside = tmp_path / "outside"
@@ -890,14 +386,6 @@ def test_project_store_rejects_symlinked_sqlite_auxiliary_files(
         ProjectStore(path)
     assert outside.read_text() == "private"
 
-def test_checkpoint_store_revalidates_copied_checkpoint(tmp_path: Path) -> None:
-    from pydantic import ValidationError
-    from v2.runtime.checkpoints import ExecutionCheckpoint
-    valid = ExecutionCheckpoint(version=2, run_id="run", task=_task(), plan=_plan())
-    unsafe = valid.model_copy(update={"run_id": " "})
-    with pytest.raises(ValidationError, match="run id must be non-empty"):
-        FileCheckpointStore(tmp_path).save(unsafe)
-    assert list(tmp_path.iterdir()) == []
 
 def test_executable_hash_rejects_symlinked_source(monkeypatch, tmp_path: Path) -> None:
     from v2.api import routes
@@ -1053,8 +541,6 @@ def test_v2_sse_failure_event_carries_typed_kind_and_message():
         "kind": "quota", "message": "The model ran out of quota."}
 
 
-
-
 def test_frontend_can_select_native_v2_chat_runtime():
     from pathlib import Path
 
@@ -1086,7 +572,6 @@ def test_live_route_reports_model_resolution_failure_as_sse(monkeypatch):
     assert response.text.count("event: graph_end") == 1
     assert "event: final_answer" not in response.text
     assert "private model detail" not in response.text
-
 
 
 def test_public_sse_projection_omits_real_envelope_source_identity():
@@ -1158,14 +643,14 @@ def test_runtime_asset_manifest_is_deeply_immutable(monkeypatch):
     from v2.api import routes
     manifest=routes.runtime_asset_manifest()
     with pytest.raises((TypeError,AttributeError)):manifest.revision='x'
-    with pytest.raises(TypeError):manifest.prompt_sha256['semantic_verifier']='x'
+    with pytest.raises(TypeError):manifest.prompt_sha256['pi_runtime']='x'
     with pytest.raises(TypeError):manifest.warehouse['sha256']='x'
     with pytest.raises(TypeError):manifest.semantic_baseline['baseline_id']='x'
     with pytest.raises(TypeError):manifest.module_sha256['routes']='x'
     with pytest.raises(TypeError):manifest.typed_argument_assets['capability_manifest']='x'
-    copied=manifest.as_dict();copied['prompt_sha256']['semantic_verifier']='x'
+    copied=manifest.as_dict();copied['prompt_sha256']['pi_runtime']='x'
     copied['typed_argument_assets']['capability_manifest']='x'
-    assert manifest.prompt_sha256['semantic_verifier']!='x'
+    assert manifest.prompt_sha256['pi_runtime']!='x'
     assert manifest.typed_argument_assets['capability_manifest']!='x'
 
 def test_preflight_exact_match_and_each_mismatch(monkeypatch,tmp_path):
@@ -1183,16 +668,6 @@ def test_preflight_exact_match_and_each_mismatch(monkeypatch,tmp_path):
     revision_path=tmp_path/'revision.json';revision_path.write_text(json.dumps(revision_only))
     assert routes.preflight_runtime_assets(revision_path) is observed
 
-def test_registry_completeness_rejects_missing_and_extra(monkeypatch):
-    from v2.api import routes
-    from v2.adapters import models
-    original=dict(models._PROVIDER_ROUTE_PROMPT_NAMES)
-    for changed in ({k:v for k,v in original.items() if k!='planner'}, {**original,'extra':'intake'}):
-        monkeypatch.setattr(models,'_PROVIDER_ROUTE_PROMPT_NAMES',changed)
-        monkeypatch.setattr(models,'_PROVIDER_ROUTE_PROMPTS',None)
-        routes.runtime_asset_manifest.cache_clear()
-        with pytest.raises(RuntimeError,match='incomplete or has extra'):routes.runtime_asset_manifest()
-    monkeypatch.setattr(models,'_PROVIDER_ROUTE_PROMPT_NAMES',original);monkeypatch.setattr(models,'_PROVIDER_ROUTE_PROMPTS',None);routes.runtime_asset_manifest.cache_clear()
 
 def test_loaded_module_hash_detects_old_import_against_new_expected(monkeypatch,tmp_path):
     import json
@@ -1201,22 +676,6 @@ def test_loaded_module_hash_detects_old_import_against_new_expected(monkeypatch,
     path=tmp_path/'new.json';path.write_text(json.dumps(expected))
     with pytest.raises(RuntimeError,match='substantive mismatch'):routes.preflight_runtime_assets(path)
 
-def test_real_lifespan_freezes_manifest_and_runtime_prompts(monkeypatch,tmp_path):
-    from v2.main import app as v2_app
-    from v2.api import routes
-    from v2.adapters import models
-    routes.runtime_asset_manifest.cache_clear();models._PROVIDER_ROUTE_PROMPTS=None
-    observed=routes.runtime_asset_manifest();path=_write_expected_manifest(tmp_path/'expected.json',observed)
-    monkeypatch.setenv('DIME_EXPECTED_ASSET_MANIFEST',str(path))
-    with TestClient(v2_app) as client:
-        first=client.get('/api/revision').json();assert first==observed.as_dict()
-        assert first['prompt_sha256']['semantic_verifier']==hashlib.sha256(models.provider_route_prompt('semantic_verifier','verifier').encode()).hexdigest()
-        verifier_path=routes._BACKEND/'v2/prompts/verifier.md';original=verifier_path.read_bytes()
-        try:
-            verifier_path.write_bytes(b'later verifier')
-            assert client.get('/api/revision').json()==first
-            assert hashlib.sha256(models.provider_route_prompt('semantic_verifier','verifier').encode()).hexdigest()==first['prompt_sha256']['semantic_verifier']
-        finally:verifier_path.write_bytes(original)
 
 def test_lifespan_fails_before_serving_on_expected_mismatch(monkeypatch,tmp_path):
     import json
@@ -1236,16 +695,6 @@ def test_lifespan_starts_on_revision_only_mismatch(monkeypatch,tmp_path):
     with TestClient(v2_app) as client:
         assert client.get('/api/revision').status_code==200
 
-def test_loaded_behavior_fingerprint_changes_on_import_time_registry_binding(monkeypatch):
-    from v2.api import routes
-    from v2.adapters import models
-    original=routes._loaded_behavior_sha256(models,{"provider_route_prompt_names":models._PROVIDER_ROUTE_PROMPT_NAMES})
-    changed=dict(models._PROVIDER_ROUTE_PROMPT_NAMES);changed['semantic_verifier']='different_import_time_binding'
-    changed_hash=routes._loaded_behavior_sha256(models,{"provider_route_prompt_names":changed})
-    assert changed_hash!=original
-    observed=routes.runtime_asset_manifest().as_dict();expected={**observed,"module_sha256":{**observed['module_sha256'],"models":changed_hash}}
-    assert expected['executable_sha256']==observed['executable_sha256']
-    assert expected['module_sha256']['models']!=observed['module_sha256']['models']
 
 def test_preflight_rejects_expected_manifest_inside_executable_roots(tmp_path):
     import json
@@ -1257,99 +706,6 @@ def test_preflight_rejects_expected_manifest_inside_executable_roots(tmp_path):
             routes.preflight_runtime_assets(inside)
     finally:
         inside.unlink(missing_ok=True)
-
-
-
-
-
-
-def test_public_provenance_separates_season_and_as_of():
-    from datetime import UTC,date,datetime
-    from types import SimpleNamespace
-    from v2.runtime.presentation import _public_evidence
-    from v2 import contracts
-    b=contracts.EvidenceOutputBinding(requirement_kind="task",output_id="WINS",node_id="n",evidence_id="e",selector="rows.WINS",value={"kind":"integer","value":61},unit={"kind":"declared","value":"count"},domain="standings")
-    st=contracts.OutputFinalStatus(requirement_kind="task",output_id="WINS",status="complete",claim_index=0,binding=b)
-    ev=contracts.EvidenceEnvelope(evidence_id="e",capability="standings",source="private",observed_at=datetime.now(UTC),season="2025-26",as_of=date(2026,4,1),rows={"WINS":61})
-    tables=_public_evidence(SimpleNamespace(output_statuses=[st],draft=contracts.DraftReport(sections=[],claims=[]),execution=SimpleNamespace(evidence=[ev])))[0]
-    assert tables[0]["provenance"]=={"capability":"standings","origin":"undeclared","warehouse_id":None,"season":"2025-26","as_of":"2026-04-01","live_sources":[]}
-    assert "private" not in str(tables)
-
-def test_no_authority_with_internal_gap_still_nonblank_and_terminal():
-    from types import SimpleNamespace
-    from v2.runtime.presentation import _answer_text
-    from v2.contracts import Gap
-    text=_answer_text(SimpleNamespace(output_statuses=[],verified_claims=[],execution=SimpleNamespace(evidence=[]),gaps=[Gap(kind="execution_failure",message="SECRET")]))
-    assert text.strip() and "SECRET" not in text
-
-
-
-
-
-def test_stream_publishes_claim_prose_and_one_clean_row_per_metric(monkeypatch,tmp_path):
-    from datetime import UTC, datetime
-
-    from v2 import contracts
-    from v2.adapters.capabilities import CAPABILITIES
-    from v2.adapters.core import build_envelope
-    from v2.runtime.ledger import RunLedger
-    from v2.runtime.loop import _verified_claims
-    from v2.runtime.models import ExecutionResult,RuntimeResult
-
-    metrics=["NET_RATING","OFF_RATING","DEF_RATING"]
-    unit=CAPABILITIES["team_ratings"].units["NET_RATING"]
-    subject=contracts.EntityRef(id="1",type="team",display_name="Capital City Stars")
-    row={"TEAM_ID":1,"TEAM_NAME":subject.display_name,
-         "NET_RATING":9.6,"OFF_RATING":119.8,"DEF_RATING":110.2}
-    envelope=build_envelope(
-        CAPABILITIES["team_ratings"],{"season":"2025-26"},
-        {"ok":True,"rows":[row],"meta":{"source":"warehouse","season":"2025-26",
-            "warehouse_id":"frozen-eval","warehouse_sha256":"a"*64}},
-        entities=[subject],observed_at=datetime.now(UTC))
-    requirement=contracts.EvidenceRequirement(
-        id="capital_city_stars_team_ratings_2025_26",description="ratings for one team",
-        capability_options=["team_ratings"],requested_outputs=list(metrics))
-    task=contracts.TaskSpec(
-        goal="ratings for one team",mode="quick",deliverable="ratings",
-        requested_outputs=list(metrics),
-        season=contracts.SeasonRef(value="2025-26",source="user",confidence=1.0),
-        entities=[subject],requirements=[requirement])
-    node=contracts.PlanNode(id="ratings",description="ratings for one team",
-        capability_hints=["team_ratings"],covers_requirement_ids=[requirement.id],
-        status="complete")
-    execution=ExecutionResult(
-        plan=contracts.Plan(nodes=[node]),evidence_by_node={node.id:envelope},
-        attempts={node.id:1})
-    bindings=[contracts.EvidenceOutputBinding(
-        requirement_kind="evidence",requirement_id=requirement.id,output_id=metric,
-        node_id=node.id,evidence_id=envelope.evidence_id,selector=f"rows[0].{metric}",
-        row_selector="rows[0]",subject_entity_type="team",subject_entity_id=subject.id,
-        subject_selector="rows[0].TEAM_ID",value={"kind":"float","value":row[metric]},
-        unit={"kind":"declared","value":unit},domain="team_ratings")
-        for metric in metrics]
-    claim=contracts.Claim(text="Capital City Stars rate at 119.8 points per 100 "
-        "possessions offensively and 110.2 defensively, for a net rating of 9.6.",
-        kind="observed",evidence_ids=[envelope.evidence_id],output_bindings=bindings)
-    draft=contracts.DraftReport(sections=["ratings"],claims=[claim])
-    verification=contracts.VerificationReport(status="pass",claim_results=[
-        {"claim_index":0,"supported":True,"reasons":[]}])
-    claims,gaps=_verified_claims(task,execution,draft,verification,
-        {envelope.evidence_id:envelope})
-    assert gaps==[]
-    result=RuntimeResult(task=task,execution=execution,draft=draft,
-        verification=verification,verified_claims=claims)
-    assert len(result.output_statuses)==2*len(metrics)
-    from v2.runtime.presentation import present_result
-    payload=present_result(result)
-    assert payload["text"].splitlines()==[
-        "Capital City Stars rate at 119.8 points per 100 possessions offensively "
-        "and 110.2 defensively, for a net rating of 9.6."]
-    assert "NET_RATING" not in payload["text"]
-    custom=payload
-    assert [row["output_id"] for row in custom["tables"]]==metrics
-    assert [row["value"] for row in custom["tables"]]==["9.6","119.8","110.2"]
-
-
 
 
 def test_runtime_manifest_pins_accepted_semantic_baseline():

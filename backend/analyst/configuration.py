@@ -28,3 +28,11 @@ def worker_environment():
     # Each isolated analysis worker uses one numerical thread.
     return {**{name: os.environ[name] for name in names if name in os.environ},
             "OPENBLAS_NUM_THREADS": "1", "OMP_NUM_THREADS": "1", "POLARS_MAX_THREADS": "1"}
+
+
+def resolve_product_model(model_id=None):
+    from shared.providers import resolve_model_id, get_llm
+    from analyst.product_session import resolved_provider
+
+    provider, name = resolve_model_id(model_id or os.environ.get("DIME_V2_MODEL"))
+    return resolved_provider(provider, get_llm(provider, name), **model_limits(provider, name))

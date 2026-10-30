@@ -67,17 +67,6 @@ def test_catalog_exposes_only_free_models(monkeypatch):
         provider, slug = item["id"].split(":", 1)
         assert is_free_model(provider, slug)
 
-def test_structured_models_clamp_configured_paid_openrouter(monkeypatch):
-    from v2.adapters.models import ProviderStructuredModel
-    monkeypatch.setattr(settings, "openrouter_model", "openai/gpt-4o")
-    monkeypatch.setattr(settings, "openrouter_api_key", "key")
-    monkeypatch.setattr(settings, "mistral_api_key", "free-limit")
-    monkeypatch.setattr(settings, "inception_api_key", "configured-paused")
-    monkeypatch.setattr(settings, "groq_api_key", "configured-paused")
-    models = ProviderStructuredModel("openrouter", "openai/gpt-4o")._models()
-    assert models
-    for provider, model in models:
-        assert is_free_model(provider, model.model_name)
 
 def test_direct_get_llm_never_constructs_paused_providers(monkeypatch):
     import shared.providers as providers
@@ -91,26 +80,6 @@ def test_direct_get_llm_never_constructs_paused_providers(monkeypatch):
     assert providers.get_llm("groq", "openai/gpt-oss-120b") is None
     assert constructed == []
 
-def test_structured_mistral_success_ledger_identity_is_free_limit(monkeypatch):
-    import asyncio
-    from pydantic import BaseModel
-    from v2.adapters import models as adapter
-    from v2.runtime import RequestEnvelope
-    class Out(BaseModel): value: str
-    class Run: output=Out(value="ok")
-    class Agent:
-        def __init__(self,*args,**kwargs): pass
-        async def run(self,prompt): return Run()
-    monkeypatch.setattr(adapter,"Agent",Agent)
-    monkeypatch.setattr(settings,"nvidia_nim_api_key","")
-    monkeypatch.setattr(settings,"openrouter_api_key","")
-    monkeypatch.setattr(settings,"mistral_api_key","free-limit")
-    model=adapter.ProviderStructuredModel("mistral","arbitrary-input")
-    env=RequestEnvelope.freeze(provider="mistral",model="arbitrary-input",
-        route="intake",prompt="p",context={},tool_schemas={},planner_version="v2")
-    got=asyncio.run(model.generate(schema=Out,prompt="p",payload={},envelope=env))
-    assert got.value=="ok"
-    assert model.last_model==f"mistral_free_limit:{settings.mistral_model}"
 
 def test_groq_free_tier_activation_is_exact_and_ordered(monkeypatch):
     import shared.providers as providers

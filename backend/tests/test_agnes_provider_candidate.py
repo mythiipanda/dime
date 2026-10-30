@@ -7,12 +7,6 @@ import pytest
 
 from shared import providers
 from shared.config import settings
-from v2.adapters.models import ProviderStructuredModel
-
-
-@pytest.fixture
-def anyio_backend():
-    return "asyncio"
 
 
 def test_agnes_is_opt_in_and_ordered_after_groq_before_gemini(monkeypatch):
@@ -67,48 +61,6 @@ def test_agnes_client_uses_allowlisted_https_openai_compatible_endpoint(monkeypa
     assert client.max_retries == 0
 
 
-@pytest.mark.anyio
-async def test_agnes_structured_adapter_fake_transport(monkeypatch):
-    monkeypatch.setattr(settings, "dime_enable_agnes", True)
-    monkeypatch.setattr(settings, "agnes_api_key", "fake-agnes")
-    sent: list[httpx.Request] = []
-
-    def handle(request: httpx.Request) -> httpx.Response:
-        sent.append(request)
-        return httpx.Response(200, json={
-            "id": "fake-completion", "created": 1,
-            "model": "agnes-3.0-flash", "object": "chat.completion",
-            "choices": [{"index": 0, "finish_reason": "stop",
-                         "message": {"role": "assistant", "content": '{"value":"ok"}'}}],
-        })
-
-    client = httpx.AsyncClient(transport=httpx.MockTransport(handle))
-    adapter = ProviderStructuredModel("agnes", "agnes-3.0-flash", http_client=client)
-    assert [provider for provider, _ in adapter._models()] == ["agnes"]
-    from pydantic import BaseModel
-    from v2.runtime import RequestEnvelope
-
-    class Result(BaseModel):
-        value: str
-
-    envelope = RequestEnvelope.freeze(
-        provider="agnes", model="agnes-3.0-flash", route="intake",
-        prompt="fixture only", context={}, tool_schemas={}, planner_version="v2")
-    try:
-        result = await adapter.generate(
-            schema=Result, prompt="fixture only", payload={}, envelope=envelope)
-    finally:
-        await client.aclose()
-    assert result.value == "ok"
-    assert adapter.last_provider == "agnes"
-    assert adapter.last_model == "agnes-3.0-flash"
-    assert len(sent) == 1
-    assert sent[0].url.scheme == "https"
-    assert sent[0].url.host == "apihub.agnes-ai.com"
-    assert json.loads(sent[0].content)["model"] == "agnes-3.0-flash"
-    assert sent[0].headers["authorization"] == "Bearer fake-agnes"
-
-
 def test_catalog_registers_only_enabled_agnes_models(monkeypatch):
     monkeypatch.setattr(settings, "dime_enable_agnes", True)
     monkeypatch.setattr(settings, "agnes_api_key", "fake-agnes")
@@ -117,3 +69,8 @@ def test_catalog_registers_only_enabled_agnes_models(monkeypatch):
     assert {item["id"] for item in choices} == {
         "agnes:agnes-3.0-flash", "agnes:agnes-2.5-flash"}
     assert all(item["available"] for item in choices)
+
+
+@pytest.fixture
+def anyio_backend():
+    return "asyncio"

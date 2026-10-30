@@ -976,3 +976,43 @@ for spec in CAPABILITIES.values():
         raise AssertionError(
             f"capability {spec.name} aliases undeclared outputs: "
             f"{undeclared_aliases}")
+
+
+def _structural_schema(value):
+    if isinstance(value, dict):
+        return {
+            key: _structural_schema(item)
+            for key, item in value.items()
+            if key not in {"description", "title"}
+        }
+    if isinstance(value, list):
+        return [_structural_schema(item) for item in value]
+    return value
+
+def capability_catalog() -> dict[str, dict]:
+    from shared.tools import WAREHOUSE_TOOLS
+    from v2.adapters.web import WebSearchRequest, WebFetchRequest
+
+    by_tool = {tool.name: tool for tool in WAREHOUSE_TOOLS}
+    catalog: dict[str, dict] = {}
+    for name, spec in CAPABILITIES.items():
+        tool = by_tool.get(spec.tool_name)
+        args_schema = (tool.args_schema.model_json_schema()
+                       if tool is not None and tool.args_schema is not None
+                       else {"type": "object", "properties": {}})
+        catalog[name] = {
+            "description": CAPABILITY_DESCRIPTIONS[name],
+            "arguments": _structural_schema(args_schema),
+            "dependent_entity_arguments": dict(spec.dependent_entity_arguments),
+        }
+    catalog.update({
+        "web_search": {
+            "description": "Discover current public sources; snippets are discovery only.",
+            "arguments": _structural_schema(WebSearchRequest.model_json_schema()),
+        },
+        "web_fetch": {
+            "description": "Extract one selected result from exactly one web_search dependency.",
+            "arguments": _structural_schema(WebFetchRequest.model_json_schema()),
+        },
+    })
+    return catalog

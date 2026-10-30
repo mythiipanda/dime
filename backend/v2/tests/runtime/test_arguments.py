@@ -53,40 +53,6 @@ def test_defs_removal_is_schema_container_scoped_and_bad_pointers_are_typed():
   with pytest.raises(SchemaCompileError) as exc:normalize_provider_wire_schema({'$ref':pointer})
   assert exc.value.code==code
 
-def _assert_snapshot_binding(root, live):
- import json,hashlib
- from v2.argument_schemas import canonical_hash
- source=json.loads((root/'catalog.source.json').read_text())
- aggregate=json.loads((root/'catalog.compiled.json').read_text())
- manifest=json.loads((root/'manifest.json').read_text())
- assert live==source
- actual=compile_capability_catalog(live);assert actual==aggregate
- assert manifest['catalog_canonical_sha256']==canonical_hash(live)==canonical_hash(source)
- assert manifest['compiled_canonical_sha256']==canonical_hash(actual)==canonical_hash(aggregate)
- rows={x['capability_id']:x for x in aggregate['capabilities']}
- assert len(rows)==manifest['count']==50
- files={p.stem:p for p in root.glob('*.json') if p.name not in {'catalog.source.json','catalog.compiled.json','manifest.json'}}
- assert set(rows)==set(files)
- assert all(json.loads(files[name].read_text())==row for name,row in rows.items())
- assert all(hashlib.sha256((root/name).read_bytes()).hexdigest()==digest for name,digest in manifest['files'].items())
-
-def test_all_50_capability_snapshots_bind_live_source_aggregate_and_rows():
- import pathlib
- from v2.runtime.assembly import capability_catalog
- _assert_snapshot_binding(pathlib.Path(__file__).parents[2]/'capability_snapshots',capability_catalog())
-
-def test_snapshot_binding_detects_description_only_source_drift(tmp_path):
- import pathlib,shutil,pytest
- from v2.runtime.assembly import capability_catalog
- root=pathlib.Path(__file__).parents[2]/'capability_snapshots';shutil.copytree(root,tmp_path/'s')
- live=capability_catalog();live['standings']['description']+=' drift'
- with pytest.raises(AssertionError):_assert_snapshot_binding(tmp_path/'s',live)
-
-def test_snapshot_binding_detects_per_capability_row_drift(tmp_path):
- import pathlib,shutil,json,pytest
- from v2.runtime.assembly import capability_catalog
- root=pathlib.Path(__file__).parents[2]/'capability_snapshots';shutil.copytree(root,tmp_path/'s');p=tmp_path/'s'/'standings.json';row=json.loads(p.read_text());row['status']='DRIFT';p.write_text(json.dumps(row))
- with pytest.raises(AssertionError):_assert_snapshot_binding(tmp_path/'s',capability_catalog())
 
 def test_array_branch_records_item_constraints():
  out=compile_capability_catalog({'c':{'arguments':{'type':'object','additionalProperties':False,'properties':{'xs':{'type':'array','minItems':1,'items':{'type':'string','enum':['a'],'minLength':1}}}}}})

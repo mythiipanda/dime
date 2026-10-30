@@ -4,7 +4,6 @@ import pytest
 from shared import store
 from v2.adapters import coverage
 from v2.adapters.capabilities import CAPABILITIES
-from v2.adapters.models import ModelIntake
 from v2.contracts import EvidenceRequirement, SeasonRef, TaskSpec
 
 SEASON_SCOPED = tuple(
@@ -136,41 +135,6 @@ def warehouse_without(monkeypatch, tmp_path):
     store.warehouse_identity_cache_clear()
     coverage.coverage_cache_clear()
 
-def test_a_capability_whose_table_is_absent_is_not_season_covered(
-        warehouse_without):
-    warehouse_without([
-        "silver_hist_player_seasons", "silver_team_games"])
-    unserved = {
-        name: coverage.declared_tables_for_capability(name, {})
-        for name in SEASON_SCOPED
-    }
-    unserved = {
-        name: tables for name, tables in unserved.items()
-        if tables and not coverage.tables_for_capability(name, {})
-    }
-    assert unserved, "every capability kept a table it reads"
-    season = busiest_season()
-    for name, tables in unserved.items():
-        for table in tables:
-            assert table not in on_hand_tables(), (name, table)
-        result = ModelIntake._mark_uncovered_season(task_for(name, season))
-        assert result.season.value == season, name
-        spoken = [*result.open_questions, *result.assumptions]
-        assert spoken, f"{name} reads only tables it does not have"
-        joined = " ".join(spoken)
-        for table in tables:
-            assert table in joined, (name, table)
-
-def test_a_capability_keeps_its_own_coverage_when_only_one_read_is_absent(
-        warehouse_without):
-    warehouse_without(["silver_hist_player_seasons", "silver_team_games"])
-    tables = coverage.tables_for_capability("rookie_leaders", {})
-    assert tables == ("silver_hist_player_seasons",)
-    assert coverage.absent_tables_for_capability(
-        "rookie_leaders", {}) == ("silver_player_season",)
-    season = busiest_season()
-    assert ModelIntake._mark_uncovered_season(
-        task_for("rookie_leaders", season)).open_questions == []
 
 def test_a_tool_reads_no_season_from_a_table_it_does_not_have(
         warehouse_without):

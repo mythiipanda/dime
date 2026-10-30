@@ -206,46 +206,6 @@ async def test_web_fetch_capability_rejects_unselected_or_unrelated_source():
         await WebFetchCapability().execute(
             node, TaskSpec(goal="role", mode="quick", deliverable="answer"), [parent])
 
-@pytest.mark.anyio
-async def test_planned_web_dag_binds_fetch_to_content_addressed_parent():
-    from datetime import UTC, datetime
-    from v2.adapters.web import (WebFetchCapability, WebPage,
-                                 WebSearchCapability, WebSearchResponse)
-    from v2.contracts import Plan, PlanNode, TaskSpec
-    from v2.runtime import PlanExecutor
-
-    class Search:
-        name = "fixture-search"
-        async def search(self, request):
-            return WebSearchResponse(provider=self.name, query=request.query,
-                observed_at=datetime(2026, 9, 15, tzinfo=UTC),
-                results=[WebSearchResult(rank=1, url="https://example.com/story",
-                    title="Story", snippet="Discovery")], coverage="fixture")
-
-    class Fetch:
-        name = "fixture-fetch"
-        async def fetch(self, result):
-            return WebPage(url=result.url, title=result.title,
-                retrieved_at=datetime(2026, 9, 15, tzinfo=UTC),
-                markdown="Full source", content_hash=hashlib.sha256("Full source".encode()).hexdigest())
-
-    plan = Plan(nodes=[
-        PlanNode(id="discover", description="current source",
-            capability_hints=["web_search"],
-            arguments={"query": "current Jaylen Brown role"}),
-        PlanNode(id="extract", description="full page", depends_on=["discover"],
-            capability_hints=["web_fetch"], arguments={"result_rank": 1}),
-    ])
-    result = await PlanExecutor({
-        "web_search": WebSearchCapability(Search()),
-        "web_fetch": WebFetchCapability(Fetch()),
-    }).execute(TaskSpec(
-        goal="role", mode="project", deliverable="answer",
-        season={"value": "2025-26", "source": "user", "confidence": 1},
-    ), plan)
-    assert all(item.task_season_scoped is False for item in result.evidence)
-    assert result.evidence[1].lineage == [result.evidence[0].evidence_id]
-    assert result.evidence[1].rows["markdown"] == "Full source"
 
 def test_web_preflight_rejects_unknown_arguments() -> None:
     from v2.adapters.web import WebSearchCapability

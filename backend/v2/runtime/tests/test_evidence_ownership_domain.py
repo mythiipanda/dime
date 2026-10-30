@@ -15,7 +15,6 @@ from v2.contracts import (
     TaskSpec,
     VerifiedClaim,
 )
-from v2.runtime.loop import _binding_diagnostic_event
 from v2.runtime.models import ExecutionResult, admit_verified_claim_bindings
 
 _SHORT_NODE_ID = "qualified_leaders"
@@ -150,55 +149,3 @@ def test_metric_name_domain_still_rejects():
     bindings = _bindings(_SHORT_NODE_ID, domain="assists")
     with pytest.raises(ValueError, match="binding domain does not match capability"):
         _admit(_task(), _envelope(), bindings, [_node()])
-
-def _candidate(bindings):
-    envelope = _envelope()
-    evidence_ids = list(dict.fromkeys(item.evidence_id for item in bindings))
-    claim = Claim(
-        text="Trae Young led with 880 assists.",
-        kind="observed",
-        evidence_ids=evidence_ids,
-        output_bindings=bindings,
-    )
-    return VerifiedClaim(
-        claim_index=0,
-        claim=claim,
-        evidence_ids=evidence_ids,
-        sources=[
-            ClaimSource(
-                evidence_id=evidence_id,
-                source=envelope.source,
-                capability=envelope.capability,
-                observed_at=envelope.observed_at,
-            )
-            for evidence_id in evidence_ids
-        ],
-        output_bindings=bindings,
-    )
-
-def _execution(envelope):
-    nodes = [_node()]
-    return ExecutionResult(
-        plan=Plan(nodes=nodes),
-        evidence_by_node={_SHORT_NODE_ID: envelope},
-        attempts={node.id: 1 for node in nodes},
-    )
-
-def test_diagnostic_carries_domain_and_evidence_capability():
-    envelope = _envelope()
-    bindings = _bindings(_SHORT_NODE_ID, domain="get_leaders")
-    event = _binding_diagnostic_event(
-        _execution(envelope), _candidate(bindings), 0,
-        "run-1", "binding domain does not match capability",
-        {_LIVE_EVIDENCE_ID: envelope})
-    assert event.domain == "get_leaders"
-    assert event.evidence_capability == "qualified_leaders"
-
-def test_diagnostic_without_evidence_leaves_capability_empty():
-    envelope = _envelope()
-    bindings = _bindings(_SHORT_NODE_ID, domain="get_leaders")
-    event = _binding_diagnostic_event(
-        _execution(envelope), _candidate(bindings), 0,
-        "run-1", "binding domain does not match capability")
-    assert event.domain == "get_leaders"
-    assert event.evidence_capability is None

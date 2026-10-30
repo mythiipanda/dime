@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
+import marshal
 import json
 import os
 import signal
@@ -14,6 +16,9 @@ from pydantic import BaseModel, ConfigDict
 
 from v2.api.events import Failure, FinalAnswer, GraphEnd, Token, ToolCall, ToolResult, WorkLog
 from v2.api.sse import encode_event
+
+
+_LOADED_MODULE_CODE_SHA256 = hashlib.sha256(marshal.dumps(__loader__.get_code(__name__))).hexdigest()
 
 
 class SourceRecord(BaseModel):

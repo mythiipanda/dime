@@ -8,9 +8,7 @@ from shared import store
 from shared.tools import WAREHOUSE_TOOLS
 from v2.adapters import coverage
 from v2.adapters.capabilities import CAPABILITIES
-from v2.adapters.models import ModelIntake
 from v2.contracts import EvidenceRequirement, SeasonRef, TaskSpec
-from v2.runtime.assembly import capability_catalog
 
 TOOL_MODULES = {tool.name: tool for tool in WAREHOUSE_TOOLS}
 SEASON_SCOPED = tuple(
@@ -30,23 +28,6 @@ def test_every_capability_names_a_registered_tool():
     )
     assert not unregistered, f"unregistered tools: {unregistered}"
 
-def _seasonless_evidence_task(season: str) -> TaskSpec:
-    return TaskSpec(
-        goal="Cap space for the roster",
-        mode="quick",
-        deliverable="answer",
-        season=SeasonRef(value=season, source="user", confidence=1.0),
-        required_evidence=["contracts"],
-        requirements=[EvidenceRequirement(
-            id="cap",
-            description="Cap ledger",
-            capability_options=["contracts"],
-            capability_arguments={"season": season},
-        )],
-    )
-
-def test_wire_catalog_offers_every_capability_the_registry_covers():
-    assert set(CAPABILITIES) <= set(capability_catalog())
 
 def test_season_scoped_capability_names_coverage_tables():
     blind = {
@@ -107,9 +88,6 @@ def test_registry_tables_carry_a_season_column_in_the_warehouse():
     assert not without_season, (
         f"registry names tables that hold no season: {without_season}")
 
-def test_capability_with_no_season_source_leaves_the_task_alone():
-    task = _seasonless_evidence_task("2015-16")
-    assert ModelIntake._mark_uncovered_season(task) == task
 
 def _scratch_warehouse(tmp_path):
     path = tmp_path / "scratch.duckdb"

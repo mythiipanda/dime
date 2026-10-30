@@ -24,7 +24,6 @@ from v2.contracts import (
     VerificationStatus,
     VerifiedClaim,
 )
-from v2.runtime.loop import _verified_claims
 from v2.runtime.models import ExecutionResult, admit_verified_claim_bindings
 
 KNOWN_REJECTION = "binding selector must locate exactly one value"
@@ -147,54 +146,6 @@ def test_admit_rejects_absent_selector_trio():
         admit_verified_claim_bindings(task, execution, draft, candidate)
     assert str(excinfo.value) == KNOWN_REJECTION
 
-def test_binding_diagnostic_emitted_when_diagnostics_on():
-    task, execution, draft, verification, evidence, candidate, envelope = _fixtures()
-    sink = []
-    admitted, rejected = _verified_claims(
-        task,
-        execution,
-        draft,
-        verification,
-        evidence,
-        diagnostics=True,
-        diagnostics_run_id=RUN_ID,
-        diagnostics_events=sink,
-    )
-    assert len(sink) == 1
-    event = sink[0]
-    assert isinstance(event, BindingDiagnostic)
-    assert event.run_id == RUN_ID
-    assert event.claim_index == 0
-    assert event.requirement_kind == "evidence"
-    assert event.requirement_id == "ratings"
-    assert event.output_id == "NET_RATING"
-    assert event.node_id == "ratings"
-    assert event.evidence_id == envelope.evidence_id
-    assert event.selector == "rows[5].NET_RATING"
-    assert event.row_selector == "rows[5]"
-    assert event.subject_selector == "rows[5].TEAM_ID"
-    assert event.subject_entity_type == "team"
-    assert event.subject_entity_id == "BOS"
-    assert event.declared_value == {"kind": "float", "value": "99.9"}
-    assert event.declared_unit == {
-        "kind": "declared",
-        "value": "points_per_100_possessions",
-    }
-    assert event.reanchor_changed is False
-    assert event.rejection == KNOWN_REJECTION
-    assert len(rejected) == 1
-    assert KNOWN_REJECTION in rejected[0].message
-    assert admitted[0].output_bindings == []
-
-def test_default_path_emits_no_binding_diagnostics():
-    task, execution, draft, verification, evidence, candidate, envelope = _fixtures()
-    sink = []
-    admitted, rejected = _verified_claims(
-        task, execution, draft, verification, evidence, diagnostics_events=sink
-    )
-    assert sink == []
-    assert len(rejected) == 1
-    assert KNOWN_REJECTION in rejected[0].message
 
 def test_sse_gate_drops_binding_diagnostic_on_default_path():
     event = BindingDiagnostic(

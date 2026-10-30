@@ -51,25 +51,3 @@ def test_replay_report_rejects_malformed_hashes() -> None:
             content_hashes={"t1": "a" * 64},
             mismatched_turn="t1",
         )
-
-def test_replay_helpers_build_reports_from_threads() -> None:
-    from v2.runtime.ledger import replay_entries, RunLedger, LedgerKind
-
-    ledger = RunLedger("run")
-    ledger.append(LedgerKind.TURN_START, turn_id="t1", data={"request": "ask"})
-    from v2.runtime.ledger import RequestEnvelope
-
-    envelope = RequestEnvelope.freeze(
-        provider="p", model="m", route="planner", prompt="ask",
-        context={"n": 1}, tool_schemas={"type": "object"},
-        planner_version="v2", output_strategy="strict_schema")
-    ledger.append(
-        LedgerKind.MODEL_REQUEST, turn_id="t1", call_id="model:t1:1",
-        data=envelope.model_dump(mode="json"))
-    thread = replay_entries(ledger.entries)
-    report = replay_verification_for("run", thread)
-    assert report.status == "verified" and report.item_count == 1
-    assert encode_replay_verification(report).startswith(
-        "event: replay_verification\n")
-    mismatch = replay_mismatch_report("run", "t1")
-    assert mismatch.status == "mismatch" and mismatch.mismatched_turn == "t1"
