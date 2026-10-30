@@ -4,7 +4,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from v2.api.routes import _answer_text
+from v2.runtime.presentation import _answer_text
 from v2.contracts import (
     Claim,
     ClaimKind,
@@ -397,7 +397,7 @@ def test_calculation_prose_requires_exact_admitted_number(shown, expected) -> No
     result = _result(claim)
     result.draft = SimpleNamespace(calculations=[calculation])
     result.task = SimpleNamespace(season=SimpleNamespace(value="2024-25"))
-    from v2.api.routes import _claim_numbers_are_admitted
+    from v2.runtime.presentation import _claim_numbers_are_admitted
     assert _claim_numbers_are_admitted(
         result, result.verified_claims[0], None) is (shown == expected)
 

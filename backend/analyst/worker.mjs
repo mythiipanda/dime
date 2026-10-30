@@ -21,6 +21,27 @@ export async function resolvedRuntime(config) {
   return { runtime, model: runtime.getModel(config.provider, config.model) };
 }
 
+
+function sourceSummary(record) {
+  let data = {};
+  try { data = JSON.parse(record.response.content?.[0]?.text ?? "{}"); }
+  catch { /* MCP errors may contain plain text; raw content remains readable by ref. */ }
+  return { ref: record.ref, tool: record.tool, failed: record.response.isError || data.ok === false, columns: data.columns,
+    declared_column_semantics: data.declared_column_semantics,
+    season_semantics: data.season_semantics, provenance: data.meta };
+}
+
+function priorSourceTool(records) {
+  const catalogue = new Map(records.map(record => [record.ref, record]));
+  return { name: "read_source", label: "Read prior source",
+    description: "Read a raw prior source by ref from this conversation. Filter rows in codemode before returning output. Includes source units and provenance.",
+    parameters: { type: "object", properties: { ref: { type: "string" } }, required: ["ref"], additionalProperties: false },
+    async execute(_callId, { ref }) {
+      if (!catalogue.has(ref)) throw new Error("Unknown conversation source ref");
+      return { content: [{ type: "text", text: JSON.stringify(catalogue.get(ref)) }] };
+    } };
+}
+
 // One stdin start followed by cancellation. EOF also cancels the request.
 export async function serve(runtimeFactory = resolvedRuntime) {
   const lines = createInterface({ input: process.stdin });
@@ -41,7 +62,7 @@ export async function serve(runtimeFactory = resolvedRuntime) {
       bridge = await connectPythonTools(start.bridge);
       bridgePid = bridge.pid;
       session = await createAnalystSession({ cwd: start.cwd, agentDir: start.agentDir,
-        model, modelRuntime: runtime, tools: bridge.tools.map(tool => ({ ...tool,
+        model, modelRuntime: runtime, tools: [...bridge.tools.map(tool => ({ ...tool,
           async execute(...args) {
             send({ type: "tool_call", name: tool.name });
             try {
@@ -58,7 +79,12 @@ export async function serve(runtimeFactory = resolvedRuntime) {
               send({ type: "tool_result", name: tool.name, status: "fail", error: "Tool failed" });
               throw error;
             }
-          } })) });
+          } })), priorSourceTool(start.sources ?? [])] });
+      session.subscribe(event => {
+        if (event.type === "message_update" && event.assistantMessageEvent?.type === "text_delta") {
+          send({ type: "token", text: event.assistantMessageEvent.delta });
+        }
+      });
       kind = "model";
       if (cancelled) return;
       // Persisted product turns are context, never additional prompts or a second session store.
@@ -71,6 +97,11 @@ export async function serve(runtimeFactory = resolvedRuntime) {
             stopReason: "stop", timestamp: Date.now() });
       for (const message of history) session.sessionManager.appendMessage(message);
       session.agent.state.messages = [...session.agent.state.messages, ...history];
+      if (start.sources?.length) {
+        const context = { role: "user", content: "Prior source catalogue. Use tools.read_source({ref}) inside codemode and return only filtered results:\n" + JSON.stringify(start.sources.map(sourceSummary)), timestamp: Date.now() };
+        session.sessionManager.appendMessage(context);
+        session.agent.state.messages.push(context);
+      }
       await session.prompt(start.q);
       if (cancelled) return;
       const last = session.messages.filter(m => m.role === "assistant").at(-1);

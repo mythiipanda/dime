@@ -39,17 +39,26 @@ await serve(async config => {
         writeFileSync(join(root, "entered"), "1");
         return stream;
       }
-      const first = count++ === 0;
-      const code = `const bad = JSON.parse(await tools.sql_exec({sql:"SELECT missing FROM silver_leaders_pts"}));
+      const first = count++ === 0 && config.scenario !== "model_immediate";
+      const code = config.scenario === "followup" ? `
+        const raw = JSON.parse(await tools.read_source({ref:${JSON.stringify(config.priorRef)}}));
+        const data = JSON.parse(raw.response.content[0].text);
+        const denied = await tools.read_source({ref:"not-in-conversation"}).then(() => false, () => true);
+        return {retrieved: data.rows[0].secret.length === 14 && data.rows[0].PTS === 71, unit: data.declared_column_semantics.PTS.unit, denied};
+      ` : `const bad = JSON.parse(await tools.sql_exec({sql:"SELECT missing FROM silver_leaders_pts"}));
         const good = JSON.parse(await tools.sql_exec({sql:"SELECT PTS FROM silver_leaders_pts"}));
         return {bad, good};`;
       const message = { role: "assistant", api: model.api, provider: model.provider, model: model.id,
         content: first ? [{ type: "toolCall", id: "query", name: "codemode", arguments: {code} }]
           : [{ type: "text", text: "Synthetic answer with retained sources" }],
-        stopReason: config.scenario === "model" && !first ? "error" : first ? "toolUse" : "stop",
-        errorMessage: config.scenario === "model" ? "fixture failure" : undefined,
+        stopReason: config.scenario.startsWith("model") && !first ? "error" : first ? "toolUse" : "stop",
+        errorMessage: config.scenario.startsWith("model") ? "invalid request: fixture failure" : undefined,
         timestamp: Date.now(), usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0,
           totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } } };
+      stream.push({ type: "start", partial: message });
+      if (!first && message.stopReason === "stop") {
+        stream.push({ type: "text_delta", contentIndex: 0, delta: message.content[0].text, partial: message });
+      }
       stream.push(message.stopReason === "error" ? {type:"error", reason:"error", error:message}
         : { type: "done", reason: message.stopReason, message });
       stream.end();

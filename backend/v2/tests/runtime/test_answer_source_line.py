@@ -5,7 +5,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from v2.api.routes import _answer_text
+from v2.runtime.presentation import _answer_text
 from v2.contracts import EvidenceEnvelope, EvidenceOutputBinding, OutputFinalStatus
 
 AS_OF = date(2026, 10, 3)
@@ -165,7 +165,7 @@ def test_every_live_source_has_plain_language_copy(identity: dict) -> None:
 def test_the_published_table_keeps_stamping_the_live_date_for_each_figure() -> None:
     from decimal import Decimal
 
-    from v2.api.routes import _public_evidence
+    from v2.runtime.presentation import _public_evidence
 
     envelope = _envelope(
         "live", identity={"kind": "live", "source": "nba_api"},

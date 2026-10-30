@@ -7,7 +7,7 @@ import pytest
 
 from v2.adapters.capabilities import CAPABILITIES, COUNT, PER_GAME
 from v2.adapters.core import call_capability
-from v2.api.routes import _answer_text
+from v2.runtime.presentation import _answer_text
 from v2.contracts import (
     Claim,
     ClaimSource,

@@ -103,7 +103,7 @@ def test_zero_in_a_non_scoring_metric_is_unaffected():
 
 @pytest.mark.anyio
 async def test_missing_data_zero_is_withheld_from_publication() -> None:
-    from v2.api.routes import _answer_text
+    from v2.runtime.presentation import _answer_text
     from v2.runtime import FakeCapability, PlanExecutor, Runtime
     from v2.runtime.assembly import MechanicalVerifier
     from v2.contracts import Plan, PlanNode, VerificationReport

@@ -305,6 +305,148 @@ async def test_authored_output_aliases_bind_to_typed_summary_fields(monkeypatch)
             ppg_alias] == "PPG"
 
 
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("period_scope", ["playoffs", "all", "unspecified"])
+async def test_unsupported_period_returns_unavailable_without_source_read(
+    monkeypatch, period_scope,
+):
+    calls = []
+    monkeypatch.setattr(
+        team_tools, "_hist_team_games",
+        lambda *_args: calls.append("read") or _game_rows(),
+    )
+
+    result = await team_tools.get_team_season_summary.ainvoke({
+        "team_id": _TEAM_ID,
+        "season": _SEASON,
+        "period_scope": period_scope,
+    })
+
+    assert result["ok"] is False
+    assert calls == []
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("rows", [
+    [],
+    [{"Game_ID": "missing-team", "_season": _SEASON,
+      "WL": "W", "PTS": 100}],
+    [{"Team_ID": _TEAM_ID, "Game_ID": "missing-season",
+      "WL": "W", "PTS": 100}],
+    [{"Team_ID": _TEAM_ID, "_season": _SEASON,
+      "WL": "W", "PTS": 100}],
+    [{"Team_ID": _TEAM_ID, "Game_ID": "bad-result",
+      "_season": _SEASON, "WL": "?", "PTS": 100}],
+    [{"Team_ID": _TEAM_ID, "Game_ID": "bad-points",
+      "_season": _SEASON, "WL": "W", "PTS": None}],
+    [{"Team_ID": _TEAM_ID, "Game_ID": "duplicate",
+      "_season": _SEASON, "WL": "W", "PTS": 100},
+     {"Team_ID": _TEAM_ID, "Game_ID": "duplicate",
+      "_season": _SEASON, "WL": "L", "PTS": 90}],
+])
+async def test_missing_or_ambiguous_rows_return_unavailable(monkeypatch, rows):
+    monkeypatch.setattr(team_tools, "_hist_team_games", lambda *_args: rows)
+
+    result = await team_tools.get_team_season_summary.ainvoke({
+        "team_id": _TEAM_ID,
+        "season": _SEASON,
+        "period_scope": "regular_season",
+    })
+
+    assert result["ok"] is False
+
+
+async def test_runtime_request_reaches_public_answer_with_typed_summary_and_calculation(
+    monkeypatch, tmp_path,
+):
+    import json
+
+    import httpx
+    from fastapi import FastAPI
+
+    from v2.adapters import coverage
+    from v2.api import routes
+    from v2.projects.service import ProjectStore
+    from v2.runtime import Runtime
+    from v2.runtime import assembly
+
+    request = (
+        "For the Boston Celtics, summarize the 2024-25 regular season: "
+        "games, wins, losses, total points, and points per game."
+    )
+    outputs = [
+        "GAMES", "WINS", "LOSSES", "TOTAL_POINTS", "POINTS_PER_GAME",
+    ]
+    warehouse = _WarehouseFixture(_game_rows())
+    _patch_fixture_warehouse(monkeypatch, warehouse)
+    monkeypatch.setattr(team_tools, "_abbrev", lambda _team: "BOS")
+    monkeypatch.setattr(coverage, "table_seasons", lambda _table: frozenset({_SEASON}))
+    monkeypatch.setattr(assembly, "declared_schema_for", lambda _capability: None)
+    monkeypatch.setattr(
+        "shared.providers.resolve_model_id",
+        lambda _model: ("openrouter", "fixture-model"),
+    )
+    import asyncio
+    from v2.runtime.presentation import present_result
+    result = asyncio.run(runtime.run('Who won MVP in 2023-24?'))
+    final = present_result(result)
+    custom = {key: final[key] for key in ("tables", "unverified_numbers")}
+    assert {row["output_id"] for row in evidence_rows} == set(outputs)
+    assert {row["output_id"]: row["value"] for row in evidence_rows} == {
+        "GAMES": "37", "WINS": "24", "LOSSES": "13",
+        "TOTAL_POINTS": "3996", "POINTS_PER_GAME": "108.0",
+    }
+    assert {row["output_id"]: row["unit"] for row in evidence_rows} == {
+        "GAMES": "count", "WINS": "count", "LOSSES": "count",
+        "TOTAL_POINTS": "points", "POINTS_PER_GAME": "per_game",
+    }
+    assert all(row["subject_id"] == str(_TEAM_ID)
+               for row in evidence_rows)
+    assert all(row["provenance"] == {
+        "capability": "team_season_summary",
+        "origin": "warehouse",
+        "warehouse_id": "configured-runtime",
+        "season": _SEASON,
+        "as_of": None,
+        "live_sources": [],
+    } for row in evidence_rows)
+    calculation_rows = [
+        row for row in custom["tables"] if "input_value" in row]
+    assert [(row["input_value"], row["output_id"])
+            for row in calculation_rows] == [
+        ("3996", "POINTS_PER_GAME"), ("37", "POINTS_PER_GAME"),
+    ]
+    assert custom["unverified_numbers"] == []
+    task_statuses = {
+        row["output_id"]: row["status"]
+        for row in final["carry"]["output_statuses"]
+        if row["requirement_kind"] == "task"
+    }
+    assert task_statuses == {output_id: "complete" for output_id in outputs}
+    calculation_statuses = [
+        row for row in final["carry"]["output_statuses"]
+        if row["requirement_kind"] == "calculation"
+    ]
+    assert any(
+        row["requirement_kind"] == "calculation"
+        and row["requirement_id"] == "ppg_arithmetic"
+        and row["output_id"] == "POINTS_PER_GAME"
+        and row["status"] == "complete"
+        and row["value"] == "108"
+        for row in calculation_statuses
+    ), [(row.get("requirement_id"), row.get("status"), row.get("value"),
+         row.get("unit")) for row in calculation_statuses]
+    assert final["carry"]["verification"] == "pass", {
+        "verified_claims": final["carry"]["verified_claims"],
+        "gaps": final["carry"]["gaps"],
+        "statuses": final["carry"]["output_statuses"],
+    }
+    assert "3,996 / 37 = 108" in final["text"]
+    assert "completeness is unverified" in final["text"]
+
+
 @pytest.mark.anyio
 async def test_runtime_request_reaches_public_answer_with_typed_summary_and_calculation(
     monkeypatch, tmp_path,
@@ -495,25 +637,14 @@ async def test_runtime_request_reaches_public_answer_with_typed_summary_and_calc
 
     monkeypatch.setattr(
         assembly, "ProviderStructuredModel", DeterministicStructuredModel)
-    original_build_runtime = assembly.build_runtime
-    built = {}
-
-    def capture_runtime(**kwargs):
-        runtime, ledger = original_build_runtime(**kwargs)
-        built["runtime"] = runtime
-        built["ledger"] = ledger
-        return runtime, ledger
-
-    monkeypatch.setattr(assembly, "build_runtime", capture_runtime)
-    app = FastAPI()
-    app.include_router(routes.router, prefix="/api")
-    async with httpx.AsyncClient(
-        transport=httpx.ASGITransport(app=app), base_url="http://testserver",
-    ) as client:
-        response = await client.post("/api/v2/chat/stream", json={"q": request})
-
-    assert response.status_code == 200
-    assert isinstance(built["runtime"], Runtime)
+    from v2.runtime.presentation import present_result
+    from v2.runtime.policy import ExecutionPolicy
+    runtime, ledger = assembly.build_runtime(provider="reflection", model_name="fixture",
+        run_id="summary-fixture", policy=ExecutionPolicy.live(ledger_dir=tmp_path / "ledger"))
+    result = await runtime.run(request, run_id="summary-fixture")
+    final = present_result(result)
+    custom = {key: final[key] for key in ("tables", "unverified_numbers")}
+    assert isinstance(runtime, Runtime)
     model = DeterministicStructuredModel.instances[-1]
     assert [call["route"] for call in model.calls] == [
         "intake", "planner", "synthesizer", "semantic_verifier",
@@ -527,17 +658,6 @@ async def test_runtime_request_reaches_public_answer_with_typed_summary_and_calc
     assert warehouse.read_parameters[3] == _TEAM_ID
     assert warehouse.read_parameters[4] == "BOS"
 
-    def event_data(name):
-        payloads = [
-            chunk.split("data: ", 1)[1]
-            for chunk in response.text.split("\n\n")
-            if chunk.startswith(f"event: {name}\n")
-        ]
-        assert payloads, f"missing {name} event"
-        return json.loads(payloads[-1])
-
-    custom = event_data("custom_data")
-    final = event_data("final_answer")
     expected_values = {
         "GAMES": 37,
         "WINS": 24,
@@ -598,54 +718,3 @@ async def test_runtime_request_reaches_public_answer_with_typed_summary_and_calc
     }
     assert "3,996 / 37 = 108" in final["text"]
     assert "completeness is unverified" in final["text"]
-
-
-@pytest.mark.anyio
-@pytest.mark.parametrize("period_scope", ["playoffs", "all", "unspecified"])
-async def test_unsupported_period_returns_unavailable_without_source_read(
-    monkeypatch, period_scope,
-):
-    calls = []
-    monkeypatch.setattr(
-        team_tools, "_hist_team_games",
-        lambda *_args: calls.append("read") or _game_rows(),
-    )
-
-    result = await team_tools.get_team_season_summary.ainvoke({
-        "team_id": _TEAM_ID,
-        "season": _SEASON,
-        "period_scope": period_scope,
-    })
-
-    assert result["ok"] is False
-    assert calls == []
-
-
-@pytest.mark.anyio
-@pytest.mark.parametrize("rows", [
-    [],
-    [{"Game_ID": "missing-team", "_season": _SEASON,
-      "WL": "W", "PTS": 100}],
-    [{"Team_ID": _TEAM_ID, "Game_ID": "missing-season",
-      "WL": "W", "PTS": 100}],
-    [{"Team_ID": _TEAM_ID, "_season": _SEASON,
-      "WL": "W", "PTS": 100}],
-    [{"Team_ID": _TEAM_ID, "Game_ID": "bad-result",
-      "_season": _SEASON, "WL": "?", "PTS": 100}],
-    [{"Team_ID": _TEAM_ID, "Game_ID": "bad-points",
-      "_season": _SEASON, "WL": "W", "PTS": None}],
-    [{"Team_ID": _TEAM_ID, "Game_ID": "duplicate",
-      "_season": _SEASON, "WL": "W", "PTS": 100},
-     {"Team_ID": _TEAM_ID, "Game_ID": "duplicate",
-      "_season": _SEASON, "WL": "L", "PTS": 90}],
-])
-async def test_missing_or_ambiguous_rows_return_unavailable(monkeypatch, rows):
-    monkeypatch.setattr(team_tools, "_hist_team_games", lambda *_args: rows)
-
-    result = await team_tools.get_team_season_summary.ainvoke({
-        "team_id": _TEAM_ID,
-        "season": _SEASON,
-        "period_scope": "regular_season",
-    })
-
-    assert result["ok"] is False

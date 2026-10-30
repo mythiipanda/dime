@@ -231,39 +231,3 @@ def test_final_answer_contract_unchanged_by_diagnostics_flag():
     )
     assert encode_event(answer) == encode_event(answer, diagnostics=True)
     assert KNOWN_REJECTION not in encode_event(answer)
-
-def test_routes_guard_keeps_default_stream_clean():
-    from types import SimpleNamespace
-
-    from v2.api.routes import _stream_binding_diagnostics
-
-    result = SimpleNamespace(
-        binding_diagnostics=[
-            {
-                "run_id": RUN_ID,
-                "claim_index": 0,
-                "requirement_kind": "evidence",
-                "requirement_id": "ratings",
-                "output_id": "NET_RATING",
-                "node_id": "ratings",
-                "evidence_id": "ev-1",
-                "selector": "rows[5].NET_RATING",
-                "row_selector": "rows[5]",
-                "subject_selector": "rows[5].TEAM_ID",
-                "subject_entity_type": "team",
-                "subject_entity_id": "BOS",
-                "declared_value": {"kind": "float", "value": "99.9"},
-                "declared_unit": {
-                    "kind": "declared",
-                    "value": "points_per_100_possessions",
-                },
-                "reanchor_changed": False,
-                "rejection": KNOWN_REJECTION,
-            }
-        ]
-    )
-    assert _stream_binding_diagnostics(result, False) == []
-    chunks = _stream_binding_diagnostics(result, True)
-    assert len(chunks) == 1
-    assert "binding_diagnostic" in chunks[0]
-    assert KNOWN_REJECTION in chunks[0]

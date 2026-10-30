@@ -1,3 +1,4 @@
+import { parsePiSources, type PiSource } from "./evidence";
 import { postChatStream } from "./api";
 
 export interface TextDeltaEvent {
@@ -56,6 +57,8 @@ export interface EvidenceGapNote {
 }
 
 export interface VerificationCarry {
+  sourceRefs?: string[];
+  sources?: PiSource[];
   verification: VerificationStatus;
   verifiedClaims: number | null;
   runId?: string;
@@ -515,6 +518,10 @@ export function parseCarry(raw: unknown): VerificationCarry | null {
   }
   const carry: VerificationCarry = { verification, verifiedClaims, gaps, gapsReadable };
   if (runId) carry.runId = runId;
+  if (Array.isArray(record.source_refs)) {
+    carry.sourceRefs = record.source_refs.filter((ref): ref is string => typeof ref === "string");
+    carry.sources = parsePiSources(record.sources).filter(source => carry.sourceRefs?.includes(source.ref));
+  }
   return carry;
 }
 

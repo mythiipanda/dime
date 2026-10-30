@@ -1,4 +1,5 @@
 from __future__ import annotations
+from v2.runtime import presentation
 
 import shutil
 import sys
@@ -86,128 +87,10 @@ def _admit(task, execution, draft, verified):
     return admit_verified_claim_bindings(task, execution, draft, verified)
 
 def _publish_trace(envelope, binding):
-    from v2.api.routes import _traced_value
+    from v2.runtime.presentation import _traced_value
 
     return _traced_value(envelope, binding)
 
-def test_mvp_winner_and_share_publish_with_citations_through_real_tool(
-        awards_warehouse, monkeypatch, tmp_path):
-    import json as _json
-
-    from fastapi import FastAPI
-    from fastapi.testclient import TestClient
-
-    from v2.adapters import call_capability
-    from v2.adapters.core import ToolCapability
-    from v2.api import routes
-    from v2.contracts import (
-        Claim, ClaimKind, DraftReport, EvidenceOutputBinding, Plan, PlanNode,
-        RunMode, SeasonRef, TaskSpec, VerificationReport, VerificationStatus,
-    )
-    from v2.projects.service import ProjectStore
-    from v2.runtime import PlanExecutor, Runtime
-    from v2.runtime.assembly import MechanicalVerifier
-    from v2.runtime.ledger import RunLedger
-
-    probe = call_capability(
-        "award_results", {"view": "winner", "award": "MVP", "season": SEASON})
-    assert probe.rows[0]["award_share"] == 0.935
-    placement = probe.rows[0]
-
-    task = TaskSpec(
-        goal="Who won the 2023-24 MVP and how large was the winning vote share?",
-        mode=RunMode.QUICK,
-        deliverable="winner and share",
-        requested_outputs=["PLAYER_NAME", "VOTE_SHARE"],
-        season=SeasonRef(value=SEASON, source="user", confidence=1.0))
-
-    class Intake:
-        async def understand(self, request: str, context=()):
-            return task
-
-    class Planner:
-        async def plan(self, task, failure_context=None):
-            return Plan(nodes=[PlanNode(
-                id="mvp_winner", description="official 2023-24 MVP result",
-                capability_hints=["award_results"],
-                arguments={"view": "winner", "award": "MVP"})])
-
-    class Synthesizer:
-        async def synthesize(self, task, evidence):
-            envelope = next(iter(evidence))
-            row = envelope.rows[0]
-            return DraftReport(
-                sections=["MVP"],
-                claims=[Claim(
-                    text=(f"{row['player']} won with {row['award_share']} share."),
-                    kind=ClaimKind.OBSERVED,
-                    evidence_ids=[envelope.evidence_id],
-                    output_bindings=[
-                        EvidenceOutputBinding(
-                            requirement_kind="task", requirement_id=None,
-                            output_id="PLAYER_NAME", node_id="mvp_winner",
-                            evidence_id=envelope.evidence_id,
-                            selector="rows[0].player",
-                            value={"kind": "string", "value": str(row["player"])},
-                            unit={"kind": "unitless"},
-                            domain="award_results"),
-                        EvidenceOutputBinding(
-                            requirement_kind="task", requirement_id=None,
-                            output_id="VOTE_SHARE", node_id="mvp_winner",
-                            evidence_id=envelope.evidence_id,
-                            selector="rows[0].award_share",
-                            value={"kind": "float",
-                                   "value": float(row["award_share"])},
-                            unit={"kind": "declared", "value": "fraction_0_1"},
-                            domain="award_results"),
-                    ])])
-
-    class Semantic:
-        async def verify(self, task, draft, evidence):
-            return VerificationReport(
-                status=VerificationStatus.PASS,
-                claim_results=[{"claim_index": 0, "supported": True}])
-
-    runtime = Runtime(
-        intake=Intake(), planner=Planner(),
-        executor=PlanExecutor({"award_results": ToolCapability("award_results")}),
-        synthesizer=Synthesizer(),
-        mechanical_verifier=MechanicalVerifier(),
-        semantic_verifier=Semantic())
-
-    def build(**kwargs):
-        return runtime, RunLedger(kwargs["run_id"])
-
-    monkeypatch.setenv("DIME_RUNTIME_V2", "on")
-    monkeypatch.setattr("shared.providers.resolve_model_id",
-                        lambda value: ("openrouter", "fixture"))
-    monkeypatch.setattr("v2.runtime.assembly.build_runtime", build)
-    monkeypatch.setattr(routes, "_PROJECTS", ProjectStore(tmp_path / "p.sqlite"))
-    app = FastAPI()
-    app.include_router(routes.router, prefix="/api")
-    response = TestClient(app).post(
-        "/api/v2/chat/stream",
-        json={"q": "Who won the 2023-24 MVP and how large was the winning vote share?"})
-    assert response.status_code == 200
-
-    def event(name: str) -> dict:
-        payloads = [chunk.split("data: ", 1)[1]
-                    for chunk in response.text.split("\n\n")
-                    if chunk.startswith(f"event: {name}\n")]
-        assert payloads
-        return _json.loads(payloads[-1])
-
-    custom = event("custom_data")
-    final = event("final_answer")
-    cited = {row["output_id"]: row["value"] for row in custom["tables"]}
-    assert cited["PLAYER_NAME"] == placement["player"]
-    assert cited["VOTE_SHARE"] == str(placement["award_share"])
-    assert {row["provenance"]["capability"] for row in custom["tables"]} == {
-        "award_results"}
-    assert {row["provenance"]["origin"] for row in custom["tables"]} == {
-        "warehouse"}
-    assert custom["unverified_numbers"] == []
-    assert "I could not verify a publishable answer" not in final["text"]
 
 def test_flat_envelope_capability_is_unaffected():
     from v2.contracts import (
@@ -337,10 +220,10 @@ def test_admission_and_publication_agree_by_construction_on_flat_envelope(
     monkey = pytest.MonkeyPatch()
     monkey.setattr(models_module, "resolve_evidence_binding", spy)
     try:
-        value, reason = routes._traced_value(envelope, good)
+        value, reason = presentation._traced_value(envelope, good)
         assert value == 0.935
         assert reason is None
-        value, reason = routes._traced_value(envelope, missing)
+        value, reason = presentation._traced_value(envelope, missing)
         assert value is None
         assert reason is not None
         publication_calls = list(seen)
@@ -429,3 +312,100 @@ def test_reanchor_consults_shared_selector_instead_of_exact_path():
         assert "rows[1].OFF_RATING" in seen
     finally:
         monkey.undo()
+
+
+def test_mvp_winner_and_share_publish_with_citations_through_real_tool(
+        awards_warehouse, monkeypatch, tmp_path):
+    import json as _json
+
+
+    from v2.adapters import call_capability
+    from v2.adapters.core import ToolCapability
+    from v2.contracts import (
+        Claim, ClaimKind, DraftReport, EvidenceOutputBinding, Plan, PlanNode,
+        RunMode, SeasonRef, TaskSpec, VerificationReport, VerificationStatus,
+    )
+    from v2.runtime import PlanExecutor, Runtime
+    from v2.runtime.assembly import MechanicalVerifier
+
+    probe = call_capability(
+        "award_results", {"view": "winner", "award": "MVP", "season": SEASON})
+    assert probe.rows[0]["award_share"] == 0.935
+    placement = probe.rows[0]
+
+    task = TaskSpec(
+        goal="Who won the 2023-24 MVP and how large was the winning vote share?",
+        mode=RunMode.QUICK,
+        deliverable="winner and share",
+        requested_outputs=["PLAYER_NAME", "VOTE_SHARE"],
+        season=SeasonRef(value=SEASON, source="user", confidence=1.0))
+
+    class Intake:
+        async def understand(self, request: str, context=()):
+            return task
+
+    class Planner:
+        async def plan(self, task, failure_context=None):
+            return Plan(nodes=[PlanNode(
+                id="mvp_winner", description="official 2023-24 MVP result",
+                capability_hints=["award_results"],
+                arguments={"view": "winner", "award": "MVP"})])
+
+    class Synthesizer:
+        async def synthesize(self, task, evidence):
+            envelope = next(iter(evidence))
+            row = envelope.rows[0]
+            return DraftReport(
+                sections=["MVP"],
+                claims=[Claim(
+                    text=(f"{row['player']} won with {row['award_share']} share."),
+                    kind=ClaimKind.OBSERVED,
+                    evidence_ids=[envelope.evidence_id],
+                    output_bindings=[
+                        EvidenceOutputBinding(
+                            requirement_kind="task", requirement_id=None,
+                            output_id="PLAYER_NAME", node_id="mvp_winner",
+                            evidence_id=envelope.evidence_id,
+                            selector="rows[0].player",
+                            value={"kind": "string", "value": str(row["player"])},
+                            unit={"kind": "unitless"},
+                            domain="award_results"),
+                        EvidenceOutputBinding(
+                            requirement_kind="task", requirement_id=None,
+                            output_id="VOTE_SHARE", node_id="mvp_winner",
+                            evidence_id=envelope.evidence_id,
+                            selector="rows[0].award_share",
+                            value={"kind": "float",
+                                   "value": float(row["award_share"])},
+                            unit={"kind": "declared", "value": "fraction_0_1"},
+                            domain="award_results"),
+                    ])])
+
+    class Semantic:
+        async def verify(self, task, draft, evidence):
+            return VerificationReport(
+                status=VerificationStatus.PASS,
+                claim_results=[{"claim_index": 0, "supported": True}])
+
+    runtime = Runtime(
+        intake=Intake(), planner=Planner(),
+        executor=PlanExecutor({"award_results": ToolCapability("award_results")}),
+        synthesizer=Synthesizer(),
+        mechanical_verifier=MechanicalVerifier(),
+        semantic_verifier=Semantic())
+
+
+    import asyncio
+    from v2.runtime.presentation import present_result
+    result = asyncio.run(runtime.run('Who won MVP in 2023-24?'))
+    final = present_result(result)
+    custom = {key: final[key] for key in ("tables", "unverified_numbers")}
+    cited = {row["output_id"]: row["value"] for row in custom["tables"]}
+    assert cited["PLAYER_NAME"] == placement["player"]
+    assert cited["VOTE_SHARE"] == str(placement["award_share"])
+    assert {row["provenance"]["capability"] for row in custom["tables"]} == {
+        "award_results"}
+    assert {row["provenance"]["origin"] for row in custom["tables"]} == {
+        "warehouse"}
+    assert custom["unverified_numbers"] == []
+    assert "I could not verify a publishable answer" not in final["text"]

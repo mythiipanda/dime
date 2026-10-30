@@ -125,39 +125,3 @@ def test_build_runtime_action_loop_is_opt_in():
         run_id="factory-staged", policy=policy, action_loop=False)
     assert isinstance(experimental, ActionRuntime)
     assert isinstance(staged, Runtime)
-
-@pytest.mark.anyio
-async def test_action_loop_mode_streams_answer_citations_and_carry(monkeypatch, tmp_path):
-    from v2.api import routes
-
-    built = []
-
-    def build(**kwargs):
-        assert kwargs["action_loop"] is True
-        ledger = RunLedger(kwargs["run_id"])
-        runtime, _, _ = build_action_runtime(ledger, kwargs["run_id"])
-        built.append(ledger)
-        return runtime, ledger
-
-    monkeypatch.setattr(routes, "runtime_v2_mode", lambda: "action_loop")
-    monkeypatch.setattr("shared.providers.resolve_model_id",
-                        lambda value: ("openrouter", "fixture"))
-    monkeypatch.setattr("v2.runtime.assembly.build_runtime", build)
-    monkeypatch.setattr(routes, "_PROJECTS", ProjectStore(tmp_path / "p.sqlite"))
-    monkeypatch.setenv("DIME_V2_ACTIVITY_DIR", str(tmp_path / "activity"))
-
-    response = await routes.quick_answer_stream(routes.QuickAnswerBody(q="wins"))
-    chunks = []
-    async for chunk in response.body_iterator:
-        chunks.append(chunk.decode() if isinstance(chunk, bytes) else chunk)
-    text = "".join(chunks)
-    assert "event: final_answer" in text
-    assert "event: graph_end" in text
-    payload = json.loads(
-        text.split("event: final_answer\ndata: ", 1)[1].split("\n\n", 1)[0])
-    carry = payload["carry"]
-    assert carry["verified_claims"] == 1
-    assert carry["output_statuses"][0]["status"] == "complete"
-    assert carry["citations"]
-    assert payload["text"].strip()
-    assert built

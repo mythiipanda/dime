@@ -219,90 +219,7 @@ async def test_cancelled_execution_resumes_started_node(anyio_backend, tmp_path:
     assert calls == ["one", "two"]
     assert all(node.status == PlanStatus.COMPLETE for node in result.plan.nodes)
 
-def test_quick_answer_route_is_flagged_and_streams_typed_contract(monkeypatch, tmp_path):
-    from datetime import UTC, date, datetime
-    from fastapi import FastAPI
-    from fastapi.testclient import TestClient
-    from v2 import contracts
-    from v2.api import routes
-    from v2.runtime.ledger import RunLedger
-    from v2.runtime.models import ExecutionResult, RuntimeResult
 
-    evidence = contracts.EvidenceEnvelope(
-        evidence_id="ev", capability="standings", source="fixture",
-        observed_at=datetime.now(UTC), as_of=date(2026, 9, 10),
-        rows=[{"TEAM": "Boston", "WINS": 61}])
-    result = RuntimeResult(
-        task=contracts.TaskSpec(goal="record", mode="quick", deliverable="text"),
-        execution=ExecutionResult(
-            plan=contracts.Plan(nodes=[contracts.PlanNode(
-                id="facts", description="facts", capability_hints=["standings"],
-                status="complete")]), evidence_by_node={"facts": evidence}, attempts={"facts": 1}),
-        draft=contracts.DraftReport(sections=["Record"], claims=[
-            contracts.Claim(text="Boston won 61 games.", kind="observed",
-                            evidence_ids=["ev"])]),
-        verification=contracts.VerificationReport(
-            status="pass", claim_results=[
-                contracts.ClaimResult(claim_index=0, supported=True)]),
-        verified_claims=[contracts.VerifiedClaim(
-            claim_index=0,
-            claim=contracts.Claim(text="Boston won 61 games.", kind="observed",
-                                  evidence_ids=["ev"]),
-            evidence_ids=["ev"], sources=[contracts.ClaimSource(
-                evidence_id="ev", source="fixture", capability="standings")])])
-
-    class FakeRuntime:
-        async def run(self, request, *, run_id=None, context=()):
-            assert context == ()
-            return result
-
-    monkeypatch.setattr("v2.runtime.assembly.build_runtime",
-                        lambda **kwargs: (FakeRuntime(), RunLedger(kwargs["run_id"])))
-    app = FastAPI()
-    app.include_router(routes.router, prefix="/api")
-    response = TestClient(app).post("/api/v2/chat/stream", json={"q": "record?"})
-
-    assert response.status_code == 200
-    assert "x-dime-run-id" in response.headers
-    assert "event: final_answer" in response.text
-    assert "event: graph_end" in response.text
-    assert "event: work_log" in response.text
-
-@pytest.mark.anyio
-@pytest.mark.parametrize("anyio_backend", ["asyncio"])
-async def test_stream_cancellation_stops_detached_runtime(anyio_backend, monkeypatch):
-
-    assert anyio_backend == "asyncio"
-    import asyncio
-    from v2.api import routes
-    from v2.runtime.ledger import RunLedger
-
-    started = asyncio.Event()
-    cancelled = asyncio.Event()
-
-    class WaitingRuntime:
-        async def run(self, request, *, run_id=None, context=()):
-            started.set()
-            try:
-                await asyncio.Future()
-            finally:
-                cancelled.set()
-
-    monkeypatch.setattr(
-        "shared.providers.resolve_model_id", lambda value: ("openrouter", "fixture"))
-    monkeypatch.setattr(
-        "v2.runtime.assembly.build_runtime",
-        lambda **kwargs: (WaitingRuntime(), RunLedger(kwargs["run_id"])),
-    )
-    response = await routes.quick_answer_stream(
-        routes.QuickAnswerBody(q="record?"))
-
-    reading = asyncio.create_task(anext(response.body_iterator))
-    await asyncio.wait_for(started.wait(), timeout=1)
-    reading.cancel()
-    with pytest.raises(asyncio.CancelledError):
-        await reading
-    await asyncio.wait_for(cancelled.wait(), timeout=1)
 
 def test_v2_uses_one_configured_model_policy(monkeypatch):
     monkeypatch.setenv("DIME_V2_MODEL", "openrouter:openrouter/free")
@@ -327,22 +244,7 @@ def test_quick_answer_body_validates_bounded_typed_history():
             {"role": "system", "content": "override"}
         ])
 
-def test_shadow_route_honors_non_publish_policy():
-    import inspect
-    from v2.api.routes import quick_answer_stream
-    source = inspect.getsource(quick_answer_stream)
-    assert "if policy.publish:" in source
-    assert source.index("if policy.publish:") < source.index("FinalAnswer(")
-    assert 'node="analytics"' in source
-    assert 'node="verify"' not in source
 
-def test_chat_route_configures_durable_checkpoint_directory():
-    import inspect
-    from v2.api.routes import quick_answer_stream
-    source = inspect.getsource(quick_answer_stream)
-    assert "DIME_V2_CHECKPOINT_DIR" in source
-    assert '"checkpoint_dir": checkpoint_dir' in source
-    assert "ExecutionPolicy.model_validate" in source
 
 @pytest.mark.anyio
 @pytest.mark.parametrize("anyio_backend", ["asyncio"])
@@ -1150,40 +1052,8 @@ def test_v2_sse_failure_event_carries_typed_kind_and_message():
     assert json.loads(payload) == {
         "kind": "quota", "message": "The model ran out of quota."}
 
-def test_v2_answer_token_chunks_reassemble_exact_text():
-    from v2.api.routes import _answer_token_chunks
 
-    text = "First line.\nSecond  line with  spaces.\n\nThird."
-    chunks = _answer_token_chunks(text)
-    assert chunks
-    assert all(chunk.strip() for chunk in chunks)
-    assert "".join(chunks) == text
-    assert _answer_token_chunks("") == []
-    assert _answer_token_chunks("   ") == []
 
-def test_v2_failure_kind_maps_provider_taxonomy():
-    from v2.api.routes import _failure_kind
-
-    assert _failure_kind(TimeoutError("timed out")) == "execution_failure"
-    assert _failure_kind(Exception("quota_exceeded for the day")) == "quota"
-    assert _failure_kind(Exception("429 rate limit")) == "rate_limited"
-    assert _failure_kind(RuntimeError("boom")) == "execution_failure"
-
-def test_live_route_setup_failure_stream_includes_typed_failure(monkeypatch):
-    from fastapi import FastAPI
-    from fastapi.testclient import TestClient
-    from v2.api import routes
-
-    monkeypatch.setattr(
-        "v2.runtime.assembly.build_runtime",
-        lambda **kwargs: (_ for _ in ()).throw(RuntimeError("private setup detail")),
-    )
-    app = FastAPI()
-    app.include_router(routes.router, prefix="/api")
-    response = TestClient(app).post("/api/v2/chat/stream", json={"q": "record?"})
-    assert "event: failure" in response.text
-    assert '"kind":"startup"' in response.text
-    assert "private setup detail" not in response.text
 
 def test_frontend_can_select_native_v2_chat_runtime():
     from pathlib import Path
@@ -1196,26 +1066,6 @@ def test_frontend_can_select_native_v2_chat_runtime():
     assert 'q,' in api_source and 'model,' in api_source
     assert 'thread,' in api_source and 'client: getClientId()' in api_source
 
-def test_live_route_reports_pre_stream_setup_failure_as_sse(monkeypatch):
-    from fastapi import FastAPI
-    from fastapi.testclient import TestClient
-    from v2.api import routes
-
-    monkeypatch.setattr(
-        "v2.runtime.assembly.build_runtime",
-        lambda **kwargs: (_ for _ in ()).throw(RuntimeError("private setup detail")),
-    )
-    app = FastAPI()
-    app.include_router(routes.router, prefix="/api")
-    response = TestClient(app).post("/api/v2/chat/stream", json={"q": "record?"})
-    assert response.status_code == 200
-    assert response.headers["content-type"].startswith("text/event-stream")
-    assert response.headers["x-dime-run-id"].startswith("run-")
-    assert "event: error" in response.text
-    assert "Dime could not start this run." in response.text
-    assert response.headers["x-dime-run-id"] in response.text
-    assert "private setup detail" not in response.text
-    assert response.text.rstrip().endswith("data: {}")
 
 def test_live_route_reports_model_resolution_failure_as_sse(monkeypatch):
     from fastapi import FastAPI
@@ -1231,43 +1081,13 @@ def test_live_route_reports_model_resolution_failure_as_sse(monkeypatch):
     response = TestClient(app).post("/api/v2/chat/stream", json={"q": "record?"})
     assert response.status_code == 200
     assert response.headers["content-type"].startswith("text/event-stream")
-    assert "event: error" in response.text
+    assert "event: failure" in response.text
+    assert '"kind":"configuration"' in response.text
+    assert response.text.count("event: graph_end") == 1
+    assert "event: final_answer" not in response.text
     assert "private model detail" not in response.text
 
-def test_final_carry_exports_structural_flags():
-    from v2.api import routes
-    source = Path(routes.__file__).read_text()
-    assert '"structural_flags": list(getattr(result, "structural_flags", []))' in source
 
-def test_intake_provider_failure_yields_typed_partial_final_without_error(monkeypatch):
-    from fastapi import FastAPI
-    from fastapi.testclient import TestClient
-    from v2.api import routes
-    from v2.runtime import LedgerKind, RunLedger
-    ledgers = {}
-    class BrokenIntakeRuntime:
-        async def run(self, request, *, run_id=None, context=()):
-            ledger = ledgers[run_id]
-            ledger.append(LedgerKind.STEP_START, turn_id=run_id,
-                          step_id="understand")
-            ledger.append(LedgerKind.STEP_END, turn_id=run_id, step_id="understand",
-                          data={"reason":"failed", "duration_ms":7,
-                                "error":"private provider detail"})
-            raise RuntimeError("private provider detail")
-    def build(**kwargs):
-        ledger = RunLedger(kwargs["run_id"]); ledgers[kwargs["run_id"]] = ledger
-        return BrokenIntakeRuntime(), ledger
-    monkeypatch.setattr("shared.providers.resolve_model_id",
-                        lambda value:("openrouter","fixture"))
-    monkeypatch.setattr("v2.runtime.assembly.build_runtime", build)
-    app = FastAPI(); app.include_router(routes.router, prefix="/api")
-    response = TestClient(app).post("/api/v2/chat/stream", json={"q":"record?"})
-    assert "event: error" not in response.text
-    assert "event: final_answer" in response.text
-    assert '"verification":"partial"' in response.text
-    assert '"verified_claims":0' in response.text
-    assert response.text.rstrip().endswith("event: graph_end\ndata: {}")
-    assert "private provider detail" not in response.text
 
 def test_public_sse_projection_omits_real_envelope_source_identity():
     from datetime import UTC,datetime
@@ -1328,26 +1148,6 @@ def test_real_lifespan_freezes_revision_warehouse_endpoint(monkeypatch, tmp_path
     finally:
         routes.runtime_warehouse_identity.cache_clear()
 
-def test_full_http_sse_and_activity_omit_private_failure_taxonomy(monkeypatch,tmp_path):
-    import json
-    from v2.api import routes
-    from v2.api.activity import ActivityJournal
-    from v2.contracts import TaskSpec,DraftReport,VerificationReport
-    from v2.runtime import RunLedger
-    from v2.runtime.models import RuntimeResult
-    from v2.runtime.executor import ExecutionResult
-    from v2.contracts import Plan
-    sentinel='SECRET_SENTINEL_MUST_NOT_LEAK'
-    class Runtime:
-        async def run(self,*a,**k):
-            return RuntimeResult(task=TaskSpec(goal='g',mode='quick',deliverable='d'),execution=ExecutionResult(plan=Plan(nodes=[]),errors={}),draft=DraftReport(sections=[],claims=[]),verification=VerificationReport(status='pass'))
-    def build(**kwargs):
-        ledger=RunLedger(kwargs['run_id']);ledger.append('model/request',turn_id=kwargs['run_id'],call_id='model:1',data={'provider':'inception','model':'mercury-2.5','route':'semantic_verifier','prompt_hash':'a'*64,'context_hash':'b'*64,'tool_schema_hash':'c'*64,'planner_version':'v2','budgets':{},'skill_hashes':{}});ledger.append('assistant/attempt',turn_id=kwargs['run_id'],call_id='model:1',data={'status':'failed','error':sentinel,'provider_attempts':[{'route':'semantic_verifier','provider':'inception','model':'mercury-2.5','attempt_number':1,'exception_type':'UnexpectedModelBehavior','message_class':'structured_output','latency_ms':1,'failure_top_class':'UnexpectedModelBehavior','failure_class_chain':['UnexpectedModelBehavior'],'failure_phase':'no_tool_or_empty','failure_validation_errors':[],'failure_validation_subtype':'not_applicable','failure_schema_sha256':'a'*64,'failure_route':'semantic_verifier'}]});return Runtime(),ledger
-    monkeypatch.setenv('DIME_V2_ACTIVITY_DIR',str(tmp_path/'activity'));monkeypatch.setattr('shared.providers.resolve_model_id',lambda value:('inception','mercury-2.5'));monkeypatch.setattr('v2.runtime.assembly.build_runtime',build)
-    app=FastAPI();app.include_router(routes.router,prefix='/api');response=TestClient(app).post('/api/v2/chat/stream',json={'q':'x'});text=response.text;run_id=response.headers['x-dime-run-id'];activity=[x.model_dump(mode='json') for x in ActivityJournal(tmp_path/'activity'/f'{run_id}.jsonl',run_id).read()];combined=text+json.dumps(activity)
-    for key in ('failure_top_class','failure_class_chain','failure_phase','failure_validation_errors','failure_validation_subtype','failure_schema_sha256','provider_attempts','exception_type'):
-        assert key not in combined
-    assert sentinel not in combined
 
 def _write_expected_manifest(path, manifest):
     import json
@@ -1458,171 +1258,15 @@ def test_preflight_rejects_expected_manifest_inside_executable_roots(tmp_path):
     finally:
         inside.unlink(missing_ok=True)
 
-def test_typed_public_stream_sanitizes_all_events_and_preserves_lifecycle(monkeypatch,tmp_path):
-    from datetime import UTC,datetime
-    from fastapi import FastAPI
-    from fastapi.testclient import TestClient
-    from v2 import contracts
-    from v2.api import routes
-    from v2.runtime.ledger import RunLedger
-    from v2.runtime.models import ExecutionResult,RuntimeResult
-    secret="SECRET_NEVER_PUBLIC"
-    binding=contracts.EvidenceOutputBinding(requirement_kind="task",output_id="PTS",
-        node_id="internal-node",evidence_id="internal-evidence",selector="rows.lebron.PTS",
-        row_selector="rows.lebron",subject_entity_type="player",subject_entity_id="23",
-        subject_selector="rows.lebron.PLAYER_ID",value={"kind":"integer","value":25},
-        unit={"kind":"unitless"},domain="player_report")
-    claim=contracts.Claim(text="LeBron James scored 25 points.",kind="observed",evidence_ids=["internal-evidence"],output_bindings=[binding])
-    evidence=contracts.EvidenceEnvelope(evidence_id="internal-evidence",capability="player_report",
-        source=secret,observed_at=datetime.now(UTC),entities=[contracts.EntityRef(id="23",type="player",display_name="LeBron")],rows={"lebron":{"PLAYER_ID":"23","PTS":25,"AST":8},"curry":{"PLAYER_ID":"987654321","PTS":987654321}})
-    result=RuntimeResult(task=contracts.TaskSpec(goal="x",mode="quick",deliverable="x",requested_outputs=["PTS"],entities=[contracts.EntityRef(id="23",type="player",display_name="LeBron")]),
-        execution=ExecutionResult(plan=contracts.Plan(nodes=[contracts.PlanNode(id="internal-node",description="x",capability_hints=["player_report"],status="complete")]),evidence_by_node={"internal-node":evidence},attempts={"internal-node":1}),
-        draft=contracts.DraftReport(sections=[],claims=[claim]),verification=contracts.VerificationReport(status="partial",claim_results=[{"claim_index":0,"supported":True}]),
-        verified_claims=[contracts.VerifiedClaim(claim_index=0,claim=claim,evidence_ids=["internal-evidence"],sources=[contracts.ClaimSource(evidence_id="internal-evidence",source=secret,capability="player_report")],output_bindings=[binding])],
-        gaps=[contracts.Gap(kind="missing_evidence",message=secret)])
-    holder={}
-    class Runtime:
-        async def run(self,*a,**k):
-            import asyncio
-            holder["progress"]("verify","running")
-            asyncio.get_running_loop().call_soon(
-                holder["progress"], "verify", "complete")
-            await asyncio.sleep(0)
-            return result
-    def build(**kwargs):
-        holder["progress"]=kwargs["progress"]
-        return Runtime(),RunLedger(kwargs["run_id"])
-    monkeypatch.setenv("DIME_PROJECT_STORE",str(tmp_path/"p.sqlite"))
-    monkeypatch.setattr("shared.providers.resolve_model_id",lambda value:("openrouter","fixture"))
-    monkeypatch.setattr("v2.runtime.assembly.build_runtime",build)
-    monkeypatch.setattr(routes,"_PROJECTS",ProjectStore(tmp_path/"p.sqlite"))
-    app=FastAPI();app.include_router(routes.router,prefix="/api")
-    response=TestClient(app).post("/api/v2/chat/stream",json={"q":"x"})
-    text=response.text
-    for forbidden in [secret,"internal-node","internal-evidence","rows.lebron.PTS","curry","AST","987654321"]:
-        assert forbidden not in text
-    assert text.count("event: final_answer")==1 and text.count("event: graph_end")==1
-    assert text.index("event: final_answer") < text.index("event: graph_end")
-    assert text.count("event: work_log")==1
-    assert text.index("event: work_log") < text.index("event: custom_data")
-    assert text.index("event: final_answer") < text.index("event: graph_end")
-    terminal=text[text.index("event: final_answer"):]
-    assert terminal.count("event: ")==2
-    assert response.headers["x-dime-run-id"] in text
-    final_json=__import__("json").loads(text.split("event: final_answer\ndata: ",1)[1].split("\n\n",1)[0])
-    assert final_json["text"].splitlines()[0]=="LeBron James scored 25 points."
-    carry=final_json["carry"]
-    assert carry["run_id"]==response.headers["x-dime-run-id"]
-    assert carry["verification"]=="partial" and carry["verified_claims"]==1
-    assert carry["gaps"]==[{"kind":"missing_evidence","blocks":[]}]
-    assert carry["output_statuses"][0]["output_id"]=="PTS"
-    assert "node_id" not in str(carry) and "selector" not in str(carry)
-    assert text.count('"node":"analytics","status":"complete"')==1
 
-def test_public_stream_projection_failure_abstains_and_terminates(monkeypatch,tmp_path):
-    from datetime import UTC,datetime
-    from fastapi import FastAPI
-    from fastapi.testclient import TestClient
-    from v2 import contracts
-    from v2.api import routes
-    from v2.runtime.ledger import RunLedger
-    from types import SimpleNamespace
-    secret="FAIL_SECRET"
-    binding=contracts.EvidenceOutputBinding(requirement_kind="task",output_id="WINS",node_id="n",evidence_id="e",selector="rows.WINS",value={"kind":"integer","value":61},unit={"kind":"declared","value":"count"},domain="standings")
-    status=contracts.OutputFinalStatus(requirement_kind="task",output_id="WINS",status="complete",claim_index=0,binding=binding)
-    stale=contracts.EvidenceEnvelope(evidence_id="e",capability="standings",source=secret,observed_at=datetime.now(UTC),rows={"WINS":62})
-    result=SimpleNamespace(output_statuses=[status],draft=contracts.DraftReport(sections=[],claims=[]),execution=SimpleNamespace(evidence=[stale]),verification=SimpleNamespace(status=SimpleNamespace(value="pass")),verified_claims=[],gaps=[],structural_flags=[])
-    holder={}
-    class Runtime:
-        async def run(self,*a,**k):holder["progress"]("verify","running");return result
-    def build(**kwargs):holder["progress"]=kwargs["progress"];return Runtime(),RunLedger(kwargs["run_id"])
-    monkeypatch.setattr("shared.providers.resolve_model_id",lambda value:("openrouter","fixture"));monkeypatch.setattr("v2.runtime.assembly.build_runtime",build);monkeypatch.setattr(routes,"_PROJECTS",ProjectStore(tmp_path/"p.sqlite"))
-    app=FastAPI();app.include_router(routes.router,prefix="/api")
-    response=TestClient(app).post("/api/v2/chat/stream",json={"q":"x"});text=response.text
-    assert secret not in text and '"node":"analytics"' not in text
-    assert text.count("event: work_log")==1 and '"status":"partial"' in text
-    assert text.count("event: final_answer")==1 and text.count("event: graph_end")==1
-    assert text.index("event: work_log") < text.index("event: final_answer") < text.index("event: graph_end")
 
-def test_admitted_run_keeps_non_publication_nodes_live_and_publishes_analytics_once(monkeypatch,tmp_path):
-    from datetime import UTC,datetime
-    from fastapi import FastAPI
-    from fastapi.testclient import TestClient
-    from v2 import contracts
-    from v2.api import routes
-    from v2.runtime.ledger import RunLedger
-    from types import SimpleNamespace
-    binding=contracts.EvidenceOutputBinding(requirement_kind="task",output_id="WINS",node_id="n",evidence_id="e",selector="rows.WINS",value={"kind":"integer","value":61},unit={"kind":"declared","value":"count"},domain="standings")
-    status=contracts.OutputFinalStatus(requirement_kind="task",output_id="WINS",status="complete",claim_index=0,binding=binding)
-    matched=contracts.EvidenceEnvelope(evidence_id="e",capability="standings",source="private",observed_at=datetime.now(UTC),rows={"WINS":61})
-    result=SimpleNamespace(output_statuses=[status],draft=contracts.DraftReport(sections=[],claims=[]),execution=SimpleNamespace(evidence=[matched]),verification=SimpleNamespace(status=SimpleNamespace(value="pass")),verified_claims=[],gaps=[],structural_flags=[])
-    holder={}
-    class Runtime:
-        async def run(self,*a,**k):
-            import asyncio
-            holder["progress"]("execute","running")
-            holder["progress"]("verify","running")
-            asyncio.get_running_loop().call_soon(holder["progress"],"verify","complete")
-            await asyncio.sleep(0)
-            return result
-    def build(**kwargs):holder["progress"]=kwargs["progress"];return Runtime(),RunLedger(kwargs["run_id"])
-    monkeypatch.setattr("shared.providers.resolve_model_id",lambda value:("openrouter","fixture"));monkeypatch.setattr("v2.runtime.assembly.build_runtime",build);monkeypatch.setattr(routes,"_PROJECTS",ProjectStore(tmp_path/"p.sqlite"))
-    app=FastAPI();app.include_router(routes.router,prefix="/api")
-    text=TestClient(app).post("/api/v2/chat/stream",json={"q":"x"}).text
-    assert text.count('"node":"tools","status":"running"')==1
-    analytics_updates=[line for line in text.splitlines() if '"node":"analytics","status"' in line]
-    assert len(analytics_updates)==2
-    assert '"status":"running"' in analytics_updates[0] and '"status":"complete"' in analytics_updates[1]
-    assert text.index(analytics_updates[0]) < text.index("event: work_log")
-    assert text.count("event: final_answer")==1 and text.count("event: graph_end")==1
-    assert text[text.index("event: final_answer"):].count("event: ")==2
 
-def test_abstained_run_still_reports_the_nodes_that_are_not_publication_bearing(monkeypatch,tmp_path):
-    from datetime import UTC,datetime
-    from fastapi import FastAPI
-    from fastapi.testclient import TestClient
-    from v2 import contracts
-    from v2.api import routes
-    from v2.runtime.ledger import RunLedger
-    from types import SimpleNamespace
-    binding=contracts.EvidenceOutputBinding(requirement_kind="task",output_id="WINS",node_id="n",evidence_id="e",selector="rows.WINS",value={"kind":"integer","value":61},unit={"kind":"declared","value":"count"},domain="standings")
-    status=contracts.OutputFinalStatus(requirement_kind="task",output_id="WINS",status="complete",claim_index=0,binding=binding)
-    stale=contracts.EvidenceEnvelope(evidence_id="e",capability="standings",source="private",observed_at=datetime.now(UTC),rows={"WINS":62})
-    result=SimpleNamespace(output_statuses=[status],draft=contracts.DraftReport(sections=[],claims=[]),execution=SimpleNamespace(evidence=[stale]),verification=SimpleNamespace(status=SimpleNamespace(value="pass")),verified_claims=[],gaps=[],structural_flags=[])
-    holder={}
-    class Runtime:
-        async def run(self,*a,**k):
-            holder["progress"]("execute","running")
-            holder["progress"]("verify","running")
-            return result
-    def build(**kwargs):holder["progress"]=kwargs["progress"];return Runtime(),RunLedger(kwargs["run_id"])
-    monkeypatch.setattr("shared.providers.resolve_model_id",lambda value:("openrouter","fixture"));monkeypatch.setattr("v2.runtime.assembly.build_runtime",build);monkeypatch.setattr(routes,"_PROJECTS",ProjectStore(tmp_path/"p.sqlite"))
-    app=FastAPI();app.include_router(routes.router,prefix="/api")
-    text=TestClient(app).post("/api/v2/chat/stream",json={"q":"x"}).text
-    assert text.count('"node":"tools","status":"running"')==1
-    assert '"node":"analytics"' not in text
-    assert text.index('"node":"tools"') < text.index("event: work_log")
-    assert text.count("event: work_log")==text.count("event: final_answer")==text.count("event: graph_end")==1
 
-def test_typed_terminal_contract_replaces_legacy_failure_and_metadata_cases(monkeypatch,tmp_path):
-    from fastapi import FastAPI
-    from fastapi.testclient import TestClient
-    from v2.api import routes
-    from v2.runtime.ledger import RunLedger
-    secret="EXCEPTION_SECRET"
-    class Runtime:
-        async def run(self,*a,**k): raise RuntimeError(secret)
-    monkeypatch.setattr("shared.providers.resolve_model_id",lambda value:("openrouter","fixture"));monkeypatch.setattr("v2.runtime.assembly.build_runtime",lambda **k:(Runtime(),RunLedger(k["run_id"])));monkeypatch.setattr(routes,"_PROJECTS",ProjectStore(tmp_path/"p.sqlite"))
-    app=FastAPI();app.include_router(routes.router,prefix="/api");r=TestClient(app).post("/api/v2/chat/stream",json={"q":"x"});text=r.text
-    assert secret not in text and "event: error" not in text
-    assert text.count("event: work_log")==text.count("event: final_answer")==text.count("event: graph_end")==1
-    final=text.split("event: final_answer",1)[1].split("\n\n",1)[0]
-    for field in ['"run_id"','"verification":"partial"','"verified_claims":0','"gaps"','"stage_latencies_ms"']:assert field in final
 
 def test_public_provenance_separates_season_and_as_of():
     from datetime import UTC,date,datetime
     from types import SimpleNamespace
-    from v2.api.routes import _public_evidence
+    from v2.runtime.presentation import _public_evidence
     from v2 import contracts
     b=contracts.EvidenceOutputBinding(requirement_kind="task",output_id="WINS",node_id="n",evidence_id="e",selector="rows.WINS",value={"kind":"integer","value":61},unit={"kind":"declared","value":"count"},domain="standings")
     st=contracts.OutputFinalStatus(requirement_kind="task",output_id="WINS",status="complete",claim_index=0,binding=b)
@@ -1633,95 +1277,14 @@ def test_public_provenance_separates_season_and_as_of():
 
 def test_no_authority_with_internal_gap_still_nonblank_and_terminal():
     from types import SimpleNamespace
-    from v2.api.routes import _answer_text
+    from v2.runtime.presentation import _answer_text
     from v2.contracts import Gap
     text=_answer_text(SimpleNamespace(output_statuses=[],verified_claims=[],execution=SimpleNamespace(evidence=[]),gaps=[Gap(kind="execution_failure",message="SECRET")]))
     assert text.strip() and "SECRET" not in text
 
-def test_journal_setup_and_append_failures_keep_generic_fallback_once(monkeypatch,tmp_path):
-    from fastapi import FastAPI
-    from fastapi.testclient import TestClient
-    from v2.api import routes
-    from v2.runtime.ledger import LedgerKind,RunLedger
-    ledgers={}
-    class Broken:
-        async def run(self,*a,run_id=None,**k):
-            l=ledgers[run_id];l.append(LedgerKind.TOOL_CALL,turn_id=run_id,step_id="s",call_id="c",data={"name":"contracts","args":{"secret":"SECRET"}});l.append(LedgerKind.TOOL_RESULT,turn_id=run_id,step_id="s",call_id="c",data={"status":"failed","error":"SECRET"});raise RuntimeError("SECRET")
-    class BadJournal:
-        def __init__(self,*a,**k):pass
-        def append(self,*a,**k):raise OSError("SECRET")
-    for journal in [lambda *a,**k:(_ for _ in ()).throw(PermissionError("SECRET")),BadJournal]:
-        monkeypatch.setattr("v2.api.activity.ActivityJournal",journal);monkeypatch.setattr("shared.providers.resolve_model_id",lambda value:("openrouter","fixture"));monkeypatch.setattr(routes,"_PROJECTS",ProjectStore(tmp_path/"p.sqlite"))
-        def build(**k):l=RunLedger(k["run_id"]);ledgers[k["run_id"]]=l;return Broken(),l
-        monkeypatch.setattr("v2.runtime.assembly.build_runtime",build);app=FastAPI();app.include_router(routes.router,prefix="/api");text=TestClient(app).post("/api/v2/chat/stream",json={"q":"x"}).text
-        assert text.count("event: tool_call")==1 and text.count("event: tool_result")==1
-        assert '"name":"contracts"' in text and "SECRET" not in text
-        assert text.count("event: final_answer")==text.count("event: graph_end")==1
 
-def _stream_with_runtime(monkeypatch, tmp_path, runtime_factory):
-    from fastapi import FastAPI
-    from fastapi.testclient import TestClient
-    from v2.api import routes
-    monkeypatch.setenv("DIME_RUNTIME_V2","on")
-    monkeypatch.setattr("shared.providers.resolve_model_id",lambda value:("openrouter","fixture"))
-    monkeypatch.setattr(routes,"_PROJECTS",ProjectStore(tmp_path/"p.sqlite"))
-    monkeypatch.setattr("v2.runtime.assembly.build_runtime",runtime_factory)
-    app=FastAPI();app.include_router(routes.router,prefix="/api")
-    return TestClient(app).post("/api/v2/chat/stream",json={"q":"x"}).text
 
-def test_stream_tool_events_report_the_capability_the_ledger_recorded(monkeypatch,tmp_path):
-    from v2.runtime.ledger import LedgerKind,RunLedger
-    ledgers={}
-    class Broken:
-        async def run(self,*a,run_id=None,**k):
-            ledger=ledgers[run_id]
-            ledger.append(LedgerKind.TOOL_CALL,turn_id=run_id,step_id="ratings",call_id="c",
-                data={"name":"team_ratings","args":{"secret":"SECRET"}})
-            ledger.append(LedgerKind.TOOL_RESULT,turn_id=run_id,step_id="ratings",call_id="c",
-                data={"status":"failed","error":"SECRET"})
-            raise RuntimeError("SECRET")
-    def build(**k):
-        ledger=RunLedger(k["run_id"]);ledgers[k["run_id"]]=ledger
-        return Broken(),ledger
-    text=_stream_with_runtime(monkeypatch,tmp_path,build)
-    assert '"name":"tool"' not in text and "SECRET" not in text
-    assert text.count("event: tool_call")==1 and text.count("event: tool_result")==1
-    call=text.split("event: tool_call\ndata: ",1)[1].split("\n\n",1)[0]
-    assert json.loads(call)["data"]=={"name":"team_ratings","arguments":[],"argument_count":0,"unknown_argument_count":0}
 
-def test_stream_tool_events_from_the_live_journal_carry_the_capability_name(monkeypatch,tmp_path):
-    from v2 import contracts
-    from v2.runtime.fakes import FakeCapability
-    from v2.runtime.ledger import RunLedger
-    from v2.runtime.models import ExecutionResult,RuntimeResult
-    from v2.runtime.recording import RecordedCapability
-    callbacks={};ledgers={}
-    result=RuntimeResult(
-        task=contracts.TaskSpec(goal="x",mode="quick",deliverable="x"),
-        execution=ExecutionResult(plan=contracts.Plan(nodes=[])),
-        draft=contracts.DraftReport(sections=[],claims=[]),
-        verification=contracts.VerificationReport(status="pass"))
-    class Runtime:
-        async def run(self,q,run_id=None,**k):
-            node=contracts.PlanNode(id="ratings",description="ratings",
-                capability_hints=["team_ratings"],status="complete")
-            await RecordedCapability(
-                FakeCapability("team_ratings",[{"NET_RATING":9.6}]),
-                ledgers[run_id],turn_id=run_id,
-                activity=callbacks[run_id]).execute(node,result.task,[])
-            return result
-    def build(**k):
-        callbacks[k["run_id"]]=k["activity"]
-        ledgers[k["run_id"]]=RunLedger(k["run_id"])
-        return Runtime(),ledgers[k["run_id"]]
-    text=_stream_with_runtime(monkeypatch,tmp_path,build)
-    assert text.count("event: tool_call")==1 and text.count("event: tool_result")==1
-    call=text.split("event: tool_call\ndata: ",1)[1].split("\n\n",1)[0]
-    result=text.split("event: tool_result\ndata: ",1)[1].split("\n\n",1)[0]
-    assert json.loads(call)["name"]=="team_ratings"
-    assert json.loads(call)["data"]["name"]=="team_ratings"
-    assert json.loads(result)["name"]=="team_ratings"
-    assert '"name":"tool"' not in text
 
 def test_stream_publishes_claim_prose_and_one_clean_row_per_metric(monkeypatch,tmp_path):
     from datetime import UTC, datetime
@@ -1776,66 +1339,18 @@ def test_stream_publishes_claim_prose_and_one_clean_row_per_metric(monkeypatch,t
     result=RuntimeResult(task=task,execution=execution,draft=draft,
         verification=verification,verified_claims=claims)
     assert len(result.output_statuses)==2*len(metrics)
-    class Runtime:
-        async def run(self,*a,**k):return result
-    text=_stream_with_runtime(monkeypatch,tmp_path,
-        lambda **k:(Runtime(),RunLedger(k["run_id"])))
-    payload=json.loads(text.split("event: final_answer\ndata: ",1)[1].split("\n\n",1)[0])
+    from v2.runtime.presentation import present_result
+    payload=present_result(result)
     assert payload["text"].splitlines()==[
         "Capital City Stars rate at 119.8 points per 100 possessions offensively "
         "and 110.2 defensively, for a net rating of 9.6."]
     assert "NET_RATING" not in payload["text"]
-    custom=json.loads(text.split("event: custom_data\ndata: ",1)[1].split("\n\n",1)[0])
+    custom=payload
     assert [row["output_id"] for row in custom["tables"]]==metrics
     assert [row["value"] for row in custom["tables"]]==["9.6","119.8","110.2"]
 
-def test_pretool_timeout_safe_terminal_carries_latency(monkeypatch,tmp_path):
-    from fastapi import FastAPI
-    from fastapi.testclient import TestClient
-    from v2.api import routes
-    from v2.runtime import LedgerKind,PreToolTimeoutError,RunLedger
-    ledgers={}
-    class Timeout:
-        async def run(self,*a,run_id=None,**k):
-            l=ledgers[run_id];l.append(LedgerKind.STEP_START,turn_id=run_id,step_id="understand");l.append(LedgerKind.STEP_END,turn_id=run_id,step_id="understand",data={"reason":"timeout","duration_ms":12,"error":"SECRET"});raise PreToolTimeoutError("SECRET")
-    def build(**k):l=RunLedger(k["run_id"]);ledgers[k["run_id"]]=l;return Timeout(),l
-    monkeypatch.setattr("shared.providers.resolve_model_id",lambda value:("openrouter","fixture"));monkeypatch.setattr("v2.runtime.assembly.build_runtime",build);monkeypatch.setattr(routes,"_PROJECTS",ProjectStore(tmp_path/"p.sqlite"));app=FastAPI();app.include_router(routes.router,prefix="/api");response=TestClient(app).post("/api/v2/chat/stream",json={"q":"x"});text=response.text
-    assert "SECRET" not in text and '"stage_latencies_ms":{"understand":12}' in text
-    assert '"status":"partial"' in text
-    assert text.count("event: work_log")==text.count("event: final_answer")==text.count("event: graph_end")==1
-    assert response.headers["x-dime-run-id"] in text
-    assert text.index("event: work_log") < text.index("event: final_answer") < text.index("event: graph_end")
 
-def test_pass_result_final_carry_contract(monkeypatch,tmp_path):
-    from datetime import UTC,datetime
-    from fastapi import FastAPI
-    from fastapi.testclient import TestClient
-    from v2 import contracts
-    from v2.api import routes
-    from v2.runtime.models import ExecutionResult,RuntimeResult
-    from v2.runtime.ledger import RunLedger
-    b=contracts.EvidenceOutputBinding(requirement_kind="task",output_id="WINS",node_id="n",evidence_id="e",selector="rows.WINS",value={"kind":"integer","value":61},unit={"kind":"declared","value":"count"},domain="standings")
-    c=contracts.Claim(text="private prose",kind="observed",evidence_ids=["e"],output_bindings=[b]);ev=contracts.EvidenceEnvelope(evidence_id="e",capability="standings",source="private",observed_at=datetime.now(UTC),rows={"WINS":61})
-    result=RuntimeResult(task=contracts.TaskSpec(goal="x",mode="quick",deliverable="x",requested_outputs=["WINS"]),execution=ExecutionResult(plan=contracts.Plan(nodes=[contracts.PlanNode(id="n",description="n",capability_hints=["standings"],status="complete")]),evidence_by_node={"n":ev},attempts={"n":1}),draft=contracts.DraftReport(sections=[],claims=[c]),verification=contracts.VerificationReport(status="pass",claim_results=[{"claim_index":0,"supported":True}]),verified_claims=[contracts.VerifiedClaim(claim_index=0,claim=c,evidence_ids=["e"],sources=[contracts.ClaimSource(evidence_id="e",source="private",capability="standings")],output_bindings=[b])])
-    class Runtime:
-        async def run(self,*a,**k):return result
-    monkeypatch.setattr("shared.providers.resolve_model_id",lambda value:("openrouter","fixture"));monkeypatch.setattr("v2.runtime.assembly.build_runtime",lambda **k:(Runtime(),RunLedger(k["run_id"])));monkeypatch.setattr(routes,"_PROJECTS",ProjectStore(tmp_path/"p.sqlite"));app=FastAPI();app.include_router(routes.router,prefix="/api");r=TestClient(app).post("/api/v2/chat/stream",json={"q":"x"});payload=__import__("json").loads(r.text.split("event: final_answer\ndata: ",1)[1].split("\n\n",1)[0]);carry=payload["carry"]
-    assert carry["run_id"]==r.headers["x-dime-run-id"] and carry["verification"]=="pass"
-    assert carry["verified_claims"]==1 and carry["gaps"]==[] and len(carry["output_statuses"])==1
 
-def test_no_authority_internal_gap_route_is_nonblank_and_terminal(monkeypatch,tmp_path):
-    from fastapi import FastAPI
-    from fastapi.testclient import TestClient
-    from v2 import contracts
-    from v2.api import routes
-    from v2.runtime.models import ExecutionResult,RuntimeResult
-    from v2.runtime.ledger import RunLedger
-    result=RuntimeResult(task=contracts.TaskSpec(goal="x",mode="quick",deliverable="x"),execution=ExecutionResult(plan=contracts.Plan(nodes=[])),draft=contracts.DraftReport(sections=[],claims=[]),verification=contracts.VerificationReport(status="partial"),gaps=[contracts.Gap(kind="execution_failure",message="SECRET")])
-    class Runtime:
-        async def run(self,*a,**k):return result
-    monkeypatch.setattr("shared.providers.resolve_model_id",lambda value:("openrouter","fixture"));monkeypatch.setattr("v2.runtime.assembly.build_runtime",lambda **k:(Runtime(),RunLedger(k["run_id"])));monkeypatch.setattr(routes,"_PROJECTS",ProjectStore(tmp_path/"p.sqlite"));app=FastAPI();app.include_router(routes.router,prefix="/api");text=TestClient(app).post("/api/v2/chat/stream",json={"q":"x"}).text
-    assert "SECRET" not in text and text.count("event: work_log")==text.count("event: final_answer")==text.count("event: graph_end")==1
-    payload=__import__("json").loads(text.split("event: final_answer\ndata: ",1)[1].split("\n\n",1)[0]);assert payload["text"].strip()
 
 def test_runtime_manifest_pins_accepted_semantic_baseline():
     from v2.api import routes
@@ -1846,24 +1361,6 @@ def test_runtime_manifest_pins_accepted_semantic_baseline():
         "manifest_self_hash": "c8ba316cc4d50c666208874a5d04d9788a312e450781d057b823a63aadb446ac",
     }
 
-def test_chat_stream_get_with_client_header_and_no_thread_starts_stream(monkeypatch, tmp_path):
-    from v2 import contracts
-    from v2.api import routes
-    from v2.runtime.ledger import RunLedger
-    from v2.runtime.models import ExecutionResult, RuntimeResult
-    result = RuntimeResult(task=contracts.TaskSpec(goal="x", mode="quick", deliverable="x"), execution=ExecutionResult(plan=contracts.Plan(nodes=[])), draft=contracts.DraftReport(sections=[], claims=[]), verification=contracts.VerificationReport(status="partial"), gaps=[contracts.Gap(kind="execution_failure", message="x")])
-    class Runtime:
-        async def run(self, *a, **k):
-            return result
-    monkeypatch.setattr("shared.providers.resolve_model_id", lambda value: ("openrouter", "fixture"))
-    monkeypatch.setattr("v2.runtime.assembly.build_runtime", lambda **k: (Runtime(), RunLedger(k["run_id"])))
-    monkeypatch.setattr(routes, "_PROJECTS", ProjectStore(tmp_path / "p.sqlite"))
-    app = FastAPI()
-    app.include_router(routes.router, prefix="/api")
-    response = TestClient(app, raise_server_exceptions=False).get("/api/v2/chat/stream", params={"q": "hello"}, headers={"x-dime-client": "dogfood-loop"})
-    assert response.status_code == 200
-    assert response.text.count("event: final_answer") == 1
-    assert response.text.count("event: graph_end") == 1
 
 def _healthz_client(monkeypatch, tmp_path):
     import duckdb

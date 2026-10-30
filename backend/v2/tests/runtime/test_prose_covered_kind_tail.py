@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
-from v2.api.routes import _answer_text
+from v2.runtime.presentation import _answer_text
 from v2.contracts import (
     Claim,
     ClaimKind,

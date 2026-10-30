@@ -442,6 +442,25 @@ export function AnswerVerification({
   artifacts: DimeArtifact[];
 }) {
   const provenance = mergeArtifactProvenance(artifacts);
+  if (carry?.sourceRefs) return (
+    <details className="mt-3 rounded-[10px] border border-line bg-field px-3 py-2">
+      <summary className="cursor-pointer text-[12px] font-medium text-ink-2">Sources &amp; provenance</summary>
+      {carry.sources?.map(source => (
+        <details key={source.ref} className="mt-2 text-[12px]">
+          <summary>{source.label}</summary>
+          {source.rows.length > 0 && (
+            <div className="overflow-auto">
+              <table className="mt-2 w-full text-left">
+                <thead><tr>{Object.keys(source.rows[0]).map(column => <th key={column} className="pr-4">{column}{source.units[column] ? ` (${source.units[column]})` : ""}</th>)}</tr></thead>
+                <tbody>{source.rows.map((row, index) => <tr key={index}>{Object.keys(source.rows[0]).map(column => <td key={column} className="pr-4">{typeof row[column] === "object" ? JSON.stringify(row[column]) : String(row[column] ?? "")}</td>)}</tr>)}</tbody>
+              </table>
+            </div>
+          )}
+          <details className="mt-2"><summary>Provenance</summary><pre className="overflow-auto whitespace-pre-wrap">{JSON.stringify(source.data, null, 2)}</pre></details>
+        </details>
+      ))}
+    </details>
+  );
   if (!carry && !provenance) return null;
   const disclosure = verificationDisclosure(carry, provenance);
   return (

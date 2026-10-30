@@ -1,6 +1,7 @@
 import argparse
 import asyncio
 import os
+import json
 import sys
 from pathlib import Path
 
@@ -9,6 +10,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from shared.providers import resolve_model_id
 from v2.runtime.assembly import build_runtime
 from v2.runtime.policy import ExecutionPolicy
+from v2.runtime.presentation import _answer_text, present_result
 
 def main() -> int:
     args = argparse.ArgumentParser()
@@ -16,6 +18,7 @@ def main() -> int:
     args.add_argument("--run-id", default="lat6")
     args.add_argument("--ledger-dir", default=".")
     args.add_argument("--model", default=None)
+    args.add_argument("--json", action="store_true")
     ns = args.parse_args()
     provider, model_name = resolve_model_id(
         ns.model or os.environ.get("DIME_V2_MODEL"))
@@ -28,6 +31,10 @@ def main() -> int:
         return await runtime.run(ns.question, run_id=ns.run_id)
 
     result = asyncio.run(run())
+    if ns.json:
+        print(json.dumps(present_result(result)))
+        return 0
+    print(_answer_text(result))
     print("claims=%d gaps=%d" % (len(result.verified_claims), len(result.gaps)))
     print("ledger: %s" % (Path(ns.ledger_dir) / (ns.run_id + ".jsonl")))
     return 0

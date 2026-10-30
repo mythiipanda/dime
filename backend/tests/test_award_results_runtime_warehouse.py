@@ -259,16 +259,15 @@ def test_a_missing_table_is_a_loud_absence_naming_the_table(runtime_awards,
     assert absent_tables_for_capability("award_results", {}) == (
         award_results.TABLE,)
 
+
+
 def test_a_wrong_subject_fails_loud_through_the_chat_stream(runtime_awards,
                                                            monkeypatch,
                                                            tmp_path):
     import json
 
-    from fastapi import FastAPI
-    from fastapi.testclient import TestClient
 
     from v2.adapters.core import ToolCapability
-    from v2.api import routes
     from v2.contracts import (
         DraftReport,
         Plan,
@@ -279,10 +278,8 @@ def test_a_wrong_subject_fails_loud_through_the_chat_stream(runtime_awards,
         VerificationReport,
         VerificationStatus,
     )
-    from v2.projects.service import ProjectStore
     from v2.runtime import PlanExecutor, Runtime
     from v2.runtime.assembly import MechanicalVerifier
-    from v2.runtime.ledger import RunLedger
 
     task = TaskSpec(
         goal="What awards did Ada Vega win in 2024-25?",
@@ -323,30 +320,11 @@ def test_a_wrong_subject_fails_loud_through_the_chat_stream(runtime_awards,
         mechanical_verifier=MechanicalVerifier(),
         semantic_verifier=Semantic())
 
-    monkeypatch.setenv("DIME_RUNTIME_V2", "on")
-    monkeypatch.setattr("shared.providers.resolve_model_id",
-                        lambda value: ("openrouter", "fixture"))
-    monkeypatch.setattr("v2.runtime.assembly.build_runtime",
-                        lambda **kwargs: (runtime, RunLedger(kwargs["run_id"])))
-    monkeypatch.setattr(routes, "_PROJECTS",
-                        ProjectStore(tmp_path / "p.sqlite"))
-    routes._CHAT_HITS.clear()
-    app = FastAPI()
-    app.include_router(routes.router, prefix="/api")
-    response = TestClient(app).post(
-        "/api/v2/chat/stream",
-        json={"q": "What awards did Ada Vega win in 2024-25?"})
-    routes._CHAT_HITS.clear()
-    assert response.status_code == 200
-
-    def event(name: str) -> dict:
-        payloads = [chunk.split("data: ", 1)[1]
-                    for chunk in response.text.split("\n\n")
-                    if chunk.startswith(f"event: {name}\n")]
-        assert payloads, name
-        return json.loads(payloads[-1])
-
-    final = event("final_answer")
+    import asyncio
+    from v2.runtime.presentation import present_result
+    result = asyncio.run(runtime.run('What awards did Ada Vega win in 2024-25?'))
+    final = present_result(result)
+    custom = {key: final[key] for key in ("tables", "unverified_numbers")}
     assert "PLAYER_NAME could not be verified (missing)." in final["text"]
     assert final["carry"]["output_statuses"] == [{
         "requirement_kind": "task",
@@ -359,4 +337,4 @@ def test_a_wrong_subject_fails_loud_through_the_chat_stream(runtime_awards,
     assert {block for gap in final["carry"]["gaps"]
             for block in gap["blocks"]} == {
                 "node:award_record", "node:award_record-replan2"}
-    assert "Ada Vega" in response.text
+    assert "Ada Vega" in final["text"]

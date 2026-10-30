@@ -132,6 +132,10 @@ async def with_heartbeat(
                 return
             yield item
     finally:
-        if not task.done():
-            task.cancel()
-        await asyncio.gather(task, return_exceptions=True)
+        # Starlette cancels the response scope on disconnect. Await the owner even
+        # inside that cancelled scope so its worker cleanup finishes before return.
+        import anyio
+        with anyio.CancelScope(shield=True):
+            if not task.done():
+                task.cancel()
+            await asyncio.gather(task, return_exceptions=True)

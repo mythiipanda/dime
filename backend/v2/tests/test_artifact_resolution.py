@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import pytest
-from v2.api.routes import _resolve_artifacts
+from v2.runtime.presentation import _resolve_artifacts
 from v2.contracts import (
     ArtifactIntent,
     ArtifactPoint,

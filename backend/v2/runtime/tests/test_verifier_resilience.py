@@ -103,7 +103,7 @@ async def test_semantic_failure_with_repair_mechanical_marks_judge_unavailable()
 
 @pytest.mark.anyio
 async def test_judge_unavailable_gap_reaches_plain_language_answer_text() -> None:
-    from v2.api.routes import _answer_text
+    from v2.runtime.presentation import _answer_text
 
     result = await make_runtime(RepairMechanical(), FailingSemantic()).run("answer")
     assert any(gap.kind == GapKind.JUDGE_UNAVAILABLE for gap in result.gaps)

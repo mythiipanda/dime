@@ -279,54 +279,6 @@ def _event(text: str, name: str) -> dict:
     assert payloads
     return json.loads(payloads[-1])
 
-def test_the_synthesizer_selector_reaches_a_flat_award_row(
-        awards_warehouse, monkeypatch, tmp_path):
-    from fastapi import FastAPI
-    from fastapi.testclient import TestClient
-
-    from v2.adapters.core import ToolCapability
-    from v2.api import routes
-    from v2.projects.service import ProjectStore
-    from v2.runtime import PlanExecutor, Runtime
-    from v2.runtime.assembly import MechanicalVerifier
-    from v2.runtime.ledger import RunLedger
-
-    runtime = Runtime(
-        intake=WinnerIntake(), planner=WinnerPlanner(),
-        executor=PlanExecutor(
-            {"award_results": ToolCapability("award_results")}),
-        synthesizer=WinnerSynthesizer(),
-        mechanical_verifier=MechanicalVerifier(),
-        semantic_verifier=WinnerSemantic())
-
-    def build(**kwargs):
-        return runtime, RunLedger(kwargs["run_id"])
-
-    monkeypatch.setenv("DIME_RUNTIME_V2", "on")
-    monkeypatch.setattr("shared.providers.resolve_model_id",
-                        lambda value: ("openrouter", "fixture"))
-    monkeypatch.setattr("v2.runtime.assembly.build_runtime", build)
-    monkeypatch.setattr(routes, "_PROJECTS", ProjectStore(tmp_path / "p.sqlite"))
-    routes._CHAT_HITS.clear()
-    app = FastAPI()
-    app.include_router(routes.router, prefix="/api")
-    response = TestClient(app).post(
-        "/api/v2/chat/stream",
-        json={"q": "Who won the 2023-24 MVP?"})
-    assert response.status_code == 200
-
-    custom = _event(response.text, "custom_data")
-    cited = custom["tables"]
-    final = _event(response.text, "final_answer")
-    assert [row["output_id"] for row in cited] == ["AWARD_SHARE"]
-    assert cited[0]["value"] == "0.935"
-    assert cited[0]["provenance"]["capability"] == "award_results"
-    assert cited[0]["provenance"]["origin"] == "warehouse"
-    assert custom["unverified_numbers"] == []
-    assert "I could not verify a publishable answer" not in final["text"]
-    assert final["carry"]["verified_claims"] == 1
-    assert "rows[0].award_share" not in response.text
-    assert "placements" not in response.text
 
 RECORDED_BALLOTS = {
     "2023-24": {"player": "Nikola Jokić", "coach": "Mark Daigneault",
@@ -763,57 +715,6 @@ class MvpAlignedSynthesizer:
                 evidence_ids=[envelope.evidence_id],
                 output_bindings=bindings)])
 
-def test_mvp_winner_and_share_publish_through_public_seam(
-        awards_warehouse, monkeypatch, tmp_path):
-    from fastapi import FastAPI
-    from fastapi.testclient import TestClient
-
-    from v2.adapters.core import ToolCapability
-    from v2.api import routes
-    from v2.projects.service import ProjectStore
-    from v2.runtime import PlanExecutor, Runtime
-    from v2.runtime.assembly import MechanicalVerifier
-    from v2.runtime.ledger import RunLedger
-
-    runtime = Runtime(
-        intake=MvpAlignedIntake(), planner=MvpAlignedPlanner(),
-        executor=PlanExecutor(
-            {"award_results": ToolCapability("award_results")}),
-        synthesizer=MvpAlignedSynthesizer(),
-        mechanical_verifier=MechanicalVerifier(),
-        semantic_verifier=WinnerSemantic())
-
-    def build(**kwargs):
-        return runtime, RunLedger(kwargs["run_id"])
-
-    monkeypatch.setenv("DIME_RUNTIME_V2", "on")
-    monkeypatch.setattr("shared.providers.resolve_model_id",
-                        lambda value: ("openrouter", "fixture"))
-    monkeypatch.setattr("v2.runtime.assembly.build_runtime", build)
-    monkeypatch.setattr(routes, "_PROJECTS", ProjectStore(tmp_path / "p.sqlite"))
-    routes._CHAT_HITS.clear()
-    app = FastAPI()
-    app.include_router(routes.router, prefix="/api")
-    response = TestClient(app).post(
-        "/api/v2/chat/stream",
-        json={"q": "Who won the 2023-24 MVP and how large was the winning vote share?"})
-    assert response.status_code == 200
-    custom = _event(response.text, "custom_data")
-    final = _event(response.text, "final_answer")
-    statuses = {(item["requirement_kind"], item["requirement_id"], item["output_id"]): item["status"]
-                for item in final["carry"]["output_statuses"]}
-    assert statuses[("task", None, "PLAYER_NAME")] == "complete"
-    assert statuses[("task", None, "VOTE_SHARE")] == "complete"
-    assert statuses[("evidence", "mvp_result", "PLAYER_NAME")] == "complete"
-    assert statuses[("evidence", "mvp_result", "VOTE_SHARE")] == "complete"
-    cited = {row["output_id"]: row["value"] for row in custom["tables"]}
-    assert cited["PLAYER_NAME"] == "Nikola Jokić"
-    assert cited["VOTE_SHARE"] == "0.935"
-    assert {row["provenance"]["capability"] for row in custom["tables"]} == {"award_results"}
-    assert {row["provenance"]["origin"] for row in custom["tables"]} == {"warehouse"}
-    assert custom["unverified_numbers"] == []
-    assert REFUSAL not in final["text"]
-    assert final["carry"]["verified_claims"] == 1
 def test_the_catalog_description_names_every_published_award_code() -> None:
     from v2.runtime.assembly import capability_catalog
     from shared.tools.award_results import AWARDS
@@ -830,3 +731,72 @@ def test_the_catalog_description_forbids_inventing_an_unpublished_award() -> Non
 
     assert "Finals MVP" in description
     assert "gap" in description
+
+
+def test_the_synthesizer_selector_reaches_a_flat_award_row(
+        awards_warehouse, monkeypatch, tmp_path):
+
+    from v2.adapters.core import ToolCapability
+    from v2.runtime import PlanExecutor, Runtime
+    from v2.runtime.assembly import MechanicalVerifier
+
+    runtime = Runtime(
+        intake=WinnerIntake(), planner=WinnerPlanner(),
+        executor=PlanExecutor(
+            {"award_results": ToolCapability("award_results")}),
+        synthesizer=WinnerSynthesizer(),
+        mechanical_verifier=MechanicalVerifier(),
+        semantic_verifier=WinnerSemantic())
+
+
+    import asyncio
+    from v2.runtime.presentation import present_result
+    result = asyncio.run(runtime.run('Who won MVP in 2023-24?'))
+    final = present_result(result)
+    custom = {key: final[key] for key in ("tables", "unverified_numbers")}
+    cited = custom["tables"]
+    assert [row["output_id"] for row in cited] == ["AWARD_SHARE"]
+    assert cited[0]["value"] == "0.935"
+    assert cited[0]["provenance"]["capability"] == "award_results"
+    assert cited[0]["provenance"]["origin"] == "warehouse"
+    assert custom["unverified_numbers"] == []
+    assert "I could not verify a publishable answer" not in final["text"]
+    assert final["carry"]["verified_claims"] == 1
+    assert "rows[0].award_share" not in final["text"]
+    assert "placements" not in final["text"]
+
+
+def test_mvp_winner_and_share_publish_through_public_seam(
+        awards_warehouse, monkeypatch, tmp_path):
+
+    from v2.adapters.core import ToolCapability
+    from v2.runtime import PlanExecutor, Runtime
+    from v2.runtime.assembly import MechanicalVerifier
+
+    runtime = Runtime(
+        intake=MvpAlignedIntake(), planner=MvpAlignedPlanner(),
+        executor=PlanExecutor(
+            {"award_results": ToolCapability("award_results")}),
+        synthesizer=MvpAlignedSynthesizer(),
+        mechanical_verifier=MechanicalVerifier(),
+        semantic_verifier=WinnerSemantic())
+
+
+    import asyncio
+    from v2.runtime.presentation import present_result
+    result = asyncio.run(runtime.run('Who won MVP in 2023-24?'))
+    final = present_result(result)
+    custom = {key: final[key] for key in ("tables", "unverified_numbers")}
+    statuses = {(item["requirement_kind"], item["requirement_id"], item["output_id"]): item["status"] for item in final["carry"]["output_statuses"]}
+    assert statuses[("task", None, "PLAYER_NAME")] == "complete"
+    assert statuses[("task", None, "VOTE_SHARE")] == "complete"
+    assert statuses[("evidence", "mvp_result", "PLAYER_NAME")] == "complete"
+    assert statuses[("evidence", "mvp_result", "VOTE_SHARE")] == "complete"
+    cited = {row["output_id"]: row["value"] for row in custom["tables"]}
+    assert cited["PLAYER_NAME"] == "Nikola Jokić"
+    assert cited["VOTE_SHARE"] == "0.935"
+    assert {row["provenance"]["capability"] for row in custom["tables"]} == {"award_results"}
+    assert {row["provenance"]["origin"] for row in custom["tables"]} == {"warehouse"}
+    assert custom["unverified_numbers"] == []
+    assert REFUSAL not in final["text"]
+    assert final["carry"]["verified_claims"] == 1
