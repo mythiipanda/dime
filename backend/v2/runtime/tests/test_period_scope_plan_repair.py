@@ -332,6 +332,205 @@ class CapturedR5Planner:
             )
         ])
 
+R507_PLAYER_EXPECTED = (
+    "SELECT PLAYER, TEAM, GP, PPG, RPG, APG, TS_PCT FROM silver_player_season "
+    "WHERE PLAYER = 'Shai Gilgeous-Alexander' AND _season = '2024-25'"
+)
+R507_PLAYER_ALIASED = (
+    "SELECT PLAYER, TEAM, GP, PPG, RPG, APG, TS_PCT, PPG AS \"PTS\", "
+    "RPG AS \"REB\", APG AS \"AST\" FROM silver_player_season "
+    "WHERE PLAYER = 'Shai Gilgeous-Alexander' AND _season = '2024-25'"
+)
+R507_HIST_EXPECTED = (
+    "SELECT player_name, team_abbreviation, gp, pts, reb, ast "
+    "FROM silver_hist_player_seasons WHERE player_name = "
+    "'Shai Gilgeous-Alexander' AND _season = '2024-25'"
+)
+R507_HIST_ALIASED = (
+    "SELECT player_name, team_abbreviation, gp AS \"GP\", pts AS \"TOTAL_PTS\", "
+    "reb AS \"TOTAL_REB\", ast AS \"TOTAL_AST\", pts AS \"PTS\", reb AS \"REB\", "
+    "ast AS \"AST\" FROM silver_hist_player_seasons WHERE player_name = "
+    "'Shai Gilgeous-Alexander' AND _season = '2024-25'"
+)
+
+
+def test_shared_sql_coverage_keeps_renamed_source_columns() -> None:
+    from v2.domain.sql_coverage import sql_covers
+
+    aliased_only = (
+        "SELECT player_name, team_abbreviation, gp AS \"GP\", "
+        "pts AS \"TOTAL_PTS\", reb AS \"TOTAL_REB\", ast AS \"TOTAL_AST\" "
+        "FROM silver_hist_player_seasons WHERE player_name = "
+        "'Shai Gilgeous-Alexander' AND _season = '2024-25'"
+    )
+    assert sql_covers(R507_HIST_EXPECTED, aliased_only)
+
+
+R512_SCOPE_EXPECTED = (
+    "SELECT PLAYER, TEAM, PPG FROM silver_player_season "
+    "WHERE PLAYER = 'PlayerA' AND TEAM = 'BOS' AND _season = '2024-25'"
+)
+R512_SCOPE_ALIASED = (
+    "SELECT PLAYER, TEAM, PPG, PPG AS \"PTS\" FROM silver_player_season "
+    "WHERE PLAYER = 'PlayerA' AND TEAM = 'BOS' AND _season = '2024-25'"
+)
+
+
+@pytest.mark.parametrize("actual", [
+    R512_SCOPE_EXPECTED.replace("'PlayerA'", "'playera'"),
+    R512_SCOPE_EXPECTED.replace("'PlayerA'", "'PLAYERA'"),
+    R512_SCOPE_EXPECTED.replace("'BOS'", "'bos'"),
+    R512_SCOPE_EXPECTED.replace("'2024-25'", "'2024-25 '"),
+])
+def test_shared_sql_coverage_preserves_literal_values(actual: str) -> None:
+    from v2.domain.sql_coverage import sql_covers
+
+    assert not sql_covers(R512_SCOPE_EXPECTED, actual)
+
+
+def test_shared_sql_coverage_projection_extension_preserves_literals() -> None:
+    from v2.domain.sql_coverage import sql_covers
+
+    assert sql_covers(R512_SCOPE_EXPECTED, R512_SCOPE_ALIASED)
+    for actual in (
+        R512_SCOPE_ALIASED.replace("'PlayerA'", "'playera'"),
+        R512_SCOPE_ALIASED.replace("'BOS'", "'bos'"),
+        R512_SCOPE_ALIASED.replace("'2024-25'", "'2024-25 '"),
+    ):
+        assert not sql_covers(R512_SCOPE_EXPECTED, actual)
+
+
+def test_shared_sql_coverage_accepts_identifier_and_alias_case() -> None:
+    from v2.domain.sql_coverage import sql_covers
+
+    assert sql_covers(
+        R512_SCOPE_EXPECTED,
+        "select player, team, ppg from SILVER_PLAYER_SEASON "
+        "where PLAYER = 'PlayerA' and team = 'BOS' and _season = '2024-25'",
+    )
+    # Added projection takes the fallback path; alias case is insignificant.
+    assert sql_covers(
+        R512_SCOPE_EXPECTED,
+        "select player, team, ppg, ppg as pts from SILVER_PLAYER_SEASON "
+        "where PLAYER = 'PlayerA' and team = 'BOS' and _season = '2024-25'",
+    )
+
+
+def test_shared_sql_coverage_keeps_regular_season_literal_normalization() -> None:
+    from v2.domain.sql_coverage import sql_covers
+
+    expected = (
+        "SELECT COUNT(*) AS games, MAX(pts) AS best FROM silver_hist_gamelogs "
+        "WHERE season_type = 'Regular Season' AND team_name = 'Boston Celtics'"
+    )
+    assert sql_covers(
+        expected, expected.replace("'Regular Season'", "'regular-season'"))
+    assert sql_covers(
+        expected, expected.replace("'Regular Season'", "'REGULAR SEASON'"))
+
+
+def make_r507_alias_task() -> TaskSpec:
+    return TaskSpec(
+        goal="SGA per-game and totals.",
+        mode=RunMode.QUICK,
+        deliverable="text",
+        required_evidence=["sql_exec"],
+        requirements=[
+            EvidenceRequirement(
+                id="per_game_from_player_season",
+                description="per game",
+                capability_options=["sql_exec"],
+                capability_arguments={"sql": R507_PLAYER_EXPECTED},
+                requested_outputs=["PPG", "RPG", "APG", "TS_PCT"],
+            ),
+            EvidenceRequirement(
+                id="cumulative_totals_from_hist_player_seasons",
+                description="totals",
+                capability_options=["sql_exec"],
+                capability_arguments={"sql": R507_HIST_EXPECTED},
+                requested_outputs=["TOTAL_PTS", "TOTAL_REB", "TOTAL_AST"],
+            ),
+        ],
+    )
+
+
+def test_model_planner_coverage_accepts_direct_column_alias_superset() -> None:
+    planner = make_model_planner()
+    plan = Plan(nodes=[
+        PlanNode(
+            id="player", description="per game",
+            capability_hints=["sql_exec"],
+            covers_requirement_ids=["per_game_from_player_season"],
+            arguments={"sql": R507_PLAYER_ALIASED},
+        ),
+        PlanNode(
+            id="hist", description="totals",
+            capability_hints=["sql_exec"],
+            covers_requirement_ids=[
+                "cumulative_totals_from_hist_player_seasons"],
+            arguments={"sql": R507_HIST_ALIASED},
+        ),
+    ])
+    normalized = planner._normalize_requirement_coverage(
+        make_r507_alias_task(), plan)
+    assert [node.covers_requirement_ids for node in normalized.nodes] == [
+        ["per_game_from_player_season"],
+        ["cumulative_totals_from_hist_player_seasons"],
+    ]
+
+
+@pytest.mark.parametrize("sql", [
+    # different team / season / filter scope
+    R507_PLAYER_ALIASED.replace("Shai Gilgeous-Alexander", "Jayson Tatum"),
+    R507_PLAYER_ALIASED.replace("2024-25", "2023-24"),
+    R507_PLAYER_ALIASED + " AND PPG > 10",
+    # different source table
+    R507_PLAYER_ALIASED.replace("silver_player_season", "silver_other_season"),
+    # original source column dropped entirely
+    "SELECT PLAYER, TEAM, GP, PPG, APG, TS_PCT, PPG AS \"PTS\", APG AS \"AST\" "
+    "FROM silver_player_season WHERE PLAYER = 'Shai Gilgeous-Alexander' "
+    "AND _season = '2024-25'",
+    # aggregate / expression substitution
+    R507_PLAYER_ALIASED.replace("PPG AS \"PTS\"", "SUM(PPG) AS \"PTS\""),
+    R507_PLAYER_ALIASED.replace("PPG AS \"PTS\"", "ROUND(PPG, 1) AS \"PTS\""),
+    # subquery / CTE / join scope
+    R507_PLAYER_ALIASED + " AND PPG > (SELECT 1)",
+    "WITH src AS (" + R507_PLAYER_EXPECTED + ") SELECT PLAYER, TEAM, GP, PPG, "
+    "RPG, APG, TS_PCT, PPG AS \"PTS\" FROM src",
+    R507_PLAYER_ALIASED.replace(
+        "FROM silver_player_season",
+        "FROM silver_player_season JOIN silver_hist_player_seasons "
+        "ON silver_player_season.PLAYER = silver_hist_player_seasons.player_name"),
+    R507_PLAYER_ALIASED.replace(
+        "FROM silver_player_season",
+        "FROM silver_player_season CROSS JOIN silver_hist_player_seasons"),
+    # union scope
+    R507_PLAYER_ALIASED + " UNION SELECT PLAYER, TEAM, GP, PPG, RPG, APG, "
+    "TS_PCT, PPG, RPG, APG FROM silver_player_season",
+    # group / order / limit / distinct drift
+    R507_PLAYER_ALIASED + " GROUP BY PLAYER",
+    R507_PLAYER_ALIASED + " ORDER BY PPG",
+    R507_PLAYER_ALIASED + " LIMIT 1",
+    R507_PLAYER_ALIASED.replace("SELECT ", "SELECT DISTINCT ", 1),
+    # wildcard is not a direct-column identity
+    "SELECT *, PPG AS \"PTS\" FROM silver_player_season WHERE PLAYER = "
+    "'Shai Gilgeous-Alexander' AND _season = '2024-25'",
+])
+def test_model_planner_coverage_rejects_direct_column_scope_or_expression_drift(
+    sql: str,
+) -> None:
+    planner = make_model_planner()
+    plan = Plan(nodes=[PlanNode(
+        id="player", description="per game",
+        capability_hints=["sql_exec"],
+        covers_requirement_ids=["per_game_from_player_season"],
+        arguments={"sql": sql},
+    )])
+    normalized = planner._normalize_requirement_coverage(
+        make_r507_alias_task(), plan)
+    assert normalized.nodes[0].covers_requirement_ids == []
+
+
 @pytest.mark.anyio
 async def test_captured_r5_source_scope_failure_provides_server_constraint_and_repairs() -> None:
     task = make_celtics_task()

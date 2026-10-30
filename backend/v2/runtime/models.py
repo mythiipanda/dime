@@ -21,6 +21,7 @@ from v2.contracts import (
     OutputFinalStatus,
     canonical_entity_id,
 )
+from v2.domain.sql_coverage import sql_covers
 
 _IDENTITY_KEYS = {
     "player": {"PLAYER_ID", "player_id", "PLAYER", "player",
@@ -840,9 +841,13 @@ class _BindingAdmission:
             raise ValueError("binding node does not cover requirement")
         if evidence.capability not in requirement.capability_options:
             raise ValueError("binding capability is outside requirement")
-        if any(node.arguments.get(key) != value for key, value
-               in self._requirement_arguments(requirement, evidence).items()):
-            raise ValueError("binding node scope does not match requirement")
+        for key, value in self._requirement_arguments(requirement, evidence).items():
+            actual = node.arguments.get(key)
+            matches = (sql_covers(value, actual)
+                       if key == "sql" and isinstance(value, str)
+                       else actual == value)
+            if not matches:
+                raise ValueError("binding node scope does not match requirement")
 
     def _check_metric_binding(self, binding, capability, evidence) -> None:
         from v2.adapters.capabilities import resolve_metric_column
