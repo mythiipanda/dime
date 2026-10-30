@@ -1,10 +1,11 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir, writeFile, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { ModelRuntime } from "@earendil-works/pi-coding-agent";
 import { createAssistantMessageEventStream } from "@earendil-works/pi-ai";
 import { createAnalystSession } from "./runtime.mjs";
+import { connectPythonTools } from "./python-tools.mjs";
 
 const root = process.env.DIME_PI_TEST_ROOT;
 assert(root, "DIME_PI_TEST_ROOT must identify an isolated proof directory");
@@ -138,4 +139,82 @@ test("session abort cancels a running nested analysis tool", async () => {
     assert(cancelled);
     assert(session.isIdle);
   } finally { session.dispose(); }
+});
+
+test("real Python sql_exec and schema cross MCP into Pi with source semantics and independent results", async () => {
+  const baseline = JSON.parse(await readFile(join(root, "python-baseline.json"), "utf8"));
+  const bridge = await connectPythonTools({ python: process.env.DIME_PI_PYTHON, cwd: root,
+    env: { ...process.env } });
+  const pid = bridge.pid;
+  let session;
+  let running = 0;
+  let peak = 0;
+  const tools = bridge.tools.map(tool => ({ ...tool, async execute(...args) {
+    running++;
+    peak = Math.max(peak, running);
+    try { return await tool.execute(...args); }
+    finally { running--; }
+  } }));
+  const value = record => JSON.parse(record.response.content[0].text);
+  const stable = result => {
+    const copy = structuredClone(result);
+    if (copy.meta) delete copy.meta.ms;
+    return copy;
+  };
+  try {
+    assert.deepEqual(bridge.tools.map(t => t.name), ["sql_exec", "warehouse_schema"]);
+    assert.deepEqual(bridge.tools[0].parameters.required, ["sql"]);
+    const setup = await fixture("python", `
+      const args = ${JSON.stringify(baseline.args)};
+      const calls = await Promise.all(args.map(arg => tools.sql_exec(arg)));
+      calls.push(await tools.sql_exec(args[1]));
+      const schema = JSON.parse(await tools.warehouse_schema({}));
+      return {schema, calls: calls.map(text => {
+        const record = JSON.parse(text);
+        const result = JSON.parse(record.response.content[0].text);
+        if (Array.isArray(result.rows)) result.rows = result.rows.filter(row => row.total_points !== 999);
+        return {ref: record.ref, result};
+      })};
+    `, tools);
+    session = setup.session;
+    await session.prompt("Run real Python fixture");
+    assert(peak >= 2, "real Python requests must overlap");
+    assert.equal(running, 0);
+    const records = [...bridge.results.values()];
+    const queries = records.filter(r => r.tool === "sql_exec");
+    assert.equal(queries.length, baseline.args.length + 1);
+    assert.equal(new Set(records.map(r => r.ref)).size, records.length);
+    assert.equal(new Set(queries.map(r => r.callId)).size, queries.length);
+    for (const record of queries) {
+      const result = value(record);
+      const index = baseline.args.findIndex(a => a.sql === (result.sql ?? result.meta.sql));
+      assert(index >= 0);
+      assert.deepEqual(stable(result), stable(baseline.direct[index]));
+    }
+    assert.deepEqual(value(records.find(r => r.tool === "warehouse_schema")), baseline.schema);
+    const perGame = value(queries.find(r => value(r).sql === baseline.args[0].sql));
+    assert.equal(perGame.declared_column_semantics.total_points.unit, "points_per_game");
+    assert.equal(perGame.rows[0].total_points, 11.8);
+    assert.equal(perGame.rows[1].total_points, 999);
+    assert(perGame.season_semantics.resolved_labels.some(r => r.season_label === "2090-91"));
+    assert.equal(baseline.direct[1].declared_column_semantics.PTS.unit, "total_points");
+    for (const failed of baseline.direct.slice(2)) assert.equal(failed.ok, false);
+    const seen = JSON.stringify(setup.requests[1]);
+    assert(!seen.includes("RAW_SECRET_ROW"));
+    for (const record of queries) assert(seen.includes(record.ref));
+
+    // Domain failure and input-validation errors do not close the process or erase evidence.
+    const sql = bridge.tools.find(t => t.name === "sql_exec");
+    const invalid = JSON.parse((await sql.execute("invalid", {}, undefined)).content[0].text);
+    assert.equal(invalid.response.isError, true);
+    const recovery = JSON.parse((await sql.execute("recovery", baseline.args[1], undefined)).content[0].text);
+    assert.deepEqual(stable(value(recovery)), stable(baseline.direct[1]));
+    assert.equal(bridge.results.size, baseline.args.length + 4);
+    console.log(JSON.stringify({ proof: "python-mcp-pi-equivalence", queries: queries.length,
+      refs: queries.map(r => r.ref), peak, units: ["points_per_game", "total_points"], pid }));
+  } finally {
+    session?.dispose();
+    await bridge.close();
+  }
+  assert.throws(() => process.kill(pid, 0), /ESRCH/);
 });

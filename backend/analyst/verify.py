@@ -16,7 +16,12 @@ for name in ("home", "temp", "cwd"):
 env = {"SystemRoot": os.environ["SystemRoot"], "WINDIR": os.environ["SystemRoot"],
        "HOME": str(root / "home"), "USERPROFILE": str(root / "home"),
        "TEMP": str(root / "temp"), "TMP": str(root / "temp"),
-       "PI_OFFLINE": "1", "DIME_PI_TEST_ROOT": str(root / "cwd")}
-for source in ("runtime.mjs", "runtime.test.mjs"):
+       "PI_OFFLINE": "1", "DIME_PI_TEST_ROOT": str(root / "cwd"),
+       "DIME_PI_PYTHON": sys.executable,
+       "DIME_WAREHOUSE": str(root / "cwd" / "owned.duckdb"),
+       "PYTHONDONTWRITEBYTECODE": "1"}
+subprocess.run([sys.executable, "-B", str(module / "python_fixture.py")],
+               cwd=root / "cwd", env=env, check=True)
+for source in ("runtime.mjs", "runtime.test.mjs", "python-tools.mjs"):
     subprocess.run([node, "--check", str(module / source)], cwd=root / "cwd", env=env, check=True)
 raise SystemExit(subprocess.run([node, "--test", str(module / "runtime.test.mjs")], cwd=root / "cwd", env=env).returncode)
