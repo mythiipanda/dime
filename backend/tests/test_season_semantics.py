@@ -825,3 +825,37 @@ def test_direct_alias_requires_declared_source(sql):
         "meta": {"tables": ["rates"]},
     }, {"tables": {"rates": {"PTS": {"unit": "points_per_game", "note": "source"}}}})
     assert result["declared_column_semantics"] == {}
+
+
+@pytest.mark.anyio
+async def test_intake_delivers_sql_output_contract_and_source_units(
+        unit_synthetic_warehouse):
+    from v2.adapters.models import ModelIntake
+    from v2.prompts import load_prompt
+    from v2.runtime.assembly import capability_catalog, declared_schema_for
+
+    class CapturedRequest(BaseException):
+        pass
+
+    class Capture:
+        call = None
+
+        async def generate(self, **call):
+            self.call = call
+            raise CapturedRequest
+
+    model = Capture()
+    schema = declared_schema_for("sql_exec")
+    with pytest.raises(CapturedRequest):
+        await ModelIntake(model, provider="stub", model_name="stub",
+            capability_catalog=capability_catalog()).understand("Read the requested measures.")
+    prompt = model.call["prompt"]
+    assert prompt == load_prompt("intake")
+    assert "metric_ids and requested_outputs name individual scalar projected result columns" in prompt
+    assert "Use explicit SQL column aliases matching canonical IDs" in prompt
+    assert "not umbrella or report-section labels" in prompt
+    assert "retain the requested output and basis and state the limitation" in prompt
+    assert model.call["payload"]["capability_catalog"]["sql_exec"]["declared_schema"] == schema
+    assert schema["tables"]["silver_player_season"]["PPG"]["unit"] == "points_per_game"
+    assert schema["tables"]["silver_leaders_pts"]["PTS"]["unit"] == "total_points"
+    assert "not cumulative totals" in schema["tables"]["silver_hist_player_seasons"]["PTS"]["note"]

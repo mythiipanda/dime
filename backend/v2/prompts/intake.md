@@ -67,6 +67,7 @@ Fields:
 - If the named source supports only a different basis, keep the requested basis and record the source-supported mismatch as an explicit unmet limitation in the deliverable instead of presenting the substitute as the requested output.
 - Retain the user-named source and scope; an alternative available source may be used only when it supports the requested measure and the change is disclosed.
 - Do not claim a measure is unavailable beyond the inspected source; state the limitation only for the evidence actually checked.
+- For an open-vocabulary SQL requirement, metric_ids and requested_outputs name individual scalar projected result columns, not umbrella or report-section labels. Use explicit SQL column aliases matching canonical IDs when needed so projection and requirement IDs agree. Keep each metric and requested basis separate; an alias changes neither source unit nor measure. Never relabel a per-game rate as a total or silently substitute an approximation. If the requested basis is unavailable, retain the requested output and basis and state the limitation.
 - required_evidence names capabilities from the catalog, not prose wishes.
 - required_evidence is exactly what the question asks for and nothing
   adjacent. A capability is not required when it answers a question the

@@ -267,3 +267,35 @@ def test_unbound_task_outputs_are_still_reported_missing():
                      if item.requirement_kind == "task"}
     assert task_statuses == {"PER_GAME_MEASURE": "missing",
                              "SEASON_TOTAL": "missing"}
+
+@pytest.mark.parametrize("requested_output,passes", [
+    ("MEASURE_RATE", True),
+    ("REPORT_SECTION", False),
+])
+def test_explicit_sql_alias_matches_requirement_column_contract(requested_output, passes):
+    from datetime import UTC, datetime
+    import duckdb
+    from v2.adapters.capabilities import post_evidence_failures
+    from v2.contracts import EvidenceEnvelope
+
+    sql = "SELECT source_rate AS MEASURE_RATE FROM (VALUES (1.5)) AS owned(source_rate)"
+    with duckdb.connect(":memory:") as fixture:
+        result = fixture.execute(sql)
+        columns = [item[0] for item in result.description]
+        rows = [dict(zip(columns, row)) for row in result.fetchall()]
+    task = TaskSpec(goal="requested measure", mode="quick", deliverable="measure",
+        requested_outputs=[requested_output], requirements=[EvidenceRequirement(
+            id="measure", description="requested measure", capability_options=["sql_exec"],
+            metric_ids=["MEASURE_RATE"], requested_outputs=[requested_output])])
+    node = PlanNode(id="measure", description="read", capability_hints=["sql_exec"],
+        covers_requirement_ids=["measure"], arguments={"sql": sql})
+    evidence = EvidenceEnvelope(evidence_id="owned", capability="sql_exec",
+        source="fixture", observed_at=datetime.now(UTC), rows=rows)
+    failures = post_evidence_failures(
+        preconditions_for_node(task, node, CAPABILITIES["sql_exec"]), evidence)
+    assert rows == [{"MEASURE_RATE": 1.5}]
+    if passes:
+        assert failures == []
+    else:
+        assert len(failures) == 1
+        assert requested_output in failures[0]
