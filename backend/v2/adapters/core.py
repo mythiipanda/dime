@@ -282,8 +282,10 @@ def _sql_column_semantics(
                 or not isinstance(metadata, Mapping)):
             continue
         source_column = metadata.get("column")
-        if (not isinstance(source_column, str)
-                or source_column.casefold() != output.casefold()
+        output_column = metadata.get("output_column", source_column)
+        if (not isinstance(source_column, str) or not source_column.strip()
+                or not isinstance(output_column, str)
+                or output_column.casefold() != output.casefold()
                 or not isinstance(metadata.get("table"), str)
                 or not metadata["table"].strip()):
             continue

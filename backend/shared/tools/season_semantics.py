@@ -237,12 +237,6 @@ def _projection_columns(tree: Any, exp: Any, table: str,
                 "reason": "expression or literal alias is not a direct column",
             })
             continue
-        if output_name.lower() != inner.name.lower():
-            _store_column(columns, key, {
-                "column": output_name, "supported": False,
-                "reason": "renamed direct alias; output name is not source column identity",
-            })
-            continue
         qualifier = str(inner.table or "").lower()
         if qualifier and qualifier not in {table.lower(), alias}:
             _store_column(columns, key, {
@@ -250,9 +244,15 @@ def _projection_columns(tree: Any, exp: Any, table: str,
                 "reason": "projection references an unknown table alias",
             })
             continue
-        _store_column(columns, key, {
-            "column": output_name, "supported": True, "table": table,
-        })
+        # Direct source identity carries units; renamed season decoding stays unresolved.
+        renamed = output_name.lower() != inner.name.lower()
+        entry = {
+            "column": output_name, "supported": not renamed, "table": table,
+            "source_column": str(inner.name),
+        }
+        if renamed:
+            entry["reason"] = "renamed direct alias; output name is not source column identity"
+        _store_column(columns, key, entry)
     supported = any(item["supported"] for item in columns.values())
     return columns, supported, star_seen
 
@@ -308,10 +308,11 @@ def _declared_column_semantics(
     lineage = attribution.get("columns") or {}
     declared: dict[str, dict[str, str]] = {}
     for item in lineage.values():
-        if not isinstance(item, Mapping) or not item.get("supported"):
+        if not isinstance(item, Mapping) or not item.get("source_column"):
             continue
         table = item.get("table")
-        column = item.get("column")
+        column = item.get("source_column")
+        output = item.get("column")
         if not isinstance(table, str) or not isinstance(column, str):
             continue
         table_schema = next(
@@ -324,13 +325,13 @@ def _declared_column_semantics(
             continue
         unit = metadata.get("unit")
         note = metadata.get("note")
-        semantics = {"table": table, "column": column}
+        semantics = {"table": table, "column": column, "output_column": output}
         if isinstance(unit, str) and unit.strip():
             semantics["unit"] = unit
         if isinstance(note, str) and note.strip():
             semantics["note"] = note
         if "unit" in semantics or "note" in semantics:
-            declared[column] = semantics
+            declared[output] = semantics
     return declared
 
 
