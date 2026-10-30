@@ -88,6 +88,13 @@ async def test_semantic_verifier_route_request_carries_dev_prompt_with_absence_i
     ) in captured
     assert ("a bounded claim from direct, named source, field, or time-window "
             "metadata") in captured
+    assert "never require a coverage query for explicit metadata" in captured
+    assert "Repair is evidence-closed" in captured
+    assert ("never call tools, fetch, requery, or replace evidence") in captured
+    assert ('"partial" with the gap named, not an obtain/requery '
+            "instruction") in captured
+    assert 'stay "repair"' in captured
+    assert "Never rewrite a rejection as fulfilled" in captured
 
 
 def test_absence_disclaimer_rule_present_in_both_prompts():
