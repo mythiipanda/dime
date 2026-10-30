@@ -118,6 +118,7 @@ class RequirementView:
     capability_argument_sets: tuple[Any, ...]
     metric_ids: tuple[str, ...]
     requested_outputs: tuple[str, ...]
+    expected_bases: tuple[tuple[str, str], ...] = ()
 
     def model_dump(self, mode: str | None = None) -> dict[str, Any]:
         return {
@@ -128,6 +129,7 @@ class RequirementView:
             "capability_argument_sets": [item.model_dump(mode="json") if hasattr(item, "model_dump") else item for item in self.capability_argument_sets],
             "metric_ids": list(self.metric_ids),
             "requested_outputs": list(self.requested_outputs),
+            "expected_bases": dict(self.expected_bases),
         }
 
 @dataclass(frozen=True)
@@ -166,6 +168,7 @@ class TaskView:
     open_questions: tuple[str, ...]
     skills: tuple[str, ...]
     ranked_argument_conflicts: tuple[Any, ...]
+    expected_bases: tuple[tuple[str, str], ...] = ()
 
     def model_dump(self, mode: str | None = None) -> dict[str, Any]:
         return {
@@ -174,6 +177,7 @@ class TaskView:
             "deliverable": self.deliverable,
             "metric_ids": list(self.metric_ids),
             "requested_outputs": list(self.requested_outputs),
+            "expected_bases": dict(self.expected_bases),
             "entities": [item.model_dump() for item in self.entities],
             "season": self.season.model_dump() if self.season is not None else None,
             "as_of": self.as_of.isoformat() if hasattr(self.as_of, "isoformat") and self.as_of is not None else self.as_of,
@@ -312,6 +316,10 @@ def freeze_task(task: TaskSpec) -> TaskView:
             capability_argument_sets=tuple(item.capability_argument_sets),
             metric_ids=tuple(item.metric_ids),
             requested_outputs=tuple(item.requested_outputs),
+            expected_bases=tuple(sorted(
+                (str(output_id),
+                 basis.value if hasattr(basis, "value") else str(basis))
+                for output_id, basis in item.expected_bases.items())),
         )
         for item in task.requirements
     )
@@ -339,6 +347,10 @@ def freeze_task(task: TaskSpec) -> TaskView:
         open_questions=tuple(task.open_questions),
         skills=tuple(task.skills),
         ranked_argument_conflicts=tuple(task.ranked_argument_conflicts),
+        expected_bases=tuple(sorted(
+            (str(output_id),
+             basis.value if hasattr(basis, "value") else str(basis))
+            for output_id, basis in task.expected_bases.items())),
     )
 
 def freeze_claim(claim: Any) -> ClaimView:

@@ -561,6 +561,63 @@ async def test_semantic_verifier_receives_vintage_and_source_scope() -> None:
     assert compact["task_season_scoped"] is False
 
 @pytest.mark.anyio
+async def test_semantic_verifier_receives_task_and_requirement_expected_bases() -> None:
+    from v2.contracts import (
+        Claim, DraftReport, EvidenceRequirement, MeasureBasis)
+    from v2.runtime.interfaces import (
+        freeze_draft, freeze_evidence_map, freeze_task)
+
+    stub = StubModel([{"status": "pass", "claim_results": [
+        {"claim_index": 0, "supported": True}]}])
+    verifier = ModelSemanticVerifier(stub, provider="stub", model_name="stub-model")
+    task = TaskSpec(
+        goal="cumulative totals", mode="deep_dive", deliverable="analysis",
+        requested_outputs=["PTS"], expected_bases={"PTS": MeasureBasis.TOTAL},
+        requirements=[EvidenceRequirement(
+            id="scoring", description="Scoring", capability_options=["sql_exec"],
+            requested_outputs=["PTS"],
+            expected_bases={"PTS": MeasureBasis.PER_GAME})])
+    draft = DraftReport(sections=["Scoring"], claims=[Claim(
+        text="32.7 points per game", kind="observed", evidence_ids=["ev"])])
+    evidence = EvidenceEnvelope(
+        evidence_id="ev", capability="sql_exec", source="test:warehouse",
+        observed_at=datetime.now(UTC), rows={"PTS": 32.7})
+    await verifier.verify(
+        freeze_task(task), freeze_draft(draft),
+        freeze_evidence_map({"ev": evidence}))
+    payload_task = stub.calls[0]["payload"]["task"]
+    assert payload_task["expected_bases"] == {"PTS": "total"}
+    assert payload_task["requirements"][0]["expected_bases"] == {
+        "PTS": "per_game"}
+
+@pytest.mark.anyio
+async def test_semantic_verifier_receives_empty_legacy_expected_bases() -> None:
+    from v2.contracts import Claim, DraftReport, EvidenceRequirement
+    from v2.runtime.interfaces import (
+        freeze_draft, freeze_evidence_map, freeze_task)
+
+    stub = StubModel([{"status": "pass", "claim_results": [
+        {"claim_index": 0, "supported": True}]}])
+    verifier = ModelSemanticVerifier(stub, provider="stub", model_name="stub-model")
+    task = TaskSpec(
+        goal="trade", mode="deep_dive", deliverable="analysis",
+        requirements=[EvidenceRequirement(
+            id="trade", description="Trade", capability_options=["trade_value"],
+            requested_outputs=["SALARY"])])
+    draft = DraftReport(sections=["Trade"], claims=[Claim(
+        text="Brown's salary is $57.1M.", kind="observed", evidence_ids=["ev"])])
+    evidence = EvidenceEnvelope(
+        evidence_id="ev", capability="trade_value",
+        source="v1:get_trade_value:salary",
+        observed_at=datetime.now(UTC), rows={"salary": 57_100_000})
+    await verifier.verify(
+        freeze_task(task), freeze_draft(draft),
+        freeze_evidence_map({"ev": evidence}))
+    payload_task = stub.calls[0]["payload"]["task"]
+    assert payload_task["expected_bases"] == {}
+    assert payload_task["requirements"][0]["expected_bases"] == {}
+
+@pytest.mark.anyio
 async def test_intake_receives_explicit_current_date() -> None:
     stub = StubModel([{"goal": "record", "mode": "quick", "deliverable": "answer"}])
     intake = ModelIntake(stub, **stage_kwargs())
