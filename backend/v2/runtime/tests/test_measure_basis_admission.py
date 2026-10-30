@@ -6,6 +6,8 @@ output reported ``complete``. The basis is now carried by TaskSpec /
 EvidenceRequirement ``expected_bases`` and compared at admission against the
 evidence/catalog authoritative unit, never against the model's binding unit.
 """
+import json
+from dataclasses import FrozenInstanceError
 from datetime import UTC, datetime
 
 import pytest
@@ -28,6 +30,7 @@ from v2.contracts import (
     VerificationReport,
 )
 from v2.runtime import loop
+from v2.runtime.interfaces import freeze_task
 from v2.runtime.models import (
     BindingBasisMismatch,
     ExecutionResult,
@@ -464,3 +467,55 @@ def test_finalized_basis_prune_revalidates_under_pydantic():
         set(item.expected_bases) <= set(item.requested_outputs)
         for item in revalidated.requirements)
     assert "BOGUS_METRIC" not in revalidated.expected_bases
+
+
+def test_frozen_views_carry_sorted_expected_bases_as_maps():
+    task = _task(
+        ["PTS", "REB"],
+        task_bases={"REB": MeasureBasis.PER_GAME,
+                    "PTS": MeasureBasis.TOTAL},
+        requirement_bases={"REB": MeasureBasis.TOTAL,
+                           "PTS": MeasureBasis.PER_GAME})
+    view = freeze_task(task)
+
+    assert view.expected_bases == (("PTS", "total"), ("REB", "per_game"))
+    assert view.model_dump()["expected_bases"] == {
+        "PTS": "total", "REB": "per_game"}
+    requirement = view.requirements[0]
+    assert requirement.expected_bases == (
+        ("PTS", "per_game"), ("REB", "total"))
+    assert requirement.model_dump()["expected_bases"] == {
+        "PTS": "per_game", "REB": "total"}
+    assert json.loads(json.dumps(view.model_dump()))["expected_bases"] == {
+        "PTS": "total", "REB": "per_game"}
+
+
+def test_frozen_views_default_expected_bases_to_empty_maps():
+    task = _task(["PTS"])
+    view = freeze_task(task)
+
+    assert view.expected_bases == ()
+    assert view.model_dump()["expected_bases"] == {}
+    assert view.requirements[0].expected_bases == ()
+    assert view.requirements[0].model_dump()["expected_bases"] == {}
+
+
+def test_frozen_expected_bases_do_not_alias_or_mutate_with_task_spec():
+    task = _task(
+        ["PTS"],
+        task_bases={"PTS": MeasureBasis.TOTAL},
+        requirement_bases={"PTS": MeasureBasis.PER_GAME})
+    view = freeze_task(task)
+
+    task.expected_bases["PTS"] = MeasureBasis.PER_GAME
+    task.requirements[0].expected_bases["PTS"] = MeasureBasis.TOTAL
+
+    assert view.expected_bases == (("PTS", "total"),)
+    assert view.requirements[0].expected_bases == (("PTS", "per_game"),)
+    assert view.model_dump()["expected_bases"] == {"PTS": "total"}
+    assert view.requirements[0].model_dump()["expected_bases"] == {
+        "PTS": "per_game"}
+    with pytest.raises(FrozenInstanceError):
+        view.expected_bases = ()
+    with pytest.raises(FrozenInstanceError):
+        view.requirements[0].expected_bases = ()
