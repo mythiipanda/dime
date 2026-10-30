@@ -2568,31 +2568,8 @@ class ModelPlanner(ModelStage):
 
     @staticmethod
     def _sql_covers(expected_sql: str, actual_sql: str) -> bool:
-        if not (isinstance(actual_sql, str) and actual_sql.strip()):
-            return False
-        if not isinstance(expected_sql, str):
-            return False
-        if expected_sql.strip().casefold() == actual_sql.strip().casefold():
-            return True
-        from sqlglot import exp, parse_one
-        from sqlglot.errors import ParseError
-        try:
-            expected_ast = parse_one(expected_sql, read="duckdb")
-            actual_ast = parse_one(actual_sql, read="duckdb")
-        except ParseError:
-            return False
-        for syntax_tree in (expected_ast, actual_ast):
-            for literal in syntax_tree.find_all(exp.Literal):
-                if (
-                    literal.is_string
-                    and literal.this.strip("\'\"").casefold()
-                    in ("regular season", "regular-season")
-                ):
-                    literal.replace(exp.Literal.string("regular-season"))
-        return (
-            expected_ast.sql(dialect="duckdb").casefold()
-            == actual_ast.sql(dialect="duckdb").casefold()
-        )
+        from v2.domain.sql_coverage import sql_covers
+        return sql_covers(expected_sql, actual_sql)
 
     @staticmethod
     def _arguments_cover(expected: Mapping[str, Any], actual: Mapping[str, Any]) -> bool:
