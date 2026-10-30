@@ -12,6 +12,7 @@ from pydantic import BaseModel, ConfigDict, Field, StrictBool, StrictInt, model_
 from v2.contracts import (
     DraftReport,
     EvidenceEnvelope,
+    MeasureBasis,
     Plan,
     TaskSpec,
     Gap,
@@ -80,6 +81,28 @@ def _canonical_unit(value):
     if words in _UNIT_WORD_FORMS:
         return _UNIT_WORD_FORMS[words]
     return "_".join(words.split())
+
+# Units the warehouse column semantics really declare as cumulative season
+# totals. Explicit list only. Unlisted units remain unknown; do not infer
+# basis from a "total_" prefix.
+_TOTAL_MEASURE_UNITS = frozenset({
+    "count", "total", "total_points", "total_rebounds", "total_assists"})
+
+def _measure_basis(unit):
+    if unit is None:
+        return None
+    canonical = _canonical_unit(unit)
+    if canonical == "per_game" or canonical.endswith("_per_game"):
+        return MeasureBasis.PER_GAME
+    if canonical in _TOTAL_MEASURE_UNITS:
+        return MeasureBasis.TOTAL
+    return None
+
+def _raise_basis_mismatch(expected, actual):
+    observed = actual.value if actual is not None else "unknown"
+    raise BindingBasisMismatch(
+        f"binding basis {observed!r} does not match requested "
+        f"basis {expected.value!r}")
 
 def _canonical_domain(value):
     return "_".join(str(value).lower().split())
@@ -700,6 +723,9 @@ def propagate_evidence_to_task(task, execution, draft, admitted):
 class BindingFormMismatch(ValueError):
     pass
 
+class BindingBasisMismatch(ValueError):
+    pass
+
 class _BindingAdmission:
     def __init__(
         self,
@@ -914,6 +940,32 @@ class _BindingAdmission:
         if binding.evidence_id not in self.claim.evidence_ids:
             raise ValueError("binding evidence is not cited by claim")
 
+    def _requested_basis(self, binding):
+        if binding.requirement_kind == "task":
+            return self.task.expected_bases.get(binding.output_id)
+        requirement = self.evidence_requirements.get(binding.requirement_id)
+        if requirement is None:
+            return None
+        return requirement.expected_bases.get(binding.output_id)
+
+    def _check_measure_basis(self, binding, capability, evidence) -> None:
+        from v2.adapters.capabilities import resolve_metric_column
+        expected = self._requested_basis(binding)
+        if expected is None:
+            return
+        leaf = binding.selector.rsplit(".", 1)[-1].split("[", 1)[0]
+        metric_column = leaf
+        if leaf != binding.output_id:
+            resolved = resolve_metric_column(capability, binding.output_id)
+            if resolved is not None:
+                metric_column = resolved
+        authority = evidence.units.get(metric_column)
+        if authority is None and not capability.open_vocabulary:
+            authority = capability.units.get(metric_column)
+        actual = _measure_basis(authority)
+        if actual != expected:
+            _raise_basis_mismatch(expected, actual)
+
     def _admit_evidence_binding(self, binding) -> None:
         from v2.adapters.capabilities import CAPABILITIES
         requirement = (self.evidence_requirements.get(binding.requirement_id)
@@ -937,6 +989,7 @@ class _BindingAdmission:
         if capability.units or capability.metric_definitions \
                 or capability.output_aliases:
             self._check_metric_binding(binding, capability, evidence)
+        self._check_measure_basis(binding, capability, evidence)
         self._check_domain(binding, capability)
         self._check_task_scope(evidence)
         self._check_selector(binding, evidence, self._subject_row(binding, evidence))
@@ -960,6 +1013,18 @@ class _BindingAdmission:
         elif unit_text == "rank":
             raise ValueError("non-rank calculation cannot carry rank unit")
 
+    def _check_calculation_basis(self, binding, calculation) -> None:
+        # CalculationRequirement carries no basis map, so the only explicit
+        # contract available is the task-level basis for an output id the
+        # calculation requirement shares with the task. The calculation's own
+        # declared unit is the authority; the model's binding unit is not.
+        expected = self.task.expected_bases.get(binding.output_id)
+        if expected is None:
+            return
+        actual = _measure_basis(calculation.unit)
+        if actual != expected:
+            _raise_basis_mismatch(expected, actual)
+
     def _admit_calculation_binding(self, binding) -> None:
         requirement = self.calculation_requirements.get(binding.requirement_id)
         if requirement is None or binding.output_id not in requirement.requested_outputs:
@@ -972,6 +1037,7 @@ class _BindingAdmission:
         if self._calculation_recomputation_error(calculation) is not None:
             raise ValueError("binding calculation did not pass recomputation")
         self._check_calculation_unit(calculation)
+        self._check_calculation_basis(binding, calculation)
 
 
 def admit_verified_claim_bindings(

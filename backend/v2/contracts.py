@@ -47,6 +47,10 @@ class PeriodScopeSource(StrEnum):
     EXPLICIT_REQUEST = "explicit_request"
     DEFAULT = "default"
 
+class MeasureBasis(StrEnum):
+    TOTAL = "total"
+    PER_GAME = "per_game"
+
 class PreconditionCheck(StrEnum):
     NUMERAL = "numeral"
     ENTITY = "entity"
@@ -276,6 +280,13 @@ class EvidenceRequirement(BaseModel):
     capability_argument_sets: list[CapabilityArgumentSet] = Field(default_factory=list, max_length=8)
     metric_ids: list[CanonicalDimensionId] = Field(default_factory=list, max_length=16)
     requested_outputs: list[CanonicalDimensionId] = Field(default_factory=list, max_length=16)
+    expected_bases: dict[CanonicalDimensionId, MeasureBasis] = Field(
+        default_factory=dict, max_length=16,
+        description="Aggregation basis the user asked for, per output id of "
+                    "this requirement: \"total\" or \"per_game\". Keys must be "
+                    "in this requirement's requested_outputs. Omit an output "
+                    "when the request states no basis; never infer it from a "
+                    "metric or column name.")
 
     @model_validator(mode="after")
     def validate_requirement(self) -> "EvidenceRequirement":
@@ -294,6 +305,11 @@ class EvidenceRequirement(BaseModel):
             values = getattr(self, field_name)
             if len(values) != len(set(values)):
                 raise ValueError(f"{field_name} must not contain duplicates")
+        unknown_bases = set(self.expected_bases) - set(self.requested_outputs)
+        if unknown_bases:
+            raise ValueError(
+                "expected_bases keys must be requested outputs: "
+                f"{sorted(unknown_bases)}")
         return self
 
 def _drop_ranked_argument_conflicts_from_schema(schema: dict) -> dict:
@@ -317,6 +333,12 @@ class TaskSpec(BaseModel):
     deliverable: str = Field(max_length=1000)
     metric_ids: list[CanonicalDimensionId] = Field(default_factory=list, max_length=32)
     requested_outputs: list[CanonicalDimensionId] = Field(default_factory=list, max_length=32)
+    expected_bases: dict[CanonicalDimensionId, MeasureBasis] = Field(
+        default_factory=dict, max_length=32,
+        description="Aggregation basis the user asked for, per task output id: "
+                    "\"total\" or \"per_game\". Keys must be in "
+                    "requested_outputs. Omit an output when the request states "
+                    "no basis; never infer it from a metric or column name.")
     entities: list[EntityRef] = Field(default_factory=list, max_length=64)
     season: SeasonRef | None = Field(
         default=None,
@@ -394,6 +416,11 @@ class TaskSpec(BaseModel):
                 raise ValueError(f"{field_name} must not contain empty values")
             if len(values) != len(set(values)):
                 raise ValueError(f"{field_name} must not contain duplicates")
+        unknown_bases = set(self.expected_bases) - set(self.requested_outputs)
+        if unknown_bases:
+            raise ValueError(
+                "expected_bases keys must be requested outputs: "
+                f"{sorted(unknown_bases)}")
         requirement_ids = [item.id for item in self.requirements]
         if len(requirement_ids) != len(set(requirement_ids)):
             raise ValueError("requirements must not contain duplicate ids")

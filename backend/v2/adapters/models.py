@@ -2721,7 +2721,30 @@ def _finalize_requested_outputs(task: TaskSpec) -> TaskSpec:
     task = _drop_unresolvable_requested_outputs(task)
     task = _align_requirement_requested_outputs(task)
     task = _backfill_open_question_outputs(task)
-    return _align_calculation_requirement_requested_outputs(task)
+    task = _align_calculation_requirement_requested_outputs(task)
+    return _prune_expected_bases(task)
+
+def _prune_expected_bases(task: TaskSpec) -> TaskSpec:
+    task_bases = {
+        output_id: basis for output_id, basis in task.expected_bases.items()
+        if output_id in task.requested_outputs}
+    requirements = []
+    changed = task_bases != task.expected_bases
+    for requirement in task.requirements:
+        bases = {
+            output_id: basis
+            for output_id, basis in requirement.expected_bases.items()
+            if output_id in requirement.requested_outputs}
+        if bases == requirement.expected_bases:
+            requirements.append(requirement)
+            continue
+        changed = True
+        requirements.append(requirement.model_copy(
+            update={"expected_bases": bases}))
+    if not changed:
+        return task
+    return task.model_copy(update={
+        "expected_bases": task_bases, "requirements": requirements})
 
 def _align_requirement_requested_outputs(task: TaskSpec) -> TaskSpec:
     from v2.adapters.capabilities import CAPABILITIES, resolve_metric_column
