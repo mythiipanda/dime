@@ -433,59 +433,6 @@ class MixedSynthesizer:
                         domain="sql_exec")]),
             ])
 
-def test_a_binding_naming_a_subject_off_the_rows_is_rejected(
-        real_warehouse, monkeypatch, tmp_path):
-    from fastapi import FastAPI
-    from fastapi.testclient import TestClient
-
-    from v2.adapters import call_capability
-    from v2.adapters.core import ToolCapability
-    from v2.api import routes
-    from v2.projects.service import ProjectStore
-    from v2.runtime import PlanExecutor, Runtime
-    from v2.runtime.assembly import MechanicalVerifier
-    from v2.runtime.ledger import RunLedger
-
-    rows = call_capability("sql_exec", {
-        "sql": YOUNG_SCORERS.format(season="2023-24"), "season": "2023-24"}).rows
-    assert "Nobody McNobody" not in {row.get("player_name") for row in rows}
-
-    runtime = Runtime(
-        intake=CountIntake("2023-24",
-                           YOUNG_SCORERS.format(season="2023-24"),
-                           ["TOTAL_COUNT", "PLAYER_NAME"]),
-        planner=CountPlanner(YOUNG_SCORERS.format(season="2023-24")),
-        executor=PlanExecutor(
-            {"sql_exec": ToolCapability("sql_exec")}),
-        synthesizer=MixedSynthesizer(),
-        mechanical_verifier=MechanicalVerifier(),
-        semantic_verifier=CountSemantic())
-
-    def build(**kwargs):
-        return runtime, RunLedger(kwargs["run_id"])
-
-    monkeypatch.setenv("DIME_RUNTIME_V2", "on")
-    monkeypatch.setattr("shared.providers.resolve_model_id",
-                        lambda value: ("openrouter", "fixture"))
-    monkeypatch.setattr("v2.runtime.assembly.build_runtime", build)
-    monkeypatch.setattr(routes, "_PROJECTS", ProjectStore(tmp_path / "p.sqlite"))
-    app = FastAPI()
-    app.include_router(routes.router, prefix="/api")
-    response = TestClient(app).post(
-        "/api/v2/chat/stream", json={"q": "How many in 2023-24?"})
-    assert response.status_code == 200
-    custom = _event(response.text, "custom_data")
-    final = _event(response.text, "final_answer")
-
-    statuses = [(item["output_id"], item["status"])
-                for item in final["carry"]["output_statuses"]]
-    assert ("TOTAL_COUNT", "complete") in statuses
-    assert ("PLAYER_NAME", "rejected") in statuses
-    cited = {row["output_id"]: row["value"] for row in custom["tables"]}
-    assert cited == {"TOTAL_COUNT": "9"}
-    assert {row["provenance"]["capability"]
-            for row in custom["tables"]} == {"sql_exec"}
-    assert final["carry"]["verified_claims"] == 2
 
 GOLDEN_CALLS = {
     "sql-young-scorers-2324": (
@@ -618,3 +565,41 @@ def test_an_unmapped_column_still_publishes_its_name_and_type(canonical_warehous
 
     assert columns["PLAYER_ID"]["unit"] == ""
     assert columns["PLAYER_ID"]["type"]
+
+
+def test_a_binding_naming_a_subject_off_the_rows_is_rejected(
+        real_warehouse, monkeypatch, tmp_path):
+
+    from v2.adapters import call_capability
+    from v2.adapters.core import ToolCapability
+    from v2.runtime import PlanExecutor, Runtime
+    from v2.runtime.assembly import MechanicalVerifier
+
+    rows = call_capability("sql_exec", {
+        "sql": YOUNG_SCORERS.format(season="2023-24"), "season": "2023-24"}).rows
+    assert "Nobody McNobody" not in {row.get("player_name") for row in rows}
+
+    runtime = Runtime(
+        intake=CountIntake("2023-24",
+                           YOUNG_SCORERS.format(season="2023-24"),
+                           ["TOTAL_COUNT", "PLAYER_NAME"]),
+        planner=CountPlanner(YOUNG_SCORERS.format(season="2023-24")),
+        executor=PlanExecutor(
+            {"sql_exec": ToolCapability("sql_exec")}),
+        synthesizer=MixedSynthesizer(),
+        mechanical_verifier=MechanicalVerifier(),
+        semantic_verifier=CountSemantic())
+
+
+    import asyncio
+    from v2.runtime.presentation import present_result
+    result = asyncio.run(runtime.run('How many in 2023-24?'))
+    final = present_result(result)
+    custom = {key: final[key] for key in ("tables", "unverified_numbers")}
+    assert ("TOTAL_COUNT", "complete") in statuses
+    assert ("PLAYER_NAME", "rejected") in statuses
+    cited = {row["output_id"]: row["value"] for row in custom["tables"]}
+    assert cited == {"TOTAL_COUNT": "9"}
+    assert {row["provenance"]["capability"]
+            for row in custom["tables"]} == {"sql_exec"}
+    assert final["carry"]["verified_claims"] == 2

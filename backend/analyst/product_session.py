@@ -1,4 +1,4 @@
-"""Python-owned Pi producer. Not yet installed on the production chat route."""
+"""Python-owned Pi producer. Used by the production chat route."""
 from __future__ import annotations
 
 import asyncio
@@ -61,10 +61,20 @@ def resolved_provider(provider, client, *, context_window, max_tokens):
             "contextWindow": context_window, "maxTokens": max_tokens}
 
 
+def _save_exchange(conversations, store, client, thread, q, answer, run_id):
+    previous = conversations.references(client, thread)
+    store.save_chat(thread, "ai", answer, owner=client[:80])
+    store.save_run(thread, q[:2000], answer, [], [], owner=client[:80], run_id=run_id)
+    conversations.append_exchange(client, thread, q[:2000], answer[:2000],
+                                  run_id=run_id, turn_id=run_id)
+    if previous:
+        conversations.create_branch(client, thread, previous[-1].sequence)
+
+
 async def stream_product_session(*, q, model, node, python, env, warehouse,
                                  private_root, sources_dir, conversations, store,
                                  client=None, thread=None, history=(),
-                                 worker=None):
+                                 worker=None, run_id=None):
     """Yield frontend SSE. The caller owns HTTP cancellation and the product stores.
 
     `env` is an explicit isolated environment, not inherited from this process.
@@ -72,19 +82,26 @@ async def stream_product_session(*, q, model, node, python, env, warehouse,
     """
     if (client is None) != (thread is None):
         raise ValueError("client and thread must travel together")
-    run_id = f"run-{uuid.uuid4().hex}"
+    run_id = run_id or f"run-{uuid.uuid4().hex}"
     proc = None
     answer = None
     failure = None
+    from analyst.sources import prior_sources, source_refs
     records = []
+    new_records = []
+    streamed = False
     closed = False
     try:
+        records = prior_sources(conversations, sources_dir, client, thread) if client else []
         context = conversations.read(client, thread) if client is not None else list(history)[-8:]
         context = [turn.model_dump() if hasattr(turn, "model_dump") else turn for turn in context]
         Path(private_root).mkdir(parents=True, exist_ok=True)
         with tempfile.TemporaryDirectory(dir=private_root, prefix="pi-") as directory:
             agent_dir = Path(directory) / "agent"
             agent_dir.mkdir()
+            # Python dependencies require a home; keep it inside the owned session.
+            env = {**env, "HOME": directory, "USERPROFILE": directory,
+                   "TEMP": directory, "TMP": directory}
             try:
                 if client is not None:
                     store.save_chat(thread, "human", q[:2000], owner=client[:80])
@@ -95,7 +112,7 @@ async def stream_product_session(*, q, model, node, python, env, warehouse,
                     start_new_session=os.name != "nt",
                     limit=1024 * 1024)
                 start = {"type": "start", "q": q, "history": context,
-                         "model": model, "cwd": directory, "agentDir": str(agent_dir),
+                         "model": model, "sources": records, "cwd": directory, "agentDir": str(agent_dir),
                          "bridge": {"python": python, "cwd": directory,
                                     "env": {**env, "DIME_WAREHOUSE": str(warehouse)}}}
                 proc.stdin.write((json.dumps(start) + "\n").encode())
@@ -104,10 +121,15 @@ async def stream_product_session(*, q, model, node, python, env, warehouse,
                     event = json.loads(line)
                     kind = event["type"]
                     if kind == "source":
-                        records.append(SourceRecord.model_validate(event["record"]).model_dump(mode="json"))
+                        record = SourceRecord.model_validate(event["record"]).model_dump(mode="json")
+                        records.append(record)
+                        new_records.append(record)
                     elif kind in {"tool_call", "tool_result"}:
                         cls = ToolCall if kind == "tool_call" else ToolResult
                         yield encode_event(cls(node="tools", **event))
+                    elif kind == "token":
+                        streamed = True
+                        yield encode_event(Token(text=event["text"]))
                     elif kind == "answer":
                         if answer is not None or failure is not None:
                             raise ValueError("Duplicate worker outcome")
@@ -126,13 +148,10 @@ async def stream_product_session(*, q, model, node, python, env, warehouse,
                     target = Path(sources_dir) / f"{run_id}.json"
                     target.parent.mkdir(parents=True, exist_ok=True)
                     with target.open("x", encoding="utf-8") as artifact:
-                        json.dump({"run_id": run_id, "sources": records}, artifact)
-                if failure is None:
-                    if client is not None:
-                        store.save_chat(thread, "ai", answer, owner=client[:80])
-                        store.save_run(thread, q[:2000], answer, [], [], owner=client[:80], run_id=run_id)
-                        conversations.append_exchange(client, thread, q[:2000], answer[:2000],
-                                                      run_id=run_id, turn_id=run_id)
+                        json.dump({"run_id": run_id, "sources": new_records,
+                                   "source_refs": source_refs(records)}, artifact)
+                if failure is None and client is not None:
+                    _save_exchange(conversations, store, client, thread, q, answer, run_id)
             finally:
                 await _stop_worker(proc, env)
     except asyncio.CancelledError:
@@ -144,7 +163,8 @@ async def stream_product_session(*, q, model, node, python, env, warehouse,
     yield encode_event(WorkLog(run_id=run_id, status="partial"))
     if failure is None:
         carry = {"run_id": run_id, "verification": "unassessed", "answer_status": "unassessed",
-                 "source_refs": [record["ref"] for record in records]}
-        yield encode_event(Token(text=answer))
+                 "source_refs": source_refs(records)}
+        if not streamed:
+            yield encode_event(Token(text=answer))
         yield encode_event(FinalAnswer(text=answer, carry=carry))
     yield encode_event(GraphEnd())

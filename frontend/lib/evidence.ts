@@ -652,3 +652,36 @@ export function withCitationMarkers(text: string, sources: EvidenceSource[]): st
   });
   return out;
 }
+
+
+export interface PiSource {
+  ref: string;
+  tool: string;
+  label: string;
+  rows: Record<string, unknown>[];
+  units: Record<string, string>;
+  data: unknown;
+}
+
+export function parsePiSources(raw: unknown): PiSource[] {
+  if (!Array.isArray(raw)) return [];
+  return raw.flatMap((record): PiSource[] => {
+    if (!isRecord(record) || typeof record.ref !== "string" || typeof record.tool !== "string" ||
+        !isRecord(record.response) || !Array.isArray(record.response.content)) return [];
+    const text = record.response.content.find((item: unknown) => isRecord(item) && item.type === "text");
+    if (!isRecord(text) || typeof text.text !== "string") return [];
+    try {
+      const data: unknown = JSON.parse(text.text);
+      const rows = isRecord(data) && Array.isArray(data.rows) ? data.rows.filter(isRecord) : [];
+      const meta = isRecord(data) && isRecord(data.meta) ? data.meta : {};
+      const tables = Array.isArray(meta.tables) ? meta.tables.filter((table): table is string => typeof table === "string") : [];
+      const units: Record<string, string> = {};
+      if (isRecord(data) && isRecord(data.declared_column_semantics)) {
+        for (const [column, semantics] of Object.entries(data.declared_column_semantics)) {
+          if (isRecord(semantics) && typeof semantics.unit === "string") units[column] = semantics.unit;
+        }
+      }
+      return [{ ref: record.ref, tool: record.tool, label: tables.join(", ") || record.tool, rows, units, data }];
+    } catch { return []; }
+  });
+}

@@ -181,32 +181,12 @@ def _event(text: str, name: str) -> dict:
     return json.loads(payloads[-1])
 
 async def _stream_async(monkeypatch, tmp_path, runtime: Runtime) -> tuple[str, dict, dict]:
-    import httpx
-    from fastapi import FastAPI
-    from v2.api import routes
-    from v2.projects.service import ProjectStore
-    from v2.runtime.ledger import RunLedger
+    from v2.runtime.presentation import present_result
+    result = await runtime.run("Who led the league in total assists, and how many?")
+    final = present_result(result)
+    custom = {key: final[key] for key in ("tables", "unverified_numbers")}
+    return final["text"], custom, final
 
-    def build(**kwargs):
-        return runtime, RunLedger(kwargs["run_id"])
-
-    monkeypatch.setenv("DIME_RUNTIME_V2", "on")
-    monkeypatch.setattr("shared.providers.resolve_model_id",
-                        lambda value: ("openrouter", "fixture"))
-    monkeypatch.setattr("v2.runtime.assembly.build_runtime", build)
-    monkeypatch.setattr(routes, "_PROJECTS", ProjectStore(tmp_path / "p.sqlite"))
-    app = FastAPI()
-    app.include_router(routes.router, prefix="/api")
-    transport = httpx.ASGITransport(app=app)
-    async with httpx.AsyncClient(
-            transport=transport, base_url="http://testserver") as client:
-        response = await client.post(
-            "/api/v2/chat/stream",
-            json={"q": "Who led the league in total assists, and how many?"})
-    assert response.status_code == 200
-    return (response.text,
-            _event(response.text, "custom_data"),
-            _event(response.text, "final_answer"))
 
 def _cited(custom: dict) -> dict[str, dict]:
     return {row["output_id"]: row for row in custom["tables"]}
@@ -288,15 +268,11 @@ def test_a_missing_evidence_envelope_still_fails_the_run(monkeypatch, tmp_path):
         execution = result.execution.model_copy(update={"evidence_by_node": {}})
         return result.model_copy(update={"execution": execution})
 
-    text, custom, final = _stream(
+    import pytest
+    with pytest.raises(ValueError, match="publication evidence"):
+        _stream(
         monkeypatch, tmp_path,
         _runtime(_leader_claim(assists=880), _warehouse_envelope(), after=vanish))
-
-    assert custom == {}
-    assert final["carry"]["verification"] == "partial"
-    assert final["carry"]["verified_claims"] == 0
-    assert final["text"].startswith("I could not verify a publishable answer")
-    assert "event: custom_data" not in text
 
 def test_a_value_the_warehouse_changed_under_the_run_fails_the_run(
         monkeypatch, tmp_path):
@@ -309,13 +285,11 @@ def test_a_value_the_warehouse_changed_under_the_run_fails_the_run(
                 for node_id, item in result.execution.evidence_by_node.items()}})
         return result.model_copy(update={"execution": execution})
 
-    text, custom, final = _stream(
+    import pytest
+    with pytest.raises(ValueError, match="publication evidence"):
+        _stream(
         monkeypatch, tmp_path,
         _runtime(_leader_claim(assists=880), _warehouse_envelope(), after=rewrite))
-
-    assert custom == {}
-    assert final["carry"]["verification"] == "partial"
-    assert "event: custom_data" not in text
 
 def _source_of(envelope: EvidenceEnvelope) -> ClaimSource:
     return ClaimSource(
@@ -379,7 +353,7 @@ async def test_final_carry_preserves_admitted_citation_with_executed_scope(
     assert EVIDENCE_ID not in final["text"]
 
 def test_citation_excludes_withheld_and_unbound_claims():
-    from v2.api.routes import _public_citations
+    from v2.runtime.presentation import _public_citations
 
     envelope = _warehouse_envelope(
         source="v1:get_leaders:warehouse:silver_leaders")
@@ -411,7 +385,7 @@ def test_citation_excludes_withheld_and_unbound_claims():
     assert len(citations[0]["outputs"]) == 4
 
 def test_citation_excludes_source_without_admitted_envelope():
-    from v2.api.routes import _public_citations
+    from v2.runtime.presentation import _public_citations
 
     envelope = _warehouse_envelope(
         source="v1:get_leaders:warehouse:silver_leaders")
@@ -428,7 +402,7 @@ def test_citation_excludes_source_without_admitted_envelope():
     assert _public_citations(result) == []
 
 def test_citation_traces_derived_output_to_operand_evidence():
-    from v2.api.routes import _public_citations
+    from v2.runtime.presentation import _public_citations
 
     envelope = EvidenceEnvelope(
         evidence_id="evidence:operands", capability="qualified_leaders",
@@ -480,7 +454,7 @@ def test_citation_traces_derived_output_to_operand_evidence():
     ]
 
 def test_sql_exec_citation_preserves_exact_sql_without_inventing_table():
-    from v2.api.routes import _public_citations
+    from v2.runtime.presentation import _public_citations
 
     sql = (
         "SELECT TEAM, EFG_PCT FROM silver_four_factors_team "
@@ -521,7 +495,7 @@ def test_sql_exec_citation_preserves_exact_sql_without_inventing_table():
     assert citation["outputs"][0]["selector"] == "rows[0].EFG_PCT"
 
 def test_citation_does_not_invent_missing_calculation_operand_lineage():
-    from v2.api.routes import _public_citations
+    from v2.runtime.presentation import _public_citations
 
     calculation = DeclaredCalculation(
         calculation_id="calc1", requirement_id="calc_req", operation="add",

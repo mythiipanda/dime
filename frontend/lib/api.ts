@@ -232,6 +232,35 @@ export function getClientId(): string {
   return id;
 }
 
+async function withPiSources(payload: unknown, thread: string | null | undefined, signal: AbortSignal): Promise<unknown> {
+  if (thread && payload && typeof payload === "object" &&
+      "carry" in payload && payload.carry && typeof payload.carry === "object" &&
+      "run_id" in payload.carry && typeof payload.carry.run_id === "string" &&
+      "source_refs" in payload.carry) {
+    try {
+      const query = new URLSearchParams({ thread, client: getClientId() });
+      const sources = await fetch(`${BACKEND}/api/v2/runs/${encodeURIComponent(payload.carry.run_id)}/sources?${query}`, { signal });
+      if (sources.ok) {
+        const artifact: unknown = await sources.json();
+        if (artifact && typeof artifact === "object" && "sources" in artifact) {
+          payload = { ...payload, carry: { ...payload.carry, sources: artifact.sources } };
+        }
+      }
+    } catch {
+      // Keep the answer and opaque refs when source retrieval is unavailable.
+    }
+  }
+  return payload;
+}
+
+function parseSseFrame(frame: string): { type: string; payload: unknown } {
+  const lines = frame.split("\n");
+  const typeLine = lines.find(line => line.startsWith("event:"));
+  const data = lines.filter(line => line.startsWith("data:")).map(line => line.slice(5).trim());
+  if (!typeLine || !data.length) throw new SyntaxError("Incomplete SSE frame");
+  return { type: typeLine.slice(6).trim(), payload: JSON.parse(data.join("\n")) };
+}
+
 export async function postChatStream(
   q: string,
   model: string | null,
@@ -330,20 +359,14 @@ export async function postChatStream(
     const parts = buf.split("\n\n");
     buf = parts.pop() || "";
     for (const part of parts) {
-      const typeLine = part.split("\n").find((l) => l.startsWith("event:"));
-      const dataLines = part
-        .split("\n")
-        .filter((l) => l.startsWith("data:"))
-        .map((l) => l.slice(5).trim());
-      if (!typeLine || !dataLines.length) continue;
       try {
-        const eventType = typeLine.slice(6).trim();
-        if (eventType === "graph_end") terminal = true;
-
-        handlers.onEvent(
-          eventType,
-          JSON.parse(dataLines.join("\n")),
-        );
+        const frame = parseSseFrame(part);
+        if (frame.type === "graph_end") terminal = true;
+        if (frame.type === "final_answer") {
+          handlers.onEvent(frame.type, await withPiSources(frame.payload, thread, ctrl.signal));
+        } else {
+          handlers.onEvent(frame.type, frame.payload);
+        }
       } catch {
         continue;
       }

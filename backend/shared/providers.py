@@ -221,6 +221,12 @@ def resolve_model_id(model_id: str | None) -> tuple[ProviderName, str]:
     return _default_provider()
 
 def get_llm(name: ProviderName, model: str | None = None) -> ChatOpenAI | None:
+    if name == "reflection":
+        if not (settings.dime_enable_reflection and settings.reflection_api_key):
+            return None
+        return ChatOpenAI(model=_reflection_model(model), base_url=REFLECTION_BASE_URL,
+                          api_key=settings.reflection_api_key, timeout=settings.llm_timeout_s,
+                          max_retries=settings.llm_max_retries)
     if name not in active_provider_order():
         return None
     if name == "gemini":

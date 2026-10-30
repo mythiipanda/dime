@@ -148,7 +148,7 @@ def _admit(envelope, bindings, outputs, arguments):
     return admit_verified_claim_bindings(task, execution, draft, verified)
 
 def _publish(envelope, bindings, outputs, arguments):
-    from v2.api.routes import _answer_text
+    from v2.runtime.presentation import _answer_text
     from v2.contracts import (
         Claim,
         DraftReport,

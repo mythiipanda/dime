@@ -13,6 +13,10 @@ Live demo: [dime-fawn.vercel.app](https://dime-fawn.vercel.app)
 
 ![Dime tracing an answer back to the data](assets/readme/analyst-answer.png)
 
+## Analyst runtime
+
+The chat route now uses the Pi analyst session. The current tool catalogue is read-only SQL and warehouse schema. Answers retain source rows, declared units and provenance with unassessed verification. Live provider compatibility and representative answer quality remain separate checks. See [the analyst module](backend/analyst/README.md) for packaging, fixture commands and migration work still required.
+
 ## Features
 
 - Chat that answers with numbers, not vibes. Every stat comes

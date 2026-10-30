@@ -82,26 +82,6 @@ def test_explicit_off_still_returns_404_for_project_routes(monkeypatch, tmp_path
         "/api/projects", json={"goal": "x"}).status_code == 404
 
 
-def test_chat_stream_route_is_not_gated_behind_an_unset_flag(monkeypatch, tmp_path):
-    from fastapi import FastAPI
-    from fastapi.testclient import TestClient
-
-    from v2.api import routes
-    from v2.projects.service import ProjectStore
-    from v2.runtime.ledger import RunLedger
-
-    monkeypatch.delenv("DIME_RUNTIME_V2", raising=False)
-    monkeypatch.setattr(routes, "_PROJECTS", ProjectStore(tmp_path / "p.sqlite"))
-    monkeypatch.setattr(
-        "shared.providers.resolve_model_id", lambda value: ("openrouter", "fixture"))
-    monkeypatch.setattr(
-        "v2.runtime.assembly.build_runtime",
-        lambda **kwargs: (_StubRuntime(), RunLedger(kwargs["run_id"])))
-    app = FastAPI()
-    app.include_router(routes.router, prefix="/api")
-    response = TestClient(app).post("/api/v2/chat/stream", json={"q": "x"})
-    assert response.status_code == 200, response.text
-    assert "graph_end" in response.text
 
 
 class _StubRuntime:

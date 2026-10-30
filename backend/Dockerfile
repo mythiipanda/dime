@@ -1,4 +1,14 @@
-FROM python:3.11-slim
+FROM node:22.19.0-bookworm-slim AS analyst-deps
+WORKDIR /analyst
+COPY analyst/package.json analyst/package-lock.json ./
+RUN npm ci --omit=dev --ignore-scripts
+COPY analyst/*.mjs analyst/*.py ./
+RUN node --check worker.mjs && node --input-type=module -e "await import('./runtime.mjs')"
+
+FROM python:3.11-slim-bookworm AS runtime
+RUN apt-get update && apt-get install -y --no-install-recommends libstdc++6 && rm -rf /var/lib/apt/lists/*
+COPY --from=analyst-deps /usr/local/bin/node /usr/local/bin/node
+COPY --from=analyst-deps /analyst /srv/analyst
 WORKDIR /srv
 ARG DIME_REVISION=unknown
 ENV DIME_REVISION=$DIME_REVISION

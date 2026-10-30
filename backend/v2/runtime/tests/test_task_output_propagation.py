@@ -4,7 +4,7 @@ from unittest.mock import patch
 
 from v2.adapters.capabilities import CAPABILITIES
 from v2.adapters.core import build_envelope
-from v2.api.routes import _answer_text, _public_output_status
+from v2.runtime.presentation import _answer_text, _public_output_status
 from v2.contracts import (
     Claim,
     ClaimSource,

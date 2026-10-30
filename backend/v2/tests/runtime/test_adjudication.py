@@ -329,7 +329,7 @@ def test_unsupported_claim_gap_preserves_multiple_evidence_references() -> None:
 
 def test_output_status_matrix_and_projection_use_only_admitted_bindings():
     from types import SimpleNamespace
-    from v2.api.routes import _answer_text
+    from v2.runtime.presentation import _answer_text
     from v2.contracts import (EvidenceOutputBinding, EvidenceRequirement, VerifiedClaim)
     from v2.runtime.models import build_output_statuses
     binding = EvidenceOutputBinding(requirement_id="record", output_id="WINS",
@@ -353,7 +353,7 @@ def test_output_status_matrix_and_projection_use_only_admitted_bindings():
 
 def test_projection_uses_canonical_gap_kind_not_untrusted_message():
     from types import SimpleNamespace
-    from v2.api.routes import _answer_text
+    from v2.runtime.presentation import _answer_text
     from v2.contracts import Gap
     result = SimpleNamespace(output_statuses=[], gaps=[Gap(
         kind="execution_failure", message="SECRET internal adapter path")],
@@ -369,7 +369,7 @@ def test_ratings_task_publishes_one_clean_label_and_row_per_metric():
 
     from v2.adapters.capabilities import CAPABILITIES
     from v2.adapters.core import build_envelope
-    from v2.api.routes import _answer_text, _public_evidence
+    from v2.runtime.presentation import _answer_text, _public_evidence
     from v2.contracts import (
         Claim, EntityRef, EvidenceOutputBinding, EvidenceRequirement, SeasonRef,
         VerificationReport)
@@ -438,7 +438,7 @@ def test_ratings_task_publishes_one_clean_label_and_row_per_metric():
 def test_four_typed_values_project_complete_without_fragments():
     from types import SimpleNamespace
     from v2.contracts import OutputFinalStatus, EvidenceOutputBinding
-    from v2.api.routes import _answer_text
+    from v2.runtime.presentation import _answer_text
     values = [("ZERO",{"kind":"integer","value":0}),
               ("FLAG",{"kind":"boolean","value":False}),
               ("RATE",{"kind":"float","value":1.5}),
@@ -458,7 +458,7 @@ def test_four_typed_values_project_complete_without_fragments():
 
 def test_probe_five_abstains_without_admitted_output_authority():
     from types import SimpleNamespace
-    from v2.api.routes import _answer_text
+    from v2.runtime.presentation import _answer_text
     task = TaskSpec(goal="probe", mode="quick", deliverable="answer",
                     requested_outputs=["DECISION"])
     statuses = __import__('v2.runtime.models',fromlist=['build_output_statuses']).build_output_statuses(
@@ -497,7 +497,7 @@ def test_status_identity_must_match_binding_and_roundtrips():
 
 def test_two_subjects_same_output_and_unit_are_self_contained():
     from types import SimpleNamespace
-    from v2.api.routes import _answer_text
+    from v2.runtime.presentation import _answer_text
     from v2.contracts import OutputFinalStatus, EvidenceOutputBinding
     statuses=[]
     for req,subject,value in [("lebron","23",25),("curry","30",30)]:
@@ -515,7 +515,7 @@ def test_two_subjects_same_output_and_unit_are_self_contained():
 
 def test_calculation_projection_and_input_evidence_filtering():
     from types import SimpleNamespace
-    from v2.api.routes import _answer_text, _public_evidence
+    from v2.runtime.presentation import _answer_text, _public_evidence
     from v2.contracts import (OutputFinalStatus, CalculationOutputBinding,
         DraftReport, DeclaredCalculation, DeclaredCalculationInput)
     binding=CalculationOutputBinding(requirement_id="delta",output_id="PTS_DELTA",
@@ -538,7 +538,7 @@ def test_calculation_projection_and_input_evidence_filtering():
 def test_public_evidence_projection_excludes_sibling_rows_and_metrics():
     from datetime import UTC, datetime
     from types import SimpleNamespace
-    from v2.api.routes import _public_evidence
+    from v2.runtime.presentation import _public_evidence
     from v2.contracts import EvidenceEnvelope, EvidenceOutputBinding, OutputFinalStatus
     binding=EvidenceOutputBinding(requirement_kind="task",output_id="PTS",node_id="n",
         evidence_id="ev",selector="rows.lebron.PTS",row_selector="rows.lebron",
@@ -558,7 +558,7 @@ def test_public_evidence_projection_excludes_sibling_rows_and_metrics():
 
 def test_public_projection_rejects_stale_evidence_and_missing_calculation_input():
     import pytest
-    from v2.api.routes import _public_evidence
+    from v2.runtime.presentation import _public_evidence
     from types import SimpleNamespace
     from datetime import UTC, datetime
     from v2.contracts import EvidenceEnvelope, EvidenceOutputBinding, OutputFinalStatus
@@ -577,7 +577,7 @@ def test_calculation_projection_rejects_missing_and_ambiguous_inputs():
     import pytest
     from types import SimpleNamespace
     from datetime import UTC, datetime
-    from v2.api.routes import _public_evidence
+    from v2.runtime.presentation import _public_evidence
     from v2.contracts import (OutputFinalStatus, CalculationOutputBinding,
         DeclaredCalculation, DeclaredCalculationInput, EvidenceEnvelope)
     binding=CalculationOutputBinding(requirement_id="d",output_id="DELTA",calculation_id="c")
@@ -601,27 +601,7 @@ def test_calculation_projection_rejects_missing_and_ambiguous_inputs():
         execution=SimpleNamespace(evidence=[b]))
     with pytest.raises((ValueError,KeyError)):_public_evidence(missing_result)
 
-def test_buffered_event_projection_drops_secrets_and_internal_ids():
-    from types import SimpleNamespace
-    from v2.api.routes import _safe_buffered_event
-    secret=SimpleNamespace(type="thought_stream",text="SECRET",status="running",
-                           phase="verify",event_id="internal-1")
-    safe=_safe_buffered_event(secret)
-    encoded=safe.model_dump_json()
-    assert "SECRET" not in encoded and "internal-1" not in encoded
-    assert '"node":"analytics"' in encoded
 
-def test_public_event_contract_closes_nodes_tools_and_work_log():
-    from types import SimpleNamespace
-    from v2.api.routes import _safe_buffered_event
-    from v2.api.events import WorkLog
-    from v2.api.sse import encode_event
-    assert _safe_buffered_event(SimpleNamespace(type="node_update",node="SECRET",status="running")) is None
-    safe=_safe_buffered_event(SimpleNamespace(type="tool_result",status="ok",rows="SECRET",ms="SECRET"))
-    encoded=encode_event(safe)
-    assert "SECRET" not in encoded and "rows" not in encoded and "ms" not in encoded
-    work=encode_event(WorkLog(run_id="run-"+"a"*32,status="complete"))
-    assert '"run_id":"run-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"' in work
 
 def _seed_completed_season_boxscores(monkeypatch, tmp_path):
     import duckdb
@@ -682,7 +662,7 @@ def test_completed_season_assists_leader_publishes_count(monkeypatch, tmp_path):
     from types import SimpleNamespace
 
     from v2.adapters.core import ToolCapability
-    from v2.api.routes import _answer_text
+    from v2.runtime.presentation import _answer_text
     from v2.contracts import (
         Claim,
         ClaimKind,
@@ -759,7 +739,7 @@ def test_completed_season_assists_leader_publishes_count(monkeypatch, tmp_path):
 def _display_table(output_id, definitions=None, rows=None):
     from datetime import UTC, datetime
     from types import SimpleNamespace
-    from v2.api.routes import _public_evidence
+    from v2.runtime.presentation import _public_evidence
     from v2.contracts import EvidenceEnvelope, EvidenceOutputBinding, OutputFinalStatus
     binding = EvidenceOutputBinding(requirement_kind="task", output_id=output_id,
         node_id="n", evidence_id="ev", selector=f"rows.{output_id}",
@@ -784,14 +764,14 @@ def test_public_table_display_name_prefers_metric_definition_head():
     assert table["display_name"] == "Effective field-goal percentage"
 
 def test_public_table_display_name_humanizes_bare_output_id():
-    from v2.api.routes import _output_display_name
+    from v2.runtime.presentation import _output_display_name
     assert _display_table("PPG")["display_name"] == "PPG"
     assert _display_table("PTS_DELTA")["display_name"] == "PTS DELTA"
     assert _output_display_name("ppg") == "PPG"
 
 def test_public_output_status_carries_display_name():
     from types import SimpleNamespace
-    from v2.api.routes import _public_output_status
+    from v2.runtime.presentation import _public_output_status
     from v2.contracts import EvidenceOutputBinding, OutputFinalStatus
     binding = EvidenceOutputBinding(requirement_kind="task", output_id="PTS",
         node_id="n", evidence_id="e", selector="rows.PTS",
@@ -805,7 +785,7 @@ def test_public_output_status_carries_display_name():
 def _subject_table(subject_id, entities):
     from datetime import UTC, datetime
     from types import SimpleNamespace
-    from v2.api.routes import _public_evidence
+    from v2.runtime.presentation import _public_evidence
     from v2.contracts import (DraftReport, EvidenceEnvelope,
                               EvidenceOutputBinding, OutputFinalStatus)
     binding = EvidenceOutputBinding(
@@ -841,7 +821,7 @@ def test_public_table_subject_display_name_empty_for_unknown_id():
 
 def test_public_output_status_carries_subject_display_name():
     from types import SimpleNamespace
-    from v2.api.routes import _public_output_status
+    from v2.runtime.presentation import _public_output_status
     from v2.contracts import EvidenceOutputBinding, OutputFinalStatus
     binding = EvidenceOutputBinding(
         requirement_kind="task", output_id="PTS", node_id="n",
@@ -857,7 +837,7 @@ def test_public_output_status_carries_subject_display_name():
 
 def test_public_gaps_plumb_blocks():
     from types import SimpleNamespace
-    from v2.api.routes import _public_gaps
+    from v2.runtime.presentation import _public_gaps
     from v2.contracts import Gap, GapKind
     result = SimpleNamespace(gaps=[
         Gap(kind=GapKind.MISSING_EVIDENCE, message="no data",
@@ -868,4 +848,3 @@ def test_public_gaps_plumb_blocks():
         {"kind": "missing_evidence", "blocks": ["requirement:assists", "claim:1"]},
         {"kind": "source_conflict", "blocks": []},
     ]
-

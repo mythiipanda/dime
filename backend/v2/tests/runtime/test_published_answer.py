@@ -4,7 +4,7 @@ from datetime import UTC, datetime
 
 import pytest
 
-from v2.api.routes import _answer_text
+from v2.runtime.presentation import _answer_text
 from v2.contracts import (
     Claim,
     ClaimKind,
