@@ -113,7 +113,7 @@ def test_stored_manifest_candidate_prompt_hashes_match_live_and_others_retained(
         assert prompt_sha256[name] == live, (
             f"{name}.md changed without a manifest prompt_sha256 update")
     retained = {
-        "intake": "30deed35ee933962d6b0ae4dc4a8a646c06442804dbda3560aef792f7e086ec6",
+        "intake": "f545c1c23ebd8760962d5df5115d113589da07adb3987160b1cb51e2a9cc1a3b",
         "planner": "65291f1eecaa5c2d6a1abd63974675bee765afeebf7905ad7fd793cfd26d679b",
         "planner_v3": "52ccf42eeca25084129559a45316a8a646d3edbc99b25aeda2e424a3be27d534",
         "project_planner": "4e49203f74c7967dabaf15cd7a3fe849cd80b0e1945487ac9eb28269293a0386",
