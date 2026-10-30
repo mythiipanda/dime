@@ -7,7 +7,6 @@ import pytest
 
 from v2.adapters.capabilities import CAPABILITIES, COUNT, PER_GAME
 from v2.adapters.core import call_capability
-from v2.runtime.presentation import _answer_text
 from v2.contracts import (
     Claim,
     ClaimSource,
@@ -22,7 +21,6 @@ from v2.contracts import (
     VerificationReport,
     VerifiedClaim,
 )
-from v2.runtime.loop import _verified_claims
 from v2.runtime.models import (ExecutionResult, admit_verified_claim_bindings,
                                build_output_statuses,
                                withheld_claim_indices)
@@ -39,9 +37,6 @@ _SECOND = ("Beta Guard", "BBB", 900002, 70, 500)
 _NO_GAMES = ("Gamma Guard", "CCC", 900003, 0, 250)
 _BOARD = (_LEADER, _SECOND, _NO_GAMES)
 
-@pytest.fixture()
-def anyio_backend():
-    return "asyncio"
 
 @pytest.fixture()
 def leaders_warehouse(monkeypatch, tmp_path):
@@ -95,9 +90,6 @@ def _binding(output_id, leaf, value, unit, *, row=0, subject=_LEADER,
         domain="qualified_leaders",
     )
 
-def _counted(output_id, leaf, total, **kwargs):
-    return _binding(output_id, leaf, {"kind": "integer", "value": total},
-                    COUNT, **kwargs)
 
 def _per_game_binding(output_id, leaf, rate, unit=PER_GAME, **kwargs):
     return _binding(output_id, leaf, {"kind": "float", "value": rate},
@@ -155,23 +147,6 @@ def _admit(envelope, bindings, outputs, entity=_LEADER):
     draft, verified = _verified(envelope, bindings)
     return admit_verified_claim_bindings(task, execution, draft, verified)
 
-def _publish(envelope, bindings, outputs):
-    task = _task(outputs)
-    execution = _execution(envelope)
-    draft, _ = _verified(envelope, bindings)
-    verification = VerificationReport(
-        status="pass",
-        claim_results=[{"claim_index": 0, "supported": True, "reasons": []}])
-    admitted, gaps = _verified_claims(
-        task, execution, draft, verification,
-        {envelope.evidence_id: envelope})
-    statuses = build_output_statuses(task, admitted, gaps)
-    answer = _answer_text(SimpleNamespace(
-        output_statuses=statuses, gaps=gaps, execution=execution,
-        verified_claims=admitted, draft=draft))
-    by_key = {(row.requirement_kind, row.requirement_id, row.output_id): row
-              for row in statuses}
-    return admitted, gaps, by_key, answer
 
 @pytest.mark.parametrize("metric", _COUNTING_METRICS)
 def test_counting_leader_row_carries_its_own_per_game_companion(
@@ -211,24 +186,6 @@ def test_per_game_companion_of_another_stat_is_rejected(leaders_warehouse):
     with pytest.raises(ValueError, match="selector metric does not match"):
         _admit(envelope, [binding], ["ASSIST_PER_GAME"])
 
-def test_leader_answer_publishes_total_games_and_per_game(leaders_warehouse):
-    envelope = _envelope()
-    bindings = [
-        _counted("AST", "AST", _LEADER[4]),
-        _counted("GAMES", "GP", _LEADER[3]),
-        _per_game_binding("ASSIST_PER_GAME", "AST_PER_GAME", 11.6),
-    ]
-    outputs = ["AST", "GAMES", "ASSIST_PER_GAME"]
-    admitted, gaps, by_key, answer = _publish(envelope, bindings, outputs)
-    assert [row.status for row in by_key.values()] == ["complete"] * len(
-        by_key)
-    assert {binding.output_id for binding in admitted[0].output_bindings} == set(
-        outputs)
-    assert by_key[("task", None, "ASSIST_PER_GAME")].binding.value.value == (
-        pytest.approx(11.6))
-    assert withheld_claim_indices(gaps) == set()
-    assert [gap for gap in gaps if gap.blocks] == []
-    assert "Some requested outputs could not be published." not in answer
 
 def test_per_game_companion_read_off_another_row_is_rejected(leaders_warehouse):
     envelope = _envelope()
@@ -248,61 +205,7 @@ def test_zero_game_row_yields_no_per_game_companion(leaders_warehouse):
     with pytest.raises(ValueError, match="exactly one value"):
         _admit(envelope, [binding], ["ASSIST_PER_GAME"], entity=_NO_GAMES)
 
-class _RuntimeIntake:
-    async def understand(self, request):
-        return _task(["AST", "GAMES", "ASSIST_PER_GAME"])
 
-class _RuntimePlanner:
-    async def plan(self, task):
-        return Plan(nodes=[PlanNode(
-            id=_NODE_ID, description="counting leaderboard",
-            capability_hints=["qualified_leaders"],
-            covers_requirement_ids=[_REQUIREMENT_ID],
-            arguments={"stat_category": "AST", "season": _SEASON})])
-
-class _RuntimeSynthesizer:
-    async def synthesize(self, task, evidence):
-        envelope = evidence[0]
-        bindings = [
-            binding.model_copy(update={"evidence_id": envelope.evidence_id})
-            for binding in (
-                _counted("AST", "AST", _LEADER[4]),
-                _counted("GAMES", "GP", _LEADER[3]),
-                _per_game_binding("ASSIST_PER_GAME", "AST_PER_GAME", 11.6),
-            )]
-        return DraftReport(sections=["Assists leader"], claims=[Claim(
-            text=f"{_LEADER[0]} led the league with {_LEADER[4]} assists over "
-                 f"{_LEADER[3]} games, 11.6 per game.",
-            kind="observed", evidence_ids=[envelope.evidence_id],
-            output_bindings=bindings)])
-
-class _RuntimeSemantic:
-    async def verify(self, task, draft, evidence):
-        return VerificationReport(
-            status="pass",
-            claim_results=[{"claim_index": index, "supported": True,
-                            "reasons": []}
-                           for index, _claim in enumerate(draft.claims)])
-
-@pytest.mark.anyio
-async def test_runtime_publishes_total_games_and_per_game(leaders_warehouse):
-    from v2.adapters.core import ToolCapability
-    from v2.runtime import PlanExecutor, Runtime
-    from v2.runtime.assembly import MechanicalVerifier
-
-    runtime = Runtime(
-        intake=_RuntimeIntake(),
-        planner=_RuntimePlanner(),
-        executor=PlanExecutor(
-            {"qualified_leaders": ToolCapability("qualified_leaders")}),
-        synthesizer=_RuntimeSynthesizer(),
-        mechanical_verifier=MechanicalVerifier(),
-        semantic_verifier=_RuntimeSemantic())
-    result = await runtime.run("Who led the league in assists, and how many?")
-
-    assert [row.status for row in result.output_statuses] == ["complete"] * 6
-    assert withheld_claim_indices(result.gaps) == set()
-    assert [gap for gap in result.gaps if gap.blocks] == []
-    answer = _answer_text(result)
-    assert "11.6" in answer
-    assert "Some requested outputs could not be published." not in answer
+@pytest.fixture()
+def anyio_backend():
+    return "asyncio"

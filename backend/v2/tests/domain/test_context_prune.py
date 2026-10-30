@@ -134,36 +134,3 @@ def test_token_counts_drop_while_answer_completeness_unchanged():
     assert after_tokens < before_tokens
     assert report.tokens_before > report.tokens_after
     assert after_supported == before_supported == [True]
-
-def test_loop_prunes_context_prose_to_budget_without_network():
-    import asyncio
-
-    from v2.contracts import VerificationStatus
-    from v2.runtime import PlanExecutor, Runtime
-    from v2.runtime.tests.test_loop import (
-        Planner, SequenceVerifier, Synthesizer,
-    )
-    from v2.contracts import RunMode, TaskSpec
-
-    class ContextIntake:
-        async def understand(self, request: str, context=()) -> TaskSpec:
-            return TaskSpec(goal=request, mode=RunMode.QUICK, deliverable="text")
-
-    instance = Runtime(
-        intake=ContextIntake(),
-        planner=Planner(),
-        executor=PlanExecutor({"fake": __import__(
-            "v2.runtime", fromlist=["FakeCapability"]).FakeCapability(
-                "fake", {"value": 42})}),
-        synthesizer=Synthesizer(),
-        mechanical_verifier=SequenceVerifier(VerificationStatus.PASS),
-        semantic_verifier=SequenceVerifier(VerificationStatus.PASS),
-        context_token_budget=400,
-    )
-    from v2.domain.evidence import count_tokens
-
-    turns = _turns(8)
-    before = sum(count_tokens(turn.content) for turn in turns)
-    assert before > 400
-    result = asyncio.run(instance.run("answer", context=turns))
-    assert result.verification.status == VerificationStatus.PASS

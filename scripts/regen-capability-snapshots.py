@@ -7,7 +7,7 @@ import sys
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1] / "backend"))
 
 from v2.argument_schemas import canonical_hash, compile_capability_catalog
-from v2.runtime.assembly import capability_catalog
+from v2.adapters.capabilities import capability_catalog
 
 
 def dump(path, value):

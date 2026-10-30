@@ -10,11 +10,7 @@ from v2.adapters.capabilities import (
     resolve_metric_column,
 )
 from v2.contracts import Plan, PlanNode, PreconditionCheck, RunMode, TaskSpec
-from v2.runtime import FakeCapability, PlanExecutor
 
-@pytest.fixture
-def anyio_backend():
-    return "asyncio"
 
 def _task(outputs, capability, requirement_id="ratings"):
     return TaskSpec(
@@ -38,37 +34,6 @@ def _plan(node_id, capability, requirement_id="ratings"):
         covers_requirement_ids=[requirement_id],
     )])
 
-class _Tracking(FakeCapability):
-    def __init__(self, name, rows):
-        super().__init__(name, rows)
-        self.calls: list[str] = []
-
-    async def execute(self, node, task, evidence):
-        self.calls.append(node.id)
-        return await super().execute(node, task, evidence)
-
-@pytest.mark.anyio
-async def test_unresolvable_numeral_refused_before_execution() -> None:
-    capability = _Tracking("team_ratings", {"NET_RATING": 9.6})
-    task = _task(["HOME_RUNS"], "team_ratings")
-    with pytest.raises(ValueError, match="precondition numeral failed") as caught:
-        await PlanExecutor({"team_ratings": capability}).execute(
-            task, _plan("board", "team_ratings"))
-    message = str(caught.value)
-    assert "board" in message
-    assert "ratings" in message
-    assert "HOME_RUNS" in message
-    assert capability.calls == []
-
-@pytest.mark.anyio
-async def test_resolvable_preconditions_execute_normally() -> None:
-    capability = _Tracking("team_ratings", {"NET_RATING": 9.6})
-    task = _task(["NET_RATING"], "team_ratings")
-    result = await PlanExecutor({"team_ratings": capability}).execute(
-        task, _plan("board", "team_ratings"))
-    assert capability.calls == ["board"]
-    assert result.plan.nodes[0].status.value == "complete"
-    assert result.evidence[0].capability == "team_ratings"
 
 def test_preconditions_derive_from_task_plus_capability() -> None:
     spec = CAPABILITIES["team_ratings"]
@@ -131,29 +96,7 @@ def test_post_failures_name_check_node_and_requirement() -> None:
         PreconditionCheck.NUMERAL, "board", "ratings", "detail")
     assert "board" in expected and "ratings" in expected
 
-@pytest.mark.anyio
-async def test_team_ratings_shape_against_warehouse() -> None:
-    from v2.adapters.core import ToolCapability
-    task = _task(["NET_RATING"], "team_ratings")
-    result = await PlanExecutor(
-        {"team_ratings": ToolCapability("team_ratings")}).execute(
-        task, _plan("board", "team_ratings"))
-    assert result.plan.nodes[0].status.value == "complete"
-    envelope = result.evidence[0]
-    assert envelope.season == "2025-26"
-    assert isinstance(envelope.rows, list) and envelope.rows
-    assert "NET_RATING" in envelope.rows[0]
-    assert envelope.units.get("NET_RATING") == "points_per_100_possessions"
 
-@pytest.mark.anyio
-async def test_standings_shape_against_warehouse() -> None:
-    from v2.adapters.core import ToolCapability
-    task = _task(["WINS"], "standings", requirement_id="table")
-    result = await PlanExecutor(
-        {"standings": ToolCapability("standings")}).execute(
-        task, _plan("board", "standings", requirement_id="table"))
-    assert result.plan.nodes[0].status.value == "complete"
-    envelope = result.evidence[0]
-    assert envelope.season == "2025-26"
-    assert isinstance(envelope.rows, list) and envelope.rows
-    assert "WINS" in envelope.rows[0]
+@pytest.fixture
+def anyio_backend():
+    return "asyncio"

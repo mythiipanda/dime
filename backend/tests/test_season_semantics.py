@@ -180,75 +180,6 @@ def annotate(sql: str | None, rows: list[dict], columns: list[str],
     }, schema)["season_semantics"]
 
 
-def test_actual_schema_exposes_season_encodings(synthetic_warehouse) -> None:
-    from v2.runtime.assembly import declared_schema_for
-
-    schema = declared_schema_for("sql_exec")
-    standings = schema["tables"]["silver_hist_standings"]
-    gamelogs = schema["tables"]["silver_hist_gamelogs"]
-    salaries = schema["tables"]["silver_salaries"]
-    assert standings["_season"]["season_semantics"]["encoding"] == "canonical_label"
-    assert standings["season"]["season_semantics"]["encoding"] == "end_year_numeric"
-    assert standings["season_id"]["season_semantics"]["encoding"] == "nba_season_id_start_year"
-    assert gamelogs["season"]["season_semantics"]["encoding"] == "end_year_numeric"
-    assert gamelogs["season_type"]["season_semantics"]["encoding"] == "season_phase"
-    assert salaries["season"]["season_semantics"]["ambiguous"] is True
-
-
-def test_schema_cache_serves_declaration_and_sql_result(synthetic_warehouse) -> None:
-    from shared.tools import league
-    from v2.runtime.assembly import declared_schema_for
-
-    declared_schema_for("sql_exec")
-    before = league._warehouse_schema_cache_info()
-    assert before["misses"] == 1
-
-    result = run_sql(
-        "SELECT _season FROM silver_hist_standings ORDER BY _season LIMIT 1")
-    after = league._warehouse_schema_cache_info()
-
-    assert result["ok"] is True
-    assert result["rows"] == [{"_season": "2031-32"}]
-    assert after["misses"] == before["misses"]
-    assert after["hits"] == before["hits"] + 1
-
-
-def test_wide_schema_keeps_internal_fields_and_caps_model_display(
-        wide_synthetic_warehouse) -> None:
-    from shared.tools.league import (
-        _describe_warehouse_schema,
-        _get_warehouse_schema,
-    )
-    from v2.runtime.assembly import declared_schema_for
-
-    present, full = _get_warehouse_schema()
-    columns = full["silver_hist_standings"]
-    assert len(columns) == 45
-    assert list(columns)[40:43] == ["_season", "season_id", "season_type"]
-
-    declared = declared_schema_for("sql_exec")
-    shown = declared["tables"]["silver_hist_standings"]
-    assert len(shown) == 40
-    assert all(name in shown for name in (
-        "_season", "season_id", "season_type", "_source", "_fetched_at"))
-    assert list(shown) == [name for name in columns if name in shown]
-    assert declared["column_budget"] == {
-        "max_columns_per_table": 40,
-        "truncated_tables": {
-            "silver_hist_standings": {
-                "total_columns": 45,
-                "shown_columns": 40,
-                "omitted_columns": 5,
-            },
-        },
-    }
-
-    present, full = _get_warehouse_schema()
-    assert "silver_hist_standings" in present
-    description = _describe_warehouse_schema(full)
-    assert "schema truncated: showing 40 of 45 columns; 5 omitted" in description
-
-
 def test_sql_exec_uses_full_schema_for_hidden_canonical_season(
         wide_synthetic_warehouse) -> None:
     sql = (
@@ -272,150 +203,6 @@ def test_sql_exec_uses_full_schema_for_hidden_canonical_season(
     assert any(
         item["column"] == "_season" and item["season_label"] == "2021-22"
         for item in semantics["resolved_labels"])
-
-
-@pytest.mark.anyio
-async def test_model_intake_request_carries_the_real_wide_schema_budget(
-        wide_synthetic_warehouse) -> None:
-    from v2.adapters.models import ModelIntake
-    from v2.runtime.assembly import capability_catalog
-
-    class Capture:
-        def __init__(self):
-            self.calls = []
-
-        async def generate(self, **call):
-            self.calls.append(call)
-            return call["schema"].model_validate({
-                "goal": "schema boundary",
-                "mode": "quick",
-                "deliverable": "verified context",
-            })
-
-    model = Capture()
-    intake = ModelIntake(
-        model, provider="stub", model_name="stub",
-        capability_catalog=capability_catalog())
-    await intake.understand("Inspect the declared SQL schema.")
-    payload = model.calls[0]["payload"]
-    schema = payload["capability_catalog"]["sql_exec"]["declared_schema"]
-
-    assert schema["column_budget"]["truncated_tables"][
-        "silver_hist_standings"] == {
-            "total_columns": 45,
-            "shown_columns": 40,
-            "omitted_columns": 5,
-        }
-    assert "_season" in schema["tables"]["silver_hist_standings"]
-    assert "season_type" in schema["tables"]["silver_hist_standings"]
-
-
-def test_model_planner_sees_schema_budget_only_for_sql_candidate(
-        wide_synthetic_warehouse) -> None:
-    from v2.adapters.models import ModelPlanner, catalog_for_wire
-    from v2.contracts import EvidenceRequirement, RunMode, TaskSpec
-    from v2.runtime.assembly import capability_catalog
-
-    planner = ModelPlanner.__new__(ModelPlanner)
-    planner._catalog = dict(capability_catalog())
-    planner._wire_catalog = catalog_for_wire(planner._catalog)
-    no_sql = TaskSpec(
-        goal="mvp", mode=RunMode.QUICK, deliverable="winner",
-        requirements=[EvidenceRequirement(
-            id="award", description="official MVP result",
-            capability_options=["award_results"])])
-    with_sql = TaskSpec(
-        goal="rates", mode=RunMode.DEEP_DIVE, deliverable="table",
-        requirements=[EvidenceRequirement(
-            id="rates", description="agent-written rate query",
-            capability_options=["sql_exec"])])
-
-    assert "declared_schema" not in planner._catalog_for(no_sql)["sql_exec"]
-    declared = planner._catalog_for(with_sql)["sql_exec"]["declared_schema"]
-    assert declared["column_budget"]["truncated_tables"][
-        "silver_hist_standings"] == {
-            "total_columns": 45,
-            "shown_columns": 40,
-            "omitted_columns": 5,
-        }
-
-
-def test_declared_schema_uses_table_aware_per_game_units(
-        unit_synthetic_warehouse) -> None:
-    from shared.tools.league import _column_semantics
-    from v2.runtime.assembly import declared_schema_for
-
-    schema = declared_schema_for("sql_exec")["tables"]
-    hist = schema["silver_hist_player_seasons"]
-    assert {
-        name: hist[name]["unit"] for name in ("PTS", "REB", "AST")
-    } == {
-        "PTS": "points_per_game",
-        "REB": "rebounds_per_game",
-        "AST": "assists_per_game",
-    }
-    for name in ("PTS", "REB", "AST"):
-        assert "per_mode='pergame'" in hist[name]["note"]
-        assert "not cumulative totals" in hist[name]["note"]
-    assert hist["gp"]["unit"] == "games_played"
-    assert "denominator" in hist["gp"]["note"]
-    assert hist["player_id"]["unit"] == ""
-    assert hist["player_id"]["type"] == "INTEGER"
-
-    player = schema["silver_player_season"]
-    assert [player[name]["unit"] for name in ("PPG", "RPG", "APG")] == [
-        "points_per_game", "rebounds_per_game", "assists_per_game"]
-
-    leaders = schema["silver_leaders_pts"]
-    assert [leaders[name]["unit"] for name in ("PTS", "REB", "AST")] == [
-        "total_points", "total_rebounds", "total_assists"]
-    for name in ("PTS", "REB", "AST"):
-        assert "scripts/seed.py" in leaders[name]["note"]
-        assert "PerMode48.default='Totals'" in leaders[name]["note"]
-    for table in ("silver_leaders_reb", "silver_leaders_ast"):
-        assert [(schema[table][name]["unit"], schema[table][name]["note"])
-                for name in ("PTS", "REB", "AST")] == [("", "")] * 3
-    assert _column_semantics(
-        "silver_hist_player_seasons", "PTS") == _column_semantics(
-            "silver_hist_player_seasons", "pts")
-    assert _column_semantics(
-        "silver_leaders_pts", "AST") == _column_semantics(
-            "SILVER_LEADERS_PTS", "ast")
-
-
-def test_declared_schema_reads_without_requesting_a_writer(
-        unit_synthetic_warehouse, monkeypatch) -> None:
-    from shared import store
-    from shared.tools.league import _column_semantics
-    from v2.adapters.models import ModelIntake
-
-    real_connect_once = store._connect_once
-    requested_modes = []
-
-    def refuse_write_connection(read_only: bool):
-        requested_modes.append(read_only)
-        if not read_only:
-            raise store.WriteConflictError(store.DB_PATH)
-        return real_connect_once(read_only)
-
-    monkeypatch.setattr(store, "_connect_once", refuse_write_connection)
-    intake = ModelIntake(
-        object(), provider="test", model_name="test",
-        capability_catalog={"sql_exec": {"description": "SQL evidence"}})
-    declared = intake._catalog_with_declared_schemas()[
-        "sql_exec"]["declared_schema"]["tables"]
-
-    assert declared["silver_hist_player_seasons"]["PTS"] == {
-        "type": "DOUBLE",
-        "unit": "points_per_game",
-        "note": _column_semantics("silver_hist_player_seasons", "PTS")[1],
-    }
-    assert "per_mode='pergame'" in declared[
-        "silver_hist_player_seasons"]["PTS"]["note"]
-    assert "not cumulative totals" in declared[
-        "silver_hist_player_seasons"]["PTS"]["note"]
-    assert declared["silver_leaders_pts"]["PTS"]["unit"] == "total_points"
-    assert requested_modes == [True]
 
 
 def test_sql_exec_preserves_hist_per_game_values_and_query(
@@ -548,40 +335,6 @@ def test_sql_capability_keeps_generic_aggregate_units(
     assert "count" in evidence.metric_definitions["n"]
 
 
-def test_synthesizer_request_receives_sql_column_units(
-        unit_synthetic_warehouse) -> None:
-    from v2.adapters.models import ModelSynthesizer
-    from v2.contracts import DraftReport, RunMode, TaskSpec
-
-    class Capture:
-        payload = None
-
-        async def generate(self, **call):
-            self.payload = call["payload"]
-            return DraftReport(sections=[], claims=[], gaps=[])
-
-    evidence = _execute_sql_capability(
-        "SELECT PTS, REB, AST FROM silver_hist_player_seasons"
-    )
-    capture = Capture()
-    synthesizer = ModelSynthesizer(
-        capture, provider="fixture", model_name="capture")
-    task = TaskSpec(
-        goal="Describe the returned evidence",
-        mode=RunMode.QUICK,
-        deliverable="Evidence summary",
-    )
-    asyncio.run(synthesizer.synthesize(task, [evidence]))
-
-    sent_evidence = capture.payload["evidence"][0]
-    assert sent_evidence["units"] == {
-        "PTS": "points_per_game",
-        "REB": "rebounds_per_game",
-        "AST": "assists_per_game",
-    }
-    assert "per_mode='pergame'" in sent_evidence["metric_definitions"]["PTS"]
-
-
 @pytest.mark.parametrize("sql", [
     "SELECT PTS AS player_points, REB AS player_points FROM silver_hist_player_seasons",
     "SELECT PTS AS PTS, REB AS pts FROM silver_hist_player_seasons",
@@ -686,21 +439,6 @@ def test_cte_and_join_results_stay_unresolved(synthetic_warehouse) -> None:
         assert result["season_semantics"]["resolved_labels"] == []
 
 
-def test_small_declared_schema_has_no_truncation_notice(
-        synthetic_warehouse) -> None:
-    from v2.runtime.assembly import declared_schema_for
-
-    declared = declared_schema_for("sql_exec")
-    assert declared["column_budget"] == {
-        "max_columns_per_table": 40,
-        "truncated_tables": {},
-    }
-    assert list(declared["tables"]["silver_hist_standings"]) == [
-        "_season", "season", "season_id", "team_name", "wins",
-        "losses", "win_pct",
-    ]
-
-
 def test_actual_duplicate_output_columns_are_unresolved(synthetic_warehouse) -> None:
     result = run_sql(
         "SELECT 2025 AS season, season FROM silver_hist_standings LIMIT 1")
@@ -781,38 +519,6 @@ def test_sql_direct_alias_preserves_source_unit(
     assert metadata["note"] == evidence.metric_definitions[output]
 
 
-@pytest.mark.parametrize("binding_unit,rejection", [
-    ("points_per_game", "basis"),
-    ("total_points", "unit does not match output authority"),
-])
-def test_misleading_alias_rejects_typed_total_binding(
-        unit_synthetic_warehouse, binding_unit, rejection):
-    from v2.contracts import EvidenceOutputBinding, TaskSpec, Plan, PlanNode
-    from v2.runtime.models import ExecutionResult
-    evidence = _execute_sql_capability(
-        "SELECT PTS AS TOTAL_PTS FROM silver_hist_player_seasons")
-    task = TaskSpec(goal="total", mode="quick", deliverable="total",
-                    requested_outputs=["TOTAL_PTS"], expected_bases={"TOTAL_PTS": "total"})
-    execution = ExecutionResult(plan=Plan(nodes=[PlanNode(
-        id="sql-evidence", description="read", capability_hints=["sql_exec"],
-        status="complete")]), evidence_by_node={"sql-evidence": evidence},
-        attempts={"sql-evidence": 1})
-    binding = EvidenceOutputBinding.model_validate({
-        "requirement_kind": "task", "output_id": "TOTAL_PTS",
-        "node_id": "sql-evidence", "evidence_id": evidence.evidence_id,
-        "selector": "rows[0].TOTAL_PTS", "value": {"kind": "float", "value": 11.8},
-        "unit": {"kind": "declared", "value": binding_unit}, "domain": "sql_exec"})
-    from v2.contracts import Claim, DraftReport, VerificationReport
-    from v2.runtime import loop
-    draft = DraftReport(sections=[], claims=[Claim(text="total", kind="observed",
-        evidence_ids=[evidence.evidence_id], output_bindings=[binding])])
-    admitted, gaps = loop._verified_claims(task, execution, draft,
-        VerificationReport(status="pass", claim_results=[{"claim_index": 0, "supported": True}]),
-        {evidence.evidence_id: evidence})
-    assert admitted[0].output_bindings == []
-    assert any(rejection in gap.message for gap in gaps), [gap.message for gap in gaps]
-
-
 @pytest.mark.parametrize("sql", [
     "SELECT wrong.PTS AS player_points FROM rates",
     "SELECT missing AS player_points FROM rates",
@@ -825,37 +531,3 @@ def test_direct_alias_requires_declared_source(sql):
         "meta": {"tables": ["rates"]},
     }, {"tables": {"rates": {"PTS": {"unit": "points_per_game", "note": "source"}}}})
     assert result["declared_column_semantics"] == {}
-
-
-@pytest.mark.anyio
-async def test_intake_delivers_sql_output_contract_and_source_units(
-        unit_synthetic_warehouse):
-    from v2.adapters.models import ModelIntake
-    from v2.prompts import load_prompt
-    from v2.runtime.assembly import capability_catalog, declared_schema_for
-
-    class CapturedRequest(BaseException):
-        pass
-
-    class Capture:
-        call = None
-
-        async def generate(self, **call):
-            self.call = call
-            raise CapturedRequest
-
-    model = Capture()
-    schema = declared_schema_for("sql_exec")
-    with pytest.raises(CapturedRequest):
-        await ModelIntake(model, provider="stub", model_name="stub",
-            capability_catalog=capability_catalog()).understand("Read the requested measures.")
-    prompt = model.call["prompt"]
-    assert prompt == load_prompt("intake")
-    assert "metric_ids and requested_outputs name individual scalar projected result columns" in prompt
-    assert "Use explicit SQL column aliases matching canonical IDs" in prompt
-    assert "not umbrella or report-section labels" in prompt
-    assert "retain the requested output and basis and state the limitation" in prompt
-    assert model.call["payload"]["capability_catalog"]["sql_exec"]["declared_schema"] == schema
-    assert schema["tables"]["silver_player_season"]["PPG"]["unit"] == "points_per_game"
-    assert schema["tables"]["silver_leaders_pts"]["PTS"]["unit"] == "total_points"
-    assert "not cumulative totals" in schema["tables"]["silver_hist_player_seasons"]["PTS"]["note"]

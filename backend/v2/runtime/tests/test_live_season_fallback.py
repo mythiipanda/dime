@@ -12,12 +12,8 @@ from v2.contracts import (
     SeasonRef,
     TaskSpec,
 )
-from v2.runtime import LedgerKind, RunLedger
 from shared.tools._core import _warehouse_or_live
 
-@pytest.fixture
-def anyio_backend():
-    return "asyncio"
 
 CELTICS = {
     "TEAM_ID": 1610612738,
@@ -70,50 +66,6 @@ def _seed_single_season_warehouse(monkeypatch, tmp_path, *, season, rows):
     coverage.coverage_cache_clear()
     return warehouse
 
-def _ratings_task() -> TaskSpec:
-    return TaskSpec(
-        goal=f"Boston Celtics {REQUESTED_SEASON} offensive and defensive rating",
-        mode=RunMode.QUICK,
-        deliverable="offensive and defensive team rating",
-        season=SeasonRef(value=REQUESTED_SEASON, source="user", confidence=1.0),
-        requirements=[
-            EvidenceRequirement(
-                id="celtics_team_ratings",
-                description=f"Boston Celtics {REQUESTED_SEASON} team ratings",
-                capability_options=["team_ratings"],
-                capability_arguments={"team": "Boston Celtics"},
-            )
-        ],
-    )
-
-def _ratings_plan() -> Plan:
-    return Plan(nodes=[PlanNode(
-        id="ratings",
-        description=f"Fetch Celtics {REQUESTED_SEASON} team ratings",
-        capability_hints=["team_ratings"],
-        covers_requirement_ids=["celtics_team_ratings"],
-        arguments={"team": "Boston Celtics"},
-    )])
-
-def _stub_live_ratings(monkeypatch, *, rows, ok=True, error=""):
-    import polars as pl
-
-    from shared.sources import nba_stats
-    from shared.sources.base import FetchMeta, FetchResult
-
-    calls: list[str] = []
-
-    def fake_team_ratings(season):
-        calls.append(season)
-        return FetchResult(
-            frame=pl.DataFrame(rows) if rows else pl.DataFrame(),
-            meta=FetchMeta(source=nba_stats.SOURCE, season=season),
-            ok=ok,
-            error=error,
-        )
-
-    monkeypatch.setattr(nba_stats, "team_ratings", fake_team_ratings)
-    return calls
 
 WAREHOUSE_ROW = {
     "TEAM_ID": 97001,
@@ -129,93 +81,6 @@ WAREHOUSE_ROW = {
     "TM_TOV_PCT": 13.2,
 }
 
-def _unfiltered_ratings_task() -> TaskSpec:
-    return TaskSpec(
-        goal=f"team ratings for the {REQUESTED_SEASON} season",
-        mode=RunMode.QUICK,
-        deliverable="team rating table",
-        season=SeasonRef(value=REQUESTED_SEASON, source="user", confidence=1.0),
-        requirements=[
-            EvidenceRequirement(
-                id="team_ratings_table",
-                description=f"team ratings for {REQUESTED_SEASON}",
-                capability_options=["team_ratings"],
-            )
-        ],
-    )
-
-def _unfiltered_ratings_plan() -> Plan:
-    return Plan(nodes=[PlanNode(
-        id="ratings",
-        description=f"Fetch {REQUESTED_SEASON} team ratings",
-        capability_hints=["team_ratings"],
-        covers_requirement_ids=["team_ratings_table"],
-    )])
-
-def _recorded_ratings_executor(run_id: str):
-    from v2.adapters.core import ToolCapability
-    from v2.runtime import PlanExecutor, RecordedCapability
-
-    ledger = RunLedger(run_id)
-    capability = RecordedCapability(
-        ToolCapability("team_ratings"), ledger, turn_id=run_id)
-    return PlanExecutor({"team_ratings": capability}), ledger
-
-def _fallback_entries(ledger) -> list:
-    return [entry for entry in ledger.entries
-            if entry.kind == LedgerKind.LIVE_FALLBACK]
-
-@pytest.mark.anyio
-async def test_warehouse_season_miss_falls_back_to_live_source(
-    monkeypatch, tmp_path,
-) -> None:
-    from v2.adapters.core import ToolCapability
-    from v2.runtime import PlanExecutor
-
-    _seed_single_season_warehouse(
-        monkeypatch, tmp_path, season=SEEDED_SEASON, rows=[CELTICS])
-    calls = _stub_live_ratings(monkeypatch, rows=[CELTICS])
-
-    result = await PlanExecutor(
-        {"team_ratings": ToolCapability("team_ratings")}
-    ).execute(_ratings_task(), _ratings_plan())
-
-    assert result.plan.nodes[0].status == PlanStatus.COMPLETE
-    assert calls == [REQUESTED_SEASON]
-    assert result.errors == {}
-    envelope = result.evidence[0]
-    assert envelope.season == REQUESTED_SEASON
-    assert "nba_api" in envelope.source
-    assert envelope.source_identity is not None
-    assert envelope.source_identity.kind == "live"
-    assert envelope.source_identity.source == "nba_api"
-    assert [row["TEAM_NAME"] for row in envelope.rows] == [
-        "Boston Celtics"]
-    assert envelope.rows[0]["NET_RATING"] == 8.7
-
-@pytest.mark.anyio
-async def test_live_miss_on_uncovered_season_fails_with_season_availability_message(
-    monkeypatch, tmp_path,
-) -> None:
-    from v2.adapters.core import ToolCapability
-    from v2.runtime import PlanExecutor
-
-    _seed_single_season_warehouse(
-        monkeypatch, tmp_path, season=SEEDED_SEASON, rows=[CELTICS])
-    calls = _stub_live_ratings(
-        monkeypatch, rows=[], ok=False, error="upstream returned nothing")
-
-    result = await PlanExecutor(
-        {"team_ratings": ToolCapability("team_ratings")}
-    ).execute(_ratings_task(), _ratings_plan())
-
-    assert calls == [REQUESTED_SEASON]
-    assert result.plan.nodes[0].status == PlanStatus.FAILED
-    assert result.evidence == []
-    assert len(result.errors["ratings"]) == 1
-    message = result.errors["ratings"][0]
-    assert f"Team ratings for the {REQUESTED_SEASON} season are not available" in message
-    assert f"Available seasons: {SEEDED_SEASON}" in message
 
 @pytest.mark.anyio
 async def test_completed_season_warehouse_miss_stays_off_the_live_path_by_default(
@@ -239,129 +104,6 @@ async def test_completed_season_warehouse_miss_stays_off_the_live_path_by_defaul
     assert meta["error"].startswith(
         f"no seeded rows for silver_team_ratings ({REQUESTED_SEASON})")
 
-@pytest.mark.anyio
-async def test_seeded_season_is_answered_from_the_warehouse_without_live_fetch(
-    monkeypatch, tmp_path,
-) -> None:
-    from v2.adapters.core import ToolCapability
-    from v2.runtime import PlanExecutor
-
-    _seed_single_season_warehouse(
-        monkeypatch, tmp_path, season=REQUESTED_SEASON, rows=[CELTICS])
-    calls = _stub_live_ratings(monkeypatch, rows=[CELTICS])
-
-    task = _ratings_task()
-    plan = _ratings_plan()
-    result = await PlanExecutor(
-        {"team_ratings": ToolCapability("team_ratings")}
-    ).execute(task, plan)
-
-    assert result.plan.nodes[0].status == PlanStatus.COMPLETE
-    assert calls == []
-    assert result.errors == {}
-    assert "fixture" in result.evidence[0].source
-
-@pytest.mark.anyio
-async def test_warehouse_hit_consults_no_live_source_and_logs_no_fallback(
-    monkeypatch, tmp_path,
-) -> None:
-    from shared.sources import nba_stats
-
-    _seed_single_season_warehouse(
-        monkeypatch, tmp_path, season=REQUESTED_SEASON, rows=[WAREHOUSE_ROW])
-
-    def forbidden_live_fetch(season):
-        raise AssertionError(
-            f"live source consulted for a warehouse hit on {season}")
-
-    monkeypatch.setattr(nba_stats, "team_ratings", forbidden_live_fetch)
-    executor, ledger = _recorded_ratings_executor("run-live-fallback-hit")
-
-    result = await executor.execute(_unfiltered_ratings_task(),
-                                    _unfiltered_ratings_plan())
-
-    assert result.plan.nodes[0].status == PlanStatus.COMPLETE
-    assert result.errors == {}
-    assert _fallback_entries(ledger) == []
-
-@pytest.mark.anyio
-async def test_warehouse_miss_with_live_success_logs_one_fallback_event_naming_both_seasons(
-    monkeypatch, tmp_path,
-) -> None:
-    _seed_single_season_warehouse(
-        monkeypatch, tmp_path, season=SEEDED_SEASON, rows=[WAREHOUSE_ROW])
-    calls = _stub_live_ratings(monkeypatch, rows=[WAREHOUSE_ROW])
-    executor, ledger = _recorded_ratings_executor("run-live-fallback-served")
-
-    result = await executor.execute(_unfiltered_ratings_task(),
-                                    _unfiltered_ratings_plan())
-
-    assert calls == [REQUESTED_SEASON]
-    assert result.plan.nodes[0].status == PlanStatus.COMPLETE
-    entries = _fallback_entries(ledger)
-    assert len(entries) == 1
-    data = entries[0].data
-    assert data["capability"] == "team_ratings"
-    assert data["requested_season"] == REQUESTED_SEASON
-    assert data["warehouse_seasons"] == [SEEDED_SEASON]
-    assert data["live_source"] == "nba_api"
-    assert data["outcome"] == "served"
-    assert entries[0].step_id == "ratings"
-    assert entries[0].call_id is not None
-    assert REQUESTED_SEASON in json.dumps(data)
-    assert SEEDED_SEASON in json.dumps(data)
-
-@pytest.mark.anyio
-async def test_warehouse_miss_with_live_failure_fails_loudly_naming_the_warehouse_season(
-    monkeypatch, tmp_path,
-) -> None:
-    _seed_single_season_warehouse(
-        monkeypatch, tmp_path, season=SEEDED_SEASON, rows=[WAREHOUSE_ROW])
-    calls = _stub_live_ratings(
-        monkeypatch, rows=[], ok=False, error="upstream returned nothing")
-    executor, ledger = _recorded_ratings_executor("run-live-fallback-empty")
-
-    result = await executor.execute(_unfiltered_ratings_task(),
-                                    _unfiltered_ratings_plan())
-
-    assert calls == [REQUESTED_SEASON]
-    assert result.plan.nodes[0].status == PlanStatus.FAILED
-    assert result.evidence == []
-    message = result.errors["ratings"][0]
-    assert REQUESTED_SEASON in message
-    assert SEEDED_SEASON in message
-    entries = _fallback_entries(ledger)
-    assert len(entries) == 1
-    assert entries[0].data["outcome"] == "empty"
-    assert entries[0].data["requested_season"] == REQUESTED_SEASON
-    assert entries[0].data["warehouse_seasons"] == [SEEDED_SEASON]
-    assert entries[0].data["live_source"] == "nba_api"
-    tool_results = [entry for entry in ledger.entries
-                    if entry.kind == LedgerKind.TOOL_RESULT]
-    assert tool_results[-1].data["status"] == "failed"
-    assert REQUESTED_SEASON in tool_results[-1].data["error"]
-
-@pytest.mark.anyio
-async def test_fallback_event_carries_no_free_text_from_the_live_source(
-    monkeypatch, tmp_path,
-) -> None:
-    canary = "CANARY_API_KEY_a1b2c3d4"
-    _seed_single_season_warehouse(
-        monkeypatch, tmp_path, season=SEEDED_SEASON, rows=[WAREHOUSE_ROW])
-    _stub_live_ratings(
-        monkeypatch, rows=[], ok=False,
-        error=f"upstream rejected {canary} for the live request")
-    executor, ledger = _recorded_ratings_executor("run-live-fallback-canary")
-
-    await executor.execute(_unfiltered_ratings_task(),
-                           _unfiltered_ratings_plan())
-
-    entries = _fallback_entries(ledger)
-    assert len(entries) == 1
-    assert canary not in json.dumps(entries[0].data)
-    assert set(entries[0].data) == {
-        "capability", "requested_season", "warehouse_table",
-        "warehouse_seasons", "live_source", "outcome"}
 
 def _open_season() -> str:
     from shared.tools._core import (
@@ -413,3 +155,8 @@ async def test_stale_warehouse_rows_after_a_failed_live_fetch_keep_the_fallback_
     assert envelope.live_fallback.requested_season == open_season
     assert envelope.live_fallback.warehouse_seasons == [open_season]
     assert envelope.live_fallback.live_source == "nba_api"
+
+
+@pytest.fixture
+def anyio_backend():
+    return "asyncio"

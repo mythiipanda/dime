@@ -32,6 +32,9 @@ if target == "pytest":
     env.setdefault("PYTHONPATH", str(module.parent))
     raise SystemExit(subprocess.run([sys.executable, "-B", "-m", "pytest", *sys.argv[3:]],
                                    cwd=module.parents[1], env=env).returncode)
+if target.startswith("cli_"):
+    raise SystemExit(subprocess.run([sys.executable, "-B", str(module / "cli_fixture.py"), target],
+                                   cwd=root / "cwd", env=env).returncode)
 if target == "packaging":
     raise SystemExit(subprocess.run([sys.executable, "-B", str(module / "packaging_fixture.py")],
                                    cwd=root / "cwd", env=env).returncode)

@@ -202,12 +202,11 @@ class ConversationStore:
 
     def resolve_user_turns(self, owner: str, thread: str,
                            entries: Iterable[Any]) -> list[str]:
-        from v2.runtime.ledger import LedgerKind
 
         records = list(entries)
         requests: dict[str, str] = {}
         for entry in records:
-            if entry.kind == LedgerKind.TURN_START:
+            if entry.kind == "turn_start":
                 if entry.turn_id in requests:
                     raise ValueError(
                         f"ledger repeats turn {entry.turn_id!r}")

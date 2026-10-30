@@ -70,11 +70,13 @@ def _revision() -> str:
 
 def _executable_sha256() -> str:
     digest = hashlib.sha256()
-    for root in (_BACKEND / "app", _BACKEND / "v2"):
+    for root in (_BACKEND / "app", _BACKEND / "v2", _BACKEND / "analyst"):
         for path in sorted(root.rglob("*")):
+            if "node_modules" in path.parts or "__pycache__" in path.parts:
+                continue
             if path.is_symlink():
                 raise ValueError("executable source tree cannot contain symlinks")
-            if path.is_file() and path.suffix in {".py", ".md"}:
+            if path.is_file() and path.suffix in {".py", ".md", ".mjs", ".json"}:
                 digest.update(path.relative_to(_BACKEND).as_posix().encode())
                 digest.update(b"\0")
                 digest.update(path.read_bytes())
@@ -130,35 +132,20 @@ def _typed_argument_asset_hashes() -> dict[str, str]:
 
 @lru_cache(maxsize=1)
 def runtime_asset_manifest() -> RuntimeAssetManifest:
-    from v2.adapters import models
-    prompts = models.bind_provider_route_prompts()
-    expected_routes = set(models._PROVIDER_ROUTE_PROMPT_NAMES)
-    if set(prompts) != expected_routes or expected_routes != {
-            "intake", "requirement_review", "planner", "synthesizer",
-            "repair", "semantic_verifier", "action_loop"}:
-        raise RuntimeError("provider prompt registry is incomplete or has extra routes")
-    for module in (__import__(__name__, fromlist=["x"]), models):
-        path = Path(module.__file__).resolve()
-        if not path.is_relative_to(_BACKEND):
-            raise RuntimeError("runtime module resolved outside the backend root")
+    from analyst import product_session
+    analyst = _BACKEND / "analyst"
+    modules = {"routes": _loaded_behavior_sha256(__import__(__name__, fromlist=["x"]), {}),
+               "product_session": product_session._LOADED_MODULE_CODE_SHA256}
+    for name in ("worker.mjs", "runtime.mjs", "python-tools.mjs", "package-lock.json", "configuration.py", "python_tools.py", "sources.py"):
+        modules[name] = hashlib.sha256((analyst / name).read_bytes()).hexdigest()
     return RuntimeAssetManifest(
         revision=_revision(), executable_sha256=_executable_sha256(),
-        module_sha256=MappingProxyType({
-            "routes": _loaded_behavior_sha256(
-                __import__(__name__, fromlist=["x"]),
-                {"provider_routes": sorted(models._PROVIDER_ROUTE_PROMPT_NAMES)}),
-            "models": _loaded_behavior_sha256(
-                models, {"provider_route_prompt_names":
-                         models._PROVIDER_ROUTE_PROMPT_NAMES}),
-        }),
+        module_sha256=MappingProxyType(modules),
         warehouse=MappingProxyType(dict(runtime_warehouse_identity())),
         semantic_baseline=__import__(
             "v2.semantic_baseline", fromlist=["SEMANTIC_BASELINE"]
         ).SEMANTIC_BASELINE,
-        prompt_sha256=MappingProxyType({
-            route: hashlib.sha256(prompt.encode()).hexdigest()
-            for route, prompt in prompts.items()
-        }),
+        prompt_sha256=MappingProxyType({"pi_runtime": modules["runtime.mjs"]}),
         typed_argument_assets=MappingProxyType(_typed_argument_asset_hashes()),
     )
 
@@ -1035,17 +1022,14 @@ async def quick_answer_stream(body: QuickAnswerBody):
     import uuid
     from fastapi.responses import StreamingResponse
     from shared import store
-    from shared.providers import resolve_model_id, get_llm
-    from analyst.configuration import model_limits, worker_environment
-    from analyst.product_session import resolved_provider, stream_product_session
+    from analyst.configuration import resolve_product_model, worker_environment
+    from analyst.product_session import stream_product_session
     from v2.api.events import Failure, GraphEnd
     from v2.api.sse import encode_event
 
     run_id = f"run-{uuid.uuid4().hex}"
     try:
-        provider, model_name = resolve_model_id(body.model or os.environ.get("DIME_V2_MODEL"))
-        descriptor = resolved_provider(provider, get_llm(provider, model_name),
-                                       **model_limits(provider, model_name))
+        descriptor = resolve_product_model(body.model)
         node = shutil.which("node")
         if node is None:
             raise ValueError("Node runtime unavailable")
