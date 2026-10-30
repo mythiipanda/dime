@@ -583,7 +583,8 @@ def test_synthesizer_request_receives_sql_column_units(
 
 
 @pytest.mark.parametrize("sql", [
-    "SELECT PTS AS player_points FROM silver_hist_player_seasons",
+    "SELECT PTS AS player_points, REB AS player_points FROM silver_hist_player_seasons",
+    "SELECT PTS AS PTS, REB AS pts FROM silver_hist_player_seasons",
     "SELECT PTS * 2 AS PTS FROM silver_hist_player_seasons",
     "SELECT SUM(PTS) AS PTS FROM silver_hist_player_seasons",
     "SELECT h.PTS FROM silver_hist_player_seasons h "
@@ -756,3 +757,71 @@ def test_renamed_alias_star_and_missing_sql_are_unresolved() -> None:
     assert missing["resolved_labels"] == []
     assert missing["query_attribution"]["lineage_proven"] is False
     assert "missing SQL text" in missing["ambiguities"][0]["reason"]
+
+
+@pytest.mark.parametrize("table,source,output,unit,value", [
+    ("silver_hist_player_seasons", "PTS", "player_points", "points_per_game", 11.8),
+    ("silver_player_season", "PPG", "PTS", "points_per_game", 11.8),
+    ("silver_leaders_pts", "PTS", "TOTAL_PTS", "total_points", 71),
+    ("silver_hist_player_seasons", "PTS", "TOTAL_PTS", "points_per_game", 11.8),
+])
+def test_sql_direct_alias_preserves_source_unit(
+        unit_synthetic_warehouse, table, source, output, unit, value):
+    sql = f"SELECT s.{source} AS {output} FROM {table} s"
+    evidence = _execute_sql_capability(sql)
+    assert evidence.rows == [{output: value}]
+    assert evidence.execution_arguments["sql"] == sql
+    assert evidence.units[output] == unit
+    assert evidence.metric_definitions[output]
+    result = run_sql(sql)
+    metadata = result["declared_column_semantics"][output]
+    assert metadata["column"] == source
+    assert metadata["output_column"] == output
+    assert metadata["table"] == table
+    assert metadata["note"] == evidence.metric_definitions[output]
+
+
+@pytest.mark.parametrize("binding_unit,rejection", [
+    ("points_per_game", "basis"),
+    ("total_points", "unit does not match output authority"),
+])
+def test_misleading_alias_rejects_typed_total_binding(
+        unit_synthetic_warehouse, binding_unit, rejection):
+    from v2.contracts import EvidenceOutputBinding, TaskSpec, Plan, PlanNode
+    from v2.runtime.models import ExecutionResult
+    evidence = _execute_sql_capability(
+        "SELECT PTS AS TOTAL_PTS FROM silver_hist_player_seasons")
+    task = TaskSpec(goal="total", mode="quick", deliverable="total",
+                    requested_outputs=["TOTAL_PTS"], expected_bases={"TOTAL_PTS": "total"})
+    execution = ExecutionResult(plan=Plan(nodes=[PlanNode(
+        id="sql-evidence", description="read", capability_hints=["sql_exec"],
+        status="complete")]), evidence_by_node={"sql-evidence": evidence},
+        attempts={"sql-evidence": 1})
+    binding = EvidenceOutputBinding.model_validate({
+        "requirement_kind": "task", "output_id": "TOTAL_PTS",
+        "node_id": "sql-evidence", "evidence_id": evidence.evidence_id,
+        "selector": "rows[0].TOTAL_PTS", "value": {"kind": "float", "value": 11.8},
+        "unit": {"kind": "declared", "value": binding_unit}, "domain": "sql_exec"})
+    from v2.contracts import Claim, DraftReport, VerificationReport
+    from v2.runtime import loop
+    draft = DraftReport(sections=[], claims=[Claim(text="total", kind="observed",
+        evidence_ids=[evidence.evidence_id], output_bindings=[binding])])
+    admitted, gaps = loop._verified_claims(task, execution, draft,
+        VerificationReport(status="pass", claim_results=[{"claim_index": 0, "supported": True}]),
+        {evidence.evidence_id: evidence})
+    assert admitted[0].output_bindings == []
+    assert any(rejection in gap.message for gap in gaps), [gap.message for gap in gaps]
+
+
+@pytest.mark.parametrize("sql", [
+    "SELECT wrong.PTS AS player_points FROM rates",
+    "SELECT missing AS player_points FROM rates",
+    "SELECT PTS AS player_points FROM unknown_source",
+])
+def test_direct_alias_requires_declared_source(sql):
+    from shared.tools.season_semantics import annotate_result
+    result = annotate_result({
+        "sql": sql, "columns": ["player_points"], "rows": [{"player_points": 11.8}],
+        "meta": {"tables": ["rates"]},
+    }, {"tables": {"rates": {"PTS": {"unit": "points_per_game", "note": "source"}}}})
+    assert result["declared_column_semantics"] == {}
