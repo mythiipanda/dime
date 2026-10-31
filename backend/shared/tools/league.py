@@ -4090,6 +4090,26 @@ def _column_semantics(table: str, name: str) -> tuple[str, str]:
             )
             return unit, note
     if table_key == "silver_hist_player_seasons":
+        totals_units = {
+            "PTS_TOTAL": (
+                "total_points",
+                "cumulative season points from upstream sportsdataverse totals slice",
+            ),
+            "REB_TOTAL": (
+                "total_rebounds",
+                "cumulative season rebounds from upstream sportsdataverse totals slice",
+            ),
+            "AST_TOTAL": (
+                "total_assists",
+                "cumulative season assists from upstream sportsdataverse totals slice",
+            ),
+            "GP_TOTAL": (
+                "games",
+                "games played associated with upstream sportsdataverse totals slice",
+            ),
+        }
+        if upper in totals_units:
+            return totals_units[upper]
         per_game_units = {
             "PTS": (
                 "points_per_game",
