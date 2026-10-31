@@ -1644,3 +1644,65 @@ test("streamDimeChat completes through graph_end without an error", async () => 
     delete (globalThis as Record<string, unknown>).fetch;
   }
 });
+
+
+test("parseCarry keeps valid submission attached to carry", () => {
+  const carry = parseCarry({
+    run_id: "run-fixture-submission",
+    verification: "unassessed",
+    verified_claims: null,
+    gaps: [],
+    source_refs: ["src-1"],
+    submission: {
+      blocks: [
+        {
+          text: "Scored 30 points.",
+          anchors: [{ ref: "src-1", row: 0, columns: ["PTS"] }],
+        },
+      ],
+    },
+  });
+  assert.ok(carry);
+  assert.equal(carry.runId, "run-fixture-submission");
+  assert.equal(carry.verification, "unknown");
+  assert.ok(carry.submission);
+  assert.equal(carry.submission.blocks.length, 1);
+  assert.equal(carry.submission.blocks[0].text, "Scored 30 points.");
+  assert.deepEqual(carry.submission.blocks[0].anchors, [{ ref: "src-1", row: 0, columns: ["PTS"] }]);
+});
+
+test("parseCarry drops malformed submission without dropping valid carry fields", () => {
+  const carry = parseCarry({
+    run_id: "run-fixture-corrupt-sub",
+    verification: "unassessed",
+    verified_claims: null,
+    gaps: [],
+    source_refs: ["src-1"],
+    submission: {
+      blocks: [{ text: "", anchors: "invalid" }], // Malformed submission
+    },
+  });
+  assert.ok(carry);
+  assert.equal(carry.runId, "run-fixture-corrupt-sub");
+  assert.equal(carry.submission, undefined); // Dropped cleanly
+  assert.equal(carry.verification, "unknown");
+});
+
+test("parseCarry keeps submission even when sources hydration is absent", () => {
+  const carry = parseCarry({
+    run_id: "run-fixture-unhydrated",
+    verification: "unassessed",
+    submission: {
+      blocks: [
+        {
+          text: "Claim with unhydrated sources.",
+          anchors: [{ ref: "src-unhydrated", row: 0, columns: ["col"] }],
+        },
+      ],
+    },
+  });
+  assert.ok(carry);
+  assert.ok(carry.submission);
+  assert.equal(carry.sources, undefined);
+  assert.equal(carry.submission.blocks[0].text, "Claim with unhydrated sources.");
+});

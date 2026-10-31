@@ -3,6 +3,7 @@ import { Value } from "typebox/value";
 import { createAnalystSession } from "./runtime.js";
 import { connectPythonTools, objectValue, sourceRecordSchema, sourceOutputSchema, sourceResult, type SourceRecord, type PythonToolsOptions } from "./python-tools.js";
 import { priorSourceTool, resolvedRuntime } from "./pi-context.js";
+import { createSubmitAnswerTool, type AnswerSubmission } from "./submit-tool.js";
 import type { Message } from "@earendil-works/pi-ai";
 const turnSchema = Type.Object({ role: Type.Union([Type.Literal("user"), Type.Literal("assistant")]), content: Type.String() });
 export const analystContextSchema = Type.Object({
@@ -29,6 +30,7 @@ export type AnalystEvent = {
 } | {
     type: "answer";
     text: string;
+    submission?: AnswerSubmission;
 } | {
     type: "failure";
     kind: string;
@@ -69,6 +71,7 @@ export function createPiExecution(deps: AnalystDeps = {}) {
                 let bridge: Awaited<ReturnType<typeof connectPythonTools>> | undefined;
                 let kind = "configuration";
                 let bridgePid: number | undefined;
+                let acceptedSubmission: AnswerSubmission | undefined;
                 const cancel = () => { void session?.abort(); };
                 controller.signal.addEventListener("abort", cancel, { once: true });
                 try {
@@ -82,6 +85,10 @@ export function createPiExecution(deps: AnalystDeps = {}) {
                     bridgePid = bridge.pid;
                     controller.signal.throwIfAborted();
                     const connected = bridge;
+                    const submitTool = createSubmitAnswerTool(
+                        () => [...(start.sources ?? []), ...connected.results.values()],
+                        (submission) => { acceptedSubmission = submission; }
+                    );
                     session = await createAnalystSession({
                         cwd: start.cwd, agentDir: start.agentDir, model, modelRuntime: runtime,
                         tools: [...bridge.tools.map(tool => ({
@@ -111,7 +118,7 @@ export function createPiExecution(deps: AnalystDeps = {}) {
                                         throw error;
                                     }
                                 }
-                            })), priorSourceTool(start.sources ?? [])]
+                            })), priorSourceTool(start.sources ?? []), submitTool]
                     });
                     controller.signal.throwIfAborted();
                     session.subscribe(event => {
@@ -141,9 +148,14 @@ export function createPiExecution(deps: AnalystDeps = {}) {
                     if (!last || last.stopReason === "error" || last.stopReason === "aborted")
                         throw new Error("Model failed");
                     const text = last.content.filter(c => c.type === "text").map(c => c.text).join("");
-                    if (!text.trim())
-                        throw new Error("Model returned no answer");
-                    emit({ type: "answer", text });
+                    if (acceptedSubmission) {
+                        const canonicalText = acceptedSubmission.blocks.map(b => b.text).join("\n\n");
+                        emit({ type: "answer", text: canonicalText, submission: acceptedSubmission });
+                    } else {
+                        if (!text.trim())
+                            throw new Error("Model returned no answer");
+                        emit({ type: "answer", text });
+                    }
                 }
                 catch {
                     if (!controller.signal.aborted)

@@ -243,7 +243,14 @@ async function withPiSources(payload: unknown, thread: string | null | undefined
       if (sources.ok) {
         const artifact: unknown = await sources.json();
         if (artifact && typeof artifact === "object" && "sources" in artifact) {
-          payload = { ...payload, carry: { ...payload.carry, sources: artifact.sources } };
+          payload = {
+            ...payload,
+            carry: {
+              ...payload.carry,
+              sources: artifact.sources,
+              ...("submission" in artifact && artifact.submission ? { submission: artifact.submission } : {})
+            }
+          };
         }
       }
     } catch {

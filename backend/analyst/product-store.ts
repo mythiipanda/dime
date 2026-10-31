@@ -5,9 +5,15 @@ import { randomUUID } from "node:crypto";
 import { Type, type Static } from "typebox";
 import { Value } from "typebox/value";
 import { sourceRecordSchema, type SourceRecord } from "./python-tools.js";
+import { submitAnswerSchema, type AnswerSubmission } from "./submit-tool.js";
 const turnSchema = Type.Object({ role: Type.Union([Type.Literal("user"), Type.Literal("assistant")]), content: Type.String({ minLength: 1, maxLength: 2000, pattern: "\\S" }) });
 const referenceSchema = Type.Object({ sequence: Type.Integer(), turn: Type.String(), run_id: Type.Union([Type.String(), Type.Null()]), turn_id: Type.Union([Type.String(), Type.Null()]) });
-const artifactSchema = Type.Object({ run_id: Type.String(), sources: Type.Array(sourceRecordSchema), source_refs: Type.Optional(Type.Array(Type.String())) });
+const artifactSchema = Type.Object({
+    run_id: Type.String(),
+    sources: Type.Array(sourceRecordSchema),
+    source_refs: Type.Optional(Type.Array(Type.String())),
+    submission: Type.Optional(submitAnswerSchema)
+});
 export type Turn = Static<typeof turnSchema>;
 export type Identity = {
     owner: string;
@@ -169,15 +175,24 @@ export class ProductStore {
             string,
             SourceRecord
         ])));
-        return { run_id: run, sources: (artifact.source_refs ?? artifact.sources.map(r => r.ref)).map(ref => {
+        return {
+            run_id: run,
+            sources: (artifact.source_refs ?? artifact.sources.map(r => r.ref)).map(ref => {
                 const record = records.get(ref);
                 if (!record)
                     throw new Error("Source not found");
                 return record;
-            }) };
+            }),
+            ...(artifact.submission ? { submission: artifact.submission } : {})
+        };
     }
-    saveSources(run: string, sources: SourceRecord[], records: SourceRecord[]) {
+    saveSources(run: string, sources: SourceRecord[], records: SourceRecord[], submission?: AnswerSubmission) {
         mkdirSync(this.sources, { recursive: true });
-        writeFileSync(resolve(this.sources, run + ".json"), JSON.stringify({ run_id: run, sources, source_refs: records.map(r => r.ref) }), { flag: "wx" });
+        writeFileSync(resolve(this.sources, run + ".json"), JSON.stringify({
+            run_id: run,
+            sources,
+            source_refs: records.map(r => r.ref),
+            ...(submission ? { submission } : {})
+        }), { flag: "wx" });
     }
 }
