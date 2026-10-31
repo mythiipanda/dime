@@ -82,6 +82,3 @@ test(`Node product host ${stage}`,async()=>{
   await writeFile(join(root,"host-requests-"+stage+".json"),JSON.stringify(requests));
  } finally {await writeFile(join(root,"host-requests-"+stage+"-"+Date.now()+".json"),JSON.stringify(requests));await stop(host);await product.data.close();await stop(provider);}
 });
-
-
-

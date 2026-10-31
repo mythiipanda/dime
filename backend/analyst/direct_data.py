@@ -145,5 +145,3 @@ def internal_catalogue():
         product_rerun, product_resolve, product_trade, product_debate, product_today,
         product_watchlist, product_watchlist_add, product_watchlist_remove, product_movers, product_briefing)
     return {operation.name: operation for operation in operations}
-
-

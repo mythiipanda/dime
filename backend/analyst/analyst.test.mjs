@@ -79,4 +79,3 @@ test("in-process Pi + QuickJS + Python MCP over local OpenAI SSE, source reuse a
     assert.equal(invalid[0].type,"failure");assert.equal(invalid[0].kind,"configuration");
   } finally {server.closeAllConnections();await new Promise(resolve=>server.close(resolve));}
 });
-
