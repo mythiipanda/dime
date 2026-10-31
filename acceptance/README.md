@@ -1,177 +1,110 @@
-# Chat API contract & corpus schema (acceptance, step 1)
+# Chat acceptance contract
 
-This guide describes the acceptance runner's chat contract. See the current
-[architecture](../ARCHITECTURE.md) for the Pi request path and verification limits.
+This reference describes the current TypeScript product host. See the [architecture](../ARCHITECTURE.md) and [domain glossary](../GLOSSARY.md) for ownership and terminology.
 
-## 1.1 Endpoint inventory
+## 1.1 Endpoints and runtime mode
 
-- **HTTP method + path (public URL):** `POST /api/v2/chat/stream`, and a query-style
-  `GET /api/v2/chat/stream`.
-  The route decorators are declared router-relative as `@router.post("/v2/chat/stream")`
-  and `@router.get("/v2/chat/stream")` in `backend/v2/api/routes.py`, and
-  `backend/v2/main.py` mounts that router with `app.include_router(v2_router, prefix="/api")`.
-  **The `/api` prefix is part of the served path** — the bare `/v2/chat/stream` form is
-  not served.
-- **Server:** FastAPI. `backend/entrypoint.py` imports `v2.main:app`, so the ASGI target
-  is `entrypoint:app` (`uvicorn entrypoint:app` from the `backend/` directory).
-- **Runtime mode gate:** `DIME_RUNTIME_V2` defaults to `on` when unset or empty
-  (`backend/shared/config.py`, `runtime_v2_mode()`; accepted values
-  `off` | `on` | `shadow` | `action_loop`). Chat is served for `on` and
-  `action_loop`; both names select the Pi producer. `_require_projects()` raises
-  HTTP 404 `{"detail":"not found"}` for `off` and `shadow`.
-- **Local start (live):** see [1.5](#15-how-to-start-the-backend-locally).
-- **Source of truth for the route:** `backend/v2/api/routes.py`.
+The Node HTTP host serves both `POST /api/v2/chat/stream` and query-style `GET /api/v2/chat/stream`. The `/api` prefix is required. Route behavior is defined in `backend/analyst/http.ts`.
 
-## 1.2 Request body (JSON)
+`DIME_RUNTIME_V2` defaults to `on` when unset or empty. `on` and `action_loop` enable the same Pi producer; `off` and `shadow` return 404 for chat and the other gated product routes. Workspaces are not gated by this setting. Unknown mode values fail configuration.
 
-Body model is `QuickAnswerBody` in `backend/v2/api/routes.py`
-(`model_config = ConfigDict(extra="forbid")` — unknown keys are rejected with 422).
-Keys are **required** unless marked optional.
+## 1.2 Request body
 
-| Field | Type / constraints | Meaning |
-|---|---|---|
-| `q` | string, `min_length=1`, `max_length=2000`, non-blank | the user question |
-| `model` | optional string, `max_length=256`, non-blank when present | model id; see resolution order below |
-| `history` | optional array of conversation turns, at most **8** items | prior turns supplied inline |
-| `thread` | optional string, `min_length=1`, `max_length=80`, non-blank | conversation thread id |
-| `client` | optional string, `min_length=1`, `max_length=80`, non-blank | client / conversation owner id |
-| `diagnostics` | optional bool, default `false` | include the observability payload |
+POST accepts JSON matching `analystRequestSchema` in `backend/analyst/analyst.ts`. Unknown fields return 422. Malformed JSON returns 422 with a structured `detail` array; native parser diagnostic text can vary by Node version.
 
-- `thread` and `client` must be supplied **together**; supplying `thread` alone is a
-  validation error (`require_complete_conversation_identity` → HTTP 422).
-- **Model-resolution order:** `body.model` → `DIME_V2_MODEL` env var → provider default.
-  The route passes `body.model or os.environ.get("DIME_V2_MODEL")` to
-  `shared.providers.resolve_model_id`; an unresolvable/unknown id makes the run fail with
-  a `startup` failure stream rather than falling back.
-- **Conversation behaviour when `thread` and `client` are both given:** the route *reads*
-  stored history from the conversation store to seed the model context. On a successful run
-  it also *writes* the exchange back (assistant turn, per-turn evidence, an optional branch
-  off the parent sequence, and a saved chat/run record). It is not a read-only lookup.
+| Field | Contract |
+| --- | --- |
+| `q` | Required nonblank string, at most 2,000 characters. |
+| `model` | Optional string or null; nonblank when supplied, at most 256 characters. |
+| `history` | Optional array of at most eight user or assistant turns. Each turn has `role` and nonblank `content` of at most 2,000 characters. |
+| `thread` | Optional string or null; nonblank when supplied, at most 80 characters. |
+| `client` | Optional string or null; nonblank when supplied, at most 80 characters. |
+| `diagnostics` | Optional boolean, accepted for request compatibility. It does not enable typed claim verification. |
+
+A thread requires a client. A client supplied without a thread does not create an identified conversation. Identified requests load stored history and prior source references; anonymous requests use inline history. A successful identified exchange persists both user and assistant turns, run records and branch references. It does not persist typed per-claim evidence bindings.
+
+Model selection is implemented in `backend/analyst/providers.ts`: request `model`, then `DIME_V2_MODEL`, then a configured provider default. Unsupported selections or missing credentials produce a `configuration` failure stream. There is no silent fallback to another model.
 
 ## 1.3 Stream protocol
 
-All events are Server-Sent Events (`event: <name>\ndata: <json>\n\n`).
+Events use SSE framing: `event: <name>\ndata: <json>\n\n`. The media type is `text/event-stream; charset=utf-8`. An admitted chat request gets HTTP 200 and an `X-Dime-Run-Id` header; data arrives as events become available. A rate-limited request has its own failure stream and does not allocate a run id.
 
-- **Response media type:** `text/event-stream; charset=utf-8`
-  (`StreamingResponse(..., media_type="text/event-stream")`). It is **not**
-  `text/plain; charset=utf-8`.
-- **Status code:** 200 with an immediate stream; the HTTP body is empty until the first
-  event arrives.
-- **Response header:** `X-Dime-Run-Id` carries the run id (also present on the startup
-  failure stream).
-- **Heartbeat:** the stream is wrapped in `with_heartbeat`, which injects a
-  `ping` event (`{"ok":true}`) whenever **15s** elapse without backend output. A runner
-  must tolerate `ping`.
-- **Payload truncation:** every payload passes through
-  `backend/v2/api/sse.py` `_public_payload` (which rewrites or drops fields per event
-  type) and then `_bounded_public_value` (depth ≤ 8, ≤ 1000 list items, ≤ 256 dict keys,
-  ≤ 1000-char keys, strings truncated to 200 000 chars, non-finite floats → `null`).
+| Event | Payload |
+| --- | --- |
+| `token` | `{text}` containing an incremental text delta. |
+| `tool_call` | `{node: "tools", name, data: {}}`. |
+| `tool_result` | `{node: "tools", name, status}` with optional row count or public error text. Status is `ok` or `fail`. |
+| `work_log` | `{run_id, status: "partial"}` identifying the execution attempt. |
+| `final_answer` | `{text, carry}` containing the settled answer. |
+| `failure` | `{kind, message}` describing configuration, startup, model, transport, timeout or rate-limit failure. |
+| `error` | `{message}`, emitted with rate-limit rejection. |
+| `graph_end` | `{}`, the terminal event. |
+| `ping` | `{ok: true}`, sent after 15 seconds without other output. |
 
-Event types the runner MUST parse:
+Use `final_answer.text` as the complete answer. A stream that ends before its terminal event must not be treated as a successful complete answer.
 
-| Event | Public fields |
-|---|---|
-| `node_update` | `{node, status}` — node in `entry`\|`data_retrieval`\|`tools`\|`analytics`\|`presentation`, status `running`\|`complete`\|`error` |
-| `status` | `{text}` — short status, max 500 chars |
-| `thought_stream` | `{node, text}` — the public payload always replaces `text` with the fixed string `"Working through the evidence..."`; treat it as a progress ping, not real reasoning |
-| `tool_call` | `{node, name, data}` — `data` holds `{name, arguments, argument_count, unknown_argument_count}` |
-| `tool_result` | `{node, name, status, rows, ms, error}` — `status` is `ok`\|`fail`; `rows` is a row count, not the rows; `error` is non-null only when `status=fail` (always the string `"Tool failed"`) |
-| `token` | `{text}` — incremental answer tokens (emitted in ~12-word chunks) |
-| `custom_data` | `{node, tables, artifacts, unverified_numbers}` — `node` is always `analytics` on this endpoint |
-| `work_log` | `{run_id, status}` — `complete` \| `partial` |
-| `final_answer` | `{text, carry}` — the final text plus the `carry` provenance dict |
-| `suggestions` | `{items}` — event type is defined in `backend/v2/api/events.py` but is **not emitted** by `/api/v2/chat/stream`; the runner may accept it but must not wait for it |
-| `graph_end` | `{}` — always the last event of every terminal stream |
-| `failure` | `{kind, message}` — kinds: `startup`, `rate_limited`, `timeout`, `quota`, `provider_error`, `execution_failure` |
-| `binding_diagnostic`, `run_diagnostic` | emitted only when `diagnostics=true` |
-| `stage_summary`, `plan_update`, `evidence_update`, `verification_update` | emitted from the activity journal when `diagnostics=true` |
+`CHAT_RATE_PER_MINUTE` defaults to 20 and applies an in-process window per socket client address. Rate-limit rejection returns HTTP 200 with `failure`, `error` and `graph_end` events. `DIME_V2_RUN_TIMEOUT_S` defaults to 360 seconds; timeout aborts the analysis and terminates the stream. A separately authorized diagnostic may impose a shorter deadline.
 
-- **Startup failure stream** (`setup_error_stream`): `failure` (`kind="startup"`) →
-  `error` (`{"message","run_id"}`) → `graph_end`, with HTTP status **200**.
-- **Rate-limited stream** (`_rate_limited_stream`): `failure` (`kind="rate_limited"`) →
-  `error` (`{"message":"rate limited, retry soon"}`) → `graph_end`, HTTP status 200.
-- **Run failure mid-stream** (`failure_chunks`): optional diagnostics and replayed
-  `tool_call`/`tool_result` events, then `failure`, `work_log` (`status="partial"`),
-  `token` events, and a `final_answer` whose `carry.verification` is `"partial"`, then
-  `graph_end`. **A runner must not assume `failure` means there is no final answer.**
-- **Rate limiting:** both `POST` and `GET /api/v2/chat/stream` go through
-  `_guarded_chat_stream` → `_chat_allowed`. The limiter is **per client IP**, a **60-second
-  sliding window**, capped by `settings.chat_rate_per_minute` (default **20**). Exceeding it
-  yields the rate-limited stream above rather than an HTTP 429. The limit is in-process and
-  per-worker.
+## 1.4 Sources and verification
 
-## 1.4 Where citations/provenance and final text live
+A final answer carries:
 
-- **Final answer text:** the `text` field of the `final_answer` event. The preceding
-  `token` events are the same text streamed in chunks; use `final_answer.text` as the
-  authoritative answer.
-- **Provenance (`carry`):** the `carry` dict on the same `final_answer` event. Its keys are:
+```json
+{
+  "run_id": "run-...",
+  "verification": "unassessed",
+  "answer_status": "unassessed",
+  "source_refs": ["..."]
+}
+```
 
-  | Key | Type |
-  |---|---|
-  | `run_id` | string (`run-<32 hex>`) |
-  | `verification` | string (`pass` → `work_log.status=complete`, otherwise `partial`) |
-  | `verified_claims` | **integer count** of verified claims (not a list) |
-  | `output_statuses` | array of per-output status records |
-  | `structural_flags` | array |
-  | `gaps` | array of `{kind, blocks}` |
-  | `stage_latencies_ms` | object of step id → duration |
+These are run-level source references, including records of failed tool calls. They are not claim-level citations or verification results. Completing a run does not establish that its answer is supported.
 
-  On the mid-stream failure path `carry` is a reduced dict
-  (`run_id`, `verification="partial"`, `verified_claims=0`, `structural_flags`, `gaps`,
-  `stage_latencies_ms`) with no `output_statuses`.
+For an identified conversation, retrieve the raw records through:
 
-  The runner only needs the presence of `carry` and of its `verified_claims` / `gaps` keys;
-  it must not assume `verified_claims` is a list.
-- **Per-claim evidence provenance:** published in the `custom_data` event as
-  `tables[].provenance`, one object per cited output:
-  `{capability, origin, warehouse_id, season, as_of, live_sources}` where `origin` is
-  `warehouse` | `live` | `mixed` | `undeclared`. Each table row also carries
-  `output_id`, `display_name`, `subject_type`, `subject_id`, `subject_display_name`,
-  `value`, `unit`.
-- **Untraceable numbers:** `custom_data.unverified_numbers` — human-readable strings naming
-  outputs that could not be traced back to evidence.
-- Refusal detection and fabrication flagging are the grader's job in a later step, not part
-  of the runner in this step.
+```text
+GET /api/v2/runs/<run_id>/sources?thread=<thread>&client=<client>
+```
 
-## 1.5 How to start the backend locally
+The response contains `run_id` and `sources`. Each source record contains `ref`, `callId`, `tool` and its complete MCP `response`. The two Python agent tools are `sql_exec` and `warehouse_schema`; `read_source` reads an existing record inside codemode. Source retrieval checks the conversation's owner/thread/run association. Client and thread values are scoping identifiers, not authentication credentials.
 
-- Install Python deps: `pip install -r backend/requirements.txt`
-  (includes `fastapi`, `uvicorn[standard]`, `pydantic`, `pydantic-settings`,
-  `pydantic-ai-slim[openai]`, `httpx`, `duckdb`, `polars`, `sqlglot`).
-- **Startup configuration:**
+Raw records retain rows, declared units, season semantics, provenance and failures. The host supplies prior-source summaries to the model; scripts choose which results to return from codemode. The current answer path does not emit `verified_claims`, typed per-output provenance or `unverified_numbers`.
 
-  1. `DIME_EXPECTED_ASSET_MANIFEST` — the FastAPI lifespan in `backend/v2/main.py` calls
-     `preflight_runtime_assets()` with no argument, and that function raises
-     `RuntimeError("DIME_EXPECTED_ASSET_MANIFEST is required")` when the variable is unset.
-     Without it the app **crashes on startup**. The manifest file must live outside
-     `backend/app` and `backend/v2`.
-  2. `DIME_RUNTIME_V2` is optional and defaults to `on`. Explicit `on` or
-     `action_loop` enables chat; `off` and `shadow` return HTTP 404.
+## 1.5 Local build and startup
 
-- Start:
+Install Python data dependencies and locked Node dependencies, then build the TypeScript host:
 
-  ```
-  cd backend
-  DIME_RUNTIME_V2=on DIME_EXPECTED_ASSET_MANIFEST=<path/to/manifest.json> \
-    uvicorn entrypoint:app --host 127.0.0.1 --port 8000
-  ```
+```bash
+python -m pip install -r backend/requirements.txt
+cd backend/analyst
+npm ci --ignore-scripts
+npm run build
+```
 
-  Set `DIME_V2_MODEL` to pin the model; leave it unset to use the provider default.
-- **Health:** `GET /api/health` (`{"ok":true,"providers":{...}}`) and `GET /api/healthz`
-  (503 unless the `silver_team_ratings` table is present and non-empty).
-- **Smoke check:**
+Node 22.19.0 or later and an existing warehouse are required. Configure the desired provider through its existing key and activation settings; select an approved model from `/api/models`. `DIME_WAREHOUSE` overrides the default `backend/data/warehouse.duckdb`. `DIME_PI_PYTHON` can select the Python executable for the data engine.
 
-  ```
-  curl -N -X POST http://127.0.0.1:8000/api/v2/chat/stream \
-    -H 'Content-Type: application/json' -d '{"q":"test"}'
-  ```
+Generate the asset manifest from `backend/`, outside executable roots:
 
-  Expect a `final_answer` event with non-empty `text` and a `carry` object, terminated by
-  `graph_end`.
-- **Warehouse:** `backend/data/warehouse-runtime.duckdb` — a duckdb file in the repo used
-  to compute gold answers. Gold SQL is read-only (`SELECT` only; open read-only). Do not
-  point the runner at a path outside this repository.
+```bash
+node analyst/dist/host.js manifest manifest/expected_asset_manifest.json
+```
+
+Start the product host with that manifest:
+
+```bash
+DIME_EXPECTED_ASSET_MANIFEST=$PWD/manifest/expected_asset_manifest.json \
+  node analyst/dist/host.js
+```
+
+`preflight` in `backend/analyst/manifest.ts` rejects a missing manifest or substantive asset mismatch. A revision-label-only mismatch is reported separately. `PORT` defaults to 8000; `CORS_ALLOWED_ORIGINS` configures allowed browser origins. Workspace `PATCH` is included in allowed preflight methods.
+
+The CLI uses the same analyst module without starting an HTTP listener:
+
+```bash
+node analyst/dist/host.js chat "What were the top scoring games?" --model provider:model
+```
+
+`GET /api/health` reports the host/provider catalogue. `GET /api/healthz` checks warehouse readiness and can return 503. Successful local fixtures do not establish live-provider coverage, container execution or analyst answer quality.
 
 ## 1.6 Corpus schema (JSONL; v2 items)
 

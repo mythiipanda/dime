@@ -59,13 +59,6 @@ def awards_warehouse(recorded_awards, tmp_path, monkeypatch):
     coverage.coverage_cache_clear()
     return path
 
-@pytest.fixture(autouse=True)
-def _open_chat_budget():
-    from v2.api import routes
-
-    routes._CHAT_HITS.clear()
-    yield
-    routes._CHAT_HITS.clear()
 
 
 def test_the_capability_declares_units_for_every_numeric_output():

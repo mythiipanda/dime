@@ -26,16 +26,3 @@ def test_final_admission_rejects_wrong_selected_local_scope_end_to_end():
  verified=VerifiedClaim(claim_index=0,claim=claim,evidence_ids=['ev'],output_bindings=[binding])
  with pytest.raises(ValueError,match='scope does not match'):
   admit_verified_claim_bindings(task,execution,DraftReport(sections=['x'],claims=[claim]),verified)
-
-
-def test_startup_manifest_repins_typed_argument_assets():
- import hashlib,pathlib
- from v2.api.routes import _typed_argument_asset_hashes
- root=pathlib.Path(__file__).parents[2]
- expected={
-  'provider_schema_manifest':root/'schema_snapshots'/'manifest.json',
-  'behavior_losses':root/'schema_snapshots'/'behavior_losses.json',
-  'capability_manifest':root/'capability_snapshots'/'manifest.json',
-  'capability_source':root/'capability_snapshots'/'catalog.source.json',
-  'capability_compiled':root/'capability_snapshots'/'catalog.compiled.json'}
- assert _typed_argument_asset_hashes()=={name:hashlib.sha256(path.read_bytes()).hexdigest() for name,path in expected.items()}

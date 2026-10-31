@@ -369,44 +369,8 @@ def test_derivation_contract_is_a_named_version():
     assert "sample" not in inspect.getsource(store._warehouse_identity_uncached)
 
 
-def test_manifest_records_the_derivation_version(monkeypatch, tmp_path):
-    db = _point_db_at(monkeypatch, tmp_path)
-    from v2.api import routes
-    routes.runtime_warehouse_identity.cache_clear()
-    try:
-        recorded = routes.runtime_warehouse_identity()
-        assert recorded["sha256_derivation"] == store.WAREHOUSE_SHA256_DERIVATION
-        assert recorded["sha256"] == hashlib.sha256(b"warehouse-bytes-v1").hexdigest()
-        routes.runtime_asset_manifest.cache_clear()
-        manifest = routes.runtime_asset_manifest()
-        assert dict(manifest.warehouse) == recorded
-    finally:
-        routes.runtime_warehouse_identity.cache_clear()
-        routes.runtime_asset_manifest.cache_clear()
 
 
-def test_manifest_recorded_under_another_derivation_is_rejected_as_incompatible(
-        monkeypatch, tmp_path):
-    import json
-    from v2.api import routes
-    db = _point_db_at(monkeypatch, tmp_path)
-    routes.runtime_warehouse_identity.cache_clear()
-    routes.runtime_asset_manifest.cache_clear()
-    try:
-        observed = routes.runtime_asset_manifest().as_dict()
-    finally:
-        routes.runtime_warehouse_identity.cache_clear()
-        routes.runtime_asset_manifest.cache_clear()
-    for recorded_derivation in (None, "sha256-sampled", "sha256-head-tail"):
-        candidate = json.loads(json.dumps(observed))
-        if recorded_derivation is None:
-            del candidate["warehouse"]["sha256_derivation"]
-        else:
-            candidate["warehouse"]["sha256_derivation"] = recorded_derivation
-        path = tmp_path / f"stale-derivation-{recorded_derivation}.json"
-        path.write_text(json.dumps(candidate))
-        with pytest.raises(RuntimeError, match="derivation"):
-            routes.preflight_runtime_assets(path)
 
 
 def test_absent_error_factory_is_single_sourced():

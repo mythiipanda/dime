@@ -1,109 +1,53 @@
 # Architecture
 
-Dime answers NBA questions from a DuckDB warehouse. A Python host owns the product interface; a Node sidecar owns the model conversation. Python keeps credentials, persistence, request policy and read-only warehouse access. The pinned Pi SDK runs the agent loop and codemode sandbox.
-
-The source snapshot inspected for this document is `54456bc` on 2026-10-31.
+Dime's TypeScript application host owns HTTP, CLI, model policy, conversation state, projects, workspaces and source artifacts. It embeds the published Pi 1.4.0 SDK in the same Node process. A private Python MCP process runs the existing NBA data engine and DuckDB operations.
 
 ## Request path
 
-1. The frontend posts a question to `POST /api/v2/chat/stream`.
-2. `backend/v2/api/routes.py` applies the client rate limit, resolves the selected model, checks that Node is available and creates a run id.
-3. The route calls `analyst.product_session.stream_product_session`, the same producer used by `backend/scripts/run_v2_chat.py`.
-4. The producer loads prior sources and at most eight persisted turns, creates an owned private directory and spawns `backend/analyst/worker.mjs`.
-5. The worker creates a Pi `AgentSession` with codemode as the only active tool. Python MCP exposes `sql_exec` and `warehouse_schema`. `read_source` is a worker-local Node tool over the prior-source catalogue, not a Python MCP tool.
-6. The model writes JavaScript in codemode. It may inspect complete tool results, filter them and return chosen rows or values to its own context.
-7. The worker sends token, tool and source events. Python validates each source record and relays SSE. On success it persists the exchange and a source artifact. On failure it keeps newly collected sources but does not persist an assistant exchange.
+1. The frontend posts to `/api/v2/chat/stream`. `backend/analyst/http.ts` validates the request, applies the mode and rate checks, creates a run ID and owns SSE and disconnect cancellation.
+2. `createAnalyst().stream()` in `backend/analyst/analyst.ts` resolves the model, reads the owner/thread ledger and creates a private session directory. Public requests contain questions, model selections and conversation identities; callers do not supply disk paths or MCP descriptors.
+3. `pi-execution.ts` embeds a Pi `AgentSession` with QuickJS codemode. The only tools available inside codemode are `sql_exec`, `warehouse_schema` and the Node `read_source` tool.
+4. Python retains SQL validation, NBA calculations, source units, season encodings, dataset fetching and ingestion behavior. Direct HTTP data operations use explicit named MCP functions in `direct_data.py`. Their mutators are excluded from Pi's fixed tool list.
+5. The TypeScript host records new source rows and prior references, persists successful exchanges and emits the established SSE events. HTTP and the Node CLI consume the same analyst iterable.
 
-Current answers carry `verification: unassessed` and `answer_status: unassessed`; they do not pass through the typed verification runtime.
+Answers carry `verification: unassessed` and `answer_status: unassessed`. The active Pi path does not publish typed verified claims.
 
-## Runtime gate
+## Ownership
 
-`DIME_RUNTIME_V2` accepts `on`, `action_loop`, `shadow` and `off`. Unset or empty means `on`; any other value fails configuration.
+| TypeScript application host | Python data engine | Pi SDK |
+| --- | --- | --- |
+| HTTP validation, statuses, headers, files, CORS and SSE | SQL validation and execution | Model conversation |
+| Model selection, credentials and known SDK limits | NBA calculations and season/unit semantics | Tool selection and recovery |
+| SQLite conversations, projects and workspace tokens | DuckDB warehouse and existing state-table operations | Context compaction |
+| JSON sources and owner/thread lookup | Existing dataset fetching and ingestion | QuickJS codemode |
+| CLI and startup manifest | Explicit direct product data operations | |
 
-Only `on` and `action_loop` enable the chat, project, branch and run-source endpoints. `shadow` and `off` return 404 for those routes. Workspaces are mounted separately by `backend/entrypoint.py` and are not behind this flag.
+DuckDB chat/run history still uses the existing `shared.store` functions through named internal MCP operations. No SQLite or DuckDB format conversion is performed. The retained Python conversation, project and workspace modules support independent domain consumers and tests; they do not own the product entrypoint.
 
-## Ownership split
+## Configuration and persistence
 
-| Python host | Pi sidecar |
-| --- | --- |
-| HTTP and SSE | Model conversation |
-| Request validation and rate limits | Tool selection |
-| Model policy and credentials | Retry and recovery |
-| Owner/thread scoping | Context compaction |
-| Conversation, project and workspace persistence | Codemode execution |
-| Raw source storage | Final answer text |
-| Read-only warehouse tools | |
+`DIME_RUNTIME_V2` accepts `on`, `action_loop`, `off` and `shadow`. Unset or blank means `on`. Chat, projects, branches and run sources are available only in `on` and `action_loop`. Workspaces retain their separate owner-token rules.
 
-## Process boundary
+Model selection uses explicit process configuration. Reflection requires both `DIME_ENABLE_REFLECTION` and `REFLECTION_API_KEY` and is never selected automatically. Unsupported selections fail configuration; the host does not choose a fallback provider. Limits come from the pinned SDK catalogue, with Reflection's direct API metadata recorded explicitly. The adapter rejects Nvidia's unsupported request options.
 
-Credentials cross to the worker over stdin, never argv or logs. The worker uses an in-memory credential store and an explicit provider registration. Python starts one MCP process per worker with an explicit environment; provider credentials are not inherited.
+Defaults remain disk-backed under `backend/data`:
 
-Pi profile resources, extensions, skills, prompts, themes and context files are disabled. Built-in filesystem and shell tools are not exposed; codemode is the only active tool. This is not a network sandbox: provider transport requires outbound HTTP. `allowModelNetwork: false` stops model-catalogue network access, not provider requests.
+- `warehouse.duckdb` and `state.duckdb`, selected by `DIME_WAREHOUSE` and `DIME_STATE_DB`.
+- `v2-conversations.sqlite3`, `v2-projects.sqlite3` and `workspaces.sqlite3`, selected by their existing store environment variables.
+- `pi-sources` and `pi-private`, selected by `DIME_PI_SOURCES_DIR` and `DIME_PI_PRIVATE_DIR`.
 
-## Tool and source boundary
+Each successful exchange adds a user turn and an assistant turn with the same run ID. Follow-ups retain branch references to the previous sequence. Sources contain full MCP records, including failed domain results, units and provenance. A follow-up supplies metadata and opaque refs to the model; it does not automatically place raw rows in model context. Run-source retrieval requires the owner/thread association in SQLite. These identities are scoping values, not authentication.
 
-Tool results reach codemode as a native structured value:
+## Runtime boundary
 
-```text
-{ ref, tool, result, isError }
-```
+Provider credentials stay in the Node process. Python receives an explicit environment without provider keys and with numerical thread pools set to one. Pi profile resources, extensions, skills, prompt discovery, context files and built-in shell/filesystem tools are disabled. Provider HTTP remains available; this is not a network sandbox.
 
-`ref` is an opaque lookup id. `result` is the complete tool value, including rows, declared units, season semantics, provenance and domain failures. The full `{ref, callId, tool, response}` record stays in the worker map and the durable source artifact. A source ref is not a citation, an evidence id or proof that a claim is true.
+`backend/analyst/host.ts` is the server, manifest-generation and CLI entrypoint. Docker builds strict TypeScript before pruning development dependencies and starts `node analyst/dist/host.js`. Workspace ownership is in the copied TypeScript assets; startup does not import a Python workspace router. The startup manifest pins executable sources, compiled host modules, data-engine modules, typed argument assets, semantic baseline and warehouse identity.
 
-The host does not automatically inject prior rows into a follow-up. It supplies a catalogue of refs, columns, units, season semantics and provenance. The model must call `read_source` inside codemode to read a record, and a script may return chosen rows or values from that record.
+## Verification limits
 
-`GET /api/v2/runs/{run_id}/sources` returns the stored records only when the run belongs to the supplied owner and thread and the artifact identity matches.
+Local fixture proofs use actual Node HTTP and CLI, fake provider HTTP/SSE, real Pi/QuickJS, Python MCP and an owned synthetic DuckDB. Paired route fixtures compare old and new HTTP behavior with controlled data dependencies. Static packaging is checked without building an image or reading the production warehouse.
 
-## Seams and module depth
+The target is Node 22.19 or later, checked with TypeScript 5.9.3 and Node 22.19 declarations. Current local runtime evidence uses Node 24.13.1. A Node 22 runtime proof, full container execution, broad live-provider compatibility, concurrency and answer quality remain unproved.
 
-- `stream_product_session` is the producer seam shared by HTTP and CLI. Its interface is broad and keyword-only, so a caller must know many collaborators; that is a locality cost at the product seam.
-- The worker protocol is a narrow JSON-lines seam between Python and Pi.
-- The Python tool contract is a small interface over SQL validation, schema annotation and read-only warehouse policy. The provider and fixture adapters meet at the Pi seam.
-- Storage is split across DuckDB, SQLite and JSON artifacts. A run id links them, but there is no single transactional store.
-- The typed evidence and verification modules are outside the active Pi answer path. This document does not establish which retained modules can be deleted; that needs a caller inventory rooted in current product entry points.
-
-## Persistence
-
-- Warehouse: `backend/data/warehouse.duckdb`, selectable with `DIME_WAREHOUSE`; state: `backend/data/state.duckdb`, selectable with `DIME_STATE_DB`.
-- Conversation ledger: `backend/data/v2-conversations.sqlite3`.
-- Projects: `backend/data/v2-projects.sqlite3`.
-- Workspaces: `backend/data/workspaces.sqlite3`, selectable with `DIME_WORKSPACE_STORE`.
-- Raw source artifacts: `backend/data/pi-sources/`.
-- Private worker home and temp: `backend/data/pi-private/`.
-
-An exchange persists a user turn and an assistant turn that share a run id. Chat, run history, conversation references and source artifacts are separate records; there is no unified atomic Run aggregate. Projects are persisted goal records and are not executed by Pi.
-
-Owner and thread values scope access; they are not authentication. Anonymous requests use request history and do not persist a conversation.
-
-## Retained verification domain
-
-`backend/v2/contracts.py`, `domain/evidence.py`, `domain/calculations.py` and the runtime modules `models.py`, `interfaces.py` and `verifier.py` define typed evidence envelopes, calculation checks, immutable verifier views and mechanical claim verification.
-
-They are retained domain capability, not the active Pi orchestration path. Current product answers contain no verified claims.
-
-- A source record or source ref is not an `EvidenceEnvelope`.
-- An `EvidenceEnvelope` is not a verified claim.
-- A verified claim requires an admitted binding and a verification result that the current product path does not produce.
-
-## Known gaps
-
-- `backend/Dockerfile` copies `v2`, `shared`, scripts and data but not `workspaces`, while `backend/entrypoint.py` imports `workspaces.routes`. A built image would fail at container startup during import. No Docker image was built or run for this document.
-- One bounded Beam diagnostic completed before the latest structured-result change. Its sources supported per-game statistics, but exact totals were unresolved and its answer was unassessed. The structured-result change has fixture proof only. Broader live-provider compatibility, container behavior, concurrency and answer quality remain unproved.
-- The runtime consumes the published `@earendil-works/pi-coding-agent` 1.4.0 package. The Dime Pi fork exists for future patches but is not the artifact this runtime builds.
-
-## Data
-
-The warehouse is DuckDB, built from the `dime-data-20260930` pack and exposed read-only. `warehouse_schema` reports declared columns, units and season encodings so the model can write valid SQL without guessing.
-
-## Source map
-
-- [HTTP and SSE routes](backend/v2/api/routes.py)
-- [Product session producer](backend/analyst/product_session.py)
-- [Pi worker](backend/analyst/worker.mjs)
-- [Python MCP tools](backend/analyst/python_tools.py)
-- [MCP bridge and structured results](backend/analyst/python-tools.mjs)
-- [Source artifact lookup](backend/analyst/sources.py)
-- [Conversation ledger](backend/v2/conversations.py)
-- [Typed contracts](backend/v2/contracts.py)
-- [Runtime decision](docs/adr/0001-pi-analyst-runtime.md)
-- [Analyst module notes](backend/analyst/README.md)
+The retained typed evidence, calculation and verification domain under `backend/v2` is independent of the active Pi answer path. A source ref is not an evidence envelope or a verified claim.

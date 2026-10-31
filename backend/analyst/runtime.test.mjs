@@ -4,9 +4,9 @@ import { mkdir, writeFile, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { ModelRuntime } from "@earendil-works/pi-coding-agent";
 import { createAssistantMessageEventStream } from "@earendil-works/pi-ai";
-import { createAnalystSession } from "./runtime.mjs";
-import { priorSourceTool } from "./worker.mjs";
-import { connectPythonTools } from "./python-tools.mjs";
+import { createAnalystSession } from "./dist/runtime.js";
+import { priorSourceTool } from "./dist/pi-context.js";
+import { connectPythonTools } from "./dist/python-tools.js";
 
 const root = process.env.DIME_PI_TEST_ROOT;
 assert(root, "DIME_PI_TEST_ROOT must identify an isolated proof directory");

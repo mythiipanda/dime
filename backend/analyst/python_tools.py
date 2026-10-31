@@ -1,10 +1,12 @@
-"""Explicit read-only Dime tools served over MCP stdio. No profile discovery."""
+"""Named Dime data operations over MCP stdio. Pi receives a fixed read-only view."""
 
 import asyncio
 import json
 import os
 from pathlib import Path
 import sys
+from datetime import date, datetime
+from decimal import Decimal
 
 # Resolve source imports independently of the private working directory.
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -30,11 +32,22 @@ def catalogue():
     return {item.name: item for item in (sql_exec, warehouse_schema)}
 
 
+def wire_default(value):
+    # Dataset rows previously crossed FastAPI's JSON encoder. Preserve those
+    # date and numeric representations at the explicit MCP boundary.
+    if isinstance(value, (date, datetime)):
+        return value.isoformat()
+    if isinstance(value, Decimal):
+        return int(value) if value.as_tuple().exponent >= 0 else float(value)
+    raise TypeError("Data result is not JSON serializable")
+
+
 async def main():
     warehouse = Path(os.environ["DIME_WAREHOUSE"])
     if not warehouse.is_absolute() or not warehouse.is_file():
         raise ValueError("DIME_WAREHOUSE must be an explicit existing absolute file")
-    tools = catalogue()
+    from analyst.direct_data import internal_catalogue
+    tools = {**catalogue(), **internal_catalogue()}
     async def list_tools(_ctx, _params):
         return ListToolsResult(tools=[Tool(name=item.name, description=item.description,
                      inputSchema=item.args_schema.model_json_schema())
@@ -46,12 +59,12 @@ async def main():
             # MCP responsive while independent read-only calls execute.
             result = await asyncio.to_thread(
                 lambda: asyncio.run(tools[params.name].ainvoke(params.arguments or {})))
-            return CallToolResult(content=[TextContent(type="text", text=json.dumps(result, allow_nan=False))])
+            return CallToolResult(content=[TextContent(type="text", text=json.dumps(result, allow_nan=False, default=wire_default))])
         except Exception as error:
             return CallToolResult(isError=True, content=[TextContent(
                 type="text", text=f"{type(error).__name__}: {error}")])
 
-    server = Server("dime-readonly", on_list_tools=list_tools, on_call_tool=call_tool)
+    server = Server("dime-data-engine", on_list_tools=list_tools, on_call_tool=call_tool)
     async with stdio_server() as (read, write):
         await server.run(read, write, server.create_initialization_options())
 

@@ -84,3 +84,5 @@ dime-arch/
 .t3-context/
 /backend/hillclimb/dbg_*/
 /backend/hillclimb/*.bak
+
+/backend/analyst/dist/
