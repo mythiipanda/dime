@@ -124,24 +124,6 @@ def test_branch_names_its_parent_turn(tmp_path) -> None:
     with pytest.raises(ValueError, match="parent"):
         store.create_branch("o", "t", 999)
 
-def test_branch_route_validates_boundaries(tmp_path, monkeypatch) -> None:
-    from fastapi import FastAPI
-    from fastapi.testclient import TestClient
-    from v2.api import routes
-    from v2.conversations import ConversationStore
-
-    monkeypatch.setattr(routes, "_CONVERSATIONS",
-                        ConversationStore(tmp_path / "conversations.sqlite3"))
-    app = FastAPI()
-    app.include_router(routes.router, prefix="/api")
-    client = TestClient(app)
-    response = client.post("/api/v2/branches", json={})
-    assert response.status_code == 422
-    response = client.post(
-        "/api/v2/branches",
-        json={"thread": " ", "client": "o", "parent_sequence": 1},
-    )
-    assert response.status_code == 422
 
 def test_branch_sse_reports_counts_without_internal_ids() -> None:
     import json
@@ -151,43 +133,3 @@ def test_branch_sse_reports_counts_without_internal_ids() -> None:
     assert chunk.startswith("event: branch_reuse\n")
     payload = json.loads(chunk.split("data: ", 1)[1].strip())
     assert payload == {"parent_sequence": 3, "reused_count": 2}
-
-def test_branch_endpoints_create_list_and_get(tmp_path, monkeypatch) -> None:
-    from fastapi import FastAPI
-    from fastapi.testclient import TestClient
-    from v2.api import routes
-    from v2.conversations import ConversationStore
-
-    monkeypatch.setattr(routes, "_CONVERSATIONS",
-                        ConversationStore(tmp_path / "conversations.sqlite3"))
-    monkeypatch.setattr(routes, "_projects_enabled", lambda: True)
-    app = FastAPI()
-    app.include_router(routes.router, prefix="/api")
-    client = TestClient(app)
-    store = routes._CONVERSATIONS
-    store.append_exchange("o", "t", "first", "answer",
-                          run_id="run-1", turn_id="turn-1")
-    created = client.post("/api/v2/branches",
-                          json={"thread": "t", "client": "o",
-                                "parent_sequence": 1})
-    assert created.status_code == 201
-    branch_id = created.json()["branch_id"]
-    assert created.json()["parent_turn_id"] == "turn-1"
-    listed = client.get("/api/v2/branches",
-                        params={"thread": "t", "client": "o"})
-    assert [item["branch_id"] for item in listed.json()["branches"]] == [branch_id]
-    fetched = client.get(f"/api/v2/branches/{branch_id}",
-                         params={"thread": "t", "client": "o"})
-    assert fetched.json()["branch"]["branch_id"] == branch_id
-    assert fetched.json()["evidence_count"] == 0
-    conflict = client.post("/api/v2/branches",
-                           json={"thread": "t", "client": "o",
-                                 "parent_sequence": 1, "branch_id": branch_id})
-    assert conflict.status_code == 409
-    missing = client.post("/api/v2/branches",
-                          json={"thread": "t", "client": "o",
-                                "parent_sequence": 99})
-    assert missing.status_code == 400
-    unknown = client.get("/api/v2/branches/missing",
-                         params={"thread": "t", "client": "o"})
-    assert unknown.status_code == 404

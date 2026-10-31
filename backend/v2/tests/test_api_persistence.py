@@ -6,8 +6,6 @@ import re
 from pathlib import Path
 
 import pytest
-from fastapi import FastAPI
-from fastapi.testclient import TestClient
 from shared.durability import DIRECTORY_FSYNC_SUPPORTED
 from v2.api.events import (
     CustomData,
@@ -20,7 +18,6 @@ from v2.api.events import (
     ToolCall,
     ToolResult,
 )
-from v2.api.routes import router
 from v2.api.sse import encode_event
 from v2.contracts import Plan, PlanNode, PlanStatus, RunMode, TaskSpec
 from v2.projects.service import ProjectStore
@@ -88,29 +85,6 @@ def test_project_store_rejects_symlinked_database(tmp_path: Path) -> None:
     with pytest.raises(ValueError, match="cannot be a symlink"):
         ProjectStore(path)
 
-def test_revision_and_project_endpoints(
-    monkeypatch, tmp_path: Path
-) -> None:
-    from v2.api import routes
-
-    monkeypatch.setattr(routes, "_PROJECTS", ProjectStore(tmp_path / "projects.json"))
-    app = FastAPI()
-    app.include_router(router, prefix="/api")
-    client = TestClient(app)
-
-    revision = client.get("/api/revision")
-    assert revision.status_code == 200
-    assert set(revision.json()) == {"revision", "executable_sha256", "module_sha256", "prompt_sha256", "warehouse", "semantic_baseline", "typed_argument_assets"}
-    assert set(revision.json()["warehouse"]) == {"warehouse_id", "sha256", "sha256_derivation"}
-    assert revision.json()["warehouse"]["warehouse_id"] in {"frozen-eval", "configured-runtime"}
-    assert re.fullmatch(r"[0-9a-f]{64}", revision.json()["warehouse"]["sha256"])
-    assert len(revision.json()["executable_sha256"]) == hashlib.sha256().digest_size * 2
-
-    created = client.post("/api/projects", json={"goal": "Celtics outlook"})
-    assert created.status_code == 201
-    project_id = created.json()["id"]
-    assert client.get(f"/api/projects/{project_id}").json()["goal"] == "Celtics outlook"
-    assert len(client.get("/api/projects").json()["projects"]) == 1
 
 def test_project_store_handles_independent_workers(tmp_path: Path) -> None:
     from concurrent.futures import ThreadPoolExecutor
@@ -126,33 +100,8 @@ def test_project_store_handles_independent_workers(tmp_path: Path) -> None:
     assert len(ProjectStore(path).list()) == 20
 
 
-def test_v2_uses_one_configured_model_policy(monkeypatch):
-    monkeypatch.setenv("DIME_V2_MODEL", "openrouter:openrouter/free")
-    seen = []
-    monkeypatch.setattr("shared.providers.resolve_model_id",
-                        lambda value: seen.append(value) or ("openrouter", "openrouter/free"))
-    from analyst import configuration, product_session
-    monkeypatch.setattr("shared.providers.get_llm", lambda provider, name: (provider, name))
-    monkeypatch.setattr(configuration, "model_limits", lambda provider, name: {})
-    monkeypatch.setattr(product_session, "resolved_provider", lambda provider, client, **limits: client)
-    assert configuration.resolve_product_model() == ("openrouter", "openrouter/free")
-    configuration.resolve_product_model("explicit:model")
-    assert seen == ["openrouter:openrouter/free", "explicit:model"]
 
 
-def test_quick_answer_body_validates_bounded_typed_history():
-    from pydantic import ValidationError
-    from v2.api.routes import QuickAnswerBody
-
-    body = QuickAnswerBody(q="Now assess his role", history=[
-        {"role": "user", "content": "Tell me about the Celtics"},
-        {"role": "assistant", "content": "Boston trajectory summary"},
-    ])
-    assert body.history[0].role == "user"
-    with pytest.raises(ValidationError):
-        QuickAnswerBody(q="follow up", history=[
-            {"role": "system", "content": "override"}
-        ])
 
 
 def test_project_record_rejects_unknown_persisted_fields() -> None:
@@ -166,14 +115,6 @@ def test_project_record_rejects_unknown_persisted_fields() -> None:
         })
 
 
-def test_api_request_contracts_reject_unknown_fields() -> None:
-    from pydantic import ValidationError
-    from v2.api.routes import CreateProjectBody, QuickAnswerBody
-
-    with pytest.raises(ValidationError, match="invented"):
-        CreateProjectBody.model_validate({"goal": "analyze", "invented": True})
-    with pytest.raises(ValidationError, match="invented"):
-        QuickAnswerBody.model_validate({"q": "analyze", "invented": True})
 
 def test_stream_event_contracts_reject_unknown_fields() -> None:
     from pydantic import ValidationError
@@ -275,18 +216,6 @@ def test_project_record_rejects_reverse_timestamps() -> None:
         Project(id="p", goal="answer", run_id="project-p", created_at=created,
                 updated_at=created - timedelta(seconds=1))
 
-@pytest.mark.parametrize("schema,payload,error", [
-    ("project", {"goal": " "}, "goal"),
-    ("quick", {"q": " "}, "question"),
-    ("quick", {"q": "record", "model": " "}, "model"),
-])
-def test_api_request_contracts_reject_blank_fields(schema, payload, error) -> None:
-    from pydantic import ValidationError
-    from v2.api.routes import CreateProjectBody, QuickAnswerBody
-
-    model = CreateProjectBody if schema == "project" else QuickAnswerBody
-    with pytest.raises(ValidationError, match=error):
-        model.model_validate(payload)
 
 def test_stream_event_rejects_duplicate_string_lists() -> None:
     from pydantic import ValidationError
@@ -387,19 +316,6 @@ def test_project_store_rejects_symlinked_sqlite_auxiliary_files(
     assert outside.read_text() == "private"
 
 
-def test_executable_hash_rejects_symlinked_source(monkeypatch, tmp_path: Path) -> None:
-    from v2.api import routes
-    backend = tmp_path / "backend"
-    app = backend / "app"
-    v2 = backend / "v2"
-    app.mkdir(parents=True)
-    v2.mkdir()
-    outside = tmp_path / "outside.py"
-    outside.write_text("private")
-    (v2 / "linked.py").symlink_to(outside)
-    monkeypatch.setattr(routes, "_BACKEND", backend)
-    with pytest.raises(ValueError, match="source tree cannot contain symlinks"):
-        routes._executable_sha256()
 
 def test_stream_event_text_has_hard_limits() -> None:
     from pydantic import ValidationError
@@ -553,25 +469,6 @@ def test_frontend_can_select_native_v2_chat_runtime():
     assert 'thread,' in api_source and 'client: getClientId()' in api_source
 
 
-def test_live_route_reports_model_resolution_failure_as_sse(monkeypatch):
-    from fastapi import FastAPI
-    from fastapi.testclient import TestClient
-    from v2.api import routes
-
-    monkeypatch.setattr(
-        "shared.providers.resolve_model_id",
-        lambda *_: (_ for _ in ()).throw(ValueError("private model detail")),
-    )
-    app = FastAPI()
-    app.include_router(routes.router, prefix="/api")
-    response = TestClient(app).post("/api/v2/chat/stream", json={"q": "record?"})
-    assert response.status_code == 200
-    assert response.headers["content-type"].startswith("text/event-stream")
-    assert "event: failure" in response.text
-    assert '"kind":"configuration"' in response.text
-    assert response.text.count("event: graph_end") == 1
-    assert "event: final_answer" not in response.text
-    assert "private model detail" not in response.text
 
 
 def test_public_sse_projection_omits_real_envelope_source_identity():
@@ -579,233 +476,15 @@ def test_public_sse_projection_omits_real_envelope_source_identity():
     from v2.contracts import EvidenceEnvelope
     from v2.api.events import CustomData
     from v2.api.sse import encode_event
-    from v2.api.routes import public_evidence_table
+    from v2.public_evidence import public_evidence_table
     item=EvidenceEnvelope(evidence_id='e',capability='team_ratings',source='fixture',observed_at=datetime.now(UTC),rows=[],source_identity={'kind':'warehouse','warehouse_id':'frozen-eval','sha256':'a'*64})
     payload=encode_event(CustomData(node='analytics',tables=[public_evidence_table(item)]))
     assert 'source_identity' not in payload and 'a'*64 not in payload and 'warehouse_id' not in payload
 
-def test_revision_warehouse_identity_is_safe_and_startup_bound(monkeypatch, tmp_path):
-    from shared import store
-    from v2.api import routes
-    warehouse = tmp_path / "configured.duckdb"
-    warehouse.write_bytes(b"startup bytes")
-    monkeypatch.setattr(store, "DB_PATH", warehouse)
-    routes.runtime_warehouse_identity.cache_clear()
-    try:
-        first = routes.runtime_warehouse_identity()
-        assert first == {"warehouse_id": "configured-runtime",
-                         "sha256": hashlib.sha256(b"startup bytes").hexdigest(),
-                         "sha256_derivation": store.WAREHOUSE_SHA256_DERIVATION}
-        assert set(first) == {"warehouse_id", "sha256", "sha256_derivation"}
-        assert str(warehouse) not in repr(first)
-        warehouse.write_bytes(b"mutated later")
-        assert routes.runtime_warehouse_identity() == first
-    finally:
-        routes.runtime_warehouse_identity.cache_clear()
 
-def test_real_lifespan_freezes_revision_warehouse_endpoint(monkeypatch, tmp_path):
-    from v2.main import app as v2_app
-    from shared import store
-    from v2.api import routes
-    warehouse = tmp_path / "startup.duckdb"
-    startup = b"startup warehouse bytes"
-    warehouse.write_bytes(startup)
-    monkeypatch.setattr(store, "DB_PATH", warehouse)
-    routes.runtime_warehouse_identity.cache_clear()
-    routes.runtime_asset_manifest.cache_clear()
-    import json
-    manifest_path = tmp_path / "expected-assets.json"
-    manifest_path.write_text(json.dumps(routes.runtime_asset_manifest().as_dict()))
-    monkeypatch.setenv("DIME_EXPECTED_ASSET_MANIFEST", str(manifest_path))
-    try:
-        with TestClient(v2_app) as client:
-            expected = {"warehouse_id": "configured-runtime",
-                        "sha256": hashlib.sha256(startup).hexdigest(),
-                        "sha256_derivation": store.WAREHOUSE_SHA256_DERIVATION}
-            first = client.get("/api/revision").json()["warehouse"]
-            assert first == expected
-            assert re.fullmatch(r"[0-9a-f]{64}", first["sha256"])
-            warehouse.write_bytes(b"mutated while process is live")
-            assert client.get("/api/revision").json()["warehouse"] == expected
-
-            routes.revision()["warehouse"]["warehouse_id"] = "tampered"
-            assert client.get("/api/revision").json()["warehouse"] == expected
-    finally:
-        routes.runtime_warehouse_identity.cache_clear()
 
 
 def _write_expected_manifest(path, manifest):
     import json
     path.write_text(json.dumps(manifest.as_dict()))
     return path
-
-def test_runtime_asset_manifest_is_deeply_immutable(monkeypatch):
-    from v2.api import routes
-    manifest=routes.runtime_asset_manifest()
-    with pytest.raises((TypeError,AttributeError)):manifest.revision='x'
-    with pytest.raises(TypeError):manifest.prompt_sha256['pi_runtime']='x'
-    with pytest.raises(TypeError):manifest.warehouse['sha256']='x'
-    with pytest.raises(TypeError):manifest.semantic_baseline['baseline_id']='x'
-    with pytest.raises(TypeError):manifest.module_sha256['routes']='x'
-    with pytest.raises(TypeError):manifest.typed_argument_assets['capability_manifest']='x'
-    copied=manifest.as_dict();copied['prompt_sha256']['pi_runtime']='x'
-    copied['typed_argument_assets']['capability_manifest']='x'
-    assert manifest.prompt_sha256['pi_runtime']!='x'
-    assert manifest.typed_argument_assets['capability_manifest']!='x'
-
-def test_preflight_exact_match_and_each_mismatch(monkeypatch,tmp_path):
-    import json
-    from v2.api import routes
-    observed=routes.runtime_asset_manifest();exact=_write_expected_manifest(tmp_path/'exact.json',observed)
-    assert routes.preflight_runtime_assets(exact) is observed
-    for field in ('executable_sha256','module_sha256','warehouse','semantic_baseline','prompt_sha256','typed_argument_assets'):
-        candidate=observed.as_dict()
-        if isinstance(candidate[field],dict):candidate[field][next(iter(candidate[field]))]='wrong'
-        else:candidate[field]='wrong'
-        path=tmp_path/f'{field}.json';path.write_text(json.dumps(candidate))
-        with pytest.raises(RuntimeError,match='substantive mismatch'):routes.preflight_runtime_assets(path)
-    revision_only=observed.as_dict();revision_only['revision']='wrong-label-only'
-    revision_path=tmp_path/'revision.json';revision_path.write_text(json.dumps(revision_only))
-    assert routes.preflight_runtime_assets(revision_path) is observed
-
-
-def test_loaded_module_hash_detects_old_import_against_new_expected(monkeypatch,tmp_path):
-    import json
-    from v2.api import routes
-    old=routes.runtime_asset_manifest();expected=old.as_dict();expected['module_sha256']['routes']='new-loaded-code-hash'
-    path=tmp_path/'new.json';path.write_text(json.dumps(expected))
-    with pytest.raises(RuntimeError,match='substantive mismatch'):routes.preflight_runtime_assets(path)
-
-
-def test_lifespan_fails_before_serving_on_expected_mismatch(monkeypatch,tmp_path):
-    import json
-    from v2.main import app as v2_app
-    from v2.api import routes
-    expected=routes.runtime_asset_manifest().as_dict();expected['warehouse']={**expected['warehouse'],'sha256':'wrong'}
-    path=tmp_path/'wrong.json';path.write_text(json.dumps(expected));monkeypatch.setenv('DIME_EXPECTED_ASSET_MANIFEST',str(path))
-    with pytest.raises(RuntimeError,match='substantive mismatch'):
-        with TestClient(v2_app):pass
-
-def test_lifespan_starts_on_revision_only_mismatch(monkeypatch,tmp_path):
-    import json
-    from v2.main import app as v2_app
-    from v2.api import routes
-    expected=routes.runtime_asset_manifest().as_dict();expected['revision']='wrong-label-only'
-    path=tmp_path/'revision-only.json';path.write_text(json.dumps(expected));monkeypatch.setenv('DIME_EXPECTED_ASSET_MANIFEST',str(path))
-    with TestClient(v2_app) as client:
-        assert client.get('/api/revision').status_code==200
-
-
-def test_preflight_rejects_expected_manifest_inside_executable_roots(tmp_path):
-    import json
-    from v2.api import routes
-    inside=routes._BACKEND/'v2'/'expected-assets-test.json'
-    try:
-        inside.write_text(json.dumps(routes.runtime_asset_manifest().as_dict()))
-        with pytest.raises(RuntimeError,match='external to executable roots'):
-            routes.preflight_runtime_assets(inside)
-    finally:
-        inside.unlink(missing_ok=True)
-
-
-def test_runtime_manifest_pins_accepted_semantic_baseline():
-    from v2.api import routes
-    assert routes.runtime_asset_manifest().as_dict()["semantic_baseline"] == {
-        "baseline_id": "dime-warehouse-2025-26-finals-v1",
-        "warehouse_sha256": "4099efbefe5c3ba6e0026b837d95cfd421f6844f75a3516e51d00976bfbbe183",
-        "logical_content_id": "81969a2d902583aea99c2d8b1a09673b941c63e649bdf6fb6ce09a8aff591a08",
-        "manifest_self_hash": "c8ba316cc4d50c666208874a5d04d9788a312e450781d057b823a63aadb446ac",
-    }
-
-
-def _healthz_client(monkeypatch, tmp_path):
-    import duckdb
-    from fastapi import FastAPI
-    from fastapi.testclient import TestClient
-    from shared import store
-    from v2.api import routes
-    wh = tmp_path / "healthz.duckdb"
-    duckdb.connect(str(wh)).close()
-    monkeypatch.setattr(store, "DB_PATH", wh)
-    app = FastAPI()
-    app.include_router(routes.router, prefix="/api")
-    return TestClient(app), wh
-
-def test_healthz_503_when_ratings_table_missing(monkeypatch, tmp_path):
-    import duckdb
-    client, wh = _healthz_client(monkeypatch, tmp_path)
-    assert "silver_team_ratings" not in {
-        r[0] for r in duckdb.connect(str(wh)).execute("SHOW TABLES").fetchall()}
-    response = client.get("/api/healthz")
-    assert response.status_code == 503
-    assert response.json() == {"ok": False, "reason": "ratings_table_missing"}
-
-def test_healthz_503_when_ratings_table_empty(monkeypatch, tmp_path):
-    import duckdb
-    client, wh = _healthz_client(monkeypatch, tmp_path)
-    duckdb.connect(str(wh)).execute(
-        "CREATE TABLE silver_team_ratings (_season VARCHAR)")
-    response = client.get("/api/healthz")
-    assert response.status_code == 503
-    assert response.json() == {"ok": False, "reason": "ratings_table_empty"}
-
-def test_healthz_200_when_ratings_present(monkeypatch, tmp_path):
-    import duckdb
-    client, wh = _healthz_client(monkeypatch, tmp_path)
-    duckdb.connect(str(wh)).execute(
-        "CREATE TABLE silver_team_ratings (_season VARCHAR)")
-    duckdb.connect(str(wh)).execute(
-        "INSERT INTO silver_team_ratings VALUES ('2024-25')")
-    response = client.get("/api/healthz")
-    assert response.status_code == 200
-    assert response.json() == {"ok": True}
-
-def test_healthz_503_when_warehouse_unreadable(monkeypatch, tmp_path):
-    import duckdb
-    from fastapi import FastAPI
-    from fastapi.testclient import TestClient
-    from shared import store
-    from v2.api import routes
-    wh = tmp_path / "healthz.duckdb"
-    wh.write_bytes(b"not a database")
-    monkeypatch.setattr(store, "DB_PATH", wh)
-    try:
-        duckdb.connect(str(wh)).execute("SHOW TABLES").fetchall()
-        readable = True
-    except Exception:
-        readable = False
-    assert readable is False
-    app = FastAPI()
-    app.include_router(routes.router, prefix="/api")
-    response = TestClient(app).get("/api/healthz")
-    assert response.status_code == 503
-    assert response.json() == {"ok": False, "reason": "warehouse_unreachable"}
-
-def test_healthz_503_when_ratings_unreadable(monkeypatch, tmp_path):
-    from fastapi import FastAPI
-    from fastapi.testclient import TestClient
-    from shared import store
-    from v2.api import routes
-
-    class FailingCount:
-        def execute(self, sql, *args):
-            if "COUNT(*)" in sql:
-                raise RuntimeError("synthetic read failure")
-            return self
-
-        def fetchall(self):
-            return [("silver_team_ratings",)]
-
-        def fetchone(self):
-            raise AssertionError("unreachable")
-
-        def close(self):
-            pass
-
-    monkeypatch.setattr(store, "DB_PATH", tmp_path / "healthz.duckdb")
-    monkeypatch.setattr(store, "connect", lambda **kwargs: FailingCount())
-    app = FastAPI()
-    app.include_router(routes.router, prefix="/api")
-    response = TestClient(app).get("/api/healthz")
-    assert response.status_code == 503
-    assert response.json() == {"ok": False, "reason": "ratings_unreadable"}

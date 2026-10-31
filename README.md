@@ -46,7 +46,7 @@ The chat route now uses the Pi analyst session. Python exposes read-only SQL and
 
 ## Quickstart
 
-Backend (Python 3.12):
+Backend (Node 22.19+ and Python 3.12):
 
 ```bash
 # warehouse: fetch the data pack release (verifies checksum, unzips to backend/data/warehouse.duckdb)
@@ -55,14 +55,18 @@ cd backend
 uv venv --python 3.12
 uv pip install -r requirements.txt
 cp .env.example .env   # add your LLM keys for chat; the server boots without them
-python scripts/generate_asset_manifest.py manifest/expected_asset_manifest.json
+cd analyst
+npm ci --ignore-scripts
+npm run build
+cd ..
+node --env-file=.env analyst/dist/host.js manifest manifest/expected_asset_manifest.json
 DIME_EXPECTED_ASSET_MANIFEST=$PWD/manifest/expected_asset_manifest.json \
-  uvicorn v2.main:app --port 8010
+  PORT=8010 node --env-file=.env analyst/dist/host.js
 ```
 
 The manifest step is required. Without
 `DIME_EXPECTED_ASSET_MANIFEST`, the server exits at startup
-with `RuntimeError: DIME_EXPECTED_ASSET_MANIFEST is required`.
+with a startup configuration failure.
 
 Frontend:
 
@@ -80,7 +84,7 @@ four factors this season?"
 ```
 frontend/   Next.js 16, React 19, Tailwind 4, Recharts.
             Streams tokens and live tool activity over SSE; dark and light themes.
-backend/    FastAPI host with read-only warehouse tools over a local
+backend/    TypeScript host with a Python data engine over a local
             DuckDB warehouse.
 infra/      Azure Container Apps, scale-to-zero.
 ```

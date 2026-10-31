@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import asyncio
 import json
 import math
 from collections.abc import AsyncIterable, AsyncIterator
@@ -101,41 +100,3 @@ def encode_replay_verification(report) -> str:
     payload = _bounded_public_value(report.model_dump(
         mode="json", exclude_none=True))
     return encode_raw("replay_verification", payload)
-
-async def with_heartbeat(
-    inner: AsyncIterator[str], interval_s: float = 15.0
-) -> AsyncIterator[str]:
-    queue: asyncio.Queue[str | None] = asyncio.Queue(maxsize=64)
-
-    async def drain() -> None:
-        try:
-            async for chunk in inner:
-                await queue.put(chunk)
-        except asyncio.CancelledError:
-            raise
-        except BaseException:
-            await queue.put(None)
-            raise
-        else:
-            await queue.put(None)
-
-    task = asyncio.create_task(drain())
-    try:
-        while True:
-            try:
-                item = await asyncio.wait_for(queue.get(), timeout=interval_s)
-            except asyncio.TimeoutError:
-                yield encode_raw("ping", {"ok": True})
-                continue
-            if item is None:
-                await task
-                return
-            yield item
-    finally:
-        # Starlette cancels the response scope on disconnect. Await the owner even
-        # inside that cancelled scope so its worker cleanup finishes before return.
-        import anyio
-        with anyio.CancelScope(shield=True):
-            if not task.done():
-                task.cancel()
-            await asyncio.gather(task, return_exceptions=True)

@@ -16,13 +16,6 @@ SEASON = "2023-24"
 AS_OF = date(2026, 9, 8)
 
 
-@pytest.fixture(autouse=True)
-def _open_chat_budget():
-    from v2.api import routes
-
-    routes._CHAT_HITS.clear()
-    yield
-    routes._CHAT_HITS.clear()
 
 def _flat_envelope():
     from v2.contracts import EntityRef, EvidenceEnvelope

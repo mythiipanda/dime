@@ -56,13 +56,6 @@ def real_warehouse(monkeypatch):
     _core.last_completed_season_cache_clear()
     coverage.coverage_cache_clear()
 
-@pytest.fixture(autouse=True)
-def _open_chat_budget():
-    from v2.api import routes
-
-    routes._CHAT_HITS.clear()
-    yield
-    routes._CHAT_HITS.clear()
 
 
 def test_the_capability_declares_units_for_every_numeric_output(

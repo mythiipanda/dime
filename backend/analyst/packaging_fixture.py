@@ -8,14 +8,26 @@ module = Path(__file__).resolve().parent
 image = (module.parent / "Dockerfile").read_text()
 packaging, runtime = image.split("FROM python:3.11-slim-bookworm AS runtime", 1)
 assert "FROM node:22.19.0-bookworm-slim AS analyst-deps" in packaging
-assert "npm ci --omit=dev --ignore-scripts" in packaging
+assert "npm ci --ignore-scripts" in packaging
+assert "npm run build" in packaging
+assert "npm prune --omit=dev --ignore-scripts" in packaging
 assert "analyst/package-lock.json" in packaging
-assert "COPY analyst/*.mjs analyst/*.py ./" in packaging
+assert "COPY analyst/*.py analyst/*.ts analyst/tsconfig.json ./" in packaging
 assert "warehouse" not in packaging
 assert "COPY --from=analyst-deps /usr/local/bin/node /usr/local/bin/node" in runtime
 assert "COPY --from=analyst-deps /analyst /srv/analyst" in runtime
 lock = json.loads((module / "package-lock.json").read_text())
 assert lock["packages"]["node_modules/@earendil-works/pi-coding-agent"]["version"] == "1.4.0"
 subprocess.run([shutil.which("node"), "--input-type=module", "-e",
-                "await import(" + json.dumps((module / "runtime.mjs").as_uri()) + ")"], check=True)
+                "await import(" + json.dumps((module / "dist/runtime.js").as_uri()) + ")"], check=True)
 print("Static Node image/assets/lock boundary and local pinned SDK import passed; no image built")
+
+assert 'CMD ["node", "analyst/dist/host.js"]' in runtime
+assert "entrypoint:app" not in runtime
+assert "RUN node analyst/dist/host.js manifest" in runtime
+assert "v2/schema_snapshots" not in runtime or "COPY v2 ./v2" in runtime
+assert (module / "dist/catalog-stores.js").is_file()
+
+assert "COPY analyst/http-assets ./http-assets" in packaging
+for name in ("openapi.json","docs.html","redoc.html","oauth2-redirect.html"):
+    assert (module / "http-assets" / name).is_file()

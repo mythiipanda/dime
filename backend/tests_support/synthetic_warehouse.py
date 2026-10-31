@@ -112,10 +112,7 @@ def build_warehouse(path):
 
 def clear_warehouse_caches():
     from shared import store
-    from v2.api import routes
     store.warehouse_identity_cache_clear()
-    routes.runtime_warehouse_identity.cache_clear()
-    routes.runtime_asset_manifest.cache_clear()
 
 
 @pytest.fixture(scope="session", autouse=True)

@@ -7,19 +7,3 @@ def test_conversation_store_scopes_history_by_owner_and_bounds_context(tmp_path)
     assert [turn.content for turn in store.read("browser-a", "thread")] == [
         "q2", "a2", "q3", "a3", "q4", "a4", "q5", "a5"]
     assert store.read("browser-b", "thread") == []
-
-def test_quick_answer_requires_complete_nonblank_conversation_identity():
-    import pytest
-    from pydantic import ValidationError
-    from v2.api.routes import QuickAnswerBody
-
-    for payload in (
-        {"q": "question", "thread": "thread"},
-        {"q": "question", "thread": " ", "client": "browser"},
-    ):
-        with pytest.raises(ValidationError):
-            QuickAnswerBody.model_validate(payload)
-
-    body = QuickAnswerBody.model_validate(
-        {"q": "question", "thread": None, "client": "browser"})
-    assert body.client == "browser"
