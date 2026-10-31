@@ -1,7 +1,7 @@
 # Chat API contract & corpus schema (acceptance, step 1)
 
-This file is the contract that the acceptance runner (step 2+) codes against. Every
-claim below was verified against the source in this repository.
+This guide describes the acceptance runner's chat contract. See the current
+[architecture](../ARCHITECTURE.md) for the Pi request path and verification limits.
 
 ## 1.1 Endpoint inventory
 
@@ -14,12 +14,11 @@ claim below was verified against the source in this repository.
   not served.
 - **Server:** FastAPI. `backend/entrypoint.py` imports `v2.main:app`, so the ASGI target
   is `entrypoint:app` (`uvicorn entrypoint:app` from the `backend/` directory).
-- **Runtime mode gate:** `DIME_RUNTIME_V2` selects the mode and defaults to `off`
-  (`backend/shared/config.py`, `runtime_v2_mode()`; accepted values `off` | `on` | `shadow`).
-  The chat stream is served **only when the mode is `on`**: `quick_answer_stream` calls
-  `_require_projects()` first, which raises HTTP 404 `{"detail":"not found"}` unless
-  `runtime_v2_mode() == "on"`. `shadow` also 404s on this endpoint — shadow suppresses
-  publication of the success path, it does not open the route.
+- **Runtime mode gate:** `DIME_RUNTIME_V2` defaults to `on` when unset or empty
+  (`backend/shared/config.py`, `runtime_v2_mode()`; accepted values
+  `off` | `on` | `shadow` | `action_loop`). Chat is served for `on` and
+  `action_loop`; both names select the Pi producer. `_require_projects()` raises
+  HTTP 404 `{"detail":"not found"}` for `off` and `shadow`.
 - **Local start (live):** see [1.5](#15-how-to-start-the-backend-locally).
 - **Source of truth for the route:** `backend/v2/api/routes.py`.
 
@@ -140,15 +139,15 @@ Event types the runner MUST parse:
 - Install Python deps: `pip install -r backend/requirements.txt`
   (includes `fastapi`, `uvicorn[standard]`, `pydantic`, `pydantic-settings`,
   `pydantic-ai-slim[openai]`, `httpx`, `duckdb`, `polars`, `sqlglot`).
-- **Two required environment settings before uvicorn will even start:**
+- **Startup configuration:**
 
   1. `DIME_EXPECTED_ASSET_MANIFEST` — the FastAPI lifespan in `backend/v2/main.py` calls
      `preflight_runtime_assets()` with no argument, and that function raises
      `RuntimeError("DIME_EXPECTED_ASSET_MANIFEST is required")` when the variable is unset.
      Without it the app **crashes on startup**. The manifest file must live outside
      `backend/app` and `backend/v2`.
-  2. `DIME_RUNTIME_V2=on` — any other value (including the default `off` and `shadow`)
-     makes the chat stream return HTTP 404.
+  2. `DIME_RUNTIME_V2` is optional and defaults to `on`. Explicit `on` or
+     `action_loop` enables chat; `off` and `shadow` return HTTP 404.
 
 - Start:
 

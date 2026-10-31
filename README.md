@@ -15,7 +15,9 @@ Live demo: [dime-fawn.vercel.app](https://dime-fawn.vercel.app)
 
 ## Analyst runtime
 
-The chat route now uses the Pi analyst session. The current tool catalogue is read-only SQL and warehouse schema. Answers retain source rows, declared units and provenance with unassessed verification. Live provider compatibility and representative answer quality remain separate checks. See [the analyst module](backend/analyst/README.md) for packaging, fixture commands and migration work still required.
+See the [current architecture](ARCHITECTURE.md) and [domain glossary](GLOSSARY.md).
+
+The chat route now uses the Pi analyst session. Python exposes read-only SQL and warehouse schema; codemode can also read prior source records. Answers retain source rows, declared units and provenance with unassessed verification. One bounded live-provider run completed before the latest structured-result change; that change has fixture proof only, and broad provider, container, concurrency and answer-quality checks remain open. See [the analyst module](backend/analyst/README.md) for packaging and fixture commands.
 
 ## Features
 
@@ -34,8 +36,9 @@ The chat route now uses the Pi analyst session. The current tool catalogue is re
   factors, Finals results, and rankings are computed from
   warehouse rows. Outside the coverage window, the answer
   says so instead of guessing.
-- 101 tools over a local DuckDB warehouse. Chat runs on
-  Gemini (default) and NVIDIA NIM behind one interface.
+- Read-only SQL and warehouse schema over a local DuckDB
+  warehouse. Chat runs on configured providers behind one
+  interface.
 - Streams tokens and live tool activity over SSE, in dark
   and light themes.
 
@@ -77,18 +80,20 @@ four factors this season?"
 ```
 frontend/   Next.js 16, React 19, Tailwind 4, Recharts.
             Streams tokens and live tool activity over SSE; dark and light themes.
-backend/    FastAPI planner with 101 tools over a local DuckDB warehouse.
-            Gemini (default) and NVIDIA NIM behind one interface.
+backend/    FastAPI host with read-only warehouse tools over a local
+            DuckDB warehouse.
 infra/      Azure Container Apps, scale-to-zero.
 ```
 
-You type a question. The planner picks the tools, runs them
+You type a question. The analyst picks the tools, runs them
 against the warehouse, and streams back the answer with the
-evidence attached.
+source data attached.
 
-Production serves the v1 runtime. The v2 runtime is built,
-tested, and wired behind the `DIME_RUNTIME_V2` flag, with
-the cutover still pending.
+The v2 chat route is the Pi analyst path. `DIME_RUNTIME_V2`
+accepts `on`, `action_loop`, `shadow` and `off`; unset means
+`on`. Only `on` and `action_loop` enable the chat, project,
+branch and run-source endpoints. Workspaces mount separately
+and are not behind this flag.
 
 ## Data
 
