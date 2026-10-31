@@ -3,7 +3,7 @@ import { pathToFileURL } from "node:url";
 import { ModelRuntime } from "@earendil-works/pi-coding-agent";
 import { InMemoryCredentialStore } from "@earendil-works/pi-ai";
 import { createAnalystSession } from "./runtime.mjs";
-import { connectPythonTools } from "./python-tools.mjs";
+import { connectPythonTools, sourceOutputSchema, sourceResult } from "./python-tools.mjs";
 
 export async function resolvedRuntime(config) {
   if (!config?.provider || !config?.model || !config?.baseUrl || !config?.apiKey ||
@@ -23,22 +23,21 @@ export async function resolvedRuntime(config) {
 
 
 function sourceSummary(record) {
-  let data = {};
-  try { data = JSON.parse(record.response.content?.[0]?.text ?? "{}"); }
-  catch { /* MCP errors may contain plain text; raw content remains readable by ref. */ }
-  return { ref: record.ref, tool: record.tool, failed: record.response.isError || data.ok === false, columns: data.columns,
-    declared_column_semantics: data.declared_column_semantics,
-    season_semantics: data.season_semantics, provenance: data.meta };
+  const {result: data, isError} = sourceResult(record).structuredContent;
+  return { ref: record.ref, tool: record.tool, failed: isError, columns: data?.columns,
+    declared_column_semantics: data?.declared_column_semantics,
+    season_semantics: data?.season_semantics, provenance: data?.meta };
 }
 
-function priorSourceTool(records) {
+export function priorSourceTool(records) {
   const catalogue = new Map(records.map(record => [record.ref, record]));
   return { name: "read_source", label: "Read prior source",
-    description: "Read a raw prior source by ref from this conversation. Filter rows in codemode before returning output. Includes source units and provenance.",
+    description: "Read a prior source by ref from this conversation. Returns a native object {ref, tool, result, isError}. result contains the authoritative output or original error text. Filter result before returning from codemode; retain ref. Includes units and provenance.",
+    outputSchema: sourceOutputSchema,
     parameters: { type: "object", properties: { ref: { type: "string" } }, required: ["ref"], additionalProperties: false },
     async execute(_callId, { ref }) {
       if (!catalogue.has(ref)) throw new Error("Unknown conversation source ref");
-      return { content: [{ type: "text", text: JSON.stringify(catalogue.get(ref)) }] };
+      return sourceResult(catalogue.get(ref));
     } };
 }
 
@@ -67,16 +66,15 @@ export async function serve(runtimeFactory = resolvedRuntime) {
             send({ type: "tool_call", name: tool.name });
             try {
               const result = await tool.execute(...args);
-              const record = JSON.parse(result.content[0].text);
+              const record = bridge.results.get(result.structuredContent.ref);
               send({ type: "source", record });
-              const domain = JSON.parse(record.response.content?.[0]?.text ?? "{}");
-              const failed = record.response.isError || domain.ok === false;
+              const {result: domain, isError: failed} = result.structuredContent;
               send({ type: "tool_result", name: tool.name, status: failed ? "fail" : "ok",
-                ...(failed ? { error: "Tool failed" } : {}),
-                rows: Array.isArray(domain.rows) ? domain.rows.length : undefined });
+                ...(failed ? { error: typeof domain === "string" ? domain : domain?.error ?? "Tool failed" } : {}),
+                rows: Array.isArray(domain?.rows) ? domain.rows.length : undefined });
               return result;
             } catch (error) {
-              send({ type: "tool_result", name: tool.name, status: "fail", error: "Tool failed" });
+              send({ type: "tool_result", name: tool.name, status: "fail", error: error.message });
               throw error;
             }
           } })), priorSourceTool(start.sources ?? [])] });

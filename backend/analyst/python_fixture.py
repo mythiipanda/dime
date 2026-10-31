@@ -18,14 +18,15 @@ async def main():
         raise FileExistsError(warehouse)
     con = duckdb.connect(str(warehouse))
     try:
+        columns = ", ".join(f"metadata_{i} DOUBLE" for i in range(2000))
         con.execute("CREATE TABLE silver_hist_player_seasons "
                     "(season INTEGER, _season VARCHAR, PTS DOUBLE, _source VARCHAR)")
         con.execute("INSERT INTO silver_hist_player_seasons VALUES "
                     "(2091, '2090-91', 11.8, 'owned-synthetic'), "
                     "(2091, '2090-91', 999, 'RAW_SECRET_ROW')")
         con.execute("CREATE TABLE silver_leaders_pts "
-                    "(_season VARCHAR, PTS INTEGER, _source VARCHAR)")
-        con.execute("INSERT INTO silver_leaders_pts VALUES ('2090-91', 71, 'owned-synthetic')")
+                    f"(_season VARCHAR, PTS INTEGER, _source VARCHAR, {columns}, RAW_SECRET_ROW VARCHAR)")
+        con.execute("INSERT INTO silver_leaders_pts (_season, PTS, _source) VALUES ('2090-91', 71, 'owned-synthetic')")
     finally:
         con.close()
     tools = catalogue()

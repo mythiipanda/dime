@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { ModelRuntime } from "@earendil-works/pi-coding-agent";
 import { createAssistantMessageEventStream } from "@earendil-works/pi-ai";
 import { createAnalystSession } from "./runtime.mjs";
+import { priorSourceTool } from "./worker.mjs";
 import { connectPythonTools } from "./python-tools.mjs";
 
 const root = process.env.DIME_PI_TEST_ROOT;
@@ -168,10 +169,15 @@ test("real Python sql_exec and schema cross MCP into Pi with source semantics an
       const args = ${JSON.stringify(baseline.args)};
       const calls = await Promise.all(args.map(arg => tools.sql_exec(arg)));
       calls.push(await tools.sql_exec(args[1]));
-      const schema = JSON.parse(await tools.warehouse_schema({}));
-      return {schema, calls: calls.map(text => {
-        const record = JSON.parse(text);
-        const result = JSON.parse(record.response.content[0].text);
+      const invalid = await tools.sql_exec(args[3]);
+      if (!invalid.isError || invalid.result.ok !== false) throw new Error("Missing domain failure");
+      const recovered = await tools.sql_exec(args[1]);
+      if (recovered.isError || !recovered.result.rows.length) throw new Error("Same-script recovery failed");
+      const schema = await tools.warehouse_schema({});
+      if (typeof schema !== "object" || !schema.result.tables) throw new Error("Expected native schema.result.tables");
+      return {schema: {ref: schema.ref, tables: Object.fromEntries(Object.entries(schema.result.tables)
+        .filter(([name]) => name === "silver_hist_player_seasons"))}, invalid, recovered: {ref: recovered.ref, units: recovered.result.declared_column_semantics}, calls: calls.map(record => {
+        const result = record.result;
         if (Array.isArray(result.rows)) result.rows = result.rows.filter(row => row.total_points !== 999);
         return {ref: record.ref, result};
       })};
@@ -181,8 +187,8 @@ test("real Python sql_exec and schema cross MCP into Pi with source semantics an
     assert(peak >= 2, "real Python requests must overlap");
     assert.equal(running, 0);
     const records = [...bridge.results.values()];
-    const queries = records.filter(r => r.tool === "sql_exec");
-    assert.equal(queries.length, baseline.args.length + 1);
+    const queries = records.filter(r => r.tool === "sql_exec" && !r.response.isError);
+    assert.equal(queries.length, baseline.args.length + 3);
     assert.equal(new Set(records.map(r => r.ref)).size, records.length);
     assert.equal(new Set(queries.map(r => r.callId)).size, queries.length);
     for (const record of queries) {
@@ -192,6 +198,8 @@ test("real Python sql_exec and schema cross MCP into Pi with source semantics an
       assert.deepEqual(stable(result), stable(baseline.direct[index]));
     }
     assert.deepEqual(value(records.find(r => r.tool === "warehouse_schema")), baseline.schema);
+    assert(JSON.stringify(baseline.schema).length > 100000);
+    assert(baseline.schema.tables.silver_leaders_pts.RAW_SECRET_ROW);
     const perGame = value(queries.find(r => value(r).sql === baseline.args[0].sql));
     assert.equal(perGame.declared_column_semantics.total_points.unit, "points_per_game");
     assert.equal(perGame.rows[0].total_points, 11.8);
@@ -200,16 +208,20 @@ test("real Python sql_exec and schema cross MCP into Pi with source semantics an
     assert.equal(baseline.direct[1].declared_column_semantics.PTS.unit, "total_points");
     for (const failed of baseline.direct.slice(2)) assert.equal(failed.ok, false);
     const seen = JSON.stringify(setup.requests[1]);
+    assert(seen.includes("tables"));
     assert(!seen.includes("RAW_SECRET_ROW"));
     for (const record of queries) assert(seen.includes(record.ref));
 
     // Domain failure and input-validation errors do not close the process or erase evidence.
     const sql = bridge.tools.find(t => t.name === "sql_exec");
-    const invalid = JSON.parse((await sql.execute("invalid", {}, undefined)).content[0].text);
-    assert.equal(invalid.response.isError, true);
-    const recovery = JSON.parse((await sql.execute("recovery", baseline.args[1], undefined)).content[0].text);
-    assert.deepEqual(stable(value(recovery)), stable(baseline.direct[1]));
-    assert.equal(bridge.results.size, baseline.args.length + 4);
+    const invalid = (await sql.execute("invalid", {}, undefined)).structuredContent;
+    assert.equal(invalid.isError, true);
+    assert(invalid.result.includes("ValidationError"));
+    const recovery = (await sql.execute("recovery", baseline.args[1], undefined)).structuredContent;
+    assert.deepEqual(stable(recovery.result), stable(baseline.direct[1]));
+    assert.equal(bridge.results.size, baseline.args.length + 6);
+    await writeFile(join(root, "python-host-records.json"), JSON.stringify([...bridge.results.values()]));
+    await writeFile(join(root, "python-provider-requests.json"), JSON.stringify(setup.requests));
     console.log(JSON.stringify({ proof: "python-mcp-pi-equivalence", queries: queries.length,
       refs: queries.map(r => r.ref), peak, units: ["points_per_game", "total_points"], pid }));
   } finally {
@@ -217,4 +229,68 @@ test("real Python sql_exec and schema cross MCP into Pi with source semantics an
     await bridge.close();
   }
   assert.throws(() => process.kill(pid, 0), /ESRCH/);
+});
+
+// Observe the installed Pi/QuickJS contract before adapting the Python bridge.
+test("installed SDK distinguishes opaque text from native structured results", async () => {
+  const record = {ref: "shape-ref", callId: "shape-call", tool: "schema", response: {
+    content: [{type: "text", text: JSON.stringify({tables: {observed: ["PTS"]}})}]}};
+  const native = {...tool("native", async () => ({content: [], structuredContent: {tables: {observed: ["PTS"]}}})),
+    outputSchema: {type: "object"}};
+  const {session, requests} = await fixture("sdk-shape", `
+    const opaque = await tools.opaque({});
+    const native = await tools.native({});
+    return {opaqueType: typeof opaque, outerKeys: Object.keys(JSON.parse(opaque)),
+      nestedType: typeof JSON.parse(opaque).response.content[0].text,
+      nativeType: typeof native, tables: native.tables};
+  `, [tool("opaque", async () => textResult(record)), native]);
+  try {
+    await session.prompt("Observe installed SDK shape");
+    const seen = JSON.stringify(requests[1]);
+    for (const text of ["opaqueType", "string", "nestedType", "nativeType", "object", "observed"]) assert(seen.includes(text));
+    console.log(JSON.stringify({proof: "installed-sdk-shape", messages: requests[1].messages.filter(m => m.role === "toolResult")}));
+  } finally {session.dispose();}
+});
+
+test("prior sources expose native data, filter a large schema and recover after MCP text errors", async () => {
+  const tables = Object.fromEntries(Array.from({length: 1500}, (_, i) => ["table_" + i,
+    [{name: "PTS", type: "DOUBLE", unit: "points_per_game", source: "RAW_SECRET_ROW"}]]));
+  const records = [
+    {ref: "large-schema", callId: "s", tool: "warehouse_schema", response: {content: [{type: "text", text: JSON.stringify({tables})}]}},
+    {ref: "prior-sql", callId: "q", tool: "sql_exec", response: {content: [{type: "text", text: JSON.stringify({ok: true,
+      rows: [{PTS: 11.8}, {PTS: 999, secret: "RAW_SECRET_ROW"}], declared_column_semantics: {PTS: {unit: "points_per_game"}},
+      season_semantics: {encoding: "end_year"}, meta: {source: "owned-synthetic"}})}]}},
+    ...["WarehouseError: exact E580", '{"error":broken'].map((text, i) => ({ref: "error-" + i,
+      callId: "e" + i, tool: "sql_exec", response: {isError: true, content: [{type: "text", text}]}})),
+    {ref: "domain-failure", callId: "d", tool: "sql_exec", response: {content: [{type: "text", text: '{"ok":false,"error":"SQL exact E581"}'}]}},
+  ];
+  const before = JSON.stringify(records);
+  assert(before.length > 100000);
+  const {session, requests} = await fixture("prior-native", `
+    const errors = await Promise.all(["error-0", "error-1", "domain-failure"].map(ref => tools.read_source({ref})));
+    if (errors.some(value => !value.isError)) throw new Error("Error status lost");
+    const schema = await tools.read_source({ref: "large-schema"});
+    const sql = await tools.read_source({ref: "prior-sql"});
+    return {errors, schema: {ref: schema.ref, tables: Object.entries(schema.result.tables)
+      .filter(([name]) => name === "table_17").map(([name, columns]) => ({name, columns: columns.map(c => ({name: c.name, type: c.type, unit: c.unit}))}))},
+      sql: {ref: sql.ref, rows: sql.result.rows.filter(r => r.PTS !== 999), units: sql.result.declared_column_semantics,
+      season: sql.result.season_semantics, provenance: sql.result.meta}};
+  `, [priorSourceTool(records)]);
+  try {
+    await session.prompt("Read filtered prior data and errors");
+    const seen = JSON.stringify(requests[1]);
+    for (const text of ["large-schema", "prior-sql", "table_17", "DOUBLE", "points_per_game", "end_year", "owned-synthetic", "WarehouseError: exact E580", "broken", "SQL exact E581"]) assert(seen.includes(text), text);
+    assert(!seen.includes("RAW_SECRET_ROW"));
+    assert(!seen.includes("table_1499"));
+    const calls = session.messages.find(m => m.role === "toolResult").details.calls;
+    assert.deepEqual(calls.slice(0,3).map(c => c.status), ["error", "error", "error"]);
+    assert(calls[0].error.includes("WarehouseError: exact E580"));
+    assert(calls[1].error.includes('{"error":broken'));
+    assert(calls[2].error.includes("SQL exact E581"));
+    assert.equal(calls.at(-1).status, "ok");
+    assert.equal(JSON.stringify(records), before);
+    await writeFile(join(root, "prior-host-records.json"), before);
+    await writeFile(join(root, "prior-provider-requests.json"), JSON.stringify(requests));
+    console.log(JSON.stringify({proof: "prior-native-large-filter-errors", rawBytes: before.length, tables: Object.keys(tables).length}));
+  } finally {session.dispose();}
 });
