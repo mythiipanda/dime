@@ -110,12 +110,13 @@ def unit_synthetic_warehouse(monkeypatch, tmp_path):
         con.execute(
             "CREATE TABLE silver_hist_player_seasons ("
             "player_id INTEGER, season INTEGER, _season VARCHAR, "
-            "gp INTEGER, "
-            "PTS DOUBLE, REB DOUBLE, AST DOUBLE)"
+            "gp INTEGER, gp_total INTEGER, "
+            "PTS DOUBLE, REB DOUBLE, AST DOUBLE, "
+            "PTS_TOTAL DOUBLE, REB_TOTAL DOUBLE, AST_TOTAL DOUBLE)"
         )
         con.execute(
             "INSERT INTO silver_hist_player_seasons VALUES "
-            "(42, 2091, '2090-91', 6, 11.8, 2.3, 4.1)"
+            "(42, 2091, '2090-91', 6, 6, 11.8, 2.3, 4.1, 71.0, 14.0, 25.0)"
         )
         con.execute(
             "CREATE TABLE silver_player_season ("
@@ -302,6 +303,32 @@ def test_sql_capability_carries_proven_column_units_into_evidence(
     }
     assert "PerMode48.default='Totals'" in totals.metric_definitions["PTS"]
 
+
+
+def test_sql_capability_carries_hist_exact_totals_into_evidence(
+        unit_synthetic_warehouse) -> None:
+    hist_sql = (
+        "SELECT player_id, gp, gp_total, PTS, PTS_TOTAL, REB_TOTAL, AST_TOTAL "
+        "FROM silver_hist_player_seasons WHERE player_id = 42"
+    )
+    hist = _execute_sql_capability(hist_sql)
+    assert hist.rows == [{
+        "player_id": 42, "gp": 6, "gp_total": 6,
+        "PTS": 11.8, "PTS_TOTAL": 71.0, "REB_TOTAL": 14.0, "AST_TOTAL": 25.0,
+    }]
+    assert {name: hist.units[name] for name in ("PTS", "PTS_TOTAL", "REB_TOTAL", "AST_TOTAL", "gp_total")} == {
+        "PTS": "points_per_game",
+        "PTS_TOTAL": "total_points",
+        "REB_TOTAL": "total_rebounds",
+        "AST_TOTAL": "total_assists",
+        "gp_total": "games",
+    }
+    assert hist.units["gp"] == "games_played"
+    assert "sportsdataverse totals slice" in hist.metric_definitions["PTS_TOTAL"]
+    assert "sportsdataverse totals slice" in hist.metric_definitions["REB_TOTAL"]
+    assert "sportsdataverse totals slice" in hist.metric_definitions["AST_TOTAL"]
+    assert "sportsdataverse totals slice" in hist.metric_definitions["gp_total"]
+    assert "per_mode='pergame'" in hist.metric_definitions["PTS"]
 
 def test_sql_capability_preserves_existing_per_game_fields_and_unmapped_leaders(
         unit_synthetic_warehouse) -> None:
@@ -502,6 +529,8 @@ def test_renamed_alias_star_and_missing_sql_are_unresolved() -> None:
     ("silver_player_season", "PPG", "PTS", "points_per_game", 11.8),
     ("silver_leaders_pts", "PTS", "TOTAL_PTS", "total_points", 71),
     ("silver_hist_player_seasons", "PTS", "TOTAL_PTS", "points_per_game", 11.8),
+    ("silver_hist_player_seasons", "PTS_TOTAL", "tot_points", "total_points", 71.0),
+    ("silver_hist_player_seasons", "GP_TOTAL", "games_cnt", "games", 6),
 ])
 def test_sql_direct_alias_preserves_source_unit(
         unit_synthetic_warehouse, table, source, output, unit, value):
