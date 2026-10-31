@@ -8,6 +8,7 @@ import { createPiExecution } from "./pi-execution.js";
 import { ProductStore } from "./product-store.js";
 import { providerPolicy } from "./providers.js";
 import type { SourceRecord } from "./python-tools.js";
+import type { AnswerSubmission } from "./submit-tool.js";
 const optionalText = (max: number) => Type.Optional(Type.Union([Type.String({ minLength: 1, maxLength: max, pattern: "\\S" }), Type.Null()]));
 export const analystRequestSchema = Type.Object({
     q: Type.String({ minLength: 1, maxLength: 2000, pattern: "\\S" }), model: optionalText(256),
@@ -67,6 +68,7 @@ export type ProductEvent = {
             verification: "unassessed";
             answer_status: "unassessed";
             source_refs: string[];
+            submission?: AnswerSubmission;
         };
     };
 } | {
@@ -90,13 +92,15 @@ export function newRunId() { return "run-" + randomUUID().replaceAll("-", ""); }
 export function encodeEvent({ type, data }: ProductEvent) { return `event: ${type}\ndata: ${JSON.stringify(data)}\n\n`; }
 export function createAnalyst(options: {
     env: NodeJS.ProcessEnv;
-    python: string;
+    python?: string;
     resolveModel?: ReturnType<typeof providerPolicy>["resolve"];
+    store?: ProductStore;
+    execution?: ReturnType<typeof createPiExecution>;
     saveChat: (thread: string, role: string, content: string, owner: string) => Promise<void>;
     saveRun: (thread: string, q: string, answer: string, owner: string, run: string) => Promise<void>;
 }) {
-    const paths = productPaths(options.env), store = new ProductStore(paths.conversations, paths.sources);
-    const policy = providerPolicy(options.env), execution = createPiExecution();
+    const paths = productPaths(options.env), store = options.store ?? new ProductStore(paths.conversations, paths.sources);
+    const policy = providerPolicy(options.env), execution = options.execution ?? createPiExecution();
     return {
         store,
         async *stream(input: unknown, signal?: AbortSignal, run = newRunId()): AsyncGenerator<ProductEvent> {
@@ -114,6 +118,7 @@ export function createAnalyst(options: {
             const identity = input.thread && input.client ? { owner: input.client, thread: input.thread } : undefined;
             let directory: string | undefined;
             let answer: string | undefined, failed = false, streamed = false;
+            let submission: AnswerSubmission | undefined;
             let records: SourceRecord[] = [];
             const fresh: SourceRecord[] = [];
             try {
@@ -133,6 +138,7 @@ export function createAnalyst(options: {
                             break;
                         case "answer":
                             answer = event.text;
+                            submission = event.submission;
                             break;
                         case "closed": break;
                         case "token":
@@ -154,7 +160,7 @@ export function createAnalyst(options: {
                 if (signal?.aborted)
                     return;
                 if (records.length || !failed)
-                    store.saveSources(run, fresh, records);
+                    store.saveSources(run, fresh, records, submission);
                 if (!failed && answer && identity) {
                     await options.saveChat(identity.thread, "ai", answer, identity.owner.slice(0, 80));
                     await options.saveRun(identity.thread, input.q.slice(0, 2000), answer, identity.owner.slice(0, 80), run);
@@ -175,7 +181,7 @@ export function createAnalyst(options: {
             if (!failed && answer) {
                 if (!streamed)
                     yield { type: "token", data: { text: answer } };
-                yield { type: "final_answer", data: { text: answer, carry: { run_id: run, verification: "unassessed", answer_status: "unassessed", source_refs: records.map(r => r.ref) } } };
+                yield { type: "final_answer", data: { text: answer, carry: { run_id: run, verification: "unassessed", answer_status: "unassessed", source_refs: records.map(r => r.ref), ...(submission ? { submission } : {}) } } };
             }
             yield { type: "graph_end", data: {} };
         }

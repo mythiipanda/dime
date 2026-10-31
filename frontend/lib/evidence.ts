@@ -685,3 +685,45 @@ export function parsePiSources(raw: unknown): PiSource[] {
     } catch { return []; }
   });
 }
+
+export interface AnchorSelector {
+  ref: string;
+  row: number;
+  columns: string[];
+}
+
+export interface AnswerBlock {
+  text: string;
+  anchors: AnchorSelector[];
+}
+
+export interface AnswerSubmission {
+  blocks: AnswerBlock[];
+}
+
+export function parseAnswerSubmission(raw: unknown): AnswerSubmission | null {
+  if (!isRecord(raw) || !Array.isArray(raw.blocks) || raw.blocks.length === 0) return null;
+  const blocks: AnswerBlock[] = [];
+  for (const item of raw.blocks) {
+    if (!isRecord(item) || typeof item.text !== "string" || !item.text || !Array.isArray(item.anchors)) return null;
+    const anchors: AnchorSelector[] = [];
+    for (const a of item.anchors) {
+      if (
+        !isRecord(a) ||
+        typeof a.ref !== "string" ||
+        !a.ref ||
+        typeof a.row !== "number" ||
+        !Number.isInteger(a.row) ||
+        a.row < 0 ||
+        !Array.isArray(a.columns) ||
+        a.columns.length === 0 ||
+        !a.columns.every((c): c is string => typeof c === "string" && c.length > 0)
+      ) {
+        return null;
+      }
+      anchors.push({ ref: a.ref, row: a.row, columns: [...a.columns] });
+    }
+    blocks.push({ text: item.text, anchors });
+  }
+  return { blocks };
+}

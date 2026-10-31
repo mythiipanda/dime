@@ -46,6 +46,7 @@ import {
   type ToolState,
   type VerificationCarry,
 } from "@/lib/dime-stream";
+import type { AnswerBlock, PiSource } from "@/lib/evidence";
 import { getModels } from "@/lib/api";
 
 function Ico({ d, size = 15 }: { d: React.ReactNode; size?: number }) {
@@ -434,6 +435,67 @@ export function StreamArtifacts({ artifacts }: { artifacts: DimeArtifact[] }) {
   );
 }
 
+export function AnswerBlocks({
+  blocks,
+  sources,
+}: {
+  blocks: AnswerBlock[];
+  sources?: PiSource[];
+}) {
+  return (
+    <div className="space-y-3">
+      {blocks.map((block, i) => (
+        <p key={i} className="whitespace-pre-line">
+          {block.text}
+          {block.anchors.length > 0 && (
+            <span className="ml-1.5 inline-flex flex-wrap gap-1 text-[11px] align-baseline">
+              {block.anchors.map((anchor, aIdx) => {
+                const source = sources?.find((s) => s.ref === anchor.ref);
+                const rowData = source?.rows?.[anchor.row];
+                const isResolvable =
+                  Boolean(rowData) &&
+                  anchor.columns.length > 0 &&
+                  anchor.columns.every((c) => Object.hasOwn(rowData as object, c));
+
+                const sourceLabel = source?.label || anchor.ref;
+                const colSummary = anchor.columns.join(", ");
+                const chipText = `${sourceLabel} [r${anchor.row + 1}: ${colSummary}]`;
+                const title = `Source: ${sourceLabel} | Row ${anchor.row + 1} | Columns: ${colSummary}`;
+
+                if (isResolvable) {
+                  return (
+                    <a
+                      key={`${anchor.ref}-${anchor.row}-${aIdx}`}
+                      href={`#source-${anchor.ref}-row-${anchor.row}`}
+                      className="rounded bg-fill-subtle px-1.5 py-0.5 font-mono text-[10.5px] text-ink-2 hover:bg-fill hover:text-ink hover:underline"
+                      title={title}
+                      data-ref={anchor.ref}
+                      data-row={anchor.row}
+                      data-columns={colSummary}
+                    >
+                      {chipText}
+                    </a>
+                  );
+                }
+
+                return (
+                  <span
+                    key={`${anchor.ref}-${anchor.row}-${aIdx}`}
+                    className="rounded bg-fill-subtle px-1.5 py-0.5 font-mono text-[10.5px] text-ink-3 opacity-70"
+                    title={`Unresolved source reference: ${anchor.ref}`}
+                  >
+                    {chipText}
+                  </span>
+                );
+              })}
+            </span>
+          )}
+        </p>
+      ))}
+    </div>
+  );
+}
+
 export function AnswerVerification({
   carry,
   artifacts,
@@ -446,13 +508,13 @@ export function AnswerVerification({
     <details className="mt-3 rounded-[10px] border border-line bg-field px-3 py-2">
       <summary className="cursor-pointer text-[12px] font-medium text-ink-2">Sources &amp; provenance</summary>
       {carry.sources?.map(source => (
-        <details key={source.ref} className="mt-2 text-[12px]">
+        <details key={source.ref} id={`source-${source.ref}`} className="mt-2 text-[12px]">
           <summary>{source.label}</summary>
           {source.rows.length > 0 && (
             <div className="overflow-auto">
               <table className="mt-2 w-full text-left">
                 <thead><tr>{Object.keys(source.rows[0]).map(column => <th key={column} className="pr-4">{column}{source.units[column] ? ` (${source.units[column]})` : ""}</th>)}</tr></thead>
-                <tbody>{source.rows.map((row, index) => <tr key={index}>{Object.keys(source.rows[0]).map(column => <td key={column} className="pr-4">{typeof row[column] === "object" ? JSON.stringify(row[column]) : String(row[column] ?? "")}</td>)}</tr>)}</tbody>
+                <tbody>{source.rows.map((row, index) => <tr key={index} id={`source-${source.ref}-row-${index}`}>{Object.keys(source.rows[0]).map(column => <td key={column} className="pr-4" data-col={column}>{typeof row[column] === "object" ? JSON.stringify(row[column]) : String(row[column] ?? "")}</td>)}</tr>)}</tbody>
               </table>
             </div>
           )}
@@ -600,11 +662,15 @@ export function LiveAssistant({ live }: { live: LiveRun }) {
         </div>
       )}
       <StreamArtifacts artifacts={live.artifacts} />
-      {live.text && (
+      {live.carry?.submission?.blocks?.length ? (
+        <div className="mt-4 max-w-[620px] text-[13.5px] leading-[1.65] text-ink-2">
+          <AnswerBlocks blocks={live.carry.submission.blocks} sources={live.carry.sources} />
+        </div>
+      ) : live.text ? (
         <p className="mt-4 max-w-[620px] whitespace-pre-line text-[13.5px] leading-[1.65] text-ink-2">
           {live.text}
         </p>
-      )}
+      ) : null}
       <AnswerVerification carry={live.carry} artifacts={live.artifacts} />
       {live.failed && <FailureCard failure={live.failed} />}
     </>
@@ -629,14 +695,21 @@ export function AssistantTurn({
   return (
     <>
       <StreamArtifacts artifacts={artifacts} />
-      {text && (
+      {carry?.submission?.blocks?.length ? (
+        <div
+          className="mt-4 max-w-[620px] text-[13.5px] leading-[1.65] text-ink-2"
+          style={{ animation: FADE_UP }}
+        >
+          <AnswerBlocks blocks={carry.submission.blocks} sources={carry.sources} />
+        </div>
+      ) : text ? (
         <p
           className="mt-4 max-w-[620px] whitespace-pre-line text-[13.5px] leading-[1.65] text-ink-2"
           style={{ animation: FADE_UP }}
         >
           {text}
         </p>
-      )}
+      ) : null}
       <AnswerVerification carry={carry} artifacts={artifacts} />
       {failure && <FailureCard failure={failure} />}
       <FollowUpPills items={suggestions} onPick={onFollowUp} />

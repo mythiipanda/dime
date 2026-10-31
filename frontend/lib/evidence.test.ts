@@ -15,6 +15,8 @@ import {
   withCitationMarkers,
   withUnverifiedMarkers,
   gapMessage,
+  parseAnswerSubmission,
+  type PiSource,
 } from "./evidence";
 import type { AiMessage } from "./chat";
 
@@ -525,4 +527,108 @@ test("espn evidence reads as plain words with no infra tokens", () => {
   for (const token of [...BANNED_TOKENS, "live_external_no_warehouse_provenance"]) {
     assert.ok(!shown.includes(token), "leaked " + token);
   }
+});
+
+
+test("parseAnswerSubmission accepts valid blocks and anchors", () => {
+  const raw = {
+    blocks: [
+      {
+        text: "Leading prose statement.",
+        anchors: [{ ref: "src-1", row: 0, columns: ["PTS", "PLAYER"] }],
+      },
+      {
+        text: "Secondary statement without anchors.",
+        anchors: [],
+      },
+    ],
+  };
+  const parsed = parseAnswerSubmission(raw);
+  assert.ok(parsed);
+  assert.equal(parsed.blocks.length, 2);
+  assert.equal(parsed.blocks[0].text, "Leading prose statement.");
+  assert.equal(parsed.blocks[0].anchors[0].ref, "src-1");
+  assert.equal(parsed.blocks[0].anchors[0].row, 0);
+  assert.deepEqual(parsed.blocks[0].anchors[0].columns, ["PTS", "PLAYER"]);
+  assert.equal(parsed.blocks[1].anchors.length, 0);
+});
+
+test("parseAnswerSubmission rejects malformed payloads and invalid boundaries", () => {
+  assert.equal(parseAnswerSubmission(null), null);
+  assert.equal(parseAnswerSubmission(undefined), null);
+  assert.equal(parseAnswerSubmission("not-an-object"), null);
+  assert.equal(parseAnswerSubmission([]), null);
+  assert.equal(parseAnswerSubmission({}), null);
+  assert.equal(parseAnswerSubmission({ blocks: [] }), null); // empty blocks array rejected
+  assert.equal(parseAnswerSubmission({ blocks: [{ text: "", anchors: [] }] }), null); // empty text rejected
+  assert.equal(parseAnswerSubmission({ blocks: [{ text: "valid", anchors: "not-array" }] }), null);
+  assert.equal(
+    parseAnswerSubmission({
+      blocks: [{ text: "valid", anchors: [{ ref: "", row: 0, columns: ["c"] }] }], // empty ref
+    }),
+    null
+  );
+  assert.equal(
+    parseAnswerSubmission({
+      blocks: [{ text: "valid", anchors: [{ ref: "s", row: -1, columns: ["c"] }] }], // negative row
+    }),
+    null
+  );
+  assert.equal(
+    parseAnswerSubmission({
+      blocks: [{ text: "valid", anchors: [{ ref: "s", row: 1.5, columns: ["c"] }] }], // non-integer row
+    }),
+    null
+  );
+  assert.equal(
+    parseAnswerSubmission({
+      blocks: [{ text: "valid", anchors: [{ ref: "s", row: 0, columns: [] }] }], // empty columns
+    }),
+    null
+  );
+  assert.equal(
+    parseAnswerSubmission({
+      blocks: [{ text: "valid", anchors: [{ ref: "s", row: 0, columns: [123] }] }], // non-string columns
+    }),
+    null
+  );
+});
+
+test("anchor resolvability logic distinguishes hydrated sources from unhydrated/invalid", () => {
+  const sources: PiSource[] = [
+    {
+      ref: "src-1",
+      tool: "sql_exec",
+      label: "Season Totals",
+      units: { PTS: "points" },
+      rows: [{ PTS: 30, PLAYER: "Luka" }],
+      data: { origin: "warehouse", sources: [] },
+    },
+  ];
+
+  function resolveAnchor(anchor: { ref: string; row: number; columns: string[] }, sList?: PiSource[]) {
+    const s = sList?.find((item) => item.ref === anchor.ref);
+    const rowData = s?.rows?.[anchor.row];
+    return Boolean(
+      rowData &&
+      anchor.columns.length > 0 &&
+      anchor.columns.every((c) => Object.hasOwn(rowData as object, c))
+    );
+  }
+
+  // Hydration absent (sources undefined or empty) -> must not resolve
+  assert.equal(resolveAnchor({ ref: "src-1", row: 0, columns: ["PTS"] }, undefined), false);
+  assert.equal(resolveAnchor({ ref: "src-1", row: 0, columns: ["PTS"] }, []), false);
+
+  // Valid hydrated source, row, and columns -> resolves
+  assert.equal(resolveAnchor({ ref: "src-1", row: 0, columns: ["PTS", "PLAYER"] }, sources), true);
+
+  // Row out of bounds -> must not resolve
+  assert.equal(resolveAnchor({ ref: "src-1", row: 5, columns: ["PTS"] }, sources), false);
+
+  // Column missing on row -> must not resolve
+  assert.equal(resolveAnchor({ ref: "src-1", row: 0, columns: ["REB"] }, sources), false);
+
+  // Unknown ref -> must not resolve
+  assert.equal(resolveAnchor({ ref: "src-unknown", row: 0, columns: ["PTS"] }, sources), false);
 });
