@@ -41,12 +41,12 @@ await serve(async config => {
       }
       const first = count++ === 0 && config.scenario !== "model_immediate";
       const code = config.scenario === "followup" ? `
-        const raw = JSON.parse(await tools.read_source({ref:${JSON.stringify(config.priorRef)}}));
-        const data = JSON.parse(raw.response.content[0].text);
+        const raw = await tools.read_source({ref:${JSON.stringify(config.priorRef)}});
+        const data = raw.result;
         const denied = await tools.read_source({ref:"not-in-conversation"}).then(() => false, () => true);
         return {retrieved: data.rows[0].secret.length === 14 && data.rows[0].PTS === 71, unit: data.declared_column_semantics.PTS.unit, denied};
-      ` : `const bad = JSON.parse(await tools.sql_exec({sql:"SELECT missing FROM silver_leaders_pts"}));
-        const good = JSON.parse(await tools.sql_exec({sql:"SELECT PTS FROM silver_leaders_pts"}));
+      ` : `const bad = await tools.sql_exec({sql:"SELECT missing FROM silver_leaders_pts"});
+        const good = await tools.sql_exec({sql:"SELECT PTS FROM silver_leaders_pts"});
         return {bad, good};`;
       const message = { role: "assistant", api: model.api, provider: model.provider, model: model.id,
         content: first ? [{ type: "toolCall", id: "query", name: "codemode", arguments: {code} }]

@@ -49,3 +49,32 @@ For a source patch, clone the Dime fork into a separate source checkout, add ups
 The sole dependency override pins Pi's undici dependency to 8.12.2. Pi 1.4.0 otherwise pins 8.10.2. The patched version keeps the same Node >=22.19.0 requirement. The npm advisory range is >=8.0.0 <8.12.2. See https://github.com/advisories/GHSA-xjj6-f33q-929c for the malformed content-encoding crash and patched version. The same release clears the other findings in the current npm audit. This is a patch-level dependency override, not a Pi downgrade. Codemode integration passes with it; real provider transport validation remains part of product integration.
 
 Prior raw records stay in the host, outside model context. Follow-ups receive a catalogue of refs, columns, source units and provenance. The codemode-only read_source tool reads a ref from the trusted current-conversation catalogue; scripts filter raw rows before returning model-visible output. New run artifacts store only newly collected raw records plus source_refs, so follow-ups do not duplicate historical rows. The source API resolves those refs using authorized ledger artifacts, including older artifacts that stored full records.
+
+## Codemode source values
+
+`sql_exec`, `warehouse_schema` and `read_source` return native Pi structured objects
+`{ref, tool, result, isError}` inside codemode. No JSON parsing is required.
+The Python catalogue remains authoritative for input schemas. `result` is the
+complete authoritative domain value, including rows, declared units, season
+semantics, provenance and `ok: false` failures. MCP plaintext or malformed JSON
+errors remain their original text in `result`, with `isError: true` when MCP
+marks them as errors. Scripts can inspect failures and continue with other calls.
+
+```javascript
+const schema = await tools.warehouse_schema({});
+const names = Object.keys(schema.result.tables);
+const source = await tools.sql_exec({sql: query});
+if (source.isError) return {ref: source.ref, error: source.result};
+return {ref: source.ref, rows: source.result.rows.filter(selectRow),
+  units: source.result.declared_column_semantics};
+// A later turn uses the same value shape:
+// const prior = await tools.read_source({ref});
+// prior.result.rows
+```
+
+Filter names, columns or rows in codemode before returning to the provider.
+The full `{ref, callId, tool, response}` MCP record stays unchanged in the host
+map and durable source artifacts, including errors and successful siblings.
+Source refs, carry and the source API retain their existing formats.
+This contract change has local synthetic-provider proof only. It does not prove
+better model queries, answer quality, exact totals or resolution of C08.
