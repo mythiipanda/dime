@@ -28,7 +28,7 @@ export async function createAnalystSession({ cwd, agentDir, model, modelRuntime,
         cwd, agentDir, settingsManager,
         noExtensions: true, noSkills: true, noPromptTemplates: true,
         noThemes: true, noContextFiles: true,
-        systemPrompt: "You are Dime's analyst. Use the supplied analysis tools. Preserve source units and references.",
+        systemPrompt: "You are Dime's analyst. Use the supplied analysis tools. Preserve source units and references. Match population claims to query evidence: distinguish row counts, non-null metric contributions, and distinct entities. For contributing-entity claims, use the same metric-validity filters; account for repeated entity rows before calling a row average an entity average. Otherwise report the supported row or value count and its limits.",
         appendSystemPrompt: [],
         extensionFactories: [createCodemodeExtension({ mode: "only", models: false })],
     });
