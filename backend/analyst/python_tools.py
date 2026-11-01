@@ -17,19 +17,25 @@ from mcp.types import CallToolResult, ListToolsResult, TextContent, Tool
 
 
 def catalogue():
-    from shared.tools.sql_exec import sql_exec
+    from shared.tools.sql_exec import sql_exec, TABLES
     from shared.tools.league import _get_warehouse_schema
     from shared.tools.season_semantics import annotate_schema
     from langchain_core.tools import tool
 
-    @tool
-    def warehouse_schema(tables: list[str] | None = None) -> dict:
-        """Read declared warehouse columns, source units and season encodings.
+    declared_catalog = ", ".join(TABLES)
+    description = (
+        "Read declared warehouse columns, source units and season encodings. "
+        "Pass tables to return only those declared tables (avoiding full catalog payloads). "
+        f"Declared table allowlist: {declared_catalog}. "
+        "This allowlist names declared tables, not proof of actual table content, "
+        "complete warehouse inventory or data freshness. "
+        "catalog_scope covers the returned declared tables and columns only, not the full warehouse "
+        "inventory; a name absent here is not evidence it is absent everywhere."
+    )
 
-        Pass tables to return only those declared tables. catalog_scope covers
-        the returned declared tables and columns only, not the full warehouse
-        inventory; a name absent here is not evidence it is absent everywhere.
-        """
+    @tool("warehouse_schema", description=description)
+    def warehouse_schema(tables: list[str] | None = None) -> dict:
+        """Read declared warehouse columns, source units and season encodings."""
         _, columns = _get_warehouse_schema()
         if tables is None:
             selected = list(columns)

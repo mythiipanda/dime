@@ -188,3 +188,28 @@ def test_sql_exec_contract_is_unchanged(warehouse):
     blocked = _invoke(tool, {"sql": "DELETE FROM silver_leaders_pts"})
     assert blocked["ok"] is False
     assert "only SELECT/WITH queries are allowed" in blocked["error"]
+
+
+def test_warehouse_schema_description_dynamically_lists_authoritative_tables():
+    sql_exec_module = sys.modules["shared.tools.sql_exec"]
+    authoritative_tables = sql_exec_module.TABLES
+
+    tool = _tool()
+    for table_name in authoritative_tables:
+        assert table_name in tool.description, (
+            f"Expected authoritative table '{table_name}' in tool description")
+    assert ", ".join(authoritative_tables) in tool.description
+    assert "Declared table allowlist:" in tool.description
+    assert "not proof of actual table content" in tool.description
+
+
+def test_warehouse_schema_description_derived_dynamically_from_registry(monkeypatch):
+    sql_exec_module = sys.modules["shared.tools.sql_exec"]
+
+    synthetic_tables = ("silver_custom_alpha", "silver_custom_beta")
+    monkeypatch.setattr(sql_exec_module, "TABLES", synthetic_tables)
+
+    tool = python_tools.catalogue()["warehouse_schema"]
+    assert "silver_custom_alpha, silver_custom_beta" in tool.description
+    assert "silver_standings" not in tool.description
+    assert "silver_hist_standings" not in tool.description
