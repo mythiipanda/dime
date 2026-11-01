@@ -23,10 +23,42 @@ def catalogue():
     from langchain_core.tools import tool
 
     @tool
-    def warehouse_schema() -> dict:
-        """Read declared warehouse columns, source units and season encodings."""
+    def warehouse_schema(tables: list[str] | None = None) -> dict:
+        """Read declared warehouse columns, source units and season encodings.
+
+        Pass tables to return only those declared tables. catalog_scope covers
+        the returned declared tables and columns only, not the full warehouse
+        inventory; a name absent here is not evidence it is absent everywhere.
+        """
         _, columns = _get_warehouse_schema()
-        return annotate_schema({"tables": columns})
+        if tables is None:
+            selected = list(columns)
+        else:
+            selected = []
+            unknown = []
+            for name in dict.fromkeys(tables):
+                if name in columns:
+                    selected.append(name)
+                else:
+                    unknown.append(name)
+            if unknown:
+                raise ValueError(
+                    "unknown declared table(s) in tables selection: "
+                    f"{', '.join(unknown)}; omit tables for the full declared schema")
+            if not selected:
+                raise ValueError(
+                    "tables selection must name at least one declared table; "
+                    "omit tables for the full declared schema")
+        annotated = annotate_schema(
+            {"tables": {name: columns[name] for name in selected}})
+        annotated["catalog_scope"] = {
+            "kind": "declared_read_only_tables",
+            "exhaustive_warehouse_inventory": False,
+            "available_table_count": len(columns),
+            "returned_table_count": len(selected),
+            "negative_claim_scope": "returned declared tables and columns only",
+        }
+        return annotated
 
     # Deliberately do not export WAREHOUSE_TOOLS, which includes mutators.
     return {item.name: item for item in (sql_exec, warehouse_schema)}
