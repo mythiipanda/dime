@@ -150,7 +150,6 @@ CAPABILITY_TABLES: dict[str, tuple[str, ...]] = {
     "today": ("silver_scoreboard", "silver_standings"),
     "morning_briefing": ("silver_scoreboard", "silver_standings"),
     "award_results": ("silver_bbref_awards",),
-    "sql_exec": tuple(sorted(_AGENT_SQL_TABLES)),
 }
 
 _RATE_TO_TOTAL = {

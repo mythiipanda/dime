@@ -68,7 +68,7 @@ def test_the_capability_declares_units_for_every_numeric_output(
     assert "count" in CAPABILITIES["sql_exec"].metric_definitions["n"]
     for season in ("2023-24", "2024-25"):
         envelope = call_capability("sql_exec", {
-            "sql": YOUNG_SCORERS.format(season=season), "season": season})
+            "sql": YOUNG_SCORERS.format(season=season)})
         numeric = {
             key for row in envelope.rows for key, value in row.items()
             if isinstance(value, (int, float)) and not isinstance(value, bool)
@@ -106,9 +106,10 @@ def test_a_question_no_prebuilt_tool_answers_returns_real_cited_rows(
     template = YOUNG_SCORERS if kind == "young" else FIFTY_WIN_COUNT
     assert EXPECTED[(season, kind)] == expected
     envelope = call_capability("sql_exec", {
-        "sql": template.format(season=season), "season": season})
+        "sql": template.format(season=season)})
     assert envelope.capability == "sql_exec"
-    assert envelope.season == season
+    assert envelope.season is None
+    assert envelope.task_season_scoped is False
     assert envelope.rows == [{"n": expected}]
     assert envelope.units == {"n": "count"}
     assert envelope.source == "v1:sql_exec:warehouse"
@@ -122,7 +123,7 @@ def test_the_most_wins_question_names_the_real_team_and_total(
     from v2.adapters import call_capability
 
     envelope = call_capability("sql_exec", {
-        "sql": MOST_WINS.format(season=season), "season": season})
+        "sql": MOST_WINS.format(season=season)})
     assert envelope.rows[0]["n"] == (
         64 if season == "2023-24" else 68)
     assert envelope.rows[0]["team_name"] == (
@@ -132,11 +133,11 @@ def test_the_query_is_part_of_the_evidence_identity(real_warehouse):
     from v2.adapters import call_capability
 
     first = call_capability("sql_exec", {
-        "sql": YOUNG_SCORERS.format(season="2023-24"), "season": "2023-24"})
+        "sql": YOUNG_SCORERS.format(season="2023-24")})
     rerun = call_capability("sql_exec", {
-        "sql": YOUNG_SCORERS.format(season="2023-24"), "season": "2023-24"})
+        "sql": YOUNG_SCORERS.format(season="2023-24")})
     other = call_capability("sql_exec", {
-        "sql": FIFTY_WIN_COUNT.format(season="2023-24"), "season": "2023-24"})
+        "sql": FIFTY_WIN_COUNT.format(season="2023-24")})
     assert first.evidence_id == rerun.evidence_id
     assert first.evidence_id != other.evidence_id
 
@@ -161,7 +162,7 @@ def test_a_write_attempt_is_refused_before_execution_naming_the_violation(
     before = duckdb.connect(str(WAREHOUSE), read_only=True).execute(
         "SELECT COUNT(*) FROM silver_hist_standings").fetchone()[0]
     with pytest.raises(AdapterError) as excinfo:
-        call_capability("sql_exec", {"sql": bad, "season": "2024-25"})
+        call_capability("sql_exec", {"sql": bad})
     assert violation in str(excinfo.value)
     assert bad[:60] in str(excinfo.value)
     after = duckdb.connect(str(WAREHOUSE), read_only=True).execute(
@@ -176,7 +177,7 @@ def test_a_query_outside_the_declared_set_is_refused(real_warehouse):
     bad = "SELECT * FROM silver_award_winners WHERE _season = '2024-25'"
     assert "silver_award_winners" not in set(_SQL_TABLES)
     with pytest.raises(AdapterError) as excinfo:
-        call_capability("sql_exec", {"sql": bad, "season": "2024-25"})
+        call_capability("sql_exec", {"sql": bad})
     assert "unknown or unavailable tables" in str(excinfo.value)
     assert bad[:60] in str(excinfo.value)
 
@@ -188,7 +189,7 @@ def test_a_query_returning_nothing_fails_loudly_with_the_query_attached(
     sql = ("SELECT player_name, pts FROM silver_hist_player_seasons "
            "WHERE _season = '2024-25' AND age <= 10 AND pts >= 50")
     with pytest.raises(AdapterError) as excinfo:
-        call_capability("sql_exec", {"sql": sql, "season": "2024-25"})
+        call_capability("sql_exec", {"sql": sql})
     assert "0 rows" in str(excinfo.value)
     assert sql[:60] in str(excinfo.value)
 
@@ -199,7 +200,7 @@ def test_a_wrong_subject_negative_fails_loudly_end_to_end(real_warehouse):
     sql = ("SELECT player_name, pts FROM silver_hist_player_seasons "
            "WHERE _season = '2024-25' AND player_name = 'Nobody McNobody'")
     with pytest.raises(AdapterError) as excinfo:
-        call_capability("sql_exec", {"sql": sql, "season": "2024-25"})
+        call_capability("sql_exec", {"sql": sql})
     assert "0 rows" in str(excinfo.value)
     assert "Nobody McNobody" in str(excinfo.value)
 

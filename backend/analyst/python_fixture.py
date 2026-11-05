@@ -38,7 +38,7 @@ async def main():
         "SELECT PTS FROM silver_unavailable",
         "DELETE FROM silver_leaders_pts",
     ]
-    args = [{"sql": sql, "season": "2090-91"} for sql in queries]
+    args = [{"sql": sql} for sql in queries]
     direct = [await tools["sql_exec"].ainvoke(arg) for arg in args]
     schema = await tools["warehouse_schema"].ainvoke({})
     (root / "python-baseline.json").write_text(

@@ -181,6 +181,60 @@ def annotate(sql: str | None, rows: list[dict], columns: list[str],
     }, schema)["season_semantics"]
 
 
+def test_sql_exec_does_not_offer_a_season_argument() -> None:
+    from shared.tools.sql_exec import sql_exec
+
+    schema = sql_exec.args_schema.model_json_schema()
+    assert "season" not in schema["properties"]
+
+
+def test_sql_exec_cannot_certify_a_requested_season_its_sql_does_not_enforce(
+        synthetic_warehouse) -> None:
+    from shared.tools.sql_exec import sql_exec
+
+    sql = "SELECT team_name, _season FROM silver_hist_standings ORDER BY _season"
+    result = asyncio.run(sql_exec.ainvoke({"sql": sql, "season": "2099-00"}))
+
+    assert result["ok"] is True
+    assert "season" not in result["meta"]
+    assert {row["_season"] for row in result["rows"]} == {
+        "2031-32", "2036-37", "2042-43"}
+    labels = {
+        item["season_label"]
+        for item in result["season_semantics"]["resolved_labels"]}
+    assert labels == {"2031-32", "2036-37", "2042-43"}
+
+
+def test_sql_exec_capability_does_not_certify_an_unenforced_requested_season(
+        synthetic_warehouse) -> None:
+    from v2.adapters import call_capability
+
+    sql = "SELECT team_name, _season FROM silver_hist_standings ORDER BY _season"
+    envelope = call_capability("sql_exec", {"sql": sql, "season": "2099-00"})
+
+    assert envelope.season is None
+    assert envelope.task_season_scoped is False
+    assert {row["_season"] for row in envelope.rows} == {
+        "2031-32", "2036-37", "2042-43"}
+
+
+def test_sql_exec_preserves_a_season_the_sql_really_filters(
+        synthetic_warehouse) -> None:
+    sql = (
+        "SELECT team_name, _season FROM silver_hist_standings "
+        "WHERE _season = '2036-37'"
+    )
+    result = run_sql(sql)
+
+    assert result["ok"] is True
+    assert "season" not in result["meta"]
+    assert result["rows"] == [{"team_name": "Amber Merlins", "_season": "2036-37"}]
+    labels = {
+        item["season_label"]
+        for item in result["season_semantics"]["resolved_labels"]}
+    assert labels == {"2036-37"}
+
+
 def test_sql_exec_uses_full_schema_for_hidden_canonical_season(
         wide_synthetic_warehouse) -> None:
     sql = (
