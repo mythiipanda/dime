@@ -157,7 +157,7 @@ def _failed_live_response(live, entity_scoped: bool, entity: str, table: str, se
     from shared import store
     stale = None
     if entity_scoped and entity:
-        stale = store.read_frame(table, '_entity = ?', [entity])
+        stale = store.read_frame(table, '_season = ? AND _entity = ?', [season, entity])
     if stale is not None and stale.height > 0:
         out = _datasets_envelope(table, season, stale, True)
         out['ok'] = True
