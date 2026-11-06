@@ -169,19 +169,15 @@ def _failed_live_response(live, entity_scoped: bool, entity: str, table: str, se
 
 def _sort_frame_by_game_date(frame):
     import polars as pl
-    for fmt_s in ('%b %d, %Y', '%Y-%m-%d'):
-        try:
-            frame = frame.with_columns(pl.col('GAME_DATE').str.strptime(pl.Date, fmt_s, strict=False).alias('_d'))
-            if frame['_d'].null_count() < frame.height:
-                frame = frame.sort('_d', descending=True, nulls_last=True).drop('_d')
-            else:
-                frame = frame.drop('_d')
-                continue
-            break
-        except Exception:
-            if '_d' in frame.columns:
-                frame = frame.drop('_d')
-            continue
+    try:
+        frame = frame.with_columns(pl.col('GAME_DATE').str.strptime(pl.Date, '%b %d, %Y', strict=False).fill_null(pl.col('GAME_DATE').str.strptime(pl.Date, '%Y-%m-%d', strict=False)).alias('_d'))
+        if frame['_d'].null_count() < frame.height:
+            frame = frame.sort('_d', descending=True, nulls_last=True).drop('_d')
+        else:
+            frame = frame.drop('_d')
+    except Exception:
+        if '_d' in frame.columns:
+            frame = frame.drop('_d')
     return frame
 
 def dataset(name: str, season: str='2025-26', player_id: int=0, team_id: int=0, game_id: str='', game_date: str='', stat: str='PTS', ids: str='', player_a: str='', player_b: str='', fmt: str='json'):
