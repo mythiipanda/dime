@@ -417,7 +417,6 @@ def test_sql_capability_keeps_generic_aggregate_units(
 
 
 @pytest.mark.parametrize("sql", [
-    "SELECT PTS AS player_points, REB AS player_points FROM silver_hist_player_seasons",
     "SELECT PTS AS PTS, REB AS pts FROM silver_hist_player_seasons",
     "SELECT PTS * 2 AS PTS FROM silver_hist_player_seasons",
     "SELECT SUM(PTS) AS PTS FROM silver_hist_player_seasons",
@@ -426,7 +425,6 @@ def test_sql_capability_keeps_generic_aggregate_units(
     "WITH rates AS (SELECT PTS FROM silver_hist_player_seasons) "
     "SELECT PTS FROM rates",
     "SELECT * FROM silver_hist_player_seasons",
-    "SELECT PTS, PTS FROM silver_hist_player_seasons",
     "SELECT PTS FROM silver_hist_player_seasons "
     "UNION ALL SELECT PTS FROM silver_leaders_pts",
 ])
@@ -436,6 +434,23 @@ def test_sql_capability_does_not_guess_units_for_unsupported_projections(
     assert not {"PTS", "PTS_1", "player_points"}.intersection(evidence.units)
     assert not {"PTS", "PTS_1", "player_points"}.intersection(
         evidence.metric_definitions)
+
+
+@pytest.mark.parametrize("sql,duplicate", [
+    ("SELECT PTS AS player_points, REB AS player_points "
+     "FROM silver_hist_player_seasons", "player_points"),
+    ("SELECT PTS, PTS FROM silver_hist_player_seasons", "PTS"),
+])
+def test_sql_capability_refuses_exact_duplicate_output_columns(
+        unit_synthetic_warehouse, sql: str, duplicate: str) -> None:
+    from v2.adapters.core import AdapterError
+
+    with pytest.raises(AdapterError) as excinfo:
+        _execute_sql_capability(sql)
+    message = str(excinfo.value)
+    assert "duplicate output column name" in message
+    assert duplicate in message
+    assert "unique alias" in message
 
 
 def test_actual_sql_exec_resolves_generic_off_by_one_shape_and_preserves_raw(
@@ -482,15 +497,12 @@ def test_actual_sql_exec_end_year_and_canonical_agree(synthetic_warehouse) -> No
     assert semantics["contradictions"] == []
 
 
-def test_wide_sql_alias_literal_and_duplicate_outputs_stay_unresolved(
+def test_wide_sql_alias_and_literal_outputs_stay_unresolved(
         wide_synthetic_warehouse) -> None:
     alias = run_sql(
         "SELECT _season AS season_id FROM silver_hist_standings")
     literal = run_sql(
         "SELECT '2021-22' AS _season FROM silver_hist_standings")
-    duplicate = run_sql(
-        "SELECT 2021 AS season_id, season_id "
-        "FROM silver_hist_standings")
 
     assert alias["ok"] and alias["season_semantics"]["resolved_labels"] == []
     assert alias["season_semantics"]["season_columns"][0][
@@ -498,10 +510,20 @@ def test_wide_sql_alias_literal_and_duplicate_outputs_stay_unresolved(
     assert literal["ok"] and literal["season_semantics"]["resolved_labels"] == []
     assert literal["season_semantics"]["season_columns"][0][
         "attribution_supported"] is False
-    assert duplicate["ok"]
-    assert duplicate["season_semantics"]["resolved_labels"] == []
-    assert duplicate["season_semantics"]["query_attribution"][
-        "mode"] == "unresolved"
+
+
+def test_wide_sql_duplicate_outputs_are_refused(
+        wide_synthetic_warehouse) -> None:
+    duplicate = run_sql(
+        "SELECT 2021 AS season_id, season_id "
+        "FROM silver_hist_standings")
+
+    assert duplicate["ok"] is False
+    assert "duplicate output column name" in duplicate["error"]
+    assert "season_id" in duplicate["error"]
+    assert "unique alias" in duplicate["error"]
+    assert not duplicate["rows"]
+    assert "season_semantics" not in duplicate
 
 
 def test_cte_and_join_results_stay_unresolved(synthetic_warehouse) -> None:
@@ -520,19 +542,15 @@ def test_cte_and_join_results_stay_unresolved(synthetic_warehouse) -> None:
         assert result["season_semantics"]["resolved_labels"] == []
 
 
-def test_actual_duplicate_output_columns_are_unresolved(synthetic_warehouse) -> None:
+def test_actual_duplicate_output_columns_are_refused(synthetic_warehouse) -> None:
     result = run_sql(
         "SELECT 2025 AS season, season FROM silver_hist_standings LIMIT 1")
-    assert result["ok"] is True
-    assert result["columns"] == ["season", "season"]
-    assert len(result["rows"]) == 1
-    assert set(result["rows"][0]) == {"season"}
-    semantics = result["season_semantics"]
-    assert semantics["query_attribution"]["mode"] == "unresolved"
-    assert semantics["resolved_labels"] == []
-    column = semantics["season_columns"][0]
-    assert column["attribution_supported"] is False
-    assert column["reason"] == "duplicate output column name"
+    assert result["ok"] is False
+    assert "duplicate output column name" in result["error"]
+    assert "season" in result["error"]
+    assert "unique alias" in result["error"]
+    assert not result["rows"]
+    assert "season_semantics" not in result
 
 
 def test_duplicate_output_name_unit_refusal() -> None:
