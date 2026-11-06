@@ -251,7 +251,8 @@ def test_sql_exec_bridge_attaches_basis_and_survives(monkeypatch):
 
     async def fake_rerun(query):
         return {"tool": "rerun_sql", "ok": True, "columns": ["n"],
-                "rows": [{"n": 6}], "sql": query, "capped": False, "ms": 3}
+                "rows": [{"n": 6}], "tables": ["some_declared_table"],
+                "sql": query, "capped": False, "ms": 3}
 
     monkeypatch.setattr(se_module, "rerun_sql", fake_rerun)
     monkeypatch.setattr(se_module, "_get_warehouse_schema",
@@ -259,6 +260,7 @@ def test_sql_exec_bridge_attaches_basis_and_survives(monkeypatch):
     result = asyncio.run(se_module.sql_exec.ainvoke(
         {"sql": "SELECT count(*) FROM some_declared_table"}))
     assert result["ok"] is True
+    assert result["meta"]["tables"] == ["some_declared_table"]
     assert result["meta"]["basis"] == {
         "status": "ok",
         "aggregates": [{"index": 0, "kind": "count_star"}]}
@@ -273,6 +275,7 @@ def test_sql_exec_capped_seam_profile_scope_returned_post_cap(monkeypatch):
     async def fake_rerun(query):
         return {"tool": "rerun_sql", "ok": True, "columns": ["v"],
                 "rows": [{"v": i} for i in range(CAP)],
+                "tables": ["some_declared_table"],
                 "sql": query, "capped": True, "ms": 3}
 
     monkeypatch.setattr(se_module, "rerun_sql", fake_rerun)

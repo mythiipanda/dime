@@ -131,6 +131,7 @@ def test_rerun_sql_accepts_captured_cte_with_known_physical_source(monkeypatch):
 
     assert result["ok"] is True
     assert result["sql"] == sql
+    assert result["tables"] == ["silver_hist_gamelogs"]
     assert result["rows"] == [{"GAMES": 0}]
     assert executed == [sql]
 
@@ -173,7 +174,9 @@ def test_validate_rejects_adversarial_sql(bad):
 
 @pytest.mark.parametrize("good", LEGIT)
 def test_validate_accepts_legit_reads(good):
-    assert _validate_readonly_sql(good, {"silver_standings"})
+    sql, tables = _validate_readonly_sql(good, {"silver_standings"})
+    assert sql
+    assert tables == ["silver_standings"]
 
 
 @pytest.mark.parametrize("bad", WRITES + STACKED + DISALLOWED_TABLES)
@@ -187,4 +190,5 @@ def test_rerun_sql_rejects_without_mutation(warehouse, bad):
 def test_rerun_sql_legit_read_returns_rows(warehouse):
     out = asyncio.run(rerun_sql("SELECT TEAM, WINS FROM silver_standings"))
     assert out["ok"] is True
+    assert out["tables"] == ["silver_standings"]
     assert out["rows"] == [{"TEAM": "OKC", "WINS": 68}]
