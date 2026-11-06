@@ -4251,6 +4251,7 @@ async def text_to_sql(question: str) -> dict[str, Any]:
 
     from .. import store as _store
     from ..providers import invoke_with_fallback
+    from ..query import _duplicate_output_error, _duplicate_output_name
 
     present, cols = _get_warehouse_schema()
     if not present:
@@ -4371,6 +4372,13 @@ async def text_to_sql(question: str) -> dict[str, Any]:
                 "(SELECT DISTINCT col FROM table LIMIT 20)."
             )
             continue
+        duplicate = _duplicate_output_name(names)
+        if duplicate is not None:
+            feedback = (
+                f"\nPrevious SQL failed: "
+                f"{_duplicate_output_error(duplicate)} Fix it."
+            )
+            continue
         out_rows = [dict(zip(names, r)) for r in rows[:25]]
         _attach_player_names(out_rows)
         return {"tool": "text_to_sql", "ok": True,
@@ -4411,6 +4419,7 @@ async def rerun_sql(sql: str) -> dict[str, Any]:
     import time as _time
 
     from .. import store as _store
+    from ..query import _duplicate_output_error, _duplicate_output_name
 
     sql = (sql or "").strip()
     con = _store.connect(read_only=True)
@@ -4441,18 +4450,10 @@ async def rerun_sql(sql: str) -> dict[str, Any]:
             con.close()
         except Exception:
             pass
-    seen: set[str] = set()
-    duplicate: str | None = None
-    for name in names:
-        if name in seen:
-            duplicate = name
-            break
-        seen.add(name)
+    duplicate = _duplicate_output_name(names)
     if duplicate is not None:
         return {"tool": "rerun_sql", "ok": False,
-                "error": (f"duplicate output column name {duplicate!r}; "
-                          "give every SELECT column a unique alias so no "
-                          "value is silently overwritten"),
+                "error": _duplicate_output_error(duplicate),
                 "sql": sql}
     capped = len(rows) > RERUN_ROW_CAP
     return {"tool": "rerun_sql", "ok": True,
