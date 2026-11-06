@@ -1258,17 +1258,6 @@
   "sql_exec": {
     "arguments": {
       "properties": {
-        "season": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null
-        },
         "sql": {
           "type": "string"
         }

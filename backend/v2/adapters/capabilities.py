@@ -576,6 +576,8 @@ _LIST = [
     Capability(
         name="sql_exec",
         tool_name="sql_exec",
+        season_arg=None,
+        task_season_scoped=False,
         open_vocabulary=True,
         publishes_declared_schema=True,
         units=SQL_EXEC_UNITS,
