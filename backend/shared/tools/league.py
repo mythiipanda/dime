@@ -4441,6 +4441,19 @@ async def rerun_sql(sql: str) -> dict[str, Any]:
             con.close()
         except Exception:
             pass
+    seen: set[str] = set()
+    duplicate: str | None = None
+    for name in names:
+        if name in seen:
+            duplicate = name
+            break
+        seen.add(name)
+    if duplicate is not None:
+        return {"tool": "rerun_sql", "ok": False,
+                "error": (f"duplicate output column name {duplicate!r}; "
+                          "give every SELECT column a unique alias so no "
+                          "value is silently overwritten"),
+                "sql": sql}
     capped = len(rows) > RERUN_ROW_CAP
     return {"tool": "rerun_sql", "ok": True,
             "columns": names,
