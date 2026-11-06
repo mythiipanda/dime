@@ -5100,16 +5100,22 @@ def get_leaderboard_deltas(season: str | None = None, days: int = 7) -> dict[str
                             "rank_change": change,
                             "pts_base": old[2], "pts_now": pts,
                             "pts_change": (pts or 0) - (old[2] or 0)})
-    climbers.sort(key=lambda d: d["rank_change"], reverse=True)
-    fallers.sort(key=lambda d: d["rank_change"])
-    new_entries.sort(key=lambda d: d["rank"] or 999)
+    climbers.sort(key=lambda d: (-(d["rank_change"] or 0),
+                                 str(d["player"] or "").casefold(),
+                                 str(d["player"] or "")))
+    fallers.sort(key=lambda d: ((d["rank_change"] or 0),
+                                str(d["player"] or "").casefold(),
+                                str(d["player"] or "")))
+    new_entries.sort(key=lambda d: ((d["rank"] or 999),
+                                    str(d["player"] or "").casefold(),
+                                    str(d["player"] or "")))
     try:
         span = (_date.fromisoformat(str(latest))
                 - _date.fromisoformat(str(base))).days
     except (TypeError, ValueError):
         span = 0
     return {"tool": "get_leaderboard_deltas", "ok": True,
-            "rows": {"climbers": climbers[:10], "fallers": fallers[:10],
+            "rows": {"climbers": climbers, "fallers": fallers,
                      "new_entries": new_entries},
             "meta": {"source": "leaderboard_snapshots", "season": season,
                      "current_date": latest, "base_date": base,
