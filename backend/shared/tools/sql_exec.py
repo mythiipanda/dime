@@ -2,6 +2,7 @@ from typing import Any
 
 from langchain_core.tools import tool
 
+from .count_evidence import count_evidence_meta
 from .league import (
     RERUN_ROW_CAP,
     RERUN_TIMEOUT_S,
@@ -24,7 +25,7 @@ def _failure(query: str, message: str) -> dict[str, Any]:
     return {"tool": TOOL, "ok": False, "rows": {},
             "meta": {"sql": query[:500]}, "error": message}
 
-@tool("sql_exec", description='Run one agent-written read-only analytical query over the warehouse.\n\nThe query must be a single SELECT or WITH statement over the declared\nsilver tables. Writes, stacked statements, and tables outside the\ndeclared set are refused before execution. Results are capped at\nRERUN_ROW_CAP rows with a RERUN_TIMEOUT_S statement timeout, and a\nquery that returns nothing fails instead of publishing an empty\nanswer. Name the primary numeric column for what it measures, so a\npercentage answers as TS_PCT and a count as `n`; the column you\nalias is the column a citation binds to. Returned rows are computed\nfrom the supplied SQL, never curated table values.')
+@tool("sql_exec", description='Run one agent-written read-only analytical query over the warehouse.\n\nThe query must be a single SELECT or WITH statement over the declared\nsilver tables. Writes, stacked statements, and tables outside the\ndeclared set are refused before execution. Results are capped at\nRERUN_ROW_CAP rows with a RERUN_TIMEOUT_S statement timeout, and a\nquery that returns nothing fails instead of publishing an empty\nanswer. Name the primary numeric column for what it measures, so a\npercentage answers as TS_PCT and a count as `n`; the column you\nalias is the column a citation binds to. Returned rows are computed\nfrom the supplied SQL, never curated table values.\n\nEvery ok result also carries meta.basis and meta.profile. meta.basis\nis a local, best-effort classification of the query’s own SELECT\nlist, by 0-based column ordinal into the result’s column list: it\nreports which projected expressions are direct COUNT aggregates —\nCOUNT(*) (number of input rows in each returned group; ungrouped, the total input rows), COUNT(column) (number of non-null input values of that column in each group), and COUNT(DISTINCT ...)\n(never an entity count; a scalar distinct argument skips NULLs, a composite tuple value may include NULL components). If any projection cannot\nbe accounted for — stars, duplicates, wrapped or nested counts,\nsetops, parse doubt — basis fails closed to status="unavailable" and\nsays nothing about your numbers. meta.profile reports only the\nreturned (post-cap) rows: how many rows were returned and, per\ncolumn, how many returned values were non-null. It never reports\npre-cap totals or entity counts. Both describe only what was\nreturned, not what your query means, and neither validates your\nlogic. If you need a contributor count for an expression such as\nAVG, or distinct-value counts, add COUNT(metric) or COUNT(DISTINCT x)\ncolumns to your own query — the warehouse answers those\ndirectly.')
 async def sql_exec(sql: str) -> dict[str, Any]:
     query = (sql or "").strip()
     if not query:
@@ -67,6 +68,8 @@ async def sql_exec(sql: str) -> dict[str, Any]:
     }
     result = {"tool": TOOL, "ok": True, "rows": rows,
               "columns": out.get("columns", []), "sql": query, "meta": meta}
+    out_columns = out.get("columns", [])
+    result["meta"].update(count_evidence_meta(query, out_columns, rows))
     schema_tables: dict[str, Any] = {}
     if tables:
         _present, columns = _get_warehouse_schema()
