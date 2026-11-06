@@ -7,7 +7,6 @@ from .league import (
     RERUN_ROW_CAP,
     RERUN_TIMEOUT_S,
     _SQL_TABLES,
-    _TABLE_REF_RE,
     _get_warehouse_schema,
     rerun_sql,
 )
@@ -17,9 +16,6 @@ TOOL = "sql_exec"
 TABLES = tuple(sorted(_SQL_TABLES))
 SOURCE = "warehouse"
 MAX_SQL_CHARS = 8000
-
-def tables_in(sql: str) -> list[str]:
-    return sorted({a or b for a, b in _TABLE_REF_RE.findall(sql or "")})
 
 def _failure(query: str, message: str) -> dict[str, Any]:
     return {"tool": TOOL, "ok": False, "rows": {},
@@ -44,7 +40,7 @@ async def sql_exec(sql: str) -> dict[str, Any]:
         return _failure(
             query, "sql_exec: query returned 0 rows, so no answer can be "
                    f"published; sql: {query[:500]}")
-    tables = tables_in(query)
+    tables = out["tables"]
     meta: dict[str, Any] = {
         "source": SOURCE,
         "dataset": "warehouse",

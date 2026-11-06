@@ -4191,7 +4191,7 @@ _WRITE_RE = _re_mod.compile(
     r"vacuum|detach)\b")
 _TABLE_REF_RE = _re_mod.compile(r"(?i)from\s+(\w+)|join\s+(\w+)")
 
-def _validate_readonly_sql(sql: str, present: set[str]) -> str:
+def _validate_readonly_sql(sql: str, present: set[str]) -> tuple[str, list[str]]:
     sql = (sql or "").strip().rstrip(";").strip()
     if not _SELECT_RE.match(sql):
         raise ValueError("only SELECT/WITH queries are allowed")
@@ -4221,7 +4221,7 @@ def _validate_readonly_sql(sql: str, present: set[str]) -> str:
             used.add(source.name)
     if not used or not used.issubset(present):
         raise ValueError("unknown or unavailable tables")
-    return sql
+    return sql, sorted(used)
 
 def _attach_player_names(rows: list[dict]) -> None:
     if not rows:
@@ -4350,7 +4350,7 @@ async def text_to_sql(question: str) -> dict[str, Any]:
             feedback = "\nPrevious reply was not a single SELECT. Reply with SQL only."
             continue
         try:
-            sql = _validate_readonly_sql(sql, set(present))
+            sql, _validated_tables = _validate_readonly_sql(sql, set(present))
         except ValueError as vexc:
             feedback = f"\nPrevious reply was rejected: {vexc}. Reply with SQL only."
             continue
@@ -4426,7 +4426,7 @@ async def rerun_sql(sql: str) -> dict[str, Any]:
         return {"tool": "rerun_sql", "ok": False,
                 "error": "warehouse empty"}
     try:
-        sql = _validate_readonly_sql(sql, present)
+        sql, validated_tables = _validate_readonly_sql(sql, present)
     except ValueError as vexc:
         return {"tool": "rerun_sql", "ok": False, "error": str(vexc)[:160]}
     t0 = _time.time()
@@ -4445,6 +4445,7 @@ async def rerun_sql(sql: str) -> dict[str, Any]:
     return {"tool": "rerun_sql", "ok": True,
             "columns": names,
             "rows": [dict(zip(names, r)) for r in rows[:RERUN_ROW_CAP]],
+            "tables": validated_tables,
             "sql": sql, "capped": capped,
             "ms": int((_time.time() - t0) * 1000)}
 
