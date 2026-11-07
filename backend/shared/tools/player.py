@@ -1834,7 +1834,10 @@ def get_splits(player_id: str | int, season: str | None = None) -> dict[str, Any
             try:
                 g = g.with_columns(
                     pl.col("GAME_DATE").str.strptime(
-                        pl.Date, "%b %d, %Y", strict=False).alias("_d")
+                        pl.Date, "%b %d, %Y", strict=False)
+                        .fill_null(pl.col("GAME_DATE").str.strptime(
+                            pl.Date, "%Y-%m-%d", strict=False))
+                        .alias("_d")
                 )
             except Exception:
                 pass
