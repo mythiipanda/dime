@@ -1044,7 +1044,7 @@ def get_trend(player_id: str | int, season: str | None = None) -> dict[str, Any]
     if len(pts) < 5:
         return {"tool": "get_trend", "ok": False, "error": "too few games"}
     decay = 0.94
-    weights = [decay ** i for i in range(len(pts))]
+    weights = [decay ** (len(pts) - 1 - i) for i in range(len(pts))]
     recent = pts[-20:]
     rw = weights[-len(recent):]
     form = sum(p * w for p, w in zip(recent, rw)) / sum(rw)
