@@ -405,6 +405,10 @@ def get_regression_check(player: str, stat: str = "PTS", n: int = 10,
     scales = {"true_shooting": 20.0, "minutes": 0.25, "shot_volume": 1.0 / 3.0,
               "opponent_defense": 0.25}
 
+    drivers = sorted(drivers_all,
+                     key=lambda d: abs(_f(d.get("delta"))
+                                       * scales.get(d.get("factor"), 1.0)),
+                     reverse=True)[:3]
     _UNITS = {"true_shooting": "pct", "minutes": "min", "shot_volume": "fga",
               "opponent_defense": "rank"}
     for d in drivers_all:
@@ -414,10 +418,6 @@ def get_regression_check(player: str, stat: str = "PTS", n: int = 10,
                 v = d.get(k)
                 if isinstance(v, (int, float)) and abs(v) <= 1.5:
                     d[k] = round(v * 100, 1)
-    drivers = sorted(drivers_all,
-                     key=lambda d: abs(_f(d.get("delta"))
-                                       * scales.get(d.get("factor"), 1.0)),
-                     reverse=True)[:3]
     season_pg = sea_sum["per_game"]
     tol = (max(2.0, 0.10 * season_pg) if stat == "PTS"
            else max(1.0, 0.15 * season_pg))
