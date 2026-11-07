@@ -940,7 +940,8 @@ def _competitive_lineup_nets(
             " FROM silver_hist_possessions"
             " WHERE _season = ?"
             " AND (offense_team_id = ? OR defense_team_id = ?)"
-            " AND garbage = 0",
+            " AND garbage = 0"
+            " AND count_as_possession = 'true'",
             [season, team_id, team_id],
         ).fetchall()
     finally:
