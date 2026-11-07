@@ -124,7 +124,7 @@ def zone_diet(rows: object) -> dict[str, float | None]:
         except (TypeError, ValueError):
             continue
         zone = str(r.get("zone", ""))
-        if zone == "Restricted Area":
+        if zone in ("Restricted Area", "rim"):
             rim = round(share, 3)
         if _is_three_zone(zone):
             three += share
