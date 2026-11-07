@@ -16,6 +16,7 @@ import {
   withUnverifiedMarkers,
   gapMessage,
   parseAnswerSubmission,
+  parsePiSources,
   type PiSource,
 } from "./evidence";
 import type { AiMessage } from "./chat";
@@ -631,4 +632,60 @@ test("anchor resolvability logic distinguishes hydrated sources from unhydrated/
 
   // Unknown ref -> must not resolve
   assert.equal(resolveAnchor({ ref: "src-unknown", row: 0, columns: ["PTS"] }, sources), false);
+});
+
+test("parsePiSources preserves plain-text tool errors and keeps JSON success", () => {
+  const rawError = "Tool execution failed: warehouse read failed";
+  const parsed = parsePiSources([
+    {
+      ref: "src-err",
+      tool: "run_python",
+      response: { content: [{ type: "text", text: rawError }] },
+    },
+    {
+      ref: "src-ok",
+      tool: "sql_exec",
+      response: {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify({
+              rows: [{ PTS: 30, PLAYER: "Luka" }],
+              meta: { tables: ["Season Totals"] },
+              declared_column_semantics: { PTS: { unit: "points" } },
+            }),
+          },
+        ],
+      },
+    },
+    { ref: "src-bad", tool: "sql_exec", response: { content: [{ type: "text", text: 42 }] } },
+    { tool: "sql_exec", response: { content: [{ type: "text", text: rawError }] } },
+    "not-a-record",
+  ]);
+  assert.equal(parsed.length, 2);
+  const err = parsed[0];
+  assert.equal(err.ref, "src-err");
+  assert.equal(err.tool, "run_python");
+  assert.equal(err.label, "run_python");
+  assert.deepEqual(err.rows, []);
+  assert.deepEqual(err.units, {});
+  assert.equal(err.data, rawError);
+  assert.equal(JSON.stringify(err.data), JSON.stringify(rawError));
+  const ok = parsed[1];
+  assert.equal(ok.label, "Season Totals");
+  assert.deepEqual(ok.rows, [{ PTS: 30, PLAYER: "Luka" }]);
+  assert.deepEqual(ok.units, { PTS: "points" });
+  assert.deepEqual(ok.data, {
+    rows: [{ PTS: 30, PLAYER: "Luka" }],
+    meta: { tables: ["Season Totals"] },
+    declared_column_semantics: { PTS: { unit: "points" } },
+  });
+  assert.equal(err.rows[0], undefined);
+  const rowData = err.rows[0];
+  assert.equal(Boolean(rowData && ["PTS"].every((c) => Object.hasOwn(rowData as object, c))), false);
+  assert.deepEqual(parsePiSources("not-an-array"), []);
+  assert.deepEqual(
+    parsePiSources([{ ref: "src-x", tool: "t", response: { content: "not-array" } }]),
+    []
+  );
 });

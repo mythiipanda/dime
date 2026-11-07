@@ -682,7 +682,7 @@ export function parsePiSources(raw: unknown): PiSource[] {
         }
       }
       return [{ ref: record.ref, tool: record.tool, label: tables.join(", ") || record.tool, rows, units, data }];
-    } catch { return []; }
+    } catch { return [{ ref: record.ref, tool: record.tool, label: record.tool, rows: [], units: {}, data: text.text }]; }
   });
 }
 
