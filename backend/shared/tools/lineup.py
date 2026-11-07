@@ -222,6 +222,7 @@ def get_lineup_stats(
             "rows_after_dedupe": len(rows)}
     estimated = agg is None
     units: list[dict[str, Any]] = []
+    estimated_by_unit: list[bool] = []
     for r in rows:
         key = _lineup_key(r)
         name = r.get("GROUP_NAME") or "unknown"
@@ -242,13 +243,16 @@ def get_lineup_stats(
             pa = pf - float(r.get("PLUS_MINUS") or 0)
             blowout_share = 0.0
             est_min = round(float(r.get("MIN") or 0), 1)
-        flags = _flags(poss, blowout_share, min_possessions, estimated)
+        estimated_by_unit.append(a is None)
+        flags = _flags(poss, blowout_share, min_possessions, a is None)
         units.append({
             "GROUP_NAME": name, "EST_MIN": est_min, "GP": r.get("GP"),
             "poss": poss, "off_poss": off_poss, "def_poss": def_poss,
             **_ratings(pf, off_poss, pa, def_poss),
             "PLUS_MINUS": r.get("PLUS_MINUS"),
             "blowout_share": blowout_share, "flags": flags})
+    any_estimated = any(estimated_by_unit)
+    all_estimated = bool(estimated_by_unit) and all(estimated_by_unit)
     units.sort(key=lambda u: u["poss"], reverse=True)
     visible, hidden, warning = _apply_sample_floor(units, min_possessions,
                                                   include_small)
@@ -260,13 +264,22 @@ def get_lineup_stats(
     if hist:
         minute_note = ("minutes are clock minutes from the warehouse "
                        "lineup table")
-    elif estimated:
+    elif all_estimated:
         minute_note = ("play-level data missing; ratings estimated from "
                        "lineup minutes")
+    elif any_estimated:
+        minute_note = ("some units use play-level possession data and "
+                       "some are estimated from lineup minutes")
     else:
         minute_note = ("silver_lineups MIN is from a partial upstream "
                        "fetch, so minutes are estimated as poss/2")
-    if not estimated:
+    if all_estimated:
+        data_note = minute_note
+    elif any_estimated:
+        data_note = ("mixed possession data: not all units use "
+                     "play-level possessions; estimated units use "
+                     "MIN*2 possessions; " + minute_note)
+    elif not estimated:
         data_note = ("play-level possession data (verified against gamelog "
                      "totals) drives ratings and possession counts; "
                      + minute_note)

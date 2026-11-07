@@ -207,3 +207,75 @@ def test_get_lineup_stats_dedupes_before_limit(monkeypatch):
     assert len(names) == len(set(names)) == 2
     assert res["meta"]["rows_before_dedupe"] == 17
     assert res["meta"]["rows_after_dedupe"] == 2
+
+def _provenance_rows():
+    return [
+        {"GROUP_ID": "1-2-3-4-5", "GROUP_NAME": "measured", "GP": 40,
+         "MIN": 210.0, "PTS": 2310.0, "PLUS_MINUS": 21.0},
+        {"GROUP_ID": "6-7-8-9-10", "GROUP_NAME": "fallback", "GP": 12,
+         "MIN": 100.0, "PTS": 220.0, "PLUS_MINUS": 20.0},
+    ]
+
+def _provenance_agg(include_fallback):
+    agg = {(1, 2, 3, 4, 5): {"off_poss": 100, "def_poss": 100,
+                             "pf": 120, "pa": 100, "blowout": 0}}
+    if include_fallback:
+        agg[(6, 7, 8, 9, 10)] = {"off_poss": 100, "def_poss": 100,
+                                 "pf": 220, "pa": 200, "blowout": 0}
+    return agg
+
+def _run_provenance(monkeypatch, agg):
+    monkeypatch.setattr("shared.tools.lineup._warehouse_or_live",
+                        _fake_warehouse(_provenance_rows()))
+    monkeypatch.setattr("shared.tools.lineup._possession_aggs",
+                        lambda *a: agg)
+    return get_lineup_stats.invoke({"team": 1610612752, "season": "2024-25",
+                                    "min_possessions": 100})
+
+def _by_name(res):
+    return {r["GROUP_NAME"]: r for r in res["rows"]}
+
+def test_mixed_lineup_flags_only_fallback_estimated(monkeypatch):
+    res = _run_provenance(monkeypatch, _provenance_agg(False))
+    assert res["ok"] is True
+    rows = _by_name(res)
+    assert rows["measured"]["poss"] == 200
+    assert rows["measured"]["NET_RATING"] == 20.0
+    assert rows["fallback"]["poss"] == 200
+    assert rows["fallback"]["NET_RATING"] == 20.0
+    assert not any("estimated-possessions" in f for f in rows["measured"]["flags"])
+    assert any("estimated-possessions" in f for f in rows["fallback"]["flags"])
+    note = res["meta"]["data_note"]
+    assert "mixed possession data" in note
+    assert "MIN*2" in note
+    assert "verified against gamelog" not in note
+
+def test_all_measured_lineup_no_estimated_flag(monkeypatch):
+    res = _run_provenance(monkeypatch, _provenance_agg(True))
+    assert res["ok"] is True
+    for r in res["rows"]:
+        assert not any("estimated-possessions" in f for f in r["flags"])
+    note = res["meta"]["data_note"]
+    assert "play-level possession data" in note
+    assert "verified against gamelog" in note
+    assert "mixed possession data" not in note
+
+def test_no_agg_lineup_all_estimated_flagged(monkeypatch):
+    res = _run_provenance(monkeypatch, None)
+    assert res["ok"] is True
+    for r in res["rows"]:
+        assert any("estimated-possessions" in f for f in r["flags"])
+    note = res["meta"]["data_note"]
+    assert "play-level data missing" in note
+    assert "verified against gamelog" not in note
+    assert "mixed possession data" not in note
+
+def test_empty_agg_lineup_all_estimated_flagged(monkeypatch):
+    res = _run_provenance(monkeypatch, {})
+    assert res["ok"] is True
+    for r in res["rows"]:
+        assert any("estimated-possessions" in f for f in r["flags"])
+    note = res["meta"]["data_note"]
+    assert "play-level data missing" in note
+    assert "verified against gamelog" not in note
+    assert "mixed possession data" not in note
