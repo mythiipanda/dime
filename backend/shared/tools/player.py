@@ -1013,8 +1013,16 @@ def get_last_x(player_id: str | int, n: int = 10, season: str | None = None) -> 
     frame = _pl.DataFrame(rows)
     try:
         frame = frame.with_columns(
-            _pl.col("GAME_DATE").str.strptime(_pl.Date, "%b %d, %Y").alias("_d")
-        ).sort("_d", descending=True).drop("_d")
+            _pl.col("GAME_DATE").str.strptime(_pl.Date, "%b %d, %Y", strict=False)
+            .fill_null(_pl.col("GAME_DATE").str.strptime(_pl.Date, "%Y-%m-%d", strict=False))
+            .alias("_d")
+        )
+        if frame.filter(
+            _pl.col("_d").is_null() & _pl.col("GAME_DATE").is_not_null()
+        ).height:
+            frame = frame.drop("_d")
+            raise ValueError("unparseable GAME_DATE")
+        frame = frame.sort("_d", descending=True).drop("_d")
     except Exception:
         frame = frame.reverse()
     out = frame.head(min(max(n, 1), 25)).to_dicts()
