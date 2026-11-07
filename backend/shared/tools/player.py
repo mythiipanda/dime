@@ -1206,7 +1206,7 @@ def _pool_from_gamelogs(season):
     try:
         games = _read_df(
             "SELECT _entity, MIN, PTS, REB, AST, STL, BLK, TOV,"
-            " FG3A, FTA, FG3_PCT, FT_PCT"
+            " FG3M, FG3A, FTM, FTA, FG3_PCT, FT_PCT"
             " FROM silver_player_gamelogs WHERE _season = ?", [season])
     except Exception:
         games = []
@@ -1241,10 +1241,18 @@ def _gamelog_feats(gs):
         vals = [_num(g.get(col)) for g in gs]
         vals = [v for v in vals if v is not None]
         feats[feat] = 36 * (sum(vals) / len(vals)) / avg_min if vals else None
-    for feat in PCTS:
-        vals = [_num(g.get(feat)) for g in gs]
-        vals = [v for v in vals if v is not None]
-        feats[feat] = sum(vals) / len(vals) if vals else None
+    for feat, make_col, att_col in (
+            ("FG3_PCT", "FG3M", "FG3A"), ("FT_PCT", "FTM", "FTA")):
+        makes = 0.0
+        attempts = 0.0
+        for g in gs:
+            make = _num(g.get(make_col))
+            att = _num(g.get(att_col))
+            if make is None or att is None:
+                continue
+            makes += make
+            attempts += att
+        feats[feat] = makes / attempts if attempts else None
     for feat in ADVS:
         feats[feat] = None
     return feats
