@@ -1932,9 +1932,14 @@ def _monthly_splits(g) -> list:
     if "GAME_DATE" not in g.columns:
         return out
     try:
-        gm = g.with_columns(
-            pl.col("GAME_DATE").cast(pl.String).str.slice(0, 3).alias("_mon")
-        )
+        _raw_mon = pl.col("GAME_DATE").cast(pl.String).str.slice(0, 3)
+        _mon_expr = _raw_mon
+        if "_d" in g.columns:
+            _d_dtype = g.schema.get("_d")
+            if _d_dtype is not None and type(_d_dtype) in (pl.Date, pl.Datetime):
+                _mon_expr = pl.when(pl.col("_d").is_not_null()).then(
+                    pl.col("_d").dt.strftime("%b")).otherwise(_raw_mon)
+        gm = g.with_columns(_mon_expr.alias("_mon"))
         if "_d" in gm.columns:
             try:
                 order = (gm.filter(pl.col("_d").is_not_null())
