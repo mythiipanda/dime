@@ -1,7 +1,8 @@
 
 
 def test_missing_player_playoff_rows_name_player_gap_and_team_slice(monkeypatch):
-    from shared.tools import gamelog
+    from shared.tools import gamelog, _core
+    monkeypatch.setattr(_core, "last_completed_season", lambda: "2025-26")
 
     class Result:
         def __init__(self, rows):
@@ -29,7 +30,7 @@ def test_missing_player_playoff_rows_name_player_gap_and_team_slice(monkeypatch)
             pass
 
     monkeypatch.setattr(gamelog.store, "connect", lambda **_: Connection())
-    monkeypatch.setattr(gamelog, "_load_games", lambda *args: [])
+    monkeypatch.setattr(gamelog, "_load_games", lambda *args, **kwargs: [])
     monkeypatch.setattr(gamelog, "coerce_player_id", lambda player: 1629029)
     monkeypatch.setattr(gamelog, "playoff_inactive_note", lambda *args: None)
 
