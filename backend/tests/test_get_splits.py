@@ -101,3 +101,72 @@ def test_null_preserves_baseline(monkeypatch):
             + [_row(None, 88), _row(_long(11), 110),
                _row(_long(12), 120)])
     _assert_last10(_run(monkeypatch, rows), 80.8)
+
+
+_NON_MONTHLY = {"home", "away", "wins", "losses", "last10", "starter", "bench"}
+
+_MONTH_FACTS = [
+    ("Aug 05, 2026", "2026-08-05", 10),
+    ("Aug 10, 2026", "2026-08-10", 20),
+    ("Aug 15, 2026", "2026-08-15", 30),
+    ("Sep 05, 2026", "2026-09-05", 40),
+    ("Sep 10, 2026", "2026-09-10", 50),
+]
+
+_MONTH_EXPECTED = [
+    {"split": "Aug", "GP": 3, "PPG": 20.0, "FG_PCT": 0.5},
+    {"split": "Sep", "GP": 2, "PPG": 45.0, "FG_PCT": 0.5},
+]
+
+
+def _monthly(res):
+    assert res["ok"] is True
+    return [r for r in res["rows"] if r.get("split") not in _NON_MONTHLY]
+
+
+def test_monthly_iso_matches_long_control(monkeypatch):
+    long_res = _run(monkeypatch, [_row(l, p) for l, _i, p in _MONTH_FACTS])
+    iso_res = _run(monkeypatch, [_row(i, p) for _l, i, p in _MONTH_FACTS])
+    assert _monthly(long_res) == _MONTH_EXPECTED
+    assert _monthly(iso_res) == _MONTH_EXPECTED
+    assert iso_res == long_res
+
+
+def test_monthly_mixed_matches_long_control(monkeypatch):
+    long_res = _run(monkeypatch, [_row(l, p) for l, _i, p in _MONTH_FACTS])
+    mixed_res = _run(monkeypatch, [
+        _row(l if k % 2 == 0 else i, p)
+        for k, (l, i, p) in enumerate(_MONTH_FACTS)])
+    assert _monthly(mixed_res) == _MONTH_EXPECTED
+    assert mixed_res == long_res
+
+
+def test_monthly_yearless_long_across_years(monkeypatch):
+    rows = [_row("Aug 05, 2025", 10), _row("Aug 05, 2026", 30)]
+    assert _monthly(_run(monkeypatch, rows)) == [
+        {"split": "Aug", "GP": 2, "PPG": 20.0, "FG_PCT": 0.5}]
+
+
+def test_monthly_null_malformed_fallback_matches_direct_helper_without_d(monkeypatch):
+    import polars as pl
+
+    rows = [_row("Aug 05, 2026", 10), _row("Aug 10, 2026", 20),
+            _row("Foo 99, 9999", 40), _row(None, 99)]
+    public_monthly = _monthly(_run(monkeypatch, rows))
+    direct_monthly = player._monthly_splits(pl.DataFrame(rows))
+    key = lambda r: str(r.get("split"))
+    assert sorted(public_monthly, key=key) == sorted(direct_monthly, key=key)
+    assert {"split": "Aug", "GP": 2, "PPG": 15.0, "FG_PCT": 0.5} in public_monthly
+    assert {"split": "Foo", "GP": 1, "PPG": 40.0, "FG_PCT": 0.5} in public_monthly
+
+
+def test_monthly_cap12_remains_and_iso_matches_long(monkeypatch):
+    abbr = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct"]
+    long_rows = [_row(f"{abbr[m - 1]} 05, 2026", m * 10) for m in range(1, 11)]
+    iso_rows = [_row(f"2026-{m:02d}-05", m * 10) for m in range(1, 11)]
+    long_res = _run(monkeypatch, long_rows)
+    iso_res = _run(monkeypatch, iso_rows)
+    assert len(long_res["rows"]) == 12
+    assert len(iso_res["rows"]) == 12
+    assert [r["split"] for r in _monthly(iso_res)] == abbr[:9]
+    assert iso_res == long_res
