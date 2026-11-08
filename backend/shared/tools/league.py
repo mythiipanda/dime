@@ -1601,12 +1601,13 @@ def _qualified_rate_board(
             con,
             "SELECT PLAYER_NAME, TEAM_ABBREVIATION, GP, MIN, TS_PCT "
             "FROM silver_advanced WHERE _season = ? "
-            f"AND GP * MIN >= ? ORDER BY TS_PCT {order}, GP * MIN DESC",
+            f"AND MIN >= ? ORDER BY TS_PCT {order}, MIN DESC",
             [season, floor_value], "silver_advanced", qualification)
         rows = [
             {"RANK": index, "PLAYER": row[0], "TEAM": row[1],
-             "GP": row[2], "MPG": row[3],
-             "TOTAL_MINUTES": row[2] * row[3],
+             "GP": row[2],
+             "MPG": (row[3] / row[2]) if row[2] else 0,
+             "TOTAL_MINUTES": row[3],
              "TS_PCT": round(float(row[4]) * 100, 1)}
             for index, row in enumerate(raw, 1)
         ]
