@@ -58,8 +58,8 @@ def warehouse(tmp_path, monkeypatch):
         )
         con.execute(
             "INSERT INTO silver_advanced VALUES "
-            "('Garbage Time', 'XYZ', 2, 8.0, 0.75, '2025-26'),"
-            "('Real Shooter', 'ABC', 70, 30.0, 0.60, '2025-26')"
+            "('Garbage Time', 'XYZ', 2, 16.0, 0.75, '2025-26'),"
+            "('Real Shooter', 'ABC', 70, 2100.0, 0.60, '2025-26')"
         )
     finally:
         con.close()
@@ -107,7 +107,7 @@ def test_ts_pct_zero_floor_uses_1000_minutes(fake_con):
     )
     assert res["ok"] is True
     sql = _sql_text(fake_con)
-    assert "GP * MIN >=" in sql
+    assert "AND MIN >=" in sql
     bound = max(p for _sql, params in fake_con.calls for p in params
                 if isinstance(p, (int, float)))
     assert bound == 1000
@@ -137,7 +137,7 @@ def test_ts_pct_scrub_excluded_empirically(warehouse):
     assert "Garbage Time" not in names
     assert "Real Shooter" in names
     for r in res["rows"]:
-        assert r["GP"] * r["MPG"] >= 1000
+        assert r["TOTAL_MINUTES"] >= 1000
 
 def _live_tables():
     if not REPO_WAREHOUSE.exists():
