@@ -536,15 +536,15 @@ def get_player_ratings(
     try:
         raw = con.execute(
             f"SELECT PLAYER_NAME, TEAM_ABBREVIATION, GP, MIN, {column} "
-            "FROM silver_advanced WHERE _season = ? AND GP * MIN >= ? "
-            f"ORDER BY {column} {direction}, GP * MIN DESC LIMIT ?",
+            "FROM silver_advanced WHERE _season = ? AND MIN >= ? "
+            f"ORDER BY {column} {direction}, MIN DESC LIMIT ?",
             [season, min_minutes, limit],
         ).fetchall()
     finally:
         con.close()
     rows = [
         {"RANK": rank, "PLAYER": row[0], "TEAM": row[1], "GP": row[2],
-         "MPG": row[3], "MINUTES": round(row[2] * row[3]), column: row[4]}
+         "MPG": (row[3] / row[2]) if row[2] else 0, "MINUTES": round(row[3]), column: row[4]}
         for rank, row in enumerate(raw, 1)
     ]
     return {
