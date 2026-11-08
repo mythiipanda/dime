@@ -2865,6 +2865,7 @@ def get_player_report(player: str | int, season: str | None = None) -> dict[str,
             _err["season_error"] = True
         return _err
     line = avg["rows"][0]
+    name = str(line.get("PLAYER") or player)
 
     historical = season != last_completed_season()
     adv = ({"ok": False} if historical else
@@ -2873,8 +2874,7 @@ def get_player_report(player: str | int, season: str | None = None) -> dict[str,
              get_shot_zones.invoke({"player_id": pid, "season": season}))
     clutch = ({"ok": False} if historical else
               get_clutch.invoke({"scope": "player", "season": season,
-                                 "player": str(player)}))
-    name = str(line.get("PLAYER") or player)
+                                 "player": name}))
     a = adv.get("rows") if adv.get("ok") and isinstance(adv.get("rows"), dict) else None
     z = shots.get("rows") if shots.get("ok") and isinstance(shots.get("rows"), list) else []
     cr = clutch.get("rows") if clutch.get("ok") and isinstance(clutch.get("rows"), list) else []
