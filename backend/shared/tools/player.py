@@ -442,7 +442,12 @@ async def _compare_one(who: str, season: str) -> dict[str, Any]:
     games = await loop.run_in_executor(None, _gamelogs)
     res, sub_errors = await _compare_subresults(who, pid, season, games)
     if not games:
-        games = res.get("intel", {}).get("rows", []) or []
+        _intel = res.get("intel", {}) or {}
+        _imeta = _intel.get("meta") or {}
+        if _imeta.get("coverage") == "season_line":
+            games = []
+        else:
+            games = _intel.get("rows", []) or []
     if not games:
         return {
             "name": _display_name(who), "player_id": pid,
