@@ -1271,8 +1271,7 @@ def _gamelog_feats(gs):
     return feats
 
 def _comps_pool(season, leaders, adv):
-    notes = ("cross-era comps unavailable: "
-             "warehouse holds player stat profiles for 2025-26 only")
+    notes = "cross-era comps unavailable"
     use_adv = bool(adv)
     if leaders:
         pool = _pool_from_leaders(leaders, adv, use_adv)
