@@ -1,7 +1,9 @@
 import { Type, type Static } from "typebox";
 import { Value } from "typebox/value";
 import { defineTool } from "@earendil-works/pi-coding-agent";
-import { objectValue, sourceResult, type SourceRecord } from "./python-tools.js";
+import { objectValue, sourceResult, sourceRecordSchema, type SourceRecord } from "./python-tools.js";
+
+export { sourceRecordSchema, type SourceRecord } from "./python-tools.js";
 
 export const anchorSelectorSchema = Type.Object({
     ref: Type.String({ minLength: 1 }),

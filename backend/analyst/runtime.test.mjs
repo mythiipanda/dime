@@ -6,7 +6,8 @@ import { ModelRuntime } from "@earendil-works/pi-coding-agent";
 import { createAssistantMessageEventStream } from "@earendil-works/pi-ai";
 import { createAnalystSession } from "./dist/runtime.js";
 import { priorSourceTool } from "./dist/pi-context.js";
-import { connectPythonTools } from "./dist/python-tools.js";
+import { connectPythonTools, sourceResult } from "./dist/python-tools.js";
+import { validateAnswerSubmission } from "./dist/submit-tool.js";
 
 const root = process.env.DIME_PI_TEST_ROOT;
 assert(root, "DIME_PI_TEST_ROOT must identify an isolated proof directory");
@@ -163,7 +164,15 @@ test("real Python sql_exec and schema cross MCP into Pi with source semantics an
     return copy;
   };
   try {
-    assert.deepEqual(bridge.tools.map(t => t.name), ["sql_exec", "warehouse_schema"]);
+    assert.deepEqual(bridge.tools.map(t => t.name), [
+      "sql_exec",
+      "warehouse_schema",
+      "get_rapm",
+      "get_game_prediction",
+      "get_wpa_leaders",
+      "get_comps",
+      "get_lineup_stats",
+    ]);
     assert.deepEqual(bridge.tools[0].parameters.required, ["sql"]);
     const setup = await fixture("python", `
       const args = ${JSON.stringify(baseline.args)};
@@ -226,6 +235,106 @@ test("real Python sql_exec and schema cross MCP into Pi with source semantics an
       refs: queries.map(r => r.ref), peak, units: ["points_per_game", "total_points"], pid }));
   } finally {
     session?.dispose();
+    await bridge.close();
+  }
+  assert.throws(() => process.kill(pid, 0), /ESRCH/);
+});
+
+test("real statistical tools cross MCP with anchor compatibility, rows, columns, and JSON safety", async () => {
+  const bridge = await connectPythonTools({ python: process.env.DIME_PI_PYTHON, cwd: root,
+    env: { ...process.env } });
+  const pid = bridge.pid;
+  try {
+    const toolMap = new Map(bridge.tools.map(t => [t.name, t]));
+    assert.equal(bridge.tools.length, 7);
+
+    // 1. get_rapm
+    const rapmTool = toolMap.get("get_rapm");
+    assert(rapmTool);
+    const rapmRes = await rapmTool.execute("call-rapm", { player: "NonexistentPlayer", season: "2024-25" }, undefined);
+    assert(rapmRes.structuredContent);
+    assert(Array.isArray(rapmRes.structuredContent.result.rows));
+    assert(Array.isArray(rapmRes.structuredContent.result.columns));
+    assert(rapmRes.structuredContent.result.columns.includes("player_id"));
+    assert(rapmRes.structuredContent.result.columns.includes("name"));
+    assert(rapmRes.structuredContent.result.columns.includes("rapm"));
+
+    // 2. get_game_prediction
+    const predTool = toolMap.get("get_game_prediction");
+    assert(predTool);
+    const predRes = await predTool.execute("call-pred", { a: "BOS", b: "MIA", n_sims: 100 }, undefined);
+    assert(predRes.structuredContent);
+    assert(Array.isArray(predRes.structuredContent.result.rows));
+    assert(Array.isArray(predRes.structuredContent.result.columns));
+    assert(predRes.structuredContent.result.columns.includes("team_home"));
+    assert(predRes.structuredContent.result.columns.includes("win_prob_home"));
+    assert(predRes.structuredContent.result.columns.includes("projected_score_home"));
+    if (predRes.structuredContent.result.ok && predRes.structuredContent.result.rows.length > 0) {
+      assert.equal(predRes.structuredContent.result.rows.length, 1);
+      const row = predRes.structuredContent.result.rows[0];
+      assert.equal(typeof row.team_home, "string");
+      assert.equal(typeof row.win_prob_home, "number");
+    }
+
+    // 3. get_wpa_leaders
+    const wpaTool = toolMap.get("get_wpa_leaders");
+    assert(wpaTool);
+    const wpaRes = await wpaTool.execute("call-wpa", { season: 2025, limit: 5 }, undefined);
+    assert(wpaRes.structuredContent);
+    assert(Array.isArray(wpaRes.structuredContent.result.rows));
+    assert(Array.isArray(wpaRes.structuredContent.result.columns));
+    assert(wpaRes.structuredContent.result.columns.includes("rank"));
+    assert(wpaRes.structuredContent.result.columns.includes("player"));
+    assert(wpaRes.structuredContent.result.columns.includes("wpa"));
+
+    // 4. get_comps
+    const compsTool = toolMap.get("get_comps");
+    assert(compsTool);
+    const compsRes = await compsTool.execute("call-comps", { player_id: 2544, season: "2023-24", k: 3 }, undefined);
+    assert(compsRes.structuredContent);
+    assert(Array.isArray(compsRes.structuredContent.result.rows));
+    assert(Array.isArray(compsRes.structuredContent.result.columns));
+
+    // 5. get_lineup_stats
+    const lineupTool = toolMap.get("get_lineup_stats");
+    assert(lineupTool);
+    const lineupRes = await lineupTool.execute("call-lineup", { team: "BOS", season: "2023-24", limit: 5 }, undefined);
+    assert(lineupRes.structuredContent);
+    assert(Array.isArray(lineupRes.structuredContent.result.rows));
+    assert(Array.isArray(lineupRes.structuredContent.result.columns));
+
+    // Verify anchor compatibility across all 5 statistical tools
+    for (const toolName of ["get_rapm", "get_game_prediction", "get_wpa_leaders", "get_comps", "get_lineup_stats"]) {
+      const syntheticRecord = {
+        ref: `ref-${toolName}`,
+        callId: `call-${toolName}`,
+        tool: toolName,
+        response: {
+          content: [{
+            type: "text",
+            text: JSON.stringify({
+              ok: true,
+              tool: toolName,
+              rows: [{ id: 1, val: 42 }],
+              columns: ["id", "val"]
+            })
+          }]
+        }
+      };
+      const submission = validateAnswerSubmission({
+        blocks: [{
+          text: `Anchor for ${toolName}`,
+          anchors: [{
+            ref: syntheticRecord.ref,
+            row: 0,
+            columns: ["id", "val"]
+          }]
+        }]
+      }, (ref) => ref === syntheticRecord.ref ? syntheticRecord : undefined);
+      assert.equal(submission.blocks[0].text, `Anchor for ${toolName}`);
+    }
+    console.log(JSON.stringify({ proof: "statistical-tools-anchor-compatible", tools: 5 }));
+  } finally {
     await bridge.close();
   }
   assert.throws(() => process.kill(pid, 0), /ESRCH/);

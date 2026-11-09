@@ -6,9 +6,37 @@ import { Type, type Static } from "typebox";
 import { Value } from "typebox/value";
 import type { JsonValue } from "@earendil-works/pi-ai";
 import { defineTool } from "@earendil-works/pi-coding-agent";
+
+export type PythonToolName =
+    | "sql_exec"
+    | "warehouse_schema"
+    | "get_rapm"
+    | "get_game_prediction"
+    | "get_wpa_leaders"
+    | "get_comps"
+    | "get_lineup_stats";
+
+export const ANALYST_TOOL_NAMES: readonly PythonToolName[] = [
+    "sql_exec",
+    "warehouse_schema",
+    "get_rapm",
+    "get_game_prediction",
+    "get_wpa_leaders",
+    "get_comps",
+    "get_lineup_stats",
+] as const;
+
 export const sourceRecordSchema = Type.Object({
     ref: Type.String(), callId: Type.String(),
-    tool: Type.Union([Type.Literal("sql_exec"), Type.Literal("warehouse_schema")]),
+    tool: Type.Union([
+        Type.Literal("sql_exec"),
+        Type.Literal("warehouse_schema"),
+        Type.Literal("get_rapm"),
+        Type.Literal("get_game_prediction"),
+        Type.Literal("get_wpa_leaders"),
+        Type.Literal("get_comps"),
+        Type.Literal("get_lineup_stats"),
+    ]),
     response: Type.Object({
         content: Type.Array(Type.Unknown()),
         structuredContent: Type.Optional(Type.Unknown()), isError: Type.Optional(Type.Boolean())
@@ -69,14 +97,17 @@ export async function connectPythonTools({ python, cwd, env }: PythonToolsOption
     const results = new Map<string, SourceRecord>();
     try {
         await client.connect(transport);
-        const catalogue = (await client.listTools()).filter(tool => ["sql_exec", "warehouse_schema"].includes(tool.name));
-        if (catalogue.length !== 2 || !["sql_exec", "warehouse_schema"].every(name => catalogue.some(tool => tool.name === name))) {
+        const catalogue = (await client.listTools()).filter(tool =>
+            (ANALYST_TOOL_NAMES as readonly string[]).includes(tool.name)
+        );
+        if (catalogue.length !== ANALYST_TOOL_NAMES.length ||
+            !ANALYST_TOOL_NAMES.every(name => catalogue.some(tool => tool.name === name))) {
             throw new Error("Unexpected Python tool catalogue");
         }
         // The Python catalogue remains the authority for arguments. Its JSON Schema is checked by Pi.
         const tools = catalogue.map(tool => {
-            const name = tool.name;
-            if (name !== "sql_exec" && name !== "warehouse_schema")
+            const name = tool.name as PythonToolName;
+            if (!ANALYST_TOOL_NAMES.includes(name))
                 throw new Error("Unexpected Python tool");
             return defineTool({
                 name, label: name,
