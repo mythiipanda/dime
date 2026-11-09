@@ -416,6 +416,48 @@ export function ProvenancePanel({ provenance }: { provenance: DimeProvenance }) 
   );
 }
 
+function escapeCsvCell(val: unknown): string {
+  if (val === null || val === undefined) return "";
+  const s = String(val);
+  if (s.includes(",") || s.includes('"') || s.includes("\n") || s.includes("\r")) {
+    return `"${s.replaceAll('"', '""')}"`;
+  }
+  return s;
+}
+
+export function artifactToCopyText(artifact: DimeArtifact): string {
+  if (artifact.kind === "table") {
+    const header = artifact.columns.map((c) => escapeCsvCell(c.label || c.key)).join(",");
+    const rows = artifact.rows.map((row) => row.map(escapeCsvCell).join(","));
+    return [header, ...rows].join("\n");
+  }
+  if (artifact.kind === "compare") {
+    const lines = [
+      `${artifact.title} (${artifact.aName} vs ${artifact.bName})`,
+      ...artifact.rows.map((r) => `${r.label}: ${artifact.aName} ${r.a} · ${artifact.bName} ${r.b}`),
+    ];
+    return lines.join("\n");
+  }
+  if (artifact.kind === "chart") {
+    const lines = [
+      artifact.title,
+      ...artifact.series.map((s) => `${s.name}: ${s.values.join(", ")}`),
+    ];
+    if (artifact.footnote) {
+      lines.push(artifact.footnote);
+    }
+    return lines.join("\n");
+  }
+  if (artifact.kind === "shot_chart") {
+    const lines = [
+      artifact.title,
+      ...artifact.zones.map((z) => `x=${z.x}, y=${z.y}: ${z.att} att, ${z.pct}%`),
+    ];
+    return lines.join("\n");
+  }
+  return "";
+}
+
 export function StreamArtifacts({ artifacts }: { artifacts: DimeArtifact[] }) {
   if (artifacts.length === 0) return null;
   return (
@@ -425,6 +467,7 @@ export function StreamArtifacts({ artifacts }: { artifacts: DimeArtifact[] }) {
           key={i}
           title={artifact.title}
           source={artifact.source}
+          copyText={artifactToCopyText(artifact)}
           delay={i * 40}
         >
           <ArtifactBody artifact={artifact} />

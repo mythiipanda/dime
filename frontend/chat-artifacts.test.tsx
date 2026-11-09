@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import * as React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { ArtifactBody, AssistantTurn, LiveAssistant } from "./components/site/DimeHarness";
+import { ArtifactBody, AssistantTurn, LiveAssistant, artifactToCopyText } from "./components/site/DimeHarness";
 import { DimeStream, type DimeArtifact, type StreamSnapshot } from "./lib/dime-stream";
 import { assistantMessageFromSnapshot } from "./components/site/DimeHarness";
 
@@ -639,4 +639,91 @@ test("a normal graph_end keeps text artifacts carry with no failure", () => {
   assert.ok(html.includes(ANSWER_TEXT), html);
   assert.ok(!/reach Dime/.test(html), html);
   assert.ok(!/out of quota/i.test(html), html);
+});
+
+test("artifactToCopyText formats table artifacts as CSV with proper header and escaped cells", () => {
+  const tableArtifact: DimeArtifact = {
+    kind: "table",
+    title: "League leaders",
+    columns: [
+      { key: "player", label: "Player" },
+      { key: "team", label: "Team" },
+      { key: "notes", label: "" },
+      { key: "ppg", label: "PPG", numeric: true },
+    ],
+    rows: [
+      ["Shai Gilgeous-Alexander", "OKC", "MVP candidate, elite scorer", 31.1],
+      ['Luka "Magic" Doncic', "DAL\nTexas", '30+ ppg, "clutch"', 33.9],
+    ],
+  };
+
+  const csv = artifactToCopyText(tableArtifact);
+  assert.equal(
+    csv,
+    'Player,Team,notes,PPG\nShai Gilgeous-Alexander,OKC,"MVP candidate, elite scorer",31.1\n"Luka ""Magic"" Doncic","DAL\nTexas","30+ ppg, ""clutch""",33.9',
+  );
+});
+
+test("artifactToCopyText formats compare artifacts", () => {
+  const compareArtifact: DimeArtifact = {
+    kind: "compare",
+    title: "Head-to-head",
+    aName: "SGA",
+    bName: "Luka",
+    rows: [
+      { label: "PPG", a: 31.2, b: 28.4 },
+      { label: "TS%", a: 63.5, b: 61.2 },
+    ],
+  };
+
+  const text = artifactToCopyText(compareArtifact);
+  assert.equal(
+    text,
+    "Head-to-head (SGA vs Luka)\nPPG: SGA 31.2 · Luka 28.4\nTS%: SGA 63.5 · Luka 61.2",
+  );
+});
+
+test("artifactToCopyText formats chart series", () => {
+  const chartArtifact: DimeArtifact = {
+    kind: "chart",
+    title: "Scoring trend",
+    series: [
+      { name: "Gilgeous-Alexander", values: [24, 31, 28] },
+      { name: "Doncic", values: [27, 25, 30] },
+    ],
+    footnote: "points per game",
+  };
+
+  const text = artifactToCopyText(chartArtifact);
+  assert.equal(
+    text,
+    "Scoring trend\nGilgeous-Alexander: 24, 31, 28\nDoncic: 27, 25, 30\npoints per game",
+  );
+
+  const chartWithoutFootnote: DimeArtifact = {
+    kind: "chart",
+    title: "Scoring trend",
+    series: [{ name: "Gilgeous-Alexander", values: [30] }],
+  };
+  assert.equal(
+    artifactToCopyText(chartWithoutFootnote),
+    "Scoring trend\nGilgeous-Alexander: 30",
+  );
+});
+
+test("artifactToCopyText formats shot chart zones", () => {
+  const shotArtifact: DimeArtifact = {
+    kind: "shot_chart",
+    title: "Shot chart",
+    zones: [
+      { x: 50, y: 12, att: 142, pct: 71 },
+      { x: 32, y: 22, att: 88, pct: 52 },
+    ],
+  };
+
+  const text = artifactToCopyText(shotArtifact);
+  assert.equal(
+    text,
+    "Shot chart\nx=50, y=12: 142 att, 71%\nx=32, y=22: 88 att, 52%",
+  );
 });
