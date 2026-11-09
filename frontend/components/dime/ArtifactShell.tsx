@@ -32,6 +32,9 @@ const SOURCE_LABELS: Record<string, string> = {
   get_wpa_leaders: "WPA leaderboard",
   get_comps: "Player comps",
   get_lineup_stats: "Lineup ratings",
+  get_win_prob: "Win probability",
+  get_on_off: "On/off splits",
+  get_shot_zones: "Shot zones",
 };
 
 function sourceLabel(source?: string) {
