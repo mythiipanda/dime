@@ -1,15 +1,20 @@
 """Named Dime data operations over MCP stdio. Pi receives a fixed read-only view."""
 
 import asyncio
+from datetime import date, datetime
+from decimal import Decimal
 import json
+import math
 import os
 from pathlib import Path
 import sys
-from datetime import date, datetime
-from decimal import Decimal
+from typing import Any
+
+import numpy as np
 
 # Resolve source imports independently of the private working directory.
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from mcp.server import Server
 from mcp.server.stdio import stdio_server
@@ -20,6 +25,14 @@ def catalogue():
     from shared.tools.sql_exec import sql_exec, TABLES
     from shared.tools.league import _get_warehouse_schema
     from shared.tools.season_semantics import annotate_schema
+    try:
+        from shared.tools.rapm import get_rapm as _orig_get_rapm
+    except ImportError:
+        from shared.tools.league import get_rapm as _orig_get_rapm
+    from shared.tools.prediction import get_game_prediction as _orig_get_game_prediction
+    from shared.tools.wpa import get_wpa_leaders as _orig_get_wpa_leaders
+    from shared.tools.player import get_comps as _orig_get_comps
+    from shared.tools.lineup import get_lineup_stats as _orig_get_lineup_stats
     from langchain_core.tools import tool
 
     declared_catalog = ", ".join(TABLES)
@@ -66,8 +79,182 @@ def catalogue():
         }
         return annotated
 
+    @tool("get_rapm", description=_orig_get_rapm.description)
+    def get_rapm(player: str = "", top: int = 10, season: str | None = None) -> dict:
+        """RAPM-lite ratings. Blank player returns top list, else one row."""
+        try:
+            res = _orig_get_rapm.invoke({"player": player, "top": top, "season": season})
+            if not isinstance(res, dict):
+                res = {"tool": "get_rapm", "ok": False, "error": str(res)}
+        except Exception as exc:
+            res = {"tool": "get_rapm", "ok": False, "error": f"{type(exc).__name__}: {exc}"}
+        rows = res.get("rows")
+        if not (res.get("ok") and isinstance(rows, list)):
+            rows = []
+        cols = list(rows[0].keys()) if rows else ["player_id", "name", "rapm", "possessions"]
+        res["rows"] = rows
+        res["columns"] = cols
+        return res
+
+    @tool("get_game_prediction", description=_orig_get_game_prediction.description)
+    def get_game_prediction(a: str = "", b: str = "", game_date: str = "",
+                            season: str | None = None, n_sims: int = 10000,
+                            seed: int = 7) -> dict:
+        """Pre-game Monte Carlo prediction: win probability, projected score/total, and confidence intervals."""
+        try:
+            res = _orig_get_game_prediction.invoke({
+                "a": a, "b": b, "game_date": game_date, "season": season, "n_sims": n_sims, "seed": seed
+            })
+            if not isinstance(res, dict):
+                res = {"tool": "get_game_prediction", "ok": False, "error": str(res)}
+        except Exception as exc:
+            res = {"tool": "get_game_prediction", "ok": False, "error": f"{type(exc).__name__}: {exc}"}
+
+        default_cols = [
+            "team_home", "team_away", "win_prob_home", "win_prob_away",
+            "projected_score_home", "projected_score_away", "pace"
+        ]
+        if res.get("ok"):
+            matchup = res.get("matchup") or {}
+            estimate = res.get("estimate") or {}
+            inputs = res.get("inputs") or {}
+            home = matchup.get("home", "")
+            away = matchup.get("away", "")
+            win_prob = estimate.get("win_prob") or {}
+            score = estimate.get("projected_score") or {}
+            pace = inputs.get("game_pace")
+            row = {
+                "team_home": home,
+                "team_away": away,
+                "win_prob_home": win_prob.get(home),
+                "win_prob_away": win_prob.get(away),
+                "projected_score_home": score.get(home),
+                "projected_score_away": score.get(away),
+                "pace": pace,
+            }
+            res["rows"] = [row]
+            res["columns"] = list(row.keys())
+        else:
+            res["rows"] = []
+            res["columns"] = default_cols
+        return res
+
+    @tool("get_wpa_leaders", description=_orig_get_wpa_leaders.description)
+    def get_wpa_leaders(season: int | str | None = 2025,
+                        limit: int | str | None = 10,
+                        min_events: int | str | None = 100) -> dict:
+        """WPA-by-play leaderboard for one season."""
+        try:
+            res = _orig_get_wpa_leaders.invoke({
+                "season": season, "limit": limit, "min_events": min_events
+            })
+            if not isinstance(res, dict):
+                res = {"tool": "get_wpa_leaders", "ok": False, "error": str(res)}
+        except Exception as exc:
+            res = {"tool": "get_wpa_leaders", "ok": False, "error": f"{type(exc).__name__}: {exc}"}
+
+        raw_rows = res.get("rows")
+        default_cols = [
+            "rank", "player", "player_id", "team", "wpa", "wpa_g",
+            "events", "plus_events", "minus_events", "games"
+        ]
+        if res.get("ok"):
+            if isinstance(raw_rows, dict) and "leaders" in raw_rows and isinstance(raw_rows["leaders"], list):
+                rows = raw_rows["leaders"]
+            elif isinstance(raw_rows, list):
+                rows = raw_rows
+            else:
+                rows = []
+        else:
+            rows = []
+        cols = list(rows[0].keys()) if rows else default_cols
+        res["rows"] = rows
+        res["columns"] = cols
+        return res
+
+    @tool("get_comps", description=_orig_get_comps.description)
+    def get_comps(player_id: str | int, season: str | None = None, k: int = 5) -> dict:
+        """Nearest statistical neighbors by per-36 + advanced shape. Same-season only."""
+        try:
+            res = _orig_get_comps.invoke({"player_id": player_id, "season": season, "k": k})
+            if not isinstance(res, dict):
+                res = {"tool": "get_comps", "ok": False, "error": str(res)}
+        except Exception as exc:
+            res = {"tool": "get_comps", "ok": False, "error": f"{type(exc).__name__}: {exc}"}
+
+        rows = res.get("rows")
+        default_cols = [
+            "PLAYER", "PLAYER_ID", "TEAM", "season", "era", "similarity",
+            "archetype", "shared_archetype", "drivers"
+        ]
+        if not (res.get("ok") and isinstance(rows, list)):
+            rows = []
+        cols = list(rows[0].keys()) if rows else default_cols
+        res["rows"] = rows
+        res["columns"] = cols
+        return res
+
+    @tool("get_lineup_stats", description=_orig_get_lineup_stats.description)
+    def get_lineup_stats(team: str | int, season: str | None = None,
+                         min_possessions: int = 100, include_small: bool = False,
+                         limit: int = 10) -> dict:
+        """Five-man lineup ratings with sample floors. Names, abbrevs, or ids."""
+        try:
+            res = _orig_get_lineup_stats.invoke({
+                "team": team, "season": season, "min_possessions": min_possessions,
+                "include_small": include_small, "limit": limit
+            })
+            if not isinstance(res, dict):
+                res = {"tool": "get_lineup_stats", "ok": False, "error": str(res)}
+        except Exception as exc:
+            res = {"tool": "get_lineup_stats", "ok": False, "error": f"{type(exc).__name__}: {exc}"}
+
+        rows = res.get("rows")
+        default_cols = [
+            "GROUP_NAME", "MIN", "OFF_RATING", "DEF_RATING", "NET_RATING", "POSS"
+        ]
+        if not (res.get("ok") and isinstance(rows, list)):
+            rows = []
+        cols = list(rows[0].keys()) if rows else default_cols
+        res["rows"] = rows
+        res["columns"] = cols
+        return res
+
     # Deliberately do not export WAREHOUSE_TOOLS, which includes mutators.
-    return {item.name: item for item in (sql_exec, warehouse_schema)}
+    return {
+        item.name: item for item in (
+            sql_exec,
+            warehouse_schema,
+            get_rapm,
+            get_game_prediction,
+            get_wpa_leaders,
+            get_comps,
+            get_lineup_stats,
+        )
+    }
+
+
+def sanitize_for_wire(val: Any) -> Any:
+    """Recursively sanitize data structures for NaN-safe JSON encoding."""
+    if val is None or isinstance(val, (str, bool, int)):
+        return val
+    if isinstance(val, (float, np.floating)):
+        return None if (math.isnan(val) or math.isinf(val)) else float(val)
+    if isinstance(val, np.integer):
+        return int(val)
+    if isinstance(val, np.bool_):
+        return bool(val)
+    if isinstance(val, np.ndarray):
+        return sanitize_for_wire(val.tolist())
+    if isinstance(val, (date, datetime)):
+        return val.isoformat()
+    if isinstance(val, Decimal):
+        return int(val) if val.as_tuple().exponent >= 0 else float(val)
+    if isinstance(val, dict):
+        return {str(k): sanitize_for_wire(v) for k, v in val.items()}
+    if isinstance(val, (list, tuple, set)):
+        return [sanitize_for_wire(x) for x in val]
+    return val
 
 
 def wire_default(value):
@@ -77,7 +264,17 @@ def wire_default(value):
         return value.isoformat()
     if isinstance(value, Decimal):
         return int(value) if value.as_tuple().exponent >= 0 else float(value)
-    raise TypeError("Data result is not JSON serializable")
+    if isinstance(value, np.integer):
+        return int(value)
+    if isinstance(value, np.floating):
+        return None if (math.isnan(value) or math.isinf(value)) else float(value)
+    if isinstance(value, np.bool_):
+        return bool(value)
+    if isinstance(value, np.ndarray):
+        return value.tolist()
+    if isinstance(value, float) and (math.isnan(value) or math.isinf(value)):
+        return None
+    raise TypeError(f"Data result is not JSON serializable: {type(value).__name__}")
 
 
 async def main():
@@ -97,7 +294,8 @@ async def main():
             # MCP responsive while independent read-only calls execute.
             result = await asyncio.to_thread(
                 lambda: asyncio.run(tools[params.name].ainvoke(params.arguments or {})))
-            return CallToolResult(content=[TextContent(type="text", text=json.dumps(result, allow_nan=False, default=wire_default))])
+            sanitized = sanitize_for_wire(result)
+            return CallToolResult(content=[TextContent(type="text", text=json.dumps(sanitized, allow_nan=False, default=wire_default))])
         except Exception as error:
             return CallToolResult(isError=True, content=[TextContent(
                 type="text", text=f"{type(error).__name__}: {error}")])
