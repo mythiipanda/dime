@@ -23,7 +23,16 @@ from mcp.types import CallToolResult, ListToolsResult, TextContent, Tool
 
 def catalogue():
     from shared.tools.sql_exec import sql_exec, TABLES
-    from shared.tools.league import _get_warehouse_schema, get_win_prob as _orig_get_win_prob
+    from shared.tools.league import (
+        _get_warehouse_schema,
+        get_win_prob as _orig_get_win_prob,
+        get_team_four_factors as _orig_get_four_factors,
+    )
+    try:
+        from shared.tools.league import get_clutch_stats as _orig_get_clutch_stats
+    except ImportError:
+        from shared.tools.league import get_clutch as _orig_get_clutch_stats
+    from shared.tools.competitive import get_competitive_ratings as _orig_get_competitive_ratings
     from shared.tools.season_semantics import annotate_schema
     try:
         from shared.tools.rapm import get_rapm as _orig_get_rapm
@@ -318,6 +327,87 @@ def catalogue():
         res["columns"] = cols
         return sanitize_for_wire(res)
 
+    @tool("get_four_factors", description=_orig_get_four_factors.description)
+    def get_four_factors(team: str = "", season: str | None = None) -> dict:
+        """Team four factors breakdown (eFG%, TOV%, ORB%, FT rate, plus defensive mirrors)."""
+        try:
+            res = _orig_get_four_factors.invoke({"team": team, "season": season})
+            if not isinstance(res, dict):
+                res = {"tool": "get_four_factors", "ok": False, "error": str(res)}
+        except Exception as exc:
+            res = {"tool": "get_four_factors", "ok": False, "error": f"{type(exc).__name__}: {exc}"}
+
+        default_cols = [
+            "team", "season", "efg_pct", "tov_pct", "orb_pct", "ft_rate",
+            "def_efg_pct", "def_tov_pct", "def_orb_pct", "def_ft_rate"
+        ]
+        raw_rows = res.get("rows")
+        if res.get("ok") and isinstance(raw_rows, list):
+            rows = [r for r in raw_rows if isinstance(r, dict)]
+        else:
+            rows = []
+        cols = list(rows[0].keys()) if rows else default_cols
+        res["rows"] = rows
+        res["columns"] = cols
+        res["ok"] = bool(res.get("ok", False))
+        return sanitize_for_wire(res)
+
+    @tool("get_clutch_stats", description=_orig_get_clutch_stats.description)
+    def get_clutch_stats(player: str = "", team: str = "", season: str | None = None, min_games: int = 5) -> dict:
+        """NBA clutch statistics (last 5 min, margin <= 5) for player or team scope."""
+        scope = "team" if (team and not player) else "player"
+        args = {"scope": scope, "season": season}
+        if player:
+            args["player"] = player
+        try:
+            res = _orig_get_clutch_stats.invoke(args)
+            if not isinstance(res, dict):
+                res = {"tool": "get_clutch_stats", "ok": False, "error": str(res)}
+        except Exception as exc:
+            res = {"tool": "get_clutch_stats", "ok": False, "error": f"{type(exc).__name__}: {exc}"}
+
+        default_cols = ["player", "team", "season", "pts", "reb", "ast", "fg_pct", "min"]
+        raw_rows = res.get("rows")
+        if res.get("ok") and isinstance(raw_rows, list):
+            rows = [r for r in raw_rows if isinstance(r, dict)]
+            if team and scope == "team":
+                abbr = team.upper()
+                filtered = [r for r in rows if r.get("TEAM_ABBREVIATION") == abbr or r.get("team") == abbr]
+                if filtered:
+                    rows = filtered
+            if min_games:
+                rows = [r for r in rows if (r.get("GP") or 0) >= min_games]
+        else:
+            rows = []
+        cols = list(rows[0].keys()) if rows else default_cols
+        res["rows"] = rows
+        res["columns"] = cols
+        return sanitize_for_wire(res)
+
+    @tool("get_competitive_ratings", description=_orig_get_competitive_ratings.description)
+    def get_competitive_ratings(team: str = "league", season: str | None = None,
+                                blowout_margin: float = 20, min_games: int = 10) -> dict:
+        """Competitive Margin of Victory (MOV excluding blowouts)."""
+        try:
+            res = _orig_get_competitive_ratings.invoke({
+                "team": team, "season": season, "blowout_margin": blowout_margin, "min_games": min_games
+            })
+            if not isinstance(res, dict):
+                res = {"tool": "get_competitive_ratings", "ok": False, "error": str(res)}
+        except Exception as exc:
+            res = {"tool": "get_competitive_ratings", "ok": False, "error": f"{type(exc).__name__}: {exc}"}
+
+        default_cols = ["team", "team_name", "games", "mov", "competitive_mov", "padding_delta"]
+        raw_rows = res.get("rows")
+        if res.get("ok") and isinstance(raw_rows, list):
+            rows = [r for r in raw_rows if isinstance(r, dict)]
+        else:
+            rows = []
+        cols = list(rows[0].keys()) if rows else default_cols
+        res["rows"] = rows
+        res["columns"] = cols
+        return sanitize_for_wire(res)
+
     # Deliberately do not export WAREHOUSE_TOOLS, which includes mutators.
     return {
         item.name: item for item in (
@@ -331,6 +421,9 @@ def catalogue():
             get_win_prob,
             get_on_off,
             get_shot_zones,
+            get_four_factors,
+            get_clutch_stats,
+            get_competitive_ratings,
         )
     }
 
