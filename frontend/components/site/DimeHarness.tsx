@@ -7,6 +7,7 @@ import ArtifactShell from "@/components/dime/ArtifactShell";
 import ArtifactCompare from "@/components/dime/ArtifactCompare";
 import ArtifactChart from "@/components/dime/ArtifactChart";
 import ArtifactShotChart from "@/components/dime/ArtifactShotChart";
+import ArtifactScatter from "@/components/dime/ArtifactScatter";
 import ArtifactTable, { type ArtifactColumn } from "@/components/dime/ArtifactTable";
 import DimeSidebar from "@/components/site/DimeSidebar";
 import DimeCommandPalette, { type PaletteEntry } from "@/components/site/DimeCommandPalette";
@@ -332,6 +333,19 @@ export function ArtifactBody({ artifact }: { artifact: DimeArtifact }) {
     if (!artifact.zones.length) return null;
     return <ArtifactShotChart zones={artifact.zones} />;
   }
+  if (artifact.kind === "scatter") {
+    if (!artifact.points.length) return null;
+    return (
+      <ArtifactScatter
+        xLabel={artifact.xLabel}
+        yLabel={artifact.yLabel}
+        points={artifact.points}
+        xMid={artifact.xMid}
+        yMid={artifact.yMid}
+        footnote={artifact.footnote}
+      />
+    );
+  }
   return null;
 }
 
@@ -454,6 +468,11 @@ export function artifactToCopyText(artifact: DimeArtifact): string {
       ...artifact.zones.map((z) => `x=${z.x}, y=${z.y}: ${z.att} att, ${z.pct}%`),
     ];
     return lines.join("\n");
+  }
+  if (artifact.kind === "scatter") {
+    const header = `Label,${escapeCsvCell(artifact.xLabel)},${escapeCsvCell(artifact.yLabel)}`;
+    const rows = artifact.points.map((p) => `${escapeCsvCell(p.label)},${p.x},${p.y}`);
+    return [header, ...rows].join("\n");
   }
   return "";
 }
