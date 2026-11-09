@@ -153,6 +153,35 @@ test("chart and shot artifacts with no data render nothing", () => {
     render({ kind: "shot_chart", title: "empty", zones: [] }),
     "",
   );
+  assert.equal(
+    render({ kind: "scatter", title: "empty", xLabel: "TS%", yLabel: "USG%", points: [] }),
+    "",
+  );
+});
+
+test("streamed scatter artifacts render SVG circles, labels, and axes", () => {
+  const html = render({
+    kind: "scatter",
+    title: "Efficiency vs Volume",
+    xLabel: "True Shooting %",
+    yLabel: "Usage %",
+    xMid: 58.0,
+    yMid: 20.0,
+    footnote: "Minimum 500 minutes",
+    points: [
+      { label: "Nikola Jokic", x: 65.0, y: 28.5, highlight: true },
+      { label: "Shai Gilgeous-Alexander", x: 63.6, y: 32.0, highlight: true },
+      { label: "Role Player", x: 54.0, y: 15.0 },
+    ],
+  });
+  assert.ok(html.includes("<svg"), html.slice(0, 120));
+  assert.ok(html.includes('role="img"'), html);
+  assert.ok(html.includes("<circle"), html);
+  assert.ok(html.includes("Nikola Jokic"), html);
+  assert.ok(html.includes("Shai Gilgeous-Alexander"), html);
+  assert.ok(html.includes("True Shooting %"), html);
+  assert.ok(html.includes("Usage %"), html);
+  assert.ok(html.includes("Minimum 500 minutes"), html);
 });
 
 test("table and compare artifacts still render their rows", () => {
@@ -725,5 +754,24 @@ test("artifactToCopyText formats shot chart zones", () => {
   assert.equal(
     text,
     "Shot chart\nx=50, y=12: 142 att, 71%\nx=32, y=22: 88 att, 52%",
+  );
+});
+
+test("artifactToCopyText formats scatter points as CSV", () => {
+  const scatterArtifact: DimeArtifact = {
+    kind: "scatter",
+    title: "Efficiency vs Volume",
+    xLabel: "TS%",
+    yLabel: "USG%",
+    points: [
+      { label: "Nikola Jokic", x: 65.0, y: 28.5, highlight: true },
+      { label: 'Luka "Magic" Doncic', x: 61.2, y: 35.5 },
+    ],
+  };
+
+  const csv = artifactToCopyText(scatterArtifact);
+  assert.equal(
+    csv,
+    'Label,TS%,USG%\nNikola Jokic,65,28.5\n"Luka ""Magic"" Doncic",61.2,35.5',
   );
 });

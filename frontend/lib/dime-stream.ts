@@ -112,11 +112,25 @@ export interface ShotChartArtifactPayload {
   zones: { x: number; y: number; att: number; pct: number }[];
 }
 
+export interface ScatterArtifactPayload {
+  kind: "scatter";
+  title: string;
+  source?: string;
+  provenance?: DimeProvenance;
+  xLabel: string;
+  yLabel: string;
+  points: { label: string; x: number; y: number; highlight?: boolean }[];
+  xMid?: number;
+  yMid?: number;
+  footnote?: string;
+}
+
 export type DimeArtifact =
   | TableArtifactPayload
   | CompareArtifactPayload
   | ChartArtifactPayload
-  | ShotChartArtifactPayload;
+  | ShotChartArtifactPayload
+  | ScatterArtifactPayload;
 
 export interface ArtifactEvent {
   type: "artifact";
@@ -659,7 +673,7 @@ function formatMetricValue(value: number): string | number {
   return Number.isInteger(value) ? value : Math.round(value * 10) / 10;
 }
 
-const RESOLVED_CHART_KINDS = new Set(["chart", "shot_chart", "table", "compare"]);
+const RESOLVED_CHART_KINDS = new Set(["chart", "shot_chart", "table", "compare", "scatter"]);
 
 function asResolvedArtifacts(raw: unknown): DimeArtifact[] {
   if (!Array.isArray(raw)) return [];
@@ -779,6 +793,50 @@ function asResolvedArtifacts(raw: unknown): DimeArtifact[] {
           aName,
           bName,
           rows,
+          source: provenanceSource(provenance),
+          provenance,
+        });
+      }
+      continue;
+    }
+
+    if (kind === "scatter") {
+      const xLabel = typeof entry.xLabel === "string" ? entry.xLabel : "";
+      const yLabel = typeof entry.yLabel === "string" ? entry.yLabel : "";
+      const xMid =
+        typeof entry.xMid === "number" && Number.isFinite(entry.xMid)
+          ? entry.xMid
+          : undefined;
+      const yMid =
+        typeof entry.yMid === "number" && Number.isFinite(entry.yMid)
+          ? entry.yMid
+          : undefined;
+      const footnote =
+        typeof entry.footnote === "string" && entry.footnote
+          ? entry.footnote
+          : undefined;
+      const points: { label: string; x: number; y: number; highlight?: boolean }[] = [];
+      for (const line of Array.isArray(entry.points) ? entry.points : []) {
+        if (typeof line !== "object" || line === null) continue;
+        const p = line as Record<string, unknown>;
+        const label = typeof p.label === "string" ? p.label : "";
+        const x = typeof p.x === "number" && Number.isFinite(p.x) ? p.x : undefined;
+        const y = typeof p.y === "number" && Number.isFinite(p.y) ? p.y : undefined;
+        const highlight = typeof p.highlight === "boolean" ? p.highlight : undefined;
+        if (label && x !== undefined && y !== undefined) {
+          points.push({ label, x, y, ...(highlight !== undefined ? { highlight } : {}) });
+        }
+      }
+      if (points.length > 0) {
+        artifacts.push({
+          kind: "scatter",
+          title,
+          xLabel,
+          yLabel,
+          points,
+          ...(xMid !== undefined ? { xMid } : {}),
+          ...(yMid !== undefined ? { yMid } : {}),
+          ...(footnote ? { footnote } : {}),
           source: provenanceSource(provenance),
           provenance,
         });
