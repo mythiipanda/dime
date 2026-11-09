@@ -4026,6 +4026,8 @@ _SQL_TABLES = [
     "silver_on_off", "silver_four_factors", "silver_four_factors_team",
     "silver_cap_players",
     "silver_rapm", "silver_rapm_prior",
+    "silver_bbref_awards", "silver_combine", "silver_rosters",
+    "silver_schedule", "silver_stints", "silver_playoff_gamelogs",
 ]
 
 RERUN_ROW_CAP = 25
@@ -4065,6 +4067,11 @@ _COLUMN_UNITS: dict[str, tuple[str, str]] = {
     "RATE": ("per_100_possessions", "rate per 100 possessions"),
     "RAPM": ("points_per_100_possessions", "regularized adjusted plus-minus per 100 possessions"),
     "POSSESSIONS": ("possessions", "total tracked possessions"),
+    "AWARD_SHARE": ("fraction_0_1", "fraction of maximum possible award points won"),
+    "VOTES_FIRST": ("first_place_votes", "number of first-place award votes received"),
+    "STANDING_REACH": ("inches", "standing reach measured in inches at the NBA draft combine"),
+    "WINGSPAN": ("inches", "wingspan measured in inches at the NBA draft combine"),
+    "HEIGHT_WO_SHOES": ("inches", "height without shoes measured in inches at the NBA draft combine"),
 }
 _COLUMN_PREFIX_UNITS: tuple[tuple[str, tuple[str, str]], ...] = (
     ("_PCT", ("fraction_0_1",
