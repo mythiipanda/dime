@@ -19,6 +19,19 @@ const SOURCE_LABELS: Record<string, string> = {
   silver_team_ratings: "Team ratings",
   silver_players: "Player profiles",
   tracking_feed: "Tracking feed",
+  silver_rapm: "RAPM ratings",
+  silver_rapm_prior: "RAPM priors",
+  silver_bbref_awards: "NBA awards",
+  silver_combine: "Draft combine",
+  silver_rosters: "Team rosters",
+  silver_stints: "Lineup stints",
+  silver_playoff_gamelogs: "Playoff logs",
+  silver_gamelogs: "Game logs",
+  get_rapm: "RAPM model",
+  get_game_prediction: "Game simulation",
+  get_wpa_leaders: "WPA leaderboard",
+  get_comps: "Player comps",
+  get_lineup_stats: "Lineup ratings",
 };
 
 function sourceLabel(source?: string) {
@@ -83,7 +96,7 @@ export default function ArtifactShell({
               ? <><polyline points="4 14 10 14 10 20" /><polyline points="20 10 14 10 14 4" /><line x1="14" y1="10" x2="21" y2="3" /><line x1="3" y1="21" x2="10" y2="14" /></>
               : <><polyline points="15 3 21 3 21 9" /><polyline points="9 21 3 21 3 15" /><line x1="21" y1="3" x2="14" y2="10" /><line x1="3" y1="21" x2="10" y2="14" /></>} />
           </button>
-          <button type="button" aria-label="Copy" title={copied ? "Copied" : "Copy"}
+          <button type="button" aria-label={copied ? "Copied" : copyText ? "Copy data" : "Copy"} title={copied ? "Copied" : copyText ? "Copy data" : "Copy"}
             onClick={copy} className={iconBtn}>
             <Ico d={copied
               ? <path d="M20 6 9 17l-5-5" />
