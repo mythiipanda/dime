@@ -60,6 +60,13 @@ export type ProductEvent = {
         status: "partial";
     };
 } | {
+    type: "custom_data";
+    data: {
+        tables?: Array<Record<string, unknown>>;
+        artifacts?: Array<Record<string, unknown>>;
+        unverified_numbers?: Array<number | string>;
+    };
+} | {
     type: "final_answer";
     data: {
         text: string;
@@ -139,6 +146,16 @@ export function createAnalyst(options: {
                         case "answer":
                             answer = event.text;
                             submission = event.submission;
+                            break;
+                        case "custom_data":
+                            yield {
+                                type: "custom_data",
+                                data: {
+                                    ...(event.tables ? { tables: event.tables } : {}),
+                                    ...(event.artifacts ? { artifacts: event.artifacts } : {}),
+                                    ...(event.unverified_numbers ? { unverified_numbers: event.unverified_numbers } : {})
+                                }
+                            };
                             break;
                         case "closed": break;
                         case "token":
