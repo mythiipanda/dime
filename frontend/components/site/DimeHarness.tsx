@@ -446,28 +446,21 @@ export function artifactToCopyText(artifact: DimeArtifact): string {
     return [header, ...rows].join("\n");
   }
   if (artifact.kind === "compare") {
-    const lines = [
-      `${artifact.title} (${artifact.aName} vs ${artifact.bName})`,
-      ...artifact.rows.map((r) => `${r.label}: ${artifact.aName} ${r.a} · ${artifact.bName} ${r.b}`),
-    ];
-    return lines.join("\n");
+    const header = `Metric,${escapeCsvCell(artifact.aName)},${escapeCsvCell(artifact.bName)}`;
+    const rows = artifact.rows.map((r) => `${escapeCsvCell(r.label)},${escapeCsvCell(r.a)},${escapeCsvCell(r.b)}`);
+    return [header, ...rows].join("\n");
   }
   if (artifact.kind === "chart") {
-    const lines = [
-      artifact.title,
-      ...artifact.series.map((s) => `${s.name}: ${s.values.join(", ")}`),
-    ];
-    if (artifact.footnote) {
-      lines.push(artifact.footnote);
-    }
-    return lines.join("\n");
+    const maxVals = Math.max(0, ...artifact.series.map((s) => s.values.length));
+    const valHeaders = Array.from({length: maxVals}, (_, i) => `Val ${i + 1}`);
+    const header = maxVals > 0 ? `Series,${valHeaders.join(",")}` : "Series";
+    const rows = artifact.series.map((s) => [escapeCsvCell(s.name), ...s.values.map(escapeCsvCell)].join(","));
+    return [header, ...rows].join("\n");
   }
   if (artifact.kind === "shot_chart") {
-    const lines = [
-      artifact.title,
-      ...artifact.zones.map((z) => `x=${z.x}, y=${z.y}: ${z.att} att, ${z.pct}%`),
-    ];
-    return lines.join("\n");
+    const header = "X,Y,Attempts,Percentage";
+    const rows = artifact.zones.map((z) => `${escapeCsvCell(z.x)},${escapeCsvCell(z.y)},${escapeCsvCell(z.att)},${escapeCsvCell(z.pct)}`);
+    return [header, ...rows].join("\n");
   }
   if (artifact.kind === "scatter") {
     const header = `Label,${escapeCsvCell(artifact.xLabel)},${escapeCsvCell(artifact.yLabel)}`;

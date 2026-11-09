@@ -693,7 +693,7 @@ test("artifactToCopyText formats table artifacts as CSV with proper header and e
   );
 });
 
-test("artifactToCopyText formats compare artifacts", () => {
+test("artifactToCopyText formats compare artifacts as CSV", () => {
   const compareArtifact: DimeArtifact = {
     kind: "compare",
     title: "Head-to-head",
@@ -708,11 +708,11 @@ test("artifactToCopyText formats compare artifacts", () => {
   const text = artifactToCopyText(compareArtifact);
   assert.equal(
     text,
-    "Head-to-head (SGA vs Luka)\nPPG: SGA 31.2 · Luka 28.4\nTS%: SGA 63.5 · Luka 61.2",
+    "Metric,SGA,Luka\nPPG,31.2,28.4\nTS%,63.5,61.2",
   );
 });
 
-test("artifactToCopyText formats chart series", () => {
+test("artifactToCopyText formats chart series as CSV", () => {
   const chartArtifact: DimeArtifact = {
     kind: "chart",
     title: "Scoring trend",
@@ -726,7 +726,7 @@ test("artifactToCopyText formats chart series", () => {
   const text = artifactToCopyText(chartArtifact);
   assert.equal(
     text,
-    "Scoring trend\nGilgeous-Alexander: 24, 31, 28\nDoncic: 27, 25, 30\npoints per game",
+    "Series,Val 1,Val 2,Val 3\nGilgeous-Alexander,24,31,28\nDoncic,27,25,30",
   );
 
   const chartWithoutFootnote: DimeArtifact = {
@@ -736,11 +736,11 @@ test("artifactToCopyText formats chart series", () => {
   };
   assert.equal(
     artifactToCopyText(chartWithoutFootnote),
-    "Scoring trend\nGilgeous-Alexander: 30",
+    "Series,Val 1\nGilgeous-Alexander,30",
   );
 });
 
-test("artifactToCopyText formats shot chart zones", () => {
+test("artifactToCopyText formats shot chart zones as CSV", () => {
   const shotArtifact: DimeArtifact = {
     kind: "shot_chart",
     title: "Shot chart",
@@ -753,7 +753,7 @@ test("artifactToCopyText formats shot chart zones", () => {
   const text = artifactToCopyText(shotArtifact);
   assert.equal(
     text,
-    "Shot chart\nx=50, y=12: 142 att, 71%\nx=32, y=22: 88 att, 52%",
+    "X,Y,Attempts,Percentage\n50,12,142,71\n32,22,88,52",
   );
 });
 
