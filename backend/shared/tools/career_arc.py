@@ -4,8 +4,8 @@ from .. import store
 
 END_MIN = 2015
 END_MAX = 2026
-CURRENT_SEASON = "2025-26"
-CURRENT_END_YEAR = 2026
+CURRENT_SEASON = "2026-27"
+CURRENT_END_YEAR = 2027
 
 def to_label(end_year: int) -> str:
     y = int(end_year)
