@@ -654,7 +654,7 @@ function formatMetricValue(value: number): string | number {
   return Number.isInteger(value) ? value : Math.round(value * 10) / 10;
 }
 
-const RESOLVED_CHART_KINDS = new Set(["chart"]);
+const RESOLVED_CHART_KINDS = new Set(["chart", "shot_chart", "table", "compare"]);
 
 function asResolvedArtifacts(raw: unknown): DimeArtifact[] {
   if (!Array.isArray(raw)) return [];
@@ -666,32 +666,114 @@ function asResolvedArtifacts(raw: unknown): DimeArtifact[] {
     if (!RESOLVED_CHART_KINDS.has(kind)) continue;
     const title = typeof entry.title === "string" ? entry.title : "";
     if (!title) continue;
-    const series: { name: string; values: number[] }[] = [];
-    for (const line of Array.isArray(entry.series) ? entry.series : []) {
-      if (typeof line !== "object" || line === null) continue;
-      const record = line as Record<string, unknown>;
-      const name = typeof record.name === "string" ? record.name : "";
-      const values = (Array.isArray(record.values) ? record.values : [])
-        .filter((value): value is number =>
-          typeof value === "number" && Number.isFinite(value));
-      if (name && values.length > 0) series.push({ name, values });
-    }
-    if (series.length === 0) continue;
     const provenance =
       entry.provenance === undefined || entry.provenance === null
         ? undefined
         : parseProvenance(entry.provenance);
-    artifacts.push({
-      kind: "chart",
-      title,
-      series,
-      source: provenanceSource(provenance),
-      provenance,
-      footnote:
-        typeof entry.footnote === "string" && entry.footnote
-          ? entry.footnote
-          : undefined,
-    });
+
+    if (kind === "chart") {
+      const series: { name: string; values: number[] }[] = [];
+      for (const line of Array.isArray(entry.series) ? entry.series : []) {
+        if (typeof line !== "object" || line === null) continue;
+        const record = line as Record<string, unknown>;
+        const name = typeof record.name === "string" ? record.name : "";
+        const values = (Array.isArray(record.values) ? record.values : [])
+          .filter((value): value is number =>
+            typeof value === "number" && Number.isFinite(value));
+        if (name && values.length > 0) series.push({ name, values });
+      }
+      if (series.length === 0) continue;
+      artifacts.push({
+        kind: "chart",
+        title,
+        series,
+        source: provenanceSource(provenance),
+        provenance,
+        footnote:
+          typeof entry.footnote === "string" && entry.footnote
+            ? entry.footnote
+            : undefined,
+      });
+      continue;
+    }
+
+    if (kind === "shot_chart") {
+      const zones: { x: number; y: number; att: number; pct: number }[] = [];
+      for (const line of Array.isArray(entry.zones) ? entry.zones : []) {
+        if (typeof line !== "object" || line === null) continue;
+        const z = line as Record<string, unknown>;
+        const x = typeof z.x === "number" && Number.isFinite(z.x) ? z.x : undefined;
+        const y = typeof z.y === "number" && Number.isFinite(z.y) ? z.y : undefined;
+        const att = typeof z.att === "number" && Number.isFinite(z.att) ? z.att : undefined;
+        const pct = typeof z.pct === "number" && Number.isFinite(z.pct) ? z.pct : undefined;
+        if (x !== undefined && y !== undefined && att !== undefined && pct !== undefined) {
+          zones.push({ x, y, att, pct });
+        }
+      }
+      artifacts.push({
+        kind: "shot_chart",
+        title,
+        zones,
+        source: provenanceSource(provenance),
+        provenance,
+      });
+      continue;
+    }
+
+    if (kind === "table") {
+      const columns: { key: string; label: string; numeric?: boolean }[] = [];
+      for (const col of Array.isArray(entry.columns) ? entry.columns : []) {
+        if (typeof col !== "object" || col === null) continue;
+        const c = col as Record<string, unknown>;
+        const key = typeof c.key === "string" ? c.key : "";
+        const label = typeof c.label === "string" ? c.label : key;
+        const numeric = typeof c.numeric === "boolean" ? c.numeric : undefined;
+        if (key) columns.push({ key, label, ...(numeric !== undefined ? { numeric } : {}) });
+      }
+      const rows: (string | number)[][] = [];
+      for (const row of Array.isArray(entry.rows) ? entry.rows : []) {
+        if (Array.isArray(row)) {
+          rows.push(row.map(val => (typeof val === "number" && Number.isFinite(val)) ? val : String(val ?? "")));
+        }
+      }
+      if (columns.length > 0 && rows.length > 0) {
+        artifacts.push({
+          kind: "table",
+          title,
+          columns,
+          rows,
+          source: provenanceSource(provenance),
+          provenance,
+        });
+      }
+      continue;
+    }
+
+    if (kind === "compare") {
+      const aName = typeof entry.aName === "string" ? entry.aName : "Player A";
+      const bName = typeof entry.bName === "string" ? entry.bName : "Player B";
+      const rows: { label: string; a: number; b: number }[] = [];
+      for (const line of Array.isArray(entry.rows) ? entry.rows : []) {
+        if (typeof line !== "object" || line === null) continue;
+        const r = line as Record<string, unknown>;
+        const label = typeof r.label === "string" ? r.label : "";
+        const a = typeof r.a === "number" && Number.isFinite(r.a) ? r.a : 0;
+        const b = typeof r.b === "number" && Number.isFinite(r.b) ? r.b : 0;
+        if (label) rows.push({ label, a, b });
+      }
+      if (rows.length > 0) {
+        artifacts.push({
+          kind: "compare",
+          title,
+          aName,
+          bName,
+          rows,
+          source: provenanceSource(provenance),
+          provenance,
+        });
+      }
+      continue;
+    }
   }
   return artifacts;
 }
