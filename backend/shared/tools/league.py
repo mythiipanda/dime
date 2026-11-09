@@ -4025,6 +4025,7 @@ _SQL_TABLES = [
     "silver_hist_player_seasons", "silver_player_season", "silver_advanced",
     "silver_on_off", "silver_four_factors", "silver_four_factors_team",
     "silver_cap_players",
+    "silver_rapm", "silver_rapm_prior",
 ]
 
 RERUN_ROW_CAP = 25
@@ -4062,6 +4063,8 @@ _COLUMN_UNITS: dict[str, tuple[str, str]] = {
     "AGE": ("years", "age in years"),
     "RANK": ("rank", "leading rank; a tie shares it"),
     "RATE": ("per_100_possessions", "rate per 100 possessions"),
+    "RAPM": ("points_per_100_possessions", "regularized adjusted plus-minus per 100 possessions"),
+    "POSSESSIONS": ("possessions", "total tracked possessions"),
 }
 _COLUMN_PREFIX_UNITS: tuple[tuple[str, tuple[str, str]], ...] = (
     ("_PCT", ("fraction_0_1",

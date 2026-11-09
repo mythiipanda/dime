@@ -19,7 +19,8 @@ export const answerBlockSchema = Type.Object({
 export type AnswerBlock = Static<typeof answerBlockSchema>;
 
 export const submitAnswerSchema = Type.Object({
-    blocks: Type.Array(answerBlockSchema, { minItems: 1 })
+    blocks: Type.Array(answerBlockSchema, { minItems: 1 }),
+    artifacts: Type.Optional(Type.Array(Type.Record(Type.String(), Type.Unknown())))
 }, { additionalProperties: false });
 
 export type AnswerSubmission = Static<typeof submitAnswerSchema>;
@@ -75,7 +76,7 @@ export function createSubmitAnswerTool(
     return defineTool({
         name: "submit_answer",
         label: "Submit answer",
-        description: "Submit final prose blocks with optional source selectors. Validates selector traceability against actual rows and columns. Selectors do not verify truth.",
+        description: "Submit final prose blocks with optional source selectors and visual artifacts (table, compare, chart, shot_chart). Validates selector traceability against actual rows and columns.",
         parameters: submitAnswerSchema,
         async execute(_callId, args) {
             const sources = getContextSources();

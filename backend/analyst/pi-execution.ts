@@ -32,6 +32,11 @@ export type AnalystEvent = {
     text: string;
     submission?: AnswerSubmission;
 } | {
+    type: "custom_data";
+    tables?: Array<Record<string, unknown>>;
+    artifacts?: Array<Record<string, unknown>>;
+    unverified_numbers?: Array<number | string>;
+} | {
     type: "failure";
     kind: string;
     message: string;
@@ -87,7 +92,12 @@ export function createPiExecution(deps: AnalystDeps = {}) {
                     const connected = bridge;
                     const submitTool = createSubmitAnswerTool(
                         () => [...(start.sources ?? []), ...connected.results.values()],
-                        (submission) => { acceptedSubmission = submission; }
+                        (submission) => {
+                            acceptedSubmission = submission;
+                            if (submission.artifacts && submission.artifacts.length > 0) {
+                                emit({ type: "custom_data", artifacts: submission.artifacts });
+                            }
+                        }
                     );
                     session = await createAnalystSession({
                         cwd: start.cwd, agentDir: start.agentDir, model, modelRuntime: runtime,
