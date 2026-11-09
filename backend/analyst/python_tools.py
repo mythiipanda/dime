@@ -23,7 +23,7 @@ from mcp.types import CallToolResult, ListToolsResult, TextContent, Tool
 
 def catalogue():
     from shared.tools.sql_exec import sql_exec, TABLES
-    from shared.tools.league import _get_warehouse_schema
+    from shared.tools.league import _get_warehouse_schema, get_win_prob as _orig_get_win_prob
     from shared.tools.season_semantics import annotate_schema
     try:
         from shared.tools.rapm import get_rapm as _orig_get_rapm
@@ -31,7 +31,11 @@ def catalogue():
         from shared.tools.league import get_rapm as _orig_get_rapm
     from shared.tools.prediction import get_game_prediction as _orig_get_game_prediction
     from shared.tools.wpa import get_wpa_leaders as _orig_get_wpa_leaders
-    from shared.tools.player import get_comps as _orig_get_comps
+    from shared.tools.player import (
+        get_comps as _orig_get_comps,
+        get_on_off as _orig_get_on_off,
+        get_shot_zones as _orig_get_shot_zones,
+    )
     from shared.tools.lineup import get_lineup_stats as _orig_get_lineup_stats
     from langchain_core.tools import tool
 
@@ -220,6 +224,100 @@ def catalogue():
         res["columns"] = cols
         return res
 
+    @tool("get_win_prob", description=_orig_get_win_prob.description)
+    def get_win_prob(team_a: str, team_b: str, season: str | None = None,
+                     home_abbrev: str = "") -> dict:
+        """Real ELO win probability between two abbreviations. Neutral unless home_abbrev matches a side."""
+        try:
+            res = _orig_get_win_prob.invoke({
+                "team_a": team_a, "team_b": team_b, "season": season, "home_abbrev": home_abbrev
+            })
+            if not isinstance(res, dict):
+                res = {"tool": "get_win_prob", "ok": False, "error": str(res)}
+        except Exception as exc:
+            res = {"tool": "get_win_prob", "ok": False, "error": f"{type(exc).__name__}: {exc}"}
+
+        default_cols = ["team_a", "team_b", "win_prob_a", "win_prob_b", "elo_a", "elo_b"]
+        raw_rows = res.get("rows")
+        if res.get("ok"):
+            if isinstance(raw_rows, dict):
+                win_prob = raw_rows.get("win_prob") or {}
+                a = (team_a or "").upper()
+                b = (team_b or "").upper()
+                p_a = win_prob.get(a)
+                p_b = win_prob.get(b)
+                if p_a is None and p_b is None and len(win_prob) >= 2:
+                    keys = list(win_prob.keys())
+                    p_a = win_prob.get(keys[0])
+                    p_b = win_prob.get(keys[1])
+                ra = raw_rows.get("elo_a")
+                rb = raw_rows.get("elo_b")
+                rows = [{
+                    "team_a": a,
+                    "team_b": b,
+                    "win_prob_a": p_a,
+                    "win_prob_b": p_b,
+                    "elo_a": ra,
+                    "elo_b": rb,
+                }]
+            elif isinstance(raw_rows, list):
+                rows = [r for r in raw_rows if isinstance(r, dict)]
+            else:
+                rows = []
+        else:
+            rows = []
+
+        cols = list(rows[0].keys()) if rows else default_cols
+        res["rows"] = rows
+        res["columns"] = cols
+        return sanitize_for_wire(res)
+
+    @tool("get_on_off", description=_orig_get_on_off.description)
+    def get_on_off(player_id: str | int, team_id: str | int, season: str | None = None) -> dict:
+        """On and off splits for one player on one team. Possession level."""
+        try:
+            res = _orig_get_on_off.invoke({
+                "player_id": player_id, "team_id": team_id, "season": season
+            })
+            if not isinstance(res, dict):
+                res = {"tool": "get_on_off", "ok": False, "error": str(res)}
+        except Exception as exc:
+            res = {"tool": "get_on_off", "ok": False, "error": f"{type(exc).__name__}: {exc}"}
+
+        default_cols = ["Stat", "On", "Off", "On-Off"]
+        raw_rows = res.get("rows")
+        if res.get("ok") and isinstance(raw_rows, list):
+            rows = [r for r in raw_rows if isinstance(r, dict)]
+        else:
+            rows = []
+        cols = list(rows[0].keys()) if rows else default_cols
+        res["rows"] = rows
+        res["columns"] = cols
+        return sanitize_for_wire(res)
+
+    @tool("get_shot_zones", description=_orig_get_shot_zones.description)
+    def get_shot_zones(player_id: str | int, season: str | None = None, min_attempts: int = 50) -> dict:
+        """Zone splits for one player id: rim, midrange, three with shares."""
+        try:
+            res = _orig_get_shot_zones.invoke({
+                "player_id": player_id, "season": season, "min_attempts": min_attempts
+            })
+            if not isinstance(res, dict):
+                res = {"tool": "get_shot_zones", "ok": False, "error": str(res)}
+        except Exception as exc:
+            res = {"tool": "get_shot_zones", "ok": False, "error": f"{type(exc).__name__}: {exc}"}
+
+        default_cols = ["zone", "attempts", "makes", "fg_pct", "share_pct"]
+        raw_rows = res.get("rows")
+        if res.get("ok") and isinstance(raw_rows, list):
+            rows = [r for r in raw_rows if isinstance(r, dict)]
+        else:
+            rows = []
+        cols = list(rows[0].keys()) if rows else default_cols
+        res["rows"] = rows
+        res["columns"] = cols
+        return sanitize_for_wire(res)
+
     # Deliberately do not export WAREHOUSE_TOOLS, which includes mutators.
     return {
         item.name: item for item in (
@@ -230,6 +328,9 @@ def catalogue():
             get_wpa_leaders,
             get_comps,
             get_lineup_stats,
+            get_win_prob,
+            get_on_off,
+            get_shot_zones,
         )
     }
 

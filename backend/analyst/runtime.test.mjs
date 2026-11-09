@@ -172,6 +172,9 @@ test("real Python sql_exec and schema cross MCP into Pi with source semantics an
       "get_wpa_leaders",
       "get_comps",
       "get_lineup_stats",
+      "get_win_prob",
+      "get_on_off",
+      "get_shot_zones",
     ]);
     assert.deepEqual(bridge.tools[0].parameters.required, ["sql"]);
     const setup = await fixture("python", `
@@ -246,7 +249,7 @@ test("real statistical tools cross MCP with anchor compatibility, rows, columns,
   const pid = bridge.pid;
   try {
     const toolMap = new Map(bridge.tools.map(t => [t.name, t]));
-    assert.equal(bridge.tools.length, 7);
+    assert.equal(bridge.tools.length, 10);
 
     // 1. get_rapm
     const rapmTool = toolMap.get("get_rapm");
@@ -303,8 +306,46 @@ test("real statistical tools cross MCP with anchor compatibility, rows, columns,
     assert(Array.isArray(lineupRes.structuredContent.result.rows));
     assert(Array.isArray(lineupRes.structuredContent.result.columns));
 
-    // Verify anchor compatibility across all 5 statistical tools
-    for (const toolName of ["get_rapm", "get_game_prediction", "get_wpa_leaders", "get_comps", "get_lineup_stats"]) {
+    // 6. get_win_prob
+    const winProbTool = toolMap.get("get_win_prob");
+    assert(winProbTool);
+    const winProbRes = await winProbTool.execute("call-win-prob", { team_a: "BOS", team_b: "MIA" }, undefined);
+    assert(winProbRes.structuredContent);
+    assert(Array.isArray(winProbRes.structuredContent.result.rows));
+    assert(Array.isArray(winProbRes.structuredContent.result.columns));
+    assert(winProbRes.structuredContent.result.columns.includes("team_a"));
+    assert(winProbRes.structuredContent.result.columns.includes("team_b"));
+    assert(winProbRes.structuredContent.result.columns.includes("win_prob_a"));
+    assert(winProbRes.structuredContent.result.columns.includes("win_prob_b"));
+    assert(winProbRes.structuredContent.result.columns.includes("elo_a"));
+    assert(winProbRes.structuredContent.result.columns.includes("elo_b"));
+
+    // 7. get_on_off
+    const onOffTool = toolMap.get("get_on_off");
+    assert(onOffTool);
+    const onOffRes = await onOffTool.execute("call-on-off", { player_id: 2544, team_id: 1610612747, season: "2023-24" }, undefined);
+    assert(onOffRes.structuredContent);
+    assert(Array.isArray(onOffRes.structuredContent.result.rows));
+    assert(Array.isArray(onOffRes.structuredContent.result.columns));
+    assert(onOffRes.structuredContent.result.columns.includes("Stat"));
+    assert(onOffRes.structuredContent.result.columns.includes("On"));
+    assert(onOffRes.structuredContent.result.columns.includes("Off"));
+    assert(onOffRes.structuredContent.result.columns.includes("On-Off"));
+
+    // 8. get_shot_zones
+    const shotZonesTool = toolMap.get("get_shot_zones");
+    assert(shotZonesTool);
+    const shotZonesRes = await shotZonesTool.execute("call-shot-zones", { player_id: 2544, season: "2023-24", min_attempts: 50 }, undefined);
+    assert(shotZonesRes.structuredContent);
+    assert(Array.isArray(shotZonesRes.structuredContent.result.rows));
+    assert(Array.isArray(shotZonesRes.structuredContent.result.columns));
+    assert(shotZonesRes.structuredContent.result.columns.includes("zone"));
+
+    // Verify anchor compatibility across all 8 statistical tools
+    for (const toolName of [
+      "get_rapm", "get_game_prediction", "get_wpa_leaders", "get_comps",
+      "get_lineup_stats", "get_win_prob", "get_on_off", "get_shot_zones"
+    ]) {
       const syntheticRecord = {
         ref: `ref-${toolName}`,
         callId: `call-${toolName}`,
@@ -333,7 +374,7 @@ test("real statistical tools cross MCP with anchor compatibility, rows, columns,
       }, (ref) => ref === syntheticRecord.ref ? syntheticRecord : undefined);
       assert.equal(submission.blocks[0].text, `Anchor for ${toolName}`);
     }
-    console.log(JSON.stringify({ proof: "statistical-tools-anchor-compatible", tools: 5 }));
+    console.log(JSON.stringify({ proof: "statistical-tools-anchor-compatible", tools: 8 }));
   } finally {
     await bridge.close();
   }
