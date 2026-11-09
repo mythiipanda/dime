@@ -734,6 +734,12 @@ function asResolvedArtifacts(raw: unknown): DimeArtifact[] {
       for (const row of Array.isArray(entry.rows) ? entry.rows : []) {
         if (Array.isArray(row)) {
           rows.push(row.map(val => (typeof val === "number" && Number.isFinite(val)) ? val : String(val ?? "")));
+        } else if (typeof row === "object" && row !== null) {
+          const r = row as Record<string, unknown>;
+          rows.push(columns.map(col => {
+            const val = r[col.key];
+            return (typeof val === "number" && Number.isFinite(val)) ? val : String(val ?? "");
+          }));
         }
       }
       if (columns.length > 0 && rows.length > 0) {
