@@ -613,6 +613,30 @@ _LIST = [
         qualification="One resolved player; per-defender defended-shot aggregates.",
         coverage="How often the defender was the closest defender and how those shots fell. No per-opponent rows exist.",
     ),
+    Capability(
+        name="rapm",
+        tool_name="get_rapm",
+        units={"rapm": POINTS_PER_100, "possessions": COUNT},
+        metric_definitions={"rapm": "Regularized adjusted plus-minus per 100 possessions from RidgeCV stint regression."},
+        qualification="Minimum possessions floor applies (default 500); garbage-time excluded.",
+        coverage="Single-season and multi-season RAPM RidgeCV regression model from stint possessions.",
+    ),
+    Capability(
+        name="playoff_sim",
+        tool_name="get_playoff_sim",
+        units={"title_pct": PERCENT, "finals_pct": PERCENT},
+        metric_definitions={"title_pct": "Monte Carlo simulated probability of winning the NBA championship."},
+        qualification="16-team playoff bracket Monte Carlo simulations.",
+        coverage="Simulated title and finals odds from ratings.",
+    ),
+    Capability(
+        name="wowy",
+        tool_name="get_wowy",
+        units={"NET_RATING": POINTS_PER_100, "MIN": MINUTES},
+        metric_definitions={"NET_RATING": NET_RATING_DEF},
+        qualification="Two teammates; 4-way lineup combination splits (Both ON, A ON / B OFF, B ON / A OFF, Both OFF).",
+        coverage="Lineup possession splits from warehouse stint matrix.",
+    ),
 ]
 
 CAPABILITIES: dict[str, Capability] = {c.name: c for c in _LIST}
@@ -964,6 +988,9 @@ CAPABILITY_DESCRIPTIONS: dict[str, str] = {
     ),
     "tracking_profile": "Player or team tracking profile for one measure type or all.",
     "defensive_matchups": "One defender's defended-shot frequency and shooter results.",
+    "rapm": "Regularized adjusted plus-minus (RAPM) ratings per 100 possessions from RidgeCV stint regressions.",
+    "playoff_sim": "Simulated championship and finals odds across 16-team Monte Carlo brackets.",
+    "wowy": "With-or-without-you four-way lineup combination splits between two teammates.",
 }
 
 if len(CAPABILITIES) != len(_LIST):
