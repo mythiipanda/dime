@@ -1115,6 +1115,8 @@ def get_clutch(scope: str = "player", season: str | None = None,
                 "meta": meta}
     return {"tool": "get_clutch", "ok": True, "rows": slim[:30], "meta": meta}
 
+get_clutch_stats = get_clutch
+
 def _split_bucket(label: str) -> dict[str, Any]:
     return {"split": label, "GP": 0, "FGM": 0, "FGA": 0, "FG_PCT": 0.0,
             "FG3M": 0, "FG3A": 0, "FG3_PCT": 0.0,

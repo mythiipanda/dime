@@ -192,6 +192,9 @@ const TOOL_LABELS: Record<string, ToolNarration> = {
   get_win_prob: { running: "Computing ELO win probabilities…", done: "Computed ELO win probabilities" },
   get_on_off: { running: "Calculating on/off net ratings…", done: "Calculated on/off net ratings" },
   get_shot_zones: { running: "Analyzing shot distribution zones…", done: "Analyzed shot distribution zones" },
+  get_four_factors: { running: "Analyzing four factors", done: "Analyzed four factors" },
+  get_clutch_stats: { running: "Pulling clutch statistics", done: "Pulled clutch statistics" },
+  get_competitive_ratings: { running: "Calculating competitive ratings", done: "Calculated competitive ratings" },
   four_factors: { running: "Computing four factors", done: "Computed four factors" },
   team_four_factors: { running: "Computing team four factors", done: "Computed team four factors" },
   matchup_brief: { running: "Building matchup brief", done: "Built matchup brief" },
@@ -207,6 +210,8 @@ const TOOL_LABELS: Record<string, ToolNarration> = {
   web_fetch: { running: "Reading a web page", done: "Read a web page" },
   tool: { running: "Running a tool", done: "Ran a tool" },
 };
+
+export const TOOL_NARRATION = TOOL_LABELS;
 
 export function toolLabelFor(
   name: unknown,
