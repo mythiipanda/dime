@@ -33,6 +33,9 @@ def catalogue():
         get_standings as _orig_get_standings,
         get_rest as _orig_get_rest,
         get_team_trajectory as _orig_get_team_trajectory,
+        get_ratings as _orig_get_ratings,
+        get_rookie_leaders as _orig_get_rookie_leaders,
+        get_cap_ledger as _orig_get_cap_ledger,
     )
     try:
         from shared.tools.league import get_clutch_stats as _orig_get_clutch_stats
@@ -626,6 +629,104 @@ def catalogue():
         res["ok"] = bool(res.get("ok", False))
         return sanitize_for_wire(res)
 
+
+    @tool("get_ratings", description=_orig_get_ratings.description)
+    def get_ratings(season: str | None = None, team: str = "",
+                    requested_metric: str = "", ranking_direction: str = "") -> dict:
+        """Team offensive, defensive, net ratings, and pace (league-wide or team specific)."""
+        try:
+            res = _orig_get_ratings.invoke({
+                "season": season,
+                "team": team,
+                "requested_metric": requested_metric,
+                "ranking_direction": ranking_direction,
+            })
+            if not isinstance(res, dict):
+                res = {"tool": "get_ratings", "ok": False, "error": str(res)}
+        except Exception as exc:
+            res = {"tool": "get_ratings", "ok": False, "error": f"{type(exc).__name__}: {exc}"}
+
+        default_cols = ["team", "off_rating", "def_rating", "net_rating", "pace", "wins", "losses"]
+        raw_rows = res.get("rows")
+        if res.get("ok") and isinstance(raw_rows, list):
+            rows = [r for r in raw_rows if isinstance(r, dict)]
+        else:
+            rows = []
+        cols = list(rows[0].keys()) if rows else default_cols
+        res["rows"] = rows
+        res["columns"] = cols
+        res["ok"] = bool(res.get("ok", False))
+        return sanitize_for_wire(res)
+
+    @tool("get_rookie_leaders", description=_orig_get_rookie_leaders.description)
+    def get_rookie_leaders(stat: str = "ppg", min_value: float = 0,
+                           min_gp: int = 10, limit: int = 15,
+                           season: str | None = None) -> dict:
+        """Current rookie class leaderboard (first-year NBA players only, verified against historical seasons)."""
+        try:
+            res = _orig_get_rookie_leaders.invoke({
+                "stat": stat,
+                "min_value": min_value,
+                "min_gp": min_gp,
+                "limit": limit,
+                "season": season,
+            })
+            if not isinstance(res, dict):
+                res = {"tool": "get_rookie_leaders", "ok": False, "error": str(res)}
+        except Exception as exc:
+            res = {"tool": "get_rookie_leaders", "ok": False, "error": f"{type(exc).__name__}: {exc}"}
+
+        default_cols = ["player", "team", "age", "gp", "mpg", "ppg", "rpg", "apg"]
+        raw_rows = res.get("rows")
+        if res.get("ok") and isinstance(raw_rows, list):
+            rows = [r for r in raw_rows if isinstance(r, dict)]
+        else:
+            rows = []
+        cols = list(rows[0].keys()) if rows else default_cols
+        res["rows"] = rows
+        res["columns"] = cols
+        res["ok"] = bool(res.get("ok", False))
+        return sanitize_for_wire(res)
+
+    @tool("get_cap_ledger", description=_orig_get_cap_ledger.description)
+    def get_cap_ledger(team: str = "", season: str | None = None) -> dict:
+        """Payroll, luxury tax position, and first/second apron room for one team."""
+        try:
+            fields = getattr(getattr(_orig_get_cap_ledger, "args_schema", None), "model_fields", {})
+            call_args: dict[str, Any] = {}
+            if "team_abbrev" in fields:
+                call_args["team_abbrev"] = team
+            if "team" in fields or not fields:
+                call_args["team"] = team
+            if "season" in fields and season is not None:
+                call_args["season"] = season
+            try:
+                res = _orig_get_cap_ledger.invoke(call_args)
+            except Exception:
+                fallback = {"team_abbrev": team} if "team" in call_args else {"team": team}
+                res = _orig_get_cap_ledger.invoke(fallback)
+            if not isinstance(res, dict):
+                res = {"tool": "get_cap_ledger", "ok": False, "error": str(res)}
+        except Exception as exc:
+            res = {"tool": "get_cap_ledger", "ok": False, "error": f"{type(exc).__name__}: {exc}"}
+
+        default_cols = ["team", "total_salary", "cap_space", "tax_room", "first_apron_room", "second_apron_room"]
+        raw_rows = res.get("rows")
+        if res.get("ok"):
+            if isinstance(raw_rows, dict):
+                rows = [raw_rows]
+            elif isinstance(raw_rows, list):
+                rows = [r for r in raw_rows if isinstance(r, dict)]
+            else:
+                rows = []
+        else:
+            rows = []
+        cols = list(rows[0].keys()) if rows else default_cols
+        res["rows"] = rows
+        res["columns"] = cols
+        res["ok"] = bool(res.get("ok", False))
+        return sanitize_for_wire(res)
+
     # Deliberately do not export WAREHOUSE_TOOLS, which includes mutators.
     return {
         item.name: item for item in (
@@ -649,6 +750,9 @@ def catalogue():
             get_standings,
             get_rest,
             get_team_trajectory,
+            get_ratings,
+            get_rookie_leaders,
+            get_cap_ledger,
         )
     }
 
