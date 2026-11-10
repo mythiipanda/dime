@@ -29,6 +29,7 @@ def catalogue():
         get_team_four_factors as _orig_get_four_factors,
         get_hustle as _orig_get_hustle,
         get_injuries as _orig_get_injuries,
+        get_briefing as _orig_get_briefing,
     )
     try:
         from shared.tools.league import get_clutch_stats as _orig_get_clutch_stats
@@ -492,6 +493,49 @@ def catalogue():
         res["ok"] = bool(res.get("ok", False))
         return sanitize_for_wire(res)
 
+    @tool("get_briefing", description=_orig_get_briefing.description)
+    def get_briefing(game_date: str = "", season: str | None = None) -> dict:
+        """Morning briefing: scoreboard plus top scorers. Date MM/DD/YYYY, blank means latest."""
+        try:
+            res = _orig_get_briefing.invoke({
+                "game_date": game_date, "season": season
+            })
+            if not isinstance(res, dict):
+                res = {"tool": "get_briefing", "ok": False, "error": str(res)}
+        except Exception as exc:
+            res = {"tool": "get_briefing", "ok": False, "error": f"{type(exc).__name__}: {exc}"}
+
+        default_cols = ["date", "matchup", "score", "status", "top_scorer", "top_pts"]
+        raw_rows = res.get("rows")
+        rows: list[dict] = []
+        if res.get("ok"):
+            if isinstance(raw_rows, dict):
+                date_val = raw_rows.get("date", "")
+                games = raw_rows.get("games")
+                top_scorers = raw_rows.get("top_scorers")
+                # Flatten games into row dicts if available
+                if isinstance(games, list) and games:
+                    for g in games:
+                        if isinstance(g, dict):
+                            row = {"date": date_val, **g}
+                            rows.append(row)
+                # Or include top scorers if games is empty
+                if not rows and isinstance(top_scorers, list) and top_scorers:
+                    for s in top_scorers:
+                        if isinstance(s, dict):
+                            row = {"date": date_val, **s}
+                            rows.append(row)
+                # If both are empty or rows is empty, create at least a summary row if date is present
+                if not rows and date_val:
+                    rows = [{"date": date_val, "games_count": 0, "status": "no games scheduled or completed"}]
+            elif isinstance(raw_rows, list):
+                rows = [r for r in raw_rows if isinstance(r, dict)]
+
+        cols = list(rows[0].keys()) if rows else default_cols
+        res["rows"] = rows
+        res["columns"] = cols
+        return sanitize_for_wire(res)
+
     # Deliberately do not export WAREHOUSE_TOOLS, which includes mutators.
     return {
         item.name: item for item in (
@@ -511,6 +555,7 @@ def catalogue():
             get_hustle,
             get_injuries,
             get_award_results,
+            get_briefing,
         )
     }
 

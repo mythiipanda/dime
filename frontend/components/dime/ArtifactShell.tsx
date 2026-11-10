@@ -41,6 +41,7 @@ const SOURCE_LABELS: Record<string, string> = {
   get_hustle: "Hustle stats",
   get_injuries: "Injury report",
   get_award_results: "Award voting",
+  get_briefing: "Daily briefing",
 };
 
 function sourceLabel(source?: string) {

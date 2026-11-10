@@ -181,6 +181,7 @@ test("real Python sql_exec and schema cross MCP into Pi with source semantics an
       "get_hustle",
       "get_injuries",
       "get_award_results",
+      "get_briefing",
     ]);
     assert.deepEqual(bridge.tools[0].parameters.required, ["sql"]);
     const setup = await fixture("python", `
@@ -255,7 +256,7 @@ test("real statistical tools cross MCP with anchor compatibility, rows, columns,
   const pid = bridge.pid;
   try {
     const toolMap = new Map(bridge.tools.map(t => [t.name, t]));
-    assert.equal(bridge.tools.length, 16);
+    assert.equal(bridge.tools.length, 17);
 
     // 1. get_rapm
     const rapmTool = toolMap.get("get_rapm");
@@ -395,12 +396,20 @@ test("real statistical tools cross MCP with anchor compatibility, rows, columns,
     assert(Array.isArray(awardRes.structuredContent.result.rows));
     assert(Array.isArray(awardRes.structuredContent.result.columns));
 
-    // Verify anchor compatibility across all 14 statistical tools
+    // 15. get_briefing
+    const briefingTool = toolMap.get("get_briefing");
+    assert(briefingTool);
+    const briefingRes = await briefingTool.execute("call-briefing", { game_date: "10/24/2023" }, undefined);
+    assert(briefingRes.structuredContent);
+    assert(Array.isArray(briefingRes.structuredContent.result.rows));
+    assert(Array.isArray(briefingRes.structuredContent.result.columns));
+
+    // Verify anchor compatibility across all 15 statistical tools
     for (const toolName of [
       "get_rapm", "get_game_prediction", "get_wpa_leaders", "get_comps",
       "get_lineup_stats", "get_win_prob", "get_on_off", "get_shot_zones",
       "get_four_factors", "get_clutch_stats", "get_competitive_ratings",
-      "get_hustle", "get_injuries", "get_award_results"
+      "get_hustle", "get_injuries", "get_award_results", "get_briefing"
     ]) {
       const syntheticRecord = {
         ref: `ref-${toolName}`,
@@ -430,7 +439,7 @@ test("real statistical tools cross MCP with anchor compatibility, rows, columns,
       }, (ref) => ref === syntheticRecord.ref ? syntheticRecord : undefined);
       assert.equal(submission.blocks[0].text, `Anchor for ${toolName}`);
     }
-    console.log(JSON.stringify({ proof: "statistical-tools-anchor-compatible", tools: 14 }));
+    console.log(JSON.stringify({ proof: "statistical-tools-anchor-compatible", tools: 15 }));
   } finally {
     await bridge.close();
   }
