@@ -178,6 +178,9 @@ test("real Python sql_exec and schema cross MCP into Pi with source semantics an
       "get_four_factors",
       "get_clutch_stats",
       "get_competitive_ratings",
+      "get_hustle",
+      "get_injuries",
+      "get_award_results",
     ]);
     assert.deepEqual(bridge.tools[0].parameters.required, ["sql"]);
     const setup = await fixture("python", `
@@ -252,7 +255,7 @@ test("real statistical tools cross MCP with anchor compatibility, rows, columns,
   const pid = bridge.pid;
   try {
     const toolMap = new Map(bridge.tools.map(t => [t.name, t]));
-    assert.equal(bridge.tools.length, 13);
+    assert.equal(bridge.tools.length, 16);
 
     // 1. get_rapm
     const rapmTool = toolMap.get("get_rapm");
@@ -368,11 +371,36 @@ test("real statistical tools cross MCP with anchor compatibility, rows, columns,
     assert(Array.isArray(compRes.structuredContent.result.rows));
     assert(Array.isArray(compRes.structuredContent.result.columns));
 
-    // Verify anchor compatibility across all 11 statistical tools
+    // 12. get_hustle
+    const hustleTool = toolMap.get("get_hustle");
+    assert(hustleTool);
+    const hustleRes = await hustleTool.execute("call-hustle", { scope: "player" }, undefined);
+    assert(hustleRes.structuredContent);
+    assert(Array.isArray(hustleRes.structuredContent.result.rows));
+    assert(Array.isArray(hustleRes.structuredContent.result.columns));
+
+    // 13. get_injuries
+    const injuriesTool = toolMap.get("get_injuries");
+    assert(injuriesTool);
+    const injuriesRes = await injuriesTool.execute("call-injuries", { team: "BOS" }, undefined);
+    assert(injuriesRes.structuredContent);
+    assert(Array.isArray(injuriesRes.structuredContent.result.rows));
+    assert(Array.isArray(injuriesRes.structuredContent.result.columns));
+
+    // 14. get_award_results
+    const awardResTool = toolMap.get("get_award_results");
+    assert(awardResTool);
+    const awardRes = await awardResTool.execute("call-award-results", { view: "winner", award: "mvp" }, undefined);
+    assert(awardRes.structuredContent);
+    assert(Array.isArray(awardRes.structuredContent.result.rows));
+    assert(Array.isArray(awardRes.structuredContent.result.columns));
+
+    // Verify anchor compatibility across all 14 statistical tools
     for (const toolName of [
       "get_rapm", "get_game_prediction", "get_wpa_leaders", "get_comps",
       "get_lineup_stats", "get_win_prob", "get_on_off", "get_shot_zones",
-      "get_four_factors", "get_clutch_stats", "get_competitive_ratings"
+      "get_four_factors", "get_clutch_stats", "get_competitive_ratings",
+      "get_hustle", "get_injuries", "get_award_results"
     ]) {
       const syntheticRecord = {
         ref: `ref-${toolName}`,
@@ -402,7 +430,7 @@ test("real statistical tools cross MCP with anchor compatibility, rows, columns,
       }, (ref) => ref === syntheticRecord.ref ? syntheticRecord : undefined);
       assert.equal(submission.blocks[0].text, `Anchor for ${toolName}`);
     }
-    console.log(JSON.stringify({ proof: "statistical-tools-anchor-compatible", tools: 11 }));
+    console.log(JSON.stringify({ proof: "statistical-tools-anchor-compatible", tools: 14 }));
   } finally {
     await bridge.close();
   }
