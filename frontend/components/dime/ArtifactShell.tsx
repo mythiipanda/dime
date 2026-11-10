@@ -51,6 +51,9 @@ const SOURCE_LABELS: Record<string, string> = {
   get_leaders: "Statistical leaders",
   get_lineup_leaders: "Lineup net rating",
   get_playoffs: "Playoff results",
+  get_team_leaders: "Team leaders",
+  get_team_compare: "Team compare",
+  get_elo_standings: "ELO standings",
 };
 
 function sourceLabel(source?: string) {
