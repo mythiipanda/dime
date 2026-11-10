@@ -38,6 +38,9 @@ const SOURCE_LABELS: Record<string, string> = {
   get_four_factors: "Four factors",
   get_clutch_stats: "Clutch stats",
   get_competitive_ratings: "Competitive ratings",
+  get_hustle: "Hustle stats",
+  get_injuries: "Injury report",
+  get_award_results: "Award voting",
 };
 
 function sourceLabel(source?: string) {

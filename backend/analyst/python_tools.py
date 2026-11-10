@@ -27,6 +27,8 @@ def catalogue():
         _get_warehouse_schema,
         get_win_prob as _orig_get_win_prob,
         get_team_four_factors as _orig_get_four_factors,
+        get_hustle as _orig_get_hustle,
+        get_injuries as _orig_get_injuries,
     )
     try:
         from shared.tools.league import get_clutch_stats as _orig_get_clutch_stats
@@ -46,6 +48,7 @@ def catalogue():
         get_shot_zones as _orig_get_shot_zones,
     )
     from shared.tools.lineup import get_lineup_stats as _orig_get_lineup_stats
+    from shared.tools.award_results import get_award_results as _orig_get_award_results
     from langchain_core.tools import tool
 
     declared_catalog = ", ".join(TABLES)
@@ -408,6 +411,87 @@ def catalogue():
         res["columns"] = cols
         return sanitize_for_wire(res)
 
+    @tool("get_hustle", description=_orig_get_hustle.description)
+    def get_hustle(scope: str = "player", season: str | None = None) -> dict:
+        """NBA hustle leaders for player or team scope."""
+        try:
+            res = _orig_get_hustle.invoke({"scope": scope, "season": season})
+            if not isinstance(res, dict):
+                res = {"tool": "get_hustle", "ok": False, "error": str(res)}
+        except Exception as exc:
+            res = {"tool": "get_hustle", "ok": False, "error": f"{type(exc).__name__}: {exc}"}
+
+        default_cols = [
+            "player_name", "team_abbreviation", "contested_shots",
+            "deflections", "charges_drawn", "screen_assists"
+        ]
+        raw_rows = res.get("rows")
+        if res.get("ok") and isinstance(raw_rows, list):
+            rows = [r for r in raw_rows if isinstance(r, dict)]
+        else:
+            rows = []
+        cols = list(rows[0].keys()) if rows else default_cols
+        res["rows"] = rows
+        res["columns"] = cols
+        res["ok"] = bool(res.get("ok", False))
+        return sanitize_for_wire(res)
+
+    @tool("get_injuries", description=_orig_get_injuries.description)
+    def get_injuries(team: str = "", player: str = "", season: str | None = None) -> dict:
+        """NBA injury and availability report."""
+        try:
+            res = _orig_get_injuries.invoke({"team": team, "player": player, "season": season})
+            if not isinstance(res, dict):
+                res = {"tool": "get_injuries", "ok": False, "error": str(res)}
+        except Exception as exc:
+            res = {"tool": "get_injuries", "ok": False, "error": f"{type(exc).__name__}: {exc}"}
+
+        default_cols = ["player", "team", "status", "injury", "description"]
+        raw_rows = res.get("rows")
+        if res.get("ok") and isinstance(raw_rows, list):
+            rows = [r for r in raw_rows if isinstance(r, dict)]
+        else:
+            rows = []
+        cols = list(rows[0].keys()) if rows else default_cols
+        res["rows"] = rows
+        res["columns"] = cols
+        res["ok"] = bool(res.get("ok", False))
+        return sanitize_for_wire(res)
+
+    @tool("get_award_results", description=_orig_get_award_results.description)
+    def get_award_results(view: str = "winner", award: str = "mvp",
+                          season: str | None = None, player: str = "") -> dict:
+        """Historical recorded NBA award voting results."""
+        try:
+            args: dict[str, Any] = {"view": view, "award": award, "season": season}
+            if player:
+                args["player"] = player
+            res = _orig_get_award_results.invoke(args)
+            if not isinstance(res, dict):
+                res = {"tool": "get_award_results", "ok": False, "error": str(res)}
+        except Exception as exc:
+            res = {"tool": "get_award_results", "ok": False, "error": f"{type(exc).__name__}: {exc}"}
+
+        default_cols = ["player", "award", "season", "rank", "share", "votes"]
+        raw_rows = res.get("rows")
+        if res.get("ok"):
+            if isinstance(raw_rows, list):
+                rows = [r for r in raw_rows if isinstance(r, dict)]
+            elif isinstance(raw_rows, dict):
+                rows = [
+                    {"award": k, **v} if isinstance(v, dict) else {"award": k, "value": v}
+                    for k, v in raw_rows.items()
+                ]
+            else:
+                rows = []
+        else:
+            rows = []
+        cols = list(rows[0].keys()) if rows else default_cols
+        res["rows"] = rows
+        res["columns"] = cols
+        res["ok"] = bool(res.get("ok", False))
+        return sanitize_for_wire(res)
+
     # Deliberately do not export WAREHOUSE_TOOLS, which includes mutators.
     return {
         item.name: item for item in (
@@ -424,6 +508,9 @@ def catalogue():
             get_four_factors,
             get_clutch_stats,
             get_competitive_ratings,
+            get_hustle,
+            get_injuries,
+            get_award_results,
         )
     }
 
