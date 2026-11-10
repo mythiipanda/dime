@@ -191,6 +191,9 @@ test("real Python sql_exec and schema cross MCP into Pi with source semantics an
       "get_leaders",
       "get_lineup_leaders",
       "get_playoffs",
+      "get_team_leaders",
+      "get_team_compare",
+      "get_elo_standings",
     ]);
     assert.deepEqual(bridge.tools[0].parameters.required, ["sql"]);
     const setup = await fixture("python", `
@@ -265,7 +268,7 @@ test("real statistical tools cross MCP with anchor compatibility, rows, columns,
   const pid = bridge.pid;
   try {
     const toolMap = new Map(bridge.tools.map(t => [t.name, t]));
-    assert.equal(bridge.tools.length, 26);
+    assert.equal(bridge.tools.length, 29);
 
     // 1. get_rapm
     const rapmTool = toolMap.get("get_rapm");
@@ -485,7 +488,31 @@ test("real statistical tools cross MCP with anchor compatibility, rows, columns,
     assert(Array.isArray(playoffsRes.structuredContent.result.rows));
     assert(Array.isArray(playoffsRes.structuredContent.result.columns));
 
-    // Verify anchor compatibility across all 24 statistical tools
+    // 25. get_team_leaders
+    const teamLeadersTool = toolMap.get("get_team_leaders");
+    assert(teamLeadersTool);
+    const teamLeadersRes = await teamLeadersTool.execute("call-team-leaders", { stat_category: "AST", season: "2023-24" }, undefined);
+    assert(teamLeadersRes.structuredContent);
+    assert(Array.isArray(teamLeadersRes.structuredContent.result.rows));
+    assert(Array.isArray(teamLeadersRes.structuredContent.result.columns));
+
+    // 26. get_team_compare
+    const teamCompareTool = toolMap.get("get_team_compare");
+    assert(teamCompareTool);
+    const teamCompareRes = await teamCompareTool.execute("call-team-compare", { stat_category: "PTS", top: 3, season: "2023-24" }, undefined);
+    assert(teamCompareRes.structuredContent);
+    assert(Array.isArray(teamCompareRes.structuredContent.result.rows));
+    assert(Array.isArray(teamCompareRes.structuredContent.result.columns));
+
+    // 27. get_elo_standings
+    const eloStandingsTool = toolMap.get("get_elo_standings");
+    assert(eloStandingsTool);
+    const eloStandingsRes = await eloStandingsTool.execute("call-elo-standings", { season: "2023-24", limit: 5 }, undefined);
+    assert(eloStandingsRes.structuredContent);
+    assert(Array.isArray(eloStandingsRes.structuredContent.result.rows));
+    assert(Array.isArray(eloStandingsRes.structuredContent.result.columns));
+
+    // Verify anchor compatibility across all 27 statistical tools
     for (const toolName of [
       "get_rapm", "get_game_prediction", "get_wpa_leaders", "get_comps",
       "get_lineup_stats", "get_win_prob", "get_on_off", "get_shot_zones",
@@ -493,7 +520,8 @@ test("real statistical tools cross MCP with anchor compatibility, rows, columns,
       "get_hustle", "get_injuries", "get_award_results", "get_briefing",
       "get_standings", "get_rest", "get_team_trajectory",
       "get_ratings", "get_rookie_leaders", "get_cap_ledger",
-      "get_leaders", "get_lineup_leaders", "get_playoffs"
+      "get_leaders", "get_lineup_leaders", "get_playoffs",
+      "get_team_leaders", "get_team_compare", "get_elo_standings"
     ]) {
       const syntheticRecord = {
         ref: `ref-${toolName}`,
@@ -523,7 +551,7 @@ test("real statistical tools cross MCP with anchor compatibility, rows, columns,
       }, (ref) => ref === syntheticRecord.ref ? syntheticRecord : undefined);
       assert.equal(submission.blocks[0].text, `Anchor for ${toolName}`);
     }
-    console.log(JSON.stringify({ proof: "statistical-tools-anchor-compatible", tools: 24 }));
+    console.log(JSON.stringify({ proof: "statistical-tools-anchor-compatible", tools: 27 }));
   } finally {
     await bridge.close();
   }

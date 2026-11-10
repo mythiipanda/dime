@@ -39,6 +39,9 @@ def catalogue():
         get_leaders as _orig_get_leaders,
         get_lineup_leaders as _orig_get_lineup_leaders,
         get_playoffs as _orig_get_playoffs,
+        get_team_leaders as _orig_get_team_leaders,
+        get_team_compare as _orig_get_team_compare,
+        get_elo_standings as _orig_get_elo_standings,
     )
     try:
         from shared.tools.league import get_clutch_stats as _orig_get_clutch_stats
@@ -827,6 +830,72 @@ def catalogue():
         res["ok"] = bool(res.get("ok", False))
         return sanitize_for_wire(res)
 
+    @tool("get_team_leaders", description=_orig_get_team_leaders.description)
+    def get_team_leaders(stat_category: str = "AST", season: str | None = None) -> dict:
+        """Team totals leaderboard for a counting stat (PTS, REB, AST, STL, BLK)."""
+        try:
+            res = _orig_get_team_leaders.invoke({"stat_category": stat_category, "season": season})
+            if not isinstance(res, dict):
+                res = {"tool": "get_team_leaders", "ok": False, "error": str(res)}
+        except Exception as exc:
+            res = {"tool": "get_team_leaders", "ok": False, "error": f"{type(exc).__name__}: {exc}"}
+
+        default_cols = ["rank", "team", "abbrev", "stat", "gp", "per_game"]
+        raw_rows = res.get("rows")
+        if res.get("ok") and isinstance(raw_rows, list):
+            rows = [r for r in raw_rows if isinstance(r, dict)]
+        else:
+            rows = []
+        cols = list(rows[0].keys()) if rows else default_cols
+        res["rows"] = rows
+        res["columns"] = cols
+        res["ok"] = bool(res.get("ok", False))
+        return sanitize_for_wire(res)
+
+    @tool("get_team_compare", description=_orig_get_team_compare.description)
+    def get_team_compare(stat_category: str = "PTS", top: int = 3, season: str | None = None) -> dict:
+        """Top-N team comparison on a counting stat joined with win-loss records."""
+        try:
+            res = _orig_get_team_compare.invoke({"stat_category": stat_category, "top": top, "season": season})
+            if not isinstance(res, dict):
+                res = {"tool": "get_team_compare", "ok": False, "error": str(res)}
+        except Exception as exc:
+            res = {"tool": "get_team_compare", "ok": False, "error": f"{type(exc).__name__}: {exc}"}
+
+        default_cols = ["rank", "team", "abbrev", "stat", "gp", "per_game", "record"]
+        raw_rows = res.get("rows")
+        if res.get("ok") and isinstance(raw_rows, list):
+            rows = [r for r in raw_rows if isinstance(r, dict)]
+        else:
+            rows = []
+        cols = list(rows[0].keys()) if rows else default_cols
+        res["rows"] = rows
+        res["columns"] = cols
+        res["ok"] = bool(res.get("ok", False))
+        return sanitize_for_wire(res)
+
+    @tool("get_elo_standings", description=_orig_get_elo_standings.description)
+    def get_elo_standings(season: str | None = None, opponent: str | None = None, limit: int = 30) -> dict:
+        """ELO power ratings as standings with implied win pct, win equivalents, and Elo-implied spreads."""
+        try:
+            res = _orig_get_elo_standings.invoke({"season": season, "opponent": opponent, "limit": limit})
+            if not isinstance(res, dict):
+                res = {"tool": "get_elo_standings", "ok": False, "error": str(res)}
+        except Exception as exc:
+            res = {"tool": "get_elo_standings", "ok": False, "error": f"{type(exc).__name__}: {exc}"}
+
+        default_cols = ["rank", "abbr", "elo", "games", "w", "l", "elo_win_pct", "win_equiv", "elo_implied_spread"]
+        raw_rows = res.get("rows")
+        if res.get("ok") and isinstance(raw_rows, list):
+            rows = [r for r in raw_rows if isinstance(r, dict)]
+        else:
+            rows = []
+        cols = list(rows[0].keys()) if rows else default_cols
+        res["rows"] = rows
+        res["columns"] = cols
+        res["ok"] = bool(res.get("ok", False))
+        return sanitize_for_wire(res)
+
     # Deliberately do not export WAREHOUSE_TOOLS, which includes mutators.
     return {
         item.name: item for item in (
@@ -856,6 +925,9 @@ def catalogue():
             get_leaders,
             get_lineup_leaders,
             get_playoffs,
+            get_team_leaders,
+            get_team_compare,
+            get_elo_standings,
         )
     }
 
