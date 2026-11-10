@@ -198,6 +198,7 @@ const TOOL_LABELS: Record<string, ToolNarration> = {
   get_hustle: { running: "Analyzing hustle stats", done: "Analyzed hustle stats" },
   get_injuries: { running: "Checking injury report", done: "Checked injury report" },
   get_award_results: { running: "Looking up award voting results", done: "Looked up award voting results" },
+  get_briefing: { running: "Pulling morning briefing and scores", done: "Pulled morning briefing and scores" },
   four_factors: { running: "Computing four factors", done: "Computed four factors" },
   team_four_factors: { running: "Computing team four factors", done: "Computed team four factors" },
   matchup_brief: { running: "Building matchup brief", done: "Built matchup brief" },

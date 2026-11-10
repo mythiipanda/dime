@@ -76,6 +76,7 @@ export async function createAnalystSession({
             "- get_hustle({ scope, season }): NBA hustle leaders (contested shots, deflections, charges drawn, screen assists, loose balls recovered) for player or team scope.",
             "- get_injuries({ team, player, season }): NBA injury and availability report with optional team abbreviation or player filter.",
             "- get_award_results({ view, award, season, player }): Historical recorded NBA award voting results (MVP, DPOY, ROY, 6MOY, etc.) from published ballots.",
+            "- get_briefing({ game_date, season }): Daily morning briefing: scoreboard, scores, and top scorers for any date or latest (MM/DD/YYYY).",
             "- sql_exec({ sql }): Custom SQL across silver tables (silver_rapm, silver_rapm_prior, silver_gamelogs, silver_schedule, silver_rosters, silver_bbref_awards, silver_combine, silver_stints, silver_playoff_gamelogs).",
             "- warehouse_schema({ tables }): Inspect table schemas, column types, and units before writing queries.",
             "",
