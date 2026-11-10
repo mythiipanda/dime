@@ -182,6 +182,9 @@ test("real Python sql_exec and schema cross MCP into Pi with source semantics an
       "get_injuries",
       "get_award_results",
       "get_briefing",
+      "get_standings",
+      "get_rest",
+      "get_team_trajectory",
     ]);
     assert.deepEqual(bridge.tools[0].parameters.required, ["sql"]);
     const setup = await fixture("python", `
@@ -256,7 +259,7 @@ test("real statistical tools cross MCP with anchor compatibility, rows, columns,
   const pid = bridge.pid;
   try {
     const toolMap = new Map(bridge.tools.map(t => [t.name, t]));
-    assert.equal(bridge.tools.length, 17);
+    assert.equal(bridge.tools.length, 20);
 
     // 1. get_rapm
     const rapmTool = toolMap.get("get_rapm");
@@ -404,12 +407,37 @@ test("real statistical tools cross MCP with anchor compatibility, rows, columns,
     assert(Array.isArray(briefingRes.structuredContent.result.rows));
     assert(Array.isArray(briefingRes.structuredContent.result.columns));
 
-    // Verify anchor compatibility across all 15 statistical tools
+    // 16. get_standings
+    const standingsTool = toolMap.get("get_standings");
+    assert(standingsTool);
+    const standingsRes = await standingsTool.execute("call-standings", { season: "2023-24" }, undefined);
+    assert(standingsRes.structuredContent);
+    assert(Array.isArray(standingsRes.structuredContent.result.rows));
+    assert(Array.isArray(standingsRes.structuredContent.result.columns));
+
+    // 17. get_rest
+    const restTool = toolMap.get("get_rest");
+    assert(restTool);
+    const restRes = await restTool.execute("call-rest", { team_abbrev: "BOS", season: "2023-24" }, undefined);
+    assert(restRes.structuredContent);
+    assert(Array.isArray(restRes.structuredContent.result.rows));
+    assert(Array.isArray(restRes.structuredContent.result.columns));
+
+    // 18. get_team_trajectory
+    const trajectoryTool = toolMap.get("get_team_trajectory");
+    assert(trajectoryTool);
+    const trajectoryRes = await trajectoryTool.execute("call-trajectory", { team: "BOS", seasons_back: 3 }, undefined);
+    assert(trajectoryRes.structuredContent);
+    assert(Array.isArray(trajectoryRes.structuredContent.result.rows));
+    assert(Array.isArray(trajectoryRes.structuredContent.result.columns));
+
+    // Verify anchor compatibility across all 18 statistical tools
     for (const toolName of [
       "get_rapm", "get_game_prediction", "get_wpa_leaders", "get_comps",
       "get_lineup_stats", "get_win_prob", "get_on_off", "get_shot_zones",
       "get_four_factors", "get_clutch_stats", "get_competitive_ratings",
-      "get_hustle", "get_injuries", "get_award_results", "get_briefing"
+      "get_hustle", "get_injuries", "get_award_results", "get_briefing",
+      "get_standings", "get_rest", "get_team_trajectory"
     ]) {
       const syntheticRecord = {
         ref: `ref-${toolName}`,
@@ -439,7 +467,7 @@ test("real statistical tools cross MCP with anchor compatibility, rows, columns,
       }, (ref) => ref === syntheticRecord.ref ? syntheticRecord : undefined);
       assert.equal(submission.blocks[0].text, `Anchor for ${toolName}`);
     }
-    console.log(JSON.stringify({ proof: "statistical-tools-anchor-compatible", tools: 15 }));
+    console.log(JSON.stringify({ proof: "statistical-tools-anchor-compatible", tools: 18 }));
   } finally {
     await bridge.close();
   }
