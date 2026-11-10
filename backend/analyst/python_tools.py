@@ -36,6 +36,9 @@ def catalogue():
         get_ratings as _orig_get_ratings,
         get_rookie_leaders as _orig_get_rookie_leaders,
         get_cap_ledger as _orig_get_cap_ledger,
+        get_leaders as _orig_get_leaders,
+        get_lineup_leaders as _orig_get_lineup_leaders,
+        get_playoffs as _orig_get_playoffs,
     )
     try:
         from shared.tools.league import get_clutch_stats as _orig_get_clutch_stats
@@ -727,6 +730,103 @@ def catalogue():
         res["ok"] = bool(res.get("ok", False))
         return sanitize_for_wire(res)
 
+    @tool("get_leaders", description=_orig_get_leaders.description)
+    def get_leaders(stat_category: str = "PTS", ranking_direction: str = "desc",
+                    min_attempts: int = 0, season: str | None = None) -> dict:
+        """Qualified league statistical leaders for any category."""
+        try:
+            res = _orig_get_leaders.invoke({
+                "stat_category": stat_category,
+                "ranking_direction": ranking_direction,
+                "min_attempts": min_attempts,
+                "season": season,
+            })
+            if not isinstance(res, dict):
+                res = {"tool": "get_leaders", "ok": False, "error": str(res)}
+        except Exception as exc:
+            res = {"tool": "get_leaders", "ok": False, "error": f"{type(exc).__name__}: {exc}"}
+
+        default_cols = ["player", "team", "stat_category", "value", "gp"]
+        raw_rows = res.get("rows")
+        if res.get("ok") and isinstance(raw_rows, list):
+            rows = [r for r in raw_rows if isinstance(r, dict)]
+        else:
+            rows = []
+        cols = list(rows[0].keys()) if rows else default_cols
+        res["rows"] = rows
+        res["columns"] = cols
+        res["ok"] = bool(res.get("ok", False))
+        return sanitize_for_wire(res)
+
+    @tool("get_lineup_leaders", description=_orig_get_lineup_leaders.description)
+    def get_lineup_leaders(min_minutes: int = 100, limit: int = 10, season: str | None = None) -> dict:
+        """League-wide 5-man lineup net-rating leaderboard with minutes qualification floor."""
+        try:
+            res = _orig_get_lineup_leaders.invoke({
+                "min_minutes": min_minutes,
+                "limit": limit,
+                "season": season,
+            })
+            if not isinstance(res, dict):
+                res = {"tool": "get_lineup_leaders", "ok": False, "error": str(res)}
+        except Exception as exc:
+            res = {"tool": "get_lineup_leaders", "ok": False, "error": f"{type(exc).__name__}: {exc}"}
+
+        default_cols = ["team_abbreviation", "group_name", "gp", "min", "plus_minus", "net48"]
+        raw_rows = res.get("rows")
+        if res.get("ok") and isinstance(raw_rows, list):
+            rows = [r for r in raw_rows if isinstance(r, dict)]
+        else:
+            rows = []
+        cols = list(rows[0].keys()) if rows else default_cols
+        res["rows"] = rows
+        res["columns"] = cols
+        res["ok"] = bool(res.get("ok", False))
+        return sanitize_for_wire(res)
+
+    @tool("get_playoffs", description=_orig_get_playoffs.description)
+    def get_playoffs(season: str | None = None) -> dict:
+        """Playoff series wins per team, finals matchup, and champion for any season."""
+        try:
+            res = _orig_get_playoffs.invoke({"season": season})
+            if not isinstance(res, dict):
+                res = {"tool": "get_playoffs", "ok": False, "error": str(res)}
+        except Exception as exc:
+            res = {"tool": "get_playoffs", "ok": False, "error": f"{type(exc).__name__}: {exc}"}
+
+        default_cols = ["team", "w", "l", "champion"]
+        raw_rows = res.get("rows")
+        rows: list[dict] = []
+        if res.get("ok"):
+            if isinstance(raw_rows, dict):
+                champ = raw_rows.get("champion", "")
+                wins = raw_rows.get("wins")
+                if isinstance(wins, list) and wins:
+                    for w in wins:
+                        if isinstance(w, dict):
+                            rows.append({
+                                "team": w.get("team"),
+                                "w": w.get("w"),
+                                "l": w.get("l"),
+                                "champion": champ,
+                            })
+                elif champ:
+                    rec = raw_rows.get("champion_record") or {}
+                    rows.append({
+                        "team": champ,
+                        "w": rec.get("w"),
+                        "l": rec.get("l"),
+                        "champion": champ,
+                    })
+            elif isinstance(raw_rows, list):
+                rows = [r for r in raw_rows if isinstance(r, dict)]
+
+        cols = list(rows[0].keys()) if rows else default_cols
+        res["rows"] = rows
+        res["columns"] = cols
+        res["ok"] = bool(res.get("ok", False))
+        return sanitize_for_wire(res)
+
     # Deliberately do not export WAREHOUSE_TOOLS, which includes mutators.
     return {
         item.name: item for item in (
@@ -753,6 +853,9 @@ def catalogue():
             get_ratings,
             get_rookie_leaders,
             get_cap_ledger,
+            get_leaders,
+            get_lineup_leaders,
+            get_playoffs,
         )
     }
 

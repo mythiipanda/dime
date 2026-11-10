@@ -48,6 +48,9 @@ const SOURCE_LABELS: Record<string, string> = {
   get_ratings: "Team ratings",
   get_rookie_leaders: "Rookie leaderboard",
   get_cap_ledger: "Salary cap & apron",
+  get_leaders: "Statistical leaders",
+  get_lineup_leaders: "Lineup net rating",
+  get_playoffs: "Playoff results",
 };
 
 function sourceLabel(source?: string) {
