@@ -30,6 +30,9 @@ def catalogue():
         get_hustle as _orig_get_hustle,
         get_injuries as _orig_get_injuries,
         get_briefing as _orig_get_briefing,
+        get_standings as _orig_get_standings,
+        get_rest as _orig_get_rest,
+        get_team_trajectory as _orig_get_team_trajectory,
     )
     try:
         from shared.tools.league import get_clutch_stats as _orig_get_clutch_stats
@@ -536,6 +539,93 @@ def catalogue():
         res["columns"] = cols
         return sanitize_for_wire(res)
 
+    @tool("get_standings", description=_orig_get_standings.description)
+    def get_standings(season: str | None = None) -> dict:
+        """NBA regular-season conference and league standings for any season."""
+        try:
+            res = _orig_get_standings.invoke({"season": season})
+            if not isinstance(res, dict):
+                res = {"tool": "get_standings", "ok": False, "error": str(res)}
+        except Exception as exc:
+            res = {"tool": "get_standings", "ok": False, "error": f"{type(exc).__name__}: {exc}"}
+
+        default_cols = ["team", "wins", "losses", "pct", "conference", "division", "gb"]
+        raw_rows = res.get("rows")
+        if res.get("ok") and isinstance(raw_rows, list):
+            rows = [r for r in raw_rows if isinstance(r, dict)]
+        else:
+            rows = []
+        cols = list(rows[0].keys()) if rows else default_cols
+        res["rows"] = rows
+        res["columns"] = cols
+        res["ok"] = bool(res.get("ok", False))
+        return sanitize_for_wire(res)
+
+    @tool("get_rest", description=_orig_get_rest.description)
+    def get_rest(team_abbrev: str = "", season: str | None = None) -> dict:
+        """Back-to-back and rest-day schedule splits for any team."""
+        try:
+            res = _orig_get_rest.invoke({"team_abbrev": team_abbrev, "season": season})
+            if not isinstance(res, dict):
+                res = {"tool": "get_rest", "ok": False, "error": str(res)}
+        except Exception as exc:
+            res = {"tool": "get_rest", "ok": False, "error": f"{type(exc).__name__}: {exc}"}
+
+        default_cols = ["team", "rest_days", "games", "wins", "losses", "win_pct"]
+        raw_rows = res.get("rows")
+        rows: list[dict] = []
+        if res.get("ok"):
+            if isinstance(raw_rows, dict):
+                buckets = raw_rows.get("rest_buckets")
+                if isinstance(buckets, dict):
+                    team = team_abbrev.upper() if team_abbrev else ""
+                    for bucket_name, b_val in buckets.items():
+                        if isinstance(b_val, dict):
+                            rows.append({
+                                "team": team,
+                                "rest_days": bucket_name,
+                                "games": b_val.get("games", 0),
+                                "wins": b_val.get("wins", 0),
+                                "losses": b_val.get("losses", 0),
+                                "win_pct": b_val.get("win_pct"),
+                            })
+                else:
+                    for k, v in raw_rows.items():
+                        if isinstance(v, dict):
+                            rows.append({"team": team_abbrev.upper() if team_abbrev else "", "rest_days": k, **v})
+            elif isinstance(raw_rows, list):
+                rows = [r for r in raw_rows if isinstance(r, dict)]
+
+        cols = list(rows[0].keys()) if rows else default_cols
+        res["rows"] = rows
+        res["columns"] = cols
+        res["ok"] = bool(res.get("ok", False))
+        return sanitize_for_wire(res)
+
+    @tool("get_team_trajectory", description=_orig_get_team_trajectory.description)
+    def get_team_trajectory(team: str = "", through_season: str | None = None, seasons_back: int = 5) -> dict:
+        """Multi-season regular-season records and win percentages for any team."""
+        try:
+            res = _orig_get_team_trajectory.invoke({
+                "team": team, "through_season": through_season, "seasons": seasons_back
+            })
+            if not isinstance(res, dict):
+                res = {"tool": "get_team_trajectory", "ok": False, "error": str(res)}
+        except Exception as exc:
+            res = {"tool": "get_team_trajectory", "ok": False, "error": f"{type(exc).__name__}: {exc}"}
+
+        default_cols = ["season", "team", "wins", "losses", "win_pct"]
+        raw_rows = res.get("rows")
+        if res.get("ok") and isinstance(raw_rows, list):
+            rows = [r for r in raw_rows if isinstance(r, dict)]
+        else:
+            rows = []
+        cols = list(rows[0].keys()) if rows else default_cols
+        res["rows"] = rows
+        res["columns"] = cols
+        res["ok"] = bool(res.get("ok", False))
+        return sanitize_for_wire(res)
+
     # Deliberately do not export WAREHOUSE_TOOLS, which includes mutators.
     return {
         item.name: item for item in (
@@ -556,6 +646,9 @@ def catalogue():
             get_injuries,
             get_award_results,
             get_briefing,
+            get_standings,
+            get_rest,
+            get_team_trajectory,
         )
     }
 
