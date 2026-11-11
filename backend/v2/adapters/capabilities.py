@@ -665,6 +665,21 @@ _LIST = [
         qualification="All 30 NBA teams ELO ratings.",
         coverage="ELO power ratings as standings with implied win probabilities and spreads.",
     ),
+    Capability(
+        name="streaks",
+        tool_name="get_streaks",
+        units={"streak": COUNT},
+        qualification="Player or team streak leaderboards league-wide.",
+        coverage="Longest or currently-active streaks ranked league-wide.",
+    ),
+    Capability(
+        name="playtypes",
+        tool_name="get_playtype_profile",
+        units={"poss_pct": FRACTION, "ppp": "points_per_possession",
+               "percentile": PERCENT, "gp": COUNT, "poss": COUNT},
+        qualification="One player or team; Synergy play-type profile on offense or defense.",
+        coverage="Synergy play-type frequency share, PPP, and percentile per play type.",
+    ),
 ]
 
 CAPABILITIES: dict[str, Capability] = {c.name: c for c in _LIST}
@@ -1023,6 +1038,8 @@ CAPABILITY_DESCRIPTIONS: dict[str, str] = {
     "draft_board": "Blended draft board rankings combining college production and combine testing.",
     "young_player_usage": "Usage-rate leaderboard for young players with customizable age ceiling (default 24) and minute floors.",
     "elo_standings": "All 30 NBA teams ELO ratings.",
+    "streaks": "Longest or currently-active streaks ranked league-wide across player or team stats.",
+    "playtypes": "Synergy play-type profile for one player or team with frequency share, PPP, and percentile.",
 }
 
 if len(CAPABILITIES) != len(_LIST):

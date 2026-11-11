@@ -157,6 +157,8 @@ CAPABILITY_TABLES: dict[str, tuple[str, ...]] = {
     "draft_board": ("silver_combine",),
     "young_player_usage": ("silver_advanced", "silver_player_season"),
     "elo_standings": ("silver_team_ratings",),
+    "streaks": ("silver_player_gamelogs", "silver_hist_gamelogs"),
+    "playtypes": ("silver_playtypes",),
 }
 
 _RATE_TO_TOTAL = {
