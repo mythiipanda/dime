@@ -134,6 +134,18 @@ def catalogue():
         from shared.tools.possessions import get_possession_log as _orig_get_possession_log
     except ImportError:
         from backend.shared.tools.possessions import get_possession_log as _orig_get_possession_log
+    try:
+        from shared.tools.league import get_elo as _orig_get_elo
+    except ImportError:
+        from backend.shared.tools.league import get_elo as _orig_get_elo
+    try:
+        from shared.tools.zone import get_team_shot_zones as _orig_get_team_shot_zones
+    except ImportError:
+        from backend.shared.tools.zone import get_team_shot_zones as _orig_get_team_shot_zones
+    try:
+        from shared.tools.history import get_historical_leaders as _orig_get_historical_leaders
+    except ImportError:
+        from backend.shared.tools.history import get_historical_leaders as _orig_get_historical_leaders
 
     declared_catalog = ", ".join(TABLES)
     description = (
@@ -2452,6 +2464,179 @@ def catalogue():
         res["ok"] = True
         return sanitize_for_wire(res)
 
+
+    @tool("get_elo", description=_orig_get_elo.description)
+    def get_elo(season: str | None = None) -> dict:
+        """ELO power ratings from warehouse game results for one season."""
+        cols = ["rank", "TEAM", "ELO", "W", "L"]
+        try:
+            res = _orig_get_elo.invoke({"season": season})
+            if not isinstance(res, dict) or not res.get("ok"):
+                err = res.get("error") if isinstance(res, dict) else res
+                return sanitize_for_wire({
+                    "ok": False,
+                    "tool": "get_elo",
+                    "rows": [],
+                    "columns": cols,
+                    "error": str(err or "ELO ratings query failed"),
+                })
+        except Exception as exc:
+            return sanitize_for_wire({
+                "ok": False,
+                "tool": "get_elo",
+                "rows": [],
+                "columns": cols,
+                "error": str(exc),
+            })
+
+        raw_rows = res.get("rows")
+        raw_list: list[dict] = [r for r in raw_rows if isinstance(r, dict)] if isinstance(raw_rows, list) else []
+        rows = [
+            {
+                "rank": r.get("rank"),
+                "TEAM": r.get("TEAM"),
+                "ELO": r.get("ELO"),
+                "W": r.get("W"),
+                "L": r.get("L"),
+            }
+            for r in raw_list
+        ]
+        res["rows"] = rows
+        res["columns"] = cols
+        res["ok"] = True
+        return sanitize_for_wire(res)
+
+    @tool("get_team_shot_zones", description=_orig_get_team_shot_zones.description)
+    def get_team_shot_zones(teams: str = "league", season: str | None = None) -> dict:
+        """League-wide team shot-zone diet: per-zone attempt share and eFG with league baselines and deltas."""
+        cols = [
+            "team", "team_id", "shots",
+            "rim_share", "rim_efg", "rim_share_delta_pp", "rim_efg_delta_pp",
+            "short_mid_share", "short_mid_efg", "short_mid_share_delta_pp", "short_mid_efg_delta_pp",
+            "long_mid_share", "long_mid_efg", "long_mid_share_delta_pp", "long_mid_efg_delta_pp",
+            "corner_3_share", "corner_3_efg", "corner_3_share_delta_pp", "corner_3_efg_delta_pp",
+            "atb_3_share", "atb_3_efg", "atb_3_share_delta_pp", "atb_3_efg_delta_pp",
+        ]
+        try:
+            res = _orig_get_team_shot_zones.invoke({"teams": teams, "season": season})
+            if not isinstance(res, dict) or not res.get("ok"):
+                err = res.get("error") if isinstance(res, dict) else res
+                return sanitize_for_wire({
+                    "ok": False,
+                    "tool": "get_team_shot_zones",
+                    "rows": [],
+                    "columns": cols,
+                    "error": str(err or "Team shot zones query failed"),
+                })
+        except Exception as exc:
+            return sanitize_for_wire({
+                "ok": False,
+                "tool": "get_team_shot_zones",
+                "rows": [],
+                "columns": cols,
+                "error": str(exc),
+            })
+
+        raw_rows = res.get("rows")
+        raw_list: list[dict] = [r for r in raw_rows if isinstance(r, dict)] if isinstance(raw_rows, list) else []
+        rows = [
+            {
+                "team": r.get("team"),
+                "team_id": r.get("team_id"),
+                "shots": r.get("shots"),
+                "rim_share": r.get("rim_share"),
+                "rim_efg": r.get("rim_efg"),
+                "rim_share_delta_pp": r.get("rim_share_delta_pp"),
+                "rim_efg_delta_pp": r.get("rim_efg_delta_pp"),
+                "short_mid_share": r.get("short_mid_share"),
+                "short_mid_efg": r.get("short_mid_efg"),
+                "short_mid_share_delta_pp": r.get("short_mid_share_delta_pp"),
+                "short_mid_efg_delta_pp": r.get("short_mid_efg_delta_pp"),
+                "long_mid_share": r.get("long_mid_share"),
+                "long_mid_efg": r.get("long_mid_efg"),
+                "long_mid_share_delta_pp": r.get("long_mid_share_delta_pp"),
+                "long_mid_efg_delta_pp": r.get("long_mid_efg_delta_pp"),
+                "corner_3_share": r.get("corner_3_share"),
+                "corner_3_efg": r.get("corner_3_efg"),
+                "corner_3_share_delta_pp": r.get("corner_3_share_delta_pp"),
+                "corner_3_efg_delta_pp": r.get("corner_3_efg_delta_pp"),
+                "atb_3_share": r.get("atb_3_share"),
+                "atb_3_efg": r.get("atb_3_efg"),
+                "atb_3_share_delta_pp": r.get("atb_3_share_delta_pp"),
+                "atb_3_efg_delta_pp": r.get("atb_3_efg_delta_pp"),
+            }
+            for r in raw_list
+        ]
+        res["rows"] = rows
+        res["columns"] = cols
+        res["ok"] = True
+        return sanitize_for_wire(res)
+
+    @tool("get_historical_leaders", description=_orig_get_historical_leaders.description)
+    def get_historical_leaders(
+        category: str = "pts",
+        start_season: int | str | None = 2015,
+        end_season: int | str | None = 2026,
+        limit: int | str | None = 10,
+        mode: str = "leaders",
+    ) -> dict:
+        """League leaders per season or best single seasons from history (2015-2026)."""
+        cols = ["player_name", "season", "value", "gp", "stat"]
+        try:
+            res = _orig_get_historical_leaders.invoke({
+                "category": category,
+                "start_season": start_season,
+                "end_season": end_season,
+                "limit": limit,
+                "mode": mode,
+            })
+            if not isinstance(res, dict) or not res.get("ok"):
+                err = res.get("error") if isinstance(res, dict) else res
+                return sanitize_for_wire({
+                    "ok": False,
+                    "tool": "get_historical_leaders",
+                    "rows": [],
+                    "columns": cols,
+                    "error": str(err or "Historical leaders query failed"),
+                })
+        except Exception as exc:
+            return sanitize_for_wire({
+                "ok": False,
+                "tool": "get_historical_leaders",
+                "rows": [],
+                "columns": cols,
+                "error": str(exc),
+            })
+
+        raw_rows = res.get("rows")
+        raw_list: list[dict] = []
+        if isinstance(raw_rows, dict):
+            if "leaders" in raw_rows and isinstance(raw_rows["leaders"], list):
+                raw_list = [r for r in raw_rows["leaders"] if isinstance(r, dict)]
+            elif "seasons" in raw_rows and isinstance(raw_rows["seasons"], list):
+                for s in raw_rows["seasons"]:
+                    if isinstance(s, dict) and isinstance(s.get("leaders"), list):
+                        raw_list.extend(r for r in s["leaders"] if isinstance(r, dict))
+            else:
+                raw_list = [raw_rows]
+        elif isinstance(raw_rows, list):
+            raw_list = [r for r in raw_rows if isinstance(r, dict)]
+
+        rows = [
+            {
+                "player_name": r.get("player_name") or r.get("player"),
+                "season": r.get("season") or r.get("season_label"),
+                "value": r.get("value"),
+                "gp": r.get("gp"),
+                "stat": r.get("stat") or category,
+            }
+            for r in raw_list
+        ]
+        res["rows"] = rows
+        res["columns"] = cols
+        res["ok"] = True
+        return sanitize_for_wire(res)
+
     # Deliberately do not export WAREHOUSE_TOOLS, which includes mutators.
     return {
         item.name: item for item in (
@@ -2517,6 +2702,9 @@ def catalogue():
             search_shots,
             get_stint_timeline,
             get_possession_log,
+            get_elo,
+            get_team_shot_zones,
+            get_historical_leaders,
         )
     }
 
