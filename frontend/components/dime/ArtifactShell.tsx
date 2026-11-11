@@ -41,6 +41,8 @@ const SOURCE_LABELS: Record<string, string> = {
   get_hustle: "Hustle stats",
   get_injuries: "Injury report",
   get_award_results: "Award voting",
+  get_award_race: "Award races",
+  get_last_x: "Recent games",
   get_briefing: "League briefing",
   get_watchlist: "Watchlist",
   get_standings: "Standings",

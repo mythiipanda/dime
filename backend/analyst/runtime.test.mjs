@@ -280,6 +280,8 @@ test("real Python sql_exec and schema cross MCP into Pi with source semantics an
       "get_watchlist",
       "get_games_on_date",
       "get_boxscore",
+      "get_award_race",
+      "get_last_x",
     ]);
     assert.deepEqual(bridge.tools[0].parameters.required, ["sql"]);
     const setup = await fixture("python", `
@@ -354,7 +356,7 @@ test("real statistical tools cross MCP with anchor compatibility, rows, columns,
   const pid = bridge.pid;
   try {
     const toolMap = new Map(bridge.tools.map(t => [t.name, t]));
-    assert.equal(bridge.tools.length, 85);
+    assert.equal(bridge.tools.length, 87);
 
     // 1. get_rapm
     const rapmTool = toolMap.get("get_rapm");
@@ -1048,6 +1050,24 @@ test("real statistical tools cross MCP with anchor compatibility, rows, columns,
     assert(boxscoreRes.structuredContent);
     assert.equal(boxscoreRes.structuredContent.tool, "get_boxscore");
 
+    // 84. get_award_race
+    const awardRaceTool = toolMap.get("get_award_race");
+    assert(awardRaceTool);
+    assert.equal(awardRaceTool.name, "get_award_race");
+    assert.deepEqual(awardRaceTool.parameters.required, ["award"]);
+    const awardRaceRes = await awardRaceTool.execute("call-award-race", { award: "MVP", season: "2024-25" }, undefined);
+    assert(awardRaceRes.structuredContent);
+    assert.equal(awardRaceRes.structuredContent.tool, "get_award_race");
+
+    // 85. get_last_x
+    const lastXTool = toolMap.get("get_last_x");
+    assert(lastXTool);
+    assert.equal(lastXTool.name, "get_last_x");
+    assert.deepEqual(lastXTool.parameters.required, ["player_id"]);
+    const lastXRes = await lastXTool.execute("call-last-x", { player_id: 2544, n: 5, season: "2024-25" }, undefined);
+    assert(lastXRes.structuredContent);
+    assert.equal(lastXRes.structuredContent.tool, "get_last_x");
+
     // Verify anchor compatibility across all 77 analytical/statistical tools
     for (const toolName of [
       "get_rapm", "get_game_prediction", "get_wpa_leaders", "get_comps",
@@ -1074,7 +1094,7 @@ test("real statistical tools cross MCP with anchor compatibility, rows, columns,
       "get_matchup_preview", "get_matchup_splits", "get_regression_check",
       "get_scout_pack", "get_rotation_check",
       "get_injury_impact", "get_matchup_brief", "get_watchlist",
-      "get_games_on_date", "get_boxscore"
+      "get_games_on_date", "get_boxscore", "get_award_race", "get_last_x"
     ]) {
       const syntheticRecord = {
         ref: `ref-${toolName}`,
