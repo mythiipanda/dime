@@ -75,6 +75,9 @@ const SOURCE_LABELS: Record<string, string> = {
   get_streaks: "Streaks",
   get_playtype_profile: "Synergy Play Types",
   get_defensive_matchups: "Defensive Tracking",
+  get_head_to_head: "Head-to-head",
+  get_lineup_matchup_matrix: "Lineup matrix",
+  get_transactions: "Transactions",
 };
 
 function sourceLabel(source?: string) {

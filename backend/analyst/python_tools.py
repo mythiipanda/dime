@@ -83,6 +83,18 @@ def catalogue():
     from shared.tools.playtypes import get_playtype_profile as _orig_get_playtype_profile
     from shared.tools.tracking import get_defensive_matchups as _orig_get_defensive_matchups
     from shared.tools.award_results import get_award_results as _orig_get_award_results
+    try:
+        from shared.tools.headtohead import get_head_to_head as _orig_get_head_to_head
+    except ImportError:
+        from backend.shared.tools.headtohead import get_head_to_head as _orig_get_head_to_head
+    try:
+        from shared.tools.lineup_matrix import get_lineup_matchup_matrix as _orig_get_lineup_matchup_matrix
+    except ImportError:
+        from backend.shared.tools.lineup_matrix import get_lineup_matchup_matrix as _orig_get_lineup_matchup_matrix
+    try:
+        from shared.tools.transactions import get_transactions as _orig_get_transactions
+    except ImportError:
+        from backend.shared.tools.transactions import get_transactions as _orig_get_transactions
     from langchain_core.tools import tool
 
     declared_catalog = ", ".join(TABLES)
@@ -1702,6 +1714,163 @@ def catalogue():
         res["ok"] = True
         return sanitize_for_wire(res)
 
+
+    @tool("get_head_to_head", description=_orig_get_head_to_head.description)
+    def get_head_to_head(player: str, opponent: str, season: str | None = None) -> dict:
+        """Player matchup history vs one opponent team or opposing player's team."""
+        cols = ["date", "matchup", "wl", "min", "pts", "reb", "ast", "stl", "blk", "plus_minus"]
+        try:
+            res = _orig_get_head_to_head.invoke({
+                "player": player,
+                "opponent": opponent,
+                "season": season,
+            })
+            if not isinstance(res, dict) or not res.get("ok"):
+                err = res.get("error") if isinstance(res, dict) else res
+                return sanitize_for_wire({
+                    "ok": False,
+                    "tool": "get_head_to_head",
+                    "rows": [],
+                    "columns": cols,
+                    "error": str(err or "Head-to-head lookup failed"),
+                })
+        except Exception as exc:
+            return sanitize_for_wire({
+                "tool": "get_head_to_head",
+                "ok": False,
+                "error": str(exc),
+                "rows": [],
+                "columns": [],
+            })
+
+        raw_rows = res.get("rows")
+        rows: list[dict] = []
+        if isinstance(raw_rows, dict):
+            player_val = raw_rows.get("player") or player
+            opp_val = raw_rows.get("opponent") or opponent
+            games = raw_rows.get("games")
+            if isinstance(games, list) and games:
+                for g in games:
+                    if isinstance(g, dict):
+                        row = {
+                            "date": g.get("date"),
+                            "matchup": g.get("matchup"),
+                            "wl": g.get("wl"),
+                            "min": g.get("min"),
+                            "pts": g.get("pts"),
+                            "reb": g.get("reb"),
+                            "ast": g.get("ast"),
+                            "stl": g.get("stl"),
+                            "blk": g.get("blk"),
+                            "plus_minus": g.get("plus_minus"),
+                            "player": player_val,
+                            "opponent": opp_val,
+                        }
+                        for k, v in g.items():
+                            if k not in row:
+                                row[k] = v
+                        rows.append(row)
+            elif "vs_opponent" in raw_rows and isinstance(raw_rows["vs_opponent"], dict):
+                vs_opp = raw_rows["vs_opponent"]
+                row = {
+                    "player": player_val,
+                    "opponent": opp_val,
+                    **vs_opp,
+                }
+                rows.append(row)
+        elif isinstance(raw_rows, list):
+            rows = [r for r in raw_rows if isinstance(r, dict)]
+
+        res["rows"] = rows
+        res["columns"] = cols
+        res["ok"] = True
+        return sanitize_for_wire(res)
+
+    @tool("get_lineup_matchup_matrix", description=_orig_get_lineup_matchup_matrix.description)
+    def get_lineup_matchup_matrix(team_a: str, team_b: str, min_minutes: float = 10,
+                                  season: str | None = None) -> dict:
+        """Lineup-vs-lineup matrix for a team matchup crossing qualifying 5-man units."""
+        cols = ["team_a_lineup", "team_b_lineup", "poss", "est_minutes", "OFF_RATING_A", "DEF_RATING_A", "NET_RATING_A", "blowout_share"]
+        try:
+            res = _orig_get_lineup_matchup_matrix.invoke({
+                "team_a": team_a,
+                "team_b": team_b,
+                "min_minutes": min_minutes,
+                "season": season,
+            })
+            if not isinstance(res, dict) or not res.get("ok"):
+                err = res.get("error") if isinstance(res, dict) else res
+                return sanitize_for_wire({
+                    "ok": False,
+                    "tool": "get_lineup_matchup_matrix",
+                    "rows": [],
+                    "columns": cols,
+                    "error": str(err or "Lineup matchup matrix lookup failed"),
+                })
+        except Exception as exc:
+            return sanitize_for_wire({
+                "tool": "get_lineup_matchup_matrix",
+                "ok": False,
+                "error": str(exc),
+                "rows": [],
+                "columns": [],
+            })
+
+        raw_rows = res.get("rows")
+        if isinstance(raw_rows, list):
+            rows = [r for r in raw_rows if isinstance(r, dict)]
+        elif isinstance(raw_rows, dict):
+            rows = [raw_rows]
+        else:
+            rows = []
+
+        res["rows"] = rows
+        res["columns"] = cols
+        res["ok"] = True
+        return sanitize_for_wire(res)
+
+    @tool("get_transactions", description=_orig_get_transactions.description)
+    def get_transactions(team: str = "", start: str = "", end: str = "", txn_type: str = "") -> dict:
+        """Team front-office transactions: signings, waivers, trades, and conversions."""
+        cols = ["txn_date", "txn_type", "player", "team", "detail"]
+        try:
+            res = _orig_get_transactions.invoke({
+                "team": team,
+                "start": start,
+                "end": end,
+                "txn_type": txn_type,
+            })
+            if not isinstance(res, dict) or not res.get("ok"):
+                err = res.get("error") if isinstance(res, dict) else res
+                return sanitize_for_wire({
+                    "ok": False,
+                    "tool": "get_transactions",
+                    "rows": [],
+                    "columns": cols,
+                    "error": str(err or "Transactions lookup failed"),
+                })
+        except Exception as exc:
+            return sanitize_for_wire({
+                "tool": "get_transactions",
+                "ok": False,
+                "error": str(exc),
+                "rows": [],
+                "columns": [],
+            })
+
+        raw_rows = res.get("rows")
+        if isinstance(raw_rows, list):
+            rows = [r for r in raw_rows if isinstance(r, dict)]
+        elif isinstance(raw_rows, dict):
+            rows = [raw_rows]
+        else:
+            rows = []
+
+        res["rows"] = rows
+        res["columns"] = cols
+        res["ok"] = True
+        return sanitize_for_wire(res)
+
     # Deliberately do not export WAREHOUSE_TOOLS, which includes mutators.
     return {
         item.name: item for item in (
@@ -1755,6 +1924,9 @@ def catalogue():
             get_streaks,
             get_playtype_profile,
             get_defensive_matchups,
+            get_head_to_head,
+            get_lineup_matchup_matrix,
+            get_transactions,
         )
     }
 
@@ -1780,6 +1952,9 @@ def sanitize_for_wire(val: Any) -> Any:
     if isinstance(val, (list, tuple, set)):
         return [sanitize_for_wire(x) for x in val]
     return val
+
+
+_sanitize_floats = sanitize_for_wire
 
 
 def wire_default(value):
