@@ -158,6 +158,18 @@ def catalogue():
         from shared.tools.tracking import get_tracking_profile as _orig_get_tracking_profile
     except ImportError:
         from backend.shared.tools.tracking import get_tracking_profile as _orig_get_tracking_profile
+    try:
+        from shared.tools.rest import get_rest_advantage as _orig_get_rest_advantage
+    except ImportError:
+        from backend.shared.tools.rest import get_rest_advantage as _orig_get_rest_advantage
+    try:
+        from shared.tools.priors import get_rapm_prior as _orig_get_rapm_prior
+    except ImportError:
+        from backend.shared.tools.priors import get_rapm_prior as _orig_get_rapm_prior
+    try:
+        from shared.tools.gamelog import search_game_logs as _orig_search_game_logs
+    except ImportError:
+        from backend.shared.tools.gamelog import search_game_logs as _orig_search_game_logs
 
     declared_catalog = ", ".join(TABLES)
     description = (
@@ -2849,6 +2861,240 @@ def catalogue():
         res["ok"] = True
         return sanitize_for_wire(res)
 
+    @tool("get_rest_advantage", description=_orig_get_rest_advantage.description)
+    def get_rest_advantage(
+        team: str = "league",
+        season: str = "2025-26",
+        season_type: str = "all",
+        date: str = "",
+        opponent: str = "",
+    ) -> dict:
+        """Rest advantage: who had the fresher legs before each game."""
+        cols = ["date", "team", "opponent", "home", "result", "pts_for", "pts_against", "rest_days", "opp_rest_days", "rest_diff"]
+        try:
+            res = _orig_get_rest_advantage.invoke({
+                "team": team,
+                "season": season,
+                "season_type": season_type,
+                "date": date,
+                "opponent": opponent,
+            })
+            if not isinstance(res, dict) or not res.get("ok"):
+                err = res.get("error") if isinstance(res, dict) else res
+                return sanitize_for_wire({
+                    "ok": False,
+                    "tool": "get_rest_advantage",
+                    "rows": [],
+                    "columns": cols,
+                    "error": str(err or "Rest advantage lookup failed"),
+                })
+        except Exception as exc:
+            return sanitize_for_wire({
+                "ok": False,
+                "tool": "get_rest_advantage",
+                "rows": [],
+                "columns": cols,
+                "error": str(exc),
+            })
+
+        raw_rows = res.get("rows")
+        rows = []
+        if isinstance(raw_rows, dict):
+            t_name = raw_rows.get("team") or team
+            for g in raw_rows.get("games") or []:
+                if isinstance(g, dict):
+                    rows.append({
+                        "date": g.get("date"),
+                        "team": t_name,
+                        "opponent": g.get("opponent"),
+                        "home": g.get("home"),
+                        "result": g.get("result"),
+                        "pts_for": g.get("pts_for"),
+                        "pts_against": g.get("pts_against"),
+                        "rest_days": g.get("rest_days"),
+                        "opp_rest_days": g.get("opp_rest_days"),
+                        "rest_diff": g.get("rest_diff"),
+                    })
+        elif isinstance(raw_rows, list):
+            for item in raw_rows:
+                if isinstance(item, dict):
+                    rows.append({
+                        "date": item.get("date"),
+                        "team": item.get("team") or team,
+                        "opponent": item.get("opponent"),
+                        "home": item.get("home"),
+                        "result": item.get("result"),
+                        "pts_for": item.get("pts_for"),
+                        "pts_against": item.get("pts_against"),
+                        "rest_days": item.get("rest_days"),
+                        "opp_rest_days": item.get("opp_rest_days"),
+                        "rest_diff": item.get("rest_diff"),
+                    })
+
+        res["rows"] = rows
+        res["columns"] = cols
+        res["ok"] = True
+        return sanitize_for_wire(res)
+
+    @tool("get_rapm_prior", description=_orig_get_rapm_prior.description)
+    def get_rapm_prior(
+        player: str = "",
+        seasons: object = None,
+    ) -> dict:
+        """Prior-informed RAPM for one player blending current season with historical priors."""
+        cols = ["player", "season", "rapm", "possessions", "kind", "estimate"]
+        try:
+            res = _orig_get_rapm_prior.invoke({
+                "player": player,
+                "seasons": seasons,
+            })
+            if not isinstance(res, dict) or not res.get("ok"):
+                err = res.get("error") if isinstance(res, dict) else res
+                return sanitize_for_wire({
+                    "ok": False,
+                    "tool": "get_rapm_prior",
+                    "rows": [],
+                    "columns": cols,
+                    "error": str(err or "RAPM prior lookup failed"),
+                })
+        except Exception as exc:
+            return sanitize_for_wire({
+                "ok": False,
+                "tool": "get_rapm_prior",
+                "rows": [],
+                "columns": cols,
+                "error": str(exc),
+            })
+
+        raw_rows = res.get("rows")
+        rows = []
+        if isinstance(raw_rows, dict):
+            p_name = raw_rows.get("player") or player
+            est = raw_rows.get("estimate")
+            cur = raw_rows.get("current")
+            if isinstance(cur, dict):
+                rows.append({
+                    "player": cur.get("name") or p_name,
+                    "season": cur.get("season"),
+                    "rapm": cur.get("rapm"),
+                    "possessions": cur.get("possessions"),
+                    "kind": "current",
+                    "estimate": est,
+                })
+            for pri in raw_rows.get("priors") or []:
+                if isinstance(pri, dict):
+                    rows.append({
+                        "player": pri.get("name") or p_name,
+                        "season": pri.get("season"),
+                        "rapm": pri.get("rapm"),
+                        "possessions": pri.get("possessions"),
+                        "kind": "prior",
+                        "estimate": est,
+                    })
+        elif isinstance(raw_rows, list):
+            rows = [r for r in raw_rows if isinstance(r, dict)]
+
+        res["rows"] = rows
+        res["columns"] = cols
+        res["ok"] = True
+        return sanitize_for_wire(res)
+
+    @tool("search_game_logs", description=_orig_search_game_logs.description)
+    def search_game_logs(
+        player: str | None = None,
+        league_wide: bool = False,
+        team_wide: bool = False,
+        min_points: float | None = None,
+        min_rebounds: float | None = None,
+        min_assists: float | None = None,
+        min_pra: float | None = None,
+        max_points: float | None = None,
+        max_rebounds: float | None = None,
+        max_assists: float | None = None,
+        triple_double: bool = False,
+        double_double: bool = False,
+        best_game: bool = False,
+        opponent: str | None = None,
+        month: str | int | None = None,
+        start_date: str | None = None,
+        end_date: str | None = None,
+        home_away: str | None = None,
+        playoffs: bool = False,
+        season: str | None = None,
+        limit: int = 50,
+    ) -> dict:
+        """Filter game logs by stat thresholds, opponent, time, or home/away."""
+        cols = ["date", "game_id", "opponent", "matchup", "home", "pts", "reb", "ast", "stl", "blk", "tov", "min", "wl"]
+        try:
+            res = _orig_search_game_logs.invoke({
+                "player": player,
+                "league_wide": league_wide,
+                "team_wide": team_wide,
+                "min_points": min_points,
+                "min_rebounds": min_rebounds,
+                "min_assists": min_assists,
+                "min_pra": min_pra,
+                "max_points": max_points,
+                "max_rebounds": max_rebounds,
+                "max_assists": max_assists,
+                "triple_double": triple_double,
+                "double_double": double_double,
+                "best_game": best_game,
+                "opponent": opponent,
+                "month": month,
+                "start_date": start_date,
+                "end_date": end_date,
+                "home_away": home_away,
+                "playoffs": playoffs,
+                "season": season,
+                "limit": limit,
+            })
+            if not isinstance(res, dict) or not res.get("ok"):
+                err = res.get("error") if isinstance(res, dict) else res
+                return sanitize_for_wire({
+                    "ok": False,
+                    "tool": "search_game_logs",
+                    "rows": [],
+                    "columns": cols,
+                    "error": str(err or "Game logs search failed"),
+                })
+        except Exception as exc:
+            return sanitize_for_wire({
+                "ok": False,
+                "tool": "search_game_logs",
+                "rows": [],
+                "columns": cols,
+                "error": str(exc),
+            })
+
+        raw_rows = res.get("rows")
+        rows = []
+        if isinstance(raw_rows, dict):
+            for m in raw_rows.get("matches") or []:
+                if isinstance(m, dict):
+                    rows.append({
+                        "date": m.get("date"),
+                        "game_id": m.get("game_id"),
+                        "opponent": m.get("opponent"),
+                        "matchup": m.get("matchup"),
+                        "home": m.get("home"),
+                        "pts": m.get("pts"),
+                        "reb": m.get("reb"),
+                        "ast": m.get("ast"),
+                        "stl": m.get("stl"),
+                        "blk": m.get("blk"),
+                        "tov": m.get("tov"),
+                        "min": m.get("min"),
+                        "wl": m.get("wl"),
+                    })
+        elif isinstance(raw_rows, list):
+            rows = [r for r in raw_rows if isinstance(r, dict)]
+
+        res["rows"] = rows
+        res["columns"] = cols
+        res["ok"] = True
+        return sanitize_for_wire(res)
+
     # Deliberately do not export WAREHOUSE_TOOLS, which includes mutators.
     return {
         item.name: item for item in (
@@ -2920,6 +3166,9 @@ def catalogue():
             get_today,
             get_morning_briefing,
             get_tracking_profile,
+            get_rest_advantage,
+            get_rapm_prior,
+            search_game_logs,
         )
     }
 

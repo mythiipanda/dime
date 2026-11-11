@@ -263,6 +263,9 @@ test("real Python sql_exec and schema cross MCP into Pi with source semantics an
       "get_today",
       "get_morning_briefing",
       "get_tracking_profile",
+      "get_rest_advantage",
+      "get_rapm_prior",
+      "search_game_logs",
     ]);
     assert.deepEqual(bridge.tools[0].parameters.required, ["sql"]);
     const setup = await fixture("python", `
@@ -337,7 +340,7 @@ test("real statistical tools cross MCP with anchor compatibility, rows, columns,
   const pid = bridge.pid;
   try {
     const toolMap = new Map(bridge.tools.map(t => [t.name, t]));
-    assert.equal(bridge.tools.length, 68);
+    assert.equal(bridge.tools.length, 71);
 
     // 1. get_rapm
     const rapmTool = toolMap.get("get_rapm");
@@ -893,7 +896,31 @@ test("real statistical tools cross MCP with anchor compatibility, rows, columns,
     assert(Array.isArray(trackingRes.structuredContent.result.rows));
     assert(Array.isArray(trackingRes.structuredContent.result.columns));
 
-    // Verify anchor compatibility across all 66 statistical tools
+    // 67. get_rest_advantage
+    const restAdvTool = toolMap.get("get_rest_advantage");
+    assert(restAdvTool);
+    const restAdvRes = await restAdvTool.execute("call-rest-advantage", { team: "BOS", season: "2025-26" }, undefined);
+    assert(restAdvRes.structuredContent);
+    assert(Array.isArray(restAdvRes.structuredContent.result.rows));
+    assert(Array.isArray(restAdvRes.structuredContent.result.columns));
+
+    // 68. get_rapm_prior
+    const rapmPriorTool = toolMap.get("get_rapm_prior");
+    assert(rapmPriorTool);
+    const rapmPriorRes = await rapmPriorTool.execute("call-rapm-prior", { player: "Nikola Jokić" }, undefined);
+    assert(rapmPriorRes.structuredContent);
+    assert(Array.isArray(rapmPriorRes.structuredContent.result.rows));
+    assert(Array.isArray(rapmPriorRes.structuredContent.result.columns));
+
+    // 69. search_game_logs
+    const gameLogsTool = toolMap.get("search_game_logs");
+    assert(gameLogsTool);
+    const gameLogsRes = await gameLogsTool.execute("call-game-logs", { player: "Jayson Tatum", min_points: 30, season: "2025-26" }, undefined);
+    assert(gameLogsRes.structuredContent);
+    assert(Array.isArray(gameLogsRes.structuredContent.result.rows));
+    assert(Array.isArray(gameLogsRes.structuredContent.result.columns));
+
+    // Verify anchor compatibility across all 69 statistical tools
     for (const toolName of [
       "get_rapm", "get_game_prediction", "get_wpa_leaders", "get_comps",
       "get_lineup_stats", "get_win_prob", "get_on_off", "get_shot_zones",
@@ -913,7 +940,8 @@ test("real statistical tools cross MCP with anchor compatibility, rows, columns,
       "get_wowy", "get_shot_compare", "get_raptor_history",
       "get_season_series", "get_team_game_log", "get_zone_deltas",
       "search_shots", "get_stint_timeline", "get_possession_log",
-      "get_elo", "get_team_shot_zones", "get_historical_leaders", "get_today", "get_morning_briefing", "get_tracking_profile"
+      "get_elo", "get_team_shot_zones", "get_historical_leaders", "get_today", "get_morning_briefing", "get_tracking_profile",
+      "get_rest_advantage", "get_rapm_prior", "search_game_logs"
     ]) {
       const syntheticRecord = {
         ref: `ref-${toolName}`,
@@ -943,7 +971,7 @@ test("real statistical tools cross MCP with anchor compatibility, rows, columns,
       }, (ref) => ref === syntheticRecord.ref ? syntheticRecord : undefined);
       assert.equal(submission.blocks[0].text, `Anchor for ${toolName}`);
     }
-    console.log(JSON.stringify({ proof: "statistical-tools-anchor-compatible", tools: 66 }));
+    console.log(JSON.stringify({ proof: "statistical-tools-anchor-compatible", tools: 69 }));
   } finally {
     await bridge.close();
   }

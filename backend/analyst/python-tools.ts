@@ -75,7 +75,10 @@ export type PythonToolName =
     | "get_historical_leaders"
     | "get_today"
     | "get_morning_briefing"
-    | "get_tracking_profile";
+    | "get_tracking_profile"
+    | "get_rest_advantage"
+    | "get_rapm_prior"
+    | "search_game_logs";
 
 export const ANALYST_TOOL_NAMES: readonly PythonToolName[] = [
     "sql_exec",
@@ -146,6 +149,9 @@ export const ANALYST_TOOL_NAMES: readonly PythonToolName[] = [
     "get_today",
     "get_morning_briefing",
     "get_tracking_profile",
+    "get_rest_advantage",
+    "get_rapm_prior",
+    "search_game_logs",
 ] as const;
 
 export const sourceRecordSchema = Type.Object({
@@ -219,6 +225,9 @@ export const sourceRecordSchema = Type.Object({
         Type.Literal("get_today"),
         Type.Literal("get_morning_briefing"),
         Type.Literal("get_tracking_profile"),
+        Type.Literal("get_rest_advantage"),
+        Type.Literal("get_rapm_prior"),
+        Type.Literal("search_game_logs"),
     ]),
     response: Type.Object({
         content: Type.Array(Type.Unknown()),

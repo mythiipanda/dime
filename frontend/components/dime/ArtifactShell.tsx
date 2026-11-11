@@ -93,6 +93,9 @@ const SOURCE_LABELS: Record<string, string> = {
   get_today: "Today slate",
   get_morning_briefing: "Morning briefing",
   get_tracking_profile: "Tracking profile",
+  get_rest_advantage: "Rest advantage",
+  get_rapm_prior: "RAPM prior",
+  search_game_logs: "Game log search",
 };
 
 function sourceLabel(source?: string) {
