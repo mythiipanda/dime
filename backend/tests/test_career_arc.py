@@ -141,3 +141,24 @@ def test_compare_metrics_flags_raptor_gap(monkeypatch, tmp_path):
         {"a": str(PID), "b": str(PID), "season": "2025-26"})
     assert out.get("ok") is True
     assert out["meta"].get("raptor_gap") is True
+
+
+def test_get_career_arc_tool(monkeypatch, tmp_path):
+    _warehouse(monkeypatch, tmp_path)
+    from shared.tools.career_arc import get_career_arc
+
+    res = get_career_arc.invoke({"player": NAME})
+    assert res["ok"] is True
+    assert res["player_id"] == PID
+    assert len(res["rows"]) == 3
+    assert res["columns"] == [
+        "season", "end_year", "player_name", "team_abbreviation", "gp", "min",
+        "pts", "reb", "ast", "stl", "blk", "fg_pct", "fg3_pct", "ft_pct",
+        "ts_pct", "raptor", "raptor_gap", "source"
+    ]
+    assert res["rows"][0]["season"] == "2023-24"
+    assert res["rows"][-1]["season"] == "2025-26"
+
+    bad = get_career_arc.invoke({"player": "Nonexistent Player"})
+    assert bad["ok"] is False
+    assert bad["rows"] == []

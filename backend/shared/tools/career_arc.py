@@ -1,3 +1,4 @@
+from langchain_core.tools import tool
 from typing import Any
 
 from .. import store
@@ -130,15 +131,26 @@ def _per_game(total: object, gp: object, nd: int = 1) -> float | None:
         return None
     return round(t / g, nd)
 
+def _current_season_info() -> tuple[str, int]:
+    if "silver_leaders_pts" in _tables():
+        rows = _rows("SELECT MAX(_season) AS m FROM silver_leaders_pts", [])
+        if rows and rows[0].get("m"):
+            s = str(rows[0]["m"])
+            ey = to_end_year(s)
+            if ey:
+                return s, ey
+    return CURRENT_SEASON, CURRENT_END_YEAR
+
 def current_row(pid: int) -> dict[str, Any] | None:
     if "silver_leaders_pts" not in _tables():
         return None
+    cur_season, cur_end_year = _current_season_info()
     rows = _rows(
         "SELECT PLAYER_ID, PLAYER, TEAM, GP, MIN, PTS, REB, AST, STL, BLK, "
         "FG_PCT, FG3_PCT, FT_PCT FROM silver_leaders_pts "
         "WHERE _season = ? AND CAST(PLAYER_ID AS VARCHAR) = "
         "CAST(? AS VARCHAR) LIMIT 1",
-        [CURRENT_SEASON, str(pid)],
+        [cur_season, str(pid)],
     )
     if not rows:
         return None
@@ -151,7 +163,7 @@ def current_row(pid: int) -> dict[str, Any] | None:
         a = _rows(
             "SELECT TS_PCT FROM silver_advanced WHERE _season = ? AND "
             "CAST(PLAYER_ID AS VARCHAR) = CAST(? AS VARCHAR) LIMIT 1",
-            [CURRENT_SEASON, str(pid)],
+            [cur_season, str(pid)],
         )
         if a:
             v = _num(a[0].get("TS_PCT"))
@@ -161,7 +173,7 @@ def current_row(pid: int) -> dict[str, Any] | None:
         "player_id": r.get("PLAYER_ID"),
         "player_name": r.get("PLAYER"),
         "team_abbreviation": r.get("TEAM"),
-        "season": CURRENT_END_YEAR,
+        "season": cur_end_year,
         "gp": int(gp),
         "min": _per_game(r.get("MIN"), gp),
         "pts": _per_game(r.get("PTS"), gp),
@@ -221,10 +233,11 @@ def arc_for_id(pid: int) -> list[dict[str, Any]]:
         })
     cur = current_row(ident)
     if cur is not None:
-        rv = rap.get(CURRENT_END_YEAR)
+        cur_season, cur_end_year = _current_season_info()
+        rv = rap.get(cur_end_year)
         cur_out: dict[str, Any] = {
-            "end_year": CURRENT_END_YEAR,
-            "season": CURRENT_SEASON,
+            "end_year": cur_end_year,
+            "season": cur_season,
             "source": "current",
             "player_name": cur.get("player_name"),
             "team_abbreviation": cur.get("team_abbreviation"),
@@ -247,3 +260,71 @@ def line_for_season(pid: int, season: object) -> dict[str, Any] | None:
         if int(row["end_year"]) == year:
             return row
     return None
+
+
+@tool(description="Career trajectory and year-over-year statistical arc for an NBA player.\n\nCombines multi-season box score history with RAPTOR and current season metrics.\nReturns a chronological list of seasons with stats, efficiency, and honest coverage gaps.")
+def get_career_arc(player: str = "", player_id: int = 0) -> dict[str, Any]:
+    name = str(player or "").strip()
+    ident = 0
+    if player_id:
+        try:
+            ident = int(player_id)
+        except (TypeError, ValueError):
+            ident = 0
+
+    if not ident and name:
+        con = store.connect(read_only=True)
+        try:
+            if "silver_hist_player_seasons" in _tables():
+                res = con.execute(
+                    "SELECT player_id FROM silver_hist_player_seasons WHERE LOWER(player_name) = LOWER(?) LIMIT 1",
+                    [name]
+                ).fetchall()
+                if res and res[0][0]:
+                    ident = int(res[0][0])
+            if not ident and "silver_leaders_pts" in _tables():
+                res = con.execute(
+                    "SELECT PLAYER_ID FROM silver_leaders_pts WHERE LOWER(PLAYER) = LOWER(?) LIMIT 1",
+                    [name]
+                ).fetchall()
+                if res and res[0][0]:
+                    ident = int(res[0][0])
+            if not ident and "silver_hist_player_seasons" in _tables():
+                res = con.execute(
+                    "SELECT player_id FROM silver_hist_player_seasons WHERE LOWER(player_name) LIKE LOWER(?) LIMIT 1",
+                    [f"%{name}%"]
+                ).fetchall()
+                if res and res[0][0]:
+                    ident = int(res[0][0])
+        except Exception:
+            pass
+        finally:
+            try:
+                con.close()
+            except Exception:
+                pass
+
+    if not ident:
+        return {
+            "ok": False,
+            "tool": "get_career_arc",
+            "rows": [],
+            "columns": ["season", "pts", "reb", "ast", "min", "ts_pct", "raptor"],
+            "error": f"Player '{name or player_id}' not found in career history",
+        }
+
+    rows = arc_for_id(ident)
+    cols = [
+        "season", "end_year", "player_name", "team_abbreviation", "gp", "min",
+        "pts", "reb", "ast", "stl", "blk", "fg_pct", "fg3_pct", "ft_pct",
+        "ts_pct", "raptor", "raptor_gap", "source"
+    ]
+    p_name = rows[0].get("player_name", name) if rows else name
+    return {
+        "ok": True,
+        "tool": "get_career_arc",
+        "player_id": ident,
+        "player_name": p_name,
+        "rows": rows,
+        "columns": cols,
+    }
