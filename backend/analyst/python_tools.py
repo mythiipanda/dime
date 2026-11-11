@@ -176,6 +176,10 @@ def catalogue():
         from shared.tools.preview import get_matchup_preview
     except ImportError:
         from backend.shared.tools.preview import get_matchup_preview
+    try:
+        from shared.tools.splits import get_matchup_splits, get_regression_check
+    except ImportError:
+        from backend.shared.tools.splits import get_matchup_splits, get_regression_check
 
     declared_catalog = ", ".join(TABLES)
     description = (
@@ -3337,6 +3341,8 @@ def catalogue():
             get_career_arc,
             run_python,
             get_matchup_preview,
+            get_matchup_splits,
+            get_regression_check,
         )
     }
     return TOOL_REGISTRY
