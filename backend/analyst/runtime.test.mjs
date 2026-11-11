@@ -273,6 +273,8 @@ test("real Python sql_exec and schema cross MCP into Pi with source semantics an
       "get_matchup_preview",
       "get_matchup_splits",
       "get_regression_check",
+      "get_scout_pack",
+      "get_rotation_check",
     ]);
     assert.deepEqual(bridge.tools[0].parameters.required, ["sql"]);
     const setup = await fixture("python", `
@@ -347,7 +349,7 @@ test("real statistical tools cross MCP with anchor compatibility, rows, columns,
   const pid = bridge.pid;
   try {
     const toolMap = new Map(bridge.tools.map(t => [t.name, t]));
-    assert.equal(bridge.tools.length, 78);
+    assert.equal(bridge.tools.length, 80);
 
     // 1. get_rapm
     const rapmTool = toolMap.get("get_rapm");
@@ -983,7 +985,23 @@ test("real statistical tools cross MCP with anchor compatibility, rows, columns,
     assert(regressionCheckRes.structuredContent);
     assert.equal(regressionCheckRes.structuredContent.tool, "get_regression_check");
 
-    // Verify anchor compatibility across all 73 analytical/statistical tools
+    // 77. get_scout_pack
+    const scoutPackTool = toolMap.get("get_scout_pack");
+    assert(scoutPackTool);
+    assert.equal(scoutPackTool.name, "get_scout_pack");
+    const scoutPackRes = await scoutPackTool.execute("call-scout-pack", { team: "BOS", opponent: "MIA" }, undefined);
+    assert(scoutPackRes.structuredContent);
+    assert.equal(scoutPackRes.structuredContent.tool, "get_scout_pack");
+
+    // 78. get_rotation_check
+    const rotationCheckTool = toolMap.get("get_rotation_check");
+    assert(rotationCheckTool);
+    assert.equal(rotationCheckTool.name, "get_rotation_check");
+    const rotationCheckRes = await rotationCheckTool.execute("call-rotation-check", { team: "BOS" }, undefined);
+    assert(rotationCheckRes.structuredContent);
+    assert.equal(rotationCheckRes.structuredContent.tool, "get_rotation_check");
+
+    // Verify anchor compatibility across all 75 analytical/statistical tools
     for (const toolName of [
       "get_rapm", "get_game_prediction", "get_wpa_leaders", "get_comps",
       "get_lineup_stats", "get_win_prob", "get_on_off", "get_shot_zones",
@@ -1006,7 +1024,8 @@ test("real statistical tools cross MCP with anchor compatibility, rows, columns,
       "get_elo", "get_team_shot_zones", "get_historical_leaders", "get_today", "get_morning_briefing", "get_tracking_profile",
       "get_rest_advantage", "get_rapm_prior", "search_game_logs",
       "get_dataset", "get_dataset_freshness", "get_career_arc", "run_python",
-      "get_matchup_preview", "get_matchup_splits", "get_regression_check"
+      "get_matchup_preview", "get_matchup_splits", "get_regression_check",
+      "get_scout_pack", "get_rotation_check"
     ]) {
       const syntheticRecord = {
         ref: `ref-${toolName}`,
