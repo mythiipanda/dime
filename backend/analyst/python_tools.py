@@ -49,6 +49,10 @@ def catalogue():
         get_trade_check as _orig_get_trade_check,
         get_trade_value as _orig_get_trade_value,
         get_situational_splits as _orig_get_situational_splits,
+        get_playoff_sim as _orig_get_playoff_sim,
+        get_playoff_team_ratings as _orig_get_playoff_team_ratings,
+        get_player_risers as _orig_get_player_risers,
+        get_standings_deep as _orig_get_standings_deep,
     )
     try:
         from shared.tools.league import get_clutch_stats as _orig_get_clutch_stats
@@ -1152,6 +1156,148 @@ def catalogue():
         res["ok"] = bool(res.get("ok", False))
         return sanitize_for_wire(res)
 
+    @tool("get_playoff_sim", description=_orig_get_playoff_sim.description)
+    def get_playoff_sim(season: str | None = None, sims: int = 2000) -> dict:
+        """Simulated championship and finals odds from power ratings via Monte Carlo brackets."""
+        try:
+            res = _orig_get_playoff_sim.invoke({"season": season, "sims": sims})
+            if not isinstance(res, dict):
+                res = {"tool": "get_playoff_sim", "ok": False, "error": str(res)}
+        except Exception as exc:
+            res = {"tool": "get_playoff_sim", "ok": False, "error": f"{type(exc).__name__}: {exc}"}
+
+        default_cols = ["team", "title_pct", "finals_pct", "sims"]
+        raw_rows = res.get("rows")
+        rows: list[dict] = []
+        if res.get("ok"):
+            if isinstance(raw_rows, dict):
+                teams = raw_rows.get("teams")
+                if isinstance(teams, list) and teams:
+                    title_probs = raw_rows.get("title_probs") or {}
+                    final_probs = raw_rows.get("final_probs") or {}
+                    sims_val = raw_rows.get("sims", sims)
+                    is_t_ratio = max(title_probs.values(), default=0.0) <= 1.0
+                    is_f_ratio = max(final_probs.values(), default=0.0) <= 1.0
+                    rows = [
+                        {
+                            "team": t,
+                            "title_pct": round(title_probs.get(t, 0.0) * 100, 2) if is_t_ratio else round(title_probs.get(t, 0.0), 2),
+                            "finals_pct": round(final_probs.get(t, 0.0) * 100, 2) if is_f_ratio else round(final_probs.get(t, 0.0), 2),
+                            "sims": sims_val,
+                        }
+                        for t in teams
+                    ]
+                else:
+                    rows = [raw_rows]
+            elif isinstance(raw_rows, list):
+                rows = [r for r in raw_rows if isinstance(r, dict)]
+        cols = list(rows[0].keys()) if rows else default_cols
+        res["rows"] = rows
+        res["columns"] = cols
+        res["ok"] = bool(res.get("ok", False))
+        return sanitize_for_wire(res)
+
+    @tool("get_playoff_team_ratings", description=_orig_get_playoff_team_ratings.description)
+    def get_playoff_team_ratings(season: str | None = None, limit: int = 30) -> dict:
+        """Team offensive, defensive, and net ratings from playoff game logs."""
+        try:
+            res = _orig_get_playoff_team_ratings.invoke({"season": season, "limit": limit})
+            if not isinstance(res, dict):
+                res = {"tool": "get_playoff_team_ratings", "ok": False, "error": str(res)}
+        except Exception as exc:
+            res = {"tool": "get_playoff_team_ratings", "ok": False, "error": f"{type(exc).__name__}: {exc}"}
+
+        default_cols = ["team", "games", "off_rating", "def_rating", "net_rating"]
+        raw_rows = res.get("rows")
+        if res.get("ok") and isinstance(raw_rows, list):
+            rows = [r for r in raw_rows if isinstance(r, dict)]
+        elif res.get("ok") and isinstance(raw_rows, dict):
+            rows = [raw_rows]
+        else:
+            rows = []
+        cols = list(rows[0].keys()) if rows else default_cols
+        res["rows"] = rows
+        res["columns"] = cols
+        res["ok"] = bool(res.get("ok", False))
+        return sanitize_for_wire(res)
+
+    @tool("get_player_risers", description=_orig_get_player_risers.description)
+    def get_player_risers(season: str | None = None, n: int = 10) -> dict:
+        """Player risers and fallers: last-N games scoring and efficiency versus season baseline."""
+        try:
+            res = _orig_get_player_risers.invoke({"season": season, "n": n})
+            if not isinstance(res, dict):
+                res = {"tool": "get_player_risers", "ok": False, "error": str(res)}
+        except Exception as exc:
+            res = {"tool": "get_player_risers", "ok": False, "error": f"{type(exc).__name__}: {exc}"}
+
+        default_cols = ["PLAYER", "TEAM", "GP", "SEASON_PPG", "PPG_DELTA", "TREND"]
+        raw_rows = res.get("rows")
+        rows: list[dict] = []
+        if res.get("ok"):
+            if isinstance(raw_rows, dict):
+                for trend_key, trend_label in (("risers", "riser"), ("fallers", "faller")):
+                    trend_items = raw_rows.get(trend_key)
+                    if isinstance(trend_items, list):
+                        for item in trend_items:
+                            if isinstance(item, dict):
+                                row = dict(item)
+                                row["TREND"] = trend_label
+                                rows.append(row)
+                if not rows:
+                    rows = [raw_rows]
+            elif isinstance(raw_rows, list):
+                rows = [r for r in raw_rows if isinstance(r, dict)]
+        cols = list(rows[0].keys()) if rows else default_cols
+        res["rows"] = rows
+        res["columns"] = cols
+        res["ok"] = bool(res.get("ok", False))
+        return sanitize_for_wire(res)
+
+    @tool("get_standings_deep", description=_orig_get_standings_deep.description)
+    def get_standings_deep(season: str | None = None, top: int = 5) -> dict:
+        """Standings deep cuts: clutch records, comeback kings, blown leads, and monthly momentum."""
+        try:
+            res = _orig_get_standings_deep.invoke({"season": season, "top": top})
+            if not isinstance(res, dict):
+                res = {"tool": "get_standings_deep", "ok": False, "error": str(res)}
+        except Exception as exc:
+            res = {"tool": "get_standings_deep", "ok": False, "error": f"{type(exc).__name__}: {exc}"}
+
+        default_cols = ["TEAM", "CATEGORY", "W", "L", "PCT", "RECORD"]
+        raw_rows = res.get("rows")
+        rows: list[dict] = []
+        if res.get("ok"):
+            if isinstance(raw_rows, dict):
+                for cat, items in raw_rows.items():
+                    if isinstance(items, list):
+                        for item in items:
+                            if isinstance(item, dict):
+                                row = dict(item)
+                                row["CATEGORY"] = cat
+                                if "RECORD" not in row and "W" in row and "L" in row:
+                                    row["RECORD"] = f"{row['W']}-{row['L']}"
+                                rows.append(row)
+                    elif isinstance(items, dict):
+                        for sub_cat, sub_items in items.items():
+                            if isinstance(sub_items, list):
+                                for item in sub_items:
+                                    if isinstance(item, dict):
+                                        row = dict(item)
+                                        row["CATEGORY"] = f"{cat}_{sub_cat}"
+                                        if "RECORD" not in row and "W" in row and "L" in row:
+                                            row["RECORD"] = f"{row['W']}-{row['L']}"
+                                        rows.append(row)
+                if not rows:
+                    rows = [raw_rows]
+            elif isinstance(raw_rows, list):
+                rows = [r for r in raw_rows if isinstance(r, dict)]
+        cols = list(rows[0].keys()) if rows else default_cols
+        res["rows"] = rows
+        res["columns"] = cols
+        res["ok"] = bool(res.get("ok", False))
+        return sanitize_for_wire(res)
+
     # Deliberately do not export WAREHOUSE_TOOLS, which includes mutators.
     return {
         item.name: item for item in (
@@ -1191,6 +1337,10 @@ def catalogue():
             get_trade_check,
             get_trade_value,
             get_situational_splits,
+            get_playoff_sim,
+            get_playoff_team_ratings,
+            get_player_risers,
+            get_standings_deep,
         )
     }
 

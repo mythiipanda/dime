@@ -61,6 +61,10 @@ const SOURCE_LABELS: Record<string, string> = {
   get_trade_check: "Trade check",
   get_trade_value: "Trade value",
   get_situational_splits: "Situational splits",
+  get_playoff_sim: "Playoff simulation",
+  get_playoff_team_ratings: "Playoff ratings",
+  get_player_risers: "Player form trends",
+  get_standings_deep: "Deep standings",
 };
 
 function sourceLabel(source?: string) {
