@@ -277,6 +277,7 @@ test("real Python sql_exec and schema cross MCP into Pi with source semantics an
       "get_rotation_check",
       "get_injury_impact",
       "get_matchup_brief",
+      "get_watchlist",
     ]);
     assert.deepEqual(bridge.tools[0].parameters.required, ["sql"]);
     const setup = await fixture("python", `
@@ -351,7 +352,7 @@ test("real statistical tools cross MCP with anchor compatibility, rows, columns,
   const pid = bridge.pid;
   try {
     const toolMap = new Map(bridge.tools.map(t => [t.name, t]));
-    assert.equal(bridge.tools.length, 82);
+    assert.equal(bridge.tools.length, 83);
 
     // 1. get_rapm
     const rapmTool = toolMap.get("get_rapm");
@@ -1019,6 +1020,14 @@ test("real statistical tools cross MCP with anchor compatibility, rows, columns,
     assert(matchupBriefRes.structuredContent);
     assert.equal(matchupBriefRes.structuredContent.tool, "get_matchup_brief");
 
+    // 81. get_watchlist
+    const watchlistTool = toolMap.get("get_watchlist");
+    assert(watchlistTool);
+    assert.equal(watchlistTool.name, "get_watchlist");
+    const watchlistRes = await watchlistTool.execute("call-watchlist", { season: "2025-26" }, undefined);
+    assert(watchlistRes.structuredContent);
+    assert.equal(watchlistRes.structuredContent.tool, "get_watchlist");
+
     // Verify anchor compatibility across all 77 analytical/statistical tools
     for (const toolName of [
       "get_rapm", "get_game_prediction", "get_wpa_leaders", "get_comps",
@@ -1044,7 +1053,7 @@ test("real statistical tools cross MCP with anchor compatibility, rows, columns,
       "get_dataset", "get_dataset_freshness", "get_career_arc", "run_python",
       "get_matchup_preview", "get_matchup_splits", "get_regression_check",
       "get_scout_pack", "get_rotation_check",
-      "get_injury_impact", "get_matchup_brief"
+      "get_injury_impact", "get_matchup_brief", "get_watchlist"
     ]) {
       const syntheticRecord = {
         ref: `ref-${toolName}`,
