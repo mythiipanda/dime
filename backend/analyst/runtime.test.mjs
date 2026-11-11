@@ -260,6 +260,9 @@ test("real Python sql_exec and schema cross MCP into Pi with source semantics an
       "get_elo",
       "get_team_shot_zones",
       "get_historical_leaders",
+      "get_today",
+      "get_morning_briefing",
+      "get_tracking_profile",
     ]);
     assert.deepEqual(bridge.tools[0].parameters.required, ["sql"]);
     const setup = await fixture("python", `
@@ -334,7 +337,7 @@ test("real statistical tools cross MCP with anchor compatibility, rows, columns,
   const pid = bridge.pid;
   try {
     const toolMap = new Map(bridge.tools.map(t => [t.name, t]));
-    assert.equal(bridge.tools.length, 65);
+    assert.equal(bridge.tools.length, 68);
 
     // 1. get_rapm
     const rapmTool = toolMap.get("get_rapm");
@@ -866,7 +869,31 @@ test("real statistical tools cross MCP with anchor compatibility, rows, columns,
     assert(Array.isArray(histLeadersRes.structuredContent.result.rows));
     assert(Array.isArray(histLeadersRes.structuredContent.result.columns));
 
-    // Verify anchor compatibility across all 63 statistical tools
+    // 64. get_today
+    const todayTool = toolMap.get("get_today");
+    assert(todayTool);
+    const todayRes = await todayTool.execute("call-today", { season: "2024-25" }, undefined);
+    assert(todayRes.structuredContent);
+    assert(Array.isArray(todayRes.structuredContent.result.rows));
+    assert(Array.isArray(todayRes.structuredContent.result.columns));
+
+    // 65. get_morning_briefing
+    const morningBriefingTool = toolMap.get("get_morning_briefing");
+    assert(morningBriefingTool);
+    const morningBriefingRes = await morningBriefingTool.execute("call-morning-briefing", { season: "2024-25" }, undefined);
+    assert(morningBriefingRes.structuredContent);
+    assert(Array.isArray(morningBriefingRes.structuredContent.result.rows));
+    assert(Array.isArray(morningBriefingRes.structuredContent.result.columns));
+
+    // 66. get_tracking_profile
+    const trackingTool = toolMap.get("get_tracking_profile");
+    assert(trackingTool);
+    const trackingRes = await trackingTool.execute("call-tracking", { player: "LeBron James", measure_type: "Drives" }, undefined);
+    assert(trackingRes.structuredContent);
+    assert(Array.isArray(trackingRes.structuredContent.result.rows));
+    assert(Array.isArray(trackingRes.structuredContent.result.columns));
+
+    // Verify anchor compatibility across all 66 statistical tools
     for (const toolName of [
       "get_rapm", "get_game_prediction", "get_wpa_leaders", "get_comps",
       "get_lineup_stats", "get_win_prob", "get_on_off", "get_shot_zones",
@@ -886,7 +913,7 @@ test("real statistical tools cross MCP with anchor compatibility, rows, columns,
       "get_wowy", "get_shot_compare", "get_raptor_history",
       "get_season_series", "get_team_game_log", "get_zone_deltas",
       "search_shots", "get_stint_timeline", "get_possession_log",
-      "get_elo", "get_team_shot_zones", "get_historical_leaders"
+      "get_elo", "get_team_shot_zones", "get_historical_leaders", "get_today", "get_morning_briefing", "get_tracking_profile"
     ]) {
       const syntheticRecord = {
         ref: `ref-${toolName}`,
@@ -916,7 +943,7 @@ test("real statistical tools cross MCP with anchor compatibility, rows, columns,
       }, (ref) => ref === syntheticRecord.ref ? syntheticRecord : undefined);
       assert.equal(submission.blocks[0].text, `Anchor for ${toolName}`);
     }
-    console.log(JSON.stringify({ proof: "statistical-tools-anchor-compatible", tools: 63 }));
+    console.log(JSON.stringify({ proof: "statistical-tools-anchor-compatible", tools: 66 }));
   } finally {
     await bridge.close();
   }

@@ -90,6 +90,9 @@ const SOURCE_LABELS: Record<string, string> = {
   get_elo: "ELO ratings",
   get_team_shot_zones: "Team shot zones",
   get_historical_leaders: "Historical leaders",
+  get_today: "Today slate",
+  get_morning_briefing: "Morning briefing",
+  get_tracking_profile: "Tracking profile",
 };
 
 function sourceLabel(source?: string) {
