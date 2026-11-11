@@ -86,6 +86,10 @@ def catalogue():
     from shared.tools.tracking import get_defensive_matchups as _orig_get_defensive_matchups
     from shared.tools.award_results import get_award_results as _orig_get_award_results
     try:
+        from shared.tools.awards import get_award_race
+    except ImportError:
+        from backend.shared.tools.awards import get_award_race
+    try:
         from shared.tools.headtohead import get_head_to_head as _orig_get_head_to_head
     except ImportError:
         from backend.shared.tools.headtohead import get_head_to_head as _orig_get_head_to_head
@@ -102,12 +106,14 @@ def catalogue():
             get_wowy as _orig_get_wowy,
             get_shot_compare as _orig_get_shot_compare,
             get_raptor_history as _orig_get_raptor_history,
+            get_last_x,
         )
     except ImportError:
         from backend.shared.tools.player import (
             get_wowy as _orig_get_wowy,
             get_shot_compare as _orig_get_shot_compare,
             get_raptor_history as _orig_get_raptor_history,
+            get_last_x,
         )
     try:
         from shared.tools.team import (
@@ -3366,6 +3372,8 @@ def catalogue():
             get_watchlist,
             get_games_on_date,
             get_boxscore,
+            get_award_race,
+            get_last_x,
         )
     }
     return TOOL_REGISTRY
