@@ -42,6 +42,9 @@ def catalogue():
         get_team_leaders as _orig_get_team_leaders,
         get_team_compare as _orig_get_team_compare,
         get_elo_standings as _orig_get_elo_standings,
+        get_draft_board as _orig_get_draft_board,
+        get_combine as _orig_get_combine,
+        get_young_player_usage as _orig_get_young_player_usage,
     )
     try:
         from shared.tools.league import get_clutch_stats as _orig_get_clutch_stats
@@ -896,6 +899,95 @@ def catalogue():
         res["ok"] = bool(res.get("ok", False))
         return sanitize_for_wire(res)
 
+    @tool("get_draft_board", description=_orig_get_draft_board.description)
+    def get_draft_board(season: str = "2025") -> dict:
+        """Blended draft board rankings combining college production and combine testing."""
+        try:
+            con = _store.connect(read_only=True)
+            try:
+                con.execute("SELECT 1 FROM silver_combine LIMIT 0")
+            finally:
+                con.close()
+            if os.environ.get("PI_OFFLINE"):
+                raise RuntimeError("offline mode: live fetching disabled")
+            res = _orig_get_draft_board.invoke({"season": season})
+            if not isinstance(res, dict):
+                res = {"tool": "get_draft_board", "ok": False, "error": str(res)}
+        except Exception as exc:
+            res = {"tool": "get_draft_board", "ok": False, "error": f"{type(exc).__name__}: {exc}"}
+
+        default_cols = ["rank", "player", "pos", "school", "draft_score", "bpm"]
+        raw_rows = res.get("rows")
+        if res.get("ok") and isinstance(raw_rows, list):
+            rows = [r for r in raw_rows if isinstance(r, dict)]
+        else:
+            rows = []
+        cols = list(rows[0].keys()) if rows else default_cols
+        res["rows"] = rows
+        res["columns"] = cols
+        res["ok"] = bool(res.get("ok", False))
+        return sanitize_for_wire(res)
+
+    @tool("get_combine", description=_orig_get_combine.description)
+    def get_combine(season: str = "2025") -> dict:
+        """Anthropometric measurements (height, wingspan, reach, weight) and athletic drills."""
+        try:
+            con = _store.connect(read_only=True)
+            try:
+                con.execute("SELECT 1 FROM silver_combine LIMIT 0")
+            finally:
+                con.close()
+            if os.environ.get("PI_OFFLINE"):
+                raise RuntimeError("offline mode: live fetching disabled")
+            res = _orig_get_combine.invoke({"season": season})
+            if not isinstance(res, dict):
+                res = {"tool": "get_combine", "ok": False, "error": str(res)}
+        except Exception as exc:
+            res = {"tool": "get_combine", "ok": False, "error": f"{type(exc).__name__}: {exc}"}
+
+        default_cols = ["player", "pos", "height_wo_shoes", "height_w_shoes", "weight", "wingspan", "standing_reach"]
+        raw_rows = res.get("rows")
+        if res.get("ok") and isinstance(raw_rows, list):
+            rows = [r for r in raw_rows if isinstance(r, dict)]
+        else:
+            rows = []
+        cols = list(rows[0].keys()) if rows else default_cols
+        res["rows"] = rows
+        res["columns"] = cols
+        res["ok"] = bool(res.get("ok", False))
+        return sanitize_for_wire(res)
+
+    @tool("get_young_player_usage", description=_orig_get_young_player_usage.description)
+    def get_young_player_usage(max_age: int = 22, min_minutes: int = 1000, season: str | None = None) -> dict:
+        """Usage-rate leaderboard for young players with customizable age ceilings and minute floors."""
+        try:
+            con = _store.connect(read_only=True)
+            try:
+                con.execute("SELECT 1 FROM silver_advanced LIMIT 0")
+            finally:
+                con.close()
+            res = _orig_get_young_player_usage.invoke({
+                "max_age": max_age,
+                "min_minutes": min_minutes,
+                "season": season,
+            })
+            if not isinstance(res, dict):
+                res = {"tool": "get_young_player_usage", "ok": False, "error": str(res)}
+        except Exception as exc:
+            res = {"tool": "get_young_player_usage", "ok": False, "error": f"{type(exc).__name__}: {exc}"}
+
+        default_cols = ["RANK", "PLAYER", "TEAM", "AGE", "GP", "MPG", "MINUTES", "USG_PCT"]
+        raw_rows = res.get("rows")
+        if res.get("ok") and isinstance(raw_rows, list):
+            rows = [r for r in raw_rows if isinstance(r, dict)]
+        else:
+            rows = []
+        cols = list(rows[0].keys()) if rows else default_cols
+        res["rows"] = rows
+        res["columns"] = cols
+        res["ok"] = bool(res.get("ok", False))
+        return sanitize_for_wire(res)
+
     # Deliberately do not export WAREHOUSE_TOOLS, which includes mutators.
     return {
         item.name: item for item in (
@@ -928,6 +1020,9 @@ def catalogue():
             get_team_leaders,
             get_team_compare,
             get_elo_standings,
+            get_draft_board,
+            get_combine,
+            get_young_player_usage,
         )
     }
 

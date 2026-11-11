@@ -54,6 +54,9 @@ const SOURCE_LABELS: Record<string, string> = {
   get_team_leaders: "Team leaders",
   get_team_compare: "Team compare",
   get_elo_standings: "ELO standings",
+  get_draft_board: "Draft board",
+  get_combine: "Combine testing",
+  get_young_player_usage: "Young player usage",
 };
 
 function sourceLabel(source?: string) {
