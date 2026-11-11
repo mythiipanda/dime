@@ -78,6 +78,9 @@ const SOURCE_LABELS: Record<string, string> = {
   get_head_to_head: "Head-to-head",
   get_lineup_matchup_matrix: "Lineup matrix",
   get_transactions: "Transactions",
+  get_wowy: "WOWY splits",
+  get_shot_compare: "Shot compare",
+  get_raptor_history: "RAPTOR history",
 };
 
 function sourceLabel(source?: string) {

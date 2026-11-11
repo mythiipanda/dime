@@ -95,6 +95,18 @@ def catalogue():
         from shared.tools.transactions import get_transactions as _orig_get_transactions
     except ImportError:
         from backend.shared.tools.transactions import get_transactions as _orig_get_transactions
+    try:
+        from shared.tools.player import (
+            get_wowy as _orig_get_wowy,
+            get_shot_compare as _orig_get_shot_compare,
+            get_raptor_history as _orig_get_raptor_history,
+        )
+    except ImportError:
+        from backend.shared.tools.player import (
+            get_wowy as _orig_get_wowy,
+            get_shot_compare as _orig_get_shot_compare,
+            get_raptor_history as _orig_get_raptor_history,
+        )
     from langchain_core.tools import tool
 
     declared_catalog = ", ".join(TABLES)
@@ -1871,6 +1883,187 @@ def catalogue():
         res["ok"] = True
         return sanitize_for_wire(res)
 
+    @tool("get_wowy", description=_orig_get_wowy.description)
+    def get_wowy(
+        player_a: str = "",
+        player_b: str = "",
+        player_ids: str = "",
+        team_id: str | int = 0,
+        season: str | None = None,
+    ) -> dict:
+        """With-or-without-you (WOWY) 4-way lineup combination splits for two players."""
+        cols = ["lineup_state", "minutes", "off_rating", "def_rating", "net_rating", "poss"]
+        try:
+            res = _orig_get_wowy.invoke({
+                "player_a": player_a,
+                "player_b": player_b,
+                "player_ids": player_ids,
+                "team_id": team_id,
+                "season": season,
+            })
+            if not isinstance(res, dict) or not res.get("ok"):
+                err = res.get("error") if isinstance(res, dict) else res
+                return sanitize_for_wire({
+                    "ok": False,
+                    "tool": "get_wowy",
+                    "rows": [],
+                    "columns": cols,
+                    "error": str(err or "WOWY lookup failed"),
+                })
+        except Exception as exc:
+            return sanitize_for_wire({
+                "tool": "get_wowy",
+                "ok": False,
+                "error": str(exc),
+                "rows": [],
+                "columns": cols,
+            })
+
+        raw_rows = res.get("rows")
+        raw_list: list[dict] = []
+        if isinstance(raw_rows, list):
+            raw_list = [r for r in raw_rows if isinstance(r, dict)]
+        elif isinstance(raw_rows, dict):
+            if "rows" in raw_rows and isinstance(raw_rows["rows"], list):
+                raw_list = [r for r in raw_rows["rows"] if isinstance(r, dict)]
+            else:
+                raw_list = [raw_rows]
+
+        rows = [
+            {
+                "lineup_state": r.get("lineup_state") if r.get("lineup_state") is not None else r.get("split"),
+                "minutes": r.get("minutes"),
+                "off_rating": r.get("off_rating"),
+                "def_rating": r.get("def_rating"),
+                "net_rating": r.get("net_rating"),
+                "poss": r.get("poss") if r.get("poss") is not None else r.get("possessions"),
+            }
+            for r in raw_list
+        ]
+        res["rows"] = rows
+        res["columns"] = cols
+        res["ok"] = True
+        return sanitize_for_wire(res)
+
+    @tool("get_shot_compare", description=_orig_get_shot_compare.description)
+    def get_shot_compare(a: str = "", b: str = "", season: str | None = None) -> dict:
+        """Shot-diet showdown: zone eFG and share for two players."""
+        cols = ["zone", "a_eFG", "b_eFG", "a_fg", "b_fg", "a_share", "b_share", "edge"]
+        try:
+            try:
+                loop = asyncio.get_running_loop()
+            except RuntimeError:
+                loop = None
+            if loop is not None and loop.is_running():
+                import concurrent.futures
+                with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
+                    res = pool.submit(asyncio.run, _orig_get_shot_compare.ainvoke({
+                        "a": a, "b": b, "season": season,
+                    })).result()
+            else:
+                res = asyncio.run(_orig_get_shot_compare.ainvoke({
+                    "a": a, "b": b, "season": season,
+                }))
+            if not isinstance(res, dict) or not res.get("ok"):
+                err = res.get("error") if isinstance(res, dict) else res
+                return sanitize_for_wire({
+                    "ok": False,
+                    "tool": "get_shot_compare",
+                    "rows": [],
+                    "columns": cols,
+                    "error": str(err or "Shot compare lookup failed"),
+                })
+        except Exception as exc:
+            return sanitize_for_wire({
+                "tool": "get_shot_compare",
+                "ok": False,
+                "error": str(exc),
+                "rows": [],
+                "columns": cols,
+            })
+
+        raw_rows = res.get("rows")
+        raw_list: list[dict] = []
+        if isinstance(raw_rows, list):
+            raw_list = [r for r in raw_rows if isinstance(r, dict)]
+        elif isinstance(raw_rows, dict):
+            if "rows" in raw_rows and isinstance(raw_rows["rows"], list):
+                raw_list = [r for r in raw_rows["rows"] if isinstance(r, dict)]
+            else:
+                raw_list = [raw_rows]
+
+        rows = [
+            {
+                "zone": r.get("zone"),
+                "a_eFG": r.get("a_eFG"),
+                "b_eFG": r.get("b_eFG"),
+                "a_fg": r.get("a_fg"),
+                "b_fg": r.get("b_fg"),
+                "a_share": r.get("a_share"),
+                "b_share": r.get("b_share"),
+                "edge": r.get("edge"),
+            }
+            for r in raw_list
+        ]
+        res["rows"] = rows
+        res["columns"] = cols
+        res["ok"] = True
+        return sanitize_for_wire(res)
+
+    @tool("get_raptor_history", description=_orig_get_raptor_history.description)
+    def get_raptor_history(player: str = "", season: str = "") -> dict:
+        """Season-by-season RAPTOR and WAR for one player name."""
+        cols = ["SEASON", "TEAM", "MP", "RAPTOR_O", "RAPTOR_D", "RAPTOR", "WAR"]
+        try:
+            res = _orig_get_raptor_history.invoke({
+                "player": player,
+                "season": season,
+            })
+            if not isinstance(res, dict) or not res.get("ok"):
+                err = res.get("error") if isinstance(res, dict) else res
+                return sanitize_for_wire({
+                    "ok": False,
+                    "tool": "get_raptor_history",
+                    "rows": [],
+                    "columns": cols,
+                    "error": str(err or "RAPTOR history lookup failed"),
+                })
+        except Exception as exc:
+            return sanitize_for_wire({
+                "tool": "get_raptor_history",
+                "ok": False,
+                "error": str(exc),
+                "rows": [],
+                "columns": cols,
+            })
+
+        raw_rows = res.get("rows")
+        raw_list: list[dict] = []
+        if isinstance(raw_rows, list):
+            raw_list = [r for r in raw_rows if isinstance(r, dict)]
+        elif isinstance(raw_rows, dict):
+            if "rows" in raw_rows and isinstance(raw_rows["rows"], list):
+                raw_list = [r for r in raw_rows["rows"] if isinstance(r, dict)]
+            else:
+                raw_list = [raw_rows]
+
+        rows = [
+            {
+                "SEASON": r.get("SEASON") if r.get("SEASON") is not None else r.get("_season"),
+                "TEAM": r.get("TEAM"),
+                "MP": r.get("MP"),
+                "RAPTOR_O": r.get("RAPTOR_O") if r.get("RAPTOR_O") is not None else r.get("RAPTOR_OFFENSE"),
+                "RAPTOR_D": r.get("RAPTOR_D") if r.get("RAPTOR_D") is not None else r.get("RAPTOR_DEFENSE"),
+                "RAPTOR": r.get("RAPTOR") if r.get("RAPTOR") is not None else r.get("RAPTOR_TOTAL"),
+                "WAR": r.get("WAR") if r.get("WAR") is not None else r.get("WAR_TOTAL"),
+            }
+            for r in raw_list
+        ]
+        res["rows"] = rows
+        res["columns"] = cols
+        res["ok"] = True
+        return sanitize_for_wire(res)
+
     # Deliberately do not export WAREHOUSE_TOOLS, which includes mutators.
     return {
         item.name: item for item in (
@@ -1927,6 +2120,9 @@ def catalogue():
             get_head_to_head,
             get_lineup_matchup_matrix,
             get_transactions,
+            get_wowy,
+            get_shot_compare,
+            get_raptor_history,
         )
     }
 
