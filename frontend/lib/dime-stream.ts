@@ -100,8 +100,10 @@ export interface ChartArtifactPayload {
   title: string;
   source?: string;
   provenance?: DimeProvenance;
-  series: { name: string; values: number[] }[];
+  series: { name: string; values: number[]; tone?: "ink" | "muted" }[];
   footnote?: string;
+  unit?: string;
+  xLabels?: string[];
 }
 
 export interface ShotChartArtifactPayload {
@@ -757,17 +759,22 @@ function asResolvedArtifacts(raw: unknown): DimeArtifact[] {
         : parseProvenance(entry.provenance);
 
     if (kind === "chart") {
-      const series: { name: string; values: number[] }[] = [];
+      const series: { name: string; values: number[]; tone?: "ink" | "muted" }[] = [];
       for (const line of Array.isArray(entry.series) ? entry.series : []) {
         if (typeof line !== "object" || line === null) continue;
         const record = line as Record<string, unknown>;
         const name = typeof record.name === "string" ? record.name : "";
+        const tone = record.tone === "ink" || record.tone === "muted" ? record.tone : undefined;
         const values = (Array.isArray(record.values) ? record.values : [])
           .filter((value): value is number =>
             typeof value === "number" && Number.isFinite(value));
-        if (name && values.length > 0) series.push({ name, values });
+        if (name && values.length > 0) series.push({ name, values, ...(tone ? { tone } : {}) });
       }
       if (series.length === 0) continue;
+      const unit = typeof entry.unit === "string" ? entry.unit : undefined;
+      const xLabels = Array.isArray(entry.xLabels)
+        ? entry.xLabels.map((lbl) => String(lbl ?? "")).filter(Boolean)
+        : undefined;
       artifacts.push({
         kind: "chart",
         title,
@@ -778,6 +785,8 @@ function asResolvedArtifacts(raw: unknown): DimeArtifact[] {
           typeof entry.footnote === "string" && entry.footnote
             ? entry.footnote
             : undefined,
+        ...(unit !== undefined ? { unit } : {}),
+        ...(xLabels && xLabels.length > 0 ? { xLabels } : {}),
       });
       continue;
     }

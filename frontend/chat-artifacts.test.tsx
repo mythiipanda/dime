@@ -132,6 +132,24 @@ test("streamed chart artifacts render a chart", () => {
   assert.ok(html.includes("Gilgeous-Alexander"), html);
 });
 
+test("streamed chart artifacts render custom unit and xLabels", () => {
+  const html = render({
+    kind: "chart",
+    title: "Net Rating Trend",
+    series: [
+      { name: "Thunder", values: [8, 11, 14], tone: "ink" },
+      { name: "Celtics", values: [10, 9, 12], tone: "muted" },
+    ],
+    unit: "NetRtg",
+    xLabels: ["Oct", "Nov", "Dec"],
+  });
+  assert.ok(html.includes("<svg"), html.slice(0, 120));
+  assert.ok(html.includes("NetRtg"), html);
+  assert.ok(html.includes("Oct"), html);
+  assert.ok(html.includes("Nov"), html);
+  assert.ok(html.includes("Dec"), html);
+});
+
 test("streamed shot chart artifacts render a court", () => {
   const html = render({
     kind: "shot_chart",
@@ -737,6 +755,24 @@ test("artifactToCopyText formats chart series as CSV", () => {
   assert.equal(
     artifactToCopyText(chartWithoutFootnote),
     "Series,Val 1\nGilgeous-Alexander,30",
+  );
+});
+
+test("artifactToCopyText formats chart series with xLabels as CSV", () => {
+  const chartArtifact: DimeArtifact = {
+    kind: "chart",
+    title: "Net Rating Trend",
+    series: [
+      { name: "Thunder", values: [8, 11, 14] },
+      { name: "Celtics", values: [10, 9, 12] },
+    ],
+    xLabels: ["Oct", "Nov", "Dec"],
+  };
+
+  const text = artifactToCopyText(chartArtifact);
+  assert.equal(
+    text,
+    "Series,Oct,Nov,Dec\nThunder,8,11,14\nCeltics,10,9,12",
   );
 });
 
