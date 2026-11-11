@@ -254,6 +254,9 @@ test("real Python sql_exec and schema cross MCP into Pi with source semantics an
       "get_season_series",
       "get_team_game_log",
       "get_zone_deltas",
+      "search_shots",
+      "get_stint_timeline",
+      "get_possession_log",
     ]);
     assert.deepEqual(bridge.tools[0].parameters.required, ["sql"]);
     const setup = await fixture("python", `
@@ -328,7 +331,7 @@ test("real statistical tools cross MCP with anchor compatibility, rows, columns,
   const pid = bridge.pid;
   try {
     const toolMap = new Map(bridge.tools.map(t => [t.name, t]));
-    assert.equal(bridge.tools.length, 59);
+    assert.equal(bridge.tools.length, 62);
 
     // 1. get_rapm
     const rapmTool = toolMap.get("get_rapm");
@@ -812,7 +815,31 @@ test("real statistical tools cross MCP with anchor compatibility, rows, columns,
     assert(Array.isArray(zoneDeltasRes.structuredContent.result.rows));
     assert(Array.isArray(zoneDeltasRes.structuredContent.result.columns));
 
-    // Verify anchor compatibility across all 57 statistical tools
+    // 58. search_shots
+    const searchShotsTool = toolMap.get("search_shots");
+    assert(searchShotsTool);
+    const searchShotsRes = await searchShotsTool.execute("call-search-shots", { player: "LeBron James", limit: 5 }, undefined);
+    assert(searchShotsRes.structuredContent);
+    assert(Array.isArray(searchShotsRes.structuredContent.result.rows));
+    assert(Array.isArray(searchShotsRes.structuredContent.result.columns));
+
+    // 59. get_stint_timeline
+    const stintTimelineTool = toolMap.get("get_stint_timeline");
+    assert(stintTimelineTool);
+    const stintTimelineRes = await stintTimelineTool.execute("call-stint-timeline", { game_id: "0022300001" }, undefined);
+    assert(stintTimelineRes.structuredContent);
+    assert(Array.isArray(stintTimelineRes.structuredContent.result.rows));
+    assert(Array.isArray(stintTimelineRes.structuredContent.result.columns));
+
+    // 60. get_possession_log
+    const possessionLogTool = toolMap.get("get_possession_log");
+    assert(possessionLogTool);
+    const possessionLogRes = await possessionLogTool.execute("call-possession-log", { game_id: "0022300001" }, undefined);
+    assert(possessionLogRes.structuredContent);
+    assert(Array.isArray(possessionLogRes.structuredContent.result.rows));
+    assert(Array.isArray(possessionLogRes.structuredContent.result.columns));
+
+    // Verify anchor compatibility across all 60 statistical tools
     for (const toolName of [
       "get_rapm", "get_game_prediction", "get_wpa_leaders", "get_comps",
       "get_lineup_stats", "get_win_prob", "get_on_off", "get_shot_zones",
@@ -830,7 +857,8 @@ test("real statistical tools cross MCP with anchor compatibility, rows, columns,
       "get_streaks", "get_playtype_profile", "get_defensive_matchups",
       "get_head_to_head", "get_lineup_matchup_matrix", "get_transactions",
       "get_wowy", "get_shot_compare", "get_raptor_history",
-      "get_season_series", "get_team_game_log", "get_zone_deltas"
+      "get_season_series", "get_team_game_log", "get_zone_deltas",
+      "search_shots", "get_stint_timeline", "get_possession_log"
     ]) {
       const syntheticRecord = {
         ref: `ref-${toolName}`,
@@ -860,7 +888,7 @@ test("real statistical tools cross MCP with anchor compatibility, rows, columns,
       }, (ref) => ref === syntheticRecord.ref ? syntheticRecord : undefined);
       assert.equal(submission.blocks[0].text, `Anchor for ${toolName}`);
     }
-    console.log(JSON.stringify({ proof: "statistical-tools-anchor-compatible", tools: 57 }));
+    console.log(JSON.stringify({ proof: "statistical-tools-anchor-compatible", tools: 60 }));
   } finally {
     await bridge.close();
   }

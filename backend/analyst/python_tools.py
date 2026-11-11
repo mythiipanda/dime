@@ -122,6 +122,18 @@ def catalogue():
     except ImportError:
         from backend.shared.tools.zonedelta import get_zone_deltas as _orig_get_zone_deltas
     from langchain_core.tools import tool
+    try:
+        from shared.tools.shots import search_shots as _orig_search_shots
+    except ImportError:
+        from backend.shared.tools.shots import search_shots as _orig_search_shots
+    try:
+        from shared.tools.stints import get_stint_timeline as _orig_get_stint_timeline
+    except ImportError:
+        from backend.shared.tools.stints import get_stint_timeline as _orig_get_stint_timeline
+    try:
+        from shared.tools.possessions import get_possession_log as _orig_get_possession_log
+    except ImportError:
+        from backend.shared.tools.possessions import get_possession_log as _orig_get_possession_log
 
     declared_catalog = ", ".join(TABLES)
     description = (
@@ -2262,6 +2274,184 @@ def catalogue():
         res["ok"] = True
         return sanitize_for_wire(res)
 
+
+    @tool("search_shots", description=_orig_search_shots.description)
+    def search_shots(
+        player: str = "",
+        team: str = "",
+        zones: str = "",
+        periods: str = "",
+        three_only: bool = False,
+        made: str = "any",
+        late_clock: str = "",
+        exclude_heaves: bool = True,
+        limit: int = 25,
+        season: str | None = None,
+        group_by: str = "",
+        include_ot: str = "auto",
+    ) -> dict:
+        """Conversational shot finder: filter warehouse shots by player, team, zone, period, makes, and late-clock window with zone and period aggregates."""
+        cols = ["game_id", "player_name", "period", "minutes_remaining", "seconds_remaining", "shot_distance", "zone", "made"]
+        try:
+            res = _orig_search_shots.invoke({
+                "player": player,
+                "team": team,
+                "zones": zones,
+                "periods": periods,
+                "three_only": three_only,
+                "made": made,
+                "late_clock": late_clock,
+                "exclude_heaves": exclude_heaves,
+                "limit": limit,
+                "season": season,
+                "group_by": group_by,
+                "include_ot": include_ot,
+            })
+            if not isinstance(res, dict) or not res.get("ok"):
+                err = res.get("error") if isinstance(res, dict) else res
+                return sanitize_for_wire({
+                    "ok": False,
+                    "tool": "search_shots",
+                    "rows": [],
+                    "columns": cols,
+                    "error": str(err or "Shot search failed"),
+                })
+        except Exception as exc:
+            return sanitize_for_wire({
+                "ok": False,
+                "tool": "search_shots",
+                "rows": [],
+                "columns": cols,
+                "error": str(exc),
+            })
+
+        raw_list: list[dict] = []
+        if isinstance(res.get("shots"), list):
+            raw_list = [r for r in res["shots"] if isinstance(r, dict)]
+        elif isinstance(res.get("rows"), list):
+            raw_list = [r for r in res["rows"] if isinstance(r, dict)]
+
+        rows = [
+            {
+                "game_id": r.get("game_id") if r.get("game_id") is not None else r.get("GAME_ID"),
+                "player_name": r.get("player") if r.get("player") is not None else (r.get("player_name") or r.get("PLAYER_NAME")),
+                "period": r.get("period") if r.get("period") is not None else r.get("PERIOD"),
+                "minutes_remaining": r.get("minutes_remaining") if r.get("minutes_remaining") is not None else r.get("MINUTES_REMAINING"),
+                "seconds_remaining": r.get("seconds_remaining") if r.get("seconds_remaining") is not None else r.get("SECONDS_REMAINING"),
+                "shot_distance": r.get("distance_ft") if r.get("distance_ft") is not None else (r.get("shot_distance") or r.get("SHOT_DISTANCE")),
+                "zone": r.get("zone"),
+                "made": r.get("made") if r.get("made") is not None else (str(r.get("SHOT_MADE_FLAG") or "").strip() == "1"),
+            }
+            for r in raw_list
+        ]
+        res["rows"] = rows
+        res["columns"] = cols
+        res["ok"] = True
+        return sanitize_for_wire(res)
+
+    @tool("get_stint_timeline", description=_orig_get_stint_timeline.description)
+    def get_stint_timeline(game_id: str = "") -> dict:
+        """Ordered 5-man stint timeline for one game: lineups, clocks, scores, swings."""
+        cols = ["stint_number", "poss_start", "poss_end", "period_in", "clock_in", "period_out", "clock_out", "duration_sec", "home_abbr", "away_abbr", "score_home_in", "score_away_in", "score_home_out", "score_away_out", "home_swing"]
+        try:
+            res = _orig_get_stint_timeline.invoke({"game_id": game_id})
+            if not isinstance(res, dict) or not res.get("ok"):
+                err = res.get("error") if isinstance(res, dict) else res
+                return sanitize_for_wire({
+                    "ok": False,
+                    "tool": "get_stint_timeline",
+                    "rows": [],
+                    "columns": cols,
+                    "error": str(err or "Stint timeline lookup failed"),
+                })
+        except Exception as exc:
+            return sanitize_for_wire({
+                "ok": False,
+                "tool": "get_stint_timeline",
+                "rows": [],
+                "columns": cols,
+                "error": str(exc),
+            })
+
+        raw_rows = res.get("rows")
+        raw_list: list[dict] = [r for r in raw_rows if isinstance(r, dict)] if isinstance(raw_rows, list) else []
+        rows = [
+            {
+                "stint_number": r.get("stint_number"),
+                "poss_start": r.get("poss_start"),
+                "poss_end": r.get("poss_end"),
+                "period_in": r.get("period_in"),
+                "clock_in": r.get("clock_in"),
+                "period_out": r.get("period_out"),
+                "clock_out": r.get("clock_out"),
+                "duration_sec": r.get("duration_sec"),
+                "home_abbr": r.get("home_abbr"),
+                "away_abbr": r.get("away_abbr"),
+                "score_home_in": r.get("score_home_in"),
+                "score_away_in": r.get("score_away_in"),
+                "score_home_out": r.get("score_home_out"),
+                "score_away_out": r.get("score_away_out"),
+                "home_swing": r.get("home_swing"),
+            }
+            for r in raw_list
+        ]
+        res["rows"] = rows
+        res["columns"] = cols
+        res["ok"] = True
+        return sanitize_for_wire(res)
+
+    @tool("get_possession_log", description=_orig_get_possession_log.description)
+    def get_possession_log(game_id: str = "", period: int | None = None, clock_range: str | None = None) -> dict:
+        """Possession-by-possession log for one game: order, clocks, offense, events, points, WPA swings."""
+        cols = ["possession_number", "period", "clock_in", "clock_out", "off_abbr", "def_abbr", "points", "wpa_delta", "score_home_in", "score_away_in", "score_home_out", "score_away_out"]
+        try:
+            res = _orig_get_possession_log.invoke({
+                "game_id": game_id,
+                "period": period,
+                "clock_range": clock_range,
+            })
+            if not isinstance(res, dict) or not res.get("ok"):
+                err = res.get("error") if isinstance(res, dict) else res
+                return sanitize_for_wire({
+                    "ok": False,
+                    "tool": "get_possession_log",
+                    "rows": [],
+                    "columns": cols,
+                    "error": str(err or "Possession log lookup failed"),
+                })
+        except Exception as exc:
+            return sanitize_for_wire({
+                "ok": False,
+                "tool": "get_possession_log",
+                "rows": [],
+                "columns": cols,
+                "error": str(exc),
+            })
+
+        raw_rows = res.get("rows")
+        raw_list: list[dict] = [r for r in raw_rows if isinstance(r, dict)] if isinstance(raw_rows, list) else []
+        rows = [
+            {
+                "possession_number": r.get("possession_number"),
+                "period": r.get("period"),
+                "clock_in": r.get("clock_in"),
+                "clock_out": r.get("clock_out"),
+                "off_abbr": r.get("off_abbr"),
+                "def_abbr": r.get("def_abbr"),
+                "points": r.get("points"),
+                "wpa_delta": r.get("wpa_delta"),
+                "score_home_in": r.get("score_home_in"),
+                "score_away_in": r.get("score_away_in"),
+                "score_home_out": r.get("score_home_out"),
+                "score_away_out": r.get("score_away_out"),
+            }
+            for r in raw_list
+        ]
+        res["rows"] = rows
+        res["columns"] = cols
+        res["ok"] = True
+        return sanitize_for_wire(res)
+
     # Deliberately do not export WAREHOUSE_TOOLS, which includes mutators.
     return {
         item.name: item for item in (
@@ -2324,6 +2514,9 @@ def catalogue():
             get_season_series,
             get_team_game_log,
             get_zone_deltas,
+            search_shots,
+            get_stint_timeline,
+            get_possession_log,
         )
     }
 
