@@ -245,6 +245,9 @@ test("real Python sql_exec and schema cross MCP into Pi with source semantics an
       "get_streaks",
       "get_playtype_profile",
       "get_defensive_matchups",
+      "get_head_to_head",
+      "get_lineup_matchup_matrix",
+      "get_transactions",
     ]);
     assert.deepEqual(bridge.tools[0].parameters.required, ["sql"]);
     const setup = await fixture("python", `
@@ -319,7 +322,7 @@ test("real statistical tools cross MCP with anchor compatibility, rows, columns,
   const pid = bridge.pid;
   try {
     const toolMap = new Map(bridge.tools.map(t => [t.name, t]));
-    assert.equal(bridge.tools.length, 50);
+    assert.equal(bridge.tools.length, 53);
 
     // 1. get_rapm
     const rapmTool = toolMap.get("get_rapm");
@@ -731,7 +734,31 @@ test("real statistical tools cross MCP with anchor compatibility, rows, columns,
     assert(Array.isArray(defMatchupsRes.structuredContent.result.rows));
     assert(Array.isArray(defMatchupsRes.structuredContent.result.columns));
 
-    // Verify anchor compatibility across all 48 statistical tools
+    // 49. get_head_to_head
+    const h2hTool = toolMap.get("get_head_to_head");
+    assert(h2hTool);
+    const h2hRes = await h2hTool.execute("call-h2h", { player: "LeBron James", opponent: "BOS" }, undefined);
+    assert(h2hRes.structuredContent);
+    assert(Array.isArray(h2hRes.structuredContent.result.rows));
+    assert(Array.isArray(h2hRes.structuredContent.result.columns));
+
+    // 50. get_lineup_matchup_matrix
+    const lineupMatrixTool = toolMap.get("get_lineup_matchup_matrix");
+    assert(lineupMatrixTool);
+    const lineupMatrixRes = await lineupMatrixTool.execute("call-lineup-matrix", { team_a: "BOS", team_b: "MIA" }, undefined);
+    assert(lineupMatrixRes.structuredContent);
+    assert(Array.isArray(lineupMatrixRes.structuredContent.result.rows));
+    assert(Array.isArray(lineupMatrixRes.structuredContent.result.columns));
+
+    // 51. get_transactions
+    const txnTool = toolMap.get("get_transactions");
+    assert(txnTool);
+    const txnRes = await txnTool.execute("call-transactions", { team: "BOS" }, undefined);
+    assert(txnRes.structuredContent);
+    assert(Array.isArray(txnRes.structuredContent.result.rows));
+    assert(Array.isArray(txnRes.structuredContent.result.columns));
+
+    // Verify anchor compatibility across all 51 statistical tools
     for (const toolName of [
       "get_rapm", "get_game_prediction", "get_wpa_leaders", "get_comps",
       "get_lineup_stats", "get_win_prob", "get_on_off", "get_shot_zones",
@@ -746,7 +773,8 @@ test("real statistical tools cross MCP with anchor compatibility, rows, columns,
       "get_playoff_sim", "get_playoff_team_ratings", "get_player_risers", "get_standings_deep",
       "get_warehouse_freshness", "get_finder", "get_draft_model", "get_leaderboard_deltas",
       "get_player_ratings", "get_risers", "get_team_four_factors",
-      "get_streaks", "get_playtype_profile", "get_defensive_matchups"
+      "get_streaks", "get_playtype_profile", "get_defensive_matchups",
+      "get_head_to_head", "get_lineup_matchup_matrix", "get_transactions"
     ]) {
       const syntheticRecord = {
         ref: `ref-${toolName}`,
@@ -776,7 +804,7 @@ test("real statistical tools cross MCP with anchor compatibility, rows, columns,
       }, (ref) => ref === syntheticRecord.ref ? syntheticRecord : undefined);
       assert.equal(submission.blocks[0].text, `Anchor for ${toolName}`);
     }
-    console.log(JSON.stringify({ proof: "statistical-tools-anchor-compatible", tools: 48 }));
+    console.log(JSON.stringify({ proof: "statistical-tools-anchor-compatible", tools: 51 }));
   } finally {
     await bridge.close();
   }

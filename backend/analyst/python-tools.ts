@@ -57,7 +57,10 @@ export type PythonToolName =
     | "get_team_four_factors"
     | "get_streaks"
     | "get_playtype_profile"
-    | "get_defensive_matchups";
+    | "get_defensive_matchups"
+    | "get_head_to_head"
+    | "get_lineup_matchup_matrix"
+    | "get_transactions";
 
 export const ANALYST_TOOL_NAMES: readonly PythonToolName[] = [
     "sql_exec",
@@ -110,6 +113,9 @@ export const ANALYST_TOOL_NAMES: readonly PythonToolName[] = [
     "get_streaks",
     "get_playtype_profile",
     "get_defensive_matchups",
+    "get_head_to_head",
+    "get_lineup_matchup_matrix",
+    "get_transactions",
 ] as const;
 
 export const sourceRecordSchema = Type.Object({
@@ -165,6 +171,9 @@ export const sourceRecordSchema = Type.Object({
         Type.Literal("get_streaks"),
         Type.Literal("get_playtype_profile"),
         Type.Literal("get_defensive_matchups"),
+        Type.Literal("get_head_to_head"),
+        Type.Literal("get_lineup_matchup_matrix"),
+        Type.Literal("get_transactions"),
     ]),
     response: Type.Object({
         content: Type.Array(Type.Unknown()),
