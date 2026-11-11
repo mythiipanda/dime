@@ -105,6 +105,8 @@ const SOURCE_LABELS: Record<string, string> = {
   get_regression_check: "Regression check",
   get_scout_pack: "Scout pack",
   get_rotation_check: "Rotation check",
+  get_injury_impact: "Injury impact",
+  get_matchup_brief: "Matchup brief",
 };
 
 function sourceLabel(source?: string) {

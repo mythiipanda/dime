@@ -115,6 +115,8 @@ def catalogue():
             get_team_game_log as _orig_get_team_game_log,
             get_scout_pack,
             get_rotation_check,
+            get_injury_impact,
+            get_matchup_brief,
         )
     except ImportError:
         from backend.shared.tools.team import (
@@ -122,6 +124,8 @@ def catalogue():
             get_team_game_log as _orig_get_team_game_log,
             get_scout_pack,
             get_rotation_check,
+            get_injury_impact,
+            get_matchup_brief,
         )
     try:
         from shared.tools.zonedelta import get_zone_deltas as _orig_get_zone_deltas
@@ -3349,6 +3353,8 @@ def catalogue():
             get_regression_check,
             get_scout_pack,
             get_rotation_check,
+            get_injury_impact,
+            get_matchup_brief,
         )
     }
     return TOOL_REGISTRY

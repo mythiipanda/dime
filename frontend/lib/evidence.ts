@@ -155,6 +155,7 @@ const CAPABILITY_LABELS: Record<string, string> = {
   get_lineup_matchup_matrix: "Lineup matchups",
   get_lineup_stats: "Lineup stats",
   get_lineups: "Lineups",
+  get_matchup_brief: "Matchup brief",
   get_matchup_preview: "Matchup preview",
   get_matchup_splits: "Matchup splits",
   get_morning_briefing: "Morning briefing",
