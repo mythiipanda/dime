@@ -45,6 +45,10 @@ def catalogue():
         get_draft_board as _orig_get_draft_board,
         get_combine as _orig_get_combine,
         get_young_player_usage as _orig_get_young_player_usage,
+        get_contract_value as _orig_get_contract_value,
+        get_trade_check as _orig_get_trade_check,
+        get_trade_value as _orig_get_trade_value,
+        get_situational_splits as _orig_get_situational_splits,
     )
     try:
         from shared.tools.league import get_clutch_stats as _orig_get_clutch_stats
@@ -988,6 +992,166 @@ def catalogue():
         res["ok"] = bool(res.get("ok", False))
         return sanitize_for_wire(res)
 
+    @tool("get_contract_value", description=_orig_get_contract_value.description)
+    def get_contract_value(season: str | None = None, min_gp: int = 20, team: str = "", player: str = "") -> dict:
+        """Contract value residuals from production vs salary."""
+        try:
+            res = _orig_get_contract_value.invoke({
+                "season": season,
+                "min_gp": min_gp,
+                "team": team,
+                "player": player,
+            })
+            if not isinstance(res, dict):
+                res = {"tool": "get_contract_value", "ok": False, "error": str(res)}
+        except Exception as exc:
+            res = {"tool": "get_contract_value", "ok": False, "error": f"{type(exc).__name__}: {exc}"}
+
+        default_cols = ["player", "team", "salary", "salary_hat", "residual", "gp"]
+        raw_rows = res.get("rows")
+        if res.get("ok") and isinstance(raw_rows, list):
+            rows = [r for r in raw_rows if isinstance(r, dict)]
+        else:
+            rows = []
+        cols = list(rows[0].keys()) if rows else default_cols
+        res["rows"] = rows
+        res["columns"] = cols
+        res["ok"] = bool(res.get("ok", False))
+        return sanitize_for_wire(res)
+
+    @tool("get_trade_check", description=_orig_get_trade_check.description)
+    def get_trade_check(team_a: str = "", players_a: str = "", team_b: str = "", players_b: str = "", season: str | None = None) -> dict:
+        """CBA trade legality check under 2023 CBA apron and salary matching rules."""
+        try:
+            res = _orig_get_trade_check.invoke({
+                "team_a": team_a,
+                "players_a": players_a,
+                "team_b": team_b,
+                "players_b": players_b,
+                "season": season,
+            })
+            if not isinstance(res, dict):
+                res = {"tool": "get_trade_check", "ok": False, "error": str(res)}
+        except Exception as exc:
+            res = {"tool": "get_trade_check", "ok": False, "error": f"{type(exc).__name__}: {exc}"}
+
+        default_cols = ["side", "team", "payroll", "outgoing", "allowed_incoming", "legal", "issues"]
+        raw_rows = res.get("rows")
+        rows: list[dict] = []
+        if res.get("ok"):
+            if isinstance(raw_rows, dict):
+                legal_val = raw_rows.get("legal")
+                issues_val = raw_rows.get("issues")
+                for side_key in ("team_a", "team_b"):
+                    side_data = raw_rows.get(side_key)
+                    if isinstance(side_data, dict):
+                        rows.append({
+                            "side": side_key,
+                            "team": side_data.get("team", ""),
+                            "payroll": side_data.get("payroll"),
+                            "outgoing": side_data.get("out") if "out" in side_data else side_data.get("outgoing"),
+                            "allowed_incoming": side_data.get("allowed_in") if "allowed_in" in side_data else side_data.get("allowed_incoming"),
+                            "legal": legal_val,
+                            "issues": issues_val,
+                        })
+            elif isinstance(raw_rows, list):
+                rows = [r for r in raw_rows if isinstance(r, dict)]
+        cols = list(rows[0].keys()) if rows else default_cols
+        res["rows"] = rows
+        res["columns"] = cols
+        res["ok"] = bool(res.get("ok", False))
+        return sanitize_for_wire(res)
+
+    @tool("get_trade_value", description=_orig_get_trade_value.description)
+    def get_trade_value(team_a: str = "", players_a: str = "", team_b: str = "", players_b: str = "", picks_a: str = "", picks_b: str = "") -> dict:
+        """Trade value grade: estimated production surplus value vs salary per side plus pick equity."""
+        try:
+            res = _orig_get_trade_value.invoke({
+                "team_a": team_a,
+                "players_a": players_a,
+                "team_b": team_b,
+                "players_b": players_b,
+                "picks_a": picks_a,
+                "picks_b": picks_b,
+            })
+            if not isinstance(res, dict):
+                res = {"tool": "get_trade_value", "ok": False, "error": str(res)}
+        except Exception as exc:
+            res = {"tool": "get_trade_value", "ok": False, "error": f"{type(exc).__name__}: {exc}"}
+
+        default_cols = ["side", "player", "team", "value_m", "salary_m", "residual_m"]
+        raw_rows = res.get("rows")
+        rows: list[dict] = []
+        if res.get("ok"):
+            if isinstance(raw_rows, dict):
+                for side_key in ("team_a", "team_b"):
+                    side_data = raw_rows.get(side_key)
+                    if isinstance(side_data, dict):
+                        side_team = side_data.get("team", "")
+                        players = side_data.get("players")
+                        if isinstance(players, list):
+                            for p in players:
+                                if isinstance(p, dict):
+                                    sal = p.get("salary_26_27")
+                                    salary_m = round(sal / 1e6, 2) if isinstance(sal, (int, float)) else p.get("salary_m")
+                                    val_m = p.get("est_market_value_m") if "est_market_value_m" in p else p.get("value_m")
+                                    rows.append({
+                                        "side": side_key,
+                                        "player": p.get("name") or p.get("player", ""),
+                                        "team": p.get("team") or side_team,
+                                        "value_m": val_m,
+                                        "salary_m": salary_m,
+                                        "residual_m": p.get("residual_m"),
+                                    })
+                if not rows and "verdict" in raw_rows and isinstance(raw_rows["verdict"], dict):
+                    v = raw_rows["verdict"]
+                    rows.append({
+                        "side": "verdict",
+                        "player": v.get("winner", ""),
+                        "team": "",
+                        "value_m": v.get("delta_m"),
+                        "salary_m": None,
+                        "residual_m": None,
+                    })
+            elif isinstance(raw_rows, list):
+                rows = [r for r in raw_rows if isinstance(r, dict)]
+        cols = list(rows[0].keys()) if rows else default_cols
+        res["rows"] = rows
+        res["columns"] = cols
+        res["ok"] = bool(res.get("ok", False))
+        return sanitize_for_wire(res)
+
+    @tool("get_situational_splits", description=_orig_get_situational_splits.description)
+    def get_situational_splits(scope: str = "player", entity: str = "", season: str | None = None, clutch_seconds: int = 300, clutch_margin: int = 5, season_type: str = "regular") -> dict:
+        """Clutch situational splits for one player or team across score margins, time thresholds, and venues."""
+        try:
+            res = _orig_get_situational_splits.invoke({
+                "scope": scope,
+                "entity": entity,
+                "season": season,
+                "clutch_seconds": clutch_seconds,
+                "clutch_margin": clutch_margin,
+                "season_type": season_type,
+            })
+            if not isinstance(res, dict):
+                res = {"tool": "get_situational_splits", "ok": False, "error": str(res)}
+        except Exception as exc:
+            res = {"tool": "get_situational_splits", "ok": False, "error": f"{type(exc).__name__}: {exc}"}
+
+        default_cols = ["split", "gp", "pts", "fgm", "fga", "fg_pct", "fg3m", "fg3a", "fg3_pct", "ftm", "fta", "ft_pct"]
+        raw_rows = res.get("rows")
+        rows: list[dict] = []
+        if res.get("ok"):
+            if isinstance(raw_rows, dict) and "splits" in raw_rows and isinstance(raw_rows["splits"], list):
+                rows = [r for r in raw_rows["splits"] if isinstance(r, dict)]
+            elif isinstance(raw_rows, list):
+                rows = [r for r in raw_rows if isinstance(r, dict)]
+        cols = list(rows[0].keys()) if rows else default_cols
+        res["rows"] = rows
+        res["columns"] = cols
+        res["ok"] = bool(res.get("ok", False))
+        return sanitize_for_wire(res)
+
     # Deliberately do not export WAREHOUSE_TOOLS, which includes mutators.
     return {
         item.name: item for item in (
@@ -1023,6 +1187,10 @@ def catalogue():
             get_draft_board,
             get_combine,
             get_young_player_usage,
+            get_contract_value,
+            get_trade_check,
+            get_trade_value,
+            get_situational_splits,
         )
     }
 

@@ -39,7 +39,11 @@ export type PythonToolName =
     | "get_elo_standings"
     | "get_draft_board"
     | "get_combine"
-    | "get_young_player_usage";
+    | "get_young_player_usage"
+    | "get_contract_value"
+    | "get_trade_check"
+    | "get_trade_value"
+    | "get_situational_splits";
 
 export const ANALYST_TOOL_NAMES: readonly PythonToolName[] = [
     "sql_exec",
@@ -74,6 +78,10 @@ export const ANALYST_TOOL_NAMES: readonly PythonToolName[] = [
     "get_draft_board",
     "get_combine",
     "get_young_player_usage",
+    "get_contract_value",
+    "get_trade_check",
+    "get_trade_value",
+    "get_situational_splits",
 ] as const;
 
 export const sourceRecordSchema = Type.Object({
@@ -111,6 +119,10 @@ export const sourceRecordSchema = Type.Object({
         Type.Literal("get_draft_board"),
         Type.Literal("get_combine"),
         Type.Literal("get_young_player_usage"),
+        Type.Literal("get_contract_value"),
+        Type.Literal("get_trade_check"),
+        Type.Literal("get_trade_value"),
+        Type.Literal("get_situational_splits"),
     ]),
     response: Type.Object({
         content: Type.Array(Type.Unknown()),

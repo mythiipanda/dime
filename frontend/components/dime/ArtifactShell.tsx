@@ -57,6 +57,10 @@ const SOURCE_LABELS: Record<string, string> = {
   get_draft_board: "Draft board",
   get_combine: "Combine testing",
   get_young_player_usage: "Young player usage",
+  get_contract_value: "Contract value",
+  get_trade_check: "Trade check",
+  get_trade_value: "Trade value",
+  get_situational_splits: "Situational splits",
 };
 
 function sourceLabel(source?: string) {
