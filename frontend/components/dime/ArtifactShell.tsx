@@ -84,6 +84,9 @@ const SOURCE_LABELS: Record<string, string> = {
   get_season_series: "Season series",
   get_team_game_log: "Team game log",
   get_zone_deltas: "Zone deltas",
+  search_shots: "Shot search",
+  get_stint_timeline: "Stint timeline",
+  get_possession_log: "Possession log",
 };
 
 function sourceLabel(source?: string) {
