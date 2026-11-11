@@ -80,7 +80,8 @@ export type PythonToolName =
     | "get_rapm_prior"
     | "search_game_logs"
     | "get_dataset"
-    | "get_dataset_freshness";
+    | "get_dataset_freshness"
+    | "get_career_arc";
 
 export const ANALYST_TOOL_NAMES: readonly PythonToolName[] = [
     "sql_exec",
@@ -156,6 +157,7 @@ export const ANALYST_TOOL_NAMES: readonly PythonToolName[] = [
     "search_game_logs",
     "get_dataset",
     "get_dataset_freshness",
+    "get_career_arc",
 ] as const;
 
 export const sourceRecordSchema = Type.Object({
@@ -234,6 +236,7 @@ export const sourceRecordSchema = Type.Object({
         Type.Literal("search_game_logs"),
         Type.Literal("get_dataset"),
         Type.Literal("get_dataset_freshness"),
+        Type.Literal("get_career_arc"),
     ]),
     response: Type.Object({
         content: Type.Array(Type.Unknown()),

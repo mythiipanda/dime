@@ -118,6 +118,7 @@ const CAPABILITY_LABELS: Record<string, string> = {
   get_boxscore: "Box scores",
   get_briefing: "Briefing",
   get_cap_ledger: "Cap sheet",
+  get_career_arc: "Career arc",
   get_career_totals: "Career totals",
   get_clutch: "Clutch stats",
   get_combine: "Combine",
