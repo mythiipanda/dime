@@ -90,7 +90,9 @@ export type PythonToolName =
     | "get_rotation_check"
     | "get_injury_impact"
     | "get_matchup_brief"
-    | "get_watchlist";
+    | "get_watchlist"
+    | "get_games_on_date"
+    | "get_boxscore";
 
 export const ANALYST_TOOL_NAMES: readonly PythonToolName[] = [
     "sql_exec",
@@ -176,6 +178,8 @@ export const ANALYST_TOOL_NAMES: readonly PythonToolName[] = [
     "get_injury_impact",
     "get_matchup_brief",
     "get_watchlist",
+    "get_games_on_date",
+    "get_boxscore",
 ] as const;
 
 export const sourceRecordSchema = Type.Object({
@@ -264,6 +268,8 @@ export const sourceRecordSchema = Type.Object({
         Type.Literal("get_injury_impact"),
         Type.Literal("get_matchup_brief"),
         Type.Literal("get_watchlist"),
+        Type.Literal("get_games_on_date"),
+        Type.Literal("get_boxscore"),
     ]),
     response: Type.Object({
         content: Type.Array(Type.Unknown()),
