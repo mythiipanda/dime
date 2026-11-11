@@ -117,8 +117,8 @@ def run_python(code: str) -> dict[str, Any]:
                          "con, pl, math, statistics are already preloaded; "
                          "imports/IO/writes are unavailable. "
                          "Query with e.g. "
-                         "rows = con.execute(\"SELECT * FROM silver_standings "
-                         "LIMIT 5\").fetchall(); print(rows)"}
+                         'rows = con.execute("SELECT * FROM silver_standings '
+                         'LIMIT 5").fetchall(); print(rows)'}
     if _re.search(r"\b(insert|update|delete|drop|alter|create|attach|copy)\b",
                    lowered):
         return {"tool": "run_python", "ok": False,
@@ -149,13 +149,25 @@ def run_python(code: str) -> dict[str, Any]:
             pass
     text = buf.getvalue()[:2000]
     out = g.get("out")
-    if out is not None:
+    structured_rows = None
+    if isinstance(out, _pl.DataFrame):
         try:
-            out = str(out)[:2000]
+            structured_rows = out.to_dicts()[:50]
         except Exception:
-            out = None
+            pass
+    elif isinstance(out, list) and all(isinstance(x, dict) for x in out):
+        structured_rows = out[:50]
+
+    out_str = None
+    if out is not None and structured_rows is None:
+        try:
+            out_str = str(out)[:2000]
+        except Exception:
+            out_str = None
+
+    rows_payload = structured_rows if structured_rows is not None else {"printed": text, "out": out_str}
     return {"tool": "run_python", "ok": True,
-            "rows": {"printed": text, "out": out},
+            "rows": rows_payload,
             "meta": {"source": "warehouse"}}
 
 _EXEC_MSG_HINTS = ("does not exist", "Catalog", "Referenced column", "Binder")
