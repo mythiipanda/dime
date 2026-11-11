@@ -100,6 +100,7 @@ const SOURCE_LABELS: Record<string, string> = {
   get_dataset_freshness: "Data freshness",
   get_career_arc: "Career arc",
   run_python: "Python execution",
+  get_matchup_preview: "Matchup preview",
 };
 
 function sourceLabel(source?: string) {

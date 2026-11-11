@@ -21,6 +21,8 @@ from mcp.server.stdio import stdio_server
 from mcp.types import CallToolResult, ListToolsResult, TextContent, Tool
 
 
+TOOL_REGISTRY = None
+
 def catalogue():
     from shared.tools.sql_exec import sql_exec, TABLES
     from shared.tools.league import (
@@ -170,6 +172,10 @@ def catalogue():
         from shared.tools.gamelog import search_game_logs as _orig_search_game_logs
     except ImportError:
         from backend.shared.tools.gamelog import search_game_logs as _orig_search_game_logs
+    try:
+        from shared.tools.preview import get_matchup_preview
+    except ImportError:
+        from backend.shared.tools.preview import get_matchup_preview
 
     declared_catalog = ", ".join(TABLES)
     description = (
@@ -3253,7 +3259,7 @@ def catalogue():
         return sanitize_for_wire(res)
 
     # Deliberately do not export WAREHOUSE_TOOLS, which includes mutators.
-    return {
+    TOOL_REGISTRY = {
         item.name: item for item in (
             sql_exec,
             warehouse_schema,
@@ -3330,8 +3336,12 @@ def catalogue():
             get_dataset_freshness,
             get_career_arc,
             run_python,
+            get_matchup_preview,
         )
     }
+    return TOOL_REGISTRY
+
+TOOL_REGISTRY = catalogue
 
 
 def sanitize_for_wire(val: Any) -> Any:
