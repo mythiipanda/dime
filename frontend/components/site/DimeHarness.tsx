@@ -329,7 +329,7 @@ export function ArtifactBody({ artifact }: { artifact: DimeArtifact }) {
   }
   if (artifact.kind === "shot_chart") {
     if (!artifact.zones.length) return null;
-    return <ArtifactShotChart zones={artifact.zones} />;
+    return <ArtifactShotChart zones={artifact.zones} footnote={artifact.footnote} />;
   }
   if (artifact.kind === "scatter") {
     if (!artifact.points.length) return null;
