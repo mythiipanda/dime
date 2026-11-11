@@ -266,6 +266,8 @@ test("real Python sql_exec and schema cross MCP into Pi with source semantics an
       "get_rest_advantage",
       "get_rapm_prior",
       "search_game_logs",
+      "get_dataset",
+      "get_dataset_freshness",
     ]);
     assert.deepEqual(bridge.tools[0].parameters.required, ["sql"]);
     const setup = await fixture("python", `
@@ -340,7 +342,7 @@ test("real statistical tools cross MCP with anchor compatibility, rows, columns,
   const pid = bridge.pid;
   try {
     const toolMap = new Map(bridge.tools.map(t => [t.name, t]));
-    assert.equal(bridge.tools.length, 71);
+    assert.equal(bridge.tools.length, 73);
 
     // 1. get_rapm
     const rapmTool = toolMap.get("get_rapm");
@@ -920,7 +922,23 @@ test("real statistical tools cross MCP with anchor compatibility, rows, columns,
     assert(Array.isArray(gameLogsRes.structuredContent.result.rows));
     assert(Array.isArray(gameLogsRes.structuredContent.result.columns));
 
-    // Verify anchor compatibility across all 69 statistical tools
+    // 70. get_dataset
+    const datasetTool = toolMap.get("get_dataset");
+    assert(datasetTool);
+    const datasetRes = await datasetTool.execute("call-dataset", { name: "standings", season: "2026-27" }, undefined);
+    assert(datasetRes.structuredContent);
+    assert(Array.isArray(datasetRes.structuredContent.result.rows));
+    assert(Array.isArray(datasetRes.structuredContent.result.columns));
+
+    // 71. get_dataset_freshness
+    const datasetFreshTool = toolMap.get("get_dataset_freshness");
+    assert(datasetFreshTool);
+    const datasetFreshRes = await datasetFreshTool.execute("call-dataset-freshness", {}, undefined);
+    assert(datasetFreshRes.structuredContent);
+    assert(Array.isArray(datasetFreshRes.structuredContent.result.rows));
+    assert(Array.isArray(datasetFreshRes.structuredContent.result.columns));
+
+    // Verify anchor compatibility across all 71 statistical tools
     for (const toolName of [
       "get_rapm", "get_game_prediction", "get_wpa_leaders", "get_comps",
       "get_lineup_stats", "get_win_prob", "get_on_off", "get_shot_zones",
@@ -941,7 +959,8 @@ test("real statistical tools cross MCP with anchor compatibility, rows, columns,
       "get_season_series", "get_team_game_log", "get_zone_deltas",
       "search_shots", "get_stint_timeline", "get_possession_log",
       "get_elo", "get_team_shot_zones", "get_historical_leaders", "get_today", "get_morning_briefing", "get_tracking_profile",
-      "get_rest_advantage", "get_rapm_prior", "search_game_logs"
+      "get_rest_advantage", "get_rapm_prior", "search_game_logs",
+      "get_dataset", "get_dataset_freshness"
     ]) {
       const syntheticRecord = {
         ref: `ref-${toolName}`,
@@ -971,7 +990,7 @@ test("real statistical tools cross MCP with anchor compatibility, rows, columns,
       }, (ref) => ref === syntheticRecord.ref ? syntheticRecord : undefined);
       assert.equal(submission.blocks[0].text, `Anchor for ${toolName}`);
     }
-    console.log(JSON.stringify({ proof: "statistical-tools-anchor-compatible", tools: 69 }));
+    console.log(JSON.stringify({ proof: "statistical-tools-anchor-compatible", tools: 71 }));
   } finally {
     await bridge.close();
   }

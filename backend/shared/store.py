@@ -621,7 +621,14 @@ def read_frame(table: str, where: str = "", params: list[object] | None = None) 
     try:
         query = f"SELECT * FROM {table}" + (f" WHERE {where}" if where else "")
         rel = con.execute(query, params or [])
-        return pl.from_arrow(rel.fetch_arrow_table())
+        try:
+            return pl.from_arrow(rel.fetch_arrow_table())
+        except (ModuleNotFoundError, Exception):
+            cols = [desc[0] for desc in rel.description]
+            rows = rel.fetchall()
+            if not rows:
+                return pl.DataFrame(schema=cols)
+            return pl.DataFrame(rows, schema=cols, orient="row")
     finally:
         con.close()
 
