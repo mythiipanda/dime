@@ -353,7 +353,7 @@ def _career_baseline(pid: int, stat: str) -> dict[str, Any]:
     except Exception:
         return {"available": False, "note": CAREER_UNAVAILABLE_NOTE}
 
-@tool(description='Sustainability check on a hot stat line: window vs season plus drivers.')
+@tool(description='Sustainability check on a hot stat line: window vs season plus drivers (true shooting, minutes, shot volume, opponent defense). Returns verdict and narrative driver analysis.')
 def get_regression_check(player: str, stat: str = "PTS", n: int = 10,
                          season: str | None = None) -> dict[str, Any]:
     season = resolve_season(season)
