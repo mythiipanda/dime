@@ -211,11 +211,20 @@ def dataset(name: str, season: str='2025-26', player_id: int=0, team_id: int=0, 
             return {'ok': False, 'error': 'missing id param for this dataset'}
         if not live.ok:
             return _failed_live_response(live, entity_scoped, entity, table, season)
-        store.save_frame(table, live, entity)
+        try:
+            store.save_frame(table, live, entity)
+        except PermissionError:
+            pass
         if entity_scoped:
-            frame = store.read_frame(table, '_fetched_at = ?', [live.meta.fetched_at])
+            try:
+                frame = store.read_frame(table, '_fetched_at = ?', [live.meta.fetched_at])
+            except Exception:
+                frame = getattr(live, 'frame', frame)
         else:
-            frame = store.read_frame(table, '_season = ?', [season])
+            try:
+                frame = store.read_frame(table, '_season = ?', [season])
+            except Exception:
+                frame = getattr(live, 'frame', frame)
     if name in ('player_gamelogs', 'team_games', 'playoff_gamelogs') and frame.height > 0 and ('GAME_DATE' in frame.columns):
         frame = _sort_frame_by_game_date(frame)
     if name in ('player_gamelogs', 'team_games', 'playoff_gamelogs') and frame.height > 0:
