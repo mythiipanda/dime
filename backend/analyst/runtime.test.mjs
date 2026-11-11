@@ -271,6 +271,8 @@ test("real Python sql_exec and schema cross MCP into Pi with source semantics an
       "get_career_arc",
       "run_python",
       "get_matchup_preview",
+      "get_matchup_splits",
+      "get_regression_check",
     ]);
     assert.deepEqual(bridge.tools[0].parameters.required, ["sql"]);
     const setup = await fixture("python", `
@@ -345,7 +347,7 @@ test("real statistical tools cross MCP with anchor compatibility, rows, columns,
   const pid = bridge.pid;
   try {
     const toolMap = new Map(bridge.tools.map(t => [t.name, t]));
-    assert.equal(bridge.tools.length, 76);
+    assert.equal(bridge.tools.length, 78);
 
     // 1. get_rapm
     const rapmTool = toolMap.get("get_rapm");
@@ -965,6 +967,22 @@ test("real statistical tools cross MCP with anchor compatibility, rows, columns,
     assert(matchupPreviewRes.structuredContent);
     assert.equal(matchupPreviewRes.structuredContent.tool, "get_matchup_preview");
 
+    // 75. get_matchup_splits
+    const matchupSplitsTool = toolMap.get("get_matchup_splits");
+    assert(matchupSplitsTool);
+    assert.equal(matchupSplitsTool.name, "get_matchup_splits");
+    const matchupSplitsRes = await matchupSplitsTool.execute("call-matchup-splits", { player: "LeBron James" }, undefined);
+    assert(matchupSplitsRes.structuredContent);
+    assert.equal(matchupSplitsRes.structuredContent.tool, "get_matchup_splits");
+
+    // 76. get_regression_check
+    const regressionCheckTool = toolMap.get("get_regression_check");
+    assert(regressionCheckTool);
+    assert.equal(regressionCheckTool.name, "get_regression_check");
+    const regressionCheckRes = await regressionCheckTool.execute("call-regression-check", { player: "LeBron James" }, undefined);
+    assert(regressionCheckRes.structuredContent);
+    assert.equal(regressionCheckRes.structuredContent.tool, "get_regression_check");
+
     // Verify anchor compatibility across all 73 analytical/statistical tools
     for (const toolName of [
       "get_rapm", "get_game_prediction", "get_wpa_leaders", "get_comps",
@@ -988,7 +1006,7 @@ test("real statistical tools cross MCP with anchor compatibility, rows, columns,
       "get_elo", "get_team_shot_zones", "get_historical_leaders", "get_today", "get_morning_briefing", "get_tracking_profile",
       "get_rest_advantage", "get_rapm_prior", "search_game_logs",
       "get_dataset", "get_dataset_freshness", "get_career_arc", "run_python",
-      "get_matchup_preview"
+      "get_matchup_preview", "get_matchup_splits", "get_regression_check"
     ]) {
       const syntheticRecord = {
         ref: `ref-${toolName}`,
