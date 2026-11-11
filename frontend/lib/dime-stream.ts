@@ -112,6 +112,7 @@ export interface ShotChartArtifactPayload {
   source?: string;
   provenance?: DimeProvenance;
   zones: { x: number; y: number; att: number; pct: number }[];
+  footnote?: string;
 }
 
 export interface ScatterArtifactPayload {
@@ -810,6 +811,10 @@ function asResolvedArtifacts(raw: unknown): DimeArtifact[] {
         zones,
         source: provenanceSource(provenance),
         provenance,
+        footnote:
+          typeof entry.footnote === "string" && entry.footnote
+            ? entry.footnote
+            : undefined,
       });
       continue;
     }
