@@ -29,6 +29,33 @@ test("a chart the backend resolved renders as a chart", () => {
   assert.equal(only.artifact.footnote, "points per game");
 });
 
+test("a chart artifact preserves unit, xLabels, and series tone", () => {
+  const chunks = reduceBackendEvent("custom_data", {
+    tables: [],
+    artifacts: [
+      {
+        kind: "chart",
+        title: "Net Rating Trend",
+        unit: "NetRtg",
+        xLabels: ["Oct", "Nov", "Dec"],
+        series: [
+          { name: "Thunder", values: [8.2, 10.5, 12.1], tone: "ink" },
+          { name: "League", values: [0.0, 0.0, 0.0], tone: "muted" },
+        ],
+      },
+    ],
+  });
+
+  assert.equal(chunks.length, 1);
+  const only = chunks[0];
+  assert.equal(only.type, "artifact");
+  if (only.type !== "artifact" || only.artifact.kind !== "chart") return;
+  assert.equal(only.artifact.unit, "NetRtg");
+  assert.deepEqual(only.artifact.xLabels, ["Oct", "Nov", "Dec"]);
+  assert.equal(only.artifact.series[0].tone, "ink");
+  assert.equal(only.artifact.series[1].tone, "muted");
+});
+
 test("a resolved chart and a derived table both reach the stream", () => {
   const chunks = reduceBackendEvent("custom_data", {
     tables: [
