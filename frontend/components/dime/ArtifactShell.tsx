@@ -103,6 +103,8 @@ const SOURCE_LABELS: Record<string, string> = {
   get_matchup_preview: "Matchup preview",
   get_matchup_splits: "Matchup splits",
   get_regression_check: "Regression check",
+  get_scout_pack: "Scout pack",
+  get_rotation_check: "Rotation check",
 };
 
 function sourceLabel(source?: string) {
