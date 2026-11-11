@@ -270,6 +270,7 @@ test("real Python sql_exec and schema cross MCP into Pi with source semantics an
       "get_dataset_freshness",
       "get_career_arc",
       "run_python",
+      "get_matchup_preview",
     ]);
     assert.deepEqual(bridge.tools[0].parameters.required, ["sql"]);
     const setup = await fixture("python", `
@@ -344,7 +345,7 @@ test("real statistical tools cross MCP with anchor compatibility, rows, columns,
   const pid = bridge.pid;
   try {
     const toolMap = new Map(bridge.tools.map(t => [t.name, t]));
-    assert.equal(bridge.tools.length, 75);
+    assert.equal(bridge.tools.length, 76);
 
     // 1. get_rapm
     const rapmTool = toolMap.get("get_rapm");
@@ -956,6 +957,14 @@ test("real statistical tools cross MCP with anchor compatibility, rows, columns,
     assert(Array.isArray(runPythonRes.structuredContent.result.rows));
     assert(Array.isArray(runPythonRes.structuredContent.result.columns));
 
+    // 74. get_matchup_preview
+    const matchupPreviewTool = toolMap.get("get_matchup_preview");
+    assert(matchupPreviewTool);
+    assert.equal(matchupPreviewTool.name, "get_matchup_preview");
+    const matchupPreviewRes = await matchupPreviewTool.execute("call-matchup-preview", { a: "BOS", b: "MIA" }, undefined);
+    assert(matchupPreviewRes.structuredContent);
+    assert.equal(matchupPreviewRes.structuredContent.tool, "get_matchup_preview");
+
     // Verify anchor compatibility across all 73 analytical/statistical tools
     for (const toolName of [
       "get_rapm", "get_game_prediction", "get_wpa_leaders", "get_comps",
@@ -978,7 +987,8 @@ test("real statistical tools cross MCP with anchor compatibility, rows, columns,
       "search_shots", "get_stint_timeline", "get_possession_log",
       "get_elo", "get_team_shot_zones", "get_historical_leaders", "get_today", "get_morning_briefing", "get_tracking_profile",
       "get_rest_advantage", "get_rapm_prior", "search_game_logs",
-      "get_dataset", "get_dataset_freshness", "get_career_arc", "run_python"
+      "get_dataset", "get_dataset_freshness", "get_career_arc", "run_python",
+      "get_matchup_preview"
     ]) {
       const syntheticRecord = {
         ref: `ref-${toolName}`,
