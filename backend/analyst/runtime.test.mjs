@@ -194,6 +194,9 @@ test("real Python sql_exec and schema cross MCP into Pi with source semantics an
       "get_team_leaders",
       "get_team_compare",
       "get_elo_standings",
+      "get_draft_board",
+      "get_combine",
+      "get_young_player_usage",
     ]);
     assert.deepEqual(bridge.tools[0].parameters.required, ["sql"]);
     const setup = await fixture("python", `
@@ -268,7 +271,7 @@ test("real statistical tools cross MCP with anchor compatibility, rows, columns,
   const pid = bridge.pid;
   try {
     const toolMap = new Map(bridge.tools.map(t => [t.name, t]));
-    assert.equal(bridge.tools.length, 29);
+    assert.equal(bridge.tools.length, 32);
 
     // 1. get_rapm
     const rapmTool = toolMap.get("get_rapm");
@@ -512,7 +515,31 @@ test("real statistical tools cross MCP with anchor compatibility, rows, columns,
     assert(Array.isArray(eloStandingsRes.structuredContent.result.rows));
     assert(Array.isArray(eloStandingsRes.structuredContent.result.columns));
 
-    // Verify anchor compatibility across all 27 statistical tools
+    // 28. get_draft_board
+    const draftBoardTool = toolMap.get("get_draft_board");
+    assert(draftBoardTool);
+    const draftBoardRes = await draftBoardTool.execute("call-draft-board", { season: "2025" }, undefined);
+    assert(draftBoardRes.structuredContent);
+    assert(Array.isArray(draftBoardRes.structuredContent.result.rows));
+    assert(Array.isArray(draftBoardRes.structuredContent.result.columns));
+
+    // 29. get_combine
+    const combineTool = toolMap.get("get_combine");
+    assert(combineTool);
+    const combineRes = await combineTool.execute("call-combine", { season: "2025" }, undefined);
+    assert(combineRes.structuredContent);
+    assert(Array.isArray(combineRes.structuredContent.result.rows));
+    assert(Array.isArray(combineRes.structuredContent.result.columns));
+
+    // 30. get_young_player_usage
+    const youngPlayerTool = toolMap.get("get_young_player_usage");
+    assert(youngPlayerTool);
+    const youngPlayerRes = await youngPlayerTool.execute("call-young-player-usage", { max_age: 22, min_minutes: 1000 }, undefined);
+    assert(youngPlayerRes.structuredContent);
+    assert(Array.isArray(youngPlayerRes.structuredContent.result.rows));
+    assert(Array.isArray(youngPlayerRes.structuredContent.result.columns));
+
+    // Verify anchor compatibility across all 30 statistical tools
     for (const toolName of [
       "get_rapm", "get_game_prediction", "get_wpa_leaders", "get_comps",
       "get_lineup_stats", "get_win_prob", "get_on_off", "get_shot_zones",
@@ -521,7 +548,8 @@ test("real statistical tools cross MCP with anchor compatibility, rows, columns,
       "get_standings", "get_rest", "get_team_trajectory",
       "get_ratings", "get_rookie_leaders", "get_cap_ledger",
       "get_leaders", "get_lineup_leaders", "get_playoffs",
-      "get_team_leaders", "get_team_compare", "get_elo_standings"
+      "get_team_leaders", "get_team_compare", "get_elo_standings",
+      "get_draft_board", "get_combine", "get_young_player_usage"
     ]) {
       const syntheticRecord = {
         ref: `ref-${toolName}`,
@@ -551,7 +579,7 @@ test("real statistical tools cross MCP with anchor compatibility, rows, columns,
       }, (ref) => ref === syntheticRecord.ref ? syntheticRecord : undefined);
       assert.equal(submission.blocks[0].text, `Anchor for ${toolName}`);
     }
-    console.log(JSON.stringify({ proof: "statistical-tools-anchor-compatible", tools: 27 }));
+    console.log(JSON.stringify({ proof: "statistical-tools-anchor-compatible", tools: 30 }));
   } finally {
     await bridge.close();
   }
