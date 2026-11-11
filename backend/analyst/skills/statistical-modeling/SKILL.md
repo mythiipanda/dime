@@ -78,3 +78,42 @@ $$\hat{\theta}_{\text{shrunk}} = \frac{\text{FGM} + \alpha_0}{\text{FGA} + \alph
 When presenting modeling results:
 - **ORAPM vs DRAPM**: Use `scatter` with `xMid: 0`, `yMid: 0`, `xLabel: "Offensive RAPM"`, `yLabel: "Defensive RAPM"`. Points in the upper-right quadrant represent two-way positive impact.
 - **Player Rankings**: Use `table` with numeric alignment and source anchors linking to the specific queried rows.
+- **Trend Progression**: Use `chart` with `unit` (e.g. `"Net Rtg"`, `"PPG"`) and `xLabels` to plot rolling metrics or multi-season arcs.
+
+---
+
+## 5. Ad-Hoc Modeling Execution via `run_python`
+
+The analyst agent has direct access to the `run_python` tool equipped with preloaded:
+- `con`: Read-only DuckDB connection connected directly to the analytical warehouse.
+- `pl`: Polars library for high-speed tabular manipulation and aggregation.
+- `math` and `statistics`: Standard library mathematical algorithms.
+
+### Example: Fitting Bayesian Shrinkage Over Warehouse Rows
+```python
+# Query players with low attempt counts
+rows = con.execute("""
+    SELECT player, fg3m, fg3a 
+    FROM silver_leaders_pts 
+    WHERE fg3a BETWEEN 10 AND 50
+""").fetchall()
+
+alpha_0 = 108.0
+beta_0 = 192.0
+
+shrunk = []
+for p, fg3m, fg3a in rows:
+    raw_pct = (fg3m / fg3a) * 100.0 if fg3a > 0 else 0.0
+    shrunk_pct = ((fg3m + alpha_0) / (fg3a + alpha_0 + beta_0)) * 100.0
+    shrunk.append({
+        "player": p,
+        "fg3m": fg3m,
+        "fg3a": fg3a,
+        "raw_pct": round(raw_pct, 1),
+        "shrunk_pct": round(shrunk_pct, 1)
+    })
+
+# Assigning to out converts directly into structured rows with columns
+out = pl.DataFrame(shrunk)
+```
+The output can then be directly cited in `submit_answer` and visualized in a `table` or `scatter` artifact.

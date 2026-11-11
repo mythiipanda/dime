@@ -81,7 +81,8 @@ export type PythonToolName =
     | "search_game_logs"
     | "get_dataset"
     | "get_dataset_freshness"
-    | "get_career_arc";
+    | "get_career_arc"
+    | "run_python";
 
 export const ANALYST_TOOL_NAMES: readonly PythonToolName[] = [
     "sql_exec",
@@ -158,6 +159,7 @@ export const ANALYST_TOOL_NAMES: readonly PythonToolName[] = [
     "get_dataset",
     "get_dataset_freshness",
     "get_career_arc",
+    "run_python",
 ] as const;
 
 export const sourceRecordSchema = Type.Object({
@@ -237,6 +239,7 @@ export const sourceRecordSchema = Type.Object({
         Type.Literal("get_dataset"),
         Type.Literal("get_dataset_freshness"),
         Type.Literal("get_career_arc"),
+        Type.Literal("run_python"),
     ]),
     response: Type.Object({
         content: Type.Array(Type.Unknown()),

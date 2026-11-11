@@ -3213,6 +3213,45 @@ def catalogue():
             })
         return sanitize_for_wire(res)
 
+    @tool("run_python", description="Execute read-only Python code over the warehouse DuckDB connection (con), polars (pl), math, and statistics. Useful for ad-hoc statistical modeling, linear algebra, shrinkage, and aggregations.")
+    def run_python(code: str) -> dict:
+        from shared.tools.shared import run_python as _orig_run_python
+        try:
+            res = _orig_run_python.invoke({"code": code})
+            if not isinstance(res, dict):
+                return sanitize_for_wire({
+                    "ok": False,
+                    "tool": "run_python",
+                    "rows": [],
+                    "columns": ["printed", "out"],
+                    "error": str(res),
+                })
+        except Exception as exc:
+            return sanitize_for_wire({
+                "ok": False,
+                "tool": "run_python",
+                "rows": [],
+                "columns": ["printed", "out"],
+                "error": str(exc),
+            })
+
+        default_cols = ["printed", "out"]
+        raw_rows = res.get("rows")
+        if res.get("ok"):
+            if isinstance(raw_rows, list):
+                rows = [r for r in raw_rows if isinstance(r, dict)]
+            elif isinstance(raw_rows, dict):
+                rows = [raw_rows]
+            else:
+                rows = [{"printed": str(raw_rows or ""), "out": None}]
+        else:
+            rows = []
+        cols = list(rows[0].keys()) if rows else default_cols
+        res["rows"] = rows
+        res["columns"] = cols
+        res["ok"] = bool(res.get("ok", False))
+        return sanitize_for_wire(res)
+
     # Deliberately do not export WAREHOUSE_TOOLS, which includes mutators.
     return {
         item.name: item for item in (
@@ -3290,6 +3329,7 @@ def catalogue():
             get_dataset,
             get_dataset_freshness,
             get_career_arc,
+            run_python,
         )
     }
 
