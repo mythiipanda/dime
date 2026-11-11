@@ -96,6 +96,10 @@ const SOURCE_LABELS: Record<string, string> = {
   get_rest_advantage: "Rest advantage",
   get_rapm_prior: "RAPM prior",
   search_game_logs: "Game log search",
+  get_dataset: "Data engine",
+  get_dataset_freshness: "Data freshness",
+  get_career_arc: "Career arc",
+  run_python: "Python execution",
 };
 
 function sourceLabel(source?: string) {

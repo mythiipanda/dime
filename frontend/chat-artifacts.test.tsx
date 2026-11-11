@@ -158,8 +158,25 @@ test("streamed shot chart artifacts render a court", () => {
       { x: 50, y: 12, att: 142, pct: 71 },
       { x: 32, y: 22, att: 88, pct: 52 },
     ],
+    footnote: "Source: silver_shotchart",
   });
   assert.ok(html.includes("<svg"), html.slice(0, 120));
+  assert.ok(html.includes("Source: silver_shotchart"), html);
+});
+
+test("streamed shot chart artifacts support court feet coordinates", () => {
+  const html = render({
+    kind: "shot_chart",
+    title: "Shot diet feet coordinates",
+    zones: [
+      { x: 0, y: 0, att: 250, pct: 68 },
+      { x: -22, y: 0, att: 40, pct: 42 },
+      { x: 22, y: 0, att: 35, pct: 40 },
+      { x: 0, y: 25, att: 180, pct: 38 },
+    ],
+  });
+  assert.ok(html.includes("<svg"), html.slice(0, 120));
+  assert.ok(html.includes('cx="250"'), html);
 });
 
 test("chart and shot artifacts with no data render nothing", () => {

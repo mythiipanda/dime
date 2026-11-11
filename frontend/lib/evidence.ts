@@ -126,6 +126,8 @@ const CAPABILITY_LABELS: Record<string, string> = {
   get_competitive_ratings: "Competitive ratings",
   get_comps: "Comparisons",
   get_contract_value: "Contract values",
+  get_dataset: "Data engine",
+  get_dataset_freshness: "Data freshness",
   get_debate_card: "Debate cards",
   get_defensive_matchups: "Defensive matchups",
   get_draft_board: "Draft board",
