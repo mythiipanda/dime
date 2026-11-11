@@ -45,6 +45,7 @@ from .league import (
     snapshot_leaderboard,
     text_to_sql,
 )
+from .career_arc import get_career_arc
 from .lineup import get_lineup_stats
 from .player import (
     compare_metrics,
@@ -167,6 +168,7 @@ WAREHOUSE_TOOLS: list[BaseTool] = [
     get_award_race,
     get_award_results,
     get_historical_leaders,
+    get_career_arc,
     get_comps,
     get_player_rankings,
     get_player_report,

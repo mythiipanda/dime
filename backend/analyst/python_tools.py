@@ -3190,6 +3190,29 @@ def catalogue():
             "columns": cols,
         })
 
+    @tool("get_career_arc", description="Query year-over-year career trajectory, statistical evolution, scoring efficiency, and RAPTOR ratings for an NBA player across multiple seasons.")
+    def get_career_arc(player: str = "", player_id: int = 0) -> dict:
+        from shared.tools.career_arc import get_career_arc as _run_career_arc
+        try:
+            res = _run_career_arc.invoke({"player": player, "player_id": player_id})
+            if not isinstance(res, dict):
+                return sanitize_for_wire({
+                    "ok": False,
+                    "tool": "get_career_arc",
+                    "rows": [],
+                    "columns": ["season", "pts", "reb", "ast", "min", "ts_pct", "raptor"],
+                    "error": "Invalid result from career arc tool",
+                })
+        except Exception as exc:
+            return sanitize_for_wire({
+                "ok": False,
+                "tool": "get_career_arc",
+                "rows": [],
+                "columns": ["season", "pts", "reb", "ast", "min", "ts_pct", "raptor"],
+                "error": str(exc),
+            })
+        return sanitize_for_wire(res)
+
     # Deliberately do not export WAREHOUSE_TOOLS, which includes mutators.
     return {
         item.name: item for item in (
@@ -3266,6 +3289,7 @@ def catalogue():
             search_game_logs,
             get_dataset,
             get_dataset_freshness,
+            get_career_arc,
         )
     }
 
