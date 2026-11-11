@@ -320,12 +320,10 @@ export function ArtifactBody({ artifact }: { artifact: DimeArtifact }) {
     if (!series.length) return null;
     return (
       <ArtifactChart
-        series={series.map((s, i) => ({
-          name: s.name,
-          values: s.values,
-          tone: i === 0 ? "ink" : "muted",
-        }))}
+        series={series}
         footnote={artifact.footnote}
+        unit={artifact.unit}
+        xLabels={artifact.xLabels}
       />
     );
   }
@@ -452,7 +450,9 @@ export function artifactToCopyText(artifact: DimeArtifact): string {
   }
   if (artifact.kind === "chart") {
     const maxVals = Math.max(0, ...artifact.series.map((s) => s.values.length));
-    const valHeaders = Array.from({length: maxVals}, (_, i) => `Val ${i + 1}`);
+    const valHeaders = artifact.xLabels && artifact.xLabels.length >= maxVals
+      ? artifact.xLabels.slice(0, maxVals).map(escapeCsvCell)
+      : Array.from({length: maxVals}, (_, i) => `Val ${i + 1}`);
     const header = maxVals > 0 ? `Series,${valHeaders.join(",")}` : "Series";
     const rows = artifact.series.map((s) => [escapeCsvCell(s.name), ...s.values.map(escapeCsvCell)].join(","));
     return [header, ...rows].join("\n");
