@@ -269,6 +269,7 @@ test("real Python sql_exec and schema cross MCP into Pi with source semantics an
       "get_dataset",
       "get_dataset_freshness",
       "get_career_arc",
+      "run_python",
     ]);
     assert.deepEqual(bridge.tools[0].parameters.required, ["sql"]);
     const setup = await fixture("python", `
@@ -343,7 +344,7 @@ test("real statistical tools cross MCP with anchor compatibility, rows, columns,
   const pid = bridge.pid;
   try {
     const toolMap = new Map(bridge.tools.map(t => [t.name, t]));
-    assert.equal(bridge.tools.length, 74);
+    assert.equal(bridge.tools.length, 75);
 
     // 1. get_rapm
     const rapmTool = toolMap.get("get_rapm");
@@ -947,7 +948,15 @@ test("real statistical tools cross MCP with anchor compatibility, rows, columns,
     assert(Array.isArray(careerArcRes.structuredContent.result.rows));
     assert(Array.isArray(careerArcRes.structuredContent.result.columns));
 
-    // Verify anchor compatibility across all 72 statistical tools
+    // 73. run_python
+    const runPythonTool = toolMap.get("run_python");
+    assert(runPythonTool);
+    const runPythonRes = await runPythonTool.execute("call-run-python", { code: "print('hello from test')" }, undefined);
+    assert(runPythonRes.structuredContent);
+    assert(Array.isArray(runPythonRes.structuredContent.result.rows));
+    assert(Array.isArray(runPythonRes.structuredContent.result.columns));
+
+    // Verify anchor compatibility across all 73 analytical/statistical tools
     for (const toolName of [
       "get_rapm", "get_game_prediction", "get_wpa_leaders", "get_comps",
       "get_lineup_stats", "get_win_prob", "get_on_off", "get_shot_zones",
@@ -969,7 +978,7 @@ test("real statistical tools cross MCP with anchor compatibility, rows, columns,
       "search_shots", "get_stint_timeline", "get_possession_log",
       "get_elo", "get_team_shot_zones", "get_historical_leaders", "get_today", "get_morning_briefing", "get_tracking_profile",
       "get_rest_advantage", "get_rapm_prior", "search_game_logs",
-      "get_dataset", "get_dataset_freshness", "get_career_arc"
+      "get_dataset", "get_dataset_freshness", "get_career_arc", "run_python"
     ]) {
       const syntheticRecord = {
         ref: `ref-${toolName}`,
