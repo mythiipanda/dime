@@ -1,8 +1,11 @@
-import { isAbsolute } from "node:path";
+import { existsSync } from "node:fs";
+import { isAbsolute, resolve } from "node:path";
 import {
     createAgentSession,
     createCodemodeExtension,
     DefaultResourceLoader,
+    formatSkillsForPrompt,
+    loadSkillsFromDir,
     SessionManager,
     SettingsManager,
 } from "@earendil-works/pi-coding-agent";
@@ -43,6 +46,15 @@ export async function createAnalystSession({
         themes: [],
         defaultTools: ["codemode", ...names],
     });
+    const skillDirs = [
+        resolve(cwd, ".agents/skills"),
+        resolve(cwd, "backend/analyst/skills"),
+        resolve(cwd, "skills"),
+        resolve(agentDir, "skills"),
+    ].filter((dir) => existsSync(dir));
+    const discoveredSkills = skillDirs.flatMap((dir) => loadSkillsFromDir({ dir, source: "project" }).skills);
+    const uniqueSkills = Array.from(new Map(discoveredSkills.map((s) => [s.name, s])).values());
+    const skillsPrompt = uniqueSkills.length > 0 ? formatSkillsForPrompt(uniqueSkills, "indirect").trim() : "";
     const resourceLoader = new DefaultResourceLoader({
         cwd,
         agentDir,
@@ -52,6 +64,7 @@ export async function createAnalystSession({
         noPromptTemplates: true,
         noThemes: true,
         noContextFiles: true,
+        additionalSkillPaths: skillDirs,
         systemPrompt: [
             "You are Dime's analyst, operating as a professional NBA data analyst and analytics engineer. You possess full agency to reason, explain concepts qualitatively, run ad-hoc calculations in codemode/Python/SQL, or use specialized tools as appropriate to deliver rigorous, data-driven basketball analysis. Preserve source units and references.",
             "",
@@ -67,7 +80,7 @@ export async function createAnalystSession({
             "- Match population claims to query evidence: distinguish row counts, non-null metric contributions, and distinct entities. For contributing-entity claims, use the same metric-validity filters; account for repeated entity rows before calling a row average an entity average. Otherwise report the supported row or value count and its limits.",
             "- When presenting comparisons, trends, shot profiles, or multi-metric distributions, produce structured visual artifacts in submit_answer (artifacts array): 'compare' ({ kind: 'compare', title: string, aName: string, bName: string, rows: [{ label: string, a: number, b: number }] }), 'table' ({ kind: 'table', title: string, columns: [{ key: string, label: string, numeric?: boolean }], rows: (string | number)[][] | Record<string, unknown>[] }), 'chart' ({ kind: 'chart', title: string, series: [{ name: string, values: number[] }], footnote?: string }), 'shot_chart' ({ kind: 'shot_chart', title: string, zones: [{ x: number, y: number, att: number, pct: number }] }), and 'scatter' ({ kind: 'scatter', title: string, xLabel: string, yLabel: string, points: [{ label: string, x: number, y: number, highlight?: boolean }], xMid?: number, yMid?: number, footnote?: string } (ideal for TS% vs USG%, ORAPM vs DRAPM quadrants, efficiency vs volume)).",
         ].join("\n"),
-        appendSystemPrompt: [],
+        appendSystemPrompt: skillsPrompt ? [skillsPrompt] : [],
         extensionFactories: [createCodemodeExtension({ mode: "only", models: false })],
     });
     await resourceLoader.reload();
