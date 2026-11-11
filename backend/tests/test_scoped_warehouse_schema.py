@@ -77,7 +77,9 @@ def _tool() -> object:
 def test_default_returns_full_declared_schema_with_bounded_scope(warehouse):
     schema = _invoke(_tool(), {})
 
-    assert list(schema) == ["tables", "catalog_scope"]
+    assert set(schema) >= {"tables", "catalog_scope"}
+    assert schema["ok"] is True
+    assert schema["tool"] == "warehouse_schema" 
     assert set(schema["tables"]) == set(_DECLARED)
     assert "warehouse_only_table" not in schema["tables"]
 
@@ -146,13 +148,21 @@ def test_scoped_payload_is_measurably_smaller(warehouse):
     ["silver_leaders_pts", "silver_missing"],
 ])
 def test_unknown_table_names_are_a_boundary_error(warehouse, selection):
-    with pytest.raises(ValueError, match="silver_missing"):
-        _invoke(_tool(), {"tables": selection})
+    res = _invoke(_tool(), {"tables": selection})
+    assert res["ok"] is False
+    assert res["tool"] == "warehouse_schema"
+    assert "silver_missing" in res["error"]
+    assert res["tables"] == {}
+    assert res["columns"] == []
 
 
 def test_empty_selection_is_a_boundary_error(warehouse):
-    with pytest.raises(ValueError, match="at least one declared table"):
-        _invoke(_tool(), {"tables": []})
+    res = _invoke(_tool(), {"tables": []})
+    assert res["ok"] is False
+    assert res["tool"] == "warehouse_schema"
+    assert "at least one declared table" in res["error"]
+    assert res["tables"] == {}
+    assert res["columns"] == []
 
 
 @pytest.mark.parametrize("arguments", [

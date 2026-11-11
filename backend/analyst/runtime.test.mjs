@@ -1,7 +1,10 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { mkdir, writeFile, readFile } from "node:fs/promises";
-import { join } from "node:path";
+import { mkdtemp, mkdir, writeFile, readFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { execFileSync } from "node:child_process";
+import { fileURLToPath } from "node:url";
+import { join, dirname } from "node:path";
 import { ModelRuntime } from "@earendil-works/pi-coding-agent";
 import { createAssistantMessageEventStream } from "@earendil-works/pi-ai";
 import { createAnalystSession } from "./dist/runtime.js";
@@ -9,7 +12,34 @@ import { priorSourceTool } from "./dist/pi-context.js";
 import { connectPythonTools, sourceResult } from "./dist/python-tools.js";
 import { validateAnswerSubmission } from "./dist/submit-tool.js";
 
-const root = process.env.DIME_PI_TEST_ROOT;
+const __dirname = dirname(fileURLToPath(import.meta.url));
+
+let root = process.env.DIME_PI_TEST_ROOT;
+if (!root) {
+  const tempDir = await mkdtemp(join(tmpdir(), "dime-pi-proof-"));
+  const cwd = join(tempDir, "cwd");
+  await mkdir(cwd, { recursive: true });
+  process.env.DIME_PI_TEST_ROOT = cwd;
+  const resolvePython = () => {
+    try {
+      if (process.platform === "win32") {
+        return execFileSync("where.exe", ["python"]).toString().trim().split(/\r?\n/)[0];
+      }
+      return execFileSync("which", ["python3"]).toString().trim();
+    } catch {
+      return "python";
+    }
+  };
+  process.env.DIME_PI_PYTHON = process.env.DIME_PI_PYTHON || resolvePython();
+  process.env.DIME_WAREHOUSE = join(cwd, "owned.duckdb");
+  process.env.PYTHONDONTWRITEBYTECODE = "1";
+  execFileSync(process.env.DIME_PI_PYTHON, ["-B", join(__dirname, "python_fixture.py")], {
+    cwd,
+    env: { ...process.env, DIME_PI_TEST_ROOT: cwd, DIME_WAREHOUSE: process.env.DIME_WAREHOUSE },
+    stdio: "inherit",
+  });
+  root = cwd;
+}
 assert(root, "DIME_PI_TEST_ROOT must identify an isolated proof directory");
 
 async function fixture(name, code, tools) {
@@ -787,4 +817,55 @@ test("prior sources expose native data, filter a large schema and recover after 
     await writeFile(join(root, "prior-provider-requests.json"), JSON.stringify(requests));
     console.log(JSON.stringify({proof: "prior-native-large-filter-errors", rawBytes: before.length, tables: Object.keys(tables).length}));
   } finally {session.dispose();}
+});
+test("real Python warehouse_schema executes cleanly without unhandled exceptions and returns structured output", async () => {
+  const bridge = await connectPythonTools({ python: process.env.DIME_PI_PYTHON, cwd: root,
+    env: { ...process.env, DIME_WAREHOUSE: join(root, "owned.duckdb") } });
+  const pid = bridge.pid;
+  try {
+    const tool = bridge.tools.find(t => t.name === "warehouse_schema");
+    assert(tool, "warehouse_schema tool must be registered");
+
+    // Clean execution with full schema
+    const fullRes = await tool.execute("call-schema-full", {}, undefined);
+    assert(fullRes.structuredContent, "Structured content expected for full schema");
+    const full = fullRes.structuredContent.result;
+    assert.equal(full.tool, "warehouse_schema");
+    assert.equal(full.ok, true);
+    assert.equal(typeof full.tables, "object");
+    assert(full.catalog_scope);
+    assert.equal(full.catalog_scope.kind, "declared_read_only_tables");
+
+    // Clean execution with valid selected tables
+    const scopedRes = await tool.execute("call-schema-scoped", { tables: ["silver_hist_player_seasons"] }, undefined);
+    assert(scopedRes.structuredContent, "Structured content expected for scoped schema");
+    const scoped = scopedRes.structuredContent.result;
+    assert.equal(scoped.tool, "warehouse_schema");
+    assert.equal(scoped.ok, true);
+    assert(scoped.tables.silver_hist_player_seasons);
+    assert.equal(scoped.catalog_scope.returned_table_count, 1);
+
+    // Clean execution with unknown table: structured failure, no unhandled exception
+    const unknownRes = await tool.execute("call-schema-unknown", { tables: ["nonexistent_table"] }, undefined);
+    assert(unknownRes.structuredContent, "Structured content expected for unknown table");
+    const unknown = unknownRes.structuredContent.result;
+    assert.equal(unknown.tool, "warehouse_schema");
+    assert.equal(unknown.ok, false);
+    assert(typeof unknown.error === "string" && unknown.error.includes("unknown declared table"));
+    assert.deepEqual(unknown.tables, {});
+    assert.deepEqual(unknown.columns, []);
+
+    // Clean execution with empty table selection: structured failure, no unhandled exception
+    const emptyRes = await tool.execute("call-schema-empty", { tables: [] }, undefined);
+    assert(emptyRes.structuredContent, "Structured content expected for empty tables");
+    const empty = emptyRes.structuredContent.result;
+    assert.equal(empty.tool, "warehouse_schema");
+    assert.equal(empty.ok, false);
+    assert(typeof empty.error === "string" && empty.error.includes("at least one declared table"));
+    assert.deepEqual(empty.tables, {});
+    assert.deepEqual(empty.columns, []);
+  } finally {
+    await bridge.close();
+  }
+  assert.throws(() => process.kill(pid, 0), /ESRCH/);
 });
