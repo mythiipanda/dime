@@ -209,6 +209,9 @@ test("real Python sql_exec and schema cross MCP into Pi with source semantics an
       "get_finder",
       "get_draft_model",
       "get_leaderboard_deltas",
+      "get_player_ratings",
+      "get_risers",
+      "get_team_four_factors",
     ]);
     assert.deepEqual(bridge.tools[0].parameters.required, ["sql"]);
     const setup = await fixture("python", `
@@ -283,7 +286,7 @@ test("real statistical tools cross MCP with anchor compatibility, rows, columns,
   const pid = bridge.pid;
   try {
     const toolMap = new Map(bridge.tools.map(t => [t.name, t]));
-    assert.equal(bridge.tools.length, 44);
+    assert.equal(bridge.tools.length, 47);
 
     // 1. get_rapm
     const rapmTool = toolMap.get("get_rapm");
@@ -647,7 +650,31 @@ test("real statistical tools cross MCP with anchor compatibility, rows, columns,
     assert(Array.isArray(leaderboardDeltasRes.structuredContent.result.rows));
     assert(Array.isArray(leaderboardDeltasRes.structuredContent.result.columns));
 
-    // Verify anchor compatibility across all 42 statistical tools
+    // 43. get_player_ratings
+    const playerRatingsTool = toolMap.get("get_player_ratings");
+    assert(playerRatingsTool);
+    const playerRatingsRes = await playerRatingsTool.execute("call-player-ratings", { season: "2023-24", metric: "offense", limit: 5 }, undefined);
+    assert(playerRatingsRes.structuredContent);
+    assert(Array.isArray(playerRatingsRes.structuredContent.result.rows));
+    assert(Array.isArray(playerRatingsRes.structuredContent.result.columns));
+
+    // 44. get_risers
+    const risersTool = toolMap.get("get_risers");
+    assert(risersTool);
+    const risersRes = await risersTool.execute("call-risers", { season: "2023-24", weeks: 4 }, undefined);
+    assert(risersRes.structuredContent);
+    assert(Array.isArray(risersRes.structuredContent.result.rows));
+    assert(Array.isArray(risersRes.structuredContent.result.columns));
+
+    // 45. get_team_four_factors
+    const teamFourFactorsTool = toolMap.get("get_team_four_factors");
+    assert(teamFourFactorsTool);
+    const teamFourFactorsRes = await teamFourFactorsTool.execute("call-team-four-factors", { team: "BOS", season: "2023-24" }, undefined);
+    assert(teamFourFactorsRes.structuredContent);
+    assert(Array.isArray(teamFourFactorsRes.structuredContent.result.rows));
+    assert(Array.isArray(teamFourFactorsRes.structuredContent.result.columns));
+
+    // Verify anchor compatibility across all 45 statistical tools
     for (const toolName of [
       "get_rapm", "get_game_prediction", "get_wpa_leaders", "get_comps",
       "get_lineup_stats", "get_win_prob", "get_on_off", "get_shot_zones",
@@ -660,7 +687,8 @@ test("real statistical tools cross MCP with anchor compatibility, rows, columns,
       "get_draft_board", "get_combine", "get_young_player_usage",
       "get_contract_value", "get_trade_check", "get_trade_value", "get_situational_splits",
       "get_playoff_sim", "get_playoff_team_ratings", "get_player_risers", "get_standings_deep",
-      "get_warehouse_freshness", "get_finder", "get_draft_model", "get_leaderboard_deltas"
+      "get_warehouse_freshness", "get_finder", "get_draft_model", "get_leaderboard_deltas",
+      "get_player_ratings", "get_risers", "get_team_four_factors"
     ]) {
       const syntheticRecord = {
         ref: `ref-${toolName}`,
@@ -690,7 +718,7 @@ test("real statistical tools cross MCP with anchor compatibility, rows, columns,
       }, (ref) => ref === syntheticRecord.ref ? syntheticRecord : undefined);
       assert.equal(submission.blocks[0].text, `Anchor for ${toolName}`);
     }
-    console.log(JSON.stringify({ proof: "statistical-tools-anchor-compatible", tools: 42 }));
+    console.log(JSON.stringify({ proof: "statistical-tools-anchor-compatible", tools: 45 }));
   } finally {
     await bridge.close();
   }

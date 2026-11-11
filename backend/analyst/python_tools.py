@@ -57,6 +57,9 @@ def catalogue():
         get_finder as _orig_get_finder,
         get_draft_model as _orig_get_draft_model,
         get_leaderboard_deltas as _orig_get_leaderboard_deltas,
+        get_player_ratings as _orig_get_player_ratings,
+        get_risers as _orig_get_risers,
+        get_team_four_factors as _orig_get_team_four_factors,
     )
     try:
         from shared.tools.league import get_clutch_stats as _orig_get_clutch_stats
@@ -1418,6 +1421,92 @@ def catalogue():
         res["ok"] = bool(res.get("ok", False))
         return sanitize_for_wire(res)
 
+
+    @tool("get_player_ratings", description=_orig_get_player_ratings.description)
+    def get_player_ratings(season: str | None = None, metric: str = "offense", limit: int = 10, min_minutes: int = 1000) -> dict:
+        """Qualified player on-court offensive or defensive rating leaderboard."""
+        try:
+            res = _orig_get_player_ratings.invoke({
+                "season": season,
+                "metric": metric,
+                "limit": limit,
+                "min_minutes": min_minutes,
+            })
+            if not isinstance(res, dict):
+                res = {"tool": "get_player_ratings", "ok": False, "error": str(res)}
+        except Exception as exc:
+            res = {"tool": "get_player_ratings", "ok": False, "error": f"{type(exc).__name__}: {exc}"}
+
+        default_cols = ["PLAYER", "TEAM", "MINUTES", "RATING", "METRIC"]
+        raw_rows = res.get("rows")
+        if res.get("ok") and isinstance(raw_rows, list):
+            rows = [r for r in raw_rows if isinstance(r, dict)]
+        else:
+            rows = []
+        cols = list(rows[0].keys()) if rows else default_cols
+        res["rows"] = rows
+        res["columns"] = cols
+        res["ok"] = bool(res.get("ok", False))
+        return sanitize_for_wire(res)
+
+    @tool("get_risers", description=_orig_get_risers.description)
+    def get_risers(season: str | None = None, weeks: int = 4) -> dict:
+        """Team risers and fallers: last-N weeks win percentage versus season win percentage."""
+        try:
+            res = _orig_get_risers.invoke({"season": season, "weeks": weeks})
+            if not isinstance(res, dict):
+                res = {"tool": "get_risers", "ok": False, "error": str(res)}
+        except Exception as exc:
+            res = {"tool": "get_risers", "ok": False, "error": f"{type(exc).__name__}: {exc}"}
+
+        default_cols = ["TEAM", "LAST10", "LAST10_PCT", "SEASON_PCT", "DELTA", "TREND"]
+        raw_rows = res.get("rows")
+        rows: list[dict] = []
+        if res.get("ok"):
+            if isinstance(raw_rows, dict):
+                for trend_key, trend_label in (("risers", "riser"), ("fallers", "faller")):
+                    trend_items = raw_rows.get(trend_key)
+                    if isinstance(trend_items, list):
+                        for item in trend_items:
+                            if isinstance(item, dict):
+                                row = dict(item)
+                                row["TREND"] = trend_label
+                                rows.append(row)
+                if not rows:
+                    rows = [raw_rows]
+            elif isinstance(raw_rows, list):
+                rows = [r for r in raw_rows if isinstance(r, dict)]
+        cols = list(rows[0].keys()) if rows else default_cols
+        res["rows"] = rows
+        res["columns"] = cols
+        res["ok"] = bool(res.get("ok", False))
+        return sanitize_for_wire(res)
+
+    @tool("get_team_four_factors", description=_orig_get_team_four_factors.description)
+    def get_team_four_factors(team: str = "", season: str | None = None) -> dict:
+        """Full-board or team-specific Four Factors (eFG%, TOV%, ORB%, FT rate, and defensive mirrors)."""
+        try:
+            res = _orig_get_team_four_factors.invoke({"team": team, "season": season})
+            if not isinstance(res, dict):
+                res = {"tool": "get_team_four_factors", "ok": False, "error": str(res)}
+        except Exception as exc:
+            res = {"tool": "get_team_four_factors", "ok": False, "error": f"{type(exc).__name__}: {exc}"}
+
+        default_cols = [
+            "TEAM", "GP", "W", "EFG_PCT", "TOV_PCT", "ORB_PCT", "FT_RATE",
+            "OPP_EFG_PCT", "OPP_TOV_PCT", "DRB_PCT", "OPP_FT_RATE"
+        ]
+        raw_rows = res.get("rows")
+        if res.get("ok") and isinstance(raw_rows, list):
+            rows = [r for r in raw_rows if isinstance(r, dict)]
+        else:
+            rows = []
+        cols = list(rows[0].keys()) if rows else default_cols
+        res["rows"] = rows
+        res["columns"] = cols
+        res["ok"] = bool(res.get("ok", False))
+        return sanitize_for_wire(res)
+
     # Deliberately do not export WAREHOUSE_TOOLS, which includes mutators.
     return {
         item.name: item for item in (
@@ -1465,6 +1554,9 @@ def catalogue():
             get_finder,
             get_draft_model,
             get_leaderboard_deltas,
+            get_player_ratings,
+            get_risers,
+            get_team_four_factors,
         )
     }
 

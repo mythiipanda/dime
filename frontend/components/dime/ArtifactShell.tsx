@@ -69,6 +69,9 @@ const SOURCE_LABELS: Record<string, string> = {
   get_finder: "Historical finder",
   get_draft_model: "Draft model",
   get_leaderboard_deltas: "Leaderboard deltas",
+  get_player_ratings: "Player ratings",
+  get_risers: "Team risers",
+  get_team_four_factors: "Team four factors",
 };
 
 function sourceLabel(source?: string) {
