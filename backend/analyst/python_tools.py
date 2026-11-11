@@ -53,6 +53,10 @@ def catalogue():
         get_playoff_team_ratings as _orig_get_playoff_team_ratings,
         get_player_risers as _orig_get_player_risers,
         get_standings_deep as _orig_get_standings_deep,
+        get_warehouse_freshness as _orig_get_warehouse_freshness,
+        get_finder as _orig_get_finder,
+        get_draft_model as _orig_get_draft_model,
+        get_leaderboard_deltas as _orig_get_leaderboard_deltas,
     )
     try:
         from shared.tools.league import get_clutch_stats as _orig_get_clutch_stats
@@ -1298,6 +1302,122 @@ def catalogue():
         res["ok"] = bool(res.get("ok", False))
         return sanitize_for_wire(res)
 
+
+
+    @tool("get_warehouse_freshness", description=_orig_get_warehouse_freshness.description)
+    def get_warehouse_freshness() -> dict:
+        """Warehouse freshness and data recency panel across all silver tables."""
+        try:
+            res = _orig_get_warehouse_freshness.invoke({})
+            if not isinstance(res, dict):
+                res = {"tool": "get_warehouse_freshness", "ok": False, "error": str(res)}
+        except Exception as exc:
+            res = {"tool": "get_warehouse_freshness", "ok": False, "error": f"{type(exc).__name__}: {exc}"}
+
+        default_cols = ["table", "rows", "last_fetch", "stale"]
+        raw_rows = res.get("rows")
+        rows: list[dict] = []
+        if res.get("ok"):
+            if isinstance(raw_rows, list):
+                rows = [r for r in raw_rows if isinstance(r, dict)]
+            elif isinstance(raw_rows, dict):
+                rows = [raw_rows]
+        cols = list(rows[0].keys()) if rows else default_cols
+        res["rows"] = rows
+        res["columns"] = cols
+        res["ok"] = bool(res.get("ok", False))
+        return sanitize_for_wire(res)
+
+    @tool("get_finder", description=_orig_get_finder.description)
+    def get_finder(mode: str = "streak", team_abbrev: str = "", opponent: str = "", season: str | None = None, window: int = 5) -> dict:
+        """Historical multi-season search across streaks, versus, span, player_streak, and head2head."""
+        try:
+            res = _orig_get_finder.invoke({
+                "mode": mode, "team_abbrev": team_abbrev, "opponent": opponent,
+                "season": season, "window": window,
+            })
+            if not isinstance(res, dict):
+                res = {"tool": "get_finder", "ok": False, "error": str(res)}
+        except Exception as exc:
+            res = {"tool": "get_finder", "ok": False, "error": f"{type(exc).__name__}: {exc}"}
+
+        default_cols = ["mode", "team", "opponent", "streak", "games", "result"]
+        raw_rows = res.get("rows")
+        rows: list[dict] = []
+        if res.get("ok"):
+            if isinstance(raw_rows, dict):
+                if "a" in raw_rows and "b" in raw_rows and isinstance(raw_rows.get("a"), dict):
+                    for side_key in ("a", "b"):
+                        side_val = raw_rows.get(side_key)
+                        if isinstance(side_val, dict):
+                            rows.append({"entry": side_key, **side_val})
+                else:
+                    rows = [raw_rows]
+            elif isinstance(raw_rows, list):
+                rows = [r for r in raw_rows if isinstance(r, dict)]
+        cols = list(rows[0].keys()) if rows else default_cols
+        res["rows"] = rows
+        res["columns"] = cols
+        res["ok"] = bool(res.get("ok", False))
+        return sanitize_for_wire(res)
+
+    @tool("get_draft_model", description=_orig_get_draft_model.description)
+    def get_draft_model(season: str = "2025") -> dict:
+        """Prospect star-probability classifier from college production."""
+        try:
+            res = _orig_get_draft_model.invoke({"season": season})
+            if not isinstance(res, dict):
+                res = {"tool": "get_draft_model", "ok": False, "error": str(res)}
+        except Exception as exc:
+            res = {"tool": "get_draft_model", "ok": False, "error": f"{type(exc).__name__}: {exc}"}
+
+        default_cols = ["PLAYER", "TEAM", "PTS", "TS_PCT", "USG", "STAR_P"]
+        raw_rows = res.get("rows")
+        rows: list[dict] = []
+        if res.get("ok"):
+            if isinstance(raw_rows, list):
+                rows = [r for r in raw_rows if isinstance(r, dict)]
+            elif isinstance(raw_rows, dict):
+                rows = [raw_rows]
+        cols = list(rows[0].keys()) if rows else default_cols
+        res["rows"] = rows
+        res["columns"] = cols
+        res["ok"] = bool(res.get("ok", False))
+        return sanitize_for_wire(res)
+
+    @tool("get_leaderboard_deltas", description=_orig_get_leaderboard_deltas.description)
+    def get_leaderboard_deltas(season: str | None = None, days: int = 7) -> dict:
+        """Scoring leaderboard movers: latest snapshot vs the one from days ago."""
+        try:
+            res = _orig_get_leaderboard_deltas.invoke({"season": season, "days": days})
+            if not isinstance(res, dict):
+                res = {"tool": "get_leaderboard_deltas", "ok": False, "error": str(res)}
+        except Exception as exc:
+            res = {"tool": "get_leaderboard_deltas", "ok": False, "error": f"{type(exc).__name__}: {exc}"}
+
+        default_cols = ["player", "team", "rank_base", "rank_now", "rank_change", "pts_change", "trend"]
+        raw_rows = res.get("rows")
+        rows: list[dict] = []
+        if res.get("ok"):
+            if isinstance(raw_rows, dict):
+                for group_key, trend_label in (("climbers", "climber"), ("fallers", "faller"), ("new_entries", "new")):
+                    group_items = raw_rows.get(group_key)
+                    if isinstance(group_items, list):
+                        for item in group_items:
+                            if isinstance(item, dict):
+                                row = dict(item)
+                                row["trend"] = trend_label
+                                rows.append(row)
+                if not rows:
+                    rows = [raw_rows]
+            elif isinstance(raw_rows, list):
+                rows = [r for r in raw_rows if isinstance(r, dict)]
+        cols = list(rows[0].keys()) if rows else default_cols
+        res["rows"] = rows
+        res["columns"] = cols
+        res["ok"] = bool(res.get("ok", False))
+        return sanitize_for_wire(res)
+
     # Deliberately do not export WAREHOUSE_TOOLS, which includes mutators.
     return {
         item.name: item for item in (
@@ -1341,6 +1461,10 @@ def catalogue():
             get_playoff_team_ratings,
             get_player_risers,
             get_standings_deep,
+            get_warehouse_freshness,
+            get_finder,
+            get_draft_model,
+            get_leaderboard_deltas,
         )
     }
 
