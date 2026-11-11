@@ -96,7 +96,23 @@ def catalogue():
     @tool("warehouse_schema", description=description)
     def warehouse_schema(tables: list[str] | None = None) -> dict:
         """Read declared warehouse columns, source units and season encodings."""
-        _, columns = _get_warehouse_schema()
+        try:
+            _, columns = _get_warehouse_schema()
+        except Exception as exc:
+            return sanitize_for_wire({
+                "tool": "warehouse_schema",
+                "ok": False,
+                "error": f"warehouse unavailable: {exc}",
+                "tables": {},
+                "columns": [],
+                "catalog_scope": {
+                    "kind": "declared_read_only_tables",
+                    "exhaustive_warehouse_inventory": False,
+                    "available_table_count": 0,
+                    "returned_table_count": 0,
+                    "negative_claim_scope": "warehouse unavailable",
+                },
+            })
         if tables is None:
             selected = list(columns)
         else:
@@ -108,13 +124,27 @@ def catalogue():
                 else:
                     unknown.append(name)
             if unknown:
-                raise ValueError(
-                    "unknown declared table(s) in tables selection: "
-                    f"{', '.join(unknown)}; omit tables for the full declared schema")
+                return sanitize_for_wire({
+                    "tool": "warehouse_schema",
+                    "ok": False,
+                    "error": (
+                        "unknown declared table(s) in tables selection: "
+                        f"{', '.join(unknown)}; omit tables for the full declared schema"
+                    ),
+                    "tables": {},
+                    "columns": [],
+                })
             if not selected:
-                raise ValueError(
-                    "tables selection must name at least one declared table; "
-                    "omit tables for the full declared schema")
+                return sanitize_for_wire({
+                    "tool": "warehouse_schema",
+                    "ok": False,
+                    "error": (
+                        "tables selection must name at least one declared table; "
+                        "omit tables for the full declared schema"
+                    ),
+                    "tables": {},
+                    "columns": [],
+                })
         annotated = annotate_schema(
             {"tables": {name: columns[name] for name in selected}})
         annotated["catalog_scope"] = {
@@ -124,7 +154,9 @@ def catalogue():
             "returned_table_count": len(selected),
             "negative_claim_scope": "returned declared tables and columns only",
         }
-        return annotated
+        annotated["tool"] = "warehouse_schema"
+        annotated["ok"] = True
+        return sanitize_for_wire(annotated)
 
     @tool("get_rapm", description=_orig_get_rapm.description)
     def get_rapm(player: str = "", top: int = 10, season: str | None = None) -> dict:

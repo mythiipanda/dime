@@ -637,6 +637,34 @@ _LIST = [
         qualification="Two teammates; 4-way lineup combination splits (Both ON, A ON / B OFF, B ON / A OFF, Both OFF).",
         coverage="Lineup possession splits from warehouse stint matrix.",
     ),
+    Capability(
+        name="combine",
+        tool_name="get_combine",
+        units={"height_wo_shoes": "inches", "wingspan": "inches", "standing_reach": "inches", "weight": "lbs", "max_vertical": "inches"},
+        qualification="Draft prospect anthropometrics and athletic testing.",
+        coverage="Official NBA Draft Combine measurements and testing drills.",
+    ),
+    Capability(
+        name="draft_board",
+        tool_name="get_draft_board",
+        units={"rank": COUNT, "draft_score": "score", "bpm": "box_plus_minus"},
+        qualification="Blended draft board rankings combining college production and combine testing.",
+        coverage="Consensus prospect board with production and athletic grades.",
+    ),
+    Capability(
+        name="young_player_usage",
+        tool_name="get_young_player_usage",
+        units={"usg_pct": FRACTION, "ts_pct": FRACTION, "minutes": MINUTES},
+        qualification="Usage-rate leaderboard for young players with customizable age ceiling (default 24) and minute floors.",
+        coverage="Player age and minute qualified usage rate leaders.",
+    ),
+    Capability(
+        name="elo_standings",
+        tool_name="get_elo_standings",
+        units={"elo": "rating", "implied_win_pct": FRACTION, "win_equiv": COUNT},
+        qualification="All 30 NBA teams ELO ratings.",
+        coverage="ELO power ratings as standings with implied win probabilities and spreads.",
+    ),
 ]
 
 CAPABILITIES: dict[str, Capability] = {c.name: c for c in _LIST}
@@ -991,6 +1019,10 @@ CAPABILITY_DESCRIPTIONS: dict[str, str] = {
     "rapm": "Regularized adjusted plus-minus (RAPM) ratings per 100 possessions from RidgeCV stint regressions.",
     "playoff_sim": "Simulated championship and finals odds across 16-team Monte Carlo brackets.",
     "wowy": "With-or-without-you four-way lineup combination splits between two teammates.",
+    "combine": "Draft prospect anthropometrics and athletic testing.",
+    "draft_board": "Blended draft board rankings combining college production and combine testing.",
+    "young_player_usage": "Usage-rate leaderboard for young players with customizable age ceiling (default 24) and minute floors.",
+    "elo_standings": "All 30 NBA teams ELO ratings.",
 }
 
 if len(CAPABILITIES) != len(_LIST):
