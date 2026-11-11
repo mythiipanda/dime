@@ -128,6 +128,10 @@ def catalogue():
             get_matchup_brief,
         )
     try:
+        from shared.tools.watchlist import get_watchlist
+    except ImportError:
+        from backend.shared.tools.watchlist import get_watchlist
+    try:
         from shared.tools.zonedelta import get_zone_deltas as _orig_get_zone_deltas
     except ImportError:
         from backend.shared.tools.zonedelta import get_zone_deltas as _orig_get_zone_deltas
@@ -3355,6 +3359,7 @@ def catalogue():
             get_rotation_check,
             get_injury_impact,
             get_matchup_brief,
+            get_watchlist,
         )
     }
     return TOOL_REGISTRY
