@@ -117,6 +117,8 @@ def catalogue():
             get_rotation_check,
             get_injury_impact,
             get_matchup_brief,
+            get_games_on_date,
+            get_boxscore,
         )
     except ImportError:
         from backend.shared.tools.team import (
@@ -126,6 +128,8 @@ def catalogue():
             get_rotation_check,
             get_injury_impact,
             get_matchup_brief,
+            get_games_on_date,
+            get_boxscore,
         )
     try:
         from shared.tools.watchlist import get_watchlist
@@ -3360,6 +3364,8 @@ def catalogue():
             get_injury_impact,
             get_matchup_brief,
             get_watchlist,
+            get_games_on_date,
+            get_boxscore,
         )
     }
     return TOOL_REGISTRY
