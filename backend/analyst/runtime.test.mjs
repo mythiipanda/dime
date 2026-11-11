@@ -197,6 +197,10 @@ test("real Python sql_exec and schema cross MCP into Pi with source semantics an
       "get_draft_board",
       "get_combine",
       "get_young_player_usage",
+      "get_contract_value",
+      "get_trade_check",
+      "get_trade_value",
+      "get_situational_splits",
     ]);
     assert.deepEqual(bridge.tools[0].parameters.required, ["sql"]);
     const setup = await fixture("python", `
@@ -271,7 +275,7 @@ test("real statistical tools cross MCP with anchor compatibility, rows, columns,
   const pid = bridge.pid;
   try {
     const toolMap = new Map(bridge.tools.map(t => [t.name, t]));
-    assert.equal(bridge.tools.length, 32);
+    assert.equal(bridge.tools.length, 36);
 
     // 1. get_rapm
     const rapmTool = toolMap.get("get_rapm");
@@ -539,7 +543,39 @@ test("real statistical tools cross MCP with anchor compatibility, rows, columns,
     assert(Array.isArray(youngPlayerRes.structuredContent.result.rows));
     assert(Array.isArray(youngPlayerRes.structuredContent.result.columns));
 
-    // Verify anchor compatibility across all 30 statistical tools
+    // 31. get_contract_value
+    const contractValueTool = toolMap.get("get_contract_value");
+    assert(contractValueTool);
+    const contractValueRes = await contractValueTool.execute("call-contract-value", { player: "NonexistentPlayer" }, undefined);
+    assert(contractValueRes.structuredContent);
+    assert(Array.isArray(contractValueRes.structuredContent.result.rows));
+    assert(Array.isArray(contractValueRes.structuredContent.result.columns));
+
+    // 32. get_trade_check
+    const tradeCheckTool = toolMap.get("get_trade_check");
+    assert(tradeCheckTool);
+    const tradeCheckRes = await tradeCheckTool.execute("call-trade-check", { team_a: "BOS", team_b: "MIA" }, undefined);
+    assert(tradeCheckRes.structuredContent);
+    assert(Array.isArray(tradeCheckRes.structuredContent.result.rows));
+    assert(Array.isArray(tradeCheckRes.structuredContent.result.columns));
+
+    // 33. get_trade_value
+    const tradeValueTool = toolMap.get("get_trade_value");
+    assert(tradeValueTool);
+    const tradeValueRes = await tradeValueTool.execute("call-trade-value", { team_a: "BOS", team_b: "MIA" }, undefined);
+    assert(tradeValueRes.structuredContent);
+    assert(Array.isArray(tradeValueRes.structuredContent.result.rows));
+    assert(Array.isArray(tradeValueRes.structuredContent.result.columns));
+
+    // 34. get_situational_splits
+    const situationalSplitsTool = toolMap.get("get_situational_splits");
+    assert(situationalSplitsTool);
+    const situationalSplitsRes = await situationalSplitsTool.execute("call-situational-splits", { entity: "LeBron James" }, undefined);
+    assert(situationalSplitsRes.structuredContent);
+    assert(Array.isArray(situationalSplitsRes.structuredContent.result.rows));
+    assert(Array.isArray(situationalSplitsRes.structuredContent.result.columns));
+
+    // Verify anchor compatibility across all 34 statistical tools
     for (const toolName of [
       "get_rapm", "get_game_prediction", "get_wpa_leaders", "get_comps",
       "get_lineup_stats", "get_win_prob", "get_on_off", "get_shot_zones",
@@ -549,7 +585,8 @@ test("real statistical tools cross MCP with anchor compatibility, rows, columns,
       "get_ratings", "get_rookie_leaders", "get_cap_ledger",
       "get_leaders", "get_lineup_leaders", "get_playoffs",
       "get_team_leaders", "get_team_compare", "get_elo_standings",
-      "get_draft_board", "get_combine", "get_young_player_usage"
+      "get_draft_board", "get_combine", "get_young_player_usage",
+      "get_contract_value", "get_trade_check", "get_trade_value", "get_situational_splits"
     ]) {
       const syntheticRecord = {
         ref: `ref-${toolName}`,
@@ -579,7 +616,7 @@ test("real statistical tools cross MCP with anchor compatibility, rows, columns,
       }, (ref) => ref === syntheticRecord.ref ? syntheticRecord : undefined);
       assert.equal(submission.blocks[0].text, `Anchor for ${toolName}`);
     }
-    console.log(JSON.stringify({ proof: "statistical-tools-anchor-compatible", tools: 30 }));
+    console.log(JSON.stringify({ proof: "statistical-tools-anchor-compatible", tools: 34 }));
   } finally {
     await bridge.close();
   }
