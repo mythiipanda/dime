@@ -107,6 +107,20 @@ def catalogue():
             get_shot_compare as _orig_get_shot_compare,
             get_raptor_history as _orig_get_raptor_history,
         )
+    try:
+        from shared.tools.team import (
+            get_season_series as _orig_get_season_series,
+            get_team_game_log as _orig_get_team_game_log,
+        )
+    except ImportError:
+        from backend.shared.tools.team import (
+            get_season_series as _orig_get_season_series,
+            get_team_game_log as _orig_get_team_game_log,
+        )
+    try:
+        from shared.tools.zonedelta import get_zone_deltas as _orig_get_zone_deltas
+    except ImportError:
+        from backend.shared.tools.zonedelta import get_zone_deltas as _orig_get_zone_deltas
     from langchain_core.tools import tool
 
     declared_catalog = ", ".join(TABLES)
@@ -2064,6 +2078,190 @@ def catalogue():
         res["ok"] = True
         return sanitize_for_wire(res)
 
+    @tool("get_season_series", description=_orig_get_season_series.description)
+    def get_season_series(team_a: str, team_b: str, season: str | None = None) -> dict:
+        """Head-to-head between two teams across a season: every meeting (regular season and playoffs) with winner, scores, date, matchup."""
+        cols = ["game_id", "date", "matchup", "phase", "winner"]
+        try:
+            res = _orig_get_season_series.invoke({
+                "team_a": team_a,
+                "team_b": team_b,
+                "season": season,
+            })
+            if not isinstance(res, dict) or not res.get("ok"):
+                err = res.get("error") if isinstance(res, dict) else res
+                return sanitize_for_wire({
+                    "ok": False,
+                    "tool": "get_season_series",
+                    "rows": [],
+                    "columns": cols,
+                    "error": str(err or "Season series lookup failed"),
+                })
+        except Exception as exc:
+            return sanitize_for_wire({
+                "ok": False,
+                "tool": "get_season_series",
+                "rows": [],
+                "columns": cols,
+                "error": str(exc),
+            })
+
+        raw_rows = res.get("rows")
+        raw_list: list[dict] = []
+        if isinstance(raw_rows, dict):
+            if "games" in raw_rows and isinstance(raw_rows["games"], list):
+                raw_list = [r for r in raw_rows["games"] if isinstance(r, dict)]
+            elif "rows" in raw_rows and isinstance(raw_rows["rows"], list):
+                raw_list = [r for r in raw_rows["rows"] if isinstance(r, dict)]
+            else:
+                raw_list = [raw_rows]
+        elif isinstance(raw_rows, list):
+            raw_list = [r for r in raw_rows if isinstance(r, dict)]
+        elif isinstance(res.get("games"), list):
+            raw_list = [r for r in res["games"] if isinstance(r, dict)]
+
+        rows = [
+            {
+                "game_id": r.get("game_id"),
+                "date": r.get("date"),
+                "matchup": r.get("matchup"),
+                "phase": r.get("phase"),
+                "winner": r.get("winner"),
+            }
+            for r in raw_list
+        ]
+        res["rows"] = rows
+        res["columns"] = cols
+        res["ok"] = True
+        return sanitize_for_wire(res)
+
+    @tool("get_team_game_log", description=_orig_get_team_game_log.description)
+    def get_team_game_log(team: str, limit: int = 10, playoffs: bool = False, season: str | None = None) -> dict:
+        """A team's recent games (regular season or playoffs): date, matchup, W/L, team PTS, opp PTS, REB, AST, STL, BLK, TOV."""
+        cols = ["game_id", "date", "matchup", "wl", "pts", "opp_pts", "reb", "ast", "stl", "blk", "tov"]
+        try:
+            res = _orig_get_team_game_log.invoke({
+                "team": team,
+                "limit": limit,
+                "playoffs": playoffs,
+                "season": season,
+            })
+            if not isinstance(res, dict) or not res.get("ok"):
+                err = res.get("error") if isinstance(res, dict) else res
+                return sanitize_for_wire({
+                    "ok": False,
+                    "tool": "get_team_game_log",
+                    "rows": [],
+                    "columns": cols,
+                    "error": str(err or "Team game log lookup failed"),
+                })
+        except Exception as exc:
+            return sanitize_for_wire({
+                "ok": False,
+                "tool": "get_team_game_log",
+                "rows": [],
+                "columns": cols,
+                "error": str(exc),
+            })
+
+        raw_rows = res.get("rows")
+        raw_list: list[dict] = []
+        if isinstance(raw_rows, list):
+            raw_list = [r for r in raw_rows if isinstance(r, dict)]
+        elif isinstance(raw_rows, dict):
+            if "games" in raw_rows and isinstance(raw_rows["games"], list):
+                raw_list = [r for r in raw_rows["games"] if isinstance(r, dict)]
+            elif "rows" in raw_rows and isinstance(raw_rows["rows"], list):
+                raw_list = [r for r in raw_rows["rows"] if isinstance(r, dict)]
+            else:
+                raw_list = [raw_rows]
+        elif isinstance(res.get("games"), list):
+            raw_list = [r for r in res["games"] if isinstance(r, dict)]
+
+        rows = [
+            {
+                "game_id": r.get("game_id") if r.get("game_id") is not None else r.get("Game_ID"),
+                "date": r.get("date") if r.get("date") is not None else r.get("GAME_DATE"),
+                "matchup": r.get("matchup") if r.get("matchup") is not None else r.get("MATCHUP"),
+                "wl": r.get("wl") if r.get("wl") is not None else r.get("WL"),
+                "pts": r.get("pts") if r.get("pts") is not None else r.get("PTS"),
+                "opp_pts": r.get("opp_pts") if r.get("opp_pts") is not None else r.get("OPP_PTS"),
+                "reb": r.get("reb") if r.get("reb") is not None else r.get("REB"),
+                "ast": r.get("ast") if r.get("ast") is not None else r.get("AST"),
+                "stl": r.get("stl") if r.get("stl") is not None else r.get("STL"),
+                "blk": r.get("blk") if r.get("blk") is not None else r.get("BLK"),
+                "tov": r.get("tov") if r.get("tov") is not None else r.get("TOV"),
+            }
+            for r in raw_list
+        ]
+        res["rows"] = rows
+        res["columns"] = cols
+        res["ok"] = True
+        return sanitize_for_wire(res)
+
+    @tool("get_zone_deltas", description=_orig_get_zone_deltas.description)
+    def get_zone_deltas(player: str, season: int | str = 2025, min_attempts: int = 50) -> dict:
+        """Player-vs-league shooting-zone efficiency: per-zone FG% vs pooled league-average FG% with percentage-point deltas across court zones."""
+        cols = ["zone", "attempts", "makes", "fg_pct", "league_fg_pct", "delta_pp", "league_attempts"]
+        try:
+            res = _orig_get_zone_deltas.invoke({
+                "player": player,
+                "season": season,
+                "min_attempts": min_attempts,
+            })
+            if not isinstance(res, dict) or not res.get("ok"):
+                err = res.get("error") if isinstance(res, dict) else res
+                return sanitize_for_wire({
+                    "ok": False,
+                    "tool": "get_zone_deltas",
+                    "rows": [],
+                    "columns": cols,
+                    "error": str(err or "Zone deltas lookup failed"),
+                })
+        except Exception as exc:
+            return sanitize_for_wire({
+                "ok": False,
+                "tool": "get_zone_deltas",
+                "rows": [],
+                "columns": cols,
+                "error": str(exc),
+            })
+
+        raw_rows = res.get("rows")
+        raw_list: list[dict] = []
+        if isinstance(raw_rows, dict):
+            if "zones" in raw_rows and isinstance(raw_rows["zones"], list):
+                raw_list = [r for r in raw_rows["zones"] if isinstance(r, dict)]
+            elif "deltas" in raw_rows and isinstance(raw_rows["deltas"], list):
+                raw_list = [r for r in raw_rows["deltas"] if isinstance(r, dict)]
+            elif "rows" in raw_rows and isinstance(raw_rows["rows"], list):
+                raw_list = [r for r in raw_rows["rows"] if isinstance(r, dict)]
+            else:
+                raw_list = [raw_rows]
+        elif isinstance(raw_rows, list):
+            raw_list = [r for r in raw_rows if isinstance(r, dict)]
+        elif isinstance(res.get("deltas"), list):
+            raw_list = [r for r in res["deltas"] if isinstance(r, dict)]
+        elif isinstance(res.get("zones"), list):
+            raw_list = [r for r in res["zones"] if isinstance(r, dict)]
+
+        rows = [
+            {
+                "zone": r.get("zone"),
+                "attempts": r.get("attempts"),
+                "makes": r.get("makes"),
+                "fg_pct": r.get("fg_pct"),
+                "league_fg_pct": r.get("league_fg_pct"),
+                "delta_pp": r.get("delta_pp"),
+                "league_attempts": r.get("league_attempts"),
+            }
+            for r in raw_list
+        ]
+        res["rows"] = rows
+        res["columns"] = cols
+        res["ok"] = True
+        return sanitize_for_wire(res)
+
     # Deliberately do not export WAREHOUSE_TOOLS, which includes mutators.
     return {
         item.name: item for item in (
@@ -2123,6 +2321,9 @@ def catalogue():
             get_wowy,
             get_shot_compare,
             get_raptor_history,
+            get_season_series,
+            get_team_game_log,
+            get_zone_deltas,
         )
     }
 
