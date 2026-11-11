@@ -65,6 +65,10 @@ const SOURCE_LABELS: Record<string, string> = {
   get_playoff_team_ratings: "Playoff ratings",
   get_player_risers: "Player form trends",
   get_standings_deep: "Deep standings",
+  get_warehouse_freshness: "Warehouse freshness",
+  get_finder: "Historical finder",
+  get_draft_model: "Draft model",
+  get_leaderboard_deltas: "Leaderboard deltas",
 };
 
 function sourceLabel(source?: string) {
