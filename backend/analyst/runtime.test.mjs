@@ -251,6 +251,9 @@ test("real Python sql_exec and schema cross MCP into Pi with source semantics an
       "get_wowy",
       "get_shot_compare",
       "get_raptor_history",
+      "get_season_series",
+      "get_team_game_log",
+      "get_zone_deltas",
     ]);
     assert.deepEqual(bridge.tools[0].parameters.required, ["sql"]);
     const setup = await fixture("python", `
@@ -325,7 +328,7 @@ test("real statistical tools cross MCP with anchor compatibility, rows, columns,
   const pid = bridge.pid;
   try {
     const toolMap = new Map(bridge.tools.map(t => [t.name, t]));
-    assert.equal(bridge.tools.length, 56);
+    assert.equal(bridge.tools.length, 59);
 
     // 1. get_rapm
     const rapmTool = toolMap.get("get_rapm");
@@ -785,7 +788,31 @@ test("real statistical tools cross MCP with anchor compatibility, rows, columns,
     assert(Array.isArray(raptorRes.structuredContent.result.rows));
     assert(Array.isArray(raptorRes.structuredContent.result.columns));
 
-    // Verify anchor compatibility across all 54 statistical tools
+    // 55. get_season_series
+    const seasonSeriesTool = toolMap.get("get_season_series");
+    assert(seasonSeriesTool);
+    const seasonSeriesRes = await seasonSeriesTool.execute("call-season-series", { team_a: "BOS", team_b: "MIA" }, undefined);
+    assert(seasonSeriesRes.structuredContent);
+    assert(Array.isArray(seasonSeriesRes.structuredContent.result.rows));
+    assert(Array.isArray(seasonSeriesRes.structuredContent.result.columns));
+
+    // 56. get_team_game_log
+    const teamGameLogTool = toolMap.get("get_team_game_log");
+    assert(teamGameLogTool);
+    const teamGameLogRes = await teamGameLogTool.execute("call-team-game-log", { team: "BOS", limit: 10 }, undefined);
+    assert(teamGameLogRes.structuredContent);
+    assert(Array.isArray(teamGameLogRes.structuredContent.result.rows));
+    assert(Array.isArray(teamGameLogRes.structuredContent.result.columns));
+
+    // 57. get_zone_deltas
+    const zoneDeltasTool = toolMap.get("get_zone_deltas");
+    assert(zoneDeltasTool);
+    const zoneDeltasRes = await zoneDeltasTool.execute("call-zone-deltas", { player: "LeBron James", season: 2025 }, undefined);
+    assert(zoneDeltasRes.structuredContent);
+    assert(Array.isArray(zoneDeltasRes.structuredContent.result.rows));
+    assert(Array.isArray(zoneDeltasRes.structuredContent.result.columns));
+
+    // Verify anchor compatibility across all 57 statistical tools
     for (const toolName of [
       "get_rapm", "get_game_prediction", "get_wpa_leaders", "get_comps",
       "get_lineup_stats", "get_win_prob", "get_on_off", "get_shot_zones",
@@ -802,7 +829,8 @@ test("real statistical tools cross MCP with anchor compatibility, rows, columns,
       "get_player_ratings", "get_risers", "get_team_four_factors",
       "get_streaks", "get_playtype_profile", "get_defensive_matchups",
       "get_head_to_head", "get_lineup_matchup_matrix", "get_transactions",
-      "get_wowy", "get_shot_compare", "get_raptor_history"
+      "get_wowy", "get_shot_compare", "get_raptor_history",
+      "get_season_series", "get_team_game_log", "get_zone_deltas"
     ]) {
       const syntheticRecord = {
         ref: `ref-${toolName}`,
@@ -832,7 +860,7 @@ test("real statistical tools cross MCP with anchor compatibility, rows, columns,
       }, (ref) => ref === syntheticRecord.ref ? syntheticRecord : undefined);
       assert.equal(submission.blocks[0].text, `Anchor for ${toolName}`);
     }
-    console.log(JSON.stringify({ proof: "statistical-tools-anchor-compatible", tools: 54 }));
+    console.log(JSON.stringify({ proof: "statistical-tools-anchor-compatible", tools: 57 }));
   } finally {
     await bridge.close();
   }
