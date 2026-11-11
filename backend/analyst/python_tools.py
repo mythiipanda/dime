@@ -3095,6 +3095,101 @@ def catalogue():
         res["ok"] = True
         return sanitize_for_wire(res)
 
+    @tool("get_dataset", description="Query the Dime Data Engine for standardized silver analytical datasets (standings, leaders, ratings, injuries, player_gamelogs, team_games, scoreboard, shots, lineups, on_off, wowy, four_factors, hustle, combine, playoffs, draft, raptor, player_seasons).")
+    def get_dataset(
+        name: str,
+        season: str = "2026-27",
+        player_id: int = 0,
+        team_id: int = 0,
+        game_id: str = "",
+        game_date: str = "",
+        stat: str = "PTS",
+        ids: str = "",
+        player_a: str = "",
+        player_b: str = "",
+        fmt: str = "json",
+    ) -> dict:
+        """Query standard silver dataset tables or live upstream extracts."""
+        from analyst.dataset_engine import dataset as _run_dataset
+        try:
+            res = _run_dataset(
+                name=name,
+                season=season,
+                player_id=player_id,
+                team_id=team_id,
+                game_id=game_id,
+                game_date=game_date,
+                stat=stat,
+                ids=ids,
+                player_a=player_a,
+                player_b=player_b,
+                fmt=fmt,
+            )
+            if not isinstance(res, dict) or res.get("ok") is False:
+                err = res.get("error") if isinstance(res, dict) else res
+                return sanitize_for_wire({
+                    "ok": False,
+                    "tool": "get_dataset",
+                    "rows": [],
+                    "columns": [],
+                    "error": str(err or "Dataset query failed"),
+                })
+        except Exception as exc:
+            return sanitize_for_wire({
+                "ok": False,
+                "tool": "get_dataset",
+                "rows": [],
+                "columns": [],
+                "error": str(exc),
+            })
+
+        rows = res.get("data") if isinstance(res.get("data"), list) else res.get("rows", [])
+        if not isinstance(rows, list):
+            rows = []
+        columns = list(rows[0].keys()) if rows and isinstance(rows[0], dict) else []
+        return sanitize_for_wire({
+            "ok": True,
+            "tool": "get_dataset",
+            "name": name,
+            "season": season,
+            "rows": rows,
+            "columns": columns,
+            "meta": res.get("meta", {}),
+        })
+
+    @tool("get_dataset_freshness", description="Query current ingestion freshness and coverage timestamps across all Dime Data Engine silver warehouse tables.")
+    def get_dataset_freshness() -> dict:
+        """Query freshness status across silver warehouse tables."""
+        from analyst.dataset_engine import datasets_freshness as _run_freshness
+        try:
+            res = _run_freshness()
+            if not isinstance(res, dict) or res.get("ok") is False:
+                err = res.get("error") if isinstance(res, dict) else res
+                return sanitize_for_wire({
+                    "ok": False,
+                    "tool": "get_dataset_freshness",
+                    "rows": [],
+                    "columns": ["table", "rows", "last_fetch", "data_through"],
+                    "error": str(err or "Dataset freshness check failed"),
+                })
+        except Exception as exc:
+            return sanitize_for_wire({
+                "ok": False,
+                "tool": "get_dataset_freshness",
+                "rows": [],
+                "columns": ["table", "rows", "last_fetch", "data_through"],
+                "error": str(exc),
+            })
+
+        rows = res.get("rows") if isinstance(res.get("rows"), list) else []
+        cols = ["table", "rows", "last_fetch", "data_through"]
+        return sanitize_for_wire({
+            "ok": True,
+            "tool": "get_dataset_freshness",
+            "rows": rows,
+            "columns": cols,
+        })
+
     # Deliberately do not export WAREHOUSE_TOOLS, which includes mutators.
     return {
         item.name: item for item in (
@@ -3169,6 +3264,8 @@ def catalogue():
             get_rest_advantage,
             get_rapm_prior,
             search_game_logs,
+            get_dataset,
+            get_dataset_freshness,
         )
     }
 

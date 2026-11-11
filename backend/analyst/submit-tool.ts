@@ -78,7 +78,7 @@ export function createSubmitAnswerTool(
     return defineTool({
         name: "submit_answer",
         label: "Submit answer",
-        description: "Submit final prose blocks with optional source selectors and visual artifacts (table, compare, chart, shot_chart). Validates selector traceability against actual rows and columns.",
+        description: "Submit final prose blocks with optional source selectors and visual artifacts (table, compare, chart, shot_chart, scatter). Validates selector traceability against actual rows and columns.",
         parameters: submitAnswerSchema,
         async execute(_callId, args) {
             const sources = getContextSources();
