@@ -146,6 +146,18 @@ def catalogue():
         from shared.tools.history import get_historical_leaders as _orig_get_historical_leaders
     except ImportError:
         from backend.shared.tools.history import get_historical_leaders as _orig_get_historical_leaders
+    try:
+        from shared.tools.today import get_today as _orig_get_today
+    except ImportError:
+        from backend.shared.tools.today import get_today as _orig_get_today
+    try:
+        from shared.tools.today import get_morning_briefing as _orig_get_morning_briefing
+    except ImportError:
+        from backend.shared.tools.today import get_morning_briefing as _orig_get_morning_briefing
+    try:
+        from shared.tools.tracking import get_tracking_profile as _orig_get_tracking_profile
+    except ImportError:
+        from backend.shared.tools.tracking import get_tracking_profile as _orig_get_tracking_profile
 
     declared_catalog = ", ".join(TABLES)
     description = (
@@ -2637,6 +2649,206 @@ def catalogue():
         res["ok"] = True
         return sanitize_for_wire(res)
 
+
+    @tool("get_today", description=_orig_get_today.description)
+    def get_today(season: str | None = None) -> dict:
+        """Today home view: last night's results, tonight's games, leaderboard movers, streaks."""
+        cols = ["category", "home_team", "away_team", "score", "status", "player", "team", "detail"]
+        try:
+            res = _orig_get_today.invoke({"season": season})
+            if not isinstance(res, dict) or not res.get("ok"):
+                err = res.get("error") if isinstance(res, dict) else res
+                return sanitize_for_wire({
+                    "ok": False,
+                    "tool": "get_today",
+                    "rows": [],
+                    "columns": cols,
+                    "error": str(err or "Today home view lookup failed"),
+                })
+        except Exception as exc:
+            return sanitize_for_wire({
+                "ok": False,
+                "tool": "get_today",
+                "rows": [],
+                "columns": cols,
+                "error": str(exc),
+            })
+
+        raw_rows = res.get("rows")
+        rows: list[dict] = []
+        if isinstance(raw_rows, dict):
+            # Flatten last_night, tonight, movers, streaks
+            for g in raw_rows.get("last_night") or []:
+                if isinstance(g, dict):
+                    rows.append({
+                        "category": "last_night",
+                        "home_team": g.get("home_team") or g.get("HOME_TEAM"),
+                        "away_team": g.get("away_team") or g.get("AWAY_TEAM"),
+                        "score": f"{g.get('home_score', '')}-{g.get('away_score', '')}".strip("-"),
+                        "status": "FINAL",
+                        "player": None,
+                        "team": None,
+                        "detail": g.get("matchup") or g.get("MATCHUP"),
+                    })
+            for g in raw_rows.get("tonight") or []:
+                if isinstance(g, dict):
+                    rows.append({
+                        "category": "tonight",
+                        "home_team": g.get("home_team") or g.get("HOME_TEAM"),
+                        "away_team": g.get("away_team") or g.get("AWAY_TEAM"),
+                        "score": None,
+                        "status": g.get("status") or "SCHEDULED",
+                        "player": None,
+                        "team": None,
+                        "detail": g.get("matchup") or g.get("MATCHUP"),
+                    })
+            for m in raw_rows.get("movers") or []:
+                if isinstance(m, dict):
+                    rows.append({
+                        "category": "mover",
+                        "home_team": None,
+                        "away_team": None,
+                        "score": None,
+                        "status": None,
+                        "player": m.get("PLAYER"),
+                        "team": m.get("TEAM"),
+                        "detail": f"{m.get('RANK_CHANGE', '')} rank ({m.get('PTS_CHANGE', '')} pts)".strip(),
+                    })
+            for s in raw_rows.get("streaks") or []:
+                if isinstance(s, dict):
+                    rows.append({
+                        "category": "streak",
+                        "home_team": None,
+                        "away_team": None,
+                        "score": f"{s.get('W', '')}-{s.get('L', '')}".strip("-"),
+                        "status": s.get("STREAK"),
+                        "player": None,
+                        "team": s.get("TEAM"),
+                        "detail": f"{s.get('GAMES', '')} games".strip(),
+                    })
+        elif isinstance(raw_rows, list):
+            rows = [r for r in raw_rows if isinstance(r, dict)]
+
+        res["rows"] = rows
+        res["columns"] = cols
+        res["ok"] = True
+        return sanitize_for_wire(res)
+
+    @tool("get_morning_briefing", description=_orig_get_morning_briefing.description)
+    def get_morning_briefing(season: str | None = None) -> dict:
+        """Morning briefing: today's games, watchlist updates, leaderboard movers."""
+        cols = ["section", "headline", "detail", "team", "player"]
+        try:
+            res = _orig_get_morning_briefing.invoke({"season": season})
+            if not isinstance(res, dict) or not res.get("ok"):
+                err = res.get("error") if isinstance(res, dict) else res
+                return sanitize_for_wire({
+                    "ok": False,
+                    "tool": "get_morning_briefing",
+                    "rows": [],
+                    "columns": cols,
+                    "error": str(err or "Morning briefing lookup failed"),
+                })
+        except Exception as exc:
+            return sanitize_for_wire({
+                "ok": False,
+                "tool": "get_morning_briefing",
+                "rows": [],
+                "columns": cols,
+                "error": str(exc),
+            })
+
+        raw_rows = res.get("rows")
+        rows: list[dict] = []
+        if isinstance(raw_rows, dict):
+            today_data = raw_rows.get("today") or {}
+            if isinstance(today_data, dict):
+                for m in today_data.get("movers") or []:
+                    if isinstance(m, dict):
+                        rows.append({
+                            "section": "movers",
+                            "headline": f"{m.get('PLAYER')} ({m.get('TEAM')})",
+                            "detail": f"{m.get('RANK_CHANGE', '')} rank ({m.get('PTS_CHANGE', '')} pts)",
+                            "team": m.get("TEAM"),
+                            "player": m.get("PLAYER"),
+                        })
+                for s in today_data.get("streaks") or []:
+                    if isinstance(s, dict):
+                        rows.append({
+                            "section": "streaks",
+                            "headline": f"{s.get('TEAM')} {s.get('STREAK')}",
+                            "detail": f"{s.get('W')}-{s.get('L')} record over {s.get('GAMES')} games",
+                            "team": s.get("TEAM"),
+                            "player": None,
+                        })
+            for w in raw_rows.get("watchlist") or []:
+                if isinstance(w, dict):
+                    rows.append({
+                        "section": "watchlist",
+                        "headline": w.get("headline") or w.get("title") or "Watchlist item",
+                        "detail": w.get("detail") or w.get("note"),
+                        "team": w.get("team"),
+                        "player": w.get("player"),
+                    })
+        elif isinstance(raw_rows, list):
+            rows = [r for r in raw_rows if isinstance(r, dict)]
+
+        res["rows"] = rows
+        res["columns"] = cols
+        res["ok"] = True
+        return sanitize_for_wire(res)
+
+    @tool("get_tracking_profile", description=_orig_get_tracking_profile.description)
+    def get_tracking_profile(
+        player: str = "",
+        team: str = "",
+        season: str = "2025-26",
+        measure_type: str = "Drives",
+    ) -> dict:
+        """Player or team tracking profile: drives, shooting, touches, rebounding, speed."""
+        cols = ["subject", "season", "measure_type", "stat", "value"]
+        try:
+            res = _orig_get_tracking_profile.invoke({
+                "player": player,
+                "team": team,
+                "season": season,
+                "measure_type": measure_type,
+            })
+            if not isinstance(res, dict) or not res.get("ok"):
+                err = res.get("error") if isinstance(res, dict) else res
+                return sanitize_for_wire({
+                    "ok": False,
+                    "tool": "get_tracking_profile",
+                    "rows": [],
+                    "columns": cols,
+                    "error": str(err or "Tracking profile lookup failed"),
+                })
+        except Exception as exc:
+            return sanitize_for_wire({
+                "ok": False,
+                "tool": "get_tracking_profile",
+                "rows": [],
+                "columns": cols,
+                "error": str(exc),
+            })
+
+        raw_rows = res.get("rows")
+        raw_list: list[dict] = [r for r in raw_rows if isinstance(r, dict)] if isinstance(raw_rows, list) else []
+        rows = [
+            {
+                "subject": r.get("PLAYER_NAME") or r.get("TEAM_ABBREVIATION") or player or team,
+                "season": season,
+                "measure_type": r.get("measure_type") or measure_type,
+                "stat": r.get("stat") or "overall",
+                "value": r.get("value") or r.get("DRIVES") or r.get("POINTS"),
+            }
+            for r in raw_list
+        ]
+        res["rows"] = rows
+        res["columns"] = cols
+        res["ok"] = True
+        return sanitize_for_wire(res)
+
     # Deliberately do not export WAREHOUSE_TOOLS, which includes mutators.
     return {
         item.name: item for item in (
@@ -2705,6 +2917,9 @@ def catalogue():
             get_elo,
             get_team_shot_zones,
             get_historical_leaders,
+            get_today,
+            get_morning_briefing,
+            get_tracking_profile,
         )
     }
 
