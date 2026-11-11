@@ -72,6 +72,9 @@ const SOURCE_LABELS: Record<string, string> = {
   get_player_ratings: "Player ratings",
   get_risers: "Team risers",
   get_team_four_factors: "Team four factors",
+  get_streaks: "Streaks",
+  get_playtype_profile: "Synergy Play Types",
+  get_defensive_matchups: "Defensive Tracking",
 };
 
 function sourceLabel(source?: string) {

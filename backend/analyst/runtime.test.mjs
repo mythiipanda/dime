@@ -242,6 +242,9 @@ test("real Python sql_exec and schema cross MCP into Pi with source semantics an
       "get_player_ratings",
       "get_risers",
       "get_team_four_factors",
+      "get_streaks",
+      "get_playtype_profile",
+      "get_defensive_matchups",
     ]);
     assert.deepEqual(bridge.tools[0].parameters.required, ["sql"]);
     const setup = await fixture("python", `
@@ -316,7 +319,7 @@ test("real statistical tools cross MCP with anchor compatibility, rows, columns,
   const pid = bridge.pid;
   try {
     const toolMap = new Map(bridge.tools.map(t => [t.name, t]));
-    assert.equal(bridge.tools.length, 47);
+    assert.equal(bridge.tools.length, 50);
 
     // 1. get_rapm
     const rapmTool = toolMap.get("get_rapm");
@@ -704,7 +707,31 @@ test("real statistical tools cross MCP with anchor compatibility, rows, columns,
     assert(Array.isArray(teamFourFactorsRes.structuredContent.result.rows));
     assert(Array.isArray(teamFourFactorsRes.structuredContent.result.columns));
 
-    // Verify anchor compatibility across all 45 statistical tools
+    // 46. get_streaks
+    const streaksTool = toolMap.get("get_streaks");
+    assert(streaksTool);
+    const streaksRes = await streaksTool.execute("call-streaks", { stat: "points" }, undefined);
+    assert(streaksRes.structuredContent);
+    assert(Array.isArray(streaksRes.structuredContent.result.rows));
+    assert(Array.isArray(streaksRes.structuredContent.result.columns));
+
+    // 47. get_playtype_profile
+    const playtypeTool = toolMap.get("get_playtype_profile");
+    assert(playtypeTool);
+    const playtypeRes = await playtypeTool.execute("call-playtype", { subject: "LeBron James" }, undefined);
+    assert(playtypeRes.structuredContent);
+    assert(Array.isArray(playtypeRes.structuredContent.result.rows));
+    assert(Array.isArray(playtypeRes.structuredContent.result.columns));
+
+    // 48. get_defensive_matchups
+    const defMatchupsTool = toolMap.get("get_defensive_matchups");
+    assert(defMatchupsTool);
+    const defMatchupsRes = await defMatchupsTool.execute("call-def-matchups", { player: "LeBron James" }, undefined);
+    assert(defMatchupsRes.structuredContent);
+    assert(Array.isArray(defMatchupsRes.structuredContent.result.rows));
+    assert(Array.isArray(defMatchupsRes.structuredContent.result.columns));
+
+    // Verify anchor compatibility across all 48 statistical tools
     for (const toolName of [
       "get_rapm", "get_game_prediction", "get_wpa_leaders", "get_comps",
       "get_lineup_stats", "get_win_prob", "get_on_off", "get_shot_zones",
@@ -718,7 +745,8 @@ test("real statistical tools cross MCP with anchor compatibility, rows, columns,
       "get_contract_value", "get_trade_check", "get_trade_value", "get_situational_splits",
       "get_playoff_sim", "get_playoff_team_ratings", "get_player_risers", "get_standings_deep",
       "get_warehouse_freshness", "get_finder", "get_draft_model", "get_leaderboard_deltas",
-      "get_player_ratings", "get_risers", "get_team_four_factors"
+      "get_player_ratings", "get_risers", "get_team_four_factors",
+      "get_streaks", "get_playtype_profile", "get_defensive_matchups"
     ]) {
       const syntheticRecord = {
         ref: `ref-${toolName}`,
@@ -748,7 +776,7 @@ test("real statistical tools cross MCP with anchor compatibility, rows, columns,
       }, (ref) => ref === syntheticRecord.ref ? syntheticRecord : undefined);
       assert.equal(submission.blocks[0].text, `Anchor for ${toolName}`);
     }
-    console.log(JSON.stringify({ proof: "statistical-tools-anchor-compatible", tools: 45 }));
+    console.log(JSON.stringify({ proof: "statistical-tools-anchor-compatible", tools: 48 }));
   } finally {
     await bridge.close();
   }

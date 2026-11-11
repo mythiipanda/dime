@@ -79,6 +79,9 @@ def catalogue():
         get_shot_zones as _orig_get_shot_zones,
     )
     from shared.tools.lineup import get_lineup_stats as _orig_get_lineup_stats
+    from shared.tools.streaks import get_streaks as _orig_get_streaks
+    from shared.tools.playtypes import get_playtype_profile as _orig_get_playtype_profile
+    from shared.tools.tracking import get_defensive_matchups as _orig_get_defensive_matchups
     from shared.tools.award_results import get_award_results as _orig_get_award_results
     from langchain_core.tools import tool
 
@@ -1539,6 +1542,166 @@ def catalogue():
         res["ok"] = bool(res.get("ok", False))
         return sanitize_for_wire(res)
 
+
+    @tool("get_streaks", description=_orig_get_streaks.description)
+    def get_streaks(stat: str = "points", threshold: float | None = None, scope: str = "player", season: str | None = None, mode: str = "longest", top: int = 10) -> dict:
+        """Longest or currently-active streaks, ranked league-wide."""
+        try:
+            res = _orig_get_streaks.invoke({
+                "stat": stat,
+                "threshold": threshold,
+                "scope": scope,
+                "season": season,
+                "mode": mode,
+                "top": top,
+            })
+            if not isinstance(res, dict) or not res.get("ok"):
+                err = res.get("error") if isinstance(res, dict) else res
+                return sanitize_for_wire({
+                    "ok": False,
+                    "tool": "get_streaks",
+                    "rows": [],
+                    "columns": ["holder", "streak", "start_date", "end_date", "active"],
+                    "error": str(err or "Streak lookup failed"),
+                })
+        except Exception as exc:
+            return sanitize_for_wire({
+                "ok": False,
+                "tool": "get_streaks",
+                "rows": [],
+                "columns": ["holder", "streak", "start_date", "end_date", "active"],
+                "error": str(exc),
+            })
+
+        raw_rows = res.get("rows")
+        if isinstance(raw_rows, dict):
+            raw_list = raw_rows.get("streaks", [])
+        elif isinstance(raw_rows, list):
+            raw_list = raw_rows
+        else:
+            raw_list = []
+        rows = [
+            {
+                "holder": r.get("holder"),
+                "holder_id": r.get("holder_id"),
+                "streak": r.get("streak"),
+                "start_date": r.get("start_date"),
+                "end_date": r.get("end_date"),
+                "active": r.get("active"),
+            }
+            for r in raw_list
+            if isinstance(r, dict)
+        ]
+        res["rows"] = rows
+        res["columns"] = ["holder", "streak", "start_date", "end_date", "active"]
+        res["ok"] = True
+        return sanitize_for_wire(res)
+
+    @tool("get_playtype_profile", description=_orig_get_playtype_profile.description)
+    def get_playtype_profile(subject: str, kind: str = "player", side: str = "offense", season: str | None = None) -> dict:
+        """Synergy play-type profile for one player or team and season: frequency share, PPP, and percentile."""
+        try:
+            res = _orig_get_playtype_profile.invoke({
+                "subject": subject,
+                "kind": kind,
+                "side": side,
+                "season": season,
+            })
+            if not isinstance(res, dict) or not res.get("ok"):
+                err = res.get("error") if isinstance(res, dict) else res
+                return sanitize_for_wire({
+                    "ok": False,
+                    "tool": "get_playtype_profile",
+                    "rows": [],
+                    "columns": ["play_type", "poss_pct", "ppp", "percentile", "gp", "poss"],
+                    "error": str(err or "Playtype profile lookup failed"),
+                })
+        except Exception as exc:
+            return sanitize_for_wire({
+                "ok": False,
+                "tool": "get_playtype_profile",
+                "rows": [],
+                "columns": ["play_type", "poss_pct", "ppp", "percentile", "gp", "poss"],
+                "error": str(exc),
+            })
+
+        raw_rows = res.get("rows")
+        if isinstance(raw_rows, dict):
+            raw_list = raw_rows.get("play_types", [])
+            subject_val = raw_rows.get("subject", subject)
+            rows = [
+                {
+                    "subject": subject_val,
+                    "play_type": pt.get("play_type"),
+                    "poss_pct": pt.get("poss_pct"),
+                    "ppp": pt.get("ppp"),
+                    "percentile": pt.get("percentile"),
+                    "gp": pt.get("gp"),
+                    "poss": pt.get("poss"),
+                }
+                for pt in raw_list
+                if isinstance(pt, dict)
+            ]
+        elif isinstance(raw_rows, list):
+            rows = [
+                {
+                    "subject": pt.get("subject", subject),
+                    "play_type": pt.get("play_type"),
+                    "poss_pct": pt.get("poss_pct"),
+                    "ppp": pt.get("ppp"),
+                    "percentile": pt.get("percentile"),
+                    "gp": pt.get("gp"),
+                    "poss": pt.get("poss"),
+                }
+                for pt in raw_rows
+                if isinstance(pt, dict)
+            ]
+        else:
+            rows = []
+        res["rows"] = rows
+        res["columns"] = ["play_type", "poss_pct", "ppp", "percentile", "gp", "poss"]
+        res["ok"] = True
+        return sanitize_for_wire(res)
+
+    @tool("get_defensive_matchups", description=_orig_get_defensive_matchups.description)
+    def get_defensive_matchups(player: str = "", season: str = "2025-26") -> dict:
+        """One defender's defended-shot profile: frequency and shooter results."""
+        try:
+            res = _orig_get_defensive_matchups.invoke({
+                "player": player,
+                "season": season,
+            })
+            if not isinstance(res, dict) or not res.get("ok"):
+                err = res.get("error") if isinstance(res, dict) else res
+                return sanitize_for_wire({
+                    "ok": False,
+                    "tool": "get_defensive_matchups",
+                    "rows": [],
+                    "columns": ["PLAYER_NAME", "GP", "FREQ", "D_FGM", "D_FGA", "D_FG_PCT", "NORMAL_FG_PCT", "PCT_PLUSMINUS"],
+                    "error": str(err or "Defensive matchups lookup failed"),
+                })
+        except Exception as exc:
+            return sanitize_for_wire({
+                "ok": False,
+                "tool": "get_defensive_matchups",
+                "rows": [],
+                "columns": ["PLAYER_NAME", "GP", "FREQ", "D_FGM", "D_FGA", "D_FG_PCT", "NORMAL_FG_PCT", "PCT_PLUSMINUS"],
+                "error": str(exc),
+            })
+
+        default_cols = ["PLAYER_NAME", "GP", "FREQ", "D_FGM", "D_FGA", "D_FG_PCT", "NORMAL_FG_PCT", "PCT_PLUSMINUS"]
+        raw_rows = res.get("rows")
+        if isinstance(raw_rows, list):
+            rows = [r for r in raw_rows if isinstance(r, dict)]
+        elif isinstance(raw_rows, dict):
+            rows = [raw_rows]
+        else:
+            rows = []
+        res["rows"] = rows
+        res["columns"] = default_cols
+        res["ok"] = True
+        return sanitize_for_wire(res)
+
     # Deliberately do not export WAREHOUSE_TOOLS, which includes mutators.
     return {
         item.name: item for item in (
@@ -1589,6 +1752,9 @@ def catalogue():
             get_player_ratings,
             get_risers,
             get_team_four_factors,
+            get_streaks,
+            get_playtype_profile,
+            get_defensive_matchups,
         )
     }
 
