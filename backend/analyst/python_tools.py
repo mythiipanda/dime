@@ -2217,7 +2217,13 @@ def catalogue():
                    "error": f"{type(exc).__name__}: {exc}"}
 
         raw_rows = res.get("rows")
-        if res.get("ok") and isinstance(raw_rows, list):
+        if res.get("ok") and not isinstance(raw_rows, list):
+            res["ok"] = False
+            res.setdefault(
+                "error",
+                f"get_last_x returned {type(raw_rows).__name__} rows, expected a list",
+            )
+        if res.get("ok"):
             rows = [r for r in raw_rows if isinstance(r, dict)]
         else:
             rows = []

@@ -16,7 +16,8 @@ sys.path.insert(0, str(BACKEND / "analyst"))
 
 from analyst import python_tools  # noqa: E402
 
-AWARD_COLS = ["rank", "player", "team", "score"]
+AWARD_COLS = ["rank", "player", "team", "score", "drivers", "case_for", "case_against"]
+AWARD_DEFAULT_COLS = ["rank", "player", "team", "score"]
 LAST_X_COLS = ["GAME_DATE", "MATCHUP", "PTS", "REB", "AST", "MIN"]
 
 
@@ -60,8 +61,24 @@ def test_award_race_flattens_candidates_to_rows_array(monkeypatch):
             "ok": True,
             "rows": {
                 "candidates": [
-                    {"rank": 1, "player": "A. Star", "team": "BOS", "score": 1.42},
-                    {"rank": 2, "player": "B. Buck", "team": "DEN", "score": 1.10},
+                    {
+                        "rank": 1,
+                        "player": "A. Star",
+                        "team": "BOS",
+                        "score": 1.42,
+                        "drivers": [{"stat": "PTS", "value": 30.1, "z": 2.4}],
+                        "case_for": "leads the pool in PTS at 30.1",
+                        "case_against": "weakest edge is AST (6.0 vs pool avg 7.5)",
+                    },
+                    {
+                        "rank": 2,
+                        "player": "B. Buck",
+                        "team": "DEN",
+                        "score": 1.10,
+                        "drivers": [{"stat": "REB", "value": 12.0, "z": 1.9}],
+                        "case_for": "strongest edge is REB at 12.0 (z +1.90)",
+                        "case_against": "weakest edge is FT% (0.71 vs pool avg 0.80)",
+                    },
                 ]
             },
             "meta": {
@@ -78,6 +95,7 @@ def test_award_race_flattens_candidates_to_rows_array(monkeypatch):
     assert res["ok"] is True
     assert isinstance(res["rows"], list)
     assert [row["player"] for row in res["rows"]] == ["A. Star", "B. Buck"]
+    assert list(res["rows"][0].keys()) == AWARD_COLS
     assert res["columns"] == AWARD_COLS
     assert res["meta"]["score_unit"] == "weighted_z_score"
     assert res["meta"]["results_tool"] == "get_award_results"
@@ -101,7 +119,7 @@ def test_award_race_unknown_award_returns_empty_rows_array(monkeypatch):
 
     assert res["ok"] is False
     assert res["rows"] == []
-    assert res["columns"] == AWARD_COLS
+    assert res["columns"] == AWARD_DEFAULT_COLS
     assert res["error"] == "unknown award"
 
 
@@ -149,6 +167,26 @@ def test_last_x_keeps_game_rows_and_columns(monkeypatch):
     assert fake.calls[0]["n"] == 5
     assert fake.calls[0]["season"] == "2024-25"
     assert str(fake.calls[0]["player_id"]) == "2544"
+
+
+def test_last_x_dict_rows_fail_instead_of_empty_success(monkeypatch):
+    fake = _FakeTool(
+        "Last n games for one player id, most recent first.",
+        result={
+            "tool": "get_last_x",
+            "ok": True,
+            "rows": {"GAME_DATE": "2026-01-05", "PTS": 30},
+            "meta": {"source": "warehouse"},
+        },
+    )
+    tools = _catalogue(monkeypatch, last_x=fake)
+
+    res = _invoke(tools["get_last_x"], {"player_id": 2544})
+
+    assert res["ok"] is False
+    assert res["rows"] == []
+    assert res["columns"] == LAST_X_COLS
+    assert res["error"] == "get_last_x returned dict rows, expected a list"
 
 
 def test_last_x_upstream_error_returns_rows_array(monkeypatch):
