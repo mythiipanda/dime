@@ -1,11 +1,3 @@
-"""Analyst-boundary contract for the matchup, availability and SQL tools.
-
-These shared tools return dict-shaped rows. submit_answer rejects a source ref
-whose rows payload is not a list, so each section is flattened into
-self-describing rows at the analyst boundary and every failure path still
-returns an array.
-"""
-
 import asyncio
 import importlib
 import re
@@ -18,6 +10,8 @@ sys.path.insert(0, str(BACKEND / "analyst"))
 
 from analyst import python_tools  # noqa: E402
 
+SECTION_COLUMNS = ["section"]
+
 SECTIONED = (
     {
         "name": "get_matchup_brief",
@@ -25,10 +19,6 @@ SECTIONED = (
         "attribute": "get_matchup_brief",
         "arguments": {"a": "BOS", "b": "LAL", "season": "2025-26"},
         "description": "Two-team matchup brief with ratings, form, injuries, season series, and win probability.",
-        "default_columns": [
-            "section", "teams", "ratings_provenance", "ratings", "form",
-            "injuries", "season_series", "prediction",
-        ],
         "upstream_rows": {
             "teams": ["BOS", "LAL"],
             "ratings_provenance": {"kind": "warehouse", "source": "silver_ratings"},
@@ -56,11 +46,6 @@ SECTIONED = (
         "attribute": "get_matchup_preview",
         "arguments": {"a": "BOS", "b": "LAL", "game_date": "", "season": "2025-26"},
         "description": "Narrative preview of a scheduled NBA game.",
-        "default_columns": [
-            "section", "game", "form", "matchups", "injuries", "xfactors",
-            "why_watch", "already_played", "game_id", "date", "matchup",
-            "score", "suggestion",
-        ],
         "upstream_rows": {
             "game": {"game_id": "0022400101", "date": "2026-01-05",
                      "home": "BOS", "away": "LAL", "arena": "TD Garden"},
@@ -78,7 +63,6 @@ SECTIONED = (
         "attribute": "get_scout_pack",
         "arguments": {"team": "BOS", "opponent": "LAL", "season": "2025-26"},
         "description": "One-call next-opponent brief: record, net rating, top lineups, injuries.",
-        "default_columns": ["section", "team", "opponent", "edge"],
         "upstream_rows": {
             "team": {
                 "abbrev": "BOS",
@@ -103,10 +87,6 @@ SECTIONED = (
         "attribute": "get_injury_impact",
         "arguments": {"team": "BOS", "season": "2025-26"},
         "description": "Injury impact in one call: outs, net rating, last-10, heuristic impact.",
-        "default_columns": [
-            "section", "team", "out", "questionable", "availability_known",
-            "net_rating", "net_rank", "last10", "impact",
-        ],
         "upstream_rows": {
             "team": "BOS",
             "out": ["A. Star", "D. Wing"],
@@ -125,11 +105,6 @@ SECTIONED = (
         "arguments": {"team": "BOS", "season": "2025-26",
                       "min_possessions": 100, "top_units": 5},
         "description": "Rotation and closing-unit check from warehouse five-man units, minutes, and cached on/off.",
-        "default_columns": [
-            "section", "team", "coverage", "tiers", "starter_bench_split",
-            "most_used_unit", "closing_candidates", "thin_flags",
-            "clutch_context",
-        ],
         "upstream_rows": {
             "team": {"id": 1610612747, "abbrev": "BOS"},
             "coverage": {"season": "2025-26", "units": 12, "total_unit_poss": 2400},
@@ -147,10 +122,6 @@ SECTIONED = (
         "attribute": "get_matchup_splits",
         "arguments": {"player": "A. Star", "n": 15, "season": "2025-26"},
         "description": "Situational splits over the last N games: defense tier, home/away, rest.",
-        "default_columns": [
-            "section", "player", "player_id", "window_games", "splits",
-            "defense_splits",
-        ],
         "upstream_rows": {
             "player": "A. Star",
             "player_id": 424242,
@@ -170,11 +141,6 @@ SECTIONED = (
         "arguments": {"player": "A. Star", "stat": "PTS", "n": 10,
                       "season": "2025-26"},
         "description": "Sustainability check on a hot stat line: window vs season plus drivers.",
-        "default_columns": [
-            "section", "player", "player_id", "stat", "window_n", "window",
-            "season", "career", "drivers", "drivers_all", "verdict",
-            "verdict_note",
-        ],
         "upstream_rows": {
             "player": "A. Star",
             "player_id": 424242,
@@ -215,8 +181,6 @@ SQL_EXEC = {
 
 
 class _FakeTool:
-    """Stand-in for a langchain tool invoked by the analyst wrappers."""
-
     def __init__(self, description: str, result=None, exc: Exception | None = None):
         self.description = description
         self._result = result
@@ -234,7 +198,6 @@ class _FakeTool:
 
 
 def _catalogue(monkeypatch, stubs: dict[tuple[str, str], object]):
-    """Rebuild the analyst catalogue over stubbed shared tools."""
     for (module_name, attribute), stub in stubs.items():
         module = importlib.import_module(module_name)
         monkeypatch.setattr(module, attribute, stub)
@@ -255,7 +218,6 @@ def _holds(row: dict, key: str, expected) -> bool:
 
 
 def _assert_reachable(rows: list[dict], upstream: dict):
-    """Every upstream value must survive in exactly one emitted row."""
     by_section: dict[str, list[dict]] = {}
     for row in rows:
         by_section.setdefault(row["section"], []).append(row)
@@ -320,6 +282,19 @@ def test_sectioned_success_keeps_every_upstream_value(monkeypatch):
         assert res["columns"] == list(res["rows"][0].keys()), spec["name"]
 
 
+def test_sectioned_columns_are_emitted_row_keys(monkeypatch):
+    for spec in SECTIONED:
+        fake = _stub(spec, result=_upstream_ok(spec))
+        tools = _catalogue(monkeypatch, {(spec["module"], spec["attribute"]): fake})
+
+        res = _invoke(tools[spec["name"]], spec["arguments"])
+
+        emitted_keys = {key for row in res["rows"] for key in row}
+        assert set(res["columns"]) <= emitted_keys, spec["name"]
+        assert not set(res["columns"]) & set(spec["upstream_rows"]), spec["name"]
+        assert "section" in res["columns"], spec["name"]
+
+
 def test_sectioned_empty_rows_returns_rows_array(monkeypatch):
     for spec in SECTIONED:
         fake = _stub(spec, result={"tool": spec["name"], "ok": True, "rows": {}})
@@ -329,7 +304,8 @@ def test_sectioned_empty_rows_returns_rows_array(monkeypatch):
 
         assert res["ok"] is True, spec["name"]
         assert res["rows"] == [], spec["name"]
-        assert res["columns"] == spec["default_columns"], spec["name"]
+        assert res["columns"] == SECTION_COLUMNS, spec["name"]
+        assert not set(res["columns"]) & set(spec["upstream_rows"]), spec["name"]
 
 
 def test_sectioned_upstream_error_returns_rows_array(monkeypatch):
@@ -348,7 +324,8 @@ def test_sectioned_upstream_error_returns_rows_array(monkeypatch):
         assert res["ok"] is False, spec["name"]
         assert res["rows"] == [], spec["name"]
         assert isinstance(res["columns"], list), spec["name"]
-        assert res["columns"] == spec["default_columns"], spec["name"]
+        assert res["columns"] == SECTION_COLUMNS, spec["name"]
+        assert not set(res["columns"]) & set(spec["upstream_rows"]), spec["name"]
         assert res["error"] == "upstream refused the request", spec["name"]
         assert res["meta"]["source"] == "warehouse", spec["name"]
 
@@ -363,9 +340,27 @@ def test_sectioned_upstream_exception_becomes_structured_error(monkeypatch):
         assert res["ok"] is False, spec["name"]
         assert res["rows"] == [], spec["name"]
         assert isinstance(res["columns"], list), spec["name"]
-        assert res["columns"] == spec["default_columns"], spec["name"]
+        assert res["columns"] == SECTION_COLUMNS, spec["name"]
         assert res["error"] == "RuntimeError: warehouse unavailable", spec["name"]
         assert res["tool"] == spec["name"], spec["name"]
+
+
+def test_sectioned_non_section_rows_becomes_actionable_error(monkeypatch):
+    for spec in SECTIONED:
+        fake = _stub(spec, result={
+            "tool": spec["name"],
+            "ok": True,
+            "rows": [{"section": "rows"}],
+            "meta": {"source": "warehouse"},
+        })
+        tools = _catalogue(monkeypatch, {(spec["module"], spec["attribute"]): fake})
+
+        res = _invoke(tools[spec["name"]], spec["arguments"])
+
+        assert res["ok"] is False, spec["name"]
+        assert res["rows"] == [], spec["name"]
+        assert res["columns"] == SECTION_COLUMNS, spec["name"]
+        assert "expected a section object" in res["error"], spec["name"]
 
 
 def test_sql_exec_success_keeps_rows_and_columns(monkeypatch):
@@ -417,6 +412,58 @@ def test_sql_exec_exception_becomes_structured_error(monkeypatch):
     assert res["rows"] == []
     assert isinstance(res["columns"], list)
     assert res["error"] == "RuntimeError: warehouse unavailable"
+
+
+def test_sql_exec_non_list_rows_becomes_actionable_error(monkeypatch):
+    fake = _stub(SQL_EXEC, result={
+        "tool": "sql_exec",
+        "ok": True,
+        "rows": {"n": 12},
+        "columns": ["n"],
+        "meta": {"source": "warehouse"},
+        "error": "upstream query shape changed",
+    })
+    tools = _catalogue(monkeypatch, {(SQL_EXEC["module"], SQL_EXEC["attribute"]): fake})
+
+    res = _invoke(tools["sql_exec"], SQL_EXEC["arguments"])
+
+    assert res["ok"] is False
+    assert res["rows"] == []
+    assert res["columns"] == []
+    assert res["error"].startswith("upstream query shape changed; "), res["error"]
+    assert "sql_exec returned dict rows, expected a list" in res["error"]
+
+
+def test_sql_exec_missing_rows_becomes_actionable_error(monkeypatch):
+    fake = _stub(SQL_EXEC, result={
+        "tool": "sql_exec",
+        "ok": True,
+        "meta": {"source": "warehouse"},
+    })
+    tools = _catalogue(monkeypatch, {(SQL_EXEC["module"], SQL_EXEC["attribute"]): fake})
+
+    res = _invoke(tools["sql_exec"], SQL_EXEC["arguments"])
+
+    assert res["ok"] is False
+    assert res["rows"] == []
+    assert res["columns"] == []
+    assert res["error"] == "sql_exec returned NoneType rows, expected a list"
+
+
+def test_sql_exec_keeps_non_dict_rows_under_value(monkeypatch):
+    fake = _stub(SQL_EXEC, result={
+        "tool": "sql_exec",
+        "ok": True,
+        "rows": [{"n": 12}, "extra", 7],
+        "meta": {"source": "warehouse"},
+    })
+    tools = _catalogue(monkeypatch, {(SQL_EXEC["module"], SQL_EXEC["attribute"]): fake})
+
+    res = _invoke(tools["sql_exec"], SQL_EXEC["arguments"])
+
+    assert res["ok"] is True
+    assert res["rows"] == [{"n": 12}, {"value": "extra"}, {"value": 7}]
+    assert res["columns"] == ["n"]
 
 
 def test_registry_matches_the_typescript_tool_names(monkeypatch):

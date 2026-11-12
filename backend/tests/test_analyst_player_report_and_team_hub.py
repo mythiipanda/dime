@@ -1,11 +1,3 @@
-"""Analyst-boundary contract for the player report and team hub tools.
-
-Both shared tools return dict-shaped rows. submit_answer rejects a source ref
-whose rows payload is not a list, so each section is flattened into
-self-describing rows at the analyst boundary and every failure path still
-returns an array.
-"""
-
 import asyncio
 import sys
 from pathlib import Path
@@ -63,8 +55,6 @@ TEAM_DEFAULT_COLS = ["section", "PLAYER", "TEAM", "AGE", "GP", "PPG", "RPG", "AP
 
 
 class _FakeTool:
-    """Stand-in for a langchain tool invoked by the analyst wrappers."""
-
     def __init__(self, description: str, result=None, exc: Exception | None = None):
         self.description = description
         self._result = result
@@ -79,7 +69,6 @@ class _FakeTool:
 
 
 def _catalogue(monkeypatch, *, report=None, hub=None):
-    """Rebuild the analyst catalogue over stubbed shared tools."""
     import shared.tools.player as player
     import shared.tools.team as team
 

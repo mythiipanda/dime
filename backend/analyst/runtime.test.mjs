@@ -977,6 +977,12 @@ test("real statistical tools cross MCP with anchor compatibility, rows, columns,
     const matchupPreviewRes = await matchupPreviewTool.execute("call-matchup-preview", { a: "BOS", b: "MIA" }, undefined);
     assert(matchupPreviewRes.structuredContent);
     assert.equal(matchupPreviewRes.structuredContent.tool, "get_matchup_preview");
+    assert(Array.isArray(matchupPreviewRes.structuredContent.result.rows), "matchup preview rows must be an array so the answer can cite it");
+    assert(Array.isArray(matchupPreviewRes.structuredContent.result.columns), "matchup preview columns must be an array");
+    assert(matchupPreviewRes.structuredContent.result.columns.includes("section"), "matchup preview columns must describe the emitted section key");
+    for (const row of matchupPreviewRes.structuredContent.result.rows) {
+      assert(row && typeof row === "object" && Object.hasOwn(row, "section"), "matchup preview row must be an object with a section key");
+    }
 
     // 75. get_matchup_splits
     const matchupSplitsTool = toolMap.get("get_matchup_splits");
@@ -985,6 +991,12 @@ test("real statistical tools cross MCP with anchor compatibility, rows, columns,
     const matchupSplitsRes = await matchupSplitsTool.execute("call-matchup-splits", { player: "LeBron James" }, undefined);
     assert(matchupSplitsRes.structuredContent);
     assert.equal(matchupSplitsRes.structuredContent.tool, "get_matchup_splits");
+    assert(Array.isArray(matchupSplitsRes.structuredContent.result.rows), "matchup splits rows must be an array so the answer can cite it");
+    assert(Array.isArray(matchupSplitsRes.structuredContent.result.columns), "matchup splits columns must be an array");
+    assert(matchupSplitsRes.structuredContent.result.columns.includes("section"), "matchup splits columns must describe the emitted section key");
+    for (const row of matchupSplitsRes.structuredContent.result.rows) {
+      assert(row && typeof row === "object" && Object.hasOwn(row, "section"), "matchup splits row must be an object with a section key");
+    }
 
     // 76. get_regression_check
     const regressionCheckTool = toolMap.get("get_regression_check");
@@ -993,6 +1005,12 @@ test("real statistical tools cross MCP with anchor compatibility, rows, columns,
     const regressionCheckRes = await regressionCheckTool.execute("call-regression-check", { player: "LeBron James" }, undefined);
     assert(regressionCheckRes.structuredContent);
     assert.equal(regressionCheckRes.structuredContent.tool, "get_regression_check");
+    assert(Array.isArray(regressionCheckRes.structuredContent.result.rows), "regression check rows must be an array so the answer can cite it");
+    assert(Array.isArray(regressionCheckRes.structuredContent.result.columns), "regression check columns must be an array");
+    assert(regressionCheckRes.structuredContent.result.columns.includes("section"), "regression check columns must describe the emitted section key");
+    for (const row of regressionCheckRes.structuredContent.result.rows) {
+      assert(row && typeof row === "object" && Object.hasOwn(row, "section"), "regression check row must be an object with a section key");
+    }
 
     // 77. get_scout_pack
     const scoutPackTool = toolMap.get("get_scout_pack");
@@ -1001,6 +1019,12 @@ test("real statistical tools cross MCP with anchor compatibility, rows, columns,
     const scoutPackRes = await scoutPackTool.execute("call-scout-pack", { team: "BOS", opponent: "MIA" }, undefined);
     assert(scoutPackRes.structuredContent);
     assert.equal(scoutPackRes.structuredContent.tool, "get_scout_pack");
+    assert(Array.isArray(scoutPackRes.structuredContent.result.rows), "scout pack rows must be an array so the answer can cite it");
+    assert(Array.isArray(scoutPackRes.structuredContent.result.columns), "scout pack columns must be an array");
+    assert(scoutPackRes.structuredContent.result.columns.includes("section"), "scout pack columns must describe the emitted section key");
+    for (const row of scoutPackRes.structuredContent.result.rows) {
+      assert(row && typeof row === "object" && Object.hasOwn(row, "section"), "scout pack row must be an object with a section key");
+    }
 
     // 78. get_rotation_check
     const rotationCheckTool = toolMap.get("get_rotation_check");
@@ -1009,6 +1033,12 @@ test("real statistical tools cross MCP with anchor compatibility, rows, columns,
     const rotationCheckRes = await rotationCheckTool.execute("call-rotation-check", { team: "BOS" }, undefined);
     assert(rotationCheckRes.structuredContent);
     assert.equal(rotationCheckRes.structuredContent.tool, "get_rotation_check");
+    assert(Array.isArray(rotationCheckRes.structuredContent.result.rows), "rotation check rows must be an array so the answer can cite it");
+    assert(Array.isArray(rotationCheckRes.structuredContent.result.columns), "rotation check columns must be an array");
+    assert(rotationCheckRes.structuredContent.result.columns.includes("section"), "rotation check columns must describe the emitted section key");
+    for (const row of rotationCheckRes.structuredContent.result.rows) {
+      assert(row && typeof row === "object" && Object.hasOwn(row, "section"), "rotation check row must be an object with a section key");
+    }
 
     // 79. get_injury_impact
     const injuryImpactTool = toolMap.get("get_injury_impact");
@@ -1017,6 +1047,12 @@ test("real statistical tools cross MCP with anchor compatibility, rows, columns,
     const injuryImpactRes = await injuryImpactTool.execute("call-injury-impact", { team: "BOS" }, undefined);
     assert(injuryImpactRes.structuredContent);
     assert.equal(injuryImpactRes.structuredContent.tool, "get_injury_impact");
+    assert(Array.isArray(injuryImpactRes.structuredContent.result.rows), "injury impact rows must be an array so the answer can cite it");
+    assert(Array.isArray(injuryImpactRes.structuredContent.result.columns), "injury impact columns must be an array");
+    assert(injuryImpactRes.structuredContent.result.columns.includes("section"), "injury impact columns must describe the emitted section key");
+    for (const row of injuryImpactRes.structuredContent.result.rows) {
+      assert(row && typeof row === "object" && Object.hasOwn(row, "section"), "injury impact row must be an object with a section key");
+    }
 
     // 80. get_matchup_brief
     const matchupBriefTool = toolMap.get("get_matchup_brief");
@@ -1025,6 +1061,12 @@ test("real statistical tools cross MCP with anchor compatibility, rows, columns,
     const matchupBriefRes = await matchupBriefTool.execute("call-matchup-brief", { a: "BOS", b: "MIA" }, undefined);
     assert(matchupBriefRes.structuredContent);
     assert.equal(matchupBriefRes.structuredContent.tool, "get_matchup_brief");
+    assert(Array.isArray(matchupBriefRes.structuredContent.result.rows), "matchup brief rows must be an array so the answer can cite it");
+    assert(Array.isArray(matchupBriefRes.structuredContent.result.columns), "matchup brief columns must be an array");
+    assert(matchupBriefRes.structuredContent.result.columns.includes("section"), "matchup brief columns must describe the emitted section key");
+    for (const row of matchupBriefRes.structuredContent.result.rows) {
+      assert(row && typeof row === "object" && Object.hasOwn(row, "section"), "matchup brief row must be an object with a section key");
+    }
 
     // 81. get_watchlist
     const watchlistTool = toolMap.get("get_watchlist");

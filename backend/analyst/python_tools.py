@@ -235,15 +235,23 @@ def catalogue():
                    "error": f"{type(exc).__name__}: {exc}"}
 
         rows = res.get("rows")
-        if res.get("ok") and isinstance(rows, list):
-            rows = [r for r in rows if isinstance(r, dict)]
-            cols = res.get("columns")
-            res["rows"] = rows
-            res["columns"] = (cols if isinstance(cols, list)
-                              else list(rows[0].keys()) if rows else [])
-        else:
+        if not res.get("ok"):
             res["rows"] = []
             res["columns"] = []
+        elif not isinstance(rows, list):
+            res["ok"] = False
+            message = f"sql_exec returned {type(rows).__name__} rows, expected a list"
+            upstream_error = res.get("error")
+            res["error"] = (f"{upstream_error}; {message}"
+                            if isinstance(upstream_error, str) and upstream_error
+                            else message)
+            res["rows"] = []
+            res["columns"] = []
+        else:
+            res["rows"] = [r if isinstance(r, dict) else {"value": r} for r in rows]
+            cols = res.get("columns")
+            res["columns"] = (cols if isinstance(cols, list)
+                              else list(res["rows"][0].keys()) if res["rows"] else [])
         res["ok"] = bool(res.get("ok", False))
         return sanitize_for_wire(res)
 
@@ -711,11 +719,6 @@ def catalogue():
 
     @tool("get_award_race", description=_orig_get_award_race.description)
     def get_award_race(award: str, season: str | None = None) -> dict:
-        """Projected award race top 5 for MVP/DPOY/ROY/6MOY.
-
-        Derived model ranking, not an official result: quote the score with
-        its method metadata, and use get_award_results for recorded winners.
-        """
         try:
             res = _orig_get_award_race.invoke({"award": award, "season": season})
             if not isinstance(res, dict):
@@ -2227,11 +2230,6 @@ def catalogue():
     @tool("get_last_x", description=_orig_get_last_x.description)
     def get_last_x(player_id: str | int, n: int = 10,
                    season: str | None = None) -> dict:
-        """Last n games for one player id, most recent first.
-
-        Quote the returned game log rows directly; they carry the game date,
-        matchup, and box score lines for each of the most recent games.
-        """
         default_cols = ["GAME_DATE", "MATCHUP", "PTS", "REB", "AST", "MIN"]
         try:
             res = _orig_get_last_x.invoke({
@@ -2265,7 +2263,6 @@ def catalogue():
     @tool("get_player_report", description=_orig_get_player_report.description)
     def get_player_report(player: str | int,
                           season: str | None = None) -> dict:
-        """Multi-part player report: season line, advanced profile, shot profile, clutch."""
         default_cols = ["section", "PLAYER", "TEAM", "PPG", "RPG", "APG"]
         try:
             res = _orig_get_player_report.invoke({
@@ -2281,7 +2278,6 @@ def catalogue():
 
     @tool("get_team_hub", description=_orig_get_team_hub.description)
     def get_team_hub(team_id: str | int, season: str | None = None) -> dict:
-        """Game log plus roster for one team id, split into self-describing sections."""
         default_cols = ["section", "PLAYER", "TEAM", "AGE", "GP", "PPG", "RPG", "APG"]
         try:
             res = _orig_get_team_hub.invoke({
@@ -2300,8 +2296,6 @@ def catalogue():
         return await _sectioned_result(
             _orig_get_matchup_brief, "get_matchup_brief",
             {"a": a, "b": b, "season": season},
-            ["section", "teams", "ratings_provenance", "ratings", "form",
-             "injuries", "season_series", "prediction"],
         )
 
     @tool("get_matchup_preview", description=_orig_get_matchup_preview.description)
@@ -2310,9 +2304,6 @@ def catalogue():
         return await _sectioned_result(
             _orig_get_matchup_preview, "get_matchup_preview",
             {"a": a, "b": b, "game_date": game_date, "season": season},
-            ["section", "game", "form", "matchups", "injuries", "xfactors",
-             "why_watch", "already_played", "game_id", "date", "matchup",
-             "score", "suggestion"],
         )
 
     @tool("get_scout_pack", description=_orig_get_scout_pack.description)
@@ -2321,7 +2312,6 @@ def catalogue():
         return await _sectioned_result(
             _orig_get_scout_pack, "get_scout_pack",
             {"team": team, "opponent": opponent, "season": season},
-            ["section", "team", "opponent", "edge"],
         )
 
     @tool("get_injury_impact", description=_orig_get_injury_impact.description)
@@ -2329,8 +2319,6 @@ def catalogue():
         return await _sectioned_result(
             _orig_get_injury_impact, "get_injury_impact",
             {"team": team, "season": season},
-            ["section", "team", "out", "questionable", "availability_known",
-             "net_rating", "net_rank", "last10", "impact"],
         )
 
     @tool("get_rotation_check", description=_orig_get_rotation_check.description)
@@ -2341,9 +2329,6 @@ def catalogue():
             _orig_get_rotation_check, "get_rotation_check",
             {"team": team, "season": season,
              "min_possessions": min_possessions, "top_units": top_units},
-            ["section", "team", "coverage", "tiers", "starter_bench_split",
-             "most_used_unit", "closing_candidates", "thin_flags",
-             "clutch_context"],
         )
 
     @tool("get_matchup_splits", description=_orig_get_matchup_splits.description)
@@ -2352,8 +2337,6 @@ def catalogue():
         return await _sectioned_result(
             _orig_get_matchup_splits, "get_matchup_splits",
             {"player": player, "n": n, "season": season},
-            ["section", "player", "player_id", "window_games", "splits",
-             "defense_splits"],
         )
 
     @tool("get_regression_check", description=_orig_get_regression_check.description)
@@ -2362,9 +2345,6 @@ def catalogue():
         return await _sectioned_result(
             _orig_get_regression_check, "get_regression_check",
             {"player": player, "stat": stat, "n": n, "season": season},
-            ["section", "player", "player_id", "stat", "window_n", "window",
-             "season", "career", "drivers", "drivers_all", "verdict",
-             "verdict_note"],
         )
 
     @tool("get_season_series", description=_orig_get_season_series.description)
@@ -3636,15 +3616,22 @@ def _flatten_sections(res: dict, default_cols: list[str]) -> dict:
     return sanitize_for_wire(res)
 
 
-async def _sectioned_result(orig: Any, name: str, args: dict[str, Any],
-                            default_cols: list[str]) -> dict:
+async def _sectioned_result(orig: Any, name: str, args: dict[str, Any]) -> dict:
     try:
         res = await orig.ainvoke(args)
         if not isinstance(res, dict):
             res = {"tool": name, "ok": False, "error": str(res)}
     except Exception as exc:
         res = {"tool": name, "ok": False, "error": f"{type(exc).__name__}: {exc}"}
-    return _flatten_sections(res, default_cols)
+    raw_rows = res.get("rows")
+    if res.get("ok") and not isinstance(raw_rows, dict):
+        res["ok"] = False
+        message = f"{name} returned {type(raw_rows).__name__} rows, expected a section object"
+        upstream_error = res.get("error")
+        res["error"] = (f"{upstream_error}; {message}"
+                        if isinstance(upstream_error, str) and upstream_error
+                        else message)
+    return _flatten_sections(res, ["section"])
 
 
 _sanitize_floats = sanitize_for_wire
