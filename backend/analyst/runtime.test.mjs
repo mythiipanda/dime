@@ -1058,6 +1058,8 @@ test("real statistical tools cross MCP with anchor compatibility, rows, columns,
     const awardRaceRes = await awardRaceTool.execute("call-award-race", { award: "MVP", season: "2024-25" }, undefined);
     assert(awardRaceRes.structuredContent);
     assert.equal(awardRaceRes.structuredContent.tool, "get_award_race");
+    assert(Array.isArray(awardRaceRes.structuredContent.result.rows), "award race rows must be an array so the answer can cite it");
+    assert(Array.isArray(awardRaceRes.structuredContent.result.columns), "award race columns must be an array");
 
     // 85. get_last_x
     const lastXTool = toolMap.get("get_last_x");
@@ -1067,6 +1069,8 @@ test("real statistical tools cross MCP with anchor compatibility, rows, columns,
     const lastXRes = await lastXTool.execute("call-last-x", { player_id: 2544, n: 5, season: "2024-25" }, undefined);
     assert(lastXRes.structuredContent);
     assert.equal(lastXRes.structuredContent.tool, "get_last_x");
+    assert(Array.isArray(lastXRes.structuredContent.result.rows), "last-x rows must be an array so the answer can cite it");
+    assert(Array.isArray(lastXRes.structuredContent.result.columns), "last-x columns must be an array");
 
     // Verify anchor compatibility across all 77 analytical/statistical tools
     for (const toolName of [
