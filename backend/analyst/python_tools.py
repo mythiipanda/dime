@@ -86,6 +86,10 @@ def catalogue():
     from shared.tools.tracking import get_defensive_matchups as _orig_get_defensive_matchups
     from shared.tools.award_results import get_award_results as _orig_get_award_results
     try:
+        from shared.tools.awards import get_award_race as _orig_get_award_race
+    except ImportError:
+        from backend.shared.tools.awards import get_award_race as _orig_get_award_race
+    try:
         from shared.tools.headtohead import get_head_to_head as _orig_get_head_to_head
     except ImportError:
         from backend.shared.tools.headtohead import get_head_to_head as _orig_get_head_to_head
@@ -102,12 +106,16 @@ def catalogue():
             get_wowy as _orig_get_wowy,
             get_shot_compare as _orig_get_shot_compare,
             get_raptor_history as _orig_get_raptor_history,
+            get_last_x as _orig_get_last_x,
+            get_player_report as _orig_get_player_report,
         )
     except ImportError:
         from backend.shared.tools.player import (
             get_wowy as _orig_get_wowy,
             get_shot_compare as _orig_get_shot_compare,
             get_raptor_history as _orig_get_raptor_history,
+            get_last_x as _orig_get_last_x,
+            get_player_report as _orig_get_player_report,
         )
     try:
         from shared.tools.team import (
@@ -119,6 +127,7 @@ def catalogue():
             get_matchup_brief,
             get_games_on_date,
             get_boxscore,
+            get_team_hub as _orig_get_team_hub,
         )
     except ImportError:
         from backend.shared.tools.team import (
@@ -130,6 +139,7 @@ def catalogue():
             get_matchup_brief,
             get_games_on_date,
             get_boxscore,
+            get_team_hub as _orig_get_team_hub,
         )
     try:
         from shared.tools.watchlist import get_watchlist
@@ -660,6 +670,39 @@ def catalogue():
                     {"award": k, **v} if isinstance(v, dict) else {"award": k, "value": v}
                     for k, v in raw_rows.items()
                 ]
+            else:
+                rows = []
+        else:
+            rows = []
+        cols = list(rows[0].keys()) if rows else default_cols
+        res["rows"] = rows
+        res["columns"] = cols
+        res["ok"] = bool(res.get("ok", False))
+        return sanitize_for_wire(res)
+
+    @tool("get_award_race", description=_orig_get_award_race.description)
+    def get_award_race(award: str, season: str | None = None) -> dict:
+        """Projected award race top 5 for MVP/DPOY/ROY/6MOY.
+
+        Derived model ranking, not an official result: quote the score with
+        its method metadata, and use get_award_results for recorded winners.
+        """
+        try:
+            res = _orig_get_award_race.invoke({"award": award, "season": season})
+            if not isinstance(res, dict):
+                res = {"tool": "get_award_race", "ok": False, "error": str(res)}
+        except Exception as exc:
+            res = {"tool": "get_award_race", "ok": False,
+                   "error": f"{type(exc).__name__}: {exc}"}
+
+        default_cols = ["rank", "player", "team", "score"]
+        raw_rows = res.get("rows")
+        if res.get("ok"):
+            if isinstance(raw_rows, list):
+                rows = [r for r in raw_rows if isinstance(r, dict)]
+            elif isinstance(raw_rows, dict):
+                rows = [r for r in raw_rows.get("candidates", [])
+                        if isinstance(r, dict)]
             else:
                 rows = []
         else:
@@ -2152,6 +2195,77 @@ def catalogue():
         res["ok"] = True
         return sanitize_for_wire(res)
 
+    @tool("get_last_x", description=_orig_get_last_x.description)
+    def get_last_x(player_id: str | int, n: int = 10,
+                   season: str | None = None) -> dict:
+        """Last n games for one player id, most recent first.
+
+        Quote the returned game log rows directly; they carry the game date,
+        matchup, and box score lines for each of the most recent games.
+        """
+        default_cols = ["GAME_DATE", "MATCHUP", "PTS", "REB", "AST", "MIN"]
+        try:
+            res = _orig_get_last_x.invoke({
+                "player_id": player_id,
+                "n": n,
+                "season": season,
+            })
+            if not isinstance(res, dict):
+                res = {"tool": "get_last_x", "ok": False, "error": str(res)}
+        except Exception as exc:
+            res = {"tool": "get_last_x", "ok": False,
+                   "error": f"{type(exc).__name__}: {exc}"}
+
+        raw_rows = res.get("rows")
+        if res.get("ok") and not isinstance(raw_rows, list):
+            res["ok"] = False
+            res.setdefault(
+                "error",
+                f"get_last_x returned {type(raw_rows).__name__} rows, expected a list",
+            )
+        if res.get("ok"):
+            rows = [r for r in raw_rows if isinstance(r, dict)]
+        else:
+            rows = []
+        cols = list(rows[0].keys()) if rows else default_cols
+        res["rows"] = rows
+        res["columns"] = cols
+        res["ok"] = bool(res.get("ok", False))
+        return sanitize_for_wire(res)
+
+    @tool("get_player_report", description=_orig_get_player_report.description)
+    def get_player_report(player: str | int,
+                          season: str | None = None) -> dict:
+        """Multi-part player report: season line, advanced profile, shot profile, clutch."""
+        default_cols = ["section", "PLAYER", "TEAM", "PPG", "RPG", "APG"]
+        try:
+            res = _orig_get_player_report.invoke({
+                "player": player,
+                "season": season,
+            })
+            if not isinstance(res, dict):
+                res = {"tool": "get_player_report", "ok": False, "error": str(res)}
+        except Exception as exc:
+            res = {"tool": "get_player_report", "ok": False,
+                   "error": f"{type(exc).__name__}: {exc}"}
+        return _flatten_sections(res, default_cols)
+
+    @tool("get_team_hub", description=_orig_get_team_hub.description)
+    def get_team_hub(team_id: str | int, season: str | None = None) -> dict:
+        """Game log plus roster for one team id, split into self-describing sections."""
+        default_cols = ["section", "PLAYER", "TEAM", "AGE", "GP", "PPG", "RPG", "APG"]
+        try:
+            res = _orig_get_team_hub.invoke({
+                "team_id": team_id,
+                "season": season,
+            })
+            if not isinstance(res, dict):
+                res = {"tool": "get_team_hub", "ok": False, "error": str(res)}
+        except Exception as exc:
+            res = {"tool": "get_team_hub", "ok": False,
+                   "error": f"{type(exc).__name__}: {exc}"}
+        return _flatten_sections(res, default_cols)
+
     @tool("get_season_series", description=_orig_get_season_series.description)
     def get_season_series(team_a: str, team_b: str, season: str | None = None) -> dict:
         """Head-to-head between two teams across a season: every meeting (regular season and playoffs) with winner, scores, date, matchup."""
@@ -3366,6 +3480,10 @@ def catalogue():
             get_watchlist,
             get_games_on_date,
             get_boxscore,
+            get_award_race,
+            get_last_x,
+            get_player_report,
+            get_team_hub,
         )
     }
     return TOOL_REGISTRY
@@ -3394,6 +3512,24 @@ def sanitize_for_wire(val: Any) -> Any:
     if isinstance(val, (list, tuple, set)):
         return [sanitize_for_wire(x) for x in val]
     return val
+
+
+def _flatten_sections(res: dict, default_cols: list[str]) -> dict:
+    raw_rows = res.get("rows")
+    rows: list[dict] = []
+    if res.get("ok") and isinstance(raw_rows, dict):
+        for name, value in raw_rows.items():
+            if isinstance(value, list):
+                rows.extend({**item, "section": name}
+                            for item in value if isinstance(item, dict))
+            elif isinstance(value, dict):
+                rows.append({**value, "section": name})
+            else:
+                rows.append({"value": value, "section": name})
+    res["rows"] = rows
+    res["columns"] = list(rows[0].keys()) if rows else default_cols
+    res["ok"] = bool(res.get("ok", False))
+    return sanitize_for_wire(res)
 
 
 _sanitize_floats = sanitize_for_wire
