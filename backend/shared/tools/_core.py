@@ -184,6 +184,7 @@ TOOL_LABELS = {
     "get_player_evaluation": "Evaluating player",
     "get_player_report": "Building player report",
     "search_game_logs": "Searching game logs",
+    "get_team_hub": "Building team hub",
     "get_team_game_log": "Pulling the team game log",
     "pin_team_best_player": "Reading team scoring leaders",
     "pin_game_stat_followup": "Pulling the Finals game line",

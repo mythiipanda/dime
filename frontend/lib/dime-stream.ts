@@ -203,6 +203,8 @@ const TOOL_LABELS: Record<string, ToolNarration> = {
   get_award_results: { running: "Looking up award voting results", done: "Looked up award voting results" },
   get_award_race: { running: "Ranking the award race", done: "Ranked the award race" },
   get_last_x: { running: "Pulling recent game logs", done: "Pulled recent game logs" },
+  get_player_report: { running: "Building the player report", done: "Built the player report" },
+  get_team_hub: { running: "Building the team hub", done: "Built the team hub" },
   get_briefing: { running: "Pulling morning briefing and scores", done: "Pulled morning briefing and scores" },
   get_standings: { running: "Fetching league standings", done: "Fetched league standings" },
   get_rest: { running: "Analyzing rest and back-to-back splits", done: "Analyzed rest and back-to-back splits" },

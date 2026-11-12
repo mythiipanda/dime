@@ -107,6 +107,7 @@ def catalogue():
             get_shot_compare as _orig_get_shot_compare,
             get_raptor_history as _orig_get_raptor_history,
             get_last_x as _orig_get_last_x,
+            get_player_report as _orig_get_player_report,
         )
     except ImportError:
         from backend.shared.tools.player import (
@@ -114,6 +115,7 @@ def catalogue():
             get_shot_compare as _orig_get_shot_compare,
             get_raptor_history as _orig_get_raptor_history,
             get_last_x as _orig_get_last_x,
+            get_player_report as _orig_get_player_report,
         )
     try:
         from shared.tools.team import (
@@ -125,6 +127,7 @@ def catalogue():
             get_matchup_brief,
             get_games_on_date,
             get_boxscore,
+            get_team_hub as _orig_get_team_hub,
         )
     except ImportError:
         from backend.shared.tools.team import (
@@ -136,6 +139,7 @@ def catalogue():
             get_matchup_brief,
             get_games_on_date,
             get_boxscore,
+            get_team_hub as _orig_get_team_hub,
         )
     try:
         from shared.tools.watchlist import get_watchlist
@@ -2223,6 +2227,79 @@ def catalogue():
         res["ok"] = bool(res.get("ok", False))
         return sanitize_for_wire(res)
 
+    @tool("get_player_report", description=_orig_get_player_report.description)
+    def get_player_report(player: str | int,
+                          season: str | None = None) -> dict:
+        """Multi-part player report: season line, advanced profile, shot profile, clutch."""
+        default_cols = ["section", "PLAYER", "TEAM", "PPG", "RPG", "APG"]
+        try:
+            res = _orig_get_player_report.invoke({
+                "player": player,
+                "season": season,
+            })
+            if not isinstance(res, dict):
+                res = {"tool": "get_player_report", "ok": False, "error": str(res)}
+        except Exception as exc:
+            res = {"tool": "get_player_report", "ok": False,
+                   "error": f"{type(exc).__name__}: {exc}"}
+
+        raw_rows = res.get("rows")
+        rows: list[dict] = []
+        if res.get("ok") and isinstance(raw_rows, dict):
+            line = raw_rows.get("season_line")
+            if isinstance(line, dict):
+                rows.append({**line, "section": "season_line"})
+            advanced = raw_rows.get("advanced")
+            if isinstance(advanced, dict):
+                rows.append({**advanced, "section": "advanced"})
+            zones = raw_rows.get("shot_profile")
+            if isinstance(zones, list):
+                rows.extend({**z, "section": "shot_profile"}
+                            for z in zones if isinstance(z, dict))
+            clutch = raw_rows.get("clutch")
+            if isinstance(clutch, dict):
+                rows.append({**clutch, "section": "clutch"})
+        cols = list(rows[0].keys()) if rows else default_cols
+        res["rows"] = rows
+        res["columns"] = cols
+        res["ok"] = bool(res.get("ok", False))
+        return sanitize_for_wire(res)
+
+    @tool("get_team_hub", description=_orig_get_team_hub.description)
+    def get_team_hub(team_id: str | int, season: str | None = None) -> dict:
+        """Game log plus roster for one team id, split into self-describing sections."""
+        default_cols = ["section", "PLAYER", "TEAM", "GP", "PPG", "RPG", "APG"]
+        try:
+            res = _orig_get_team_hub.invoke({
+                "team_id": team_id,
+                "season": season,
+            })
+            if not isinstance(res, dict):
+                res = {"tool": "get_team_hub", "ok": False, "error": str(res)}
+        except Exception as exc:
+            res = {"tool": "get_team_hub", "ok": False,
+                   "error": f"{type(exc).__name__}: {exc}"}
+
+        raw_rows = res.get("rows")
+        rows: list[dict] = []
+        if res.get("ok") and isinstance(raw_rows, dict):
+            roster = raw_rows.get("roster")
+            if isinstance(roster, list):
+                rows.extend({**r, "section": "roster"}
+                            for r in roster if isinstance(r, dict))
+            summary = raw_rows.get("summary")
+            if isinstance(summary, dict):
+                rows.append({**summary, "section": "summary"})
+            games = raw_rows.get("games")
+            if isinstance(games, list):
+                rows.extend({**g, "section": "games"}
+                            for g in games if isinstance(g, dict))
+        cols = list(rows[0].keys()) if rows else default_cols
+        res["rows"] = rows
+        res["columns"] = cols
+        res["ok"] = bool(res.get("ok", False))
+        return sanitize_for_wire(res)
+
     @tool("get_season_series", description=_orig_get_season_series.description)
     def get_season_series(team_a: str, team_b: str, season: str | None = None) -> dict:
         """Head-to-head between two teams across a season: every meeting (regular season and playoffs) with winner, scores, date, matchup."""
@@ -3439,6 +3516,8 @@ def catalogue():
             get_boxscore,
             get_award_race,
             get_last_x,
+            get_player_report,
+            get_team_hub,
         )
     }
     return TOOL_REGISTRY

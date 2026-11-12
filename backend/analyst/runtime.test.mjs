@@ -282,6 +282,8 @@ test("real Python sql_exec and schema cross MCP into Pi with source semantics an
       "get_boxscore",
       "get_award_race",
       "get_last_x",
+      "get_player_report",
+      "get_team_hub",
     ]);
     assert.deepEqual(bridge.tools[0].parameters.required, ["sql"]);
     const setup = await fixture("python", `
@@ -356,7 +358,7 @@ test("real statistical tools cross MCP with anchor compatibility, rows, columns,
   const pid = bridge.pid;
   try {
     const toolMap = new Map(bridge.tools.map(t => [t.name, t]));
-    assert.equal(bridge.tools.length, 87);
+    assert.equal(bridge.tools.length, 89);
 
     // 1. get_rapm
     const rapmTool = toolMap.get("get_rapm");
@@ -1072,7 +1074,29 @@ test("real statistical tools cross MCP with anchor compatibility, rows, columns,
     assert(Array.isArray(lastXRes.structuredContent.result.rows), "last-x rows must be an array so the answer can cite it");
     assert(Array.isArray(lastXRes.structuredContent.result.columns), "last-x columns must be an array");
 
-    // Verify anchor compatibility across all 77 analytical/statistical tools
+    // 86. get_player_report
+    const playerReportTool = toolMap.get("get_player_report");
+    assert(playerReportTool);
+    assert.equal(playerReportTool.name, "get_player_report");
+    assert.deepEqual(playerReportTool.parameters.required, ["player"]);
+    const playerReportRes = await playerReportTool.execute("call-player-report", { player: 2544, season: "2024-25" }, undefined);
+    assert(playerReportRes.structuredContent);
+    assert.equal(playerReportRes.structuredContent.tool, "get_player_report");
+    assert(Array.isArray(playerReportRes.structuredContent.result.rows), "player report rows must be an array so the answer can cite it");
+    assert(Array.isArray(playerReportRes.structuredContent.result.columns), "player report columns must be an array");
+
+    // 87. get_team_hub
+    const teamHubTool = toolMap.get("get_team_hub");
+    assert(teamHubTool);
+    assert.equal(teamHubTool.name, "get_team_hub");
+    assert.deepEqual(teamHubTool.parameters.required, ["team_id"]);
+    const teamHubRes = await teamHubTool.execute("call-team-hub", { team_id: 1610612747, season: "2024-25" }, undefined);
+    assert(teamHubRes.structuredContent);
+    assert.equal(teamHubRes.structuredContent.tool, "get_team_hub");
+    assert(Array.isArray(teamHubRes.structuredContent.result.rows), "team hub rows must be an array so the answer can cite it");
+    assert(Array.isArray(teamHubRes.structuredContent.result.columns), "team hub columns must be an array");
+
+    // Verify anchor compatibility across all 87 analytical/statistical tools
     for (const toolName of [
       "get_rapm", "get_game_prediction", "get_wpa_leaders", "get_comps",
       "get_lineup_stats", "get_win_prob", "get_on_off", "get_shot_zones",
@@ -1098,7 +1122,8 @@ test("real statistical tools cross MCP with anchor compatibility, rows, columns,
       "get_matchup_preview", "get_matchup_splits", "get_regression_check",
       "get_scout_pack", "get_rotation_check",
       "get_injury_impact", "get_matchup_brief", "get_watchlist",
-      "get_games_on_date", "get_boxscore", "get_award_race", "get_last_x"
+      "get_games_on_date", "get_boxscore", "get_award_race", "get_last_x",
+      "get_player_report", "get_team_hub"
     ]) {
       const syntheticRecord = {
         ref: `ref-${toolName}`,
@@ -1128,7 +1153,7 @@ test("real statistical tools cross MCP with anchor compatibility, rows, columns,
       }, (ref) => ref === syntheticRecord.ref ? syntheticRecord : undefined);
       assert.equal(submission.blocks[0].text, `Anchor for ${toolName}`);
     }
-    console.log(JSON.stringify({ proof: "statistical-tools-anchor-compatible", tools: 72 }));
+    console.log(JSON.stringify({ proof: "statistical-tools-anchor-compatible", tools: 87 }));
   } finally {
     await bridge.close();
   }
