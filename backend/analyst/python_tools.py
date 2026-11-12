@@ -2248,33 +2248,12 @@ def catalogue():
         except Exception as exc:
             res = {"tool": "get_player_report", "ok": False,
                    "error": f"{type(exc).__name__}: {exc}"}
-
-        raw_rows = res.get("rows")
-        rows: list[dict] = []
-        if res.get("ok") and isinstance(raw_rows, dict):
-            line = raw_rows.get("season_line")
-            if isinstance(line, dict):
-                rows.append({**line, "section": "season_line"})
-            advanced = raw_rows.get("advanced")
-            if isinstance(advanced, dict):
-                rows.append({**advanced, "section": "advanced"})
-            zones = raw_rows.get("shot_profile")
-            if isinstance(zones, list):
-                rows.extend({**z, "section": "shot_profile"}
-                            for z in zones if isinstance(z, dict))
-            clutch = raw_rows.get("clutch")
-            if isinstance(clutch, dict):
-                rows.append({**clutch, "section": "clutch"})
-        cols = list(rows[0].keys()) if rows else default_cols
-        res["rows"] = rows
-        res["columns"] = cols
-        res["ok"] = bool(res.get("ok", False))
-        return sanitize_for_wire(res)
+        return _flatten_sections(res, default_cols)
 
     @tool("get_team_hub", description=_orig_get_team_hub.description)
     def get_team_hub(team_id: str | int, season: str | None = None) -> dict:
         """Game log plus roster for one team id, split into self-describing sections."""
-        default_cols = ["section", "PLAYER", "TEAM", "GP", "PPG", "RPG", "APG"]
+        default_cols = ["section", "PLAYER", "TEAM", "AGE", "GP", "PPG", "RPG", "APG"]
         try:
             res = _orig_get_team_hub.invoke({
                 "team_id": team_id,
@@ -2285,26 +2264,7 @@ def catalogue():
         except Exception as exc:
             res = {"tool": "get_team_hub", "ok": False,
                    "error": f"{type(exc).__name__}: {exc}"}
-
-        raw_rows = res.get("rows")
-        rows: list[dict] = []
-        if res.get("ok") and isinstance(raw_rows, dict):
-            roster = raw_rows.get("roster")
-            if isinstance(roster, list):
-                rows.extend({**r, "section": "roster"}
-                            for r in roster if isinstance(r, dict))
-            summary = raw_rows.get("summary")
-            if isinstance(summary, dict):
-                rows.append({**summary, "section": "summary"})
-            games = raw_rows.get("games")
-            if isinstance(games, list):
-                rows.extend({**g, "section": "games"}
-                            for g in games if isinstance(g, dict))
-        cols = list(rows[0].keys()) if rows else default_cols
-        res["rows"] = rows
-        res["columns"] = cols
-        res["ok"] = bool(res.get("ok", False))
-        return sanitize_for_wire(res)
+        return _flatten_sections(res, default_cols)
 
     @tool("get_season_series", description=_orig_get_season_series.description)
     def get_season_series(team_a: str, team_b: str, season: str | None = None) -> dict:
@@ -3552,6 +3512,24 @@ def sanitize_for_wire(val: Any) -> Any:
     if isinstance(val, (list, tuple, set)):
         return [sanitize_for_wire(x) for x in val]
     return val
+
+
+def _flatten_sections(res: dict, default_cols: list[str]) -> dict:
+    raw_rows = res.get("rows")
+    rows: list[dict] = []
+    if res.get("ok") and isinstance(raw_rows, dict):
+        for name, value in raw_rows.items():
+            if isinstance(value, list):
+                rows.extend({**item, "section": name}
+                            for item in value if isinstance(item, dict))
+            elif isinstance(value, dict):
+                rows.append({**value, "section": name})
+            else:
+                rows.append({"value": value, "section": name})
+    res["rows"] = rows
+    res["columns"] = list(rows[0].keys()) if rows else default_cols
+    res["ok"] = bool(res.get("ok", False))
+    return sanitize_for_wire(res)
 
 
 _sanitize_floats = sanitize_for_wire

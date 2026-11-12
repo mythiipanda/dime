@@ -16,10 +16,50 @@ sys.path.insert(0, str(BACKEND / "analyst"))
 
 from analyst import python_tools  # noqa: E402
 
-PLAYER_COLS = ["PLAYER", "TEAM", "PPG", "RPG", "APG", "section"]
-TEAM_COLS = ["PLAYER", "TEAM", "AGE", "GP", "PPG", "RPG", "APG", "section"]
+SEASON_LINE = {
+    "PLAYER_ID": 424242,
+    "PLAYER": "A. Star",
+    "TEAM": "BOS",
+    "AGE": 27,
+    "GP": 82,
+    "GS": 82,
+    "MPG": 35.1,
+    "PPG": 28.4,
+    "RPG": 8.1,
+    "APG": 6.2,
+    "SPG": 1.2,
+    "BPG": 0.6,
+    "FG_PCT": 0.471,
+    "FG3_PCT": 0.382,
+    "FT_PCT": 0.855,
+    "TS_PCT": 0.601,
+}
+
+ROSTER_ROW = {
+    "PLAYER": "A. Star",
+    "TEAM": "LAL",
+    "AGE": 27,
+    "GP": 55,
+    "PPG": 28.4,
+    "RPG": 8.1,
+    "APG": 6.2,
+}
+
+TEAM_SUMMARY = {
+    "games": 65,
+    "wins": 41,
+    "losses": 24,
+    "covers_full_season": False,
+    "ppg": 114.8,
+    "ppg_games": 65,
+    "ts_pct": 57.9,
+    "ts_pct_games": 65,
+}
+
+PLAYER_COLS = [*SEASON_LINE, "section"]
+TEAM_COLS = [*ROSTER_ROW, "section"]
 PLAYER_DEFAULT_COLS = ["section", "PLAYER", "TEAM", "PPG", "RPG", "APG"]
-TEAM_DEFAULT_COLS = ["section", "PLAYER", "TEAM", "GP", "PPG", "RPG", "APG"]
+TEAM_DEFAULT_COLS = ["section", "PLAYER", "TEAM", "AGE", "GP", "PPG", "RPG", "APG"]
 
 
 class _FakeTool:
@@ -61,13 +101,7 @@ def test_player_report_flattens_sections_to_rows_array(monkeypatch):
             "tool": "get_player_report",
             "ok": True,
             "rows": {
-                "season_line": {
-                    "PLAYER": "A. Star",
-                    "TEAM": "BOS",
-                    "PPG": 28.4,
-                    "RPG": 8.1,
-                    "APG": 6.2,
-                },
+                "season_line": dict(SEASON_LINE),
                 "advanced": {
                     "PLAYER_NAME": "A. Star",
                     "TS_PCT": 0.612,
@@ -96,7 +130,8 @@ def test_player_report_flattens_sections_to_rows_array(monkeypatch):
     assert [row["section"] for row in res["rows"]] == [
         "season_line", "advanced", "shot_profile", "shot_profile", "clutch",
     ]
-    assert res["rows"][0]["PLAYER"] == "A. Star"
+    assert res["rows"][0] == {**SEASON_LINE, "section": "season_line"}
+    assert res["rows"][0]["TS_PCT"] == 0.601
     assert res["columns"] == PLAYER_COLS
     assert res["meta"]["player"] == "A. Star"
     assert res["meta"]["deterministic_answer"] == "A. Star, 2024-25: 28.4 PPG."
@@ -145,15 +180,7 @@ def test_team_hub_flattens_sections_to_rows_array(monkeypatch):
             "ok": True,
             "rows": {
                 "roster": [
-                    {
-                        "PLAYER": "A. Star",
-                        "TEAM": "LAL",
-                        "AGE": 27,
-                        "GP": 55,
-                        "PPG": 28.4,
-                        "RPG": 8.1,
-                        "APG": 6.2,
-                    },
+                    dict(ROSTER_ROW),
                     {
                         "PLAYER": "B. Role",
                         "TEAM": "LAL",
@@ -164,7 +191,7 @@ def test_team_hub_flattens_sections_to_rows_array(monkeypatch):
                         "APG": 2.1,
                     },
                 ],
-                "summary": {"TEAM": "LAL", "WINS": 41, "LOSSES": 24, "PPG": 114.8},
+                "summary": dict(TEAM_SUMMARY),
                 "games": [{"GAME_ID": "0022400001", "WL": "W", "PTS": 118}],
             },
             "meta": {"source": "warehouse:silver_hist_gamelogs", "season": "2024-25"},
@@ -179,11 +206,45 @@ def test_team_hub_flattens_sections_to_rows_array(monkeypatch):
     assert [row["section"] for row in res["rows"]] == [
         "roster", "roster", "summary", "games",
     ]
-    assert res["rows"][0]["PLAYER"] == "A. Star"
-    assert res["rows"][2]["WINS"] == 41
+    assert res["rows"][0] == {**ROSTER_ROW, "section": "roster"}
+    assert res["rows"][2] == {**TEAM_SUMMARY, "section": "summary"}
+    assert res["rows"][2]["wins"] == 41
+    assert res["rows"][2]["covers_full_season"] is False
     assert res["columns"] == TEAM_COLS
     assert res["meta"]["source"] == "warehouse:silver_hist_gamelogs"
     assert fake.calls == [{"team_id": 1610612747, "season": "2024-25"}]
+
+
+def test_unknown_section_keys_are_surfaced_not_dropped(monkeypatch):
+    fake = _FakeTool(
+        "Game log plus roster for one team id. Warehouse first.",
+        result={
+            "tool": "get_team_hub",
+            "ok": True,
+            "rows": {
+                "roster": [dict(ROSTER_ROW)],
+                "summary": dict(TEAM_SUMMARY),
+                "games": [{"GAME_ID": "0022400001", "WL": "W", "PTS": 118}],
+                "awards": [{"name": "All-Star", "season": "2024-25"}],
+                "streak": {"length": 4, "kind": "win"},
+                "notes": None,
+            },
+            "meta": {"source": "warehouse:silver_hist_gamelogs"},
+        },
+    )
+    tools = _catalogue(monkeypatch, hub=fake)
+
+    res = _invoke(tools["get_team_hub"], {"team_id": 1610612747})
+
+    assert res["ok"] is True
+    assert [row["section"] for row in res["rows"]] == [
+        "roster", "summary", "games", "awards", "streak", "notes",
+    ]
+    assert res["rows"][3] == {"name": "All-Star", "season": "2024-25",
+                              "section": "awards"}
+    assert res["rows"][4] == {"length": 4, "kind": "win", "section": "streak"}
+    assert res["rows"][5] == {"value": None, "section": "notes"}
+    assert res["columns"] == [*ROSTER_ROW, "section"]
 
 
 def test_team_hub_empty_rows_returns_rows_array(monkeypatch):
