@@ -24,7 +24,7 @@ from mcp.types import CallToolResult, ListToolsResult, TextContent, Tool
 TOOL_REGISTRY = None
 
 def catalogue():
-    from shared.tools.sql_exec import sql_exec, TABLES
+    from shared.tools.sql_exec import sql_exec as _orig_sql_exec, TABLES
     from shared.tools.league import (
         _get_warehouse_schema,
         get_win_prob as _orig_get_win_prob,
@@ -121,10 +121,10 @@ def catalogue():
         from shared.tools.team import (
             get_season_series as _orig_get_season_series,
             get_team_game_log as _orig_get_team_game_log,
-            get_scout_pack,
-            get_rotation_check,
-            get_injury_impact,
-            get_matchup_brief,
+            get_scout_pack as _orig_get_scout_pack,
+            get_rotation_check as _orig_get_rotation_check,
+            get_injury_impact as _orig_get_injury_impact,
+            get_matchup_brief as _orig_get_matchup_brief,
             get_games_on_date,
             get_boxscore,
             get_team_hub as _orig_get_team_hub,
@@ -133,10 +133,10 @@ def catalogue():
         from backend.shared.tools.team import (
             get_season_series as _orig_get_season_series,
             get_team_game_log as _orig_get_team_game_log,
-            get_scout_pack,
-            get_rotation_check,
-            get_injury_impact,
-            get_matchup_brief,
+            get_scout_pack as _orig_get_scout_pack,
+            get_rotation_check as _orig_get_rotation_check,
+            get_injury_impact as _orig_get_injury_impact,
+            get_matchup_brief as _orig_get_matchup_brief,
             get_games_on_date,
             get_boxscore,
             get_team_hub as _orig_get_team_hub,
@@ -199,13 +199,19 @@ def catalogue():
     except ImportError:
         from backend.shared.tools.gamelog import search_game_logs as _orig_search_game_logs
     try:
-        from shared.tools.preview import get_matchup_preview
+        from shared.tools.preview import get_matchup_preview as _orig_get_matchup_preview
     except ImportError:
-        from backend.shared.tools.preview import get_matchup_preview
+        from backend.shared.tools.preview import get_matchup_preview as _orig_get_matchup_preview
     try:
-        from shared.tools.splits import get_matchup_splits, get_regression_check
+        from shared.tools.splits import (
+            get_matchup_splits as _orig_get_matchup_splits,
+            get_regression_check as _orig_get_regression_check,
+        )
     except ImportError:
-        from backend.shared.tools.splits import get_matchup_splits, get_regression_check
+        from backend.shared.tools.splits import (
+            get_matchup_splits as _orig_get_matchup_splits,
+            get_regression_check as _orig_get_regression_check,
+        )
 
     declared_catalog = ", ".join(TABLES)
     description = (
@@ -217,6 +223,29 @@ def catalogue():
         "catalog_scope covers the returned declared tables and columns only, not the full warehouse "
         "inventory; a name absent here is not evidence it is absent everywhere."
     )
+
+    @tool("sql_exec", description=_orig_sql_exec.description)
+    async def sql_exec(sql: str) -> dict:
+        try:
+            res = await _orig_sql_exec.ainvoke({"sql": sql})
+            if not isinstance(res, dict):
+                res = {"tool": "sql_exec", "ok": False, "error": str(res)}
+        except Exception as exc:
+            res = {"tool": "sql_exec", "ok": False,
+                   "error": f"{type(exc).__name__}: {exc}"}
+
+        rows = res.get("rows")
+        if res.get("ok") and isinstance(rows, list):
+            rows = [r for r in rows if isinstance(r, dict)]
+            cols = res.get("columns")
+            res["rows"] = rows
+            res["columns"] = (cols if isinstance(cols, list)
+                              else list(rows[0].keys()) if rows else [])
+        else:
+            res["rows"] = []
+            res["columns"] = []
+        res["ok"] = bool(res.get("ok", False))
+        return sanitize_for_wire(res)
 
     @tool("warehouse_schema", description=description)
     def warehouse_schema(tables: list[str] | None = None) -> dict:
@@ -2266,6 +2295,78 @@ def catalogue():
                    "error": f"{type(exc).__name__}: {exc}"}
         return _flatten_sections(res, default_cols)
 
+    @tool("get_matchup_brief", description=_orig_get_matchup_brief.description)
+    async def get_matchup_brief(a: str = "", b: str = "", season: str | None = None) -> dict:
+        return await _sectioned_result(
+            _orig_get_matchup_brief, "get_matchup_brief",
+            {"a": a, "b": b, "season": season},
+            ["section", "teams", "ratings_provenance", "ratings", "form",
+             "injuries", "season_series", "prediction"],
+        )
+
+    @tool("get_matchup_preview", description=_orig_get_matchup_preview.description)
+    async def get_matchup_preview(a: str = "", b: str = "", game_date: str = "",
+                                  season: str | None = None) -> dict:
+        return await _sectioned_result(
+            _orig_get_matchup_preview, "get_matchup_preview",
+            {"a": a, "b": b, "game_date": game_date, "season": season},
+            ["section", "game", "form", "matchups", "injuries", "xfactors",
+             "why_watch", "already_played", "game_id", "date", "matchup",
+             "score", "suggestion"],
+        )
+
+    @tool("get_scout_pack", description=_orig_get_scout_pack.description)
+    async def get_scout_pack(team: str = "", opponent: str = "",
+                             season: str | None = None) -> dict:
+        return await _sectioned_result(
+            _orig_get_scout_pack, "get_scout_pack",
+            {"team": team, "opponent": opponent, "season": season},
+            ["section", "team", "opponent", "edge"],
+        )
+
+    @tool("get_injury_impact", description=_orig_get_injury_impact.description)
+    async def get_injury_impact(team: str = "", season: str | None = None) -> dict:
+        return await _sectioned_result(
+            _orig_get_injury_impact, "get_injury_impact",
+            {"team": team, "season": season},
+            ["section", "team", "out", "questionable", "availability_known",
+             "net_rating", "net_rank", "last10", "impact"],
+        )
+
+    @tool("get_rotation_check", description=_orig_get_rotation_check.description)
+    async def get_rotation_check(team: str | int = "", season: str | None = None,
+                                 min_possessions: int = 100,
+                                 top_units: int = 5) -> dict:
+        return await _sectioned_result(
+            _orig_get_rotation_check, "get_rotation_check",
+            {"team": team, "season": season,
+             "min_possessions": min_possessions, "top_units": top_units},
+            ["section", "team", "coverage", "tiers", "starter_bench_split",
+             "most_used_unit", "closing_candidates", "thin_flags",
+             "clutch_context"],
+        )
+
+    @tool("get_matchup_splits", description=_orig_get_matchup_splits.description)
+    async def get_matchup_splits(player: str, n: int = 15,
+                                 season: str | None = None) -> dict:
+        return await _sectioned_result(
+            _orig_get_matchup_splits, "get_matchup_splits",
+            {"player": player, "n": n, "season": season},
+            ["section", "player", "player_id", "window_games", "splits",
+             "defense_splits"],
+        )
+
+    @tool("get_regression_check", description=_orig_get_regression_check.description)
+    async def get_regression_check(player: str, stat: str = "PTS", n: int = 10,
+                                   season: str | None = None) -> dict:
+        return await _sectioned_result(
+            _orig_get_regression_check, "get_regression_check",
+            {"player": player, "stat": stat, "n": n, "season": season},
+            ["section", "player", "player_id", "stat", "window_n", "window",
+             "season", "career", "drivers", "drivers_all", "verdict",
+             "verdict_note"],
+        )
+
     @tool("get_season_series", description=_orig_get_season_series.description)
     def get_season_series(team_a: str, team_b: str, season: str | None = None) -> dict:
         """Head-to-head between two teams across a season: every meeting (regular season and playoffs) with winner, scores, date, matchup."""
@@ -3520,8 +3621,11 @@ def _flatten_sections(res: dict, default_cols: list[str]) -> dict:
     if res.get("ok") and isinstance(raw_rows, dict):
         for name, value in raw_rows.items():
             if isinstance(value, list):
-                rows.extend({**item, "section": name}
-                            for item in value if isinstance(item, dict))
+                for item in value:
+                    if isinstance(item, dict):
+                        rows.append({**item, "section": name})
+                    else:
+                        rows.append({"value": item, "section": name})
             elif isinstance(value, dict):
                 rows.append({**value, "section": name})
             else:
@@ -3530,6 +3634,17 @@ def _flatten_sections(res: dict, default_cols: list[str]) -> dict:
     res["columns"] = list(rows[0].keys()) if rows else default_cols
     res["ok"] = bool(res.get("ok", False))
     return sanitize_for_wire(res)
+
+
+async def _sectioned_result(orig: Any, name: str, args: dict[str, Any],
+                            default_cols: list[str]) -> dict:
+    try:
+        res = await orig.ainvoke(args)
+        if not isinstance(res, dict):
+            res = {"tool": name, "ok": False, "error": str(res)}
+    except Exception as exc:
+        res = {"tool": name, "ok": False, "error": f"{type(exc).__name__}: {exc}"}
+    return _flatten_sections(res, default_cols)
 
 
 _sanitize_floats = sanitize_for_wire
