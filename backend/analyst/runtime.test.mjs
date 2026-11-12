@@ -1097,7 +1097,7 @@ test("real statistical tools cross MCP with anchor compatibility, rows, columns,
     assert(Array.isArray(teamHubRes.structuredContent.result.columns), "team hub columns must be an array");
 
     // Verify anchor compatibility across all 87 analytical/statistical tools
-    for (const toolName of [
+    const anchorToolNames = [
       "get_rapm", "get_game_prediction", "get_wpa_leaders", "get_comps",
       "get_lineup_stats", "get_win_prob", "get_on_off", "get_shot_zones",
       "get_four_factors", "get_clutch_stats", "get_competitive_ratings",
@@ -1124,7 +1124,8 @@ test("real statistical tools cross MCP with anchor compatibility, rows, columns,
       "get_injury_impact", "get_matchup_brief", "get_watchlist",
       "get_games_on_date", "get_boxscore", "get_award_race", "get_last_x",
       "get_player_report", "get_team_hub"
-    ]) {
+    ];
+    for (const toolName of anchorToolNames) {
       const syntheticRecord = {
         ref: `ref-${toolName}`,
         callId: `call-${toolName}`,
@@ -1153,7 +1154,7 @@ test("real statistical tools cross MCP with anchor compatibility, rows, columns,
       }, (ref) => ref === syntheticRecord.ref ? syntheticRecord : undefined);
       assert.equal(submission.blocks[0].text, `Anchor for ${toolName}`);
     }
-    console.log(JSON.stringify({ proof: "statistical-tools-anchor-compatible", tools: 87 }));
+    console.log(JSON.stringify({ proof: "statistical-tools-anchor-compatible", tools: anchorToolNames.length }));
   } finally {
     await bridge.close();
   }
