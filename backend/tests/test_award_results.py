@@ -25,6 +25,9 @@ def _page(year: int):
 
 @pytest.fixture(scope="module")
 def recorded_awards(tmp_path_factory):
+    pytest.importorskip(
+        "lxml",
+        reason="lxml is required to parse basketball-reference award pages")
     import seed_bbref_awards as seed
     from shared import store
 

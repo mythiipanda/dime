@@ -7,6 +7,10 @@ on:
         required: false
         default: latest
         type: string
+  pull_request:
+    paths:
+      - 'backend/**'
+      - '.github/workflows/build-backend.yml'
   push:
     branches: [dev]
     paths:
@@ -30,6 +34,7 @@ jobs:
         run: |
           python -m pytest backend/tests/test_sql_rerun_hardening.py backend/tests/test_v2_wire_schema_strip.py backend/evals/test_score_golden.py backend/tests/test_rerun_sql_adversarial.py -q
   build:
+    if: github.event_name != 'pull_request'
     needs: [test]
     runs-on: ubuntu-latest
     steps:

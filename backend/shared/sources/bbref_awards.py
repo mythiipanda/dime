@@ -4,7 +4,12 @@ from dataclasses import dataclass
 
 import polars as pl
 import requests
-from lxml import etree, html as lxml_html
+
+try:
+    from lxml import etree, html as lxml_html
+except ImportError:
+    etree = None
+    lxml_html = None
 
 from .base import FetchMeta, FetchResult
 
@@ -34,6 +39,15 @@ class AwardsPageError(RuntimeError):
 
 class Throttled(RuntimeError):
     pass
+
+class MissingDependencyError(RuntimeError):
+    pass
+
+def require_lxml() -> None:
+    if etree is None or lxml_html is None:
+        raise MissingDependencyError(
+            "lxml is required to read basketball-reference award pages; "
+            "install it with 'pip install lxml' and retry")
 
 @dataclass(frozen=True)
 class AwardSection:
@@ -399,6 +413,7 @@ def paced_transport(min_interval_s: float = MIN_INTERVAL_S):
     return get
 
 def _document(text: str, label: str):
+    require_lxml()
     if "<table" not in text:
         raise AwardsPageError(
             f"season {label}: no award ballot markup in the fetched page")
@@ -414,6 +429,7 @@ def _assert_page_season(doc, label: str) -> None:
             f"season {label}: page heading '{heading}' is not that season")
 
 def _award_tables(doc) -> dict:
+    require_lxml()
     tables: dict = {}
     for table in doc.xpath("//table[@id]"):
         tables.setdefault(table.get("id"), table)

@@ -9,6 +9,10 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts"))
 
+pytest.importorskip(
+    "lxml",
+    reason="lxml is required to parse basketball-reference award pages")
+
 import seed_bbref_awards as seed
 from shared import store
 from shared.sources import bbref_awards as src
