@@ -6,6 +6,7 @@
     "node": ">=22.19.0"
   },
   "scripts": {
+    "pretest": "npm run build",
     "test": "python verify.py",
     "check": "tsc -p tsconfig.json --noEmit",
     "build": "tsc -p tsconfig.json"

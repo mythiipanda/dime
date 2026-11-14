@@ -10,6 +10,7 @@ on:
   pull_request:
     paths:
       - 'backend/**'
+      - 'frontend/**'
       - '.github/workflows/build-backend.yml'
   push:
     branches: [dev]
@@ -28,11 +29,29 @@ jobs:
           python-version: "3.11"
           cache: pip
           cache-dependency-path: backend/requirements.txt
+      - name: Enforce the zero-comment rule
+        run: python backend/scripts/no_comments.py
       - name: Install backend dependencies
         run: pip install -r backend/requirements.txt pytest
       - name: Run contract-boundary gate subset
         run: |
           python -m pytest backend/tests/test_sql_rerun_hardening.py backend/tests/test_v2_wire_schema_strip.py backend/evals/test_score_golden.py backend/tests/test_rerun_sql_adversarial.py -q
+  frontend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Install frontend dependencies
+        run: npm ci
+        working-directory: frontend
+      - name: Typecheck the frontend
+        run: npm run typecheck
+        working-directory: frontend
+      - name: Run the frontend test suite
+        run: npm test
+        working-directory: frontend
   build:
     if: github.event_name != 'pull_request'
     needs: [test]
