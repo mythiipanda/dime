@@ -114,6 +114,10 @@ const SOURCE_LABELS: Record<string, string> = {
   get_matchup_brief: "Matchup brief",
   get_games_on_date: "Games on date",
   get_boxscore: "Box score",
+  get_lineups: "Team lineups",
+  get_splits: "Player splits",
+  get_recap: "Game recap",
+  get_scouting_report: "Scouting report",
 };
 
 function sourceLabel(source?: string) {

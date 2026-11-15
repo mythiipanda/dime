@@ -191,6 +191,7 @@ const CAPABILITY_LABELS: Record<string, string> = {
   get_season_series: "Season series",
   get_shot_compare: "Shot comparison",
   get_shot_zones: "Shot zones",
+  get_splits: "Player splits",
   get_stint_timeline: "Lineup stints",
   get_team_compare: "Team comparison",
   get_team_four_factors: "Four factors",

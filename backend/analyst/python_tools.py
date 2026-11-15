@@ -108,6 +108,7 @@ def catalogue():
             get_raptor_history as _orig_get_raptor_history,
             get_last_x as _orig_get_last_x,
             get_player_report as _orig_get_player_report,
+            get_splits as _orig_get_splits,
         )
     except ImportError:
         from backend.shared.tools.player import (
@@ -116,6 +117,7 @@ def catalogue():
             get_raptor_history as _orig_get_raptor_history,
             get_last_x as _orig_get_last_x,
             get_player_report as _orig_get_player_report,
+            get_splits as _orig_get_splits,
         )
     try:
         from shared.tools.team import (
@@ -128,6 +130,9 @@ def catalogue():
             get_games_on_date,
             get_boxscore,
             get_team_hub as _orig_get_team_hub,
+            get_lineups as _orig_get_lineups,
+            get_recap as _orig_get_recap,
+            get_scouting_report as _orig_get_scouting_report,
         )
     except ImportError:
         from backend.shared.tools.team import (
@@ -140,6 +145,9 @@ def catalogue():
             get_games_on_date,
             get_boxscore,
             get_team_hub as _orig_get_team_hub,
+            get_lineups as _orig_get_lineups,
+            get_recap as _orig_get_recap,
+            get_scouting_report as _orig_get_scouting_report,
         )
     try:
         from shared.tools.watchlist import get_watchlist
@@ -2291,6 +2299,67 @@ def catalogue():
                    "error": f"{type(exc).__name__}: {exc}"}
         return _flatten_sections(res, default_cols)
 
+    @tool("get_lineups", description=_orig_get_lineups.description)
+    def get_lineups(team_id: str | int, season: str | None = None) -> dict:
+        default_cols = ["GROUP_NAME", "MIN", "PLUS_MINUS", "SAMPLE_TIER",
+                        "EST_POSS", "competitive_net", "competitive_poss"]
+        try:
+            res = _orig_get_lineups.invoke({
+                "team_id": team_id,
+                "season": season,
+            })
+            if not isinstance(res, dict):
+                res = {"tool": "get_lineups", "ok": False, "error": str(res)}
+        except Exception as exc:
+            res = {"tool": "get_lineups", "ok": False,
+                   "error": f"{type(exc).__name__}: {exc}"}
+        return _row_list_result(res, "get_lineups", default_cols)
+
+    @tool("get_splits", description=_orig_get_splits.description)
+    def get_splits(player_id: str | int, season: str | None = None) -> dict:
+        default_cols = ["split", "GP", "PPG", "FG_PCT"]
+        try:
+            res = _orig_get_splits.invoke({
+                "player_id": player_id,
+                "season": season,
+            })
+            if not isinstance(res, dict):
+                res = {"tool": "get_splits", "ok": False, "error": str(res)}
+        except Exception as exc:
+            res = {"tool": "get_splits", "ok": False,
+                   "error": f"{type(exc).__name__}: {exc}"}
+        return _row_list_result(res, "get_splits", default_cols)
+
+    @tool("get_recap", description=_orig_get_recap.description)
+    def get_recap(game_id: str, season: str | None = None) -> dict:
+        default_cols = ["PLAYER", "TEAM", "PTS", "REB", "AST"]
+        try:
+            res = _orig_get_recap.invoke({
+                "game_id": game_id,
+                "season": season,
+            })
+            if not isinstance(res, dict):
+                res = {"tool": "get_recap", "ok": False, "error": str(res)}
+        except Exception as exc:
+            res = {"tool": "get_recap", "ok": False,
+                   "error": f"{type(exc).__name__}: {exc}"}
+        return _row_list_result(res, "get_recap", default_cols)
+
+    @tool("get_scouting_report", description=_orig_get_scouting_report.description)
+    def get_scouting_report(team_id: str | int, season: str | None = None) -> dict:
+        default_cols = ["section", "value", "GROUP_NAME", "MIN", "PLUS_MINUS"]
+        try:
+            res = _orig_get_scouting_report.invoke({
+                "team_id": team_id,
+                "season": season,
+            })
+            if not isinstance(res, dict):
+                res = {"tool": "get_scouting_report", "ok": False, "error": str(res)}
+        except Exception as exc:
+            res = {"tool": "get_scouting_report", "ok": False,
+                   "error": f"{type(exc).__name__}: {exc}"}
+        return _section_object_result(res, "get_scouting_report", default_cols)
+
     @tool("get_matchup_brief", description=_orig_get_matchup_brief.description)
     async def get_matchup_brief(a: str = "", b: str = "", season: str | None = None) -> dict:
         return await _sectioned_result(
@@ -3565,6 +3634,10 @@ def catalogue():
             get_last_x,
             get_player_report,
             get_team_hub,
+            get_lineups,
+            get_splits,
+            get_recap,
+            get_scouting_report,
         )
     }
     return TOOL_REGISTRY
@@ -3632,6 +3705,37 @@ async def _sectioned_result(orig: Any, name: str, args: dict[str, Any]) -> dict:
                         if isinstance(upstream_error, str) and upstream_error
                         else message)
     return _flatten_sections(res, ["section"])
+
+
+def _row_list_result(res: dict, name: str, default_cols: list[str]) -> dict:
+    raw_rows = res.get("rows")
+    if res.get("ok") and not isinstance(raw_rows, list):
+        res["ok"] = False
+        message = f"{name} returned {type(raw_rows).__name__} rows, expected a list"
+        upstream_error = res.get("error")
+        res["error"] = (f"{upstream_error}; {message}"
+                        if isinstance(upstream_error, str) and upstream_error
+                        else message)
+    if res.get("ok") and isinstance(raw_rows, list):
+        rows = [r for r in raw_rows if isinstance(r, dict)]
+    else:
+        rows = []
+    res["rows"] = rows
+    res["columns"] = list(rows[0].keys()) if rows else default_cols
+    res["ok"] = bool(res.get("ok", False))
+    return sanitize_for_wire(res)
+
+
+def _section_object_result(res: dict, name: str, default_cols: list[str]) -> dict:
+    raw_rows = res.get("rows")
+    if res.get("ok") and not isinstance(raw_rows, dict):
+        res["ok"] = False
+        message = f"{name} returned {type(raw_rows).__name__} rows, expected a section object"
+        upstream_error = res.get("error")
+        res["error"] = (f"{upstream_error}; {message}"
+                        if isinstance(upstream_error, str) and upstream_error
+                        else message)
+    return _flatten_sections(res, default_cols)
 
 
 _sanitize_floats = sanitize_for_wire
