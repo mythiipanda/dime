@@ -1,6 +1,8 @@
 import asyncio
 import importlib
+import os
 import re
+import subprocess
 import sys
 import threading
 from pathlib import Path
@@ -230,7 +232,7 @@ def test_recap_rows_keep_the_upstream_boxscore_keys(monkeypatch):
 def test_recap_timeout_returns_a_structured_error(monkeypatch):
     release = threading.Event()
     fake = _BlockingTool(release)
-    monkeypatch.setattr(python_tools, "RECAP_LIVE_TIMEOUT_S", 0.1)
+    monkeypatch.setattr(python_tools, "LIVE_CALL_TIMEOUT_S", 0.1)
     tools = _catalogue(monkeypatch, {("shared.tools.team", "get_recap"): fake})
     try:
         res = _invoke(tools["get_recap"],
@@ -243,18 +245,26 @@ def test_recap_timeout_returns_a_structured_error(monkeypatch):
     assert isinstance(res["columns"], list)
     assert res["columns"] == ["PLAYER", "TEAM", "PTS", "REB", "AST"]
     assert res["tool"] == "get_recap"
-    assert "get_recap" in res["error"]
-    assert "timed out" in res["error"]
-    assert "0.1s" in res["error"]
+    assert res["error"] == (
+        "get_recap timed out after 0.1s: the upstream source is a live "
+        "stats.nba.com call, not the warehouse. Retry later, or answer "
+        "from the warehouse-backed get_boxscore tool."
+    )
     assert fake.calls == [{"game_id": "0022400001", "season": "2024-25"}]
 
 
-def test_recap_timeout_budget_stays_inside_the_bridge_budget():
+def _bridge_budget_ms():
     source = (BACKEND / "analyst" / "python-tools.ts").read_text(encoding="utf-8")
     match = re.search(r"requestTimeoutMs:\s*(\d+)", source)
-
     assert match
-    assert python_tools.RECAP_LIVE_TIMEOUT_S * 1000 < int(match.group(1))
+    return int(match.group(1))
+
+
+def test_recap_timeout_budget_stays_inside_the_bridge_budget():
+    budget_ms = _bridge_budget_ms()
+
+    assert python_tools.LIVE_CALL_TIMEOUT_S * 1000 < budget_ms
+    assert budget_ms - python_tools.LIVE_CALL_TIMEOUT_S * 1000 >= 3000
 
 
 def test_scouting_report_flattens_sections_to_rows_array(monkeypatch):
@@ -407,3 +417,200 @@ def test_registry_matches_the_typescript_tool_names(monkeypatch):
     for name in ("get_lineups", "get_splits", "get_recap", "get_scouting_report"):
         assert name in tools
         assert tools[name].args_schema.model_json_schema()["required"]
+
+
+def test_network_inventory_derives_real_warehouse_alternatives(monkeypatch):
+    source = (BACKEND / "analyst" / "python-tools.ts").read_text(encoding="utf-8")
+    block = source.split(
+        "export const ANALYST_TOOL_NAMES: readonly PythonToolName[] = [", 1)[1]
+    block = block.split("] as const;", 1)[0]
+    declared = re.findall(r'"([^"]+)"', block)
+    tools = _catalogue(monkeypatch, {})
+
+    assert len(python_tools.NETWORK_TOOL_SOURCES) == 36
+    assert set(python_tools.NETWORK_TOOL_SOURCES) <= set(declared)
+    assert python_tools.LIVE_ONLY_TOOLS == {"get_recap": "get_boxscore"}
+    for name in python_tools.NETWORK_TOOL_SOURCES:
+        alternative = python_tools.LIVE_ONLY_TOOLS.get(name, name)
+        assert alternative in declared
+        assert alternative in tools
+        assert python_tools.NETWORK_TOOL_SOURCES[name]
+
+
+def test_network_tool_descriptions_state_backing(monkeypatch):
+    tools = _catalogue(monkeypatch, {})
+    for name in python_tools.NETWORK_TOOL_SOURCES:
+        description = tools[name].description
+        if name in python_tools.LIVE_ONLY_TOOLS:
+            assert description.endswith("Live only."), name
+        else:
+            assert description.endswith("Warehouse-backed with live fallback."), name
+
+
+def test_live_timeout_error_template():
+    text = python_tools._live_timeout_error("get_recap", "stats.nba.com", "get_boxscore")
+
+    assert text == (
+        f"get_recap timed out after {python_tools.LIVE_CALL_TIMEOUT_S:.1f}s: "
+        "the upstream source is a live stats.nba.com call, not the warehouse. "
+        "Retry later, or answer from the warehouse-backed get_boxscore tool."
+    )
+
+
+def test_import_does_not_pollute_process_env():
+    code = (
+        "import os, sys;"
+        "os.environ.pop('DIME_LIVE_ATTEMPTS', None);"
+        f"sys.path.insert(0, {str(BACKEND)!r});"
+        f"sys.path.insert(0, {str(BACKEND / 'analyst')!r});"
+        "import analyst.python_tools;"
+        "assert 'DIME_LIVE_ATTEMPTS' not in os.environ"
+    )
+    proc = subprocess.run([sys.executable, "-c", code], cwd=str(BACKEND),
+                          capture_output=True, text=True)
+
+    assert proc.returncode == 0, proc.stderr
+
+
+def test_single_live_attempt_when_configured(monkeypatch):
+    import shared.sources.base as base
+    from shared.config import settings
+
+    assert python_tools.LIVE_CALL_TIMEOUT_S >= settings.default_timeout_seconds
+    monkeypatch.setenv("DIME_LIVE_ATTEMPTS", "1")
+    calls: list[int] = []
+
+    def _blocked():
+        calls.append(1)
+        raise RuntimeError("blocked upstream")
+
+    result = base.safe("stub", "2025-26", _blocked)
+
+    assert calls == [1]
+    assert result.ok is False
+
+
+def test_bridge_tool_description_mutation_stays_private(monkeypatch):
+    tools = _catalogue(monkeypatch, {})
+
+    for name in ("get_boxscore", "get_games_on_date"):
+        bridge_tool = tools[name]
+        shared_tool = getattr(team_module, name)
+        suffix = ("Live only." if name in python_tools.LIVE_ONLY_TOOLS
+                  else "Warehouse-backed with live fallback.")
+        assert bridge_tool is not shared_tool, name
+        assert bridge_tool.description.endswith(suffix), name
+        assert not shared_tool.description.endswith(suffix), name
+        before = shared_tool.description
+        bridge_tool.description = bridge_tool.description + " bridge-local"
+        assert shared_tool.description == before, name
+
+
+def test_bridge_clone_keeps_all_names_and_schemas(monkeypatch):
+    tools = _catalogue(monkeypatch, {})
+    source = (BACKEND / "analyst" / "python-tools.ts").read_text(encoding="utf-8")
+    block = source.split(
+        "export const ANALYST_TOOL_NAMES: readonly PythonToolName[] = [", 1)[1]
+    block = block.split("] as const;", 1)[0]
+    declared = re.findall(r'"([^"]+)"', block)
+
+    assert len(declared) == 93
+    assert list(tools.keys()) == declared
+    for name, upstream_schema in UPSTREAM_SCHEMAS.items():
+        assert tools[name].args_schema.model_json_schema() == upstream_schema, name
+
+
+def test_timeout_error_text_for_each_tool_kind():
+    source = (BACKEND / "analyst" / "python-tools.ts").read_text(encoding="utf-8")
+    block = source.split(
+        "export const ANALYST_TOOL_NAMES: readonly PythonToolName[] = [", 1)[1]
+    block = block.split("] as const;", 1)[0]
+    declared = set(re.findall(r'"([^"]+)"', block))
+    elapsed = f"{python_tools.LIVE_CALL_TIMEOUT_S:.1f}s"
+
+    assert python_tools._timeout_error("get_recap") == (
+        f"get_recap timed out after {elapsed}: the upstream source is a live "
+        "stats.nba.com call, not the warehouse. Retry later, or answer "
+        "from the warehouse-backed get_boxscore tool."
+    )
+    assert python_tools._timeout_error("get_splits") == (
+        f"get_splits timed out after {elapsed}; "
+        "the warehouse read is unavailable right now; retry later"
+    )
+    assert python_tools._timeout_error("sql_exec") == (
+        f"sql_exec timed out after {elapsed}; "
+        "the read did not complete in time; retry later"
+    )
+    for alternative in python_tools.LIVE_ONLY_TOOLS.values():
+        assert alternative in declared
+
+
+def test_non_network_tool_uses_the_bridge_budget(monkeypatch):
+    budget_ms = _bridge_budget_ms()
+    assert budget_ms > python_tools.LIVE_CALL_TIMEOUT_S * 1000
+
+    class _Sleeper:
+        description = "sleeper"
+
+        def __init__(self, delay):
+            self.delay = delay
+
+        async def ainvoke(self, arguments):
+            await asyncio.sleep(self.delay)
+            return {"tool": "probe", "ok": True, "rows": [], "columns": []}
+
+    monkeypatch.setattr(python_tools, "LIVE_CALL_TIMEOUT_S", 0.01)
+    tools = {"sql_exec": _Sleeper(0.05), "get_splits": _Sleeper(0.05)}
+
+    non_network = asyncio.run(
+        python_tools._execute_tool_bounded(tools, "sql_exec", {}))
+    assert non_network["ok"] is True
+
+    network = asyncio.run(
+        python_tools._execute_tool_bounded(tools, "get_splits", {}))
+    assert network["ok"] is False
+    assert network["error"] == (
+        "get_splits timed out after 0.0s; "
+        "the warehouse read is unavailable right now; retry later"
+    )
+
+
+def test_central_bound_times_out_a_warehouse_backed_tool(monkeypatch):
+    release = threading.Event()
+    fake = _BlockingTool(release)
+    monkeypatch.setattr(python_tools, "LIVE_CALL_TIMEOUT_S", 0.1)
+    tools = _catalogue(monkeypatch, {("shared.tools.player", "get_splits"): fake})
+    try:
+        res = asyncio.run(python_tools._execute_tool_bounded(
+            tools, "get_splits", {"player_id": 424242, "season": "2024-25"}))
+    finally:
+        release.set()
+
+    assert res["tool"] == "get_splits"
+    assert res["ok"] is False
+    assert res["rows"] == []
+    assert isinstance(res["columns"], list)
+    assert res["error"] == (
+        "get_splits timed out after 0.1s; "
+        "the warehouse read is unavailable right now; retry later"
+    )
+
+
+def test_warehouse_backed_result_is_byte_identical(monkeypatch):
+    spec = LIST_TOOLS[1]
+    expected = {
+        "tool": "get_splits", "ok": True,
+        "rows": [dict(SPLIT_ROW), dict(SPLIT_ROW_WITHOUT_FG)],
+        "columns": ["split", "GP", "PPG", "FG_PCT"],
+        "meta": {"source": "warehouse", "season": "2024-25"},
+    }
+    fake = _stub(spec, result={
+        "tool": "get_splits", "ok": True,
+        "rows": [dict(row) for row in spec["rows"]],
+        "meta": {"source": "warehouse", "season": "2024-25"},
+    })
+    tools = _catalogue(monkeypatch, {(spec["module"], spec["attribute"]): fake})
+
+    res = _invoke(tools["get_splits"], spec["arguments"])
+
+    assert res == expected

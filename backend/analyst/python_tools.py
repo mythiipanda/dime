@@ -22,7 +22,48 @@ from mcp.server.stdio import stdio_server
 from mcp.types import CallToolResult, ListToolsResult, TextContent, Tool
 
 
-RECAP_LIVE_TIMEOUT_S = 10.0
+LIVE_CALL_TIMEOUT_S = 12.0
+
+NETWORK_TOOL_SOURCES = {
+    "get_boxscore": "stats.nba.com",
+    "get_briefing": "stats.nba.com",
+    "get_clutch_stats": "stats.nba.com",
+    "get_combine": "stats.nba.com",
+    "get_dataset": "live upstream sources",
+    "get_draft_board": "stats.nba.com",
+    "get_draft_model": "live college stats",
+    "get_games_on_date": "stats.nba.com",
+    "get_hustle": "stats.nba.com",
+    "get_injuries": "ESPN",
+    "get_injury_impact": "stats.nba.com",
+    "get_last_x": "stats.nba.com",
+    "get_leaders": "stats.nba.com",
+    "get_lineup_matchup_matrix": "stats.nba.com",
+    "get_lineup_stats": "stats.nba.com",
+    "get_lineups": "stats.nba.com",
+    "get_matchup_brief": "stats.nba.com",
+    "get_matchup_preview": "stats.nba.com",
+    "get_matchup_splits": "stats.nba.com",
+    "get_on_off": "pbpstats",
+    "get_player_report": "stats.nba.com",
+    "get_playoff_sim": "stats.nba.com",
+    "get_playoffs": "stats.nba.com",
+    "get_playtype_profile": "stats.nba.com",
+    "get_ratings": "stats.nba.com",
+    "get_recap": "stats.nba.com",
+    "get_regression_check": "stats.nba.com",
+    "get_rotation_check": "stats.nba.com",
+    "get_scout_pack": "stats.nba.com",
+    "get_scouting_report": "stats.nba.com",
+    "get_shot_compare": "stats.nba.com",
+    "get_shot_zones": "stats.nba.com",
+    "get_splits": "stats.nba.com",
+    "get_standings": "stats.nba.com",
+    "get_team_hub": "stats.nba.com",
+    "get_wowy": "pbpstats",
+}
+
+LIVE_ONLY_TOOLS = {"get_recap": "get_boxscore"}
 
 TOOL_REGISTRY = None
 
@@ -2339,7 +2380,6 @@ def catalogue():
         res = await _bounded_live_call(
             _orig_get_recap, "get_recap",
             {"game_id": game_id, "season": season},
-            RECAP_LIVE_TIMEOUT_S,
         )
         return _row_list_result(res, "get_recap", default_cols)
 
@@ -3638,6 +3678,13 @@ def catalogue():
             get_scouting_report,
         )
     }
+    for _network_name in NETWORK_TOOL_SOURCES:
+        _network_tool = TOOL_REGISTRY[_network_name].model_copy(deep=True)
+        TOOL_REGISTRY[_network_name] = _network_tool
+        _backing = ("Live only." if _network_name in LIVE_ONLY_TOOLS
+                    else "Warehouse-backed with live fallback.")
+        if not _network_tool.description.endswith(_backing):
+            _network_tool.description = f"{_network_tool.description} {_backing}"
     return TOOL_REGISTRY
 
 TOOL_REGISTRY = catalogue
@@ -3705,8 +3752,34 @@ async def _sectioned_result(orig: Any, name: str, args: dict[str, Any]) -> dict:
     return _flatten_sections(res, ["section"])
 
 
-async def _bounded_live_call(orig: Any, name: str, args: dict[str, Any],
-                             timeout_s: float) -> dict[str, Any]:
+def _live_timeout_error(name: str, source: str, alternative: str) -> str:
+    return (
+        f"{name} timed out after {LIVE_CALL_TIMEOUT_S:.1f}s: the upstream "
+        f"source is a live {source} call, not the warehouse. Retry later, or "
+        f"answer from the warehouse-backed {alternative} tool."
+    )
+
+
+def _network_meta(name: str) -> tuple[str, str]:
+    return NETWORK_TOOL_SOURCES[name], LIVE_ONLY_TOOLS.get(name, name)
+
+
+def _timeout_error(name: str) -> str:
+    if name in LIVE_ONLY_TOOLS:
+        source, alternative = _network_meta(name)
+        return _live_timeout_error(name, source, alternative)
+    if name in NETWORK_TOOL_SOURCES:
+        return (
+            f"{name} timed out after {LIVE_CALL_TIMEOUT_S:.1f}s; "
+            "the warehouse read is unavailable right now; retry later"
+        )
+    return (
+        f"{name} timed out after {LIVE_CALL_TIMEOUT_S:.1f}s; "
+        "the read did not complete in time; retry later"
+    )
+
+
+async def _bounded_live_call(orig: Any, name: str, args: dict[str, Any]) -> dict[str, Any]:
     loop = asyncio.get_running_loop()
     future: asyncio.Future[Any] = loop.create_future()
 
@@ -3732,15 +3805,11 @@ async def _bounded_live_call(orig: Any, name: str, args: dict[str, Any],
             _publish(value, None)
 
     threading.Thread(target=_worker, daemon=True).start()
-    done, _pending = await asyncio.wait({future}, timeout=timeout_s)
+    done, _pending = await asyncio.wait({future}, timeout=LIVE_CALL_TIMEOUT_S)
     if not done:
         future.cancel()
-        return {"tool": name, "ok": False, "error": (
-            f"{name} timed out after {timeout_s:.1f}s: the upstream source is a "
-            "live stats.nba.com call, not the warehouse. Retry the same call "
-            "later, or answer the question from a warehouse-backed tool such "
-            "as get_boxscore."
-        )}
+        return {"tool": name, "ok": False, "rows": [], "columns": [],
+                "error": _timeout_error(name)}
     error = future.exception()
     if error is not None:
         return {"tool": name, "ok": False,
@@ -3749,6 +3818,18 @@ async def _bounded_live_call(orig: Any, name: str, args: dict[str, Any],
     if not isinstance(raw, dict):
         return {"tool": name, "ok": False, "error": str(raw)}
     return raw
+
+
+async def _execute_tool_bounded(tools: dict[str, Any], name: str,
+                                arguments: dict[str, Any]) -> dict[str, Any]:
+    invoke = lambda: asyncio.run(tools[name].ainvoke(arguments))
+    if name not in NETWORK_TOOL_SOURCES:
+        return await asyncio.to_thread(invoke)
+    try:
+        return await asyncio.wait_for(asyncio.to_thread(invoke), LIVE_CALL_TIMEOUT_S)
+    except asyncio.TimeoutError:
+        return {"tool": name, "ok": False, "rows": [], "columns": [],
+                "error": _timeout_error(name)}
 
 
 def _row_list_result(res: dict, name: str, default_cols: list[str]) -> dict:
@@ -3806,6 +3887,7 @@ def wire_default(value):
 
 
 async def main():
+    os.environ.setdefault("DIME_LIVE_ATTEMPTS", "1")
     warehouse = Path(os.environ["DIME_WAREHOUSE"])
     if not warehouse.is_absolute() or not warehouse.is_file():
         raise ValueError("DIME_WAREHOUSE must be an explicit existing absolute file")
@@ -3818,10 +3900,8 @@ async def main():
 
     async def call_tool(_ctx, params):
         try:
-            # SQL's existing implementation performs blocking DuckDB work. Keep
-            # MCP responsive while independent read-only calls execute.
-            result = await asyncio.to_thread(
-                lambda: asyncio.run(tools[params.name].ainvoke(params.arguments or {})))
+            result = await _execute_tool_bounded(
+                tools, params.name, params.arguments or {})
             sanitized = sanitize_for_wire(result)
             return CallToolResult(content=[TextContent(type="text", text=json.dumps(sanitized, allow_nan=False, default=wire_default))])
         except Exception as error:
