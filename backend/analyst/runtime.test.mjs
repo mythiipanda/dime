@@ -1177,66 +1177,137 @@ test("real statistical tools cross MCP with anchor compatibility, rows, columns,
     assert(Array.isArray(scoutingReportRes.structuredContent.result.rows), "scouting report rows must be an array so the answer can cite it");
     assert(Array.isArray(scoutingReportRes.structuredContent.result.columns), "scouting report columns must be an array");
 
-    // Verify anchor compatibility across all 91 analytical/statistical tools
-    const anchorToolNames = [
-      "get_rapm", "get_game_prediction", "get_wpa_leaders", "get_comps",
-      "get_lineup_stats", "get_win_prob", "get_on_off", "get_shot_zones",
-      "get_four_factors", "get_clutch_stats", "get_competitive_ratings",
-      "get_hustle", "get_injuries", "get_award_results", "get_briefing",
-      "get_standings", "get_rest", "get_team_trajectory",
-      "get_ratings", "get_rookie_leaders", "get_cap_ledger",
-      "get_leaders", "get_lineup_leaders", "get_playoffs",
-      "get_team_leaders", "get_team_compare", "get_elo_standings",
-      "get_draft_board", "get_combine", "get_young_player_usage",
-      "get_contract_value", "get_trade_check", "get_trade_value", "get_situational_splits",
-      "get_playoff_sim", "get_playoff_team_ratings", "get_player_risers", "get_standings_deep",
-      "get_warehouse_freshness", "get_finder", "get_draft_model", "get_leaderboard_deltas",
-      "get_player_ratings", "get_risers", "get_team_four_factors",
-      "get_streaks", "get_playtype_profile", "get_defensive_matchups",
-      "get_head_to_head", "get_lineup_matchup_matrix", "get_transactions",
-      "get_wowy", "get_shot_compare", "get_raptor_history",
-      "get_season_series", "get_team_game_log", "get_zone_deltas",
-      "search_shots", "get_stint_timeline", "get_possession_log",
-      "get_elo", "get_team_shot_zones", "get_historical_leaders", "get_today", "get_morning_briefing", "get_tracking_profile",
-      "get_rest_advantage", "get_rapm_prior", "search_game_logs",
-      "get_dataset", "get_dataset_freshness", "get_career_arc", "run_python",
-      "get_matchup_preview", "get_matchup_splits", "get_regression_check",
-      "get_scout_pack", "get_rotation_check",
-      "get_injury_impact", "get_matchup_brief", "get_watchlist",
-      "get_games_on_date", "get_boxscore", "get_award_race", "get_last_x",
-      "get_player_report", "get_team_hub",
-      "get_lineups", "get_splits", "get_recap", "get_scouting_report"
-    ];
+    const anchorToolNames = bridge.tools.map(tool => tool.name);
+    assert.equal(new Set(anchorToolNames).size, bridge.tools.length);
+    const anchorArgs = {
+      sql_exec: { sql: "SELECT PTS, _source FROM silver_hist_player_seasons ORDER BY PTS" },
+      warehouse_schema: {},
+      get_rapm: { player: "NonexistentPlayer", season: "2024-25" },
+      get_game_prediction: { a: "BOS", b: "MIA", n_sims: 100 },
+      get_wpa_leaders: { season: 2025, limit: 5 },
+      get_comps: { player_id: 2544, season: "2023-24", k: 3 },
+      get_lineup_stats: { team: "BOS", season: "2023-24", limit: 5 },
+      get_win_prob: { team_a: "BOS", team_b: "MIA" },
+      get_on_off: { player_id: 2544, team_id: 1610612747, season: "2023-24" },
+      get_shot_zones: { player_id: 2544, season: "2023-24", min_attempts: 50 },
+      get_four_factors: { team: "BOS" },
+      get_clutch_stats: { player: "LeBron James" },
+      get_competitive_ratings: { team: "BOS" },
+      get_hustle: { scope: "player" },
+      get_injuries: { team: "BOS" },
+      get_award_results: { view: "winner", award: "mvp" },
+      get_briefing: { game_date: "10/24/2023" },
+      get_standings: { season: "2023-24" },
+      get_rest: { team_abbrev: "BOS", season: "2023-24" },
+      get_team_trajectory: { team: "BOS", seasons_back: 3 },
+      get_ratings: { team: "BOS" },
+      get_rookie_leaders: { stat: "ppg", limit: 5 },
+      get_cap_ledger: { team: "BOS" },
+      get_leaders: { stat_category: "PTS" },
+      get_lineup_leaders: { min_minutes: 100 },
+      get_playoffs: { season: "2023-24" },
+      get_team_leaders: { stat_category: "AST", season: "2023-24" },
+      get_team_compare: { stat_category: "PTS", top: 3, season: "2023-24" },
+      get_elo_standings: { season: "2023-24", limit: 5 },
+      get_draft_board: { season: "2025" },
+      get_combine: { season: "2025" },
+      get_young_player_usage: { max_age: 22, min_minutes: 1000 },
+      get_contract_value: { player: "NonexistentPlayer" },
+      get_trade_check: { team_a: "BOS", team_b: "MIA" },
+      get_trade_value: { team_a: "BOS", team_b: "MIA" },
+      get_situational_splits: { entity: "LeBron James" },
+      get_playoff_sim: { season: "2023-24", sims: 100 },
+      get_playoff_team_ratings: { season: "2023-24", limit: 5 },
+      get_player_risers: { season: "2023-24", n: 5 },
+      get_standings_deep: { season: "2023-24", top: 3 },
+      get_warehouse_freshness: {},
+      get_finder: { mode: "streak", team_abbrev: "BOS" },
+      get_draft_model: { season: "2025" },
+      get_leaderboard_deltas: { season: "2023-24", days: 7 },
+      get_player_ratings: { season: "2023-24", metric: "offense", limit: 5 },
+      get_risers: { season: "2023-24", weeks: 4 },
+      get_team_four_factors: { team: "BOS", season: "2023-24" },
+      get_streaks: { stat: "points" },
+      get_playtype_profile: { subject: "LeBron James" },
+      get_defensive_matchups: { player: "LeBron James" },
+      get_head_to_head: { player: "LeBron James", opponent: "BOS" },
+      get_lineup_matchup_matrix: { team_a: "BOS", team_b: "MIA" },
+      get_transactions: { team: "BOS" },
+      get_wowy: { player_a: "LeBron James", player_b: "Anthony Davis", season: "2023-24" },
+      get_shot_compare: { a: "LeBron James", b: "Stephen Curry", season: "2023-24" },
+      get_raptor_history: { player: "LeBron James" },
+      get_season_series: { team_a: "BOS", team_b: "MIA" },
+      get_team_game_log: { team: "BOS", limit: 10 },
+      get_zone_deltas: { player: "LeBron James", season: 2025 },
+      search_shots: { player: "LeBron James", limit: 5 },
+      get_stint_timeline: { game_id: "0022300001" },
+      get_possession_log: { game_id: "0022300001" },
+      get_elo: { season: "2024-25" },
+      get_team_shot_zones: { teams: "BOS,LAL", season: "2024-25" },
+      get_historical_leaders: { category: "pts", start_season: 2023, end_season: 2024, limit: 5 },
+      get_today: { season: "2024-25" },
+      get_morning_briefing: { season: "2024-25" },
+      get_tracking_profile: { player: "LeBron James", measure_type: "Drives" },
+      get_rest_advantage: { team: "BOS", season: "2025-26" },
+      get_rapm_prior: { player: "Nikola Jokić" },
+      search_game_logs: { player: "Jayson Tatum", min_points: 30, season: "2025-26" },
+      get_dataset: { name: "standings", season: "2026-27" },
+      get_dataset_freshness: {},
+      get_career_arc: { player: "LeBron James" },
+      run_python: { code: "print('hello from test')" },
+      get_matchup_preview: { a: "BOS", b: "MIA" },
+      get_matchup_splits: { player: "LeBron James" },
+      get_regression_check: { player: "LeBron James" },
+      get_scout_pack: { team: "BOS", opponent: "MIA" },
+      get_rotation_check: { team: "BOS" },
+      get_injury_impact: { team: "BOS" },
+      get_matchup_brief: { a: "BOS", b: "MIA" },
+      get_watchlist: { season: "2025-26" },
+      get_games_on_date: { game_date: "01/15/2025", season: "2024-25" },
+      get_boxscore: { game_id: "0022400001", season: "2024-25" },
+      get_award_race: { award: "MVP", season: "2024-25" },
+      get_last_x: { player_id: 2544, n: 5, season: "2024-25" },
+      get_player_report: { player: 2544, season: "2024-25" },
+      get_team_hub: { team_id: 1610612747, season: "2024-25" },
+      get_lineups: { team_id: 1610612747, season: "2024-25" },
+      get_splits: { player_id: 2544, season: "2024-25" },
+      get_recap: { game_id: "0022300001", season: "2024-25" },
+      get_scouting_report: { team_id: 1610612747, season: "2024-25" }
+    };
+    let wrapperInvocations = 0;
+    let toolsExercised = 0;
+    let citationsValidated = 0;
+    let assertionsPassed = 0;
     for (const toolName of anchorToolNames) {
-      const syntheticRecord = {
-        ref: `ref-${toolName}`,
-        callId: `call-${toolName}`,
-        tool: toolName,
-        response: {
-          content: [{
-            type: "text",
-            text: JSON.stringify({
-              ok: true,
-              tool: toolName,
-              rows: [{ id: 1, val: 42 }],
-              columns: ["id", "val"]
-            })
-          }]
-        }
-      };
+      const tool = toolMap.get(toolName);
+      assert(tool, `${toolName} must exist in the live catalogue`);
+      const res = await tool.execute(`call-anchor-${toolName}`, anchorArgs[toolName], undefined);
+      wrapperInvocations++;
+      assert(res.structuredContent, `${toolName} returned no structured content`);
+      const record = bridge.results.get(res.structuredContent.ref);
+      assert(record, `${toolName} left no retained source record`);
+      const sourced = sourceResult(record);
+      assertionsPassed++;
+      assert.equal(sourced.structuredContent.tool, toolName);
+      const result = sourced.structuredContent.result;
+      toolsExercised++;
+      if (result.rows === undefined) continue;
+      assertionsPassed++;
+      assert(Array.isArray(result.rows), `${toolName} rows must be an array`);
+      if (result.rows.length === 0) continue;
+      assertionsPassed++;
+      assert(Array.isArray(result.columns), `${toolName} columns must be an array`);
+      const citedColumn = result.columns.find(column => typeof column === "string" && Object.hasOwn(result.rows[0], column));
+      assertionsPassed++;
+      assert(citedColumn, `${toolName} cited column must exist on the real first row`);
       const submission = validateAnswerSubmission({
-        blocks: [{
-          text: `Anchor for ${toolName}`,
-          anchors: [{
-            ref: syntheticRecord.ref,
-            row: 0,
-            columns: ["id", "val"]
-          }]
-        }]
-      }, (ref) => ref === syntheticRecord.ref ? syntheticRecord : undefined);
+        blocks: [{ text: `Anchor for ${toolName}`, anchors: [{ ref: record.ref, row: 0, columns: [citedColumn] }] }]
+      }, ref => ref === record.ref ? record : undefined);
+      assertionsPassed++;
       assert.equal(submission.blocks[0].text, `Anchor for ${toolName}`);
+      citationsValidated++;
     }
-    console.log(JSON.stringify({ proof: "statistical-tools-anchor-compatible", tools: anchorToolNames.length, catalogueTools: bridge.tools.length }));
+    console.log(JSON.stringify({ proof: "all-tools-citation-contract", toolsExercised, wrapperInvocations, citationsValidated, assertionsPassed, catalogueTools: bridge.tools.length }));
   } finally {
     await bridge.close();
   }
