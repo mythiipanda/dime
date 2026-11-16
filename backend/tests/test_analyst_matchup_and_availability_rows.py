@@ -704,9 +704,9 @@ def test_registry_matches_the_typescript_tool_names(monkeypatch):
     tools = _catalogue(monkeypatch, {})
 
     source = (BACKEND / "analyst" / "python-tools.ts").read_text(encoding="utf-8")
-    block = source.split(
-        "export const ANALYST_TOOL_NAMES: readonly PythonToolName[] = [", 1)[1]
-    block = block.split("] as const;", 1)[0]
+    block = re.search(
+        r"export const ANALYST_TOOL_NAMES\b[^=]*=\s*\[(.*?)\]\s*as const;", source, re.S
+    ).group(1)
     declared = re.findall(r'"([^"]+)"', block)
 
     assert len(declared) == 93

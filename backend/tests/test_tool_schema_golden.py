@@ -47,8 +47,9 @@ def _serialize(value):
 
 def _typescript_names():
     source = TS_SOURCE.read_text(encoding="utf-8")
-    block = source.split("export const ANALYST_TOOL_NAMES: readonly PythonToolName[] = [", 1)[1]
-    block = block.split("] as const;", 1)[0]
+    block = re.search(
+        r"export const ANALYST_TOOL_NAMES\b[^=]*=\s*\[(.*?)\]\s*as const;", source, re.S
+    ).group(1)
     return re.findall(r'"([^"]+)"', block)
 
 

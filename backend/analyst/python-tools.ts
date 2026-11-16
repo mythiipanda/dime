@@ -7,102 +7,7 @@ import { Value } from "typebox/value";
 import type { JsonValue } from "@earendil-works/pi-ai";
 import { defineTool } from "@earendil-works/pi-coding-agent";
 
-export type PythonToolName =
-    | "sql_exec"
-    | "warehouse_schema"
-    | "get_rapm"
-    | "get_game_prediction"
-    | "get_wpa_leaders"
-    | "get_comps"
-    | "get_lineup_stats"
-    | "get_win_prob"
-    | "get_on_off"
-    | "get_shot_zones"
-    | "get_four_factors"
-    | "get_clutch_stats"
-    | "get_competitive_ratings"
-    | "get_hustle"
-    | "get_injuries"
-    | "get_award_results"
-    | "get_briefing"
-    | "get_standings"
-    | "get_rest"
-    | "get_team_trajectory"
-    | "get_ratings"
-    | "get_rookie_leaders"
-    | "get_cap_ledger"
-    | "get_leaders"
-    | "get_lineup_leaders"
-    | "get_playoffs"
-    | "get_team_leaders"
-    | "get_team_compare"
-    | "get_elo_standings"
-    | "get_draft_board"
-    | "get_combine"
-    | "get_young_player_usage"
-    | "get_contract_value"
-    | "get_trade_check"
-    | "get_trade_value"
-    | "get_situational_splits"
-    | "get_playoff_sim"
-    | "get_playoff_team_ratings"
-    | "get_player_risers"
-    | "get_standings_deep"
-    | "get_warehouse_freshness"
-    | "get_finder"
-    | "get_draft_model"
-    | "get_leaderboard_deltas"
-    | "get_player_ratings"
-    | "get_risers"
-    | "get_team_four_factors"
-    | "get_streaks"
-    | "get_playtype_profile"
-    | "get_defensive_matchups"
-    | "get_head_to_head"
-    | "get_lineup_matchup_matrix"
-    | "get_transactions"
-    | "get_wowy"
-    | "get_shot_compare"
-    | "get_raptor_history"
-    | "get_season_series"
-    | "get_team_game_log"
-    | "get_zone_deltas"
-    | "search_shots"
-    | "get_stint_timeline"
-    | "get_possession_log"
-    | "get_elo"
-    | "get_team_shot_zones"
-    | "get_historical_leaders"
-    | "get_today"
-    | "get_morning_briefing"
-    | "get_tracking_profile"
-    | "get_rest_advantage"
-    | "get_rapm_prior"
-    | "search_game_logs"
-    | "get_dataset"
-    | "get_dataset_freshness"
-    | "get_career_arc"
-    | "run_python"
-    | "get_matchup_preview"
-    | "get_matchup_splits"
-    | "get_regression_check"
-    | "get_scout_pack"
-    | "get_rotation_check"
-    | "get_injury_impact"
-    | "get_matchup_brief"
-    | "get_watchlist"
-    | "get_games_on_date"
-    | "get_boxscore"
-    | "get_award_race"
-    | "get_last_x"
-    | "get_player_report"
-    | "get_team_hub"
-    | "get_lineups"
-    | "get_splits"
-    | "get_recap"
-    | "get_scouting_report";
-
-export const ANALYST_TOOL_NAMES: readonly PythonToolName[] = [
+export const ANALYST_TOOL_NAMES = [
     "sql_exec",
     "warehouse_schema",
     "get_rapm",
@@ -198,103 +103,16 @@ export const ANALYST_TOOL_NAMES: readonly PythonToolName[] = [
     "get_scouting_report",
 ] as const;
 
+export type PythonToolName = (typeof ANALYST_TOOL_NAMES)[number];
+
+type ToolLiteralTuple<T extends readonly string[]> = { -readonly [K in keyof T]: Type.TLiteral<T[K]> };
+function makeToolLiterals<const T extends readonly string[]>(names: T): ToolLiteralTuple<T> {
+    return names.map(name => Type.Literal(name)) as unknown as ToolLiteralTuple<T>;
+}
+
 export const sourceRecordSchema = Type.Object({
     ref: Type.String(), callId: Type.String(),
-    tool: Type.Union([
-        Type.Literal("sql_exec"),
-        Type.Literal("warehouse_schema"),
-        Type.Literal("get_rapm"),
-        Type.Literal("get_game_prediction"),
-        Type.Literal("get_wpa_leaders"),
-        Type.Literal("get_comps"),
-        Type.Literal("get_lineup_stats"),
-        Type.Literal("get_win_prob"),
-        Type.Literal("get_on_off"),
-        Type.Literal("get_shot_zones"),
-        Type.Literal("get_four_factors"),
-        Type.Literal("get_clutch_stats"),
-        Type.Literal("get_competitive_ratings"),
-        Type.Literal("get_hustle"),
-        Type.Literal("get_injuries"),
-        Type.Literal("get_award_results"),
-        Type.Literal("get_briefing"),
-        Type.Literal("get_standings"),
-        Type.Literal("get_rest"),
-        Type.Literal("get_team_trajectory"),
-        Type.Literal("get_ratings"),
-        Type.Literal("get_rookie_leaders"),
-        Type.Literal("get_cap_ledger"),
-        Type.Literal("get_leaders"),
-        Type.Literal("get_lineup_leaders"),
-        Type.Literal("get_playoffs"),
-        Type.Literal("get_team_leaders"),
-        Type.Literal("get_team_compare"),
-        Type.Literal("get_elo_standings"),
-        Type.Literal("get_draft_board"),
-        Type.Literal("get_combine"),
-        Type.Literal("get_young_player_usage"),
-        Type.Literal("get_contract_value"),
-        Type.Literal("get_trade_check"),
-        Type.Literal("get_trade_value"),
-        Type.Literal("get_situational_splits"),
-        Type.Literal("get_playoff_sim"),
-        Type.Literal("get_playoff_team_ratings"),
-        Type.Literal("get_player_risers"),
-        Type.Literal("get_standings_deep"),
-        Type.Literal("get_warehouse_freshness"),
-        Type.Literal("get_finder"),
-        Type.Literal("get_draft_model"),
-        Type.Literal("get_leaderboard_deltas"),
-        Type.Literal("get_player_ratings"),
-        Type.Literal("get_risers"),
-        Type.Literal("get_team_four_factors"),
-        Type.Literal("get_streaks"),
-        Type.Literal("get_playtype_profile"),
-        Type.Literal("get_defensive_matchups"),
-        Type.Literal("get_head_to_head"),
-        Type.Literal("get_lineup_matchup_matrix"),
-        Type.Literal("get_transactions"),
-        Type.Literal("get_wowy"),
-        Type.Literal("get_shot_compare"),
-        Type.Literal("get_raptor_history"),
-        Type.Literal("get_season_series"),
-        Type.Literal("get_team_game_log"),
-        Type.Literal("get_zone_deltas"),
-        Type.Literal("search_shots"),
-        Type.Literal("get_stint_timeline"),
-        Type.Literal("get_possession_log"),
-        Type.Literal("get_elo"),
-        Type.Literal("get_team_shot_zones"),
-        Type.Literal("get_historical_leaders"),
-        Type.Literal("get_today"),
-        Type.Literal("get_morning_briefing"),
-        Type.Literal("get_tracking_profile"),
-        Type.Literal("get_rest_advantage"),
-        Type.Literal("get_rapm_prior"),
-        Type.Literal("search_game_logs"),
-        Type.Literal("get_dataset"),
-        Type.Literal("get_dataset_freshness"),
-        Type.Literal("get_career_arc"),
-        Type.Literal("run_python"),
-        Type.Literal("get_matchup_preview"),
-        Type.Literal("get_matchup_splits"),
-        Type.Literal("get_regression_check"),
-        Type.Literal("get_scout_pack"),
-        Type.Literal("get_rotation_check"),
-        Type.Literal("get_injury_impact"),
-        Type.Literal("get_matchup_brief"),
-        Type.Literal("get_watchlist"),
-        Type.Literal("get_games_on_date"),
-        Type.Literal("get_boxscore"),
-        Type.Literal("get_award_race"),
-        Type.Literal("get_last_x"),
-        Type.Literal("get_player_report"),
-        Type.Literal("get_team_hub"),
-        Type.Literal("get_lineups"),
-        Type.Literal("get_splits"),
-        Type.Literal("get_recap"),
-        Type.Literal("get_scouting_report"),
-    ]),
+    tool: Type.Union(makeToolLiterals(ANALYST_TOOL_NAMES)),
     response: Type.Object({
         content: Type.Array(Type.Unknown()),
         structuredContent: Type.Optional(Type.Unknown()), isError: Type.Optional(Type.Boolean())

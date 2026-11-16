@@ -407,9 +407,9 @@ def test_registry_matches_the_typescript_tool_names(monkeypatch):
     tools = _catalogue(monkeypatch, {})
 
     source = (BACKEND / "analyst" / "python-tools.ts").read_text(encoding="utf-8")
-    block = source.split(
-        "export const ANALYST_TOOL_NAMES: readonly PythonToolName[] = [", 1)[1]
-    block = block.split("] as const;", 1)[0]
+    block = re.search(
+        r"export const ANALYST_TOOL_NAMES\b[^=]*=\s*\[(.*?)\]\s*as const;", source, re.S
+    ).group(1)
     declared = re.findall(r'"([^"]+)"', block)
 
     assert len(declared) == 93
@@ -421,9 +421,9 @@ def test_registry_matches_the_typescript_tool_names(monkeypatch):
 
 def test_network_inventory_derives_real_warehouse_alternatives(monkeypatch):
     source = (BACKEND / "analyst" / "python-tools.ts").read_text(encoding="utf-8")
-    block = source.split(
-        "export const ANALYST_TOOL_NAMES: readonly PythonToolName[] = [", 1)[1]
-    block = block.split("] as const;", 1)[0]
+    block = re.search(
+        r"export const ANALYST_TOOL_NAMES\b[^=]*=\s*\[(.*?)\]\s*as const;", source, re.S
+    ).group(1)
     declared = re.findall(r'"([^"]+)"', block)
     tools = _catalogue(monkeypatch, {})
 
@@ -516,9 +516,9 @@ def test_bridge_tool_description_mutation_stays_private(monkeypatch):
 def test_bridge_clone_keeps_all_names_and_schemas(monkeypatch):
     tools = _catalogue(monkeypatch, {})
     source = (BACKEND / "analyst" / "python-tools.ts").read_text(encoding="utf-8")
-    block = source.split(
-        "export const ANALYST_TOOL_NAMES: readonly PythonToolName[] = [", 1)[1]
-    block = block.split("] as const;", 1)[0]
+    block = re.search(
+        r"export const ANALYST_TOOL_NAMES\b[^=]*=\s*\[(.*?)\]\s*as const;", source, re.S
+    ).group(1)
     declared = re.findall(r'"([^"]+)"', block)
 
     assert len(declared) == 93
@@ -529,9 +529,9 @@ def test_bridge_clone_keeps_all_names_and_schemas(monkeypatch):
 
 def test_timeout_error_text_for_each_tool_kind():
     source = (BACKEND / "analyst" / "python-tools.ts").read_text(encoding="utf-8")
-    block = source.split(
-        "export const ANALYST_TOOL_NAMES: readonly PythonToolName[] = [", 1)[1]
-    block = block.split("] as const;", 1)[0]
+    block = re.search(
+        r"export const ANALYST_TOOL_NAMES\b[^=]*=\s*\[(.*?)\]\s*as const;", source, re.S
+    ).group(1)
     declared = set(re.findall(r'"([^"]+)"', block))
     elapsed = f"{python_tools.LIVE_CALL_TIMEOUT_S:.1f}s"
 
