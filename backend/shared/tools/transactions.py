@@ -217,3 +217,7 @@ def get_transactions(team: str = "", start: str = "", end: str = "",
                                  "for seasons on file; a range outside "
                                  "coverage is reported, never swapped.",
                      **store.warehouse_identity()}}
+
+get_transactions.args_schema.__doc__ = (
+    'Team transactions: signings, waivers, trades by team and date range.'
+)

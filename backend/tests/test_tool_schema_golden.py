@@ -6,6 +6,7 @@ from pathlib import Path
 BACKEND = Path(__file__).resolve().parent.parent
 GOLDEN = Path(__file__).resolve().parent / "tool_schema_golden.json"
 TS_SOURCE = BACKEND / "analyst" / "python-tools.ts"
+SHARED_TOOL_NAMES = ("get_tracking_profile", "get_defensive_matchups", "get_transactions")
 sys.path.insert(0, str(BACKEND))
 sys.path.insert(0, str(BACKEND / "analyst"))
 
@@ -22,6 +23,13 @@ def _capture(tools):
     return result
 
 
+def _shared_snapshot():
+    from shared.tools import WAREHOUSE_TOOLS
+
+    by_name = {tool.name: tool for tool in WAREHOUSE_TOOLS}
+    return _capture({name: by_name[name] for name in SHARED_TOOL_NAMES})
+
+
 def _snapshot():
     from analyst import python_tools
     from analyst import direct_data
@@ -29,6 +37,7 @@ def _snapshot():
     return {
         "catalogue": _capture(python_tools.catalogue()),
         "internal": _capture(direct_data.internal_catalogue()),
+        "shared": _shared_snapshot(),
     }
 
 
@@ -57,6 +66,14 @@ def test_catalogue_golden_matches_live():
 
 def test_internal_golden_matches_live():
     assert _serialize(_golden()["internal"]) == _serialize(_snapshot()["internal"])
+
+
+def test_shared_golden_matches_live():
+    assert _serialize(_golden()["shared"]) == _serialize(_snapshot()["shared"])
+
+
+def test_golden_shared_names():
+    assert list(_golden()["shared"].keys()) == list(SHARED_TOOL_NAMES)
 
 
 def test_live_catalogue_names_match_typescript_list():

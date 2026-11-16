@@ -3752,5 +3752,90 @@
         "type": "object"
       }
     }
+  },
+  "shared": {
+    "get_tracking_profile": {
+      "name": "get_tracking_profile",
+      "description": "Player or team tracking profile: drives, shooting, touches, rebounding, speed.",
+      "args_schema": {
+        "description": "Player or team tracking profile: drives, shooting, touches, rebounding, speed.",
+        "properties": {
+          "player": {
+            "default": "",
+            "title": "Player",
+            "type": "string"
+          },
+          "team": {
+            "default": "",
+            "title": "Team",
+            "type": "string"
+          },
+          "season": {
+            "default": "2025-26",
+            "title": "Season",
+            "type": "string"
+          },
+          "measure_type": {
+            "default": "",
+            "title": "Measure Type",
+            "type": "string"
+          }
+        },
+        "title": "get_tracking_profile",
+        "type": "object"
+      }
+    },
+    "get_defensive_matchups": {
+      "name": "get_defensive_matchups",
+      "description": "One defender's defended-shot profile: frequency and shooter results.",
+      "args_schema": {
+        "description": "One defender's defended-shot profile: frequency and shooter results.",
+        "properties": {
+          "player": {
+            "default": "",
+            "title": "Player",
+            "type": "string"
+          },
+          "season": {
+            "default": "2025-26",
+            "title": "Season",
+            "type": "string"
+          }
+        },
+        "title": "get_defensive_matchups",
+        "type": "object"
+      }
+    },
+    "get_transactions": {
+      "name": "get_transactions",
+      "description": "Team transactions: signings, waivers, trades by team and date range.",
+      "args_schema": {
+        "description": "Team transactions: signings, waivers, trades by team and date range.",
+        "properties": {
+          "team": {
+            "default": "",
+            "title": "Team",
+            "type": "string"
+          },
+          "start": {
+            "default": "",
+            "title": "Start",
+            "type": "string"
+          },
+          "end": {
+            "default": "",
+            "title": "End",
+            "type": "string"
+          },
+          "txn_type": {
+            "default": "",
+            "title": "Txn Type",
+            "type": "string"
+          }
+        },
+        "title": "get_transactions",
+        "type": "object"
+      }
+    }
   }
 }

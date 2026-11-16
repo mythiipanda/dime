@@ -335,3 +335,10 @@ def get_defensive_matchups(player: str = "",
                                  "those shots fell. No per-opponent rows "
                                  "exist, so none are shown.",
                      **store.warehouse_identity()}}
+
+get_tracking_profile.args_schema.__doc__ = (
+    'Player or team tracking profile: drives, shooting, touches, rebounding, speed.'
+)
+get_defensive_matchups.args_schema.__doc__ = (
+    "One defender's defended-shot profile: frequency and shooter results."
+)
