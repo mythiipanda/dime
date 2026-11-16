@@ -1852,7 +1852,7 @@ def catalogue():
             if isinstance(r, dict)
         ]
         res["rows"] = rows
-        res["columns"] = ["holder", "streak", "start_date", "end_date", "active"]
+        res["columns"] = list(rows[0].keys()) if rows else ["holder", "streak", "start_date", "end_date", "active"]
         res["ok"] = True
         return sanitize_for_wire(res)
 

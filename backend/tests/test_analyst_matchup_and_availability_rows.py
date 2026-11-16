@@ -216,6 +216,22 @@ PLAYTYPE_PROFILE = {
     ],
 }
 
+STREAKS = {
+    "name": "get_streaks",
+    "module": "shared.tools.streaks",
+    "attribute": "get_streaks",
+    "arguments": {"stat": "points"},
+    "description": "Longest or currently-active streaks, ranked league-wide.",
+    "default_columns": ["holder", "streak", "start_date", "end_date", "active"],
+    "emitted_columns": ["holder", "holder_id", "streak", "start_date", "end_date", "active"],
+    "streak_rows": [
+        {"holder": "Synthetic Scorer", "holder_id": 2544, "streak": 12,
+         "start_date": "2026-01-02", "end_date": "2026-01-20", "active": True},
+        {"holder": "Synthetic Wing", "holder_id": 2545, "streak": 8,
+         "start_date": "2026-02-01", "end_date": "2026-02-12", "active": False},
+    ],
+}
+
 
 class _FakeTool:
     def __init__(self, description: str, result=None, exc: Exception | None = None):
@@ -601,6 +617,81 @@ def test_playtype_profile_error_paths_keep_default_columns(monkeypatch):
     for result, exc in cases:
         fake = _FakeTool(spec["description"], result=result, exc=exc)
         tools = _playtype_tools(monkeypatch, fake)
+
+        res = _invoke(tools[spec["name"]], spec["arguments"])
+
+        assert res["ok"] is False
+        assert res["rows"] == []
+        assert res["columns"] == spec["default_columns"]
+
+
+def _streaks_upstream_rows(shape):
+    spec = STREAKS
+    streaks = [dict(r) for r in spec["streak_rows"]]
+    if shape == "dict":
+        rows = {"streaks": streaks, "count": len(streaks)}
+    else:
+        rows = streaks
+    return {
+        "tool": spec["name"],
+        "ok": True,
+        "rows": rows,
+        "meta": {"source": "warehouse"},
+    }
+
+
+def _streaks_tools(monkeypatch, fake):
+    spec = STREAKS
+    return _catalogue(monkeypatch, {
+        (spec["module"], spec["attribute"]): fake,
+    })
+
+
+def test_streaks_columns_follow_emitted_row_keys_both_shapes(monkeypatch):
+    spec = STREAKS
+    for shape in ("dict", "list"):
+        fake = _FakeTool(spec["description"], result=_streaks_upstream_rows(shape))
+        tools = _streaks_tools(monkeypatch, fake)
+
+        res = _invoke(tools[spec["name"]], spec["arguments"])
+
+        assert res["ok"] is True, shape
+        assert isinstance(res["rows"], list), shape
+        assert len(res["rows"]) == len(spec["streak_rows"]), shape
+        assert isinstance(res["columns"], list), shape
+        assert res["columns"] == list(res["rows"][0].keys()), shape
+        assert res["columns"] == spec["emitted_columns"], shape
+        assert "holder_id" in res["columns"], shape
+        assert res["rows"][0]["holder_id"] == spec["streak_rows"][0]["holder_id"], shape
+        for key in spec["default_columns"]:
+            assert key in res["columns"], key
+
+
+def test_streaks_empty_rows_keeps_default_columns(monkeypatch):
+    spec = STREAKS
+    fake = _FakeTool(spec["description"], result={
+        "tool": spec["name"], "ok": True, "rows": {},
+        "meta": {"source": "warehouse"},
+    })
+    tools = _streaks_tools(monkeypatch, fake)
+
+    res = _invoke(tools[spec["name"]], spec["arguments"])
+
+    assert res["ok"] is True
+    assert res["rows"] == []
+    assert res["columns"] == spec["default_columns"]
+
+
+def test_streaks_error_paths_keep_default_columns(monkeypatch):
+    spec = STREAKS
+    cases = (
+        ({"tool": spec["name"], "ok": False, "rows": {},
+          "error": "upstream refused the request"}, None),
+        (None, RuntimeError("warehouse unavailable")),
+    )
+    for result, exc in cases:
+        fake = _FakeTool(spec["description"], result=result, exc=exc)
+        tools = _streaks_tools(monkeypatch, fake)
 
         res = _invoke(tools[spec["name"]], spec["arguments"])
 
