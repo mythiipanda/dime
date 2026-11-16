@@ -1970,7 +1970,7 @@ def catalogue():
         else:
             rows = []
         res["rows"] = rows
-        res["columns"] = default_cols
+        res["columns"] = list(rows[0].keys()) if rows else default_cols
         res["ok"] = True
         return sanitize_for_wire(res)
 

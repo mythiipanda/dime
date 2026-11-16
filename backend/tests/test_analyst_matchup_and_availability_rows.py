@@ -179,6 +179,26 @@ SQL_EXEC = {
     "default_columns": [],
 }
 
+DEFENSIVE_MATCHUPS = {
+    "name": "get_defensive_matchups",
+    "module": "shared.tools.tracking",
+    "attribute": "get_defensive_matchups",
+    "arguments": {"player": "Synthetic Defender", "season": "2025-26"},
+    "description": "One defender's defended-shot profile: frequency and shooter results.",
+    "upstream_row": {
+        "CLOSE_DEF_PERSON_ID": 424242,
+        "PLAYER_NAME": "Synthetic Defender",
+        "PLAYER_LAST_TEAM_ABBREVIATION": "TST",
+        "GP": 41,
+        "FREQ": 0.312,
+        "D_FGM": 3.4,
+        "D_FGA": 7.9,
+        "D_FG_PCT": 0.430,
+        "NORMAL_FG_PCT": 0.458,
+        "PCT_PLUSMINUS": -1.2,
+    },
+}
+
 
 class _FakeTool:
     def __init__(self, description: str, result=None, exc: Exception | None = None):
@@ -464,6 +484,31 @@ def test_sql_exec_keeps_non_dict_rows_under_value(monkeypatch):
     assert res["ok"] is True
     assert res["rows"] == [{"n": 12}, {"value": "extra"}, {"value": 7}]
     assert res["columns"] == ["n"]
+
+
+def test_defensive_matchups_columns_follow_upstream_row_keys(monkeypatch):
+    row = dict(DEFENSIVE_MATCHUPS["upstream_row"])
+    fake = _FakeTool(DEFENSIVE_MATCHUPS["description"], result={
+        "tool": DEFENSIVE_MATCHUPS["name"],
+        "ok": True,
+        "rows": [row],
+        "meta": {"source": "warehouse"},
+    })
+    tools = _catalogue(monkeypatch, {
+        (DEFENSIVE_MATCHUPS["module"], DEFENSIVE_MATCHUPS["attribute"]): fake,
+    })
+
+    res = _invoke(tools[DEFENSIVE_MATCHUPS["name"]], DEFENSIVE_MATCHUPS["arguments"])
+
+    assert res["ok"] is True
+    assert isinstance(res["rows"], list)
+    assert len(res["rows"]) == 1
+    assert isinstance(res["columns"], list)
+    assert res["columns"] == list(row.keys())
+    assert not set(res["columns"]) - set(row.keys())
+    assert res["rows"][0] == row
+    for key in row:
+        assert key in res["columns"], key
 
 
 def test_registry_matches_the_typescript_tool_names(monkeypatch):
