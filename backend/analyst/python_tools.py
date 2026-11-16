@@ -1917,7 +1917,7 @@ def catalogue():
         else:
             rows = []
         res["rows"] = rows
-        res["columns"] = ["play_type", "poss_pct", "ppp", "percentile", "gp", "poss"]
+        res["columns"] = list(rows[0].keys()) if rows else ["play_type", "poss_pct", "ppp", "percentile", "gp", "poss"]
         res["ok"] = True
         return sanitize_for_wire(res)
 

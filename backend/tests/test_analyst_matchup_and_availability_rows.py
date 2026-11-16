@@ -199,6 +199,23 @@ DEFENSIVE_MATCHUPS = {
     },
 }
 
+PLAYTYPE_PROFILE = {
+    "name": "get_playtype_profile",
+    "module": "shared.tools.playtypes",
+    "attribute": "get_playtype_profile",
+    "arguments": {"subject": "Synthetic Scorer", "kind": "player",
+                  "side": "offense", "season": "2025-26"},
+    "description": "Synergy play-type profile for one player or team and season: frequency share, PPP, and percentile.",
+    "subject": "Synthetic Scorer",
+    "default_columns": ["play_type", "poss_pct", "ppp", "percentile", "gp", "poss"],
+    "play_types": [
+        {"play_type": "Pick and Roll", "poss_pct": 0.31, "ppp": 1.02,
+         "percentile": 88.0, "gp": 70, "poss": 1200},
+        {"play_type": "Isolation", "poss_pct": 0.22, "ppp": 0.98,
+         "percentile": 74.0, "gp": 70, "poss": 850},
+    ],
+}
+
 
 class _FakeTool:
     def __init__(self, description: str, result=None, exc: Exception | None = None):
@@ -509,6 +526,87 @@ def test_defensive_matchups_columns_follow_upstream_row_keys(monkeypatch):
     assert res["rows"][0] == row
     for key in row:
         assert key in res["columns"], key
+
+
+def _playtype_upstream_rows(shape):
+    spec = PLAYTYPE_PROFILE
+    play_types = [dict(p) for p in spec["play_types"]]
+    if shape == "dict":
+        rows = {
+            "subject": spec["subject"],
+            "subject_id": 2544,
+            "kind": "player",
+            "side": "offense",
+            "season": "2025-26",
+            "play_types": play_types,
+        }
+    else:
+        rows = [{"subject": spec["subject"], **p} for p in play_types]
+    return {
+        "tool": spec["name"],
+        "ok": True,
+        "rows": rows,
+        "meta": {"source": "warehouse"},
+    }
+
+
+def _playtype_tools(monkeypatch, fake):
+    spec = PLAYTYPE_PROFILE
+    return _catalogue(monkeypatch, {
+        (spec["module"], spec["attribute"]): fake,
+    })
+
+
+def test_playtype_profile_columns_follow_upstream_row_keys_both_shapes(monkeypatch):
+    spec = PLAYTYPE_PROFILE
+    for shape in ("dict", "list"):
+        fake = _FakeTool(spec["description"], result=_playtype_upstream_rows(shape))
+        tools = _playtype_tools(monkeypatch, fake)
+
+        res = _invoke(tools[spec["name"]], spec["arguments"])
+
+        assert res["ok"] is True, shape
+        assert isinstance(res["rows"], list), shape
+        assert len(res["rows"]) == len(spec["play_types"]), shape
+        assert isinstance(res["columns"], list), shape
+        assert res["columns"] == list(res["rows"][0].keys()), shape
+        assert "subject" in res["columns"], shape
+        assert res["rows"][0]["subject"] == spec["subject"], shape
+        for key in spec["default_columns"]:
+            assert key in res["columns"], key
+
+
+def test_playtype_profile_empty_rows_keeps_default_columns(monkeypatch):
+    spec = PLAYTYPE_PROFILE
+    fake = _FakeTool(spec["description"], result={
+        "tool": spec["name"], "ok": True, "rows": {},
+        "meta": {"source": "warehouse"},
+    })
+    tools = _playtype_tools(monkeypatch, fake)
+
+    res = _invoke(tools[spec["name"]], spec["arguments"])
+
+    assert res["ok"] is True
+    assert res["rows"] == []
+    assert res["columns"] == spec["default_columns"]
+
+
+def test_playtype_profile_error_paths_keep_default_columns(monkeypatch):
+    spec = PLAYTYPE_PROFILE
+    cases = (
+        ({"tool": spec["name"], "ok": False, "rows": {},
+          "error": "upstream refused the request"}, None),
+        (None, RuntimeError("warehouse unavailable")),
+    )
+    for result, exc in cases:
+        fake = _FakeTool(spec["description"], result=result, exc=exc)
+        tools = _playtype_tools(monkeypatch, fake)
+
+        res = _invoke(tools[spec["name"]], spec["arguments"])
+
+        assert res["ok"] is False
+        assert res["rows"] == []
+        assert res["columns"] == spec["default_columns"]
 
 
 def test_registry_matches_the_typescript_tool_names(monkeypatch):
