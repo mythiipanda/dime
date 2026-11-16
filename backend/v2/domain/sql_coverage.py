@@ -1,22 +1,3 @@
-"""Pure SQL coverage comparison shared by planning and admission.
-
-Planning-time requirement coverage and runtime binding admission must agree on
-what "the same SQL" means.  The rule is exact normalized equality plus one
-conservative extension: a single-table plain SELECT may add direct source-column
-projections (optionally aliased or duplicated) as long as every source column
-projected by the requirement is still projected at least once and every
-non-projection clause is identical.
-
-Anything this extension does not positively recognize keeps exact normalized
-equality, so aggregates, expressions, wildcards, joins, CTEs, subqueries, set
-operations, and any filter/group/order/limit/distinct drift stay rejected.
-
-Canonicalization only normalizes what the SQL grammar makes insignificant:
-identifier case and keyword spelling.  Every literal value keeps its exact
-text, the only exception being the pre-existing ``regular season`` /
-``regular-season`` literal normalization.  In particular a filter such as
-``PLAYER = 'PlayerA'`` never matches ``PLAYER = 'playera'``.
-"""
 from __future__ import annotations
 
 from typing import Any
@@ -38,11 +19,6 @@ def _normalize_regular_season(ast: exp.Expression) -> exp.Expression:
 
 
 def _normalize_identifiers(ast: exp.Expression) -> exp.Expression:
-    """Lowercase identifiers without touching literal values.
-
-    Identifier case is not significant in the duckdb dialect, but string
-    literal case is, so only ``exp.Identifier`` nodes are rewritten.
-    """
     for identifier in ast.find_all(exp.Identifier):
         identifier.set("this", identifier.this.casefold())
     return ast
@@ -72,11 +48,6 @@ def _direct_column(projection: exp.Expression, allowed: frozenset[str]) -> str |
 
 
 def _direct_source_columns(ast: exp.Expression) -> list[str] | None:
-    """Return projected source columns for a plain single-table SELECT.
-
-    ``None`` marks any shape this extension does not positively understand, so
-    the caller keeps exact equality.
-    """
     if not isinstance(ast, exp.Select):
         return None
     if ast.args.get("with") is not None:
@@ -121,7 +92,6 @@ def _projection_extension_covers(
 
 
 def sql_covers(expected_sql: Any, actual_sql: Any) -> bool:
-    """Return whether ``actual_sql`` covers ``expected_sql``."""
     if not (isinstance(actual_sql, str) and actual_sql.strip()):
         return False
     if not isinstance(expected_sql, str):

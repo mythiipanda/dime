@@ -83,9 +83,6 @@ def _canonical_unit(value):
         return _UNIT_WORD_FORMS[words]
     return "_".join(words.split())
 
-# Units the warehouse column semantics really declare as cumulative season
-# totals. Explicit list only. Unlisted units remain unknown; do not infer
-# basis from a "total_" prefix.
 _TOTAL_MEASURE_UNITS = frozenset({
     "count", "total", "total_points", "total_rebounds", "total_assists"})
 
@@ -764,10 +761,6 @@ class _BindingAdmission:
             raise ValueError("non-rank calculation cannot carry rank unit")
 
     def _check_calculation_basis(self, binding, calculation) -> None:
-        # CalculationRequirement carries no basis map, so the only explicit
-        # contract available is the task-level basis for an output id the
-        # calculation requirement shares with the task. The calculation's own
-        # declared unit is the authority; the model's binding unit is not.
         expected = self.task.expected_bases.get(binding.output_id)
         if expected is None:
             return

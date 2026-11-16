@@ -1,11 +1,3 @@
-"""Requested measure basis at the evidence admission boundary.
-
-Fixture C from R500: the task asks for cumulative points while the source
-serves points per game. Before this check the binding was admitted and the
-output reported ``complete``. The basis is now carried by TaskSpec /
-EvidenceRequirement ``expected_bases`` and compared at admission against the
-evidence/catalog authoritative unit, never against the model's binding unit.
-"""
 import json
 from dataclasses import FrozenInstanceError
 from datetime import UTC, datetime
@@ -103,8 +95,6 @@ def test_actual_column_semantics_cumulative_units_map_to_total():
         unit, _ = _column_semantics("silver_leaders_pts", column)
         assert unit == unit_name
         assert _measure_basis(unit) is MeasureBasis.TOTAL
-    # A "total_" prefix is not the rule: a real unit with that prefix stays
-    # outside the requested-basis vocabulary.
     assert _measure_basis("total_minutes") is None
 
 

@@ -1,4 +1,3 @@
-"""Owned synthetic warehouse and direct-tool baseline for the Pi integration test."""
 
 import asyncio
 import json
@@ -13,7 +12,6 @@ from python_tools import catalogue
 async def main():
     root = Path(os.environ["DIME_PI_TEST_ROOT"])
     warehouse = Path(os.environ["DIME_WAREHOUSE"])
-    # Never replace a pre-existing database, even in a proof directory.
     if warehouse.exists():
         raise FileExistsError(warehouse)
     con = duckdb.connect(str(warehouse))

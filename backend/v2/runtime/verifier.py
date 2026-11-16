@@ -82,12 +82,6 @@ def _matches_calculation_display(raw: str, values: set[Decimal]) -> bool:
     return False
 
 def _fold_separators(text: str) -> str:
-    """Fold look-alike separators inside ``YYYY<sep>YY`` spans to ASCII ``-``.
-
-    The fold is one character for one character, so every offset of the result
-    maps to the same offset of ``text`` and the wording the model actually
-    wrote stays available for the reported reasons.
-    """
     characters: list[str] | None = None
     for match in _SEASON_SPAN_RX.finditer(text):
         if characters is None:

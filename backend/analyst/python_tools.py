@@ -1,4 +1,3 @@
-"""Named Dime data operations over MCP stdio. Pi receives a fixed read-only view."""
 
 import asyncio
 from datetime import date, datetime
@@ -13,7 +12,6 @@ from typing import Any
 
 import numpy as np
 
-# Resolve source imports independently of the private working directory.
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
@@ -66,6 +64,81 @@ NETWORK_TOOL_SOURCES = {
 LIVE_ONLY_TOOLS = {"get_recap": "get_boxscore"}
 
 TOOL_REGISTRY = None
+
+_TOOL_SCHEMA_DESCRIPTIONS = {
+    'get_award_results': 'Historical recorded NBA award voting results.',
+    'get_briefing': 'Morning briefing: scoreboard plus top scorers. Date MM/DD/YYYY, blank means latest.',
+    'get_cap_ledger': 'Payroll, luxury tax position, and first/second apron room for one team.',
+    'get_clutch_stats': 'NBA clutch statistics (last 5 min, margin <= 5) for player or team scope.',
+    'get_combine': 'Anthropometric measurements (height, wingspan, reach, weight) and athletic drills.',
+    'get_competitive_ratings': 'Competitive Margin of Victory (MOV excluding blowouts).',
+    'get_comps': 'Nearest statistical neighbors by per-36 + advanced shape. Same-season only.',
+    'get_contract_value': 'Contract value residuals from production vs salary.',
+    'get_dataset': 'Query standard silver dataset tables or live upstream extracts.',
+    'get_dataset_freshness': 'Query freshness status across silver warehouse tables.',
+    'get_defensive_matchups': "One defender's defended-shot profile: frequency and shooter results.",
+    'get_draft_board': 'Blended draft board rankings combining college production and combine testing.',
+    'get_draft_model': 'Prospect star-probability classifier from college production.',
+    'get_elo': 'ELO power ratings from warehouse game results for one season.',
+    'get_elo_standings': 'ELO power ratings as standings with implied win pct, win equivalents, and Elo-implied spreads.',
+    'get_finder': 'Historical multi-season search across streaks, versus, span, player_streak, and head2head.',
+    'get_four_factors': 'Team four factors breakdown (eFG%, TOV%, ORB%, FT rate, plus defensive mirrors).',
+    'get_game_prediction': 'Pre-game Monte Carlo prediction: win probability, projected score/total, and confidence intervals.',
+    'get_head_to_head': "Player matchup history vs one opponent team or opposing player's team.",
+    'get_historical_leaders': 'League leaders per season or best single seasons from history (2015-2026).',
+    'get_hustle': 'NBA hustle leaders for player or team scope.',
+    'get_injuries': 'NBA injury and availability report.',
+    'get_leaderboard_deltas': 'Scoring leaderboard movers: latest snapshot vs the one from days ago.',
+    'get_leaders': 'Qualified league statistical leaders for any category.',
+    'get_lineup_leaders': 'League-wide 5-man lineup net-rating leaderboard with minutes qualification floor.',
+    'get_lineup_matchup_matrix': 'Lineup-vs-lineup matrix for a team matchup crossing qualifying 5-man units.',
+    'get_lineup_stats': 'Five-man lineup ratings with sample floors. Names, abbrevs, or ids.',
+    'get_morning_briefing': "Morning briefing: today's games, watchlist updates, leaderboard movers.",
+    'get_on_off': 'On and off splits for one player on one team. Possession level.',
+    'get_player_ratings': 'Qualified player on-court offensive or defensive rating leaderboard.',
+    'get_player_risers': 'Player risers and fallers: last-N games scoring and efficiency versus season baseline.',
+    'get_playoff_sim': 'Simulated championship and finals odds from power ratings via Monte Carlo brackets.',
+    'get_playoff_team_ratings': 'Team offensive, defensive, and net ratings from playoff game logs.',
+    'get_playoffs': 'Playoff series wins per team, finals matchup, and champion for any season.',
+    'get_playtype_profile': 'Synergy play-type profile for one player or team and season: frequency share, PPP, and percentile.',
+    'get_possession_log': 'Possession-by-possession log for one game: order, clocks, offense, events, points, WPA swings.',
+    'get_rapm': 'RAPM-lite ratings. Blank player returns top list, else one row.',
+    'get_rapm_prior': 'Prior-informed RAPM for one player blending current season with historical priors.',
+    'get_raptor_history': 'Season-by-season RAPTOR and WAR for one player name.',
+    'get_ratings': 'Team offensive, defensive, net ratings, and pace (league-wide or team specific).',
+    'get_rest': 'Back-to-back and rest-day schedule splits for any team.',
+    'get_rest_advantage': 'Rest advantage: who had the fresher legs before each game.',
+    'get_risers': 'Team risers and fallers: last-N weeks win percentage versus season win percentage.',
+    'get_rookie_leaders': 'Current rookie class leaderboard (first-year NBA players only, verified against historical seasons).',
+    'get_season_series': 'Head-to-head between two teams across a season: every meeting (regular season and playoffs) with winner, scores, date, matchup.',
+    'get_shot_compare': 'Shot-diet showdown: zone eFG and share for two players.',
+    'get_shot_zones': 'Zone splits for one player id: rim, midrange, three with shares.',
+    'get_situational_splits': 'Clutch situational splits for one player or team across score margins, time thresholds, and venues.',
+    'get_standings': 'NBA regular-season conference and league standings for any season.',
+    'get_standings_deep': 'Standings deep cuts: clutch records, comeback kings, blown leads, and monthly momentum.',
+    'get_stint_timeline': 'Ordered 5-man stint timeline for one game: lineups, clocks, scores, swings.',
+    'get_streaks': 'Longest or currently-active streaks, ranked league-wide.',
+    'get_team_compare': 'Top-N team comparison on a counting stat joined with win-loss records.',
+    'get_team_four_factors': 'Full-board or team-specific Four Factors (eFG%, TOV%, ORB%, FT rate, and defensive mirrors).',
+    'get_team_game_log': "A team's recent games (regular season or playoffs): date, matchup, W/L, team PTS, opp PTS, REB, AST, STL, BLK, TOV.",
+    'get_team_leaders': 'Team totals leaderboard for a counting stat (PTS, REB, AST, STL, BLK).',
+    'get_team_shot_zones': 'League-wide team shot-zone diet: per-zone attempt share and eFG with league baselines and deltas.',
+    'get_team_trajectory': 'Multi-season regular-season records and win percentages for any team.',
+    'get_today': "Today home view: last night's results, tonight's games, leaderboard movers, streaks.",
+    'get_tracking_profile': 'Player or team tracking profile: drives, shooting, touches, rebounding, speed.',
+    'get_trade_check': 'CBA trade legality check under 2023 CBA apron and salary matching rules.',
+    'get_trade_value': 'Trade value grade: estimated production surplus value vs salary per side plus pick equity.',
+    'get_transactions': 'Team front-office transactions: signings, waivers, trades, and conversions.',
+    'get_warehouse_freshness': 'Warehouse freshness and data recency panel across all silver tables.',
+    'get_win_prob': 'Real ELO win probability between two abbreviations. Neutral unless home_abbrev matches a side.',
+    'get_wowy': 'With-or-without-you (WOWY) 4-way lineup combination splits for two players.',
+    'get_wpa_leaders': 'WPA-by-play leaderboard for one season.',
+    'get_young_player_usage': 'Usage-rate leaderboard for young players with customizable age ceilings and minute floors.',
+    'get_zone_deltas': 'Player-vs-league shooting-zone efficiency: per-zone FG% vs pooled league-average FG% with percentage-point deltas across court zones.',
+    'search_game_logs': 'Filter game logs by stat thresholds, opponent, time, or home/away.',
+    'search_shots': 'Conversational shot finder: filter warehouse shots by player, team, zone, period, makes, and late-clock window with zone and period aggregates.',
+    'warehouse_schema': 'Read declared warehouse columns, source units and season encodings.',
+}
 
 def catalogue():
     from shared.tools.sql_exec import sql_exec as _orig_sql_exec, TABLES
@@ -309,7 +382,6 @@ def catalogue():
 
     @tool("warehouse_schema", description=description)
     def warehouse_schema(tables: list[str] | None = None) -> dict:
-        """Read declared warehouse columns, source units and season encodings."""
         try:
             _, columns = _get_warehouse_schema()
         except Exception as exc:
@@ -374,7 +446,6 @@ def catalogue():
 
     @tool("get_rapm", description=_orig_get_rapm.description)
     def get_rapm(player: str = "", top: int = 10, season: str | None = None) -> dict:
-        """RAPM-lite ratings. Blank player returns top list, else one row."""
         try:
             res = _orig_get_rapm.invoke({"player": player, "top": top, "season": season})
             if not isinstance(res, dict):
@@ -393,7 +464,6 @@ def catalogue():
     def get_game_prediction(a: str = "", b: str = "", game_date: str = "",
                             season: str | None = None, n_sims: int = 10000,
                             seed: int = 7) -> dict:
-        """Pre-game Monte Carlo prediction: win probability, projected score/total, and confidence intervals."""
         try:
             res = _orig_get_game_prediction.invoke({
                 "a": a, "b": b, "game_date": game_date, "season": season, "n_sims": n_sims, "seed": seed
@@ -436,7 +506,6 @@ def catalogue():
     def get_wpa_leaders(season: int | str | None = 2025,
                         limit: int | str | None = 10,
                         min_events: int | str | None = 100) -> dict:
-        """WPA-by-play leaderboard for one season."""
         try:
             res = _orig_get_wpa_leaders.invoke({
                 "season": season, "limit": limit, "min_events": min_events
@@ -467,7 +536,6 @@ def catalogue():
 
     @tool("get_comps", description=_orig_get_comps.description)
     def get_comps(player_id: str | int, season: str | None = None, k: int = 5) -> dict:
-        """Nearest statistical neighbors by per-36 + advanced shape. Same-season only."""
         try:
             res = _orig_get_comps.invoke({"player_id": player_id, "season": season, "k": k})
             if not isinstance(res, dict):
@@ -491,7 +559,6 @@ def catalogue():
     def get_lineup_stats(team: str | int, season: str | None = None,
                          min_possessions: int = 100, include_small: bool = False,
                          limit: int = 10) -> dict:
-        """Five-man lineup ratings with sample floors. Names, abbrevs, or ids."""
         try:
             res = _orig_get_lineup_stats.invoke({
                 "team": team, "season": season, "min_possessions": min_possessions,
@@ -516,7 +583,6 @@ def catalogue():
     @tool("get_win_prob", description=_orig_get_win_prob.description)
     def get_win_prob(team_a: str, team_b: str, season: str | None = None,
                      home_abbrev: str = "") -> dict:
-        """Real ELO win probability between two abbreviations. Neutral unless home_abbrev matches a side."""
         try:
             res = _orig_get_win_prob.invoke({
                 "team_a": team_a, "team_b": team_b, "season": season, "home_abbrev": home_abbrev
@@ -563,7 +629,6 @@ def catalogue():
 
     @tool("get_on_off", description=_orig_get_on_off.description)
     def get_on_off(player_id: str | int, team_id: str | int, season: str | None = None) -> dict:
-        """On and off splits for one player on one team. Possession level."""
         try:
             res = _orig_get_on_off.invoke({
                 "player_id": player_id, "team_id": team_id, "season": season
@@ -586,7 +651,6 @@ def catalogue():
 
     @tool("get_shot_zones", description=_orig_get_shot_zones.description)
     def get_shot_zones(player_id: str | int, season: str | None = None, min_attempts: int = 50) -> dict:
-        """Zone splits for one player id: rim, midrange, three with shares."""
         try:
             res = _orig_get_shot_zones.invoke({
                 "player_id": player_id, "season": season, "min_attempts": min_attempts
@@ -609,7 +673,6 @@ def catalogue():
 
     @tool("get_four_factors", description=_orig_get_four_factors.description)
     def get_four_factors(team: str = "", season: str | None = None) -> dict:
-        """Team four factors breakdown (eFG%, TOV%, ORB%, FT rate, plus defensive mirrors)."""
         try:
             res = _orig_get_four_factors.invoke({"team": team, "season": season})
             if not isinstance(res, dict):
@@ -634,7 +697,6 @@ def catalogue():
 
     @tool("get_clutch_stats", description=_orig_get_clutch_stats.description)
     def get_clutch_stats(player: str = "", team: str = "", season: str | None = None, min_games: int = 5) -> dict:
-        """NBA clutch statistics (last 5 min, margin <= 5) for player or team scope."""
         scope = "team" if (team and not player) else "player"
         args = {"scope": scope, "season": season}
         if player:
@@ -667,7 +729,6 @@ def catalogue():
     @tool("get_competitive_ratings", description=_orig_get_competitive_ratings.description)
     def get_competitive_ratings(team: str = "league", season: str | None = None,
                                 blowout_margin: float = 20, min_games: int = 10) -> dict:
-        """Competitive Margin of Victory (MOV excluding blowouts)."""
         try:
             res = _orig_get_competitive_ratings.invoke({
                 "team": team, "season": season, "blowout_margin": blowout_margin, "min_games": min_games
@@ -690,7 +751,6 @@ def catalogue():
 
     @tool("get_hustle", description=_orig_get_hustle.description)
     def get_hustle(scope: str = "player", season: str | None = None) -> dict:
-        """NBA hustle leaders for player or team scope."""
         try:
             res = _orig_get_hustle.invoke({"scope": scope, "season": season})
             if not isinstance(res, dict):
@@ -715,7 +775,6 @@ def catalogue():
 
     @tool("get_injuries", description=_orig_get_injuries.description)
     def get_injuries(team: str = "", player: str = "", season: str | None = None) -> dict:
-        """NBA injury and availability report."""
         try:
             res = _orig_get_injuries.invoke({"team": team, "player": player, "season": season})
             if not isinstance(res, dict):
@@ -738,7 +797,6 @@ def catalogue():
     @tool("get_award_results", description=_orig_get_award_results.description)
     def get_award_results(view: str = "winner", award: str = "mvp",
                           season: str | None = None, player: str = "") -> dict:
-        """Historical recorded NBA award voting results."""
         try:
             args: dict[str, Any] = {"view": view, "award": award, "season": season}
             if player:
@@ -799,7 +857,6 @@ def catalogue():
 
     @tool("get_briefing", description=_orig_get_briefing.description)
     def get_briefing(game_date: str = "", season: str | None = None) -> dict:
-        """Morning briefing: scoreboard plus top scorers. Date MM/DD/YYYY, blank means latest."""
         try:
             res = _orig_get_briefing.invoke({
                 "game_date": game_date, "season": season
@@ -817,19 +874,16 @@ def catalogue():
                 date_val = raw_rows.get("date", "")
                 games = raw_rows.get("games")
                 top_scorers = raw_rows.get("top_scorers")
-                # Flatten games into row dicts if available
                 if isinstance(games, list) and games:
                     for g in games:
                         if isinstance(g, dict):
                             row = {"date": date_val, **g}
                             rows.append(row)
-                # Or include top scorers if games is empty
                 if not rows and isinstance(top_scorers, list) and top_scorers:
                     for s in top_scorers:
                         if isinstance(s, dict):
                             row = {"date": date_val, **s}
                             rows.append(row)
-                # If both are empty or rows is empty, create at least a summary row if date is present
                 if not rows and date_val:
                     rows = [{"date": date_val, "games_count": 0, "status": "no games scheduled or completed"}]
             elif isinstance(raw_rows, list):
@@ -842,7 +896,6 @@ def catalogue():
 
     @tool("get_standings", description=_orig_get_standings.description)
     def get_standings(season: str | None = None) -> dict:
-        """NBA regular-season conference and league standings for any season."""
         try:
             res = _orig_get_standings.invoke({"season": season})
             if not isinstance(res, dict):
@@ -864,7 +917,6 @@ def catalogue():
 
     @tool("get_rest", description=_orig_get_rest.description)
     def get_rest(team_abbrev: str = "", season: str | None = None) -> dict:
-        """Back-to-back and rest-day schedule splits for any team."""
         try:
             res = _orig_get_rest.invoke({"team_abbrev": team_abbrev, "season": season})
             if not isinstance(res, dict):
@@ -905,7 +957,6 @@ def catalogue():
 
     @tool("get_team_trajectory", description=_orig_get_team_trajectory.description)
     def get_team_trajectory(team: str = "", through_season: str | None = None, seasons_back: int = 5) -> dict:
-        """Multi-season regular-season records and win percentages for any team."""
         try:
             res = _orig_get_team_trajectory.invoke({
                 "team": team, "through_season": through_season, "seasons": seasons_back
@@ -931,7 +982,6 @@ def catalogue():
     @tool("get_ratings", description=_orig_get_ratings.description)
     def get_ratings(season: str | None = None, team: str = "",
                     requested_metric: str = "", ranking_direction: str = "") -> dict:
-        """Team offensive, defensive, net ratings, and pace (league-wide or team specific)."""
         try:
             res = _orig_get_ratings.invoke({
                 "season": season,
@@ -960,7 +1010,6 @@ def catalogue():
     def get_rookie_leaders(stat: str = "ppg", min_value: float = 0,
                            min_gp: int = 10, limit: int = 15,
                            season: str | None = None) -> dict:
-        """Current rookie class leaderboard (first-year NBA players only, verified against historical seasons)."""
         try:
             res = _orig_get_rookie_leaders.invoke({
                 "stat": stat,
@@ -988,7 +1037,6 @@ def catalogue():
 
     @tool("get_cap_ledger", description=_orig_get_cap_ledger.description)
     def get_cap_ledger(team: str = "", season: str | None = None) -> dict:
-        """Payroll, luxury tax position, and first/second apron room for one team."""
         try:
             fields = getattr(getattr(_orig_get_cap_ledger, "args_schema", None), "model_fields", {})
             call_args: dict[str, Any] = {}
@@ -1028,7 +1076,6 @@ def catalogue():
     @tool("get_leaders", description=_orig_get_leaders.description)
     def get_leaders(stat_category: str = "PTS", ranking_direction: str = "desc",
                     min_attempts: int = 0, season: str | None = None) -> dict:
-        """Qualified league statistical leaders for any category."""
         try:
             res = _orig_get_leaders.invoke({
                 "stat_category": stat_category,
@@ -1055,7 +1102,6 @@ def catalogue():
 
     @tool("get_lineup_leaders", description=_orig_get_lineup_leaders.description)
     def get_lineup_leaders(min_minutes: int = 100, limit: int = 10, season: str | None = None) -> dict:
-        """League-wide 5-man lineup net-rating leaderboard with minutes qualification floor."""
         try:
             res = _orig_get_lineup_leaders.invoke({
                 "min_minutes": min_minutes,
@@ -1081,7 +1127,6 @@ def catalogue():
 
     @tool("get_playoffs", description=_orig_get_playoffs.description)
     def get_playoffs(season: str | None = None) -> dict:
-        """Playoff series wins per team, finals matchup, and champion for any season."""
         try:
             res = _orig_get_playoffs.invoke({"season": season})
             if not isinstance(res, dict):
@@ -1124,7 +1169,6 @@ def catalogue():
 
     @tool("get_team_leaders", description=_orig_get_team_leaders.description)
     def get_team_leaders(stat_category: str = "AST", season: str | None = None) -> dict:
-        """Team totals leaderboard for a counting stat (PTS, REB, AST, STL, BLK)."""
         try:
             res = _orig_get_team_leaders.invoke({"stat_category": stat_category, "season": season})
             if not isinstance(res, dict):
@@ -1146,7 +1190,6 @@ def catalogue():
 
     @tool("get_team_compare", description=_orig_get_team_compare.description)
     def get_team_compare(stat_category: str = "PTS", top: int = 3, season: str | None = None) -> dict:
-        """Top-N team comparison on a counting stat joined with win-loss records."""
         try:
             res = _orig_get_team_compare.invoke({"stat_category": stat_category, "top": top, "season": season})
             if not isinstance(res, dict):
@@ -1168,7 +1211,6 @@ def catalogue():
 
     @tool("get_elo_standings", description=_orig_get_elo_standings.description)
     def get_elo_standings(season: str | None = None, opponent: str | None = None, limit: int = 30) -> dict:
-        """ELO power ratings as standings with implied win pct, win equivalents, and Elo-implied spreads."""
         try:
             res = _orig_get_elo_standings.invoke({"season": season, "opponent": opponent, "limit": limit})
             if not isinstance(res, dict):
@@ -1190,7 +1232,6 @@ def catalogue():
 
     @tool("get_draft_board", description=_orig_get_draft_board.description)
     def get_draft_board(season: str = "2025") -> dict:
-        """Blended draft board rankings combining college production and combine testing."""
         try:
             con = _store.connect(read_only=True)
             try:
@@ -1219,7 +1260,6 @@ def catalogue():
 
     @tool("get_combine", description=_orig_get_combine.description)
     def get_combine(season: str = "2025") -> dict:
-        """Anthropometric measurements (height, wingspan, reach, weight) and athletic drills."""
         try:
             con = _store.connect(read_only=True)
             try:
@@ -1248,7 +1288,6 @@ def catalogue():
 
     @tool("get_young_player_usage", description=_orig_get_young_player_usage.description)
     def get_young_player_usage(max_age: int = 22, min_minutes: int = 1000, season: str | None = None) -> dict:
-        """Usage-rate leaderboard for young players with customizable age ceilings and minute floors."""
         try:
             con = _store.connect(read_only=True)
             try:
@@ -1279,7 +1318,6 @@ def catalogue():
 
     @tool("get_contract_value", description=_orig_get_contract_value.description)
     def get_contract_value(season: str | None = None, min_gp: int = 20, team: str = "", player: str = "") -> dict:
-        """Contract value residuals from production vs salary."""
         try:
             res = _orig_get_contract_value.invoke({
                 "season": season,
@@ -1306,7 +1344,6 @@ def catalogue():
 
     @tool("get_trade_check", description=_orig_get_trade_check.description)
     def get_trade_check(team_a: str = "", players_a: str = "", team_b: str = "", players_b: str = "", season: str | None = None) -> dict:
-        """CBA trade legality check under 2023 CBA apron and salary matching rules."""
         try:
             res = _orig_get_trade_check.invoke({
                 "team_a": team_a,
@@ -1349,7 +1386,6 @@ def catalogue():
 
     @tool("get_trade_value", description=_orig_get_trade_value.description)
     def get_trade_value(team_a: str = "", players_a: str = "", team_b: str = "", players_b: str = "", picks_a: str = "", picks_b: str = "") -> dict:
-        """Trade value grade: estimated production surplus value vs salary per side plus pick equity."""
         try:
             res = _orig_get_trade_value.invoke({
                 "team_a": team_a,
@@ -1408,7 +1444,6 @@ def catalogue():
 
     @tool("get_situational_splits", description=_orig_get_situational_splits.description)
     def get_situational_splits(scope: str = "player", entity: str = "", season: str | None = None, clutch_seconds: int = 300, clutch_margin: int = 5, season_type: str = "regular") -> dict:
-        """Clutch situational splits for one player or team across score margins, time thresholds, and venues."""
         try:
             res = _orig_get_situational_splits.invoke({
                 "scope": scope,
@@ -1439,7 +1474,6 @@ def catalogue():
 
     @tool("get_playoff_sim", description=_orig_get_playoff_sim.description)
     def get_playoff_sim(season: str | None = None, sims: int = 2000) -> dict:
-        """Simulated championship and finals odds from power ratings via Monte Carlo brackets."""
         try:
             res = _orig_get_playoff_sim.invoke({"season": season, "sims": sims})
             if not isinstance(res, dict):
@@ -1480,7 +1514,6 @@ def catalogue():
 
     @tool("get_playoff_team_ratings", description=_orig_get_playoff_team_ratings.description)
     def get_playoff_team_ratings(season: str | None = None, limit: int = 30) -> dict:
-        """Team offensive, defensive, and net ratings from playoff game logs."""
         try:
             res = _orig_get_playoff_team_ratings.invoke({"season": season, "limit": limit})
             if not isinstance(res, dict):
@@ -1504,7 +1537,6 @@ def catalogue():
 
     @tool("get_player_risers", description=_orig_get_player_risers.description)
     def get_player_risers(season: str | None = None, n: int = 10) -> dict:
-        """Player risers and fallers: last-N games scoring and efficiency versus season baseline."""
         try:
             res = _orig_get_player_risers.invoke({"season": season, "n": n})
             if not isinstance(res, dict):
@@ -1537,7 +1569,6 @@ def catalogue():
 
     @tool("get_standings_deep", description=_orig_get_standings_deep.description)
     def get_standings_deep(season: str | None = None, top: int = 5) -> dict:
-        """Standings deep cuts: clutch records, comeback kings, blown leads, and monthly momentum."""
         try:
             res = _orig_get_standings_deep.invoke({"season": season, "top": top})
             if not isinstance(res, dict):
@@ -1583,7 +1614,6 @@ def catalogue():
 
     @tool("get_warehouse_freshness", description=_orig_get_warehouse_freshness.description)
     def get_warehouse_freshness() -> dict:
-        """Warehouse freshness and data recency panel across all silver tables."""
         try:
             res = _orig_get_warehouse_freshness.invoke({})
             if not isinstance(res, dict):
@@ -1607,7 +1637,6 @@ def catalogue():
 
     @tool("get_finder", description=_orig_get_finder.description)
     def get_finder(mode: str = "streak", team_abbrev: str = "", opponent: str = "", season: str | None = None, window: int = 5) -> dict:
-        """Historical multi-season search across streaks, versus, span, player_streak, and head2head."""
         try:
             res = _orig_get_finder.invoke({
                 "mode": mode, "team_abbrev": team_abbrev, "opponent": opponent,
@@ -1640,7 +1669,6 @@ def catalogue():
 
     @tool("get_draft_model", description=_orig_get_draft_model.description)
     def get_draft_model(season: str = "2025") -> dict:
-        """Prospect star-probability classifier from college production."""
         try:
             res = _orig_get_draft_model.invoke({"season": season})
             if not isinstance(res, dict):
@@ -1664,7 +1692,6 @@ def catalogue():
 
     @tool("get_leaderboard_deltas", description=_orig_get_leaderboard_deltas.description)
     def get_leaderboard_deltas(season: str | None = None, days: int = 7) -> dict:
-        """Scoring leaderboard movers: latest snapshot vs the one from days ago."""
         try:
             res = _orig_get_leaderboard_deltas.invoke({"season": season, "days": days})
             if not isinstance(res, dict):
@@ -1698,7 +1725,6 @@ def catalogue():
 
     @tool("get_player_ratings", description=_orig_get_player_ratings.description)
     def get_player_ratings(season: str | None = None, metric: str = "offense", limit: int = 10, min_minutes: int = 1000) -> dict:
-        """Qualified player on-court offensive or defensive rating leaderboard."""
         try:
             res = _orig_get_player_ratings.invoke({
                 "season": season,
@@ -1725,7 +1751,6 @@ def catalogue():
 
     @tool("get_risers", description=_orig_get_risers.description)
     def get_risers(season: str | None = None, weeks: int = 4) -> dict:
-        """Team risers and fallers: last-N weeks win percentage versus season win percentage."""
         try:
             res = _orig_get_risers.invoke({"season": season, "weeks": weeks})
             if not isinstance(res, dict):
@@ -1758,7 +1783,6 @@ def catalogue():
 
     @tool("get_team_four_factors", description=_orig_get_team_four_factors.description)
     def get_team_four_factors(team: str = "", season: str | None = None) -> dict:
-        """Full-board or team-specific Four Factors (eFG%, TOV%, ORB%, FT rate, and defensive mirrors)."""
         try:
             res = _orig_get_team_four_factors.invoke({"team": team, "season": season})
             if not isinstance(res, dict):
@@ -1784,7 +1808,6 @@ def catalogue():
 
     @tool("get_streaks", description=_orig_get_streaks.description)
     def get_streaks(stat: str = "points", threshold: float | None = None, scope: str = "player", season: str | None = None, mode: str = "longest", top: int = 10) -> dict:
-        """Longest or currently-active streaks, ranked league-wide."""
         try:
             res = _orig_get_streaks.invoke({
                 "stat": stat,
@@ -1838,7 +1861,6 @@ def catalogue():
 
     @tool("get_playtype_profile", description=_orig_get_playtype_profile.description)
     def get_playtype_profile(subject: str, kind: str = "player", side: str = "offense", season: str | None = None) -> dict:
-        """Synergy play-type profile for one player or team and season: frequency share, PPP, and percentile."""
         try:
             res = _orig_get_playtype_profile.invoke({
                 "subject": subject,
@@ -1904,7 +1926,6 @@ def catalogue():
 
     @tool("get_defensive_matchups", description=_orig_get_defensive_matchups.description)
     def get_defensive_matchups(player: str = "", season: str = "2025-26") -> dict:
-        """One defender's defended-shot profile: frequency and shooter results."""
         try:
             res = _orig_get_defensive_matchups.invoke({
                 "player": player,
@@ -1944,7 +1965,6 @@ def catalogue():
 
     @tool("get_head_to_head", description=_orig_get_head_to_head.description)
     def get_head_to_head(player: str, opponent: str, season: str | None = None) -> dict:
-        """Player matchup history vs one opponent team or opposing player's team."""
         cols = ["date", "matchup", "wl", "min", "pts", "reb", "ast", "stl", "blk", "plus_minus"]
         try:
             res = _orig_get_head_to_head.invoke({
@@ -2016,7 +2036,6 @@ def catalogue():
     @tool("get_lineup_matchup_matrix", description=_orig_get_lineup_matchup_matrix.description)
     def get_lineup_matchup_matrix(team_a: str, team_b: str, min_minutes: float = 10,
                                   season: str | None = None) -> dict:
-        """Lineup-vs-lineup matrix for a team matchup crossing qualifying 5-man units."""
         cols = ["team_a_lineup", "team_b_lineup", "poss", "est_minutes", "OFF_RATING_A", "DEF_RATING_A", "NET_RATING_A", "blowout_share"]
         try:
             res = _orig_get_lineup_matchup_matrix.invoke({
@@ -2058,7 +2077,6 @@ def catalogue():
 
     @tool("get_transactions", description=_orig_get_transactions.description)
     def get_transactions(team: str = "", start: str = "", end: str = "", txn_type: str = "") -> dict:
-        """Team front-office transactions: signings, waivers, trades, and conversions."""
         cols = ["txn_date", "txn_type", "player", "team", "detail"]
         try:
             res = _orig_get_transactions.invoke({
@@ -2106,7 +2124,6 @@ def catalogue():
         team_id: str | int = 0,
         season: str | None = None,
     ) -> dict:
-        """With-or-without-you (WOWY) 4-way lineup combination splits for two players."""
         cols = ["lineup_state", "minutes", "off_rating", "def_rating", "net_rating", "poss"]
         try:
             res = _orig_get_wowy.invoke({
@@ -2162,7 +2179,6 @@ def catalogue():
 
     @tool("get_shot_compare", description=_orig_get_shot_compare.description)
     def get_shot_compare(a: str = "", b: str = "", season: str | None = None) -> dict:
-        """Shot-diet showdown: zone eFG and share for two players."""
         cols = ["zone", "a_eFG", "b_eFG", "a_fg", "b_fg", "a_share", "b_share", "edge"]
         try:
             try:
@@ -2227,7 +2243,6 @@ def catalogue():
 
     @tool("get_raptor_history", description=_orig_get_raptor_history.description)
     def get_raptor_history(player: str = "", season: str = "") -> dict:
-        """Season-by-season RAPTOR and WAR for one player name."""
         cols = ["SEASON", "TEAM", "MP", "RAPTOR_O", "RAPTOR_D", "RAPTOR", "WAR"]
         try:
             res = _orig_get_raptor_history.invoke({
@@ -2456,7 +2471,6 @@ def catalogue():
 
     @tool("get_season_series", description=_orig_get_season_series.description)
     def get_season_series(team_a: str, team_b: str, season: str | None = None) -> dict:
-        """Head-to-head between two teams across a season: every meeting (regular season and playoffs) with winner, scores, date, matchup."""
         cols = ["game_id", "date", "matchup", "phase", "winner"]
         try:
             res = _orig_get_season_series.invoke({
@@ -2513,7 +2527,6 @@ def catalogue():
 
     @tool("get_team_game_log", description=_orig_get_team_game_log.description)
     def get_team_game_log(team: str, limit: int = 10, playoffs: bool = False, season: str | None = None) -> dict:
-        """A team's recent games (regular season or playoffs): date, matchup, W/L, team PTS, opp PTS, REB, AST, STL, BLK, TOV."""
         cols = ["game_id", "date", "matchup", "wl", "pts", "opp_pts", "reb", "ast", "stl", "blk", "tov"]
         try:
             res = _orig_get_team_game_log.invoke({
@@ -2577,7 +2590,6 @@ def catalogue():
 
     @tool("get_zone_deltas", description=_orig_get_zone_deltas.description)
     def get_zone_deltas(player: str, season: int | str = 2025, min_attempts: int = 50) -> dict:
-        """Player-vs-league shooting-zone efficiency: per-zone FG% vs pooled league-average FG% with percentage-point deltas across court zones."""
         cols = ["zone", "attempts", "makes", "fg_pct", "league_fg_pct", "delta_pp", "league_attempts"]
         try:
             res = _orig_get_zone_deltas.invoke({
@@ -2654,7 +2666,6 @@ def catalogue():
         group_by: str = "",
         include_ot: str = "auto",
     ) -> dict:
-        """Conversational shot finder: filter warehouse shots by player, team, zone, period, makes, and late-clock window with zone and period aggregates."""
         cols = ["game_id", "player_name", "period", "minutes_remaining", "seconds_remaining", "shot_distance", "zone", "made"]
         try:
             res = _orig_search_shots.invoke({
@@ -2715,7 +2726,6 @@ def catalogue():
 
     @tool("get_stint_timeline", description=_orig_get_stint_timeline.description)
     def get_stint_timeline(game_id: str = "") -> dict:
-        """Ordered 5-man stint timeline for one game: lineups, clocks, scores, swings."""
         cols = ["stint_number", "poss_start", "poss_end", "period_in", "clock_in", "period_out", "clock_out", "duration_sec", "home_abbr", "away_abbr", "score_home_in", "score_away_in", "score_home_out", "score_away_out", "home_swing"]
         try:
             res = _orig_get_stint_timeline.invoke({"game_id": game_id})
@@ -2766,7 +2776,6 @@ def catalogue():
 
     @tool("get_possession_log", description=_orig_get_possession_log.description)
     def get_possession_log(game_id: str = "", period: int | None = None, clock_range: str | None = None) -> dict:
-        """Possession-by-possession log for one game: order, clocks, offense, events, points, WPA swings."""
         cols = ["possession_number", "period", "clock_in", "clock_out", "off_abbr", "def_abbr", "points", "wpa_delta", "score_home_in", "score_away_in", "score_home_out", "score_away_out"]
         try:
             res = _orig_get_possession_log.invoke({
@@ -2819,7 +2828,6 @@ def catalogue():
 
     @tool("get_elo", description=_orig_get_elo.description)
     def get_elo(season: str | None = None) -> dict:
-        """ELO power ratings from warehouse game results for one season."""
         cols = ["rank", "TEAM", "ELO", "W", "L"]
         try:
             res = _orig_get_elo.invoke({"season": season})
@@ -2860,7 +2868,6 @@ def catalogue():
 
     @tool("get_team_shot_zones", description=_orig_get_team_shot_zones.description)
     def get_team_shot_zones(teams: str = "league", season: str | None = None) -> dict:
-        """League-wide team shot-zone diet: per-zone attempt share and eFG with league baselines and deltas."""
         cols = [
             "team", "team_id", "shots",
             "rim_share", "rim_efg", "rim_share_delta_pp", "rim_efg_delta_pp",
@@ -2932,7 +2939,6 @@ def catalogue():
         limit: int | str | None = 10,
         mode: str = "leaders",
     ) -> dict:
-        """League leaders per season or best single seasons from history (2015-2026)."""
         cols = ["player_name", "season", "value", "gp", "stat"]
         try:
             res = _orig_get_historical_leaders.invoke({
@@ -2992,7 +2998,6 @@ def catalogue():
 
     @tool("get_today", description=_orig_get_today.description)
     def get_today(season: str | None = None) -> dict:
-        """Today home view: last night's results, tonight's games, leaderboard movers, streaks."""
         cols = ["category", "home_team", "away_team", "score", "status", "player", "team", "detail"]
         try:
             res = _orig_get_today.invoke({"season": season})
@@ -3017,7 +3022,6 @@ def catalogue():
         raw_rows = res.get("rows")
         rows: list[dict] = []
         if isinstance(raw_rows, dict):
-            # Flatten last_night, tonight, movers, streaks
             for g in raw_rows.get("last_night") or []:
                 if isinstance(g, dict):
                     rows.append({
@@ -3076,7 +3080,6 @@ def catalogue():
 
     @tool("get_morning_briefing", description=_orig_get_morning_briefing.description)
     def get_morning_briefing(season: str | None = None) -> dict:
-        """Morning briefing: today's games, watchlist updates, leaderboard movers."""
         cols = ["section", "headline", "detail", "team", "player"]
         try:
             res = _orig_get_morning_briefing.invoke({"season": season})
@@ -3145,7 +3148,6 @@ def catalogue():
         season: str = "2025-26",
         measure_type: str = "Drives",
     ) -> dict:
-        """Player or team tracking profile: drives, shooting, touches, rebounding, speed."""
         cols = ["subject", "season", "measure_type", "stat", "value"]
         try:
             res = _orig_get_tracking_profile.invoke({
@@ -3197,7 +3199,6 @@ def catalogue():
         date: str = "",
         opponent: str = "",
     ) -> dict:
-        """Rest advantage: who had the fresher legs before each game."""
         cols = ["date", "team", "opponent", "home", "result", "pts_for", "pts_against", "rest_days", "opp_rest_days", "rest_diff"]
         try:
             res = _orig_get_rest_advantage.invoke({
@@ -3269,7 +3270,6 @@ def catalogue():
         player: str = "",
         seasons: object = None,
     ) -> dict:
-        """Prior-informed RAPM for one player blending current season with historical priors."""
         cols = ["player", "season", "rapm", "possessions", "kind", "estimate"]
         try:
             res = _orig_get_rapm_prior.invoke({
@@ -3351,7 +3351,6 @@ def catalogue():
         season: str | None = None,
         limit: int = 50,
     ) -> dict:
-        """Filter game logs by stat thresholds, opponent, time, or home/away."""
         cols = ["date", "game_id", "opponent", "matchup", "home", "pts", "reb", "ast", "stl", "blk", "tov", "min", "wl"]
         try:
             res = _orig_search_game_logs.invoke({
@@ -3437,7 +3436,6 @@ def catalogue():
         player_b: str = "",
         fmt: str = "json",
     ) -> dict:
-        """Query standard silver dataset tables or live upstream extracts."""
         from analyst.dataset_engine import dataset as _run_dataset
         try:
             res = _run_dataset(
@@ -3487,7 +3485,6 @@ def catalogue():
 
     @tool("get_dataset_freshness", description="Query current ingestion freshness and coverage timestamps across all Dime Data Engine silver warehouse tables.")
     def get_dataset_freshness() -> dict:
-        """Query freshness status across silver warehouse tables."""
         from analyst.dataset_engine import datasets_freshness as _run_freshness
         try:
             res = _run_freshness()
@@ -3580,7 +3577,6 @@ def catalogue():
         res["ok"] = bool(res.get("ok", False))
         return sanitize_for_wire(res)
 
-    # Deliberately do not export WAREHOUSE_TOOLS, which includes mutators.
     TOOL_REGISTRY = {
         item.name: item for item in (
             sql_exec,
@@ -3685,13 +3681,16 @@ def catalogue():
                     else "Warehouse-backed with live fallback.")
         if not _network_tool.description.endswith(_backing):
             _network_tool.description = f"{_network_tool.description} {_backing}"
+    for _schema_name, _schema_doc in _TOOL_SCHEMA_DESCRIPTIONS.items():
+        _schema_tool = TOOL_REGISTRY.get(_schema_name)
+        if _schema_tool is not None and _schema_tool.args_schema is not None:
+            _schema_tool.args_schema.__doc__ = _schema_doc
     return TOOL_REGISTRY
 
 TOOL_REGISTRY = catalogue
 
 
 def sanitize_for_wire(val: Any) -> Any:
-    """Recursively sanitize data structures for NaN-safe JSON encoding."""
     if val is None or isinstance(val, (str, bool, int)):
         return val
     if isinstance(val, (float, np.floating)):
@@ -3867,8 +3866,6 @@ _sanitize_floats = sanitize_for_wire
 
 
 def wire_default(value):
-    # Dataset rows previously crossed FastAPI's JSON encoder. Preserve those
-    # date and numeric representations at the explicit MCP boundary.
     if isinstance(value, (date, datetime)):
         return value.isoformat()
     if isinstance(value, Decimal):

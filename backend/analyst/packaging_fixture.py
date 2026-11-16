@@ -1,4 +1,3 @@
-"""Static image boundary and local SDK assets; never builds a warehouse image."""
 import json
 from pathlib import Path
 import shutil

@@ -1,4 +1,3 @@
-"""Cross-language product persistence fixture using only explicit owned paths."""
 import json,os,sys
 from pathlib import Path
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]))

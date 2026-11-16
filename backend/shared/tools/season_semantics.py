@@ -1,4 +1,3 @@
-"""Season encoding metadata shared by declared SQL schemas and SQL results."""
 
 from __future__ import annotations
 
@@ -244,7 +243,6 @@ def _projection_columns(tree: Any, exp: Any, table: str,
                 "reason": "projection references an unknown table alias",
             })
             continue
-        # Direct source identity carries units; renamed season decoding stays unresolved.
         renamed = output_name.lower() != inner.name.lower()
         entry = {
             "column": output_name, "supported": not renamed, "table": table,
@@ -303,7 +301,6 @@ def _declared_column_semantics(
     schema: Mapping[str, Any] | None,
     attribution: Mapping[str, Any],
 ) -> dict[str, dict[str, str]]:
-    """Carry source-backed units only for proven direct output columns."""
     tables = (schema or {}).get("tables") or {}
     lineage = attribution.get("columns") or {}
     declared: dict[str, dict[str, str]] = {}
@@ -527,7 +524,6 @@ def annotate_result(
             "mode", "reason", "lineage_proven")
     }
     supported, unresolved = _select_columns(season_columns, candidates, attribution)
-    # Deduplicate by (table, column), keeping the last match.
     supported = list({(item["table"], item["column"]): item for item in supported}.values())
     semantics["resolved_labels"], row_labels = _resolved_rows(rows, supported)
     columns, ambiguities = _season_column_entries(supported, unresolved, rows)

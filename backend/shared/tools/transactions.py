@@ -140,10 +140,9 @@ def _matching_rows(raws: list[dict[str, Any]], start: str, end: str,
     return rows
 
 
-@tool
+@tool(description='Team transactions: signings, waivers, trades by team and date range.')
 def get_transactions(team: str = "", start: str = "", end: str = "",
                      txn_type: str = "") -> dict[str, Any]:
-    """Team transactions: signings, waivers, trades by team and date range."""
     want_team = "" if team is None else str(team).strip()
     want_start = "" if start is None else str(start).strip()
     want_end = "" if end is None else str(end).strip()

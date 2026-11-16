@@ -81,9 +81,7 @@ def _tot_row(**kwargs):
 
 @pytest.fixture()
 def synthetic_season_feed() -> pl.DataFrame:
-    """Synthetic feed with base, adv, tot matching sportsdataverse schema."""
     rows = [
-        # SGA
         _base_row(
             player_id=1628983,
             player_name="Shai Gilgeous-Alexander",
@@ -128,7 +126,6 @@ def synthetic_season_feed() -> pl.DataFrame:
             reb=379.0,
             ast=486.0,
         ),
-        # De'Aaron Fox - Traded player
         _base_row(
             player_id=1628368,
             player_name="De'Aaron Fox",
@@ -173,7 +170,6 @@ def synthetic_season_feed() -> pl.DataFrame:
             reb=254.0,
             ast=391.0,
         ),
-        # Missing Totals Player
         _base_row(
             player_id=99999,
             player_name="Missing Totals Player",
@@ -187,7 +183,6 @@ def synthetic_season_feed() -> pl.DataFrame:
             season=2025,
             ts_pct=0.540,
         ),
-        # Playoffs row (should be filtered out)
         _base_row(
             player_id=1628983,
             season_type="playoffs",
@@ -232,7 +227,6 @@ def test_transform_handles_missing_totals_as_null(
 
 
 def test_transform_handles_entirely_empty_totals() -> None:
-    """Missing totals entire rows is valid and naturally empty totals select keeps schema/null."""
     feed = pl.DataFrame([
         _base_row(player_id=1, pts=18.0),
         _adv_row(player_id=1, ts_pct=0.550),
@@ -290,7 +284,6 @@ def test_transform_filters_phase() -> None:
 
 
 def test_transform_multiseason_isolation() -> None:
-    """Prove two seasons for same player isolate advanced TS% and totals via [player_id, season]."""
     feed = pl.DataFrame([
         _base_row(player_id=1, season=2024, gp=70, pts=20.0),
         _adv_row(player_id=1, season=2024, ts_pct=0.550),
@@ -315,13 +308,10 @@ def test_transform_multiseason_isolation() -> None:
 
 
 def test_transform_missing_required_column_fails_boundary() -> None:
-    """Missing required source columns fail boundary via Polars native error."""
-    # Missing season_type
     bad_phase = pl.DataFrame([{"per_mode": "pergame", "measure_type": "base", "player_id": 1}])
     with pytest.raises(pl.exceptions.ColumnNotFoundError):
         transform_player_season_stats(bad_phase)
 
-    # Missing measure column in base
     feed = pl.DataFrame([
         {"season_type": "regular-season", "per_mode": "pergame", "measure_type": "base", "player_id": 1}
     ])
@@ -330,8 +320,6 @@ def test_transform_missing_required_column_fails_boundary() -> None:
 
 
 def test_transform_duplicate_detection_fails_1_to_1() -> None:
-    """Duplicate keys in base, advanced, or totals slices must fail 1:1 join validation."""
-    # Duplicate in base
     dup_base = pl.DataFrame([
         _base_row(player_id=1, season=2025, pts=20.0),
         _base_row(player_id=1, season=2025, pts=22.0),
@@ -342,7 +330,6 @@ def test_transform_duplicate_detection_fails_1_to_1() -> None:
         transform_player_season_stats(dup_base)
     assert "1:1" in str(excinfo.value) or "duplicate" in str(excinfo.value).lower()
 
-    # Duplicate in advanced
     dup_adv = pl.DataFrame([
         _base_row(player_id=1, season=2025),
         _adv_row(player_id=1, season=2025, ts_pct=0.55),
@@ -353,7 +340,6 @@ def test_transform_duplicate_detection_fails_1_to_1() -> None:
         transform_player_season_stats(dup_adv)
     assert "1:1" in str(excinfo.value) or "duplicate" in str(excinfo.value).lower()
 
-    # Duplicate in totals
     dup_tot = pl.DataFrame([
         _base_row(player_id=1, season=2025),
         _adv_row(player_id=1, season=2025),

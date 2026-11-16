@@ -1,44 +1,37 @@
-"""Named data operations for the product host. Never registered as Pi tools."""
 import json
 from langchain_core.tools import tool
 
-@tool
+@tool(description='Append an existing product chat row to the state database.')
 def product_save_chat(thread: str, role: str, content: str, owner: str) -> dict:
-    """Append an existing product chat row to the state database."""
     from shared import store
     store.save_chat(thread, role, content, owner=owner)
     return {"ok": True}
 
-@tool
+@tool(description='Append an existing product run row to the state database.')
 def product_save_run(thread: str, question: str, answer: str, owner: str, run_id: str) -> dict:
-    """Append an existing product run row to the state database."""
     from shared import store
     store.save_run(thread, question, answer, [], [], owner=owner, run_id=run_id)
     return {"ok": True}
 
-@tool
+@tool(description='List existing product state threads for one owner.')
 def product_threads(owner: str) -> dict:
-    """List existing product state threads for one owner."""
     from shared import store
     return {"threads": store.list_threads(owner=owner)}
 
-@tool
+@tool(description='List existing product state runs for one owner and thread.')
 def product_runs(thread: str, owner: str) -> dict:
-    """List existing product state runs for one owner and thread."""
     from shared import store
     return {"runs": store.list_runs(thread, owner=owner)}
 
-@tool
+@tool(description='Read the data engine warehouse identity and semantic baseline.')
 def product_warehouse_identity() -> dict:
-    """Read the data engine warehouse identity and semantic baseline."""
     from shared import store
     from v2.semantic_baseline import SEMANTIC_BASELINE
     identity = store.warehouse_identity()
     return {"warehouse": {"warehouse_id": identity["warehouse_id"], "sha256": identity["warehouse_sha256"], "sha256_derivation": store.WAREHOUSE_SHA256_DERIVATION}, "semantic_baseline": dict(SEMANTIC_BASELINE)}
 
-@tool
+@tool(description='Check the existing ratings readiness contract.')
 def product_warehouse_health() -> dict:
-    """Check the existing ratings readiness contract."""
     from shared import store
     try:
         con = store.connect(read_only=True)
@@ -54,39 +47,33 @@ def product_warehouse_health() -> dict:
         con.close()
     return {"ok": True} if count else {"ok": False, "reason": "ratings_table_empty"}
 
-@tool
+@tool(description='Read or fetch a dataset using the existing Python season and source semantics.')
 def product_dataset(name: str, season: str = '2025-26', player_id: int = 0, team_id: int = 0, game_id: str = '', game_date: str = '', stat: str = 'PTS', ids: str = '', player_a: str = '', player_b: str = '', fmt: str = 'json') -> dict:
-    """Read or fetch a dataset using the existing Python season and source semantics."""
     from analyst.dataset_engine import dataset
     return dataset(name, season, player_id, team_id, game_id, game_date, stat, ids, player_a, player_b, fmt)
 
-@tool
+@tool(description='Read the cached existing dataset freshness report.')
 def product_freshness() -> dict:
-    """Read the cached existing dataset freshness report."""
     from analyst.dataset_engine import datasets_freshness
     return datasets_freshness()
 
-@tool
+@tool(description='Run the existing read-only SQL rerun operation.')
 async def product_rerun(sql: str) -> dict:
-    """Run the existing read-only SQL rerun operation."""
     from shared.tools.league import rerun_sql
     return await rerun_sql(sql)
 
-@tool
+@tool(description='Resolve NBA entities using the existing resolver.')
 def product_resolve(query: str) -> dict:
-    """Resolve NBA entities using the existing resolver."""
     from shared.tools import resolve_entity
     return resolve_entity.invoke({'query': query})
 
-@tool
+@tool(description='Check a trade using the existing Python domain implementation.')
 def product_trade(team_a: str, players_a: str, team_b: str, players_b: str, season: str = '2025-26') -> dict:
-    """Check a trade using the existing Python domain implementation."""
     from shared.tools import get_trade_check
     return get_trade_check.invoke(dict(team_a=team_a,players_a=players_a,team_b=team_b,players_b=players_b,season=season))
 
-@tool
+@tool(description='Build the current debate card with the domain season clamp.')
 def product_debate(a: str, b: str, season: str = '2025-26') -> dict:
-    """Build the current debate card with the domain season clamp."""
     from shared.tools import get_debate_card
     from shared.tools._core import InvalidSeasonError, clamp_season
     try:
@@ -102,40 +89,34 @@ def product_debate(a: str, b: str, season: str = '2025-26') -> dict:
 def _decoded(result):
     return json.loads(result) if isinstance(result, str) else result
 
-@tool
+@tool(description='Read the current today data.')
 def product_today(season: str = '2025-26') -> dict:
-    """Read the current today data."""
     from shared.tools.today import get_today
     return _decoded(get_today.invoke({'season':season}))
 
-@tool
+@tool(description='Read the current watchlist data.')
 def product_watchlist(season: str = '2025-26') -> dict:
-    """Read the current watchlist data."""
     from shared.tools.watchlist import get_watchlist
     return _decoded(get_watchlist.invoke({'season':season}))
 
-@tool
+@tool(description='Apply the current direct product watchlist addition.')
 def product_watchlist_add(entity_type: str, entity_id: str, season: str = '2025-26') -> dict:
-    """Apply the current direct product watchlist addition."""
     from shared.tools.watchlist import add_watchlist_item
     return _decoded(add_watchlist_item.invoke(dict(entity_type=entity_type,entity_id=entity_id,season=season)))
 
-@tool
+@tool(description='Apply the current direct product watchlist removal.')
 def product_watchlist_remove(entity_type: str, entity_id: str) -> dict:
-    """Apply the current direct product watchlist removal."""
     from shared.tools.watchlist import remove_watchlist_item
     return _decoded(remove_watchlist_item.invoke(dict(entity_type=entity_type,entity_id=entity_id)))
 
-@tool
+@tool(description='Read and normalize current leaderboard deltas.')
 def product_movers(season: str = '2025-26', days: int = 7) -> dict:
-    """Read and normalize current leaderboard deltas."""
     from shared.tools.league import get_leaderboard_deltas
     from shared.tools.today import normalize_movers
     return normalize_movers(_decoded(get_leaderboard_deltas.invoke(dict(season=season,days=days))), season)
 
-@tool
+@tool(description='Read the existing morning briefing.')
 def product_briefing(season: str = '2025-26') -> dict:
-    """Read the existing morning briefing."""
     from shared.tools.today import get_morning_briefing
     return _decoded(get_morning_briefing.invoke({'season':season}))
 
@@ -144,4 +125,7 @@ def internal_catalogue():
         product_warehouse_identity, product_warehouse_health, product_dataset, product_freshness,
         product_rerun, product_resolve, product_trade, product_debate, product_today,
         product_watchlist, product_watchlist_add, product_watchlist_remove, product_movers, product_briefing)
-    return {operation.name: operation for operation in operations}
+    result = {operation.name: operation for operation in operations}
+    for operation in operations:
+        operation.args_schema.__doc__ = operation.description
+    return result

@@ -1,4 +1,3 @@
-"""Dataset engine extracted from the product HTTP adapter. No HTTP ownership."""
 
 import io, time, base64
 

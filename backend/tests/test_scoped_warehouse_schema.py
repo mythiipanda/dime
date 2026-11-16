@@ -1,4 +1,3 @@
-"""Scoped declared-table selection at the python_tools catalogue boundary."""
 
 import asyncio
 import json

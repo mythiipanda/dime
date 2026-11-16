@@ -1,4 +1,3 @@
-"""Launch each meaningful product fixture in a clean environment before imports."""
 import os
 from pathlib import Path
 import shutil

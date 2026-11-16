@@ -125,7 +125,6 @@ def test_shared_sql_coverage_accepts_identifier_and_alias_case() -> None:
         "select player, team, ppg from SILVER_PLAYER_SEASON "
         "where PLAYER = 'PlayerA' and team = 'BOS' and _season = '2024-25'",
     )
-    # Added projection takes the fallback path; alias case is insignificant.
     assert sql_covers(
         R512_SCOPE_EXPECTED,
         "select player, team, ppg, ppg as pts from SILVER_PLAYER_SEASON "

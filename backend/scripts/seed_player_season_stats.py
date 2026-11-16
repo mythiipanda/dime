@@ -25,13 +25,6 @@ def label(end_year: int) -> str:
 
 
 def transform_player_season_stats(df: pl.DataFrame) -> pl.DataFrame:
-    """Transform raw player season stats into a 1-row-per-player-season dataframe.
-
-    Preserves existing per-game and advanced columns while retaining explicit
-    source base totals (pts_total, reb_total, ast_total) and associated gp_total.
-    Uses Polars 1:1 join validation to fail on duplicate feeds rather than arbitrary
-    deduplication.
-    """
     rs = df.filter(pl.col("season_type") == "regular-season")
 
     base = rs.filter(

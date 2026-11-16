@@ -1,10 +1,3 @@
-"""Cheap, fail-closed count evidence and returned-row profile for sql_exec.
-
-Additive metadata only. Nothing here executes SQL, reads the warehouse, or
-claims entities or grains. Basis indexes are 0-based ordinals aligned with the
-result's ``columns`` list, correlated positionally. All doubt fails closed to
-``status="unavailable"`` and the caller's payload passes through untouched.
-"""
 
 from __future__ import annotations
 

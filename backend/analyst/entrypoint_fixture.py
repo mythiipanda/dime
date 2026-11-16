@@ -1,4 +1,3 @@
-"""Start the actual Node host with its generated manifest and an owned warehouse."""
 import json,os,shutil,socket,subprocess,sys,time,urllib.request
 from pathlib import Path
 module=Path(__file__).resolve().parent

@@ -1,10 +1,3 @@
-"""Analyst-boundary contract for the award race and last-x tools.
-
-Both tools must hand the analyst a rows array. submit_answer rejects a source
-ref whose rows payload is not a list, so the award-race tool's dict-shaped
-rows are flattened at the analyst boundary and every failure path still
-returns an array.
-"""
 
 import asyncio
 import sys
@@ -22,7 +15,6 @@ LAST_X_COLS = ["GAME_DATE", "MATCHUP", "PTS", "REB", "AST", "MIN"]
 
 
 class _FakeTool:
-    """Stand-in for a langchain tool invoked by the analyst wrappers."""
 
     def __init__(self, description: str, result=None, exc: Exception | None = None):
         self.description = description
@@ -38,7 +30,6 @@ class _FakeTool:
 
 
 def _catalogue(monkeypatch, *, award=None, last_x=None):
-    """Rebuild the analyst catalogue over stubbed shared tools."""
     import shared.tools.awards as awards
     import shared.tools.player as player
 

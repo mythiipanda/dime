@@ -1,4 +1,3 @@
-"""Keep the product import graph free of the replaced conversation owners."""
 import ast
 from pathlib import Path
 

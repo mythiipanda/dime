@@ -14,9 +14,6 @@ SEASON = "2025-26"
 
 
 def _sample_rows():
-    # silver_advanced is Totals basis per the declared producer (no per_mode):
-    # MIN is the season TOTAL minutes, not per-game. Fixture encodes that
-    # contract deliberately (R927 prereg; not universal production proof).
     return [
         ("Scrub 600", "AAA", 60, 600.0, 0.75, SEASON),
         ("Scrub 999", "BBB", 74, 999.0, 0.70, SEASON),

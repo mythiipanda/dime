@@ -226,11 +226,10 @@ def _profile_rows(measures: list[str], scope: str, pid: int | None,
     return rows
 
 
-@tool
+@tool(description='Player or team tracking profile: drives, shooting, touches, rebounding, speed.')
 def get_tracking_profile(player: str = "", team: str = "",
                          season: str = "2025-26",
                          measure_type: str = "") -> dict[str, Any]:
-    """Player or team tracking profile: drives, shooting, touches, rebounding, speed."""
     season = _season_or_default(season)
     want_player = str(player or "").strip()
     want_team = str(team or "").strip()
@@ -291,10 +290,9 @@ def get_tracking_profile(player: str = "", team: str = "",
                      **store.warehouse_identity()}}
 
 
-@tool
+@tool(description="One defender's defended-shot profile: frequency and shooter results.")
 def get_defensive_matchups(player: str = "",
                            season: str = "2025-26") -> dict[str, Any]:
-    """One defender's defended-shot profile: frequency and shooter results."""
     season = _season_or_default(season)
     want = str(player or "").strip()
     if not want:
