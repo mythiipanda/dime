@@ -1162,6 +1162,11 @@ test("real statistical tools cross MCP with anchor compatibility, rows, columns,
     assert(Array.isArray(splitsRes.structuredContent.result.rows), "splits rows must be an array so the answer can cite it");
     assert(Array.isArray(splitsRes.structuredContent.result.columns), "splits columns must be an array");
 
+    const recapTool = toolMap.get("get_recap");
+    assert(recapTool);
+    assert.equal(recapTool.name, "get_recap");
+    assert.deepEqual(recapTool.parameters.required, ["game_id"]);
+
     const scoutingReportTool = toolMap.get("get_scouting_report");
     assert(scoutingReportTool);
     assert.equal(scoutingReportTool.name, "get_scouting_report");
