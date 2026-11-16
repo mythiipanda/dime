@@ -653,7 +653,7 @@ def catalogue():
         default_cols = ["Stat", "On", "Off", "On-Off"]
         raw_rows = res.get("rows")
         if res.get("ok") and isinstance(raw_rows, list):
-            rows = [r for r in raw_rows if isinstance(r, dict)]
+            rows = [r if isinstance(r, dict) else {"value": r} for r in raw_rows]
         else:
             rows = []
         cols = list(rows[0].keys()) if rows else default_cols

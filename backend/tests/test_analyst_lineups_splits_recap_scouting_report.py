@@ -775,3 +775,30 @@ def test_get_last_x_upstream_error_text_is_preserved(monkeypatch):
     assert res["rows"] == []
     assert res["columns"] == LAST_X_DEFAULT_COLS
     assert res["error"] == "empty upstream response"
+
+
+ON_OFF_SPEC = {
+    "name": "get_on_off",
+    "module": "shared.tools.player",
+    "attribute": "get_on_off",
+    "arguments": {"player_id": 2544, "team_id": 1610612747, "season": "2024-25"},
+}
+
+
+def test_get_on_off_wraps_non_dict_rows_losslessly(monkeypatch):
+    dict_row = {"Stat": "PTS", "On": 110.2, "Off": 105.1, "On-Off": 5.1}
+    fake = _stub(ON_OFF_SPEC, result={
+        "tool": "get_on_off",
+        "ok": True,
+        "rows": [dict(dict_row), 42],
+    })
+    tools = _catalogue(monkeypatch, {(ON_OFF_SPEC["module"], ON_OFF_SPEC["attribute"]): fake})
+
+    res = _invoke(tools["get_on_off"], ON_OFF_SPEC["arguments"])
+
+    assert fake.calls == [ON_OFF_SPEC["arguments"]]
+    assert res["ok"] is True
+    assert res.get("error") is None
+    assert res["rows"] == [dict_row, {"value": 42}]
+    assert isinstance(res["rows"], list)
+    assert isinstance(res["columns"], list)
