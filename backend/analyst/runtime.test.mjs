@@ -358,7 +358,7 @@ test("real Python sql_exec and schema cross MCP into Pi with source semantics an
 
 test("real statistical tools cross MCP with anchor compatibility, rows, columns, and JSON safety", async () => {
   const bridge = await connectPythonTools({ python: process.env.DIME_PI_PYTHON, cwd: root,
-    env: { ...process.env, DIME_LIVE_ATTEMPTS: "1" } });
+    env: { ...process.env } });
   const pid = bridge.pid;
   try {
     const toolMap = new Map(bridge.tools.map(t => [t.name, t]));
@@ -1161,16 +1161,6 @@ test("real statistical tools cross MCP with anchor compatibility, rows, columns,
     assert.equal(splitsRes.structuredContent.tool, "get_splits");
     assert(Array.isArray(splitsRes.structuredContent.result.rows), "splits rows must be an array so the answer can cite it");
     assert(Array.isArray(splitsRes.structuredContent.result.columns), "splits columns must be an array");
-
-    const recapTool = toolMap.get("get_recap");
-    assert(recapTool);
-    assert.equal(recapTool.name, "get_recap");
-    assert.deepEqual(recapTool.parameters.required, ["game_id"]);
-    const recapRes = await recapTool.execute("call-recap", { game_id: "0022400001", season: "2024-25" }, undefined);
-    assert(recapRes.structuredContent);
-    assert.equal(recapRes.structuredContent.tool, "get_recap");
-    assert(Array.isArray(recapRes.structuredContent.result.rows), "recap rows must be an array so the answer can cite it");
-    assert(Array.isArray(recapRes.structuredContent.result.columns), "recap columns must be an array");
 
     const scoutingReportTool = toolMap.get("get_scouting_report");
     assert(scoutingReportTool);

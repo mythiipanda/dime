@@ -2,6 +2,7 @@ import asyncio
 import importlib
 import re
 import sys
+import threading
 from pathlib import Path
 
 BACKEND = Path(__file__).resolve().parent.parent
@@ -118,6 +119,18 @@ class _FakeTool:
         return self._result
 
 
+class _BlockingTool:
+    def __init__(self, release: threading.Event):
+        self.description = "get_recap blocking stub"
+        self._release = release
+        self.calls: list[dict] = []
+
+    def invoke(self, args):
+        self.calls.append(args)
+        self._release.wait(30)
+        return {"tool": "get_recap", "ok": True, "rows": [dict(RECAP_ROW)]}
+
+
 def _catalogue(monkeypatch, stubs: dict[tuple[str, str], object] | None = None):
     for (module_name, attribute), stub in (stubs or {}).items():
         module = importlib.import_module(module_name)
@@ -212,6 +225,36 @@ def test_recap_rows_keep_the_upstream_boxscore_keys(monkeypatch):
     assert res["columns"] == ["PLAYER", "TEAM", "PTS", "REB", "AST"]
     assert res["meta"]["source"] == "nba_api"
     assert res["meta"]["rows"] == 1
+
+
+def test_recap_timeout_returns_a_structured_error(monkeypatch):
+    release = threading.Event()
+    fake = _BlockingTool(release)
+    monkeypatch.setattr(python_tools, "RECAP_LIVE_TIMEOUT_S", 0.1)
+    tools = _catalogue(monkeypatch, {("shared.tools.team", "get_recap"): fake})
+    try:
+        res = _invoke(tools["get_recap"],
+                      {"game_id": "0022400001", "season": "2024-25"})
+    finally:
+        release.set()
+
+    assert res["ok"] is False
+    assert res["rows"] == []
+    assert isinstance(res["columns"], list)
+    assert res["columns"] == ["PLAYER", "TEAM", "PTS", "REB", "AST"]
+    assert res["tool"] == "get_recap"
+    assert "get_recap" in res["error"]
+    assert "timed out" in res["error"]
+    assert "0.1s" in res["error"]
+    assert fake.calls == [{"game_id": "0022400001", "season": "2024-25"}]
+
+
+def test_recap_timeout_budget_stays_inside_the_bridge_budget():
+    source = (BACKEND / "analyst" / "python-tools.ts").read_text(encoding="utf-8")
+    match = re.search(r"requestTimeoutMs:\s*(\d+)", source)
+
+    assert match
+    assert python_tools.RECAP_LIVE_TIMEOUT_S * 1000 < int(match.group(1))
 
 
 def test_scouting_report_flattens_sections_to_rows_array(monkeypatch):

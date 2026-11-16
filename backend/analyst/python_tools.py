@@ -8,6 +8,7 @@ import math
 import os
 from pathlib import Path
 import sys
+import threading
 from typing import Any
 
 import numpy as np
@@ -20,6 +21,8 @@ from mcp.server import Server
 from mcp.server.stdio import stdio_server
 from mcp.types import CallToolResult, ListToolsResult, TextContent, Tool
 
+
+RECAP_LIVE_TIMEOUT_S = 10.0
 
 TOOL_REGISTRY = None
 
@@ -2331,18 +2334,13 @@ def catalogue():
         return _row_list_result(res, "get_splits", default_cols)
 
     @tool("get_recap", description=_orig_get_recap.description)
-    def get_recap(game_id: str, season: str | None = None) -> dict:
+    async def get_recap(game_id: str, season: str | None = None) -> dict:
         default_cols = ["PLAYER", "TEAM", "PTS", "REB", "AST"]
-        try:
-            res = _orig_get_recap.invoke({
-                "game_id": game_id,
-                "season": season,
-            })
-            if not isinstance(res, dict):
-                res = {"tool": "get_recap", "ok": False, "error": str(res)}
-        except Exception as exc:
-            res = {"tool": "get_recap", "ok": False,
-                   "error": f"{type(exc).__name__}: {exc}"}
+        res = await _bounded_live_call(
+            _orig_get_recap, "get_recap",
+            {"game_id": game_id, "season": season},
+            RECAP_LIVE_TIMEOUT_S,
+        )
         return _row_list_result(res, "get_recap", default_cols)
 
     @tool("get_scouting_report", description=_orig_get_scouting_report.description)
@@ -3705,6 +3703,52 @@ async def _sectioned_result(orig: Any, name: str, args: dict[str, Any]) -> dict:
                         if isinstance(upstream_error, str) and upstream_error
                         else message)
     return _flatten_sections(res, ["section"])
+
+
+async def _bounded_live_call(orig: Any, name: str, args: dict[str, Any],
+                             timeout_s: float) -> dict[str, Any]:
+    loop = asyncio.get_running_loop()
+    future: asyncio.Future[Any] = loop.create_future()
+
+    def _publish(value: Any, error: Exception | None) -> None:
+        def _apply() -> None:
+            if future.done():
+                return
+            if error is None:
+                future.set_result(value)
+            else:
+                future.set_exception(error)
+        try:
+            loop.call_soon_threadsafe(_apply)
+        except RuntimeError:
+            return
+
+    def _worker() -> None:
+        try:
+            value = orig.invoke(args)
+        except Exception as error:
+            _publish(None, error)
+        else:
+            _publish(value, None)
+
+    threading.Thread(target=_worker, daemon=True).start()
+    done, _pending = await asyncio.wait({future}, timeout=timeout_s)
+    if not done:
+        future.cancel()
+        return {"tool": name, "ok": False, "error": (
+            f"{name} timed out after {timeout_s:.1f}s: the upstream source is a "
+            "live stats.nba.com call, not the warehouse. Retry the same call "
+            "later, or answer the question from a warehouse-backed tool such "
+            "as get_boxscore."
+        )}
+    error = future.exception()
+    if error is not None:
+        return {"tool": name, "ok": False,
+                "error": f"{type(error).__name__}: {error}"}
+    raw = future.result()
+    if not isinstance(raw, dict):
+        return {"tool": name, "ok": False, "error": str(raw)}
+    return raw
 
 
 def _row_list_result(res: dict, name: str, default_cols: list[str]) -> dict:
