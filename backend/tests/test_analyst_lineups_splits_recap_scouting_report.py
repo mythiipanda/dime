@@ -802,3 +802,89 @@ def test_get_on_off_wraps_non_dict_rows_losslessly(monkeypatch):
     assert res["rows"] == [dict_row, {"value": 42}]
     assert isinstance(res["rows"], list)
     assert isinstance(res["columns"], list)
+
+
+DRAFT_BOARD_SPEC = {
+    "name": "get_draft_board",
+    "module": "shared.tools.league",
+    "attribute": "get_draft_board",
+    "arguments": {"season": "2025"},
+    "rows": [{"rank": 1, "player": "A. Prospect", "pos": "G"}],
+    "default_columns": ["rank", "player", "pos", "school", "draft_score", "bpm"],
+}
+
+COMBINE_SPEC = {
+    "name": "get_combine",
+    "module": "shared.tools.league",
+    "attribute": "get_combine",
+    "arguments": {"season": "2025"},
+    "rows": [{"player": "A. Prospect", "pos": "G", "wingspan": 80.5}],
+    "default_columns": ["player", "pos", "height_wo_shoes", "height_w_shoes",
+                        "weight", "wingspan", "standing_reach"],
+}
+
+YOUNG_USAGE_SPEC = {
+    "name": "get_young_player_usage",
+    "module": "shared.tools.league",
+    "attribute": "get_young_player_usage",
+    "arguments": {"max_age": 22, "min_minutes": 1000, "season": None},
+    "rows": [{"RANK": 1, "PLAYER": "A. Young", "USG_PCT": 28.4}],
+    "default_columns": ["RANK", "PLAYER", "TEAM", "AGE", "GP", "MPG", "MINUTES",
+                        "USG_PCT"],
+}
+
+CATALOGUE_PRECHECK_SPECS = (DRAFT_BOARD_SPEC, COMBINE_SPEC, YOUNG_USAGE_SPEC)
+
+
+def test_catalogue_draft_combine_usage_reach_upstream_without_nameerror(monkeypatch):
+    fakes = {}
+    stubs = {}
+    for spec in CATALOGUE_PRECHECK_SPECS:
+        fake = _stub(spec, result={
+            "tool": spec["name"],
+            "ok": True,
+            "rows": [dict(row) for row in spec["rows"]],
+            "meta": {"source": "fixture"},
+        })
+        fakes[spec["name"]] = fake
+        stubs[(spec["module"], spec["attribute"])] = fake
+    tools = _catalogue(monkeypatch, stubs)
+
+    for spec in CATALOGUE_PRECHECK_SPECS:
+        res = _invoke(tools[spec["name"]], spec["arguments"])
+
+        assert "NameError" not in str(res.get("error")), spec["name"]
+        assert res.get("error") is None, spec["name"]
+        assert res["ok"] is True, spec["name"]
+        assert res["tool"] == spec["name"], spec["name"]
+        assert isinstance(res["rows"], list), spec["name"]
+        assert res["rows"] == spec["rows"], spec["name"]
+        assert isinstance(res["columns"], list), spec["name"]
+        assert res["columns"] == list(spec["rows"][0].keys()), spec["name"]
+        assert fakes[spec["name"]].calls == [spec["arguments"]], spec["name"]
+
+
+def test_catalogue_draft_combine_pi_offline_guard_survives(monkeypatch):
+    guarded = (DRAFT_BOARD_SPEC, COMBINE_SPEC)
+    fakes = {}
+    stubs = {}
+    for spec in guarded:
+        fake = _stub(spec, result={
+            "tool": spec["name"],
+            "ok": True,
+            "rows": [dict(row) for row in spec["rows"]],
+        })
+        fakes[spec["name"]] = fake
+        stubs[(spec["module"], spec["attribute"])] = fake
+    tools = _catalogue(monkeypatch, stubs)
+    monkeypatch.setenv("PI_OFFLINE", "1")
+
+    for spec in guarded:
+        res = _invoke(tools[spec["name"]], spec["arguments"])
+
+        assert "NameError" not in str(res.get("error")), spec["name"]
+        assert res["error"] == "RuntimeError: offline mode: live fetching disabled", spec["name"]
+        assert res["ok"] is False, spec["name"]
+        assert res["rows"] == [], spec["name"]
+        assert res["columns"] == spec["default_columns"], spec["name"]
+        assert fakes[spec["name"]].calls == [], spec["name"]

@@ -1245,11 +1245,6 @@ def catalogue():
     @tool("get_draft_board", description=_orig_get_draft_board.description)
     def get_draft_board(season: str = "2025") -> dict:
         try:
-            con = _store.connect(read_only=True)
-            try:
-                con.execute("SELECT 1 FROM silver_combine LIMIT 0")
-            finally:
-                con.close()
             if os.environ.get("PI_OFFLINE"):
                 raise RuntimeError("offline mode: live fetching disabled")
             res = _orig_get_draft_board.invoke({"season": season})
@@ -1273,11 +1268,6 @@ def catalogue():
     @tool("get_combine", description=_orig_get_combine.description)
     def get_combine(season: str = "2025") -> dict:
         try:
-            con = _store.connect(read_only=True)
-            try:
-                con.execute("SELECT 1 FROM silver_combine LIMIT 0")
-            finally:
-                con.close()
             if os.environ.get("PI_OFFLINE"):
                 raise RuntimeError("offline mode: live fetching disabled")
             res = _orig_get_combine.invoke({"season": season})
@@ -1301,11 +1291,6 @@ def catalogue():
     @tool("get_young_player_usage", description=_orig_get_young_player_usage.description)
     def get_young_player_usage(max_age: int = 22, min_minutes: int = 1000, season: str | None = None) -> dict:
         try:
-            con = _store.connect(read_only=True)
-            try:
-                con.execute("SELECT 1 FROM silver_advanced LIMIT 0")
-            finally:
-                con.close()
             res = _orig_get_young_player_usage.invoke({
                 "max_age": max_age,
                 "min_minutes": min_minutes,
