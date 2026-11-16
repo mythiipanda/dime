@@ -1180,6 +1180,7 @@ test("real statistical tools cross MCP with anchor compatibility, rows, columns,
     const anchorToolNames = bridge.tools.map(tool => tool.name);
     assert.equal(new Set(anchorToolNames).size, bridge.tools.length);
     const columnlessTools = new Set(["get_watchlist", "get_games_on_date", "get_boxscore"]);
+    const rowslessTools = new Set(["warehouse_schema"]);
     const anchorArgs = {
       sql_exec: { sql: "SELECT PTS, _source FROM silver_hist_player_seasons ORDER BY PTS" },
       warehouse_schema: {},
@@ -1277,6 +1278,7 @@ test("real statistical tools cross MCP with anchor compatibility, rows, columns,
     };
     let wrapperInvocations = 0;
     let toolsExercised = 0;
+    let rowsToolsWithRows = 0;
     let citationsValidated = 0;
     let assertionsPassed = 0;
     for (const toolName of anchorToolNames) {
@@ -1294,6 +1296,7 @@ test("real statistical tools cross MCP with anchor compatibility, rows, columns,
       const result = sourced.structuredContent.result;
       toolsExercised++;
       if (result.rows === undefined) continue;
+      rowsToolsWithRows++;
       assertionsPassed++;
       assert(Array.isArray(result.rows), `${toolName} rows must be an array`);
       assertionsPassed++;
@@ -1313,8 +1316,10 @@ test("real statistical tools cross MCP with anchor compatibility, rows, columns,
       assert.equal(submission.blocks[0].text, `Anchor for ${toolName}`);
       citationsValidated++;
     }
+    const expectedRowsTools = anchorToolNames.length - rowslessTools.size;
+    assert.equal(rowsToolsWithRows, expectedRowsTools, `${rowsToolsWithRows} of ${anchorToolNames.length} tools exposed rows; expected ${expectedRowsTools} because only ${[...rowslessTools].join(", ")} may omit rows, so a rows-bearing tool regressed and lost its rows`);
     assert(citationsValidated >= 1, "citation path must validate at least one real source row so a global skip cannot hide");
-    console.log(JSON.stringify({ proof: "all-tools-citation-contract", toolsExercised, wrapperInvocations, citationsValidated, assertionsPassed, catalogueTools: bridge.tools.length }));
+    console.log(JSON.stringify({ proof: "all-tools-citation-contract", toolsExercised, wrapperInvocations, rowsToolsWithRows, expectedRowsTools, citationsValidated, assertionsPassed, catalogueTools: bridge.tools.length }));
   } finally {
     await bridge.close();
   }
