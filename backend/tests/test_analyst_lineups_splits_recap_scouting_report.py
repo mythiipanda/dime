@@ -553,6 +553,34 @@ def test_timeout_error_text_for_each_tool_kind():
         assert alternative in declared
 
 
+def test_live_source_labels_produce_clean_error_text():
+    elapsed = f"{python_tools.LIVE_CALL_TIMEOUT_S:.1f}s"
+    board = python_tools._timeout_error("get_draft_board")
+    dataset = python_tools._timeout_error("get_dataset")
+    draft_model = python_tools._timeout_error("get_draft_model")
+
+    assert "barttorvik college stats" in board
+    assert board == (
+        f"get_draft_board timed out after {elapsed}: the upstream source is a live "
+        "barttorvik college stats call, not the warehouse. Retry later, or answer "
+        "from the warehouse-backed get_dataset tool."
+    )
+    assert dataset.count("a live ") == 1
+    assert "live live" not in dataset
+    assert dataset == (
+        f"get_dataset timed out after {elapsed}: the upstream source is a live "
+        "upstream sources call, not the warehouse. Retry later, or answer "
+        "from the warehouse-backed get_boxscore tool."
+    )
+    assert draft_model.count("a live ") == 1
+    assert "live live" not in draft_model
+    assert draft_model == (
+        f"get_draft_model timed out after {elapsed}: the upstream source is a live "
+        "college stats call, not the warehouse. Retry later, or answer "
+        "from the warehouse-backed get_dataset tool."
+    )
+
+
 def test_non_network_tool_uses_the_bridge_budget(monkeypatch):
     budget_ms = _bridge_budget_ms()
     assert budget_ms > python_tools.LIVE_CALL_TIMEOUT_S * 1000
