@@ -652,3 +652,126 @@ def test_warehouse_backed_result_is_byte_identical(monkeypatch):
     res = _invoke(tools["get_splits"], spec["arguments"])
 
     assert res == expected
+
+
+ROWLIST_DEFAULT_COLS = ["a", "b"]
+LAST_X_DEFAULT_COLS = ["GAME_DATE", "MATCHUP", "PTS", "REB", "AST", "MIN"]
+
+
+def test_row_list_result_wraps_non_dict_rows_losslessly():
+    res = {"tool": "probe", "ok": True, "rows": [{"a": 1}, 7, "x", {"a": 2}]}
+
+    out = python_tools._row_list_result(res, "probe", ROWLIST_DEFAULT_COLS)
+
+    assert out["ok"] is True
+    assert out["rows"] == [{"a": 1}, {"value": 7}, {"value": "x"}, {"a": 2}]
+    assert out["columns"] == ["a"]
+    assert isinstance(out["rows"], list)
+    assert isinstance(out["columns"], list)
+
+
+def test_row_list_result_keeps_all_dict_rows_unchanged():
+    raw = [{"a": 1, "b": 2}, {"b": 3, "a": 4}]
+    res = {"tool": "probe", "ok": True,
+           "rows": [dict(r) for r in raw], "meta": {"source": "warehouse"}}
+
+    out = python_tools._row_list_result(res, "probe", ROWLIST_DEFAULT_COLS)
+
+    assert out["ok"] is True
+    assert out["rows"] == raw
+    assert out["columns"] == ["a", "b"]
+    assert out["meta"] == {"source": "warehouse"}
+
+
+def test_row_list_result_empty_rows_use_default_columns():
+    res = {"tool": "probe", "ok": True, "rows": []}
+
+    out = python_tools._row_list_result(res, "probe", ROWLIST_DEFAULT_COLS)
+
+    assert out["ok"] is True
+    assert out["rows"] == []
+    assert out["columns"] == ROWLIST_DEFAULT_COLS
+    assert isinstance(out["rows"], list)
+    assert isinstance(out["columns"], list)
+
+
+def test_row_list_result_preserves_upstream_error_text():
+    res = {"tool": "probe", "ok": False, "error": "upstream refused the request"}
+
+    out = python_tools._row_list_result(res, "probe", ROWLIST_DEFAULT_COLS)
+
+    assert out["ok"] is False
+    assert out["rows"] == []
+    assert out["columns"] == ROWLIST_DEFAULT_COLS
+    assert out["error"] == "upstream refused the request"
+
+
+def _last_x_spec():
+    return {
+        "name": "get_last_x",
+        "module": "shared.tools.player",
+        "attribute": "get_last_x",
+        "arguments": {"player_id": 2544, "n": 5, "season": "2024-25"},
+        "default_columns": LAST_X_DEFAULT_COLS,
+    }
+
+
+def _invoke_last_x(monkeypatch, result):
+    spec = _last_x_spec()
+    fake = _stub(spec, result=result)
+    tools = _catalogue(monkeypatch, {(spec["module"], spec["attribute"]): fake})
+    res = _invoke(tools["get_last_x"], spec["arguments"])
+    assert fake.calls == [spec["arguments"]]
+    return res
+
+
+def test_get_last_x_uses_the_same_lossless_row_normalization(monkeypatch):
+    res = _invoke_last_x(monkeypatch, {
+        "tool": "get_last_x",
+        "ok": True,
+        "rows": [{"a": 1}, 7, "x", {"a": 2}],
+    })
+
+    assert res["ok"] is True
+    assert res["rows"] == [{"a": 1}, {"value": 7}, {"value": "x"}, {"a": 2}]
+    assert res["columns"] == ["a"]
+    assert isinstance(res["rows"], list)
+    assert isinstance(res["columns"], list)
+
+
+def test_get_last_x_keeps_all_dict_rows_and_derives_columns(monkeypatch):
+    raw = [{"GAME_DATE": "2026-01-05", "PTS": 30}]
+    res = _invoke_last_x(monkeypatch, {
+        "tool": "get_last_x",
+        "ok": True,
+        "rows": [dict(raw[0])],
+    })
+
+    assert res["ok"] is True
+    assert res["rows"] == raw
+    assert res["columns"] == list(raw[0].keys())
+
+
+def test_get_last_x_empty_rows_use_default_columns(monkeypatch):
+    res = _invoke_last_x(monkeypatch, {
+        "tool": "get_last_x",
+        "ok": True,
+        "rows": [],
+    })
+
+    assert res["ok"] is True
+    assert res["rows"] == []
+    assert res["columns"] == LAST_X_DEFAULT_COLS
+
+
+def test_get_last_x_upstream_error_text_is_preserved(monkeypatch):
+    res = _invoke_last_x(monkeypatch, {
+        "tool": "get_last_x",
+        "ok": False,
+        "error": "empty upstream response",
+    })
+
+    assert res["ok"] is False
+    assert res["rows"] == []
+    assert res["columns"] == LAST_X_DEFAULT_COLS
+    assert res["error"] == "empty upstream response"

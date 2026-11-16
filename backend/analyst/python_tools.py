@@ -2322,22 +2322,7 @@ def catalogue():
             res = {"tool": "get_last_x", "ok": False,
                    "error": f"{type(exc).__name__}: {exc}"}
 
-        raw_rows = res.get("rows")
-        if res.get("ok") and not isinstance(raw_rows, list):
-            res["ok"] = False
-            res.setdefault(
-                "error",
-                f"get_last_x returned {type(raw_rows).__name__} rows, expected a list",
-            )
-        if res.get("ok"):
-            rows = [r for r in raw_rows if isinstance(r, dict)]
-        else:
-            rows = []
-        cols = list(rows[0].keys()) if rows else default_cols
-        res["rows"] = rows
-        res["columns"] = cols
-        res["ok"] = bool(res.get("ok", False))
-        return sanitize_for_wire(res)
+        return _row_list_result(res, "get_last_x", default_cols)
 
     @tool("get_player_report", description=_orig_get_player_report.description)
     def get_player_report(player: str | int,
@@ -3848,7 +3833,7 @@ def _row_list_result(res: dict, name: str, default_cols: list[str]) -> dict:
                         if isinstance(upstream_error, str) and upstream_error
                         else message)
     if res.get("ok") and isinstance(raw_rows, list):
-        rows = [r for r in raw_rows if isinstance(r, dict)]
+        rows = [r if isinstance(r, dict) else {"value": r} for r in raw_rows]
     else:
         rows = []
     res["rows"] = rows
