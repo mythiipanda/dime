@@ -1179,6 +1179,7 @@ test("real statistical tools cross MCP with anchor compatibility, rows, columns,
 
     const anchorToolNames = bridge.tools.map(tool => tool.name);
     assert.equal(new Set(anchorToolNames).size, bridge.tools.length);
+    const columnlessTools = new Set(["get_watchlist", "get_games_on_date", "get_boxscore"]);
     const anchorArgs = {
       sql_exec: { sql: "SELECT PTS, _source FROM silver_hist_player_seasons ORDER BY PTS" },
       warehouse_schema: {},
@@ -1281,6 +1282,7 @@ test("real statistical tools cross MCP with anchor compatibility, rows, columns,
     for (const toolName of anchorToolNames) {
       const tool = toolMap.get(toolName);
       assert(tool, `${toolName} must exist in the live catalogue`);
+      assert(Object.hasOwn(anchorArgs, toolName), `${toolName} needs an entry in anchorArgs`);
       const res = await tool.execute(`call-anchor-${toolName}`, anchorArgs[toolName], undefined);
       wrapperInvocations++;
       assert(res.structuredContent, `${toolName} returned no structured content`);
@@ -1294,9 +1296,13 @@ test("real statistical tools cross MCP with anchor compatibility, rows, columns,
       if (result.rows === undefined) continue;
       assertionsPassed++;
       assert(Array.isArray(result.rows), `${toolName} rows must be an array`);
-      if (result.rows.length === 0) continue;
       assertionsPassed++;
-      assert(Array.isArray(result.columns), `${toolName} columns must be an array`);
+      if (columnlessTools.has(toolName)) {
+        assert(result.columns === undefined && result.rows.length === 0, `${toolName} must expose no columns only when it returns no rows`);
+      } else {
+        assert(Array.isArray(result.columns), `${toolName} columns must be an array`);
+      }
+      if (result.rows.length === 0) continue;
       const citedColumn = result.columns.find(column => typeof column === "string" && Object.hasOwn(result.rows[0], column));
       assertionsPassed++;
       assert(citedColumn, `${toolName} cited column must exist on the real first row`);
@@ -1307,6 +1313,7 @@ test("real statistical tools cross MCP with anchor compatibility, rows, columns,
       assert.equal(submission.blocks[0].text, `Anchor for ${toolName}`);
       citationsValidated++;
     }
+    assert(citationsValidated >= 1, "citation path must validate at least one real source row so a global skip cannot hide");
     console.log(JSON.stringify({ proof: "all-tools-citation-contract", toolsExercised, wrapperInvocations, citationsValidated, assertionsPassed, catalogueTools: bridge.tools.length }));
   } finally {
     await bridge.close();
