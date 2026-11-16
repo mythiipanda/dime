@@ -1181,6 +1181,8 @@ test("real statistical tools cross MCP with anchor compatibility, rows, columns,
     assert.equal(new Set(anchorToolNames).size, bridge.tools.length);
     const columnlessTools = new Set(["get_watchlist", "get_games_on_date", "get_boxscore"]);
     const rowslessTools = new Set(["warehouse_schema"]);
+    const observedRowsless = new Set();
+    const observedColumnless = new Set();
     const anchorArgs = {
       sql_exec: { sql: "SELECT PTS, _source FROM silver_hist_player_seasons ORDER BY PTS" },
       warehouse_schema: {},
@@ -1295,11 +1297,12 @@ test("real statistical tools cross MCP with anchor compatibility, rows, columns,
       assert.equal(sourced.structuredContent.tool, toolName);
       const result = sourced.structuredContent.result;
       toolsExercised++;
-      if (result.rows === undefined) continue;
+      if (result.rows === undefined) { observedRowsless.add(toolName); continue; }
       rowsToolsWithRows++;
       assertionsPassed++;
       assert(Array.isArray(result.rows), `${toolName} rows must be an array`);
       assertionsPassed++;
+      if (result.columns === undefined) observedColumnless.add(toolName);
       if (columnlessTools.has(toolName)) {
         assert(result.columns === undefined && result.rows.length === 0, `${toolName} must expose no columns only when it returns no rows`);
       } else {
@@ -1318,6 +1321,8 @@ test("real statistical tools cross MCP with anchor compatibility, rows, columns,
     }
     const expectedRowsTools = anchorToolNames.length - rowslessTools.size;
     assert.equal(rowsToolsWithRows, expectedRowsTools, `${rowsToolsWithRows} of ${anchorToolNames.length} tools exposed rows; expected ${expectedRowsTools} because only ${[...rowslessTools].join(", ")} may omit rows, so a rows-bearing tool regressed and lost its rows`);
+    assert.deepEqual([...observedRowsless].sort(), [...rowslessTools].sort(), `rowsless identity was [${[...observedRowsless].sort().join(", ")}]; expected exactly [${[...rowslessTools].sort().join(", ")}] - a different tool losing rows cannot be masked by another tool gaining them`);
+    assert.deepEqual([...observedColumnless].sort(), [...columnlessTools].sort(), `columnless identity was [${[...observedColumnless].sort().join(", ")}]; expected exactly [${[...columnlessTools].sort().join(", ")}]`);
     assert(citationsValidated >= 1, "citation path must validate at least one real source row so a global skip cannot hide");
     console.log(JSON.stringify({ proof: "all-tools-citation-contract", toolsExercised, wrapperInvocations, rowsToolsWithRows, expectedRowsTools, citationsValidated, assertionsPassed, catalogueTools: bridge.tools.length }));
   } finally {
