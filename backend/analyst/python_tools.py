@@ -63,6 +63,18 @@ NETWORK_TOOL_SOURCES = {
 
 LIVE_ONLY_TOOLS = {"get_recap": "get_boxscore"}
 
+WAREHOUSE_QUERY_TOOL = "get_dataset"
+WAREHOUSE_FALLBACK_TOOL = "get_boxscore"
+
+WAREHOUSE_ALTERNATIVES = {
+    name: (
+        LIVE_ONLY_TOOLS[name] if name in LIVE_ONLY_TOOLS
+        else WAREHOUSE_FALLBACK_TOOL if name == WAREHOUSE_QUERY_TOOL
+        else WAREHOUSE_QUERY_TOOL
+    )
+    for name in NETWORK_TOOL_SOURCES
+}
+
 TOOL_REGISTRY = None
 
 _TOOL_SCHEMA_DESCRIPTIONS = {
@@ -3760,18 +3772,13 @@ def _live_timeout_error(name: str, source: str, alternative: str) -> str:
 
 
 def _network_meta(name: str) -> tuple[str, str]:
-    return NETWORK_TOOL_SOURCES[name], LIVE_ONLY_TOOLS.get(name, name)
+    return NETWORK_TOOL_SOURCES[name], WAREHOUSE_ALTERNATIVES[name]
 
 
 def _timeout_error(name: str) -> str:
-    if name in LIVE_ONLY_TOOLS:
+    if name in NETWORK_TOOL_SOURCES:
         source, alternative = _network_meta(name)
         return _live_timeout_error(name, source, alternative)
-    if name in NETWORK_TOOL_SOURCES:
-        return (
-            f"{name} timed out after {LIVE_CALL_TIMEOUT_S:.1f}s; "
-            "the warehouse read is unavailable right now; retry later"
-        )
     return (
         f"{name} timed out after {LIVE_CALL_TIMEOUT_S:.1f}s; "
         "the read did not complete in time; retry later"

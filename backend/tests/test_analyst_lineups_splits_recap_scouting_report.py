@@ -431,9 +431,16 @@ def test_network_inventory_derives_real_warehouse_alternatives(monkeypatch):
     assert set(python_tools.NETWORK_TOOL_SOURCES) <= set(declared)
     assert python_tools.LIVE_ONLY_TOOLS == {"get_recap": "get_boxscore"}
     for name in python_tools.NETWORK_TOOL_SOURCES:
-        alternative = python_tools.LIVE_ONLY_TOOLS.get(name, name)
+        _source, alternative = python_tools._network_meta(name)
         assert alternative in declared
+        assert alternative != name
         assert alternative in tools
+        assert (alternative == "get_boxscore"
+                or tools[alternative].description.endswith(
+                    "Warehouse-backed with live fallback.")), name
+        error = python_tools._timeout_error(name)
+        assert alternative in error, name
+        assert "the warehouse read is unavailable right now" not in error, name
         assert python_tools.NETWORK_TOOL_SOURCES[name]
 
 
@@ -534,8 +541,9 @@ def test_timeout_error_text_for_each_tool_kind():
         "from the warehouse-backed get_boxscore tool."
     )
     assert python_tools._timeout_error("get_splits") == (
-        f"get_splits timed out after {elapsed}; "
-        "the warehouse read is unavailable right now; retry later"
+        f"get_splits timed out after {elapsed}: the upstream source is a live "
+        "stats.nba.com call, not the warehouse. Retry later, or answer "
+        "from the warehouse-backed get_dataset tool."
     )
     assert python_tools._timeout_error("sql_exec") == (
         f"sql_exec timed out after {elapsed}; "
@@ -570,8 +578,9 @@ def test_non_network_tool_uses_the_bridge_budget(monkeypatch):
         python_tools._execute_tool_bounded(tools, "get_splits", {}))
     assert network["ok"] is False
     assert network["error"] == (
-        "get_splits timed out after 0.0s; "
-        "the warehouse read is unavailable right now; retry later"
+        "get_splits timed out after 0.0s: the upstream source is a live "
+        "stats.nba.com call, not the warehouse. Retry later, or answer "
+        "from the warehouse-backed get_dataset tool."
     )
 
 
@@ -591,8 +600,9 @@ def test_central_bound_times_out_a_warehouse_backed_tool(monkeypatch):
     assert res["rows"] == []
     assert isinstance(res["columns"], list)
     assert res["error"] == (
-        "get_splits timed out after 0.1s; "
-        "the warehouse read is unavailable right now; retry later"
+        "get_splits timed out after 0.1s: the upstream source is a live "
+        "stats.nba.com call, not the warehouse. Retry later, or answer "
+        "from the warehouse-backed get_dataset tool."
     )
 
 
