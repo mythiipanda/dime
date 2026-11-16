@@ -38,7 +38,7 @@ jobs:
         run: pip install -r backend/requirements.txt pytest
       - name: Run contract-boundary gate subset
         run: |
-          python -m pytest backend/tests/test_sql_rerun_hardening.py backend/tests/test_v2_wire_schema_strip.py backend/evals/test_score_golden.py backend/tests/test_rerun_sql_adversarial.py -q
+          python -m pytest backend/tests/test_sql_rerun_hardening.py backend/tests/test_v2_wire_schema_strip.py backend/evals/test_score_golden.py backend/tests/test_rerun_sql_adversarial.py backend/tests/test_tool_schema_golden.py -q
   frontend:
     runs-on: ubuntu-latest
     steps:
