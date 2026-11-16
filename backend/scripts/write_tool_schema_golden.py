@@ -11,6 +11,6 @@ spec = importlib.util.spec_from_file_location("tool_schema_golden_test", TEST)
 module = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(module)
 snapshot = module._snapshot()
-sections = {name: snapshot[name] for name in ("catalogue", "internal", "shared")}
+sections = dict(snapshot)
 module.GOLDEN.write_bytes(module._serialize(sections))
 print(f"wrote {module.GOLDEN}")

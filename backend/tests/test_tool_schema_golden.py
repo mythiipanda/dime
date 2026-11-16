@@ -73,7 +73,12 @@ def test_shared_golden_matches_live():
 
 
 def test_golden_shared_names():
-    assert list(_golden()["shared"].keys()) == list(SHARED_TOOL_NAMES)
+    golden = _golden()["shared"]
+    live = _snapshot()["shared"]
+    assert list(golden.keys()) == list(SHARED_TOOL_NAMES)
+    for name in SHARED_TOOL_NAMES:
+        assert golden[name]["description"] == live[name]["description"]
+        assert golden[name]["args_schema"] == live[name]["args_schema"]
 
 
 def test_live_catalogue_names_match_typescript_list():
