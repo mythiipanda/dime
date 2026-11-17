@@ -261,6 +261,65 @@ LINEUP_MATCHUP = {
                "pts_a", "pts_b", "flags"],
 }
 
+MORNING_BRIEFING = {
+    "name": "get_morning_briefing",
+    "module": "shared.tools.today",
+    "attribute": "get_morning_briefing",
+    "arguments": {"season": "2025-26"},
+    "description": "Morning briefing: today's games, watchlist updates, leaderboard movers.",
+    "upstream_rows": {
+        "today": {
+            "last_night": [{
+                "GAME_ID": "1",
+                "VISITOR_TEAM_ABBREVIATION": "LAL",
+                "HOME_TEAM_ABBREVIATION": "BOS",
+                "VISITOR_TEAM_PTS": 110,
+                "HOME_TEAM_PTS": 118,
+                "GAME_STATUS_TEXT": "Final",
+            }],
+            "tonight": [{
+                "GAME_ID": "2",
+                "VISITOR_TEAM_ABBREVIATION": "GSW",
+                "HOME_TEAM_ABBREVIATION": "NYK",
+                "GAME_STATUS_TEXT": "7:30 pm ET",
+            }],
+            "movers": [{
+                "PLAYER": "A. Star", "TEAM": "BOS",
+                "RANK_CHANGE": "+2", "PTS_CHANGE": "1.4",
+            }],
+            "streaks": [{
+                "TEAM": "Denver Nuggets", "W": 9, "L": 2,
+                "STREAK": "W5", "GAMES": 5,
+            }],
+        },
+        "watchlist": [{
+            "headline": "Watch BOS", "detail": "rest",
+            "team": "BOS", "player": "A. Star",
+        }],
+        "movers": {
+            "climbers": [{
+                "player": "C. Guard", "team": "BOS",
+                "rank_base": 12, "rank_now": 10, "rank_change": 2,
+                "pts_base": 20.0, "pts_now": 21.4, "pts_change": 1.4,
+            }],
+            "fallers": [{
+                "player": "D. Forward", "team": "LAL",
+                "rank_base": 8, "rank_now": 9, "rank_change": -1,
+                "pts_base": 24.0, "pts_now": 23.2, "pts_change": -0.8,
+            }],
+            "new_entries": [{
+                "player": "E. Rookie", "team": "NYK",
+                "rank": 25, "pts": 18.5,
+            }],
+        },
+    },
+}
+
+MORNING_BRIEFING_SECTIONS = [
+    "last_night", "tonight", "today_movers", "streaks", "watchlist",
+    "movers_climbers", "movers_fallers", "movers_new_entries",
+]
+
 
 class _FakeTool:
     def __init__(self, description: str, result=None, exc: Exception | None = None):
@@ -910,6 +969,59 @@ def test_lineup_matchup_exception_becomes_structured_error(monkeypatch):
     assert isinstance(res["columns"], list)
     assert res["columns"] == []
     assert res["error"] == "warehouse unavailable"
+
+
+def test_morning_briefing_surfaces_all_faithful_upstream_sections(monkeypatch):
+    spec = MORNING_BRIEFING
+    fake = _FakeTool(spec["description"], result={
+        "tool": spec["name"],
+        "ok": True,
+        "rows": spec["upstream_rows"],
+        "meta": {"season": "2025-26"},
+    })
+    tools = _catalogue(monkeypatch, {(spec["module"], spec["attribute"]): fake})
+
+    res = _invoke(tools[spec["name"]], spec["arguments"])
+
+    cols = ["section", "headline", "detail", "team", "player"]
+    assert res["ok"] is True
+    assert isinstance(res["rows"], list)
+    assert isinstance(res["columns"], list)
+    assert res["columns"] == cols
+    assert len(res["rows"]) == 8
+    sections = [r["section"] for r in res["rows"]]
+    assert sorted(sections) == sorted(MORNING_BRIEFING_SECTIONS)
+    assert len(set(sections)) == len(sections)
+    assert "movers" not in sections
+    for row in res["rows"]:
+        assert isinstance(row, dict)
+        assert set(row.keys()) == set(cols)
+    assert set(res["columns"]) == {key for row in res["rows"] for key in row}
+
+    last = next(r for r in res["rows"] if r["section"] == "last_night")
+    assert last["headline"] == "LAL @ BOS"
+    assert last["detail"] == "110-118 Final"
+    assert last["player"] is None
+    tonight = next(r for r in res["rows"] if r["section"] == "tonight")
+    assert tonight["headline"] == "GSW @ NYK"
+    assert tonight["detail"] == "?-? 7:30 pm ET"
+    assert tonight["player"] is None
+
+    today_movers = [r for r in res["rows"] if r["section"] == "today_movers"]
+    assert any(r["player"] == "A. Star" for r in today_movers)
+    assert any(r["team"] == "BOS" for r in today_movers)
+    assert any(r["section"] == "streaks" and r["team"] == "Denver Nuggets"
+               for r in res["rows"])
+    assert any(r["section"] == "watchlist" and r["player"] == "A. Star"
+               for r in res["rows"])
+
+    by_section = {r["section"]: r for r in res["rows"]}
+    assert by_section["movers_climbers"]["player"] == "C. Guard"
+    assert by_section["movers_climbers"]["detail"] == "2 rank (1.4 pts)"
+    assert by_section["movers_fallers"]["player"] == "D. Forward"
+    assert by_section["movers_fallers"]["detail"] == "-1 rank (-0.8 pts)"
+    assert by_section["movers_new_entries"]["player"] == "E. Rookie"
+    assert by_section["movers_new_entries"]["detail"] == "new #25 (18.5 pts)"
 
 
 def test_registry_matches_the_typescript_tool_names(monkeypatch):

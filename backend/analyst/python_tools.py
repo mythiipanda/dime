@@ -3088,10 +3088,32 @@ def catalogue():
         if isinstance(raw_rows, dict):
             today_data = raw_rows.get("today") or {}
             if isinstance(today_data, dict):
+                for g in today_data.get("last_night") or []:
+                    if isinstance(g, dict):
+                        vpts = g.get("VISITOR_TEAM_PTS")
+                        hpts = g.get("HOME_TEAM_PTS")
+                        rows.append({
+                            "section": "last_night",
+                            "headline": f"{g.get('VISITOR_TEAM_ABBREVIATION') or '?'} @ {g.get('HOME_TEAM_ABBREVIATION') or '?'}",
+                            "detail": f"{vpts if vpts is not None else '?'}-{hpts if hpts is not None else '?'} {g.get('GAME_STATUS_TEXT') or ''}".strip(),
+                            "team": g.get("HOME_TEAM_ABBREVIATION"),
+                            "player": None,
+                        })
+                for g in today_data.get("tonight") or []:
+                    if isinstance(g, dict):
+                        vpts = g.get("VISITOR_TEAM_PTS")
+                        hpts = g.get("HOME_TEAM_PTS")
+                        rows.append({
+                            "section": "tonight",
+                            "headline": f"{g.get('VISITOR_TEAM_ABBREVIATION') or '?'} @ {g.get('HOME_TEAM_ABBREVIATION') or '?'}",
+                            "detail": f"{vpts if vpts is not None else '?'}-{hpts if hpts is not None else '?'} {g.get('GAME_STATUS_TEXT') or ''}".strip(),
+                            "team": g.get("HOME_TEAM_ABBREVIATION"),
+                            "player": None,
+                        })
                 for m in today_data.get("movers") or []:
                     if isinstance(m, dict):
                         rows.append({
-                            "section": "movers",
+                            "section": "today_movers",
                             "headline": f"{m.get('PLAYER')} ({m.get('TEAM')})",
                             "detail": f"{m.get('RANK_CHANGE', '')} rank ({m.get('PTS_CHANGE', '')} pts)",
                             "team": m.get("TEAM"),
@@ -3115,6 +3137,22 @@ def catalogue():
                         "team": w.get("team"),
                         "player": w.get("player"),
                     })
+            movers_data = raw_rows.get("movers")
+            if isinstance(movers_data, dict):
+                for category in ("climbers", "fallers", "new_entries"):
+                    for m in movers_data.get(category) or []:
+                        if isinstance(m, dict):
+                            if category == "new_entries":
+                                detail = f"new #{m.get('rank')} ({m.get('pts')} pts)"
+                            else:
+                                detail = f"{m.get('rank_change')} rank ({m.get('pts_change')} pts)"
+                            rows.append({
+                                "section": f"movers_{category}",
+                                "headline": f"{m.get('player')} ({m.get('team')})",
+                                "detail": detail,
+                                "team": m.get("team"),
+                                "player": m.get("player"),
+                            })
         elif isinstance(raw_rows, list):
             rows = [r for r in raw_rows if isinstance(r, dict)]
 
