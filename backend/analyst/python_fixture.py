@@ -25,6 +25,12 @@ async def main():
         con.execute("CREATE TABLE silver_leaders_pts "
                     f"(_season VARCHAR, PTS INTEGER, _source VARCHAR, {columns}, RAW_SECRET_ROW VARCHAR)")
         con.execute("INSERT INTO silver_leaders_pts (_season, PTS, _source) VALUES ('2090-91', 71, 'owned-synthetic')")
+        con.execute("CREATE TABLE silver_lineups "
+                    "(_season VARCHAR, _entity VARCHAR, TEAM_ID BIGINT, "
+                    " GROUP_NAME VARCHAR, MIN DOUBLE, PLUS_MINUS DOUBLE)")
+        con.execute("INSERT INTO silver_lineups VALUES "
+                    "('2024-25', 'team:1610612747', 1610612747, "
+                    " 'Avery-Bradley-Caruso-Dolson-Erhun', 120.0, 6.5)")
     finally:
         con.close()
     tools = catalogue()
