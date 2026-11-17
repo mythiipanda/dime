@@ -31,6 +31,9 @@ async def main():
         con.execute("INSERT INTO silver_lineups VALUES "
                     "('2024-25', 'team:1610612747', 1610612747, "
                     " 'Avery-Bradley-Caruso-Dolson-Erhun', 120.0, 6.5)")
+        con.execute("INSERT INTO silver_lineups VALUES "
+                    "('2023-24', 'team:1610612738', 1610612738, "
+                    " 'Brown-Tatum-Horford-White-Pritchard', 120.0, 8.0)")
     finally:
         con.close()
     tools = catalogue()
