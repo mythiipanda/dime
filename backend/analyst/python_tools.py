@@ -3006,27 +3006,31 @@ def catalogue():
         if isinstance(raw_rows, dict):
             for g in raw_rows.get("last_night") or []:
                 if isinstance(g, dict):
+                    vpts = g.get("VISITOR_TEAM_PTS")
+                    hpts = g.get("HOME_TEAM_PTS")
                     rows.append({
                         "category": "last_night",
-                        "home_team": g.get("home_team") or g.get("HOME_TEAM"),
-                        "away_team": g.get("away_team") or g.get("AWAY_TEAM"),
-                        "score": f"{g.get('home_score', '')}-{g.get('away_score', '')}".strip("-"),
-                        "status": "FINAL",
+                        "home_team": g.get("HOME_TEAM_ABBREVIATION"),
+                        "away_team": g.get("VISITOR_TEAM_ABBREVIATION"),
+                        "score": f"{vpts if vpts is not None else '?'}-{hpts if hpts is not None else '?'}",
+                        "status": g.get("GAME_STATUS_TEXT") or "FINAL",
                         "player": None,
                         "team": None,
-                        "detail": g.get("matchup") or g.get("MATCHUP"),
+                        "detail": f"{g.get('VISITOR_TEAM_ABBREVIATION') or '?'} @ {g.get('HOME_TEAM_ABBREVIATION') or '?'}",
                     })
             for g in raw_rows.get("tonight") or []:
                 if isinstance(g, dict):
+                    vpts = g.get("VISITOR_TEAM_PTS")
+                    hpts = g.get("HOME_TEAM_PTS")
                     rows.append({
                         "category": "tonight",
-                        "home_team": g.get("home_team") or g.get("HOME_TEAM"),
-                        "away_team": g.get("away_team") or g.get("AWAY_TEAM"),
-                        "score": None,
-                        "status": g.get("status") or "SCHEDULED",
+                        "home_team": g.get("HOME_TEAM_ABBREVIATION"),
+                        "away_team": g.get("VISITOR_TEAM_ABBREVIATION"),
+                        "score": f"{vpts if vpts is not None else '?'}-{hpts if hpts is not None else '?'}",
+                        "status": g.get("GAME_STATUS_TEXT") or "SCHEDULED",
                         "player": None,
                         "team": None,
-                        "detail": g.get("matchup") or g.get("MATCHUP"),
+                        "detail": f"{g.get('VISITOR_TEAM_ABBREVIATION') or '?'} @ {g.get('HOME_TEAM_ABBREVIATION') or '?'}",
                     })
             for m in raw_rows.get("movers") or []:
                 if isinstance(m, dict):

@@ -325,6 +325,22 @@ MORNING_BRIEFING_SECTIONS = [
     "movers_climbers", "movers_fallers", "movers_new_entries",
 ]
 
+GET_TODAY = {
+    "name": "get_today",
+    "module": "shared.tools.today",
+    "attribute": "get_today",
+    "arguments": {"season": "2025-26"},
+    "description": (
+        "Today home view: last night's results, tonight's games, "
+        "leaderboard movers, streaks."
+    ),
+}
+
+GET_TODAY_COLUMNS = [
+    "category", "home_team", "away_team", "score", "status",
+    "player", "team", "detail",
+]
+
 
 class _FakeTool:
     def __init__(self, description: str, result=None, exc: Exception | None = None):
@@ -398,6 +414,29 @@ def _upstream_ok(spec) -> dict:
         "rows": spec["upstream_rows"],
         "meta": {"source": "warehouse", "season": "2025-26"},
     }
+
+
+def _get_today_upstream():
+    today = MORNING_BRIEFING["upstream_rows"]["today"]
+    return {
+        "last_night": [dict(r) for r in today["last_night"]],
+        "tonight": [dict(r) for r in today["tonight"]],
+        "movers": [dict(r) for r in today["movers"]],
+        "streaks": [dict(r) for r in today["streaks"]],
+    }
+
+
+def _get_today_result(monkeypatch, upstream_rows):
+    fake = _stub(GET_TODAY, result={
+        "tool": GET_TODAY["name"],
+        "ok": True,
+        "rows": upstream_rows,
+        "meta": {"source": "nba_api+warehouse", "season": "2025-26"},
+    })
+    tools = _catalogue(monkeypatch, {
+        (GET_TODAY["module"], GET_TODAY["attribute"]): fake,
+    })
+    return _invoke(tools[GET_TODAY["name"]], GET_TODAY["arguments"])
 
 
 def test_sectioned_success_returns_rows_array_with_section(monkeypatch):
@@ -1086,6 +1125,43 @@ def test_morning_briefing_watchlist_maps_real_entity_rows(monkeypatch):
     assert watch[3]["team"] is None
     assert watch[3]["headline"] == "Watching player No Data"
     assert watch[3]["detail"] is None
+
+
+def test_get_today_maps_real_scoreboard_keys(monkeypatch):
+    res = _get_today_result(monkeypatch, _get_today_upstream())
+
+    assert res["ok"] is True
+    assert res["columns"] == GET_TODAY_COLUMNS
+    assert len(res["rows"]) == 4
+    for row in res["rows"]:
+        assert set(row.keys()) == set(GET_TODAY_COLUMNS)
+
+    by_category = {row["category"]: row for row in res["rows"]}
+    last = by_category["last_night"]
+    assert last["home_team"] == "BOS"
+    assert last["away_team"] == "LAL"
+    assert last["score"] == "110-118"
+    assert last["status"] == "Final"
+    assert last["detail"] == "LAL @ BOS"
+
+    tonight = by_category["tonight"]
+    assert tonight["home_team"] == "NYK"
+    assert tonight["away_team"] == "GSW"
+    assert tonight["score"] == "?-?"
+    assert tonight["status"] == "7:30 pm ET"
+    assert tonight["detail"] == "GSW @ NYK"
+
+
+def test_get_today_preserves_real_zero_and_marks_unplayed_with_question(monkeypatch):
+    upstream = _get_today_upstream()
+    upstream["last_night"][0]["HOME_TEAM_PTS"] = 0
+
+    res = _get_today_result(monkeypatch, upstream)
+    by_category = {row["category"]: row for row in res["rows"]}
+
+    assert by_category["last_night"]["score"] == "110-0"
+    assert by_category["tonight"]["score"] == "?-?"
+    assert not any(c.isdigit() for c in by_category["tonight"]["score"])
 
 
 def test_registry_matches_the_typescript_tool_names(monkeypatch):
