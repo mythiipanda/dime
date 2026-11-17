@@ -249,6 +249,18 @@ HEAD_TO_HEAD = {
     },
 }
 
+LINEUP_MATCHUP = {
+    "name": "get_lineup_matchup_matrix",
+    "module": "shared.tools.lineup_matrix",
+    "attribute": "get_lineup_matchup_matrix",
+    "arguments": {"team_a": "AAA", "team_b": "BBB"},
+    "description": "Lineup-vs-lineup matrix for a team matchup crossing qualifying 5-man units.",
+    "literal_columns": ["team_a_lineup", "team_b_lineup", "poss", "est_minutes",
+                        "OFF_RATING_A", "DEF_RATING_A", "NET_RATING_A", "blowout_share"],
+    "extras": ["team_a_ids", "team_b_ids", "off_poss_a", "off_poss_b",
+               "pts_a", "pts_b", "flags"],
+}
+
 
 class _FakeTool:
     def __init__(self, description: str, result=None, exc: Exception | None = None):
@@ -743,6 +755,26 @@ def _head_to_head_tools(monkeypatch, fake):
     })
 
 
+def _lineup_pair_row():
+    from shared.tools.lineup_matrix import _pair_row
+
+    return _pair_row(
+        (101, 102, 103, 104, 105),
+        (201, 202, 203, 204, 205),
+        {"poss": 120, "off_poss_a": 60, "off_poss_b": 58,
+         "pts_a": 130, "pts_b": 118, "blowout": 12},
+        "Unit Alpha",
+        "Unit Beta",
+    )
+
+
+def _lineup_tools(monkeypatch, fake):
+    spec = LINEUP_MATCHUP
+    return _catalogue(monkeypatch, {
+        (spec["module"], spec["attribute"]): fake,
+    })
+
+
 def test_head_to_head_columns_follow_emitted_row_keys_both_shapes(monkeypatch):
     spec = HEAD_TO_HEAD
     for shape in ("dict", "list"):
@@ -805,6 +837,79 @@ def test_head_to_head_error_path_keeps_literal_columns(monkeypatch):
     assert res["ok"] is False
     assert res["rows"] == []
     assert res["columns"] == spec["literal_columns"]
+
+
+def test_lineup_matchup_columns_follow_real_pair_row_keys(monkeypatch):
+    spec = LINEUP_MATCHUP
+    row = _lineup_pair_row()
+    assert len(row) == 15
+    fake = _FakeTool(spec["description"], result={
+        "tool": spec["name"], "ok": True, "rows": [row],
+        "meta": {"source": "warehouse"},
+    })
+    tools = _lineup_tools(monkeypatch, fake)
+
+    res = _invoke(tools[spec["name"]], spec["arguments"])
+
+    assert res["ok"] is True
+    assert isinstance(res["rows"], list)
+    assert len(res["rows"]) == 1
+    assert isinstance(res["columns"], list)
+    assert res["columns"] == list(row.keys())
+    assert res["columns"] == list(res["rows"][0].keys())
+    assert not set(res["columns"]) - set(row.keys())
+    assert res["rows"][0] == row
+    for key in spec["extras"]:
+        assert key in res["columns"], key
+    assert len(fake.calls) == 1
+    assert fake.calls[0]["team_a"] == spec["arguments"]["team_a"]
+    assert fake.calls[0]["team_b"] == spec["arguments"]["team_b"]
+
+
+def test_lineup_matchup_empty_rows_keeps_literal_columns(monkeypatch):
+    spec = LINEUP_MATCHUP
+    fake = _FakeTool(spec["description"], result={
+        "tool": spec["name"], "ok": True, "rows": [],
+        "meta": {"source": "warehouse"},
+    })
+    tools = _lineup_tools(monkeypatch, fake)
+
+    res = _invoke(tools[spec["name"]], spec["arguments"])
+
+    assert res["ok"] is True
+    assert res["rows"] == []
+    assert isinstance(res["columns"], list)
+    assert res["columns"] == spec["literal_columns"]
+
+
+def test_lineup_matchup_error_path_keeps_literal_columns(monkeypatch):
+    spec = LINEUP_MATCHUP
+    fake = _FakeTool(spec["description"], result={
+        "tool": spec["name"], "ok": False, "rows": [],
+        "error": "upstream refused the request",
+    })
+    tools = _lineup_tools(monkeypatch, fake)
+
+    res = _invoke(tools[spec["name"]], spec["arguments"])
+
+    assert res["ok"] is False
+    assert res["rows"] == []
+    assert isinstance(res["columns"], list)
+    assert res["columns"] == spec["literal_columns"]
+
+
+def test_lineup_matchup_exception_becomes_structured_error(monkeypatch):
+    spec = LINEUP_MATCHUP
+    fake = _FakeTool(spec["description"], exc=RuntimeError("warehouse unavailable"))
+    tools = _lineup_tools(monkeypatch, fake)
+
+    res = _invoke(tools[spec["name"]], spec["arguments"])
+
+    assert res["ok"] is False
+    assert res["rows"] == []
+    assert isinstance(res["columns"], list)
+    assert res["columns"] == []
+    assert res["error"] == "warehouse unavailable"
 
 
 def test_registry_matches_the_typescript_tool_names(monkeypatch):

@@ -2068,7 +2068,7 @@ def catalogue():
             rows = []
 
         res["rows"] = rows
-        res["columns"] = cols
+        res["columns"] = list(rows[0].keys()) if rows else cols
         res["ok"] = True
         return sanitize_for_wire(res)
 
