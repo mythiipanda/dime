@@ -3129,14 +3129,58 @@ def catalogue():
                             "player": None,
                         })
             for w in raw_rows.get("watchlist") or []:
-                if isinstance(w, dict):
-                    rows.append({
-                        "section": "watchlist",
-                        "headline": w.get("headline") or w.get("title") or "Watchlist item",
-                        "detail": w.get("detail") or w.get("note"),
-                        "team": w.get("team"),
-                        "player": w.get("player"),
-                    })
+                if not isinstance(w, dict):
+                    continue
+                etype = str(w.get("entity_type") or "").strip().lower()
+                eid = w.get("entity_id")
+                added = w.get("added_at")
+                snap = w.get("snapshot")
+                snap = snap if isinstance(snap, dict) else {}
+                is_player = etype == "player"
+                is_team = etype == "team"
+                if is_player:
+                    player_val = eid
+                    team_val = snap.get("team")
+                    label = snap.get("player") or eid
+                elif is_team:
+                    player_val = None
+                    team_val = eid
+                    label = snap.get("name") or snap.get("team") or eid
+                else:
+                    player_val = None
+                    team_val = None
+                    label = eid
+                kind = etype if etype in ("player", "team") else ""
+                if kind and label:
+                    headline = f"Watching {kind} {label}"
+                elif label:
+                    headline = f"Watching {label}"
+                else:
+                    headline = None
+                detail_bits = []
+                if added:
+                    detail_bits.append(f"Added {added}")
+                if snap.get("found"):
+                    if is_player:
+                        stat_bits = []
+                        for key, unit in (("ppg", "PPG"), ("rpg", "RPG"), ("apg", "APG")):
+                            value = snap.get(key)
+                            if value is not None:
+                                stat_bits.append(f"{value} {unit}")
+                        if stat_bits:
+                            detail_bits.append(" / ".join(stat_bits))
+                    else:
+                        record = snap.get("record")
+                        if record:
+                            detail_bits.append(str(record))
+                detail = " \u00b7 ".join(detail_bits) if detail_bits else None
+                rows.append({
+                    "section": "watchlist",
+                    "headline": headline,
+                    "detail": detail,
+                    "team": team_val,
+                    "player": player_val,
+                })
             movers_data = raw_rows.get("movers")
             if isinstance(movers_data, dict):
                 for category in ("climbers", "fallers", "new_entries"):

@@ -293,8 +293,13 @@ MORNING_BRIEFING = {
             }],
         },
         "watchlist": [{
-            "headline": "Watch BOS", "detail": "rest",
-            "team": "BOS", "player": "A. Star",
+            "entity_type": "player",
+            "entity_id": "A. Star",
+            "added_at": "2026-03-01T12:00:00Z",
+            "snapshot": {
+                "found": True, "player": "A. Star", "team": "BOS",
+                "gp": 60, "ppg": 24.5, "rpg": 5.2, "apg": 4.1,
+            },
         }],
         "movers": {
             "climbers": [{
@@ -1016,12 +1021,71 @@ def test_morning_briefing_surfaces_all_faithful_upstream_sections(monkeypatch):
                for r in res["rows"])
 
     by_section = {r["section"]: r for r in res["rows"]}
+    watch = by_section["watchlist"]
+    assert watch["player"] == "A. Star"
+    assert watch["team"] == "BOS"
+    assert watch["headline"] == "Watching player A. Star"
+    assert watch["detail"] == "Added 2026-03-01T12:00:00Z \u00b7 24.5 PPG / 5.2 RPG / 4.1 APG"
     assert by_section["movers_climbers"]["player"] == "C. Guard"
     assert by_section["movers_climbers"]["detail"] == "2 rank (1.4 pts)"
     assert by_section["movers_fallers"]["player"] == "D. Forward"
     assert by_section["movers_fallers"]["detail"] == "-1 rank (-0.8 pts)"
     assert by_section["movers_new_entries"]["player"] == "E. Rookie"
     assert by_section["movers_new_entries"]["detail"] == "new #25 (18.5 pts)"
+
+
+def test_morning_briefing_watchlist_maps_real_entity_rows(monkeypatch):
+    spec = MORNING_BRIEFING
+    watch_rows = [
+        {"entity_type": "player", "entity_id": "A. Star",
+         "added_at": "2026-03-01T12:00:00Z",
+         "snapshot": {"found": True, "player": "A. Star", "team": "BOS",
+                      "gp": 60, "ppg": 24.5, "rpg": 5.2, "apg": 4.1}},
+        {"entity_type": "team", "entity_id": "BOS",
+         "added_at": "2026-03-02T09:30:00Z",
+         "snapshot": {"found": True, "team": "BOS", "name": "Boston Celtics",
+                      "wins": 41, "losses": 24, "record": "41-24"}},
+        {"entity_type": "player", "entity_id": "Unknown Guy",
+         "added_at": "2026-03-03T00:00:00Z",
+         "snapshot": {"found": False, "player": "Unknown Guy"}},
+        {"entity_type": "player", "entity_id": "No Data",
+         "snapshot": {"found": False}},
+    ]
+    upstream = dict(spec["upstream_rows"])
+    upstream["watchlist"] = watch_rows
+    fake = _FakeTool(spec["description"], result={
+        "tool": spec["name"], "ok": True, "rows": upstream,
+        "meta": {"season": "2025-26"},
+    })
+    tools = _catalogue(monkeypatch, {(spec["module"], spec["attribute"]): fake})
+
+    res = _invoke(tools[spec["name"]], spec["arguments"])
+
+    cols = ["section", "headline", "detail", "team", "player"]
+    watch = [r for r in res["rows"] if r["section"] == "watchlist"]
+    assert len(watch) == len(watch_rows)
+    for row in watch:
+        assert set(row.keys()) == set(cols)
+
+    assert watch[0]["player"] == "A. Star"
+    assert watch[0]["team"] == "BOS"
+    assert watch[0]["headline"] == "Watching player A. Star"
+    assert watch[0]["detail"] == "Added 2026-03-01T12:00:00Z \u00b7 24.5 PPG / 5.2 RPG / 4.1 APG"
+
+    assert watch[1]["player"] is None
+    assert watch[1]["team"] == "BOS"
+    assert watch[1]["headline"] == "Watching team Boston Celtics"
+    assert watch[1]["detail"] == "Added 2026-03-02T09:30:00Z \u00b7 41-24"
+
+    assert watch[2]["player"] == "Unknown Guy"
+    assert watch[2]["team"] is None
+    assert watch[2]["headline"] == "Watching player Unknown Guy"
+    assert watch[2]["detail"] == "Added 2026-03-03T00:00:00Z"
+
+    assert watch[3]["player"] == "No Data"
+    assert watch[3]["team"] is None
+    assert watch[3]["headline"] == "Watching player No Data"
+    assert watch[3]["detail"] is None
 
 
 def test_registry_matches_the_typescript_tool_names(monkeypatch):
