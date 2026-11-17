@@ -199,6 +199,46 @@ DEFENSIVE_MATCHUPS = {
     },
 }
 
+TRACKING_PROFILE = {
+    "name": "get_tracking_profile",
+    "module": "shared.tools.tracking",
+    "attribute": "get_tracking_profile",
+    "description": "Player or team tracking profile: drives, shooting, touches, rebounding, speed.",
+    "columns": ["subject", "season", "measure_type", "stat", "value"],
+}
+
+TRACKING_IDENTITY_VALUES = {
+    "PLAYER_ID": 2544,
+    "PLAYER_NAME": "Synthetic Scorer",
+    "TEAM_ID": 1610612747,
+    "TEAM_ABBREVIATION": "TST",
+    "TEAM_NAME": "Test Team",
+    "GP": 70,
+    "W": 40,
+    "L": 30,
+    "MIN": 2400,
+}
+
+CATCH_SHOOT_MEASURES = {
+    "CATCH_SHOOT_FGM": 100,
+    "CATCH_SHOOT_FGA": 220,
+    "CATCH_SHOOT_FG_PCT": 0.455,
+    "CATCH_SHOOT_PTS": 250,
+    "CATCH_SHOOT_FG3M": 40,
+    "CATCH_SHOOT_FG3A": 110,
+    "CATCH_SHOOT_FG3_PCT": 0.364,
+    "CATCH_SHOOT_EFG_PCT": 0.53,
+}
+
+DEFENSE_MEASURES = {
+    "STL": 1.4,
+    "BLK": 0.8,
+    "DREB": 4.2,
+    "DEF_RIM_FGM": 2.1,
+    "DEF_RIM_FGA": 4.5,
+    "DEF_RIM_FG_PCT": 0.467,
+}
+
 PLAYTYPE_PROFILE = {
     "name": "get_playtype_profile",
     "module": "shared.tools.playtypes",
@@ -1282,3 +1322,94 @@ def test_search_shots_explicit_clock_keys_keep_precedence(monkeypatch):
     emitted = res["rows"][0]
     assert emitted["minutes_remaining"] == "09"
     assert emitted["seconds_remaining"] == "07"
+
+
+def _tracking_row(measure_type, measures):
+    from shared.tools.tracking import _MEASURE_COLUMNS, _PLAYER_IDENTITY
+
+    identity = {key: TRACKING_IDENTITY_VALUES[key] for key in _PLAYER_IDENTITY}
+    family = {key: measures[key] for key in _MEASURE_COLUMNS[measure_type] if key in measures}
+    return {**identity, **family, "measure_type": measure_type}
+
+
+def _tracking_result(monkeypatch, rows, arguments=None):
+    spec = TRACKING_PROFILE
+    fake = _FakeTool(spec["description"], result={
+        "tool": spec["name"],
+        "ok": True,
+        "rows": rows,
+        "meta": {"source": "warehouse"},
+    })
+    tools = _catalogue(monkeypatch, {(spec["module"], spec["attribute"]): fake})
+    return _invoke(tools[spec["name"]], arguments or {
+        "player": "Synthetic Scorer", "season": "2025-26",
+        "measure_type": "CatchShoot",
+    })
+
+
+def test_tracking_profile_emits_concrete_measure_stat_value_pairs(monkeypatch):
+    families = (("CatchShoot", CATCH_SHOOT_MEASURES),
+                ("Defense", DEFENSE_MEASURES))
+    for measure_type, measures in families:
+        res = _tracking_result(monkeypatch, [_tracking_row(measure_type, measures)], {
+            "player": "Synthetic Scorer", "season": "2025-26",
+            "measure_type": measure_type,
+        })
+
+        assert res["ok"] is True, measure_type
+        assert isinstance(res["rows"], list), measure_type
+        assert isinstance(res["columns"], list), measure_type
+        assert res["columns"] == TRACKING_PROFILE["columns"], measure_type
+        assert len(res["rows"]) == len(measures), measure_type
+        assert {row["stat"]: row["value"] for row in res["rows"]} == measures, measure_type
+        for row in res["rows"]:
+            assert list(row.keys()) == TRACKING_PROFILE["columns"], measure_type
+            assert row["subject"] == "Synthetic Scorer", measure_type
+            assert row["season"] == "2025-26", measure_type
+            assert row["measure_type"] == measure_type, measure_type
+        assert "overall" not in {row["stat"] for row in res["rows"]}, measure_type
+        assert None not in [row["value"] for row in res["rows"]], measure_type
+        assert not set(TRACKING_IDENTITY_VALUES) & {row["stat"] for row in res["rows"]}, measure_type
+
+
+def test_tracking_profile_catchshoot_pts_maps_real_value(monkeypatch):
+    res = _tracking_result(monkeypatch, [_tracking_row("CatchShoot", CATCH_SHOOT_MEASURES)])
+
+    pts = [row for row in res["rows"] if row["stat"] == "CATCH_SHOOT_PTS"]
+    assert len(pts) == 1
+    assert pts[0]["value"] == 250
+    assert all(row["stat"] != "overall" for row in res["rows"])
+    assert all(row["value"] is not None for row in res["rows"])
+
+
+def test_tracking_profile_empty_rows_keeps_rows_and_columns(monkeypatch):
+    res = _tracking_result(monkeypatch, [])
+
+    assert res["ok"] is True
+    assert isinstance(res["rows"], list)
+    assert res["rows"] == []
+    assert isinstance(res["columns"], list)
+    assert res["columns"] == TRACKING_PROFILE["columns"]
+
+
+def test_tracking_profile_error_paths_keep_rows_and_columns(monkeypatch):
+    spec = TRACKING_PROFILE
+    cases = (
+        ({"tool": spec["name"], "ok": False, "rows": [],
+          "error": "upstream refused the request"}, None, "upstream refused the request"),
+        (None, RuntimeError("warehouse unavailable"), "warehouse unavailable"),
+    )
+    for result, exc, message in cases:
+        fake = _FakeTool(spec["description"], result=result, exc=exc)
+        tools = _catalogue(monkeypatch, {(spec["module"], spec["attribute"]): fake})
+        res = _invoke(tools[spec["name"]], {
+            "player": "Synthetic Scorer", "season": "2025-26",
+            "measure_type": "CatchShoot",
+        })
+
+        assert res["ok"] is False
+        assert isinstance(res["rows"], list)
+        assert res["rows"] == []
+        assert isinstance(res["columns"], list)
+        assert res["columns"] == spec["columns"]
+        assert res["error"] == message

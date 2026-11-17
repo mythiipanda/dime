@@ -320,9 +320,17 @@ def catalogue():
     except ImportError:
         from backend.shared.tools.today import get_morning_briefing as _orig_get_morning_briefing
     try:
-        from shared.tools.tracking import get_tracking_profile as _orig_get_tracking_profile
+        from shared.tools.tracking import (
+            get_tracking_profile as _orig_get_tracking_profile,
+            _PLAYER_IDENTITY as _TRACKING_PLAYER_IDENTITY,
+            _TEAM_IDENTITY as _TRACKING_TEAM_IDENTITY,
+        )
     except ImportError:
-        from backend.shared.tools.tracking import get_tracking_profile as _orig_get_tracking_profile
+        from backend.shared.tools.tracking import (
+            get_tracking_profile as _orig_get_tracking_profile,
+            _PLAYER_IDENTITY as _TRACKING_PLAYER_IDENTITY,
+            _TEAM_IDENTITY as _TRACKING_TEAM_IDENTITY,
+        )
     try:
         from shared.tools.rest import get_rest_advantage as _orig_get_rest_advantage
     except ImportError:
@@ -3244,16 +3252,21 @@ def catalogue():
 
         raw_rows = res.get("rows")
         raw_list: list[dict] = [r for r in raw_rows if isinstance(r, dict)] if isinstance(raw_rows, list) else []
-        rows = [
-            {
-                "subject": r.get("PLAYER_NAME") or r.get("TEAM_ABBREVIATION") or player or team,
-                "season": season,
-                "measure_type": r.get("measure_type") or measure_type,
-                "stat": r.get("stat") or "overall",
-                "value": r.get("value") or r.get("DRIVES") or r.get("POINTS"),
-            }
-            for r in raw_list
-        ]
+        excluded = set(_TRACKING_PLAYER_IDENTITY) | set(_TRACKING_TEAM_IDENTITY) | {"measure_type"}
+        rows = []
+        for r in raw_list:
+            subject = r.get("PLAYER_NAME") or r.get("TEAM_ABBREVIATION") or player or team
+            row_measure_type = r.get("measure_type") or measure_type
+            for column, value in r.items():
+                if column in excluded:
+                    continue
+                rows.append({
+                    "subject": subject,
+                    "season": season,
+                    "measure_type": row_measure_type,
+                    "stat": column,
+                    "value": value,
+                })
         res["rows"] = rows
         res["columns"] = cols
         res["ok"] = True
