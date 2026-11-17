@@ -3478,28 +3478,32 @@ def catalogue():
         raw_rows = res.get("rows")
         rows = []
         if isinstance(raw_rows, dict):
-            for m in raw_rows.get("matches") or []:
+            leader_mode = "matches" not in raw_rows
+            for m in (raw_rows.get("matches") or raw_rows.get("leaders") or []):
                 if isinstance(m, dict):
-                    rows.append({
-                        "date": m.get("date"),
-                        "game_id": m.get("game_id"),
-                        "opponent": m.get("opponent"),
-                        "matchup": m.get("matchup"),
-                        "home": m.get("home"),
-                        "pts": m.get("pts"),
-                        "reb": m.get("reb"),
-                        "ast": m.get("ast"),
-                        "stl": m.get("stl"),
-                        "blk": m.get("blk"),
-                        "tov": m.get("tov"),
-                        "min": m.get("min"),
-                        "wl": m.get("wl"),
-                    })
+                    if leader_mode:
+                        rows.append(m)
+                    else:
+                        rows.append({
+                            "date": m.get("date"),
+                            "game_id": m.get("game_id"),
+                            "opponent": m.get("opponent"),
+                            "matchup": m.get("matchup"),
+                            "home": m.get("home"),
+                            "pts": m.get("pts"),
+                            "reb": m.get("reb"),
+                            "ast": m.get("ast"),
+                            "stl": m.get("stl"),
+                            "blk": m.get("blk"),
+                            "tov": m.get("tov"),
+                            "min": m.get("min"),
+                            "wl": m.get("wl"),
+                        })
         elif isinstance(raw_rows, list):
             rows = [r for r in raw_rows if isinstance(r, dict)]
 
         res["rows"] = rows
-        res["columns"] = cols
+        res["columns"] = list(rows[0].keys()) if rows else cols
         res["ok"] = True
         return sanitize_for_wire(res)
 

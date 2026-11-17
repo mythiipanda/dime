@@ -1413,3 +1413,136 @@ def test_tracking_profile_error_paths_keep_rows_and_columns(monkeypatch):
         assert isinstance(res["columns"], list)
         assert res["columns"] == spec["columns"]
         assert res["error"] == message
+
+
+SEARCH_GAME_LOGS = {
+    "name": "search_game_logs",
+    "module": "shared.tools.gamelog",
+    "attribute": "search_game_logs",
+    "description": "Filter game logs by stat thresholds, opponent, time, or home/away.",
+}
+
+GAME_LOG_COLUMNS = ["date", "game_id", "opponent", "matchup", "home", "pts", "reb", "ast", "stl", "blk", "tov", "min", "wl"]
+
+LEAGUE_LEADER_ROW = {"player": "Synthetic Scorer", "player_id": 2544, "count": 7}
+TEAM_LEADER_ROW = {"team_abbr": "TST", "team": "Test Team", "count": 9}
+PLAYER_MATCH_ROW = {
+    "date": "2026-01-04",
+    "game_id": "0022400001",
+    "opponent": "OPP",
+    "matchup": "TST vs. OPP",
+    "home": True,
+    "pts": 31,
+    "reb": 6,
+    "ast": 4,
+    "stl": 1,
+    "blk": 0,
+    "tov": 2,
+    "fgm": 11,
+    "fga": 20,
+    "fg3m": 3,
+    "fg3a": 7,
+    "min": "34:12",
+    "plus_minus": 8,
+    "wl": "W",
+}
+
+LEAGUE_WIDE_ARGS = {"league_wide": True, "min_points": 50, "season": "2025-26"}
+TEAM_WIDE_ARGS = {"team_wide": True, "min_points": 50, "season": "2025-26"}
+PLAYER_MODE_ARGS = {"player": "Synthetic Scorer", "season": "2025-26"}
+
+
+def _game_log_fake(result=None, exc=None):
+    return _FakeTool(SEARCH_GAME_LOGS["description"], result=result, exc=exc)
+
+
+def _game_log_tools(monkeypatch, fake):
+    return _catalogue(monkeypatch, {
+        (SEARCH_GAME_LOGS["module"], SEARCH_GAME_LOGS["attribute"]): fake,
+    })
+
+
+def _game_log_ok(rows):
+    return {
+        "tool": SEARCH_GAME_LOGS["name"],
+        "ok": True,
+        "rows": rows,
+        "meta": {"source": "warehouse", "season": "2025-26"},
+    }
+
+
+def _invoke_game_log(monkeypatch, rows, arguments):
+    tools = _game_log_tools(monkeypatch, _game_log_fake(result=_game_log_ok(rows)))
+    return _invoke(tools[SEARCH_GAME_LOGS["name"]], arguments)
+
+
+def test_game_log_wide_modes_return_nonempty_rows(monkeypatch):
+    cases = (
+        ({"league_wide": True, "leaders": [dict(LEAGUE_LEADER_ROW)]},
+         LEAGUE_WIDE_ARGS, LEAGUE_LEADER_ROW),
+        ({"team_wide": True, "leaders": [dict(TEAM_LEADER_ROW)]},
+         TEAM_WIDE_ARGS, TEAM_LEADER_ROW),
+    )
+    for rows, arguments, leader in cases:
+        res = _invoke_game_log(monkeypatch, rows, arguments)
+
+        assert res["ok"] is True
+        assert isinstance(res["rows"], list)
+        assert res["rows"]
+        assert isinstance(res["rows"][0], dict)
+        assert set(res["rows"][0]) == set(leader)
+        for key, value in leader.items():
+            assert res["rows"][0][key] == value, key
+
+
+def test_game_log_wide_columns_follow_emitted_rows(monkeypatch):
+    cases = (
+        ({"league_wide": True, "leaders": [dict(LEAGUE_LEADER_ROW)]}, LEAGUE_WIDE_ARGS),
+        ({"team_wide": True, "leaders": [dict(TEAM_LEADER_ROW)]}, TEAM_WIDE_ARGS),
+    )
+    for rows, arguments in cases:
+        res = _invoke_game_log(monkeypatch, rows, arguments)
+
+        assert res["ok"] is True
+        assert isinstance(res["columns"], list)
+        assert res["columns"] == list(res["rows"][0].keys())
+        assert set(res["columns"]) & set(res["rows"][0])
+        assert not set(res["columns"]) & set(GAME_LOG_COLUMNS)
+
+
+def test_game_log_player_mode_unchanged(monkeypatch):
+    rows = {
+        "player": "Synthetic Scorer",
+        "player_id": 2544,
+        "matches": [dict(PLAYER_MATCH_ROW)],
+    }
+    res = _invoke_game_log(monkeypatch, rows, PLAYER_MODE_ARGS)
+
+    assert res["ok"] is True
+    assert isinstance(res["rows"], list)
+    assert len(res["rows"]) == 1
+    assert list(res["rows"][0].keys()) == GAME_LOG_COLUMNS
+    assert res["columns"] == GAME_LOG_COLUMNS
+    assert res["rows"][0]["pts"] == 31
+    assert res["rows"][0]["date"] == "2026-01-04"
+    assert res["rows"][0]["wl"] == "W"
+
+
+def test_game_log_empty_and_error_paths_keep_columns(monkeypatch):
+    cases = (
+        (_game_log_ok({}), None, True),
+        (_game_log_ok({"league_wide": True, "leaders": []}), None, True),
+        ({"tool": SEARCH_GAME_LOGS["name"], "ok": False, "rows": {},
+          "error": "upstream refused the request"}, None, False),
+        (None, RuntimeError("warehouse unavailable"), False),
+    )
+    for result, exc, ok in cases:
+        fake = _game_log_fake(result=result, exc=exc)
+        tools = _game_log_tools(monkeypatch, fake)
+        res = _invoke(tools[SEARCH_GAME_LOGS["name"]], LEAGUE_WIDE_ARGS)
+
+        assert res["ok"] is ok
+        assert isinstance(res["rows"], list)
+        assert res["rows"] == []
+        assert isinstance(res["columns"], list)
+        assert res["columns"] == GAME_LOG_COLUMNS
