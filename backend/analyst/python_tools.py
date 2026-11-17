@@ -2026,7 +2026,7 @@ def catalogue():
             rows = [r for r in raw_rows if isinstance(r, dict)]
 
         res["rows"] = rows
-        res["columns"] = cols
+        res["columns"] = list(rows[0].keys()) if rows else cols
         res["ok"] = True
         return sanitize_for_wire(res)
 

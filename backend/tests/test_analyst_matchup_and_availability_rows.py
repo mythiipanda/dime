@@ -232,6 +232,23 @@ STREAKS = {
     ],
 }
 
+HEAD_TO_HEAD = {
+    "name": "get_head_to_head",
+    "module": "shared.tools.headtohead",
+    "attribute": "get_head_to_head",
+    "arguments": {"player": "Synthetic Scorer", "opponent": "OPP",
+                  "season": "2025-26"},
+    "description": "Head-to-head game log between two players.",
+    "literal_columns": ["date", "matchup", "wl", "min", "pts", "reb", "ast",
+                        "stl", "blk", "plus_minus"],
+    "game_row": {
+        "date": "2026-01-04", "game_id": "0022400001", "matchup": "TST vs. OPP",
+        "home": True, "pts": 21, "reb": 5, "ast": 4, "stl": 1, "blk": 0,
+        "tov": 2, "fgm": 8, "fga": 17, "fg3m": 2, "fg3a": 6,
+        "min": "34:12", "plus_minus": 7, "wl": "W",
+    },
+}
+
 
 class _FakeTool:
     def __init__(self, description: str, result=None, exc: Exception | None = None):
@@ -698,6 +715,96 @@ def test_streaks_error_paths_keep_default_columns(monkeypatch):
         assert res["ok"] is False
         assert res["rows"] == []
         assert res["columns"] == spec["default_columns"]
+
+
+def _head_to_head_upstream_rows(shape):
+    spec = HEAD_TO_HEAD
+    game = dict(spec["game_row"])
+    if shape == "dict":
+        rows = {
+            "player": spec["arguments"]["player"],
+            "opponent": spec["arguments"]["opponent"],
+            "games": [game],
+        }
+    else:
+        rows = [game]
+    return {
+        "tool": spec["name"],
+        "ok": True,
+        "rows": rows,
+        "meta": {"source": "warehouse", "season": "2025-26"},
+    }
+
+
+def _head_to_head_tools(monkeypatch, fake):
+    spec = HEAD_TO_HEAD
+    return _catalogue(monkeypatch, {
+        (spec["module"], spec["attribute"]): fake,
+    })
+
+
+def test_head_to_head_columns_follow_emitted_row_keys_both_shapes(monkeypatch):
+    spec = HEAD_TO_HEAD
+    for shape in ("dict", "list"):
+        fake = _FakeTool(spec["description"], result=_head_to_head_upstream_rows(shape))
+        tools = _head_to_head_tools(monkeypatch, fake)
+
+        res = _invoke(tools[spec["name"]], spec["arguments"])
+
+        assert res["ok"] is True, shape
+        assert isinstance(res["rows"], list), shape
+        assert len(res["rows"]) == 1, shape
+        assert isinstance(res["columns"], list), shape
+        assert res["columns"] == list(res["rows"][0].keys()), shape
+        assert not set(res["columns"]) - set(res["rows"][0]), shape
+        for key in spec["literal_columns"]:
+            assert key in res["columns"], (shape, key)
+        for key in spec["game_row"]:
+            assert key in res["columns"], (shape, key)
+
+
+def test_head_to_head_dict_shape_emits_full_game_row(monkeypatch):
+    spec = HEAD_TO_HEAD
+    fake = _FakeTool(spec["description"], result=_head_to_head_upstream_rows("dict"))
+    tools = _head_to_head_tools(monkeypatch, fake)
+
+    res = _invoke(tools[spec["name"]], spec["arguments"])
+
+    emitted = set(res["rows"][0])
+    assert len(emitted) == 19
+    assert {"player", "opponent", "game_id", "home", "tov", "fgm",
+            "fga", "fg3m", "fg3a"} <= emitted
+    assert res["columns"] == list(res["rows"][0].keys())
+
+
+def test_head_to_head_empty_rows_keeps_literal_columns(monkeypatch):
+    spec = HEAD_TO_HEAD
+    fake = _FakeTool(spec["description"], result={
+        "tool": spec["name"], "ok": True, "rows": {},
+        "meta": {"source": "warehouse"},
+    })
+    tools = _head_to_head_tools(monkeypatch, fake)
+
+    res = _invoke(tools[spec["name"]], spec["arguments"])
+
+    assert res["ok"] is True
+    assert res["rows"] == []
+    assert res["columns"] == spec["literal_columns"]
+
+
+def test_head_to_head_error_path_keeps_literal_columns(monkeypatch):
+    spec = HEAD_TO_HEAD
+    fake = _FakeTool(spec["description"], result={
+        "tool": spec["name"], "ok": False, "rows": {},
+        "error": "upstream refused the request",
+    })
+    tools = _head_to_head_tools(monkeypatch, fake)
+
+    res = _invoke(tools[spec["name"]], spec["arguments"])
+
+    assert res["ok"] is False
+    assert res["rows"] == []
+    assert res["columns"] == spec["literal_columns"]
 
 
 def test_registry_matches_the_typescript_tool_names(monkeypatch):
