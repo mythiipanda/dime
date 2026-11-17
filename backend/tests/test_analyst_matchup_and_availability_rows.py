@@ -341,6 +341,29 @@ GET_TODAY_COLUMNS = [
     "player", "team", "detail",
 ]
 
+SEARCH_SHOTS = {
+    "name": "search_shots",
+    "module": "shared.tools.shots",
+    "attribute": "search_shots",
+    "arguments": {
+        "player": "Synthetic Scorer",
+        "team": "BOS",
+        "zones": "",
+        "periods": "",
+        "three_only": False,
+        "made": "any",
+        "late_clock": "",
+        "exclude_heaves": True,
+        "limit": 25,
+        "season": "2025-26",
+        "group_by": "",
+        "include_ot": "auto",
+    },
+    "description": "Search shot attempts by player, team, zone, period and clock.",
+    "columns": ["game_id", "player_name", "period", "minutes_remaining",
+                "seconds_remaining", "shot_distance", "zone", "made"],
+}
+
 
 class _FakeTool:
     def __init__(self, description: str, result=None, exc: Exception | None = None):
@@ -437,6 +460,43 @@ def _get_today_result(monkeypatch, upstream_rows):
         (GET_TODAY["module"], GET_TODAY["attribute"]): fake,
     })
     return _invoke(tools[GET_TODAY["name"]], GET_TODAY["arguments"])
+
+
+def _search_shot_row(clock="3:24", **overrides):
+    row = {
+        "player_id": 2544,
+        "player": "Synthetic Scorer",
+        "team_id": 1610612747,
+        "team": "BOS",
+        "period": 3,
+        "clock": clock,
+        "zone": "left_corner_three",
+        "zone_label": "Left Corner 3",
+        "action": "catch and shoot",
+        "distance_ft": 23.7,
+        "made": True,
+        "game_id": "0022400001",
+    }
+    row.update(overrides)
+    return row
+
+
+def _search_shots_result(monkeypatch, rows):
+    spec = SEARCH_SHOTS
+    fake = _FakeTool(spec["description"], result={
+        "tool": spec["name"],
+        "ok": True,
+        "filters": {},
+        "aggregate": {"attempts": len(rows)},
+        "by_zone": {},
+        "by_period": {},
+        "shots": rows,
+        "meta": {"source": "warehouse", "season": "2025-26"},
+    })
+    tools = _catalogue(monkeypatch, {
+        (spec["module"], spec["attribute"]): fake,
+    })
+    return _invoke(tools[spec["name"]], spec["arguments"])
 
 
 def test_sectioned_success_returns_rows_array_with_section(monkeypatch):
@@ -1177,3 +1237,48 @@ def test_registry_matches_the_typescript_tool_names(monkeypatch):
     assert list(tools.keys()) == declared
     for spec in SECTIONED:
         assert spec["name"] in tools
+
+
+def test_search_shots_parses_real_upstream_clock_string(monkeypatch):
+    res = _search_shots_result(monkeypatch, [_search_shot_row()])
+
+    assert res["ok"] is True
+    assert isinstance(res["rows"], list)
+    assert isinstance(res["columns"], list)
+    assert res["columns"] == SEARCH_SHOTS["columns"]
+    assert len(res["rows"]) == 1
+    row = res["rows"][0]
+    assert list(row.keys()) == SEARCH_SHOTS["columns"]
+    assert row["minutes_remaining"] == "3"
+    assert row["seconds_remaining"] == "24"
+    assert row["game_id"] == "0022400001"
+    assert row["player_name"] == "Synthetic Scorer"
+    assert row["period"] == 3
+    assert row["shot_distance"] == 23.7
+    assert row["zone"] == "left_corner_three"
+    assert row["made"] is True
+
+
+def test_search_shots_unparseable_clock_yields_none(monkeypatch):
+    for row in (_search_shot_row(clock="unknown"), _search_shot_row(clock=None)):
+        res = _search_shots_result(monkeypatch, [row])
+
+        assert res["ok"] is True
+        assert res["columns"] == SEARCH_SHOTS["columns"]
+        assert len(res["rows"]) == 1
+        emitted = res["rows"][0]
+        assert emitted["minutes_remaining"] is None
+        assert emitted["seconds_remaining"] is None
+
+
+def test_search_shots_explicit_clock_keys_keep_precedence(monkeypatch):
+    row = _search_shot_row(
+        clock="3:24", MINUTES_REMAINING="09", SECONDS_REMAINING="07")
+    res = _search_shots_result(monkeypatch, [row])
+
+    assert res["ok"] is True
+    assert res["columns"] == SEARCH_SHOTS["columns"]
+    assert len(res["rows"]) == 1
+    emitted = res["rows"][0]
+    assert emitted["minutes_remaining"] == "09"
+    assert emitted["seconds_remaining"] == "07"
