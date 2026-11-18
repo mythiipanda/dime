@@ -1,9 +1,12 @@
 import assert from "node:assert/strict";
 import {test} from "node:test";
 import {createServer} from "node:http";
-import {mkdir,writeFile} from "node:fs/promises";
+import {existsSync} from "node:fs";
+import {mkdir,readdir,writeFile} from "node:fs/promises";
 import {join} from "node:path";
-import {createPiExecution as createAnalyst} from "./dist/pi-execution.js";
+import {createPiExecution as createPiExec} from "./dist/pi-execution.js";
+import {createAnalyst,threadWorkspacePath} from "./dist/analyst.js";
+import {ProductStore} from "./dist/product-store.js";
 
 const root=process.env.DIME_PI_TEST_ROOT;
 assert(root,"Owned fixture directory required");
@@ -41,7 +44,7 @@ test("in-process Pi + QuickJS + Python MCP over local OpenAI SSE, source reuse a
   const context={q:"fixture question",history:[],sources:[],cwd,agentDir:join(cwd,"agent"),
     model:{provider:"fixture",model:"fixture",baseUrl:`http://127.0.0.1:${address.port}/v1`,apiKey:"synthetic",contextWindow:100000,maxTokens:4000},
     bridge:{python:process.env.DIME_PI_PYTHON,cwd,env}};
-  const analyst=createAnalyst();
+  const analyst=createPiExec();
   try {
     const events=[];
     for await(const event of analyst.stream(context)) events.push(event);
@@ -78,4 +81,40 @@ test("in-process Pi + QuickJS + Python MCP over local OpenAI SSE, source reuse a
     for await(const event of analyst.stream({...context,model:{}})) invalid.push(event);
     assert.equal(invalid[0].type,"failure");assert.equal(invalid[0].kind,"configuration");
   } finally {server.closeAllConnections();await new Promise(resolve=>server.close(resolve));}
+});
+
+test("createAnalyst retains persistent per-thread workspace across turns and cleans ephemeral dirs",async()=>{
+  const privateDir=join(root,"analyst-ws-private");
+  const dbPath=join(root,"analyst-ws-conv.sqlite");
+  const sourcesDir=join(root,"analyst-ws-sources");
+  const seenBridgeEnvs=[];
+  const mockExec={
+    async *stream(ctx){
+      seenBridgeEnvs.push({cwd:ctx.bridge.cwd,ws:ctx.bridge.env.DIME_THREAD_WORKSPACE});
+      await writeFile(join(ctx.bridge.cwd,"turn-artifact.txt"),"persisted-data","utf8");
+      yield {type:"answer",text:"Turn complete"};
+      yield {type:"closed"};
+    }
+  };
+  const analyst=createAnalyst({
+    env:{...process.env,DIME_PI_PRIVATE_DIR:privateDir,DIME_CONVERSATION_STORE:dbPath,DIME_PI_SOURCES_DIR:sourcesDir,DIME_WAREHOUSE:process.env.DIME_WAREHOUSE},
+    resolveModel:()=>({id:"fixture",name:"Fixture",provider:"fixture",api:"openai-completions",reasoning:false,input:["text"],contextWindow:100000,maxTokens:4000,cost:{input:0,output:0,cacheRead:0,cacheWrite:0}}),
+    store:new ProductStore(dbPath,sourcesDir),
+    execution:mockExec,
+    saveChat:async()=>{},
+    saveRun:async()=>{},
+  });
+  for await(const _event of analyst.stream({q:"Turn 1",thread:"t-ws-1",client:"owner-a"})){}
+  for await(const _event of analyst.stream({q:"Turn 2",thread:"t-ws-1",client:"owner-a"})){}
+  for await(const _event of analyst.stream({q:"Anonymous"})){}
+  const expectedWs=threadWorkspacePath(privateDir,{owner:"owner-a",thread:"t-ws-1"});
+  assert.equal(seenBridgeEnvs[0].cwd,expectedWs);
+  assert.equal(seenBridgeEnvs[0].ws,expectedWs);
+  assert.equal(seenBridgeEnvs[1].cwd,expectedWs);
+  assert.equal(seenBridgeEnvs[1].ws,expectedWs);
+  assert(existsSync(join(expectedWs,"turn-artifact.txt")));
+  assert.notEqual(seenBridgeEnvs[2].ws,expectedWs);
+  assert(!existsSync(seenBridgeEnvs[2].ws));
+  const entries=await readdir(privateDir);
+  assert(!entries.some(name=>name.startsWith("pi-")));
 });

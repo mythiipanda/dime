@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
-import {readFileSync,writeFileSync} from "node:fs";
+import {mkdtempSync,readFileSync,rmSync,writeFileSync} from "node:fs";
+import {tmpdir} from "node:os";
 import {join} from "node:path";
 import {ProductStore} from "./dist/product-store.js";
 import {ProjectStore,WorkspaceStore} from "./dist/catalog-stores.js";
@@ -14,5 +15,21 @@ const workspaces=new WorkspaceStore(join(root,"cross-workspaces.sqlite")),worksp
 workspaces.update(workspace,{add_thread_ids:["new-thread","new-thread"],remove_thread_ids:["old-thread"]});
 assert.deepEqual(workspaces.get(workspace.id).member_thread_ids,["new-thread"]);
 console.log("Node reads Python-created SQLite; identities, run IDs, branches, workspace token binding and membership preserved");
+
+const longDir=mkdtempSync(join(tmpdir(),"dime-long-memo-"));
+try {
+ const longStore=new ProductStore(join(longDir,"long.sqlite"),join(longDir,"sources"));
+ const longQuestion="Q ".repeat(3000).trim();
+ const longMemo="M".repeat(5500)+"-END";
+ const id={owner:"memo-owner",thread:"memo-thread"};
+ longStore.append(id,longQuestion,longMemo,"run-"+"c".repeat(32));
+ const turns=longStore.read(id);
+ assert.equal(turns.length,2);
+ assert.equal(turns[0].content,longQuestion);
+ assert.equal(turns[1].content,longMemo);
+ assert.equal(turns[1].content.length,5504);
+} finally {
+ rmSync(longDir,{recursive:true,force:true});
+}
 
 const createdProject=projects.create("Node project");const createdWorkspace=workspaces.create("Node workspace","node-owner");writeFileSync(join(root,"cross-node-created.json"),JSON.stringify({project:createdProject.id,workspace:createdWorkspace.workspace.id,token:createdWorkspace.token}));

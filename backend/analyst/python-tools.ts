@@ -5,7 +5,7 @@ import { fileURLToPath } from "node:url";
 import { Type, type Static } from "typebox";
 import { Value } from "typebox/value";
 import type { JsonValue } from "@earendil-works/pi-ai";
-import { defineTool } from "@earendil-works/pi-coding-agent";
+import { defineTool, type ToolNamespace } from "@earendil-works/pi-coding-agent";
 
 export const ANALYST_TOOL_NAMES = [
     "sql_exec",
@@ -105,6 +105,30 @@ export const ANALYST_TOOL_NAMES = [
 
 export type PythonToolName = (typeof ANALYST_TOOL_NAMES)[number];
 
+const NAMESPACES: Record<string, ToolNamespace> = {
+    player: { name: "player", description: "Player impact, RAPM, on/off, splits, comps, scouting, and availability tools." },
+    team: { name: "team", description: "Team ratings, four factors, 5-man lineups, standings, and Elo tools." },
+    league: { name: "league", description: "League leaders, awards, draft, playoffs, briefings, and dataset tools." },
+    cba: { name: "cba", description: "2023 CBA salary cap ledgers, trade legality checks, contract values, and transactions." },
+    spatial: { name: "spatial", description: "Shot zones, shot diets, optical tracking, and Synergy playtype tools." },
+    matchup: { name: "matchup", description: "Game predictions, head-to-head matchups, boxscores, rest, and stint logs." },
+};
+
+const TOOL_NAMESPACE_GROUPS: Record<string, readonly PythonToolName[]> = {
+    cba: ["get_cap_ledger", "get_contract_value", "get_trade_check", "get_trade_value", "get_transactions"],
+    spatial: ["get_shot_zones", "get_shot_compare", "get_team_shot_zones", "get_zone_deltas", "search_shots", "get_tracking_profile", "get_playtype_profile"],
+    matchup: ["get_game_prediction", "get_win_prob", "get_defensive_matchups", "get_head_to_head", "get_lineup_matchup_matrix", "get_season_series", "get_rest", "get_rest_advantage", "get_matchup_preview", "get_matchup_splits", "get_matchup_brief", "get_games_on_date", "get_boxscore", "get_possession_log", "get_stint_timeline"],
+    player: ["get_rapm", "get_rapm_prior", "get_raptor_history", "get_comps", "get_on_off", "get_wowy", "get_clutch_stats", "get_hustle", "get_injuries", "get_rookie_leaders", "get_young_player_usage", "get_player_risers", "get_player_ratings", "get_situational_splits", "get_career_arc", "get_last_x", "get_player_report", "get_splits", "get_scouting_report", "get_scout_pack", "get_regression_check", "get_rotation_check", "get_injury_impact", "search_game_logs"],
+    team: ["get_lineup_stats", "get_lineup_leaders", "get_lineups", "get_four_factors", "get_team_four_factors", "get_team_trajectory", "get_ratings", "get_team_leaders", "get_team_compare", "get_team_game_log", "get_team_hub", "get_risers", "get_playoff_team_ratings", "get_competitive_ratings", "get_elo", "get_elo_standings", "get_standings", "get_standings_deep"],
+    league: ["get_wpa_leaders", "get_award_results", "get_award_race", "get_briefing", "get_morning_briefing", "get_today", "get_leaders", "get_leaderboard_deltas", "get_historical_leaders", "get_playoffs", "get_playoff_sim", "get_draft_board", "get_combine", "get_draft_model", "get_warehouse_freshness", "get_dataset", "get_dataset_freshness", "get_finder", "get_streaks", "get_watchlist", "get_recap"],
+};
+
+const TOOL_NAMESPACE_MAP = new Map<string, ToolNamespace>(
+    Object.entries(TOOL_NAMESPACE_GROUPS).flatMap(([group, names]) =>
+        names.map((name) => [name, NAMESPACES[group]] as const)
+    )
+);
+
 type ToolLiteralTuple<T extends readonly string[]> = { -readonly [K in keyof T]: Type.TLiteral<T[K]> };
 function makeToolLiterals<const T extends readonly string[]>(names: T): ToolLiteralTuple<T> {
     return names.map(name => Type.Literal(name)) as unknown as ToolLiteralTuple<T>;
@@ -169,7 +193,7 @@ export async function connectPythonTools({ python, cwd, env }: PythonToolsOption
         args: ["-B", fileURLToPath(new URL("../python_tools.py", import.meta.url))],
         cwd, env, inheritEnv: false, maxStderrBytes: 65536
     });
-    const client = new McpClient({ name: "dime-analyst", version: "1", requestTimeoutMs: 15000 });
+    const client = new McpClient({ name: "dime-analyst", version: "1", requestTimeoutMs: 90000 });
     const results = new Map<string, SourceRecord>();
     try {
         await client.connect(transport);
@@ -180,13 +204,14 @@ export async function connectPythonTools({ python, cwd, env }: PythonToolsOption
             !ANALYST_TOOL_NAMES.every(name => catalogue.some(tool => tool.name === name))) {
             throw new Error("Unexpected Python tool catalogue");
         }
-        // The Python catalogue remains the authority for arguments. Its JSON Schema is checked by Pi.
         const tools = catalogue.map(tool => {
             const name = tool.name as PythonToolName;
             if (!ANALYST_TOOL_NAMES.includes(name))
                 throw new Error("Unexpected Python tool");
+            const namespace = TOOL_NAMESPACE_MAP.get(name);
             return defineTool({
                 name, label: name,
+                ...(namespace ? { namespace } : {}),
                 description: tool.description + " Returns {ref, tool, result, isError}. Filter result before returning from codemode; retain ref.",
                 parameters: Type.Unsafe<Record<string, unknown>>(tool.inputSchema), outputSchema: sourceOutputSchema,
                 async execute(callId, args, signal) {

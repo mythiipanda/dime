@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { Type } from "typebox";
 import { Value } from "typebox/value";
+
 const policies = {
     gemini: { models: ["gemini-3.5-flash", "gemini-3.8-flash", "gemma-4-31b-it", "gemini-3.5-flash-lite"], key: "GEMINI_API_KEY", url: "https://generativelanguage.googleapis.com/v1beta/openai/" },
     nvidia: { models: ["z-ai/glm-5.3-flash", "deepseek-ai/deepseek-v4.1-flash"], key: "NVIDIA_NIM_API_KEY", url: "https://integrate.api.nvidia.com/v1" },
@@ -13,11 +14,46 @@ const policies = {
     reflection: { models: ["Beam-1.0-501B-A23B"], key: "REFLECTION_API_KEY", url: "https://api.reflection.ai/openai/v1" },
     inception: { models: ["mercury-2.5"], key: "INCEPTION_API_KEY", url: "https://api.inceptionlabs.ai/v1" },
 };
+
 type Provider = keyof typeof policies;
+type TokenLimits = { contextWindow: number; maxTokens: number };
+
+const EXTRA_LIMITS: Partial<Record<Provider, Record<string, TokenLimits>>> = {
+    reflection: { "Beam-1.0-501B-A23B": { contextWindow: 1048576, maxTokens: 131072 } },
+    agnes: {
+        "agnes-3.0-flash": { contextWindow: 262144, maxTokens: 32768 },
+        "agnes-2.5-flash": { contextWindow: 262144, maxTokens: 32768 },
+    },
+    inception: { "mercury-2.5": { contextWindow: 131072, maxTokens: 16384 } },
+};
+
+const DEFAULT_APPROVED_LIMITS: TokenLimits = { contextWindow: 131072, maxTokens: 16384 };
+
 function isProvider(name: string): name is Provider { return Object.hasOwn(policies, name); }
+
 const order: Provider[] = ["groq", "agnes", "cerebras", "nvidia", "openrouter", "mistral", "gemini", "inception"];
 const gated = new Set<Provider>(["groq", "agnes", "reflection", "inception"]);
 const limitSchema = Type.Record(Type.String(), Type.Record(Type.String(), Type.Object({ id: Type.String(), contextWindow: Type.Integer(), maxTokens: Type.Integer() }, { additionalProperties: true })));
+
+function resolveLimits(provider: Provider, model: string): TokenLimits {
+    const explicit = EXTRA_LIMITS[provider]?.[model];
+    if (explicit)
+        return explicit;
+    const name = provider === "gemini" ? "google" : provider;
+    let raw: string;
+    try {
+        raw = readFileSync(fileURLToPath(new URL(`../node_modules/@earendil-works/pi-ai/dist/providers/data/${name}.json`, import.meta.url)), "utf8");
+    }
+    catch {
+        return DEFAULT_APPROVED_LIMITS;
+    }
+    const data: unknown = JSON.parse(raw);
+    if (!Value.Check(limitSchema, data))
+        throw new Error("Invalid SDK token metadata");
+    const entry = Object.values(data).flatMap(Object.values).find(item => item.id === model);
+    return entry ? { contextWindow: entry.contextWindow, maxTokens: entry.maxTokens } : DEFAULT_APPROVED_LIMITS;
+}
+
 export function providerPolicy(env: NodeJS.ProcessEnv) {
     const enabled = (name: Provider) => !gated.has(name) || ["true", "1", "yes", "on"].includes((env["DIME_ENABLE_" + name.toUpperCase()] ?? "false").toLowerCase());
     const key = (name: Provider) => env[policies[name].key] || (name === "gemini" ? env.GOOGLE_API_KEY : "");
@@ -62,24 +98,9 @@ export function providerPolicy(env: NodeJS.ProcessEnv) {
             const { provider, model } = selection(id);
             if (!available(provider))
                 throw new Error("Selected provider is unavailable");
-            // Existing Nvidia policy requires chat_template_kwargs, which this Pi adapter does not support.
             if (provider === "nvidia")
                 throw new Error("Provider requires request options not yet supported by Pi adapter");
-            let limits: {
-                contextWindow: number;
-                maxTokens: number;
-            } | undefined;
-            if (provider === "reflection")
-                limits = { contextWindow: 1048576, maxTokens: 131072 };
-            else {
-                const name = provider === "gemini" ? "google" : provider;
-                const data: unknown = JSON.parse(readFileSync(fileURLToPath(new URL(`../node_modules/@earendil-works/pi-ai/dist/providers/data/${name}.json`, import.meta.url)), "utf8"));
-                if (!Value.Check(limitSchema, data))
-                    throw new Error("Invalid SDK token metadata");
-                limits = Object.values(data).flatMap(Object.values).find(entry => entry.id === model);
-            }
-            if (!limits)
-                throw new Error("Selected model has no supported token metadata");
+            const limits = resolveLimits(provider, model);
             const headers: Record<string, string> = provider === "openrouter" ? { "HTTP-Referer": "https://github.com/mythiipanda/dime", "X-Title": "Dime NBA Analyst" } : ["groq", "cerebras", "agnes"].includes(provider) ? { "User-Agent": "dime-agent/1.0" } : {};
             return { provider, model, apiKey: key(provider), baseUrl: policies[provider].url, headers, contextWindow: limits.contextWindow, maxTokens: limits.maxTokens };
         }

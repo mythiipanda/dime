@@ -6,7 +6,11 @@ import { Type, type Static } from "typebox";
 import { Value } from "typebox/value";
 import { sourceRecordSchema, type SourceRecord } from "./python-tools.js";
 import { submitAnswerSchema, type AnswerSubmission } from "./submit-tool.js";
-const turnSchema = Type.Object({ role: Type.Union([Type.Literal("user"), Type.Literal("assistant")]), content: Type.String({ minLength: 1, maxLength: 2000, pattern: "\\S" }) });
+
+const MAX_TURN_CHARS = 64000;
+const MAX_HISTORY_TURNS = 24;
+
+const turnSchema = Type.Object({ role: Type.Union([Type.Literal("user"), Type.Literal("assistant")]), content: Type.String({ minLength: 1, maxLength: MAX_TURN_CHARS, pattern: "\\S" }) });
 const referenceSchema = Type.Object({ sequence: Type.Integer(), turn: Type.String(), run_id: Type.Union([Type.String(), Type.Null()]), turn_id: Type.Union([Type.String(), Type.Null()]) });
 const artifactSchema = Type.Object({
     run_id: Type.String(),
@@ -77,7 +81,7 @@ export class ProductStore {
         }
     }
     read(input: Identity): Turn[] {
-        return this.references(input).slice(-8).map(row => {
+        return this.references(input).slice(-MAX_HISTORY_TURNS).map(row => {
             const turn: unknown = JSON.parse(row.turn);
             if (!Value.Check(turnSchema, turn))
                 throw new Error("Invalid conversation turn");
@@ -132,8 +136,8 @@ export class ProductStore {
             if (typeof sequence !== "number")
                 throw new Error("Invalid sequence");
             const insert = db.prepare("INSERT INTO conversations(owner,thread,sequence,turn,run_id,turn_id) VALUES(?,?,?,?,?,?)");
-            insert.run(owner, thread, sequence + 1, JSON.stringify({ role: "user", content: question.slice(0, 2000) }), run, run);
-            insert.run(owner, thread, sequence + 2, JSON.stringify({ role: "assistant", content: answer.slice(0, 2000) }), run, run);
+            insert.run(owner, thread, sequence + 1, JSON.stringify({ role: "user", content: question.slice(0, MAX_TURN_CHARS) }), run, run);
+            insert.run(owner, thread, sequence + 2, JSON.stringify({ role: "assistant", content: answer.slice(0, MAX_TURN_CHARS) }), run, run);
             if (last)
                 db.prepare("INSERT INTO branches VALUES(?,?,?,?,?,?)").run(owner, thread, "br-" + randomUUID().replaceAll("-", "").slice(0, 12), sequence, last.run_id, last.turn_id);
             db.exec("COMMIT");

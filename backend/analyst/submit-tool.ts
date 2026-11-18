@@ -15,7 +15,7 @@ export type AnchorSelector = Static<typeof anchorSelectorSchema>;
 
 export const answerBlockSchema = Type.Object({
     text: Type.String({ minLength: 1 }),
-    anchors: Type.Array(anchorSelectorSchema)
+    anchors: Type.Optional(Type.Array(anchorSelectorSchema))
 }, { additionalProperties: false });
 
 export type AnswerBlock = Static<typeof answerBlockSchema>;
@@ -27,6 +27,42 @@ export const submitAnswerSchema = Type.Object({
 
 export type AnswerSubmission = Static<typeof submitAnswerSchema>;
 
+function validateAnchor(anchor: AnchorSelector, getSource: (ref: string) => SourceRecord | undefined) {
+    const record = getSource(anchor.ref);
+    if (!record)
+        throw new Error(`Unknown source ref: ${anchor.ref}`);
+    const res = sourceResult(record);
+    if (res.isError)
+        throw new Error(`Source ref is an error result: ${anchor.ref}`);
+    const data = objectValue(res.structuredContent.result);
+    if (!data)
+        throw new Error(`Source ref has no object data: ${anchor.ref}`);
+    const rows = Array.isArray(data.rows) ? data.rows : undefined;
+    if (!rows)
+        throw new Error(`Source ref has no rows array: ${anchor.ref}`);
+    if (anchor.row >= rows.length)
+        throw new Error(`Anchor row index ${anchor.row} out of bounds (length: ${rows.length}) for ref: ${anchor.ref}`);
+    const rowData = objectValue(rows[anchor.row]);
+    if (!rowData)
+        throw new Error(`Anchor row ${anchor.row} is not an object for ref: ${anchor.ref}`);
+    for (const col of anchor.columns) {
+        if (!Object.hasOwn(rowData, col))
+            throw new Error(`Column '${col}' does not exist on row ${anchor.row} for ref: ${anchor.ref}`);
+    }
+}
+
+function normalizeShotChart(artifact: Record<string, unknown>): Record<string, unknown> {
+    if (artifact.kind !== "shot_chart" || !Array.isArray(artifact.zones) || artifact.zones.length === 0)
+        return artifact;
+    const zones = artifact.zones.map(objectValue);
+    if (zones.some(z => !z || typeof z.pct !== "number" || z.pct <= 0 || z.pct > 1))
+        return artifact;
+    return {
+        ...artifact,
+        zones: zones.map(z => ({ ...z, pct: Math.round((z!.pct as number) * 1000) / 10 }))
+    };
+}
+
 export function validateAnswerSubmission(
     input: unknown,
     getSource: (ref: string) => SourceRecord | undefined
@@ -34,41 +70,14 @@ export function validateAnswerSubmission(
     if (!Value.Check(submitAnswerSchema, input)) {
         throw new Error("Invalid answer submission schema: blocks with non-empty text required");
     }
-
-    for (const block of input.blocks) {
-        for (const anchor of block.anchors) {
-            const record = getSource(anchor.ref);
-            if (!record) {
-                throw new Error(`Unknown source ref: ${anchor.ref}`);
-            }
-            const res = sourceResult(record);
-            if (res.isError) {
-                throw new Error(`Source ref is an error result: ${anchor.ref}`);
-            }
-            const structured = res.structuredContent;
-            const data = objectValue(structured.result);
-            if (!data) {
-                throw new Error(`Source ref has no object data: ${anchor.ref}`);
-            }
-            const rows = Array.isArray(data.rows) ? data.rows : undefined;
-            if (!rows) {
-                throw new Error(`Source ref has no rows array: ${anchor.ref}`);
-            }
-            if (anchor.row >= rows.length) {
-                throw new Error(`Anchor row index ${anchor.row} out of bounds (length: ${rows.length}) for ref: ${anchor.ref}`);
-            }
-            const rowData = objectValue(rows[anchor.row]);
-            if (!rowData) {
-                throw new Error(`Anchor row ${anchor.row} is not an object for ref: ${anchor.ref}`);
-            }
-            for (const col of anchor.columns) {
-                if (!Object.hasOwn(rowData, col)) {
-                    throw new Error(`Column '${col}' does not exist on row ${anchor.row} for ref: ${anchor.ref}`);
-                }
-            }
-        }
-    }
-    return structuredClone(input);
+    const blocks = input.blocks.map(block => {
+        const anchors = block.anchors ?? [];
+        for (const anchor of anchors)
+            validateAnchor(anchor, getSource);
+        return { text: block.text, anchors };
+    });
+    const artifacts = input.artifacts ? structuredClone(input.artifacts).map(normalizeShotChart) : undefined;
+    return artifacts !== undefined ? { blocks, artifacts } : { blocks };
 }
 
 export function createSubmitAnswerTool(
