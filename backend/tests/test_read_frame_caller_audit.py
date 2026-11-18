@@ -38,6 +38,10 @@ OPTIONAL_READ_SITES = {
         "seed script asks whether silver_hist_player_seasons has been "
         "seeded yet; absent means nothing seeded, which is the question "
         "being asked",
+    ("scripts.build_silver_player_season", "build_season_frame"):
+        "seed builder tries three independent source tables in priority "
+        "order and falls through to the next when one is absent; it raises "
+        "SeasonBuildError naming every source only when all are empty",
 }
 
 def _python_files():
