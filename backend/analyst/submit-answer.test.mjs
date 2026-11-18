@@ -399,7 +399,7 @@ test("Pi session fixture validates current and prior refs, rejects invalid selec
 
   try {
     assert.deepEqual(session.getActiveToolNames(), ["codemode"]);
-    assert.deepEqual(session.getCallableToolNames(), ["submit_answer", "read_source"]);
+    assert.deepEqual(new Set(session.getCallableToolNames()), new Set(["submit_answer", "read_source", "load_skill"]));
 
     await session.prompt("Run synthetic submission fixture");
     assert.equal(requests.length, 2);
@@ -693,4 +693,23 @@ test("createAnalyst downstream verification remains unassessed and preserves sub
   } finally {
     await rm(dir, { recursive: true, force: true });
   }
+});
+
+test("validateAnswerSubmission permits omitted anchors and normalizes shot_chart pct from 0-1 to 0-100", () => {
+  const validated = validateAnswerSubmission({
+    blocks: [{ text: "Empirical Bayes ridge estimate without SQL row anchors." }],
+    artifacts: [
+      {
+        kind: "shot_chart",
+        title: "Zone Profile",
+        zones: [
+          { x: 0, y: 2, att: 180, pct: 0.68 },
+          { x: 22, y: 1, att: 90, pct: 0.425 },
+        ],
+      },
+    ],
+  }, () => undefined);
+  assert.deepEqual(validated.blocks[0].anchors, []);
+  assert.equal(validated.artifacts[0].zones[0].pct, 68);
+  assert.equal(validated.artifacts[0].zones[1].pct, 42.5);
 });

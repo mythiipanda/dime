@@ -81,7 +81,7 @@ async function fixture(name, code, tools) {
   const session = await createAnalystSession({ cwd, agentDir, model: runtime.getModel("fixture", "fixture"), modelRuntime: runtime, tools,
     settings: { retry: { enabled: false }, compaction: { enabled: false } } });
   assert.deepEqual(session.getActiveToolNames(), ["codemode"]);
-  assert.deepEqual(new Set(session.getCallableToolNames()), new Set(tools.map(t => t.name)));
+  assert.deepEqual(new Set(session.getCallableToolNames()), new Set([...tools.map(t => t.name), "load_skill"]));
   assert(!session.systemPrompt.includes("PROFILE_CONTEXT_MUST_NOT_LOAD"));
   return { session, requests };
 }
@@ -331,7 +331,10 @@ test("real Python sql_exec and schema cross MCP into Pi with source semantics an
     assert.equal(perGame.rows[1].total_points, 999);
     assert(perGame.season_semantics.resolved_labels.some(r => r.season_label === "2090-91"));
     assert.equal(baseline.direct[1].declared_column_semantics.PTS.unit, "total_points");
-    for (const failed of baseline.direct.slice(2)) assert.equal(failed.ok, false);
+    assert.equal(baseline.direct[2].ok, true);
+    assert.deepEqual(baseline.direct[2].rows, []);
+    assert.equal(baseline.direct[2].meta.empty_observation, true);
+    for (const failed of baseline.direct.slice(3)) assert.equal(failed.ok, false);
     const seen = JSON.stringify(setup.requests[1]);
     assert(seen.includes("tables"));
     assert(!seen.includes("RAW_SECRET_ROW"));
@@ -1444,4 +1447,29 @@ test("real Python warehouse_schema executes cleanly without unhandled exceptions
     await bridge.close();
   }
   assert.throws(() => process.kill(pid, 0), /ESRCH/);
+});
+
+test("createAnalystSession discovers bundled skills regardless of cwd and exposes load_skill inside codemode", async () => {
+  const { session, requests } = await fixture("load-skill", `
+    const cba = await tools.load_skill({ name: "cba-trade-analysis" });
+    const recon = await tools.load_skill({ name: "warehouse-reconciliation" });
+    const lineup = await tools.load_skill({ name: "lineups-and-rotations" });
+    const missing = await tools.load_skill({ name: "nonexistent-skill-xyz" });
+    return { cbaOk: cba.ok, hasApron: cba.content.includes("First Apron"), reconOk: recon.ok, lineupOk: lineup.ok, missingOk: missing.ok, validCount: (missing.available_skills || []).length };
+  `, []);
+  try {
+    await session.prompt("Load bundled skills inside codemode");
+    assert(session.systemPrompt.includes("load_skill"));
+    assert(session.systemPrompt.includes("cba-trade-analysis"));
+    assert(session.systemPrompt.includes("warehouse-reconciliation"));
+    assert(session.systemPrompt.includes("lineups-and-rotations"));
+    const toolTexts = session.messages.filter(m => m.role === "toolResult").flatMap(m => m.content).map(c => c.text ?? "").join("\n");
+    assert(toolTexts.includes('"cbaOk":true'));
+    assert(toolTexts.includes('"hasApron":true'));
+    assert(toolTexts.includes('"reconOk":true'));
+    assert(toolTexts.includes('"lineupOk":true'));
+    assert(toolTexts.includes('"missingOk":false'));
+  } finally {
+    session.dispose();
+  }
 });

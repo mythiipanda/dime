@@ -1,5 +1,10 @@
-
-import re as _re
+import json as _json
+import os as _os
+from pathlib import Path as _Path
+import shutil as _shutil
+import subprocess as _subprocess
+import sys as _sys
+import tempfile as _tempfile
 from typing import Any
 from langchain_core.tools import tool
 
@@ -89,111 +94,273 @@ def search_nba(query: str) -> dict[str, Any]:
     except Exception as exc:
         return {"tool": "search_nba", "ok": False, "error": str(exc)[:200]}
 
-_CODE_BANNED = (
-    "import ", "import(", "__", "os.", "sys.", "open(",
-    "exec(", "eval(", "compile(", "subprocess", "socket",
-    "pathlib", "shutil", "globals(", "locals(", "vars(",
-    "getattr(", "setattr(", "delattr(", "input(",
-)
+_BOOTSTRAP_SCRIPT = """
+import datetime
+import decimal
+import io
+import json
+import math
+import os
+import re
+import statistics
+import sys
+from pathlib import Path
 
-@tool(description='Run read-only Python over the warehouse. Tables: any silver_* table.\n\nAvailable: con (read-only DuckDB connection), pl (polars), math,\nstatistics. SELECT via con.execute("...").fetchall(). No imports,\nno writes, no network. Print or set `out`. Output capped.')
-def run_python(code: str) -> dict[str, Any]:
-    import io as _io
-    import math as _math
-    import statistics as _stats
-    from contextlib import redirect_stdout as _redir
+os.environ["MPLBACKEND"] = "Agg"
 
-    import duckdb as _ddb
-    import polars as _pl
+import duckdb
+import numpy as np
+import polars as pl
 
-    from ..store import DB_PATH
 
-    lowered = str(code or "").lower()
-    if not code or not code.strip():
-        return {"tool": "run_python", "ok": False, "error": "empty code"}
-    if any(b in lowered for b in _CODE_BANNED):
-        return {"tool": "run_python", "ok": False,
-                "error": "That code pattern is unavailable. "
-                         "con, pl, math, statistics are already preloaded; "
-                         "imports/IO/writes are unavailable. "
-                         "Query with e.g. "
-                         'rows = con.execute("SELECT * FROM silver_standings '
-                         'LIMIT 5").fetchall(); print(rows)'}
-    if _re.search(r"\b(insert|update|delete|drop|alter|create|attach|copy)\b",
-                   lowered):
-        return {"tool": "run_python", "ok": False,
-                "error": "writes banned, SELECT only"}
-    try:
-        con = _ddb.connect(str(DB_PATH), read_only=True)
-    except Exception as exc:
-        return {"tool": "run_python", "ok": False, "error": str(exc)[:160]}
-    buf = _io.StringIO()
-    g: dict[str, Any] = {"con": con, "pl": _pl, "math": _math,
-                         "statistics": _stats, "out": None}
-    try:
-        with _redir(buf):
-            exec(compile(str(code), "<dime>", "exec"),
-                 {"__builtins__": __builtins__}, g)
-    except Exception as exc:
-        msg = str(exc)
-        if any(h in msg for h in _EXEC_MSG_HINTS):
-            col_hint, hint = _run_python_table_hint(con, code)
-            return {"tool": "run_python", "ok": False,
-                    "error": f"unknown table or column.{col_hint} "
-                             f"Valid tables: {hint}"}
-        return {"tool": "run_python", "ok": False, "error": str(exc)[:300]}
-    finally:
-        try:
-            con.close()
-        except Exception:
-            pass
-    text = buf.getvalue()[:2000]
-    out = g.get("out")
-    structured_rows = None
-    if isinstance(out, _pl.DataFrame):
-        try:
-            structured_rows = out.to_dicts()[:50]
-        except Exception:
-            pass
-    elif isinstance(out, list) and all(isinstance(x, dict) for x in out):
-        structured_rows = out[:50]
+def _json_safe(value, depth=0):
+    if depth > 6:
+        return str(value)[:2000]
+    if value is None or isinstance(value, (bool, str)):
+        return value
+    if isinstance(value, (int, np.integer)):
+        return int(value)
+    if isinstance(value, (float, np.floating)):
+        num = float(value)
+        return num if math.isfinite(num) else None
+    if isinstance(value, decimal.Decimal):
+        num = float(value)
+        return num if math.isfinite(num) else None
+    if isinstance(value, (datetime.date, datetime.datetime)):
+        return value.isoformat()
+    if isinstance(value, np.ndarray):
+        return _json_safe(value.tolist(), depth + 1)
+    if isinstance(value, dict):
+        return {str(k): _json_safe(v, depth + 1) for k, v in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_json_safe(item, depth + 1) for item in value]
+    return str(value)[:2000]
 
-    out_str = None
-    if out is not None and structured_rows is None:
-        try:
-            out_str = str(out)[:2000]
-        except Exception:
-            out_str = None
 
-    rows_payload = structured_rows if structured_rows is not None else {"printed": text, "out": out_str}
-    return {"tool": "run_python", "ok": True,
-            "rows": rows_payload,
-            "meta": {"source": "warehouse"}}
-
-_EXEC_MSG_HINTS = ("does not exist", "Catalog", "Referenced column", "Binder")
-
-def _run_python_table_hint(con: Any, code: str) -> str:
+def _table_hint(con, code):
+    if con is None:
+        return "", ""
     try:
         rows = con.execute("SHOW TABLES").fetchall()
-        valid = sorted(str(r[0]) for r in rows
-                       if str(r[0]).startswith("silver_"))
+        valid = sorted(str(r[0]) for r in rows if str(r[0]).startswith("silver_"))
     except Exception:
         valid = []
     hint = ", ".join(valid) if valid else "no silver tables available"
     col_hint = ""
     try:
-        import re as _re2
-
         for t in valid:
-            if _re2.search(r"\b" + _re2.escape(t) + r"\b", code,
-                           _re2.IGNORECASE):
-                cols = con.execute(
-                    f"PRAGMA table_info({t})").fetchall()
-                names = [str(c[1]) for c in cols
-                         if not str(c[1]).startswith("_")]
-                col_hint = f" Columns of {t}: " + ", ".join(names[:25]
-                                                             )
+            if re.search(r"\\b" + re.escape(t) + r"\\b", code, re.IGNORECASE):
+                cols = con.execute(f"PRAGMA table_info({t})").fetchall()
+                names = [str(c[1]) for c in cols if not str(c[1]).startswith("_")]
+                col_hint = f" Columns of {t}: " + ", ".join(names[:25])
                 break
     except Exception:
         pass
     return col_hint, hint
+
+
+def _serialize_out(out):
+    if isinstance(out, pl.DataFrame):
+        return _json_safe(out.head(500).to_dicts()), None
+    if isinstance(out, list) and all(isinstance(x, dict) for x in out):
+        return _json_safe(out[:500]), None
+    if isinstance(out, dict):
+        safe = _json_safe(out)
+        encoded = json.dumps(safe)
+        if len(encoded) > 16000:
+            return None, encoded[:16000]
+        return None, safe
+    if isinstance(out, (int, float, bool, np.integer, np.floating)):
+        return None, _json_safe(out)
+    if out is not None:
+        return None, str(out)[:16000]
+    return None, None
+
+
+def _main():
+    result_path = Path(os.environ["DIME_PY_RESULT_PATH"])
+    db_path = os.environ.get("DIME_WAREHOUSE", "")
+    code = sys.stdin.read()
+    con = None
+    try:
+        if db_path:
+            con = duckdb.connect(db_path, read_only=True)
+    except Exception as exc:
+        result_path.write_text(json.dumps({
+            "ok": False,
+            "error": str(exc)[:300],
+            "recovery_hint": "Verify DIME_WAREHOUSE path and warehouse availability.",
+        }), encoding="utf-8")
+        return
+    buf = io.StringIO()
+    old_stdout = sys.stdout
+    ns = {
+        "__builtins__": __builtins__,
+        "con": con,
+        "pl": pl,
+        "np": np,
+        "math": math,
+        "statistics": statistics,
+        "out": None,
+    }
+    try:
+        sys.stdout = buf
+        exec(compile(code, "<dime>", "exec"), ns, ns)
+    except Exception as exc:
+        sys.stdout = old_stdout
+        msg = str(exc) or type(exc).__name__
+        hints = ("does not exist", "Catalog", "Referenced column", "Binder")
+        recovery = "Check Python syntax, variable names, and warehouse column names via warehouse_schema."
+        if any(h in msg for h in hints):
+            col_hint, valid_hint = _table_hint(con, code)
+            recovery = f"Unknown table or column.{col_hint} Valid tables: {valid_hint}"
+        result_path.write_text(json.dumps({
+            "ok": False,
+            "error": msg[:500],
+            "stdout": buf.getvalue()[:16000],
+            "recovery_hint": recovery,
+        }), encoding="utf-8")
+        return
+    finally:
+        sys.stdout = old_stdout
+        if con is not None:
+            try:
+                con.close()
+            except Exception:
+                pass
+    text = buf.getvalue()[:16000]
+    structured_rows, out_val = _serialize_out(ns.get("out"))
+    workspace_files = sorted(
+        str(p.relative_to(".")).replace("\\\\", "/")
+        for p in Path(".").rglob("*")
+        if p.is_file()
+    )[:200]
+    result_path.write_text(json.dumps({
+        "ok": True,
+        "structured_rows": structured_rows,
+        "out_val": out_val,
+        "stdout": text,
+        "workspace_files": workspace_files,
+    }), encoding="utf-8")
+
+
+_main()
+"""
+
+_SAFE_ENV_KEYS = (
+    "SystemRoot",
+    "WINDIR",
+    "PATH",
+    "LANG",
+    "LC_ALL",
+    "PYTHONPATH",
+    "PYTHONNOUSERSITE",
+    "CONDA_PREFIX",
+    "SSL_CERT_FILE",
+    "SSL_CERT_DIR",
+)
+
+def _workspace_dir() -> tuple[_Path, bool]:
+    configured = _os.environ.get("DIME_THREAD_WORKSPACE", "").strip()
+    if configured:
+        path = _Path(configured)
+        path.mkdir(parents=True, exist_ok=True)
+        return path, False
+    return _Path(_tempfile.mkdtemp(prefix="dime-py-")), True
+
+def _clean_subprocess_env(workspace: _Path, db_path: _Path, result_path: _Path) -> dict[str, str]:
+    env = {k: _os.environ[k] for k in _SAFE_ENV_KEYS if _os.environ.get(k)}
+    env.update({
+        "HOME": str(workspace),
+        "USERPROFILE": str(workspace),
+        "TEMP": str(workspace),
+        "TMP": str(workspace),
+        "OPENBLAS_NUM_THREADS": "1",
+        "OMP_NUM_THREADS": "1",
+        "POLARS_MAX_THREADS": "1",
+        "MPLBACKEND": "Agg",
+        "PYTHONDONTWRITEBYTECODE": "1",
+        "DIME_WAREHOUSE": str(db_path),
+        "DIME_THREAD_WORKSPACE": str(workspace),
+        "DIME_PY_RESULT_PATH": str(result_path),
+    })
+    return env
+
+def _format_subprocess_result(payload: dict[str, Any]) -> dict[str, Any]:
+    if not payload.get("ok"):
+        out: dict[str, Any] = {
+            "tool": "run_python",
+            "ok": False,
+            "error": str(payload.get("error") or "Python execution failed")[:500],
+        }
+        if payload.get("recovery_hint"):
+            out["recovery_hint"] = str(payload["recovery_hint"])
+        if payload.get("stdout"):
+            out["stdout"] = str(payload["stdout"])[:16000]
+        return out
+    structured_rows = payload.get("structured_rows")
+    text = str(payload.get("stdout") or "")[:16000]
+    workspace_files = list(payload.get("workspace_files") or [])
+    if structured_rows is not None:
+        rows_payload: Any = structured_rows
+    else:
+        rows_payload = {
+            "printed": text,
+            "out": payload.get("out_val"),
+            "workspace_files": workspace_files,
+        }
+    return {
+        "tool": "run_python",
+        "ok": True,
+        "rows": rows_payload,
+        "stdout": text,
+        "workspace_files": workspace_files,
+        "meta": {"source": "warehouse", "workspace_files": workspace_files},
+    }
+
+@tool(description='Run isolated Python in the thread workspace with read-only DuckDB warehouse access.\n\nPreloaded: con (read-only DuckDB connection), pl (polars), np (numpy), math, statistics. Standard scientific imports (scipy, statsmodels, sklearn, matplotlib, duckdb, polars, json, pathlib) are allowed and workspace files persist across turns for identified threads. Print to stdout or assign `out`.')
+def run_python(code: str) -> dict[str, Any]:
+    from ..store import DB_PATH
+
+    if not code or not str(code).strip():
+        return {"tool": "run_python", "ok": False, "error": "empty code"}
+    workspace, ephemeral = _workspace_dir()
+    fd, raw_result_path = _tempfile.mkstemp(prefix="dime-py-res-", suffix=".json")
+    _os.close(fd)
+    result_path = _Path(raw_result_path)
+    try:
+        env = _clean_subprocess_env(workspace, _Path(DB_PATH), result_path)
+        try:
+            proc = _subprocess.run(
+                [_sys.executable, "-B", "-c", _BOOTSTRAP_SCRIPT],
+                input=str(code),
+                cwd=str(workspace),
+                env=env,
+                capture_output=True,
+                text=True,
+                timeout=60,
+            )
+        except _subprocess.TimeoutExpired:
+            return {
+                "tool": "run_python",
+                "ok": False,
+                "error": "run_python timed out after 60s",
+                "recovery_hint": "Filter rows in SQL before Python modeling or reduce iteration count.",
+            }
+        raw = result_path.read_text(encoding="utf-8") if result_path.exists() else ""
+        if not raw.strip():
+            err = (proc.stderr or proc.stdout or f"exit code {proc.returncode}").strip()
+            return {
+                "tool": "run_python",
+                "ok": False,
+                "error": err[:500],
+                "recovery_hint": "Check script imports, memory usage, or stderr output.",
+            }
+        return _format_subprocess_result(_json.loads(raw))
+    finally:
+        try:
+            result_path.unlink(missing_ok=True)
+        except Exception:
+            pass
+        if ephemeral:
+            _shutil.rmtree(workspace, ignore_errors=True)

@@ -4,10 +4,11 @@ import { createAnalystSession } from "./runtime.js";
 import { connectPythonTools, objectValue, sourceRecordSchema, sourceOutputSchema, sourceResult, type SourceRecord, type PythonToolsOptions } from "./python-tools.js";
 import { priorSourceTool, resolvedRuntime } from "./pi-context.js";
 import { createSubmitAnswerTool, type AnswerSubmission } from "./submit-tool.js";
-import type { Message } from "@earendil-works/pi-ai";
+import type { AssistantMessage, Message } from "@earendil-works/pi-ai";
+
 const turnSchema = Type.Object({ role: Type.Union([Type.Literal("user"), Type.Literal("assistant")]), content: Type.String() });
 export const analystContextSchema = Type.Object({
-    q: Type.String({ minLength: 1 }), history: Type.Array(turnSchema, { maxItems: 8 }), model: Type.Unknown(),
+    q: Type.String({ minLength: 1 }), history: Type.Array(turnSchema, { maxItems: 24 }), model: Type.Unknown(),
     sources: Type.Optional(Type.Array(sourceRecordSchema)), cwd: Type.String(), agentDir: Type.String(),
     bridge: Type.Object({ python: Type.String(), cwd: Type.String(), env: Type.Record(Type.String(), Type.String()) }),
 });
@@ -44,10 +45,12 @@ export type AnalystEvent = {
     type: "closed";
     pid?: number;
 };
+
 type AnalystDeps = {
     resolveRuntime?: typeof resolvedRuntime;
     connectTools?: (options: PythonToolsOptions) => ReturnType<typeof connectPythonTools>;
 };
+
 function sourceSummary(record: SourceRecord) {
     const { result, isError } = sourceResult(record).structuredContent;
     const data = objectValue(result);
@@ -56,7 +59,64 @@ function sourceSummary(record: SourceRecord) {
         declared_column_semantics: data?.declared_column_semantics, season_semantics: data?.season_semantics, provenance: data?.meta
     };
 }
-// HTTP and CLI adapters consume events without depending on Pi session types.
+
+function safeFailureMessage(kind: string, error: unknown, apiKey?: string): string {
+    const raw = error instanceof Error ? error.message : String(error ?? "");
+    let sanitized = raw.trim();
+    if (apiKey && apiKey.length >= 4)
+        sanitized = sanitized.split(apiKey).join("[redacted]");
+    sanitized = sanitized
+        .replace(/\b(Bearer\s+|sk-|gsk_|AIza|xai-|key-)[^\s"']+/gi, "[redacted]")
+        .replace(/\s+/g, " ")
+        .slice(0, 240);
+    return sanitized ? `Dime ${kind} failed: ${sanitized}` : `Dime ${kind} failed.`;
+}
+
+function toHistoryMessages(history: AnalystContext["history"], model: { api: AssistantMessage["api"]; provider: string; id: string }): Message[] {
+    return history.map(turn => turn.role === "user"
+        ? { role: "user", content: turn.content, timestamp: Date.now() }
+        : {
+            role: "assistant", content: [{ type: "text", text: turn.content }], api: model.api, provider: model.provider, model: model.id,
+            usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } },
+            stopReason: "stop", timestamp: Date.now()
+        });
+}
+
+function wrapBridgeTools(
+    tools: Awaited<ReturnType<typeof connectPythonTools>>["tools"],
+    results: Map<string, SourceRecord>,
+    emit: (event: AnalystEvent) => void
+) {
+    return tools.map(tool => ({
+        ...tool,
+        async execute(...args: Parameters<typeof tool.execute>) {
+            emit({ type: "tool_call", name: tool.name });
+            try {
+                const result = await tool.execute(...args);
+                if (!Value.Check(sourceOutputSchema, result.structuredContent))
+                    throw new Error("Invalid source result");
+                const record = results.get(result.structuredContent.ref);
+                if (!record)
+                    throw new Error("Tool result has no source record");
+                emit({ type: "source", record });
+                const domain = objectValue(result.structuredContent.result);
+                const failed = result.structuredContent.isError;
+                const error = domain?.error;
+                emit({
+                    type: "tool_result", name: tool.name, status: failed ? "fail" : "ok",
+                    ...(failed ? { error: typeof error === "string" ? error : "Tool failed" } : {}),
+                    ...(Array.isArray(domain?.rows) ? { rows: domain.rows.length } : {})
+                });
+                return result;
+            }
+            catch (error) {
+                emit({ type: "tool_result", name: tool.name, status: "fail", error: error instanceof Error ? error.message : String(error) });
+                throw error;
+            }
+        }
+    }));
+}
+
 export function createPiExecution(deps: AnalystDeps = {}) {
     const resolveRuntime = deps.resolveRuntime ?? resolvedRuntime;
     const connectTools = deps.connectTools ?? connectPythonTools;
@@ -77,12 +137,14 @@ export function createPiExecution(deps: AnalystDeps = {}) {
                 let kind = "configuration";
                 let bridgePid: number | undefined;
                 let acceptedSubmission: AnswerSubmission | undefined;
+                let modelApiKey: string | undefined;
                 const cancel = () => { void session?.abort(); };
                 controller.signal.addEventListener("abort", cancel, { once: true });
                 try {
                     if (!Value.Check(analystContextSchema, input) || !input.q.trim())
                         throw new Error("Invalid product context");
                     const start = input;
+                    modelApiKey = objectValue(start.model)?.apiKey as string | undefined;
                     const { runtime, model } = await resolveRuntime(start.model);
                     controller.signal.throwIfAborted();
                     kind = "startup";
@@ -94,55 +156,20 @@ export function createPiExecution(deps: AnalystDeps = {}) {
                         () => [...(start.sources ?? []), ...connected.results.values()],
                         (submission) => {
                             acceptedSubmission = submission;
-                            if (submission.artifacts && submission.artifacts.length > 0) {
+                            if (submission.artifacts && submission.artifacts.length > 0)
                                 emit({ type: "custom_data", artifacts: submission.artifacts });
-                            }
                         }
                     );
                     session = await createAnalystSession({
                         cwd: start.cwd, agentDir: start.agentDir, model, modelRuntime: runtime,
-                        tools: [...bridge.tools.map(tool => ({
-                                ...tool,
-                                async execute(...args: Parameters<typeof tool.execute>) {
-                                    emit({ type: "tool_call", name: tool.name });
-                                    try {
-                                        const result = await tool.execute(...args);
-                                        if (!Value.Check(sourceOutputSchema, result.structuredContent))
-                                            throw new Error("Invalid source result");
-                                        const record = connected.results.get(result.structuredContent.ref);
-                                        if (!record)
-                                            throw new Error("Tool result has no source record");
-                                        emit({ type: "source", record });
-                                        const domain = objectValue(result.structuredContent.result);
-                                        const failed = result.structuredContent.isError;
-                                        const error = domain?.error;
-                                        emit({
-                                            type: "tool_result", name: tool.name, status: failed ? "fail" : "ok",
-                                            ...(failed ? { error: typeof error === "string" ? error : "Tool failed" } : {}),
-                                            ...(Array.isArray(domain?.rows) ? { rows: domain.rows.length } : {})
-                                        });
-                                        return result;
-                                    }
-                                    catch (error) {
-                                        emit({ type: "tool_result", name: tool.name, status: "fail", error: error instanceof Error ? error.message : String(error) });
-                                        throw error;
-                                    }
-                                }
-                            })), priorSourceTool(start.sources ?? []), submitTool]
+                        tools: [...wrapBridgeTools(bridge.tools, connected.results, emit), priorSourceTool(start.sources ?? []), submitTool]
                     });
                     controller.signal.throwIfAborted();
                     session.subscribe(event => {
-                        if (event.type === "message_update" && event.assistantMessageEvent.type === "text_delta") {
+                        if (event.type === "message_update" && event.assistantMessageEvent.type === "text_delta")
                             emit({ type: "token", text: event.assistantMessageEvent.delta });
-                        }
                     });
-                    const history: Message[] = start.history.map(turn => turn.role === "user"
-                        ? { role: "user", content: turn.content, timestamp: Date.now() }
-                        : {
-                            role: "assistant", content: [{ type: "text", text: turn.content }], api: model.api, provider: model.provider, model: model.id,
-                            usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } },
-                            stopReason: "stop", timestamp: Date.now()
-                        });
+                    const history = toHistoryMessages(start.history, model);
                     for (const message of history)
                         session.sessionManager.appendMessage(message);
                     session.agent.state.messages = [...session.agent.state.messages, ...history];
@@ -155,8 +182,10 @@ export function createPiExecution(deps: AnalystDeps = {}) {
                     await session.prompt(start.q);
                     controller.signal.throwIfAborted();
                     const last = session.messages.filter(m => m.role === "assistant").at(-1);
-                    if (!last || last.stopReason === "error" || last.stopReason === "aborted")
-                        throw new Error("Model failed");
+                    if (!last || last.stopReason === "error" || last.stopReason === "aborted") {
+                        const detail = last && "errorMessage" in last && typeof last.errorMessage === "string" ? last.errorMessage : "";
+                        throw new Error(detail || "Model failed");
+                    }
                     const text = last.content.filter(c => c.type === "text").map(c => c.text).join("");
                     if (acceptedSubmission) {
                         const canonicalText = acceptedSubmission.blocks.map(b => b.text).join("\n\n");
@@ -167,9 +196,9 @@ export function createPiExecution(deps: AnalystDeps = {}) {
                         emit({ type: "answer", text });
                     }
                 }
-                catch {
+                catch (error) {
                     if (!controller.signal.aborted)
-                        emit({ type: "failure", kind, message: `Dime ${kind} failed.` });
+                        emit({ type: "failure", kind, message: safeFailureMessage(kind, error, modelApiKey) });
                 }
                 finally {
                     try {

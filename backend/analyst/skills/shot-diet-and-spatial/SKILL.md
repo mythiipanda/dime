@@ -44,19 +44,19 @@ Evaluate a team or player's offensive health using three structural ratios:
 
 ## 3. Visual Artifact Construction
 
-Produce `shot_chart` artifacts for spatial analysis in `submit_answer`:
+Produce `shot_chart` artifacts for spatial analysis in `submit_answer`. Always express `pct` on a `0-100` percentage-point scale (e.g. `68.0`, not `0.68`):
 
 ```javascript
 {
   kind: "shot_chart",
   title: "Player 2025-26 Shot Zone Efficiency vs League Average",
   zones: [
-    { x: 0, y: 0, att: 320, pct: 0.68 },    // Restricted Area
-    { x: 0, y: 8, att: 110, pct: 0.44 },    // Paint Non-RA
-    { x: 0, y: 16, att: 85, pct: 0.42 },    // Mid-Range
-    { x: -22, y: 4, att: 75, pct: 0.41 },   // Left Corner 3
-    { x: 22, y: 4, att: 80, pct: 0.39 },    // Right Corner 3
-    { x: 0, y: 25, att: 290, pct: 0.36 }    // Above-the-Break 3
+    { x: 0, y: 0, att: 320, pct: 68.0 },
+    { x: 0, y: 8, att: 110, pct: 44.0 },
+    { x: 0, y: 16, att: 85, pct: 42.0 },
+    { x: -22, y: 4, att: 75, pct: 41.0 },
+    { x: 22, y: 4, att: 80, pct: 39.0 },
+    { x: 0, y: 25, att: 290, pct: 36.0 }
   ]
 }
 ```

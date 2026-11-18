@@ -1,3 +1,4 @@
+import os as _os
 from typing import Any
 
 from langchain_core.tools import tool
@@ -15,31 +16,47 @@ from .season_semantics import annotate_result, annotate_schema
 TOOL = "sql_exec"
 TABLES = tuple(sorted(_SQL_TABLES))
 SOURCE = "warehouse"
-MAX_SQL_CHARS = 8000
+MAX_SQL_CHARS = 32000
 
-def _failure(query: str, message: str) -> dict[str, Any]:
-    return {"tool": TOOL, "ok": False, "rows": {},
-            "meta": {"sql": query[:500]}, "error": message}
+def _failure(query: str, message: str, recovery_hint: str | None = None) -> dict[str, Any]:
+    out: dict[str, Any] = {
+        "tool": TOOL,
+        "ok": False,
+        "rows": {},
+        "meta": {"sql": query[:500]},
+        "error": message,
+    }
+    if recovery_hint:
+        out["recovery_hint"] = recovery_hint
+    return out
 
-@tool("sql_exec", description='Run one agent-written read-only analytical query over the warehouse.\n\nThe query must be a single SELECT or WITH statement over the declared\nsilver tables. Writes, stacked statements, and tables outside the\ndeclared set are refused before execution. Results are capped at\nRERUN_ROW_CAP rows with a RERUN_TIMEOUT_S statement timeout, and a\nquery that returns nothing fails instead of publishing an empty\nanswer. Name the primary numeric column for what it measures, so a\npercentage answers as TS_PCT and a count as `n`; the column you\nalias is the column a citation binds to. Returned rows are computed\nfrom the supplied SQL, never curated table values.\n\nEvery ok result also carries meta.basis and meta.profile. meta.basis\nis a local, best-effort classification of the query’s own SELECT\nlist, by 0-based column ordinal into the result’s column list: it\nreports which projected expressions are direct COUNT aggregates —\nCOUNT(*) (number of input rows in each returned group; ungrouped, the total input rows), COUNT(column) (number of non-null input values of that column in each group), and COUNT(DISTINCT ...)\n(never an entity count; a scalar distinct argument skips NULLs, a composite tuple value may include NULL components). If any projection cannot\nbe accounted for — stars, duplicates, wrapped or nested counts,\nsetops, parse doubt — basis fails closed to status="unavailable" and\nsays nothing about your numbers. meta.profile reports only the\nreturned (post-cap) rows: how many rows were returned and, per\ncolumn, how many returned values were non-null. It never reports\npre-cap totals or entity counts. Both describe only what was\nreturned, not what your query means, and neither validates your\nlogic. If you need a contributor count for an expression such as\nAVG, or distinct-value counts, add COUNT(metric) or COUNT(DISTINCT x)\ncolumns to your own query — the warehouse answers those\ndirectly.')
+@tool("sql_exec", description='Run one agent-written read-only analytical query over the warehouse.\n\nThe query must be a single SELECT or WITH statement over the declared\nsilver tables. Writes, stacked statements, and tables outside the\ndeclared set are refused before execution. Results are capped at\nRERUN_ROW_CAP rows with a RERUN_TIMEOUT_S statement timeout; a valid\nquery returning 0 rows returns ok=True, rows=[], row_count=0, and\nmeta.empty_observation=True (unless DIME_STRICT_NONEMPTY_SQL=1).\nName the primary numeric column for what it measures, so a percentage\nanswers as TS_PCT and a count as `n`; the column you alias is the\ncolumn a citation binds to.\n\nEvery ok result also carries meta.basis and meta.profile. If you need\na contributor count for an expression such as AVG, or distinct-value\ncounts, add COUNT(metric) or COUNT(DISTINCT x) columns to your query.')
 async def sql_exec(sql: str) -> dict[str, Any]:
     query = (sql or "").strip()
     if not query:
-        return _failure(query, "sql_exec: sql is required; pass one "
-                               "SELECT or WITH statement")
+        return _failure(
+            query,
+            "sql_exec: sql is required; pass one SELECT or WITH statement",
+            "Pass a single SELECT or WITH query; inspect tables with warehouse_schema.",
+        )
     if len(query) > MAX_SQL_CHARS:
         return _failure(
-            query, f"sql_exec: sql is {len(query)} chars, over the "
-                   f"{MAX_SQL_CHARS} cap")
+            query,
+            f"sql_exec: sql is {len(query)} chars, over the {MAX_SQL_CHARS} cap",
+        )
     out = await rerun_sql(query)
     if not out.get("ok"):
         return _failure(
-            query, f"{out.get('error', 'query failed')}; sql: {query[:500]}")
+            query,
+            f"{out.get('error', 'query failed')}; sql: {query[:500]}",
+            "Call warehouse_schema to verify exact table names, column names, and season encodings.",
+        )
     rows = out.get("rows") or []
-    if not rows:
+    if not rows and _os.environ.get("DIME_STRICT_NONEMPTY_SQL") == "1":
         return _failure(
-            query, "sql_exec: query returned 0 rows, so no answer can be "
-                   f"published; sql: {query[:500]}")
+            query,
+            f"sql_exec: query returned 0 rows, so no answer can be published; sql: {query[:500]}",
+        )
     tables = out["tables"]
     meta: dict[str, Any] = {
         "source": SOURCE,
@@ -50,21 +67,30 @@ async def sql_exec(sql: str) -> dict[str, Any]:
         "timeout_s": RERUN_TIMEOUT_S,
         "capped": out.get("capped", False),
         "ms": out.get("ms", 0),
+        "empty_observation": len(rows) == 0,
         "result_type": "agent_sql_result",
         "model_projection": False,
-        "method": ("agent-written read-only SQL executed under the shared "
-                   "kernel rails: SELECT/WITH only, one statement, writes "
-                   "blocked, tables limited to the declared set, "
-                   f"{RERUN_ROW_CAP} row cap, {RERUN_TIMEOUT_S}s statement "
-                   "timeout; rows are computed, not curated"),
-        "coverage": (f"Agent-written SQL over "
-                     f"{', '.join(tables) if tables else 'no tables'}; "
-                     f"computed rows, never a curated table. "
-                     f"SQL: {query[:300]}"),
+        "method": (
+            "agent-written read-only SQL executed under the shared kernel rails: "
+            "SELECT/WITH only, one statement, writes blocked, tables limited to "
+            f"the declared set, {RERUN_ROW_CAP} row cap, {RERUN_TIMEOUT_S}s "
+            "statement timeout; rows are computed, not curated"
+        ),
+        "coverage": (
+            f"Agent-written SQL over {', '.join(tables) if tables else 'no tables'}; "
+            f"computed rows, never a curated table. SQL: {query[:300]}"
+        ),
     }
-    result = {"tool": TOOL, "ok": True, "rows": rows,
-              "columns": out.get("columns", []), "sql": query, "meta": meta}
     out_columns = out.get("columns", [])
+    result = {
+        "tool": TOOL,
+        "ok": True,
+        "rows": rows,
+        "columns": out_columns,
+        "row_count": len(rows),
+        "sql": query,
+        "meta": meta,
+    }
     result["meta"].update(count_evidence_meta(query, out_columns, rows))
     schema_tables: dict[str, Any] = {}
     if tables:

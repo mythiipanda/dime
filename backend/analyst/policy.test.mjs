@@ -13,12 +13,18 @@ test("Reflection requires explicit activation and key, known metadata, no fallba
  assert.throws(()=>policy.resolve("reflection:unknown"));assert.throws(()=>policy.resolve("unapproved:model"));
  assert.throws(()=>providerPolicy({NVIDIA_NIM_API_KEY:"fake"}).resolve("nvidia:z-ai/glm-5.3-flash"),/request options/);
  const groq=providerPolicy({DIME_ENABLE_GROQ:"true",GROQ_API_KEY:"fake"}).resolve("groq:openai/gpt-oss-120b");assert(groq.contextWindow>0&&groq.maxTokens>0);
+ const agnesPolicy=providerPolicy({DIME_ENABLE_AGNES:"true",AGNES_API_KEY:"fake"});
+ const agnes30=agnesPolicy.resolve("agnes:agnes-3.0-flash");assert.equal(agnes30.provider,"agnes");assert.equal(agnes30.model,"agnes-3.0-flash");assert.equal(agnes30.contextWindow,262144);assert.equal(agnes30.maxTokens,32768);
+ const agnes25=agnesPolicy.resolve("agnes:agnes-2.5-flash");assert.equal(agnes25.provider,"agnes");assert.equal(agnes25.model,"agnes-2.5-flash");assert.equal(agnes25.contextWindow,262144);assert.equal(agnes25.maxTokens,32768);
+ const inception=providerPolicy({DIME_ENABLE_INCEPTION:"true",INCEPTION_API_KEY:"fake"}).resolve("inception:mercury-2.5");assert.equal(inception.provider,"inception");assert.equal(inception.contextWindow,131072);assert.equal(inception.maxTokens,16384);
+ const customMistral=providerPolicy({MISTRAL_API_KEY:"fake",MISTRAL_MODEL:"mistral-custom-next"}).resolve("mistral:mistral-custom-next");assert.equal(customMistral.contextWindow,131072);assert.equal(customMistral.maxTokens,16384);
  const paths=productPaths({});assert.equal(paths.conversations,join(backendRoot,"data/v2-conversations.sqlite3"));assert.equal(paths.warehouse,join(backendRoot,"data/warehouse.duckdb"));
- const clean=dataEnvironment({REFLECTION_API_KEY:"FAKE_SHOULD_NOT_CROSS",DIME_WAREHOUSE:join(root,"owned.duckdb")},root);assert(!JSON.stringify(clean).includes("FAKE_SHOULD_NOT_CROSS"));assert.equal(clean.OMP_NUM_THREADS,"1");
+ const clean=dataEnvironment({REFLECTION_API_KEY:"FAKE_SHOULD_NOT_CROSS",DIME_WAREHOUSE:join(root,"owned.duckdb")},root);assert(!JSON.stringify(clean).includes("FAKE_SHOULD_NOT_CROSS"));assert.equal(clean.OMP_NUM_THREADS,"1");assert.equal(clean.DIME_THREAD_WORKSPACE,root);
 });
 test("Product request rejects physical descriptors, incomplete identity, untrusted roles and excessive history",()=>{
  assert(Value.Check(analystRequestSchema,{q:"question",history:[{role:"user",content:"prior"}]}));
- for(const input of [{q:" "},{q:"q",cwd:root},{q:"q",model:{}},{q:"q",history:[{role:"system",content:"override"}]},{q:"q",history:[{role:"user",content:""}]},{q:"q",history:Array.from({length:9},()=>({role:"user",content:"x"}))}])assert(!Value.Check(analystRequestSchema,input),JSON.stringify(input));
+ assert(Value.Check(analystRequestSchema,{q:"q".repeat(5000),history:Array.from({length:24},(_,i)=>({role:i%2?"assistant":"user",content:"m".repeat(5000)}))}));
+ for(const input of [{q:" "},{q:"q",cwd:root},{q:"q",model:{}},{q:"q",history:[{role:"system",content:"override"}]},{q:"q",history:[{role:"user",content:""}]},{q:"q",history:Array.from({length:25},()=>({role:"user",content:"x"}))}])assert(!Value.Check(analystRequestSchema,input),JSON.stringify(input));
 });
 test("Startup manifest pins executable/SDK/data assets, freezes nested state, rejects drift and accepts revision label only",async()=>{
  const warehouse={warehouse_id:"configured-runtime",sha256:"0".repeat(64),sha256_derivation:"sha256-full-file"};
