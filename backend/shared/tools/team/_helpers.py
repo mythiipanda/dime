@@ -8,10 +8,7 @@ def _pkg():
 
 def _team_game_seasons() -> set[str] | None:
     try:
-        try:
-            from shared.coverage import table_seasons as _seasons
-        except ImportError:
-            from v2.adapters.coverage import table_seasons as _seasons
+        from shared.coverage import table_seasons as _seasons
     except Exception:
         return None
     try:

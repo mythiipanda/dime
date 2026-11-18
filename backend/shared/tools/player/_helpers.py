@@ -64,11 +64,6 @@ def _read_df(sql: str, params: list, tries: int = 5) -> list[dict[str, Any]]:
 def _season_line_seasons() -> set[str] | None:
     try:
         from shared.coverage import table_seasons as _seasons
-    except ImportError:
-        try:
-            from v2.adapters.coverage import table_seasons as _seasons
-        except Exception:
-            return None
     except Exception:
         return None
     try:
