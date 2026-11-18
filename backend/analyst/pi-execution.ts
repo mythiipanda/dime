@@ -1,3 +1,5 @@
+import { readdirSync, statSync } from "node:fs";
+import { extname, join } from "node:path";
 import { Type, type Static } from "typebox";
 import { Value } from "typebox/value";
 import { createAnalystSession } from "./runtime.js";
@@ -5,6 +7,68 @@ import { connectPythonTools, objectValue, sourceRecordSchema, sourceOutputSchema
 import { priorSourceTool, resolvedRuntime } from "./pi-context.js";
 import { createSubmitAnswerTool, type AnswerSubmission } from "./submit-tool.js";
 import type { AssistantMessage, Message } from "@earendil-works/pi-ai";
+
+const WORKSPACE_ARTIFACT_EXTENSIONS = new Set([".parquet", ".csv", ".json", ".md", ".png", ".tsv", ".txt"]);
+const WORKSPACE_IGNORED_DIRS = new Set(["node_modules", "__pycache__"]);
+const WORKSPACE_ARTIFACT_LIMIT = 40;
+const WORKSPACE_MAX_DEPTH = 2;
+
+export type WorkspaceArtifact = {
+    path: string;
+    bytes: number;
+};
+
+function walkWorkspaceArtifacts(dir: string, prefix: string, depth: number, out: WorkspaceArtifact[]): void {
+    let entries;
+    try {
+        entries = readdirSync(dir, { withFileTypes: true });
+    }
+    catch {
+        return;
+    }
+    for (const entry of entries) {
+        if (entry.name.startsWith("."))
+            continue;
+        const rel = prefix ? `${prefix}/${entry.name}` : entry.name;
+        const fullPath = join(dir, entry.name);
+        if (entry.isDirectory()) {
+            if (!WORKSPACE_IGNORED_DIRS.has(entry.name) && depth < WORKSPACE_MAX_DEPTH)
+                walkWorkspaceArtifacts(fullPath, rel, depth + 1, out);
+            continue;
+        }
+        if (!entry.isFile() || !WORKSPACE_ARTIFACT_EXTENSIONS.has(extname(entry.name).toLowerCase()))
+            continue;
+        try {
+            out.push({ path: rel, bytes: statSync(fullPath).size });
+        }
+        catch {
+        }
+    }
+}
+
+export function listWorkspaceArtifacts(cwd: string): WorkspaceArtifact[] {
+    if (!cwd)
+        return [];
+    const items: WorkspaceArtifact[] = [];
+    walkWorkspaceArtifacts(cwd, "", 0, items);
+    items.sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
+    return items.slice(0, WORKSPACE_ARTIFACT_LIMIT);
+}
+
+export function canonicalArgsKey(value: unknown): string {
+    if (value === null || typeof value !== "object")
+        return JSON.stringify(value) ?? "null";
+    if (Array.isArray(value))
+        return "[" + value.map(item => canonicalArgsKey(item)).join(",") + "]";
+    const obj = value as Record<string, unknown>;
+    const keys = Object.keys(obj).sort();
+    const parts: string[] = [];
+    for (const key of keys) {
+        if (obj[key] !== undefined)
+            parts.push(`${JSON.stringify(key)}:${canonicalArgsKey(obj[key])}`);
+    }
+    return "{" + parts.join(",") + "}";
+}
 
 const turnSchema = Type.Object({ role: Type.Union([Type.Literal("user"), Type.Literal("assistant")]), content: Type.String() });
 export const analystContextSchema = Type.Object({
@@ -82,19 +146,66 @@ function toHistoryMessages(history: AnalystContext["history"], model: { api: Ass
         });
 }
 
+function buildLoopRecord(
+    toolName: string,
+    callId: string,
+    count: number,
+    rawArgs: unknown,
+    lastRef?: string
+) {
+    const error = "Identical tool call repeated 3 times in this run";
+    const parsedArgs = objectValue(rawArgs);
+    const payload = {
+        ok: false,
+        loop_detected: true,
+        error,
+        summary: `Blocked repeated ${toolName} call (#${count}) with identical arguments.`,
+        args: parsedArgs ? JSON.parse(canonicalArgsKey(parsedArgs)) : {},
+        recovery_hint: lastRef
+            ? `Reuse prior ref ${lastRef} via tools.read_source, change parameters/SQL, or call submit_answer.`
+            : "Change parameters/SQL or call submit_answer.",
+        next_actions: ["Inspect prior source ref", "Modify query/parameters", "Call submit_answer"]
+    };
+    const record: SourceRecord = {
+        ref: `loop_${count}_${toolName.replace(/[^a-zA-Z0-9_]/g, "_")}`,
+        callId,
+        tool: toolName as SourceRecord["tool"],
+        response: {
+            isError: true,
+            structuredContent: payload,
+            content: [{ type: "text", text: JSON.stringify(payload) }]
+        }
+    };
+    return { record, payload };
+}
+
 function wrapBridgeTools(
     tools: Awaited<ReturnType<typeof connectPythonTools>>["tools"],
     results: Map<string, SourceRecord>,
     emit: (event: AnalystEvent) => void
 ) {
+    const callCounts = new Map<string, { count: number; lastRef?: string }>();
     return tools.map(tool => ({
         ...tool,
         async execute(...args: Parameters<typeof tool.execute>) {
             emit({ type: "tool_call", name: tool.name });
+            const key = `${tool.name}:${canonicalArgsKey(args[1] ?? {})}`;
+            const entry = callCounts.get(key) ?? { count: 0 };
+            entry.count += 1;
+            callCounts.set(key, entry);
+            if (entry.count >= 3) {
+                const callId = typeof args[0] === "string" && args[0] ? args[0] : `loop_${entry.count}`;
+                const { record, payload } = buildLoopRecord(tool.name, callId, entry.count, args[1], entry.lastRef);
+                results.set(record.ref, record);
+                emit({ type: "source", record });
+                emit({ type: "tool_result", name: tool.name, status: "fail", error: payload.error });
+                return sourceResult(record);
+            }
             try {
                 const result = await tool.execute(...args);
                 if (!Value.Check(sourceOutputSchema, result.structuredContent))
                     throw new Error("Invalid source result");
+                entry.lastRef = result.structuredContent.ref;
                 const record = results.get(result.structuredContent.ref);
                 if (!record)
                     throw new Error("Tool result has no source record");
@@ -177,6 +288,16 @@ export function createPiExecution(deps: AnalystDeps = {}) {
                         const context: Message = { role: "user", content: "Prior source catalogue. Use tools.read_source({ref}) inside codemode and return only filtered results:\n" + JSON.stringify(start.sources.map(sourceSummary)), timestamp: Date.now() };
                         session.sessionManager.appendMessage(context);
                         session.agent.state.messages.push(context);
+                    }
+                    const workspaceFiles = listWorkspaceArtifacts(start.bridge.cwd);
+                    if (workspaceFiles.length > 0) {
+                        const workspaceContext: Message = {
+                            role: "user",
+                            content: "Thread workspace files available in run_python cwd:\n" + JSON.stringify(workspaceFiles),
+                            timestamp: Date.now()
+                        };
+                        session.sessionManager.appendMessage(workspaceContext);
+                        session.agent.state.messages.push(workspaceContext);
                     }
                     kind = "model";
                     await session.prompt(start.q);

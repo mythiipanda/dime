@@ -27,10 +27,18 @@ export const submitAnswerSchema = Type.Object({
 
 export type AnswerSubmission = Static<typeof submitAnswerSchema>;
 
-function validateAnchor(anchor: AnchorSelector, getSource: (ref: string) => SourceRecord | undefined) {
+function validateAnchor(
+    anchor: AnchorSelector,
+    getSource: (ref: string) => SourceRecord | undefined,
+    availableRefs?: readonly string[]
+) {
     const record = getSource(anchor.ref);
-    if (!record)
-        throw new Error(`Unknown source ref: ${anchor.ref}`);
+    if (!record) {
+        const refHint = availableRefs && availableRefs.length > 0
+            ? `. Available refs: [${availableRefs.slice(0, 20).join(", ")}]`
+            : "";
+        throw new Error(`Unknown source ref: ${anchor.ref}${refHint}`);
+    }
     const res = sourceResult(record);
     if (res.isError)
         throw new Error(`Source ref is an error result: ${anchor.ref}`);
@@ -46,8 +54,10 @@ function validateAnchor(anchor: AnchorSelector, getSource: (ref: string) => Sour
     if (!rowData)
         throw new Error(`Anchor row ${anchor.row} is not an object for ref: ${anchor.ref}`);
     for (const col of anchor.columns) {
-        if (!Object.hasOwn(rowData, col))
-            throw new Error(`Column '${col}' does not exist on row ${anchor.row} for ref: ${anchor.ref}`);
+        if (!Object.hasOwn(rowData, col)) {
+            const availableColumns = Object.keys(rowData).slice(0, 30).join(", ");
+            throw new Error(`Column '${col}' does not exist on row ${anchor.row} for ref: ${anchor.ref}. Available columns: [${availableColumns}]. Fix the column name or omit anchors for derived values.`);
+        }
     }
 }
 
@@ -65,7 +75,8 @@ function normalizeShotChart(artifact: Record<string, unknown>): Record<string, u
 
 export function validateAnswerSubmission(
     input: unknown,
-    getSource: (ref: string) => SourceRecord | undefined
+    getSource: (ref: string) => SourceRecord | undefined,
+    availableRefs?: readonly string[]
 ): AnswerSubmission {
     if (!Value.Check(submitAnswerSchema, input)) {
         throw new Error("Invalid answer submission schema: blocks with non-empty text required");
@@ -73,7 +84,7 @@ export function validateAnswerSubmission(
     const blocks = input.blocks.map(block => {
         const anchors = block.anchors ?? [];
         for (const anchor of anchors)
-            validateAnchor(anchor, getSource);
+            validateAnchor(anchor, getSource, availableRefs);
         return { text: block.text, anchors };
     });
     const artifacts = input.artifacts ? structuredClone(input.artifacts).map(normalizeShotChart) : undefined;
@@ -92,7 +103,7 @@ export function createSubmitAnswerTool(
         async execute(_callId, args) {
             const sources = getContextSources();
             const sourceMap = new Map(sources.map(s => [s.ref, s]));
-            const validated = validateAnswerSubmission(args, ref => sourceMap.get(ref));
+            const validated = validateAnswerSubmission(args, ref => sourceMap.get(ref), [...sourceMap.keys()]);
             onAccept(validated);
             return {
                 content: [{ type: "text", text: `Answer submitted with ${validated.blocks.length} block(s).` }],

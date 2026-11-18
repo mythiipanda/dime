@@ -7,7 +7,7 @@
   },
   "scripts": {
     "pretest": "npm run build",
-    "test": "python verify.py",
+    "test": "python verify.py && node --test test/harness-upgrades.test.mjs",
     "check": "tsc -p tsconfig.json --noEmit",
     "build": "tsc -p tsconfig.json"
   },
