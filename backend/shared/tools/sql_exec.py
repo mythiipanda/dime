@@ -145,6 +145,7 @@ def _error_suggestions(query: str, error: str) -> list[str]:
     return matches
 
 @tool("sql_exec", description='Run one agent-written read-only analytical query over the warehouse.\n\nThe query must be a single SELECT or WITH statement over the declared\nsilver tables. Writes, stacked statements, and tables outside the\ndeclared set are refused before execution. DESCRIBE, SHOW TABLES,\ninformation_schema and catalog functions are refused as well; call\nwarehouse_schema for table and column listings. Results are capped at\nRERUN_ROW_CAP rows with a RERUN_TIMEOUT_S statement timeout; a valid\nquery returning 0 rows returns ok=True, rows=[], row_count=0, and\nmeta.empty_observation=True (unless DIME_STRICT_NONEMPTY_SQL=1).\nName the primary numeric column for what it measures, so a percentage\nanswers as TS_PCT and a count as `n`; the column you alias is the\ncolumn a citation binds to.\n\nEvery ok result also carries meta.basis and meta.profile. If you need\na contributor count for an expression such as AVG, or distinct-value\ncounts, add COUNT(metric) or COUNT(DISTINCT x) columns to your query.')
+
 async def sql_exec(sql: str) -> dict[str, Any]:
     query = (sql or "").strip()
     if not query:

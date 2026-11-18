@@ -14,6 +14,7 @@ _SQL_TABLES = [
     "silver_clutch", "silver_player_gamelogs", "silver_team_games",
     "silver_leaders_pts", "silver_leaders_reb", "silver_leaders_ast",
     "silver_leaders_stl", "silver_leaders_blk", "silver_boxscores",
+    "silver_leaders_dreb", "silver_leaders_fg_pct",
     "silver_lineups", "silver_shots", "silver_hustle_player",
     "silver_hustle_team", "silver_injuries", "silver_injury_entries",
     "silver_hist_gamelogs",
@@ -27,19 +28,20 @@ _SQL_TABLES = [
     "silver_on_off", "silver_four_factors", "silver_four_factors_team",
     "silver_cap_players", "silver_news",
     "silver_rapm", "silver_rapm_prior", "silver_impact",
+    "silver_hist_hustle", "silver_hist_pbp",
     "silver_bbref_awards", "silver_combine", "silver_rosters",
     "silver_schedule", "silver_stints", "silver_playoff_gamelogs",
     "silver_transactions", "silver_contracts", "silver_preseason_projections",
     "silver_future_picks", "silver_draft_value_curve",
     "silver_bbref_gamelogs_2024_25", "silver_boxscores_ext",
-    "silver_cap_history", "silver_hist_hustle", "silver_hist_pbp",
+    "silver_cap_history",
     "silver_hist_salaries", "silver_leaders_dreb", "silver_leaders_fg_pct",
     "silver_playoff_inactive", "silver_scoreboard",
     "silver_tracking_pt_defend", "silver_tracking_pt_shot",
     "silver_tracking_pt_stats", "silver_wowy", "silver_zone_splits",
 ]
 
-RERUN_ROW_CAP = 25
+RERUN_ROW_CAP = 200
 RERUN_TIMEOUT_S = 30
 
 _SCHEMA_TTL_S = 3600.0

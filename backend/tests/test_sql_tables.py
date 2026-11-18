@@ -123,8 +123,27 @@ def test_sql_exec_refusals_and_cap_still_apply(warehouse):
         "SELECT TEAM FROM silver_playoffs")
     assert stacked["ok"] is False
     assert warehouse["user_selects"] == 0
-    capped = _run("SELECT WINS FROM silver_standings ORDER BY WINS")
+    capped = _run(
+        "SELECT s.WINS FROM silver_standings s, silver_standings t "
+        "ORDER BY s.WINS")
     assert capped["ok"] is True
     assert capped["meta"]["tables"] == ["silver_standings"]
     assert capped["meta"]["capped"] is True
-    assert len(capped["rows"]) == 25
+    assert len(capped["rows"]) == 200
+
+
+def test_canonical_silver_tables_are_allowlisted():
+    warehouse = store.CANONICAL_DB_PATH
+    if not warehouse.exists():
+        pytest.skip(f"no canonical warehouse at {warehouse}")
+    con = duckdb.connect(str(warehouse), read_only=True)
+    try:
+        tables = [
+            row[0] for row in con.execute("SHOW TABLES").fetchall()
+            if str(row[0]).startswith("silver_")
+        ]
+    finally:
+        con.close()
+    assert tables, f"no silver tables in {warehouse}"
+    missing = [table for table in tables if table not in league._SQL_TABLES]
+    assert not missing, f"silver tables missing from _SQL_TABLES: {missing}"
