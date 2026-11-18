@@ -6,6 +6,7 @@ import { join } from "node:path";
 import { Type } from "typebox";
 import { ModelRuntime } from "@earendil-works/pi-coding-agent";
 import { createAssistantMessageEventStream } from "@earendil-works/pi-ai";
+import { reportBootstrapFailure } from "../dist/host.js";
 import {
   canonicalArgsKey,
   createPiExecution,
@@ -409,4 +410,16 @@ test("submit_answer and validateAnswerSubmission provide available columns and a
       return true;
     }
   );
+});
+
+test("host bootstrap failure names the missing manifest variable on stderr", () => {
+  const printed = [];
+  reportBootstrapFailure(
+    new Error("DIME_EXPECTED_ASSET_MANIFEST is required"),
+    (text) => printed.push(text)
+  );
+  const stderr = printed.join("");
+  assert.match(stderr, /^Dime host failed: DIME_EXPECTED_ASSET_MANIFEST is required\n/);
+  assert.match(stderr, /Error: DIME_EXPECTED_ASSET_MANIFEST is required/);
+  assert.match(stderr, /\n\s+at /);
 });

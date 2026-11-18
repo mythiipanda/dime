@@ -72,6 +72,10 @@ export async function main(args: string[], env = process.env, resolveModel?: Res
         await product.data.close();
     }
 }
+export function reportBootstrapFailure(error: unknown, write: (text: string) => void = text => { process.stderr.write(text); }) {
+    const detail = error instanceof Error ? error : new Error(String(error));
+    write(`Dime host failed: ${detail.message}\n${detail.stack ?? ""}\n`);
+}
 if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
-    main(process.argv.slice(2)).catch(() => { process.stderr.write("Dime host failed.\n"); process.exitCode = 1; });
+    main(process.argv.slice(2)).catch(error => { reportBootstrapFailure(error); process.exitCode = 1; });
 }
