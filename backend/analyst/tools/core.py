@@ -153,12 +153,41 @@ def _python_rows(res: dict[str, Any]) -> list[dict[str, Any]]:
     return [{"printed": str(raw_rows or ""), "out": None}]
 
 
+def _build_schema_index(
+        columns: dict[str, Any],
+        spans: dict[str, str],
+        selected: list[str],
+        ) -> dict[str, Any]:
+    return sanitize_for_wire({
+        "tool": "warehouse_schema",
+        "ok": True,
+        "tables": {
+            name: {
+                "column_count": len(columns[name]),
+                "seasons": spans.get(name, "n/a"),
+            }
+            for name in selected
+        },
+        "hint": "Pass tables=[...] for column names, units and season encodings.",
+        "catalog_scope": {
+            "kind": "declared_read_only_tables",
+            "exhaustive_warehouse_inventory": False,
+            "available_table_count": len(columns),
+            "returned_table_count": len(selected),
+            "negative_claim_scope": (
+                "returned declared table names, column counts and season spans only"
+            ),
+        },
+    })
+
+
 def register() -> dict[str, Any]:
     from shared.tools.sql_exec import sql_exec as _orig_sql_exec, TABLES
     from shared.tools.league import (
         _get_warehouse_schema,
         get_warehouse_freshness as _orig_get_warehouse_freshness,
     )
+    from shared.tools.league.sql_schema import _get_warehouse_season_spans
     from shared.tools.season_semantics import annotate_schema
     try:
         from shared.tools.watchlist import get_watchlist
@@ -167,8 +196,9 @@ def register() -> dict[str, Any]:
 
     declared_catalog = ", ".join(TABLES)
     schema_description = (
-        "Read declared warehouse columns, source units and season encodings. "
-        "Pass tables to return only those declared tables (avoiding full catalog payloads). "
+        "Index declared warehouse tables by name, column count and season span. "
+        "Pass tables=[...] to read column names, units and season encodings "
+        "for specific declared tables; the default is an index, not a catalog. "
         f"Declared table allowlist: {declared_catalog}. "
         "This allowlist names declared tables, not proof of actual table content, "
         "complete warehouse inventory or data freshness. "
@@ -218,6 +248,9 @@ def register() -> dict[str, Any]:
         selected, err = _select_schema_tables(columns, tables)
         if err is not None:
             return err
+        if tables is None:
+            spans = _get_warehouse_season_spans(list(columns), columns)
+            return _build_schema_index(columns, spans, selected)
         annotated = annotate_schema({"tables": {name: columns[name] for name in selected}})
         if 'silver_hist_lineups' in selected:
             annotated['lineup_variant_policy'] = (

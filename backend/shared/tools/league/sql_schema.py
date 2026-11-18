@@ -48,6 +48,7 @@ _SCHEMA_TTL_S = 3600.0
 _SCHEMA_DISPLAY_COLUMN_LIMIT = 40
 _schema_cache: dict[str, object] = {"at": 0.0, "present": [], "cols": {}}
 _schema_cache_stats: dict[str, int] = {"hits": 0, "misses": 0}
+_season_span_cache: dict[str, object] = {"at": 0.0, "spans": {}}
 
 
 def _describe_warehouse_schema(cols: dict[str, dict]) -> str:
@@ -125,12 +126,64 @@ def _clear_warehouse_schema_cache() -> None:
     _schema_cache["cols"] = {}
     _schema_cache_stats["hits"] = 0
     _schema_cache_stats["misses"] = 0
+    _season_span_cache["at"] = 0.0
+    _season_span_cache["spans"] = {}
 
 
 def _warehouse_schema_cache_info() -> dict[str, float]:
     return {"hits": _schema_cache_stats["hits"],
             "misses": _schema_cache_stats["misses"],
             "at": _schema_cache["at"]}
+
+
+def _season_span(seasons: list[str]) -> str:
+    labels = sorted({
+        str(value).strip() for value in seasons
+        if value is not None and str(value).strip()
+    })
+    if not labels:
+        return "n/a"
+    count = len(labels)
+    unit = "season" if count == 1 else "seasons"
+    return f"{labels[0]}..{labels[-1]} ({count} {unit})"
+
+
+def _table_seasons(table: str, columns: dict[str, Any]) -> list[str]:
+    names = {str(name).lower() for name in columns}
+    upper = {str(name).upper() for name in columns}
+    if "_season" not in names:
+        return []
+    if "game_id" in upper:
+        try:
+            return list(_pkg().store.seasons_with_data(table))
+        except Exception:
+            return []
+    con = _pkg().store.connect(read_only=True)
+    try:
+        rows = con.execute(
+            f"SELECT DISTINCT _season FROM {table} ORDER BY _season"
+        ).fetchall()
+    except Exception:
+        return []
+    finally:
+        con.close()
+    return [str(row[0]) for row in rows if row and row[0] is not None]
+
+
+def _get_warehouse_season_spans(
+        present: list[str], columns: dict[str, dict[str, Any]]
+        ) -> dict[str, str]:
+    now = _time.monotonic()
+    at = float(_season_span_cache.get("at") or 0.0)
+    if now - at < _SCHEMA_TTL_S and _season_span_cache.get("spans"):
+        return dict(_season_span_cache["spans"])
+    spans = {
+        name: _season_span(_table_seasons(name, columns.get(name) or {}))
+        for name in present
+    }
+    _season_span_cache["at"] = now
+    _season_span_cache["spans"] = spans
+    return dict(spans)
 
 
 _COLUMN_UNITS: dict[str, tuple[str, str]] = {

@@ -1,6 +1,7 @@
 
 import asyncio
 import json
+import os
 import sys
 from pathlib import Path
 
@@ -73,12 +74,12 @@ def _tool() -> object:
     return python_tools.catalogue()["warehouse_schema"]
 
 
-def test_default_returns_full_declared_schema_with_bounded_scope(warehouse):
+def test_default_returns_compact_index_with_bounded_scope(warehouse):
     schema = _invoke(_tool(), {})
 
     assert set(schema) >= {"tables", "catalog_scope"}
     assert schema["ok"] is True
-    assert schema["tool"] == "warehouse_schema" 
+    assert schema["tool"] == "warehouse_schema"
     assert set(schema["tables"]) == set(_DECLARED)
     assert "warehouse_only_table" not in schema["tables"]
 
@@ -88,15 +89,17 @@ def test_default_returns_full_declared_schema_with_bounded_scope(warehouse):
     assert scope["available_table_count"] == 3
     assert scope["returned_table_count"] == 3
     assert scope["negative_claim_scope"] == (
-        "returned declared tables and columns only")
+        "returned declared table names, column counts and season spans only")
 
-    seasons = schema["tables"]["silver_hist_player_seasons"]
-    assert seasons["season"]["type"] == "INTEGER"
-    assert seasons["season"]["season_semantics"]["encoding"] == "end_year_numeric"
-    assert seasons["_season"]["season_semantics"]["encoding"] == "canonical_label"
-    assert seasons["PTS"]["unit"] == "points_per_game"
-    assert schema["tables"]["silver_leaders_pts"]["PTS"]["unit"] == "total_points"
-    assert "RAW_SECRET_ROW" in schema["tables"]["silver_leaders_pts"]
+    for entry in schema["tables"].values():
+        assert set(entry) == {"column_count", "seasons"}
+        assert isinstance(entry["column_count"], int)
+        assert isinstance(entry["seasons"], str)
+    assert schema["tables"]["silver_hist_player_seasons"] == {
+        "column_count": 4, "seasons": "2090-91..2090-91 (1 season)"}
+    assert "season" not in schema["tables"]["silver_hist_player_seasons"]
+    assert "RAW_SECRET_ROW" not in json.dumps(schema)
+    assert "tables=[...]" in schema["hint"]
 
 
 def test_selection_returns_only_requested_declared_tables_with_metadata(warehouse):
@@ -132,14 +135,14 @@ def test_selection_deduplicates_without_reordering(warehouse):
     assert scoped["catalog_scope"]["returned_table_count"] == 2
 
 
-def test_scoped_payload_is_measurably_smaller(warehouse):
+def test_unscoped_index_is_smaller_than_scoped_columns(warehouse):
     tool = _tool()
-    full = json.dumps(_invoke(tool, {})).encode("utf-8")
+    index = json.dumps(_invoke(tool, {})).encode("utf-8")
     scoped = json.dumps(_invoke(tool, {
         "tables": ["silver_hist_player_seasons", "silver_leaders_pts"],
     })).encode("utf-8")
 
-    assert len(scoped) < len(full)
+    assert len(index) < len(scoped)
 
 
 @pytest.mark.parametrize("selection", [
@@ -222,3 +225,42 @@ def test_warehouse_schema_description_derived_dynamically_from_registry(monkeypa
     assert "silver_custom_alpha, silver_custom_beta" in tool.description
     assert "silver_standings" not in tool.description
     assert "silver_hist_standings" not in tool.description
+
+
+def _require_live_warehouse():
+    configured = os.environ.get("DIME_WAREHOUSE")
+    path = Path(configured) if configured else store.DB_PATH
+    if not path.is_file():
+        pytest.skip(f"no warehouse at {path}")
+    return path
+
+
+def test_unscoped_live_payload_stays_under_twelve_thousand_characters(monkeypatch):
+    path = _require_live_warehouse()
+    monkeypatch.setattr(store, "DB_PATH", path)
+    _clear_caches()
+    result = _invoke(_tool(), {})
+    payload = json.dumps(result)
+
+    assert len(payload) < 12000, len(payload)
+    assert result["tables"]
+    for name, entry in result["tables"].items():
+        assert set(entry) == {"column_count", "seasons"}, name
+        assert isinstance(entry["column_count"], int), name
+        assert isinstance(entry["seasons"], str), name
+    assert "tables=[...]" in payload
+    assert result["catalog_scope"]["returned_table_count"] == len(result["tables"])
+
+
+def test_scoped_live_payload_keeps_column_annotations(monkeypatch):
+    path = _require_live_warehouse()
+    monkeypatch.setattr(store, "DB_PATH", path)
+    _clear_caches()
+    result = _invoke(_tool(), {"tables": ["silver_leaders_pts"]})
+    payload = json.dumps(result)
+
+    columns = result["tables"]["silver_leaders_pts"]
+    assert columns["PTS"]["unit"] == "total_points"
+    assert columns["PTS"]["note"]
+    assert columns["_season"]["season_semantics"]["unit"] == "season_label"
+    assert "total_points" in payload
