@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { deriveArtifacts, reduceBackendEvent } from "./dime-stream";
+import { asResolvedArtifacts, deriveArtifacts, reduceBackendEvent } from "./dime-stream";
 
 test("a chart the backend resolved renders as a chart", () => {
   const chunks = reduceBackendEvent("custom_data", {
@@ -54,6 +54,30 @@ test("a chart artifact preserves unit, xLabels, and series tone", () => {
   assert.deepEqual(only.artifact.xLabels, ["Oct", "Nov", "Dec"]);
   assert.equal(only.artifact.series[0].tone, "ink");
   assert.equal(only.artifact.series[1].tone, "muted");
+});
+
+test("a chart artifact preserves accent, good, and warn tones and drops invalid tones", () => {
+  const artifacts = asResolvedArtifacts([
+    {
+      kind: "chart",
+      title: "Tone Palette",
+      series: [
+        { name: "Primary", values: [1, 2], tone: "accent" },
+        { name: "Positive", values: [3, 4], tone: "good" },
+        { name: "Warning", values: [5, 6], tone: "warn" },
+        { name: "Unknown", values: [7, 8], tone: "neon" },
+      ],
+    },
+  ]);
+
+  assert.equal(artifacts.length, 1);
+  const chart = artifacts[0];
+  assert.equal(chart.kind, "chart");
+  if (chart.kind !== "chart") return;
+  assert.equal(chart.series[0].tone, "accent");
+  assert.equal(chart.series[1].tone, "good");
+  assert.equal(chart.series[2].tone, "warn");
+  assert.equal(chart.series[3].tone, undefined);
 });
 
 test("a resolved chart and a derived table both reach the stream", () => {
