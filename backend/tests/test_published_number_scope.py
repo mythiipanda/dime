@@ -1,3 +1,4 @@
+import asyncio
 import sys
 from contextlib import contextmanager
 from pathlib import Path
@@ -10,7 +11,6 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from shared import store
 from shared.tools import league as league_mod
 from shared.tools import team as team_mod
-from v2.adapters import call_capability
 
 REPO_WAREHOUSE = (
     Path(__file__).resolve().parent.parent / "data" / "warehouse.duckdb"
@@ -67,9 +67,10 @@ def _playoff_round_wins(con, team, opponent, season, round_code):
     ).fetchone()
 
 def _brief(a, b, season):
-    env = call_capability("matchup_brief", {"a": a, "b": b, "season": season})
-    assert env.capability == "matchup_brief"
-    return env.rows
+    out = asyncio.run(team_mod.get_matchup_brief.ainvoke(
+        {"a": a, "b": b, "season": season}))
+    assert out["ok"] is True
+    return out["rows"]
 
 def _split(rows, name):
     return next(row for row in rows if row["split"] == name)
@@ -181,6 +182,7 @@ def _synthetic_splits():
     return out
 
 def test_split_omits_a_rate_the_warehouse_cannot_supply(tmp_path, monkeypatch):
+    _skip_without_warehouse()
     _synthetic(tmp_path, monkeypatch, [None, None, None], ["W", "W", "L"])
     row = _split(_synthetic_splits()["rows"], "last10")
     assert row["GP"] == 3
@@ -190,6 +192,7 @@ def test_split_omits_a_rate_the_warehouse_cannot_supply(tmp_path, monkeypatch):
 def test_split_divides_a_rate_by_the_games_that_carry_a_score(
     tmp_path, monkeypatch,
 ):
+    _skip_without_warehouse()
     _synthetic(tmp_path, monkeypatch, [120.0, None, 90.0], ["W", "L", "W"])
     row = _split(_synthetic_splits()["rows"], "last10")
     assert row["GP"] == 3
@@ -199,6 +202,7 @@ def test_split_divides_a_rate_by_the_games_that_carry_a_score(
 def test_split_does_not_count_an_undecided_game_as_a_loss(
     tmp_path, monkeypatch,
 ):
+    _skip_without_warehouse()
     _synthetic(tmp_path, monkeypatch, [120.0, 90.0, 0.0], ["W", "L", None])
     row = _split(_synthetic_splits()["rows"], "last10")
     assert row["GP"] == 3

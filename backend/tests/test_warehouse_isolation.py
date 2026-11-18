@@ -11,10 +11,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from shared import store
-from v2.adapters import coverage
-from v2.adapters import core as adapter_core
-from v2.adapters.capabilities import CAPABILITIES
+from shared import coverage, store
 
 _FETCHED_AT = "2026-01-01T00:00:00+00:00"
 
@@ -23,7 +20,7 @@ def _make_warehouse(db: Path) -> None:
 
 @pytest.fixture()
 def scratch(monkeypatch):
-    directory = Path(tempfile.mkdtemp(prefix="whiso_", dir="/tmp"))
+    directory = Path(tempfile.mkdtemp(prefix="whiso_"))
     db = directory / "wh.duckdb"
     _make_warehouse(db)
     monkeypatch.setattr(store, "DB_PATH", db)
@@ -47,7 +44,7 @@ def _read_view_rows(view: Path) -> list:
     finally:
         con.close()
 
-def test_capability_reads_open_read_only(scratch, monkeypatch):
+def test_warehouse_reads_open_read_only(scratch, monkeypatch):
     modes: list = []
     real_connect = duckdb.connect
 
@@ -67,14 +64,6 @@ def test_capability_reads_open_read_only(scratch, monkeypatch):
     assert coverage.table_seasons("t") == frozenset({"2024-25"})
     verdict = coverage.coverage_check("PTS", "2024-25", table="t")
     assert verdict["covered"] is True
-    envelope = adapter_core.build_envelope(
-        CAPABILITIES["team_totals"],
-        {"season": "2024-25"},
-        {"tool": "get_team_leaders", "ok": True,
-         "rows": [{"TEAM_ID": 1, "TOTAL": 5}],
-         "meta": {"source": "warehouse", "season": "2024-25"}})
-    assert envelope.source_identity is not None
-    assert envelope.source_identity.kind == "warehouse"
     assert modes
     assert all(mode is True for mode in modes)
 
@@ -121,7 +110,7 @@ def test_parallel_runs_isolated_and_write_conflict_loud(scratch):
     assert _read_view_rows(second) == [1, 2]
 
 def test_coverage_freshness_discriminates_same_size_same_mtime():
-    directory = Path(tempfile.mkdtemp(prefix="whfresh_", dir="/tmp"))
+    directory = Path(tempfile.mkdtemp(prefix="whfresh_"))
     try:
         size = 20000
         same_ns = 1700000000000000000

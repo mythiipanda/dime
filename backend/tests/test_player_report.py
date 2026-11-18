@@ -6,7 +6,7 @@ import pytest
 from shared import store
 from shared.tools import TOOL_NAMES, get_player_report
 from shared.tools import _core as core_mod
-from v2.adapters import coverage as coverage_mod
+from shared import coverage as coverage_mod
 
 @pytest.fixture()
 def warehouse(monkeypatch, tmp_path):

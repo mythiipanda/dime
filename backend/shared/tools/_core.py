@@ -63,8 +63,8 @@ def resolve_season(season: object | None = None,
         return text
     if table:
         try:
-            from v2.adapters.coverage import parse_season_start
-            from v2.adapters.coverage import table_seasons
+            from shared.coverage import parse_season_start
+            from shared.coverage import table_seasons
             covered = sorted(
                 found for found in table_seasons(table)
                 if parse_season_start(found) is not None)

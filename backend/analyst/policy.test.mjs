@@ -24,7 +24,8 @@ test("Startup manifest pins executable/SDK/data assets, freezes nested state, re
  const warehouse={warehouse_id:"configured-runtime",sha256:"0".repeat(64),sha256_derivation:"sha256-full-file"};
  const data={call:async()=>({warehouse,semantic_baseline:{fixture:"fixed"}})};
  const manifest=await runtimeManifest(data,{DIME_REVISION:"fixture"});assert(Object.isFrozen(manifest));assert(Object.isFrozen(manifest.module_sha256));assert(!("dist/worker.js" in manifest.module_sha256));
- for(const key of ["provider_schema_manifest","behavior_losses","capability_manifest","capability_source","capability_compiled"])assert.match(manifest.typed_argument_assets[key],/^[a-f0-9]{64}$/);
+ assert(!("typed_argument_assets" in manifest));
+ assert.match(manifest.module_sha256["tools/core.py"],/^[a-f0-9]{64}$/);
  const path=join(root,"expected-manifest-"+Date.now()+".json");writeFileSync(path,JSON.stringify(manifest));preflight(manifest,path);
  const altered=JSON.parse(readFileSync(path,"utf8"));altered.warehouse.sha256_derivation="sampled";writeFileSync(path,JSON.stringify(altered));assert.throws(()=>preflight(manifest,path),/mismatch/);
  altered.warehouse=warehouse;altered.revision="different-label";writeFileSync(path,JSON.stringify(altered));preflight(manifest,path);

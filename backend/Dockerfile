@@ -3,6 +3,7 @@ WORKDIR /analyst
 COPY analyst/package.json analyst/package-lock.json ./
 RUN npm ci --ignore-scripts
 COPY analyst/*.py analyst/*.ts analyst/tsconfig.json ./
+COPY analyst/tools ./tools
 COPY analyst/http-assets ./http-assets
 RUN npm run build && npm prune --omit=dev --ignore-scripts && node --input-type=module -e "await import('./dist/runtime.js')"
 
@@ -15,7 +16,6 @@ ARG DIME_REVISION=unknown
 ENV DIME_REVISION=$DIME_REVISION
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
-COPY v2 ./v2
 COPY shared ./shared
 COPY bin/espn-pp-cli /usr/local/bin/espn-pp-cli
 RUN chmod +x /usr/local/bin/espn-pp-cli

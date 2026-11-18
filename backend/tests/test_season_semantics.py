@@ -205,19 +205,6 @@ def test_sql_exec_cannot_certify_a_requested_season_its_sql_does_not_enforce(
     assert labels == {"2031-32", "2036-37", "2042-43"}
 
 
-def test_sql_exec_capability_does_not_certify_an_unenforced_requested_season(
-        synthetic_warehouse) -> None:
-    from v2.adapters import call_capability
-
-    sql = "SELECT team_name, _season FROM silver_hist_standings ORDER BY _season"
-    envelope = call_capability("sql_exec", {"sql": sql, "season": "2099-00"})
-
-    assert envelope.season is None
-    assert envelope.task_season_scoped is False
-    assert {row["_season"] for row in envelope.rows} == {
-        "2031-32", "2036-37", "2042-43"}
-
-
 def test_sql_exec_preserves_a_season_the_sql_really_filters(
         synthetic_warehouse) -> None:
     sql = (
@@ -302,26 +289,7 @@ def test_sql_exec_exposes_cumulative_values_without_rewriting_either_basis(
     assert hist["rows"][0]["PTS"] * hist["rows"][0]["gp"] != totals["rows"][0]["PTS"]
 
 
-def _execute_sql_capability(sql: str):
-    from v2.adapters.core import ToolCapability
-    from v2.contracts import PlanNode, RunMode, TaskSpec
-
-    capability = ToolCapability("sql_exec")
-    task = TaskSpec(
-        goal="Read the selected warehouse columns",
-        mode=RunMode.QUICK,
-        deliverable="Rows with declared source units",
-    )
-    node = PlanNode(
-        id="sql-evidence",
-        description="Read selected columns",
-        capability_hints=["sql_exec"],
-        arguments={"sql": sql},
-    )
-    return asyncio.run(capability.execute(node, task, []))
-
-
-def test_sql_capability_carries_proven_column_units_into_evidence(
+def test_sql_exec_carries_proven_column_units(
         unit_synthetic_warehouse) -> None:
     hist_sql = (
         "SELECT player_id, gp, PTS, REB, AST "
@@ -331,89 +299,80 @@ def test_sql_capability_carries_proven_column_units_into_evidence(
         "SELECT PLAYER_ID, GP, PTS, REB, AST "
         "FROM silver_leaders_pts WHERE PLAYER_ID = 42"
     )
-    hist = _execute_sql_capability(hist_sql)
-    totals = _execute_sql_capability(total_sql)
+    hist = run_sql(hist_sql)
+    totals = run_sql(total_sql)
 
-    assert hist.rows == [{
+    assert hist["rows"] == [{
         "player_id": 42, "gp": 6, "PTS": 11.8, "REB": 2.3, "AST": 4.1,
     }]
-    assert hist.execution_arguments["sql"] == hist_sql
-    assert {name: hist.units[name] for name in ("PTS", "REB", "AST")} == {
+    hist_sem = hist["declared_column_semantics"]
+    assert {name: hist_sem[name]["unit"] for name in ("PTS", "REB", "AST")} == {
         "PTS": "points_per_game",
         "REB": "rebounds_per_game",
         "AST": "assists_per_game",
     }
-    assert "per_mode='pergame'" in hist.metric_definitions["PTS"]
-    assert "not cumulative totals" in hist.metric_definitions["PTS"]
+    assert "per_mode='pergame'" in hist_sem["PTS"]["note"]
+    assert "not cumulative totals" in hist_sem["PTS"]["note"]
 
-    assert totals.rows == [{
+    assert totals["rows"] == [{
         "PLAYER_ID": 42, "GP": 6, "PTS": 71, "REB": 14, "AST": 25,
     }]
-    assert totals.execution_arguments["sql"] == total_sql
-    assert {name: totals.units[name] for name in ("PTS", "REB", "AST")} == {
+    tot_sem = totals["declared_column_semantics"]
+    assert {name: tot_sem[name]["unit"] for name in ("PTS", "REB", "AST")} == {
         "PTS": "total_points",
         "REB": "total_rebounds",
         "AST": "total_assists",
     }
-    assert "PerMode48.default='Totals'" in totals.metric_definitions["PTS"]
+    assert "PerMode48.default='Totals'" in tot_sem["PTS"]["note"]
 
 
-
-def test_sql_capability_carries_hist_exact_totals_into_evidence(
+def test_sql_exec_carries_hist_exact_totals(
         unit_synthetic_warehouse) -> None:
     hist_sql = (
         "SELECT player_id, gp, gp_total, PTS, PTS_TOTAL, REB_TOTAL, AST_TOTAL "
         "FROM silver_hist_player_seasons WHERE player_id = 42"
     )
-    hist = _execute_sql_capability(hist_sql)
-    assert hist.rows == [{
+    hist = run_sql(hist_sql)
+    assert hist["rows"] == [{
         "player_id": 42, "gp": 6, "gp_total": 6,
         "PTS": 11.8, "PTS_TOTAL": 71.0, "REB_TOTAL": 14.0, "AST_TOTAL": 25.0,
     }]
-    assert {name: hist.units[name] for name in ("PTS", "PTS_TOTAL", "REB_TOTAL", "AST_TOTAL", "gp_total")} == {
+    sem = hist["declared_column_semantics"]
+    assert {name: sem[name]["unit"] for name in ("PTS", "PTS_TOTAL", "REB_TOTAL", "AST_TOTAL", "gp_total")} == {
         "PTS": "points_per_game",
         "PTS_TOTAL": "total_points",
         "REB_TOTAL": "total_rebounds",
         "AST_TOTAL": "total_assists",
         "gp_total": "games",
     }
-    assert hist.units["gp"] == "games_played"
-    assert "sportsdataverse totals slice" in hist.metric_definitions["PTS_TOTAL"]
-    assert "sportsdataverse totals slice" in hist.metric_definitions["REB_TOTAL"]
-    assert "sportsdataverse totals slice" in hist.metric_definitions["AST_TOTAL"]
-    assert "sportsdataverse totals slice" in hist.metric_definitions["gp_total"]
-    assert "per_mode='pergame'" in hist.metric_definitions["PTS"]
+    assert sem["gp"]["unit"] == "games_played"
+    assert "sportsdataverse totals slice" in sem["PTS_TOTAL"]["note"]
+    assert "sportsdataverse totals slice" in sem["REB_TOTAL"]["note"]
+    assert "sportsdataverse totals slice" in sem["AST_TOTAL"]["note"]
+    assert "sportsdataverse totals slice" in sem["gp_total"]["note"]
+    assert "per_mode='pergame'" in sem["PTS"]["note"]
 
-def test_sql_capability_preserves_existing_per_game_fields_and_unmapped_leaders(
+
+def test_sql_exec_preserves_existing_per_game_fields_and_unmapped_leaders(
         unit_synthetic_warehouse) -> None:
-    player = _execute_sql_capability(
+    player = run_sql(
         "SELECT PPG, RPG, APG FROM silver_player_season WHERE PLAYER_ID = 42"
     )
-    assert player.rows == [{"PPG": 11.8, "RPG": 2.3, "APG": 4.1}]
-    assert player.units == {
+    assert player["rows"] == [{"PPG": 11.8, "RPG": 2.3, "APG": 4.1}]
+    psem = player["declared_column_semantics"]
+    assert {k: psem[k]["unit"] for k in ("PPG", "RPG", "APG")} == {
         "PPG": "points_per_game",
         "RPG": "rebounds_per_game",
         "APG": "assists_per_game",
     }
 
     for table in ("silver_leaders_reb", "silver_leaders_ast"):
-        evidence = _execute_sql_capability(
+        res = run_sql(
             f"SELECT PTS, REB, AST FROM {table} WHERE PLAYER_ID = 42"
         )
-        assert evidence.rows == [{"PTS": 71, "REB": 14, "AST": 25}]
-        assert not {"PTS", "REB", "AST"}.intersection(evidence.units)
+        assert res["rows"] == [{"PTS": 71, "REB": 14, "AST": 25}]
         assert not {"PTS", "REB", "AST"}.intersection(
-            evidence.metric_definitions)
-
-
-def test_sql_capability_keeps_generic_aggregate_units(
-        unit_synthetic_warehouse) -> None:
-    evidence = _execute_sql_capability(
-        "SELECT COUNT(*) AS n FROM silver_hist_player_seasons"
-    )
-    assert evidence.rows == [{"n": 1}]
-    assert evidence.units == {"n": "count"}
-    assert "count" in evidence.metric_definitions["n"]
+            res["declared_column_semantics"])
 
 
 @pytest.mark.parametrize("sql", [
@@ -428,12 +387,11 @@ def test_sql_capability_keeps_generic_aggregate_units(
     "SELECT PTS FROM silver_hist_player_seasons "
     "UNION ALL SELECT PTS FROM silver_leaders_pts",
 ])
-def test_sql_capability_does_not_guess_units_for_unsupported_projections(
+def test_sql_exec_does_not_guess_units_for_unsupported_projections(
         unit_synthetic_warehouse, sql: str) -> None:
-    evidence = _execute_sql_capability(sql)
-    assert not {"PTS", "PTS_1", "player_points"}.intersection(evidence.units)
+    res = run_sql(sql)
     assert not {"PTS", "PTS_1", "player_points"}.intersection(
-        evidence.metric_definitions)
+        res["declared_column_semantics"])
 
 
 @pytest.mark.parametrize("sql,duplicate", [
@@ -441,13 +399,11 @@ def test_sql_capability_does_not_guess_units_for_unsupported_projections(
      "FROM silver_hist_player_seasons", "player_points"),
     ("SELECT PTS, PTS FROM silver_hist_player_seasons", "PTS"),
 ])
-def test_sql_capability_refuses_exact_duplicate_output_columns(
+def test_sql_exec_refuses_exact_duplicate_output_columns(
         unit_synthetic_warehouse, sql: str, duplicate: str) -> None:
-    from v2.adapters.core import AdapterError
-
-    with pytest.raises(AdapterError) as excinfo:
-        _execute_sql_capability(sql)
-    message = str(excinfo.value)
+    res = run_sql(sql)
+    assert res["ok"] is False
+    message = str(res["error"])
     assert "duplicate output column name" in message
     assert duplicate in message
     assert "unique alias" in message
@@ -607,17 +563,14 @@ def test_renamed_alias_star_and_missing_sql_are_unresolved() -> None:
 def test_sql_direct_alias_preserves_source_unit(
         unit_synthetic_warehouse, table, source, output, unit, value):
     sql = f"SELECT s.{source} AS {output} FROM {table} s"
-    evidence = _execute_sql_capability(sql)
-    assert evidence.rows == [{output: value}]
-    assert evidence.execution_arguments["sql"] == sql
-    assert evidence.units[output] == unit
-    assert evidence.metric_definitions[output]
     result = run_sql(sql)
+    assert result["rows"] == [{output: value}]
     metadata = result["declared_column_semantics"][output]
+    assert metadata["unit"] == unit
+    assert metadata["note"]
     assert metadata["column"] == source
     assert metadata["output_column"] == output
     assert metadata["table"] == table
-    assert metadata["note"] == evidence.metric_definitions[output]
 
 
 @pytest.mark.parametrize("sql", [

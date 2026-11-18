@@ -16,7 +16,7 @@ def _valid_game_id(raw: object) -> str:
 
 
 def _no_coverage(game_id: str) -> dict[str, Any]:
-    from v2.adapters.coverage import table_seasons
+    from shared.coverage import table_seasons
 
     available = sorted(table_seasons(_TABLE))
     if available:

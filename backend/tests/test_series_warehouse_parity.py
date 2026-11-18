@@ -10,7 +10,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from shared import store
 from shared.tools import team as team_mod
-from v2.adapters import coverage
+from shared import coverage
 
 DATA_DIR = Path(__file__).resolve().parent.parent / "data"
 BASELINE = store.CANONICAL_DB_PATH

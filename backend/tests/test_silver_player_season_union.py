@@ -14,7 +14,7 @@ import seed_bbref_league_pages as bbref
 from shared import store
 from shared.sources.base import FetchMeta, FetchResult
 from shared.tools import _core as core_mod
-from v2.adapters import coverage as coverage_mod
+from shared import coverage as coverage_mod
 
 CURRY = 201939
 LEBRON = 2544

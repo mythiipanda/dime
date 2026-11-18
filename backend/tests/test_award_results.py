@@ -47,7 +47,7 @@ def recorded_awards(tmp_path_factory):
 def _point_at(path: Path, tmp_path: Path, monkeypatch) -> Path:
     from shared import store
     from shared.tools import _core
-    from v2.adapters import coverage
+    from shared import coverage
 
     monkeypatch.setattr(store, "DB_PATH", path)
     monkeypatch.setattr(store, "LOCK_PATH", tmp_path / ".write.lock")

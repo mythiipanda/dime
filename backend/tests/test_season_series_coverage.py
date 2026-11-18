@@ -1,3 +1,4 @@
+import asyncio
 import json
 import sys
 from contextlib import contextmanager
@@ -10,7 +11,6 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from shared import store
 from shared.tools import team as team_mod
-from v2.adapters import call_capability
 
 REPO_WAREHOUSE = (
     Path(__file__).resolve().parent.parent / "data" / "warehouse.duckdb"
@@ -61,9 +61,10 @@ def _series(a, b, season):
         {"team_a": a, "team_b": b, "season": season})
 
 def _brief_rows(a, b, season):
-    env = call_capability("matchup_brief", {"a": a, "b": b, "season": season})
-    assert env.capability == "matchup_brief"
-    return env.rows
+    out = asyncio.run(team_mod.get_matchup_brief.ainvoke(
+        {"a": a, "b": b, "season": season}))
+    assert out["ok"] is True
+    return out["rows"]
 
 def test_the_uncovered_season_fixture_really_is_uncovered():
     _require_warehouse()

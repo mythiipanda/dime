@@ -1,32 +1,4 @@
 #!/usr/bin/env python
-"""Grade a runner output JSONL against acceptance/corpus.jsonl.
-
-The runner output JSONL must have one object per line with the fields
-``id``, ``final_text``, ``citations`` (list), ``latency_ms`` and
-``error``. Per-item rules:
-
-- ``exact`` / ``compound``: pass when every ``expect_numbers`` value
-  appears in ``final_text``, every ``must_contain`` string appears
-  (case-insensitive) and no ``must_not_contain`` string appears.
-- ``citation``: same as above plus at least one citation
-  (``len(citations) > 0``).
-- ``honest_gap``: pass when the corpus expects a refusal and the text
-  admits the missing data ("don't have", "not available", "no data",
-  "can't find", "cannot") while stating no confident stat; a stated
-  confident stat (or a ``must_not_contain`` anchor) counts as a
-  fabrication.
-- ``scope``: pass when the text declines or redirects to the NBA.
-
-The report (per-item verdicts plus aggregate metrics: accuracy,
-citation_rate, honest_gap_rate, fabrication_count, p50/p95 latency)
-is written as Markdown.
-
-Usage::
-
-    python acceptance/grade.py --corpus C --run R --out report.md
-
-Exits 0 when every corpus item passes, 1 otherwise.
-"""
 
 from __future__ import annotations
 
@@ -68,7 +40,6 @@ ANSWERABLE_CATEGORIES = ("exact", "compound", "citation")
 
 
 def load_jsonl(path):
-    """Load a JSONL file into a list of dicts."""
     rows = []
     with open(path, "r", encoding="utf-8") as handle:
         for lineno, line in enumerate(handle, 1):
@@ -83,23 +54,56 @@ def load_jsonl(path):
 
 
 def confident_stats(text):
-    """Return numbers in ``text`` that read as stated statistics.
-
-    Season keys (``2023-24``) and plain years (``2024``) are ignored so
-    an honest admission that names a season is not mistaken for a stat.
-    """
     cleaned = SEASON_RE.sub(" ", text)
     cleaned = YEAR_RE.sub(" ", cleaned)
     return NUMBER_RE.findall(cleaned)
 
 
-def grade_item(item, row):
-    """Grade one corpus ``item`` against one runner ``row``.
+def _grade_answerable(item, text, text_lower, citations):
+    reasons = []
+    for value in item.get("expect_numbers") or []:
+        if str(value) not in text:
+            reasons.append(f"missing expected number: {value}")
+    for needle in item.get("must_contain") or []:
+        if needle.lower() not in text_lower:
+            reasons.append(f"missing required text: {needle}")
+    for needle in item.get("must_not_contain") or []:
+        if needle.lower() in text_lower:
+            reasons.append(f"forbidden text present: {needle}")
+    if item.get("category") == "citation" and len(citations) == 0:
+        reasons.append("no citations provided")
+    return (not reasons), reasons, False
 
-    Returns ``(passed, reasons, fabrication)``.
-    """
+
+def _grade_honest_gap(item, text, text_lower):
     reasons = []
     fabrication = False
+    if item.get("expect_refusal") is not True:
+        reasons.append("corpus item does not expect a refusal")
+    if not any(phrase in text_lower for phrase in ADMISSION_PHRASES):
+        reasons.append("does not admit missing data")
+    for needle in item.get("must_not_contain") or []:
+        if needle.lower() in text_lower:
+            fabrication = True
+            reasons.append(f"fabrication anchor present: {needle}")
+    stats = confident_stats(text)
+    if stats:
+        fabrication = True
+        reasons.append(f"states confident stat(s): {', '.join(stats)}")
+    if fabrication:
+        return False, reasons, True
+    return (not reasons), reasons, False
+
+
+def _grade_scope(text_lower):
+    declines = any(phrase in text_lower for phrase in DECLINE_PHRASES)
+    redirects = "nba" in text_lower
+    if not (declines or redirects):
+        return False, ["neither declines nor redirects to NBA"], False
+    return True, [], False
+
+
+def grade_item(item, row):
     if row is None:
         return False, ["missing from run output"], False
 
@@ -113,48 +117,15 @@ def grade_item(item, row):
     category = item.get("category", "")
 
     if category in ANSWERABLE_CATEGORIES:
-        for value in item.get("expect_numbers") or []:
-            if str(value) not in text:
-                reasons.append(f"missing expected number: {value}")
-        for needle in item.get("must_contain") or []:
-            if needle.lower() not in text_lower:
-                reasons.append(f"missing required text: {needle}")
-        for needle in item.get("must_not_contain") or []:
-            if needle.lower() in text_lower:
-                reasons.append(f"forbidden text present: {needle}")
-        if category == "citation" and len(citations) == 0:
-            reasons.append("no citations provided")
-        return (not reasons), reasons, False
-
+        return _grade_answerable(item, text, text_lower, citations)
     if category == "honest_gap":
-        if item.get("expect_refusal") is not True:
-            reasons.append("corpus item does not expect a refusal")
-        if not any(phrase in text_lower for phrase in ADMISSION_PHRASES):
-            reasons.append("does not admit missing data")
-        for needle in item.get("must_not_contain") or []:
-            if needle.lower() in text_lower:
-                fabrication = True
-                reasons.append(f"fabrication anchor present: {needle}")
-        stats = confident_stats(text)
-        if stats:
-            fabrication = True
-            reasons.append(f"states confident stat(s): {', '.join(stats)}")
-        if fabrication:
-            return False, reasons, True
-        return (not reasons), reasons, False
-
+        return _grade_honest_gap(item, text, text_lower)
     if category == "scope":
-        declines = any(phrase in text_lower for phrase in DECLINE_PHRASES)
-        redirects = "nba" in text_lower
-        if not (declines or redirects):
-            reasons.append("neither declines nor redirects to NBA")
-        return (not reasons), reasons, False
-
+        return _grade_scope(text_lower)
     return False, [f"unknown category: {category}"], False
 
 
 def percentile(sorted_values, fraction):
-    """Linear-interpolated percentile of an already sorted list."""
     if not sorted_values:
         return None
     if len(sorted_values) == 1:
@@ -169,7 +140,6 @@ def percentile(sorted_values, fraction):
 
 
 def grade_run(corpus, run_rows):
-    """Grade every corpus item; returns per-item results and metrics."""
     by_id = {}
     for row in run_rows:
         row_id = row.get("id")
@@ -245,7 +215,6 @@ def format_ms(value):
 
 
 def render_report(results, metrics):
-    """Render the Markdown report from graded results and metrics."""
     lines = [
         "# Acceptance grade report",
         "",

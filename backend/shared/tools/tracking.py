@@ -167,7 +167,7 @@ def _as_int(value: object) -> int | None:
 
 
 def _no_coverage(tool: str, table: str, season: str) -> dict[str, Any]:
-    from v2.adapters.coverage import table_seasons
+    from shared.coverage import table_seasons
 
     available = sorted(table_seasons(table))
     if available:
@@ -262,7 +262,7 @@ def get_tracking_profile(player: str = "", team: str = "",
                 "error": f"unknown team: {want_team}",
                 "meta": {"source": f"warehouse:{_TRACKING_TABLE}",
                          "season": season}}
-    from v2.adapters.coverage import table_seasons
+    from shared.coverage import table_seasons
 
     if season not in table_seasons(_TRACKING_TABLE):
         return _no_coverage("get_tracking_profile", _TRACKING_TABLE, season)
@@ -307,7 +307,7 @@ def get_defensive_matchups(player: str = "",
                 "error": f"unknown player: {want}",
                 "meta": {"source": f"warehouse:{_DEFEND_TABLE}",
                          "season": season}}
-    from v2.adapters.coverage import table_seasons
+    from shared.coverage import table_seasons
 
     if season not in table_seasons(_DEFEND_TABLE):
         return _no_coverage("get_defensive_matchups", _DEFEND_TABLE, season)

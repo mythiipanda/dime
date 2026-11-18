@@ -26,7 +26,7 @@ def product_runs(thread: str, owner: str) -> dict:
 @tool(description='Read the data engine warehouse identity and semantic baseline.')
 def product_warehouse_identity() -> dict:
     from shared import store
-    from v2.semantic_baseline import SEMANTIC_BASELINE
+    from shared.semantic_baseline import SEMANTIC_BASELINE
     identity = store.warehouse_identity()
     return {"warehouse": {"warehouse_id": identity["warehouse_id"], "sha256": identity["warehouse_sha256"], "sha256_derivation": store.WAREHOUSE_SHA256_DERIVATION}, "semantic_baseline": dict(SEMANTIC_BASELINE)}
 

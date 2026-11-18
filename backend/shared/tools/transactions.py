@@ -88,7 +88,7 @@ def _requested_seasons(start: str, end: str) -> list[str]:
 
 
 def _no_coverage(start: str, end: str, txn_type: str, team: str) -> dict[str, Any]:
-    from v2.adapters.coverage import table_seasons
+    from shared.coverage import table_seasons
 
     available = sorted(table_seasons(_TABLE))
     span = start or end
@@ -169,7 +169,7 @@ def get_transactions(team: str = "", start: str = "", end: str = "",
                              "txn_type": canonical}}
     requested = _requested_seasons(want_start, want_end)
     if requested:
-        from v2.adapters.coverage import table_seasons
+        from shared.coverage import table_seasons
 
         available = set(table_seasons(_TABLE))
         if not any(season in available for season in requested):

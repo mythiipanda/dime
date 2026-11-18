@@ -14,9 +14,8 @@ pytestmark = pytest.mark.skipif(
 
 @pytest.fixture
 def runtime_awards(monkeypatch):
-    from shared import store
+    from shared import coverage, store
     from shared.tools import _core
-    from v2.adapters import coverage
 
     connect = store.connect
     monkeypatch.setattr(store, "DB_PATH", RUNTIME_WAREHOUSE)
@@ -153,12 +152,12 @@ def test_a_team_award_is_not_reported_as_a_tie(runtime_awards):
 
 def test_the_runtime_warehouse_answers_every_season_it_records(
         runtime_awards):
+    from shared.coverage import table_seasons
     from shared.tools.award_results import (
         TABLE,
         AwardResultError,
         _season_guard,
     )
-    from v2.adapters.coverage import table_seasons
 
     answerable = sorted(table_seasons(TABLE))
     assert len(answerable) == 47
@@ -172,33 +171,24 @@ def test_the_runtime_warehouse_answers_every_season_it_records(
 
 def test_the_coverage_registry_names_the_table_the_awards_tool_reads(
         runtime_awards):
-    from shared.tools.award_results import TABLE
-    from v2.adapters.capabilities import CAPABILITIES
-    from v2.adapters.coverage import (
+    from shared.coverage import (
         absent_tables_for_capability,
         declared_tables_for_capability,
         warehouse_tables,
     )
+    from shared.tools.award_results import TABLE
 
     assert declared_tables_for_capability("award_results", {}) == (TABLE,)
     assert absent_tables_for_capability("award_results", {}) == ()
     assert TABLE in warehouse_tables()
-    coverage_text = CAPABILITIES["award_results"].coverage
-    assert "Basketball-Reference" in coverage_text
-    assert "nba_api" not in coverage_text
 
-
-def test_a_wrong_subject_fails_loud_through_the_capability_end_to_end(
+def test_a_wrong_subject_fails_loud_through_the_tool_end_to_end(
         runtime_awards):
-    from v2.adapters import call_capability
-    from v2.adapters.core import AdapterError
-
-    with pytest.raises(AdapterError) as excinfo:
-        call_capability("award_results", {
-            "view": "player_awards", "award": "MVP", "season": "2024-25",
-            "player": "Ada Vega"})
-    message = str(excinfo.value)
-    assert "get_award_results" in message
+    result = _results(
+        view="player_awards", award="MVP", season="2024-25", player="Ada Vega")
+    assert result["ok"] is False
+    assert result["rows"] == {}
+    message = result["error"]
     assert "Ada Vega" in message
     assert "2024-25" in message
 
@@ -207,9 +197,9 @@ def test_a_missing_table_is_a_loud_absence_naming_the_table(runtime_awards,
                                                           monkeypatch):
     import duckdb
 
-    from shared import store
+    from shared import coverage, store
+    from shared.coverage import absent_tables_for_capability
     from shared.tools import award_results
-    from v2.adapters import coverage
 
     empty = tmp_path / "empty.duckdb"
     duckdb.connect(str(empty)).close()
@@ -223,8 +213,5 @@ def test_a_missing_table_is_a_loud_absence_naming_the_table(runtime_awards,
     assert result["rows"] == {}
     assert award_results.TABLE in result["error"]
     assert "missing" in result["error"]
-
-    from v2.adapters.coverage import absent_tables_for_capability
-
     assert absent_tables_for_capability("award_results", {}) == (
         award_results.TABLE,)

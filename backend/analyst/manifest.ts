@@ -19,10 +19,12 @@ function files(root: string): string[] {
 const loadedModules = Object.fromEntries(files(join(backendRoot, "analyst/dist")).filter(path => path.endsWith(".js")).map(path => [relative(join(backendRoot, "analyst"), path).split(sep).join("/"), sha(readFileSync(path))]));
 for (const name of ["package-lock.json", "python_tools.py", "direct_data.py", "dataset_engine.py", "http-assets/openapi.json", "http-assets/docs.html", "http-assets/redoc.html", "http-assets/oauth2-redirect.html"])
     loadedModules[name] = sha(readFileSync(join(backendRoot, "analyst", name)));
+for (const path of files(join(backendRoot, "analyst/tools")).filter(path => path.endsWith(".py")))
+    loadedModules[relative(join(backendRoot, "analyst"), path).split(sep).join("/")] = sha(readFileSync(path));
 export async function runtimeManifest(data: DirectData, env: NodeJS.ProcessEnv) {
     const modules = { ...loadedModules };
     const digest = createHash("sha256");
-    for (const root of ["v2", "analyst", "shared"]) {
+    for (const root of ["analyst", "shared"]) {
         for (const path of files(join(backendRoot, root)).filter(path => /\.(py|md|mjs|js|ts|json)$/.test(path))) {
             digest.update(relative(backendRoot, path).split(sep).join("/"));
             digest.update("\0");
@@ -39,15 +41,14 @@ export async function runtimeManifest(data: DirectData, env: NodeJS.ProcessEnv) 
             revision = "unknown";
         }
     }
-    const assets = { provider_schema_manifest: "v2/schema_snapshots/manifest.json", behavior_losses: "v2/schema_snapshots/behavior_losses.json", capability_manifest: "v2/capability_snapshots/manifest.json", capability_source: "v2/capability_snapshots/catalog.source.json", capability_compiled: "v2/capability_snapshots/catalog.compiled.json" };
     const identity = await data.call("product_warehouse_identity", {});
-    return deepFreeze({ revision, executable_sha256: digest.digest("hex"), module_sha256: modules, warehouse: identity.warehouse, semantic_baseline: identity.semantic_baseline, prompt_sha256: { pi_runtime: modules["dist/runtime.js"] }, typed_argument_assets: Object.fromEntries(Object.entries(assets).map(([name, path]) => [name, sha(readFileSync(join(backendRoot, path)))])) });
+    return deepFreeze({ revision, executable_sha256: digest.digest("hex"), module_sha256: modules, warehouse: identity.warehouse, semantic_baseline: identity.semantic_baseline, prompt_sha256: { pi_runtime: modules["dist/runtime.js"] } });
 }
 export function preflight(manifest: Awaited<ReturnType<typeof runtimeManifest>>, path: string | undefined) {
     if (!path)
         throw new Error("DIME_EXPECTED_ASSET_MANIFEST is required");
     const absolute = resolve(path);
-    if (["app", "v2", "analyst", "shared"].some(root => absolute.startsWith(join(backendRoot, root) + sep)))
+    if (["app", "analyst", "shared"].some(root => absolute.startsWith(join(backendRoot, root) + sep)))
         throw new Error("expected asset manifest must be external to executable roots");
     const expected: unknown = JSON.parse(readFileSync(absolute, "utf8"));
     if (typeof expected !== "object" || expected === null || !("revision" in expected))

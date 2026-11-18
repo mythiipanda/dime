@@ -113,9 +113,7 @@ def test_registered_in_tool_registry(seeded):
     assert "get_stint_timeline" in tools.TOOL_NAMES
 
 
-def test_capability_registered(seeded):
-    from v2.adapters import capabilities
+def test_analyst_catalogue_registered(seeded):
+    from analyst import python_tools
 
-    assert "stint_timeline" in capabilities.CAPABILITIES
-    assert any(c.name == "stint_timeline" for c in capabilities._LIST)
-    assert "stint_timeline" in capabilities.CAPABILITY_DESCRIPTIONS
+    assert "get_stint_timeline" in python_tools.catalogue()
