@@ -359,7 +359,7 @@ const BANNED_TOKENS = ["silver_", "warehouse", "evidence_id", "_season", "Eviden
 test("registry tools all have a display decision", () => {
   const toolsDir = join(process.cwd(), "..", "backend", "shared", "tools");
   const names = new Set<string>();
-  for (const file of readdirSync(toolsDir)) {
+  for (const file of readdirSync(toolsDir, { recursive: true, encoding: "utf8" })) {
     if (!file.endsWith(".py")) continue;
     const src = readFileSync(join(toolsDir, file), "utf8");
     for (const m of src.matchAll(/@tool\b[^\n]*\ndef ([a-z_0-9]+)/g)) names.add(m[1]);

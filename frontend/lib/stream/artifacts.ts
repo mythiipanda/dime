@@ -1,0 +1,399 @@
+import { mergeProvenance, parseProvenance, provenanceSource } from "./provenance";
+import type {
+  ChartArtifactPayload,
+  ChartSeriesPayload,
+  ChartTone,
+  CompareArtifactPayload,
+  DimeArtifact,
+  DimeProvenance,
+  ScatterArtifactPayload,
+  ShotChartArtifactPayload,
+  TableArtifactPayload,
+} from "./types";
+
+interface EvidenceRow {
+  metric: string;
+  subject: string;
+  value: number | null;
+  unit: string;
+  provenance: DimeProvenance;
+}
+
+const VALID_CHART_TONES: ReadonlySet<ChartTone> = new Set([
+  "ink",
+  "muted",
+  "accent",
+  "good",
+  "warn",
+]);
+
+function finiteNumber(raw: unknown): number | undefined {
+  return typeof raw === "number" && Number.isFinite(raw) ? raw : undefined;
+}
+
+function parseChartTone(raw: unknown): ChartTone | undefined {
+  return typeof raw === "string" && VALID_CHART_TONES.has(raw as ChartTone)
+    ? (raw as ChartTone)
+    : undefined;
+}
+
+function parseChartSeries(raw: unknown): ChartSeriesPayload[] {
+  const series: ChartSeriesPayload[] = [];
+  for (const line of Array.isArray(raw) ? raw : []) {
+    if (typeof line !== "object" || line === null) continue;
+    const record = line as Record<string, unknown>;
+    const name = typeof record.name === "string" ? record.name : "";
+    const tone = parseChartTone(record.tone);
+    const values = (Array.isArray(record.values) ? record.values : [])
+      .filter((value): value is number => finiteNumber(value) !== undefined);
+    if (name && values.length > 0) {
+      series.push({ name, values, ...(tone ? { tone } : {}) });
+    }
+  }
+  return series;
+}
+
+function resolveChart(
+  entry: Record<string, unknown>,
+  title: string,
+  provenance: DimeProvenance | undefined,
+): ChartArtifactPayload | null {
+  const series = parseChartSeries(entry.series);
+  if (series.length === 0) return null;
+  const unit = typeof entry.unit === "string" ? entry.unit : undefined;
+  const xLabels = Array.isArray(entry.xLabels)
+    ? entry.xLabels.map((lbl) => String(lbl ?? "")).filter(Boolean)
+    : undefined;
+  const footnote =
+    typeof entry.footnote === "string" && entry.footnote ? entry.footnote : undefined;
+  return {
+    kind: "chart",
+    title,
+    series,
+    source: provenanceSource(provenance),
+    provenance,
+    footnote,
+    ...(unit !== undefined ? { unit } : {}),
+    ...(xLabels && xLabels.length > 0 ? { xLabels } : {}),
+  };
+}
+
+function parseShotZone(
+  line: unknown,
+): { x: number; y: number; att: number; pct: number } | null {
+  if (typeof line !== "object" || line === null) return null;
+  const z = line as Record<string, unknown>;
+  const x = finiteNumber(z.x);
+  const y = finiteNumber(z.y);
+  const att = finiteNumber(z.att);
+  const pct = finiteNumber(z.pct);
+  if (x === undefined || y === undefined || att === undefined || pct === undefined) {
+    return null;
+  }
+  return { x, y, att, pct };
+}
+
+function resolveShotChart(
+  entry: Record<string, unknown>,
+  title: string,
+  provenance: DimeProvenance | undefined,
+): ShotChartArtifactPayload {
+  const zones: { x: number; y: number; att: number; pct: number }[] = [];
+  for (const line of Array.isArray(entry.zones) ? entry.zones : []) {
+    const parsed = parseShotZone(line);
+    if (parsed) zones.push(parsed);
+  }
+  return {
+    kind: "shot_chart",
+    title,
+    zones,
+    source: provenanceSource(provenance),
+    provenance,
+    footnote:
+      typeof entry.footnote === "string" && entry.footnote ? entry.footnote : undefined,
+  };
+}
+
+function parseTableColumns(
+  raw: unknown,
+): { key: string; label: string; numeric?: boolean }[] {
+  const columns: { key: string; label: string; numeric?: boolean }[] = [];
+  for (const col of Array.isArray(raw) ? raw : []) {
+    if (typeof col !== "object" || col === null) continue;
+    const c = col as Record<string, unknown>;
+    const key = typeof c.key === "string" ? c.key : "";
+    if (!key) continue;
+    const label = typeof c.label === "string" ? c.label : key;
+    const numeric = typeof c.numeric === "boolean" ? c.numeric : undefined;
+    columns.push({ key, label, ...(numeric !== undefined ? { numeric } : {}) });
+  }
+  return columns;
+}
+
+function tableCell(val: unknown): string | number {
+  return finiteNumber(val) !== undefined ? (val as number) : String(val ?? "");
+}
+
+function parseTableRows(
+  raw: unknown,
+  columns: { key: string; label: string; numeric?: boolean }[],
+): (string | number)[][] {
+  const rows: (string | number)[][] = [];
+  for (const row of Array.isArray(raw) ? raw : []) {
+    if (Array.isArray(row)) {
+      rows.push(row.map(tableCell));
+    } else if (typeof row === "object" && row !== null) {
+      const r = row as Record<string, unknown>;
+      rows.push(columns.map((col) => tableCell(r[col.key])));
+    }
+  }
+  return rows;
+}
+
+function resolveTable(
+  entry: Record<string, unknown>,
+  title: string,
+  provenance: DimeProvenance | undefined,
+): TableArtifactPayload | null {
+  const columns = parseTableColumns(entry.columns);
+  const rows = parseTableRows(entry.rows, columns);
+  if (columns.length === 0 || rows.length === 0) return null;
+  return {
+    kind: "table",
+    title,
+    columns,
+    rows,
+    source: provenanceSource(provenance),
+    provenance,
+  };
+}
+
+function resolveCompare(
+  entry: Record<string, unknown>,
+  title: string,
+  provenance: DimeProvenance | undefined,
+): CompareArtifactPayload | null {
+  const aName = typeof entry.aName === "string" ? entry.aName : "Player A";
+  const bName = typeof entry.bName === "string" ? entry.bName : "Player B";
+  const rows: { label: string; a: number; b: number }[] = [];
+  for (const line of Array.isArray(entry.rows) ? entry.rows : []) {
+    if (typeof line !== "object" || line === null) continue;
+    const r = line as Record<string, unknown>;
+    const label = typeof r.label === "string" ? r.label : "";
+    if (!label) continue;
+    rows.push({
+      label,
+      a: finiteNumber(r.a) ?? 0,
+      b: finiteNumber(r.b) ?? 0,
+    });
+  }
+  if (rows.length === 0) return null;
+  return {
+    kind: "compare",
+    title,
+    aName,
+    bName,
+    rows,
+    source: provenanceSource(provenance),
+    provenance,
+  };
+}
+
+function parseScatterPoint(
+  line: unknown,
+): { label: string; x: number; y: number; highlight?: boolean } | null {
+  if (typeof line !== "object" || line === null) return null;
+  const p = line as Record<string, unknown>;
+  const label = typeof p.label === "string" ? p.label : "";
+  const x = finiteNumber(p.x);
+  const y = finiteNumber(p.y);
+  if (!label || x === undefined || y === undefined) return null;
+  const highlight = typeof p.highlight === "boolean" ? p.highlight : undefined;
+  return { label, x, y, ...(highlight !== undefined ? { highlight } : {}) };
+}
+
+function resolveScatter(
+  entry: Record<string, unknown>,
+  title: string,
+  provenance: DimeProvenance | undefined,
+): ScatterArtifactPayload | null {
+  const xLabel = typeof entry.xLabel === "string" ? entry.xLabel : "";
+  const yLabel = typeof entry.yLabel === "string" ? entry.yLabel : "";
+  const xMid = finiteNumber(entry.xMid);
+  const yMid = finiteNumber(entry.yMid);
+  const footnote =
+    typeof entry.footnote === "string" && entry.footnote ? entry.footnote : undefined;
+  const points: { label: string; x: number; y: number; highlight?: boolean }[] = [];
+  for (const line of Array.isArray(entry.points) ? entry.points : []) {
+    const parsed = parseScatterPoint(line);
+    if (parsed) points.push(parsed);
+  }
+  if (points.length === 0) return null;
+  return {
+    kind: "scatter",
+    title,
+    xLabel,
+    yLabel,
+    points,
+    ...(xMid !== undefined ? { xMid } : {}),
+    ...(yMid !== undefined ? { yMid } : {}),
+    ...(footnote ? { footnote } : {}),
+    source: provenanceSource(provenance),
+    provenance,
+  };
+}
+
+type ArtifactResolver = (
+  entry: Record<string, unknown>,
+  title: string,
+  provenance: DimeProvenance | undefined,
+) => DimeArtifact | null;
+
+const ARTIFACT_RESOLVERS: Record<string, ArtifactResolver> = {
+  chart: resolveChart,
+  shot_chart: resolveShotChart,
+  table: resolveTable,
+  compare: resolveCompare,
+  scatter: resolveScatter,
+};
+
+export function asResolvedArtifacts(raw: unknown): DimeArtifact[] {
+  if (!Array.isArray(raw)) return [];
+  const artifacts: DimeArtifact[] = [];
+  for (const item of raw) {
+    if (typeof item !== "object" || item === null) continue;
+    const entry = item as Record<string, unknown>;
+    const kind = typeof entry.kind === "string" ? entry.kind : "";
+    const resolver = ARTIFACT_RESOLVERS[kind];
+    const title = typeof entry.title === "string" ? entry.title : "";
+    if (!resolver || !title) continue;
+    const provenance =
+      entry.provenance === undefined || entry.provenance === null
+        ? undefined
+        : parseProvenance(entry.provenance);
+    const resolved = resolver(entry, title, provenance);
+    if (resolved) artifacts.push(resolved);
+  }
+  return artifacts;
+}
+
+function parseEvidenceValue(raw: unknown): number | null {
+  const num = finiteNumber(raw);
+  if (num !== undefined) return num;
+  if (typeof raw === "string" && raw.trim() !== "") {
+    const parsed = Number(raw);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+  return null;
+}
+
+function asEvidenceRows(tables: unknown): EvidenceRow[] {
+  if (!Array.isArray(tables)) return [];
+  const rows: EvidenceRow[] = [];
+  for (const item of tables) {
+    if (typeof item !== "object" || item === null) continue;
+    const row = item as Record<string, unknown>;
+    const metric =
+      typeof row.display_name === "string" && row.display_name
+        ? row.display_name
+        : typeof row.output_id === "string"
+          ? row.output_id
+          : "";
+    if (!metric) continue;
+    const subject =
+      typeof row.subject_display_name === "string" && row.subject_display_name
+        ? row.subject_display_name
+        : "League";
+    const unit = typeof row.unit === "string" && row.unit !== "unitless" ? row.unit : "";
+    rows.push({
+      metric,
+      subject,
+      value: parseEvidenceValue(row.value),
+      unit,
+      provenance: parseProvenance(row.provenance),
+    });
+  }
+  return rows;
+}
+
+function formatMetricValue(value: number): string | number {
+  return Number.isInteger(value) ? value : Math.round(value * 10) / 10;
+}
+
+function evidenceProvenance(rows: EvidenceRow[]): DimeProvenance {
+  const summary = mergeProvenance(rows.map((row) => row.provenance));
+  if (rows.length < 2) return summary;
+  return {
+    ...summary,
+    evidence: rows.map((row) => ({
+      label: `${row.subject} \u00b7 ${row.metric}`,
+      provenance: row.provenance,
+    })),
+  };
+}
+
+export function deriveArtifacts(tables: unknown): DimeArtifact[] {
+  const rows = asEvidenceRows(tables);
+  if (!rows.length) return [];
+  const artifacts: DimeArtifact[] = [];
+  const byMetric = new Map<string, EvidenceRow[]>();
+  for (const row of rows) {
+    const group = byMetric.get(row.metric) ?? [];
+    group.push(row);
+    byMetric.set(row.metric, group);
+  }
+  const subjects = [...new Set(rows.map((r) => r.subject))];
+  const sharedMetrics = [...byMetric.entries()].filter(
+    ([, group]) =>
+      subjects.length === 2 &&
+      group.length === 2 &&
+      group[0].subject !== group[1].subject &&
+      group.every((r) => r.value !== null),
+  );
+  if (subjects.length === 2 && sharedMetrics.length > 0) {
+    const [aName, bName] = subjects;
+    const compared = sharedMetrics.flatMap(([, group]) => group);
+    const provenance = evidenceProvenance(compared);
+    artifacts.push({
+      kind: "compare",
+      title: "Head-to-head",
+      source: provenanceSource(provenance),
+      provenance,
+      aName,
+      bName,
+      rows: sharedMetrics.map(([metric, group]) => {
+        const aRow = group.find((r) => r.subject === aName) ?? group[0];
+        const bRow = group.find((r) => r.subject === bName) ?? group[1];
+        return {
+          label: metric,
+          a: aRow.value as number,
+          b: bRow.value as number,
+        };
+      }),
+    });
+  }
+  const compared = new Set(sharedMetrics.map(([metric]) => metric));
+  const tableRows = rows.filter((r) => !compared.has(r.metric));
+  if (tableRows.length > 0) {
+    const provenance = evidenceProvenance(tableRows);
+    artifacts.push({
+      kind: "table",
+      title: "Evidence",
+      source: provenanceSource(provenance),
+      provenance,
+      columns: [
+        { key: "metric", label: "Metric" },
+        { key: "subject", label: "Subject" },
+        { key: "value", label: "Value", numeric: true },
+        { key: "unit", label: "Unit" },
+      ],
+      rows: tableRows.map((r) => [
+        r.metric,
+        r.subject,
+        r.value === null ? "\u2014" : formatMetricValue(r.value),
+        r.unit,
+      ]),
+    });
+  }
+  return artifacts;
+}
