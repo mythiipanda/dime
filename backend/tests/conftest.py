@@ -7,7 +7,5 @@ def canonical_warehouse():
 
     original = store.DB_PATH
     store.DB_PATH = store.CANONICAL_DB_PATH
-    store.warehouse_identity_cache_clear()
     yield store.DB_PATH
     store.DB_PATH = original
-    store.warehouse_identity_cache_clear()
