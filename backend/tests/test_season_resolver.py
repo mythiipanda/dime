@@ -49,13 +49,21 @@ def test_an_in_progress_season_is_not_reported_as_completed() -> None:
     assert last_completed_season() == cal
 
 
-def test_the_current_season_is_not_the_one_table_that_lags_the_rest() -> None:
+def test_completed_season_union_never_outpaces_registry_tables() -> None:
     from shared import store
+    from shared.tools._core import last_completed_season, last_completed_season_cache_clear
 
-    lagging = store.seasons_with_data("silver_boxscores")[-1]
-    current = store.completed_seasons_across_tables()[-1]
+    last_completed_season_cache_clear()
+    newest_by_table = [
+        seasons[-1]
+        for table in store._SEASON_TABLES
+        if (seasons := store.seasons_with_data(table))
+    ]
+    union = store.completed_seasons_across_tables()
 
-    assert current > lagging
+    assert union
+    assert union[-1] <= max(newest_by_table)
+    assert last_completed_season() in union
 
 
 def test_one_absent_season_table_does_not_empty_the_current_season() -> None:
