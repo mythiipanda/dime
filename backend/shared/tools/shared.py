@@ -8,6 +8,8 @@ import tempfile as _tempfile
 from typing import Any
 from langchain_core.tools import tool
 
+from ..store.macros import NAME_KEY_MACRO
+
 @tool(description='Resolve a player or team name to canonical ids. Call before any id tool.\n\nScored general matcher from _core plus Wikipedia suggestions\nwhen nothing in static tables scores above 0.5.')
 def resolve_entity(query: str) -> dict[str, Any]:
     try:
@@ -94,7 +96,7 @@ def search_nba(query: str) -> dict[str, Any]:
     except Exception as exc:
         return {"tool": "search_nba", "ok": False, "error": str(exc)[:200]}
 
-_BOOTSTRAP_SCRIPT = """
+_BOOTSTRAP_SCRIPT = f"NAME_KEY_MACRO = {NAME_KEY_MACRO!r}\n" + """
 import datetime
 import decimal
 import io
@@ -185,6 +187,7 @@ def _main():
     try:
         if db_path:
             con = duckdb.connect(db_path, read_only=True)
+            con.execute(NAME_KEY_MACRO)
     except Exception as exc:
         result_path.write_text(json.dumps({
             "ok": False,

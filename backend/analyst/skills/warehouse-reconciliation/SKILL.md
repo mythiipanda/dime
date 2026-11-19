@@ -40,3 +40,11 @@ In player-season tables, a traded player often has one combined row (`TEAM_ABBRE
 - When an audit finds duplicate rows by the event key, build one deduplicated CTE (`QUALIFY row_number() OVER (PARTITION BY <key> ORDER BY _fetched_at DESC) = 1`) and run every later aggregate on that CTE, never on the raw table.
 - Reconcile before reporting: the deduplicated attempt total must equal the unique-key count from the audit. A total that still equals the raw row count means the aggregate read duplicated rows.
 - Explain what duplication does to each metric: uniform k-fold duplication multiplies counts (FGA, FGM, possessions) by k but leaves ratios (FG%, eFG%, per-possession rates) unchanged, because numerator and denominator scale together. Non-uniform duplication biases ratios too.
+
+## 6. Joining Tables on Player Names
+
+Name-keyed tables spell the same player differently: accents (`Nikola Jokić` vs `Nikola Jokic`), punctuation (`A.J. Green` vs `AJ Green`), and suffixes (`Larry Nance Jr.` vs `Larry Nance Jr`). A raw `ON a.PLAYER_NAME = b.name` join silently drops those players.
+- Join on `name_key(a.PLAYER_NAME) = name_key(b.name)`. `name_key` is built into every `sql_exec` and `run_python` connection; it strips accents, punctuation, and generational suffixes, and returns NULL for rows whose name holds no letters.
+- Prefer `player_id` joins whenever both tables carry an ID.
+- Before ranking or aggregating, count unmatched rows on each side with an anti-join and report the count and the names.
+- Compute team-level totals (payroll, wins) from each source table on its own, then join teams on the team key. Never derive a team total from a player-level join, because every unmatched player shrinks that team's total and can drop the team entirely.
