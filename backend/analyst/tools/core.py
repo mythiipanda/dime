@@ -160,6 +160,13 @@ def register() -> dict[str, Any]:
             "returned_table_count": len(selected),
             "negative_claim_scope": "returned declared tables and columns only",
         }
+        try:
+            from shared.tools.data_dictionary import dictionary_for_tables
+            dictionary = dictionary_for_tables(selected)
+        except Exception:
+            dictionary = None
+        if dictionary is not None:
+            annotated["data_dictionary"] = dictionary
         annotated["tool"] = "warehouse_schema"
         annotated["ok"] = True
         return sanitize_for_wire(annotated)
