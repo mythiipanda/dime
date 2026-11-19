@@ -4,6 +4,7 @@ import unicodedata as _ud
 
 from langchain_core.tools import tool
 
+from ...contracts import contract_details, match_record, normalize_name, salary_records
 from .._core import coerce_team_id
 from ._helpers import _owned_connection, _pkg, _warehouse_tables
 from .cba_cap import _salary_vintage
@@ -129,25 +130,26 @@ _CONTRACT_WEIGHTS = {"PTS": 1.0, "REB": 1.2, "AST": 1.5,
 
 
 def _contract_norm(s: object) -> str:
-    return "".join(
-        c for c in _ud.normalize("NFKD", str(s or ""))
-        if not _ud.combining(c)
-    ).strip().lower()
+    return normalize_name(s)
 
 
 def _contract_tables(con) -> tuple[bool, set[str]]:
     tables = _warehouse_tables(con)
-    return ({"silver_cap_players", "silver_leaders_pts"} <= tables,
+    if 'silver_leaders_pts' not in tables:
+        return False, set()
+    return (bool({'silver_cap_players', 'silver_salaries'} & tables),
             {r[1] for r in
              con.execute("PRAGMA table_info(silver_leaders_pts)").fetchall()})
 
 
 def _contract_fetched(con) -> tuple[object, object]:
     try:
+        tables = _warehouse_tables(con)
+        cap_table = 'silver_salaries' if 'silver_salaries' in tables else 'silver_cap_players'
         return (con.execute(
             "SELECT MAX(_fetched_at) FROM silver_leaders_pts").fetchall()[0][0],
             con.execute(
-                "SELECT MAX(_fetched_at) FROM silver_cap_players").fetchall()[0][0])
+                f"SELECT MAX(_fetched_at) FROM {cap_table}").fetchall()[0][0])
     except Exception:
         return None, None
 
@@ -156,11 +158,11 @@ def _contract_read(con, season: str):
     ready, have = _contract_tables(con)
     if not ready:
         return "empty", None, None, None, None
+    pid = 'PLAYER_ID' if 'PLAYER_ID' in have else 'NULL'
     prod = con.execute(
-        """SELECT PLAYER, TEAM, GP, PTS, REB, AST, STL, BLK, TOV
+        f"""SELECT PLAYER, TEAM, GP, PTS, REB, AST, STL, BLK, TOV, {pid}
         FROM silver_leaders_pts WHERE _season = ?""", [season]).fetchall()
-    cap = con.execute(
-        "SELECT player, team, salary FROM silver_cap_players").fetchall()
+    cap = salary_records(con)
     prod_date, cap_date = _contract_fetched(con)
     return None, have, prod, cap, (prod_date, cap_date)
 
@@ -168,17 +170,21 @@ def _contract_read(con, season: str):
 def _contract_fitted(cap: list, by_name: dict, min_gp: int,
                      use_w: dict) -> list[dict[str, Any]]:
     fitted = []
-    for player, team, salary in cap:
-        r = by_name.get(_contract_norm(player))
-        if r is None:
+    production = [{'PLAYER_NAME': r[0], 'TEAM': r[1], 'PLAYER_ID': r[9], 'production': r}
+                  for r in by_name.values()]
+    for contract in cap:
+        player, team, salary = contract['PLAYER_NAME'], contract['TEAM'], contract['salary']
+        match = match_record(production, player, contract.get('PLAYER_ID'), team)
+        if match is None:
             continue
-        _, lteam, gp, pts, reb, ast, stl, blk, tov = r
+        _, lteam, gp, pts, reb, ast, stl, blk, tov = match['production'][:9]
         gp = gp or 0
         if gp < min_gp or gp <= 0:
             continue
         vals = {"PTS": pts or 0, "REB": reb or 0, "AST": ast or 0,
                 "STL": stl or 0, "BLK": blk or 0, "TOV": tov or 0}
         fitted.append({
+            **contract_details(contract),
             "PLAYER": player, "TEAM": team or lteam,
             "SALARY": salary or 0, "GP": gp,
             "SCORE": sum(vals[c] / gp * use_w[c] for c in use_w)})
@@ -258,9 +264,10 @@ def get_contract_value(season: str | None = None, min_gp: int = 20,
     missing = [c for c in _CONTRACT_WEIGHTS if c not in have]
     use_w = {c: (0.0 if c in missing else w)
              for c, w in _CONTRACT_WEIGHTS.items()}
-    by_name: dict[str, tuple] = {}
+    by_name: dict[tuple, tuple] = {}
     for r in prod:
-        by_name.setdefault(_contract_norm(r[0]), r)
+        key = ('id', r[9]) if r[9] is not None else ('name', _contract_norm(r[0]))
+        by_name.setdefault(key, r)
     fitted = _contract_fitted(cap, by_name, min_gp, use_w)
     if len(fitted) < 2:
         return {"tool": "get_contract_value", "ok": False,

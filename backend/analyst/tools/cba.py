@@ -63,6 +63,10 @@ def _player_value_row(side_key: str, side_team: str, p: dict[str, Any]) -> dict[
         "value_m": val_m,
         "salary_m": salary_m,
         "residual_m": p.get("residual_m"),
+        **{key: p.get(key) for key in (
+            'player_id', 'bref_slug', 'remaining_guaranteed',
+            'contract_schedule_available', 'years_remaining', 'salary_by_season',
+            'future_salaries', 'option_years', 'years_remaining_basis')},
     }
 
 

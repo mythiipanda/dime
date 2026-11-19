@@ -4,6 +4,7 @@ import unicodedata as _ud
 
 from langchain_core.tools import tool
 
+from ...contracts import contract_details, match_record, normalize_name, salary_records
 from ._helpers import _owned_connection, _pkg, _warehouse_tables
 from .cba_cap import (
     CAP,
@@ -80,10 +81,10 @@ def _trade_guard(con, season: str, team_a: str, players_a: str, team_b: str,
     return None
 
 
-def _infer_trade_side(plist: str, con: object) -> str:
+def _infer_trade_side(plist: str, con: object, season: str | None = None) -> str:
     teams: set[str] = set()
     for nm in [x.strip() for x in str(plist).split(",") if x.strip()]:
-        hit = _locate_player_team(nm, con)
+        hit = _locate_player_team(nm, con, season)
         if hit is None:
             return ""
         teams.add(str(hit[1]))
@@ -182,8 +183,8 @@ def get_trade_check(
 
     if (not team_a or not team_b) and players_a and players_b:
         with _owned_connection(None) as infer_con:
-            team_a = team_a or _infer_trade_side(players_a, infer_con)
-            team_b = team_b or _infer_trade_side(players_b, infer_con)
+            team_a = team_a or _infer_trade_side(players_a, infer_con, season)
+            team_b = team_b or _infer_trade_side(players_b, infer_con, season)
     if not team_a or not team_b:
         return {"tool": "get_trade_check", "ok": False,
                 "error": "two teams needed"}
@@ -300,12 +301,14 @@ class _TradeWarehouse:
 
 def _trade_leader_rows(con, prod_season: str) -> dict[str, dict]:
     rows: dict[str, dict] = {}
+    columns = {r[1] for r in con.execute('PRAGMA table_info(silver_leaders_pts)').fetchall()}
+    pid = 'PLAYER_ID' if 'PLAYER_ID' in columns else 'NULL'
     for r in con.execute(
-            "SELECT PLAYER, TEAM, GP, PTS, REB, AST, STL, BLK, TOV,"
-            " FG3M, FG3_PCT FROM silver_leaders_pts WHERE _season = ?",
+            f"SELECT PLAYER, TEAM, GP, PTS, REB, AST, STL, BLK, TOV,"
+            f" FG3M, FG3_PCT, {pid} FROM silver_leaders_pts WHERE _season = ?",
             [prod_season]).fetchall():
         rows.setdefault(_trade_value_norm(r[0]), {
-            "name": r[0], "team": r[1], "gp": r[2] or 0,
+            "name": r[0], "team": r[1], "gp": r[2] or 0, 'PLAYER_ID': r[11],
             "tot": {"PTS": r[3] or 0, "REB": r[4] or 0, "AST": r[5] or 0,
                     "STL": r[6] or 0, "BLK": r[7] or 0, "TOV": r[8] or 0},
             "fg3m": r[9] or 0, "fg3_pct": r[10]})
@@ -356,8 +359,28 @@ def _trade_season_scoped(table: str, name_col: str, val_col: str,
 
 
 def _trade_sheet_salaries(con, warehouse: _TradeWarehouse,
-                          sal_season: str) -> dict[str, int]:
+                          sal_season: str, leaders: dict | None = None) -> dict[str, int]:
     salaries: dict[str, int] = {}
+    records = salary_records(con, sal_season, include_fallback=True)
+    matched = set()
+    for key, lead in (leaders or {}).items():
+        contract = match_record(records, lead['name'], lead.get('PLAYER_ID'), lead['team'])
+        if contract is not None:
+            matched.add(id(contract))
+            lead['contract'] = contract
+            if contract['salary'] is not None:
+                salaries[key] = int(contract['salary'])
+    if leaders is not None:
+        for contract in records:
+            key = _trade_value_norm(contract['PLAYER_NAME'])
+            if id(contract) in matched or key in leaders:
+                continue
+            leaders[key] = {'name': contract['PLAYER_NAME'], 'team': contract['TEAM'],
+                            'PLAYER_ID': contract.get('PLAYER_ID'), 'gp': 0,
+                            'tot': {}, 'fg3m': 0, 'contract': contract}
+            if contract['salary'] is not None:
+                salaries[key] = int(contract['salary'])
+        return salaries
     for table, name_col, val_col in (
             ("silver_salaries", "PLAYER_NAME", None),
             ("silver_cap_players", "player", "salary")):
@@ -441,9 +464,13 @@ def _trade_value_player(display: str, leaders: dict, adv: dict,
                         gaps: list[str]) -> dict[str, Any]:
     key = _trade_value_norm(display)
     lead = leaders.get(key)
+    matches = [(k, v) for k, v in leaders.items() if normalize_name(v.get('contract', {}).get('PLAYER_NAME')) == normalize_name(display)]
+    if len(matches) == 1:
+        key, lead = matches[0]
     advanced = adv.get(key, {})
     gp = lead["gp"] if lead else 0
     out: dict[str, Any] = {
+        **contract_details(lead.get('contract') if lead else None),
         "name": display, "salary_26_27": salaries.get(key),
         "age": advanced.get("age"), "gp": gp,
         "ppg": round(lead["tot"]["PTS"] / gp, 1) if lead and gp else 0.0,
@@ -705,7 +732,7 @@ def get_trade_value(
         use_w = _trade_leader_weights(warehouse)
         leaders = _trade_leader_rows(con, prod_season)
         adv = _trade_adv_rows(con, warehouse, prod_season)
-        salaries = _trade_sheet_salaries(con, warehouse, sal_season)
+        salaries = _trade_sheet_salaries(con, warehouse, sal_season, leaders)
         if not salaries:
             warehouse.note("no 2026-27 salary rows: residuals unavailable")
         ratings = _trade_rating_rows(con, warehouse, prod_season)
