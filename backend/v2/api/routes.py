@@ -27,9 +27,11 @@ from v2.api.sse import encode_raw, with_heartbeat
 from shared.config import runtime_v2_mode
 from shared.rate_limit import check_sql_rerun, client_ip
 from v2.boards.service import router as boards_router
+from v2.notebooks.routes import router as notebooks_router
 
 router = APIRouter()
 router.include_router(boards_router)
+router.include_router(notebooks_router)
 _BACKEND = Path(__file__).resolve().parents[2]
 _PROJECTS = ProjectStore(
     os.environ.get("DIME_PROJECT_STORE", str(_BACKEND / "data" / "v2-projects.sqlite3"))

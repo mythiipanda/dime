@@ -222,13 +222,15 @@ def _check(sql: str, allowed: set[str]) -> str:
 
 
 def _run_with_timeout(con, sql: str, timeout_s: float,
-                      max_rows: int) -> tuple[list[str], list[tuple], bool]:
+                      max_rows: int, *, params: dict | None = None,
+                      typed: bool = False) -> tuple[list, list[tuple], bool]:
     out: dict = {}
 
     def _run() -> None:
         try:
-            rel = con.execute(sql)
-            cols = [d[0] for d in con.description]
+            rel = con.execute(sql, params) if params is not None else con.execute(sql)
+            cols = ([{"name": d[0], "type": str(d[1])} for d in con.description]
+                    if typed else [d[0] for d in con.description])
             rows = rel.fetchmany(max_rows + 1)
             out["result"] = (cols, rows, len(rows) > max_rows)
         except Exception as exc:
@@ -239,7 +241,8 @@ def _run_with_timeout(con, sql: str, timeout_s: float,
     th.join(timeout_s)
     if th.is_alive():
         try:
-            con.close()
+            con.interrupt()
+            th.join(1)
         except Exception:
             pass
         raise TimeoutError(f"query exceeded {timeout_s:g}s")
