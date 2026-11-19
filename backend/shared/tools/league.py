@@ -2706,19 +2706,25 @@ def _payroll(team: str, con: object = None) -> tuple[int, list[dict]]:
         con = _store.connect()
     try:
         tables = {r[0] for r in con.execute("SHOW TABLES").fetchall()}
+        vintage, _, _ = _salary_vintage(con)
+        def vintage_filter(table):
+            cols = {r[1] for r in con.execute(f"PRAGMA table_info({table})").fetchall()}
+            return (" AND _season = ?", [vintage]) if vintage and "_season" in cols else ("", [])
         if "silver_salaries" in tables:
+            where, params = vintage_filter("silver_salaries")
             rows = con.execute(
                 """SELECT PLAYER_NAME, SALARY_2025_26 FROM silver_salaries
-                WHERE TEAM = ?""",
-                [team.upper()],
+                WHERE TEAM = ?""" + where,
+                [team.upper(), *params],
             ).fetchall()
             if rows:
                 players = [{"player": r[0], "salary": r[1]} for r in rows]
                 return sum(r[1] or 0 for r in rows), players
+        where, params = vintage_filter("silver_cap_players")
         rows = con.execute(
             """SELECT player, salary FROM silver_cap_players
-            WHERE team = ?""",
-            [team.upper()],
+            WHERE team = ?""" + where,
+            [team.upper(), *params],
         ).fetchall()
     finally:
         if own:
@@ -2751,15 +2757,21 @@ def _salary_vintage(con: object = None) -> tuple[str, int, str | None]:
         con = _store.connect()
     try:
         tables = {r[0] for r in con.execute("SHOW TABLES").fetchall()}
-        if "silver_salaries" not in tables:
-            return "", 0, None
-        row = con.execute(
-            "SELECT _season, COUNT(*), MAX(_fetched_at) FROM silver_salaries "
-            "GROUP BY _season ORDER BY COUNT(*) DESC LIMIT 1"
-        ).fetchone()
-        if not row:
-            return "", 0, None
-        return str(row[0] or ""), int(row[1] or 0), row[2]
+        for table in ("silver_salaries", "silver_cap_players"):
+            if table not in tables:
+                continue
+            cols = {r[1] for r in con.execute(f"PRAGMA table_info({table})").fetchall()}
+            if "_season" not in cols:
+                continue
+            fetched = "MAX(_fetched_at)" if "_fetched_at" in cols else "NULL"
+            row = con.execute(
+                f"SELECT _season, COUNT(*), {fetched} FROM {table} "
+                "WHERE _season IS NOT NULL AND _season <> '' "
+                "GROUP BY _season ORDER BY _season DESC LIMIT 1"
+            ).fetchone()
+            if row:
+                return str(row[0]), int(row[1]), row[2]
+        return "", 0, None
     except Exception:
         return "", 0, None
     finally:
@@ -2979,9 +2991,11 @@ def get_trade_check(
             if not supplied_team:
                 continue
             for player in [x.strip() for x in str(players).split(",") if x.strip()]:
+                cols = {r[1] for r in guard_con.execute("PRAGMA table_info(silver_salaries)").fetchall()}
+                where, params = (" AND _season = ?", [salary_season]) if salary_season and "_season" in cols else ("", [])
                 row = guard_con.execute(
-                    "SELECT TEAM FROM silver_salaries WHERE lower(PLAYER_NAME) = lower(?) LIMIT 1",
-                    [player],
+                    "SELECT TEAM FROM silver_salaries WHERE lower(PLAYER_NAME) = lower(?)" + where + " LIMIT 1",
+                    [player, *params],
                 ).fetchone()
                 if row and str(row[0] or "").upper() != supplied_team.upper():
                     return {"tool": "get_trade_check", "ok": False,
