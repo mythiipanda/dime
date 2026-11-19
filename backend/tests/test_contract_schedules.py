@@ -141,6 +141,21 @@ def test_cap_legacy_snapshot_compat_and_explicitly_unavailable(warehouse):
     assert player['contract_schedule_available'] is False
 
 
+def test_trade_team_inference_with_multiple_labeled_salary_columns(warehouse):
+    from shared.tools.league.trade_value import _infer_trade_side
+
+    con = duckdb.connect(str(warehouse))
+    try:
+        con.execute('CREATE TABLE silver_salaries (PLAYER_NAME VARCHAR, TEAM VARCHAR, SALARY_2026_27 BIGINT, SALARY_2027_28 BIGINT, _season VARCHAR)')
+        con.execute("INSERT INTO silver_salaries VALUES ('Inference Example', 'BOS', 125, 150, '2026-27')")
+        assert league._payroll('BOS', con, '2026-27')[0] == 125
+        assert _infer_trade_side('Inference Example', con) == 'BOS'
+        assert _infer_trade_side('Inference Example', con, '2026-27') == 'BOS'
+        assert league._locate_player_team('Inference Example', con, '2026-27')[2] == 125
+    finally:
+        con.close()
+
+
 def test_payroll_empty_primary_uses_normalized_vendor_salary(warehouse):
     con = duckdb.connect(str(warehouse))
     try:

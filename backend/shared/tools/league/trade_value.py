@@ -81,10 +81,10 @@ def _trade_guard(con, season: str, team_a: str, players_a: str, team_b: str,
     return None
 
 
-def _infer_trade_side(plist: str, con: object) -> str:
+def _infer_trade_side(plist: str, con: object, season: str | None = None) -> str:
     teams: set[str] = set()
     for nm in [x.strip() for x in str(plist).split(",") if x.strip()]:
-        hit = _locate_player_team(nm, con)
+        hit = _locate_player_team(nm, con, season)
         if hit is None:
             return ""
         teams.add(str(hit[1]))
@@ -183,8 +183,8 @@ def get_trade_check(
 
     if (not team_a or not team_b) and players_a and players_b:
         with _owned_connection(None) as infer_con:
-            team_a = team_a or _infer_trade_side(players_a, infer_con)
-            team_b = team_b or _infer_trade_side(players_b, infer_con)
+            team_a = team_a or _infer_trade_side(players_a, infer_con, season)
+            team_b = team_b or _infer_trade_side(players_b, infer_con, season)
     if not team_a or not team_b:
         return {"tool": "get_trade_check", "ok": False,
                 "error": "two teams needed"}

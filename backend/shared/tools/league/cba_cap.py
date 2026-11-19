@@ -1,4 +1,5 @@
 import difflib as _dl
+import re
 from typing import Any
 
 from langchain_core.tools import tool
@@ -107,11 +108,15 @@ def _first_name_compatible(want: str, cand: str) -> bool:
     return _dl.SequenceMatcher(None, a, b).ratio() >= 0.9
 
 
-def _salary_sheet_rows(con: object) -> list | None:
+def _salary_sheet_rows(con: object, season: str | None = None) -> list | None:
     try:
         if "silver_salaries" not in _warehouse_tables(con):
             return None
-        return [(r['PLAYER_NAME'], r['salary'], r['TEAM']) for r in salary_records(con)]
+        columns = {r[1] for r in con.execute('PRAGMA table_info(silver_salaries)').fetchall()}
+        if season is None:
+            labeled = sorted(c for c in columns if re.fullmatch(r'SALARY_\d{4}_\d{2}', c))
+            season = labeled[-1][7:].replace('_', '-') if labeled else None
+        return [(r['PLAYER_NAME'], r['salary'], r['TEAM']) for r in salary_records(con, salary_season=season)]
     except Exception:
         return None
 
@@ -170,11 +175,11 @@ def _first_token(text: str) -> str:
     return parts[0] if parts else ""
 
 
-def _locate_player_team(name: str, con: object) -> tuple[str, str, int] | None:
+def _locate_player_team(name: str, con: object, season: str | None = None) -> tuple[str, str, int] | None:
     w = str(name or "").strip().lower()
     if not w:
         return None
-    rows = _salary_sheet_rows(con)
+    rows = _salary_sheet_rows(con, season)
     if rows is None:
         return None
     exact, subs, loose = _name_match_tiers(rows, w)
