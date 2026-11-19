@@ -245,6 +245,16 @@ def test_display_formatter(value,unit,expected):
     assert format_value(value,unit)==expected
 
 
+def test_narrative_seasons_and_iso_dates_are_not_statistical_claims():
+    packet=example_packet()
+    claims=[Claim(md="In 2025-26, scores 33.46 points (as of 2026-01-01).",cites=["c1"]),
+            Claim(md="In 2025-26, scores 99.9 points.",cites=["c1"]),
+            Claim(md="Ranks 99th in 2025-26.",cites=["c1"])]
+    accepted,rejected=validate_narrative(packet,Narrative(summary=claims))
+    assert accepted.summary==claims[:1]
+    assert len(rejected)==2 and all(r["reason"].startswith("unsupported_number") for r in rejected)
+
+
 def test_polished_deep_dive_display_summaries_and_impact(real):
     packet=Packet.model_validate(request().json())
     for s in packet.sections:

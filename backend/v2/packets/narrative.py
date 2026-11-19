@@ -7,6 +7,7 @@ from .models import Chart, Kpis, Narrative, Packet, Table
 
 
 NUMBER = re.compile(r"(?<![\w.])[-+−]?(?:\d[\d,]*(?:\.\d+)?|\.\d+)(?:[eE][-+]?\d+)?")
+CALENDAR = re.compile(r"(?<![\w.])\d{4}-\d{2}(?:-\d{2})?(?![\w-]|\.\d)")
 
 
 def cited_values(packet: Packet) -> dict[str, list]:
@@ -63,6 +64,7 @@ def validate_narrative(packet: Packet, narrative: Narrative) -> tuple[Narrative,
             else:
                 available = _numbers([values[cid] for cid in claim.cites])
                 md = re.sub(r"\[\^[^\]]+\]", "", claim.md)
+                md = CALENDAR.sub("", md)
                 for token in NUMBER.findall(md):
                     try:
                         decimal = Decimal(token.replace(",", "").replace("−", "-"))
