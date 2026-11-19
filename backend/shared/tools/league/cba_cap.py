@@ -1,5 +1,4 @@
 import difflib as _dl
-import re
 from typing import Any
 
 from langchain_core.tools import tool
@@ -113,9 +112,8 @@ def _salary_sheet_rows(con: object, season: str | None = None) -> list | None:
         if "silver_salaries" not in _warehouse_tables(con):
             return None
         columns = {r[1] for r in con.execute('PRAGMA table_info(silver_salaries)').fetchall()}
-        if season is None:
-            labeled = sorted(c for c in columns if re.fullmatch(r'SALARY_\d{4}_\d{2}', c))
-            season = labeled[-1][7:].replace('_', '-') if labeled else None
+        if season is None and '_season' in columns:
+            season = con.execute('SELECT MAX(_season) FROM silver_salaries').fetchone()[0]
         return [(r['PLAYER_NAME'], r['salary'], r['TEAM']) for r in salary_records(con, salary_season=season)]
     except Exception:
         return None

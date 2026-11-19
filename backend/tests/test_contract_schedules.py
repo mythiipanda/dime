@@ -156,6 +156,20 @@ def test_trade_team_inference_with_multiple_labeled_salary_columns(warehouse):
         con.close()
 
 
+def test_stale_trade_fallback_uses_snapshot_not_furthest_salary(warehouse):
+    from shared.tools.league.cba_cap import _resolve_stale_trade_player
+
+    con = duckdb.connect(str(warehouse))
+    try:
+        con.execute('CREATE TABLE silver_salaries (PLAYER_NAME VARCHAR, TEAM VARCHAR, SALARY_2026_27 BIGINT, SALARY_2031_32 BIGINT, _season VARCHAR)')
+        con.execute("INSERT INTO silver_salaries VALUES ('Snapshot Example', 'BOS', 125, 900, '2026-27')")
+        assert _resolve_stale_trade_player('Snapshot Example', 'BOS', con) == ('Snapshot Example', 125)
+        con.execute('UPDATE silver_salaries SET SALARY_2031_32 = NULL')
+        assert _resolve_stale_trade_player('Snapshot Example', 'BOS', con) == ('Snapshot Example', 125)
+    finally:
+        con.close()
+
+
 def test_payroll_empty_primary_uses_normalized_vendor_salary(warehouse):
     con = duckdb.connect(str(warehouse))
     try:
