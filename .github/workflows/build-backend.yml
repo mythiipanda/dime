@@ -12,12 +12,14 @@ on:
       - 'backend/**'
       - 'frontend/**'
       - '.github/workflows/build-backend.yml'
+      - '.github/actions/**'
   push:
     branches: [dev]
     paths:
       - 'backend/**'
       - 'frontend/**'
       - '.github/workflows/build-backend.yml'
+      - '.github/actions/**'
 permissions:
   packages: write
 jobs:
@@ -34,6 +36,7 @@ jobs:
         run: python backend/scripts/no_comments.py
       - name: Prove the zero-comment scanner still detects violations
         run: python backend/scripts/no_comments.py --self-test
+      - uses: ./.github/actions/fetch-warehouse
       - name: Install backend dependencies
         run: pip install -r backend/requirements.txt pytest
       - name: Run backend test suite
@@ -80,11 +83,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Fetch warehouse data (release asset)
-        run: |
-          curl -L -o /tmp/dime_data.zip https://github.com/mythiipanda/dime/releases/download/dime-data-20260930/dime_data_full.zip
-          unzip -q /tmp/dime_data.zip -d backend
-          ls -la backend/data | head
+      - uses: ./.github/actions/fetch-warehouse
       - uses: docker/login-action@v3
         with:
           registry: ghcr.io
