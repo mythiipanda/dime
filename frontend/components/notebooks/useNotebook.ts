@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { NotebookError, getNotebook, saveNotebook } from "../../lib/notebook-api";
 import type { Notebook, SaveState } from "../../lib/notebooks";
+import { clearNotebookDraft, findNotebookDraft, writeNotebookDraft } from "../../lib/notebook-drafts";
 
 export function useNotebook(id: string) {
   const [notebook, setNotebook] = useState<Notebook | null>(null);
@@ -10,12 +11,14 @@ export function useNotebook(id: string) {
   const [error, setError] = useState("");
   const [generation, setGeneration] = useState(0);
   const [pulse, setPulse] = useState(0);
+  const [draft, setDraft] = useState<ReturnType<typeof findNotebookDraft>>(null);
   const current = useRef<Notebook | null>(null), version = useRef(1), revision = useRef(0), saved = useRef(0);
   const busy = useRef<Promise<boolean> | null>(null), conflict = useRef(false), active = useRef(true);
-  useEffect(() => { active.current = true; const controller = new AbortController(); getNotebook(id, controller.signal).then((doc) => { if (controller.signal.aborted) return; current.current = doc; version.current = doc.version; setNotebook(doc); }).catch((e) => { if (!controller.signal.aborted) setError(e.message); }); return () => { active.current = false; controller.abort(); }; }, [id]);
+  useEffect(() => { active.current = true; const controller = new AbortController(); getNotebook(id, controller.signal).then((doc) => { if (controller.signal.aborted) return; current.current = doc; version.current = doc.version; setNotebook(doc); setDraft(findNotebookDraft(doc)); }).catch((e) => { if (!controller.signal.aborted) setError(e.message); }); return () => { active.current = false; controller.abort(); }; }, [id]);
   const edit = useCallback((change: (doc: Notebook) => Notebook) => {
     if (!current.current || conflict.current) return;
     current.current = change(current.current); revision.current += 1; setNotebook(current.current); setGeneration(revision.current); setState("dirty");
+    writeNotebookDraft(current.current, version.current);
   }, []);
   const persist = useCallback(async (): Promise<boolean> => {
     if (busy.current) { const ok = await busy.current; return ok && saved.current !== revision.current ? persist() : ok; }
@@ -28,6 +31,8 @@ export function useNotebook(id: string) {
         const result = await saveNotebook(snapshot);
         version.current = result.version; saved.current = at;
         current.current = { ...current.current!, version: result.version, updated_at: result.updated_at };
+        clearNotebookDraft(id, snapshot.version);
+        if (at !== revision.current) writeNotebookDraft(current.current, result.version);
         if (active.current) { setNotebook(current.current); setState(at === revision.current ? "saved" : "dirty"); setError(""); if (at !== revision.current) setPulse((n) => n + 1); }
         return true;
       } catch (e) {
@@ -38,8 +43,15 @@ export function useNotebook(id: string) {
       } finally { busy.current = null; }
     })();
     busy.current = operation; return operation;
-  }, []);
+  }, [id]);
   useEffect(() => { if (!generation) return; const timer = setTimeout(() => { void persist(); }, 650); return () => clearTimeout(timer); }, [generation, pulse, persist]);
   useEffect(() => { const warn = (event: BeforeUnloadEvent) => { if (revision.current !== saved.current) event.preventDefault(); }; window.addEventListener("beforeunload", warn); return () => window.removeEventListener("beforeunload", warn); }, []);
-  return { notebook, state, error, edit, persist, current };
+  const discardDraft = () => { if (draft) clearNotebookDraft(id, draft.base_version); setDraft(null); };
+  const restoreDraft = () => {
+    if (!draft || !current.current) return;
+    const server = current.current;
+    discardDraft();
+    edit(() => ({ ...server, title: draft.notebook.title, cells: draft.notebook.cells, origin: draft.notebook.origin }));
+  };
+  return { notebook, state, error, edit, persist, current, draft, restoreDraft, discardDraft };
 }

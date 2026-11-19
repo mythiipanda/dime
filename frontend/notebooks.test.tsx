@@ -13,8 +13,9 @@ const button = (host: ParentNode, text: string) => [...host.querySelectorAll("bu
 async function click(element: HTMLElement) { assert.ok(element); await act(async () => { element.click(); await delay(); }); }
 const sqlResult: SQLResult = { columns: [{ name: "PLAYER", type: "VARCHAR" }, { name: "PTS", type: "DOUBLE" }], rows: [{ PLAYER: "Stephen Curry", PTS: 28.5 }], page: 0, page_size: 100, has_more: false, ms: 7, truncated: false };
 
-async function mount(options: { sqlError?: boolean; empty?: boolean; conflict?: boolean; listError?: boolean; deferredSave?: boolean; pythonEnabled?: boolean; savedPython?: boolean } = {}, hook = false) {
+async function mount(options: { sqlError?: boolean; empty?: boolean; conflict?: boolean; listError?: boolean; deferredSave?: boolean; pythonEnabled?: boolean; savedPython?: boolean; saveError?: boolean; storedDrafts?: string; openNotebook?: boolean } = {}, hook = false) {
   const dom = new JSDOM("<!doctype html><html><body><div id='root'></div></body></html>", { url: "http://localhost/?tab=notebooks", pretendToBeVisual: true });
+  if (options.storedDrafts) dom.window.localStorage.setItem("dime_notebook_drafts_v1", options.storedDrafts);
   Object.assign(globalThis, { window: dom.window, Window: dom.window.Window, document: dom.window.document, HTMLElement: dom.window.HTMLElement, Element: dom.window.Element, Node: dom.window.Node, DocumentFragment: dom.window.DocumentFragment, ShadowRoot: dom.window.ShadowRoot, MutationObserver: dom.window.MutationObserver, requestAnimationFrame: dom.window.requestAnimationFrame.bind(dom.window), cancelAnimationFrame: dom.window.cancelAnimationFrame.bind(dom.window), getComputedStyle: dom.window.getComputedStyle.bind(dom.window), IS_REACT_ACT_ENVIRONMENT: true });
   Object.assign(dom.window.HTMLElement.prototype, { attachEvent() {}, detachEvent() {}, scrollIntoView() {}, getClientRects() { return []; } });
   Object.assign(dom.window.Range.prototype, { getClientRects() { return []; }, getBoundingClientRect() { return { left: 0, right: 0, top: 0, bottom: 0 }; } });
@@ -32,6 +33,7 @@ async function mount(options: { sqlError?: boolean; empty?: boolean; conflict?: 
     if (path.endsWith("/notebooks") && method === "POST") { doc = { ...doc, ...body } as Notebook; return Response.json(doc, { status: 201 }); }
     if (path.endsWith("/notebooks")) return options.listError ? Response.json({ detail: "Storage unavailable" }, { status: 503 }) : Response.json({ notebooks: [] });
     if (method === "PUT") {
+      if (options.saveError) return Response.json({ detail: "Backend unavailable" }, { status: 503 });
       if (options.deferredSave) await new Promise<void>((resolve) => { resolveSave = resolve; });
       if (options.conflict) return Response.json({ detail: "Notebook changed; reload before saving" }, { status: 409 });
       assert.equal(body.version, doc.version); doc = { ...doc, ...body, version: doc.version + 1 } as Notebook; return Response.json(doc);
@@ -41,7 +43,7 @@ async function mount(options: { sqlError?: boolean; empty?: boolean; conflict?: 
   const { default: NotebooksPanel } = await import("./components/notebooks/NotebooksPanel");
   let currentHook: ReturnType<typeof useNotebook>;
   function Hook() { currentHook = useNotebook(doc.id); return <span>{currentHook.state}</span>; }
-  function Harness() { const [id, setId] = useState<string | null>(options.savedPython ? doc.id : null); return <NotebooksPanel notebookId={id} onOpen={setId} />; }
+  function Harness() { const [id, setId] = useState<string | null>(options.savedPython || options.openNotebook ? doc.id : null); return <NotebooksPanel notebookId={id} onOpen={setId} />; }
   const host = dom.window.document.getElementById("root")!, root = createRoot(host);
   await act(async () => { root.render(hook ? <Hook /> : <Harness />); await delay(); });
   return { dom, host, options, requests, hook: () => currentHook!, releaseSave: () => resolveSave?.(), cleanup: async () => { await act(async () => { root.unmount(); await delay(); }); globalThis.fetch = previous; dom.window.close(); } };
@@ -126,6 +128,34 @@ test("a 409 stops autosave, shows reload and disables conflicting edits", async 
 test("list loading errors are actionable", async () => {
   const m = await mount({ listError: true });
   try { assert.match(m.host.querySelector('[role="alert"]')!.textContent!, /Storage unavailable/); m.options.listError = false; await click(button(m.host, "Retry")); assert.match(m.host.textContent!, /Room for your next insight/); } finally { await m.cleanup(); }
+});
+
+test("failed saves survive leaving and reopening, offer restore, and clear after save", async () => {
+  const first = await mount({ saveError: true }, true);
+  let stored = "";
+  try {
+    await act(async () => {
+      first.hook().edit((doc) => ({ ...doc, title: "Recovered analysis" }));
+      assert.equal(await first.hook().persist(), false);
+    });
+    stored = first.dom.window.localStorage.getItem("dime_notebook_drafts_v1")!;
+    assert.equal(JSON.parse(stored)[`${"a".repeat(32)}:1`].notebook.title, "Recovered analysis");
+  } finally { await first.cleanup(); }
+  const reopened = await mount({ storedDrafts: stored, openNotebook: true });
+  try {
+    assert.match(reopened.host.textContent!, /Restore unsaved changes/);
+    assert.equal(reopened.host.querySelector<HTMLInputElement>('[aria-label="Notebook title"]')!.value, "Test notebook");
+    await click(button(reopened.host, "Restore unsaved changes"));
+    assert.equal(reopened.host.querySelector<HTMLInputElement>('[aria-label="Notebook title"]')!.value, "Recovered analysis");
+    await act(async () => { await delay(700); });
+    assert.deepEqual(JSON.parse(reopened.dom.window.localStorage.getItem("dime_notebook_drafts_v1")!), {});
+  } finally { await reopened.cleanup(); }
+});
+
+test("invalid local drafts do not prevent opening a notebook", async () => {
+  const m = await mount({ storedDrafts: '{"invalid":null}' });
+  try { await click(button(m.host, "New notebook")); assert.doesNotMatch(m.host.textContent!, /Restore unsaved changes/); }
+  finally { await m.cleanup(); }
 });
 
 test("autosave serializes writes and preserves edits made during an in-flight save", async () => {
