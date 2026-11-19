@@ -35,14 +35,18 @@ it("stores workflow drafts per thread and tolerates unavailable storage", () => 
   } finally { Object.assign(globalThis, { window: previous }); dom.window.close(); }
 });
 
-it("acknowledges a draft only for a newer user turn or matching sent text", () => {
+it("acknowledges only matching user text after submit's trim normalization", () => {
   const draft = { threadId: "one", request: "Original", text: "Edited", edited: true, createdAt: 1000 };
   assert.equal(workflowDraftWasSent(draft, []), false);
-  assert.equal(workflowDraftWasSent(draft, [{ role: "user", text: "Old question", createdAt: 999 }]), false);
-  assert.equal(workflowDraftWasSent(draft, [{ role: "assistant", text: "Edited", createdAt: 1001 }]), false);
-  assert.equal(workflowDraftWasSent(draft, [{ role: "user", text: "New question", createdAt: 1001 }]), true);
+  const unrelated = [{ role: "user", text: "Original", createdAt: 2000 }];
+  assert.equal(workflowDraftWasSent(draft, unrelated), false);
+  assert.equal(workflowDraftWasSent(draft, [{ role: "assistant", text: "Edited" }]), false);
+  assert.equal(workflowDraftWasSent(draft, [{ role: "user", text: "New question" }]), false);
   assert.equal(workflowDraftWasSent(draft, [{ role: "user", text: "Edited" }]), true);
+  const matching = [{ role: "user", text: "Edited\t", createdAt: 500 }];
+  assert.equal(workflowDraftWasSent({ ...draft, text: " \nEdited\r\n" }, matching), true);
   assert.equal(workflowDraftWasSent({ ...draft, text: "" }, [{ role: "user", text: "" }]), false);
+  assert.equal(workflowDraftWasSent({ ...draft, text: " \t\n" }, [{ role: "user", text: "" }]), false);
 });
 
 it("fills a workflow, previews its request and runs only when complete", async () => {
@@ -115,13 +119,17 @@ for (const mode of ["edit", "clear-rewrite"]) it(`workflow draft ${mode}: user c
       await ready;
       return Response.json({ models: [{ id: "gemini:flash", available: true, default: true }], available: { gemini: true } });
     }
-    if (String(input).includes("/chat/stream")) { requests.push(JSON.parse(String(init?.body))); return new Response("unavailable", { status: 503 }); }
+    if (String(input).includes("/chat/stream")) {
+      assert.equal(loadWorkflowDraft("pending-workflow"), null);
+      requests.push(JSON.parse(String(init?.body)));
+      return new Response("unavailable", { status: 503 });
+    }
     return Response.json({ runs: [] });
   };
   const host = dom.window.document.getElementById("root")!;
   let root = createRoot(host);
   const original = "Prepare an opponent scouting report.";
-  const revised = "Compare OKC and DEN transition defense instead.";
+  const revised = " \nCompare OKC and DEN transition defense instead.\t ";
   createWorkflowDraft("pending-workflow", original);
   const edit = async (value: string) => act(async () => {
     const input = host.querySelector("textarea")!;
@@ -151,32 +159,34 @@ for (const mode of ["edit", "clear-rewrite"]) it(`workflow draft ${mode}: user c
     assert.equal(requests.length, 0);
     await act(async () => host.querySelector<HTMLButtonElement>('[aria-label="Send message"]')!.click());
     assert.equal(requests.length, 1);
-    assert.equal(requests[0].q, revised);
+    assert.equal(requests[0].q, revised.trim());
     assert.equal(loadWorkflowDraft("pending-workflow"), null);
   } finally { resolveModels(); await act(async () => root.unmount()); globalThis.fetch = previous; dom.window.close(); }
 });
 
-it("restores a draft alongside older history and clears it only for a newer user turn", async () => {
+it("preserves a newer draft edit alongside an earlier send and clears only normalized matching history", async () => {
   const dom = new JSDOM("<div id='root'></div>", { url: "http://localhost/?tab=chat&thread=history-workflow" });
   Object.assign(globalThis, { window: dom.window, document: dom.window.document, localStorage: dom.window.localStorage, HTMLElement: dom.window.HTMLElement, IS_REACT_ACT_ENVIRONMENT: true });
   dom.window.matchMedia = (() => ({ matches: true, addEventListener() {}, removeEventListener() {} })) as unknown as typeof dom.window.matchMedia;
   Object.assign(dom.window.HTMLElement.prototype, { scrollTo() {}, scrollIntoView() {} });
   const previous = globalThis.fetch;
-  const draft = createWorkflowDraft("history-workflow", "Unsent request");
-  let newer = false;
-  globalThis.fetch = async input => Response.json(String(input).includes("/models") ? { models: [] } : { runs: [{ question: newer ? "Newer question" : "Older question", answer: "Saved answer", tables: [], suggestions: [], created_at: new Date(draft.createdAt + (newer ? 1000 : -1000)).toISOString() }] });
+  const initial = createWorkflowDraft("history-workflow", "Earlier request");
+  const draft = { ...initial, text: " \nNewer unsent edit\t ", edited: true };
+  saveWorkflowDraft(draft);
+  let matching = false;
+  globalThis.fetch = async input => Response.json(String(input).includes("/models") ? { models: [] } : { runs: [{ question: matching ? draft.text.trim() : initial.request, answer: "Saved answer", tables: [], suggestions: [], created_at: new Date(draft.createdAt + (matching ? -1000 : 1000)).toISOString() }] });
   const host = dom.window.document.getElementById("root")!;
   let root = createRoot(host);
   try {
     await act(async () => root.render(<StrictMode><ChatView thread="history-workflow" replay={null} onRunDone={() => {}} /></StrictMode>));
-    assert.match(host.textContent!, /Older question/);
+    assert.match(host.textContent!, /Earlier request/);
     assert.equal(host.querySelector("textarea")!.value, draft.text);
     assert.deepEqual(loadWorkflowDraft("history-workflow"), draft);
     await act(async () => root.unmount());
-    newer = true;
+    matching = true;
     root = createRoot(host);
     await act(async () => root.render(<StrictMode><ChatView thread="history-workflow" replay={null} onRunDone={() => {}} /></StrictMode>));
-    assert.match(host.textContent!, /Newer question/);
+    assert.match(host.textContent!, /Newer unsent edit/);
     assert.equal(loadWorkflowDraft("history-workflow"), null);
     assert.equal(host.querySelector("textarea")!.value, "");
   } finally { await act(async () => root.unmount()); globalThis.fetch = previous; dom.window.close(); }

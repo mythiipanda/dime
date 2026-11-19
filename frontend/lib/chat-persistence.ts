@@ -13,11 +13,10 @@ export function cacheChatRun(thread: string, question: string, snapshot: StreamS
   appendCachedRun(thread, run);
 }
 
-export async function loadChatRuns(thread: string): Promise<{ question: string; snapshot: StreamSnapshot; createdAt: number }[]> {
+export async function loadChatRuns(thread: string): Promise<{ question: string; snapshot: StreamSnapshot }[]> {
   const runs = await getRuns(thread);
   return Promise.all(runs.map(async (run: PersistedRun) => {
-    const createdAt = Date.parse(run.created_at);
-    if (run.snapshot) return { question: run.question, snapshot: run.snapshot, createdAt };
+    if (run.snapshot) return { question: run.question, snapshot: run.snapshot };
     let carry: unknown;
     if (run.id) {
       try {
@@ -36,6 +35,6 @@ export async function loadChatRuns(thread: string): Promise<{ question: string; 
     stream.handle("final_answer", { text: run.answer, tables: run.tables, suggestions: run.suggestions, carry });
     stream.handle("suggestions", { items: run.suggestions });
     stream.finish();
-    return { question: run.question, snapshot: stream.snapshot(), createdAt };
+    return { question: run.question, snapshot: stream.snapshot() };
   }));
 }

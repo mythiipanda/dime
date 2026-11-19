@@ -48,8 +48,13 @@ export function AssistantTurn({ message, prefix, onFollowUp }: { message: Extrac
 }
 
 export function ChatView({ thread, replay, onRunDone, workflowRequest, onWorkflowConsumed }: { thread: string; replay: string | null; onRunDone: (question: string) => void; workflowRequest?: { thread: string; text: string } | null; onWorkflowConsumed?: () => void }) {
-  const chat = useDimeChat({ thread, replay, onRunDone });
   const [workflowDraft, setWorkflowDraft] = useState<WorkflowDraft | null>(() => replay ? null : loadWorkflowDraft(thread) ?? (workflowRequest?.thread === thread ? createWorkflowDraft(thread, workflowRequest.text) : null));
+  const chat = useDimeChat({ thread, replay, onRunDone, onSubmit: () => {
+    if (!workflowDraft) return;
+    clearWorkflowDraft(thread);
+    setWorkflowDraft(null);
+    onWorkflowConsumed?.();
+  } });
   const workflowSent = workflowDraft !== null && workflowDraftWasSent(workflowDraft, chat.messages);
   useEffect(() => {
     if (workflowDraft) chat.setDraft(workflowDraft.text);

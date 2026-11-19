@@ -25,8 +25,9 @@ export function createWorkflowDraft(threadId: string, request: string): Workflow
   return draft;
 }
 
-export function workflowDraftWasSent(draft: WorkflowDraft, messages: readonly { role: string; text: string; createdAt?: number }[]): boolean {
-  return messages.some(message => message.role === "user" && ((message.createdAt !== undefined && message.createdAt > draft.createdAt) || (!!draft.text.trim() && message.text === draft.text)));
+export function workflowDraftWasSent(draft: WorkflowDraft, messages: readonly { role: string; text: string }[]): boolean {
+  const text = draft.text.trim();
+  return !!text && messages.some(message => message.role === "user" && message.text.trim() === text);
 }
 
 export function clearWorkflowDraft(thread: string): void {
