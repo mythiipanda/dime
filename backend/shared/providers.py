@@ -43,6 +43,7 @@ GEMINI_MODELS: tuple[str, ...] = (
     "gemini-3.8-flash",
     "gemma-4-31b-it",
     "gemini-3.5-flash-lite",
+    "gemini-4-hydrogen",
 )
 GEMINI_ALLOWLIST = frozenset(GEMINI_MODELS)
 NVIDIA_NIM_BASE_URL = "https://integrate.api.nvidia.com/v1"
