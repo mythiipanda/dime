@@ -5,7 +5,7 @@ import { join, basename } from "node:path";
 import { Type, type TSchema, type Static } from "typebox";
 import { Value } from "typebox/value";
 import { validationDetails, validationDetail } from "./http-validation.js";
-import { createAnalyst, analystRequestSchema, backendRoot, newRunId, encodeEvent } from "./analyst.js";
+import { createAnalyst, analystRequestSchema, backendRoot, newRunId, encodeEvent, runTimeoutMs } from "./analyst.js";
 import { ProjectStore, WorkspaceStore } from "./catalog-stores.js";
 import { providerPolicy } from "./providers.js";
 import { objectValue } from "./python-tools.js";
@@ -328,13 +328,14 @@ export function createProductServer(options: {
         const run = newRunId(), controller = new AbortController();
         const abort = () => controller.abort();
         res.on("close", abort);
-        const timer = setTimeout(abort, positive(env.DIME_V2_RUN_TIMEOUT_S, 360) * 1000);
+        const timeoutMs = runTimeoutMs(env);
+        const timer = setTimeout(abort, timeoutMs);
         let heartbeat: ReturnType<typeof setTimeout> | undefined;
         const resetHeartbeat = () => { clearTimeout(heartbeat); heartbeat = setTimeout(() => { res.write(encodeEvent({ type: "ping", data: { ok: true } })); resetHeartbeat(); }, 15000); };
         resetHeartbeat();
         res.writeHead(200, { "content-type": "text/event-stream; charset=utf-8", "x-dime-run-id": run });
         try {
-            for await (const event of analyst.stream(input, controller.signal, run)) {
+            for await (const event of analyst.stream(input, controller.signal, run, { runTimeoutMs: timeoutMs })) {
                 res.write(encodeEvent(event));
                 resetHeartbeat();
             }

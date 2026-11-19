@@ -6,6 +6,7 @@ import { createAnalystSession } from "./runtime.js";
 import { connectPythonTools, objectValue, sourceRecordSchema, sourceOutputSchema, sourceResult, type SourceRecord, type PythonToolsOptions } from "./python-tools.js";
 import { priorSourceTool, resolvedRuntime } from "./pi-context.js";
 import { createSubmitAnswerTool, type AnswerSubmission } from "./submit-tool.js";
+import { countToolCall, createRunStatusTool, type RunStatusTracker } from "./run-status.js";
 import type { AssistantMessage, Message } from "@earendil-works/pi-ai";
 import type { AgentSessionEvent } from "@earendil-works/pi-coding-agent";
 
@@ -84,7 +85,7 @@ export function canonicalArgsKey(value: unknown): string {
 
 const turnSchema = Type.Object({ role: Type.Union([Type.Literal("user"), Type.Literal("assistant")]), content: Type.String() });
 export const analystContextSchema = Type.Object({
-    q: Type.String({ minLength: 1 }), history: Type.Array(turnSchema, { maxItems: 24 }), model: Type.Unknown(),
+    q: Type.String({ minLength: 1 }), history: Type.Array(turnSchema, { maxItems: 24 }), model: Type.Unknown(), runTimeoutMs: Type.Optional(Type.Number({ minimum: 1 })),
     sources: Type.Optional(Type.Array(sourceRecordSchema)), cwd: Type.String(), agentDir: Type.String(),
     bridge: Type.Object({ python: Type.String(), cwd: Type.String(), env: Type.Record(Type.String(), Type.String()) }),
 });
@@ -197,12 +198,14 @@ function buildLoopRecord(
 function wrapBridgeTools(
     tools: Awaited<ReturnType<typeof connectPythonTools>>["tools"],
     results: Map<string, SourceRecord>,
-    emit: (event: AnalystEvent) => void
+    emit: (event: AnalystEvent) => void,
+    tracker: RunStatusTracker
 ) {
     const callCounts = new Map<string, { count: number; lastRef?: string }>();
     return tools.map(tool => ({
         ...tool,
         async execute(...args: Parameters<typeof tool.execute>) {
+            tracker.toolCalls += 1;
             emit({ type: "tool_call", name: tool.name });
             const key = `${tool.name}:${canonicalArgsKey(args[1] ?? {})}`;
             const entry = callCounts.get(key) ?? { count: 0 };
@@ -268,6 +271,7 @@ export function createPiExecution(deps: AnalystDeps = {}) {
                 let bridgePid: number | undefined;
                 let acceptedSubmission: AnswerSubmission | undefined;
                 let modelApiKey: string | undefined;
+                const startedAt = Date.now();
                 const cancel = () => { void session?.abort(); };
                 controller.signal.addEventListener("abort", cancel, { once: true });
                 try {
@@ -282,9 +286,17 @@ export function createPiExecution(deps: AnalystDeps = {}) {
                     bridgePid = bridge.pid;
                     controller.signal.throwIfAborted();
                     const connected = bridge;
+                    const tracker: RunStatusTracker = {
+                        startedAt,
+                        budgetMs: start.runTimeoutMs,
+                        toolCalls: 0,
+                        sourceCount: () => (start.sources?.length ?? 0) + connected.results.size,
+                        submitted: false,
+                    };
                     const submitTool = createSubmitAnswerTool(
                         () => [...(start.sources ?? []), ...connected.results.values()],
                         (submission) => {
+                            tracker.submitted = true;
                             acceptedSubmission = submission;
                             if (submission.artifacts && submission.artifacts.length > 0)
                                 emit({ type: "custom_data", artifacts: submission.artifacts });
@@ -292,8 +304,14 @@ export function createPiExecution(deps: AnalystDeps = {}) {
                     );
                     session = await createAnalystSession({
                         cwd: start.cwd, agentDir: start.agentDir, model, modelRuntime: runtime,
-                        tools: [...wrapBridgeTools(bridge.tools, connected.results, emit), priorSourceTool(start.sources ?? []), submitTool],
+                        tools: [
+                            ...wrapBridgeTools(bridge.tools, connected.results, emit, tracker),
+                            countToolCall(priorSourceTool(start.sources ?? []), tracker),
+                            countToolCall(submitTool, tracker),
+                            countToolCall(createRunStatusTool(tracker), tracker),
+                        ],
                         onSkillLoad: () => {
+                            tracker.toolCalls += 1;
                             emit({ type: "tool_call", name: "load_skill" });
                             emit({ type: "tool_result", name: "load_skill", status: "ok" });
                         }

@@ -90,7 +90,7 @@ test("createAnalyst retains persistent per-thread workspace across turns and cle
   const seenBridgeEnvs=[];
   const mockExec={
     async *stream(ctx){
-      seenBridgeEnvs.push({cwd:ctx.bridge.cwd,ws:ctx.bridge.env.DIME_THREAD_WORKSPACE});
+      seenBridgeEnvs.push({cwd:ctx.bridge.cwd,ws:ctx.bridge.env.DIME_THREAD_WORKSPACE,timeout:ctx.runTimeoutMs});
       await writeFile(join(ctx.bridge.cwd,"turn-artifact.txt"),"persisted-data","utf8");
       yield {type:"answer",text:"Turn complete"};
       yield {type:"closed"};
@@ -104,7 +104,7 @@ test("createAnalyst retains persistent per-thread workspace across turns and cle
     saveChat:async()=>{},
     saveRun:async()=>{},
   });
-  for await(const _event of analyst.stream({q:"Turn 1",thread:"t-ws-1",client:"owner-a"})){}
+  for await(const _event of analyst.stream({q:"Turn 1",thread:"t-ws-1",client:"owner-a"},undefined,"run-budget-test",{runTimeoutMs:12345})){}
   for await(const _event of analyst.stream({q:"Turn 2",thread:"t-ws-1",client:"owner-a"})){}
   for await(const _event of analyst.stream({q:"Anonymous"})){}
   const expectedWs=threadWorkspacePath(privateDir,{owner:"owner-a",thread:"t-ws-1"});
@@ -114,6 +114,9 @@ test("createAnalyst retains persistent per-thread workspace across turns and cle
   assert.equal(seenBridgeEnvs[1].ws,expectedWs);
   assert(existsSync(join(expectedWs,"turn-artifact.txt")));
   assert.notEqual(seenBridgeEnvs[2].ws,expectedWs);
+  assert.equal(seenBridgeEnvs[0].timeout,12345);
+  assert.equal(seenBridgeEnvs[1].timeout,undefined);
+  assert.equal(seenBridgeEnvs[2].timeout,undefined);
   assert(!existsSync(seenBridgeEnvs[2].ws));
   const entries=await readdir(privateDir);
   assert(!entries.some(name=>name.startsWith("pi-")));
