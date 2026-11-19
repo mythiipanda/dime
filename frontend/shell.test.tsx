@@ -15,6 +15,7 @@ import { citationDetails } from "./lib/citation-details";
 import { DimeStream, streamDimeChat } from "./lib/dime-stream";
 import { scoutingEvents } from "./lib/replay-fixture";
 import { getClientId } from "./lib/api";
+import { LibraryView } from "./components/shell/WorkspaceViews";
 
 test("navigation exposes only this port's destinations, with Tools grouped", () => {
   assert.deepEqual(shellNavigation.map(item => item.label), ["Home", "Ask", "Library", "Data", "Trades", "Matchups", "Awards"]);
@@ -26,6 +27,23 @@ test("navigation exposes only this port's destinations, with Tools grouped", () 
   const url = shellUrl("http://localhost/?replay=scouting&other=keep", "briefs", "thread-1");
   assert.equal(url.searchParams.get("tab"), "briefs"); assert.equal(url.searchParams.get("thread"), "thread-1");
   assert.equal(url.searchParams.get("replay"), null); assert.equal(url.searchParams.get("other"), "keep");
+});
+
+test("Library keeps conversations available when projects returns 404", async () => {
+  const dom = new JSDOM("<div id='root'></div>", { url: "http://localhost" });
+  Object.assign(globalThis, { window: dom.window, document: dom.window.document, IS_REACT_ACT_ENVIRONMENT: true });
+  const previous = globalThis.fetch;
+  globalThis.fetch = async input => String(input).includes("/projects") ? new Response("Not found", { status: 404 }) : Response.json({ threads: [{ id: "conversation", title: "Available conversation", updated: "2026-11-19", turns: 1 }] });
+  const host = dom.window.document.getElementById("root")!, root = createRoot(host);
+  let opened = "";
+  try {
+    await act(async () => root.render(<LibraryView onThread={id => { opened = id; }} />));
+    assert.match(host.textContent!, /Available conversation/); assert.match(host.textContent!, /Projects could not be loaded/); assert.doesNotMatch(host.textContent!, /Could not load your library/);
+    await act(async () => [...host.querySelectorAll("button")].find(button => button.textContent?.includes("Open conversation"))!.click());
+    assert.equal(opened, "conversation");
+    await act(async () => [...host.querySelectorAll("button")].find(button => button.textContent === "Conversations")!.click());
+    assert.match(host.textContent!, /Available conversation/); assert.doesNotMatch(host.textContent!, /Projects could not be loaded/);
+  } finally { await act(async () => root.unmount()); globalThis.fetch = previous; dom.window.close(); }
 });
 
 test("PromptBar has a real ellipsis, clean model labels and disabled unavailable models", () => {
