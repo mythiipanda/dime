@@ -16,6 +16,8 @@ import { getFreshness, getQueryParam, setQueryParam } from "../lib/api";
 import { streakLine } from "../lib/exploreFeed";
 import { updatedLine } from "../lib/freshness";
 import { EXPANDABLE_PANELS, markMounted, toggleExpanded } from "../lib/explorePanels";
+import { PageHeader } from "./ds/Panel";
+import { Chip } from "./ds/Chip";
 import type {
   ExploreContext,
   ExplorePanelId,
@@ -114,12 +116,10 @@ export default function ExploreWorkspace({
   const lineupsKey = `lineups-${ctx?.panel === "lineups" ? (ctx.teamAbbr ?? "") : ""}-${lineupsStreak ? streakLine(lineupsStreak) : ""}`;
 
   return (
-    <div className="explore-scroll">
-      <main className="explore-shell">
-        <section className="explore-overview" aria-labelledby="explore-title">
-          <div className="explore-overview-head">
-            <h1 id="explore-title">Explore</h1>
-          </div>
+    <div className="min-h-full">
+      <main className="mx-auto max-w-6xl px-6 py-10 lg:px-10">
+        <section aria-label="Explore data">
+          <PageHeader eyebrow="The evidence desk" title="Explore the game" description="Search the warehouse, follow a signal, or open a dataset. Every decision starts with a closer look." actions={<Chip>2025–26 season</Chip>} />
 
           <ExploreSearch onSelect={handleSearchSelect} onAsk={onAsk} />
 
@@ -133,7 +133,7 @@ export default function ExploreWorkspace({
         {expanded && (
           <section
             id="explore-active"
-            className="explore-active"
+            className="mt-6 scroll-mt-6 space-y-5"
             aria-live="polite"
             key={exploreKey}
           >
@@ -185,7 +185,7 @@ export default function ExploreWorkspace({
           </section>
         )}
 
-        {updated && <footer className="explore-footer">{updated}</footer>}
+        {updated && <footer className="mt-6 text-[11px] text-ink-3">{updated}</footer>}
       </main>
     </div>
   );

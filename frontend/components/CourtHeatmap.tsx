@@ -121,7 +121,7 @@ function heatStyle(delta: number | null, isHover: boolean): {
   if (delta === null) {
     return {
       fill: isHover ? "rgba(0, 0, 0, 0.05)" : "rgba(0, 0, 0, 0.02)",
-      stroke: "var(--color-stone-border)",
+      stroke: "var(--line)",
       strokeWidth: 1,
     };
   }
@@ -132,13 +132,13 @@ function heatStyle(delta: number | null, isHover: boolean): {
   if (delta >= 0) {
     return {
       fill: `rgba(59, 166, 241, ${a.toFixed(2)})`,
-      stroke: "var(--color-cyan-signal)",
+      stroke: "var(--accent)",
       strokeWidth: isHover ? 2 : 1.2,
     };
   }
   return {
     fill: `rgba(225, 29, 72, ${a.toFixed(2)})`,
-    stroke: "var(--color-ember)",
+    stroke: "var(--red)",
     strokeWidth: isHover ? 2 : 1.2,
   };
 }
@@ -169,11 +169,11 @@ export default function CourtHeatmap({ rows, meta, verdict }: CourtHeatmapProps)
           style={{
             fontSize: 13,
             fontWeight: 500,
-            color: "var(--color-ink-black)",
-            background: "var(--color-stone-canvas)",
+            color: "var(--ink)",
+            background: "var(--page)",
             padding: "8px 14px",
             borderRadius: 8,
-            border: "1px solid var(--color-stone-border)",
+            border: "1px solid var(--line)",
           }}
         >
           {verdict}
@@ -188,12 +188,12 @@ export default function CourtHeatmap({ rows, meta, verdict }: CourtHeatmapProps)
             height: "auto",
             display: "block",
             borderRadius: 10,
-            background: "var(--color-pure-white)",
-            border: "1px solid var(--color-stone-border)",
+            background: "var(--surface)",
+            border: "1px solid var(--line)",
           }}
         >
 
-          <rect x="1" y="1" width="498" height="468" fill="none" stroke="var(--color-stone-border)" strokeWidth="1.5" />
+          <rect x="1" y="1" width="498" height="468" fill="none" stroke="var(--line)" strokeWidth="1.5" />
 
 
           {ZONE_PATHS.map((zp) => {
@@ -201,7 +201,7 @@ export default function CourtHeatmap({ rows, meta, verdict }: CourtHeatmapProps)
             const isHover = hovered === zp.id;
 
             let fill = "rgba(0, 0, 0, 0.02)";
-            let stroke = "var(--color-stone-border)";
+            let stroke = "var(--line)";
             let strokeWidth = 1;
 
             if (isCompare && rec) {
@@ -212,11 +212,11 @@ export default function CourtHeatmap({ rows, meta, verdict }: CourtHeatmapProps)
               if (edgeName && edgeName !== "wash") {
                 if (edgeName.toLowerCase().includes(nameA.toLowerCase())) {
                   fill = isHover ? "rgba(59, 166, 241, 0.45)" : "rgba(59, 166, 241, 0.24)";
-                  stroke = "var(--color-cyan-signal)";
+                  stroke = "var(--accent)";
                   strokeWidth = isHover ? 2 : 1.2;
                 } else if (edgeName.toLowerCase().includes(nameB.toLowerCase())) {
                   fill = isHover ? "rgba(28, 25, 23, 0.35)" : "rgba(28, 25, 23, 0.18)";
-                  stroke = "var(--color-soot)";
+                  stroke = "var(--ink)";
                   strokeWidth = isHover ? 2 : 1.2;
                 }
               }
@@ -250,15 +250,15 @@ export default function CourtHeatmap({ rows, meta, verdict }: CourtHeatmapProps)
 
 
 
-          <circle cx="250" cy="417.5" r="7.5" fill="none" stroke="var(--color-ink-black)" strokeWidth="1.8" />
+          <circle cx="250" cy="417.5" r="7.5" fill="none" stroke="var(--ink)" strokeWidth="1.8" />
 
-          <line x1="220" y1="430" x2="280" y2="430" stroke="var(--color-ink-black)" strokeWidth="2.5" />
+          <line x1="220" y1="430" x2="280" y2="430" stroke="var(--ink)" strokeWidth="2.5" />
 
-          <circle cx="250" cy="280" r="60" fill="none" stroke="var(--color-stone-muted)" strokeWidth="1.2" strokeDasharray="4 4" />
-          <circle cx="250" cy="280" r="60" fill="none" stroke="var(--color-stone-muted)" strokeWidth="1.2" clipPath="url(#top-circle)" />
+          <circle cx="250" cy="280" r="60" fill="none" stroke="var(--line-strong)" strokeWidth="1.2" strokeDasharray="4 4" />
+          <circle cx="250" cy="280" r="60" fill="none" stroke="var(--line-strong)" strokeWidth="1.2" clipPath="url(#top-circle)" />
 
-          <line x1="0" y1="0" x2="500" y2="0" stroke="var(--color-stone-border)" strokeWidth="2" />
-          <circle cx="250" cy="0" r="60" fill="none" stroke="var(--color-stone-border)" strokeWidth="1.2" />
+          <line x1="0" y1="0" x2="500" y2="0" stroke="var(--line)" strokeWidth="2" />
+          <circle cx="250" cy="0" r="60" fill="none" stroke="var(--line)" strokeWidth="1.2" />
         </svg>
 
 
@@ -268,8 +268,8 @@ export default function CourtHeatmap({ rows, meta, verdict }: CourtHeatmapProps)
               position: "absolute",
               top: 12,
               left: 12,
-              background: "var(--color-pure-white)",
-              border: "1px solid var(--color-stone-border)",
+              background: "var(--surface)",
+              border: "1px solid var(--line)",
               borderRadius: 8,
               padding: "8px 12px",
               boxShadow: "var(--shadow-card)",
@@ -279,12 +279,12 @@ export default function CourtHeatmap({ rows, meta, verdict }: CourtHeatmapProps)
               zIndex: 10,
             }}
           >
-            <div style={{ fontWeight: 600, color: "var(--color-ink-black)" }}>
+            <div style={{ fontWeight: 600, color: "var(--ink)" }}>
               {activeRecord.zone || hovered}
             </div>
             {isCompare ? (
               <div style={{ marginTop: 4, display: "flex", flexDirection: "column", gap: 2 }}>
-                <div style={{ color: "var(--color-warm-gray)" }}>
+                <div style={{ color: "var(--ink-2)" }}>
                   {meta?.a || "Player A"}:{" "}
                   {(() => {
                     const three = isThreeZone(activeRecord.zone || hovered || "");
@@ -294,7 +294,7 @@ export default function CourtHeatmap({ rows, meta, verdict }: CourtHeatmapProps)
                   })()}{" "}
                   ({((activeRecord.a_share ?? 0) * 100).toFixed(0)}% vol)
                 </div>
-                <div style={{ color: "var(--color-warm-gray)" }}>
+                <div style={{ color: "var(--ink-2)" }}>
                   {meta?.b || "Player B"}:{" "}
                   {(() => {
                     const three = isThreeZone(activeRecord.zone || hovered || "");
@@ -305,14 +305,14 @@ export default function CourtHeatmap({ rows, meta, verdict }: CourtHeatmapProps)
                   ({((activeRecord.b_share ?? 0) * 100).toFixed(0)}% vol)
                 </div>
                 {activeRecord.edge && (
-                  <div style={{ fontWeight: 500, color: "var(--color-cyan-edge)", marginTop: 2 }}>
+                  <div style={{ fontWeight: 500, color: "var(--accent-ink)", marginTop: 2 }}>
                     Advantage: {activeRecord.edge}
                   </div>
                 )}
               </div>
             ) : (
               <div style={{ marginTop: 4, display: "flex", flexDirection: "column", gap: 2 }}>
-                <div style={{ color: "var(--color-warm-gray)" }}>
+                <div style={{ color: "var(--ink-2)" }}>
                   {(() => {
                     const three = isThreeZone(activeRecord.zone || hovered || "");
                     const acc = three && activeRecord.FG_PCT != null
@@ -322,7 +322,7 @@ export default function CourtHeatmap({ rows, meta, verdict }: CourtHeatmapProps)
                     return `Efficiency: ${acc != null ? ((acc * 100).toFixed(1) + "% " + lbl) : "n/a"}`;
                   })()}
                 </div>
-                <div style={{ color: "var(--color-warm-gray)" }}>
+                <div style={{ color: "var(--ink-2)" }}>
                   Volume: {((activeRecord.SHARE ?? activeRecord.share ?? 0) * 100).toFixed(1)}% of shots
                   {activeRecord.FGA !== undefined && ` (${activeRecord.FGM}/${activeRecord.FGA})`}
                 </div>
@@ -330,7 +330,7 @@ export default function CourtHeatmap({ rows, meta, verdict }: CourtHeatmapProps)
                   <div
                     style={{
                       fontWeight: 500,
-                      color: activeRecord.LEAGUE_DELTA >= 0 ? "var(--color-cyan-edge)" : "var(--color-warm-gray)",
+                      color: activeRecord.LEAGUE_DELTA >= 0 ? "var(--accent-ink)" : "var(--ink-2)",
                     }}
                   >
                     vs League: {activeRecord.LEAGUE_DELTA >= 0 ? "+" : ""}
@@ -344,27 +344,27 @@ export default function CourtHeatmap({ rows, meta, verdict }: CourtHeatmapProps)
       </div>
 
 
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: 11, color: "var(--color-ash-gray)", padding: "0 4px" }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: 11, color: "var(--ink-3)", padding: "0 4px" }}>
         <span>Hover court zones to inspect volume and shooting efficiency</span>
         {isCompare ? (
           <div style={{ display: "flex", gap: 12 }}>
             <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
-              <span style={{ width: 8, height: 8, borderRadius: 2, background: "var(--color-cyan-signal)" }} />
+              <span style={{ width: 8, height: 8, borderRadius: 2, background: "var(--accent)" }} />
               {meta?.a || "Player A"}
             </span>
             <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
-              <span style={{ width: 8, height: 8, borderRadius: 2, background: "var(--color-soot)" }} />
+              <span style={{ width: 8, height: 8, borderRadius: 2, background: "var(--ink)" }} />
               {meta?.b || "Player B"}
             </span>
           </div>
         ) : (
           <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
             <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
-              <span style={{ width: 8, height: 8, borderRadius: 2, background: "var(--color-ember)" }} />
+              <span style={{ width: 8, height: 8, borderRadius: 2, background: "var(--red)" }} />
               Below avg
             </span>
             <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
-              <span style={{ width: 8, height: 8, borderRadius: 2, background: "var(--color-cyan-signal)" }} />
+              <span style={{ width: 8, height: 8, borderRadius: 2, background: "var(--accent)" }} />
               Above avg
             </span>
             <span>depth scales with gap</span>

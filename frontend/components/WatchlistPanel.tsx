@@ -10,7 +10,10 @@ import {
 } from "../lib/api";
 import EmptyState from "./EmptyState";
 import Skeleton from "./Skeleton";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Panel } from "./ds/Panel";
+import { Button } from "./ds/Button";
+import { Chip } from "./ds/Chip";
+import { TextField } from "./ds/TextField";
 
 function snapshotLabel(item: WatchItem): string {
   const s = item.snapshot || {};
@@ -94,109 +97,17 @@ export default function WatchlistPanel() {
     }
   };
 
-  return (
-    <div className="card">
-      <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 4 }}>Watchlist</div>
-      <div style={{ fontSize: 12, color: "var(--color-warm-gray)", marginBottom: 12 }}>
-        {etype === "player"
-          ? "Add a player by full name."
-          : "Add a team by abbreviation (e.g. OKC)."}
-      </div>
 
-      <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
-        <Select value={etype} onValueChange={(next) => setEtype(next as "player" | "team")}>
-          <SelectTrigger aria-label="Entity type">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="player">Player</SelectItem>
-            <SelectItem value="team">Team</SelectItem>
-          </SelectContent>
-        </Select>
-        <input
-          ref={inputRef}
-          className="field"
-          style={{ flex: 1 }}
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === "Enter") add();
-          }}
-          placeholder={etype === "player" ? "Shai Gilgeous-Alexander" : "OKC"}
-          aria-label="Name"
-        />
-        <button className="pill-cta" onClick={add} disabled={busy || !name.trim()}>
-          {busy ? "Adding..." : "Add"}
-        </button>
-      </div>
-      {formErr && (
-        <div style={{ fontSize: 12, color: "var(--color-ember)", marginBottom: 8 }}>{formErr}</div>
-      )}
-
-      {loading ? (
-        <Skeleton lines={2} />
-      ) : err && !items.length ? (
-        <div style={{ fontSize: 12, color: "var(--color-warm-gray)" }}>{err}</div>
-      ) : !items.length ? (
-        <EmptyState
-          title="Your watchlist is empty"
-          description="Track players and teams to see them here."
-          actionLabel="Add your first player"
-          onAction={() => inputRef.current?.focus()}
-        />
-      ) : (
-        <div>
-          {items.map((item) => (
-            <div
-              key={`${item.entity_type}:${item.entity_id}`}
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: 10,
-                padding: "8px 0",
-                borderTop: "1px solid var(--color-stone-border)",
-                fontSize: 13,
-              }}
-            >
-              <span
-                style={{
-                  fontSize: 10,
-                  fontWeight: 600,
-                  letterSpacing: "0.04em",
-                  textTransform: "uppercase",
-                  color: "var(--color-warm-gray)",
-                  border: "1px solid var(--color-stone-border)",
-                  borderRadius: 9999,
-                  padding: "2px 8px",
-                  flexShrink: 0,
-                }}
-              >
-                {item.entity_type}
-              </span>
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ fontWeight: 500, color: "var(--color-ink-black)" }}>
-                  {item.snapshot?.player || item.snapshot?.team || item.entity_id}
-                </div>
-                {snapshotSub(item) && (
-                  <div style={{ fontSize: 11, color: "var(--color-ash-gray)" }}>
-                    {snapshotSub(item)}
-                  </div>
-                )}
-              </div>
-              <span style={{ fontSize: 12, color: "var(--color-warm-gray)" }}>
-                {snapshotLabel(item)}
-              </span>
-              <button
-                className="pill-ghost"
-                style={{ fontSize: 12, padding: "3px 10px" }}
-                onClick={() => remove(item)}
-              >
-                Remove
-              </button>
-            </div>
-          ))}
-        </div>
-      )}
-    </div>
-  );
+  return <Panel title="Watchlist" description="A focused view of the players and teams that matter to your work.">
+    <form className="mb-5 flex flex-wrap gap-2" onSubmit={(e) => { e.preventDefault(); void add(); }}>
+      <select aria-label="Entity type" value={etype} onChange={(e) => setEtype(e.target.value as "player" | "team")} className="rounded-lg border border-line-strong bg-field px-3 py-2 text-[12px] text-ink"><option value="player">Player</option><option value="team">Team</option></select>
+      <TextField ref={inputRef} className="min-w-40 flex-1" value={name} onChange={(e) => setName(e.target.value)} placeholder={etype === "player" ? "Shai Gilgeous-Alexander" : "OKC"} aria-label="Name" />
+      <Button variant="primary" size="sm" className="self-center" disabled={busy || !name.trim()}>{busy ? "Adding..." : "Add"}</Button>
+    </form>
+    {formErr && <p role="alert" className="mb-3 text-[12px] text-red">{formErr}</p>}
+    {err && <p role="alert" className="mb-3 text-[12px] text-red">{err}</p>}
+    {loading ? <Skeleton lines={2} /> : !items.length ? !err && <EmptyState title="Your watchlist is empty" description="Track players and teams to see them here." actionLabel="Add your first player" onAction={() => inputRef.current?.focus()} /> : <ul className="divide-y divide-line">{items.map((item) => <li key={item.entity_type + ":" + item.entity_id} className="flex flex-wrap items-center gap-3 py-3">
+      <Chip>{item.entity_type}</Chip><div className="min-w-32 flex-1"><p className="text-[13px] font-medium">{item.snapshot?.player || item.snapshot?.team || item.entity_id}</p>{snapshotSub(item) && <p className="mt-1 text-[11px] text-ink-3">{snapshotSub(item)}</p>}</div><span className="text-[12px] tabular-nums text-ink-2">{snapshotLabel(item)}</span><Button size="xs" variant="quiet" onClick={() => remove(item)}>Remove</Button>
+    </li>)}</ul>}
+  </Panel>;
 }

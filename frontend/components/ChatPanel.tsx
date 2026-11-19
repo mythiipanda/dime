@@ -49,7 +49,7 @@ function CopyButton({ text }: { text: string }) {
   const [done, setDone] = useState(false);
   return (
     <button
-      className="pill-ghost"
+      className="inline-flex items-center justify-center gap-1.5 rounded-full px-3 py-1.5 text-[12px] transition-colors bg-field text-ink-2 hover:bg-hover"
       style={{ fontSize: 12 }}
       onClick={() => {
         navigator.clipboard
@@ -76,7 +76,7 @@ function CiteButton({ text, sources }: {
   const [done, setDone] = useState(false);
   return (
     <button
-      className="pill-ghost"
+      className="inline-flex items-center justify-center gap-1.5 rounded-full px-3 py-1.5 text-[12px] transition-colors bg-field text-ink-2 hover:bg-hover"
       style={{ fontSize: 12 }}
       title="Copy answer with a citable source line"
       onClick={() => {
@@ -136,7 +136,7 @@ function LinkButton({ index }: { index: number }) {
   const [done, setDone] = useState(false);
   return (
     <button
-      className="pill-ghost"
+      className="inline-flex items-center justify-center gap-1.5 rounded-full px-3 py-1.5 text-[12px] transition-colors bg-field text-ink-2 hover:bg-hover"
       style={{ fontSize: 12 }}
       onClick={() => {
         if (typeof window === "undefined") return;
@@ -467,9 +467,9 @@ export default function ChatPanel({ thread, onRunDone, preset, autoSend, onAutoS
                 <Button
                   variant="ghost"
                   size="default"
-                  className="pill-ghost interactive-tactile h-auto font-normal"
+                  className="inline-flex items-center justify-center gap-1.5 rounded-full px-3 py-1.5 text-[12px] transition-colors bg-field text-ink-2 hover:bg-hover transition-colors hover:bg-hover h-auto font-normal"
                   onClick={stop}
-                  style={{ borderColor: "var(--color-cyan-signal)", color: "var(--color-cyan-edge)" }}
+                  style={{ borderColor: "var(--accent)", color: "var(--accent-ink)" }}
                 >
                   Stop {elapsed}s
                 </Button>
@@ -481,12 +481,12 @@ export default function ChatPanel({ thread, onRunDone, preset, autoSend, onAutoS
                   aria-label="Send"
                   disabled={!input.trim()}
                   onClick={() => sendText(input)}
-                  className="interactive-tactile chat-send disabled:opacity-100 [&_svg:not([class*='size-'])]:size-[15px]"
+                  className="transition-colors hover:bg-hover chat-send disabled:opacity-100 [&_svg:not([class*='size-'])]:size-[15px]"
                   style={{
                     width: 28, height: 28, borderRadius: 8, border: "none", cursor: input.trim() ? "pointer" : "default",
                     display: "flex", alignItems: "center", justifyContent: "center",
-                    background: input.trim() ? "var(--color-ink-black)" : "var(--color-stone-muted)",
-                    color: input.trim() ? "var(--color-pure-white)" : "var(--color-warm-gray)",
+                    background: input.trim() ? "var(--ink)" : "var(--line-strong)",
+                    color: input.trim() ? "var(--surface)" : "var(--ink-2)",
                     transition: "background 200ms ease, color 200ms ease",
                   }}
                 >
@@ -530,7 +530,7 @@ export default function ChatPanel({ thread, onRunDone, preset, autoSend, onAutoS
                 disabled={busy}
                 className="chat-starter"
               >
-                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" style={{ color: "var(--color-ash-gray)", flexShrink: 0 }}>
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" style={{ color: "var(--ink-3)", flexShrink: 0 }}>
                   {item.icon}
                 </svg>
                 <span>{item.title}</span>
@@ -575,7 +575,7 @@ export default function ChatPanel({ thread, onRunDone, preset, autoSend, onAutoS
                 >
 
                   <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
-                    <span style={{ fontWeight: 600, fontSize: 13, color: "var(--color-ink-black)" }}>
+                    <span style={{ fontWeight: 600, fontSize: 13, color: "var(--ink)" }}>
                       Dime
                     </span>
                   </div>
@@ -584,10 +584,10 @@ export default function ChatPanel({ thread, onRunDone, preset, autoSend, onAutoS
 
                     {m.ai?.error && (
                       <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 8 }}>
-                        <span style={{ color: "var(--color-ember)", fontSize: 13 }}>{m.ai.error} If this keeps happening, switch models and ask again.</span>
+                        <span style={{ color: "var(--red)", fontSize: 13 }}>{m.ai.error} If this keeps happening, switch models and ask again.</span>
                         <button
                           type="button"
-                          className="pill-ghost interactive-tactile"
+                          className="inline-flex items-center justify-center gap-1.5 rounded-full px-3 py-1.5 text-[12px] transition-colors bg-field text-ink-2 hover:bg-hover transition-colors hover:bg-hover"
                           style={{ fontSize: 12, padding: "3px 10px" }}
                           disabled={busy}
                           onClick={() => {
@@ -604,7 +604,7 @@ export default function ChatPanel({ thread, onRunDone, preset, autoSend, onAutoS
                     )}
 
                     {m.ai?.caution && m.ai.caution.length > 0 && (
-                      <div style={{ fontSize: 12, color: "var(--color-warm-gray)", marginBottom: 10, background: "var(--color-sky-wash)", padding: "6px 12px", borderRadius: 8 }}>
+                      <div style={{ fontSize: 12, color: "var(--ink-2)", marginBottom: 10, background: "var(--accent-tint)", padding: "6px 12px", borderRadius: 8 }}>
                         Check numbers against tables: {m.ai.caution.join(", ")}
                       </div>
                     )}
@@ -618,8 +618,8 @@ export default function ChatPanel({ thread, onRunDone, preset, autoSend, onAutoS
                           alignItems: "center",
                           gap: 6,
                           fontSize: 12,
-                          color: "var(--color-warm-gray)",
-                          background: "var(--color-sky-wash)",
+                          color: "var(--ink-2)",
+                          background: "var(--accent-tint)",
                           borderRadius: 999,
                           padding: "3px 12px",
                           marginBottom: 8,
@@ -635,7 +635,7 @@ export default function ChatPanel({ thread, onRunDone, preset, autoSend, onAutoS
                     )}
 
                     {m.ai?.streaming && !m.ai.done ? (
-                      <div style={{ fontSize: 14, lineHeight: 1.64, color: "var(--color-ink-black)" }}>
+                      <div style={{ fontSize: 14, lineHeight: 1.64, color: "var(--ink)" }}>
                         <StreamText text={m.text} />
                       </div>
                     ) : m.ai ? (
@@ -669,7 +669,7 @@ export default function ChatPanel({ thread, onRunDone, preset, autoSend, onAutoS
                         <LinkButton index={i} />
                         <button
                           type="button"
-                          className="pill-ghost interactive-tactile"
+                          className="inline-flex items-center justify-center gap-1.5 rounded-full px-3 py-1.5 text-[12px] transition-colors bg-field text-ink-2 hover:bg-hover transition-colors hover:bg-hover"
                           style={{ fontSize: 12, padding: "3px 10px" }}
                           title="Open a debate card from this answer"
                           onClick={() => {
@@ -689,8 +689,8 @@ export default function ChatPanel({ thread, onRunDone, preset, autoSend, onAutoS
                         {m.ai.suggestions.map((s) => (
                           <button
                             key={s}
-                            className="pill-ghost interactive-tactile"
-                            style={{ fontSize: 12, padding: "3px 10px", background: "var(--color-pure-white)" }}
+                            className="inline-flex items-center justify-center gap-1.5 rounded-full px-3 py-1.5 text-[12px] transition-colors bg-field text-ink-2 hover:bg-hover transition-colors hover:bg-hover"
+                            style={{ fontSize: 12, padding: "3px 10px", background: "var(--surface)" }}
                             onClick={() => sendText(s)}
                             disabled={busy}
                           >
@@ -727,7 +727,7 @@ export default function ChatPanel({ thread, onRunDone, preset, autoSend, onAutoS
               bottom: 0,
               left: 260,
               right: 0,
-              background: "linear-gradient(180deg, transparent, var(--color-stone-canvas) 32%)",
+              background: "linear-gradient(180deg, transparent, var(--page) 32%)",
               padding: "26px 20px 24px",
               zIndex: 40,
               boxSizing: "border-box",
@@ -737,8 +737,8 @@ export default function ChatPanel({ thread, onRunDone, preset, autoSend, onAutoS
               {!atBottom && messages.length > 2 && (
                 <div style={{ textAlign: "center", marginBottom: 8 }}>
                   <button
-                    className="pill-ghost"
-                    style={{ fontSize: 12, background: "var(--color-pure-white)", boxShadow: "var(--shadow-card)" }}
+                    className="inline-flex items-center justify-center gap-1.5 rounded-full px-3 py-1.5 text-[12px] transition-colors bg-field text-ink-2 hover:bg-hover"
+                    style={{ fontSize: 12, background: "var(--surface)", boxShadow: "var(--shadow-card)" }}
                     onClick={() => {
                       setAtBottom(true);
                       endRef.current?.scrollIntoView({ block: "end" });
@@ -788,9 +788,9 @@ export default function ChatPanel({ thread, onRunDone, preset, autoSend, onAutoS
                   <Button
                     variant="ghost"
                     size="default"
-                    className="pill-ghost h-auto font-normal"
+                    className="inline-flex items-center justify-center gap-1.5 rounded-full px-3 py-1.5 text-[12px] transition-colors bg-field text-ink-2 hover:bg-hover h-auto font-normal"
                     onClick={stop}
-                    style={{ borderColor: "var(--color-cyan-signal)", color: "var(--color-cyan-edge)" }}
+                    style={{ borderColor: "var(--accent)", color: "var(--accent-ink)" }}
                   >
                     Stop {elapsed}s
                   </Button>
@@ -807,8 +807,8 @@ export default function ChatPanel({ thread, onRunDone, preset, autoSend, onAutoS
                       width: 28, height: 28, borderRadius: 8, border: "none", flexShrink: 0,
                       cursor: input.trim() ? "pointer" : "default",
                       display: "flex", alignItems: "center", justifyContent: "center",
-                      background: input.trim() ? "var(--color-ink-black)" : "var(--color-stone-muted)",
-                      color: input.trim() ? "var(--color-pure-white)" : "var(--color-warm-gray)",
+                      background: input.trim() ? "var(--ink)" : "var(--line-strong)",
+                      color: input.trim() ? "var(--surface)" : "var(--ink-2)",
                       transition: "background 200ms ease, color 200ms ease",
                     }}
                   >

@@ -79,7 +79,7 @@ function labelKeyFor(rows: Row[]): string | null {
 }
 
 const cellStyle: React.CSSProperties = {
-  borderBottom: "1px solid var(--color-stone-border)",
+  borderBottom: "1px solid var(--line)",
   padding: "7px 10px",
   fontSize: 13,
   fontWeight: 400,
@@ -89,9 +89,9 @@ const cellStyle: React.CSSProperties = {
 };
 
 const headStyle: React.CSSProperties = {
-  borderBottom: "1px solid var(--color-stone-border)",
+  borderBottom: "1px solid var(--line)",
   padding: "7px 10px",
-  color: "var(--color-warm-gray)",
+  color: "var(--ink-2)",
   fontSize: 12,
   fontWeight: 500,
   textAlign: "right",
@@ -266,7 +266,7 @@ export default function AdvancedStatsPanel({ onPlayerSelect }: { onPlayerSelect?
   const rowCount = typeof meta?.rows === "number" ? meta.rows : pool.length;
 
   return (
-    <section aria-label="Advanced stats" style={{ fontFamily: "var(--font-body)" }}>
+    <section aria-label="Advanced stats" style={{ fontFamily: "var(--font-inter)" }}>
       <div className="panel-kicker">Advanced</div>
       <h2 className="panel-title" style={{ margin: "4px 0 12px" }}>
         Advanced stats
@@ -279,7 +279,7 @@ export default function AdvancedStatsPanel({ onPlayerSelect }: { onPlayerSelect?
               type="button"
               role="tab"
               aria-selected={tab === t.key}
-              className={tab === t.key ? "tab-active" : "pill-ghost"}
+              className={tab === t.key ? "inline-flex items-center justify-center gap-1.5 rounded-full px-3 py-1.5 text-[12px] transition-colors bg-surface text-ink shadow-hairline" : "inline-flex items-center justify-center gap-1.5 rounded-full px-3 py-1.5 text-[12px] transition-colors bg-field text-ink-2 hover:bg-hover"}
               onClick={() => pickTab(t.key)}
               style={{ fontSize: 12, padding: "4px 12px" }}
             >
@@ -288,7 +288,7 @@ export default function AdvancedStatsPanel({ onPlayerSelect }: { onPlayerSelect?
           ))}
         </div>
         <select
-          className="field"
+          className="rounded-lg border border-line bg-field px-3 py-2 text-ink"
           aria-label="Season"
           value={season}
           onChange={(e) => pickSeason(e.target.value)}
@@ -302,12 +302,12 @@ export default function AdvancedStatsPanel({ onPlayerSelect }: { onPlayerSelect?
         </select>
         {tab === "lineups" && (
           <div role="group" aria-label="Minimum possessions" style={{ display: "inline-flex", gap: 4, alignItems: "center" }}>
-            <span style={{ fontSize: 11, color: "var(--color-ash-gray)" }}>Min poss</span>
+            <span style={{ fontSize: 11, color: "var(--ink-3)" }}>Min poss</span>
             {MIN_POSS_OPTIONS.map((m) => (
               <button
                 key={m}
                 type="button"
-                className={minPoss === m ? "tab-active" : "pill-ghost"}
+                className={minPoss === m ? "inline-flex items-center justify-center gap-1.5 rounded-full px-3 py-1.5 text-[12px] transition-colors bg-surface text-ink shadow-hairline" : "inline-flex items-center justify-center gap-1.5 rounded-full px-3 py-1.5 text-[12px] transition-colors bg-field text-ink-2 hover:bg-hover"}
                 onClick={() => pickMinPoss(m)}
                 style={{ fontSize: 12, padding: "4px 10px" }}
                 aria-pressed={minPoss === m}
@@ -318,7 +318,7 @@ export default function AdvancedStatsPanel({ onPlayerSelect }: { onPlayerSelect?
           </div>
         )}
         <input
-          className="field"
+          className="rounded-lg border border-line bg-field px-3 py-2 text-ink"
           aria-label="Filter rows"
           value={filter}
           onChange={(e) => {
@@ -328,40 +328,40 @@ export default function AdvancedStatsPanel({ onPlayerSelect }: { onPlayerSelect?
           placeholder="Filter rows"
           style={{ fontSize: 13, width: 150 }}
         />
-        <a className="pill-ghost" style={{ fontSize: 12 }} href={datasetUrl(csvName, csvParams, "csv")}>
+        <a className="inline-flex items-center justify-center gap-1.5 rounded-full px-3 py-1.5 text-[12px] transition-colors bg-field text-ink-2 hover:bg-hover" style={{ fontSize: 12 }} href={datasetUrl(csvName, csvParams, "csv")}>
           CSV
         </a>
-        <span style={{ marginLeft: "auto", fontSize: 12, color: "var(--color-ash-gray)", fontVariantNumeric: "tabular-nums" }}>
+        <span style={{ marginLeft: "auto", fontSize: 12, color: "var(--ink-3)", fontVariantNumeric: "tabular-nums" }}>
           Showing {view.length} of {rowCount}
         </span>
       </div>
       {status === "loading" && <Skeleton lines={5} label={`Loading ${tab} for ${season}`} />}
       {status === "error" && (
-        <div style={{ fontSize: 13, color: "var(--color-warm-gray)" }}>
+        <div style={{ fontSize: 13, color: "var(--ink-2)" }}>
           {error} Try another season{tab === "lineups" ? " or a lower possession cutoff" : ""}.
         </div>
       )}
       {status === "ok" && !pool.length && (
-        <div style={{ fontSize: 13, color: "var(--color-warm-gray)" }}>
+        <div style={{ fontSize: 13, color: "var(--ink-2)" }}>
           No rows for {season}. Try another season.
         </div>
       )}
       {status === "ok" && pool.length > 0 && view.length === 0 && (
-        <div style={{ fontSize: 13, color: "var(--color-warm-gray)" }}>
+        <div style={{ fontSize: 13, color: "var(--ink-2)" }}>
           No rows match this filter for {season}. Clear the search.
         </div>
       )}
       {status === "ok" && view.length > 0 && (
         <div
           className="dime-table table-scroll"
-          style={{ border: "1px solid var(--color-stone-border)", borderRadius: 10, background: "var(--color-pure-white)", boxShadow: "var(--shadow-card)" }}
+          style={{ border: "1px solid var(--line)", borderRadius: 10, background: "var(--surface)", boxShadow: "var(--shadow-card)" }}
         >
-          <table style={{ borderCollapse: "collapse", width: "100%", fontFamily: "var(--font-body)" }}>
+          <table style={{ borderCollapse: "collapse", width: "100%", fontFamily: "var(--font-inter)" }}>
             <thead>
               <tr>
                 <th style={{ ...headStyle, textAlign: "right", width: 44 }}>#</th>
                 {cols.label && (
-                  <th style={{ ...headStyle, textAlign: "left", position: "sticky", left: 0, background: "var(--color-pure-white)" }}>
+                  <th style={{ ...headStyle, textAlign: "left", position: "sticky", left: 0, background: "var(--surface)" }}>
                     <button
                       type="button"
                       onClick={() => toggleSort(cols.label as string)}
@@ -391,9 +391,9 @@ export default function AdvancedStatsPanel({ onPlayerSelect }: { onPlayerSelect?
             <tbody>
               {view.map((i, rank) => (
                 <tr key={i}>
-                  <td style={{ ...cellStyle, color: "var(--color-ash-gray)" }}>{rank + 1}</td>
+                  <td style={{ ...cellStyle, color: "var(--ink-3)" }}>{rank + 1}</td>
                   {cols.label && (
-                    <td style={{ ...cellStyle, textAlign: "left", position: "sticky", left: 0, background: "var(--color-pure-white)" }}>
+                    <td style={{ ...cellStyle, textAlign: "left", position: "sticky", left: 0, background: "var(--surface)" }}>
                       {(() => {
                         const raw = pool[i][cols.label as string];
                         const text = String(raw ?? "");
@@ -403,7 +403,7 @@ export default function AdvancedStatsPanel({ onPlayerSelect }: { onPlayerSelect?
                               type="button"
                               onClick={() => onPlayerSelect(text)}
                               title={`Open ${text}`}
-                              style={{ background: "none", border: "none", padding: 0, font: "inherit", cursor: "pointer", color: "var(--color-cyan-edge)", fontWeight: 500, textDecoration: "underline", textUnderlineOffset: 2, textAlign: "left" }}
+                              style={{ background: "none", border: "none", padding: 0, font: "inherit", cursor: "pointer", color: "var(--accent-ink)", fontWeight: 500, textDecoration: "underline", textUnderlineOffset: 2, textAlign: "left" }}
                             >
                               {text}
                             </button>
@@ -420,7 +420,7 @@ export default function AdvancedStatsPanel({ onPlayerSelect }: { onPlayerSelect?
                       <td key={c} style={cellStyle}>
                         {v === null ? String(pool[i][c] ?? "") : fmtVal(c, v)}
                         {p !== undefined && (
-                          <sub style={{ marginLeft: 3, fontSize: 9, color: "var(--color-ash-gray)", fontVariantNumeric: "tabular-nums" }}>
+                          <sub style={{ marginLeft: 3, fontSize: 9, color: "var(--ink-3)", fontVariantNumeric: "tabular-nums" }}>
                             {p}
                           </sub>
                         )}
@@ -433,7 +433,7 @@ export default function AdvancedStatsPanel({ onPlayerSelect }: { onPlayerSelect?
           </table>
         </div>
       )}
-      <div style={{ marginTop: 8, fontSize: 12, color: "var(--color-ash-gray)" }}>
+      <div style={{ marginTop: 8, fontSize: 12, color: "var(--ink-3)" }}>
         {note}
       </div>
     </section>

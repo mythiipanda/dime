@@ -105,12 +105,12 @@ function SummaryLine({ s }: { s: RestTeamSummary }) {
       }}
     >
       <span
-        style={{ fontSize: 14, fontWeight: 600, color: "var(--color-cyan-edge)" }}
+        style={{ fontSize: 14, fontWeight: 600, color: "var(--accent-ink)" }}
       >
         {edge > 0 ? "+" : ""}
         {edge.toFixed(2)} avg edge
       </span>
-      <span style={{ fontSize: 12, color: "var(--color-warm-gray)" }}>
+      <span style={{ fontSize: 12, color: "var(--ink-2)" }}>
         {s.avgRest !== null ? `${s.avgRest.toFixed(1)}d avg rest` : "no baseline"}
         {s.backToBacks !== null ? ` · ${s.backToBacks} back-to-back` : ""}
       </span>
@@ -149,8 +149,8 @@ export default function RestAdvantageView({
       {parsed.kind === "league" ? (
         <div
           style={{
-            background: "var(--color-pure-white)",
-            border: "1px solid var(--color-stone-border)",
+            background: "var(--surface)",
+            border: "1px solid var(--line)",
             borderRadius: 10,
             overflowX: "auto",
           }}
@@ -164,7 +164,7 @@ export default function RestAdvantageView({
             }}
           >
             <thead>
-              <tr style={{ fontSize: 10, color: "var(--color-ash-gray)", textAlign: "left" }}>
+              <tr style={{ fontSize: 10, color: "var(--ink-3)", textAlign: "left" }}>
                 <th style={{ fontWeight: 500, padding: "8px 12px" }}>Team</th>
                 <th style={{ fontWeight: 500, padding: "8px 8px", textAlign: "right" }}>Avg edge</th>
                 <th style={{ fontWeight: 500, padding: "8px 8px", textAlign: "right" }}>B2B</th>
@@ -175,9 +175,9 @@ export default function RestAdvantageView({
               {parsed.teams.map((s, i) => (
                 <tr
                   key={`${s.team}-${i}`}
-                  style={{ borderTop: "1px solid var(--color-stone-border)" }}
+                  style={{ borderTop: "1px solid var(--line)" }}
                 >
-                  <td style={{ padding: "7px 12px", fontSize: 12, fontWeight: 500, color: "var(--color-ink-black)" }}>
+                  <td style={{ padding: "7px 12px", fontSize: 12, fontWeight: 500, color: "var(--ink)" }}>
                     {s.team}
                   </td>
                   <td
@@ -185,7 +185,7 @@ export default function RestAdvantageView({
                       padding: "7px 8px",
                       fontSize: 13,
                       fontWeight: 600,
-                      color: "var(--color-cyan-edge)",
+                      color: "var(--accent-ink)",
                       textAlign: "right",
                     }}
                   >
@@ -193,10 +193,10 @@ export default function RestAdvantageView({
                       ? `${s.avgDiff >= 0 ? "+" : ""}${s.avgDiff.toFixed(2)}`
                       : "—"}
                   </td>
-                  <td style={{ padding: "7px 8px", fontSize: 12, color: "var(--color-warm-gray)", textAlign: "right" }}>
+                  <td style={{ padding: "7px 8px", fontSize: 12, color: "var(--ink-2)", textAlign: "right" }}>
                     {s.backToBacks ?? "—"}
                   </td>
-                  <td style={{ padding: "7px 12px", fontSize: 12, color: "var(--color-warm-gray)", textAlign: "right" }}>
+                  <td style={{ padding: "7px 12px", fontSize: 12, color: "var(--ink-2)", textAlign: "right" }}>
                     {s.withEdge || "—"}
                   </td>
                 </tr>
@@ -224,8 +224,8 @@ export default function RestAdvantageView({
           {parsed.games.length > 0 && (
             <div
               style={{
-                background: "var(--color-pure-white)",
-                border: "1px solid var(--color-stone-border)",
+                background: "var(--surface)",
+                border: "1px solid var(--line)",
                 borderRadius: 10,
                 overflowX: "auto",
               }}
@@ -239,7 +239,7 @@ export default function RestAdvantageView({
                 }}
               >
                 <thead>
-                  <tr style={{ fontSize: 10, color: "var(--color-ash-gray)", textAlign: "left" }}>
+                  <tr style={{ fontSize: 10, color: "var(--ink-3)", textAlign: "left" }}>
                     <th style={{ fontWeight: 500, padding: "8px 12px" }}>Date</th>
                     <th style={{ fontWeight: 500, padding: "8px 8px" }}>Opp</th>
                     <th style={{ fontWeight: 500, padding: "8px 8px", textAlign: "right" }}>Rest</th>
@@ -253,21 +253,21 @@ export default function RestAdvantageView({
                     return (
                       <tr
                         key={`${g.date}-${i}`}
-                        style={{ borderTop: "1px solid var(--color-stone-border)" }}
+                        style={{ borderTop: "1px solid var(--line)" }}
                       >
-                        <td style={{ padding: "7px 12px", fontSize: 12, color: "var(--color-warm-gray)" }}>
+                        <td style={{ padding: "7px 12px", fontSize: 12, color: "var(--ink-2)" }}>
                           {fmtDate(g.date)}
                         </td>
-                        <td style={{ padding: "7px 8px", fontSize: 12, color: "var(--color-ink-black)" }}>
+                        <td style={{ padding: "7px 8px", fontSize: 12, color: "var(--ink)" }}>
                           {g.home ? "vs " : "@ "}
                           {g.opponent || "—"}
                           {g.result && (
-                            <span style={{ color: "var(--color-ash-gray)", marginLeft: 4 }}>
+                            <span style={{ color: "var(--ink-3)", marginLeft: 4 }}>
                               {g.result}
                             </span>
                           )}
                         </td>
-                        <td style={{ padding: "7px 8px", fontSize: 12, color: "var(--color-warm-gray)", textAlign: "right" }}>
+                        <td style={{ padding: "7px 8px", fontSize: 12, color: "var(--ink-2)", textAlign: "right" }}>
                           {fmtRest(g.rest)}
                           {b2b && (
                             <span style={{ marginLeft: 4 }}>
@@ -275,7 +275,7 @@ export default function RestAdvantageView({
                             </span>
                           )}
                         </td>
-                        <td style={{ padding: "7px 8px", fontSize: 12, color: "var(--color-warm-gray)", textAlign: "right" }}>
+                        <td style={{ padding: "7px 8px", fontSize: 12, color: "var(--ink-2)", textAlign: "right" }}>
                           {fmtRest(g.oppRest)}
                         </td>
                         <td
@@ -283,7 +283,7 @@ export default function RestAdvantageView({
                             padding: "7px 12px",
                             fontSize: 13,
                             fontWeight: 600,
-                            color: "var(--color-cyan-edge)",
+                            color: "var(--accent-ink)",
                             textAlign: "right",
                           }}
                         >

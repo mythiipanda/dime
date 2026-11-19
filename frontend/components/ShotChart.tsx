@@ -30,8 +30,8 @@ function drawShots(canvas: HTMLCanvasElement, shots: Shot[]) {
   
 
   const cssv = getComputedStyle(document.documentElement);
-  const surface = cssv.getPropertyValue("--color-pure-white").trim() || "#ffffff";
-  const ink = cssv.getPropertyValue("--color-ink-black").trim() || "#1c1917";
+  const surface = cssv.getPropertyValue("--surface").trim() || "#ffffff";
+  const ink = cssv.getPropertyValue("--ink").trim() || "#1c1917";
   ctx.clearRect(0, 0, W, H);
   ctx.fillStyle = surface;
   ctx.fillRect(0, 0, W, H);
@@ -105,14 +105,14 @@ export default function ShotChart({
 
   return (
     <div style={{ marginTop: 12 }}>
-      <div style={{ fontSize: 12, color: "var(--color-warm-gray)" }}>
+      <div style={{ fontSize: 12, color: "var(--ink-2)" }}>
         {count} shots. Filled marks went in. Outlines missed.
       </div>
-      {error && <div style={{ fontSize: 12, color: "var(--color-warm-gray)" }}>{error}</div>}
+      {error && <div style={{ fontSize: 12, color: "var(--ink-2)" }}>{error}</div>}
       <canvas ref={ref} width={500} height={475} style={{ width: "100%", marginTop: 8 }} />
       {zones.length > 0 && (
         <div style={{ marginTop: 8 }}>
-          <div style={{ fontSize: 12, color: "var(--color-warm-gray)", marginBottom: 4 }}>
+          <div style={{ fontSize: 12, color: "var(--ink-2)", marginBottom: 4 }}>
             Rim under 8 feet. Three beyond 23.75.
           </div>
           <DataTable rows={zones} />
@@ -185,7 +185,7 @@ export function ShotChartCard({ initialPlayer }: { initialPlayer?: string }) {
     <div>
       <div style={{ display: "flex", gap: 8, marginTop: 16, flexWrap: "wrap" }}>
         <input
-          className="field"
+          className="rounded-lg border border-line bg-field px-3 py-2 text-ink"
           value={playerId}
           onChange={(e) => setPlayerId(e.target.value)}
           placeholder="player name or id, e.g. LeBron or 2544"
@@ -193,13 +193,13 @@ export function ShotChartCard({ initialPlayer }: { initialPlayer?: string }) {
           aria-label="Player name or id"
         />
         <input
-          className="field"
+          className="rounded-lg border border-line bg-field px-3 py-2 text-ink"
           value={season}
           onChange={(e) => setSeason(e.target.value)}
           placeholder="season"
           style={{ width: 110 }}
         />
-        <button className="pill-ghost" onClick={plot}>
+        <button className="inline-flex items-center justify-center gap-1.5 rounded-full px-3 py-1.5 text-[12px] transition-colors bg-field text-ink-2 hover:bg-hover" onClick={plot}>
           Plot
         </button>
       </div>
@@ -208,7 +208,7 @@ export function ShotChartCard({ initialPlayer }: { initialPlayer?: string }) {
           {suggest.map((s) => (
             <button
               key={s.id}
-              className="pill-ghost"
+              className="inline-flex items-center justify-center gap-1.5 rounded-full px-3 py-1.5 text-[12px] transition-colors bg-field text-ink-2 hover:bg-hover"
               style={{ fontSize: 12 }}
               onClick={() => {
                 setPlayerId(String(s.id));

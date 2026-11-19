@@ -7,6 +7,9 @@ import { apiPath } from "../lib/api";
 import { fetchIndexSummaries } from "../lib/exploreIndex";
 import type { ExplorePanelId } from "../lib/exploreSearch";
 import { TEAM_IDS } from "../lib/teams";
+import { Button } from "./ds/Button";
+import { Chip } from "./ds/Chip";
+import { Database } from "iconoir-react";
 
 
 
@@ -125,30 +128,31 @@ export default function ExploreIndex({
   const visible = CARDS.filter((card) => (summaries[card.id] ?? []).length > 0);
 
   return (
-    <div className="explore-index" aria-label="Available analysis">
+    <div className="my-6 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3" aria-label="Available analysis">
       {visible.map((card, index) => (
-        <button
+        <Button
           key={card.id}
           type="button"
-          className={`explore-index-card${active === card.id ? " is-open" : ""}`}
+          variant="quiet"
+          className={`min-h-44 flex-col items-stretch justify-start rounded-xl border p-5 text-left font-normal transition-colors hover:bg-hover ${active === card.id ? "border-ink-3 bg-hover-2" : "border-line bg-surface"}`}
           onClick={() => onSelect(card.id)}
           aria-expanded={active === card.id}
         >
-          <span className="explore-index-top">
-            <span className="explore-index-number">0{index + 1}</span>
-            <span className="explore-index-go">
+          <span className="mb-4 flex items-center justify-between">
+            <Chip><Database width={13} height={13} className="inline" /> 0{index + 1}</Chip>
+            <span className="text-ink-3">
               <ArrowUpRight />
             </span>
           </span>
-          <strong>{card.label}</strong>
-          <span className="explore-index-lines">
+          <strong className="mb-2 text-[13px] font-medium">{card.label}</strong>
+          <span className="flex flex-col gap-1 text-[11px] leading-relaxed text-ink-3">
             {summaries[card.id].map((line, i) => (
-              <span className="explore-index-line" key={i} title={line}>
+              <span className="truncate" key={i} title={line}>
                 {line}
               </span>
             ))}
           </span>
-        </button>
+        </Button>
       ))}
     </div>
   );

@@ -100,8 +100,8 @@ export default function DebateCardModal({
           left: 0,
           right: 0,
           zIndex: 5,
-          background: "var(--color-pure-white)",
-          border: "1px solid var(--color-stone-border)",
+          background: "var(--surface)",
+          border: "1px solid var(--line)",
           borderRadius: 8,
           margin: "4px 0 0",
           padding: 4,
@@ -121,7 +121,7 @@ export default function DebateCardModal({
                 fontSize: 13,
                 lineHeight: 1.5,
                 minHeight: 40,
-                color: "var(--color-ink-black)",
+                color: "var(--ink)",
                 cursor: "pointer",
               }}
               onClick={() => {
@@ -148,8 +148,8 @@ export default function DebateCardModal({
         aria-label="Debate card"
         showCloseButton={false}
         style={{
-          background: "var(--color-pure-white)",
-          border: "1px solid var(--color-stone-border)",
+          background: "var(--surface)",
+          border: "1px solid var(--line)",
           borderRadius: 10,
           padding: 20,
           maxWidth: 640,
@@ -161,7 +161,7 @@ export default function DebateCardModal({
           gap: 0,
         }}
       >
-        <DialogTitle className="display" style={{ fontSize: 20, fontWeight: 400, color: "var(--color-ink-black)", marginBottom: 4 }}>
+        <DialogTitle className="font-medium tracking-tight" style={{ fontSize: 20, fontWeight: 400, color: "var(--ink)", marginBottom: 4 }}>
           Debate card
         </DialogTitle>
         {debateTopic ? (
@@ -173,9 +173,9 @@ export default function DebateCardModal({
                 fontWeight: 500,
                 borderRadius: 9999,
                 padding: "2px 10px",
-                border: "1px solid var(--color-stone-border)",
-                background: "var(--color-sky-wash)",
-                color: "var(--color-cyan-edge)",
+                border: "1px solid var(--line)",
+                background: "var(--accent-tint)",
+                color: "var(--accent-ink)",
                 whiteSpace: "nowrap",
                 maxWidth: "100%",
                 overflow: "hidden",
@@ -187,14 +187,14 @@ export default function DebateCardModal({
             </span>
           </div>
         ) : (
-          <DialogDescription style={{ fontSize: 14, color: "var(--color-warm-gray)", marginBottom: 16 }}>
+          <DialogDescription style={{ fontSize: 14, color: "var(--ink-2)", marginBottom: 16 }}>
             Pick two players and settle it with data.
           </DialogDescription>
         )}
         <div style={{ display: "flex", gap: 8, marginBottom: 12, flexWrap: "wrap" }}>
           <div style={{ position: "relative", flex: "1 1 160px", minWidth: 0 }}>
             <input
-              className="field"
+              className="rounded-lg border border-line bg-field px-3 py-2 text-ink"
               style={{ width: "100%" }}
               value={a}
               placeholder="Player A"
@@ -208,7 +208,7 @@ export default function DebateCardModal({
           </div>
           <div style={{ position: "relative", flex: "1 1 160px", minWidth: 0 }}>
             <input
-              className="field"
+              className="rounded-lg border border-line bg-field px-3 py-2 text-ink"
               style={{ width: "100%" }}
               value={b}
               placeholder="Player B"
@@ -224,19 +224,19 @@ export default function DebateCardModal({
         <div style={{ display: "flex", gap: 8, marginBottom: 16, flexWrap: "wrap" }}>
           <button
             type="button"
-            className="pill-cta"
+            className="inline-flex items-center justify-center gap-1.5 rounded-full px-3 py-1.5 text-[12px] transition-colors bg-ink text-page hover:opacity-90 disabled:opacity-50"
             style={{ minHeight: 40 }}
             disabled={!a.trim() || !b.trim() || status === "loading"}
             onClick={generate}
           >
             {status === "loading" ? "Building…" : "Generate"}
           </button>
-          <button type="button" className="pill-ghost" style={{ minHeight: 40 }} onClick={onClose}>
+          <button type="button" className="inline-flex items-center justify-center gap-1.5 rounded-full px-3 py-1.5 text-[12px] transition-colors bg-field text-ink-2 hover:bg-hover" style={{ minHeight: 40 }} onClick={onClose}>
             Close
           </button>
         </div>
         {status === "error" && (
-          <div style={{ fontSize: 14, color: "var(--color-warm-gray)", marginBottom: 12 }}>
+          <div style={{ fontSize: 14, color: "var(--ink-2)", marginBottom: 12 }}>
             {error || "The debate card didn't build. Try again."}
           </div>
         )}
@@ -250,17 +250,17 @@ export default function DebateCardModal({
                 height: 360,
                 maxHeight: "50dvh",
                 display: "block",
-                background: "var(--color-stone-canvas)",
-                border: "1px solid var(--color-stone-border)",
+                background: "var(--page)",
+                border: "1px solid var(--line)",
                 borderRadius: 10,
               }}
             />
             <div style={{ display: "flex", gap: 8, marginTop: 12, flexWrap: "wrap" }}>
-              <button type="button" className="pill-ghost" style={{ minHeight: 40 }} onClick={copyLink}>
+              <button type="button" className="inline-flex items-center justify-center gap-1.5 rounded-full px-3 py-1.5 text-[12px] transition-colors bg-field text-ink-2 hover:bg-hover" style={{ minHeight: 40 }} onClick={copyLink}>
                 {copied ? "Copied" : "Copy Link"}
               </button>
               <a
-                className="pill-ghost"
+                className="inline-flex items-center justify-center gap-1.5 rounded-full px-3 py-1.5 text-[12px] transition-colors bg-field text-ink-2 hover:bg-hover"
                 style={{ textDecoration: "none", fontSize: 13, minHeight: 40, display: "inline-flex", alignItems: "center" }}
                 href={fileUrl}
                 download={rows.path}
