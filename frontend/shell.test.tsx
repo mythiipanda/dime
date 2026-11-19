@@ -157,8 +157,8 @@ it("never selects unconfigured providers and presents human model names", () => 
 });
 
 it("keeps old URL values and defines the requested navigation", () => {
-  assert.deepEqual(shellNavigation.map((n) => n.label), ["Home", "Ask", "Boards", "Workflows", "Library", "Data"]);
-  for (const tab of ["chat", "today", "data", "workflows"] as const) assert.equal(parseShellTab(tab), tab);
+  assert.deepEqual(shellNavigation.map((n) => n.label), ["Home", "Ask", "Boards", "Notebooks", "Workflows", "Library", "Data"]);
+  for (const tab of ["chat", "today", "data", "workflows", "notebooks"] as const) assert.equal(parseShellTab(tab), tab);
   assert.equal(parseShellTab("unknown"), "chat");
 });
 
