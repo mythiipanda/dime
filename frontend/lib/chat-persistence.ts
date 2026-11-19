@@ -33,6 +33,7 @@ export async function loadChatRuns(thread: string): Promise<{ question: string; 
     const stream = new DimeStream();
     stream.handle("custom_data", { tables: run.tables });
     stream.handle("final_answer", { text: run.answer, tables: run.tables, suggestions: run.suggestions, carry });
+    stream.handle("suggestions", { items: run.suggestions });
     stream.finish();
     return { question: run.question, snapshot: stream.snapshot() };
   }));

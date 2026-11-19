@@ -2,6 +2,19 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { replayName, replayStream } from "./replay";
 import { DimeStream } from "./dime-stream";
+import { loadChatRuns } from "./chat-persistence";
+
+test("saved runs without snapshots restore follow-up suggestions through DimeStream", async () => {
+  const previous = globalThis.fetch;
+  globalThis.fetch = async () => Response.json({ runs: [{ question: "Question", answer: "Saved answer", tables: [], suggestions: ["Next question", "", 42, "Another question"] }] });
+  try {
+    const runs = await loadChatRuns("restored-followups");
+    assert.equal(runs[0].snapshot.text, "Saved answer");
+    assert.deepEqual(runs[0].snapshot.suggestions, ["Next question", "Another question"]);
+    globalThis.fetch = async () => Response.json({ runs: [{ question: "Question", answer: "No follow-ups", tables: [] }] });
+    assert.deepEqual((await loadChatRuns("restored-no-followups"))[0].snapshot.suggestions, []);
+  } finally { globalThis.fetch = previous; }
+});
 
 test("replay URL is development-only and ignores invalid names", () => {
   assert.equal(replayName("?replay=scouting", "development"), "scouting");
