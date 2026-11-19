@@ -25,7 +25,7 @@ const suggestions = [
   { icon: Database, text: "Find the most effective five-man lineups this season" },
 ];
 
-function AssistantTurn({ ai, question, onAsk }: { ai: AiMessage; question: string; onAsk: (q: string) => void }) {
+export function AssistantTurn({ ai, question, onAsk }: { ai: AiMessage; question: string; onAsk: (q: string) => void }) {
   const [copied, setCopied] = useState(false);
   const items = ai.activity || [];
   const tools = pairToolItems(items).map((pair, i) => {
@@ -33,7 +33,7 @@ function AssistantTurn({ ai, question, onAsk }: { ai: AiMessage; question: strin
     return { id: record.eventId || String(i), label: capabilityLabel(recordKey(record) || record.title), status: (pair.result ? pair.result.transition === "failed" || pair.result.status === "fail" ? "error" : "done" : "running") as "done" | "error" | "running", detail: pair.result?.summary };
   });
   const tables = Object.values(ai.nodes).flatMap((n) => n.tables);
-  const grids = tables.filter((t) => Array.isArray(t.rows) && t.rows.every((r) => r && typeof r === "object" && !Array.isArray(r)));
+  const grids = tables.filter((t) => t.tool !== "get_comps" && Array.isArray(t.rows) && t.rows.every((r) => r && typeof r === "object" && !Array.isArray(r)));
   const remaining: AiMessage = { ...ai, nodes: Object.fromEntries(Object.entries(ai.nodes).map(([key, node]) => [key, { ...node, tables: node!.tables.filter((t) => !grids.includes(t)) }])) };
   return <article className="assistant-turn" aria-label="Dime response">
     <div className="mb-4 flex items-center gap-2 text-[12px] font-medium"><Basketball width={16} height={16} /><span>Dime</span><span className="ml-1 text-[10px] font-normal text-ink-3">NBA intelligence</span></div>

@@ -7,6 +7,18 @@ import { DimeShell, parseShellTab, shellNavigation } from "./components/shell/Di
 import { availableModel, modelLabel } from "./lib/model-catalog";
 import { renderToStaticMarkup } from "react-dom/server";
 import { PromptBar } from "./components/ds/PromptBar";
+import { AssistantTurn } from "./components/shell/ChatView";
+import { aiFromRun } from "./lib/stream-event";
+
+it("preserves statistical drivers when reopening a saved comps result", () => {
+  const ai = aiFromRun({ question: "Find player comps", answer: "Comparable players", created_at: "2026-01-01", suggestions: [], tables: [{ tool: "get_comps", rows: [{ PLAYER: "Test player", TEAM: "OKC", similarity: 0.94, drivers: [{ stat: "AST_PCT", target: 31.5, comp: 29.8 }] }] }] });
+  const html = renderToStaticMarkup(<AssistantTurn ai={ai} question="Find player comps" onAsk={() => {}} />);
+  assert.match(html, /AST_PCT/);
+  assert.match(html, /31\.5/);
+  assert.match(html, /29\.8/);
+  assert.match(html, /Test player/);
+  assert.doesNotMatch(html, /2 records/);
+});
 
 it("never selects unconfigured providers and presents human model names", () => {
   const models = [{ id: "mistral:ministral-8b-2512", engine: "mistral", default: true, available: false }, { id: "gemini:gemini-2.5-flash", engine: "gemini", available: true }];
