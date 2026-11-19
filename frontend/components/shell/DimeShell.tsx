@@ -3,7 +3,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { HomeSimple, ChatBubble, ViewGrid, Sparks, Book, Database, SunLight, HalfMoon, Search, Xmark } from "iconoir-react";
 import { SidebarNav } from "../ds/SidebarNav";
-import { Button } from "../ds/Button";
 import { Chip } from "../ds/Chip";
 import { ChatView } from "./ChatView";
 import { getThreads, type ThreadInfo } from "../../lib/api";
@@ -14,6 +13,7 @@ import { HomeView } from "./HomeView";
 import BriefsPage from "../../app/briefs/page";
 import CommandPalette from "../CommandPalette";
 import DebateCardModal from "../DebateCardModal";
+import { BoardsPanel } from "../BoardsPanel";
 
 export type ShellTab = "today" | "chat" | "boards" | "workflows" | "briefs" | "data";
 export const shellNavigation = [
@@ -40,16 +40,19 @@ export function DimeShell() {
   const [paletteKey, setPaletteKey] = useState(0);
   const [debate, setDebate] = useState(false);
   const [exploreKey, setExploreKey] = useState(0);
+  const [boardId, setBoardId] = useState<string | null>(null);
   const syncUrl = (nextTab: ShellTab, nextThread: string, push = true) => {
     const url = new URL(window.location.href);
     url.searchParams.set("tab", nextTab); url.searchParams.set("thread", nextThread);
     url.searchParams.delete("replay");
+    url.searchParams.delete("board");
     window.history[push ? "pushState" : "replaceState"]({}, "", url);
   };
   useEffect(() => {
     const read = () => {
       const params = new URLSearchParams(window.location.search);
       setTab(parseShellTab(params.get("tab")));
+      setBoardId(params.get("board"));
       const id = params.get("thread");
       const selected = id && /^[A-Za-z0-9-]{1,64}$/.test(id) ? id : newId();
       setThread(selected); setReplay(replayName(window.location.search));
@@ -66,12 +69,18 @@ export function DimeShell() {
     return [...merged.values()].sort((a, b) => b.updated.localeCompare(a.updated));
   })).catch(() => {}); }, []);
   useEffect(() => { reload(); }, [reload]);
-  const navigate = (value: string) => { const next = parseShellTab(value); setTab(next); setReplay(null); syncUrl(next, thread); };
+  const navigate = (value: string) => { const next = parseShellTab(value); setTab(next); if (next === "boards") setBoardId(null); setReplay(null); syncUrl(next, thread); };
   const startChat = (text?: string) => {
     const id = newId(); setThread(id); setPreset(null); setTab("chat"); setReplay(null);
     setAutoSend(text ? { thread: id, text } : null);
     if (text) setThreads((current) => [{ id, title: text.split("\n")[0], updated: new Date().toISOString(), turns: 0 }, ...current]);
     syncUrl("chat", id);
+  };
+  const openBoard = (id: string | null) => {
+    setBoardId(id); setTab("boards");
+    const url = new URL(window.location.href); url.searchParams.set("tab", "boards");
+    if (id) url.searchParams.set("board", id); else url.searchParams.delete("board");
+    window.history.pushState({}, "", url);
   };
   const title = tab === "chat" ? threads.find((t) => t.id === thread)?.title || "New chat" : shellNavigation.find((n) => n.id === tab)!.label;
   return <div className="dime-shell">
@@ -87,7 +96,7 @@ export function DimeShell() {
         {tab === "data" && <ExploreWorkspace exploreKey={exploreKey} onAsk={(q) => { setPreset(q); navigate("chat"); }} />}
         {tab === "today" && <HomeView onWorkflows={() => navigate("workflows")} />}
         {tab === "briefs" && <BriefsPage />}
-        {tab === "boards" && <div className="flex min-h-full items-center justify-center p-8"><div className="max-w-sm text-center"><ViewGrid width={28} height={28} className="mx-auto mb-5 text-ink-3" /><h1 className="mb-3 text-2xl font-medium tracking-tight">Boards</h1><p className="mb-2 text-[13px] text-ink-2">Agent-built, cited player grids.</p><p className="mb-6 text-[12px] text-ink-3">Coming next.</p><Button size="sm" onClick={() => navigate("workflows")}>Explore workflows</Button></div></div>}
+        {tab === "boards" && <BoardsPanel boardId={boardId} onOpen={openBoard} onAsk={(q) => { startChat(); setPreset(q); }} />}
       </div>
     </main>
     <CommandPalette openKey={paletteKey} onAsk={(q) => { setPreset(q); navigate("chat"); }} onTab={navigate} onDebate={() => setDebate(true)} />

@@ -8,6 +8,7 @@ import { Button } from "../../components/ds/Button";
 import { Chip } from "../../components/ds/Chip";
 import { PageHeader, Panel } from "../../components/ds/Panel";
 import EmptyState from "../../components/EmptyState";
+import { SavedBoards } from "../../components/SavedBoards";
 import {
   briefStale,
   getBrief,
@@ -55,7 +56,8 @@ export default function BriefsPage() {
 
 
   return <div className="mx-auto max-w-6xl px-6 py-10 lg:px-10">
-    <PageHeader eyebrow="Your working library" title="Saved briefs" description="Cited matchup analysis, kept close. Revisit the evidence or run an updated brief when the data changes." actions={<Chip>{docs.length} {docs.length === 1 ? "brief" : "briefs"}</Chip>} />
+    <PageHeader eyebrow="Your working library" title="Library" description="Your boards and cited briefs, kept close. Return to a shortlist, revisit its evidence, or start a new line of inquiry." actions={<Chip>{docs.length} {docs.length === 1 ? "brief" : "briefs"}</Chip>} />
+    <div className="mb-8"><SavedBoards onOpen={(id) => window.location.assign(`/?tab=boards&board=${encodeURIComponent(id)}`)} /></div>
     {!docs.length ? <Panel title="Build a library of decisions"><EmptyState icon={<Book width={28} height={28} />} title="No briefs yet" description="Save one from a matchup answer in chat. Your saved analysis and its source context will appear here." actionLabel="Ask Dime" onAction={() => window.location.assign("/?tab=chat")} /></Panel> : <div className="grid items-start gap-6 lg:grid-cols-[280px_minmax(0,1fr)]">
       <aside className="space-y-3" aria-label="Saved briefs">{docs.map((doc) => <div key={doc.id} className="rounded-xl border border-line bg-surface p-3">
         <button type="button" onClick={() => setActiveId(doc.id)} aria-pressed={activeId === doc.id} className={"w-full rounded-lg p-2 text-left transition-colors hover:bg-hover " + (activeId === doc.id ? "bg-hover-2" : "")}><p className="text-[13px] font-medium leading-relaxed">{briefTitle(doc)}</p><p className="mt-2 text-[11px] text-ink-3">{doc.createdAt.slice(0, 10)}</p></button>

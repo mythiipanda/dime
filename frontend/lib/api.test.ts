@@ -3,7 +3,39 @@
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { apiPath } from "./api";
+import { apiPath, fillBoardCells, getBoardMetrics, seedBoardRows } from "./api";
+
+test("Boards wrappers preserve the batch, season, filters and abort signal", async () => {
+  const previous = globalThis.fetch;
+  const calls: { url: string; init?: RequestInit }[] = [];
+  const metrics = [{ id: "ppg" }];
+  globalThis.fetch = async (url, init) => { calls.push({ url: String(url), init }); return Response.json({ ok: true, metrics, cells: {}, players: {}, player_ids: [] }); };
+  try {
+    const signal = new AbortController().signal;
+    assert.deepEqual(await getBoardMetrics(signal), metrics);
+    await fillBoardCells("2025-26", [201939, 203999], ["ppg", "ts_pct"], signal);
+    await seedBoardRows("2025-26", { metric_id: "ppg", n: 10, min_mpg: 20 }, signal);
+    assert.ok(calls[0].url.endsWith("/api/boards/metrics"));
+    assert.equal(calls[0].init?.method, "GET");
+    assert.equal(calls[1].init?.signal, signal);
+    assert.deepEqual(JSON.parse(String(calls[1].init?.body)), { season: "2025-26", player_ids: [201939, 203999], metric_ids: ["ppg", "ts_pct"] });
+    assert.deepEqual(JSON.parse(String(calls[2].init?.body)), { season: "2025-26", metric_id: "ppg", n: 10, min_mpg: 20 });
+  } finally { globalThis.fetch = previous; }
+});
+
+test("Boards wrappers handle empty payloads, service errors and non-JSON failures clearly", async () => {
+  const previous = globalThis.fetch;
+  try {
+    globalThis.fetch = async () => Response.json({ ok: true, metrics: [] });
+    assert.deepEqual(await getBoardMetrics(), []);
+    globalThis.fetch = async () => Response.json({ detail: "Warehouse unavailable" }, { status: 503 });
+    await assert.rejects(fillBoardCells("2025-26", [], []), /Warehouse unavailable/);
+    globalThis.fetch = async () => new Response("Bad Gateway", { status: 502 });
+    await assert.rejects(getBoardMetrics(), /Boards request failed \(502\)/);
+    globalThis.fetch = async () => Response.json(null);
+    await assert.rejects(getBoardMetrics(), /Boards request failed/);
+  } finally { globalThis.fetch = previous; }
+});
 
 test("points at the v2 router", () => {
   assert.equal(apiPath("/today"), "/api/today");
