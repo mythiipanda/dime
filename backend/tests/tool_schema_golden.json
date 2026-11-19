@@ -3363,6 +3363,67 @@
         "title": "get_scouting_report",
         "type": "object"
       }
+    },
+    "web_search": {
+      "name": "web_search",
+      "description": "Search the public web for current NBA news, rumors, transactions, and external context. Returns cited rows with rank, title, URL, snippet, domain, and published date when available. Use only when warehouse or live NBA tools cannot answer, or when current external reporting is needed; snippets are discovery evidence, so call web_fetch before relying on page details.",
+      "args_schema": {
+        "properties": {
+          "query": {
+            "title": "Query",
+            "type": "string"
+          },
+          "max_results": {
+            "default": 5,
+            "title": "Max Results",
+            "type": "integer"
+          },
+          "timelimit": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Timelimit"
+          },
+          "region": {
+            "default": "us-en",
+            "title": "Region",
+            "type": "string"
+          },
+          "safesearch": {
+            "default": "moderate",
+            "title": "Safesearch",
+            "type": "string"
+          }
+        },
+        "required": [
+          "query"
+        ],
+        "title": "web_search",
+        "type": "object"
+      }
+    },
+    "web_fetch": {
+      "name": "web_fetch",
+      "description": "Fetch one public HTTP(S) page and extract readable text. Use after web_search or when the user supplies a URL. Returns a cited row with final URL, title, publisher, extracted text, and content hash. Fetch only pages needed for the answer; web_search snippets are not a substitute for page evidence.",
+      "args_schema": {
+        "properties": {
+          "url": {
+            "title": "Url",
+            "type": "string"
+          }
+        },
+        "required": [
+          "url"
+        ],
+        "title": "web_fetch",
+        "type": "object"
+      }
     }
   },
   "internal": {
