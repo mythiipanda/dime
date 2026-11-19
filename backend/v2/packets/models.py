@@ -2,7 +2,38 @@ from datetime import datetime
 from typing import Annotated, Any, Literal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
+
+
+def format_value(value, unit=None):
+    if value is None:
+        return "—"
+    if isinstance(value, bool):
+        return "Yes" if value else "No"
+    if not isinstance(value, (int, float)):
+        return str(value)
+    if unit in ("count", "years"):
+        return f"{value:,.0f}"
+    if unit == "usd":
+        sign = "-" if value < 0 else ""
+        return f"{sign}${abs(value)/1_000_000:,.1f}M" if abs(value) >= 1_000_000 else f"{sign}${abs(value):,.0f}"
+    if unit == "pct":
+        return f"{value:.1f}%"
+    if unit in ("rating", "points_per_100_possessions", "percentage_points"):
+        return f"{value:+.1f}"
+    return f"{value:.1f}"
+
+
+UNITS = {"age": "years", "gp": "count", "g": "count", "n": "count", "fga": "count",
+         "percentile": "pct", "share": "pct", "league_share": "pct", "fg_pct": "pct",
+         "league_fg_pct": "pct", "ts_pct": "pct", "usg_pct": "pct", "pie": "pct",
+         "net_rating": "rating", "rapm": "points_per_100_possessions",
+         "share_delta": "percentage_points", "efficiency_delta": "percentage_points"}
+
+
+def display_rows(rows, units):
+    return [{key: {"provider_stat":"Provider units", "pct":"Percent", "rating":"Points per 100 possessions"}.get(value, value) if key == "unit" and isinstance(value, str) else format_value(value, units.get(key) or row.get("unit") or UNITS.get(key.lower()))
+             for key, value in row.items()} for row in rows]
 
 
 class Model(BaseModel):
@@ -33,6 +64,11 @@ class Kpi(Model):
     null_reason: str | None = None
     context: str | None = None
 
+    @model_validator(mode="after")
+    def formatted(self):
+        self.display = format_value(self.value, self.unit)
+        return self
+
 
 class Kpis(Model):
     type: Literal["kpis"] = "kpis"
@@ -51,6 +87,16 @@ class Table(Model):
     rows: list[dict[str, Any]]
     cites: dict[str, str]
     note: str | None = None
+    title: str | None = None
+    collapsed: bool = False
+    display_rows: list[dict[str, str]] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def formatted(self):
+        self.columns = [c for c in self.columns if not c.key.lower().endswith("_id") and c.key.lower() != "id"]
+        self.rows = [{k: v for k, v in row.items() if not k.lower().endswith("_id") and k.lower() != "id"} for row in self.rows]
+        self.display_rows = display_rows(self.rows, {c.key: c.unit for c in self.columns})
+        return self
 
 
 class Series(Model):
@@ -65,6 +111,12 @@ class Chart(Model):
     series: list[Series]
     data: list[dict[str, Any]]
     cite: str | None = None
+    display_data: list[dict[str, str]] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def formatted(self):
+        self.display_data = display_rows(self.data, {})
+        return self
 
 
 class Text(Model):

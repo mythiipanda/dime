@@ -14,6 +14,7 @@ from v2.main import app
 from v2.packets import deep_dive
 from v2.packets.models import Citation, Claim, Kpi, Kpis, Narrative, Packet, Section, Table
 from v2.packets.narrative import narrative_prompt, validate_narrative
+from v2.packets.models import format_value
 
 
 WAREHOUSE = store.DB_PATH
@@ -237,3 +238,28 @@ def test_narrative_leading_decimal_and_signed_numbers():
     assert not accepted.summary and len(rejected)==1
     accepted,rejected=validate_narrative(packet,Narrative(summary=[Claim(md="Value 1e1000000.",cites=["c1"])]))
     assert not accepted.summary and rejected[0]["reason"]=="invalid_number"
+
+
+@pytest.mark.parametrize("value,unit,expected",[(27,"years","27"),(65,"count","65"),(40_800_000,"usd","$40.8M"),(66.5,"pct","66.5%"),(16.3,"rating","+16.3"),(None,"usd","—")])
+def test_display_formatter(value,unit,expected):
+    assert format_value(value,unit)==expected
+
+
+def test_polished_deep_dive_display_summaries_and_impact(real):
+    packet=Packet.model_validate(request().json())
+    for s in packet.sections:
+        assert s.summary and "[^" in s.summary
+        for block in s.blocks:
+            if block.type=="table":
+                assert not any(c.key.lower().endswith("_id") for c in block.columns)
+                assert len(block.rows)==len(block.display_rows)
+            elif block.type=="chart":
+                assert len(block.data)==len(block.display_data)
+    impact=section(packet,"impact")
+    curated=next(b for b in impact.blocks if b.type=="table" and b.title=="On/off highlights")
+    assert 1<=len(curated.rows)<=8 and not curated.collapsed
+    assert impact.blocks[-1].title=="On/off appendix" and impact.blocks[-1].collapsed
+    assert len(impact.blocks[-1].rows)>len(curated.rows)
+    assert not any(b.type=="callout" and b.md in ("Clutch totals","Hustle totals") for b in impact.blocks)
+    age=next(i for i in section(packet,"profile").blocks[0].items if i.label=="Age")
+    assert age.display==str(int(age.value))

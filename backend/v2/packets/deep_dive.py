@@ -7,7 +7,7 @@ import duckdb
 from fastapi import HTTPException
 
 from v2.boards.service import _name
-from .models import Callout, Chart, Citation, Column, Kpi, Kpis, Packet, Section, Series, Table, Text
+from .models import Callout, Chart, Citation, Column, Kpi, Kpis, Packet, Section, Series, Table, Text, format_value
 
 
 BASE = "silver_player_season"
@@ -91,9 +91,9 @@ class Data:
         return cid
 
 
-def table(rows, specs, cites, note=None):
+def table(rows, specs, cites, note=None, title=None, collapsed=False):
     return Table(columns=[Column(key=k, label=label, unit=unit) for k, label, unit in specs],
-                 rows=rows, cites=cites, note=note)
+                 rows=rows, cites=cites, note=note, title=title, collapsed=collapsed)
 
 
 def chart(rows, x, series, cid, kind="bar"):
@@ -178,7 +178,7 @@ def build_packet(con, player, season):
         lo, hi = min(valid, key=lambda x:x[1]["percentile"]), max(valid, key=lambda x:x[1]["percentile"])
         for word, (i, r) in [("Strongest", hi), ("Weakest", lo)]:
             cid = rank_cites[str(i)]
-            blocks.append(Text(md=f"{word} measured percentile: {r['metric']} at {r['percentile']:.1f}. [^{cid}]", cites=[cid]))
+            blocks.append(Text(md=f"{word} measured percentile: {r['metric']} at {format_value(r['percentile'], 'pct')}. [^{cid}]", cites=[cid]))
     else:
         blocks.append(unavailable(d, "No qualified percentile comparison is available."))
     sections.append(Section(id="league_context", title="League context", blocks=blocks))
@@ -222,7 +222,7 @@ def build_packet(con, player, season):
         eligible = [r for r in zr if r[key] is not None]
         if eligible:
             r = max(eligible,key=lambda r:abs(r[key]))
-            blocks.append(Text(md=f"Largest absolute {label} delta: {r['zone']} ({r[key]:+.1f} percentage points). [^{zc}]", cites=[zc]))
+            blocks.append(Text(md=f"Largest absolute {label} delta: {r['zone']} ({format_value(r[key], 'percentage_points')} percentage points). [^{zc}]", cites=[zc]))
     if not blocks:
         blocks.append(unavailable(d,"Shot profile unavailable for this player."))
     sections.append(Section(id="shot_profile", title="Shot profile", summary="League zones are attempt-weighted over the qualified cohort; distance buckets are not geometric shot-chart zones.", blocks=blocks))
@@ -269,6 +269,7 @@ def build_packet(con, player, season):
     sections.append(Section(id="form_splits",title="Form & splits",blocks=blocks))
 
     blocks=[]
+    appendix = None
     for source, cols, where, params, label in [
         ("silver_on_off",["Stat","On","Off","On-Off"],'"_season" = ? AND "_entity" = ?',[season,f"player:{pid}"],"On/off (provider values; percentage fields converted to 0–100)"),
         ("silver_clutch",["PLAYER_ID","GP","MIN","PTS","AST","REB"],'"_season" = ? AND "PLAYER_ID" = ?',[season,pid],"Clutch totals"),
@@ -289,16 +290,36 @@ def build_packet(con, player, season):
                 if any(value is None for value in entry.values()):
                     entry["null_reason"] = "missing_or_nonfinite_value"
                 clean.append(entry)
-            specs = [(k,k,None) for k in cols]
+            labels = {"Stat":"Statistic", "On":"On court", "Off":"Off court", "On-Off":"On minus off",
+                      "GP":"Games", "G":"Games", "MIN":"Minutes", "PTS":"Points", "AST":"Assists", "REB":"Rebounds",
+                      "DEFLECTIONS":"Deflections", "CONTESTED_SHOTS":"Contested shots", "SCREEN_ASSISTS":"Screen assists"}
+            specs = [(k,labels.get(k,k),"rating" if k == "On-Off" else "count" if k in ("GP","G","PTS","AST","REB","DEFLECTIONS","CONTESTED_SHOTS","SCREEN_ASSISTS") else None) for k in cols if k != "PLAYER_ID"]
             if source == "silver_on_off":
                 specs.append(("unit", "Unit", None))
-            blocks += [Callout(md=label),table(clean,specs,{"*":cid},"On/off units depend on Stat; only labels containing % are multiplied by 100; other values retain provider units." if source=="silver_on_off" else "Provider totals, not per-game rates.")]
+                appendix = table(clean,specs,{"*":cid},"Full provider statistics; only labels containing % are multiplied by 100; other values retain provider units.","On/off appendix",True)
+                indexed = {r["Stat"]:r for r in clean}
+                curated = []
+                offense, defense = indexed.get("Pts per 100 Possessions"), indexed.get("Pts per 100 Possessions - Defense")
+                if offense and defense:
+                    curated.append({"Stat":"Net rating", **{k:offense[k]-defense[k] if offense[k] is not None and defense[k] is not None else None for k in ("On","Off","On-Off")}, "unit":"rating"})
+                for key, human in [("Net Rating","Net rating"),("Pts per 100 Possessions","Offensive rating"),("Pts per 100 Possessions - Defense","Defensive rating"),("TS%","True shooting"),("eFG%","Effective field goal"),("Pace","Pace"),("DReb%","Defensive rebound"),("Live Ball TO%","Live-ball turnover")]:
+                    if key in indexed and not any(r["Stat"] == human for r in curated):
+                        curated.append({**indexed[key],"Stat":human})
+                selected_cite = d.derived(cid, [], "Curated provider stats; net rating is offensive points per 100 possessions minus defensive points per 100 possessions.")
+                if curated:
+                    blocks.append(table(curated[:8],specs,{"*":selected_cite},"Team outcomes with the player on/off; net rating is offense minus defense, not causal impact.","On/off highlights"))
+                else:
+                    blocks.append(unavailable(d,"Key on/off statistics unavailable; see the full appendix."))
+            else:
+                blocks.append(table(clean,specs,{"*":cid},"Provider totals, not per-game rates.",label))
         else:
             blocks.append(unavailable(d,f"{label}: data missing or ambiguous."))
     if len(rapm)==1:
         blocks.append(Kpis(items=[next(i for i in items if i.label=="RAPM")]))
     else:
         blocks.append(unavailable(d,"RAPM unavailable or ambiguous."))
+    if appendix:
+        blocks.append(appendix)
     sections.append(Section(id="impact",title="Impact",blocks=blocks))
 
     history,hc=d.read("silver_hist_player_seasons",["player_id","season","gp","min","pts","reb","ast","ts_pct"], '"player_id" = ? AND "season" <= ? AND "season" < ?', [pid,2025,int(season[:4])+1],100, '"season"')
@@ -332,5 +353,27 @@ def build_packet(con, player, season):
     if not history:
         blocks.append(unavailable(d,"Historical career seasons unavailable; only the current season may be shown."))
     sections.append(Section(id="career",title="Career trajectory",blocks=blocks))
+    ppg = next(i for i in items if i.label == "PPG")
+    if ppg.value is not None and ppg.cite:
+        sections[0].summary = f"{names[pid]} averages {ppg.display} points per game in {season} [^{ppg.cite}]."
+    if valid:
+        sections[1].summary = next(b.md for b in sections[1].blocks if isinstance(b, Text) and b.md.startswith("Strongest"))
+    if zr and zc:
+        measured = [r for r in zr if r["share"] is not None]
+        if measured:
+            largest = max(measured,key=lambda r:r["share"])
+            sections[2].summary = f"{largest['zone']} accounts for the largest recorded attempt share at {format_value(largest['share'],'pct')} [^{zc}]."
+    if dated and lc:
+        last = averages("Last 10",dated[-10:])
+        sections[3].summary = f"Across the last {format_value(last['gp'],'count')} available games, scoring averages {format_value(last['pts'])} points per game [^{lc}]."
+    rapm_item = next(i for i in items if i.label == "RAPM")
+    if rapm_item.value is not None and rapm_item.cite:
+        sections[4].summary = f"RAPM measures {rapm_item.display} points per 100 possessions in this warehouse snapshot [^{rapm_item.cite}]."
+    elif appendix:
+        sections[4].summary = f"Available on/off outcomes describe team performance with and without {names[pid]}, not causal impact [^{appendix.cites['*']}]."
+    if career and cc:
+        latest = career[-1]
+        if latest.get("ppg") is not None:
+            sections[5].summary = f"The latest available season, {latest['season']}, records {format_value(latest['ppg'])} points per game [^{cc}]."
     return Packet(id=uuid4(),kind="player_deep_dive",title=f"{names[pid]} · Player deep dive",subtitle=f"{b.get('TEAM') or 'Team unavailable'} · {season}",season=season,generated_at=datetime.now(UTC),inputs={"player":player,"player_id":pid},sections=sections,citations=d.citations,
         limitations=list(dict.fromkeys(["Descriptive packet, not a projection.","Salary is a separate 2026-27 vintage, not selected-season salary; no multi-year contract schedule.",*d.gaps])))

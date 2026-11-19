@@ -1,5 +1,12 @@
 # Packets
 
+Raw KPI `value`, table `rows`, and chart `data` remain numeric. Shared model
+formatting supplies KPI `display`, table `display_rows`, and chart `display_data`
+for presentation (whole ages/counts, compact dollars, percentages, signed impact).
+Tables have optional `title`/`note` and `collapsed` (default false); identifiers
+are omitted. Impact highlights are capped at eight rows; full on/off statistics
+are the final, collapsed appendix. Supported sections include cited summaries.
+
 `POST /api/packets/player_deep_dive` accepts `player` (exact full name or NBA id)
 and `season` (default `2025-26`). Returns a complete, descriptive six-section
 packet without an LLM, network request or persistence. Names use Boards' NFKD,
