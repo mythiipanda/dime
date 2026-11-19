@@ -199,6 +199,7 @@ test("real Python sql_exec and schema cross MCP into Pi with source semantics an
       "sql_exec",
       "warehouse_schema",
       "get_rapm",
+      "get_impact_rank",
       "get_game_prediction",
       "get_wpa_leaders",
       "get_comps",
@@ -367,7 +368,7 @@ test("real statistical tools cross MCP with anchor compatibility, rows, columns,
   const pid = bridge.pid;
   try {
     const toolMap = new Map(bridge.tools.map(t => [t.name, t]));
-    assert.equal(bridge.tools.length, 94);
+    assert.equal(bridge.tools.length, 95);
 
     // 1. get_rapm
     const rapmTool = toolMap.get("get_rapm");
@@ -1192,6 +1193,7 @@ test("real statistical tools cross MCP with anchor compatibility, rows, columns,
       sql_exec: { sql: "SELECT PTS, _source FROM silver_hist_player_seasons ORDER BY PTS" },
       warehouse_schema: {},
       get_rapm: { player: "NonexistentPlayer", season: "2024-25" },
+      get_impact_rank: { player: "Jaylen Brown", season: "2025-26" },
       get_game_prediction: { a: "BOS", b: "MIA", n_sims: 100 },
       get_wpa_leaders: { season: 2025, limit: 5 },
       get_comps: { player_id: 2544, season: "2023-24", k: 3 },

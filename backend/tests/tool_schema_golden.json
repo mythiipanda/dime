@@ -19,7 +19,7 @@
     },
     "warehouse_schema": {
       "name": "warehouse_schema",
-      "description": "Read declared warehouse columns, source units and season encodings. Pass tables to return only those declared tables (avoiding full catalog payloads). Declared table allowlist: silver_advanced, silver_bbref_awards, silver_boxscores, silver_cap_players, silver_clutch, silver_combine, silver_contracts, silver_four_factors, silver_four_factors_team, silver_hist_draft, silver_hist_gamelogs, silver_hist_lineups, silver_hist_player_seasons, silver_hist_possessions, silver_hist_shots, silver_hist_standings, silver_hist_team_seasons, silver_hustle_player, silver_hustle_team, silver_injuries, silver_leaders_ast, silver_leaders_blk, silver_leaders_pts, silver_leaders_reb, silver_leaders_stl, silver_lineups, silver_on_off, silver_player_gamelogs, silver_player_season, silver_playoff_gamelogs, silver_playoffs, silver_preseason_projections, silver_rapm, silver_rapm_prior, silver_raptor_player, silver_raptor_team, silver_rosters, silver_salaries, silver_schedule, silver_shots, silver_standings, silver_stints, silver_team_games, silver_team_ratings, silver_transactions. This allowlist names declared tables, not proof of actual table content, complete warehouse inventory or data freshness. catalog_scope covers the returned declared tables and columns only, not the full warehouse inventory; a name absent here is not evidence it is absent everywhere.",
+      "description": "Read declared warehouse columns, source units and season encodings. Pass tables to return only those declared tables (avoiding full catalog payloads). Declared table allowlist: silver_advanced, silver_bbref_awards, silver_boxscores, silver_cap_players, silver_clutch, silver_combine, silver_contracts, silver_four_factors, silver_four_factors_team, silver_hist_draft, silver_hist_gamelogs, silver_hist_lineups, silver_hist_player_seasons, silver_hist_possessions, silver_hist_shots, silver_hist_standings, silver_hist_team_seasons, silver_hustle_player, silver_hustle_team, silver_impact, silver_injuries, silver_leaders_ast, silver_leaders_blk, silver_leaders_pts, silver_leaders_reb, silver_leaders_stl, silver_lineups, silver_on_off, silver_player_gamelogs, silver_player_season, silver_playoff_gamelogs, silver_playoffs, silver_preseason_projections, silver_rapm, silver_rapm_prior, silver_raptor_player, silver_raptor_team, silver_rosters, silver_salaries, silver_schedule, silver_shots, silver_standings, silver_stints, silver_team_games, silver_team_ratings, silver_transactions. This allowlist names declared tables, not proof of actual table content, complete warehouse inventory or data freshness. catalog_scope covers the returned declared tables and columns only, not the full warehouse inventory; a name absent here is not evidence it is absent everywhere.",
       "args_schema": {
         "description": "Read declared warehouse columns, source units and season encodings.",
         "properties": {
@@ -73,6 +73,33 @@
           }
         },
         "title": "get_rapm",
+        "type": "object"
+      }
+    },
+    "get_impact_rank": {
+      "name": "get_impact_rank",
+      "description": "Player impact and league rank for a season across all-in-one plus-minus metrics the warehouse covers: published BPM (basketball-reference advanced), rapm-lite estimates, and FiveThirtyEight RAPTOR for older seasons. One row per metric covering the season; rank is 1..N by value within that season's player pool. Player required; season optional. Warehouse only; each row cites its source.",
+      "args_schema": {
+        "properties": {
+          "player": {
+            "default": "",
+            "title": "Player",
+            "type": "string"
+          },
+          "season": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Season"
+          }
+        },
+        "title": "get_impact_rank",
         "type": "object"
       }
     },
@@ -1213,6 +1240,43 @@
           }
         },
         "title": "get_trade_value",
+        "type": "object"
+      }
+    },
+    "get_trade_partners": {
+      "name": "get_trade_partners",
+      "description": "Find CBA-legal salary-matching trade packages for one player across the league. Player name; season defaults to 2026-27; teams optionally restricts partners (comma-separated abbreviations); max_packages caps rows per team (default 3). Each row is a roster package (up to 3 players) whose salary satisfies both sides' matching rules under the same simplified 2023 CBA as get_trade_check.",
+      "args_schema": {
+        "properties": {
+          "player": {
+            "default": "",
+            "title": "Player",
+            "type": "string"
+          },
+          "season": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Season"
+          },
+          "teams": {
+            "default": "",
+            "title": "Teams",
+            "type": "string"
+          },
+          "max_packages": {
+            "default": 3,
+            "title": "Max Packages",
+            "type": "integer"
+          }
+        },
+        "title": "get_trade_partners",
         "type": "object"
       }
     },
