@@ -147,6 +147,12 @@ def register() -> dict[str, Any]:
         if err is not None:
             return err
         annotated = annotate_schema({"tables": {name: columns[name] for name in selected}})
+        if 'silver_hist_lineups' in selected:
+            annotated['lineup_variant_policy'] = (
+                "Filter season_type (regular-season/playoffs), measure_type "
+                "(base/advanced/defense/misc/opponent/scoring/usage), per_mode (totals/pergame). "
+                "Default regular-season/base/totals; never sum across variants. "
+                "Ratings/pace require matching advanced row on group_id, team_id, _season, season_type, per_mode.")
         annotated["catalog_scope"] = {
             "kind": "declared_read_only_tables",
             "exhaustive_warehouse_inventory": False,

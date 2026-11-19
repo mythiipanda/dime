@@ -2,6 +2,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from langchain_core.tools import tool
+from ...lineup_variants import DEFAULT_FILTER
 
 from .._core import IN_SEASON_MONTHS as _IN_SEASON_MONTHS, TTL_LEADERS, TTL_SCOREBOARD_PAST
 from ._helpers import _pkg
@@ -135,7 +136,8 @@ def _warehouse_table_meta() -> list[tuple[str, int, str | None]]:
         parts = []
         for t in tables:
             mx = "MAX(_fetched_at)" if has_ts[t] else "CAST(NULL AS VARCHAR)"
-            parts.append(f"SELECT '{t}' AS t, COUNT(*) AS n, {mx} AS mx FROM {t}")
+            where = f" WHERE {DEFAULT_FILTER}" if t == 'silver_hist_lineups' else ''
+            parts.append(f"SELECT '{t}' AS t, COUNT(*) AS n, {mx} AS mx FROM {t}{where}")
         return [(r[0], r[1], r[2]) for r in
                 con.execute(" UNION ALL ".join(parts)).fetchall()]
     finally:

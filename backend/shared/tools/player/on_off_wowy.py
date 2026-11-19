@@ -2,6 +2,7 @@ import sys
 from typing import Any
 
 from langchain_core.tools import tool
+from ...lineup_variants import SeasonType, validate_variants
 
 
 def _pkg():
@@ -158,26 +159,50 @@ def _wowy_shared_on_team(con, table: str, extra: str, season: str, tid: object, 
     ).fetchone()
 
 
-def _wowy_pairing(con, season: str, tid: object | None, pid_a: int, pid_b: int) -> tuple[str, str, object | None]:
+def _wowy_pairing(con, season: str, tid: object | None, pid_a: int, pid_b: int, season_type: SeasonType = 'regular-season') -> tuple[str, str, object | None]:
+    validate_variants(season_type=season_type)
+    extra = _HIST_LINEUP_FILTER.replace('regular-season', season_type)
     if tid:
-        row = _wowy_shared_on_team(con, "silver_lineups", "", season, tid, pid_a, pid_b)
-        if not row or not row[0]:
-            row = _wowy_shared_on_team(con, "silver_hist_lineups", _HIST_LINEUP_FILTER, season, tid, pid_a, pid_b)
+        row = _wowy_shared_on_team(con, 'silver_hist_lineups', extra, season, tid, pid_a, pid_b)
+        if row and row[0]:
+            return 'silver_hist_lineups', extra, tid
+    else:
+        row = _wowy_paired_players(con, 'silver_hist_lineups', extra, season, None, pid_a, pid_b)
+        if row:
+            return 'silver_hist_lineups', extra, row[0]
+    if tid:
+        row = _wowy_shared_on_team(con, "silver_lineups", "", season, tid, pid_a, pid_b) if season_type == 'regular-season' else None
         if not row or not row[0]:
             return "silver_lineups", "", None
         return "silver_lineups", "", tid
-    row = _wowy_paired_players(con, "silver_lineups", "", season, None, pid_a, pid_b)
+    row = _wowy_paired_players(con, "silver_lineups", "", season, None, pid_a, pid_b) if season_type == 'regular-season' else None
     if row:
         return "silver_lineups", "", row[0]
-    row = _wowy_paired_players(con, "silver_hist_lineups", _HIST_LINEUP_FILTER, season, None, pid_a, pid_b)
-    if row:
-        return "silver_hist_lineups", _HIST_LINEUP_FILTER, row[0]
     return "", "", None
 
 
 def _wowy_split_frame(
     con, table: str, extra: str, season: str, tid: object, pid_a: int, pid_b: int, raw_a: str, raw_b: str
 ):
+    source = table
+    ratings = """
+          ROUND(100.0 * SUM(PTS) / NULLIF(SUM(FGA - OREB + TOV + 0.44 * FTA), 0), 2) AS off_rating,
+          ROUND(100.0 * SUM(PTS - PLUS_MINUS) / NULLIF(SUM(FGA - OREB + TOV + 0.44 * FTA), 0), 2) AS def_rating,
+          ROUND(100.0 * SUM(PLUS_MINUS) / NULLIF(SUM(FGA - OREB + TOV + 0.44 * FTA), 0), 2) AS net_rating
+    """
+    if table == 'silver_hist_lineups':
+        source = """(
+            SELECT b.* EXCLUDE (off_rating, def_rating, net_rating, poss),
+                   a.off_rating, a.def_rating, a.net_rating, a.poss
+            FROM silver_hist_lineups b LEFT JOIN silver_hist_lineups a
+              ON a.group_id = b.group_id AND a.team_id = b.team_id
+             AND a._season = b._season AND a.season_type = b.season_type
+             AND a.per_mode = b.per_mode AND a.measure_type = 'advanced'
+        )"""
+        ratings = ', '.join(
+            f'ROUND(SUM({name} * poss) / NULLIF(SUM(CASE WHEN {name} IS NOT NULL THEN poss END), 0), 2) AS {name}'
+            for name in ('off_rating', 'def_rating', 'net_rating')
+        )
     return con.execute(
         f"""
         SELECT
@@ -189,10 +214,8 @@ def _wowy_split_frame(
           END AS split,
           ROUND(SUM(MIN), 1) AS minutes,
           ROUND(SUM(FGA - OREB + TOV + 0.44 * FTA), 0) AS possessions,
-          ROUND(100.0 * SUM(PTS) / NULLIF(SUM(FGA - OREB + TOV + 0.44 * FTA), 0), 2) AS off_rating,
-          ROUND(100.0 * SUM(PTS - PLUS_MINUS) / NULLIF(SUM(FGA - OREB + TOV + 0.44 * FTA), 0), 2) AS def_rating,
-          ROUND(100.0 * SUM(PLUS_MINUS) / NULLIF(SUM(FGA - OREB + TOV + 0.44 * FTA), 0), 2) AS net_rating
-        FROM {table}
+          {ratings}
+        FROM {source}
         WHERE TEAM_ID = ? AND _season = ?{extra}
         GROUP BY split
         ORDER BY minutes DESC
@@ -244,7 +267,7 @@ def _wowy_team_abbreviation(con, season: str, shared_tid: object) -> str:
     if row and row[0]:
         return str(row[0])
     row = con.execute(
-        "SELECT TEAM_ABBREVIATION FROM silver_hist_lineups WHERE _season = ? AND TEAM_ID = ? LIMIT 1",
+        "SELECT TEAM_ABBREVIATION FROM silver_hist_lineups WHERE _season = ? AND TEAM_ID = ?" + _HIST_LINEUP_FILTER + " LIMIT 1",
         [season, shared_tid],
     ).fetchone()
     return str(row[0]) if row and row[0] else str(shared_tid)
@@ -259,6 +282,7 @@ def get_wowy(
     player_ids: str = "",
     team_id: str | int = 0,
     season: str | None = None,
+    season_type: SeasonType = 'regular-season',
 ) -> dict[str, Any]:
     pkg = _pkg()
     season = pkg.resolve_season(season)
@@ -270,7 +294,7 @@ def get_wowy(
         con = pkg.store.connect(read_only=True)
         try:
             tid = pkg.coerce_team_id(team_id) if team_id else None
-            table, extra, shared_tid = _wowy_pairing(con, season, tid, pid_a, pid_b)
+            table, extra, shared_tid = _wowy_pairing(con, season, tid, pid_a, pid_b, season_type)
             if not shared_tid:
                 if tid:
                     return {
@@ -292,11 +316,19 @@ def get_wowy(
         finally:
             con.close()
 
+    if season_type != 'regular-season':
+        return {
+            'tool': 'get_wowy', 'ok': False, 'rows': [],
+            'error': 'Playoff WOWY is not available for this case; no matching warehouse splits.',
+            'meta': {'season': season, 'season_type': season_type},
+        }
+
     from ...sources import pbpstats
 
     ids = [pid for pid in (pid_a, pid_b) if pid]
     resolved_team = pkg.coerce_team_id(team_id) if team_id else 0
-    entity_key = f"wowy:{raw_a}_{raw_b}"
+    entity_key = (f"wowy:{raw_a}_{raw_b}" if season_type == 'regular-season'
+                  else f"wowy:{season_type}:{raw_a}_{raw_b}")
     rows, meta = pkg._warehouse_or_live(
         "silver_wowy",
         "_season = ? AND _entity = ?",

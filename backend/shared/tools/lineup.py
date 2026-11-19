@@ -248,7 +248,9 @@ def get_lineup_stats(
         units.append({
             "GROUP_NAME": name, "EST_MIN": est_min, "GP": r.get("GP"),
             "poss": poss, "off_poss": off_poss, "def_poss": def_poss,
-            **_ratings(pf, off_poss, pa, def_poss),
+            **({k: r[k] for k in ('OFF_RATING', 'DEF_RATING', 'NET_RATING')}
+               if hist and all(r.get(k) is not None for k in ('OFF_RATING', 'DEF_RATING', 'NET_RATING'))
+               else _ratings(pf, off_poss, pa, def_poss)),
             "PLUS_MINUS": r.get("PLUS_MINUS"),
             "blowout_share": blowout_share, "flags": flags})
     any_estimated = any(estimated_by_unit)

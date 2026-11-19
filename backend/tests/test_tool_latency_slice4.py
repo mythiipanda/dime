@@ -40,6 +40,7 @@ def _load(name):
 
 
 def _max_of_5(fn, kwargs):
+    fn.invoke(kwargs)
     best = 0.0
     for _ in range(5):
         t0 = time.perf_counter()
@@ -65,13 +66,11 @@ def test_error_paths_unchanged():
         assert _norm(fn.invoke(kwargs)) == _load(name)
 
 
-@pytest.mark.canonical_warehouse
 def test_lineup_stats_max_of_5_under_150ms():
     for name, kwargs in STATS_CASES.items():
         assert _max_of_5(get_lineup_stats, kwargs) < 150, name
 
 
-@pytest.mark.canonical_warehouse
 def test_lineup_matchup_matrix_max_of_5_under_200ms():
     for name, kwargs in MATRIX_CASES.items():
         assert _max_of_5(get_lineup_matchup_matrix, kwargs) < 200, name

@@ -894,6 +894,11 @@
             ],
             "default": null,
             "title": "Season"
+          },
+          "playoffs": {
+            "default": false,
+            "title": "Playoffs",
+            "type": "boolean"
           }
         },
         "title": "get_lineup_leaders",
@@ -1828,6 +1833,15 @@
             ],
             "default": null,
             "title": "Season"
+          },
+          "season_type": {
+            "default": "regular-season",
+            "enum": [
+              "regular-season",
+              "playoffs"
+            ],
+            "title": "Season Type",
+            "type": "string"
           }
         },
         "title": "get_wowy",
@@ -3208,6 +3222,38 @@
             ],
             "default": null,
             "title": "Season"
+          },
+          "season_type": {
+            "default": "regular-season",
+            "enum": [
+              "regular-season",
+              "playoffs"
+            ],
+            "title": "Season Type",
+            "type": "string"
+          },
+          "measure_type": {
+            "default": "base",
+            "enum": [
+              "base",
+              "advanced",
+              "defense",
+              "misc",
+              "opponent",
+              "scoring",
+              "usage"
+            ],
+            "title": "Measure Type",
+            "type": "string"
+          },
+          "per_mode": {
+            "default": "totals",
+            "enum": [
+              "totals",
+              "pergame"
+            ],
+            "title": "Per Mode",
+            "type": "string"
           }
         },
         "required": [

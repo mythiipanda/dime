@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any, Iterable
 
 from shared.tools.league import _SQL_TABLES as _AGENT_SQL_TABLES
+from .lineup_variants import DEFAULT_FILTER
 
 UNAVAILABLE_METRICS = ("EPM", "LEBRON", "DARKO", "DRIP", "PER", "BPM",
                        "WS", "VORP")
@@ -432,8 +433,9 @@ def _read_table_seasons(path: Path, table: str) -> frozenset[str]:
         }
         if "_season" not in columns:
             return frozenset()
+        where = f" WHERE {DEFAULT_FILTER}" if table == 'silver_hist_lineups' else ''
         rows = connection.execute(
-            f"SELECT DISTINCT _season FROM {table}").fetchall()
+            f"SELECT DISTINCT _season FROM {table}{where}").fetchall()
     finally:
         try:
             connection.close()
@@ -475,9 +477,10 @@ def _read_league_seasons(
 
     connection = duckdb.connect(str(path), read_only=True)
     try:
+        extra = f" AND {DEFAULT_FILTER}" if table == 'silver_hist_lineups' else ''
         rows = connection.execute(
             f'SELECT _season, COUNT(DISTINCT "{team_column}") AS teams '
-            f'FROM "{table}" WHERE _season IS NOT NULL '
+            f'FROM "{table}" WHERE _season IS NOT NULL {extra} '
             f'GROUP BY 1 ORDER BY 1').fetchall()
     finally:
         try:
