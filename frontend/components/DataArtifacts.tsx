@@ -239,7 +239,7 @@ function EvidenceLimitations({ meta }: {
     .filter((item): item is string => Boolean(item));
   if (items.length === 0) return null;
   return (
-    <div style={{ fontSize: 11, color: "var(--color-warm-gray)", marginTop: 4 }}>
+    <div style={{ fontSize: 11, color: "var(--ink-2)", marginTop: 4 }}>
       {items.join(" · ")}
     </div>
   );
@@ -256,7 +256,7 @@ function CitePill({ title, meta }: {
   return (
     <button
       type="button"
-      className="pill-ghost"
+      className="inline-flex items-center justify-center gap-1.5 rounded-full px-3 py-1.5 text-[12px] transition-colors bg-field text-ink-2 hover:bg-hover"
       style={{ fontSize: 11, padding: "3px 10px" }}
       title="Copy a source line for this table"
       onClick={() => {
@@ -290,8 +290,8 @@ function InlineChart({ rows }: { rows: unknown }) {
   return (
     <div
       style={{
-        background: "var(--color-pure-white)",
-        border: "1px solid var(--color-stone-border)",
+        background: "var(--surface)",
+        border: "1px solid var(--line)",
         borderRadius: 10,
         padding: "12px 14px",
         marginBottom: 12,
@@ -300,7 +300,7 @@ function InlineChart({ rows }: { rows: unknown }) {
       <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: open ? 8 : 0 }}>
         <button
           type="button"
-          className="pill-ghost"
+          className="inline-flex items-center justify-center gap-1.5 rounded-full px-3 py-1.5 text-[12px] transition-colors bg-field text-ink-2 hover:bg-hover"
           style={{ fontSize: 11, padding: "2px 10px" }}
           onClick={() => setOpen((v) => !v)}
         >
@@ -365,7 +365,7 @@ function SaveBrief({
     return (
       <a
         href="/briefs"
-        style={{ fontSize: 12, fontWeight: 500, color: "var(--color-warm-gray)" }}
+        style={{ fontSize: 12, fontWeight: 500, color: "var(--ink-2)" }}
       >
         Saved · Open briefs
       </a>
@@ -374,7 +374,7 @@ function SaveBrief({
   return (
     <button
       type="button"
-      className="pill-ghost"
+      className="inline-flex items-center justify-center gap-1.5 rounded-full px-3 py-1.5 text-[12px] transition-colors bg-field text-ink-2 hover:bg-hover"
       style={{ fontSize: 12, padding: "3px 10px", marginTop: 8 }}
       disabled={saving}
       onClick={() => {
@@ -458,10 +458,12 @@ export default function DataArtifacts({
 
 
   const tableHasContent = (t: {
+    tool?: string;
     rows?: unknown;
     verdict?: string;
     meta?: Record<string, unknown>;
   }) => {
+    if (t.tool === "get_game_prediction" && parsePrediction(t)) return true;
     const rows = (t.rows as { rows?: unknown } | undefined)?.rows ?? t.rows;
     if (Array.isArray(rows))
       return (
@@ -534,7 +536,7 @@ export default function DataArtifacts({
     <div
       style={{
         fontSize: 12,
-        color: "var(--color-warm-gray)",
+        color: "var(--ink-2)",
         padding: "12px 4px",
       }}
     >
@@ -569,10 +571,10 @@ export default function DataArtifacts({
       return (
         <div
           style={{
-            border: "1px solid var(--color-stone-border)",
+            border: "1px solid var(--line)",
             borderRadius: 12,
             padding: "16px",
-            background: "var(--color-pure-white)",
+            background: "var(--surface)",
             marginTop: 10,
           }}
         >
@@ -596,15 +598,15 @@ export default function DataArtifacts({
           display: "flex",
           alignItems: "center",
           justifyContent: "space-between",
-          background: "var(--color-stone-canvas)",
-          border: "1px solid var(--color-stone-border)",
+          background: "var(--page)",
+          border: "1px solid var(--line)",
           borderRadius: 8,
           padding: "8px 12px",
           marginTop: 10,
         }}
       >
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          <span style={{ fontSize: 12, fontWeight: 500, color: "var(--color-ink-black)" }}>
+          <span style={{ fontSize: 12, fontWeight: 500, color: "var(--ink)" }}>
             {rawTitle} is open in the data panel
           </span>
         </div>
@@ -614,7 +616,7 @@ export default function DataArtifacts({
             setShowInline(true);
             setExpanded(true);
           }}
-          className="pill-ghost interactive-tactile"
+          className="inline-flex items-center justify-center gap-1.5 rounded-full px-3 py-1.5 text-[12px] transition-colors bg-field text-ink-2 hover:bg-hover transition-colors hover:bg-hover"
           style={{ fontSize: 11, padding: "2px 8px" }}
         >
           Show inline
@@ -639,10 +641,10 @@ export default function DataArtifacts({
     return (
       <div
         style={{
-          border: "1px solid var(--color-stone-border)",
+          border: "1px solid var(--line)",
           borderRadius: 12,
           padding: "10px 14px",
-          background: "var(--color-pure-white)",
+          background: "var(--surface)",
           marginTop: 10,
           display: "flex",
           alignItems: "center",
@@ -655,18 +657,18 @@ export default function DataArtifacts({
             style={{
               fontWeight: 600,
               fontSize: 13,
-              color: "var(--color-ink-black)",
+              color: "var(--ink)",
             }}
           >
             {rawTitle}
             {rowCount !== null && (
-              <span style={{ fontWeight: 400, color: "var(--color-ash-gray)" }}>
+              <span style={{ fontWeight: 400, color: "var(--ink-3)" }}>
                 {" "}
                 · {rowCount} rows
               </span>
             )}
           </div>
-          <div style={{ fontSize: 11, color: "var(--color-ash-gray)", marginTop: 2 }}>
+          <div style={{ fontSize: 11, color: "var(--ink-3)", marginTop: 2 }}>
             {table.meta?.source ? `Source: ${table.meta.source}` : "Source: NBA data"}
             {table.meta?.fetched_at
               ? ` · ${String(table.meta.fetched_at).slice(0, 10)}`
@@ -679,7 +681,7 @@ export default function DataArtifacts({
           </div>
           <EvidenceLimitations meta={table.meta} />
           {table.verdict && (
-            <div style={{ fontSize: 12, marginTop: 4, color: "var(--color-ink-black)" }}>
+            <div style={{ fontSize: 12, marginTop: 4, color: "var(--ink)" }}>
               {table.verdict.length > 160
                 ? `${table.verdict.slice(0, 160)}…`
                 : table.verdict}
@@ -690,12 +692,12 @@ export default function DataArtifacts({
         {onOpenArtifact && (
           <button
             type="button"
-            className="pill-ghost interactive-tactile"
+            className="inline-flex items-center justify-center gap-1.5 rounded-full px-3 py-1.5 text-[12px] transition-colors bg-field text-ink-2 hover:bg-hover transition-colors hover:bg-hover"
             style={{
               fontSize: 11,
               padding: "3px 10px",
-              borderColor: "var(--color-cyan-edge)",
-              color: "var(--color-cyan-edge)",
+              borderColor: "var(--accent-ink)",
+              color: "var(--accent-ink)",
             }}
             onClick={() => {
               onOpenArtifact({
@@ -716,7 +718,7 @@ export default function DataArtifacts({
         )}
         <button
           type="button"
-          className="pill-ghost interactive-tactile"
+          className="inline-flex items-center justify-center gap-1.5 rounded-full px-3 py-1.5 text-[12px] transition-colors bg-field text-ink-2 hover:bg-hover transition-colors hover:bg-hover"
           style={{ fontSize: 11, padding: "3px 10px", fontWeight: 600 }}
           onClick={() => setExpanded(true)}
           title="Show the evidence table inline"
@@ -732,10 +734,10 @@ export default function DataArtifacts({
     <div
       className="t-skel-in"
       style={{
-        border: "1px solid var(--color-stone-border)",
+        border: "1px solid var(--line)",
         borderRadius: 12,
         padding: "16px",
-        background: "var(--color-pure-white)",
+        background: "var(--surface)",
         boxShadow: "0 1px 3px rgba(0, 0, 0, 0.04)",
         marginTop: 10,
       }}
@@ -747,16 +749,16 @@ export default function DataArtifacts({
           alignItems: "center",
           flexWrap: "wrap",
           gap: 8,
-          borderBottom: "1px solid var(--color-stone-border)",
+          borderBottom: "1px solid var(--line)",
           paddingBottom: 12,
           marginBottom: 12,
         }}
       >
         <div>
-          <div style={{ fontWeight: 600, fontSize: 13, color: "var(--color-ink-black)" }}>
+          <div style={{ fontWeight: 600, fontSize: 13, color: "var(--ink)" }}>
             {rawTitle}
           </div>
-          <div style={{ fontSize: 11, color: "var(--color-ash-gray)", marginTop: 2 }}>
+          <div style={{ fontSize: 11, color: "var(--ink-3)", marginTop: 2 }}>
             {table.meta?.source ? `Source: ${table.meta.source}` : "Source: NBA data"}
             {table.meta?.fetched_at ? ` · ${String(table.meta.fetched_at).slice(0, 10)}` : ""}
             {table.meta?.estimated ? (
@@ -769,7 +771,7 @@ export default function DataArtifacts({
                 href={table.meta.links.watch}
                 target="_blank"
                 rel="noreferrer"
-                style={{ marginLeft: 6, color: "var(--color-cyan-edge)" }}
+                style={{ marginLeft: 6, color: "var(--accent-ink)" }}
               >
                 Watch video
               </a>
@@ -781,7 +783,7 @@ export default function DataArtifacts({
         <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
           <button
             type="button"
-            className="pill-ghost interactive-tactile"
+            className="inline-flex items-center justify-center gap-1.5 rounded-full px-3 py-1.5 text-[12px] transition-colors bg-field text-ink-2 hover:bg-hover transition-colors hover:bg-hover"
             style={{ fontSize: 11, padding: "3px 10px" }}
             onClick={() => setExpanded(false)}
             title="Collapse this dataset"
@@ -792,15 +794,15 @@ export default function DataArtifacts({
           {onOpenArtifact && (
             <button
               type="button"
-              className="pill-ghost interactive-tactile"
+              className="inline-flex items-center justify-center gap-1.5 rounded-full px-3 py-1.5 text-[12px] transition-colors bg-field text-ink-2 hover:bg-hover transition-colors hover:bg-hover"
               style={{
                 fontSize: 11,
                 padding: "3px 10px",
                 display: "inline-flex",
                 alignItems: "center",
                 gap: 4,
-                borderColor: "var(--color-cyan-edge)",
-                color: "var(--color-cyan-edge)",
+                borderColor: "var(--accent-ink)",
+                color: "var(--accent-ink)",
               }}
               onClick={() => {
                 onOpenArtifact({
@@ -832,7 +834,7 @@ export default function DataArtifacts({
           )}
           {isShotTool && (
             <button
-              className={viewMode === "court" ? "tab-active" : "pill-ghost"}
+              className={viewMode === "court" ? "inline-flex items-center justify-center gap-1.5 rounded-full px-3 py-1.5 text-[12px] transition-colors bg-surface text-ink shadow-hairline" : "inline-flex items-center justify-center gap-1.5 rounded-full px-3 py-1.5 text-[12px] transition-colors bg-field text-ink-2 hover:bg-hover"}
               style={{ fontSize: 11, padding: "3px 10px" }}
               onClick={() => setViewMode("court")}
             >
@@ -840,7 +842,7 @@ export default function DataArtifacts({
             </button>
           )}
           <button
-            className={viewMode === "table" ? "tab-active" : "pill-ghost"}
+            className={viewMode === "table" ? "inline-flex items-center justify-center gap-1.5 rounded-full px-3 py-1.5 text-[12px] transition-colors bg-surface text-ink shadow-hairline" : "inline-flex items-center justify-center gap-1.5 rounded-full px-3 py-1.5 text-[12px] transition-colors bg-field text-ink-2 hover:bg-hover"}
             style={{ fontSize: 11, padding: "3px 10px" }}
             onClick={() => setViewMode("table")}
           >
@@ -848,7 +850,7 @@ export default function DataArtifacts({
           </button>
           {!isShotTool && (
             <button
-              className={viewMode === "chart" ? "tab-active" : "pill-ghost"}
+              className={viewMode === "chart" ? "inline-flex items-center justify-center gap-1.5 rounded-full px-3 py-1.5 text-[12px] transition-colors bg-surface text-ink shadow-hairline" : "inline-flex items-center justify-center gap-1.5 rounded-full px-3 py-1.5 text-[12px] transition-colors bg-field text-ink-2 hover:bg-hover"}
               style={{ fontSize: 11, padding: "3px 10px" }}
               onClick={() => setViewMode("chart")}
             >
@@ -857,7 +859,7 @@ export default function DataArtifacts({
           )}
           {viewMode === "table" && (
             <button
-              className={heat ? "tab-active" : "pill-ghost"}
+              className={heat ? "inline-flex items-center justify-center gap-1.5 rounded-full px-3 py-1.5 text-[12px] transition-colors bg-surface text-ink shadow-hairline" : "inline-flex items-center justify-center gap-1.5 rounded-full px-3 py-1.5 text-[12px] transition-colors bg-field text-ink-2 hover:bg-hover"}
               style={{ fontSize: 11, padding: "3px 10px" }}
               onClick={() => setHeat(!heat)}
               title="Toggle heat map gradient"
@@ -869,7 +871,7 @@ export default function DataArtifacts({
             <button
               type="button"
               onClick={() => setShowInline(false)}
-              className="pill-ghost interactive-tactile"
+              className="inline-flex items-center justify-center gap-1.5 rounded-full px-3 py-1.5 text-[12px] transition-colors bg-field text-ink-2 hover:bg-hover transition-colors hover:bg-hover"
               style={{ fontSize: 11, padding: "3px 8px" }}
               title="Hide inline table since canvas is active"
             >
@@ -879,7 +881,7 @@ export default function DataArtifacts({
           {contentIdx.length > 1 && (
             <div style={{ display: "flex", gap: 4, marginLeft: 6 }}>
               <button
-                className="pill-ghost"
+                className="inline-flex items-center justify-center gap-1.5 rounded-full px-3 py-1.5 text-[12px] transition-colors bg-field text-ink-2 hover:bg-hover"
                 style={{ fontSize: 11, padding: "3px 8px" }}
                 disabled={page === 0}
                 onClick={() => setPage(page - 1)}
@@ -889,7 +891,7 @@ export default function DataArtifacts({
               <span
                 style={{
                   fontSize: 11,
-                  color: "var(--color-warm-gray)",
+                  color: "var(--ink-2)",
                   display: "flex",
                   alignItems: "center",
                 }}
@@ -897,7 +899,7 @@ export default function DataArtifacts({
                 {page + 1}/{contentIdx.length}
               </span>
               <button
-                className="pill-ghost"
+                className="inline-flex items-center justify-center gap-1.5 rounded-full px-3 py-1.5 text-[12px] transition-colors bg-field text-ink-2 hover:bg-hover"
                 style={{ fontSize: 11, padding: "3px 8px" }}
                 disabled={page >= contentIdx.length - 1}
                 onClick={() => setPage(page + 1)}
@@ -913,7 +915,7 @@ export default function DataArtifacts({
         <details
           style={{
             fontSize: 11,
-            color: "var(--color-warm-gray)",
+            color: "var(--ink-2)",
             marginBottom: 12,
           }}
         >
@@ -924,7 +926,7 @@ export default function DataArtifacts({
             style={{
               whiteSpace: "pre-wrap",
               margin: "6px 0 0",
-              background: "var(--color-stone-canvas)",
+              background: "var(--page)",
               padding: 8,
               borderRadius: 6,
               fontSize: 11,
@@ -998,8 +1000,8 @@ export default function DataArtifacts({
       ) : toolName === "run_python" ? (
         <div
           style={{
-            background: "var(--color-stone-canvas)",
-            border: "1px solid var(--color-stone-border)",
+            background: "var(--page)",
+            border: "1px solid var(--line)",
             padding: 12,
             borderRadius: 8,
             fontFamily: "monospace",
@@ -1010,7 +1012,7 @@ export default function DataArtifacts({
           <div
             style={{
               fontSize: 11,
-              color: "var(--color-warm-gray)",
+              color: "var(--ink-2)",
               marginBottom: 6,
               fontWeight: 500,
             }}

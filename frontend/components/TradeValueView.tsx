@@ -125,8 +125,8 @@ function SideCard({ side, grade }: { side: TradeSide; grade?: string }) {
       style={{
         flex: "1 1 240px",
         minWidth: 0,
-        background: "var(--color-pure-white)",
-        border: "1px solid var(--color-stone-border)",
+        background: "var(--surface)",
+        border: "1px solid var(--line)",
         borderRadius: 10,
         padding: "12px 14px",
       }}
@@ -143,7 +143,7 @@ function SideCard({ side, grade }: { side: TradeSide; grade?: string }) {
           style={{
             fontWeight: 600,
             fontSize: 16,
-            color: "var(--color-ink-black)",
+            color: "var(--ink)",
           }}
         >
           {side.team}
@@ -168,7 +168,7 @@ function SideCard({ side, grade }: { side: TradeSide; grade?: string }) {
           <div
             key={`${p.name}-${i}`}
             style={{
-              borderTop: i === 0 && side.picks.length === 0 ? "none" : "1px solid var(--color-stone-border)",
+              borderTop: i === 0 && side.picks.length === 0 ? "none" : "1px solid var(--line)",
               paddingTop: i === 0 && side.picks.length === 0 ? 0 : 8,
             }}
           >
@@ -184,7 +184,7 @@ function SideCard({ side, grade }: { side: TradeSide; grade?: string }) {
                 style={{
                   fontSize: 13,
                   fontWeight: 500,
-                  color: "var(--color-ink-black)",
+                  color: "var(--ink)",
                 }}
               >
                 {p.name}
@@ -193,7 +193,7 @@ function SideCard({ side, grade }: { side: TradeSide; grade?: string }) {
                 style={{
                   fontSize: 12,
                   fontWeight: 600,
-                  color: "var(--color-cyan-edge)",
+                  color: "var(--accent-ink)",
                   fontVariantNumeric: "tabular-nums",
                   whiteSpace: "nowrap",
                 }}
@@ -204,7 +204,7 @@ function SideCard({ side, grade }: { side: TradeSide; grade?: string }) {
             <div
               style={{
                 fontSize: 11,
-                color: "var(--color-warm-gray)",
+                color: "var(--ink-2)",
                 marginTop: 2,
                 fontVariantNumeric: "tabular-nums",
               }}
@@ -229,7 +229,7 @@ function SideCard({ side, grade }: { side: TradeSide; grade?: string }) {
           <div
             key={`pick-${i}`}
             style={{
-              borderTop: "1px solid var(--color-stone-border)",
+              borderTop: "1px solid var(--line)",
               paddingTop: 8,
               display: "flex",
               justifyContent: "space-between",
@@ -237,12 +237,12 @@ function SideCard({ side, grade }: { side: TradeSide; grade?: string }) {
               fontSize: 12,
             }}
           >
-            <span style={{ color: "var(--color-warm-gray)" }}>{k.desc}</span>
+            <span style={{ color: "var(--ink-2)" }}>{k.desc}</span>
             <span
               style={{
                 fontVariantNumeric: "tabular-nums",
                 whiteSpace: "nowrap",
-                color: "var(--color-ink-black)",
+                color: "var(--ink)",
               }}
             >
               {k.slot !== null ? `~pick ${k.slot}` : ""}
@@ -269,8 +269,8 @@ export default function TradeValueView({ rows }: { rows: unknown }) {
       <SectionTitle>Trade value</SectionTitle>
       <div
         style={{
-          background: "var(--color-stone-canvas)",
-          border: "1px solid var(--color-stone-border)",
+          background: "var(--page)",
+          border: "1px solid var(--line)",
           borderRadius: 10,
           padding: "12px 16px",
           marginBottom: 12,
@@ -286,12 +286,12 @@ export default function TradeValueView({ rows }: { rows: unknown }) {
             style={{
               fontWeight: 600,
               fontSize: 16,
-              color: "var(--color-ink-black)",
+              color: "var(--ink)",
             }}
           >
             {winnerLabel}
             {verdict.deltaM !== null && verdict.winner !== "even" && (
-              <span style={{ fontWeight: 400, color: "var(--color-warm-gray)" }}>
+              <span style={{ fontWeight: 400, color: "var(--ink-2)" }}>
                 {" "}
                 by {moneyM(Math.abs(verdict.deltaM))}
               </span>
@@ -301,7 +301,7 @@ export default function TradeValueView({ rows }: { rows: unknown }) {
             <div
               style={{
                 fontSize: 12,
-                color: "var(--color-warm-gray)",
+                color: "var(--ink-2)",
                 marginTop: 4,
                 lineHeight: 1.55,
               }}
@@ -324,12 +324,12 @@ export default function TradeValueView({ rows }: { rows: unknown }) {
                 padding: "4px 12px",
                 background:
                   grade.startsWith("A") || grade.startsWith("B")
-                    ? "var(--color-ink-black)"
-                    : "var(--color-stone-border)",
+                    ? "var(--ink)"
+                    : "var(--line)",
                 color:
                   grade.startsWith("A") || grade.startsWith("B")
-                    ? "var(--color-pure-white)"
-                    : "var(--color-ink-black)",
+                    ? "var(--surface)"
+                    : "var(--ink)",
               }}
             >
               {team} {grade}
@@ -349,10 +349,10 @@ export default function TradeValueView({ rows }: { rows: unknown }) {
               <div
                 key={f.team}
                 style={{
-                  border: "1px solid var(--color-stone-border)",
+                  border: "1px solid var(--line)",
                   borderRadius: 10,
                   padding: "10px 14px",
-                  background: "var(--color-pure-white)",
+                  background: "var(--surface)",
                 }}
               >
                 <div
@@ -368,7 +368,7 @@ export default function TradeValueView({ rows }: { rows: unknown }) {
                     style={{
                       fontWeight: 600,
                       fontSize: 13,
-                      color: "var(--color-ink-black)",
+                      color: "var(--ink)",
                     }}
                   >
                     {f.team}
@@ -383,7 +383,7 @@ export default function TradeValueView({ rows }: { rows: unknown }) {
                     key={i}
                     style={{
                       fontSize: 12,
-                      color: "var(--color-warm-gray)",
+                      color: "var(--ink-2)",
                       lineHeight: 1.55,
                     }}
                   >

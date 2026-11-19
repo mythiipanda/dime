@@ -101,10 +101,10 @@ export default function ZoneBars({ rows }: { rows: unknown }) {
 
   return (
     <div>
-      <div style={{ fontSize: 13, fontWeight: 600, color: "var(--color-ink-black)" }}>
+      <div style={{ fontSize: 13, fontWeight: 600, color: "var(--ink)" }}>
         Shot diet by zone
       </div>
-      <div style={{ fontSize: 11, color: "var(--color-warm-gray)", marginTop: 2, marginBottom: 8 }}>
+      <div style={{ fontSize: 11, color: "var(--ink-2)", marginTop: 2, marginBottom: 8 }}>
         Frequency is share of shots. Accuracy is 3P% on three-point zones, eFG elsewhere.
       </div>
       <svg
@@ -120,7 +120,7 @@ export default function ZoneBars({ rows }: { rows: unknown }) {
               x2={W - PAD_R}
               y1={y(t)}
               y2={y(t)}
-              stroke="var(--color-stone-border)"
+              stroke="var(--line)"
               strokeWidth={1}
             />
             <text
@@ -128,7 +128,7 @@ export default function ZoneBars({ rows }: { rows: unknown }) {
               y={y(t) + 3.5}
               textAnchor="end"
               fontSize={10}
-              fill="var(--color-ash-gray)"
+              fill="var(--ink-3)"
             >
               {`${Math.round(t * 100)}%`}
             </text>
@@ -146,7 +146,7 @@ export default function ZoneBars({ rows }: { rows: unknown }) {
                 width={barW}
                 height={Math.max(1.5, baseY - y(p.share))}
                 rx={2.5}
-                fill="var(--color-soot)"
+                fill="var(--ink)"
               >
                 <title>{`${p.zone}: ${(p.share * 100).toFixed(1)}% of shots (${p.fgm}/${p.fga})`}</title>
               </rect>
@@ -156,7 +156,7 @@ export default function ZoneBars({ rows }: { rows: unknown }) {
                 width={barW}
                 height={Math.max(1.5, baseY - y(p.acc))}
                 rx={2.5}
-                fill="var(--color-cyan-signal)"
+                fill="var(--accent)"
               >
                 <title>{`${p.zone}: ${(p.acc * 100).toFixed(1)}% ${/3|corner|break/i.test(p.zone) ? "3P" : "eFG"}${p.delta !== null ? ` (${p.delta >= 0 ? "+" : ""}${(p.delta * 100).toFixed(1)} vs league)` : ""}`}</title>
               </rect>
@@ -165,7 +165,7 @@ export default function ZoneBars({ rows }: { rows: unknown }) {
                 y={y(p.share) - 4}
                 textAnchor="middle"
                 fontSize={9.5}
-                fill="var(--color-warm-gray)"
+                fill="var(--ink-2)"
               >
                 {`${Math.round(p.share * 100)}`}
               </text>
@@ -175,7 +175,7 @@ export default function ZoneBars({ rows }: { rows: unknown }) {
                 textAnchor="middle"
                 fontSize={9.5}
                 fontWeight={600}
-                fill="var(--color-ink-black)"
+                fill="var(--ink)"
               >
                 {`${Math.round(Math.min(1, p.acc) * 100)}`}
               </text>
@@ -185,7 +185,7 @@ export default function ZoneBars({ rows }: { rows: unknown }) {
                 textAnchor="middle"
                 fontSize={10}
                 fontWeight={500}
-                fill="var(--color-ink-black)"
+                fill="var(--ink)"
               >
                 {p.short}
               </text>
@@ -194,7 +194,7 @@ export default function ZoneBars({ rows }: { rows: unknown }) {
                 y={baseY + 27}
                 textAnchor="middle"
                 fontSize={9.5}
-                fill="var(--color-ash-gray)"
+                fill="var(--ink-3)"
               >
                 {`${p.fgm}/${p.fga}`}
               </text>
@@ -208,15 +208,15 @@ export default function ZoneBars({ rows }: { rows: unknown }) {
           gap: 14,
           marginTop: 6,
           fontSize: 11,
-          color: "var(--color-warm-gray)",
+          color: "var(--ink-2)",
         }}
       >
         <span style={{ display: "inline-flex", alignItems: "center", gap: 5 }}>
-          <span style={{ width: 10, height: 10, borderRadius: 2, background: "var(--color-soot)" }} />
+          <span style={{ width: 10, height: 10, borderRadius: 2, background: "var(--ink)" }} />
           Frequency
         </span>
         <span style={{ display: "inline-flex", alignItems: "center", gap: 5 }}>
-          <span style={{ width: 10, height: 10, borderRadius: 2, background: "var(--color-cyan-signal)" }} />
+          <span style={{ width: 10, height: 10, borderRadius: 2, background: "var(--accent)" }} />
           Accuracy
         </span>
       </div>

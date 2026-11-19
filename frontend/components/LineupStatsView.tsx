@@ -94,8 +94,8 @@ export default function LineupStatsView({
       </div>
       <div
         style={{
-          background: "var(--color-pure-white)",
-          border: "1px solid var(--color-stone-border)",
+          background: "var(--surface)",
+          border: "1px solid var(--line)",
           borderRadius: 10,
           overflowX: "auto",
         }}
@@ -112,7 +112,7 @@ export default function LineupStatsView({
             <tr
               style={{
                 fontSize: 10,
-                color: "var(--color-ash-gray)",
+                color: "var(--ink-3)",
                 textAlign: "left",
               }}
             >
@@ -127,13 +127,13 @@ export default function LineupStatsView({
             {parsed.units.map((u, i) => (
               <tr
                 key={`${u.name}-${i}`}
-                style={{ borderTop: "1px solid var(--color-stone-border)" }}
+                style={{ borderTop: "1px solid var(--line)" }}
               >
                 <td
                   style={{
                     padding: "7px 12px",
                     fontSize: 12,
-                    color: "var(--color-ink-black)",
+                    color: "var(--ink)",
                     maxWidth: 220,
                     overflow: "hidden",
                     textOverflow: "ellipsis",
@@ -157,7 +157,7 @@ export default function LineupStatsView({
                   style={{
                     padding: "7px 8px",
                     fontSize: 12,
-                    color: "var(--color-warm-gray)",
+                    color: "var(--ink-2)",
                     textAlign: "right",
                   }}
                 >
@@ -167,7 +167,7 @@ export default function LineupStatsView({
                   style={{
                     padding: "7px 8px",
                     fontSize: 12,
-                    color: "var(--color-warm-gray)",
+                    color: "var(--ink-2)",
                     textAlign: "right",
                   }}
                 >
@@ -177,7 +177,7 @@ export default function LineupStatsView({
                   style={{
                     padding: "7px 8px",
                     fontSize: 12,
-                    color: "var(--color-warm-gray)",
+                    color: "var(--ink-2)",
                     textAlign: "right",
                   }}
                 >
@@ -188,7 +188,7 @@ export default function LineupStatsView({
                     padding: "7px 12px",
                     fontSize: 13,
                     fontWeight: 600,
-                    color: "var(--color-cyan-edge)",
+                    color: "var(--accent-ink)",
                     textAlign: "right",
                   }}
                 >

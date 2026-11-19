@@ -83,13 +83,13 @@ function StatCell({ label, value }: { label: string; value: string }) {
         style={{
           fontSize: 16,
           fontWeight: 600,
-          color: "var(--color-ink-black)",
+          color: "var(--ink)",
           fontVariantNumeric: "tabular-nums",
         }}
       >
         {value}
       </div>
-      <div style={{ fontSize: 11, color: "var(--color-ash-gray)" }}>{label}</div>
+      <div style={{ fontSize: 11, color: "var(--ink-3)" }}>{label}</div>
     </div>
   );
 }
@@ -120,8 +120,8 @@ export default function RegressionView({ rows }: { rows: unknown }) {
       </div>
       <div
         style={{
-          background: "var(--color-stone-canvas)",
-          border: "1px solid var(--color-stone-border)",
+          background: "var(--page)",
+          border: "1px solid var(--line)",
           borderRadius: 10,
           padding: "12px 16px",
           marginBottom: 12,
@@ -137,12 +137,12 @@ export default function RegressionView({ rows }: { rows: unknown }) {
             marginBottom: 6,
             background:
               r.verdict === "sustainable"
-                ? "var(--color-sky-wash)"
-                : "var(--color-ink-black)",
+                ? "var(--accent-tint)"
+                : "var(--ink)",
             color:
               r.verdict === "sustainable"
-                ? "var(--color-cyan-edge)"
-                : "var(--color-pure-white)",
+                ? "var(--accent-ink)"
+                : "var(--surface)",
           }}
         >
           {r.verdict}
@@ -151,7 +151,7 @@ export default function RegressionView({ rows }: { rows: unknown }) {
           <div
             style={{
               fontSize: 12,
-              color: "var(--color-warm-gray)",
+              color: "var(--ink-2)",
               lineHeight: 1.55,
             }}
           >
@@ -169,8 +169,8 @@ export default function RegressionView({ rows }: { rows: unknown }) {
       >
         <div
           style={{
-            background: "var(--color-pure-white)",
-            border: "1px solid var(--color-stone-border)",
+            background: "var(--surface)",
+            border: "1px solid var(--line)",
             borderRadius: 10,
             padding: "12px 14px",
           }}
@@ -179,7 +179,7 @@ export default function RegressionView({ rows }: { rows: unknown }) {
             style={{
               fontSize: 11,
               fontWeight: 600,
-              color: "var(--color-warm-gray)",
+              color: "var(--ink-2)",
               marginBottom: 8,
             }}
           >
@@ -193,8 +193,8 @@ export default function RegressionView({ rows }: { rows: unknown }) {
         </div>
         <div
           style={{
-            background: "var(--color-pure-white)",
-            border: "1px solid var(--color-stone-border)",
+            background: "var(--surface)",
+            border: "1px solid var(--line)",
             borderRadius: 10,
             padding: "12px 14px",
           }}
@@ -203,7 +203,7 @@ export default function RegressionView({ rows }: { rows: unknown }) {
             style={{
               fontSize: 11,
               fontWeight: 600,
-              color: "var(--color-warm-gray)",
+              color: "var(--ink-2)",
               marginBottom: 8,
             }}
           >
@@ -220,7 +220,7 @@ export default function RegressionView({ rows }: { rows: unknown }) {
         <div
           style={{
             fontSize: 13,
-            color: "var(--color-ink-black)",
+            color: "var(--ink)",
             marginBottom: 12,
             fontVariantNumeric: "tabular-nums",
           }}
@@ -229,7 +229,7 @@ export default function RegressionView({ rows }: { rows: unknown }) {
           <span
             style={{
               fontWeight: 600,
-              color: hot ? "var(--color-cyan-edge)" : "var(--color-warm-gray)",
+              color: hot ? "var(--accent-ink)" : "var(--ink-2)",
             }}
           >
             {fmtDelta(gap)}
@@ -249,19 +249,19 @@ export default function RegressionView({ rows }: { rows: unknown }) {
                   justifyContent: "space-between",
                   alignItems: "center",
                   gap: 8,
-                  border: "1px solid var(--color-stone-border)",
+                  border: "1px solid var(--line)",
                   borderRadius: 8,
                   padding: "8px 12px",
-                  background: "var(--color-pure-white)",
+                  background: "var(--surface)",
                   fontSize: 12,
                 }}
               >
-                <span style={{ color: "var(--color-ink-black)", fontWeight: 500 }}>
+                <span style={{ color: "var(--ink)", fontWeight: 500 }}>
                   {d.factor}
                 </span>
                 <span
                   style={{
-                    color: "var(--color-warm-gray)",
+                    color: "var(--ink-2)",
                     fontVariantNumeric: "tabular-nums",
                   }}
                 >
@@ -273,8 +273,8 @@ export default function RegressionView({ rows }: { rows: unknown }) {
                       fontWeight: 600,
                       color:
                         d.delta !== null && d.delta > 0
-                          ? "var(--color-cyan-edge)"
-                          : "var(--color-warm-gray)",
+                          ? "var(--accent-ink)"
+                          : "var(--ink-2)",
                     }}
                   >
                     {fmtDelta(d.delta, 2)}

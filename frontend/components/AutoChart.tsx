@@ -66,7 +66,13 @@ function zoneData(
   return rows.map((r) => ({ label: str(r.zone), FG_PCT: num(r.FG_PCT) }));
 }
 
-const AXIS = { fontSize: 11, fill: "var(--color-warm-gray)" } as const;
+const AXIS = { fontSize: 11, fill: "var(--ink-2)" } as const;
+const TOOLTIP = {
+  contentStyle: { backgroundColor: "var(--tooltip-bg)", color: "var(--tooltip-fg)", border: "1px solid var(--tooltip-border)", borderRadius: 8, fontSize: 12 },
+  labelStyle: { color: "var(--tooltip-muted)" },
+  itemStyle: { color: "var(--tooltip-fg)" },
+  cursor: { fill: "var(--hover)", stroke: "var(--line-strong)" },
+};
 
 export default function AutoChart({
   table,
@@ -79,16 +85,16 @@ export default function AutoChart({
   if (trend) {
     return (
       <div style={{ marginTop: 8 }}>
-        <div style={{ fontSize: 12, color: "var(--color-warm-gray)", marginBottom: 4 }}>
+        <div style={{ fontSize: 12, color: "var(--ink-2)", marginBottom: 4 }}>
           Points by game
         </div>
         <ResponsiveContainer width="100%" height={160}>
           <LineChart data={trend}>
-            <CartesianGrid stroke="var(--color-stone-border)" vertical={false} />
+            <CartesianGrid stroke="var(--line)" vertical={false} />
             <XAxis dataKey="label" tick={AXIS} interval={2} />
             <YAxis tick={AXIS} width={30} />
-            <Tooltip />
-            <Line type="monotone" dataKey="PTS" stroke="var(--color-cyan-signal)" strokeWidth={2} dot={false} />
+            <Tooltip {...TOOLTIP} />
+            <Line type="monotone" dataKey="PTS" stroke="var(--accent)" strokeWidth={2} dot={false} />
           </LineChart>
         </ResponsiveContainer>
       </div>
@@ -98,16 +104,16 @@ export default function AutoChart({
   if (lead) {
     return (
       <div style={{ marginTop: 8 }}>
-        <div style={{ fontSize: 12, color: "var(--color-warm-gray)", marginBottom: 4 }}>
+        <div style={{ fontSize: 12, color: "var(--ink-2)", marginBottom: 4 }}>
           Top {stat}
         </div>
         <ResponsiveContainer width="100%" height={200}>
           <BarChart data={lead} layout="vertical">
-            <CartesianGrid stroke="var(--color-stone-border)" horizontal={false} />
+            <CartesianGrid stroke="var(--line)" horizontal={false} />
             <XAxis type="number" tick={AXIS} />
             <YAxis type="category" dataKey="label" tick={AXIS} width={categoryAxisWidth(lead.map((d) => d.label))} interval={0} />
-            <Tooltip />
-            <Bar dataKey="value" fill="var(--color-ink-black)" radius={[0, 4, 4, 0]} />
+            <Tooltip {...TOOLTIP} />
+            <Bar dataKey="value" fill="var(--ink)" radius={[0, 4, 4, 0]} />
           </BarChart>
         </ResponsiveContainer>
       </div>
@@ -117,16 +123,16 @@ export default function AutoChart({
   if (zone) {
     return (
       <div style={{ marginTop: 8 }}>
-        <div style={{ fontSize: 12, color: "var(--color-warm-gray)", marginBottom: 4 }}>
+        <div style={{ fontSize: 12, color: "var(--ink-2)", marginBottom: 4 }}>
           Efficiency by zone
         </div>
         <ResponsiveContainer width="100%" height={140}>
           <BarChart data={zone}>
-            <CartesianGrid stroke="var(--color-stone-border)" vertical={false} />
+            <CartesianGrid stroke="var(--line)" vertical={false} />
             <XAxis dataKey="label" tick={AXIS} />
             <YAxis tick={AXIS} width={36} domain={[0, 1]} />
-            <Tooltip />
-            <Bar dataKey="FG_PCT" fill="var(--color-cyan-signal)" radius={[4, 4, 0, 0]} />
+            <Tooltip {...TOOLTIP} />
+            <Bar dataKey="FG_PCT" fill="var(--accent)" radius={[4, 4, 0, 0]} />
           </BarChart>
         </ResponsiveContainer>
       </div>

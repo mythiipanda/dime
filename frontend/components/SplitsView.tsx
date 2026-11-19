@@ -81,8 +81,8 @@ export default function SplitsView({
           <div
             key={`${s.split}-${i}`}
             style={{
-              background: "var(--color-pure-white)",
-              border: "1px solid var(--color-stone-border)",
+              background: "var(--surface)",
+              border: "1px solid var(--line)",
               borderRadius: 10,
               padding: "10px 14px",
             }}
@@ -108,7 +108,7 @@ export default function SplitsView({
                   style={{
                     fontWeight: 600,
                     fontSize: 13,
-                    color: "var(--color-ink-black)",
+                    color: "var(--ink)",
                   }}
                 >
                   {s.split}
@@ -116,7 +116,7 @@ export default function SplitsView({
                 {s.lowSample && <Chip>low sample</Chip>}
               </div>
               <span
-                style={{ fontSize: 11, color: "var(--color-ash-gray)" }}
+                style={{ fontSize: 11, color: "var(--ink-3)" }}
               >
                 {s.gp} gp
               </span>
@@ -134,8 +134,8 @@ export default function SplitsView({
                   fontSize: 13,
                   fontWeight: 600,
                   color: s.lowSample
-                    ? "var(--color-warm-gray)"
-                    : "var(--color-cyan-edge)",
+                    ? "var(--ink-2)"
+                    : "var(--accent-ink)",
                   fontVariantNumeric: "tabular-nums",
                 }}
               >
@@ -144,7 +144,7 @@ export default function SplitsView({
               <div style={{ flex: 1 }}>
                 <Bar
                   pct={((s.ppg ?? 0) / maxPpg) * 100}
-                  color={s.lowSample ? "var(--color-stone-muted)" : undefined}
+                  color={s.lowSample ? "var(--line-strong)" : undefined}
                 />
               </div>
             </div>
@@ -154,7 +154,7 @@ export default function SplitsView({
                 gap: 12,
                 marginTop: 6,
                 fontSize: 11,
-                color: "var(--color-ash-gray)",
+                color: "var(--ink-3)",
                 fontVariantNumeric: "tabular-nums",
                 flexWrap: "wrap",
               }}

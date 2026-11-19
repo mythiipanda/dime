@@ -13,7 +13,9 @@ import {
   type ExploreContext,
   type SearchResult,
 } from "../lib/exploreSearch";
-import { Input } from "@/components/ui/input";
+import { TextField } from "./ds/TextField";
+import { Button } from "./ds/Button";
+import { Search, ArrowUpRight } from "iconoir-react";
 
 
 
@@ -133,17 +135,17 @@ export default function ExploreSearch({
   const empty = showList && !busy && items.length === 0;
 
   return (
-    <div className="explore-search">
-      <div className="explore-search-row">
-        <div className="explore-search-field" ref={fieldRef}>
-          <span aria-hidden="true" className="explore-search-icon">⌕</span>
-          <Input
+    <div className="relative mb-5">
+      <div className="flex items-stretch gap-2">
+        <div className="relative flex min-w-0 flex-1 items-center gap-2 rounded-lg border border-line bg-surface px-3 focus-within:border-ink-3 focus-within:ring-2 focus-within:ring-hover" ref={fieldRef}>
+          <Search aria-hidden="true" width={15} height={15} className="text-ink-3" />
+          <TextField
             role="combobox"
             aria-expanded={showList}
             aria-controls="explore-search-results"
             aria-activedescendant={items[active] ? `explore-result-${active}` : undefined}
             aria-label="Search players, teams, and stats"
-            className="h-auto px-0 py-0 focus-visible:ring-0"
+            className="w-full border-0 bg-transparent px-0 py-2.5 shadow-none focus-visible:outline-none"
             value={q}
             onChange={(e) => {
               setQ(e.target.value);
@@ -166,32 +168,30 @@ export default function ExploreSearch({
             }}
             placeholder="Search players, teams, and stats"
           />
-          {busy && <span className="explore-search-busy" aria-hidden="true" />}
+          {busy && <span className="h-3 w-3 shrink-0 animate-spin rounded-full border-2 border-line border-t-ink-3 motion-reduce:animate-none" aria-hidden="true" />}
         </div>
-        <button
+        <Button
           type="button"
-          className="explore-ask"
+          size="sm"
+          className="h-10 shrink-0 rounded-lg border border-line bg-surface"
           onClick={() => onAsk("What is the most important NBA trend in the data right now?")}
         >
           Ask Dime
-          <svg width={12} height={12} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-            <line x1="7" y1="17" x2="17" y2="7" />
-            <polyline points="7 7 17 7 17 17" />
-          </svg>
-        </button>
+          <ArrowUpRight width={13} height={13} />
+        </Button>
       </div>
 
       {showList && (
         <>
           <div
-            className="explore-search-dismiss"
+            className="fixed inset-0 z-40"
             onClick={() => setOpen(false)}
             aria-hidden="true"
           />
           {createPortal(
             <div
               id="explore-search-results"
-              className="explore-search-results"
+              className="z-50 overflow-y-auto rounded-xl border border-line bg-surface p-1.5 shadow-float"
               role="listbox"
               aria-label="Search results"
               style={{
@@ -205,8 +205,8 @@ export default function ExploreSearch({
               }}
             >
               {groups.map((kind) => (
-                <section key={kind}>
-                  <h2>{groupLabel(kind)}</h2>
+                <section key={kind} className="not-first:mt-1 not-first:border-t not-first:border-line not-first:pt-1">
+                  <h2 className="px-2 py-1.5 text-[10px] font-medium uppercase tracking-wide text-ink-3">{groupLabel(kind)}</h2>
                   {items
                     .filter((x) => x.kind === kind)
                     .map((item) => {
@@ -220,22 +220,22 @@ export default function ExploreSearch({
                           type="button"
                           role="option"
                           aria-selected={index === active}
-                          className={index === active ? "is-active" : ""}
+                          className={`grid w-full grid-cols-[minmax(0,1fr)_auto] items-center gap-2 rounded-lg px-2 py-2 text-left text-[13px] hover:bg-hover ${index === active ? "bg-hover-2" : ""}`}
                           onMouseEnter={() => setActive(index)}
                           onClick={() => pick(item)}
                         >
-                          <span>{label}</span>
-                          <small>{resultHint(item)}</small>
+                          <span className="truncate">{label}</span>
+                          <small className="text-[11px] text-ink-3">{resultHint(item)}</small>
                         </button>
                       );
                     })}
                 </section>
               ))}
-              {empty && <div className="explore-search-empty">No matches</div>}
+              {empty && <div className="px-3 py-5 text-center text-[12px] text-ink-3">No matches</div>}
               {!empty && needle.length >= 2 && (
                 <button
                   type="button"
-                  className="explore-search-ask"
+                  className="mt-1 w-full rounded-lg border border-line px-2 py-2 text-left text-[12px] hover:bg-hover"
                   onClick={() => {
                     setOpen(false);
                     onAsk(`Tell me about ${needle}`);

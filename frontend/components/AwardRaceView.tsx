@@ -87,7 +87,7 @@ export default function AwardRaceView({
         {top && runner && (
           <button
             type="button"
-            className="pill-ghost"
+            className="inline-flex items-center justify-center gap-1.5 rounded-full px-3 py-1.5 text-[12px] transition-colors bg-field text-ink-2 hover:bg-hover"
             style={{ fontSize: 12, padding: "4px 14px" }}
             onClick={() => setDebateOpen(true)}
           >
@@ -114,8 +114,8 @@ export default function AwardRaceView({
           <div
             key={`${c.player}-${c.rank}`}
             style={{
-              background: "var(--color-pure-white)",
-              border: "1px solid var(--color-stone-border)",
+              background: "var(--surface)",
+              border: "1px solid var(--line)",
               borderRadius: 10,
               padding: "12px 16px",
             }}
@@ -141,13 +141,13 @@ export default function AwardRaceView({
                   flexShrink: 0,
                   background:
                     c.rank === 1
-                      ? "var(--color-ink-black)"
-                      : "var(--color-stone-canvas)",
+                      ? "var(--ink)"
+                      : "var(--page)",
                   color:
                     c.rank === 1
-                      ? "var(--color-pure-white)"
-                      : "var(--color-warm-gray)",
-                  border: "1px solid var(--color-stone-border)",
+                      ? "var(--surface)"
+                      : "var(--ink-2)",
+                  border: "1px solid var(--line)",
                 }}
               >
                 {c.rank}
@@ -157,14 +157,14 @@ export default function AwardRaceView({
                   style={{
                     fontWeight: 600,
                     fontSize: 14,
-                    color: "var(--color-ink-black)",
+                    color: "var(--ink)",
                   }}
                 >
                   {c.player}
                 </div>
                 {c.team && (
                   <div
-                    style={{ fontSize: 11, color: "var(--color-ash-gray)" }}
+                    style={{ fontSize: 11, color: "var(--ink-3)" }}
                   >
                     {c.team}
                   </div>
@@ -174,7 +174,7 @@ export default function AwardRaceView({
                 style={{
                   fontSize: 13,
                   fontWeight: 600,
-                  color: "var(--color-cyan-edge)",
+                  color: "var(--accent-ink)",
                   fontVariantNumeric: "tabular-nums",
                 }}
               >
@@ -204,19 +204,19 @@ export default function AwardRaceView({
                 style={{
                   marginTop: 10,
                   paddingTop: 8,
-                  borderTop: "1px solid var(--color-stone-border)",
+                  borderTop: "1px solid var(--line)",
                   display: "flex",
                   flexDirection: "column",
                   gap: 4,
                 }}
               >
                 {c.caseFor && (
-                  <div style={{ fontSize: 12, color: "var(--color-warm-gray)" }}>
+                  <div style={{ fontSize: 12, color: "var(--ink-2)" }}>
                     {c.caseFor}
                   </div>
                 )}
                 {c.caseAgainst && (
-                  <div style={{ fontSize: 12, color: "var(--color-ash-gray)" }}>
+                  <div style={{ fontSize: 12, color: "var(--ink-3)" }}>
                     {c.caseAgainst}
                   </div>
                 )}

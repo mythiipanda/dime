@@ -1,12 +1,7 @@
 "use client";
 
 import type { ReactNode } from "react";
-
-
-
-
-
-
+import { Surface } from "./ds/Panel";
 
 export function PanelHeader({
   kicker,
@@ -41,8 +36,8 @@ export default function ExplorePanel({
   children: ReactNode;
 }) {
   return (
-    <div id={id} className="explore-panel-anchor">
-      <section className="card explore-panel-card">{children}</section>
+    <div id={id} className="scroll-mt-16">
+      <Surface>{children}</Surface>
     </div>
   );
 }

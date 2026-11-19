@@ -98,8 +98,8 @@ export default function StreaksView({
             <div
               key={`${s.holder}-${i}`}
               style={{
-                background: "var(--color-pure-white)",
-                border: "1px solid var(--color-stone-border)",
+                background: "var(--surface)",
+                border: "1px solid var(--line)",
                 borderRadius: 10,
                 padding: "10px 14px",
               }}
@@ -120,7 +120,7 @@ export default function StreaksView({
                   <span
                     style={{
                       fontSize: 11,
-                      color: "var(--color-ash-gray)",
+                      color: "var(--ink-3)",
                       fontVariantNumeric: "tabular-nums",
                       minWidth: 20,
                     }}
@@ -131,7 +131,7 @@ export default function StreaksView({
                     style={{
                       fontWeight: 600,
                       fontSize: 13,
-                      color: "var(--color-ink-black)",
+                      color: "var(--ink)",
                     }}
                   >
                     {s.holder}
@@ -141,7 +141,7 @@ export default function StreaksView({
                 {dates && (
                   <span
                     className="streak-dates"
-                    style={{ fontSize: 11, color: "var(--color-ash-gray)" }}
+                    style={{ fontSize: 11, color: "var(--ink-3)" }}
                   >
                     {dates}
                   </span>
@@ -157,8 +157,8 @@ export default function StreaksView({
                     fontWeight: 600,
                     color:
                       i === 0
-                        ? "var(--color-cyan-edge)"
-                        : "var(--color-ink-black)",
+                        ? "var(--accent-ink)"
+                        : "var(--ink)",
                     fontVariantNumeric: "tabular-nums",
                   }}
                 >
@@ -171,7 +171,7 @@ export default function StreaksView({
                   />
                 </div>
                 <span
-                  style={{ fontSize: 11, color: "var(--color-ash-gray)" }}
+                  style={{ fontSize: 11, color: "var(--ink-3)" }}
                 >
                   games
                 </span>

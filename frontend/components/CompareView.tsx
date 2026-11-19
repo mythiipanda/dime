@@ -60,19 +60,19 @@ function MetricsView({ rows }: { rows: Record<string, unknown> }) {
   const unavailable = (rows.unavailable || []) as { metric?: string }[];
   return (
     <div style={{ marginTop: 8 }}>
-      <div style={{ fontSize: 12, color: "var(--color-warm-gray)", marginBottom: 8 }}>
+      <div style={{ fontSize: 12, color: "var(--ink-2)", marginBottom: 8 }}>
         Metrics {agreement}: {verdict}
       </div>
       <table style={{ borderCollapse: "collapse", width: "100%", fontSize: 12 }}>
         <thead>
           <tr>
-            <th style={{ textAlign: "left", borderBottom: "1px solid var(--color-stone-border)", padding: "4px 8px", color: "var(--color-warm-gray)", fontWeight: 500 }}>
+            <th style={{ textAlign: "left", borderBottom: "1px solid var(--line)", padding: "4px 8px", color: "var(--ink-2)", fontWeight: 500 }}>
               Metric
             </th>
-            <th style={{ textAlign: "left", borderBottom: "1px solid var(--color-stone-border)", padding: "4px 8px", color: "var(--color-warm-gray)", fontWeight: 500 }}>
+            <th style={{ textAlign: "left", borderBottom: "1px solid var(--line)", padding: "4px 8px", color: "var(--ink-2)", fontWeight: 500 }}>
               {labelA}
             </th>
-            <th style={{ textAlign: "left", borderBottom: "1px solid var(--color-stone-border)", padding: "4px 8px", color: "var(--color-warm-gray)", fontWeight: 500 }}>
+            <th style={{ textAlign: "left", borderBottom: "1px solid var(--line)", padding: "4px 8px", color: "var(--ink-2)", fontWeight: 500 }}>
               {labelB}
             </th>
           </tr>
@@ -80,13 +80,13 @@ function MetricsView({ rows }: { rows: Record<string, unknown> }) {
         <tbody>
           {metrics.map((m) => (
             <tr key={String(m.metric)}>
-              <td style={{ borderBottom: "1px solid var(--color-stone-border)", padding: "4px 8px", color: "var(--color-warm-gray)" }}>
+              <td style={{ borderBottom: "1px solid var(--line)", padding: "4px 8px", color: "var(--ink-2)" }}>
                 {String(m.label)}
               </td>
-              <td style={{ borderBottom: "1px solid var(--color-stone-border)", padding: "4px 8px", fontWeight: m.leader === "a" ? 600 : 400 }}>
+              <td style={{ borderBottom: "1px solid var(--line)", padding: "4px 8px", fontWeight: m.leader === "a" ? 600 : 400 }}>
                 {num(m.a)}
               </td>
-              <td style={{ borderBottom: "1px solid var(--color-stone-border)", padding: "4px 8px", fontWeight: m.leader === "b" ? 600 : 400 }}>
+              <td style={{ borderBottom: "1px solid var(--line)", padding: "4px 8px", fontWeight: m.leader === "b" ? 600 : 400 }}>
                 {num(m.b)}
               </td>
             </tr>
@@ -94,7 +94,7 @@ function MetricsView({ rows }: { rows: Record<string, unknown> }) {
         </tbody>
       </table>
       {unavailable.length > 0 && (
-        <div style={{ fontSize: 11, color: "var(--color-warm-gray)", marginTop: 8 }}>
+        <div style={{ fontSize: 11, color: "var(--ink-2)", marginTop: 8 }}>
           Not in warehouse: {unavailable.map((u) => String(u.metric)).join(", ")}
         </div>
       )}
@@ -136,7 +136,7 @@ export default function CompareView({ rows }: { rows: unknown }) {
     <div style={{ marginTop: 8, minWidth: 0, maxWidth: "100%", overflowWrap: "break-word" }}>
       <button
         type="button"
-        className="pill-ghost"
+        className="inline-flex items-center justify-center gap-1.5 rounded-full px-3 py-1.5 text-[12px] transition-colors bg-field text-ink-2 hover:bg-hover"
         style={{ fontSize: 12, marginBottom: 8, minHeight: 40 }}
         onClick={() => {
           setDebateOpen(true);
@@ -152,12 +152,12 @@ export default function CompareView({ rows }: { rows: unknown }) {
         />
       )}
       {fit && fit.note && (
-        <div style={{ fontSize: 12, color: "var(--color-warm-gray)", marginBottom: 8 }}>
+        <div style={{ fontSize: 12, color: "var(--ink-2)", marginBottom: 8 }}>
           Fit {fit.fit}: {fit.note}
         </div>
       )}
       {pair && pair.teammates && pair.note && (
-        <div style={{ fontSize: 12, color: "var(--color-warm-gray)", marginBottom: 8 }}>
+        <div style={{ fontSize: 12, color: "var(--ink-2)", marginBottom: 8 }}>
           Together: {pair.note}
         </div>
       )}
@@ -168,9 +168,9 @@ export default function CompareView({ rows }: { rows: unknown }) {
             <th
               style={{
                 textAlign: "left",
-                borderBottom: "1px solid var(--color-stone-border)",
+                borderBottom: "1px solid var(--line)",
                 padding: "8px 10px",
-                color: "var(--color-warm-gray)",
+                color: "var(--ink-2)",
                 fontWeight: 500,
                 verticalAlign: "top",
                 overflowWrap: "break-word",
@@ -181,9 +181,9 @@ export default function CompareView({ rows }: { rows: unknown }) {
             <th
               style={{
                 textAlign: "left",
-                borderBottom: "1px solid var(--color-stone-border)",
+                borderBottom: "1px solid var(--line)",
                 padding: "8px 10px",
-                color: "var(--color-warm-gray)",
+                color: "var(--ink-2)",
                 fontWeight: 500,
                 verticalAlign: "top",
                 overflowWrap: "break-word",
@@ -194,9 +194,9 @@ export default function CompareView({ rows }: { rows: unknown }) {
             <th
               style={{
                 textAlign: "left",
-                borderBottom: "1px solid var(--color-stone-border)",
+                borderBottom: "1px solid var(--line)",
                 padding: "8px 10px",
-                color: "var(--color-warm-gray)",
+                color: "var(--ink-2)",
                 fontWeight: 500,
                 verticalAlign: "top",
                 overflowWrap: "break-word",
@@ -209,13 +209,13 @@ export default function CompareView({ rows }: { rows: unknown }) {
         <tbody>
           {keys.map((k) => (
             <tr key={k}>
-              <td style={{ borderBottom: "1px solid var(--color-stone-border)", padding: "8px 10px", color: "var(--color-warm-gray)", verticalAlign: "top", overflowWrap: "break-word" }}>
+              <td style={{ borderBottom: "1px solid var(--line)", padding: "8px 10px", color: "var(--ink-2)", verticalAlign: "top", overflowWrap: "break-word" }}>
                 {k}
               </td>
-              <td style={{ borderBottom: "1px solid var(--color-stone-border)", padding: "8px 10px", verticalAlign: "top", overflowWrap: "break-word" }}>
+              <td style={{ borderBottom: "1px solid var(--line)", padding: "8px 10px", verticalAlign: "top", overflowWrap: "break-word" }}>
                 {fmt(a[k as keyof Side])}
               </td>
-              <td style={{ borderBottom: "1px solid var(--color-stone-border)", padding: "8px 10px", verticalAlign: "top", overflowWrap: "break-word" }}>
+              <td style={{ borderBottom: "1px solid var(--line)", padding: "8px 10px", verticalAlign: "top", overflowWrap: "break-word" }}>
                 {fmt(b[k as keyof Side])}
               </td>
             </tr>
@@ -226,10 +226,10 @@ export default function CompareView({ rows }: { rows: unknown }) {
       {names.length === 2 && (
         <div style={{ marginTop: 8, minWidth: 0 }}>
           <div style={{ display: "flex", height: 10, borderRadius: 9999, overflow: "hidden" }}>
-            <div style={{ width: `${(prob[names[0]] || 0) * 100}%`, background: "var(--color-ink-black)" }} />
-            <div style={{ flex: 1, background: "var(--color-stone-border)" }} />
+            <div style={{ width: `${(prob[names[0]] || 0) * 100}%`, background: "var(--ink)" }} />
+            <div style={{ flex: 1, background: "var(--line)" }} />
           </div>
-          <div style={{ fontSize: 12, color: "var(--color-warm-gray)", marginTop: 4, overflowWrap: "break-word" }}>
+          <div style={{ fontSize: 12, color: "var(--ink-2)", marginTop: 4, overflowWrap: "break-word" }}>
             {names[0]} {Math.round((prob[names[0]] || 0) * 100)} pct vs {names[1]}{" "}
             {Math.round((prob[names[1]] || 0) * 100)} pct
           </div>

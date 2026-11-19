@@ -99,8 +99,8 @@ export default function CompsView({
           <div
             key={`${c.player}-${i}`}
             style={{
-              background: "var(--color-pure-white)",
-              border: "1px solid var(--color-stone-border)",
+              background: "var(--surface)",
+              border: "1px solid var(--line)",
               borderRadius: 10,
               padding: "12px 14px",
               display: "flex",
@@ -113,7 +113,7 @@ export default function CompsView({
                 style={{
                   fontWeight: 600,
                   fontSize: 14,
-                  color: "var(--color-ink-black)",
+                  color: "var(--ink)",
                 }}
               >
                 {c.player}
@@ -121,7 +121,7 @@ export default function CompsView({
               <div
                 style={{
                   fontSize: 11,
-                  color: "var(--color-ash-gray)",
+                  color: "var(--ink-3)",
                   marginTop: 2,
                 }}
               >
@@ -140,7 +140,7 @@ export default function CompsView({
                 <span
                   style={{
                     fontSize: 11,
-                    color: "var(--color-warm-gray)",
+                    color: "var(--ink-2)",
                     fontWeight: 500,
                   }}
                 >
@@ -150,7 +150,7 @@ export default function CompsView({
                   style={{
                     fontSize: 12,
                     fontWeight: 600,
-                    color: "var(--color-cyan-edge)",
+                    color: "var(--accent-ink)",
                     fontVariantNumeric: "tabular-nums",
                   }}
                 >
@@ -169,7 +169,7 @@ export default function CompsView({
             {c.drivers.length > 0 && (
               <div
                 style={{
-                  borderTop: "1px solid var(--color-stone-border)",
+                  borderTop: "1px solid var(--line)",
                   paddingTop: 8,
                   display: "flex",
                   flexDirection: "column",
@@ -183,7 +183,7 @@ export default function CompsView({
                       display: "flex",
                       justifyContent: "space-between",
                       fontSize: 11,
-                      color: "var(--color-warm-gray)",
+                      color: "var(--ink-2)",
                       fontVariantNumeric: "tabular-nums",
                     }}
                   >

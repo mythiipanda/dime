@@ -94,8 +94,8 @@ export default function LineupMatrixView({
       </div>
       <div
         style={{
-          background: "var(--color-pure-white)",
-          border: "1px solid var(--color-stone-border)",
+          background: "var(--surface)",
+          border: "1px solid var(--line)",
           borderRadius: 10,
           overflowX: "auto",
         }}
@@ -109,7 +109,7 @@ export default function LineupMatrixView({
           }}
         >
           <thead>
-            <tr style={{ fontSize: 10, color: "var(--color-ash-gray)", textAlign: "left" }}>
+            <tr style={{ fontSize: 10, color: "var(--ink-3)", textAlign: "left" }}>
               <th style={{ fontWeight: 500, padding: "8px 12px" }}>{aAbbr} unit</th>
               <th style={{ fontWeight: 500, padding: "8px 8px" }}>{bAbbr} unit</th>
               <th style={{ fontWeight: 500, padding: "8px 8px", textAlign: "right" }}>Min</th>
@@ -122,13 +122,13 @@ export default function LineupMatrixView({
             {parsed.pairs.map((p, i) => (
               <tr
                 key={`${p.aName}-${p.bName}-${i}`}
-                style={{ borderTop: "1px solid var(--color-stone-border)" }}
+                style={{ borderTop: "1px solid var(--line)" }}
               >
                 <td
                   style={{
                     padding: "7px 12px",
                     fontSize: 12,
-                    color: "var(--color-ink-black)",
+                    color: "var(--ink)",
                     maxWidth: 180,
                     overflow: "hidden",
                     textOverflow: "ellipsis",
@@ -142,7 +142,7 @@ export default function LineupMatrixView({
                   style={{
                     padding: "7px 8px",
                     fontSize: 12,
-                    color: "var(--color-warm-gray)",
+                    color: "var(--ink-2)",
                     maxWidth: 180,
                     overflow: "hidden",
                     textOverflow: "ellipsis",
@@ -152,7 +152,7 @@ export default function LineupMatrixView({
                 >
                   {p.bName}
                 </td>
-                <td style={{ padding: "7px 8px", fontSize: 12, color: "var(--color-warm-gray)", textAlign: "right" }}>
+                <td style={{ padding: "7px 8px", fontSize: 12, color: "var(--ink-2)", textAlign: "right" }}>
                   {p.estMin !== null ? p.estMin.toFixed(1) : "—"}
                   {p.tinySample && (
                     <span style={{ marginLeft: 4 }}>
@@ -170,7 +170,7 @@ export default function LineupMatrixView({
                     padding: "7px 12px",
                     fontSize: 13,
                     fontWeight: 600,
-                    color: "var(--color-cyan-edge)",
+                    color: "var(--accent-ink)",
                     textAlign: "right",
                   }}
                 >

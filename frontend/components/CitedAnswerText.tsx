@@ -7,6 +7,8 @@ import type { AiMessage } from "../lib/chat";
 import { contextPills, evidenceSources, unverifiedSummary, withCitationMarkers } from "../lib/evidence";
 import { Chip } from "./view-shared";
 import type { EvidenceSource } from "../lib/evidence";
+import { citationDetails } from "../lib/citation-details";
+import { CitationChip } from "./ds/CitationChip";
 
 export function CiteTable({ source }: { source: EvidenceSource }) {
   const cells: { head: string; body: string; alignRight?: boolean; strong?: boolean }[] = [];
@@ -25,8 +27,8 @@ export function CiteTable({ source }: { source: EvidenceSource }) {
                 style={{
                   textAlign: c.alignRight ? "right" : "left",
                   padding: "4px 10px 4px 0",
-                  borderBottom: "1px solid var(--color-stone-muted)",
-                  color: "var(--color-warm-gray)",
+                  borderBottom: "1px solid var(--line-strong)",
+                  color: "var(--ink-2)",
                   fontWeight: 500,
                   fontSize: 11,
                   whiteSpace: "nowrap",
@@ -46,7 +48,7 @@ export function CiteTable({ source }: { source: EvidenceSource }) {
                   padding: "4px 10px 4px 0",
                   textAlign: c.alignRight ? "right" : "left",
                   whiteSpace: "nowrap",
-                  color: c.strong ? "var(--color-ink-black)" : "var(--color-warm-gray)",
+                  color: c.strong ? "var(--ink)" : "var(--ink-2)",
                   fontVariantNumeric: "tabular-nums",
                   fontWeight: c.strong ? 600 : 400,
                 }}
@@ -96,10 +98,10 @@ function RowActions({
     cursor: "pointer",
     fontSize: 12,
     fontWeight: 500,
-    color: "var(--color-warm-gray)",
+    color: "var(--ink-2)",
   } as const;
   if (flagged) {
-    return <div style={{ fontSize: 12, color: "var(--color-ash-gray)" }}>Flagged</div>;
+    return <div style={{ fontSize: 12, color: "var(--ink-3)" }}>Flagged</div>;
   }
   return (
     <div style={{ display: "flex", marginTop: 2 }}>
@@ -142,8 +144,8 @@ export function EvidenceLedger({
                 lineHeight: 1.5,
                 padding: "3px 8px",
                 borderRadius: 6,
-                color: open ? "var(--color-ink-black)" : "var(--color-ash-gray)",
-                background: open ? "var(--color-bg-selected)" : "transparent",
+                color: open ? "var(--ink)" : "var(--ink-3)",
+                background: open ? "var(--hover-2)" : "transparent",
                 fontVariantNumeric: "tabular-nums",
               }}
             >
@@ -172,7 +174,7 @@ export function UnverifiedNote({ ai }: { ai: AiMessage }) {
   const note = unverifiedSummary(ai);
   if (!note) return null;
   return (
-    <div style={{ marginTop: 10, fontSize: 12, lineHeight: 1.5, color: "var(--color-ash-gray)" }}>
+    <div style={{ marginTop: 10, fontSize: 12, lineHeight: 1.5, color: "var(--ink-3)" }}>
       {note}
     </div>
   );
@@ -235,7 +237,7 @@ function downloadLog(entries: FlagEntry[]) {
   URL.revokeObjectURL(url);
 }
 
-export default function CitedAnswerText({ text, ai }: { text: string; ai: AiMessage }) {
+export default function CitedAnswerText({ text, ai, compact = false, evidencePrefix = "" }: { text: string; ai: AiMessage; compact?: boolean; evidencePrefix?: string }) {
   const [openCite, setOpenCite] = useState<number | null>(null);
   const [accepted, setAccepted] = useState<number[]>([]);
   const [flagged, setFlagged] = useState<FlagEntry[]>([]);
@@ -268,7 +270,7 @@ export default function CitedAnswerText({ text, ai }: { text: string; ai: AiMess
     .filter((i) => i >= 0);
   return (
     <div>
-      <ContextPills ai={ai} />
+      {!compact && <ContextPills ai={ai} />}
       <AnswerText
         text={marked}
         components={{
@@ -278,6 +280,7 @@ export default function CitedAnswerText({ text, ai }: { text: string; ai: AiMess
               const index = Number(target.slice("#cite-".length));
               if (!Number.isInteger(index) || !sources[index]) return <>{children}</>;
               if (accepted.includes(index)) return <>{children}</>;
+              if (compact) return <CitationChip index={index} detail={citationDetails(ai, sources[index], evidencePrefix)} claim={[sources[index].subject, sources[index].stat, sources[index].value].filter(Boolean).join(" · ")} onAccept={() => accept(index)} onFlag={() => flag(index)} />;
               return (
                 <CiteAnchor
                   index={index}
@@ -293,17 +296,17 @@ export default function CitedAnswerText({ text, ai }: { text: string; ai: AiMess
           },
         }}
       />
-      <EvidenceLedger
+      {compact ? sources.length > 0 && <div className="mt-4 flex flex-wrap items-center gap-1.5 border-t border-line pt-3"><span className="mr-1 text-[10px] text-ink-3">Sources</span>{sources.map((source) => <CitationChip key={source.key} index={source.index} detail={citationDetails(ai, source, evidencePrefix)} claim={[source.subject, source.stat, source.value].filter(Boolean).join(" · ")} />)}</div> : <EvidenceLedger
         sources={sources}
         openIndex={openCite}
         flagged={flaggedIndexes}
         onAccept={accept}
         onFlag={flag}
-      />
+      />}
       {flagged.length > 0 ? (
         <button
           type="button"
-          className="pill-ghost"
+          className="inline-flex items-center justify-center gap-1.5 rounded-full px-3 py-1.5 text-[12px] transition-colors bg-field text-ink-2 hover:bg-hover"
           style={{ fontSize: 12, padding: "3px 10px", marginTop: 8 }}
           onClick={() => downloadLog(flagged)}
         >

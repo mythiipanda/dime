@@ -37,7 +37,7 @@ export function Bar({
     <div
       style={{
         height,
-        background: "var(--color-stone-border)",
+        background: "var(--line)",
         borderRadius: 3,
         overflow: "hidden",
       }}
@@ -46,7 +46,7 @@ export function Bar({
         style={{
           width: `${w}%`,
           height: "100%",
-          background: color ?? "var(--color-cyan-signal)",
+          background: color ?? "var(--accent)",
           borderRadius: 3,
         }}
       />
@@ -75,15 +75,15 @@ export function Chip({
         fontWeight: 500,
         borderRadius: 9999,
         padding: "2px 10px",
-        border: "1px solid var(--color-stone-border)",
+        border: "1px solid var(--line)",
         background:
           tone === "accent"
-            ? "var(--color-sky-wash)"
-            : "var(--color-stone-canvas)",
+            ? "var(--accent-tint)"
+            : "var(--page)",
         color:
           tone === "accent"
-            ? "var(--color-cyan-edge)"
-            : "var(--color-warm-gray)",
+            ? "var(--accent-ink)"
+            : "var(--ink-2)",
         whiteSpace: "nowrap",
       }}
     >
@@ -95,10 +95,10 @@ export function Chip({
 export function SectionTitle({ children }: { children: ReactNode }) {
   return (
     <div
-      className="display"
+      className="font-medium tracking-tight"
       style={{
         fontSize: 16,
-        color: "var(--color-ink-black)",
+        color: "var(--ink)",
         marginBottom: 10,
       }}
     >
@@ -112,7 +112,7 @@ export function Caption({ children }: { children: ReactNode }) {
     <div
       style={{
         fontSize: 11,
-        color: "var(--color-ash-gray)",
+        color: "var(--ink-3)",
         lineHeight: 1.5,
       }}
     >

@@ -52,21 +52,21 @@ export default function DraftPanel() {
       <PanelHeader kicker="Draft" title="Draft combine" action={<CopyLink panel="draft" />} />
       <div style={{ display: "flex", gap: 8 }}>
         <input
-          className="field"
+          className="rounded-lg border border-line bg-field px-3 py-2 text-ink"
           value={year}
           onChange={(e) => setYear(e.target.value)}
           placeholder="draft year"
           style={{ width: 110 }}
           aria-label="Draft year"
         />
-        <button className="pill-cta" style={{ fontSize: 12 }} disabled={busy} onClick={() => load()}>
+        <button className="inline-flex items-center justify-center gap-1.5 rounded-full px-3 py-1.5 text-[12px] transition-colors bg-ink text-page hover:opacity-90 disabled:opacity-50" style={{ fontSize: 12 }} disabled={busy} onClick={() => load()}>
           {busy ? "Loading" : "Show"}
         </button>
       </div>
-      {error && <div style={{ color: "var(--color-warm-gray)", marginTop: 8 }}>{error}</div>}
+      {error && <div style={{ color: "var(--ink-2)", marginTop: 8 }}>{error}</div>}
       {rows === null && !error && <Skeleton lines={5} label="Loading combine rows" />}
       {rows !== null && Array.isArray(rows) && rows.length === 0 && !busy && (
-        <div style={{ fontSize: 12, color: "var(--color-warm-gray)", marginTop: 8 }}>
+        <div style={{ fontSize: 12, color: "var(--ink-2)", marginTop: 8 }}>
           No combine rows for {year}. Try another draft year. Measurements land after each combine.
         </div>
       )}

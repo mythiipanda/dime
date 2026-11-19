@@ -126,7 +126,7 @@ function TierGroup({ label, players }: { label: string; players: RotationPlayer[
         style={{
           fontSize: 11,
           fontWeight: 600,
-          color: "var(--color-warm-gray)",
+          color: "var(--ink-2)",
           marginBottom: 6,
         }}
       >
@@ -134,8 +134,8 @@ function TierGroup({ label, players }: { label: string; players: RotationPlayer[
       </div>
       <div
         style={{
-          background: "var(--color-pure-white)",
-          border: "1px solid var(--color-stone-border)",
+          background: "var(--surface)",
+          border: "1px solid var(--line)",
           borderRadius: 10,
         }}
       >
@@ -147,17 +147,17 @@ function TierGroup({ label, players }: { label: string; players: RotationPlayer[
               alignItems: "center",
               gap: 10,
               padding: "8px 14px",
-              borderTop: i === 0 ? "none" : "1px solid var(--color-stone-border)",
+              borderTop: i === 0 ? "none" : "1px solid var(--line)",
               fontVariantNumeric: "tabular-nums",
             }}
           >
             <span
-              style={{ flex: 1, fontSize: 13, fontWeight: 500, color: "var(--color-ink-black)" }}
+              style={{ flex: 1, fontSize: 13, fontWeight: 500, color: "var(--ink)" }}
             >
               {p.name}
             </span>
             {p.mpg !== null && (
-              <span style={{ fontSize: 12, color: "var(--color-warm-gray)" }}>
+              <span style={{ fontSize: 12, color: "var(--ink-2)" }}>
                 {p.mpg.toFixed(1)} mpg
               </span>
             )}
@@ -169,14 +169,14 @@ function TierGroup({ label, players }: { label: string; players: RotationPlayer[
                   fontSize: 12,
                   fontWeight: 600,
                   color:
-                    p.diff >= 0 ? "var(--color-cyan-edge)" : "var(--color-warm-gray)",
+                    p.diff >= 0 ? "var(--accent-ink)" : "var(--ink-2)",
                 }}
               >
                 {p.diff >= 0 ? "+" : ""}
                 {p.diff.toFixed(1)} net/100
               </span>
             ) : (
-              <span style={{ fontSize: 11, color: "var(--color-ash-gray)" }}>no on/off</span>
+              <span style={{ fontSize: 11, color: "var(--ink-3)" }}>no on/off</span>
             )}
           </div>
         ))}
@@ -196,7 +196,7 @@ function UnitRow({ u, bestLabel }: { u: RotationUnit; bestLabel?: string }) {
         fontVariantNumeric: "tabular-nums",
       }}
     >
-      <span className="unit-name" style={{ flex: 1, fontSize: 12, color: "var(--color-ink-black)" }}>
+      <span className="unit-name" style={{ flex: 1, fontSize: 12, color: "var(--ink)" }}>
         {u.name.split("-").join(", ")}
       </span>
       {u.best && (
@@ -210,7 +210,7 @@ function UnitRow({ u, bestLabel }: { u: RotationUnit; bestLabel?: string }) {
           style={{
             fontSize: 13,
             fontWeight: 600,
-            color: u.best ? "var(--color-cyan-edge)" : "var(--color-ink-black)",
+            color: u.best ? "var(--accent-ink)" : "var(--ink)",
           }}
         >
           {u.net >= 0 ? "+" : ""}
@@ -218,7 +218,7 @@ function UnitRow({ u, bestLabel }: { u: RotationUnit; bestLabel?: string }) {
         </span>
       )}
       {u.poss !== null && (
-        <span className="unit-poss" style={{ fontSize: 11, color: "var(--color-ash-gray)" }}>
+        <span className="unit-poss" style={{ fontSize: 11, color: "var(--ink-3)" }}>
           {Math.round(u.poss)} poss
         </span>
       )}
@@ -265,8 +265,8 @@ export default function RotationCheckView({
       {r.flags.length > 0 ? (
         <div
           style={{
-            background: "var(--color-pure-white)",
-            border: "1px solid var(--color-stone-border)",
+            background: "var(--surface)",
+            border: "1px solid var(--line)",
             borderRadius: 10,
             padding: "12px 16px",
             marginBottom: 12,
@@ -279,7 +279,7 @@ export default function RotationCheckView({
           {r.flags.map((f, i) => (
             <div
               key={i}
-              style={{ fontSize: 12, color: "var(--color-ink-black)", lineHeight: 1.55 }}
+              style={{ fontSize: 12, color: "var(--ink)", lineHeight: 1.55 }}
             >
               {f}
             </div>
@@ -296,7 +296,7 @@ export default function RotationCheckView({
       <TierGroup label="Fringe" players={r.fringe} />
 
       {(r.starterDiff !== null || r.benchDiff !== null) && (
-        <div style={{ fontSize: 12, color: "var(--color-warm-gray)", marginBottom: 12 }}>
+        <div style={{ fontSize: 12, color: "var(--ink-2)", marginBottom: 12 }}>
           Starters {r.starterDiff !== null ? `${r.starterDiff >= 0 ? "+" : ""}${r.starterDiff.toFixed(1)} net/100` : "—"}
           {" · "}bench {r.benchDiff !== null ? `${r.benchDiff >= 0 ? "+" : ""}${r.benchDiff.toFixed(1)} net/100` : "—"}
           {" (avg on/off)"}
@@ -308,8 +308,8 @@ export default function RotationCheckView({
           <SectionTitle>Units</SectionTitle>
           <div
             style={{
-              background: "var(--color-pure-white)",
-              border: "1px solid var(--color-stone-border)",
+              background: "var(--surface)",
+              border: "1px solid var(--line)",
               borderRadius: 10,
               padding: "10px 14px",
               display: "flex",
@@ -323,7 +323,7 @@ export default function RotationCheckView({
                   style={{
                     fontSize: 11,
                     fontWeight: 600,
-                    color: "var(--color-warm-gray)",
+                    color: "var(--ink-2)",
                     marginBottom: 4,
                   }}
                 >
@@ -338,7 +338,7 @@ export default function RotationCheckView({
                   style={{
                     fontSize: 11,
                     fontWeight: 600,
-                    color: "var(--color-warm-gray)",
+                    color: "var(--ink-2)",
                     marginBottom: 4,
                   }}
                 >
@@ -358,7 +358,7 @@ export default function RotationCheckView({
       {(r.clutchNote || r.closers.length > 0) && (
         <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
           {r.closers.length > 0 && (
-            <div style={{ fontSize: 12, color: "var(--color-warm-gray)" }}>
+            <div style={{ fontSize: 12, color: "var(--ink-2)" }}>
               Clutch minutes:{" "}
               {r.closers
                 .slice(0, 5)
