@@ -5,7 +5,7 @@ import { notebookFromAnswer, notebookFromBoard } from "./notebook-seed";
 import type { AiMessage } from "./chat";
 import type { Board, BoardCitation } from "./boards";
 import { scoutingEvents, scoutingQuestion } from "./replay-fixture";
-import { applyEvent } from "./stream-event";
+import { aiFromRun, applyEvent } from "./stream-event";
 
 test("cell helpers are immutable, bounded and safe on empty or missing cells", () => {
   const first = newCell("sql", "SELECT 1"), second = newCell("python", "print(2)");
@@ -143,6 +143,19 @@ test("flat public evidence becomes typed Cited values snapshots, alone or alongs
     assert.equal(output.data.columns.find((column) => column.name === "provenance")!.type, "JSON");
     assert.doesNotMatch(draft.cells.map((cell) => cell.source).join("\n"), /No tables/);
   }
+});
+
+test("reopened answers retain run identity and flat citations; unidentified answers get unique origins", () => {
+  const ai = aiFromRun({ id: "saved-run-id", question: "Question", answer: "Answer", tables: [{ output_id: "PPG", value: "28", subject_id: 201939, unit: "points", provenance: { source: "NBA warehouse" } }], suggestions: [], created_at: "2026-01-01" });
+  assert.equal(ai.carry?.run_id, "saved-run-id");
+  const draft = notebookFromAnswer(ai, "Question");
+  assert.deepEqual(draft.origin, { kind: "chat", ref: "saved-run-id" });
+  assert.match(draft.cells[1].source, /Cited values/);
+  const unidentified = aiFromRun({ question: "Same question", answer: "Answer", tables: [], suggestions: [], created_at: "2026-01-01" });
+  const first = notebookFromAnswer(unidentified, "Same question").origin!.ref;
+  const second = notebookFromAnswer(unidentified, "Same question").origin!.ref;
+  assert.match(first, /^[a-f0-9-]{36}$/);
+  assert.notEqual(first, second);
 });
 
 test("answer caches are bounded and an explicit table binding does not require tool-call params", () => {

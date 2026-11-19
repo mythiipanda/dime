@@ -96,7 +96,7 @@ export function notebookFromAnswer(ai: AiMessage, question: string): NotebookDra
       cells.push({ ...cell("markdown", `${!queries.size && index === 0 ? `${context}\n\n` : ""}### ${snapshot.title}`, cells.length), outputs: { kind: "snapshot", data: snapshot.data } });
     });
   }
-  return { title: (question.trim() || "Answer notebook").slice(0, 160), cells, origin: { kind: "chat", ref: (ai.carry?.run_id || question || "answer").slice(0, 256) } };
+  return { title: (question.trim() || "Answer notebook").slice(0, 160), cells, origin: { kind: "chat", ref: (ai.carry?.run_id || crypto.randomUUID()).slice(0, 256) } };
 }
 
 export function notebookFromBoard(board: Board): NotebookDraft {
