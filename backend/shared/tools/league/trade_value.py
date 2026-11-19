@@ -35,12 +35,28 @@ PICK_VALUE_M: dict[int, float] = {
 }
 
 
-def _pick_value_for_slot(slot: int, is_frp: bool) -> float:
+def _pick_value_for_slot(slot: int, is_frp: bool,
+                         curve_m: dict[int, float] | None = None) -> float:
+    if curve_m is not None and slot in curve_m:
+        return curve_m[slot]
     if is_frp:
         return PICK_VALUE_M.get(max(1, min(slot, 30)), 5.0)
     if 31 <= slot <= 40:
         return 2.5
     return 1.0
+
+
+def _draft_value_curve_m(con) -> dict[int, float] | None:
+    try:
+        rows = con.execute(
+            "select SLOT, VALUE_INDEX from silver_draft_value_curve "
+            "where _season = '2026-27'").fetchall()
+    except Exception:
+        return None
+    if not rows:
+        return None
+    return {int(slot): round(float(idx) * PICK_VALUE_M[1], 1)
+            for slot, idx in rows if idx is not None}
 
 
 _TRADE_CHECK_UNMODELED = (
@@ -625,7 +641,8 @@ def _trade_value_player(display: str, leaders: dict, adv: dict,
 
 
 def _trade_first_round_slot(entry: dict, net_rank: object,
-                            giving_abbr: str, prot) -> None:
+                            giving_abbr: str, prot,
+                            curve_m: dict[int, float] | None = None) -> None:
     if net_rank is None:
         slot = 15
         entry["assumptions"].append(
@@ -640,22 +657,31 @@ def _trade_first_round_slot(entry: dict, net_rank: object,
         slot = max(slot, n + 1)
         entry["assumptions"].append(
             f"top-{n} protected: conveyance risk applied")
-    value = _pick_value_for_slot(slot, True)
+    value = _pick_value_for_slot(slot, True, curve_m)
+    if curve_m is not None:
+        entry["assumptions"].append(
+            "valued on empirical draft value curve (silver_draft_value_curve)")
     if prot:
         value = round(value * 0.8, 1)
     entry.update(est_slot=slot, est_value_m=value)
 
 
-def _trade_second_round_slot(entry: dict, desc: str) -> None:
+def _trade_second_round_slot(entry: dict, desc: str,
+                             curve_m: dict[int, float] | None = None) -> None:
     m = _re.search(r"\b([3-5]\d)\b", desc)
     slot = int(m.group(1)) if m and 31 <= int(m.group(1)) <= 60 else 45
     entry.update(est_slot=slot,
-                 est_value_m=_pick_value_for_slot(slot, False))
+                 est_value_m=_pick_value_for_slot(slot, False, curve_m))
     entry["assumptions"].append("second-round slot estimate")
+    if curve_m is not None:
+        entry["assumptions"].append(
+            "valued on empirical draft value curve (silver_draft_value_curve)")
 
 
 def _trade_value_pick(desc: str, giving_abbr: str, ratings: dict,
-                      gaps: list[str]) -> dict[str, Any]:
+                      gaps: list[str],
+                      curve_m: dict[int, float] | None = None
+                      ) -> dict[str, Any]:
     low = desc.lower()
     year = _re.search(r"(\d{4})", desc)
     is_frp = bool(_re.search(r"frp|first[\s-]?round", low))
@@ -670,15 +696,17 @@ def _trade_value_pick(desc: str, giving_abbr: str, ratings: dict,
     if is_frp:
         net_rank = (ratings.get(giving_abbr.upper(), {}) or {}).get(
             "NET_RATING_RANK")
-        _trade_first_round_slot(entry, net_rank, giving_abbr, prot)
+        _trade_first_round_slot(entry, net_rank, giving_abbr, prot, curve_m)
     else:
-        _trade_second_round_slot(entry, desc)
+        _trade_second_round_slot(entry, desc, curve_m)
     return entry
 
 
 def _trade_value_picks(raw: str, giving_abbr: str, ratings: dict,
-                       gaps: list[str]) -> list[dict]:
-    return [_trade_value_pick(desc, giving_abbr, ratings, gaps)
+                       gaps: list[str],
+                       curve_m: dict[int, float] | None = None
+                       ) -> list[dict]:
+    return [_trade_value_pick(desc, giving_abbr, ratings, gaps, curve_m)
             for desc in [p.strip() for p in str(raw or "").split(",")
                          if p.strip()]]
 
@@ -865,6 +893,7 @@ def get_trade_value(
             warehouse.note("no 2026-27 salary rows: residuals unavailable")
         ratings = _trade_rating_rows(con, warehouse, prod_season)
         payroll_source = _payroll_source(con)
+        curve_m = _draft_value_curve_m(con)
 
     dpp = _trade_dollars_per_point(leaders, salaries, use_w)
     if not dpp:
@@ -876,8 +905,10 @@ def get_trade_value(
                                      warehouse.gaps) for n in names_a]
     players_b = [_trade_value_player(n, leaders, adv, salaries, use_w, dpp,
                                      warehouse.gaps) for n in names_b]
-    picks_list_a = _trade_value_picks(picks_a, team_a, ratings, warehouse.gaps)
-    picks_list_b = _trade_value_picks(picks_b, team_b, ratings, warehouse.gaps)
+    picks_list_a = _trade_value_picks(picks_a, team_a, ratings,
+                                      warehouse.gaps, curve_m)
+    picks_list_b = _trade_value_picks(picks_b, team_b, ratings,
+                                      warehouse.gaps, curve_m)
 
     total_a = _trade_side_total(players_a, picks_list_a)
     total_b = _trade_side_total(players_b, picks_list_b)
