@@ -50,7 +50,7 @@ test("board notebook action posts a scoped seed and opens only after creation su
     const body = requests.find((request) => request.path.endsWith("/notebooks"))!.body;
     assert.deepEqual(body.origin, { kind: "board", ref: listBoards()[0].id });
     const cells = body.cells as { kind: string; source: string }[];
-    assert.match(cells.find((cell) => cell.kind === "sql")!.source, /IN \(201939, 203999\)/);
+    assert.match(cells.find((cell) => cell.kind === "sql")!.source, /VALUES \(201939,[\s\S]*\(203999,/);
     assert.deepEqual(m.opened, ["b".repeat(32)]);
   } finally { await m.cleanup(); }
 });

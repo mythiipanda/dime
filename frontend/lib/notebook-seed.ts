@@ -116,22 +116,23 @@ export function notebookFromBoard(board: Board): NotebookDraft {
     group.columns.add(citation.column);
     for (const entry of citations) if (entry.citation && !group.citations.has(entry.id)) group.citations.set(entry.id, entry.citation);
   }
+  const players = [...new Map(board.rows.map((row) => {
+    if (!Number.isSafeInteger(row.player_id) || row.player_id < 1) throw new Error("The board contains an invalid player ID.");
+    return [row.player_id, row] as const;
+  })).values()];
   let chart: { query: string; metric: string } | undefined;
   for (const [table, group] of groups) {
     const name = { silver_player_season: "PLAYER", silver_advanced: "PLAYER_NAME", silver_cap_players: "player" }[table];
     if (!name) throw new Error(`The board source ${table} is not supported for notebook seeding.`);
     const columns = [...group.columns];
-    let query: string;
-    if (table === "silver_cap_players") {
-      const selected = board.rows.map((row) => {
-        const key = group.citations.get(row.player_id)?.row_key || {};
-        return `(${literal(row.player_id)}, ${literal(key.player)}, ${literal(key.team)})`;
-      }).join(",\n  ");
-      query = `WITH selected(PLAYER_ID, player, team) AS (\n  VALUES ${selected}\n)\nSELECT s.PLAYER_ID, p.${identifier(name)} AS "Player", ${columns.map((column) => `p.${identifier(column)}`).join(", ")}\nFROM selected s LEFT JOIN ${identifier(table)} p\n  ON p.player = s.player AND p.team = s.team\n  AND p."_season" = ${literal(group.season)}\nORDER BY s.PLAYER_ID`;
-    } else {
-      const ids = board.rows.map((row) => { if (!Number.isSafeInteger(row.player_id) || row.player_id < 1) throw new Error("The board contains an invalid player ID."); return row.player_id; });
-      query = `SELECT "PLAYER_ID", ${identifier(name)} AS "Player", ${columns.map(identifier).join(", ")}\nFROM ${identifier(table)}\nWHERE "_season" = ${literal(group.season)}\n  AND "PLAYER_ID" IN (${ids.join(", ")})\nORDER BY "PLAYER_ID"`;
-    }
+    const salary = table === "silver_cap_players";
+    const selected = players.map((row) => {
+      const key = group.citations.get(row.player_id)?.row_key || {};
+      return `(${literal(row.player_id)}, ${literal(row.name)}${salary ? `, ${literal(key.player)}, ${literal(key.team)}` : ""})`;
+    }).join(",\n  ");
+    const matched = `COUNT(p.${identifier(salary ? "player" : "PLAYER_ID")})`;
+    const metrics = columns.map((column) => `CASE WHEN ${matched} = 1 THEN MAX(p.${identifier(column)}) ELSE NULL END AS ${identifier(column)}`);
+    const query = `WITH selected(PLAYER_ID, player_name${salary ? ", player, team" : ""}) AS (\n  VALUES ${selected}\n)\nSELECT s.PLAYER_ID, s.player_name AS "Player",\n  ${metrics.join(",\n  ")},\n  ${matched} AS rows_matched\nFROM selected s LEFT JOIN ${identifier(table)} p\n  ON ${salary ? "p.player = s.player AND p.team = s.team" : 'p."PLAYER_ID" = s.PLAYER_ID'}\n  AND p."_season" = ${literal(group.season)}\nGROUP BY s.PLAYER_ID, s.player_name\nORDER BY s.PLAYER_ID`;
     cells.push(cell("sql", query, cells.length));
     chart ||= { query, metric: columns[0] };
   }

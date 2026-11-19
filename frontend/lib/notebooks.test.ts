@@ -167,8 +167,8 @@ test("board fixtures generate one scoped, ordered SQL cell per source table and 
   const before = JSON.stringify(seedBoard), draft = notebookFromBoard(seedBoard), sql = draft.cells.filter((cell) => cell.kind === "sql");
   assert.equal(sql.length, 2); assert.deepEqual(draft.origin, { kind: "board", ref: "board-fixture" });
   assert.match(draft.cells[0].source, /Stephen Curry[\s\S]*Nikola Jokić[\s\S]*ppg, ts_pct, usg_pct/);
-  for (const cell of sql) { assert.match(cell.source, /"_season" = '2025-26'/); assert.match(cell.source, /IN \(201939, 203999\)/); assert.match(cell.source, /ORDER BY "PLAYER_ID"/); assert.doesNotMatch(cell.source, /SELECT \*/); }
-  assert.match(sql[1].source, /"TS_PCT", "USG_PCT"/);
+  for (const cell of sql) { assert.match(cell.source, /"_season" = '2025-26'/); assert.match(cell.source, /VALUES \(201939, 'Stephen Curry'\),\s*\(203999, 'Nikola Jokić'\)/); assert.match(cell.source, /ORDER BY s.PLAYER_ID/); assert.doesNotMatch(cell.source, /SELECT \*/); }
+  assert.match(sql[1].source, /MAX\(p\."TS_PCT"\)[\s\S]*MAX\(p\."USG_PCT"\)/);
   const python = draft.cells.at(-1)!;
   assert.equal(python.kind, "python"); assert.match(python.source, /Optional chart[\s\S]*df = sql\([\s\S]*barh/);
   assert.equal(JSON.stringify(seedBoard), before);
@@ -177,10 +177,23 @@ test("board fixtures generate one scoped, ordered SQL cell per source table and 
 test("salary queries use the resolved citation identity and salary vintage, never guess a name join", () => {
   const board: Board = { ...seedBoard, columns: [{ metric_id: "salary" }], cells: { "201939": { salary: { value: 1, citation: { ...boardCitation("silver_cap_players", "salary"), season: "2026-27", row_key: { player: "O'Neal", team: "TEST" } } } } } };
   const query = notebookFromBoard(board).cells[1].source;
-  assert.match(query, /201939, 'O''Neal', 'TEST'/);
-  assert.match(query, /203999, NULL, NULL/);
+  assert.match(query, /201939, 'Stephen Curry', 'O''Neal', 'TEST'/);
+  assert.match(query, /203999, 'Nikola Jokić', NULL, NULL/);
   assert.match(query, /LEFT JOIN "silver_cap_players"[\s\S]*p\."_season" = '2026-27'/);
   assert.match(query, /ORDER BY s.PLAYER_ID/);
+});
+
+test("board SQL retains missing players and blanks ambiguous source rows for every source", () => {
+  for (const table of ["silver_player_season", "silver_advanced", "silver_cap_players"]) {
+    const board: Board = { ...seedBoard, rows: [...seedBoard.rows, seedBoard.rows[0]], columns: [{ metric_id: "metric" }], cells: { "201939": { metric: { value: null, citation: boardCitation(table, "metric") } } } };
+    const query = notebookFromBoard(board).cells[1].source;
+    assert.match(query, /FROM selected s LEFT JOIN/);
+    assert.match(query, /CASE WHEN COUNT\(p\."(?:PLAYER_ID|player)"\) = 1 THEN MAX\(p\."metric"\) ELSE NULL END AS "metric"/);
+    assert.match(query, /COUNT\(p\."(?:PLAYER_ID|player)"\) AS rows_matched/);
+    assert.match(query, /GROUP BY s.PLAYER_ID, s.player_name/);
+    assert.equal(query.match(/201939,/g)!.length, 1);
+    assert.match(query, /203999, 'Nikola Jokić'/);
+  }
 });
 
 test("empty boards seed context only, missing citations and invalid identifiers produce actionable errors", () => {
