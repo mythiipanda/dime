@@ -31,7 +31,7 @@ test("navigation exposes only this port's destinations, with Tools grouped", () 
 
 test("Library keeps conversations available when projects returns 404", async () => {
   const dom = new JSDOM("<div id='root'></div>", { url: "http://localhost" });
-  Object.assign(globalThis, { window: dom.window, document: dom.window.document, IS_REACT_ACT_ENVIRONMENT: true });
+  Object.assign(globalThis, { window: dom.window, document: dom.window.document, HTMLElement: dom.window.HTMLElement, Element: dom.window.Element, Node: dom.window.Node, IS_REACT_ACT_ENVIRONMENT: true });
   const previous = globalThis.fetch;
   globalThis.fetch = async input => String(input).includes("/projects") ? new Response("Not found", { status: 404 }) : Response.json({ threads: [{ id: "conversation", title: "Available conversation", updated: "2026-11-19", turns: 1 }] });
   const host = dom.window.document.getElementById("root")!, root = createRoot(host);
@@ -48,7 +48,7 @@ test("Library keeps conversations available when projects returns 404", async ()
 
 for (const mode of ["http", "network", "cached"]) test(`Library exposes ${mode} failures and retry under every filter`, async () => {
   const dom = new JSDOM("<div id='root'></div>", { url: "http://localhost" });
-  Object.assign(globalThis, { window: dom.window, document: dom.window.document, IS_REACT_ACT_ENVIRONMENT: true });
+  Object.assign(globalThis, { window: dom.window, document: dom.window.document, HTMLElement: dom.window.HTMLElement, Element: dom.window.Element, Node: dom.window.Node, IS_REACT_ACT_ENVIRONMENT: true });
   const previous = globalThis.fetch, previousStorage = globalThis.localStorage;
   globalThis.localStorage = dom.window.localStorage;
   const threads = [{ id: "cached", title: "Cached conversation", updated: "2026-11-19", turns: 1 }];

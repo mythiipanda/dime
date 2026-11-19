@@ -21,6 +21,9 @@ The chat route now uses the Pi analyst session. Python exposes read-only SQL and
 
 ## Features
 
+Frontend contributors: read the [Dime design system](frontend/DESIGN_SYSTEM.md).
+The live component reference is available at `/design-system`.
+
 - Chat that answers with numbers, not vibes. Every stat comes
   out of the warehouse and the reply shows the tables, charts,
   and shot maps behind it.

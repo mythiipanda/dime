@@ -1,0 +1,62 @@
+@import "tw-animate-css";
+
+@layer components {
+:root {
+  --control-xs: 1.75rem;
+  --control-sm: 2rem;
+  --control-md: 2.25rem;
+  --type-meta: 0.75rem;
+  --type-ui: 0.8125rem;
+  --type-body: 0.875rem;
+  --type-title: 1.75rem;
+  --workspace-width: 75rem;
+  --reading-width: 47.5rem;
+  --motion-fast: 150ms;
+  --motion-normal: 200ms;
+  --overlay-backdrop: oklch(0 0 0 / 0.45);
+}
+
+.ds-button { position: relative; display: inline-flex; flex-shrink: 0; align-items: center; justify-content: center; border-radius: 999px; font-size: var(--type-ui); font-weight: 500; line-height: 1; user-select: none; transition: background-color var(--motion-fast), color var(--motion-fast), opacity var(--motion-fast); }
+.ds-button-xs { min-height: var(--control-xs); padding-inline: 0.625rem; gap: 0.25rem; font-size: var(--type-meta); }
+.ds-button-sm { min-height: var(--control-sm); padding-inline: 0.75rem; gap: 0.375rem; }
+.ds-button-md { min-height: var(--control-md); padding-inline: 1rem; gap: 0.5rem; }
+.ds-button-icon { width: var(--control-sm); height: var(--control-sm); border-radius: var(--radius-control); padding: 0; }
+.ds-button[data-disabled] { pointer-events: none; opacity: 0.5; }
+.ds-button[data-loading] { cursor: progress; opacity: 1; }
+.ds-spinner { animation: spin 1s linear infinite; }
+.ds-field { min-width: 0; width: 100%; height: var(--control-md); padding-inline: 0.75rem; border: 1px solid var(--line-strong); border-radius: var(--radius-control); background: var(--surface); color: var(--ink); font-size: var(--type-ui); transition: border-color var(--motion-fast), box-shadow var(--motion-fast); }
+.ds-field::placeholder { color: var(--ink-3); }
+.ds-field:hover:not(:disabled):not([aria-invalid=true]) { border-color: var(--ink-3); }
+.ds-field[aria-invalid=true]:not(:disabled) { border-color: var(--red); }
+.ds-field:disabled { cursor: not-allowed; opacity: 0.5; background: var(--inset); }
+.ds-segmented { display: inline-flex; flex-wrap: wrap; gap: 0.25rem; padding: 0.25rem; border: 1px solid var(--line); border-radius: var(--radius-control); background: var(--inset); }
+.ds-segment { display: inline-flex; align-items: center; justify-content: center; min-height: var(--control-sm); padding: 0.375rem 0.75rem; border-radius: var(--radius-chip); color: var(--ink-2); font-size: var(--type-meta); font-weight: 500; line-height: 1.25; transition: background-color var(--motion-fast), color var(--motion-fast), box-shadow var(--motion-fast); }
+.ds-segment:hover:not([data-disabled]) { color: var(--ink); background: var(--hover); }
+.ds-segment[data-checked] { color: var(--ink); background: var(--surface); box-shadow: var(--shadow-hairline); }
+.ds-segment[data-disabled] { cursor: not-allowed; opacity: 0.5; }
+.ds-dialog-backdrop { position: fixed; inset: 0; z-index: 50; background: var(--overlay-backdrop); }
+.ds-dialog-viewport { position: fixed; inset: 0; z-index: 50; display: flex; align-items: flex-start; justify-content: center; overflow-y: auto; overscroll-behavior: contain; padding: min(16dvh, 6rem) 1rem 2rem; }
+.ds-dialog { position: relative; width: 100%; max-width: 35rem; height: fit-content; border: 1px solid var(--line-strong); border-radius: var(--radius-window); outline: none; background: var(--surface); color: var(--ink); box-shadow: var(--shadow-overlay); }
+.ds-dialog[data-open] { animation: var(--animate-in); animation-duration: var(--motion-fast); --tw-enter-opacity: 0; --tw-enter-scale: 0.98; }
+.ds-dialog-backdrop[data-open] { animation: var(--animate-in); animation-duration: var(--motion-fast); --tw-enter-opacity: 0; }
+.workspace-page { max-width: var(--workspace-width); }
+.system-page { max-width: var(--workspace-width); margin-inline: auto; padding: 3rem 2.5rem 5rem; }
+.system-preview { display: grid; grid-template-columns: minmax(0, 1fr) minmax(16rem, 0.85fr); gap: 1.5rem; }
+.system-label { font-size: var(--type-meta); color: var(--ink-2); }
+.system-swatch { height: 4rem; border-radius: var(--radius-control); border: 1px solid var(--line-strong); }
+.system-section { scroll-margin-top: 2rem; }
+.system-link { color: var(--ink-2); text-decoration: underline; text-underline-offset: 4px; }
+.system-link:hover { color: var(--ink); }
+@media (pointer: coarse) {
+  .ds-button, .ds-segment, .icon-button, .sidebar-row { min-height: 2.75rem; }
+  .ds-button-icon, .icon-button { min-width: 2.75rem; }
+  .ds-field { height: 2.75rem; font-size: 1rem; }
+}
+@media (max-width: 760px) {
+  .system-page { padding: 2rem 1.25rem 3rem; }
+  .system-preview { grid-template-columns: minmax(0, 1fr); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .ds-dialog, .ds-dialog-backdrop, .ds-spinner { animation: none; }
+}
+}

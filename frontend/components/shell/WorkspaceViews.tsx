@@ -6,6 +6,8 @@ import WarehouseView from "../dime/views/WarehouseView";
 import { Button } from "../ds/Button";
 import { Chip } from "../ds/Chip";
 import { PageHeader } from "../ds/Panel";
+import { SegmentedControl } from "../ds/SegmentedControl";
+import { TextField } from "../ds/TextField";
 import { BACKEND } from "../../lib/chat";
 import { getClientId, getThreads, type ThreadInfo } from "../../lib/api";
 import { getHomeSnapshot, type HomeSnapshot } from "../../lib/warehouse";
@@ -81,8 +83,8 @@ export function LibraryView({ onThread }: { onThread: (id: string) => void }) {
   return <div className="workspace-page">
     <PageHeader eyebrow="Your research, organized" title="Library" description="Saved conversations and analyst projects. Pick up a question where you left off." actions={<Chip>{items.length} saved</Chip>} />
     <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
-      <div className="flex gap-1 rounded-lg border border-line bg-inset p-1" aria-label="Library filters">{[["all", "All research"], ["thread", "Conversations"], ["project", "Projects"]].map(([id, label]) => <button key={id} onClick={() => setFilter(id)} aria-pressed={filter === id} className={`rounded-md px-3 py-1.5 text-[12px] ${filter === id ? "bg-surface text-ink shadow-sm" : "text-ink-3 hover:text-ink"}`}>{label}</button>)}</div>
-      <label className="flex items-center gap-2 rounded-lg border border-line bg-surface px-3 py-2"><Search width={14} height={14} className="text-ink-3" /><input aria-label="Search library" placeholder="Search your research…" value={query} onChange={event => setQuery(event.target.value)} className="min-w-0 bg-transparent text-[12px] outline-none" /></label>
+      <SegmentedControl options={["all", "thread", "project"]} value={filter} onChange={setFilter} label="Library filters" labels={{ all: "All research", thread: "Conversations", project: "Projects" }} />
+      <div className="relative w-full sm:w-64"><Search aria-hidden="true" width={14} height={14} className="pointer-events-none absolute top-1/2 left-3 -translate-y-1/2 text-ink-3" /><TextField type="search" aria-label="Search library" placeholder="Search your research…" value={query} onChange={event => setQuery(event.target.value)} className="pl-9" /></div>
     </div>
     {!loading && !error && projectsError && <p role="status" className="mb-4 text-[12px] text-ink-3">Projects could not be loaded. Conversations are still available. <button className="underline" onClick={() => setAttempt(value => value + 1)}>Retry projects</button></p>}
     {!loading && !error && threadsError && <p role="status" className="mb-4 text-[12px] text-ink-3">Conversations could not be loaded from the server.{cachedThreads ? " Showing cached conversations." : ""} <button className="underline" onClick={() => setAttempt(value => value + 1)}>Retry conversations</button></p>}
