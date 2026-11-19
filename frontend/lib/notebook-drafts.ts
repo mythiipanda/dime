@@ -16,8 +16,8 @@ function entries(): [string, string][] {
   try { return [...new Map<string, string>([...Object.keys(window.localStorage).filter((key) => key.startsWith(KEY)).map((key): [string, string] => [key, window.localStorage.getItem(key)!]), ...memory])]; }
   catch { return [...memory]; }
 }
-function put(key: string, value: string) {
-  try { window.localStorage.setItem(key, value); memory.delete(key); } catch { memory.set(key, value); }
+function put(key: string, value: string): boolean {
+  try { window.localStorage.setItem(key, value); memory.delete(key); return true; } catch { memory.set(key, value); return false; }
 }
 function remove(key: string) {
   memory.delete(key);
@@ -28,8 +28,9 @@ function content(doc: Notebook): string {
 }
 export function writeNotebookDraft(notebook: Notebook, base_version: number, source?: Draft) {
   const key = `${KEY}:${notebook.id}:${tabId()}:${base_version}`;
-  put(key, JSON.stringify({ notebook, base_version, saved_at: Date.now() }));
-  if (source && (source.legacy || source.key !== key)) discardNotebookDraft(source);
+  const durable = put(key, JSON.stringify({ notebook, base_version, saved_at: Date.now() }));
+  if (durable && source && (source.legacy || source.key !== key)) discardNotebookDraft(source);
+  return durable;
 }
 export function clearNotebookDraft(id: string, saved?: Notebook) {
   const prefix = `${KEY}:${id}:${tabId()}:`;

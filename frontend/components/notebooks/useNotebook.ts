@@ -9,6 +9,7 @@ export function useNotebook(id: string) {
   const [notebook, setNotebook] = useState<Notebook | null>(null);
   const [state, setState] = useState<SaveState>("saved");
   const [error, setError] = useState("");
+  const [draftWarning, setDraftWarning] = useState("");
   const [generation, setGeneration] = useState(0);
   const [pulse, setPulse] = useState(0);
   const [draft, setDraft] = useState<ReturnType<typeof findNotebookDraft>>(null);
@@ -19,7 +20,7 @@ export function useNotebook(id: string) {
   const edit = useCallback((change: (doc: Notebook) => Notebook, restoredDraft?: NonNullable<ReturnType<typeof findNotebookDraft>>) => {
     if (!current.current || conflict.current || pendingDraft.current) return;
     current.current = change(current.current); revision.current += 1; setNotebook(current.current); setGeneration(revision.current); setState("dirty");
-    writeNotebookDraft(current.current, version.current, restoredDraft);
+    setDraftWarning(writeNotebookDraft(current.current, version.current, restoredDraft) ? "" : "Draft not saved: browser storage full");
   }, []);
   const persist = useCallback(async (): Promise<boolean> => {
     if (pendingDraft.current) return false;
@@ -34,7 +35,8 @@ export function useNotebook(id: string) {
         version.current = result.version; saved.current = at;
         current.current = { ...current.current!, version: result.version, updated_at: result.updated_at };
         clearNotebookDraft(id, result);
-        if (at !== revision.current) writeNotebookDraft(current.current, result.version);
+        const durable = at === revision.current || writeNotebookDraft(current.current, result.version);
+        if (active.current) setDraftWarning(durable ? "" : "Draft not saved: browser storage full");
         if (active.current) { setNotebook(current.current); setState(at === revision.current ? "saved" : "dirty"); setError(""); if (at !== revision.current) setPulse((n) => n + 1); }
         return true;
       } catch (e) {
@@ -55,5 +57,5 @@ export function useNotebook(id: string) {
     pendingDraft.current = null; setDraft(null);
     edit(() => ({ ...server, title: draft.notebook.title, cells: draft.notebook.cells, origin: draft.notebook.origin }), draft);
   };
-  return { notebook, state, error, edit, persist, current, draft, restoreDraft, discardDraft };
+  return { notebook, state, error, draftWarning, edit, persist, current, draft, restoreDraft, discardDraft };
 }

@@ -255,6 +255,25 @@ for (const source of ["other-tab", "legacy", "current-tab"] as const) test(`rest
   } finally { await m.cleanup(); }
 });
 
+test("storage-full recovery keeps the durable source and warns until the backend saves", async () => {
+  const m = await mount({ openNotebook: true, tabId: "current-tab", drafts: [{ title: "Durable recovery", tab: "other-tab", version: 1, time: 1 }] });
+  const storage = m.dom.window.localStorage, prototype = Object.getPrototypeOf(storage), originalSet = prototype.setItem;
+  const sourceKey = Object.keys(storage)[0], source = storage.getItem(sourceKey);
+  try {
+    prototype.setItem = function(key: string, value: string) {
+      if (key.startsWith(`dime_notebook_drafts_v1:${"a".repeat(32)}:current-tab:`)) throw new m.dom.window.DOMException("Storage full", "QuotaExceededError");
+      return originalSet.call(this, key, value);
+    };
+    await click(button(m.host, "Restore unsaved changes"));
+    assert.equal(storage.getItem(sourceKey), source, "failed replacement must preserve the durable source");
+    assert.equal(m.host.querySelector<HTMLInputElement>('[aria-label="Notebook title"]')!.value, "Durable recovery");
+    assert.match(m.host.querySelector('[role="alert"]')!.textContent!, /Draft not saved: browser storage full/);
+    await act(async () => { await delay(700); });
+    assert.equal(storage.getItem(sourceKey), null);
+    assert.doesNotMatch(m.host.textContent!, /Draft not saved: browser storage full/);
+  } finally { prototype.setItem = originalSet; await m.cleanup(); }
+});
+
 test("successful saves remove matching drafts across tabs and legacy storage but preserve other content", async () => {
   const m = await mount({ tabId: "current-tab" }, true);
   try {
