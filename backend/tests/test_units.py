@@ -114,7 +114,7 @@ def test_apron_matching_rules():
     assert _allowed_incoming(20_000_000, False) == (
         25_250_000, "125% plus $250k (below the first apron)")
     assert _allowed_incoming(20_000_000, False, 13_330_652) == (
-        33_330_652, "cap space plus outgoing salary (under the cap)")
+        33_580_652, "cap room plus outgoing salary plus $250k (under the cap)")
     assert _allowed_incoming(20_000_000, False, 1_000_000) == (
         25_250_000, "125% plus $250k (below the first apron)")
     over = _apron_state(CAP["apron2"] + 1)
