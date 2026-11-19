@@ -103,6 +103,35 @@ test("evidence tables distinguish zero from missing values and keep numeric alig
   assert.doesNotMatch(empty, /<table/);
 });
 
+test("native field validation supplies associated feedback without an explicit error", async () => {
+  const dom = new JSDOM("<div id='root'></div>", { url: "http://localhost", pretendToBeVisual: true });
+  Object.assign(globalThis, { window: dom.window, document: dom.window.document, HTMLElement: dom.window.HTMLElement, HTMLInputElement: dom.window.HTMLInputElement, Element: dom.window.Element, Node: dom.window.Node, Event: dom.window.Event, FormData: dom.window.FormData, IS_REACT_ACT_ENVIRONMENT: true });
+  const host = dom.window.document.getElementById("root")!, root = createRoot(host);
+  const cases = [
+    { props: { required: true }, feedback: /missing/, valid: "Scouting report" },
+    { props: { type: "email", defaultValue: "not-email" }, feedback: /required type/, valid: "analyst@example.com" },
+    { props: { type: "number", min: 3, defaultValue: "1" }, feedback: /too small/, valid: "3" },
+  ];
+  try {
+    for (const [index, entry] of cases.entries()) {
+      let submissions = 0;
+      await act(async () => root.render(<Form key={index} onSubmit={event => { event.preventDefault(); submissions++; }}><FormField name="research" label="Research field" description="Keep the draft"><TextField {...entry.props} /></FormField><Button type="submit">Save</Button></Form>));
+      const input = host.querySelector("input")!;
+      await act(async () => host.querySelector("button")!.click());
+      const message = host.querySelector('[role="alert"]')!;
+      assert.equal(submissions, 0);
+      assert.ok(message);
+      assert.match(message.textContent!, entry.feedback);
+      assert.ok(input.getAttribute("aria-describedby")!.split(" ").includes(message.id));
+      assert.match(host.textContent!, /Keep the draft/);
+      await act(async () => { input.value = entry.valid; input.dispatchEvent(new dom.window.Event("change", { bubbles: true })); });
+      assert.equal(host.querySelector('[role="alert"]'), null);
+      await act(async () => host.querySelector("button")!.click());
+      assert.equal(submissions, 1);
+    }
+  } finally { await act(async () => root.unmount()); dom.window.close(); }
+});
+
 test("filters expose named single-choice semantics instead of orphan tabs", () => {
   const html = renderToStaticMarkup(<SegmentedControl options={["all", "thread"]} value="thread" onChange={() => {}} label="Research filters" labels={{ all: "All research", thread: "Conversations" }} />);
   assert.match(html, /role="radiogroup"/);

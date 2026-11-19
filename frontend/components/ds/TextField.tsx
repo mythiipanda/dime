@@ -22,5 +22,9 @@ export function FormField({ name, label, description, error, children }: {
     <FormPrimitive.Control asChild id={children.props.id}>{children}</FormPrimitive.Control>
     {description && <FormPrimitive.Message className="ds-field-description">{description}</FormPrimitive.Message>}
     {error && <FormPrimitive.Message className="ds-field-error" role="alert">{error}</FormPrimitive.Message>}
+    {!error && <FormPrimitive.ValidityState>{validity => {
+      const match = (["valueMissing", "typeMismatch", "patternMismatch", "tooShort", "tooLong", "rangeUnderflow", "rangeOverflow", "stepMismatch", "badInput"] as const).find(key => validity?.[key]);
+      return match ? <FormPrimitive.Message match={match} className="ds-field-error" role="alert" /> : validity?.customError ? <FormPrimitive.Message className="ds-field-error" role="alert">This value is not valid</FormPrimitive.Message> : null;
+    }}</FormPrimitive.ValidityState>}
   </FormPrimitive.Field>;
 }
