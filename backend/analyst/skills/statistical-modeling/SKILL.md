@@ -13,8 +13,21 @@ description: Fit, validate, and interpret NBA statistical estimates, including R
 
 ## Shooting rates: empirical Bayes shrinkage
 
-- Fit the prior in the specified reference cohort, then score the target cohort. Count makes `k_i` and attempts `n_i` at the same player and shot-population grain. For an attempt-weighted method of moments, use `mu = sum(k) / sum(n)`, `s2 = average((k/n - mu)**2, weights=n)`, and approximate the binomial noise with `average(mu*(1-mu)/n, weights=n)`. Use the same weighting for both variance terms.
-- Subtract noise from `s2` to estimate latent variance `tau2`. For a finite Beta prior, `M = mu*(1-mu)/tau2 - 1`, with shape parameters `M*mu` and `M*(1-mu)`. If latent variance is nonpositive, report that these moments don't identify a finite strength; disclose any requested floor, cap, or fallback. A supplied fixed prior is not a fitted empirical prior.
+- Fit the prior only on the specified reference cohort, then score the target cohort. Supply one row per eligible player with positive attempts and makes between zero and attempts, using the same shot population for both counts. `mu` comes from the same reference rows as the variance. For an attempt-weighted method of moments, run this helper:
+
+```python
+def fit_beta_prior(makes, attempts):
+    k = np.asarray(makes, dtype=float)
+    n = np.asarray(attempts, dtype=float)
+    mu = k.sum() / n.sum()
+    observed_var = np.average((k / n - mu) ** 2, weights=n)
+    noise_var = np.average(mu * (1 - mu) / n, weights=n)
+    latent_var = observed_var - noise_var
+    strength = mu * (1 - mu) / latent_var - 1 if latent_var > 0 else None
+    return {"mu": mu, "M": strength, "observed_var": observed_var, "noise_var": noise_var, "latent_var": latent_var, "players": len(n), "attempts": n.sum()}
+```
+
+- `mu*(1-mu)/observed_var` is not `M`: it treats binomial noise as skill spread and omits the `- 1`, so the prior is too weak. The Beta shape parameters are `M*mu` and `M*(1-mu)`. If `M` is `None`, report that these moments don't identify a finite strength; disclose any requested floor, cap, or fallback. A supplied fixed prior is not a fitted empirical prior.
 - The posterior mean is `(k + M*mu)/(n + M)`. Report raw and shrunk rates, attempts, and signed `shrunk - raw` in percentage points when ranking shifts. Low-volume rates move more toward the prior; a raw leaderboard is not a reliable ranking of underlying skill.
 
 ## Cluster bootstrap: differences of rates
