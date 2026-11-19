@@ -78,16 +78,22 @@ export function notebookFromAnswer(ai: AiMessage, question: string): NotebookDra
     add(query, bindings ?? candidates[0]?.args.params, table);
   });
   calls.filter((call) => call.query && (call.args.params !== undefined || !tableQueries.has(call.query))).forEach((call) => add(call.query, call.args.params));
-  if (!queries.size) {
+  {
     const context = "## Data snapshot\n\nNo executable SQL was recorded. These cached tables are context, not reproducible queries.";
-    const snapshots = tables.flatMap((table) => {
+    const snapshots = (queries.size ? [] : tables).flatMap((table) => {
       const cached = cachedTable(table);
       return cached ? [{ title: capabilityLabel(text(table.tool)), data: { columns: cached.columns, rows: cached.rows, truncated: cached.truncated } }] : [];
     });
-    if (!snapshots.length) cells.push(cell("markdown", `${context}\n\nNo tables with recorded rows were attached to this answer.`, cells.length));
+    const cited = cachedTable({ rows: tables.filter((table) => !Array.isArray(table.rows) && typeof table.output_id === "string" && Object.hasOwn(table, "value")).map((table) => ({
+      output: text(table.display_name, table.output_id), value: table.value, unit: table.unit ?? null,
+      subject: table.subject_id ?? null, subject_type: table.subject_type ?? null,
+      source: text(record(table.provenance).source) || "Source not recorded", provenance: record(table.provenance),
+    })) });
+    if (cited?.rows.length) snapshots.push({ title: "Cited values", data: { columns: cited.columns, rows: cited.rows, truncated: cited.truncated } });
+    if (!queries.size && !snapshots.length) cells.push(cell("markdown", `${context}\n\nNo tables with recorded rows were attached to this answer.`, cells.length));
     snapshots.forEach((snapshot, index) => {
       if (cells.length >= 100) throw new Error("This answer has too many snapshot tables for one notebook.");
-      cells.push({ ...cell("markdown", `${index === 0 ? `${context}\n\n` : ""}### ${snapshot.title}`, cells.length), outputs: { kind: "snapshot", data: snapshot.data } });
+      cells.push({ ...cell("markdown", `${!queries.size && index === 0 ? `${context}\n\n` : ""}### ${snapshot.title}`, cells.length), outputs: { kind: "snapshot", data: snapshot.data } });
     });
   }
   return { title: (question.trim() || "Answer notebook").slice(0, 160), cells, origin: { kind: "chat", ref: (ai.carry?.run_id || question || "answer").slice(0, 256) } };

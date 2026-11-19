@@ -131,6 +131,20 @@ test("ambiguous call bindings never attach a cached table to the wrong parameter
   assert.ok(sql.every((cell) => !cell.outputs));
 });
 
+test("flat public evidence becomes typed Cited values snapshots, alone or alongside recorded SQL", () => {
+  for (const withSQL of [false, true]) {
+    const evidence = { output_id: "NET_RATING", value: "9.4", unit: "points_per_100_possessions", subject_type: "team", subject_id: "OKC", provenance: { source: "NBA warehouse", season: "2025-26", capability: "team_ratings" } };
+    const ai: AiMessage = { text: "Cited answer", done: true, nodes: { analytics: { status: "complete", thoughts: [], toolResults: [], toolCalls: withSQL ? [{ name: "query_warehouse", sql: "SELECT 1", args: {} }] : [], tables: [evidence] } } };
+    const draft = notebookFromAnswer(ai, "Rating?");
+    const snapshot = draft.cells.find((cell) => cell.source.includes("### Cited values"))!;
+    const output = snapshot.outputs as { kind: string; data: { columns: { name: string; type: string }[]; rows: Record<string, unknown>[] } };
+    assert.equal(snapshot.kind, "markdown"); assert.equal(output.kind, "snapshot");
+    assert.deepEqual(output.data.rows[0], { output: "NET_RATING", value: "9.4", unit: evidence.unit, subject: "OKC", subject_type: "team", source: "NBA warehouse", provenance: evidence.provenance });
+    assert.equal(output.data.columns.find((column) => column.name === "provenance")!.type, "JSON");
+    assert.doesNotMatch(draft.cells.map((cell) => cell.source).join("\n"), /No tables/);
+  }
+});
+
 test("answer caches are bounded and an explicit table binding does not require tool-call params", () => {
   const ai: AiMessage = { text: "Cached result", done: true, nodes: { analytics: { status: "complete", thoughts: [], toolResults: [],
     toolCalls: [{ name: "query_warehouse", sql: "SELECT $1 AS PLAYER", args: {} }],
