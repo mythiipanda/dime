@@ -165,6 +165,20 @@ test("snapshot objects and arrays become short readable text without mutating da
   assert.deepEqual(readableSnapshot({ columns: [], rows: [], truncated: false }), { columns: [], rows: [], truncated: false });
 });
 
+test("Cited values preserve fetched, as-of and observed source dates without inventing one", () => {
+  for (const field of ["fetched_at", "as_of", "observed_at", "observed"]) {
+    for (const location of ["provenance", "meta", "top"]) {
+      const when = "2026-01-02T03:04:05Z";
+      const timestamp = location === "top" ? { [field]: when } : { [location]: { [field]: when } };
+      const ai = aiFromRun({ question: "Date?", answer: "Answer", tables: [{ output_id: "PPG", value: 28, ...timestamp }], suggestions: [], created_at: "2026-02-01" });
+      const output = notebookFromAnswer(ai, "Date?").cells[1].outputs as { data: { rows: Record<string, unknown>[] } };
+      assert.equal(output.data.rows[0]["As of"], when);
+    }
+  }
+  const ai = aiFromRun({ question: "Date?", answer: "Answer", tables: [{ output_id: "PPG", value: 28 }], suggestions: [], created_at: "2026-02-01" });
+  assert.ok(!Object.hasOwn((notebookFromAnswer(ai, "Date?").cells[1].outputs as { data: { rows: Record<string, unknown>[] } }).data.rows[0], "As of"));
+});
+
 test("reopened answers retain run identity and flat citations; unidentified answers get unique origins", () => {
   const ai = aiFromRun({ id: "saved-run-id", question: "Question", answer: "Answer", tables: [{ output_id: "PPG", value: "28", subject_id: 201939, unit: "points", provenance: { source: "NBA warehouse" } }], suggestions: [], created_at: "2026-01-01" });
   assert.equal(ai.carry?.run_id, "saved-run-id");

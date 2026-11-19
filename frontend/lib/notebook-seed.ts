@@ -100,9 +100,11 @@ export function notebookFromAnswer(ai: AiMessage, question: string): NotebookDra
     const cited = cachedTable({ rows: tables.filter((table) => !Array.isArray(table.rows) && typeof table.output_id === "string" && Object.hasOwn(table, "value")).map((table) => {
       const provenance = record(table.provenance), meta = record(table.meta);
       const season = text(provenance.season, meta.season), capability = text(provenance.capability, table.capability, table.tool), name = text(provenance.table, table.table, meta.table);
+      const asOf = text(provenance.fetched_at, provenance.as_of, provenance.observed_at, provenance.observed, table.fetched_at, table.as_of, table.observed_at, table.observed, meta.fetched_at, meta.as_of, meta.observed_at, meta.observed);
       return { output: text(table.display_name, table.output_id), value: table.value, unit: table.unit ?? null,
         subject: table.subject_id ?? null, subject_type: table.subject_type ?? null, Source: answerSource(table),
         ...(season ? { Season: season } : {}), ...(capability ? { Capability: capability } : {}), ...(name ? { Table: name } : {}),
+        ...(asOf ? { "As of": asOf } : {}),
       };
     }) });
     if (cited?.rows.length) snapshots.push({ title: "Cited values", data: readableSnapshot(cited) });
