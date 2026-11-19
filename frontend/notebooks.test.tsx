@@ -13,12 +13,13 @@ const button = (host: ParentNode, text: string) => [...host.querySelectorAll("bu
 async function click(element: HTMLElement) { assert.ok(element); await act(async () => { element.click(); await delay(); }); }
 const sqlResult: SQLResult = { columns: [{ name: "PLAYER", type: "VARCHAR" }, { name: "PTS", type: "DOUBLE" }], rows: [{ PLAYER: "Stephen Curry", PTS: 28.5 }], page: 0, page_size: 100, has_more: false, ms: 7, truncated: false };
 
-async function mount(options: { sqlError?: boolean; empty?: boolean; conflict?: boolean; listError?: boolean; deferredSave?: boolean; pythonEnabled?: boolean } = {}, hook = false) {
+async function mount(options: { sqlError?: boolean; empty?: boolean; conflict?: boolean; listError?: boolean; deferredSave?: boolean; pythonEnabled?: boolean; savedPython?: boolean } = {}, hook = false) {
   const dom = new JSDOM("<!doctype html><html><body><div id='root'></div></body></html>", { url: "http://localhost/?tab=notebooks", pretendToBeVisual: true });
   Object.assign(globalThis, { window: dom.window, Window: dom.window.Window, document: dom.window.document, HTMLElement: dom.window.HTMLElement, Element: dom.window.Element, Node: dom.window.Node, DocumentFragment: dom.window.DocumentFragment, ShadowRoot: dom.window.ShadowRoot, MutationObserver: dom.window.MutationObserver, requestAnimationFrame: dom.window.requestAnimationFrame.bind(dom.window), cancelAnimationFrame: dom.window.cancelAnimationFrame.bind(dom.window), getComputedStyle: dom.window.getComputedStyle.bind(dom.window), IS_REACT_ACT_ENVIRONMENT: true });
   Object.assign(dom.window.HTMLElement.prototype, { attachEvent() {}, detachEvent() {}, scrollIntoView() {}, getClientRects() { return []; } });
   Object.assign(dom.window.Range.prototype, { getClientRects() { return []; }, getBoundingClientRect() { return { left: 0, right: 0, top: 0, bottom: 0 }; } });
   let doc: Notebook = { id: "a".repeat(32), title: "Test notebook", version: 1, created_at: "2026-01-01", updated_at: "2026-01-01", cells: [newCell("sql", "SELECT PLAYER, PPG AS PTS FROM silver_player_season")] };
+  if (options.savedPython) doc.cells = [{ ...newCell("python", "show(df)"), outputs: { kind: "python", data: { ok: true, stdout: "old stdout", tables: [{ columns: [{ name: "old", type: "VARCHAR" }], rows: [{ old: "old table" }], row_count: 1 }], figures: [{ mime_type: "image/png", data: "old-image" }] } } }];
   const requests: { path: string; method: string; body: Record<string, unknown> }[] = [];
   let resolveSave: (() => void) | undefined;
   const previous = globalThis.fetch;
@@ -40,7 +41,7 @@ async function mount(options: { sqlError?: boolean; empty?: boolean; conflict?: 
   const { default: NotebooksPanel } = await import("./components/notebooks/NotebooksPanel");
   let currentHook: ReturnType<typeof useNotebook>;
   function Hook() { currentHook = useNotebook(doc.id); return <span>{currentHook.state}</span>; }
-  function Harness() { const [id, setId] = useState<string | null>(null); return <NotebooksPanel notebookId={id} onOpen={setId} />; }
+  function Harness() { const [id, setId] = useState<string | null>(options.savedPython ? doc.id : null); return <NotebooksPanel notebookId={id} onOpen={setId} />; }
   const host = dom.window.document.getElementById("root")!, root = createRoot(host);
   await act(async () => { root.render(hook ? <Hook /> : <Harness />); await delay(); });
   return { dom, host, options, requests, hook: () => currentHook!, releaseSave: () => resolveSave?.(), cleanup: async () => { await act(async () => { root.unmount(); await delay(); }); globalThis.fetch = previous; dom.window.close(); } };
@@ -70,6 +71,16 @@ test("creates a notebook, runs SQL, shows a typed table and explains disabled Py
     assert.equal(m.host.querySelector('[role="alert"]'), null);
     assert.equal(m.host.querySelector<HTMLButtonElement>('[aria-label="Run cell 2"]')!.disabled, true);
     assert.equal(m.requests.filter((r) => r.path.endsWith("/python")).length, 0);
+  } finally { await m.cleanup(); }
+});
+
+test("disabled Python hides stale successful outputs restored from disk", async () => {
+  const m = await mount({ savedPython: true });
+  try {
+    assert.match(m.host.textContent!, /Python is off on this backend/);
+    assert.doesNotMatch(m.host.textContent!, /Python complete|old stdout|old table/);
+    assert.equal(m.host.querySelector(".notebook-figure"), null);
+    assert.equal(m.host.querySelector("table"), null);
   } finally { await m.cleanup(); }
 });
 
