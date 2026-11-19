@@ -6,6 +6,7 @@ import { act, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { useNotebook } from "./components/notebooks/useNotebook";
 import { newCell, type Notebook, type SQLResult } from "./lib/notebooks";
+import { findNotebookDraft, writeNotebookDraft } from "./lib/notebook-drafts";
 
 createRequire(`${process.cwd()}/notebooks.test.tsx`).extensions[".css"] = () => {};
 const delay = (ms = 25) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -13,13 +14,18 @@ const button = (host: ParentNode, text: string) => [...host.querySelectorAll("bu
 async function click(element: HTMLElement) { assert.ok(element); await act(async () => { element.click(); await delay(); }); }
 const sqlResult: SQLResult = { columns: [{ name: "PLAYER", type: "VARCHAR" }, { name: "PTS", type: "DOUBLE" }], rows: [{ PLAYER: "Stephen Curry", PTS: 28.5 }], page: 0, page_size: 100, has_more: false, ms: 7, truncated: false };
 
-async function mount(options: { sqlError?: boolean; empty?: boolean; conflict?: boolean; listError?: boolean; deferredSave?: boolean; pythonEnabled?: boolean; savedPython?: boolean; saveError?: boolean; storedDrafts?: string; openNotebook?: boolean } = {}, hook = false) {
+async function mount(options: { sqlError?: boolean; empty?: boolean; conflict?: boolean; listError?: boolean; deferredSave?: boolean; pythonEnabled?: boolean; savedPython?: boolean; saveError?: boolean; storedDrafts?: string; openNotebook?: boolean; storedEntries?: Record<string, string>; tabId?: string; serverVersion?: number; serverUpdated?: string; drafts?: { title: string; tab: string; version: number; time: number }[] } = {}, hook = false) {
   const dom = new JSDOM("<!doctype html><html><body><div id='root'></div></body></html>", { url: "http://localhost/?tab=notebooks", pretendToBeVisual: true });
   if (options.storedDrafts) dom.window.localStorage.setItem("dime_notebook_drafts_v1", options.storedDrafts);
+  for (const [key, value] of Object.entries(options.storedEntries || {})) dom.window.localStorage.setItem(key, value);
+  if (options.tabId) dom.window.sessionStorage.setItem("dime_notebook_drafts_v1:tab", options.tabId);
   Object.assign(globalThis, { window: dom.window, Window: dom.window.Window, document: dom.window.document, HTMLElement: dom.window.HTMLElement, Element: dom.window.Element, Node: dom.window.Node, DocumentFragment: dom.window.DocumentFragment, ShadowRoot: dom.window.ShadowRoot, MutationObserver: dom.window.MutationObserver, requestAnimationFrame: dom.window.requestAnimationFrame.bind(dom.window), cancelAnimationFrame: dom.window.cancelAnimationFrame.bind(dom.window), getComputedStyle: dom.window.getComputedStyle.bind(dom.window), IS_REACT_ACT_ENVIRONMENT: true });
   Object.assign(dom.window.HTMLElement.prototype, { attachEvent() {}, detachEvent() {}, scrollIntoView() {}, getClientRects() { return []; } });
   Object.assign(dom.window.Range.prototype, { getClientRects() { return []; }, getBoundingClientRect() { return { left: 0, right: 0, top: 0, bottom: 0 }; } });
   let doc: Notebook = { id: "a".repeat(32), title: "Test notebook", version: 1, created_at: "2026-01-01", updated_at: "2026-01-01", cells: [newCell("sql", "SELECT PLAYER, PPG AS PTS FROM silver_player_season")] };
+  doc.version = options.serverVersion || doc.version;
+  doc.updated_at = options.serverUpdated || doc.updated_at;
+  for (const draft of options.drafts || []) dom.window.localStorage.setItem(`dime_notebook_drafts_v1:${doc.id}:${draft.tab}:${draft.version}`, JSON.stringify({ notebook: { ...doc, title: draft.title }, base_version: draft.version, saved_at: draft.time }));
   if (options.savedPython) doc.cells = [{ ...newCell("python", "show(df)"), outputs: { kind: "python", data: { ok: true, stdout: "old stdout", tables: [{ columns: [{ name: "old", type: "VARCHAR" }], rows: [{ old: "old table" }], row_count: 1 }], figures: [{ mime_type: "image/png", data: "old-image" }] } } }];
   const requests: { path: string; method: string; body: Record<string, unknown> }[] = [];
   let resolveSave: (() => void) | undefined;
@@ -151,23 +157,24 @@ test("new Markdown cells keep their editor and focus until Escape", async () => 
 
 test("failed saves survive leaving and reopening, offer restore, and clear after save", async () => {
   const first = await mount({ saveError: true }, true);
-  let stored = "";
+  let stored: Record<string, string> = {}, tabId = "";
   try {
     await act(async () => {
       first.hook().edit((doc) => ({ ...doc, title: "Recovered analysis" }));
       assert.equal(await first.hook().persist(), false);
     });
-    stored = first.dom.window.localStorage.getItem("dime_notebook_drafts_v1")!;
-    assert.equal(JSON.parse(stored)[`${"a".repeat(32)}:1`].notebook.title, "Recovered analysis");
+    stored = Object.fromEntries(Object.keys(first.dom.window.localStorage).map((key) => [key, first.dom.window.localStorage.getItem(key)!]));
+    assert.equal(JSON.parse(Object.values(stored)[0]).notebook.title, "Recovered analysis");
+    tabId = first.dom.window.sessionStorage.getItem("dime_notebook_drafts_v1:tab")!;
   } finally { await first.cleanup(); }
-  const reopened = await mount({ storedDrafts: stored, openNotebook: true });
+  const reopened = await mount({ storedEntries: stored, tabId, openNotebook: true });
   try {
     assert.match(reopened.host.textContent!, /Restore unsaved changes/);
     assert.equal(reopened.host.querySelector<HTMLInputElement>('[aria-label="Notebook title"]')!.value, "Test notebook");
     await click(button(reopened.host, "Restore unsaved changes"));
     assert.equal(reopened.host.querySelector<HTMLInputElement>('[aria-label="Notebook title"]')!.value, "Recovered analysis");
     await act(async () => { await delay(700); });
-    assert.deepEqual(JSON.parse(reopened.dom.window.localStorage.getItem("dime_notebook_drafts_v1")!), {});
+    assert.equal(reopened.dom.window.localStorage.length, 0);
   } finally { await reopened.cleanup(); }
 });
 
@@ -175,6 +182,54 @@ test("invalid local drafts do not prevent opening a notebook", async () => {
   const m = await mount({ storedDrafts: '{"invalid":null}' });
   try { await click(button(m.host, "New notebook")); assert.doesNotMatch(m.host.textContent!, /Restore unsaved changes/); }
   finally { await m.cleanup(); }
+});
+
+test("recovery ignores clock skew, shows base version, and blocks edits until a choice", async () => {
+  const options = { serverVersion: 3, serverUpdated: "2099-01-01", drafts: [{ title: "Clock-skewed edits", tab: "old-tab", version: 1, time: 1 }] };
+  const m = await mount(options, true);
+  try {
+    assert.equal(m.hook().draft!.notebook.title, "Clock-skewed edits");
+    const before = m.dom.window.localStorage.getItem(m.hook().draft!.key);
+    await act(async () => { m.hook().edit((doc) => ({ ...doc, title: "Do not overwrite" })); assert.equal(await m.hook().persist(), false); });
+    assert.equal(m.hook().notebook!.title, "Test notebook");
+    assert.equal(m.dom.window.localStorage.getItem(m.hook().draft!.key), before);
+    assert.equal(m.requests.filter((request) => request.method === "PUT").length, 0);
+    await act(async () => { m.hook().restoreDraft(); });
+    assert.equal(m.hook().notebook!.title, "Clock-skewed edits");
+    assert.equal(m.hook().notebook!.version, 3);
+  } finally { await m.cleanup(); }
+  const ui = await mount({ ...options, openNotebook: true });
+  try {
+    assert.match(ui.host.textContent!, /base version 1 · saved elsewhere since/);
+    assert.equal(ui.host.querySelector<HTMLInputElement>('[aria-label="Notebook title"]')!.disabled, true);
+    await click(button(ui.host, "Discard draft"));
+    assert.equal(ui.dom.window.localStorage.length, 0);
+    assert.equal(ui.host.querySelector<HTMLInputElement>('[aria-label="Notebook title"]')!.disabled, false);
+  } finally { await ui.cleanup(); }
+});
+
+test("identical draft content is not offered even if its timestamp is newer", async () => {
+  const m = await mount({ drafts: [{ title: "Test notebook", tab: "other", version: 1, time: Date.now() + 100000 }] }, true);
+  try { assert.equal(m.hook().draft, null); } finally { await m.cleanup(); }
+});
+
+test("tabs store independent drafts, offer the newest difference, and save only clears the saving tab", async () => {
+  const m = await mount({}, true);
+  try {
+    const doc = m.hook().notebook!, storage = m.dom.window.localStorage;
+    for (const [tab, title, time] of [["tab-a", "Tab A edits", 100], ["tab-b", "Tab B edits", 200]] as const) {
+      m.dom.window.sessionStorage.setItem("dime_notebook_drafts_v1:tab", tab);
+      writeNotebookDraft({ ...doc, title }, 1);
+      const key = `dime_notebook_drafts_v1:${doc.id}:${tab}:1`;
+      storage.setItem(key, JSON.stringify({ ...JSON.parse(storage.getItem(key)!), saved_at: time }));
+    }
+    assert.equal(findNotebookDraft(doc)!.notebook.title, "Tab B edits");
+    const keyA = `dime_notebook_drafts_v1:${doc.id}:tab-a:1`, originalA = storage.getItem(keyA);
+    await act(async () => { m.hook().edit((current) => ({ ...current, title: "Tab B saved" })); assert.equal(await m.hook().persist(), true); });
+    assert.equal(storage.getItem(keyA), originalA);
+    assert.equal(storage.getItem(`dime_notebook_drafts_v1:${doc.id}:tab-b:1`), null);
+    assert.equal(findNotebookDraft(m.hook().notebook!)!.notebook.title, "Tab A edits");
+  } finally { await m.cleanup(); }
 });
 
 test("autosave serializes writes and preserves edits made during an in-flight save", async () => {
