@@ -170,6 +170,8 @@ interface Props {
   thread: string;
   onRunDone: () => void;
   preset?: string | null;
+  autoSend?: { thread: string; text: string } | null;
+  onAutoSendConsumed?: () => void;
   onOpenArtifact?: (artifact: ArtifactItem) => void;
   activeArtifactId?: string;
 }
@@ -325,7 +327,7 @@ function LinkButton({ index }: { index: number }) {
   );
 }
 
-export default function ChatPanel({ thread, onRunDone, preset, onOpenArtifact, activeArtifactId }: Props) {
+export default function ChatPanel({ thread, onRunDone, preset, autoSend, onAutoSendConsumed, onOpenArtifact, activeArtifactId }: Props) {
   const [models, setModels] = useState<ModelOption[]>([]);
   const [model, setModel] = useState<string | null>(null);
   const [modelStatus, setModelStatus] = useState<"loading" | "ready" | "error">("loading");
@@ -548,6 +550,17 @@ export default function ChatPanel({ thread, onRunDone, preset, onOpenArtifact, a
       thread,
     );
   };
+
+  const sentAutoRequest = useRef<object | null>(null);
+  useEffect(() => {
+    if (!autoSend || autoSend.thread !== thread || busy || sentAutoRequest.current === autoSend) return;
+    const timer = window.setTimeout(() => {
+      sentAutoRequest.current = autoSend;
+      onAutoSendConsumed?.();
+      void sendText(autoSend.text);
+    }, 0);
+    return () => window.clearTimeout(timer);
+  });
 
   const stop = () => {
     abort.current?.abort();

@@ -11,9 +11,10 @@ import WatchlistPanel from "../components/WatchlistPanel";
 import OnboardingModal from "../components/OnboardingModal";
 import DebateCardModal from "../components/DebateCardModal";
 import ExploreWorkspace from "../components/ExploreWorkspace";
+import WorkflowsPanel from "../components/WorkflowsPanel";
 import { ThreadInfo, getQueryParam, getThreads, setQueryParam } from "../lib/api";
 
-type Tab = "chat" | "data" | "today";
+type Tab = "chat" | "data" | "today" | "workflows";
 
 function newThreadId() {
   return "t-" + Math.random().toString(36).slice(2, 8);
@@ -28,6 +29,7 @@ export default function Home() {
   const [artifactClosing, setArtifactClosing] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
   const [preset, setPreset] = useState<string | null>(null);
+  const [autoSend, setAutoSend] = useState<{ thread: string; text: string } | null>(null);
   const [exploreKey, setExploreKey] = useState(0);
   
   
@@ -46,7 +48,7 @@ export default function Home() {
 
   useEffect(() => {
     const v = getQueryParam("tab");
-    if (v === "chat" || v === "data" || v === "today") setTab(v);
+    if (v === "chat" || v === "data" || v === "today" || v === "workflows") setTab(v);
     const t = getQueryParam("thread");
     if (t && /^[A-Za-z0-9-]{1,64}$/.test(t)) {
       setActive(t);
@@ -85,6 +87,7 @@ export default function Home() {
     today: useRef<HTMLButtonElement | null>(null),
     chat: useRef<HTMLButtonElement | null>(null),
     data: useRef<HTMLButtonElement | null>(null),
+    workflows: useRef<HTMLButtonElement | null>(null),
   };
   useLayoutEffect(() => {
     const btn = tabBtnRefs[tab].current;
@@ -147,7 +150,7 @@ export default function Home() {
   useEffect(() => {
     const onPop = () => {
       const v = getQueryParam("tab");
-      if (v === "chat" || v === "data" || v === "today") setTab(v);
+      if (v === "chat" || v === "data" || v === "today" || v === "workflows") setTab(v);
       const t = getQueryParam("thread");
       if (t && /^[A-Za-z0-9-]{1,64}$/.test(t)) setActive(t);
       setExploreKey((k) => k + 1);
@@ -275,6 +278,12 @@ export default function Home() {
               Analyst chat
             </button>
             <button
+              ref={tabBtnRefs.workflows}
+              onClick={() => selectTab("workflows")}
+              className={tab === "workflows" ? "tab-active" : "tab-idle"}
+              style={{ fontSize: 12, border: "none", padding: "3px 12px", borderRadius: 6, cursor: "pointer", position: "relative", zIndex: 1, background: "transparent" }}
+            >Workflows</button>
+            <button
               ref={tabBtnRefs.data}
               onClick={() => selectTab("data")}
               className={tab === "data" ? "tab-active" : "tab-idle"}
@@ -351,6 +360,8 @@ export default function Home() {
                     thread={active}
                     onRunDone={reload}
                     preset={preset}
+                    autoSend={autoSend?.thread === active ? autoSend : null}
+                    onAutoSendConsumed={() => setAutoSend(null)}
                     onOpenArtifact={openArtifact}
                     activeArtifactId={activeArtifact?.id}
                   />
@@ -378,6 +389,18 @@ export default function Home() {
                 </div>
               )}
             </div>
+          ) : tab === "workflows" ? (
+            <WorkflowsPanel onRun={(text) => {
+              const id = newThreadId();
+              setPreset(null);
+              setActiveArtifact(null);
+              setActive(id);
+              setThreads((current) => [{ id, title: text.split("\n")[0], updated: new Date().toISOString(), turns: 0 }, ...current]);
+              setAutoSend({ thread: id, text });
+              setTab("chat");
+              setQueryParam("thread", id, true);
+              setQueryParam("tab", "chat");
+            }} />
           ) : tab === "today" ? (
             <div style={{ height: "100%", overflowY: "auto" }}>
               <div

@@ -13,7 +13,7 @@ const SECTIONS=[
   {label:"Trade checker",hash:"explore-trade"},{label:"Crew lineups",hash:"explore-lineups"},{label:"Playoffs",hash:"explore-playoffs"},
 ];
 
-export default function CommandPalette({onAsk,onTab,onDebate,openKey=0}:{onAsk:(q:string)=>void;onTab:(t:"chat"|"data")=>void;onDebate?:()=>void;openKey?:number}) {
+export default function CommandPalette({onAsk,onTab,onDebate,openKey=0}:{onAsk:(q:string)=>void;onTab:(t:"chat"|"data"|"workflows")=>void;onDebate?:()=>void;openKey?:number}) {
   const [open,setOpen]=useState(false),[q,setQ]=useState(""),[hits,setHits]=useState<Hit[]>([]),[active,setActive]=useState(0);
   const input=useRef<HTMLInputElement>(null);
   useEffect(()=>{if(openKey>0)setOpen(true)},[openKey]);
@@ -24,6 +24,7 @@ export default function CommandPalette({onAsk,onTab,onDebate,openKey=0}:{onAsk:(
   const items=useMemo<PaletteItem[]>(()=>{
     const out:PaletteItem[]=[
       {id:"chat",group:"Navigate",label:"Analyst chat",hint:"view",run:()=>{onTab("chat");close()}},
+      {id:"workflows",group:"Navigate",label:"Workflows",hint:"view",run:()=>{onTab("workflows");close()}},
       {id:"data",group:"Navigate",label:"Explore datasets",hint:"view",run:()=>{onTab("data");close()}},
       ...SECTIONS.map(s=>({id:s.hash,group:"Explore",label:s.label,hint:"section",run:()=>{onTab("data");close();setTimeout(()=>document.getElementById(s.hash)?.scrollIntoView({behavior:"smooth"}),80)}})),
       ...(onDebate?[{id:"debate",group:"Actions",label:"New debate card",hint:"action",run:()=>{onDebate();close()}}]:[]),
