@@ -192,7 +192,7 @@ def get_splits(player_id: str | int, season: str | None = None) -> dict[str, Any
     except Exception as exc:
         return {"tool": "get_splits", "ok": False, "error": str(exc)[:160]}
     try:
-        rows.extend(_opp_tier_splits(frame, season))
+        rows.extend(pkg._opp_tier_splits(frame, season))
     except Exception:
         pass
     return {

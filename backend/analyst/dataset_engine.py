@@ -304,12 +304,12 @@ def dataset(name: str, season: str='2025-26', player_id: int=0, team_id: int=0, 
             if entity_scoped:
                 try:
                     frame = store.read_frame(table, '_fetched_at = ?', [live.meta.fetched_at])
-                except Exception:
+                except store.TableAbsent:
                     frame = getattr(live, 'frame', frame)
             else:
                 try:
                     frame = store.read_frame(table, '_season = ?', [season])
-                except Exception:
+                except store.TableAbsent:
                     frame = getattr(live, 'frame', frame)
     if name in ('player_gamelogs', 'team_games', 'playoff_gamelogs') and frame.height > 0 and ('GAME_DATE' in frame.columns):
         frame = _sort_frame_by_game_date(frame)

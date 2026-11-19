@@ -43,6 +43,7 @@ def test_probe_verdict_expires():
 
 def test_fallback_skips_probe_failed_provider(monkeypatch):
     _reset()
+    monkeypatch.setattr(prov, 'active_provider_order', lambda: ('mistral', 'gemini', 'cerebras'))
     prov._probe_state["mistral"] = (False, time.time())
     calls = []
 
@@ -59,6 +60,7 @@ def test_fallback_skips_probe_failed_provider(monkeypatch):
 
 def test_invoke_exposes_accepted_provider_and_sanitized_attempts(monkeypatch):
     _reset(); calls=[]
+    monkeypatch.setattr(prov, 'active_provider_order', lambda: ('gemini', 'nvidia', 'openrouter'))
     monkeypatch.setattr(prov.settings, 'cerebras_api_key', '')
     monkeypatch.setattr(prov.settings, 'dime_enable_groq', False)
     class C:
@@ -86,6 +88,7 @@ def test_invoke_exposes_accepted_provider_and_sanitized_attempts(monkeypatch):
 
 def test_paid_openrouter_primary_provenance_matches_constructed_free_slug(monkeypatch):
     _reset(); seen=[]
+    monkeypatch.setattr(prov, 'active_provider_order', lambda: ('gemini', 'openrouter'))
     monkeypatch.setattr(prov.settings, 'cerebras_api_key', '')
     class C:
         async def ainvoke(self,messages,**kwargs):
@@ -102,6 +105,7 @@ def test_paid_openrouter_primary_provenance_matches_constructed_free_slug(monkey
 
 def test_arbitrary_mistral_primary_provenance_matches_free_limit(monkeypatch):
     _reset(); seen=[]
+    monkeypatch.setattr(prov, 'active_provider_order', lambda: ('gemini', 'mistral'))
     monkeypatch.setattr(prov.settings, 'cerebras_api_key', '')
     class C:
         async def ainvoke(self,messages,**kwargs):

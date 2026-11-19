@@ -256,10 +256,13 @@ def _score_comp_candidates(pool, target, kept, stats, pct_round, season, k):
 
 @tool(description="Nearest statistical neighbors by per-36 + advanced shape. Same-season only.")
 def get_comps(player_id: str | int, season: str | None = None, k: int = 5) -> dict[str, Any]:
-    from .._core import clamp_season
+    from .._core import InvalidSeasonError, clamp_season
 
     pkg = _pkg()
-    season = clamp_season(pkg.resolve_season(season))
+    try:
+        season = clamp_season(pkg.resolve_season(season))
+    except InvalidSeasonError as exc:
+        return {"tool": "get_comps", "ok": False, "error": str(exc)}
     try:
         k = max(1, min(int(k or 5), 15))
     except (TypeError, ValueError):

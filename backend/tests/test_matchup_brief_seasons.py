@@ -78,6 +78,7 @@ def test_derived_ratings_keep_every_team_on_the_full_schedule():
                                             abs=0.05), team_id
         assert card["pace"] > 90.0, team_id
 
+@pytest.mark.canonical_warehouse
 def test_season_series_2024_25_counts_regular_and_playoff_meetings():
     out = get_season_series.invoke(
         {"team_a": "BOS", "team_b": "NYK", "season": "2024-25"})

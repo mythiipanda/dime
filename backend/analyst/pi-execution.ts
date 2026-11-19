@@ -12,6 +12,7 @@ const WORKSPACE_ARTIFACT_EXTENSIONS = new Set([".parquet", ".csv", ".json", ".md
 const WORKSPACE_IGNORED_DIRS = new Set(["node_modules", "__pycache__"]);
 const WORKSPACE_ARTIFACT_LIMIT = 40;
 const WORKSPACE_MAX_DEPTH = 2;
+const ABORT_GRACE_MS = 10_000;
 
 export type WorkspaceArtifact = {
     path: string;
@@ -113,6 +114,7 @@ export type AnalystEvent = {
 type AnalystDeps = {
     resolveRuntime?: typeof resolvedRuntime;
     connectTools?: (options: PythonToolsOptions) => ReturnType<typeof connectPythonTools>;
+    abortGraceMs?: number;
 };
 
 function sourceSummary(record: SourceRecord) {
@@ -233,6 +235,7 @@ function wrapBridgeTools(
 export function createPiExecution(deps: AnalystDeps = {}) {
     const resolveRuntime = deps.resolveRuntime ?? resolvedRuntime;
     const connectTools = deps.connectTools ?? connectPythonTools;
+    const abortGraceMs = deps.abortGraceMs ?? ABORT_GRACE_MS;
     return {
         async *stream(input: unknown, signal?: AbortSignal): AsyncGenerator<AnalystEvent> {
             const controller = new AbortController();
@@ -242,6 +245,9 @@ export function createPiExecution(deps: AnalystDeps = {}) {
             const emit = (event: AnalystEvent) => { events.push(event); wake?.(); };
             const onAbort = () => controller.abort();
             signal?.addEventListener("abort", onAbort, { once: true });
+            let abandoned = false;
+            const abandon = new Promise<void>(resolve => controller.signal.addEventListener("abort", () => setTimeout(resolve, abortGraceMs).unref(), { once: true }));
+            void abandon.then(() => { abandoned = true; wake?.(); });
             if (signal?.aborted)
                 controller.abort();
             async function run() {
@@ -341,18 +347,18 @@ export function createPiExecution(deps: AnalystDeps = {}) {
             }
             const pending = run().finally(() => { finished = true; wake?.(); });
             try {
-                while (!finished || events.length) {
+                while ((!finished && !abandoned) || events.length) {
                     const next = events.shift();
                     if (next)
                         yield next;
                     else
                         await new Promise<void>(resolve => { wake = resolve; });
                 }
-                await pending;
+                await Promise.race([pending, abandon]);
             }
             finally {
                 controller.abort();
-                await pending;
+                await Promise.race([pending, abandon]);
                 signal?.removeEventListener("abort", onAbort);
             }
         }

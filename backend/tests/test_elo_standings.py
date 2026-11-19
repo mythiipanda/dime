@@ -62,6 +62,7 @@ def test_unknown_opponent():
     assert res["ok"] is False
     assert "unknown team" in res["error"]
 
+@pytest.mark.canonical_warehouse
 def test_real_2025_26_smoke():
     res = get_elo_standings.invoke({"season": "2025-26"})
     assert res["ok"] is True

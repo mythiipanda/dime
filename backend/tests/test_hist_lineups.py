@@ -1,4 +1,5 @@
 import sys
+import pytest
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
@@ -14,6 +15,7 @@ SEASON = "2022-23"
 TOP_UNIT = "A. Horford - M. Smart - J. Brown - J. Tatum - D. White"
 TOP_MIN = 432.4
 
+@pytest.mark.canonical_warehouse
 def test_get_lineup_stats_hist_season_returns_rows():
     res = get_lineup_stats.invoke(
         {"team": "BOS", "season": SEASON, "min_possessions": 100})
@@ -59,6 +61,7 @@ def test_get_lineups_hist_season_returns_rows_sorted_by_min():
     mins = [float(r.get("MIN") or 0) for r in res["rows"]]
     assert mins == sorted(mins, reverse=True)
 
+@pytest.mark.canonical_warehouse
 def test_get_wowy_hist_season_uses_real_minutes():
     res = get_wowy.invoke({"player_a": str(TATUM), "player_b": str(BROWN),
                            "team_id": "BOS", "season": SEASON})
@@ -74,6 +77,7 @@ def test_get_on_off_hist_season_returns_rows():
     stats = [r["Stat"] for r in res["rows"]]
     assert "Net Rating" in stats
 
+@pytest.mark.canonical_warehouse
 def test_get_lineup_stats_current_season_still_serves_warehouse():
     res = get_lineup_stats.invoke({"team": "BOS", "season": "2025-26"})
     assert res["ok"] is True
