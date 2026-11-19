@@ -40,13 +40,13 @@ export default function ScoreStrip() {
   if (!loaded) return null;
   if (!games.length)
     return (
-      <div style={{ fontSize: 12, color: "var(--color-warm-gray)", marginBottom: 16 }}>
+      <div style={{ fontSize: 12, color: "var(--ink-2)", marginBottom: 16 }}>
         Scores {date}: no games posted yet.
       </div>
     );
   return (
     <section aria-label={`Scores from ${date}`}>
-      <div style={{ fontSize: 12, color: "var(--color-warm-gray)", marginBottom: 4 }}>
+      <div style={{ fontSize: 12, color: "var(--ink-2)", marginBottom: 4 }}>
         Scores {date}
       </div>
     <div
@@ -63,10 +63,10 @@ export default function ScoreStrip() {
           key={i}
           style={{
             flexShrink: 0,
-            border: "1px solid var(--color-stone-border)",
+            border: "1px solid var(--line)",
             borderRadius: 10,
             padding: "6px 12px",
-            background: "var(--color-pure-white)",
+            background: "var(--surface)",
             fontSize: 12,
           }}
         >
@@ -75,7 +75,7 @@ export default function ScoreStrip() {
           {"  "}
           <span style={{ fontWeight: 500 }}>{g.HOME_TEAM_ABBREVIATION}</span>{" "}
           {g.HOME_TEAM_PTS ?? "-"}
-          <div style={{ fontSize: 10, color: "var(--color-ash-gray)" }}>
+          <div style={{ fontSize: 10, color: "var(--ink-3)" }}>
             {g.GAME_STATUS_TEXT || "Final"}
           </div>
         </div>

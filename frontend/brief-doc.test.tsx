@@ -233,4 +233,32 @@ describe("matchup brief doc", () => {
       restore();
     }
   });
+
+  it("offers an empty-library state and removes a selected brief", async () => {
+    const restore = isolateFetch(() => Promise.reject(new TypeError("offline")));
+    try {
+      saveBrief({ title: "BOS at NYK", question: "Preview Boston and New York", rows: PREVIEW_ROWS });
+      const host = await mountEl(React.createElement(BriefsPage));
+      await act(async () => buttons(host, "BOS at NYK")[0].click());
+      await act(async () => buttons(host, "Delete")[0].click());
+      assert.equal(listBriefs().length, 0);
+      assert.ok(host.textContent?.includes("No briefs yet"));
+      assert.ok(buttons(host, "Ask Dime").length);
+    } finally {
+      restore();
+    }
+  });
+
+  it("keeps re-run available when a saved brief has no renderable content", async () => {
+    const restore = isolateFetch(() => Promise.reject(new TypeError("offline")));
+    try {
+      saveBrief({ title: "Incomplete brief", question: "Preview Boston", rows: [] });
+      const host = await mountEl(React.createElement(BriefsPage));
+      await act(async () => buttons(host, "Incomplete brief")[0].click());
+      assert.ok(host.textContent?.includes("This brief did not load."));
+      assert.ok(buttons(host, "Re-run").length);
+    } finally {
+      restore();
+    }
+  });
 });

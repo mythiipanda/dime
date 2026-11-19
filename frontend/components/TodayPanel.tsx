@@ -1,9 +1,12 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { GameRow, TodayMover, TeamStreak, TodayRows, getToday, getDatasetJson, SEASON } from "../lib/api";
+import { GameRow, TodayRows, getToday, getDatasetJson, SEASON } from "../lib/api";
 import EmptyState from "./EmptyState";
 import Skeleton from "./Skeleton";
+import { Panel } from "./ds/Panel";
+import { Chip } from "./ds/Chip";
+import { RecordsTable } from "./ds/RecordsTable";
 
 
 
@@ -46,7 +49,7 @@ function useSeasonWrap(active: boolean): SeasonWrap | null {
           if (String(r.WL) === "W") wins[ab].w += 1;
         }
         const teams = Object.values(wins).sort((a, b) => b.w - a.w);
-        if (teams.length < 2 || teams[0].w < 4) return; 
+        if (teams.length < 2 || teams[0].w < 4) return;
         const leaders = (ld.data || []) as Record<string, unknown>[];
         const top = [...leaders]
           .filter((r) => typeof r.PTS === "number" && typeof r.GP === "number" && (r.GP as number) > 0)
@@ -79,271 +82,27 @@ function useSeasonWrap(active: boolean): SeasonWrap | null {
   return wrap;
 }
 
-function SeasonWrapCard({ w }: { w: SeasonWrap }) {
-  const lines = [
-    { k: "Champions", v: `${w.champion} (def. ${w.runnerUp}, ${w.series})` },
-    { k: "Scoring leader", v: w.scoring },
-    { k: "Best record", v: w.best },
-  ].filter((l) => l.v);
-  return (
-    <div
-      style={{
-        border: "1px solid var(--color-stone-border)",
-        borderRadius: 12,
-        padding: "12px 14px",
-        marginBottom: 12,
-        background: "var(--color-pure-white)",
-      }}
-    >
-      <div style={{ fontSize: 12, fontWeight: 600, color: "var(--color-warm-gray)", marginBottom: 6 }}>
-        {w.season} season wrap
-      </div>
-      {lines.map((l) => (
-        <div key={l.k} style={{ display: "flex", gap: 10, fontSize: 13, padding: "3px 0" }}>
-          <span style={{ minWidth: 110, color: "var(--color-warm-gray)" }}>{l.k}</span>
-          <span style={{ fontWeight: 500, color: "var(--color-ink-black)" }}>{l.v}</span>
-        </div>
-      ))}
-    </div>
-  );
-}
 
-function GameChip({ g }: { g: GameRow }) {
-  return (
-    <div
-      style={{
-        flexShrink: 0,
-        border: "1px solid var(--color-stone-border)",
-        borderRadius: 10,
-        padding: "6px 12px",
-        background: "var(--color-pure-white)",
-        fontSize: 12,
-      }}
-    >
-      <span style={{ fontWeight: 500 }}>{g.VISITOR_TEAM_ABBREVIATION || "AWAY"}</span>{" "}
-      {g.VISITOR_TEAM_PTS ?? "-"}
-      {"  "}
-      <span style={{ fontWeight: 500 }}>{g.HOME_TEAM_ABBREVIATION || "HOME"}</span>{" "}
-      {g.HOME_TEAM_PTS ?? "-"}
-      <div style={{ fontSize: 10, color: "var(--color-ash-gray)" }}>
-        {g.GAME_STATUS_TEXT || "Scheduled"}
-      </div>
-    </div>
-  );
-}
-
-function GameRowList({ games, emptyTitle, emptyDescription }: { games: GameRow[]; emptyTitle: string; emptyDescription: string }) {
-  if (!games.length) {
-    return (
-      <EmptyState title={emptyTitle} description={emptyDescription} />
-    );
-  }
-  return (
-    <div style={{ display: "flex", gap: 8, overflowX: "auto", padding: "4px 0" }}>
-      {games.map((g, i) => (
-        <GameChip key={i} g={g} />
-      ))}
-    </div>
-  );
-}
-
-function MoverRow({ m }: { m: TodayMover }) {
-  if (m.note) {
-    return (
-      <div style={{ fontSize: 13, color: "var(--color-warm-gray)", padding: "6px 0" }}>
-        {m.note}
-      </div>
-    );
-  }
-  return (
-    <div
-      style={{
-        display: "flex",
-        alignItems: "center",
-        gap: 10,
-        padding: "6px 0",
-        borderTop: "1px solid var(--color-stone-border)",
-        fontSize: 13,
-      }}
-    >
-      <span
-        style={{
-          fontSize: 11,
-          fontWeight: 600,
-          minWidth: 36,
-          color: "var(--color-cyan-edge)",
-        }}
-      >
-        {m.RANK_CHANGE}
-      </span>
-      <span style={{ flex: 1, fontWeight: 500, color: "var(--color-ink-black)" }}>
-        {m.PLAYER || "Unknown"}
-      </span>
-      <span style={{ fontSize: 12, color: "var(--color-warm-gray)" }}>{m.TEAM}</span>
-      <span style={{ fontSize: 12, color: "var(--color-warm-gray)", minWidth: 56, textAlign: "right" }}>
-        {typeof m.PTS_CHANGE === "number"
-          ? `${m.PTS_CHANGE > 0 ? "+" : ""}${m.PTS_CHANGE.toFixed(1)} pts`
-          : ""}
-      </span>
-    </div>
-  );
-}
-
-function StreakRow({ s }: { s: TeamStreak }) {
-  const winning = (s.STREAK || "").toUpperCase().startsWith("W");
-  return (
-    <div
-      style={{
-        display: "flex",
-        alignItems: "center",
-        gap: 10,
-        padding: "6px 0",
-        borderTop: "1px solid var(--color-stone-border)",
-        fontSize: 13,
-      }}
-    >
-      <span
-        style={{
-          fontSize: 11,
-          fontWeight: 600,
-          padding: "2px 8px",
-          borderRadius: 9999,
-          background: winning ? "var(--color-sky-wash)" : "transparent",
-          color: winning ? "var(--color-cyan-edge)" : "var(--color-warm-gray)",
-          border: winning ? "none" : "1px solid var(--color-stone-border)",
-        }}
-      >
-        {s.STREAK || `${s.GAMES} streak`}
-      </span>
-      <span style={{ flex: 1, fontWeight: 500 }}>{s.TEAM}</span>
-      <span style={{ fontSize: 12, color: "var(--color-warm-gray)" }}>
-        {s.W ?? "-"}-{s.L ?? "-"}
-      </span>
-    </div>
-  );
+function Games({ games, title }: { games: GameRow[]; title: string }) {
+  return <div><h3 className="mb-3 text-[11px] font-medium text-ink-3">{title}</h3>{games.length ? <div className="grid gap-2 sm:grid-cols-2">{games.map((game, i) => <div key={i} className="rounded-lg border border-line bg-inset px-4 py-3"><div className="mb-2 text-[10px] text-ink-3">{game.GAME_STATUS_TEXT || "Scheduled"}</div><div className="flex justify-between text-[13px]"><span>{game.VISITOR_TEAM_ABBREVIATION || "TBD"}</span><span className="font-mono">{game.VISITOR_TEAM_PTS ?? "—"}</span></div><div className="mt-1.5 flex justify-between text-[13px]"><span>{game.HOME_TEAM_ABBREVIATION || "TBD"}</span><span className="font-mono">{game.HOME_TEAM_PTS ?? "—"}</span></div></div>)}</div> : <p className="rounded-lg border border-dashed border-line px-4 py-5 text-[12px] text-ink-3">No games on this slate.</p>}</div>;
 }
 
 export default function TodayPanel() {
   const [rows, setRows] = useState<TodayRows | null>(null);
   const [err, setErr] = useState("");
   const [loading, setLoading] = useState(true);
-
   useEffect(() => {
     let live = true;
-    getToday()
-      .then((r) => {
-        if (live) setRows(r);
-      })
-      .catch(() => {
-        if (live) setErr("Today is unavailable right now.");
-      })
-      .finally(() => {
-        if (live) setLoading(false);
-      });
-    return () => {
-      live = false;
-    };
+    getToday().then((data) => { if (live) setRows(data); }).catch(() => { if (live) setErr("Today is unavailable right now."); }).finally(() => { if (live) setLoading(false); });
+    return () => { live = false; };
   }, []);
-  
-  
-
-
-
-  const noGames =
-    !!rows && !(rows.last_night || []).length && !(rows.tonight || []).length;
+  const noGames = !!rows && !(rows.last_night || []).length && !(rows.tonight || []).length;
   const wrap = useSeasonWrap(noGames);
-
-  if (loading) {
-    return (
-      <div className="card">
-        <Skeleton lines={3} label="Loading today..." />
-      </div>
-    );
-  }
-
-  if (err || !rows) {
-    return (
-      <div className="card">
-        <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 4 }}>Today</div>
-        <EmptyState
-          title="Today is unavailable"
-          description={err || "We couldn't load today's slate. Try again in a bit."}
-        />
-      </div>
-    );
-  }
-
-  return (
-    <div className="card">
-      <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 12 }}>Today</div>
-
-      {noGames ? (
-        <>
-          {wrap && <SeasonWrapCard w={wrap} />}
-          <EmptyState
-            title="No games today"
-            description="It's the offseason. Check back in October, or explore season leaders below."
-          />
-        </>
-      ) : (
-        <>
-          <div style={{ fontSize: 12, color: "var(--color-warm-gray)", marginBottom: 4 }}>
-            Last night
-          </div>
-          <GameRowList
-            games={rows.last_night || []}
-            emptyTitle="No games last night"
-            emptyDescription="Nothing on the slate last night."
-          />
-
-          <div style={{ fontSize: 12, color: "var(--color-warm-gray)", margin: "12px 0 4px" }}>
-            Tonight
-          </div>
-          <GameRowList
-            games={rows.tonight || []}
-            emptyTitle="No games scheduled tonight"
-            emptyDescription="Check back tomorrow, or explore season leaders below."
-          />
-        </>
-      )}
-
-      <div
-        style={{
-          display: "grid",
-          gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))",
-          gap: 16,
-          marginTop: 16,
-        }}
-      >
-        <div>
-          <div style={{ fontSize: 12, color: "var(--color-warm-gray)", marginBottom: 4 }}>
-            Leaderboard movers (7d)
-          </div>
-          {(rows.movers || []).length ? (
-            rows.movers.slice(0, 6).map((m, i) => (
-              <MoverRow key={m.PLAYER || i} m={m} />
-            ))
-          ) : (
-            <EmptyState
-              title="Movers not loaded yet"
-              description="Leaderboard movement hasn't loaded yet. Check back soon."
-            />
-          )}
-        </div>
-        <div>
-          <div style={{ fontSize: 12, color: "var(--color-warm-gray)", marginBottom: 4 }}>
-            Team streaks (3+ games)
-          </div>
-          {(rows.streaks || []).length ? (
-            rows.streaks.map((s, i) => <StreakRow key={s.TEAM || i} s={s} />)
-          ) : (
-            <EmptyState
-              title="No active 3+ game streaks"
-              description="No team is on a run right now. Check back after the next slate."
-            />
-          )}
-        </div>
-      </div>
-    </div>
-  );
+  return <Panel title="Today" description="Scores and signals from the latest available data." actions={<Chip>League snapshot</Chip>}>
+    {loading ? <Skeleton lines={3} label="Loading today..." /> : err || !rows ? <EmptyState title="Today is unavailable" description={err || "We couldn't load today's slate. Try again in a bit."} /> : <>
+      {noGames ? <div className="rounded-lg border border-dashed border-line bg-inset"><EmptyState title="No games today" description="No games are posted for this slate. Explore season leaders or prepare your next scouting report." /></div> : <div className="grid gap-6 md:grid-cols-2"><Games title="Last night" games={rows.last_night || []} /><Games title="Tonight" games={rows.tonight || []} /></div>}
+      {wrap && <div className="mt-5 grid gap-3 rounded-lg border border-line bg-inset p-4 text-[12px] sm:grid-cols-3"><div><p className="mb-2 text-[10px] text-ink-3">{wrap.season} CHAMPIONS</p><p>{wrap.champion}</p><p className="mt-1 text-ink-3">def. {wrap.runnerUp}, {wrap.series}</p></div><div><p className="mb-2 text-[10px] text-ink-3">SCORING LEADER</p><p>{wrap.scoring || "Not available"}</p></div><div><p className="mb-2 text-[10px] text-ink-3">BEST RECORD</p><p>{wrap.best || "Not available"}</p></div></div>}
+      <div className="mt-5 grid gap-5 lg:grid-cols-2"><div>{rows.movers?.length ? <RecordsTable title="Leaderboard movers (7d)" rows={rows.movers.slice(0, 6).map((m) => ({ Player: m.PLAYER || "Unknown", Team: m.TEAM || "—", Rank: m.RANK_CHANGE || "—", "Points change": m.PTS_CHANGE ?? "—" }))} /> : <EmptyState title="Movers not loaded yet" description="Leaderboard movement hasn't loaded yet. Check back soon." />}</div><div>{rows.streaks?.length ? <RecordsTable title="Team streaks (3+ games)" rows={rows.streaks.map((s) => ({ Team: s.TEAM || "Unknown", Streak: s.STREAK || s.GAMES || "—", Record: (s.W ?? "—") + "–" + (s.L ?? "—") }))} /> : <EmptyState title="No active 3+ game streaks" description="No team is on a run right now. Check back after the next slate." />}</div></div>
+    </>}
+  </Panel>;
 }

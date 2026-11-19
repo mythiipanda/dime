@@ -14,7 +14,7 @@ export default function CopyLink({ panel, anchor }: { panel: string; anchor?: st
   return (
     <button
       type="button"
-      className="pill-ghost"
+      className="inline-flex items-center justify-center gap-1.5 rounded-full px-3 py-1.5 text-[12px] transition-colors bg-field text-ink-2 hover:bg-hover"
       style={{ fontSize: 12 }}
       onClick={() => {
         if (typeof window === "undefined") return;

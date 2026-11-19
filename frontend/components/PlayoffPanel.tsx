@@ -102,20 +102,20 @@ export default function PlayoffPanel() {
     <ExplorePanel id="explore-playoffs">
       <PanelHeader kicker="Season" title="Playoffs 2025-26" action={<CopyLink panel="playoffs" />} />
       {busy && <Skeleton lines={4} label="Loading playoff series" />}
-      {error && <div style={{ fontSize: 12, color: "var(--color-warm-gray)", marginTop: 8 }}>{error}</div>}
+      {error && <div style={{ fontSize: 12, color: "var(--ink-2)", marginTop: 8 }}>{error}</div>}
       {!busy && !error && champion && (
-        <div style={{ fontSize: 14, color: "var(--color-ink-black)", marginTop: 8, fontWeight: 600 }}>
+        <div style={{ fontSize: 14, color: "var(--ink)", marginTop: 8, fontWeight: 600 }}>
           Champion: {champion}
         </div>
       )}
       {!busy && !error && series.length === 0 && (
-        <div style={{ fontSize: 12, color: "var(--color-warm-gray)", marginTop: 8 }}>
+        <div style={{ fontSize: 12, color: "var(--ink-2)", marginTop: 8 }}>
           No playoff games. Series results appear here once the postseason field is set.
         </div>
       )}
       {!busy && !error && byRound.map(({ rd, list }) => (
         <div key={rd} style={{ marginTop: 12 }}>
-          <div style={{ fontSize: 12, color: "var(--color-warm-gray)", textTransform: "uppercase", letterSpacing: 0.6 }}>
+          <div style={{ fontSize: 12, color: "var(--ink-2)", textTransform: "uppercase", letterSpacing: 0.6 }}>
             {ROUND_LABELS[rd] || `Round ${rd}`}
           </div>
           <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 6 }}>
@@ -129,25 +129,25 @@ export default function PlayoffPanel() {
                   key={`${s.round}-${s.a}-${s.b}`}
                   style={{
                     fontSize: 12,
-                    border: "1px solid var(--color-stone-border)",
+                    border: "1px solid var(--line)",
                     borderRadius: 8,
                     padding: "6px 10px",
-                    color: "var(--color-ink-black)",
-                    background: "var(--color-pure-white)",
+                    color: "var(--ink)",
+                    background: "var(--surface)",
                   }}
                 >
                   <span style={{ fontWeight: 600 }}>{winner}</span>
                   {" def. "}
                   {loser}
                   {" "}
-                  <span style={{ color: "var(--color-warm-gray)" }}>{wWins}-{lWins}</span>
+                  <span style={{ color: "var(--ink-2)" }}>{wWins}-{lWins}</span>
                 </div>
               );
             })}
           </div>
         </div>
       ))}
-      <div style={{ fontSize: 12, color: "var(--color-warm-gray)", marginTop: 12 }}>
+      <div style={{ fontSize: 12, color: "var(--ink-2)", marginTop: 12 }}>
         {champion
           ? "Final results. Simulated odds return when the next season begins."
           : "Simulated odds live in chat: ask Simulate the playoffs."}

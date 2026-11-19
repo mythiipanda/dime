@@ -105,10 +105,10 @@ export default function TrendChart({
 
   return (
     <div>
-      <div style={{ fontSize: 13, fontWeight: 600, color: "var(--color-ink-black)" }}>
+      <div style={{ fontSize: 13, fontWeight: 600, color: "var(--ink)" }}>
         {playerName ? `${playerName} RAPTOR trajectory` : "RAPTOR trajectory"}
       </div>
-      <div style={{ fontSize: 11, color: "var(--color-warm-gray)", marginTop: 2, marginBottom: 8 }}>
+      <div style={{ fontSize: 11, color: "var(--ink-2)", marginTop: 2, marginBottom: 8 }}>
         Total plus offense and defense split by season
       </div>
       <svg
@@ -124,7 +124,7 @@ export default function TrendChart({
               x2={W - PAD_R}
               y1={y(t)}
               y2={y(t)}
-              stroke="var(--color-stone-border)"
+              stroke="var(--line)"
               strokeWidth={1}
             />
             <text
@@ -132,7 +132,7 @@ export default function TrendChart({
               y={y(t) + 3.5}
               textAnchor="end"
               fontSize={10}
-              fill="var(--color-ash-gray)"
+              fill="var(--ink-3)"
             >
               {t.toFixed(1)}
             </text>
@@ -143,26 +143,26 @@ export default function TrendChart({
           x2={W - PAD_R}
           y1={zeroY}
           y2={zeroY}
-          stroke="var(--color-stone-muted)"
+          stroke="var(--line-strong)"
           strokeWidth={1}
         />
         <path
           d={pathFor(pts, (p) => p.defense, x, y)}
           fill="none"
-          stroke="var(--color-warm-gray)"
+          stroke="var(--ink-2)"
           strokeWidth={1.5}
           strokeDasharray="5 3"
         />
         <path
           d={pathFor(pts, (p) => p.offense, x, y)}
           fill="none"
-          stroke="var(--color-soot)"
+          stroke="var(--ink)"
           strokeWidth={1.5}
         />
         <path
           d={pathFor(pts, (p) => p.total, x, y)}
           fill="none"
-          stroke="var(--color-cyan-signal)"
+          stroke="var(--accent)"
           strokeWidth={2.25}
         />
         {pts.map((p, i) =>
@@ -172,8 +172,8 @@ export default function TrendChart({
               cx={x(i)}
               cy={y(p.total)}
               r={3}
-              fill="var(--color-cyan-signal)"
-              stroke="var(--color-pure-white)"
+              fill="var(--accent)"
+              stroke="var(--surface)"
               strokeWidth={1.25}
             >
               <title>{`${p.season}: RAPTOR ${p.total.toFixed(1)} (O ${p.offense?.toFixed(1) ?? "n/a"}, D ${p.defense?.toFixed(1) ?? "n/a"}, WAR ${p.war?.toFixed(1) ?? "n/a"})`}</title>
@@ -187,7 +187,7 @@ export default function TrendChart({
             y={H - 8}
             textAnchor="middle"
             fontSize={10}
-            fill="var(--color-warm-gray)"
+            fill="var(--ink-2)"
           >
             {shortSeason(p.season)}
           </text>
@@ -199,15 +199,15 @@ export default function TrendChart({
           gap: 14,
           marginTop: 6,
           fontSize: 11,
-          color: "var(--color-warm-gray)",
+          color: "var(--ink-2)",
         }}
       >
         <span style={{ display: "inline-flex", alignItems: "center", gap: 5 }}>
-          <span style={{ width: 16, height: 2.5, borderRadius: 2, background: "var(--color-cyan-signal)" }} />
+          <span style={{ width: 16, height: 2.5, borderRadius: 2, background: "var(--accent)" }} />
           Total
         </span>
         <span style={{ display: "inline-flex", alignItems: "center", gap: 5 }}>
-          <span style={{ width: 16, height: 2, borderRadius: 2, background: "var(--color-soot)" }} />
+          <span style={{ width: 16, height: 2, borderRadius: 2, background: "var(--ink)" }} />
           Offense
         </span>
         <span style={{ display: "inline-flex", alignItems: "center", gap: 5 }}>
@@ -217,13 +217,13 @@ export default function TrendChart({
               height: 2,
               borderRadius: 2,
               background:
-                "repeating-linear-gradient(90deg, var(--color-warm-gray) 0 4px, transparent 4px 7px)",
+                "repeating-linear-gradient(90deg, var(--ink-2) 0 4px, transparent 4px 7px)",
             }}
           />
           Defense
         </span>
       </div>
-      <div style={{ fontSize: 10, color: "var(--color-ash-gray)", marginTop: 4 }}>
+      <div style={{ fontSize: 10, color: "var(--ink-3)", marginTop: 4 }}>
         Hover a point for WAR and exact splits.
       </div>
     </div>

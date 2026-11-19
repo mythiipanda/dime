@@ -169,24 +169,24 @@ function FormCard({ abbr, form }: { abbr: string; form: TeamForm | null }) {
     <div
       style={{
         flex: "1 1 200px",
-        background: "var(--color-pure-white)",
-        border: "1px solid var(--color-stone-border)",
+        background: "var(--surface)",
+        border: "1px solid var(--line)",
         borderRadius: 10,
         padding: "10px 14px",
       }}
     >
       <div
-        style={{ fontWeight: 600, fontSize: 14, color: "var(--color-ink-black)" }}
+        style={{ fontWeight: 600, fontSize: 14, color: "var(--ink)" }}
       >
         {abbr}
       </div>
       {form.note ? (
-        <div style={{ fontSize: 12, color: "var(--color-ash-gray)" }}>{form.note}</div>
+        <div style={{ fontSize: 12, color: "var(--ink-3)" }}>{form.note}</div>
       ) : (
         <div
           style={{
             fontSize: 12,
-            color: "var(--color-warm-gray)",
+            color: "var(--ink-2)",
             marginTop: 4,
             display: "flex",
             flexDirection: "column",
@@ -205,13 +205,13 @@ function FormCard({ abbr, form }: { abbr: string; form: TeamForm | null }) {
 function StarRow({ s }: { s: StarLine }) {
   return (
     <div>
-      <div style={{ fontSize: 13, fontWeight: 600, color: "var(--color-ink-black)" }}>
+      <div style={{ fontSize: 13, fontWeight: 600, color: "var(--ink)" }}>
         {s.name}
       </div>
       <div
         style={{
           fontSize: 11,
-          color: "var(--color-ash-gray)",
+          color: "var(--ink-3)",
           fontVariantNumeric: "tabular-nums",
         }}
       >
@@ -236,14 +236,14 @@ export default function MatchupPreviewView({
     return (
       <div
         style={{
-          background: "var(--color-stone-canvas)",
-          border: "1px solid var(--color-stone-border)",
+          background: "var(--page)",
+          border: "1px solid var(--line)",
           borderRadius: 10,
           padding: "14px 16px",
         }}
       >
         <SectionTitle>{p.playedMatchup || "Already played"}</SectionTitle>
-        <div style={{ fontSize: 13, color: "var(--color-ink-black)" }}>
+        <div style={{ fontSize: 13, color: "var(--ink)" }}>
           {p.playedScore}
           {p.playedDate ? ` · ${p.playedDate}` : ""}
         </div>
@@ -251,7 +251,7 @@ export default function MatchupPreviewView({
           <div
             style={{
               fontSize: 12,
-              color: "var(--color-warm-gray)",
+              color: "var(--ink-2)",
               marginTop: 6,
             }}
           >
@@ -266,13 +266,13 @@ export default function MatchupPreviewView({
     <div>
       <div style={{ marginBottom: 12 }}>
         <div
-          className="display"
-          style={{ fontSize: 20, color: "var(--color-ink-black)" }}
+          className="font-medium tracking-tight"
+          style={{ fontSize: 20, color: "var(--ink)" }}
         >
-          {p.away} <span style={{ color: "var(--color-ash-gray)" }}>@</span> {p.home}
+          {p.away} <span style={{ color: "var(--ink-3)" }}>@</span> {p.home}
         </div>
         <div
-          style={{ fontSize: 12, color: "var(--color-warm-gray)", marginTop: 4 }}
+          style={{ fontSize: 12, color: "var(--ink-2)", marginTop: 4 }}
         >
           {[p.date, p.arena].filter(Boolean).join(" · ")}
         </div>
@@ -296,10 +296,10 @@ export default function MatchupPreviewView({
               <div
                 key={i}
                 style={{
-                  border: "1px solid var(--color-stone-border)",
+                  border: "1px solid var(--line)",
                   borderRadius: 10,
                   padding: "10px 14px",
-                  background: "var(--color-pure-white)",
+                  background: "var(--surface)",
                 }}
               >
                 <div
@@ -317,7 +317,7 @@ export default function MatchupPreviewView({
                   <div
                     style={{
                       fontSize: 11,
-                      color: "var(--color-cyan-edge)",
+                      color: "var(--accent-ink)",
                       marginTop: 6,
                     }}
                   >
@@ -345,19 +345,19 @@ export default function MatchupPreviewView({
                   key={abbr as string}
                   style={{
                     flex: "1 1 200px",
-                    border: "1px solid var(--color-stone-border)",
+                    border: "1px solid var(--line)",
                     borderRadius: 10,
                     padding: "10px 14px",
-                    background: "var(--color-pure-white)",
+                    background: "var(--surface)",
                     fontSize: 12,
-                    color: "var(--color-warm-gray)",
+                    color: "var(--ink-2)",
                   }}
                 >
                   <div
                     style={{
                       fontWeight: 600,
                       fontSize: 13,
-                      color: "var(--color-ink-black)",
+                      color: "var(--ink)",
                       marginBottom: 6,
                     }}
                   >
@@ -369,7 +369,7 @@ export default function MatchupPreviewView({
                     <>
                       {list.out.map((o, i) => (
                         <div key={i} style={{ marginBottom: 4 }}>
-                          <span style={{ fontWeight: 500, color: "var(--color-ink-black)" }}>
+                          <span style={{ fontWeight: 500, color: "var(--ink)" }}>
                             {o.name}
                           </span>
                           {o.impact ? ` — ${o.impact}` : ""}
@@ -404,18 +404,18 @@ export default function MatchupPreviewView({
                   key={abbr as string}
                   style={{
                     fontSize: 12,
-                    color: "var(--color-warm-gray)",
-                    border: "1px solid var(--color-stone-border)",
+                    color: "var(--ink-2)",
+                    border: "1px solid var(--line)",
                     borderRadius: 10,
                     padding: "10px 14px",
-                    background: "var(--color-pure-white)",
+                    background: "var(--surface)",
                     lineHeight: 1.55,
                   }}
                 >
                   <span
                     style={{
                       fontWeight: 600,
-                      color: "var(--color-ink-black)",
+                      color: "var(--ink)",
                       marginRight: 6,
                     }}
                   >
@@ -432,8 +432,8 @@ export default function MatchupPreviewView({
       {p.whyWatch && (
         <div
           style={{
-            background: "var(--color-stone-canvas)",
-            border: "1px solid var(--color-stone-border)",
+            background: "var(--page)",
+            border: "1px solid var(--line)",
             borderRadius: 10,
             padding: "12px 16px",
           }}
@@ -442,7 +442,7 @@ export default function MatchupPreviewView({
           <div
             style={{
               fontSize: 13,
-              color: "var(--color-ink-black)",
+              color: "var(--ink)",
               lineHeight: 1.65,
             }}
           >

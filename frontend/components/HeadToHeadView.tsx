@@ -144,22 +144,22 @@ export default function HeadToHeadView({
 
       <div
         style={{
-          background: "var(--color-pure-white)",
-          border: "1px solid var(--color-stone-border)",
+          background: "var(--surface)",
+          border: "1px solid var(--line)",
           borderRadius: 10,
           padding: "14px",
           marginBottom: 8,
           textAlign: "center",
         }}
       >
-        <div style={{ fontSize: 11, color: "var(--color-ash-gray)", marginBottom: 4 }}>
+        <div style={{ fontSize: 11, color: "var(--ink-3)", marginBottom: 4 }}>
           Series record in these games
         </div>
         <div
           style={{
             fontSize: 22,
             fontWeight: 600,
-            color: "var(--color-ink-black)",
+            color: "var(--ink)",
             fontVariantNumeric: "tabular-nums",
             whiteSpace: "nowrap",
           }}
@@ -175,7 +175,7 @@ export default function HeadToHeadView({
             marginTop: 8,
             flexWrap: "wrap",
             fontSize: 12,
-            color: "var(--color-warm-gray)",
+            color: "var(--ink-2)",
             fontVariantNumeric: "tabular-nums",
           }}
         >
@@ -197,7 +197,7 @@ export default function HeadToHeadView({
             marginTop: 8,
             flexWrap: "wrap",
             fontSize: 12,
-            color: "var(--color-warm-gray)",
+            color: "var(--ink-2)",
             fontVariantNumeric: "tabular-nums",
           }}
         >
@@ -207,7 +207,7 @@ export default function HeadToHeadView({
                 style={{
                   fontSize: 14,
                   fontWeight: 600,
-                  color: "var(--color-cyan-edge)",
+                  color: "var(--accent-ink)",
                 }}
               >
                 {h.line.ppg.toFixed(1)}
@@ -225,8 +225,8 @@ export default function HeadToHeadView({
       ) : (
         <div
           style={{
-            background: "var(--color-pure-white)",
-            border: "1px solid var(--color-stone-border)",
+            background: "var(--surface)",
+            border: "1px solid var(--line)",
             borderRadius: 10,
             overflowX: "auto",
           }}
@@ -241,7 +241,7 @@ export default function HeadToHeadView({
                   gap: 10,
                   padding: "8px 14px",
                   borderTop:
-                    i === 0 ? "none" : "1px solid var(--color-stone-border)",
+                    i === 0 ? "none" : "1px solid var(--line)",
                   fontVariantNumeric: "tabular-nums",
                   minWidth: 0,
                 }}
@@ -251,7 +251,7 @@ export default function HeadToHeadView({
                     width: 56,
                     flexShrink: 0,
                     fontSize: 12,
-                    color: "var(--color-warm-gray)",
+                    color: "var(--ink-2)",
                   }}
                 >
                   {fmtDate(g.date)}
@@ -261,7 +261,7 @@ export default function HeadToHeadView({
                     flex: 1,
                     minWidth: 0,
                     fontSize: 12,
-                    color: "var(--color-ink-black)",
+                    color: "var(--ink)",
                     overflow: "hidden",
                     textOverflow: "ellipsis",
                     whiteSpace: "nowrap",
@@ -273,7 +273,7 @@ export default function HeadToHeadView({
                   style={{
                     flexShrink: 0,
                     fontSize: 12,
-                    color: "var(--color-warm-gray)",
+                    color: "var(--ink-2)",
                   }}
                 >
                   {g.pts.toFixed(0)} pts · {g.reb.toFixed(0)} reb ·{" "}
@@ -285,7 +285,7 @@ export default function HeadToHeadView({
                     flexShrink: 0,
                     fontSize: 11,
                     fontWeight: 600,
-                    color: "var(--color-warm-gray)",
+                    color: "var(--ink-2)",
                     textAlign: "right",
                   }}
                 >

@@ -24,22 +24,22 @@ export default function OnboardingModal({ onFinish, onSelectPrompt }: Props) {
       <DialogContent
         aria-label="Welcome to Dime"
         showCloseButton={false}
-        className="card onboard-panel"
+        className="rounded-xl border border-line bg-surface p-5 onboard-panel"
         style={{ width: 460, maxWidth: "92vw", padding: 24, gap: 0 }}
       >
         <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", marginBottom: 4 }}>
-          <DialogTitle className="display" style={{ fontSize: 24, fontWeight: 400, color: "var(--color-ink-black)" }}>
+          <DialogTitle className="font-medium tracking-tight" style={{ fontSize: 24, fontWeight: 400, color: "var(--ink)" }}>
             Meet Dime
           </DialogTitle>
           <button
             type="button"
             onClick={onFinish}
-            style={{ background: "transparent", border: "none", fontSize: 12, color: "var(--color-warm-gray)", cursor: "pointer" }}
+            style={{ background: "transparent", border: "none", fontSize: 12, color: "var(--ink-2)", cursor: "pointer" }}
           >
             Skip
           </button>
         </div>
-        <DialogDescription style={{ fontSize: 13, fontWeight: 400, color: "var(--color-warm-gray)", marginBottom: 14 }}>
+        <DialogDescription style={{ fontSize: 13, fontWeight: 400, color: "var(--ink-2)", marginBottom: 14 }}>
           Ask a hard basketball question. Every number traces back to the data.
         </DialogDescription>
         <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
@@ -47,7 +47,7 @@ export default function OnboardingModal({ onFinish, onSelectPrompt }: Props) {
             <button
               key={p}
               type="button"
-              className="pill-ghost interactive-tactile"
+              className="inline-flex items-center justify-center gap-1.5 rounded-full px-3 py-1.5 text-[12px] transition-colors bg-field text-ink-2 hover:bg-hover transition-colors hover:bg-hover"
               style={{ textAlign: "left", fontSize: 13, padding: "10px 16px", cursor: "pointer" }}
               onClick={() => onSelectPrompt(p)}
             >

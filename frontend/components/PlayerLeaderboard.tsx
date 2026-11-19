@@ -105,7 +105,7 @@ function percentileFor(sorted: number[], v: number): number {
 }
 
 const cellStyle: React.CSSProperties = {
-  borderBottom: "1px solid var(--color-stone-border)",
+  borderBottom: "1px solid var(--line)",
   padding: "7px 10px",
   fontSize: 13,
   fontWeight: 400,
@@ -115,9 +115,9 @@ const cellStyle: React.CSSProperties = {
 };
 
 const headStyle: React.CSSProperties = {
-  borderBottom: "1px solid var(--color-stone-border)",
+  borderBottom: "1px solid var(--line)",
   padding: "7px 10px",
-  color: "var(--color-warm-gray)",
+  color: "var(--ink-2)",
   fontSize: 12,
   fontWeight: 500,
   textAlign: "right",
@@ -301,7 +301,7 @@ export default function PlayerLeaderboard({
   return (
     <section
       aria-label="Player season leaderboard"
-      style={{ fontFamily: "var(--font-body)" }}
+      style={{ fontFamily: "var(--font-inter)" }}
     >
       <PanelHeader
         kicker="Season leaderboard"
@@ -319,7 +319,7 @@ export default function PlayerLeaderboard({
         }}
       >
         <select
-          className="field"
+          className="rounded-lg border border-line bg-field px-3 py-2 text-ink"
           aria-label="Season"
           value={season}
           onChange={(e) => applySeason(e.target.value)}
@@ -332,7 +332,7 @@ export default function PlayerLeaderboard({
           ))}
         </select>
         <input
-          className="field"
+          className="rounded-lg border border-line bg-field px-3 py-2 text-ink"
           aria-label="Search players"
           value={query}
           onChange={(e) => applyQuery(e.target.value)}
@@ -354,7 +354,7 @@ export default function PlayerLeaderboard({
             <button
               key={o.v}
               type="button"
-              className={mode === o.v ? "tab-active" : "pill-ghost"}
+              className={mode === o.v ? "inline-flex items-center justify-center gap-1.5 rounded-full px-3 py-1.5 text-[12px] transition-colors bg-surface text-ink shadow-hairline" : "inline-flex items-center justify-center gap-1.5 rounded-full px-3 py-1.5 text-[12px] transition-colors bg-field text-ink-2 hover:bg-hover"}
               onClick={() => applyMode(o.v)}
               style={{ fontSize: 12, padding: "4px 12px" }}
             >
@@ -366,7 +366,7 @@ export default function PlayerLeaderboard({
           style={{
             marginLeft: "auto",
             fontSize: 12,
-            color: "var(--color-ash-gray)",
+            color: "var(--ink-3)",
             fontVariantNumeric: "tabular-nums",
           }}
         >
@@ -374,23 +374,23 @@ export default function PlayerLeaderboard({
         </span>
       </div>
       {status === "loading" && (
-        <div style={{ fontSize: 13, color: "var(--color-warm-gray)" }}>
+        <div style={{ fontSize: 13, color: "var(--ink-2)" }}>
           Loading player seasons...
         </div>
       )}
       {status === "error" && (
-        <div style={{ fontSize: 13, color: "var(--color-warm-gray)" }}>
+        <div style={{ fontSize: 13, color: "var(--ink-2)" }}>
           player_seasons has no rows for {season}
           {error ? ` (${error})` : ""}. Try another season.
         </div>
       )}
       {status === "ok" && pool.length === 0 && (
-        <div style={{ fontSize: 13, color: "var(--color-warm-gray)" }}>
+        <div style={{ fontSize: 13, color: "var(--ink-2)" }}>
           player_seasons returned no rows for {season}. Try another season.
         </div>
       )}
       {status === "ok" && pool.length > 0 && view.length === 0 && (
-        <div style={{ fontSize: 13, color: "var(--color-warm-gray)" }}>
+        <div style={{ fontSize: 13, color: "var(--ink-2)" }}>
           No players match this filter for {season}. Loosen the minutes filter
           or clear the search.
         </div>
@@ -399,9 +399,9 @@ export default function PlayerLeaderboard({
         <div
           className="dime-table table-scroll"
           style={{
-            border: "1px solid var(--color-stone-border)",
+            border: "1px solid var(--line)",
             borderRadius: 10,
-            background: "var(--color-pure-white)",
+            background: "var(--surface)",
             boxShadow: "var(--shadow-card)",
           }}
         >
@@ -409,7 +409,7 @@ export default function PlayerLeaderboard({
             style={{
               borderCollapse: "collapse",
               width: "100%",
-              fontFamily: "var(--font-body)",
+              fontFamily: "var(--font-inter)",
             }}
           >
             <thead>
@@ -420,7 +420,7 @@ export default function PlayerLeaderboard({
                     textAlign: "left",
                     position: "sticky",
                     left: 0,
-                    background: "var(--color-pure-white)",
+                    background: "var(--surface)",
                   }}
                 >
                   <button
@@ -500,7 +500,7 @@ export default function PlayerLeaderboard({
                         textAlign: "left",
                         position: "sticky",
                         left: 0,
-                        background: "var(--color-pure-white)",
+                        background: "var(--surface)",
                       }}
                     >
                       {onPlayerSelect ? (
@@ -514,7 +514,7 @@ export default function PlayerLeaderboard({
                             padding: 0,
                             font: "inherit",
                             cursor: "pointer",
-                            color: "var(--color-cyan-edge)",
+                            color: "var(--accent-ink)",
                             textAlign: "left",
                             fontWeight: 500,
                             textDecoration: "underline",
@@ -531,7 +531,7 @@ export default function PlayerLeaderboard({
                           style={{
                             marginLeft: 6,
                             fontSize: 11,
-                            color: "var(--color-ash-gray)",
+                            color: "var(--ink-3)",
                           }}
                         >
                           {row.team}
@@ -549,7 +549,7 @@ export default function PlayerLeaderboard({
                               style={{
                                 marginLeft: 3,
                                 fontSize: 9,
-                                color: "var(--color-ash-gray)",
+                                color: "var(--ink-3)",
                                 fontVariantNumeric: "tabular-nums",
                               }}
                             >
@@ -564,7 +564,7 @@ export default function PlayerLeaderboard({
                                 height: 3,
                                 marginTop: 3,
                                 marginLeft: "auto",
-                                background: "var(--color-stone-border)",
+                                background: "var(--line)",
                                 borderRadius: 2,
                                 overflow: "hidden",
                               }}
@@ -574,7 +574,7 @@ export default function PlayerLeaderboard({
                                   display: "block",
                                   width: `${p}%`,
                                   height: "100%",
-                                  background: "var(--color-cyan-signal)",
+                                  background: "var(--accent)",
                                 }}
                               />
                             </span>
@@ -593,7 +593,7 @@ export default function PlayerLeaderboard({
         style={{
           marginTop: 8,
           fontSize: 12,
-          color: "var(--color-ash-gray)",
+          color: "var(--ink-3)",
         }}
       >
         Per-game numbers from player_seasons. Subscripts mark the 0-99

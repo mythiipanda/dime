@@ -73,21 +73,21 @@ export default function TradePanel({ onAskValue }: { onAskValue?: (q: string) =>
     <ExplorePanel id="explore-trade">
       <PanelHeader kicker="Trade" title="Trade checker" action={<CopyLink panel="trade" />} />
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-        <input className="field" value={a} onChange={(e) => setA(e.target.value)} placeholder="team A" style={{ width: 80 }} />
-        <input className="field" value={pa} onChange={(e) => setPa(e.target.value)} placeholder="players out, comma separated" style={{ flex: 1, minWidth: 200 }} />
+        <input className="rounded-lg border border-line bg-field px-3 py-2 text-ink" value={a} onChange={(e) => setA(e.target.value)} placeholder="team A" style={{ width: 80 }} />
+        <input className="rounded-lg border border-line bg-field px-3 py-2 text-ink" value={pa} onChange={(e) => setPa(e.target.value)} placeholder="players out, comma separated" style={{ flex: 1, minWidth: 200 }} />
       </div>
       <div style={{ display: "flex", gap: 8, marginTop: 8, flexWrap: "wrap" }}>
-        <input className="field" value={b} onChange={(e) => setB(e.target.value)} placeholder="team B" style={{ width: 80 }} />
-        <input className="field" value={pb} onChange={(e) => setPb(e.target.value)} placeholder="players out, comma separated" style={{ flex: 1, minWidth: 200 }} />
+        <input className="rounded-lg border border-line bg-field px-3 py-2 text-ink" value={b} onChange={(e) => setB(e.target.value)} placeholder="team B" style={{ width: 80 }} />
+        <input className="rounded-lg border border-line bg-field px-3 py-2 text-ink" value={pb} onChange={(e) => setPb(e.target.value)} placeholder="players out, comma separated" style={{ flex: 1, minWidth: 200 }} />
       </div>
       <div style={{ marginTop: 12, display: "flex", gap: 8, flexWrap: "wrap" }}>
-        <button className="pill-cta" style={{ fontSize: 12 }} disabled={busy} onClick={check}>
+        <button className="inline-flex items-center justify-center gap-1.5 rounded-full px-3 py-1.5 text-[12px] transition-colors bg-ink text-page hover:opacity-90 disabled:opacity-50" style={{ fontSize: 12 }} disabled={busy} onClick={check}>
           {busy ? "Checking" : "Check legality"}
         </button>
         {onAskValue && (
           <button
             type="button"
-            className="pill-ghost"
+            className="inline-flex items-center justify-center gap-1.5 rounded-full px-3 py-1.5 text-[12px] transition-colors bg-field text-ink-2 hover:bg-hover"
             style={{ fontSize: 12 }}
             disabled={!a.trim() || !b.trim() || (!pa.trim() && !pb.trim())}
             title="Ask the analyst to grade this trade's value"
@@ -101,7 +101,7 @@ export default function TradePanel({ onAskValue }: { onAskValue?: (q: string) =>
           </button>
         )}
       </div>
-      {error && <div style={{ color: "var(--color-warm-gray)", marginTop: 8 }}>{error}</div>}
+      {error && <div style={{ color: "var(--ink-2)", marginTop: 8 }}>{error}</div>}
       {out && (
         <div style={{ marginTop: 12 }}>
           <div
@@ -110,8 +110,8 @@ export default function TradePanel({ onAskValue }: { onAskValue?: (q: string) =>
               fontSize: 12,
               borderRadius: 9999,
               padding: "4px 12px",
-              background: out.legal ? "var(--color-ink-black)" : "var(--color-stone-border)",
-              color: out.legal ? "var(--color-pure-white)" : "var(--color-ink-black)",
+              background: out.legal ? "var(--ink)" : "var(--line)",
+              color: out.legal ? "var(--surface)" : "var(--ink)",
             }}
           >
             {out.legal ? "Legal" : "Illegal"}
@@ -125,11 +125,11 @@ export default function TradePanel({ onAskValue }: { onAskValue?: (q: string) =>
                 <div style={{ fontWeight: 500 }}>
                   {side.team} sends {millions(side.out)}
                 </div>
-                <div style={{ fontSize: 12, color: "var(--color-warm-gray)" }}>
+                <div style={{ fontSize: 12, color: "var(--ink-2)" }}>
                   {side.players.join(", ") || "nobody"} · payroll {millions(side.payroll)}
                 </div>
                 {(side.allowed_in != null || side.match_rule) && (
-                  <div style={{ fontSize: 12, color: "var(--color-warm-gray)" }}>
+                  <div style={{ fontSize: 12, color: "var(--ink-2)" }}>
                     Takes back up to {side.allowed_in != null ? millions(side.allowed_in) : "n/a"}
                     {side.match_rule ? ` · ${side.match_rule}` : ""}
                     {side.over_apron2 ? " · 2nd apron" : side.over_apron1 ? " · 1st apron" : ""}
@@ -139,17 +139,17 @@ export default function TradePanel({ onAskValue }: { onAskValue?: (q: string) =>
             ))}
           </div>
           {out.issues.map((issue) => (
-            <div key={issue} style={{ fontSize: 12, color: "var(--color-warm-gray)", marginTop: 4 }}>
+            <div key={issue} style={{ fontSize: 12, color: "var(--ink-2)", marginTop: 4 }}>
               {issue}
             </div>
           ))}
           {out.checks && out.checks.filter((c) => !c.checked).length > 0 && (
-            <div style={{ fontSize: 12, color: "var(--color-warm-gray)", marginTop: 4 }}>
+            <div style={{ fontSize: 12, color: "var(--ink-2)", marginTop: 4 }}>
               Not checked: {out.checks.filter((c) => !c.checked).map((c) => c.rule).join(", ")}.
             </div>
           )}
           {out.disclaimer && (
-            <div style={{ fontSize: 12, color: "var(--color-warm-gray)", marginTop: 4 }}>
+            <div style={{ fontSize: 12, color: "var(--ink-2)", marginTop: 4 }}>
               {out.disclaimer}
               {out.salary_date ? ` Salaries as of ${out.salary_date.slice(0, 10)}.` : ""}
             </div>
