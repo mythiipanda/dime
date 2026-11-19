@@ -1,3 +1,4 @@
+import duckdb
 import polars as pl
 import pytest
 
@@ -237,3 +238,47 @@ def test_absent_table_reports_no_data(tmp_path, monkeypatch):
         "side": "offense", "season": "2024-25"})
     assert out == {"tool": "get_playtype_profile", "ok": False,
                    "error": "no playtype data in the warehouse yet"}
+
+
+def test_team_offense_possession_proxy_when_playtypes_absent(tmp_path, monkeypatch):
+    _use_scratch(tmp_path, monkeypatch)
+    con = duckdb.connect()
+    con.execute("""
+        CREATE TABLE silver_hist_possessions(
+            season BIGINT, count_as_possession VARCHAR, garbage BIGINT,
+            offense_team_id BIGINT, possession_start_type VARCHAR, points BIGINT
+        )
+    """)
+    rows = [
+        (2026, "true", 0, 1610612759, "OffMadeShot", 2),
+        (2026, "true", 0, 1610612759, "OffMadeShot", 4),
+        (2026, "true", 0, 1610612759, "OffLiveBallTurnover", 3),
+        (2026, "true", 1, 1610612759, "OffMadeShot", 100),
+        (2026, "false", 0, 1610612759, "OffLiveBallTurnover", 100),
+        (2025, "true", 0, 1610612759, "OffMadeShot", 100),
+        (2026, "true", 0, 1610612760, "OffMadeShot", 100),
+    ]
+    con.executemany("INSERT INTO silver_hist_possessions VALUES (?, ?, ?, ?, ?, ?)", rows)
+    con.execute("""
+        CREATE TABLE silver_team_ratings(TEAM_ID BIGINT, TEAM_NAME VARCHAR, _season VARCHAR)
+    """)
+    con.execute("INSERT INTO silver_team_ratings VALUES (1610612759, 'San Antonio Spurs', '2025-26')")
+    monkeypatch.setattr(store, "read_frame",
+                        _read_frame_raising(
+                            store.TableAbsent("silver_playtypes", "scratch.duckdb")))
+    monkeypatch.setattr(store, "connect", lambda read_only=None: con)
+    from shared.tools import playtypes
+    out = playtypes.get_playtype_profile.invoke({
+        "subject": "1610612759", "kind": "team",
+        "side": "offense", "season": "2025-26"})
+    assert out["ok"] is True
+    assert out["rows"]["subject"] == "San Antonio Spurs"
+    assert out["meta"]["proxy"] == "silver_hist_possessions.possession_start_type"
+    assert out["meta"]["synergy_available"] is False
+    by_type = {p["play_type"]: p for p in out["rows"]["play_types"]}
+    assert by_type["OffMadeShot"]["ppp"] == 3.0
+    assert by_type["OffMadeShot"]["poss"] == 2
+    assert by_type["OffMadeShot"]["poss_pct"] == 0.6667
+    assert by_type["OffLiveBallTurnover"]["ppp"] == 3.0
+    assert by_type["OffLiveBallTurnover"]["poss"] == 1
+    con.close()

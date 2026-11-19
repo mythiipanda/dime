@@ -88,7 +88,7 @@ TOOL_SCHEMA_DESCRIPTIONS = {
     "get_playoff_sim": "Simulated championship and finals odds from power ratings via Monte Carlo brackets.",
     "get_playoff_team_ratings": "Team offensive, defensive, and net ratings from playoff game logs.",
     "get_playoffs": "Playoff series wins per team, finals matchup, and champion for any season.",
-    "get_playtype_profile": "Synergy play-type profile for one player or team and season: frequency share, PPP, and percentile.",
+    "get_playtype_profile": "Synergy play-type profile for one player or team and season: frequency share, PPP, and percentile; team offense falls back to warehouse possession start-type PPP proxies when Synergy is absent.",
     "get_possession_log": "Possession-by-possession log for one game: order, clocks, offense, events, points, WPA swings.",
     "get_rapm": "RAPM-lite ratings. Blank player returns top list, else one row.",
     "get_rapm_prior": "Prior-informed RAPM for one player blending current season with historical priors.",
