@@ -21,6 +21,7 @@ SEEDERS = [
     ("recent_market", "seed_recent_market.py", [], True),
     ("transactions", "seed_transactions.py", [], True),
     ("injuries_news", "seed_injury_news.py", ["--season"], True),
+    ("injury_entries", "normalize_injuries.py", [], True),
     ("tracking", "seed_tracking.py", [], True),
     ("playoffs", "seed_historical_playoffs.py", ["--season"], False),
     ("team_ratings", "seed_team_ratings.py", [], True),
@@ -30,6 +31,7 @@ SEEDERS = [
     ("scoreboard", "seed_scoreboard_2025_26.py", [], False),
     ("shots", "seed_shots_2025_26.py", [], False),
     ("repair_shot_names", "repair_shot_names.py", [], False),
+    ("four_factors_team", "build_team_four_factors.py", [], False),
 ]
 
 
