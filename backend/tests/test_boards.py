@@ -205,8 +205,37 @@ def test_one_parameterized_query_per_table(warehouse, monkeypatch):
 
     monkeypatch.setattr(store, "connect", lambda **kwargs: Connection())
     assert fill(ids=[1, 2, 3], metrics=list(METRICS)).status_code == 200
-    assert len(queries) == 3
+    assert len([sql for sql, _ in queries if "information_schema" not in sql]) == 3
     assert all("?" in sql and len(params) == 1 for sql, params in queries)
+
+
+def test_basic_only_warehouse_does_not_require_advanced(warehouse):
+    with duckdb.connect(str(warehouse)) as con:
+        con.execute("DROP TABLE silver_advanced")
+        con.execute("DROP TABLE silver_cap_players")
+    response = fill(ids=[1], metrics=["ppg"])
+    assert response.status_code == 200
+    assert response.json()["cells"]["1"]["ppg"]["value"] == 20
+    response = client.post("/api/boards/seed", json={"metric_id": "ppg", "min_gp": 10, "min_mpg": 20})
+    assert response.status_code == 200
+    assert response.json()["player_ids"] == [2, 1]
+    assert fill(ids=[1], metrics=["ts_pct"]).status_code == 503
+    assert client.post("/api/boards/seed", json={"metric_id": "ts_pct"}).status_code == 503
+    assert fill(ids=[1], metrics=["salary_2026_27"]).status_code == 503
+
+
+def test_advanced_only_warehouse_and_salary_qualification(warehouse):
+    with duckdb.connect(str(warehouse)) as con:
+        con.execute("DROP TABLE silver_player_season")
+    response = fill(ids=[1], metrics=["ts_pct", "salary_2026_27"])
+    assert response.status_code == 200
+    assert response.json()["players"]["1"]["name"] == "Alpha Guard"
+    assert response.json()["cells"]["1"]["ts_pct"]["value"] == 60
+    assert response.json()["cells"]["1"]["salary_2026_27"]["value"] == 1000000
+    response = client.post("/api/boards/seed", json={"metric_id": "salary_2026_27", "min_gp": 10})
+    assert response.status_code == 200
+    assert response.json()["player_ids"] == [1]
+    assert fill(ids=[1], metrics=["ppg"]).status_code == 503
 
 
 def test_missing_unknown_and_empty(warehouse):

@@ -36,8 +36,10 @@ suffix removal, accent removal, or team-based tie-breaker. The citation carries
 the salary vintage and the separate player-name resolution query. This is not
 a guarantee of salary coverage for every player.
 
-One identity index retains every name spelling per player ID from both
-same-season tables. Matching any spelling is allowed; a matching name shared by
+One identity index retains every name spelling per player ID from whichever of
+the two same-season identity tables exist. Missing optional identity tables do
+not prevent basic-only or advanced-only requests; a missing requested metric
+table still produces HTTP 503. Matching any spelling is allowed; a matching name shared by
 multiple IDs is always rejected. Ambiguous-name citations include every colliding
 ID, table, query, row key and source. Multiple salary rows across aliases are
 rejected too; no alias is arbitrarily preferred to break a tie.

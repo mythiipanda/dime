@@ -80,8 +80,10 @@ class SeasonData:
 
 
 def _load(con, season: str, metric_ids: list[str]) -> SeasonData:
+    available = {row[0] for row in con.execute(
+        "SELECT table_name FROM information_schema.tables WHERE table_schema = ?", ["main"]).fetchall()}
     reads = {table: _read(con, table, season)
-             for table in ("silver_player_season", "silver_advanced")}
+             for table in ("silver_player_season", "silver_advanced") if table in available}
     for metric_id in dict.fromkeys(metric_ids):
         metric = METRICS.get(metric_id)
         if metric and metric.table not in reads:
@@ -222,7 +224,7 @@ def seed(body: SeedBody):
                 qualified = set()
                 for pid in eligible:
                     for table in qualification_tables:
-                        rows = data.indexes[table].get(pid, [])
+                        rows = data.indexes.get(table, {}).get(pid, [])
                         if not rows:
                             continue
                         if len(rows) == 1:
@@ -235,7 +237,7 @@ def seed(body: SeedBody):
                         break
                 eligible = qualified
                 filters["qualification"] = [{"table": table, "sql": data.reads[table][1],
-                                             "params": data.reads[table][2]} for table in qualification_tables]
+                                             "params": data.reads[table][2]} for table in qualification_tables if table in data.reads]
             result = _fill(con, body.season, sorted(eligible), [body.metric_id], data)
             ranked = [(int(pid), cell[body.metric_id]["value"]) for pid, cell in result["cells"].items()
                       if cell[body.metric_id]["value"] is not None]
