@@ -232,6 +232,48 @@ test("tabs store independent drafts, offer the newest difference, and save only 
   } finally { await m.cleanup(); }
 });
 
+for (const source of ["other-tab", "legacy", "current-tab"] as const) test(`restoring ${source} takes ownership before saving and never resurfaces`, async () => {
+  const notebook: Notebook = { id: "a".repeat(32), title: "Recovered edits", version: 1, created_at: "2026-01-01", updated_at: "2026-01-01", cells: [] };
+  const legacyId = `${notebook.id}:1`;
+  const m = await mount({ tabId: "current-tab", serverVersion: 3, saveError: true,
+    storedDrafts: source === "legacy" ? JSON.stringify({ [legacyId]: { notebook, base_version: 1, saved_at: 1 } }) : undefined,
+    drafts: source === "legacy" ? [] : [{ title: notebook.title, tab: source, version: 1, time: 1 }],
+  }, true);
+  try {
+    const original = m.hook().draft!, storage = m.dom.window.localStorage;
+    await act(async () => { m.hook().restoreDraft(); });
+    if (source === "legacy") assert.equal(JSON.parse(storage.getItem("dime_notebook_drafts_v1")!)[legacyId], undefined);
+    else assert.equal(storage.getItem(original.key), null);
+    const ownedKey = `dime_notebook_drafts_v1:${notebook.id}:current-tab:3`;
+    assert.equal(JSON.parse(storage.getItem(ownedKey)!).notebook.title, notebook.title);
+    await act(async () => { assert.equal(await m.hook().persist(), false); });
+    assert.ok(storage.getItem(ownedKey), "failed save must retain the transferred draft");
+    m.options.saveError = false;
+    await act(async () => { assert.equal(await m.hook().persist(), true); });
+    assert.equal(storage.getItem(ownedKey), null);
+    assert.equal(findNotebookDraft({ ...m.hook().notebook!, title: "An older server copy" }), null);
+  } finally { await m.cleanup(); }
+});
+
+test("successful saves remove matching drafts across tabs and legacy storage but preserve other content", async () => {
+  const m = await mount({ tabId: "current-tab" }, true);
+  try {
+    await act(async () => { m.hook().edit((doc) => ({ ...doc, title: "Saved content" })); });
+    const doc = m.hook().notebook!, storage = m.dom.window.localStorage;
+    for (const [tab, title] of [["duplicate", doc.title], ["different", "Other tab's unsaved edits"]]) {
+      m.dom.window.sessionStorage.setItem("dime_notebook_drafts_v1:tab", tab);
+      writeNotebookDraft({ ...doc, title }, 1);
+    }
+    const legacyId = `${doc.id}:1`;
+    storage.setItem("dime_notebook_drafts_v1", JSON.stringify({ [legacyId]: { notebook: doc, base_version: 1, saved_at: 1 } }));
+    m.dom.window.sessionStorage.setItem("dime_notebook_drafts_v1:tab", "current-tab");
+    await act(async () => { assert.equal(await m.hook().persist(), true); });
+    assert.equal(storage.getItem(`dime_notebook_drafts_v1:${doc.id}:duplicate:1`), null);
+    assert.equal(JSON.parse(storage.getItem("dime_notebook_drafts_v1")!)[legacyId], undefined);
+    assert.equal(findNotebookDraft(m.hook().notebook!)!.notebook.title, "Other tab's unsaved edits");
+  } finally { await m.cleanup(); }
+});
+
 test("autosave serializes writes and preserves edits made during an in-flight save", async () => {
   const m = await mount({ deferredSave: true }, true);
   try {

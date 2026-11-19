@@ -26,22 +26,25 @@ function remove(key: string) {
 function content(doc: Notebook): string {
   return JSON.stringify({ title: doc.title, origin: doc.origin ?? null, cells: doc.cells.map((cell) => [cell.id, cell.kind, cell.source, cell.outputs ?? null, cell.executed_at ?? null]) });
 }
-export function writeNotebookDraft(notebook: Notebook, base_version: number) {
-  put(`${KEY}:${notebook.id}:${tabId()}:${base_version}`, JSON.stringify({ notebook, base_version, saved_at: Date.now() }));
+export function writeNotebookDraft(notebook: Notebook, base_version: number, source?: Draft) {
+  const key = `${KEY}:${notebook.id}:${tabId()}:${base_version}`;
+  put(key, JSON.stringify({ notebook, base_version, saved_at: Date.now() }));
+  if (source && (source.legacy || source.key !== key)) discardNotebookDraft(source);
 }
-export function clearNotebookDraft(id: string) {
+export function clearNotebookDraft(id: string, saved?: Notebook) {
   const prefix = `${KEY}:${id}:${tabId()}:`;
   for (const [key] of entries()) if (key.startsWith(prefix)) remove(key);
+  if (saved) for (const draft of readNotebookDrafts(saved)) if (content(draft.notebook) === content(saved)) discardNotebookDraft(draft);
 }
 export function discardNotebookDraft(draft: Draft) {
   if (!draft.legacy) { remove(draft.key); return; }
   try {
-    const legacy = JSON.parse(window.localStorage.getItem(KEY) || "{}");
+    const legacy = JSON.parse(entries().find(([key]) => key === KEY)?.[1] || "{}");
     delete legacy[draft.legacy];
     put(KEY, JSON.stringify(legacy));
   } catch {}
 }
-export function findNotebookDraft(notebook: Notebook): Draft | null {
+function readNotebookDrafts(notebook: Notebook): Draft[] {
   const drafts: Draft[] = [];
   for (const [key, raw] of entries()) {
     try {
@@ -52,9 +55,12 @@ export function findNotebookDraft(notebook: Notebook): Draft | null {
         if (doc?.id !== notebook.id || !Number.isInteger(draft.base_version) || draft.base_version < 1 ||
             !Number.isFinite(draft.saved_at) || typeof doc.title !== "string" || !Array.isArray(doc.cells) || doc.cells.length > 100 ||
             !doc.cells.every((cell: Notebook["cells"][number]) => cell && typeof cell.id === "string" && typeof cell.source === "string" && ["markdown", "sql", "python"].includes(cell.kind))) continue;
-        if (content(doc) !== content(notebook)) drafts.push({ ...draft, key });
+        drafts.push({ ...draft, key });
       }
     } catch {}
   }
-  return drafts.sort((a, b) => b.saved_at - a.saved_at)[0] || null;
+  return drafts;
+}
+export function findNotebookDraft(notebook: Notebook): Draft | null {
+  return readNotebookDrafts(notebook).filter((draft) => content(draft.notebook) !== content(notebook)).sort((a, b) => b.saved_at - a.saved_at)[0] || null;
 }

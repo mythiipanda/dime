@@ -16,10 +16,10 @@ export function useNotebook(id: string) {
   const current = useRef<Notebook | null>(null), version = useRef(1), revision = useRef(0), saved = useRef(0);
   const busy = useRef<Promise<boolean> | null>(null), conflict = useRef(false), active = useRef(true);
   useEffect(() => { active.current = true; const controller = new AbortController(); getNotebook(id, controller.signal).then((doc) => { if (controller.signal.aborted) return; current.current = doc; version.current = doc.version; pendingDraft.current = findNotebookDraft(doc); setNotebook(doc); setDraft(pendingDraft.current); }).catch((e) => { if (!controller.signal.aborted) setError(e.message); }); return () => { active.current = false; controller.abort(); }; }, [id]);
-  const edit = useCallback((change: (doc: Notebook) => Notebook) => {
+  const edit = useCallback((change: (doc: Notebook) => Notebook, restoredDraft?: NonNullable<ReturnType<typeof findNotebookDraft>>) => {
     if (!current.current || conflict.current || pendingDraft.current) return;
     current.current = change(current.current); revision.current += 1; setNotebook(current.current); setGeneration(revision.current); setState("dirty");
-    writeNotebookDraft(current.current, version.current);
+    writeNotebookDraft(current.current, version.current, restoredDraft);
   }, []);
   const persist = useCallback(async (): Promise<boolean> => {
     if (pendingDraft.current) return false;
@@ -33,7 +33,7 @@ export function useNotebook(id: string) {
         const result = await saveNotebook(snapshot);
         version.current = result.version; saved.current = at;
         current.current = { ...current.current!, version: result.version, updated_at: result.updated_at };
-        clearNotebookDraft(id);
+        clearNotebookDraft(id, result);
         if (at !== revision.current) writeNotebookDraft(current.current, result.version);
         if (active.current) { setNotebook(current.current); setState(at === revision.current ? "saved" : "dirty"); setError(""); if (at !== revision.current) setPulse((n) => n + 1); }
         return true;
@@ -53,7 +53,7 @@ export function useNotebook(id: string) {
     if (!draft || !current.current) return;
     const server = current.current;
     pendingDraft.current = null; setDraft(null);
-    edit(() => ({ ...server, title: draft.notebook.title, cells: draft.notebook.cells, origin: draft.notebook.origin }));
+    edit(() => ({ ...server, title: draft.notebook.title, cells: draft.notebook.cells, origin: draft.notebook.origin }), draft);
   };
   return { notebook, state, error, edit, persist, current, draft, restoreDraft, discardDraft };
 }
