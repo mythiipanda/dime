@@ -11,7 +11,19 @@ DEFAULT_REVISION = "main"
 WAREHOUSE_FILE = "warehouse.duckdb"
 MANIFEST_FILE = "manifest.json"
 CHECKSUM_FILE = "warehouse.duckdb.sha256"
+CARD_FILE = "README.md"
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
+
+SOURCE_LICENSES = {
+    "nba_api": "NBA Stats API via nba_api (stats.nba.com terms of use)",
+    "nba_api_boxscore_ext": "NBA Stats API via nba_api (stats.nba.com terms of use)",
+    "nba_official": "NBA official league data (nba.com terms of use)",
+    "sportsdataverse": "sportsdataverse-data releases, sourced from NBA Stats (MIT)",
+    "huggingface": "community dataset on Hugging Face (see its dataset page)",
+    "teamrankings": "TeamRankings public projections (teamrankings.com terms of use)",
+    "basketball_reference": "Basketball Reference (sports-reference.com terms of use)",
+    "spotrac": "Spotrac contract data (spotrac.com terms of use)",
+}
 
 
 def sha256_file(path):
@@ -40,6 +52,130 @@ def manifest_text(manifest):
 
 def checksum_text(sha256):
     return f"{sha256}  {WAREHOUSE_FILE}\n"
+
+
+def _table_inventory(warehouse_path):
+    import duckdb
+    con = duckdb.connect(str(warehouse_path), read_only=True)
+    try:
+        names = sorted(row[0] for row in con.execute("SHOW TABLES").fetchall())
+        inventory = []
+        for name in names:
+            count = con.execute(f'SELECT count(*) FROM "{name}"').fetchone()[0]
+            columns = {row[0] for row in con.execute(f'DESCRIBE "{name}"').fetchall()}
+            seasons = None
+            season_col = "_season" if "_season" in columns else ("season" if "season" in columns else None)
+            if season_col:
+                lo, hi = con.execute(
+                    f'SELECT min("{season_col}"), max("{season_col}") FROM "{name}"'
+                ).fetchone()
+                if lo is not None:
+                    seasons = str(lo) if lo == hi else f"{lo} – {hi}"
+            sources = ""
+            if "_source" in columns:
+                sources = ", ".join(sorted(
+                    row[0] for row in
+                    con.execute(f'SELECT DISTINCT "_source" FROM "{name}"').fetchall()
+                    if row[0]
+                ))
+            inventory.append({
+                "table": name,
+                "rows": count,
+                "seasons": seasons or "—",
+                "sources": sources,
+            })
+        return inventory
+    finally:
+        con.close()
+
+
+def _license_for_source(source):
+    if source in SOURCE_LICENSES:
+        return SOURCE_LICENSES[source]
+    head = source.split(":", 1)[0]
+    if head in SOURCE_LICENSES:
+        return SOURCE_LICENSES[head]
+    return "see source terms"
+
+
+def build_dataset_card(warehouse_path, manifest):
+    try:
+        tables = _table_inventory(warehouse_path)
+    except Exception as exc:
+        tables = []
+        inventory_error = str(exc)
+    else:
+        inventory_error = None
+    licenses = {}
+    for row in tables:
+        for source in row["sources"].split(", ") if row["sources"] else []:
+            licenses.setdefault(source, _license_for_source(source))
+    lines = [
+        "---",
+        "license: other",
+        "tags:",
+        "  - nba",
+        "  - basketball",
+        "  - sports-analytics",
+        "  - duckdb",
+        "---",
+        "",
+        "# Dime Warehouse",
+        "",
+        "DuckDB warehouse backing [Dime](https://github.com/mythiipanda/dime), an NBA analytics agent. "
+        "Bronze and silver tables hold box scores, play-by-play, tracking, contracts, and historical "
+        "stats, normalized for deterministic tool queries.",
+        "",
+        f"- Warehouse file: `{WAREHOUSE_FILE}` ({manifest['size']:,} bytes)",
+        f"- sha256: `{manifest['sha256']}`",
+        f"- Last updated: {manifest['published_at']}",
+        "",
+        "## Tables",
+        "",
+    ]
+    if inventory_error is not None:
+        lines.append(f"Table inventory unavailable at publish time: {inventory_error}")
+        lines.append("")
+    else:
+        lines += [
+            "| Table | Rows | Seasons | Sources |",
+            "| --- | --- | --- | --- |",
+        ]
+        for row in tables:
+            lines.append(f"| `{row['table']}` | {row['rows']:,} | {row['seasons']} | {row['sources']} |")
+        lines.append("")
+    lines.append("## Sources")
+    lines.append("")
+    if licenses:
+        for source in sorted(licenses):
+            lines.append(f"- `{source}` — {licenses[source]}")
+    else:
+        lines.append("See each table's `_source` provenance column.")
+    lines += [
+        "",
+        "Every silver table carries provenance columns: `_source` (origin dataset), `_season` "
+        "(NBA season label), `_entity` (ingestion unit), and `_fetched_at` (UTC timestamp). "
+        "The `fetch_log` table records one row per ingestion unit.",
+        "",
+        "## Pull",
+        "",
+        "```bash",
+        "./scripts/fetch-data.sh",
+        "```",
+        "",
+        f"Downloads `{WAREHOUSE_FILE}` from this dataset into `backend/data/`.",
+        "",
+        "## Publish",
+        "",
+        "```bash",
+        f"python backend/scripts/publish_warehouse.py --warehouse backend/data/{WAREHOUSE_FILE}",
+        "```",
+        "",
+        f"Uploads `{WAREHOUSE_FILE}`, `{CHECKSUM_FILE}`, `{MANIFEST_FILE}`, and this card to the "
+        "dataset. Requires `HF_TOKEN` with write access.",
+        "",
+    ]
+    return "\n".join(lines)
 
 
 def default_warehouse_path():
@@ -108,14 +244,17 @@ def publish(warehouse_path, dataset=DEFAULT_DATASET, revision=DEFAULT_REVISION, 
         "warehouse_file": WAREHOUSE_FILE,
         "manifest_file": MANIFEST_FILE,
         "checksum_file": CHECKSUM_FILE,
+        "card_file": CARD_FILE,
         "sha256": sha256,
         "size": size,
         "dry_run": bool(dry_run),
         "skipped": False,
         "commit": None,
     }
+    card = build_dataset_card(warehouse_path, manifest)
     if dry_run:
         verdict["manifest"] = manifest
+        verdict["card"] = card
         return verdict
     if api is None:
         from huggingface_hub import HfApi
@@ -130,6 +269,7 @@ def publish(warehouse_path, dataset=DEFAULT_DATASET, revision=DEFAULT_REVISION, 
         CommitOperationAdd(path_in_repo=WAREHOUSE_FILE, path_or_fileobj=str(warehouse_path)),
         CommitOperationAdd(path_in_repo=CHECKSUM_FILE, path_or_fileobj=checksum_text(sha256).encode()),
         CommitOperationAdd(path_in_repo=MANIFEST_FILE, path_or_fileobj=manifest_text(manifest).encode()),
+        CommitOperationAdd(path_in_repo=CARD_FILE, path_or_fileobj=card.encode()),
     ]
     message = commit_message or f"{WAREHOUSE_FILE} {sha256[:12]} ({size} bytes)"
     info = api.create_commit(

@@ -3,6 +3,8 @@ import importlib.util
 import json
 import subprocess
 import sys
+
+import pytest
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -105,13 +107,36 @@ def test_publish_uploads_warehouse_manifest_and_checksum(tmp_path):
     assert commit["revision"] == "main"
     assert commit["token"] == "token"
     paths = [op.path_in_repo for op in commit["operations"]]
-    assert paths == ["warehouse.duckdb", "warehouse.duckdb.sha256", "manifest.json"]
+    assert paths == ["warehouse.duckdb", "warehouse.duckdb.sha256", "manifest.json", "README.md"]
     assert commit["operations"][0].path_or_fileobj == str(warehouse.resolve())
     checksum = commit["operations"][1].path_or_fileobj.decode()
     manifest = json.loads(commit["operations"][2].path_or_fileobj.decode())
+    card = commit["operations"][3].path_or_fileobj.decode()
+    assert card.startswith("---\nlicense:")
+    assert _sha256(warehouse) in card
     assert checksum == f"{_sha256(warehouse)}  warehouse.duckdb\n"
     assert manifest["sha256"] == _sha256(warehouse)
     assert manifest["published_at"] == "2026-01-02T03:04:05+00:00"
+
+
+def test_dataset_card_lists_tables_and_sources(tmp_path):
+    duckdb = pytest.importorskip("duckdb")
+    pw = _load()
+    warehouse = tmp_path / "warehouse.duckdb"
+    con = duckdb.connect(str(warehouse))
+    con.execute("CREATE TABLE silver_test (x INTEGER, _season VARCHAR, _source VARCHAR)")
+    con.execute("INSERT INTO silver_test VALUES (1, '2024-25', 'nba_api'), (2, '2025-26', 'nba_api')")
+    con.close()
+    manifest = {"size": warehouse.stat().st_size, "sha256": "deadbeef",
+                "published_at": "2026-01-02T00:00:00+00:00"}
+    card = pw.build_dataset_card(warehouse, manifest)
+    assert card.startswith("---\nlicense:")
+    assert "| `silver_test` | 2 | 2024-25 – 2025-26 | nba_api |" in card
+    assert "sha256: `deadbeef`" in card
+    assert "Last updated: 2026-01-02T00:00:00+00:00" in card
+    assert "`nba_api`" in card
+    assert "fetch-data.sh" in card
+    assert "publish_warehouse.py" in card
 
 
 def test_publish_skips_when_remote_sha_matches(tmp_path):
