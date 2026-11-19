@@ -27,8 +27,8 @@ export function CiteTable({ source }: { source: EvidenceSource }) {
                 style={{
                   textAlign: c.alignRight ? "right" : "left",
                   padding: "4px 10px 4px 0",
-                  borderBottom: "1px solid var(--color-stone-muted)",
-                  color: "var(--color-warm-gray)",
+                  borderBottom: "1px solid var(--line-strong)",
+                  color: "var(--ink-2)",
                   fontWeight: 500,
                   fontSize: 11,
                   whiteSpace: "nowrap",
@@ -48,7 +48,7 @@ export function CiteTable({ source }: { source: EvidenceSource }) {
                   padding: "4px 10px 4px 0",
                   textAlign: c.alignRight ? "right" : "left",
                   whiteSpace: "nowrap",
-                  color: c.strong ? "var(--color-ink-black)" : "var(--color-warm-gray)",
+                  color: c.strong ? "var(--ink)" : "var(--ink-2)",
                   fontVariantNumeric: "tabular-nums",
                   fontWeight: c.strong ? 600 : 400,
                 }}
@@ -98,10 +98,10 @@ function RowActions({
     cursor: "pointer",
     fontSize: 12,
     fontWeight: 500,
-    color: "var(--color-warm-gray)",
+    color: "var(--ink-2)",
   } as const;
   if (flagged) {
-    return <div style={{ fontSize: 12, color: "var(--color-ash-gray)" }}>Flagged</div>;
+    return <div style={{ fontSize: 12, color: "var(--ink-3)" }}>Flagged</div>;
   }
   return (
     <div style={{ display: "flex", marginTop: 2 }}>
@@ -144,8 +144,8 @@ export function EvidenceLedger({
                 lineHeight: 1.5,
                 padding: "3px 8px",
                 borderRadius: 6,
-                color: open ? "var(--color-ink-black)" : "var(--color-ash-gray)",
-                background: open ? "var(--color-bg-selected)" : "transparent",
+                color: open ? "var(--ink)" : "var(--ink-3)",
+                background: open ? "var(--hover-2)" : "transparent",
                 fontVariantNumeric: "tabular-nums",
               }}
             >
@@ -174,7 +174,7 @@ export function UnverifiedNote({ ai }: { ai: AiMessage }) {
   const note = unverifiedSummary(ai);
   if (!note) return null;
   return (
-    <div style={{ marginTop: 10, fontSize: 12, lineHeight: 1.5, color: "var(--color-ash-gray)" }}>
+    <div style={{ marginTop: 10, fontSize: 12, lineHeight: 1.5, color: "var(--ink-3)" }}>
       {note}
     </div>
   );
@@ -306,7 +306,7 @@ export default function CitedAnswerText({ text, ai, compact = false, evidencePre
       {flagged.length > 0 ? (
         <button
           type="button"
-          className="pill-ghost"
+          className="inline-flex items-center justify-center gap-1.5 rounded-full px-3 py-1.5 text-[12px] transition-colors bg-field text-ink-2 hover:bg-hover"
           style={{ fontSize: 12, padding: "3px 10px", marginTop: 8 }}
           onClick={() => downloadLog(flagged)}
         >

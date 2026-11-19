@@ -60,7 +60,7 @@ export default function AnswerText({ text, components }: { text: string; compone
         overflowWrap: "break-word",
         whiteSpace: "pre-wrap",
         fontVariantNumeric: "tabular-nums",
-        color: "var(--color-ink-black)",
+        color: "var(--ink)",
       }}
       className="answer-md t-skel-in"
     >
@@ -68,7 +68,7 @@ export default function AnswerText({ text, components }: { text: string; compone
         <div
           style={{
             fontSize: 12,
-            color: "var(--color-ash-gray)",
+            color: "var(--ink-3)",
             marginBottom: 6,
           }}
         >
@@ -99,8 +99,8 @@ export default function AnswerText({ text, components }: { text: string; compone
           code: ({ children }) => (
             <code
               style={{
-                background: "var(--color-field)",
-                border: "1px solid var(--color-stone-border)",
+                background: "var(--field)",
+                border: "1px solid var(--line)",
                 borderRadius: 4,
                 padding: "0 4px",
                 fontSize: 12,
@@ -119,8 +119,8 @@ export default function AnswerText({ text, components }: { text: string; compone
               style={{
                 textAlign: "left",
                 padding: "6px 10px",
-                borderBottom: "1px solid var(--color-stone-muted)",
-                color: "var(--color-warm-gray)",
+                borderBottom: "1px solid var(--line-strong)",
+                color: "var(--ink-2)",
                 fontWeight: 500,
                 whiteSpace: "nowrap",
               }}
@@ -132,7 +132,7 @@ export default function AnswerText({ text, components }: { text: string; compone
             <td
               style={{
                 padding: "6px 10px",
-                borderBottom: "1px solid var(--color-stone-border)",
+                borderBottom: "1px solid var(--line)",
                 whiteSpace: "nowrap",
               }}
             >

@@ -108,22 +108,22 @@ export default function ImpactView({
 
       <div
         style={{
-          background: "var(--color-pure-white)",
-          border: "1px solid var(--color-stone-border)",
+          background: "var(--surface)",
+          border: "1px solid var(--line)",
           borderRadius: 10,
           padding: "14px",
           marginBottom: 8,
           textAlign: "center",
         }}
       >
-        <div style={{ fontSize: 11, color: "var(--color-ash-gray)", marginBottom: 4 }}>
+        <div style={{ fontSize: 11, color: "var(--ink-3)", marginBottom: 4 }}>
           Net rating swing per 100
         </div>
         <div
           style={{
             fontSize: 24,
             fontWeight: 600,
-            color: "var(--color-cyan-edge)",
+            color: "var(--accent-ink)",
             fontVariantNumeric: "tabular-nums",
           }}
         >
@@ -134,7 +134,7 @@ export default function ImpactView({
           style={{
             marginTop: 6,
             fontSize: 12,
-            color: "var(--color-warm-gray)",
+            color: "var(--ink-2)",
             fontVariantNumeric: "tabular-nums",
           }}
         >
@@ -147,8 +147,8 @@ export default function ImpactView({
 
       <div
         style={{
-          background: "var(--color-pure-white)",
-          border: "1px solid var(--color-stone-border)",
+          background: "var(--surface)",
+          border: "1px solid var(--line)",
           borderRadius: 10,
           padding: "12px 14px",
           overflowX: "auto",
@@ -166,14 +166,14 @@ export default function ImpactView({
                   marginBottom: 4,
                 }}
               >
-                <span style={{ fontSize: 12, color: "var(--color-warm-gray)" }}>
+                <span style={{ fontSize: 12, color: "var(--ink-2)" }}>
                   {b.label}
                 </span>
                 <span
                   style={{
                     fontSize: 13,
                     fontWeight: 600,
-                    color: "var(--color-ink-black)",
+                    color: "var(--ink)",
                     fontVariantNumeric: "tabular-nums",
                   }}
                 >
@@ -184,7 +184,7 @@ export default function ImpactView({
               <div
                 style={{
                   height: 6,
-                  background: "var(--color-stone-border)",
+                  background: "var(--line)",
                   borderRadius: 3,
                   overflow: "hidden",
                 }}
@@ -193,7 +193,7 @@ export default function ImpactView({
                   style={{
                     width: `${(Math.abs(b.value) / maxAbs) * 100}%`,
                     height: "100%",
-                    background: "var(--color-cyan-signal)",
+                    background: "var(--accent)",
                     borderRadius: 3,
                   }}
                 />
@@ -201,7 +201,7 @@ export default function ImpactView({
             </div>
           ))}
         </div>
-        <div style={{ marginTop: 8, fontSize: 11, color: "var(--color-ash-gray)" }}>
+        <div style={{ marginTop: 8, fontSize: 11, color: "var(--ink-3)" }}>
           {im.method === "raptor_components"
             ? "Box vs on-off blend"
             : "On-court lift vs box prior"}

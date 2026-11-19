@@ -58,8 +58,8 @@ export default function ThreadRail({
         flexDirection: "column",
         height: "100%",
         padding: "10px 0",
-        background: "var(--color-stone-canvas)",
-        borderRight: "1px solid var(--color-stone-border)",
+        background: "var(--page)",
+        borderRight: "1px solid var(--line)",
         boxSizing: "border-box",
         justifyContent: "flex-start",
         gap: 12,
@@ -71,7 +71,7 @@ export default function ThreadRail({
           <button
             type="button"
             onClick={onHomeClick}
-            className="interactive-tactile"
+            className="transition-colors hover:bg-hover"
             style={{
               display: "flex",
               alignItems: "center",
@@ -83,7 +83,7 @@ export default function ThreadRail({
             }}
             title="Return to Home"
           >
-            <span style={{ fontWeight: 600, fontSize: 13, letterSpacing: "-0.01em", color: "var(--color-ink-black)" }}>
+            <span style={{ fontWeight: 600, fontSize: 13, letterSpacing: "-0.01em", color: "var(--ink)" }}>
               Dime
             </span>
           </button>
@@ -91,7 +91,7 @@ export default function ThreadRail({
             <button
               type="button"
               onClick={onSearch}
-              className="pill-ghost interactive-tactile"
+              className="inline-flex items-center justify-center gap-1.5 rounded-full px-3 py-1.5 text-[12px] transition-colors bg-field text-ink-2 hover:bg-hover transition-colors hover:bg-hover"
               style={{ padding: "4px 8px", fontSize: 12, display: "flex", alignItems: "center", gap: 4 }}
               title="Search commands and players"
             >
@@ -124,14 +124,14 @@ export default function ThreadRail({
             cursor: "pointer",
           }}
         >
-          <div style={{ display: "flex", alignItems: "center", gap: 8, color: "var(--color-ink-black)" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, color: "var(--ink)" }}>
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
               <line x1="12" y1="5" x2="12" y2="19" />
               <line x1="5" y1="12" x2="19" y2="12" />
             </svg>
             <span>New session</span>
           </div>
-          <span style={{ fontSize: 10, color: "var(--color-ash-gray)", fontFamily: "monospace" }}>
+          <span style={{ fontSize: 10, color: "var(--ink-3)", fontFamily: "monospace" }}>
             ⌘N
           </span>
         </button>
@@ -142,7 +142,7 @@ export default function ThreadRail({
             style={{
               fontSize: 12,
               fontWeight: 500,
-              color: "var(--color-ash-gray)",
+              color: "var(--ink-3)",
               padding: "0 10px",
               marginBottom: 4,
             }}
@@ -159,13 +159,13 @@ export default function ThreadRail({
                 fill="none"
                 stroke="currentColor"
                 strokeWidth="2"
-                style={{ position: "absolute", left: 8, color: "var(--color-ash-gray)", pointerEvents: "none" }}
+                style={{ position: "absolute", left: 8, color: "var(--ink-3)", pointerEvents: "none" }}
               >
                 <circle cx="11" cy="11" r="8" />
                 <line x1="21" y1="21" x2="16.65" y2="16.65" />
               </svg>
               <input
-                className="field"
+                className="rounded-lg border border-line bg-field px-3 py-2 text-ink"
                 placeholder="Search history..."
                 value={filterQuery}
                 onChange={(e) => setFilterQuery(e.target.value)}
@@ -176,7 +176,7 @@ export default function ThreadRail({
                   boxSizing: "border-box",
                   borderRadius: 6,
                   height: 28,
-                  background: "var(--color-pure-white)",
+                  background: "var(--surface)",
                 }}
               />
             </div>
@@ -194,7 +194,7 @@ export default function ThreadRail({
           >
             {visibleBuckets.map((bucket) => (
               <div key={bucket.label} style={{ display: "flex", flexDirection: "column", gap: 1 }}>
-                <div style={{ fontSize: 11, fontWeight: 500, color: "var(--color-ash-gray)", padding: "8px 6px 4px" }}>
+                <div style={{ fontSize: 11, fontWeight: 500, color: "var(--ink-3)", padding: "8px 6px 4px" }}>
                   {bucket.label}
                 </div>
                 {bucket.items.map((t) => {
@@ -212,13 +212,13 @@ export default function ThreadRail({
                         padding: "0 8px",
                         margin: "0 8px",
                         fontSize: 13,
-                        background: isSelected ? "var(--color-field)" : "transparent",
+                        background: isSelected ? "var(--field)" : "transparent",
                         border: "none",
                         cursor: "pointer",
                         width: "calc(100% - 16px)",
                         display: "flex",
                         alignItems: "center",
-                        color: isSelected ? "var(--color-ink-black)" : "var(--color-warm-gray)",
+                        color: isSelected ? "var(--ink)" : "var(--ink-2)",
                       }}
                     >
                       <div
@@ -238,7 +238,7 @@ export default function ThreadRail({
             ))}
 
             {!filtered.length && (
-              <div style={{ fontSize: 12, color: "var(--color-ash-gray)", padding: "12px 6px" }}>
+              <div style={{ fontSize: 12, color: "var(--ink-3)", padding: "12px 6px" }}>
                 {filterQuery ? "No matching sessions" : "No recent sessions"}
               </div>
             )}

@@ -135,12 +135,12 @@ function ToolRow({ c, live }: { c: ToolCall; live: boolean }) {
   const [draftSql, setDraftSql] = useState(c.sql || "");
   const spinning = c.status === "running" && live;
   const dotColor = spinning
-    ? "var(--color-cyan-signal)"
+    ? "var(--accent)"
     : c.status === "fail"
-      ? "var(--color-ember)"
+      ? "var(--red)"
       : c.status === "running"
-        ? "var(--color-ash-gray)"
-        : "var(--color-ink-black)";
+        ? "var(--ink-3)"
+        : "var(--ink)";
   const glyph = spinning ? "" : c.status === "fail" ? "✗" : c.status === "running" ? "○" : "·";
   const label = toolLabel(c);
   const prefix = c.agent ? `${c.agent.charAt(0).toUpperCase() + c.agent.slice(1)} desk · ` : "";
@@ -148,7 +148,7 @@ function ToolRow({ c, live }: { c: ToolCall; live: boolean }) {
     <div
       style={{
         paddingLeft: c.agent ? 16 : 0,
-        borderBottom: "1px solid var(--color-stone-border)",
+        borderBottom: "1px solid var(--line)",
       }}
     >
       <button
@@ -188,7 +188,7 @@ function ToolRow({ c, live }: { c: ToolCall; live: boolean }) {
             style={{
               display: "block",
               fontSize: 13,
-              color: "var(--color-ink-black)",
+              color: "var(--ink)",
               whiteSpace: "nowrap",
               overflow: "hidden",
               textOverflow: "ellipsis",
@@ -202,7 +202,7 @@ function ToolRow({ c, live }: { c: ToolCall; live: boolean }) {
               style={{
                 display: "block",
                 fontSize: 12,
-                color: c.status === "fail" ? "var(--color-ember)" : "var(--color-ash-gray)",
+                color: c.status === "fail" ? "var(--red)" : "var(--ink-3)",
               }}
             >
               {metaLine(c, live)}
@@ -215,7 +215,7 @@ function ToolRow({ c, live }: { c: ToolCall; live: boolean }) {
           style={{
             padding: "4px 0 8px 15px",
             fontSize: 11,
-            color: "var(--color-warm-gray)",
+            color: "var(--ink-2)",
           }}
         >
           {c.summary && <div style={{ marginBottom: 4 }}>{c.summary}</div>}
@@ -234,7 +234,7 @@ function ToolRow({ c, live }: { c: ToolCall; live: boolean }) {
                   cursor: "pointer",
                   fontSize: 11,
                   fontWeight: 600,
-                  color: "var(--color-cyan-edge)",
+                  color: "var(--accent-ink)",
                 }}
               >
                 SQL {sqlOpen ? "▾" : "▸"}
@@ -253,7 +253,7 @@ function ToolRow({ c, live }: { c: ToolCall; live: boolean }) {
                   cursor: "pointer",
                   fontSize: 11,
                   fontWeight: 600,
-                  color: "var(--color-cyan-edge)",
+                  color: "var(--accent-ink)",
                 }}
               >
                 Edit & run
@@ -273,17 +273,17 @@ function ToolRow({ c, live }: { c: ToolCall; live: boolean }) {
                       fontFamily: "ui-monospace, monospace",
                       fontSize: 11,
                       lineHeight: 1.5,
-                      background: "var(--color-stone-canvas)",
-                      border: "1px solid var(--color-stone-border)",
+                      background: "var(--page)",
+                      border: "1px solid var(--line)",
                       borderRadius: 6,
                       padding: 8,
-                      color: "var(--color-ink-black)",
+                      color: "var(--ink)",
                     }}
                   />
                   <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 6 }}>
                     <button
                       type="button"
-                      className="pill-ghost"
+                      className="inline-flex items-center justify-center gap-1.5 rounded-full px-3 py-1.5 text-[12px] transition-colors bg-field text-ink-2 hover:bg-hover"
                       disabled={rerun?.loading === true || !draftSql.trim()}
                       onClick={(e) => {
                         e.stopPropagation();
@@ -306,14 +306,14 @@ function ToolRow({ c, live }: { c: ToolCall; live: boolean }) {
                     >
                       {rerun?.loading ? "Running…" : "Run query"}
                     </button>
-                    <span style={{ color: "var(--color-ash-gray)" }}>
+                    <span style={{ color: "var(--ink-3)" }}>
                       Read-only · 25 row cap
                     </span>
                   </div>
                 </div>
               )}
               {rerun && !rerun.loading && rerun.error && (
-                <div style={{ marginTop: 4, color: "var(--color-ember)" }}>
+                <div style={{ marginTop: 4, color: "var(--red)" }}>
                   {rerun.error.slice(0, 160)}
                 </div>
               )}
@@ -331,7 +331,7 @@ function ToolRow({ c, live }: { c: ToolCall; live: boolean }) {
                         borderCollapse: "collapse",
                         fontFamily: "ui-monospace, monospace",
                         fontSize: 11,
-                        color: "var(--color-ink-black)",
+                        color: "var(--ink)",
                       }}
                     >
                       <thead>
@@ -344,7 +344,7 @@ function ToolRow({ c, live }: { c: ToolCall; live: boolean }) {
                                 fontWeight: 600,
                                 padding: "3px 8px 3px 0",
                                 borderBottom:
-                                  "1px solid var(--color-stone-border)",
+                                  "1px solid var(--line)",
                                 whiteSpace: "nowrap",
                               }}
                             >
@@ -362,7 +362,7 @@ function ToolRow({ c, live }: { c: ToolCall; live: boolean }) {
                                 style={{
                                   padding: "3px 8px 3px 0",
                                   borderBottom:
-                                    "1px solid var(--color-stone-border)",
+                                    "1px solid var(--line)",
                                   whiteSpace: "nowrap",
                                 }}
                               >
@@ -389,11 +389,11 @@ function GroupRow({ g, live }: { g: ToolGroup; live: boolean }) {
   const state = groupState(g);
   const spinning = state === "running" && live;
   const dotColor =
-    state === "fail" ? "var(--color-ember)" : spinning ? "var(--color-cyan-signal)" : "var(--color-ink-black)";
+    state === "fail" ? "var(--red)" : spinning ? "var(--accent)" : "var(--ink)";
   const glyph = spinning ? "" : state === "fail" ? "✗" : "·";
   const prefix = g.agent ? `${g.agent.charAt(0).toUpperCase() + g.agent.slice(1)} desk · ` : "";
   return (
-    <div style={{ borderBottom: "1px solid var(--color-stone-border)" }}>
+    <div style={{ borderBottom: "1px solid var(--line)" }}>
       <button
         type="button"
         onClick={() => setOpen((o) => !o)}
@@ -432,7 +432,7 @@ function GroupRow({ g, live }: { g: ToolGroup; live: boolean }) {
             style={{
               display: "block",
               fontSize: 13,
-              color: "var(--color-ink-black)",
+              color: "var(--ink)",
               whiteSpace: "nowrap",
               overflow: "hidden",
               textOverflow: "ellipsis",
@@ -445,13 +445,13 @@ function GroupRow({ g, live }: { g: ToolGroup; live: boolean }) {
             style={{
               display: "block",
               fontSize: 12,
-              color: state === "fail" ? "var(--color-ember)" : "var(--color-ash-gray)",
+              color: state === "fail" ? "var(--red)" : "var(--ink-3)",
             }}
           >
             {groupMeta(g, live)}
           </span>
         </span>
-        <span aria-hidden style={{ fontSize: 12, color: "var(--color-ash-gray)" }}>
+        <span aria-hidden style={{ fontSize: 12, color: "var(--ink-3)" }}>
           {open ? "▾" : "▸"}
         </span>
       </button>
@@ -472,12 +472,12 @@ function ThoughtBlock({ text, running, thoughtMs, thoughtStarted }: { text: stri
   const suffix = ms === undefined ? "" : ` · ${fmtMs(ms) || "0ms"}`;
   const title = thoughtTitle(text);
   return (
-    <details open={running} style={{ marginTop: 8, color: "var(--color-warm-gray)", fontSize: 12 }}>
+    <details open={running} style={{ marginTop: 8, color: "var(--ink-2)", fontSize: 12 }}>
       <summary style={{ cursor: "pointer", listStyle: "none", fontSize: 12 }}>
-        <span aria-hidden style={{ marginRight: 7, color: "var(--color-ash-gray)" }}>{running ? "●" : "○"}</span>
+        <span aria-hidden style={{ marginRight: 7, color: "var(--ink-3)" }}>{running ? "●" : "○"}</span>
         {running ? `Thinking: ${title}` : `Thought: ${title}${suffix}`}
       </summary>
-      <div style={{ margin: "7px 0 0 19px", paddingLeft: 10, borderLeft: "1px solid var(--color-stone-border)", whiteSpace: "pre-wrap" }}>
+      <div style={{ margin: "7px 0 0 19px", paddingLeft: 10, borderLeft: "1px solid var(--line)", whiteSpace: "pre-wrap" }}>
         {text}
       </div>
     </details>
@@ -497,7 +497,7 @@ export default function AgentActivity({ ai }: { ai: AiMessage }) {
     (ai.activity?.length ?? 0) > 0;
 
   if (!hasActivity) {
-    return running ? <div role="status" style={{ marginBottom: 10, fontSize: 12, color: "var(--color-ash-gray)" }}>Analyzing…</div> : null;
+    return running ? <div role="status" style={{ marginBottom: 10, fontSize: 12, color: "var(--ink-3)" }}>Analyzing…</div> : null;
   }
 
   const label = running
@@ -511,12 +511,12 @@ export default function AgentActivity({ ai }: { ai: AiMessage }) {
       {(ai.activity?.length ?? 0) > 0 ? (
         <ActivityTimeline items={ai.activity!} running={running} />
       ) : (
-        <details style={{ color: "var(--color-warm-gray)", fontSize: 12 }}>
+        <details style={{ color: "var(--ink-2)", fontSize: 12 }}>
           <summary style={{ cursor: "pointer", listStyle: "none" }}>
-            <span aria-hidden style={{ marginRight: 7, color: "var(--color-ash-gray)" }}>{running ? "●" : "·"}</span>
+            <span aria-hidden style={{ marginRight: 7, color: "var(--ink-3)" }}>{running ? "●" : "·"}</span>
             {label}
           </summary>
-          <div style={{ margin: "7px 0 0 19px", paddingLeft: 10, borderLeft: "1px solid var(--color-stone-border)" }}>
+          <div style={{ margin: "7px 0 0 19px", paddingLeft: 10, borderLeft: "1px solid var(--line)" }}>
             {grouped.map((entry) =>
               "calls" in entry ? (
                 <GroupRow key={entry.key} g={entry} live={running} />
@@ -529,11 +529,11 @@ export default function AgentActivity({ ai }: { ai: AiMessage }) {
       )}
       <ThoughtBlock text={reasoning} running={running} thoughtMs={ai.thoughtMs} thoughtStarted={ai.thoughtStarted} />
       {thoughts.length > 0 && (
-        <details style={{ marginTop: 8, color: "var(--color-warm-gray)", fontSize: 12 }}>
-          <summary style={{ cursor: "pointer", listStyle: "none", fontSize: 12, color: "var(--color-ash-gray)" }}>
+        <details style={{ marginTop: 8, color: "var(--ink-2)", fontSize: 12 }}>
+          <summary style={{ cursor: "pointer", listStyle: "none", fontSize: 12, color: "var(--ink-3)" }}>
             Progress updates · {thoughts.length}
           </summary>
-          <div style={{ margin: "7px 0 0 19px", paddingLeft: 10, borderLeft: "1px solid var(--color-stone-border)" }}>
+          <div style={{ margin: "7px 0 0 19px", paddingLeft: 10, borderLeft: "1px solid var(--line)" }}>
             {thoughts.map((text, index) => <div key={`thought-${index}`}>{text}</div>)}
           </div>
         </details>

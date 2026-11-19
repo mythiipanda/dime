@@ -18,12 +18,12 @@ export function RevisionCard({ info }: { info: { revision: string; runtime: stri
   return (
     <div
       style={{
-        border: "1px solid var(--color-stone-border)",
+        border: "1px solid var(--line)",
         borderRadius: 10,
         padding: "10px 14px",
-        background: "var(--color-pure-white)",
+        background: "var(--surface)",
         fontSize: 12,
-        color: "var(--color-warm-gray)",
+        color: "var(--ink-2)",
         marginBottom: 16,
         fontVariantNumeric: "tabular-nums",
       }}
@@ -31,7 +31,7 @@ export function RevisionCard({ info }: { info: { revision: string; runtime: stri
       {info ? (
         <>
           revision{" "}
-          <span style={{ fontWeight: 500, color: "var(--color-ink-black)" }}>
+          <span style={{ fontWeight: 500, color: "var(--ink)" }}>
             {shortRevision(info.revision)}
           </span>{" "}
           · {info.runtime}
@@ -55,7 +55,7 @@ export function RunMetaHeader({
   if (!revision.trim()) return null;
   const runId = text.trim() ? runIdOf(parseSseText(text)) : null;
   return (
-    <div style={{ fontSize: 12, color: "var(--color-warm-gray)", marginBottom: 6 }}>
+    <div style={{ fontSize: 12, color: "var(--ink-2)", marginBottom: 6 }}>
       {runId ? `run ${runId.slice(0, 12)} · ` : ""}
       {revision.trim().slice(0, 8)}
       {runtime.trim() ? ` · ${runtime.trim()}` : ""}
@@ -68,7 +68,7 @@ export function DiagnosticsTable({ rows }: { rows: BindingDiagnostic[] }) {
   const cell: CSSProperties = {
     padding: "6px 10px 6px 0",
     fontSize: 12,
-    color: "var(--color-warm-gray)",
+    color: "var(--ink-2)",
     verticalAlign: "top",
     textAlign: "left",
   };
@@ -86,7 +86,7 @@ export function DiagnosticsTable({ rows }: { rows: BindingDiagnostic[] }) {
                     fontSize: 11,
                     fontWeight: 500,
                     whiteSpace: "nowrap",
-                    borderBottom: "1px solid var(--color-stone-muted)",
+                    borderBottom: "1px solid var(--line-strong)",
                   }}
                 >
                   {h}
@@ -99,7 +99,7 @@ export function DiagnosticsTable({ rows }: { rows: BindingDiagnostic[] }) {
           {rows.map((d, i) => (
             <tr key={`${d.output_id}-${d.claim_index}-${i}`}>
               <td style={{ ...cell, fontVariantNumeric: "tabular-nums" }}>{d.claim_index}</td>
-              <td style={{ ...cell, fontWeight: 500, color: "var(--color-ink-black)" }}>
+              <td style={{ ...cell, fontWeight: 500, color: "var(--ink)" }}>
                 {d.output_id}
               </td>
               <td style={cell}>
@@ -110,7 +110,7 @@ export function DiagnosticsTable({ rows }: { rows: BindingDiagnostic[] }) {
               <td style={cell}>{d.evidence_capability || ""}</td>
               <td style={{ ...cell, fontFamily: "monospace" }}>
                 {d.selector || ""}
-                <div style={{ color: "var(--color-ash-gray)" }}>
+                <div style={{ color: "var(--ink-3)" }}>
                   {[d.row_selector, d.subject_selector].filter(Boolean).join(" · ")}
                 </div>
               </td>
@@ -121,7 +121,7 @@ export function DiagnosticsTable({ rows }: { rows: BindingDiagnostic[] }) {
                 {declaredText(d.declared_value)}
               </td>
               <td style={cell}>{d.reanchor_changed ? "changed" : "same"}</td>
-              <td style={{ ...cell, color: "var(--color-ink-black)" }}>{d.rejection}</td>
+              <td style={{ ...cell, color: "var(--ink)" }}>{d.rejection}</td>
             </tr>
           ))}
         </tbody>

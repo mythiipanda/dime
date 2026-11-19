@@ -158,16 +158,16 @@ export default function LineupPanel({ initialTeam, initialStreak, fetchTimeoutMs
         title="Lineups"
         action={<CopyLink panel="lineups" />}
       />
-      <div style={{ display: "inline-flex", background: "var(--color-stone-canvas)", padding: 2, borderRadius: 9999, border: "1px solid var(--color-stone-border)", marginBottom: 12 }}>
+      <div style={{ display: "inline-flex", background: "var(--page)", padding: 2, borderRadius: 9999, border: "1px solid var(--line)", marginBottom: 12 }}>
         <button
-          className={tab === "5man" ? "tab-active" : "pill-ghost"}
+          className={tab === "5man" ? "inline-flex items-center justify-center gap-1.5 rounded-full px-3 py-1.5 text-[12px] transition-colors bg-surface text-ink shadow-hairline" : "inline-flex items-center justify-center gap-1.5 rounded-full px-3 py-1.5 text-[12px] transition-colors bg-field text-ink-2 hover:bg-hover"}
           style={{ fontSize: 11, padding: "3px 12px", border: "none" }}
           onClick={() => pickTab("5man")}
         >
           5-Man
         </button>
         <button
-          className={tab === "wowy" ? "tab-active" : "pill-ghost"}
+          className={tab === "wowy" ? "inline-flex items-center justify-center gap-1.5 rounded-full px-3 py-1.5 text-[12px] transition-colors bg-surface text-ink shadow-hairline" : "inline-flex items-center justify-center gap-1.5 rounded-full px-3 py-1.5 text-[12px] transition-colors bg-field text-ink-2 hover:bg-hover"}
           style={{ fontSize: 11, padding: "3px 12px", border: "none" }}
           onClick={() => pickTab("wowy")}
         >
@@ -178,7 +178,7 @@ export default function LineupPanel({ initialTeam, initialStreak, fetchTimeoutMs
       {tab === "5man" ? (
         <div>
           {streak && (
-            <div style={{ fontSize: 12, color: "var(--color-warm-gray)", marginBottom: 8 }}>
+            <div style={{ fontSize: 12, color: "var(--ink-2)", marginBottom: 8 }}>
               {streakLine(streak)}
             </div>
           )}
@@ -196,9 +196,9 @@ export default function LineupPanel({ initialTeam, initialStreak, fetchTimeoutMs
           </Select>
           {error && (
             <div style={{ marginTop: 8 }}>
-              <div style={{ color: "var(--color-warm-gray)", fontSize: 12 }}>{error}</div>
+              <div style={{ color: "var(--ink-2)", fontSize: 12 }}>{error}</div>
               <button
-                className="pill-ghost"
+                className="inline-flex items-center justify-center gap-1.5 rounded-full px-3 py-1.5 text-[12px] transition-colors bg-field text-ink-2 hover:bg-hover"
                 style={{ fontSize: 12, marginTop: 8 }}
                 onClick={() => setRetryNonce((n) => n + 1)}
               >
@@ -208,7 +208,7 @@ export default function LineupPanel({ initialTeam, initialStreak, fetchTimeoutMs
           )}
           {busy && rows.length === 0 && !error && <Skeleton lines={5} label={`Loading ${team} lineups`} />}
           {!busy && !error && rows.length === 0 && (
-            <div style={{ fontSize: 12, color: "var(--color-warm-gray)", marginTop: 8 }}>
+            <div style={{ fontSize: 12, color: "var(--ink-2)", marginTop: 8 }}>
               No lineups. They show up once the season is far enough along.
             </div>
           )}
@@ -231,7 +231,7 @@ export default function LineupPanel({ initialTeam, initialStreak, fetchTimeoutMs
         <div>
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center", marginBottom: 12 }}>
             <input
-              className="field"
+              className="rounded-lg border border-line bg-field px-3 py-2 text-ink"
               placeholder="Player A"
               value={playerA}
               onChange={(e) => setPlayerA(e.target.value)}
@@ -239,7 +239,7 @@ export default function LineupPanel({ initialTeam, initialStreak, fetchTimeoutMs
               aria-label="Player A"
             />
             <input
-              className="field"
+              className="rounded-lg border border-line bg-field px-3 py-2 text-ink"
               placeholder="Player B"
               value={playerB}
               onChange={(e) => setPlayerB(e.target.value)}
@@ -247,7 +247,7 @@ export default function LineupPanel({ initialTeam, initialStreak, fetchTimeoutMs
               aria-label="Player B"
             />
             <button
-              className="pill-cta"
+              className="inline-flex items-center justify-center gap-1.5 rounded-full px-3 py-1.5 text-[12px] transition-colors bg-ink text-page hover:opacity-90 disabled:opacity-50"
               style={{ fontSize: 12, padding: "4px 14px" }}
               disabled={wowyBusy}
               onClick={runWowy}
@@ -255,7 +255,7 @@ export default function LineupPanel({ initialTeam, initialStreak, fetchTimeoutMs
               {wowyBusy ? "Calculating..." : "Compare"}
             </button>
           </div>
-          {error && <div style={{ color: "var(--color-warm-gray)", fontSize: 12, marginBottom: 8 }}>{error}</div>}
+          {error && <div style={{ color: "var(--ink-2)", fontSize: 12, marginBottom: 8 }}>{error}</div>}
           {wowyRows.length > 0 && <WowyCard rows={wowyRows} verdict={wowyVerdict} />}
         </div>
       )}

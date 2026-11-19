@@ -201,7 +201,7 @@ export default function DataTable({ rows, capCols = 8, capRows = 25, heat = fals
     return m;
   }, [t, shown, pct]);
   if (!t || !view) return null;
-  if (!t.body.length) return <div style={{ fontSize: 12, color: "var(--color-warm-gray)" }}>No matches.</div>;
+  if (!t.body.length) return <div style={{ fontSize: 12, color: "var(--ink-2)" }}>No matches.</div>;
   const downloadCsv = () => {
     const esc = (v: string) =>
       /[",\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v;
@@ -234,7 +234,7 @@ export default function DataTable({ rows, capCols = 8, capRows = 25, heat = fals
     <div>
       <div style={{ display: "flex", gap: 8, marginBottom: 8, alignItems: "center" }}>
         <input
-          className="field"
+          className="rounded-lg border border-line bg-field px-3 py-2 text-ink"
           value={filter}
           onChange={(e) => {
             setFilter(e.target.value);
@@ -244,13 +244,13 @@ export default function DataTable({ rows, capCols = 8, capRows = 25, heat = fals
           style={{ fontSize: 12, width: 160 }}
           aria-label="Filter rows"
         />
-        <span style={{ fontSize: 11, color: "var(--color-ash-gray)" }}>
+        <span style={{ fontSize: 11, color: "var(--ink-3)" }}>
           Showing {shown.length} of {view.idx.length}
           {view.idx.length !== view.total ? ` (filtered from ${view.total})` : ""}
           {view.total === 500 ? " (first 500)" : ""}
         </span>
         <button
-          className={pct ? "tab-active" : "pill-ghost"}
+          className={pct ? "inline-flex items-center justify-center gap-1.5 rounded-full px-3 py-1.5 text-[12px] transition-colors bg-surface text-ink shadow-hairline" : "inline-flex items-center justify-center gap-1.5 rounded-full px-3 py-1.5 text-[12px] transition-colors bg-field text-ink-2 hover:bg-hover"}
           style={{ fontSize: 11, padding: "2px 10px" }}
           onClick={() => {
             const next = !pct;
@@ -262,7 +262,7 @@ export default function DataTable({ rows, capCols = 8, capRows = 25, heat = fals
           Pct
         </button>
         <button
-          className={showIds ? "tab-active" : "pill-ghost"}
+          className={showIds ? "inline-flex items-center justify-center gap-1.5 rounded-full px-3 py-1.5 text-[12px] transition-colors bg-surface text-ink shadow-hairline" : "inline-flex items-center justify-center gap-1.5 rounded-full px-3 py-1.5 text-[12px] transition-colors bg-field text-ink-2 hover:bg-hover"}
           style={{ fontSize: 11, padding: "2px 10px", marginLeft: "auto" }}
           onClick={() => setShowIds((v) => !v)}
           title="Show hidden ID columns"
@@ -270,14 +270,14 @@ export default function DataTable({ rows, capCols = 8, capRows = 25, heat = fals
           IDs
         </button>
         <button
-          className="pill-ghost"
+          className="inline-flex items-center justify-center gap-1.5 rounded-full px-3 py-1.5 text-[12px] transition-colors bg-field text-ink-2 hover:bg-hover"
           style={{ fontSize: 11, padding: "2px 10px" }}
           onClick={downloadCsv}
         >
           CSV
         </button>
       </div>
-    <div className="dime-table" style={{ border: "1px solid var(--color-stone-border)", borderRadius: 10, background: "var(--color-pure-white)", boxShadow: "var(--shadow-card)", overflow: "hidden" }}>
+    <div className="dime-table" style={{ border: "1px solid var(--line)", borderRadius: 10, background: "var(--surface)", boxShadow: "var(--shadow-card)", overflow: "hidden" }}>
       <Table style={{ borderCollapse: "collapse", width: "100%", fontSize: 12 }}>
         <TableHeader className="[&_tr]:border-0">
           <TableRow className="border-0 hover:bg-transparent">
@@ -297,9 +297,9 @@ export default function DataTable({ rows, capCols = 8, capRows = 25, heat = fals
                 title={sortCol === c ? `Sorted by ${headerLabel(c)} (${sortDir === 1 ? "low to high" : "high to low"}). Select to change.` : `Sort by ${headerLabel(c)}`}
                 style={{
                   textAlign: t.numeric[t.cols.indexOf(c)] ? "right" : "left",
-                  borderBottom: "1px solid var(--color-stone-border)",
+                  borderBottom: "1px solid var(--line)",
                   padding: "7px 10px",
-                  color: "var(--color-warm-gray)",
+                  color: "var(--ink-2)",
                   fontWeight: 500,
                   cursor: "pointer",
                   userSelect: "none",
@@ -320,14 +320,14 @@ export default function DataTable({ rows, capCols = 8, capRows = 25, heat = fals
                 const m = t.maxs[j];
                 const bg =
                   heat && v !== null && m !== null
-                    ? `color-mix(in srgb, var(--color-cyan-signal) ${Math.round(4 + 22 * (Math.abs(v) / m))}%, transparent)`
+                    ? `color-mix(in srgb, var(--accent) ${Math.round(4 + 22 * (Math.abs(v) / m))}%, transparent)`
                     : undefined;
                 return (
                   <TableCell
                     key={j}
                     className="whitespace-normal"
                     style={{
-                      borderBottom: "1px solid var(--color-stone-border)",
+                      borderBottom: "1px solid var(--line)",
                       padding: "7px 10px",
                       background: bg,
                       textAlign: t.numeric[j] ? "right" : "left",
@@ -345,7 +345,7 @@ export default function DataTable({ rows, capCols = 8, capRows = 25, heat = fals
                           padding: 0,
                           font: "inherit",
                           cursor: "pointer",
-                          color: "var(--color-cyan-edge)",
+                          color: "var(--accent-ink)",
                           textAlign: "left",
                           fontWeight: 500,
                           textDecoration: "underline",
@@ -366,7 +366,7 @@ export default function DataTable({ rows, capCols = 8, capRows = 25, heat = fals
                             border: "none",
                             padding: "0 0 0 6px",
                             cursor: "pointer",
-                            color: "var(--color-warm-gray)",
+                            color: "var(--ink-2)",
                             fontSize: 11,
                           }}
                         >
@@ -392,7 +392,7 @@ export default function DataTable({ rows, capCols = 8, capRows = 25, heat = fals
                               <span
                                 style={{
                                   fontSize: 11,
-                                  color: "var(--color-ash-gray)",
+                                  color: "var(--ink-3)",
                                   fontVariantNumeric: "tabular-nums",
                                   marginLeft: 6,
                                 }}
@@ -406,7 +406,7 @@ export default function DataTable({ rows, capCols = 8, capRows = 25, heat = fals
                       </>
                     )}
                     {t.subs[ri][t.cols[j]] && (
-                      <div style={{ fontSize: 10, color: "var(--color-ash-gray)" }}>
+                      <div style={{ fontSize: 10, color: "var(--ink-3)" }}>
                         {t.subs[ri][t.cols[j]]}
                       </div>
                     )}
@@ -428,7 +428,7 @@ export default function DataTable({ rows, capCols = 8, capRows = 25, heat = fals
                               style={{
                                 width: 24,
                                 height: 3,
-                                background: "var(--color-stone-border)",
+                                background: "var(--line)",
                                 borderRadius: 2,
                                 overflow: "hidden",
                               }}
@@ -438,11 +438,11 @@ export default function DataTable({ rows, capCols = 8, capRows = 25, heat = fals
                                   display: "block",
                                   width: `${Math.round(r * 100)}%`,
                                   height: "100%",
-                                  background: "var(--color-cyan-signal)",
+                                  background: "var(--accent)",
                                 }}
                               />
                             </span>
-                            <span style={{ fontSize: 9, color: "var(--color-ash-gray)" }}>
+                            <span style={{ fontSize: 9, color: "var(--ink-3)" }}>
                               p{Math.round(r * 100)}
                             </span>
                           </div>
