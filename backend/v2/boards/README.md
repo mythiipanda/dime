@@ -30,9 +30,9 @@ The raw SQL replay plus the metric definition explains that transformation.
 
 `salary_2026_27` always reads the 2026–27 salary vintage, independently of the
 performance season. A salary name must match exactly one player ID in the union
-of basic and advanced rows for the selected season after Unicode NFC, case and whitespace
-normalization. Multiple salary rows are also rejected. There is no fuzzy match,
-suffix removal, accent removal, or team-based tie-breaker. The citation carries
+of basic and advanced rows for the selected season after Unicode NFKD decomposition,
+accent removal, case and whitespace normalization. Multiple salary rows are also
+rejected. There is no fuzzy match, suffix removal, or team-based tie-breaker. The citation carries
 the salary vintage and the separate player-name resolution query. This is not
 a guarantee of salary coverage for every player.
 

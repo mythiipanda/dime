@@ -37,7 +37,9 @@ class SeedBody(BaseModel):
 
 
 def _name(value: str | None) -> str:
-    return " ".join(unicodedata.normalize("NFC", value or "").casefold().split())
+    decomposed = unicodedata.normalize("NFKD", value or "")
+    unaccented = "".join(char for char in decomposed if not unicodedata.combining(char))
+    return " ".join(unaccented.casefold().split())
 
 
 def _read(con, table: str, season: str) -> tuple[list[dict], str, list]:
@@ -133,7 +135,7 @@ def _salary(data: SeasonData, pid: int) -> tuple[dict | None, str | None, dict]:
                   for source in data.name_sources[name]]
     own_source = next((ref for ref in sources if ref["player_id"] == pid), None)
     resolution = {
-        "method": "NFC_casefold_whitespace_full_name_exact",
+        "method": "NFKD_strip_accents_casefold_whitespace_full_name_exact",
         "player_id": pid, "spellings": spellings, "matched_names": matched_names,
         "sources": sources, "collisions": collisions,
         "table": own_source["table"] if own_source else None,
