@@ -1,6 +1,7 @@
 import math
 import unicodedata
 from collections import defaultdict
+from contextlib import contextmanager
 from dataclasses import dataclass
 from typing import Annotated, Any
 
@@ -194,10 +195,19 @@ def metrics():
     return {"ok": True, "metrics": [metric.public() for metric in METRICS.values()]}
 
 
+@contextmanager
+def _connection():
+    try:
+        with store.connect(read_only=True) as con:
+            yield con
+    finally:
+        store.warehouse_pool_clear()
+
+
 def fill(payload: dict):
     try:
         body = FillBody.model_validate(payload)
-        with store.connect(read_only=True) as con:
+        with _connection() as con:
             return _fill(con, body.season, body.player_ids, body.metric_ids)
     except ValidationError as exc:
         return {"ok": False, "status": 422, "error": str(exc)}
@@ -211,7 +221,7 @@ def seed(payload: dict):
         metric = METRICS.get(body.metric_id)
         if metric is None:
             return {"ok": False, "status": 422, "error": "unknown_metric"}
-        with store.connect(read_only=True) as con:
+        with _connection() as con:
             data = _load(con, body.season, [body.metric_id])
             if metric.unit == "usd" and not all(table in data.reads for table in IDENTITY_TABLES):
                 return {"ok": False, "status": 503, "error": "Boards salary identity incomplete"}

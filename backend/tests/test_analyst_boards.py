@@ -1,6 +1,7 @@
 import hashlib
 import json
 import sys
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 import duckdb
@@ -142,3 +143,25 @@ def test_direct_catalogue_bridge(warehouse):
     assert product_board_fill.invoke({"payload": {"player_ids": [1], "metric_ids": ["ppg"]}})["cells"]["1"]["ppg"]["value"] == 20
     assert product_board_seed.invoke({"payload": {"metric_id": "ppg", "n": 1}})["player_ids"] == [3]
     json.dumps(product_board_fill.invoke({"payload": {"player_ids": [1], "metric_ids": list(METRICS)}}))
+
+
+def test_requests_release_thread_local_pool_on_success_and_error(warehouse, monkeypatch):
+    from shared.store.connections import connect
+    monkeypatch.setattr(store, "connect", connect)
+    monkeypatch.setattr(store, "DB_PATH", warehouse)
+    before = hashlib.sha256(warehouse.read_bytes()).hexdigest()
+    baseline = len(store._pool_registry)
+    for _ in range(4):
+        with ThreadPoolExecutor(max_workers=1) as executor:
+            assert executor.submit(fill).result()["ok"]
+            assert executor.submit(service.seed, {"metric_id": "ppg"}).result()["ok"]
+        assert len(store._pool_registry) == baseline
+    def unavailable(*args):
+        raise duckdb.CatalogException("unavailable")
+    monkeypatch.setattr(service, "_load", unavailable)
+    for operation, payload in [(service.fill, {"player_ids": [1], "metric_ids": ["ppg"]}),
+                               (service.seed, {"metric_id": "ppg"})]:
+        with ThreadPoolExecutor(max_workers=1) as executor:
+            assert executor.submit(operation, payload).result()["status"] == 503
+        assert len(store._pool_registry) == baseline
+    assert hashlib.sha256(warehouse.read_bytes()).hexdigest() == before
