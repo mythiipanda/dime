@@ -33,7 +33,7 @@ export function DimeComposer({
             onSubmit();
           }
         }}
-        placeholder="Ask about any team, player, lineup, or market\u2026"
+        placeholder="Ask about any team, player, lineup, or market…"
         rows={1}
         className="w-full resize-none bg-transparent px-1 pt-0.5 text-[13.5px] leading-[1.5] text-ink placeholder:text-ink-3 focus:outline-none [@media(pointer:coarse)]:text-base"
       />

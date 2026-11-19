@@ -1,15 +1,10 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { getDatasetJson, getFreshness, getRevision, type FreshRow } from "@/lib/api";
+import { getFreshness, getRevision, type FreshRow } from "@/lib/api";
+import { getTableDetail } from "@/lib/warehouse";
+import { ShotsExplorer } from "@/components/shell/ShotsExplorer";
 import { BACKEND } from "@/lib/chat";
-
-const LOGICAL_DATASETS = new Set([
-  "standings", "leaders", "injuries", "player_gamelogs", "team_games",
-  "scoreboard", "shots", "lineups", "on_off", "wowy", "four_factors",
-  "hustle", "combine", "ratings", "playoffs", "playoff_gamelogs",
-  "draft", "raptor", "player_seasons",
-]);
 
 function fmtRows(n: number) {
   return n.toLocaleString("en-US");
@@ -27,25 +22,11 @@ function relTime(iso: string | null): string {
   return `${Math.round(hours / 24)}d ago`;
 }
 
-function logicalName(table: string): string | null {
-  const stripped = table.startsWith("silver_") ? table.slice("silver_".length) : table;
-  if (LOGICAL_DATASETS.has(stripped)) return stripped;
-  if (stripped.startsWith("leaders")) return "leaders";
-  return null;
-}
-
 type Detail =
   | { state: "idle" }
   | { state: "loading" }
-  | { state: "ready"; columns: string[]; types: Record<string, string>; sample: string[][] }
+  | { state: "ready"; columns: string[]; types: Record<string, string>; sample: string[][]; seasons: string[]; count: number }
   | { state: "unavailable"; reason: string };
-
-function cellType(v: unknown): string {
-  if (v === null || v === undefined) return "null";
-  if (typeof v === "number") return Number.isInteger(v) ? "int" : "double";
-  if (typeof v === "boolean") return "boolean";
-  return "string";
-}
 
 function fmtCell(v: unknown): string {
   if (v === null || v === undefined) return "—";
@@ -60,6 +41,7 @@ export default function WarehouseView() {
   const [selected, setSelected] = useState<string | null>(null);
   const [detail, setDetail] = useState<Detail>({ state: "idle" });
   const [status, setStatus] = useState<string | null>(null);
+  const [season, setSeason] = useState("");
 
   useEffect(() => {
     let cancelled = false;
@@ -95,31 +77,20 @@ export default function WarehouseView() {
   useEffect(() => {
     if (!selected) return;
     setDetail({ state: "loading" });
-    const name = logicalName(selected);
-    if (!name) {
-      setDetail({ state: "unavailable", reason: "Detail is not exposed for this table yet." });
-      return;
-    }
     let cancelled = false;
-    getDatasetJson(name, { season: "2025-26" })
+    getTableDetail(selected, season)
       .then((res) => {
         if (cancelled) return;
-        const rows = Array.isArray(res.data) ? (res.data as Record<string, unknown>[]) : [];
-        if (!res.ok || rows.length === 0) {
-          setDetail({
-            state: "unavailable",
-            reason: typeof res.error === "string" ? res.error : "No rows returned for this table.",
-          });
-          return;
-        }
-        const columns = Object.keys(rows[0]).filter((c) => !c.startsWith("_"));
-        const types: Record<string, string> = {};
-        for (const c of columns) types[c] = cellType(rows[0][c]);
+        const rows = res.rows;
+        const columns = res.columns.map(column => column.name);
+        const types = Object.fromEntries(res.columns.map(column => [column.name, column.type]));
         setDetail({
           state: "ready",
           columns,
           types,
           sample: rows.slice(0, 5).map((r) => columns.map((c) => fmtCell(r[c]))),
+          seasons: res.seasons,
+          count: res.count,
         });
       })
       .catch(() => {
@@ -128,7 +99,7 @@ export default function WarehouseView() {
     return () => {
       cancelled = true;
     };
-  }, [selected]);
+  }, [selected, season]);
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -187,7 +158,7 @@ export default function WarehouseView() {
                   <li key={t.table}>
                     <button
                       type="button"
-                      onClick={() => setSelected(t.table)}
+                      onClick={() => { setSelected(t.table); setSeason(""); }}
                       className={`flex w-full touch-manipulation select-none flex-col gap-0.5 px-4 py-2.5 text-left transition-colors duration-100 ${
                         active ? "bg-hover-2" : "hover:bg-hover"
                       }`}
@@ -229,6 +200,7 @@ export default function WarehouseView() {
               )}
               {detail.state === "ready" && (
                 <>
+                  <div className="mt-4 flex flex-wrap items-center gap-3 text-[12px]"><label>Season <select aria-label="Table season" className="ml-2 rounded border border-line bg-field px-2 py-1" value={season} onChange={event => setSeason(event.target.value)}><option value="">All seasons</option>{detail.seasons.map(value => <option key={value}>{value}</option>)}</select></label><span className="text-ink-3">{fmtRows(detail.count)} matching rows · sample limited to 5</span></div>
                   <h3 className="mb-1 mt-5 text-[12px] font-medium text-ink-3">Schema</h3>
                   <table className="w-full text-[13px]">
                     <thead className="sticky top-0 z-10 bg-page">
@@ -248,6 +220,7 @@ export default function WarehouseView() {
                   </table>
 
                   <h3 className="mb-1 mt-5 text-[12px] font-medium text-ink-3">Sample rows</h3>
+                  {!detail.sample.length && <p className="py-4 text-[12px] text-ink-3">No rows for this selection. Schema remains available.</p>}
                   <div className="overflow-x-auto">
                     <table className="w-full text-[13px]">
                       <thead className="sticky top-0 z-10 bg-page">
@@ -274,6 +247,7 @@ export default function WarehouseView() {
                   </div>
                 </>
               )}
+              {(selected === "silver_shots" || selected === "silver_zone_splits") && <ShotsExplorer key={selected} season={season || (detail.state === "ready" ? detail.seasons[0] : "") || ""} />}
 
               {status && (
                 <p className="mt-6 font-mono text-[11px] text-ink-3">Backend {status}</p>

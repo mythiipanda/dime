@@ -175,14 +175,14 @@ def get_trade_check(
         return {"tool": "get_trade_check", "ok": False,
                 "error": "two teams needed"}
 
-    with _owned_connection(None) as guard_con:
+    with _owned_connection(None, read_only=True) as guard_con:
         guard_error = _trade_guard(guard_con, season, team_a, players_a,
                                    team_b, players_b)
     if guard_error:
         return {"tool": "get_trade_check", "ok": False, "error": guard_error}
 
     if (not team_a or not team_b) and players_a and players_b:
-        with _owned_connection(None) as infer_con:
+        with _owned_connection(None, read_only=True) as infer_con:
             team_a = team_a or _infer_trade_side(players_a, infer_con, season)
             team_b = team_b or _infer_trade_side(players_b, infer_con, season)
     if not team_a or not team_b:
@@ -196,7 +196,7 @@ def get_trade_check(
                           f"different teams; check the team names")}
     team_a, team_b = norm
 
-    with _owned_connection(None) as con:
+    with _owned_connection(None, read_only=True) as con:
         try:
             team_a, side_a, team_b, side_b, corrections = _trade_match_sides(
                 team_a, players_a, team_b, players_b, con, season)

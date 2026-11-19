@@ -7,7 +7,7 @@
     "build": "next build",
     "start": "next start",
     "typecheck": "tsc --noEmit",
-    "test": "tsx --test lib/api.test.ts lib/briefs.test.ts lib/chat.test.ts lib/diagnostics.test.ts lib/evidence.test.ts lib/grades.test.ts lib/exploreFeed.test.ts lib/exploreFeedAction.test.ts lib/exploreIndex.test.ts lib/exploreSearch.test.ts lib/freshness.test.ts stream-batcher.test.tsx lib/scroll.test.ts lib/dime-stream.test.ts lib/resolved-artifacts.test.ts chat-artifacts.test.tsx render-plan.test.tsx",
+    "test": "tsx --test lib/api.test.ts lib/briefs.test.ts lib/chat.test.ts lib/diagnostics.test.ts lib/evidence.test.ts lib/grades.test.ts lib/exploreFeed.test.ts lib/exploreFeedAction.test.ts lib/exploreIndex.test.ts lib/exploreSearch.test.ts lib/freshness.test.ts stream-batcher.test.tsx lib/scroll.test.ts lib/dime-stream.test.ts lib/resolved-artifacts.test.ts chat-artifacts.test.tsx render-plan.test.tsx shell.test.tsx lib/replay.test.ts workspace.test.tsx",
     "test:api": "tsx --test lib/api.test.ts",
     "test:chat": "tsx --test lib/chat.test.ts",
     "qa": "node qa-verify.mjs"
@@ -16,6 +16,7 @@
     "@base-ui/react": "^1.8.0",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
+    "iconoir-react": "^7.12.2",
     "lucide-react": "^1.49.0",
     "next": "16.3.4",
     "react": "19.2.8",

@@ -1,6 +1,16 @@
 import json
 from langchain_core.tools import tool
 
+@tool(description='Read a bounded public warehouse table schema and sample.')
+def product_table_detail(table: str, season: str = '') -> dict:
+    from analyst.dataset_engine import warehouse_table
+    return warehouse_table(table, season)
+
+@tool(description='Read the cached schedule and warehouse team ratings snapshot.')
+def product_home() -> dict:
+    from analyst.dataset_engine import home_snapshot
+    return home_snapshot()
+
 @tool(description='Append an existing product chat row to the state database.')
 def product_save_chat(thread: str, role: str, content: str, owner: str) -> dict:
     from shared import store
@@ -70,7 +80,10 @@ def product_resolve(query: str) -> dict:
 @tool(description='Check a trade using the existing Python domain implementation.')
 def product_trade(team_a: str, players_a: str, team_b: str, players_b: str, season: str = '2025-26') -> dict:
     from shared.tools import get_trade_check
-    return get_trade_check.invoke(dict(team_a=team_a,players_a=players_a,team_b=team_b,players_b=players_b,season=season))
+    try:
+        return get_trade_check.invoke(dict(team_a=team_a,players_a=players_a,team_b=team_b,players_b=players_b,season=season))
+    except ValueError as error:
+        return {'ok': False, 'error': str(error)}
 
 @tool(description='Build the current debate card with the domain season clamp.')
 def product_debate(a: str, b: str, season: str = '2025-26') -> dict:
@@ -122,7 +135,7 @@ def product_briefing(season: str = '2025-26') -> dict:
 
 def internal_catalogue():
     operations = (product_save_chat, product_save_run, product_threads, product_runs,
-        product_warehouse_identity, product_warehouse_health, product_dataset, product_freshness,
+        product_warehouse_identity, product_warehouse_health, product_dataset, product_freshness, product_table_detail, product_home,
         product_rerun, product_resolve, product_trade, product_debate, product_today,
         product_watchlist, product_watchlist_add, product_watchlist_remove, product_movers, product_briefing)
     result = {operation.name: operation for operation in operations}

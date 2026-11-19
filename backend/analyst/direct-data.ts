@@ -2,6 +2,8 @@ import { McpClient, StdioTransport } from "@earendil-works/pi-mcp";
 import { fileURLToPath } from "node:url";
 import { objectValue, type PythonToolsOptions } from "./python-tools.js";
 export type DirectOperations = {
+    product_table_detail: { table: string; season: string };
+    product_home: Record<string, never>;
     product_save_chat: {
         thread: string;
         role: string;

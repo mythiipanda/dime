@@ -524,15 +524,21 @@ export function appendCachedRun(thread: string, run: RunInfo): void {
   lsSet(RUNS_KEY(thread), cached.slice(-MAX_CACHED_RUNS));
 }
 
-export async function getThreads(): Promise<ThreadInfo[]> {
+type ThreadLoad = { rows: ThreadInfo[]; error: string | null; fromCache: boolean };
+
+export function getThreads(): Promise<ThreadInfo[]>;
+export function getThreads(options: { withStatus: true }): Promise<ThreadLoad>;
+export async function getThreads(options?: { withStatus: true }): Promise<ThreadInfo[] | ThreadLoad> {
+  let result: ThreadLoad;
   try {
     const res = await fetch(`${BACKEND}${apiPath(`/threads?client=${encodeURIComponent(getClientId())}`)}`);
-    if (!res.ok) return loadCachedThreads();
+    if (!res.ok) throw new Error(`Could not load conversations (HTTP ${res.status}).`);
     const server = ((await res.json()).threads || []) as ThreadInfo[];
-    return mergeThreads(server);
-  } catch {
-    return loadCachedThreads();
+    result = { rows: mergeThreads(server), error: null, fromCache: false };
+  } catch (error) {
+    result = { rows: loadCachedThreads(), error: error instanceof Error ? error.message : "Could not load conversations.", fromCache: true };
   }
+  return options?.withStatus ? result : result.rows;
 }
 
 export interface RunInfo {

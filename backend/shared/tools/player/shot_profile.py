@@ -110,7 +110,7 @@ def _hist_zone_rows(player: dict, league: dict, total: int, floor: int) -> tuple
     excluded: list[str] = []
     for key in pkg._HIST_ZONE_KEYS:
         m, a = player[key]
-        if a < floor:
+        if not a or a < floor:
             excluded.append(key)
             continue
         lm, la = league[key]
@@ -360,7 +360,7 @@ def get_shot_zones(player_id: str | int, season: str | None = None, min_attempts
     pkg = _pkg()
     season = pkg.resolve_season(season)
     player_id = pkg.coerce_player_id(player_id)
-    floor = pkg._clamp_hist_floor(min_attempts)
+    floor = 0 if min_attempts == 0 else pkg._clamp_hist_floor(min_attempts)
     try:
         hist_year = pkg._hist_season_year(season)
     except Exception:

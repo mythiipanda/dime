@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import DimeHarness from "@/components/site/DimeHarness";
+import { DimeShell } from "@/components/shell/DimeShell";
 import styles from "./scrollbars.module.css";
 
 export const metadata: Metadata = {
@@ -10,7 +10,7 @@ export const metadata: Metadata = {
 export default function DimePage() {
   return (
     <div className={styles.scope}>
-      <DimeHarness />
+      <DimeShell />
     </div>
   );
 }

@@ -11,6 +11,8 @@ const env={...process.env,DIME_CONVERSATION_STORE:join(root,`node-conversations-
 const db=new DatabaseSync(env.DIME_CONVERSATION_STORE);db.exec("CREATE TABLE conversations(owner TEXT NOT NULL,thread TEXT NOT NULL,sequence INTEGER NOT NULL,turn TEXT NOT NULL,run_id TEXT,turn_id TEXT,PRIMARY KEY(owner,thread,sequence))");db.prepare("INSERT INTO conversations VALUES(?,?,?,?,?,?)").run("fixture","thread",1,JSON.stringify({role:"user",content:"old"}),null,null);db.close();
 const output=(operation,args)=>({ok:true,rows:{operation,args}});
 const data={close:async()=>{},async call(name,args){switch(name){
+ case "product_home":return {ok:true,date:"2026-11-19",schedule:{available:false,games:[],next_date:null},snapshot:{rows:[]}};
+ case "product_table_detail":return args.table==="silver_missing"?{ok:false,error:"Table not found"}:{ok:true,table:args.table,seasons:[args.season],columns:[{name:"PTS",type:"INTEGER"}],count:0,rows:[],limit:50};
  case "product_warehouse_health":return {ok:false,reason:"ratings_table_missing"};
  case "product_freshness":return cases.find(c=>c.path==="/api/datasets/freshness").body;
  case "product_dataset":{const fixture=cases.find(c=>c.path===`/api/datasets/${args.name}${args.name==="leaders"?"?season=2090-91":""}`);if(args.fmt==="csv")return {encoding:"base64",media_type:"text/csv",body:Buffer.from(cases.find(c=>c.path.endsWith("fmt=csv")).body).toString("base64")};return fixture.body;}
@@ -18,7 +20,7 @@ const data={close:async()=>{},async call(name,args){switch(name){
  case "product_runs":return {runs:[{question:"fixture",answer:"answer",tables:[],thread:args.thread,owner:args.owner}]};
  case "product_rerun":return {ok:true,columns:["PTS"],rows:[[71]],ms:1,capped:false};
  case "product_resolve":return output("resolve",{query:args.query});
- case "product_trade":return output("trade",args);
+ case "product_trade":return args.team_a==="BAD"?{ok:false,error:"Unknown team BAD"}:output("trade",args);
  case "product_debate":if(args.season==="2025-26")return cases.find(c=>c.path==="/api/debate-card?a=A&b=B").body;return {result:{ok:true,rows:{path:"/private/debate_A_vs_B_1.html",players:["A","B"]}},season:args.season};
  case "product_today":return output("today",args);
  case "product_watchlist":return output("watchlist",args);
@@ -54,6 +56,14 @@ try {
  writeFileSync(join(root,"new-route-contract-failures-"+Date.now()+".json"),JSON.stringify(failures,null,2));
  assert.equal(failures.length,0,JSON.stringify(failures.map(f=>({path:f.path,error:f.error.slice(0,350)})),null,2));
  console.log(`Paired old/new actual HTTP: ${cases.length} contracts passed`);
+ {
+  const home=await fetch(url+"/api/home");assert.equal(home.status,200);assert.equal((await home.json()).schedule.available,false);
+  const table=await fetch(url+"/api/warehouse/tables/silver_sample?season=2025-26");assert.equal(table.status,200);const detail=await table.json();assert.equal(detail.columns[0].type,"INTEGER");assert.deepEqual(detail.seasons,["2025-26"]);assert.deepEqual(detail.rows,[]);
+  for(const name of ["conversations","silver_missing","silver_sample%3BDROP"]){const response=await fetch(url+"/api/warehouse/tables/"+name);assert.equal(response.status,404);}
+  console.log("Home and table-detail route contracts: schedule absence, schema, season, empty rows and invalid tables passed");
+  const trade=await fetch(url+"/api/trade/check",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({team_a:"BAD",players_a:["Player A"],team_b:"NYK",players_b:["Player B"]})});assert.equal(trade.status,422);assert.equal((await trade.json()).error,"Unknown team BAD");
+  console.log("Trade domain errors: HTTP 422 with readable checker reason passed");
+ }
  {
   const preflightPatch = await fetch(url + "/api/workspaces/fixture", {
    method: "OPTIONS",
