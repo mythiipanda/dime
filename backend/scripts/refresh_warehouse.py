@@ -16,6 +16,7 @@ DEFAULT_SEASON = "2025-26"
 sys.path.insert(0, str(SCRIPTS_DIR.parent))
 
 SEEDERS = [
+    ("current_season", "seed_current_season.py", ["--season"], True),
     ("bulk_history", "seed_bulk_history.py", [], True),
     ("recent_market", "seed_recent_market.py", [], True),
     ("transactions", "seed_transactions.py", [], True),
@@ -29,6 +30,7 @@ SEEDERS = [
     ("stints", "seed_stints.py", [], True),
     ("scoreboard", "seed_scoreboard_2025_26.py", [], False),
     ("shots", "seed_shots_2025_26.py", [], False),
+    ("repair_shot_names", "repair_shot_names.py", [], False),
 ]
 
 
