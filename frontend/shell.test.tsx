@@ -8,7 +8,7 @@ import { availableModel, modelLabel } from "./lib/model-catalog";
 import { renderToStaticMarkup } from "react-dom/server";
 import { PromptBar } from "./components/ds/PromptBar";
 import { AssistantTurn } from "./components/shell/ChatView";
-import { aiFromRun } from "./lib/stream-event";
+import { aiFromRun, applyEvent } from "./lib/stream-event";
 import { citationDetails } from "./lib/citation-details";
 import { evidenceSources } from "./lib/evidence";
 import CitedAnswerText from "./components/CitedAnswerText";
@@ -31,7 +31,7 @@ it("ties compact citation chips to source rows and recorded query metadata", () 
 });
 
 it("resolves each citation to its own table rather than the first matching capability", () => {
-  const ai = aiFromRun({ question: "Ratings", answer: "", created_at: "", suggestions: [], tables: [
+  const ai = applyEvent({ text: "", done: true, nodes: {} }, "custom_data", { node: "analytics", tables: [
     { tool: "team_ratings", table_id: "okc", rows: [{ Team: "Oklahoma City", NET: 9.4 }], meta: { season: "2025-26", sql: "SELECT NET WHERE TEAM = 'OKC'" } },
     { tool: "team_ratings", table_id: "den", rows: [{ Team: "Denver", NET: 4.6 }], meta: { season: "2024-25", sql: "SELECT NET WHERE TEAM = 'DEN'" } },
     { output_id: "NET", value: 4.6, provenance: { capability: "team_ratings", table_id: "den", season: "2024-25" } },
