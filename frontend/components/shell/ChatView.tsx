@@ -54,13 +54,15 @@ export function ChatView({ thread, preset, autoSend, replay, onConsumed, onRunDo
   const [models, setModels] = useState<ModelOption[]>([]);
   const [model, setModel] = useState<string | null>(null);
   const [modelError, setModelError] = useState(false);
+  const [modelsLoaded, setModelsLoaded] = useState(false);
+  const [workflowBlocked, setWorkflowBlocked] = useState(false);
   const [busy, setBusy] = useState(false);
   const abort = useRef<AbortController | null>(null);
   const running = useRef(false);
   const sent = useRef(false);
   const end = useRef<HTMLDivElement>(null);
   const mounted = useRef(true);
-  const loadModels = () => { setModelError(false); getModels().then((r) => { if (!mounted.current) return; if (!Array.isArray(r.models)) throw Error("Invalid model catalog"); setModels(r.models); setModel((m) => availableModel(r.models, m)); }).catch(() => { if (mounted.current) { setModel(null); setModelError(true); } }); };
+  const loadModels = () => { setModelError(false); setModelsLoaded(false); getModels().then((r) => { if (!mounted.current) return; if (!Array.isArray(r.models)) throw Error("Invalid model catalog"); setModels(r.models); setModel((m) => availableModel(r.models, m)); }).catch(() => { if (mounted.current) { setModel(null); setModelError(true); } }).finally(() => { if (mounted.current) setModelsLoaded(true); }); };
   useEffect(() => {
     mounted.current = true;
     loadModels();
@@ -105,16 +107,20 @@ export function ChatView({ thread, preset, autoSend, replay, onConsumed, onRunDo
   };
   useEffect(() => {
     if (sent.current || (!replay && !autoSend)) return;
-    if (!replay && !model) return;
+    if (!replay && !modelsLoaded) return;
     const timer = setTimeout(() => {
       sent.current = true;
-      if (autoSend?.thread === thread) { onConsumed(); void send(autoSend.text); }
+      if (autoSend?.thread === thread) {
+        onConsumed();
+        if (model) void send(autoSend.text);
+        else { setInput(autoSend.text); setWorkflowBlocked(true); }
+      }
       else if (replay) void send("Where does Oklahoma City have an edge against Denver?", replay);
     }, 0);
     return () => clearTimeout(timer);
   });
   const stop = () => { abort.current?.abort(); running.current = false; setBusy(false); setMessages((m) => m.map((message, i) => i === m.length - 1 && message.ai ? { ...message, ai: { ...message.ai, done: true, streaming: false } } : message)); };
-  const composer = <PromptBar value={input} onChange={setInput} onSend={send} onStop={stop} busy={busy} models={models.map((m) => ({ id: m.id, label: modelLabel(m.id), available: m.available }))} model={model} onModelChange={(id) => setModel(availableModel(models, id))} modelError={modelError} onRetry={loadModels} />;
+  const composer = <><PromptBar value={input} onChange={setInput} onSend={send} onStop={stop} busy={busy} models={models.map((m) => ({ id: m.id, label: modelLabel(m.id), available: m.available }))} model={model} onModelChange={(id) => setModel(availableModel(models, id))} modelError={modelError} onRetry={loadModels} />{workflowBlocked && !model && <p role="status" className="mt-3 px-1 text-[12px] text-ink-2">No model configured — add a provider key to run this workflow. Your request is saved in the composer.</p>}</>;
   return <div className="chat-view">
     {!messages.length ? <div className="chat-empty">
       <h1><span>A clearer view of the game.</span>What are we working on?</h1>
