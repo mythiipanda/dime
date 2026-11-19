@@ -1,7 +1,7 @@
 import math
 import unicodedata
 from collections import defaultdict
-from typing import Annotated, Any, Literal
+from typing import Annotated, Any
 
 import duckdb
 from fastapi import APIRouter, HTTPException
@@ -32,8 +32,6 @@ class SeedBody(BaseModel):
     n: int = Field(default=10, strict=True, ge=1, le=25)
     min_gp: int | None = Field(default=None, strict=True, ge=0)
     min_mpg: float | None = Field(default=None, ge=0, allow_inf_nan=False)
-    position: Literal["G", "F", "C"] | None = Field(
-        default=None, description="At least one warehouse boxscore start at this position in the selected season.")
 
 
 def _name(value: str | None) -> str:
@@ -187,13 +185,6 @@ def seed(body: SeedBody):
             filters = {"min_gp": body.min_gp, "min_mpg": body.min_mpg,
                        "table": source_table, "minutes_column": minutes_column,
                        "sql": source_read[1], "params": source_read[2]}
-            if body.position is not None:
-                sql = ('SELECT DISTINCT "PLAYER_ID" FROM "silver_boxscores" '
-                       'WHERE "_season" = ? AND upper(trim("position")) = ?')
-                params = [body.season, body.position]
-                positional_ids = {row[0] for row in con.execute(sql, params).fetchall()}
-                eligible = [pid for pid in eligible if pid in positional_ids]
-                filters["position"] = {"value": body.position, "table": "silver_boxscores", "sql": sql, "params": params}
             result = _fill(con, body.season, eligible, [body.metric_id], {source_table: source_read})
             ranked = [(int(pid), cell[body.metric_id]["value"]) for pid, cell in result["cells"].items()
                       if cell[body.metric_id]["value"] is not None]

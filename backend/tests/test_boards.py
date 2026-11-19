@@ -27,7 +27,6 @@ def warehouse(tmp_path, monkeypatch):
         identity = 'PLAYER_ID BIGINT, PLAYER VARCHAR, TEAM VARCHAR' if table == "silver_player_season" else 'PLAYER_ID BIGINT, PLAYER_NAME VARCHAR, TEAM_ABBREVIATION VARCHAR, GP DOUBLE, MIN DOUBLE'
         con.execute(f'CREATE TABLE {table} ({identity}, {", ".join(c + " DOUBLE" for c in columns)}, {provenance})')
     con.execute(f'CREATE TABLE silver_cap_players (player VARCHAR, team VARCHAR, salary BIGINT, {provenance})')
-    con.execute('CREATE TABLE silver_boxscores (PLAYER_ID BIGINT, position VARCHAR, _season VARCHAR)')
     for pid, name, points, gp, mpg, defense in [
         (1, "Alpha Guard", 20, 50, 30, 100),
         (2, "Beta Wing", 30, 60, 35, 110),
@@ -38,7 +37,6 @@ def warehouse(tmp_path, monkeypatch):
         con.execute('INSERT INTO silver_advanced (PLAYER_ID,PLAYER_NAME,TEAM_ABBREVIATION,GP,MIN,TS_PCT,DEF_RATING,TM_TOV_PCT,_source,_season,_fetched_at,_entity) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)',
                     [pid, name, "AAA", gp, mpg, .6, defense, 12.5, "fixture-advanced", "2025-26", "2026-09-02", "advanced"])
     con.execute("INSERT INTO silver_cap_players VALUES ('Alpha Guard','AAA',1000000,'salary-fixture','2026-27','2026-09-03','season:2026-27')")
-    con.execute("INSERT INTO silver_boxscores VALUES (1,'G','2025-26'),(2,'F','2025-26'),(3,'C','2025-26')")
     con.close()
     monkeypatch.setattr(store, "connect", lambda **kwargs: duckdb.connect(str(path), read_only=kwargs.get("read_only", False)))
     return path
@@ -198,8 +196,7 @@ def test_seed_order_filters_and_citations(warehouse, metric, expected):
     assert result["filters"]["params"] == ["2025-26"]
 
 
-def test_seed_position_empty_unknown_and_salary(warehouse):
-    assert client.post("/api/boards/seed", json={"metric_id": "ppg", "position": "G"}).json()["player_ids"] == [1]
+def test_seed_empty_unknown_and_salary(warehouse):
     assert client.post("/api/boards/seed", json={"metric_id": "ppg", "min_gp": 100}).json()["player_ids"] == []
     assert client.post("/api/boards/seed", json={"metric_id": "salary_2026_27"}).json()["player_ids"] == [1]
     assert client.post("/api/boards/seed", json={"metric_id": "unknown"}).status_code == 422
@@ -215,7 +212,7 @@ def test_seed_position_empty_unknown_and_salary(warehouse):
     ("seed", {"metric_id": "ppg", "n": 0}),
     ("seed", {"metric_id": "ppg", "min_gp": -1}),
     ("seed", {"metric_id": "ppg", "min_mpg": -1}),
-    ("seed", {"metric_id": "ppg", "position": "DROP TABLE"}),
+    ("seed", {"metric_id": "ppg", "position": "G"}),
 ])
 def test_validation_caps(path, payload):
     assert client.post(f"/api/boards/{path}", json=payload).status_code == 422

@@ -11,17 +11,16 @@ the immutable metric registry. Conflicting rows are not resolved by row order.
   30 metrics maximum). It returns `{ok, cells, players}` with string player-ID
   keys. Empty inputs are valid. Unknown IDs, missing values, conflicting rows,
   and unresolved salaries produce null cells with machine-readable reasons.
-- `POST /api/boards/seed` accepts `{season?, metric_id, n?, min_gp?, min_mpg?,
-  position?}` and returns `{ok, player_ids, cells, players, filters}`. `n` defaults
+- `POST /api/boards/seed` accepts `{season?, metric_id, n?, min_gp?, min_mpg?}`
+  and returns `{ok, player_ids, cells, players, filters}`. `n` defaults
   to 10 and is bounded to 1–25. Null values are excluded, sorting follows
   `higher_is_better`, and ties are broken by ascending player ID. Unknown metrics
   are rejected with HTTP 422. The default performance season is `2025-26`.
 
-`position` accepts `G`, `F`, or `C`: a player must have at least one boxscore
-start recorded at exactly that position in `silver_boxscores` in the requested
-season. It is not an inferred roster position or a PG/SG/SF/PF classification.
-Players without that coverage are excluded; no matching coverage yields an empty
-seed. Qualification query/parameters are included in `filters`.
+Qualification query/parameters are included in `filters`. Position filtering is
+not supported: the shipped warehouse has no position source covering the default
+performance season. Supplying `position` is rejected with HTTP 422, not silently
+treated as an empty seed or inferred from historical data.
 
 Every cell carries table, column, season, query/parameters, row key, source, and
 fetch timestamp. Missing cells preserve the attempted query and leave unknown
