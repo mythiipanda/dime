@@ -79,7 +79,7 @@ def get_rookie_leaders(stat: str = "ppg", min_value: float = 0,
 
 @tool(description="League-wide five-man lineup net-rating leaderboard.\n\nNet rating is PLUS_MINUS per 48 minutes from the warehouse lineup\ntable. A minimum-minutes floor (default 100) is ALWAYS applied and\nstated: a +3 in 4 minutes is a 300.0 'net rating' on a junk slice\nand never tops the board (F50).")
 def get_lineup_leaders(min_minutes: int = 100, limit: int = 10,
-                       season: str | None = None) -> dict[str, Any]:
+                       season: str | None = None, playoffs: bool = False) -> dict[str, Any]:
     pkg = _pkg()
     season = pkg.resolve_season(season)
     min_minutes = max(25, min(float(min_minutes), 5000))
@@ -100,7 +100,7 @@ def get_lineup_leaders(min_minutes: int = 100, limit: int = 10,
                 sql, [season, float(min_minutes), int(limit) * 2]
             ).fetchdf().to_dict("records")
             hist = False
-            if not raw:
+            if not raw or playoffs:
                 raw = con.execute(
                     """
                     SELECT team_abbreviation AS TEAM_ABBREVIATION,
@@ -110,10 +110,12 @@ def get_lineup_leaders(min_minutes: int = 100, limit: int = 10,
                                AS NET48
                     FROM silver_hist_lineups
                     WHERE _season = ? AND min >= ?
+                      AND season_type = ?
+                      AND measure_type = 'base' AND per_mode = 'totals'
                     ORDER BY plus_minus / NULLIF(min, 0) DESC NULLS LAST
                     LIMIT ?
                     """,
-                    [season, float(min_minutes), int(limit) * 2],
+                    [season, float(min_minutes), 'playoffs' if playoffs else 'regular-season', int(limit) * 2],
                 ).fetchdf().to_dict("records")
                 hist = bool(raw)
         finally:

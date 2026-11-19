@@ -1,4 +1,5 @@
 import sys
+import pytest
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
@@ -66,6 +67,18 @@ def test_get_wowy_hist_season_uses_real_minutes():
     both = next(r for r in res["rows"] if r["split"] == "Both ON")
     assert both["minutes"] == 1433.6
     assert res["meta"].get("source") == "silver_hist_lineups"
+    from shared import store
+    with store.connect(read_only=True) as con:
+        expected = con.execute(
+            "SELECT round(sum(off_rating * poss)/sum(poss),2) FROM silver_hist_lineups "
+            "WHERE _season=? AND team_id=? AND group_id LIKE '%-1628369-%' "
+            "AND group_id LIKE '%-1627759-%' AND season_type='regular-season' "
+            "AND measure_type='advanced' AND per_mode='totals' "
+            "AND group_id IN (SELECT group_id FROM silver_hist_lineups WHERE _season=? "
+            "AND team_id=? AND season_type='regular-season' AND measure_type='base' "
+            "AND per_mode='totals')", [SEASON, BOS, SEASON, BOS],
+        ).fetchone()[0]
+    assert both['off_rating'] == expected
 
 def test_get_on_off_hist_season_returns_rows():
     res = get_on_off.invoke({"player_id": str(TATUM),
@@ -79,3 +92,70 @@ def test_get_lineup_stats_current_season_still_serves_warehouse():
     assert res["ok"] is True
     assert len(res["rows"]) > 0
     assert res["meta"].get("coverage") != "historical_lineups"
+
+
+def test_hist_advanced_ratings_join_and_unique_units():
+    from shared import store
+    from shared.tools.team import _hist_lineup_rows
+    rows = _hist_lineup_rows(BOS, SEASON)
+    assert len(rows) == len({r['GROUP_ID'] for r in rows})
+    top = max(rows, key=lambda r: r['MIN'])
+    assert round(top['MIN'], 1) == TOP_MIN
+    with store.connect(read_only=True) as con:
+        expected = con.execute(
+            "SELECT off_rating, def_rating, net_rating, pace FROM silver_hist_lineups "
+            "WHERE team_id=? AND _season=? AND group_id=? AND season_type='regular-season' "
+            "AND measure_type='advanced' AND per_mode='totals'",
+            [BOS, SEASON, top['GROUP_ID']],
+        ).fetchone()
+    assert tuple(top[k] for k in ('OFF_RATING', 'DEF_RATING', 'NET_RATING', 'PACE')) == expected
+    assert all(v is not None for v in expected)
+
+
+def test_hist_lineup_leaders_qualified_base_totals():
+    from shared.tools.league import get_lineup_leaders
+    res = get_lineup_leaders.invoke({'season': SEASON, 'min_minutes': 100, 'limit': 1})
+    assert res['ok']
+    assert res['rows'][0]['TEAM_ABBREVIATION'] == 'GSW'
+    assert res['rows'][0]['MIN'] == 169.9
+    assert res['rows'][0]['NET48'] == 21.2
+
+
+@pytest.mark.parametrize('season_type,measure_type,per_mode', [
+    ('playoffs', 'base', 'totals'), ('regular-season', 'base', 'pergame'),
+    ('regular-season', 'advanced', 'totals'),
+])
+def test_hist_lineup_variant_selection(season_type, measure_type, per_mode):
+    from shared.tools.team import _hist_lineup_rows
+    from shared import store
+    rows = _hist_lineup_rows(BOS, SEASON, season_type, measure_type, per_mode)
+    with store.connect(read_only=True) as con:
+        expected = con.execute(
+            'SELECT count(*), sum(min) FROM silver_hist_lineups WHERE team_id=? AND _season=? '
+            'AND season_type=? AND measure_type=? AND per_mode=?',
+            [BOS, SEASON, season_type, measure_type, per_mode],
+        ).fetchone()
+    assert len(rows) == expected[0]
+    assert sum(r['MIN'] for r in rows) == pytest.approx(expected[1])
+
+
+def test_hist_lineup_empty_and_invalid_variant():
+    from shared.tools.team import _hist_lineup_rows
+    assert _hist_lineup_rows(BOS, '1900-01') == []
+    with pytest.raises(ValueError):
+        get_lineups.invoke({'team_id': 'BOS', 'season_type': 'invalid'})
+
+
+def test_wowy_playoffs_uses_selected_totals():
+    from shared import store
+    res = get_wowy.invoke({'player_a': str(TATUM), 'player_b': str(BROWN),
+                           'season': SEASON, 'team_id': 'BOS', 'season_type': 'playoffs'})
+    assert res['ok']
+    with store.connect(read_only=True) as con:
+        expected = con.execute(
+            "SELECT round(sum(min),1) FROM silver_hist_lineups WHERE _season=? AND team_id=? "
+            "AND group_id LIKE '%-1628369-%' AND group_id LIKE '%-1627759-%' "
+            "AND season_type='playoffs' AND measure_type='base' AND per_mode='totals'",
+            [SEASON, BOS],
+        ).fetchone()[0]
+    assert next(r for r in res['rows'] if r['split'] == 'Both ON')['minutes'] == expected

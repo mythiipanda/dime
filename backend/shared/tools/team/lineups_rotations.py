@@ -2,6 +2,7 @@ import sys
 from typing import Any
 
 from langchain_core.tools import tool
+from ...lineup_variants import SeasonType, MeasureType, PerMode
 
 
 def _pkg():
@@ -93,20 +94,26 @@ _HIST_LINEUP_PAIRS = (
     ("gp", "GP"), ("min", "MIN"), ("pts", "PTS"),
     ("plus_minus", "PLUS_MINUS"), ("fga", "FGA"), ("oreb", "OREB"),
     ("tov", "TOV"), ("fta", "FTA"),
+    ("off_rating", "OFF_RATING"), ("def_rating", "DEF_RATING"),
+    ("net_rating", "NET_RATING"), ("pace", "PACE"),
 )
 
 
-def _hist_lineup_rows(team_id: int, season: str) -> list[dict[str, Any]]:
+def _hist_lineup_rows(team_id: int, season: str, season_type: SeasonType = 'regular-season', measure_type: MeasureType = 'base', per_mode: PerMode = 'totals') -> list[dict[str, Any]]:
     try:
         from ... import store as _store
         found = _store._read_df(
-            "SELECT group_id, group_name, team_id, team_abbreviation,"
-            " gp, min, pts, plus_minus, fga, oreb, tov, fta"
-            " FROM silver_hist_lineups"
-            " WHERE _season = ? AND team_id = ?"
-            " AND season_type = 'regular-season'"
-            " AND measure_type = 'base' AND per_mode = 'totals'",
-            [season, team_id],
+            "SELECT b.group_id, b.group_name, b.team_id, b.team_abbreviation,"
+            " b.gp, b.min, b.pts, b.plus_minus, b.fga, b.oreb, b.tov, b.fta,"
+            " a.off_rating, a.def_rating, a.net_rating, a.pace"
+            " FROM (SELECT * EXCLUDE (off_rating, def_rating, net_rating, pace)"
+            " FROM silver_hist_lineups WHERE _season = ? AND team_id = ?"
+            " AND season_type = ? AND measure_type = ? AND per_mode = ?) b"
+            " LEFT JOIN silver_hist_lineups a ON a.group_id = b.group_id"
+            " AND a.team_id = b.team_id AND a._season = b._season"
+            " AND a.season_type = b.season_type AND a.per_mode = b.per_mode"
+            " AND a.measure_type = 'advanced'",
+            [season, team_id, season_type, measure_type, per_mode],
         )
     except Exception:
         return []
@@ -172,7 +179,7 @@ def _apply_competitive_nets(rows, comp):
 
 
 @tool(description='Five-man lineup stats for one team id, sorted by minutes.')
-def get_lineups(team_id: str | int, season: str | None = None) -> dict[str, Any]:
+def get_lineups(team_id: str | int, season: str | None = None, season_type: SeasonType = 'regular-season', measure_type: MeasureType = 'base', per_mode: PerMode = 'totals') -> dict[str, Any]:
     pkg = _pkg()
     season = pkg.resolve_season(season)
     team_id = pkg.coerce_team_id(team_id)
@@ -182,8 +189,8 @@ def get_lineups(team_id: str | int, season: str | None = None) -> dict[str, Any]
         lambda: pkg.nba_stats.lineups(team_id, season), season,
         entity=f"team:{team_id}", ttl_s=pkg.TTL_PBPSTATS,
     )
-    if not rows:
-        rows = pkg._hist_lineup_rows(team_id, season)
+    if not rows or (season_type, measure_type, per_mode) != ('regular-season', 'base', 'totals'):
+        rows = pkg._hist_lineup_rows(team_id, season, season_type, measure_type, per_mode)
         if rows:
             meta = {**meta, "source": "warehouse",
                     "coverage": "historical_lineups"}

@@ -1,6 +1,7 @@
 from typing import Any
 
 from langchain_core.tools import tool
+from shared.lineup_variants import SeasonType, MeasureType, PerMode
 
 from .common import (
     _flatten_sections,
@@ -185,10 +186,11 @@ def register() -> dict[str, Any]:
         return res
 
     @tool("get_lineup_leaders", description=_orig_get_lineup_leaders.description)
-    def get_lineup_leaders(min_minutes: int = 100, limit: int = 10, season: str | None = None) -> dict:
-        res = call_sync(_orig_get_lineup_leaders, "get_lineup_leaders", {
-            "min_minutes": min_minutes, "limit": limit, "season": season,
-        })
+    def get_lineup_leaders(min_minutes: int = 100, limit: int = 10, season: str | None = None, playoffs: bool = False) -> dict:
+        args = {"min_minutes": min_minutes, "limit": limit, "season": season}
+        if playoffs:
+            args['playoffs'] = playoffs
+        res = call_sync(_orig_get_lineup_leaders, "get_lineup_leaders", args)
         return finish_dict_list(res, "get_lineup_leaders", ["team_abbreviation", "group_name", "gp", "min", "plus_minus", "net48"])
 
     @tool("get_rest", description=_orig_get_rest.description)
@@ -231,9 +233,14 @@ def register() -> dict[str, Any]:
         return _flatten_sections(res, default_cols, name="get_team_hub")
 
     @tool("get_lineups", description=_orig_get_lineups.description)
-    def get_lineups(team_id: str | int, season: str | None = None) -> dict:
+    def get_lineups(team_id: str | int, season: str | None = None, season_type: SeasonType = 'regular-season', measure_type: MeasureType = 'base', per_mode: PerMode = 'totals') -> dict:
         default_cols = ["GROUP_NAME", "MIN", "PLUS_MINUS", "SAMPLE_TIER", "EST_POSS", "competitive_net", "competitive_poss"]
-        res = call_sync(_orig_get_lineups, "get_lineups", {"team_id": team_id, "season": season})
+        args = {"team_id": team_id, "season": season}
+        for key, value, default in [('season_type', season_type, 'regular-season'),
+                                    ('measure_type', measure_type, 'base'), ('per_mode', per_mode, 'totals')]:
+            if value != default:
+                args[key] = value
+        res = call_sync(_orig_get_lineups, "get_lineups", args)
         return _row_list_result(res, "get_lineups", default_cols)
 
     @tool("get_team_game_log", description=_orig_get_team_game_log.description)
