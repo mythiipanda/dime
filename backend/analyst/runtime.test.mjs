@@ -231,6 +231,7 @@ test("real Python sql_exec and schema cross MCP into Pi with source semantics an
       "get_contract_value",
       "get_trade_check",
       "get_trade_value",
+      "get_trade_partners",
       "get_situational_splits",
       "get_playoff_sim",
       "get_playoff_team_ratings",
@@ -366,7 +367,7 @@ test("real statistical tools cross MCP with anchor compatibility, rows, columns,
   const pid = bridge.pid;
   try {
     const toolMap = new Map(bridge.tools.map(t => [t.name, t]));
-    assert.equal(bridge.tools.length, 93);
+    assert.equal(bridge.tools.length, 94);
 
     // 1. get_rapm
     const rapmTool = toolMap.get("get_rapm");
@@ -1223,6 +1224,7 @@ test("real statistical tools cross MCP with anchor compatibility, rows, columns,
       get_contract_value: { player: "NonexistentPlayer" },
       get_trade_check: { team_a: "BOS", team_b: "MIA" },
       get_trade_value: { team_a: "BOS", team_b: "MIA" },
+      get_trade_partners: { player: "Jaylen Brown", season: "2026-27" },
       get_situational_splits: { entity: "LeBron James" },
       get_playoff_sim: { season: "2023-24", sims: 100 },
       get_playoff_team_ratings: { season: "2023-24", limit: 5 },

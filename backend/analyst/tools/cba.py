@@ -101,6 +101,7 @@ def register() -> dict[str, Any]:
         get_cap_ledger as _orig_get_cap_ledger,
         get_contract_value as _orig_get_contract_value,
         get_trade_check as _orig_get_trade_check,
+        get_trade_partners as _orig_get_trade_partners,
         get_trade_value as _orig_get_trade_value,
     )
     try:
@@ -145,6 +146,20 @@ def register() -> dict[str, Any]:
             enrich_error("get_trade_check", res)
         return sanitize_for_wire(res)
 
+    @tool("get_trade_partners", description=_orig_get_trade_partners.description)
+    def get_trade_partners(player: str = "", season: str | None = None, teams: str = "", max_packages: int = 3) -> dict:
+        res = call_sync(_orig_get_trade_partners, "get_trade_partners", {
+            "player": player, "season": season, "teams": teams, "max_packages": max_packages,
+        })
+        default_cols = ["team", "players", "package_salary", "incoming", "match_rule", "over_apron1", "over_apron2", "legal"]
+        rows = list(res.get("rows") or []) if res.get("ok") else []
+        res["rows"] = rows
+        res["columns"] = list(rows[0].keys()) if rows else default_cols
+        res["ok"] = bool(res.get("ok", False))
+        if not res["ok"]:
+            enrich_error("get_trade_partners", res)
+        return sanitize_for_wire(res)
+
     @tool("get_trade_value", description=_orig_get_trade_value.description)
     def get_trade_value(team_a: str = "", players_a: str = "", team_b: str = "", players_b: str = "", picks_a: str = "", picks_b: str = "") -> dict:
         res = call_sync(_orig_get_trade_value, "get_trade_value", {
@@ -187,6 +202,7 @@ def register() -> dict[str, Any]:
         "get_cap_ledger": get_cap_ledger,
         "get_contract_value": get_contract_value,
         "get_trade_check": get_trade_check,
+        "get_trade_partners": get_trade_partners,
         "get_trade_value": get_trade_value,
         "get_transactions": get_transactions,
     }

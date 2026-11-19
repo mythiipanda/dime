@@ -342,5 +342,6 @@ from .trade_value import (
     _trade_value_sides,
     _trade_verdict_line,
     get_trade_check,
+    get_trade_partners,
     get_trade_value,
 )
