@@ -521,7 +521,7 @@ def test_bridge_clone_keeps_all_names_and_schemas(monkeypatch):
     ).group(1)
     declared = re.findall(r'"([^"]+)"', block)
 
-    assert len(declared) == 95
+    assert len(declared) == 96
     assert list(tools.keys()) == declared
     for name, upstream_schema in UPSTREAM_SCHEMAS.items():
         assert tools[name].args_schema.model_json_schema() == upstream_schema, name
