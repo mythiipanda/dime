@@ -23,11 +23,27 @@ class BoundedText(io.StringIO):
         return len(text)
 
 
-def plotting(warnings):
+def plotting(warnings, theme="light"):
     try:
         import matplotlib
         matplotlib.use("Agg")
         from matplotlib import pyplot
+        from cycler import cycler
+        foreground = "#8a9099" if theme == "dark" else "#737982"
+        pyplot.rcParams.update({
+            "font.family": "sans-serif",
+            "font.sans-serif": ["Inter", "DejaVu Sans", "sans-serif"],
+            "font.size": 10,
+            "axes.prop_cycle": cycler(color=["#59a69a", "#8793a5", "#c79a64", "#a38aba"]),
+            "figure.facecolor": "none", "axes.facecolor": "none",
+            "savefig.transparent": True,
+            "text.color": foreground, "axes.labelcolor": foreground,
+            "axes.edgecolor": foreground, "xtick.color": foreground,
+            "ytick.color": foreground,
+            "axes.spines.top": False, "axes.spines.right": False,
+            "axes.grid": True, "axes.axisbelow": True,
+            "grid.color": foreground, "grid.alpha": 0.18, "grid.linewidth": 0.5,
+        })
         return pyplot
     except ImportError:
         warnings.append("Figure capture is unavailable because matplotlib is not installed. Install backend requirements to enable plots.")
@@ -49,7 +65,7 @@ def main():
     try:
         with contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(stderr):
             import polars as pl
-            plt = plotting(result["warnings"])
+            plt = plotting(result["warnings"], job.get("theme", "light"))
             from v2.notebooks.sql import connection, validate
 
             def sql(query, **params):

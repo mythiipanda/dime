@@ -18,14 +18,14 @@ def enabled() -> bool:
     return os.environ.get("DIME_NOTEBOOK_PYTHON") == "1"
 
 
-def run(source: str, timeout_s: float) -> dict:
+def run(source: str, timeout_s: float, theme: str = "light") -> dict:
     env = {"PATH": os.defpath, "MPLBACKEND": "Agg", "OPENBLAS_NUM_THREADS": "1",
            "OMP_NUM_THREADS": "1", "POLARS_MAX_THREADS": "2"}
     with tempfile.TemporaryDirectory(prefix="dime-notebook-") as directory:
         env.update(HOME=directory, TMPDIR=directory, MPLCONFIGDIR=directory)
         job = Path(directory) / "job.json"
         job.write_text(json.dumps({"source": source, "warehouse": str(store.DB_PATH.resolve()),
-                                   "cpu_s": math.ceil(timeout_s) + 1}))
+                                   "cpu_s": math.ceil(timeout_s) + 1, "theme": theme}))
         with (Path(directory) / "stdout").open("wb") as stdout, (Path(directory) / "stderr").open("wb") as stderr:
             process = subprocess.Popen([sys.executable, "-I", str(WORKER), str(job)], cwd=directory,
                                        env=env, stdin=subprocess.DEVNULL, stdout=stdout, stderr=stderr,
