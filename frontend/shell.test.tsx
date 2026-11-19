@@ -12,6 +12,7 @@ import { aiFromRun, applyEvent } from "./lib/stream-event";
 import { citationDetails } from "./lib/citation-details";
 import { evidenceSources } from "./lib/evidence";
 import CitedAnswerText from "./components/CitedAnswerText";
+import { EvidenceAction } from "./components/ds/CitationChip";
 
 it("ties compact citation chips to source rows and recorded query metadata", () => {
   const ai = aiFromRun({ question: "Ratings", answer: "Net rating is 9.4", created_at: "2026-01-01", suggestions: [], tables: [{ tool: "team_ratings", rows: [{ Team: "Oklahoma City", NET: 9.4 }], meta: { season: "2025-26", source: "Warehouse", sql: "SELECT NET FROM team_ratings" } }, { tool: "team_ratings", output_id: "NET", subject_display_name: "Oklahoma City", value: 9.4, provenance: { capability: "team_ratings", season: "2025-26" } }] });
@@ -61,6 +62,20 @@ it("preserves statistical drivers when reopening a saved comps result", () => {
   assert.match(html, /29\.8/);
   assert.match(html, /Test player/);
   assert.doesNotMatch(html, /2 records/);
+});
+
+it("hides evidence navigation for live claim-only answers without inventing row targets", () => {
+  const ai = applyEvent({ text: "Net rating is 9.4", done: true, nodes: {} }, "custom_data", { node: "analytics", tables: [{ output_id: "NET_RATING", value: "9.4", provenance: { capability: "team_ratings", season: "2025-26" } }] });
+  const detail = citationDetails(ai, evidenceSources(ai)[0]);
+  assert.equal(detail.target, null);
+  assert.deepEqual(detail.rows, []);
+  assert.equal(renderToStaticMarkup(<EvidenceAction target={detail.target} onNavigate={() => {}} />), "");
+  const html = renderToStaticMarkup(<AssistantTurn ai={ai} question="Ratings" onAsk={() => {}} />);
+  assert.match(html, /citation-chip/);
+  assert.doesNotMatch(html, /evidence-artifacts/);
+  assert.match(renderToStaticMarkup(<EvidenceAction target="evidence-0" onNavigate={() => {}} />), /View evidence/);
+  const empty = { text: "", done: true, nodes: {} };
+  assert.equal(citationDetails(empty, evidenceSources(ai)[0]).target, null);
 });
 
 it("never selects unconfigured providers and presents human model names", () => {

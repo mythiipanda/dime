@@ -24,6 +24,7 @@ export function citationDetails(ai: AiMessage, source: EvidenceSource, prefix = 
   const matching = rows.filter((row) => source.subject && Object.values(record(row)).some((value) => String(value).toLowerCase() === source.subject.toLowerCase()));
   const calls = Object.values(ai.nodes).flatMap((node) => node.toolCalls).filter((tool) => tool.name === capability && tool.sql);
   const call = calls.length === 1 ? calls[0] : undefined;
+  const isGrid = Array.isArray(data.rows) && data.tool !== "get_comps" && data.rows.every((row) => row && typeof row === "object" && !Array.isArray(row));
   return {
     label: capabilityLabel(capability || source.stat),
     table: text(provenance.table, meta.table, capability) || "Not recorded",
@@ -32,7 +33,6 @@ export function citationDetails(ai: AiMessage, source: EvidenceSource, prefix = 
     query: text(table.sql, provenance.sql, provenance.query, data.sql, meta.sql, meta.query, call?.sql),
     count: typeof meta.rows === "number" ? meta.rows : rows.length,
     rows: (matching.length ? matching : rows).slice(0, 3).map(record),
-    target: `${prefix}evidence-${tables.indexOf(data as typeof tables[number])}`,
-    fallback: `${prefix}evidence-artifacts`,
+    target: isGrid ? `${prefix}evidence-${tables.findIndex((candidate) => record(candidate) === data)}` : data.rows ? `${prefix}evidence-artifacts` : null,
   };
 }
