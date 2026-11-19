@@ -193,6 +193,7 @@ def main_union(argv: list[str]) -> int:
     parser.add_argument("--json-file", default="")
     parser.add_argument("--csv-url", default=src.CSV_URL)
     parser.add_argument("--json-url", default=src.JSON_URL)
+    parser.add_argument("--csv-only", action="store_true")
     args = parser.parse_args(argv)
 
     transport = src.paced_transport()
@@ -203,11 +204,14 @@ def main_union(argv: list[str]) -> int:
         csv_text = transport(args.csv_url)
     if args.json_file:
         json_text = Path(args.json_file).read_text(encoding="utf-8")
+        json_frame = src.parse_json(json_text)
+    elif args.csv_only:
+        json_frame = pl.DataFrame([], schema={c: pl.String for c in src.COLUMNS})
     else:
         log(f"fetching {args.json_url}")
         json_text = transport(args.json_url)
+        json_frame = src.parse_json(json_text)
     csv_frame = src.parse_csv(csv_text)
-    json_frame = src.parse_json(json_text)
     frame = src.union(csv_frame, json_frame)
     log(f"parsed csv={csv_frame.height} json={json_frame.height} "
         f"union_after_dedup={frame.height}")
