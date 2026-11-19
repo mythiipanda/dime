@@ -46,7 +46,7 @@ last-expression DataFrame emits up to four tables, each at most 500 rows and
 256KiB, with types, row_count and truncated. stdout/stderr are capped at 64K
 characters each. Matplotlib Agg emits up to four PNGs, each at most 1MiB,
 as `{mime_type, data}` (base64). Errors include a bounded traceback. Matplotlib
-must be installed in the backend environment; it was already importable in
-the development environment and requirements were not changed.
+is pinned in backend requirements; if unavailable, ordinary cells still run
+and the response includes a figure-capture warning.
 
 Check: `python -m pytest tests/test_notebooks.py tests/test_query_warehouse.py -q`

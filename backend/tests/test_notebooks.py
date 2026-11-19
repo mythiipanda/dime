@@ -260,6 +260,14 @@ def test_python_figure(monkeypatch):
     assert png.startswith(b'\x89PNG\r\n\x1a\n') and len(png) <= 1024 * 1024
 
 
+def test_missing_matplotlib_is_a_capture_warning(monkeypatch):
+    from v2.notebooks.worker import plotting
+    monkeypatch.setitem(sys.modules, "matplotlib", None)
+    warnings = []
+    assert plotting(warnings) is None
+    assert "Figure capture is unavailable" in warnings[0]
+
+
 def test_python_env_no_secrets_isolated_cwd_and_traceback(monkeypatch):
     monkeypatch.setenv("DIME_NOTEBOOK_PYTHON", "1")
     monkeypatch.setenv("NOTEBOOK_SENTINEL_SECRET", "do-not-inherit")

@@ -23,6 +23,17 @@ class BoundedText(io.StringIO):
         return len(text)
 
 
+def plotting(warnings):
+    try:
+        import matplotlib
+        matplotlib.use("Agg")
+        from matplotlib import pyplot
+        return pyplot
+    except ImportError:
+        warnings.append("Figure capture is unavailable because matplotlib is not installed. Install backend requirements to enable plots.")
+        return None
+
+
 def main():
     job = json.loads(Path(sys.argv[1]).read_text())
     try:
@@ -34,13 +45,11 @@ def main():
         pass
     sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
     stdout, stderr = BoundedText("captured-stdout"), BoundedText("captured-stderr")
-    result = {"ok": True, "tables": [], "figures": []}
+    result = {"ok": True, "tables": [], "figures": [], "warnings": []}
     try:
         with contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(stderr):
             import polars as pl
-            import matplotlib
-            matplotlib.use("Agg")
-            from matplotlib import pyplot as plt
+            plt = plotting(result["warnings"])
             from v2.notebooks.sql import connection, validate
 
             def sql(query, **params):
@@ -76,7 +85,7 @@ def main():
                 value = eval(compile(ast.Expression(last.value), "<notebook>", "eval"), namespace)
                 if value is not None:
                     show(value)
-            for number in plt.get_fignums():
+            for number in plt.get_fignums() if plt else []:
                 if len(result["figures"]) == 4:
                     raise ValueError("At most four figures can be displayed per call")
                 image = io.BytesIO()
@@ -84,7 +93,8 @@ def main():
                 if image.tell() > 1024 * 1024:
                     raise ValueError("Figure exceeds 1MB")
                 result["figures"].append({"mime_type": "image/png", "data": base64.b64encode(image.getvalue()).decode()})
-            plt.close("all")
+            if plt:
+                plt.close("all")
     except BaseException:
         result.update(ok=False, error=traceback.format_exc()[-16000:])
     result.update(stdout=stdout.getvalue(), stderr=stderr.getvalue())
