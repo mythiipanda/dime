@@ -10,14 +10,18 @@ function fileSlug(title: string): string {
 }
 
 export default function ArtifactMemo({ artifact }: { artifact: MemoArtifactPayload }) {
-  const download = () => {
-    const blob = new Blob([memoToMarkdown(artifact)], { type: "text/markdown" });
+  const save = (blob: Blob, ext: string) => {
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `${fileSlug(artifact.title)}.md`;
+    a.download = `${fileSlug(artifact.title)}.${ext}`;
     a.click();
     URL.revokeObjectURL(url);
+  };
+  const downloadMd = () => save(new Blob([memoToMarkdown(artifact)], { type: "text/markdown" }), "md");
+  const downloadPdf = async () => {
+    const { memoToPdfBlob } = await import("@/lib/stream/memo-pdf");
+    save(memoToPdfBlob(artifact), "pdf");
   };
   return <div className="p-4">
     {artifact.subtitle && <p className="mb-4 text-xs text-ink-3">{artifact.subtitle}</p>}
@@ -34,9 +38,14 @@ export default function ArtifactMemo({ artifact }: { artifact: MemoArtifactPaylo
     </div>
     <div className="mt-5 flex flex-wrap items-center justify-between gap-2 border-t border-line pt-3">
       <p className="break-words text-xs text-ink-3">{artifact.footnote || "Section citations reference queried source rows."}</p>
-      <Button size="sm" variant="quiet" aria-label={`Download ${artifact.title} as markdown`} onClick={download}>
-        <Download size={14} aria-hidden="true" />Download memo
-      </Button>
+      <div className="flex gap-2">
+        <Button size="sm" variant="quiet" aria-label={`Download ${artifact.title} as markdown`} onClick={downloadMd}>
+          <Download size={14} aria-hidden="true" />Markdown
+        </Button>
+        <Button size="sm" variant="quiet" aria-label={`Download ${artifact.title} as PDF`} onClick={downloadPdf}>
+          <Download size={14} aria-hidden="true" />PDF
+        </Button>
+      </div>
     </div>
   </div>;
 }

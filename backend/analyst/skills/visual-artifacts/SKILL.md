@@ -166,7 +166,7 @@ briefing, scenario playbook or strategy report — not a single visual. Each
 `sections[].body` is markdown-style prose. `anchors` on a section cite source
 rows exactly like block anchors and are validated the same way; cite the rows a
 section's claims rest on. `subtitle` and `footnote` are optional. A memo renders
-as a document card with a download affordance; keep it to one memo per answer.
+as a document card that downloads as Markdown or PDF; keep it to one memo per answer.
 
 ---
 
