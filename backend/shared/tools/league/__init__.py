@@ -120,6 +120,7 @@ from .clutch import (
     get_situational_splits,
 )
 from .draft_capital import get_draft_capital
+from .expectations import get_expectations
 from .draft_contracts import (
     _CONTRACT_WEIGHTS,
     _contract_fetched,

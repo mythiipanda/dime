@@ -161,8 +161,8 @@ def test_an_uncovered_playoff_phase_publishes_no_series_record():
     assert summary["series"] is None
     assert "playoffs" not in summary["games_by_phase"]
     assert out["meta"]["coverage"]["playoffs"]["source"] is None
-    assert out["meta"]["coverage"]["playoffs"]["consulted"] == list(
-        PLAYOFF_TABLES)
+    assert out["meta"]["coverage"]["playoffs"]["consulted"] == [
+        "silver_hist_gamelogs", *PLAYOFF_TABLES]
 
 def test_an_unanswerable_section_publishes_no_number_at_all():
     _require_warehouse()
