@@ -21,8 +21,15 @@ SOURCE_LICENSES = {
     "sportsdataverse": "sportsdataverse-data releases, sourced from NBA Stats (MIT)",
     "huggingface": "community dataset on Hugging Face (see its dataset page)",
     "teamrankings": "TeamRankings public projections (teamrankings.com terms of use)",
-    "basketball_reference": "Basketball Reference (sports-reference.com terms of use)",
     "spotrac": "Spotrac contract data (spotrac.com terms of use)",
+    "basketball-reference": "Basketball Reference (sports-reference.com terms of use)",
+    "bref_contracts": "Basketball Reference contract data (sports-reference.com terms of use)",
+    "espn": "ESPN public data (espn.com terms of use)",
+    "fivethirtyeight": "FiveThirtyEight RAPTOR archive (CC BY 4.0)",
+    "orojas119/nba-salary-cap": "community dataset (orojas119/nba-salary-cap)",
+    "pbpstats": "pbpstats public NBA possession data",
+    "rapm-lite": "derived metric computed in-repo",
+    "rapm-prior": "derived metric computed in-repo",
 }
 
 
