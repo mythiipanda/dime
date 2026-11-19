@@ -37,7 +37,11 @@ export default function DesignSystemPage() {
     try { localStorage.setItem("bui-theme", next ? "dark" : "light"); } catch {}
   };
   const navigate = (section: typeof sections[number]) => {
-    window.location.hash = section.toLowerCase();
+    requestAnimationFrame(() => {
+      const target = document.getElementById(section.toLowerCase());
+      target?.focus({ preventScroll: true });
+      target?.scrollIntoView({ block: "start" });
+    });
   };
   return <main className="min-h-dvh bg-page text-ink">
     <div className="system-page">
