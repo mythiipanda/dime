@@ -33,3 +33,8 @@ In player-season tables, a traded player often has one combined row (`TEAM_ABBRE
 `sql_exec` returns `ok: true, rows: [], row_count: 0, meta: { empty_observation: true }` when a valid query matches zero rows:
 - Do **not** treat a 0-row result as a tool crash. First verify your filter literals (spelling, case, season encoding) against `warehouse_schema` or a broader `SELECT DISTINCT` probe.
 - Once filters are verified, a 0-row observation is affirmative evidence that no entity or event satisfied those criteria in the covered warehouse scope (e.g., resolving a false-premise question). Report the exact verified scope and the 0-row finding transparently.
+
+## 5. Duplicate Rows
+- When an audit finds duplicate rows by the event key, build one deduplicated CTE (`QUALIFY row_number() OVER (PARTITION BY <key> ORDER BY _fetched_at DESC) = 1`) and run every later aggregate on that CTE, never on the raw table.
+- Reconcile before reporting: the deduplicated attempt total must equal the unique-key count from the audit. A total that still equals the raw row count means the aggregate read duplicated rows.
+- Explain what duplication does to each metric: uniform k-fold duplication multiplies counts (FGA, FGM, possessions) by k but leaves ratios (FG%, eFG%, per-possession rates) unchanged, because numerator and denominator scale together. Non-uniform duplication biases ratios too.
