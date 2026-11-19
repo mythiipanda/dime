@@ -52,7 +52,7 @@ The live component reference is available at `/design-system`.
 Backend (Node 22.19+ and Python 3.12):
 
 ```bash
-# warehouse: fetch the data pack release (verifies checksum, unzips to backend/data/warehouse.duckdb)
+# warehouse: fetch the Hugging Face dataset (verifies checksum, writes backend/data/warehouse.duckdb)
 ./scripts/fetch-data.sh
 cd backend
 uv venv --python 3.12
@@ -104,19 +104,19 @@ and are not behind this flag.
 
 ## Data
 
-The warehouse is a DuckDB file baked into the backend Docker
-image. On backend changes, CI downloads the data pack
-(`dime-data-20260930`), unzips it into
-`backend/data/`, builds derived tables at
-image time, and pushes
+The warehouse is a DuckDB file hosted as the private Hugging Face
+dataset `mythiix/dime-warehouse`. On backend changes, CI downloads
+`warehouse.duckdb` from that dataset, verifies its checksum, and
+builds derived tables at image time before pushing
 `ghcr.io/mythiipanda/dime-backend:latest`. For local dev,
-`./scripts/fetch-data.sh` fetches the current pack
-(`dime-data-20260930`, checksum-verified) and exits 1 on
-failure. The warehouse is the primary source at answer time; on misses, some datasets fall back to live sources (nba_stats, ESPN) where configured, and that fallback can fail or time out.
+`./scripts/fetch-data.sh` fetches the current dataset file
+(checksum-verified) and exits 1 on failure. Publish an updated
+warehouse with `backend/scripts/publish_warehouse.py` after ingest.
+The warehouse is the primary source at answer time; on misses, some datasets fall back to live sources (nba_stats, ESPN) where configured, and that fallback can fail or time out.
 
-The current pack holds 54 tables. A fresh backfill covers
+The current dataset holds 54 tables. A fresh backfill covers
 2015-16 through 2024-25 with 330,485 boxscore rows and 40,000
-lineup rows. The pack also carries the historical tables:
+lineup rows. The dataset also carries the historical tables:
 RAPTOR, RAPM, shots, advanced stats, on/off splits, clutch
 splits, leaders, salaries, zone splits, and the `hist_*`
 tables.
@@ -144,7 +144,7 @@ pytest tests/ -q
 ## Contributing
 
 Push backend changes on `dev` and CI builds the backend
-image with the data pack baked in. Run `pytest tests/ -q`
+image with the warehouse baked in. Run `pytest tests/ -q`
 from `backend/` before you open a PR. Deployments go
 through `infra/deploy.sh`, which needs `az login` and the
 LLM keys in `backend/.env` (pushed as Container App
