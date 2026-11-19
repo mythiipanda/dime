@@ -38,6 +38,7 @@ class PythonBody(BaseModel):
     model_config = ConfigDict(extra="forbid")
     source: str = Field(min_length=1, max_length=100_000)
     timeout_s: float = Field(default=30, gt=0, le=60, allow_inf_nan=False)
+    theme: Literal["dark", "light"] = "light"
 
 
 @router.get("/capabilities")
@@ -63,7 +64,7 @@ def execute_sql(body: SQLBody):
 def execute_python(body: PythonBody):
     if not runner.enabled():
         raise HTTPException(403, "Python execution is disabled. For trusted local notebooks only, set DIME_NOTEBOOK_PYTHON=1 on the backend.")
-    return runner.run(body.source, body.timeout_s)
+    return runner.run(body.source, body.timeout_s, body.theme)
 
 
 def storage_call(method, *args):

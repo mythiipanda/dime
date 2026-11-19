@@ -186,6 +186,21 @@ def test_sql_named_params_and_empty_result():
     assert query("SELECT $missing FROM silver_player_season").status_code == 400
 
 
+@pytest.mark.parametrize("predicate", [
+    "player_id = 12 AND ppg > 1",
+    "player_id = 12 OR player_id = -1",
+    "NOT (player_id <> 12)",
+    "player_id BETWEEN 12 AND 12",
+    "player_id IN (12)",
+    "CASE WHEN player_id = 12 AND ppg > 1 THEN TRUE ELSE FALSE END",
+    "player LIKE 'Player 12'",
+])
+def test_notebook_sql_operators(predicate):
+    response = query(f"SELECT player_id FROM silver_player_season WHERE {predicate}")
+    assert response.status_code == 200, response.text
+    assert response.json()["rows"] == [{"player_id": 12}]
+
+
 def test_sql_empty_statement_and_nonfinite_values():
     assert query(";").status_code == 400
     assert query(" ").status_code == 400
@@ -306,12 +321,23 @@ def test_python_show_dataframe_stdout_cap_and_table_cap(monkeypatch):
     assert result["tables"][0]["row_count"] == 700 and result["tables"][0]["truncated"]
 
 
-def test_python_figure(monkeypatch):
+@pytest.mark.parametrize("theme,foreground", [("dark", "#8a9099"), ("light", "#737982")])
+def test_python_figure(monkeypatch, theme, foreground):
+    import io
+    from PIL import Image
+
     monkeypatch.setenv("DIME_NOTEBOOK_PYTHON", "1")
-    result = python("import matplotlib.pyplot as plt\nplt.plot([1,2,3], [2,1,4])\nplt.title('Notebook')").json()
+    result = python("import matplotlib.pyplot as plt\nplt.plot([1,2,3], [2,1,4])\nplt.title('Notebook')\nprint(plt.rcParams['text.color'])\nprint(plt.rcParams['axes.spines.top'], plt.rcParams['axes.spines.right'])", theme=theme).json()
     assert result["ok"], result
     png = base64.b64decode(result["figures"][0]["data"])
     assert png.startswith(b'\x89PNG\r\n\x1a\n') and len(png) <= 1024 * 1024
+    assert foreground in result["stdout"] and "False False" in result["stdout"]
+    assert Image.open(io.BytesIO(png)).getpixel((0, 0))[3] == 0
+
+
+def test_python_theme_validation(monkeypatch):
+    monkeypatch.setenv("DIME_NOTEBOOK_PYTHON", "1")
+    assert python("pass", theme="unknown").status_code == 422
 
 
 def test_missing_matplotlib_is_a_capture_warning(monkeypatch):
