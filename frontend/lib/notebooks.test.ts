@@ -6,6 +6,7 @@ import type { AiMessage } from "./chat";
 import type { Board, BoardCitation } from "./boards";
 import { scoutingEvents, scoutingQuestion } from "./replay-fixture";
 import { aiFromRun, applyEvent } from "./stream-event";
+import { readableSnapshot } from "./notebook-snapshot";
 
 test("cell helpers are immutable, bounded and safe on empty or missing cells", () => {
   const first = newCell("sql", "SELECT 1"), second = newCell("python", "print(2)");
@@ -133,17 +134,35 @@ test("ambiguous call bindings never attach a cached table to the wrong parameter
 
 test("flat public evidence becomes typed Cited values snapshots, alone or alongside recorded SQL", () => {
   for (const withSQL of [false, true]) {
-    const evidence = { output_id: "NET_RATING", value: "9.4", unit: "points_per_100_possessions", subject_type: "team", subject_id: "OKC", provenance: { source: "NBA warehouse", season: "2025-26", capability: "team_ratings" } };
+    const evidence = { output_id: "NET_RATING", value: "9.4", unit: "points_per_100_possessions", subject_type: "team", subject_id: "OKC", provenance: { source: "NBA warehouse", season: "2025-26", capability: "team_ratings", table: "silver_team_ratings" } };
     const ai = aiFromRun({ question: "Rating?", answer: "Cited answer", tables: [evidence], suggestions: [], created_at: "2026-01-01" });
     if (withSQL) ai.nodes.analytics!.toolCalls = [{ name: "query_warehouse", sql: "SELECT 1", args: {} }];
     const draft = notebookFromAnswer(ai, "Rating?");
     const snapshot = draft.cells.find((cell) => cell.source.includes("### Cited values"))!;
     const output = snapshot.outputs as { kind: string; data: { columns: { name: string; type: string }[]; rows: Record<string, unknown>[] } };
     assert.equal(snapshot.kind, "markdown"); assert.equal(output.kind, "snapshot");
-    assert.deepEqual(output.data.rows[0], { output: "NET_RATING", value: "9.4", unit: evidence.unit, subject: "OKC", subject_type: "team", source: "NBA warehouse", provenance: evidence.provenance });
-    assert.equal(output.data.columns.find((column) => column.name === "provenance")!.type, "JSON");
+    assert.deepEqual(output.data.rows[0], { output: "NET_RATING", value: "9.4", unit: evidence.unit, subject: "OKC", subject_type: "team", Source: "NBA warehouse", Season: "2025-26", Capability: "team_ratings", Table: "silver_team_ratings" });
+    assert.ok(output.data.columns.every((column) => column.name !== "provenance" && column.type !== "JSON"));
     assert.doesNotMatch(draft.cells.map((cell) => cell.source).join("\n"), /No tables/);
   }
+});
+
+test("snapshot objects and arrays become short readable text without mutating data or losing scalars", () => {
+  const input = { columns: [{ name: "details", type: "JSON" }, { name: "value", type: "DOUBLE" }], rows: [
+    { details: { wins: 5, active: true, context: { season: "2025-26" } }, value: 9.4 },
+    { details: ["NBA", { source: "Warehouse" }], value: null },
+    { details: {}, value: 0 },
+    { details: { long: "x".repeat(500), other: [1, 2, 3, 4, 5] }, value: false },
+  ], truncated: false };
+  const before = JSON.stringify(input), result = readableSnapshot(input);
+  assert.equal(result.rows[0].details, "wins: 5 · active: true · context: season: 2025-26");
+  assert.equal(result.rows[1].details, "NBA · source: Warehouse");
+  assert.equal(result.rows[2].details, "—");
+  assert.ok(String(result.rows[3].details).length <= 200);
+  assert.deepEqual(result.rows.map((row) => row.value), [9.4, null, 0, false]);
+  assert.equal(result.columns[0].type, "VARCHAR");
+  assert.equal(JSON.stringify(input), before);
+  assert.deepEqual(readableSnapshot({ columns: [], rows: [], truncated: false }), { columns: [], rows: [], truncated: false });
 });
 
 test("reopened answers retain run identity and flat citations; unidentified answers get unique origins", () => {
@@ -171,7 +190,7 @@ test("published warehouse, live and mixed provenance labels survive in context a
     const ai = aiFromRun({ question: "Source?", answer: "Answer", tables: [{ output_id: "PPG", value: 28, unit: "points", subject_id: 201939, provenance }], suggestions: [], created_at: "2026-01-01" });
     const draft = notebookFromAnswer(ai, "Source?");
     assert.ok(draft.cells[0].source.includes(expected));
-    assert.equal((draft.cells[1].outputs as { data: { rows: Record<string, unknown>[] } }).data.rows[0].source, expected);
+    assert.equal((draft.cells[1].outputs as { data: { rows: Record<string, unknown>[] } }).data.rows[0].Source, expected);
   }
 });
 

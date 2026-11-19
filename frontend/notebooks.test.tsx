@@ -16,7 +16,7 @@ const button = (host: ParentNode, text: string) => [...host.querySelectorAll("bu
 async function click(element: HTMLElement) { assert.ok(element); await act(async () => { element.click(); await delay(); }); }
 const sqlResult: SQLResult = { columns: [{ name: "PLAYER", type: "VARCHAR" }, { name: "PTS", type: "DOUBLE" }], rows: [{ PLAYER: "Stephen Curry", PTS: 28.5 }], page: 0, page_size: 100, has_more: false, ms: 7, truncated: false };
 
-async function mount(options: { sqlError?: boolean; empty?: boolean; conflict?: boolean; listError?: boolean; deferredSave?: boolean; pythonEnabled?: boolean; savedPython?: boolean; saveError?: boolean; storedDrafts?: string; openNotebook?: boolean; storedEntries?: Record<string, string>; tabId?: string; serverVersion?: number; serverUpdated?: string; drafts?: { title: string; tab: string; version: number; time: number }[]; answer?: AiMessage; createNetworkError?: boolean } = {}, hook = false) {
+async function mount(options: { sqlError?: boolean; empty?: boolean; conflict?: boolean; listError?: boolean; deferredSave?: boolean; pythonEnabled?: boolean; savedPython?: boolean; savedSnapshot?: boolean; saveError?: boolean; storedDrafts?: string; openNotebook?: boolean; storedEntries?: Record<string, string>; tabId?: string; serverVersion?: number; serverUpdated?: string; drafts?: { title: string; tab: string; version: number; time: number }[]; answer?: AiMessage; createNetworkError?: boolean } = {}, hook = false) {
   const dom = new JSDOM("<!doctype html><html><body><div id='root'></div></body></html>", { url: "http://localhost/?tab=notebooks", pretendToBeVisual: true });
   if (options.storedDrafts) dom.window.localStorage.setItem("dime_notebook_drafts_v1", options.storedDrafts);
   for (const [key, value] of Object.entries(options.storedEntries || {})) dom.window.localStorage.setItem(key, value);
@@ -27,6 +27,7 @@ async function mount(options: { sqlError?: boolean; empty?: boolean; conflict?: 
   let doc: Notebook = { id: "a".repeat(32), title: "Test notebook", version: 1, created_at: "2026-01-01", updated_at: "2026-01-01", cells: [newCell("sql", "SELECT PLAYER, PPG AS PTS FROM silver_player_season")] };
   doc.version = options.serverVersion || doc.version;
   doc.updated_at = options.serverUpdated || doc.updated_at;
+  if (options.savedSnapshot) doc.cells = [{ ...newCell("markdown", "Saved snapshot"), outputs: { kind: "snapshot", data: { columns: [{ name: "details", type: "JSON" }], rows: [{ details: { wins: 5, source: "NBA" } }], truncated: false } } }];
   for (const draft of options.drafts || []) dom.window.localStorage.setItem(`dime_notebook_drafts_v1:${doc.id}:${draft.tab}:${draft.version}`, JSON.stringify({ notebook: { ...doc, title: draft.title }, base_version: draft.version, saved_at: draft.time }));
   if (options.savedPython) doc.cells = [{ ...newCell("python", "show(df)"), outputs: { kind: "python", data: { ok: true, stdout: "old stdout", tables: [{ columns: [{ name: "old", type: "VARCHAR" }], rows: [{ old: "old table" }], row_count: 1 }], figures: [{ mime_type: "image/png", data: "old-image" }] } } }];
   const requests: { path: string; method: string; body: Record<string, unknown> }[] = [];
@@ -113,6 +114,15 @@ test("seeded answer tables are explicitly cached and cannot page into a differen
     assert.match(m.host.querySelector('table[aria-label="Query result"]')!.textContent!, /Stephen Curry/);
     assert.doesNotMatch(m.host.querySelector(".notebook-result-meta")!.textContent!, /cached|snapshot/);
     assert.equal(m.host.querySelector(".notebook-note"), null);
+  } finally { await m.cleanup(); }
+});
+
+test("saved snapshot objects render as readable text, never raw JSON", async () => {
+  const m = await mount({ savedSnapshot: true, openNotebook: true });
+  try {
+    const table = m.host.querySelector('table[aria-label="Cached answer snapshot"]')!;
+    assert.match(table.textContent!, /detailsVARCHAR[\s\S]*wins: 5 · source: NBA/);
+    assert.doesNotMatch(table.textContent!, /JSON|\{"|\[object Object\]/);
   } finally { await m.cleanup(); }
 });
 

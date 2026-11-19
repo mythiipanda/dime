@@ -3,6 +3,7 @@
 import { useState } from "react";
 import dynamic from "next/dynamic";
 import { chartable, type CellOutput, type TypedColumn } from "../../lib/notebooks";
+import { readableSnapshot } from "../../lib/notebook-snapshot";
 import { Button } from "../ds/Button";
 
 const AutoChart = dynamic(() => import("../AutoChart"), { ssr: false });
@@ -14,13 +15,13 @@ export function NotebookOutput({ output, paging, onPage, snapshotTime }: { outpu
   const [chart, setChart] = useState(false);
   if (!output) return null;
   const value = output as CellOutput;
-  if (value.kind === "snapshot" && value.data) return <div className="notebook-output"><div className="notebook-result-meta">Cached snapshot · from answer · {snapshotTime ? <time dateTime={snapshotTime} title="Copied into this notebook">{new Date(snapshotTime).toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}</time> : "time not recorded"}</div><NotebookTable columns={value.data.columns} rows={value.data.rows} label="Cached answer snapshot" />{value.data.truncated && <p className="notebook-note">Showing a bounded preview of the original answer table.</p>}</div>;
+  if (value.kind === "snapshot" && value.data) return <div className="notebook-output"><div className="notebook-result-meta">Cached snapshot · from answer · {snapshotTime ? <time dateTime={snapshotTime} title="Copied into this notebook">{new Date(snapshotTime).toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}</time> : "time not recorded"}</div><NotebookTable {...readableSnapshot(value.data)} label="Cached answer snapshot" />{value.data.truncated && <p className="notebook-note">Showing a bounded preview of the original answer table.</p>}</div>;
   if (value.kind === "error") return <div className="notebook-error" role="alert"><strong>Cell could not run</strong><pre>{value.message}</pre><span>Edit the cell and run it again.</span></div>;
   if (value.kind === "sql" && value.data) {
     const result = value.data;
     const cached = "cached" in result && result.cached === true;
     return <div className="notebook-output"><div className="notebook-result-meta"><span className="notebook-result-dot" /><span>{result.rows.length.toLocaleString()} {cached ? "cached rows" : `rows${result.has_more ? " on this page" : " returned"}`}</span>{!cached && <><span>·</span><span>{result.ms.toLocaleString(undefined, { maximumFractionDigits: 1 })} ms</span></>}<span className="notebook-output-label">{cached ? "Answer snapshot" : "Warehouse SQL"}</span>{chartable(result.rows) && <Button variant="quiet" size="xs" aria-pressed={chart} onClick={() => setChart(!chart)}>{chart ? "Table" : "Chart"}</Button>}</div>
-      {chart && chartable(result.rows) ? <div className="notebook-chart"><AutoChart table={{ rows: result.rows }} /></div> : <NotebookTable columns={result.columns} rows={result.rows} />}
+      {chart && chartable(result.rows) ? <div className="notebook-chart"><AutoChart table={{ rows: result.rows }} /></div> : <NotebookTable {...(cached ? readableSnapshot(result) : result)} />}
       {cached && <p className="notebook-note">Cached answer preview. Run this cell to refresh results and enable paging.</p>}
       {!cached && (result.page > 0 || result.has_more || result.truncated) && <div className="notebook-pagination"><span>{result.truncated ? "Output capped at 5,000 rows. " : ""}Page {result.page + 1} · {result.page * result.page_size + (result.rows.length ? 1 : 0)}–{result.page * result.page_size + result.rows.length}</span><Button size="xs" variant="quiet" disabled={paging || result.page === 0} onClick={() => onPage(result.page - 1)}>Previous</Button><Button size="xs" variant="quiet" disabled={paging || !result.has_more} onClick={() => onPage(result.page + 1)}>{paging ? "Loading…" : "Next page"}</Button></div>}
     </div>;

@@ -2,6 +2,7 @@ import type { Board, BoardCitation } from "./boards";
 import type { AiMessage } from "./chat";
 import { citationDetails } from "./citation-details";
 import { capabilityLabel } from "./evidence";
+import { readableSnapshot } from "./notebook-snapshot";
 import type { CellKind, NotebookCell, NotebookDraft, SQLResult } from "./notebooks";
 
 const record = (value: unknown): Record<string, unknown> => value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
@@ -94,14 +95,17 @@ export function notebookFromAnswer(ai: AiMessage, question: string): NotebookDra
     const context = "## Data snapshot\n\nNo executable SQL was recorded. These cached tables are context, not reproducible queries.";
     const snapshots = (queries.size ? [] : tables).flatMap((table) => {
       const cached = cachedTable(table);
-      return cached ? [{ title: capabilityLabel(text(table.tool)), data: { columns: cached.columns, rows: cached.rows, truncated: cached.truncated } }] : [];
+      return cached ? [{ title: capabilityLabel(text(table.tool)), data: readableSnapshot(cached) }] : [];
     });
-    const cited = cachedTable({ rows: tables.filter((table) => !Array.isArray(table.rows) && typeof table.output_id === "string" && Object.hasOwn(table, "value")).map((table) => ({
-      output: text(table.display_name, table.output_id), value: table.value, unit: table.unit ?? null,
-      subject: table.subject_id ?? null, subject_type: table.subject_type ?? null,
-      source: answerSource(table), provenance: record(table.provenance),
-    })) });
-    if (cited?.rows.length) snapshots.push({ title: "Cited values", data: { columns: cited.columns, rows: cited.rows, truncated: cited.truncated } });
+    const cited = cachedTable({ rows: tables.filter((table) => !Array.isArray(table.rows) && typeof table.output_id === "string" && Object.hasOwn(table, "value")).map((table) => {
+      const provenance = record(table.provenance), meta = record(table.meta);
+      const season = text(provenance.season, meta.season), capability = text(provenance.capability, table.capability, table.tool), name = text(provenance.table, table.table, meta.table);
+      return { output: text(table.display_name, table.output_id), value: table.value, unit: table.unit ?? null,
+        subject: table.subject_id ?? null, subject_type: table.subject_type ?? null, Source: answerSource(table),
+        ...(season ? { Season: season } : {}), ...(capability ? { Capability: capability } : {}), ...(name ? { Table: name } : {}),
+      };
+    }) });
+    if (cited?.rows.length) snapshots.push({ title: "Cited values", data: readableSnapshot(cited) });
     if (!queries.size && !snapshots.length) cells.push(cell("markdown", `${context}\n\nNo tables with recorded rows were attached to this answer.`, cells.length));
     snapshots.forEach((snapshot, index) => {
       if (cells.length >= 100) throw new Error("This answer has too many snapshot tables for one notebook.");
