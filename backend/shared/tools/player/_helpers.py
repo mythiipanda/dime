@@ -106,6 +106,39 @@ def _gamelog_coverage() -> str:
     return f"game logs cover {seasons[0]}\u2013{seasons[-1]}"
 
 
+def _std_context(player_id: object, season: str,
+                 line: dict[str, Any] | None) -> dict[str, Any] | None:
+    pkg = _pkg()
+    if pkg.season_static(season):
+        return None
+    gp = None
+    if line is not None:
+        try:
+            gp = int(line["GP"]) if line.get("GP") is not None else None
+        except (TypeError, ValueError):
+            gp = None
+    if gp is None:
+        try:
+            rows = _read_df(
+                "SELECT COUNT(DISTINCT Game_ID) AS n FROM silver_player_gamelogs "
+                "WHERE _season = ? AND _entity = ?",
+                [season, f"player:{player_id}"])
+            gp = int(rows[0]["n"]) if rows and rows[0].get("n") else None
+        except Exception:
+            gp = None
+    prior = None
+    prior_season = pkg.last_completed_season()
+    if prior_season and prior_season != season:
+        prior_line = _season_line(player_id, prior_season)
+        if prior_line:
+            prior = {"season": prior_season}
+            for key, col in (("games_played", "GP"), ("ppg", "PPG"),
+                             ("rpg", "RPG"), ("apg", "APG")):
+                if prior_line.get(col) is not None:
+                    prior[key] = prior_line[col]
+    return pkg.season_to_date_meta(season, gp, prior)
+
+
 def _season_line(player_id: object, season: str) -> dict[str, Any] | None:
     pkg = _pkg()
     store = pkg.store
