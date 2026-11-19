@@ -35,7 +35,7 @@ export function priorSourceTool(records: SourceRecord[]) {
     const catalogue = new Map(records.map(record => [record.ref, record]));
     return defineTool({
         name: "read_source", label: "Read prior source",
-        description: "Read a prior source by ref from this conversation. Returns {ref, tool, result, isError}. Filter result before returning from codemode; retain ref. Includes units and provenance.",
+        description: "Read a prior source by ref from this conversation. Returns {ref, tool, result, evidence, isError}. evidence is a compact source card; result keeps full rows. Filter result before returning from codemode; retain ref.",
         outputSchema: sourceOutputSchema,
         parameters: Type.Object({ ref: Type.String() }, { additionalProperties: false }),
         async execute(_callId, { ref }) {

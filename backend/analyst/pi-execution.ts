@@ -3,7 +3,7 @@ import { extname, join } from "node:path";
 import { Type, type Static } from "typebox";
 import { Value } from "typebox/value";
 import { createAnalystSession } from "./runtime.js";
-import { connectPythonTools, objectValue, sourceRecordSchema, sourceOutputSchema, sourceResult, type SourceRecord, type PythonToolsOptions } from "./python-tools.js";
+import { connectPythonTools, objectValue, sourceEvidenceCard, sourceRecordSchema, sourceOutputSchema, sourceResult, type SourceRecord, type PythonToolsOptions } from "./python-tools.js";
 import { priorSourceTool, resolvedRuntime } from "./pi-context.js";
 import { createSubmitAnswerTool, type AnswerSubmission } from "./submit-tool.js";
 import type { AssistantMessage, Message } from "@earendil-works/pi-ai";
@@ -129,12 +129,7 @@ type AnalystDeps = {
 };
 
 function sourceSummary(record: SourceRecord) {
-    const { result, isError } = sourceResult(record).structuredContent;
-    const data = objectValue(result);
-    return {
-        ref: record.ref, tool: record.tool, failed: isError, columns: data?.columns,
-        declared_column_semantics: data?.declared_column_semantics, season_semantics: data?.season_semantics, provenance: data?.meta
-    };
+    return sourceEvidenceCard(record);
 }
 
 function safeFailureMessage(kind: string, error: unknown, apiKey?: string): string {
@@ -185,6 +180,7 @@ function buildLoopRecord(
         ref: `loop_${count}_${toolName.replace(/[^a-zA-Z0-9_]/g, "_")}`,
         callId,
         tool: toolName as SourceRecord["tool"],
+        ...(parsedArgs ? { args: parsedArgs } : {}),
         response: {
             isError: true,
             structuredContent: payload,
@@ -309,7 +305,7 @@ export function createPiExecution(deps: AnalystDeps = {}) {
                         session.sessionManager.appendMessage(message);
                     session.agent.state.messages = [...session.agent.state.messages, ...history];
                     if (start.sources?.length) {
-                        const context: Message = { role: "user", content: "Prior source catalogue. Use tools.read_source({ref}) inside codemode and return only filtered results:\n" + JSON.stringify(start.sources.map(sourceSummary)), timestamp: Date.now() };
+                        const context: Message = { role: "user", content: "Prior source evidence cards. Use tools.read_source({ref}) inside codemode and return only filtered results; cards omit full rows:\n" + JSON.stringify(start.sources.map(sourceSummary)), timestamp: Date.now() };
                         session.sessionManager.appendMessage(context);
                         session.agent.state.messages.push(context);
                     }
