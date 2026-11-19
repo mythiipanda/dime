@@ -20,6 +20,7 @@ SEEDERS = [
     ("recent_market", "seed_recent_market.py", [], True),
     ("transactions", "seed_transactions.py", [], True),
     ("injuries_news", "seed_injury_news.py", ["--season"], True),
+    ("injury_entries", "normalize_injuries.py", [], True),
     ("tracking", "seed_tracking.py", [], True),
     ("playoffs", "seed_historical_playoffs.py", ["--season"], False),
     ("team_ratings", "seed_team_ratings.py", [], True),
