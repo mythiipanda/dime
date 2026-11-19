@@ -61,7 +61,6 @@ def test_get_lineups_hist_season_returns_rows_sorted_by_min():
     mins = [float(r.get("MIN") or 0) for r in res["rows"]]
     assert mins == sorted(mins, reverse=True)
 
-@pytest.mark.canonical_warehouse
 def test_get_wowy_hist_season_uses_real_minutes():
     res = get_wowy.invoke({"player_a": str(TATUM), "player_b": str(BROWN),
                            "team_id": "BOS", "season": SEASON})

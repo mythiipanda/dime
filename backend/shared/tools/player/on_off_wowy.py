@@ -2,7 +2,7 @@ import sys
 from typing import Any
 
 from langchain_core.tools import tool
-from ...lineup_variants import SeasonType
+from ...lineup_variants import SeasonType, validate_variants
 
 
 def _pkg():
@@ -160,6 +160,7 @@ def _wowy_shared_on_team(con, table: str, extra: str, season: str, tid: object, 
 
 
 def _wowy_pairing(con, season: str, tid: object | None, pid_a: int, pid_b: int, season_type: SeasonType = 'regular-season') -> tuple[str, str, object | None]:
+    validate_variants(season_type=season_type)
     extra = _HIST_LINEUP_FILTER.replace('regular-season', season_type)
     if tid:
         row = _wowy_shared_on_team(con, 'silver_hist_lineups', extra, season, tid, pid_a, pid_b)

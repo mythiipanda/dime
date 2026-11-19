@@ -2,7 +2,7 @@ import sys
 from typing import Any
 
 from langchain_core.tools import tool
-from ...lineup_variants import SeasonType, MeasureType, PerMode
+from ...lineup_variants import SeasonType, MeasureType, PerMode, validate_variants
 
 
 def _pkg():
@@ -100,6 +100,7 @@ _HIST_LINEUP_PAIRS = (
 
 
 def _hist_lineup_rows(team_id: int, season: str, season_type: SeasonType = 'regular-season', measure_type: MeasureType = 'base', per_mode: PerMode = 'totals') -> list[dict[str, Any]]:
+    validate_variants(season_type, measure_type, per_mode)
     try:
         from ... import store as _store
         found = _store._read_df(
