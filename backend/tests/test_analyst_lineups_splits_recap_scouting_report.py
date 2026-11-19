@@ -412,7 +412,7 @@ def test_registry_matches_the_typescript_tool_names(monkeypatch):
     ).group(1)
     declared = re.findall(r'"([^"]+)"', block)
 
-    assert len(declared) == 95
+    assert len(declared) == 98
     assert list(tools.keys()) == declared
     for name in ("get_lineups", "get_splits", "get_recap", "get_scouting_report"):
         assert name in tools
