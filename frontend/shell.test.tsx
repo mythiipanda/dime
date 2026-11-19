@@ -124,15 +124,17 @@ for (const hash of ["#m-1", "", "#m-99"]) it(`restores indexed message anchors a
   const originalFetch = globalThis.fetch;
   let releaseHistory!: () => void;
   const historyGate = new Promise<void>((resolve) => { releaseHistory = resolve; });
+  let stream!: ReadableStreamDefaultController<Uint8Array>;
   globalThis.fetch = async (url) => {
-    if (String(url).includes("/models")) return Response.json({ models: [] });
+    if (String(url).includes("/models")) return Response.json({ models: [{ id: "test", available: true }] });
+    if (String(url).includes("/chat/stream")) return new Response(new ReadableStream<Uint8Array>({ start(controller) { stream = controller; } }), { headers: { "Content-Type": "text/event-stream" } });
     await historyGate;
     return Response.json({ runs: [{ question: "Saved question", answer: "Saved answer", created_at: "2026-01-01", tables: [], suggestions: [] }] });
   };
   const host = dom.window.document.getElementById("root")!;
   const root = createRoot(host);
   try {
-    await act(async () => root.render(<ChatView thread="t-linked" preset={null} autoSend={null} replay={null} onConsumed={() => {}} onRunDone={() => {}} />));
+    await act(async () => root.render(<ChatView thread="t-linked" preset="Follow-up" autoSend={null} replay={null} onConsumed={() => {}} onRunDone={() => {}} />));
     assert.equal(host.querySelector("#m-1"), null);
     await act(async () => releaseHistory());
     assert.match(host.querySelector("#m-0")!.textContent!, /Saved question/);
@@ -144,6 +146,23 @@ for (const hash of ["#m-1", "", "#m-99"]) it(`restores indexed message anchors a
       dom.window.dispatchEvent(new dom.window.HashChangeEvent("hashchange"));
     });
     assert.deepEqual(scrolled, [{ id: "m-0", block: "start" }]);
+    scrolled.length = 0;
+    await act(async () => host.querySelector<HTMLButtonElement>('[aria-label="Send message"]')!.click());
+    assert.equal(dom.window.location.hash, "");
+    assert.equal(dom.window.location.search, "?tab=chat&thread=t-linked");
+    for (const text of ["Streaming", " answer"]) {
+      await act(async () => {
+        stream.enqueue(new TextEncoder().encode(`event: token\ndata: ${JSON.stringify({ text })}\n\n`));
+        await new Promise((resolve) => setTimeout(resolve, 40));
+      });
+    }
+    await act(async () => {
+      stream.enqueue(new TextEncoder().encode('event: done\ndata: {}\n\n'));
+      stream.close();
+    });
+    assert.match(host.querySelector("#m-3")!.textContent!, /Streaming answer/);
+    assert.ok(scrolled.length >= 2);
+    assert.ok(scrolled.every((entry) => entry.id === "" && entry.block === "nearest"));
   } finally {
     await act(async () => root.unmount());
     globalThis.fetch = originalFetch;

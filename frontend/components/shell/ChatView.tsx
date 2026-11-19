@@ -69,6 +69,7 @@ export function ChatView({ thread, preset, autoSend, replay, onConsumed, onRunDo
   const running = useRef(false);
   const sent = useRef(false);
   const end = useRef<HTMLDivElement>(null);
+  const hashPending = useRef(true);
   const mounted = useRef(true);
   const loadModels = () => { setModelError(false); setModelsLoaded(false); getModels().then((r) => { if (!mounted.current) return; if (!Array.isArray(r.models)) throw Error("Invalid model catalog"); setModels(r.models); setModel((m) => availableModel(r.models, m)); }).catch(() => { if (mounted.current) { setModel(null); setModelError(true); } }).finally(() => { if (mounted.current) setModelsLoaded(true); }); };
   useEffect(() => {
@@ -82,16 +83,25 @@ export function ChatView({ thread, preset, autoSend, replay, onConsumed, onRunDo
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
   useEffect(() => { if (preset) setInput(preset); }, [preset]);
-  useEffect(() => { if (!scrollToHash()) end.current?.scrollIntoView({ block: "nearest" }); }, [messages]);
   useEffect(() => {
-    window.addEventListener("hashchange", scrollToHash);
-    return () => window.removeEventListener("hashchange", scrollToHash);
+    if (hashPending.current && messages.length) {
+      hashPending.current = false;
+      if (scrollToHash()) return;
+    }
+    end.current?.scrollIntoView({ block: "nearest" });
+  }, [messages]);
+  useEffect(() => {
+    const onHashChange = () => { hashPending.current = !scrollToHash(); };
+    window.addEventListener("hashchange", onHashChange);
+    return () => window.removeEventListener("hashchange", onHashChange);
   }, []);
 
   const send = async (raw: string, fixture?: string) => {
     const q = raw.trim();
     if (!q || running.current) return;
     if (!fixture && (!model || !models.some((m) => m.id === model && m.available !== false))) return;
+    hashPending.current = false;
+    if (window.location.hash) window.history.replaceState(null, "", window.location.pathname + window.location.search);
     running.current = true;
     const controller = new AbortController();
     abort.current = controller;
