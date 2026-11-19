@@ -56,6 +56,7 @@ _TOOL_ORDER = (
     "get_win_prob",
     "get_on_off",
     "get_shot_zones",
+    "get_phase_shot_splits",
     "get_four_factors",
     "get_clutch_stats",
     "get_competitive_ratings",
