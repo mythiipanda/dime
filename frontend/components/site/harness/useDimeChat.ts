@@ -41,6 +41,8 @@ export function useDimeChat(options?: { thread: string; replay?: string | null; 
   const [historyLoading, setHistoryLoading] = useState(!!thread);
   const [historyError, setHistoryError] = useState<string | null>(null);
   const [modelsError, setModelsError] = useState(false);
+  const [modelsLoading, setModelsLoading] = useState(true);
+  const [providers, setProviders] = useState<string[]>([]);
   const [modelsAttempt, setModelsAttempt] = useState(0);
   const showReference = activeTab === REFERENCE_TAB && messages.length === 0;
   const [live, setLive] = useState<LiveRun | null>(null);
@@ -97,7 +99,7 @@ export function useDimeChat(options?: { thread: string; replay?: string | null; 
 
   const submit = (raw?: string) => {
     const q = (raw ?? draft).trim();
-    if (!q || live || historyLoading) return;
+    if (!q || live || historyLoading || (!options?.replay && !modelOptions.some(item => item.id === model && item.available !== false))) return;
     const tabId = thread ?? activeTab;
     abortRef.current?.abort();
     const ctrl = new AbortController();
@@ -149,9 +151,11 @@ export function useDimeChat(options?: { thread: string; replay?: string | null; 
   useEffect(() => {
     let active = true;
     setModelsError(false);
+    setModelsLoading(true);
     getModels()
       .then((res) => {
         if (!active) return;
+        setProviders(Object.keys(res.available ?? {}));
         setModelOptions(
           res.models.map((m) => ({
             id: m.id,
@@ -164,7 +168,7 @@ export function useDimeChat(options?: { thread: string; replay?: string | null; 
         const available = res.models.filter(m => m.available !== false);
         setModel(current => current ?? available.find(m => m.default)?.id ?? available[0]?.id ?? null);
       })
-      .catch(() => { if (active) setModelsError(true); });
+      .catch(() => { if (active) setModelsError(true); }).finally(() => { if (active) setModelsLoading(false); });
     return () => {
       active = false;
     };
@@ -278,6 +282,8 @@ export function useDimeChat(options?: { thread: string; replay?: string | null; 
     draft,
     setDraft,
     modelOptions,
+    modelsLoading,
+    providers,
     model,
     setModel,
     activeView,

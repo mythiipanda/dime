@@ -51,7 +51,7 @@ export function DimeShell() {
   const toggleTheme = () => {
     const next = !document.documentElement.classList.contains("dark");
     document.documentElement.classList.toggle("dark", next); setDark(next);
-    try { window.localStorage.setItem("bui-theme", next ? "dark" : "light"); } catch { /* Theme works without storage. */ }
+    try { window.localStorage.setItem("bui-theme", next ? "dark" : "light"); } catch {  }
   };
   const onRunDone = useCallback((question: string) => {
     setThreads(current => [{ id: thread, title: current.find(item => item.id === thread)?.title || question.slice(0, 80), turns: (current.find(item => item.id === thread)?.turns ?? 0) + 1, updated: new Date().toISOString() }, ...current.filter(item => item.id !== thread)]);

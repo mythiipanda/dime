@@ -46,8 +46,8 @@ button:focus-visible, a:focus-visible, summary:focus-visible, input:focus-visibl
 .citation-card { max-width: calc(100vw - 32px); }
 .composer-dock { flex-shrink: 0; padding: 12px max(24px, calc((100% - 760px) / 2)) 18px; background: var(--page); margin-top: auto; }
 .workspace-page { max-width: 1200px; margin: 0 auto; padding: 40px; }
-.workspace-embedded { display: flex; min-height: 520px; }
-.workspace-embedded > section { width: 100%; }
+.workspace-embedded { display: flex; height: calc(100dvh - 240px); min-height: 520px; }
+.workspace-embedded > section { width: 100%; min-height: 0; }
 .tools-view { display: flex; flex-direction: column; height: 100%; min-height: 700px; }
 .tools-view > * { flex: 1; min-height: 0; }
 @media (max-width: 760px) {

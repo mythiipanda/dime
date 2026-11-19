@@ -1,5 +1,67 @@
 
 import io, time, base64
+import json
+import re
+from datetime import datetime
+from zoneinfo import ZoneInfo
+
+def warehouse_table(table: str, season: str = '') -> dict:
+    from shared import store
+    if not re.fullmatch(r'silver_[a-z0-9_]+', table):
+        return {'ok': False, 'error': 'Table not found'}
+    con = store.connect(read_only=True)
+    try:
+        if table not in {r[0] for r in con.execute('SHOW TABLES').fetchall()}:
+            return {'ok': False, 'error': 'Table not found'}
+        schema = con.execute(f'DESCRIBE "{table}"').fetchall()
+        columns = [r[0] for r in schema]
+        where = ' WHERE _season = ?' if season and '_season' in columns else ''
+        args = [season] if where else []
+        count = con.execute(f'SELECT count(*) FROM "{table}"{where}', args).fetchone()[0]
+        cursor = con.execute(f'SELECT * FROM "{table}"{where} LIMIT 50', args)
+        rows = [dict(zip(columns, row)) for row in cursor.fetchall()]
+        seasons = [r[0] for r in con.execute(f'SELECT DISTINCT _season FROM "{table}" WHERE _season IS NOT NULL ORDER BY 1 DESC LIMIT 100').fetchall()] if '_season' in columns else []
+        fetched = con.execute(f'SELECT max(_fetched_at) FROM "{table}"{where}', args).fetchone()[0] if '_fetched_at' in columns else None
+        from shared.freshness import table_data_through
+        result = {'ok': True, 'table': table, 'columns': [{'name': r[0], 'type': r[1]} for r in schema], 'rows': rows, 'count': count, 'seasons': seasons, 'last_fetch': fetched, 'data_through': table_data_through(con, table, columns), 'limit': 50}
+        return json.loads(json.dumps(result, default=str))
+    finally:
+        con.close()
+
+def home_snapshot() -> dict:
+    from shared import store
+    today = datetime.now(ZoneInfo('America/New_York')).date().isoformat()
+    con = store.connect(read_only=True)
+    try:
+        tables = {r[0] for r in con.execute('SHOW TABLES').fetchall()}
+        schedule = {'table': 'silver_scoreboard', 'available': False, 'games': [], 'next_date': None, 'seasons': [], 'last_fetch': None}
+        for table, date_column in [('silver_schedule', 'date'), ('silver_scoreboard', 'GAME_DATE_EST')]:
+            if table not in tables:
+                continue
+            columns = [r[0] for r in con.execute(f'DESCRIBE "{table}"').fetchall()]
+            if date_column in columns:
+                day = "cast(coalesce(try_cast(date AS TIMESTAMPTZ), try_strptime(date, '%Y-%m-%dT%H:%MZ') AT TIME ZONE 'UTC') AT TIME ZONE 'America/New_York' AS DATE)" if table == 'silver_schedule' else 'try_cast(GAME_DATE_EST AS DATE)'
+                cursor = con.execute(f'SELECT * FROM "{table}" WHERE {day} = cast(? AS DATE)', [today])
+                rows = [dict(zip(columns, row)) for row in cursor.fetchall()]
+                games = list({str(row.get('GAME_ID', row.get('id', i))): row for i, row in enumerate(rows)}.values())
+                next_date = con.execute(f'SELECT min({day}) FROM "{table}" WHERE {day} > cast(? AS DATE)', [today]).fetchone()[0]
+                seasons = [str(row[0]) for row in con.execute(f'SELECT DISTINCT _season FROM "{table}" WHERE _season IS NOT NULL ORDER BY 1 DESC').fetchall()] if '_season' in columns else []
+                fetched = con.execute(f'SELECT max(_fetched_at) FROM "{table}"').fetchone()[0] if '_fetched_at' in columns else None
+                candidate = {**schedule, 'table': table, 'available': True, 'games': games, 'next_date': next_date, 'seasons': seasons, 'last_fetch': fetched}
+                if not schedule['available'] or games or (next_date and not schedule['next_date']):
+                    schedule = candidate
+                if games:
+                    break
+        snapshot = {'table': 'silver_team_ratings', 'season': None, 'rows': [], 'last_fetch': None}
+        if 'silver_team_ratings' in tables:
+            season = con.execute('SELECT max(_season) FROM silver_team_ratings').fetchone()[0]
+            if season:
+                cursor = con.execute('SELECT TEAM_NAME, GP, NET_RATING, _fetched_at FROM silver_team_ratings WHERE _season = ? ORDER BY NET_RATING DESC NULLS LAST LIMIT 8', [season])
+                rows = [dict(zip(['TEAM_NAME', 'GP', 'NET_RATING', '_fetched_at'], row)) for row in cursor.fetchall()]
+                snapshot = {**snapshot, 'season': season, 'rows': rows, 'last_fetch': max((str(row['_fetched_at']) for row in rows if row.get('_fetched_at')), default=None)}
+        return json.loads(json.dumps({'ok': True, 'date': today, 'schedule': schedule, 'snapshot': snapshot}, default=str))
+    finally:
+        con.close()
 
 def binary_data(content, media_type):
     raw = content.encode() if isinstance(content, str) else content
@@ -181,6 +243,21 @@ def _sort_frame_by_game_date(frame):
 
 def dataset(name: str, season: str='2025-26', player_id: int=0, team_id: int=0, game_id: str='', game_date: str='', stat: str='PTS', ids: str='', player_a: str='', player_b: str='', fmt: str='json'):
     import polars as pl
+    if name == 'zone_splits':
+        from shared.tools.player import get_shot_zones
+        if not player_id:
+            return {'ok': False, 'error': 'missing id param for this dataset'}
+        result = get_shot_zones.invoke({'player_id': player_id, 'season': season, 'min_attempts': 0})
+        if not result.get('ok'):
+            return {'ok': False, 'error': result.get('error', 'shot zones unavailable'), 'meta': result.get('meta')}
+        frame = pl.DataFrame(result.get('rows', []))
+        if fmt == 'csv':
+            return binary_data(frame.write_csv(), 'text/csv')
+        if fmt == 'parquet':
+            buf = io.BytesIO()
+            frame.write_parquet(buf)
+            return binary_data(buf.getvalue(), 'application/octet-stream')
+        return {'ok': True, 'data': frame.to_dicts(), 'meta': result.get('meta')}
     if name == 'wowy' and (player_a or ids):
         return _wowy_dataset(season, player_a or ids, player_b, team_id, fmt)
     if name not in _DATASETS_TABLES:

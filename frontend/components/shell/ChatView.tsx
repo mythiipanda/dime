@@ -55,7 +55,7 @@ export function ChatView({ thread, replay, onRunDone }: { thread: string; replay
     chat.submit(suggestedPrompts[0]);
   }, [replay, chat.historyLoading, chat.submit]);
   const busy = !!chat.live;
-  const composer = <PromptBar value={chat.draft} onChange={chat.setDraft} onSend={chat.submit} onStop={chat.stop} busy={busy || chat.historyLoading} models={chat.modelOptions} model={chat.model} onModelChange={chat.setModel} modelError={chat.modelsError} onRetry={chat.retryModels} />;
+  const composer = <PromptBar value={chat.draft} onChange={chat.setDraft} onSend={chat.submit} onStop={chat.stop} busy={busy || chat.historyLoading} models={chat.modelOptions} model={chat.model} onModelChange={chat.setModel} modelError={chat.modelsError} onRetry={chat.retryModels} providers={chat.providers} modelsLoading={chat.modelsLoading} />;
   const empty = chat.messages.length === 0 && !chat.live;
   return <div className="chat-view">
     {replay && <div className="border-b border-line bg-inset px-6 py-2 text-center text-[11px] text-ink-2">Development replay · illustrative data, not live analysis</div>}

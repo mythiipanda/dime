@@ -1,4 +1,4 @@
-/** Monospace token chip — for code values like `updated_at`. */
+
 export function Chip({
   children,
   tone = "neutral",

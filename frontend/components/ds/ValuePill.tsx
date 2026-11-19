@@ -8,8 +8,7 @@ const TONES: Record<Tone, { cls: string; ring: string }> = {
   accent: { cls: "bg-accent-tint text-accent-ink", ring: "0 0 0 1px color-mix(in oklch, var(--accent) 28%, transparent)" },
 };
 
-/** Inline value badge — a plain value (a date, a name, a count) set off in
- *  prose. Softer than a StatusPill (no dot) and not a mono token (see Chip). */
+
 export function ValuePill({
   children,
   tone = "neutral",

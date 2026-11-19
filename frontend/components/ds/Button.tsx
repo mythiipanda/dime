@@ -6,8 +6,7 @@ import { cn } from "@/lib/utils";
 
 const filledShadow = "shadow-[inset_0_1px_0_rgba(255,255,255,0.14)]";
 
-/* Pill-shaped by default — the app's core button style. Explicit symmetric
- * padding (not a fixed height) so the top/bottom spacing is always equal. */
+
 export const buttonVariants = cva(
   `inline-flex items-center justify-center font-medium select-none
    transition-[transform,background-color,opacity] duration-150 ease-out
@@ -20,13 +19,13 @@ export const buttonVariants = cva(
         ghost: "bg-hover-2 text-ink hover:bg-line-strong",
         accent: `bg-accent text-white hover:bg-accent-ink ${filledShadow}`,
         success: `bg-green text-white hover:brightness-95 ${filledShadow}`,
-        /* transparent until hovered — for dense toolbars/action rows */
+
         quiet: "text-ink hover:bg-hover",
       },
       size: {
-        /* compact toolbar pill — fixed height, lighter weight */
+
         xs: "h-7 rounded-full px-2.5 text-[12px] font-normal leading-none gap-1",
-        /* canonical action pill — 27px tall, roomy sides */
+
         sm: "h-[27px] px-3 text-[13px] leading-none rounded-full gap-1.5",
         md: "px-4 py-[9px] text-sm leading-none rounded-full gap-2",
       },

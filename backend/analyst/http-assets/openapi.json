@@ -5,6 +5,33 @@
     "version": "0.1.0"
   },
   "paths": {
+    "/api/home": {
+      "get": {
+        "summary": "Cached schedule and latest warehouse team ratings",
+        "description": "Warehouse-only. Returns the current Eastern date, cached games with their source seasons, next cached date, source tables and fetch timestamps. Empty or absent schedule data is explicit; no sample data or live feed is substituted.",
+        "operationId": "warehouse_home",
+        "responses": {
+          "200": { "description": "Home snapshot", "content": { "application/json": { "schema": { "type": "object", "required": ["ok", "date", "schedule", "snapshot"], "properties": { "ok": { "type": "boolean" }, "date": { "type": "string", "format": "date" }, "schedule": { "type": "object" }, "snapshot": { "type": "object" } } } } } },
+          "500": { "description": "Warehouse unavailable" }
+        }
+      }
+    },
+    "/api/warehouse/tables/{table}": {
+      "get": {
+        "summary": "Public silver table schema, count and bounded sample",
+        "operationId": "warehouse_table_detail",
+        "description": "Read-only introspection of existing silver_* tables. Returns actual DuckDB column types, filtered row count, up to 50 sample rows, available seasons, fetch timestamp and table-level data-through date. Empty tables retain their schema. Private/state tables and SQL identifiers are rejected.",
+        "parameters": [
+          { "name": "table", "in": "path", "required": true, "schema": { "type": "string", "pattern": "^silver_[a-z0-9_]+$" } },
+          { "name": "season", "in": "query", "schema": { "type": "string", "default": "" }, "description": "Optional exact _season filter; empty means all seasons." }
+        ],
+        "responses": {
+          "200": { "description": "Table detail", "content": { "application/json": { "schema": { "type": "object", "required": ["ok", "table", "columns", "rows", "count", "seasons", "limit"], "properties": { "ok": { "type": "boolean" }, "table": { "type": "string" }, "columns": { "type": "array", "items": { "type": "object", "properties": { "name": { "type": "string" }, "type": { "type": "string" } } } }, "rows": { "type": "array", "maxItems": 50, "items": { "type": "object" } }, "count": { "type": "integer" }, "seasons": { "type": "array", "items": { "type": "string" } }, "limit": { "const": 50 }, "last_fetch": { "type": ["string", "null"] }, "data_through": { "type": ["string", "null"] } } } } } },
+          "404": { "description": "Unknown or nonpublic table" },
+          "500": { "description": "Warehouse unavailable" }
+        }
+      }
+    },
     "/api/revision": {
       "get": {
         "summary": "Revision",

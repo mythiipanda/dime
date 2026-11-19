@@ -126,6 +126,12 @@ export function createProductServer(options: {
     route("GET", /^\/api\/health$/, async ({ res }) => json(res, { ok: true, providers: policy.catalog().available }));
     route("GET", /^\/api\/healthz$/, async ({ res }) => { const result = await data.call("product_warehouse_health", {}); json(res, result, result.ok ? 200 : 503); });
     route("GET", /^\/api\/datasets\/freshness$/, async ({ res }) => json(res, await data.call("product_freshness", {})));
+    route("GET", /^\/api\/home$/, async ({ res }) => json(res, await data.call("product_home", {})));
+    route("GET", /^\/api\/warehouse\/tables\/([^/]+)$/, async ({ res, url, params }) => {
+        if (!/^silver_[a-z0-9_]+$/.test(params[0])) { json(res, { ok: false, error: "Table not found" }, 404); return; }
+        const result = await data.call("product_table_detail", { table: params[0], season: url.searchParams.get("season") ?? "" });
+        json(res, result, result.ok ? 200 : 404);
+    });
     route("GET", /^\/api\/datasets\/([^/]+)$/, async ({ res, url, params }) => {
         const q = (name: string, fallback = "") => url.searchParams.get(name) ?? fallback;
         const result = await data.call("product_dataset", { name: params[0], season: q("season", "2025-26"), player_id: integer(url, "player_id", 0), team_id: integer(url, "team_id", 0), game_id: q("game_id"), game_date: q("game_date"), stat: q("stat", "PTS"), ids: q("ids"), player_a: q("player_a"), player_b: q("player_b"), fmt: q("fmt", "json") });

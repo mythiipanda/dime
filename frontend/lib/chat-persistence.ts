@@ -28,7 +28,7 @@ export async function loadChatRuns(thread: string): Promise<{ question: string; 
           const source = await response.json();
           carry = { run_id: run.id, source_refs: source.source_refs ?? source.sources?.map((item: { ref: string }) => item.ref), sources: source.sources, submission: source.submission };
         }
-      } catch { /* The saved answer remains readable if sources are unavailable. */ }
+      } catch {  }
     }
     const stream = new DimeStream();
     stream.handle("custom_data", { tables: run.tables });
