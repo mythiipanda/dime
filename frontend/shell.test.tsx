@@ -18,8 +18,11 @@ it("navigates boards, searches real threads, and dispatches workflows to a new c
   Object.assign(dom.window.HTMLElement.prototype, { scrollIntoView() {}, attachEvent() {}, detachEvent() {} });
   const originalFetch = globalThis.fetch;
   const requests: { thread: string; q: string }[] = [];
+  let releaseModels!: () => void;
+  const modelGate = new Promise<void>((resolve) => { releaseModels = resolve; });
   globalThis.fetch = async (url, init) => {
     if (String(url).includes("/chat/stream")) { requests.push(JSON.parse(String(init?.body))); return new Response("unavailable", { status: 503 }); }
+    if (String(url).includes("/models")) await modelGate;
     return Response.json(String(url).includes("/models") ? { models: [{ id: "test", default: true }] } : { threads: [{ id: "t-existing", title: "Denver rotation", updated: "2026-01-01", turns: 1 }], runs: [] });
   };
   const host = dom.window.document.getElementById("root")!;
@@ -35,6 +38,8 @@ it("navigates boards, searches real threads, and dispatches workflows to a new c
     const selects = host.querySelectorAll("select");
     for (const [i, value] of ["OKC", "DEN"].entries()) await act(async () => { selects[i].value = value; selects[i].dispatchEvent(new dom.window.Event("change", { bubbles: true })); });
     await act(async () => button("Run workflow").click());
+    assert.equal(requests.length, 0);
+    await act(async () => releaseModels());
     await act(async () => { await new Promise((r) => setTimeout(r, 60)); });
     assert.equal(requests.length, 1);
     assert.match(requests[0].q, /OKC/);

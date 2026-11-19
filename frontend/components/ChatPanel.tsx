@@ -385,7 +385,7 @@ export default function ChatPanel({ thread, onRunDone, preset, autoSend, onAutoS
 
   const sentAutoRequest = useRef<object | null>(null);
   useEffect(() => {
-    if (!autoSend || autoSend.thread !== thread || busy || sentAutoRequest.current === autoSend) return;
+    if (!autoSend || autoSend.thread !== thread || busy || modelStatus === "loading" || sentAutoRequest.current === autoSend) return;
     const timer = window.setTimeout(() => {
       sentAutoRequest.current = autoSend;
       onAutoSendConsumed?.();

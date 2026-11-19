@@ -102,6 +102,7 @@ export function ChatView({ thread, preset, autoSend, replay, onConsumed, onRunDo
   };
   useEffect(() => {
     if (sent.current || (!replay && !autoSend)) return;
+    if (!replay && !model && !modelError) return;
     const timer = setTimeout(() => {
       sent.current = true;
       if (autoSend?.thread === thread) { onConsumed(); void send(autoSend.text); }
