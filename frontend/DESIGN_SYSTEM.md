@@ -128,7 +128,7 @@ reachable. A no-match state does not run an arbitrary action on Enter.
 
 ## Before shipping a UI change
 
-Read `.devin/skills/dime-ui/SKILL.md`. Use the reference to inspect required, invalid,
+Use the component contracts above. Inspect required, invalid,
 disabled, loading, empty, no-match and long-text states. Check the actual feature at 390px
 and 1280px, light/dark, keyboard, touch and reduced motion. Include real focus-ring captures,
 not just computed CSS. Test the backend contract independently of the illustration.
