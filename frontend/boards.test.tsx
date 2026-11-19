@@ -10,7 +10,7 @@ const players = { "201939": { name: "Stephen Curry", team: "GSW" }, "203999": { 
 const requests: { path: string; body: Record<string, unknown> }[] = [];
 const asks: string[] = [];
 
-async function mount(options: { failure?: boolean; seedEmpty?: boolean; boardId?: string; nullReason?: string } = {}) {
+async function mount(options: { failure?: boolean; seedEmpty?: boolean; boardId?: string; nullReason?: string; teamState?: "null" | "missing" } = {}) {
   const dom = testDom;
   dom.window.document.body.innerHTML = "<div id='root'></div>";
   dom.window.localStorage.clear();
@@ -30,7 +30,8 @@ async function mount(options: { failure?: boolean; seedEmpty?: boolean; boardId?
       if (options.failure) return Response.json({ detail: "Boards warehouse unavailable" }, { status: 503 });
       const cells = Object.fromEntries((body.player_ids as number[]).map((pid) => [pid, Object.fromEntries((body.metric_ids as string[]).map((id) => [id, { value: 25.5, citation: { table: "silver_player_season", column: id.toUpperCase(), season: body.season, source: "warehouse-test", fetched_at: "2026-09-01", sql: "SELECT * FROM silver_player_season WHERE _season = ?", params: [body.season], row_key: { PLAYER_ID: pid } } }]))]));
       if (options.nullReason) for (const row of Object.values(cells)) for (const cell of Object.values(row)) Object.assign(cell, { value: null, reason: options.nullReason });
-      return Response.json({ ok: true, cells, players });
+      const filledPlayers = options.teamState === "missing" ? {} : options.teamState === "null" ? Object.fromEntries(Object.entries(players).map(([id, player]) => [id, { ...player, team: null }])) : players;
+      return Response.json({ ok: true, cells, players: filledPlayers });
     }
     return Response.json({ rows: { players: [] } });
   };
@@ -90,6 +91,22 @@ test("an empty seed is explicit, not fabricated player rows", async () => {
   const m = await mount({ seedEmpty: true });
   try { await click(button(m.host, "Scoring guards")); assert.match(m.host.querySelector('[role="alert"]')!.textContent!, /No players matched/); assert.equal(listBoards()[0].rows.length, 0); } finally { await m.cleanup(); }
 });
+
+for (const teamState of ["null", "missing"] as const) {
+  test(`season changes clear previous teams when new identities are ${teamState}`, async () => {
+    const m = await mount();
+    try {
+      await click(button(m.host, "Scoring guards"));
+      assert.equal(listBoards()[0].rows[0].team, "GSW");
+      m.options.teamState = teamState;
+      await click([...m.host.querySelectorAll<HTMLButtonElement>('[role="radio"]')].find(el => el.textContent === "2024-25")!);
+      assert.equal(listBoards()[0].season, "2024-25");
+      assert.ok(listBoards()[0].rows.every(row => row.team === ""));
+      assert.match(m.host.querySelector("tbody")!.textContent!, /Team not recorded/);
+      assert.doesNotMatch(m.host.querySelector("tbody")!.textContent!, /GSW|DEN/);
+    } finally { await m.cleanup(); }
+  });
+}
 
 test("metric picker shows definitions and Library reuses saved-board links", async () => {
   const m = await mount();

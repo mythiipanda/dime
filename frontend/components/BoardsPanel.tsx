@@ -73,7 +73,7 @@ export function BoardsPanel({ boardId, onOpen, onAsk }: { boardId: string | null
     fillBoardCells(current.season, current.rows.map((r) => r.player_id), current.columns.map((c) => c.metric_id), ctrl.signal).then((data) => {
       if (ctrl.signal.aborted || !latest.current || boardShape(latest.current) !== boardShape(current)) return;
       const active = latest.current;
-      commit({ ...active, cells: data.cells, rows: active.rows.map((r) => ({ ...r, name: data.players[r.player_id]?.name || r.name, team: data.players[r.player_id]?.team || r.team })) });
+      commit({ ...active, cells: data.cells, rows: active.rows.map((r) => ({ ...r, name: data.players[r.player_id]?.name || r.name, team: data.players[r.player_id]?.team || "" })) });
     }).catch((e) => { if (!ctrl.signal.aborted) setError(e instanceof Error ? e.message : "Could not fill this board."); }).finally(() => { if (!ctrl.signal.aborted) setBusy(false); });
     return () => ctrl.abort();
   }, [signature, retry, commit]);
