@@ -48,3 +48,13 @@ Name-keyed tables spell the same player differently: accents (`Nikola Jokić` vs
 - Prefer `player_id` joins whenever both tables carry an ID.
 - Before ranking or aggregating, count unmatched rows on each side with an anti-join and report the count and the names.
 - Compute team-level totals (payroll, wins) from each source table on its own, then join teams on the team key. Never derive a team total from a player-level join, because every unmatched player shrinks that team's total and can drop the team entirely.
+
+## 7. Call Economy: Fewer Turns, Faster Answers
+
+Every codemode turn costs model latency, so spend calls deliberately:
+
+- Inspect schema once per table with `warehouse_schema({ tables: [...] })` and reuse the result via `store`/`load`; never re-fetch the full catalog or repeat a freshness check within a run.
+- `get_warehouse_freshness` and `get_dataset_freshness` report overlapping coverage; one freshness check per run is enough unless you specifically need Data Engine ingestion timestamps.
+- When `sql_exec` fails, read the error's candidate bindings and `schema_hint` (the referenced tables' real columns, and which tables actually contain a missing column) and correct the query on the next call; call `warehouse_schema` again only when no hint was returned.
+- Prefer one comprehensive `run_python` script (loops and intermediate variables inside Python) over many small one-row probe calls, and batch independent `sql_exec`/`run_python` calls with `Promise.all` inside codemode.
+
