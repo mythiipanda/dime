@@ -316,11 +316,18 @@ def get_wowy(
         finally:
             con.close()
 
+    if season_type != 'regular-season':
+        return {
+            'tool': 'get_wowy', 'ok': False, 'rows': [],
+            'error': 'Playoff WOWY is not available for this case; no matching warehouse splits.',
+            'meta': {'season': season, 'season_type': season_type},
+        }
+
     from ...sources import pbpstats
 
     ids = [pid for pid in (pid_a, pid_b) if pid]
     resolved_team = pkg.coerce_team_id(team_id) if team_id else 0
-    entity_key = f"wowy:{raw_a}_{raw_b}"
+    entity_key = f"wowy:{season_type}:{raw_a}_{raw_b}"
     rows, meta = pkg._warehouse_or_live(
         "silver_wowy",
         "_season = ? AND _entity = ?",

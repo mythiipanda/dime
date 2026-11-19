@@ -161,3 +161,36 @@ def test_wowy_playoffs_uses_selected_totals():
             [SEASON, BOS],
         ).fetchone()[0]
     assert next(r for r in res['rows'] if r['split'] == 'Both ON')['minutes'] == expected
+
+
+@pytest.mark.parametrize('player_a,player_b', [('', ''), (str(TATUM), ''), (str(TATUM), str(BROWN))])
+def test_wowy_playoffs_never_uses_regular_season_fallback(monkeypatch, player_a, player_b):
+    import shared.tools.player as player
+    import shared.tools.player.on_off_wowy as wowy
+
+    def unexpected(*args, **kwargs):
+        raise AssertionError('regular-season fallback must not be called')
+
+    def broken_frame(*args, **kwargs):
+        raise RuntimeError('warehouse split unavailable')
+
+    monkeypatch.setattr(player, '_warehouse_or_live', unexpected)
+    monkeypatch.setattr(wowy, '_wowy_split_frame', broken_frame)
+    res = get_wowy.invoke({'player_a': player_a, 'player_b': player_b,
+                           'team_id': 'BOS', 'season': SEASON, 'season_type': 'playoffs'})
+    assert res['ok'] is False
+    assert res['rows'] == []
+    assert 'Playoff WOWY is not available' in res['error']
+
+
+def test_wowy_fallback_cache_is_season_type_scoped(monkeypatch):
+    import shared.tools.player as player
+    calls = []
+
+    def cached(*args, **kwargs):
+        calls.append(kwargs['entity'])
+        return [], {}
+
+    monkeypatch.setattr(player, '_warehouse_or_live', cached)
+    assert get_wowy.invoke({'season': SEASON})['ok']
+    assert calls == ['wowy:regular-season:_']
