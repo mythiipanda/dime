@@ -33,7 +33,8 @@ An API change includes its runtime validation, public contracts/OpenAPI, callers
 and tests. Regenerate the asset manifest for the actual revision before running
 the host. Synthetic fixtures and offline tests do not prove live answer quality.
 Never tune on the held-out benchmark split or spend paid-provider quota on broad
-evals without explicit approval.
+evals without explicit approval. For DAB v1 dev spot checks, run history and trace
+clustering, use `../dime-internal/agent-ops/hillclimb/runbook-dab.md`.
 
 ## UI work
 

@@ -89,6 +89,7 @@ CAPABILITY_TABLES: dict[str, tuple[str, ...]] = {
         "silver_player_gamelogs",
         "silver_salaries",
         "silver_cap_players",
+        "silver_contracts",
     ),
     "player_comparison": (
         "silver_player_gamelogs",
