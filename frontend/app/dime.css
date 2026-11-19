@@ -50,7 +50,14 @@ button:focus-visible, a:focus-visible, summary:focus-visible, input:focus-visibl
 .workspace-embedded > section { width: 100%; min-height: 0; }
 .tools-view { display: flex; flex-direction: column; height: 100%; min-height: 700px; }
 .tools-view > * { flex: 1; min-height: 0; }
+.workflow-page { max-width: 1020px; margin: 0 auto; padding: 48px 40px 64px; }
+.workflow-card { text-align: left; display: flex; flex-direction: column; min-height: 164px; padding: 20px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); transition: border-color 150ms, transform 200ms var(--ease-out-strong), box-shadow 200ms; }
+.workflow-card:hover { border-color: var(--line-strong); box-shadow: var(--shadow-card); transform: translateY(-2px); }
+.workflow-field { display: grid; gap: 8px; font-size: 12px; color: var(--ink-2); }
+.workflow-field input, .workflow-field select { width: 100%; border: 1px solid var(--line-strong); border-radius: 8px; padding: 10px 12px; background: var(--inset); color: var(--ink); font-size: 13px; }
+.workflow-field option { background: var(--surface); }
 @media (max-width: 760px) {
+  .workflow-page { padding: 28px 20px; }
   .dime-sidebar { flex-basis: 52px; width: 52px; }
   .dime-sidebar .sidebar-copy { display: none; }
   .conversation { width: calc(100% - 32px); }
