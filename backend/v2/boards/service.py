@@ -17,6 +17,7 @@ PlayerId = Annotated[int, Field(strict=True, gt=0)]
 MetricId = Annotated[str, Field(min_length=1, max_length=80)]
 router = APIRouter(prefix="/boards", tags=["boards"])
 SALARY_SEASON = "2026-27"
+IDENTITY_TABLES = ("silver_player_season", "silver_advanced")
 
 
 class FillBody(BaseModel):
@@ -82,8 +83,10 @@ class SeasonData:
 def _load(con, season: str, metric_ids: list[str]) -> SeasonData:
     available = {row[0] for row in con.execute(
         "SELECT table_name FROM information_schema.tables WHERE table_schema = ?", ["main"]).fetchall()}
+    if not any(table in available for table in IDENTITY_TABLES):
+        raise duckdb.CatalogException("Boards identity tables unavailable")
     reads = {table: _read(con, table, season)
-             for table in ("silver_player_season", "silver_advanced") if table in available}
+             for table in IDENTITY_TABLES if table in available}
     for metric_id in dict.fromkeys(metric_ids):
         metric = METRICS.get(metric_id)
         if metric and metric.table not in reads:
@@ -97,7 +100,7 @@ def _load(con, season: str, metric_ids: list[str]) -> SeasonData:
         indexes[table] = index
     identities = {}
     name_sources: dict[str, list[dict]] = defaultdict(list)
-    for table in ("silver_player_season", "silver_advanced"):
+    for table in IDENTITY_TABLES:
         name_column, team_column = (("PLAYER", "TEAM") if table == "silver_player_season"
                                     else ("PLAYER_NAME", "TEAM_ABBREVIATION"))
         for pid, rows in indexes.get(table, {}).items():
@@ -164,7 +167,9 @@ def _fill(con, season: str, player_ids: list[int] | None, metric_ids: list[str],
                 reason = "unknown_metric"
             else:
                 _, sql, params = data.reads[metric.table]
-                if identity is None:
+                if metric.unit == "usd" and not all(table in data.reads for table in IDENTITY_TABLES):
+                    reason = "identity_incomplete"
+                elif identity is None:
                     reason = "unknown_player"
                 elif metric.unit == "usd":
                     row, reason, resolution = _salary(data, pid)
@@ -193,8 +198,6 @@ def metrics():
 
 @router.post("/fill")
 def fill(body: FillBody):
-    if not body.player_ids:
-        return {"ok": True, "cells": {}, "players": {}}
     try:
         with store.connect(read_only=True) as con:
             return _fill(con, body.season, body.player_ids, body.metric_ids)
@@ -210,6 +213,8 @@ def seed(body: SeedBody):
     try:
         with store.connect(read_only=True) as con:
             data = _load(con, body.season, [body.metric_id])
+            if metric.unit == "usd" and not all(table in data.reads for table in IDENTITY_TABLES):
+                raise HTTPException(status_code=503, detail="Boards salary identity incomplete")
             source_read = data.reads[metric.table]
             filters = {"min_gp": body.min_gp, "min_mpg": body.min_mpg,
                        "table": metric.table, "sql": source_read[1], "params": source_read[2]}

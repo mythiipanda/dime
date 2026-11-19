@@ -224,18 +224,44 @@ def test_basic_only_warehouse_does_not_require_advanced(warehouse):
     assert fill(ids=[1], metrics=["salary_2026_27"]).status_code == 503
 
 
-def test_advanced_only_warehouse_and_salary_qualification(warehouse):
+def test_advanced_only_warehouse_and_incomplete_salary_identity(warehouse):
     with duckdb.connect(str(warehouse)) as con:
         con.execute("DROP TABLE silver_player_season")
     response = fill(ids=[1], metrics=["ts_pct", "salary_2026_27"])
     assert response.status_code == 200
     assert response.json()["players"]["1"]["name"] == "Alpha Guard"
     assert response.json()["cells"]["1"]["ts_pct"]["value"] == 60
-    assert response.json()["cells"]["1"]["salary_2026_27"]["value"] == 1000000
+    assert response.json()["cells"]["1"]["salary_2026_27"]["value"] is None
+    assert response.json()["cells"]["1"]["salary_2026_27"]["reason"] == "identity_incomplete"
     response = client.post("/api/boards/seed", json={"metric_id": "salary_2026_27", "min_gp": 10})
-    assert response.status_code == 200
-    assert response.json()["player_ids"] == [1]
+    assert response.status_code == 503
+    assert response.json()["detail"] == "Boards salary identity incomplete"
     assert fill(ids=[1], metrics=["ppg"]).status_code == 503
+
+
+def test_salary_requires_advanced_identity_table_even_for_basic_players(warehouse):
+    with duckdb.connect(str(warehouse)) as con:
+        con.execute("DROP TABLE silver_advanced")
+    response = fill(ids=[1], metrics=["ppg", "salary_2026_27"])
+    assert response.status_code == 200
+    assert response.json()["cells"]["1"]["ppg"]["value"] == 20
+    cell = response.json()["cells"]["1"]["salary_2026_27"]
+    assert cell["value"] is None and cell["reason"] == "identity_incomplete"
+    response = client.post("/api/boards/seed", json={"metric_id": "salary_2026_27"})
+    assert response.status_code == 503
+    assert response.json()["detail"] == "Boards salary identity incomplete"
+
+
+def test_no_identity_tables_is_warehouse_unavailable(warehouse):
+    with duckdb.connect(str(warehouse)) as con:
+        con.execute("DROP TABLE silver_player_season")
+        con.execute("DROP TABLE silver_advanced")
+    for response in [fill(ids=[1], metrics=["salary_2026_27"]),
+                     fill(ids=[1], metrics=["ppg"]), fill(ids=[]),
+                     client.post("/api/boards/seed", json={"metric_id": "salary_2026_27"}),
+                     client.post("/api/boards/seed", json={"metric_id": "ppg"})]:
+        assert response.status_code == 503
+        assert response.json()["detail"] == "Boards warehouse unavailable"
 
 
 def test_missing_unknown_and_empty(warehouse):
