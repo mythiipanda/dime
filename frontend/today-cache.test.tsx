@@ -6,6 +6,7 @@ import { act } from "react";
 import { createRoot } from "react-dom/client";
 import type { Root } from "react-dom/client";
 import TodayPanel from "./components/TodayPanel";
+import { HomeView } from "./components/shell/HomeView";
 import { addWatchlist, clearEnvelopeCache, getWatchlist } from "./lib/api";
 
 const dom = new JSDOM("<!doctype html><html><body></body></html>", {
@@ -61,15 +62,19 @@ function envelope(rows: unknown) {
   };
 }
 
-function mockFetch() {
+function mockFetch({ empty = false, offline = false } = {}) {
   calls = [];
   clearEnvelopeCache();
   gx.fetch = ((url: string, init?: RequestInit) => {
     const u = String(url);
     const method = init?.method || "GET";
     calls.push({ url: u, method });
+    if (offline) return Promise.reject(new TypeError("offline"));
     if (u.includes("/today?") && method === "GET") {
-      return Promise.resolve(envelope(TODAY_ROWS));
+      return Promise.resolve(envelope(empty ? { ...TODAY_ROWS, tonight: [] } : TODAY_ROWS));
+    }
+    if (u.includes("/movers?")) {
+      return Promise.resolve(envelope({ climbers: empty ? [] : [{ player: "Shai Gilgeous-Alexander", team: "OKC", rank_change: 2, rank_base: 3, rank_now: 1, pts_change: 1.4 }], fallers: [], new_entries: [] }));
     }
     if (u.includes("/watchlist") && method === "GET" && !u.includes("entity_type")) {
       return Promise.resolve(envelope([]));
@@ -94,14 +99,14 @@ function watchlistGets() {
   );
 }
 
-async function mountToday() {
+async function mountToday(element: React.ReactElement = React.createElement(TodayPanel)) {
   const el = win.document.createElement("div");
   win.document.body.appendChild(el);
   mounts.push(el);
   const root = createRoot(el);
   roots.push(root);
   await act(async () => {
-    root.render(React.createElement(TodayPanel));
+    root.render(element);
   });
   return { el, root };
 }
@@ -147,5 +152,49 @@ describe("today tab caching", () => {
       await getWatchlist();
     });
     assert.equal(watchlistGets().length, 2);
+  });
+});
+
+describe("Home design-system views", () => {
+  it("renders scores, mover rows, and the workflow entry point", async () => {
+    mockFetch();
+    let opened = false;
+    const { el } = await mountToday(React.createElement(HomeView, { onWorkflows: () => { opened = true; } }));
+    await tick();
+    assert.ok(el.textContent?.includes("BOS"));
+    assert.ok(el.textContent?.includes("Shai Gilgeous-Alexander"));
+    const buttons = [...el.querySelectorAll("button")];
+    await act(async () => buttons.find((button) => button.textContent?.includes("Open workflows"))!.click());
+    assert.equal(opened, true);
+    await act(async () => buttons.find((button) => button.textContent === "14d")!.click());
+    await tick();
+    assert.ok(calls.some((call) => call.url.includes("/movers?") && call.url.includes("days=14")));
+  });
+
+  it("has useful empty states and an accessible watchlist form", async () => {
+    mockFetch({ empty: true });
+    const { el } = await mountToday(React.createElement(HomeView, { onWorkflows: () => {} }));
+    await tick();
+    assert.ok(el.textContent?.includes("No games today"));
+    assert.ok(el.textContent?.includes("No movers yet"));
+    assert.ok(el.textContent?.includes("Your watchlist is empty"));
+    const add = [...el.querySelectorAll("button")].find((button) => button.textContent === "Add")!;
+    assert.equal(add.disabled, true);
+    const input = el.querySelector<HTMLInputElement>('input[aria-label="Name"]')!;
+    let focused = false;
+    input.focus = () => { focused = true; };
+    await act(async () => [...el.querySelectorAll("button")].find((button) => button.textContent === "Add your first player")!.click());
+    assert.equal(focused, true);
+  });
+
+  it("isolates unavailable data without hiding navigation or controls", async () => {
+    mockFetch({ offline: true });
+    const { el } = await mountToday(React.createElement(HomeView, { onWorkflows: () => {} }));
+    await tick();
+    assert.ok(el.textContent?.includes("Today is unavailable"));
+    assert.ok(el.textContent?.includes("Movers are unavailable"));
+    assert.ok(el.querySelector('[role="alert"]')?.textContent?.includes("Watchlist is unavailable"));
+    assert.ok(!el.textContent?.includes("Your watchlist is empty"));
+    assert.ok([...el.querySelectorAll("button")].some((button) => button.textContent?.includes("Open workflows")));
   });
 });

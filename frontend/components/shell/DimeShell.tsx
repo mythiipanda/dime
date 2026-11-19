@@ -10,9 +10,7 @@ import { getThreads, type ThreadInfo } from "../../lib/api";
 import { replayName } from "../../lib/replay";
 import WorkflowsPanel from "../WorkflowsPanel";
 import ExploreWorkspace from "../ExploreWorkspace";
-import TodayPanel from "../TodayPanel";
-import MoversPanel from "../MoversPanel";
-import WatchlistPanel from "../WatchlistPanel";
+import { HomeView } from "./HomeView";
 import BriefsPage from "../../app/briefs/page";
 import CommandPalette from "../CommandPalette";
 import DebateCardModal from "../DebateCardModal";
@@ -87,7 +85,7 @@ export function DimeShell() {
         {tab === "chat" && thread && <ChatView key={`${thread}-${replay || "live"}`} thread={thread} preset={preset} autoSend={autoSend?.thread === thread ? autoSend : null} replay={replay} onConsumed={() => setAutoSend(null)} onRunDone={reload} />}
         {tab === "workflows" && <WorkflowsPanel onRun={startChat} />}
         {tab === "data" && <ExploreWorkspace exploreKey={exploreKey} onAsk={(q) => { setPreset(q); navigate("chat"); }} />}
-        {tab === "today" && <div className="workflow-page grid gap-4"><div className="mb-4"><p className="mb-2 text-[11px] text-ink-3">YOUR DAILY READ</p><h1 className="text-2xl font-medium tracking-tight">Around the league</h1></div><TodayPanel /><MoversPanel /><WatchlistPanel /></div>}
+        {tab === "today" && <HomeView onWorkflows={() => navigate("workflows")} />}
         {tab === "briefs" && <BriefsPage />}
         {tab === "boards" && <div className="flex min-h-full items-center justify-center p-8"><div className="max-w-sm text-center"><ViewGrid width={28} height={28} className="mx-auto mb-5 text-ink-3" /><h1 className="mb-3 text-2xl font-medium tracking-tight">Boards</h1><p className="mb-2 text-[13px] text-ink-2">Agent-built, cited player grids.</p><p className="mb-6 text-[12px] text-ink-3">Coming next.</p><Button size="sm" onClick={() => navigate("workflows")}>Explore workflows</Button></div></div>}
       </div>

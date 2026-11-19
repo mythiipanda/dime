@@ -3,6 +3,11 @@
 import { useEffect, useState } from "react";
 import MatchupPreviewView, { parsePreview } from "../../components/MatchupPreviewView";
 import { getRevision } from "../../lib/api";
+import { Book } from "iconoir-react";
+import { Button } from "../../components/ds/Button";
+import { Chip } from "../../components/ds/Chip";
+import { PageHeader, Panel } from "../../components/ds/Panel";
+import EmptyState from "../../components/EmptyState";
 import {
   briefStale,
   getBrief,
@@ -48,122 +53,17 @@ export default function BriefsPage() {
     window.location.assign(rerunBrief(doc));
   };
 
-  return (
-    <div style={{ maxWidth: 1100, margin: "0 auto", padding: "24px 20px 80px" }}>
-      <div
-        style={{
-          fontSize: 10,
-          fontWeight: 600,
-          letterSpacing: ".08em",
-          textTransform: "uppercase",
-          color: "var(--color-ash-gray)",
-        }}
-      >
-        Briefs
-      </div>
-      <h1 className="display" style={{ fontSize: 24, margin: "4px 0 6px" }}>
-        Saved briefs
-      </h1>
-      <div style={{ fontSize: 13, color: "var(--color-warm-gray)", marginBottom: 16 }}>
-        Cited matchup briefs, kept where you can find them.
-      </div>
-      {!docs.length ? (
-        <div style={{ fontSize: 13, color: "var(--color-warm-gray)" }}>
-          No briefs yet. Save one from a matchup answer in chat.
-        </div>
-      ) : (
-        <div style={{ display: "grid", gridTemplateColumns: "280px 1fr", gap: 20 }}>
-          <div>
-            {docs.map((doc) => (
-              <div key={doc.id} style={{ marginBottom: 4 }}>
-                <button
-                  type="button"
-                  onClick={() => setActiveId(doc.id)}
-                  aria-pressed={activeId === doc.id}
-                  style={{
-                    display: "block",
-                    width: "100%",
-                    textAlign: "left",
-                    background:
-                      activeId === doc.id
-                        ? "var(--color-bg-selected)"
-                        : "transparent",
-                    border: "1px solid var(--color-stone-border)",
-                    borderRadius: 10,
-                    padding: "8px 12px",
-                    cursor: "pointer",
-                  }}
-                >
-                  <div
-                    style={{
-                      fontSize: 13,
-                      fontWeight: 500,
-                      color: "var(--color-ink-black)",
-                    }}
-                  >
-                    {briefTitle(doc)}
-                  </div>
-                  <div style={{ fontSize: 11, color: "var(--color-ash-gray)" }}>
-                    {doc.createdAt.slice(0, 10)}
-                  </div>
-                </button>
-                <div style={{ display: "flex", gap: 8, marginTop: 4 }}>
-                  <button
-                    type="button"
-                    onClick={() => rerun(doc)}
-                    style={{
-                      background: "none",
-                      border: "none",
-                      padding: 0,
-                      cursor: "pointer",
-                      fontSize: 12,
-                      fontWeight: 500,
-                      color: "var(--color-warm-gray)",
-                    }}
-                  >
-                    Re-run
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => remove(doc.id)}
-                    style={{
-                      background: "none",
-                      border: "none",
-                      padding: 0,
-                      cursor: "pointer",
-                      fontSize: 12,
-                      fontWeight: 500,
-                      color: "var(--color-warm-gray)",
-                    }}
-                  >
-                    Delete
-                  </button>
-                </div>
-              </div>
-            ))}
-          </div>
-          <div>
-            {!active ? (
-              <div style={{ fontSize: 13, color: "var(--color-warm-gray)" }}>
-                Pick a brief to read it.
-              </div>
-            ) : parsePreview(active.rows) ? (
-              <>
-                {briefStale(active.packHash, packHash) ? (
-                  <div style={{ fontSize: 12, color: "var(--color-warm-gray)", marginBottom: 8 }}>
-                    This brief may be out of date.
-                  </div>
-                ) : null}
-                <MatchupPreviewView rows={active.rows} meta={active.meta ?? undefined} />
-              </>
-            ) : (
-              <div style={{ fontSize: 13, color: "var(--color-warm-gray)" }}>
-                This brief did not load.
-              </div>
-            )}
-          </div>
-        </div>
-      )}
-    </div>
-  );
+
+  return <div className="mx-auto max-w-6xl px-6 py-10 lg:px-10">
+    <PageHeader eyebrow="Your working library" title="Saved briefs" description="Cited matchup analysis, kept close. Revisit the evidence or run an updated brief when the data changes." actions={<Chip>{docs.length} {docs.length === 1 ? "brief" : "briefs"}</Chip>} />
+    {!docs.length ? <Panel title="Build a library of decisions"><EmptyState icon={<Book width={28} height={28} />} title="No briefs yet" description="Save one from a matchup answer in chat. Your saved analysis and its source context will appear here." actionLabel="Ask Dime" onAction={() => window.location.assign("/?tab=chat")} /></Panel> : <div className="grid items-start gap-6 lg:grid-cols-[280px_minmax(0,1fr)]">
+      <aside className="space-y-3" aria-label="Saved briefs">{docs.map((doc) => <div key={doc.id} className="rounded-xl border border-line bg-surface p-3">
+        <button type="button" onClick={() => setActiveId(doc.id)} aria-pressed={activeId === doc.id} className={"w-full rounded-lg p-2 text-left transition-colors hover:bg-hover " + (activeId === doc.id ? "bg-hover-2" : "")}><p className="text-[13px] font-medium leading-relaxed">{briefTitle(doc)}</p><p className="mt-2 text-[11px] text-ink-3">{doc.createdAt.slice(0, 10)}</p></button>
+        <div className="mt-2 flex gap-1 border-t border-line pt-2"><Button size="xs" variant="quiet" onClick={() => rerun(doc)}>Re-run</Button><Button size="xs" variant="quiet" className="text-ink-3 hover:text-red" onClick={() => remove(doc.id)}>Delete</Button></div>
+      </div>)}</aside>
+      <Panel title={active ? briefTitle(active) : "Reading room"} description={active ? "Saved evidence · " + active.createdAt.slice(0, 10) : "Your brief, its sources, and the details behind the decision."}>
+        {!active ? <EmptyState icon={<Book width={24} height={24} />} title="Pick a brief to read it." description="Select a saved brief from your library." /> : parsePreview(active.rows) ? <>{briefStale(active.packHash, packHash) && <p role="status" className="mb-4 rounded-lg border border-line bg-orange-tint px-3 py-2 text-[12px] text-orange">This brief may be out of date.</p>}<MatchupPreviewView rows={active.rows} meta={active.meta ?? undefined} /></> : <EmptyState title="This brief did not load." description="The saved content is unavailable. Re-run the brief to refresh it." />}
+      </Panel>
+    </div>}
+  </div>;
 }
