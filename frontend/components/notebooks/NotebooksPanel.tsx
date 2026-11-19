@@ -51,7 +51,7 @@ function NotebookEditor({ id, onBack, capabilities, capabilityError, reloadCapab
     const token = (tokens.current.get(cell.id) || 0) + 1; tokens.current.set(cell.id, token);
     setRunning((prev) => new Set(prev).add(cell.id));
     try {
-      const output = cell.kind === "sql" ? { kind: "sql" as const, data: await runNotebookSQL(cell.source, page) } : { kind: "python" as const, data: await runNotebookPython(cell.source) };
+      const output = cell.kind === "sql" ? { kind: "sql" as const, data: await runNotebookSQL(cell.source, page) } : { kind: "python" as const, data: await runNotebookPython(cell.source, document.documentElement.classList.contains("dark") ? "dark" : "light") };
       if (active.current && tokens.current.get(cell.id) === token) edit((doc) => ({ ...doc, cells: doc.cells.map((c) => c.id === cell.id && c.source === cell.source && c.kind === cell.kind ? { ...c, outputs: output, executed_at: new Date().toISOString() } : c) }));
     } catch (e) {
       if (active.current && tokens.current.get(cell.id) === token) edit((doc) => ({ ...doc, cells: doc.cells.map((c) => c.id === cell.id && c.source === cell.source && c.kind === cell.kind ? { ...c, outputs: { kind: "error", message: message(e) }, executed_at: new Date().toISOString() } : c) }));

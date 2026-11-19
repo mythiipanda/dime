@@ -13,7 +13,7 @@ const button = (host: ParentNode, text: string) => [...host.querySelectorAll("bu
 async function click(element: HTMLElement) { assert.ok(element); await act(async () => { element.click(); await delay(); }); }
 const sqlResult: SQLResult = { columns: [{ name: "PLAYER", type: "VARCHAR" }, { name: "PTS", type: "DOUBLE" }], rows: [{ PLAYER: "Stephen Curry", PTS: 28.5 }], page: 0, page_size: 100, has_more: false, ms: 7, truncated: false };
 
-async function mount(options: { sqlError?: boolean; empty?: boolean; conflict?: boolean; listError?: boolean; deferredSave?: boolean } = {}, hook = false) {
+async function mount(options: { sqlError?: boolean; empty?: boolean; conflict?: boolean; listError?: boolean; deferredSave?: boolean; pythonEnabled?: boolean } = {}, hook = false) {
   const dom = new JSDOM("<!doctype html><html><body><div id='root'></div></body></html>", { url: "http://localhost/?tab=notebooks", pretendToBeVisual: true });
   Object.assign(globalThis, { window: dom.window, Window: dom.window.Window, document: dom.window.document, HTMLElement: dom.window.HTMLElement, Element: dom.window.Element, Node: dom.window.Node, DocumentFragment: dom.window.DocumentFragment, ShadowRoot: dom.window.ShadowRoot, MutationObserver: dom.window.MutationObserver, requestAnimationFrame: dom.window.requestAnimationFrame.bind(dom.window), cancelAnimationFrame: dom.window.cancelAnimationFrame.bind(dom.window), getComputedStyle: dom.window.getComputedStyle.bind(dom.window), IS_REACT_ACT_ENVIRONMENT: true });
   Object.assign(dom.window.HTMLElement.prototype, { attachEvent() {}, detachEvent() {}, scrollIntoView() {}, getClientRects() { return []; } });
@@ -25,7 +25,8 @@ async function mount(options: { sqlError?: boolean; empty?: boolean; conflict?: 
   globalThis.fetch = async (input, init) => {
     const path = String(input), method = init?.method || "GET", body = init?.body ? JSON.parse(String(init.body)) : {};
     requests.push({ path, method, body });
-    if (path.endsWith("/capabilities")) return Response.json({ python: { enabled: false, trusted_local_only: true, message: "Trusted local Python only. Enable with DIME_NOTEBOOK_PYTHON=1; this is not a security sandbox." } });
+    if (path.endsWith("/capabilities")) return Response.json({ python: { enabled: !!options.pythonEnabled, trusted_local_only: true, message: "Trusted local Python only. Enable with DIME_NOTEBOOK_PYTHON=1; this is not a security sandbox." } });
+    if (path.endsWith("/python")) return Response.json({ ok: true, stdout: "", stderr: "", tables: [], figures: [] });
     if (path.endsWith("/sql")) return options.sqlError ? Response.json({ detail: "Table is not allowlisted" }, { status: 400 }) : Response.json({ ...sqlResult, rows: options.empty ? [] : sqlResult.rows });
     if (path.endsWith("/notebooks") && method === "POST") { doc = { ...doc, ...body } as Notebook; return Response.json(doc, { status: 201 }); }
     if (path.endsWith("/notebooks")) return options.listError ? Response.json({ detail: "Storage unavailable" }, { status: 503 }) : Response.json({ notebooks: [] });
@@ -69,6 +70,22 @@ test("creates a notebook, runs SQL, shows a typed table and explains disabled Py
     assert.equal(m.host.querySelector('[role="alert"]'), null);
     assert.equal(m.host.querySelector<HTMLButtonElement>('[aria-label="Run cell 2"]')!.disabled, true);
     assert.equal(m.requests.filter((r) => r.path.endsWith("/python")).length, 0);
+  } finally { await m.cleanup(); }
+});
+
+test("Python runs send the current theme without rerunning code on theme changes", async () => {
+  const m = await mount({ pythonEnabled: true });
+  try {
+    await click(button(m.host, "Player shot profile"));
+    m.dom.window.document.documentElement.classList.add("dark");
+    await click(m.host.querySelector<HTMLButtonElement>('[aria-label="Run cell 3"]')!);
+    const requests = () => m.requests.filter((r) => r.path.endsWith("/python"));
+    assert.equal(requests()[0].body.theme, "dark");
+    m.dom.window.document.documentElement.classList.remove("dark");
+    await act(async () => { await delay(); });
+    assert.equal(requests().length, 1);
+    await click(m.host.querySelector<HTMLButtonElement>('[aria-label="Run cell 3"]')!);
+    assert.equal(requests()[1].body.theme, "light");
   } finally { await m.cleanup(); }
 });
 

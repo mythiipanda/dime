@@ -16,5 +16,5 @@ export const saveNotebook = (notebook: Notebook) => request<Notebook>(`/${encode
 export const deleteNotebook = (id: string) => request<void>(`/${encodeURIComponent(id)}`, "DELETE");
 export const notebookCapabilities = (signal?: AbortSignal) => request<NotebookCapabilities>("/capabilities", "GET", undefined, signal);
 export const runNotebookSQL = (sql: string, page = 0, signal?: AbortSignal) => request<SQLResult>("/sql", "POST", { sql, page, page_size: 100 }, signal);
-export const runNotebookPython = (source: string, signal?: AbortSignal) => request<PythonResult>("/python", "POST", { source, timeout_s: 30 }, signal);
+export const runNotebookPython = (source: string, theme: "dark" | "light", signal?: AbortSignal) => request<PythonResult>("/python", "POST", { source, timeout_s: 30, theme }, signal);
 export const exportNotebook = (id: string, fmt: "ipynb" | "json") => request<unknown>(`/${encodeURIComponent(id)}/export?fmt=${fmt}`);
