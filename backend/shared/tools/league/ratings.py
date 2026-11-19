@@ -362,6 +362,28 @@ def get_team_four_factors(team: str = "", season: str | None = None) -> dict[str
                     "rows": [], "meta": {"season": season},
                     "error": f"unknown team '{team_q}'"}
         team_abbr = match["abbreviation"]
+    requested_season = season
+    season_fallback = None
+    try:
+        src_table = ("silver_team_games" if derived
+                     else "silver_four_factors_team")
+        probe = pkg.store.connect(read_only=True)
+        try:
+            has_rows = probe.execute(
+                f"SELECT 1 FROM {src_table} WHERE _season = ? LIMIT 1",
+                [season]).fetchone()
+            if not has_rows:
+                latest = probe.execute(
+                    f"SELECT MAX(_season) FROM {src_table} "
+                    "WHERE _season <= ?", [season]).fetchone()
+                latest = str(latest[0] or "") if latest else ""
+                if latest and latest != season:
+                    season_fallback = latest
+                    season = latest
+        finally:
+            probe.close()
+    except Exception:
+        season_fallback = None
     try:
         if derived:
             raw = pkg.store._read_df(_TEAM_FOUR_FACTORS_SQL, [season])
@@ -394,7 +416,10 @@ def get_team_four_factors(team: str = "", season: str | None = None) -> dict[str
             "note": "computed offline from silver_team_games box "
                     "scores; eFG% = (FGM + 0.5*FG3M)/FGA, TOV% per "
                     "possession estimate, ORB% vs opponent DREB, "
-                    "FTr = FTA/FGA. Quote figures verbatim."}
+                    "FTr = FTA/FGA. Quote figures verbatim.",
+            **({"requested_season": requested_season,
+                "season_fallback": season_fallback}
+               if season_fallback else {})}
     if team_q and rows:
         r0 = rows[0]
         meta["leader_line"] = (

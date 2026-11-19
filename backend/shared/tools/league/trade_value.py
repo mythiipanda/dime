@@ -80,7 +80,8 @@ def _trade_guard_team_error(con, team: str, players: str,
             actual = str(row[0] or "").upper() if row and row[0] else ""
         if actual and actual != team.upper():
             return (f"salary data lists {player} with {actual}, "
-                    f"not {team.upper()}; trade math was not calculated")
+                    f"not {team.upper()} in season {season}; "
+                    "trade math was not calculated")
     return None
 
 
@@ -187,7 +188,8 @@ def get_trade_check(
     team_a: str = "", players_a: str = "", team_b: str = "", players_b: str = "",
     season: str | None = None,
 ) -> dict[str, Any]:
-    season = _pkg().resolve_season(season)
+    season = (str(season or "").strip() or _pkg().current_season()
+              or _pkg().resolve_season(None))
     if not players_a and not players_b:
         return {"tool": "get_trade_check", "ok": False,
                 "error": "two teams needed"}
@@ -263,7 +265,7 @@ def get_trade_check(
                      "base-year, trade-kicker, minimum-salary, and sign-and-trade rules. "
                      "Confirm with a cap specialist."},
             "meta": {"source": source, "rules": "v1-simplified",
-                     "salary_date": salary_date}}
+                     "salary_date": salary_date, "season": season}}
 
 
 _TRADE_VALUE_WEIGHTS = {"PTS": 1.0, "REB": 1.2, "AST": 1.5,
@@ -701,7 +703,7 @@ def _trade_value_error(msg: str) -> dict[str, Any]:
     return {"tool": "get_trade_value", "ok": False, "error": msg}
 
 
-@tool(description='Trade value grade: estimated production value vs salary per side, plus picks.\n\nReasoning layer on top of get_trade_check (which covers cap legality).\nAll dollar figures are rough estimates from 2025-26 production versus\n2026-27 salaries. Picks like "2029 FRP" or "2030 FRP top-4 protected".')
+@tool(description='Trade value grade: estimated production value vs salary per side, plus picks.\n\nReasoning layer on top of get_trade_check (which covers cap legality).\nAll dollar figures are rough estimates from the latest completed\nproduction season versus the current salary sheet. Picks like "2029 FRP"\nor "2030 FRP top-4 protected".')
 def get_trade_value(
     team_a: str = "", players_a: str = "", team_b: str = "",
     players_b: str = "", picks_a: str = "", picks_b: str = "",
@@ -713,11 +715,13 @@ def get_trade_value(
                 f"both sides resolve to the same team ({team_a} / {team_b}) "
                 "- check the team names")
         team_a, team_b = norm
+    with _owned_connection(None, read_only=True) as vintage_con:
+        sal_season, sal_rows, _ = _salary_vintage(vintage_con)
+    sal_season = sal_season or "2026-27"
     prod_season = _pkg().last_completed_season()
-    sal_season = "2026-27"
     disclaimer = (f"All dollar figures are rough estimates from {prod_season} "
-                  "production vs 2026-27 salary data. Not cap-legality advice; "
-                  "pair with get_trade_check.")
+                  f"production vs {sal_season} salary data. Not cap-legality "
+                  "advice; pair with get_trade_check.")
 
     if not team_a or not team_b:
         return _trade_value_error("two teams needed")
@@ -782,9 +786,9 @@ def get_trade_value(
     s1 = _trade_verdict_line(winner, total_a, total_b, delta, abbr_a, abbr_b)
     s2 = _trade_driver_line(_trade_driver(players_a, players_b))
     s3 = key_fit_note.strip() or "Fit notes are limited by missing team data."
-    s4 = ("All values are rough estimates from 2025-26 production versus "
-          "2026-27 salaries, so this is not cap-legality advice: pair it "
-          "with get_trade_check.")
+    s4 = (f"All values are rough estimates from {prod_season} production "
+          f"versus {sal_season} salaries, so this is not cap-legality advice: "
+          "pair it with get_trade_check.")
 
     return {"tool": "get_trade_value", "ok": True,
             "rows": {"team_a": {"team": abbr_a, "players": players_a,
@@ -804,5 +808,5 @@ def get_trade_value(
                      "(outperforming the contract), negative = overpaid"},
             "meta": {"source": payroll_source,
                      "production_season": prod_season,
-                     "salary_season": _salary_vintage()[0] or "2026-27",
+                     "salary_season": sal_season,
                      "estimates": True}}
