@@ -470,3 +470,17 @@ test("history replays as one transcript when the model requires prior reasoning"
   assert.ok(transcript);
   assert.ok(transcript.content.includes("User: Who led the league in points?"));
 });
+
+test("pi execution stream ends after abort even when the run never settles", async () => {
+  const pi = createPiExecution({
+    resolveRuntime: () => new Promise(() => {}),
+    connectTools: async () => ({ tools: [], results: new Map(), pid: 1, close: async () => {} }),
+    abortGraceMs: 50,
+  });
+  const controller = new AbortController();
+  setTimeout(() => controller.abort(), 20);
+  const events = [];
+  for await (const event of pi.stream({ q: "hang", history: [], model: "fixture:fixture", cwd: tmpdir(), agentDir: tmpdir(), bridge: { python: "fake", cwd: tmpdir(), env: {} } }, controller.signal))
+    events.push(event);
+  assert.equal(events.some((e) => e.type === "answer"), false);
+});
