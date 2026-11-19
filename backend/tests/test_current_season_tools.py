@@ -29,11 +29,12 @@ def test_trade_check_defaults_to_the_current_season(monkeypatch, tmp_path):
     con = duckdb.connect(str(path))
     con.execute(
         "CREATE TABLE silver_salaries (PLAYER_NAME VARCHAR, TEAM VARCHAR, "
-        "SALARY_2025_26 INTEGER, _season VARCHAR, _fetched_at VARCHAR)")
+        "SALARY_2025_26 INTEGER, SALARY_2026_27 INTEGER, _season VARCHAR, "
+        "_fetched_at VARCHAR)")
     con.execute(
         "INSERT INTO silver_salaries VALUES "
-        "('LeBron James', 'LAL', 50000000, '2026-27', NULL), "
-        "('Giannis Antetokounmpo', 'MIA', 40000000, '2026-27', NULL)")
+        "('LeBron James', 'LAL', 50000000, 51000000, '2026-27', NULL), "
+        "('Giannis Antetokounmpo', 'MIA', 40000000, 41000000, '2026-27', NULL)")
     con.close()
     monkeypatch.setattr(store, "DB_PATH", path)
     monkeypatch.setattr(store, "LOCK_PATH", tmp_path / ".write.lock")
@@ -68,11 +69,12 @@ def test_trade_guard_names_the_season_on_a_stale_team_premise(
     con = duckdb.connect(str(path))
     con.execute(
         "CREATE TABLE silver_salaries (PLAYER_NAME VARCHAR, TEAM VARCHAR, "
-        "SALARY_2025_26 INTEGER, _season VARCHAR, _fetched_at VARCHAR)")
+        "SALARY_2025_26 INTEGER, SALARY_2026_27 INTEGER, _season VARCHAR, "
+        "_fetched_at VARCHAR)")
     con.execute(
         "INSERT INTO silver_salaries VALUES "
-        "('Jaylen Brown', 'PHI', 57000000, '2026-27', NULL), "
-        "('Jayson Tatum', 'BOS', 58000000, '2026-27', NULL)")
+        "('Jaylen Brown', 'PHI', 57000000, 57500000, '2026-27', NULL), "
+        "('Jayson Tatum', 'BOS', 58000000, 58500000, '2026-27', NULL)")
     con.execute(
         "CREATE TABLE silver_leaders_pts (PLAYER VARCHAR, TEAM VARCHAR, "
         "GP INTEGER, PTS REAL, REB REAL, AST REAL, STL REAL, BLK REAL, "
