@@ -35,6 +35,7 @@ def test_named_team_ratings_is_one_call():
     assert str(row["OFF_RATING"]) in answer
     assert str(row["DEF_RATING"]) in answer
 
+@pytest.mark.canonical_warehouse
 def test_true_shooting_leader_is_qualified_and_one_call():
     out = get_leaders.invoke({"stat_category": "TS_PCT", "season": "2025-26"})
     assert out["ok"] is True
@@ -200,6 +201,7 @@ def test_team_rating_tool_enum_and_planner_vocabulary_stay_aligned():
         "TM_TOV_PCT": {"label": "turnover percentage", "format": "decimal3", "direction": "asc"},
     }
 
+@pytest.mark.canonical_warehouse
 def test_bound_warehouse_read_paths_and_lineage(monkeypatch,tmp_path):
     import hashlib
     from shared import store

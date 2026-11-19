@@ -374,7 +374,8 @@ def test_derivation_contract_is_a_named_version():
 
 
 def test_absent_error_factory_is_single_sourced():
-    source = Path(store.__file__).read_text(encoding="utf-8")
+    source = "\n".join(p.read_text(encoding="utf-8")
+                       for p in sorted(Path(store.__file__).parent.glob("*.py")))
     assert source.count("f\"warehouse absent: {path}\"") == 1
     assert "f\"warehouse absent: {DB_PATH}\"" not in source
     factory_definition = "def _warehouse_absent_error(path: Path | str) -> FileNotFoundError:"
@@ -382,7 +383,7 @@ def test_absent_error_factory_is_single_sourced():
     constructions = [line.strip() for line in source.splitlines()
                      if "FileNotFoundError(" in line]
     assert constructions == ["return FileNotFoundError(f\"warehouse absent: {path}\")"]
-    assert source.count("raise _warehouse_absent_error(") == 2
+    assert source.count("raise pkg._warehouse_absent_error(") == 2
 
 
 def _point_db_at_absent(monkeypatch, tmp_path):

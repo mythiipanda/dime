@@ -17,8 +17,8 @@ from shared import file_lock
 
 _SAMPLE_READ_BYTES = 8192
 _PACK_MEMBER = "data/warehouse.duckdb"
-CANONICAL_WAREHOUSE = Path("/home/hatch/workspace/dime-r25-data/backend/data/warehouse-backfill.duckdb")
-DEFAULT_STAGE_DIR = Path("/home/hatch/workspace/dime-data-release")
+CANONICAL_WAREHOUSE = Path.home() / "workspace" / "dime-r25-data" / "backend" / "data" / "warehouse-backfill.duckdb"
+DEFAULT_STAGE_DIR = Path.home() / "workspace" / "dime-data-release"
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 FETCH_SH = REPO_ROOT / "scripts" / "fetch-data.sh"
 FETCH_ACTION_YML = REPO_ROOT / ".github" / "actions" / "fetch-warehouse" / "action.yml"

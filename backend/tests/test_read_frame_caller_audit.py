@@ -8,13 +8,16 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import pytest
 
 BACKEND = Path(__file__).resolve().parent.parent
-SKIP_PARTS = {"tests", "test", "__pycache__", "bench", "fixtures"}
+SKIP_PARTS = {"tests", "test", "__pycache__", "bench", "fixtures", ".venv"}
 
 READ = "read_frame"
 OPTIONAL = "read_frame_optional"
 ERROR = "TableAbsent"
 
 OPTIONAL_READ_SITES = {
+    ("scripts.build_silver_player_season", "build_season_frame"):
+        "offline builder that tries the hist, leaders and advanced sources in "
+        "turn and builds the season from whichever one holds rows",
     ("shared.tools._core", "_bound_warehouse_read"):
         "cache-first reader: a cold table is fetched live and seeded by "
         "save_frame, and the returned meta declares cached=False with the "
