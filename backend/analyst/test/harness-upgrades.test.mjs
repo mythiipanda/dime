@@ -478,9 +478,15 @@ test("pi execution stream ends after abort even when the run never settles", asy
     abortGraceMs: 50,
   });
   const controller = new AbortController();
-  setTimeout(() => controller.abort(), 20);
+  const timer = setTimeout(() => controller.abort(), 20);
+  const keepAlive = setInterval(() => {}, 1000);
   const events = [];
-  for await (const event of pi.stream({ q: "hang", history: [], model: "fixture:fixture", cwd: tmpdir(), agentDir: tmpdir(), bridge: { python: "fake", cwd: tmpdir(), env: {} } }, controller.signal))
-    events.push(event);
+  try {
+    for await (const event of pi.stream({ q: "hang", history: [], model: "fixture:fixture", cwd: tmpdir(), agentDir: tmpdir(), bridge: { python: "fake", cwd: tmpdir(), env: {} } }, controller.signal))
+      events.push(event);
+  } finally {
+    clearTimeout(timer);
+    clearInterval(keepAlive);
+  }
   assert.equal(events.some((e) => e.type === "answer"), false);
 });
