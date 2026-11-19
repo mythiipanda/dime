@@ -103,3 +103,20 @@ test("metric picker shows definitions and Library reuses saved-board links", asy
     assert.ok(listBoards().some((b) => b.id === saved.id));
   } finally { await m.cleanup(); }
 });
+
+test("Library opens a memory-only board through client navigation", async () => {
+  const m = await mount();
+  try {
+    Object.defineProperty(m.dom.window, "localStorage", { configurable: true, get() { throw new Error("Storage blocked"); } });
+    const saved = saveBoard(newBoard());
+    const pushed: string[] = [];
+    const { AppRouterContext } = await import("next/dist/shared/lib/app-router-context.shared-runtime");
+    const { default: BriefsPage } = await import("./app/briefs/page");
+    const router = { push: (url: string) => pushed.push(url), replace() {}, refresh() {}, back() {}, forward() {}, prefetch: async () => {}, bfcacheId: "test" };
+    await act(async () => m.root.render(<AppRouterContext.Provider value={router}><BriefsPage /></AppRouterContext.Provider>));
+    assert.match(m.host.textContent!, /Session only/);
+    await click(button(m.host, "Open"));
+    assert.deepEqual(pushed, [`/?tab=boards&board=${encodeURIComponent(saved.id)}`]);
+    assert.equal(getBoard(saved.id)?.id, saved.id);
+  } finally { await m.cleanup(); }
+});
