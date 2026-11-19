@@ -9,6 +9,7 @@ import { HomeContent, HomeView } from "./components/shell/WorkspaceViews";
 import WarehouseView from "./components/dime/views/WarehouseView";
 import { PromptBar } from "./components/ds/PromptBar";
 import { ShotsExplorer } from "./components/shell/ShotsExplorer";
+import TradesView from "./components/dime/views/TradesView";
 import type { HomeSnapshot } from "./lib/warehouse";
 
 const snapshot: HomeSnapshot = { date: "2026-11-19", schedule: { available: false, table: "silver_scoreboard", games: [], next_date: null, seasons: [], last_fetch: null }, snapshot: { table: "silver_team_ratings", season: "2025-26", rows: [{ TEAM_NAME: "Boston", GP: 82, NET_RATING: 10.3 }], last_fetch: "2026-04-13" } };
@@ -89,4 +90,15 @@ test("Shots explorer preserves zone data even if shot coordinates are unavailabl
     assert.match(host.textContent!, /No shot coordinates/); assert.match(host.textContent!, /50.0%/); assert.match(host.textContent!, /warehouse:silver_zone_splits/);
   });
   globalThis.fetch = previous;
+});
+
+test("Trades renders the backend's readable domain error on HTTP 422", async () => {
+  await mount(<TradesView />, async () => Response.json({ ok: false, error: "Salary data lists Luka with LAL, not DAL" }, { status: 422 }), async host => {
+    await act(async () => [...host.querySelectorAll("button")].find(item => item.textContent?.includes("Luka"))!.click());
+    const button = [...host.querySelectorAll("button")].find(item => item.textContent?.includes("Check with real cap rules"));
+    assert.ok(button);
+    await act(async () => button.click());
+    assert.match(host.textContent!, /Salary data lists Luka with LAL, not DAL/);
+    assert.doesNotMatch(host.textContent!, /Could not reach the backend/);
+  });
 });

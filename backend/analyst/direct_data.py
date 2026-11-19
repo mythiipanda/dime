@@ -80,7 +80,10 @@ def product_resolve(query: str) -> dict:
 @tool(description='Check a trade using the existing Python domain implementation.')
 def product_trade(team_a: str, players_a: str, team_b: str, players_b: str, season: str = '2025-26') -> dict:
     from shared.tools import get_trade_check
-    return get_trade_check.invoke(dict(team_a=team_a,players_a=players_a,team_b=team_b,players_b=players_b,season=season))
+    try:
+        return get_trade_check.invoke(dict(team_a=team_a,players_a=players_a,team_b=team_b,players_b=players_b,season=season))
+    except ValueError as error:
+        return {'ok': False, 'error': str(error)}
 
 @tool(description='Build the current debate card with the domain season clamp.')
 def product_debate(a: str, b: str, season: str = '2025-26') -> dict:

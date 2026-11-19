@@ -20,7 +20,7 @@ const data={close:async()=>{},async call(name,args){switch(name){
  case "product_runs":return {runs:[{question:"fixture",answer:"answer",tables:[],thread:args.thread,owner:args.owner}]};
  case "product_rerun":return {ok:true,columns:["PTS"],rows:[[71]],ms:1,capped:false};
  case "product_resolve":return output("resolve",{query:args.query});
- case "product_trade":return output("trade",args);
+ case "product_trade":return args.team_a==="BAD"?{ok:false,error:"Unknown team BAD"}:output("trade",args);
  case "product_debate":if(args.season==="2025-26")return cases.find(c=>c.path==="/api/debate-card?a=A&b=B").body;return {result:{ok:true,rows:{path:"/private/debate_A_vs_B_1.html",players:["A","B"]}},season:args.season};
  case "product_today":return output("today",args);
  case "product_watchlist":return output("watchlist",args);
@@ -61,6 +61,8 @@ try {
   const table=await fetch(url+"/api/warehouse/tables/silver_sample?season=2025-26");assert.equal(table.status,200);const detail=await table.json();assert.equal(detail.columns[0].type,"INTEGER");assert.deepEqual(detail.seasons,["2025-26"]);assert.deepEqual(detail.rows,[]);
   for(const name of ["conversations","silver_missing","silver_sample%3BDROP"]){const response=await fetch(url+"/api/warehouse/tables/"+name);assert.equal(response.status,404);}
   console.log("Home and table-detail route contracts: schedule absence, schema, season, empty rows and invalid tables passed");
+  const trade=await fetch(url+"/api/trade/check",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({team_a:"BAD",players_a:["Player A"],team_b:"NYK",players_b:["Player B"]})});assert.equal(trade.status,422);assert.equal((await trade.json()).error,"Unknown team BAD");
+  console.log("Trade domain errors: HTTP 422 with readable checker reason passed");
  }
  {
   const preflightPatch = await fetch(url + "/api/workspaces/fixture", {

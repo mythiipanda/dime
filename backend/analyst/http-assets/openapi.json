@@ -666,11 +666,14 @@
             }
           },
           "422": {
-            "description": "Validation Error",
+            "description": "Invalid request or trade-check domain error (for example, unavailable salary data or a player/team mismatch)",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "anyOf": [
+                    { "$ref": "#/components/schemas/HTTPValidationError" },
+                    { "type": "object", "required": ["ok", "error"], "properties": { "ok": { "type": "boolean", "enum": [false] }, "error": { "type": "string" } }, "additionalProperties": true }
+                  ]
                 }
               }
             }
