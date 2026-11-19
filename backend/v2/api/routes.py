@@ -462,6 +462,24 @@ def dataset(
             return Response(df.write_csv(), media_type="text/csv")
         return {"ok": True, "data": rows, "verdict": res.get("verdict"), "meta": res.get("meta")}
 
+    if name == "zone_splits":
+        from shared.tools.player import get_shot_zones
+
+        if not player_id:
+            return {"ok": False, "error": "missing id param for this dataset"}
+        result = get_shot_zones.invoke({"player_id": player_id, "season": season})
+        if not result.get("ok"):
+            return {"ok": False, "error": result.get("error", "shot zones unavailable"),
+                    "meta": result.get("meta")}
+        frame = pl.DataFrame(result.get("rows", []))
+        if fmt == "csv":
+            return Response(frame.write_csv(), media_type="text/csv")
+        if fmt == "parquet":
+            buf = io.BytesIO()
+            frame.write_parquet(buf)
+            return Response(buf.getvalue(), media_type="application/octet-stream")
+        return {"ok": True, "data": frame.to_dicts(), "meta": result.get("meta")}
+
     if name not in _DATASETS_TABLES:
         return {"ok": False, "error": f"unknown dataset, pick one of {sorted(_DATASETS_TABLES)}"}
     from shared import store
@@ -529,13 +547,23 @@ def dataset(
             return {"ok": False, "error": live.error,
                     "source": live.meta.source,
                     "detail": "live source failed and no cached rows for this entity"}
-        store.save_frame(table, live, entity)
-        if entity_scoped:
-            frame = store.read_frame(
-                table, "_fetched_at = ?", [live.meta.fetched_at]
-            )
+        if store.DB_PATH.resolve() == store.CANONICAL_DB_PATH:
+            frame = live.frame
+            if frame.height:
+                frame = frame.with_columns(
+                    pl.lit(live.meta.source).alias("_source"),
+                    pl.lit(live.meta.season).alias("_season"),
+                    pl.lit(live.meta.fetched_at).alias("_fetched_at"),
+                    pl.lit(entity).alias("_entity"),
+                )
         else:
-            frame = store.read_frame(table, "_season = ?", [season])
+            store.save_frame(table, live, entity)
+            if entity_scoped:
+                frame = store.read_frame(
+                    table, "_fetched_at = ?", [live.meta.fetched_at]
+                )
+            else:
+                frame = store.read_frame(table, "_season = ?", [season])
     if (name in ("player_gamelogs", "team_games", "playoff_gamelogs")
             and frame.height > 0 and "GAME_DATE" in frame.columns):
 
