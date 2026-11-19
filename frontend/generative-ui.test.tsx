@@ -138,7 +138,8 @@ test("overflowing tables expose measured cues and working scroll buttons", async
     await act(async () => root.render(<ArtifactTable title="Wide fixture" columns={[{ key: "player", label: "Player" }]} rows={[["Player"]]} />));
     const region = host.querySelector<HTMLDivElement>('[role="region"]')!;
     Object.defineProperties(region, { scrollWidth: { configurable: true, value: 640 }, clientWidth: { configurable: true, value: 220 } });
-    region.scrollBy = ({ left = 0 }: ScrollToOptions) => {
+    region.scrollBy = (options?: ScrollToOptions | number) => {
+      const left = typeof options === "number" ? options : options?.left ?? 0;
       region.scrollLeft = Math.max(0, Math.min(420, region.scrollLeft + left));
       region.dispatchEvent(new window.Event("scroll", { bubbles: true }));
     };
