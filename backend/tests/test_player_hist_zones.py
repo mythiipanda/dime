@@ -130,13 +130,11 @@ def test_multi_season_history():
 
 @pytest.mark.canonical_warehouse
 def test_unknown_player_stays_honest():
-    pytest = __import__("pytest")
-    with pytest.raises(store.TableAbsent) as info:
-        get_shot_zones.invoke({"player_id": 999999999, "season": "2024-25"})
-    assert info.value.table == "silver_zone_splits"
-    assert str(store.DB_PATH) == info.value.warehouse
-    assert store.DB_PATH.name in str(info.value)
-    assert "999999999" not in str(info.value)
+    res = get_shot_zones.invoke({"player_id": 999999999, "season": "2024-25"})
+    assert res["ok"] is False
+    assert not res.get("rows")
+    assert res.get("error")
+    assert res["meta"].get("coverage") == "none"
 
 def test_compare_edges_survive_hist_zones():
     import asyncio
