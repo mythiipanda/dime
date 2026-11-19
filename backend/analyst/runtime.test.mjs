@@ -369,7 +369,7 @@ test("real statistical tools cross MCP with anchor compatibility, rows, columns,
   const pid = bridge.pid;
   try {
     const toolMap = new Map(bridge.tools.map(t => [t.name, t]));
-    assert.equal(bridge.tools.length, 96);
+    assert.equal(bridge.tools.length, 97);
 
     // 1. get_rapm
     const rapmTool = toolMap.get("get_rapm");
