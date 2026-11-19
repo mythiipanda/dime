@@ -10,18 +10,20 @@ const players = { "201939": { name: "Stephen Curry", team: "GSW" }, "203999": { 
 const requests: { path: string; body: Record<string, unknown> }[] = [];
 const asks: string[] = [];
 
-async function mount(options: { failure?: boolean; seedEmpty?: boolean; boardId?: string; nullReason?: string } = {}) {
+async function mount(options: { failure?: boolean; seedEmpty?: boolean; boardId?: string; nullReason?: string; notebookError?: boolean } = {}) {
   const dom = new JSDOM("<!doctype html><html><body><div id='root'></div></body></html>", { url: "http://localhost", pretendToBeVisual: true });
   const gx = globalThis as unknown as Record<string, unknown>;
   Object.assign(gx, { window: dom.window, document: dom.window.document, localStorage: dom.window.localStorage, HTMLElement: dom.window.HTMLElement, Element: dom.window.Element, Node: dom.window.Node, DocumentFragment: dom.window.DocumentFragment, ShadowRoot: dom.window.ShadowRoot, requestAnimationFrame: dom.window.requestAnimationFrame.bind(dom.window), cancelAnimationFrame: dom.window.cancelAnimationFrame.bind(dom.window), getComputedStyle: dom.window.getComputedStyle.bind(dom.window), IS_REACT_ACT_ENVIRONMENT: true });
   Object.assign(dom.window.HTMLElement.prototype, { attachEvent() {}, detachEvent() {}, scrollIntoView() {} });
   const { BoardsPanel } = await import("./components/BoardsPanel");
-  function Harness() { const [id, setId] = useState<string | null>(null); return <BoardsPanel boardId={id} onOpen={setId} onAsk={(p) => asks.push(p)} />; }
+  const opened: string[] = [];
+  function Harness() { const [id, setId] = useState<string | null>(null); return <BoardsPanel boardId={id} onOpen={setId} onAsk={(p) => asks.push(p)} onOpenNotebook={(id) => opened.push(id)} />; }
   const previous = globalThis.fetch;
   requests.length = 0; asks.length = 0;
   globalThis.fetch = async (url, init) => {
     const path = String(url); const body = init?.body ? JSON.parse(String(init.body)) : {};
     requests.push({ path, body });
+    if (path.endsWith("/notebooks")) return options.notebookError ? Response.json({ detail: "Notebook backend unavailable" }, { status: 503 }) : Response.json({ id: "b".repeat(32) });
     if (path.endsWith("/metrics")) return Response.json({ ok: true, metrics });
     if (path.endsWith("/seed")) return Response.json({ ok: true, player_ids: options.seedEmpty ? [] : [201939, 203999], cells: {}, players });
     if (path.endsWith("/fill")) {
@@ -35,10 +37,36 @@ async function mount(options: { failure?: boolean; seedEmpty?: boolean; boardId?
   const root = createRoot(dom.window.document.getElementById("root")!);
   await act(async () => { root.render(options.boardId ? <BoardsPanel boardId={options.boardId} onOpen={() => {}} onAsk={() => {}} /> : <Harness />); });
   const host = dom.window.document.getElementById("root")!;
-  return { dom, host, options, root, cleanup: async () => { await act(async () => root.unmount()); globalThis.fetch = previous; dom.window.close(); } };
+  return { dom, host, options, root, opened, cleanup: async () => { await act(async () => root.unmount()); globalThis.fetch = previous; dom.window.close(); } };
 }
 const button = (host: ParentNode, text: string) => [...host.querySelectorAll("button")].find((b) => b.textContent?.includes(text))!;
 async function click(el: HTMLElement) { assert.ok(el); await act(async () => { el.click(); await new Promise((r) => setTimeout(r, 25)); }); }
+
+test("board notebook action posts a scoped seed and opens only after creation succeeds", async () => {
+  const m = await mount();
+  try {
+    await click(button(m.host, "Scoring guards"));
+    await click(button(m.host, "Open as notebook"));
+    const body = requests.find((request) => request.path.endsWith("/notebooks"))!.body;
+    assert.deepEqual(body.origin, { kind: "board", ref: listBoards()[0].id });
+    const cells = body.cells as { kind: string; source: string }[];
+    assert.match(cells.find((cell) => cell.kind === "sql")!.source, /IN \(201939, 203999\)/);
+    assert.deepEqual(m.opened, ["b".repeat(32)]);
+  } finally { await m.cleanup(); }
+});
+
+test("board notebook backend errors show a dismissible toast without navigating or losing the board", async () => {
+  const m = await mount({ notebookError: true });
+  try {
+    await click(button(m.host, "Scoring guards"));
+    await click(button(m.host, "Open as notebook"));
+    assert.match(m.host.querySelector('[role="alert"]')!.textContent!, /Notebook not created[\s\S]*backend unavailable/);
+    assert.deepEqual(m.opened, []);
+    assert.match(m.host.textContent!, /Stephen Curry/);
+    await click(m.host.querySelector<HTMLButtonElement>('[aria-label="Dismiss notebook error"]')!);
+    assert.equal(m.host.querySelector('[role="alert"]'), null);
+  } finally { await m.cleanup(); }
+});
 
 test("creates a template, fills real row ids, saves its cache and opens a source card", async () => {
   const m = await mount();

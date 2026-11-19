@@ -18,6 +18,8 @@ import { RecordsTable } from "../ds/RecordsTable";
 import { StatusPill } from "../ds/StatusPill";
 import CitedAnswerText from "../CitedAnswerText";
 import DataArtifacts from "../DataArtifacts";
+import { notebookFromAnswer } from "../../lib/notebook-seed";
+import { OpenNotebookButton } from "../notebooks/OpenNotebookButton";
 
 const suggestions = [
   { icon: Group, text: "Compare Shai Gilgeous-Alexander and Luka Dončić" },
@@ -32,7 +34,7 @@ function scrollToHash() {
   return !!target;
 }
 
-export function AssistantTurn({ ai, question, onAsk }: { ai: AiMessage; question: string; onAsk: (q: string) => void }) {
+export function AssistantTurn({ ai, question, onAsk, onOpenNotebook }: { ai: AiMessage; question: string; onAsk: (q: string) => void; onOpenNotebook?: (id: string) => void }) {
   const evidencePrefix = useId();
   const [copied, setCopied] = useState(false);
   const items = ai.activity || [];
@@ -52,11 +54,11 @@ export function AssistantTurn({ ai, question, onAsk }: { ai: AiMessage; question
     {grids.map((t, i) => <div key={i} id={`${evidencePrefix}evidence-${tables.indexOf(t)}`} tabIndex={-1}><RecordsTable rows={t.rows as Record<string, unknown>[]} title={capabilityLabel(t.tool)} source={[t.meta?.source, t.meta?.season].filter(Boolean).join(" · ")} /></div>)}
     {Object.values(remaining.nodes).some((n) => n.tables.some((t) => t.rows || t.tool === "get_game_prediction")) && <div id={`${evidencePrefix}evidence-artifacts`} tabIndex={-1}><DataArtifacts ai={remaining} question={question} onAsk={onAsk} /></div>}
     {ai.error && <div role="alert" className="mt-4 rounded-xl border border-line bg-surface px-4 py-3"><p className="!m-0 text-[12px] text-red">{ai.error}</p><button className="mt-2 text-[12px] text-ink-2 hover:text-ink" onClick={() => onAsk(question)}>Try again <ArrowRight width={12} height={12} className="inline" /></button></div>}
-    {ai.done && ai.text && <div className="mt-4 flex items-center gap-2 text-ink-3"><button className="icon-button" aria-label="Copy answer" onClick={() => navigator.clipboard.writeText(ai.text).then(() => setCopied(true))}>{copied ? <Check width={14} height={14} /> : <Copy width={14} height={14} />}</button><span className="text-[10px]">Check source coverage before making a decision.</span></div>}
+    {ai.done && ai.text && <div className="mt-4 flex flex-wrap items-center gap-2 text-ink-3"><button className="icon-button" aria-label="Copy answer" onClick={() => navigator.clipboard.writeText(ai.text).then(() => setCopied(true))}>{copied ? <Check width={14} height={14} /> : <Copy width={14} height={14} />}</button>{onOpenNotebook && <OpenNotebookButton seed={() => notebookFromAnswer(ai, question)} onOpen={onOpenNotebook} />}<span className="text-[10px]">Check source coverage before making a decision.</span></div>}
   </article>;
 }
 
-export function ChatView({ thread, preset, autoSend, replay, onConsumed, onRunDone }: { thread: string; preset: string | null; autoSend: { thread: string; text: string } | null; replay: string | null; onConsumed: () => void; onRunDone: () => void }) {
+export function ChatView({ thread, preset, autoSend, replay, onConsumed, onRunDone, onOpenNotebook }: { thread: string; preset: string | null; autoSend: { thread: string; text: string } | null; replay: string | null; onConsumed: () => void; onRunDone: () => void; onOpenNotebook?: (id: string) => void }) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState(preset || "");
   const [models, setModels] = useState<ModelOption[]>([]);
@@ -152,7 +154,7 @@ export function ChatView({ thread, preset, autoSend, replay, onConsumed, onRunDo
     </div> : <>
       <div className="conversation">
         {replay && <div className="mb-6"><StatusPill tone="orange" dot={false}>Development replay · synthetic data</StatusPill></div>}
-        {messages.map((message, i) => message.role === "human" ? <div key={i} id={`m-${i}`} className="user-turn">{message.text}</div> : <div key={i} id={`m-${i}`}><AssistantTurn ai={message.ai!} question={messages[i - 1]?.text || ""} onAsk={send} /></div>)}
+        {messages.map((message, i) => message.role === "human" ? <div key={i} id={`m-${i}`} className="user-turn">{message.text}</div> : <div key={i} id={`m-${i}`}><AssistantTurn ai={message.ai!} question={messages[i - 1]?.text || ""} onAsk={send} onOpenNotebook={onOpenNotebook} /></div>)}
         <div ref={end} />
       </div>
       <div className="composer-dock">{composer}<p className="mt-2 text-center text-[10px] text-ink-3">Dime can make mistakes. Review the evidence behind every decision.</p></div>
