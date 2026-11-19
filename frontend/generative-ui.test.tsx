@@ -142,3 +142,12 @@ test("empty evidence tables retain their title and recovery", () => {
   assert.match(dom.window.document.body.textContent!, /0 records.*No records available/);
   dom.window.close();
 });
+
+test("visually hidden artifact announcements stay anchored to their local surface", () => {
+  const dom = new JSDOM(renderToStaticMarkup(<ArtifactShell title="Fixture"><ArtifactTable title="Fixture records" columns={[{ key: "player", label: "Player" }]} rows={[["Player"]]} /></ArtifactShell>));
+  const status = dom.window.document.querySelector('[role="status"]')!;
+  const caption = dom.window.document.querySelector("caption")!;
+  assert.ok(status.parentElement!.classList.contains("relative"));
+  assert.ok(caption.closest("table")!.parentElement!.parentElement!.classList.contains("relative"));
+  dom.window.close();
+});

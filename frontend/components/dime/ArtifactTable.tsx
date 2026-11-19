@@ -47,7 +47,7 @@ export default function ArtifactTable<T extends (string | number | null)[]>({
     renderCell ? renderCell(row, i) : row[i] == null || row[i] === "" ? <span aria-label="Not available" className="text-ink-3">—</span> : String(row[i]);
 
   return (
-    <div>
+    <div className="relative min-w-0">
     <div role="region" aria-label={`${title} records`} tabIndex={0} className="max-h-[420px] overflow-auto overscroll-contain focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-accent-ink">
     <table className="w-full text-[13px]">
       <caption className="sr-only">{title}</caption>
