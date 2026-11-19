@@ -29,8 +29,8 @@ function AddPlayer({ board, onAdd }: { board: Board; onAdd: (player: PlayerHit) 
     const timeout = setTimeout(() => { setLoading(true); void resolvePlayers(query, 6).then(rows => { if (active) { setHits(rows); setLoading(false); } }); }, 200);
     return () => { active = false; clearTimeout(timeout); };
   }, [query]);
-  return <Popover><PopoverTrigger render={<Button size="sm" disabled={board.rows.length >= 50} />}><Plus size={14} />Add player</PopoverTrigger>
-    <PopoverContent align="start" className="w-80 bg-surface text-ink">
+  return <Popover><PopoverTrigger asChild><Button size="sm" disabled={board.rows.length >= 50}><Plus size={14} />Add player</Button></PopoverTrigger>
+    <PopoverContent align="start" aria-label="Add a player" className="w-80 bg-surface text-ink">
       <TextField autoFocus aria-label="Find a player" placeholder="Search player names…" value={query} onChange={event => { setQuery(event.target.value); setHits([]); setLoading(event.target.value.trim().length >= 2); }} />
       <div aria-live="polite" className="max-h-64 overflow-auto">{query.trim().length < 2 ? <p className="p-3 text-xs text-ink-3">Type at least two characters.</p> : loading ? <p className="p-3 text-xs text-ink-3">Searching players…</p> : hits.length ? hits.map(hit => <Button key={hit.id} variant="quiet" className="w-full justify-start" disabled={board.rows.some(row => row.player_id === hit.id)} onClick={() => { onAdd(hit); setQuery(""); setHits([]); }}>{hit.name}</Button>) : <p className="p-3 text-xs text-ink-3">No players found. Try a full name.</p>}</div>
     </PopoverContent>
@@ -40,8 +40,8 @@ function AddPlayer({ board, onAdd }: { board: Board; onAdd: (player: PlayerHit) 
 function MetricPicker({ metrics, board, onAdd }: { metrics: BoardMetric[]; board: Board; onAdd: (id: string) => void }) {
   const [query, setQuery] = useState("");
   const filtered = metrics.filter(metric => `${metric.label} ${metric.definition}`.toLowerCase().includes(query.toLowerCase()));
-  return <Dialog><DialogTrigger render={<Button size="sm" disabled={board.columns.length >= 30} />}><Plus size={14} />Add metric</DialogTrigger>
-    <DialogContent className="max-w-lg"><div className="flex items-start justify-between gap-4"><div><DialogTitle className="text-lg font-medium">Choose a metric</DialogTitle><DialogDescription className="mt-2 text-xs text-ink-3">Warehouse-backed definitions. Salary uses the single 2026–27 vintage.</DialogDescription></div><DialogClose render={<Button size="icon" variant="quiet" aria-label="Close metric picker" />}><X size={16} /></DialogClose></div>
+  return <Dialog><DialogTrigger asChild><Button size="sm" disabled={board.columns.length >= 30}><Plus size={14} />Add metric</Button></DialogTrigger>
+    <DialogContent className="max-w-lg p-6"><div className="flex items-start justify-between gap-4"><div><DialogTitle className="text-lg font-medium">Choose a metric</DialogTitle><DialogDescription className="mt-2 text-xs text-ink-3">Warehouse-backed definitions. Salary uses the single 2026–27 vintage.</DialogDescription></div><DialogClose asChild><Button size="icon" variant="quiet" aria-label="Close metric picker"><X size={16} /></Button></DialogClose></div>
       <TextField className="my-4" aria-label="Search metrics" placeholder="Search metrics…" value={query} onChange={event => setQuery(event.target.value)} />
       <div className="max-h-[55vh] overflow-auto">{[...new Set(filtered.map(metric => metric.category))].map(category => <section key={category}><h3 className="sticky top-0 bg-surface py-3 text-xs text-ink-3">{category}</h3>{filtered.filter(metric => metric.category === category).map(metric => <div key={metric.id} className="flex items-center gap-3 border-t border-line py-3"><div className="min-w-0 flex-1"><p className="text-sm font-medium">{metric.label}</p><p className="mt-1 text-xs leading-relaxed text-ink-3">{metric.definition}</p></div><Button size="sm" disabled={board.columns.some(column => column.metric_id === metric.id)} onClick={() => onAdd(metric.id)}>{board.columns.some(column => column.metric_id === metric.id) ? "Added" : "Add"}<span className="sr-only"> {metric.label}</span></Button></div>)}</section>)}{!filtered.length && <p role="status" className="py-6 text-sm text-ink-3">No matching metrics.</p>}</div>
     </DialogContent>

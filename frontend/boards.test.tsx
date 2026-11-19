@@ -1,6 +1,6 @@
+import { testDom } from "./test-dom";
 import test from "node:test";
 import assert from "node:assert/strict";
-import { JSDOM } from "jsdom";
 import { act, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { addRow, boardTemplates, getBoard, listBoards, newBoard, saveBoard, type BoardMetric } from "./lib/boards";
@@ -11,9 +11,11 @@ const requests: { path: string; body: Record<string, unknown> }[] = [];
 const asks: string[] = [];
 
 async function mount(options: { failure?: boolean; seedEmpty?: boolean; boardId?: string; nullReason?: string } = {}) {
-  const dom = new JSDOM("<!doctype html><html><body><div id='root'></div></body></html>", { url: "http://localhost", pretendToBeVisual: true });
-  const gx = globalThis as unknown as Record<string, unknown>;
-  Object.assign(gx, { window: dom.window, document: dom.window.document, localStorage: dom.window.localStorage, HTMLElement: dom.window.HTMLElement, Element: dom.window.Element, Node: dom.window.Node, DocumentFragment: dom.window.DocumentFragment, ShadowRoot: dom.window.ShadowRoot, requestAnimationFrame: dom.window.requestAnimationFrame.bind(dom.window), cancelAnimationFrame: dom.window.cancelAnimationFrame.bind(dom.window), getComputedStyle: dom.window.getComputedStyle.bind(dom.window), IS_REACT_ACT_ENVIRONMENT: true });
+  const dom = testDom;
+  dom.window.document.body.innerHTML = "<div id='root'></div>";
+  dom.window.localStorage.clear();
+  dom.window.history.replaceState({}, "", "/");
+  Object.assign(globalThis, { localStorage: dom.window.localStorage, IS_REACT_ACT_ENVIRONMENT: true });
   Object.assign(dom.window.HTMLElement.prototype, { attachEvent() {}, detachEvent() {}, scrollIntoView() {} });
   const { BoardsPanel } = await import("./components/BoardsPanel");
   function Harness() { const [id, setId] = useState<string | null>(null); return <BoardsPanel boardId={id} onOpen={setId} onAsk={(p) => asks.push(p)} />; }
@@ -35,7 +37,7 @@ async function mount(options: { failure?: boolean; seedEmpty?: boolean; boardId?
   const root = createRoot(dom.window.document.getElementById("root")!);
   await act(async () => { root.render(options.boardId ? <BoardsPanel boardId={options.boardId} onOpen={() => {}} onAsk={() => {}} /> : <Harness />); });
   const host = dom.window.document.getElementById("root")!;
-  return { dom, host, options, root, cleanup: async () => { await act(async () => root.unmount()); globalThis.fetch = previous; dom.window.close(); } };
+  return { dom, host, options, root, cleanup: async () => { await act(async () => root.unmount()); globalThis.fetch = previous; } };
 }
 const button = (host: ParentNode, text: string) => [...host.querySelectorAll("button")].find((b) => b.textContent?.includes(text))!;
 async function click(el: HTMLElement) { assert.ok(el); await act(async () => { el.click(); await new Promise((r) => setTimeout(r, 25)); }); }
@@ -160,14 +162,22 @@ test("reopening a board replaces cached nulls with a fresh warehouse fill", asyn
 });
 
 for (const [reason, words] of [["unmatched_salary_name", "No 2026-27 salary row for this player"], ["ambiguous_salary_name", "Name matches multiple players"]]) {
-  test(`null ${reason} explains the reason on keyboard focus`, async () => {
+  test(`null ${reason} retains a hover reason and opens evidence only on activation`, async () => {
     const m = await mount({ nullReason: reason });
     try {
       await click(button(m.host, "Scoring guards"));
       const trigger = m.host.querySelector<HTMLButtonElement>('[aria-label^="Source: Stephen Curry · Points"]')!;
       assert.ok(trigger.getAttribute("aria-label")?.includes(words));
+      assert.ok(trigger.title.includes(words));
       await act(async () => { trigger.focus(); });
+      assert.equal(m.dom.window.document.querySelector('[role="dialog"]'), null);
+      await act(async () => { trigger.dispatchEvent(new m.dom.window.MouseEvent("pointerenter", { bubbles: true })); await new Promise(resolve => setTimeout(resolve, 200)); });
+      assert.equal(m.dom.window.document.querySelector('[role="dialog"]'), null);
+      await click(trigger);
       assert.ok(m.dom.window.document.querySelector('[role="status"]')?.textContent?.includes(words));
+      assert.equal(m.dom.window.document.activeElement, trigger);
+      await act(async () => { trigger.dispatchEvent(new m.dom.window.KeyboardEvent("keydown", { key: "Escape", bubbles: true })); });
+      assert.equal(m.dom.window.document.querySelector('[role="dialog"]'), null);
     } finally { await m.cleanup(); }
   });
 }

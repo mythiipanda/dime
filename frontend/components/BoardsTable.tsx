@@ -3,7 +3,6 @@
 import { ArrowLeft, ArrowRight, ArrowUp, ArrowDown, Database, X } from "lucide-react";
 import { Button } from "./ds/Button";
 import { ValuePill } from "./ds/ValuePill";
-import { useState } from "react";
 import { Popover, PopoverTrigger, PopoverContent } from "./ui/popover";
 import { columnPercentiles, type Board, type BoardCell, type BoardMetric } from "../lib/boards";
 
@@ -13,7 +12,6 @@ export function formatBoardValue(value: number, metric: BoardMetric): string {
 }
 
 export function BoardValue({ cell, metric, player }: { cell: BoardCell; metric: BoardMetric; player: string }) {
-  const [open, setOpen] = useState(false);
   const c = cell.citation;
   const reasons: Record<string, string> = {
     unmatched_salary_name: "No 2026-27 salary row for this player",
@@ -27,11 +25,11 @@ export function BoardValue({ cell, metric, player }: { cell: BoardCell; metric: 
     missing_or_nonfinite_value: "The source row has no usable value for this metric",
   };
   const reason = cell.value == null ? (reasons[cell.reason || ""] || "This value is unavailable in the warehouse") : undefined;
-  return <Popover open={open} onOpenChange={setOpen}>
-    <PopoverTrigger openOnHover delay={150} closeDelay={150} onFocus={() => { if (reason) setOpen(true); }} render={<Button variant="quiet" size="sm" className="font-mono tabular-nums" />} aria-label={`Source: ${player} · ${metric.label}${reason ? ` · ${reason}` : ""}`} title={reason}>
+  return <Popover>
+    <PopoverTrigger asChild><Button variant="quiet" size="sm" className="font-mono tabular-nums" aria-label={`Source: ${player} · ${metric.label}${reason ? ` · ${reason}` : ""}`} title={reason}>
       {cell.value == null ? <span className="text-ink-3">—</span> : formatBoardValue(cell.value, metric)}
-    </PopoverTrigger>
-    <PopoverContent side="bottom" align="end" initialFocus={false} className="w-[min(370px,calc(100vw-32px))] gap-3 border border-line bg-surface p-4 text-ink shadow-overlay ring-0">
+    </Button></PopoverTrigger>
+    <PopoverContent side="bottom" align="end" aria-label={`${player} · ${metric.label} evidence`} onOpenAutoFocus={event => event.preventDefault()} className="w-[min(370px,calc(100vw-32px))] gap-3 border border-line bg-surface p-4 text-ink shadow-overlay ring-0">
       <div className="flex items-center gap-2 text-[12px] font-medium"><Database width={14} />{metric.label}<span className="ml-auto text-[10px] font-normal text-ink-3">WAREHOUSE EVIDENCE</span></div>
       <p className="text-[12px] text-ink-2">{player}<span className="float-right font-mono tabular-nums text-ink">{cell.value == null ? "Not available" : cell.value.toLocaleString("en-US", { maximumFractionDigits: 4 }) + (metric.unit === "pct" ? "%" : metric.unit === "usd" ? " USD" : "")}</span></p>
       {reason && <p role="status" className="rounded-md bg-inset px-2 py-2 text-[11px] text-ink-2">{reason}</p>}
@@ -64,7 +62,7 @@ export function BoardsTable({ board, metrics, loading, sort, onSort, onRemoveRow
           const metric = metrics.find(item => item.id === metric_id);
           return <th scope="col" key={metric_id} className="min-w-40 px-3 py-3 text-right font-normal" aria-sort={sort?.id === metric_id && metric ? (metric.higher_is_better === sort.best ? "descending" : "ascending") : "none"}>
             <div className="flex items-center justify-end gap-1"><Button size="xs" variant="quiet" disabled={!metric} title={metric?.definition} onClick={() => metric && onSort(metric)}>{metric?.label || metric_id}{sort?.id === metric_id && (metric?.higher_is_better === sort.best ? " ↓" : " ↑")}</Button>
-              <Popover><PopoverTrigger render={<Button size="xs" variant="quiet" aria-label={`Manage ${metric?.label || metric_id}`} />}>···</PopoverTrigger><PopoverContent align="end">
+              <Popover><PopoverTrigger asChild><Button size="xs" variant="quiet" aria-label={`Manage ${metric?.label || metric_id}`}>···</Button></PopoverTrigger><PopoverContent align="end" aria-label={`Manage ${metric?.label || metric_id}`}>
                 <Button size="sm" variant="quiet" disabled={index === 0} onClick={() => onMoveColumn(index, index - 1)}><ArrowLeft size={13} />Move left</Button>
                 <Button size="sm" variant="quiet" disabled={index === board.columns.length - 1} onClick={() => onMoveColumn(index, index + 1)}><ArrowRight size={13} />Move right</Button>
                 <Button size="sm" variant="quiet" onClick={() => onRemoveColumn(metric_id)}>Remove metric</Button>
@@ -75,7 +73,7 @@ export function BoardsTable({ board, metrics, loading, sort, onSort, onRemoveRow
       </tr></thead>
       <tbody className="divide-y divide-line">{board.rows.map((row, index) => <tr key={row.player_id} className="hover:bg-hover">
         <th scope="row" className="px-4 py-3 font-normal"><div className="flex items-center gap-3"><span className="font-mono text-[10px] text-ink-3">{String(index + 1).padStart(2, "0")}</span><div className="min-w-28 flex-1"><p className="font-medium">{row.name}</p><p className="mt-1 text-[10px] text-ink-3">{row.team || "Team not recorded"}</p></div>
-          <Popover><PopoverTrigger render={<Button size="xs" variant="quiet" aria-label={`Manage ${row.name}`} />}>···</PopoverTrigger><PopoverContent align="start">
+          <Popover><PopoverTrigger asChild><Button size="xs" variant="quiet" aria-label={`Manage ${row.name}`}>···</Button></PopoverTrigger><PopoverContent align="start" aria-label={`Manage ${row.name}`}>
             <Button size="sm" variant="quiet" disabled={index === 0} onClick={() => onMoveRow(index, index - 1)}><ArrowUp size={13} />Move up</Button>
             <Button size="sm" variant="quiet" disabled={index === board.rows.length - 1} onClick={() => onMoveRow(index, index + 1)}><ArrowDown size={13} />Move down</Button>
             <Button size="sm" variant="quiet" onClick={() => onRemoveRow(row.player_id)}><X size={13} />Remove player</Button>
