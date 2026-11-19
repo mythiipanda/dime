@@ -131,6 +131,37 @@ test("source-value popovers open with actual selectors and dismiss without chang
   } finally { await act(async () => root.unmount()); host.remove(); }
 });
 
+test("overflowing tables expose measured cues and working scroll buttons", async () => {
+  const host = document.createElement("div"); document.body.append(host);
+  const root = createRoot(host);
+  try {
+    await act(async () => root.render(<ArtifactTable title="Wide fixture" columns={[{ key: "player", label: "Player" }]} rows={[["Player"]]} />));
+    const region = host.querySelector<HTMLDivElement>('[role="region"]')!;
+    Object.defineProperties(region, { scrollWidth: { configurable: true, value: 640 }, clientWidth: { configurable: true, value: 220 } });
+    region.scrollBy = ({ left = 0 }: ScrollToOptions) => {
+      region.scrollLeft = Math.max(0, Math.min(420, region.scrollLeft + left));
+      region.dispatchEvent(new window.Event("scroll", { bubbles: true }));
+    };
+    await act(async () => window.dispatchEvent(new window.Event("resize")));
+    const back = host.querySelector<HTMLButtonElement>('[aria-label="Scroll table left"]')!;
+    const forward = host.querySelector<HTMLButtonElement>('[aria-label="Scroll table right"]')!;
+    assert.equal(back.disabled, true);
+    assert.match(document.getElementById(region.getAttribute("aria-describedby")!)!.textContent!, /Scroll for all columns/);
+    await act(async () => forward.click());
+    assert.equal(region.scrollLeft, 165);
+    assert.equal(back.disabled, false);
+    await act(async () => { forward.click(); forward.click(); });
+    assert.equal(region.scrollLeft, 420);
+    assert.equal(forward.disabled, true);
+    await act(async () => back.click());
+    assert.equal(region.scrollLeft, 255);
+    Object.defineProperty(region, "clientWidth", { configurable: true, value: 640 });
+    region.scrollLeft = 0;
+    await act(async () => window.dispatchEvent(new window.Event("resize")));
+    assert.equal(host.querySelector('[aria-label="Scroll table right"]'), null);
+  } finally { await act(async () => root.unmount()); host.remove(); }
+});
+
 test("clipboard denial reports an honest recovery, not a false copied status", async () => {
   const host = document.createElement("div"); document.body.append(host);
   const root = createRoot(host);

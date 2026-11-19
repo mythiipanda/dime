@@ -78,6 +78,7 @@ even when a reference suggests custom animation.
 - Citation details open deliberately on click, Enter or Space; Escape dismisses and returns focus.
 - Tables preserve raw values and provenance. A missing value is a dash, not zero.
 - All-numeric columns align right; mixed text columns remain readable. Overflow is focusable.
+- Wide answer tables expose a measured scroll cue and labeled left/right buttons, not a hidden-scrollbar-only affordance. Headers wrap so narrow layouts can show values sooner.
 - Anchor visually hidden captions and live statuses to a positioned local container so long answers cannot expand the document outside the scroll region.
 - Empty tables retain their title, record count, source and a next step. Do not invent records.
 - New feature work uses the shared system; legacy screens are not automatically fully migrated.
