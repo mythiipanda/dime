@@ -362,13 +362,24 @@ def _trade_sheet_salaries(con, warehouse: _TradeWarehouse,
                           sal_season: str, leaders: dict | None = None) -> dict[str, int]:
     salaries: dict[str, int] = {}
     records = salary_records(con, sal_season, include_fallback=True)
+    matched = set()
     for key, lead in (leaders or {}).items():
         contract = match_record(records, lead['name'], lead.get('PLAYER_ID'), lead['team'])
         if contract is not None:
+            matched.add(id(contract))
             lead['contract'] = contract
             if contract['salary'] is not None:
                 salaries[key] = int(contract['salary'])
     if leaders is not None:
+        for contract in records:
+            key = _trade_value_norm(contract['PLAYER_NAME'])
+            if id(contract) in matched or key in leaders:
+                continue
+            leaders[key] = {'name': contract['PLAYER_NAME'], 'team': contract['TEAM'],
+                            'PLAYER_ID': contract.get('PLAYER_ID'), 'gp': 0,
+                            'tot': {}, 'fg3m': 0, 'contract': contract}
+            if contract['salary'] is not None:
+                salaries[key] = int(contract['salary'])
         return salaries
     for table, name_col, val_col in (
             ("silver_salaries", "PLAYER_NAME", None),

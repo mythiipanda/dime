@@ -192,6 +192,21 @@ def test_trade_value_id_join_name_fallback_and_wrapper(warehouse):
     assert _trade_value_rows(result['rows'])[0]['option_years'] == {'2027-28': 'player'}
 
 
+def test_trade_value_keeps_salary_only_rookie_schedule(warehouse):
+    _new_warehouse(warehouse)
+    con = duckdb.connect(str(warehouse))
+    con.execute("INSERT INTO silver_salaries VALUES ('Rookie Example', 'BOS', 3, 50, 'rookie01', 100, 50, 60, NULL, 'team', '2026-27')")
+    con.close()
+    result = league.get_trade_value.invoke({'team_a': 'BOS', 'players_a': 'Rookie Example', 'team_b': 'NYK', 'players_b': 'Fallback Example Jr.'})
+    assert result['ok'], result
+    rookie = result['rows']['team_a']['players'][0]
+    assert rookie['salary_26_27'] == 50
+    assert rookie['future_salaries'] == {'2027-28': 60}
+    assert rookie['option_years'] == {'2027-28': 'team'}
+    assert rookie['gp'] == 0
+    assert rookie['production_score'] is None
+
+
 def test_empty_and_conflicting_id_contracts(warehouse):
     _new_warehouse(warehouse)
     con = duckdb.connect(str(warehouse))
