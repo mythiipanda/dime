@@ -72,6 +72,18 @@ it("preserves statistical drivers when reopening a saved comps result", () => {
   assert.doesNotMatch(html, /2 records/);
 });
 
+it("reopens saved game predictions with top-level matchup and estimate", () => {
+  const prediction = { tool: "get_game_prediction", matchup: { home: "OKC", away: "DEN" }, estimate: { win_prob: { OKC: 0.62, DEN: 0.38 }, projected_score: { OKC: 115, DEN: 109 }, projected_total: 224 } };
+  const ai = aiFromRun({ question: "Predict OKC vs DEN", answer: "Prediction", created_at: "2026-01-01", suggestions: [], tables: [prediction] });
+  const html = renderToStaticMarkup(<AssistantTurn ai={ai} question="Predict OKC vs DEN" onAsk={() => {}} />);
+  assert.match(html, /62\.0%/);
+  assert.match(html, /115/);
+  assert.match(html, /109/);
+  assert.match(html, /224/);
+  const empty = renderToStaticMarkup(<AssistantTurn ai={{ ...ai, nodes: {} }} question="Predict" onAsk={() => {}} />);
+  assert.doesNotMatch(empty, /evidence-artifacts/);
+});
+
 it("hides evidence navigation for live claim-only answers without inventing row targets", () => {
   const ai = applyEvent({ text: "Net rating is 9.4", done: true, nodes: {} }, "custom_data", { node: "analytics", tables: [{ output_id: "NET_RATING", value: "9.4", provenance: { capability: "team_ratings", season: "2025-26" } }] });
   const detail = citationDetails(ai, evidenceSources(ai)[0]);
