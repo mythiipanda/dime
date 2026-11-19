@@ -1463,8 +1463,9 @@ test("createAnalystSession discovers bundled skills regardless of cwd and expose
     const recon = await tools.load_skill({ name: "warehouse-reconciliation" });
     const lineup = await tools.load_skill({ name: "lineups-and-rotations" });
     const stats = await tools.load_skill({ name: "statistical-modeling" });
+    const historical = await tools.load_skill({ name: "historical-grain-and-time" });
     const missing = await tools.load_skill({ name: "nonexistent-skill-xyz" });
-    return { cbaOk: cba.ok, hasApron: cba.content.includes("First Apron"), reconOk: recon.ok, lineupOk: lineup.ok, statsOk: stats.ok, missingOk: missing.ok, validCount: (missing.available_skills || []).length };
+    return { cbaOk: cba.ok, hasApron: cba.content.includes("First Apron"), reconOk: recon.ok, lineupOk: lineup.ok, statsOk: stats.ok, historicalOk: historical.ok, missingOk: missing.ok, validCount: (missing.available_skills || []).length };
   `, []);
   try {
     await session.prompt("Load bundled skills inside codemode");
@@ -1473,12 +1474,14 @@ test("createAnalystSession discovers bundled skills regardless of cwd and expose
     assert(session.systemPrompt.includes("warehouse-reconciliation"));
     assert(session.systemPrompt.includes("lineups-and-rotations"));
     assert(session.systemPrompt.includes('tools.load_skill({ name: "statistical-modeling" })'));
+    assert(session.systemPrompt.includes("historical-grain-and-time"));
     const toolTexts = session.messages.filter(m => m.role === "toolResult").flatMap(m => m.content).map(c => c.text ?? "").join("\n");
     assert(toolTexts.includes('"cbaOk":true'));
     assert(toolTexts.includes('"hasApron":true'));
     assert(toolTexts.includes('"reconOk":true'));
     assert(toolTexts.includes('"lineupOk":true'));
     assert(toolTexts.includes('"statsOk":true'));
+    assert(toolTexts.includes('"historicalOk":true'));
     assert(toolTexts.includes('"missingOk":false'));
   } finally {
     session.dispose();
