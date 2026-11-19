@@ -80,7 +80,7 @@ function read(): Board[] {
 function write(boards: Board[]) {
   memory = JSON.stringify({ version: 1, boards });
   const store = storage();
-  if (store && store !== failedStorage) { try { store.setItem(KEY, memory); } catch { failedStorage = store; } }
+  if (store) { try { store.setItem(KEY, memory); failedStorage = null; } catch { failedStorage = store; } }
   if (typeof window !== "undefined") window.dispatchEvent(new window.Event("dime:boards"));
 }
 export function boardsArePersistent(): boolean { const store = storage(); return !!store && store !== failedStorage; }

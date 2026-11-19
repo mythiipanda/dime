@@ -60,6 +60,34 @@ test("unavailable localStorage falls back to memory", () => {
   try { Object.defineProperty(dom.window, "localStorage", { get() { throw new Error("denied"); } }); const b = saveBoard(sample()); assert.ok(getBoard(b.id)); assert.equal(boardsArePersistent(), false); deleteBoard(b.id); } finally { dom.window.close(); }
 });
 
+test("storage writes retry and persist the memory shadow after quota space is freed", () => {
+  const dom = install();
+  const proto = Object.getPrototypeOf(dom.window.localStorage);
+  const original = proto.setItem;
+  try {
+    const first = saveBoard(sample());
+    const second = saveBoard(duplicateBoard(first));
+    let attempts = 0;
+    proto.setItem = function(key: string, value: string) {
+      attempts++;
+      if (JSON.parse(value).boards.length > 1) throw new Error("quota exceeded");
+      return original.call(this, key, value);
+    };
+    saveBoard({ ...first, title: "Memory edit" });
+    assert.equal(boardsArePersistent(), false);
+    assert.equal(getBoard(first.id)?.title, "Memory edit");
+    deleteBoard(second.id);
+    assert.equal(attempts, 2);
+    assert.equal(boardsArePersistent(), true);
+    const disk = JSON.parse(dom.window.localStorage.getItem("dime_boards_v1")!);
+    assert.equal(disk.boards.length, 1);
+    assert.equal(disk.boards[0].title, "Memory edit");
+    saveBoard({ ...first, title: "Durable again" });
+    assert.equal(getBoard(first.id)?.title, "Durable again");
+    assert.equal(attempts, 3);
+  } finally { proto.setItem = original; dom.window.close(); }
+});
+
 test("row and column helpers are immutable, unique, capped and clear removed caches", () => {
   const board = sample(); const original = JSON.stringify(board);
   assert.equal(addRow(board, board.rows[0]), board);
