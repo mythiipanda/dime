@@ -151,3 +151,7 @@ def test_sql_exec_zero_rows_and_long_sql_and_recovery_hint(warehouse, monkeypatc
     assert res_err["ok"] is False
     assert "recovery_hint" in res_err
     assert "warehouse_schema" in res_err["recovery_hint"]
+
+    res_typo = asyncio.run(sql_exec_mod.sql_exec.ainvoke({"sql": "SELECT WINSX FROM silver_standings"}))
+    assert res_typo["ok"] is False
+    assert "silver_standings.WINS" in res_typo["recovery_hint"]
