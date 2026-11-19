@@ -1249,6 +1249,43 @@
         "type": "object"
       }
     },
+    "get_trade_partners": {
+      "name": "get_trade_partners",
+      "description": "Find CBA-legal salary-matching trade packages for one player across the league. Player name; season defaults to 2026-27; teams optionally restricts partners (comma-separated abbreviations); max_packages caps rows per team (default 3). Each row is a roster package (up to 3 players) whose salary satisfies both sides' matching rules under the same simplified 2023 CBA as get_trade_check.",
+      "args_schema": {
+        "properties": {
+          "player": {
+            "default": "",
+            "title": "Player",
+            "type": "string"
+          },
+          "season": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Season"
+          },
+          "teams": {
+            "default": "",
+            "title": "Teams",
+            "type": "string"
+          },
+          "max_packages": {
+            "default": 3,
+            "title": "Max Packages",
+            "type": "integer"
+          }
+        },
+        "title": "get_trade_partners",
+        "type": "object"
+      }
+    },
     "get_situational_splits": {
       "name": "get_situational_splits",
       "description": "Clutch situational splits for one player or team: score state plus venue.",
