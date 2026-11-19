@@ -7,7 +7,8 @@ import WorkflowsPanel from "./components/WorkflowsPanel";
 import { workflows } from "./lib/workflows";
 import { DimeShell } from "./components/shell/DimeShell";
 import { StrictMode } from "react";
-import { loadWorkflowDraft, saveWorkflowDraft } from "./lib/workflow-drafts";
+import { clearWorkflowDraft, hasPendingWorkflowDraft, loadWorkflowDraft, saveWorkflowDraft } from "./lib/workflow-drafts";
+import { ChatView } from "./components/shell/ChatView";
 
 it("stores workflow drafts per thread and tolerates unavailable storage", () => {
   const previous = globalThis.window;
@@ -20,9 +21,14 @@ it("stores workflow drafts per thread and tolerates unavailable storage", () => 
     assert.equal(loadWorkflowDraft("two"), null);
     saveWorkflowDraft("one", "  ");
     assert.equal(loadWorkflowDraft("one"), null);
+    assert.equal(hasPendingWorkflowDraft("one"), true);
+    clearWorkflowDraft("one");
+    assert.equal(hasPendingWorkflowDraft("one"), false);
     Object.defineProperty(dom.window, "localStorage", { get() { throw new Error("Storage blocked"); } });
     assert.doesNotThrow(() => saveWorkflowDraft("one", "Request"));
+    assert.doesNotThrow(() => clearWorkflowDraft("one"));
     assert.equal(loadWorkflowDraft("one"), null);
+    assert.equal(hasPendingWorkflowDraft("one"), false);
   } finally { Object.assign(globalThis, { window: previous }); dom.window.close(); }
 });
 
@@ -80,6 +86,61 @@ it("fills a workflow, previews its request and runs only when complete", async (
     await act(async () => root.unmount());
     dom.window.close();
   }
+});
+
+for (const mode of ["edit", "clear-rewrite"]) it(`workflow draft ${mode}: user changes survive model loading and reload until manually sent`, async () => {
+  const dom = new JSDOM("<div id='root'></div>", { url: "http://localhost/?tab=chat&thread=pending-workflow" });
+  Object.assign(globalThis, { window: dom.window, document: dom.window.document, localStorage: dom.window.localStorage, HTMLElement: dom.window.HTMLElement, IS_REACT_ACT_ENVIRONMENT: true });
+  dom.window.matchMedia = (() => ({ matches: true, addEventListener() {}, removeEventListener() {} })) as unknown as typeof dom.window.matchMedia;
+  Object.assign(dom.window.HTMLElement.prototype, { scrollTo() {}, scrollIntoView() {}, attachEvent() {}, detachEvent() {} });
+  const previous = globalThis.fetch;
+  const requests: Record<string, unknown>[] = [];
+  let resolveModels!: () => void;
+  const ready = new Promise<void>(resolve => { resolveModels = resolve; });
+  globalThis.fetch = async (input, init) => {
+    if (String(input).includes("/models")) {
+      await ready;
+      return Response.json({ models: [{ id: "gemini:flash", available: true, default: true }], available: { gemini: true } });
+    }
+    if (String(input).includes("/chat/stream")) { requests.push(JSON.parse(String(init?.body))); return new Response("unavailable", { status: 503 }); }
+    return Response.json({ runs: [] });
+  };
+  const host = dom.window.document.getElementById("root")!;
+  let root = createRoot(host);
+  const original = "Prepare an opponent scouting report.";
+  const revised = "Compare OKC and DEN transition defense instead.";
+  saveWorkflowDraft("pending-workflow", original);
+  const edit = async (value: string) => act(async () => {
+    const input = host.querySelector("textarea")!;
+    input.focus();
+    Object.getOwnPropertyDescriptor(dom.window.HTMLTextAreaElement.prototype, "value")!.set!.call(input, value);
+    input.dispatchEvent(new dom.window.Event("input", { bubbles: true }));
+    input.dispatchEvent(new dom.window.KeyboardEvent("keyup", { key: "x", bubbles: true }));
+  });
+  try {
+    await act(async () => root.render(<StrictMode><ChatView thread="pending-workflow" replay={null} onRunDone={() => {}} workflowRequest={{ thread: "pending-workflow", text: original }} /></StrictMode>));
+    assert.equal(host.querySelector("textarea")!.value, original);
+    if (mode === "clear-rewrite") {
+      await edit("");
+      assert.equal(loadWorkflowDraft("pending-workflow"), null);
+      assert.equal(hasPendingWorkflowDraft("pending-workflow"), true);
+    }
+    await edit(revised);
+    assert.equal(loadWorkflowDraft("pending-workflow"), revised);
+    await act(async () => resolveModels());
+    assert.equal(host.querySelector("textarea")!.value, revised);
+    assert.equal(requests.length, 0);
+    await act(async () => root.unmount());
+    root = createRoot(host);
+    await act(async () => root.render(<StrictMode><ChatView thread="pending-workflow" replay={null} onRunDone={() => {}} /></StrictMode>));
+    assert.equal(host.querySelector("textarea")!.value, revised);
+    assert.equal(requests.length, 0);
+    await act(async () => host.querySelector<HTMLButtonElement>('[aria-label="Send message"]')!.click());
+    assert.equal(requests.length, 1);
+    assert.equal(requests[0].q, revised);
+    assert.equal(loadWorkflowDraft("pending-workflow"), null);
+    assert.equal(hasPendingWorkflowDraft("pending-workflow"), false);
+  } finally { resolveModels(); await act(async () => root.unmount()); globalThis.fetch = previous; dom.window.close(); }
 });
 
 for (const mode of ["available", "empty", "error", "retry"]) it(`workflow handoff ${mode}: uses a fresh thread even when model loading fails`, async () => {

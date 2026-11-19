@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { ArrowRight, Basketball, Copy, Database, User } from "iconoir-react";
@@ -15,7 +15,7 @@ import { useDimeChat } from "../site/harness/useDimeChat";
 import type { ChatMsg } from "../site/harness/types";
 import type { VerificationCarry } from "../../lib/dime-stream";
 import { citationDetails } from "../../lib/citation-details";
-import { loadWorkflowDraft, saveWorkflowDraft } from "../../lib/workflow-drafts";
+import { clearWorkflowDraft, hasPendingWorkflowDraft, loadWorkflowDraft, saveWorkflowDraft } from "../../lib/workflow-drafts";
 
 export const suggestedPrompts = [
   "Build a scouting report on Shai Gilgeous-Alexander",
@@ -49,26 +49,38 @@ export function AssistantTurn({ message, prefix, onFollowUp }: { message: Extrac
 
 export function ChatView({ thread, replay, onRunDone, workflowRequest, onWorkflowConsumed }: { thread: string; replay: string | null; onRunDone: (question: string) => void; workflowRequest?: { thread: string; text: string } | null; onWorkflowConsumed?: () => void }) {
   const chat = useDimeChat({ thread, replay, onRunDone });
-  const [workflowDraftActive, setWorkflowDraftActive] = useState(false);
+  const workflowDraftActive = useRef(false);
+  const workflowRestored = useRef(false);
+  const workflowEdited = useRef(false);
   useEffect(() => {
-    if (replay) return;
+    if (replay || workflowRestored.current) return;
+    workflowRestored.current = true;
     const saved = loadWorkflowDraft(thread);
-    if (saved !== null) { chat.setDraft(saved); setWorkflowDraftActive(true); }
-  }, [thread, replay, chat.setDraft]);
+    const request = workflowRequest?.thread === thread ? workflowRequest : null;
+    if (saved !== null || hasPendingWorkflowDraft(thread) || request) {
+      workflowDraftActive.current = true;
+      chat.setDraft(saved ?? request?.text ?? "");
+    }
+  }, [thread, replay, workflowRequest, chat.setDraft]);
   useEffect(() => {
-    if (!workflowDraftActive) return;
-    saveWorkflowDraft(thread, chat.draft);
-    if (!chat.draft.trim()) setWorkflowDraftActive(false);
-  }, [thread, chat.draft, workflowDraftActive]);
+    if (!workflowDraftActive.current || !chat.messages.some(message => message.role === "user")) return;
+    clearWorkflowDraft(thread);
+    workflowDraftActive.current = false;
+  }, [thread, chat.messages]);
+  const changeDraft = (text: string) => {
+    if (workflowDraftActive.current) {
+      workflowEdited.current = true;
+      saveWorkflowDraft(thread, text);
+    }
+    chat.setDraft(text);
+  };
   const consumedWorkflow = useRef<typeof workflowRequest>(null);
   useEffect(() => {
     if (!workflowRequest || workflowRequest.thread !== thread || consumedWorkflow.current === workflowRequest || chat.historyLoading || chat.modelsLoading) return;
     consumedWorkflow.current = workflowRequest;
-    chat.setDraft(workflowRequest.text);
-    setWorkflowDraftActive(true);
-    if (chat.modelOptions.some(model => model.id === chat.model && model.available !== false)) chat.submit(workflowRequest.text);
+    if (!workflowEdited.current && chat.modelOptions.some(model => model.id === chat.model && model.available !== false)) chat.submit(chat.draft);
     onWorkflowConsumed?.();
-  }, [workflowRequest, thread, chat.historyLoading, chat.modelsLoading, chat.modelOptions, chat.model, chat.submit, chat.setDraft, onWorkflowConsumed]);
+  }, [workflowRequest, thread, chat.draft, chat.historyLoading, chat.modelsLoading, chat.modelOptions, chat.model, chat.submit, onWorkflowConsumed]);
   const replayStarted = useRef(false);
   useEffect(() => {
     if (!replay || chat.historyLoading || replayStarted.current) return;
@@ -76,14 +88,14 @@ export function ChatView({ thread, replay, onRunDone, workflowRequest, onWorkflo
     chat.submit(suggestedPrompts[0]);
   }, [replay, chat.historyLoading, chat.submit]);
   const busy = !!chat.live;
-  const composer = <PromptBar value={chat.draft} onChange={chat.setDraft} onSend={chat.submit} onStop={chat.stop} busy={busy || chat.historyLoading} models={chat.modelOptions} model={chat.model} onModelChange={chat.setModel} modelError={chat.modelsError} onRetry={chat.retryModels} providers={chat.providers} modelsLoading={chat.modelsLoading} />;
+  const composer = <PromptBar value={chat.draft} onChange={changeDraft} onSend={chat.submit} onStop={chat.stop} busy={busy || chat.historyLoading} models={chat.modelOptions} model={chat.model} onModelChange={chat.setModel} modelError={chat.modelsError} onRetry={chat.retryModels} providers={chat.providers} modelsLoading={chat.modelsLoading} />;
   const empty = chat.messages.length === 0 && !chat.live;
   return <div className="chat-view">
     {replay && <div className="border-b border-line bg-inset px-6 py-2 text-center text-[11px] text-ink-2">Development replay · illustrative data, not live analysis</div>}
     {empty ? <section className="chat-empty">
       <h1><span>Your front office, on demand.</span>What are we looking into?</h1>
       {composer}
-      <div className="mt-6 space-y-0.5">{suggestedPrompts.map((prompt, index) => <button key={prompt} className="suggestion-row" disabled={chat.historyLoading} onClick={() => chat.setDraft(prompt)}>{index === 0 ? <User width={16} height={16} /> : index === 1 ? <Basketball width={16} height={16} /> : <Database width={16} height={16} />}<span>{prompt}</span><ArrowRight width={14} height={14} className="ml-auto" /></button>)}</div>
+      <div className="mt-6 space-y-0.5">{suggestedPrompts.map((prompt, index) => <button key={prompt} className="suggestion-row" disabled={chat.historyLoading} onClick={() => changeDraft(prompt)}>{index === 0 ? <User width={16} height={16} /> : index === 1 ? <Basketball width={16} height={16} /> : <Database width={16} height={16} />}<span>{prompt}</span><ArrowRight width={14} height={14} className="ml-auto" /></button>)}</div>
       {chat.historyLoading && <p role="status" className="mt-4 text-[12px] text-ink-3">Loading conversation…</p>}
       {chat.historyError && <p role="alert" className="mt-4 text-[12px] text-red">{chat.historyError}</p>}
     </section> : <>
