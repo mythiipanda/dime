@@ -134,7 +134,8 @@ test("ambiguous call bindings never attach a cached table to the wrong parameter
 test("flat public evidence becomes typed Cited values snapshots, alone or alongside recorded SQL", () => {
   for (const withSQL of [false, true]) {
     const evidence = { output_id: "NET_RATING", value: "9.4", unit: "points_per_100_possessions", subject_type: "team", subject_id: "OKC", provenance: { source: "NBA warehouse", season: "2025-26", capability: "team_ratings" } };
-    const ai: AiMessage = { text: "Cited answer", done: true, nodes: { analytics: { status: "complete", thoughts: [], toolResults: [], toolCalls: withSQL ? [{ name: "query_warehouse", sql: "SELECT 1", args: {} }] : [], tables: [evidence] } } };
+    const ai = aiFromRun({ question: "Rating?", answer: "Cited answer", tables: [evidence], suggestions: [], created_at: "2026-01-01" });
+    if (withSQL) ai.nodes.analytics!.toolCalls = [{ name: "query_warehouse", sql: "SELECT 1", args: {} }];
     const draft = notebookFromAnswer(ai, "Rating?");
     const snapshot = draft.cells.find((cell) => cell.source.includes("### Cited values"))!;
     const output = snapshot.outputs as { kind: string; data: { columns: { name: string; type: string }[]; rows: Record<string, unknown>[] } };
