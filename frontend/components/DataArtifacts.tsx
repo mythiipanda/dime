@@ -458,10 +458,12 @@ export default function DataArtifacts({
 
 
   const tableHasContent = (t: {
+    tool?: string;
     rows?: unknown;
     verdict?: string;
     meta?: Record<string, unknown>;
   }) => {
+    if (t.tool === "get_game_prediction" && parsePrediction(t)) return true;
     const rows = (t.rows as { rows?: unknown } | undefined)?.rows ?? t.rows;
     if (Array.isArray(rows))
       return (
