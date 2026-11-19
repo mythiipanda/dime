@@ -67,3 +67,8 @@ Teams operating at or above the Second Apron face the most punitive roster restr
 
 - **Trade Check Summaries**: Use `compare` artifacts to contrast incoming and outgoing player profiles, salaries, and net ratings.
 - **Roster Cap Ledger**: Use `table` artifacts displaying player salaries, luxury tax tiers, and team apron room/deficit.
+
+## 5. Thresholds and Mechanisms
+- **Near-threshold teams**: after classifying payrolls into tiers, list every team within about $2M of any threshold (cap, tax, either apron) on either side, with its exact margin. A team $0.4M under the second apron is one signing away from the hardest restrictions, so the classification alone misleads.
+- **Explain the mechanism behind value**: when a ranking rewards cheap production, name the CBA mechanism that creates it (rookie-scale contracts, minimum deals, second-round or two-way conversions) and when it ends (extension eligibility, restricted free agency).
+- **Locked vs flexible money**: when sorting guaranteed from non-guaranteed or option years, state the trade-off: guaranteed money buys roster certainty but removes the ability to waive or trade around the cap; non-guaranteed or option years buy optionality at the cost of retention risk.
