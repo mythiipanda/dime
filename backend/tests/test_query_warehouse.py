@@ -48,6 +48,39 @@ def test_select_works(tiny_warehouse):
     assert out["meta"]["row_cap"] == 500
 
 
+@pytest.mark.parametrize("predicate", [
+    "WINS > 65 AND LOSSES < 20",
+    "WINS > 65 OR LOSSES < 15",
+    "NOT (WINS < 65 OR LOSSES > 20)",
+    "WINS BETWEEN 65 AND 70",
+    "WINS IN (68, 69)",
+    "WINS NOT IN (61, 62)",
+    "CASE WHEN WINS > 65 AND LOSSES < 20 THEN TRUE ELSE FALSE END",
+    "TeamCity LIKE 'Oklahoma%'",
+    "WINS IS NOT NULL AND (WINS + LOSSES) / 2 = 41 AND WINS - LOSSES > 50",
+])
+def test_sql_operators_work_in_agent_tool(tiny_warehouse, predicate):
+    from shared.tools.query import query_warehouse_tool
+
+    out = query_warehouse_tool.invoke({
+        "sql": f"SELECT TeamCity FROM silver_standings WHERE {predicate}",
+    })
+    assert out["ok"] is True, out.get("error")
+    assert out["rows"] == [{"TeamCity": "Oklahoma City"}]
+
+
+@pytest.mark.parametrize("function", ["read_csv", "read_parquet", "getenv"])
+@pytest.mark.parametrize("expression", [
+    "{function}('secret')",
+    "CASE WHEN TRUE AND TRUE THEN {function}('secret') ELSE NULL END",
+    "FALSE AND {function}('secret') IS NULL",
+])
+def test_operators_do_not_bypass_function_allowlist(tiny_warehouse, function, expression):
+    out = q.query_warehouse("SELECT " + expression.format(function=function))
+    assert out["ok"] is False
+    assert "blocked: function not allowed:" in out["error"]
+
+
 def test_with_cte_works(tiny_warehouse):
     out = q.query_warehouse(
         "WITH okc AS (SELECT * FROM silver_standings "
@@ -84,11 +117,19 @@ def test_multi_cte_works(tiny_warehouse):
     "DETACH o",
     "INSTALL httpfs",
     "LOAD spatial",
+    "SET threads=1",
+    "SELECT 1; DROP TABLE silver_standings",
+    "WITH changed AS (DELETE FROM silver_standings RETURNING *) SELECT * FROM changed",
+    "SELECT * INTO stolen FROM silver_standings",
+    "SELECT CASE WHEN TRUE THEN (DELETE FROM silver_standings RETURNING WINS) ELSE 0 END",
+    "SELECT * FROM silver_standings WHERE TRUE AND (UPDATE silver_standings SET WINS=0 RETURNING TRUE)",
 ])
 def test_writes_blocked(tiny_warehouse, sql):
+    with pytest.raises(ValueError, match="blocked|syntax error"):
+        q._check(sql, {"silver_standings"})
     out = q.query_warehouse(sql)
     assert out["ok"] is False
-    assert "blocked" in out["error"], out["error"]
+    assert out["error"].startswith(("blocked", "syntax error")), out["error"]
     check = q.query_warehouse("SELECT COUNT(*) AS n FROM silver_standings")
     assert check["rows"] == [{"n": 2}]
 

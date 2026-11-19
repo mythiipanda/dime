@@ -13,6 +13,14 @@ STATEMENT_TIMEOUT_S = 30
 
 _READ_STMTS = (exp.Select, exp.Union, exp.Intersect, exp.Except)
 
+_SQL_OPERATORS = frozenset({
+    exp.And, exp.Or, exp.Xor, exp.Not, exp.Is, exp.In, exp.Between,
+    exp.Like, exp.ILike, exp.Case, exp.Exists,
+    exp.EQ, exp.NEQ, exp.GT, exp.GTE, exp.LT, exp.LTE,
+    exp.NullSafeEQ, exp.NullSafeNEQ,
+    exp.Add, exp.Sub, exp.Mul, exp.Div, exp.IntDiv, exp.Mod, exp.Pow, exp.Neg,
+})
+
 _SAFE_FUNCTIONS = frozenset("""
 case if coalesce nullif ifnull greatest least
 cast try_cast
@@ -195,6 +203,8 @@ def _check(sql: str, allowed: set[str]) -> str:
     tree = _parse_one(stmt)
     if not isinstance(tree, _READ_STMTS):
         raise ValueError("blocked: only SELECT and WITH queries are allowed")
+    if any(isinstance(node, (exp.DML, exp.DDL)) for node in tree.walk()):
+        raise ValueError("blocked: writes are not allowed inside queries")
     for sel in tree.find_all(exp.Select):
         if sel.args.get("into") is not None:
             raise ValueError("blocked: SELECT ... INTO is not allowed; "
@@ -215,6 +225,8 @@ def _check(sql: str, allowed: set[str]) -> str:
             raise ValueError("blocked: table functions are not allowed; "
                              "query the warehouse tables")
     for fn in tree.find_all(exp.Func):
+        if type(fn) in _SQL_OPERATORS:
+            continue
         fname = _func_name(fn)
         if fname not in _SAFE_FUNCTIONS:
             raise ValueError("blocked: function not allowed: " + fname)
@@ -222,13 +234,15 @@ def _check(sql: str, allowed: set[str]) -> str:
 
 
 def _run_with_timeout(con, sql: str, timeout_s: float,
-                      max_rows: int) -> tuple[list[str], list[tuple], bool]:
+                      max_rows: int, *, params: dict | None = None,
+                      typed: bool = False) -> tuple[list, list[tuple], bool]:
     out: dict = {}
 
     def _run() -> None:
         try:
-            rel = con.execute(sql)
-            cols = [d[0] for d in con.description]
+            rel = con.execute(sql, params) if params is not None else con.execute(sql)
+            cols = ([{"name": d[0], "type": str(d[1])} for d in con.description]
+                    if typed else [d[0] for d in con.description])
             rows = rel.fetchmany(max_rows + 1)
             out["result"] = (cols, rows, len(rows) > max_rows)
         except Exception as exc:
@@ -239,7 +253,8 @@ def _run_with_timeout(con, sql: str, timeout_s: float,
     th.join(timeout_s)
     if th.is_alive():
         try:
-            con.close()
+            con.interrupt()
+            th.join(1)
         except Exception:
             pass
         raise TimeoutError(f"query exceeded {timeout_s:g}s")

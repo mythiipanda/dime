@@ -13,7 +13,7 @@ const SECTIONS=[
   {label:"Trade checker",hash:"explore-trade"},{label:"Crew lineups",hash:"explore-lineups"},{label:"Playoffs",hash:"explore-playoffs"},
 ];
 
-export default function CommandPalette({onAsk,onTab,onDebate,openKey=0}:{onAsk:(q:string)=>void;onTab:(t:"chat"|"data"|"workflows"|"today"|"boards"|"briefs")=>void;onDebate?:()=>void;openKey?:number}) {
+export default function CommandPalette({onAsk,onTab,onDebate,openKey=0}:{onAsk:(q:string)=>void;onTab:(t:"chat"|"data"|"workflows"|"today"|"boards"|"notebooks"|"briefs")=>void;onDebate?:()=>void;openKey?:number}) {
   const [open,setOpen]=useState(false),[q,setQ]=useState(""),[hits,setHits]=useState<Hit[]>([]),[active,setActive]=useState(0);
   const input=useRef<HTMLInputElement>(null);
   useEffect(()=>{if(openKey>0)setOpen(true)},[openKey]);
@@ -26,6 +26,7 @@ export default function CommandPalette({onAsk,onTab,onDebate,openKey=0}:{onAsk:(
       {id:"today",group:"Navigate",label:"Home",hint:"view",run:()=>{onTab("today");close()}},
       {id:"chat",group:"Navigate",label:"Ask",hint:"view",run:()=>{onTab("chat");close()}},
       {id:"boards",group:"Navigate",label:"Boards",hint:"view",run:()=>{onTab("boards");close()}},
+      {id:"notebooks",group:"Navigate",label:"Notebooks",hint:"view",run:()=>{onTab("notebooks");close()}},
       {id:"briefs",group:"Navigate",label:"Library",hint:"view",run:()=>{onTab("briefs");close()}},
       {id:"workflows",group:"Navigate",label:"Workflows",hint:"view",run:()=>{onTab("workflows");close()}},
       {id:"data",group:"Navigate",label:"Data",hint:"view",run:()=>{onTab("data");close()}},

@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import dynamic from "next/dynamic";
 import { HomeSimple, ChatBubble, ViewGrid, Sparks, Book, Database, SunLight, HalfMoon, Search, Xmark } from "iconoir-react";
 import { SidebarNav } from "../ds/SidebarNav";
 import { Chip } from "../ds/Chip";
@@ -15,11 +16,14 @@ import CommandPalette from "../CommandPalette";
 import DebateCardModal from "../DebateCardModal";
 import { BoardsPanel } from "../BoardsPanel";
 
-export type ShellTab = "today" | "chat" | "boards" | "workflows" | "briefs" | "data";
+const NotebooksPanel = dynamic(() => import("../notebooks/NotebooksPanel"), { ssr: false });
+
+export type ShellTab = "today" | "chat" | "boards" | "notebooks" | "workflows" | "briefs" | "data";
 export const shellNavigation = [
   { id: "today", label: "Home", icon: <HomeSimple width={17} height={17} /> },
   { id: "chat", label: "Ask", icon: <ChatBubble width={17} height={17} /> },
   { id: "boards", label: "Boards", icon: <ViewGrid width={17} height={17} /> },
+  { id: "notebooks", label: "Notebooks", icon: <Book width={17} height={17} /> },
   { id: "workflows", label: "Workflows", icon: <Sparks width={17} height={17} /> },
   { id: "briefs", label: "Library", icon: <Book width={17} height={17} /> },
   { id: "data", label: "Data", icon: <Database width={17} height={17} /> },
@@ -41,11 +45,13 @@ export function DimeShell() {
   const [debate, setDebate] = useState(false);
   const [exploreKey, setExploreKey] = useState(0);
   const [boardId, setBoardId] = useState<string | null>(null);
+  const [notebookId, setNotebookId] = useState<string | null>(null);
   const syncUrl = (nextTab: ShellTab, nextThread: string, push = true) => {
     const url = new URL(window.location.href);
     url.searchParams.set("tab", nextTab); url.searchParams.set("thread", nextThread);
     url.searchParams.delete("replay");
     url.searchParams.delete("board");
+    url.searchParams.delete("notebook");
     window.history[push ? "pushState" : "replaceState"]({}, "", url);
   };
   useEffect(() => {
@@ -53,6 +59,7 @@ export function DimeShell() {
       const params = new URLSearchParams(window.location.search);
       setTab(parseShellTab(params.get("tab")));
       setBoardId(params.get("board"));
+      setNotebookId(params.get("notebook"));
       const id = params.get("thread");
       const selected = id && /^[A-Za-z0-9-]{1,64}$/.test(id) ? id : newId();
       setThread(selected); setReplay(replayName(window.location.search));
@@ -69,7 +76,7 @@ export function DimeShell() {
     return [...merged.values()].sort((a, b) => b.updated.localeCompare(a.updated));
   })).catch(() => {}); }, []);
   useEffect(() => { reload(); }, [reload]);
-  const navigate = (value: string) => { const next = parseShellTab(value); setTab(next); if (next === "boards") setBoardId(null); setReplay(null); syncUrl(next, thread); };
+  const navigate = (value: string) => { const next = parseShellTab(value); setTab(next); if (next === "boards") setBoardId(null); if (next === "notebooks") setNotebookId(null); setReplay(null); syncUrl(next, thread); };
   const startChat = (text?: string) => {
     const id = newId(); setThread(id); setPreset(null); setTab("chat"); setReplay(null);
     setAutoSend(text ? { thread: id, text } : null);
@@ -80,6 +87,13 @@ export function DimeShell() {
     setBoardId(id); setTab("boards");
     const url = new URL(window.location.href); url.searchParams.set("tab", "boards");
     if (id) url.searchParams.set("board", id); else url.searchParams.delete("board");
+    window.history.pushState({}, "", url);
+  };
+  const openNotebook = (id: string | null) => {
+    setNotebookId(id); setTab("notebooks"); setReplay(null);
+    const url = new URL(window.location.href); url.searchParams.set("tab", "notebooks");
+    url.searchParams.delete("board"); url.searchParams.delete("replay");
+    if (id) url.searchParams.set("notebook", id); else url.searchParams.delete("notebook");
     window.history.pushState({}, "", url);
   };
   const title = tab === "chat" ? threads.find((t) => t.id === thread)?.title || "New chat" : shellNavigation.find((n) => n.id === tab)!.label;
@@ -97,6 +111,7 @@ export function DimeShell() {
         {tab === "today" && <HomeView onWorkflows={() => navigate("workflows")} />}
         {tab === "briefs" && <BriefsLibrary onOpenBoard={openBoard} />}
         {tab === "boards" && <BoardsPanel boardId={boardId} onOpen={openBoard} onAsk={(q) => { startChat(); setPreset(q); }} />}
+        {tab === "notebooks" && <NotebooksPanel notebookId={notebookId} onOpen={openNotebook} />}
       </div>
     </main>
     <CommandPalette openKey={paletteKey} onAsk={(q) => { setPreset(q); navigate("chat"); }} onTab={navigate} onDebate={() => setDebate(true)} />
