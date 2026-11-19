@@ -293,6 +293,7 @@ test("real Python sql_exec and schema cross MCP into Pi with source semantics an
       "get_recap",
       "get_scouting_report",
       "get_expectations",
+      "get_roster_fit",
     ]);
     assert.deepEqual(bridge.tools[0].parameters.required, ["sql"]);
     const setup = await fixture("python", `
@@ -1289,7 +1290,8 @@ test("real statistical tools cross MCP with anchor compatibility, rows, columns,
       get_splits: { player_id: 2544, season: "2024-25" },
       get_recap: { game_id: "0022300001", season: "2024-25" },
       get_scouting_report: { team_id: 1610612747, season: "2024-25" },
-      get_expectations: { team: "BOS", season: "2024-25" }
+      get_expectations: { team: "BOS", season: "2024-25" },
+      get_roster_fit: { team: "BOS", season: "2024-25" }
     };
     let wrapperInvocations = 0;
     let toolsExercised = 0;

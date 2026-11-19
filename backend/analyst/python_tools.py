@@ -145,6 +145,7 @@ _TOOL_ORDER = (
     "get_recap",
     "get_scouting_report",
     "get_expectations",
+    "get_roster_fit",
 )
 
 _REGISTRARS = (
