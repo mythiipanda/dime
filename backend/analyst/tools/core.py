@@ -8,6 +8,7 @@ from .common import (
     sanitize_for_wire,
 )
 from .errors import enrich_error
+from .sql_hints import schema_hint_for_sql_failure
 
 
 def _normalize_sql_result(res: dict[str, Any]) -> dict[str, Any]:
@@ -122,6 +123,9 @@ def register() -> dict[str, Any]:
                 res = {"tool": "sql_exec", "ok": False, "error": str(res)}
         except Exception as exc:
             res = {"tool": "sql_exec", "ok": False, "error": f"{type(exc).__name__}: {exc}"}
+        hint = schema_hint_for_sql_failure(sql, res)
+        if hint is not None:
+            res["schema_hint"] = hint
         return _normalize_sql_result(res)
 
     @tool("warehouse_schema", description=schema_description)
