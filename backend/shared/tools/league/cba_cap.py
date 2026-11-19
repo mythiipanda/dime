@@ -248,11 +248,29 @@ def _payroll(team: str, con: object = None,
                     "salary_column_unmatched",
                     f"silver_salaries has no salary column for season "
                     f"{season or 'unknown'}")
-            records = [r for r in salary_records(con, salary_season=season) if str(r['TEAM']).upper() == team.upper()]
-            rows = [(r['PLAYER_NAME'], r['salary']) for r in records]
+            records = salary_records(con, salary_season=season)
+            team_cache: dict[str, str] = {}
+            rows = []
+            players = []
+            for r in records:
+                name = str(r.get('PLAYER_NAME') or '')
+                key = name.lower()
+                if season:
+                    if key not in team_cache:
+                        team_cache[key] = (_season_player_team(con, name, season, tables)
+                                           or str(r.get('TEAM') or ''))
+                    record_team = team_cache[key]
+                else:
+                    record_team = str(r.get('TEAM') or '')
+                if record_team.upper() != team.upper():
+                    continue
+                salary = r.get('salary')
+                if salary is None:
+                    continue
+                rows.append((r['PLAYER_NAME'], salary))
+                players.append({"player": r['PLAYER_NAME'], "salary": salary,
+                                "team": record_team, **contract_details(r)})
             if rows:
-                players = [{"player": r['PLAYER_NAME'], "salary": r['salary'],
-                            **contract_details(r)} for r in records]
                 return sum(r[1] or 0 for r in rows), players
         if "silver_cap_players" in tables:
             rows = con.execute(
@@ -295,6 +313,30 @@ def _outgoing_needed(incoming: int, over_apron1: bool,
         return incoming
     by_room = incoming - cap_room - 250_000 if cap_room > 0 else incoming
     return max(0, min(-(-(incoming - 250_000) * 4 // 5), by_room))
+
+
+def _season_player_team(con: object, name: str, season: str,
+                        tables: set[str] | None = None) -> str | None:
+    if tables is None:
+        tables = {r[0] for r in con.execute("SHOW TABLES").fetchall()}
+    lookups = (
+        ("silver_leaders_pts", "PLAYER", "TEAM"),
+        ("silver_player_season", "PLAYER", "TEAM"),
+        ("silver_hist_player_seasons", "player_name", "team_abbreviation"),
+    )
+    for table, name_col, team_col in lookups:
+        if table not in tables:
+            continue
+        try:
+            row = con.execute(
+                f"SELECT {team_col} FROM {table} WHERE _season = ? "
+                f"AND lower({name_col}) = lower(?) LIMIT 1",
+                [season, name]).fetchone()
+        except Exception:
+            row = None
+        if row and row[0]:
+            return str(row[0]).upper()
+    return None
 
 
 def _salary_vintage(con: object = None) -> tuple[str, int, str | None]:

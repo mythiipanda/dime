@@ -279,8 +279,18 @@ def get_contract_value(season: str | None = None, min_gp: int = 20,
     team_scope = _contract_team_scope(str(team or "").strip())
     rows, row_error = _contract_rows(fitted, str(player or "").strip(),
                                      team_scope)
+    player_below_floor = False
+    if rows is None and str(player or "").strip():
+        wider = _contract_fitted(cap, by_name, 1, use_w)
+        rows, row_error = _contract_rows(wider, str(player or "").strip(),
+                                         team_scope)
+        player_below_floor = rows is not None and any(
+            int(r.get("GP") or 0) < min_gp for r in rows)
     if rows is None:
         return {"tool": "get_contract_value", "ok": False, "error": row_error}
+    for row in rows:
+        row["PREDICTED"] = round(slope * row["SCORE"] + intercept, 2)
+        row["RESIDUAL"] = round(row["SALARY"] - row["PREDICTED"], 2)
     prod_date, cap_date = dates
     return {"tool": "get_contract_value", "ok": True, "rows": rows,
             "meta": {"formula": (
@@ -292,6 +302,7 @@ def get_contract_value(season: str | None = None, min_gp: int = 20,
                      "missing_columns_zero_weight": missing,
                      "slope": round(slope, 2), "intercept": round(intercept, 2),
                      "n_qualified": len(fitted), "min_gp": min_gp,
+                     "player_below_min_gp": player_below_floor,
                      "production_season": season,
                      "salary_season": _salary_vintage()[0] or "2026-27",
                      "production_date": prod_date, "salary_date": cap_date,

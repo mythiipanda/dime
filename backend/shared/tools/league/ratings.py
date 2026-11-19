@@ -289,6 +289,42 @@ def get_playoff_team_ratings(
     }
 
 
+_TEAM_FOUR_FACTORS_SQL = """
+WITH games AS (
+    SELECT Team_ID, Game_ID, _season,
+           FGM, FG3M, FGA, FTA, TOV, OREB, DREB,
+           MIN, PTS, WL,
+           split_part(MATCHUP, ' ', 1) AS TEAM
+    FROM silver_team_games
+    WHERE _season = ?
+),
+paired AS (
+    SELECT g.*, o.DREB AS OPP_DREB, o.FGM AS OPP_FGM,
+           o.FG3M AS OPP_FG3M, o.FGA AS OPP_FGA, o.FTA AS OPP_FTA,
+           o.TOV AS OPP_TOV, o.OREB AS OPP_OREB
+    FROM games g
+    JOIN games o ON o.Game_ID = g.Game_ID AND o.Team_ID <> g.Team_ID
+)
+SELECT TEAM, Team_ID, _season, COUNT(*) AS GP,
+       SUM(CASE WHEN WL = 'W' THEN 1 ELSE 0 END) AS W,
+       ROUND((SUM(FGM) + 0.5 * SUM(FG3M)) / NULLIF(SUM(FGA), 0), 4) AS EFG_PCT,
+       ROUND(SUM(TOV) / NULLIF(SUM(FGA) + 0.44 * SUM(FTA) + SUM(TOV), 0), 4) AS TOV_PCT,
+       ROUND(SUM(OREB) / NULLIF(SUM(OREB) + SUM(OPP_DREB), 0), 4) AS ORB_PCT,
+       ROUND(SUM(FTA) / NULLIF(SUM(FGA), 0), 4) AS FT_RATE,
+       ROUND((SUM(OPP_FGM) + 0.5 * SUM(OPP_FG3M)) / NULLIF(SUM(OPP_FGA), 0), 4) AS OPP_EFG_PCT,
+       ROUND(SUM(OPP_TOV) / NULLIF(SUM(OPP_FGA) + 0.44 * SUM(OPP_FTA) + SUM(OPP_TOV), 0), 4) AS OPP_TOV_PCT,
+       ROUND(SUM(DREB) / NULLIF(SUM(DREB) + SUM(OPP_OREB), 0), 4) AS DRB_PCT,
+       ROUND(SUM(OPP_FTA) / NULLIF(SUM(OPP_FGA), 0), 4) AS OPP_FT_RATE
+FROM paired
+GROUP BY TEAM, Team_ID, _season
+ORDER BY EFG_PCT DESC
+"""
+
+_TEAM_FOUR_FACTOR_COLS = (
+    "TEAM", "GP", "W", "EFG_PCT", "TOV_PCT", "ORB_PCT", "FT_RATE",
+    "OPP_EFG_PCT", "OPP_TOV_PCT", "DRB_PCT", "OPP_FT_RATE")
+
+
 @tool(description='Team four factors (eFG%, TOV%, ORB%, FT rate, plus defensive\nmirrors), computed offline from warehouse team game rows. Use for\n"why are the Thunder good", "team identity", or any four-factors\nask. Pass a team name/abbrev to scope to one team; empty returns\nthe full 30-team board.')
 def get_team_four_factors(team: str = "", season: str | None = None) -> dict[str, Any]:
     pkg = _pkg()
@@ -303,14 +339,15 @@ def get_team_four_factors(team: str = "", season: str | None = None) -> dict[str
         return {"tool": "get_team_four_factors", "ok": False,
                 "rows": [], "meta": {},
                 "error": f"warehouse read failed: {str(exc)[:120]}"}
-    if "silver_four_factors_team" not in tables:
+    derived = "silver_four_factors_team" not in tables
+    if derived and "silver_team_games" not in tables:
         return {"tool": "get_team_four_factors", "ok": False,
                 "rows": [], "meta": {"season": season},
                 "error": "warehouse table missing: "
-                         "silver_four_factors_team (run "
-                         "scripts/build_team_four_factors.py)"}
-    where, params = "_season = ?", [season]
+                         "silver_four_factors_team and "
+                         "silver_team_games"}
     team_q = (team or "").strip()
+    team_abbr = ""
     if team_q:
         from nba_api.stats.static import teams as _static
         match = None
@@ -324,14 +361,24 @@ def get_team_four_factors(team: str = "", season: str | None = None) -> dict[str
             return {"tool": "get_team_four_factors", "ok": False,
                     "rows": [], "meta": {"season": season},
                     "error": f"unknown team '{team_q}'"}
-        where += " AND TEAM = ?"
-        params.append(match["abbreviation"])
+        team_abbr = match["abbreviation"]
     try:
-        rows = pkg.store._read_df(
-            f"SELECT TEAM, GP, W, EFG_PCT, TOV_PCT, ORB_PCT, FT_RATE, "
-            f"OPP_EFG_PCT, OPP_TOV_PCT, DRB_PCT, OPP_FT_RATE "
-            f"FROM silver_four_factors_team WHERE {where} "
-            f"ORDER BY EFG_PCT DESC", params)
+        if derived:
+            raw = pkg.store._read_df(_TEAM_FOUR_FACTORS_SQL, [season])
+            rows = [{k: r.get(k) for k in _TEAM_FOUR_FACTOR_COLS}
+                    for r in raw]
+            if team_abbr:
+                rows = [r for r in rows if r.get("TEAM") == team_abbr]
+        else:
+            where, params = "_season = ?", [season]
+            if team_abbr:
+                where += " AND TEAM = ?"
+                params.append(team_abbr)
+            rows = pkg.store._read_df(
+                f"SELECT TEAM, GP, W, EFG_PCT, TOV_PCT, ORB_PCT, FT_RATE, "
+                f"OPP_EFG_PCT, OPP_TOV_PCT, DRB_PCT, OPP_FT_RATE "
+                f"FROM silver_four_factors_team WHERE {where} "
+                f"ORDER BY EFG_PCT DESC", params)
     except Exception as exc:
         return {"tool": "get_team_four_factors", "ok": False,
                 "rows": [], "meta": {"season": season},
@@ -340,7 +387,9 @@ def get_team_four_factors(team: str = "", season: str | None = None) -> dict[str
         return {"tool": "get_team_four_factors", "ok": False,
                 "rows": [], "meta": {"season": season},
                 "error": f"no four-factors rows for {season}"}
-    meta = {"season": season, "source": "warehouse",
+    meta = {"season": season,
+            "source": "warehouse:silver_team_games" if derived else "warehouse",
+            "derived_from": "silver_team_games" if derived else None,
             "rows": len(rows),
             "note": "computed offline from silver_team_games box "
                     "scores; eFG% = (FGM + 0.5*FG3M)/FGA, TOV% per "

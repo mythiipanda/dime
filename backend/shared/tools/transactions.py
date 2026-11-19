@@ -140,6 +140,64 @@ def _matching_rows(raws: list[dict[str, Any]], start: str, end: str,
     return rows
 
 
+def _transactions_table_absent() -> bool:
+    try:
+        store.read_frame(_TABLE, "1 = 0", [])
+    except store.TableAbsent:
+        return True
+    except Exception:
+        return False
+    return False
+
+
+def _movement_fallback(want_start: str, want_end: str, tid: int | None,
+                       want_team: str, canonical: str) -> dict[str, Any]:
+    try:
+        from scripts.seed_transactions import fetch_transactions, map_transactions
+        from nba_api.stats.static import teams as _teams
+
+        frame = map_transactions(fetch_transactions())
+        abbr_by_id = {int(t["id"]): str(t["abbreviation"])
+                      for t in _teams.get_teams()}
+        raws = []
+        for raw in frame.to_dicts():
+            raw = dict(raw)
+            raw["team"] = abbr_by_id.get(_as_int(raw.get("team_id")),
+                                         raw.get("team"))
+            raws.append(raw)
+    except Exception as exc:
+        return {"tool": "get_transactions", "ok": False, "rows": [],
+                "error": f"transactions fallback failed: {str(exc)[:160]}",
+                "meta": {"source": "nba_official:player_movement",
+                         "team": want_team.upper() if want_team else "",
+                         "start": want_start, "end": want_end,
+                         "txn_type": canonical}}
+    rows = _matching_rows(raws, want_start, want_end, tid, want_team, canonical)
+    if not rows:
+        subject = want_team.upper() if want_team else "the league"
+        bounds = want_start or want_end
+        if want_start and want_end:
+            bounds = want_start + ".." + want_end
+        label = canonical if canonical else "transactions"
+        error = (f"No {label} rows for {subject} in {bounds}."
+                 if bounds else f"No {label} rows for {subject}.")
+        return {"tool": "get_transactions", "ok": False, "rows": [],
+                "error": error,
+                "meta": {"source": "nba_official:player_movement",
+                         "team": want_team.upper() if want_team else "",
+                         "start": want_start, "end": want_end,
+                         "txn_type": canonical,
+                         "coverage": "Live NBA player movement feed; "
+                                     "silver_transactions is not seeded."}}
+    return {"tool": "get_transactions", "ok": True, "rows": rows,
+            "meta": {"source": "nba_official:player_movement",
+                     "team": want_team.upper() if want_team else "",
+                     "start": want_start, "end": want_end,
+                     "txn_type": canonical,
+                     "coverage": "Live NBA player movement feed; "
+                                 "silver_transactions is not seeded."}}
+
+
 @tool(description='Team transactions: signings, waivers, trades by team and date range.')
 def get_transactions(team: str = "", start: str = "", end: str = "",
                      txn_type: str = "") -> dict[str, Any]:
@@ -173,6 +231,9 @@ def get_transactions(team: str = "", start: str = "", end: str = "",
 
         available = set(table_seasons(_TABLE))
         if not any(season in available for season in requested):
+            if _transactions_table_absent():
+                return _movement_fallback(want_start, want_end, tid,
+                                          want_team, canonical)
             return _no_coverage(want_start, want_end, canonical,
                                 want_team.upper() if want_team else "")
     clauses: list[str] = []
@@ -184,7 +245,10 @@ def get_transactions(team: str = "", start: str = "", end: str = "",
         clauses.append("txn_date <= ?")
         params.append(want_end)
     where = " AND ".join(clauses)
-    frame = store.read_frame(_TABLE, where, params)
+    try:
+        frame = store.read_frame(_TABLE, where, params)
+    except store.TableAbsent:
+        return _movement_fallback(want_start, want_end, tid, want_team, canonical)
     raws: list[dict[str, Any]] = []
     if frame is not None and frame.height > 0:
         try:
