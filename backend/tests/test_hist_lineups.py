@@ -212,3 +212,24 @@ def test_playoff_lineups_skip_unfiltered_competitive_possessions(monkeypatch):
     assert all('playoffs' in r['competitive_note'] for r in res['rows'])
     assert 'omitted' in res['meta']['competitive_note']
     assert res['meta']['season_type'] == 'playoffs'
+
+
+@pytest.mark.parametrize('measure,column', [('advanced', 'poss'), ('misc', 'pts_paint'),
+                                            ('scoring', 'pct_pts_3pt'), ('usage', 'fgm')])
+def test_selected_measure_stats_survive_codemode(measure, column):
+    from analyst.tools.team import register
+    from shared import store
+    tool = register()['get_lineups']
+    res = tool.invoke({'team_id': 'BOS', 'season': SEASON, 'measure_type': measure})
+    assert res['ok'] and res['rows']
+    with store.connect(read_only=True) as con:
+        populated = con.execute(
+            'SELECT * FROM silver_hist_lineups WHERE team_id=? AND _season=? '
+            "AND season_type='regular-season' AND measure_type=? AND per_mode='totals' LIMIT 1",
+            [BOS, SEASON, measure],
+        ).fetchdf().to_dict('records')[0]
+    row = next(r for r in res['rows'] if r['GROUP_ID'] == populated['group_id'])
+    assert row[column.upper()] == populated[column]
+    assert column.upper() in res['columns']
+    assert row['GP'] is not None and row['MIN'] is not None
+    assert row['PTS'] is not None

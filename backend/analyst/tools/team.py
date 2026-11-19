@@ -241,7 +241,10 @@ def register() -> dict[str, Any]:
             if value != default:
                 args[key] = value
         res = call_sync(_orig_get_lineups, "get_lineups", args)
-        return _row_list_result(res, "get_lineups", default_cols)
+        result = _row_list_result(res, "get_lineups", default_cols)
+        if measure_type != 'base' and result['rows']:
+            result['columns'] = list(dict.fromkeys(key for row in result['rows'] for key in row))
+        return result
 
     @tool("get_team_game_log", description=_orig_get_team_game_log.description)
     def get_team_game_log(team: str, limit: int = 10, playoffs: bool = False, season: str | None = None) -> dict:

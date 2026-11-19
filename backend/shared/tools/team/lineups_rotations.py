@@ -1,3 +1,4 @@
+import math
 import sys
 from typing import Any
 
@@ -103,17 +104,20 @@ def _hist_lineup_rows(team_id: int, season: str, season_type: SeasonType = 'regu
     validate_variants(season_type, measure_type, per_mode)
     try:
         from ... import store as _store
+        base_columns = ', '.join(f'base.{lower} AS base_{lower}' for lower, _ in _HIST_LINEUP_PAIRS[:-4])
         found = _store._read_df(
-            "SELECT b.group_id, b.group_name, b.team_id, b.team_abbreviation,"
-            " b.gp, b.min, b.pts, b.plus_minus, b.fga, b.oreb, b.tov, b.fta,"
-            " a.off_rating, a.def_rating, a.net_rating, a.pace"
+            "SELECT b.*, a.off_rating, a.def_rating, a.net_rating, a.pace, " + base_columns +
             " FROM (SELECT * EXCLUDE (off_rating, def_rating, net_rating, pace)"
             " FROM silver_hist_lineups WHERE _season = ? AND team_id = ?"
             " AND season_type = ? AND measure_type = ? AND per_mode = ?) b"
             " LEFT JOIN silver_hist_lineups a ON a.group_id = b.group_id"
             " AND a.team_id = b.team_id AND a._season = b._season"
             " AND a.season_type = b.season_type AND a.per_mode = b.per_mode"
-            " AND a.measure_type = 'advanced'",
+            " AND a.measure_type = 'advanced'"
+            " LEFT JOIN silver_hist_lineups base ON base.group_id = b.group_id"
+            " AND base.team_id = b.team_id AND base._season = b._season"
+            " AND base.season_type = b.season_type AND base.per_mode = b.per_mode"
+            " AND base.measure_type = 'base'",
             [season, team_id, season_type, measure_type, per_mode],
         )
     except Exception:
@@ -121,8 +125,14 @@ def _hist_lineup_rows(team_id: int, season: str, season_type: SeasonType = 'regu
     out: list[dict[str, Any]] = []
     for r in found or []:
         try:
-            out.append({upper: r.get(lower)
-                        for lower, upper in _HIST_LINEUP_PAIRS})
+            r = {key: value for key, value in r.items()
+                 if value is not None and not (isinstance(value, float) and math.isnan(value))}
+            row = {upper: r.get(lower) if r.get(lower) is not None else r.get(f'base_{lower}')
+                   for lower, upper in _HIST_LINEUP_PAIRS}
+            if measure_type != 'base':
+                row.update({key.upper(): value for key, value in r.items()
+                            if value is not None and not key.startswith(('_', 'base_'))})
+            out.append(row)
         except Exception:
             continue
     return out
