@@ -26,6 +26,7 @@ _SQL_TABLES = [
     "silver_rapm", "silver_rapm_prior",
     "silver_bbref_awards", "silver_combine", "silver_rosters",
     "silver_schedule", "silver_stints", "silver_playoff_gamelogs",
+    "silver_transactions", "silver_contracts", "silver_preseason_projections",
 ]
 
 RERUN_ROW_CAP = 25

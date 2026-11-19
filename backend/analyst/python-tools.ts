@@ -43,6 +43,7 @@ export const ANALYST_TOOL_NAMES = [
     "get_contract_value",
     "get_trade_check",
     "get_trade_value",
+    "get_trade_partners",
     "get_situational_splits",
     "get_playoff_sim",
     "get_playoff_team_ratings",
@@ -115,7 +116,7 @@ const NAMESPACES: Record<string, ToolNamespace> = {
 };
 
 const TOOL_NAMESPACE_GROUPS: Record<string, readonly PythonToolName[]> = {
-    cba: ["get_cap_ledger", "get_contract_value", "get_trade_check", "get_trade_value", "get_transactions"],
+    cba: ["get_cap_ledger", "get_contract_value", "get_trade_check", "get_trade_partners", "get_trade_value", "get_transactions"],
     spatial: ["get_shot_zones", "get_shot_compare", "get_team_shot_zones", "get_zone_deltas", "search_shots", "get_tracking_profile", "get_playtype_profile"],
     matchup: ["get_game_prediction", "get_win_prob", "get_defensive_matchups", "get_head_to_head", "get_lineup_matchup_matrix", "get_season_series", "get_rest", "get_rest_advantage", "get_matchup_preview", "get_matchup_splits", "get_matchup_brief", "get_games_on_date", "get_boxscore", "get_possession_log", "get_stint_timeline"],
     player: ["get_rapm", "get_rapm_prior", "get_raptor_history", "get_comps", "get_on_off", "get_wowy", "get_clutch_stats", "get_hustle", "get_injuries", "get_rookie_leaders", "get_young_player_usage", "get_player_risers", "get_player_ratings", "get_situational_splits", "get_career_arc", "get_last_x", "get_player_report", "get_splits", "get_scouting_report", "get_scout_pack", "get_regression_check", "get_rotation_check", "get_injury_impact", "search_game_logs"],
