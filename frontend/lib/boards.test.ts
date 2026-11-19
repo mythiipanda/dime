@@ -103,6 +103,29 @@ test("row and column helpers are immutable, unique, capped and clear removed cac
   assert.equal(addRow({ ...board, rows: Array.from({ length: 50 }, (_, i) => ({ player_id: i + 1, name: "P", team: "" })) }, { player_id: 99, name: "P", team: "" }).rows.length, 50);
 });
 
+test("quota recovery reads external saves and deletions before retrying the collection", () => {
+  const dom = install();
+  const proto = Object.getPrototypeOf(dom.window.localStorage);
+  const original = proto.setItem;
+  try {
+    const deleted = saveBoard(sample());
+    const retained = saveBoard(duplicateBoard(deleted));
+    proto.setItem = () => { throw new Error("quota exceeded"); };
+    saveBoard({ ...deleted, title: "Unsaved edit" });
+    assert.equal(boardsArePersistent(), false);
+    const external = { ...duplicateBoard(retained), title: "Other tab's board" };
+    original.call(dom.window.localStorage, "dime_boards_v1", JSON.stringify({ version: 1, boards: [{ ...retained, title: "Other tab's rename" }, external] }));
+    assert.equal(getBoard(deleted.id), null);
+    assert.equal(getBoard(retained.id)?.title, "Other tab's rename");
+    assert.equal(boardsArePersistent(), false);
+    proto.setItem = original;
+    const local = saveBoard({ ...duplicateBoard(retained), title: "New local board" });
+    assert.deepEqual(new Set(listBoards().map(board => board.id)), new Set([retained.id, external.id, local.id]));
+    assert.equal(getBoard(retained.id)?.title, "Other tab's rename");
+    assert.equal(boardsArePersistent(), true);
+  } finally { proto.setItem = original; dom.window.close(); }
+});
+
 test("sort is stable, respects metric direction and always puts nulls last", () => {
   const board = sample();
   assert.deepEqual(sortByColumn(board, metric).rows.map((r) => r.player_id), [3, 4, 1, 2]);

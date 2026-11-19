@@ -66,11 +66,13 @@ export function validBoard(value: unknown): value is Board {
 
 let memory: string | null = null;
 let failedStorage: Storage | null = null;
+let memoryStorage: Storage | null = null;
+let persistedSnapshot: string | null = null;
 function storage(): Storage | null { try { return typeof window === "undefined" ? null : window.localStorage; } catch { return null; } }
 function read(): Board[] {
   const store = storage();
   let raw = memory;
-  if (store && store !== failedStorage) { try { raw = store.getItem(KEY); } catch { failedStorage = store; } }
+  if (store) { try { const persisted = store.getItem(KEY); raw = store === memoryStorage && persisted === persistedSnapshot ? memory : persisted; } catch {} }
   try {
     const parsed: unknown = JSON.parse(raw || "null");
     if (!object(parsed) || parsed.version !== 1 || !Array.isArray(parsed.boards)) return [];
@@ -80,7 +82,11 @@ function read(): Board[] {
 function write(boards: Board[]) {
   memory = JSON.stringify({ version: 1, boards });
   const store = storage();
-  if (store) { try { store.setItem(KEY, memory); failedStorage = null; } catch { failedStorage = store; } }
+  memoryStorage = null;
+  if (store) {
+    try { persistedSnapshot = store.getItem(KEY); memoryStorage = store; } catch {}
+    try { store.setItem(KEY, memory); persistedSnapshot = memory; memoryStorage = store; failedStorage = null; } catch { failedStorage = store; }
+  }
   if (typeof window !== "undefined") window.dispatchEvent(new window.Event("dime:boards"));
 }
 export function boardsArePersistent(): boolean { const store = storage(); return !!store && store !== failedStorage; }
