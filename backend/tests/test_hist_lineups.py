@@ -194,3 +194,21 @@ def test_wowy_fallback_cache_is_season_type_scoped(monkeypatch):
     monkeypatch.setattr(player, '_warehouse_or_live', cached)
     assert get_wowy.invoke({'season': SEASON})['ok']
     assert calls == ['wowy:regular-season:_']
+
+
+def test_playoff_lineups_skip_unfiltered_competitive_possessions(monkeypatch):
+    import shared.tools.team as team
+    calls = []
+
+    def competitive(*args):
+        calls.append(args)
+        return {}
+
+    monkeypatch.setattr(team, '_competitive_lineup_nets', competitive)
+    res = get_lineups.invoke({'team_id': 'BOS', 'season': SEASON, 'season_type': 'playoffs'})
+    assert res['ok'] and res['rows']
+    assert calls == []
+    assert all(r['competitive_net'] is None and r['competitive_poss'] is None for r in res['rows'])
+    assert all('playoffs' in r['competitive_note'] for r in res['rows'])
+    assert 'omitted' in res['meta']['competitive_note']
+    assert res['meta']['season_type'] == 'playoffs'

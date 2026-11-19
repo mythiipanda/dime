@@ -202,13 +202,21 @@ def get_lineups(team_id: str | int, season: str | None = None, season_type: Seas
         if tier == "small":
             r["SAMPLE"] = "small: under ~100 possessions"
     rows = sorted(rows, key=lambda r: float(r.get("MIN") or 0), reverse=True)
-    try:
-        comp = pkg._competitive_lineup_nets(team_id, season)
-    except Exception:
-        comp = None
+    comp = None
+    if season_type == 'regular-season':
+        try:
+            comp = pkg._competitive_lineup_nets(team_id, season)
+        except Exception:
+            pass
     pkg._apply_competitive_nets(rows, comp)
+    if season_type != 'regular-season':
+        for row in rows:
+            row['competitive_note'] = 'competitive nets unavailable for playoffs: possessions are not season-type filtered'
     meta = {**meta,
-            "scope": f"Lineup nets are full-game totals for season {season} "
+            'season_type': season_type,
+            'competitive_note': ('whole-season possession coverage' if season_type == 'regular-season'
+                                 else 'competitive nets omitted: possessions are not season-type filtered'),
+            "scope": f"Lineup nets are full-game totals for {season_type} {season} "
             "with no margin or clock filter, so garbage time is included."}
     return {"tool": "get_lineups", "ok": True, "rows": rows, "meta": meta}
 
