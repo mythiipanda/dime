@@ -48,8 +48,8 @@
 .ds-segment[data-state=checked] { color: var(--ink); background: var(--surface); box-shadow: var(--shadow-btn); }
 .ds-segment[data-disabled] { cursor: not-allowed; opacity: 0.5; }
 .ds-dialog-backdrop { position: fixed; inset: 0; z-index: 50; background: var(--overlay-backdrop); }
-.ds-dialog-viewport { position: fixed; inset: 0; z-index: 50; display: flex; align-items: flex-start; justify-content: center; overflow-y: auto; overscroll-behavior: contain; padding: min(16dvh, 6rem) 1rem 2rem; }
-.ds-dialog { position: relative; width: 100%; max-width: 35rem; height: fit-content; border: 1px solid var(--line-strong); border-radius: var(--radius-window); outline: none; background: var(--surface); color: var(--ink); box-shadow: var(--shadow-overlay); }
+.ds-dialog-viewport { position: fixed; inset: 0; z-index: 50; display: flex; align-items: flex-start; justify-content: center; overflow-y: auto; overscroll-behavior: contain; padding: min(16dvh, 6rem) 1rem 2rem; pointer-events: none; }
+.ds-dialog { position: relative; width: 100%; max-width: 35rem; height: fit-content; border: 1px solid var(--line-strong); border-radius: var(--radius-window); outline: none; background: var(--surface); color: var(--ink); box-shadow: var(--shadow-overlay); pointer-events: auto; }
 .ds-surface { min-width: 0; border: 1px solid var(--line); border-radius: var(--radius-panel); background: var(--surface); padding: var(--space-panel); }
 .ds-panel-header { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: 0.75rem; margin-bottom: 1.5rem; }
 .ds-panel-title { color: var(--ink); font-size: var(--type-ui); font-weight: 500; line-height: 1.5; overflow-wrap: anywhere; }

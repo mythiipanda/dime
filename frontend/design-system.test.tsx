@@ -1,3 +1,4 @@
+import "./test-dom";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
@@ -42,6 +43,23 @@ test("pending asChild actions block the child's own handler", async () => {
     await act(async () => host.querySelector("a")!.click());
     assert.equal(actions, 0);
     assert.equal(dom.window.location.hash, "");
+  } finally { await act(async () => root.unmount()); dom.window.close(); }
+});
+
+test("non-modal dialogs render independently of the optional overlay and close", async () => {
+  const dom = new JSDOM("<div id='root'></div>", { url: "http://localhost", pretendToBeVisual: true });
+  Object.assign(globalThis, { window: dom.window, document: dom.window.document, HTMLElement: dom.window.HTMLElement, HTMLInputElement: dom.window.HTMLInputElement, Element: dom.window.Element, Node: dom.window.Node, NodeFilter: dom.window.NodeFilter, MutationObserver: dom.window.MutationObserver, CustomEvent: dom.window.CustomEvent, Event: dom.window.Event, getComputedStyle: dom.window.getComputedStyle.bind(dom.window), IS_REACT_ACT_ENVIRONMENT: true });
+  const { Dialog, DialogTrigger, DialogContent, DialogTitle, DialogDescription, DialogClose } = await import("./components/ui/dialog");
+  const host = dom.window.document.getElementById("root")!, root = createRoot(host);
+  try {
+    await act(async () => root.render(<Dialog modal={false}><DialogTrigger>Inspect</DialogTrigger><DialogContent><DialogTitle>Source</DialogTitle><DialogDescription>Evidence details</DialogDescription><DialogClose>Close</DialogClose></DialogContent></Dialog>));
+    await act(async () => host.querySelector("button")!.click());
+    const dialog = dom.window.document.querySelector('[role="dialog"]')!;
+    assert.ok(dialog);
+    assert.match(dialog.textContent!, /Evidence details/);
+    assert.equal(dom.window.document.querySelector(".ds-dialog-backdrop"), null);
+    await act(async () => dialog.querySelector<HTMLButtonElement>("button")!.click());
+    assert.equal(dom.window.document.querySelector('[role="dialog"]'), null);
   } finally { await act(async () => root.unmount()); dom.window.close(); }
 });
 
