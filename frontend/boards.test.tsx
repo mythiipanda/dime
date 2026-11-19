@@ -10,7 +10,7 @@ const players = { "201939": { name: "Stephen Curry", team: "GSW" }, "203999": { 
 const requests: { path: string; body: Record<string, unknown> }[] = [];
 const asks: string[] = [];
 
-async function mount(options: { failure?: boolean; seedEmpty?: boolean; boardId?: string } = {}) {
+async function mount(options: { failure?: boolean; seedEmpty?: boolean; boardId?: string; nullReason?: string } = {}) {
   const dom = new JSDOM("<!doctype html><html><body><div id='root'></div></body></html>", { url: "http://localhost", pretendToBeVisual: true });
   const gx = globalThis as unknown as Record<string, unknown>;
   Object.assign(gx, { window: dom.window, document: dom.window.document, localStorage: dom.window.localStorage, HTMLElement: dom.window.HTMLElement, Element: dom.window.Element, Node: dom.window.Node, DocumentFragment: dom.window.DocumentFragment, ShadowRoot: dom.window.ShadowRoot, requestAnimationFrame: dom.window.requestAnimationFrame.bind(dom.window), cancelAnimationFrame: dom.window.cancelAnimationFrame.bind(dom.window), getComputedStyle: dom.window.getComputedStyle.bind(dom.window), IS_REACT_ACT_ENVIRONMENT: true });
@@ -27,6 +27,7 @@ async function mount(options: { failure?: boolean; seedEmpty?: boolean; boardId?
     if (path.endsWith("/fill")) {
       if (options.failure) return Response.json({ detail: "Boards warehouse unavailable" }, { status: 503 });
       const cells = Object.fromEntries((body.player_ids as number[]).map((pid) => [pid, Object.fromEntries((body.metric_ids as string[]).map((id) => [id, { value: 25.5, citation: { table: "silver_player_season", column: id.toUpperCase(), season: body.season, source: "warehouse-test", fetched_at: "2026-09-01", sql: "SELECT * FROM silver_player_season WHERE _season = ?", params: [body.season], row_key: { PLAYER_ID: pid } } }]))]));
+      if (options.nullReason) for (const row of Object.values(cells)) for (const cell of Object.values(row)) Object.assign(cell, { value: null, reason: options.nullReason });
       return Response.json({ ok: true, cells, players });
     }
     return Response.json({ rows: { players: [] } });
@@ -120,3 +121,30 @@ test("Library opens a memory-only board through client navigation", async () => 
     assert.equal(getBoard(saved.id)?.id, saved.id);
   } finally { await m.cleanup(); }
 });
+
+test("reopening a board replaces cached nulls with a fresh warehouse fill", async () => {
+  const m = await mount({ nullReason: "unmatched_salary_name" });
+  try {
+    await click(button(m.host, "Scoring guards"));
+    const saved = listBoards()[0];
+    assert.equal(getBoard(saved.id)?.cells[201939].ppg.value, null);
+    await click(button(m.host, "All boards"));
+    m.options.nullReason = undefined;
+    await click(button(m.host, "Open"));
+    assert.equal(requests.filter((r) => r.path.endsWith("/fill")).length, 2);
+    assert.equal(getBoard(saved.id)?.cells[201939].ppg.value, 25.5);
+  } finally { await m.cleanup(); }
+});
+
+for (const [reason, words] of [["unmatched_salary_name", "No 2026-27 salary row for this player"], ["ambiguous_salary_name", "Name matches multiple players"]]) {
+  test(`null ${reason} explains the reason on keyboard focus`, async () => {
+    const m = await mount({ nullReason: reason });
+    try {
+      await click(button(m.host, "Scoring guards"));
+      const trigger = m.host.querySelector<HTMLButtonElement>('[aria-label^="Source: Stephen Curry · Points"]')!;
+      assert.ok(trigger.getAttribute("aria-label")?.includes(words));
+      await act(async () => { trigger.focus(); });
+      assert.ok(m.dom.window.document.querySelector('[role="status"]')?.textContent?.includes(words));
+    } finally { await m.cleanup(); }
+  });
+}

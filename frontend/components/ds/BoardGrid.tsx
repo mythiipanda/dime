@@ -1,6 +1,7 @@
 "use client";
 
 import { ArrowDown, ArrowUp, Database, Xmark } from "iconoir-react";
+import { useState } from "react";
 import { Popover, PopoverTrigger, PopoverContent } from "../ui/popover";
 import { Shimmer } from "./Shimmer";
 import { columnPercentiles, type Board, type BoardCell, type BoardMetric } from "../../lib/boards";
@@ -11,10 +12,22 @@ export function formatBoardValue(value: number, metric: BoardMetric): string {
 }
 
 function Cell({ cell, metric, player }: { cell: BoardCell; metric: BoardMetric; player: string }) {
+  const [open, setOpen] = useState(false);
   const c = cell.citation;
-  const reason = cell.reason?.replaceAll("_", " ");
-  return <Popover>
-    <PopoverTrigger openOnHover delay={150} closeDelay={150} className="board-value" aria-label={`Source: ${player} · ${metric.label}`} title={reason}>
+  const reasons: Record<string, string> = {
+    unmatched_salary_name: "No 2026-27 salary row for this player",
+    ambiguous_salary_name: "Name matches multiple players; salary cannot be assigned safely",
+    ambiguous_salary_rows: "Multiple salary rows match this player",
+    identity_incomplete: "Player identity data is incomplete; salary cannot be matched safely",
+    unknown_player: "Player not found in this season's warehouse data",
+    unknown_metric: "This metric is not available",
+    ambiguous_metric_rows: "Multiple rows match this player and metric",
+    no_metric_row: "No data for this player and metric in the selected season",
+    missing_or_nonfinite_value: "The source row has no usable value for this metric",
+  };
+  const reason = cell.value == null ? (reasons[cell.reason || ""] || "This value is unavailable in the warehouse") : undefined;
+  return <Popover open={open} onOpenChange={setOpen}>
+    <PopoverTrigger openOnHover delay={150} closeDelay={150} onFocus={() => { if (reason) setOpen(true); }} className="board-value" aria-label={`Source: ${player} · ${metric.label}${reason ? ` · ${reason}` : ""}`} title={reason}>
       {cell.value == null ? <span className="text-ink-3">—</span> : formatBoardValue(cell.value, metric)}
     </PopoverTrigger>
     <PopoverContent side="bottom" align="end" initialFocus={false} className="citation-card board-citation w-[370px] gap-3 border border-line bg-surface p-4 text-ink shadow-overlay ring-0">
