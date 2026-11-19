@@ -21,8 +21,8 @@ def resolve_salary_column(columns: set[str], season: str | None) -> str:
         if column in columns:
             return column
     salary_columns = {c for c in columns if re.fullmatch(r'SALARY_\d{4}_\d{2}', c)}
-    if salary_columns == {'SALARY_2025_26'}:
-        return 'SALARY_2025_26'
+    if len(salary_columns) == 1:
+        return next(iter(salary_columns))
     return ''
 
 

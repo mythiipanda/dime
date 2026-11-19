@@ -6,7 +6,7 @@ import polars as pl
 import pytest
 
 from shared import store
-from shared.contracts import contract_details, resolve_player_ids, salary_records
+from shared.contracts import contract_details, resolve_player_ids, resolve_salary_column, salary_records
 from shared.sources import salaries
 from shared.tools import league
 
@@ -25,6 +25,21 @@ HTML = '''<table id="contracts"><thead><tr>
 <td data-stat="remain_gtd" csk="90">$90</td>
 </tr><tr><th data-stat="player">Team Totals</th><td data-stat="y1" csk="999"></td></tr>
 </tbody></table>'''
+
+
+@pytest.mark.parametrize('column', ['SALARY_1999_00', 'SALARY_2025_26', 'SALARY_2031_32'])
+def test_single_season_salary_column_fallback(column):
+    assert resolve_salary_column({'PLAYER_NAME', column}, None) == column
+    assert resolve_salary_column({'PLAYER_NAME', column}, '2026-27') == column
+
+
+def test_salary_column_precedence_and_ambiguity():
+    columns = {'SALARY_2024_25', 'SALARY_2025_26'}
+    assert resolve_salary_column(columns, None) == ''
+    assert resolve_salary_column(columns, '2026-27') == ''
+    assert resolve_salary_column(columns, '2024-25') == 'SALARY_2024_25'
+    assert resolve_salary_column(columns | {'SALARY'}, '2024-25') == 'SALARY'
+    assert resolve_salary_column({'PLAYER_NAME', 'SALARY_notes'}, None) == ''
 
 
 def test_parser_retains_seasons_options_slug_and_guaranteed():
