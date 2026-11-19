@@ -217,9 +217,10 @@ for (const [reason, words] of [["unmatched_salary_name", "No 2026-27 salary row 
       assert.equal(m.dom.window.document.querySelector('[role="dialog"]'), null);
       await click(trigger);
       assert.ok(m.dom.window.document.querySelector('[role="status"]')?.textContent?.includes(words));
-      assert.equal(m.dom.window.document.activeElement, trigger);
-      await act(async () => { trigger.dispatchEvent(new m.dom.window.KeyboardEvent("keydown", { key: "Escape", bubbles: true })); });
+      assert.ok(m.dom.window.document.querySelector('[role="dialog"]')!.contains(m.dom.window.document.activeElement));
+      await act(async () => { m.dom.window.document.activeElement!.dispatchEvent(new m.dom.window.KeyboardEvent("keydown", { key: "Escape", bubbles: true })); });
       assert.equal(m.dom.window.document.querySelector('[role="dialog"]'), null);
+      assert.equal(m.dom.window.document.activeElement, trigger);
     } finally { await m.cleanup(); }
   });
 }
@@ -242,5 +243,25 @@ test("column sorting is reflected in semantic headers and row order", async () =
     await click(button(m.host, "Points"));
     assert.match(m.host.querySelector("tbody tr")!.textContent!, /Nikola Jokić/);
     assert.equal(m.host.querySelector('[aria-sort="descending"]')?.textContent?.includes("Points"), true);
+  } finally { await m.cleanup(); }
+});
+
+test("citation activation moves focus inside and makes the saved row key reachable", async () => {
+  const m = await mount();
+  try {
+    await click(button(m.host, "Scoring guards"));
+    const trigger = m.host.querySelector<HTMLButtonElement>('[aria-label="Source: Stephen Curry · Points"]')!;
+    await act(async () => trigger.focus());
+    await click(trigger);
+    const evidence = m.dom.window.document.querySelector('[role="dialog"]')!;
+    assert.ok(evidence.contains(m.dom.window.document.activeElement));
+    const summary = evidence.querySelector("summary")!;
+    await act(async () => { summary.focus(); summary.click(); });
+    assert.equal(m.dom.window.document.activeElement, summary);
+    assert.equal(summary.parentElement!.hasAttribute("open"), true);
+    assert.match(summary.parentElement!.textContent!, /201939/);
+    await act(async () => summary.dispatchEvent(new m.dom.window.KeyboardEvent("keydown", { key: "Escape", bubbles: true })));
+    assert.equal(m.dom.window.document.querySelector('[role="dialog"]'), null);
+    assert.equal(m.dom.window.document.activeElement, trigger);
   } finally { await m.cleanup(); }
 });

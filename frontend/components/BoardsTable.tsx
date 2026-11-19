@@ -31,7 +31,7 @@ export function BoardValue({ cell, metric, metricId, player }: { cell: BoardCell
     <PopoverTrigger asChild><Button variant="quiet" size="sm" className="font-mono tabular-nums" aria-label={`Source: ${player} · ${label}${reason ? ` · ${reason}` : ""}`} title={reason}>
       {cell.value == null ? <span className="text-ink-3">—</span> : formatBoardValue(cell.value, metric)}
     </Button></PopoverTrigger>
-    <PopoverContent side="bottom" align="end" aria-label={`${player} · ${label} evidence`} onOpenAutoFocus={event => event.preventDefault()} className="w-[min(370px,calc(100vw-32px))] gap-3 border border-line bg-surface p-4 text-ink shadow-overlay ring-0">
+    <PopoverContent side="bottom" align="end" aria-label={`${player} · ${label} evidence`} className="w-[min(370px,calc(100vw-32px))] gap-3 border border-line bg-surface p-4 text-ink shadow-overlay ring-0">
       <div className="flex items-center gap-2 text-[12px] font-medium"><Database width={14} />{label}<span className="ml-auto text-[10px] font-normal text-ink-3">WAREHOUSE EVIDENCE</span></div>
       <p className="text-[12px] text-ink-2">{player}<span className="float-right font-mono tabular-nums text-ink">{cell.value == null ? "Not available" : cell.value.toLocaleString("en-US", { maximumFractionDigits: 4 }) + (metric?.unit === "pct" ? "%" : metric?.unit === "usd" ? " USD" : "")}</span></p>
       {reason && <p role="status" className="rounded-md bg-inset px-2 py-2 text-[11px] text-ink-2">{reason}</p>}
