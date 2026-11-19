@@ -69,7 +69,7 @@ def test_zone_splits_uses_existing_warehouse_tool(monkeypatch, payload):
     monkeypatch.setitem(sys.modules, "shared.tools.player", SimpleNamespace(
         get_shot_zones=SimpleNamespace(invoke=invoke)))
     result = dataset("zone_splits")
-    invoke.assert_called_once_with({"player_id": 201939, "season": "2025-26"})
+    invoke.assert_called_once_with({"player_id": 201939, "season": "2025-26", "min_attempts": 0})
     assert result["ok"] is payload["ok"]
     assert result["meta"] == payload["meta"]
     if payload["ok"]:

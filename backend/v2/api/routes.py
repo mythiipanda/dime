@@ -467,7 +467,7 @@ def dataset(
 
         if not player_id:
             return {"ok": False, "error": "missing id param for this dataset"}
-        result = get_shot_zones.invoke({"player_id": player_id, "season": season})
+        result = get_shot_zones.invoke({"player_id": player_id, "season": season, "min_attempts": 0})
         if not result.get("ok"):
             return {"ok": False, "error": result.get("error", "shot zones unavailable"),
                     "meta": result.get("meta")}

@@ -1538,7 +1538,7 @@ def _hist_zone_rows(player: dict, league: dict, total: int, floor: int) -> tuple
     excluded: list[str] = []
     for key in _HIST_ZONE_KEYS:
         m, a = player[key]
-        if a < floor:
+        if a == 0 or a < floor:
             excluded.append(key)
             continue
         lm, la = league[key]
@@ -1566,12 +1566,13 @@ def get_shot_zones(player_id: str | int, season: str | None = None, min_attempts
     (basketball-reference distance buckets, league-wide), then live
     shot_chart (fail-fast; endpoint-blocked from datacenter IPs).
     Zones below min_attempts (default 50, clamped 10..200) are excluded.
+    Set min_attempts to 0 to include every zone with attempts.
     """
     season = resolve_season(season)
     player_id = coerce_player_id(player_id)
     import math
 
-    floor = _clamp_hist_floor(min_attempts)
+    floor = 0 if min_attempts == 0 else _clamp_hist_floor(min_attempts)
     try:
         hist_year = _hist_season_year(season)
     except Exception:
