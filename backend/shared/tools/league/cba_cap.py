@@ -3,6 +3,7 @@ from typing import Any
 
 from langchain_core.tools import tool
 
+from ...contracts import contract_details, resolve_salary_column, salary_records
 from .._core import coerce_team_id
 from ..competitive import _resolve_team_abbr
 from ._helpers import _owned_connection, _pkg, _warehouse_tables
@@ -110,8 +111,7 @@ def _salary_sheet_rows(con: object) -> list | None:
     try:
         if "silver_salaries" not in _warehouse_tables(con):
             return None
-        return con.execute(
-            "SELECT PLAYER_NAME, SALARY, TEAM FROM silver_salaries").fetchall()
+        return [(r['PLAYER_NAME'], r['salary'], r['TEAM']) for r in salary_records(con)]
     except Exception:
         return None
 
@@ -226,13 +226,7 @@ class SalaryColumnError(RuntimeError):
 
 
 def _resolve_salary_column(scols: set[str], season: str | None) -> str:
-    if "SALARY" in scols:
-        return "SALARY"
-    if season:
-        want = "SALARY_" + str(season).strip().replace("-", "_")
-        if want in scols:
-            return want
-    return ""
+    return resolve_salary_column(scols, season)
 
 
 def _payroll(team: str, con: object = None,
@@ -251,13 +245,11 @@ def _payroll(team: str, con: object = None,
                     "salary_column_unmatched",
                     f"silver_salaries has no salary column for season "
                     f"{season or 'unknown'}")
-            rows = con.execute(
-                f"SELECT PLAYER_NAME, {scol} FROM silver_salaries "
-                "WHERE TEAM = ?",
-                [team.upper()],
-            ).fetchall()
+            records = [r for r in salary_records(con, salary_season=season) if str(r['TEAM']).upper() == team.upper()]
+            rows = [(r['PLAYER_NAME'], r.get(scol)) for r in records]
             if rows:
-                players = [{"player": r[0], "salary": r[1]} for r in rows]
+                players = [{"player": r['PLAYER_NAME'], "salary": r.get(scol),
+                            **contract_details(r)} for r in records]
                 return sum(r[1] or 0 for r in rows), players
         if "silver_cap_players" in tables:
             rows = con.execute(
@@ -270,7 +262,7 @@ def _payroll(team: str, con: object = None,
     finally:
         if own:
             con.close()
-    players = [{"player": r[0], "salary": r[1]} for r in rows]
+    players = [{"player": r[0], "salary": r[1], **contract_details(None)} for r in rows]
     return sum(r[1] or 0 for r in rows), players
 
 
@@ -394,7 +386,7 @@ def get_cap_ledger(team: str = "") -> dict[str, Any]:
     return {"tool": "get_cap_ledger", "ok": True,
             "rows": {"team": team.upper(), "payroll": total,
                      "players": sorted(players, key=lambda p: p["salary"] or 0,
-                                       reverse=True)[:15],
+                                       reverse=True),
                      "room_under_apron2": CAP["apron2"] - total,
                      "over_tax": total > CAP["tax"]},
             "meta": {"source": source, "season": season or "2026-27",

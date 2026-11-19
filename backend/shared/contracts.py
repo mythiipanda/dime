@@ -1,0 +1,135 @@
+import re
+import unicodedata
+
+import polars as pl
+
+
+def normalize_name(value: object) -> str:
+    text = ''.join(c for c in unicodedata.normalize('NFKD', str(value or ''))
+                   if not unicodedata.combining(c)).lower()
+    words = re.sub(r'[^a-z0-9\s]', '', text).split()
+    while words and words[-1] in {'jr', 'sr', 'ii', 'iii', 'iv', 'v'}:
+        words.pop()
+    return ''.join(words)
+
+
+def resolve_salary_column(columns: set[str], season: str | None) -> str:
+    if 'SALARY' in columns:
+        return 'SALARY'
+    if season:
+        column = 'SALARY_' + season.replace('-', '_')
+        if column in columns:
+            return column
+    salary_columns = {c for c in columns if re.fullmatch(r'SALARY_\d{4}_\d{2}', c)}
+    if salary_columns == {'SALARY_2025_26'}:
+        return 'SALARY_2025_26'
+    return ''
+
+
+def contract_details(row: dict | None) -> dict:
+    row = row or {}
+    current = str(row.get('_season') or '')
+    columns = sorted(c for c in row if re.fullmatch(r'SALARY_\d{4}_\d{2}', c))
+    salaries = {c[7:].replace('_', '-'): row[c] for c in columns
+                if row[c] is not None and c[7:].replace('_', '-') >= current}
+    available = 'SALARY' in row and len(columns) > 1 and bool(salaries)
+    options = {season: row.get('OPTION_' + season.replace('-', '_'))
+               for season in (c[7:].replace('_', '-') for c in columns)
+               if season >= current and row.get('OPTION_' + season.replace('-', '_'))}
+    return {
+        'player_id': row.get('PLAYER_ID'),
+        'bref_slug': row.get('BREF_SLUG'),
+        'remaining_guaranteed': row.get('GUARANTEED'),
+        'contract_schedule_available': available,
+        'years_remaining': sum(v > 0 for v in salaries.values()) if available else None,
+        'salary_by_season': salaries if available else None,
+        'future_salaries': {k: v for k, v in salaries.items() if k > current} if available else None,
+        'option_years': options if available else None,
+        'years_remaining_basis': 'listed salary seasons including options; not guaranteed term' if available else None,
+    }
+
+
+def salary_records(con, season: str | None = None, salary_season: str | None = None,
+                   include_fallback: bool = False) -> list[dict]:
+    tables = {r[0] for r in con.execute('SHOW TABLES').fetchall()}
+    records = []
+    for table in ('silver_salaries', 'silver_cap_players'):
+        if table not in tables:
+            continue
+        columns = [r[1] for r in con.execute(f'PRAGMA table_info({table})').fetchall()]
+        salary = resolve_salary_column(set(columns), salary_season or season) if table == 'silver_salaries' else 'salary'
+        if not salary:
+            continue
+        where = ''
+        params = []
+        if season and '_season' in columns:
+            where = ' WHERE _season = ?'
+            params = [season]
+        rows = [dict(zip(columns, values)) for values in con.execute(f'SELECT * FROM {table}{where}', params).fetchall()]
+        if rows and not season and '_season' in columns:
+            latest = max(str(r.get('_season') or '') for r in rows)
+            rows = [r for r in rows if str(r.get('_season') or '') == latest]
+        if rows:
+            for row in rows:
+                row['PLAYER_NAME'] = row.get('PLAYER_NAME', row.get('player'))
+                row['TEAM'] = row.get('TEAM', row.get('team'))
+                row['salary'] = row.get(salary)
+            if not records:
+                records = rows
+            else:
+                records.extend(r for r in rows if match_record(
+                    records, r['PLAYER_NAME'], r.get('PLAYER_ID'), r['TEAM']) is None)
+            if not include_fallback:
+                return records
+    return records
+
+
+def match_record(records: list[dict], name: str, player_id=None, team: str = '') -> dict | None:
+    if player_id is not None:
+        hits = [r for r in records if r.get('PLAYER_ID') == player_id]
+        if len(hits) == 1:
+            return hits[0]
+        if hits:
+            hits = [r for r in hits if str(r.get('TEAM') or '').upper() == team.upper()]
+            return hits[0] if len(hits) == 1 else None
+    hits = [r for r in records if normalize_name(r.get('PLAYER_NAME', r.get('PLAYER'))) == normalize_name(name)
+            and (player_id is None or r.get('PLAYER_ID') is None or r['PLAYER_ID'] == player_id)]
+    if len(hits) == 1:
+        return hits[0]
+    hits = [r for r in hits if str(r.get('TEAM') or '').upper() == team.upper()]
+    return hits[0] if len(hits) == 1 else None
+
+
+def warehouse_player_ids(con) -> list[dict]:
+    records = []
+    tables = {r[0] for r in con.execute('SHOW TABLES').fetchall()}
+    for table in ('silver_leaders_pts', 'silver_advanced', 'silver_player_season'):
+        if table not in tables:
+            continue
+        columns = {r[1] for r in con.execute(f'PRAGMA table_info({table})').fetchall()}
+        name = next((c for c in ('PLAYER_NAME', 'PLAYER') if c in columns), None)
+        team = next((c for c in ('TEAM_ABBREVIATION', 'TEAM') if c in columns), None)
+        if not name or 'PLAYER_ID' not in columns:
+            continue
+        team_sql = team or 'NULL'
+        season_sql = '_season' if '_season' in columns else "''"
+        for pid, player, abbr, season in con.execute(
+                f'SELECT DISTINCT PLAYER_ID, {name}, {team_sql}, {season_sql} FROM {table} WHERE PLAYER_ID IS NOT NULL').fetchall():
+            records.append({'PLAYER_ID': pid, 'PLAYER_NAME': player, 'TEAM': abbr, '_season': season or ''})
+    return records
+
+
+def resolve_player_ids(frame, con):
+    index = {}
+    for row in warehouse_player_ids(con):
+        index.setdefault(normalize_name(row['PLAYER_NAME']), []).append(row)
+    ids = []
+    for row in frame.to_dicts():
+        candidates = index.get(normalize_name(row['PLAYER_NAME']), [])
+        unique = {r['PLAYER_ID'] for r in candidates}
+        if len(unique) > 1:
+            latest = {pid: max(r['_season'] for r in candidates if r['PLAYER_ID'] == pid) for pid in unique}
+            unique = {r['PLAYER_ID'] for r in candidates if r['_season'] == latest[r['PLAYER_ID']]
+                      and str(r['TEAM'] or '').upper() == str(row['TEAM']).upper()}
+        ids.append(next(iter(unique)) if len(unique) == 1 else None)
+    return frame.with_columns(pl.Series('PLAYER_ID', ids, dtype=pl.Int64))
