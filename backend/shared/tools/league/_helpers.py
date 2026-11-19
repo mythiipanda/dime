@@ -11,11 +11,11 @@ def _warehouse_tables(con) -> set[str]:
 
 
 @contextmanager
-def _owned_connection(con: object):
+def _owned_connection(con: object, *, read_only: bool = False):
     if con is not None:
         yield con
         return
-    own = _pkg().store.connect()
+    own = _pkg().store.connect(read_only=True) if read_only else _pkg().store.connect()
     try:
         yield own
     finally:

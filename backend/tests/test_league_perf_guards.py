@@ -73,6 +73,7 @@ def _leader_rows():
         {"PLAYER": "E"},
     ]
 
+@pytest.mark.canonical_warehouse
 @pytest.mark.parametrize("category", ["PTS", "REB", "AST"])
 def test_get_leaders_single_read_byte_identical(monkeypatch, category):
     total = 200

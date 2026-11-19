@@ -86,7 +86,12 @@ const EVENT_REDUCERS: Record<string, EventReducer> = {
       artifact,
     }));
   },
-  final_answer: (d) => [{ type: "final", text: asString(d.text), carry: parseCarry(d.carry) }],
+  final_answer: (d) => {
+    const submission = asRecord(asRecord(d.carry).submission);
+    return [{ type: "final", text: asString(d.text), carry: parseCarry(d.carry),
+      ...(Array.isArray(submission.artifacts) ? { artifacts: asResolvedArtifacts(submission.artifacts) } : {}),
+    }];
+  },
   failure: (d) => {
     const kind = asString(d.kind) || "execution_failure";
     return [
@@ -237,6 +242,7 @@ export class DimeStream {
       case "final":
         this.snap.text = event.text;
         this.snap.carry = event.carry;
+        if (event.artifacts) this.snap.artifacts = event.artifacts;
         break;
       case "failure":
         this.recordFailure(event, authority);
@@ -248,14 +254,12 @@ export class DimeStream {
 export function streamDimeChat(
   q: string,
   callbacks: DimeStreamCallbacks,
-  opts?: { signal?: AbortSignal; model?: string | null },
+  opts?: { signal?: AbortSignal; model?: string | null; thread?: string; replay?: string | null },
 ): void {
   const stream = new DimeStream();
   let settled = false;
   const emit = () => callbacks.onUpdate(stream.snapshot());
-  void postChatStream(
-    q,
-    opts?.model ?? null,
+  const handlers: Parameters<typeof postChatStream>[2] =
     {
       onEvent: (type, data) => {
         if (settled) return;
@@ -273,11 +277,18 @@ export function streamDimeChat(
         settled = true;
         stream.fail("connection", message);
         stream.finish();
-        const snap = stream.snapshot();
-        callbacks.onError(snap, message);
+        callbacks.onError(stream.snapshot(), message);
       },
-    },
+    };
+  if (process.env.NODE_ENV === "development" && opts?.replay) {
+    void import("../replay").then(({ replayStream }) => replayStream(opts.replay!, handlers, opts.signal));
+    return;
+  }
+  void postChatStream(
+    q,
+    opts?.model ?? null,
+    handlers,
     opts?.signal,
-    null,
+    opts?.thread ?? null,
   );
 }

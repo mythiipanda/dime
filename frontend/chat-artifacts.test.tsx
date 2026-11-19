@@ -128,7 +128,9 @@ test("streamed chart artifacts render a chart", () => {
     ],
     footnote: "points per game",
   });
-  assert.ok(html.includes("<svg"), html.slice(0, 120));
+  assert.ok(html.includes("recharts-responsive-container"), html.slice(0, 120));
+  assert.ok(html.includes("View chart data"), html);
+  assert.match(html, />24</);
   assert.ok(html.includes("Gilgeous-Alexander"), html);
 });
 
@@ -143,7 +145,8 @@ test("streamed chart artifacts render custom unit and xLabels", () => {
     unit: "NetRtg",
     xLabels: ["Oct", "Nov", "Dec"],
   });
-  assert.ok(html.includes("<svg"), html.slice(0, 120));
+  assert.ok(html.includes("recharts-responsive-container"), html.slice(0, 120));
+  assert.match(html, />14</);
   assert.ok(html.includes("NetRtg"), html);
   assert.ok(html.includes("Oct"), html);
   assert.ok(html.includes("Nov"), html);
@@ -460,7 +463,7 @@ test("an unknown provenance artifact blocks a verified claim and stays inspectab
     assert.match(html, /not declared/i, html);
     assert.match(html, /partly undeclared/i, html);
     assert.ok(html.includes("QA FIXTURE unknown provenance chart"), html);
-    assert.equal((html.match(/<summary/g) ?? []).length, 2, html);
+    assert.equal((html.match(/<summary[^>]*>Sources &amp; provenance<\/summary>/g) ?? []).length, 2, html);
   }
 });
 

@@ -11,6 +11,7 @@ import { createAnalystSession } from "./dist/runtime.js";
 import { loadSkillTool, priorSourceTool } from "./dist/pi-context.js";
 import { connectPythonTools, sourceResult } from "./dist/python-tools.js";
 import { validateAnswerSubmission } from "./dist/submit-tool.js";
+import { analystEventFrom } from "./dist/pi-execution.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -1483,4 +1484,11 @@ test("loadSkillTool reports each successful skill load", async () => {
   await tool.execute("c1", { name: "CBA-Trade-Analysis" });
   await tool.execute("c2", { name: "missing" });
   assert.deepEqual(loaded, ["cba-trade-analysis"]);
+});
+
+test("analystEventFrom traces provider retries in the run event stream", () => {
+  assert.deepEqual(analystEventFrom({ type: "auto_retry_start", attempt: 1, maxAttempts: 6, delayMs: 5000, errorMessage: "429" }), { type: "tool_call", name: "provider_retry" });
+  assert.deepEqual(analystEventFrom({ type: "auto_retry_end", success: false, attempt: 6, finalError: "429" }), { type: "tool_result", name: "provider_retry", status: "fail", error: "429" });
+  assert.deepEqual(analystEventFrom({ type: "auto_retry_end", success: true, attempt: 2 }), { type: "tool_result", name: "provider_retry", status: "ok", error: undefined });
+  assert.equal(analystEventFrom({ type: "agent_start" }), undefined);
 });

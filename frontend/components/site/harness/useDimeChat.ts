@@ -4,6 +4,8 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import type { PaletteEntry } from "@/components/site/DimeCommandPalette";
 import type { PickerModel } from "@/components/site/DimeModelPicker";
 import { getModels } from "@/lib/api";
+import { cacheChatRun, loadChatRuns } from "@/lib/chat-persistence";
+import { modelDisplayName } from "@/lib/modelNames";
 import { streamDimeChat } from "@/lib/dime-stream";
 import {
   assistantMessageFromSnapshot,
@@ -27,14 +29,21 @@ const VIEW_LABELS: { id: "chat" | ViewKey; label: string }[] = [
   { id: "warehouse", label: "Warehouse" },
 ];
 
-export function useDimeChat() {
+export function useDimeChat(options?: { thread: string; replay?: string | null; onRunDone?: (question: string) => void; onSubmit?: () => void }) {
   const [tabs, setTabs] = useState<Tab[]>([{ id: REFERENCE_TAB, label: "New analysis" }]);
   const [activeTab, setActiveTab] = useState(REFERENCE_TAB);
   const [messagesByTab, setMessagesByTab] = useState<Record<string, ChatMsg[]>>({});
   const [modelOptions, setModelOptions] = useState<PickerModel[]>([]);
   const [model, setModel] = useState<string | null>(null);
   const [activeView, setActiveView] = useState<"chat" | ViewKey>("chat");
-  const messages = messagesByTab[activeTab] ?? [];
+  const thread = options?.thread;
+  const messages = messagesByTab[thread ?? activeTab] ?? [];
+  const [historyLoading, setHistoryLoading] = useState(!!thread);
+  const [historyError, setHistoryError] = useState<string | null>(null);
+  const [modelsError, setModelsError] = useState(false);
+  const [modelsLoading, setModelsLoading] = useState(true);
+  const [providers, setProviders] = useState<string[]>([]);
+  const [modelsAttempt, setModelsAttempt] = useState(0);
   const showReference = activeTab === REFERENCE_TAB && messages.length === 0;
   const [live, setLive] = useState<LiveRun | null>(null);
   const [draft, setDraft] = useState("");
@@ -47,6 +56,20 @@ export function useDimeChat() {
   const sheetRef = useRef<HTMLDivElement | null>(null);
   const liveId = useRef(0);
   const abortRef = useRef<AbortController | null>(null);
+
+  useEffect(() => {
+    if (!thread) return;
+    let cancelled = false;
+    setHistoryLoading(true);
+    setHistoryError(null);
+    void loadChatRuns(thread).then(runs => {
+      if (!cancelled) setMessagesByTab(current => ({ ...current, [thread]: runs.flatMap(({ question, snapshot }): ChatMsg[] => [
+        { role: "user", text: question }, assistantMessageFromSnapshot(snapshot, ""),
+      ]) }));
+    }).catch(() => { if (!cancelled) setHistoryError("Could not load this conversation."); })
+      .finally(() => { if (!cancelled) setHistoryLoading(false); });
+    return () => { cancelled = true; };
+  }, [thread]);
 
   const addTab = () => {
     const id = `t${Date.now()}`;
@@ -76,8 +99,9 @@ export function useDimeChat() {
 
   const submit = (raw?: string) => {
     const q = (raw ?? draft).trim();
-    if (!q || live) return;
-    const tabId = activeTab;
+    if (!q || live || historyLoading || (!options?.replay && !modelOptions.some(item => item.id === model && item.available !== false))) return;
+    options?.onSubmit?.();
+    const tabId = thread ?? activeTab;
     abortRef.current?.abort();
     const ctrl = new AbortController();
     abortRef.current = ctrl;
@@ -104,15 +128,22 @@ export function useDimeChat() {
         onUpdate: (snap) =>
           setLive((cur) => (cur && cur.id === id ? { ...cur, ...snap } : cur)),
         onDone: (snap) => {
+          if (liveId.current !== id) return;
           setLive((cur) => (cur && cur.id === id ? null : cur));
           appendMessage(tabId, assistantMessageFromSnapshot(snap, ""));
+          if (thread && !options?.replay) {
+            cacheChatRun(thread, q, snap);
+            options?.onRunDone?.(q);
+          }
         },
         onError: (snap, message) => {
+          if (liveId.current !== id) return;
           setLive((cur) => (cur && cur.id === id ? null : cur));
           appendMessage(tabId, assistantMessageFromSnapshot(snap, message));
+          if (thread && !options?.replay) { cacheChatRun(thread, q, snap); options?.onRunDone?.(q); }
         },
       },
-      { signal: ctrl.signal, model },
+      { signal: ctrl.signal, model, thread, replay: options?.replay },
     );
   };
 
@@ -120,24 +151,29 @@ export function useDimeChat() {
 
   useEffect(() => {
     let active = true;
+    setModelsError(false);
+    setModelsLoading(true);
     getModels()
       .then((res) => {
         if (!active) return;
+        setProviders(Object.keys(res.available ?? {}));
         setModelOptions(
           res.models.map((m) => ({
             id: m.id,
             engine: m.engine,
-            label: m.id.split(":").slice(1).join(":").replace(/:free$/, ""),
+            label: modelDisplayName(m.id),
             default: m.default,
             available: m.available,
           })),
         );
+        const available = res.models.filter(m => m.available !== false);
+        setModel(current => current ?? available.find(m => m.default)?.id ?? available[0]?.id ?? null);
       })
-      .catch(() => undefined);
+      .catch(() => { if (active) setModelsError(true); }).finally(() => { if (active) setModelsLoading(false); });
     return () => {
       active = false;
     };
-  }, []);
+  }, [modelsAttempt]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -228,6 +264,16 @@ export function useDimeChat() {
   );
 
   return {
+    historyLoading,
+    historyError,
+    modelsError,
+    retryModels: () => setModelsAttempt(value => value + 1),
+    stop: () => {
+      abortRef.current?.abort();
+      liveId.current += 1;
+      if (live) appendMessage(thread ?? activeTab, assistantMessageFromSnapshot({ ...live, done: true }, ""));
+      setLive(null);
+    },
     tabs,
     activeTab,
     setActiveTab,
@@ -237,6 +283,8 @@ export function useDimeChat() {
     draft,
     setDraft,
     modelOptions,
+    modelsLoading,
+    providers,
     model,
     setModel,
     activeView,

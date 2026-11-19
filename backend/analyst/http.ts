@@ -126,6 +126,12 @@ export function createProductServer(options: {
     route("GET", /^\/api\/health$/, async ({ res }) => json(res, { ok: true, providers: policy.catalog().available }));
     route("GET", /^\/api\/healthz$/, async ({ res }) => { const result = await data.call("product_warehouse_health", {}); json(res, result, result.ok ? 200 : 503); });
     route("GET", /^\/api\/datasets\/freshness$/, async ({ res }) => json(res, await data.call("product_freshness", {})));
+    route("GET", /^\/api\/home$/, async ({ res }) => json(res, await data.call("product_home", {})));
+    route("GET", /^\/api\/warehouse\/tables\/([^/]+)$/, async ({ res, url, params }) => {
+        if (!/^silver_[a-z0-9_]+$/.test(params[0])) { json(res, { ok: false, error: "Table not found" }, 404); return; }
+        const result = await data.call("product_table_detail", { table: params[0], season: url.searchParams.get("season") ?? "" });
+        json(res, result, result.ok ? 200 : 404);
+    });
     route("GET", /^\/api\/datasets\/([^/]+)$/, async ({ res, url, params }) => {
         const q = (name: string, fallback = "") => url.searchParams.get(name) ?? fallback;
         const result = await data.call("product_dataset", { name: params[0], season: q("season", "2025-26"), player_id: integer(url, "player_id", 0), team_id: integer(url, "team_id", 0), game_id: q("game_id"), game_date: q("game_date"), stat: q("stat", "PTS"), ids: q("ids"), player_a: q("player_a"), player_b: q("player_b"), fmt: q("fmt", "json") });
@@ -246,7 +252,7 @@ export function createProductServer(options: {
         json(res, out.ok ? { ok: true, rows: { columns: out.columns, rows: out.rows, ms: out.ms ?? 0, capped: out.capped ?? false } } : { ok: false, error: out.error ?? "rerun failed", rows: {} });
     });
     route("GET", /^\/api\/resolve$/, async ({ res, url }) => json(res, await data.call("product_resolve", { query: (url.searchParams.get("q") ?? "").slice(0, 80) })));
-    route("POST", /^\/api\/trade\/check$/, async ({ req, res }) => { const input = parseBody(tradeSchema, await body(req)); const players = (value: string | string[] | undefined) => Array.isArray(value) ? value.map(s => s.trim()).filter(Boolean).join(", ") : value ?? ""; json(res, await data.call("product_trade", { team_a: input.team_a ?? "", team_b: input.team_b ?? "", players_a: players(input.players_a), players_b: players(input.players_b), season: input.season ?? "2025-26" })); });
+    route("POST", /^\/api\/trade\/check$/, async ({ req, res }) => { const input = parseBody(tradeSchema, await body(req)); const players = (value: string | string[] | undefined) => Array.isArray(value) ? value.map(s => s.trim()).filter(Boolean).join(", ") : value ?? ""; const result = await data.call("product_trade", { team_a: input.team_a ?? "", team_b: input.team_b ?? "", players_a: players(input.players_a), players_b: players(input.players_b), season: input.season ?? "2025-26" }); json(res, result, result.ok === false ? 422 : 200); });
     route("GET", /^\/api\/debate-card$/, async ({ res, url }) => {
         const a = (url.searchParams.get("a") ?? "").trim().slice(0, 80), b = (url.searchParams.get("b") ?? "").trim().slice(0, 80);
         if (!a || !b) {

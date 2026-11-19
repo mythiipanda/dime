@@ -226,6 +226,7 @@ def test_warehouse_undecided_game_is_not_published_as_a_loss():
         row = _split(out["rows"], "last10")
         assert row["UNDECIDED"] == row["GP"] - row["W"] - row["L"]
 
+@pytest.mark.canonical_warehouse
 @pytest.mark.parametrize(
     "a, b, season, round_code",
     [
@@ -259,6 +260,7 @@ def test_season_series_keeps_game_wins_and_series_wins_distinct(
     assert summary["series"][0]["games_won"] == {a: series_a, b: series_b}
     assert summary["games_undecided"] == 0
 
+@pytest.mark.canonical_warehouse
 def test_a_game_count_never_satisfies_a_series_count():
     _skip_without_warehouse()
     summary = _brief("BOS", "NYK", "2024-25")["season_series"]["summary"]
@@ -305,6 +307,7 @@ def test_leader_qualification_publishes_the_value_the_floor_applies_to():
         assert f"{round(minutes):,}" in out["meta"]["deterministic_answer"]
         assert "total minutes" in out["meta"]["deterministic_answer"]
 
+@pytest.mark.canonical_warehouse
 def test_per_game_minutes_cannot_answer_the_total_minutes_floor():
     _skip_without_warehouse()
     with _warehouse() as con:

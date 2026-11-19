@@ -134,7 +134,11 @@ export default function TradesView() {
         season: TRADE_SEASON,
       }),
     })
-      .then((res) => res.json())
+      .then(async res => {
+        const data = await res.json().catch(() => null);
+        if (!res.ok) throw new Error(typeof data?.error === "string" ? data.error : typeof data?.detail === "string" ? data.detail : `Trade check failed (HTTP ${res.status}).`);
+        return data;
+      })
       .then((data: { ok?: boolean; rows?: TradeCheckRows; error?: string }) => {
         if (data.ok === false || !data.rows) {
           setCheck({ state: "error", message: data.error || "Real check failed." });
@@ -142,7 +146,7 @@ export default function TradesView() {
           setCheck({ state: "ready", rows: data.rows });
         }
       })
-      .catch(() => setCheck({ state: "error", message: "Could not reach the backend." }));
+      .catch(error => setCheck({ state: "error", message: error instanceof Error ? error.message : "Could not reach the backend." }));
   };
 
   const line = (abbr: string, out: number, back: number) => {

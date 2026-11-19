@@ -1,6 +1,7 @@
 from typing import Any
 
 from langchain_core.tools import tool
+from shared.lineup_variants import SeasonType
 
 from .common import (
     _flatten_sections,
@@ -303,12 +304,15 @@ def register() -> dict[str, Any]:
 
     @tool("get_wowy", description=_orig_get_wowy.description)
     def get_wowy(player_a: str = "", player_b: str = "", player_ids: str = "",
-                 team_id: str | int = 0, season: str | None = None) -> dict:
+                 team_id: str | int = 0, season: str | None = None, season_type: SeasonType = 'regular-season') -> dict:
         cols = ["lineup_state", "minutes", "off_rating", "def_rating", "net_rating", "poss"]
-        res = call_sync(_orig_get_wowy, "get_wowy", {
+        args = {
             "player_a": player_a, "player_b": player_b, "player_ids": player_ids,
             "team_id": team_id, "season": season,
-        })
+        }
+        if season_type != 'regular-season':
+            args['season_type'] = season_type
+        res = call_sync(_orig_get_wowy, "get_wowy", args)
         return finish_strict_rows(res, "get_wowy", cols, "WOWY lookup failed", _wowy_rows, fixed_cols=True)
 
     @tool("get_raptor_history", description=_orig_get_raptor_history.description)

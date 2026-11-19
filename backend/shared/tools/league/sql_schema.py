@@ -42,6 +42,12 @@ def _describe_warehouse_schema(cols: dict[str, dict]) -> str:
     truncated = budget["truncated_tables"]
     for table, columns in display.items():
         line = f"{table}: {', '.join(columns)}"
+        if table == 'silver_hist_lineups':
+            line += (". Variant rows: MUST filter season_type ('regular-season', 'playoffs'),"
+                     " measure_type ('base', 'advanced', 'defense', 'misc', 'opponent', 'scoring', 'usage'),"
+                     " per_mode ('totals', 'pergame'). Default: regular-season/base/totals."
+                     " Never aggregate across variants. Ratings and pace are populated only in advanced;"
+                     " join on group_id, team_id, _season, season_type, per_mode with measure_type='advanced'.")
         omitted = truncated.get(table)
         if omitted:
             line += (
@@ -72,6 +78,7 @@ def _schema_for_display(
         for name, metadata in columns.items():
             semantics = metadata.get("season_semantics", {})
             if (name.lower() in provenance
+                    or (table == 'silver_hist_lineups' and name in {'season_type', 'measure_type', 'per_mode'})
                     or (semantics.get("encoding") not in (None, "unknown")
                         and semantics.get("source")
                         != "no source-backed mapping")):

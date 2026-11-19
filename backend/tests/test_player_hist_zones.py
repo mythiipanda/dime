@@ -1,6 +1,7 @@
 
 import math
 import sys
+import pytest
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
@@ -127,6 +128,7 @@ def test_multi_season_history():
         assert out["meta"]["player_shots"] == expected
         assert sum(r["FGA"] for r in out["rows"]) == expected
 
+@pytest.mark.canonical_warehouse
 def test_unknown_player_stays_honest():
     pytest = __import__("pytest")
     with pytest.raises(store.TableAbsent) as info:

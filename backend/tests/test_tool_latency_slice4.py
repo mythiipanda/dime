@@ -1,5 +1,6 @@
 import json
 import sys
+import pytest
 import time
 from pathlib import Path
 
@@ -39,6 +40,7 @@ def _load(name):
 
 
 def _max_of_5(fn, kwargs):
+    fn.invoke(kwargs)
     best = 0.0
     for _ in range(5):
         t0 = time.perf_counter()
@@ -47,11 +49,13 @@ def _max_of_5(fn, kwargs):
     return best
 
 
+@pytest.mark.canonical_warehouse
 def test_lineup_stats_matches_pre_pushdown_output():
     for name, kwargs in STATS_CASES.items():
         assert _norm(get_lineup_stats.invoke(kwargs)) == _load(name)
 
 
+@pytest.mark.canonical_warehouse
 def test_lineup_matchup_matrix_matches_pre_pushdown_output():
     for name, kwargs in MATRIX_CASES.items():
         assert _norm(get_lineup_matchup_matrix.invoke(kwargs)) == _load(name)

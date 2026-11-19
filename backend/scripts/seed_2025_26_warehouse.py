@@ -124,7 +124,7 @@ def seed() -> None:
             print("inserting 2025-26 regular-season team games ...")
             con.execute(
                 "INSERT INTO silver_team_games "
-                f"({', '.join('\"' + c + '\"' for c in TEAM_GAME_COLS)}) "
+                "(" + ", ".join('"' + c + '"' for c in TEAM_GAME_COLS) + ") "
                 + TEAM_GAME_SELECT,
                 [SEASON, fetched_at, END_YEAR],
             )
@@ -137,7 +137,7 @@ def seed() -> None:
             print("inserting 2025-26 lineups ...")
             con.execute(
                 "INSERT INTO silver_lineups "
-                f"({', '.join('\"' + c + '\"' for c in LINEUP_COLS)}) "
+                "(" + ", ".join('"' + c + '"' for c in LINEUP_COLS) + ") "
                 + LINEUP_SELECT,
                 [SEASON, fetched_at, END_YEAR],
             )

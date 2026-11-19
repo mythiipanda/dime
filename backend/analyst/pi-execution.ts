@@ -7,11 +7,23 @@ import { connectPythonTools, objectValue, sourceRecordSchema, sourceOutputSchema
 import { priorSourceTool, resolvedRuntime } from "./pi-context.js";
 import { createSubmitAnswerTool, type AnswerSubmission } from "./submit-tool.js";
 import type { AssistantMessage, Message } from "@earendil-works/pi-ai";
+import type { AgentSessionEvent } from "@earendil-works/pi-coding-agent";
 
 const WORKSPACE_ARTIFACT_EXTENSIONS = new Set([".parquet", ".csv", ".json", ".md", ".png", ".tsv", ".txt"]);
 const WORKSPACE_IGNORED_DIRS = new Set(["node_modules", "__pycache__"]);
 const WORKSPACE_ARTIFACT_LIMIT = 40;
 const WORKSPACE_MAX_DEPTH = 2;
+const ABORT_GRACE_MS = 10_000;
+
+export function analystEventFrom(event: AgentSessionEvent): AnalystEvent | undefined {
+    if (event.type === "message_update" && event.assistantMessageEvent.type === "text_delta")
+        return { type: "token", text: event.assistantMessageEvent.delta };
+    if (event.type === "auto_retry_start")
+        return { type: "tool_call", name: "provider_retry" };
+    if (event.type === "auto_retry_end")
+        return { type: "tool_result", name: "provider_retry", status: event.success ? "ok" : "fail", error: event.finalError };
+    return undefined;
+}
 
 export type WorkspaceArtifact = {
     path: string;
@@ -113,6 +125,7 @@ export type AnalystEvent = {
 type AnalystDeps = {
     resolveRuntime?: typeof resolvedRuntime;
     connectTools?: (options: PythonToolsOptions) => ReturnType<typeof connectPythonTools>;
+    abortGraceMs?: number;
 };
 
 function sourceSummary(record: SourceRecord) {
@@ -233,6 +246,7 @@ function wrapBridgeTools(
 export function createPiExecution(deps: AnalystDeps = {}) {
     const resolveRuntime = deps.resolveRuntime ?? resolvedRuntime;
     const connectTools = deps.connectTools ?? connectPythonTools;
+    const abortGraceMs = deps.abortGraceMs ?? ABORT_GRACE_MS;
     return {
         async *stream(input: unknown, signal?: AbortSignal): AsyncGenerator<AnalystEvent> {
             const controller = new AbortController();
@@ -242,6 +256,9 @@ export function createPiExecution(deps: AnalystDeps = {}) {
             const emit = (event: AnalystEvent) => { events.push(event); wake?.(); };
             const onAbort = () => controller.abort();
             signal?.addEventListener("abort", onAbort, { once: true });
+            let abandoned = false;
+            const abandon = new Promise<void>(resolve => controller.signal.addEventListener("abort", () => setTimeout(resolve, abortGraceMs).unref(), { once: true }));
+            void abandon.then(() => { abandoned = true; wake?.(); });
             if (signal?.aborted)
                 controller.abort();
             async function run() {
@@ -283,8 +300,9 @@ export function createPiExecution(deps: AnalystDeps = {}) {
                     });
                     controller.signal.throwIfAborted();
                     session.subscribe(event => {
-                        if (event.type === "message_update" && event.assistantMessageEvent.type === "text_delta")
-                            emit({ type: "token", text: event.assistantMessageEvent.delta });
+                        const mapped = analystEventFrom(event);
+                        if (mapped)
+                            emit(mapped);
                     });
                     const history = toHistoryMessages(start.history, model);
                     for (const message of history)
@@ -341,18 +359,18 @@ export function createPiExecution(deps: AnalystDeps = {}) {
             }
             const pending = run().finally(() => { finished = true; wake?.(); });
             try {
-                while (!finished || events.length) {
+                while ((!finished && !abandoned) || events.length) {
                     const next = events.shift();
                     if (next)
                         yield next;
                     else
                         await new Promise<void>(resolve => { wake = resolve; });
                 }
-                await pending;
+                await Promise.race([pending, abandon]);
             }
             finally {
                 controller.abort();
-                await pending;
+                await Promise.race([pending, abandon]);
                 signal?.removeEventListener("abort", onAbort);
             }
         }

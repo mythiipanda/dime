@@ -17,11 +17,11 @@ from shared import file_lock
 
 _SAMPLE_READ_BYTES = 8192
 _PACK_MEMBER = "data/warehouse.duckdb"
-CANONICAL_WAREHOUSE = Path("/home/hatch/workspace/dime-r25-data/backend/data/warehouse-backfill.duckdb")
-DEFAULT_STAGE_DIR = Path("/home/hatch/workspace/dime-data-release")
+CANONICAL_WAREHOUSE = Path.home() / "workspace" / "dime-r25-data" / "backend" / "data" / "warehouse-backfill.duckdb"
+DEFAULT_STAGE_DIR = Path.home() / "workspace" / "dime-data-release"
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 FETCH_SH = REPO_ROOT / "scripts" / "fetch-data.sh"
-WORKFLOW_YML = REPO_ROOT / ".github" / "workflows" / "build-backend.yml"
+FETCH_ACTION_YML = REPO_ROOT / ".github" / "actions" / "fetch-warehouse" / "action.yml"
 README_MD = REPO_ROOT / "README.md"
 VERDICT_KEYS = ["drift", "tables_changed", "pack_path", "sha256", "fingerprint", "pack", "released_at"]
 _HEX = set("0123456789abcdefABCDEF")
@@ -139,14 +139,14 @@ def _unified_diff(rel, old_text, new_text):
 def prepare_updates(tag, zip_name, sha256):
     fetch_old = FETCH_SH.read_text()
     fetch_new = _swap_tag(_swap_sha_token(fetch_old, sha256), tag)
-    flow_old = WORKFLOW_YML.read_text()
-    flow_new = _swap_tag(_swap_zip_name(flow_old, zip_name), tag)
+    action_old = FETCH_ACTION_YML.read_text()
+    action_new = _swap_tag(_swap_zip_name(_swap_sha_token(action_old, sha256), zip_name), tag)
     readme_old = README_MD.read_text()
     readme_new = _swap_tag(readme_old, tag)
     return {
         "scripts/fetch-data.sh": _unified_diff("scripts/fetch-data.sh", fetch_old, fetch_new),
-        ".github/workflows/build-backend.yml": _unified_diff(
-            ".github/workflows/build-backend.yml", flow_old, flow_new),
+        ".github/actions/fetch-warehouse/action.yml": _unified_diff(
+            ".github/actions/fetch-warehouse/action.yml", action_old, action_new),
         "README.md": _unified_diff("README.md", readme_old, readme_new),
     }
 
@@ -267,7 +267,8 @@ def _run(args, stage_dir):
                         / "hidden_files" / ("release-pack-" + tag))
         prep_dir.mkdir(parents=True, exist_ok=True)
         (prep_dir / "fetch-data.sh.diff").write_text(diffs["scripts/fetch-data.sh"])
-        (prep_dir / "build-backend.yml.diff").write_text(diffs[".github/workflows/build-backend.yml"])
+        (prep_dir / "fetch-warehouse-action.yml.diff").write_text(
+            diffs[".github/actions/fetch-warehouse/action.yml"])
         (prep_dir / "README.md.diff").write_text(diffs["README.md"])
         print("release_pack: prepare diffs in " + str(prep_dir), file=sys.stderr)
     emit_verdict(verdict)
