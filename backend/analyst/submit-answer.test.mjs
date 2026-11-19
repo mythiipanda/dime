@@ -800,3 +800,42 @@ test("memo artifacts reject anchors to unknown refs, bad rows and missing column
   assert.throws(() => validate(memo([{ ref: "cap-source", row: 0, columns: ["salary"] }])), /does not exist/);
   assert.throws(() => validate(memo([{ ref: "cap-source", row: 0 }])), /Invalid memo section anchor/);
 });
+
+test("unknown and empty artifact kinds are dropped with a warning the agent sees", async () => {
+  const source = makeSourceRecord("src-1", { rows: [{ stat: "reb", value: 10 }] });
+  let accepted = null;
+  const tool = createSubmitAnswerTool(
+    () => [source],
+    sub => { accepted = sub; }
+  );
+  const submission = {
+    blocks: [{ text: "Done." }],
+    artifacts: [
+      { kind: "pie", title: "Playstyle pie" },
+      { kind: "chart", title: "Empty trend" },
+      { kind: "memo", title: "No sections", sections: [] },
+      { kind: "table", title: "Rebounds", columns: [{ key: "stat", label: "Stat" }], rows: [["reb", 10]] },
+    ],
+  };
+  const result = await tool.execute("call-2", submission);
+  assert.equal(accepted.artifacts.length, 1);
+  assert.equal(accepted.artifacts[0].kind, "table");
+  const text = result.content[0].text;
+  assert.match(text, /unknown artifact kind "pie"/);
+  assert.match(text, /"chart" artifact has no series/);
+  assert.match(text, /"memo" artifact has no sections/);
+  assert.match(text, /Supported kinds: .*memo/);
+});
+
+test("validateAnswerSubmission drops rejected artifacts but keeps valid ones", () => {
+  const warnings = [];
+  const validated = validateAnswerSubmission(
+    { blocks: [{ text: "x" }], artifacts: [{ kind: "mystery", title: "?" }, { kind: "scatter", title: "ok", points: [{ label: "p", x: 1, y: 2 }] }] },
+    () => undefined,
+    undefined,
+    warnings,
+  );
+  assert.equal(validated.artifacts.length, 1);
+  assert.equal(validated.artifacts[0].kind, "scatter");
+  assert.deepEqual(warnings, ['dropped artifact: unknown artifact kind "mystery"']);
+});
