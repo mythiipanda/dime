@@ -10,7 +10,7 @@ import { replayName } from "../../lib/replay";
 import WorkflowsPanel from "../WorkflowsPanel";
 import ExploreWorkspace from "../ExploreWorkspace";
 import { HomeView } from "./HomeView";
-import BriefsPage from "../../app/briefs/page";
+import { BriefsLibrary } from "../BriefsLibrary";
 import CommandPalette from "../CommandPalette";
 import DebateCardModal from "../DebateCardModal";
 import { BoardsPanel } from "../BoardsPanel";
@@ -95,7 +95,7 @@ export function DimeShell() {
         {tab === "workflows" && <WorkflowsPanel onRun={startChat} />}
         {tab === "data" && <ExploreWorkspace exploreKey={exploreKey} onAsk={(q) => { setPreset(q); navigate("chat"); }} />}
         {tab === "today" && <HomeView onWorkflows={() => navigate("workflows")} />}
-        {tab === "briefs" && <BriefsPage />}
+        {tab === "briefs" && <BriefsLibrary onOpenBoard={openBoard} />}
         {tab === "boards" && <BoardsPanel boardId={boardId} onOpen={openBoard} onAsk={(q) => { startChat(); setPreset(q); }} />}
       </div>
     </main>

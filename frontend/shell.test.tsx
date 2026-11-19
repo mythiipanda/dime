@@ -49,6 +49,15 @@ it("opens saved board URLs and prefills Ask without sending, with working Boards
     await act(async () => { dom.window.history.pushState({}, "", `/?tab=boards&board=${saved.id}`); dom.window.dispatchEvent(new dom.window.PopStateEvent("popstate")); });
     assert.match(host.textContent!, /Stephen Curry/);
     assert.equal(sent.length, 0);
+    Object.defineProperty(dom.window, "localStorage", { configurable: true, get() { throw new Error("Storage blocked"); } });
+    const memoryBoard = saveBoard({ ...saved, id: "memory-board", title: "Memory shortlist" });
+    await act(async () => [...host.querySelectorAll("button")].find((b) => b.textContent?.trim() === "Library")!.click());
+    assert.match(host.textContent!, /Session only/);
+    await act(async () => [...host.querySelectorAll("button")].find((b) => b.textContent?.trim() === "Memory shortlist")!.click());
+    assert.equal(host.querySelector<HTMLInputElement>('[aria-label="Board title"]')?.value, "Memory shortlist");
+    assert.match(host.textContent!, /Stephen Curry/);
+    assert.equal(new URL(dom.window.location.href).searchParams.get("tab"), "boards");
+    assert.equal(new URL(dom.window.location.href).searchParams.get("board"), memoryBoard.id);
   } finally { await act(async () => root.unmount()); globalThis.fetch = previous; dom.window.close(); }
 });
 
