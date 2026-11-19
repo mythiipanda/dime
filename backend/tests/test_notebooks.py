@@ -194,6 +194,22 @@ def test_snapshot_export_uses_a_separate_markdown_cell_after_unclosed_fence(fenc
     assert "```" not in source and "~~~" not in source
 
 
+@pytest.mark.parametrize("raw_rows", [[], [{"details": {"season": "2025-26", "values": [1, 2, {"source": "NBA"}]}}]])
+def test_snapshot_json_export_retains_raw_values_while_ipynb_uses_readable_rows(raw_rows):
+    rows = [{"details": "season: 2025-26 · values: 1 · 2 · source: NBA"}] if raw_rows else []
+    doc = create(cells=[{"kind": "markdown", "source": "Snapshot", "outputs": {"kind": "snapshot", "data": {
+        "columns": [{"name": "details", "type": "VARCHAR"}], "rows": rows, "raw_rows": raw_rows, "truncated": False,
+    }}}])
+    url = f'/api/notebooks/{doc["id"]}'
+    assert client.get(url).json()["cells"][0]["outputs"]["data"]["raw_rows"] == raw_rows
+    assert client.get(url + "/export?fmt=json").json()["cells"][0]["outputs"]["data"]["raw_rows"] == raw_rows
+    exported = client.get(url + "/export?fmt=ipynb").json()["cells"][1]
+    source = "".join(exported["source"])
+    assert "raw_rows" not in source and '{"' not in source
+    if rows:
+        assert rows[0]["details"] in source
+
+
 def query(statement="SELECT player_id, player, ppg FROM silver_player_season ORDER BY player_id", **extra):
     return client.post("/api/notebooks/sql", json={"sql": statement, **extra})
 

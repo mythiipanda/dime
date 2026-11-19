@@ -139,10 +139,11 @@ test("flat public evidence becomes typed Cited values snapshots, alone or alongs
     if (withSQL) ai.nodes.analytics!.toolCalls = [{ name: "query_warehouse", sql: "SELECT 1", args: {} }];
     const draft = notebookFromAnswer(ai, "Rating?");
     const snapshot = draft.cells.find((cell) => cell.source.includes("### Cited values"))!;
-    const output = snapshot.outputs as { kind: string; data: { columns: { name: string; type: string }[]; rows: Record<string, unknown>[] } };
+    const output = snapshot.outputs as { kind: string; data: { columns: { name: string; type: string }[]; rows: Record<string, unknown>[]; raw_rows: unknown[] } };
     assert.equal(snapshot.kind, "markdown"); assert.equal(output.kind, "snapshot");
     assert.deepEqual(output.data.rows[0], { output: "NET_RATING", value: "9.4", unit: evidence.unit, subject: "OKC", subject_type: "team", Source: "NBA warehouse", Season: "2025-26", Capability: "team_ratings", Table: "silver_team_ratings" });
     assert.ok(output.data.columns.every((column) => column.name !== "provenance" && column.type !== "JSON"));
+    assert.deepEqual(output.data.raw_rows, [evidence]);
     assert.doesNotMatch(draft.cells.map((cell) => cell.source).join("\n"), /No tables/);
   }
 });
@@ -162,7 +163,19 @@ test("snapshot objects and arrays become short readable text without mutating da
   assert.deepEqual(result.rows.map((row) => row.value), [9.4, null, 0, false]);
   assert.equal(result.columns[0].type, "VARCHAR");
   assert.equal(JSON.stringify(input), before);
-  assert.deepEqual(readableSnapshot({ columns: [], rows: [], truncated: false }), { columns: [], rows: [], truncated: false });
+  assert.deepEqual(result.raw_rows, input.rows);
+  assert.deepEqual(readableSnapshot(result).raw_rows, input.rows);
+  assert.deepEqual(readableSnapshot({ columns: [], rows: [], truncated: false }), { columns: [], rows: [], raw_rows: [], truncated: false });
+});
+
+test("snapshot seeds preserve complete nested values behind their readable display and JSON serialization", () => {
+  const rows = [{ details: { season: "2025-26", nested: { items: [1, 2, { value: "x".repeat(500) }] } } }];
+  const ai = aiFromRun({ question: "Snapshot?", answer: "Answer", tables: [{ tool: "query_warehouse", rows }], suggestions: [], created_at: "2026-01-01" });
+  const draft = notebookFromAnswer(ai, "Snapshot?");
+  const saved = JSON.parse(JSON.stringify(draft));
+  assert.deepEqual(saved.cells[1].outputs.data.raw_rows, rows);
+  assert.equal(typeof saved.cells[1].outputs.data.rows[0].details, "string");
+  assert.ok(saved.cells[1].outputs.data.rows[0].details.length <= 200);
 });
 
 test("Cited values preserve fetched, as-of and observed source dates without inventing one", () => {

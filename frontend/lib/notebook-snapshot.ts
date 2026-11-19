@@ -8,9 +8,10 @@ function summary(value: unknown, depth = 0): string {
   return (entries.slice(0, 4).map((item) => typeof item === "string" ? item : summary(item, depth + 1)).join(" · ") + (entries.length > 4 ? " · …" : "")).slice(0, 200) || "—";
 }
 
-export function readableSnapshot(table: Pick<SQLResult, "columns" | "rows" | "truncated">) {
+export function readableSnapshot(table: Pick<SQLResult, "columns" | "rows" | "truncated"> & { raw_rows?: Record<string, unknown>[] }) {
   return {
     ...table,
+    raw_rows: table.raw_rows ?? table.rows,
     columns: table.columns.map((column) => table.rows.some((row) => row[column.name] !== null && typeof row[column.name] === "object") ? { ...column, type: "VARCHAR" } : column),
     rows: table.rows.map((row) => Object.fromEntries(Object.entries(row).map(([key, value]) => [key, value !== null && typeof value === "object" ? summary(value) : value]))),
   };

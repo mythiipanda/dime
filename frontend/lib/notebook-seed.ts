@@ -97,7 +97,8 @@ export function notebookFromAnswer(ai: AiMessage, question: string): NotebookDra
       const cached = cachedTable(table);
       return cached ? [{ title: capabilityLabel(text(table.tool)), data: readableSnapshot(cached) }] : [];
     });
-    const cited = cachedTable({ rows: tables.filter((table) => !Array.isArray(table.rows) && typeof table.output_id === "string" && Object.hasOwn(table, "value")).map((table) => {
+    const citations = tables.filter((table) => !Array.isArray(table.rows) && typeof table.output_id === "string" && Object.hasOwn(table, "value"));
+    const cited = cachedTable({ rows: citations.map((table) => {
       const provenance = record(table.provenance), meta = record(table.meta);
       const season = text(provenance.season, meta.season), capability = text(provenance.capability, table.capability, table.tool), name = text(provenance.table, table.table, meta.table);
       const asOf = text(provenance.fetched_at, provenance.as_of, provenance.observed_at, provenance.observed, table.fetched_at, table.as_of, table.observed_at, table.observed, meta.fetched_at, meta.as_of, meta.observed_at, meta.observed);
@@ -107,7 +108,7 @@ export function notebookFromAnswer(ai: AiMessage, question: string): NotebookDra
         ...(asOf ? { "As of": asOf } : {}),
       };
     }) });
-    if (cited?.rows.length) snapshots.push({ title: "Cited values", data: readableSnapshot(cited) });
+    if (cited?.rows.length) snapshots.push({ title: "Cited values", data: { ...readableSnapshot(cited), raw_rows: citations.slice(0, cited.rows.length) } });
     if (!queries.size && !snapshots.length) cells.push(cell("markdown", `${context}\n\nNo tables with recorded rows were attached to this answer.`, cells.length));
     snapshots.forEach((snapshot, index) => {
       if (cells.length >= 100) throw new Error("This answer has too many snapshot tables for one notebook.");
