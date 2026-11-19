@@ -13,6 +13,14 @@ STATEMENT_TIMEOUT_S = 30
 
 _READ_STMTS = (exp.Select, exp.Union, exp.Intersect, exp.Except)
 
+_SQL_OPERATORS = frozenset({
+    exp.And, exp.Or, exp.Xor, exp.Not, exp.Is, exp.In, exp.Between,
+    exp.Like, exp.ILike, exp.Case, exp.Exists,
+    exp.EQ, exp.NEQ, exp.GT, exp.GTE, exp.LT, exp.LTE,
+    exp.NullSafeEQ, exp.NullSafeNEQ,
+    exp.Add, exp.Sub, exp.Mul, exp.Div, exp.IntDiv, exp.Mod, exp.Pow, exp.Neg,
+})
+
 _SAFE_FUNCTIONS = frozenset("""
 case if coalesce nullif ifnull greatest least
 cast try_cast
@@ -215,6 +223,8 @@ def _check(sql: str, allowed: set[str]) -> str:
             raise ValueError("blocked: table functions are not allowed; "
                              "query the warehouse tables")
     for fn in tree.find_all(exp.Func):
+        if type(fn) in _SQL_OPERATORS:
+            continue
         fname = _func_name(fn)
         if fname not in _SAFE_FUNCTIONS:
             raise ValueError("blocked: function not allowed: " + fname)
