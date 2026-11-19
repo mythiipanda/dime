@@ -7,6 +7,10 @@ describe("workflow registry", () => {
     assert.equal(workflows.length, 6);
     assert.equal(new Set(workflows.map((w) => w.id)).size, 6);
   });
+  it("uses the correct article for vowel and consonant titles", () => {
+    assert.equal(workflows.find(w => w.id === "opponent-scouting")!.buildRequest({}).split("\n")[0], "Prepare an opponent scouting report.");
+    assert.equal(workflows.find(w => w.id === "lineup-audit")!.buildRequest({}).split("\n")[0], "Prepare a lineup audit.");
+  });
   for (const workflow of workflows) {
     it(`${workflow.title} builds a sourced request with ordered sections and all inputs`, () => {
       const values = Object.fromEntries(workflow.fields.map((f) => [f.id, f.options?.[0] || `value-${f.id}`]));

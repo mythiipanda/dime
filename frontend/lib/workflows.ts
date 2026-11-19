@@ -24,7 +24,7 @@ function defineWorkflow(spec: Omit<Workflow, "buildRequest">): Workflow {
   return {
     ...spec,
     buildRequest: (values) => [
-      `Prepare a ${spec.title.toLowerCase()}.`,
+      `Prepare ${/^[aeiou]/i.test(spec.title) ? "an" : "a"} ${spec.title.toLowerCase()}.`,
       ...spec.fields.flatMap((f) => values[f.id]?.trim() ? [`${f.label}: ${values[f.id].trim()}`] : []),
       "Use the 2025-26 season unless explicitly stated otherwise. Source all numbers from the warehouse and include citations. Explicitly state when data is missing instead of guessing.",
       "Return these deliverable sections in this order:",
