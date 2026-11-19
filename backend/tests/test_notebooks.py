@@ -273,6 +273,17 @@ def test_python_stdout_stderr_dataframe_and_statelessness(monkeypatch):
     assert python("print(x)").json()["ok"] is False
 
 
+def test_python_sql_infers_columns_after_null_leading_rows(monkeypatch):
+    monkeypatch.setenv("DIME_NOTEBOOK_PYTHON", "1")
+    result = python("sql('SELECT CASE WHEN player_id < 150 THEN NULL ELSE player_id END AS value FROM silver_player_season WHERE player_id <= 150 ORDER BY player_id')").json()
+    assert result["ok"], result
+    table = result["tables"][0]
+    assert table["columns"] == [{"name": "value", "type": "Int64"}]
+    assert table["row_count"] == 151
+    assert table["rows"][:150] == [{"value": None}] * 150
+    assert table["rows"][150] == {"value": 150}
+
+
 def test_python_show_dataframe_stdout_cap_and_table_cap(monkeypatch):
     monkeypatch.setenv("DIME_NOTEBOOK_PYTHON", "1")
     result = python("print('x' * 100000)\nshow(pl.DataFrame({'value': range(700)}))").json()

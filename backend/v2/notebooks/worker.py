@@ -60,7 +60,7 @@ def main():
                     rows = cursor.fetchmany(5001)
                 if len(rows) > 5000:
                     raise ValueError("Python sql() results are limited to 5000 rows; add a LIMIT")
-                return pl.DataFrame(rows, schema=columns, orient="row")
+                return pl.DataFrame(rows, schema=columns, orient="row", infer_schema_length=None)
 
             def show(obj):
                 if isinstance(obj, pl.DataFrame):
