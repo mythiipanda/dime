@@ -1,4 +1,3 @@
-"""Seed recent NBA transactions, contracts, and projections into a scratch warehouse."""
 
 import argparse
 import io
