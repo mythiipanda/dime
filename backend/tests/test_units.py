@@ -113,10 +113,25 @@ def test_apron_matching_rules():
         20_000_000, "100% (above the first apron)")
     assert _allowed_incoming(20_000_000, False) == (
         25_250_000, "125% plus $250k (below the first apron)")
+    assert _allowed_incoming(20_000_000, False, 13_330_652) == (
+        33_330_652, "cap space plus outgoing salary (under the cap)")
+    assert _allowed_incoming(20_000_000, False, 1_000_000) == (
+        25_250_000, "125% plus $250k (below the first apron)")
     over = _apron_state(CAP["apron2"] + 1)
     assert over["over_apron1"] and over["over_apron2"]
     under = _apron_state(0)
     assert not under["over_apron1"] and not under["over_apron2"]
+
+
+def test_outgoing_needed_inverts_matching():
+    from shared.tools.league import _allowed_incoming, _outgoing_needed
+
+    assert _outgoing_needed(19_512_195, True) == 19_512_195
+    need = _outgoing_needed(34_206_898, False)
+    assert _allowed_incoming(need, False)[0] >= 34_206_898
+    assert _allowed_incoming(need - 1, False)[0] < 34_206_898
+    assert _outgoing_needed(10_000_000, False, 13_000_000) == 0
+
 
 def test_pair_history_slim_both_on():
     from shared.tools.player import pair_history

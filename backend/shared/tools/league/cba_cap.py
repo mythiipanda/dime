@@ -284,10 +284,21 @@ def _apron_state(payroll: int) -> dict[str, object]:
     }
 
 
-def _allowed_incoming(outgoing: int, over_apron1: bool) -> tuple[int, str]:
+def _allowed_incoming(outgoing: int, over_apron1: bool,
+                      cap_room: int = 0) -> tuple[int, str]:
     if over_apron1:
         return outgoing, "100% (above the first apron)"
-    return int(outgoing * 1.25 + 250_000), "125% plus $250k (below the first apron)"
+    matched = int(outgoing * 1.25 + 250_000)
+    if outgoing + cap_room > matched:
+        return outgoing + cap_room, "cap space plus outgoing salary (under the cap)"
+    return matched, "125% plus $250k (below the first apron)"
+
+
+def _outgoing_needed(incoming: int, over_apron1: bool,
+                     cap_room: int = 0) -> int:
+    if over_apron1:
+        return incoming
+    return max(0, min(-(-(incoming - 250_000) * 4 // 5), incoming - max(cap_room, 0)))
 
 
 def _salary_vintage(con: object = None) -> tuple[str, int, str | None]:
