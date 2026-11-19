@@ -48,6 +48,14 @@ test("charts preserve observation positions when values or labels are missing", 
   assert.match(artifactToCopyText(chart), /Player,10,,30/);
 });
 
+test("numeric chart years and game zero retain labels in the view and CSV", () => {
+  const [chart] = asResolvedArtifacts([{ kind: "chart", title: "Years", xLabels: [2024, null, 2026, 0], series: [{ name: "Player", values: [10, null, 30, 0] }] }]);
+  assert.equal(chart.kind, "chart");
+  if (chart.kind !== "chart") return;
+  assert.deepEqual(chart.xLabels, ["2024", "", "2026", "0"]);
+  assert.match(artifactToCopyText(chart), /,2024,,2026,0/);
+});
+
 test("final submission restores catalog artifacts without duplicating streamed ones", () => {
   const stream = new DimeStream();
   stream.handle("custom_data", { artifacts: generativeFixtures });

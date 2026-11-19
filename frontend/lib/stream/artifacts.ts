@@ -63,7 +63,7 @@ function resolveChart(
   if (series.length === 0) return null;
   const unit = typeof entry.unit === "string" ? entry.unit : undefined;
   const xLabels = Array.isArray(entry.xLabels)
-    ? entry.xLabels.map((lbl) => typeof lbl === "string" ? lbl : "")
+    ? entry.xLabels.map((lbl) => typeof lbl === "string" || finiteNumber(lbl) !== undefined ? String(lbl) : "")
     : undefined;
   const footnote =
     typeof entry.footnote === "string" && entry.footnote ? entry.footnote : undefined;
