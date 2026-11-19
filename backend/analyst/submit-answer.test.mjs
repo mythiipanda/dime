@@ -714,6 +714,135 @@ test("validateAnswerSubmission permits omitted anchors and normalizes shot_chart
   assert.equal(validated.artifacts[0].zones[1].pct, 42.5);
 });
 
+test("validateAnswerSubmission accepts valid typed artifacts for every known kind", () => {
+  const artifacts = [
+    {
+      kind: "table",
+      title: "Top scorers",
+      columns: [
+        { key: "player", label: "Player" },
+        { key: "ppg", label: "PPG", numeric: true },
+        { key: "gp", label: "GP", numeric: true },
+      ],
+      rows: [
+        { player: "Player One", ppg: 30.1, gp: 72 },
+        { player: "Player Two", ppg: null, gp: 68 },
+      ],
+    },
+    {
+      kind: "table",
+      title: "Array rows",
+      columns: [
+        { key: "player", label: "Player" },
+        { key: "ppg", label: "PPG", numeric: true },
+      ],
+      rows: [["Player One", 30.1], ["Player Two", ""]],
+    },
+    {
+      kind: "compare",
+      title: "Head to head",
+      aName: "Player One",
+      bName: "Player Two",
+      rows: [
+        { label: "Points per game", a: 30.1, b: 27.4 },
+        { label: "True shooting", a: 61.2, b: 59.8 },
+      ],
+    },
+    {
+      kind: "chart",
+      title: "Scoring trend",
+      unit: "PPG",
+      xLabels: ["G1-5", "G6-10"],
+      series: [
+        { name: "Player One", values: [31.2, null], tone: "accent" },
+        { name: "Baseline", values: [33.9, 33.9], tone: "muted" },
+      ],
+      footnote: "Fixture values.",
+    },
+    {
+      kind: "shot_chart",
+      title: "Shot diet",
+      zones: [
+        { x: 0, y: 0, att: 380, pct: 0.684 },
+        { x: 22, y: 5, att: 40, pct: 0.395 },
+      ],
+      footnote: "Fixture zones.",
+    },
+    {
+      kind: "scatter",
+      title: "Usage vs efficiency",
+      xLabel: "Usage rate",
+      yLabel: "True shooting",
+      xMid: 20,
+      yMid: 57.5,
+      points: [
+        { label: "Player One", x: 29.5, y: 66.8, highlight: true },
+        { label: "League average", x: 20, y: 57.5 },
+      ],
+    },
+  ];
+  const validated = validateAnswerSubmission({ blocks: [{ text: "Fixture answer." }], artifacts }, () => undefined);
+  assert.equal(validated.artifacts.length, artifacts.length);
+  assert.deepEqual(validated.artifacts[0], artifacts[0]);
+  assert.deepEqual(validated.artifacts[1], artifacts[1]);
+  assert.deepEqual(validated.artifacts[2], artifacts[2]);
+  assert.deepEqual(validated.artifacts[3], artifacts[3]);
+  assert.equal(validated.artifacts[4].zones[0].pct, 68.4);
+  assert.equal(validated.artifacts[4].zones[1].pct, 39.5);
+  assert.deepEqual(validated.artifacts[5], artifacts[5]);
+});
+
+test("validateAnswerSubmission rejects malformed typed artifacts with actionable errors", () => {
+  const cases = [
+    [{ kind: "table", title: "Bad", rows: [] }, /Invalid table artifact at artifacts\[0\].*\/rows: must not have fewer than 1 items/i],
+    [{ kind: "table", title: "Bad", columns: [], rows: [{}] }, /Invalid table artifact.*\/columns: must not have fewer than 1 items/i],
+    [{ kind: "table", title: "Bad", columns: [{ key: "player", label: "Player" }], rows: [{ other: "x" }] }, /missing column 'player'/],
+    [{ kind: "table", title: "Bad", columns: [{ key: "ppg", label: "PPG" }], rows: [[1, 2]] }, /expected 1 cell\(s\)/],
+    [{ kind: "table", title: "Bad", columns: [{ key: "ppg", label: "PPG" }], rows: [[{}]] }, /string, number or null/],
+    [{ kind: "table", title: "Bad", columns: [{ key: "ppg", label: "PPG" }], rows: [{ ppg: {} }], footnote: "x" }, /must not have additional properties|additional propert/i],
+    [{ kind: "compare", title: "Bad", aName: "A", bName: "B", rows: [] }, /Invalid compare artifact/],
+    [{ kind: "compare", title: "Bad", aName: "A", bName: "B", rows: [{ label: "PPG", a: "30", b: 27 }] }, /\/rows\/0\/a: must be number/i],
+    [{ kind: "chart", title: "Bad", series: [] }, /Invalid chart artifact.*\/series: must not have fewer than 1 items/i],
+    [{ kind: "chart", title: "Bad", series: [{ name: "A", values: [] }] }, /\/series\/0\/values: must not have fewer than 1 items/i],
+    [{ kind: "chart", title: "Bad", series: [{ name: "A", values: [null] }] }, /every series value is null/],
+    [{ kind: "chart", title: "Bad", series: [{ name: "A", values: [1], tone: "neon" }] }, /\/series\/0\/tone/i],
+    [{ kind: "shot_chart", title: "Bad", zones: [] }, /Invalid shot_chart artifact.*\/zones: must not have fewer than 1 items/i],
+    [{ kind: "shot_chart", title: "Bad", zones: [{ x: 0, y: 0, att: 10 }] }, /\/zones\/0: must have required properties pct/i],
+    [{ kind: "shot_chart", title: "Bad", zones: [{ x: 0, y: 0, att: -3, pct: 50 }] }, /\/zones\/0\/att: must be >= 0/i],
+    [{ kind: "scatter", title: "Bad", xLabel: "USG", yLabel: "TS", points: [] }, /Invalid scatter artifact.*\/points: must not have fewer than 1 items/i],
+    [{ kind: "scatter", title: "Bad", xLabel: "USG", yLabel: "TS", points: [{ label: "A", y: 60 }] }, /\/points\/0: must have required properties x/i],
+    [{ kind: "scatter", title: "Bad", xLabel: "USG", yLabel: "TS", xMid: "20", points: [{ label: "A", x: 1, y: 2 }] }, /\/xMid: must be number/i],
+  ];
+  for (const [artifact, pattern] of cases) {
+    assert.throws(
+      () => validateAnswerSubmission({ blocks: [{ text: "Fixture" }], artifacts: [artifact] }, () => undefined),
+      error => {
+        assert.match(error.message, pattern);
+        assert.match(error.message, /visual-artifacts skill/);
+        return true;
+      },
+      `expected rejection for ${JSON.stringify(artifact)}`
+    );
+  }
+  assert.throws(
+    () => validateAnswerSubmission({
+      blocks: [{ text: "ok" }, { text: "never reached" }],
+      artifacts: [
+        { kind: "future_kind", title: "Future", payload: { nested: true } },
+        { kind: "compare", title: "Bad", aName: "A", bName: "B", rows: [{ label: "X", a: 1 }] },
+      ],
+    }, () => undefined),
+    /Invalid compare artifact at artifacts\[1\]/
+  );
+});
+
+test("validateAnswerSubmission preserves unknown artifact kinds and artifacts without a kind", () => {
+  const unknown = { kind: "future_viz", title: "Future", spec: { anything: [1, 2, 3] } };
+  const untyped = { title: "No kind", data: "opaque" };
+  const validated = validateAnswerSubmission({ blocks: [{ text: "Fixture" }], artifacts: [unknown, untyped] }, () => undefined);
+  assert.deepEqual(validated.artifacts, [unknown, untyped]);
+});
+
 function playerCardInput(overrides = {}) {
   return { kind: "player_card", title: "Player snapshot", ref: "card-source", row: 0, nameColumn: "player", teamColumn: "team",
     metrics: [{ column: "pts", label: "Points" }, { column: "missed", label: "Missed" }, { column: "impact", label: "Impact" }], ...overrides };
