@@ -1,3 +1,4 @@
+import "./test-dom";
 import { it } from "node:test";
 import assert from "node:assert/strict";
 import { JSDOM } from "jsdom";
@@ -54,6 +55,9 @@ it("fills a workflow, previews its request and runs only when complete", async (
   const gx = globalThis as unknown as Record<string, unknown>;
   gx.window = dom.window;
   gx.document = dom.window.document;
+  gx.HTMLElement = dom.window.HTMLElement;
+  gx.Element = dom.window.Element;
+  gx.Node = dom.window.Node;
   gx.IS_REACT_ACT_ENVIRONMENT = true;
   const host = dom.window.document.getElementById("root")!;
   const root = createRoot(host);
@@ -274,7 +278,8 @@ for (const mode of ["available", "empty", "error", "retry", "leave-return"]) it(
     await act(async () => root.render(<StrictMode><DimeShell /></StrictMode>));
     assert.equal(requests.length, mode === "available" ? 1 : 0);
     await act(async () => host.querySelector<HTMLButtonElement>('[aria-label="Open command palette"]')!.click());
-    assert.match(host.querySelector('[role="dialog"]')!.textContent!, /Workflows/);
+    assert.match(dom.window.document.querySelector('[role="dialog"]')!.textContent!, /Workflows/);
+    await act(async () => dom.window.document.querySelector<HTMLButtonElement>('[aria-label="Close command palette"]')!.click());
     if (mode === "retry") {
       modelsFail = false;
       await act(async () => [...host.querySelectorAll("button")].find(button => button.textContent?.includes("Models unavailable"))!.click());
