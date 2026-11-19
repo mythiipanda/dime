@@ -75,13 +75,22 @@ Recorded payroll is not a certified complete cap ledger. Contract terms use
 `silver_cap_players`, whose salaries can differ from the preferred payroll sheet.
 
 Cap constants are imported from `shared.tools.league.CAP` and cited to that
-helper. A simplified rule implementation already exists in `get_trade_check`:
-the packet reuses `_allowed_incoming` and `_apron_state` for its salary band,
-and reports the same second-apron aggregation restriction. This is a snapshot
-check using 2026-27 salaries, not legality for the production season, and omits
-the same exceptions/other CBA rules. No call to the fuzzy/live-capable trade-value
-tool is made. Source citations retain replayable warehouse SQL; constant
-citations contain a parameterized SELECT of the imported values and code origin.
+helper. Legality calls the public `shared.tools.get_trade_check` directly with
+the salary vintage; no matching, cap-absorption or aggregation math lives in
+the packet. Per-team outcomes attribute the checker's reported issues; the
+overall verdict, applied rule, allowed/actual incoming and apron flags come
+from its response. The "Not modeled" warning lists only unchecked rules in
+that response. Failed checker inputs leave the verdict null, with a Callout.
+No call to the trade-value tool is made. Source citations retain replayable
+warehouse SQL; checker citations record arguments and the complete returned
+response, with a parameterized SELECT replaying that response and supporting
+citations pointing to source tables and thresholds. This is not fresh execution
+of the checker when the citation SQL is replayed.
+
+The current `main` checker lacks the absorption and contract-schedule changes
+merged into `dev` by PRs #116/#118. The packet delegates to the implementation
+on its branch rather than copying those rules or inventing missing schedules.
+The absorption adapter test verifies response passthrough, not CBA correctness.
 
 Production rates are weighted by GP × MPG, an estimate based on rounded rates;
 games are summed. These are weighted rates, not additive projected production.

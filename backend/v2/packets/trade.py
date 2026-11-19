@@ -1,5 +1,6 @@
 from collections import Counter
 from datetime import UTC, datetime
+import json
 from uuid import uuid4
 
 import duckdb
@@ -7,7 +8,8 @@ from fastapi import HTTPException
 from nba_api.stats.static import teams
 
 from shared.sources.salaries import TEAM_ABBR
-from shared.tools.league import CAP, _allowed_incoming, _apron_state, _payroll, _payroll_source
+from shared.tools import get_trade_check
+from shared.tools.league import CAP, _payroll, _payroll_source
 from v2.boards.service import _name
 from .deep_dive import ADV, BASE, Data, number, table, unique, unavailable
 from .models import Callout, Citation, Kpi, Kpis, Packet, Section, Text, format_value
@@ -107,6 +109,54 @@ def payroll(data, snapshot, cites, team):
     return None, [], None
 
 
+def checker_blocks(data, ta, tb, sides, ledgers, outgoing, source_cites):
+    arguments = {"team_a":ta,"team_b":tb,"season":SALARY_SEASON}
+    for team,key in ((ta,"players_a"),(tb,"players_b")):
+        roster = ledgers[team][1]
+        arguments[key] = ", ".join(next((r["player"] for r in roster if _name(r["player"]) == _name(p["PLAYER"])),p["PLAYER"]) for p in sides[team])
+    if any(ledgers[t][0] is None or outgoing[t] is None for t in (ta,tb)):
+        result = {"ok":False,"error":"Missing or ambiguous payroll/player salaries; checker verdict unavailable."}
+    else:
+        try:
+            result = get_trade_check.invoke(arguments)
+        except duckdb.Error:
+            result = {"ok":False,"error":"Trade checker could not read its required warehouse inputs."}
+    cid = f"c{len(data.citations)+1}"
+    data.citations[cid] = Citation(source_table="shared.tools.get_trade_check",table="shared.tools.get_trade_check",
+        columns=["rows","meta"],season=SALARY_SEASON,sql="SELECT CAST(? AS JSON) AS checker_result LIMIT ?",
+        params=[json.dumps(result,default=str),1],row_key={"checker":"shared.tools.get_trade_check","arguments":arguments},
+        source=result.get("meta",{}).get("source"),salary_vintage={"season":SALARY_SEASON,"fetched_at":result.get("rows",{}).get("salary_date")},
+        supporting_cites=list(dict.fromkeys(c for c in source_cites if c)),
+        transformation="Recorded direct get_trade_check result, not recomputed matching math; SQL replays this recorded result; supporting citations describe warehouse inputs.")
+    payload = result.get("rows",{}) if result.get("ok") else {}
+    issues = payload.get("issues",[])
+    rows = []
+    for key,team,other_key in (("team_a",ta,"team_b"),("team_b",tb,"team_a")):
+        side = payload.get(key,{})
+        reasons = [reason for reason in issues if str(reason).startswith(team+" ") or not any(str(reason).startswith(t+" ") for t in (ta,tb))]
+        valid = bool(payload) and side.get("team") == team
+        rows.append({"team":team,"verdict":side.get("legal",not reasons) if valid else None,
+            "deal_legal":payload.get("legal") if valid else None,
+            "rule":side.get("match_rule"),"allowed_incoming":side.get("allowed_in"),
+            "incoming":payload.get(other_key,{}).get("out"),"outgoing_needed":side.get("outgoing_needed"),
+            "over_apron1":side.get("over_apron1"),"over_apron2":side.get("over_apron2"),
+            "reasons":"; ".join(reasons) if valid else result.get("error","Checker returned different team attribution."),
+            "null_reason":None if valid else "checker_verdict_unavailable"})
+    specs = [("team","Team",None),("verdict","Passes reported checks",None),("deal_legal","Checker deal verdict",None),
+        ("rule","Rule applied",None),("allowed_incoming","Allowed incoming","usd"),("incoming","Actual incoming","usd"),
+        ("outgoing_needed","Outgoing needed","usd"),("over_apron1","Above first apron",None),("over_apron2","Above second apron",None),("reasons","Checker reasons",None)]
+    blocks = [table(rows,specs,{"*":cid},"Direct get_trade_check result for the 2026-27 salary vintage; team outcomes are attributed from the checker's reported issues.","Trade checker verdict")]
+    checks = payload.get("checks",[])
+    if checks:
+        blocks.append(table(checks,[("rule","Check",None),("checked","Evaluated",None),("note","Checker note",None)],{"*":cid},title="Checker rule coverage"))
+        not_modeled = [str(c["rule"]) for c in checks if c.get("checked") is False]
+        if not_modeled:
+            blocks.append(Callout(tone="warn",md="Not modeled by the checker: "+"; ".join(not_modeled)+f". [^{cid}]"))
+    if not payload or any(r["null_reason"] for r in rows):
+        blocks.append(unavailable(data,result.get("error","Checker attribution differs from the validated trade; no verdict is asserted.")))
+    return blocks
+
+
 def build_trade(con, team_a, team_b, a_sends, b_sends, season, notes=None):
     ta, tb = resolve_team(team_a), resolve_team(team_b)
     if ta == tb:
@@ -139,7 +189,7 @@ def build_trade(con, team_a, team_b, a_sends, b_sends, season, notes=None):
             wage_cites[row["PLAYER_ID"]] = cid
     outgoing = {t:complete_sum([wages[r["PLAYER_ID"]] for r in rows]) for t,rows in sides.items()}
     deal_blocks = []
-    cap_rows, match_rows, cap_cites = [], [], {}
+    cap_rows, cap_cites = [], {}
     threshold_cite = f"c{len(d.citations)+1}"
     d.citations[threshold_cite] = Citation(source_table="backend/shared/tools/league.py::CAP",table="backend/shared/tools/league.py::CAP",
         columns=list(CAP),season=SALARY_SEASON,sql='SELECT ? AS cap, ? AS tax, ? AS apron1, ? AS apron2 LIMIT ?',
@@ -150,7 +200,7 @@ def build_trade(con, team_a, team_b, a_sends, b_sends, season, notes=None):
         before, _, pc = ledgers[team]
         inputs = [pc,ledgers[other][2]]
         cid = d.derived(pc or ledgers[other][2],inputs+[threshold_cite],
-                        "2026-27 recorded payroll via shared.tools.league._payroll; after=before-outgoing+incoming; thresholds use CAP and salary band uses _apron_state/_allowed_incoming.")
+                        "2026-27 recorded payroll via shared.tools.league._payroll; after=before-outgoing+incoming; thresholds use CAP. Legality is delegated separately to get_trade_check.")
         change = incoming-out if incoming is not None and out is not None else None
         after = before+change if before is not None and change is not None else None
         deal_blocks.append(Kpis(items=[kpi(f"{team} outgoing salary",out,"usd",cid,context=SALARY_SEASON),
@@ -162,11 +212,6 @@ def build_trade(con, team_a, team_b, a_sends, b_sends, season, notes=None):
             cap_rows.append({"team":team,"position":label,"payroll":value,**CAP,
                 **{f"room_{key}":threshold-value if value is not None else None for key,threshold in CAP.items()},
                 "null_reason":None if value is not None else "incomplete_payroll_or_trade_salaries"})
-        allowed, rule = _allowed_incoming(out,bool(_apron_state(before)["over_apron1"])) if out is not None and before is not None else (None,"Incomplete salaries")
-        match_rows.append({"team":team,"outgoing":out,"incoming":incoming,"allowed_incoming":allowed,"rule":rule,
-            "within_salary_band":incoming <= allowed if incoming is not None and allowed is not None else None,
-            "aggregation_blocked":bool(_apron_state(before)["over_apron2"]) and len(sides[team])>1 if before is not None else None,
-            "null_reason":None if incoming is not None and allowed is not None else "incomplete_payroll_or_trade_salaries"})
     deal = Section(id="deal_summary",title="Deal summary",blocks=deal_blocks)
     movements = [f"{r['PLAYER']} to {dest}" for origin,dest in ((ta,tb),(tb,ta)) for r in sides[origin]]
     if bc:
@@ -178,11 +223,9 @@ def build_trade(con, team_a, team_b, a_sends, b_sends, season, notes=None):
     cap_specs = [("team","Team",None),("position","Position",None),("payroll","Recorded payroll","usd")]
     for key,label in (("cap","Cap"),("tax","Tax"),("apron1","First apron"),("apron2","Second apron")):
         cap_specs += [(key,label,"usd"),(f"room_{key}",f"Room below {label.lower()}","usd")]
-    cap = Section(id="cap_position",title="Cap position",summary=f"Cap comparisons use recorded {SALARY_SEASON} payroll and repository thresholds, not {season} cap legality [^{threshold_cite}].",blocks=[
+    cap = Section(id="cap_position",title="Cap position and legality",summary=f"Cap comparisons and the trade checker use the {SALARY_SEASON} salary vintage, separate from {season} production [^{threshold_cite}].",blocks=[
         table(cap_rows,cap_specs,cap_cites,f"{SALARY_SEASON}; {source}; payroll is a recorded roster sum, not a certified cap ledger.","Payroll and thresholds"),
-        table(match_rows,[("team","Team",None),("outgoing","Outgoing","usd"),("incoming","Incoming","usd"),("allowed_incoming","Allowed incoming","usd"),("rule","Existing simplified rule",None),("within_salary_band","Within salary band",None),("aggregation_blocked","Second-apron aggregation blocked",None)],{str(i):cap_cites[str(i*2)] for i in range(2)},
-              "Reuses _allowed_incoming/_apron_state and get_trade_check aggregation logic; 2026-27 salary snapshot only, not a legality verdict.","Simplified salary-matching check"),
-        Callout(tone="warn",md="Existing trade rules are simplified: cash, exceptions, hard caps, Stepien/frozen picks, base-year, trade kickers, minimum salaries and sign-and-trades are not evaluated; consult a cap specialist.")])
+        *checker_blocks(d,ta,tb,sides,ledgers,outgoing,[*salary_cites.values(),bc,threshold_cite])])
     if any(r["payroll"] is None for r in cap_rows):
         cap.blocks.append(unavailable(d,"Incomplete payroll or player salaries; affected cap math is null, never zero-filled."))
 

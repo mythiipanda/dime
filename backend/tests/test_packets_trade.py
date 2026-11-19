@@ -1,5 +1,6 @@
 from pathlib import Path
 import sys
+from types import SimpleNamespace
 
 import duckdb
 import pytest
@@ -8,7 +9,8 @@ from fastapi.testclient import TestClient
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
 
 from shared import store
-from shared.tools.league import CAP, _allowed_incoming, _apron_state
+from shared.tools import get_trade_check
+from shared.tools.league import CAP
 from v2.main import app
 from v2.packets.models import Packet
 from v2.packets import trade
@@ -65,6 +67,8 @@ def test_real_trade_kpis_payroll_production_rotation_and_citations(real):
     response=post(notes="Offer includes a user-provided 2030 first-round pick; unvalued.")
     assert response.status_code==200,response.text
     packet=Packet.model_validate(response.json())
+    checker=get_trade_check.invoke({"team_a":"OKC","team_b":"LAL","players_a":"Shai Gilgeous-Alexander","players_b":"Luka Doncic","season":"2026-27"})
+    assert checker["ok"],checker
     assert packet.kind=="trade_evaluation" and len(packet.sections)==5
     assert Packet.model_validate_json(packet.model_dump_json())==packet
     values={i.label:i.value for b in section(packet,"deal_summary").blocks if b.type=="kpis" for i in b.items}
@@ -85,7 +89,10 @@ def test_real_trade_kpis_payroll_production_rotation_and_citations(real):
             for key,threshold in CAP.items():
                 assert after[key]==threshold and after[f"room_{key}"]==threshold-after["payroll"]
             matching=next(r for r in section(packet,"cap_position").blocks[1].rows if r["team"]==team)
-            assert matching["allowed_incoming"]==_allowed_incoming(outgoing,_apron_state(before)["over_apron1"])[0]
+            side=checker["rows"]["team_a" if team=="OKC" else "team_b"]
+            assert matching["allowed_incoming"]==side["allowed_in"]
+            assert matching["rule"]==side["match_rule"]
+            assert matching["deal_legal"]==checker["rows"]["legal"]
         sga_row=section(packet,"production_exchanged").blocks[0].rows[0]
         ppg,gp,mpg=con.execute("SELECT PPG,GP,MPG FROM silver_player_season WHERE PLAYER_ID=? AND _season=?",[1628983,"2025-26"]).fetchone()
         ts=con.execute("SELECT TS_PCT FROM silver_advanced WHERE PLAYER_ID=? AND _season=?",[1628983,"2025-26"]).fetchone()[0]
@@ -223,3 +230,52 @@ def test_real_rotation_accepts_bref_pho_game_logs(real):
     assert rotation["season_minutes"]==total
     assert rotation["outgoing_minutes"]==outgoing
     assert rotation["outgoing_share"]==pytest.approx(100*outgoing/total)
+
+
+@pytest.mark.parametrize("apron",[False,True])
+def test_packet_verdict_equals_public_checker(minimal,apron):
+    with duckdb.connect(str(minimal)) as con:
+        if apron:
+            con.execute("UPDATE silver_cap_players SET salary=200000000 WHERE player='Alpha Wing'")
+        con.execute('''CREATE TABLE silver_salaries AS SELECT player AS PLAYER_NAME, team AS TEAM,
+            salary AS SALARY_2025_26, _source, _season, _fetched_at, _entity FROM silver_cap_players''')
+    sends=[1,3] if apron else [1]
+    players="Alpha Guard, Alpha Wing" if apron else "Alpha Guard"
+    expected=get_trade_check.invoke({"team_a":"OKC","team_b":"LAL","players_a":players,"players_b":"Luka Doncic","season":"2026-27"})
+    assert expected["ok"],expected
+    response=fixture_post(a_sends=sends)
+    assert response.status_code==200,response.text
+    packet=Packet.model_validate(response.json())
+    cap=section(packet,"cap_position")
+    rows=cap.blocks[1].rows
+    for row,key,other in zip(rows,("team_a","team_b"),("team_b","team_a")):
+        side=expected["rows"][key]
+        assert row["deal_legal"]==expected["rows"]["legal"]
+        assert row["allowed_incoming"]==side["allowed_in"]
+        assert row["incoming"]==expected["rows"][other]["out"]
+        assert row["rule"]==side["match_rule"]
+        for issue in expected["rows"]["issues"]:
+            if issue.startswith(row["team"]+" "):
+                assert issue in row["reasons"] and row["verdict"] is False
+    assert rows[0]["over_apron2"] is apron
+    if apron:
+        assert "cannot aggregate" in rows[0]["reasons"]
+    unchecked=[c["rule"] for c in expected["rows"]["checks"] if not c["checked"]]
+    warning=next(b.md for b in cap.blocks if b.type=="callout" and b.md.startswith("Not modeled"))
+    assert all(rule in warning for rule in unchecked)
+
+
+def test_checker_absorption_response_is_not_recomputed(minimal,monkeypatch):
+    calls=[]
+    def invoke(arguments):
+        calls.append(arguments)
+        return {"ok":True,"rows":{"team_a":{"team":"OKC","out":40000000,"allowed_in":115250000,"match_rule":"cap room plus outgoing salary plus $250k (under the cap)"},
+            "team_b":{"team":"LAL","out":50000000,"allowed_in":125250000,"match_rule":"cap room plus outgoing salary plus $250k (under the cap)"},
+            "legal":True,"issues":[],"checks":[]},"meta":{"source":"injected checker response"}}
+    monkeypatch.setattr(trade,"get_trade_check",SimpleNamespace(invoke=invoke))
+    response=fixture_post()
+    assert response.status_code==200,response.text
+    rows=section(Packet.model_validate(response.json()),"cap_position").blocks[1].rows
+    assert calls==[{"team_a":"OKC","team_b":"LAL","season":"2026-27","players_a":"Alpha Guard","players_b":"Luka Doncic"}]
+    assert rows[0]["allowed_incoming"]==115250000
+    assert rows[0]["verdict"] and "under the cap" in rows[0]["rule"]
