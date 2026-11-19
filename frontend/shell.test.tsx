@@ -95,7 +95,7 @@ it("keeps old URL values and defines the requested navigation", () => {
   assert.equal(parseShellTab("unknown"), "chat");
 });
 
-it("navigates boards, searches real threads, and dispatches workflows to a new chat", async () => {
+for (const catalog of ["available", "unconfigured", "empty", "error"] as const) it(`dispatches workflows to a new chat with an ${catalog} model catalog`, async () => {
   const dom = new JSDOM("<!doctype html><html><body><div id='root'></div></body></html>", { url: "http://localhost/?tab=boards&thread=t-existing" });
   const gx = globalThis as unknown as Record<string, unknown>;
   Object.assign(gx, { window: dom.window, document: dom.window.document, HTMLElement: dom.window.HTMLElement, Element: dom.window.Element, Node: dom.window.Node, DocumentFragment: dom.window.DocumentFragment, localStorage: dom.window.localStorage, sessionStorage: dom.window.sessionStorage, IS_REACT_ACT_ENVIRONMENT: true });
@@ -106,8 +106,12 @@ it("navigates boards, searches real threads, and dispatches workflows to a new c
   const modelGate = new Promise<void>((resolve) => { releaseModels = resolve; });
   globalThis.fetch = async (url, init) => {
     if (String(url).includes("/chat/stream")) { requests.push(JSON.parse(String(init?.body))); return new Response("unavailable", { status: 503 }); }
-    if (String(url).includes("/models")) await modelGate;
-    return Response.json(String(url).includes("/models") ? { models: [{ id: "test", default: true }] } : { threads: [{ id: "t-existing", title: "Denver rotation", updated: "2026-01-01", turns: 1 }], runs: [] });
+    if (String(url).includes("/models")) {
+      await modelGate;
+      if (catalog === "error") return new Response("unavailable", { status: 503 });
+      return Response.json({ models: catalog === "empty" ? [] : [{ id: "test", default: true, available: catalog === "available" }] });
+    }
+    return Response.json({ threads: [{ id: "t-existing", title: "Denver rotation", updated: "2026-01-01", turns: 1 }], runs: [] });
   };
   const host = dom.window.document.getElementById("root")!;
   const root = createRoot(host);
@@ -125,17 +129,31 @@ it("navigates boards, searches real threads, and dispatches workflows to a new c
     assert.equal(requests.length, 0);
     await act(async () => releaseModels());
     await act(async () => { await new Promise((r) => setTimeout(r, 60)); });
-    assert.equal(requests.length, 1);
-    assert.match(requests[0].q, /OKC/);
-    assert.match(requests[0].q, /DEN/);
-    assert.notEqual(requests[0].thread, "t-existing");
-    assert.equal(new URL(dom.window.location.href).searchParams.get("thread"), requests[0].thread);
+    if (catalog === "available") {
+      assert.equal(requests.length, 1);
+      assert.match(requests[0].q, /OKC/);
+      assert.match(requests[0].q, /DEN/);
+      assert.equal(new URL(dom.window.location.href).searchParams.get("thread"), requests[0].thread);
+      assert.match(host.textContent!, /Chat failed with status 503/);
+      assert.doesNotMatch(host.textContent!, /No model configured/);
+    } else {
+      assert.equal(requests.length, 0);
+      const composer = host.querySelector<HTMLTextAreaElement>('textarea[aria-label="Message Dime"]')!;
+      assert.match(composer.value, /OKC/);
+      assert.match(composer.value, /DEN/);
+      assert.match(composer.value, /warehouse/);
+      assert.match(host.querySelector('[role="status"]')!.textContent!, /No model configured — add a provider key to run this workflow/);
+      assert.equal(host.querySelector<HTMLButtonElement>('[aria-label="Send message"]')!.disabled, true);
+      assert.equal(host.querySelector(".user-turn"), null);
+    }
+    assert.notEqual(new URL(dom.window.location.href).searchParams.get("thread"), "t-existing");
     assert.equal(new URL(dom.window.location.href).searchParams.get("tab"), "chat");
-    assert.match(host.textContent!, /Chat failed with status 503/);
     await act(async () => host.querySelector<HTMLButtonElement>('[aria-label="Collapse sidebar"]')!.click());
     assert.ok(host.querySelector(".is-collapsed"));
     await act(async () => host.querySelector<HTMLButtonElement>('[aria-label="Expand sidebar"]')!.click());
     assert.equal(host.querySelector(".is-collapsed"), null);
+    await act(async () => { await new Promise((r) => setTimeout(r, 30)); });
+    assert.equal(requests.length, catalog === "available" ? 1 : 0);
   } finally {
     await act(async () => root.unmount());
     globalThis.fetch = originalFetch;
