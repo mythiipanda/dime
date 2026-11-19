@@ -126,7 +126,7 @@ export default function DiagnosticsPage() {
 
   const run = async () => {
     const question = q.trim();
-    if (!question || running || !v2) return;
+    if (!question || running) return;
     abort.current?.abort();
     abort.current = new AbortController();
     setEvents([]);
@@ -195,7 +195,7 @@ export default function DiagnosticsPage() {
               placeholder="Ask the question to probe"
               aria-label="Probe question"
             />
-            <button className="pill-cta" onClick={run} disabled={running || !v2 || !q.trim()}>
+            <button className="pill-cta" onClick={run} disabled={running || !q.trim()}>
               {running ? "Running..." : "Run probe"}
             </button>
           </div>
