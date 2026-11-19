@@ -1,6 +1,6 @@
 ---
 name: visual-artifacts
-description: Select grounded generative answer components from Dime's bounded catalog (player_card, scatter, shot_chart, compare, table, chart).
+description: Select grounded generative answer components from Dime's bounded catalog (player_card, scatter, shot_chart, compare, table, chart, memo).
 ---
 
 # Dime Visual Artifacts & Multimodal Output Guide
@@ -17,6 +17,7 @@ Dime empowers analysts to generate rich, interactive visual artifacts directly r
 | **Head-to-Head Showdowns** (2 players or 2 teams) | `compare` | Visual bars comparing normalized metrics between entity `a` and entity `b`. |
 | **Rankings, Rosters, Ledgers, Multi-Metric Lists** | `table` | Sortable columns with typed numeric formatting, source citation headers, CSV export. |
 | **Time-Series, Trajectories, Multi-Game Trends** | `chart` | Line/bar series over ordered games, months, or seasons with `unit`, `xLabels`, and semantic `tone`. |
+| **Executive Briefings, GM/Owner Deliverables, Multi-Section Reports** | `memo` | Titled document with headed `sections`, per-section citation `anchors`, and markdown export. |
 
 ---
 
@@ -141,6 +142,31 @@ grounding in the prose: unlike player-card values, they are not source-resolved.
   footnote: "Source: silver_shotchart. Field goal percentages vs volume."
 }
 ```
+
+### `memo`
+```typescript
+{
+  kind: "memo",
+  title: "2026-27 Cap & Roster Strategy — Orlando Magic",
+  subtitle: "Owner briefing",
+  sections: [
+    {
+      heading: "Cap position",
+      body: "Orlando sits $3.2M under the first apron with a locked multi-year core...",
+      anchors: [{ ref: "actual-ref-from-query", row: 0, columns: ["team", "payroll"] }]
+    },
+    { heading: "Trade options", body: "The flexible path is aggregating mid-tier salary..." }
+  ],
+  footnote: "Sources: silver_salaries, silver_rapm."
+}
+```
+
+Use `memo` when the deliverable is a document — an executive memo, owner
+briefing, scenario playbook or strategy report — not a single visual. Each
+`sections[].body` is markdown-style prose. `anchors` on a section cite source
+rows exactly like block anchors and are validated the same way; cite the rows a
+section's claims rest on. `subtitle` and `footnote` are optional. A memo renders
+as a document card with a download affordance; keep it to one memo per answer.
 
 ---
 

@@ -769,3 +769,34 @@ test("player cards use source units fallback and refuse non-finite or string met
     assert.throws(validate);
   }
 });
+
+test("memo artifacts validate section anchors like block anchors", () => {
+  const sources = new Map([
+    ["cap-source", makeSourceRecord("cap-source", { rows: [{ team: "ORL", payroll: 172400000 }] })],
+  ]);
+  const memo = {
+    kind: "memo",
+    title: "Cap & roster strategy",
+    sections: [
+      { heading: "Cap position", body: "Orlando sits under the first apron.", anchors: [{ ref: "cap-source", row: 0, columns: ["team", "payroll"] }] },
+      { heading: "Options", body: "Aggregate mid-tier salary." },
+    ],
+  };
+  const validated = validateAnswerSubmission({ blocks: [{ text: "Fixture only" }], artifacts: [memo] }, ref => sources.get(ref));
+  assert.equal(validated.artifacts[0].kind, "memo");
+  assert.equal(validated.artifacts[0].sections[0].anchors[0].ref, "cap-source");
+});
+
+test("memo artifacts reject anchors to unknown refs, bad rows and missing columns", () => {
+  const source = makeSourceRecord("cap-source", { rows: [{ team: "ORL", payroll: 172400000 }] });
+  const memo = anchors => ({
+    kind: "memo",
+    title: "Cap & roster strategy",
+    sections: [{ heading: "Cap position", body: "Body.", anchors }],
+  });
+  const validate = artifact => validateAnswerSubmission({ blocks: [{ text: "Fixture" }], artifacts: [artifact] }, ref => ref === "cap-source" ? source : undefined);
+  assert.throws(() => validate(memo([{ ref: "ghost", row: 0, columns: ["team"] }])), /Unknown source ref/);
+  assert.throws(() => validate(memo([{ ref: "cap-source", row: 5, columns: ["team"] }])), /out of bounds/);
+  assert.throws(() => validate(memo([{ ref: "cap-source", row: 0, columns: ["salary"] }])), /does not exist/);
+  assert.throws(() => validate(memo([{ ref: "cap-source", row: 0 }])), /Invalid memo section anchor/);
+});
