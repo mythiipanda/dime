@@ -158,7 +158,7 @@ export default function ZoneSplitsPanel({
       <PanelHeader kicker="Shots" title="Shots by zone" />
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
         <input
-          className="field"
+          className="rounded-lg border border-line bg-field px-3 py-2 text-ink"
           value={input}
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={(e) => {
@@ -169,7 +169,7 @@ export default function ZoneSplitsPanel({
           aria-label="Player name or id"
         />
         <select
-          className="field"
+          className="rounded-lg border border-line bg-field px-3 py-2 text-ink"
           aria-label="Season"
           value={season}
           onChange={(e) => pickSeason(e.target.value)}
@@ -181,7 +181,7 @@ export default function ZoneSplitsPanel({
             </option>
           ))}
         </select>
-        <button className="pill-cta" style={{ fontSize: 12 }} onClick={show}>
+        <button className="inline-flex items-center justify-center gap-1.5 rounded-full px-3 py-1.5 text-[12px] transition-colors bg-ink text-page hover:opacity-90 disabled:opacity-50" style={{ fontSize: 12 }} onClick={show}>
           Show
         </button>
       </div>
@@ -190,7 +190,7 @@ export default function ZoneSplitsPanel({
           {suggest.map((s) => (
             <button
               key={s.id}
-              className="pill-ghost"
+              className="inline-flex items-center justify-center gap-1.5 rounded-full px-3 py-1.5 text-[12px] transition-colors bg-field text-ink-2 hover:bg-hover"
               style={{ fontSize: 12 }}
               onClick={() => {
                 setPlayerId(String(s.id));
@@ -205,26 +205,26 @@ export default function ZoneSplitsPanel({
         </div>
       )}
       {playerName && status !== "idle" && (
-        <div style={{ marginTop: 10, fontSize: 12, color: "var(--color-warm-gray)" }}>
+        <div style={{ marginTop: 10, fontSize: 12, color: "var(--ink-2)" }}>
           {playerName}{playerId ? ` · ${season}` : ""}
         </div>
       )}
       <div style={{ marginTop: 8 }}>
         {status === "idle" && (
-          <div style={{ fontSize: 13, color: "var(--color-warm-gray)" }}>
+          <div style={{ fontSize: 13, color: "var(--ink-2)" }}>
             Search a player to see shooting by zone.
           </div>
         )}
         {status === "loading" && <Skeleton lines={4} label="Loading zone splits" />}
         {status === "error" && (
-          <div style={{ fontSize: 13, color: "var(--color-warm-gray)" }}>
+          <div style={{ fontSize: 13, color: "var(--ink-2)" }}>
             {error} Try another player or season.
           </div>
         )}
         {status === "ok" && zones.length > 0 && (
           <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
             <div role="img" aria-label={`Field goal percentage by zone for ${playerName || playerId}`}>
-              <div style={{ display: "flex", gap: 6, marginBottom: 6, fontSize: 11, color: "var(--color-ash-gray)", fontVariantNumeric: "tabular-nums" }}>
+              <div style={{ display: "flex", gap: 6, marginBottom: 6, fontSize: 11, color: "var(--ink-3)", fontVariantNumeric: "tabular-nums" }}>
                 <span>0%</span>
                 <span style={{ marginLeft: "auto" }}>50%</span>
                 <span style={{ marginLeft: "auto" }}>100%</span>
@@ -239,45 +239,45 @@ export default function ZoneSplitsPanel({
                       <span style={{ marginLeft: "auto", fontSize: 13, fontWeight: 600, fontVariantNumeric: "tabular-nums" }}>
                         {(z.pct * 100).toFixed(1)}%
                       </span>
-                      <span style={{ fontSize: 11, color: "var(--color-ash-gray)", fontVariantNumeric: "tabular-nums" }}>
+                      <span style={{ fontSize: 11, color: "var(--ink-3)", fontVariantNumeric: "tabular-nums" }}>
                         {z.fgm}/{z.fga}
                       </span>
                     </div>
-                    <div style={{ height: 8, borderRadius: 4, background: "var(--color-stone-border)", overflow: "hidden" }}>
+                    <div style={{ height: 8, borderRadius: 4, background: "var(--line)", overflow: "hidden" }}>
                       <div
                         style={{
                           height: "100%",
                           width: `${Math.round(z.pct * 100)}%`,
                           borderRadius: 4,
-                          background: "var(--color-cyan-signal)",
+                          background: "var(--accent)",
                           opacity: maxFga > 0 ? 0.45 + 0.55 * (z.fga / maxFga) : 1,
                         }}
                       />
                     </div>
-                    <div style={{ marginTop: 2, fontSize: 11, color: "var(--color-ash-gray)", fontVariantNumeric: "tabular-nums" }}>
+                    <div style={{ marginTop: 2, fontSize: 11, color: "var(--ink-3)", fontVariantNumeric: "tabular-nums" }}>
                       {totalFga > 0 ? Math.round((z.fga / totalFga) * 100) : 0}% of attempts
                     </div>
                   </div>
                 ))}
               </div>
-              <div style={{ marginTop: 8, fontSize: 11, color: "var(--color-ash-gray)" }}>
+              <div style={{ marginTop: 8, fontSize: 11, color: "var(--ink-3)" }}>
                 Bar length is field goal percentage. Darker bars mean more attempts.
               </div>
             </div>
             <div
               className="dime-table table-scroll"
-              style={{ border: "1px solid var(--color-stone-border)", borderRadius: 10, background: "var(--color-pure-white)", boxShadow: "var(--shadow-card)" }}
+              style={{ border: "1px solid var(--line)", borderRadius: 10, background: "var(--surface)", boxShadow: "var(--shadow-card)" }}
             >
-              <table style={{ borderCollapse: "collapse", width: "100%", fontFamily: "var(--font-body)" }}>
+              <table style={{ borderCollapse: "collapse", width: "100%", fontFamily: "var(--font-inter)" }}>
                 <thead>
                   <tr>
                     {["#", "Zone", "FGM", "FGA", "FG%"].map((h) => (
                       <th
                         key={h}
                         style={{
-                          borderBottom: "1px solid var(--color-stone-border)",
+                          borderBottom: "1px solid var(--line)",
                           padding: "7px 10px",
-                          color: "var(--color-warm-gray)",
+                          color: "var(--ink-2)",
                           fontSize: 12,
                           fontWeight: 500,
                           textAlign: h === "Zone" ? "left" : "right",
@@ -292,19 +292,19 @@ export default function ZoneSplitsPanel({
                 <tbody>
                   {zones.map((z, i) => (
                     <tr key={z.zone}>
-                      <td style={{ borderBottom: "1px solid var(--color-stone-border)", padding: "7px 10px", fontSize: 13, textAlign: "right", color: "var(--color-ash-gray)", fontVariantNumeric: "tabular-nums" }}>
+                      <td style={{ borderBottom: "1px solid var(--line)", padding: "7px 10px", fontSize: 13, textAlign: "right", color: "var(--ink-3)", fontVariantNumeric: "tabular-nums" }}>
                         {i + 1}
                       </td>
-                      <td style={{ borderBottom: "1px solid var(--color-stone-border)", padding: "7px 10px", fontSize: 13, fontWeight: 500, textAlign: "left" }}>
+                      <td style={{ borderBottom: "1px solid var(--line)", padding: "7px 10px", fontSize: 13, fontWeight: 500, textAlign: "left" }}>
                         {z.zone}
                       </td>
-                      <td style={{ borderBottom: "1px solid var(--color-stone-border)", padding: "7px 10px", fontSize: 13, textAlign: "right", fontVariantNumeric: "tabular-nums" }}>
+                      <td style={{ borderBottom: "1px solid var(--line)", padding: "7px 10px", fontSize: 13, textAlign: "right", fontVariantNumeric: "tabular-nums" }}>
                         {z.fgm}
                       </td>
-                      <td style={{ borderBottom: "1px solid var(--color-stone-border)", padding: "7px 10px", fontSize: 13, textAlign: "right", fontVariantNumeric: "tabular-nums" }}>
+                      <td style={{ borderBottom: "1px solid var(--line)", padding: "7px 10px", fontSize: 13, textAlign: "right", fontVariantNumeric: "tabular-nums" }}>
                         {z.fga}
                       </td>
-                      <td style={{ borderBottom: "1px solid var(--color-stone-border)", padding: "7px 10px", fontSize: 13, textAlign: "right", fontVariantNumeric: "tabular-nums" }}>
+                      <td style={{ borderBottom: "1px solid var(--line)", padding: "7px 10px", fontSize: 13, textAlign: "right", fontVariantNumeric: "tabular-nums" }}>
                         {(z.pct * 100).toFixed(1)}%
                       </td>
                     </tr>
@@ -315,7 +315,7 @@ export default function ZoneSplitsPanel({
           </div>
         )}
       </div>
-      <div style={{ marginTop: 8, fontSize: 12, color: "var(--color-ash-gray)" }}>
+      <div style={{ marginTop: 8, fontSize: 12, color: "var(--ink-3)" }}>
         Zone splits are player-scoped. Current seasons use the league shot zones. Older seasons group shots as rim, short mid, long mid, corner 3, and above-break 3.
       </div>
     </ExplorePanel>

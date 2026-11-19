@@ -43,18 +43,18 @@ export default function ModelPicker({ models, value, onChange, status = "ready",
       <button
         type="button"
         onClick={() => onRetry?.()}
-        className="interactive-tactile"
+        className="transition-colors hover:bg-hover"
         style={{
           display: "inline-flex",
           alignItems: "center",
           gap: 5,
           padding: "4px 8px",
           borderRadius: 6,
-          background: "var(--color-stone-canvas)",
-          border: "1px solid var(--color-stone-border)",
+          background: "var(--page)",
+          border: "1px solid var(--line)",
           fontSize: 12,
           fontWeight: 500,
-          color: "var(--color-ink-black)",
+          color: "var(--ink)",
           cursor: "pointer",
         }}
         title="Retry loading models"
@@ -71,14 +71,14 @@ export default function ModelPicker({ models, value, onChange, status = "ready",
       <SelectTrigger
         aria-label="Model"
         title="Switch model"
-        className="interactive-tactile"
+        className="transition-colors hover:bg-hover"
         style={{
           padding: "4px 8px",
           borderRadius: 6,
-          background: "var(--color-stone-canvas)",
+          background: "var(--page)",
           fontSize: 12,
           fontWeight: 500,
-          color: "var(--color-ink-black)",
+          color: "var(--ink)",
         }}
       >
         <SelectValue placeholder={status === "loading" ? "Loading models..." : "Models unavailable"}>
@@ -91,7 +91,7 @@ export default function ModelPicker({ models, value, onChange, status = "ready",
             style={{
               fontSize: 10,
               fontWeight: 600,
-              color: "var(--color-ash-gray)",
+              color: "var(--ink-3)",
               textTransform: "uppercase",
               letterSpacing: "0.08em",
               padding: "4px 8px 6px",
@@ -101,7 +101,7 @@ export default function ModelPicker({ models, value, onChange, status = "ready",
           </SelectLabel>
           {status === "error" && (
             <SelectItem value={RETRY_VALUE} label="Retry loading models">
-              <span style={{ fontSize: 13, color: "var(--color-cyan-edge)" }}>
+              <span style={{ fontSize: 13, color: "var(--accent-ink)" }}>
                 Retry loading models
               </span>
             </SelectItem>
@@ -121,12 +121,12 @@ export default function ModelPicker({ models, value, onChange, status = "ready",
                     style={{
                       fontSize: 13,
                       fontWeight: isSelected ? 600 : 400,
-                      color: "var(--color-ink-black)",
+                      color: "var(--ink)",
                     }}
                   >
                     {displayName(m.id)}
                   </span>
-                  <span style={{ fontSize: 11, fontWeight: 400, color: "var(--color-warm-gray)" }}>
+                  <span style={{ fontSize: 11, fontWeight: 400, color: "var(--ink-2)" }}>
                     {isUnavailable
                       ? `${providerDisplayName(m.engine) || m.engine} · unavailable`
                       : (providerDisplayName(m.engine) || m.engine || "live")}

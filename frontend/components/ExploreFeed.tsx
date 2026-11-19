@@ -6,6 +6,9 @@ import type { TodayMover, TeamStreak, WatchItem } from "../lib/api";
 import { buildFeedExpansion, feedActionFor, type FeedExpansion, type FeedItem } from "../lib/exploreFeed";
 import type { ExploreContext } from "../lib/exploreSearch";
 import Skeleton from "./Skeleton";
+import { Panel } from "./ds/Panel";
+import { Button } from "./ds/Button";
+import { ValuePill } from "./ds/ValuePill";
 
 
 
@@ -57,12 +60,11 @@ export default function ExploreFeed({
 
   if (feed === null) {
     return (
-      <div className="explore-feed" aria-label="Right now">
-        <div className="panel-kicker">Right now</div>
+      <Panel title="Right now" className="my-6">
         <div style={{ minHeight: 132 }}>
           <Skeleton lines={4} />
         </div>
-      </div>
+      </Panel>
     );
   }
   if (feed.total === 0) return null;
@@ -82,42 +84,41 @@ export default function ExploreFeed({
     <li key={item.id}>
       <button
         type="button"
-        className="explore-feed-row"
+        className="flex w-full flex-wrap items-baseline gap-2 rounded-lg px-2 py-3 text-left text-[12px] transition-colors hover:bg-hover"
         onClick={() => activate(item)}
         aria-label={`${item.name}, ${item.statText}, ${item.rankTitle}`}
       >
-        <span className="explore-feed-name">
+        <span className="min-w-40 flex-1 font-medium">
           {item.name}
           {item.team ? (
-            <span className="explore-feed-team"> {item.team}</span>
+            <span className="font-normal text-ink-3"> {item.team}</span>
           ) : null}
         </span>
-        <span className="explore-feed-stat">{item.statText}</span>
-        <span className="explore-feed-rank" title={item.rankTitle}>
-          {item.rankLabel}
+        <span className="text-[11px] tabular-nums text-ink-2">{item.statText}</span>
+        <span title={item.rankTitle}>
+          <ValuePill>{item.rankLabel}</ValuePill>
         </span>
       </button>
     </li>
   );
 
   return (
-    <section className="explore-feed" aria-label="Right now">
-      <div className="panel-kicker">Right now</div>
-      <ul className="explore-feed-list">
+    <Panel title="Right now" description="Signals from the latest available league data and your watchlist." className="my-6">
+      <ul className="divide-y divide-line">
         {shown.map(row)}
         {feed.extra.length > 0 ? (
           <li key="explore-feed-expander">
-            <button
+            <Button
               type="button"
-              className="explore-feed-expander"
+              variant="quiet" size="xs" className="mt-2 text-ink-3"
               aria-expanded={expanded}
               onClick={() => setExpanded(!expanded)}
             >
               {expanded ? "Show fewer" : "Show all " + feed.total}
-            </button>
+            </Button>
           </li>
         ) : null}
       </ul>
-    </section>
+    </Panel>
   );
 }

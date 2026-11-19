@@ -186,21 +186,21 @@ function LeadersBody({ g }: { g: GameLogLeaders }) {
             alignItems: "center",
             gap: 12,
             padding: "8px 14px",
-            borderTop: i === 0 ? "none" : "1px solid var(--color-stone-border)",
+            borderTop: i === 0 ? "none" : "1px solid var(--line)",
           }}
         >
           <span
             style={{
               width: 22,
               fontSize: 11,
-              color: "var(--color-ash-gray)",
+              color: "var(--ink-3)",
               fontVariantNumeric: "tabular-nums",
             }}
           >
             {i + 1}
           </span>
           <span
-            style={{ flex: 1, fontSize: 13, fontWeight: 500, color: "var(--color-ink-black)" }}
+            style={{ flex: 1, fontSize: 13, fontWeight: 500, color: "var(--ink)" }}
           >
             {l.label}
           </span>
@@ -208,7 +208,7 @@ function LeadersBody({ g }: { g: GameLogLeaders }) {
             style={{
               width: 72,
               height: 6,
-              background: "var(--color-stone-border)",
+              background: "var(--line)",
               borderRadius: 3,
               overflow: "hidden",
             }}
@@ -218,7 +218,7 @@ function LeadersBody({ g }: { g: GameLogLeaders }) {
                 display: "block",
                 width: `${(l.count / max) * 100}%`,
                 height: "100%",
-                background: "var(--color-cyan-signal)",
+                background: "var(--accent)",
                 borderRadius: 3,
               }}
             />
@@ -229,7 +229,7 @@ function LeadersBody({ g }: { g: GameLogLeaders }) {
               textAlign: "right",
               fontSize: 13,
               fontWeight: 600,
-              color: "var(--color-cyan-edge)",
+              color: "var(--accent-ink)",
               fontVariantNumeric: "tabular-nums",
             }}
           >
@@ -292,8 +292,8 @@ export default function GameLogView({
             )}
           <div
             style={{
-              background: "var(--color-pure-white)",
-              border: "1px solid var(--color-stone-border)",
+              background: "var(--surface)",
+              border: "1px solid var(--line)",
               borderRadius: 10,
               marginTop: 8,
             }}
@@ -311,15 +311,15 @@ export default function GameLogView({
                     alignItems: "center",
                     gap: 10,
                     padding: "8px 14px",
-                    borderTop: i === 0 ? "none" : "1px solid var(--color-stone-border)",
+                    borderTop: i === 0 ? "none" : "1px solid var(--line)",
                     fontVariantNumeric: "tabular-nums",
                     opacity: hit ? 1 : 0.55,
                   }}
                 >
-                  <span style={{ width: 56, fontSize: 12, color: "var(--color-warm-gray)" }}>
+                  <span style={{ width: 56, fontSize: 12, color: "var(--ink-2)" }}>
                     {fmtDate(m.date, !!meta?.season)}
                   </span>
-                  <span style={{ width: 64, fontSize: 12, color: "var(--color-ink-black)" }}>
+                  <span style={{ width: 64, fontSize: 12, color: "var(--ink)" }}>
                     {m.home ? "vs " : "@ "}
                     {m.opponent || "—"}
                   </span>
@@ -328,7 +328,7 @@ export default function GameLogView({
                       width: 18,
                       fontSize: 11,
                       fontWeight: 600,
-                      color: "var(--color-warm-gray)",
+                      color: "var(--ink-2)",
                     }}
                   >
                     {m.wl || ""}
@@ -337,17 +337,17 @@ export default function GameLogView({
                     style={{
                       fontSize: 14,
                       fontWeight: 600,
-                      color: hit ? "var(--color-cyan-edge)" : "var(--color-ink-black)",
+                      color: hit ? "var(--accent-ink)" : "var(--ink)",
                     }}
                   >
                     {showPra ? m.pra.toFixed(0) : m.pts.toFixed(0)}
                   </span>
-                  <span style={{ fontSize: 11, color: "var(--color-ash-gray)" }}>
+                  <span style={{ fontSize: 11, color: "var(--ink-3)" }}>
                     {showPra ? "PRA" : "PTS"}
                   </span>
                   <span
                     className="gamelog-details"
-                    style={{ flex: 1, minWidth: 0, fontSize: 12, color: "var(--color-warm-gray)" }}
+                    style={{ flex: 1, minWidth: 0, fontSize: 12, color: "var(--ink-2)" }}
                   >
                     {m.pts.toFixed(0)} pts · {m.reb.toFixed(0)} reb · {m.ast.toFixed(0)} ast ·{" "}
                     {m.stl.toFixed(0)} stl · {m.blk.toFixed(0)} blk
@@ -368,8 +368,8 @@ export default function GameLogView({
       ) : (
         <div
           style={{
-            background: "var(--color-pure-white)",
-            border: "1px solid var(--color-stone-border)",
+            background: "var(--surface)",
+            border: "1px solid var(--line)",
             borderRadius: 10,
           }}
         >

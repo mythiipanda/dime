@@ -133,10 +133,10 @@ function PairedProbBar({ p, favHome }: { p: PredictionRows; favHome: boolean }) 
           marginBottom: 6,
         }}
       >
-        <span style={{ fontWeight: 600, fontSize: 13, color: "var(--color-ink-black)" }}>
+        <span style={{ fontWeight: 600, fontSize: 13, color: "var(--ink)" }}>
           {p.away}
         </span>
-        <span style={{ fontWeight: 600, fontSize: 13, color: "var(--color-ink-black)" }}>
+        <span style={{ fontWeight: 600, fontSize: 13, color: "var(--ink)" }}>
           {p.home}
         </span>
       </div>
@@ -153,7 +153,7 @@ function PairedProbBar({ p, favHome }: { p: PredictionRows; favHome: boolean }) 
           style={{
             fontSize: 20,
             fontWeight: 600,
-            color: !favHome ? "var(--color-cyan-edge)" : "var(--color-ink-black)",
+            color: !favHome ? "var(--accent-ink)" : "var(--ink)",
             fontVariantNumeric: "tabular-nums",
           }}
         >
@@ -163,7 +163,7 @@ function PairedProbBar({ p, favHome }: { p: PredictionRows; favHome: boolean }) 
           style={{
             fontSize: 20,
             fontWeight: 600,
-            color: favHome ? "var(--color-cyan-edge)" : "var(--color-ink-black)",
+            color: favHome ? "var(--accent-ink)" : "var(--ink)",
             fontVariantNumeric: "tabular-nums",
           }}
         >
@@ -173,7 +173,7 @@ function PairedProbBar({ p, favHome }: { p: PredictionRows; favHome: boolean }) 
       <div
         style={{
           height: 8,
-          background: "var(--color-stone-border)",
+          background: "var(--line)",
           borderRadius: 4,
           overflow: "hidden",
           display: "flex",
@@ -183,7 +183,7 @@ function PairedProbBar({ p, favHome }: { p: PredictionRows; favHome: boolean }) 
           style={{
             width: `${Math.min(100, p.awayProb * 100)}%`,
             height: "100%",
-            background: !favHome ? "var(--color-cyan-signal)" : "var(--color-stone-muted)",
+            background: !favHome ? "var(--accent)" : "var(--line-strong)",
           }}
         />
         <div style={{ flex: 1 }} />
@@ -191,18 +191,18 @@ function PairedProbBar({ p, favHome }: { p: PredictionRows; favHome: boolean }) 
           style={{
             width: `${Math.min(100, p.homeProb * 100)}%`,
             height: "100%",
-            background: favHome ? "var(--color-cyan-signal)" : "var(--color-stone-muted)",
+            background: favHome ? "var(--accent)" : "var(--line-strong)",
           }}
         />
       </div>
-      <div style={{ fontSize: 11, color: "var(--color-ash-gray)", marginTop: 4 }}>
+      <div style={{ fontSize: 11, color: "var(--ink-3)", marginTop: 4 }}>
         one 100% scale. Bar lengths are directly comparable
       </div>
       {ciLine && (
         <div
           style={{
             fontSize: 11,
-            color: "var(--color-ash-gray)",
+            color: "var(--ink-3)",
             marginTop: 4,
             fontVariantNumeric: "tabular-nums",
           }}
@@ -254,7 +254,7 @@ export default function PredictionView({
         <div
           style={{
             fontSize: 12,
-            color: "var(--color-warm-gray)",
+            color: "var(--ink-2)",
             marginBottom: 12,
           }}
         >
@@ -263,8 +263,8 @@ export default function PredictionView({
       )}
       <div
         style={{
-          background: "var(--color-stone-canvas)",
-          border: "1px solid var(--color-stone-border)",
+          background: "var(--page)",
+          border: "1px solid var(--line)",
           borderRadius: 10,
           padding: "12px 16px",
           marginBottom: 10,
@@ -274,7 +274,7 @@ export default function PredictionView({
           style={{
             fontSize: 11,
             fontWeight: 600,
-            color: "var(--color-warm-gray)",
+            color: "var(--ink-2)",
             marginBottom: 10,
           }}
         >
@@ -284,8 +284,8 @@ export default function PredictionView({
       </div>
       <div
         style={{
-          background: "var(--color-pure-white)",
-          border: "1px solid var(--color-stone-border)",
+          background: "var(--surface)",
+          border: "1px solid var(--line)",
           borderRadius: 10,
           padding: "12px 16px",
           marginBottom: 10,
@@ -295,7 +295,7 @@ export default function PredictionView({
           style={{
             fontSize: 11,
             fontWeight: 600,
-            color: "var(--color-warm-gray)",
+            color: "var(--ink-2)",
             marginBottom: 6,
           }}
         >
@@ -305,7 +305,7 @@ export default function PredictionView({
           style={{
             fontSize: 16,
             fontWeight: 600,
-            color: "var(--color-ink-black)",
+            color: "var(--ink)",
             fontVariantNumeric: "tabular-nums",
           }}
         >
@@ -314,7 +314,7 @@ export default function PredictionView({
         <div
           style={{
             fontSize: 12,
-            color: "var(--color-warm-gray)",
+            color: "var(--ink-2)",
             marginTop: 4,
             fontVariantNumeric: "tabular-nums",
           }}
@@ -326,7 +326,7 @@ export default function PredictionView({
           <div
             style={{
               fontSize: 11,
-              color: "var(--color-ash-gray)",
+              color: "var(--ink-3)",
               marginTop: 2,
               fontVariantNumeric: "tabular-nums",
             }}
@@ -345,7 +345,7 @@ export default function PredictionView({
         <details
           style={{
             fontSize: 11,
-            color: "var(--color-warm-gray)",
+            color: "var(--ink-2)",
             marginTop: 10,
           }}
         >

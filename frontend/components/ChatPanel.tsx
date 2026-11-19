@@ -5,15 +5,11 @@ import {
   AiMessage,
   ChatMessage,
   ModelOption,
-  NodeName,
-  ToolResult,
   createStreamBatcher,
-  emptyNode,
-  isFailureFinal,
 } from "../lib/chat";
-import { RunInfo, appendCachedRun, buildCitation, getModels, getRuns, postChatStream } from "../lib/api";
+import { appendCachedRun, buildCitation, getModels, getRuns, postChatStream } from "../lib/api";
 import { takeRerun } from "../lib/briefs";
-import { activityRecordFromEvent, mergeActivityRecord } from "../lib/activity";
+import { applyEvent, aiFromRun } from "../lib/stream-event";
 import AnswerText from "./AnswerText";
 import CitedAnswerText from "./CitedAnswerText";
 import { StreamText } from "./StreamText";
@@ -37,185 +33,23 @@ function priorQuestion(messages: ChatMessage[], i: number): string {
   return "";
 }
 
-function applyEvent(ai: AiMessage, type: string, data: unknown): AiMessage {
-  const d = data as Record<string, unknown>;
-  const next: AiMessage = {
-    ...ai,
-    nodes: { ...ai.nodes },
-  };
-  const touch = (n: NodeName) => {
-    if (!next.nodes[n]) next.nodes[n] = emptyNode();
-    return next.nodes[n]!;
-  };
-  const activity = activityRecordFromEvent(type, d, next.activity?.length || 0);
-  if (activity) next.activity = mergeActivityRecord(next.activity || [], activity);
-  if (type === "node_update") {
-    const node = d.node as NodeName;
-    if (node === "entry") return next;
-    const status = d.status;
-    touch(node).status =
-      status === "complete" || status === "error" ? status : "running";
-  } else if (type === "thought_token") {
-    if (!next.thoughtStarted) next.thoughtStarted = Date.now();
-    const node = touch(d.node as NodeName);
-    node.liveThought = (node.liveThought || "") + String(d.text || "");
-    if (d.agent && !node.liveThoughtAgent) node.liveThoughtAgent = String(d.agent);
-  } else if (type === "thought_stream") {
-    if (!next.thoughtStarted) next.thoughtStarted = Date.now();
-    touch(d.node as NodeName).thoughts.push(String(d.text || ""));
-  } else if (type === "tool_call") {
-    const node = touch(d.node as NodeName);
-    const id =
-      typeof d.correlation_id === "string"
-        ? d.correlation_id
-        : typeof d.event_id === "string"
-          ? d.event_id
-          : undefined;
-    node.toolCalls.push({
-      id,
-      name: String(d.name || ""),
-      args: (d.args as Record<string, unknown>) || {},
-      label: d.label as string | undefined,
-      summary: d.summary as string | undefined,
-      agent: d.agent as string | undefined,
-      status: "running",
-      startedAt: Date.now(),
-    });
-  } else if (type === "tool_result") {
-    const node = touch(d.node as NodeName);
-    const name = String(d.name || "");
-    const agent = d.agent as string | undefined;
-    const id =
-      typeof d.correlation_id === "string"
-        ? d.correlation_id
-        : typeof d.event_id === "string"
-          ? d.event_id
-          : undefined;
-    for (let i = 0; i < node.toolCalls.length; i++) {
-      const c = node.toolCalls[i];
-      if (c.status !== "running") continue;
-      if (id && c.id) {
-        if (c.id !== id) continue;
-      } else if (!(c.name === name && c.agent === agent)) {
-        continue;
-      }
-        c.status = d.status === "ok" ? "ok" : "fail";
-        c.endedAt = Date.now();
-        if (typeof d.rows === "number") c.rows = d.rows;
-        if (typeof d.ms === "number") c.ms = d.ms;
-        if (d.error) c.error = String(d.error);
-        if (d.summary) c.summary = String(d.summary);
-        if (typeof d.sql === "string" && d.sql.trim()) c.sql = d.sql;
-        break;
-    }
-  } else if (type === "custom_data") {
-    const node = touch(d.node as NodeName);
-    const tables = (d.tables as unknown[]) || [];
-    node.tables.push(
-      ...(tables as {
-        tool: string;
-        rows?: unknown;
-        meta?: { source?: string; fetched_at?: string };
-      }[]),
-    );
-    const unverified = d.unverified_numbers as string[] | undefined;
-    if (unverified && unverified.length) {
-      next.caution = [...(next.caution || []), ...unverified];
-    }
-  } else if (type === "token") {
-    next.text = (next.text || "") + String(d.text || "");
-    next.streaming = true;
-  } else if (type === "final_answer") {
-    next.text = String(d.text || "");
-    next.streaming = false;
-    if (d.carry && typeof d.carry === "object") {
-      next.carry = d.carry as AiMessage["carry"];
-    }
-    
-    
-    
-    
-    
-    
-    
-
-
-
-
-
-
-
-    if (!isFailureFinal(next.text, d.carry)) {
-      next.error = undefined;
-    }
-  } else if (type === "suggestions") {
-    const items = (d.items as string[]) || [];
-    next.suggestions = items;
-  } else if (type === "error") {
-    next.error = String(d.message || "error");
-  } else if (type === "graph_end") {
-    next.done = true;
-    next.streaming = false;
-    if (next.thoughtStarted && !next.thoughtMs) {
-      next.thoughtMs = Date.now() - next.thoughtStarted;
-    }
-    for (const n of Object.keys(next.nodes) as NodeName[]) {
-      if (next.nodes[n]!.status === "running") next.nodes[n]!.status = "complete";
-    }
-  }
-  return next;
-}
 
 interface Props {
   thread: string;
   onRunDone: () => void;
   preset?: string | null;
+  autoSend?: { thread: string; text: string } | null;
+  onAutoSendConsumed?: () => void;
   onOpenArtifact?: (artifact: ArtifactItem) => void;
   activeArtifactId?: string;
 }
 
-function aiFromRun(r: RunInfo): AiMessage {
-  const tables: ToolResult[] = [];
-  if (Array.isArray(r.tables)) {
-    for (const t of r.tables) {
-      if (
-        typeof t === "object" &&
-        t !== null &&
-        
-        
-
-
-        (typeof (t as { tool?: unknown }).tool === "string" ||
-          typeof (t as { kind?: unknown }).kind === "string" ||
-          Array.isArray((t as { rows?: unknown }).rows))
-      ) {
-        tables.push(t as ToolResult);
-      }
-    }
-  }
-  return {
-    text: typeof r.answer === "string" ? r.answer : "",
-    nodes: tables.length
-      ? {
-          analytics: {
-            status: "complete",
-            thoughts: [],
-            toolCalls: [],
-            toolResults: [],
-            tables,
-          },
-        }
-      : {},
-    done: true,
-    suggestions: Array.isArray(r.suggestions) ? r.suggestions : [],
-  };
-}
 
 function CopyButton({ text }: { text: string }) {
   const [done, setDone] = useState(false);
   return (
     <button
-      className="pill-ghost"
+      className="inline-flex items-center justify-center gap-1.5 rounded-full px-3 py-1.5 text-[12px] transition-colors bg-field text-ink-2 hover:bg-hover"
       style={{ fontSize: 12 }}
       onClick={() => {
         navigator.clipboard
@@ -242,7 +76,7 @@ function CiteButton({ text, sources }: {
   const [done, setDone] = useState(false);
   return (
     <button
-      className="pill-ghost"
+      className="inline-flex items-center justify-center gap-1.5 rounded-full px-3 py-1.5 text-[12px] transition-colors bg-field text-ink-2 hover:bg-hover"
       style={{ fontSize: 12 }}
       title="Copy answer with a citable source line"
       onClick={() => {
@@ -302,7 +136,7 @@ function LinkButton({ index }: { index: number }) {
   const [done, setDone] = useState(false);
   return (
     <button
-      className="pill-ghost"
+      className="inline-flex items-center justify-center gap-1.5 rounded-full px-3 py-1.5 text-[12px] transition-colors bg-field text-ink-2 hover:bg-hover"
       style={{ fontSize: 12 }}
       onClick={() => {
         if (typeof window === "undefined") return;
@@ -325,7 +159,7 @@ function LinkButton({ index }: { index: number }) {
   );
 }
 
-export default function ChatPanel({ thread, onRunDone, preset, onOpenArtifact, activeArtifactId }: Props) {
+export default function ChatPanel({ thread, onRunDone, preset, autoSend, onAutoSendConsumed, onOpenArtifact, activeArtifactId }: Props) {
   const [models, setModels] = useState<ModelOption[]>([]);
   const [model, setModel] = useState<string | null>(null);
   const [modelStatus, setModelStatus] = useState<"loading" | "ready" | "error">("loading");
@@ -549,6 +383,17 @@ export default function ChatPanel({ thread, onRunDone, preset, onOpenArtifact, a
     );
   };
 
+  const sentAutoRequest = useRef<object | null>(null);
+  useEffect(() => {
+    if (!autoSend || autoSend.thread !== thread || busy || modelStatus === "loading" || sentAutoRequest.current === autoSend) return;
+    const timer = window.setTimeout(() => {
+      sentAutoRequest.current = autoSend;
+      onAutoSendConsumed?.();
+      void sendText(autoSend.text);
+    }, 0);
+    return () => window.clearTimeout(timer);
+  });
+
   const stop = () => {
     abort.current?.abort();
     setBusy(false);
@@ -622,9 +467,9 @@ export default function ChatPanel({ thread, onRunDone, preset, onOpenArtifact, a
                 <Button
                   variant="ghost"
                   size="default"
-                  className="pill-ghost interactive-tactile h-auto font-normal"
+                  className="inline-flex items-center justify-center gap-1.5 rounded-full px-3 py-1.5 text-[12px] transition-colors bg-field text-ink-2 hover:bg-hover transition-colors hover:bg-hover h-auto font-normal"
                   onClick={stop}
-                  style={{ borderColor: "var(--color-cyan-signal)", color: "var(--color-cyan-edge)" }}
+                  style={{ borderColor: "var(--accent)", color: "var(--accent-ink)" }}
                 >
                   Stop {elapsed}s
                 </Button>
@@ -636,12 +481,12 @@ export default function ChatPanel({ thread, onRunDone, preset, onOpenArtifact, a
                   aria-label="Send"
                   disabled={!input.trim()}
                   onClick={() => sendText(input)}
-                  className="interactive-tactile chat-send disabled:opacity-100 [&_svg:not([class*='size-'])]:size-[15px]"
+                  className="transition-colors hover:bg-hover chat-send disabled:opacity-100 [&_svg:not([class*='size-'])]:size-[15px]"
                   style={{
                     width: 28, height: 28, borderRadius: 8, border: "none", cursor: input.trim() ? "pointer" : "default",
                     display: "flex", alignItems: "center", justifyContent: "center",
-                    background: input.trim() ? "var(--color-ink-black)" : "var(--color-stone-muted)",
-                    color: input.trim() ? "var(--color-pure-white)" : "var(--color-warm-gray)",
+                    background: input.trim() ? "var(--ink)" : "var(--line-strong)",
+                    color: input.trim() ? "var(--surface)" : "var(--ink-2)",
                     transition: "background 200ms ease, color 200ms ease",
                   }}
                 >
@@ -685,7 +530,7 @@ export default function ChatPanel({ thread, onRunDone, preset, onOpenArtifact, a
                 disabled={busy}
                 className="chat-starter"
               >
-                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" style={{ color: "var(--color-ash-gray)", flexShrink: 0 }}>
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" style={{ color: "var(--ink-3)", flexShrink: 0 }}>
                   {item.icon}
                 </svg>
                 <span>{item.title}</span>
@@ -730,7 +575,7 @@ export default function ChatPanel({ thread, onRunDone, preset, onOpenArtifact, a
                 >
 
                   <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
-                    <span style={{ fontWeight: 600, fontSize: 13, color: "var(--color-ink-black)" }}>
+                    <span style={{ fontWeight: 600, fontSize: 13, color: "var(--ink)" }}>
                       Dime
                     </span>
                   </div>
@@ -739,10 +584,10 @@ export default function ChatPanel({ thread, onRunDone, preset, onOpenArtifact, a
 
                     {m.ai?.error && (
                       <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 8 }}>
-                        <span style={{ color: "var(--color-ember)", fontSize: 13 }}>{m.ai.error} If this keeps happening, switch models and ask again.</span>
+                        <span style={{ color: "var(--red)", fontSize: 13 }}>{m.ai.error} If this keeps happening, switch models and ask again.</span>
                         <button
                           type="button"
-                          className="pill-ghost interactive-tactile"
+                          className="inline-flex items-center justify-center gap-1.5 rounded-full px-3 py-1.5 text-[12px] transition-colors bg-field text-ink-2 hover:bg-hover transition-colors hover:bg-hover"
                           style={{ fontSize: 12, padding: "3px 10px" }}
                           disabled={busy}
                           onClick={() => {
@@ -759,7 +604,7 @@ export default function ChatPanel({ thread, onRunDone, preset, onOpenArtifact, a
                     )}
 
                     {m.ai?.caution && m.ai.caution.length > 0 && (
-                      <div style={{ fontSize: 12, color: "var(--color-warm-gray)", marginBottom: 10, background: "var(--color-sky-wash)", padding: "6px 12px", borderRadius: 8 }}>
+                      <div style={{ fontSize: 12, color: "var(--ink-2)", marginBottom: 10, background: "var(--accent-tint)", padding: "6px 12px", borderRadius: 8 }}>
                         Check numbers against tables: {m.ai.caution.join(", ")}
                       </div>
                     )}
@@ -773,8 +618,8 @@ export default function ChatPanel({ thread, onRunDone, preset, onOpenArtifact, a
                           alignItems: "center",
                           gap: 6,
                           fontSize: 12,
-                          color: "var(--color-warm-gray)",
-                          background: "var(--color-sky-wash)",
+                          color: "var(--ink-2)",
+                          background: "var(--accent-tint)",
                           borderRadius: 999,
                           padding: "3px 12px",
                           marginBottom: 8,
@@ -790,7 +635,7 @@ export default function ChatPanel({ thread, onRunDone, preset, onOpenArtifact, a
                     )}
 
                     {m.ai?.streaming && !m.ai.done ? (
-                      <div style={{ fontSize: 14, lineHeight: 1.64, color: "var(--color-ink-black)" }}>
+                      <div style={{ fontSize: 14, lineHeight: 1.64, color: "var(--ink)" }}>
                         <StreamText text={m.text} />
                       </div>
                     ) : m.ai ? (
@@ -824,7 +669,7 @@ export default function ChatPanel({ thread, onRunDone, preset, onOpenArtifact, a
                         <LinkButton index={i} />
                         <button
                           type="button"
-                          className="pill-ghost interactive-tactile"
+                          className="inline-flex items-center justify-center gap-1.5 rounded-full px-3 py-1.5 text-[12px] transition-colors bg-field text-ink-2 hover:bg-hover transition-colors hover:bg-hover"
                           style={{ fontSize: 12, padding: "3px 10px" }}
                           title="Open a debate card from this answer"
                           onClick={() => {
@@ -844,8 +689,8 @@ export default function ChatPanel({ thread, onRunDone, preset, onOpenArtifact, a
                         {m.ai.suggestions.map((s) => (
                           <button
                             key={s}
-                            className="pill-ghost interactive-tactile"
-                            style={{ fontSize: 12, padding: "3px 10px", background: "var(--color-pure-white)" }}
+                            className="inline-flex items-center justify-center gap-1.5 rounded-full px-3 py-1.5 text-[12px] transition-colors bg-field text-ink-2 hover:bg-hover transition-colors hover:bg-hover"
+                            style={{ fontSize: 12, padding: "3px 10px", background: "var(--surface)" }}
                             onClick={() => sendText(s)}
                             disabled={busy}
                           >
@@ -882,7 +727,7 @@ export default function ChatPanel({ thread, onRunDone, preset, onOpenArtifact, a
               bottom: 0,
               left: 260,
               right: 0,
-              background: "linear-gradient(180deg, transparent, var(--color-stone-canvas) 32%)",
+              background: "linear-gradient(180deg, transparent, var(--page) 32%)",
               padding: "26px 20px 24px",
               zIndex: 40,
               boxSizing: "border-box",
@@ -892,8 +737,8 @@ export default function ChatPanel({ thread, onRunDone, preset, onOpenArtifact, a
               {!atBottom && messages.length > 2 && (
                 <div style={{ textAlign: "center", marginBottom: 8 }}>
                   <button
-                    className="pill-ghost"
-                    style={{ fontSize: 12, background: "var(--color-pure-white)", boxShadow: "var(--shadow-card)" }}
+                    className="inline-flex items-center justify-center gap-1.5 rounded-full px-3 py-1.5 text-[12px] transition-colors bg-field text-ink-2 hover:bg-hover"
+                    style={{ fontSize: 12, background: "var(--surface)", boxShadow: "var(--shadow-card)" }}
                     onClick={() => {
                       setAtBottom(true);
                       endRef.current?.scrollIntoView({ block: "end" });
@@ -943,9 +788,9 @@ export default function ChatPanel({ thread, onRunDone, preset, onOpenArtifact, a
                   <Button
                     variant="ghost"
                     size="default"
-                    className="pill-ghost h-auto font-normal"
+                    className="inline-flex items-center justify-center gap-1.5 rounded-full px-3 py-1.5 text-[12px] transition-colors bg-field text-ink-2 hover:bg-hover h-auto font-normal"
                     onClick={stop}
-                    style={{ borderColor: "var(--color-cyan-signal)", color: "var(--color-cyan-edge)" }}
+                    style={{ borderColor: "var(--accent)", color: "var(--accent-ink)" }}
                   >
                     Stop {elapsed}s
                   </Button>
@@ -962,8 +807,8 @@ export default function ChatPanel({ thread, onRunDone, preset, onOpenArtifact, a
                       width: 28, height: 28, borderRadius: 8, border: "none", flexShrink: 0,
                       cursor: input.trim() ? "pointer" : "default",
                       display: "flex", alignItems: "center", justifyContent: "center",
-                      background: input.trim() ? "var(--color-ink-black)" : "var(--color-stone-muted)",
-                      color: input.trim() ? "var(--color-pure-white)" : "var(--color-warm-gray)",
+                      background: input.trim() ? "var(--ink)" : "var(--line-strong)",
+                      color: input.trim() ? "var(--surface)" : "var(--ink-2)",
                       transition: "background 200ms ease, color 200ms ease",
                     }}
                   >

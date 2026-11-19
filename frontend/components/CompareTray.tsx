@@ -62,8 +62,8 @@ export default function CompareTray({
         maxWidth: 640,
         padding: "8px 12px",
         borderRadius: 999,
-        background: "var(--color-pure-white)",
-        border: "1px solid var(--color-stone-border)",
+        background: "var(--surface)",
+        border: "1px solid var(--line)",
         boxShadow: "0 6px 24px rgba(0, 0, 0, 0.10)",
       }}
     >
@@ -72,7 +72,7 @@ export default function CompareTray({
           fontSize: 10,
           fontWeight: 600,
           letterSpacing: "0.08em",
-          color: "var(--color-warm-gray)",
+          color: "var(--ink-2)",
           textTransform: "uppercase",
         }}
       >
@@ -81,14 +81,14 @@ export default function CompareTray({
       {names.map((n) => (
         <span
           key={n}
-          className="pill-ghost"
+          className="inline-flex items-center justify-center gap-1.5 rounded-full px-3 py-1.5 text-[12px] transition-colors bg-field text-ink-2 hover:bg-hover"
           style={{
             display: "inline-flex",
             alignItems: "center",
             gap: 4,
             fontSize: 12,
             padding: "2px 6px 2px 10px",
-            background: "var(--color-sky-wash)",
+            background: "var(--accent-tint)",
           }}
         >
           {n}
@@ -101,7 +101,7 @@ export default function CompareTray({
               background: "none",
               border: "none",
               cursor: "pointer",
-              color: "var(--color-warm-gray)",
+              color: "var(--ink-2)",
               fontSize: 13,
               lineHeight: 1,
               padding: 2,
@@ -113,7 +113,7 @@ export default function CompareTray({
       ))}
       <button
         type="button"
-        className="pill-ghost interactive-tactile"
+        className="inline-flex items-center justify-center gap-1.5 rounded-full px-3 py-1.5 text-[12px] transition-colors bg-field text-ink-2 hover:bg-hover transition-colors hover:bg-hover"
         style={{ fontSize: 12, padding: "3px 12px", fontWeight: 600 }}
         disabled={disabled || names.length < 2}
         title={names.length < 2 ? "Pin at least two players to compare" : `Compare ${names.join(" vs ")}`}
@@ -130,7 +130,7 @@ export default function CompareTray({
           background: "none",
           border: "none",
           cursor: "pointer",
-          color: "var(--color-warm-gray)",
+          color: "var(--ink-2)",
           fontSize: 12,
           padding: 2,
         }}

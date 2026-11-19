@@ -46,7 +46,7 @@ function Meta({ meta }: { meta: Record<string, unknown> | null }) {
   const rows = Number(meta.rows ?? 0);
   const stamp = typeof meta.fetched_at === "string" ? freshDateLabel(meta.fetched_at) : null;
   return (
-    <div style={{ fontSize: 12, color: "var(--color-warm-gray)", marginTop: 8 }}>
+    <div style={{ fontSize: 12, color: "var(--ink-2)", marginTop: 8 }}>
       {rows} rows{stamp ? ` · updated ${stamp}` : ""}
     </div>
   );
@@ -92,7 +92,7 @@ export function Leaders({
               setCat(c);
               show(c);
             }}
-            className={cat === c ? "tab-active" : "tab-idle"}
+            className={cat === c ? "inline-flex items-center justify-center gap-1.5 rounded-full px-3 py-1.5 text-[12px] transition-colors bg-surface text-ink shadow-hairline" : "inline-flex items-center justify-center gap-1.5 rounded-full px-3 py-1.5 text-[12px] transition-colors bg-field text-ink-3 hover:bg-hover"}
             style={{ fontSize: 12 }}
             aria-pressed={cat === c}
           >
@@ -100,7 +100,7 @@ export function Leaders({
           </button>
         ))}
         <button
-          className="pill-cta"
+          className="inline-flex items-center justify-center gap-1.5 rounded-full px-3 py-1.5 text-[12px] transition-colors bg-ink text-page hover:opacity-90 disabled:opacity-50"
           style={{ fontSize: 12 }}
           disabled={p.busy}
           onClick={() => show(cat)}
@@ -108,14 +108,14 @@ export function Leaders({
           {p.busy ? "Loading" : "Show"}
         </button>
         <a
-          className="pill-ghost"
+          className="inline-flex items-center justify-center gap-1.5 rounded-full px-3 py-1.5 text-[12px] transition-colors bg-field text-ink-2 hover:bg-hover"
           style={{ fontSize: 12 }}
           href={datasetUrl("leaders", { season: "2025-26", stat: cat }, "csv")}
         >
           CSV
         </a>
       </div>
-      {p.error && <div style={{ color: "var(--color-warm-gray)", marginTop: 8 }}>{p.error}</div>}
+      {p.error && <div style={{ color: "var(--ink-2)", marginTop: 8 }}>{p.error}</div>}
       <Meta meta={p.meta} />
       {p.rows === null && !p.error && <Skeleton lines={5} label="Loading leaders" />}
       {Array.isArray(p.rows) && p.rows.length > 0 && (
@@ -173,7 +173,7 @@ export function Standings() {
       <PanelHeader kicker="Season" title="Standings race" action={<CopyLink panel="leaders" anchor="standings" />} />
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
         <input
-          className="field"
+          className="rounded-lg border border-line bg-field px-3 py-2 text-ink"
           value={season}
           onChange={(e) => setSeason(e.target.value)}
           placeholder="2025-26"
@@ -181,7 +181,7 @@ export function Standings() {
           aria-label="Season"
         />
         <button
-          className="pill-cta"
+          className="inline-flex items-center justify-center gap-1.5 rounded-full px-3 py-1.5 text-[12px] transition-colors bg-ink text-page hover:opacity-90 disabled:opacity-50"
           style={{ fontSize: 12 }}
           disabled={p.busy}
           onClick={() => show(season)}
@@ -189,14 +189,14 @@ export function Standings() {
           {p.busy ? "Loading" : "Show"}
         </button>
         <a
-          className="pill-ghost"
+          className="inline-flex items-center justify-center gap-1.5 rounded-full px-3 py-1.5 text-[12px] transition-colors bg-field text-ink-2 hover:bg-hover"
           style={{ fontSize: 12 }}
           href={datasetUrl("standings", { season }, "csv")}
         >
           CSV
         </a>
       </div>
-      {p.error && <div style={{ color: "var(--color-warm-gray)", marginTop: 8 }}>{p.error}</div>}
+      {p.error && <div style={{ color: "var(--ink-2)", marginTop: 8 }}>{p.error}</div>}
       <Meta meta={p.meta} />
       {p.rows === null && !p.error && <Skeleton lines={5} label="Loading standings" />}
       {p.rows !== null && (
@@ -254,7 +254,7 @@ export function Gamelog({ initialPlayer }: { initialPlayer?: string }) {
       <PanelHeader kicker="Player" title="Game log trends" action={<CopyLink panel="shots" anchor="gamelog" />} />
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
         <input
-          className="field"
+          className="rounded-lg border border-line bg-field px-3 py-2 text-ink"
           value={idVal}
           onChange={(e) => setIdVal(e.target.value)}
           placeholder="player id, e.g. 2544"
@@ -262,7 +262,7 @@ export function Gamelog({ initialPlayer }: { initialPlayer?: string }) {
           aria-label="Player name or id"
         />
         <button
-          className="pill-cta"
+          className="inline-flex items-center justify-center gap-1.5 rounded-full px-3 py-1.5 text-[12px] transition-colors bg-ink text-page hover:opacity-90 disabled:opacity-50"
           style={{ fontSize: 12 }}
           disabled={p.busy}
           onClick={() => show(idVal)}
@@ -275,7 +275,7 @@ export function Gamelog({ initialPlayer }: { initialPlayer?: string }) {
           {suggest.map((s) => (
             <button
               key={s.id}
-              className="pill-ghost"
+              className="inline-flex items-center justify-center gap-1.5 rounded-full px-3 py-1.5 text-[12px] transition-colors bg-field text-ink-2 hover:bg-hover"
               style={{ fontSize: 12 }}
               onClick={() => show(String(s.id))}
             >
@@ -284,12 +284,12 @@ export function Gamelog({ initialPlayer }: { initialPlayer?: string }) {
           ))}
         </div>
       )}
-      {p.error && <div style={{ color: "var(--color-warm-gray)", marginTop: 8 }}>{p.error}</div>}
+      {p.error && <div style={{ color: "var(--ink-2)", marginTop: 8 }}>{p.error}</div>}
       <Meta meta={p.meta} />
       {p.rows === null && !p.error && <Skeleton lines={5} label="Loading game log" />}
       {pts.length > 1 && (
         <div style={{ marginTop: 8 }}>
-          <div style={{ fontSize: 12, color: "var(--color-warm-gray)", marginBottom: 4 }}>
+          <div style={{ fontSize: 12, color: "var(--ink-2)", marginBottom: 4 }}>
             Points, recent first
           </div>
           <Sparkline values={pts.slice(0, 20)} />

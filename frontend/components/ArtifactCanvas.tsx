@@ -108,8 +108,8 @@ export default function ArtifactCanvas({ artifact, onClose, onAsk }: ArtifactCan
         display: "flex",
         flexDirection: "column",
         height: "100%",
-        background: "var(--color-pure-white)",
-        borderLeft: "1px solid var(--color-stone-border)",
+        background: "var(--surface)",
+        borderLeft: "1px solid var(--line)",
         boxSizing: "border-box",
       }}
     >
@@ -120,8 +120,8 @@ export default function ArtifactCanvas({ artifact, onClose, onAsk }: ArtifactCan
           alignItems: "center",
           justifyContent: "space-between",
           padding: "14px 20px",
-          borderBottom: "1px solid var(--color-stone-border)",
-          background: "var(--color-pure-white)",
+          borderBottom: "1px solid var(--line)",
+          background: "var(--surface)",
           gap: 12,
           flexShrink: 0,
         }}
@@ -131,7 +131,7 @@ export default function ArtifactCanvas({ artifact, onClose, onAsk }: ArtifactCan
             style={{
               fontSize: 14,
               fontWeight: 600,
-              color: "var(--color-ink-black)",
+              color: "var(--ink)",
               whiteSpace: "nowrap",
               overflow: "hidden",
               textOverflow: "ellipsis",
@@ -139,12 +139,12 @@ export default function ArtifactCanvas({ artifact, onClose, onAsk }: ArtifactCan
           >
             {rawTitle}
           </div>
-          <div style={{ fontSize: 11, color: "var(--color-warm-gray)", marginTop: 1 }}>
+          <div style={{ fontSize: 11, color: "var(--ink-2)", marginTop: 1 }}>
               {artifact.meta?.source ? `Source: ${artifact.meta.source}` : "Source: NBA data"}
             {artifact.meta?.fetched_at ? ` · ${String(artifact.meta.fetched_at).slice(0, 10)}` : ""}
           </div>
           {(artifact.meta?.qualification || artifact.meta?.coverage || artifact.meta?.warnings?.length) && (
-            <div style={{ fontSize: 11, color: "var(--color-warm-gray)", marginTop: 3 }}>
+            <div style={{ fontSize: 11, color: "var(--ink-2)", marginTop: 3 }}>
               {[artifact.meta?.qualification, artifact.meta?.coverage,
                 ...(artifact.meta?.warnings ?? [])].filter(Boolean).join(" · ")}
             </div>
@@ -156,16 +156,16 @@ export default function ArtifactCanvas({ artifact, onClose, onAsk }: ArtifactCan
           <div
             style={{
               display: "inline-flex",
-              background: "var(--color-stone-canvas)",
+              background: "var(--page)",
               padding: 2,
               borderRadius: 9999,
-              border: "1px solid var(--color-stone-border)",
+              border: "1px solid var(--line)",
             }}
           >
             {isShotTool && (
               <button
                 type="button"
-                className={viewMode === "court" ? "tab-active" : "pill-ghost"}
+                className={viewMode === "court" ? "inline-flex items-center justify-center gap-1.5 rounded-full px-3 py-1.5 text-[12px] transition-colors bg-surface text-ink shadow-hairline" : "inline-flex items-center justify-center gap-1.5 rounded-full px-3 py-1.5 text-[12px] transition-colors bg-field text-ink-2 hover:bg-hover"}
                 style={{ fontSize: 11, padding: "3px 12px", border: "none" }}
                 onClick={() => setViewMode("court")}
               >
@@ -174,7 +174,7 @@ export default function ArtifactCanvas({ artifact, onClose, onAsk }: ArtifactCan
             )}
             <button
               type="button"
-              className={viewMode === "table" ? "tab-active" : "pill-ghost"}
+              className={viewMode === "table" ? "inline-flex items-center justify-center gap-1.5 rounded-full px-3 py-1.5 text-[12px] transition-colors bg-surface text-ink shadow-hairline" : "inline-flex items-center justify-center gap-1.5 rounded-full px-3 py-1.5 text-[12px] transition-colors bg-field text-ink-2 hover:bg-hover"}
               style={{ fontSize: 11, padding: "3px 12px", border: "none" }}
               onClick={() => setViewMode("table")}
             >
@@ -183,7 +183,7 @@ export default function ArtifactCanvas({ artifact, onClose, onAsk }: ArtifactCan
             {!isShotTool && !isCustomView && (
               <button
                 type="button"
-                className={viewMode === "chart" ? "tab-active" : "pill-ghost"}
+                className={viewMode === "chart" ? "inline-flex items-center justify-center gap-1.5 rounded-full px-3 py-1.5 text-[12px] transition-colors bg-surface text-ink shadow-hairline" : "inline-flex items-center justify-center gap-1.5 rounded-full px-3 py-1.5 text-[12px] transition-colors bg-field text-ink-2 hover:bg-hover"}
                 style={{ fontSize: 11, padding: "3px 12px", border: "none" }}
                 onClick={() => setViewMode("chart")}
               >
@@ -195,7 +195,7 @@ export default function ArtifactCanvas({ artifact, onClose, onAsk }: ArtifactCan
           {viewMode === "table" && (
             <button
               type="button"
-              className={heat ? "tab-active" : "pill-ghost"}
+              className={heat ? "inline-flex items-center justify-center gap-1.5 rounded-full px-3 py-1.5 text-[12px] transition-colors bg-surface text-ink shadow-hairline" : "inline-flex items-center justify-center gap-1.5 rounded-full px-3 py-1.5 text-[12px] transition-colors bg-field text-ink-2 hover:bg-hover"}
               style={{ fontSize: 11, padding: "3px 10px" }}
               onClick={() => setHeat(!heat)}
               title="Toggle heat map gradient"
@@ -208,11 +208,11 @@ export default function ArtifactCanvas({ artifact, onClose, onAsk }: ArtifactCan
           <button
             type="button"
             onClick={onClose}
-            className="pill-ghost"
+            className="inline-flex items-center justify-center gap-1.5 rounded-full px-3 py-1.5 text-[12px] transition-colors bg-field text-ink-2 hover:bg-hover"
             style={{
               padding: "4px 8px",
               fontSize: 12,
-              color: "var(--color-warm-gray)",
+              color: "var(--ink-2)",
               display: "flex",
               alignItems: "center",
               cursor: "pointer",
@@ -230,12 +230,12 @@ export default function ArtifactCanvas({ artifact, onClose, onAsk }: ArtifactCan
           <details
             style={{
               fontSize: 11,
-              color: "var(--color-warm-gray)",
+              color: "var(--ink-2)",
               marginBottom: 16,
-              background: "var(--color-stone-canvas)",
+              background: "var(--page)",
               padding: "8px 12px",
               borderRadius: 8,
-              border: "1px solid var(--color-stone-border)",
+              border: "1px solid var(--line)",
             }}
           >
             <summary style={{ cursor: "pointer", fontWeight: 500 }}>View SQL query</summary>
@@ -280,8 +280,8 @@ export default function ArtifactCanvas({ artifact, onClose, onAsk }: ArtifactCan
         ) : toolName === "run_python" ? (
           <div
             style={{
-              background: "var(--color-stone-canvas)",
-              border: "1px solid var(--color-stone-border)",
+              background: "var(--page)",
+              border: "1px solid var(--line)",
               padding: 16,
               borderRadius: 10,
               fontFamily: "monospace",
@@ -289,7 +289,7 @@ export default function ArtifactCanvas({ artifact, onClose, onAsk }: ArtifactCan
               overflowX: "auto",
             }}
           >
-            <div style={{ fontSize: 11, color: "var(--color-warm-gray)", marginBottom: 8, fontWeight: 500 }}>
+            <div style={{ fontSize: 11, color: "var(--ink-2)", marginBottom: 8, fontWeight: 500 }}>
               Python Output
             </div>
             <pre style={{ margin: 0, whiteSpace: "pre-wrap" }}>
@@ -304,7 +304,7 @@ export default function ArtifactCanvas({ artifact, onClose, onAsk }: ArtifactCan
           <div
             style={{
               fontSize: 12,
-              color: "var(--color-warm-gray)",
+              color: "var(--ink-2)",
               padding: "12px 4px",
             }}
           >
@@ -318,8 +318,8 @@ export default function ArtifactCanvas({ artifact, onClose, onAsk }: ArtifactCan
             {hasCustomChart && (
               <div
                 style={{
-                  background: "var(--color-pure-white)",
-                  border: "1px solid var(--color-stone-border)",
+                  background: "var(--surface)",
+                  border: "1px solid var(--line)",
                   borderRadius: 10,
                   padding: "12px 14px",
                   marginBottom: 12,
@@ -334,7 +334,7 @@ export default function ArtifactCanvas({ artifact, onClose, onAsk }: ArtifactCan
                 >
                   <button
                     type="button"
-                    className="pill-ghost"
+                    className="inline-flex items-center justify-center gap-1.5 rounded-full px-3 py-1.5 text-[12px] transition-colors bg-field text-ink-2 hover:bg-hover"
                     style={{ fontSize: 11, padding: "2px 10px" }}
                     onClick={() => setShowChart((v) => !v)}
                   >
