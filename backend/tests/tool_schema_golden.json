@@ -3452,6 +3452,29 @@
         "title": "get_scouting_report",
         "type": "object"
       }
+    },
+    "get_roster_fit": {
+      "name": "get_roster_fit",
+      "description": "Roster gap and fit profile for one team and season (default current): rotation shares by skill archetype (spacing, creation, rim protection, defense, bench depth) versus league and top-8 contender baselines, returning the biggest gaps. Reads silver_leaders_pts and standings; warehouse only.",
+      "args_schema": {
+        "properties": {
+          "team_id": {
+            "default": null,
+            "title": "Team Id"
+          },
+          "team": {
+            "default": "",
+            "title": "Team",
+            "type": "string"
+          },
+          "season": {
+            "default": null,
+            "title": "Season"
+          }
+        },
+        "title": "get_roster_fit",
+        "type": "object"
+      }
     }
   },
   "internal": {
