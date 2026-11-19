@@ -10,6 +10,8 @@ import { Form, FormField, TextField } from "@/components/ds/TextField";
 import { RecordsTable } from "@/components/ds/RecordsTable";
 import { Popover, PopoverContent, PopoverDescription, PopoverTitle, PopoverTrigger } from "@/components/ui/popover";
 import DimeCommandPalette from "@/components/site/DimeCommandPalette";
+import { StreamArtifacts } from "@/components/site/harness/ArtifactsView";
+import { generativeFixtures } from "@/lib/generative-fixture";
 
 const foundations = [
   { name: "Canvas", token: "canvas", className: "bg-canvas" },
@@ -19,7 +21,7 @@ const foundations = [
   { name: "Ink", token: "ink", className: "bg-ink" },
   { name: "Accent", token: "accent-ink", className: "bg-accent-ink" },
 ];
-const sections = ["Overview", "Foundations", "Controls", "Evidence", "States"] as const;
+const sections = ["Overview", "Foundations", "Controls", "Evidence", "Generative", "States"] as const;
 const researchRows = [
   { player: "Wing A", minutes: 1240, points_per_36: 18.4, contract_years: 2 },
   { player: "Wing B", minutes: 986, points_per_36: 16.2, contract_years: 1 },
@@ -109,6 +111,10 @@ export default function DesignSystemPage() {
           <RecordsTable title="Illustrative player records" rows={evidenceState === "With records" ? researchRows : []} source="Design fixture · no live warehouse query · minutes / points per 36 / contract years" />
           <p role="status" className="text-xs text-ink-2">{evidenceState === "With records" ? "3 illustrative records. Source and units stay attached to the table." : "No matching records. The table keeps its title, source, and next step."}</p>
         </Surface>
+      </section>
+      <section id="generative" tabIndex={-1} aria-label="Generative" className="system-section mb-12">
+        <PageHeader eyebrow="04 / Generative answers" title="The right shape for the answer." description="A bounded component catalog, not arbitrary generated code. Player snapshots, interactive charts and sortable tables stay inside the conversation, with raw values and source inspection." />
+        <div className="max-w-[760px]"><StatusPill dot={false}>Fictional design fixtures · no live data</StatusPill><StreamArtifacts artifacts={generativeFixtures} /></div>
       </section>
       <section id="states" tabIndex={-1} aria-label="States" className="system-section">
         <PageHeader eyebrow="04 / States" title="Always say what happened." description="A color is not an explanation. Every status has a label, every error keeps your input, and every empty state points to a useful next step." />
