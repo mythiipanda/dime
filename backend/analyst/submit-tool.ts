@@ -77,9 +77,22 @@ export function validateAnswerSubmission(
             validateAnchor(anchor, getSource, availableRefs);
         return { text: block.text, anchors };
     });
-    const artifacts = input.artifacts ? structuredClone(input.artifacts).map((artifact, index) =>
-        artifact.kind === "player_card" ? resolvePlayerCard(artifact, getSource) : validateAnswerArtifact(artifact, index)
-    ) : undefined;
+    const artifacts = input.artifacts ? structuredClone(input.artifacts).map((artifact, index) => {
+        if (artifact.kind === "player_card") return resolvePlayerCard(artifact, getSource);
+        if (artifact.kind === "memo" && Array.isArray(artifact.sections)) {
+            for (const section of artifact.sections) {
+                const anchors = objectValue(section)?.anchors;
+                if (Array.isArray(anchors)) {
+                    for (const anchor of anchors) {
+                        if (!Value.Check(anchorSelectorSchema, anchor))
+                            throw new Error("Invalid memo section anchor: ref, row and columns required");
+                        validateAnchor(anchor, getSource, availableRefs);
+                    }
+                }
+            }
+        }
+        return validateAnswerArtifact(artifact, index);
+    }) : undefined;
     return artifacts !== undefined ? { blocks, artifacts } : { blocks };
 }
 
@@ -90,7 +103,7 @@ export function createSubmitAnswerTool(
     return defineTool({
         name: "submit_answer",
         label: "Submit answer",
-        description: "Submit final prose blocks with optional source selectors and visual artifacts (table, compare, chart, shot_chart, scatter, player_card). Load visual-artifacts for schemas. player_card uses ref/row/nameColumn and metrics [{column,label}]; the host resolves values and units from one source row. Validates selector traceability and artifact schemas, not semantic correctness.",
+        description: "Submit final prose blocks with optional source selectors and visual artifacts (table, compare, chart, shot_chart, scatter, player_card, memo). Load visual-artifacts for schemas. player_card uses ref/row/nameColumn and metrics [{column,label}]; the host resolves values and units from one source row. memo sections may carry anchors validated like block anchors. Validates selector traceability and artifact schemas, not semantic correctness.",
         parameters: submitAnswerSchema,
         async execute(_callId, args) {
             const sources = getContextSources();

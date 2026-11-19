@@ -412,7 +412,7 @@ def test_registry_matches_the_typescript_tool_names(monkeypatch):
     ).group(1)
     declared = re.findall(r'"([^"]+)"', block)
 
-    assert len(declared) == 98
+    assert len(declared) == len(tools)
     assert list(tools.keys()) == declared
     for name in ("get_lineups", "get_splits", "get_recap", "get_scouting_report"):
         assert name in tools
@@ -521,7 +521,7 @@ def test_bridge_clone_keeps_all_names_and_schemas(monkeypatch):
     ).group(1)
     declared = re.findall(r'"([^"]+)"', block)
 
-    assert len(declared) == 98
+    assert len(declared) == len(tools)
     assert list(tools.keys()) == declared
     for name, upstream_schema in UPSTREAM_SCHEMAS.items():
         assert tools[name].args_schema.model_json_schema() == upstream_schema, name

@@ -1273,7 +1273,7 @@ def test_registry_matches_the_typescript_tool_names(monkeypatch):
     ).group(1)
     declared = re.findall(r'"([^"]+)"', block)
 
-    assert len(declared) == 98
+    assert len(declared) == len(tools)
     assert list(tools.keys()) == declared
     for spec in SECTIONED:
         assert spec["name"] in tools
