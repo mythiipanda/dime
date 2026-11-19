@@ -193,6 +193,19 @@ def test_sql_empty_statement_and_nonfinite_values():
     assert data["rows"] == [{"value": None}]
 
 
+def test_sql_nested_nonfinite_values_are_json_safe():
+    response = query("""SELECT
+        ['NaN'::DOUBLE, 'Infinity'::DOUBLE, '-Infinity'::DOUBLE, 1.5] AS numbers,
+        {'nested': [{'value': 'NaN'::DOUBLE}, {'value': 2.5}]} AS details
+        FROM silver_player_season LIMIT 1""")
+    assert response.status_code == 200, response.text
+    assert response.json()["rows"] == [{
+        "numbers": [None, None, None, 1.5],
+        "details": {"nested": [{"value": None}, {"value": 2.5}]},
+    }]
+    json.dumps(response.json(), allow_nan=False)
+
+
 @pytest.mark.parametrize("statement", [
     "DELETE FROM silver_player_season", "DROP TABLE silver_player_season",
     "SELECT * FROM private_notes", "SELECT * FROM unknown_table",

@@ -44,7 +44,13 @@ def execute(sql: str, params: dict[str, Any], page: int, page_size: int) -> dict
     start_row = page * page_size
     kept = rows[:5000]
     def value(item):
-        return None if isinstance(item, float) and not math.isfinite(item) else item
+        if isinstance(item, float) and not math.isfinite(item):
+            return None
+        if isinstance(item, dict):
+            return {key: value(nested) for key, nested in item.items()}
+        if isinstance(item, (list, tuple)):
+            return [value(nested) for nested in item]
+        return item
     return {"columns": columns, "rows": [dict(zip([c["name"] for c in columns], map(value, row))) for row in kept[start_row:start_row + page_size]],
             "page": page, "page_size": page_size,
             "has_more": start_row + page_size < len(kept),
