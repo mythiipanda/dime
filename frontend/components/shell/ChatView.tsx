@@ -9,6 +9,7 @@ import { pairToolItems, planSteps, recordKey } from "../../lib/activity";
 import { capabilityLabel } from "../../lib/evidence";
 import { replayStream } from "../../lib/replay";
 import { takeRerun } from "../../lib/briefs";
+import { availableModel, modelLabel } from "../../lib/model-catalog";
 import { PromptBar } from "../ds/PromptBar";
 import { ThinkingState } from "../ds/ThinkingState";
 import { ToolChips } from "../ds/ToolChips";
@@ -58,7 +59,7 @@ export function ChatView({ thread, preset, autoSend, replay, onConsumed, onRunDo
   const sent = useRef(false);
   const end = useRef<HTMLDivElement>(null);
   const mounted = useRef(true);
-  const loadModels = () => { setModelError(false); getModels().then((r) => { if (!mounted.current) return; if (!r.models?.length) throw Error("No models"); setModels(r.models); setModel((m) => m || r.models.find((x) => x.default)?.id || r.models[0].id); }).catch(() => { if (mounted.current) setModelError(true); }); };
+  const loadModels = () => { setModelError(false); getModels().then((r) => { if (!mounted.current) return; if (!Array.isArray(r.models)) throw Error("Invalid model catalog"); setModels(r.models); setModel((m) => availableModel(r.models, m)); }).catch(() => { if (mounted.current) { setModel(null); setModelError(true); } }); };
   useEffect(() => {
     mounted.current = true;
     loadModels();
@@ -75,6 +76,7 @@ export function ChatView({ thread, preset, autoSend, replay, onConsumed, onRunDo
   const send = async (raw: string, fixture?: string) => {
     const q = raw.trim();
     if (!q || running.current) return;
+    if (!fixture && (!model || !models.some((m) => m.id === model && m.available !== false))) return;
     running.current = true;
     const controller = new AbortController();
     abort.current = controller;
@@ -102,7 +104,7 @@ export function ChatView({ thread, preset, autoSend, replay, onConsumed, onRunDo
   };
   useEffect(() => {
     if (sent.current || (!replay && !autoSend)) return;
-    if (!replay && !model && !modelError) return;
+    if (!replay && !model) return;
     const timer = setTimeout(() => {
       sent.current = true;
       if (autoSend?.thread === thread) { onConsumed(); void send(autoSend.text); }
@@ -111,7 +113,7 @@ export function ChatView({ thread, preset, autoSend, replay, onConsumed, onRunDo
     return () => clearTimeout(timer);
   });
   const stop = () => { abort.current?.abort(); running.current = false; setBusy(false); setMessages((m) => m.map((message, i) => i === m.length - 1 && message.ai ? { ...message, ai: { ...message.ai, done: true, streaming: false } } : message)); };
-  const composer = <PromptBar value={input} onChange={setInput} onSend={send} onStop={stop} busy={busy} models={models.map((m) => ({ id: m.id, label: m.id }))} model={model} onModelChange={setModel} modelError={modelError} onRetry={loadModels} />;
+  const composer = <PromptBar value={input} onChange={setInput} onSend={send} onStop={stop} busy={busy} models={models.map((m) => ({ id: m.id, label: modelLabel(m.id), available: m.available }))} model={model} onModelChange={(id) => setModel(availableModel(models, id))} modelError={modelError} onRetry={loadModels} />;
   return <div className="chat-view">
     {!messages.length ? <div className="chat-empty">
       <h1><span>A clearer view of the game.</span>What are we working on?</h1>

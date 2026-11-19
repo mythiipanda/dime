@@ -4,6 +4,20 @@ import { JSDOM } from "jsdom";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { DimeShell, parseShellTab, shellNavigation } from "./components/shell/DimeShell";
+import { availableModel, modelLabel } from "./lib/model-catalog";
+import { renderToStaticMarkup } from "react-dom/server";
+import { PromptBar } from "./components/ds/PromptBar";
+
+it("never selects unconfigured providers and presents human model names", () => {
+  const models = [{ id: "mistral:ministral-8b-2512", engine: "mistral", default: true, available: false }, { id: "gemini:gemini-2.5-flash", engine: "gemini", available: true }];
+  assert.equal(availableModel(models, models[0].id), models[1].id);
+  assert.equal(availableModel(models.slice(0, 1), null), null);
+  assert.equal(availableModel([], null), null);
+  assert.equal(modelLabel(models[0].id), "Ministral 8B");
+  const html = renderToStaticMarkup(<PromptBar value="Question" onChange={() => {}} onSend={() => {}} onStop={() => {}} busy={false} models={models.map((m) => ({ ...m, label: modelLabel(m.id) }))} model={null} onModelChange={() => {}} onRetry={() => {}} />);
+  assert.match(html, /disabled=""[^>]*>Ministral 8B · Unavailable/);
+  assert.match(html, /disabled="" aria-label="Send message"/);
+});
 
 it("keeps old URL values and defines the requested navigation", () => {
   assert.deepEqual(shellNavigation.map((n) => n.label), ["Home", "Ask", "Boards", "Workflows", "Library", "Data"]);
