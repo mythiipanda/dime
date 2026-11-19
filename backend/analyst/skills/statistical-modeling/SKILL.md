@@ -117,3 +117,24 @@ for p, fg3m, fg3a in rows:
 out = pl.DataFrame(shrunk)
 ```
 The output can then be directly cited in `submit_answer` and visualized in a `table` or `scatter` artifact.
+
+---
+
+## 5. Empirical Bayes Prior by Method of Moments
+
+For rates `r_i = makes_i / attempts_i` on a high-volume cohort:
+1. `mu = sum(makes) / sum(attempts)`.
+2. Observed variance weighted by attempts: `S2 = sum(n_i * (r_i - mu)^2) / sum(n_i)`.
+3. Expected sampling variance under that same weighting: `mu * (1 - mu) * k / sum(n_i)` for `k` players. Subtract it to get the true between-player variance `tau2`.
+4. Prior strength `M = mu * (1 - mu) / tau2 - 1`; shrunk rate `(makes + M * mu) / (attempts + M)`.
+State which weighting you used; mixing a weighted `S2` with an unweighted sampling term changes `M` substantially.
+
+## 6. Interpreting Model Output
+
+A number is not an answer until you say what it means and how much to trust it:
+- **Why the method**: say what problem the technique solves in this data. Ridge RAPM exists because teammates share the floor, so their columns are nearly collinear and unpenalized coefficients explode; lambda trades a little bias for much lower variance. Cluster bootstraps exist because events within a game are correlated. Shrinkage exists because sampling noise dominates small samples.
+- **Signal vs noise**: give the interval or standard error and say plainly whether it excludes zero.
+- **Biases**: name the selection effects that shape the sample, such as survivorship (only players good enough to keep playing appear at older ages, which flattens late-career decline), minimum-minute filters, era and cohort effects.
+- **Data artifacts**: duplicated rows inflate counts and totals but leave ratios unchanged when duplication is uniform; say which of your figures each artifact would distort.
+- **Shape, not just endpoints**: for trends, describe the phases (acceleration, plateau, reversal) rather than only first-vs-last change.
+- **Largest contrast**: in any comparison, name the biggest gap and what drives it.

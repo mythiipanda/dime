@@ -67,3 +67,13 @@ Teams operating at or above the Second Apron face the most punitive roster restr
 
 - **Trade Check Summaries**: Use `compare` artifacts to contrast incoming and outgoing player profiles, salaries, and net ratings.
 - **Roster Cap Ledger**: Use `table` artifacts displaying player salaries, luxury tax tiers, and team apron room/deficit.
+
+---
+
+## 5. Feasibility Checks Every Trade or Cap Answer Needs
+
+- **Use the thresholds the user states**; otherwise read them from the warehouse cap ledger and say which set you used.
+- **Distance to every line**: report each team's payroll and its signed distance to the cap, tax, First Apron, and Second Apron. Call out any team within about $2M of a line, on either side, as a boundary case whose tier one small move would flip.
+- **Under-cap receivers**: a team below the cap absorbs incoming salary into cap space up to `Cap - Payroll` with no matching needed. When incoming salary exceeds that room, say so and name the fallback (matching, an exception, a third team, or salary sent back).
+- **Make illegal deals legal**: for every side that fails, compute the exact fix: the extra outgoing salary (or reduction in incoming salary) its matching rule requires, and whether that team may aggregate contracts to get there.
+- **Multi-year view**: separate the current-season cap hit from total remaining guaranteed money, and weigh the trade-off it implies: a locked-in core buys continuity but removes future flexibility; expiring money preserves optionality. Rookie-scale contracts are capped by the CBA, so cheap high-impact players on them are surplus value by construction.

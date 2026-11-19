@@ -33,3 +33,9 @@ In player-season tables, a traded player often has one combined row (`TEAM_ABBRE
 `sql_exec` returns `ok: true, rows: [], row_count: 0, meta: { empty_observation: true }` when a valid query matches zero rows:
 - Do **not** treat a 0-row result as a tool crash. First verify your filter literals (spelling, case, season encoding) against `warehouse_schema` or a broader `SELECT DISTINCT` probe.
 - Once filters are verified, a 0-row observation is affirmative evidence that no entity or event satisfied those criteria in the covered warehouse scope (e.g., resolving a false-premise question). Report the exact verified scope and the 0-row finding transparently.
+
+## 5. Cross-Table Joins
+
+- Join players and teams on IDs whenever both sides carry them.
+- When only names are shared, normalize both sides before joining: strip accents, punctuation, and suffixes (Jr., Sr., II, III), collapse whitespace, lowercase.
+- Report matched and unmatched counts. If more than a few percent of rows fail to match, inspect the unmatched names and fix the join before computing anything from it.
