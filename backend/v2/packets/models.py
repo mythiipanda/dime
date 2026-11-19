@@ -19,7 +19,9 @@ def format_value(value, unit=None):
         return f"{sign}${abs(value)/1_000_000:,.1f}M" if abs(value) >= 1_000_000 else f"{sign}${abs(value):,.0f}"
     if unit == "pct":
         return f"{value:.1f}%"
-    if unit in ("rating", "points_per_100_possessions", "percentage_points"):
+    if unit == "percentage_points":
+        return f"{value:+.1f} pp"
+    if unit in ("rating", "points_per_100_possessions"):
         return f"{value:+.1f}"
     return f"{value:.1f}"
 
@@ -32,7 +34,7 @@ UNITS = {"age": "years", "gp": "count", "g": "count", "n": "count", "fga": "coun
 
 
 def display_rows(rows, units):
-    return [{key: {"provider_stat":"Provider units", "pct":"Percent", "rating":"Points per 100 possessions"}.get(value, value) if key == "unit" and isinstance(value, str) else format_value(value, units.get(key) or row.get("unit") or UNITS.get(key.lower()))
+    return [{key: {"provider_stat":"Provider units", "pct":"Percent", "rating":"Points per 100 possessions"}.get(value, value) if key == "unit" and isinstance(value, str) else format_value(value, "percentage_points" if key == "On-Off" and row.get("unit") == "pct" else units.get(key) or row.get("unit") or UNITS.get(key.lower()))
              for key, value in row.items()} for row in rows]
 
 

@@ -260,6 +260,12 @@ def test_polished_deep_dive_display_summaries_and_impact(real):
     assert 1<=len(curated.rows)<=8 and not curated.collapsed
     assert impact.blocks[-1].title=="On/off appendix" and impact.blocks[-1].collapsed
     assert len(impact.blocks[-1].rows)>len(curated.rows)
+    for block in (curated,impact.blocks[-1]):
+        for raw,display in zip(block.rows,block.display_rows):
+            if raw["unit"]=="pct" and raw.get("On-Off") is not None:
+                assert display["On-Off"]==f"{raw['On-Off']:+.1f} pp"
+            elif raw.get("On-Off") is not None:
+                assert display["On-Off"]==f"{raw['On-Off']:+.1f}"
     assert not any(b.type=="callout" and b.md in ("Clutch totals","Hustle totals") for b in impact.blocks)
     age=next(i for i in section(packet,"profile").blocks[0].items if i.label=="Age")
     assert age.display==str(int(age.value))

@@ -222,7 +222,7 @@ def build_packet(con, player, season):
         eligible = [r for r in zr if r[key] is not None]
         if eligible:
             r = max(eligible,key=lambda r:abs(r[key]))
-            blocks.append(Text(md=f"Largest absolute {label} delta: {r['zone']} ({format_value(r[key], 'percentage_points')} percentage points). [^{zc}]", cites=[zc]))
+            blocks.append(Text(md=f"Largest absolute {label} delta: {r['zone']} ({format_value(r[key], 'percentage_points')}). [^{zc}]", cites=[zc]))
     if not blocks:
         blocks.append(unavailable(d,"Shot profile unavailable for this player."))
     sections.append(Section(id="shot_profile", title="Shot profile", summary="League zones are attempt-weighted over the qualified cohort; distance buckets are not geometric shot-chart zones.", blocks=blocks))
