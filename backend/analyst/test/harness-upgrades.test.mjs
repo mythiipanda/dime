@@ -475,9 +475,147 @@ test("run_status is exposed to codemode with host budget and checkpointed submis
     assert.match(transcript, /submitted"?\s*:\s*true/);
     assert.match(transcript, /budget_ms"?\s*:\s*12345/);
     assert.match(transcript, /budget_remaining_ms"?\s*:\s*\d+/);
+    assert.match(
+      seenContexts[0].messages.map((message) => messageText(message.content)).join("\n"),
+      /Host run budget: 12s \(12345ms total\)/
+    );
   } finally {
     await rm(cwd, { recursive: true, force: true });
   }
+});
+
+test("no host budget context is injected when runTimeoutMs is unset", async () => {
+  const cwd = await mkdtemp(join(tmpdir(), "dime-no-budget-ctx-"));
+  const agentDir = join(cwd, "agent");
+  await mkdir(agentDir, { recursive: true });
+
+  const seenContexts = [];
+  const runtime = await makeFixtureRuntime(agentDir, (model, context) => {
+    seenContexts.push(structuredClone(context));
+    const msg = {
+      role: "assistant",
+      api: model.api,
+      provider: model.provider,
+      model: model.id,
+      content: [{ type: "text", text: "Done." }],
+      stopReason: "stop",
+      timestamp: Date.now(),
+      usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } },
+    };
+    const stream = createAssistantMessageEventStream();
+    stream.push({ type: "done", reason: "stop", message: msg });
+    stream.end();
+    return stream;
+  });
+  const pi = createPiExecution({
+    resolveRuntime: async () => ({ runtime, model: runtime.getModel("fixture", "fixture") }),
+    connectTools: async () => ({ tools: [], results: new Map(), pid: 1006, close: async () => {} }),
+  });
+
+  try {
+    for await (const event of pi.stream({
+      q: "Quick question",
+      history: [],
+      model: "fixture:fixture",
+      cwd,
+      agentDir,
+      bridge: { python: "fake", cwd, env: {} },
+    })) void event;
+    const transcript = seenContexts[0].messages.map((message) => messageText(message.content)).join("\n");
+    assert(!transcript.includes("Host run budget:"));
+  } finally {
+    await rm(cwd, { recursive: true, force: true });
+  }
+});
+
+test("repeated identical tool errors carry a data-limitation hint", async () => {
+  const cwd = await mkdtemp(join(tmpdir(), "dime-repeat-error-"));
+  const agentDir = join(cwd, "agent");
+  await mkdir(agentDir, { recursive: true });
+
+  let turn = 0;
+  const seenContexts = [];
+  const runtime = await makeFixtureRuntime(agentDir, (model, context) => {
+    turn++;
+    seenContexts.push(structuredClone(context));
+    const content = turn <= 2
+      ? [{ type: "toolCall", id: `call-repeat-error-${turn}`, name: "codemode", arguments: { code: turn === 1
+          ? `return await tools.get_trade_check({ give: ["Brown"], get: ["George"] });`
+          : `return await tools.get_trade_check({ give: ["Brown"], get: ["George", "pick"] });` } }]
+      : [{ type: "text", text: "Done." }];
+    const msg = {
+      role: "assistant",
+      api: model.api,
+      provider: model.provider,
+      model: model.id,
+      content,
+      stopReason: turn <= 2 ? "toolUse" : "stop",
+      timestamp: Date.now(),
+      usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } },
+    };
+    const stream = createAssistantMessageEventStream();
+    stream.push({ type: "done", reason: msg.stopReason, message: msg });
+    stream.end();
+    return stream;
+  });
+
+  const resultsMap = new Map();
+  let execCount = 0;
+  const mockBridge = {
+    tools: [{
+      name: "get_trade_check",
+      label: "get_trade_check",
+      description: "Check a trade",
+      parameters: Type.Object({ give: Type.Array(Type.String()), get: Type.Array(Type.String()) }),
+      async execute(callId) {
+        execCount++;
+        const ref = `src-trade-${execCount}`;
+        const payload = { ok: false, error: "salary data lists Jaylen Brown with PHI, not BOS; trade math was not calculated" };
+        const record = { ref, callId, tool: "get_trade_check", response: { content: [{ type: "text", text: JSON.stringify(payload) }], structuredContent: payload, isError: true } };
+        resultsMap.set(ref, record);
+        return { content: [{ type: "text", text: JSON.stringify(payload) }], details: undefined, structuredContent: { ref, tool: "get_trade_check", result: payload, isError: true }, isError: true };
+      },
+    }],
+    results: resultsMap,
+    pid: 1005,
+    close: async () => {},
+  };
+  const pi = createPiExecution({
+    resolveRuntime: async () => ({ runtime, model: runtime.getModel("fixture", "fixture") }),
+    connectTools: async () => mockBridge,
+  });
+
+  try {
+    for await (const event of pi.stream({
+      q: "Retry a failing trade check",
+      history: [],
+      model: "fixture:fixture",
+      cwd,
+      agentDir,
+      bridge: { python: "fake", cwd, env: {} },
+    })) void event;
+    assert.equal(execCount, 2);
+    const transcript = seenContexts.map((context) => context.messages.map((message) => messageText(message.content)).join("\n")).join("\n");
+    assert.match(transcript, /repeated_error"?\s*:\s*"Same error as 1 earlier get_trade_check call/);
+    assert.match(transcript, /recovery_hint"?\s*:\s*"Treat as a data limitation/);
+  } finally {
+    await rm(cwd, { recursive: true, force: true });
+  }
+});
+
+test("submit_answer accepts and reports omitted parts", async () => {
+  const accepted = [];
+  const tool = createSubmitAnswerTool(() => [], (submission) => accepted.push(submission));
+  const result = await tool.execute("call-omit", {
+    blocks: [{ text: "Partial verified answer." }],
+    omitted: ["Trade candidates for Jaylen Brown", "Playoff shooting struggles"],
+  });
+  assert.equal(accepted.length, 1);
+  assert.deepEqual(accepted[0].omitted, ["Trade candidates for Jaylen Brown", "Playoff shooting struggles"]);
+  assert.match(result.content[0].text, /2 omitted part\(s\) recorded/);
+
+  const full = validateAnswerSubmission({ blocks: [{ text: "Complete." }] }, () => undefined);
+  assert.equal(full.omitted, undefined);
 });
 
 test("submit_answer and validateAnswerSubmission provide available columns and available refs hints", async () => {

@@ -202,6 +202,7 @@ function wrapBridgeTools(
     tracker: RunStatusTracker
 ) {
     const callCounts = new Map<string, { count: number; lastRef?: string }>();
+    const lastErrors = new Map<string, { error: string; count: number }>();
     return tools.map(tool => ({
         ...tool,
         async execute(...args: Parameters<typeof tool.execute>) {
@@ -231,6 +232,19 @@ function wrapBridgeTools(
                 const domain = objectValue(result.structuredContent.result);
                 const failed = result.structuredContent.isError;
                 const error = domain?.error;
+                if (failed && domain) {
+                    const errorText = typeof error === "string" ? error : "Tool failed";
+                    const previous = lastErrors.get(tool.name);
+                    const count = previous && previous.error === errorText ? previous.count + 1 : 1;
+                    lastErrors.set(tool.name, { error: errorText, count });
+                    if (count >= 2) {
+                        domain.repeated_error = `Same error as ${count - 1} earlier ${tool.name} call(s) in this run`;
+                        domain.recovery_hint = "Treat as a data limitation: note the gap and move to the next sub-question instead of retrying.";
+                        result.content = [{ type: "text", text: JSON.stringify(domain) }];
+                    }
+                }
+                else if (!failed)
+                    lastErrors.delete(tool.name);
                 emit({
                     type: "tool_result", name: tool.name, status: failed ? "fail" : "ok",
                     ...(failed ? { error: typeof error === "string" ? error : "Tool failed" } : {}),
@@ -348,6 +362,15 @@ export function createPiExecution(deps: AnalystDeps = {}) {
                         };
                         session.sessionManager.appendMessage(workspaceContext);
                         session.agent.state.messages.push(workspaceContext);
+                    }
+                    if (start.runTimeoutMs !== undefined) {
+                        const budgetContext: Message = {
+                            role: "user",
+                            content: `Host run budget: ${Math.round(start.runTimeoutMs / 1000)}s (${Math.round(start.runTimeoutMs)}ms total). The host aborts this run when it expires; tools.run_status({}) reports elapsed and remaining budget.`,
+                            timestamp: Date.now()
+                        };
+                        session.sessionManager.appendMessage(budgetContext);
+                        session.agent.state.messages.push(budgetContext);
                     }
                     kind = "model";
                     await session.prompt(start.q);
