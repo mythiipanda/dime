@@ -3,23 +3,27 @@
 import { useState } from "react";
 import dynamic from "next/dynamic";
 import { chartable, type CellOutput, type TypedColumn } from "../../lib/notebooks";
+import { readableSnapshot } from "../../lib/notebook-snapshot";
 import { Button } from "../ds/Button";
 
 const AutoChart = dynamic(() => import("../AutoChart"), { ssr: false });
 const scalar = (value: unknown) => value === null || value === undefined ? "—" : typeof value === "object" ? JSON.stringify(value) : String(value);
 export function NotebookTable({ columns, rows, label = "Query result" }: { columns: TypedColumn[]; rows: Record<string, unknown>[]; label?: string }) {
-  return <div className="notebook-table-wrap"><table className="notebook-table" aria-label={label}><thead><tr>{columns.map((column) => <th key={column.name} scope="col"><span>{column.name}</span><small>{column.type}</small></th>)}</tr></thead><tbody>{rows.map((row, i) => <tr key={i}>{columns.map((c) => <td key={c.name} className={typeof row[c.name] === "number" ? "is-number" : ""}>{scalar(row[c.name])}</td>)}</tr>)}</tbody></table>{!rows.length && <p className="notebook-empty-output">Query complete. No rows matched.</p>}</div>;
+  return <div className="notebook-table-wrap"><table className="notebook-table" aria-label={label}><thead><tr>{columns.map((column) => <th key={column.name} scope="col"><span>{column.name}</span><small>{column.type}</small></th>)}</tr></thead><tbody>{rows.map((row, i) => <tr key={i}>{columns.map((c) => <td key={c.name} className={typeof row[c.name] === "number" ? "is-number" : ""}>{scalar(row[c.name])}</td>)}</tr>)}</tbody></table>{!rows.length && <p className="notebook-empty-output">{label === "Cached answer snapshot" ? "No rows recorded in this snapshot." : "Query complete. No rows matched."}</p>}</div>;
 }
-export function NotebookOutput({ output, paging, onPage }: { output: unknown; paging: boolean; onPage: (page: number) => void }) {
+export function NotebookOutput({ output, paging, onPage, snapshotTime }: { output: unknown; paging: boolean; onPage: (page: number) => void; snapshotTime?: string }) {
   const [chart, setChart] = useState(false);
   if (!output) return null;
   const value = output as CellOutput;
+  if (value.kind === "snapshot" && value.data) return <div className="notebook-output"><div className="notebook-result-meta">Cached snapshot · from answer · {snapshotTime ? <time dateTime={snapshotTime} title="Copied into this notebook">{new Date(snapshotTime).toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}</time> : "time not recorded"}</div><NotebookTable {...readableSnapshot(value.data)} label="Cached answer snapshot" />{value.data.truncated && <p className="notebook-note">Showing a bounded preview of the original answer table.</p>}</div>;
   if (value.kind === "error") return <div className="notebook-error" role="alert"><strong>Cell could not run</strong><pre>{value.message}</pre><span>Edit the cell and run it again.</span></div>;
   if (value.kind === "sql" && value.data) {
     const result = value.data;
-    return <div className="notebook-output"><div className="notebook-result-meta"><span className="notebook-result-dot" /><span>{result.rows.length.toLocaleString()} rows{result.has_more ? " on this page" : " returned"}</span><span>·</span><span>{result.ms.toLocaleString(undefined, { maximumFractionDigits: 1 })} ms</span><span className="notebook-output-label">Warehouse SQL</span>{chartable(result.rows) && <Button variant="quiet" size="xs" aria-pressed={chart} onClick={() => setChart(!chart)}>{chart ? "Table" : "Chart"}</Button>}</div>
-      {chart && chartable(result.rows) ? <div className="notebook-chart"><AutoChart table={{ rows: result.rows }} /></div> : <NotebookTable columns={result.columns} rows={result.rows} />}
-      {(result.page > 0 || result.has_more || result.truncated) && <div className="notebook-pagination"><span>{result.truncated ? "Output capped at 5,000 rows. " : ""}Page {result.page + 1} · {result.page * result.page_size + (result.rows.length ? 1 : 0)}–{result.page * result.page_size + result.rows.length}</span><Button size="xs" variant="quiet" disabled={paging || result.page === 0} onClick={() => onPage(result.page - 1)}>Previous</Button><Button size="xs" variant="quiet" disabled={paging || !result.has_more} onClick={() => onPage(result.page + 1)}>{paging ? "Loading…" : "Next page"}</Button></div>}
+    const cached = "cached" in result && result.cached === true;
+    return <div className="notebook-output"><div className="notebook-result-meta"><span className="notebook-result-dot" /><span>{result.rows.length.toLocaleString()} {cached ? "cached rows" : `rows${result.has_more ? " on this page" : " returned"}`}</span>{!cached && <><span>·</span><span>{result.ms.toLocaleString(undefined, { maximumFractionDigits: 1 })} ms</span></>}<span className="notebook-output-label">{cached ? "Answer snapshot" : "Warehouse SQL"}</span>{chartable(result.rows) && <Button variant="quiet" size="xs" aria-pressed={chart} onClick={() => setChart(!chart)}>{chart ? "Table" : "Chart"}</Button>}</div>
+      {chart && chartable(result.rows) ? <div className="notebook-chart"><AutoChart table={{ rows: result.rows }} /></div> : <NotebookTable {...(cached ? readableSnapshot(result) : result)} />}
+      {cached && <p className="notebook-note">Cached answer preview. Run this cell to refresh results and enable paging.</p>}
+      {!cached && (result.page > 0 || result.has_more || result.truncated) && <div className="notebook-pagination"><span>{result.truncated ? "Output capped at 5,000 rows. " : ""}Page {result.page + 1} · {result.page * result.page_size + (result.rows.length ? 1 : 0)}–{result.page * result.page_size + result.rows.length}</span><Button size="xs" variant="quiet" disabled={paging || result.page === 0} onClick={() => onPage(result.page - 1)}>Previous</Button><Button size="xs" variant="quiet" disabled={paging || !result.has_more} onClick={() => onPage(result.page + 1)}>{paging ? "Loading…" : "Next page"}</Button></div>}
     </div>;
   }
   if (value.kind === "python" && value.data) {

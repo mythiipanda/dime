@@ -145,7 +145,8 @@ export function aiFromRun(r: RunInfo): AiMessage {
 
         (typeof (t as { tool?: unknown }).tool === "string" ||
           typeof (t as { kind?: unknown }).kind === "string" ||
-          Array.isArray((t as { rows?: unknown }).rows))
+          Array.isArray((t as { rows?: unknown }).rows) ||
+          (typeof (t as { output_id?: unknown }).output_id === "string" && Object.hasOwn(t, "value")))
       ) {
         tables.push(t as ToolResult);
       }
@@ -165,7 +166,7 @@ export function aiFromRun(r: RunInfo): AiMessage {
         }
       : {},
     done: true,
+    ...(r.id ? { carry: { run_id: r.id } } : {}),
     suggestions: Array.isArray(r.suggestions) ? r.suggestions : [],
   };
 }
-

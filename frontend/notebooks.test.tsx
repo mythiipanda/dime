@@ -7,6 +7,8 @@ import { createRoot } from "react-dom/client";
 import { useNotebook } from "./components/notebooks/useNotebook";
 import { newCell, type Notebook, type SQLResult } from "./lib/notebooks";
 import { findNotebookDraft, writeNotebookDraft } from "./lib/notebook-drafts";
+import { AssistantTurn } from "./components/shell/ChatView";
+import type { AiMessage } from "./lib/chat";
 
 createRequire(`${process.cwd()}/notebooks.test.tsx`).extensions[".css"] = () => {};
 const delay = (ms = 25) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -14,7 +16,7 @@ const button = (host: ParentNode, text: string) => [...host.querySelectorAll("bu
 async function click(element: HTMLElement) { assert.ok(element); await act(async () => { element.click(); await delay(); }); }
 const sqlResult: SQLResult = { columns: [{ name: "PLAYER", type: "VARCHAR" }, { name: "PTS", type: "DOUBLE" }], rows: [{ PLAYER: "Stephen Curry", PTS: 28.5 }], page: 0, page_size: 100, has_more: false, ms: 7, truncated: false };
 
-async function mount(options: { sqlError?: boolean; empty?: boolean; conflict?: boolean; listError?: boolean; deferredSave?: boolean; pythonEnabled?: boolean; savedPython?: boolean; saveError?: boolean; storedDrafts?: string; openNotebook?: boolean; storedEntries?: Record<string, string>; tabId?: string; serverVersion?: number; serverUpdated?: string; drafts?: { title: string; tab: string; version: number; time: number }[] } = {}, hook = false) {
+async function mount(options: { sqlError?: boolean; empty?: boolean; conflict?: boolean; listError?: boolean; deferredSave?: boolean; pythonEnabled?: boolean; savedPython?: boolean; savedSnapshot?: boolean; saveError?: boolean; storedDrafts?: string; openNotebook?: boolean; storedEntries?: Record<string, string>; tabId?: string; serverVersion?: number; serverUpdated?: string; drafts?: { title: string; tab: string; version: number; time: number }[]; answer?: AiMessage; createNetworkError?: boolean } = {}, hook = false) {
   const dom = new JSDOM("<!doctype html><html><body><div id='root'></div></body></html>", { url: "http://localhost/?tab=notebooks", pretendToBeVisual: true });
   if (options.storedDrafts) dom.window.localStorage.setItem("dime_notebook_drafts_v1", options.storedDrafts);
   for (const [key, value] of Object.entries(options.storedEntries || {})) dom.window.localStorage.setItem(key, value);
@@ -25,6 +27,7 @@ async function mount(options: { sqlError?: boolean; empty?: boolean; conflict?: 
   let doc: Notebook = { id: "a".repeat(32), title: "Test notebook", version: 1, created_at: "2026-01-01", updated_at: "2026-01-01", cells: [newCell("sql", "SELECT PLAYER, PPG AS PTS FROM silver_player_season")] };
   doc.version = options.serverVersion || doc.version;
   doc.updated_at = options.serverUpdated || doc.updated_at;
+  if (options.savedSnapshot) doc.cells = [{ ...newCell("markdown", "Saved snapshot"), outputs: { kind: "snapshot", data: { columns: [{ name: "details", type: "JSON" }], rows: [{ details: { wins: 5, source: "NBA" } }], truncated: false } } }];
   for (const draft of options.drafts || []) dom.window.localStorage.setItem(`dime_notebook_drafts_v1:${doc.id}:${draft.tab}:${draft.version}`, JSON.stringify({ notebook: { ...doc, title: draft.title }, base_version: draft.version, saved_at: draft.time }));
   if (options.savedPython) doc.cells = [{ ...newCell("python", "show(df)"), outputs: { kind: "python", data: { ok: true, stdout: "old stdout", tables: [{ columns: [{ name: "old", type: "VARCHAR" }], rows: [{ old: "old table" }], row_count: 1 }], figures: [{ mime_type: "image/png", data: "old-image" }] } } }];
   const requests: { path: string; method: string; body: Record<string, unknown> }[] = [];
@@ -36,7 +39,7 @@ async function mount(options: { sqlError?: boolean; empty?: boolean; conflict?: 
     if (path.endsWith("/capabilities")) return Response.json({ python: { enabled: !!options.pythonEnabled, trusted_local_only: true, message: "Trusted local Python only. Enable with DIME_NOTEBOOK_PYTHON=1; this is not a security sandbox." } });
     if (path.endsWith("/python")) return Response.json({ ok: true, stdout: "", stderr: "", tables: [], figures: [] });
     if (path.endsWith("/sql")) return options.sqlError ? Response.json({ detail: "Table is not allowlisted" }, { status: 400 }) : Response.json({ ...sqlResult, rows: options.empty ? [] : sqlResult.rows });
-    if (path.endsWith("/notebooks") && method === "POST") { doc = { ...doc, ...body } as Notebook; return Response.json(doc, { status: 201 }); }
+    if (path.endsWith("/notebooks") && method === "POST") { if (options.createNetworkError) throw new TypeError("Failed to fetch"); doc = { ...doc, ...body } as Notebook; return Response.json(doc, { status: 201 }); }
     if (path.endsWith("/notebooks")) return options.listError ? Response.json({ detail: "Storage unavailable" }, { status: 503 }) : Response.json({ notebooks: [] });
     if (method === "PUT") {
       if (options.saveError) return Response.json({ detail: "Backend unavailable" }, { status: 503 });
@@ -49,11 +52,79 @@ async function mount(options: { sqlError?: boolean; empty?: boolean; conflict?: 
   const { default: NotebooksPanel } = await import("./components/notebooks/NotebooksPanel");
   let currentHook: ReturnType<typeof useNotebook>;
   function Hook() { currentHook = useNotebook(doc.id); return <span>{currentHook.state}</span>; }
-  function Harness() { const [id, setId] = useState<string | null>(options.savedPython || options.openNotebook ? doc.id : null); return <NotebooksPanel notebookId={id} onOpen={setId} />; }
+  function Harness() { const [id, setId] = useState<string | null>(options.savedPython || options.openNotebook ? doc.id : null); return options.answer && !id ? <AssistantTurn ai={options.answer} question="Replay question" onAsk={() => {}} onOpenNotebook={setId} /> : <NotebooksPanel notebookId={id} onOpen={setId} />; }
   const host = dom.window.document.getElementById("root")!, root = createRoot(host);
   await act(async () => { root.render(hook ? <Hook /> : <Harness />); await delay(); });
   return { dom, host, options, requests, hook: () => currentHook!, releaseSave: () => resolveSave?.(), cleanup: async () => { await act(async () => { root.unmount(); await delay(); }); globalThis.fetch = previous; dom.window.close(); } };
 }
+
+test("answer action creates an editable notebook with its origin and honest snapshot", async () => {
+  const m = await mount({ answer: { text: "Recorded answer excerpt", done: true, carry: { run_id: "recorded-run" }, nodes: {} } });
+  try {
+    await click(button(m.host, "Open as notebook"));
+    assert.equal(m.host.querySelector<HTMLInputElement>('[aria-label="Notebook title"]')!.value, "Replay question");
+    const body = m.requests.find((request) => request.method === "POST" && request.path.endsWith("/notebooks"))!.body;
+    assert.deepEqual(body.origin, { kind: "chat", ref: "recorded-run" });
+    assert.match(m.host.textContent!, /Recorded answer excerpt[\s\S]*Data snapshot/);
+    assert.equal(m.host.querySelectorAll(".notebook-cell.is-sql").length, 0);
+  } finally { await m.cleanup(); }
+});
+
+test("answer action explains a down backend and leaves the answer available for retry", async () => {
+  const m = await mount({ createNetworkError: true, answer: { text: "Keep this answer", done: true, nodes: {} } });
+  try {
+    await click(button(m.host, "Open as notebook"));
+    assert.match(m.host.querySelector('[role="alert"]')!.textContent!, /backend is unavailable/);
+    assert.match(m.host.textContent!, /Keep this answer/);
+    assert.equal(button(m.host, "Open as notebook").disabled, false);
+  } finally { await m.cleanup(); }
+});
+
+for (const empty of [false, true]) test(`no-SQL answer snapshots use non-executable typed tables with capture time, not JSON or paging (empty=${empty})`, async () => {
+  const m = await mount({ answer: { text: "Original answer", done: true, nodes: { analytics: { status: "complete", thoughts: [], toolResults: [], toolCalls: [],
+    tables: [{ tool: "team_ratings", rows: empty ? [] : [{ Team: "Oklahoma City", Rating: 9.4 }], ...{ columns: [{ name: "Team", type: "VARCHAR" }, { name: "Rating", type: "DOUBLE" }] } }],
+  } } } });
+  try {
+    await click(button(m.host, "Open as notebook"));
+    assert.match(m.host.querySelector('table[aria-label="Cached answer snapshot"]')!.textContent!, /TeamVARCHAR[\s\S]*RatingDOUBLE/);
+    if (empty) assert.match(m.host.textContent!, /No rows recorded in this snapshot/);
+    else assert.match(m.host.querySelector('table[aria-label="Cached answer snapshot"]')!.textContent!, /Oklahoma City/);
+    assert.match(m.host.querySelector(".notebook-result-meta")!.textContent!, /Cached snapshot · from answer ·/);
+    assert.equal(m.host.querySelector("time")!.dateTime, "2026-01-01");
+    assert.equal(m.host.querySelector('[aria-label^="Run cell"]'), null);
+    assert.equal(m.host.querySelector(".notebook-pagination"), null);
+    assert.equal(m.host.querySelector(".notebook-markdown pre"), null);
+    assert.equal(m.requests.filter((request) => request.path.endsWith("/sql")).length, 0);
+    assert.equal(button(m.host, "Run all").disabled, true);
+  } finally { await m.cleanup(); }
+});
+
+test("seeded answer tables are explicitly cached and cannot page into a different live result before rerunning", async () => {
+  const m = await mount({ answer: { text: "A recorded result", done: true, nodes: { analytics: { status: "complete", thoughts: [], toolResults: [],
+    toolCalls: [{ name: "query_warehouse", sql: "SELECT PLAYER, PPG AS PTS FROM silver_player_season ORDER BY PPG DESC", args: {} }],
+    tables: [{ tool: "query_warehouse", rows: Array.from({ length: 150 }, () => ({ PLAYER: "Cached player", PTS: 10 })) }],
+  } } } });
+  try {
+    await click(button(m.host, "Open as notebook"));
+    assert.match(m.host.querySelector(".notebook-result-meta")!.textContent!, /100 cached rows[\s\S]*Answer snapshot/);
+    assert.match(m.host.querySelector(".notebook-note")!.textContent!, /Run this cell/);
+    assert.equal(m.host.querySelector(".notebook-pagination"), null);
+    assert.equal(m.requests.filter((request) => request.path.endsWith("/sql")).length, 0);
+    await click(m.host.querySelector<HTMLButtonElement>('[aria-label="Run cell 2"]')!);
+    assert.match(m.host.querySelector('table[aria-label="Query result"]')!.textContent!, /Stephen Curry/);
+    assert.doesNotMatch(m.host.querySelector(".notebook-result-meta")!.textContent!, /cached|snapshot/);
+    assert.equal(m.host.querySelector(".notebook-note"), null);
+  } finally { await m.cleanup(); }
+});
+
+test("saved snapshot objects render as readable text, never raw JSON", async () => {
+  const m = await mount({ savedSnapshot: true, openNotebook: true });
+  try {
+    const table = m.host.querySelector('table[aria-label="Cached answer snapshot"]')!;
+    assert.match(table.textContent!, /detailsVARCHAR[\s\S]*wins: 5 · source: NBA/);
+    assert.doesNotMatch(table.textContent!, /JSON|\{"|\[object Object\]/);
+  } finally { await m.cleanup(); }
+});
 
 test("creates a notebook, runs SQL, shows a typed table and explains disabled Python without an error", async () => {
   const m = await mount();

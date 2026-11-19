@@ -105,12 +105,12 @@ export function DimeShell() {
         <div className="flex items-center gap-1"><button className="icon-button" aria-label="Search commands" onClick={() => setPaletteKey((k) => k + 1)}><Search width={15} height={15} /></button><button className="icon-button" aria-label={dark ? "Switch to light theme" : "Switch to dark theme"} onClick={() => { const next = !dark; setDark(next); document.documentElement.classList.toggle("dark", next); try { localStorage.setItem("dime_theme", next ? "dark" : "light"); } catch {} }}>{dark ? <SunLight width={16} height={16} /> : <HalfMoon width={16} height={16} />}</button></div>
       </header>
       <div className="dime-content">
-        {tab === "chat" && thread && <ChatView key={`${thread}-${replay || "live"}`} thread={thread} preset={preset} autoSend={autoSend?.thread === thread ? autoSend : null} replay={replay} onConsumed={() => setAutoSend(null)} onRunDone={reload} />}
+        {tab === "chat" && thread && <ChatView key={`${thread}-${replay || "live"}`} thread={thread} preset={preset} autoSend={autoSend?.thread === thread ? autoSend : null} replay={replay} onConsumed={() => setAutoSend(null)} onRunDone={reload} onOpenNotebook={openNotebook} />}
         {tab === "workflows" && <WorkflowsPanel onRun={startChat} />}
         {tab === "data" && <ExploreWorkspace exploreKey={exploreKey} onAsk={(q) => { setPreset(q); navigate("chat"); }} />}
         {tab === "today" && <HomeView onWorkflows={() => navigate("workflows")} />}
         {tab === "briefs" && <BriefsLibrary onOpenBoard={openBoard} />}
-        {tab === "boards" && <BoardsPanel boardId={boardId} onOpen={openBoard} onAsk={(q) => { startChat(); setPreset(q); }} />}
+        {tab === "boards" && <BoardsPanel boardId={boardId} onOpen={openBoard} onAsk={(q) => { startChat(); setPreset(q); }} onOpenNotebook={openNotebook} />}
         {tab === "notebooks" && <NotebooksPanel notebookId={notebookId} onOpen={openNotebook} />}
       </div>
     </main>
