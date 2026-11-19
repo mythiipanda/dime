@@ -1,6 +1,7 @@
 "use client";
 
-import { Dialog as DialogPrimitive } from "@base-ui/react/dialog";
+import * as DialogPrimitive from "@radix-ui/react-dialog";
+import { forwardRef, type ComponentPropsWithoutRef } from "react";
 import { cn } from "@/lib/utils";
 
 export const Dialog = DialogPrimitive.Root;
@@ -9,11 +10,11 @@ export const DialogClose = DialogPrimitive.Close;
 export const DialogTitle = DialogPrimitive.Title;
 export const DialogDescription = DialogPrimitive.Description;
 
-export function DialogContent({ className, ...props }: Omit<DialogPrimitive.Popup.Props, "className"> & { className?: string }) {
+export const DialogContent = forwardRef<HTMLDivElement, ComponentPropsWithoutRef<typeof DialogPrimitive.Content>>(function DialogContent({ className, ...props }, ref) {
   return <DialogPrimitive.Portal>
-    <DialogPrimitive.Backdrop className="ds-dialog-backdrop" />
-    <DialogPrimitive.Viewport className="ds-dialog-viewport">
-      <DialogPrimitive.Popup {...props} className={cn("ds-dialog", className)} />
-    </DialogPrimitive.Viewport>
+    <DialogPrimitive.Overlay className="ds-dialog-backdrop" />
+    <div className="ds-dialog-viewport">
+      <DialogPrimitive.Content {...props} ref={ref} className={cn("ds-dialog", className)} />
+    </div>
   </DialogPrimitive.Portal>;
-}
+});
