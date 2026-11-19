@@ -1,8 +1,8 @@
 "use client";
 
-import { Button as ButtonPrimitive } from "@base-ui/react/button";
+import { Slot } from "@radix-ui/react-slot";
 import { LoaderCircle } from "lucide-react";
-import type { ComponentProps } from "react";
+import { forwardRef, type ComponentPropsWithoutRef } from "react";
 import { cva, type VariantProps } from "class-variance-authority";
 import { cn } from "@/lib/utils";
 
@@ -35,18 +35,27 @@ export const buttonVariants = cva(
 
 export type ButtonVariant = NonNullable<VariantProps<typeof buttonVariants>["variant"]>;
 
-export function Button({
+export const Button = forwardRef<HTMLButtonElement, ComponentPropsWithoutRef<"button"> & VariantProps<typeof buttonVariants> & { asChild?: boolean; loading?: boolean }>(function Button({
   variant,
   size,
   className,
   loading = false,
   disabled,
+  asChild = false,
   children,
   type = "button",
+  onClick,
+  onClickCapture,
   ...props
-}: Omit<ComponentProps<typeof ButtonPrimitive>, "className"> & VariantProps<typeof buttonVariants> & { className?: string; loading?: boolean }) {
-  return <ButtonPrimitive {...props} type={type} disabled={disabled || loading} focusableWhenDisabled={loading || props.focusableWhenDisabled} aria-busy={loading || undefined} data-loading={loading || undefined} className={cn(buttonVariants({ variant, size }), className)}>
-    <span className={cn("inline-flex items-center justify-center gap-[inherit]", loading && "opacity-0")}>{children}</span>
-    {loading && <LoaderCircle aria-hidden="true" className="ds-spinner absolute size-4" />}
-  </ButtonPrimitive>;
-}
+}, ref) {
+  const Component = asChild ? Slot : "button";
+  return <Component {...props} ref={ref} {...(!asChild && { type, disabled })} aria-disabled={disabled || loading || undefined} aria-busy={loading || undefined} data-loading={loading || undefined} onClickCapture={event => {
+    if (disabled || loading) { event.preventDefault(); event.stopPropagation(); return; }
+    onClickCapture?.(event);
+  }} onClick={event => {
+    if (disabled || loading) { event.preventDefault(); event.stopPropagation(); return; }
+    onClick?.(event);
+  }} className={cn(buttonVariants({ variant, size }), className)}>
+    {asChild ? children : <><span className={cn("inline-flex items-center justify-center gap-[inherit]", loading && "opacity-0")}>{children}</span>{loading && <LoaderCircle aria-hidden="true" className="absolute size-4 animate-spin motion-reduce:animate-none" />}</>}
+  </Component>;
+});

@@ -33,6 +33,7 @@ export default function DimeCommandPalette({
   const [query, setQuery] = useState("");
   const [active, setActive] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
+  const returnFocusRef = useRef<HTMLElement | null>(null);
   const listRef = useRef<HTMLDivElement>(null);
 
   const results = useMemo(() => {
@@ -80,7 +81,15 @@ export default function DimeCommandPalette({
 
   return (
     <Dialog open={open} onOpenChange={next => { if (!next) onClose(); }}>
-      <DialogContent initialFocus={inputRef} onKeyDown={onKey} className="overflow-hidden">
+      <DialogContent onOpenAutoFocus={event => {
+        returnFocusRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+        event.preventDefault();
+        inputRef.current?.focus();
+      }} onCloseAutoFocus={event => {
+        if (!returnFocusRef.current?.isConnected) return;
+        event.preventDefault();
+        returnFocusRef.current.focus({ preventScroll: true });
+      }} onKeyDown={onKey} className="overflow-hidden">
         <DialogTitle className="sr-only">Command palette</DialogTitle>
         <DialogDescription className="sr-only">Search views and actions. Use arrow keys to navigate and Enter to open.</DialogDescription>
         <div className="flex h-12 items-center gap-2 border-b border-line px-3.5">

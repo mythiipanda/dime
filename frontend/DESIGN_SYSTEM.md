@@ -1,138 +1,101 @@
 # Dime design system
 
-The running reference is `/design-system`. It renders the actual shared components,
-not separate mock implementations. Use it in light and dark themes before changing a primitive.
+Read [the product design contract](../DESIGN.md) and [frontend agent guidance](AGENTS.md).
+The running reference is `/design-system`: actual shared components, not separate mockups.
+Examples are labeled fixtures, never live warehouse claims or account saves.
 
-## Product direction
+## Library decision
 
-Dime is an analyst workbench, not a dashboard template. The question, answer and evidence
-are the primary content. Keep neutral surfaces, readable secondary text, compact controls,
-restrained color and ample space around the question. Beautiful UI's harness supplies the
-visual direction; the old prototype is not a design specification.
+**shadcn/ui's Radix variant** is the component foundation. Tony explicitly rejected
+Base UI, which is removed from imports and dependencies. We adapt source-owned
+[shadcn recipes](https://ui.shadcn.com/docs/components/radix) to Dime's semantic
+tokens and public APIs, rather than installing a second theme. Button, input,
+radio group, dialog and popover follow those recipes; Radix Form handles the
+complete field's native validation and label/message associations.
 
-The pilot adoption is Library search and filters, plus the command palette shared by every
-workspace. This is a foundation release, not a claim that every legacy screen is migrated.
-Platform work can consume these exports without replacing Dime's Pi agent or streaming API.
+The [design.how UI-library directory](https://design.how/directory/ui-libraries)
+provided the candidates. This is a choice of one system, not permission to mix them.
 
-## Research and selection
-
-Reviewed the [40-library design.how directory](https://design.how/directory/ui-libraries),
-then compared the React/Next/Tailwind candidates with Dime's installed dependencies and
-agent runtime. The directory is a discovery list, not a recommendation to combine systems.
-
-| Source | Fit and decision |
+| Candidate | Decision |
 | --- | --- |
-| [Beautiful UI](https://beautifului.dev/harness) | Keep the adopted MIT visual foundation, quiet surfaces and chat proportions. The existing attribution remains in `components/ds/LICENSE`. |
-| [Base UI](https://base-ui.com/react/overview/quick-start) | Chosen behavior layer, already installed. Button, Input, RadioGroup, Dialog and Popover own keyboard interaction, disabled semantics, focus and dismissal. |
-| [coss UI](https://coss.com/ui/docs) | Chosen composition/reference layer: Base UI with Tailwind, small owned adapters, shared control sizing and complete states. Dime adapts the pattern, not its full theme or component inventory. |
-| [shadcn/ui](https://ui.shadcn.com/docs) | Compatible registry/composition conventions. The existing Popover already follows them. Use its Base UI recipes, not a second Radix foundation. |
-| [React Aria](https://react-spectrum.adobe.com/react-aria/) | Strong accessible interactions, but adopting it alongside the installed Base UI duplicates behavior and styling work. |
-| [Ariakit](https://ariakit.org), [Ark UI](https://ark-ui.com), [Headless UI](https://headlessui.com), [Radix](https://www.radix-ui.com/primitives) | Credible alternatives, not additional dependencies for the same primitive families. |
-| [Mantine](https://mantine.dev), [Chakra](https://chakra-ui.com), [Material UI](https://mui.com/material-ui/), [HeroUI](https://www.heroui.com) | Broad application kits; unnecessary provider/theme changes for this existing Tailwind shell. |
-| [Kibo UI](https://www.kibo-ui.com/docs) | Useful future source for a genuinely missing complex feature. Do not install its whole catalog. |
-| [AI Elements](https://elements.ai-sdk.dev) | Useful citation/reasoning composition references; its site announces migration to shadcn/ui at the end of November 2026. Do not introduce a soon-deprecated runtime dependency. |
-| [assistant-ui](https://www.assistant-ui.com/docs) | Chat-specific runtime integration is unnecessary while Dime owns its Pi/SSE state. Its docs returned 403 during this review; no runtime claims were verified. |
-| [Motion Primitives](https://motion-primitives.com/docs), [Magic UI](https://magicui.design), [Cult UI](https://www.cult-ui.com), [Kokonut UI](https://kokonutui.com) | Selective motion/marketing sources, not the workbench's behavior foundation. No animated decoration or new animation runtime. |
-| [HextaUI](https://hextaui.com), [transitions.dev](https://transitions.dev), [Rare UI](https://rareui.com) | Named references, not verified implementation sources: requests returned 403, 403 and 429 respectively. No copied code or accessibility claims from them. |
-| Other directory entries | Vue/Svelte/Solid-specific systems do not fit React; platform-specific and large themed kits add no capability needed by this pilot. |
+| [shadcn/ui](https://ui.shadcn.com/docs) + [Radix](https://www.radix-ui.com/primitives) | Chosen: mature SaaS component coverage, React/Tailwind fit, owned source and accessible overlay/selection behavior without a theme provider. Use the Radix recipes, not Base UI recipes. |
+| [Untitled UI React](https://www.untitledui.com/react/docs/introduction) | Strong SaaS reference built on React Aria and Tailwind; not selected because importing another visual system and its broader source catalog is unnecessary for the existing shell. No paid components are copied. |
+| [HeroUI](https://www.heroui.com) / [Mantine](https://mantine.dev) | Broad app kits, but their app-wide styling conventions add migration work beyond these shared primitives. |
+| [React Aria Components](https://react-spectrum.adobe.com/react-aria/) | Credible accessible foundation; a second interaction stack alongside the selected Radix family is unnecessary. |
+| [Beautiful UI](https://beautifului.dev/harness) | Retain its adopted MIT visual foundation: quiet surfaces, chat proportions, compact actions. Attribution remains in `components/ds/LICENSE`. |
 
-[design.how](https://design.how/skills) was unlocked with the requested email. Its
-`design-system-boss`, `build-design-system`, `ui-review`, glossary, taste and component
-guidance informed the audit, registry, complete states and keyboard/focus checks. We use
-the PR/minimal-footprint path: no whole-app migration, mass token rewrite, worker fan-out,
-font generation, logo generation or new animation system. The stock scripts are not added
-to the product; this repository keeps its own typecheck, tests and zero-comment check.
-No before/after pixel-parity claim is made: changed control sizes, contrast and selection
-semantics are intentional. A future migration needs a per-screen baseline first.
+The adapted shadcn components retain its MIT license in `components/ui/LICENSE`;
+this attribution covers the shared Button/Input adaptations as well as overlays.
+Reference source: the official `new-york` registry's
+[button](https://ui.shadcn.com/r/styles/new-york/button.json),
+[input](https://ui.shadcn.com/r/styles/new-york/input.json),
+[radio group](https://ui.shadcn.com/r/styles/new-york/radio-group.json),
+[dialog](https://ui.shadcn.com/r/styles/new-york/dialog.json) and
+[popover](https://ui.shadcn.com/r/styles/new-york/popover.json).
+
+Apply [Emil's design-engineering skill](https://github.com/emilkowalski/skills/blob/main/skills/emil-design-eng/SKILL.md)
+for complete interaction states, stable geometry, interruptible feedback and
+trigger-relative overlay origins. [Quartz spacing](https://design.how/systems/quartz/foundations/space.md)
+and [motion](https://design.how/systems/quartz/foundations/motion.md) inform density
+and restraint, not a competing Quartz theme. Project rules forbid bespoke motion,
+even when a reference suggests custom animation.
 
 ## Foundations
 
 | Role | Source | Rule |
 | --- | --- | --- |
-| Color | `app/globals.css` | Use `page`, `canvas`, `surface`, `inset`, `ink`, `ink-2`, `ink-3`, `line`, `accent-ink`, and status roles, never literal palette values in a screen. |
-| Theme aliases | `app/dime.css` | Existing shadcn aliases remain compatible. Dime's `accent` is a brand blue, not shadcn's neutral hover background; adapt imported recipes accordingly. |
-| Type | `app/system.css` | UI 13px, body 14px, meta 12px, page title 28px. Inter for prose; JetBrains Mono for SQL, IDs and tabular numbers. Use semantic HTML, not another typography runtime. |
-| Density | `app/system.css` | Button xs/sm/md = 28/32/36px minimum. Input = 36px. Touch controls = at least 44px. Never shrink a touch target to fit a row. |
-| Corners | `app/globals.css` | Chip 6px, control 8px, card 10px, window 14px. Existing Surface uses 12px panels. Buttons retain Beautiful UI's pill shape. |
-| Width | `app/system.css` | Workspace 1200px; reading content 760px. Fields shrink with their container and toolbar controls wrap. |
-| Motion | `tw-animate-css`, `app/system.css` | Use library enter recipes and the existing spinner. Feedback 150ms, transitions 200ms. No custom spring, sliding selection indicator or bespoke keyframes. Respect reduced motion. |
-| Elevation | `app/globals.css` | Hairline for selected controls, raised/overlay only when content actually floats. |
-
-`ink-3` and the light-theme status colors were adjusted within their existing hue families
-so supporting copy and statuses can meet normal-text contrast, rather than remaining decorative
-low-contrast gray. `design-system.test.tsx` checks the actual token pairs in both themes.
+| Color | `app/globals.css` | Semantic light/dark roles only. `line` divides content; `control-edge` identifies fields at 3:1. Text requires 4.5:1; focus requires 3:1. |
+| Theme aliases | `app/dime.css` | Dime's `accent` is blue, not shadcn's neutral hover. Adapt imported recipes, never replace the entire palette. |
+| Type | `app/system.css` | UI 13px, body 14px, metadata 12px, page title 28px. Inter for prose, JetBrains Mono for SQL/identifiers; right-aligned tabular figures for numeric cells. |
+| Density | `app/system.css` | Controls 28/32/36px; touch targets at least 44px. 4px spacing rhythm with small optical adjustments. |
+| Shape | `app/globals.css`, `app/system.css` | 8px controls, 12px panels, 14px windows; pill-shaped actions. Depth only for selected controls and floating content. |
+| Width | `app/system.css` | Workspace 1200px, reading width 760px. Wrap toolbars; scroll wide tables locally. |
+| Motion | `tw-animate-css`, `app/system.css` | Feedback 150ms, general transition role 200ms. Instant command search. Library popover recipes only; reduced motion removes animation and spinner rotation. |
 
 ## Canonical component registry
 
-| Family | Import | Status / use |
+| Family | Import | Contract |
 | --- | --- | --- |
-| Action | `components/ds/Button` | Base UI Button; preserves `primary`, `secondary`, `ghost`, `accent`, `success`, `quiet`; adds `destructive`, icon size and loading. |
-| Text input | `components/ds/TextField` | Base UI Input; native input props/ref; explicitly connect a label and help/error text. |
-| Single-choice filter | `components/ds/SegmentedControl` | Base UI RadioGroup/Radio; same string options/value/onChange API, optional labels, group label and disabled. It is a radio group, not tabs without panels. |
-| Modal | `components/ui/dialog` | Base UI Dialog parts; portal, backdrop, viewport and popup. Add Title, Description and an accessible Close. |
-| Source overlay | `components/ui/popover` | Existing Base UI Popover. Keep the library's collision handling and focus behavior. |
-| Command search | `components/site/DimeCommandPalette` | Shared dialog composition. Input owns active option; arrow keys/Enter search results; Escape/outside press close. |
-| Surface / heading | `components/ds/Panel` | Existing Surface, Panel and PageHeader. Use semantic text inside them; do not clone card geometry. |
-| Status / metadata | `components/ds/StatusPill`, `components/ds/Chip` | Existing label-plus-tone components. Color never supplies the only meaning. |
-| Analyst-specific | `components/ds/PromptBar`, `CitationChip`, `ThinkingState`, `ToolChips` | Keep domain composition, evidence and provider contracts. Use shared primitives when extending them; do not swap the agent runtime for a chat UI library. |
+| Action | `components/ds/Button` | shadcn native button/Slot composition + cva. Existing variants, xs/sm/md/icon sizes, native `type="button"` default. `loading` preserves label/width/focus and blocks activation; explicit disabled uses native disabled. |
+| Text input | `components/ds/TextField` | shadcn native input adaptation with forwarded ref. Standalone inputs need an explicit label, ID and help/error associations. |
+| Complete field | `Form`, `FormField` from `components/ds/TextField` | Compose `FormField name="..."` inside `Form`; one `TextField` child. Radix connects label, description, validation and errors. Native required/disabled/readOnly props stay on the input. Keep form-level error state in the caller. |
+| Single-choice filter | `components/ds/SegmentedControl` | Radix radio group/items, not tabs without panels. Group name, string options/value/onChange, optional labels and disabled. Selection follows library-managed focus, including rapid arrow presses; Space activates. |
+| Modal | `components/ui/dialog` | shadcn/Radix portal, scrollable overlay, focus trap and dismissal. Supply Title, Description and an accessible Close. Command palette restores the invoking control using Radix auto-focus hooks because it also opens from a global shortcut. |
+| Source overlay | `components/ui/popover` | shadcn/Radix click/keyboard popover with collision padding and viewport-bounded dimensions. Give Content an accessible name (`aria-label` or `aria-labelledby`). `PopoverTitle`/`Description` are visual text parts. No custom hover timers. |
+| Command search | `components/site/DimeCommandPalette` | Shared dialog; input owns active result, arrow keys/Enter navigate and run; Escape/outside press close. Do not recreate a modal per screen. |
+| Surface / heading | `components/ds/Panel` | Surface, Panel and PageHeader share spacing, hierarchy and corners. Do not clone card geometry. |
+| Evidence table | `components/ds/RecordsTable` | Named scroll region, caption, scoped column headings, right-aligned numbers, honest missing values, count, source footer and meaningful empty state. Units belong in headings or source text. |
+| Status / metadata | `components/ds/StatusPill`, `components/ds/Chip` | Label plus semantic tone. Color is never the sole meaning. |
+| Analyst-specific | `PromptBar`, `CitationChip`, `ThinkingState`, `ToolChips` in `components/ds` | Preserve Pi/SSE state, evidence navigation and provenance. Domain composition is not a new component framework. |
 
-Existing domain views that still use raw controls are legacy consumers, not alternate
-canonical components. Migrate them as their feature is touched; do not build another Button.
+## Interaction and data rules
 
-## Component contracts
+- Compose the registry before adding a dependency. Keep one implementation per primitive.
+- Pending actions keep their accessible name and reject repeated submission. Keep drafts on failure.
+- Every field has a persistent label; placeholders are examples. Errors say how to recover.
+- Citation details open deliberately on click, Enter or Space; Escape dismisses and returns focus.
+- Tables preserve raw values and provenance. A missing value is a dash, not zero.
+- All-numeric columns align right; mixed text columns remain readable. Overflow is focusable.
+- Empty tables retain their title, record count, source and a next step. Do not invent records.
+- New feature work uses the shared system; legacy screens are not automatically fully migrated.
 
-### Button
+## Verification
 
-`<Button variant="primary" loading={saving} type="submit">Save research</Button>`
+Run `npm run typecheck`, `npm test`, `npm run build` from `frontend`, plus
+`python backend/scripts/no_comments.py` from the root. The focused suite is
+`npx tsx --test design-system.test.tsx` (also included in `npm test`).
 
-The default type is `button`, so a secondary action cannot accidentally submit a form.
-Only intended submit actions use `type="submit"`. Loading keeps the accessible label and
-occupied box, sets `aria-busy`, stays focusable and prevents activation through Base UI.
-Ordinary disabled controls are not focusable. Give icon-only buttons an `aria-label`.
-The Base UI `render` prop is available for composition; set `nativeButton={false}` for a link.
-Do not pass `loading` to a custom `render` element that ignores disabled semantics.
+For shared changes, check `/design-system` and real Library/chat/command consumers
+in light/dark, desktop/narrow, keyboard/focus-visible and reduced motion. Check
+normal, pressed, pending, disabled, error, empty and long-content states. A build
+or static markup test does not prove an interactive browser flow; record approved
+UI checks and disclose any untested data/provider path.
 
-### TextField
+## Fidelity review
 
-Use `label[htmlFor]`, a stable `id`, `required` where appropriate, and `aria-describedby`
-pointing to help or an inline error. Set `aria-invalid` only when invalid, not merely because
-the field is required. Preserve the value on failed submission. The disabled style wins over
-the invalid border. The reference demonstrates normal, required, invalid, read-only, disabled
-and long-value states. Search fields use `type="search"` and an explicit accessible name.
-
-### SegmentedControl
-
-Use this for mutually exclusive filters, not navigation between separate documents.
-`label` names the group; `labels` maps stored values to human-readable text. Arrow keys move
-within the group, Tab enters/leaves it, selection has `aria-checked`, and disabled groups do
-not change. There is no handcrafted animated thumb. Use Base UI Tabs directly for real tab
-panels, including its panel associations, rather than making this component impersonate tabs.
-
-### Dialog and command search
-
-Base UI owns scroll locking, focus containment, Escape, outside dismissal and focus return.
-Keep the root mounted while its `open` value changes. The command input receives initial
-focus, result buttons are outside the Tab order, and the visible close control is keyboard
-reachable. A no-match state does not run an arbitrary action on Enter.
-
-| Event | Expected result |
-| --- | --- |
-| Open via search button | Focus enters the command input. |
-| Tab / Shift+Tab while open | Focus stays inside the modal. |
-| Arrow keys in input | Active result changes and scrolls into view. |
-| Enter in input | Only the active result runs, once. |
-| Enter on close control | Only closes; never executes a search result. |
-| Escape or outside press | Closes and returns focus to the previous opener when it still exists. |
-| Action navigates / opener removed | No detached element is focused; destination owns its focus policy. |
-| Empty search result | Announces no matches; Enter does nothing. |
-
-## Before shipping a UI change
-
-Use the component contracts above. Inspect required, invalid,
-disabled, loading, empty, no-match and long-text states. Check the actual feature at 390px
-and 1280px, light/dark, keyboard, touch and reduced motion. Include real focus-ring captures,
-not just computed CSS. Test the backend contract independently of the illustration.
-
-Run `npm run typecheck`, `npm test`, `npm run build` and the repository zero-comment check.
-The design-system tests check semantics and contrast, not subjective visual quality.
-Do not describe a build or screenshot as proof of a flow that was not actually exercised.
+| Before | After | Why |
+| --- | --- | --- |
+| Unwanted behavior foundation | shadcn/ui's Radix family throughout shared primitives | Honor Tony's preference while keeping one accessible stack. |
+| Quiet field edges and repeated help/error markup | Contrast-tested edge, focus ring and Radix Form composition | Discoverable, labeled controls in both themes. |
+| Generic left-aligned rows | Numeric alignment, caption, missing-value labels and source footer | Evidence stays inspectable, not decorative. |
+| Palette and button-only reference | Complete form lifecycle, spacing/shape/depth specimens, full/empty evidence, source overlay | Agents can copy real states rather than guess. |

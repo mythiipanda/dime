@@ -24,6 +24,7 @@
   --line-soft: oklch(0.966 0.002 264.542);
   --grid-line: color-mix(in srgb, var(--line) 78%, transparent);
   --field: oklch(0.961 0.001 286.375);
+  --control-edge: oklch(0.64 0.01 264.477);
   --stripe: oklch(0.405 0 0 / 0.075);
   --stripe-bg: oklch(0.97 0 0);
 
@@ -71,6 +72,7 @@
   --line-strong: oklch(0.356 0.007 264.474);
   --line-soft: oklch(0.278 0.006 258.354);
   --field: oklch(0.293 0.006 271.223);
+  --control-edge: oklch(0.56 0.01 264.477);
   --stripe: oklch(1 0 0 / 0.055);
   --stripe-bg: oklch(0.226 0.004 264.485);
 

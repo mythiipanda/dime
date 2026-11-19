@@ -1,13 +1,14 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
-import { act } from "react";
+import { act, useState } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { createRoot } from "react-dom/client";
 import { JSDOM } from "jsdom";
 import { Button } from "./components/ds/Button";
 import { SegmentedControl } from "./components/ds/SegmentedControl";
-import { TextField } from "./components/ds/TextField";
+import { Form, FormField, TextField } from "./components/ds/TextField";
+import { RecordsTable } from "./components/ds/RecordsTable";
 
 test("actions do not submit a form unless explicitly marked submit", async () => {
   const dom = new JSDOM("<div id='root'></div>", { url: "http://localhost" });
@@ -15,7 +16,7 @@ test("actions do not submit a form unless explicitly marked submit", async () =>
   const host = dom.window.document.getElementById("root")!, root = createRoot(host);
   let submissions = 0, actions = 0;
   try {
-    await act(async () => root.render(<form onSubmit={event => { event.preventDefault(); submissions++; }}><Button onClick={() => actions++}>Preview</Button><Button type="submit">Save</Button><Button loading onClick={() => actions++}>Pending</Button><Button disabled onClick={() => actions++}>Unavailable</Button></form>));
+    await act(async () => root.render(<form onSubmit={event => { event.preventDefault(); submissions++; }}><Button onClick={() => actions++}>Preview</Button><Button type="submit">Save</Button><Button type="submit" loading onClick={() => actions++}>Pending</Button><Button disabled onClick={() => actions++}>Unavailable</Button></form>));
     const [preview, save, pending, disabled] = host.querySelectorAll("button");
     await act(async () => { preview.click(); pending.click(); disabled.click(); });
     assert.equal(actions, 1);
@@ -23,9 +24,65 @@ test("actions do not submit a form unless explicitly marked submit", async () =>
     assert.equal(pending.getAttribute("aria-busy"), "true");
     assert.equal(pending.getAttribute("aria-disabled"), "true");
     assert.equal(pending.textContent, "Pending");
+    pending.focus();
+    assert.equal(dom.window.document.activeElement, pending);
+    assert.equal(disabled.disabled, true);
     await act(async () => save.click());
     assert.equal(submissions, 1);
   } finally { await act(async () => root.unmount()); dom.window.close(); }
+});
+
+test("pending asChild actions block the child's own handler", async () => {
+  const dom = new JSDOM("<div id='root'></div>", { url: "http://localhost" });
+  Object.assign(globalThis, { window: dom.window, document: dom.window.document, HTMLElement: dom.window.HTMLElement, Element: dom.window.Element, Node: dom.window.Node, IS_REACT_ACT_ENVIRONMENT: true });
+  const host = dom.window.document.getElementById("root")!, root = createRoot(host);
+  let actions = 0;
+  try {
+    await act(async () => root.render(<Button asChild loading><a href="#saved" onClick={() => actions++}>Save</a></Button>));
+    await act(async () => host.querySelector("a")!.click());
+    assert.equal(actions, 0);
+    assert.equal(dom.window.location.hash, "");
+  } finally { await act(async () => root.unmount()); dom.window.close(); }
+});
+
+test("complete fields associate explicit IDs, help and errors and retain disabled input semantics", async () => {
+  const dom = new JSDOM("<div id='root'></div>", { url: "http://localhost" });
+  Object.assign(globalThis, { window: dom.window, document: dom.window.document, HTMLElement: dom.window.HTMLElement, HTMLInputElement: dom.window.HTMLInputElement, Element: dom.window.Element, Node: dom.window.Node, IS_REACT_ACT_ENVIRONMENT: true });
+  const host = dom.window.document.getElementById("root")!, root = createRoot(host);
+  try {
+    await act(async () => root.render(<Form><FormField name="research" label="Research name" description="Keep the draft" error="Use at least 3 characters"><TextField id="explicit-research" required disabled defaultValue="Draft" /></FormField></Form>));
+    const input = host.querySelector("input")!;
+    assert.equal(host.querySelector("label")!.htmlFor, input.id);
+    assert.equal(input.name, "research");
+    assert.equal(input.disabled, true);
+    assert.equal(input.required, true);
+    assert.equal(input.value, "Draft");
+    assert.equal(input.getAttribute("aria-invalid"), "true");
+    const descriptions = input.getAttribute("aria-describedby")!.split(" ").map(id => dom.window.document.getElementById(id)!.textContent);
+    assert.ok(descriptions.includes("Keep the draft"));
+    assert.ok(descriptions.includes("Use at least 3 characters"));
+    assert.equal(host.querySelector('[role="alert"]')!.textContent, "Use at least 3 characters");
+  } finally { await act(async () => root.unmount()); dom.window.close(); }
+});
+
+test("evidence tables distinguish zero from missing values and keep numeric alignment, source and empty recovery", () => {
+  const dom = new JSDOM(renderToStaticMarkup(<RecordsTable title="Player evidence" source="warehouse · minutes" rows={[{ player: "Wing A", minutes: 0 }, { player: "Wing B", minutes: null }]} />));
+  const region = dom.window.document.querySelector('[role="region"]')!;
+  assert.equal(region.getAttribute("aria-label"), "Player evidence records");
+  assert.equal(region.getAttribute("tabindex"), "0");
+  assert.equal(region.querySelector("caption")!.textContent, "Player evidence");
+  assert.equal(region.querySelectorAll('th[scope="col"]').length, 2);
+  assert.equal(region.querySelector("td.is-numeric")!.textContent, "0");
+  assert.equal(region.querySelector('[aria-label="Not available"]')!.textContent, "—");
+  assert.match(dom.window.document.body.textContent!, /2 records/);
+  assert.match(dom.window.document.body.textContent!, /warehouse · minutes/);
+  dom.window.close();
+  const empty = renderToStaticMarkup(<RecordsTable title="Player evidence" rows={[]} source="warehouse · minutes" />);
+  assert.match(empty, /0 records/);
+  assert.match(empty, /No records available/);
+  assert.match(empty, /Adjust the query/);
+  assert.match(empty, /warehouse · minutes/);
+  assert.doesNotMatch(empty, /<table/);
 });
 
 test("filters expose named single-choice semantics instead of orphan tabs", () => {
@@ -36,6 +93,39 @@ test("filters expose named single-choice semantics instead of orphan tabs", () =
   assert.match(html, /aria-checked="true"/);
   assert.doesNotMatch(html, /role="tab"/);
   assert.match(html, /Conversations/);
+});
+
+test("filter selection follows library-managed arrow focus even on rapid key presses", async () => {
+  const dom = new JSDOM("<div id='root'></div>", { url: "http://localhost", pretendToBeVisual: true });
+  Object.assign(globalThis, { window: dom.window, document: dom.window.document, HTMLElement: dom.window.HTMLElement, Element: dom.window.Element, Node: dom.window.Node, Event: dom.window.Event, CustomEvent: dom.window.CustomEvent, IS_REACT_ACT_ENVIRONMENT: true });
+  const host = dom.window.document.getElementById("root")!, root = createRoot(host);
+  function Filters({ disabled = false }: { disabled?: boolean }) {
+    const [value, setValue] = useState("With records");
+    return <SegmentedControl options={["With records", "No matches"]} value={value} onChange={setValue} disabled={disabled} label="Evidence state" />;
+  }
+  try {
+    await act(async () => root.render(<Filters />));
+    const [withRecords, noMatches] = host.querySelectorAll<HTMLButtonElement>('[role="radio"]');
+    await act(async () => withRecords.focus());
+    await act(async () => {
+      withRecords.dispatchEvent(new dom.window.KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true }));
+      withRecords.dispatchEvent(new dom.window.KeyboardEvent("keyup", { key: "ArrowRight", bubbles: true }));
+      await new Promise(resolve => setTimeout(resolve, 20));
+    });
+    assert.equal(dom.window.document.activeElement, noMatches);
+    assert.equal(noMatches.getAttribute("aria-checked"), "true");
+    assert.equal(noMatches.getAttribute("data-state"), "checked");
+    await act(async () => {
+      noMatches.dispatchEvent(new dom.window.KeyboardEvent("keydown", { key: "ArrowLeft", bubbles: true }));
+      noMatches.dispatchEvent(new dom.window.KeyboardEvent("keyup", { key: "ArrowLeft", bubbles: true }));
+      await new Promise(resolve => setTimeout(resolve, 20));
+    });
+    assert.equal(withRecords.getAttribute("aria-checked"), "true");
+    await act(async () => root.render(<Filters disabled />));
+    await act(async () => noMatches.click());
+    assert.equal(withRecords.getAttribute("aria-checked"), "true");
+    assert.equal(noMatches.disabled, true);
+  } finally { await act(async () => root.unmount()); dom.window.close(); }
 });
 
 test("fields retain native required, error, disabled and help associations", () => {
@@ -62,6 +152,13 @@ function luminance(rgb: number[]) {
   return 0.2126 * r + 0.7152 * g + 0.0722 * b;
 }
 for (const [theme, palette] of [["light", light], ["dark", dark]] as const) {
+  for (const foreground of ["control-edge", "accent-ink"]) {
+    test(`${theme} ${foreground} on surface meets control/focus contrast`, () => {
+      const l1 = luminance(color(palette[foreground]).rgb), l2 = luminance(color(palette.surface).rgb);
+      const ratio = (Math.max(l1, l2) + 0.05) / (Math.min(l1, l2) + 0.05);
+      assert.ok(ratio >= 3, `${ratio.toFixed(2)}:1 is below 3:1`);
+    });
+  }
   for (const [foreground, background] of [["ink", "page"], ["ink-2", "surface"], ["ink-3", "surface"], ["ink-3", "inset"], ["green", "green-tint"], ["orange", "orange-tint"], ["red", "red-tint"], ["accent-ink", "accent-tint"], ["page", "accent-ink"], ["page", "green"], ["page", "red"]]) {
     test(`${theme} ${foreground} on ${background} meets normal-text contrast`, () => {
       const fg = color(palette[foreground]), bg = color(palette[background]), surface = color(palette.surface);

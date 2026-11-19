@@ -6,7 +6,9 @@ import { Button } from "@/components/ds/Button";
 import { Panel, PageHeader, Surface } from "@/components/ds/Panel";
 import { SegmentedControl } from "@/components/ds/SegmentedControl";
 import { StatusPill } from "@/components/ds/StatusPill";
-import { TextField } from "@/components/ds/TextField";
+import { Form, FormField, TextField } from "@/components/ds/TextField";
+import { RecordsTable } from "@/components/ds/RecordsTable";
+import { Popover, PopoverContent, PopoverDescription, PopoverTitle, PopoverTrigger } from "@/components/ui/popover";
 import DimeCommandPalette from "@/components/site/DimeCommandPalette";
 
 const foundations = [
@@ -17,13 +19,19 @@ const foundations = [
   { name: "Ink", token: "ink", className: "bg-ink" },
   { name: "Accent", token: "accent-ink", className: "bg-accent-ink" },
 ];
-const sections = ["Overview", "Foundations", "Controls", "States"] as const;
+const sections = ["Overview", "Foundations", "Controls", "Evidence", "States"] as const;
+const researchRows = [
+  { player: "Wing A", minutes: 1240, points_per_36: 18.4, contract_years: 2 },
+  { player: "Wing B", minutes: 986, points_per_36: 16.2, contract_years: 1 },
+  { player: "Wing C", minutes: 722, points_per_36: null, contract_years: 3 },
+];
 
 export default function DesignSystemPage() {
   const [dark, setDark] = useState(true);
   const [filter, setFilter] = useState("All research");
   const [palette, setPalette] = useState(false);
   const [name, setName] = useState("");
+  const [evidenceState, setEvidenceState] = useState("With records");
   const [state, setState] = useState<"idle" | "error" | "saving" | "saved">("idle");
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => {
@@ -51,7 +59,7 @@ export default function DesignSystemPage() {
       </header>
       <section id="overview" tabIndex={-1} aria-label="Overview" className="system-section">
         <PageHeader eyebrow="Dime foundations / 01" title="Less interface. More intelligence." description="A quiet, precise workspace for basketball decisions. One visual language, accessible controls, and evidence always within reach." actions={<StatusPill tone="neutral" dot={false}>Component reference</StatusPill>} />
-        <div className="mb-10 flex flex-wrap items-center justify-between gap-4"><nav aria-label="Reference sections" className="ds-segmented">{sections.map(section => <a key={section} href={`#${section.toLowerCase()}`} className="ds-segment">{section}</a>)}</nav><p className="system-label">Beautiful UI surfaces. Base UI behavior.</p></div>
+        <div className="mb-10 flex flex-wrap items-center justify-between gap-4"><nav aria-label="Reference sections" className="ds-segmented">{sections.map(section => <a key={section} href={`#${section.toLowerCase()}`} className="ds-segment">{section}</a>)}</nav><p className="system-label">Beautiful UI surfaces. shadcn/ui · Radix components.</p></div>
         <div className="system-preview mb-12">
           <Surface className="flex flex-col justify-between gap-8 p-7">
             <div><p className="system-label mb-3">The design direction</p><h2 className="max-w-sm text-2xl leading-snug font-medium tracking-tight">Make the next decision clearer.</h2><p className="mt-4 max-w-md text-sm leading-relaxed text-ink-2">Neutral surfaces keep the research in focus. A restrained accent signals an action, not decoration. Compact controls leave room for the work.</p></div>
@@ -73,24 +81,40 @@ export default function DesignSystemPage() {
           <Panel title="Density and motion" description="Compact on a pointer. Comfortable on touch."><dl className="grid grid-cols-2 gap-y-4 text-xs"><dt className="text-ink-3">Control heights</dt><dd className="text-right font-mono">28 / 32 / 36 px</dd><dt className="text-ink-3">Touch targets</dt><dd className="text-right font-mono">44 px minimum</dd><dt className="text-ink-3">Control / panel corners</dt><dd className="text-right font-mono">8 / 12 px</dd><dt className="text-ink-3">Feedback / transition</dt><dd className="text-right font-mono">150 / 200 ms</dd></dl><p className="mt-5 border-t border-line pt-4 text-xs leading-relaxed text-ink-2">Library enter transitions only. Reduced motion removes nonessential animation. No decorative movement in the analysis.</p></Panel>
         </div>
       </section>
+      <section aria-label="Shape and space" className="system-section mb-12">
+        <div className="grid gap-5 sm:grid-cols-3">
+          <Panel title="Space is structure" description="A 4px rhythm, not a box around every thought."><div className="system-specimen gap-2 px-4" aria-hidden="true"><span className="size-2 rounded bg-line-strong" /><span className="size-3 rounded bg-line-strong" /><span className="size-4 rounded bg-line-strong" /><span className="size-6 rounded bg-line-strong" /><span className="size-8 rounded bg-line-strong" /></div><p className="mt-3 font-mono text-xs text-ink-3">8 / 12 / 16 / 24 / 32</p></Panel>
+          <Panel title="Corners have roles" description="Pill actions. Shaped controls. Quiet panels."><div className="system-specimen gap-3" aria-hidden="true"><span className="size-9 rounded-full border border-line-strong bg-surface" /><span className="size-9 rounded-[var(--radius-control)] border border-line-strong bg-surface" /><span className="size-12 rounded-[var(--radius-panel)] border border-line-strong bg-surface" /></div><p className="mt-3 font-mono text-xs text-ink-3">Pill / 8 / 12 px</p></Panel>
+          <Panel title="Depth has a purpose" description="Only floating content needs to feel raised."><div className="system-specimen" aria-hidden="true"><span className="rounded-[var(--radius-control)] bg-surface px-4 py-2 text-xs shadow-overlay">Source details</span></div><p className="mt-3 font-mono text-xs text-ink-3">--shadow-overlay</p></Panel>
+        </div>
+      </section>
       <section id="controls" tabIndex={-1} aria-label="Controls" className="system-section mb-12">
         <PageHeader eyebrow="02 / Controls" title="Familiar by design." description="Library primitives own keyboard behavior and focus. Dime supplies the tokens, the density, and the basketball context." />
         <div className="grid gap-5 md:grid-cols-2">
           <Panel title="Actions" description="One primary action per task. Quiet controls for everything else."><div className="flex flex-wrap gap-3"><Button variant="primary" onClick={() => setPalette(true)}>Primary action</Button><Button onClick={() => setPalette(true)}>Secondary</Button><Button variant="quiet" onClick={() => setPalette(true)}>Quiet</Button><Button variant="accent" onClick={() => setPalette(true)}>Accent</Button></div><div className="mt-5 flex flex-wrap items-center gap-3"><Button disabled>Unavailable</Button><Button loading>Save research</Button><Button size="icon" aria-label="Search commands" onClick={() => setPalette(true)}><Search size={15} /></Button></div><p className="mt-5 text-xs leading-relaxed text-ink-3">Pending actions keep their name, width, and focus. Repeated activation is blocked.</p></Panel>
-          <Panel title="A complete field" description="Try an empty or short name, then a valid one."><form noValidate onSubmit={event => {
+          <Panel title="A complete field" description="Try an empty or short name, then a valid one."><Form noValidate onSubmit={event => {
             event.preventDefault();
             if (state === "saving") return;
             if (name.trim().length < 3) { setState("error"); return; }
             setState("saving");
             timer.current = setTimeout(() => setState("saved"), 700);
-          }}><label htmlFor="research-name" className="mb-2 block text-xs font-medium">Research name <span className="font-normal text-ink-3">(required)</span></label><TextField id="research-name" required value={name} onChange={event => { setName(event.target.value); setState("idle"); }} aria-invalid={state === "error" || undefined} aria-describedby="research-help" readOnly={state === "saving"} placeholder="e.g. Rotation fits" /><p id="research-help" role={state === "error" ? "alert" : undefined} className={`mt-2 text-xs ${state === "error" ? "text-red" : "text-ink-3"}`}>{state === "error" ? "Use at least 3 characters for the research name." : "Local example only. Nothing is sent or saved to your account."}</p><div className="mt-5 flex flex-wrap items-center gap-3"><Button type="submit" variant="primary" loading={state === "saving"}>Save example</Button><span role="status" className="text-xs text-green">{state === "saved" && <span className="inline-flex items-center gap-1"><Check size={13} aria-hidden="true" /> Example saved locally</span>}</span></div></form></Panel>
+          }}><FormField name="research-name" label={<>Research name <span className="font-normal text-ink-3">(required)</span></>} description="Local example only. Nothing is sent or saved to your account." error={state === "error" ? "Use at least 3 characters for the research name." : undefined}><TextField id="research-name" required value={name} onChange={event => { setName(event.target.value); setState("idle"); }} readOnly={state === "saving"} placeholder="e.g. Rotation fits" /></FormField><div className="mt-5 flex flex-wrap items-center gap-3"><Button type="submit" variant="primary" loading={state === "saving"}>Save example</Button><span role="status" className="text-xs text-green">{state === "saved" && <span className="inline-flex items-center gap-1"><Check size={13} aria-hidden="true" /> Example saved locally</span>}</span></div></Form></Panel>
         </div>
       </section>
+      <section id="evidence" tabIndex={-1} aria-label="Evidence" className="system-section mb-12">
+        <PageHeader eyebrow="03 / Evidence" title="The detail behind the decision." description="Data is part of the answer, not a screenshot of it. Align numbers, state units, keep missing values honest, and make the source reachable without losing your place." />
+        <Surface>
+          <div className="flex flex-wrap items-start justify-between gap-4"><div><h2 className="ds-panel-title">Rotation shortlist</h2><p className="ds-panel-description">Fictional players and illustrative values, not a live scouting result.</p></div><StatusPill tone="neutral" dot={false}>Design fixture</StatusPill></div>
+          <div className="mt-6 flex flex-wrap items-center justify-between gap-3"><SegmentedControl options={["With records", "No matches"]} value={evidenceState} onChange={setEvidenceState} label="Evidence example state" /><Popover><PopoverTrigger asChild><Button size="sm">Source details</Button></PopoverTrigger><PopoverContent align="end" aria-label="Design fixture source details"><PopoverTitle>Design fixture</PopoverTitle><PopoverDescription className="text-xs leading-relaxed text-ink-2">These rows demonstrate density and missing values. No warehouse query was run.</PopoverDescription><dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-2 border-t border-line pt-3 text-xs"><dt className="text-ink-3">Units</dt><dd>Minutes, points per 36 minutes, years</dd><dt className="text-ink-3">Missing</dt><dd>Dash means not available, never zero.</dd></dl></PopoverContent></Popover></div>
+          <RecordsTable title="Illustrative player records" rows={evidenceState === "With records" ? researchRows : []} source="Design fixture · no live warehouse query · minutes / points per 36 / contract years" />
+          <p role="status" className="text-xs text-ink-2">{evidenceState === "With records" ? "3 illustrative records. Source and units stay attached to the table." : "No matching records. The table keeps its title, source, and next step."}</p>
+        </Surface>
+      </section>
       <section id="states" tabIndex={-1} aria-label="States" className="system-section">
-        <PageHeader eyebrow="03 / States" title="Always say what happened." description="A color is not an explanation. Every status has a label, every error keeps your input, and every empty state points to a useful next step." />
+        <PageHeader eyebrow="04 / States" title="Always say what happened." description="A color is not an explanation. Every status has a label, every error keeps your input, and every empty state points to a useful next step." />
         <Surface><div className="flex flex-wrap gap-3"><StatusPill tone="neutral">Queued</StatusPill><StatusPill tone="accent">Researching</StatusPill><StatusPill tone="green">Ready to review</StatusPill><StatusPill tone="orange">Needs attention</StatusPill><StatusPill tone="red">Could not load</StatusPill></div><div className="mt-6"><SegmentedControl options={["All research", "Conversations", "Projects"]} value={filter} onChange={setFilter} label="Example research filter" /><p role="status" className="mt-2 text-xs text-ink-3">Selected: {filter}. Illustrative filter only.</p></div><div className="mt-7 grid gap-5 border-t border-line pt-6 sm:grid-cols-2"><div><label htmlFor="disabled-field" className="mb-2 block text-xs font-medium">Unavailable field</label><TextField id="disabled-field" disabled value="Not available for this example" /></div><div><label htmlFor="long-field" className="mb-2 block text-xs font-medium">Long text</label><TextField id="long-field" readOnly defaultValue="A long research title stays inside its container without breaking the layout" /></div></div></Surface>
       </section>
-      <footer className="mt-12 flex flex-wrap justify-between gap-4 border-t border-line pt-5 text-xs text-ink-3"><p>Shared foundations for every Dime workspace.</p><div className="flex flex-wrap gap-4"><a href="https://beautifului.dev/harness" className="system-link">Beautiful UI</a><a href="https://base-ui.com/react/overview/quick-start" className="system-link">Base UI</a><a href="https://coss.com/ui/docs" className="system-link">coss UI</a><a href="https://design.how/skills" className="system-link">design.how</a></div></footer>
+      <footer className="mt-12 flex flex-wrap justify-between gap-4 border-t border-line pt-5 text-xs text-ink-3"><p>Shared foundations for every Dime workspace.</p><div className="flex flex-wrap gap-4"><a href="https://beautifului.dev/harness" className="system-link">Beautiful UI</a><a href="https://ui.shadcn.com/docs/components/radix" className="system-link">shadcn/ui · Radix</a><a href="https://design.how/directory/ui-libraries" className="system-link">design.how</a></div></footer>
     </div>
     <DimeCommandPalette open={palette} onClose={() => setPalette(false)} entries={[
       ...sections.map(section => ({ id: section, label: section, kind: "view" as const, run: () => navigate(section) })),
