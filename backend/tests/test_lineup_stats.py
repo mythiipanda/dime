@@ -225,6 +225,8 @@ def _provenance_agg(include_fallback):
     return agg
 
 def _run_provenance(monkeypatch, agg):
+    monkeypatch.setattr("shared.tools.lineup._hist_lineup_rows",
+                        lambda *a, **k: [])
     monkeypatch.setattr("shared.tools.lineup._warehouse_or_live",
                         _fake_warehouse(_provenance_rows()))
     monkeypatch.setattr("shared.tools.lineup._possession_aggs",
