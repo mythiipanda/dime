@@ -413,6 +413,85 @@ test("submit_answer and validateAnswerSubmission provide available columns and a
   );
 });
 
+test("accepted submit_answer is emitted when the run aborts before prompt returns", async () => {
+  const cwd = await mkdtemp(join(tmpdir(), "dime-submit-abort-"));
+  const agentDir = join(cwd, "agent");
+  await mkdir(agentDir, { recursive: true });
+  let markEntered;
+  const entered = new Promise((resolve) => { markEntered = resolve; });
+  let turn = 0;
+  const runtime = await makeFixtureRuntime(agentDir, (model) => {
+    turn++;
+    const content = turn === 1
+      ? [{ type: "toolCall", id: "call-submit-abort", name: "codemode", arguments: { code: `
+          await tools.submit_answer({ blocks: [{ text: "Checkpoint answer." }] });
+          return await tools.wait_for_cancel({});
+        ` } }]
+      : [{ type: "text", text: "Done." }];
+    const msg = {
+      role: "assistant",
+      api: model.api,
+      provider: model.provider,
+      model: model.id,
+      content,
+      stopReason: turn === 1 ? "toolUse" : "stop",
+      timestamp: Date.now(),
+      usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } },
+    };
+    const stream = createAssistantMessageEventStream();
+    stream.push({ type: "done", reason: msg.stopReason, message: msg });
+    stream.end();
+    return stream;
+  });
+  const mockBridge = {
+    tools: [{
+      name: "wait_for_cancel",
+      label: "wait_for_cancel",
+      description: "Wait until cancelled",
+      parameters: Type.Object({}, { additionalProperties: false }),
+      async execute(_callId, _args, signal) {
+        markEntered();
+        await new Promise((resolve, reject) => {
+          const fail = () => reject(new Error("fixture cancelled"));
+          if (signal?.aborted) fail();
+          else signal?.addEventListener("abort", fail, { once: true });
+        });
+      },
+    }],
+    results: new Map(),
+    pid: 1004,
+    close: async () => {},
+  };
+  const pi = createPiExecution({
+    resolveRuntime: async () => ({ runtime, model: runtime.getModel("fixture", "fixture") }),
+    connectTools: async () => mockBridge,
+    abortGraceMs: 20,
+  });
+  const abort = new AbortController();
+  const events = [];
+  try {
+    const consuming = (async () => {
+      for await (const event of pi.stream({
+        q: "Submit then hang",
+        history: [],
+        model: "fixture:fixture",
+        cwd,
+        agentDir,
+        bridge: { python: "fake", cwd, env: {} },
+      }, abort.signal)) events.push(event);
+    })();
+    await entered;
+    abort.abort();
+    await consuming;
+    const answer = events.find((event) => event.type === "answer");
+    assert.equal(answer?.text, "Checkpoint answer.");
+    assert.equal(answer?.submission?.blocks?.[0]?.text, "Checkpoint answer.");
+    assert(!events.some((event) => event.type === "failure"));
+  } finally {
+    await rm(cwd, { recursive: true, force: true });
+  }
+});
+
 test("host bootstrap failure names the missing manifest variable on stderr", () => {
   const printed = [];
   reportBootstrapFailure(

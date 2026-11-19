@@ -254,7 +254,16 @@ export function createPiExecution(deps: AnalystDeps = {}) {
             let wake: (() => void) | undefined;
             let finished = false;
             const emit = (event: AnalystEvent) => { events.push(event); wake?.(); };
-            const onAbort = () => controller.abort();
+            let acceptedSubmission: AnswerSubmission | undefined;
+            let answerEmitted = false;
+            const emitAcceptedAnswer = () => {
+                if (answerEmitted || !acceptedSubmission)
+                    return;
+                answerEmitted = true;
+                const canonicalText = acceptedSubmission.blocks.map(block => block.text).join("\n\n");
+                emit({ type: "answer", text: canonicalText, submission: acceptedSubmission });
+            };
+            const onAbort = () => { emitAcceptedAnswer(); controller.abort(); };
             signal?.addEventListener("abort", onAbort, { once: true });
             let abandoned = false;
             const abandon = new Promise<void>(resolve => controller.signal.addEventListener("abort", () => setTimeout(resolve, abortGraceMs).unref(), { once: true }));
@@ -266,7 +275,6 @@ export function createPiExecution(deps: AnalystDeps = {}) {
                 let bridge: Awaited<ReturnType<typeof connectPythonTools>> | undefined;
                 let kind = "configuration";
                 let bridgePid: number | undefined;
-                let acceptedSubmission: AnswerSubmission | undefined;
                 let modelApiKey: string | undefined;
                 const cancel = () => { void session?.abort(); };
                 controller.signal.addEventListener("abort", cancel, { once: true });
@@ -326,23 +334,24 @@ export function createPiExecution(deps: AnalystDeps = {}) {
                     kind = "model";
                     await session.prompt(start.q);
                     controller.signal.throwIfAborted();
-                    const last = session.messages.filter(m => m.role === "assistant").at(-1);
-                    if (!last || last.stopReason === "error" || last.stopReason === "aborted") {
-                        const detail = last && "errorMessage" in last && typeof last.errorMessage === "string" ? last.errorMessage : "";
-                        throw new Error(detail || "Model failed");
-                    }
-                    const text = last.content.filter(c => c.type === "text").map(c => c.text).join("");
                     if (acceptedSubmission) {
-                        const canonicalText = acceptedSubmission.blocks.map(b => b.text).join("\n\n");
-                        emit({ type: "answer", text: canonicalText, submission: acceptedSubmission });
+                        emitAcceptedAnswer();
                     } else {
+                        const last = session.messages.filter(m => m.role === "assistant").at(-1);
+                        if (!last || last.stopReason === "error" || last.stopReason === "aborted") {
+                            const detail = last && "errorMessage" in last && typeof last.errorMessage === "string" ? last.errorMessage : "";
+                            throw new Error(detail || "Model failed");
+                        }
+                        const text = last.content.filter(c => c.type === "text").map(c => c.text).join("");
                         if (!text.trim())
                             throw new Error("Model returned no answer");
+                        answerEmitted = true;
                         emit({ type: "answer", text });
                     }
                 }
                 catch (error) {
-                    if (!controller.signal.aborted)
+                    emitAcceptedAnswer();
+                    if (!answerEmitted && !controller.signal.aborted)
                         emit({ type: "failure", kind, message: safeFailureMessage(kind, error, modelApiKey) });
                 }
                 finally {
