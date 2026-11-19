@@ -7,6 +7,7 @@ import { createRoot } from "react-dom/client";
 import type { Root } from "react-dom/client";
 import DataArtifacts from "./components/DataArtifacts";
 import BriefsPage from "./app/briefs/page";
+import { AppRouterContext } from "next/dist/shared/lib/app-router-context.shared-runtime";
 import { listBriefs, saveBrief } from "./lib/briefs";
 import type { AiMessage } from "./lib/chat";
 
@@ -71,7 +72,7 @@ async function mountEl(el: React.ReactElement) {
   const root = createRoot(host);
   roots.push(root);
   await act(async () => {
-    root.render(el);
+    root.render(<AppRouterContext.Provider value={{ push() {}, replace() {}, refresh() {}, back() {}, forward() {}, prefetch: async () => {}, bfcacheId: "test" }}>{el}</AppRouterContext.Provider>);
   });
   await act(async () => {
     await new Promise((r) => setTimeout(r, 80));
