@@ -100,7 +100,7 @@ export default function DimeCommandPalette({
             aria-activedescendant={results.length ? `dime-palette-${active}` : undefined}
             className="min-w-0 flex-1 bg-transparent text-[13.5px] text-ink outline-none placeholder:text-ink-3 [@media(pointer:coarse)]:text-base"
           />
-          <DialogClose aria-label="Close command palette" className="shrink-0 rounded-md bg-field px-2 py-1 font-mono text-[11px] text-ink-2 shadow-hairline">esc</DialogClose>
+          <DialogClose aria-label="Close command palette" className="shrink-0 rounded-md bg-field px-2 py-1 font-mono text-[11px] text-ink-2 shadow-hairline [@media(pointer:coarse)]:min-h-11 [@media(pointer:coarse)]:min-w-11">esc</DialogClose>
         </div>
         <div ref={listRef} id="dime-palette-list" role="listbox" aria-label="Views and actions" className="max-h-[46dvh] overflow-y-auto overscroll-contain p-1.5">
           {results.length === 0 && (
