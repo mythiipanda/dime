@@ -30,8 +30,8 @@ function drawShots(canvas: HTMLCanvasElement, shots: Shot[]) {
   
 
   const cssv = getComputedStyle(document.documentElement);
-  const surface = cssv.getPropertyValue("--color-pure-white").trim() || "#ffffff";
-  const ink = cssv.getPropertyValue("--color-ink-black").trim() || "#1c1917";
+  const surface = cssv.getPropertyValue("--surface").trim() || "#ffffff";
+  const ink = cssv.getPropertyValue("--ink").trim() || "#1c1917";
   ctx.clearRect(0, 0, W, H);
   ctx.fillStyle = surface;
   ctx.fillRect(0, 0, W, H);
