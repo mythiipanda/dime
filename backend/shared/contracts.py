@@ -77,8 +77,12 @@ def salary_records(con, season: str | None = None, salary_season: str | None = N
             if not records:
                 records = rows
             else:
-                records.extend(r for r in rows if match_record(
-                    records, r['PLAYER_NAME'], r.get('PLAYER_ID'), r['TEAM']) is None)
+                for row in rows:
+                    primary = match_record(records, row['PLAYER_NAME'], row.get('PLAYER_ID'), row['TEAM'])
+                    if primary is None:
+                        records.append(row)
+                    elif primary['salary'] is None:
+                        primary['salary'] = row['salary']
             if not include_fallback:
                 return records
     return records

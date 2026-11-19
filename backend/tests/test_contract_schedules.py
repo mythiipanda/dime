@@ -246,6 +246,22 @@ def test_vendor_fallback_does_not_override_primary_salary(warehouse):
         con.close()
 
 
+def test_vendor_salary_fills_null_primary_without_losing_schedule(warehouse):
+    _new_warehouse(warehouse)
+    con = duckdb.connect(str(warehouse))
+    try:
+        con.execute('UPDATE silver_salaries SET SALARY = NULL WHERE PLAYER_ID = 1')
+        con.execute('CREATE TABLE silver_cap_players (player VARCHAR, team VARCHAR, salary BIGINT)')
+        con.execute("INSERT INTO silver_cap_players VALUES ('Different Salary Name', 'BOS', 125)")
+        records = salary_records(con, '2026-27', include_fallback=True)
+        assert len(records) == 2
+        player = next(r for r in records if r['PLAYER_ID'] == 1)
+        assert player['salary'] == 125
+        assert contract_details(player)['future_salaries'] == {'2027-28': 110}
+    finally:
+        con.close()
+
+
 def test_schedule_availability_depends_on_salary_data_not_slug():
     row = {'SALARY': 100, 'SALARY_2026_27': 100, 'SALARY_2027_28': 110, '_season': '2026-27'}
     assert contract_details(row)['years_remaining'] == 2
