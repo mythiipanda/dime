@@ -15,10 +15,11 @@ def _require_team_four_factors_pack():
         tables = {row[0] for row in con.execute("SHOW TABLES").fetchall()}
     finally:
         con.close()
-    if "silver_four_factors_team" not in tables:
+    if ("silver_four_factors_team" not in tables
+            and "silver_team_games" not in tables):
         pytest.skip(
-            "release pack omits silver_four_factors_team; "
-            "run scripts/build_team_four_factors.py"
+            "release pack omits silver_four_factors_team and "
+            "silver_team_games; run scripts/build_team_four_factors.py"
         )
 
 def test_tool_registered():

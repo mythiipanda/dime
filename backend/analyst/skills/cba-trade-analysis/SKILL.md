@@ -67,3 +67,13 @@ Teams operating at or above the Second Apron face the most punitive roster restr
 
 - **Trade Check Summaries**: Use `compare` artifacts to contrast incoming and outgoing player profiles, salaries, and net ratings.
 - **Roster Cap Ledger**: Use `table` artifacts displaying player salaries, luxury tax tiers, and team apron room/deficit.
+
+---
+
+## 5. Season-Aware Team Checks (Stale Premises)
+
+A player's team depends on the season being graded:
+- **Current-season questions** use the current season and current rosters from the salary sheet. A player who changed teams shows up with his new team.
+- **Historical questions** pass the past season explicitly; team checks then use that season's production rows, so a departed player still grades against his old team.
+
+When `get_trade_check` answers "salary data lists {player} with {TEAM}, not {TEAM2} in season {SEASON}", the question's team premise is stale for that season. Say so plainly, then either re-grade with the reported team (for a current question) or re-run with the historical season the user meant. Never silently grade the trade as asked when the team check failed.
