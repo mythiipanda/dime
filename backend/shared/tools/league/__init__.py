@@ -219,6 +219,7 @@ from .ratings import (
     get_player_ratings,
     get_player_risers,
     get_playoff_team_ratings,
+    get_impact_rank,
     get_rapm,
     get_ratings,
     get_rest,
@@ -294,6 +295,7 @@ from .standings import (
     get_standings_deep,
     get_team_trajectory,
 )
+from .news import get_news_feed
 from .trade_value import (
     PICK_VALUE_M,
     _TRADE_CHECK_UNMODELED,
@@ -343,5 +345,6 @@ from .trade_value import (
     _trade_value_sides,
     _trade_verdict_line,
     get_trade_check,
+    get_trade_partners,
     get_trade_value,
 )
