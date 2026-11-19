@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { ArrowRight, Basketball, Copy, Database, User } from "iconoir-react";
@@ -15,6 +15,7 @@ import { useDimeChat } from "../site/harness/useDimeChat";
 import type { ChatMsg } from "../site/harness/types";
 import type { VerificationCarry } from "../../lib/dime-stream";
 import { citationDetails } from "../../lib/citation-details";
+import { loadWorkflowDraft, saveWorkflowDraft } from "../../lib/workflow-drafts";
 
 export const suggestedPrompts = [
   "Build a scouting report on Shai Gilgeous-Alexander",
@@ -48,11 +49,23 @@ export function AssistantTurn({ message, prefix, onFollowUp }: { message: Extrac
 
 export function ChatView({ thread, replay, onRunDone, workflowRequest, onWorkflowConsumed }: { thread: string; replay: string | null; onRunDone: (question: string) => void; workflowRequest?: { thread: string; text: string } | null; onWorkflowConsumed?: () => void }) {
   const chat = useDimeChat({ thread, replay, onRunDone });
+  const [workflowDraftActive, setWorkflowDraftActive] = useState(false);
+  useEffect(() => {
+    if (replay) return;
+    const saved = loadWorkflowDraft(thread);
+    if (saved !== null) { chat.setDraft(saved); setWorkflowDraftActive(true); }
+  }, [thread, replay, chat.setDraft]);
+  useEffect(() => {
+    if (!workflowDraftActive) return;
+    saveWorkflowDraft(thread, chat.draft);
+    if (!chat.draft.trim()) setWorkflowDraftActive(false);
+  }, [thread, chat.draft, workflowDraftActive]);
   const consumedWorkflow = useRef<typeof workflowRequest>(null);
   useEffect(() => {
     if (!workflowRequest || workflowRequest.thread !== thread || consumedWorkflow.current === workflowRequest || chat.historyLoading || chat.modelsLoading) return;
     consumedWorkflow.current = workflowRequest;
     chat.setDraft(workflowRequest.text);
+    setWorkflowDraftActive(true);
     if (chat.modelOptions.some(model => model.id === chat.model && model.available !== false)) chat.submit(workflowRequest.text);
     onWorkflowConsumed?.();
   }, [workflowRequest, thread, chat.historyLoading, chat.modelsLoading, chat.modelOptions, chat.model, chat.submit, chat.setDraft, onWorkflowConsumed]);

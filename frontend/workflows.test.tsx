@@ -7,6 +7,24 @@ import WorkflowsPanel from "./components/WorkflowsPanel";
 import { workflows } from "./lib/workflows";
 import { DimeShell } from "./components/shell/DimeShell";
 import { StrictMode } from "react";
+import { loadWorkflowDraft, saveWorkflowDraft } from "./lib/workflow-drafts";
+
+it("stores workflow drafts per thread and tolerates unavailable storage", () => {
+  const previous = globalThis.window;
+  const dom = new JSDOM("", { url: "http://localhost" });
+  Object.assign(globalThis, { window: dom.window });
+  try {
+    assert.equal(loadWorkflowDraft("missing"), null);
+    saveWorkflowDraft("one", "Prepare a player evaluation.");
+    assert.equal(loadWorkflowDraft("one"), "Prepare a player evaluation.");
+    assert.equal(loadWorkflowDraft("two"), null);
+    saveWorkflowDraft("one", "  ");
+    assert.equal(loadWorkflowDraft("one"), null);
+    Object.defineProperty(dom.window, "localStorage", { get() { throw new Error("Storage blocked"); } });
+    assert.doesNotThrow(() => saveWorkflowDraft("one", "Request"));
+    assert.equal(loadWorkflowDraft("one"), null);
+  } finally { Object.assign(globalThis, { window: previous }); dom.window.close(); }
+});
 
 it("fills a workflow, previews its request and runs only when complete", async () => {
   const dom = new JSDOM("<!doctype html><html><body><div id='root'></div></body></html>", { url: "http://localhost" });
@@ -72,7 +90,8 @@ for (const mode of ["available", "empty", "error", "retry"]) it(`workflow handof
     if (url.includes("/chat/stream")) { requests.push(JSON.parse(String(init?.body))); return new Response("unavailable", { status: 503 }); }
     return Response.json({ threads: [], runs: [] });
   };
-  const host = dom.window.document.getElementById("root")!, root = createRoot(host);
+  const host = dom.window.document.getElementById("root")!;
+  let root = createRoot(host);
   try {
     await act(async () => root.render(<StrictMode><DimeShell /></StrictMode>));
     await act(async () => [...host.querySelectorAll("button")].find(button => button.textContent?.includes("Opponent scouting report"))!.click());
@@ -93,11 +112,19 @@ for (const mode of ["available", "empty", "error", "retry"]) it(`workflow handof
       assert.equal(requests[0].thread, url.searchParams.get("thread"));
       assert.equal(requests[0].model, "gemini:flash");
       assert.match(host.textContent!, /503/);
+      assert.equal(loadWorkflowDraft(url.searchParams.get("thread")!), null);
     } else {
       assert.equal(requests.length, 0);
       assert.equal(host.querySelector("textarea")!.value, expected);
       assert.match(host.textContent!, mode === "empty" ? /GEMINI_API_KEY/ : /Models unavailable/);
       assert.equal(host.querySelector<HTMLButtonElement>('[aria-label="Send message"]')!.disabled, true);
+      assert.equal(loadWorkflowDraft(url.searchParams.get("thread")!), expected);
+      await act(async () => root.unmount());
+      root = createRoot(host);
+      await act(async () => root.render(<StrictMode><DimeShell /></StrictMode>));
+      assert.equal(host.querySelector("textarea")!.value, expected);
+      assert.equal(new URL(dom.window.location.href).searchParams.get("thread"), url.searchParams.get("thread"));
+      assert.equal(requests.length, 0);
     }
     await act(async () => root.render(<StrictMode><DimeShell /></StrictMode>));
     assert.equal(requests.length, mode === "available" ? 1 : 0);
@@ -112,6 +139,7 @@ for (const mode of ["available", "empty", "error", "retry"]) it(`workflow handof
       assert.equal(requests.length, 1);
       assert.equal(requests[0].thread, url.searchParams.get("thread"));
       assert.notEqual(requests[0].thread, "original-thread");
+      assert.equal(loadWorkflowDraft(url.searchParams.get("thread")!), null);
     }
   } finally { await act(async () => root.unmount()); globalThis.fetch = previous; dom.window.close(); }
 });
