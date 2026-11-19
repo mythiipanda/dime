@@ -9,6 +9,7 @@ from pathlib import Path
 import duckdb
 
 from .. import file_lock
+from .macros import NAME_KEY_MACRO
 
 
 def _pkg():
@@ -39,7 +40,9 @@ def _connect_once(read_only: bool) -> duckdb.DuckDBPyConnection:
     pkg = _pkg()
     db_path = Path(pkg.DB_PATH)
     if read_only:
-        return pkg.duckdb.connect(str(db_path), read_only=True)
+        con = pkg.duckdb.connect(str(db_path), read_only=True)
+        con.execute(NAME_KEY_MACRO)
+        return con
     if db_path.resolve() == pkg.CANONICAL_DB_PATH:
         raise PermissionError("canonical benchmark warehouse is immutable")
     con = pkg.duckdb.connect(str(db_path))
@@ -48,6 +51,7 @@ def _connect_once(read_only: bool) -> duckdb.DuckDBPyConnection:
         dataset VARCHAR, season VARCHAR, entity VARCHAR,
         source VARCHAR, fetched_at VARCHAR, rows INTEGER)"""
     )
+    con.execute(NAME_KEY_MACRO)
     return con
 
 

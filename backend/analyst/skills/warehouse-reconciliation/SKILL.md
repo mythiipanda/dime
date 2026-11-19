@@ -33,3 +33,11 @@ In player-season tables, a traded player often has one combined row (`TEAM_ABBRE
 `sql_exec` returns `ok: true, rows: [], row_count: 0, meta: { empty_observation: true }` when a valid query matches zero rows:
 - Do **not** treat a 0-row result as a tool crash. First verify your filter literals (spelling, case, season encoding) against `warehouse_schema` or a broader `SELECT DISTINCT` probe.
 - Once filters are verified, a 0-row observation is affirmative evidence that no entity or event satisfied those criteria in the covered warehouse scope (e.g., resolving a false-premise question). Report the exact verified scope and the 0-row finding transparently.
+
+## 5. Joining Tables on Player Names
+
+Name-keyed tables spell the same player differently: accents (`Nikola Jokić` vs `Nikola Jokic`), punctuation (`A.J. Green` vs `AJ Green`), and suffixes (`Larry Nance Jr.` vs `Larry Nance Jr`). A raw `ON a.PLAYER_NAME = b.name` join silently drops those players.
+- Join on `name_key(a.PLAYER_NAME) = name_key(b.name)`. `name_key` is built into every `sql_exec` and `run_python` connection; it strips accents, punctuation, and generational suffixes, and returns NULL for rows whose name holds no letters.
+- Prefer `player_id` joins whenever both tables carry an ID.
+- Before ranking or aggregating, count unmatched rows on each side with an anti-join and report the count and the names.
+- Compute team-level totals (payroll, wins) from each source table on its own, then join teams on the team key. Never derive a team total from a player-level join, because every unmatched player shrinks that team's total and can drop the team entirely.
