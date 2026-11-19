@@ -7,8 +7,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from shared import store  # noqa: E402
-
+from shared import store
 
 @pytest.fixture(autouse=True)
 def _pooled_warehouse(monkeypatch, tmp_path):
@@ -22,7 +21,6 @@ def _pooled_warehouse(monkeypatch, tmp_path):
     yield
     store.warehouse_pool_clear()
 
-
 def test_sequential_reads_share_underlying_connection():
     a = store.connect(read_only=True)
     b = store.connect(read_only=True)
@@ -31,7 +29,6 @@ def test_sequential_reads_share_underlying_connection():
     assert a.execute("SELECT COUNT(*) FROM t").fetchone() == (2,)
     assert b.execute("SELECT COUNT(*) FROM t").fetchone() == (2,)
 
-
 def test_wrapper_close_is_noop_and_pool_survives():
     a = store.connect(read_only=True)
     a.close()
@@ -39,7 +36,6 @@ def test_wrapper_close_is_noop_and_pool_survives():
     assert a._con is b._con
     assert a.execute("SELECT 1").fetchall() == [(1,)]
     assert b.execute("SELECT COUNT(*) FROM t").fetchone() == (2,)
-
 
 def test_real_write_evicts_pooled_connection():
     a = store.connect(read_only=True)
@@ -54,7 +50,6 @@ def test_real_write_evicts_pooled_connection():
     b = store.connect(read_only=True)
     assert b._con is not old
     assert b.execute("SELECT COUNT(*) FROM t").fetchone() == (3,)
-
 
 def test_write_connects_are_unpooled_with_real_close():
     a = store.connect(read_only=False)
@@ -71,7 +66,6 @@ def test_write_connects_are_unpooled_with_real_close():
     assert not hasattr(b, "_con")
     b.close()
     assert getattr(store._pool_state, "entry", None) is None
-
 
 def test_pool_is_thread_local():
     main_con = store.connect(read_only=True)
@@ -90,14 +84,12 @@ def test_pool_is_thread_local():
     assert len(seen) == 1
     assert seen[0] is not main_con._con
 
-
 def test_pool_clear_forces_fresh_connection():
     a = store.connect(read_only=True)
     old = a._con
     store.warehouse_pool_clear()
     b = store.connect(read_only=True)
     assert b._con is not old
-
 
 def test_pooled_connection_supports_with_block():
     with store.connect(read_only=True) as c:
@@ -106,7 +98,6 @@ def test_pooled_connection_supports_with_block():
     d = store.connect(read_only=True)
     assert d._con is inner
     assert d.execute("SELECT COUNT(*) FROM t").fetchone() == (2,)
-
 
 def test_write_connect_succeeds_while_read_pooled():
     r = store.connect(read_only=True)
@@ -121,7 +112,6 @@ def test_write_connect_succeeds_while_read_pooled():
     b = store.connect(read_only=True)
     assert b.execute(
         "SELECT COUNT(*) FROM t WHERE x = 99").fetchone() == (1,)
-
 
 def test_write_connect_evicts_pooled_reads():
     a = store.connect(read_only=True)

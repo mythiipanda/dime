@@ -1,20 +1,36 @@
-FROM python:3.11-slim
+FROM node:22.19.0-bookworm-slim AS analyst-deps
+WORKDIR /analyst
+COPY analyst/package.json analyst/package-lock.json ./
+RUN npm ci --ignore-scripts
+COPY analyst/*.py analyst/*.ts analyst/tsconfig.json ./
+COPY analyst/tools ./tools
+COPY analyst/http-assets ./http-assets
+RUN npm run build && npm prune --omit=dev --ignore-scripts && node --input-type=module -e "await import('./dist/runtime.js')"
+
+FROM python:3.11-slim-bookworm AS runtime
+RUN apt-get update && apt-get install -y --no-install-recommends libstdc++6 && rm -rf /var/lib/apt/lists/*
+COPY --from=analyst-deps /usr/local/bin/node /usr/local/bin/node
+COPY --from=analyst-deps /analyst /srv/analyst
 WORKDIR /srv
 ARG DIME_REVISION=unknown
 ENV DIME_REVISION=$DIME_REVISION
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
-COPY v2 ./v2
 COPY shared ./shared
-COPY entrypoint.py ./entrypoint.py
-COPY scripts/build_team_four_factors.py scripts/generate_asset_manifest.py scripts/seed_team_ratings.py ./scripts/
+COPY bin/espn-pp-cli /usr/local/bin/espn-pp-cli
+RUN chmod +x /usr/local/bin/espn-pp-cli
+ENV ESPN_CLI_PATH=/usr/local/bin/espn-pp-cli
+ENV ESPN_CLI_SHA256=6238a03e1afdeb0f64ae81e399b8afc0a7555fe9fa039dc4939147dddc3cf009
+RUN echo "$ESPN_CLI_SHA256  /usr/local/bin/espn-pp-cli" | sha256sum -c -
+
+COPY scripts/build_team_four_factors.py scripts/seed_team_ratings.py ./scripts/
 COPY data ./data
 RUN cp data/warehouse.duckdb data/_build.duckdb && \
     DIME_ENV=dev DIME_WAREHOUSE=/srv/data/_build.duckdb python scripts/build_team_four_factors.py && \
     (DIME_ENV=dev DIME_WAREHOUSE=/srv/data/_build.duckdb python scripts/seed_team_ratings.py 2024-25 || echo "team ratings seed skipped") && \
     mv data/_build.duckdb data/warehouse.duckdb
-RUN python scripts/generate_asset_manifest.py /srv/manifest/expected_asset_manifest.json
+RUN node analyst/dist/host.js manifest /srv/manifest/expected_asset_manifest.json
 ENV DIME_EXPECTED_ASSET_MANIFEST=/srv/manifest/expected_asset_manifest.json
 ENV PORT=8000
 EXPOSE 8000
-CMD ["uvicorn", "entrypoint:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "2"]
+CMD ["node", "analyst/dist/host.js"]

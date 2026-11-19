@@ -12,15 +12,13 @@ from shared.sources import nba_stats
 SEASON = "2025-26"
 TIMEOUT = 30
 
-
 def _fetch(fn, *args):
     with concurrent.futures.ThreadPoolExecutor(max_workers=1) as ex:
         fut = ex.submit(fn, *args)
         try:
             return fut.result(timeout=TIMEOUT)
-        except Exception as e:
+        except Exception:
             return None
-
 
 def _seeded_entities(table: str) -> set:
     con = store.connect()
@@ -32,7 +30,6 @@ def _seeded_entities(table: str) -> set:
             f"SELECT DISTINCT _entity FROM {table}").fetchall()}
     finally:
         con.close()
-
 
 def main() -> None:
     print("=== lineups ===", flush=True)
@@ -131,7 +128,6 @@ def main() -> None:
             print(f"  {name}: fetch failed", flush=True)
         time.sleep(2)
     print(f"on_off seeded: {done} new players", flush=True)
-
 
 if __name__ == "__main__":
     main()

@@ -1,6 +1,6 @@
 "use client";
 
-/** Segmented control — equal-width segments, sliding thumb. */
+
 export function SegmentedControl<T extends string>({
   options,
   value,

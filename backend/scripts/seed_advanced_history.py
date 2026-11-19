@@ -22,16 +22,13 @@ DELAY_S = 2.0
 REQUIRED_COLUMNS = ("PLAYER_ID", "PLAYER_NAME", "AGE", "TS_PCT",
                     "NET_RATING", "DEF_RATING")
 
-
 class SeasonFetchError(RuntimeError):
     pass
-
 
 class SeasonReport(TypedDict):
     loaded: dict[str, int]
     skipped: list[str]
     rows: int
-
 
 def _start_year(season: str) -> int:
     year, _, tail = str(season).partition("-")
@@ -41,13 +38,11 @@ def _start_year(season: str) -> int:
         raise ValueError(f"season must span consecutive years, got {season!r}")
     return int(year)
 
-
 def season_slugs(first: str = FIRST_SEASON, last: str = LAST_SEASON) -> list[str]:
     start, end = _start_year(first), _start_year(last)
     if end < start:
         raise ValueError(f"empty season range: {first} to {last}")
     return [f"{y}-{(y + 1) % 100:02d}" for y in range(start, end + 1)]
-
 
 def loaded_seasons() -> set[str]:
     con = store.connect()
@@ -62,10 +57,8 @@ def loaded_seasons() -> set[str]:
     finally:
         con.close()
 
-
 def fetch_season(season: str) -> FetchResult:
     return nba_stats.player_advanced(season)
-
 
 def require_complete(season: str, result: FetchResult) -> None:
     if not result.ok or result.frame.height == 0:
@@ -76,11 +69,9 @@ def require_complete(season: str, result: FetchResult) -> None:
     if missing:
         raise SeasonFetchError(f"{TABLE} {season}: fetch lacks {missing}")
 
-
 def seed_season(season: str, result: FetchResult) -> int:
     require_complete(season, result)
     return store.save_frame(TABLE, result, entity=ENTITY, replace_season=True)
-
 
 def run(seasons: list[str],
         fetch: Callable[[str], FetchResult] = fetch_season,
@@ -99,7 +90,6 @@ def run(seasons: list[str],
         fetched += 1
         done.add(season)
     return {"loaded": loaded, "skipped": skipped, "rows": sum(loaded.values())}
-
 
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(
@@ -125,7 +115,6 @@ def main(argv: list[str] | None = None) -> int:
     print(f"{TABLE}: {len(report['loaded'])} seasons loaded, {report['rows']} rows, "
           f"{len(report['skipped'])} skipped")
     return 0
-
 
 if __name__ == "__main__":
     raise SystemExit(main())

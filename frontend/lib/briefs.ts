@@ -1,3 +1,5 @@
+import { TEAM_IDS, isTeamAbbr } from "./teams";
+
 export interface BriefDoc {
   id: string;
   title: string;
@@ -6,10 +8,16 @@ export interface BriefDoc {
   rows: unknown;
   meta?: Record<string, unknown> | null;
   packHash?: string | null;
+  rev?: number;
+}
+
+export function docRev(doc: BriefDoc | null): number {
+  return doc && typeof doc.rev === "number" ? doc.rev : 0;
 }
 
 const KEY = "dime_briefs_v1";
 const RERUN_KEY = "dime_rerun";
+const SEEN_KEY = "dime_brief_viewer_seen";
 
 type Store = Pick<Storage, "getItem" | "setItem" | "removeItem">;
 
@@ -126,6 +134,7 @@ export function saveBrief(input: {
     rows: input.rows ?? null,
     meta: input.meta ?? null,
     packHash: input.packHash ?? null,
+    rev: 1,
   };
   const docs = readAll().filter((b) => b.id !== doc.id);
   docs.push(doc);
@@ -135,6 +144,79 @@ export function saveBrief(input: {
 
 export function removeBrief(id: string) {
   writeAll(readAll().filter((b) => b.id !== id));
+}
+
+export const MATCHUP_TEAM_ABBRS = Object.keys(TEAM_IDS).sort();
+
+export interface MatchupBriefInput {
+  title: string;
+  question: string;
+  rows: unknown;
+  meta: Record<string, unknown>;
+}
+
+export function matchupBriefInput(away: string, home: string): MatchupBriefInput | null {
+  const a = away.trim().toUpperCase();
+  const h = home.trim().toUpperCase();
+  if (!a || !h || a === h || !isTeamAbbr(a) || !isTeamAbbr(h)) return null;
+  return {
+    title: `${a} at ${h}`,
+    question: `Preview ${a} at ${h}: ratings, key matchups, decisive stats`,
+    rows: { game: { away: a, home: h } },
+    meta: { template: "matchup" },
+  };
+}
+
+export function updateBrief(
+  id: string,
+  patch: { title?: string; question?: string },
+  expectedRev: number,
+): { ok: true; doc: BriefDoc } | { ok: false; current: BriefDoc | null } {
+  const docs = readAll();
+  const at = docs.findIndex((b) => b.id === id);
+  if (at < 0) return { ok: false, current: null };
+  const current = docs[at];
+  if (docRev(current) !== expectedRev) return { ok: false, current };
+  const next: BriefDoc = {
+    ...current,
+    ...(patch.title !== undefined ? { title: patch.title } : null),
+    ...(patch.question !== undefined ? { question: patch.question } : null),
+    rev: expectedRev + 1,
+  };
+  docs[at] = next;
+  writeAll(docs);
+  return { ok: true, doc: next };
+}
+
+export function briefFieldDiff(
+  prev: { title: string; question: string },
+  next: { title: string; question: string },
+): string[] {
+  const out: string[] = [];
+  if (prev.title !== next.title) out.push("title");
+  if (prev.question !== next.question) out.push("question");
+  return out;
+}
+
+export function briefViewerSeen(): boolean {
+  try {
+    return store().getItem(SEEN_KEY) === "1";
+  } catch (e) {
+    warn(`read ${SEEN_KEY}`, e);
+    return false;
+  }
+}
+
+export function markBriefViewerSeen() {
+  try {
+    store().setItem(SEEN_KEY, "1");
+  } catch (e) {
+    warn(`write ${SEEN_KEY}`, e);
+  }
+}
+
+export function shouldAutoOpenBrief(viewerSeen: boolean, panelOpen: boolean): boolean {
+  return !viewerSeen && !panelOpen;
 }
 
 export function rerunBrief(doc: BriefDoc): string {

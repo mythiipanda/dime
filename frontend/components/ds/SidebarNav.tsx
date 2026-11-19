@@ -1,9 +1,9 @@
 "use client";
 
-import { useState, type ReactNode } from "react";
+import { Fragment, useState, type ReactNode } from "react";
 import { EditPencil, Search, SidebarCollapse, SidebarExpand, Basketball } from "iconoir-react";
 
-export interface SidebarItem { id: string; label: string; icon: ReactNode; href?: string }
+export interface SidebarItem { id: string; label: string; icon: ReactNode; href?: string; group?: string }
 export interface SidebarRecent { id: string; label: string }
 
 export function SidebarNav({ workspace, items, activeNav, recents, activeThread, onNavigate, onNewChat, onPick, footer }: {
@@ -20,7 +20,10 @@ export function SidebarNav({ workspace, items, activeNav, recents, activeThread,
     {collapsed && <button className="icon-button mx-auto mb-2" aria-label="Expand sidebar" onClick={() => setCollapsed(false)}><SidebarExpand width={16} height={16} /></button>}
     <button className="sidebar-row mt-2 mb-3" onClick={onNewChat} title="New chat"><EditPencil width={17} height={17} /><span className="sidebar-copy">New chat</span></button>
     <nav className="flex flex-col gap-0.5" aria-label="Main navigation">
-      {items.map((item) => item.href ? <a key={item.id} className="sidebar-row" href={item.href} title={item.label}>{item.icon}<span className="sidebar-copy">{item.label}</span></a> : <button key={item.id} className="sidebar-row" title={item.label} aria-current={activeNav === item.id ? "page" : undefined} onClick={() => onNavigate(item.id)}>{item.icon}<span className="sidebar-copy">{item.label}</span></button>)}
+      {items.map((item, index) => <Fragment key={item.id}>
+        {item.group && item.group !== items[index - 1]?.group && <p className="sidebar-copy mt-5 mb-1 px-2 text-[10px] uppercase tracking-widest text-ink-3">{item.group}</p>}
+        {item.href ? <a className="sidebar-row" href={item.href} title={item.label}>{item.icon}<span className="sidebar-copy">{item.label}</span></a> : <button className="sidebar-row" title={item.label} aria-current={activeNav === item.id ? "page" : undefined} onClick={() => onNavigate(item.id)}>{item.icon}<span className="sidebar-copy">{item.label}</span></button>}
+      </Fragment>)}
     </nav>
     <div className="sidebar-copy mt-8 flex min-h-0 flex-1 flex-col">
       <label className="mb-2 flex items-center gap-2 px-2 text-[11px] text-ink-3"><span>Chats</span><Search width={12} height={12} className="ml-auto" /><input aria-label="Search chats" placeholder="Search" value={search} onChange={(e) => setSearch(e.target.value)} className="w-20 min-w-0 bg-transparent text-ink-2 outline-none placeholder:text-ink-3" /></label>

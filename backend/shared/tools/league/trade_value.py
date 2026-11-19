@@ -1,0 +1,791 @@
+import re as _re
+from typing import Any
+import unicodedata as _ud
+
+from langchain_core.tools import tool
+
+from ...contracts import contract_details, match_record, normalize_name, salary_records
+from ._helpers import _owned_connection, _pkg, _warehouse_tables
+from .cba_cap import (
+    CAP,
+    SalaryColumnError,
+    _allowed_incoming,
+    _outgoing_needed,
+    _apron_state,
+    _auto_correct_side,
+    _locate_player_team,
+    _match_trade_players,
+    _norm_trade_teams,
+    _payroll,
+    _payroll_source,
+    _salary_date,
+    _salary_vintage,
+    _unknown_player_hints,
+)
+
+PICK_VALUE_M: dict[int, float] = {
+    1: 45.0, 2: 38.0, 3: 32.0, 4: 28.0, 5: 25.0,
+    6: 18.0, 7: 18.0, 8: 18.0, 9: 18.0, 10: 18.0,
+    11: 12.0, 12: 12.0, 13: 12.0, 14: 12.0,
+    15: 8.0, 16: 8.0, 17: 8.0, 18: 8.0, 19: 8.0, 20: 8.0,
+    21: 5.0, 22: 5.0, 23: 5.0, 24: 5.0, 25: 5.0,
+    26: 5.0, 27: 5.0, 28: 5.0, 29: 5.0, 30: 5.0,
+}
+
+
+def _pick_value_for_slot(slot: int, is_frp: bool) -> float:
+    if is_frp:
+        return PICK_VALUE_M.get(max(1, min(slot, 30)), 5.0)
+    if 31 <= slot <= 40:
+        return 2.5
+    return 1.0
+
+
+_TRADE_CHECK_UNMODELED = (
+    "cash in trade", "prior trade exceptions", "taxpayer midlevel hard cap",
+    "frozen pick plus Stepien",
+    "base-year plus trade-kicker plus minimum-salary plus sign-and-trade",
+)
+
+
+def _trade_guard_vintage_error(con, season: str) -> str | None:
+    salary_season, salary_rows, _ = _salary_vintage(con)
+    if not (salary_rows and salary_season and salary_season != season):
+        return None
+    return (f"salary data is for {salary_season}, not {season}; "
+            "trade math was not calculated")
+
+
+def _trade_guard_team_error(con, team: str, players: str) -> str | None:
+    for player in [x.strip() for x in str(players).split(",") if x.strip()]:
+        row = con.execute(
+            "SELECT TEAM FROM silver_salaries WHERE lower(PLAYER_NAME) = lower(?) LIMIT 1",
+            [player]).fetchone()
+        if row and str(row[0] or "").upper() != team.upper():
+            return (f"salary data lists {player} with {row[0]}, "
+                    f"not {team.upper()}; trade math was not calculated")
+    return None
+
+
+def _trade_guard(con, season: str, team_a: str, players_a: str, team_b: str,
+                 players_b: str) -> str | None:
+    guard_error = _trade_guard_vintage_error(con, season)
+    if guard_error:
+        return guard_error
+    for team, players in ((team_a, players_a), (team_b, players_b)):
+        if not team:
+            continue
+        team_error = _trade_guard_team_error(con, team, players)
+        if team_error:
+            return team_error
+    return None
+
+
+def _infer_trade_side(plist: str, con: object, season: str | None = None) -> str:
+    teams: set[str] = set()
+    for nm in [x.strip() for x in str(plist).split(",") if x.strip()]:
+        hit = _locate_player_team(nm, con, season)
+        if hit is None:
+            return ""
+        teams.add(str(hit[1]))
+    return teams.pop() if len(teams) == 1 else ""
+
+
+def _trade_unknown_message(team_a: str, unk_a: list[str], team_b: str,
+                           unk_b: list[str], con: object) -> str:
+    parts = []
+    if unk_a:
+        parts.append(f"{team_a.upper()}: {'; '.join(unk_a)}")
+    if unk_b:
+        parts.append(f"{team_b.upper()}: {'; '.join(unk_b)}")
+    msg = "unknown players: " + " | ".join(parts)
+    hints = _unknown_player_hints(unk_a + unk_b, con)
+    return msg + ". " + "; ".join(hints) if hints else msg
+
+
+def _trade_autocorrect_side(unknown: list[str], team: str, plist: str,
+                            con: object, matched: tuple,
+                            season: str | None = None) -> tuple:
+    if not unknown:
+        return team, matched, []
+    fix = _auto_correct_side(unknown, team, plist, con, season)
+    if not fix:
+        return team, matched, []
+    return fix
+
+
+def _trade_match_sides(team_a: str, players_a: str, team_b: str,
+                       players_b: str, con: object,
+                       season: str | None = None):
+    side_a = _match_trade_players(team_a, players_a, con, season)
+    side_b = _match_trade_players(team_b, players_b, con, season)
+    corrections: list[str] = []
+    team_a, side_a, corr_a = _trade_autocorrect_side(
+        side_a[2], team_a, players_a, con, side_a, season)
+    corrections.extend(corr_a)
+    team_b, side_b, corr_b = _trade_autocorrect_side(
+        side_b[2], team_b, players_b, con, side_b, season)
+    corrections.extend(corr_b)
+    return team_a, side_a, team_b, side_b, corrections
+
+
+def _trade_side_rows(team: str, side: tuple, payroll: int, state: dict,
+                     allow: int, rule: str, needed: int) -> dict[str, Any]:
+    return {"team": team.upper(), "out": side[0], "players": side[1],
+            "payroll": payroll, "allowed_in": allow, "match_rule": rule,
+            "outgoing_needed": needed,
+            **{k: v for k, v in state.items()}}
+
+
+def _trade_check_issues(team_a: str, state_a: dict, names_a: list[str],
+                        team_b: str, state_b: dict, names_b: list[str],
+                        out_a: int, allow_a: int, out_b: int,
+                        allow_b: int) -> list[str]:
+    issues = []
+    if state_a["over_apron2"] and len(names_a) > 1:
+        issues.append(f"{team_a.upper()} cannot aggregate above second apron")
+    if state_b["over_apron2"] and len(names_b) > 1:
+        issues.append(f"{team_b.upper()} cannot aggregate above second apron")
+    if out_b > allow_a:
+        issues.append(f"{team_a.upper()} takes back too much")
+    if out_a > allow_b:
+        issues.append(f"{team_b.upper()} takes back too much")
+    return issues
+
+
+def _trade_check_checks(team_a: str, rule_a: str, team_b: str,
+                        rule_b: str) -> list[dict[str, Any]]:
+    return [
+        {"rule": "salary matching", "checked": True,
+         "note": f"{team_a.upper()} {rule_a}, {team_b.upper()} {rule_b}"},
+        {"rule": "second apron aggregation ban", "checked": True,
+         "note": "multi player out banned above second apron"},
+        *({"rule": rule, "checked": False, "note": "not modeled"}
+          for rule in _TRADE_CHECK_UNMODELED),
+    ]
+
+
+@tool(description='Trade legality check. Player names comma separated per side.\n\nSimplified 2023 CBA: 125 percent plus 250k matching below the first\napron, 100 percent above it, no aggregation above the second apron.\nPicks and exceptions stay out of v1.')
+def get_trade_check(
+    team_a: str = "", players_a: str = "", team_b: str = "", players_b: str = "",
+    season: str | None = None,
+) -> dict[str, Any]:
+    season = _pkg().resolve_season(season)
+    if not players_a and not players_b:
+        return {"tool": "get_trade_check", "ok": False,
+                "error": "two teams needed"}
+
+    with _owned_connection(None, read_only=True) as guard_con:
+        guard_error = _trade_guard(guard_con, season, team_a, players_a,
+                                   team_b, players_b)
+    if guard_error:
+        return {"tool": "get_trade_check", "ok": False, "error": guard_error}
+
+    if (not team_a or not team_b) and players_a and players_b:
+        with _owned_connection(None, read_only=True) as infer_con:
+            team_a = team_a or _infer_trade_side(players_a, infer_con, season)
+            team_b = team_b or _infer_trade_side(players_b, infer_con, season)
+    if not team_a or not team_b:
+        return {"tool": "get_trade_check", "ok": False,
+                "error": "two teams needed"}
+    norm = _norm_trade_teams(team_a, team_b)
+    if norm is None:
+        return {"tool": "get_trade_check", "ok": False,
+                "error": (f"both sides resolve to the same team "
+                          f"({team_a} / {team_b}) - a trade needs two "
+                          f"different teams; check the team names")}
+    team_a, team_b = norm
+
+    with _owned_connection(None, read_only=True) as con:
+        try:
+            team_a, side_a, team_b, side_b, corrections = _trade_match_sides(
+                team_a, players_a, team_b, players_b, con, season)
+        except SalaryColumnError as exc:
+            return {"tool": "get_trade_check", "ok": False,
+                    "reason": exc.reason, "error": str(exc)}
+        out_a, names_a, unk_a = side_a
+        out_b, names_b, unk_b = side_b
+        if unk_a or unk_b:
+            return {"tool": "get_trade_check", "ok": False,
+                    "error": _trade_unknown_message(
+                        team_a, unk_a, team_b, unk_b, con)}
+        if not names_a or not names_b:
+            empty = team_a.upper() if not names_a else team_b.upper()
+            return {"tool": "get_trade_check", "ok": False,
+                    "error": (f"no players matched on the {empty} side - "
+                              f"not grading a one-sided 'trade'. If you "
+                              f"meant a past real-world trade, say which "
+                              f"teams and players were in it.")}
+        pay_a, _ = _payroll(team_a, con, season)
+        pay_b, _ = _payroll(team_b, con, season)
+        salary_date = _salary_date(con)
+        source = _payroll_source(con)
+    state_a = _apron_state(pay_a)
+    state_b = _apron_state(pay_b)
+    room_a = max(0, CAP["cap"] - pay_a)
+    room_b = max(0, CAP["cap"] - pay_b)
+    allow_a, rule_a = _allowed_incoming(out_a, bool(state_a["over_apron1"]), room_a)
+    allow_b, rule_b = _allowed_incoming(out_b, bool(state_b["over_apron1"]), room_b)
+    need_a = _outgoing_needed(out_b, bool(state_a["over_apron1"]), room_a)
+    need_b = _outgoing_needed(out_a, bool(state_b["over_apron1"]), room_b)
+    issues = _trade_check_issues(team_a, state_a, names_a, team_b, state_b,
+                                 names_b, out_a, allow_a, out_b, allow_b)
+    return {"tool": "get_trade_check", "ok": True,
+            "rows": {"team_a": _trade_side_rows(
+                         team_a, side_a, pay_a, state_a, allow_a, rule_a, need_a),
+                     "team_b": _trade_side_rows(
+                         team_b, side_b, pay_b, state_b, allow_b, rule_b, need_b),
+                     "legal": not issues, "issues": issues,
+                     "checks": _trade_check_checks(team_a, rule_a, team_b,
+                                                   rule_b),
+                     "salary_date": salary_date,
+                     **({"attribution_corrections": corrections}
+                        if corrections else {}),
+                     "disclaimer": "Estimate only, rules simplified. Skips cash, "
+                     "prior trade exceptions, taxpayer midlevel, frozen pick, Stepien, "
+                     "base-year, trade-kicker, minimum-salary, and sign-and-trade rules. "
+                     "Confirm with a cap specialist."},
+            "meta": {"source": source, "rules": "v1-simplified",
+                     "salary_date": salary_date}}
+
+
+_TRADE_VALUE_WEIGHTS = {"PTS": 1.0, "REB": 1.2, "AST": 1.5,
+                        "STL": 2.0, "BLK": 2.0, "TOV": -1.5}
+
+_TRADE_LEADERS_COLUMNS = ["PLAYER", "GP", "PTS", "REB", "AST", "STL",
+                          "BLK", "TOV", "FG3M", "FG3_PCT"]
+
+_TRADE_RANK_COLUMNS = ["OFF_RATING_RANK", "DEF_RATING_RANK",
+                       "NET_RATING_RANK", "TS_PCT_RANK", "AST_PCT_RANK",
+                       "REB_PCT_RANK"]
+
+_TRADE_NEED_COLUMNS = [("need_offense", "OFF_RATING_RANK"),
+                       ("need_defense", "DEF_RATING_RANK"),
+                       ("need_shooting", "TS_PCT_RANK"),
+                       ("need_playmaking", "AST_PCT_RANK"),
+                       ("need_rebounding", "REB_PCT_RANK")]
+
+_TRADE_TAG_NEEDS = {"spacer": "need_shooting",
+                    "playmaker": "need_playmaking",
+                    "defensive playmaker": "need_defense",
+                    "efficient scorer": "need_offense",
+                    "high-usage creator": "need_offense"}
+
+
+def _trade_value_norm(s: object) -> str:
+    return "".join(c for c in _ud.normalize("NFKD", str(s or ""))
+                   if not _ud.combining(c)).strip().lower()
+
+
+class _TradeWarehouse:
+
+    __slots__ = ("tables", "cols", "gaps")
+
+    def __init__(self, con, prod_season: str, sal_season: str) -> None:
+        self.tables = _warehouse_tables(con)
+        self.cols = {t: {r[1] for r in
+                         con.execute(f"PRAGMA table_info({t})").fetchall()}
+                     for t in self.tables if t.startswith("silver_")}
+        self.gaps: list[str] = []
+
+    def missing(self, table: str, required: list[str]) -> list[str]:
+        have = self.cols.get(table, set())
+        return [c for c in required if c not in have]
+
+    def has_leaders(self) -> bool:
+        return "silver_leaders_pts" in self.tables
+
+    def note(self, text: str) -> None:
+        self.gaps.append(text)
+
+
+def _trade_leader_rows(con, prod_season: str) -> dict[str, dict]:
+    rows: dict[str, dict] = {}
+    columns = {r[1] for r in con.execute('PRAGMA table_info(silver_leaders_pts)').fetchall()}
+    pid = 'PLAYER_ID' if 'PLAYER_ID' in columns else 'NULL'
+    for r in con.execute(
+            f"SELECT PLAYER, TEAM, GP, PTS, REB, AST, STL, BLK, TOV,"
+            f" FG3M, FG3_PCT, {pid} FROM silver_leaders_pts WHERE _season = ?",
+            [prod_season]).fetchall():
+        rows.setdefault(_trade_value_norm(r[0]), {
+            "name": r[0], "team": r[1], "gp": r[2] or 0, 'PLAYER_ID': r[11],
+            "tot": {"PTS": r[3] or 0, "REB": r[4] or 0, "AST": r[5] or 0,
+                    "STL": r[6] or 0, "BLK": r[7] or 0, "TOV": r[8] or 0},
+            "fg3m": r[9] or 0, "fg3_pct": r[10]})
+    return rows
+
+
+def _trade_leader_weights(warehouse: _TradeWarehouse) -> dict[str, float]:
+    missing = warehouse.missing("silver_leaders_pts", _TRADE_LEADERS_COLUMNS)
+    if missing:
+        warehouse.note(
+            "silver_leaders_pts missing columns skipped at zero weight: "
+            + ", ".join(missing))
+    return {c: (0.0 if c in missing else w)
+            for c, w in _TRADE_VALUE_WEIGHTS.items()}
+
+
+def _trade_adv_rows(con, warehouse: _TradeWarehouse,
+                    prod_season: str) -> dict[str, dict]:
+    if "silver_advanced" not in warehouse.tables:
+        warehouse.note("silver_advanced missing: age, TS_PCT, USG_PCT "
+                       "and NET_RATING unavailable")
+        return {}
+    missing = warehouse.missing(
+        "silver_advanced", ["PLAYER_NAME", "AGE", "TS_PCT", "USG_PCT"])
+    if missing:
+        warehouse.note("silver_advanced missing columns: " + ", ".join(missing))
+    rows: dict[str, dict] = {}
+    for r in con.execute(
+            "SELECT PLAYER_NAME, AGE, TS_PCT, USG_PCT FROM "
+            "silver_advanced WHERE _season = ?", [prod_season]).fetchall():
+        rows.setdefault(_trade_value_norm(r[0]),
+                        {"age": r[1], "ts": r[2], "usg": r[3]})
+    return rows
+
+
+def _trade_salary_column(scols: set[str]) -> str:
+    if "SALARY" in scols:
+        return "SALARY"
+    return next((c for c in scols if "SALARY" in c.upper()), "")
+
+
+def _trade_season_scoped(table: str, name_col: str, val_col: str,
+                         scols: set[str], sal_season: str):
+    if "_season" in scols:
+        return (f"SELECT {name_col}, {val_col} FROM {table} WHERE _season = ?",
+                [sal_season])
+    return f"SELECT {name_col}, {val_col} FROM {table}", []
+
+
+def _trade_sheet_salaries(con, warehouse: _TradeWarehouse,
+                          sal_season: str, leaders: dict | None = None) -> dict[str, int]:
+    salaries: dict[str, int] = {}
+    records = salary_records(con, sal_season, include_fallback=True)
+    matched = set()
+    for key, lead in (leaders or {}).items():
+        contract = match_record(records, lead['name'], lead.get('PLAYER_ID'), lead['team'])
+        if contract is not None:
+            matched.add(id(contract))
+            lead['contract'] = contract
+            if contract['salary'] is not None:
+                salaries[key] = int(contract['salary'])
+    if leaders is not None:
+        for contract in records:
+            key = _trade_value_norm(contract['PLAYER_NAME'])
+            if id(contract) in matched or key in leaders:
+                continue
+            leaders[key] = {'name': contract['PLAYER_NAME'], 'team': contract['TEAM'],
+                            'PLAYER_ID': contract.get('PLAYER_ID'), 'gp': 0,
+                            'tot': {}, 'fg3m': 0, 'contract': contract}
+            if contract['salary'] is not None:
+                salaries[key] = int(contract['salary'])
+        return salaries
+    for table, name_col, val_col in (
+            ("silver_salaries", "PLAYER_NAME", None),
+            ("silver_cap_players", "player", "salary")):
+        if table not in warehouse.tables:
+            continue
+        scols = warehouse.cols.get(table, set())
+        val = val_col or _trade_salary_column(scols)
+        if not val:
+            continue
+        query, params = _trade_season_scoped(table, name_col, val, scols,
+                                             sal_season)
+        for r in con.execute(query, params).fetchall():
+            if r[1] is not None:
+                salaries.setdefault(_trade_value_norm(r[0]), int(r[1]))
+    return salaries
+
+
+def _trade_team_id_to_abbr() -> dict:
+    try:
+        from nba_api.stats.static import teams as _static
+
+        return {t["id"]: t["abbreviation"] for t in _static.get_teams()}
+    except Exception:
+        return {}
+
+
+def _trade_rating_rows(con, warehouse: _TradeWarehouse,
+                       prod_season: str) -> dict[str, dict]:
+    if "silver_team_ratings" not in warehouse.tables:
+        warehouse.note("silver_team_ratings missing: pick slots assumed "
+                       "mid-first and team needs unavailable")
+        return {}
+    have = warehouse.cols.get("silver_team_ratings", set())
+    ranks = [c for c in _TRADE_RANK_COLUMNS if c in have]
+    if len(ranks) < len(_TRADE_RANK_COLUMNS):
+        warehouse.note("silver_team_ratings missing columns: " + ", ".join(
+            c for c in _TRADE_RANK_COLUMNS if c not in ranks))
+    names = ["TEAM_ID", "TEAM_NAME"] + ranks
+    id_to_abbr = _trade_team_id_to_abbr()
+    ratings: dict[str, dict] = {}
+    for r in con.execute(
+            f"SELECT {', '.join(names)} FROM silver_team_ratings "
+            f"WHERE _season = ?", [prod_season]).fetchall():
+        row = dict(zip(names, r))
+        abbr = id_to_abbr.get(row["TEAM_ID"], "")
+        if abbr:
+            ratings[str(abbr).upper()] = row
+    return ratings
+
+
+def _trade_dollars_per_point(leaders: dict, salaries: dict,
+                             use_w: dict[str, float]) -> float:
+    total = score = 0.0
+    for key, lead in leaders.items():
+        gp = lead["gp"]
+        if gp < 20 or key not in salaries:
+            continue
+        total += salaries[key]
+        score += sum(lead["tot"][c] / gp * use_w[c] for c in use_w)
+    return (total / score) if score > 0 else 0.0
+
+
+def _trade_archetypes(lead: dict, gp: int, advanced: dict) -> list[str]:
+    per = {c: lead["tot"][c] / gp for c in lead["tot"]}
+    tags = []
+    if (lead["fg3m"] or 0) / gp >= 2.0:
+        tags.append("spacer")
+    if per["AST"] >= 5.0:
+        tags.append("playmaker")
+    if per["STL"] + per["BLK"] >= 1.5:
+        tags.append("defensive playmaker")
+    if advanced.get("ts") is not None and advanced["ts"] >= 0.60:
+        tags.append("efficient scorer")
+    if advanced.get("usg") is not None and advanced["usg"] >= 0.28:
+        tags.append("high-usage creator")
+    return tags
+
+
+def _trade_value_player(display: str, leaders: dict, adv: dict,
+                        salaries: dict, use_w: dict, dpp: float,
+                        gaps: list[str]) -> dict[str, Any]:
+    key = _trade_value_norm(display)
+    lead = leaders.get(key)
+    matches = [(k, v) for k, v in leaders.items() if normalize_name(v.get('contract', {}).get('PLAYER_NAME')) == normalize_name(display)]
+    if len(matches) == 1:
+        key, lead = matches[0]
+    advanced = adv.get(key, {})
+    gp = lead["gp"] if lead else 0
+    out: dict[str, Any] = {
+        **contract_details(lead.get('contract') if lead else None),
+        "name": display, "salary_26_27": salaries.get(key),
+        "age": advanced.get("age"), "gp": gp,
+        "ppg": round(lead["tot"]["PTS"] / gp, 1) if lead and gp else 0.0,
+        "production_score": None, "est_market_value_m": "unknown",
+        "residual_m": "unknown", "archetypes": [],
+        "production_source": "2025-26 totals"}
+    if not lead or gp < 10:
+        gaps.append(
+            f"{display}: unknown value treated as 0 in side total "
+            "(GP < 10 or no 2025-26 production row)")
+        return out
+    score = round(sum(lead["tot"][c] / gp * use_w[c] for c in use_w), 2)
+    est_m = round(score * dpp / 1e6, 1)
+    out["production_score"] = score
+    out["est_market_value_m"] = est_m
+    if out["salary_26_27"] is not None:
+        out["residual_m"] = round(
+            (est_m * 1e6 - out["salary_26_27"]) / 1e6, 1)
+        rv = out["residual_m"]
+        out["residual_note"] = (
+            f"surplus value of about ${rv}M (outperforming the contract)"
+            if rv >= 0 else
+            f"overpaid by an estimated ${abs(rv)}M on this production")
+    out["archetypes"] = _trade_archetypes(lead, gp, advanced)
+    return out
+
+
+def _trade_first_round_slot(entry: dict, net_rank: object,
+                            giving_abbr: str, prot) -> None:
+    if net_rank is None:
+        slot = 15
+        entry["assumptions"].append(
+            f"no ratings row for {giving_abbr.upper()}: assumed "
+            "mid-first slot 15")
+    else:
+        slot = max(1, min(round(31 - net_rank * 0.85), 30))
+        entry["assumptions"].append(
+            f"slot estimated from {giving_abbr.upper()} net rank {net_rank}")
+    if prot:
+        n = int(prot.group(1))
+        slot = max(slot, n + 1)
+        entry["assumptions"].append(
+            f"top-{n} protected: conveyance risk applied")
+    value = _pick_value_for_slot(slot, True)
+    if prot:
+        value = round(value * 0.8, 1)
+    entry.update(est_slot=slot, est_value_m=value)
+
+
+def _trade_second_round_slot(entry: dict, desc: str) -> None:
+    m = _re.search(r"\b([3-5]\d)\b", desc)
+    slot = int(m.group(1)) if m and 31 <= int(m.group(1)) <= 60 else 45
+    entry.update(est_slot=slot,
+                 est_value_m=_pick_value_for_slot(slot, False))
+    entry["assumptions"].append("second-round slot estimate")
+
+
+def _trade_value_pick(desc: str, giving_abbr: str, ratings: dict,
+                      gaps: list[str]) -> dict[str, Any]:
+    low = desc.lower()
+    year = _re.search(r"(\d{4})", desc)
+    is_frp = bool(_re.search(r"frp|first[\s-]?round", low))
+    is_srp = bool(_re.search(r"\bsrp\b|second[\s-]?round", low))
+    prot = _re.search(r"top[-\s]?(\d+)\s*protect", low)
+    entry: dict[str, Any] = {"desc": desc, "est_slot": None,
+                             "est_value_m": 0.0, "assumptions": []}
+    if not year or (not is_frp and not is_srp):
+        entry["assumptions"].append("unparseable pick description")
+        gaps.append(f"{desc}: unparseable pick, valued at 0")
+        return entry
+    if is_frp:
+        net_rank = (ratings.get(giving_abbr.upper(), {}) or {}).get(
+            "NET_RATING_RANK")
+        _trade_first_round_slot(entry, net_rank, giving_abbr, prot)
+    else:
+        _trade_second_round_slot(entry, desc)
+    return entry
+
+
+def _trade_value_picks(raw: str, giving_abbr: str, ratings: dict,
+                       gaps: list[str]) -> list[dict]:
+    return [_trade_value_pick(desc, giving_abbr, ratings, gaps)
+            for desc in [p.strip() for p in str(raw or "").split(",")
+                         if p.strip()]]
+
+
+def _trade_side_total(players: list[dict], picks: list[dict]) -> float:
+    return round(sum(p["est_market_value_m"] for p in players
+                     if isinstance(p["est_market_value_m"], (int, float)))
+                 + sum(k["est_value_m"] for k in picks), 1)
+
+
+def _trade_grades(winner: str, delta: float, total_a: float, total_b: float,
+                  abbr_a: str, abbr_b: str) -> dict[str, str]:
+    if winner == "even":
+        return {abbr_a: "B", abbr_b: "B"}
+    share = abs(delta) / max(total_a, total_b, 1)
+    top = abbr_a if winner == abbr_a else abbr_b
+    bottom = abbr_b if top == abbr_a else abbr_a
+    top_grade = "A" if share >= 0.25 else "A-" if share >= 0.15 else "B+"
+    bottom_grade = ("F" if share >= 0.40 else "D" if share >= 0.25
+                    else "C+" if share >= 0.15 else "B-")
+    return {top: top_grade, bottom: bottom_grade}
+
+
+def _trade_timeline(ratings: dict, team_abbr: str) -> tuple[str, list]:
+    r = ratings.get(team_abbr.upper(), {})
+    needs = [name for name, col in _TRADE_NEED_COLUMNS
+             if isinstance(r.get(col), (int, float)) and r[col] >= 20]
+    net_rank = r.get("NET_RATING_RANK")
+    timeline = ("unknown" if not isinstance(net_rank, (int, float))
+                else "contender" if net_rank <= 8
+                else "rebuilding" if net_rank >= 22 else "middle")
+    return timeline, needs
+
+
+def _trade_fit_notes(player: dict, timeline: str, needs: list) -> list:
+    notes = []
+    for tag in player.get("archetypes", []):
+        need = _TRADE_TAG_NEEDS.get(tag)
+        if need and need in needs:
+            notes.append(f"{player['name']} fills {need} ({tag})")
+    age = player.get("age")
+    if isinstance(age, (int, float)) and age >= 32 and timeline == "rebuilding":
+        notes.append(f"{player['name']}: timeline clash (age {age:g} "
+                     "joining a rebuild)")
+    if isinstance(age, (int, float)) and age <= 23 and timeline == "contender":
+        notes.append(f"{player['name']}: developmental piece on a contender")
+    return notes
+
+
+def _trade_fit(team_abbr: str, received: list[dict],
+               ratings: dict) -> dict[str, Any]:
+    timeline, needs = _trade_timeline(ratings, team_abbr)
+    notes = [note for player in received
+             for note in _trade_fit_notes(player, timeline, needs)]
+    notes.append("positional logjam not assessed: no position data "
+                 "in warehouse")
+    return {"needs": needs, "timeline": timeline, "notes": notes}
+
+
+def _trade_driver(players_a: list, players_b: list):
+    valued = [p for p in players_a + players_b
+              if isinstance(p["est_market_value_m"], (int, float))]
+    if not valued:
+        return None
+    return max(valued, key=lambda p: (abs(p["residual_m"])
+                                      if isinstance(p["residual_m"],
+                                                    (int, float)) else 0))
+
+
+def _trade_key_add(winner: str, abbr_a: str, players_a: list,
+                   players_b: list):
+    win_side = players_b if winner == abbr_a else players_a
+    got = [p for p in win_side
+           if isinstance(p["est_market_value_m"], (int, float))]
+    return max(got, key=lambda p: p["est_market_value_m"], default=None)
+
+
+def _trade_key_fit_note(winner: str, fit: dict, key_add: dict | None) -> str:
+    if key_add is None or winner == "even":
+        return ""
+    notes = fit[winner]["notes"]
+    hit = next((n for n in notes if n.startswith(key_add["name"])), "")
+    if hit:
+        return (f" {key_add['name']} {hit[len(key_add['name']) + 1:]} "
+                f"for {winner}.")
+    return (f" {key_add['name']} headlines the return for {winner} "
+            f"({fit[winner]['timeline']} timeline).")
+
+
+def _trade_verdict_line(winner: str, total_a: float, total_b: float,
+                        delta: float, abbr_a: str, abbr_b: str) -> str:
+    if winner == "even":
+        return (f"This grades as roughly even, with {abbr_a} at an estimated "
+                f"${total_a}M and {abbr_b} at an estimated ${total_b}M, "
+                f"a gap of about ${abs(delta)}M.")
+    return (f"{winner} wins on estimated value by about ${abs(delta)}M, "
+            f"${max(total_a, total_b)}M to ${min(total_a, total_b)}M.")
+
+
+def _trade_driver_line(driver: dict | None) -> str:
+    if driver is None:
+        return "No player had enough production data to name a value driver."
+    residual = driver["residual_m"]
+    res_txt = ("the best value in the deal"
+               if isinstance(residual, (int, float)) and residual < 0
+               else "the largest gap between salary and production")
+    return (f"The biggest driver is {driver['name']}, with an estimated "
+            f"${driver['est_market_value_m']}M market value against a "
+            f"${(driver['salary_26_27'] or 0) / 1e6:.1f}M salary, "
+            f"{res_txt}.")
+
+
+def _trade_value_sides(con, team_a: str, players_a: str, team_b: str,
+                       players_b: str, season: str | None = None):
+    _, names_a, unk_a = _match_trade_players(team_a, players_a, con, season)
+    _, names_b, unk_b = _match_trade_players(team_b, players_b, con, season)
+    if unk_a:
+        fix = _auto_correct_side(unk_a, team_a, players_a, con, season)
+        if fix:
+            team_a, (_, names_a, unk_a), _c = fix
+    if unk_b:
+        fix = _auto_correct_side(unk_b, team_b, players_b, con, season)
+        if fix:
+            team_b, (_, names_b, unk_b), _c = fix
+    return team_a, names_a, unk_a, team_b, names_b, unk_b
+
+
+def _trade_value_error(msg: str) -> dict[str, Any]:
+    return {"tool": "get_trade_value", "ok": False, "error": msg}
+
+
+@tool(description='Trade value grade: estimated production value vs salary per side, plus picks.\n\nReasoning layer on top of get_trade_check (which covers cap legality).\nAll dollar figures are rough estimates from 2025-26 production versus\n2026-27 salaries. Picks like "2029 FRP" or "2030 FRP top-4 protected".')
+def get_trade_value(
+    team_a: str = "", players_a: str = "", team_b: str = "",
+    players_b: str = "", picks_a: str = "", picks_b: str = "",
+) -> dict[str, Any]:
+    if team_a and team_b:
+        norm = _norm_trade_teams(team_a, team_b)
+        if norm is None:
+            return _trade_value_error(
+                f"both sides resolve to the same team ({team_a} / {team_b}) "
+                "- check the team names")
+        team_a, team_b = norm
+    prod_season = _pkg().last_completed_season()
+    sal_season = "2026-27"
+    disclaimer = (f"All dollar figures are rough estimates from {prod_season} "
+                  "production vs 2026-27 salary data. Not cap-legality advice; "
+                  "pair with get_trade_check.")
+
+    if not team_a or not team_b:
+        return _trade_value_error("two teams needed")
+    with _owned_connection(None) as con:
+        try:
+            team_a, names_a, unk_a, team_b, names_b, unk_b = _trade_value_sides(
+                con, team_a, players_a, team_b, players_b, sal_season)
+        except SalaryColumnError as exc:
+            return {"tool": "get_trade_value", "ok": False,
+                    "reason": exc.reason, "error": str(exc)}
+        if unk_a or unk_b:
+            out = _trade_value_error(_trade_unknown_message(
+                team_a, unk_a, team_b, unk_b, con))
+            out["reason"] = "unknown_players"
+            return out
+        if not names_a or not names_b:
+            return {"tool": "get_trade_value", "ok": False,
+                    "terminal": True,
+                    "error": ("I can only grade proposed trades where "
+                              "both sides name players. What a past "
+                              "trade's other side actually received is "
+                              "not in this dataset.")}
+
+        warehouse = _TradeWarehouse(con, prod_season, sal_season)
+        if not warehouse.has_leaders():
+            return _trade_value_error(
+                "cannot value players: silver_leaders_pts missing from "
+                "warehouse")
+        use_w = _trade_leader_weights(warehouse)
+        leaders = _trade_leader_rows(con, prod_season)
+        adv = _trade_adv_rows(con, warehouse, prod_season)
+        salaries = _trade_sheet_salaries(con, warehouse, sal_season, leaders)
+        if not salaries:
+            warehouse.note("no 2026-27 salary rows: residuals unavailable")
+        ratings = _trade_rating_rows(con, warehouse, prod_season)
+        payroll_source = _payroll_source(con)
+
+    dpp = _trade_dollars_per_point(leaders, salaries, use_w)
+    if not dpp:
+        return _trade_value_error(
+            "cannot value players: no qualified salary plus production "
+            "overlap in warehouse")
+
+    players_a = [_trade_value_player(n, leaders, adv, salaries, use_w, dpp,
+                                     warehouse.gaps) for n in names_a]
+    players_b = [_trade_value_player(n, leaders, adv, salaries, use_w, dpp,
+                                     warehouse.gaps) for n in names_b]
+    picks_list_a = _trade_value_picks(picks_a, team_a, ratings, warehouse.gaps)
+    picks_list_b = _trade_value_picks(picks_b, team_b, ratings, warehouse.gaps)
+
+    total_a = _trade_side_total(players_a, picks_list_a)
+    total_b = _trade_side_total(players_b, picks_list_b)
+    delta = round(total_a - total_b, 1)
+    abbr_a, abbr_b = team_a.upper(), team_b.upper()
+    winner = abbr_a if delta >= 0.5 else abbr_b if delta <= -0.5 else "even"
+
+    fit = {abbr_a: _trade_fit(abbr_a, players_b, ratings),
+           abbr_b: _trade_fit(abbr_b, players_a, ratings)}
+
+    key_fit_note = _trade_key_fit_note(
+        winner, fit, _trade_key_add(winner, abbr_a, players_a, players_b))
+    s1 = _trade_verdict_line(winner, total_a, total_b, delta, abbr_a, abbr_b)
+    s2 = _trade_driver_line(_trade_driver(players_a, players_b))
+    s3 = key_fit_note.strip() or "Fit notes are limited by missing team data."
+    s4 = ("All values are rough estimates from 2025-26 production versus "
+          "2026-27 salaries, so this is not cap-legality advice: pair it "
+          "with get_trade_check.")
+
+    return {"tool": "get_trade_value", "ok": True,
+            "rows": {"team_a": {"team": abbr_a, "players": players_a,
+                                "picks": picks_list_a, "side_total_m": total_a},
+                     "team_b": {"team": abbr_b, "players": players_b,
+                                "picks": picks_list_b, "side_total_m": total_b},
+                     "fit": fit,
+                     "verdict": {"winner": winner, "delta_m": delta,
+                                 "grades": _trade_grades(
+                                     winner, delta, total_a, total_b,
+                                     abbr_a, abbr_b),
+                                 "text": " ".join([s1, s2, s3, s4])},
+                     "data_gaps": warehouse.gaps,
+                     "disclaimer": disclaimer,
+                     "residual_meaning": "residual_m = estimated market "
+                     "value minus salary; positive = surplus value "
+                     "(outperforming the contract), negative = overpaid"},
+            "meta": {"source": payroll_source,
+                     "production_season": prod_season,
+                     "salary_season": _salary_vintage()[0] or "2026-27",
+                     "estimates": True}}

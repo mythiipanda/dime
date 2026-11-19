@@ -9,17 +9,14 @@ _base = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(_base)
 safe = _base.safe
 
-
 class FakeResponse:
     def __init__(self, code):
         self.status_code = code
-
 
 class FakeHTTPError(Exception):
     def __init__(self, code):
         super().__init__(str(code))
         self.response = FakeResponse(code)
-
 
 def test_catalog_exception_fails_fast(monkeypatch):
     monkeypatch.setenv("DIME_LIVE_ATTEMPTS", "3")
@@ -34,7 +31,6 @@ def test_catalog_exception_fails_fast(monkeypatch):
     assert len(calls) == 1
     assert sleeps == []
 
-
 def test_http_404_fails_fast(monkeypatch):
     monkeypatch.setenv("DIME_LIVE_ATTEMPTS", "3")
     calls = []
@@ -48,7 +44,6 @@ def test_http_404_fails_fast(monkeypatch):
     assert len(calls) == 1
     assert sleeps == []
 
-
 def test_value_error_fails_fast(monkeypatch):
     monkeypatch.setenv("DIME_LIVE_ATTEMPTS", "3")
     calls = []
@@ -61,7 +56,6 @@ def test_value_error_fails_fast(monkeypatch):
     assert res.ok is False
     assert len(calls) == 1
     assert sleeps == []
-
 
 def test_transient_runtime_error_still_retried(monkeypatch):
     monkeypatch.setenv("DIME_LIVE_ATTEMPTS", "3")
@@ -78,7 +72,6 @@ def test_transient_runtime_error_still_retried(monkeypatch):
     assert len(calls) == 2
     assert len(sleeps) == 1
     assert res.frame.height == 2
-
 
 def test_http_429_still_retried(monkeypatch):
     monkeypatch.setenv("DIME_LIVE_ATTEMPTS", "3")

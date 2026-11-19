@@ -10,10 +10,7 @@ from shared.tools.player import (
     _fit_box_prior,
 )
 
-
-
 RAPTOR_BLEND_TOLERANCE = 2.5
-
 
 def test_raptor_covered_player_within_documented_tolerance():
     out = get_impact_estimate.invoke(
@@ -21,6 +18,7 @@ def test_raptor_covered_player_within_documented_tolerance():
     assert out["ok"] is True
     assert out["is_estimate"] is True
     assert out["method"] == "raptor_components"
+    assert out["method_kind"] == "estimate"
     assert out["disclaimer"].startswith("This is a statistical estimate")
     measured = out["measured"]["total_per_100"]
     assert abs(out["estimate_per_100"] - measured) <= RAPTOR_BLEND_TOLERANCE
@@ -29,7 +27,6 @@ def test_raptor_covered_player_within_documented_tolerance():
     assert comps["raptor_box_per_100"] is not None
     assert comps["raptor_onoff_per_100"] is not None
 
-
 def test_raptor_covered_second_player_ballpark():
     out = get_impact_estimate.invoke(
         {"player": "Stephen Curry", "season": "2021-22"})
@@ -37,13 +34,13 @@ def test_raptor_covered_second_player_ballpark():
     assert abs(out["estimate_per_100"]
                - out["measured"]["total_per_100"]) <= RAPTOR_BLEND_TOLERANCE
 
-
 def test_current_season_no_coverage_returns_flagged_estimate():
     out = get_impact_estimate.invoke(
         {"player": "Cooper Flagg", "season": "2025-26"})
     assert out["ok"] is True
     assert out["is_estimate"] is True
     assert out["method"] == "box_prior_shrinkage"
+    assert out["method_kind"] == "estimate"
     assert out["measured"] is None
     assert isinstance(out["estimate_per_100"], float)
     assert any("RAPTOR" in n and "frozen" in n
@@ -51,7 +48,6 @@ def test_current_season_no_coverage_returns_flagged_estimate():
     comps = out["components"]
     assert comps["box_prior"]["fitted"] is True
     assert 0.0 <= comps["box_prior"]["r2"] <= 1.0
-
 
 def test_low_minute_player_is_prior_dominated():
     out = get_impact_estimate.invoke(
@@ -61,14 +57,12 @@ def test_low_minute_player_is_prior_dominated():
     assert out["confidence"]["level"] == "low"
     assert any("Prior-dominated" in n for n in out["confidence"]["notes"])
 
-
 def test_high_minute_player_is_measured_dominated():
     out = get_impact_estimate.invoke(
         {"player": "Nikola Jokic", "season": "2025-26"})
     assert out["ok"] is True
     assert out["components"]["measured_weight"] > 0.5
     assert out["confidence"]["level"] == "high"
-
 
 def test_veteran_gets_stale_raptor_context():
     out = get_impact_estimate.invoke(
@@ -79,13 +73,11 @@ def test_veteran_gets_stale_raptor_context():
     assert stale["season"] < "2025-26"
     assert "not used in the estimate" in stale["note"]
 
-
 def test_rookie_has_no_stale_raptor():
     out = get_impact_estimate.invoke(
         {"player": "Cooper Flagg", "season": "2025-26"})
     assert out["ok"] is True
     assert out["stale_measured"] is None
-
 
 def test_unknown_player_clean_error():
     out = get_impact_estimate.invoke(
@@ -93,7 +85,6 @@ def test_unknown_player_clean_error():
     assert out["ok"] is False
     assert "unknown player" in out["error"]
     assert out["is_estimate"] is True
-
 
 def test_box_prior_fit_diagnostics_sane():
     prior = _fit_box_prior("2025-26")

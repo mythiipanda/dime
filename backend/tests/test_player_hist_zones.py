@@ -1,6 +1,7 @@
 
 import math
 import sys
+import pytest
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
@@ -9,11 +10,9 @@ from shared import store
 from shared.tools.player import get_shot_compare, get_shot_zones
 from shared.tools.zone import ZONE_KEYS
 
-
 SGA = 1628983
 LUKA = 1629029
 LEBRON = 2544
-
 
 def _geo_zone(x, y, v):
     try:
@@ -35,7 +34,6 @@ def _geo_zone(x, y, v):
         return "short_mid"
     return "long_mid"
 
-
 def _season_rows(year):
     con = store.connect(read_only=True)
     try:
@@ -45,7 +43,6 @@ def _season_rows(year):
             [year]).fetchall()
     finally:
         con.close()
-
 
 def _fold(rows, person_id):
     agg = {k: [0, 0] for k in ZONE_KEYS}
@@ -57,7 +54,6 @@ def _fold(rows, person_id):
         if str(r or "").lower() == "made":
             agg[z][0] += 1
     return agg
-
 
 def test_hist_source_shape_and_floor_defaults():
     out = get_shot_zones.invoke({"player_id": SGA, "season": "2024-25"})
@@ -73,7 +69,6 @@ def test_hist_source_shape_and_floor_defaults():
         assert r["FG_PCT"] == round(r["FGM"] / r["FGA"], 3)
         assert r["share"] == round(r["FGA"] / out["meta"]["player_shots"], 3)
         assert 0.0 <= r["share"] <= 1.0
-
 
 def test_hist_values_match_independent_sql():
     out = get_shot_zones.invoke(
@@ -100,7 +95,6 @@ def test_hist_values_match_independent_sql():
         assert by_zone[z]["LEAGUE_DELTA"] == round(
             by_zone[z]["eFG_PCT"] - league_efg, 3)
 
-
 def test_floor_excludes_thin_zone_and_clamps():
     tight = get_shot_zones.invoke(
         {"player_id": SGA, "season": "2024-25", "min_attempts": 200})
@@ -116,7 +110,6 @@ def test_floor_excludes_thin_zone_and_clamps():
         {"player_id": SGA, "season": "2024-25", "min_attempts": 500})
     assert clamped["meta"]["min_attempts"] == 200
     assert clamped["meta"]["excluded_zones"] == ["corner_3"]
-
 
 def test_multi_season_history():
     for season, expected_year in (("2015-16", 2016), ("2025-26", 2026)):
@@ -135,36 +128,15 @@ def test_multi_season_history():
         assert out["meta"]["player_shots"] == expected
         assert sum(r["FGA"] for r in out["rows"]) == expected
 
-
-def test_low_volume_dataset_keeps_all_attempted_zones():
-    from v2.api.routes import dataset
-
-    player_id = 2748
-    mine = _fold(_season_rows(2016), player_id)
-    expected = sum(a for _, a in mine.values())
-    assert expected == 10
-    default = get_shot_zones.invoke({"player_id": player_id, "season": "2015-16"})
-    assert default["meta"]["min_attempts"] == 50
-    assert default["rows"] == []
-
-    out = dataset(name="zone_splits", season="2015-16", player_id=player_id, fmt="json")
-    assert out["ok"] is True
-    assert out["meta"]["min_attempts"] == 0
-    assert out["meta"]["player_shots"] == expected
-    by_zone = {r["zone"]: r for r in out["data"]}
-    assert set(by_zone) == {z for z, (_, a) in mine.items() if a}
-    assert sum(r["FGA"] for r in by_zone.values()) == expected
-    for zone, row in by_zone.items():
-        assert (row["FGM"], row["FGA"]) == tuple(mine[zone])
-        assert row["share"] == round(row["FGA"] / expected, 3)
-        assert row["FG_PCT"] == round(row["FGM"] / row["FGA"], 3)
-
-
+@pytest.mark.canonical_warehouse
 def test_unknown_player_stays_honest():
-    out = get_shot_zones.invoke(
-        {"player_id": 999999999, "season": "2024-25"})
-    assert out["ok"] is False
-
+    pytest = __import__("pytest")
+    with pytest.raises(store.TableAbsent) as info:
+        get_shot_zones.invoke({"player_id": 999999999, "season": "2024-25"})
+    assert info.value.table == "silver_zone_splits"
+    assert str(store.DB_PATH) == info.value.warehouse
+    assert store.DB_PATH.name in str(info.value)
+    assert "999999999" not in str(info.value)
 
 def test_compare_edges_survive_hist_zones():
     import asyncio

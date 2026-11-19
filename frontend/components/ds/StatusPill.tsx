@@ -19,7 +19,7 @@ const statusPillVariants = cva(
 
 type Tone = NonNullable<VariantProps<typeof statusPillVariants>["tone"]>;
 
-/* the leading dot lives on a separate element, so its color stays a small lookup */
+
 const dotColor: Record<Tone, string> = {
   green: "bg-green",
   orange: "bg-orange",

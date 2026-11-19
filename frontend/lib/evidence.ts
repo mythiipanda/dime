@@ -1,4 +1,5 @@
 import type { AiMessage } from "./chat";
+import { gradeClaim, type GradeInput, type GradedClaim } from "./grades";
 
 export interface EvidenceGap {
   kind?: string;
@@ -40,14 +41,84 @@ export interface EvidenceSource {
   stat: string;
   value: string;
   origin: string;
+  grade?: GradedClaim;
+  note?: string;
+  asOf?: string;
+  outputId: string;
+  subjectType: string;
+  subjectId: string;
+}
+
+export function evidenceNote(meta: unknown): string | null {
+  if (!isRecord(meta)) return null;
+  const record = meta as Record<string, unknown>;
+  if (record.evidence_status !== "ineligible") return null;
+  if (record.evidence_reason === "live_external_no_warehouse_provenance") {
+    const source = record.source;
+    const raw = typeof source === "string" ? source : "";
+    const name = !raw
+      ? "Outside"
+      : raw.length <= 4
+        ? raw.toUpperCase()
+        : raw.charAt(0).toUpperCase() + raw.slice(1);
+    return `${name} live data — couldn't be traced to source data.`;
+  }
+  return "Couldn't be traced to source data.";
+}
+
+function strField(table: Record<string, unknown>, field: string): string {
+  const raw = table[field];
+  return raw === null || raw === undefined ? "" : String(raw);
+}
+
+function textField(record: unknown, field: string): string {
+  if (!isRecord(record)) return "";
+  const raw = (record as Record<string, unknown>)[field];
+  return typeof raw === "string" ? raw : "";
+}
+
+function numberField(record: unknown, field: string): number | null {
+  if (!isRecord(record)) return null;
+  const raw = (record as Record<string, unknown>)[field];
+  return typeof raw === "number" && Number.isFinite(raw) ? raw : null;
+}
+
+function gradeInputOf(table: Record<string, unknown>): GradeInput {
+  const provenance = table.provenance;
+  const meta = table.meta;
+  const method = textField(meta, "method") || undefined;
+  const methodKind = textField(meta, "method_kind") || undefined;
+  const windowRaw = numberField(meta, "window_n") ?? numberField(meta, "windowN");
+  const kindRaw = isRecord(meta) ? (meta as Record<string, unknown>).window_kind : undefined;
+  return {
+    method,
+    methodKind,
+    windowN: windowRaw,
+    windowKind: kindRaw === "meetings" ? "meetings" : kindRaw === "games" ? "games" : null,
+    lineage: textField(provenance, "origin") || undefined,
+    season: textField(provenance, "season") || undefined,
+  };
+}
+
+function asOfOf(table: Record<string, unknown>): string {
+  const provenance = table.provenance;
+  const meta = table.meta;
+  return (
+    textField(provenance, "as_of") ||
+    textField(meta, "as_of") ||
+    textField(meta, "fetched_at") ||
+    textField(provenance, "fetched_at")
+  );
 }
 
 const CAPABILITY_LABELS: Record<string, string> = {
   get_advanced: "Advanced stats",
   get_award_race: "Award races",
+  get_award_results: "Award results",
   get_boxscore: "Box scores",
   get_briefing: "Briefing",
   get_cap_ledger: "Cap sheet",
+  get_career_arc: "Career arc",
   get_career_totals: "Career totals",
   get_clutch: "Clutch stats",
   get_combine: "Combine",
@@ -55,11 +126,17 @@ const CAPABILITY_LABELS: Record<string, string> = {
   get_competitive_ratings: "Competitive ratings",
   get_comps: "Comparisons",
   get_contract_value: "Contract values",
+  get_dataset: "Data engine",
+  get_dataset_freshness: "Data freshness",
   get_debate_card: "Debate cards",
+  get_defensive_matchups: "Defensive matchups",
   get_draft_board: "Draft board",
   get_draft_model: "Draft model",
   get_elo: "Elo",
   get_elo_standings: "Elo standings",
+  get_espn_event_summary: "Game recap",
+  get_espn_odds: "Odds",
+  get_espn_scores: "Live scores",
   get_finder: "Finder",
   get_four_factors: "Four factors",
   get_game_prediction: "Game predictions",
@@ -78,6 +155,7 @@ const CAPABILITY_LABELS: Record<string, string> = {
   get_lineup_matchup_matrix: "Lineup matchups",
   get_lineup_stats: "Lineup stats",
   get_lineups: "Lineups",
+  get_matchup_brief: "Matchup brief",
   get_matchup_preview: "Matchup preview",
   get_matchup_splits: "Matchup splits",
   get_morning_briefing: "Morning briefing",
@@ -93,6 +171,8 @@ const CAPABILITY_LABELS: Record<string, string> = {
   get_playoff_sim: "Playoff simulator",
   get_playoff_team_ratings: "Playoff team ratings",
   get_playoffs: "Playoffs",
+  get_playtype_profile: "Play types",
+  get_possession_log: "Possession log",
   get_preview: "Preview",
   get_rapm: "RAPM",
   get_rapm_prior: "RAPM priors",
@@ -111,6 +191,8 @@ const CAPABILITY_LABELS: Record<string, string> = {
   get_season_series: "Season series",
   get_shot_compare: "Shot comparison",
   get_shot_zones: "Shot zones",
+  get_splits: "Player splits",
+  get_stint_timeline: "Lineup stints",
   get_team_compare: "Team comparison",
   get_team_four_factors: "Four factors",
   get_team_game_log: "Game log",
@@ -120,8 +202,10 @@ const CAPABILITY_LABELS: Record<string, string> = {
   get_team_splits: "Team splits",
   get_team_trajectory: "Trajectory",
   get_today: "Today's games",
+  get_tracking_profile: "Tracking stats",
   get_trade_check: "Trade checker",
   get_trade_value: "Trade values",
+  get_transactions: "Transactions",
   get_trend: "Trends",
   get_warehouse_freshness: "Data freshness",
   get_watchlist: "Watchlist",
@@ -132,6 +216,9 @@ const CAPABILITY_LABELS: Record<string, string> = {
   get_zone_deltas: "Zone changes",
   qualified_leaders: "League leaders",
   team_ratings: "Team ratings",
+  query_warehouse_tool: "SQL query",
+  run_python: "Python",
+  search_nba: "Search",
 };
 
 const STAT_LABELS: Record<string, string> = {
@@ -227,6 +314,40 @@ function sentenceCase(token: string): string {
   if (words.length > 1 && (words[0] === "get" || words[0] === "fetch")) words.shift();
   const joined = words.join(" ");
   return joined ? joined.charAt(0).toUpperCase() + joined.slice(1) : joined;
+}
+
+const AWARD_FAILURE_NOTES: Record<string, string> = {
+  table_missing: "Award results aren't available right now.",
+  no_ballots: "No award ballots on hand for that question.",
+  season_uncovered: "No ballots cover that season.",
+  award_required: "Tell me which award to look up.",
+  unknown_award: "That award isn't published here.",
+  warehouse_read_failed: "Award results couldn't be read right now.",
+  subject_award_absent: "No ballot row for that pick.",
+  award_season_absent: "No ballot for that season.",
+  ballot_unranked: "That ballot publishes no ranked field.",
+  unknown_view: "That view isn't available.",
+  player_required: "That view needs a player name.",
+  player_unsupported: "Player names only work in the player view.",
+  subject_absent: "That pick isn't on the ballot.",
+};
+
+const SALARY_TOOLS = ["get_cap_ledger", "get_trade_check", "get_trade_value"];
+
+const SALARY_FAILURE_NOTES: Record<string, string> = {
+  salary_column_unmatched: "Salary data doesn't cover that season.",
+  unknown_players: "Couldn't match those player names.",
+  unknown_player: "Couldn't match those player names.",
+};
+
+export function toolFailureNote(reason: unknown, tool?: unknown): string | null {
+  if (typeof reason !== "string" || !reason) return null;
+  const known = AWARD_FAILURE_NOTES[reason] ?? SALARY_FAILURE_NOTES[reason];
+  if (known) return known;
+  if (typeof tool === "string" && SALARY_TOOLS.includes(tool)) {
+    return "Salary data couldn't be read right now.";
+  }
+  return null;
 }
 
 export function capabilityLabel(capability: string): string {
@@ -327,6 +448,7 @@ function tableSource(table: unknown, index: number): EvidenceSource | null {
     const outputId = typeof t.output_id === "string" ? t.output_id : "";
     const rawValue = t.value !== undefined ? t.value : t.input_value;
     const value = rawValue === null || rawValue === undefined ? "" : String(rawValue);
+    const asOf = asOfOf(t);
     return {
       key: "claim-" + index,
       index,
@@ -334,9 +456,15 @@ function tableSource(table: unknown, index: number): EvidenceSource | null {
       stat: displayStat(outputId, t.unit, t),
       value,
       origin: originText(t.provenance),
+      outputId,
+      subjectType: strField(t, "subject_type"),
+      subjectId: strField(t, "subject_id"),
+      grade: gradeClaim(gradeInputOf(t)),
+      ...(asOf ? { asOf } : null),
     };
   }
   if (typeof t.tool === "string") {
+    const note = evidenceNote(t.meta);
     return {
       key: "tool-" + index,
       index,
@@ -344,6 +472,10 @@ function tableSource(table: unknown, index: number): EvidenceSource | null {
       stat: capabilityLabel(t.tool),
       value: "",
       origin: originText(t.meta),
+      ...(note ? { note } : null),
+      outputId: "",
+      subjectType: "",
+      subjectId: "",
     };
   }
   return null;
@@ -410,6 +542,21 @@ function incompleteLabels(ai: AiMessage): string[] {
   return labels;
 }
 
+export function gapReasons(ai: AiMessage): string[] {
+  const carry = carryOf(ai);
+  const gaps = Array.isArray(carry.gaps) ? carry.gaps : [];
+  const seen = new Set<string>();
+  const reasons: string[] = [];
+  gaps.forEach((gap) => {
+    const kind =
+      typeof gap === "string" ? gap : isRecord(gap) ? String(gap.kind || "") : "";
+    if (!kind || seen.has(kind)) return;
+    seen.add(kind);
+    reasons.push(gapMessage(kind));
+  });
+  return reasons;
+}
+
 function reasonText(ai: AiMessage): string {
   const carry = carryOf(ai);
   const gaps = Array.isArray(carry.gaps) ? carry.gaps : [];
@@ -439,6 +586,56 @@ function escapeRegExp(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
+function isStatValue(value: unknown): value is string {
+  return typeof value === "string" && /^(?:\d{2,}(?:\.\d+)?|\d\.\d+)$/.test(value);
+}
+
+function isValueChar(ch: string | undefined): boolean {
+  return ch !== undefined && "0123456789.-–".includes(ch);
+}
+
+function markValue(out: string, value: string): string {
+  let from = 0;
+  let result = "";
+  for (;;) {
+    const at = out.indexOf(value, from);
+    if (at < 0) {
+      result += out.slice(from);
+      break;
+    }
+    if (isValueChar(out[at - 1]) || isValueChar(out[at + value.length])) {
+      result += out.slice(from, at + 1);
+      from = at + 1;
+      continue;
+    }
+    result += out.slice(from, at) + value + "[?](#unverified)";
+    from = at + value.length;
+  }
+  return result;
+}
+
+export function unverifiedValues(ai: AiMessage, admitted: string[]): string[] {
+  const admittedSet = new Set(admitted);
+  const carry = carryOf(ai);
+  const statuses = Array.isArray(carry.output_statuses) ? carry.output_statuses : [];
+  const values: string[] = [];
+  statuses.forEach((status) => {
+    if (!status || status.status === "complete") return;
+    if (isStatValue(status.value) && !admittedSet.has(status.value)) values.push(status.value);
+  });
+  return [...new Set(values)].sort((a, b) => b.length - a.length);
+}
+
+export function withUnverifiedMarkers(text: string, unbacked: string[]): string {
+  if (!text || unbacked.length === 0) return text;
+  let out = text;
+  unbacked.forEach((value) => {
+    if (!isStatValue(value)) return;
+    out = markValue(out, value);
+  });
+  return out;
+}
+
 export function withCitationMarkers(text: string, sources: EvidenceSource[]): string {
   if (!text || sources.length === 0) return text;
   const byValue = new Map<string, EvidenceSource[]>();
@@ -459,4 +656,79 @@ export function withCitationMarkers(text: string, sources: EvidenceSource[]): st
     out = out.replace(rx, value + marker);
   });
   return out;
+}
+
+
+export interface PiSource {
+  ref: string;
+  tool: string;
+  label: string;
+  rows: Record<string, unknown>[];
+  units: Record<string, string>;
+  data: unknown;
+}
+
+export function parsePiSources(raw: unknown): PiSource[] {
+  if (!Array.isArray(raw)) return [];
+  return raw.flatMap((record): PiSource[] => {
+    if (!isRecord(record) || typeof record.ref !== "string" || typeof record.tool !== "string" ||
+        !isRecord(record.response) || !Array.isArray(record.response.content)) return [];
+    const text = record.response.content.find((item: unknown) => isRecord(item) && item.type === "text");
+    if (!isRecord(text) || typeof text.text !== "string") return [];
+    try {
+      const data: unknown = JSON.parse(text.text);
+      const rows = isRecord(data) && Array.isArray(data.rows) ? data.rows.filter(isRecord) : [];
+      const meta = isRecord(data) && isRecord(data.meta) ? data.meta : {};
+      const tables = Array.isArray(meta.tables) ? meta.tables.filter((table): table is string => typeof table === "string") : [];
+      const units: Record<string, string> = {};
+      if (isRecord(data) && isRecord(data.declared_column_semantics)) {
+        for (const [column, semantics] of Object.entries(data.declared_column_semantics)) {
+          if (isRecord(semantics) && typeof semantics.unit === "string") units[column] = semantics.unit;
+        }
+      }
+      return [{ ref: record.ref, tool: record.tool, label: tables.join(", ") || record.tool, rows, units, data }];
+    } catch { return [{ ref: record.ref, tool: record.tool, label: record.tool, rows: [], units: {}, data: text.text }]; }
+  });
+}
+
+export interface AnchorSelector {
+  ref: string;
+  row: number;
+  columns: string[];
+}
+
+export interface AnswerBlock {
+  text: string;
+  anchors: AnchorSelector[];
+}
+
+export interface AnswerSubmission {
+  blocks: AnswerBlock[];
+}
+
+export function parseAnswerSubmission(raw: unknown): AnswerSubmission | null {
+  if (!isRecord(raw) || !Array.isArray(raw.blocks) || raw.blocks.length === 0) return null;
+  const blocks: AnswerBlock[] = [];
+  for (const item of raw.blocks) {
+    if (!isRecord(item) || typeof item.text !== "string" || !item.text || !Array.isArray(item.anchors)) return null;
+    const anchors: AnchorSelector[] = [];
+    for (const a of item.anchors) {
+      if (
+        !isRecord(a) ||
+        typeof a.ref !== "string" ||
+        !a.ref ||
+        typeof a.row !== "number" ||
+        !Number.isInteger(a.row) ||
+        a.row < 0 ||
+        !Array.isArray(a.columns) ||
+        a.columns.length === 0 ||
+        !a.columns.every((c): c is string => typeof c === "string" && c.length > 0)
+      ) {
+        return null;
+      }
+      anchors.push({ ref: a.ref, row: a.row, columns: [...a.columns] });
+    }
+    blocks.push({ text: item.text, anchors });
+  }
+  return { blocks };
 }

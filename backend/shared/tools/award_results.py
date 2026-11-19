@@ -4,9 +4,9 @@ from langchain_core.tools import tool
 
 from .. import store
 
-TABLE = "silver_award_winners"
+TABLE = "silver_bbref_awards"
 TOOL = "get_award_results"
-VIEWS = ("winner", "field", "player_awards")
+VIEWS = ("winner", "field", "player_awards", "winner_history")
 VOTE_COLUMNS = ("votes_first", "votes_second", "votes_third")
 
 AWARDS: dict[str, dict[str, Any]] = {
@@ -82,12 +82,10 @@ AWARDS: dict[str, dict[str, Any]] = {
     },
 }
 
-
 def _squash(value: object) -> str:
     return "".join(
         character for character in str(value or "").upper()
         if character.isalnum())
-
 
 AWARD_LOOKUP: dict[str, str] = {
     _squash(key): code
@@ -95,24 +93,22 @@ AWARD_LOOKUP: dict[str, str] = {
     for key in (code, *spec["aliases"])
 }
 
-
 def normalize_award(name: object) -> str | None:
     return AWARD_LOOKUP.get(_squash(name))
-
 
 def published_awards() -> str:
     return ", ".join(sorted(AWARDS))
 
-
 RANK_SEMANTICS = (
-    "rank is always 1: every row is a recorded winner, never a ballot "
-    "placement; vote counts, vote shares, and ranked fields are not in the "
-    "dataset")
-
+    "rank is the published leading rank; a tied placement shares that rank and "
+    "keeps its verbatim published rank_label, a null rank labelled ORV means the "
+    "ballot counted the subject but it made no team, and a null rank with any "
+    "other label is a published gap rather than an absence")
 
 class AwardResultError(RuntimeError):
-    pass
-
+    def __init__(self, reason: str, detail: str) -> None:
+        self.reason = reason
+        super().__init__(detail)
 
 def _table_on_hand() -> bool:
     try:
@@ -128,32 +124,32 @@ def _table_on_hand() -> bool:
     finally:
         connection.close()
 
-
 def _seasons_on_hand() -> tuple[str, ...]:
-    from v2.adapters.coverage import table_seasons
+    from shared.coverage import table_seasons
 
     return tuple(sorted(table_seasons(TABLE)))
-
 
 def _season_guard(requested: object) -> str:
     if not _table_on_hand():
         raise AwardResultError(
+            "table_missing",
             f"warehouse table missing: {TABLE}; no award result can be read")
     seasons = _seasons_on_hand()
     raw = str(requested or "").strip()
     if not seasons:
         raise AwardResultError(
-            f"{TABLE} holds no award winners, so no season can be answered")
+            "no_ballots",
+            f"{TABLE} holds no award ballots, so no season can be answered")
     if not raw:
         return seasons[-1]
     if raw not in seasons:
         raise AwardResultError(
-            f"no {TABLE} winners for the {raw} season; award winners on hand "
+            "season_uncovered",
+            f"no {TABLE} ballot for the {raw} season; award results on hand "
             f"cover {seasons[0]} through {seasons[-1]} "
-            f"({len(seasons)} seasons recorded). Dime never estimates a "
-            f"missing winner.")
+            f"({len(seasons)} seasons published). Dime never estimates a "
+            f"missing ballot.")
     return raw
-
 
 def _award_guard(award: object, *, required: bool) -> str | None:
     raw = str(award or "").strip()
@@ -161,14 +157,15 @@ def _award_guard(award: object, *, required: bool) -> str | None:
         if not required:
             return None
         raise AwardResultError(
+            "award_required",
             "the winner and field views need an award; published awards: "
             f"{published_awards()}")
     canon = normalize_award(raw)
     if canon is None:
         raise AwardResultError(
+            "unknown_award",
             f"unknown award '{raw}'; published awards: {published_awards()}")
     return canon
-
 
 _SELECT = """
     SEASON, AWARD, RANK, RANK_LABEL, PLAYER, COACH, TEAM, AGE,
@@ -176,20 +173,18 @@ _SELECT = """
     VOTES_FIRST, VOTES_SECOND, VOTES_THIRD
 """
 
-
 def _name_match(column: str) -> str:
     return f"strip_accents(lower({column})) = strip_accents(lower(?))"
-
 
 def _read(sql: str, params: list[Any]) -> list[dict[str, Any]]:
     try:
         return store._read_df(sql, params)
     except Exception as exc:
         raise AwardResultError(
+            "warehouse_read_failed",
             f"warehouse read of {TABLE} failed: {str(exc)[:200]}") from exc
 
-
-def _winner_rows(season: str, player: str | None
+def _ballot_rows(season: str, player: str | None
                  ) -> tuple[list[dict[str, Any]], str | None]:
     params: list[Any] = [season]
     clauses = ["_season <= ?"]
@@ -208,16 +203,19 @@ def _winner_rows(season: str, player: str | None
         f"WHERE {' AND '.join(clauses)}", params)
     return rows, (observed[0]["fetched_at"] if observed else None)
 
+def _coach_ballots(player: str, season: str) -> list[dict[str, Any]]:
+    return _read(
+        f"SELECT DISTINCT SEASON, AWARD FROM {TABLE} "
+        f"WHERE {_name_match('COACH')} AND _season <= ? ORDER BY SEASON",
+        [player, season])
 
 def _null(value: Any) -> Any:
     return None if value is None or value != value else value
-
 
 def _tied(rank: Any, rank_label: Any) -> bool:
     text = str(rank_label or "")
     return rank is not None and text.endswith("T") \
         and text[:-1].isdigit()
-
 
 def _placement(row: dict[str, Any]) -> dict[str, Any]:
     rank = _null(row["RANK"])
@@ -238,12 +236,11 @@ def _placement(row: dict[str, Any]) -> dict[str, Any]:
         "votes_first": _null(row["VOTES_FIRST"]),
         "votes_second": _null(row["VOTES_SECOND"]),
         "votes_third": _null(row["VOTES_THIRD"]),
+        "winner": _null(row["PLAYER"]) or _null(row["COACH"]),
     }
-
 
 def _placements(raw: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return [_placement(row) for row in raw]
-
 
 def _career_note(placements: list[dict[str, Any]]) -> str:
     grouped: dict[str, list[str]] = {}
@@ -253,115 +250,184 @@ def _career_note(placements: list[dict[str, Any]]) -> str:
         f"{award} in {', '.join(sorted(set(seasons)))}"
         for award, seasons in sorted(grouped.items()))
 
+def _absent_subject(player: str, season: str,
+                    coach_rows: list[dict[str, Any]]) -> str:
+    if not coach_rows:
+        return (f"no award ballot through the {season} season carries a player "
+                f"named {player}")
+    seasons = sorted({str(row["SEASON"]) for row in coach_rows})
+    awards = sorted({str(row["AWARD"]) for row in coach_rows})
+    return (f"{player} is on record as a coach, not a player, on the "
+            f"{', '.join(awards)} ballot for {', '.join(seasons)}; no player "
+            f"ballot through the {season} season carries that name")
 
-def _absent_subject(player: str, season: str) -> str:
-    return (f"no award winner through the {season} season is a player "
-            f"named {player}")
+
+def _resolve_player_awards(placement_rows: list[dict[str, Any]], canon: str | None,
+                           season: str, subject: str) -> list[dict[str, Any]]:
+    if canon is None:
+        return placement_rows
+    narrowed = [row for row in placement_rows if row["award"] == canon]
+    if not narrowed:
+        raise AwardResultError(
+            "subject_award_absent",
+            f"no {canon} ballot row for {subject} through the {season} "
+            f"season; {subject} is on record for "
+            f"{_career_note(placement_rows)}")
+    return narrowed
+
+
+def _filter_award_rows(placement_rows: list[dict[str, Any]], canon: str | None,
+                       season: str) -> list[dict[str, Any]]:
+    if canon is None:
+        return placement_rows
+    filtered = [row for row in placement_rows if row["award"] == canon]
+    if not filtered:
+        raise AwardResultError(
+            "award_season_absent",
+            f"no {canon} ballot for the {season} season")
+    return filtered
+
+
+def _leading_ranks(placement_rows: list[dict[str, Any]]) -> dict[str, int]:
+    leading_by_season: dict[str, int] = {}
+    for row in placement_rows:
+        if row["rank"] is not None:
+            season_key = row["season"]
+            leading_by_season[season_key] = min(
+                leading_by_season.get(season_key, row["rank"]), row["rank"])
+    return leading_by_season
+
+
+def _resolve_winner_history(placement_rows: list[dict[str, Any]],
+                            leading_by_season: dict[str, int],
+                            canon: str, season: str) -> list[dict[str, Any]]:
+    if not leading_by_season:
+        raise AwardResultError(
+            "ballot_unranked",
+            f"the {canon} ballots through the {season} season publish "
+            "no ranked placement")
+    return [row for row in placement_rows
+            if row["rank"] is not None
+            and row["rank"] == leading_by_season[row["season"]]]
+
+
+def _resolve_winner(placement_rows: list[dict[str, Any]], canon: str,
+                    season: str) -> list[dict[str, Any]]:
+    leading = min((row["rank"] for row in placement_rows
+                   if row["rank"] is not None), default=None)
+    if leading is None:
+        raise AwardResultError(
+            "ballot_unranked",
+            f"the {canon} ballot for the {season} season publishes no ranked "
+            "placement")
+    return [row for row in placement_rows if row["rank"] == leading]
 
 
 def _resolve(placement_rows: list[dict[str, Any]], view: str, canon: str | None,
              season: str, subject: str) -> list[dict[str, Any]]:
     if view == "player_awards":
-        if canon is None:
-            return placement_rows
-        narrowed = [row for row in placement_rows if row["award"] == canon]
-        if not narrowed:
-            raise AwardResultError(
-                f"no {canon} winner row for {subject} through the {season} "
-                f"season; {subject} is on record for "
-                f"{_career_note(placement_rows)}")
-        return narrowed
-    if canon is not None:
-        placement_rows = [row for row in placement_rows
-                          if row["award"] == canon]
-        if not placement_rows:
-            raise AwardResultError(
-                f"no {canon} winner recorded for the {season} season")
-    leading = min((row["rank"] for row in placement_rows
-                   if row["rank"] is not None), default=None)
-    if leading is None:
+        return _resolve_player_awards(placement_rows, canon, season, subject)
+    placement_rows = _filter_award_rows(placement_rows, canon, season)
+    if view == "field":
+        return placement_rows
+    leading_by_season = _leading_ranks(placement_rows)
+    if view == "winner_history":
+        return _resolve_winner_history(
+            placement_rows, leading_by_season, canon, season)
+    if view != "winner":
         raise AwardResultError(
-            f"the {canon} winners for the {season} season carry no rank")
-    return [row for row in placement_rows if row["rank"] == leading]
-
+            "ballot_unranked",
+            f"the {canon} ballot for the {season} season publishes no ranked "
+            "placement")
+    return _resolve_winner(placement_rows, canon, season)
 
 def _coverage(view: str, spec: dict[str, Any] | None, season: str) -> str:
-    scope = spec["label"] if spec is not None else "every recorded award"
-    what = {
-        "winner": "the recorded winner",
-        "field": "ballot detail, which this dataset does not carry",
-        "player_awards": "every winner row the subject appears on",
-    }[view]
-    return (f"Recorded NBA award winner from nba_api PlayerAwards for {scope}: "
-            f"{what} in {season}, read from {TABLE}. This is a recorded "
+    scope = spec["label"] if spec is not None else "every published award"
+    if view == "winner_history":
+        what = "every subject sharing the leading rank in each covered season"
+        time_scope = "through"
+    elif view == "player_awards":
+        what = "every ballot row the subject appears on"
+        time_scope = "through"
+    else:
+        what = {
+            "winner": "every subject sharing the leading rank",
+            "field": "every published placement on the ballot",
+        }[view]
+        time_scope = "in"
+    return (f"Official Basketball-Reference award result for {scope}: {what} "
+            f"{time_scope} {season}, read verbatim from {TABLE}. This is a recorded "
             f"outcome, never a model score, projection, or live race.")
 
-
-@tool
+@tool(description="Recorded NBA award results read from published ballots.\n\nview=winner returns every subject sharing the leading rank for one award in\none season. view=winner_history returns the leading-rank subject(s) for that\naward in every covered season through the requested season. view=field returns\nthe whole ranked ballot with vote shares and vote counts. view=player_awards\nreturns one player's award record through the named season. Use get_award_race\nfor a model score, never for a result.")
 def get_award_results(
-    view: Literal["winner", "field", "player_awards"],
+    view: Literal["winner", "field", "player_awards", "winner_history"],
     award: str | None = None,
     season: str | None = None,
     player: str | None = None,
 ) -> dict[str, Any]:
-    """Recorded NBA award winners read from the warehouse.
-
-    view=winner returns the recorded winner for one award in one season.
-    view=player_awards returns one player's award-winner record through the
-    named season. view=field is not served: the nba_api winners dataset
-    records winners only, with no ballot detail (no vote counts, shares, or
-    ranked fields). Use get_award_race for a model score, never for a result.
-    """
     try:
         if view not in VIEWS:
             raise AwardResultError(
+                "unknown_view",
                 f"unknown view '{view}'; valid views: {', '.join(VIEWS)}")
-        if view == "field":
-            raise AwardResultError(
-                "the field view needs full ballot detail (vote counts, vote "
-                "shares, ranked field); the nba_api winners dataset records "
-                "winners only")
         history = view == "player_awards"
         named = str(player or "").strip()
         if history and not named:
             raise AwardResultError(
+                "player_required",
                 "the player_awards view needs a player name")
-        if not history and named:
+        if view == "winner_history":
+            if named:
+                raise AwardResultError(
+                    "player_unsupported",
+                    "a player name is only accepted by the player_awards view")
+        elif not history and named:
             raise AwardResultError(
+                "player_unsupported",
                 "a player name is only accepted by the player_awards view")
         canon = _award_guard(award, required=not history)
-        if canon == "COY":
-            raise AwardResultError(
-                "Coach of the Year is not in the nba_api player awards "
-                "dataset, which covers players only")
         season = _season_guard(season)
-        raw, fetched_at = _winner_rows(season, named if history else None)
+        if view == "winner_history":
+            raw = _read(
+                f"SELECT {_SELECT} FROM {TABLE} WHERE AWARD = ? AND _season <= ? "
+                "ORDER BY _season, RANK NULLS LAST, POINTS_WON DESC, PLAYER, COACH",
+                [canon, season])
+            observed = _read(
+                f"SELECT MAX(_fetched_at) AS fetched_at FROM {TABLE} "
+                "WHERE AWARD = ? AND _season <= ?", [canon, season])
+            fetched_at = observed[0]["fetched_at"] if observed else None
+        else:
+            raw, fetched_at = _ballot_rows(season, named if history else None)
         placements = _placements(raw)
         if history and not placements:
-            raise AwardResultError(_absent_subject(named, season))
+            raise AwardResultError(
+                "subject_absent",
+                _absent_subject(named, season, _coach_ballots(named, season)))
         rows = _resolve(placements, view, canon, season, named or canon or "")
     except AwardResultError as exc:
         return {"tool": TOOL, "ok": False, "rows": {}, "meta": {},
-                "error": str(exc)}
+                "reason": exc.reason, "error": str(exc)}
 
     spec = AWARDS[canon] if canon is not None else None
     vote_columns = [name for name in VOTE_COLUMNS
                     if any(row[name] is not None for row in rows)]
     meta: dict[str, Any] = {
         "source": "warehouse",
-        "dataset": "nba_api",
+        "dataset": "basketball-reference",
         "season": season,
         "view": view,
         "count": len(rows),
         "award": canon,
-        "award_label": spec["label"] if spec is not None else "every recorded award",
-        "award_subject": spec["subject"] if spec is not None else "player",
+        "award_label": spec["label"] if spec is not None else "every published award",
+        "award_subject": spec["subject"] if spec is not None else "player and coach",
         "honors_teams": spec["honors_teams"] if spec is not None else None,
-        "ballot": False,
+        "ballot": bool(vote_columns),
         "vote_columns": vote_columns,
         "result_type": "official_award_result",
         "model_projection": False,
-        "method": f"winner rows recorded from nba_api PlayerAwards into {TABLE} with no scoring",
+        "method": f"ballot rows read verbatim from {TABLE} with no scoring",
+        "method_kind": "official",
         "rank_semantics": RANK_SEMANTICS,
         "history_through": season,
         "seasons_covered": sorted({str(row["season"]) for row in placements}),
@@ -369,4 +435,4 @@ def get_award_results(
         "fetched_at": fetched_at,
         "projection_tool": "get_award_race",
     }
-    return {"tool": TOOL, "ok": True, "rows": {"placements": rows}, "meta": meta}
+    return {"tool": TOOL, "ok": True, "rows": rows, "meta": meta}

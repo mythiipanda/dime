@@ -4,7 +4,6 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-
 def _warehouse_has_history() -> bool:
     try:
         from shared import store
@@ -22,7 +21,6 @@ def _warehouse_has_history() -> bool:
         return int(n) > 100
     except Exception:
         return False
-
 
 def test_per_season_leaders_shape_and_order():
     if not _warehouse_has_history():
@@ -45,7 +43,6 @@ def test_per_season_leaders_shape_and_order():
     assert res["meta"]["source"] == "warehouse"
     assert res["meta"]["estimated"] is True
 
-
 def test_single_season_best_has_known_campaign():
     if not _warehouse_has_history():
         return
@@ -63,14 +60,12 @@ def test_single_season_best_has_known_campaign():
     assert "Harden" in blob
     assert leaders[0]["value"] >= 34.0
 
-
 def test_invalid_category_rejected():
     from shared.tools.history import get_historical_leaders
 
     res = get_historical_leaders.invoke({"category": "dunks"})
     assert res["ok"] is False
     assert "pts" in res["error"]
-
 
 def test_season_clamp_never_2026():
     if not _warehouse_has_history():
@@ -86,7 +81,6 @@ def test_season_clamp_never_2026():
     assert res["meta"]["end_season"] == 2026
     assert res["rows"]["seasons"][-1]["season"] == 2026
 
-
 def test_empty_range_honest():
     if not _warehouse_has_history():
         return
@@ -98,7 +92,6 @@ def test_empty_range_honest():
     })
     assert res["ok"] is False
     assert "no RAPTOR coverage" in res["error"]
-
 
 def test_limit_clamp():
     if not _warehouse_has_history():
@@ -118,12 +111,10 @@ def test_limit_clamp():
     assert res["meta"]["limit"] == 1
     assert len(res["rows"]["leaders"]) == 1
 
-
 def test_registered():
     from shared import tools
 
     assert "get_historical_leaders" in tools.TOOL_NAMES
-
 
 def test_future_range_outside_coverage_is_honest():
     from shared.tools.history import get_historical_leaders
@@ -134,7 +125,6 @@ def test_future_range_outside_coverage_is_honest():
     })
     assert res["ok"] is False
     assert "no PTS coverage" in res["error"]
-
 
 def test_partial_overlap_clamps_with_warning():
     if not _warehouse_has_history():
@@ -149,7 +139,6 @@ def test_partial_overlap_clamps_with_warning():
     assert res["meta"]["end_season"] == 2026
     assert "warning" in res["meta"]
 
-
 def test_reversed_range_swaps_with_warning():
     if not _warehouse_has_history():
         return
@@ -163,7 +152,6 @@ def test_reversed_range_swaps_with_warning():
     assert res["meta"]["start_season"] <= res["meta"]["end_season"]
     assert "warning" in res["meta"]
 
-
 def test_string_inputs_never_traceback():
     from shared.tools.history import get_historical_leaders
 
@@ -173,7 +161,6 @@ def test_string_inputs_never_traceback():
     })
     assert isinstance(res, dict)
     assert "ok" in res
-
 
 def test_category_aliases_resolve():
     if not _warehouse_has_history():
@@ -190,14 +177,12 @@ def test_category_aliases_resolve():
         assert res["ok"] is True
         assert res["meta"]["category"] == canon
 
-
 def test_unknown_category_hint():
     from shared.tools.history import get_historical_leaders
 
     res = get_historical_leaders.invoke({"category": "asists"})
     assert res["ok"] is False
     assert "did you mean" in res["error"]
-
 
 def test_rows_carry_season_label_and_display():
     if not _warehouse_has_history():

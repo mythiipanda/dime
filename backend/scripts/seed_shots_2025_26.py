@@ -9,7 +9,6 @@ from shared.sources import nba_stats
 SEASON = "2025-26"
 SLEEP = 0.8
 
-
 def main() -> None:
     force = "--all" in sys.argv
     with store.connect() as con:
@@ -30,7 +29,7 @@ def main() -> None:
                 store.save_frame("silver_shots", res, f"player:{pid}")
             else:
                 failed.append(pid)
-        except Exception as exc:  # noqa: BLE001 - log and continue
+        except Exception as exc:
             print(f"ERR {pid}: {exc}", flush=True)
             failed.append(pid)
         if i % 25 == 0:
@@ -50,7 +49,6 @@ def main() -> None:
         p = con.execute(
             "SELECT COUNT(DISTINCT _entity) FROM silver_shots").fetchone()[0]
     print(f"DONE rows={n} entities={p} failed={len(failed)}", flush=True)
-
 
 if __name__ == "__main__":
     main()

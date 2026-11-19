@@ -12,7 +12,6 @@ from shared.sources.base import FetchMeta, FetchResult
 
 ERRORS: list[str] = []
 
-
 def worker(n: int) -> None:
     try:
         frame = pl.DataFrame({"v": [n]})
@@ -20,7 +19,6 @@ def worker(n: int) -> None:
         store.save_frame("_repro_lock", res, entity=f"w{n}", replace_season=False)
     except Exception as exc:
         ERRORS.append(str(exc)[:120])
-
 
 def main() -> None:
     threads = [threading.Thread(target=worker, args=(i,)) for i in range(8)]
@@ -38,7 +36,6 @@ def main() -> None:
     for e in ERRORS[:3]:
         print("ERR:", e)
     sys.exit(1 if ERRORS or n != 8 else 0)
-
 
 if __name__ == "__main__":
     main()

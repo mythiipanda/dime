@@ -1,14 +1,23 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { readFileSync, readdirSync } from "node:fs";
+import { join } from "node:path";
 import {
   capabilityLabel,
+  evidenceNote,
   statLabel,
   subjectName,
   contextPills,
   evidenceSources,
+  toolFailureNote,
   unverifiedSummary,
+  unverifiedValues,
   withCitationMarkers,
+  withUnverifiedMarkers,
   gapMessage,
+  parseAnswerSubmission,
+  parsePiSources,
+  type PiSource,
 } from "./evidence";
 import type { AiMessage } from "./chat";
 
@@ -156,9 +165,42 @@ test("context pills cap capabilities and skip empties", () => {
   assert.deepEqual(contextPills(aiWith({}, tables)), []);
 });
 
+test("unverified values come from incomplete typed statuses only", () => {
+  const carry = {
+    output_statuses: [
+      { output_id: "AST", status: "incomplete", value: "64" },
+      { output_id: "OFF_RATING", status: "complete", value: "118.2" },
+      { output_id: "PLAYER_NAME", status: "missing", value: "Trae Young" },
+      { output_id: "APG", status: "incomplete" },
+    ],
+  };
+  assert.deepEqual(unverifiedValues(aiWith(carry, []), []), ["64"]);
+});
+
+test("admitted values never count as unverified", () => {
+  const carry = {
+    output_statuses: [{ output_id: "AST", status: "incomplete", value: "880" }],
+  };
+  assert.deepEqual(unverifiedValues(aiWith(carry, []), ["880"]), []);
+});
+
+test("unverified markers land on literal occurrences with clean boundaries", () => {
+  assert.equal(
+    withUnverifiedMarkers("64 wins and 64 losses.", ["64"]),
+    "64[?](#unverified) wins and 64[?](#unverified) losses.",
+  );
+  assert.equal(
+    withUnverifiedMarkers("In the 2024-25 season, top 3.", ["24", "25", "3"]),
+    "In the 2024-25 season, top 3.",
+  );
+  assert.equal(withUnverifiedMarkers("64 wins.", []), "64 wins.");
+});
+
 test("sources never leak machine ids", () => {
   const sources = evidenceSources(aiWith({}, [CLAIM_TABLE, NAME_TABLE]));
-  const joined = JSON.stringify(sources);
+  const joined = JSON.stringify(
+    sources.map((s) => [s.subject, s.stat, s.value, s.origin]),
+  );
   for (const token of ["output_id", "subject_id", "Ppg", "Apg", "Leaders", "verified_claims", "ppg", "NET_RATING", "points_per_100"]) {
     assert.ok(!joined.includes(token), "leaked " + token);
   }
@@ -262,4 +304,388 @@ test("multiple unchecked stats are counted, not listed", () => {
 test("no signal means no summary", () => {
   assert.equal(unverifiedSummary(aiWith({}, [])), null);
   assert.equal(unverifiedSummary(aiWith({ verification: "pass", verified_claims: 2, gaps: [] }, [CLAIM_TABLE])), null);
+});
+
+test("evidence sources grade from typed method_kind", () => {
+  const estimated = aiWith({}, [
+    {
+      ...CLAIM_TABLE,
+      meta: { method: "NBA box-score estimated possessions", method_kind: "estimate" },
+    },
+  ]);
+  assert.equal(evidenceSources(estimated)[0]?.grade?.grade, "G4");
+  const official = aiWith({}, [
+    {
+      ...CLAIM_TABLE,
+      meta: { method: "official", method_kind: "official" },
+      provenance: { ...CLAIM_TABLE.provenance, origin: "warehouse" },
+    },
+  ]);
+  assert.equal(evidenceSources(official)[0]?.grade?.grade, "G1");
+});
+
+test("award and plumbing tools have curated display names", () => {
+  assert.equal(capabilityLabel("get_award_results"), "Award results");
+  assert.equal(capabilityLabel("query_warehouse_tool"), "SQL query");
+  assert.equal(capabilityLabel("run_python"), "Python");
+  assert.equal(capabilityLabel("search_nba"), "Search");
+});
+
+test("award machine reasons map to plain words", () => {
+  const cases: Array<[string, string]> = [
+    ["table_missing", "Award results aren't available right now."],
+    ["no_ballots", "No award ballots on hand for that question."],
+    ["season_uncovered", "No ballots cover that season."],
+    ["award_required", "Tell me which award to look up."],
+    ["unknown_award", "That award isn't published here."],
+    ["warehouse_read_failed", "Award results couldn't be read right now."],
+    ["subject_award_absent", "No ballot row for that pick."],
+    ["award_season_absent", "No ballot for that season."],
+    ["ballot_unranked", "That ballot publishes no ranked field."],
+    ["unknown_view", "That view isn't available."],
+    ["player_required", "That view needs a player name."],
+    ["player_unsupported", "Player names only work in the player view."],
+    ["subject_absent", "That pick isn't on the ballot."],
+  ];
+  for (const [reason, note] of cases) assert.equal(toolFailureNote(reason), note);
+  assert.equal(toolFailureNote("something_new"), null);
+  assert.equal(toolFailureNote(""), null);
+  assert.equal(toolFailureNote(null), null);
+  assert.equal(toolFailureNote(42), null);
+});
+
+const BANNED_TOKENS = ["silver_", "warehouse", "evidence_id", "_season", "EvidenceEnvelope", "(missing)", "(rejected)"];
+
+test("registry tools all have a display decision", () => {
+  const toolsDir = join(process.cwd(), "..", "backend", "shared", "tools");
+  const names = new Set<string>();
+  for (const file of readdirSync(toolsDir, { recursive: true, encoding: "utf8" })) {
+    if (!file.endsWith(".py")) continue;
+    const src = readFileSync(join(toolsDir, file), "utf8");
+    for (const m of src.matchAll(/@tool\b[^\n]*\ndef ([a-z_0-9]+)/g)) names.add(m[1]);
+  }
+  assert.ok(names.size > 50);
+  const fallbackOk: Record<string, string> = {
+    add_watchlist_item: "tray plumbing, never evidence",
+    remove_watchlist_item: "tray plumbing, never evidence",
+    compare_metrics: "fallback adequate",
+    get_situational_splits: "fallback adequate",
+    get_splits: "fallback adequate",
+    get_standings: "fallback adequate",
+    get_standings_deep: "fallback adequate",
+    get_streaks: "fallback adequate",
+    resolve_entity: "internal resolution, never evidence",
+    search_game_logs: "fallback adequate",
+    search_shots: "fallback adequate",
+    snapshot_leaderboard: "fallback adequate",
+  };
+  const src = readFileSync(join(process.cwd(), "lib", "evidence.ts"), "utf8");
+  const mapped = new Set<string>();
+  for (const m of src.matchAll(/^  ([a-z_0-9]+): "/gm)) mapped.add(m[1]);
+  const undecided = [...names].filter((n) => !mapped.has(n) && !(n in fallbackOk)).sort();
+  assert.deepEqual(undecided, []);
+  for (const name of Object.keys(fallbackOk)) {
+    if (mapped.has(name)) continue;
+    const label = capabilityLabel(name);
+    for (const token of BANNED_TOKENS) assert.ok(!label.includes(token), `${name} fallback leaks ${token}`);
+  }
+});
+
+const NEW_REGISTRY_CASES: Array<[string, string]> = [
+  ["get_defensive_matchups", "Defensive matchups"],
+  ["get_playtype_profile", "Play types"],
+  ["get_possession_log", "Possession log"],
+  ["get_stint_timeline", "Lineup stints"],
+  ["get_tracking_profile", "Tracking stats"],
+  ["get_transactions", "Transactions"],
+];
+
+test("newly registered capabilities are curated, not left to the fallback", () => {
+  for (const [capability, label] of NEW_REGISTRY_CASES) {
+    assert.equal(capabilityLabel(capability), label);
+    assert.ok(!label.includes("_"), label + " keeps a machine token");
+    assert.ok(!label.includes("get"), label + " keeps the tool prefix");
+  }
+});
+
+test("new capability claims read as plain sources and pills", () => {
+  const tables = NEW_REGISTRY_CASES.map(([capability]) => ({
+    ...CLAIM_TABLE,
+    provenance: { capability, season: "2024-25", as_of: "2025-04-14" },
+  }));
+  const sources = evidenceSources(aiWith({}, tables));
+  assert.equal(sources.length, 6);
+  assert.deepEqual(sources.map((s) => s.origin), [
+    "Defensive matchups, 2024-25 season",
+    "Play types, 2024-25 season",
+    "Possession log, 2024-25 season",
+    "Lineup stints, 2024-25 season",
+    "Tracking stats, 2024-25 season",
+    "Transactions, 2024-25 season",
+  ]);
+  assert.deepEqual(contextPills(aiWith({}, tables)), [
+    "2024-25",
+    "Defensive matchups",
+    "Play types",
+  ]);
+  const shown = JSON.stringify(sources.map((s) => [s.subject, s.stat, s.value, s.origin]));
+  for (const [capability] of NEW_REGISTRY_CASES) {
+    assert.ok(!shown.includes(capability), "leaked " + capability);
+  }
+});
+
+test("new capability tools keep their truthful evidence note", () => {
+  const live = {
+    tool: "get_transactions",
+    rows: [{ team: "BOS" }],
+    meta: {
+      capability: "get_transactions",
+      season: "2024-25",
+      source: "espn",
+      evidence_status: "ineligible",
+      evidence_reason: "live_external_no_warehouse_provenance",
+    },
+  };
+  const unlisted = {
+    tool: "get_playtype_profile",
+    rows: [{ subject: "BOS" }],
+    meta: {
+      capability: "get_playtype_profile",
+      season: "2024-25",
+      evidence_status: "ineligible",
+      evidence_reason: "unlisted_kind",
+    },
+  };
+  const sources = evidenceSources(aiWith({}, [live, unlisted]));
+  assert.equal(sources[0].stat, "Transactions");
+  assert.equal(sources[0].origin, "Transactions, 2024-25 season");
+  assert.equal(sources[0].note, "ESPN live data — couldn't be traced to source data.");
+  assert.equal(sources[1].stat, "Play types");
+  assert.equal(sources[1].origin, "Play types, 2024-25 season");
+  assert.equal(sources[1].note, "Couldn't be traced to source data.");
+  const shown = JSON.stringify(sources.map((s) => [s.stat, s.origin, s.note]));
+  for (const token of [...BANNED_TOKENS, "live_external_no_warehouse_provenance", ...NEW_REGISTRY_CASES.map(([c]) => c)]) {
+    assert.ok(!shown.includes(token), "leaked " + token);
+  }
+});
+
+test("salary machine reasons map to plain words with a family fallback", () => {
+  assert.equal(toolFailureNote("salary_column_unmatched"), "Salary data doesn't cover that season.");
+  assert.equal(toolFailureNote("unknown_players"), "Couldn't match those player names.");
+  assert.equal(toolFailureNote("unknown_player"), "Couldn't match those player names.");
+  assert.equal(
+    toolFailureNote("some_future_reason", "get_cap_ledger"),
+    "Salary data couldn't be read right now.",
+  );
+  assert.equal(toolFailureNote("some_future_reason", "get_trade_value"), "Salary data couldn't be read right now.");
+  assert.equal(toolFailureNote("some_future_reason", "get_leaders"), null);
+  assert.equal(toolFailureNote("some_future_reason"), null);
+  assert.equal(toolFailureNote("table_missing", "get_cap_ledger"), "Award results aren't available right now.");
+});
+
+const ESPN_META = {
+  source: "espn",
+  evidence_status: "ineligible",
+  evidence_reason: "live_external_no_warehouse_provenance",
+};
+
+const ESPN_TABLE = {
+  tool: "get_espn_scores",
+  rows: [{ home: "LAL", away: "BOS", status: "Final" }],
+  meta: ESPN_META,
+};
+
+test("espn capabilities have plain-word display names", () => {
+  assert.equal(capabilityLabel("get_espn_scores"), "Live scores");
+  assert.equal(capabilityLabel("get_espn_event_summary"), "Game recap");
+  assert.equal(capabilityLabel("get_espn_odds"), "Odds");
+});
+
+test("ineligible evidence carries a plain-words note", () => {
+  assert.equal(evidenceNote(ESPN_META), "ESPN live data — couldn't be traced to source data.");
+  assert.equal(evidenceNote({ evidence_status: "ok" }), null);
+  assert.equal(evidenceNote({}), null);
+  assert.equal(evidenceNote(null), null);
+});
+
+test("other ineligible reasons stay neutral and never borrow the live label", () => {
+  assert.equal(
+    evidenceNote({ evidence_status: "ineligible", evidence_reason: "unlisted_kind" }),
+    "Couldn't be traced to source data.",
+  );
+  assert.equal(
+    evidenceNote({ evidence_status: "ineligible" }),
+    "Couldn't be traced to source data.",
+  );
+});
+
+test("espn evidence reads as plain words with no infra tokens", () => {
+  const sources = evidenceSources(aiWith({}, [ESPN_TABLE]));
+  assert.equal(sources.length, 1);
+  assert.equal(sources[0].stat, "Live scores");
+  assert.ok(sources[0].note?.includes("couldn't be traced to source data."));
+  const shown = JSON.stringify([sources[0].stat, sources[0].note]);
+  for (const token of [...BANNED_TOKENS, "live_external_no_warehouse_provenance"]) {
+    assert.ok(!shown.includes(token), "leaked " + token);
+  }
+});
+
+
+test("parseAnswerSubmission accepts valid blocks and anchors", () => {
+  const raw = {
+    blocks: [
+      {
+        text: "Leading prose statement.",
+        anchors: [{ ref: "src-1", row: 0, columns: ["PTS", "PLAYER"] }],
+      },
+      {
+        text: "Secondary statement without anchors.",
+        anchors: [],
+      },
+    ],
+  };
+  const parsed = parseAnswerSubmission(raw);
+  assert.ok(parsed);
+  assert.equal(parsed.blocks.length, 2);
+  assert.equal(parsed.blocks[0].text, "Leading prose statement.");
+  assert.equal(parsed.blocks[0].anchors[0].ref, "src-1");
+  assert.equal(parsed.blocks[0].anchors[0].row, 0);
+  assert.deepEqual(parsed.blocks[0].anchors[0].columns, ["PTS", "PLAYER"]);
+  assert.equal(parsed.blocks[1].anchors.length, 0);
+});
+
+test("parseAnswerSubmission rejects malformed payloads and invalid boundaries", () => {
+  assert.equal(parseAnswerSubmission(null), null);
+  assert.equal(parseAnswerSubmission(undefined), null);
+  assert.equal(parseAnswerSubmission("not-an-object"), null);
+  assert.equal(parseAnswerSubmission([]), null);
+  assert.equal(parseAnswerSubmission({}), null);
+  assert.equal(parseAnswerSubmission({ blocks: [] }), null); // empty blocks array rejected
+  assert.equal(parseAnswerSubmission({ blocks: [{ text: "", anchors: [] }] }), null); // empty text rejected
+  assert.equal(parseAnswerSubmission({ blocks: [{ text: "valid", anchors: "not-array" }] }), null);
+  assert.equal(
+    parseAnswerSubmission({
+      blocks: [{ text: "valid", anchors: [{ ref: "", row: 0, columns: ["c"] }] }], // empty ref
+    }),
+    null
+  );
+  assert.equal(
+    parseAnswerSubmission({
+      blocks: [{ text: "valid", anchors: [{ ref: "s", row: -1, columns: ["c"] }] }], // negative row
+    }),
+    null
+  );
+  assert.equal(
+    parseAnswerSubmission({
+      blocks: [{ text: "valid", anchors: [{ ref: "s", row: 1.5, columns: ["c"] }] }], // non-integer row
+    }),
+    null
+  );
+  assert.equal(
+    parseAnswerSubmission({
+      blocks: [{ text: "valid", anchors: [{ ref: "s", row: 0, columns: [] }] }], // empty columns
+    }),
+    null
+  );
+  assert.equal(
+    parseAnswerSubmission({
+      blocks: [{ text: "valid", anchors: [{ ref: "s", row: 0, columns: [123] }] }], // non-string columns
+    }),
+    null
+  );
+});
+
+test("anchor resolvability logic distinguishes hydrated sources from unhydrated/invalid", () => {
+  const sources: PiSource[] = [
+    {
+      ref: "src-1",
+      tool: "sql_exec",
+      label: "Season Totals",
+      units: { PTS: "points" },
+      rows: [{ PTS: 30, PLAYER: "Luka" }],
+      data: { origin: "warehouse", sources: [] },
+    },
+  ];
+
+  function resolveAnchor(anchor: { ref: string; row: number; columns: string[] }, sList?: PiSource[]) {
+    const s = sList?.find((item) => item.ref === anchor.ref);
+    const rowData = s?.rows?.[anchor.row];
+    return Boolean(
+      rowData &&
+      anchor.columns.length > 0 &&
+      anchor.columns.every((c) => Object.hasOwn(rowData as object, c))
+    );
+  }
+
+  // Hydration absent (sources undefined or empty) -> must not resolve
+  assert.equal(resolveAnchor({ ref: "src-1", row: 0, columns: ["PTS"] }, undefined), false);
+  assert.equal(resolveAnchor({ ref: "src-1", row: 0, columns: ["PTS"] }, []), false);
+
+  // Valid hydrated source, row, and columns -> resolves
+  assert.equal(resolveAnchor({ ref: "src-1", row: 0, columns: ["PTS", "PLAYER"] }, sources), true);
+
+  // Row out of bounds -> must not resolve
+  assert.equal(resolveAnchor({ ref: "src-1", row: 5, columns: ["PTS"] }, sources), false);
+
+  // Column missing on row -> must not resolve
+  assert.equal(resolveAnchor({ ref: "src-1", row: 0, columns: ["REB"] }, sources), false);
+
+  // Unknown ref -> must not resolve
+  assert.equal(resolveAnchor({ ref: "src-unknown", row: 0, columns: ["PTS"] }, sources), false);
+});
+
+test("parsePiSources preserves plain-text tool errors and keeps JSON success", () => {
+  const rawError = "Tool execution failed: warehouse read failed";
+  const parsed = parsePiSources([
+    {
+      ref: "src-err",
+      tool: "run_python",
+      response: { content: [{ type: "text", text: rawError }] },
+    },
+    {
+      ref: "src-ok",
+      tool: "sql_exec",
+      response: {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify({
+              rows: [{ PTS: 30, PLAYER: "Luka" }],
+              meta: { tables: ["Season Totals"] },
+              declared_column_semantics: { PTS: { unit: "points" } },
+            }),
+          },
+        ],
+      },
+    },
+    { ref: "src-bad", tool: "sql_exec", response: { content: [{ type: "text", text: 42 }] } },
+    { tool: "sql_exec", response: { content: [{ type: "text", text: rawError }] } },
+    "not-a-record",
+  ]);
+  assert.equal(parsed.length, 2);
+  const err = parsed[0];
+  assert.equal(err.ref, "src-err");
+  assert.equal(err.tool, "run_python");
+  assert.equal(err.label, "run_python");
+  assert.deepEqual(err.rows, []);
+  assert.deepEqual(err.units, {});
+  assert.equal(err.data, rawError);
+  assert.equal(JSON.stringify(err.data), JSON.stringify(rawError));
+  const ok = parsed[1];
+  assert.equal(ok.label, "Season Totals");
+  assert.deepEqual(ok.rows, [{ PTS: 30, PLAYER: "Luka" }]);
+  assert.deepEqual(ok.units, { PTS: "points" });
+  assert.deepEqual(ok.data, {
+    rows: [{ PTS: 30, PLAYER: "Luka" }],
+    meta: { tables: ["Season Totals"] },
+    declared_column_semantics: { PTS: { unit: "points" } },
+  });
+  assert.equal(err.rows[0], undefined);
+  const rowData = err.rows[0];
+  assert.equal(Boolean(rowData && ["PTS"].every((c) => Object.hasOwn(rowData as object, c))), false);
+  assert.deepEqual(parsePiSources("not-an-array"), []);
+  assert.deepEqual(
+    parsePiSources([{ ref: "src-x", tool: "t", response: { content: "not-array" } }]),
+    []
+  );
 });

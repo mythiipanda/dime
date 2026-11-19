@@ -15,7 +15,6 @@ from shared.tools.team import (
     get_rotation_check,
 )
 
-
 def _player(name, minutes, mpg=None, diff=None, cached=True, pid=1, gp=60, pts=600.0):
     return {
         "PLAYER": name, "PLAYER_ID": pid, "GP": gp, "MIN": float(minutes),
@@ -24,11 +23,9 @@ def _player(name, minutes, mpg=None, diff=None, cached=True, pid=1, gp=60, pts=6
         "CACHED": cached,
     }
 
-
 def _fifteen():
     return [_player(f"P{i + 1}", 2000 - i * 100, pid=100 + i,
                     diff=1.0, cached=True) for i in range(15)]
-
 
 def _unit(name, poss, net, best=False):
     return {
@@ -38,13 +35,11 @@ def _unit(name, poss, net, best=False):
         "is_best_net_unit": best, "flags": [],
     }
 
-
 def test_tiers_split_top5_6_10_11_15():
     tiers = _tier_players(_fifteen())
     assert [p["PLAYER"] for p in tiers["core"]] == [f"P{i}" for i in range(1, 6)]
     assert [p["PLAYER"] for p in tiers["bench"]] == [f"P{i}" for i in range(6, 11)]
     assert [p["PLAYER"] for p in tiers["fringe"]] == [f"P{i}" for i in range(11, 16)]
-
 
 def test_tiers_sort_by_mpg_desc():
     players = [_player("low", 100, pid=1), _player("high", 900, pid=2),
@@ -53,7 +48,6 @@ def test_tiers_sort_by_mpg_desc():
     assert tiers["core"][0]["PLAYER"] == "high"
     assert tiers["core"][1]["PLAYER"] == "mid"
 
-
 def test_thin_rotation_seven_man():
     players = ([_player(f"R{i}", 1500, mpg=25, pid=i) for i in range(7)]
                + [_player(f"B{i}", 200, mpg=4, pid=100 + i) for i in range(8)])
@@ -61,13 +55,11 @@ def test_thin_rotation_seven_man():
                                  bench_diffs=[], cached_onoff=10)
     assert any("thin rotation" in f for f in flags)
 
-
 def test_heavy_reliance_share_040():
     players = [_player(f"R{i}", 1500, mpg=20, pid=i) for i in range(10)]
     flags = _thin_rotation_flags(players=players, most_used_share=0.40,
                                  bench_diffs=[], cached_onoff=10)
     assert any("heavy reliance" in f for f in flags)
-
 
 def test_bench_drag_avg_minus4():
     players = [_player(f"R{i}", 1500, mpg=20, pid=i) for i in range(10)]
@@ -76,18 +68,15 @@ def test_bench_drag_avg_minus4():
                                  cached_onoff=10)
     assert any("bench drag" in f for f in flags)
 
-
 def test_thin_onoff_coverage_5_of_10():
     players = [_player(f"R{i}", 1500, mpg=20, pid=i) for i in range(10)]
     flags = _thin_rotation_flags(players=players, most_used_share=0.1,
                                  bench_diffs=[], cached_onoff=5)
     assert any("on/off coverage thin" in f for f in flags)
 
-
 def test_thin_flags_empty_no_crash():
     assert _thin_rotation_flags(players=[], most_used_share=0.0,
                                 bench_diffs=[], cached_onoff=0) == []
-
 
 def test_closing_candidates_best_net_first():
     units = [_unit("most-used", 500, 2.0, best=False),
@@ -101,7 +90,6 @@ def test_closing_candidates_best_net_first():
         assert set(u) == {"GROUP_NAME", "EST_MIN", "GP", "poss",
                           "OFF_RATING", "DEF_RATING", "NET_RATING",
                           "PLUS_MINUS", "is_best_net_unit", "flags"}
-
 
 def test_assemble_report_keys_and_math():
     players = _fifteen()
@@ -136,7 +124,6 @@ def test_assemble_report_keys_and_math():
         assert set(p) == {"PLAYER", "PLAYER_ID", "GP", "MIN", "MPG",
                           "PTS", "ON", "OFF", "DIFF", "CACHED"}
 
-
 def test_assemble_empty_clutch_note():
     res = _assemble_rotation_report(team_id=14, abbrev="LAL",
                                     season="2025-26", min_possessions=100,
@@ -146,16 +133,13 @@ def test_assemble_empty_clutch_note():
     assert "no cached clutch minutes" in res["rows"]["clutch_context"]["note"]
     assert res["rows"]["clutch_context"]["closers"] == []
 
-
 def test_registered_in_tool_registry():
     assert "get_rotation_check" in tools.TOOL_NAMES
-
 
 def test_invalid_team_fails_cleanly():
     res = _asyncio.run(get_rotation_check.ainvoke({"team": "Not A Real Team XYZ"}))
     assert res["ok"] is False
     assert "error" in res
-
 
 def test_tool_hermetic_with_monkeypatched_fetchers(monkeypatch):
     raw = [{"player_id": 100 + i, "player_name": f"P{i + 1}", "gp": 60,
@@ -188,13 +172,11 @@ def test_tool_hermetic_with_monkeypatched_fetchers(monkeypatch):
     assert isinstance(rows["thin_flags"], list)
     assert res["meta"]["source"] == "warehouse"
 
-
 def _star(name, mpg, gp, pid):
     return {"PLAYER": name, "PLAYER_ID": pid, "GP": gp,
             "MIN": round(mpg * gp, 1), "MPG": float(mpg),
             "PTS": 0.0, "ON": None, "OFF": None, "DIFF": None,
             "CACHED": False}
-
 
 def test_low_gp_star_never_fringe():
     players = [_star("Keegan Murray", 34.5, 23, 1),
@@ -209,7 +191,6 @@ def test_low_gp_star_never_fringe():
     bench_names = [p["PLAYER"] for p in tiers["bench"]]
     assert "Domantas Sabonis" in bench_names
 
-
 def test_cameo_appearance_excluded_from_core():
     players = [_star("Cameo", 40.0, 5, 1)]
     players += [_star(f"R{i}", 25 - i, 70, 100 + i) for i in range(10)]
@@ -217,7 +198,6 @@ def test_cameo_appearance_excluded_from_core():
     core_names = [p["PLAYER"] for p in tiers["core"]]
     assert "Cameo" not in core_names
     assert len(tiers["core"]) == 5
-
 
 def test_closing_candidates_dedupes_duplicate_units():
     dupes = [_unit("closers", 300, 10.0, best=True) for _ in range(5)]

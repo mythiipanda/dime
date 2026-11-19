@@ -8,7 +8,6 @@ import shared.tools.headtohead as h2h
 from shared.tools import get_head_to_head
 from shared.tools.headtohead import deltas, summarize, vs_opponent
 
-
 def _row(matchup, date, wl="W", pts=20, reb=10, ast=5,
          fgm=10, fga=20, fta=0, tov=2):
     return {"MATCHUP": matchup, "GAME_DATE": date, "WL": wl,
@@ -17,7 +16,6 @@ def _row(matchup, date, wl="W", pts=20, reb=10, ast=5,
             "STL": 1, "BLK": 1, "TOV": tov,
             "FGM": fgm, "FGA": fga, "FG3M": 2, "FG3A": 6,
             "FTA": fta, "PLUS_MINUS": 5}
-
 
 def test_summarize_math():
     rows = [
@@ -35,13 +33,11 @@ def test_summarize_math():
     assert s["ts_pct"] == round(54 / (2 * (33 + 0.44 * 10)), 3)
     assert (s["w"], s["l"]) == (1, 1)
 
-
 def test_summarize_empty():
     s = summarize([])
     assert s["gp"] == 0
     assert s["ppg"] == 0.0
     assert (s["w"], s["l"]) == (0, 0)
-
 
 def test_deltas_math():
     opp = {"ppg": 30.0, "rpg": 10.0, "apg": 5.0,
@@ -52,7 +48,6 @@ def test_deltas_math():
     assert d == {"ppg": 10.0, "rpg": 2.0, "apg": 1.0,
                  "fg_pct": 0.05, "ts_pct": 0.02}
 
-
 def test_vs_opponent_filters_home_and_away():
     rows = [
         _row("BOS @ NYK", "Jan 01, 2026"),
@@ -62,9 +57,7 @@ def test_vs_opponent_filters_home_and_away():
     kept = vs_opponent(rows, "NYK")
     assert [r["MATCHUP"] for r in kept] == ["BOS @ NYK", "BOS vs. NYK"]
 
-
 def test_vs_opponent_never_teammates_side():
-
 
     rows = [
         _row("NYK @ BOS", "Jan 01, 2026"),
@@ -73,7 +66,6 @@ def test_vs_opponent_never_teammates_side():
     ]
     assert len(vs_opponent(rows, "NYK")) == 1
     assert vs_opponent(rows, "NYK")[0]["MATCHUP"] == "BOS @ NYK"
-
 
 def _fake_season(monkeypatch):
     nyk = [_row(f"BOS @ NYK" if i % 2 else "BOS vs. NYK",
@@ -84,7 +76,6 @@ def _fake_season(monkeypatch):
                   reb=6, ast=7, fgm=15, fga=30, fta=0)
              for i in range(4)]
     monkeypatch.setattr(h2h, "_load_player_games", lambda pid, season: nyk + other)
-
 
 def test_tool_averages_deltas_record(monkeypatch):
     _fake_season(monkeypatch)
@@ -108,7 +99,6 @@ def test_tool_averages_deltas_record(monkeypatch):
     dates = [g["date"] for g in rows["games"]]
     assert dates == sorted(dates, reverse=True)
 
-
 def test_tool_small_sample_flagged(monkeypatch):
     one = [_row("BOS @ NYK", "Jan 01, 2026", "L", pts=24, reb=13, ast=8)]
     monkeypatch.setattr(h2h, "_load_player_games", lambda pid, season: one)
@@ -119,7 +109,6 @@ def test_tool_small_sample_flagged(monkeypatch):
     assert rows["small_sample"] is True
     assert rows["team_record"] == "0-1"
     assert rows["note"] and "1 game" in rows["note"]
-
 
 def test_tool_zero_games_vs_opponent_still_honest(monkeypatch):
     games = [_row("BOS @ MIA", f"Jan {i + 1:02d}, 2026") for i in range(3)]
@@ -132,13 +121,11 @@ def test_tool_zero_games_vs_opponent_still_honest(monkeypatch):
     assert rows["games"] == []
     assert rows["small_sample"] is True
 
-
 def test_tool_unknown_player_rejected():
     res = get_head_to_head.invoke({"player": "Player McNotreal zzz",
                                    "opponent": "NYK"})
     assert res["ok"] is False
     assert "unknown player" in res["error"]
-
 
 def test_tool_unknown_team_rejected():
     res = get_head_to_head.invoke({"player": "Jayson Tatum",
@@ -146,14 +133,12 @@ def test_tool_unknown_team_rejected():
     assert res["ok"] is False
     assert "unknown team" in res["error"]
 
-
 def test_tool_no_gamelogs_for_resolved_player(monkeypatch):
     monkeypatch.setattr(h2h, "_load_player_games", lambda pid, season: [])
     res = get_head_to_head.invoke({"player": "Jayson Tatum",
                                    "opponent": "NYK"})
     assert res["ok"] is False
     assert "no gamelog data" in res["error"]
-
 
 def test_integration_tatum_vs_knicks_real_warehouse():
     res = get_head_to_head.invoke({"player": "Tatum", "opponent": "Knicks"})

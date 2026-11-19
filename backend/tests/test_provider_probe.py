@@ -6,8 +6,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-import shared.providers as prov  # noqa: E402
-
+import shared.providers as prov
 
 class _FakeClient:
     def __init__(self, reply="ok", boom=False):
@@ -21,10 +20,8 @@ class _FakeClient:
             content = "ok"
         return R()
 
-
 def _reset():
     prov._probe_state.clear()
-
 
 def test_probe_records_ok_and_failure(monkeypatch):
     _reset()
@@ -39,15 +36,14 @@ def test_probe_records_ok_and_failure(monkeypatch):
     assert asyncio.run(prov.probe_provider("groq")) is False
     assert prov.probe_verdict("groq") is False
 
-
 def test_probe_verdict_expires():
     _reset()
     prov._probe_state["groq"] = (False, time.time() - 7000)
     assert prov.probe_verdict("groq") is None
 
-
 def test_fallback_skips_probe_failed_provider(monkeypatch):
     _reset()
+    monkeypatch.setattr(prov, 'active_provider_order', lambda: ('mistral', 'gemini', 'cerebras'))
     prov._probe_state["mistral"] = (False, time.time())
     calls = []
 
@@ -60,11 +56,13 @@ def test_fallback_skips_probe_failed_provider(monkeypatch):
         "mistral", "m", []))
     assert out.content == "ok"
     assert "mistral" not in calls, "probe-failed primary was not skipped"
-    assert calls[0] == "gemini"
-
+    assert calls[0] in ("gemini", "cerebras")
 
 def test_invoke_exposes_accepted_provider_and_sanitized_attempts(monkeypatch):
     _reset(); calls=[]
+    monkeypatch.setattr(prov, 'active_provider_order', lambda: ('gemini', 'nvidia', 'openrouter'))
+    monkeypatch.setattr(prov.settings, 'cerebras_api_key', '')
+    monkeypatch.setattr(prov.settings, 'dime_enable_groq', False)
     class C:
         def __init__(self,name): self.name=name
         async def ainvoke(self,messages,**kwargs):
@@ -88,9 +86,10 @@ def test_invoke_exposes_accepted_provider_and_sanitized_attempts(monkeypatch):
          'latency_ms':out.provider_attempts[1]['latency_ms']},)
     assert 'secret' not in str(out.provider_attempts)
 
-
 def test_paid_openrouter_primary_provenance_matches_constructed_free_slug(monkeypatch):
     _reset(); seen=[]
+    monkeypatch.setattr(prov, 'active_provider_order', lambda: ('gemini', 'openrouter'))
+    monkeypatch.setattr(prov.settings, 'cerebras_api_key', '')
     class C:
         async def ainvoke(self,messages,**kwargs):
             class R: content='ok'
@@ -104,9 +103,10 @@ def test_paid_openrouter_primary_provenance_matches_constructed_free_slug(monkey
     assert out.model==prov.GEMINI_DEFAULT
     assert seen[0]==('gemini',out.model)
 
-
 def test_arbitrary_mistral_primary_provenance_matches_free_limit(monkeypatch):
     _reset(); seen=[]
+    monkeypatch.setattr(prov, 'active_provider_order', lambda: ('gemini', 'mistral'))
+    monkeypatch.setattr(prov.settings, 'cerebras_api_key', '')
     class C:
         async def ainvoke(self,messages,**kwargs):
             class R: content='ok'

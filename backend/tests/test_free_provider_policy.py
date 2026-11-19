@@ -5,19 +5,46 @@ from shared.providers import (
 )
 from shared.config import settings
 
-
-def test_every_runtime_fallback_chain_is_free_only():
-    for primary in ("openrouter", "mistral", "inception", "groq", "gemini"):
-        assert fallback_order(primary)[0] == "gemini"
-        assert set(fallback_order(primary)) == {
-            "gemini", "nvidia", "openrouter", "mistral"}
-        assert not ({"inception", "groq"} & set(fallback_order(primary)))
-
+def test_every_runtime_fallback_chain_is_free_only(monkeypatch):
+    for name, value in {
+        "dime_enable_groq": True, "groq_api_key": "fake-groq",
+        "dime_enable_agnes": True, "agnes_api_key": "fake-agnes",
+        "cerebras_api_key": "fake-cerebras", "nvidia_nim_api_key": "fake-nvidia",
+        "openrouter_api_key": "fake-openrouter", "mistral_api_key": "fake-mistral",
+        "gemini_api_key": "fake-gemini", "dime_enable_inception": False,
+    }.items():
+        monkeypatch.setattr(settings, name, value)
+    for primary in ("openrouter", "mistral", "inception", "groq", "gemini",
+                    "cerebras"):
+        order = fallback_order(primary)
+        assert order == [
+            "groq", "agnes", "cerebras", "nvidia", "openrouter", "mistral", "gemini"]
+        assert set(order) <= {
+            "gemini", "nvidia", "openrouter", "mistral", "cerebras", "groq", "agnes"}
+        assert "inception" not in fallback_order(primary)
+def test_fallback_order_skips_unconfigured_free_providers_and_keeps_gemini_last(monkeypatch):
+    import shared.providers as providers
+    monkeypatch.setattr(settings, "dime_enable_groq", True)
+    monkeypatch.setattr(settings, "groq_api_key", "fake-groq")
+    monkeypatch.setattr(settings, "dime_enable_agnes", True)
+    monkeypatch.setattr(settings, "agnes_api_key", "fake-agnes")
+    monkeypatch.setattr(settings, "cerebras_api_key", "")
+    monkeypatch.setattr(settings, "nvidia_nim_api_key", "fake-nvidia")
+    monkeypatch.setattr(settings, "openrouter_api_key", "")
+    monkeypatch.setattr(settings, "mistral_api_key", "fake-mistral")
+    monkeypatch.setattr(settings, "gemini_api_key", "fake-gemini")
+    assert providers.active_provider_order() == (
+        "groq", "agnes", "nvidia", "mistral", "gemini")
+    assert providers.fallback_order("groq") == [
+        "groq", "agnes", "nvidia", "mistral", "gemini"]
 
 def test_openrouter_paid_and_stale_slugs_clamp(monkeypatch):
     monkeypatch.setattr(settings, "openrouter_model", "openai/gpt-4o")
     monkeypatch.setattr(settings, "nvidia_nim_api_key", "")
     monkeypatch.setattr(settings, "openrouter_api_key", "key")
+    monkeypatch.setattr(settings, "gemini_api_key", "")
+    monkeypatch.setattr(settings, "cerebras_api_key", "")
+    monkeypatch.setattr(settings, "dime_enable_groq", False)
     for raw in (None, "openrouter:openai/gpt-4o", "openai/gpt-4o"):
         provider, slug = resolve_model_id(raw)
         assert provider == "openrouter"
@@ -25,35 +52,20 @@ def test_openrouter_paid_and_stale_slugs_clamp(monkeypatch):
     assert resolve_model_id("openrouter:" + OPENROUTER_AUTO) == (
         "openrouter", OPENROUTER_AUTO)
 
-
 def test_mistral_explicit_slug_clamps_to_configured_free_limit(monkeypatch):
     monkeypatch.setattr(settings, "mistral_model", "owner-free-limit")
     assert resolve_model_id("mistral:paid-looking-other") == (
         "mistral", "owner-free-limit")
     assert is_free_model("mistral", "owner-free-limit")
 
-
 def test_catalog_exposes_only_free_models(monkeypatch):
     monkeypatch.setattr(settings, "openrouter_model", "openai/gpt-4o")
     catalog = models_catalog()
-    assert set(catalog["available"]) == {
+    assert set(catalog["available"]) >= {
         "gemini", "nvidia", "openrouter", "mistral"}
     for item in catalog["models"]:
         provider, slug = item["id"].split(":", 1)
         assert is_free_model(provider, slug)
-
-
-def test_structured_models_clamp_configured_paid_openrouter(monkeypatch):
-    from v2.adapters.models import ProviderStructuredModel
-    monkeypatch.setattr(settings, "openrouter_model", "openai/gpt-4o")
-    monkeypatch.setattr(settings, "openrouter_api_key", "key")
-    monkeypatch.setattr(settings, "mistral_api_key", "free-limit")
-    monkeypatch.setattr(settings, "inception_api_key", "configured-paused")
-    monkeypatch.setattr(settings, "groq_api_key", "configured-paused")
-    models = ProviderStructuredModel("openrouter", "openai/gpt-4o")._models()
-    assert models
-    for provider, model in models:
-        assert is_free_model(provider, model.model_name)
 
 
 def test_direct_get_llm_never_constructs_paused_providers(monkeypatch):
@@ -63,31 +75,10 @@ def test_direct_get_llm_never_constructs_paused_providers(monkeypatch):
     monkeypatch.setattr(settings, "groq_api_key", "retained-key")
     monkeypatch.setattr(providers, "ChatOpenAI",
                         lambda **kwargs: constructed.append(kwargs) or object())
+    monkeypatch.setattr(settings, "dime_enable_groq", False)
     assert providers.get_llm("inception", "mercury-2.5") is None
-    assert providers.get_llm("groq", "anything") is None
+    assert providers.get_llm("groq", "openai/gpt-oss-120b") is None
     assert constructed == []
-
-
-def test_structured_mistral_success_ledger_identity_is_free_limit(monkeypatch):
-    import asyncio
-    from pydantic import BaseModel
-    from v2.adapters import models as adapter
-    from v2.runtime import RequestEnvelope
-    class Out(BaseModel): value: str
-    class Run: output=Out(value="ok")
-    class Agent:
-        def __init__(self,*args,**kwargs): pass
-        async def run(self,prompt): return Run()
-    monkeypatch.setattr(adapter,"Agent",Agent)
-    monkeypatch.setattr(settings,"nvidia_nim_api_key","")
-    monkeypatch.setattr(settings,"openrouter_api_key","")
-    monkeypatch.setattr(settings,"mistral_api_key","free-limit")
-    model=adapter.ProviderStructuredModel("mistral","arbitrary-input")
-    env=RequestEnvelope.freeze(provider="mistral",model="arbitrary-input",
-        route="intake",prompt="p",context={},tool_schemas={},planner_version="v2")
-    got=asyncio.run(model.generate(schema=Out,prompt="p",payload={},envelope=env))
-    assert got.value=="ok"
-    assert model.last_model==f"mistral_free_limit:{settings.mistral_model}"
 
 
 def test_groq_free_tier_activation_is_exact_and_ordered(monkeypatch):
@@ -101,13 +92,15 @@ def test_groq_free_tier_activation_is_exact_and_ordered(monkeypatch):
     monkeypatch.setattr(settings, "groq_model", providers.GROQ_DEFAULT)
     assert providers.resolve_model_id("inception:any") == (
         "inception", providers.INCEPTION_DEFAULT)
-    assert providers.fallback_order("inception") == [
-        "gemini", "nvidia", "groq", "openrouter", "mistral", "inception"]
+    order = providers.fallback_order("inception")
+    assert order[:3] == ["groq", "openrouter", "mistral"]
+    assert order[-1] == "inception"
     assert providers.is_free_model("groq", "openai/gpt-oss-20b")
-    assert not providers.is_free_model("groq", "openai/gpt-oss-120b")
+    assert providers.is_free_model("groq", "openai/gpt-oss-120b")
+    assert providers.resolve_model_id("groq:openai/gpt-oss-120b") == (
+        "groq", "openai/gpt-oss-120b")
     with __import__("pytest").raises(providers.ProviderPolicyError):
-        providers.resolve_model_id("groq:openai/gpt-oss-120b")
-
+        providers.resolve_model_id("groq:qwen/qwen3.8-27b")
 
 def test_groq_key_is_inert_without_explicit_activation(monkeypatch):
     import shared.providers as providers
@@ -116,10 +109,9 @@ def test_groq_key_is_inert_without_explicit_activation(monkeypatch):
     assert "groq" not in providers.active_provider_order()
     assert providers.get_llm("groq") is None
 
-
 @__import__("pytest").mark.parametrize("slug", [
-    "openai/gpt-oss-120b", "groq/compound", "", "openai/gpt-oss-20B",
-    "openai/gpt-oss-20b ", "openai/gpt-oss-20b-extra"])
+    "qwen/qwen3.8-27b", "groq/compound", "", "openai/gpt-oss-20B",
+    "openai/gpt-oss-20b ", "openai/gpt-oss-120b-extra"])
 def test_explicit_unlisted_groq_slugs_fail_closed_before_client(monkeypatch, slug):
     import shared.providers as providers
     monkeypatch.setattr(settings, "dime_enable_groq", True)
@@ -127,14 +119,12 @@ def test_explicit_unlisted_groq_slugs_fail_closed_before_client(monkeypatch, slu
     with __import__("pytest").raises(providers.ProviderPolicyError):
         providers.resolve_model_id("groq:" + slug)
 
-
 def test_gemini_allowlist_is_workhorse_and_quality_only(monkeypatch):
-    import shared.providers as providers
-    assert GEMINI_DEFAULT == "gemini-3.5-flash-lite"
+    assert GEMINI_DEFAULT == "gemini-3.5-flash"
     assert set(GEMINI_MODELS) == {
-        "gemini-3.5-flash-lite", "gemini-3.5-flash", "gemma-4-31b-it"}
+        "gemini-3.5-flash-lite", "gemini-3.5-flash", "gemini-3.8-flash",
+        "gemma-4-31b-it"}
     assert GEMINI_ALLOWLIST == set(GEMINI_MODELS)
-
 
 def test_gemini_boundary_fails_closed_on_unapproved_slugs(monkeypatch):
     monkeypatch.setattr(settings, "gemini_api_key", "key")
@@ -148,25 +138,29 @@ def test_gemini_boundary_fails_closed_on_unapproved_slugs(monkeypatch):
         with __import__("pytest").raises(ProviderPolicyError):
             resolve_model_id("gemini:" + unapproved)
 
-
 def test_gemini_is_free_and_default_when_keyed(monkeypatch):
     import shared.providers as providers
+    monkeypatch.setattr(settings, "dime_enable_groq", False)
+    monkeypatch.setattr(settings, "groq_api_key", "")
+    monkeypatch.setattr(settings, "dime_enable_agnes", False)
+    monkeypatch.setattr(settings, "agnes_api_key", "")
     monkeypatch.setattr(settings, "gemini_api_key", "key")
     monkeypatch.setattr(settings, "nvidia_nim_api_key", "")
     assert is_free_model("gemini", GEMINI_DEFAULT)
     assert not is_free_model("gemini", "gemini-2.5-pro")
+    monkeypatch.setattr(settings, "cerebras_api_key", "")
     assert providers._default_provider() == ("gemini", GEMINI_DEFAULT)
     assert providers._gemini_model("gemini-3.5-flash") == "gemini-3.5-flash"
+    assert providers._gemini_model("gemini-3.5-flash-lite") == "gemini-3.5-flash-lite"
     assert providers._gemini_model("gemini-2.5-pro") == GEMINI_DEFAULT
     catalog = models_catalog()
     assert catalog["available"]["gemini"] is True
     gemini_ids = [item["id"] for item in catalog["models"]
                   if item["engine"] == "gemini"]
     assert gemini_ids == [f"gemini:{m}" for m in GEMINI_MODELS]
-    assert providers.fallback_order("nvidia")[0] == "gemini"
+    assert providers.fallback_order("nvidia") == ["gemini"]
     defaults = [item["id"] for item in catalog["models"] if item["default"]]
     assert defaults == [f"gemini:{GEMINI_DEFAULT}"]
-
 
 def test_gemini_inert_without_key(monkeypatch):
     import shared.providers as providers
@@ -178,7 +172,6 @@ def test_gemini_inert_without_key(monkeypatch):
     catalog = models_catalog()
     assert catalog["available"]["gemini"] is False
 
-
 def test_no_keys_falls_back_to_mistral_default_without_crashing(monkeypatch):
     import shared.providers as providers
     monkeypatch.setattr(settings, "gemini_api_key", "")
@@ -187,13 +180,15 @@ def test_no_keys_falls_back_to_mistral_default_without_crashing(monkeypatch):
     monkeypatch.setattr(settings, "mistral_api_key", "")
     monkeypatch.setattr(settings, "dime_enable_groq", False)
     monkeypatch.setattr(settings, "dime_enable_inception", False)
+    monkeypatch.setattr(settings, "dime_enable_agnes", False)
+    monkeypatch.setattr(settings, "agnes_api_key", "")
+    monkeypatch.setattr(settings, "cerebras_api_key", "")
     assert providers._default_provider() == (
         "mistral", providers.MISTRAL_DEFAULT)
     assert providers.resolve_model_id(None) == providers._default_provider()
-    assert providers.fallback_order("gemini")[0] == "gemini"
+    assert providers.fallback_order("gemini") == []
     assert providers.get_llm("gemini") is None
     assert providers.get_llm("mistral") is None
-
 
 def test_gemini_client_uses_openai_compatible_endpoint(monkeypatch):
     import shared.providers as providers

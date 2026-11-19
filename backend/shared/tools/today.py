@@ -2,8 +2,7 @@
 from typing import Any
 from langchain_core.tools import tool
 
-from ._core import IN_SEASON_MONTHS, season_static, last_completed_season, resolve_season
-
+from ._core import IN_SEASON_MONTHS, season_static, resolve_season
 
 def _in_offseason() -> bool:
     from datetime import datetime
@@ -11,13 +10,12 @@ def _in_offseason() -> bool:
 
     return datetime.now(ZoneInfo("America/New_York")).month not in IN_SEASON_MONTHS
 
-
 def _warehouse_has_games(season: str, dates: list[str]) -> bool:
     season = resolve_season(season)
     try:
         from .. import store as _store
 
-        frame = _store.read_frame(
+        frame = _store.read_frame_optional(
             "silver_scoreboard",
             "_season = ? AND _entity IN ("
             + ",".join("?" for _ in dates) + ")",
@@ -26,7 +24,6 @@ def _warehouse_has_games(season: str, dates: list[str]) -> bool:
         return frame.height > 0
     except Exception:
         return True
-
 
 def _warehouse_games(date_str: str, season: str) -> tuple[list, bool]:
     season = resolve_season(season)
@@ -45,9 +42,10 @@ def _warehouse_games(date_str: str, season: str) -> tuple[list, bool]:
             if gid:
                 r["LINKS"] = game_links(str(gid))
         return rows, True
+    except _store.TableAbsent:
+        return [], False
     except Exception:
         return [], False
-
 
 def _live_scores_needed(season: str, dates: list[str]) -> bool:
     season = resolve_season(season)
@@ -56,7 +54,6 @@ def _live_scores_needed(season: str, dates: list[str]) -> bool:
     if _in_offseason() and not _warehouse_has_games(season, dates):
         return False
     return True
-
 
 def _games(date_str: str, season: str) -> list:
     season = resolve_season(season)
@@ -76,9 +73,7 @@ def _games(date_str: str, season: str) -> list:
         return []
     finally:
 
-
         ex.shutdown(wait=False)
-
 
 def _scoreboards(season: str) -> tuple[list, list, bool]:
     season = resolve_season(season)
@@ -98,7 +93,6 @@ def _scoreboards(season: str) -> tuple[list, list, bool]:
         tonight = ex.submit(_games, today, season)
         return last.result(), tonight.result(), True
 
-
 def normalize_movers(delta: Any, season: str) -> dict[str, Any]:
     season = resolve_season(season)
     empty = {"climbers": [], "fallers": [], "new_entries": []}
@@ -115,7 +109,6 @@ def normalize_movers(delta: Any, season: str) -> dict[str, Any]:
                   for key in ("climbers", "fallers", "new_entries")}
     return {**delta, "ok": True, "rows": normalized}
 
-
 def _movers_from_delta(delta: Any, season: str) -> list:
     season = resolve_season(season)
     rows = normalize_movers(delta, season)["rows"]
@@ -129,7 +122,6 @@ def _movers_from_delta(delta: Any, season: str) -> list:
            "PTS_CHANGE": item.get("pts_change")}
           for item in rows["fallers"][:3]],
     ]
-
 
 def _streaks(season: str) -> list[dict[str, Any]]:
     season = resolve_season(season)
@@ -167,10 +159,8 @@ def _streaks(season: str) -> list[dict[str, Any]]:
         streaks = []
     return streaks
 
-
-@tool
+@tool(description="Today home view: last night's results, tonight's games, leaderboard movers, streaks.")
 def get_today(season: str | None = None) -> dict[str, Any]:
-    """Today home view: last night's results, tonight's games, leaderboard movers, streaks."""
     season = resolve_season(season)
     from datetime import datetime
     from zoneinfo import ZoneInfo
@@ -191,14 +181,8 @@ def get_today(season: str | None = None) -> dict[str, Any]:
             "meta": {"date": today, "source": "nba_api+warehouse",
                      "scoreboard_ok": scoreboard_ok}}
 
-
-@tool
+@tool(description="Morning briefing: today's games, watchlist updates, leaderboard movers.\n\nDeterministic pipeline for app open. Combines get_today, get_watchlist,\nand get_leaderboard_deltas into one response.")
 def get_morning_briefing(season: str | None = None) -> dict[str, Any]:
-    """Morning briefing: today's games, watchlist updates, leaderboard movers.
-
-    Deterministic pipeline for app open. Combines get_today, get_watchlist,
-    and get_leaderboard_deltas into one response.
-    """
     season = resolve_season(season)
     import concurrent.futures as _cf
 

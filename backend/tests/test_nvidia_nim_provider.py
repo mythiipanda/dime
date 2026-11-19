@@ -11,19 +11,29 @@ from shared.providers import (
     resolve_model_id,
 )
 
-
-def test_gemini_is_priority_one_and_exact_models_are_exposed(monkeypatch):
+def test_gemini_is_last_configured_free_fallback_and_exact_models_are_exposed(monkeypatch):
+    monkeypatch.setattr(settings, "dime_enable_groq", False)
+    monkeypatch.setattr(settings, "groq_api_key", "")
+    monkeypatch.setattr(settings, "dime_enable_agnes", False)
+    monkeypatch.setattr(settings, "agnes_api_key", "")
+    monkeypatch.setattr(settings, "nvidia_nim_api_key", "")
+    monkeypatch.setattr(settings, "cerebras_api_key", "")
+    monkeypatch.setattr(settings, "openrouter_api_key", "")
+    monkeypatch.setattr(settings, "mistral_api_key", "")
+    monkeypatch.setattr(settings, "dime_enable_inception", False)
     monkeypatch.setattr(settings, "gemini_api_key", "key")
+    monkeypatch.setattr(settings, "cerebras_api_key", "")
     for primary in ("gemini", "nvidia", "openrouter", "mistral", "inception", "groq"):
-        assert fallback_order(primary)[0] == "gemini"
+        assert fallback_order(primary) == ["gemini"]
     catalog = models_catalog()
     assert catalog["available"]["gemini"] is True
-    assert [item["id"] for item in catalog["models"] if item["engine"] == "gemini"] == [
-        f"gemini:{model}" for model in GEMINI_MODELS
+    assert sorted(item["id"] for item in catalog["models"] if item["engine"] == "gemini") == [
+        f"gemini:{model}" for model in sorted(GEMINI_MODELS)
     ]
+    gemini_ids = [item["id"] for item in catalog["models"] if item["engine"] == "gemini"]
+    assert gemini_ids.index(f"gemini:{GEMINI_DEFAULT}") == 0
     assert catalog["models"][0]["id"] == f"gemini:{GEMINI_DEFAULT}"
     assert catalog["models"][0]["default"] is True
-
 
 def test_nvidia_models_are_exposed(monkeypatch):
     monkeypatch.setattr(settings, "nvidia_nim_api_key", "key")
@@ -33,13 +43,11 @@ def test_nvidia_models_are_exposed(monkeypatch):
         f"nvidia:{model}" for model in NVIDIA_NIM_MODELS
     ]
 
-
 def test_nvidia_model_boundary_clamps_to_allowlist(monkeypatch):
     monkeypatch.setattr(settings, "nvidia_nim_api_key", "key")
     for model in NVIDIA_NIM_MODELS:
         assert resolve_model_id(f"nvidia:{model}") == ("nvidia", model)
     assert resolve_model_id("nvidia:unapproved/model") == ("nvidia", NVIDIA_NIM_DEFAULT)
-
 
 def test_nvidia_client_uses_nim_endpoint(monkeypatch):
     monkeypatch.setattr(settings, "nvidia_nim_api_key", "key")
@@ -47,7 +55,6 @@ def test_nvidia_client_uses_nim_endpoint(monkeypatch):
     assert client is not None
     assert client.model_name == NVIDIA_NIM_DEFAULT
     assert str(client.openai_api_base).rstrip("/") == NVIDIA_NIM_BASE_URL
-
 
 def test_nvidia_llm_sends_thinking_off_on_every_nim_model(monkeypatch):
     monkeypatch.setattr(settings, "nvidia_nim_api_key", "fake-nim-key")
@@ -63,7 +70,6 @@ def test_nvidia_llm_sends_thinking_off_on_every_nim_model(monkeypatch):
         llm = get_llm("nvidia", model)
         assert llm is not None
         assert llm.kwargs.get("extra_body") == expected
-
 
 def test_deepseek_flash_is_routable_on_nim(monkeypatch):
     monkeypatch.setattr(settings, "nvidia_nim_api_key", "key")

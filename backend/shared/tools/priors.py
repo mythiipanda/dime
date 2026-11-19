@@ -3,7 +3,7 @@ from typing import Any
 
 from langchain_core.tools import tool
 
-from ._core import last_completed_season, resolve_season
+from ._core import last_completed_season
 
 PRIOR_SEASONS = {2022: "2021-22", 2023: "2022-23",
                  2024: "2023-24", 2025: "2024-25"}
@@ -11,10 +11,8 @@ PRIOR_FLOOR, PRIOR_CAP = 2022, 2025
 ESTIMATE_LABEL = ("documented-estimate: possession-weighted mean of "
                   "current-season RAPM plus prior-season RAPM")
 
-
 def season_label(end_year: object) -> str:
     return PRIOR_SEASONS[int(str(end_year).strip())]
-
 
 def clamp_prior_seasons(seasons: object) -> list[int]:
     if seasons is None:
@@ -30,7 +28,6 @@ def clamp_prior_seasons(seasons: object) -> list[int]:
         out.append(max(PRIOR_FLOOR, min(PRIOR_CAP, year)))
     return sorted(set(out))
 
-
 def blend_estimate(current: dict[str, Any] | None,
                    priors: list[dict[str, Any]]) -> dict[str, Any] | None:
     parts = ([current] if current else []) + list(priors or [])
@@ -42,14 +39,8 @@ def blend_estimate(current: dict[str, Any] | None,
     return {"estimate": round(sum(r * w for r, w in weighted) / total, 2),
             "total_possessions": total}
 
-
-@tool
+@tool(description='Prior-informed RAPM for one player.\n\nBlends current-season silver_rapm with silver_rapm_prior seasons.\nReturns a documented estimate, or an honest empty when missing.')
 def get_rapm_prior(player: str = "", seasons: object = None) -> dict[str, Any]:
-    """Prior-informed RAPM for one player.
-
-    Blends current-season silver_rapm with silver_rapm_prior seasons.
-    Returns a documented estimate, or an honest empty when missing.
-    """
     from .. import store as _store
 
     name = str(player or "").strip()

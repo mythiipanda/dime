@@ -1,0 +1,13 @@
+max-cognitive = 40
+max-cyclomatic = 40
+table = false
+cache = true
+cache-file = ".cccc.cache"
+
+exclude = [
+  "**/node_modules/**",
+  "**/.next/**",
+  "**/__pycache__/**",
+  "**/tests/**",
+  "**/test_*.py",
+]

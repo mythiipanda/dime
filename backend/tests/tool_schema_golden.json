@@ -1,0 +1,3920 @@
+{
+  "catalogue": {
+    "sql_exec": {
+      "name": "sql_exec",
+      "description": "Run one agent-written read-only analytical query over the warehouse.\n\nThe query must be a single SELECT or WITH statement over the declared\nsilver tables. Writes, stacked statements, and tables outside the\ndeclared set are refused before execution. Results are capped at\nRERUN_ROW_CAP rows with a RERUN_TIMEOUT_S statement timeout; a valid\nquery returning 0 rows returns ok=True, rows=[], row_count=0, and\nmeta.empty_observation=True (unless DIME_STRICT_NONEMPTY_SQL=1).\nName the primary numeric column for what it measures, so a percentage\nanswers as TS_PCT and a count as `n`; the column you alias is the\ncolumn a citation binds to.\n\nEvery ok result also carries meta.basis and meta.profile. If you need\na contributor count for an expression such as AVG, or distinct-value\ncounts, add COUNT(metric) or COUNT(DISTINCT x) columns to your query.",
+      "args_schema": {
+        "properties": {
+          "sql": {
+            "title": "Sql",
+            "type": "string"
+          }
+        },
+        "required": [
+          "sql"
+        ],
+        "title": "sql_exec",
+        "type": "object"
+      }
+    },
+    "warehouse_schema": {
+      "name": "warehouse_schema",
+      "description": "Read declared warehouse columns, source units and season encodings. Pass tables to return only those declared tables (avoiding full catalog payloads). Declared table allowlist: silver_advanced, silver_bbref_awards, silver_boxscores, silver_cap_players, silver_clutch, silver_combine, silver_four_factors, silver_four_factors_team, silver_hist_draft, silver_hist_gamelogs, silver_hist_lineups, silver_hist_player_seasons, silver_hist_possessions, silver_hist_shots, silver_hist_standings, silver_hustle_player, silver_hustle_team, silver_injuries, silver_leaders_ast, silver_leaders_blk, silver_leaders_pts, silver_leaders_reb, silver_leaders_stl, silver_lineups, silver_on_off, silver_player_gamelogs, silver_player_season, silver_playoff_gamelogs, silver_playoffs, silver_rapm, silver_rapm_prior, silver_raptor_player, silver_raptor_team, silver_rosters, silver_salaries, silver_schedule, silver_shots, silver_standings, silver_stints, silver_team_games, silver_team_ratings. This allowlist names declared tables, not proof of actual table content, complete warehouse inventory or data freshness. catalog_scope covers the returned declared tables and columns only, not the full warehouse inventory; a name absent here is not evidence it is absent everywhere.",
+      "args_schema": {
+        "description": "Read declared warehouse columns, source units and season encodings.",
+        "properties": {
+          "tables": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Tables"
+          }
+        },
+        "title": "warehouse_schema",
+        "type": "object"
+      }
+    },
+    "get_rapm": {
+      "name": "get_rapm",
+      "description": "RAPM-lite ratings. Blank player returns top list, else one row.",
+      "args_schema": {
+        "description": "RAPM-lite ratings. Blank player returns top list, else one row.",
+        "properties": {
+          "player": {
+            "default": "",
+            "title": "Player",
+            "type": "string"
+          },
+          "top": {
+            "default": 10,
+            "title": "Top",
+            "type": "integer"
+          },
+          "season": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Season"
+          }
+        },
+        "title": "get_rapm",
+        "type": "object"
+      }
+    },
+    "get_game_prediction": {
+      "name": "get_game_prediction",
+      "description": "Pre-game Monte Carlo prediction: win probability, projected score/total, and confidence intervals. Model estimates with documented methodology, not betting picks. Two team names/abbrevs/ids; optional game_date (MM/DD/YYYY), n_sims, seed for reproducibility.",
+      "args_schema": {
+        "description": "Pre-game Monte Carlo prediction: win probability, projected score/total, and confidence intervals.",
+        "properties": {
+          "a": {
+            "default": "",
+            "title": "A",
+            "type": "string"
+          },
+          "b": {
+            "default": "",
+            "title": "B",
+            "type": "string"
+          },
+          "game_date": {
+            "default": "",
+            "title": "Game Date",
+            "type": "string"
+          },
+          "season": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Season"
+          },
+          "n_sims": {
+            "default": 10000,
+            "title": "N Sims",
+            "type": "integer"
+          },
+          "seed": {
+            "default": 7,
+            "title": "Seed",
+            "type": "integer"
+          }
+        },
+        "title": "get_game_prediction",
+        "type": "object"
+      }
+    },
+    "get_wpa_leaders": {
+      "name": "get_wpa_leaders",
+      "description": "WPA-by-play leaderboard for one season. Season is an end-year clamped to 2021..2025.\n\nDeltas come from the fitted win-probability model before and after\neach play, credited to the acting player. Documented estimates.",
+      "args_schema": {
+        "description": "WPA-by-play leaderboard for one season.",
+        "properties": {
+          "season": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": 2025,
+            "title": "Season"
+          },
+          "limit": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": 10,
+            "title": "Limit"
+          },
+          "min_events": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": 100,
+            "title": "Min Events"
+          }
+        },
+        "title": "get_wpa_leaders",
+        "type": "object"
+      }
+    },
+    "get_comps": {
+      "name": "get_comps",
+      "description": "Nearest statistical neighbors by per-36 + advanced shape. Same-season only.",
+      "args_schema": {
+        "description": "Nearest statistical neighbors by per-36 + advanced shape. Same-season only.",
+        "properties": {
+          "player_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "integer"
+              }
+            ],
+            "title": "Player Id"
+          },
+          "season": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Season"
+          },
+          "k": {
+            "default": 5,
+            "title": "K",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "player_id"
+        ],
+        "title": "get_comps",
+        "type": "object"
+      }
+    },
+    "get_lineup_stats": {
+      "name": "get_lineup_stats",
+      "description": "Five-man lineup ratings with sample floors. Names, abbrevs, or ids.\n\nUnits under min_possessions (default 100) are hidden; blowout-heavy\nunits are flagged. Ratings are per 100 possessions, warehouse-first.\nThe best lineup (highest NET_RATING among units meeting the floor) is\nreturned in the top-level best_net_unit field and flagged per-row as\nis_best_net_unit, so it is never the most-used unit by default. Warehouse-backed with live fallback.",
+      "args_schema": {
+        "description": "Five-man lineup ratings with sample floors. Names, abbrevs, or ids.",
+        "properties": {
+          "team": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "integer"
+              }
+            ],
+            "title": "Team"
+          },
+          "season": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Season"
+          },
+          "min_possessions": {
+            "default": 100,
+            "title": "Min Possessions",
+            "type": "integer"
+          },
+          "include_small": {
+            "default": false,
+            "title": "Include Small",
+            "type": "boolean"
+          },
+          "limit": {
+            "default": 10,
+            "title": "Limit",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "team"
+        ],
+        "title": "get_lineup_stats",
+        "type": "object"
+      }
+    },
+    "get_win_prob": {
+      "name": "get_win_prob",
+      "description": "Real ELO win probability between two abbreviations. Neutral unless home_abbrev matches a side.",
+      "args_schema": {
+        "description": "Real ELO win probability between two abbreviations. Neutral unless home_abbrev matches a side.",
+        "properties": {
+          "team_a": {
+            "title": "Team A",
+            "type": "string"
+          },
+          "team_b": {
+            "title": "Team B",
+            "type": "string"
+          },
+          "season": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Season"
+          },
+          "home_abbrev": {
+            "default": "",
+            "title": "Home Abbrev",
+            "type": "string"
+          }
+        },
+        "required": [
+          "team_a",
+          "team_b"
+        ],
+        "title": "get_win_prob",
+        "type": "object"
+      }
+    },
+    "get_on_off": {
+      "name": "get_on_off",
+      "description": "On and off splits for one player on one team. Possession level. Warehouse-backed with live fallback.",
+      "args_schema": {
+        "description": "On and off splits for one player on one team. Possession level.",
+        "properties": {
+          "player_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "integer"
+              }
+            ],
+            "title": "Player Id"
+          },
+          "team_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "integer"
+              }
+            ],
+            "title": "Team Id"
+          },
+          "season": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Season"
+          }
+        },
+        "required": [
+          "player_id",
+          "team_id"
+        ],
+        "title": "get_on_off",
+        "type": "object"
+      }
+    },
+    "get_shot_zones": {
+      "name": "get_shot_zones",
+      "description": "Zone splits for one player id: rim, midrange, three with shares.\n\nWarehouse-first: historical silver_hist_shots geometric zones, then\nseeded silver_shots, then seeded silver_zone_splits\n(basketball-reference distance buckets, league-wide), then live\nshot_chart (fail-fast; endpoint-blocked from datacenter IPs).\nZones below min_attempts (default 50, clamped 10..200) are excluded. Warehouse-backed with live fallback.",
+      "args_schema": {
+        "description": "Zone splits for one player id: rim, midrange, three with shares.",
+        "properties": {
+          "player_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "integer"
+              }
+            ],
+            "title": "Player Id"
+          },
+          "season": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Season"
+          },
+          "min_attempts": {
+            "default": 50,
+            "title": "Min Attempts",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "player_id"
+        ],
+        "title": "get_shot_zones",
+        "type": "object"
+      }
+    },
+    "get_four_factors": {
+      "name": "get_four_factors",
+      "description": "Team four factors (eFG%, TOV%, ORB%, FT rate, plus defensive\nmirrors), computed offline from warehouse team game rows. Use for\n\"why are the Thunder good\", \"team identity\", or any four-factors\nask. Pass a team name/abbrev to scope to one team; empty returns\nthe full 30-team board.",
+      "args_schema": {
+        "description": "Team four factors breakdown (eFG%, TOV%, ORB%, FT rate, plus defensive mirrors).",
+        "properties": {
+          "team": {
+            "default": "",
+            "title": "Team",
+            "type": "string"
+          },
+          "season": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Season"
+          }
+        },
+        "title": "get_four_factors",
+        "type": "object"
+      }
+    },
+    "get_clutch_stats": {
+      "name": "get_clutch_stats",
+      "description": "Clutch stats (last 5 min, margin 5 or less), player or team scope. Warehouse-backed with live fallback.",
+      "args_schema": {
+        "description": "NBA clutch statistics (last 5 min, margin <= 5) for player or team scope.",
+        "properties": {
+          "player": {
+            "default": "",
+            "title": "Player",
+            "type": "string"
+          },
+          "team": {
+            "default": "",
+            "title": "Team",
+            "type": "string"
+          },
+          "season": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Season"
+          },
+          "min_games": {
+            "default": 5,
+            "title": "Min Games",
+            "type": "integer"
+          }
+        },
+        "title": "get_clutch_stats",
+        "type": "object"
+      }
+    },
+    "get_competitive_ratings": {
+      "name": "get_competitive_ratings",
+      "description": "Competitive MOV: what happens to a team's MOV when blowouts are dropped.\n\nteam: 3-letter abbrev, full name, nickname, city, or \"league\"/\"\" for\nall teams. season: \"YYYY-YY\" or \"all\" for every warehouse season\n(multi-season output is pooled across seasons, not a single\nteam-season -- see meta.season_note). season_type: regular (default),\nplayoffs, or all; matched against the actual distinct warehouse values\nbefore aggregating. NOTE: the default changed from \"all\" to \"regular\"\non 2026-09-10 so season-scoped queries no longer silently mix playoff\ngames in; pass \"all\" explicitly to include playoffs.\nblowout_margin: games with abs(plus_minus) above this are excluded from\nthe competitive set (clamped to [1, 40]). min_games: floor on\ncompetitive games; rows below it are flagged low_sample and carry\nnumbers with no interpretation. Warehouse only; plus_minus is each\nteam's own MOV per game.",
+      "args_schema": {
+        "description": "Competitive Margin of Victory (MOV excluding blowouts).",
+        "properties": {
+          "team": {
+            "default": "league",
+            "title": "Team",
+            "type": "string"
+          },
+          "season": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Season"
+          },
+          "blowout_margin": {
+            "default": 20,
+            "title": "Blowout Margin",
+            "type": "number"
+          },
+          "min_games": {
+            "default": 10,
+            "title": "Min Games",
+            "type": "integer"
+          }
+        },
+        "title": "get_competitive_ratings",
+        "type": "object"
+      }
+    },
+    "get_hustle": {
+      "name": "get_hustle",
+      "description": "Hustle leaders, player or team scope. Contests, deflections, charges. Warehouse-backed with live fallback.",
+      "args_schema": {
+        "description": "NBA hustle leaders for player or team scope.",
+        "properties": {
+          "scope": {
+            "default": "player",
+            "title": "Scope",
+            "type": "string"
+          },
+          "season": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Season"
+          }
+        },
+        "title": "get_hustle",
+        "type": "object"
+      }
+    },
+    "get_injuries": {
+      "name": "get_injuries",
+      "description": "Injury report, optional team abbreviation or player filter.\n\nWith a player name, also joins playoff inactive listings so\n'is X injured?' surfaces 'inactive for the entire playoff run'\ninstead of a bare 'active' (F45). Warehouse-backed with live fallback.",
+      "args_schema": {
+        "description": "NBA injury and availability report.",
+        "properties": {
+          "team": {
+            "default": "",
+            "title": "Team",
+            "type": "string"
+          },
+          "player": {
+            "default": "",
+            "title": "Player",
+            "type": "string"
+          },
+          "season": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Season"
+          }
+        },
+        "title": "get_injuries",
+        "type": "object"
+      }
+    },
+    "get_award_results": {
+      "name": "get_award_results",
+      "description": "Recorded NBA award results read from published ballots.\n\nview=winner returns every subject sharing the leading rank for one award in\none season. view=winner_history returns the leading-rank subject(s) for that\naward in every covered season through the requested season. view=field returns\nthe whole ranked ballot with vote shares and vote counts. view=player_awards\nreturns one player's award record through the named season. Use get_award_race\nfor a model score, never for a result.",
+      "args_schema": {
+        "description": "Historical recorded NBA award voting results.",
+        "properties": {
+          "view": {
+            "default": "winner",
+            "title": "View",
+            "type": "string"
+          },
+          "award": {
+            "default": "mvp",
+            "title": "Award",
+            "type": "string"
+          },
+          "season": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Season"
+          },
+          "player": {
+            "default": "",
+            "title": "Player",
+            "type": "string"
+          }
+        },
+        "title": "get_award_results",
+        "type": "object"
+      }
+    },
+    "get_briefing": {
+      "name": "get_briefing",
+      "description": "Morning briefing: scoreboard plus top scorers. Date MM/DD/YYYY, blank means latest. Warehouse-backed with live fallback.",
+      "args_schema": {
+        "description": "Morning briefing: scoreboard plus top scorers. Date MM/DD/YYYY, blank means latest.",
+        "properties": {
+          "game_date": {
+            "default": "",
+            "title": "Game Date",
+            "type": "string"
+          },
+          "season": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Season"
+          }
+        },
+        "title": "get_briefing",
+        "type": "object"
+      }
+    },
+    "get_standings": {
+      "name": "get_standings",
+      "description": "League standings for one season like 2025-26. Warehouse-backed with live fallback.",
+      "args_schema": {
+        "description": "NBA regular-season conference and league standings for any season.",
+        "properties": {
+          "season": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Season"
+          }
+        },
+        "title": "get_standings",
+        "type": "object"
+      }
+    },
+    "get_rest": {
+      "name": "get_rest",
+      "description": "Back-to-back plus rest-day splits from history game dates.",
+      "args_schema": {
+        "description": "Back-to-back and rest-day schedule splits for any team.",
+        "properties": {
+          "team_abbrev": {
+            "default": "",
+            "title": "Team Abbrev",
+            "type": "string"
+          },
+          "season": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Season"
+          }
+        },
+        "title": "get_rest",
+        "type": "object"
+      }
+    },
+    "get_team_trajectory": {
+      "name": "get_team_trajectory",
+      "description": "Multi-season regular-season records for one team, newest first.\n\nThis is a trajectory evidence primitive, not a trend opinion. It reads\ncomplete historical standings and returns record and win percentage for\na bounded number of seasons ending at through_season.",
+      "args_schema": {
+        "description": "Multi-season regular-season records and win percentages for any team.",
+        "properties": {
+          "team": {
+            "default": "",
+            "title": "Team",
+            "type": "string"
+          },
+          "through_season": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Through Season"
+          },
+          "seasons_back": {
+            "default": 5,
+            "title": "Seasons Back",
+            "type": "integer"
+          }
+        },
+        "title": "get_team_trajectory",
+        "type": "object"
+      }
+    },
+    "get_ratings": {
+      "name": "get_ratings",
+      "description": "Team ratings, optionally bound to one requested ranked metric.\n\nWhen ``requested_metric`` and ``ranking_direction`` are set, rows are\nordered by that metric field and the payload owns the leader claim.\n``team`` narrows a direct team-ratings question. Warehouse-backed with live fallback.",
+      "args_schema": {
+        "description": "Team offensive, defensive, net ratings, and pace (league-wide or team specific).",
+        "properties": {
+          "season": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Season"
+          },
+          "team": {
+            "default": "",
+            "title": "Team",
+            "type": "string"
+          },
+          "requested_metric": {
+            "default": "",
+            "title": "Requested Metric",
+            "type": "string"
+          },
+          "ranking_direction": {
+            "default": "",
+            "title": "Ranking Direction",
+            "type": "string"
+          }
+        },
+        "title": "get_ratings",
+        "type": "object"
+      }
+    },
+    "get_rookie_leaders": {
+      "name": "get_rookie_leaders",
+      "description": "Current rookie class leaderboard (first-year NBA players only).\n\nRookies are defined structurally: a player in the current-season\nstats table with NO row in any prior season (hist or warehouse).\nNever an age proxy, never historical seasons (F46: a \"rookies 20+\nppg\" query answered from 2023-24 listed Edwards/LaMelo/Wemby; the\nright answer was the current draft class, e.g. Cooper Flagg).\nstat is a per-game column: ppg, rpg, apg, spg, bpg, mpg.",
+      "args_schema": {
+        "description": "Current rookie class leaderboard (first-year NBA players only, verified against historical seasons).",
+        "properties": {
+          "stat": {
+            "default": "ppg",
+            "title": "Stat",
+            "type": "string"
+          },
+          "min_value": {
+            "default": 0,
+            "title": "Min Value",
+            "type": "number"
+          },
+          "min_gp": {
+            "default": 10,
+            "title": "Min Gp",
+            "type": "integer"
+          },
+          "limit": {
+            "default": 15,
+            "title": "Limit",
+            "type": "integer"
+          },
+          "season": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Season"
+          }
+        },
+        "title": "get_rookie_leaders",
+        "type": "object"
+      }
+    },
+    "get_cap_ledger": {
+      "name": "get_cap_ledger",
+      "description": "Payroll plus apron room for one abbreviation. 2026-27 thresholds.",
+      "args_schema": {
+        "description": "Payroll, luxury tax position, and first/second apron room for one team.",
+        "properties": {
+          "team": {
+            "default": "",
+            "title": "Team",
+            "type": "string"
+          },
+          "season": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Season"
+          }
+        },
+        "title": "get_cap_ledger",
+        "type": "object"
+      }
+    },
+    "get_leaders": {
+      "name": "get_leaders",
+      "description": "Qualified league leaderboard for one stat category.\n\nranking_direction is ``desc`` for highest-first or ``asc`` for\nlowest-first. min_attempts carries an explicit user volume floor for\npercentage metrics; zero keeps the league qualification.\n\nPercentage boards use the NBA minimums carried by the warehouse\ninstead of an arbitrary attempts floor. For 3P%, the qualification is\n82 made threes over an 82-game season. This keeps the board comparable\nto the official league leaderboard and excludes tiny samples. Warehouse-backed with live fallback.",
+      "args_schema": {
+        "description": "Qualified league statistical leaders for any category.",
+        "properties": {
+          "stat_category": {
+            "default": "PTS",
+            "title": "Stat Category",
+            "type": "string"
+          },
+          "ranking_direction": {
+            "default": "desc",
+            "title": "Ranking Direction",
+            "type": "string"
+          },
+          "min_attempts": {
+            "default": 0,
+            "title": "Min Attempts",
+            "type": "integer"
+          },
+          "season": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Season"
+          }
+        },
+        "title": "get_leaders",
+        "type": "object"
+      }
+    },
+    "get_lineup_leaders": {
+      "name": "get_lineup_leaders",
+      "description": "League-wide five-man lineup net-rating leaderboard.\n\nNet rating is PLUS_MINUS per 48 minutes from the warehouse lineup\ntable. A minimum-minutes floor (default 100) is ALWAYS applied and\nstated: a +3 in 4 minutes is a 300.0 'net rating' on a junk slice\nand never tops the board (F50).",
+      "args_schema": {
+        "description": "League-wide 5-man lineup net-rating leaderboard with minutes qualification floor.",
+        "properties": {
+          "min_minutes": {
+            "default": 100,
+            "title": "Min Minutes",
+            "type": "integer"
+          },
+          "limit": {
+            "default": 10,
+            "title": "Limit",
+            "type": "integer"
+          },
+          "season": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Season"
+          },
+          "playoffs": {
+            "default": false,
+            "title": "Playoffs",
+            "type": "boolean"
+          }
+        },
+        "title": "get_lineup_leaders",
+        "type": "object"
+      }
+    },
+    "get_playoffs": {
+      "name": "get_playoffs",
+      "description": "Playoff wins per team plus champion for one season. Warehouse-backed with live fallback.",
+      "args_schema": {
+        "description": "Playoff series wins per team, finals matchup, and champion for any season.",
+        "properties": {
+          "season": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Season"
+          }
+        },
+        "title": "get_playoffs",
+        "type": "object"
+      }
+    },
+    "get_team_leaders": {
+      "name": "get_team_leaders",
+      "description": "Team totals leaderboard for a counting stat (PTS, REB, AST, STL,\nBLK): player game logs summed by team, with per-game averages.\nUse for \"which team leads in total assists\" - get_leaders is\nplayer-level only.",
+      "args_schema": {
+        "description": "Team totals leaderboard for a counting stat (PTS, REB, AST, STL, BLK).",
+        "properties": {
+          "stat_category": {
+            "default": "AST",
+            "title": "Stat Category",
+            "type": "string"
+          },
+          "season": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Season"
+          }
+        },
+        "title": "get_team_leaders",
+        "type": "object"
+      }
+    },
+    "get_team_compare": {
+      "name": "get_team_compare",
+      "description": "Top-N team compare on one counting stat: total, per-game, games\nplayed, and the win-loss record joined from standings, in one\nboard. Use for multi-metric team compares (\"compare the top 3\nscoring teams: totals, per-game, and wins\") - get_team_leaders has\nno records and a delegate fan-out composes nameless tables with\nempty cells or invented numbers (F66). The answer is built\ndeterministically from the rows into meta.deterministic_answer;\ncompose ships it verbatim (v67 design law).",
+      "args_schema": {
+        "description": "Top-N team comparison on a counting stat joined with win-loss records.",
+        "properties": {
+          "stat_category": {
+            "default": "PTS",
+            "title": "Stat Category",
+            "type": "string"
+          },
+          "top": {
+            "default": 3,
+            "title": "Top",
+            "type": "integer"
+          },
+          "season": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Season"
+          }
+        },
+        "title": "get_team_compare",
+        "type": "object"
+      }
+    },
+    "get_elo_standings": {
+      "name": "get_elo_standings",
+      "description": "ELO power ratings as standings: implied win pct, win equivalents, and Elo-implied spreads. ROADMAP Appendix #3.",
+      "args_schema": {
+        "description": "ELO power ratings as standings with implied win pct, win equivalents, and Elo-implied spreads.",
+        "properties": {
+          "season": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Season"
+          },
+          "opponent": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Opponent"
+          },
+          "limit": {
+            "default": 30,
+            "title": "Limit",
+            "type": "integer"
+          }
+        },
+        "title": "get_elo_standings",
+        "type": "object"
+      }
+    },
+    "get_draft_board": {
+      "name": "get_draft_board",
+      "description": "Draft board: college production plus combine measurements, blended rank. Warehouse-backed with live fallback.",
+      "args_schema": {
+        "description": "Blended draft board rankings combining college production and combine testing.",
+        "properties": {
+          "season": {
+            "default": "2025",
+            "title": "Season",
+            "type": "string"
+          }
+        },
+        "title": "get_draft_board",
+        "type": "object"
+      }
+    },
+    "get_combine": {
+      "name": "get_combine",
+      "description": "Draft combine measurements plus shooting drills for one draft year. Warehouse-backed with live fallback.",
+      "args_schema": {
+        "description": "Anthropometric measurements (height, wingspan, reach, weight) and athletic drills.",
+        "properties": {
+          "season": {
+            "default": "2025",
+            "title": "Season",
+            "type": "string"
+          }
+        },
+        "title": "get_combine",
+        "type": "object"
+      }
+    },
+    "get_young_player_usage": {
+      "name": "get_young_player_usage",
+      "description": "Qualified usage-rate board for young players from silver_advanced.\n\nUses total minutes (GP * per-game MIN) as the sample floor. The default\nmeans age 22 or younger with at least 1,000 minutes in the asked season.\nA hard 500-total-minute floor is ALWAYS enforced: the caller may raise\nit but never undercut it.",
+      "args_schema": {
+        "description": "Usage-rate leaderboard for young players with customizable age ceilings and minute floors.",
+        "properties": {
+          "max_age": {
+            "default": 22,
+            "title": "Max Age",
+            "type": "integer"
+          },
+          "min_minutes": {
+            "default": 1000,
+            "title": "Min Minutes",
+            "type": "integer"
+          },
+          "season": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Season"
+          }
+        },
+        "title": "get_young_player_usage",
+        "type": "object"
+      }
+    },
+    "get_contract_value": {
+      "name": "get_contract_value",
+      "description": "Contract value residuals from production vs salary.\n\nReturns league leaders by default; pass team for one roster or player for\none named player's modeled salary and residual.",
+      "args_schema": {
+        "description": "Contract value residuals from production vs salary.",
+        "properties": {
+          "season": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Season"
+          },
+          "min_gp": {
+            "default": 20,
+            "title": "Min Gp",
+            "type": "integer"
+          },
+          "team": {
+            "default": "",
+            "title": "Team",
+            "type": "string"
+          },
+          "player": {
+            "default": "",
+            "title": "Player",
+            "type": "string"
+          }
+        },
+        "title": "get_contract_value",
+        "type": "object"
+      }
+    },
+    "get_trade_check": {
+      "name": "get_trade_check",
+      "description": "Trade legality check. Player names comma separated per side.\n\nSimplified 2023 CBA: 125 percent plus 250k matching below the first\napron, 100 percent above it, no aggregation above the second apron.\nPicks and exceptions stay out of v1.",
+      "args_schema": {
+        "description": "CBA trade legality check under 2023 CBA apron and salary matching rules.",
+        "properties": {
+          "team_a": {
+            "default": "",
+            "title": "Team A",
+            "type": "string"
+          },
+          "players_a": {
+            "default": "",
+            "title": "Players A",
+            "type": "string"
+          },
+          "team_b": {
+            "default": "",
+            "title": "Team B",
+            "type": "string"
+          },
+          "players_b": {
+            "default": "",
+            "title": "Players B",
+            "type": "string"
+          },
+          "season": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Season"
+          }
+        },
+        "title": "get_trade_check",
+        "type": "object"
+      }
+    },
+    "get_trade_value": {
+      "name": "get_trade_value",
+      "description": "Trade value grade: estimated production value vs salary per side, plus picks.\n\nReasoning layer on top of get_trade_check (which covers cap legality).\nAll dollar figures are rough estimates from 2025-26 production versus\n2026-27 salaries. Picks like \"2029 FRP\" or \"2030 FRP top-4 protected\".",
+      "args_schema": {
+        "description": "Trade value grade: estimated production surplus value vs salary per side plus pick equity.",
+        "properties": {
+          "team_a": {
+            "default": "",
+            "title": "Team A",
+            "type": "string"
+          },
+          "players_a": {
+            "default": "",
+            "title": "Players A",
+            "type": "string"
+          },
+          "team_b": {
+            "default": "",
+            "title": "Team B",
+            "type": "string"
+          },
+          "players_b": {
+            "default": "",
+            "title": "Players B",
+            "type": "string"
+          },
+          "picks_a": {
+            "default": "",
+            "title": "Picks A",
+            "type": "string"
+          },
+          "picks_b": {
+            "default": "",
+            "title": "Picks B",
+            "type": "string"
+          }
+        },
+        "title": "get_trade_value",
+        "type": "object"
+      }
+    },
+    "get_situational_splits": {
+      "name": "get_situational_splits",
+      "description": "Clutch situational splits for one player or team: score state plus venue.",
+      "args_schema": {
+        "description": "Clutch situational splits for one player or team across score margins, time thresholds, and venues.",
+        "properties": {
+          "scope": {
+            "default": "player",
+            "title": "Scope",
+            "type": "string"
+          },
+          "entity": {
+            "default": "",
+            "title": "Entity",
+            "type": "string"
+          },
+          "season": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Season"
+          },
+          "clutch_seconds": {
+            "default": 300,
+            "title": "Clutch Seconds",
+            "type": "integer"
+          },
+          "clutch_margin": {
+            "default": 5,
+            "title": "Clutch Margin",
+            "type": "integer"
+          },
+          "season_type": {
+            "default": "regular",
+            "title": "Season Type",
+            "type": "string"
+          }
+        },
+        "title": "get_situational_splits",
+        "type": "object"
+      }
+    },
+    "get_playoff_sim": {
+      "name": "get_playoff_sim",
+      "description": "Simulated title and finals odds from ratings, Monte Carlo brackets. Warehouse-backed with live fallback.",
+      "args_schema": {
+        "description": "Simulated championship and finals odds from power ratings via Monte Carlo brackets.",
+        "properties": {
+          "season": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Season"
+          },
+          "sims": {
+            "default": 2000,
+            "title": "Sims",
+            "type": "integer"
+          }
+        },
+        "title": "get_playoff_sim",
+        "type": "object"
+      }
+    },
+    "get_playoff_team_ratings": {
+      "name": "get_playoff_team_ratings",
+      "description": "Team offensive, defensive, and net ratings from playoff game logs.",
+      "args_schema": {
+        "description": "Team offensive, defensive, and net ratings from playoff game logs.",
+        "properties": {
+          "season": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Season"
+          },
+          "limit": {
+            "default": 30,
+            "title": "Limit",
+            "type": "integer"
+          }
+        },
+        "title": "get_playoff_team_ratings",
+        "type": "object"
+      }
+    },
+    "get_player_risers": {
+      "name": "get_player_risers",
+      "description": "Player risers and fallers: last-N games scoring/efficiency vs the\nplayer's own season average, warehouse only. Use this for\nplayer-level 'who is rising/falling/hot' asks; get_risers is the\nTEAM version (win-rate windows).",
+      "args_schema": {
+        "description": "Player risers and fallers: last-N games scoring and efficiency versus season baseline.",
+        "properties": {
+          "season": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Season"
+          },
+          "n": {
+            "default": 10,
+            "title": "N",
+            "type": "integer"
+          }
+        },
+        "title": "get_player_risers",
+        "type": "object"
+      }
+    },
+    "get_standings_deep": {
+      "name": "get_standings_deep",
+      "description": "Standings deep cuts: clutch records, comeback kings, blown leads, monthly momentum.",
+      "args_schema": {
+        "description": "Standings deep cuts: clutch records, comeback kings, blown leads, and monthly momentum.",
+        "properties": {
+          "season": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Season"
+          },
+          "top": {
+            "default": 5,
+            "title": "Top",
+            "type": "integer"
+          }
+        },
+        "title": "get_standings_deep",
+        "type": "object"
+      }
+    },
+    "get_warehouse_freshness": {
+      "name": "get_warehouse_freshness",
+      "description": "Warehouse freshness panel: every silver table, row count, last fetch, stale flag.",
+      "args_schema": {
+        "description": "Warehouse freshness and data recency panel across all silver tables.",
+        "properties": {},
+        "title": "get_warehouse_freshness",
+        "type": "object"
+      }
+    },
+    "get_finder": {
+      "name": "get_finder",
+      "description": "Team finder across history seasons. Modes: streak, versus, span,\nplayer_streak, head2head.",
+      "args_schema": {
+        "description": "Historical multi-season search across streaks, versus, span, player_streak, and head2head.",
+        "properties": {
+          "mode": {
+            "default": "streak",
+            "title": "Mode",
+            "type": "string"
+          },
+          "team_abbrev": {
+            "default": "",
+            "title": "Team Abbrev",
+            "type": "string"
+          },
+          "opponent": {
+            "default": "",
+            "title": "Opponent",
+            "type": "string"
+          },
+          "season": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Season"
+          },
+          "window": {
+            "default": 5,
+            "title": "Window",
+            "type": "integer"
+          }
+        },
+        "title": "get_finder",
+        "type": "object"
+      }
+    },
+    "get_draft_model": {
+      "name": "get_draft_model",
+      "description": "Star-probability classifier from college production (honest proxy). Warehouse-backed with live fallback.",
+      "args_schema": {
+        "description": "Prospect star-probability classifier from college production.",
+        "properties": {
+          "season": {
+            "default": "2025",
+            "title": "Season",
+            "type": "string"
+          }
+        },
+        "title": "get_draft_model",
+        "type": "object"
+      }
+    },
+    "get_leaderboard_deltas": {
+      "name": "get_leaderboard_deltas",
+      "description": "Scoring leaderboard movers: latest snapshot vs the one from days ago.",
+      "args_schema": {
+        "description": "Scoring leaderboard movers: latest snapshot vs the one from days ago.",
+        "properties": {
+          "season": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Season"
+          },
+          "days": {
+            "default": 7,
+            "title": "Days",
+            "type": "integer"
+          }
+        },
+        "title": "get_leaderboard_deltas",
+        "type": "object"
+      }
+    },
+    "get_player_ratings": {
+      "name": "get_player_ratings",
+      "description": "Qualified player on-court offensive or defensive rating leaderboard.\n\nThese are lineup results while the player was on court, not an individual\ndefensive-value metric. A hard 500-total-minute floor is ALWAYS enforced:\nthe caller cannot undercut it, so garbage-time players can never top the\nboard (a 0-minute floor once crowned a 53.3 on-court DEF_RATING from\n~15 total minutes as the \"best defensive player\").",
+      "args_schema": {
+        "description": "Qualified player on-court offensive or defensive rating leaderboard.",
+        "properties": {
+          "season": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Season"
+          },
+          "metric": {
+            "default": "offense",
+            "title": "Metric",
+            "type": "string"
+          },
+          "limit": {
+            "default": 10,
+            "title": "Limit",
+            "type": "integer"
+          },
+          "min_minutes": {
+            "default": 1000,
+            "title": "Min Minutes",
+            "type": "integer"
+          }
+        },
+        "title": "get_player_ratings",
+        "type": "object"
+      }
+    },
+    "get_risers": {
+      "name": "get_risers",
+      "description": "Risers and fallers: last-N win pct vs season win pct, warehouse only.",
+      "args_schema": {
+        "description": "Team risers and fallers: last-N weeks win percentage versus season win percentage.",
+        "properties": {
+          "season": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Season"
+          },
+          "weeks": {
+            "default": 4,
+            "title": "Weeks",
+            "type": "integer"
+          }
+        },
+        "title": "get_risers",
+        "type": "object"
+      }
+    },
+    "get_team_four_factors": {
+      "name": "get_team_four_factors",
+      "description": "Team four factors (eFG%, TOV%, ORB%, FT rate, plus defensive\nmirrors), computed offline from warehouse team game rows. Use for\n\"why are the Thunder good\", \"team identity\", or any four-factors\nask. Pass a team name/abbrev to scope to one team; empty returns\nthe full 30-team board.",
+      "args_schema": {
+        "description": "Full-board or team-specific Four Factors (eFG%, TOV%, ORB%, FT rate, and defensive mirrors).",
+        "properties": {
+          "team": {
+            "default": "",
+            "title": "Team",
+            "type": "string"
+          },
+          "season": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Season"
+          }
+        },
+        "title": "get_team_four_factors",
+        "type": "object"
+      }
+    },
+    "get_streaks": {
+      "name": "get_streaks",
+      "description": "Longest or currently-active streaks, ranked league-wide.\n\nstat: points/rebounds/assists/threes/steals/blocks/double-doubles/\ntriple-doubles, or wins/losses for team scope. threshold: minimum per\ngame (defaults: 30 pts, 10 reb/ast, 4 threes, 3 stl/blk; ignored for\ndouble-doubles, triple-doubles, wins, losses). scope: player or team.\nmode: longest or active. Warehouse only; active means the streak\nincludes the holder's latest game on record.",
+      "args_schema": {
+        "description": "Longest or currently-active streaks, ranked league-wide.",
+        "properties": {
+          "stat": {
+            "default": "points",
+            "title": "Stat",
+            "type": "string"
+          },
+          "threshold": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Threshold"
+          },
+          "scope": {
+            "default": "player",
+            "title": "Scope",
+            "type": "string"
+          },
+          "season": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Season"
+          },
+          "mode": {
+            "default": "longest",
+            "title": "Mode",
+            "type": "string"
+          },
+          "top": {
+            "default": 10,
+            "title": "Top",
+            "type": "integer"
+          }
+        },
+        "title": "get_streaks",
+        "type": "object"
+      }
+    },
+    "get_playtype_profile": {
+      "name": "get_playtype_profile",
+      "description": "Synergy play-type profile for one player or team and season: frequency share, PPP, and percentile per play type on offense or defense. Warehouse-backed with live fallback.",
+      "args_schema": {
+        "description": "Synergy play-type profile for one player or team and season: frequency share, PPP, and percentile.",
+        "properties": {
+          "subject": {
+            "title": "Subject",
+            "type": "string"
+          },
+          "kind": {
+            "default": "player",
+            "title": "Kind",
+            "type": "string"
+          },
+          "side": {
+            "default": "offense",
+            "title": "Side",
+            "type": "string"
+          },
+          "season": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Season"
+          }
+        },
+        "required": [
+          "subject"
+        ],
+        "title": "get_playtype_profile",
+        "type": "object"
+      }
+    },
+    "get_defensive_matchups": {
+      "name": "get_defensive_matchups",
+      "description": "One defender's defended-shot profile: frequency and shooter results.",
+      "args_schema": {
+        "description": "One defender's defended-shot profile: frequency and shooter results.",
+        "properties": {
+          "player": {
+            "default": "",
+            "title": "Player",
+            "type": "string"
+          },
+          "season": {
+            "default": "2025-26",
+            "title": "Season",
+            "type": "string"
+          }
+        },
+        "title": "get_defensive_matchups",
+        "type": "object"
+      }
+    },
+    "get_head_to_head": {
+      "name": "get_head_to_head",
+      "description": "How a player has done against one opponent team.\n\nplayer: name, nickname, or id (same resolution as every other tool).\nopponent: team name, abbreviation, or id, e.g. \"Knicks\" or \"NYK\".\nseason: 2025-26 only in the warehouse; other seasons clamp.\n\nReturns the player's game logs against the opponent (most recent\nfirst), vs-opponent averages next to the season baseline, the deltas\nbetween them, and the player's team record in those games. Fewer\nthan 5 games sets small_sample and says so plainly. Warehouse only;\nplayer-vs-player is not supported.\nIf `opponent` names a PLAYER (e.g. \"Shai Gilgeous-Alexander\"), it\nresolves to that player's current team so the lane still answers the\nmeetings between the two players' teams instead of erroring; the\nresolution is disclosed in the note.",
+      "args_schema": {
+        "description": "Player matchup history vs one opponent team or opposing player's team.",
+        "properties": {
+          "player": {
+            "title": "Player",
+            "type": "string"
+          },
+          "opponent": {
+            "title": "Opponent",
+            "type": "string"
+          },
+          "season": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Season"
+          }
+        },
+        "required": [
+          "player",
+          "opponent"
+        ],
+        "title": "get_head_to_head",
+        "type": "object"
+      }
+    },
+    "get_lineup_matchup_matrix": {
+      "name": "get_lineup_matchup_matrix",
+      "description": "Lineup-vs-lineup matrix for a team matchup. Names, abbrevs, or ids.\n\nCrosses every qualifying 5-man unit of team A against every qualifying\nunit of team B over their shared play-level possessions: shared minutes,\nnet rating in those minutes, sample-size flags. Lineups qualify at\nmin_minutes season minutes (poss/2); shared minutes are estimated from\npossessions (~2 per minute), never play-clock minutes. Warehouse-backed with live fallback.",
+      "args_schema": {
+        "description": "Lineup-vs-lineup matrix for a team matchup crossing qualifying 5-man units.",
+        "properties": {
+          "team_a": {
+            "title": "Team A",
+            "type": "string"
+          },
+          "team_b": {
+            "title": "Team B",
+            "type": "string"
+          },
+          "min_minutes": {
+            "default": 10,
+            "title": "Min Minutes",
+            "type": "number"
+          },
+          "season": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Season"
+          }
+        },
+        "required": [
+          "team_a",
+          "team_b"
+        ],
+        "title": "get_lineup_matchup_matrix",
+        "type": "object"
+      }
+    },
+    "get_transactions": {
+      "name": "get_transactions",
+      "description": "Team transactions: signings, waivers, trades by team and date range.",
+      "args_schema": {
+        "description": "Team front-office transactions: signings, waivers, trades, and conversions.",
+        "properties": {
+          "team": {
+            "default": "",
+            "title": "Team",
+            "type": "string"
+          },
+          "start": {
+            "default": "",
+            "title": "Start",
+            "type": "string"
+          },
+          "end": {
+            "default": "",
+            "title": "End",
+            "type": "string"
+          },
+          "txn_type": {
+            "default": "",
+            "title": "Txn Type",
+            "type": "string"
+          }
+        },
+        "title": "get_transactions",
+        "type": "object"
+      }
+    },
+    "get_wowy": {
+      "name": "get_wowy",
+      "description": "With-or-without-you (WOWY) 4-way lineup combination splits for two players.\n\nAccepts player_a and player_b by name or id, or comma-separated player_ids.\nComputes Both ON, A ON / B OFF, B ON / A OFF, and Both OFF with minutes,\noffensive rating, defensive rating, and net rating from warehouse lineups. Warehouse-backed with live fallback.",
+      "args_schema": {
+        "description": "With-or-without-you (WOWY) 4-way lineup combination splits for two players.",
+        "properties": {
+          "player_a": {
+            "default": "",
+            "title": "Player A",
+            "type": "string"
+          },
+          "player_b": {
+            "default": "",
+            "title": "Player B",
+            "type": "string"
+          },
+          "player_ids": {
+            "default": "",
+            "title": "Player Ids",
+            "type": "string"
+          },
+          "team_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "integer"
+              }
+            ],
+            "default": 0,
+            "title": "Team Id"
+          },
+          "season": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Season"
+          },
+          "season_type": {
+            "default": "regular-season",
+            "enum": [
+              "regular-season",
+              "playoffs"
+            ],
+            "title": "Season Type",
+            "type": "string"
+          }
+        },
+        "title": "get_wowy",
+        "type": "object"
+      }
+    },
+    "get_shot_compare": {
+      "name": "get_shot_compare",
+      "description": "Shot-diet showdown: zone eFG and share for two players.\n\nMissing zone data stays null, never 0.0: a player without a seeded\nzone row has NO data there, not a 0% shooter. Edges and the verdict\nare computed only where BOTH players have data; takeaways must never\nbe built on a missing cell. Warehouse-backed with live fallback.",
+      "args_schema": {
+        "description": "Shot-diet showdown: zone eFG and share for two players.",
+        "properties": {
+          "a": {
+            "default": "",
+            "title": "A",
+            "type": "string"
+          },
+          "b": {
+            "default": "",
+            "title": "B",
+            "type": "string"
+          },
+          "season": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Season"
+          }
+        },
+        "title": "get_shot_compare",
+        "type": "object"
+      }
+    },
+    "get_raptor_history": {
+      "name": "get_raptor_history",
+      "description": "Season-by-season RAPTOR and WAR for one player name. Warehouse only.",
+      "args_schema": {
+        "description": "Season-by-season RAPTOR and WAR for one player name.",
+        "properties": {
+          "player": {
+            "default": "",
+            "title": "Player",
+            "type": "string"
+          },
+          "season": {
+            "default": "",
+            "title": "Season",
+            "type": "string"
+          }
+        },
+        "title": "get_raptor_history",
+        "type": "object"
+      }
+    },
+    "get_season_series": {
+      "name": "get_season_series",
+      "description": "Head-to-head between two TEAMS: every meeting this season, regular\nseason and playoffs, with winner and scores when tracked. Use for\n\"how did X do against Y\", \"X vs Y record\", \"season series\".",
+      "args_schema": {
+        "description": "Head-to-head between two teams across a season: every meeting (regular season and playoffs) with winner, scores, date, matchup.",
+        "properties": {
+          "team_a": {
+            "title": "Team A",
+            "type": "string"
+          },
+          "team_b": {
+            "title": "Team B",
+            "type": "string"
+          },
+          "season": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Season"
+          }
+        },
+        "required": [
+          "team_a",
+          "team_b"
+        ],
+        "title": "get_season_series",
+        "type": "object"
+      }
+    },
+    "get_team_game_log": {
+      "name": "get_team_game_log",
+      "description": "A team's recent games, most recent first: date, matchup, W/L,\nteam and opponent points, plus team REB/AST/STL/BLK/TOV. Use for\n\"show me the <team> last N games\" asks - this is the TEAM game log,\nnever search_game_logs (that tool is per-player and its team_wide\nmode returns match counts, not games). team: name, nickname,\nabbreviation, or id. limit: 1-30. playoffs: read silver_playoffs\n(team-level playoff rows) instead of the regular-season table.\nWarehouse only; 2025-26 only.",
+      "args_schema": {
+        "description": "A team's recent games (regular season or playoffs): date, matchup, W/L, team PTS, opp PTS, REB, AST, STL, BLK, TOV.",
+        "properties": {
+          "team": {
+            "title": "Team",
+            "type": "string"
+          },
+          "limit": {
+            "default": 10,
+            "title": "Limit",
+            "type": "integer"
+          },
+          "playoffs": {
+            "default": false,
+            "title": "Playoffs",
+            "type": "boolean"
+          },
+          "season": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Season"
+          }
+        },
+        "required": [
+          "team"
+        ],
+        "title": "get_team_game_log",
+        "type": "object"
+      }
+    },
+    "get_zone_deltas": {
+      "name": "get_zone_deltas",
+      "description": "Player-vs-league shooting-zone efficiency: per-zone FG% vs the\npooled league-average FG% for the same season, with delta in\npercentage points. Zones below min_attempts (default 50, clamped\n10..200) are excluded. Season is the end year (2010..2025).",
+      "args_schema": {
+        "description": "Player-vs-league shooting-zone efficiency: per-zone FG% vs pooled league-average FG% with percentage-point deltas across court zones.",
+        "properties": {
+          "player": {
+            "title": "Player",
+            "type": "string"
+          },
+          "season": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "string"
+              }
+            ],
+            "default": 2025,
+            "title": "Season"
+          },
+          "min_attempts": {
+            "default": 50,
+            "title": "Min Attempts",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "player"
+        ],
+        "title": "get_zone_deltas",
+        "type": "object"
+      }
+    },
+    "search_shots": {
+      "name": "search_shots",
+      "description": "Conversational shot finder: filter warehouse shots by player, team,\nzone, period, makes, and late-clock window, with zone/period aggregates\nplus optional per-player/per-team leaderboards.\n\nzones: rim, short_mid, long_mid, corner_3, atb_3 (comma-separated;\n\"\" = all). periods: 1-4, ot, 1h, 2h, 4th (comma-separated; \"\" = all).\nlate_clock: integer seconds remaining (periods 4+, time-based only, not\nscore-aware). group_by: \"\" | \"player\" | \"team\" -- per-player/per-team\nvolume + efficiency leaderboards sorted by attempts (this is how you\nanswer \"who takes over fourth quarters\"). include_ot: auto (default --\novertime is included when a 4th-quarter/2nd-half window is selected,\nwhen overtime is explicitly selected (periods='ot'), or when late_clock\nis given without an explicit period filter), yes, no.\nperiods='4th' includes overtime by default; pass include_ot=no to get\nexactly the 4th quarter. Zero matches return ok True with empty\naggregates and an explanatory note, never silent zeros. Results are\ntime-based only, never score-aware (meta.clutch_safe=false); TS% is not\nshown because the table has no free-throw attempts.",
+      "args_schema": {
+        "description": "Conversational shot finder: filter warehouse shots by player, team, zone, period, makes, and late-clock window with zone and period aggregates.",
+        "properties": {
+          "player": {
+            "default": "",
+            "title": "Player",
+            "type": "string"
+          },
+          "team": {
+            "default": "",
+            "title": "Team",
+            "type": "string"
+          },
+          "zones": {
+            "default": "",
+            "title": "Zones",
+            "type": "string"
+          },
+          "periods": {
+            "default": "",
+            "title": "Periods",
+            "type": "string"
+          },
+          "three_only": {
+            "default": false,
+            "title": "Three Only",
+            "type": "boolean"
+          },
+          "made": {
+            "default": "any",
+            "title": "Made",
+            "type": "string"
+          },
+          "late_clock": {
+            "default": "",
+            "title": "Late Clock",
+            "type": "string"
+          },
+          "exclude_heaves": {
+            "default": true,
+            "title": "Exclude Heaves",
+            "type": "boolean"
+          },
+          "limit": {
+            "default": 25,
+            "title": "Limit",
+            "type": "integer"
+          },
+          "season": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Season"
+          },
+          "group_by": {
+            "default": "",
+            "title": "Group By",
+            "type": "string"
+          },
+          "include_ot": {
+            "default": "auto",
+            "title": "Include Ot",
+            "type": "string"
+          }
+        },
+        "title": "search_shots",
+        "type": "object"
+      }
+    },
+    "get_stint_timeline": {
+      "name": "get_stint_timeline",
+      "description": "Ordered 5-man stint timeline for one game: lineups, clocks, scores, swings.",
+      "args_schema": {
+        "description": "Ordered 5-man stint timeline for one game: lineups, clocks, scores, swings.",
+        "properties": {
+          "game_id": {
+            "default": "",
+            "title": "Game Id",
+            "type": "string"
+          }
+        },
+        "title": "get_stint_timeline",
+        "type": "object"
+      }
+    },
+    "get_possession_log": {
+      "name": "get_possession_log",
+      "description": "Possession-by-possession log for one game: order, clocks, offense, events, points, WPA swings.",
+      "args_schema": {
+        "description": "Possession-by-possession log for one game: order, clocks, offense, events, points, WPA swings.",
+        "properties": {
+          "game_id": {
+            "default": "",
+            "title": "Game Id",
+            "type": "string"
+          },
+          "period": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Period"
+          },
+          "clock_range": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Clock Range"
+          }
+        },
+        "title": "get_possession_log",
+        "type": "object"
+      }
+    },
+    "get_elo": {
+      "name": "get_elo",
+      "description": "ELO power ratings from warehouse game results for one season.",
+      "args_schema": {
+        "description": "ELO power ratings from warehouse game results for one season.",
+        "properties": {
+          "season": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Season"
+          }
+        },
+        "title": "get_elo",
+        "type": "object"
+      }
+    },
+    "get_team_shot_zones": {
+      "name": "get_team_shot_zones",
+      "description": "League-wide team shot-zone diet: per-zone attempt share and eFG\nwith league baselines and deltas. teams is \"league\" or a comma-separated\nlist of team names/abbrevs/ids. Zones: rim, short_mid, long_mid,\ncorner_3, atb_3.",
+      "args_schema": {
+        "description": "League-wide team shot-zone diet: per-zone attempt share and eFG with league baselines and deltas.",
+        "properties": {
+          "teams": {
+            "default": "league",
+            "title": "Teams",
+            "type": "string"
+          },
+          "season": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Season"
+          }
+        },
+        "title": "get_team_shot_zones",
+        "type": "object"
+      }
+    },
+    "get_historical_leaders": {
+      "name": "get_historical_leaders",
+      "description": "League leaders per season or best single seasons from history. Seasons are end-years (2026 means 2025-26), clamped to 2015..2026.\n\nSeasons are end-years clamped to 2015..2026. Values are per-game\nwarehouse estimates. Empty ranges report honestly, never fabricated.",
+      "args_schema": {
+        "description": "League leaders per season or best single seasons from history (2015-2026).",
+        "properties": {
+          "category": {
+            "default": "pts",
+            "title": "Category",
+            "type": "string"
+          },
+          "start_season": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": 2015,
+            "title": "Start Season"
+          },
+          "end_season": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": 2026,
+            "title": "End Season"
+          },
+          "limit": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": 10,
+            "title": "Limit"
+          },
+          "mode": {
+            "default": "leaders",
+            "title": "Mode",
+            "type": "string"
+          }
+        },
+        "title": "get_historical_leaders",
+        "type": "object"
+      }
+    },
+    "get_today": {
+      "name": "get_today",
+      "description": "Today home view: last night's results, tonight's games, leaderboard movers, streaks.",
+      "args_schema": {
+        "description": "Today home view: last night's results, tonight's games, leaderboard movers, streaks.",
+        "properties": {
+          "season": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Season"
+          }
+        },
+        "title": "get_today",
+        "type": "object"
+      }
+    },
+    "get_morning_briefing": {
+      "name": "get_morning_briefing",
+      "description": "Morning briefing: today's games, watchlist updates, leaderboard movers.\n\nDeterministic pipeline for app open. Combines get_today, get_watchlist,\nand get_leaderboard_deltas into one response.",
+      "args_schema": {
+        "description": "Morning briefing: today's games, watchlist updates, leaderboard movers.",
+        "properties": {
+          "season": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Season"
+          }
+        },
+        "title": "get_morning_briefing",
+        "type": "object"
+      }
+    },
+    "get_tracking_profile": {
+      "name": "get_tracking_profile",
+      "description": "Player or team tracking profile: drives, shooting, touches, rebounding, speed.",
+      "args_schema": {
+        "description": "Player or team tracking profile: drives, shooting, touches, rebounding, speed.",
+        "properties": {
+          "player": {
+            "default": "",
+            "title": "Player",
+            "type": "string"
+          },
+          "team": {
+            "default": "",
+            "title": "Team",
+            "type": "string"
+          },
+          "season": {
+            "default": "2025-26",
+            "title": "Season",
+            "type": "string"
+          },
+          "measure_type": {
+            "default": "Drives",
+            "title": "Measure Type",
+            "type": "string"
+          }
+        },
+        "title": "get_tracking_profile",
+        "type": "object"
+      }
+    },
+    "get_rest_advantage": {
+      "name": "get_rest_advantage",
+      "description": "Rest advantage: who had the fresher legs before each game.\n\nteam: 3-letter abbrev, full team name, or \"league\"/\"\" for all 30\nteams. season_type: regular, playoffs, or all (default). Games are\nfiltered to the season_type BEFORE rest gaps are computed, so rest\nnever leaks across the filter boundary. Warehouse only; the first\ngame in scope has no rest baseline and reports None.\ndate: optional YYYY-MM-DD; team mode only. With date and no\nopponent, returns the team's single game on that date (summary\nstill covers the full season as quotable context). opponent:\noptional second team; team mode only. Team + opponent + date\nreturns the completed matchup on that date when one exists, else a\npre-tip-off preview projecting each side's rest from its last\ncompleted game before that date (preview mode: not a warehouse\ngame record). Team + opponent with no date returns their most\nrecent completed matchup.",
+      "args_schema": {
+        "description": "Rest advantage: who had the fresher legs before each game.",
+        "properties": {
+          "team": {
+            "default": "league",
+            "title": "Team",
+            "type": "string"
+          },
+          "season": {
+            "default": "2025-26",
+            "title": "Season",
+            "type": "string"
+          },
+          "season_type": {
+            "default": "all",
+            "title": "Season Type",
+            "type": "string"
+          },
+          "date": {
+            "default": "",
+            "title": "Date",
+            "type": "string"
+          },
+          "opponent": {
+            "default": "",
+            "title": "Opponent",
+            "type": "string"
+          }
+        },
+        "title": "get_rest_advantage",
+        "type": "object"
+      }
+    },
+    "get_rapm_prior": {
+      "name": "get_rapm_prior",
+      "description": "Prior-informed RAPM for one player.\n\nBlends current-season silver_rapm with silver_rapm_prior seasons.\nReturns a documented estimate, or an honest empty when missing.",
+      "args_schema": {
+        "description": "Prior-informed RAPM for one player blending current season with historical priors.",
+        "properties": {
+          "player": {
+            "default": "",
+            "title": "Player",
+            "type": "string"
+          },
+          "seasons": {
+            "default": null,
+            "title": "Seasons"
+          }
+        },
+        "title": "get_rapm_prior",
+        "type": "object"
+      }
+    },
+    "search_game_logs": {
+      "name": "search_game_logs",
+      "description": "Filter game logs by stat thresholds, opponent, time, or home/away.\n\nplayer: name, nickname, or id (same resolution as every other tool).\nRequired unless league_wide=True or team_wide=True.\nleague_wide: when True, ignore player and return per-player match\ncounts across the whole warehouse (answers \"who had the most\n50-point games this season\").\nteam_wide: when True, ignore player and return per-team match\ncounts across the whole warehouse (answers \"which team had the\nmost 50-point games this season\"). Each matched game counts for\nthe team the player was on that night (first token of MATCHUP,\ne.g. \"LAL vs. BOS\" -> \"LAL\"), so a mid-season trade attributes\neach game to the team at game time, not the current team.\nplayoffs: when True, read silver_playoff_gamelogs instead of the\nregular-season table.\nmin_points / min_rebounds / min_assists: per-game stat floors\n(e.g. min_points=40 for 40-point games). min_pra: points + rebounds\n+ assists floor. max_points / max_rebounds / max_assists: per-game\nstat ceilings, exclusive (max_points=20 keeps 0-19 games -\n\"under 20\"). triple_double / double_double: keep only games\nwith 10+ in 3 (or 2) of PTS/REB/AST/STL/BLK. opponent: team name or\nabbreviation, e.g. \"Knicks\" or \"NYK\". month: name, number, or\nYYYY-MM. start_date / end_date: YYYY-MM-DD, inclusive. home_away:\n\"home\" or \"away\". season: 2025-26 only in the warehouse.\nbest_game: when True, ignore the limit and return only the single\nhighest-scoring game (answers \"best game\" / \"career high\" phrasing).\nReturns matching games, most recent first, with the total match\ncount (rows beyond limit are counted, not returned). A player with\nno rows in the chosen scope is an explicit ok:False error, never a\nsilent 0.\nWarehouse only; 2025-26 only.",
+      "args_schema": {
+        "description": "Filter game logs by stat thresholds, opponent, time, or home/away.",
+        "properties": {
+          "player": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Player"
+          },
+          "league_wide": {
+            "default": false,
+            "title": "League Wide",
+            "type": "boolean"
+          },
+          "team_wide": {
+            "default": false,
+            "title": "Team Wide",
+            "type": "boolean"
+          },
+          "min_points": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Min Points"
+          },
+          "min_rebounds": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Min Rebounds"
+          },
+          "min_assists": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Min Assists"
+          },
+          "min_pra": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Min Pra"
+          },
+          "max_points": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Max Points"
+          },
+          "max_rebounds": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Max Rebounds"
+          },
+          "max_assists": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Max Assists"
+          },
+          "triple_double": {
+            "default": false,
+            "title": "Triple Double",
+            "type": "boolean"
+          },
+          "double_double": {
+            "default": false,
+            "title": "Double Double",
+            "type": "boolean"
+          },
+          "best_game": {
+            "default": false,
+            "title": "Best Game",
+            "type": "boolean"
+          },
+          "opponent": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Opponent"
+          },
+          "month": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Month"
+          },
+          "start_date": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Start Date"
+          },
+          "end_date": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "End Date"
+          },
+          "home_away": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Home Away"
+          },
+          "playoffs": {
+            "default": false,
+            "title": "Playoffs",
+            "type": "boolean"
+          },
+          "season": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Season"
+          },
+          "limit": {
+            "default": 50,
+            "title": "Limit",
+            "type": "integer"
+          }
+        },
+        "title": "search_game_logs",
+        "type": "object"
+      }
+    },
+    "get_dataset": {
+      "name": "get_dataset",
+      "description": "Query the Dime Data Engine for standardized silver analytical datasets (standings, leaders, ratings, injuries, player_gamelogs, team_games, scoreboard, shots, lineups, on_off, wowy, four_factors, hustle, combine, playoffs, draft, raptor, player_seasons). Warehouse-backed with live fallback.",
+      "args_schema": {
+        "description": "Query standard silver dataset tables or live upstream extracts.",
+        "properties": {
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "season": {
+            "default": "2026-27",
+            "title": "Season",
+            "type": "string"
+          },
+          "player_id": {
+            "default": 0,
+            "title": "Player Id",
+            "type": "integer"
+          },
+          "team_id": {
+            "default": 0,
+            "title": "Team Id",
+            "type": "integer"
+          },
+          "game_id": {
+            "default": "",
+            "title": "Game Id",
+            "type": "string"
+          },
+          "game_date": {
+            "default": "",
+            "title": "Game Date",
+            "type": "string"
+          },
+          "stat": {
+            "default": "PTS",
+            "title": "Stat",
+            "type": "string"
+          },
+          "ids": {
+            "default": "",
+            "title": "Ids",
+            "type": "string"
+          },
+          "player_a": {
+            "default": "",
+            "title": "Player A",
+            "type": "string"
+          },
+          "player_b": {
+            "default": "",
+            "title": "Player B",
+            "type": "string"
+          },
+          "fmt": {
+            "default": "json",
+            "title": "Fmt",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "title": "get_dataset",
+        "type": "object"
+      }
+    },
+    "get_dataset_freshness": {
+      "name": "get_dataset_freshness",
+      "description": "Query current ingestion freshness and coverage timestamps across all Dime Data Engine silver warehouse tables.",
+      "args_schema": {
+        "description": "Query freshness status across silver warehouse tables.",
+        "properties": {},
+        "title": "get_dataset_freshness",
+        "type": "object"
+      }
+    },
+    "get_career_arc": {
+      "name": "get_career_arc",
+      "description": "Query year-over-year career trajectory, statistical evolution, scoring efficiency, and RAPTOR ratings for an NBA player across multiple seasons.",
+      "args_schema": {
+        "properties": {
+          "player": {
+            "default": "",
+            "title": "Player",
+            "type": "string"
+          },
+          "player_id": {
+            "default": 0,
+            "title": "Player Id",
+            "type": "integer"
+          }
+        },
+        "title": "get_career_arc",
+        "type": "object"
+      }
+    },
+    "run_python": {
+      "name": "run_python",
+      "description": "Execute read-only Python code over the warehouse DuckDB connection (con), polars (pl), math, and statistics. Useful for ad-hoc statistical modeling, linear algebra, shrinkage, and aggregations.",
+      "args_schema": {
+        "properties": {
+          "code": {
+            "title": "Code",
+            "type": "string"
+          }
+        },
+        "required": [
+          "code"
+        ],
+        "title": "run_python",
+        "type": "object"
+      }
+    },
+    "get_matchup_preview": {
+      "name": "get_matchup_preview",
+      "description": "Narrative preview of a scheduled NBA game: recent form, key player matchups, injury impact, x-factors, why-watch. Pass two team names/abbrevs/ids, or a date (MM/DD/YYYY) to preview that day's marquee game. Never predicts scores. Warehouse-backed with live fallback.",
+      "args_schema": {
+        "properties": {
+          "a": {
+            "default": "",
+            "title": "A",
+            "type": "string"
+          },
+          "b": {
+            "default": "",
+            "title": "B",
+            "type": "string"
+          },
+          "game_date": {
+            "default": "",
+            "title": "Game Date",
+            "type": "string"
+          },
+          "season": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Season"
+          }
+        },
+        "title": "get_matchup_preview",
+        "type": "object"
+      }
+    },
+    "get_matchup_splits": {
+      "name": "get_matchup_splits",
+      "description": "Situational splits over the last N games: defense tier, home/away, rest. Warehouse-backed with live fallback.",
+      "args_schema": {
+        "properties": {
+          "player": {
+            "title": "Player",
+            "type": "string"
+          },
+          "n": {
+            "default": 15,
+            "title": "N",
+            "type": "integer"
+          },
+          "season": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Season"
+          }
+        },
+        "required": [
+          "player"
+        ],
+        "title": "get_matchup_splits",
+        "type": "object"
+      }
+    },
+    "get_regression_check": {
+      "name": "get_regression_check",
+      "description": "Sustainability check on a hot stat line: window vs season plus drivers (true shooting, minutes, shot volume, opponent defense). Returns verdict and narrative driver analysis. Warehouse-backed with live fallback.",
+      "args_schema": {
+        "properties": {
+          "player": {
+            "title": "Player",
+            "type": "string"
+          },
+          "stat": {
+            "default": "PTS",
+            "title": "Stat",
+            "type": "string"
+          },
+          "n": {
+            "default": 10,
+            "title": "N",
+            "type": "integer"
+          },
+          "season": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Season"
+          }
+        },
+        "required": [
+          "player"
+        ],
+        "title": "get_regression_check",
+        "type": "object"
+      }
+    },
+    "get_scout_pack": {
+      "name": "get_scout_pack",
+      "description": "One-call next-opponent brief: record, net rating, top lineups, injuries. Warehouse-backed with live fallback.",
+      "args_schema": {
+        "properties": {
+          "team": {
+            "default": "",
+            "title": "Team",
+            "type": "string"
+          },
+          "opponent": {
+            "default": "",
+            "title": "Opponent",
+            "type": "string"
+          },
+          "season": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Season"
+          }
+        },
+        "title": "get_scout_pack",
+        "type": "object"
+      }
+    },
+    "get_rotation_check": {
+      "name": "get_rotation_check",
+      "description": "Rotation and closing-unit check from warehouse five-man units, minutes, and cached on/off. Warehouse-backed with live fallback.",
+      "args_schema": {
+        "properties": {
+          "team": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "integer"
+              }
+            ],
+            "default": "",
+            "title": "Team"
+          },
+          "season": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Season"
+          },
+          "min_possessions": {
+            "default": 100,
+            "title": "Min Possessions",
+            "type": "integer"
+          },
+          "top_units": {
+            "default": 5,
+            "title": "Top Units",
+            "type": "integer"
+          }
+        },
+        "title": "get_rotation_check",
+        "type": "object"
+      }
+    },
+    "get_injury_impact": {
+      "name": "get_injury_impact",
+      "description": "Injury impact in one call: outs, net rating, last-10, heuristic impact. Warehouse-backed with live fallback.",
+      "args_schema": {
+        "properties": {
+          "team": {
+            "default": "",
+            "title": "Team",
+            "type": "string"
+          },
+          "season": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Season"
+          }
+        },
+        "title": "get_injury_impact",
+        "type": "object"
+      }
+    },
+    "get_matchup_brief": {
+      "name": "get_matchup_brief",
+      "description": "Two-team matchup brief with ratings, form, injuries, season series, and win probability. Warehouse-backed with live fallback.",
+      "args_schema": {
+        "properties": {
+          "a": {
+            "default": "",
+            "title": "A",
+            "type": "string"
+          },
+          "b": {
+            "default": "",
+            "title": "B",
+            "type": "string"
+          },
+          "season": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Season"
+          }
+        },
+        "title": "get_matchup_brief",
+        "type": "object"
+      }
+    },
+    "get_watchlist": {
+      "name": "get_watchlist",
+      "description": "List followed entities with their latest snapshot.\n\nPlayers carry per-game PTS/REB/AST from silver_leaders_pts.\nTeams carry W/L from silver_standings.",
+      "args_schema": {
+        "properties": {
+          "season": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Season"
+          }
+        },
+        "title": "get_watchlist",
+        "type": "object"
+      }
+    },
+    "get_games_on_date": {
+      "name": "get_games_on_date",
+      "description": "Scoreboard for one date. Date format is MM/DD/YYYY. Warehouse-backed with live fallback.",
+      "args_schema": {
+        "properties": {
+          "game_date": {
+            "title": "Game Date",
+            "type": "string"
+          },
+          "season": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Season"
+          }
+        },
+        "required": [
+          "game_date"
+        ],
+        "title": "get_games_on_date",
+        "type": "object"
+      }
+    },
+    "get_boxscore": {
+      "name": "get_boxscore",
+      "description": "Traditional boxscore player stats for one game id. Warehouse-backed with live fallback.",
+      "args_schema": {
+        "properties": {
+          "game_id": {
+            "title": "Game Id",
+            "type": "string"
+          },
+          "season": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Season"
+          }
+        },
+        "required": [
+          "game_id"
+        ],
+        "title": "get_boxscore",
+        "type": "object"
+      }
+    },
+    "get_award_race": {
+      "name": "get_award_race",
+      "description": "Award race top 5 for MVP/DPOY/ROY/6MOY.\n\nThe formula is computed from warehouse stats only and listed in meta.",
+      "args_schema": {
+        "properties": {
+          "award": {
+            "title": "Award",
+            "type": "string"
+          },
+          "season": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Season"
+          }
+        },
+        "required": [
+          "award"
+        ],
+        "title": "get_award_race",
+        "type": "object"
+      }
+    },
+    "get_last_x": {
+      "name": "get_last_x",
+      "description": "Last n games for one player id, most recent first. Warehouse-backed with live fallback.",
+      "args_schema": {
+        "properties": {
+          "player_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "integer"
+              }
+            ],
+            "title": "Player Id"
+          },
+          "n": {
+            "default": 10,
+            "title": "N",
+            "type": "integer"
+          },
+          "season": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Season"
+          }
+        },
+        "required": [
+          "player_id"
+        ],
+        "title": "get_last_x",
+        "type": "object"
+      }
+    },
+    "get_player_report": {
+      "name": "get_player_report",
+      "description": "Multi-part player report: season line, advanced profile, shots, clutch. Warehouse-backed with live fallback.",
+      "args_schema": {
+        "properties": {
+          "player": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "integer"
+              }
+            ],
+            "title": "Player"
+          },
+          "season": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Season"
+          }
+        },
+        "required": [
+          "player"
+        ],
+        "title": "get_player_report",
+        "type": "object"
+      }
+    },
+    "get_team_hub": {
+      "name": "get_team_hub",
+      "description": "Game log plus roster for one team id. Warehouse first. Warehouse-backed with live fallback.",
+      "args_schema": {
+        "properties": {
+          "team_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "integer"
+              }
+            ],
+            "title": "Team Id"
+          },
+          "season": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Season"
+          }
+        },
+        "required": [
+          "team_id"
+        ],
+        "title": "get_team_hub",
+        "type": "object"
+      }
+    },
+    "get_lineups": {
+      "name": "get_lineups",
+      "description": "Five-man lineup stats for one team id, sorted by minutes. Warehouse-backed with live fallback.",
+      "args_schema": {
+        "properties": {
+          "team_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "integer"
+              }
+            ],
+            "title": "Team Id"
+          },
+          "season": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Season"
+          },
+          "season_type": {
+            "default": "regular-season",
+            "enum": [
+              "regular-season",
+              "playoffs"
+            ],
+            "title": "Season Type",
+            "type": "string"
+          },
+          "measure_type": {
+            "default": "base",
+            "enum": [
+              "base",
+              "advanced",
+              "defense",
+              "misc",
+              "opponent",
+              "scoring",
+              "usage"
+            ],
+            "title": "Measure Type",
+            "type": "string"
+          },
+          "per_mode": {
+            "default": "totals",
+            "enum": [
+              "totals",
+              "pergame"
+            ],
+            "title": "Per Mode",
+            "type": "string"
+          }
+        },
+        "required": [
+          "team_id"
+        ],
+        "title": "get_lineups",
+        "type": "object"
+      }
+    },
+    "get_splits": {
+      "name": "get_splits",
+      "description": "Home/away plus monthly, wins/losses, last-10, starter splits from the game log. Warehouse-backed with live fallback.",
+      "args_schema": {
+        "properties": {
+          "player_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "integer"
+              }
+            ],
+            "title": "Player Id"
+          },
+          "season": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Season"
+          }
+        },
+        "required": [
+          "player_id"
+        ],
+        "title": "get_splits",
+        "type": "object"
+      }
+    },
+    "get_recap": {
+      "name": "get_recap",
+      "description": "Post-game recap data: boxscore top five plus team totals. Live only.",
+      "args_schema": {
+        "properties": {
+          "game_id": {
+            "title": "Game Id",
+            "type": "string"
+          },
+          "season": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Season"
+          }
+        },
+        "required": [
+          "game_id"
+        ],
+        "title": "get_recap",
+        "type": "object"
+      }
+    },
+    "get_scouting_report": {
+      "name": "get_scouting_report",
+      "description": "One-call dossier: record, roster, lineups, leaders context. Warehouse-backed with live fallback.",
+      "args_schema": {
+        "properties": {
+          "team_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "integer"
+              }
+            ],
+            "title": "Team Id"
+          },
+          "season": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Season"
+          }
+        },
+        "required": [
+          "team_id"
+        ],
+        "title": "get_scouting_report",
+        "type": "object"
+      }
+    }
+  },
+  "internal": {
+    "product_save_chat": {
+      "name": "product_save_chat",
+      "description": "Append an existing product chat row to the state database.",
+      "args_schema": {
+        "description": "Append an existing product chat row to the state database.",
+        "properties": {
+          "thread": {
+            "title": "Thread",
+            "type": "string"
+          },
+          "role": {
+            "title": "Role",
+            "type": "string"
+          },
+          "content": {
+            "title": "Content",
+            "type": "string"
+          },
+          "owner": {
+            "title": "Owner",
+            "type": "string"
+          }
+        },
+        "required": [
+          "thread",
+          "role",
+          "content",
+          "owner"
+        ],
+        "title": "product_save_chat",
+        "type": "object"
+      }
+    },
+    "product_save_run": {
+      "name": "product_save_run",
+      "description": "Append an existing product run row to the state database.",
+      "args_schema": {
+        "description": "Append an existing product run row to the state database.",
+        "properties": {
+          "thread": {
+            "title": "Thread",
+            "type": "string"
+          },
+          "question": {
+            "title": "Question",
+            "type": "string"
+          },
+          "answer": {
+            "title": "Answer",
+            "type": "string"
+          },
+          "owner": {
+            "title": "Owner",
+            "type": "string"
+          },
+          "run_id": {
+            "title": "Run Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "thread",
+          "question",
+          "answer",
+          "owner",
+          "run_id"
+        ],
+        "title": "product_save_run",
+        "type": "object"
+      }
+    },
+    "product_threads": {
+      "name": "product_threads",
+      "description": "List existing product state threads for one owner.",
+      "args_schema": {
+        "description": "List existing product state threads for one owner.",
+        "properties": {
+          "owner": {
+            "title": "Owner",
+            "type": "string"
+          }
+        },
+        "required": [
+          "owner"
+        ],
+        "title": "product_threads",
+        "type": "object"
+      }
+    },
+    "product_runs": {
+      "name": "product_runs",
+      "description": "List existing product state runs for one owner and thread.",
+      "args_schema": {
+        "description": "List existing product state runs for one owner and thread.",
+        "properties": {
+          "thread": {
+            "title": "Thread",
+            "type": "string"
+          },
+          "owner": {
+            "title": "Owner",
+            "type": "string"
+          }
+        },
+        "required": [
+          "thread",
+          "owner"
+        ],
+        "title": "product_runs",
+        "type": "object"
+      }
+    },
+    "product_warehouse_identity": {
+      "name": "product_warehouse_identity",
+      "description": "Read the data engine warehouse identity and semantic baseline.",
+      "args_schema": {
+        "description": "Read the data engine warehouse identity and semantic baseline.",
+        "properties": {},
+        "title": "product_warehouse_identity",
+        "type": "object"
+      }
+    },
+    "product_warehouse_health": {
+      "name": "product_warehouse_health",
+      "description": "Check the existing ratings readiness contract.",
+      "args_schema": {
+        "description": "Check the existing ratings readiness contract.",
+        "properties": {},
+        "title": "product_warehouse_health",
+        "type": "object"
+      }
+    },
+    "product_dataset": {
+      "name": "product_dataset",
+      "description": "Read or fetch a dataset using the existing Python season and source semantics.",
+      "args_schema": {
+        "description": "Read or fetch a dataset using the existing Python season and source semantics.",
+        "properties": {
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "season": {
+            "default": "2025-26",
+            "title": "Season",
+            "type": "string"
+          },
+          "player_id": {
+            "default": 0,
+            "title": "Player Id",
+            "type": "integer"
+          },
+          "team_id": {
+            "default": 0,
+            "title": "Team Id",
+            "type": "integer"
+          },
+          "game_id": {
+            "default": "",
+            "title": "Game Id",
+            "type": "string"
+          },
+          "game_date": {
+            "default": "",
+            "title": "Game Date",
+            "type": "string"
+          },
+          "stat": {
+            "default": "PTS",
+            "title": "Stat",
+            "type": "string"
+          },
+          "ids": {
+            "default": "",
+            "title": "Ids",
+            "type": "string"
+          },
+          "player_a": {
+            "default": "",
+            "title": "Player A",
+            "type": "string"
+          },
+          "player_b": {
+            "default": "",
+            "title": "Player B",
+            "type": "string"
+          },
+          "fmt": {
+            "default": "json",
+            "title": "Fmt",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "title": "product_dataset",
+        "type": "object"
+      }
+    },
+    "product_freshness": {
+      "name": "product_freshness",
+      "description": "Read the cached existing dataset freshness report.",
+      "args_schema": {
+        "description": "Read the cached existing dataset freshness report.",
+        "properties": {},
+        "title": "product_freshness",
+        "type": "object"
+      }
+    },
+    "product_table_detail": {
+      "name": "product_table_detail",
+      "description": "Read a bounded public warehouse table schema and sample.",
+      "args_schema": {
+        "description": "Read a bounded public warehouse table schema and sample.",
+        "properties": {
+          "table": {
+            "title": "Table",
+            "type": "string"
+          },
+          "season": {
+            "default": "",
+            "title": "Season",
+            "type": "string"
+          }
+        },
+        "required": [
+          "table"
+        ],
+        "title": "product_table_detail",
+        "type": "object"
+      }
+    },
+    "product_home": {
+      "name": "product_home",
+      "description": "Read the cached schedule and warehouse team ratings snapshot.",
+      "args_schema": {
+        "description": "Read the cached schedule and warehouse team ratings snapshot.",
+        "properties": {},
+        "title": "product_home",
+        "type": "object"
+      }
+    },
+    "product_rerun": {
+      "name": "product_rerun",
+      "description": "Run the existing read-only SQL rerun operation.",
+      "args_schema": {
+        "description": "Run the existing read-only SQL rerun operation.",
+        "properties": {
+          "sql": {
+            "title": "Sql",
+            "type": "string"
+          }
+        },
+        "required": [
+          "sql"
+        ],
+        "title": "product_rerun",
+        "type": "object"
+      }
+    },
+    "product_resolve": {
+      "name": "product_resolve",
+      "description": "Resolve NBA entities using the existing resolver.",
+      "args_schema": {
+        "description": "Resolve NBA entities using the existing resolver.",
+        "properties": {
+          "query": {
+            "title": "Query",
+            "type": "string"
+          }
+        },
+        "required": [
+          "query"
+        ],
+        "title": "product_resolve",
+        "type": "object"
+      }
+    },
+    "product_trade": {
+      "name": "product_trade",
+      "description": "Check a trade using the existing Python domain implementation.",
+      "args_schema": {
+        "description": "Check a trade using the existing Python domain implementation.",
+        "properties": {
+          "team_a": {
+            "title": "Team A",
+            "type": "string"
+          },
+          "players_a": {
+            "title": "Players A",
+            "type": "string"
+          },
+          "team_b": {
+            "title": "Team B",
+            "type": "string"
+          },
+          "players_b": {
+            "title": "Players B",
+            "type": "string"
+          },
+          "season": {
+            "default": "2025-26",
+            "title": "Season",
+            "type": "string"
+          }
+        },
+        "required": [
+          "team_a",
+          "players_a",
+          "team_b",
+          "players_b"
+        ],
+        "title": "product_trade",
+        "type": "object"
+      }
+    },
+    "product_debate": {
+      "name": "product_debate",
+      "description": "Build the current debate card with the domain season clamp.",
+      "args_schema": {
+        "description": "Build the current debate card with the domain season clamp.",
+        "properties": {
+          "a": {
+            "title": "A",
+            "type": "string"
+          },
+          "b": {
+            "title": "B",
+            "type": "string"
+          },
+          "season": {
+            "default": "2025-26",
+            "title": "Season",
+            "type": "string"
+          }
+        },
+        "required": [
+          "a",
+          "b"
+        ],
+        "title": "product_debate",
+        "type": "object"
+      }
+    },
+    "product_today": {
+      "name": "product_today",
+      "description": "Read the current today data.",
+      "args_schema": {
+        "description": "Read the current today data.",
+        "properties": {
+          "season": {
+            "default": "2025-26",
+            "title": "Season",
+            "type": "string"
+          }
+        },
+        "title": "product_today",
+        "type": "object"
+      }
+    },
+    "product_watchlist": {
+      "name": "product_watchlist",
+      "description": "Read the current watchlist data.",
+      "args_schema": {
+        "description": "Read the current watchlist data.",
+        "properties": {
+          "season": {
+            "default": "2025-26",
+            "title": "Season",
+            "type": "string"
+          }
+        },
+        "title": "product_watchlist",
+        "type": "object"
+      }
+    },
+    "product_watchlist_add": {
+      "name": "product_watchlist_add",
+      "description": "Apply the current direct product watchlist addition.",
+      "args_schema": {
+        "description": "Apply the current direct product watchlist addition.",
+        "properties": {
+          "entity_type": {
+            "title": "Entity Type",
+            "type": "string"
+          },
+          "entity_id": {
+            "title": "Entity Id",
+            "type": "string"
+          },
+          "season": {
+            "default": "2025-26",
+            "title": "Season",
+            "type": "string"
+          }
+        },
+        "required": [
+          "entity_type",
+          "entity_id"
+        ],
+        "title": "product_watchlist_add",
+        "type": "object"
+      }
+    },
+    "product_watchlist_remove": {
+      "name": "product_watchlist_remove",
+      "description": "Apply the current direct product watchlist removal.",
+      "args_schema": {
+        "description": "Apply the current direct product watchlist removal.",
+        "properties": {
+          "entity_type": {
+            "title": "Entity Type",
+            "type": "string"
+          },
+          "entity_id": {
+            "title": "Entity Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "entity_type",
+          "entity_id"
+        ],
+        "title": "product_watchlist_remove",
+        "type": "object"
+      }
+    },
+    "product_movers": {
+      "name": "product_movers",
+      "description": "Read and normalize current leaderboard deltas.",
+      "args_schema": {
+        "description": "Read and normalize current leaderboard deltas.",
+        "properties": {
+          "season": {
+            "default": "2025-26",
+            "title": "Season",
+            "type": "string"
+          },
+          "days": {
+            "default": 7,
+            "title": "Days",
+            "type": "integer"
+          }
+        },
+        "title": "product_movers",
+        "type": "object"
+      }
+    },
+    "product_briefing": {
+      "name": "product_briefing",
+      "description": "Read the existing morning briefing.",
+      "args_schema": {
+        "description": "Read the existing morning briefing.",
+        "properties": {
+          "season": {
+            "default": "2025-26",
+            "title": "Season",
+            "type": "string"
+          }
+        },
+        "title": "product_briefing",
+        "type": "object"
+      }
+    }
+  },
+  "shared": {
+    "get_tracking_profile": {
+      "name": "get_tracking_profile",
+      "description": "Player or team tracking profile: drives, shooting, touches, rebounding, speed.",
+      "args_schema": {
+        "description": "Player or team tracking profile: drives, shooting, touches, rebounding, speed.",
+        "properties": {
+          "player": {
+            "default": "",
+            "title": "Player",
+            "type": "string"
+          },
+          "team": {
+            "default": "",
+            "title": "Team",
+            "type": "string"
+          },
+          "season": {
+            "default": "2025-26",
+            "title": "Season",
+            "type": "string"
+          },
+          "measure_type": {
+            "default": "",
+            "title": "Measure Type",
+            "type": "string"
+          }
+        },
+        "title": "get_tracking_profile",
+        "type": "object"
+      }
+    },
+    "get_defensive_matchups": {
+      "name": "get_defensive_matchups",
+      "description": "One defender's defended-shot profile: frequency and shooter results.",
+      "args_schema": {
+        "description": "One defender's defended-shot profile: frequency and shooter results.",
+        "properties": {
+          "player": {
+            "default": "",
+            "title": "Player",
+            "type": "string"
+          },
+          "season": {
+            "default": "2025-26",
+            "title": "Season",
+            "type": "string"
+          }
+        },
+        "title": "get_defensive_matchups",
+        "type": "object"
+      }
+    },
+    "get_transactions": {
+      "name": "get_transactions",
+      "description": "Team transactions: signings, waivers, trades by team and date range.",
+      "args_schema": {
+        "description": "Team transactions: signings, waivers, trades by team and date range.",
+        "properties": {
+          "team": {
+            "default": "",
+            "title": "Team",
+            "type": "string"
+          },
+          "start": {
+            "default": "",
+            "title": "Start",
+            "type": "string"
+          },
+          "end": {
+            "default": "",
+            "title": "End",
+            "type": "string"
+          },
+          "txn_type": {
+            "default": "",
+            "title": "Txn Type",
+            "type": "string"
+          }
+        },
+        "title": "get_transactions",
+        "type": "object"
+      }
+    }
+  }
+}

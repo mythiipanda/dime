@@ -1,0 +1,366 @@
+import { readdirSync, statSync } from "node:fs";
+import { extname, join } from "node:path";
+import { Type, type Static } from "typebox";
+import { Value } from "typebox/value";
+import { createAnalystSession } from "./runtime.js";
+import { connectPythonTools, objectValue, sourceRecordSchema, sourceOutputSchema, sourceResult, type SourceRecord, type PythonToolsOptions } from "./python-tools.js";
+import { priorSourceTool, resolvedRuntime } from "./pi-context.js";
+import { createSubmitAnswerTool, type AnswerSubmission } from "./submit-tool.js";
+import type { AssistantMessage, Message } from "@earendil-works/pi-ai";
+
+const WORKSPACE_ARTIFACT_EXTENSIONS = new Set([".parquet", ".csv", ".json", ".md", ".png", ".tsv", ".txt"]);
+const WORKSPACE_IGNORED_DIRS = new Set(["node_modules", "__pycache__"]);
+const WORKSPACE_ARTIFACT_LIMIT = 40;
+const WORKSPACE_MAX_DEPTH = 2;
+const ABORT_GRACE_MS = 10_000;
+
+export type WorkspaceArtifact = {
+    path: string;
+    bytes: number;
+};
+
+function walkWorkspaceArtifacts(dir: string, prefix: string, depth: number, out: WorkspaceArtifact[]): void {
+    let entries;
+    try {
+        entries = readdirSync(dir, { withFileTypes: true });
+    }
+    catch {
+        return;
+    }
+    for (const entry of entries) {
+        if (entry.name.startsWith("."))
+            continue;
+        const rel = prefix ? `${prefix}/${entry.name}` : entry.name;
+        const fullPath = join(dir, entry.name);
+        if (entry.isDirectory()) {
+            if (!WORKSPACE_IGNORED_DIRS.has(entry.name) && depth < WORKSPACE_MAX_DEPTH)
+                walkWorkspaceArtifacts(fullPath, rel, depth + 1, out);
+            continue;
+        }
+        if (!entry.isFile() || !WORKSPACE_ARTIFACT_EXTENSIONS.has(extname(entry.name).toLowerCase()))
+            continue;
+        try {
+            out.push({ path: rel, bytes: statSync(fullPath).size });
+        }
+        catch {
+        }
+    }
+}
+
+export function listWorkspaceArtifacts(cwd: string): WorkspaceArtifact[] {
+    if (!cwd)
+        return [];
+    const items: WorkspaceArtifact[] = [];
+    walkWorkspaceArtifacts(cwd, "", 0, items);
+    items.sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
+    return items.slice(0, WORKSPACE_ARTIFACT_LIMIT);
+}
+
+export function canonicalArgsKey(value: unknown): string {
+    if (value === null || typeof value !== "object")
+        return JSON.stringify(value) ?? "null";
+    if (Array.isArray(value))
+        return "[" + value.map(item => canonicalArgsKey(item)).join(",") + "]";
+    const obj = value as Record<string, unknown>;
+    const keys = Object.keys(obj).sort();
+    const parts: string[] = [];
+    for (const key of keys) {
+        if (obj[key] !== undefined)
+            parts.push(`${JSON.stringify(key)}:${canonicalArgsKey(obj[key])}`);
+    }
+    return "{" + parts.join(",") + "}";
+}
+
+const turnSchema = Type.Object({ role: Type.Union([Type.Literal("user"), Type.Literal("assistant")]), content: Type.String() });
+export const analystContextSchema = Type.Object({
+    q: Type.String({ minLength: 1 }), history: Type.Array(turnSchema, { maxItems: 24 }), model: Type.Unknown(),
+    sources: Type.Optional(Type.Array(sourceRecordSchema)), cwd: Type.String(), agentDir: Type.String(),
+    bridge: Type.Object({ python: Type.String(), cwd: Type.String(), env: Type.Record(Type.String(), Type.String()) }),
+});
+export type AnalystContext = Static<typeof analystContextSchema>;
+export type AnalystEvent = {
+    type: "token";
+    text: string;
+} | {
+    type: "tool_call";
+    name: string;
+} | {
+    type: "tool_result";
+    name: string;
+    status: "ok" | "fail";
+    error?: string;
+    rows?: number;
+} | {
+    type: "source";
+    record: SourceRecord;
+} | {
+    type: "answer";
+    text: string;
+    submission?: AnswerSubmission;
+} | {
+    type: "custom_data";
+    tables?: Array<Record<string, unknown>>;
+    artifacts?: Array<Record<string, unknown>>;
+    unverified_numbers?: Array<number | string>;
+} | {
+    type: "failure";
+    kind: string;
+    message: string;
+} | {
+    type: "closed";
+    pid?: number;
+};
+
+type AnalystDeps = {
+    resolveRuntime?: typeof resolvedRuntime;
+    connectTools?: (options: PythonToolsOptions) => ReturnType<typeof connectPythonTools>;
+    abortGraceMs?: number;
+};
+
+function sourceSummary(record: SourceRecord) {
+    const { result, isError } = sourceResult(record).structuredContent;
+    const data = objectValue(result);
+    return {
+        ref: record.ref, tool: record.tool, failed: isError, columns: data?.columns,
+        declared_column_semantics: data?.declared_column_semantics, season_semantics: data?.season_semantics, provenance: data?.meta
+    };
+}
+
+function safeFailureMessage(kind: string, error: unknown, apiKey?: string): string {
+    const raw = error instanceof Error ? error.message : String(error ?? "");
+    let sanitized = raw.trim();
+    if (apiKey && apiKey.length >= 4)
+        sanitized = sanitized.split(apiKey).join("[redacted]");
+    sanitized = sanitized
+        .replace(/\b(Bearer\s+|sk-|gsk_|AIza|xai-|key-)[^\s"']+/gi, "[redacted]")
+        .replace(/\s+/g, " ")
+        .slice(0, 240);
+    return sanitized ? `Dime ${kind} failed: ${sanitized}` : `Dime ${kind} failed.`;
+}
+
+function toHistoryMessages(history: AnalystContext["history"], model: { api: AssistantMessage["api"]; provider: string; id: string; compat?: object }): Message[] {
+    if (history.length > 0 && model.compat && "requiresReasoningContentOnAssistantMessages" in model.compat && model.compat.requiresReasoningContentOnAssistantMessages)
+        return [{ role: "user", content: "Earlier turns of this conversation, replayed as a transcript because their reasoning was not retained:\n\n" + history.map(turn => (turn.role === "user" ? "User: " : "Analyst: ") + turn.content).join("\n\n"), timestamp: Date.now() }];
+    return history.map(turn => turn.role === "user"
+        ? { role: "user", content: turn.content, timestamp: Date.now() }
+        : {
+            role: "assistant", content: [{ type: "text", text: turn.content }], api: model.api, provider: model.provider, model: model.id,
+            usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } },
+            stopReason: "stop", timestamp: Date.now()
+        });
+}
+
+function buildLoopRecord(
+    toolName: string,
+    callId: string,
+    count: number,
+    rawArgs: unknown,
+    lastRef?: string
+) {
+    const error = "Identical tool call repeated 3 times in this run";
+    const parsedArgs = objectValue(rawArgs);
+    const payload = {
+        ok: false,
+        loop_detected: true,
+        error,
+        summary: `Blocked repeated ${toolName} call (#${count}) with identical arguments.`,
+        args: parsedArgs ? JSON.parse(canonicalArgsKey(parsedArgs)) : {},
+        recovery_hint: lastRef
+            ? `Reuse prior ref ${lastRef} via tools.read_source, change parameters/SQL, or call submit_answer.`
+            : "Change parameters/SQL or call submit_answer.",
+        next_actions: ["Inspect prior source ref", "Modify query/parameters", "Call submit_answer"]
+    };
+    const record: SourceRecord = {
+        ref: `loop_${count}_${toolName.replace(/[^a-zA-Z0-9_]/g, "_")}`,
+        callId,
+        tool: toolName as SourceRecord["tool"],
+        response: {
+            isError: true,
+            structuredContent: payload,
+            content: [{ type: "text", text: JSON.stringify(payload) }]
+        }
+    };
+    return { record, payload };
+}
+
+function wrapBridgeTools(
+    tools: Awaited<ReturnType<typeof connectPythonTools>>["tools"],
+    results: Map<string, SourceRecord>,
+    emit: (event: AnalystEvent) => void
+) {
+    const callCounts = new Map<string, { count: number; lastRef?: string }>();
+    return tools.map(tool => ({
+        ...tool,
+        async execute(...args: Parameters<typeof tool.execute>) {
+            emit({ type: "tool_call", name: tool.name });
+            const key = `${tool.name}:${canonicalArgsKey(args[1] ?? {})}`;
+            const entry = callCounts.get(key) ?? { count: 0 };
+            entry.count += 1;
+            callCounts.set(key, entry);
+            if (entry.count >= 3) {
+                const callId = typeof args[0] === "string" && args[0] ? args[0] : `loop_${entry.count}`;
+                const { record, payload } = buildLoopRecord(tool.name, callId, entry.count, args[1], entry.lastRef);
+                results.set(record.ref, record);
+                emit({ type: "source", record });
+                emit({ type: "tool_result", name: tool.name, status: "fail", error: payload.error });
+                return sourceResult(record);
+            }
+            try {
+                const result = await tool.execute(...args);
+                if (!Value.Check(sourceOutputSchema, result.structuredContent))
+                    throw new Error("Invalid source result");
+                entry.lastRef = result.structuredContent.ref;
+                const record = results.get(result.structuredContent.ref);
+                if (!record)
+                    throw new Error("Tool result has no source record");
+                emit({ type: "source", record });
+                const domain = objectValue(result.structuredContent.result);
+                const failed = result.structuredContent.isError;
+                const error = domain?.error;
+                emit({
+                    type: "tool_result", name: tool.name, status: failed ? "fail" : "ok",
+                    ...(failed ? { error: typeof error === "string" ? error : "Tool failed" } : {}),
+                    ...(Array.isArray(domain?.rows) ? { rows: domain.rows.length } : {})
+                });
+                return result;
+            }
+            catch (error) {
+                emit({ type: "tool_result", name: tool.name, status: "fail", error: error instanceof Error ? error.message : String(error) });
+                throw error;
+            }
+        }
+    }));
+}
+
+export function createPiExecution(deps: AnalystDeps = {}) {
+    const resolveRuntime = deps.resolveRuntime ?? resolvedRuntime;
+    const connectTools = deps.connectTools ?? connectPythonTools;
+    const abortGraceMs = deps.abortGraceMs ?? ABORT_GRACE_MS;
+    return {
+        async *stream(input: unknown, signal?: AbortSignal): AsyncGenerator<AnalystEvent> {
+            const controller = new AbortController();
+            const events: AnalystEvent[] = [];
+            let wake: (() => void) | undefined;
+            let finished = false;
+            const emit = (event: AnalystEvent) => { events.push(event); wake?.(); };
+            const onAbort = () => controller.abort();
+            signal?.addEventListener("abort", onAbort, { once: true });
+            let abandoned = false;
+            const abandon = new Promise<void>(resolve => controller.signal.addEventListener("abort", () => setTimeout(resolve, abortGraceMs).unref(), { once: true }));
+            void abandon.then(() => { abandoned = true; wake?.(); });
+            if (signal?.aborted)
+                controller.abort();
+            async function run() {
+                let session: Awaited<ReturnType<typeof createAnalystSession>> | undefined;
+                let bridge: Awaited<ReturnType<typeof connectPythonTools>> | undefined;
+                let kind = "configuration";
+                let bridgePid: number | undefined;
+                let acceptedSubmission: AnswerSubmission | undefined;
+                let modelApiKey: string | undefined;
+                const cancel = () => { void session?.abort(); };
+                controller.signal.addEventListener("abort", cancel, { once: true });
+                try {
+                    if (!Value.Check(analystContextSchema, input) || !input.q.trim())
+                        throw new Error("Invalid product context");
+                    const start = input;
+                    modelApiKey = objectValue(start.model)?.apiKey as string | undefined;
+                    const { runtime, model } = await resolveRuntime(start.model);
+                    controller.signal.throwIfAborted();
+                    kind = "startup";
+                    bridge = await connectTools(start.bridge);
+                    bridgePid = bridge.pid;
+                    controller.signal.throwIfAborted();
+                    const connected = bridge;
+                    const submitTool = createSubmitAnswerTool(
+                        () => [...(start.sources ?? []), ...connected.results.values()],
+                        (submission) => {
+                            acceptedSubmission = submission;
+                            if (submission.artifacts && submission.artifacts.length > 0)
+                                emit({ type: "custom_data", artifacts: submission.artifacts });
+                        }
+                    );
+                    session = await createAnalystSession({
+                        cwd: start.cwd, agentDir: start.agentDir, model, modelRuntime: runtime,
+                        tools: [...wrapBridgeTools(bridge.tools, connected.results, emit), priorSourceTool(start.sources ?? []), submitTool],
+                        onSkillLoad: () => {
+                            emit({ type: "tool_call", name: "load_skill" });
+                            emit({ type: "tool_result", name: "load_skill", status: "ok" });
+                        }
+                    });
+                    controller.signal.throwIfAborted();
+                    session.subscribe(event => {
+                        if (event.type === "message_update" && event.assistantMessageEvent.type === "text_delta")
+                            emit({ type: "token", text: event.assistantMessageEvent.delta });
+                    });
+                    const history = toHistoryMessages(start.history, model);
+                    for (const message of history)
+                        session.sessionManager.appendMessage(message);
+                    session.agent.state.messages = [...session.agent.state.messages, ...history];
+                    if (start.sources?.length) {
+                        const context: Message = { role: "user", content: "Prior source catalogue. Use tools.read_source({ref}) inside codemode and return only filtered results:\n" + JSON.stringify(start.sources.map(sourceSummary)), timestamp: Date.now() };
+                        session.sessionManager.appendMessage(context);
+                        session.agent.state.messages.push(context);
+                    }
+                    const workspaceFiles = listWorkspaceArtifacts(start.bridge.cwd);
+                    if (workspaceFiles.length > 0) {
+                        const workspaceContext: Message = {
+                            role: "user",
+                            content: "Thread workspace files available in run_python cwd:\n" + JSON.stringify(workspaceFiles),
+                            timestamp: Date.now()
+                        };
+                        session.sessionManager.appendMessage(workspaceContext);
+                        session.agent.state.messages.push(workspaceContext);
+                    }
+                    kind = "model";
+                    await session.prompt(start.q);
+                    controller.signal.throwIfAborted();
+                    const last = session.messages.filter(m => m.role === "assistant").at(-1);
+                    if (!last || last.stopReason === "error" || last.stopReason === "aborted") {
+                        const detail = last && "errorMessage" in last && typeof last.errorMessage === "string" ? last.errorMessage : "";
+                        throw new Error(detail || "Model failed");
+                    }
+                    const text = last.content.filter(c => c.type === "text").map(c => c.text).join("");
+                    if (acceptedSubmission) {
+                        const canonicalText = acceptedSubmission.blocks.map(b => b.text).join("\n\n");
+                        emit({ type: "answer", text: canonicalText, submission: acceptedSubmission });
+                    } else {
+                        if (!text.trim())
+                            throw new Error("Model returned no answer");
+                        emit({ type: "answer", text });
+                    }
+                }
+                catch (error) {
+                    if (!controller.signal.aborted)
+                        emit({ type: "failure", kind, message: safeFailureMessage(kind, error, modelApiKey) });
+                }
+                finally {
+                    try {
+                        await session?.abort();
+                    }
+                    finally {
+                        session?.dispose();
+                        await bridge?.close();
+                        controller.signal.removeEventListener("abort", cancel);
+                        emit({ type: "closed", pid: bridgePid });
+                    }
+                }
+            }
+            const pending = run().finally(() => { finished = true; wake?.(); });
+            try {
+                while ((!finished && !abandoned) || events.length) {
+                    const next = events.shift();
+                    if (next)
+                        yield next;
+                    else
+                        await new Promise<void>(resolve => { wake = resolve; });
+                }
+                await Promise.race([pending, abandon]);
+            }
+            finally {
+                controller.abort();
+                await Promise.race([pending, abandon]);
+                signal?.removeEventListener("abort", onAbort);
+            }
+        }
+    };
+}

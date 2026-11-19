@@ -1,14 +1,20 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  MATCHUP_TEAM_ABBRS,
   briefStale,
+  briefViewerSeen,
   getBrief,
   listBriefs,
+  markBriefViewerSeen,
+  matchupBriefInput,
   packHashOf,
   removeBrief,
   rerunBrief,
   saveBrief,
+  shouldAutoOpenBrief,
   takeRerun,
+  updateBrief,
 } from "./briefs";
 
 function installLocalStorage() {
@@ -93,6 +99,40 @@ test("throwing storage warns loudly and falls back to memory", () => {
   }
 });
 
+test("typed revision guard accepts matching writes, rejects stale ones", () => {
+  installLocalStorage();
+  const doc = saveBrief({ title: "t", question: "q?", rows: null });
+  assert.equal(doc.rev, 1);
+  const ok = updateBrief(doc.id, { title: "t2" }, 1);
+  assert.equal(ok.ok, true);
+  if (ok.ok) assert.equal(ok.doc.rev, 2);
+  const stale = updateBrief(doc.id, { title: "t3" }, 1);
+  assert.equal(stale.ok, false);
+  if (!stale.ok && stale.current) assert.equal(stale.current.title, "t2");
+  assert.equal(getBrief(doc.id)?.title, "t2");
+  const missing = updateBrief("nope", { title: "x" }, 0);
+  assert.equal(missing.ok, false);
+  assert.equal(missing.current, null);
+  removeBrief(doc.id);
+});
+
+test("legacy docs without a revision compare as zero", () => {
+  installLocalStorage();
+  const doc = saveBrief({ title: "t", question: "q?", rows: null });
+  const raw = JSON.parse(
+    ((globalThis as Record<string, unknown>).localStorage as { getItem: (k: string) => string }).getItem(
+      "dime_briefs_v1",
+    ),
+  );
+  delete raw[0].rev;
+  ((globalThis as Record<string, unknown>).localStorage as { setItem: (k: string, v: string) => void }).setItem(
+    "dime_briefs_v1",
+    JSON.stringify(raw),
+  );
+  const first = updateBrief(doc.id, { title: "t2" }, 0);
+  assert.equal(first.ok, true);
+});
+
 test("pack hash helpers read revision and compare staleness", () => {
   assert.equal(packHashOf({ revision: "abc123" }), "abc123");
   assert.equal(packHashOf({}), null);
@@ -117,4 +157,40 @@ test("corrupt storage reads as empty, never throws", () => {
     "not-json{{{",
   );
   assert.deepEqual(listBriefs(), []);
+});
+
+test("a matchup brief input is built from a valid team pair", () => {
+  const input = matchupBriefInput("bos", "nyk");
+  assert.ok(input);
+  assert.equal(input.title, "BOS at NYK");
+  assert.ok(input.question.includes("BOS"));
+  assert.ok(input.question.includes("NYK"));
+  assert.deepEqual(input.rows, { game: { away: "BOS", home: "NYK" } });
+});
+
+test("matchup brief input rejects same-team, unknown, and empty pairs", () => {
+  assert.equal(matchupBriefInput("BOS", "bos"), null);
+  assert.equal(matchupBriefInput("BOS", "ZZZ"), null);
+  assert.equal(matchupBriefInput("", "NYK"), null);
+  assert.equal(matchupBriefInput("BOS", ""), null);
+});
+
+test("every team can anchor a matchup brief", () => {
+  assert.equal(MATCHUP_TEAM_ABBRS.length, 30);
+  assert.ok(MATCHUP_TEAM_ABBRS.includes("BOS"));
+  assert.ok(MATCHUP_TEAM_ABBRS.includes("OKC"));
+});
+
+test("the brief panel opens only once, for an unseen viewer on a quiet panel", () => {
+  assert.equal(shouldAutoOpenBrief(false, false), true);
+  assert.equal(shouldAutoOpenBrief(true, false), false);
+  assert.equal(shouldAutoOpenBrief(false, true), false);
+  assert.equal(shouldAutoOpenBrief(true, true), false);
+});
+
+test("the seen flag round-trips through storage", () => {
+  installLocalStorage();
+  assert.equal(briefViewerSeen(), false);
+  markBriefViewerSeen();
+  assert.equal(briefViewerSeen(), true);
 });

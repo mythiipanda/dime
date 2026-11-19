@@ -11,7 +11,6 @@ import seed_team_ratings as seed
 from shared import store
 from shared.sources.base import FetchMeta, FetchResult
 
-
 @pytest.fixture
 def scratch(monkeypatch, tmp_path):
     db = tmp_path / "ratings.duckdb"
@@ -24,7 +23,6 @@ def scratch(monkeypatch, tmp_path):
     store.warehouse_tables_cache_clear()
     store.warehouse_pool_clear()
     return db
-
 
 def _frame(n_teams=30):
     rows = []
@@ -44,13 +42,11 @@ def _frame(n_teams=30):
         })
     return pl.DataFrame(rows)
 
-
 def _ok(season, n_teams=30):
     return FetchResult(
         frame=_frame(n_teams),
         meta=FetchMeta(source="nba_api", season=season),
     )
-
 
 def _count(season):
     con = store.connect(read_only=True)
@@ -64,7 +60,6 @@ def _count(season):
     finally:
         con.close()
 
-
 def _provenance(season):
     con = store.connect(read_only=True)
     try:
@@ -77,7 +72,6 @@ def _provenance(season):
         ).fetchall()
     finally:
         con.close()
-
 
 def test_seed_writes_provenance_on_every_row(scratch, monkeypatch):
     monkeypatch.setattr(seed, "fetch", lambda season: _ok(season))
@@ -93,7 +87,6 @@ def test_seed_writes_provenance_on_every_row(scratch, monkeypatch):
         assert n == 30
         assert stamped == 30
 
-
 def test_rerun_skips_completed_units(scratch, monkeypatch):
     calls = []
 
@@ -107,7 +100,6 @@ def test_rerun_skips_completed_units(scratch, monkeypatch):
     assert seed.main(["--seasons", "2024-25,2023-24"]) == 0
     assert sorted(calls) == ["2023-24", "2024-25"]
     assert _count("2024-25") == 30
-
 
 def test_rerun_after_clearing_watermark_replaces_without_duplicates(
         scratch, monkeypatch):
@@ -124,7 +116,6 @@ def test_rerun_after_clearing_watermark_replaces_without_duplicates(
     monkeypatch.setattr(seed, "fetch", lambda season: _ok(season, n_teams=29))
     assert seed.main(["--seasons", "2024-25"]) == 0
     assert _count("2024-25") == 29
-
 
 def test_failure_records_fetch_log_and_returns_nonzero(scratch, monkeypatch):
     monkeypatch.setattr(
@@ -147,7 +138,6 @@ def test_failure_records_fetch_log_and_returns_nonzero(scratch, monkeypatch):
     assert int(row[0]) == -1
     assert _count("2024-25") == 0
 
-
 def test_failed_unit_is_retried_on_next_run(scratch, monkeypatch):
     attempts = []
 
@@ -164,7 +154,6 @@ def test_failed_unit_is_retried_on_next_run(scratch, monkeypatch):
     assert seed.main(["--seasons", "2024-25"]) == 0
     assert _count("2024-25") == 30
 
-
 def test_refuses_without_scratch_db(monkeypatch, tmp_path):
     calls = []
     monkeypatch.delenv("DIME_WAREHOUSE", raising=False)
@@ -173,14 +162,12 @@ def test_refuses_without_scratch_db(monkeypatch, tmp_path):
     assert seed.main(["--seasons", "2024-25"]) == 1
     assert calls == []
 
-
 def test_positional_seasons_override_default(scratch, monkeypatch):
     calls = []
     monkeypatch.setattr(seed, "fetch",
                         lambda season: calls.append(season) or _ok(season))
     assert seed.main(["2024-25"]) == 0
     assert calls == ["2024-25"]
-
 
 def test_refuses_prod_env_without_explicit_scratch_db(monkeypatch, tmp_path):
     db = tmp_path / "ratings.duckdb"
@@ -191,7 +178,6 @@ def test_refuses_prod_env_without_explicit_scratch_db(monkeypatch, tmp_path):
     monkeypatch.setattr(seed, "fetch", _must_not_fetch)
     assert seed.main(["--seasons", "2024-25"]) == 1
     assert not db.exists()
-
 
 def test_explicit_scratch_db_opts_in_without_env(monkeypatch, tmp_path):
     db = tmp_path / "ratings.duckdb"

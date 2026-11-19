@@ -28,12 +28,10 @@ DESK_OVERRIDE = {
     "text_to_sql": "league",
 }
 
-
 def _singular(tok: str) -> str:
     if len(tok) > 3 and tok.endswith("s") and not tok.endswith("ss"):
         return tok[:-1]
     return tok
-
 
 def _tokens(text: str) -> set[str]:
     return {
@@ -42,15 +40,14 @@ def _tokens(text: str) -> set[str]:
         if len(tok) > 1 and tok not in _STOPWORDS
     }
 
-
 def _family_for(name: str, tool) -> str:
     if name in DESK_OVERRIDE:
         return DESK_OVERRIDE[name]
     mod = getattr(getattr(tool, "func", None), "__module__", None) or ""
-    if mod.startswith("app.tools."):
-        return mod.rsplit(".", 1)[-1]
+    for prefix in ("app.tools.", "shared.tools."):
+        if mod.startswith(prefix):
+            return mod[len(prefix):].split(".", 1)[0]
     return "misc"
-
 
 def _cost_for(name: str) -> str:
     lowered = name.lower()
@@ -58,12 +55,11 @@ def _cost_for(name: str) -> str:
         return "heavy"
     return "cheap"
 
-
 def build_cards() -> list[dict]:
-    from . import v1_tools
+    from . import WAREHOUSE_TOOLS
 
     cards = []
-    for tool in v1_tools:
+    for tool in WAREHOUSE_TOOLS:
         description = (getattr(tool, "description", None) or "").strip()
         purpose = description.splitlines()[0].strip() if description else ""
         triggers = _tokens(description)
@@ -77,7 +73,6 @@ def build_cards() -> list[dict]:
         })
     return cards
 
-
 def _score(question_tokens: set[str], card: dict) -> int:
     name = _tokens(card["name"]) - {"get"}
     triggers = set(card["triggers"])
@@ -88,7 +83,6 @@ def _score(question_tokens: set[str], card: dict) -> int:
         + (2 if question_tokens & family else 0)
     )
 
-
 def rank_tools(question: str, k: int = 8) -> list[str]:
     cards = build_cards()
     q = _tokens(question or "")
@@ -96,7 +90,6 @@ def rank_tools(question: str, k: int = 8) -> list[str]:
     scored.sort(key=lambda item: (-item[0], item[1]))
     k = max(0, min(k, len(scored)))
     return [name for _, name in scored[:k]]
-
 
 def describe(names: list[str]) -> str:
     index = {card["name"]: card for card in build_cards()}

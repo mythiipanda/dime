@@ -6,13 +6,11 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-import shared.providers as prov  # noqa: E402
-
+import shared.providers as prov
 
 class _Chunk:
     def __init__(self, text):
         self.content = text
-
 
 class _HangClient:
 
@@ -23,7 +21,6 @@ class _HangClient:
         await asyncio.sleep(self.hang_s)
         yield _Chunk("never")
 
-
 class _OKClient:
     def __init__(self, text="hello", chunks=1):
         self.text = text
@@ -33,19 +30,16 @@ class _OKClient:
         for _ in range(self.chunks):
             yield _Chunk(self.text)
 
-
 class _EmptyFirstClient:
 
     async def astream(self, messages, **kwargs):
         yield _Chunk("")
         yield _Chunk("fine")
 
-
 class _BoomClient:
     async def astream(self, messages, **kwargs):
         raise RuntimeError("quota exhausted")
         yield _Chunk("never")
-
 
 def _setup(monkeypatch, clients, timeout_s=0.3):
     prov._probe_state.clear()
@@ -58,7 +52,6 @@ def _setup(monkeypatch, clients, timeout_s=0.3):
     monkeypatch.setattr(prov, "note_provider_failure",
                         lambda name: prov._probe_state.setdefault(
                             name, (False, time.time())))
-
 
 def test_hanging_provider_fails_fast(monkeypatch):
     _setup(monkeypatch, {"p1": _HangClient}, timeout_s=0.3)
@@ -75,12 +68,10 @@ def test_hanging_provider_fails_fast(monkeypatch):
     ok, _ts = prov._probe_state.get("p1", (None, None))
     assert ok is False, "hanging provider was not recorded as a failure"
 
-
 def test_hanging_provider_falls_back_to_next(monkeypatch):
     _setup(monkeypatch, {"p1": _HangClient, "p2": _OKClient}, timeout_s=0.3)
     chunks = asyncio.run(_drain_text("p1"))
     assert chunks == [{"provider": "p2", "text": "hello"}]
-
 
 def test_chunks_variant_also_fails_fast(monkeypatch):
     _setup(monkeypatch, {"p1": _HangClient}, timeout_s=0.3)
@@ -92,12 +83,10 @@ def test_chunks_variant_also_fails_fast(monkeypatch):
         assert time.monotonic() - t0 < 5.0
         assert "no first token" in str(exc)
 
-
 def test_empty_first_chunk_counts_as_progress(monkeypatch):
     _setup(monkeypatch, {"p1": _EmptyFirstClient}, timeout_s=0.3)
     chunks = asyncio.run(_drain_text("p1"))
     assert chunks == [{"provider": "p1", "text": "fine"}]
-
 
 def test_healthy_client_streams_normally(monkeypatch):
     _setup(monkeypatch, {"p1": lambda: _OKClient("hi", chunks=3)},
@@ -105,16 +94,13 @@ def test_healthy_client_streams_normally(monkeypatch):
     chunks = asyncio.run(_drain_text("p1"))
     assert [c["text"] for c in chunks] == ["hi"] * 3
 
-
 def test_immediate_error_still_falls_back(monkeypatch):
     _setup(monkeypatch, {"p1": _BoomClient, "p2": _OKClient}, timeout_s=0.3)
     chunks = asyncio.run(_drain_text("p1"))
     assert chunks == [{"provider": "p2", "text": "hello"}]
 
-
 async def _drain_text(primary):
     return [x async for x in prov.astream_with_fallback(primary, "m", [])]
-
 
 async def _drain_chunks(primary):
     return [x async for x in prov.astream_chunks_with_fallback(primary, "m", [])]

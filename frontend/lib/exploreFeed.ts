@@ -308,10 +308,10 @@ interface RankedWatch {
   sub: string | undefined;
 }
 
-function buildFullWatchItems(
-  watchlist: WatchItem[] | null | undefined,
-): FeedItem[] {
-  if (!Array.isArray(watchlist)) return [];
+function splitWatchlist(watchlist: WatchItem[]): {
+  players: RankedWatch[];
+  teams: RankedWatch[];
+} {
   const players: RankedWatch[] = [];
   const teams: RankedWatch[] = [];
   for (const item of watchlist) {
@@ -331,18 +331,74 @@ function buildFullWatchItems(
       teams.push({ item, name, sub: undefined });
     }
   }
+  return { players, teams };
+}
+
+function winsOf(w: RankedWatch): number {
+  const s = w.item.snapshot;
+  const direct = num(s.wins);
+  if (direct !== null) return direct;
+  const head = Number(clean(s.record).split("-")[0]);
+  return Number.isFinite(head) ? head : -1;
+}
+
+function watchPlayerItem(
+  item: WatchItem,
+  players: RankedWatch[],
+  playerRank: Map<WatchItem, number>,
+): FeedItem | null {
+  const found = players.find((p) => p.item === item);
+  if (!found) return null;
+  const rank = playerRank.get(item) ?? 1;
+  const ppg = num(item.snapshot.ppg) ?? 0;
+  return {
+    id: `watch-player-${clean(item.entity_id) || found.name}`,
+    kind: "watchlist",
+    entity: "player",
+    name: found.name,
+    team: found.sub,
+    statText: `${ppg.toFixed(1)} ppg`,
+    rankLabel: `#${rank}`,
+    rankTitle: `Ranked #${rank} of ${players.length} watched players by PPG`,
+    question: null,
+  };
+}
+
+function watchTeamItem(
+  item: WatchItem,
+  teams: RankedWatch[],
+  teamRank: Map<WatchItem, number>,
+): FeedItem | null {
+  const found = teams.find((t) => t.item === item);
+  if (!found) return null;
+  const rank = teamRank.get(item) ?? 1;
+  const s = item.snapshot;
+  const record = clean(s.record);
+  const w = num(s.wins);
+  const l = num(s.losses);
+  const text = record || (w !== null ? `${w}-${l ?? 0}` : "");
+  return {
+    id: `watch-team-${clean(item.entity_id) || found.name}`,
+    kind: "watchlist",
+    entity: "team",
+    name: found.name,
+    statText: text,
+    rankLabel: `#${rank}`,
+    rankTitle: `Ranked #${rank} of ${teams.length} watched teams by wins`,
+    question: null,
+  };
+}
+
+function buildFullWatchItems(
+  watchlist: WatchItem[] | null | undefined,
+): FeedItem[] {
+  if (!Array.isArray(watchlist)) return [];
+  const { players, teams } = splitWatchlist(watchlist);
   const byPpg = [...players].sort(
     (a, b) => (num(b.item.snapshot.ppg) ?? 0) - (num(a.item.snapshot.ppg) ?? 0),
   );
   const playerRank = new Map<WatchItem, number>();
   byPpg.forEach((p, i) => playerRank.set(p.item, i + 1));
-  const winsOf = (w: RankedWatch): number => {
-    const s = w.item.snapshot;
-    const direct = num(s.wins);
-    if (direct !== null) return direct;
-    const head = Number(clean(s.record).split("-")[0]);
-    return Number.isFinite(head) ? head : -1;
-  };
   const byWins = [...teams].sort((a, b) => winsOf(b) - winsOf(a));
   const teamRank = new Map<WatchItem, number>();
   byWins.forEach((t, i) => teamRank.set(t.item, i + 1));
@@ -350,42 +406,13 @@ function buildFullWatchItems(
   const out: FeedItem[] = [];
   for (const item of watchlist) {
     if (!item || !item.snapshot) continue;
-    if (item.entity_type === "player") {
-      const found = players.find((p) => p.item === item);
-      if (!found) continue;
-      const rank = playerRank.get(item) ?? 1;
-      const ppg = num(item.snapshot.ppg) ?? 0;
-      out.push({
-        id: `watch-player-${clean(item.entity_id) || found.name}`,
-        kind: "watchlist",
-        entity: "player",
-        name: found.name,
-        team: found.sub,
-        statText: `${ppg.toFixed(1)} ppg`,
-        rankLabel: `#${rank}`,
-        rankTitle: `Ranked #${rank} of ${players.length} watched players by PPG`,
-        question: null,
-      });
-    } else if (item.entity_type === "team") {
-      const found = teams.find((t) => t.item === item);
-      if (!found) continue;
-      const rank = teamRank.get(item) ?? 1;
-      const s = item.snapshot;
-      const record = clean(s.record);
-      const w = num(s.wins);
-      const l = num(s.losses);
-      const text = record || (w !== null ? `${w}-${l ?? 0}` : "");
-      out.push({
-        id: `watch-team-${clean(item.entity_id) || found.name}`,
-        kind: "watchlist",
-        entity: "team",
-        name: found.name,
-        statText: text,
-        rankLabel: `#${rank}`,
-        rankTitle: `Ranked #${rank} of ${teams.length} watched teams by wins`,
-        question: null,
-      });
-    }
+    const built =
+      item.entity_type === "player"
+        ? watchPlayerItem(item, players, playerRank)
+        : item.entity_type === "team"
+          ? watchTeamItem(item, teams, teamRank)
+          : null;
+    if (built) out.push(built);
   }
   return out;
 }

@@ -1,4 +1,4 @@
-/** Shimmering label — signals the agent is processing. */
+
 export function Shimmer({
   children,
   className = "",

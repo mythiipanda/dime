@@ -11,7 +11,6 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts"))
 import seed_2023_24_playoffs as seed
 from shared import store
 
-
 def _hist_frame():
     return pl.DataFrame({
         "season_id": ["22023", "22023"], "team_id": [1, 2],
@@ -28,7 +27,6 @@ def _hist_frame():
         "season_type": ["playoffs", "playoffs"],
     })
 
-
 def _db(path: Path):
     con = duckdb.connect(str(path))
     con.register("rows", _hist_frame().to_arrow())
@@ -36,7 +34,6 @@ def _db(path: Path):
     con.execute("CREATE TABLE silver_hist_player_seasons(player_id BIGINT, season INT, team_abbreviation VARCHAR)")
     con.execute("INSERT INTO silver_hist_player_seasons VALUES (10, 2024, 'AAA'), (20, 2024, 'BBB')")
     con.close()
-
 
 def test_team_seed_promotes_complete_paired_games_idempotently(tmp_path, monkeypatch):
     path = tmp_path / "warehouse.duckdb"
@@ -53,14 +50,12 @@ def test_team_seed_promotes_complete_paired_games_idempotently(tmp_path, monkeyp
     finally:
         con.close()
 
-
 def test_team_seed_rejects_unpaired_game():
     frame = _hist_frame().head(1).select([
         pl.col(name.lower()).alias(name) for name in seed.TEAM_COLS
     ])
     with pytest.raises(ValueError, match="multiple teams|exactly two team rows"):
         seed.validate_team_rows(frame)
-
 
 def test_player_population_is_historical_season_scoped(tmp_path):
     path = tmp_path / "warehouse.duckdb"
@@ -70,7 +65,6 @@ def test_player_population_is_historical_season_scoped(tmp_path):
         assert seed.player_ids(con) == [10, 20]
     finally:
         con.close()
-
 
 def test_all_team_seed_promotes_every_historical_playoff_season(tmp_path, monkeypatch):
     path = tmp_path / "warehouse.duckdb"
@@ -99,7 +93,6 @@ def test_all_team_seed_promotes_every_historical_playoff_season(tmp_path, monkey
         ).fetchall() == [("2022-23", 2), ("2023-24", 2)]
     finally:
         con.close()
-
 
 def test_available_team_seasons_uses_only_playoff_rows(tmp_path):
     path = tmp_path / "warehouse.duckdb"

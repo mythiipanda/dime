@@ -7,7 +7,7 @@ import type { citationDetails } from "../../lib/citation-details";
 
 export function EvidenceAction({ target, onNavigate }: { target: string | null; onNavigate: () => void }) {
   if (!target) return null;
-  return <button onClick={() => { const element = document.getElementById(target); element?.scrollIntoView({ block: "center", behavior: "smooth" }); element?.focus({ preventScroll: true }); onNavigate(); }}>View evidence <ArrowDown width={11} height={11} className="inline" /></button>;
+  return <button onClick={() => { const element = document.getElementById(target); for (let parent = element?.parentElement; parent; parent = parent.parentElement) { if (parent instanceof HTMLDetailsElement) parent.open = true; } element?.scrollIntoView({ block: "center", behavior: "smooth" }); element?.focus({ preventScroll: true }); onNavigate(); }}>View evidence <ArrowDown width={11} height={11} className="inline" /></button>;
 }
 
 export function CitationChip({ index, detail, claim, onAccept, onFlag }: {

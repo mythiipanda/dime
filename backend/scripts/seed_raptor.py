@@ -16,10 +16,8 @@ TABLES = {
 }
 HIST_PLAYER_URL = f"{BASE}/historical_RAPTOR_by_player.csv"
 
-
 def label(end_year: int) -> str:
     return f"{end_year - 1}-{str(end_year)[2:]}"
-
 
 def load(table: str, url: str) -> int:
     frame = pl.read_csv(url)
@@ -35,7 +33,6 @@ def load(table: str, url: str) -> int:
         total += store.save_frame(table, res, entity="league", replace_season=True)
     print(f"{table}: {total} rows")
     return total
-
 
 def load_historical_player() -> int:
     frame = pl.read_csv(HIST_PLAYER_URL)
@@ -59,13 +56,11 @@ def load_historical_player() -> int:
     print(f"historical silver_raptor_player (1977..2013): {total} rows")
     return total
 
-
 def main() -> None:
     print(f"modern player seasons: {label(2014)}..{label(2022)}")
     total = sum(load(t, u) for t, u in TABLES.items())
     total += load_historical_player()
     print(f"raptor rows loaded: {total}")
-
 
 if __name__ == "__main__":
     main()

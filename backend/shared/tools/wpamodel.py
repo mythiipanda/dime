@@ -6,13 +6,11 @@ B1 = 5.853395
 SMOOTH = 360.0
 TIPOFF_SEC = 2880.0
 
-
 def _sigmoid(z: float) -> float:
     if z >= 0:
         return 1.0 / (1.0 + math.exp(-z))
     e = math.exp(z)
     return e / (1.0 + e)
-
 
 def parse_clock(clock: object) -> float | None:
     try:
@@ -29,7 +27,6 @@ def parse_clock(clock: object) -> float | None:
     except (ValueError, AttributeError):
         return None
 
-
 def seconds_remaining(clock: object, period: object) -> float | None:
     left = parse_clock(clock)
     if left is None:
@@ -44,11 +41,9 @@ def seconds_remaining(clock: object, period: object) -> float | None:
         return left + 720.0 * (4 - p)
     return left
 
-
 def win_probability(home_lead: float, sec_remaining: float) -> float:
     sec = max(0.0, float(sec_remaining))
     return _sigmoid(B0 + B1 * float(home_lead) / math.sqrt(sec + SMOOTH))
-
 
 def win_probability_from_scores(
     score_home: object, score_away: object, clock: object, period: object,
@@ -61,7 +56,6 @@ def win_probability_from_scores(
     if sec is None:
         return None
     return win_probability(lead, sec)
-
 
 def fit_logistic(
     rows: list, iters: int = 25,

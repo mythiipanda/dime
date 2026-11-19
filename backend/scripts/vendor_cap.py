@@ -22,7 +22,6 @@ THRESHOLDS = {
     "apron2": 222_372_000,
 }
 
-
 def main() -> None:
     req = urllib.request.Request(URL, headers={"User-Agent": "dime-seed/1.0"})
     with urllib.request.urlopen(req, timeout=120) as r:
@@ -48,7 +47,6 @@ def main() -> None:
     n = store.save_frame("silver_cap_players", res, entity="season:2026-27")
     print(f"cap players: {n}")
     print(f"thresholds: {THRESHOLDS}")
-
 
 if __name__ == "__main__":
     main()

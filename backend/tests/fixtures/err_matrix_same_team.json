@@ -1,0 +1,1 @@
+{"error": "team_a and team_b must be different teams for a matchup matrix", "ok": false, "tool": "get_lineup_matchup_matrix"}

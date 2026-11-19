@@ -6,7 +6,6 @@ from .base import FetchResult, safe
 SOURCE = "pbpstats"
 BASE = "https://api.pbpstats.com"
 
-
 def _get(path: str, params: dict) -> pl.DataFrame:
     import httpx
 
@@ -17,7 +16,6 @@ def _get(path: str, params: dict) -> pl.DataFrame:
     if isinstance(rows, dict):
         rows = [rows]
     return pl.DataFrame(rows) if rows else pl.DataFrame()
-
 
 def on_off(
     player_id: int, team_id: int, season: str, stat_type: str = "team",
@@ -30,7 +28,6 @@ def on_off(
         )
 
     return safe(SOURCE, season, run)
-
 
 def wowy(
     player_ids: list[int], team_id: int, season: str, only_with: bool = True,
@@ -45,7 +42,6 @@ def wowy(
         )
 
     return safe(SOURCE, season, run)
-
 
 def four_factors(player_id: int, team_id: int, season: str) -> FetchResult:
     def run() -> pl.DataFrame:

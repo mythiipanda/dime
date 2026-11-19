@@ -9,16 +9,13 @@ import pytest
 from shared import store
 from shared.sources.base import FetchMeta, FetchResult
 
-
 TABLE = "test_save_frame_drill"
-
 
 @pytest.fixture
 def scratch(monkeypatch, tmp_path):
     monkeypatch.setattr(store, "DB_PATH", tmp_path / "saveframe.duckdb")
     monkeypatch.setattr(store, "LOCK_PATH", tmp_path / ".write.lock")
     return tmp_path
-
 
 def _res(rows, season="2024-25", source="t"):
     return FetchResult(
@@ -27,18 +24,15 @@ def _res(rows, season="2024-25", source="t"):
                        fetched_at="2026-01-01T00:00:00"),
     )
 
-
 def _seeded_count():
     return store.read_frame(
         TABLE, where="_season = ? AND _entity = ?", params=["2024-25", "E1"]
     ).height
 
-
 def _e1_rows():
     return store.read_frame(
         TABLE, where="_season = ? AND _entity = ?", params=["2024-25", "E1"]
     ).sort("GID")
-
 
 def test_crash_mid_schema_mismatch_keeps_committed_rows(scratch):
     store.save_frame(TABLE, _res([{"GID": "G1", "PTS": 10},
@@ -52,7 +46,6 @@ def test_crash_mid_schema_mismatch_keeps_committed_rows(scratch):
     assert got.height == 3
     assert got["PTS"].to_list() == [10, 20, 30]
 
-
 def test_crash_same_entity_delete_rolls_back(scratch):
     store.save_frame(TABLE, _res([{"GID": "G1", "PTS": 10},
                                   {"GID": "G2", "PTS": 20}]), entity="E1")
@@ -64,7 +57,6 @@ def test_crash_same_entity_delete_rolls_back(scratch):
     assert got.height == 2
     assert got["PTS"].to_list() == [10, 20]
 
-
 def test_crash_after_insert_rolls_back_without_wiping_history(scratch):
     store.save_frame(TABLE, _res([{"GID": "G1", "PTS": 10},
                                   {"GID": "G2", "PTS": 20}]), entity="E1")
@@ -75,7 +67,6 @@ def test_crash_after_insert_rolls_back_without_wiping_history(scratch):
     got = _e1_rows()
     assert got.height == 2
     assert got["PTS"].to_list() == [10, 20]
-
 
 def test_multi_column_mismatch_rolls_back_then_merges(scratch):
     store.save_frame(TABLE, _res([{"GID": "G1", "PTS": 10}]), entity="E1")
@@ -92,7 +83,6 @@ def test_multi_column_mismatch_rolls_back_then_merges(scratch):
     assert _e1_rows()["AST"].to_list() == [None]
     assert merged.height == 2
 
-
 def test_schema_mismatch_merges_without_wiping_other_entities(scratch):
     store.save_frame(TABLE, _res([{"GID": "G1", "PTS": 10},
                                   {"GID": "G2", "PTS": 20}]), entity="E1")
@@ -108,7 +98,6 @@ def test_schema_mismatch_merges_without_wiping_other_entities(scratch):
     assert new.height == 1
     assert new["AST"].to_list() == [7]
     assert store.read_frame(TABLE).height == 3
-
 
 def test_happy_path_replace_semantics_unchanged(scratch):
     store.save_frame(TABLE, _res([{"GID": "G1", "PTS": 10}]), entity="E1")

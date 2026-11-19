@@ -1,5 +1,4 @@
 import importlib.util
-import fcntl
 import hashlib
 import json
 import subprocess
@@ -11,15 +10,15 @@ from pathlib import Path
 
 import duckdb
 
-SCRIPT = Path(__file__).resolve().parent.parent / "scripts" / "release_pack.py"
+from shared import file_lock
 
+SCRIPT = Path(__file__).resolve().parent.parent / "scripts" / "release_pack.py"
 
 def _load():
     spec = importlib.util.spec_from_file_location("release_pack", SCRIPT)
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module
-
 
 def _make_db(path, rows):
     con = duckdb.connect(str(path))
@@ -28,7 +27,6 @@ def _make_db(path, rows):
         con.execute("INSERT INTO t1 VALUES (?)", [i])
     con.execute("CHECKPOINT")
     con.close()
-
 
 def test_sample_digest_stable_and_hex(tmp_path):
     rp = _load()
@@ -39,7 +37,6 @@ def test_sample_digest_stable_and_hex(tmp_path):
     assert first == second
     assert len(first) == 64
     int(first, 16)
-
 
 def test_sample_digest_changes_on_append(tmp_path):
     rp = _load()
@@ -52,7 +49,6 @@ def test_sample_digest_changes_on_append(tmp_path):
     con.close()
     assert rp.sample_digest(db) != before
 
-
 def test_sample_digest_tiny_file(tmp_path):
     rp = _load()
     tiny = tmp_path / "tiny.bin"
@@ -60,7 +56,6 @@ def test_sample_digest_tiny_file(tmp_path):
     digest = rp.sample_digest(tiny)
     assert len(digest) == 64
     int(digest, 16)
-
 
 def test_fingerprint_db_reports_tables_and_counts(tmp_path):
     rp = _load()
@@ -78,7 +73,6 @@ def test_fingerprint_db_reports_tables_and_counts(tmp_path):
     assert fp["size"] == db.stat().st_size
     assert len(fp["sample"]) == 64
 
-
 def test_fingerprint_db_copy_matches(tmp_path):
     rp = _load()
     src = tmp_path / "a.duckdb"
@@ -86,7 +80,6 @@ def test_fingerprint_db_copy_matches(tmp_path):
     _make_db(src, 5)
     shutil.copyfile(src, dst)
     assert rp.fingerprint_db(src) == rp.fingerprint_db(dst)
-
 
 def test_compare_identical_copies_no_drift(tmp_path):
     rp = _load()
@@ -97,7 +90,6 @@ def test_compare_identical_copies_no_drift(tmp_path):
     changed = rp.compare_fingerprints(rp.fingerprint_db(src), rp.fingerprint_db(dst))
     assert changed == []
     assert rp.fingerprints_drift(rp.fingerprint_db(src), rp.fingerprint_db(dst)) is False
-
 
 def test_compare_one_row_diff_detected(tmp_path):
     rp = _load()
@@ -113,7 +105,6 @@ def test_compare_one_row_diff_detected(tmp_path):
     assert changed == ["t1"]
     assert rp.fingerprints_drift(rp.fingerprint_db(src), rp.fingerprint_db(dst)) is True
 
-
 def test_compare_added_table_detected(tmp_path):
     rp = _load()
     src = tmp_path / "a.duckdb"
@@ -127,7 +118,6 @@ def test_compare_added_table_detected(tmp_path):
     changed = rp.compare_fingerprints(rp.fingerprint_db(src), rp.fingerprint_db(dst))
     assert changed == ["t2"]
     assert rp.fingerprints_drift(rp.fingerprint_db(src), rp.fingerprint_db(dst)) is True
-
 
 def test_compare_db_paths_end_to_end(tmp_path):
     rp = _load()
@@ -148,14 +138,12 @@ def test_compare_db_paths_end_to_end(tmp_path):
     assert drift_diff is True
     assert changed_diff == ["t1"]
 
-
 def _sha_chunked(path):
     h = hashlib.new("sha256")
     with open(path, "rb") as fh:
         for chunk in iter(lambda: fh.read(1 << 20), b""):
             h.update(chunk)
     return h.hexdigest()
-
 
 def test_build_pack_layout_and_sha(tmp_path):
     rp = _load()
@@ -171,23 +159,22 @@ def test_build_pack_layout_and_sha(tmp_path):
     zipfile.ZipFile(dest).extractall(out)
     assert rp.fingerprint_db(out / "data" / "warehouse.duckdb") == rp.fingerprint_db(src)
 
-
 def test_prepare_updates_three_diffs(tmp_path):
     rp = _load()
     tag = "dime-data-20990101"
     zip_name = "dime_data_20990101.zip"
     sha = "0" * 64
-    before = {p: p.read_bytes() for p in (rp.FETCH_SH, rp.WORKFLOW_YML, rp.README_MD)}
+    before = {p: p.read_bytes() for p in (rp.FETCH_SH, rp.FETCH_ACTION_YML, rp.README_MD)}
     diffs = rp.prepare_updates(tag, zip_name, sha)
-    assert sorted(diffs) == [".github/workflows/build-backend.yml", "README.md", "scripts/fetch-data.sh"]
+    assert sorted(diffs) == [".github/actions/fetch-warehouse/action.yml", "README.md", "scripts/fetch-data.sh"]
     assert tag in diffs["scripts/fetch-data.sh"]
     assert sha in diffs["scripts/fetch-data.sh"]
-    assert tag + "/" + zip_name in diffs[".github/workflows/build-backend.yml"]
+    assert tag + "/" + zip_name in diffs[".github/actions/fetch-warehouse/action.yml"]
+    assert sha in diffs[".github/actions/fetch-warehouse/action.yml"]
     assert tag in diffs["README.md"]
     assert "dime-data-20260930" in diffs["scripts/fetch-data.sh"]
-    after = {p: p.read_bytes() for p in (rp.FETCH_SH, rp.WORKFLOW_YML, rp.README_MD)}
+    after = {p: p.read_bytes() for p in (rp.FETCH_SH, rp.FETCH_ACTION_YML, rp.README_MD)}
     assert before == after
-
 
 def _run_cli(args, cwd):
     return subprocess.run(
@@ -197,7 +184,6 @@ def _run_cli(args, cwd):
         text=True,
         timeout=300,
     )
-
 
 def test_cli_no_drift_verdict_schema(tmp_path):
     rp = _load()
@@ -213,7 +199,6 @@ def test_cli_no_drift_verdict_schema(tmp_path):
     assert verdict["tables_changed"] == []
     assert verdict["pack_path"] is None
     assert verdict["sha256"] is None
-
 
 def test_cli_drift_rebuilds_and_second_run_clean(tmp_path):
     rp = _load()
@@ -248,7 +233,6 @@ def test_cli_drift_rebuilds_and_second_run_clean(tmp_path):
     assert again.returncode == 0
     assert json.loads(again.stdout)["drift"] is False
 
-
 def test_cli_prepare_writes_diffs_without_touching_repo(tmp_path):
     rp = _load()
     stage = tmp_path / "stage"
@@ -262,7 +246,7 @@ def test_cli_prepare_writes_diffs_without_touching_repo(tmp_path):
     con.execute("INSERT INTO t1 VALUES (8)")
     con.execute("CHECKPOINT")
     con.close()
-    before = {p: p.read_bytes() for p in (rp.FETCH_SH, rp.WORKFLOW_YML, rp.README_MD)}
+    before = {p: p.read_bytes() for p in (rp.FETCH_SH, rp.FETCH_ACTION_YML, rp.README_MD)}
     proc = _run_cli(
         ["--warehouse", str(canonical), "--pack-path", str(baseline),
          "--stage-dir", str(stage), "--name", "dime_data_t2",
@@ -273,11 +257,10 @@ def test_cli_prepare_writes_diffs_without_touching_repo(tmp_path):
     verdict = json.loads(proc.stdout)
     assert verdict["drift"] is True
     written = sorted(p.name for p in prep.iterdir())
-    assert written == ["README.md.diff", "build-backend.yml.diff", "fetch-data.sh.diff"]
+    assert written == ["README.md.diff", "fetch-data.sh.diff", "fetch-warehouse-action.yml.diff"]
     assert verdict["sha256"] in (prep / "fetch-data.sh.diff").read_text()
-    after = {p: p.read_bytes() for p in (rp.FETCH_SH, rp.WORKFLOW_YML, rp.README_MD)}
+    after = {p: p.read_bytes() for p in (rp.FETCH_SH, rp.FETCH_ACTION_YML, rp.README_MD)}
     assert before == after
-
 
 def test_cli_flock_single_flight_exits_cleanly(tmp_path):
     lock = tmp_path / "release-pack.lock"
@@ -288,17 +271,16 @@ def test_cli_flock_single_flight_exits_cleanly(tmp_path):
     rp = _load()
     rp.build_pack(warehouse, baseline)
     with open(lock, "w") as fh:
-        fcntl.flock(fh, fcntl.LOCK_EX)
+        file_lock.lock_exclusive(fh)
         proc = _run_cli(
             ["--warehouse", str(warehouse), "--pack-path", str(baseline),
              "--lock-path", str(lock)],
             tmp_path,
         )
-        fcntl.flock(fh, fcntl.LOCK_UN)
+        file_lock.unlock(fh)
     assert proc.returncode == 0
     verdict = json.loads(proc.stdout)
     assert verdict["drift"] is False
-
 
 def test_newest_staged_pack_picks_latest(tmp_path):
     rp = _load()

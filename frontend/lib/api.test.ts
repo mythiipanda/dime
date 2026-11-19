@@ -3,39 +3,7 @@
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { apiPath, fillBoardCells, getBoardMetrics, seedBoardRows } from "./api";
-
-test("Boards wrappers preserve the batch, season, filters and abort signal", async () => {
-  const previous = globalThis.fetch;
-  const calls: { url: string; init?: RequestInit }[] = [];
-  const metrics = [{ id: "ppg" }];
-  globalThis.fetch = async (url, init) => { calls.push({ url: String(url), init }); return Response.json({ ok: true, metrics, cells: {}, players: {}, player_ids: [] }); };
-  try {
-    const signal = new AbortController().signal;
-    assert.deepEqual(await getBoardMetrics(signal), metrics);
-    await fillBoardCells("2025-26", [201939, 203999], ["ppg", "ts_pct"], signal);
-    await seedBoardRows("2025-26", { metric_id: "ppg", n: 10, min_mpg: 20 }, signal);
-    assert.ok(calls[0].url.endsWith("/api/boards/metrics"));
-    assert.equal(calls[0].init?.method, "GET");
-    assert.equal(calls[1].init?.signal, signal);
-    assert.deepEqual(JSON.parse(String(calls[1].init?.body)), { season: "2025-26", player_ids: [201939, 203999], metric_ids: ["ppg", "ts_pct"] });
-    assert.deepEqual(JSON.parse(String(calls[2].init?.body)), { season: "2025-26", metric_id: "ppg", n: 10, min_mpg: 20 });
-  } finally { globalThis.fetch = previous; }
-});
-
-test("Boards wrappers handle empty payloads, service errors and non-JSON failures clearly", async () => {
-  const previous = globalThis.fetch;
-  try {
-    globalThis.fetch = async () => Response.json({ ok: true, metrics: [] });
-    assert.deepEqual(await getBoardMetrics(), []);
-    globalThis.fetch = async () => Response.json({ detail: "Warehouse unavailable" }, { status: 503 });
-    await assert.rejects(fillBoardCells("2025-26", [], []), /Warehouse unavailable/);
-    globalThis.fetch = async () => new Response("Bad Gateway", { status: 502 });
-    await assert.rejects(getBoardMetrics(), /Boards request failed \(502\)/);
-    globalThis.fetch = async () => Response.json(null);
-    await assert.rejects(getBoardMetrics(), /Boards request failed/);
-  } finally { globalThis.fetch = previous; }
-});
+import { apiPath, getThreads } from "./api";
 
 test("points at the v2 router", () => {
   assert.equal(apiPath("/today"), "/api/today");
@@ -78,6 +46,25 @@ function installLocalStorage() {
   (globalThis as Record<string, unknown>).localStorage = shim;
   return store;
 }
+
+test("thread loading status distinguishes cached failures from successful empty results", async () => {
+  const storage = installLocalStorage();
+  const previous = globalThis.fetch;
+  const thread = { id: "cached", title: "Cached conversation", updated: "2026-11-19", turns: 1 };
+  try {
+    globalThis.fetch = async () => Response.json({ threads: [thread] });
+    assert.deepEqual(await getThreads({ withStatus: true }), { rows: [thread], error: null, fromCache: false });
+    globalThis.fetch = async () => { throw new Error("offline"); };
+    assert.deepEqual(await getThreads({ withStatus: true }), { rows: [thread], error: "offline", fromCache: true });
+    assert.deepEqual(await getThreads(), [thread]);
+    storage.clear();
+    globalThis.fetch = async () => new Response("unavailable", { status: 503 });
+    const failure = await getThreads({ withStatus: true });
+    assert.deepEqual(failure.rows, []); assert.equal(failure.fromCache, true); assert.match(failure.error!, /HTTP 503/);
+    globalThis.fetch = async () => Response.json({ threads: [] });
+    assert.deepEqual(await getThreads({ withStatus: true }), { rows: [], error: null, fromCache: false });
+  } finally { globalThis.fetch = previous; }
+});
 
 function run(question: string, created_at: string, id?: string): RunInfo {
   return { id, question, answer: `a:${question}`, tables: [], suggestions: [], created_at };
