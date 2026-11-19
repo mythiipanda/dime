@@ -121,3 +121,32 @@ def test_cap_ledger_vintage_only_schema_fails_typed(
     out = league_mod.get_cap_ledger.invoke({"team": "LAL"})
     assert out["ok"] is False
     assert out["reason"] == "salary_column_unmatched"
+
+
+def test_salary_vintage_prefers_the_newest_season(monkeypatch, tmp_path):
+    import duckdb
+
+    from shared import store
+    from shared.tools.league import _salary_vintage
+
+    path = tmp_path / "vintage_order.duckdb"
+    con = duckdb.connect(str(path))
+    try:
+        con.execute(
+            "CREATE TABLE silver_salaries (PLAYER_NAME VARCHAR, TEAM VARCHAR, "
+            "SALARY INTEGER, _season VARCHAR, _fetched_at VARCHAR)")
+        con.execute(
+            "INSERT INTO silver_salaries VALUES "
+            "('LeBron James', 'LAL', 50000000, '2025-26', '2026-01-01'), "
+            "('Giannis Antetokounmpo', 'MIA', 40000000, '2025-26', "
+            "'2026-01-01'), "
+            "('Jayson Tatum', 'BOS', 58000000, '2026-27', '2026-09-01')")
+    finally:
+        con.close()
+    monkeypatch.setattr(store, "DB_PATH", path)
+    monkeypatch.setattr(store, "LOCK_PATH", tmp_path / ".write.lock")
+    store.warehouse_tables_cache_clear()
+    store.warehouse_pool_clear()
+    season, rows, _ = _salary_vintage()
+    assert season == "2026-27"
+    assert rows == 1

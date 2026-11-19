@@ -195,3 +195,34 @@ def test_four_factors_falls_back_to_latest_season_with_rows(
     direct = get_team_four_factors.invoke({"season": "2025-26"})
     assert direct["ok"] is True
     assert "season_fallback" not in direct["meta"]
+
+
+def test_season_player_team_ignores_tot_aggregates(monkeypatch, tmp_path):
+    import duckdb
+
+    from shared import store
+    from shared.tools.league.cba_cap import _season_player_team
+
+    path = tmp_path / "tot.duckdb"
+    con = duckdb.connect(str(path))
+    con.execute(
+        "CREATE TABLE silver_leaders_pts (PLAYER VARCHAR, TEAM VARCHAR, "
+        "GP INTEGER, PTS REAL, _season VARCHAR, _fetched_at VARCHAR)")
+    con.execute(
+        "INSERT INTO silver_leaders_pts VALUES "
+        "('Jaylen Brown', 'TOT', 70, 25.0, '2025-26', NULL), "
+        "('Jayson Tatum', 'BOS', 70, 26.0, '2025-26', NULL)")
+    con.close()
+    monkeypatch.setattr(store, "DB_PATH", path)
+    monkeypatch.setattr(store, "LOCK_PATH", tmp_path / ".write.lock")
+    store.warehouse_pool_clear()
+    store.warehouse_tables_cache_clear()
+
+    lookup = store.connect(read_only=True)
+    try:
+        assert _season_player_team(
+            lookup, "Jaylen Brown", "2025-26", None) is None
+        assert _season_player_team(
+            lookup, "Jayson Tatum", "2025-26", None) == "BOS"
+    finally:
+        lookup.close()
