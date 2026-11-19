@@ -1,5 +1,3 @@
-import shutil
-
 import duckdb
 from shared import store
 from shared.tools import get_trade_check
@@ -7,7 +5,9 @@ from shared.tools import get_trade_check
 
 def test_trade_checker_reads_configured_warehouse_without_write_access(monkeypatch, tmp_path):
     path = tmp_path / 'configured.duckdb'
-    shutil.copyfile(store.CANONICAL_DB_PATH, path)
+    with duckdb.connect(str(path)) as con:
+        con.execute('CREATE TABLE silver_salaries(PLAYER_NAME VARCHAR, TEAM VARCHAR, SALARY INTEGER, _season VARCHAR)')
+        con.execute("INSERT INTO silver_salaries VALUES ('Luka Doncic', 'LAL', 50000000, '2026-27')")
     monkeypatch.setattr(store, 'DB_PATH', path)
     store.warehouse_pool_clear()
     store.warehouse_tables_cache_clear()
@@ -20,8 +20,8 @@ def test_trade_checker_reads_configured_warehouse_without_write_access(monkeypat
     with duckdb.connect(str(path), read_only=True):
         result = get_trade_check.invoke({'team_a': 'DAL', 'team_b': 'NYK', 'players_a': 'Luka Doncic', 'players_b': 'Karl-Anthony Towns', 'season': '2026-27'})
     assert modes and all(mode == {'read_only': True} for mode in modes)
-    assert result['ok'] or result.get('error')
-    assert not isinstance(result.get('error'), Exception)
+    assert result['ok'] is False
+    assert 'salary data lists Luka Doncic with LAL, not DAL' in result['error']
     store.warehouse_pool_clear()
 
 

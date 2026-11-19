@@ -3530,6 +3530,39 @@
         "type": "object"
       }
     },
+    "product_table_detail": {
+      "name": "product_table_detail",
+      "description": "Read a bounded public warehouse table schema and sample.",
+      "args_schema": {
+        "description": "Read a bounded public warehouse table schema and sample.",
+        "properties": {
+          "table": {
+            "title": "Table",
+            "type": "string"
+          },
+          "season": {
+            "default": "",
+            "title": "Season",
+            "type": "string"
+          }
+        },
+        "required": [
+          "table"
+        ],
+        "title": "product_table_detail",
+        "type": "object"
+      }
+    },
+    "product_home": {
+      "name": "product_home",
+      "description": "Read the cached schedule and warehouse team ratings snapshot.",
+      "args_schema": {
+        "description": "Read the cached schedule and warehouse team ratings snapshot.",
+        "properties": {},
+        "title": "product_home",
+        "type": "object"
+      }
+    },
     "product_rerun": {
       "name": "product_rerun",
       "description": "Run the existing read-only SQL rerun operation.",
