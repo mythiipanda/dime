@@ -2968,7 +2968,7 @@ def get_trade_check(
 
     from .. import store as _store
 
-    guard_con = _store.connect()
+    guard_con = duckdb.connect(str(_store.DB_PATH), read_only=True)
     try:
         salary_season, salary_rows, _ = _salary_vintage(guard_con)
         if salary_rows and salary_season and salary_season != season:
@@ -3008,7 +3008,7 @@ def get_trade_check(
                 ts.add(str(hit[1]))
             return ts.pop() if len(ts) == 1 else ""
 
-        con = _store.connect()
+        con = duckdb.connect(str(_store.DB_PATH), read_only=True)
         try:
             team_a = team_a or _infer_side(players_a)
             team_b = team_b or _infer_side(players_b)
@@ -3026,7 +3026,7 @@ def get_trade_check(
     team_a, team_b = _norm
     from .. import store as _store
 
-    con = _store.connect()
+    con = duckdb.connect(str(_store.DB_PATH), read_only=True)
     try:
         out_a, names_a, unk_a = _match_trade_players(team_a, players_a, con)
         out_b, names_b, unk_b = _match_trade_players(team_b, players_b, con)

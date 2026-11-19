@@ -1,4 +1,7 @@
 from pathlib import Path
+import os
+import shutil
+import subprocess
 import sys
 from types import SimpleNamespace
 
@@ -40,6 +43,7 @@ def real(monkeypatch):
 @pytest.fixture
 def minimal(tmp_path,monkeypatch):
     path=tmp_path/"trade.duckdb"
+    monkeypatch.setattr(store,"DB_PATH",path)
     with duckdb.connect(str(path)) as con:
         con.execute('''CREATE TABLE silver_player_season (PLAYER_ID BIGINT, PLAYER VARCHAR, TEAM VARCHAR,
             AGE DOUBLE, GP DOUBLE, MPG DOUBLE, PPG DOUBLE, RPG DOUBLE, APG DOUBLE,
@@ -279,3 +283,39 @@ def test_checker_absorption_response_is_not_recomputed(minimal,monkeypatch):
     assert calls==[{"team_a":"OKC","team_b":"LAL","season":"2026-27","players_a":"Alpha Guard","players_b":"Luka Doncic"}]
     assert rows[0]["allowed_incoming"]==115250000
     assert rows[0]["verdict"] and "under the cap" in rows[0]["rule"]
+
+
+def test_configured_warehouse_keeps_packet_connection_open_and_read_only(tmp_path):
+    if not WAREHOUSE.exists():
+        pytest.skip("warehouse not provisioned")
+    copied=tmp_path/"configured.duckdb"
+    shutil.copyfile(WAREHOUSE,copied)
+    before=copied.stat().st_mtime_ns
+    script='''
+import os
+from pathlib import Path
+import duckdb
+from fastapi.testclient import TestClient
+from shared import store
+from v2.main import app
+assert store.DB_PATH == Path(os.environ["DIME_WAREHOUSE"])
+original=duckdb.connect
+reads=[]
+def connect(*args,**kwargs):
+    if args and Path(str(args[0])) == store.DB_PATH:
+        assert kwargs.get("read_only") is True, kwargs
+        reads.append(True)
+    return original(*args,**kwargs)
+duckdb.connect=connect
+response=TestClient(app).post("/api/packets/trade_evaluation",json={"team_a":"OKC","team_b":"LAL","a_sends":["Shai Gilgeous-Alexander"],"b_sends":["Luka Doncic"]})
+assert response.status_code == 200, response.text
+sections={s["id"]:s for s in response.json()["sections"]}
+rotation=next(b for b in sections["rotation_impact"]["blocks"] if b["type"]=="table")
+assert all(r["outgoing_share"] is not None for r in rotation["rows"])
+assert len(reads)>=3, reads
+print("configured warehouse packet: 200; checker reads isolated and read-only; rotation populated")
+'''
+    result=subprocess.run([sys.executable,"-c",script],cwd=Path(__file__).resolve().parents[1],
+        env={**os.environ,"DIME_WAREHOUSE":str(copied)},capture_output=True,text=True,timeout=90)
+    assert result.returncode==0,result.stdout+result.stderr
+    assert copied.stat().st_mtime_ns==before
