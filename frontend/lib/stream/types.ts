@@ -137,6 +137,28 @@ export interface ScatterArtifactPayload {
   footnote?: string;
 }
 
+export interface MemoAnchor {
+  ref: string;
+  row: number;
+  columns: string[];
+}
+
+export interface MemoSectionPayload {
+  heading: string;
+  body: string;
+  anchors?: MemoAnchor[];
+}
+
+export interface MemoArtifactPayload {
+  kind: "memo";
+  title: string;
+  source?: string;
+  provenance?: DimeProvenance;
+  subtitle?: string;
+  sections: MemoSectionPayload[];
+  footnote?: string;
+}
+
 export interface PlayerCardArtifactPayload {
   kind: "player_card";
   title: string;
