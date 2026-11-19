@@ -6,6 +6,7 @@ import { Type, type Static } from "typebox";
 import { Value } from "typebox/value";
 import type { JsonValue } from "@earendil-works/pi-ai";
 import { defineTool, type ToolNamespace } from "@earendil-works/pi-coding-agent";
+import { TOOL_PROMPT_GUIDELINES } from "./tool-contract-metadata.js";
 
 export const ANALYST_TOOL_NAMES = [
     "sql_exec",
@@ -209,9 +210,11 @@ export async function connectPythonTools({ python, cwd, env }: PythonToolsOption
             if (!ANALYST_TOOL_NAMES.includes(name))
                 throw new Error("Unexpected Python tool");
             const namespace = TOOL_NAMESPACE_MAP.get(name);
+            const promptGuidelines = TOOL_PROMPT_GUIDELINES[name];
             return defineTool({
                 name, label: name,
                 ...(namespace ? { namespace } : {}),
+                ...(promptGuidelines ? { promptGuidelines } : {}),
                 description: tool.description + " Returns {ref, tool, result, isError}. Filter result before returning from codemode; retain ref.",
                 parameters: Type.Unsafe<Record<string, unknown>>(tool.inputSchema), outputSchema: sourceOutputSchema,
                 async execute(callId, args, signal) {

@@ -16,6 +16,8 @@ import {
   createSubmitAnswerTool,
   validateAnswerSubmission,
 } from "../dist/submit-tool.js";
+import { ANALYST_TOOL_NAMES } from "../dist/python-tools.js";
+import { TOOL_PROMPT_GUIDELINES } from "../dist/tool-contract-metadata.js";
 
 function makeSourceRecord(ref, { rows = [], isError = false, error } = {}) {
   const result = error !== undefined ? { rows, error } : { rows };
@@ -59,6 +61,52 @@ function makeFixtureRuntime(agentDir, streamHandler, compat) {
     return runtime;
   });
 }
+
+test("tool contract metadata covers high-risk analyst tools", () => {
+  const covered = [
+    "sql_exec",
+    "warehouse_schema",
+    "run_python",
+    "get_cap_ledger",
+    "get_contract_value",
+    "get_trade_check",
+    "get_trade_value",
+    "get_lineup_stats",
+    "get_lineup_leaders",
+    "get_lineups",
+    "get_wowy",
+    "get_lineup_matchup_matrix",
+    "get_shot_zones",
+    "get_shot_compare",
+    "get_zone_deltas",
+    "search_shots",
+    "get_team_shot_zones",
+    "get_tracking_profile",
+    "get_playtype_profile",
+    "get_rapm",
+    "get_rapm_prior",
+    "get_on_off",
+    "get_comps",
+    "get_game_prediction",
+    "get_win_prob",
+    "get_playoff_sim",
+    "get_regression_check",
+    "get_scout_pack",
+    "get_rotation_check",
+    "get_injury_impact",
+  ];
+  for (const name of covered) {
+    const guidelines = TOOL_PROMPT_GUIDELINES[name];
+    assert.ok(Array.isArray(guidelines) && guidelines.length === 1, name);
+    assert.match(guidelines[0], /Use /, name);
+    assert.match(guidelines[0], /Do not /, name);
+    assert.ok(guidelines[0].length <= 500, name);
+  }
+  for (const [name, guidelines] of Object.entries(TOOL_PROMPT_GUIDELINES)) {
+    assert.ok(ANALYST_TOOL_NAMES.includes(name), name);
+    assert.ok(guidelines.every((guideline) => guideline.trim().length > 0), name);
+  }
+});
 
 test("listWorkspaceArtifacts respects depth, extensions, ignores, sorting, and cap", async () => {
   const dir = await mkdtemp(join(tmpdir(), "dime-ws-artifacts-"));
