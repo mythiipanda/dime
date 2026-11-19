@@ -246,9 +246,9 @@ def _payroll(team: str, con: object = None,
                     f"silver_salaries has no salary column for season "
                     f"{season or 'unknown'}")
             records = [r for r in salary_records(con, salary_season=season) if str(r['TEAM']).upper() == team.upper()]
-            rows = [(r['PLAYER_NAME'], r.get(scol)) for r in records]
+            rows = [(r['PLAYER_NAME'], r['salary']) for r in records]
             if rows:
-                players = [{"player": r['PLAYER_NAME'], "salary": r.get(scol),
+                players = [{"player": r['PLAYER_NAME'], "salary": r['salary'],
                             **contract_details(r)} for r in records]
                 return sum(r[1] or 0 for r in rows), players
         if "silver_cap_players" in tables:

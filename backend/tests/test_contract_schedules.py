@@ -141,6 +141,19 @@ def test_cap_legacy_snapshot_compat_and_explicitly_unavailable(warehouse):
     assert player['contract_schedule_available'] is False
 
 
+def test_payroll_empty_primary_uses_normalized_vendor_salary(warehouse):
+    con = duckdb.connect(str(warehouse))
+    try:
+        con.execute('CREATE TABLE silver_salaries (PLAYER_NAME VARCHAR, TEAM VARCHAR, SALARY_2025_26 BIGINT)')
+        con.execute('CREATE TABLE silver_cap_players (player VARCHAR, team VARCHAR, salary BIGINT)')
+        con.execute("INSERT INTO silver_cap_players VALUES ('Vendor Example', 'BOS', 125)")
+        total, players = league._payroll('BOS', con)
+        assert total == 125
+        assert players[0]['salary'] == 125
+    finally:
+        con.close()
+
+
 def test_cap_new_schedule_and_wrapper(warehouse):
     _new_warehouse(warehouse)
     result = league.get_cap_ledger.invoke({'team': 'BOS'})
