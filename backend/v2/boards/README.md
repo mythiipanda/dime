@@ -29,19 +29,28 @@ fractions are multiplied by 100, except `TM_TOV_PCT`, already per 100 possession
 The raw SQL replay plus the metric definition explains that transformation.
 
 `salary_2026_27` always reads the 2026–27 salary vintage, independently of the
-performance season. A salary name must match exactly one player ID in the
-selected player-season population after Unicode NFC, case and whitespace
+performance season. A salary name must match exactly one player ID in the union
+of basic and advanced rows for the selected season after Unicode NFC, case and whitespace
 normalization. Multiple salary rows are also rejected. There is no fuzzy match,
 suffix removal, accent removal, or team-based tie-breaker. The citation carries
 the salary vintage and the separate player-name resolution query. This is not
 a guarantee of salary coverage for every player.
 
+One identity index retains every name spelling per player ID from both
+same-season tables. Matching any spelling is allowed; a matching name shared by
+multiple IDs is always rejected. Ambiguous-name citations include every colliding
+ID, table, query, row key and source. Multiple salary rows across aliases are
+rejected too; no alias is arbitrarily preferred to break a tie.
+
 Metric values and seed candidates come from the requested metric's own table,
-not an inner join to basic season coverage. Advanced seeds qualify using advanced
-`GP` and `MIN` (minutes per game); basic and salary seeds use basic `GP`/`MPG`.
-Player metadata uses an unambiguous basic row or, if absent, an advanced row.
-Salary resolution considers names from both same-season identity tables, with
-the chosen resolution table/query recorded in the citation.
+not an inner join to basic season coverage. Salary candidates come from salary
+rows resolved through the union identity index. GP/MPG filters are only applied
+when supplied. Advanced seeds qualify using advanced `GP` and `MIN` (minutes per
+game); basic seeds use basic `GP`/`MPG`. For salary qualification, use an
+unambiguous basic row, or an advanced row if the basic row is absent; missing
+qualification data excludes a player only when the corresponding filter is set.
+Player display metadata uses an unambiguous basic row or an advanced row, while
+salary citations retain matched spellings and all resolution sources.
 
 Validation errors use HTTP 422; warehouse read failures use HTTP 503 rather than
 appearing as successful empty results.

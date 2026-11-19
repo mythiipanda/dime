@@ -102,6 +102,69 @@ def test_metric_rows_do_not_depend_on_basic_coverage(warehouse):
     assert result["player_ids"] == [1, 2]
 
 
+@pytest.fixture
+def real_warehouse(monkeypatch):
+    if not WAREHOUSE.exists():
+        pytest.skip("warehouse not provisioned")
+    monkeypatch.setattr(store, "connect", lambda **kwargs: duckdb.connect(str(WAREHOUSE), read_only=True))
+    return WAREHOUSE
+
+
+def test_real_salary_seed_includes_advanced_only_malachi(real_warehouse):
+    with duckdb.connect(str(real_warehouse), read_only=True) as con:
+        assert con.execute("SELECT COUNT(*) FROM silver_player_season WHERE PLAYER_ID=1641869 AND _season='2025-26'").fetchone()[0] == 0
+        assert con.execute("SELECT salary FROM silver_cap_players WHERE player='Malachi Smith' AND _season='2026-27'").fetchone()[0] == 2150917
+    result = client.post("/api/boards/seed", json={"metric_id": "salary_2026_27", "n": 25}).json()
+    assert 1641869 in result["player_ids"]
+    assert result["cells"]["1641869"]["salary_2026_27"]["value"] == 2150917
+    assert result["players"]["1641869"]["name"] == "Malachi Smith"
+    values = [result["cells"][str(pid)]["salary_2026_27"]["value"] for pid in result["player_ids"]]
+    assert values == sorted(values)
+
+
+def test_real_salary_matches_walter_alternative_spelling(real_warehouse):
+    with duckdb.connect(str(real_warehouse), read_only=True) as con:
+        assert con.execute("SELECT PLAYER FROM silver_player_season WHERE PLAYER_ID=1642383 AND _season='2025-26'").fetchone()[0] == "Walter Clayton"
+        expected = con.execute("SELECT salary FROM silver_cap_players WHERE player='Walter Clayton Jr.' AND _season='2026-27'").fetchone()[0]
+    cell = fill(ids=[1642383], metrics=["salary_2026_27"]).json()["cells"]["1642383"]["salary_2026_27"]
+    assert cell["value"] == expected == 4190520
+    resolution = cell["citation"]["identity_resolution"]
+    assert set(resolution["spellings"]) == {"walter clayton", "walter clayton jr."}
+    assert resolution["table"] == "silver_advanced"
+
+
+def test_real_jaren_collision_lists_all_ids_and_tables(real_warehouse):
+    result = fill(ids=[1114, 1628991], metrics=["salary_2026_27"]).json()
+    for pid in [1114, 1628991]:
+        cell = result["cells"][str(pid)]["salary_2026_27"]
+        assert cell["value"] is None and cell["reason"] == "ambiguous_salary_name"
+        collisions = cell["citation"]["identity_resolution"]["collisions"]
+        assert {(ref["player_id"], ref["table"]) for ref in collisions} == {
+            (1114, "silver_player_season"), (1628991, "silver_advanced")}
+        for ref in collisions:
+            assert ref["sql"] and ref["params"] == ["2025-26"]
+            assert ref["source"] and ref["row_key"]["PLAYER_ID"] == ref["player_id"]
+
+
+def test_salary_seed_only_applies_requested_filters(warehouse):
+    with duckdb.connect(str(warehouse)) as con:
+        con.execute("DELETE FROM silver_player_season WHERE PLAYER_ID=1")
+        con.execute("UPDATE silver_advanced SET GP=NULL,MIN=NULL WHERE PLAYER_ID=1")
+    assert client.post("/api/boards/seed", json={"metric_id": "salary_2026_27"}).json()["player_ids"] == [1]
+    assert client.post("/api/boards/seed", json={"metric_id": "salary_2026_27", "min_gp": 0}).json()["player_ids"] == []
+    assert client.post("/api/boards/seed", json={"metric_id": "salary_2026_27", "min_mpg": 0}).json()["player_ids"] == []
+
+
+def test_alternative_salary_names_do_not_bypass_collisions(warehouse):
+    with duckdb.connect(str(warehouse)) as con:
+        con.execute("UPDATE silver_advanced SET PLAYER_NAME='Alternate Name' WHERE PLAYER_ID=1")
+        con.execute("INSERT INTO silver_advanced (PLAYER_ID,PLAYER_NAME,_season) VALUES (4,'Alternate Name','2025-26')")
+        con.execute("UPDATE silver_cap_players SET player='Alternate Name'")
+    cell = fill(ids=[1], metrics=["salary_2026_27"]).json()["cells"]["1"]["salary_2026_27"]
+    assert cell["value"] is None and cell["reason"] == "ambiguous_salary_name"
+    assert {ref["player_id"] for ref in cell["citation"]["identity_resolution"]["collisions"]} == {1, 4}
+
+
 def test_fill_and_replayable_citations(warehouse):
     response = fill(metrics=["ppg", "fg_pct", "ts_pct", "tov_pct", "salary_2026_27"])
     assert response.status_code == 200
@@ -172,6 +235,7 @@ def test_salary_ambiguity_never_guesses(warehouse, ambiguous_identity):
 def test_null_names_and_nonfinite_values(warehouse):
     with duckdb.connect(str(warehouse)) as con:
         con.execute("UPDATE silver_player_season SET PLAYER=NULL,PPG='NaN'::DOUBLE WHERE PLAYER_ID=1")
+        con.execute("UPDATE silver_advanced SET PLAYER_NAME=NULL WHERE PLAYER_ID=1")
         con.execute("INSERT INTO silver_cap_players VALUES (NULL,'AAA',5,'fixture','2026-27','today','league')")
     result = fill(ids=[1], metrics=["ppg", "salary_2026_27"]).json()
     assert result["cells"]["1"]["salary_2026_27"]["reason"] == "unmatched_salary_name"
