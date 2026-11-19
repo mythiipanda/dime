@@ -40,7 +40,7 @@ it("fills a workflow, previews its request and runs only when complete", async (
     await act(async () => run.click());
     assert.deepEqual(requests, [expected]);
     await act(async () => [...host.querySelectorAll("button")].find((b) => b.textContent?.includes("All workflows"))!.click());
-    await act(async () => [...host.querySelectorAll("button")].find((b) => b.textContent?.includes("Player evaluation"))!.click());
+    await act(async () => [...host.querySelectorAll("button")].find((b) => b.querySelector("h3")?.textContent === "Player evaluation")!.click());
     assert.equal(host.querySelector("input")!.value, "");
     assert.equal(host.querySelector<HTMLButtonElement>('button[type="submit"]')!.disabled, true);
   } finally {

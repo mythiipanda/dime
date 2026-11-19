@@ -13,7 +13,7 @@ const SECTIONS=[
   {label:"Trade checker",hash:"explore-trade"},{label:"Crew lineups",hash:"explore-lineups"},{label:"Playoffs",hash:"explore-playoffs"},
 ];
 
-export default function CommandPalette({onAsk,onTab,onDebate,openKey=0}:{onAsk:(q:string)=>void;onTab:(t:"chat"|"data"|"workflows")=>void;onDebate?:()=>void;openKey?:number}) {
+export default function CommandPalette({onAsk,onTab,onDebate,openKey=0}:{onAsk:(q:string)=>void;onTab:(t:"chat"|"data"|"workflows"|"today"|"boards"|"briefs")=>void;onDebate?:()=>void;openKey?:number}) {
   const [open,setOpen]=useState(false),[q,setQ]=useState(""),[hits,setHits]=useState<Hit[]>([]),[active,setActive]=useState(0);
   const input=useRef<HTMLInputElement>(null);
   useEffect(()=>{if(openKey>0)setOpen(true)},[openKey]);
@@ -23,9 +23,12 @@ export default function CommandPalette({onAsk,onTab,onDebate,openKey=0}:{onAsk:(
   const close=()=>setOpen(false),needle=q.trim().toLowerCase(),tray=readTray();
   const items=useMemo<PaletteItem[]>(()=>{
     const out:PaletteItem[]=[
-      {id:"chat",group:"Navigate",label:"Analyst chat",hint:"view",run:()=>{onTab("chat");close()}},
+      {id:"today",group:"Navigate",label:"Home",hint:"view",run:()=>{onTab("today");close()}},
+      {id:"chat",group:"Navigate",label:"Ask",hint:"view",run:()=>{onTab("chat");close()}},
+      {id:"boards",group:"Navigate",label:"Boards",hint:"view",run:()=>{onTab("boards");close()}},
+      {id:"briefs",group:"Navigate",label:"Library",hint:"view",run:()=>{onTab("briefs");close()}},
       {id:"workflows",group:"Navigate",label:"Workflows",hint:"view",run:()=>{onTab("workflows");close()}},
-      {id:"data",group:"Navigate",label:"Explore datasets",hint:"view",run:()=>{onTab("data");close()}},
+      {id:"data",group:"Navigate",label:"Data",hint:"view",run:()=>{onTab("data");close()}},
       ...SECTIONS.map(s=>({id:s.hash,group:"Explore",label:s.label,hint:"section",run:()=>{onTab("data");close();setTimeout(()=>document.getElementById(s.hash)?.scrollIntoView({behavior:"smooth"}),80)}})),
       ...(onDebate?[{id:"debate",group:"Actions",label:"New debate card",hint:"action",run:()=>{onDebate();close()}}]:[]),
       ...(tray.length>=2?[{id:"tray",group:"Actions",label:`Compare ${tray.join(" vs ")}`,hint:"action",run:()=>{onTab("chat");onAsk(`Compare ${tray.join(" and ")} this season`);close()}}]:[]),
