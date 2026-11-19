@@ -7,12 +7,23 @@ import { connectPythonTools, objectValue, sourceRecordSchema, sourceOutputSchema
 import { priorSourceTool, resolvedRuntime } from "./pi-context.js";
 import { createSubmitAnswerTool, type AnswerSubmission } from "./submit-tool.js";
 import type { AssistantMessage, Message } from "@earendil-works/pi-ai";
+import type { AgentSessionEvent } from "@earendil-works/pi-coding-agent";
 
 const WORKSPACE_ARTIFACT_EXTENSIONS = new Set([".parquet", ".csv", ".json", ".md", ".png", ".tsv", ".txt"]);
 const WORKSPACE_IGNORED_DIRS = new Set(["node_modules", "__pycache__"]);
 const WORKSPACE_ARTIFACT_LIMIT = 40;
 const WORKSPACE_MAX_DEPTH = 2;
 const ABORT_GRACE_MS = 10_000;
+
+export function analystEventFrom(event: AgentSessionEvent): AnalystEvent | undefined {
+    if (event.type === "message_update" && event.assistantMessageEvent.type === "text_delta")
+        return { type: "token", text: event.assistantMessageEvent.delta };
+    if (event.type === "auto_retry_start")
+        return { type: "tool_call", name: "provider_retry" };
+    if (event.type === "auto_retry_end")
+        return { type: "tool_result", name: "provider_retry", status: event.success ? "ok" : "fail", error: event.finalError };
+    return undefined;
+}
 
 export type WorkspaceArtifact = {
     path: string;
@@ -289,8 +300,9 @@ export function createPiExecution(deps: AnalystDeps = {}) {
                     });
                     controller.signal.throwIfAborted();
                     session.subscribe(event => {
-                        if (event.type === "message_update" && event.assistantMessageEvent.type === "text_delta")
-                            emit({ type: "token", text: event.assistantMessageEvent.delta });
+                        const mapped = analystEventFrom(event);
+                        if (mapped)
+                            emit(mapped);
                     });
                     const history = toHistoryMessages(start.history, model);
                     for (const message of history)
