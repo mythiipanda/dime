@@ -248,14 +248,12 @@ export class DimeStream {
 export function streamDimeChat(
   q: string,
   callbacks: DimeStreamCallbacks,
-  opts?: { signal?: AbortSignal; model?: string | null },
+  opts?: { signal?: AbortSignal; model?: string | null; thread?: string; replay?: string | null },
 ): void {
   const stream = new DimeStream();
   let settled = false;
   const emit = () => callbacks.onUpdate(stream.snapshot());
-  void postChatStream(
-    q,
-    opts?.model ?? null,
+  const handlers: Parameters<typeof postChatStream>[2] =
     {
       onEvent: (type, data) => {
         if (settled) return;
@@ -273,11 +271,18 @@ export function streamDimeChat(
         settled = true;
         stream.fail("connection", message);
         stream.finish();
-        const snap = stream.snapshot();
-        callbacks.onError(snap, message);
+        callbacks.onError(stream.snapshot(), message);
       },
-    },
+    };
+  if (process.env.NODE_ENV === "development" && opts?.replay) {
+    void import("../replay").then(({ replayStream }) => replayStream(opts.replay!, handlers, opts.signal));
+    return;
+  }
+  void postChatStream(
+    q,
+    opts?.model ?? null,
+    handlers,
     opts?.signal,
-    null,
+    opts?.thread ?? null,
   );
 }

@@ -135,14 +135,14 @@ export function AnswerBlocks({
   );
 }
 
-function SourceRefDetails({ carry }: { carry: VerificationCarry }) {
+export function SourceRefDetails({ carry, prefix = "" }: { carry: VerificationCarry; prefix?: string }) {
   return (
     <details className="mt-3 rounded-[10px] border border-line bg-field px-3 py-2">
       <summary className="cursor-pointer text-[12px] font-medium text-ink-2">
         Sources &amp; provenance
       </summary>
       {carry.sources?.map((source) => (
-        <details key={source.ref} id={`source-${source.ref}`} className="mt-2 text-[12px]">
+        <details key={source.ref} id={`${prefix}source-${source.ref}`} className="mt-2 text-[12px]">
           <summary>{source.label}</summary>
           {source.rows.length > 0 && (
             <div className="overflow-auto">
@@ -159,7 +159,7 @@ function SourceRefDetails({ carry }: { carry: VerificationCarry }) {
                 </thead>
                 <tbody>
                   {source.rows.map((row, index) => (
-                    <tr key={index} id={`source-${source.ref}-row-${index}`}>
+                    <tr key={index} id={`${prefix}source-${source.ref}-row-${index}`} tabIndex={-1}>
                       {Object.keys(source.rows[0]).map((column) => (
                         <td key={column} className="pr-4" data-col={column}>
                           {typeof row[column] === "object"
@@ -188,12 +188,14 @@ function SourceRefDetails({ carry }: { carry: VerificationCarry }) {
 export function AnswerVerification({
   carry,
   artifacts,
+  prefix = "",
 }: {
   carry: VerificationCarry | null;
   artifacts: DimeArtifact[];
+  prefix?: string;
 }) {
   const provenance = mergeArtifactProvenance(artifacts);
-  if (carry?.sourceRefs) return <SourceRefDetails carry={carry} />;
+  if (carry?.sourceRefs) return <SourceRefDetails carry={carry} prefix={prefix} />;
   if (!carry && !provenance) return null;
   const disclosure = verificationDisclosure(carry, provenance);
   return (
