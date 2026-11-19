@@ -164,15 +164,16 @@ def test_prepare_updates_three_diffs(tmp_path):
     tag = "dime-data-20990101"
     zip_name = "dime_data_20990101.zip"
     sha = "0" * 64
-    before = {p: p.read_bytes() for p in (rp.FETCH_SH, rp.WORKFLOW_YML, rp.README_MD)}
+    before = {p: p.read_bytes() for p in (rp.FETCH_SH, rp.FETCH_ACTION_YML, rp.README_MD)}
     diffs = rp.prepare_updates(tag, zip_name, sha)
-    assert sorted(diffs) == [".github/workflows/build-backend.yml", "README.md", "scripts/fetch-data.sh"]
+    assert sorted(diffs) == [".github/actions/fetch-warehouse/action.yml", "README.md", "scripts/fetch-data.sh"]
     assert tag in diffs["scripts/fetch-data.sh"]
     assert sha in diffs["scripts/fetch-data.sh"]
-    assert tag + "/" + zip_name in diffs[".github/workflows/build-backend.yml"]
+    assert tag + "/" + zip_name in diffs[".github/actions/fetch-warehouse/action.yml"]
+    assert sha in diffs[".github/actions/fetch-warehouse/action.yml"]
     assert tag in diffs["README.md"]
     assert "dime-data-20260930" in diffs["scripts/fetch-data.sh"]
-    after = {p: p.read_bytes() for p in (rp.FETCH_SH, rp.WORKFLOW_YML, rp.README_MD)}
+    after = {p: p.read_bytes() for p in (rp.FETCH_SH, rp.FETCH_ACTION_YML, rp.README_MD)}
     assert before == after
 
 def _run_cli(args, cwd):
@@ -245,7 +246,7 @@ def test_cli_prepare_writes_diffs_without_touching_repo(tmp_path):
     con.execute("INSERT INTO t1 VALUES (8)")
     con.execute("CHECKPOINT")
     con.close()
-    before = {p: p.read_bytes() for p in (rp.FETCH_SH, rp.WORKFLOW_YML, rp.README_MD)}
+    before = {p: p.read_bytes() for p in (rp.FETCH_SH, rp.FETCH_ACTION_YML, rp.README_MD)}
     proc = _run_cli(
         ["--warehouse", str(canonical), "--pack-path", str(baseline),
          "--stage-dir", str(stage), "--name", "dime_data_t2",
@@ -256,9 +257,9 @@ def test_cli_prepare_writes_diffs_without_touching_repo(tmp_path):
     verdict = json.loads(proc.stdout)
     assert verdict["drift"] is True
     written = sorted(p.name for p in prep.iterdir())
-    assert written == ["README.md.diff", "build-backend.yml.diff", "fetch-data.sh.diff"]
+    assert written == ["README.md.diff", "fetch-data.sh.diff", "fetch-warehouse-action.yml.diff"]
     assert verdict["sha256"] in (prep / "fetch-data.sh.diff").read_text()
-    after = {p: p.read_bytes() for p in (rp.FETCH_SH, rp.WORKFLOW_YML, rp.README_MD)}
+    after = {p: p.read_bytes() for p in (rp.FETCH_SH, rp.FETCH_ACTION_YML, rp.README_MD)}
     assert before == after
 
 def test_cli_flock_single_flight_exits_cleanly(tmp_path):

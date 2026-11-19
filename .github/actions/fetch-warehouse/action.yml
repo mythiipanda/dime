@@ -6,7 +6,7 @@ inputs:
     default: https://github.com/mythiipanda/dime/releases/download/dime-data-20260930/dime_data_full.zip
   sha256:
     description: Expected SHA-256 of the warehouse zip
-    default: 5566409dd71881194edc6dd6ddddbf56a316824a9c34340b3ddb34d6c7a95ea8
+    default: "5566409dd71881194edc6dd6ddddbf56a316824a9c34340b3ddb34d6c7a95ea8"
 runs:
   using: composite
   steps:
@@ -14,7 +14,7 @@ runs:
       id: cache
       uses: actions/cache@v4
       with:
-        path: .dime-data/dime_data_full.zip
+        path: .dime-data/warehouse.zip
         key: dime-data-${{ inputs.sha256 }}
     - name: Download warehouse zip
       if: steps.cache.outputs.cache-hit != 'true'
@@ -24,10 +24,10 @@ runs:
         DIME_DATA_SHA256: ${{ inputs.sha256 }}
       run: |
         mkdir -p .dime-data
-        curl -fL --retry 3 -o .dime-data/dime_data_full.zip "$DIME_DATA_URL"
-        echo "$DIME_DATA_SHA256  .dime-data/dime_data_full.zip" | sha256sum -c -
+        curl -fL --retry 3 -o .dime-data/warehouse.zip "$DIME_DATA_URL"
+        echo "$DIME_DATA_SHA256  .dime-data/warehouse.zip" | sha256sum -c -
     - name: Unpack warehouse
       shell: bash
       run: |
-        unzip -q -o .dime-data/dime_data_full.zip -d backend
+        unzip -q -o .dime-data/warehouse.zip -d backend
         ls -la backend/data | head
