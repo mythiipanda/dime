@@ -45,6 +45,7 @@ test("creates a template, fills real row ids, saves its cache and opens a source
     await click(button(m.host, "Scoring guards"));
     assert.ok(m.host.textContent?.includes("Stephen Curry"));
     assert.ok(m.host.textContent?.includes("25.5"));
+    assert.doesNotMatch(m.host.textContent!, /Warehouse only|No model required/);
     const fill = requests.find((r) => r.path.endsWith("/fill"))!;
     assert.deepEqual(fill.body.player_ids, [201939, 203999]);
     assert.equal(fill.body.season, "2025-26");

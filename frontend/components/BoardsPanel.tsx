@@ -6,7 +6,6 @@ import { getBoardMetrics, fillBoardCells, seedBoardRows, resolvePlayers, type Pl
 import { addColumn, addRow, boardCsv, boardPrompt, boardTemplates, boardsArePersistent, duplicateBoard, getBoard, newBoard, removeColumn, removeRow, reorderColumns, reorderRows, saveBoard, sortByColumn, type Board, type BoardMetric, type BoardTemplate } from "../lib/boards";
 import { BoardGrid } from "./ds/BoardGrid";
 import { Button } from "./ds/Button";
-import { Chip } from "./ds/Chip";
 import { PageHeader } from "./ds/Panel";
 import { TextField } from "./ds/TextField";
 import { Shimmer } from "./ds/Shimmer";
@@ -110,6 +109,5 @@ export function BoardsPanel({ boardId, onOpen, onAsk }: { boardId: string | null
     {(busy || seeding) && <div role="status" className="mb-3 text-[11px]"><Shimmer>{seeding ? "Finding the starting player pool…" : "Filling from the warehouse…"}</Shimmer></div>}
     {board.rows.length > 0 && board.columns.length > 0 ? <BoardGrid board={board} metrics={metrics} loading={busy} sort={sort} onSort={(m) => { const best = sort?.id === m.id ? !sort.best : true; setSort({ id: m.id, best }); commit(sortByColumn(board, m, best)); }} onRemoveRow={(id) => commit(removeRow(board, id))} onRemoveColumn={(id) => commit(removeColumn(board, id))} onMoveRow={(from, to) => { setSort(null); commit(reorderRows(board, from, to)); }} onMoveColumn={(from, to) => commit(reorderColumns(board, from, to))} /> : <div className="board-empty"><span className="board-template-icon mx-auto mb-5"><ViewGrid width={22} /></span><h2 className="text-[17px] font-medium tracking-tight">{seeding ? "Building your starting pool" : !board.rows.length ? "Make room for a better decision." : "Choose what to compare."}</h2><p className="mx-auto mt-3 max-w-sm text-[12px] leading-relaxed text-ink-3">{!board.rows.length ? "Add a player, then choose your metrics. Dime fills the grid from the warehouse and keeps the sources close." : "Add a metric to see warehouse-backed values for your players."}</p>{!seeding && !board.rows.length && template?.seed && <Button size="sm" className="mt-5" onClick={() => void populate(board, template)}>Populate template <ArrowUpRight width={12} /></Button>}</div>}
     <div className="mt-4 flex flex-wrap items-start justify-between gap-4"><div className="flex items-start gap-2 text-[10px] leading-relaxed text-ink-3"><Database width={12} className="mt-0.5 shrink-0" /><p>Click any value to inspect its source. Shading shows relative rank within this board.<br />Higher tint = stronger rank; defensive rating and salary favor lower values. Salary uses 2026–27 data.</p></div><Button size="sm" variant="secondary" onClick={() => onAsk(boardPrompt(board, metrics))}>Ask Dime about this board <ArrowUpRight width={12} /></Button></div>
-    <div className="mt-5 flex gap-2"><Chip>Warehouse only</Chip><Chip>No model required</Chip></div>
   </div>;
 }
