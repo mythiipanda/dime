@@ -14,7 +14,7 @@ _DATASETS_FRESHNESS_CACHE = {'at': 0.0, 'payload': None}
 def _datasets_freshness_payload() -> dict:
     from shared import store
     from shared.freshness import table_data_through
-    con = store.connect()
+    con = store.connect(read_only=True)
     try:
         tables = [r[0] for r in con.execute('SHOW TABLES').fetchall()]
         rows = []
