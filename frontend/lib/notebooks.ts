@@ -6,13 +6,13 @@ export interface TypedColumn { name: string; type: string }
 export interface SQLResult { columns: TypedColumn[]; rows: Record<string, unknown>[]; page: number; page_size: number; has_more: boolean; ms: number; truncated: boolean }
 export interface PythonResult { ok: boolean; stdout: string; stderr: string; error?: string; warnings?: string[]; tables: { columns: TypedColumn[]; rows: Record<string, unknown>[]; row_count: number; truncated: boolean }[]; figures: { mime_type: string; data: string }[] }
 export interface NotebookCapabilities { python: { enabled: boolean; message: string; trusted_local_only: boolean } }
-export type CellOutput = { kind: "sql"; data: SQLResult } | { kind: "python"; data: PythonResult } | { kind: "error"; message: string };
+export type CellOutput = { kind: "snapshot"; data: Pick<SQLResult, "columns" | "rows" | "truncated"> } | { kind: "sql"; data: SQLResult } | { kind: "python"; data: PythonResult } | { kind: "error"; message: string };
 export type SaveState = "saved" | "dirty" | "saving" | "conflict" | "error";
 export const saveStateLabel = (state: SaveState) => ({ saved: "Saved", dirty: "Unsaved changes", saving: "Saving…", conflict: "Conflict, reload", error: "Not saved · retry" })[state];
 
 export function newCell(kind: CellKind = "sql", source = ""): NotebookCell { return { id: crypto.randomUUID().replaceAll("-", ""), kind, source }; }
 export function updateCell(cells: NotebookCell[], id: string, changes: Partial<Pick<NotebookCell, "source" | "kind" | "outputs" | "executed_at">>): NotebookCell[] {
-  return cells.map((cell) => cell.id !== id ? cell : { ...cell, ...("source" in changes || "kind" in changes ? { outputs: undefined, executed_at: null } : {}), ...changes });
+  return cells.map((cell) => cell.id !== id ? cell : { ...cell, ...("source" in changes && cell.kind !== "markdown" || "kind" in changes ? { outputs: undefined, executed_at: null } : {}), ...changes });
 }
 export function addCell(cells: NotebookCell[], after: string | null, kind: CellKind = "sql"): NotebookCell[] {
   if (cells.length >= 100) return cells;

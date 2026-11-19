@@ -79,6 +79,25 @@ test("answer action explains a down backend and leaves the answer available for 
   } finally { await m.cleanup(); }
 });
 
+for (const empty of [false, true]) test(`no-SQL answer snapshots use non-executable typed tables with capture time, not JSON or paging (empty=${empty})`, async () => {
+  const m = await mount({ answer: { text: "Original answer", done: true, nodes: { analytics: { status: "complete", thoughts: [], toolResults: [], toolCalls: [],
+    tables: [{ tool: "team_ratings", rows: empty ? [] : [{ Team: "Oklahoma City", Rating: 9.4 }], ...{ columns: [{ name: "Team", type: "VARCHAR" }, { name: "Rating", type: "DOUBLE" }] } }],
+  } } } });
+  try {
+    await click(button(m.host, "Open as notebook"));
+    assert.match(m.host.querySelector('table[aria-label="Cached answer snapshot"]')!.textContent!, /TeamVARCHAR[\s\S]*RatingDOUBLE/);
+    if (empty) assert.match(m.host.textContent!, /No rows recorded in this snapshot/);
+    else assert.match(m.host.querySelector('table[aria-label="Cached answer snapshot"]')!.textContent!, /Oklahoma City/);
+    assert.match(m.host.querySelector(".notebook-result-meta")!.textContent!, /Cached snapshot · from answer ·/);
+    assert.equal(m.host.querySelector("time")!.dateTime, "2026-01-01");
+    assert.equal(m.host.querySelector('[aria-label^="Run cell"]'), null);
+    assert.equal(m.host.querySelector(".notebook-pagination"), null);
+    assert.equal(m.host.querySelector(".notebook-markdown pre"), null);
+    assert.equal(m.requests.filter((request) => request.path.endsWith("/sql")).length, 0);
+    assert.equal(button(m.host, "Run all").disabled, true);
+  } finally { await m.cleanup(); }
+});
+
 test("seeded answer tables are explicitly cached and cannot page into a different live result before rerunning", async () => {
   const m = await mount({ answer: { text: "A recorded result", done: true, nodes: { analytics: { status: "complete", thoughts: [], toolResults: [],
     toolCalls: [{ name: "query_warehouse", sql: "SELECT PLAYER, PPG AS PTS FROM silver_player_season ORDER BY PPG DESC", args: {} }],

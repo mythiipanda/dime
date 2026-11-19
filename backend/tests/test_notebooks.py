@@ -159,6 +159,24 @@ def test_nested_python_outputs_keep_table_row_counts():
     assert len(preview["tables"][0]["rows"]) == 20
 
 
+@pytest.mark.parametrize("rows,truncated", [([], False), ([{"Team": "A|B\n<script>", "Rating": None}], True)])
+def test_snapshot_export_is_a_markdown_table(rows, truncated):
+    doc = create(cells=[{"kind": "markdown", "source": "## Snapshot", "outputs": {
+        "kind": "snapshot", "data": {"columns": [{"name": "Team", "type": "VARCHAR"}, {"name": "Rating", "type": "DOUBLE"}], "rows": rows, "truncated": truncated},
+    }}])
+    exported = client.get(f'/api/notebooks/{doc["id"]}/export?fmt=ipynb').json()["cells"][0]
+    assert exported["cell_type"] == "markdown"
+    assert "outputs" not in exported
+    source = "".join(exported["source"])
+    assert "## Snapshot" in source
+    assert f'Cached snapshot · from answer · {doc["created_at"]}' in source
+    assert "| Team | Rating |\n| --- | --- |" in source
+    if rows:
+        assert "| A&#124;B<br>&lt;script&gt; | — |" in source
+        assert "Bounded preview" in source
+    assert client.get(f'/api/notebooks/{doc["id"]}').json()["cells"][0]["outputs"]["data"]["rows"] == rows
+
+
 def query(statement="SELECT player_id, player, ppg FROM silver_player_season ORDER BY player_id", **extra):
     return client.post("/api/notebooks/sql", json={"sql": statement, **extra})
 

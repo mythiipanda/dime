@@ -157,6 +157,22 @@ def ipynb(notebook: dict) -> dict:
     for cell in notebook["cells"]:
         markdown = cell["kind"] == "markdown"
         source = ("%%sql\n" if cell["kind"] == "sql" else "") + cell["source"]
+        output = cell.get("outputs")
+        if markdown and isinstance(output, dict) and output.get("kind") == "snapshot":
+            data = output.get("data", {})
+            names = [column["name"] for column in data.get("columns", [])]
+            def scalar(value):
+                rendered = "—" if value is None else json.dumps(value, ensure_ascii=False) if isinstance(value, (dict, list)) else str(value)
+                return rendered.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace("\\", "&#92;").replace("|", "&#124;").replace("`", "&#96;").replace("\r", "").replace("\n", "<br>")
+            source += f"\n\nCached snapshot · from answer · {notebook['created_at']}\n\n"
+            if names:
+                lines = [" | ".join(scalar(name) for name in names), " | ".join("---" for _ in names)]
+                lines.extend(" | ".join(scalar(row.get(name)) for name in names) for row in data.get("rows", []))
+                source += "\n".join(f"| {line} |" for line in lines)
+            else:
+                source += "No columns recorded."
+            if data.get("truncated"):
+                source += "\n\nBounded preview of the original answer table."
         item = {"id": cell["id"], "cell_type": "markdown" if markdown else "code", "metadata": {}, "source": source.splitlines(keepends=True)}
         if not markdown:
             item.update(execution_count=None, outputs=[])

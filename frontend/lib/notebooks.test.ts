@@ -96,9 +96,28 @@ test("replay and empty answers become honest Markdown snapshots, never fabricate
   const draft = notebookFromAnswer(ai, scoutingQuestion);
   assert.equal(draft.cells.filter((cell) => cell.kind === "sql").length, 0);
   assert.match(draft.cells[0].source, /synthetic|Synthetic/);
-  assert.match(draft.cells[1].source, /Data snapshot[\s\S]*No executable SQL[\s\S]*Oklahoma City/);
+  assert.match(draft.cells[1].source, /Data snapshot[\s\S]*No executable SQL/);
+  assert.doesNotMatch(draft.cells[1].source, /```|Oklahoma City/);
+  const output = draft.cells[1].outputs as { kind: string; data: { columns: { name: string; type: string }[]; rows: Record<string, unknown>[] } };
+  assert.equal(output.kind, "snapshot");
+  assert.deepEqual(output.data.columns.slice(0, 2), [{ name: "Team", type: "VARCHAR" }, { name: "GP", type: "DOUBLE" }]);
+  assert.equal(output.data.rows[0].Team, "Oklahoma City");
+  assert.deepEqual(updateCell(draft.cells, draft.cells[1].id, { source: "Revised snapshot context" })[1].outputs, output);
+  assert.equal(updateCell(draft.cells, draft.cells[1].id, { kind: "sql" })[1].outputs, undefined);
   assert.equal(draft.origin?.ref, "dev-replay-scouting");
   assert.match(notebookFromAnswer({ text: "Nothing recorded", nodes: {}, done: true }, "").cells[1].source, /No tables/);
+});
+
+test("each recorded snapshot table keeps its own typed rows, including empty and null values", () => {
+  const draft = notebookFromAnswer({ text: "Snapshots", done: true, nodes: { analytics: { status: "complete", thoughts: [], toolResults: [], toolCalls: [], tables: [
+    { tool: "team_ratings", rows: [{ Team: "A", value: null, qualified: true }] },
+    { tool: "team_ratings", rows: [], ...{ columns: [{ name: "Team", type: "VARCHAR" }] } },
+  ] } } }, "Snapshot question");
+  assert.equal(draft.cells.length, 3);
+  const outputs = draft.cells.slice(1).map((cell) => cell.outputs as { data: { columns: { name: string; type: string }[]; rows: unknown[] } });
+  assert.deepEqual(outputs[0].data.columns.map((column) => column.type), ["VARCHAR", "UNKNOWN", "BOOLEAN"]);
+  assert.deepEqual(outputs[1].data.rows, []);
+  assert.deepEqual(outputs[1].data.columns, [{ name: "Team", type: "VARCHAR" }]);
 });
 
 test("ambiguous call bindings never attach a cached table to the wrong parameter set", () => {

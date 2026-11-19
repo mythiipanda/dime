@@ -78,10 +78,18 @@ export function notebookFromAnswer(ai: AiMessage, question: string): NotebookDra
     add(query, bindings ?? candidates[0]?.args.params, table);
   });
   calls.filter((call) => call.query && (call.args.params !== undefined || !tableQueries.has(call.query))).forEach((call) => add(call.query, call.args.params));
-  if (!queries.size) cells.push(cell("markdown", `## Data snapshot\n\nNo executable SQL was recorded. These cached tables are context, not reproducible queries.\n\n${tables.length ? tables.map((table) => {
-    const cached = cachedTable(table);
-    return `### ${capabilityLabel(text(table.tool))}\n${cached ? `${cached.rows.length} preview rows${cached.truncated ? " (truncated)" : ""}; columns: ${cached.columns.map((column) => column.name).join(", ")}.\n\n\`\`\`json\n${JSON.stringify(cached.rows.slice(0, 5), null, 2).slice(0, 6000)}\n\`\`\`` : "No row snapshot recorded."}`;
-  }).join("\n\n").slice(0, 70000) : "No tables were attached to this answer."}`, cells.length));
+  if (!queries.size) {
+    const context = "## Data snapshot\n\nNo executable SQL was recorded. These cached tables are context, not reproducible queries.";
+    const snapshots = tables.flatMap((table) => {
+      const cached = cachedTable(table);
+      return cached ? [{ title: capabilityLabel(text(table.tool)), data: { columns: cached.columns, rows: cached.rows, truncated: cached.truncated } }] : [];
+    });
+    if (!snapshots.length) cells.push(cell("markdown", `${context}\n\nNo tables with recorded rows were attached to this answer.`, cells.length));
+    snapshots.forEach((snapshot, index) => {
+      if (cells.length >= 100) throw new Error("This answer has too many snapshot tables for one notebook.");
+      cells.push({ ...cell("markdown", `${index === 0 ? `${context}\n\n` : ""}### ${snapshot.title}`, cells.length), outputs: { kind: "snapshot", data: snapshot.data } });
+    });
+  }
   return { title: (question.trim() || "Answer notebook").slice(0, 160), cells, origin: { kind: "chat", ref: (ai.carry?.run_id || question || "answer").slice(0, 256) } };
 }
 

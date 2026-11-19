@@ -8,12 +8,13 @@ import { Button } from "../ds/Button";
 const AutoChart = dynamic(() => import("../AutoChart"), { ssr: false });
 const scalar = (value: unknown) => value === null || value === undefined ? "—" : typeof value === "object" ? JSON.stringify(value) : String(value);
 export function NotebookTable({ columns, rows, label = "Query result" }: { columns: TypedColumn[]; rows: Record<string, unknown>[]; label?: string }) {
-  return <div className="notebook-table-wrap"><table className="notebook-table" aria-label={label}><thead><tr>{columns.map((column) => <th key={column.name} scope="col"><span>{column.name}</span><small>{column.type}</small></th>)}</tr></thead><tbody>{rows.map((row, i) => <tr key={i}>{columns.map((c) => <td key={c.name} className={typeof row[c.name] === "number" ? "is-number" : ""}>{scalar(row[c.name])}</td>)}</tr>)}</tbody></table>{!rows.length && <p className="notebook-empty-output">Query complete. No rows matched.</p>}</div>;
+  return <div className="notebook-table-wrap"><table className="notebook-table" aria-label={label}><thead><tr>{columns.map((column) => <th key={column.name} scope="col"><span>{column.name}</span><small>{column.type}</small></th>)}</tr></thead><tbody>{rows.map((row, i) => <tr key={i}>{columns.map((c) => <td key={c.name} className={typeof row[c.name] === "number" ? "is-number" : ""}>{scalar(row[c.name])}</td>)}</tr>)}</tbody></table>{!rows.length && <p className="notebook-empty-output">{label === "Cached answer snapshot" ? "No rows recorded in this snapshot." : "Query complete. No rows matched."}</p>}</div>;
 }
-export function NotebookOutput({ output, paging, onPage }: { output: unknown; paging: boolean; onPage: (page: number) => void }) {
+export function NotebookOutput({ output, paging, onPage, snapshotTime }: { output: unknown; paging: boolean; onPage: (page: number) => void; snapshotTime?: string }) {
   const [chart, setChart] = useState(false);
   if (!output) return null;
   const value = output as CellOutput;
+  if (value.kind === "snapshot" && value.data) return <div className="notebook-output"><div className="notebook-result-meta">Cached snapshot · from answer · {snapshotTime ? <time dateTime={snapshotTime} title="Copied into this notebook">{new Date(snapshotTime).toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}</time> : "time not recorded"}</div><NotebookTable columns={value.data.columns} rows={value.data.rows} label="Cached answer snapshot" />{value.data.truncated && <p className="notebook-note">Showing a bounded preview of the original answer table.</p>}</div>;
   if (value.kind === "error") return <div className="notebook-error" role="alert"><strong>Cell could not run</strong><pre>{value.message}</pre><span>Edit the cell and run it again.</span></div>;
   if (value.kind === "sql" && value.data) {
     const result = value.data;
