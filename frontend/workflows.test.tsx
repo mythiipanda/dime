@@ -54,10 +54,20 @@ it("fills a workflow, previews its request and runs only when complete", async (
     });
     assert.equal(run.disabled, true);
     await act(async () => {
+      selects[1].value = "OKC";
+      selects[1].dispatchEvent(new dom.window.Event("change", { bubbles: true }));
+    });
+    assert.equal(run.disabled, true);
+    assert.equal(host.querySelector('[role="alert"]')!.textContent, "Opponent must differ from Your team.");
+    assert.equal(selects[1].getAttribute("aria-invalid"), "true");
+    await act(async () => host.querySelector("form")!.dispatchEvent(new dom.window.Event("submit", { bubbles: true, cancelable: true })));
+    assert.equal(requests.length, 0);
+    await act(async () => {
       selects[1].value = "DEN";
       selects[1].dispatchEvent(new dom.window.Event("change", { bubbles: true }));
     });
     assert.equal(run.disabled, false);
+    assert.equal(host.querySelector('[role="alert"]'), null);
     const expected = workflows[0].buildRequest({ team: "OKC", opponent: "DEN" });
     assert.equal(host.querySelector("pre")!.textContent, expected);
     await act(async () => run.click());

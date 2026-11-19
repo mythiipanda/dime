@@ -42,6 +42,20 @@ export const workflows: readonly Workflow[] = [
   defineWorkflow({ id: "player-comparison", title: "Player comparison", summary: "Compare two players through the same decision-making lens.", category: "Player evaluation", deliverable: ["Side-by-side overview", "Offensive comparison", "Defensive comparison", "Role and fit", "Recommendation", "Data gaps"], fields: [field("playerA", "Player A", "player", "Enter first player"), field("playerB", "Player B", "player", "Enter second player")] }),
 ];
 
-export function validateWorkflow(workflow: Workflow, values: WorkflowValues): WorkflowField[] {
-  return workflow.fields.filter((f) => f.required && !values[f.id]?.trim());
+export interface WorkflowValidationIssue {
+  field: WorkflowField;
+  kind: "required" | "same-team";
+  message: string;
+}
+
+export function validateWorkflow(workflow: Workflow, values: WorkflowValues): WorkflowValidationIssue[] {
+  const issues: WorkflowValidationIssue[] = workflow.fields.filter((f) => f.required && !values[f.id]?.trim())
+    .map(field => ({ field, kind: "required", message: `${field.label} is required.` }));
+  const teams = workflow.fields.filter(field => field.kind === "team");
+  teams.forEach((field, index) => {
+    const team = values[field.id]?.trim().toUpperCase();
+    const duplicate = team && teams.slice(0, index).find(other => values[other.id]?.trim().toUpperCase() === team);
+    if (duplicate) issues.push({ field, kind: "same-team", message: `${field.label} must differ from ${duplicate.label}.` });
+  });
+  return issues;
 }

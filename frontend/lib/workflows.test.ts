@@ -30,11 +30,22 @@ describe("workflow registry", () => {
     });
     it(`${workflow.title} rejects empty and whitespace-only required fields`, () => {
       const required = workflow.fields.filter((f) => f.required);
-      assert.deepEqual(validateWorkflow(workflow, {}), required);
-      assert.deepEqual(validateWorkflow(workflow, Object.fromEntries(workflow.fields.map((f) => [f.id, "  "]))), required);
-      const values = Object.fromEntries(required.map((f) => [f.id, "filled"]));
+      assert.deepEqual(validateWorkflow(workflow, {}).map(issue => issue.field), required);
+      assert.deepEqual(validateWorkflow(workflow, Object.fromEntries(workflow.fields.map((f) => [f.id, "  "]))).map(issue => issue.field), required);
+      const values = Object.fromEntries(required.map((f) => [f.id, `value-${f.id}`]));
       assert.deepEqual(validateWorkflow(workflow, values), []);
       assert.doesNotMatch(workflow.buildRequest({}), /undefined|null/);
     });
   }
+  for (const id of ["opponent-scouting", "trade-evaluation"]) it(`${id} requires different teams`, () => {
+    const workflow = workflows.find(workflow => workflow.id === id)!;
+    const [first, second] = workflow.fields.filter(field => field.kind === "team");
+    const values = Object.fromEntries(workflow.fields.map(field => [field.id, `value-${field.id}`]));
+    values[first.id] = "OKC";
+    values[second.id] = " okc ";
+    assert.deepEqual(validateWorkflow(workflow, values), [{ field: second, kind: "same-team", message: `${second.label} must differ from ${first.label}.` }]);
+    values[second.id] = "DEN";
+    assert.deepEqual(validateWorkflow(workflow, values), []);
+    assert.ok(validateWorkflow(workflow, {}).every(issue => issue.kind === "required"));
+  });
 });
