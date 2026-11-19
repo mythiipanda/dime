@@ -6,6 +6,7 @@ import duckdb
 from fastapi import HTTPException
 from nba_api.stats.static import teams
 
+from shared.sources.salaries import TEAM_ABBR
 from shared.tools.league import CAP, _allowed_incoming, _apron_state, _payroll, _payroll_source
 from v2.boards.service import _name
 from .deep_dive import ADV, BASE, Data, number, table, unique, unavailable
@@ -13,7 +14,7 @@ from .models import Callout, Citation, Kpi, Kpis, Packet, Section, Text, format_
 
 
 SALARY_SEASON = "2026-27"
-TEAM_ALIASES = {"BRK":"BKN", "CHO":"CHA", "PHO":"PHX"}
+TEAM_ALIASES = TEAM_ABBR
 BASE_COLUMNS = ["PLAYER_ID","PLAYER","TEAM","AGE","GP","MPG","PPG","RPG","APG"]
 ADV_COLUMNS = ["PLAYER_ID","TS_PCT","USG_PCT","NET_RATING","PIE"]
 PRODUCTION = [("age","Age","years"),("gp","Games","count"),("mpg","Minutes / game","per_game"),
@@ -256,18 +257,20 @@ def build_trade(con, team_a, team_b, a_sends, b_sends, season, notes=None):
 
 
 def rotation_section(data, sides, ta, tb, season):
+    codes = sorted({ta,tb} | {alias for alias, canonical in TEAM_ALIASES.items() if canonical in (ta,tb)})
+    matches = " OR ".join('"MATCHUP" LIKE ?' for _ in codes)
     logs, lc = data.read("silver_player_gamelogs",["Player_ID","Game_ID","MATCHUP","MIN"],
-        '"_season" = ? AND ("MATCHUP" LIKE ? OR "MATCHUP" LIKE ?)',[season,ta+" %",tb+" %"],5000)
+        f'"_season" = ? AND ({matches})',[season,*[code+" %" for code in codes]],5000)
     counts = Counter((r["Player_ID"],r["Game_ID"]) for r in logs)
     usable = bool(logs) and all(v == 1 for v in counts.values()) and all(number(r["MIN"]) is not None for r in logs)
     rows, impact_rows, impact_cites = [], [], {}
     for team,other in ((ta,tb),(tb,ta)):
-        team_logs = [r for r in logs if str(r["MATCHUP"]).startswith(team+" ")]
+        team_logs = [r for r in logs if canonical_team(str(r["MATCHUP"]).split()[0]) == team]
         total = sum(number(r["MIN"]) for r in team_logs) if usable and team_logs else None
         def minutes(players, origin):
             values = []
             for player in players:
-                found = [r for r in logs if r["Player_ID"] == player["PLAYER_ID"] and str(r["MATCHUP"]).startswith(origin+" ")]
+                found = [r for r in logs if r["Player_ID"] == player["PLAYER_ID"] and canonical_team(str(r["MATCHUP"]).split()[0]) == origin]
                 values.append(sum(number(r["MIN"]) for r in found) if usable and found else None)
             return complete_sum(values)
         outgoing, incoming = minutes(sides[team],team), minutes(sides[other],other)

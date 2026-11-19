@@ -209,3 +209,17 @@ def test_team_code_aliases():
     assert trade.resolve_team("BRK")=="BKN"
     assert trade.resolve_team("CHO")=="CHA"
     assert trade.resolve_team("PHO")=="PHX"
+
+
+def test_real_rotation_accepts_bref_pho_game_logs(real):
+    response=post(team_a="PHX",team_b="OKC",a_sends=["Devin Booker"],b_sends=["Shai Gilgeous-Alexander"])
+    assert response.status_code==200,response.text
+    packet=Packet.model_validate(response.json())
+    rotation=section(packet,"rotation_impact").blocks[0].rows[0]
+    with duckdb.connect(str(real),read_only=True) as con:
+        total=con.execute("SELECT SUM(MIN) FROM silver_player_gamelogs WHERE _season=? AND SUBSTR(MATCHUP,1,3) IN (?,?)",["2025-26","PHX","PHO"]).fetchone()[0]
+        outgoing=con.execute("SELECT SUM(MIN) FROM silver_player_gamelogs WHERE _season=? AND Player_ID=? AND SUBSTR(MATCHUP,1,3) IN (?,?)",["2025-26",1626164,"PHX","PHO"]).fetchone()[0]
+    assert total and outgoing
+    assert rotation["season_minutes"]==total
+    assert rotation["outgoing_minutes"]==outgoing
+    assert rotation["outgoing_share"]==pytest.approx(100*outgoing/total)
