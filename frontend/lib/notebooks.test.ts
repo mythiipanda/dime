@@ -159,6 +159,22 @@ test("reopened answers retain run identity and flat citations; unidentified answ
   assert.notEqual(first, second);
 });
 
+test("published warehouse, live and mixed provenance labels survive in context and Cited values", () => {
+  const fixtures = [
+    { provenance: { origin: "warehouse", warehouse_id: "warehouse-123", table: "silver_player_season" }, expected: "Warehouse · silver_player_season · warehouse-123" },
+    { provenance: { origin: "live", warehouse_id: null, live_sources: ["nba_stats", "espn"] }, expected: "Live · nba_stats · espn" },
+    { provenance: { origin: "mixed", warehouse_id: "warehouse-456", live_sources: ["nba_stats"] }, expected: "Warehouse · warehouse-456; Live · nba_stats" },
+    { provenance: { source: "Legacy source", origin: "warehouse", warehouse_id: "warehouse-789" }, expected: "Legacy source" },
+    { provenance: { origin: "undeclared", warehouse_id: null, live_sources: [] }, expected: "Source not recorded" },
+  ];
+  for (const { provenance, expected } of fixtures) {
+    const ai = aiFromRun({ question: "Source?", answer: "Answer", tables: [{ output_id: "PPG", value: 28, unit: "points", subject_id: 201939, provenance }], suggestions: [], created_at: "2026-01-01" });
+    const draft = notebookFromAnswer(ai, "Source?");
+    assert.ok(draft.cells[0].source.includes(expected));
+    assert.equal((draft.cells[1].outputs as { data: { rows: Record<string, unknown>[] } }).data.rows[0].source, expected);
+  }
+});
+
 test("answer caches are bounded and an explicit table binding does not require tool-call params", () => {
   const ai: AiMessage = { text: "Cached result", done: true, nodes: { analytics: { status: "complete", thoughts: [], toolResults: [],
     toolCalls: [{ name: "query_warehouse", sql: "SELECT $1 AS PLAYER", args: {} }],

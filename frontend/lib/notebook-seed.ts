@@ -16,6 +16,18 @@ function literal(value: unknown): string {
   throw new Error("A recorded SQL parameter is not a supported scalar value.");
 }
 
+function answerSource(table: Record<string, unknown>): string {
+  const provenance = record(table.provenance), meta = record(table.meta);
+  const explicit = text(provenance.source, meta.source);
+  if (explicit) return explicit;
+  const warehouse = text(provenance.warehouse_id), name = text(provenance.table, table.table, meta.table);
+  const live = Array.isArray(provenance.live_sources) ? provenance.live_sources.filter((source): source is string => typeof source === "string" && !!source.trim()) : [];
+  const sources: string[] = [];
+  if (warehouse || name || ["warehouse", "mixed"].includes(text(provenance.origin))) sources.push(["Warehouse", name, warehouse].filter(Boolean).join(" · "));
+  if (live.length || provenance.origin === "live") sources.push(["Live", ...live].join(" · "));
+  return sources.join("; ") || "Source not recorded";
+}
+
 function inlineParameters(query: string, params: unknown): string {
   let position = 0;
   const named = record(params);
@@ -50,7 +62,7 @@ export function notebookFromAnswer(ai: AiMessage, question: string): NotebookDra
   const calls = nodes.flatMap((node) => node.toolCalls).map((call) => ({ ...call, query: text(call.sql, call.args.sql) }));
   const sources = [...new Set(tables.map((table) => {
     const provenance = record(table.provenance), meta = record(table.meta);
-    return [capabilityLabel(text(table.tool)), text(provenance.source, meta.source) || "Source not recorded", text(provenance.season, meta.season)].filter(Boolean).join(" · ");
+    return [capabilityLabel(text(table.tool)), answerSource(table), text(provenance.season, meta.season)].filter(Boolean).join(" · ");
   }))];
   const cells = [cell("markdown", `# ${question || "Answer notebook"}\n\n${ai.text.slice(0, 1800)}${ai.text.length > 1800 ? "…" : ""}\n\n## Sources\n${sources.length ? sources.map((source) => `- ${source}`).join("\n") : "No sources recorded."}\n\nCached tables below are from the original answer. Run SQL cells to query the current warehouse.`, 0)];
   const queries = new Map<string, NotebookCell>();
@@ -87,7 +99,7 @@ export function notebookFromAnswer(ai: AiMessage, question: string): NotebookDra
     const cited = cachedTable({ rows: tables.filter((table) => !Array.isArray(table.rows) && typeof table.output_id === "string" && Object.hasOwn(table, "value")).map((table) => ({
       output: text(table.display_name, table.output_id), value: table.value, unit: table.unit ?? null,
       subject: table.subject_id ?? null, subject_type: table.subject_type ?? null,
-      source: text(record(table.provenance).source) || "Source not recorded", provenance: record(table.provenance),
+      source: answerSource(table), provenance: record(table.provenance),
     })) });
     if (cited?.rows.length) snapshots.push({ title: "Cited values", data: { columns: cited.columns, rows: cited.rows, truncated: cited.truncated } });
     if (!queries.size && !snapshots.length) cells.push(cell("markdown", `${context}\n\nNo tables with recorded rows were attached to this answer.`, cells.length));
