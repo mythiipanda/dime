@@ -4,7 +4,7 @@ import { Type } from "typebox";
 import { Value } from "typebox/value";
 
 const policies = {
-    gemini: { models: ["gemini-3.5-flash", "gemini-3.8-flash", "gemma-4-31b-it", "gemini-3.5-flash-lite", "gemini-4-hydrogen"], key: "GEMINI_API_KEY", url: "https://generativelanguage.googleapis.com/v1beta/openai/" },
+    gemini: { models: ["gemini-3.5-flash", "gemini-3.8-flash", "gemma-4-31b-it", "gemini-3.5-flash-lite", "gemini-4-hydrogen"], key: "GEMINI_API_KEY", url: "https://generativelanguage.googleapis.com/v1beta" },
     nvidia: { models: ["z-ai/glm-5.3-flash", "deepseek-ai/deepseek-v4.1-flash"], key: "NVIDIA_NIM_API_KEY", url: "https://integrate.api.nvidia.com/v1" },
     openrouter: { models: ["nvidia/nemotron-3-ultra-550b-a55b:free", "nvidia/nemotron-3-super-120b-a12b:free", "dots-studio/dots-3-note-preview:free", "openrouter/free"], key: "OPENROUTER_API_KEY", url: "https://openrouter.ai/api/v1" },
     mistral: { models: ["ministral-8b-2512"], key: "MISTRAL_API_KEY", url: "https://api.mistral.ai/v1" },
