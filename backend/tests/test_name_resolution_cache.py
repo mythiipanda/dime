@@ -46,6 +46,7 @@ def test_unknown_names_still_miss():
     ranked = score_player_candidates("Zzz Not A Player Xyz")
     assert not ranked or ranked[0][0] < 0.8
 
+@pytest.mark.canonical_warehouse
 def test_slug_order_and_suffix_warehouse_identity_are_normalized():
 
     assert coerce_player_id("curry-stephen") == 201939

@@ -1,0 +1,33 @@
+name: Fetch warehouse data
+description: Restore the stats warehouse release asset from cache (downloading and checksum-verifying it on a miss) and unpack it into backend/data.
+inputs:
+  url:
+    description: Release asset URL of the warehouse zip
+    default: https://github.com/mythiipanda/dime/releases/download/dime-data-20260930/dime_data_full.zip
+  sha256:
+    description: Expected SHA-256 of the warehouse zip
+    default: "5566409dd71881194edc6dd6ddddbf56a316824a9c34340b3ddb34d6c7a95ea8"
+runs:
+  using: composite
+  steps:
+    - name: Restore cached warehouse zip
+      id: cache
+      uses: actions/cache@v4
+      with:
+        path: .dime-data/warehouse.zip
+        key: dime-data-${{ inputs.sha256 }}
+    - name: Download warehouse zip
+      if: steps.cache.outputs.cache-hit != 'true'
+      shell: bash
+      env:
+        DIME_DATA_URL: ${{ inputs.url }}
+        DIME_DATA_SHA256: ${{ inputs.sha256 }}
+      run: |
+        mkdir -p .dime-data
+        curl -fL --retry 3 -o .dime-data/warehouse.zip "$DIME_DATA_URL"
+        echo "$DIME_DATA_SHA256  .dime-data/warehouse.zip" | sha256sum -c -
+    - name: Unpack warehouse
+      shell: bash
+      run: |
+        unzip -q -o .dime-data/warehouse.zip -d backend
+        ls -la backend/data | head

@@ -14,15 +14,12 @@ def test_run_python_math_and_print():
     assert res["ok"] is True
     assert res["tool"] == "run_python"
     assert "2" in res["rows"]["printed"]
-    assert res["rows"]["out"] == "42"
+    assert res["rows"]["out"] == 42
 
-def test_run_python_polars_structured_rows():
-    code = """
-import duckdb # should fail if import
-"""
-    res_banned = run_python.invoke({"code": code})
-    assert res_banned["ok"] is False
-    assert "unavailable" in res_banned["error"].lower()
+def test_run_python_rejects_empty_code():
+    res = run_python.invoke({"code": "   "})
+    assert res["ok"] is False
+    assert res["error"] == "empty code"
 
 def test_run_python_polars_dataframe_out():
     code = """
@@ -37,10 +34,10 @@ out = df
     assert res["rows"][0]["pts"] == 33.9
 
 def test_run_python_banned_writes():
-    for banned in ["DROP TABLE test", "INSERT INTO silver_boxscores VALUES (1)", "DELETE FROM silver_boxscores"]:
-        res = run_python.invoke({"code": banned})
+    for banned in ["DROP TABLE silver_boxscores", "CREATE TABLE silver_scratch (x INT)", "DELETE FROM silver_boxscores"]:
+        res = run_python.invoke({"code": f"con.execute({banned!r})"})
         assert res["ok"] is False
-        assert "writes banned" in res["error"].lower()
+        assert "read-only" in res["error"].lower() or "read only" in res["error"].lower()
 
 def test_run_python_duckdb_con(tmp_path, monkeypatch):
     db_file = tmp_path / "test_wh.duckdb"

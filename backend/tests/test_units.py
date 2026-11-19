@@ -1,5 +1,6 @@
 
 import sys
+import pytest
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
@@ -494,6 +495,7 @@ def test_compare_metrics_stale_raptor_is_context_not_four_votes(monkeypatch):
         "Every verdict-eligible metric favors Nikola Jokic")
     assert "2021-22 vintage" in out["rows"]["verdict"]
 
+@pytest.mark.canonical_warehouse
 def test_resolve_entity_uses_warehouse_canonical_id_for_exact_suffix_name():
     res = tools.resolve_entity.invoke({"query": "Tim Hardaway Jr."})
     player = res["rows"]["players"][0]

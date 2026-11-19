@@ -1,3 +1,4 @@
+import pytest
 import json
 import time
 from pathlib import Path
@@ -43,6 +44,7 @@ def test_get_streaks_points30_completes_under_15s_nonempty():
     assert len(res["rows"]["streaks"]) > 0
 
 
+@pytest.mark.canonical_warehouse
 def test_get_streaks_matches_prechange_output_3_cases():
     from shared.tools.streaks import get_streaks
     for key, kw in SLICE2_CASES.items():
