@@ -269,14 +269,19 @@ def dataset(name: str, season: str='2025-26', player_id: int=0, team_id: int=0, 
         table = f'silver_leaders_{stat.lower()}'
     entity_scoped = name in ('player_gamelogs', 'team_games', 'shots', 'scoreboard', 'lineups', 'on_off', 'wowy', 'four_factors')
     entity = _dataset_entity(player_id, team_id, game_id, game_date, ids)
-    frame = store.read_frame(table, '_season = ?', [season])
+    try:
+        frame = store.read_frame(table, '_season = ?', [season])
+    except store.TableAbsent:
+        if name != 'shots':
+            raise
+        frame = pl.DataFrame()
     if name == 'leaders' and frame.height > 0:
         from shared.tools import clamp_stat
         stat_col = clamp_stat(stat)
         if stat_col in frame.columns:
             frame = frame.sort(stat_col, descending=True, nulls_last=True)
     if entity_scoped:
-        if entity:
+        if entity and (name != 'shots' or frame.width):
             frame = store.read_frame(table, '_season = ? AND _entity = ?', [season, entity])
         else:
             frame = frame.clear()
@@ -285,22 +290,27 @@ def dataset(name: str, season: str='2025-26', player_id: int=0, team_id: int=0, 
         live = _datasets_fetch_live(name, season, player_id, team_id, game_id, game_date, stat, ids)
         if live is None:
             return {'ok': False, 'error': 'missing id param for this dataset'}
-        if not live.ok:
+        if not live.ok and not (name == 'shots' and live.error == 'empty upstream response'):
+            if name == 'shots':
+                return {'ok': False, 'error': live.error or 'Shot data unavailable for this player and season', 'source': live.meta.source}
             return _failed_live_response(live, entity_scoped, entity, table, season)
-        try:
-            store.save_frame(table, live, entity)
-        except PermissionError:
-            pass
-        if entity_scoped:
-            try:
-                frame = store.read_frame(table, '_fetched_at = ?', [live.meta.fetched_at])
-            except Exception:
-                frame = getattr(live, 'frame', frame)
+        if name == 'shots':
+            frame = live.frame
         else:
             try:
-                frame = store.read_frame(table, '_season = ?', [season])
-            except Exception:
-                frame = getattr(live, 'frame', frame)
+                store.save_frame(table, live, entity)
+            except PermissionError:
+                pass
+            if entity_scoped:
+                try:
+                    frame = store.read_frame(table, '_fetched_at = ?', [live.meta.fetched_at])
+                except Exception:
+                    frame = getattr(live, 'frame', frame)
+            else:
+                try:
+                    frame = store.read_frame(table, '_season = ?', [season])
+                except Exception:
+                    frame = getattr(live, 'frame', frame)
     if name in ('player_gamelogs', 'team_games', 'playoff_gamelogs') and frame.height > 0 and ('GAME_DATE' in frame.columns):
         frame = _sort_frame_by_game_date(frame)
     if name in ('player_gamelogs', 'team_games', 'playoff_gamelogs') and frame.height > 0:
@@ -313,5 +323,7 @@ def dataset(name: str, season: str='2025-26', player_id: int=0, team_id: int=0, 
         frame.write_parquet(buf)
         return binary_data(buf.getvalue(), media_type='application/octet-stream')
     out = _datasets_envelope(table, season, frame, cached)
+    if name == 'shots' and not cached:
+        out['meta'].update(source=live.meta.source, fetched_at=live.meta.fetched_at)
     out['ok'] = True
     return out
