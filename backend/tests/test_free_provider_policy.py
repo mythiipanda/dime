@@ -123,7 +123,7 @@ def test_gemini_allowlist_is_workhorse_and_quality_only(monkeypatch):
     assert GEMINI_DEFAULT == "gemini-3.5-flash"
     assert set(GEMINI_MODELS) == {
         "gemini-3.5-flash-lite", "gemini-3.5-flash", "gemini-3.8-flash",
-        "gemma-4-31b-it"}
+        "gemma-4-31b-it", "gemini-4-hydrogen"}
     assert GEMINI_ALLOWLIST == set(GEMINI_MODELS)
 
 def test_gemini_boundary_fails_closed_on_unapproved_slugs(monkeypatch):
