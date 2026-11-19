@@ -10,7 +10,7 @@ const players = { "201939": { name: "Stephen Curry", team: "GSW" }, "203999": { 
 const requests: { path: string; body: Record<string, unknown> }[] = [];
 const asks: string[] = [];
 
-async function mount(options: { failure?: boolean; seedEmpty?: boolean; boardId?: string; nullReason?: string; teamState?: "null" | "missing" } = {}) {
+async function mount(options: { failure?: boolean; seedEmpty?: boolean; boardId?: string; nullReason?: string; teamState?: "null" | "missing"; catalogFailure?: boolean } = {}) {
   const dom = testDom;
   dom.window.document.body.innerHTML = "<div id='root'></div>";
   dom.window.localStorage.clear();
@@ -24,7 +24,7 @@ async function mount(options: { failure?: boolean; seedEmpty?: boolean; boardId?
   globalThis.fetch = async (url, init) => {
     const path = String(url); const body = init?.body ? JSON.parse(String(init.body)) : {};
     requests.push({ path, body });
-    if (path.endsWith("/metrics")) return Response.json({ ok: true, metrics });
+    if (path.endsWith("/metrics")) return options.catalogFailure ? Response.json({ detail: "Metric catalog unavailable" }, { status: 503 }) : Response.json({ ok: true, metrics });
     if (path.endsWith("/seed")) return Response.json({ ok: true, player_ids: options.seedEmpty ? [] : [201939, 203999], cells: {}, players });
     if (path.endsWith("/fill")) {
       if (options.failure) return Response.json({ detail: "Boards warehouse unavailable" }, { status: 503 });
@@ -177,6 +177,31 @@ test("reopening a board replaces cached nulls with a fresh warehouse fill", asyn
     assert.equal(getBoard(saved.id)?.cells[201939].ppg.value, 25.5);
   } finally { await m.cleanup(); }
 });
+
+for (const nullReason of [undefined, "no_metric_row"]) {
+  test(`cached ${nullReason ? "missing" : "numeric"} values retain evidence when catalog and fill fail`, async () => {
+    const m = await mount({ nullReason });
+    try {
+      await click(button(m.host, "Scoring guards"));
+      const saved = listBoards()[0];
+      m.options.catalogFailure = true;
+      m.options.failure = true;
+      const { BoardsPanel } = await import("./components/BoardsPanel");
+      await act(async () => { m.root.render(<BoardsPanel boardId={saved.id} onOpen={() => {}} onAsk={() => {}} />); });
+      assert.match(m.host.querySelector('[role="alert"]')!.textContent!, /Metric catalog unavailable/);
+      const trigger = m.host.querySelector<HTMLButtonElement>('[aria-label^="Source: Stephen Curry · ppg"]')!;
+      assert.ok(trigger);
+      assert.equal(trigger.textContent, nullReason ? "—" : "25.5");
+      assert.doesNotMatch(m.host.querySelector("tbody")!.textContent!, /Not filled/);
+      await click(trigger);
+      const evidence = m.dom.window.document.querySelector('[role="dialog"]')!;
+      assert.match(evidence.textContent!, /warehouse-test/);
+      assert.match(evidence.textContent!, /SELECT \* FROM silver_player_season/);
+      assert.match(evidence.textContent!, /2025-26/);
+      if (nullReason) assert.match(evidence.textContent!, /No data for this player/);
+    } finally { await m.cleanup(); }
+  });
+}
 
 for (const [reason, words] of [["unmatched_salary_name", "No 2026-27 salary row for this player"], ["ambiguous_salary_name", "Name matches multiple players"]]) {
   test(`null ${reason} retains a hover reason and opens evidence only on activation`, async () => {
