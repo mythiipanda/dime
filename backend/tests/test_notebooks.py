@@ -192,6 +192,7 @@ def test_sql_named_params_and_empty_result():
     "NOT (player_id <> 12)",
     "player_id BETWEEN 12 AND 12",
     "player_id IN (12)",
+    "player_id NOT IN (0, 1) AND player_id BETWEEN 12 AND 12",
     "CASE WHEN player_id = 12 AND ppg > 1 THEN TRUE ELSE FALSE END",
     "player LIKE 'Player 12'",
 ])
@@ -222,6 +223,16 @@ def test_sql_nested_nonfinite_values_are_json_safe():
 
 
 @pytest.mark.parametrize("statement", [
+    "INSERT INTO silver_player_season VALUES (7000, 'Injected', 1)",
+    "UPDATE silver_player_season SET ppg=0",
+    "CREATE TABLE stolen (id INTEGER)",
+    "ALTER TABLE silver_player_season ADD COLUMN stolen INTEGER",
+    "PRAGMA table_info(silver_player_season)",
+    "SET threads=1",
+    "SELECT 1; DROP TABLE silver_player_season",
+    "WITH changed AS (DELETE FROM silver_player_season RETURNING *) SELECT * FROM changed",
+    "SELECT CASE WHEN TRUE THEN (DELETE FROM silver_player_season RETURNING player_id) ELSE 0 END",
+    "SELECT * FROM silver_player_season WHERE TRUE AND (UPDATE silver_player_season SET ppg=0 RETURNING TRUE)",
     "DELETE FROM silver_player_season", "DROP TABLE silver_player_season",
     "SELECT * FROM private_notes", "SELECT * FROM unknown_table",
     "SELECT * FROM read_csv('/etc/passwd')", "SELECT * FROM read_parquet('https://example.com/x')",
@@ -232,6 +243,8 @@ def test_sql_nested_nonfinite_values_are_json_safe():
 ])
 def test_sql_rejects_unsafe_or_unknown_queries(statement):
     assert query(statement).status_code == 400
+    check = query("SELECT COUNT(*) AS n, SUM(ppg) AS total FROM silver_player_season").json()
+    assert check["rows"] == [{"n": 6000, "total": pytest.approx(1799700)}]
 
 
 def test_sql_external_access_is_disabled():
