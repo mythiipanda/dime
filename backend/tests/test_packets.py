@@ -245,6 +245,16 @@ def test_display_formatter(value,unit,expected):
     assert format_value(value,unit)==expected
 
 
+def test_narrative_seasons_and_iso_dates_are_not_statistical_claims():
+    packet=example_packet()
+    claims=[Claim(md="In 2025-26, scores 33.46 points (as of 2026-01-01).",cites=["c1"]),
+            Claim(md="In 2025-26, scores 99.9 points.",cites=["c1"]),
+            Claim(md="Ranks 99th in 2025-26.",cites=["c1"])]
+    accepted,rejected=validate_narrative(packet,Narrative(summary=claims))
+    assert accepted.summary==claims[:1]
+    assert len(rejected)==2 and all(r["reason"].startswith("unsupported_number") for r in rejected)
+
+
 def test_polished_deep_dive_display_summaries_and_impact(real):
     packet=Packet.model_validate(request().json())
     for s in packet.sections:
@@ -260,6 +270,12 @@ def test_polished_deep_dive_display_summaries_and_impact(real):
     assert 1<=len(curated.rows)<=8 and not curated.collapsed
     assert impact.blocks[-1].title=="On/off appendix" and impact.blocks[-1].collapsed
     assert len(impact.blocks[-1].rows)>len(curated.rows)
+    for block in (curated,impact.blocks[-1]):
+        for raw,display in zip(block.rows,block.display_rows):
+            if raw["unit"]=="pct" and raw.get("On-Off") is not None:
+                assert display["On-Off"]==f"{raw['On-Off']:+.1f} pp"
+            elif raw.get("On-Off") is not None:
+                assert display["On-Off"]==f"{raw['On-Off']:+.1f}"
     assert not any(b.type=="callout" and b.md in ("Clutch totals","Hustle totals") for b in impact.blocks)
     age=next(i for i in section(packet,"profile").blocks[0].items if i.label=="Age")
     assert age.display==str(int(age.value))
