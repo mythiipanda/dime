@@ -130,6 +130,25 @@ test("list loading errors are actionable", async () => {
   try { assert.match(m.host.querySelector('[role="alert"]')!.textContent!, /Storage unavailable/); m.options.listError = false; await click(button(m.host, "Retry")); assert.match(m.host.textContent!, /Room for your next insight/); } finally { await m.cleanup(); }
 });
 
+test("new Markdown cells keep their editor and focus until Escape", async () => {
+  const m = await mount();
+  try {
+    await click(button(m.host, "New notebook"));
+    await click(button(m.host, "Add cell"));
+    const select = m.host.querySelector<HTMLSelectElement>('[aria-label="Cell 2 kind"]')!;
+    await act(async () => { select.value = "markdown"; select.dispatchEvent(new m.dom.window.Event("change", { bubbles: true })); });
+    const textarea = m.host.querySelector<HTMLTextAreaElement>('[aria-label="Cell 2 markdown"]')!;
+    const setter = Object.getOwnPropertyDescriptor(m.dom.window.HTMLTextAreaElement.prototype, "value")!.set!;
+    await act(async () => { textarea.focus(); setter.call(textarea, "First character"); textarea.dispatchEvent(new m.dom.window.Event("input", { bubbles: true })); textarea.dispatchEvent(new m.dom.window.KeyboardEvent("keyup", { key: "r", bubbles: true })); });
+    assert.ok(m.host.querySelector('[aria-label="Cell 2 markdown"]') === textarea, "Markdown editor was replaced");
+    assert.ok(m.dom.window.document.activeElement === textarea, "Markdown editor lost focus");
+    assert.equal(textarea.value, "First character");
+    await act(async () => { textarea.dispatchEvent(new m.dom.window.KeyboardEvent("keydown", { key: "Escape", bubbles: true })); });
+    assert.ok(!m.host.querySelector('[aria-label="Cell 2 markdown"]'), "Escape did not leave edit mode");
+    assert.match(m.host.querySelector(".notebook-markdown")!.textContent!, /First character/);
+  } finally { await m.cleanup(); }
+});
+
 test("failed saves survive leaving and reopening, offer restore, and clear after save", async () => {
   const first = await mount({ saveError: true }, true);
   let stored = "";
