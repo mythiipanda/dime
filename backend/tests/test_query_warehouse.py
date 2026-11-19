@@ -54,6 +54,7 @@ def test_select_works(tiny_warehouse):
     "NOT (WINS < 65 OR LOSSES > 20)",
     "WINS BETWEEN 65 AND 70",
     "WINS IN (68, 69)",
+    "WINS NOT IN (61, 62)",
     "CASE WHEN WINS > 65 AND LOSSES < 20 THEN TRUE ELSE FALSE END",
     "TeamCity LIKE 'Oklahoma%'",
     "WINS IS NOT NULL AND (WINS + LOSSES) / 2 = 41 AND WINS - LOSSES > 50",
@@ -116,11 +117,19 @@ def test_multi_cte_works(tiny_warehouse):
     "DETACH o",
     "INSTALL httpfs",
     "LOAD spatial",
+    "SET threads=1",
+    "SELECT 1; DROP TABLE silver_standings",
+    "WITH changed AS (DELETE FROM silver_standings RETURNING *) SELECT * FROM changed",
+    "SELECT * INTO stolen FROM silver_standings",
+    "SELECT CASE WHEN TRUE THEN (DELETE FROM silver_standings RETURNING WINS) ELSE 0 END",
+    "SELECT * FROM silver_standings WHERE TRUE AND (UPDATE silver_standings SET WINS=0 RETURNING TRUE)",
 ])
 def test_writes_blocked(tiny_warehouse, sql):
+    with pytest.raises(ValueError, match="blocked|syntax error"):
+        q._check(sql, {"silver_standings"})
     out = q.query_warehouse(sql)
     assert out["ok"] is False
-    assert "blocked" in out["error"], out["error"]
+    assert out["error"].startswith(("blocked", "syntax error")), out["error"]
     check = q.query_warehouse("SELECT COUNT(*) AS n FROM silver_standings")
     assert check["rows"] == [{"n": 2}]
 

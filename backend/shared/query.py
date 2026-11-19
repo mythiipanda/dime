@@ -203,6 +203,8 @@ def _check(sql: str, allowed: set[str]) -> str:
     tree = _parse_one(stmt)
     if not isinstance(tree, _READ_STMTS):
         raise ValueError("blocked: only SELECT and WITH queries are allowed")
+    if any(isinstance(node, (exp.DML, exp.DDL)) for node in tree.walk()):
+        raise ValueError("blocked: writes are not allowed inside queries")
     for sel in tree.find_all(exp.Select):
         if sel.args.get("into") is not None:
             raise ValueError("blocked: SELECT ... INTO is not allowed; "
