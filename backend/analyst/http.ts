@@ -20,6 +20,10 @@ const workspaceUpdate = Type.Object({ name: Type.Optional(Type.Union([Type.Strin
 const branchCreate = Type.Object({ thread: text(80), client: text(80), parent_sequence: Type.Integer({ minimum: 1 }), branch_id: Type.Optional(Type.Union([text(64), Type.Null()])) }, { additionalProperties: false });
 const tradeSchema = Type.Object({ team_a: Type.Optional(Type.String()), team_b: Type.Optional(Type.String()), players_a: Type.Optional(Type.Union([Type.String(), Type.Array(Type.String())])), players_b: Type.Optional(Type.Union([Type.String(), Type.Array(Type.String())])), season: Type.Optional(Type.String()) }, { additionalProperties: false });
 const watchSchema = Type.Object({ entity_type: Type.String(), entity_id: Type.String(), season: Type.Optional(Type.String()) });
+const boardSeason = Type.Optional(Type.String({ pattern: "^\\d{4}-\\d{2}$" }));
+const boardMetric = Type.String({ minLength: 1, maxLength: 80 });
+const boardFill = Type.Object({ season: boardSeason, player_ids: Type.Array(Type.Integer({ minimum: 1, maximum: Number.MAX_SAFE_INTEGER }), { maxItems: 50 }), metric_ids: Type.Array(boardMetric, { maxItems: 30 }) }, { additionalProperties: false });
+const boardSeed = Type.Object({ season: boardSeason, metric_id: boardMetric, n: Type.Optional(Type.Integer({ minimum: 1, maximum: 25 })), min_gp: Type.Optional(Type.Union([Type.Integer({ minimum: 0 }), Type.Null()])), min_mpg: Type.Optional(Type.Union([Type.Number({ minimum: 0 }), Type.Null()])) }, { additionalProperties: false });
 const CORS_ALLOWED_METHODS = ["GET", "POST", "PATCH", "DELETE"];
 const CORS_ALLOWED_METHODS_HEADER = CORS_ALLOWED_METHODS.join(", ");
 export function parseBody<S extends TSchema>(schema: S, input: unknown): Static<S> {
@@ -124,6 +128,14 @@ export function createProductServer(options: {
     route("GET", /^\/api\/revision$/, async ({ res }) => json(res, options.manifest));
     route("GET", /^\/api\/models$/, async ({ res }) => json(res, policy.catalog()));
     route("GET", /^\/api\/health$/, async ({ res }) => json(res, { ok: true, providers: policy.catalog().available }));
+    route("GET", /^\/api\/boards\/metrics$/, async ({ res }) => json(res, await data.call("product_board_metrics", {})));
+    route("POST", /^\/api\/boards\/(fill|seed)$/, async ({ req, res, params }) => {
+        const operation = params[0] === "fill" ? "product_board_fill" : "product_board_seed";
+        const payload = parseBody(params[0] === "fill" ? boardFill : boardSeed, await body(req));
+        const result = await data.call(operation, { payload });
+        if (result.ok === false) throw new HttpError(result.status === 422 ? 422 : 503, result.error ?? "Boards warehouse unavailable");
+        json(res, result);
+    });
     route("GET", /^\/api\/healthz$/, async ({ res }) => { const result = await data.call("product_warehouse_health", {}); json(res, result, result.ok ? 200 : 503); });
     route("GET", /^\/api\/datasets\/freshness$/, async ({ res }) => json(res, await data.call("product_freshness", {})));
     route("GET", /^\/api\/home$/, async ({ res }) => json(res, await data.call("product_home", {})));

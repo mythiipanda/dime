@@ -17,7 +17,7 @@ function files(root: string): string[] {
     });
 }
 const loadedModules = Object.fromEntries(files(join(backendRoot, "analyst/dist")).filter(path => path.endsWith(".js")).map(path => [relative(join(backendRoot, "analyst"), path).split(sep).join("/"), sha(readFileSync(path))]));
-for (const name of ["package-lock.json", "python_tools.py", "direct_data.py", "dataset_engine.py", "http-assets/openapi.json", "http-assets/docs.html", "http-assets/redoc.html", "http-assets/oauth2-redirect.html"])
+for (const name of ["package-lock.json", "python_tools.py", "direct_data.py", "dataset_engine.py", "boards.py", "board_metrics.py", "http-assets/openapi.json", "http-assets/docs.html", "http-assets/redoc.html", "http-assets/oauth2-redirect.html"])
     loadedModules[name] = sha(readFileSync(join(backendRoot, "analyst", name)));
 for (const path of files(join(backendRoot, "analyst/tools")).filter(path => path.endsWith(".py")))
     loadedModules[relative(join(backendRoot, "analyst"), path).split(sep).join("/")] = sha(readFileSync(path));

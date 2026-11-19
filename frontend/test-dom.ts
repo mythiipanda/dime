@@ -1,6 +1,7 @@
 import { JSDOM } from "jsdom";
 
-const dom = new JSDOM("<!doctype html><html><body></body></html>", { url: "http://localhost", pretendToBeVisual: true });
+export const testDom = new JSDOM("<!doctype html><html><body></body></html>", { url: "http://localhost", pretendToBeVisual: true });
+const dom = testDom;
 Object.assign(globalThis, {
   window: dom.window,
   document: dom.window.document,
@@ -11,6 +12,7 @@ Object.assign(globalThis, {
   HTMLInputElement: dom.window.HTMLInputElement,
   MutationObserver: dom.window.MutationObserver,
   CustomEvent: dom.window.CustomEvent,
+  Event: dom.window.Event,
   getComputedStyle: (element: Element) => element.ownerDocument.defaultView!.getComputedStyle(element),
   requestAnimationFrame: dom.window.requestAnimationFrame.bind(dom.window),
   cancelAnimationFrame: dom.window.cancelAnimationFrame.bind(dom.window),
