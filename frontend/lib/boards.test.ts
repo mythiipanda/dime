@@ -38,6 +38,21 @@ test("validation rejects corrupt, nonfinite, duplicate, oversized and unknown-ve
   } finally { dom.window.close(); }
 });
 
+test("column presentation snapshots round trip while legacy boards remain valid", () => {
+  const dom = install();
+  try {
+    const legacy = sample();
+    assert.equal(validBoard(legacy), true);
+    const saved = saveBoard(legacy, [metric]);
+    assert.deepEqual(getBoard(saved.id)?.columns[0].presentation, { label: "Points", unit: "per_game", format: "decimal" });
+    const snapshot = saved.columns[0].presentation!;
+    for (const presentation of [null, {}, { ...snapshot, unit: "unknown" }, { ...snapshot, format: "unknown" }, { ...snapshot, label: 1 }]) {
+      assert.equal(validBoard({ ...saved, columns: [{ metric_id: "ppg", presentation }] }), false);
+    }
+    assert.equal(getBoard(saveBoard(duplicateBoard(saved)).id)?.columns[0].presentation?.label, "Points");
+  } finally { dom.window.close(); }
+});
+
 test("failed storage writes use a readable memory shadow instead of returning stale disk values", () => {
   const dom = install();
   try {

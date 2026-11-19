@@ -61,10 +61,11 @@ export function BoardsPanel({ boardId, onOpen, onAsk }: { boardId: string | null
   const [titleDraft, setTitleDraft] = useState("");
   const latest = useRef<Board | null>(null);
   const seedAbort = useRef<AbortController | null>(null);
-  const commit = useCallback((next: Board) => { const saved = saveBoard(next); latest.current = saved; setBoard(saved); }, []);
+  const commit = useCallback((next: Board) => { const saved = saveBoard(next, metrics); latest.current = saved; setBoard(saved); }, [metrics]);
   useEffect(() => { if (latest.current?.id !== boardId) { seedAbort.current?.abort(); setSeeding(false); setError(""); } const next = boardId ? getBoard(boardId) : null; latest.current = next; setBoard(next); setTitleDraft(next?.title || ""); setSort(null); }, [boardId]);
   useEffect(() => { const ctrl = new AbortController(); setCatalogError(""); getBoardMetrics(ctrl.signal).then(setMetrics).catch((e) => { if (!ctrl.signal.aborted) setCatalogError(e instanceof Error ? e.message : "Metric catalog unavailable."); }); return () => ctrl.abort(); }, [catalogAttempt]);
   useEffect(() => () => seedAbort.current?.abort(), []);
+  useEffect(() => { if (latest.current && metrics.length) commit(latest.current); }, [metrics, boardId, commit]);
   const signature = board ? boardShape(board) : "";
   useEffect(() => {
     const current = latest.current;
@@ -91,7 +92,7 @@ export function BoardsPanel({ boardId, onOpen, onAsk }: { boardId: string | null
     } catch (e) { if (!ctrl.signal.aborted && latest.current?.id === current.id) setError(e instanceof Error ? e.message : "Could not populate this template."); }
     finally { if (!ctrl.signal.aborted) setSeeding(false); }
   }
-  function create(template: BoardTemplate) { const next = saveBoard(newBoard(template)); latest.current = next; setBoard(next); setError(""); onOpen(next.id); if (template.seed) void populate(next, template); }
+  function create(template: BoardTemplate) { const next = saveBoard(newBoard(template), metrics); latest.current = next; setBoard(next); setError(""); onOpen(next.id); if (template.seed) void populate(next, template); }
   const template = boardTemplates.find((t) => t.id === board?.template_id);
   function refresh() { if (board && !board.rows.length && template?.seed) void populate(board, template); else setRetry((n) => n + 1); }
   function exportCsv() { if (!board) return; const url = URL.createObjectURL(new Blob([boardCsv(board, metrics)], { type: "text/csv;charset=utf-8;" })); const a = document.createElement("a"); a.href = url; a.download = `${board.title.replace(/[^a-z0-9-]/gi, "-")}.csv`; a.click(); URL.revokeObjectURL(url); }

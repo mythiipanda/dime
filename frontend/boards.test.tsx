@@ -5,7 +5,7 @@ import { act, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { addRow, boardTemplates, getBoard, listBoards, newBoard, saveBoard, type BoardMetric } from "./lib/boards";
 
-const metrics: BoardMetric[] = boardTemplates[0].columns.map((id) => ({ id, label: id === "ppg" ? "Points" : id, category: "Scoring", unit: "per_game", table: "silver_player_season", column: id.toUpperCase(), higher_is_better: true, definition: `${id} definition` }));
+const metrics: BoardMetric[] = boardTemplates[0].columns.map((id) => ({ id, label: id === "ppg" ? "Points" : id, category: "Scoring", unit: id === "salary_2026_27" ? "usd" : id.endsWith("_pct") ? "pct" : "per_game", table: "silver_player_season", column: id.toUpperCase(), higher_is_better: true, definition: `${id} definition` }));
 const players = { "201939": { name: "Stephen Curry", team: "GSW" }, "203999": { name: "Nikola Jokić", team: "DEN" } };
 const requests: { path: string; body: Record<string, unknown> }[] = [];
 const asks: string[] = [];
@@ -189,7 +189,7 @@ for (const nullReason of [undefined, "no_metric_row"]) {
       const { BoardsPanel } = await import("./components/BoardsPanel");
       await act(async () => { m.root.render(<BoardsPanel boardId={saved.id} onOpen={() => {}} onAsk={() => {}} />); });
       assert.match(m.host.querySelector('[role="alert"]')!.textContent!, /Metric catalog unavailable/);
-      const trigger = m.host.querySelector<HTMLButtonElement>('[aria-label^="Source: Stephen Curry · ppg"]')!;
+      const trigger = m.host.querySelector<HTMLButtonElement>('[aria-label^="Source: Stephen Curry · Points"]')!;
       assert.ok(trigger);
       assert.equal(trigger.textContent, nullReason ? "—" : "25.5");
       assert.doesNotMatch(m.host.querySelector("tbody")!.textContent!, /Not filled/);
@@ -202,6 +202,33 @@ for (const nullReason of [undefined, "no_metric_row"]) {
     } finally { await m.cleanup(); }
   });
 }
+
+test("saved column metadata preserves labels, currency and percent units through a catalog outage", async () => {
+  const m = await mount();
+  try {
+    await click(button(m.host, "Scoring guards"));
+    const saved = listBoards()[0];
+    assert.deepEqual(saved.columns.find(column => column.metric_id === "salary_2026_27")?.presentation, { label: "salary_2026_27", unit: "usd", format: "currency" });
+    saved.cells[201939].salary_2026_27.value = 2500000;
+    saved.cells[201939].ts_pct.value = 62.5;
+    await act(async () => { saveBoard(saved); });
+    m.options.catalogFailure = true;
+    m.options.failure = true;
+    const { BoardsPanel } = await import("./components/BoardsPanel");
+    await act(async () => { m.root.render(<BoardsPanel boardId={saved.id} onOpen={() => {}} onAsk={() => {}} />); });
+    assert.match(m.host.querySelector("thead")!.textContent!, /Points/);
+    assert.match(m.host.querySelector("thead")!.textContent!, /Percent/);
+    assert.match(m.host.querySelector("thead")!.textContent!, /USD/);
+    for (const [id, formatted, evidenceValue] of [["ts_pct", "62.5%", "62.5%"], ["salary_2026_27", "$2.5M", "2,500,000 USD"]]) {
+      const trigger = m.host.querySelector<HTMLButtonElement>(`[aria-label="Source: Stephen Curry · ${id}"]`)!;
+      assert.equal(trigger.textContent, formatted);
+      await click(trigger);
+      const evidence = m.dom.window.document.querySelector('[role="dialog"]')!;
+      assert.ok(evidence.textContent!.includes(evidenceValue));
+      await act(async () => { evidence.dispatchEvent(new m.dom.window.KeyboardEvent("keydown", { key: "Escape", bubbles: true })); await new Promise(resolve => setTimeout(resolve, 25)); });
+    }
+  } finally { await m.cleanup(); }
+});
 
 for (const [reason, words] of [["unmatched_salary_name", "No 2026-27 salary row for this player"], ["ambiguous_salary_name", "Name matches multiple players"]]) {
   test(`null ${reason} retains a hover reason and opens evidence only on activation`, async () => {

@@ -4,6 +4,13 @@ export interface BoardMetric {
   unit: "per_game" | "pct" | "rating" | "usd" | "count";
   table: string; column: string; higher_is_better: boolean; definition: string;
 }
+export interface BoardPresentation {
+  label: string; unit: BoardMetric["unit"]; format: "currency" | "percent" | "integer" | "decimal";
+}
+export interface BoardColumn { metric_id: string; presentation?: BoardPresentation }
+export function metricPresentation(metric: BoardMetric): BoardPresentation {
+  return { label: metric.label, unit: metric.unit, format: metric.unit === "usd" ? "currency" : metric.unit === "pct" ? "percent" : metric.unit === "count" ? "integer" : "decimal" };
+}
 export interface BoardCitation {
   table: string | null; column: string | null; season: string;
   sql: string | null; params: unknown[]; source: string | null; fetched_at: string | null;
@@ -14,7 +21,7 @@ export interface BoardCell { value: number | null; reason?: string; citation: Bo
 export type BoardCells = Record<string, Record<string, BoardCell>>;
 export interface BoardRow { player_id: number; name: string; team: string }
 export interface Board {
-  id: string; title: string; season: string; rows: BoardRow[]; columns: { metric_id: string }[];
+  id: string; title: string; season: string; rows: BoardRow[]; columns: BoardColumn[];
   cells: BoardCells; created_at: string; updated_at: string; template_id?: string;
 }
 export interface BoardFill {
@@ -49,6 +56,7 @@ export function validBoard(value: unknown): value is Board {
   }
   for (const col of value.columns) {
     if (!object(col) || !text(col.metric_id) || !col.metric_id || columnIds.has(col.metric_id)) return false;
+    if (col.presentation !== undefined && (!object(col.presentation) || !text(col.presentation.label) || !["per_game", "pct", "rating", "usd", "count"].includes(String(col.presentation.unit)) || !["currency", "percent", "integer", "decimal"].includes(String(col.presentation.format)))) return false;
     columnIds.add(col.metric_id);
   }
   for (const [pid, cells] of Object.entries(value.cells)) {
@@ -92,8 +100,9 @@ function write(boards: Board[]) {
 export function boardsArePersistent(): boolean { const store = storage(); return !!store && store !== failedStorage; }
 export function listBoards(): Board[] { return read().sort((a, b) => b.updated_at.localeCompare(a.updated_at)); }
 export function getBoard(id: string): Board | null { return read().find((b) => b.id === id) || null; }
-export function saveBoard(board: Board): Board {
-  const saved = { ...board, title: board.title.trim() || "Untitled board", updated_at: new Date().toISOString() };
+export function saveBoard(board: Board, metrics: BoardMetric[] = []): Board {
+  const columns = board.columns.map(column => { const metric = metrics.find(item => item.id === column.metric_id); return metric ? { ...column, presentation: metricPresentation(metric) } : column; });
+  const saved = { ...board, columns, title: board.title.trim() || "Untitled board", updated_at: new Date().toISOString() };
   if (!validBoard(saved)) throw new Error("This board could not be saved: invalid document.");
   write([saved, ...read().filter((b) => b.id !== saved.id)]);
   return saved;
