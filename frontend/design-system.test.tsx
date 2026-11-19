@@ -46,6 +46,17 @@ test("pending asChild actions block the child's own handler", async () => {
   } finally { await act(async () => root.unmount()); dom.window.close(); }
 });
 
+test("dialogs keep their bounded scroll area inside the Radix scroll-lock shard", () => {
+  const system = readFileSync(new URL("./app/system.css", import.meta.url), "utf8");
+  const content = system.match(/\.ds-dialog\s*\{([^}]+)\}/)![1];
+  assert.match(content, /max-height:\s*100%/);
+  assert.match(content, /overflow-y:\s*auto/);
+  assert.match(content, /overscroll-behavior:\s*contain/);
+  const palette = readFileSync(new URL("./components/site/DimeCommandPalette.tsx", import.meta.url), "utf8");
+  assert.match(palette, /className="overflow-x-hidden"/);
+  assert.doesNotMatch(palette, /className="overflow-hidden"/);
+});
+
 test("non-modal dialogs render independently of the optional overlay and close", async () => {
   const dom = new JSDOM("<div id='root'></div>", { url: "http://localhost", pretendToBeVisual: true });
   Object.assign(globalThis, { window: dom.window, document: dom.window.document, HTMLElement: dom.window.HTMLElement, HTMLInputElement: dom.window.HTMLInputElement, Element: dom.window.Element, Node: dom.window.Node, NodeFilter: dom.window.NodeFilter, MutationObserver: dom.window.MutationObserver, CustomEvent: dom.window.CustomEvent, Event: dom.window.Event, getComputedStyle: dom.window.getComputedStyle.bind(dom.window), IS_REACT_ACT_ENVIRONMENT: true });

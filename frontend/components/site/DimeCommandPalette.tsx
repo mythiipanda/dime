@@ -89,7 +89,7 @@ export default function DimeCommandPalette({
         if (!returnFocusRef.current?.isConnected) return;
         event.preventDefault();
         returnFocusRef.current.focus({ preventScroll: true });
-      }} onKeyDown={onKey} className="overflow-hidden">
+      }} onKeyDown={onKey} className="overflow-x-hidden">
         <DialogTitle className="sr-only">Command palette</DialogTitle>
         <DialogDescription className="sr-only">Search views and actions. Use arrow keys to navigate and Enter to open.</DialogDescription>
         <div className="flex h-12 items-center gap-2 border-b border-line px-3.5">
