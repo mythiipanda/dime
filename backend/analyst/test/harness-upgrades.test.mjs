@@ -31,7 +31,7 @@ function makeSourceRecord(ref, { rows = [], isError = false, error } = {}) {
   };
 }
 
-function makeFixtureRuntime(agentDir, streamHandler) {
+function makeFixtureRuntime(agentDir, streamHandler, compat) {
   return ModelRuntime.create({
     authPath: join(agentDir, "auth.json"),
     modelsPath: null,
@@ -51,6 +51,7 @@ function makeFixtureRuntime(agentDir, streamHandler) {
           contextWindow: 100000,
           maxTokens: 4000,
           cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+          compat,
         },
       ],
       streamSimple: streamHandler,
@@ -422,4 +423,50 @@ test("host bootstrap failure names the missing manifest variable on stderr", () 
   assert.match(stderr, /^Dime host failed: DIME_EXPECTED_ASSET_MANIFEST is required\n/);
   assert.match(stderr, /Error: DIME_EXPECTED_ASSET_MANIFEST is required/);
   assert.match(stderr, /\n\s+at /);
+});
+
+async function contextsForHistory(compat) {
+  const cwd = await mkdtemp(join(tmpdir(), "dime-history-"));
+  const agentDir = join(cwd, "agent");
+  const bridgeCwd = join(cwd, "bridge-ws");
+  await mkdir(agentDir, { recursive: true });
+  await mkdir(bridgeCwd, { recursive: true });
+  const seenContexts = [];
+  const runtime = await makeFixtureRuntime(agentDir, (model, context) => {
+    seenContexts.push(structuredClone(context));
+    const stream = createAssistantMessageEventStream();
+    stream.push({ type: "done", reason: "stop", message: { role: "assistant", api: model.api, provider: model.provider, model: model.id, content: [{ type: "text", text: "Done." }], stopReason: "stop", timestamp: Date.now(), usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } } } });
+    stream.end();
+    return stream;
+  }, compat);
+  const pi = createPiExecution({
+    resolveRuntime: async () => ({ runtime, model: runtime.getModel("fixture", "fixture") }),
+    connectTools: async () => ({ tools: [], results: new Map(), pid: 1001, close: async () => {} }),
+  });
+  try {
+    for await (const event of pi.stream({
+      q: "And their defensive rating?",
+      history: [{ role: "user", content: "Who led the league in points?" }, { role: "assistant", content: "Luka Doncic at 33.5 PPG." }],
+      model: "fixture:fixture",
+      cwd,
+      agentDir,
+      bridge: { python: "fake", cwd: bridgeCwd, env: {} },
+    })) void event;
+    return seenContexts[0].messages;
+  } finally {
+    await rm(cwd, { recursive: true, force: true });
+  }
+}
+
+test("history replays as assistant turns by default", async () => {
+  const messages = await contextsForHistory(undefined);
+  assert.equal(messages.filter((m) => m.role === "assistant").length, 1);
+});
+
+test("history replays as one transcript when the model requires prior reasoning", async () => {
+  const messages = await contextsForHistory({ requiresReasoningContentOnAssistantMessages: true });
+  assert.equal(messages.filter((m) => m.role === "assistant").length, 0);
+  const transcript = messages.find((m) => m.role === "user" && typeof m.content === "string" && m.content.includes("Analyst: Luka Doncic at 33.5 PPG."));
+  assert.ok(transcript);
+  assert.ok(transcript.content.includes("User: Who led the league in points?"));
 });

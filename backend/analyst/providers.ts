@@ -33,6 +33,7 @@ function isProvider(name: string): name is Provider { return Object.hasOwn(polic
 
 const order: Provider[] = ["groq", "agnes", "cerebras", "nvidia", "openrouter", "mistral", "gemini", "inception"];
 const gated = new Set<Provider>(["groq", "agnes", "reflection", "inception"]);
+const reasoningReplay = new Set<Provider>(["reflection"]);
 const limitSchema = Type.Record(Type.String(), Type.Record(Type.String(), Type.Object({ id: Type.String(), contextWindow: Type.Integer(), maxTokens: Type.Integer() }, { additionalProperties: true })));
 
 function resolveLimits(provider: Provider, model: string): TokenLimits {
@@ -102,7 +103,7 @@ export function providerPolicy(env: NodeJS.ProcessEnv) {
                 throw new Error("Provider requires request options not yet supported by Pi adapter");
             const limits = resolveLimits(provider, model);
             const headers: Record<string, string> = provider === "openrouter" ? { "HTTP-Referer": "https://github.com/mythiipanda/dime", "X-Title": "Dime NBA Analyst" } : ["groq", "cerebras", "agnes"].includes(provider) ? { "User-Agent": "dime-agent/1.0" } : {};
-            return { provider, model, apiKey: key(provider), baseUrl: policies[provider].url, headers, contextWindow: limits.contextWindow, maxTokens: limits.maxTokens };
+            return { provider, model, apiKey: key(provider), baseUrl: policies[provider].url, headers, contextWindow: limits.contextWindow, maxTokens: limits.maxTokens, ...(reasoningReplay.has(provider) ? { compat: { requiresReasoningContentOnAssistantMessages: true } } : {}) };
         }
     };
 }

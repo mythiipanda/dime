@@ -136,7 +136,9 @@ function safeFailureMessage(kind: string, error: unknown, apiKey?: string): stri
     return sanitized ? `Dime ${kind} failed: ${sanitized}` : `Dime ${kind} failed.`;
 }
 
-function toHistoryMessages(history: AnalystContext["history"], model: { api: AssistantMessage["api"]; provider: string; id: string }): Message[] {
+function toHistoryMessages(history: AnalystContext["history"], model: { api: AssistantMessage["api"]; provider: string; id: string; compat?: object }): Message[] {
+    if (history.length > 0 && model.compat && "requiresReasoningContentOnAssistantMessages" in model.compat && model.compat.requiresReasoningContentOnAssistantMessages)
+        return [{ role: "user", content: "Earlier turns of this conversation, replayed as a transcript because their reasoning was not retained:\n\n" + history.map(turn => (turn.role === "user" ? "User: " : "Analyst: ") + turn.content).join("\n\n"), timestamp: Date.now() }];
     return history.map(turn => turn.role === "user"
         ? { role: "user", content: turn.content, timestamp: Date.now() }
         : {

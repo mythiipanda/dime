@@ -10,6 +10,7 @@ export const modelConfigSchema = Type.Object({
     baseUrl: Type.String({ minLength: 1 }), apiKey: Type.String({ minLength: 1 }),
     contextWindow: Type.Integer({ minimum: 1 }), maxTokens: Type.Integer({ minimum: 1 }),
     headers: Type.Optional(Type.Record(Type.String(), Type.String())),
+    compat: Type.Optional(Type.Object({ requiresReasoningContentOnAssistantMessages: Type.Optional(Type.Boolean()) })),
 });
 
 export async function resolvedRuntime(input: unknown) {
@@ -20,7 +21,7 @@ export async function resolvedRuntime(input: unknown) {
     runtime.registerProvider(config.provider, {
         api: "openai-completions", baseUrl: config.baseUrl, apiKey: config.apiKey, headers: config.headers,
         models: [{
-                id: config.model, name: config.model, input: ["text"], reasoning: false, contextWindow: config.contextWindow, maxTokens: config.maxTokens,
+                id: config.model, name: config.model, input: ["text"], reasoning: false, contextWindow: config.contextWindow, maxTokens: config.maxTokens, compat: config.compat,
                 cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }
             }]
     });
