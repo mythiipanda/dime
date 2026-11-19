@@ -54,7 +54,7 @@ const skillOutputSchema = Type.Object({
     available_skills: Type.Array(Type.String()),
 }, { additionalProperties: false });
 
-export function loadSkillTool(skills: readonly Skill[]) {
+export function loadSkillTool(skills: readonly Skill[], onLoad?: (name: string) => void) {
     const byName = new Map(skills.map(skill => [skill.name.toLowerCase(), skill]));
     const available = skills.map(skill => skill.name).sort();
     return defineTool({
@@ -73,6 +73,7 @@ export function loadSkillTool(skills: readonly Skill[]) {
                 };
             }
             const text = readFileSync(skill.filePath, "utf8");
+            onLoad?.(skill.name);
             return {
                 content: [{ type: "text", text }],
                 details: undefined,

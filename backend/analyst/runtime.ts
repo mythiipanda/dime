@@ -55,6 +55,7 @@ export async function createAnalystSession({
     modelRuntime,
     tools,
     settings = {},
+    onSkillLoad,
 }: {
     cwd: string;
     agentDir: string;
@@ -62,6 +63,7 @@ export async function createAnalystSession({
     modelRuntime: NonNullable<SessionOptions["modelRuntime"]>;
     tools: NonNullable<SessionOptions["customTools"]>;
     settings?: Parameters<typeof SettingsManager.inMemory>[0];
+    onSkillLoad?: (name: string) => void;
 }) {
     if (!cwd || !agentDir || !isAbsolute(cwd) || !isAbsolute(agentDir)) {
         throw new TypeError("Explicit absolute private cwd and agentDir are required");
@@ -77,7 +79,7 @@ export async function createAnalystSession({
     const discoveredSkills = skillDirs.flatMap((dir) => loadSkillsFromDir({ dir, source: "project" }).skills);
     const uniqueSkills = Array.from(new Map(discoveredSkills.map((s) => [s.name, s])).values());
     const skillsPrompt = uniqueSkills.length > 0 ? formatSkillsForPrompt(uniqueSkills, "indirect").trim() : "";
-    const sessionTools = inputNames.includes("load_skill") ? tools : [...tools, loadSkillTool(uniqueSkills)];
+    const sessionTools = inputNames.includes("load_skill") ? tools : [...tools, loadSkillTool(uniqueSkills, onSkillLoad)];
     const names = sessionTools.map((tool) => tool.name);
     const settingsManager = SettingsManager.inMemory({
         retry: { enabled: true, maxRetries: 6, baseDelayMs: 5000 },

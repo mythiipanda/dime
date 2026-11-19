@@ -275,7 +275,11 @@ export function createPiExecution(deps: AnalystDeps = {}) {
                     );
                     session = await createAnalystSession({
                         cwd: start.cwd, agentDir: start.agentDir, model, modelRuntime: runtime,
-                        tools: [...wrapBridgeTools(bridge.tools, connected.results, emit), priorSourceTool(start.sources ?? []), submitTool]
+                        tools: [...wrapBridgeTools(bridge.tools, connected.results, emit), priorSourceTool(start.sources ?? []), submitTool],
+                        onSkillLoad: () => {
+                            emit({ type: "tool_call", name: "load_skill" });
+                            emit({ type: "tool_result", name: "load_skill", status: "ok" });
+                        }
                     });
                     controller.signal.throwIfAborted();
                     session.subscribe(event => {
