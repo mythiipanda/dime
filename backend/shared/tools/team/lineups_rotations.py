@@ -100,8 +100,20 @@ _HIST_LINEUP_PAIRS = (
 )
 
 
+_HIST_LINEUP_ROWS_CACHE: dict[tuple, list[dict[str, Any]]] = {}
+
+
 def _hist_lineup_rows(team_id: int, season: str, season_type: SeasonType = 'regular-season', measure_type: MeasureType = 'base', per_mode: PerMode = 'totals') -> list[dict[str, Any]]:
     validate_variants(season_type, measure_type, per_mode)
+    from ... import store as _identity_store
+    try:
+        frozen = tuple(sorted(_identity_store.warehouse_identity().items()))
+    except Exception:
+        frozen = ()
+    cache_key = (team_id, season, season_type, measure_type, per_mode, frozen)
+    cached = _HIST_LINEUP_ROWS_CACHE.get(cache_key)
+    if cached is not None:
+        return [dict(r) for r in cached]
     try:
         from ... import store as _store
         base_columns = ', '.join(f'base.{lower} AS base_{lower}' for lower, _ in _HIST_LINEUP_PAIRS[:-4])
@@ -135,7 +147,10 @@ def _hist_lineup_rows(team_id: int, season: str, season_type: SeasonType = 'regu
             out.append(row)
         except Exception:
             continue
-    return out
+    if len(_HIST_LINEUP_ROWS_CACHE) > 96:
+        _HIST_LINEUP_ROWS_CACHE.clear()
+    _HIST_LINEUP_ROWS_CACHE[cache_key] = out
+    return [dict(r) for r in out]
 
 
 def _by_last_name_index():

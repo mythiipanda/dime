@@ -9,7 +9,7 @@ import { ModelRuntime } from "@earendil-works/pi-coding-agent";
 import { createAssistantMessageEventStream } from "@earendil-works/pi-ai";
 import { createAnalystSession } from "./dist/runtime.js";
 import { loadSkillTool, priorSourceTool } from "./dist/pi-context.js";
-import { connectPythonTools, sourceResult } from "./dist/python-tools.js";
+import { connectPythonTools, sourceResult, ANALYST_TOOL_NAMES } from "./dist/python-tools.js";
 import { validateAnswerSubmission } from "./dist/submit-tool.js";
 import { analystEventFrom } from "./dist/pi-execution.js";
 
@@ -369,7 +369,8 @@ test("real statistical tools cross MCP with anchor compatibility, rows, columns,
   const pid = bridge.pid;
   try {
     const toolMap = new Map(bridge.tools.map(t => [t.name, t]));
-    assert.equal(bridge.tools.length, 97);
+    assert.equal(bridge.tools.length, ANALYST_TOOL_NAMES.length);
+    assert.deepEqual(new Set(bridge.tools.map(t => t.name)), new Set(ANALYST_TOOL_NAMES));
 
     // 1. get_rapm
     const rapmTool = toolMap.get("get_rapm");
