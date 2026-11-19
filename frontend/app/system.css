@@ -1,5 +1,6 @@
 @import "tw-animate-css";
 
+@layer components {
 :root {
   --control-xs: 1.75rem;
   --control-sm: 2rem;
@@ -57,4 +58,5 @@
 }
 @media (prefers-reduced-motion: reduce) {
   .ds-dialog, .ds-dialog-backdrop, .ds-spinner { animation: none; }
+}
 }

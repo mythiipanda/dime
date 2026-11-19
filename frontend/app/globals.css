@@ -29,7 +29,7 @@
 
   
   --accent: oklch(0.626 0.205 254.947);
-  --accent-ink: oklch(0.556 0.187 255.617);
+  --accent-ink: oklch(0.535 0.187 255.617);
   --accent-tint: oklch(0.96 0.019 252.878);
 
   
@@ -82,7 +82,7 @@
   --green-tint: oklch(0.705 0.154 153.814 / 0.14);
   --orange: oklch(0.746 0.156 55.642);
   --orange-tint: oklch(0.746 0.156 55.642 / 0.14);
-  --red: oklch(0.666 0.18 21.433);
+  --red: oklch(0.72 0.16 21.433);
   --red-tint: oklch(0.666 0.18 21.433 / 0.14);
 
   --tooltip-bg: oklch(0.182 0.004 264.459);
