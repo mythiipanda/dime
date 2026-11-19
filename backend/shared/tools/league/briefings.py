@@ -13,6 +13,7 @@ FRESHNESS_RULES: dict[str, tuple[str, float | None]] = {
     "silver_scoreboard": ("daily in season", 36 * 3600),
     "silver_standings": ("daily in season", 36 * 3600),
     "silver_injuries": ("daily in season", 36 * 3600),
+    "silver_news": ("daily in season", 36 * 3600),
     "silver_leaders_pts": ("daily in season", 36 * 3600),
     "silver_leaders_ast": ("daily in season", 36 * 3600),
     "silver_leaders_reb": ("daily in season", 36 * 3600),
