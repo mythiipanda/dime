@@ -202,14 +202,20 @@ def get_lineup_stats(
     except ValueError as exc:
         return {"tool": "get_lineup_stats", "ok": False,
                 "error": str(exc)[:160]}
-    rows, meta, agg = _fetch_lineup_inputs(team_id, season)
+    current = season == resolve_season(None)
+    if current:
+        rows, meta, agg = _fetch_lineup_inputs(team_id, season)
+    else:
+        rows, meta, agg = [], {"source": "warehouse"}, _safe_aggs(team_id, season)
     hist = False
     if not rows:
         rows = _hist_lineup_rows(team_id, season)
         hist = bool(rows)
-        if hist:
+        if hist and not current:
             meta = {**meta, "source": "warehouse",
                     "coverage": "historical_lineups"}
+    if not rows and not current:
+        rows, meta, agg = _fetch_lineup_inputs(team_id, season)
     if not rows:
         return {"tool": "get_lineup_stats", "ok": True, "rows": [],
                 "meta": {**meta, "data_note": (

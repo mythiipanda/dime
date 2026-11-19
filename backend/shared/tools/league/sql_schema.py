@@ -15,17 +15,19 @@ _SQL_TABLES = [
     "silver_leaders_pts", "silver_leaders_reb", "silver_leaders_ast",
     "silver_leaders_stl", "silver_leaders_blk", "silver_boxscores",
     "silver_lineups", "silver_shots", "silver_hustle_player",
-    "silver_hustle_team", "silver_injuries", "silver_hist_gamelogs",
+    "silver_hustle_team", "silver_injuries", "silver_injury_entries",
+    "silver_hist_gamelogs",
     "silver_hist_standings", "silver_hist_possessions",
     "silver_hist_shots", "silver_hist_lineups", "silver_salaries",
     "silver_hist_draft", "silver_hist_team_seasons", "silver_raptor_player",
     "silver_raptor_team",
     "silver_hist_player_seasons", "silver_player_season", "silver_advanced",
     "silver_on_off", "silver_four_factors", "silver_four_factors_team",
-    "silver_cap_players",
-    "silver_rapm", "silver_rapm_prior",
+    "silver_cap_players", "silver_news",
+    "silver_rapm", "silver_rapm_prior", "silver_impact",
     "silver_bbref_awards", "silver_combine", "silver_rosters",
     "silver_schedule", "silver_stints", "silver_playoff_gamelogs",
+    "silver_transactions", "silver_contracts", "silver_preseason_projections",
 ]
 
 RERUN_ROW_CAP = 25
