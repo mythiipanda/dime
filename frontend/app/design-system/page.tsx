@@ -21,7 +21,7 @@ const sections = ["Overview", "Foundations", "Controls", "States"] as const;
 
 export default function DesignSystemPage() {
   const [dark, setDark] = useState(true);
-  const [view, setView] = useState<typeof sections[number]>("Overview");
+  const [filter, setFilter] = useState("All research");
   const [palette, setPalette] = useState(false);
   const [name, setName] = useState("");
   const [state, setState] = useState<"idle" | "error" | "saving" | "saved">("idle");
@@ -37,8 +37,7 @@ export default function DesignSystemPage() {
     try { localStorage.setItem("bui-theme", next ? "dark" : "light"); } catch {}
   };
   const navigate = (section: typeof sections[number]) => {
-    setView(section);
-    document.getElementById(section.toLowerCase())?.scrollIntoView({ block: "start" });
+    window.location.hash = section.toLowerCase();
   };
   return <main className="min-h-dvh bg-page text-ink">
     <div className="system-page">
@@ -46,9 +45,9 @@ export default function DesignSystemPage() {
         <a href="/" className="inline-flex items-center gap-2 text-sm font-medium"><ArrowLeft size={15} aria-hidden="true" /> Dime <span className="font-normal text-ink-3">/ Design system</span></a>
         <div className="flex items-center gap-2"><Button size="sm" onClick={() => setPalette(true)}><Command size={14} aria-hidden="true" /> Commands</Button><Button size="icon" variant="quiet" aria-label={dark ? "Switch to light theme" : "Switch to dark theme"} onClick={toggleTheme}>{dark ? <Sun size={16} /> : <Moon size={16} />}</Button></div>
       </header>
-      <section id="overview" className="system-section">
+      <section id="overview" tabIndex={-1} aria-label="Overview" className="system-section">
         <PageHeader eyebrow="Dime foundations / 01" title="Less interface. More intelligence." description="A quiet, precise workspace for basketball decisions. One visual language, accessible controls, and evidence always within reach." actions={<StatusPill tone="neutral" dot={false}>Component reference</StatusPill>} />
-        <div className="mb-10 flex flex-wrap items-center justify-between gap-4"><SegmentedControl options={sections} value={view} onChange={navigate} label="Reference sections" /><p className="system-label">Beautiful UI surfaces. Base UI behavior.</p></div>
+        <div className="mb-10 flex flex-wrap items-center justify-between gap-4"><nav aria-label="Reference sections" className="ds-segmented">{sections.map(section => <a key={section} href={`#${section.toLowerCase()}`} className="ds-segment">{section}</a>)}</nav><p className="system-label">Beautiful UI surfaces. Base UI behavior.</p></div>
         <div className="system-preview mb-12">
           <Surface className="flex flex-col justify-between gap-8 p-7">
             <div><p className="system-label mb-3">The design direction</p><h2 className="max-w-sm text-2xl leading-snug font-medium tracking-tight">Make the next decision clearer.</h2><p className="mt-4 max-w-md text-sm leading-relaxed text-ink-2">Neutral surfaces keep the research in focus. A restrained accent signals an action, not decoration. Compact controls leave room for the work.</p></div>
@@ -62,7 +61,7 @@ export default function DesignSystemPage() {
           </Surface>
         </div>
       </section>
-      <section id="foundations" className="system-section mb-12">
+      <section id="foundations" tabIndex={-1} aria-label="Foundations" className="system-section mb-12">
         <PageHeader eyebrow="01 / Foundations" title="One palette, two themes." description="Semantic roles adapt to the theme. Typography, density, corners, and elevation come from the same small set of tokens." />
         <div className="mb-6 grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-6">{foundations.map(item => <div key={item.token}><div className={`system-swatch ${item.className}`} /><p className="mt-3 text-xs font-medium">{item.name}</p><code className="mt-1 block text-xs text-ink-3">--{item.token}</code></div>)}</div>
         <div className="grid gap-5 md:grid-cols-2">
@@ -70,7 +69,7 @@ export default function DesignSystemPage() {
           <Panel title="Density and motion" description="Compact on a pointer. Comfortable on touch."><dl className="grid grid-cols-2 gap-y-4 text-xs"><dt className="text-ink-3">Control heights</dt><dd className="text-right font-mono">28 / 32 / 36 px</dd><dt className="text-ink-3">Touch targets</dt><dd className="text-right font-mono">44 px minimum</dd><dt className="text-ink-3">Control / panel corners</dt><dd className="text-right font-mono">8 / 12 px</dd><dt className="text-ink-3">Feedback / transition</dt><dd className="text-right font-mono">150 / 200 ms</dd></dl><p className="mt-5 border-t border-line pt-4 text-xs leading-relaxed text-ink-2">Library enter transitions only. Reduced motion removes nonessential animation. No decorative movement in the analysis.</p></Panel>
         </div>
       </section>
-      <section id="controls" className="system-section mb-12">
+      <section id="controls" tabIndex={-1} aria-label="Controls" className="system-section mb-12">
         <PageHeader eyebrow="02 / Controls" title="Familiar by design." description="Library primitives own keyboard behavior and focus. Dime supplies the tokens, the density, and the basketball context." />
         <div className="grid gap-5 md:grid-cols-2">
           <Panel title="Actions" description="One primary action per task. Quiet controls for everything else."><div className="flex flex-wrap gap-3"><Button variant="primary" onClick={() => setPalette(true)}>Primary action</Button><Button onClick={() => setPalette(true)}>Secondary</Button><Button variant="quiet" onClick={() => setPalette(true)}>Quiet</Button><Button variant="accent" onClick={() => setPalette(true)}>Accent</Button></div><div className="mt-5 flex flex-wrap items-center gap-3"><Button disabled>Unavailable</Button><Button loading>Save research</Button><Button size="icon" aria-label="Search commands" onClick={() => setPalette(true)}><Search size={15} /></Button></div><p className="mt-5 text-xs leading-relaxed text-ink-3">Pending actions keep their name, width, and focus. Repeated activation is blocked.</p></Panel>
@@ -83,9 +82,9 @@ export default function DesignSystemPage() {
           }}><label htmlFor="research-name" className="mb-2 block text-xs font-medium">Research name <span className="font-normal text-ink-3">(required)</span></label><TextField id="research-name" required value={name} onChange={event => { setName(event.target.value); setState("idle"); }} aria-invalid={state === "error" || undefined} aria-describedby="research-help" readOnly={state === "saving"} placeholder="e.g. Rotation fits" /><p id="research-help" role={state === "error" ? "alert" : undefined} className={`mt-2 text-xs ${state === "error" ? "text-red" : "text-ink-3"}`}>{state === "error" ? "Use at least 3 characters for the research name." : "Local example only. Nothing is sent or saved to your account."}</p><div className="mt-5 flex flex-wrap items-center gap-3"><Button type="submit" variant="primary" loading={state === "saving"}>Save example</Button><span role="status" className="text-xs text-green">{state === "saved" && <span className="inline-flex items-center gap-1"><Check size={13} aria-hidden="true" /> Example saved locally</span>}</span></div></form></Panel>
         </div>
       </section>
-      <section id="states" className="system-section">
+      <section id="states" tabIndex={-1} aria-label="States" className="system-section">
         <PageHeader eyebrow="03 / States" title="Always say what happened." description="A color is not an explanation. Every status has a label, every error keeps your input, and every empty state points to a useful next step." />
-        <Surface><div className="flex flex-wrap gap-3"><StatusPill tone="neutral">Queued</StatusPill><StatusPill tone="accent">Researching</StatusPill><StatusPill tone="green">Ready to review</StatusPill><StatusPill tone="orange">Needs attention</StatusPill><StatusPill tone="red">Could not load</StatusPill></div><div className="mt-7 grid gap-5 border-t border-line pt-6 sm:grid-cols-2"><div><label htmlFor="disabled-field" className="mb-2 block text-xs font-medium">Unavailable field</label><TextField id="disabled-field" disabled value="Not available for this example" /></div><div><label htmlFor="long-field" className="mb-2 block text-xs font-medium">Long text</label><TextField id="long-field" readOnly defaultValue="A long research title stays inside its container without breaking the layout" /></div></div></Surface>
+        <Surface><div className="flex flex-wrap gap-3"><StatusPill tone="neutral">Queued</StatusPill><StatusPill tone="accent">Researching</StatusPill><StatusPill tone="green">Ready to review</StatusPill><StatusPill tone="orange">Needs attention</StatusPill><StatusPill tone="red">Could not load</StatusPill></div><div className="mt-6"><SegmentedControl options={["All research", "Conversations", "Projects"]} value={filter} onChange={setFilter} label="Example research filter" /><p role="status" className="mt-2 text-xs text-ink-3">Selected: {filter}. Illustrative filter only.</p></div><div className="mt-7 grid gap-5 border-t border-line pt-6 sm:grid-cols-2"><div><label htmlFor="disabled-field" className="mb-2 block text-xs font-medium">Unavailable field</label><TextField id="disabled-field" disabled value="Not available for this example" /></div><div><label htmlFor="long-field" className="mb-2 block text-xs font-medium">Long text</label><TextField id="long-field" readOnly defaultValue="A long research title stays inside its container without breaking the layout" /></div></div></Surface>
       </section>
       <footer className="mt-12 flex flex-wrap justify-between gap-4 border-t border-line pt-5 text-xs text-ink-3"><p>Shared foundations for every Dime workspace.</p><div className="flex flex-wrap gap-4"><a href="https://beautifului.dev/harness" className="system-link">Beautiful UI</a><a href="https://base-ui.com/react/overview/quick-start" className="system-link">Base UI</a><a href="https://coss.com/ui/docs" className="system-link">coss UI</a><a href="https://design.how/skills" className="system-link">design.how</a></div></footer>
     </div>
