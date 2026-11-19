@@ -219,6 +219,7 @@ from .ratings import (
     get_player_ratings,
     get_player_risers,
     get_playoff_team_ratings,
+    get_impact_rank,
     get_rapm,
     get_ratings,
     get_rest,

@@ -49,6 +49,7 @@ _TOOL_ORDER = (
     "sql_exec",
     "warehouse_schema",
     "get_rapm",
+    "get_impact_rank",
     "get_game_prediction",
     "get_wpa_leaders",
     "get_comps",

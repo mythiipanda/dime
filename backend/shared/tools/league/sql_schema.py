@@ -23,7 +23,7 @@ _SQL_TABLES = [
     "silver_hist_player_seasons", "silver_player_season", "silver_advanced",
     "silver_on_off", "silver_four_factors", "silver_four_factors_team",
     "silver_cap_players",
-    "silver_rapm", "silver_rapm_prior",
+    "silver_rapm", "silver_rapm_prior", "silver_impact",
     "silver_bbref_awards", "silver_combine", "silver_rosters",
     "silver_schedule", "silver_stints", "silver_playoff_gamelogs",
     "silver_transactions", "silver_contracts", "silver_preseason_projections",
