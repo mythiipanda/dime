@@ -133,6 +133,39 @@ def test_real_salary_matches_walter_alternative_spelling(real_warehouse):
     assert resolution["table"] == "silver_advanced"
 
 
+@pytest.mark.parametrize("pid,salary_name,expected", [
+    (1629029, "Luka Doncic", 49500000),
+    (203999, "Nikola Jokic", 59033114),
+])
+def test_real_salary_matches_accented_identity(real_warehouse, pid, salary_name, expected):
+    with duckdb.connect(str(real_warehouse), read_only=True) as con:
+        assert con.execute("SELECT salary FROM silver_cap_players WHERE player=? AND _season='2026-27'", [salary_name]).fetchone()[0] == expected
+        name = con.execute("SELECT PLAYER FROM silver_player_season WHERE PLAYER_ID=? AND _season='2025-26'", [pid]).fetchone()[0]
+        assert name != salary_name
+    cell = fill(ids=[pid], metrics=["salary_2026_27"]).json()["cells"][str(pid)]["salary_2026_27"]
+    assert cell["value"] == expected
+    assert "reason" not in cell
+    assert cell["citation"]["row_key"]["player"] == salary_name
+    assert cell["citation"]["salary_vintage"]["season"] == "2026-27"
+    assert cell["citation"]["identity_resolution"]["method"] == "NFKD_strip_accents_casefold_whitespace_full_name_exact"
+
+
+@pytest.mark.parametrize("ambiguous_identity", [True, False])
+def test_accent_normalization_preserves_salary_ambiguity_rejection(warehouse, ambiguous_identity):
+    with duckdb.connect(str(warehouse)) as con:
+        con.execute("UPDATE silver_player_season SET PLAYER='Álpha Guard' WHERE PLAYER_ID=1")
+        con.execute("UPDATE silver_advanced SET PLAYER_NAME='Álpha Guard' WHERE PLAYER_ID=1")
+        if ambiguous_identity:
+            con.execute("INSERT INTO silver_advanced (PLAYER_ID,PLAYER_NAME,_season) VALUES (4,'Alpha Guard','2025-26')")
+        else:
+            con.execute("INSERT INTO silver_cap_players (player,salary,_season) VALUES ('Alpha Guàrd',2000000,'2026-27')")
+    cell = fill(ids=[1], metrics=["salary_2026_27"]).json()["cells"]["1"]["salary_2026_27"]
+    assert cell["value"] is None
+    assert cell["reason"] == ("ambiguous_salary_name" if ambiguous_identity else "ambiguous_salary_rows")
+    if ambiguous_identity:
+        assert {ref["player_id"] for ref in cell["citation"]["identity_resolution"]["collisions"]} == {1, 4}
+
+
 def test_real_jaren_collision_lists_all_ids_and_tables(real_warehouse):
     result = fill(ids=[1114, 1628991], metrics=["salary_2026_27"]).json()
     for pid in [1114, 1628991]:
