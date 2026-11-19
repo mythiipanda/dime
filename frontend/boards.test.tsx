@@ -38,7 +38,7 @@ async function mount(options: { failure?: boolean; seedEmpty?: boolean; boardId?
   const root = createRoot(dom.window.document.getElementById("root")!);
   await act(async () => { root.render(options.boardId ? <BoardsPanel boardId={options.boardId} onOpen={() => {}} onAsk={() => {}} /> : <Harness />); });
   const host = dom.window.document.getElementById("root")!;
-  return { dom, host, options, root, cleanup: async () => { await act(async () => root.unmount()); globalThis.fetch = previous; } };
+  return { dom, host, options, root, cleanup: async () => { await act(async () => { root.unmount(); await new Promise(resolve => setTimeout(resolve, 25)); }); globalThis.fetch = previous; } };
 }
 const button = (host: ParentNode, text: string) => [...host.querySelectorAll("button")].find((b) => b.textContent?.includes(text))!;
 async function click(el: HTMLElement) { assert.ok(el); await act(async () => { el.click(); await new Promise((r) => setTimeout(r, 25)); }); }
@@ -218,9 +218,9 @@ for (const [reason, words] of [["unmatched_salary_name", "No 2026-27 salary row 
       await click(trigger);
       assert.ok(m.dom.window.document.querySelector('[role="status"]')?.textContent?.includes(words));
       assert.ok(m.dom.window.document.querySelector('[role="dialog"]')!.contains(m.dom.window.document.activeElement));
-      await act(async () => { m.dom.window.document.activeElement!.dispatchEvent(new m.dom.window.KeyboardEvent("keydown", { key: "Escape", bubbles: true })); });
+      await act(async () => { m.dom.window.document.activeElement!.dispatchEvent(new m.dom.window.KeyboardEvent("keydown", { key: "Escape", bubbles: true })); await new Promise(resolve => setTimeout(resolve, 25)); });
       assert.equal(m.dom.window.document.querySelector('[role="dialog"]'), null);
-      assert.equal(m.dom.window.document.activeElement, trigger);
+      assert.equal(m.dom.window.document.activeElement === trigger, true);
     } finally { await m.cleanup(); }
   });
 }
@@ -257,11 +257,11 @@ test("citation activation moves focus inside and makes the saved row key reachab
     assert.ok(evidence.contains(m.dom.window.document.activeElement));
     const summary = evidence.querySelector("summary")!;
     await act(async () => { summary.focus(); summary.click(); });
-    assert.equal(m.dom.window.document.activeElement, summary);
+    assert.equal(m.dom.window.document.activeElement === summary, true);
     assert.equal(summary.parentElement!.hasAttribute("open"), true);
     assert.match(summary.parentElement!.textContent!, /201939/);
-    await act(async () => summary.dispatchEvent(new m.dom.window.KeyboardEvent("keydown", { key: "Escape", bubbles: true })));
+    await act(async () => { summary.dispatchEvent(new m.dom.window.KeyboardEvent("keydown", { key: "Escape", bubbles: true })); await new Promise(resolve => setTimeout(resolve, 25)); });
     assert.equal(m.dom.window.document.querySelector('[role="dialog"]'), null);
-    assert.equal(m.dom.window.document.activeElement, trigger);
+    assert.equal(m.dom.window.document.activeElement === trigger, true);
   } finally { await m.cleanup(); }
 });
