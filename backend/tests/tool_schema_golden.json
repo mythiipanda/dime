@@ -3366,6 +3366,54 @@
     }
   },
   "internal": {
+    "product_board_metrics": {
+      "name": "product_board_metrics",
+      "description": "List the supported warehouse-backed board metrics.",
+      "args_schema": {
+        "description": "List the supported warehouse-backed board metrics.",
+        "properties": {},
+        "title": "product_board_metrics",
+        "type": "object"
+      }
+    },
+    "product_board_fill": {
+      "name": "product_board_fill",
+      "description": "Fill a bounded player board with read-only warehouse values and citations.",
+      "args_schema": {
+        "description": "Fill a bounded player board with read-only warehouse values and citations.",
+        "properties": {
+          "payload": {
+            "additionalProperties": true,
+            "title": "Payload",
+            "type": "object"
+          }
+        },
+        "required": [
+          "payload"
+        ],
+        "title": "product_board_fill",
+        "type": "object"
+      }
+    },
+    "product_board_seed": {
+      "name": "product_board_seed",
+      "description": "Seed a player board deterministically from one warehouse metric.",
+      "args_schema": {
+        "description": "Seed a player board deterministically from one warehouse metric.",
+        "properties": {
+          "payload": {
+            "additionalProperties": true,
+            "title": "Payload",
+            "type": "object"
+          }
+        },
+        "required": [
+          "payload"
+        ],
+        "title": "product_board_seed",
+        "type": "object"
+      }
+    },
     "product_save_chat": {
       "name": "product_save_chat",
       "description": "Append an existing product chat row to the state database.",

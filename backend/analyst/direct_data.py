@@ -1,6 +1,21 @@
 import json
 from langchain_core.tools import tool
 
+@tool(description='List the supported warehouse-backed board metrics.')
+def product_board_metrics() -> dict:
+    from analyst.boards import metrics
+    return metrics()
+
+@tool(description='Fill a bounded player board with read-only warehouse values and citations.')
+def product_board_fill(payload: dict) -> dict:
+    from analyst.boards import fill
+    return fill(payload)
+
+@tool(description='Seed a player board deterministically from one warehouse metric.')
+def product_board_seed(payload: dict) -> dict:
+    from analyst.boards import seed
+    return seed(payload)
+
 @tool(description='Read a bounded public warehouse table schema and sample.')
 def product_table_detail(table: str, season: str = '') -> dict:
     from analyst.dataset_engine import warehouse_table
@@ -134,7 +149,7 @@ def product_briefing(season: str = '2025-26') -> dict:
     return _decoded(get_morning_briefing.invoke({'season':season}))
 
 def internal_catalogue():
-    operations = (product_save_chat, product_save_run, product_threads, product_runs,
+    operations = (product_board_metrics, product_board_fill, product_board_seed, product_save_chat, product_save_run, product_threads, product_runs,
         product_warehouse_identity, product_warehouse_health, product_dataset, product_freshness, product_table_detail, product_home,
         product_rerun, product_resolve, product_trade, product_debate, product_today,
         product_watchlist, product_watchlist_add, product_watchlist_remove, product_movers, product_briefing)
