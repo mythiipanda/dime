@@ -16,6 +16,7 @@ import {
   createSubmitAnswerTool,
   validateAnswerSubmission,
 } from "../dist/submit-tool.js";
+import { countToolCall, createRunStatusTool } from "../dist/run-status.js";
 
 function makeSourceRecord(ref, { rows = [], isError = false, error } = {}) {
   const result = error !== undefined ? { rows, error } : { rows };
@@ -29,6 +30,16 @@ function makeSourceRecord(ref, { rows = [], isError = false, error } = {}) {
       isError,
     },
   };
+}
+
+function messageText(value) {
+  if (typeof value === "string")
+    return value;
+  if (Array.isArray(value))
+    return value.map(messageText).join("\n");
+  if (value && typeof value === "object")
+    return Object.values(value).map(messageText).join("\n");
+  return "";
 }
 
 function makeFixtureRuntime(agentDir, streamHandler, compat) {
@@ -355,6 +366,120 @@ test("canonicalArgsKey normalizes nested key order and wrapBridgeTools short-cir
   }
 });
 
+test("run_status reports elapsed budget and counters", async () => {
+  const tracker = {
+    startedAt: Date.now() - 1000,
+    budgetMs: 5000,
+    toolCalls: 7,
+    sourceCount: () => 3,
+    submitted: true,
+  };
+  const tool = createRunStatusTool(tracker);
+  const result = await tool.execute("call-status", {}, undefined, undefined, undefined);
+  const status = result.structuredContent;
+  assert.equal(status.ok, true);
+  assert.equal(status.tool_calls, 7);
+  assert.equal(status.source_count, 3);
+  assert.equal(status.submitted, true);
+  assert.equal(status.budget_ms, 5000);
+  assert.ok(status.elapsed_ms >= 1000);
+  assert.equal(status.elapsed_ms + status.budget_remaining_ms, status.budget_ms);
+
+  const unbudgeted = createRunStatusTool({ startedAt: Date.now(), toolCalls: 0, sourceCount: () => 0, submitted: false });
+  const unbudgetedResult = await unbudgeted.execute("call-status-2", {}, undefined, undefined, undefined);
+  assert.equal(unbudgetedResult.structuredContent.budget_ms, undefined);
+  assert.equal(unbudgetedResult.structuredContent.budget_remaining_ms, undefined);
+
+  const counted = countToolCall(createRunStatusTool(tracker), tracker);
+  await counted.execute("call-status-3", {}, undefined, undefined, undefined);
+  assert.equal(tracker.toolCalls, 8);
+});
+
+test("run_status is exposed to codemode with host budget and checkpointed submission", async () => {
+  const cwd = await mkdtemp(join(tmpdir(), "dime-run-status-"));
+  const agentDir = join(cwd, "agent");
+  await mkdir(agentDir, { recursive: true });
+
+  let turn = 0;
+  const seenContexts = [];
+  const runtime = await makeFixtureRuntime(agentDir, (model, context) => {
+    turn++;
+    seenContexts.push(structuredClone(context));
+    const content = turn === 1
+      ? [{ type: "toolCall", id: "call-run-status", name: "codemode", arguments: { code: `
+          await tools.submit_answer({ blocks: [{ text: "Checkpoint partial." }] });
+          const source = await tools.sql_exec({ sql: "SELECT 1" });
+          const prior = await tools.read_source({ ref: "prior-1" });
+          const status = await tools.run_status({});
+          return { sourceRef: source.ref, priorRef: prior.ref, status };
+        ` } }]
+      : [{ type: "text", text: "Done." }];
+    const msg = {
+      role: "assistant",
+      api: model.api,
+      provider: model.provider,
+      model: model.id,
+      content,
+      stopReason: turn === 1 ? "toolUse" : "stop",
+      timestamp: Date.now(),
+      usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } },
+    };
+    const stream = createAssistantMessageEventStream();
+    stream.push({ type: "done", reason: turn === 1 ? "toolUse" : "stop", message: msg });
+    stream.end();
+    return stream;
+  });
+
+  const resultsMap = new Map();
+  const mockBridge = {
+    tools: [{
+      name: "sql_exec",
+      label: "sql_exec",
+      description: "Run SQL",
+      parameters: Type.Object({ sql: Type.String(), params: Type.Optional(Type.Record(Type.String(), Type.Unknown())) }),
+      async execute(callId) {
+        const ref = "src-run-status";
+        const payload = { rows: [{ val: 1 }] };
+        const record = { ref, callId, tool: "sql_exec", response: { content: [{ type: "text", text: JSON.stringify(payload) }], structuredContent: payload, isError: false } };
+        resultsMap.set(ref, record);
+        return { content: [], details: undefined, structuredContent: { ref, tool: "sql_exec", result: payload, isError: false }, isError: false };
+      },
+    }],
+    results: resultsMap,
+    pid: 1003,
+    close: async () => {},
+  };
+  const pi = createPiExecution({
+    resolveRuntime: async () => ({ runtime, model: runtime.getModel("fixture", "fixture") }),
+    connectTools: async () => mockBridge,
+  });
+
+  try {
+    const events = [];
+    for await (const event of pi.stream({
+      q: "Checkpoint a large analysis",
+      history: [],
+      model: "fixture:fixture",
+      runTimeoutMs: 12345,
+      sources: [makeSourceRecord("prior-1", { rows: [{ player: "Jokic", pts: 29.6 }] })],
+      cwd,
+      agentDir,
+      bridge: { python: "fake", cwd, env: {} },
+    }))
+      events.push(event);
+    assert.equal(events.find((event) => event.type === "answer")?.text, "Checkpoint partial.");
+    const transcript = seenContexts.map((context) => context.messages.map((message) => messageText(message.content)).join("\n")).join("\n");
+    assert.match(transcript, /"?ok"?\s*:\s*true/);
+    assert.match(transcript, /tool_calls"?\s*:\s*4/);
+    assert.match(transcript, /source_count"?\s*:\s*2/);
+    assert.match(transcript, /submitted"?\s*:\s*true/);
+    assert.match(transcript, /budget_ms"?\s*:\s*12345/);
+    assert.match(transcript, /budget_remaining_ms"?\s*:\s*\d+/);
+  } finally {
+    await rm(cwd, { recursive: true, force: true });
+  }
+});
+
 test("submit_answer and validateAnswerSubmission provide available columns and available refs hints", async () => {
   const src1 = makeSourceRecord("src-1", {
     rows: [{ player: "Jokic", pts: 29.6, trb: 12.7 }],
@@ -411,6 +536,85 @@ test("submit_answer and validateAnswerSubmission provide available columns and a
       return true;
     }
   );
+});
+
+test("accepted submit_answer is emitted when the run aborts before prompt returns", async () => {
+  const cwd = await mkdtemp(join(tmpdir(), "dime-submit-abort-"));
+  const agentDir = join(cwd, "agent");
+  await mkdir(agentDir, { recursive: true });
+  let markEntered;
+  const entered = new Promise((resolve) => { markEntered = resolve; });
+  let turn = 0;
+  const runtime = await makeFixtureRuntime(agentDir, (model) => {
+    turn++;
+    const content = turn === 1
+      ? [{ type: "toolCall", id: "call-submit-abort", name: "codemode", arguments: { code: `
+          await tools.submit_answer({ blocks: [{ text: "Checkpoint answer." }] });
+          return await tools.wait_for_cancel({});
+        ` } }]
+      : [{ type: "text", text: "Done." }];
+    const msg = {
+      role: "assistant",
+      api: model.api,
+      provider: model.provider,
+      model: model.id,
+      content,
+      stopReason: turn === 1 ? "toolUse" : "stop",
+      timestamp: Date.now(),
+      usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } },
+    };
+    const stream = createAssistantMessageEventStream();
+    stream.push({ type: "done", reason: msg.stopReason, message: msg });
+    stream.end();
+    return stream;
+  });
+  const mockBridge = {
+    tools: [{
+      name: "wait_for_cancel",
+      label: "wait_for_cancel",
+      description: "Wait until cancelled",
+      parameters: Type.Object({}, { additionalProperties: false }),
+      async execute(_callId, _args, signal) {
+        markEntered();
+        await new Promise((resolve, reject) => {
+          const fail = () => reject(new Error("fixture cancelled"));
+          if (signal?.aborted) fail();
+          else signal?.addEventListener("abort", fail, { once: true });
+        });
+      },
+    }],
+    results: new Map(),
+    pid: 1004,
+    close: async () => {},
+  };
+  const pi = createPiExecution({
+    resolveRuntime: async () => ({ runtime, model: runtime.getModel("fixture", "fixture") }),
+    connectTools: async () => mockBridge,
+    abortGraceMs: 20,
+  });
+  const abort = new AbortController();
+  const events = [];
+  try {
+    const consuming = (async () => {
+      for await (const event of pi.stream({
+        q: "Submit then hang",
+        history: [],
+        model: "fixture:fixture",
+        cwd,
+        agentDir,
+        bridge: { python: "fake", cwd, env: {} },
+      }, abort.signal)) events.push(event);
+    })();
+    await entered;
+    abort.abort();
+    await consuming;
+    const answer = events.find((event) => event.type === "answer");
+    assert.equal(answer?.text, "Checkpoint answer.");
+    assert.equal(answer?.submission?.blocks?.[0]?.text, "Checkpoint answer.");
+    assert(!events.some((event) => event.type === "failure"));
+  } finally {
+    await rm(cwd, { recursive: true, force: true });
+  }
 });
 
 test("host bootstrap failure names the missing manifest variable on stderr", () => {
