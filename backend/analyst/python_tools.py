@@ -62,6 +62,7 @@ _TOOL_ORDER = (
     "get_competitive_ratings",
     "get_hustle",
     "get_injuries",
+    "get_news_feed",
     "get_award_results",
     "get_briefing",
     "get_standings",

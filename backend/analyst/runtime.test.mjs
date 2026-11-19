@@ -212,6 +212,7 @@ test("real Python sql_exec and schema cross MCP into Pi with source semantics an
       "get_competitive_ratings",
       "get_hustle",
       "get_injuries",
+      "get_news_feed",
       "get_award_results",
       "get_briefing",
       "get_standings",
@@ -368,7 +369,7 @@ test("real statistical tools cross MCP with anchor compatibility, rows, columns,
   const pid = bridge.pid;
   try {
     const toolMap = new Map(bridge.tools.map(t => [t.name, t]));
-    assert.equal(bridge.tools.length, 95);
+    assert.equal(bridge.tools.length, 96);
 
     // 1. get_rapm
     const rapmTool = toolMap.get("get_rapm");
@@ -1206,6 +1207,7 @@ test("real statistical tools cross MCP with anchor compatibility, rows, columns,
       get_competitive_ratings: { team: "BOS" },
       get_hustle: { scope: "player" },
       get_injuries: { team: "BOS" },
+      get_news_feed: { team: "BOS", limit: 5 },
       get_award_results: { view: "winner", award: "mvp" },
       get_briefing: { game_date: "10/24/2023" },
       get_standings: { season: "2023-24" },

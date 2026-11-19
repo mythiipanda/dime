@@ -24,6 +24,7 @@ export const ANALYST_TOOL_NAMES = [
     "get_competitive_ratings",
     "get_hustle",
     "get_injuries",
+    "get_news_feed",
     "get_award_results",
     "get_briefing",
     "get_standings",
@@ -122,7 +123,7 @@ const TOOL_NAMESPACE_GROUPS: Record<string, readonly PythonToolName[]> = {
     matchup: ["get_game_prediction", "get_win_prob", "get_defensive_matchups", "get_head_to_head", "get_lineup_matchup_matrix", "get_season_series", "get_rest", "get_rest_advantage", "get_matchup_preview", "get_matchup_splits", "get_matchup_brief", "get_games_on_date", "get_boxscore", "get_possession_log", "get_stint_timeline"],
     player: ["get_rapm", "get_rapm_prior", "get_impact_rank", "get_raptor_history", "get_comps", "get_on_off", "get_wowy", "get_clutch_stats", "get_hustle", "get_injuries", "get_rookie_leaders", "get_young_player_usage", "get_player_risers", "get_player_ratings", "get_situational_splits", "get_career_arc", "get_last_x", "get_player_report", "get_splits", "get_scouting_report", "get_scout_pack", "get_regression_check", "get_rotation_check", "get_injury_impact", "search_game_logs"],
     team: ["get_lineup_stats", "get_lineup_leaders", "get_lineups", "get_four_factors", "get_team_four_factors", "get_team_trajectory", "get_ratings", "get_team_leaders", "get_team_compare", "get_team_game_log", "get_team_hub", "get_risers", "get_playoff_team_ratings", "get_competitive_ratings", "get_elo", "get_elo_standings", "get_standings", "get_standings_deep"],
-    league: ["get_wpa_leaders", "get_award_results", "get_award_race", "get_briefing", "get_morning_briefing", "get_today", "get_leaders", "get_leaderboard_deltas", "get_historical_leaders", "get_playoffs", "get_playoff_sim", "get_draft_board", "get_combine", "get_draft_model", "get_warehouse_freshness", "get_dataset", "get_dataset_freshness", "get_finder", "get_streaks", "get_watchlist", "get_recap"],
+    league: ["get_wpa_leaders", "get_award_results", "get_award_race", "get_briefing", "get_morning_briefing", "get_today", "get_leaders", "get_leaderboard_deltas", "get_historical_leaders", "get_playoffs", "get_playoff_sim", "get_draft_board", "get_combine", "get_draft_model", "get_warehouse_freshness", "get_dataset", "get_dataset_freshness", "get_finder", "get_streaks", "get_watchlist", "get_recap", "get_news_feed"],
 };
 
 const TOOL_NAMESPACE_MAP = new Map<string, ToolNamespace>(
