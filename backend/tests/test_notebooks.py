@@ -13,11 +13,24 @@ from fastapi.testclient import TestClient
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from shared import store as warehouse_store
+from shared.config import settings
 from v2.main import app
 from v2.notebooks import runner, sql
 from v2.notebooks.store import OUTPUT_CAP
 
 client = TestClient(app)
+
+
+def test_notebook_put_cors_preflight():
+    origin = settings.cors_origins[0]
+    response = client.options("/api/notebooks/" + "a" * 32, headers={
+        "Origin": origin,
+        "Access-Control-Request-Method": "PUT",
+        "Access-Control-Request-Headers": "content-type",
+    })
+    assert response.status_code == 200, response.text
+    assert response.headers["access-control-allow-origin"] == origin
+    assert "PUT" in response.headers["access-control-allow-methods"]
 
 
 @pytest.fixture(autouse=True)
