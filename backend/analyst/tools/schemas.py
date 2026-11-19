@@ -66,6 +66,7 @@ TOOL_SCHEMA_DESCRIPTIONS = {
     "get_dataset_freshness": "Query freshness status across silver warehouse tables.",
     "get_defensive_matchups": "One defender's defended-shot profile: frequency and shooter results.",
     "get_draft_board": "Blended draft board rankings combining college production and combine testing.",
+    "get_draft_capital": "Future draft pick ownership (2027+) with protections, swaps and forfeits, plus empirical pick value.",
     "get_draft_model": "Prospect star-probability classifier from college production.",
     "get_elo": "ELO power ratings from warehouse game results for one season.",
     "get_elo_standings": "ELO power ratings as standings with implied win pct, win equivalents, and Elo-implied spreads.",

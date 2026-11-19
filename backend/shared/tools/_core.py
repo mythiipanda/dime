@@ -166,6 +166,7 @@ TOOL_LABELS = {
     "get_playoff_intel": "Pulling playoff logs",
     "get_trade_check": "Checking trade math",
     "get_trade_value": "Grading trade value",
+    "get_draft_capital": "Checking future pick ownership",
     "get_award_race": "Ranking award races",
     "get_award_results": "Reading award results",
     "get_last_x": "Pulling recent game logs",

@@ -100,6 +100,7 @@ def register() -> dict[str, Any]:
     from shared.tools.league import (
         get_cap_ledger as _orig_get_cap_ledger,
         get_contract_value as _orig_get_contract_value,
+        get_draft_capital as _orig_get_draft_capital,
         get_trade_check as _orig_get_trade_check,
         get_trade_value as _orig_get_trade_value,
     )
@@ -160,6 +161,13 @@ def register() -> dict[str, Any]:
             enrich_error("get_trade_value", res)
         return sanitize_for_wire(res)
 
+    @tool("get_draft_capital", description=_orig_get_draft_capital.description)
+    def get_draft_capital(team: str = "", draft_year: str = "") -> dict:
+        res = call_sync(_orig_get_draft_capital, "get_draft_capital", {
+            "team": team, "draft_year": draft_year,
+        })
+        return finish_dict_list(res, "get_draft_capital", ["draft_year", "round", "orig_team", "status", "held_by", "direction", "est_slot", "est_value_m"])
+
     @tool("get_transactions", description=_orig_get_transactions.description)
     def get_transactions(team: str = "", start: str = "", end: str = "", txn_type: str = "") -> dict:
         cols = ["txn_date", "txn_type", "player", "team", "detail"]
@@ -186,6 +194,7 @@ def register() -> dict[str, Any]:
     return {
         "get_cap_ledger": get_cap_ledger,
         "get_contract_value": get_contract_value,
+        "get_draft_capital": get_draft_capital,
         "get_trade_check": get_trade_check,
         "get_trade_value": get_trade_value,
         "get_transactions": get_transactions,
