@@ -1,6 +1,7 @@
 export const shellNavigation = [
   { id: "today", label: "Home" },
   { id: "chat", label: "Ask" },
+  { id: "workflows", label: "Workflows" },
   { id: "briefs", label: "Library" },
   { id: "data", label: "Data" },
   { id: "trades", label: "Trades", group: "Tools" },

@@ -46,8 +46,16 @@ export function AssistantTurn({ message, prefix, onFollowUp }: { message: Extrac
   </article>;
 }
 
-export function ChatView({ thread, replay, onRunDone }: { thread: string; replay: string | null; onRunDone: (question: string) => void }) {
+export function ChatView({ thread, replay, onRunDone, workflowRequest, onWorkflowConsumed }: { thread: string; replay: string | null; onRunDone: (question: string) => void; workflowRequest?: { thread: string; text: string } | null; onWorkflowConsumed?: () => void }) {
   const chat = useDimeChat({ thread, replay, onRunDone });
+  const consumedWorkflow = useRef<typeof workflowRequest>(null);
+  useEffect(() => {
+    if (!workflowRequest || workflowRequest.thread !== thread || consumedWorkflow.current === workflowRequest || chat.historyLoading || chat.modelsLoading) return;
+    consumedWorkflow.current = workflowRequest;
+    chat.setDraft(workflowRequest.text);
+    if (chat.modelOptions.some(model => model.id === chat.model && model.available !== false)) chat.submit(workflowRequest.text);
+    onWorkflowConsumed?.();
+  }, [workflowRequest, thread, chat.historyLoading, chat.modelsLoading, chat.modelOptions, chat.model, chat.submit, chat.setDraft, onWorkflowConsumed]);
   const replayStarted = useRef(false);
   useEffect(() => {
     if (!replay || chat.historyLoading || replayStarted.current) return;
