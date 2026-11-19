@@ -29,6 +29,7 @@ SEEDERS = [
     ("stints", "seed_stints.py", [], True),
     ("scoreboard", "seed_scoreboard_2025_26.py", [], False),
     ("shots", "seed_shots_2025_26.py", [], False),
+    ("repair_shot_names", "repair_shot_names.py", [], False),
 ]
 
 
