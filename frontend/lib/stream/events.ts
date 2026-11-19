@@ -86,7 +86,12 @@ const EVENT_REDUCERS: Record<string, EventReducer> = {
       artifact,
     }));
   },
-  final_answer: (d) => [{ type: "final", text: asString(d.text), carry: parseCarry(d.carry) }],
+  final_answer: (d) => {
+    const submission = asRecord(asRecord(d.carry).submission);
+    return [{ type: "final", text: asString(d.text), carry: parseCarry(d.carry),
+      ...(Array.isArray(submission.artifacts) ? { artifacts: asResolvedArtifacts(submission.artifacts) } : {}),
+    }];
+  },
   failure: (d) => {
     const kind = asString(d.kind) || "execution_failure";
     return [
@@ -237,6 +242,7 @@ export class DimeStream {
       case "final":
         this.snap.text = event.text;
         this.snap.carry = event.carry;
+        if (event.artifacts) this.snap.artifacts = event.artifacts;
         break;
       case "failure":
         this.recordFailure(event, authority);

@@ -98,7 +98,7 @@ export type ChartTone = "ink" | "muted" | "accent" | "good" | "warn";
 
 export interface ChartSeriesPayload {
   name: string;
-  values: number[];
+  values: (number | null)[];
   tone?: ChartTone;
 }
 
@@ -135,12 +135,27 @@ export interface ScatterArtifactPayload {
   footnote?: string;
 }
 
+export interface PlayerCardArtifactPayload {
+  kind: "player_card";
+  title: string;
+  source?: string;
+  provenance?: DimeProvenance;
+  playerName: string;
+  team?: string;
+  sourceRef: string;
+  sourceRow: number;
+  nameColumn: string;
+  teamColumn?: string;
+  metrics: { column: string; label: string; value: number | null; unit?: string }[];
+}
+
 export type DimeArtifact =
   | TableArtifactPayload
   | CompareArtifactPayload
   | ChartArtifactPayload
   | ShotChartArtifactPayload
-  | ScatterArtifactPayload;
+  | ScatterArtifactPayload
+  | PlayerCardArtifactPayload;
 
 export interface ArtifactEvent {
   type: "artifact";
@@ -151,6 +166,7 @@ export interface FinalEvent {
   type: "final";
   text: string;
   carry: VerificationCarry | null;
+  artifacts?: DimeArtifact[];
 }
 
 export interface FailureEvent {

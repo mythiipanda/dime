@@ -713,3 +713,59 @@ test("validateAnswerSubmission permits omitted anchors and normalizes shot_chart
   assert.equal(validated.artifacts[0].zones[0].pct, 68);
   assert.equal(validated.artifacts[0].zones[1].pct, 42.5);
 });
+
+function playerCardInput(overrides = {}) {
+  return { kind: "player_card", title: "Player snapshot", ref: "card-source", row: 0, nameColumn: "player", teamColumn: "team",
+    metrics: [{ column: "pts", label: "Points" }, { column: "missed", label: "Missed" }, { column: "impact", label: "Impact" }], ...overrides };
+}
+
+function playerCardSource() {
+  const source = makeSourceRecord("card-source", { rows: [{ player: "Alex Example", team: "Fixture City", pts: 24.6, missed: 0, impact: null }] });
+  source.response.structuredContent.declared_column_semantics = { pts: { unit: "points/game" }, missed: { unit: "games" } };
+  source.response.structuredContent.meta = { season: "fixture-season" };
+  return source;
+}
+
+test("player cards resolve identity, exact values and declared units from one source row", () => {
+  const source = playerCardSource(), input = playerCardInput();
+  const original = structuredClone(input);
+  const result = validateAnswerSubmission({ blocks: [{ text: "Fixture only" }], artifacts: [input] }, ref => ref === source.ref ? source : undefined);
+  const card = result.artifacts[0];
+  assert.equal(card.playerName, "Alex Example");
+  assert.equal(card.team, "Fixture City");
+  assert.equal(card.sourceRef, source.ref);
+  assert.equal(card.sourceRow, 0);
+  assert.deepEqual(card.metrics, [{ column: "pts", label: "Points", value: 24.6, unit: "points/game" }, { column: "missed", label: "Missed", value: 0, unit: "games" }, { column: "impact", label: "Impact", value: null }]);
+  assert.equal(card.provenance.origin, "undeclared");
+  assert.equal(card.provenance.season, "fixture-season");
+  assert.deepEqual(input, original);
+});
+
+test("player cards reject forged values, units, row joins and invalid selectors", () => {
+  const source = playerCardSource();
+  const validate = artifact => validateAnswerSubmission({ blocks: [{ text: "Fixture only" }], artifacts: [artifact] }, () => source);
+  for (const overrides of [
+    { row: -1 }, { row: 0.5 }, { row: 1 }, { nameColumn: "missing" }, { nameColumn: "pts" }, { teamColumn: "missing" },
+    { playerName: "Forged" }, { provenance: { origin: "warehouse" } }, { metrics: [] },
+    { metrics: Array.from({ length: 7 }, () => ({ column: "pts", label: "Points" })) },
+    { metrics: [{ column: "pts", label: "Points", value: 99 }] },
+    { metrics: [{ column: "pts", label: "Points", unit: "%" }] },
+    { metrics: [{ column: "pts", label: "Points", row: 1 }] },
+    { metrics: [{ column: "player", label: "Wrong type" }] },
+    { metrics: [{ column: "missing", label: "Missing" }] },
+  ]) assert.throws(() => validate(playerCardInput(overrides)));
+  assert.throws(() => validateAnswerSubmission({ blocks: [{ text: "Fixture" }], artifacts: [playerCardInput()] }, () => undefined), /Unknown player_card source/);
+  source.response.isError = true;
+  assert.throws(() => validate(playerCardInput()), /successful source/);
+});
+
+test("player cards use source units fallback and refuse non-finite or string metrics", () => {
+  const source = playerCardSource();
+  source.response.structuredContent.units = { impact: "points/100 possessions" };
+  const validate = () => validateAnswerSubmission({ blocks: [{ text: "Fixture" }], artifacts: [playerCardInput()] }, () => source);
+  assert.equal(validate().artifacts[0].metrics[2].unit, "points/100 possessions");
+  for (const value of ["24.6", Infinity, NaN, {}, undefined]) {
+    source.response.structuredContent.rows[0].pts = value;
+    assert.throws(validate);
+  }
+});

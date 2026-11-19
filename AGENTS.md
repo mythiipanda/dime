@@ -80,6 +80,14 @@ reduced motion. Use an approved testing-agent handoff for recorded UI testing;
 the testing agent owns servers, browser setup and recording. Don't describe a
 build or static render as proof of a user flow. Disclose untested paths.
 
+Generative answers use Dime's allowlisted artifact catalog, never generated JSX,
+HTML or a second chat runtime. `player_card` input selects identity/metrics from
+one source ref/row; the host resolves exact values and source-declared units.
+Keep its input schema, frontend payload/parser, visual-artifacts skill and tests
+aligned. The final stored submission restores artifacts without duplicating SSE
+ones. Exercise `?replay=generative` in development for provider-free card/chart/
+table checks; all example data must remain explicitly fictional.
+
 ## Finishing
 
 Inspect the diff for unintended files, dead styles, duplicate components and
