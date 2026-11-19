@@ -3,6 +3,7 @@ import { Value } from "typebox/value";
 import { defineTool } from "@earendil-works/pi-coding-agent";
 import { objectValue, sourceResult, sourceRecordSchema, type SourceRecord } from "./python-tools.js";
 import { resolvePlayerCard } from "./player-card.js";
+import { validateAnswerArtifact } from "./artifact-schemas.js";
 
 export { sourceRecordSchema, type SourceRecord } from "./python-tools.js";
 
@@ -62,18 +63,6 @@ function validateAnchor(
     }
 }
 
-function normalizeShotChart(artifact: Record<string, unknown>): Record<string, unknown> {
-    if (artifact.kind !== "shot_chart" || !Array.isArray(artifact.zones) || artifact.zones.length === 0)
-        return artifact;
-    const zones = artifact.zones.map(objectValue);
-    if (zones.some(z => !z || typeof z.pct !== "number" || z.pct <= 0 || z.pct > 1))
-        return artifact;
-    return {
-        ...artifact,
-        zones: zones.map(z => ({ ...z, pct: Math.round((z!.pct as number) * 1000) / 10 }))
-    };
-}
-
 export function validateAnswerSubmission(
     input: unknown,
     getSource: (ref: string) => SourceRecord | undefined,
@@ -88,8 +77,8 @@ export function validateAnswerSubmission(
             validateAnchor(anchor, getSource, availableRefs);
         return { text: block.text, anchors };
     });
-    const artifacts = input.artifacts ? structuredClone(input.artifacts).map(artifact =>
-        artifact.kind === "player_card" ? resolvePlayerCard(artifact, getSource) : normalizeShotChart(artifact)
+    const artifacts = input.artifacts ? structuredClone(input.artifacts).map((artifact, index) =>
+        artifact.kind === "player_card" ? resolvePlayerCard(artifact, getSource) : validateAnswerArtifact(artifact, index)
     ) : undefined;
     return artifacts !== undefined ? { blocks, artifacts } : { blocks };
 }
@@ -101,7 +90,7 @@ export function createSubmitAnswerTool(
     return defineTool({
         name: "submit_answer",
         label: "Submit answer",
-        description: "Submit final prose blocks with optional source selectors and visual artifacts (table, compare, chart, shot_chart, scatter, player_card). Load visual-artifacts for schemas. player_card uses ref/row/nameColumn and metrics [{column,label}]; the host resolves values and units from one source row. Validates selector traceability, not semantic correctness.",
+        description: "Submit final prose blocks with optional source selectors and visual artifacts (table, compare, chart, shot_chart, scatter, player_card). Load visual-artifacts for schemas. player_card uses ref/row/nameColumn and metrics [{column,label}]; the host resolves values and units from one source row. Validates selector traceability and artifact schemas, not semantic correctness.",
         parameters: submitAnswerSchema,
         async execute(_callId, args) {
             const sources = getContextSources();
