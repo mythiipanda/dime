@@ -10,6 +10,14 @@ const players = { "201939": { name: "Stephen Curry", team: "GSW" }, "203999": { 
 const requests: { path: string; body: Record<string, unknown> }[] = [];
 const asks: string[] = [];
 
+test("compact salary formatting explicitly omits unnecessary fractional zeros", async () => {
+  const { formatBoardValue } = await import("./components/BoardsTable");
+  const presentation = { label: "Salary", unit: "usd", format: "currency" } as const;
+  assert.equal(formatBoardValue(2500000, presentation), "$2.5M");
+  assert.equal(formatBoardValue(2000000, presentation), "$2M");
+  assert.equal(formatBoardValue(2560000, presentation), "$2.56M");
+});
+
 async function mount(options: { failure?: boolean; seedEmpty?: boolean; boardId?: string; nullReason?: string; teamState?: "null" | "missing"; catalogFailure?: boolean } = {}) {
   const dom = testDom;
   dom.window.document.body.innerHTML = "<div id='root'></div>";

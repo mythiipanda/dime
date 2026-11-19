@@ -8,7 +8,7 @@ import { columnPercentiles, metricPresentation, type Board, type BoardCell, type
 
 export function formatBoardValue(value: number, presentation?: BoardPresentation): string {
   if (!presentation) return value.toLocaleString("en-US", { maximumFractionDigits: 4 });
-  if (presentation.format === "currency") return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", notation: "compact", maximumFractionDigits: 2 }).format(value);
+  if (presentation.format === "currency") return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", notation: "compact", minimumFractionDigits: 0, maximumFractionDigits: 2 }).format(value);
   return value.toLocaleString("en-US", { minimumFractionDigits: presentation.format === "integer" ? 0 : 1, maximumFractionDigits: presentation.format === "integer" ? 0 : 1 }) + (presentation.format === "percent" ? "%" : "");
 }
 
