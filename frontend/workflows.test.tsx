@@ -54,18 +54,20 @@ it("fills a workflow, previews its request and runs only when complete", async (
   }
 });
 
-for (const mode of ["available", "empty", "error"]) it(`workflow handoff ${mode}: uses dev chat once or retains the draft without a new thread`, async () => {
+for (const mode of ["available", "empty", "error", "retry"]) it(`workflow handoff ${mode}: uses a fresh thread even when model loading fails`, async () => {
   const dom = new JSDOM("<div id='root'></div>", { url: "http://localhost/?tab=workflows&thread=original-thread" });
   Object.assign(globalThis, { window: dom.window, document: dom.window.document, localStorage: dom.window.localStorage, HTMLElement: dom.window.HTMLElement, IS_REACT_ACT_ENVIRONMENT: true });
   dom.window.matchMedia = (() => ({ matches: true, addEventListener() {}, removeEventListener() {} })) as unknown as typeof dom.window.matchMedia;
   Object.assign(dom.window.HTMLElement.prototype, { scrollTo() {}, scrollIntoView() {}, attachEvent() {}, detachEvent() {} });
   const previous = globalThis.fetch;
   const requests: Record<string, unknown>[] = [];
+  let modelsFail = mode === "error" || mode === "retry";
   globalThis.fetch = async (input, init) => {
     const url = String(input);
     if (url.includes("/models")) {
-      if (mode === "error") return new Response("unavailable", { status: 503 });
-      return Response.json({ models: mode === "available" ? [{ id: "gemini:flash", available: true, default: true }] : [], available: { gemini: mode === "available" } });
+      if (modelsFail) return new Response("unavailable", { status: 503 });
+      const available = mode === "available" || mode === "retry";
+      return Response.json({ models: available ? [{ id: "gemini:flash", available: true, default: true }] : [], available: { gemini: available } });
     }
     if (url.includes("/chat/stream")) { requests.push(JSON.parse(String(init?.body))); return new Response("unavailable", { status: 503 }); }
     return Response.json({ threads: [], runs: [] });
@@ -84,15 +86,14 @@ for (const mode of ["available", "empty", "error"]) it(`workflow handoff ${mode}
     await act(async () => { await new Promise(resolve => setTimeout(resolve, 30)); });
     const url = new URL(dom.window.location.href);
     assert.equal(url.searchParams.get("tab"), "chat");
+    assert.notEqual(url.searchParams.get("thread"), "original-thread");
     if (mode === "available") {
-      assert.notEqual(url.searchParams.get("thread"), "original-thread");
       assert.equal(requests.length, 1);
       assert.equal(requests[0].q, expected);
       assert.equal(requests[0].thread, url.searchParams.get("thread"));
       assert.equal(requests[0].model, "gemini:flash");
       assert.match(host.textContent!, /503/);
     } else {
-      assert.equal(url.searchParams.get("thread"), "original-thread");
       assert.equal(requests.length, 0);
       assert.equal(host.querySelector("textarea")!.value, expected);
       assert.match(host.textContent!, mode === "empty" ? /GEMINI_API_KEY/ : /Models unavailable/);
@@ -102,5 +103,15 @@ for (const mode of ["available", "empty", "error"]) it(`workflow handoff ${mode}
     assert.equal(requests.length, mode === "available" ? 1 : 0);
     await act(async () => host.querySelector<HTMLButtonElement>('[aria-label="Open command palette"]')!.click());
     assert.match(host.querySelector('[role="dialog"]')!.textContent!, /Workflows/);
+    if (mode === "retry") {
+      modelsFail = false;
+      await act(async () => [...host.querySelectorAll("button")].find(button => button.textContent?.includes("Models unavailable"))!.click());
+      assert.equal(host.querySelector("textarea")!.value, expected);
+      assert.equal(requests.length, 0);
+      await act(async () => host.querySelector<HTMLButtonElement>('[aria-label="Send message"]')!.click());
+      assert.equal(requests.length, 1);
+      assert.equal(requests[0].thread, url.searchParams.get("thread"));
+      assert.notEqual(requests[0].thread, "original-thread");
+    }
   } finally { await act(async () => root.unmount()); globalThis.fetch = previous; dom.window.close(); }
 });

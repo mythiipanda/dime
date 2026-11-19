@@ -9,7 +9,7 @@ import MatchupsView from "../dime/views/MatchupsView";
 import AwardsView from "../dime/views/AwardsView";
 import { ChatView } from "./ChatView";
 import { DataView, HomeView, LibraryView } from "./WorkspaceViews";
-import { getModels, getThreads, type ThreadInfo } from "../../lib/api";
+import { getThreads, type ThreadInfo } from "../../lib/api";
 import WorkflowsPanel from "../WorkflowsPanel";
 import { parseShellTab, shellNavigation, shellUrl, validThread, type ShellTab } from "../../lib/shell-navigation";
 import { replayName } from "../../lib/replay";
@@ -50,15 +50,12 @@ export function DimeShell() {
     window.history.pushState({}, "", shellUrl(window.location.href, nextTab, nextThread));
   };
   const newChat = () => navigate("chat", crypto.randomUUID());
-  const runWorkflow = async (text: string) => {
+  const runWorkflow = (text: string) => {
     if (workflowStarting.current) return;
     workflowStarting.current = true;
-    try {
-      const models = await getModels().catch(() => null);
-      const nextThread = models?.models.some(model => model.available !== false) ? crypto.randomUUID() : thread;
-      setWorkflowRequest({ thread: nextThread, text });
-      navigate("chat", nextThread);
-    } finally { workflowStarting.current = false; }
+    const nextThread = crypto.randomUUID();
+    setWorkflowRequest({ thread: nextThread, text });
+    navigate("chat", nextThread);
   };
   const pick = (id: string) => { if (validThread(id)) navigate("chat", id); };
   const toggleTheme = () => {
@@ -82,7 +79,7 @@ export function DimeShell() {
     <main className="dime-main">
       <header className="dime-header"><div className="dime-top-tab"><span>{label}</span>{tab === "chat" && <span className="max-w-48 truncate text-ink-3">{threads.find(item => item.id === thread)?.title || "New conversation"}</span>}</div><div className="flex items-center gap-1"><button className="icon-button" aria-label="Open command palette" onClick={() => setPalette(true)}><Search size={15} /></button><button className="icon-button" aria-label="Toggle theme" onClick={toggleTheme}>{dark ? <Sun size={15} /> : <Moon size={15} />}</button></div></header>
       <div className="dime-content">
-        {tab === "chat" && thread && <ChatView key={`${thread}-${replay ?? "live"}`} thread={thread} replay={replay} onRunDone={onRunDone} workflowRequest={workflowRequest?.thread === thread ? workflowRequest : null} onWorkflowConsumed={() => setWorkflowRequest(null)} />}
+        {tab === "chat" && thread && <ChatView key={`${thread}-${replay ?? "live"}`} thread={thread} replay={replay} onRunDone={onRunDone} workflowRequest={workflowRequest?.thread === thread ? workflowRequest : null} onWorkflowConsumed={() => { workflowStarting.current = false; setWorkflowRequest(null); }} />}
         {tab === "workflows" && <WorkflowsPanel onRun={runWorkflow} />}
         {tab === "today" && <HomeView onAsk={() => navigate("workflows")} />}
         {tab === "briefs" && <LibraryView onThread={pick} />}
