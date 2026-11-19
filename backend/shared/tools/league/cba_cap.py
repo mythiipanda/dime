@@ -330,7 +330,8 @@ def _season_player_team(con: object, name: str, season: str,
         try:
             row = con.execute(
                 f"SELECT {team_col} FROM {table} WHERE _season = ? "
-                f"AND lower({name_col}) = lower(?) LIMIT 1",
+                f"AND lower({name_col}) = lower(?) "
+                f"AND upper({team_col}) <> 'TOT' LIMIT 1",
                 [season, name]).fetchone()
         except Exception:
             row = None
@@ -349,7 +350,8 @@ def _salary_vintage(con: object = None) -> tuple[str, int, str | None]:
             return "", 0, None
         row = con.execute(
             "SELECT _season, COUNT(*), MAX(_fetched_at) FROM silver_salaries "
-            "GROUP BY _season ORDER BY COUNT(*) DESC LIMIT 1"
+            "GROUP BY _season ORDER BY _season DESC NULLS LAST, "
+            "COUNT(*) DESC LIMIT 1"
         ).fetchone()
         if not row:
             return "", 0, None
