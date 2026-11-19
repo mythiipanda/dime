@@ -63,8 +63,8 @@ export function useDimeChat(options?: { thread: string; replay?: string | null; 
     setHistoryLoading(true);
     setHistoryError(null);
     void loadChatRuns(thread).then(runs => {
-      if (!cancelled) setMessagesByTab(current => ({ ...current, [thread]: runs.flatMap(({ question, snapshot }): ChatMsg[] => [
-        { role: "user", text: question }, assistantMessageFromSnapshot(snapshot, ""),
+      if (!cancelled) setMessagesByTab(current => ({ ...current, [thread]: runs.flatMap(({ question, snapshot, createdAt }): ChatMsg[] => [
+        { role: "user", text: question, createdAt }, assistantMessageFromSnapshot(snapshot, ""),
       ]) }));
     }).catch(() => { if (!cancelled) setHistoryError("Could not load this conversation."); })
       .finally(() => { if (!cancelled) setHistoryLoading(false); });
@@ -107,7 +107,7 @@ export function useDimeChat(options?: { thread: string; replay?: string | null; 
     liveId.current += 1;
     const id = liveId.current;
     const startedAt = Date.now();
-    appendMessage(tabId, { role: "user", text: q });
+    appendMessage(tabId, { role: "user", text: q, createdAt: startedAt });
     setDraft("");
     setLive({
       id,

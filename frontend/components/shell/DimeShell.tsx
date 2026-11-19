@@ -13,7 +13,7 @@ import { getThreads, type ThreadInfo } from "../../lib/api";
 import WorkflowsPanel from "../WorkflowsPanel";
 import { parseShellTab, shellNavigation, shellUrl, validThread, type ShellTab } from "../../lib/shell-navigation";
 import { replayName } from "../../lib/replay";
-import { saveWorkflowDraft } from "../../lib/workflow-drafts";
+import { createWorkflowDraft } from "../../lib/workflow-drafts";
 
 export { parseShellTab, shellNavigation } from "../../lib/shell-navigation";
 const icons = { today: Home, chat: MessageCircle, workflows: Workflow, briefs: BookOpen, data: Database, trades: ArrowLeftRight, matchups: Swords, awards: Award };
@@ -55,7 +55,7 @@ export function DimeShell() {
     if (workflowStarting.current) return;
     workflowStarting.current = true;
     const nextThread = crypto.randomUUID();
-    saveWorkflowDraft(nextThread, text);
+    createWorkflowDraft(nextThread, text);
     setWorkflowRequest({ thread: nextThread, text });
     navigate("chat", nextThread);
     queueMicrotask(() => { workflowStarting.current = false; });

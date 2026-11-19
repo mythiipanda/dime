@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { ArrowRight, Basketball, Copy, Database, User } from "iconoir-react";
@@ -15,7 +15,7 @@ import { useDimeChat } from "../site/harness/useDimeChat";
 import type { ChatMsg } from "../site/harness/types";
 import type { VerificationCarry } from "../../lib/dime-stream";
 import { citationDetails } from "../../lib/citation-details";
-import { clearWorkflowDraft, hasPendingWorkflowDraft, loadWorkflowDraft, saveWorkflowDraft } from "../../lib/workflow-drafts";
+import { clearWorkflowDraft, createWorkflowDraft, loadWorkflowDraft, saveWorkflowDraft, workflowDraftWasSent, type WorkflowDraft } from "../../lib/workflow-drafts";
 
 export const suggestedPrompts = [
   "Build a scouting report on Shai Gilgeous-Alexander",
@@ -49,38 +49,36 @@ export function AssistantTurn({ message, prefix, onFollowUp }: { message: Extrac
 
 export function ChatView({ thread, replay, onRunDone, workflowRequest, onWorkflowConsumed }: { thread: string; replay: string | null; onRunDone: (question: string) => void; workflowRequest?: { thread: string; text: string } | null; onWorkflowConsumed?: () => void }) {
   const chat = useDimeChat({ thread, replay, onRunDone });
-  const workflowDraftActive = useRef(false);
-  const workflowRestored = useRef(false);
-  const workflowEdited = useRef(false);
+  const [workflowDraft, setWorkflowDraft] = useState<WorkflowDraft | null>(() => replay ? null : loadWorkflowDraft(thread) ?? (workflowRequest?.thread === thread ? createWorkflowDraft(thread, workflowRequest.text) : null));
+  const workflowSent = workflowDraft !== null && workflowDraftWasSent(workflowDraft, chat.messages);
   useEffect(() => {
-    if (replay || workflowRestored.current) return;
-    workflowRestored.current = true;
-    const saved = loadWorkflowDraft(thread);
-    const request = workflowRequest?.thread === thread ? workflowRequest : null;
-    if (saved !== null || hasPendingWorkflowDraft(thread) || request) {
-      workflowDraftActive.current = true;
-      chat.setDraft(saved ?? request?.text ?? "");
-    }
-  }, [thread, replay, workflowRequest, chat.setDraft]);
+    if (workflowDraft) chat.setDraft(workflowDraft.text);
+  }, [workflowDraft, chat.setDraft]);
   useEffect(() => {
-    if (!workflowDraftActive.current || !chat.messages.some(message => message.role === "user")) return;
+    if (!workflowSent || !workflowDraft) return;
     clearWorkflowDraft(thread);
-    workflowDraftActive.current = false;
-  }, [thread, chat.messages]);
+    setWorkflowDraft(null);
+    if (chat.draft === workflowDraft.text) chat.setDraft("");
+    onWorkflowConsumed?.();
+  }, [thread, workflowSent, workflowDraft, chat.draft, chat.setDraft, onWorkflowConsumed]);
   const changeDraft = (text: string) => {
-    if (workflowDraftActive.current) {
-      workflowEdited.current = true;
-      saveWorkflowDraft(thread, text);
+    if (workflowDraft) {
+      const edited = { ...workflowDraft, text, edited: true };
+      saveWorkflowDraft(edited);
+      setWorkflowDraft(edited);
+      onWorkflowConsumed?.();
     }
     chat.setDraft(text);
   };
   const consumedWorkflow = useRef<typeof workflowRequest>(null);
   useEffect(() => {
-    if (!workflowRequest || workflowRequest.thread !== thread || consumedWorkflow.current === workflowRequest || chat.historyLoading || chat.modelsLoading) return;
+    if (!workflowRequest || workflowRequest.thread !== thread || !workflowDraft || workflowSent || consumedWorkflow.current === workflowRequest) return;
+    if (workflowDraft.edited || workflowDraft.text !== workflowDraft.request) { onWorkflowConsumed?.(); return; }
+    if (chat.historyLoading || chat.modelsLoading || chat.live || chat.draft !== workflowDraft.text) return;
     consumedWorkflow.current = workflowRequest;
-    if (!workflowEdited.current && chat.modelOptions.some(model => model.id === chat.model && model.available !== false)) chat.submit(chat.draft);
+    if (workflowDraft.request === workflowRequest.text && chat.modelOptions.some(model => model.id === chat.model && model.available !== false)) chat.submit(workflowDraft.text);
     onWorkflowConsumed?.();
-  }, [workflowRequest, thread, chat.draft, chat.historyLoading, chat.modelsLoading, chat.modelOptions, chat.model, chat.submit, onWorkflowConsumed]);
+  }, [workflowRequest, workflowDraft, workflowSent, thread, chat.draft, chat.historyLoading, chat.modelsLoading, chat.live, chat.modelOptions, chat.model, chat.submit, onWorkflowConsumed]);
   const replayStarted = useRef(false);
   useEffect(() => {
     if (!replay || chat.historyLoading || replayStarted.current) return;

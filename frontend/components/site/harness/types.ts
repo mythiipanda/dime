@@ -20,7 +20,7 @@ export type ViewKey =
 export type AssistantFailure = { kind: string; message: string };
 
 export type ChatMsg =
-  | { role: "user"; text: string }
+  | { role: "user"; text: string; createdAt?: number }
   | {
       role: "assistant";
       text: string;

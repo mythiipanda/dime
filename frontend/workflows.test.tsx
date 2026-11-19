@@ -7,7 +7,7 @@ import WorkflowsPanel from "./components/WorkflowsPanel";
 import { workflows } from "./lib/workflows";
 import { DimeShell } from "./components/shell/DimeShell";
 import { StrictMode } from "react";
-import { clearWorkflowDraft, hasPendingWorkflowDraft, loadWorkflowDraft, saveWorkflowDraft } from "./lib/workflow-drafts";
+import { clearWorkflowDraft, createWorkflowDraft, loadWorkflowDraft, saveWorkflowDraft, workflowDraftWasSent } from "./lib/workflow-drafts";
 import { ChatView } from "./components/shell/ChatView";
 
 it("stores workflow drafts per thread and tolerates unavailable storage", () => {
@@ -16,20 +16,33 @@ it("stores workflow drafts per thread and tolerates unavailable storage", () => 
   Object.assign(globalThis, { window: dom.window });
   try {
     assert.equal(loadWorkflowDraft("missing"), null);
-    saveWorkflowDraft("one", "Prepare a player evaluation.");
-    assert.equal(loadWorkflowDraft("one"), "Prepare a player evaluation.");
+    const draft = createWorkflowDraft("one", "Prepare a player evaluation.");
+    assert.deepEqual(loadWorkflowDraft("one"), draft);
     assert.equal(loadWorkflowDraft("two"), null);
-    saveWorkflowDraft("one", "  ");
-    assert.equal(loadWorkflowDraft("one"), null);
-    assert.equal(hasPendingWorkflowDraft("one"), true);
+    const empty = { ...draft, text: "", edited: true };
+    saveWorkflowDraft(empty);
+    assert.deepEqual(loadWorkflowDraft("one"), empty);
     clearWorkflowDraft("one");
-    assert.equal(hasPendingWorkflowDraft("one"), false);
+    assert.equal(loadWorkflowDraft("one"), null);
+    dom.window.localStorage.setItem("dime.workflow-draft:one", "{invalid");
+    assert.equal(loadWorkflowDraft("one"), null);
+    dom.window.localStorage.setItem("dime.workflow-draft:one", JSON.stringify({ ...draft, threadId: "two" }));
+    assert.equal(loadWorkflowDraft("one"), null);
     Object.defineProperty(dom.window, "localStorage", { get() { throw new Error("Storage blocked"); } });
-    assert.doesNotThrow(() => saveWorkflowDraft("one", "Request"));
+    assert.doesNotThrow(() => saveWorkflowDraft(draft));
     assert.doesNotThrow(() => clearWorkflowDraft("one"));
     assert.equal(loadWorkflowDraft("one"), null);
-    assert.equal(hasPendingWorkflowDraft("one"), false);
   } finally { Object.assign(globalThis, { window: previous }); dom.window.close(); }
+});
+
+it("acknowledges a draft only for a newer user turn or matching sent text", () => {
+  const draft = { threadId: "one", request: "Original", text: "Edited", edited: true, createdAt: 1000 };
+  assert.equal(workflowDraftWasSent(draft, []), false);
+  assert.equal(workflowDraftWasSent(draft, [{ role: "user", text: "Old question", createdAt: 999 }]), false);
+  assert.equal(workflowDraftWasSent(draft, [{ role: "assistant", text: "Edited", createdAt: 1001 }]), false);
+  assert.equal(workflowDraftWasSent(draft, [{ role: "user", text: "New question", createdAt: 1001 }]), true);
+  assert.equal(workflowDraftWasSent(draft, [{ role: "user", text: "Edited" }]), true);
+  assert.equal(workflowDraftWasSent({ ...draft, text: "" }, [{ role: "user", text: "" }]), false);
 });
 
 it("fills a workflow, previews its request and runs only when complete", async () => {
@@ -109,7 +122,7 @@ for (const mode of ["edit", "clear-rewrite"]) it(`workflow draft ${mode}: user c
   let root = createRoot(host);
   const original = "Prepare an opponent scouting report.";
   const revised = "Compare OKC and DEN transition defense instead.";
-  saveWorkflowDraft("pending-workflow", original);
+  createWorkflowDraft("pending-workflow", original);
   const edit = async (value: string) => act(async () => {
     const input = host.querySelector("textarea")!;
     input.focus();
@@ -122,11 +135,12 @@ for (const mode of ["edit", "clear-rewrite"]) it(`workflow draft ${mode}: user c
     assert.equal(host.querySelector("textarea")!.value, original);
     if (mode === "clear-rewrite") {
       await edit("");
-      assert.equal(loadWorkflowDraft("pending-workflow"), null);
-      assert.equal(hasPendingWorkflowDraft("pending-workflow"), true);
+      assert.equal(loadWorkflowDraft("pending-workflow")!.text, "");
+      assert.equal(loadWorkflowDraft("pending-workflow")!.edited, true);
     }
     await edit(revised);
-    assert.equal(loadWorkflowDraft("pending-workflow"), revised);
+    assert.equal(loadWorkflowDraft("pending-workflow")!.text, revised);
+    assert.equal(loadWorkflowDraft("pending-workflow")!.edited, true);
     await act(async () => resolveModels());
     assert.equal(host.querySelector("textarea")!.value, revised);
     assert.equal(requests.length, 0);
@@ -139,11 +153,36 @@ for (const mode of ["edit", "clear-rewrite"]) it(`workflow draft ${mode}: user c
     assert.equal(requests.length, 1);
     assert.equal(requests[0].q, revised);
     assert.equal(loadWorkflowDraft("pending-workflow"), null);
-    assert.equal(hasPendingWorkflowDraft("pending-workflow"), false);
   } finally { resolveModels(); await act(async () => root.unmount()); globalThis.fetch = previous; dom.window.close(); }
 });
 
-for (const mode of ["available", "empty", "error", "retry"]) it(`workflow handoff ${mode}: uses a fresh thread even when model loading fails`, async () => {
+it("restores a draft alongside older history and clears it only for a newer user turn", async () => {
+  const dom = new JSDOM("<div id='root'></div>", { url: "http://localhost/?tab=chat&thread=history-workflow" });
+  Object.assign(globalThis, { window: dom.window, document: dom.window.document, localStorage: dom.window.localStorage, HTMLElement: dom.window.HTMLElement, IS_REACT_ACT_ENVIRONMENT: true });
+  dom.window.matchMedia = (() => ({ matches: true, addEventListener() {}, removeEventListener() {} })) as unknown as typeof dom.window.matchMedia;
+  Object.assign(dom.window.HTMLElement.prototype, { scrollTo() {}, scrollIntoView() {} });
+  const previous = globalThis.fetch;
+  const draft = createWorkflowDraft("history-workflow", "Unsent request");
+  let newer = false;
+  globalThis.fetch = async input => Response.json(String(input).includes("/models") ? { models: [] } : { runs: [{ question: newer ? "Newer question" : "Older question", answer: "Saved answer", tables: [], suggestions: [], created_at: new Date(draft.createdAt + (newer ? 1000 : -1000)).toISOString() }] });
+  const host = dom.window.document.getElementById("root")!;
+  let root = createRoot(host);
+  try {
+    await act(async () => root.render(<StrictMode><ChatView thread="history-workflow" replay={null} onRunDone={() => {}} /></StrictMode>));
+    assert.match(host.textContent!, /Older question/);
+    assert.equal(host.querySelector("textarea")!.value, draft.text);
+    assert.deepEqual(loadWorkflowDraft("history-workflow"), draft);
+    await act(async () => root.unmount());
+    newer = true;
+    root = createRoot(host);
+    await act(async () => root.render(<StrictMode><ChatView thread="history-workflow" replay={null} onRunDone={() => {}} /></StrictMode>));
+    assert.match(host.textContent!, /Newer question/);
+    assert.equal(loadWorkflowDraft("history-workflow"), null);
+    assert.equal(host.querySelector("textarea")!.value, "");
+  } finally { await act(async () => root.unmount()); globalThis.fetch = previous; dom.window.close(); }
+});
+
+for (const mode of ["available", "empty", "error", "retry", "leave-return"]) it(`workflow handoff ${mode}: uses a fresh thread even when model loading fails`, async () => {
   const dom = new JSDOM("<div id='root'></div>", { url: "http://localhost/?tab=workflows&thread=original-thread" });
   Object.assign(globalThis, { window: dom.window, document: dom.window.document, localStorage: dom.window.localStorage, HTMLElement: dom.window.HTMLElement, IS_REACT_ACT_ENVIRONMENT: true });
   dom.window.matchMedia = (() => ({ matches: true, addEventListener() {}, removeEventListener() {} })) as unknown as typeof dom.window.matchMedia;
@@ -151,11 +190,14 @@ for (const mode of ["available", "empty", "error", "retry"]) it(`workflow handof
   const previous = globalThis.fetch;
   const requests: Record<string, unknown>[] = [];
   let modelsFail = mode === "error" || mode === "retry";
+  let resolveModels!: () => void;
+  const ready = new Promise<void>(resolve => { resolveModels = resolve; });
   globalThis.fetch = async (input, init) => {
     const url = String(input);
     if (url.includes("/models")) {
+      if (mode === "leave-return") await ready;
       if (modelsFail) return new Response("unavailable", { status: 503 });
-      const available = mode === "available" || mode === "retry";
+      const available = mode === "available" || mode === "retry" || mode === "leave-return";
       return Response.json({ models: available ? [{ id: "gemini:flash", available: true, default: true }] : [], available: { gemini: available } });
     }
     if (url.includes("/chat/stream")) { requests.push(JSON.parse(String(init?.body))); return new Response("unavailable", { status: 503 }); }
@@ -177,6 +219,28 @@ for (const mode of ["available", "empty", "error", "retry"]) it(`workflow handof
     const url = new URL(dom.window.location.href);
     assert.equal(url.searchParams.get("tab"), "chat");
     assert.notEqual(url.searchParams.get("thread"), "original-thread");
+    if (mode === "leave-return") {
+      const revised = "Use my revised workflow request instead.";
+      await act(async () => {
+        const input = host.querySelector("textarea")!;
+        input.focus();
+        Object.getOwnPropertyDescriptor(dom.window.HTMLTextAreaElement.prototype, "value")!.set!.call(input, revised);
+        input.dispatchEvent(new dom.window.Event("input", { bubbles: true }));
+        input.dispatchEvent(new dom.window.KeyboardEvent("keyup", { key: "x", bubbles: true }));
+      });
+      assert.equal(loadWorkflowDraft(url.searchParams.get("thread")!)!.edited, true);
+      await act(async () => [...host.querySelectorAll("button")].find(button => button.textContent === "Workflows")!.click());
+      await act(async () => [...host.querySelectorAll("button")].find(button => button.textContent === "Ask")!.click());
+      await act(async () => resolveModels());
+      assert.equal(host.querySelector("textarea")!.value, revised);
+      assert.equal(requests.length, 0);
+      await act(async () => host.querySelector<HTMLButtonElement>('[aria-label="Send message"]')!.click());
+      assert.equal(requests.length, 1);
+      assert.equal(requests[0].q, revised);
+      assert.equal(requests[0].thread, url.searchParams.get("thread"));
+      assert.equal(loadWorkflowDraft(url.searchParams.get("thread")!), null);
+      return;
+    }
     if (mode === "available") {
       assert.equal(requests.length, 1);
       assert.equal(requests[0].q, expected);
@@ -189,7 +253,7 @@ for (const mode of ["available", "empty", "error", "retry"]) it(`workflow handof
       assert.equal(host.querySelector("textarea")!.value, expected);
       assert.match(host.textContent!, mode === "empty" ? /GEMINI_API_KEY/ : /Models unavailable/);
       assert.equal(host.querySelector<HTMLButtonElement>('[aria-label="Send message"]')!.disabled, true);
-      assert.equal(loadWorkflowDraft(url.searchParams.get("thread")!), expected);
+      assert.equal(loadWorkflowDraft(url.searchParams.get("thread")!)!.text, expected);
       await act(async () => root.unmount());
       root = createRoot(host);
       await act(async () => root.render(<StrictMode><DimeShell /></StrictMode>));
@@ -212,5 +276,5 @@ for (const mode of ["available", "empty", "error", "retry"]) it(`workflow handof
       assert.notEqual(requests[0].thread, "original-thread");
       assert.equal(loadWorkflowDraft(url.searchParams.get("thread")!), null);
     }
-  } finally { await act(async () => root.unmount()); globalThis.fetch = previous; dom.window.close(); }
+  } finally { resolveModels(); await act(async () => root.unmount()); globalThis.fetch = previous; dom.window.close(); }
 });
