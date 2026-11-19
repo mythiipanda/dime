@@ -42,6 +42,8 @@ def _trade_check_rows(raw_rows: Any) -> list[dict[str, Any]]:
                     "payroll": side_data.get("payroll"),
                     "outgoing": side_data.get("out") if "out" in side_data else side_data.get("outgoing"),
                     "allowed_incoming": side_data.get("allowed_in") if "allowed_in" in side_data else side_data.get("allowed_incoming"),
+                    "match_rule": side_data.get("match_rule"),
+                    "outgoing_needed": side_data.get("outgoing_needed"),
                     "legal": legal_val,
                     "issues": issues_val,
                 })
@@ -130,7 +132,7 @@ def register() -> dict[str, Any]:
         res = call_sync(_orig_get_trade_check, "get_trade_check", {
             "team_a": team_a, "players_a": players_a, "team_b": team_b, "players_b": players_b, "season": season,
         })
-        default_cols = ["side", "team", "payroll", "outgoing", "allowed_incoming", "legal", "issues"]
+        default_cols = ["side", "team", "payroll", "outgoing", "allowed_incoming", "match_rule", "outgoing_needed", "legal", "issues"]
         rows = _trade_check_rows(res.get("rows")) if res.get("ok") else []
         res["rows"] = rows
         res["columns"] = list(rows[0].keys()) if rows else default_cols

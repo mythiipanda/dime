@@ -6,8 +6,10 @@ from langchain_core.tools import tool
 
 from ._helpers import _owned_connection, _pkg, _warehouse_tables
 from .cba_cap import (
+    CAP,
     SalaryColumnError,
     _allowed_incoming,
+    _outgoing_needed,
     _apron_state,
     _auto_correct_side,
     _locate_player_team,
@@ -127,9 +129,10 @@ def _trade_match_sides(team_a: str, players_a: str, team_b: str,
 
 
 def _trade_side_rows(team: str, side: tuple, payroll: int, state: dict,
-                     allow: int, rule: str) -> dict[str, Any]:
+                     allow: int, rule: str, needed: int) -> dict[str, Any]:
     return {"team": team.upper(), "out": side[0], "players": side[1],
             "payroll": payroll, "allowed_in": allow, "match_rule": rule,
+            "outgoing_needed": needed,
             **{k: v for k, v in state.items()}}
 
 
@@ -218,15 +221,19 @@ def get_trade_check(
         source = _payroll_source(con)
     state_a = _apron_state(pay_a)
     state_b = _apron_state(pay_b)
-    allow_a, rule_a = _allowed_incoming(out_a, bool(state_a["over_apron1"]))
-    allow_b, rule_b = _allowed_incoming(out_b, bool(state_b["over_apron1"]))
+    room_a = max(0, CAP["cap"] - pay_a)
+    room_b = max(0, CAP["cap"] - pay_b)
+    allow_a, rule_a = _allowed_incoming(out_a, bool(state_a["over_apron1"]), room_a)
+    allow_b, rule_b = _allowed_incoming(out_b, bool(state_b["over_apron1"]), room_b)
+    need_a = _outgoing_needed(out_b, bool(state_a["over_apron1"]), room_a)
+    need_b = _outgoing_needed(out_a, bool(state_b["over_apron1"]), room_b)
     issues = _trade_check_issues(team_a, state_a, names_a, team_b, state_b,
                                  names_b, out_a, allow_a, out_b, allow_b)
     return {"tool": "get_trade_check", "ok": True,
             "rows": {"team_a": _trade_side_rows(
-                         team_a, side_a, pay_a, state_a, allow_a, rule_a),
+                         team_a, side_a, pay_a, state_a, allow_a, rule_a, need_a),
                      "team_b": _trade_side_rows(
-                         team_b, side_b, pay_b, state_b, allow_b, rule_b),
+                         team_b, side_b, pay_b, state_b, allow_b, rule_b, need_b),
                      "legal": not issues, "issues": issues,
                      "checks": _trade_check_checks(team_a, rule_a, team_b,
                                                    rule_b),

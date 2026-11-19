@@ -38,6 +38,7 @@ from .cba_cap import (
     SalaryColumnError,
     _RosterIndex,
     _allowed_incoming,
+    _outgoing_needed,
     _apron_state,
     _auto_correct_side,
     _current_team_for_player,
