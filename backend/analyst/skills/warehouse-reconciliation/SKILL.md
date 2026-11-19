@@ -20,6 +20,8 @@ Different `silver_*` tables encode seasons differently:
 - **`season` (`end_year_numeric`)** in historical tables (`silver_hist_standings`, `silver_hist_gamelogs`, `silver_hist_player_seasons`): 4-digit integer end year (`2025` means the `2024-25` season).
 - **`season_id` (`nba_season_id_start_year`)**: `'2' + start_year` (e.g., `'22024'` means regular-season `2024-25`).
 - **`season_type` (`season_phase`)**: Filter explicitly between `'regular-season'` and `'playoffs'` (or `GAME_ID` prefixes `'002'` regular season vs `'004'` playoffs vs `'001'` preseason). Never mix preseason or playoff rows into regular-season totals unless requested.
+- **Phase is not season**: `GAME_ID LIKE '002%'` selects the regular season of every season a table holds. Multi-season tables (`silver_hist_shots`, `silver_hist_gamelogs`, `silver_advanced`, ...) also need a `_season` filter. When `sql_exec` returns `meta.season_scope_warning`, add the filter and rerun before using the rows.
+- **Bound check**: a shooting percentage, eFG%, or TS% above 100%, or a single-season game count above 1,230, means the population or formula is wrong; fix it before reporting.
 
 ## 3. Traded Players & Entity-Level Deduplication
 
