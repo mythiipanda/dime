@@ -14,6 +14,14 @@ import { evidenceSources } from "./lib/evidence";
 import CitedAnswerText from "./components/CitedAnswerText";
 import { EvidenceAction } from "./components/ds/CitationChip";
 
+it("shows publication caution independently of verification statuses and gaps", () => {
+  const ai = applyEvent({ text: "A published answer", done: true, nodes: {} }, "custom_data", { node: "presentation", unverified_numbers: ["42.7", "18"] });
+  const render = (caution: string[] | undefined) => renderToStaticMarkup(<AssistantTurn ai={{ ...ai, caution }} question="Ratings" onAsk={() => {}} />);
+  assert.match(render(ai.caution), /Check numbers against tables: 42\.7, 18/);
+  assert.doesNotMatch(render([]), /Check numbers against tables/);
+  assert.doesNotMatch(render(undefined), /Check numbers against tables/);
+});
+
 it("ties compact citation chips to source rows and recorded query metadata", () => {
   const ai = aiFromRun({ question: "Ratings", answer: "Net rating is 9.4", created_at: "2026-01-01", suggestions: [], tables: [{ tool: "team_ratings", rows: [{ Team: "Oklahoma City", NET: 9.4 }], meta: { season: "2025-26", source: "Warehouse", sql: "SELECT NET FROM team_ratings" } }, { tool: "team_ratings", output_id: "NET", subject_display_name: "Oklahoma City", value: 9.4, provenance: { capability: "team_ratings", season: "2025-26" } }] });
   const sources = evidenceSources(ai);

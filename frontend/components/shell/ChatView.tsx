@@ -40,6 +40,7 @@ export function AssistantTurn({ ai, question, onAsk }: { ai: AiMessage; question
     <div className="mb-4 flex items-center gap-2 text-[12px] font-medium"><Basketball width={16} height={16} /><span>Dime</span><span className="ml-1 text-[10px] font-normal text-ink-3">NBA intelligence</span></div>
     {(items.length > 0 || !ai.done) && <ThinkingState busy={!ai.done && !ai.error} steps={planSteps(items).map((s) => ({ label: capabilityLabel(s.capability), state: s.state }))} />}
     <ToolChips tools={tools} />
+    {!!ai.caution?.length && <div role="status" className="mb-3 rounded-lg border border-line bg-surface px-3 py-2 text-[12px] text-ink-2">Check numbers against tables: {ai.caution.join(", ")}</div>}
     {ai.text && <StreamingText streaming={ai.streaming}><CitedAnswerText text={ai.text} ai={ai} compact evidencePrefix={evidencePrefix} /></StreamingText>}
     {grids.map((t, i) => <div key={i} id={`${evidencePrefix}evidence-${tables.indexOf(t)}`} tabIndex={-1}><RecordsTable rows={t.rows as Record<string, unknown>[]} title={capabilityLabel(t.tool)} source={[t.meta?.source, t.meta?.season].filter(Boolean).join(" · ")} /></div>)}
     {Object.values(remaining.nodes).some((n) => n.tables.some((t) => t.rows)) && <div id={`${evidencePrefix}evidence-artifacts`} tabIndex={-1}><DataArtifacts ai={remaining} question={question} onAsk={onAsk} /></div>}
