@@ -104,6 +104,7 @@ export const ANALYST_TOOL_NAMES = [
     "get_splits",
     "get_recap",
     "get_scouting_report",
+    "get_expectations",
 ] as const;
 
 export type PythonToolName = (typeof ANALYST_TOOL_NAMES)[number];
