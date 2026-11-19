@@ -327,7 +327,8 @@ def get_wowy(
 
     ids = [pid for pid in (pid_a, pid_b) if pid]
     resolved_team = pkg.coerce_team_id(team_id) if team_id else 0
-    entity_key = f"wowy:{season_type}:{raw_a}_{raw_b}"
+    entity_key = (f"wowy:{raw_a}_{raw_b}" if season_type == 'regular-season'
+                  else f"wowy:{season_type}:{raw_a}_{raw_b}")
     rows, meta = pkg._warehouse_or_live(
         "silver_wowy",
         "_season = ? AND _entity = ?",

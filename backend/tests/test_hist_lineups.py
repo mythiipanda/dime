@@ -183,7 +183,7 @@ def test_wowy_playoffs_never_uses_regular_season_fallback(monkeypatch, player_a,
     assert 'Playoff WOWY is not available' in res['error']
 
 
-def test_wowy_fallback_cache_is_season_type_scoped(monkeypatch):
+def test_wowy_regular_season_fallback_preserves_cache_key(monkeypatch):
     import shared.tools.player as player
     calls = []
 
@@ -193,7 +193,31 @@ def test_wowy_fallback_cache_is_season_type_scoped(monkeypatch):
 
     monkeypatch.setattr(player, '_warehouse_or_live', cached)
     assert get_wowy.invoke({'season': SEASON})['ok']
-    assert calls == ['wowy:regular-season:_']
+    assert calls == ['wowy:_']
+
+
+def test_completed_season_wowy_reads_legacy_cached_rows(monkeypatch):
+    import polars as pl
+    from shared.tools import _core
+    from shared.sources import pbpstats
+
+    cached = pl.DataFrame({'split': ['ON'], 'minutes': [123.4]})
+    reads = []
+
+    def read(table, where, params):
+        reads.append((table, params))
+        return (cached if params == [SEASON, f'wowy:{TATUM}_'] else pl.DataFrame()), {}
+
+    def no_live(*args):
+        raise AssertionError('completed-season fallback must use the existing cache')
+
+    monkeypatch.setattr(_core, '_bound_warehouse_read', read)
+    monkeypatch.setattr(pbpstats, 'wowy', no_live)
+    assert _core.season_static(SEASON)
+    res = get_wowy.invoke({'player_a': str(TATUM), 'team_id': 'BOS', 'season': SEASON})
+    assert res['ok'] and res['rows'] == cached.to_dicts()
+    assert res['meta']['cached'] is True
+    assert reads == [('silver_wowy', [SEASON, f'wowy:{TATUM}_'])]
 
 
 def test_playoff_lineups_skip_unfiltered_competitive_possessions(monkeypatch):
