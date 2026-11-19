@@ -12,8 +12,15 @@ from shared.query import _check, _run_with_timeout
 
 
 def connection(path: Path | None = None):
-    return duckdb.connect(str(path or store.DB_PATH), read_only=True,
-                          config={"enable_external_access": "false", "threads": "2", "memory_limit": "512MB"})
+    con = duckdb.connect(str(path or store.DB_PATH), read_only=True)
+    try:
+        con.execute("SET enable_external_access=false")
+        con.execute("SET threads=2")
+        con.execute("SET memory_limit='512MB'")
+    except BaseException:
+        con.close()
+        raise
+    return con
 
 
 def validate(con, sql: str) -> str:

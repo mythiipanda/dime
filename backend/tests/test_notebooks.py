@@ -200,6 +200,23 @@ def test_sql_external_access_is_disabled():
             con.execute("SELECT * FROM read_csv('/etc/passwd')")
 
 
+def test_sql_after_pooled_warehouse_read_keeps_external_access_blocked():
+    try:
+        with warehouse_store.connect(read_only=True) as pooled:
+            assert pooled.execute("SELECT COUNT(*) FROM silver_player_season").fetchone()[0] == 6000
+        response = query(page_size=1)
+        assert response.status_code == 200, response.text
+        assert response.json()["rows"][0]["player_id"] == 0
+        with sql.connection() as con:
+            assert con.execute("SELECT current_setting('enable_external_access')").fetchone()[0] is False
+            with pytest.raises(duckdb.Error, match="disabled"):
+                con.execute("SELECT * FROM read_csv('/etc/passwd')")
+        with warehouse_store.connect(read_only=True) as pooled:
+            assert pooled.execute("SELECT COUNT(*) FROM silver_player_season").fetchone()[0] == 6000
+    finally:
+        warehouse_store.warehouse_pool_clear()
+
+
 def test_sql_allowlist_fails_closed(monkeypatch):
     from shared.tools import league
     monkeypatch.setattr(league, "_SQL_TABLES", [])
