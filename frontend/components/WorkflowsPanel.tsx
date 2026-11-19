@@ -11,6 +11,7 @@ import { ValuePill } from "./ds/ValuePill";
 
 const categories = ["All tasks", "Game prep", "Roster", "Player evaluation"] as const;
 const categoryIcons = { "Game prep": Basketball, Roster: Group, "Player evaluation": StatsReport };
+const countLabel = (count: number, label: string) => `${count} ${label}${count === 1 ? "" : "s"}`;
 
 export default function WorkflowsPanel({ onRun }: { onRun: (request: string) => void }) {
   const [selected, setSelected] = useState<Workflow | null>(null);
@@ -19,11 +20,11 @@ export default function WorkflowsPanel({ onRun }: { onRun: (request: string) => 
   const missing = selected ? validateWorkflow(selected, values) : [];
   return <div className="workflow-page">
     {!selected ? <>
-      <div className="mb-8 flex items-start justify-between gap-6"><div><p className="mb-3 text-[11px] font-medium tracking-wider text-ink-3">THE ANALYST’S PLAYBOOK</p><h1 className="text-[28px] font-medium tracking-[-.04em]">Good questions. Better decisions.</h1><p className="mt-3 max-w-md text-[13px] leading-relaxed text-ink-2">Start with a task. Dime brings the structure, finds the evidence, and builds a cited analysis you can work with.</p></div><span className="mt-9 hidden sm:block"><Chip>6 workflows</Chip></span></div>
+      <div className="mb-8 flex items-start justify-between gap-6"><div><p className="mb-3 text-[11px] font-medium tracking-wider text-ink-3">THE ANALYST’S PLAYBOOK</p><h1 className="text-[28px] font-medium tracking-[-.04em]">Good questions. Better decisions.</h1><p className="mt-3 max-w-md text-[13px] leading-relaxed text-ink-2">Start with a task. Dime brings the structure, finds the evidence, and builds a cited analysis you can work with.</p></div><span className="mt-9 hidden sm:block"><Chip>{countLabel(workflows.length, "workflow")}</Chip></span></div>
       <div className="mb-8 overflow-x-auto pb-1"><SegmentedControl options={categories} value={category} onChange={setCategory} /></div>
       {categories.slice(1).filter((c) => category === "All tasks" || category === c).map((c) => <section key={c} className="mb-8"><h2 className="mb-3 text-[11px] font-medium text-ink-3">{c}</h2><div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">{workflows.filter((w) => w.category === c).map((w) => { const Icon = categoryIcons[w.category]; return <button key={w.id} className="workflow-card group" onClick={() => { setSelected(w); setValues({}); }}>
         <div className="mb-4 flex w-full items-center justify-between"><span className="rounded-lg border border-line bg-inset p-2 text-ink-2"><Icon width={17} height={17} /></span><ArrowRight width={15} height={15} className="text-ink-3 transition-transform group-hover:translate-x-1 group-hover:text-ink" /></div>
-        <h3 className="text-[13px] font-medium">{w.title}</h3><p className="mt-2 mb-5 text-[12px] leading-relaxed text-ink-2">{w.summary}</p><span className="mt-auto text-[10px] text-ink-3">{w.deliverable.length} sections <span className="mx-1.5">·</span> {w.fields.filter((f) => f.required).length} inputs <span className="mx-1.5">·</span> Cited analysis</span>
+        <h3 className="text-[13px] font-medium">{w.title}</h3><p className="mt-2 mb-5 text-[12px] leading-relaxed text-ink-2">{w.summary}</p><span className="mt-auto text-[10px] text-ink-3">{countLabel(w.deliverable.length, "section")} <span className="mx-1.5">·</span> {countLabel(w.fields.filter((f) => f.required).length, "input")} <span className="mx-1.5">·</span> Cited analysis</span>
       </button>; })}</div></section>)}
       <div className="mt-10 border-t border-line pt-5 text-[11px] text-ink-3">Grounded in your warehouse. Clear about what’s missing. Always open to a follow-up.</div>
     </> : <>

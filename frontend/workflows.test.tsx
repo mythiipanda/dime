@@ -19,6 +19,10 @@ it("fills a workflow, previews its request and runs only when complete", async (
   const requests: string[] = [];
   try {
     await act(async () => root.render(<WorkflowsPanel onRun={(text) => requests.push(text)} />));
+    const cards = [...host.querySelectorAll(".workflow-card")];
+    assert.match(cards.find(card => card.querySelector("h3")?.textContent === "Player evaluation")!.textContent!, /5 sections.*1 input\s*·/);
+    assert.match(cards.find(card => card.querySelector("h3")?.textContent === "Player comparison")!.textContent!, /6 sections.*2 inputs\s*·/);
+    assert.match(host.textContent!, /6 workflows/);
     const card = [...host.querySelectorAll("button")].find((button) => button.textContent?.includes("Opponent scouting report"))!;
     await act(async () => card.click());
     const run = host.querySelector<HTMLButtonElement>('button[type="submit"]')!;
