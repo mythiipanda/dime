@@ -58,6 +58,7 @@ export function DimeShell() {
     saveWorkflowDraft(nextThread, text);
     setWorkflowRequest({ thread: nextThread, text });
     navigate("chat", nextThread);
+    queueMicrotask(() => { workflowStarting.current = false; });
   };
   const pick = (id: string) => { if (validThread(id)) navigate("chat", id); };
   const toggleTheme = () => {
