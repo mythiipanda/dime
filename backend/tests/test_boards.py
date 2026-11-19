@@ -24,7 +24,7 @@ def warehouse(tmp_path, monkeypatch):
     provenance = '_source VARCHAR, _season VARCHAR, _fetched_at VARCHAR, _entity VARCHAR'
     for table in ("silver_player_season", "silver_advanced"):
         columns = sorted({m.column for m in METRICS.values() if m.table == table})
-        identity = 'PLAYER_ID BIGINT, PLAYER VARCHAR, TEAM VARCHAR' if table == "silver_player_season" else 'PLAYER_ID BIGINT'
+        identity = 'PLAYER_ID BIGINT, PLAYER VARCHAR, TEAM VARCHAR' if table == "silver_player_season" else 'PLAYER_ID BIGINT, PLAYER_NAME VARCHAR, TEAM_ABBREVIATION VARCHAR, GP DOUBLE, MIN DOUBLE'
         con.execute(f'CREATE TABLE {table} ({identity}, {", ".join(c + " DOUBLE" for c in columns)}, {provenance})')
     con.execute(f'CREATE TABLE silver_cap_players (player VARCHAR, team VARCHAR, salary BIGINT, {provenance})')
     con.execute('CREATE TABLE silver_boxscores (PLAYER_ID BIGINT, position VARCHAR, _season VARCHAR)')
@@ -35,8 +35,8 @@ def warehouse(tmp_path, monkeypatch):
     ]:
         con.execute('INSERT INTO silver_player_season (PLAYER_ID,PLAYER,TEAM,PPG,GP,MPG,FG_PCT,_source,_season,_fetched_at,_entity) VALUES (?,?,?,?,?,?,?,?,?,?,?)',
                     [pid, name, "AAA", points, gp, mpg, .5, "fixture", "2025-26", "2026-09-01", "league"])
-        con.execute('INSERT INTO silver_advanced (PLAYER_ID,TS_PCT,DEF_RATING,TM_TOV_PCT,_source,_season,_fetched_at,_entity) VALUES (?,?,?,?,?,?,?,?)',
-                    [pid, .6, defense, 12.5, "fixture-advanced", "2025-26", "2026-09-02", "advanced"])
+        con.execute('INSERT INTO silver_advanced (PLAYER_ID,PLAYER_NAME,TEAM_ABBREVIATION,GP,MIN,TS_PCT,DEF_RATING,TM_TOV_PCT,_source,_season,_fetched_at,_entity) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)',
+                    [pid, name, "AAA", gp, mpg, .6, defense, 12.5, "fixture-advanced", "2025-26", "2026-09-02", "advanced"])
     con.execute("INSERT INTO silver_cap_players VALUES ('Alpha Guard','AAA',1000000,'salary-fixture','2026-27','2026-09-03','season:2026-27')")
     con.execute("INSERT INTO silver_boxscores VALUES (1,'G','2025-26'),(2,'F','2025-26'),(3,'C','2025-26')")
     con.close()
@@ -72,6 +72,36 @@ def test_registry_http(warehouse):
     assert response.status_code == 200
     assert len(response.json()["metrics"]) == 25
     assert {"id", "label", "category", "unit", "table", "column", "higher_is_better", "definition"} == set(response.json()["metrics"][0])
+
+
+def test_real_advanced_only_player_and_seed(monkeypatch):
+    if not WAREHOUSE.exists():
+        pytest.skip("warehouse not provisioned")
+    monkeypatch.setattr(store, "connect", lambda **kwargs: duckdb.connect(str(WAREHOUSE), read_only=True))
+    with duckdb.connect(str(WAREHOUSE), read_only=True) as con:
+        assert con.execute("SELECT COUNT(*) FROM silver_player_season WHERE PLAYER_ID=1631260 AND _season='2025-26'").fetchone()[0] == 0
+        rating, name, team = con.execute("SELECT NET_RATING,PLAYER_NAME,TEAM_ABBREVIATION FROM silver_advanced WHERE PLAYER_ID=1631260 AND _season='2025-26'").fetchone()
+        expected = [r[0] for r in con.execute("SELECT PLAYER_ID FROM silver_advanced WHERE _season='2025-26' AND GP>=78 AND MIN>=29.1 AND NET_RATING IS NOT NULL ORDER BY NET_RATING DESC,PLAYER_ID LIMIT 25").fetchall()]
+    result = fill(ids=[1631260], metrics=["net_rating"]).json()
+    assert result["cells"]["1631260"]["net_rating"]["value"] == rating
+    assert result["players"]["1631260"] == {"name": name, "team": team}
+    seeded = client.post("/api/boards/seed", json={"metric_id": "net_rating", "n": 25, "min_gp": 78, "min_mpg": 29.1}).json()
+    assert seeded["player_ids"] == expected
+    assert 1631260 in seeded["player_ids"]
+
+
+def test_metric_rows_do_not_depend_on_basic_coverage(warehouse):
+    with duckdb.connect(str(warehouse)) as con:
+        con.execute("DELETE FROM silver_player_season WHERE PLAYER_ID=1")
+    result = fill(ids=[1], metrics=["ts_pct", "ppg", "salary_2026_27"]).json()
+    assert result["players"]["1"] == {"name": "Alpha Guard", "team": "AAA"}
+    assert result["cells"]["1"]["ts_pct"]["value"] == 60
+    assert result["cells"]["1"]["ppg"]["reason"] == "no_metric_row"
+    salary = result["cells"]["1"]["salary_2026_27"]
+    assert salary["value"] == 1000000
+    assert salary["citation"]["identity_resolution"]["table"] == "silver_advanced"
+    result = client.post("/api/boards/seed", json={"metric_id": "def_rating", "min_gp": 10, "min_mpg": 20}).json()
+    assert result["player_ids"] == [1, 2]
 
 
 def test_fill_and_replayable_citations(warehouse):

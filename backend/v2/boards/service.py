@@ -73,23 +73,16 @@ def _value(metric: Metric, raw: Any) -> float | int | None:
 
 
 def _fill(con, season: str, player_ids: list[int] | None, metric_ids: list[str],
-          base_read: tuple | None = None) -> dict:
-    reads = {"silver_player_season": base_read or _read(con, "silver_player_season", season)}
-    base = reads["silver_player_season"][0]
-    by_player: dict[int, list[dict]] = defaultdict(list)
-    names: dict[str, set[int]] = defaultdict(set)
-    for row in base:
-        pid = row["PLAYER_ID"]
-        if pid is None:
-            continue
-        by_player[pid].append(row)
-        if row.get("PLAYER"):
-            names[_name(row["PLAYER"])].add(pid)
-    ids = list(dict.fromkeys(player_ids)) if player_ids is not None else sorted(by_player)
+          reads: dict | None = None) -> dict:
+    reads = dict(reads or {})
+    if "silver_player_season" not in reads:
+        reads["silver_player_season"] = _read(con, "silver_player_season", season)
     for metric_id in dict.fromkeys(metric_ids):
         metric = METRICS.get(metric_id)
         if metric and metric.table not in reads:
             reads[metric.table] = _read(con, metric.table, SALARY_SEASON if metric.unit == "usd" else season)
+        if metric and metric.unit == "usd" and "silver_advanced" not in reads:
+            reads["silver_advanced"] = _read(con, "silver_advanced", season)
     indexes = {}
     for table, (rows, _, _) in reads.items():
         index: dict[Any, list[dict]] = defaultdict(list)
@@ -97,12 +90,28 @@ def _fill(con, season: str, player_ids: list[int] | None, metric_ids: list[str],
             key = _name(row["player"]) if table == "silver_cap_players" else row["PLAYER_ID"]
             index[key].append(row)
         indexes[table] = index
+    identities = {}
+    names: dict[str, set[int]] = defaultdict(set)
+    for table in ("silver_player_season", "silver_advanced"):
+        name_column, team_column = (("PLAYER", "TEAM") if table == "silver_player_season"
+                                    else ("PLAYER_NAME", "TEAM_ABBREVIATION"))
+        for pid, rows in indexes.get(table, {}).items():
+            if pid is None:
+                continue
+            for row in rows:
+                if row.get(name_column):
+                    names[_name(row[name_column])].add(pid)
+            if len(rows) == 1 and pid not in identities:
+                identities[pid] = {"name": rows[0].get(name_column), "team": rows[0].get(team_column),
+                                   "table": table}
+    known_ids = set().union(*(set(index) for table, index in indexes.items() if table != "silver_cap_players"))
+    known_ids.discard(None)
+    ids = list(dict.fromkeys(player_ids)) if player_ids is not None else sorted(known_ids)
     players, cells = {}, {}
     for pid in ids:
-        identity_rows = by_player.get(pid, [])
-        identity = identity_rows[0] if len(identity_rows) == 1 else None
-        players[str(pid)] = {"name": identity.get("PLAYER") if identity else None,
-                             "team": identity.get("TEAM") if identity else None}
+        identity = identities.get(pid)
+        players[str(pid)] = {"name": identity["name"] if identity else None,
+                             "team": identity["team"] if identity else None}
         cells[str(pid)] = {}
         for metric_id in dict.fromkeys(metric_ids):
             metric = METRICS.get(metric_id)
@@ -111,12 +120,12 @@ def _fill(con, season: str, player_ids: list[int] | None, metric_ids: list[str],
                 reason = "unknown_metric"
             else:
                 _, sql, params = reads[metric.table]
-                if not identity_rows:
+                if pid not in known_ids:
                     reason = "unknown_player"
-                elif identity is None:
+                elif metric.unit == "usd" and identity is None:
                     reason = "ambiguous_player_rows"
                 else:
-                    key = _name(identity["PLAYER"]) if metric.unit == "usd" else pid
+                    key = _name(identity["name"]) if metric.unit == "usd" else pid
                     matches = indexes[metric.table].get(key, [])
                     if metric.unit == "usd" and not key:
                         reason = "unmatched_salary_name"
@@ -135,11 +144,11 @@ def _fill(con, season: str, player_ids: list[int] | None, metric_ids: list[str],
             if metric and metric.unit == "usd":
                 citation["identity_resolution"] = {
                     "method": "NFC_casefold_whitespace_full_name_exact",
-                    "name": identity.get("PLAYER") if identity else None,
+                    "name": identity["name"] if identity else None,
                     "player_id": pid,
-                    "table": "silver_player_season",
-                    "sql": reads["silver_player_season"][1],
-                    "params": reads["silver_player_season"][2],
+                    "table": identity["table"] if identity else None,
+                    "sql": reads[identity["table"]][1] if identity else None,
+                    "params": reads[identity["table"]][2] if identity else [],
                 }
             cells[str(pid)][metric_id] = {"value": value, "citation": citation, **({"reason": reason} if reason else {})}
     return {"ok": True, "cells": cells, "players": players}
@@ -168,12 +177,16 @@ def seed(body: SeedBody):
         raise HTTPException(status_code=422, detail="unknown_metric")
     try:
         with store.connect(read_only=True) as con:
-            base_read = _read(con, "silver_player_season", body.season)
-            eligible = [row["PLAYER_ID"] for row in base_read[0]
+            source_table = metric.table if metric.unit != "usd" else "silver_player_season"
+            source_read = _read(con, source_table, body.season)
+            minutes_column = "MIN" if source_table == "silver_advanced" else "MPG"
+            eligible = [row["PLAYER_ID"] for row in source_read[0]
+                        if row["PLAYER_ID"] is not None
                         if (body.min_gp is None or (row.get("GP") is not None and row["GP"] >= body.min_gp))
-                        and (body.min_mpg is None or (row.get("MPG") is not None and row["MPG"] >= body.min_mpg))]
+                        and (body.min_mpg is None or (row.get(minutes_column) is not None and row[minutes_column] >= body.min_mpg))]
             filters = {"min_gp": body.min_gp, "min_mpg": body.min_mpg,
-                       "sql": base_read[1], "params": base_read[2]}
+                       "table": source_table, "minutes_column": minutes_column,
+                       "sql": source_read[1], "params": source_read[2]}
             if body.position is not None:
                 sql = ('SELECT DISTINCT "PLAYER_ID" FROM "silver_boxscores" '
                        'WHERE "_season" = ? AND upper(trim("position")) = ?')
@@ -181,7 +194,7 @@ def seed(body: SeedBody):
                 positional_ids = {row[0] for row in con.execute(sql, params).fetchall()}
                 eligible = [pid for pid in eligible if pid in positional_ids]
                 filters["position"] = {"value": body.position, "table": "silver_boxscores", "sql": sql, "params": params}
-            result = _fill(con, body.season, eligible, [body.metric_id], base_read)
+            result = _fill(con, body.season, eligible, [body.metric_id], {source_table: source_read})
             ranked = [(int(pid), cell[body.metric_id]["value"]) for pid, cell in result["cells"].items()
                       if cell[body.metric_id]["value"] is not None]
             ranked.sort(key=lambda item: (-item[1] if metric.higher_is_better else item[1], item[0]))

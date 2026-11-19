@@ -3,7 +3,7 @@
 All reads use the configured warehouse in read-only mode. No provider, live
 source, tool runtime, or SQL-generation model is invoked. Each distinct metric
 table is queried once per request, with a bound season parameter; player-season
-rows are also used for identity and qualification. Identifiers come only from
+and advanced rows are used for identity. Identifiers come only from
 the immutable metric registry. Conflicting rows are not resolved by row order.
 
 - `GET /api/boards/metrics` returns `{ok, metrics}` (25 metric definitions).
@@ -36,6 +36,13 @@ normalization. Multiple salary rows are also rejected. There is no fuzzy match,
 suffix removal, accent removal, or team-based tie-breaker. The citation carries
 the salary vintage and the separate player-name resolution query. This is not
 a guarantee of salary coverage for every player.
+
+Metric values and seed candidates come from the requested metric's own table,
+not an inner join to basic season coverage. Advanced seeds qualify using advanced
+`GP` and `MIN` (minutes per game); basic and salary seeds use basic `GP`/`MPG`.
+Player metadata uses an unambiguous basic row or, if absent, an advanced row.
+Salary resolution considers names from both same-season identity tables, with
+the chosen resolution table/query recorded in the citation.
 
 Validation errors use HTTP 422; warehouse read failures use HTTP 503 rather than
 appearing as successful empty results.
