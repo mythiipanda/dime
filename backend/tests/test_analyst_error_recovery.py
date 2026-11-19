@@ -1,3 +1,4 @@
+import asyncio
 import sys
 from pathlib import Path
 
@@ -9,8 +10,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "analyst"))
 from analyst import python_tools
 
 
-@pytest.mark.asyncio
-async def test_sql_column_error_includes_recovery_contract(monkeypatch):
+def test_sql_column_error_includes_recovery_contract(monkeypatch):
     import shared.tools.sql_exec
 
     sql_mod = sys.modules["shared.tools.sql_exec"]
@@ -27,7 +27,7 @@ async def test_sql_column_error_includes_recovery_contract(monkeypatch):
 
     monkeypatch.setattr(sql_mod, "sql_exec", _ColErr())
     tools = python_tools.catalogue()
-    res = await tools["sql_exec"].ainvoke({"sql": "SELECT nonexistent_col FROM silver_standings"})
+    res = asyncio.run(tools["sql_exec"].ainvoke({"sql": "SELECT nonexistent_col FROM silver_standings"}))
     assert res["ok"] is False
     assert isinstance(res.get("summary"), str) and res["summary"]
     assert isinstance(res.get("recovery_hint"), str)

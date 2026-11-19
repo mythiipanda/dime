@@ -37,6 +37,7 @@ def warehouse(monkeypatch, tmp_path):
 
 def test_registered(): assert "get_player_report" in TOOL_NAMES
 
+@pytest.mark.canonical_warehouse
 def test_lebron_report_names_the_absent_season_table():
     pytest = __import__("pytest")
     with pytest.raises(store.TableAbsent) as info:

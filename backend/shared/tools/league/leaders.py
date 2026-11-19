@@ -231,6 +231,7 @@ def _leaders_table_board(stat_category: str, season: str, order: str):
         [season], lambda: pkg.nba_stats.leaders(stat_category, season), season,
     )
     meta["stat_category"] = stat_category
+    meta.setdefault("season", season)
     needs_id_fallback = bool(rows) and not any(
         "PLAYER_ID" in row or "player_id" in row for row in rows
     )

@@ -1,5 +1,6 @@
 import json
 import sys
+import pytest
 import time
 from pathlib import Path
 
@@ -47,11 +48,13 @@ def _max_of_5(fn, kwargs):
     return best
 
 
+@pytest.mark.canonical_warehouse
 def test_lineup_stats_matches_pre_pushdown_output():
     for name, kwargs in STATS_CASES.items():
         assert _norm(get_lineup_stats.invoke(kwargs)) == _load(name)
 
 
+@pytest.mark.canonical_warehouse
 def test_lineup_matchup_matrix_matches_pre_pushdown_output():
     for name, kwargs in MATRIX_CASES.items():
         assert _norm(get_lineup_matchup_matrix.invoke(kwargs)) == _load(name)
@@ -62,11 +65,13 @@ def test_error_paths_unchanged():
         assert _norm(fn.invoke(kwargs)) == _load(name)
 
 
+@pytest.mark.canonical_warehouse
 def test_lineup_stats_max_of_5_under_150ms():
     for name, kwargs in STATS_CASES.items():
         assert _max_of_5(get_lineup_stats, kwargs) < 150, name
 
 
+@pytest.mark.canonical_warehouse
 def test_lineup_matchup_matrix_max_of_5_under_200ms():
     for name, kwargs in MATRIX_CASES.items():
         assert _max_of_5(get_lineup_matchup_matrix, kwargs) < 200, name
