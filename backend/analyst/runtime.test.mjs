@@ -8,7 +8,7 @@ import { join, dirname } from "node:path";
 import { ModelRuntime } from "@earendil-works/pi-coding-agent";
 import { createAssistantMessageEventStream } from "@earendil-works/pi-ai";
 import { createAnalystSession } from "./dist/runtime.js";
-import { priorSourceTool } from "./dist/pi-context.js";
+import { loadSkillTool, priorSourceTool } from "./dist/pi-context.js";
 import { connectPythonTools, sourceResult } from "./dist/python-tools.js";
 import { validateAnswerSubmission } from "./dist/submit-tool.js";
 
@@ -1472,4 +1472,12 @@ test("createAnalystSession discovers bundled skills regardless of cwd and expose
   } finally {
     session.dispose();
   }
+});
+
+test("loadSkillTool reports each successful skill load", async () => {
+  const loaded = [];
+  const tool = loadSkillTool([{ name: "cba-trade-analysis", filePath: fileURLToPath(import.meta.url) }], name => loaded.push(name));
+  await tool.execute("c1", { name: "CBA-Trade-Analysis" });
+  await tool.execute("c2", { name: "missing" });
+  assert.deepEqual(loaded, ["cba-trade-analysis"]);
 });
