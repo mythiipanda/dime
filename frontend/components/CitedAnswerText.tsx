@@ -7,6 +7,8 @@ import type { AiMessage } from "../lib/chat";
 import { contextPills, evidenceSources, unverifiedSummary, withCitationMarkers } from "../lib/evidence";
 import { Chip } from "./view-shared";
 import type { EvidenceSource } from "../lib/evidence";
+import { citationDetails } from "../lib/citation-details";
+import { CitationChip } from "./ds/CitationChip";
 
 export function CiteTable({ source }: { source: EvidenceSource }) {
   const cells: { head: string; body: string; alignRight?: boolean; strong?: boolean }[] = [];
@@ -235,7 +237,7 @@ function downloadLog(entries: FlagEntry[]) {
   URL.revokeObjectURL(url);
 }
 
-export default function CitedAnswerText({ text, ai }: { text: string; ai: AiMessage }) {
+export default function CitedAnswerText({ text, ai, compact = false, evidencePrefix = "" }: { text: string; ai: AiMessage; compact?: boolean; evidencePrefix?: string }) {
   const [openCite, setOpenCite] = useState<number | null>(null);
   const [accepted, setAccepted] = useState<number[]>([]);
   const [flagged, setFlagged] = useState<FlagEntry[]>([]);
@@ -268,7 +270,7 @@ export default function CitedAnswerText({ text, ai }: { text: string; ai: AiMess
     .filter((i) => i >= 0);
   return (
     <div>
-      <ContextPills ai={ai} />
+      {!compact && <ContextPills ai={ai} />}
       <AnswerText
         text={marked}
         components={{
@@ -278,6 +280,7 @@ export default function CitedAnswerText({ text, ai }: { text: string; ai: AiMess
               const index = Number(target.slice("#cite-".length));
               if (!Number.isInteger(index) || !sources[index]) return <>{children}</>;
               if (accepted.includes(index)) return <>{children}</>;
+              if (compact) return <CitationChip index={index} detail={citationDetails(ai, sources[index], evidencePrefix)} claim={[sources[index].subject, sources[index].stat, sources[index].value].filter(Boolean).join(" · ")} onAccept={() => accept(index)} onFlag={() => flag(index)} />;
               return (
                 <CiteAnchor
                   index={index}
@@ -293,13 +296,13 @@ export default function CitedAnswerText({ text, ai }: { text: string; ai: AiMess
           },
         }}
       />
-      <EvidenceLedger
+      {compact ? sources.length > 0 && <div className="mt-4 flex flex-wrap items-center gap-1.5 border-t border-line pt-3"><span className="mr-1 text-[10px] text-ink-3">Sources</span>{sources.map((source) => <CitationChip key={source.key} index={source.index} detail={citationDetails(ai, source, evidencePrefix)} claim={[source.subject, source.stat, source.value].filter(Boolean).join(" · ")} />)}</div> : <EvidenceLedger
         sources={sources}
         openIndex={openCite}
         flagged={flaggedIndexes}
         onAccept={accept}
         onFlag={flag}
-      />
+      />}
       {flagged.length > 0 ? (
         <button
           type="button"

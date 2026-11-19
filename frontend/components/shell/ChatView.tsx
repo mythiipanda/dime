@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { Basketball, Group, Database, ArrowRight, Copy, Check } from "iconoir-react";
 import { appendCachedRun, getModels, getRuns, postChatStream } from "../../lib/api";
 import { type AiMessage, type ChatMessage, type ModelOption, createStreamBatcher } from "../../lib/chat";
@@ -26,6 +26,7 @@ const suggestions = [
 ];
 
 export function AssistantTurn({ ai, question, onAsk }: { ai: AiMessage; question: string; onAsk: (q: string) => void }) {
+  const evidencePrefix = useId();
   const [copied, setCopied] = useState(false);
   const items = ai.activity || [];
   const tools = pairToolItems(items).map((pair, i) => {
@@ -39,9 +40,9 @@ export function AssistantTurn({ ai, question, onAsk }: { ai: AiMessage; question
     <div className="mb-4 flex items-center gap-2 text-[12px] font-medium"><Basketball width={16} height={16} /><span>Dime</span><span className="ml-1 text-[10px] font-normal text-ink-3">NBA intelligence</span></div>
     {(items.length > 0 || !ai.done) && <ThinkingState busy={!ai.done && !ai.error} steps={planSteps(items).map((s) => ({ label: capabilityLabel(s.capability), state: s.state }))} />}
     <ToolChips tools={tools} />
-    {ai.text && <StreamingText streaming={ai.streaming}><CitedAnswerText text={ai.text} ai={ai} /></StreamingText>}
-    {grids.map((t, i) => <RecordsTable key={i} rows={t.rows as Record<string, unknown>[]} title={capabilityLabel(t.tool)} source={[t.meta?.source, t.meta?.season].filter(Boolean).join(" · ")} />)}
-    {Object.values(remaining.nodes).some((n) => n.tables.some((t) => t.rows)) && <DataArtifacts ai={remaining} question={question} onAsk={onAsk} />}
+    {ai.text && <StreamingText streaming={ai.streaming}><CitedAnswerText text={ai.text} ai={ai} compact evidencePrefix={evidencePrefix} /></StreamingText>}
+    {grids.map((t, i) => <div key={i} id={`${evidencePrefix}evidence-${t.tool}`} tabIndex={-1}><RecordsTable rows={t.rows as Record<string, unknown>[]} title={capabilityLabel(t.tool)} source={[t.meta?.source, t.meta?.season].filter(Boolean).join(" · ")} /></div>)}
+    {Object.values(remaining.nodes).some((n) => n.tables.some((t) => t.rows)) && <div id={`${evidencePrefix}evidence-artifacts`} tabIndex={-1}><DataArtifacts ai={remaining} question={question} onAsk={onAsk} /></div>}
     {ai.error && <div role="alert" className="mt-4 rounded-xl border border-line bg-surface px-4 py-3"><p className="!m-0 text-[12px] text-red">{ai.error}</p><button className="mt-2 text-[12px] text-ink-2 hover:text-ink" onClick={() => onAsk(question)}>Try again <ArrowRight width={12} height={12} className="inline" /></button></div>}
     {ai.done && ai.text && <div className="mt-4 flex items-center gap-2 text-ink-3"><button className="icon-button" aria-label="Copy answer" onClick={() => navigator.clipboard.writeText(ai.text).then(() => setCopied(true))}>{copied ? <Check width={14} height={14} /> : <Copy width={14} height={14} />}</button><span className="text-[10px]">Check source coverage before making a decision.</span></div>}
   </article>;

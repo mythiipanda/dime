@@ -9,6 +9,26 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { PromptBar } from "./components/ds/PromptBar";
 import { AssistantTurn } from "./components/shell/ChatView";
 import { aiFromRun } from "./lib/stream-event";
+import { citationDetails } from "./lib/citation-details";
+import { evidenceSources } from "./lib/evidence";
+import CitedAnswerText from "./components/CitedAnswerText";
+
+it("ties compact citation chips to source rows and recorded query metadata", () => {
+  const ai = aiFromRun({ question: "Ratings", answer: "Net rating is 9.4", created_at: "2026-01-01", suggestions: [], tables: [{ tool: "team_ratings", rows: [{ Team: "Oklahoma City", NET: 9.4 }], meta: { season: "2025-26", source: "Warehouse", sql: "SELECT NET FROM team_ratings" } }, { tool: "team_ratings", output_id: "NET", subject_display_name: "Oklahoma City", value: 9.4, provenance: { capability: "team_ratings", season: "2025-26" } }] });
+  const sources = evidenceSources(ai);
+  const detail = citationDetails(ai, sources[1]);
+  assert.equal(detail.query, "SELECT NET FROM team_ratings");
+  assert.equal(detail.season, "2025-26");
+  assert.equal(detail.count, 1);
+  assert.equal(detail.rows[0].NET, 9.4);
+  assert.equal(detail.target, "evidence-team_ratings");
+  const html = renderToStaticMarkup(<CitedAnswerText text={ai.text} ai={ai} compact />);
+  assert.match(html, /citation-chip/);
+  assert.doesNotMatch(html, /id="cite-/);
+  const empty = aiFromRun({ question: "", answer: "", created_at: "", suggestions: [], tables: [] });
+  assert.equal(renderToStaticMarkup(<CitedAnswerText text="" ai={empty} compact />), "<div></div>");
+  assert.equal(citationDetails(empty, sources[0]).query, "");
+});
 
 it("preserves statistical drivers when reopening a saved comps result", () => {
   const ai = aiFromRun({ question: "Find player comps", answer: "Comparable players", created_at: "2026-01-01", suggestions: [], tables: [{ tool: "get_comps", rows: [{ PLAYER: "Test player", TEAM: "OKC", similarity: 0.94, drivers: [{ stat: "AST_PCT", target: 31.5, comp: 29.8 }] }] }] });

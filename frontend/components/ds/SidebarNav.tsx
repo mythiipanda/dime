@@ -30,6 +30,6 @@ export function SidebarNav({ workspace, items, activeNav, recents, activeThread,
         {!!recents.length && !recents.some((r) => r.label.toLowerCase().includes(search.toLowerCase())) && <p className="px-2 py-2 text-[11px] text-ink-3">No matching chats.</p>}
       </div>
     </div>
-    <div className="sidebar-copy mt-auto border-t border-line px-2 py-4">{footer}</div>
+    <div className="sidebar-copy mt-auto border-t border-line px-2 pt-4 pb-14">{footer}</div>
   </aside>;
 }
