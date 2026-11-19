@@ -99,6 +99,7 @@ TOOL_SCHEMA_DESCRIPTIONS = {
     "get_risers": "Team risers and fallers: last-N weeks win percentage versus season win percentage.",
     "get_rookie_leaders": "Current rookie class leaderboard (first-year NBA players only, verified against historical seasons).",
     "get_season_series": "Head-to-head between two teams across a season: every meeting (regular season and playoffs) with winner, scores, date, matchup.",
+    "get_phase_shot_splits": "Regular season vs playoffs shooting splits for one player or team: zone eFG/share plus catch-and-shoot vs pull-up family splits with deltas and cited warehouse sources.",
     "get_shot_compare": "Shot-diet showdown: zone eFG and share for two players.",
     "get_shot_zones": "Zone splits for one player id: rim, midrange, three with shares.",
     "get_situational_splits": "Clutch situational splits for one player or team across score margins, time thresholds, and venues.",

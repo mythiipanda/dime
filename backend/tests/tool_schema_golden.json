@@ -405,6 +405,39 @@
         "type": "object"
       }
     },
+    "get_phase_shot_splits": {
+      "name": "get_phase_shot_splits",
+      "description": "Regular season vs playoffs shooting splits for one player or team in one season: zone diet and eFG plus shot-family splits (catch-and-shoot vs pull-up vs rim) with playoff-minus-regular deltas in percentage points. Warehouse-first from silver_hist_shots; measured tracking splits appear when seeded. Give exactly one of player or team.",
+      "args_schema": {
+        "description": "Regular season vs playoffs shooting splits for one player or team: zone eFG/share plus catch-and-shoot vs pull-up family splits with deltas and cited warehouse sources.",
+        "properties": {
+          "player": {
+            "default": "",
+            "title": "Player",
+            "type": "string"
+          },
+          "team": {
+            "default": "",
+            "title": "Team",
+            "type": "string"
+          },
+          "season": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Season"
+          }
+        },
+        "title": "get_phase_shot_splits",
+        "type": "object"
+      }
+    },
     "get_four_factors": {
       "name": "get_four_factors",
       "description": "Team four factors (eFG%, TOV%, ORB%, FT rate, plus defensive\nmirrors), computed offline from warehouse team game rows. Use for\n\"why are the Thunder good\", \"team identity\", or any four-factors\nask. Pass a team name/abbrev to scope to one team; empty returns\nthe full 30-team board.",
