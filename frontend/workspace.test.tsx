@@ -11,6 +11,7 @@ import { PromptBar } from "./components/ds/PromptBar";
 import { ShotsExplorer } from "./components/shell/ShotsExplorer";
 import TradesView from "./components/dime/views/TradesView";
 import type { HomeSnapshot } from "./lib/warehouse";
+import { clearEnvelopeCache } from "./lib/api";
 
 const snapshot: HomeSnapshot = { date: "2026-11-19", schedule: { available: false, table: "silver_scoreboard", games: [], next_date: null, seasons: [], last_fetch: null }, snapshot: { table: "silver_team_ratings", season: "2025-26", rows: [{ TEAM_NAME: "Boston", GP: 82, NET_RATING: 10.3 }], last_fetch: "2026-04-13" } };
 
@@ -81,7 +82,7 @@ test("Ask explains supported provider keys and prevents form and keyboard sends 
 
 test("Shots explorer preserves zone data even if shot coordinates are unavailable", async () => {
   const previous = globalThis.fetch;
-  await mount(<ShotsExplorer initialSeason="2025-26" initialPlayer="2544" />, async input => {
+  await mount(<ShotsExplorer season="2025-26" initialPlayer="2544" />, async input => {
     const url = String(input);
     if (url.includes("zone_splits")) return Response.json({ ok: true, data: [{ zone: "rim", FGM: 1, FGA: 2, FG_PCT: 0.5, share: 1 }], meta: { source: "warehouse:silver_zone_splits" } });
     return Response.json({ ok: false, error: "No shot coordinates" });
@@ -100,5 +101,51 @@ test("Trades renders the backend's readable domain error on HTTP 422", async () 
     await act(async () => button.click());
     assert.match(host.textContent!, /Salary data lists Luka with LAL, not DAL/);
     assert.doesNotMatch(host.textContent!, /Could not reach the backend/);
+  });
+});
+
+test("Shots queries follow asynchronously loaded and subsequently selected seasons", async () => {
+  const calls: string[] = [];
+  function Seasons() {
+    const [season, setSeason] = React.useState("");
+    return <><button onClick={() => setSeason("2022-23")}>Loaded season</button><button onClick={() => setSeason("2023-24")}>Selected season</button><ShotsExplorer season={season} initialPlayer="2544" /></>;
+  }
+  await mount(<Seasons />, async input => { calls.push(String(input)); return Response.json({ ok: true, data: [] }); }, async (host, dom) => {
+    const input = host.querySelector<HTMLInputElement>('[aria-label="Shots season"]')!;
+    assert.equal(input.value, "");
+    assert.equal([...host.querySelectorAll("button")].find(button => button.textContent === "Load shots")!.disabled, true);
+    for (const [label, season] of [["Loaded season", "2022-23"], ["Selected season", "2023-24"]]) {
+      await act(async () => [...host.querySelectorAll("button")].find(button => button.textContent === label)!.click());
+      assert.equal(input.value, season);
+      await act(async () => host.querySelector("form")!.dispatchEvent(new dom.window.Event("submit", { bubbles: true, cancelable: true })));
+      assert.ok(calls.slice(-2).every(url => new URL(url).searchParams.get("season") === season));
+    }
+  });
+});
+
+test("Warehouse passes loaded seasons and table filter changes to Shots", async () => {
+  clearEnvelopeCache();
+  let resolveDetail!: (response: Response) => void;
+  let first = true;
+  const detail = { ok: true, columns: [], rows: [], seasons: ["2022-23", "2021-22"], count: 0 };
+  await mount(<WarehouseView />, async input => {
+    const url = String(input);
+    if (url.includes("freshness")) return Response.json({ ok: true, rows: [{ table: "silver_shots", rows: 0, last_fetch: null }] });
+    if (url.includes("/warehouse/tables/")) {
+      if (first) { first = false; return new Promise<Response>(resolve => { resolveDetail = resolve; }); }
+      return Response.json(detail);
+    }
+    return Response.json({});
+  }, async (host, dom) => {
+    const input = () => host.querySelector<HTMLInputElement>('[aria-label="Shots season"]')!;
+    assert.equal(input().value, "");
+    await act(async () => resolveDetail(Response.json(detail)));
+    assert.equal(input().value, "2022-23");
+    await act(async () => {
+      const filter = host.querySelector<HTMLSelectElement>('[aria-label="Table season"]')!;
+      filter.value = "2021-22";
+      filter.dispatchEvent(new dom.window.Event("change", { bubbles: true }));
+    });
+    assert.equal(input().value, "2021-22");
   });
 });

@@ -247,7 +247,7 @@ export default function WarehouseView() {
                   </div>
                 </>
               )}
-              {(selected === "silver_shots" || selected === "silver_zone_splits") && <ShotsExplorer initialSeason={season || (detail.state === "ready" ? detail.seasons[0] : "") || "2025-26"} />}
+              {(selected === "silver_shots" || selected === "silver_zone_splits") && <ShotsExplorer key={selected} season={season || (detail.state === "ready" ? detail.seasons[0] : "") || ""} />}
 
               {status && (
                 <p className="mt-6 font-mono text-[11px] text-ink-3">Backend {status}</p>

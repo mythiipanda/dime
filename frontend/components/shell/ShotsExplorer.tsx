@@ -8,9 +8,8 @@ type Dataset = { rows: Record<string, unknown>[]; source: string; error: string 
 const empty: Dataset = { rows: [], source: "", error: null };
 const cell = (value: unknown) => value == null ? "—" : String(value);
 
-export function ShotsExplorer({ initialSeason, initialPlayer = "" }: { initialSeason: string; initialPlayer?: string }) {
+export function ShotsExplorer({ season, initialPlayer = "" }: { season: string; initialPlayer?: string }) {
   const [player, setPlayer] = useState(initialPlayer);
-  const [season, setSeason] = useState(initialSeason);
   const [loadedSeason, setLoadedSeason] = useState("");
   const [shots, setShots] = useState<Dataset>(empty);
   const [zones, setZones] = useState<Dataset>(empty);
@@ -39,8 +38,8 @@ export function ShotsExplorer({ initialSeason, initialPlayer = "" }: { initialSe
     <p className="mt-2 text-[12px] text-ink-3">Player-level shots and zone shares, using the existing warehouse-first datasets. All attempt counts are included.</p>
     <form onSubmit={event => { event.preventDefault(); void load(); }} className="my-4 flex flex-wrap items-center gap-2">
       <input aria-label="Player name or id" placeholder="Player name or id" value={player} onChange={event => setPlayer(event.target.value)} className="min-w-0 rounded-lg border border-line bg-field px-3 py-2 text-[12px]" />
-      <input aria-label="Shots season" value={season} onChange={event => setSeason(event.target.value)} pattern="[0-9]{4}-[0-9]{2}" className="w-24 rounded-lg border border-line bg-field px-3 py-2 text-[12px]" />
-      <Button type="submit" size="sm" disabled={busy || !player.trim()}>{busy ? "Loading…" : "Load shots"}</Button>
+      <input aria-label="Shots season" value={season} readOnly title="Select a season above in the table detail" className="w-24 rounded-lg border border-line bg-field px-3 py-2 text-[12px]" />
+      <Button type="submit" size="sm" disabled={busy || !player.trim() || !season}>{busy ? "Loading…" : "Load shots"}</Button>
     </form>
     {error && <p role="alert" className="text-[12px] text-red">{error}</p>}
     {loadedSeason && <div className="space-y-4">
